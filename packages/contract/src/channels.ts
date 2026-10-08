@@ -3021,6 +3021,34 @@ export const channels = {
   ),
 
   /**
+   * How far a service's read of an Excel export's pages has got (ADR-0202 Decision 5): the renderer polls it while the export
+   * is in flight, to step the status bar.
+   *
+   * **It does not enter the document's lane**, which the export holds for its whole length: a progress that waited for the
+   * lane would answer only when there was nothing left to report. Two counts and a state, read from a map main keeps — no
+   * text, no path, and nothing that scales with the document.
+   */
+  'document.exportProgress': channel(
+    'Answers how many pages of a service-read export have been read, while one is in flight.',
+    z.object({ docId: docIdSchema }).strict(),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('idle') }),
+      z.object({ kind: z.literal('reading'), done: z.number().int().nonnegative(), total: z.number().int().nonnegative() }),
+    ]),
+  ),
+
+  /**
+   * Asks a service-read export to stop (ADR-0202 Decision 5): a flag main checks between pages, after which the temporary file
+   * is removed and the export answers `cancelled`. `cancelled: false` says there was no read in flight to stop — a cancel that
+   * raced the end of the export is an answer, not a fault. Not in the lane, for `document.exportProgress`' reason.
+   */
+  'document.cancelExport': channel(
+    'Asks a service-read export in flight to stop after the page it is on.',
+    z.object({ docId: docIdSchema }).strict(),
+    z.object({ cancelled: z.boolean() }),
+  ),
+
+  /**
    * Writes the document as PDF/A-2b to a file the user picks — D10's *PDF/A-2b export*,
    * Ghostscript's `pdfwrite` in a contained process (ADR-0075).
    *

@@ -8,7 +8,9 @@ import {
   EXPORT_EXCEL_APPLY,
   EXPORT_EXCEL_CELL,
   EXPORT_EXCEL_CLIPPED,
+  EXPORT_EXCEL_BUILT_IN_NOTE,
   EXPORT_EXCEL_ENGINE,
+  EXPORT_EXCEL_ENGINE_BUILT_IN,
   EXPORT_EXCEL_SERVICES_NO_KEY,
   EXPORT_EXCEL_ENGINE_AUTOMATIC,
   EXPORT_EXCEL_ENGINE_AZURE,
@@ -46,12 +48,13 @@ const LAYOUTS: Readonly<Record<SheetLayout, MessageKey>> = {
 /** Each engine's name, as a record for the same reason. */
 const ENGINES: Readonly<Record<Engine, MessageKey>> = {
   automatic: EXPORT_EXCEL_ENGINE_AUTOMATIC,
+  'built-in': EXPORT_EXCEL_ENGINE_BUILT_IN,
   azure: EXPORT_EXCEL_ENGINE_AZURE,
   claude: EXPORT_EXCEL_ENGINE_CLAUDE,
 };
 
 /** What a service engine sends, said before anything is sent (ADR-0086 Decision 4). */
-const SENDS: Readonly<Record<Exclude<Engine, 'automatic'>, MessageKey>> = {
+const SENDS: Readonly<Record<Exclude<Engine, 'automatic' | 'built-in'>, MessageKey>> = {
   azure: EXPORT_EXCEL_SENDS_AZURE,
   claude: EXPORT_EXCEL_SENDS_CLAUDE,
 };
@@ -163,8 +166,11 @@ export default function ExportExcelBody({
         {engineChoice}
         {pageChoice}
         {/* THE PAGES THAT WILL BE SENT, counted from the row, and said only while the row names some: a count of every
-            page under *Select pages* would say more leaves this computer than does. */}
-        {range.chosen === undefined ? null : (
+            page under *Select pages* would say more leaves this computer than does. A read on this computer sends nothing and
+            says what it leaves in the document instead (ADR-0202). */}
+        {engine === 'built-in' ? (
+          <p>{_(EXPORT_EXCEL_BUILT_IN_NOTE)}</p>
+        ) : range.chosen === undefined ? null : (
           <p>
             {_(SENDS[engine], {
               count: range.chosen.length,

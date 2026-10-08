@@ -1530,6 +1530,14 @@ class PageRefused extends Error {
   }
 }
 
+/** The person asked a service-read export to stop (ADR-0202 Decision 5): thrown between pages, answered as a cancelled picker. */
+class ExportCancelled extends Error {
+  constructor() {
+    super('the export was cancelled between pages');
+    this.name = 'ExportCancelled';
+  }
+}
+
 /** The resolutions a print may be asked for, in dots per inch. */
 /**
  * The JPEG quality of a recent card's picture (ADR-0100). Measured 2026-09-25 by
@@ -2663,6 +2671,11 @@ export class DocumentCommands {
   readonly #word: DocumentWordExport;
   readonly #pickText: (sourceName: string) => Promise<string | null>;
   readonly #pickContact: (sourceName: string) => Promise<string | null>;
+  /**
+   * The service-read exports in flight, by document (ADR-0202 Decision 5): pages read of pages asked, and whether the person
+   * asked it to stop. Counts and a flag — never text — and one entry per document at most, since the export holds the lane.
+   */
+  readonly #reading = new Map<DocId, { done: number; total: number; stop: boolean }>();
   readonly #layoutText: LayoutTextSource | null;
   readonly #pdfa: PdfaSource | null;
   readonly #officeImport: OfficeImport | null;
@@ -5465,13 +5478,16 @@ export class DocumentCommands {
     const destination = await this.#pickOffice(suggest, 'xlsx');
     if (destination === null) return undefined;
 
-    const { value } = await this.#documents.run(docId, async (context): Promise<ExcelOutcome> => {
+    const { value } = await this.#documents.run(docId, async (context): Promise<ExcelOutcome | undefined> => {
       if (context.version !== version) return { kind: 'changed' };
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
+      // THE READ IS REPORTED AND CAN BE STOPPED while it runs (ADR-0202 Decision 5): two small facts kept in a map main owns,
+      // dropped when the export ends however it ends, so a later export of the same document starts from nothing.
+      this.#reading.set(docId, { done: 0, total: pagesOf(pages, (await this.#geometry(docId, sessions, [])).pageCount).length, stop: false });
       try {
         return await writeStreamedDocument(
           this.#save.deps,
@@ -5482,10 +5498,35 @@ export class DocumentCommands {
       } catch (thrown) {
         if (thrown instanceof NoTablesToWrite) return { kind: 'no-tables', picturePages: 0 };
         if (thrown instanceof PageRefused) return serviceRefusal(engine, thrown.page, thrown.original);
+        // A STOPPED READ WRITES NOTHING: the temporary file is already removed, and the person asked, so it is a cancelled
+        // picker's answer (`undefined`) and not a fault.
+        if (thrown instanceof ExportCancelled) return undefined;
         throw thrown;
+      } finally {
+        this.#reading.delete(docId);
       }
     });
     return value;
+  }
+
+  /**
+   * How far a service-read export has got, for the renderer's polling (ADR-0202 Decision 5). Not in the lane, which the
+   * export holds: a count that waited for it would answer when there was nothing left to count.
+   */
+  exportProgress(docId: DocId): { readonly kind: 'idle' } | { readonly kind: 'reading'; readonly done: number; readonly total: number } {
+    const reading = this.#reading.get(docId);
+    return reading === undefined ? { kind: 'idle' } : { kind: 'reading', done: reading.done, total: reading.total };
+  }
+
+  /**
+   * Asks the service-read export of this document to stop after the page it is on. `false` says none was reading — the
+   * cancel raced the end — which is an answer. Not in the lane, for {@link exportProgress}' reason.
+   */
+  cancelExport(docId: DocId): boolean {
+    const reading = this.#reading.get(docId);
+    if (reading === undefined) return false;
+    reading.stop = true;
+    return true;
   }
 
   /** Each page's tables as the service reads them, one request per page, as the zip pulls them. */
@@ -5497,12 +5538,16 @@ export class DocumentCommands {
   ): AsyncIterable<SpreadsheetPage> {
     const { pageCount } = await this.#geometry(docId, sessions, []);
     for (const page of pagesOf(pages, pageCount)) {
+      // CHECKED BETWEEN PAGES, before a request is paid for: a stop the person asked for costs at most the page in hand.
+      const reading = this.#reading.get(docId);
+      if (reading?.stop === true) throw new ExportCancelled();
       let tables: readonly RecognisedTable[];
       try {
         tables = await this.#networkTables(docId, sessions, page, engine);
       } catch (thrown) {
         throw new PageRefused(page, thrown);
       }
+      if (reading !== undefined) reading.done += 1;
       yield { page, tables, edits: [] };
     }
   }

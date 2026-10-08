@@ -10,8 +10,16 @@ export const EXPORT_EXCEL_DIALOG_ID = 'dialog.export-excel';
 
 const LAYOUT = z.enum(['sheet-per-page', 'one-sheet']);
 
-/** Who reads the tables (ADR-0086); the dialog carries the choice across its pages. */
-const ENGINE = z.enum(TABLE_ENGINES);
+/**
+ * Who reads the tables (ADR-0086) and, for a handwritten or scanned document, how the pages are read first (ADR-0202); the
+ * dialog carries the choice across its pages.
+ *
+ * The channel's engines (`automatic` for the PDF's own text, `claude` and `azure` for a service that reads each page as
+ * tables) and `built-in`, which is NOT a channel engine: it means *read the pages on this computer, then find the tables in
+ * what was read*, a walk the command runs before it asks the channel for `automatic`. One list for the dialog, so a choice
+ * is one radio; the command maps it.
+ */
+const ENGINE = z.enum([...TABLE_ENGINES, 'built-in']);
 
 /** A person's text for one cell of the page on show, addressed as the grid shows it. */
 const EDIT = z

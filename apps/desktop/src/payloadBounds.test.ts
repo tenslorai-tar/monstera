@@ -407,6 +407,8 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'document.exportPowerPoint': 'needs an engine session and a save dialog',
   // The Excel export's ask is a `DocId` and a layout; the tables are read and streamed in main.
   'document.exportExcel': 'needs an engine session and a save dialog',
+  'document.exportProgress': 'needs an export in flight; answers two small counts and a state',
+  'document.cancelExport': 'needs an export in flight; answers one boolean',
   // The print's ask is a `DocId` and a resolution; the pages are rasterised and printed in main.
   'document.print': 'needs an engine session and the system print dialog',
   'document.email': 'needs an engine session and the Windows Share sheet',

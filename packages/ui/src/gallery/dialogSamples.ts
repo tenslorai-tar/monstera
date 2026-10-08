@@ -922,13 +922,29 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     },
   ],
   'dialog.export-word': [
-    { state: 'opened', props: { pageCount: 12 } },
-    { state: 'select', props: { pageCount: 12 }, steps: [press('Select pages'), type('Page numbers', '1-3, 7')] },
+    { state: 'opened', props: { pageCount: 12, readers: ['built-in', 'claude'] } },
+    {
+      state: 'select',
+      props: { pageCount: 12, readers: ['built-in', 'claude'] },
+      steps: [press('Select pages'), type('Page numbers', '1-3, 7')],
+    },
     {
       state: 'refused',
-      props: { pageCount: 12 },
+      props: { pageCount: 12, readers: ['built-in', 'claude'] },
       steps: [press('Select pages'), type('Page numbers', '20'), press('Choose where to save…')],
     },
+    // A HANDWRITTEN OR SCANNED DOCUMENT (ADR-0202): the readers this machine has, and what a service is sent.
+    {
+      state: 'scanned',
+      props: { pageCount: 12, readers: ['built-in', 'claude', 'azure'] },
+      steps: [choose('Handwritten or scanned')],
+    },
+    {
+      state: 'service',
+      props: { pageCount: 12, readers: ['built-in', 'claude', 'azure'] },
+      steps: [choose('Handwritten or scanned'), choose('Claude'), press('Select pages'), type('Page numbers', '1-3, 7')],
+    },
+    { state: 'no reader', props: { pageCount: 12, readers: [] }, steps: [choose('Handwritten or scanned')] },
   ],
   'dialog.export-powerpoint': [
     { state: 'opened', props: { pageCount: 12, becomes: 'slides' } },
@@ -947,8 +963,10 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'opened', props: EXCEL },
     { state: 'select', props: { ...EXCEL, range: { every: false, text: '1, 3-4' } } },
     // With a service key stored, the dialog offers the engines; a network engine replaces the preview.
-    { state: 'engines', props: { ...EXCEL, engines: ['automatic', 'azure', 'claude'] } },
-    { state: 'service', props: { ...EXCEL, engines: ['automatic', 'azure', 'claude'], engine: 'claude' } },
+    { state: 'engines', props: { ...EXCEL, engines: ['automatic', 'built-in', 'azure', 'claude'] } },
+    { state: 'service', props: { ...EXCEL, engines: ['automatic', 'built-in', 'azure', 'claude'], engine: 'claude' } },
+    // A PRINTED SCAN read on this computer first (ADR-0202): nothing is sent, and the note says what it leaves in the document.
+    { state: 'printed scan', props: { ...EXCEL, engines: ['automatic', 'built-in'], engine: 'built-in' } },
     { state: 'empty', props: { ...EXCEL, index: 1, page: 2, tables: [] } },
     { state: 'long', props: { ...EXCEL, tables: [TABLE, TABLE, TABLE], truncated: true } },
   ],

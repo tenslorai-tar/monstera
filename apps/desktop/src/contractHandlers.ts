@@ -488,6 +488,10 @@ export function createContractHandlers(deps: {
     'document.exportWord': exportWordHandler(deps.commands, mintWritten),
     'document.exportPowerPoint': exportPowerPointHandler(deps.commands, mintWritten),
     'document.exportExcel': exportExcelHandler(deps.commands, mintWritten),
+    // NOT IN THE LANE (ADR-0202 Decision 5): the export holds it for its whole length, so a count or a stop that queued
+    // behind it would be answered when there was nothing left to report. Plain reads and a flag of a map main keeps.
+    'document.exportProgress': ({ docId }) => Promise.resolve(ok(deps.commands.exportProgress(docId))),
+    'document.cancelExport': ({ docId }) => Promise.resolve(ok({ cancelled: deps.commands.cancelExport(docId) })),
     'document.print': printHandler(deps.commands),
     'document.email': emailHandler(deps.commands),
     'document.exportPdfa': exportPdfaHandler(deps.commands, mintWritten),

@@ -670,6 +670,8 @@ export const EXPORT_EXCEL_ENGINE = messageKey('dialog.export-excel.engine');
 export const EXPORT_EXCEL_ENGINE_AUTOMATIC = messageKey('dialog.export-excel.engine.automatic');
 export const EXPORT_EXCEL_ENGINE_AZURE = messageKey('dialog.export-excel.engine.azure');
 export const EXPORT_EXCEL_ENGINE_CLAUDE = messageKey('dialog.export-excel.engine.claude');
+export const EXPORT_EXCEL_ENGINE_BUILT_IN = messageKey('dialog.export-excel.engine.built-in');
+export const EXPORT_EXCEL_BUILT_IN_NOTE = messageKey('dialog.export-excel.built-in-note');
 export const EXPORT_EXCEL_SENDS_AZURE = messageKey('dialog.export-excel.sends.azure');
 export const EXPORT_EXCEL_SENDS_CLAUDE = messageKey('dialog.export-excel.sends.claude');
 export const EXCEL_SERVICE_REFUSED = messageKey('dialog.service-refused.body');
@@ -2851,6 +2853,7 @@ export const WORD_COUNT_PROGRESS = messageKey('task.word-count');
  * which is why the bar it names is not optional (`BUILD-PROMPT.md` M5).
  */
 export const OCR_PROGRESS = messageKey('task.ocr');
+export const EXPORT_EXCEL_READING = messageKey('task.export-excel-reading');
 /** The READ's name, because the write is one command and takes no walk. */
 export const ENHANCE_PROGRESS = messageKey('task.enhance');
 export const TASK_PROGRESS = messageKey('status.task.progress');
@@ -3544,7 +3547,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [OCR_HANDWRITING_READY]:
     'To read handwriting, draw a box with Azure OCR or Claude OCR, in the OCR group of Tools — whichever you have a key for.',
   [EXPORT_EXCEL_SERVICES_NO_KEY]:
-    'To read tables from scanned pages with Azure Document Intelligence or Claude, add a key in Settings.',
+    'To read handwritten or scanned pages, add a Claude or Azure key in Settings, or set up the text models on this computer for printed scans.',
   [OCR_OUTCOME_TITLE]: 'Recognition',
   [OCR_OUTCOME_RECOGNISED]:
     '{count, plural, one {Read the text on one page} other {Read the text on # pages}}.',
@@ -5604,10 +5607,14 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EXPORT_EXCEL_TITLE]: 'Export tables to Excel',
   [EXPORT_EXCEL_LAYOUT]: 'Where the tables go',
   [EXPORT_EXCEL_PAGES_NOTE]: 'Tables are written from these pages only.',
-  [EXPORT_EXCEL_ENGINE]: 'Read the tables with',
-  [EXPORT_EXCEL_ENGINE_AUTOMATIC]: 'This PDF’s own text',
-  [EXPORT_EXCEL_ENGINE_AZURE]: 'Azure Document Intelligence',
-  [EXPORT_EXCEL_ENGINE_CLAUDE]: 'Claude',
+  // THE FIRST QUESTION, shared in spirit with the Word export's (ADR-0202): what is in the document decides who reads it.
+  [EXPORT_EXCEL_ENGINE]: 'What is in this document?',
+  [EXPORT_EXCEL_ENGINE_AUTOMATIC]: 'Typed text (the PDF’s own words)',
+  [EXPORT_EXCEL_ENGINE_BUILT_IN]: 'Printed scan, read on this computer',
+  [EXPORT_EXCEL_ENGINE_AZURE]: 'Handwritten or scanned, read by Azure',
+  [EXPORT_EXCEL_ENGINE_CLAUDE]: 'Handwritten or scanned, read by Claude',
+  [EXPORT_EXCEL_BUILT_IN_NOTE]:
+    'The pages are read on this computer first, then the tables are found in what was read. Nothing leaves your computer. The words are also kept, unseen, in this document, and Undo takes them out again.',
   // SAID BEFORE ANYTHING IS SENT (ADR-0086 Decision 4): what leaves this computer, and where to.
   // No cost is stated, which is the row's rule for every service string.
   [EXPORT_EXCEL_SENDS_AZURE]:
@@ -6160,6 +6167,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [GROUP_ACCESSIBILITY]: 'Accessibility',
   [WORD_COUNT_PROGRESS]: 'Counting words',
   [OCR_PROGRESS]: 'Recognising text',
+  [EXPORT_EXCEL_READING]: 'Reading pages for Excel',
   // NAMES THE READ, which is what the bar actually counts: *looking for scans*.
   [ENHANCE_PROGRESS]: 'Looking for scanned pages',
   // THE LABEL FIRST, so a screen reader announces what is running before the

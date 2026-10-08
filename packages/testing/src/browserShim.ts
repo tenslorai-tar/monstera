@@ -2598,6 +2598,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     // NO BROWSER TO OPEN: what `main` answers when the system opened nothing.
     'document.openBarcodeLink': () => Promise.resolve(ok({ kind: 'not-opened' as const })),
     'document.saveBarcodeContact': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+    'document.exportProgress': () => Promise.resolve(ok({ kind: 'idle' as const })),
+    'document.cancelExport': () => Promise.resolve(ok({ cancelled: false })),
     // NO DATA FOLDER IN A BROWSER: no version was kept, so none is listed and nothing is old to move.
     'document.listBackups': () => Promise.resolve(ok({ kind: 'listed' as const, versions: [] })),
     'document.restoreBackup': () => Promise.resolve(ok({ kind: 'gone' as const })),

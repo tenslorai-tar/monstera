@@ -8,7 +8,7 @@ import {
   createClient,
 } from '@monstera/contract';
 import { type DocId, type DocVersion, type MessageKey, asDocId, asDocVersion, asFileHandle, err, ok } from '@monstera/shared';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { PAGE_BACKGROUND_DIALOG_ID } from '../dialogs/pageBackground.js';
 import type { ObjectFilter } from '../objectEditing.js';
@@ -49,6 +49,7 @@ import {
   SCAN_READERS_NONE,
 } from '../messages/en.js';
 import type { RecognisedWalk } from '../dialogs/ocrOutcome.js';
+import { UNTRACKED } from '../runningTask.js';
 import type { ScanReader } from '../dialogs/scanReader.js';
 import type { ToastAction } from '../primitives/Toast.js';
 import type { CommandContext } from '../registries/commands.js';
@@ -177,6 +178,8 @@ const NOTHING_RECOGNISED = (): Promise<undefined> => Promise.resolve(undefined);
 const NO_SCANS = {
   scanReaders: (): Promise<readonly ScanReader[]> => Promise.resolve([]),
   readScans: (): Promise<undefined> => Promise.resolve(undefined),
+  // AND NO STATUS-BAR TASK: the Excel export shows a service's read there, and a case that is not about it shows nothing.
+  track: UNTRACKED,
 };
 
 /**
@@ -3844,7 +3847,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         settleMarks: NOTHING_MARKED,
         client,
         toast: () => undefined,
-        tableEngines: () => ['automatic'],
+        ...NO_SCANS,
         stamp,
         signatures,
         onApplied: () => undefined,
@@ -3921,7 +3924,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         settleMarks: NOTHING_MARKED,
         client,
         toast: () => undefined,
-        tableEngines: () => ['automatic'],
+        ...NO_SCANS,
         stamp,
         signatures,
         onApplied: () => undefined,
@@ -3942,7 +3945,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         settleMarks: NOTHING_MARKED,
         client,
         toast: () => undefined,
-        tableEngines: () => ['automatic'],
+        ...NO_SCANS,
         stamp,
         signatures,
         onApplied: () => undefined,
@@ -3967,7 +3970,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         settleMarks: NOTHING_MARKED,
         client,
         toast: () => undefined,
-        tableEngines: () => ['automatic'],
+        ...NO_SCANS,
         stamp,
         signatures,
         onApplied: () => undefined,
@@ -3990,7 +3993,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         settleMarks: NOTHING_MARKED,
           client,
           toast: () => undefined,
-          tableEngines: () => ['automatic'],
+          ...NO_SCANS,
           stamp,
           signatures,
           onApplied: () => undefined,
@@ -4009,7 +4012,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     });
 
     it('sends the SERVICE the person chose and no edits, and shows a page the service refused', async () => {
-      // THE UI HALF of ADR-0086's wired pair: the dialog offers what `tableEngines` answers, the
+      // THE UI HALF of ADR-0086's wired pair: the dialog offers `automatic` and the readers `scanReaders` answers, the
       // choice crosses as `engine`, and the grid's edits — MuPDF's tables' — do not cross with it.
       const { client, sent } = reviewing({
         kind: 'service-refused',
@@ -4024,7 +4027,9 @@ describe('delete pages — the mutation-dialog gate', () => {
         settleMarks: NOTHING_MARKED,
         client,
         toast: () => undefined,
-        tableEngines: () => ['automatic', 'claude'],
+        scanReaders: () => Promise.resolve(['claude'] as const),
+        readScans: () => Promise.resolve(undefined),
+        track: UNTRACKED,
         stamp,
         signatures,
         onApplied: () => undefined,
@@ -4061,6 +4066,193 @@ describe('delete pages — the mutation-dialog gate', () => {
         id: 'dialog.service-refused',
         props: { page: 7, reason: 'rejected', detail: 'Claude said no.' },
       });
+    });
+  });
+
+  it('Excel read by a SERVICE: the status bar steps from the polled count, a Cancel reaches main, and the task always ends (ADR-0202)', async () => {
+    vi.useFakeTimers();
+    try {
+      const steps: number[] = [];
+      const totals: number[] = [];
+      let ended = 0;
+      const controller = new AbortController();
+      const cancelled: unknown[] = [];
+      let finish: ((value: unknown) => void) | undefined;
+      const exporting = new Promise<unknown>((resolve) => {
+        finish = resolve;
+      });
+      const client = createClient(channels, (id, params) => {
+        if (id === 'document.pageTables') {
+          return Promise.resolve(ok({ version: asDocVersion(5), pageCount: 10, tables: [], truncated: false }));
+        }
+        if (id === 'document.exportProgress') return Promise.resolve(ok({ kind: 'reading', done: 2, total: 3 }));
+        if (id === 'document.cancelExport') {
+          cancelled.push(params);
+          return Promise.resolve(ok({ cancelled: true }));
+        }
+        return exporting.then((value) => ok(value));
+      });
+      const running = exportExcelCommand({
+        settleMarks: NOTHING_MARKED,
+        client,
+        toast: () => undefined,
+        scanReaders: () => Promise.resolve(['claude'] as const),
+        readScans: () => Promise.resolve(undefined),
+        track: (_label, total) => {
+          totals.push(total);
+          return {
+            signal: controller.signal,
+            step: (done) => steps.push(done),
+            end: () => {
+              ended += 1;
+            },
+          };
+        },
+        stamp,
+        signatures,
+        onApplied: () => undefined,
+        ask: (id) =>
+          Promise.resolve(
+            id === 'dialog.export-excel'
+              ? { kind: 'export', layout: 'sheet-per-page', engine: 'claude', edits: [], pages: CHOSEN }
+              : undefined,
+          ),
+      }).run(CONTEXT) as Promise<void>;
+
+      // LET THE COMMAND REACH THE EXPORT, then let a second pass: the poll's first answer steps the bar.
+      await vi.advanceTimersByTimeAsync(1100);
+      expect(totals).toStrictEqual([CHOSEN.length]);
+      expect(steps).toStrictEqual([2]);
+      // THE PERSON PRESSES CANCEL in the status bar: main is told, for the document being exported.
+      controller.abort();
+      expect(cancelled).toStrictEqual([{ docId: DOC }]);
+      finish?.({ kind: 'cancelled' });
+      await running;
+      expect(ended).toBe(1);
+      // AND THE POLL STOPPED with the export: no step arrives after it.
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(steps).toStrictEqual([2]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('CONTROL: the PDF’s own text shows no task at all — it reads in a moment', async () => {
+    const totals: number[] = [];
+    const client = createClient(channels, (id) => {
+      if (id === 'document.pageTables') {
+        return Promise.resolve(ok({ version: asDocVersion(5), pageCount: 10, tables: [], truncated: false }));
+      }
+      return Promise.resolve(ok({ kind: 'copied', bytes: 9, written: WRITTEN }));
+    });
+    await exportExcelCommand({
+      settleMarks: NOTHING_MARKED,
+      client,
+      toast: () => undefined,
+      ...NO_SCANS,
+      track: (_label, total) => {
+        totals.push(total);
+        return UNTRACKED(_label, total);
+      },
+      stamp,
+      signatures,
+      onApplied: () => undefined,
+      ask: (id) =>
+        Promise.resolve(
+          id === 'dialog.export-excel'
+            ? { kind: 'export', layout: 'sheet-per-page', engine: 'automatic', edits: [], pages: CHOSEN }
+            : undefined,
+        ),
+    }).run(CONTEXT);
+    expect(totals).toStrictEqual([]);
+  });
+
+  describe('Excel from a printed scan (ADR-0202)', () => {
+    const tableOf = (page: number) =>
+      page === 3
+        ? [{ rows: [[{ text: 'Part', clipped: false }]] }]
+        : [];
+
+    function run(options: { readonly walked?: RecognisedWalk | undefined; readonly choose?: unknown }): {
+      readonly sent: { id: string; params: unknown }[];
+      readonly walks: { pages: readonly number[]; reader: ScanReader }[];
+      readonly asked: { id: string; props: unknown }[];
+      readonly said: MessageKey[];
+      readonly done: Promise<void>;
+    } {
+      const sent: { id: string; params: unknown }[] = [];
+      const walks: { pages: readonly number[]; reader: ScanReader }[] = [];
+      const asked: { id: string; props: unknown }[] = [];
+      const said: MessageKey[] = [];
+      let reads = 0;
+      const client = createClient(channels, (id, params) => {
+        sent.push({ id, params });
+        if (id === 'document.pageTables') {
+          reads += 1;
+          const { page } = params as { page: number };
+          // THE DOCUMENT MOVES WHEN THE WALK WRITES: the first read (the dialog's) is version 5, the one after the walk 8.
+          return Promise.resolve(ok({ version: asDocVersion(reads === 1 ? 5 : 8), pageCount: 10, tables: tableOf(page), truncated: false }));
+        }
+        return Promise.resolve(ok({ kind: 'copied', bytes: 9, written: WRITTEN }));
+      });
+      const done = exportExcelCommand({
+        settleMarks: NOTHING_MARKED,
+        client,
+        toast: (_kind, message) => said.push(message),
+        scanReaders: () => Promise.resolve(['built-in'] as const),
+        track: UNTRACKED,
+        readScans: (_docId, pages, reader) => {
+          walks.push({ pages, reader });
+          return Promise.resolve('walked' in options ? options.walked : { recognised: 2, skipped: 0, stopped: false });
+        },
+        stamp,
+        signatures,
+        onApplied: () => undefined,
+        ask: (id, props) => {
+          asked.push({ id, props });
+          return Promise.resolve(
+            id === 'dialog.export-excel'
+              ? (options.choose ?? { kind: 'export', layout: 'sheet-per-page', engine: 'built-in', edits: [], pages: CHOSEN })
+              : undefined,
+          );
+        },
+      }).run(CONTEXT) as Promise<void>;
+      return { sent, walks, asked, said, done };
+    }
+
+    it('offers the printed scan beside the PDF’s own text, reads the chosen pages on this computer, THEN exports with the PDF’s own engine at the NEW version', async () => {
+      const t = run({});
+      await t.done;
+      expect((t.asked[0]?.props as { engines: unknown }).engines).toStrictEqual(['automatic', 'built-in']);
+      expect(t.walks).toStrictEqual([{ pages: CHOSEN, reader: 'built-in' }]);
+      // THE CHANNEL HAS NO `built-in`: it is asked for `automatic`, at the version the walk made (8), and with no edits.
+      expect(t.sent.at(-1)).toStrictEqual({
+        id: 'document.exportExcel',
+        params: { docId: DOC, layout: 'sheet-per-page', engine: 'automatic', version: asDocVersion(8), pages: CHOSEN_SET, edits: [] },
+      });
+      // WHAT WAS READ is said once, after the export.
+      expect(t.asked.map((each) => each.id)).toStrictEqual(['dialog.export-excel', 'dialog.ocr-outcome']);
+    });
+
+    it('a walk the person STOPPED writes NO file, and says what was read', async () => {
+      const t = run({ walked: { recognised: 1, skipped: 0, stopped: true } });
+      await t.done;
+      expect(t.sent.some((call) => call.id === 'document.exportExcel')).toBe(false);
+      expect(t.asked.map((each) => each.id)).toStrictEqual(['dialog.export-excel', 'dialog.ocr-outcome']);
+    });
+
+    it('a reader that CANNOT RUN now is said, and nothing is exported', async () => {
+      const t = run({ walked: undefined });
+      await t.done;
+      expect(t.sent.some((call) => call.id === 'document.exportExcel')).toBe(false);
+      expect(t.said).toStrictEqual([SCAN_READERS_NONE]);
+    });
+
+    it('CONTROL: the PDF’s own text reads nothing first, whatever readers the machine has', async () => {
+      const t = run({ choose: { kind: 'export', layout: 'sheet-per-page', engine: 'automatic', edits: [], pages: CHOSEN } });
+      await t.done;
+      expect(t.walks).toStrictEqual([]);
+      expect(t.sent.at(-1)).toMatchObject({ params: { engine: 'automatic', version: asDocVersion(5) } });
     });
   });
 
@@ -6227,7 +6419,6 @@ describe('every file write confirms, and its Show in folder reveals the file the
       recogniseFirst: NOTHING_RECOGNISED,
       ...NO_SCANS,
       settleMarks: NOTHING_MARKED,
-      tableEngines: () => ['automatic' as const],
       track: () => ({ signal: new AbortController().signal, step: () => undefined, end: () => undefined }),
       docusignReady: () => true,
     };

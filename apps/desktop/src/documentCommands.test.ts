@@ -2860,7 +2860,16 @@ describe('barcodes — placed from typed text and read back, through the lane (A
     expect(placed.kind).toBe('placed');
 
     const after = await commands.pageBarcodes(docId, 0);
-    expect(after.barcodes).toStrictEqual([{ format: 'QRCode', text: 'MONSTERA 42' }]);
+    expect(after.barcodes.map(({ format, text }) => ({ format, text }))).toStrictEqual([{ format: 'QRCode', text: 'MONSTERA 42' }]);
+    // AND IT SAYS WHERE IT IS (the owner's item 5.2): the symbol was fitted to the 160-point square centred in the box, x 160–320,
+    // so its box sits inside that column and fills most of it.
+    const where = after.barcodes[0]?.box;
+    expect(where).toBeDefined();
+    if (where === undefined) return;
+    expect(where.x0).toBeGreaterThanOrEqual(156);
+    expect(where.x1).toBeLessThanOrEqual(324);
+    expect(where.x1 - where.x0).toBeGreaterThan(100);
+    expect(where.y1 - where.y0).toBeGreaterThan(100);
     // The read is stamped with the version the placement produced, so a list can be discarded
     // when the page it describes has moved.
     expect(after.version).toBe(before.version + 1);
@@ -4772,6 +4781,60 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
       });
       expect(asked).toStrictEqual([0, 1]);
       expect(existsSync(destination)).toBe(false);
+    });
+
+    it('REPORTS how far it has read while it runs, and nothing before or after (ADR-0202)', async () => {
+      const destination = join(mkdtempSync(join(directory, 'xlsx-')), 'progress.xlsx');
+      const seen: unknown[] = [];
+      // THE READER CLOSES OVER THE COMMANDS IT IS A PART OF, so they are held by an object it is told of afterwards.
+      const commandsOf: { current?: DocumentCommands } = {};
+      const { commands } = exportingTo(destination, (_doc, _sessions, page) => {
+        // READ BEFORE THE PAGE IS COUNTED: page 0 sees 0 done, page 1 sees 1, page 2 sees 2 — of the 3 asked.
+        seen.push(commandsOf.current?.exportProgress(tablesDoc));
+        return Promise.resolve(page === 1 ? [SPANNED] : []);
+      });
+      commandsOf.current = commands;
+      expect(commands.exportProgress(tablesDoc)).toStrictEqual({ kind: 'idle' });
+
+      await commands.exportExcel(tablesDoc, 'sheet-per-page', await unreviewed(commands, tablesDoc), 'claude');
+
+      expect(seen).toStrictEqual([
+        { kind: 'reading', done: 0, total: 3 },
+        { kind: 'reading', done: 1, total: 3 },
+        { kind: 'reading', done: 2, total: 3 },
+      ]);
+      // THE ENTRY IS DROPPED WITH THE EXPORT, so the next poll is the answer of a document that is reading nothing.
+      expect(commands.exportProgress(tablesDoc)).toStrictEqual({ kind: 'idle' });
+    });
+
+    it('a STOP between pages writes NO file, reads no page after it, and is answered as a cancelled picker', async () => {
+      const destination = join(mkdtempSync(join(directory, 'xlsx-')), 'stopped.xlsx');
+      const asked: number[] = [];
+      const commandsOf: { current?: DocumentCommands } = {};
+      const { commands } = exportingTo(destination, (_doc, _sessions, page) => {
+        asked.push(page);
+        // THE PERSON PRESSES CANCEL while page 1 is being read: page 2 must not be sent.
+        if (page === 1) expect(commandsOf.current?.cancelExport(tablesDoc)).toBe(true);
+        return Promise.resolve([SPANNED]);
+      });
+      commandsOf.current = commands;
+
+      expect(await commands.exportExcel(tablesDoc, 'one-sheet', await unreviewed(commands, tablesDoc), 'azure')).toBeUndefined();
+      expect(asked).toStrictEqual([0, 1]);
+      expect(existsSync(destination)).toBe(false);
+    });
+
+    it('CONTROL: a stop with nothing reading is an answer (false), and does not stop the NEXT export', async () => {
+      const destination = join(mkdtempSync(join(directory, 'xlsx-')), 'after.xlsx');
+      const asked: number[] = [];
+      const { commands } = exportingTo(destination, (_doc, _sessions, page) => {
+        asked.push(page);
+        return Promise.resolve([SPANNED]);
+      });
+      expect(commands.cancelExport(tablesDoc)).toBe(false);
+
+      expect((await commands.exportExcel(tablesDoc, 'one-sheet', await unreviewed(commands, tablesDoc), 'azure'))?.kind).toBe('copied');
+      expect(asked).toStrictEqual([0, 1, 2]);
     });
 
     it('answers NO TABLES, writing nothing, when the service finds none on any page', async () => {

@@ -3385,13 +3385,11 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           signatures,
           toast,
           settleMarks,
-          // THE SAME TWO FACTS the OCR tool's engines are offered on (`cloudReady`, `claudeReady`
-          // below): a service is offered where its key is stored, and nowhere else (ADR-0086).
-          tableEngines: () => [
-            'automatic',
-            ...(azureReady ? (['azure'] as const) : []),
-            ...(claudeKeyStored ? (['claude'] as const) : []),
-          ],
+          // THE SAME READERS THE WORD EXPORT OFFERS (ADR-0202): this computer's where its models are provisioned, and a
+          // service where its key is stored and nowhere else (ADR-0086) — the walk that reads the pages is the one too.
+          scanReaders: exportDeps.scanReaders,
+          readScans: exportDeps.readScans,
+          track,
         }),
         printCommand({ client, onApplied: applied, ask, stamp, signatures, settings, toast, settleMarks }),
         emailCommand({ client, onApplied: applied, ask, stamp, signatures, settleMarks }),

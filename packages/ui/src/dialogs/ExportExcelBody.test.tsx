@@ -151,20 +151,38 @@ describe('ExportExcelBody', () => {
   it('CONTROL: with one engine there is no engine choice at all — and it SAYS how to get one (§10.5)', () => {
     shown();
     expect(screen.queryByRole('radio', { name: 'Claude' })).toBeNull();
-    expect(screen.queryByRole('group', { name: 'Read the tables with' })).toBeNull();
-    expect(screen.getByText(/add a key in Settings/u)).toBeTruthy();
+    expect(screen.queryByRole('group', { name: 'What is in this document?' })).toBeNull();
+    expect(screen.getByText(/key in Settings/u)).toBeTruthy();
   });
 
   it('CONTROL: with a service offered, the no-key sentence is not shown', () => {
     shown({ engines: ['automatic', 'claude'] });
-    expect(screen.queryByText(/add a key in Settings/u)).toBeNull();
+    expect(screen.queryByText(/key in Settings/u)).toBeNull();
+  });
+
+  it('a PRINTED SCAN read on this computer sends nothing, says what it leaves in the document, hides the grid, and answers no edits', () => {
+    const resolve = shown({ engines: ['automatic', 'built-in'] });
+    fireEvent.change(cell(2, 1), { target: { value: 'Hex bolt' } });
+    fireEvent.click(screen.getByRole('radio', { name: 'Printed scan, read on this computer' }));
+    // NOTHING LEAVES THE COMPUTER, so no page count is said; what the read leaves in the document is.
+    expect(screen.queryByText(/will be sent to/u)).toBeNull();
+    expect(screen.getByText(/Nothing leaves your computer\. The words are also kept, unseen, in this document/u)).toBeTruthy();
+    expect(screen.queryByRole('textbox')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Choose where to save…' }));
+    expect(resolve).toHaveBeenCalledWith({
+      kind: 'export',
+      layout: 'sheet-per-page',
+      engine: 'built-in',
+      edits: [],
+      pages: EVERY_PAGE,
+    });
   });
 
   it('choosing a SERVICE says what leaves the computer, hides the grid, and answers no edits', () => {
     const resolve = shown({ engines: ['automatic', 'azure', 'claude'] });
     // Typed BEFORE the switch: a correction to MuPDF's table must not cross with a service engine.
     fireEvent.change(cell(2, 1), { target: { value: 'Hex bolt' } });
-    fireEvent.click(screen.getByRole('radio', { name: 'Azure Document Intelligence' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Handwritten or scanned, read by Azure' }));
 
     expect(screen.getByText(/All 3 pages of this document will be sent to Azure Document Intelligence/u)).toBeTruthy();
     expect(screen.queryByRole('textbox')).toBeNull();
@@ -186,7 +204,7 @@ describe('ExportExcelBody', () => {
 
   it('says a ONE-page document’s page goes, not “all 1 page”', () => {
     shown({ index: 0, page: 1, pageCount: 1, engines: ['automatic', 'claude'] });
-    fireEvent.click(screen.getByRole('radio', { name: 'Claude' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Handwritten or scanned, read by Claude' }));
     expect(screen.getByText(/^This document’s page will be sent to Anthropic’s Claude/u)).toBeTruthy();
     expect(screen.queryByText(/All 1 page/u)).toBeNull();
   });
@@ -194,8 +212,8 @@ describe('ExportExcelBody', () => {
   it('CONTROL: switching BACK to this PDF’s own text keeps what was typed', () => {
     const resolve = shown({ engines: ['automatic', 'claude'] });
     fireEvent.change(cell(2, 1), { target: { value: 'Hex bolt' } });
-    fireEvent.click(screen.getByRole('radio', { name: 'Claude' }));
-    fireEvent.click(screen.getByRole('radio', { name: 'This PDF’s own text' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Handwritten or scanned, read by Claude' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Typed text (the PDF’s own words)' }));
     fireEvent.click(screen.getByRole('button', { name: 'Choose where to save…' }));
     expect(resolve).toHaveBeenCalledWith({
       kind: 'export',

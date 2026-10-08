@@ -285,6 +285,7 @@ import {
   TOAST_PROTECTION_SET,
   TOAST_TEXT_SAVED,
   TOAST_WORD_SAVED,
+  EXPORT_EXCEL_READING,
   SCAN_READERS_NONE,
   TOAST_SAVED,
   TOAST_SAVED_CLEARED,
@@ -3061,6 +3062,42 @@ export function exportPowerPointCommand(deps: DocumentCommandDeps & WritesAFile 
 }
 
 /**
+ * Runs a request main answers only when it has READ the pages, with the status bar showing how far it has got and a Cancel
+ * that stops it (ADR-0202 Decision 5).
+ *
+ * Main reads while the file streams and holds the document's lane for all of it, so progress is POLLED from the two channels
+ * that do not enter the lane (`document.exportProgress`), once a second, and a Cancel sends `document.cancelExport` — a flag
+ * main checks between pages. The poll and the listener are removed and the task ended however the request ends.
+ */
+async function withReadProgress<T>(
+  deps: { readonly client: ContractClient; readonly track: TrackTask },
+  docId: DocId,
+  total: number,
+  run: () => Promise<T>,
+): Promise<T> {
+  const task = deps.track(EXPORT_EXCEL_READING, total);
+  const poll = globalThis.setInterval(() => {
+    void deps.client['document.exportProgress']({ docId }).then((progress) => {
+      if (progress.ok && progress.value.kind === 'reading') task.step(progress.value.done);
+    });
+  }, READ_PROGRESS_INTERVAL_MS);
+  const stop = (): void => {
+    void deps.client['document.cancelExport']({ docId });
+  };
+  task.signal.addEventListener('abort', stop, { once: true });
+  try {
+    return await run();
+  } finally {
+    globalThis.clearInterval(poll);
+    task.signal.removeEventListener('abort', stop);
+    task.end();
+  }
+}
+
+/** How often the read's count is asked for: a page of a service read takes seconds, so once a second shows every page. */
+const READ_PROGRESS_INTERVAL_MS = 1000;
+
+/**
  * Writes the tables MuPDF finds as an Excel workbook (ADR-0072, ADR-0073): the
  * review grid on the page on show, then main's check, save dialog and write.
  *
@@ -3078,13 +3115,12 @@ export function exportPowerPointCommand(deps: DocumentCommandDeps & WritesAFile 
  * no text.
  */
 export function exportExcelCommand(
-  deps: DocumentCommandDeps & WritesAFile & SettlesMarksFirst & {
-    /**
-     * The engines this machine can read tables with (ADR-0086): `automatic` always, a service
-     * where its key is stored. A function, read when the command runs, so a key stored after
-     * the ribbon was drawn is offered.
-     */
-    readonly tableEngines: () => readonly ExportExcelAnswer['engine'][];
+  // THE READERS THIS MACHINE HAS (ADR-0086, ADR-0202): `automatic` — the PDF's own text — is always there, and a handwritten
+  // or scanned document is read by this computer's recogniser where its models are provisioned, or by a service where its
+  // key is stored. Asked when the command runs, so a key stored after the ribbon was drawn is offered.
+  deps: DocumentCommandDeps & ReadsScans & WritesAFile & SettlesMarksFirst & {
+    /** The status bar's running task, for a service's read of the pages (ADR-0202 Decision 5): its count, and a Cancel that stops it. */
+    readonly track: TrackTask;
   },
 ): UiCommand {
   return {
@@ -3112,7 +3148,9 @@ export function exportExcelCommand(
       let range: PageRangeStart = { every: true, text: '' };
       // ASSIGNED ONLY BY THE EXPORT ANSWER, the one way out of the loop that reaches the request.
       let pages: readonly number[];
-      const engines = deps.tableEngines();
+      // `automatic` FIRST, then the readers in their own order: a reader's name IS its dialog value (`built-in`, `claude`,
+      // `azure`), so the list needs no translation between the two.
+      const engines: ExportExcelAnswer['engine'][] = ['automatic', ...(await deps.scanReaders())];
       let reviewed: DocVersion | undefined;
       for (;;) {
         const read = await deps.client['document.pageTables']({ docId, page: index });
@@ -3151,10 +3189,32 @@ export function exportExcelCommand(
         index = chosen.to;
       }
 
-      const answer = await deps.client['document.exportExcel']({
+      // A PRINTED SCAN IS READ ON THIS COMPUTER FIRST (ADR-0202), over the pages the person chose, and the tables are then
+      // found in what was read by the PDF's own engine. A walk the person stopped writes no file, and the pages already read
+      // are in the open document, which the outcome says. The walk moved the document's version, so the export names the
+      // one it holds NOW: the chosen pages' first page answers it.
+      let walked: RecognisedWalk | undefined;
+      if (engine === 'built-in') {
+        walked = await deps.readScans(docId, pages, 'built-in');
+        if (walked === undefined) {
+          deps.toast('problem', SCAN_READERS_NONE);
+          return;
+        }
+        if (walked.stopped) {
+          void deps.ask(OCR_OUTCOME_DIALOG_ID, walked);
+          return;
+        }
+        const now = await deps.client['document.pageTables']({ docId, page: pages[0] ?? 0 });
+        if (!now.ok) {
+          reportProblem(deps, now.error);
+          return;
+        }
+        reviewed = now.value.version;
+      }
+      const request = {
         docId,
         layout,
-        engine,
+        engine: engine === 'built-in' ? ('automatic' as const) : engine,
         version: reviewed,
         pages: pageSetOf(pages),
         // THE GRID'S EDITS ARE MUPDF'S TABLES', and only the automatic engine writes them.
@@ -3162,7 +3222,15 @@ export function exportExcelCommand(
           engine === 'automatic'
             ? [...edits].flatMap(([page, made]) => made.map((edit) => ({ page, ...edit })))
             : [],
-      });
+      };
+      // A SERVICE READS EACH PAGE WHILE THE WORKBOOK STREAMS, in main, and the person is shown how far it has got and can
+      // stop it (ADR-0202 Decision 5). The PDF's own text reads in a moment and shows nothing.
+      const answer =
+        engine === 'claude' || engine === 'azure'
+          ? await withReadProgress(deps, docId, pages.length, () => deps.client['document.exportExcel'](request))
+          : await deps.client['document.exportExcel'](request);
+      // WHAT THE READING DID is said whatever became of the export, since the pages changed either way.
+      if (walked !== undefined && walked.recognised > 0) await deps.ask(OCR_OUTCOME_DIALOG_ID, walked);
       if (!answer.ok) {
         reportProblem(deps, answer.error);
         return;
