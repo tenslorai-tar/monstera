@@ -9,12 +9,12 @@
  */
 
 /** A matrix as the file stores it: `[a b c d e f]`, mapping a unit square (or a path's own space) into the page. */
-export type Matrix6 = readonly [number, number, number, number, number, number];
+export type Matrix6 = [number, number, number, number, number, number];
 
 /** The page's frame: its visible box and the quarter turn it is displayed at. */
 export interface ContentFrame {
   readonly crop: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
-  readonly rotation: number;
+  readonly rotation: 0 | 90 | 180 | 270;
 }
 
 /** One run of text, `engine/text-runs`' fields plus whether it is painted. */
@@ -48,11 +48,24 @@ export interface ContentImage {
   readonly bounds: ContentBounds;
   readonly width: number;
   readonly height: number;
-  /** `jpeg`: the image's own bytes, a plain DCT stream. `bgra`: the decoded bitmap, `width * height * 4` bytes. */
-  readonly format: 'jpeg' | 'bgra';
+  /** `jpeg`: the image's own bytes, a plain DCT stream. `png`: the decoded bitmap, encoded. */
+  readonly format: 'jpeg' | 'png';
   readonly bytes: Uint8Array;
-  /** Whether a clip narrower than the image applies, which a picture cannot say. */
-  readonly clipped: boolean;
+}
+
+/**
+ * An image as the host answers it: where its bytes are in the blob the host wrote beside the answer. `bgra` is the decoded
+ * bitmap, `width * height * 4` bytes, which `assemblePageContent` encodes.
+ */
+export interface ContentImageHeader {
+  readonly index: number;
+  readonly matrix: Matrix6;
+  readonly bounds: ContentBounds;
+  readonly width: number;
+  readonly height: number;
+  readonly format: 'jpeg' | 'bgra';
+  readonly offset: number;
+  readonly length: number;
 }
 
 /** An axis box in page space. */
@@ -90,14 +103,22 @@ export type ContentSegment =
 export interface ContentPath {
   readonly index: number;
   readonly bounds: ContentBounds;
-  readonly segments: readonly ContentSegment[];
+  // A MUTABLE ARRAY, because the wire's schema is one and this type is what a handler answers with.
+  readonly segments: ContentSegment[];
   readonly fill: ContentColour | null;
   readonly stroke: (ContentColour & { readonly width: number; readonly cap: 'butt' | 'round' | 'square'; readonly join: 'miter' | 'round' | 'bevel' }) | null;
-  /** Whether the engine can state the whole of how this path is painted as a solid fill and a solid line. */
-  readonly simple: boolean;
 }
 
-/** An object the slide cannot write natively, to be cut from a render with no text in it. */
+/**
+ * Only a path the engine can state whole, as a solid fill and a solid undashed line, with no clip narrower than itself,
+ * is answered as a {@link ContentPath}. Any other painted path is a {@link ContentOpaque}: the host decides once, here,
+ * what a shape can be, and nothing downstream has a second opinion.
+ */
+
+/**
+ * An object the slide cannot write natively (a clipped or dashed or patterned path, a shading, a masked or clipped image, an
+ * image past the budget), to be cut from a render with no text in it.
+ */
 export interface ContentOpaque {
   readonly index: number;
   readonly bounds: ContentBounds;

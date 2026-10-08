@@ -119,6 +119,7 @@ import {
   type ComposeChannels,
   composeChannels,
   remotePdfiumPageObjects,
+  remotePdfiumPageContent,
   remotePdfiumRenderPage,
   remotePdfiumTextRuns,
   remotePdfiumWriter,
@@ -1440,6 +1441,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         page,
         width,
         height,
+        // The viewer's raster keeps the page's words; only the editable PowerPoint export asks for none (ADR-0210).
+        false,
       );
       return {
         width: raster.width,
@@ -2948,6 +2951,9 @@ type PdfiumPageObjects = ReturnType<typeof remotePdfiumPageObjects>;
 /** One page rasterised, over the same wire. */
 type PdfiumRenderPage = ReturnType<typeof remotePdfiumRenderPage>;
 
+/** One page's own content, over the same wire (ADR-0210). */
+type PdfiumPageContent = ReturnType<typeof remotePdfiumPageContent>;
+
 /**
  * The PDFium host's lifetime, its one granted area, and the writer the bus
  * routes `replaceTextObject` to.
@@ -3001,6 +3007,7 @@ function pdfiumHostBinding(
   readonly textRuns: PdfiumTextRuns;
   readonly pageObjects: PdfiumPageObjects;
   readonly renderPage: PdfiumRenderPage;
+  readonly pageContent: PdfiumPageContent;
   readonly close: () => Promise<void>;
 } {
   /** What one built host holds. Cleared together, or not at all. */
@@ -3010,6 +3017,7 @@ function pdfiumHostBinding(
     readonly textRuns: PdfiumTextRuns;
   readonly pageObjects: PdfiumPageObjects;
   readonly renderPage: PdfiumRenderPage;
+  readonly pageContent: PdfiumPageContent;
     /** The granted pair, so `close` can remove exactly what `connect` created. */
     readonly paths: { readonly snapshot: DirectoryPath; readonly output: DirectoryPath };
     readonly session: string;
@@ -3144,6 +3152,7 @@ function pdfiumHostBinding(
       textRuns: remotePdfiumTextRuns(client, held, transfer),
       pageObjects: remotePdfiumPageObjects(client, held, transfer),
       renderPage: remotePdfiumRenderPage(client, held, transfer),
+      pageContent: remotePdfiumPageContent(client, held, transfer),
       paths,
       session: opened.value.session,
     };
@@ -3182,8 +3191,9 @@ function pdfiumHostBinding(
     },
     textRuns: async (image, page) => (await ensure()).textRuns(image, page),
     pageObjects: async (image, page) => (await ensure()).pageObjects(image, page),
-    renderPage: async (image, page, width, height) =>
-      (await ensure()).renderPage(image, page, width, height),
+    renderPage: async (image, page, width, height, withoutText) =>
+      (await ensure()).renderPage(image, page, width, height, withoutText),
+    pageContent: async (image, page) => (await ensure()).pageContent(image, page),
     close: async () => {
       const live = host;
       host = null;

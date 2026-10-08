@@ -31,10 +31,14 @@
 The slide needs what the host's `engine/text-runs` and `engine/page-objects` do not say: the picture bytes, the path
 segments, the page's frame, and a render without text. Both new things are registered in the PDFium host's routing table.
 
-- **`engine/page-content`** is one read of one page and answers, in a file in the granted output area (the route
-  `engine/render-page` takes, because a page's pictures are megabytes and the pipe frames small answers): the page's frame
-  (crop box and rotation, so `PageTransform` can place every object), its text runs, its images and its paths.
-  The pipe answer is the file's byte count and four counters.
+- **`engine/page-content`** is one read of one page: the page's frame (crop box and rotation, so `PageTransform` can place
+  every object), its text runs (`engine/text-runs`' run and a render-mode flag, read from that channel's own schema), its
+  images' headers, its paths and its opaque places. It is a `fileAnswered` channel (ADR-0125), so the metadata crosses in the
+  answer file the contract already provides and is validated against the channel's schema like every other answer. **The
+  images' bytes are not in it**: they are written to the output name `into` as `engine/render-page`'s raster is (a page's
+  pictures are megabytes, past the answer file's 8 MiB ceiling), and the answer says how many bytes were written and where
+  each image lies. The first draft of this record had one custom file of metadata and pictures with a parser of its own;
+  two existing mechanisms do the same job and a third would be a second opinion about how a host answer crosses (B3a).
 - **`engine/render-page` gains `withoutText: boolean`** (default false, so every existing caller is unchanged): the page is
   rendered with its text objects removed from the in-memory page. The host holds no document between calls (ADR-0047), so
   nothing persists.
@@ -45,10 +49,11 @@ leave no text in a form at any depth). Text inside a form therefore reads as ord
 this ADR owns no second opinion about form matrices (B3a). A page whose `unaddressable` is still non-zero is not written
 editable (Decision 8).
 
-**The file crosses a trust boundary and is parsed as one.** The host is hostile by invariant 25's premise. Main reads the file
-through one parser (`pageContentFile.ts`) that validates the header with a zod schema, bounds every count
-(`PAGE_CONTENT_MAX_*`), and checks that every image's offset and length lie inside the file before it slices. A file that
-fails any check is an `engine-refused` outcome for that page, which falls back to Exact look.
+**The pictures cross a trust boundary and are taken as one.** The host is hostile by invariant 25's premise. Every list is
+bounded in the channel's schema (`PAGE_CONTENT_*_MAX`), the blob is taken at exactly the count the host announced
+(`takeAnnounced`), and `assemblePageContent` checks before it slices that every image's offset and length lie inside what
+was written, that a bitmap is exactly width times height times four, and that a JPEG begins as one. A refusal is a page
+written as Exact look.
 
 ### 2. The slide model, in one pure module
 
@@ -72,19 +77,22 @@ The writer never decides what a page contained.
 
 ### 4. Pictures
 
-A picture is placed at the image's matrix: position, size, rotation and mirror (`a:xfrm rot` and `flipH`/`flipV`). An image
+A picture is placed at the image's matrix: position, size, rotation and mirror (`a:xfrm rot` and `flipV`). An image
 whose matrix has a shear, which PowerPoint cannot express, is a cut picture (Decision 6). A plain JPEG (the image's only
-filter is DCT, no mask, no soft mask) is embedded as its own bytes; anything else is the decoded bitmap as PNG, with alpha
-where the page has a mask. Pixels are bounded at 16 megapixels per image (ADR-0072's slide budget), halved in each axis until
-they fit.
+filter is DCT over device grey or RGB) is embedded as its own bytes; anything else is PDFium's decoded bitmap as PNG.
+**An image with a mask is not embedded**: the decoded bitmap carries no mask and the rendering that applies it has a fixed
+size, so the host probes the rendering and an image with a transparent pixel in its middle is a cut picture, which has the
+page's own appearance. An image past 16 megapixels (ADR-0072's slide budget), clipped narrower than itself, or past the
+128 MiB byte budget is a cut picture too; the host never decodes it into the answer.
 
 ### 5. Shapes
 
 A path is a **shape** when it has no clip, a solid fill or a solid stroke (or both), and at most 256 segments:
 an axis-aligned closed rectangle is `rect`; a single line is `line`; any other is `custGeom` with `moveTo`, `lnTo`,
-`cubicBezTo` and `close`. Alpha is written. Dashes and joins are written when the engine states them, and a stroke whose
-dash the engine will not state is a cut picture. Anything else (a clip, a pattern, a shading, a path beyond the bound) is a
-**cut picture**.
+`cubicBezTo` and `close`. Alpha, cap and join are written. A filled path of more than one subpath is a cut picture, because
+DrawingML does not say which fill rule holds the holes. Anything else (a clip narrower than the path, a dash, a pattern, a
+shading, a path beyond the 256-segment or 20,000-segment bound) is a **cut picture**. A clip that is one rectangle
+containing the object is not narrower than it: producers wrap a whole page in one, and counting it would cut every shape.
 
 ### 6. A cut picture
 
@@ -101,8 +109,9 @@ for recognise on export), and the result message says so. With no model on the m
 
 ### 8. Fallback is per page and named
 
-A page is written as Exact look, and listed by its number in the answer, when: it has no text and recognition did not give it
-any; the content file failed validation; `unaddressable` is non-zero after flattening; or the text read was truncated. The
+A page is written as Exact look, and listed by its number in the answer, when: it has pictures and no text and recognition
+did not give it any; the read was refused or failed validation; `unaddressable` is non-zero after flattening; the text or
+another list was truncated; or any painted run is not upright (rotated or skewed text, which a level box would misplace). The
 deck is still one file; Editable pages and Exact look pages sit side by side. `fellBack: number[]` (one-based, as a person
 counts) is a field of `document.exportPowerPoint`'s `copied` answer only. Exact look has no fallback because it is the
 fallback.

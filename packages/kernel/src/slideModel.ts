@@ -418,7 +418,7 @@ function pictureOf(fit: Fit, image: ContentImage): SlidePicture | undefined {
     height,
     rotation,
     flipV,
-    source: { kind: 'embedded', extension: image.format === 'jpeg' ? 'jpeg' : 'png', bytes: image.bytes },
+    source: { kind: 'embedded', extension: image.format, bytes: image.bytes },
   };
 }
 
@@ -430,7 +430,6 @@ function cutOf(fit: Fit, order: number, region: ContentBounds): SlidePicture | u
 
 /** A path as a shape, or `undefined` where it is not one a shape can be. */
 function shapeOf(fit: Fit, path: ContentPath): SlideShape | undefined {
-  if (!path.simple) return undefined;
   const moves = path.segments.filter((segment) => segment.kind === 'move').length;
   if (path.fill !== null && moves > 1) return undefined;
   const points = path.segments.flatMap((segment) => {
@@ -567,8 +566,8 @@ export function buildSlide(content: PageContent, deck: PageSize): SlideBuild {
 
   const objects: SlideObject[] = [...textBoxes(fit, painted)];
   for (const image of content.images) {
-    const placed = image.clipped ? undefined : pictureOf(fit, image);
-    const picture = placed ?? cutOf(fit, image.index, image.bounds);
+    // A SHEARED image cannot be a picture; it is cut from the render like anything else a picture cannot say.
+    const picture = pictureOf(fit, image) ?? cutOf(fit, image.index, image.bounds);
     if (picture !== undefined) objects.push(picture);
   }
   for (const path of content.paths) {

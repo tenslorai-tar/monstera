@@ -298,6 +298,7 @@ export {
   type PdfiumInputKeeper,
   type PdfiumTransfer,
   regeneratedBy,
+  remotePdfiumPageContent,
   remotePdfiumPageObjects,
   remotePdfiumRenderPage,
   remotePdfiumTextRuns,

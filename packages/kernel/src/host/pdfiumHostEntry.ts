@@ -4,8 +4,10 @@ import {
   localPdfiumExecution,
   onImage,
   openPdfium,
+  pageContent,
   pageObjects,
   renderPageBitmap,
+  renderPageBitmapWithoutText,
   textRuns,
 } from '../pdfium.js';
 import { cryptoBytes } from '../token.js';
@@ -136,8 +138,15 @@ const handlers = createPdfiumHandlers({
   // because that is what PDFium produces and what main's encoder takes; a
   // conversion here would be one of two, done for a consumer that wants
   // neither.
-  renderPage: (image, page, width, height) =>
-    onImage(image, async (session) => (await renderPageBitmap(session, page, width, height)).bgra),
+  renderPage: (image, page, width, height, withoutText) =>
+    onImage(image, async (session) =>
+      (withoutText
+        ? await renderPageBitmapWithoutText(session, page, width, height)
+        : await renderPageBitmap(session, page, width, height)
+      ).bgra,
+    ),
+  // ADR-0210: one page's own content. `pageContent` flattens forms in this process's in-memory page and reads.
+  pageContent: (image, page) => onImage(image, (session) => pageContent(session, page)),
   pageObjects: (image, page) =>
     onImage(image, async (session) => {
       const objects = await pageObjects(session, page);

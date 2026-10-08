@@ -26,7 +26,7 @@ function run(index: number, text: string, left: number, bottom: number, right: n
   return { index, last: index, text, left, right, bottom, top, invisible, style: style(over) };
 }
 
-const FRAME = { crop: { x0: 0, y0: 0, x1: 612, y1: 792 }, rotation: 0 };
+const FRAME: PageContent['frame'] = { crop: { x0: 0, y0: 0, x1: 612, y1: 792 }, rotation: 0 };
 
 function page(over: Partial<PageContent>): PageContent {
   return { frame: FRAME, runs: [], images: [], paths: [], opaque: [], unaddressable: 0, truncated: false, ...over };
@@ -46,7 +46,6 @@ const RECTANGLE: ContentPath = {
   ],
   fill: { r: 0, g: 0, b: 255, a: 255 },
   stroke: null,
-  simple: true,
 };
 
 const RULE: ContentPath = {
@@ -58,7 +57,6 @@ const RULE: ContentPath = {
   ],
   fill: null,
   stroke: { r: 0, g: 0, b: 0, a: 255, width: 2, cap: 'butt', join: 'miter' },
-  simple: true,
 };
 
 /** The fixture the brief names: text in two fonts, an image, a rectangle and a line. */
@@ -70,7 +68,7 @@ const FIXTURE = page({
     run(3, 'and ends on a third.', 72, 622, 200, 633),
   ],
   images: [
-    { index: 4, matrix: [200, 0, 0, 120, 72, 400], bounds: { left: 72, bottom: 400, right: 272, top: 520 }, width: 20, height: 12, format: 'jpeg', bytes: JPEG, clipped: false },
+    { index: 4, matrix: [200, 0, 0, 120, 72, 400], bounds: { left: 72, bottom: 400, right: 272, top: 520 }, width: 20, height: 12, format: 'jpeg', bytes: JPEG },
   ],
   paths: [RECTANGLE, RULE],
 });

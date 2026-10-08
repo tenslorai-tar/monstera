@@ -3,7 +3,7 @@ import { HeldPassword } from '@monstera/shared';
 
 import type { CommandExecution } from '../commandRouting.js';
 import type { ImageSession } from '../engineSeam.js';
-import type { TextRun } from '../pdfiumFfi.js';
+import type { PageContentRead, TextRun } from '../pdfiumFfi.js';
 import {
   EditRefusedError,
   NothingToReplaceError,
@@ -107,7 +107,15 @@ export type HostPageRasteriser = (
   page: number,
   width: number,
   height: number,
+  withoutText: boolean,
 ) => Promise<Uint8Array>;
+
+/**
+ * A page's own content for the editable PowerPoint export (ADR-0210): the wire's answer and the images' bytes, which the
+ * handler writes beside it. Injected for {@link HostTextRunsReader}'s reason. `pdfiumFfi.ts`' `PageContentRead`, by an
+ * erased import so no binding loads here.
+ */
+export type HostPageContentReader = (image: ImageSession, page: number) => Promise<PageContentRead>;
 
 export type HostPageObjectsReader = (
   image: ImageSession,
@@ -146,12 +154,15 @@ export interface PdfiumHandlerParts {
   readonly pageObjects: HostPageObjectsReader;
   /** How this process rasterises a page. `engine/render-page`. */
   readonly renderPage: HostPageRasteriser;
+  /** How this process reads a page's own content. `engine/page-content`. */
+  readonly pageContent: HostPageContentReader;
 }
 
 export function createPdfiumHandlers({
   areas,
   execution,
   files,
+  pageContent,
   pageObjects,
   probe,
   renderPage,
@@ -416,7 +427,30 @@ export function createPdfiumHandlers({
       }
     },
 
-    'engine/render-page': async ({ session, from, password, into, page, width, height }) => {
+    // THE THIRD READ: one page's own content. The answer is the page's metadata; the images' bytes are written to `into`
+    // AFTER the read succeeds and outside the `try`, `engine/render-page`'s rule, so a page that could not be read leaves
+    // main's output name unwritten rather than half a blob.
+    'engine/page-content': async ({ session, from, password, into, page }) => {
+      const held = areas.lookup(session);
+      if (held === undefined) return gone;
+      let image: ImageSession;
+      try {
+        image = await imageFor(held, from, password);
+      } catch {
+        return failed('asset-missing');
+      }
+      let read: PageContentRead;
+      try {
+        read = await pageContent(image, page);
+      } catch {
+        return failed('engine-refused');
+      }
+      const { blob, ...answer } = read;
+      const written = await files.writeOutput(held.outputDirectory, into, blob);
+      return { ok: true, value: { ...answer, imageBytes: written } };
+    },
+
+    'engine/render-page': async ({ session, from, password, into, page, width, height, withoutText }) => {
       const held = areas.lookup(session);
       if (held === undefined) return gone;
       let image: ImageSession;
@@ -427,7 +461,7 @@ export function createPdfiumHandlers({
       }
       let raster;
       try {
-        raster = await renderPage(image, page, width, height);
+        raster = await renderPage(image, page, width, height, withoutText);
       } catch {
         // THE DOCUMENT'S FAULT OR THE REQUEST'S, not the host's: a page this
         // document does not have, or a size PDFium cannot allocate. Neither is

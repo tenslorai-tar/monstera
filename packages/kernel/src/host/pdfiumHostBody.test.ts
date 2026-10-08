@@ -245,8 +245,37 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9])) {
         unaddressable: 7,
       });
     },
-    renderPage: (image, page, width, height) => {
-      calls.push(`render:${String(page)}:${String(width)}x${String(height)}:${seen(image)}`);
+    // ADR-0210: one page's own content. The blob is a value nothing else here produces, and the answer carries a frame,
+    // a picture header and an opaque place, so a handler that dropped any of them fails a case.
+    pageContent: (image, page) => {
+      calls.push(`page-content:${String(page)}:${seen(image)}`);
+      if (image.bytes.length === 1 && image.bytes[0] === 0) throw new Error('PDFium refused the document');
+      return Promise.resolve({
+        frame: { crop: { x0: 0, y0: 0, x1: 612, y1: 792 }, rotation: 90 as const },
+        runs: RUNS.map((run) => ({ ...run, invisible: true })),
+        images: [
+          {
+            index: 3,
+            matrix: [10, 0, 0, 10, 5, 5] as const,
+            bounds: { left: 5, bottom: 5, right: 15, top: 15 },
+            width: 2,
+            height: 2,
+            format: 'bgra' as const,
+            offset: 0,
+            length: 16,
+          },
+        ],
+        paths: [],
+        opaque: [{ index: 4, bounds: { left: 0, bottom: 0, right: 9, top: 9 } }],
+        unaddressable: 0,
+        truncated: false,
+        blob: new Uint8Array(16).fill(9),
+      });
+    },
+    renderPage: (image, page, width, height, withoutText) => {
+      calls.push(
+        `render:${String(page)}:${String(width)}x${String(height)}:${seen(image)}${withoutText ? ':without-text' : ''}`,
+      );
       // THE SAME REFUSAL SHAPE the other stubs use: a one-byte document is one
       // this engine cannot read, so `engine-refused` exercises the handler's
       // catch rather than a branch written for the test.
@@ -713,6 +742,7 @@ describe('the PDFium host body', () => {
         page: 2,
         width: 4,
         height: 3,
+        withoutText: false,
       }),
     );
     await stream.whenSent(2);
@@ -749,6 +779,7 @@ describe('the PDFium host body', () => {
         page: 0,
         width: 2,
         height: 2,
+        withoutText: false,
       }),
     );
     await stream.whenSent(2);
@@ -756,6 +787,61 @@ describe('the PDFium host body', () => {
     expect(answerIn(stream.sent[1])).toMatchObject({
       body: { ok: false, error: { code: 'engine-refused' } },
     });
+    expect(files.written.size).toBe(0);
+  });
+
+  it('asks for a page with no text only when told to, and the flag reaches the rasteriser (ADR-0210)', async () => {
+    stream = stubStream();
+    const files = emptyFiles();
+    const { session, calls } = await openArea(files);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([9]));
+
+    stream.feed(
+      request('r1', 'engine/render-page', { session, from: IN, password: null, into: OUT, page: 1, width: 2, height: 2, withoutText: true }),
+    );
+    await stream.whenSent(2);
+
+    // CONTROL: the case above asks `withoutText: false` and records no suffix, so a handler that hard-coded either value fails one of the two.
+    expect(calls).toStrictEqual(['render:1:2x2:9:without-text']);
+  });
+
+  it('answers a page’s content in a file and writes the pictures beside it, into the OUTPUT directory (ADR-0210)', async () => {
+    stream = stubStream();
+    const files = emptyFiles();
+    const { session, calls } = await openArea(files);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([7]));
+
+    stream.feed(request('c1', 'engine/page-content', { session, from: IN, password: null, into: OUT, page: 4 }, ANSWER));
+    await stream.whenSent(2);
+
+    const answer = files.written.get(`${AREA.outputDirectory}|${ANSWER}`);
+    const blob = files.written.get(`${AREA.outputDirectory}|${OUT}`);
+    expect(answer, 'the metadata crossed in the answer file').toBeDefined();
+    expect(blob?.length, 'the pictures were written to the name main minted').toBe(16);
+    expect(blob?.every((byte) => byte === 9)).toBe(true);
+    expect(JSON.parse(new TextDecoder().decode(answer))).toMatchObject({
+      ok: true,
+      value: {
+        frame: { rotation: 90 },
+        images: [{ index: 3, format: 'bgra', offset: 0, length: 16 }],
+        opaque: [{ index: 4 }],
+        // THE BYTES WRITTEN, from the write itself and not from the reader: a handler that answered the reader's own claim could say 16 and write nothing.
+        imageBytes: 16,
+      },
+    });
+    expect(calls).toStrictEqual(['page-content:4:7']);
+  });
+
+  it('writes NOTHING when the page cannot be read, so main reads no half-written picture blob', async () => {
+    stream = stubStream();
+    const files = emptyFiles();
+    const { session } = await openArea(files);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([0]));
+
+    stream.feed(request('c1', 'engine/page-content', { session, from: IN, password: null, into: OUT, page: 0 }, ANSWER));
+    await stream.whenSent(2);
+
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: false, error: { code: 'engine-refused' } } });
     expect(files.written.size).toBe(0);
   });
 

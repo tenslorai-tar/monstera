@@ -94,6 +94,17 @@ export const PDFIUM_ADAPTER = [
 ];
 
 /**
+ * The page-content read's edges: the adapter, and the channels module whose bounds the proof reads the image budget from
+ * (ADR-0210), so a stale build cannot hold the proof to yesterday's pixel limit.
+ *
+ * @type {BuildEdge[]}
+ */
+export const PDFIUM_PAGE_CONTENT = [
+  ...PDFIUM_ADAPTER,
+  ['packages/kernel/src/host/pdfiumChannels.ts', 'packages/kernel/dist/host/pdfiumChannels.js', 'tsc'],
+];
+
+/**
  * The routing a PDFium COMMAND is dispatched through, plus the adapter beneath
  * it.
  *
@@ -435,6 +446,8 @@ export const ARTEFACT_EDGES = {
   // so the same edges: the adapter, the two that dispatch to it, and the table
   // that says they should.
   'proof:pdfiumobject': PDFIUM_COMMAND,
+  // The page-content read (ADR-0210): the adapter and the channels module its image budget comes from.
+  'proof:pdfiumcontent': PDFIUM_PAGE_CONTENT,
   // The fidelity proof drives the same built adapter, and reads pixels rather
   // than text: it is the guard that an edit does not silently redraw the page.
   'proof:editfidelity': PDFIUM_ADAPTER,

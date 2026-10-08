@@ -136,6 +136,7 @@
     "proof:pdfiumadapter": "node scripts/proofs/pdfiumAdapter.proof.mjs",
     "proof:pdfiumcommand": "node scripts/proofs/pdfiumCommand.proof.mjs",
     "proof:pdfiumobject": "node scripts/proofs/pdfiumObject.proof.mjs",
+    "proof:pdfiumcontent": "node scripts/proofs/pdfiumPageContent.proof.mjs",
     "proof:pdfiumreadback": "node scripts/proofs/pdfiumReadBack.proof.mjs",
     "proof:editfidelity": "node scripts/proofs/editFidelity.proof.mjs",
     "proof:inlineimages": "node scripts/proofs/inlineImages.proof.mjs",
