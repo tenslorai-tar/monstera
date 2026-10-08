@@ -1,4 +1,4 @@
-import type { Box } from '@monstera/shared';
+import { type Box, snapRotation } from '@monstera/shared';
 import type { CommandOfKind } from '@monstera/contract';
 import type { PDFDocument, PDFObject } from './mupdfRaw.js';
 
@@ -126,19 +126,19 @@ function extentOf(object: PDFObject): Box | null {
 }
 
 /**
- * A page's rotation in degrees, normalised to 0, 90, 180 or 270.
+ * A page's rotation in quarter turns, 0 to 3.
  *
- * A missing, non-numeric or unaligned `/Rotate` reads as 0 rather than
- * refusing: the value only decides whether the target's two numbers are
- * swapped, and a page whose rotation a viewer ignores is one this command
- * should treat the way the viewer does.
+ * A missing or non-numeric `/Rotate` reads as 0 rather than refusing: the value only decides whether the target's two
+ * numbers are swapped. **An unaligned one is snapped, not read as 0** (CR-COR-04): `/Rotate 45` is displayed at 90 by the
+ * engine, and this once read it as unturned, so the target was not swapped for a page shown on its side. `snapRotation`
+ * is the one rule for what a page's rotation is (B3a), and this takes it rather than spelling a second.
  */
 function quarterTurns(object: PDFObject): number {
   const rotate = object.getInheritable('Rotate');
   if (!rotate.isNumber()) return 0;
   const degrees = rotate.asNumber();
-  if (!Number.isFinite(degrees) || degrees % 90 !== 0) return 0;
-  return (((degrees / 90) % 4) + 4) % 4;
+  if (!Number.isFinite(degrees)) return 0;
+  return snapRotation(degrees) / 90;
 }
 
 /** Four numbers as a PDF array. */
