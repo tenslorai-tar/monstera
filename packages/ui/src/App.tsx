@@ -321,6 +321,7 @@ import { SHORTCUTS_SETTING } from './settings/keyboard.js';
 import { ToolRegistry } from './registries/tools.js';
 import { APPLICATION_DIALOGS } from './registries/applicationDialogs.js';
 import { DialogRegistry } from './registries/dialogs.js';
+import { PageSourcesContext, type PageSources } from './dialogs/pageSources.js';
 import { DialogHost, useDialogHost } from './surfaces/DialogHost.js';
 import {
   HIGH_CONTRAST_QUERIES,
@@ -1770,6 +1771,18 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
 
   /** The tabs as the assistant needs them: each document's id and the name its tab shows (ADR-0134). */
   const assistantDocuments = useMemo(() => tabs.map(({ docId, name }) => ({ docId, name })), [tabs]);
+  // THE OPEN DOCUMENTS' PAGES FOR A DIALOG that shows another document's pages (Merge's page picker): the client and the
+  // tabs, by the id the dialog holds as a string, so the body never casts one into a `DocId`.
+  const pageSources = useMemo<PageSources>(
+    () => ({
+      client,
+      find: (docId) => {
+        const tab = tabs.find((candidate) => candidate.docId === docId);
+        return tab === undefined ? undefined : { docId: tab.docId, version: tab.version, byteLength: tab.byteLength };
+      },
+    }),
+    [client, tabs],
+  );
 
   // Stable, so the scroller's consume-the-request effect does not re-run on
   // every parent render and scroll again to a page it has already reached.
@@ -4389,14 +4402,16 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       {/* The ONE mount point. `DialogHost` renders nothing when none is open —
           not a hidden dialog — so this is not a control that renders and does
           nothing; it is the seam every dialog arrives through. */}
-      <DialogHost
-        registry={dialogs}
-        closeLabel={CLOSE_LABEL}
-        open={openDialog}
-        onClose={close}
-        onResolve={resolveDialog}
-        onUpdate={reportDialog}
-      />
+      <PageSourcesContext.Provider value={pageSources}>
+        <DialogHost
+          registry={dialogs}
+          closeLabel={CLOSE_LABEL}
+          open={openDialog}
+          onClose={close}
+          onResolve={resolveDialog}
+          onUpdate={reportDialog}
+        />
+      </PageSourcesContext.Provider>
     </main>
     </ErrorBoundary>
   );

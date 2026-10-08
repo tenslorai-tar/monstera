@@ -363,6 +363,10 @@ export const MERGE_DOCUMENT_PAGES = messageKey('dialog.merge-document.pages');
 export const MERGE_DOCUMENT_PAGES_ALL = messageKey('dialog.merge-document.pages-all');
 export const MERGE_DOCUMENT_PAGES_COUNT = messageKey('dialog.merge-document.pages-count');
 export const MERGE_DOCUMENT_PAGES_TOO_MANY = messageKey('dialog.merge-document.pages-too-many');
+export const MERGE_DOCUMENT_PICK = messageKey('dialog.merge-document.pick');
+export const MERGE_DOCUMENT_PICK_HIDE = messageKey('dialog.merge-document.pick-hide');
+export const MERGE_DOCUMENT_PICK_NOTE = messageKey('dialog.merge-document.pick-note');
+export const MERGE_DOCUMENT_PICK_TILE = messageKey('dialog.merge-document.pick-tile');
 export const MERGE_DOCUMENT_PAGES_EMPTY = messageKey('dialog.merge-document.pages-empty');
 export const INSERT_FROM_PDF_COMMAND_TITLE = messageKey('command.insert-from-pdf.title');
 export const INSERT_FROM_PDF_TITLE = messageKey('dialog.insert-from-pdf.title');
@@ -5212,6 +5216,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [MERGE_DOCUMENT_PAGES_TOO_MANY]:
     'That picks out more separate groups of pages than a merge can carry ({limit} at most). Type fewer groups, like 1-40, or merge this document on its own.',
   [MERGE_DOCUMENT_PAGES_EMPTY]: 'Type the pages to take, or clear the box to take them all.',
+  [MERGE_DOCUMENT_PICK]: 'Choose pages…',
+  [MERGE_DOCUMENT_PICK_HIDE]: 'Hide pages',
+  [MERGE_DOCUMENT_PICK_NOTE]: 'Click a page to take it or leave it. The box above shows what you chose.',
+  [MERGE_DOCUMENT_PICK_TILE]: 'Page {number}',
   [INSERT_FROM_PDF_COMMAND_TITLE]: 'Insert from PDF…',
   [INSERT_FROM_PDF_TITLE]: 'Insert from PDF',
   [INSERT_FROM_PDF_LABEL]: 'Insert from',

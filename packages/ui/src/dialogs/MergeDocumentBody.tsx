@@ -23,6 +23,8 @@ import {
   MERGE_DOCUMENT_PAGES_COUNT,
   MERGE_DOCUMENT_PAGES_EMPTY,
   MERGE_DOCUMENT_PAGES_TOO_MANY,
+  MERGE_DOCUMENT_PICK,
+  MERGE_DOCUMENT_PICK_HIDE,
   MERGE_DOCUMENT_REMOVE,
   MERGE_DOCUMENT_ROW,
   SOURCE_CHOOSE_FILE,
@@ -34,7 +36,8 @@ import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
 import { SegmentedControl } from '../primitives/SegmentedControl.js';
-import { type PageRangeProblem, parsePageGroups } from '../pageRanges.js';
+import { type PageRangeProblem, formatPageRanges, parsePageGroups } from '../pageRanges.js';
+import { MergePagePicker } from './MergePagePicker.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import { rangeProblemSentence } from './pageRangeProblem.js';
 import type { MERGE_PLACEMENTS, MergeDocumentAnswer } from './mergeDocumentResult.js';
@@ -141,6 +144,29 @@ function rowPages(text: string, total: number): RowPages {
 }
 
 /**
+ * The zero-based pages a row's range names: every page for an empty range, the pages typed for a good one, and none for
+ * one that cannot be read (the picker then starts the choice afresh).
+ */
+function takenOf(text: string, total: number): ReadonlySet<number> {
+  if (text.trim() === '') return new Set(Array.from({ length: total }, (_unused, index) => index));
+  const groups = parsePageGroups(text, total);
+  return groups.ok ? new Set(groups.value.flat()) : new Set();
+}
+
+/**
+ * A row's range text after one page was clicked. Writes through `formatPageRanges`, the inverse of the parser, so what
+ * the field then shows reads back as the same pages; a choice of every page is the empty field, which is what *all*
+ * means; and the last page taken cannot be left, since a merge of no pages of a document is not a thing a row can say.
+ */
+function pagesTextAfterToggle(text: string, total: number, page: number): string {
+  const next = new Set(takenOf(text, total));
+  if (!next.delete(page)) next.add(page);
+  if (next.size === 0) return text;
+  if (next.size === total) return '';
+  return formatPageRanges([...next]);
+}
+
+/**
  * The merge dialog's body — which documents come in, in what order, and where: at the start, at the end, or after a
  * page (the owner's item 13d, ADR-0152).
  *
@@ -184,6 +210,8 @@ export default function MergeDocumentBody({
     }),
   );
   const rangesOk = [...ranges.values()].every((range) => range.read.ok);
+  // THE ROWS WHOSE PAGES ARE SHOWN to choose from, by row key; the choice itself is the row's range text.
+  const [picking, setPicking] = useState<ReadonlySet<number>>(new Set());
   const [placement, setPlacement] = useState<Placement>(draft?.placement ?? 'end');
   const [typed, setTyped] = useState(draft?.page ?? '1');
   const attempt = useAttempt();
@@ -280,6 +308,36 @@ export default function MergeDocumentBody({
                           setDocuments((now) => now.map((row) => (row.key === each.key ? { ...row, pages } : row)));
                         }}
                       />
+                    )}
+                    {chosen === undefined ? null : (
+                      <span className="m-merge-list__pick">
+                        <Button
+                          label={picking.has(each.key) ? MERGE_DOCUMENT_PICK_HIDE : MERGE_DOCUMENT_PICK}
+                          onClick={() => {
+                            setPicking((now) => {
+                              const next = new Set(now);
+                              if (!next.delete(each.key)) next.add(each.key);
+                              return next;
+                            });
+                          }}
+                        />
+                        {picking.has(each.key) ? (
+                          <MergePagePicker
+                            docId={each.docId}
+                            total={chosen.pageCount}
+                            taken={takenOf(each.pages, chosen.pageCount)}
+                            onToggle={(page) => {
+                              setDocuments((now) =>
+                                now.map((row) =>
+                                  row.key === each.key
+                                    ? { ...row, pages: pagesTextAfterToggle(row.pages, chosen.pageCount, page) }
+                                    : row,
+                                ),
+                              );
+                            }}
+                          />
+                        ) : null}
+                      </span>
                     )}
                   </li>
                 );

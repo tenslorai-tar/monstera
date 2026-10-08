@@ -4722,6 +4722,70 @@ optgroup {
   gap: var(--space-2);
 }
 
+/* CHOOSING PAGES BY PICTURE (item 5.1): under the range field, from the select's column to the row's end. The tiles wrap
+   and the strip scrolls, so a long document is not a tall dialog. */
+.m-merge-list__pick {
+  display: flex;
+  grid-column: 2 / -1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-8);
+}
+
+.m-merge-pick {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  inline-size: 100%;
+}
+
+.m-merge-pick__tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  max-block-size: 18rem;
+  overflow-y: auto;
+  padding: var(--space-4);
+}
+
+.m-merge-pick__tile {
+  position: relative;
+  display: block;
+  min-inline-size: 72px;
+  min-block-size: 93px;
+  padding: 0;
+  border: 2px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.m-merge-pick__tile[aria-pressed='true'] {
+  border-color: var(--accent);
+}
+
+.m-merge-pick__tile[aria-pressed='false'] .m-merge-pick__picture {
+  opacity: 0.35;
+}
+
+.m-merge-pick__picture {
+  display: block;
+  inline-size: 72px;
+  block-size: auto;
+  background: var(--page);
+}
+
+/* THE NUMBER sits on the picture's corner, on a chip of the surface so it reads over any page. */
+.m-merge-pick__number {
+  position: absolute;
+  inset-block-end: var(--space-2);
+  inset-inline-end: var(--space-2);
+  padding-inline: var(--space-4);
+  background: var(--bg2);
+  font-size: var(--font-chrome-12);
+  font-variant-numeric: tabular-nums;
+}
+
 .m-merge-list__range-note {
   color: var(--muted);
   font-size: var(--font-chrome-12);
