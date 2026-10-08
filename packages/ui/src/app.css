@@ -4770,7 +4770,7 @@ optgroup {
   min-inline-size: 72px;
   min-block-size: 93px;
   padding: 0;
-  border: 2px solid var(--border);
+  border: 2px solid var(--border-control);
   background: var(--surface2);
   color: var(--text);
   cursor: pointer;

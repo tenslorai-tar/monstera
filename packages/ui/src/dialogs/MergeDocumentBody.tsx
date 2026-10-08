@@ -2,7 +2,7 @@ import { useLingui } from '@lingui/react';
 import { MAX_MERGE_DOCUMENTS, MAX_MERGE_PART_ENTRIES, type PageSet, pageSetOf } from '@monstera/contract';
 import { err } from '@monstera/shared';
 import type { ReactElement } from 'react';
-import { useRef, useState } from 'react';
+import { Suspense, lazy, useRef, useState } from 'react';
 
 import {
   MERGE_DOCUMENT_ADD,
@@ -37,7 +37,6 @@ import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
 import { SegmentedControl } from '../primitives/SegmentedControl.js';
 import { type PageRangeProblem, formatPageRanges, parsePageGroups } from '../pageRanges.js';
-import { MergePagePicker } from './MergePagePicker.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import { rangeProblemSentence } from './pageRangeProblem.js';
 import type { MERGE_PLACEMENTS, MergeDocumentAnswer } from './mergeDocumentResult.js';
@@ -91,6 +90,14 @@ function MergePagesField({
     </span>
   );
 }
+
+/**
+ * The page picker, loaded when a person first opens one. It draws pages with PDF.js, whose module needs the browser's
+ * `DOMMatrix` the moment it loads, so a static import made every environment that merely LOADS this dialog's body (the
+ * gallery, the test that holds every body) load the parser too — and the declared Node floor, which has no `DOMMatrix`, failed
+ * on it. Splitting it also keeps the parser out of the dialog's own chunk for the person who types their pages.
+ */
+const MergePagePicker = lazy(() => import('./MergePagePicker.js').then((loaded) => ({ default: loaded.MergePagePicker })));
 
 /** Where the merged pages go. */
 type Placement = (typeof MERGE_PLACEMENTS)[number];
@@ -322,20 +329,22 @@ export default function MergeDocumentBody({
                           }}
                         />
                         {picking.has(each.key) ? (
-                          <MergePagePicker
-                            docId={each.docId}
-                            total={chosen.pageCount}
-                            taken={takenOf(each.pages, chosen.pageCount)}
-                            onToggle={(page) => {
-                              setDocuments((now) =>
-                                now.map((row) =>
-                                  row.key === each.key
-                                    ? { ...row, pages: pagesTextAfterToggle(row.pages, chosen.pageCount, page) }
-                                    : row,
-                                ),
-                              );
-                            }}
-                          />
+                          <Suspense fallback={null}>
+                            <MergePagePicker
+                              docId={each.docId}
+                              total={chosen.pageCount}
+                              taken={takenOf(each.pages, chosen.pageCount)}
+                              onToggle={(page) => {
+                                setDocuments((now) =>
+                                  now.map((row) =>
+                                    row.key === each.key
+                                      ? { ...row, pages: pagesTextAfterToggle(row.pages, chosen.pageCount, page) }
+                                      : row,
+                                  ),
+                                );
+                              }}
+                            />
+                          </Suspense>
                         ) : null}
                       </span>
                     )}

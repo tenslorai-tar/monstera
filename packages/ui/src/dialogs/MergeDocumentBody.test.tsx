@@ -196,11 +196,17 @@ describe('MergeDocumentBody', () => {
 
   const tile = (page: number): HTMLElement => screen.getByRole('button', { name: `Page ${String(page)}` });
 
-  it('CHOOSE PAGES shows each page as a tile that takes it or leaves it, and writes the row’s range field (item 5.1)', () => {
+  /** Opens the tiles and waits for them: the picker is loaded when first asked for (it brings the parser with it). */
+  const choosePages = async (): Promise<void> => {
+    press('Choose pages…');
+    await screen.findByRole('button', { name: 'Page 1' });
+  };
+
+  it('CHOOSE PAGES shows each page as a tile that takes it or leaves it, and writes the row’s range field (item 5.1)', async () => {
     const { resolve } = opened({ choices: [{ ...ALPHA, pageCount: 6 }, BETA] });
     // CLOSED UNTIL ASKED: no tiles, and the button names what it does.
     expect(screen.queryByRole('button', { name: 'Page 1' })).toBeNull();
-    press('Choose pages…');
+    await choosePages();
     // EVERY PAGE IS TAKEN WHILE THE FIELD IS EMPTY, which is what an empty field means.
     for (let page = 1; page <= 6; page += 1) expect(tile(page).getAttribute('aria-pressed')).toBe('true');
     fireEvent.click(tile(2));
@@ -212,9 +218,9 @@ describe('MergeDocumentBody', () => {
     expect(answered(resolve)).toStrictEqual({ kind: 'merge', documents: [{ docId: 'd-a', pages: [0, [2, 3], 5] }], at: 8 });
   });
 
-  it('typing and clicking edit ONE field: a typed range shows as taken tiles, and taking every page empties the field', () => {
+  it('typing and clicking edit ONE field: a typed range shows as taken tiles, and taking every page empties the field', async () => {
     opened({ choices: [{ ...ALPHA, pageCount: 4 }, BETA] });
-    press('Choose pages…');
+    await choosePages();
     fireEvent.change(pagesBox(1), { target: { value: '2-3' } });
     expect([1, 2, 3, 4].map((page) => tile(page).getAttribute('aria-pressed'))).toStrictEqual(['false', 'true', 'true', 'false']);
     fireEvent.click(tile(1));
@@ -222,18 +228,18 @@ describe('MergeDocumentBody', () => {
     expect((pagesBox(1) as HTMLInputElement).value).toBe('');
   });
 
-  it('THE LAST PAGE TAKEN CANNOT BE LEFT: a row of no pages is not something a merge can say', () => {
+  it('THE LAST PAGE TAKEN CANNOT BE LEFT: a row of no pages is not something a merge can say', async () => {
     opened({ choices: [{ ...ALPHA, pageCount: 4 }, BETA] });
-    press('Choose pages…');
+    await choosePages();
     fireEvent.change(pagesBox(1), { target: { value: '3' } });
     fireEvent.click(tile(3));
     expect((pagesBox(1) as HTMLInputElement).value).toBe('3');
     expect(tile(3).getAttribute('aria-pressed')).toBe('true');
   });
 
-  it('Hide pages closes the tiles and keeps the choice', () => {
+  it('Hide pages closes the tiles and keeps the choice', async () => {
     opened({ choices: [{ ...ALPHA, pageCount: 4 }, BETA] });
-    press('Choose pages…');
+    await choosePages();
     fireEvent.click(tile(1));
     press('Hide pages');
     expect(screen.queryByRole('button', { name: 'Page 1' })).toBeNull();
