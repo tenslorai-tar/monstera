@@ -932,6 +932,10 @@ const memory = {
 		if (bytes.byteLength > 0) boundNative().write(ptr, bytes, bytes.byteLength)
 	},
 	utf8(ptr: number): string {
+		/* MONSTERA: a NULL string is the empty string, as it was under WASM, where reading address 0 yielded nothing. Natively
+		   strlen(NULL) is an access violation that ends the host, and several engine calls answer NULL for "none"
+		   (CR-NAT-07). Every string read comes through here, so the class is closed in one place. */
+		if (ptr === 0) return ""
 		const n = boundNative().strlen(ptr)
 		return new TextDecoder().decode(memory.readU8(ptr, n))
 	},
@@ -4311,18 +4315,20 @@ export class PDFAnnotation extends Userdata<"pdf_annot"> {
 	}
 
 	getCalloutLine() {
-		let n = libmupdf._wasm_pdf_annot_callout_line(this.pointer,
-			(_wasm_point << 2) as Pointer<"fz_point">)
+		/* MONSTERA: byte addresses. Upstream's _wasm_point was a word index, so it shifted by two to make an address; ours
+		   is already an address, and the shift truncated it to 32 bits and handed the engine an arbitrary place to write
+		   three points (CR-NAT-02). The three points sit 8 bytes apart, as POINT, POINT2 and POINT3 lay them out. */
+		let n = libmupdf._wasm_pdf_annot_callout_line(this.pointer, _wasm_point)
 		if (n == 3)
 			return [
-				fromPoint((_wasm_point+0) << 2 as Pointer<"fz_point">),
-				fromPoint((_wasm_point+1) << 2 as Pointer<"fz_point">),
-				fromPoint((_wasm_point+2) << 2 as Pointer<"fz_point">)
+				fromPoint((_wasm_point + 0) as Pointer<"fz_point">),
+				fromPoint((_wasm_point + 8) as Pointer<"fz_point">),
+				fromPoint((_wasm_point + 16) as Pointer<"fz_point">)
 			]
 		if (n == 2)
 			return [
-				fromPoint((_wasm_point+0) << 2 as Pointer<"fz_point">),
-				fromPoint((_wasm_point+1) << 2 as Pointer<"fz_point">)
+				fromPoint((_wasm_point + 0) as Pointer<"fz_point">),
+				fromPoint((_wasm_point + 8) as Pointer<"fz_point">)
 			]
 		return null
 	}
