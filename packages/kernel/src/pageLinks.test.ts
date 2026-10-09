@@ -684,7 +684,7 @@ describe('readLinkAddress (ADR-0167)', () => {
 
 describe('a link leaves the page under it as it was (the owner’s review of 0.1.12.0: the linked area was white)', () => {
   /** The page's pixels at 2× through the engine, annotations and links drawn, as the grey of the box a link sits over. */
-  async function pixelsUnder(bytes: Uint8Array, box: { x0: number; y0: number; x1: number; y1: number }): Promise<number[]> {
+  function pixelsUnder(bytes: Uint8Array, box: { x0: number; y0: number; x1: number; y1: number }): number[] {
     const document = new PDFDocumentRaw(bytes);
     try {
       const scale = 2;
@@ -725,11 +725,11 @@ describe('a link leaves the page under it as it was (the owner’s review of 0.1
   }
 
   it('keeps the words under a web link and a page link as dark as they were, with the thin outline on', async () => {
-    const before = darkness(await pixelsUnder(await pageWithText(), BOX));
+    const before = darkness(pixelsUnder(await pageWithText(), BOX));
     // THE TEXT IS THERE, or "as dark as it was" is a comparison of two blanks.
     expect(before).toBeGreaterThan(500);
-    const thin = darkness(await pixelsUnder(await linked('thin'), BOX));
-    const none = darkness(await pixelsUnder(await linked('none'), BOX));
+    const thin = darkness(pixelsUnder(await linked('thin'), BOX));
+    const none = darkness(pixelsUnder(await linked('none'), BOX));
     // THE OUTLINE ONLY ADDS: dark pixels are never fewer than the page's own.
     expect(thin).toBeGreaterThanOrEqual(before);
     expect(none).toBe(before);
@@ -749,7 +749,7 @@ describe('a link leaves the page under it as it was (the owner’s review of 0.1
     });
     covered.getPage(0).node.set(PDFName.of('Annots'), covered.context.obj([covered.context.register(square)]));
     const bytes = await covered.save({ useObjectStreams: false });
-    const before = darkness(await pixelsUnder(await pageWithText(), BOX));
-    expect(darkness(await pixelsUnder(bytes, BOX))).toBeLessThan(before / 4);
+    const before = darkness(pixelsUnder(await pageWithText(), BOX));
+    expect(darkness(pixelsUnder(bytes, BOX))).toBeLessThan(before / 4);
   });
 });
