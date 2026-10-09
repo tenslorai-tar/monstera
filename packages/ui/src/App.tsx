@@ -1977,19 +1977,23 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     setToolId(id);
     setKeptTool(id);
   }, []);
-  /**
-   * A FIELD TOOL DOES NOT OUTLIVE THE FORMS TAB. The tool slot is the application's and not the tab's, so a field tool
-   * chosen on the Forms tab was still armed when the tab was opened again, and the drawing surface took the press a field
-   * should have had (reproduced 2026-10-07, `formsTab.pw.ts`). Leaving the tab puts it down; only the move OFF the tab,
-   * so a field tool started from the palette in another section is not undone by the section it started in.
-   */
-  const ribbonSection = useSetting(settings, RIBBON_SECTION_SETTING);
-  const previousSection = useRef(ribbonSection);
+  // CHOOSING ORGANIZE returns to its grid, putting down an earlier tool (including a kept one). Watch the setting's
+  // writes rather than only its rendered value: rechoosing the active section must also end a drawing started inside
+  // Organize. A tool chosen AFTER that section choice still gets the reader in which to draw. All section projections
+  // write this setting, so the rail, menu, palette and Help centre follow one rule. A field tool also ends on leaving
+  // Forms, as before; field tools started through the palette elsewhere are kept until another choice ends them.
   useEffect(() => {
-    const left = previousSection.current === 'forms' && ribbonSection !== 'forms';
-    previousSection.current = ribbonSection;
-    if (left && toolId !== undefined && isFormFieldTool(toolId)) setToolId(undefined);
-  }, [ribbonSection, toolId]);
+    let previous = settings.get(RIBBON_SECTION_SETTING.id);
+    return settings.watch([RIBBON_SECTION_SETTING.id], () => {
+      const next = settings.get(RIBBON_SECTION_SETTING.id);
+      if (next === 'organize') chooseTool(undefined);
+      else if (previous === 'forms' && next !== 'forms') {
+        setToolId((current) => current !== undefined && isFormFieldTool(current) ? undefined : current);
+        setKeptTool((current) => current !== undefined && isFormFieldTool(current) ? undefined : current);
+      }
+      previous = next;
+    });
+  }, [chooseTool, settings]);
   /**
    * Edit object's filter (ADR-0153 Decision 2): a value BESIDE the tool slot, since the slot answers what a press on
    * the page does — the same for all four filters — and this answers which objects are outlined.

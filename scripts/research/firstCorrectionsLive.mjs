@@ -9,6 +9,7 @@ import { PDFDict, PDFDocument, PDFName, PDFNumber } from '@cantoo/pdf-lib';
 import { developmentEnvironment } from '../lib/launchEnvironment.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
 import { popupPlaced } from '../../packages/testing/dist/settled.js';
+import { ORGANIZE_FRAME_COUNT, readOrganizeFrames, recordOrganizeFrames } from '../../packages/testing/dist/organizeFrames.js';
 
 /** @typedef {import('../../packages/kernel/dist/annotationInterchange.js').InterchangeAnnotation} Comment */
 /** @param {Comment} record @param {boolean} quantize */
@@ -161,7 +162,7 @@ async function drive() {
       await page.getByRole('dialog', { name: 'Comments import', exact: true }).waitFor({ state: 'hidden' });
     }
   }
-  if (run === 'organize-baseline') await command('Hand — drag to move the pages');
+  if (run === 'organize-baseline' || run === 'organize') await command('Hand — drag to move the pages');
   for (const section of ['Tools', 'Home', 'Organize']) {
     const tab = page.getByRole('tab', { name: section, exact: true });
     const button = page.getByRole('button', { name: section, exact: true });
@@ -176,6 +177,66 @@ async function drive() {
   }
   if (run === 'organize-baseline') {
     await page.screenshot({ path: join(output, 'organize-baseline-armed-tool.png') });
+    return;
+  }
+  if (run === 'organize') {
+    const grid = page.getByRole('region', { name: 'Pages to organize' });
+    await expect(grid).toBeVisible();
+    /** @param {string} name */
+    const shot = (name) => page.screenshot({ path: join(output, `organize-${name}.png`), animations: 'disabled' });
+    const sections = ['tools', 'home', 'comment', 'edit', 'organize', 'forms', 'review', 'protect'];
+    /** @param {string} name @param {boolean} edge */
+    const section = async (name, edge) => {
+      const box = await page.locator(`[data-ribbon-section="${name}"]`).first().boundingBox();
+      if (box === null) throw new Error(`${name}: the section has no box`);
+      await page.mouse.click(box.x + (edge ? box.width - 3 : box.width / 2), box.y + box.height / 2);
+    };
+    for (const first of sections) {
+      for (const second of sections) {
+        await command('Hand — drag to move the pages');
+        await section(first, false);
+        await shot(`pair-${first}-${second}-1`);
+        await section(second, true);
+        await shot(`pair-${first}-${second}-2`);
+        await section('organize', true);
+        await expect(grid).toBeVisible();
+        await expect(grid.getByRole('button', { name: 'Thumbnail', exact: true })).toBeVisible();
+        await expect(grid.locator('[data-layer="shown"] canvas[data-drawn="true"]')).toHaveCount(5);
+        await shot(`pair-${first}-${second}-3-grid`);
+      }
+    }
+    await section('forms', false);
+    await page.getByRole('button', { name: /^Text field/u }).first().dblclick();
+    await expect(page.locator('[data-annotation-overlay]').first()).toBeVisible();
+    await shot('03-kept-field');
+    await section('organize', false);
+    await expect(grid).toBeVisible();
+    await shot('04-kept-tool-ended');
+    await command('Rectangle');
+    await expect(page.getByLabel('Draw on page 1')).toBeVisible();
+    await shot('05-tool-started-inside');
+    await section('organize', true);
+    await expect(grid).toBeVisible();
+    await shot('06-organize-rechosen');
+    await grid.getByRole('button', { name: 'Full page', exact: true }).click();
+    await expect(grid).toHaveAttribute('data-page-view', 'full-page');
+    await expect(grid.locator('[data-layer="shown"] [data-thumb-page="0"] canvas')).toHaveAttribute('data-drawn', 'true');
+    await shot('07-full-page');
+    await recordOrganizeFrames(page);
+    const frames = () => readOrganizeFrames(page);
+    await expect.poll(async () => (await frames()).length).toBeGreaterThan(0);
+    const thumbnail = await grid.getByRole('button', { name: 'Thumbnail', exact: true }).boundingBox();
+    if (thumbnail === null) throw new Error('Thumbnail has no box');
+    await page.mouse.click(thumbnail.x + thumbnail.width - 3, thumbnail.y + thumbnail.height / 2);
+    await expect(grid).toHaveAttribute('data-page-view', 'thumbnail');
+    await expect.poll(async () => (await frames()).length).toBe(ORGANIZE_FRAME_COUNT);
+    const recorded = await frames();
+    expect(recorded.flat().some((card) => card.width > 400)).toBe(true);
+    expect(recorded.flat().some((card) => card.width < 200)).toBe(true);
+    expect(recorded.findIndex((frame) => frame.length === 0 || frame.some((card) => card.drawn !== 'true'))).toBe(-1);
+    await writeFile(join(output, 'organize-thumbnail-frames.json'), JSON.stringify(recorded));
+    await shot('08-first-thumbnail');
+    process.stdout.write('Organize: all 64 section pairs, kept and in-section tools, and 120 finished Thumbnail frames passed.\n');
     return;
   }
   process.stdout.write(`${(await page.locator('body').innerText()).slice(0, 15000)}\n`);

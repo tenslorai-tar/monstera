@@ -383,6 +383,44 @@ const OPEN_DOCUMENT_ANSWERS = {
   },
 };
 
+it('choosing Organize ends the previous tool, including when Organize is already chosen', async () => {
+  const { client } = answeringClient(OPEN_DOCUMENT_ANSWERS);
+  const settings = freshSettings();
+  render(<App client={client} settings={settings} />);
+  await withDocumentOpen();
+  await pressCommand('Hand — drag to move the pages', 'Home');
+  for (const name of ['Tools', 'Home', 'Organize']) {
+    await act(async () => {
+      screen.getByRole('button', { name }).click();
+      await Promise.resolve();
+    });
+  }
+  expect(screen.getByRole('region', { name: 'Pages to organize' })).toBeTruthy();
+  await pressCommand('Rectangle', 'Comment');
+  await act(async () => {
+    settings.set('appearance.ribbon-section', 'organize');
+    await Promise.resolve();
+  });
+  expect(screen.getByRole('region', { name: 'Pages to organize' })).toBeTruthy();
+  // A palette tool starts without changing the section. Rechoosing that same section must put it down.
+  await act(async () => {
+    fireEvent.keyDown(document.body, { key: 'k', ctrlKey: true });
+    await Promise.resolve();
+  });
+  const query = screen.getByRole('combobox', { name: 'Search commands' });
+  fireEvent.change(query, { target: { value: 'Rectangle' } });
+  await act(async () => {
+    screen.getByRole('option', { name: 'Rectangle' }).click();
+    await Promise.resolve();
+  });
+  expect(screen.queryByRole('region', { name: 'Pages to organize' })).toBeNull();
+  await act(async () => {
+    settings.set('appearance.ribbon-section', 'organize');
+    await Promise.resolve();
+  });
+  expect(screen.getByRole('region', { name: 'Pages to organize' })).toBeTruthy();
+});
+
 /** Opens a document and settles the effects, leaving the toolbar rendered. */
 async function withDocumentOpen(): Promise<void> {
   await act(async () => {

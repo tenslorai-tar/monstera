@@ -64,3 +64,15 @@ keeps its present meaning.
 - `CommandContext` gains a field every command receives; commands that act on pages move to `targetPages`.
 - The document store gains `selectedPages` and clears it on a version move.
 - §10.3's canvas bullet names the grid.
+
+## Correction — choosing Organize puts down the previous tool (2026-10-09)
+
+An armed tool temporarily uses the reading view, where a box can be drawn. It survived
+Tools > Home > Organize, hiding both the grid and its size control. Choosing Organize
+now puts down the earlier tool and any double-click hold. This follows every write of
+the existing section setting, including choosing the already active Organize section.
+A tool started after that choice can still draw; choosing Organize again returns to
+the cards. Leaving Forms still puts down a field tool. No new setting or surface owns
+the view. The rendered proof covers every ordered pair of the eight sections, a kept
+tool and a tool started inside Organize, and the first Full page > Thumbnail transition
+with every visible card drawn in every frame.

@@ -27,6 +27,7 @@ When you choose **Organize** in the rail, the pages area shows every page of the
 - Rotating and deleting use the selected pages. Other page tools, such as extracting or duplicating, still use the page you last had open.
 - Everything here can be undone with **Ctrl+Z**.
 - The card size you choose is remembered.
+- Choosing **Organize** puts down an earlier drawing or Hand tool and brings back the cards. If you start a drawing tool while in Organize, choose **Organize** again to return to the cards.
 
 <!--
 Screenshots to capture:
