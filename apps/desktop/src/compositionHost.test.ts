@@ -598,10 +598,11 @@ describe('the composition root, with an engine host platform', () => {
       let sessions = 0;
       const spy = platformAnswering((channel, params) => {
         if (channel === 'engine/open') {
-          const { password } = params as { password?: unknown };
-          opens.push(password);
-          if (password === PASSWORD) return { ok: true, value: { session: `ab0${String(sessions++)}`, access: 2 } };
-          return { ok: false, error: { code: password === undefined ? 'needs-password' : 'wrong-password' } };
+          // EVERY KEY the open carries (ADR-0171 Decision 8), as `lockedHost` reads them: the frame says `keys`, not `password`.
+          const { keys } = params as { keys: readonly unknown[] };
+          opens.push(keys);
+          if (keys.includes(PASSWORD)) return { ok: true, value: { session: `ab0${String(sessions++)}`, access: 2 } };
+          return { ok: false, error: { code: keys.length === 0 ? 'needs-password' : 'wrong-password' } };
         }
         if (channel === 'engine/apply') {
           applies.push(params);
@@ -650,8 +651,8 @@ describe('the composition root, with an engine host platform', () => {
       expect(rebuilds.length).toBeGreaterThan(0);
       // EVERY OPEN THE REBUILD MADE CARRIED THE PASSWORD, and the first attempt at the document's life carried none: the
       // password is the one `document.unlock` was given, held in main and not asked for again.
-      expect(rebuilds.every((password) => password === PASSWORD)).toBe(true);
-      expect(opens[0]).toBeUndefined();
+      expect(rebuilds.every((keys) => Array.isArray(keys) && keys.includes(PASSWORD))).toBe(true);
+      expect(opens[0]).toStrictEqual([]);
       // THE EDIT MADE BEFORE THE DEATH IS REPLAYED onto the rebuilt session: the log held it, and the canonical image
       // (the file as opened) does not.
       expect(applies.length).toBeGreaterThanOrEqual(before + 1 + 1 + 1);

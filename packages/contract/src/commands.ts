@@ -1,4 +1,5 @@
 import type { DocId, DocVersion } from '@monstera/shared';
+import { DEFAULT_TEXT_LINE_HEIGHT, MAX_TEXT_LINE_HEIGHT, MAX_TEXT_PADDING, MIN_TEXT_LINE_HEIGHT } from '@monstera/shared';
 import { z } from 'zod';
 
 import { MAX_PAGE_INDEX, MAX_PAGE_SET_ENTRIES, pageSetOfAtMost, pageSetSchema, pairedPageSetSchema } from './pageSet.js';
@@ -1358,12 +1359,8 @@ export const annotationColourSchema = z.tuple([
 /** An annotation's colour. See {@link annotationColourSchema}. */
 export type AnnotationColour = z.infer<typeof annotationColourSchema>;
 
-/** The line pitch a text box may be set to, as a multiple of its size, and the margin it may keep, in points (ADR-0211). */
-export const MIN_TEXT_LINE_HEIGHT = 0.8;
-/** The pitch a box has until it is changed, as a multiple of its size; a style that names it is not written. */
-export const DEFAULT_TEXT_LINE_HEIGHT = 1.2;
-export const MAX_TEXT_LINE_HEIGHT = 3;
-export const MAX_TEXT_PADDING = 72;
+/** The line pitch a text box may be set to, and the margin it may keep (ADR-0211): defined in `@monstera/shared`, named here too. */
+export { DEFAULT_TEXT_LINE_HEIGHT, MAX_TEXT_LINE_HEIGHT, MAX_TEXT_PADDING, MIN_TEXT_LINE_HEIGHT };
 /** How many runs of styled words one restyle may name. */
 export const MAX_TEXT_RUNS = 64;
 

@@ -133,6 +133,7 @@ export {
 // built from and the one a consumer asks about are the same function (B3a).
 // THE ONE RULE for whether a field can be called a name, taken by the create (kernel) and by the surface that asks first.
 export { fieldNameClash } from './fieldNames.js';
+export { DEFAULT_TEXT_LINE_HEIGHT, MAX_TEXT_LINE_HEIGHT, MAX_TEXT_PADDING, MIN_TEXT_LINE_HEIGHT } from './textBoxLimits.js';
 export {
   type PriorPageOrder,
   keptPermutation,

@@ -17,7 +17,7 @@
  * box. Never a style dropped on some of its words (*preserve, never drop*).
  */
 
-import { DEFAULT_TEXT_LINE_HEIGHT, MAX_TEXT_LINE_HEIGHT, MAX_TEXT_PADDING, MIN_TEXT_LINE_HEIGHT } from '@monstera/contract';
+import { DEFAULT_TEXT_LINE_HEIGHT, MAX_TEXT_LINE_HEIGHT, MAX_TEXT_PADDING, MIN_TEXT_LINE_HEIGHT } from '@monstera/shared';
 
 /** An RGB colour, each channel 0 to 1, as every annotation here carries one. */
 export type Rgb = readonly [number, number, number];
