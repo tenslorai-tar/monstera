@@ -5,6 +5,8 @@ import {
   type CommandOfKind,
   ENGINE_ANSWER_FILE_MAX_BYTES,
   type FormDataImportFormat,
+  type AnnotationDataFormat,
+  type AnnotationImportReport,
 } from '@monstera/contract';
 import type { ImportReport } from '../formData.js';
 
@@ -635,6 +637,28 @@ export function remoteMupdfFlatFields(
 
 /** What the import plan answers over the boundary, or `unreadable` for a file that is not form data. */
 export type RemoteImportPlan = ImportReport | 'unreadable';
+
+export type RemoteAnnotationImportPlanner = (
+  session: MupdfSession, bytes: Uint8Array, format: AnnotationDataFormat,
+) => Promise<AnnotationImportReport | 'unreadable'>;
+
+/** A comment file is parsed only in the contained host, on the session's asset route. */
+export function remoteMupdfAnnotationImportPlan(
+  client: ClientApi<EngineChannels>, sessions: RemoteSessions, assets: SessionAssets,
+): RemoteAnnotationImportPlanner {
+  return async (session, bytes, format) => {
+    const area = sessions.areaFor(session);
+    const asset = assets.name();
+    await assets.write(area.snapshotDirectory, asset, bytes);
+    try {
+      const result = await client['engine/annotation-import-plan']({ session: sessions.handleFor(session), format, asset });
+      if (!result.ok && result.error.code === 'plan-failed') return 'unreadable';
+      return answered('engine/annotation-import-plan', result);
+    } finally {
+      await assets.remove(area.snapshotDirectory, asset);
+    }
+  };
+}
 
 /** Plans an import of a form data file in the host that holds the session. */
 export type RemoteFormImportPlanner = (

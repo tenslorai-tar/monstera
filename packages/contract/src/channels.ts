@@ -58,6 +58,7 @@ import {
   formDataFormatSchema,
   formDataImportFormatSchema,
   annotationDataFormatSchema,
+  annotationImportReportSchema,
   formFieldKindSchema,
   formFieldHandleSchema,
   formFieldReadSchema,
@@ -4178,8 +4179,8 @@ export const channels = {
 
   /**
    * Adds the annotations a file the user picks carries (ADR-0077). `document.importFormData`'s
-   * outcomes: `unreadable` covers a file that is not annotation data, carries nothing exchanged,
-   * or names a page this document lacks — the host's reason does not cross, so it is not guessed.
+   * outcomes: the contained planner reports each skipped record before the valid comments are
+   * placed (ADR-0223). A readable file with nothing to place reports without an empty mutation.
    */
   'document.importAnnotations': channel(
     'Adds the annotations from a file the user picks.',
@@ -4187,10 +4188,12 @@ export const channels = {
     z.discriminatedUnion('kind', [
       z.object({
         kind: z.literal('imported'),
+        report: annotationImportReportSchema,
         version: docVersionSchema,
         byteLength: z.number().int().nonnegative(),
         historyDropped: z.number().int().nonnegative(),
       }),
+      z.object({ kind: z.literal('nothing'), report: annotationImportReportSchema }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('unreadable') }),
       z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),

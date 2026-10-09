@@ -78,6 +78,7 @@ import {
   type AccessibilityReportOnWire,
   type HostFieldPropertiesReader,
   type RemoteFormImportPlanner,
+  type RemoteAnnotationImportPlanner,
   type HostFlatFieldsReader,
   type HostFormDataExport,
   type HostAnnotationDataExport,
@@ -145,6 +146,7 @@ import {
   remoteMupdfDuplicateReport,
   remoteMupdfFieldProperties,
   remoteMupdfFormImportPlan,
+  remoteMupdfAnnotationImportPlan,
   remoteMupdfFlatFields,
   remoteMupdfFormFields,
   remoteMupdfLayers,
@@ -1663,6 +1665,11 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // THE ANNOTATIONS, composed as the form data is and for its reasons (ADR-0077).
     annotationData: {
       pick: pickAnnotationData,
+      plan: (docId, sessions, bytes, format) => {
+        const session = sessions.mupdf;
+        if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+        return engineHost.annotationImportPlan(session, bytes, format);
+      },
       encode: (docId, sessions, format) => {
         const session = sessions.mupdf;
         if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
@@ -2095,6 +2102,7 @@ function engineSessionOpener(
   readonly fieldProperties: HostFieldPropertiesReader;
   /** What importing a data file would do to the form, from whichever host is live. */
   readonly formImportPlan: RemoteFormImportPlanner;
+  readonly annotationImportPlan: RemoteAnnotationImportPlanner;
   /** One page's barcodes, from whichever host is live. */
   readonly barcodes: BarcodeReport;
   /** The accessibility check, from whichever host is live. */
@@ -2540,6 +2548,11 @@ function engineSessionOpener(
 
   /** The import plan's half of the same registration. See {@link pageText}. */
   let formImportPlan: RemoteFormImportPlanner | null = null;
+  let annotationImportPlan: RemoteAnnotationImportPlanner | null = null;
+  const planAnnotationImportThroughHost: RemoteAnnotationImportPlanner = (session, bytes, format) => {
+    if (annotationImportPlan === null) return Promise.reject(new Error('No annotation import planner is connected.'));
+    return annotationImportPlan(session, bytes, format);
+  };
 
   const planFormImportThroughHost: RemoteFormImportPlanner = (session, bytes, format) => {
     if (formImportPlan === null) {
@@ -2800,6 +2813,7 @@ function engineSessionOpener(
     flatFields = remoteMupdfFlatFields(client, remote);
     fieldProperties = remoteMupdfFieldProperties(client, remote);
     formImportPlan = remoteMupdfFormImportPlan(client, remote, sessionAssets());
+    annotationImportPlan = remoteMupdfAnnotationImportPlan(client, remote, sessionAssets());
     barcodes = remoteMupdfBarcodes(client, remote);
     accessibility = remoteMupdfAccessibility(client, remote);
     duplicates = remoteMupdfDuplicateReport(client, remote);
@@ -3180,6 +3194,7 @@ function engineSessionOpener(
     flatFields: readFlatFieldsThroughHost,
     fieldProperties: readFieldPropertiesThroughHost,
     formImportPlan: planFormImportThroughHost,
+    annotationImportPlan: planAnnotationImportThroughHost,
     barcodes: readBarcodesThroughHost,
     accessibility: checkAccessibilityThroughHost,
     duplicates: readDuplicatesThroughHost,

@@ -190,6 +190,9 @@ async function joined(ocr: HostOcrReader): Promise<{
         throw new Error('a recognition must not export a Word file');
       },
       formImportPlan: () => {
+        throw new Error('this case does not plan an import');
+      },
+      annotationImportPlan: () => {
         throw new Error('an OCR case must not plan an import');
       },
       fieldProperties: () => {

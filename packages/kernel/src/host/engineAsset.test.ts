@@ -202,6 +202,9 @@ async function joined(): Promise<{
         throw new Error('unused');
       },
       formImportPlan: () => {
+        throw new Error('this case does not plan an import');
+      },
+      annotationImportPlan: () => {
         throw new Error('an asset case must not plan an import');
       },
       fieldProperties: () => {

@@ -1816,7 +1816,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       const version = asDocVersion(current + 1);
       versions.set(docId, version);
       return Promise.resolve(
-        ok({ kind: 'imported' as const, version, byteLength: chosen.byteLength, historyDropped: 0 }),
+        ok({ kind: 'imported' as const, version, byteLength: chosen.byteLength, historyDropped: 0,
+          report: { imported: 1, total: 1, pages: 1, skipped: [], more: 0 } }),
       );
     },
     /**

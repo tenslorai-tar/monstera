@@ -1,5 +1,6 @@
 import type {
   AiProviderId,
+  AnnotationImportSkipped,
   CloudProviderId,
   CloudRefusal,
   CloudState,
@@ -8,6 +9,27 @@ import type {
 } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 import { messageKey } from '@monstera/shared';
+
+export const COMMENTS_IMPORT_RESULT_TITLE = messageKey('comments.import-result.title');
+export const COMMENTS_IMPORT_COUNT = messageKey('comments.import-result.count');
+export const COMMENTS_IMPORT_EMPTY = messageKey('comments.import-result.empty');
+export const COMMENTS_IMPORT_MISSING_PAGE = messageKey('comments.import-result.missing-page');
+export const COMMENTS_IMPORT_UNSUPPORTED = messageKey('comments.import-result.unsupported');
+export const COMMENTS_IMPORT_INVALID = messageKey('comments.import-result.invalid');
+export const COMMENTS_IMPORT_MISSING_ENTRY = messageKey('comments.import-result.missing-entry');
+export const COMMENTS_IMPORT_MORE = messageKey('comments.import-result.more');
+export const COMMENTS_IMPORT_FIELDS: Readonly<Record<NonNullable<AnnotationImportSkipped['field']>, MessageKey>> = {
+  entry: messageKey('comments.import-field.entry'), page: messageKey('comments.import-field.page'),
+  subtype: messageKey('comments.import-field.subtype'), rect: messageKey('comments.import-field.rect'),
+  colour: messageKey('comments.import-field.colour'), interiorColour: messageKey('comments.import-field.interior-colour'),
+  opacity: messageKey('comments.import-field.opacity'), borderWidth: messageKey('comments.import-field.border-width'),
+  contents: messageKey('comments.import-field.contents'), author: messageKey('comments.import-field.author'),
+  subject: messageKey('comments.import-field.subject'), modified: messageKey('comments.import-field.modified'),
+  quadPoints: messageKey('comments.import-field.quad-points'), inkList: messageKey('comments.import-field.ink-list'),
+  vertices: messageKey('comments.import-field.vertices'), line: messageKey('comments.import-field.line'),
+  lineEndings: messageKey('comments.import-field.line-endings'), icon: messageKey('comments.import-field.icon'),
+  defaultAppearance: messageKey('comments.import-field.default-appearance'),
+};
 
 /**
  * The English catalogue.
@@ -5689,10 +5711,26 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [IMPORT_ANNOTATIONS_XFDF_TITLE]: 'Import comments from XFDF…',
   [IMPORT_ANNOTATIONS_FDF_TITLE]: 'Import comments from FDF…',
   [IMPORT_ANNOTATIONS_PROBLEM_TITLE]: 'Those comments were not imported',
-  // NAMES EVERY CAUSE, for the form data message's reason: the refusal happens in the engine host
-  // and its reason does not cross, so naming one would be a guess.
+  [COMMENTS_IMPORT_RESULT_TITLE]: 'Comments import',
+  [COMMENTS_IMPORT_COUNT]: '{count, plural, one {# comment imported.} other {# comments imported.}}',
+  [COMMENTS_IMPORT_EMPTY]: 'This file contains no comments. Nothing was added.',
+  [COMMENTS_IMPORT_MISSING_PAGE]: 'Comment {comment} was on page {page}, which this document does not have ({pages} pages).',
+  [COMMENTS_IMPORT_UNSUPPORTED]: 'Comment {comment} uses a kind of comment Monstera cannot import.',
+  [COMMENTS_IMPORT_INVALID]: 'Comment {comment} has an invalid {field} entry.',
+  [COMMENTS_IMPORT_MISSING_ENTRY]: 'Comment {comment} is missing its {field} entry.',
+  [COMMENTS_IMPORT_MORE]: '{count, plural, one {# more comment was skipped.} other {# more comments were skipped.}} The list above shows the first {listed}.',
+  [COMMENTS_IMPORT_FIELDS.entry]: 'comment', [COMMENTS_IMPORT_FIELDS.page]: 'page',
+  [COMMENTS_IMPORT_FIELDS.subtype]: 'kind', [COMMENTS_IMPORT_FIELDS.rect]: 'position',
+  [COMMENTS_IMPORT_FIELDS.colour]: 'colour', [COMMENTS_IMPORT_FIELDS.interiorColour]: 'fill colour',
+  [COMMENTS_IMPORT_FIELDS.opacity]: 'opacity', [COMMENTS_IMPORT_FIELDS.borderWidth]: 'line width',
+  [COMMENTS_IMPORT_FIELDS.contents]: 'text', [COMMENTS_IMPORT_FIELDS.author]: 'author',
+  [COMMENTS_IMPORT_FIELDS.subject]: 'subject', [COMMENTS_IMPORT_FIELDS.modified]: 'date',
+  [COMMENTS_IMPORT_FIELDS.quadPoints]: 'marked text position', [COMMENTS_IMPORT_FIELDS.inkList]: 'drawn stroke',
+  [COMMENTS_IMPORT_FIELDS.vertices]: 'shape points', [COMMENTS_IMPORT_FIELDS.line]: 'line ends',
+  [COMMENTS_IMPORT_FIELDS.lineEndings]: 'line ending style', [COMMENTS_IMPORT_FIELDS.icon]: 'note icon',
+  [COMMENTS_IMPORT_FIELDS.defaultAppearance]: 'text appearance',
   [IMPORT_ANNOTATIONS_UNREADABLE]:
-    'Nothing was added. The file may not be comments in that format, it may carry no kind of comment Monstera imports, it may place a comment on a page this document does not have, or one of its comments may be incomplete.',
+    'This file could not be read as comments in the chosen format. Nothing was added.',
   [IMPORT_ANNOTATIONS_TOO_LARGE]:
     'Nothing was added. Monstera reads comment files up to {megabytes} MB, and that one is larger.',
   [COMPARE_COMMAND_TITLE]: 'Compare documents…',

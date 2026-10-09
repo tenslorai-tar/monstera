@@ -2016,6 +2016,7 @@ function importAnnotationsHandler(
   }): Promise<Awaited<ReturnType<ContractHandlers['document.importAnnotations']>>> => {
     try {
       const outcome = await commands.importAnnotations(docId, format);
+      if (outcome.kind === 'nothing') return ok(outcome);
       if (outcome.kind === 'cancelled') return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'unreadable') return ok({ kind: 'unreadable' } as const);
       if (outcome.kind === 'too-large') {
@@ -2023,6 +2024,7 @@ function importAnnotationsHandler(
       }
       return ok({
         kind: 'imported',
+        report: outcome.report,
         version: outcome.version,
         byteLength: outcome.byteLength,
         historyDropped: outcome.historyDropped,

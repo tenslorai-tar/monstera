@@ -582,6 +582,9 @@ describe('the engine host answers a containment probe', () => {
       throw new Error('a containment probe must not export a Word file');
     },
     formImportPlan: () => {
+      throw new Error('this case does not plan an import');
+    },
+    annotationImportPlan: () => {
       throw new Error('a containment probe must not plan an import');
     },
     fieldProperties: () => {

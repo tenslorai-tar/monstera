@@ -198,6 +198,9 @@ function start(stream: HostByteStream) {
       throw new Error('no case here exports a Word file');
     },
     formImportPlan: () => {
+      throw new Error('this case does not plan an import');
+    },
+    annotationImportPlan: () => {
       throw new Error('a host body case must not plan an import');
     },
     fieldProperties: () => {

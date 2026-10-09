@@ -97,6 +97,7 @@ async function joined(parts: {
       flatFields: refuse('propose fields'),
       fieldProperties: refuse('read field properties'),
       formImportPlan: refuse('plan an import'),
+      annotationImportPlan: refuse('plan a comment import'),
       barcodes: refuse('read barcodes'),
       exportAnnotationData: refuse('export annotations'),
       accessibility: refuse('check accessibility'),

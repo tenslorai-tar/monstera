@@ -3,6 +3,7 @@ import type { MessageKey } from '@monstera/shared';
 
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { IMPORT_ANNOTATIONS_PROBLEM_DIALOG_ID } from '../dialogs/importAnnotationsProblem.js';
+import { IMPORT_ANNOTATIONS_RESULT_DIALOG_ID } from '../dialogs/importAnnotationsResult.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import {
   EXPORT_ANNOTATIONS_FDF_TITLE,
@@ -113,8 +114,15 @@ function importAnnotationsCommand(
         });
         return;
       }
+      if (answer.value.kind === 'nothing') {
+        void deps.ask(IMPORT_ANNOTATIONS_RESULT_DIALOG_ID, answer.value.report);
+        return;
+      }
       deps.onApplied({ version: answer.value.version, byteLength: answer.value.byteLength });
       confirmDone(deps, TOAST_COMMENTS_IMPORTED);
+      if (answer.value.report.skipped.length > 0 || answer.value.report.more > 0) {
+        void deps.ask(IMPORT_ANNOTATIONS_RESULT_DIALOG_ID, answer.value.report);
+      }
       // INVARIANT 18, after `onApplied`, for `importFormDataCommand`'s reason.
       if (answer.value.historyDropped > 0) {
         void deps.ask(HISTORY_TRIMMED_DIALOG_ID, { dropped: answer.value.historyDropped });

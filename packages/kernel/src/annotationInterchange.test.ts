@@ -1,22 +1,22 @@
 import { PDFArray, PDFDocument, PDFHexString, PDFName, PDFString, degrees } from '@cantoo/pdf-lib';
 import { type AnnotationDataFormat, MAX_ANNOTATION_DATA_BYTES } from '@monstera/contract';
-import { ColorSpace, Matrix, PDFAnnotation, PDFPage } from './mupdfRaw.js';
+import { ColorSpace, Matrix, PDFAnnotation, PDFObject, PDFPage } from './mupdfRaw.js';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
-  AnnotationPageMissingError,
   type InterchangeAnnotation,
   NoImportableAnnotationsError,
   UnreadableAnnotationDataError,
   applyImportAnnotations,
   canonicalDefaultAppearance,
   parseAnnotationData,
+  planAnnotationImport,
   readInterchangeAnnotations,
   readInterchangeRecordsAt,
   serialiseAnnotationData,
 } from './annotationInterchange.js';
 import type { MupdfSession } from './engineSeam.js';
-import { mupdfWriter, withDocument } from './mupdfWriter.js';
+import { mupdfWriter, withDocument, withDocumentRemoving } from './mupdfWriter.js';
 import { XfdfDoctypeError } from './xfdfReader.js';
 
 /**
@@ -194,13 +194,69 @@ function comparable(record: InterchangeAnnotation): Partial<InterchangeAnnotatio
 }
 
 describe('annotation interchange — exported and imported through all three formats', () => {
+  it('reads each native array length once during the unchanged FDF walk', () => {
+    const records: InterchangeAnnotation[] = [
+      { page: 0, subtype: 'Square', rect: [10, 10, 30, 30] },
+      { page: 0, subtype: 'Line', rect: [10, 10, 30, 30], line: [10, 10, 30, 30], lineEndings: ['None', 'OpenArrow'] },
+      { page: 0, subtype: 'Ink', rect: [10, 10, 30, 30], inkList: [[10, 10, 20, 20, 30, 30], [10, 20, 20, 30]] },
+    ];
+    const bytes = serialiseAnnotationData(records, 'fdf');
+    const lengths = vi.spyOn(PDFObject.prototype, 'length', 'get');
+    try {
+      expect(parseAnnotationData(bytes, 'fdf')).toStrictEqual(records);
+      // The annotation list, three rectangles, a line, its endings, the ink
+      // list, and its two strokes. None is changed while it is read.
+      expect(lengths).toHaveBeenCalledTimes(9);
+    } finally {
+      lengths.mockRestore();
+    }
+  });
+
   it('reads a document’s annotations as records: every exchanged subtype, no link, no action', async () => {
     const records = await withSession(source, readInterchangeAnnotations);
     expect(records).toStrictEqual(EXPECTED);
     expect(JSON.stringify(records)).not.toContain('JavaScript');
   });
 
+  it('a malformed FDF position is an invalid entry, not a missing entry, and keeps its valid siblings', () => {
+    const text = new TextDecoder().decode(serialiseAnnotationData(EXPECTED, 'fdf'));
+    const broken = text.replace('/Rect [100 100 300 200]', '/Rect (broken) /Unused [100 100 300 200]');
+    expect(broken).not.toBe(text);
+    const plan = planAnnotationImport(new TextEncoder().encode(broken), 'fdf', 2);
+    expect(plan.records).toHaveLength(EXPECTED.length - 1);
+    expect(plan.report.skipped).toStrictEqual([{ comment: 1, reason: 'invalid-entry', field: 'rect' }]);
+  });
+
   for (const format of ['json', 'xfdf', 'fdf'] as const satisfies readonly AnnotationDataFormat[]) {
+    it(`${format}: export, delete, import and reopen keeps each comment's kind, page, position, colour and text`, async () => {
+      await withSession(source, async (session) => {
+        // Normalise through Monstera's writer first: absent optional entries on a
+        // foreign annotation receive the viewer's defaults when it is created.
+        // This run specifically promises a round trip of Monstera's own comments.
+        const initial = serialiseAnnotationData(await readInterchangeAnnotations(session), format);
+        await withDocumentRemoving(session, (document) => {
+          for (let index = 0; index < document.countPages(); index += 1) {
+            const page = document.loadPage(index);
+            for (const annotation of [...page.getAnnotations()].reverse()) page.deleteAnnotation(annotation);
+          }
+        });
+        await applyImportAnnotations(session, { kind: 'importAnnotations', format, bytes: initial });
+        const original = await readInterchangeAnnotations(session);
+        const exported = serialiseAnnotationData(original, format);
+        await withDocumentRemoving(session, (document) => {
+          for (let index = 0; index < document.countPages(); index += 1) {
+            const page = document.loadPage(index);
+            for (const annotation of [...page.getAnnotations()].reverse()) page.deleteAnnotation(annotation);
+          }
+        });
+        expect(await readInterchangeAnnotations(session)).toStrictEqual([]);
+        await applyImportAnnotations(session, { kind: 'importAnnotations', format, bytes: exported });
+        const saved = await mupdfWriter.serialise(session);
+        const reopened = await withSession(saved, readInterchangeAnnotations);
+        expect(reopened.map(comparable)).toStrictEqual(original.map(comparable));
+      });
+    });
+
     it(`${format}: what is exported imports into another document as the same annotations, drawn`, async () => {
       const exported = serialiseAnnotationData(await withSession(source, readInterchangeAnnotations), format);
       expect(parseAnnotationData(exported, format)).toHaveLength(EXPECTED.length);
@@ -386,11 +442,48 @@ describe('annotation interchange — exported and imported through all three for
       });
     }
 
-    it('a file placing one annotation past the last page — the valid ones are not added either', async () => {
+    it('PARTIAL IMPORT: every format places the valid comments and names the absent page', async () => {
       const onMissingPage = [...EXPECTED, { ...EXPECTED[0], page: 5 }] as InterchangeAnnotation[];
-      const result = await annotationCountAfter(serialiseAnnotationData(onMissingPage, 'json'), 'json');
-      expect(result.error).toBeInstanceOf(AnnotationPageMissingError);
-      expect(result.count).toBe(0);
+      for (const format of ['json', 'fdf', 'xfdf'] as const) {
+        const bytes = serialiseAnnotationData(onMissingPage, format);
+        const plan = planAnnotationImport(bytes, format, 2);
+        expect(plan.report).toStrictEqual({ imported: EXPECTED.length, total: EXPECTED.length + 1,
+          pages: 2, skipped: [{ comment: EXPECTED.length + 1, page: 6, reason: 'missing-page' }], more: 0 });
+        const result = await annotationCountAfter(bytes, format);
+        expect(result.error).toBeUndefined();
+        expect(result.count).toBe(EXPECTED.length);
+      }
+    });
+
+    it('PARTIAL IMPORT: an incomplete markup and an unsupported kind do not cost a valid JSON sibling', async () => {
+      const bytes = new TextEncoder().encode(JSON.stringify({ format: 'monstera-annotations', version: 1,
+        annotations: [EXPECTED[0], { page: 0, subtype: 'Highlight', rect: [1, 1, 2, 2] },
+          { page: 0, subtype: 'Sound', rect: [1, 1, 2, 2] }] }));
+      expect(planAnnotationImport(bytes, 'json', 2).report).toStrictEqual({ imported: 1, total: 3, pages: 2,
+        skipped: [{ comment: 2, reason: 'missing-entry', field: 'quadPoints' },
+          { comment: 3, reason: 'unsupported-kind', field: 'subtype' }], more: 0 });
+      expect(await annotationCountAfter(bytes, 'json')).toStrictEqual({ error: undefined, count: 1 });
+    });
+
+    it('PARTIAL IMPORT: an invalid XFDF colour is named without losing the valid records on either side', async () => {
+      const bytes = new TextEncoder().encode('<xfdf><annots>' +
+        '<text page="0" rect="1,1,20,20"><contents>first</contents></text>' +
+        '<square page="0" rect="1,1,20,20" color="wrong"/>' +
+        '<text page="1" rect="1,1,20,20"><contents>last</contents></text>' +
+        '</annots></xfdf>');
+      expect(planAnnotationImport(bytes, 'xfdf', 2).report).toStrictEqual({ imported: 2, total: 3, pages: 2,
+        skipped: [{ comment: 2, reason: 'invalid-entry', field: 'colour' }], more: 0 });
+      expect(await annotationCountAfter(bytes, 'xfdf')).toStrictEqual({ error: undefined, count: 2 });
+    });
+
+    it('CONTROL: an empty file is distinguished from one whose comments were all skipped', () => {
+      for (const format of ['json', 'fdf', 'xfdf'] as const) {
+        const empty = planAnnotationImport(serialiseAnnotationData([], format), format, 2).report;
+        expect(empty).toStrictEqual({ imported: 0, total: 0, pages: 2, skipped: [], more: 0 });
+        const missing = planAnnotationImport(serialiseAnnotationData([{ ...EXPECTED[0], page: 5 }] as InterchangeAnnotation[], format), format, 2).report;
+        expect(missing).toStrictEqual({ imported: 0, total: 1, pages: 2,
+          skipped: [{ comment: 1, page: 6, reason: 'missing-page' }], more: 0 });
+      }
     });
 
     it('CONTROL: the same file without that annotation imports', async () => {

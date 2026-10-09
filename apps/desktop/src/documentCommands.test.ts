@@ -549,6 +549,17 @@ const localFormData: FormDataSource = {
 
 /** {@link localFormData}'s shape for the annotations, with the real reader and encoder. */
 const localAnnotationData: AnnotationDataSource = {
+  plan: async (id, sessions, bytes, format) => {
+    const held = sessions.mupdf;
+    if (held === undefined) throw new MissingSessionError(id, 'mupdf');
+    const { readAnnotationImportPlan } = await import('../../../packages/kernel/src/annotationInterchange.js');
+    try {
+      return await readAnnotationImportPlan(held, bytes, format);
+    } catch {
+      // Models the remote planner's declared plan-failed outcome for an unreadable file.
+      return 'unreadable';
+    }
+  },
   pick: () => Promise.reject(new Error('this case does not write an annotation file')),
   encode: async (id, sessions, format) => {
     const held = sessions.mupdf;
@@ -3342,6 +3353,18 @@ describe('annotations exported to a file and imported from it, through the lane 
     const before = (await readInterchangeAnnotations(blankSession)).length;
     expect(await commands.importAnnotations(blankDoc, 'json')).toStrictEqual({ kind: 'unreadable' });
     expect(await readInterchangeAnnotations(blankSession)).toHaveLength(before);
+  });
+
+  it('a broken annotation planner is a host failure, never a verdict that the selected file was unreadable', async () => {
+    const bytes = serialiseAnnotationData(await readInterchangeAnnotations(annotatedSession), 'json');
+    const flushes: DocId[] = [];
+    const commands = commandsWith({ ...localAnnotationData,
+      open: () => Promise.resolve('selected-comments.json'),
+      read: () => Promise.resolve({ kind: 'read', bytes }),
+      plan: () => Promise.reject(new Error('the host planner failed')),
+    }, flushes);
+    await expect(commands.importAnnotations(blankDoc, 'json')).rejects.toThrow('the host planner failed');
+    expect(flushes).toStrictEqual([]);
   });
 
   /*

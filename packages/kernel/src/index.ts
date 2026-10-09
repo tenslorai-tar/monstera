@@ -368,6 +368,8 @@ export {
   remoteMupdfDuplicateReport,
   remoteMupdfFieldProperties,
   remoteMupdfFormImportPlan,
+  remoteMupdfAnnotationImportPlan,
+  type RemoteAnnotationImportPlanner,
   type RemoteFormImportPlanner,
   type RemoteImportPlan,
   remoteMupdfFlatFields,

@@ -772,6 +772,9 @@ export function suggestedAnnotationDataName(name: string, format: AnnotationData
  * `MAX_ANNOTATION_DATA_BYTES`.
  */
 export interface AnnotationDataSource {
+  readonly plan: (
+    docId: DocId, sessions: DocumentSessions, bytes: Uint8Array, format: AnnotationDataFormat,
+  ) => Promise<import('@monstera/contract').AnnotationImportReport | 'unreadable'>;
   readonly pick: (sourceName: string, format: AnnotationDataFormat) => Promise<string | null>;
   readonly encode: (docId: DocId, sessions: DocumentSessions, format: AnnotationDataFormat) => Promise<ByteImage>;
   readonly open: (format: AnnotationDataFormat) => Promise<string | null>;
@@ -780,7 +783,8 @@ export interface AnnotationDataSource {
 
 /** What {@link DocumentCommands.importAnnotations} answers. */
 export type ImportAnnotationsOutcome =
-  | ({ readonly kind: 'imported' } & Applied)
+  | ({ readonly kind: 'imported'; readonly report: import('@monstera/contract').AnnotationImportReport } & Applied)
+  | { readonly kind: 'nothing'; readonly report: import('@monstera/contract').AnnotationImportReport }
   | { readonly kind: 'cancelled' }
   | { readonly kind: 'unreadable' }
   | { readonly kind: 'too-large'; readonly limitBytes: number };
@@ -4889,9 +4893,8 @@ export class DocumentCommands {
   /**
    * Adds the annotations a file the user picks carries (ADR-0077).
    *
-   * {@link importFormData}'s body and every one of its reasons, the wide catch included: a file
-   * that is not annotation data, carries nothing this build exchanges, or names a page this
-   * document lacks is the apply refusing, and that reason does not cross the host's boundary.
+   * The contained planner reports every shortfall before the shared plan places the valid
+   * records. A readable file with no records to place returns its report without a mutation.
    */
   async importAnnotations(docId: DocId, format: AnnotationDataFormat): Promise<ImportAnnotationsOutcome> {
     if (this.#documents.nameOf(docId) === undefined) {
@@ -4905,16 +4908,19 @@ export class DocumentCommands {
     if (read.kind === 'too-large') return { kind: 'too-large', limitBytes: MAX_ANNOTATION_DATA_BYTES };
     if (read.kind === 'unreadable') return { kind: 'unreadable' };
 
-    try {
-      const applied = await this.execute(docId, { kind: 'importAnnotations', format, bytes: read.bytes });
-      return { kind: 'imported', ...applied };
-    } catch (error) {
-      if (error instanceof DocumentPoisonedError || error instanceof MissingSessionError) {
-        throw error;
-      }
-      if (error instanceof DocumentNotOpenError) throw error;
-      return { kind: 'unreadable' };
-    }
+    // Only the reader/planner can decide a file is unreadable. A broken host
+    // or a failed apply goes through the normal failure reporting instead.
+    const { value: report } = await this.#documents.run(docId, () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return this.#annotationData.plan(docId, sessions, read.bytes, format);
+    });
+    if (report === 'unreadable') return { kind: 'unreadable' };
+    if (report.imported === 0) return { kind: 'nothing', report };
+    const applied = await this.execute(docId, { kind: 'importAnnotations', format, bytes: read.bytes });
+    return { kind: 'imported', ...applied, report };
   }
 
   /**

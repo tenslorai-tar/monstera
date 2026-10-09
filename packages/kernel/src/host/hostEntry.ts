@@ -4,6 +4,7 @@ import { checkAccessibility } from '../accessibilityCheck.js';
 import {
   copyAnnotationData,
   readInterchangeAnnotations,
+  readAnnotationImportPlan,
   serialiseAnnotationData,
 } from '../annotationInterchange.js';
 import { readPageBarcodes } from '../barcodeReader.js';
@@ -209,6 +210,7 @@ const engineHandlers = createEngineHandlers({
   fieldProperties: readFieldProperties,
   // WHAT AN IMPORT WOULD DO, planned here for the field list's reason: the file is hostile input and the plan walks the form.
   formImportPlan: readFormImportPlan,
+  annotationImportPlan: readAnnotationImportPlan,
   exportFormData: async (session, format) =>
     serialiseFormData(await readFormData(session), format),
   // AND A FOURTH, the snapshot's reason for a whole page: §3 assigns export

@@ -38,6 +38,7 @@ import { HELP_DIALOG } from '../dialogs/help.js';
 import { HISTORY_TRIMMED_DIALOG } from '../dialogs/historyTrimmed.js';
 import { PERMISSION_PASSWORD_REPLACED_DIALOG } from '../dialogs/permissionPasswordReplaced.js';
 import { IMPORT_ANNOTATIONS_PROBLEM_DIALOG } from '../dialogs/importAnnotationsProblem.js';
+import { IMPORT_ANNOTATIONS_RESULT_DIALOG } from '../dialogs/importAnnotationsResult.js';
 import { IMPORT_FORM_DATA_PROBLEM_DIALOG } from '../dialogs/importFormDataProblem.js';
 import { IMPORT_PAGE_AS_LAYER_DIALOG } from '../dialogs/importPageAsLayer.js';
 import { INSERT_FROM_PDF_DIALOG } from '../dialogs/insertFromPdf.js';
@@ -158,6 +159,7 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   FOLLOW_LINK_DIALOG,
   IMPORT_FORM_DATA_PROBLEM_DIALOG,
   IMPORT_ANNOTATIONS_PROBLEM_DIALOG,
+  IMPORT_ANNOTATIONS_RESULT_DIALOG,
   INSERT_IMAGE_PROBLEM_DIALOG,
   MARKDOWN_IMPORT_PROBLEM_DIALOG,
   WORKBOOK_INCOMPLETE_DIALOG,

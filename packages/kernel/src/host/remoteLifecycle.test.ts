@@ -47,6 +47,7 @@ import {
   createRemoteSessions,
   remotePdfLibHost,
   remoteSignatureHost,
+  remoteMupdfAnnotationImportPlan,
   type SessionAssets,
 } from './remoteEngine.js';
 import { PngPixelsRefused } from '../imageDimensions.js';
@@ -306,6 +307,10 @@ function joined(
       flatFields: detectFlatFields,
       fieldProperties: readFieldProperties,
       formImportPlan: readFormImportPlan,
+      annotationImportPlan: async (session, bytes, format) => {
+        const { readAnnotationImportPlan } = await import('../annotationInterchange.js');
+        return readAnnotationImportPlan(session, bytes, format);
+      },
       barcodes: () => {
         throw new Error('the lifecycle half must not read barcodes');
       },
@@ -361,6 +366,7 @@ function joined(
     held,
     open: (image: Uint8Array, opening: Opening = AS_COPIED) => openAsSupervisor(client, sessions, areas, image, opening),
     lifecycle: remoteMupdfLifecycle(client, sessions, areas),
+    annotationPlan: remoteMupdfAnnotationImportPlan(client, sessions, fileAssets(areas)),
     // THE SIGNER'S HOST HALF, through the same client and areas, with assets written where the host reads them.
     signer: remoteSignatureHost(client, sessions, areas, fileAssets(areas)),
     // AND pdf-lib's, for the same reason: a hosted command's refusal crosses this same pipe.
@@ -381,6 +387,33 @@ function fileAssets(areas: FakeAreas): SessionAssets {
     remove: (directory, name) => rm(join(directory, name), { force: true }),
   };
 }
+
+it('the contained comment planner crosses its real asset route, reports each skipped page, and removes its asset', async () => {
+  const areas = realAreas();
+  const host = joined(areas);
+  const document = await PDFDocument.create();
+  document.addPage();
+  const session = await host.open(await document.save());
+  const area = areas.made[0];
+  if (area === undefined) throw new Error('the opened session has no area');
+  const before = await readdir(area.snapshotDirectory);
+  try {
+    for (const format of ['json', 'fdf', 'xfdf'] as const) {
+      const bytes = serialiseAnnotationData([
+        { page: 0, subtype: 'Text', rect: [20, 20, 38, 38], contents: 'Placed' },
+        { page: 4, subtype: 'Text', rect: [20, 20, 38, 38], contents: 'Missing page' },
+      ], format);
+      expect(await host.annotationPlan(session, bytes, format)).toStrictEqual({
+        imported: 1, total: 2, pages: 1, skipped: [{ comment: 2, page: 5, reason: 'missing-page' }], more: 0,
+      });
+      expect(await readdir(area.snapshotDirectory)).toStrictEqual(before);
+    }
+    expect(await host.annotationPlan(session, new TextEncoder().encode('{}'), 'json')).toBe('unreadable');
+    expect(await readdir(area.snapshotDirectory)).toStrictEqual(before);
+  } finally {
+    await host.lifecycle.close(session);
+  }
+});
 
 /**
  * ONE SPELLING OF IT, because two would be the defect being fixed.
@@ -701,6 +734,9 @@ describe('remoteMupdfLifecycle', () => {
           throw new Error('the byte-size case must not export form data');
         },
         formImportPlan: () => {
+          throw new Error('this case does not plan an import');
+        },
+        annotationImportPlan: () => {
           throw new Error('a lifecycle case must not plan an import');
         },
         fieldProperties: () => {

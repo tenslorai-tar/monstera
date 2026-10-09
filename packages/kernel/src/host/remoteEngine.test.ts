@@ -370,6 +370,10 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
       flatFields: detectFlatFields,
       fieldProperties: readFieldProperties,
       formImportPlan: readFormImportPlan,
+      annotationImportPlan: async (session, bytes, format) => {
+        const { readAnnotationImportPlan } = await import('../annotationInterchange.js');
+        return readAnnotationImportPlan(session, bytes, format);
+      },
       barcodes: readPageBarcodes,
       exportAnnotationData: async (session, format) =>
         serialiseAnnotationData(await readInterchangeAnnotations(session), format),
@@ -891,6 +895,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
           throw new Error('unused');
         },
         formImportPlan: () => {
+          throw new Error('this case does not plan an import');
+        },
+        annotationImportPlan: () => {
           throw new Error('a refused-host case must not plan an import');
         },
         fieldProperties: () => {
@@ -1051,6 +1058,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
           throw new Error('the rotation-refusal case must not export a Word file');
         },
         formImportPlan: () => {
+          throw new Error('this case does not plan an import');
+        },
+        annotationImportPlan: () => {
           throw new Error('a refused-host case must not plan an import');
         },
         fieldProperties: () => {

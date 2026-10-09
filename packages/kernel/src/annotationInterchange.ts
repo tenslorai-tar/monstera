@@ -3,6 +3,12 @@ import type { PDFAnnotation, PDFDocument, PDFObject, PDFPage } from './mupdfRaw.
 import { z } from 'zod';
 
 import type { AnnotationDataFormat } from '@monstera/contract';
+import {
+  ANNOTATION_IMPORT_FIELDS,
+  MAX_ANNOTATION_IMPORT_SKIPS,
+  type AnnotationImportReport,
+  type AnnotationImportSkipped,
+} from '@monstera/contract/host';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
@@ -226,7 +232,7 @@ export const interchangeAnnotationSchema = z
     };
     const needed = needs[record.subtype];
     if (needed !== undefined && record[needed] === undefined) {
-      context.addIssue({ code: 'custom', message: `a ${record.subtype} needs its ${needed}` });
+      context.addIssue({ code: 'custom', path: [needed], message: `a ${record.subtype} needs its ${needed}` });
     }
   });
 
@@ -324,11 +330,11 @@ export async function copyAnnotationData(
  *
  * THE ONE READER OF ENTRIES, taken by the document walk and by an FDF's `/Annots` alike, so a
  * file and a document cannot disagree about what `/C` means (B3a). What differs is what each does
- * with a candidate the schema refuses: {@link tolerantRecord} for the document, a refusal for a file.
+ * with a candidate the schema refuses: {@link tolerantRecord} for the document, a named skip in an import plan.
  */
-function candidateFrom(dictionary: PDFObject, page: number): Candidate {
+function candidateFrom(dictionary: PDFObject, page: number | null | undefined): Candidate {
   const subtype = nameIn(dictionary.get('Subtype'));
-  const rect = numbersIn(dictionary.get('Rect'));
+  const rect = numericArrayEntry(dictionary.get('Rect'));
   // CHECKED BEFORE THE SECOND `get`: an absent `/BS` reads as MuPDF's shared null, which belongs to
   // no document and throws when asked for a key.
   const style = dictionary.get('BS');
@@ -337,7 +343,8 @@ function candidateFrom(dictionary: PDFObject, page: number): Candidate {
   const ink = dictionary.get('InkList');
   const strokes: number[][] = [];
   if (ink.isArray()) {
-    for (let index = 0; index < ink.length; index += 1) {
+    const length = ink.length;
+    for (let index = 0; index < length; index += 1) {
       const stroke = numbersIn(ink.get(index));
       if (stroke !== undefined) strokes.push(stroke);
     }
@@ -346,18 +353,18 @@ function candidateFrom(dictionary: PDFObject, page: number): Candidate {
     page,
     subtype,
     rect,
-    colour: numbersIn(dictionary.get('C')),
-    interiorColour: numbersIn(dictionary.get('IC')),
+    colour: numericArrayEntry(dictionary.get('C')),
+    interiorColour: numericArrayEntry(dictionary.get('IC')),
     opacity: numberIn(dictionary.get('CA')),
     borderWidth: border,
     contents: textIn(dictionary.get('Contents')),
     author: textIn(dictionary.get('T')),
     subject: textIn(dictionary.get('Subj')),
     modified: textIn(dictionary.get('M')),
-    quadPoints: numbersIn(dictionary.get('QuadPoints')),
+    quadPoints: numericArrayEntry(dictionary.get('QuadPoints')),
     inkList: strokes.length > 0 ? strokes : undefined,
-    vertices: numbersIn(dictionary.get('Vertices')),
-    line: numbersIn(dictionary.get('L')),
+    vertices: numericArrayEntry(dictionary.get('Vertices')),
+    line: numericArrayEntry(dictionary.get('L')),
     lineEndings: endings?.length === 2 ? endings : undefined,
     icon: subtype === 'Text' ? nameIn(dictionary.get('Name')) : undefined,
     defaultAppearance: subtype === 'FreeText' ? textIn(dictionary.get('DA')) : undefined,
@@ -366,6 +373,11 @@ function candidateFrom(dictionary: PDFObject, page: number): Candidate {
 
 /** A record before the schema has seen it: every entry of the record's, each of unknown shape. */
 type Candidate = { -readonly [K in keyof InterchangeAnnotation]?: unknown };
+
+/** Keep an absent entry distinct from one present with the wrong type, for the import's explanation. */
+function numericArrayEntry(value: PDFObject): number[] | null | undefined {
+  return value.isNull() ? undefined : numbersIn(value) ?? null;
+}
 
 /** The candidate's entries that are there — an absent entry is no key, as in the dictionary. */
 function present(candidate: Candidate): Candidate {
@@ -414,7 +426,8 @@ function numberIn(value: PDFObject): number | undefined {
 function numbersIn(value: PDFObject): number[] | undefined {
   if (!value.isArray()) return undefined;
   const out: number[] = [];
-  for (let index = 0; index < value.length; index += 1) {
+  const length = value.length;
+  for (let index = 0; index < length; index += 1) {
     const entry = value.get(index);
     if (!entry.isNumber()) return undefined;
     out.push(engineNumber(entry));
@@ -425,7 +438,8 @@ function numbersIn(value: PDFObject): number[] | undefined {
 function namesIn(value: PDFObject): string[] | undefined {
   if (!value.isArray()) return undefined;
   const out: string[] = [];
-  for (let index = 0; index < value.length; index += 1) {
+  const length = value.length;
+  for (let index = 0; index < length; index += 1) {
     const entry = value.get(index);
     if (!entry.isName()) return undefined;
     out.push(entry.asName());
@@ -609,7 +623,7 @@ function fdfAnnotations(records: readonly InterchangeAnnotation[]): string {
 
 /** A file that is not annotation data this build reads, with the reason it was refused. */
 export class UnreadableAnnotationDataError extends Error {
-  constructor(detail: string) {
+  constructor(detail: string, readonly entryField: AnnotationImportSkipped['field'] = 'entry') {
     super(`This annotation file was refused: ${detail}.`);
     this.name = 'UnreadableAnnotationDataError';
   }
@@ -623,36 +637,83 @@ export class NoImportableAnnotationsError extends Error {
   }
 }
 
-/** A record naming a page this document does not have. Refused whole, like a form value. */
-export class AnnotationPageMissingError extends Error {
-  constructor(page: number, pages: number) {
-    super(
-      `The file places an annotation on page ${String(page + 1)} and this document has ${String(pages)}. ` +
-        'Nothing was added: importing the rest would leave that one out with no report.',
-    );
-    this.name = 'AnnotationPageMissingError';
-  }
-}
-
 /**
  * What an annotation file says, whichever format it is in, every record checked by the one schema.
  *
- * A record the schema refuses refuses the file: the import is one command, and adding the
- * annotations that happened to be well-formed would leave the rest out with no report.
+ * Container syntax must be readable before records can be separated. The import plan below
+ * validates each record independently and reports the ones it cannot place.
  */
-export function parseAnnotationData(bytes: Uint8Array, format: AnnotationDataFormat): readonly InterchangeAnnotation[] {
-  if (format === 'fdf') return parseFdf(bytes);
+function annotationCandidates(bytes: Uint8Array, format: AnnotationDataFormat): readonly unknown[] {
+  if (format === 'fdf') return fdfCandidates(bytes);
   let text: string;
   try {
     text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
   } catch (error) {
     throw new UnreadableAnnotationDataError(error instanceof Error ? error.message : String(error));
   }
-  const candidates = format === 'json' ? jsonCandidates(text) : readXfdfAnnotations(text).flatMap(xfdfCandidate);
-  return candidates.map((candidate, index) => checked(candidate, index));
+  if (format === 'json') return jsonCandidates(text);
+  return readXfdfAnnotations(text).map((element) => {
+    try {
+      return xfdfCandidate(element)[0] ?? { subtype: element.element };
+    } catch (error) {
+      if (!(error instanceof UnreadableAnnotationDataError)) throw error;
+      // Conversion failure is confined to this record. The schema below names invalid entries
+      // without exposing parser diagnostics or treating an invalid sibling as a file failure.
+      return error;
+    }
+  });
+}
+
+/** Strict read for callers that require a complete exchange, independent of destination pages. */
+export function parseAnnotationData(bytes: Uint8Array, format: AnnotationDataFormat): readonly InterchangeAnnotation[] {
+  return annotationCandidates(bytes, format).map((candidate, index) => checked(candidate, index));
+}
+
+/** One plan for the read and the apply: invalid records and absent pages never cost valid siblings. */
+export function planAnnotationImport(
+  bytes: Uint8Array,
+  format: AnnotationDataFormat,
+  pages: number,
+  paste?: { readonly page: number; readonly nudge: boolean },
+): { readonly records: readonly InterchangeAnnotation[]; readonly report: AnnotationImportReport } {
+  const candidates = annotationCandidates(bytes, format);
+  const records: InterchangeAnnotation[] = [];
+  const skipped: AnnotationImportSkipped[] = [];
+  for (const [index, candidate] of candidates.entries()) {
+    if (candidate instanceof UnreadableAnnotationDataError) {
+      skipped.push({ comment: index + 1, reason: 'invalid-entry', field: candidate.entryField });
+      continue;
+    }
+    const parsed = interchangeAnnotationSchema.safeParse(candidate);
+    if (!parsed.success) {
+      const field = parsed.error.issues[0]?.path[0];
+      const named = ANNOTATION_IMPORT_FIELDS.find((name) => name === field) ?? 'entry';
+      const subtype = typeof candidate === 'object' && candidate !== null && 'subtype' in candidate ? candidate.subtype : undefined;
+      const unsupported = typeof subtype === 'string' && !(INTERCHANGE_SUBTYPES as readonly string[]).includes(subtype);
+      const missing = named !== 'entry' && typeof candidate === 'object' && candidate !== null &&
+        (!(named in candidate) || Reflect.get(candidate, named) === undefined);
+      skipped.push({ comment: index + 1, reason: unsupported ? 'unsupported-kind' : missing ? 'missing-entry' : 'invalid-entry', field: named });
+      continue;
+    }
+    const record = retargeted(parsed.data, paste);
+    if (record.page >= pages) {
+      skipped.push({ comment: index + 1, page: record.page + 1, reason: 'missing-page' });
+    } else records.push(record);
+  }
+  return {
+    records,
+    report: { imported: records.length, total: candidates.length, pages,
+      skipped: skipped.slice(0, MAX_ANNOTATION_IMPORT_SKIPS), more: Math.max(0, skipped.length - MAX_ANNOTATION_IMPORT_SKIPS) },
+  };
+}
+
+/** A contained query; it runs the same plan the command will apply. */
+export function readAnnotationImportPlan(session: MupdfSession, bytes: Uint8Array, format: AnnotationDataFormat): Promise<AnnotationImportReport> {
+  return withDocument(session, (document) => planAnnotationImport(bytes, format, document.countPages()).report);
 }
 
 function checked(candidate: unknown, index: number): InterchangeAnnotation {
+  if (candidate instanceof UnreadableAnnotationDataError) throw candidate;
   const parsed = interchangeAnnotationSchema.safeParse(candidate);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
@@ -694,14 +755,18 @@ function numbersOf(text: string, what: string): number[] {
   const parts = text.trim().split(/[\s,;]+/u).filter((part) => part !== '');
   return parts.map((part) => {
     const value = Number(part);
-    if (!Number.isFinite(value)) throw new UnreadableAnnotationDataError(`${what} holds "${part.slice(0, 32)}", which is not a number`);
+    if (!Number.isFinite(value)) {
+      const field = what === 'coords' ? 'quadPoints' : what === 'a gesture' ? 'inkList'
+        : what === 'start' || what === 'end' ? 'line' : what === 'vertices' ? 'vertices' : 'rect';
+      throw new UnreadableAnnotationDataError(`${what} holds "${part.slice(0, 32)}", which is not a number`, field);
+    }
     return value;
   });
 }
 
-function colourOf(text: string): number[] {
+function colourOf(text: string, field: 'colour' | 'interiorColour' = 'colour'): number[] {
   const match = /^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/u.exec(text.trim());
-  if (match === null) throw new UnreadableAnnotationDataError(`a colour "${text.slice(0, 32)}" is not #RRGGBB`);
+  if (match === null) throw new UnreadableAnnotationDataError(`a colour "${text.slice(0, 32)}" is not #RRGGBB`, field);
   return [match[1], match[2], match[3]].map((hex) => Number.parseInt(hex ?? '0', 16) / 255);
 }
 
@@ -721,7 +786,7 @@ function xfdfCandidate(element: XfdfAnnotation): unknown[] {
   const colourText = get('color');
   if (colourText !== undefined) candidate.colour = colourOf(colourText);
   const interior = get('interior-color');
-  if (interior !== undefined) candidate.interiorColour = colourOf(interior);
+  if (interior !== undefined) candidate.interiorColour = colourOf(interior, 'interiorColour');
   const opacity = get('opacity');
   if (opacity !== undefined) candidate.opacity = Number(opacity);
   const width = get('width');
@@ -764,7 +829,7 @@ function xfdfCandidate(element: XfdfAnnotation): unknown[] {
  * route. `/Page` is the FDF's own entry; a dictionary without one is refused, because guessing a
  * page would put a note somewhere its author did not.
  */
-function parseFdf(bytes: Uint8Array): readonly InterchangeAnnotation[] {
+function fdfCandidates(bytes: Uint8Array): readonly unknown[] {
   let document: mupdf.Document;
   try {
     document = mupdf.PDFDocument.openDocument(bytes, 'application/vnd.fdf');
@@ -776,18 +841,21 @@ function parseFdf(bytes: Uint8Array): readonly InterchangeAnnotation[] {
   }
   try {
     const list = document.getTrailer().get('Root').get('FDF').get('Annots');
+    if (list.isNull()) return [];
     if (!list.isArray()) throw new UnreadableAnnotationDataError('it has no /Root /FDF /Annots array');
-    const found: InterchangeAnnotation[] = [];
-    for (let index = 0; index < list.length; index += 1) {
+    const found: unknown[] = [];
+    const length = list.length;
+    for (let index = 0; index < length; index += 1) {
       const entry = list.get(index);
-      if (!entry.isDictionary()) continue;
+      if (!entry.isDictionary()) { found.push(null); continue; }
       const subtype = nameIn(entry.get('Subtype'));
-      if (subtype === undefined || !(INTERCHANGE_SUBTYPES as readonly string[]).includes(subtype)) continue;
-      const page = numberIn(entry.get('Page'));
-      if (page === undefined) {
-        throw new UnreadableAnnotationDataError(`annotation ${String(index + 1)} names no /Page`);
+      if (subtype === undefined || !(INTERCHANGE_SUBTYPES as readonly string[]).includes(subtype)) {
+        found.push({ subtype });
+        continue;
       }
-      found.push(checked(candidateFrom(entry, page), index));
+      const pageEntry = entry.get('Page');
+      const page = pageEntry.isNull() ? undefined : numberIn(pageEntry) ?? null;
+      found.push(candidateFrom(entry, page));
     }
     return found;
   } finally {
@@ -798,10 +866,10 @@ function parseFdf(bytes: Uint8Array): readonly InterchangeAnnotation[] {
 /* ------------------------------------------------------------------- apply */
 
 /**
- * Adds every annotation the file carries, or none.
+ * Adds the annotations the shared plan can place (ADR-0223).
  *
- * Every record is parsed and every page checked before the first is created, so a file naming a
- * page this document lacks changes nothing. Each annotation is created by MuPDF for its subtype,
+ * Every record is parsed and every page checked before the first is created. Each valid
+ * annotation is created by MuPDF for its subtype,
  * given its entries raw in user space, marked as this build's, and drawn by `update()`.
  */
 /**
@@ -856,14 +924,8 @@ function nudgedLine(line: readonly [number, number, number, number]): [number, n
 
 export const applyImportAnnotations: Apply<'mupdf', 'importAnnotations'> = (session, command) =>
   withDocument(session, (document) => {
-    const records = parseAnnotationData(command.bytes, command.format).map((record) =>
-      retargeted(record, command.paste),
-    );
+    const { records } = planAnnotationImport(command.bytes, command.format, document.countPages(), command.paste);
     if (records.length === 0) throw new NoImportableAnnotationsError();
-    const pages = document.countPages();
-    for (const record of records) {
-      if (record.page >= pages) throw new AnnotationPageMissingError(record.page, pages);
-    }
     // EACH PAGE ONCE: its annotations are created, then redrawn together. Redrawn one by one, every record cost as much
     // as the records already on its page (`redrawPage`): 4,000 notes on one page took 6.5 s.
     const placed = new Map<number, { readonly page: PDFPage; readonly annotations: PDFAnnotation[] }>();

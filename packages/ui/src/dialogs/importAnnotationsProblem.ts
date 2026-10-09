@@ -8,8 +8,8 @@ import { declareDialog } from '../registries/dialogs.js';
 export const IMPORT_ANNOTATIONS_PROBLEM_DIALOG_ID = 'dialog.import-annotations-problem';
 
 /**
- * What a person is told when a comment file added nothing (ADR-0077) — `importFormDataProblem.ts`'
- * two reasons and its argument for listing every cause of `unreadable` rather than guessing one.
+ * A container that cannot be read, or exceeds the read's byte bound (ADR-0223).
+ * Empty files and unusable records have their own precise import result.
  */
 export const IMPORT_ANNOTATIONS_PROBLEM_DIALOG = declareDialog({
   id: IMPORT_ANNOTATIONS_PROBLEM_DIALOG_ID,

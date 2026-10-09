@@ -26,6 +26,7 @@ import type { ReadSignature } from '../signatureRead.js';
 import type { PlaceholderRequest, PreparedSignature } from '../signatureHole.js';
 import type { FlatFieldCandidate } from '../flatFields.js';
 import type { ImportReport } from '../formData.js';
+import type { readAnnotationImportPlan } from '../annotationInterchange.js';
 import type { ListedField } from '../formFields.js';
 import type { NextSave } from '../mupdfWriter.js';
 import type { ProtectedWriting } from '../documentProtection.js';
@@ -562,6 +563,7 @@ export interface EngineHandlerParts {
   readonly fieldProperties: HostFieldPropertiesReader;
   /** How this process plans an import of form data. `engine/form-import-plan`. */
   readonly formImportPlan: HostFormImportPlanner;
+  readonly annotationImportPlan: typeof readAnnotationImportPlan;
   /** How this process reads a page's barcodes. `engine/page-barcodes`. */
   readonly barcodes: HostBarcodesReader;
 }
@@ -603,6 +605,7 @@ export function createEngineHandlers({
   flatFields,
   fieldProperties,
   formImportPlan,
+  annotationImportPlan,
   barcodes,
 }: EngineHandlerParts): Handlers<EngineChannels> {
   // THE MISS IS RETURNED, NEVER THROWN, and that is the load-bearing choice in
@@ -1144,6 +1147,21 @@ export function createEngineHandlers({
       return { ok: true, value: { fields: [...(await fieldProperties(held.session, fields))] } };
     },
 
+    'engine/annotation-import-plan': async ({ session, format, asset }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      let bytes: Uint8Array;
+      try {
+        bytes = await files.readSnapshot(held.snapshotDirectory, asset);
+      } catch (error) {
+        return failed('asset-missing', error);
+      }
+      try {
+        return { ok: true, value: await annotationImportPlan(held.session, bytes, format) };
+      } catch (error) {
+        return failed('plan-failed', error);
+      }
+    },
     'engine/form-import-plan': async ({ session, format, asset }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;

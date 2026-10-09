@@ -4471,13 +4471,36 @@ export type AnnotationDataFormat = z.infer<typeof annotationDataFormatSchema>;
 /** How large an annotation file this build reads: {@link MAX_FORM_DATA_BYTES}' bound and reason. */
 export const MAX_ANNOTATION_DATA_BYTES = 8 * 1024 * 1024;
 
+/** The entries a skipped comment can name; diagnostics never carry a parser's text. */
+export const ANNOTATION_IMPORT_FIELDS = [
+  'entry', 'page', 'subtype', 'rect', 'colour', 'interiorColour', 'opacity', 'borderWidth',
+  'contents', 'author', 'subject', 'modified', 'quadPoints', 'inkList', 'vertices', 'line',
+  'lineEndings', 'icon', 'defaultAppearance',
+] as const;
+export const MAX_ANNOTATION_IMPORT_SKIPS = 100;
+export const annotationImportSkippedSchema = z.object({
+  comment: z.number().int().positive(),
+  page: z.number().int().positive().optional(),
+  reason: z.enum(['missing-page', 'unsupported-kind', 'missing-entry', 'invalid-entry']),
+  field: z.enum(ANNOTATION_IMPORT_FIELDS).optional(),
+}).strict();
+export type AnnotationImportSkipped = z.infer<typeof annotationImportSkippedSchema>;
+export const annotationImportReportSchema = z.object({
+  imported: z.number().int().nonnegative(),
+  total: z.number().int().nonnegative(),
+  pages: z.number().int().nonnegative(),
+  skipped: z.array(annotationImportSkippedSchema).max(MAX_ANNOTATION_IMPORT_SKIPS).readonly(),
+  more: z.number().int().nonnegative(),
+}).strict();
+export type AnnotationImportReport = z.infer<typeof annotationImportReportSchema>;
+
 /**
  * Adds the annotations a file carries (ADR-0077).
  *
  * `importFormData`'s route and its reasons: main picks and reads the file, the bytes travel the
  * granted directory, and the parse happens in the engine host, where a stranger's file belongs.
- * Every record is checked and every page confirmed before the first annotation is created, so a
- * file that cannot be imported whole adds nothing.
+ * The shared import plan checks each record and destination page before creating the valid
+ * comments. Its query reports each shortfall (ADR-0223).
  */
 export const importAnnotationsSchema = z.object({
   kind: z.literal('importAnnotations'),

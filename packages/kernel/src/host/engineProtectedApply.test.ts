@@ -87,6 +87,7 @@ function build(protectedWriting: Protection) {
       formFields: refuse('read the fields'),
       fieldProperties: refuse('read a field’s properties'),
       formImportPlan: refuse('plan a form import'),
+      annotationImportPlan: refuse('plan a comment import'),
       pageRewrite: refuse('rewrite a page'),
       duplicates: refuse('look for duplicates'),
       extract: refuse('build a document'),

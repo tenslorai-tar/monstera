@@ -3,6 +3,7 @@ import { asDocId, asDocVersion, asFileHandle, messageKey, ok } from '@monstera/s
 import { describe, expect, it } from 'vitest';
 
 import { IMPORT_ANNOTATIONS_PROBLEM_DIALOG_ID } from '../dialogs/importAnnotationsProblem.js';
+import { IMPORT_ANNOTATIONS_RESULT_DIALOG_ID } from '../dialogs/importAnnotationsResult.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import { GROUP_COMMENT_FILES, TOAST_COMMENTS_IMPORTED, TOAST_COMMENTS_SAVED } from '../messages/en.js';
 import type { ToastAction } from '../primitives/Toast.js';
@@ -96,7 +97,8 @@ describe('the comment-file commands', () => {
   });
 
   it('an import that added comments reports the new version, opens nothing, and SAYS it imported (ADR-0141)', async () => {
-    const { deps, opened, applied, said } = harness({ kind: 'imported', version: 2, byteLength: 900, historyDropped: 0 });
+    const { deps, opened, applied, said } = harness({ kind: 'imported', version: 2, byteLength: 900, historyDropped: 0,
+      report: { imported: 2, total: 2, pages: 1, skipped: [], more: 0 } });
     await importAnnotationsXfdfCommand(deps).run(CONTEXT);
     expect(applied).toStrictEqual([{ version: 2, byteLength: 900 }]);
     expect(opened).toStrictEqual([]);
@@ -110,6 +112,24 @@ describe('the comment-file commands', () => {
     expect(opened).toStrictEqual([{ id: IMPORT_ANNOTATIONS_PROBLEM_DIALOG_ID, props: { reason: 'unreadable' } }]);
     expect(applied).toStrictEqual([]);
     expect(said).toStrictEqual([]);
+  });
+
+  it('a partial import refreshes the document and reports the precise missing page for every format', async () => {
+    const report = { imported: 1, total: 2, pages: 3, skipped: [{ comment: 2, page: 5, reason: 'missing-page' }], more: 0 };
+    for (const factory of [importAnnotationsJsonCommand, importAnnotationsFdfCommand, importAnnotationsXfdfCommand]) {
+      const { deps, opened, applied } = harness({ kind: 'imported', version: 2, byteLength: 900, historyDropped: 0, report });
+      await factory(deps).run(CONTEXT);
+      expect(applied).toStrictEqual([{ version: 2, byteLength: 900 }]);
+      expect(opened).toStrictEqual([{ id: IMPORT_ANNOTATIONS_RESULT_DIALOG_ID, props: report }]);
+    }
+  });
+
+  it('a readable empty file reports no comments and does not mark the document changed', async () => {
+    const report = { imported: 0, total: 0, pages: 3, skipped: [], more: 0 };
+    const { deps, opened, applied, said } = harness({ kind: 'nothing', report });
+    await importAnnotationsJsonCommand(deps).run(CONTEXT);
+    expect(opened).toStrictEqual([{ id: IMPORT_ANNOTATIONS_RESULT_DIALOG_ID, props: report }]);
+    expect([applied, said]).toStrictEqual([[], []]);
   });
 
   it('an XFDF export XML cannot carry names the format as the problem', async () => {

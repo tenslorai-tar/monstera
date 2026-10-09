@@ -32,6 +32,7 @@ import {
   formDataFormatSchema,
   formDataImportFormatSchema,
   annotationDataFormatSchema,
+  annotationImportReportSchema,
   formFieldKindSchema,
   importFormDataSchema,
   importAnnotationsSchema,
@@ -3122,6 +3123,12 @@ export const engineChannels = {
    * the wire is: {@link ENGINE_IMPORT_SKIPS_MAX} names, each cut to {@link ENGINE_IMPORT_SKIP_NAME_MAX}, and the rest
    * counted.
    */
+  'engine/annotation-import-plan': channel(
+    'Plans which comments can be placed in this session, and reports every shortfall.',
+    z.object({ session: sessionSchema, format: annotationDataFormatSchema, asset: outputNameSchema }).strict(),
+    annotationImportReportSchema,
+    ['no-such-session', 'asset-missing', 'plan-failed'],
+  ),
   'engine/form-import-plan': channel(
     'Plans what a form data file would fill in this session’s form, and reports it.',
     z.object({ session: sessionSchema, format: formDataImportFormatSchema, asset: outputNameSchema }).strict(),
