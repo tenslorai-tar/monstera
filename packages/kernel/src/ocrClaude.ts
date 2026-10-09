@@ -582,6 +582,48 @@ async function askClaudeAboutImage(
   return parsed;
 }
 
+/** How much of an axis the words of a read must span before the model's own frame is trusted for it. */
+const TRUSTED_SPAN = 0.7;
+/** The margin kept at each edge when an axis is stretched back over the raster, as a share of it. */
+const STRETCH_MARGIN = 0.02;
+/** Fewest words a spread is judged from: a few words in a corner are a corner, not a compressed frame. */
+const FEWEST_WORDS_FOR_SPAN = 4;
+
+/**
+ * The word boxes, with an axis stretched back over the raster where the model's frame was plainly too small.
+ *
+ * MEASURED 2026-10-09 (Haiku 4.5, the owner's handwritten table, a 1096 × 893 raster, live through the built app): asked for
+ * pixel coordinates — with no size, with the size said, and in thousandths of the image — the model answered boxes in a frame
+ * a half to a third the size of what it was sent: the right-most word of a table that runs to the edge ended at 395, 408 and
+ * 591 of 1096 (the first two in pixels, the last in thousandths), and the rows 0.4 of their pitch. Every word was drawn
+ * compressed toward the top-left, which put *Insert as text on the page* in a narrow column at the box's corner. The
+ * documentation's word for these coordinates is *approximate* and prompting did not move it.
+ *
+ * What stays true of an approximate frame is the ORDER and the proportions, so where the words of a read span less than
+ * {@link TRUSTED_SPAN} of an axis (and there are enough of them to judge), that axis is stretched so they span the raster
+ * less a margin. A person drags a box AROUND the writing, so the writing fills it. Each axis is judged alone, and a read that
+ * already spans its raster is not touched: this never moves a frame the model got right.
+ */
+export function fittedToRaster(
+  boxes: readonly (readonly [number, number, number, number])[],
+  width: number,
+  height: number,
+): readonly (readonly [number, number, number, number])[] {
+  if (boxes.length < FEWEST_WORDS_FOR_SPAN) return boxes;
+  const low = (at: 0 | 1): number => Math.min(...boxes.map((box) => box[at]));
+  const high = (at: 2 | 3): number => Math.max(...boxes.map((box) => box[at]));
+  const axis = (from: 0 | 1, to: 2 | 3, extent: number): ((value: number) => number) => {
+    const start = low(from);
+    const span = high(to) - start;
+    if (!(span > 0) || span >= extent * TRUSTED_SPAN) return (value) => value;
+    const margin = extent * STRETCH_MARGIN;
+    return (value) => margin + ((value - start) / span) * (extent - 2 * margin);
+  };
+  const across = axis(0, 2, width);
+  const down = axis(1, 3, height);
+  return boxes.map(([x1, y1, x2, y2]) => [across(x1), down(y1), across(x2), down(y2)] as const);
+}
+
 /** The recogniser's answer, as a page in PDF space — every box checked against its raster. */
 function pageFrom(data: z.infer<typeof answerSchema>, request: ClaudeRequest): RecognisedPage {
   const { width, height } = pngSize(request.png);
@@ -593,14 +635,11 @@ function pageFrom(data: z.infer<typeof answerSchema>, request: ClaudeRequest): R
   const toPage = (x: number, y: number): PdfPoint =>
     toPdf(viewportPoint(x + request.origin[0], y + request.origin[1]), transform);
 
-  const lines: RecognisedLine[] = [];
-  for (const line of data.lines) {
-    const words: RecognisedWord[] = [];
-    for (const word of line.words) {
-      // EVERY BOX IS CHECKED AGAINST THE RASTER IT CLAIMS TO BE IN. The schema
-      // could not bound it, and a box outside the image or inside out is a
-      // coordinate the answer got wrong — so the whole answer is refused rather
-      // than one word drawn somewhere nobody asked for.
+  // EVERY BOX IS CHECKED AGAINST THE RASTER IT CLAIMS TO BE IN, all of them before any is placed. The schema could not bound
+  // it, and a box outside the image or inside out is a coordinate the answer got wrong — so the whole answer is refused rather
+  // than one word drawn somewhere nobody asked for.
+  const checked = data.lines.map((line) =>
+    line.words.map((word) => {
       const [x1, y1, x2, y2] = word.box;
       if (
         word.box.length !== 4 ||
@@ -615,6 +654,18 @@ function pageFrom(data: z.infer<typeof answerSchema>, request: ClaudeRequest): R
           `Claude placed a word outside the ${String(width)}×${String(height)} raster it was reading`,
         );
       }
+      return { text: word.text, box: [x1, y1, x2, y2] as const };
+    }),
+  );
+  const fitted = fittedToRaster(checked.flat().map((word) => word.box), width, height);
+  let next = 0;
+
+  const lines: RecognisedLine[] = [];
+  for (const line of checked) {
+    const words: RecognisedWord[] = [];
+    for (const word of line) {
+      const [x1, y1, x2, y2] = fitted[next] ?? word.box;
+      next += 1;
       words.push({ text: word.text, box: pageBoxOf([x1, y1, x2, y2], toPage), confidence: 0 });
     }
     if (words.length === 0) continue;

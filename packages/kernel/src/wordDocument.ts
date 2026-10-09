@@ -299,7 +299,9 @@ function wordTable(table: PageTable, rich: boolean, area: PageSize): string {
           ? ''
           : `<w:shd w:val="clear" w:color="auto" w:fill="${cell.fill.map((part) => Math.round(Math.min(1, Math.max(0, part)) * 255).toString(16).padStart(2, '0')).join('')}"/>`;
       const runs = cell.lines
-        .map((line, index) => run(index === 0 ? line.text : ` ${line.text}`, rich ? line : null))
+        // A CELL'S TEXT ENDS AT ITS LAST LETTER: a recognised word is followed by the space that marks the word break, and the
+        // last word of a cell would otherwise carry it into the table.
+        .map((line, index) => run(index === 0 ? line.text.trimEnd() : ` ${line.text.trimEnd()}`, rich ? line : null))
         .join('');
       return (
         `<w:tc><w:tcPr><w:tcW w:w="${String(width * span)}" w:type="dxa"/>` +

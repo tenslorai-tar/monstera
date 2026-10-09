@@ -305,6 +305,27 @@ describe('writeRecognisedText', () => {
     expect(layerOf(bytes).lines[0]?.text).toBe('unsegmented');
   });
 
+  it('writes the SPACE between two words of a line even where they touch, so a table header is not one word (Names | Hours)', async () => {
+    // THE OWNER'S PAGE: two handwritten words with only a ruled line between them, boxes a fraction of a point apart. A reader
+    // puts a space only where the gap is wide, and extracted "NamesHours".
+    const touching = await written([
+      recognised([72, 700, 200, 716], [
+        { text: 'Names', box: [72, 700, 130, 716] },
+        { text: 'Hours', box: [130.2, 700, 190, 716] },
+      ]),
+    ]);
+    expect(layerOf(touching).lines[0]?.text).toBe('Names Hours');
+    // CONTROL: a word alone on its line, or the last of one, gets no space — nothing trailing the line's words.
+    const alone = await written([recognised([72, 700, 130, 716], [{ text: 'Names', box: [72, 700, 130, 716] }])]);
+    expect(layerOf(alone).lines[0]?.text).toBe('Names');
+    // AND TWO LINES ARE NOT RUN TOGETHER by it: the line above ends at its own last word.
+    const two = await written([
+      recognised([72, 700, 130, 716], [{ text: 'Names', box: [72, 700, 130, 716] }]),
+      recognised([72, 680, 130, 696], [{ text: 'Hours', box: [72, 680, 130, 696] }]),
+    ]);
+    expect(layerOf(two).lines.map((line) => line.text)).toStrictEqual(['Names', 'Hours']);
+  });
+
   it('skips a run with no area or no text, and says how many it drew', async () => {
     const document = await PDFDocument.create();
     const page = document.addPage([PAGE_WIDTH, PAGE_HEIGHT]);

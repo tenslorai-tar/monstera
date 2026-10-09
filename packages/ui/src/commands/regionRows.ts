@@ -83,9 +83,11 @@ export function isTabular(rows: readonly (readonly ReadLine[])[]): boolean {
  * The font size a line is put back at: one that fits both the line's height and its width, so the words land where they
  * were read and neither spill past the box nor shrink to nothing.
  *
- * @param measure the average width of a character as a share of the size — 0.5 for the sans face the text boxes use
+ * @param measure the widest an average character of the sans face the text boxes use is, as a share of the size: 0.6, not
+ *   the 0.5 of its letters alone, because a line that is a hair too wide wraps in its box and the last word is lost to the clip
+ *   (measured 2026-10-09: "Names Hours" at 25 points in a 143-point box)
  */
-export function fitSize(box: ReadBox, text: string, measure = 0.5): number {
+export function fitSize(box: ReadBox, text: string, measure = 0.6): number {
   const height = Math.abs(box.y1 - box.y0);
   const width = Math.abs(box.x1 - box.x0);
   const characters = Math.max(1, Array.from(text).length);

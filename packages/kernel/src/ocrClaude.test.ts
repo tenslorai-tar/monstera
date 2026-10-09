@@ -10,6 +10,7 @@ import {
   claudeImageLimits,
   claudeRasterScale,
   fitsClaudeImage,
+  fittedToRaster,
   pngSize,
   readTablesThroughClaude,
   recogniseThroughClaude,
@@ -212,6 +213,56 @@ describe('a raster the MODEL would resize is refused before anything is sent (th
       { png: RASTER, ...FRAME, crop: [0, 0, 1191, 1684], fetchImpl },
     );
     expect(calls).toHaveLength(1);
+  });
+});
+
+describe('fittedToRaster — a frame the model drew too small is stretched back over the raster', () => {
+  type Box = readonly [number, number, number, number];
+  /** The owner's table as Haiku 4.5 answered it on 2026-10-09: four columns whose words end at 591 of 1096. */
+  const compressed: Box[] = [
+    [12, 2, 93, 45],
+    [113, 2, 200, 45],
+    [259, 2, 376, 45],
+    [463, 2, 591, 45],
+    [12, 59, 75, 104],
+    [122, 59, 135, 104],
+    [267, 59, 304, 104],
+    [492, 59, 525, 104],
+  ];
+
+  it('stretches words that span less than 70% of an axis, in order and in proportion, to the raster less a margin', () => {
+    const fitted = fittedToRaster(compressed, 1096, 893);
+    const last = fitted[3];
+    // THE RIGHT-MOST WORD NOW ENDS NEAR THE RIGHT EDGE, the bottom row near the bottom, and the order is what it was.
+    expect(last?.[2]).toBeCloseTo(1096 * 0.98, 5);
+    expect(fitted[7]?.[3]).toBeCloseTo(893 * 0.98, 5);
+    expect(fitted[0]?.[0]).toBeCloseTo(1096 * 0.02, 5);
+    expect((fitted[1]?.[0] ?? 0) < (fitted[2]?.[0] ?? 0)).toBe(true);
+    expect((fitted[2]?.[0] ?? 0) < (fitted[3]?.[0] ?? 0)).toBe(true);
+  });
+
+  it('CONTROL: a read that already spans its raster is not touched, and a few words in a corner are a corner', () => {
+    const spread: Box[] = [
+      [20, 20, 120, 60],
+      [900, 20, 1050, 60],
+      [20, 800, 120, 860],
+      [900, 800, 1050, 860],
+    ];
+    expect(fittedToRaster(spread, 1096, 893)).toStrictEqual(spread);
+    const corner = compressed.slice(0, 3);
+    expect(fittedToRaster(corner, 1096, 893)).toStrictEqual(corner);
+  });
+
+  it('judges each axis alone: a read wide enough across is stretched only down', () => {
+    const wideNotTall: Box[] = [
+      [20, 10, 300, 40],
+      [400, 10, 700, 40],
+      [750, 10, 1060, 40],
+      [20, 60, 300, 90],
+    ];
+    const fitted = fittedToRaster(wideNotTall, 1096, 893);
+    expect(fitted[0]?.[0]).toBe(20);
+    expect(fitted[3]?.[3]).toBeCloseTo(893 * 0.98, 5);
   });
 });
 

@@ -302,10 +302,24 @@ function advancingCodes(text: string): number {
   return advancing;
 }
 
+/** The code of the space a word break is written as, in the glyphless font's two-byte encoding. */
+const SPACE_CODE = '0020';
+
 /** One run of text and the box it must occupy, in PDF user space. */
 interface PlacedRun {
   readonly text: string;
   readonly box: readonly [number, number, number, number];
+  /**
+   * Another word of the same line follows this one, so a SPACE is written after it.
+   *
+   * Words are separate runs, and a reader puts a space between two only where the gap between them is wide enough. Two words
+   * a ruled line apart in handwriting (a table's *Names* and *Hours*, the owner's page of 2026-10-08) sit a few points
+   * apart, so the reader extracted one word, *NamesHours*, and the Word table's header cell held it. The space makes the
+   * boundary the recogniser's, not the reader's guess.
+   */
+  readonly spaceAfter?: boolean;
+  /** The line the word came from, so the space is written only between two words that are WRITTEN on one line. */
+  readonly line?: RecognisedLine;
 }
 
 /**
@@ -324,7 +338,7 @@ function runsOf(lines: readonly RecognisedLine[]): readonly PlacedRun[] {
       runs.push({ text: line.text, box: line.box });
       continue;
     }
-    for (const word of line.words) runs.push({ text: word.text, box: word.box });
+    for (const word of line.words) runs.push({ text: word.text, box: word.box, line });
   }
   return runs;
 }
@@ -380,9 +394,12 @@ function quarterTurn(page: PDFPage): keyof typeof ROTATED_RUN {
 
 /** The runs of a recognition that have a box with area and a character that advances: the ones that are drawn. */
 function writableRuns(lines: readonly RecognisedLine[]): ReturnType<typeof runsOf> {
-  return runsOf(lines).filter(
+  const written = runsOf(lines).filter(
     (run) => advancingCodes(run.text) > 0 && run.box[2] > run.box[0] && run.box[3] > run.box[1],
   );
+  // A SPACE AFTER A WORD ONLY WHERE THE NEXT WRITTEN RUN IS OF THE SAME LINE: a word whose neighbour was skipped for having
+  // no area is the line's last, and a trailing space would be a character the recogniser never read.
+  return written.map((run, at) => (run.line !== undefined && written[at + 1]?.line === run.line ? { ...run, spaceAfter: true } : run));
 }
 
 /** The bytes of one content stream, or `undefined` for anything this module cannot decode (which is then left alone). */
@@ -510,6 +527,15 @@ export function writeRecognisedText(
       setTextMatrix(a, b, c, d, run.box[originX], run.box[originY]),
       showText(PDFHexString.of(codesOf(run.text))),
     );
+    if (run.spaceAfter === true) {
+      // THE SPACE sits at the word's end along the text direction (the matrix's first column) and is squeezed to a hundredth
+      // of its width, so it takes no room from the next word and moves nothing else; only the character is there.
+      operators.push(
+        setCharacterSqueeze(1),
+        setTextMatrix(a, b, c, d, run.box[originX] + a * across, run.box[originY] + b * across),
+        showText(PDFHexString.of(SPACE_CODE)),
+      );
+    }
   }
   operators.push(endText(), popGraphicsState());
   page.pushOperators(...operators);

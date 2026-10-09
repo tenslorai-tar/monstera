@@ -1415,6 +1415,13 @@ optgroup {
   resize: vertical;
 }
 
+/* A TABLE'S CELLS ARE A TAB APART, and tab stops only line up in a face whose letters are one width: in the proportional face
+   "Joe" and "Jada" ended at different stops and the columns wandered. The user agent's own monospace (there is no family token). */
+.m-region-read__text--table {
+  font-family: monospace;
+  tab-size: 10;
+}
+
 .m-region-read__text:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
