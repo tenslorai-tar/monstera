@@ -2549,6 +2549,13 @@ test('the RIBBON FOLDS PER GROUP below 1920, nothing scrolls sideways, and every
   // and a loop over the class opened the Settings dialog over the ribbon it was measuring.
   const sections = page.locator('.m-ribbon__tab[data-ribbon-section]:not([disabled])');
   const widest: number[] = [];
+  // EACH GROUP'S SMALLEST FOOTPRINT, per section, read here where every group is drawn whole: its first unit, the group's own
+  // edge, and the More it would need once anything folded. A group the width cannot hold at all goes to the row's More WHOLE,
+  // and the room that leaves must be less than that group's footprint — which is not the widest BUTTON once a group's first
+  // unit is a wide column (Tools › Application opens with Help centre, Keyboard shortcuts and Settings, and the widest button
+  // of Tools is Keyboard shortcuts). Measured on the ubuntu runner, 2026-10-09: room 130.36 against a widest button of 129.75,
+  // with the Application group moved to the row's More, which was right.
+  const footprints: number[][] = [];
   for (let index = 0; index < (await sections.count()); index += 1) {
     await sections.nth(index).click();
     await expect(tools.locator('.m-tool-button[data-command]').first()).toBeVisible();
@@ -2556,6 +2563,18 @@ test('the RIBBON FOLDS PER GROUP below 1920, nothing scrolls sideways, and every
       await tools
         .locator('.m-tool-button[data-command]')
         .evaluateAll((buttons) => Math.max(...buttons.map((button) => button.getBoundingClientRect().width))),
+    );
+    footprints.push(
+      await tools.evaluate((element) => {
+        const gauge = element.querySelector('.m-ribbon__more-gauge')?.getBoundingClientRect().width ?? 0;
+        return [...element.querySelectorAll('.m-ribbon__group')].map((group) => {
+          const row = group.querySelector('.m-ribbon__buttons');
+          const first = row?.firstElementChild?.getBoundingClientRect().width ?? 0;
+          const gap = Number.parseFloat(getComputedStyle(row ?? group).columnGap) || 0;
+          const chrome = group.getBoundingClientRect().width - (row?.getBoundingClientRect().width ?? 0);
+          return first + gap + gauge + chrome;
+        });
+      }),
     );
   }
   await sections.first().click();
@@ -2603,7 +2622,11 @@ test('the RIBBON FOLDS PER GROUP below 1920, nothing scrolls sideways, and every
     await expect(tools.locator('.m-tool-button[data-command]').first()).toBeVisible();
     if ((await more.count()) === 0) continue;
     // A SETTLED fold: the room is read once the row stops changing, not on its first frame.
-    await expect.poll(unusedRoom).toBeLessThan(widest[index] ?? 0);
+    // THE BOUND IS THE FIRST HIDDEN GROUP'S FOOTPRINT where a group went to the row's More whole, and the widest button
+    // where only buttons folded inside the groups that stayed.
+    const drawn = await tools.locator('.m-ribbon__group').count();
+    const bound = Math.max(widest[index] ?? 0, drawn < (footprints[index]?.length ?? 0) ? (footprints[index]?.[drawn] ?? 0) : 0);
+    await expect.poll(unusedRoom).toBeLessThan(bound);
     expect(await unusedRoom()).toBeGreaterThanOrEqual(-1);
     checked += 1;
   }
