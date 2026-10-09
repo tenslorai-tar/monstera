@@ -1,9 +1,10 @@
-import { PDFDocument, PDFName, PDFArray, PDFDict, PDFNumber, PDFString } from '@cantoo/pdf-lib';
+import { PDFDocument, PDFName, PDFArray, PDFDict, PDFNumber, PDFString, StandardFonts } from '@cantoo/pdf-lib';
 import { describe, expect, it } from 'vitest';
 
 import type { CommandOfKind } from '@monstera/contract';
 import { asDocVersion } from '@monstera/shared';
 
+import { ColorSpace, PDFDocument as PDFDocumentRaw } from './mupdfRaw.js';
 import { mupdfWriter } from './mupdfWriter.js';
 import { readAnnotations } from './pageAnnotations.js';
 import { applyAddLink, applySetLinkOutline, captureAddLink, readLinkAddress, readPageLinks } from './pageLinks.js';
@@ -678,5 +679,77 @@ describe('readLinkAddress (ADR-0167)', () => {
     } finally {
       await mupdfWriter.close(session);
     }
+  });
+});
+
+describe('a link leaves the page under it as it was (the owner’s review of 0.1.12.0: the linked area was white)', () => {
+  /** The page's pixels at 2× through the engine, annotations and links drawn, as the grey of the box a link sits over. */
+  async function pixelsUnder(bytes: Uint8Array, box: { x0: number; y0: number; x1: number; y1: number }): Promise<number[]> {
+    const document = new PDFDocumentRaw(bytes);
+    try {
+      const scale = 2;
+      const pixmap = document.loadPage(0).toPixmap([scale, 0, 0, scale, 0, 0], ColorSpace.DeviceGray, false, true);
+      const width = pixmap.getWidth();
+      const samples = pixmap.getPixels();
+      const out: number[] = [];
+      // THE PAGE IS 200 HIGH and the box is in PDF space (y up); the pixmap's rows run down.
+      for (let y = Math.round((200 - box.y1) * scale); y < Math.round((200 - box.y0) * scale); y += 1) {
+        for (let x = Math.round(box.x0 * scale); x < Math.round(box.x1 * scale); x += 1) out.push(samples[y * width + x] ?? 0);
+      }
+      return out;
+    } finally {
+      document.destroy();
+    }
+  }
+
+  /** A page with black text where a link will go: a link that covered it would turn dark pixels light. */
+  async function pageWithText(): Promise<Uint8Array> {
+    const blank = await PDFDocument.create();
+    const font = await blank.embedFont(StandardFonts.HelveticaBold);
+    const page = blank.addPage([200, 200]);
+    for (let line = 0; line < 8; line += 1) page.drawText('LINKED WORDS HERE', { x: 10, y: 170 - line * 14, size: 12, font });
+    return blank.save({ useObjectStreams: false });
+  }
+
+  const BOX = { x0: 10, y0: 90, x1: 150, y1: 160 };
+  const darkness = (pixels: readonly number[]): number => pixels.filter((value) => value < 128).length;
+
+  async function linked(border: 'none' | 'thin'): Promise<Uint8Array> {
+    const session = await mupdfWriter.open(await pageWithText());
+    try {
+      await applyAddLink(session, { kind: 'addLink', page: 0, rect: BOX, target: { kind: 'uri', uri: 'https://example.org/a' }, border });
+      return await mupdfWriter.serialise(session);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }
+
+  it('keeps the words under a web link and a page link as dark as they were, with the thin outline on', async () => {
+    const before = darkness(await pixelsUnder(await pageWithText(), BOX));
+    // THE TEXT IS THERE, or "as dark as it was" is a comparison of two blanks.
+    expect(before).toBeGreaterThan(500);
+    const thin = darkness(await pixelsUnder(await linked('thin'), BOX));
+    const none = darkness(await pixelsUnder(await linked('none'), BOX));
+    // THE OUTLINE ONLY ADDS: dark pixels are never fewer than the page's own.
+    expect(thin).toBeGreaterThanOrEqual(before);
+    expect(none).toBe(before);
+  });
+
+  it('CONTROL: an opaque white mark over the same box DOES cover the words, so the reading can see a cover when there is one', async () => {
+    // A LINK IS NOT DRAWN BY THE ENGINE AT ALL (it is not an annotation in its model), so the cover is a Square with an opaque
+    // white appearance: the one thing in a PDF that would put a white box over the words, which is what this reading exists to find.
+    const covered = await PDFDocument.load(await pageWithText());
+    const appearance = covered.context.stream('1 g 0 0 140 70 re f', { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 140, 70] });
+    const square = covered.context.obj({
+      Type: 'Annot',
+      Subtype: 'Square',
+      Rect: [BOX.x0, BOX.y0, BOX.x1, BOX.y1],
+      F: 4,
+      AP: { N: covered.context.register(appearance) },
+    });
+    covered.getPage(0).node.set(PDFName.of('Annots'), covered.context.obj([covered.context.register(square)]));
+    const bytes = await covered.save({ useObjectStreams: false });
+    const before = darkness(await pixelsUnder(await pageWithText(), BOX));
+    expect(darkness(await pixelsUnder(bytes, BOX))).toBeLessThan(before / 4);
   });
 });
