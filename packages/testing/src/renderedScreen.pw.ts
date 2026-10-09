@@ -2613,7 +2613,15 @@ test('the RIBBON FOLDS PER GROUP below 1920, nothing scrolls sideways, and every
     tools.evaluate((element) => {
       const last = [...element.querySelectorAll('.m-ribbon__group')].at(-1);
       if (last === undefined) return Number.POSITIVE_INFINITY;
-      const end = element.getBoundingClientRect().right - Number.parseFloat(getComputedStyle(element).paddingRight);
+      // THE ROW'S OWN MORE, when a group went to it whole, stands between the last group and the box's edge: the room a
+      // hidden group could take is what is left BEFORE it, less the gap the row charges between two items. Measured to
+      // the edge, the More's own width read as unused room — 130.36 on the ubuntu runner, against a widest button of 129.75.
+      const rest = element.querySelector('.m-ribbon__rest');
+      const style = getComputedStyle(element);
+      const end =
+        rest === null
+          ? element.getBoundingClientRect().right - Number.parseFloat(style.paddingRight)
+          : rest.getBoundingClientRect().left - (Number.parseFloat(style.columnGap) || 0);
       return end - last.getBoundingClientRect().right;
     });
   let checked = 0;
