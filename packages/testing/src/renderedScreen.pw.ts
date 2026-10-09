@@ -2561,14 +2561,21 @@ test('the RIBBON FOLDS PER GROUP below 1920, nothing scrolls sideways, and every
     await expect(tools.locator('.m-tool-button[data-command]').first()).toBeVisible();
     // THE WIDEST UNIT THE ROW FOLDS, not the widest tool: a named menu or a column of small tools is one unit and wider
     // than any `[data-command]` button inside it.
+    // PLUS THE GAP BESIDE IT: folding a unit frees its width AND the gap between it and its neighbour, so the room the
+    // last fold leaves can reach a unit and a gap before the fold would have gone one step further. Measured on the
+    // ubuntu runner 2026-10-09, Tools: room 130.36 against a widest unit of 129.75 and a gap of `--space-2`.
     widest.push(
-      await tools.evaluate((element) =>
-        Math.max(
-          ...[...element.querySelectorAll('.m-tool-button[data-command], .m-ribbon__buttons > *')].map(
-            (unit) => unit.getBoundingClientRect().width,
-          ),
-        ),
-      ),
+      await tools.evaluate((element) => {
+        const gap = Number.parseFloat(getComputedStyle(element.querySelector('.m-ribbon__buttons') ?? element).columnGap) || 0;
+        return (
+          gap +
+          Math.max(
+            ...[...element.querySelectorAll('.m-tool-button[data-command], .m-ribbon__buttons > *')].map(
+              (unit) => unit.getBoundingClientRect().width,
+            ),
+          )
+        );
+      }),
     );
     footprints.push(
       await tools.evaluate((element) => {
