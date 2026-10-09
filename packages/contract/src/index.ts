@@ -350,6 +350,7 @@ export {
   MAX_TEXT_LINE_HEIGHT,
   MAX_TEXT_PADDING,
   MAX_TEXT_RUNS,
+  MAX_TEXT_RUN_CHARS,
   MIN_TEXT_LINE_HEIGHT,
   annotationAlignSchema,
   annotationTextRunSchema,

@@ -104,9 +104,9 @@ is not available.
 - [ ] **Underline text** — Markup · `annotate.underline` · Shows: on screen · Help: *Highlight, underline or strike through text*
 - [ ] **Strikethrough text** — Markup · `annotate.strikeout` · Shows: on screen · Help: *Highlight, underline or strike through text*
 - [ ] **Select annotations** — Markup · `annotate.select` · Shows: on screen · Help: *Change how annotations look*
-- [ ] **Freehand** — Markup · `annotate.ink` · Shows: on screen · Help: *Draw freehand*
 - [ ] **Text box** — Markup · `annotate.text-box` · Shows: on screen · Help: *Add a text box*
 - [ ] **Typewriter** — Markup · `annotate.typewriter` · Shows: on screen · Help: *Type text onto a page*
+- [ ] **Freehand** — Markup · `annotate.ink` · Shows: on screen · Help: *Draw freehand*
 - [ ] **Note** — Markup · `annotate.sticky-note` · Shows: on screen · Help: *Add a note (sticky note)*
 - [ ] **Insertion mark** — Markup · `annotate.caret` · Shows: on screen · Help: *Mark where text should be inserted*
 - [ ] **Erase annotation** — Markup · `annotate.eraser` · Shows: on screen · Help: *Erase annotations*
@@ -175,12 +175,12 @@ is not available.
 
 ## Ribbon › Tools
 
-- [ ] **Settings** — Application · `app.settings` · Shows: on screen · Help: *Change Monstera's settings*
 - [ ] **Reveal diagnostics log** — Application · `log.reveal` · Shows: on screen · Help: *If something goes wrong*
 - [ ] **Components** — Application · `app.components` · Shows: on screen · Help: *Check Monstera's components*
 - [ ] **About** — Application · `app.about` · Shows: on screen · Help: *See the version and licences*
 - [ ] **Help centre** — Application · `app.help` · Shows: on screen · Help: *Get help with what you are doing*
 - [ ] **Keyboard shortcuts** — Application · `app.keyboard-shortcuts` · Shows: on screen · Help: *See and change keyboard shortcuts*
+- [ ] **Settings** — Application · `app.settings` · Shows: on screen · Help: *Change Monstera's settings*
 - [ ] **Export as PDF/A…** — Convert · `document.export-pdfa` · Shows: a toast · Help: *Save an archival copy (PDF/A)*
 - [ ] **Save a smaller copy…** — Convert · `document.optimize` · Shows: a toast · Help: *Make a smaller copy of a PDF*
 - [ ] **Export text…** — Convert · `document.export-text` · Shows: a toast · Help: *Save the text as a text file*

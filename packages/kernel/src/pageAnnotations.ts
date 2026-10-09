@@ -817,6 +817,8 @@ function writeWordsStyle(annotation: PDFAnnotation, text: AnnotationTextStyle, d
   if (!styles && !isStyled(annotation)) return;
   // REFUSED, NEVER HALF-WRITTEN: a style the box cannot show would be stored and drawn by nothing — a control that did nothing.
   const words = text.words?.map((run) => run.text).join('') ?? annotation.getContents();
+  // THE RUNS TOGETHER ARE A TEXT BOX'S WORDS and are held to its bound, which the wire's per-run bound cannot say.
+  if (words.length > MAX_ANNOTATION_TEXT) throw new RangeError(`a text box holds at most ${String(MAX_ANNOTATION_TEXT)} characters`);
   if (!isStylable(annotation) || !writable(words)) {
     throw new RangeError('this text mark cannot take styles: a callout, or words in a script the base 14 faces cannot write');
   }

@@ -1361,8 +1361,14 @@ export type AnnotationColour = z.infer<typeof annotationColourSchema>;
 
 /** The line pitch a text box may be set to, and the margin it may keep (ADR-0211): defined in `@monstera/shared`, named here too. */
 export { DEFAULT_TEXT_LINE_HEIGHT, MAX_TEXT_LINE_HEIGHT, MAX_TEXT_PADDING, MIN_TEXT_LINE_HEIGHT };
-/** How many runs of styled words one restyle may name. */
-export const MAX_TEXT_RUNS = 64;
+/**
+ * How many runs of styled words one restyle may name, and the most one run may say. The product bounds the frame: at the
+ * wire's worst (six bytes a character) 64 runs of 4096 characters were 1.6 MB against the host's 256 KB route
+ * (`hostRoutes.test.ts`, measured 2026-10-09), and sixteen of 1024 are about 100 KB. The words together are still held to
+ * {@link MAX_ANNOTATION_TEXT} where they are written.
+ */
+export const MAX_TEXT_RUNS = 16;
+export const MAX_TEXT_RUN_CHARS = 1024;
 
 /**
  * How a text mark's words are drawn, as the file says: the type size, colour, face and the side the lines sit against
@@ -1407,7 +1413,7 @@ export type AnnotationAlign = z.infer<typeof annotationAlignSchema>;
 /** A run of a text box's words and what it says of itself over the box's own style (ADR-0211 Decision 7). */
 export const annotationTextRunSchema = z
   .object({
-    text: z.string().min(1).max(MAX_ANNOTATION_TEXT),
+    text: z.string().min(1).max(MAX_TEXT_RUN_CHARS),
     bold: z.boolean().optional(),
     italic: z.boolean().optional(),
     underline: z.boolean().optional(),
