@@ -93,3 +93,10 @@ Editor 10.7.5's exports (JOURNAL, 2026-09-21) showed three of their clauses narr
   MuPDF's red.
 
 Blend modes are not exchanged: MuPDF's annotation API has none, so an imported mark is Normal.
+
+## Correction, 2026-10-09 — usable comments survive a skipped record
+
+The owner's Codex run 1 supersedes Decision 4's whole-file refusal and the
+matching rejected alternative. ADR-0223 requires one shared import plan to
+place every valid comment and report each shortfall. The original decision is
+retained above as the record of the policy it replaces.
