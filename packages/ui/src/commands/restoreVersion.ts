@@ -10,7 +10,6 @@ import {
   TOAST_RESTORE_NONE,
 } from '../messages/en.js';
 import { TOASTS, type UiCommand } from '../registries/commands.js';
-import { confirmDone } from './confirmWritten.js';
 import { type DocumentCommandDeps, hasDocument, reportProblem } from './documentCommands.js';
 import type { OpenedDocument } from './importMarkdown.js';
 import type { ShowToast } from '../toasts.js';
