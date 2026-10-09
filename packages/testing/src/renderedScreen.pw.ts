@@ -2559,10 +2559,16 @@ test('the RIBBON FOLDS PER GROUP below 1920, nothing scrolls sideways, and every
   for (let index = 0; index < (await sections.count()); index += 1) {
     await sections.nth(index).click();
     await expect(tools.locator('.m-tool-button[data-command]').first()).toBeVisible();
+    // THE WIDEST UNIT THE ROW FOLDS, not the widest tool: a named menu or a column of small tools is one unit and wider
+    // than any `[data-command]` button inside it.
     widest.push(
-      await tools
-        .locator('.m-tool-button[data-command]')
-        .evaluateAll((buttons) => Math.max(...buttons.map((button) => button.getBoundingClientRect().width))),
+      await tools.evaluate((element) =>
+        Math.max(
+          ...[...element.querySelectorAll('.m-tool-button[data-command], .m-ribbon__buttons > *')].map(
+            (unit) => unit.getBoundingClientRect().width,
+          ),
+        ),
+      ),
     );
     footprints.push(
       await tools.evaluate((element) => {
@@ -2634,7 +2640,24 @@ test('the RIBBON FOLDS PER GROUP below 1920, nothing scrolls sideways, and every
     // where only buttons folded inside the groups that stayed.
     const drawn = await tools.locator('.m-ribbon__group').count();
     const bound = Math.max(widest[index] ?? 0, drawn < (footprints[index]?.length ?? 0) ? (footprints[index]?.[drawn] ?? 0) : 0);
-    await expect.poll(unusedRoom).toBeLessThan(bound);
+    try {
+      await expect.poll(unusedRoom).toBeLessThan(bound);
+    } catch (error) {
+      // NAME THE SECTION AND THE WIDTHS: a failure here is read from a CI log on a machine this one is not.
+      const state = await tools.evaluate((element) => ({
+        scrollWidth: element.scrollWidth,
+        clientWidth: element.clientWidth,
+        rest: element.querySelector('.m-ribbon__rest') !== null,
+        groups: [...element.querySelectorAll('.m-ribbon__group')].map((group) => ({
+          width: group.getBoundingClientRect().width,
+          units: [...(group.querySelector('.m-ribbon__buttons')?.children ?? [])].map((unit) => unit.getBoundingClientRect().width),
+        })),
+      }));
+      throw new Error(
+        `section ${String(index)}: room ${String(await unusedRoom())} against bound ${String(bound)} (widest ${String(widest[index])}, footprints ${JSON.stringify(footprints[index])}) ${JSON.stringify(state)}`,
+        { cause: error },
+      );
+    }
     expect(await unusedRoom()).toBeGreaterThanOrEqual(-1);
     checked += 1;
   }
