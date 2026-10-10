@@ -10,8 +10,7 @@ import { expect } from '@playwright/test';
 import { PDFDocument } from '@cantoo/pdf-lib';
 import { developmentEnvironment } from '../lib/launchEnvironment.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
-import { popupPlaced } from '../../packages/testing/dist/settled.js';
-import { ORGANIZE_FRAME_COUNT, readOrganizeFrames, recordOrganizeFrames } from '../../packages/testing/dist/organizeFrames.js';
+import { SHELL_LAUNCH, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 
 /** @typedef {import('../../packages/kernel/dist/annotationInterchange.js').InterchangeAnnotation} Comment */
 /** @param {Comment} record @param {boolean} quantize */
@@ -24,6 +23,15 @@ function xfdfColours(record, quantize) {
 }
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+refuseStaleBuild(root, [
+  ...SHELL_LAUNCH,
+  ['packages/testing/src/settled.ts', 'packages/testing/dist/settled.js', 'tsc'],
+  ['packages/testing/src/organizeFrames.ts', 'packages/testing/dist/organizeFrames.js', 'tsc'],
+  ['packages/shared/src', 'apps/desktop/dist/renderer/index.html', 'bundler'],
+  ['packages/contract/src', 'apps/desktop/dist/renderer/index.html', 'bundler'],
+], 11);
+const { popupPlaced } = await import('../../packages/testing/dist/settled.js');
+const { ORGANIZE_FRAME_COUNT, readOrganizeFrames, recordOrganizeFrames } = await import('../../packages/testing/dist/organizeFrames.js');
 const output = join(root, '_review/codex/run-1');
 const run = process.argv[2] ?? 'baseline';
 const runFile = promisify(execFile);
