@@ -341,4 +341,12 @@ describe('MuPDF’s channel map', () => {
     expect(applied.safeParse({}).success).toBe(true);
     expect(applied.safeParse({ bytes: 12 }).success).toBe(false);
   });
+
+  it('a protection prior carries its known opening key on capture and inverse, and remains strict', () => {
+    const value = { kind: 'setDocumentProtection', prior: { standing: 'protected', passwordTerms: 'encrypt=aes-256', userPassword: 'sample-opening-key' } };
+    expect(engineChannels['engine/capture'].result.parse({ captured: true, value })).toStrictEqual({ captured: true, value });
+    const params = { session: 'a'.repeat(43), inverse: value };
+    expect(engineChannels['engine/invert'].params.parse(params)).toStrictEqual(params);
+    expect(engineChannels['engine/invert'].params.safeParse({ ...params, inverse: { ...value, prior: { ...value.prior, unregistered: true } } }).success).toBe(false);
+  });
 });

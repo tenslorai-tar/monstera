@@ -52,7 +52,7 @@ const SAME = 'one-for-both-0220';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 17 });
+const roster = createRoster(failures, { cases: 33 });
 
 /** @param {string} name @param {boolean} held @param {string} detail */
 function check(name, held, detail) {
@@ -423,6 +423,60 @@ async function main(/** @type {any} */ kernel) {
     }
   }
 
+  // PROTECTION UNDO, with a separate reader for every saved result (ADR-0224).
+  // This belongs beside the existing native/WASM comparison: importing the WASM
+  // SDK into the native TypeScript project merges their unrelated global pointer brands.
+  for (const encryption of ['rc4-40', 'rc4-128', 'aes-128', 'aes-256']) {
+    const added = await open(plain);
+    try {
+      const captured = await kernel.captureSetDocumentProtection(added);
+      if (!captured.captured) throw new Error(captured.reason);
+      await kernel.localMupdfExecution.apply({ session: added, command: { kind: 'setDocumentProtection', encryption, userPassword: USER, ownerPassword: OWNER }, sources: [], reads: undefined });
+      const applied = read(await kernel.mupdfWriter.serialise(added));
+      await kernel.invertSetDocumentProtection(added, captured.prior);
+      const restored = read(await kernel.mupdfWriter.serialise(added));
+      const original = read(plain);
+      check(`${encryption}: adding protection, undoing and saving restores the plain document`,
+        applied.encrypted && applied.access === 0 && !restored.encrypted && restored.access === 1 && restored.pages === original.pages && restored.text === original.text,
+        JSON.stringify({ applied: applied.access, restored: restored.access, pages: restored.pages }));
+    } finally {
+      await kernel.mupdfWriter.close(added);
+    }
+    for (const change of ['permissions', 'passwords', 'removal']) {
+      const session = await open(plain);
+      try {
+        const first = { kind: 'setDocumentProtection', encryption, userPassword: USER, ownerPassword: OWNER, permissions: ['print', 'fill-forms'] };
+        await kernel.localMupdfExecution.apply({ session, command: first, sources: [], reads: undefined });
+        const original = read(await kernel.mupdfWriter.serialise(session), USER);
+        const captured = await kernel.captureSetDocumentProtection(session);
+        if (!captured.captured) throw new Error(captured.reason);
+        const command = change === 'removal' ? { kind: 'setDocumentProtection', encryption: 'none' }
+          : change === 'passwords' ? { ...first, userPassword: 'next-open-0224', ownerPassword: 'next-owner-0224' }
+            : { ...first, permissions: ['copy'] };
+        await kernel.localMupdfExecution.apply({ session, command, sources: [], reads: undefined });
+        const changedBytes = await kernel.mupdfWriter.serialise(session);
+        const changed = read(changedBytes, change === 'passwords' ? 'next-open-0224' : USER);
+        const took = change === 'removal' ? !changed.encrypted
+          : change === 'passwords' ? changed.access === 2 && read(changedBytes, USER).access === 0
+            : changed.permissions !== original.permissions;
+        await kernel.invertSetDocumentProtection(session, captured.prior);
+        const restored = await kernel.mupdfWriter.serialise(session);
+        const asUser = read(restored, USER);
+        const asOwner = read(restored, OWNER);
+        const kept = asUser.access === 2 && asOwner.access === 4 && read(restored).access === 0 && read(restored, 'next-open-0224').access === 0
+          && asUser.permissions === original.permissions && asUser.version === original.version && asUser.pages === original.pages && asUser.text === original.text;
+        const marked = await runCommand(kernel, session, COMMANDS[0][1], undefined);
+        const after = read(marked, USER);
+        check(`${encryption}: undoing ${change} keeps both passwords and permissions, and the next Watermark saves protected`,
+          took && kept && after.access === 2 && read(marked, OWNER).access === 4 && read(marked).access === 0
+            && after.permissions === original.permissions && after.pages === original.pages && after.text.includes('DRAFT') && after.text.includes('Original words'),
+          JSON.stringify({ took, kept, user: after.access, owner: read(marked, OWNER).access, permissions: after.permissions, pages: after.pages }));
+      } finally {
+        await kernel.mupdfWriter.close(session);
+      }
+    }
+  }
+
   process.stdout.write(
     failures.length > 0
       ? `\n${String(failures.length)} protected pdf-lib case(s) FAILED:\n\n  - ${failures.join('\n\n  - ')}\n`
@@ -441,7 +495,7 @@ if (bindNativeEngine(ROOT) === null) {
   });
 } else {
   refuseStaleBuild(ROOT, PDF_LIB_PROTECTED, 7);
-  const [{ mupdfWriter }, { localMupdfExecution }, { localPdfLibWriter }, { applyPdfLibImage }, { protectedWritingOf }] =
+  const [{ mupdfWriter }, { localMupdfExecution }, { localPdfLibWriter }, { applyPdfLibImage }, { protectedWritingOf, captureSetDocumentProtection, invertSetDocumentProtection }] =
     await Promise.all([
       import('../../packages/kernel/dist/mupdfWriter.js'),
       import('../../packages/kernel/dist/commandSpecs.js'),
@@ -449,5 +503,5 @@ if (bindNativeEngine(ROOT) === null) {
       import('../../packages/kernel/dist/pdfLibWriter.js'),
       import('../../packages/kernel/dist/documentProtection.js'),
     ]);
-  await main({ mupdfWriter, localMupdfExecution, localPdfLibWriter, applyPdfLibImage, protectedWritingOf });
+  await main({ mupdfWriter, localMupdfExecution, localPdfLibWriter, applyPdfLibImage, protectedWritingOf, captureSetDocumentProtection, invertSetDocumentProtection });
 }

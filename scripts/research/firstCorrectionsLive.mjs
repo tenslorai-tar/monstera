@@ -2,10 +2,12 @@
 /** Drives an isolated development app with Playwright's real mouse and keyboard. */
 import { copyFile, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
+import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { _electron } from 'playwright';
 import { expect } from '@playwright/test';
-import { PDFDict, PDFDocument, PDFName, PDFNumber } from '@cantoo/pdf-lib';
+import { PDFDocument } from '@cantoo/pdf-lib';
 import { developmentEnvironment } from '../lib/launchEnvironment.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
 import { popupPlaced } from '../../packages/testing/dist/settled.js';
@@ -24,6 +26,7 @@ function xfdfColours(record, quantize) {
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const output = join(root, '_review/codex/run-1');
 const run = process.argv[2] ?? 'baseline';
+const runFile = promisify(execFile);
 await mkdir(output, { recursive: true });
 const sample = join(output, 'form-test-view-copy.pdf');
 const form = join(output, 'form-test-copy.pdf');
@@ -71,13 +74,13 @@ async function drive() {
   await open.click();
   await page.locator('canvas.m-page').first().waitFor({ state: 'visible' });
   await page.screenshot({ path: join(output, `${run}-01-open.png`) });
-  if (run === 'protection-baseline' || run === 'protection') {
+  if (run === 'protection-baseline' || run === 'protection' || run === 'protection-memory-baseline' || run === 'protection-memory') {
     const user = 'run-one-open';
     const owner = 'run-one-owner';
     /** @param {string} name */
     const shot = (name) => page.screenshot({ path: join(output, `${run}-${name}.png`), animations: 'disabled' });
-    /** @param {'add' | 'permissions' | 'password' | 'remove'} change */
-    const protect = async (change) => {
+    /** @param {'add' | 'permissions' | 'password' | 'remove'} change @param {string} tag */
+    const protect = async (change, tag = change) => {
       await command('Password and permissions');
       const dialog = page.getByRole('dialog', { name: 'Password and permissions', exact: true });
       if (change === 'remove') {
@@ -89,10 +92,15 @@ async function drive() {
         await dialog.getByLabel('Password to change permissions (optional)', { exact: true }).fill(change === 'password' ? 'run-one-next-owner' : owner);
         if (change === 'permissions') await dialog.locator('[data-protect-permission="copy"]').uncheck();
       }
-      await shot(`02-${change}-dialog`);
-      await dialog.getByRole('button', { name: change === 'remove' ? 'Remove protection' : 'Protect document', exact: true }).click();
+      await popupPlaced(page, dialog, 'protection dialog');
+      await shot(`02-${tag}-dialog`);
+      const button = dialog.getByRole('button', { name: change === 'remove' ? 'Remove protection' : 'Protect document', exact: true });
+      const buttonBox = await button.boundingBox();
+      if (buttonBox === null) throw new Error('the protection action has no box');
+      const edge = run === 'protection' || run === 'protection-memory';
+      await page.mouse.click(buttonBox.x + (edge ? buttonBox.width - 3 : buttonBox.width / 2), buttonBox.y + buttonBox.height / 2);
       await page.getByText('Password and permissions set. They are applied when you save.', { exact: true }).last().waitFor();
-      await shot(`03-${change}-applied`);
+      await shot(`03-${tag}-applied`);
     };
     const save = async () => {
       const started = Date.now();
@@ -100,17 +108,25 @@ async function drive() {
       await expect.poll(async () => (await stat(five)).mtimeMs >= started).toBe(true);
       await expect(page.getByRole('status', { name: 'Document status', exact: true })).toContainText('Saved');
     };
-    const facts = async () => {
+    /** @param {number} pages */
+    const facts = async (pages = 5) => {
       const bytes = await readFile(five);
       let withoutPassword = true;
       try { await PDFDocument.load(bytes, { updateMetadata: false }); } catch { withoutPassword = false; }
       const document = await PDFDocument.load(bytes, { password: user, updateMetadata: false });
       await PDFDocument.load(bytes, { password: owner, updateMetadata: false });
-      const encryption = document.context.lookup(document.context.trailerInfo.Encrypt);
-      if (!(encryption instanceof PDFDict)) throw new Error('the independent reader found no encryption dictionary');
-      const permissions = encryption.lookup(PDFName.of('P'), PDFNumber).asNumber();
-      if (!Number.isInteger(permissions)) throw new Error('the independent reader found no permission integer');
-      return { withoutPassword, userOpens: true, ownerOpens: true, permissions };
+      let wrongPasswordOpens = true;
+      try { await PDFDocument.load(bytes, { password: 'run-one-wrong', updateMetadata: false }); } catch { wrongPasswordOpens = false; }
+      expect(wrongPasswordOpens).toBe(false);
+      expect(document.getPageCount()).toBe(pages);
+      // pdf-lib removes /Encrypt from its readable in-memory document. Read
+      // the original file's permission integer with the independent qpdf CLI.
+      const { stdout } = await runFile('qpdf', [`--password=${user}`, '--show-encryption', five]);
+      const qpdfPermissions = /^P = (-?\d+)\s*$/mu.exec(stdout)?.[1];
+      if (qpdfPermissions === undefined) throw new Error('qpdf did not report the permission integer');
+      const permissions = Number(qpdfPermissions);
+      expect(Number.isInteger(permissions)).toBe(true);
+      return { withoutPassword, userOpens: true, ownerOpens: true, wrongPasswordOpens, permissions, pages: document.getPageCount() };
     };
     /** @param {string} name */
     const reopen = async (name) => {
@@ -127,7 +143,51 @@ async function drive() {
       await page.locator('canvas.m-page').first().waitFor();
       await shot(`06-${name}-reopened`);
     };
+    if (run === 'protection-memory-baseline' || run === 'protection-memory') {
+      await protect('add');
+      await protect('permissions');
+      await page.keyboard.press('Control+Z');
+      await shot('07-permissions-undone');
+      await command('Watermark…');
+      const watermark = page.getByRole('dialog', { name: 'Watermark', exact: true });
+      await watermark.getByLabel('Text', { exact: true }).fill('Run one protected watermark');
+      await popupPlaced(page, watermark, 'watermark dialog');
+      await shot('10-watermark-dialog');
+      await watermark.getByRole('button', { name: 'Add watermark', exact: true }).click();
+      if (run === 'protection-memory-baseline') {
+        const problem = page.getByRole('dialog', { name: 'That could not be done', exact: true });
+        await problem.waitFor();
+        await popupPlaced(page, problem, 'watermark refusal after undo');
+        await shot('11-watermark-refused-after-undo');
+        process.stdout.write('The built app refused Watermark after the in-session protection undo.\n');
+        return;
+      }
+      await page.getByText('Run one protected watermark', { exact: true }).first().waitFor();
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+      await shot('11-watermark-added-after-undo');
+      await save();
+      const restored = await facts();
+      expect(restored.withoutPassword).toBe(false);
+      process.stdout.write(`${run}, page command after protection undo: ${JSON.stringify(restored)}\n`);
+      await shot('12-watermark-saved-protected');
+      await reopen('page-command');
+      return;
+    }
     await protect('add');
+    await page.keyboard.press('Control+Z');
+    await shot('07-add-undone');
+    await save();
+    const plain = await PDFDocument.load(await readFile(five), { updateMetadata: false });
+    expect(plain.getPageCount()).toBe(5);
+    expect(plain.context.trailerInfo.Encrypt).toBeUndefined();
+    expect((await runFile('qpdf', ['--show-encryption', five])).stdout.trim()).toBe('File is not encrypted');
+    await shot('08-add-saved-plain');
+    await page.keyboard.press('Control+W');
+    await page.getByRole('button', { name: 'Open PDF…', exact: true }).click();
+    await page.locator('canvas.m-page').first().waitFor();
+    await expect(page.getByRole('dialog', { name: 'This document is protected', exact: true })).toHaveCount(0);
+    await shot('09-add-reopened-plain');
+    await protect('add', 'establish');
     await save();
     const original = await facts();
     expect(original.withoutPassword).toBe(false);

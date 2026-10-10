@@ -18,6 +18,10 @@ tries an empty password and refuses the next pdf-lib command. The refusal was
 measured before changing the protection code, after independently checking
 that both original passwords and the permission integer were still correct.
 
+The old built app also refused Watermark after those protection changes and
+Undo, matching the direct kernel control. Insert blank page succeeded because
+its declaration uses MuPDF and does not ask for the readable pdf-lib copy.
+
 ## Decision
 
 The protected prior carries both `passwordTerms` and the optional known
@@ -47,10 +51,20 @@ encrypted checkpoint, preserving the owner password that was never known.
 ## Consequences and proof
 
 The prior gains one bounded optional field, and its transport proof must show
-that field arrives whole while remaining absent from files. The kernel proof
-applies, inverts, serialises and reads each protection change with a separate
-WASM reader. It checks both passwords, permissions, page count and original
-text, then inserts a page through the actual pdf-lib command and writes it
+that field arrives whole while remaining absent from files. The kernel unit
+regression checks the known key and the next pdf-lib command. The existing
+`proof:pdflibprotected` vehicle applies, inverts, serialises and reads each
+protection change with a separate WASM reader. It checks both passwords, permissions, page count and original
+text, then adds a watermark through the actual pdf-lib command and writes it
 protected again. Addition is checked against the original plain document.
 The native app's successful save/reopen cases remain a separate observation;
 this decision does not claim that their saved-file protection was broken.
+
+The first proof draft chose Insert blank page for that follow-up, but its
+declaration routes it to MuPDF. The pdf-lib writer correctly rejected that
+test call. Watermark is the declared pdf-lib operation used by the proof.
+
+The comparison lives in that script rather than the native TypeScript project:
+the two engine SDKs declare unrelated global pointer brands. The existing
+script already reads native output with the WASM engine in a separate type
+context. No production SDK type or compiler check is weakened.

@@ -302,7 +302,7 @@ export const applySetDocumentProtection: Apply<'mupdf', 'setDocumentProtection'>
  * undo with the key the document was opened with.
  */
 export type PriorProtection =
-  | { readonly standing: 'protected'; readonly passwordTerms: string }
+  | { readonly standing: 'protected'; readonly passwordTerms: string; readonly userPassword?: string | undefined }
   | { readonly standing: 'unprotected' };
 
 /**
@@ -313,10 +313,16 @@ export const captureSetDocumentProtection = async (
   session: MupdfSession,
 ): Promise<CaptureResult<PriorProtection>> => {
   const { terms, encrypted } = await sessionProtection(session);
-  // THE OPTIONS ONLY: the prior is lifted across the host's pipe as a credential, and the password that opens the result is
-  // not part of what an undo restores (ADR-0220's record keeps it for a pdf-lib command; after an undo it is not known here,
-  // so such a command is refused as `protection-not-reproducible` until the document is reopened, never written wrongly).
-  if (terms !== undefined) return { captured: true, prior: { standing: 'protected', passwordTerms: terms.options } };
+  // BOTH PARTS OF THE KNOWN RECORD (ADR-0224): the options keep the file protected, and the opening key lets a later
+  // pdf-lib command read its copy. Both names are credentials lifted into the transport frame, never a file or the log.
+  if (terms !== undefined) return {
+    captured: true,
+    prior: {
+      standing: 'protected',
+      passwordTerms: terms.options,
+      ...(terms.userPassword === undefined ? {} : { userPassword: terms.userPassword }),
+    },
+  };
   if (!encrypted) return { captured: true, prior: { standing: 'unprotected' } };
   return {
     captured: false,
@@ -335,7 +341,7 @@ export const invertSetDocumentProtection = async (
   prior: PriorProtection,
 ): Promise<void> => {
   if (prior.standing === 'protected') {
-    await restoreSessionProtection(session, { options: prior.passwordTerms, userPassword: undefined });
+    await restoreSessionProtection(session, { options: prior.passwordTerms, userPassword: prior.userPassword });
     return;
   }
   const { encrypted } = await sessionProtection(session);

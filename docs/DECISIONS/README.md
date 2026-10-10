@@ -58,7 +58,7 @@ Each contains:
 
 | ADR | Title | Status |
 |---|---|---|
-| [0224](0224-protection-undo-restores-the-whole-protection-record.md) | Protection undo restores the whole protection record | Accepted 2026-10-10; preserves the known opening key beside the writer options, implementation follows |
+| [0224](0224-protection-undo-restores-the-whole-protection-record.md) | Protection undo restores the whole protection record | Accepted 2026-10-10; built with the known opening key beside the writer options and 33 native/WASM protection cases |
 | [0223](0223-comment-imports-place-every-valid-record-and-report-every-shortfall.md) | Comment imports place every valid record and report every shortfall | Accepted 2026-10-09; supersedes ADR-0077's whole-file refusal; built with a structured partial-import report |
 | [0001](0001-agpl-on-the-microsoft-store.md) | AGPL-3.0 on the Microsoft Store | Accepted; mechanism corrected 2026-08-17 |
 | [0002](0002-brand-mark-treatment.md) | Brand mark treatment — composite logo used as supplied | Accepted; noted 2026-09-19 (three owner-supplied masters replace `logo.png`) and 2026-09-23 (**two masters**: `monstera_logo_square.png` retired by the owner, and the mark alone is the application icon, the taskbar button, the title bar, the Store tiles and the file-type icon); noted 2026-10-07 (the owner's new logo is the master; the `.ico` is trimmed like the Store's icons); noted 2026-10-08 (the logo of 2026-10-08 fills the square edge to edge) |

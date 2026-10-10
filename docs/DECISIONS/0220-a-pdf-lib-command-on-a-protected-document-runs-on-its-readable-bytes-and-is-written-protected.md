@@ -99,4 +99,6 @@ unprotected, which is every handler test; the production entry supplies it, load
 the prior retain both parts of the structured protection record. The inverse
 formerly restored only its writer options and discarded a known opening key,
 so this decision's readable-copy step failed after a direct kernel undo.
-The saved-file password remained intact in the native app checks.
+The saved-file password remained intact in the native app checks. The existing
+`proof:pdflibprotected` now includes the 16 protection-undo comparisons across
+the four schemes, bringing its roster from 17 to 33 cases.

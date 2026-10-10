@@ -35,7 +35,7 @@ const channels = {
     'takes a key and a note, and answers a prior carrying terms and the note back',
     z.object({ session: z.string(), password: z.string(), note: z.string() }).strict(),
     z
-      .object({ prior: z.object({ standing: z.literal('protected'), passwordTerms: z.string() }).strict(), note: z.string() })
+      .object({ prior: z.object({ standing: z.literal('protected'), passwordTerms: z.string(), userPassword: z.string() }).strict(), note: z.string() })
       .strict(),
   ),
 } as const;
@@ -77,7 +77,7 @@ async function run(): Promise<Run> {
         readAll();
         handed.push(params);
         return Promise.resolve(
-          ok({ prior: { standing: 'protected' as const, passwordTerms: `user-password="${params.password}"` }, note: params.note }),
+          ok({ prior: { standing: 'protected' as const, passwordTerms: `user-password="${params.password}"`, userPassword: params.password }, note: params.note }),
         );
       },
     },
@@ -160,7 +160,7 @@ describe('a credential crosses to a host in the frame, never in a file (ADR-0171
     expect(result.handed).toStrictEqual([{ session: 's1', password: SECRET, note: `the note: ${SECRET}` }]);
     expect(result.answer).toStrictEqual({
       ok: true,
-      value: { prior: { standing: 'protected', passwordTerms: `user-password="${SECRET}"` }, note: `the note: ${SECRET}` },
+      value: { prior: { standing: 'protected', passwordTerms: `user-password="${SECRET}"`, userPassword: SECRET }, note: `the note: ${SECRET}` },
     });
     // AND NOTHING IS LEFT once the call has ended.
     expect(result.left).toStrictEqual([]);

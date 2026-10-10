@@ -1,4 +1,5 @@
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
+import type { CommandOfKind } from '@monstera/contract';
 import * as mupdf from './mupdfRaw.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 
@@ -8,7 +9,9 @@ import {
   invertSetDocumentProtection,
   permissionBits,
   protectionOptions,
+  protectedWritingOf,
 } from './documentProtection.js';
+import { applyPdfLibImage } from './pdfLibWriter.js';
 import type { ByteImage } from './engineSeam.js';
 import { mupdfWriter, restoreSessionProtection } from './mupdfWriter.js';
 
@@ -25,6 +28,31 @@ import { mupdfWriter, restoreSessionProtection } from './mupdfWriter.js';
  * subject here is always a round trip.
  */
 let written: ByteImage;
+
+it('protection undo keeps the known opening key for the next pdf-lib command', async () => {
+  const session = await mupdfWriter.open(written);
+  try {
+    const original = { kind: 'setDocumentProtection', encryption: 'aes-256', userPassword: 'first,open"key', ownerPassword: 'first-owner', permissions: ['print'] } satisfies CommandOfKind<'setDocumentProtection'>;
+    await applySetDocumentProtection(session, original);
+    const captured = await captureSetDocumentProtection(session);
+    if (!captured.captured) throw new Error(captured.reason);
+    expect(captured.prior).toMatchObject({ standing: 'protected', userPassword: original.userPassword });
+    await applySetDocumentProtection(session, { ...original, permissions: ['copy'] });
+    await mupdfWriter.serialise(session);
+    await invertSetDocumentProtection(session, captured.prior);
+    const writing = await protectedWritingOf(session);
+    if (writing === undefined) throw new Error('the restored document lost its protection');
+    const plain = await writing.plain();
+    expect((await PDFDocument.load(plain)).getPageCount()).toBe(1);
+    const marked = await applyPdfLibImage(plain, { kind: 'watermarkPages', pages: 'all', text: 'Protection undo proof', opacity: 0.3, rotationDegrees: 0, fontSize: 24 }, undefined);
+    const saved = await writing.protect(marked);
+    await expect(mupdfWriter.open(saved)).rejects.toThrow('encrypted');
+    await mupdfWriter.close(await mupdfWriter.open(saved, original.userPassword));
+    await mupdfWriter.close(await mupdfWriter.open(saved, original.ownerPassword));
+  } finally {
+    await mupdfWriter.close(session);
+  }
+});
 
 beforeAll(async () => {
   const document = await PDFDocument.create();

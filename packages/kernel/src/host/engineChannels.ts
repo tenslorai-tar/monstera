@@ -809,7 +809,11 @@ const capturedPriorSchema = z.discriminatedUnion('kind', [
        */
       prior: z.discriminatedUnion('standing', [
         z
-          .object({ standing: z.literal('protected'), passwordTerms: z.string().min(1).max(PROTECTION_TERMS_MAX) })
+          .object({
+            standing: z.literal('protected'),
+            passwordTerms: z.string().min(1).max(PROTECTION_TERMS_MAX),
+            userPassword: z.string().max(DOCUMENT_PASSWORD_MAX_CHARS).optional(),
+          })
           .strict(),
         z.object({ standing: z.literal('unprotected') }).strict(),
       ]),
