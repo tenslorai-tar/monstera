@@ -67,3 +67,24 @@ fail, including the actual unchanged live harness; restoring this correction
 passed all 26. The resolver table and two subject-file exclusions are unchanged.
 The executable expression must be the resolver call itself: a value starting
 with that call but falling back to `process.execPath` is not certified.
+
+## Correction, 2026-10-10 — Compiler loading and job placement
+
+The first implementation at `5b7b96eb` imported TypeScript directly and left
+its two workflow steps on Guards. That job deliberately does not install
+`node_modules`. This machine's installed compiler masked the placement error;
+the workflow source and existing job-placement check expose it. Main has not
+moved to this commit.
+
+The scanner must load the compiler through the existing
+`scripts/lib/loadTypeScript.mjs`, the one owner of its resolution and refusal.
+It must not duplicate that loader or fall back to the old text scan. Move both
+the proof and the actual check, still annotated, into the existing CI build
+matrix that runs `npm ci` on Windows and Ubuntu. This follows the placement of
+the other compiler-based security instruments; it installs nothing in Guards
+and removes no check from the combined CI/Guards gate.
+
+The existing `check:jobplacement` is the control: the old placement must be
+rejected and the new placement must pass. The scanner's 26 cases must still
+pass through the shared compiler loader. This correction is recorded in its
+own commit before changing the loader use or workflows.
