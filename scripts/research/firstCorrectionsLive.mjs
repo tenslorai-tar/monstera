@@ -206,6 +206,74 @@ async function drive() {
     await reopen('final');
     return;
   }
+  if (run === 'comments-catalogue') {
+    const document = await PDFDocument.create();
+    const [firstPage] = await document.copyPages(source, [0]);
+    if (firstPage === undefined) throw new Error('The test source must have its first page');
+    document.addPage(firstPage);
+    const single = join(output, 'one-page-copy.pdf');
+    await writeFile(single, await document.save());
+    /** @param {string} file */
+    const pick = async (file) => app.evaluate(({ dialog }, picked) => {
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [picked] });
+    }, file);
+    await pick(single);
+    await page.getByRole('button', { name: 'Open another document' }).click();
+    await page.getByRole('button', { name: 'one-page-copy.pdf', exact: true }).waitFor();
+    await page.screenshot({ path: join(output, 'comments-catalogue-02-one-page.png') });
+    /** @param {string} format @param {string} file @param {string} shot @param {boolean} edge */
+    const report = async (format, file, shot, edge) => {
+      await pick(file);
+      await page.locator('[data-ribbon-section="review"]').first().click();
+      const button = page.getByRole('button', { name: `Import ${format.toUpperCase()}`, exact: true });
+      const bounds = await button.boundingBox();
+      if (bounds === null) throw new Error('The comments import must have a box');
+      await page.mouse.click(bounds.x + (edge ? bounds.width - 3 : bounds.width / 2), bounds.y + bounds.height / 2);
+      const dialog = page.getByRole('dialog', { name: 'Comments import', exact: true });
+      await dialog.waitFor();
+      await popupPlaced(page, dialog, 'catalogue comments report');
+      await page.screenshot({ path: join(output, `comments-catalogue-${shot}.png`), animations: 'disabled' });
+      return dialog;
+    };
+    const dismiss = async () => {
+      await page.keyboard.press('Escape');
+      await page.getByRole('dialog', { name: 'Comments import', exact: true }).waitFor({ state: 'hidden' });
+      await page.keyboard.press('Control+Z');
+    };
+    for (const format of ['json', 'fdf', 'xfdf']) {
+      const dialog = await report(format, join(output, `comments-roundtrip.${format}`), `03-one-page-${format}`, format === 'fdf');
+      await expect(dialog).toContainText('Comment 2 was on page 5, which this document does not have (1 page).');
+      await expect(dialog).toContainText('1 comment imported.');
+      await dismiss();
+    }
+    const exported = /** @type {{ annotations: readonly Comment[] }} */ (JSON.parse(await readFile(join(output, 'comments-roundtrip.json'), 'utf8')));
+    const first = exported.annotations[0];
+    if (first === undefined) throw new Error('The earlier export must contain its first comment');
+    const mixed = join(output, 'comments-catalogue-mixed.json');
+    await writeFile(mixed, JSON.stringify({ ...exported, annotations: [first,
+      { ...first, subtype: 'FutureNote' }, { ...first, rect: 'not a position' },
+    ] }));
+    const mixedDialog = await report('json', mixed, '04-kind-and-field', true);
+    await expect(mixedDialog).toContainText('Comment 2: Monstera cannot import this kind of comment.');
+    await expect(mixedDialog).toContainText('Comment 3 has an invalid position entry.');
+    await dismiss();
+    const long = join(output, 'comments-catalogue-long.json');
+    await writeFile(long, JSON.stringify({ ...exported, annotations: [first,
+      ...Array.from({ length: 101 }, () => ({ ...first, page: 4 })),
+    ] }));
+    const longDialog = await report('json', long, '05-long-report', false);
+    await expect(longDialog.getByRole('listitem')).toHaveCount(100);
+    await expect(longDialog).toContainText('1 more comment was skipped. The list above shows the first 100.');
+    await expect(longDialog.getByRole('button', { name: 'OK', exact: true })).toBeInViewport();
+    const longBounds = await longDialog.boundingBox();
+    if (longBounds === null) throw new Error('The long report must have a box');
+    await page.mouse.move(longBounds.x + longBounds.width / 2, longBounds.y + longBounds.height / 2);
+    await page.mouse.wheel(0, 10_000);
+    await expect(longDialog.getByText('1 more comment was skipped. The list above shows the first 100.', { exact: true })).toBeInViewport();
+    await page.screenshot({ path: join(output, 'comments-catalogue-06-long-report-end.png'), animations: 'disabled' });
+    process.stdout.write('Comments catalogue: all three one-page reports, kind and field labels, and the bounded long report passed.\n');
+    return;
+  }
   if (run === 'comments') {
     for (const format of ['json', 'fdf', 'xfdf']) {
       await app.evaluate(({ dialog }, picked) => {

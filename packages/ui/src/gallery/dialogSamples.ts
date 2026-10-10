@@ -717,6 +717,18 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'wrong-file', props: { reason: 'matched-nothing', named: 7 } },
   ],
   'dialog.import-annotations-problem': [{ state: 'opened', props: { reason: 'unreadable' } }],
+  'dialog.import-annotations-result': [
+    { state: 'empty', props: { imported: 0, total: 0, pages: 3, skipped: [], more: 0 } },
+    { state: 'partial', props: { imported: 1, total: 5, pages: 1, more: 0, skipped: [
+      { comment: 2, page: 5, reason: 'missing-page' },
+      { comment: 3, page: 1, reason: 'unsupported-kind' },
+      { comment: 4, page: 1, reason: 'missing-entry', field: 'rect' },
+      { comment: 5, page: 1, reason: 'invalid-entry', field: 'quadPoints' },
+    ] } },
+    { state: 'long', props: { imported: 2, total: 242, pages: 3, more: 140,
+      skipped: Array.from({ length: 100 }, (_unused, at) => ({ comment: at + 3, page: at + 4, reason: 'missing-page' })),
+    } },
+  ],
   'dialog.insert-image-problem': [{ state: 'opened', props: { reason: 'too-large', limitBytes: 50 * 1024 * 1024 } }],
   'dialog.markdown-import-problem': [
     { state: 'opened', props: { reason: 'malformed-csv', line: 14 } },

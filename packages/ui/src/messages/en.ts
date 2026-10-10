@@ -18,17 +18,36 @@ export const COMMENTS_IMPORT_UNSUPPORTED = messageKey('comments.import-result.un
 export const COMMENTS_IMPORT_INVALID = messageKey('comments.import-result.invalid');
 export const COMMENTS_IMPORT_MISSING_ENTRY = messageKey('comments.import-result.missing-entry');
 export const COMMENTS_IMPORT_MORE = messageKey('comments.import-result.more');
+export const COMMENTS_IMPORT_FIELD_ENTRY = messageKey('comments.import-field.entry');
+export const COMMENTS_IMPORT_FIELD_PAGE = messageKey('comments.import-field.page');
+export const COMMENTS_IMPORT_FIELD_SUBTYPE = messageKey('comments.import-field.subtype');
+export const COMMENTS_IMPORT_FIELD_RECT = messageKey('comments.import-field.rect');
+export const COMMENTS_IMPORT_FIELD_COLOUR = messageKey('comments.import-field.colour');
+export const COMMENTS_IMPORT_FIELD_INTERIOR_COLOUR = messageKey('comments.import-field.interior-colour');
+export const COMMENTS_IMPORT_FIELD_OPACITY = messageKey('comments.import-field.opacity');
+export const COMMENTS_IMPORT_FIELD_BORDER_WIDTH = messageKey('comments.import-field.border-width');
+export const COMMENTS_IMPORT_FIELD_CONTENTS = messageKey('comments.import-field.contents');
+export const COMMENTS_IMPORT_FIELD_AUTHOR = messageKey('comments.import-field.author');
+export const COMMENTS_IMPORT_FIELD_SUBJECT = messageKey('comments.import-field.subject');
+export const COMMENTS_IMPORT_FIELD_MODIFIED = messageKey('comments.import-field.modified');
+export const COMMENTS_IMPORT_FIELD_QUAD_POINTS = messageKey('comments.import-field.quad-points');
+export const COMMENTS_IMPORT_FIELD_INK_LIST = messageKey('comments.import-field.ink-list');
+export const COMMENTS_IMPORT_FIELD_VERTICES = messageKey('comments.import-field.vertices');
+export const COMMENTS_IMPORT_FIELD_LINE = messageKey('comments.import-field.line');
+export const COMMENTS_IMPORT_FIELD_LINE_ENDINGS = messageKey('comments.import-field.line-endings');
+export const COMMENTS_IMPORT_FIELD_ICON = messageKey('comments.import-field.icon');
+export const COMMENTS_IMPORT_FIELD_DEFAULT_APPEARANCE = messageKey('comments.import-field.default-appearance');
 export const COMMENTS_IMPORT_FIELDS: Readonly<Record<NonNullable<AnnotationImportSkipped['field']>, MessageKey>> = {
-  entry: messageKey('comments.import-field.entry'), page: messageKey('comments.import-field.page'),
-  subtype: messageKey('comments.import-field.subtype'), rect: messageKey('comments.import-field.rect'),
-  colour: messageKey('comments.import-field.colour'), interiorColour: messageKey('comments.import-field.interior-colour'),
-  opacity: messageKey('comments.import-field.opacity'), borderWidth: messageKey('comments.import-field.border-width'),
-  contents: messageKey('comments.import-field.contents'), author: messageKey('comments.import-field.author'),
-  subject: messageKey('comments.import-field.subject'), modified: messageKey('comments.import-field.modified'),
-  quadPoints: messageKey('comments.import-field.quad-points'), inkList: messageKey('comments.import-field.ink-list'),
-  vertices: messageKey('comments.import-field.vertices'), line: messageKey('comments.import-field.line'),
-  lineEndings: messageKey('comments.import-field.line-endings'), icon: messageKey('comments.import-field.icon'),
-  defaultAppearance: messageKey('comments.import-field.default-appearance'),
+  entry: COMMENTS_IMPORT_FIELD_ENTRY, page: COMMENTS_IMPORT_FIELD_PAGE,
+  subtype: COMMENTS_IMPORT_FIELD_SUBTYPE, rect: COMMENTS_IMPORT_FIELD_RECT,
+  colour: COMMENTS_IMPORT_FIELD_COLOUR, interiorColour: COMMENTS_IMPORT_FIELD_INTERIOR_COLOUR,
+  opacity: COMMENTS_IMPORT_FIELD_OPACITY, borderWidth: COMMENTS_IMPORT_FIELD_BORDER_WIDTH,
+  contents: COMMENTS_IMPORT_FIELD_CONTENTS, author: COMMENTS_IMPORT_FIELD_AUTHOR,
+  subject: COMMENTS_IMPORT_FIELD_SUBJECT, modified: COMMENTS_IMPORT_FIELD_MODIFIED,
+  quadPoints: COMMENTS_IMPORT_FIELD_QUAD_POINTS, inkList: COMMENTS_IMPORT_FIELD_INK_LIST,
+  vertices: COMMENTS_IMPORT_FIELD_VERTICES, line: COMMENTS_IMPORT_FIELD_LINE,
+  lineEndings: COMMENTS_IMPORT_FIELD_LINE_ENDINGS, icon: COMMENTS_IMPORT_FIELD_ICON,
+  defaultAppearance: COMMENTS_IMPORT_FIELD_DEFAULT_APPEARANCE,
 };
 
 /**
@@ -5714,8 +5733,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [COMMENTS_IMPORT_RESULT_TITLE]: 'Comments import',
   [COMMENTS_IMPORT_COUNT]: '{count, plural, one {# comment imported.} other {# comments imported.}}',
   [COMMENTS_IMPORT_EMPTY]: 'This file contains no comments. Nothing was added.',
-  [COMMENTS_IMPORT_MISSING_PAGE]: 'Comment {comment} was on page {page}, which this document does not have ({pages} pages).',
-  [COMMENTS_IMPORT_UNSUPPORTED]: 'Comment {comment} uses a kind of comment Monstera cannot import.',
+  [COMMENTS_IMPORT_MISSING_PAGE]: 'Comment {comment} was on page {page}, which this document does not have ({pages, plural, one {# page} other {# pages}}).',
+  [COMMENTS_IMPORT_UNSUPPORTED]: 'Comment {comment}: Monstera cannot import this kind of comment.',
   [COMMENTS_IMPORT_INVALID]: 'Comment {comment} has an invalid {field} entry.',
   [COMMENTS_IMPORT_MISSING_ENTRY]: 'Comment {comment} is missing its {field} entry.',
   [COMMENTS_IMPORT_MORE]: '{count, plural, one {# more comment was skipped.} other {# more comments were skipped.}} The list above shows the first {listed}.',

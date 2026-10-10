@@ -28,3 +28,10 @@ it('says exactly that a readable file contains no comments', () => {
   expect(screen.getByText('This file contains no comments. Nothing was added.')).toBeTruthy();
   expect(screen.queryAllByRole('listitem')).toStrictEqual([]);
 });
+
+it('names a one-page document through the plural rule', () => {
+  activateCatalogue('en', EN);
+  render(<I18nProvider i18n={i18n}><ImportAnnotationsResultBody imported={1} total={2} pages={1}
+    skipped={[{ comment: 2, page: 5, reason: 'missing-page' }]} more={0} /></I18nProvider>);
+  expect(screen.getByText('Comment 2 was on page 5, which this document does not have (1 page).')).toBeTruthy();
+});
