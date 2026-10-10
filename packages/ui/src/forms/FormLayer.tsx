@@ -5,6 +5,7 @@ import { type CSSProperties, type MouseEvent, type ReactElement, useEffect, useR
 import { type OverlayPage, pdfRectOnScreen } from '../annotations/annotationSpace.js';
 import { FORM_FIELD_FILL_IN } from '../messages/en.js';
 import { ChoiceOptions, FieldTextBox } from './FieldControls.js';
+import { fieldPressArea } from './fieldHoles.js';
 import { type ListedField, fieldFill } from './fieldFill.js';
 import { type SelectMode, modeOf } from './fieldSelection.js';
 
@@ -14,6 +15,12 @@ const NO_SELECTION: ReadonlySet<number> = new Set();
 /** Whether a press carries a modifier that extends a selection rather than acts on the field. */
 function modified(event: MouseEvent): boolean {
   return modeOf(event) !== 'replace';
+}
+
+/** The text field being typed in: its place in the walk, and where the press that opened it landed, if a press did. */
+interface Typing {
+  readonly index: number;
+  readonly pressedAt: { readonly x: number; readonly y: number } | undefined;
 }
 
 /** One field to fill, named as every fill names it: page, place in the page's widget walk, and the value. */
@@ -62,6 +69,10 @@ export function FormLayer({
   selected = NO_SELECTION,
   reveal,
   onSelect,
+  comments,
+  focus,
+  onFocused,
+  onTab,
 }: {
   readonly page: number;
   readonly fields: readonly ListedField[];
@@ -73,11 +84,43 @@ export function FormLayer({
   readonly reveal?: { readonly index: number; readonly stamp: number } | undefined;
   /** A press on a field's control selects it, the way a click on its row in the Fields list does. */
   readonly onSelect?: ((index: number, mode: SelectMode) => void) | undefined;
+  /**
+   * The comments on this page while a tool that picks is on (ADR-0226 Decision 1): the layer is then above that tool's
+   * surface, and a press on a comment over a field is the tool's, so each comment is taken out of the field's press
+   * area. Absent while no tool is on, when the layer is under every surface and nothing is taken out.
+   */
+  readonly comments?: readonly { readonly rect: ListedField['rect'] }[] | undefined;
+  /** A field to take the focus, stamped so asking twice focuses twice: where Tab from another field sent it. */
+  readonly focus?: { readonly index: number; readonly stamp: number } | undefined;
+  /** Told once a focus request has been taken, so it is not taken again by a layer drawn later. */
+  readonly onFocused?: ((stamp: number) => void) | undefined;
+  /** Tab or Shift+Tab in a field, which has been left and filled: the form's order decides where the focus goes next. */
+  readonly onTab?: ((index: number, backwards: boolean, filled: boolean) => void) | undefined;
 }): ReactElement | null {
   const { i18n } = useLingui();
   // THE TEXT FIELD BEING TYPED IN, by its place in the walk. One at a time: leaving one fills it and closes it.
-  const [typing, setTyping] = useState<number | undefined>(undefined);
+  const [typing, setTyping] = useState<Typing | undefined>(undefined);
   const root = useRef<HTMLDivElement | null>(null);
+  // A FIELD THE FORM'S ORDER SENT THE FOCUS TO (Tab from another field, perhaps on another page), taken once per stamp
+  // while rendering, React's form for state that follows a prop: a text field opens with its words selected, as a
+  // tabbed-into box is.
+  const [focusTaken, setFocusTaken] = useState<number | undefined>(undefined);
+  const wantsFocus = focus !== undefined && focus.stamp !== focusTaken ? focus : undefined;
+  const target = wantsFocus === undefined ? undefined : fields.find((field) => field.index === wantsFocus.index);
+  if (wantsFocus !== undefined && target !== undefined) {
+    setFocusTaken(wantsFocus.stamp);
+    if (fieldFill(target).kind === 'text') setTyping({ index: target.index, pressedAt: undefined });
+  }
+  // ANY OTHER KIND IS FOCUSED WHERE IT IS once it is drawn, and told back so the request is spent.
+  useEffect(() => {
+    if (focus === undefined || !fields.some((field) => field.index === focus.index)) return;
+    const control = root.current?.querySelector<HTMLElement>(`[data-form-field="${String(focus.index)}"]`);
+    if (control !== null && control !== undefined && document.activeElement !== control) {
+      control.focus();
+      if (typeof control.scrollIntoView === 'function') control.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+    onFocused?.(focus.stamp);
+  }, [fields, focus, onFocused]);
 
   // BROUGHT INTO VIEW WHEN ASKED, once the outline is drawn: the Fields list names a field on a page that may be off
   // the screen, and a highlight nobody can see is no highlight.
@@ -91,10 +134,15 @@ export function FormLayer({
     }
   }, [stamp, wanted]);
 
+  const covering = (comments ?? []).flatMap((comment) => (comment.rect === null ? [] : [pdfRectOnScreen(comment.rect, geometry)]));
   const placed = fields.flatMap((field) => {
     if (field.rect === null) return [];
     const offer = fieldFill(field);
-    return offer.kind === 'none' ? [] : [{ field, offer, box: pdfRectOnScreen(field.rect, geometry) }];
+    if (offer.kind === 'none') return [];
+    const box = pdfRectOnScreen(field.rect, geometry);
+    const area = fieldPressArea(box, covering);
+    // A FIELD A COMMENT COVERS WHOLE takes no press: every point of it is the comment's.
+    return area === 'none' ? [] : [{ field, offer, box, clip: area === 'whole' ? undefined : area.clipPath }];
   });
   // THE OUTLINES, for every selected field with a place on this page: a field nobody can fill here is still one a person
   // selected in the list, and is still the one the page must show.
@@ -120,12 +168,13 @@ export function FormLayer({
           }}
         />
       ))}
-      {placed.map(({ field, offer, box }) => {
+      {placed.map(({ field, offer, box, clip }) => {
         const at: CSSProperties = {
           left: `${String(box.left)}px`,
           top: `${String(box.top)}px`,
           width: `${String(box.width)}px`,
           height: `${String(box.height)}px`,
+          ...(clip === undefined ? {} : { clipPath: clip }),
         };
         const fill = (value: FieldFill): void => {
           onFill({ page, index: field.index, value });
@@ -179,7 +228,7 @@ export function FormLayer({
           );
         }
 
-        if (typing === field.index) {
+        if (typing?.index === field.index) {
           const size = offer.lines ? Math.min(box.height * LINE_FILL, LINES_POINTS * geometry.zoom) : box.height * LINE_FILL;
           return (
             <FieldTextBox
@@ -189,6 +238,15 @@ export function FormLayer({
               className="m-page-field-editor"
               name={field.name}
               offer={offer}
+              pressedAt={typing.pressedAt}
+              selectsAll={typing.pressedAt === undefined}
+              onTab={
+                onTab === undefined
+                  ? undefined
+                  : (backwards, filled) => {
+                      onTab(field.index, backwards, filled);
+                    }
+              }
               onCancel={() => {
                 setTyping(undefined);
               }}
@@ -211,7 +269,9 @@ export function FormLayer({
             className="m-page-field m-page-field--text"
             onClick={(event) => {
               if (modified(event)) return;
-              setTyping(field.index);
+              // A PRESS OPENS THE BOX WITH THE CARET WHERE IT LANDED; a keyboard's Enter or Space on the control is a
+              // click with no place (`detail` 0), and opens it with the words selected, as Tab does.
+              setTyping({ index: field.index, pressedAt: event.detail === 0 ? undefined : { x: event.clientX, y: event.clientY } });
             }}
             onPointerDown={(event) => {
               onSelect?.(field.index, modeOf(event));

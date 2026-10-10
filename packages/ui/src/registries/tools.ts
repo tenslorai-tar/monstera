@@ -413,6 +413,12 @@ export interface UiTool {
    * click on its button, it stays on until Escape (`UiCommand.hold`).
    */
   readonly endsAfterOne?: true;
+  /**
+   * That a press on a form field fills the field while this tool is on, unless the press lands on a comment (ADR-0226
+   * Decision 1). A tool that PICKS what is on the page says so; a tool that draws does not, and keeps every press. The
+   * page then mounts the form layer above this tool's surface, with the comments taken out of each field's press area.
+   */
+  readonly fillsFields?: true;
   /** Called once when the tool is put down, whichever way (Escape, another tool, leaving the tab): what it held for a run of drags is dropped. */
   readonly ended?: () => void;
   /**

@@ -8231,6 +8231,13 @@ body {
   pointer-events: none;
 }
 
+/* EXCEPT A FORM FIELD (ADR-0226 Decision 2): a press that starts on one fills it, and a drag anywhere else moves the
+   pages. Its editor too, once a press has opened it. */
+.m-page-list--panning .m-page-slot .m-page-field,
+.m-page-list--panning .m-page-slot .m-page-field-editor {
+  pointer-events: auto;
+}
+
 /* THE PAGES STRIP IN TWO COLUMNS with each page's number under it (v5-02). The thumbnail keeps its
    one width, so pages of different sizes still line up in each column. */
 .m-thumbnails {

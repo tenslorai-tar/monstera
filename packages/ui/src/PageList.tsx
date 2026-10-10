@@ -222,6 +222,11 @@ export interface PageListProps {
         readonly selected: ReadonlySet<string>;
         readonly reveal: { readonly page: number; readonly index: number; readonly stamp: number } | undefined;
         readonly onSelect: (page: number, index: number, mode: SelectMode) => void;
+        /** A field the form's order sends the focus to, stamped (ADR-0226 Decision 3). */
+        readonly focus?: { readonly page: number; readonly index: number; readonly stamp: number } | undefined;
+        readonly onFocused?: (stamp: number) => void;
+        /** Tab or Shift+Tab in a field on a page: the form's order decides where the focus goes. */
+        readonly onTab?: (page: number, index: number, backwards: boolean, filled: boolean) => void;
       }
     | undefined;
   /**
@@ -1180,6 +1185,9 @@ export function PageList({
           ? (event) => {
               const element = scroller.current;
               if (event.button !== 0 || element === null) return;
+              // A PRESS THAT STARTS ON A FORM FIELD FILLS IT (ADR-0226 Decision 2): capturing the pointer here would
+              // send its release and its click to the scroller, and the field would never hear the press.
+              if (event.target instanceof Element && event.target.closest('[data-form-field]') !== null) return;
               element.setPointerCapture(event.pointerId);
               setGrab({ x: event.clientX, y: event.clientY, left: element.scrollLeft, top: element.scrollTop });
             }
@@ -1315,6 +1323,15 @@ export function PageList({
               ? undefined
               : (index, mode) => {
                   fieldSelection.onSelect(page, index, mode);
+                }
+          }
+          focusField={fieldSelection?.focus?.page === page ? fieldSelection.focus : undefined}
+          onFocusedField={fieldSelection?.onFocused}
+          onTabField={
+            fieldSelection?.onTab === undefined
+              ? undefined
+              : (index, backwards, filled) => {
+                  fieldSelection.onTab?.(page, index, backwards, filled);
                 }
           }
           scroller={scroller}
@@ -1524,6 +1541,9 @@ function PageSlot({
   selectedFields,
   revealField,
   onSelectField,
+  focusField,
+  onFocusedField,
+  onTabField,
   scroller,
   hidden,
 }: {
@@ -1585,6 +1605,9 @@ function PageSlot({
   readonly selectedFields: ReadonlySet<number> | undefined;
   readonly revealField: { readonly index: number; readonly stamp: number } | undefined;
   readonly onSelectField: ((index: number, mode: SelectMode) => void) | undefined;
+  readonly focusField: { readonly index: number; readonly stamp: number } | undefined;
+  readonly onFocusedField: ((stamp: number) => void) | undefined;
+  readonly onTabField: ((index: number, backwards: boolean, filled: boolean) => void) | undefined;
   /** The scroller the slot sits in, whose box decides which tiles are wanted. */
   readonly scroller: React.RefObject<HTMLElement | null>;
   /** Out of the layout: single page shows only the page on show, and a hidden slot is never visible, so never drawn. */
@@ -1731,6 +1754,28 @@ function PageSlot({
     };
   }, [mounted, tiled]);
 
+  // THE PAGE'S FORM FIELDS (ADR-0168), over the text, the links and the marks so a press on a field fills it. Not while
+  // Edit text or Edit object holds the page: there a press is the mode's. WHERE in the stack depends on the tool
+  // (ADR-0226 Decision 1): under a drawing tool's surface, which keeps every press; above the surface of a tool that
+  // picks, with the comments taken out of each field so a press on a comment is still the tool's.
+  const fieldsOver = drawing?.tool.fillsFields === true;
+  const formLayer =
+    fields === undefined || size === undefined || onFillField === undefined || editing !== undefined ? null : (
+      <FormLayer
+        fields={fields}
+        geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
+        onFill={onFillField}
+        onSelect={onSelectField}
+        page={page}
+        reveal={revealField}
+        {...(selectedFields === undefined ? {} : { selected: selectedFields })}
+        {...(fieldsOver ? { comments: annotations ?? [] } : {})}
+        focus={focusField}
+        onFocused={onFocusedField}
+        onTab={onTabField}
+      />
+    );
+
   return (
     <div
       className="m-page-slot"
@@ -1850,20 +1895,8 @@ function PageSlot({
           page={page}
         />
       )}
-      {/* THE PAGE'S FORM FIELDS (ADR-0168), over the text, the links and the marks so a press on a field fills it, and
-          under the drawing overlay, which takes the press while a tool is on. Not while Edit text or Edit object holds
-          the page: there a press is the mode's. */}
-      {fields === undefined || size === undefined || onFillField === undefined || editing !== undefined ? null : (
-        <FormLayer
-          fields={fields}
-          geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
-          onFill={onFillField}
-          onSelect={onSelectField}
-          page={page}
-          reveal={revealField}
-          {...(selectedFields === undefined ? {} : { selected: selectedFields })}
-        />
-      )}
+      {/* THE FORM LAYER HERE, under the drawing overlay, while no tool or a drawing tool is on (`formLayer`). */}
+      {fieldsOver ? null : formLayer}
       {/* OVER THE TEXT AND ITS MARKS, as the drawing overlay is: while Edit text or
           Edit object is on, a press on an outline is the mode's, and nothing else
           holds the pointer — the modes share one slot and never mount together. */}
@@ -1909,6 +1942,7 @@ function PageSlot({
           tool={drawing.tool}
         />
       )}
+      {fieldsOver ? formLayer : null}
       {/* WORDS BEING TYPED, over everything else on the page: the box a person is typing in is what is in front. */}
       {writing === undefined || size === undefined ? null : (
         <InlineWriter

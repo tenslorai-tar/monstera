@@ -291,6 +291,7 @@ import {
   liveKeys,
   select as chooseField,
 } from './forms/fieldSelection.js';
+import { nextFillable } from './forms/fieldOrder.js';
 import { FieldPropertiesPanel } from './forms/FieldPropertiesPanel.js';
 import type { PlacedField } from './forms/arrange.js';
 import { type FieldToCopy, copyFieldToPagesCommand, fieldArrangeCommands } from './commands/fieldArrangeCommands.js';
@@ -1181,6 +1182,20 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     },
     [openVersion],
   );
+  /**
+   * THE FIELD TAB SENT THE FOCUS TO (ADR-0226 Decision 3), held here because it may be on another page, whose layer is
+   * drawn after the fill that Tab made has moved the version. Spent by the layer that takes it.
+   */
+  const [fieldFocus, setFieldFocus] = useState<
+    { page: number; index: number; stamp: number; after: DocVersion | undefined } | undefined
+  >(undefined);
+  const focusStamps = useRef(0);
+  /**
+   * THE SELECTED FIELDS, NAMED (ADR-0193): the keys of the selection joined to the list the document has at this version,
+   * in the order they were chosen. A key the list does not hold is dropped, never named by guesswork.
+   */
+  const formFieldList = useFormFieldList(client, activeId, openVersion);
+  const fieldsInOrder = formFieldList.fields;
   const fieldSelectionForPages = useMemo(
     () => ({
       selected: selectedFieldKeys,
@@ -1188,14 +1203,23 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       onSelect: (page: number, index: number, mode: SelectMode): void => {
         selectField(page, index, mode);
       },
+      // HELD UNTIL THE FILL TAB SENT HAS LANDED: the fill moves the version, the page's list is read again and its layer
+      // drawn anew, so a focus given before that would be given to a control about to be replaced.
+      focus: fieldFocus !== undefined && fieldFocus.after !== openVersion ? fieldFocus : undefined,
+      onFocused: (stamp: number): void => {
+        setFieldFocus((current) => (current?.stamp === stamp ? undefined : current));
+      },
+      onTab: (page: number, index: number, backwards: boolean, filled: boolean): void => {
+        const next = nextFillable(fieldsInOrder, { page, index }, backwards);
+        if (next === undefined) return;
+        // A STAMP THAT ONLY RISES: a spent request is cleared, and one counted from it would repeat a stamp the layer
+        // has already taken, so the second Tab would go nowhere.
+        focusStamps.current += 1;
+        setFieldFocus({ page: next.page, index: next.index, stamp: focusStamps.current, after: filled ? openVersion : undefined });
+      },
     }),
-    [fieldReveal, selectField, selectedFieldKeys],
+    [fieldFocus, fieldReveal, fieldsInOrder, openVersion, selectField, selectedFieldKeys],
   );
-  /**
-   * THE SELECTED FIELDS, NAMED (ADR-0193): the keys of the selection joined to the list the document has at this version,
-   * in the order they were chosen. A key the list does not hold is dropped, never named by guesswork.
-   */
-  const formFieldList = useFormFieldList(client, activeId, openVersion);
   const selectedHandles = useMemo((): readonly FormFieldHandle[] => {
     const byKey = new Map(formFieldList.fields.map((field) => [fieldKey(field.page, field.index), field]));
     const handles: FormFieldHandle[] = [];

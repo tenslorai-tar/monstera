@@ -587,5 +587,7 @@ export function selectTool(deps: SelectDeps): UiTool {
   };
 
   // THE ARROW: this tool picks what is there rather than drawing something new (the owner's review of 0.1.6.0).
-  return { id: SELECT_TOOL_ID, controller, cursor: 'arrow', hint: HINT_SELECT };
+  // A PRESS ON A FORM FIELD FILLS IT (ADR-0226 Decision 1, the owner's answer of 2026-10-10): this tool picks what is
+  // there, and a field is there; a press on a comment over the field is still this tool's.
+  return { id: SELECT_TOOL_ID, controller, cursor: 'arrow', hint: HINT_SELECT, fillsFields: true };
 }

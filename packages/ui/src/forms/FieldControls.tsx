@@ -3,6 +3,7 @@ import { type CSSProperties, type FocusEvent, type KeyboardEvent, type ReactElem
 
 import { FORMS_CHOICE_EMPTY } from '../messages/en.js';
 import { composing } from '../surfaces/shortcuts.js';
+import { caretIndexAt } from './fieldCaret.js';
 import type { FillOffer } from './fieldFill.js';
 
 /**
@@ -36,6 +37,9 @@ export function FieldTextBox({
   onCommit,
   onCancel,
   onDone,
+  pressedAt,
+  onTab,
+  selectsAll = false,
 }: {
   /** Data attributes a surface finds the box by. */
   readonly marks?: Readonly<Record<`data-${string}`, string>>;
@@ -51,9 +55,24 @@ export function FieldTextBox({
   readonly onCancel?: () => void;
   /** Told once the box has been left, after any commit: the page closes its editor here. */
   readonly onDone?: () => void;
+  /**
+   * Where the press that opened the box landed, in the window's pixels: the caret goes there when the box takes focus
+   * (ADR-0226 Decision 3), never to the end or the start of what it holds.
+   */
+  readonly pressedAt?: { readonly x: number; readonly y: number } | undefined;
+  /**
+   * Tab and Shift+Tab: the box is left, filling it, and the next or previous field takes the focus. Absent where the
+   * browser's own order is the right one (the Forms panel, whose rows are in the form's order already).
+   */
+  readonly onTab?: ((backwards: boolean, filled: boolean) => void) | undefined;
+  /** The words are selected when the box first takes focus with no press to place the caret: reached by Tab. */
+  readonly selectsAll?: boolean;
 }): ReactElement {
   const shown = useRef<string | undefined>(undefined);
   const cancelled = useRef(false);
+  // THE PRESS IS SPENT BY THE FIRST FOCUS: a later focus, by Tab or by a click, puts the caret where that one says.
+  const press = useRef(pressedAt);
+  const selectAllOnce = useRef(selectsAll);
   const common = {
     ...marks,
     'aria-label': name,
@@ -69,6 +88,16 @@ export function FieldTextBox({
     },
     onFocus: (event: FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       shown.current = event.currentTarget.value;
+      const at = press.current;
+      press.current = undefined;
+      const selecting = selectAllOnce.current;
+      selectAllOnce.current = false;
+      if (at !== undefined) {
+        const caret = caretFromPress(event.currentTarget, at);
+        event.currentTarget.setSelectionRange(caret, caret);
+      } else if (selecting) {
+        event.currentTarget.select();
+      }
     },
     onBlur: (event: FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       if (!cancelled.current && event.currentTarget.value !== shown.current) onCommit(event.currentTarget.value);
@@ -84,9 +113,44 @@ export function FieldTextBox({
         return;
       }
       if (event.key === 'Enter' && !offer.lines) event.currentTarget.blur();
+      if (event.key === 'Tab' && onTab !== undefined && !event.altKey && !event.ctrlKey && !event.metaKey) {
+        // THE FORM'S ORDER, not the document's DOM order: the next field may be on the next page, whose layer is a
+        // different subtree, so the page decides where the focus goes after this box has been left and filled.
+        event.preventDefault();
+        const filling = !cancelled.current && event.currentTarget.value !== shown.current;
+        event.currentTarget.blur();
+        onTab(event.shiftKey, filling);
+      }
     },
   };
   return offer.lines ? <textarea rows={rows} {...common} /> : <input type="text" {...common} />;
+}
+
+/** The canvas every caret measurement draws nothing on: one per window, made on first use. */
+let measuring: CanvasRenderingContext2D | null | undefined;
+
+/**
+ * The caret a press at a point asks for, in a box's own text. A one-line box measures its prefixes in the face it draws
+ * them in ({@link caretIndexAt}); a box for line breaks first takes the line the press is on, counted by the box's line
+ * height from its top, and measures within it. A line the box wrapped on its own is counted as one: the browser says
+ * nothing about where it wrapped, and the caret then lands on the right line's start or end rather than in the wrong one.
+ */
+function caretFromPress(element: HTMLInputElement | HTMLTextAreaElement, at: { readonly x: number; readonly y: number }): number {
+  const style = getComputedStyle(element);
+  const box = element.getBoundingClientRect();
+  measuring ??= document.createElement('canvas').getContext('2d');
+  const context = measuring;
+  if (context === null) return element.value.length;
+  context.font = style.font;
+  const widthOf = (prefix: string): number => context.measureText(prefix).width;
+  const x = at.x - box.left - parseFloat(style.borderLeftWidth) - parseFloat(style.paddingLeft) + element.scrollLeft;
+  if (!(element instanceof HTMLTextAreaElement)) return caretIndexAt(element.value, x, widthOf);
+  const lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.2;
+  const y = at.y - box.top - parseFloat(style.borderTopWidth) - parseFloat(style.paddingTop) + element.scrollTop;
+  const lines = element.value.split('\n');
+  const line = Math.min(Math.max(0, Math.floor(y / lineHeight)), lines.length - 1);
+  const before = lines.slice(0, line).reduce((sum, each) => sum + each.length + 1, 0);
+  return before + caretIndexAt(lines[line] ?? '', x, widthOf);
 }
 
 /**
