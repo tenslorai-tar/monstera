@@ -135,3 +135,16 @@ targetRules = ["generic-api-key"]
 condition = "AND"
 paths = ['''(^|[\\/])scripts[\\/]provision[\\/]keys[\\/]adoptiumKey\.mjs$''']
 regexes = ['''^3B04D753C9050D9A5D343F39843C48A565F8F04B$''']
+
+# Finding: generic-api-key on passwordTerms: 'encrypt=aes-256' in the protection
+# inverse schema fixture. This is a public encryption algorithm option, with no
+# password or credential. The fixture must keep exercising the real field name.
+# Limited to this rule, this exact file and this exact value together. The proof
+# in scripts/proofs/protectionScanner.proof.mjs checks a different value and a
+# different path still fire, and removing this entry restores the finding.
+[[allowlists]]
+description = "Public encrypt=aes-256 option in the protection inverse schema fixture"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''(^|[\\/])packages[\\/]kernel[\\/]src[\\/]host[\\/]coreChannels\.test\.ts$''']
+regexes = ['''^encrypt=aes-256$''']
