@@ -108,3 +108,15 @@ a static import fails before the caller's try/catch; a caught dynamic import
 can report unavailable. Both scanner steps on Guards must then be reported;
 both in the installing matrix must pass. This records that correction before
 changing the placement instrument.
+
+## Corrected implementation, 2026-10-10
+
+The caller scan now uses the shared compiler loader. Its annotated proof and
+check are in the installing CI build matrix, and all 26 scanner cases pass.
+The placement instrument follows static initialization through importers and
+re-exporters while preserving its per-function and caught-dynamic-import
+cases. Its 27 cases pass, including two new cases checked against actual Node
+execution. Restoring the original instrument failed the static-import case
+with Node exit 1 but no reported violation; restoring the correction passed.
+Moving both caller steps back to Guards then reported both as misplaced;
+restoring their CI placement reported none and located the existing control.

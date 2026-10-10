@@ -24,6 +24,7 @@
  */
 
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -35,7 +36,7 @@ const ROOT = repoRoot();
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 25 });
+const roster = createRoster(failures, { cases: 27 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -580,6 +581,59 @@ try {
       'A regex matching prose classifies every job as installing, and that reads exactly like a ' +
         'repository where every job does. The throw says which, and names the second case as ' +
         'one that replaces this control rather than deletes it.',
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // MODULE INITIALIZATION: actual Node execution separates static imports
+  // from caught dynamic imports, independently of this instrument's model.
+  // -------------------------------------------------------------------------
+  {
+    const root = fixture({
+      'scripts/lib/init.mjs':
+        "import { loadTypeScript } from './loadTypeScript.mjs';\n" +
+        'const compiler = await loadTypeScript("compiler is absent");\n' +
+        'export function living() { return compiler; }\n',
+      'scripts/lib/barrel.mjs': "export { living } from './init.mjs';\n",
+      'scripts/proofs/consumer.mjs':
+        "import { living } from '../lib/barrel.mjs';\n" +
+        'try { living(); } catch { console.log("handled"); }\n',
+      [CONTROL_PATH]: CONTROL_SOURCE,
+      '.github/workflows/a.yml': workflow(
+        [`node scripts/ci/annotate.mjs ${CONTROL_PATH}`],
+        ['node scripts/ci/annotate.mjs scripts/proofs/consumer.mjs'],
+      ),
+    });
+    const execution = spawnSync(process.execPath, [join(root, 'scripts/proofs/consumer.mjs')], { encoding: 'utf8' });
+    const result = await scan({ root, control: CONTROL_PATH });
+    check(
+      'static import/re-export initialization dies before a caller catch and is reported',
+      execution.status === 1 && /compiler is absent/u.test(execution.stderr) &&
+        result.violations.length === 1 && result.violations[0]?.script === 'scripts/proofs/consumer.mjs',
+      `Node exit=${String(execution.status)}; violations=${JSON.stringify(result.violations)}. ` +
+        'An exported function need not reach the loader for static module initialization to fail.',
+    );
+  }
+  {
+    const root = fixture({
+      'scripts/lib/init.mjs':
+        "import { loadTypeScript } from './loadTypeScript.mjs';\n" +
+        'await loadTypeScript("compiler is absent");\n',
+      'scripts/proofs/consumer.mjs':
+        'try { await import("../lib/init.mjs"); } catch { console.log("unavailable"); }\n',
+      [CONTROL_PATH]: CONTROL_SOURCE,
+      '.github/workflows/a.yml': workflow(
+        [`node scripts/ci/annotate.mjs ${CONTROL_PATH}`],
+        ['node scripts/ci/annotate.mjs scripts/proofs/consumer.mjs'],
+      ),
+    });
+    const execution = spawnSync(process.execPath, [join(root, 'scripts/proofs/consumer.mjs')], { encoding: 'utf8' });
+    const result = await scan({ root, control: CONTROL_PATH });
+    check(
+      'CONTROL: caught dynamic initialization can degrade and is not a static dependency',
+      execution.status === 0 && execution.stdout.trim() === 'unavailable' && result.violations.length === 0 && !result.blind,
+      `Node exit=${String(execution.status)}; violations=${JSON.stringify(result.violations)}. ` +
+        'Propagating every dynamic edge would tell a working degrading step to move.',
     );
   }
 

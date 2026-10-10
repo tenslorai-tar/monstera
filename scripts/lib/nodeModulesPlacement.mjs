@@ -187,6 +187,7 @@ function everyScript(dir) {
  * @param {string} root
  * @returns {Promise<{
  *   imports: Map<string, string[]>,
+ *   staticImports: Map<string, string[]>,
  *   direct: Set<string>,
  *   callSites: Map<string, Map<string, CallSite[]>>,
  *   importBindings: Map<string, Map<string, string>>,
@@ -216,6 +217,8 @@ export async function importGraph(root) {
 
   /** @type {Map<string, string[]>} */
   const imports = new Map();
+  /** @type {Map<string, string[]>} */
+  const staticImports = new Map();
   /** @type {Set<string>} */
   const direct = new Set();
   /** @type {Map<string, Map<string, CallSite[]>>} */
@@ -231,6 +234,8 @@ export async function importGraph(root) {
     }
     /** @type {string[]} */
     const edges = [];
+    /** @type {string[]} */
+    const staticEdges = [];
     /** @type {Map<string, string>} */
     const bindings = new Map();
     /** @param {string} specifier @param {import('typescript').Node} node */
@@ -239,6 +244,7 @@ export async function importGraph(root) {
       if (specifier.startsWith('.')) {
         const target = relative(root, resolve(absolute, '..', specifier)).replace(/\\/gu, '/');
         edges.push(target);
+        if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) staticEdges.push(target);
         if (ts.isImportDeclaration(node)) {
           const named = node.importClause?.namedBindings;
           if (named !== undefined && ts.isNamedImports(named)) {
@@ -332,10 +338,11 @@ export async function importGraph(root) {
     };
     visit(source, false, undefined, MODULE_SCOPE);
     imports.set(key, edges);
+    staticImports.set(key, staticEdges);
     callSites.set(key, calls);
     importBindings.set(key, bindings);
   }
-  return { imports, direct, callSites, importBindings };
+  return { imports, staticImports, direct, callSites, importBindings };
 }
 
 /**
@@ -350,7 +357,7 @@ export async function importGraph(root) {
  * }>}
  */
 export async function scriptsNeedingModules(root) {
-  const { imports, direct, callSites, importBindings } = await importGraph(root);
+  const { imports, staticImports, direct, callSites, importBindings } = await importGraph(root);
 
   // TWO KINDS OF DEATH, and conflating them is what made the first version
   // report 28 misplaced steps in a green job.
@@ -417,6 +424,22 @@ export async function scriptsNeedingModules(root) {
   const callTime = new Set(
     [...dying].filter((entry) => entry.endsWith(`#${MODULE_SCOPE}`)).map((entry) => entry.split('#')[0] ?? ''),
   );
+
+  // ADR-0225: static importers evaluate their dependencies before their own
+  // try/catch can run. An uncaught initializer is therefore a load-time death
+  // for every static importer/re-exporter. Dynamic import rejection can be
+  // caught, so it is not part of this unconditional initialization closure.
+  changed = true;
+  while (changed) {
+    changed = false;
+    for (const [file, edges] of staticImports) {
+      if (loadTime.has(file)) continue;
+      if (edges.some((edge) => loadTime.has(edge) || callTime.has(edge))) {
+        loadTime.add(file);
+        changed = true;
+      }
+    }
+  }
 
   return { needing: new Set([...loadTime, ...callTime]), loadTime, callTime, dying };
 }

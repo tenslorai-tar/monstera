@@ -655,6 +655,17 @@ jobs:
       - name: Only an owner renders a thrown value's stack
         run: node scripts/ci/annotate.mjs scripts/lib/stackOwnership.mjs
 
+      # ADR-0225: the caller scan reads the compiler's syntax tree so an
+      # unrelated Playwright executablePath is not treated as a contained host.
+      # Both steps belong here: this matrix installs TypeScript on Windows and
+      # Ubuntu; Guards deliberately installs no node_modules. The actual check
+      # remains beside its proof, annotated, with the same resolver/kind policy.
+      - name: Prove the Electron-binary caller scan sees, refuses and tolerates
+        run: node scripts/ci/annotate.mjs scripts/proofs/electronBinaryCallers.proof.mjs
+
+      - name: Every host caller names the Electron binary through the one resolver
+        run: node scripts/ci/annotate.mjs scripts/lib/electronBinaryCallers.mjs
+
       # HHH-1. The step above was first registered on Guards, which runs no
       # `npm ci`, so it would have failed on every run — and no machine with
       # node_modules installed can reproduce that. This derives which scripts

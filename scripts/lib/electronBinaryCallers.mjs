@@ -48,10 +48,16 @@
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
-import ts from 'typescript';
 
 import { repoRoot } from './gitScope.mjs';
 import { isMain } from './isMain.mjs';
+import { loadTypeScript } from './loadTypeScript.mjs';
+
+/** @typedef {import('typescript').Node} SyntaxNode */
+/** @typedef {import('typescript').CallExpression} CallExpression */
+/** @typedef {import('typescript').ObjectLiteralExpression} ObjectLiteralExpression */
+/** @typedef {import('typescript').Expression} Expression */
+const ts = await loadTypeScript('the contained-host caller scan cannot distinguish host calls from unrelated launch APIs');
 
 /**
  * The resolvers a host's executable may be NAMED by. Anything else is a violation.
@@ -124,9 +130,9 @@ function resolverNamedBy(value) {
 /**
  * A direct property with one unambiguous initializer. Spreads or duplicate
  * properties can replace the value, so the scan must not certify them.
- * @param {ts.ObjectLiteralExpression} object
+ * @param {ObjectLiteralExpression} object
  * @param {string} name
- * @returns {ts.Expression | undefined}
+ * @returns {Expression | undefined}
  */
 function literalProperty(object, name) {
   if (object.properties.some((property) => ts.isSpreadAssignment(property))) return undefined;
@@ -142,8 +148,8 @@ function literalProperty(object, name) {
  * The compiler owns JavaScript syntax (ADR-0225). A property name does not
  * identify its API: Playwright's executablePath launches the app, not a host.
  * Recognise direct and member calls, including a literal bracket member.
- * @param {ts.Node} node
- * @returns {node is ts.CallExpression}
+ * @param {SyntaxNode} node
+ * @returns {node is CallExpression}
  */
 function createsHost(node) {
   if (!ts.isCallExpression(node)) return false;
@@ -216,9 +222,9 @@ export function scanElectronBinaryCallers(options = {}) {
     const relativePath = relative(root, file).replaceAll('\\', '/');
     if (SUBJECT_FILES.includes(relativePath)) continue;
     const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
-    /** @type {ts.CallExpression[]} */
+    /** @type {CallExpression[]} */
     const calls = [];
-    /** @param {ts.Node} node */
+    /** @param {SyntaxNode} node */
     function visit(node) {
       if (createsHost(node)) calls.push(node);
       ts.forEachChild(node, visit);
