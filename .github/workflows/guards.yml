@@ -325,6 +325,9 @@ jobs:
       - name: Prove the canary rejects an older scanner
         run: node scripts/ci/annotate.mjs scripts/lib/scannerCanary.proof.mjs
 
+      - name: Prove the protection fixture exception remains exact
+        run: node scripts/ci/annotate.mjs scripts/proofs/protectionScanner.proof.mjs
+
       # The memory budgets are read from invariant §9.17 rather than defined as
       # constants (ADR-0012), so the number a human reads is the number the
       # build enforces. Almost every case here asserts a REFUSAL: a parser for a
