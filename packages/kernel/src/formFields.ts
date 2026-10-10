@@ -497,7 +497,9 @@ export function refuseUnfillable(widget: PDFWidget, value: FieldFill): void {
     if (!widget.isChoice()) {
       throw new Error(`A chosen option cannot fill a ${kind} field ("${widget.getName()}").`);
     }
-    if (value.option !== '' && !widget.getOptions().includes(value.option)) {
+    // A DROPDOWN THAT TAKES TYPING (`/Ff` Edit) holds what was typed, offered or not: the document says it may.
+    const typed = widget.isComboBox() && fieldRulesOf(widget).editable;
+    if (!typed && value.option !== '' && !widget.getOptions().includes(value.option)) {
       throw new Error(
         `The field "${widget.getName()}" does not offer the option ${JSON.stringify(value.option)}. ` +
           'The document decides what a choice field may hold, and MuPDF stores an unlisted value ' +

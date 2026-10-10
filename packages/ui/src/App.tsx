@@ -142,6 +142,7 @@ import {
   autoscrollCommand,
   commandPaletteCommand,
   toggleDarkPageCommand,
+  toggleFieldHighlightCommand,
   toggleGridCommand,
   toggleLoupeCommand,
   toggleSplitViewCommand,
@@ -274,6 +275,8 @@ import {
   HINT_ADD_TEXT,
   HINT_EDIT_TEXT,
   HINT_HAND,
+  FORM_FIELD_REQUIRED_EMPTY,
+  FORM_FIELD_REQUIRED_LEFT,
   LINK_ADDED,
   SPLIT_SECOND_LABEL,
   TOAST_DISMISS,
@@ -292,6 +295,7 @@ import {
   select as chooseField,
 } from './forms/fieldSelection.js';
 import { nextFillable } from './forms/fieldOrder.js';
+import { type FieldProblem, emptyRequired } from './forms/fieldCheck.js';
 import { FieldPropertiesPanel } from './forms/FieldPropertiesPanel.js';
 import type { PlacedField } from './forms/arrange.js';
 import { type FieldToCopy, copyFieldToPagesCommand, fieldArrangeCommands } from './commands/fieldArrangeCommands.js';
@@ -351,6 +355,7 @@ import {
 } from './settings/rendering.js';
 import {
   DARK_PAGE_SETTING,
+  FIELD_HIGHLIGHT_SETTING,
   GRID_DIVISIONS_SETTING,
   GRID_SETTING,
   GRID_SIZE_SETTING,
@@ -1187,7 +1192,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * drawn after the fill that Tab made has moved the version. Spent by the layer that takes it.
    */
   const [fieldFocus, setFieldFocus] = useState<
-    { page: number; index: number; stamp: number; after: DocVersion | undefined } | undefined
+    { page: number; index: number; stamp: number; after: DocVersion | undefined; say?: FieldProblem } | undefined
   >(undefined);
   const focusStamps = useRef(0);
   /**
@@ -1196,6 +1201,38 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    */
   const formFieldList = useFormFieldList(client, activeId, openVersion);
   const fieldsInOrder = formFieldList.fields;
+  /**
+   * A SAVE THE PERSON PRESSED, and the form's required fields still empty (A1.7): the document is saved as it is, never
+   * refused, the first empty field takes the focus with its sentence beside it, outlined and announced, the person is
+   * told in a toast once that focus is taken, and every one keeps its red outline. An autosave says nothing: it is not a
+   * moment the person chose. The save only RECORDS the request; which field it names is worked out from the list on show,
+   * so the command registry holds a callback that never changes with the list.
+   */
+  const [requiredReminder, setRequiredReminder] = useState<{ readonly docId: DocId; readonly stamp: number } | undefined>(undefined);
+  const onSavedByPerson = useCallback(
+    (docId: DocId, version: DocVersion): void => {
+      onSaved(docId, version);
+      // A STAMP FROM THE CLOCK, NEGATED: never one Tab's rising count has given, so the layer never takes it as spent.
+      setRequiredReminder({ docId, stamp: -Date.now() });
+    },
+    [onSaved],
+  );
+  const firstEmptyRequired = requiredReminder !== undefined && requiredReminder.docId === activeId ? emptyRequired(fieldsInOrder)[0] : undefined;
+  // NOTHING TO REMIND OF, or another document on show: the request is dropped, so a field emptied later never wakes it.
+  if (requiredReminder !== undefined && firstEmptyRequired === undefined && formFieldList.fields.length > 0) setRequiredReminder(undefined);
+  const reminderFocus = useMemo(
+    () =>
+      requiredReminder === undefined || firstEmptyRequired === undefined
+        ? undefined
+        : {
+            page: firstEmptyRequired.page,
+            index: firstEmptyRequired.index,
+            stamp: requiredReminder.stamp,
+            after: undefined,
+            say: { message: FORM_FIELD_REQUIRED_EMPTY, values: { name: firstEmptyRequired.name } },
+          },
+    [firstEmptyRequired, requiredReminder],
+  );
   const fieldSelectionForPages = useMemo(
     () => ({
       selected: selectedFieldKeys,
@@ -1205,9 +1242,14 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       },
       // HELD UNTIL THE FILL TAB SENT HAS LANDED: the fill moves the version, the page's list is read again and its layer
       // drawn anew, so a focus given before that would be given to a control about to be replaced.
-      focus: fieldFocus !== undefined && fieldFocus.after !== openVersion ? fieldFocus : undefined,
+      focus: fieldFocus !== undefined && fieldFocus.after !== openVersion ? fieldFocus : reminderFocus,
       onFocused: (stamp: number): void => {
         setFieldFocus((current) => (current?.stamp === stamp ? undefined : current));
+        if (requiredReminder?.stamp === stamp) {
+          // TOLD ONCE THE FIELD HAS THE FOCUS, so the toast and the sentence beside the field arrive together.
+          toast('problem', FORM_FIELD_REQUIRED_LEFT);
+          setRequiredReminder(undefined);
+        }
       },
       onTab: (page: number, index: number, backwards: boolean, filled: boolean): void => {
         const next = nextFillable(fieldsInOrder, { page, index }, backwards);
@@ -1218,7 +1260,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         setFieldFocus({ page: next.page, index: next.index, stamp: focusStamps.current, after: filled ? openVersion : undefined });
       },
     }),
-    [fieldFocus, fieldReveal, fieldsInOrder, openVersion, selectField, selectedFieldKeys],
+    [fieldFocus, fieldReveal, fieldsInOrder, openVersion, reminderFocus, requiredReminder, selectField, selectedFieldKeys, toast],
   );
   const selectedHandles = useMemo((): readonly FormFieldHandle[] => {
     const byKey = new Map(formFieldList.fields.map((field) => [fieldKey(field.page, field.index), field]));
@@ -3459,7 +3501,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         findDuplicatePagesCommand({ client, onApplied: applied, ask, stamp, signatures }),
         undoCommand({ client, onApplied: applied, ask, stamp, signatures }),
         redoCommand({ client, onApplied: applied, ask, stamp, signatures }),
-        saveCommand({ client, ask, toast, onSaved, warnSignatureBreak, settleMarks }),
+        saveCommand({ client, ask, toast, onSaved: onSavedByPerson, warnSignatureBreak, settleMarks }),
         closeTabCommand({ close: (docId) => requestClose([docId]) }),
         closeOthersCommand({ close: requestClose }),
         // THE SHELL'S OWN `activeId` AND `showSideBySide`, which is what keeps this a second ROUTE
@@ -3563,6 +3605,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         toggleRulersCommand({ settings }),
         toggleGridCommand({ settings }),
         toggleDarkPageCommand({ settings }),
+        toggleFieldHighlightCommand({ settings }),
         toggleLoupeCommand({ settings }),
         toggleSplitViewCommand({ settings }),
         commandPaletteCommand({ onToggle: togglePalette }),
@@ -3670,6 +3713,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       // render, which is the property that matters here and not their presence in the list.
       toast,
       onSaved,
+      onSavedByPerson,
       // Stable for the same reason: a memo over a state setter.
       busy,
       // THE SELECTED-TEXT MENU reads these four: the selection its `when` asks about, the one
@@ -3801,6 +3845,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   // wherever the person went since (the owner's review of 2026-10-07: every link on the page shows while one is being made).
   const linksOutlined =
     useSetting(settings, RIBBON_SECTION_SETTING) === 'comment' || toolId === LINK_ADDRESS_TOOL_ID || toolId === LINK_PAGE_TOOL_ID;
+  const fieldsHighlighted = useSetting(settings, FIELD_HIGHLIGHT_SETTING);
 
   /**
    * What the tool that is on waits for, for the status bar's tool line (ADR-0154 Decision 4). A drawing tool's hint is
@@ -4278,6 +4323,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           showGrid={showGrid}
           onFollowLink={onFollowLink}
           linksOutlined={linksOutlined}
+          fieldsHighlighted={fieldsHighlighted}
           onFillField={fillFormField}
           fieldSelection={fieldSelectionForPages}
           unit={unit}
@@ -4801,6 +4847,7 @@ const DocumentLayer = memo(function DocumentLayer({
             // NO LINKS BEHIND: a hidden page is pressed by nobody, so its links are not read (ADR-0167).
             onFollowLink={undefined}
             linksOutlined={false}
+            fieldsHighlighted={false}
             // NOR ITS FIELDS (ADR-0168), for the links' reason.
             onFillField={undefined}
             fieldSelection={undefined}
@@ -4870,6 +4917,7 @@ function PageCanvas({
   showGrid,
   onFollowLink,
   linksOutlined,
+  fieldsHighlighted,
   onFillField,
   fieldSelection,
   unit,
@@ -4953,6 +5001,8 @@ function PageCanvas({
   readonly onFollowLink: PageListProps['onFollowLink'];
   /** Whether links are outlined: the Comment section is on show. */
   readonly linksOutlined: boolean;
+  /** Whether a form's fields are washed and its required ones outlined (ADR-0226). Both panes take it. */
+  readonly fieldsHighlighted: boolean;
   /** Fills a form field pressed on a page (ADR-0168); `undefined` behind. Both panes take it. */
   readonly onFillField: PageListProps['onFillField'];
   /** The selected form fields, outlined on their pages (`forms/fieldSelection.ts`); `undefined` behind. */
@@ -5295,6 +5345,7 @@ function PageCanvas({
       showGrid={showGrid}
       onFollowLink={onFollowLink}
       linksOutlined={linksOutlined}
+      fieldsHighlighted={fieldsHighlighted}
       onFillField={onFillField}
       fieldSelection={fieldSelection}
       unit={unit}
@@ -5346,6 +5397,7 @@ function PageCanvas({
       showGrid={showGrid}
       onFollowLink={onFollowLink}
       linksOutlined={linksOutlined}
+      fieldsHighlighted={fieldsHighlighted}
       onFillField={onFillField}
       unit={unit}
       label={SPLIT_SECOND_LABEL}

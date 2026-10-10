@@ -88,7 +88,6 @@ describe('FormLayer', () => {
     const { container } = draw([
       field({ index: 0, readOnly: true }),
       field({ index: 1, kind: 'signature' }),
-      field({ index: 2, kind: 'button' }),
       field({ index: 3, values: ['…'], cut: true }),
       field({ index: 4, kind: 'listbox', values: ['a', 'b'] }),
       field({ index: 5, rect: null }),
@@ -96,6 +95,15 @@ describe('FormLayer', () => {
     ]);
     const controls = [...container.querySelectorAll<HTMLElement>('[data-form-field]')];
     expect(controls.map((element) => element.getAttribute('data-form-field'))).toStrictEqual(['6']);
+  });
+
+  it('a PUSH BUTTON has a control, and pressing it says what it cannot do and fills nothing (A1.9)', () => {
+    const { container, fills } = draw([field({ index: 2, kind: 'button', name: 'Send' })]);
+    const button = at(container, 2);
+    if (button === null) throw new Error('the push button has no control');
+    fireEvent.click(button);
+    expect(fills).toStrictEqual([]);
+    expect(container.querySelector('.m-page-field-problem [role="alert"]')?.textContent).toContain('does not run what a form’s buttons are set to do');
   });
 
   it('draws nothing at all over a page with nothing to fill', () => {

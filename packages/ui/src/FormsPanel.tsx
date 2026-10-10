@@ -21,6 +21,7 @@ import {
   FORMS_KIND_SIGNATURE,
   FORMS_KIND_TEXT,
   FORMS_LABEL,
+  FORMS_NOT_FILLABLE,
   FORMS_ROW,
   FORMS_TRUNCATED,
   FORMS_UNAVAILABLE,
@@ -340,6 +341,29 @@ function FieldControl({
   const offer = fieldFill(field);
 
   if (offer.kind === 'none') return <span className="m-forms-locked">{i18n._(offer.reason, offer.values)}</span>;
+  // A PUSH BUTTON is pressed on the page, where it says what it cannot do; a second press point here would say it twice.
+  if (offer.kind === 'button') return <span className="m-forms-locked">{i18n._(FORMS_NOT_FILLABLE)}</span>;
+
+  if (offer.kind === 'choices') {
+    return (
+      <select
+        className="m-forms-choice"
+        aria-label={field.name}
+        multiple
+        onChange={(event) => {
+          onFill({ set: 'choices', options: [...event.currentTarget.selectedOptions].map((option) => option.value) });
+        }}
+        size={Math.min(offer.options.length, LIST_ROWS)}
+        value={[...offer.held]}
+      >
+        {offer.options.map((option, at) => (
+          <option key={at} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    );
+  }
 
   if (offer.kind === 'text') {
     return (

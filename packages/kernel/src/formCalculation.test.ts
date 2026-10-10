@@ -47,6 +47,13 @@ async function form(): Promise<Uint8Array> {
   const one = fields.createOptionList('one');
   one.addOptions(['a', 'b']);
   one.addToPage(page, { x: 50, y: 250, width: 200, height: 60, font });
+  const typed = fields.createDropdown('typed');
+  typed.addOptions(['Mr', 'Ms']);
+  typed.enableEditing();
+  typed.addToPage(page, { x: 50, y: 200, width: 120, height: 20, font });
+  const fixed = fields.createDropdown('fixed');
+  fixed.addOptions(['Mr', 'Ms']);
+  fixed.addToPage(page, { x: 50, y: 170, width: 120, height: 20, font });
   return document.save();
 }
 
@@ -115,6 +122,21 @@ describe('a fill works the form out in the same command', () => {
       const drawn = widget?.getObject().get('AP', 'N').readStream().asString() ?? '';
       expect(drawn).toContain('1,234.50');
       expect(drawn).not.toContain('1234.5)');
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+});
+
+describe('a dropdown that takes typing', () => {
+  it('holds a typed value it does not list, and pdf-lib reads it; a dropdown that does not take typing refuses it', async () => {
+    const session = await mupdfWriter.open(await form());
+    try {
+      await applyFillFormField(session, fillOf(await indexOf(session, 'typed'), { set: 'choice', option: 'Dr' }));
+      const saved = await PDFDocument.load(await mupdfWriter.serialise(session));
+      expect(saved.getForm().getDropdown('typed').getSelected()).toStrictEqual(['Dr']);
+      // CONTROL: the same value into the dropdown whose /Ff has no Edit bit.
+      await expect(applyFillFormField(session, fillOf(await indexOf(session, 'fixed'), { set: 'choice', option: 'Dr' }))).rejects.toThrow(/does not offer/u);
     } finally {
       await mupdfWriter.close(session);
     }

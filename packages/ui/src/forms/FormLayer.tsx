@@ -1,12 +1,14 @@
 import { useLingui } from '@lingui/react';
 import type { FieldFill } from '@monstera/contract';
-import { type CSSProperties, type MouseEvent, type ReactElement, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, type MouseEvent, type PointerEvent, type ReactElement, useEffect, useId, useRef, useState } from 'react';
 
 import { type OverlayPage, pdfRectOnScreen } from '../annotations/annotationSpace.js';
-import { FORM_FIELD_FILL_IN } from '../messages/en.js';
+import { FORM_BUTTON_NO_SCRIPTS, FORM_FIELD_FILL_IN, FORM_FIELD_PRESS } from '../messages/en.js';
+import { Problem } from '../primitives/Problem.js';
 import { ChoiceOptions, FieldTextBox } from './FieldControls.js';
+import { type FieldProblem, leftFieldProblem, storedText } from './fieldCheck.js';
 import { fieldPressArea } from './fieldHoles.js';
-import { type ListedField, fieldFill } from './fieldFill.js';
+import { type FillOffer, type ListedField, fieldFill } from './fieldFill.js';
 import { type SelectMode, modeOf } from './fieldSelection.js';
 
 /** No place on the page is selected. */
@@ -38,6 +40,21 @@ const LINE_FILL = 0.7;
 
 /** The size a box for line breaks types at, in points before the zoom: MuPDF's default for a field with no size. */
 const LINES_POINTS = 12;
+
+/** How wide a monospaced character is, as a fraction of its size: Courier's 600 units of 1000. */
+const MONO_ADVANCE = 0.6;
+
+/**
+ * A comb field's cells (ADR-0226 Decision 4): one character to a cell, `maxLength` cells across the field, as a reader
+ * draws it. The box types in a monospaced face, so every character is one advance wide, and the spacing after each is
+ * what is left of its cell; the first is set in half a gap, so each character stands in the middle of its cell.
+ */
+function combCells(offer: Extract<FillOffer, { kind: 'text' }>, width: number, size: number): CSSProperties {
+  if (!offer.comb || offer.maxLength === null) return {};
+  const cell = width / offer.maxLength;
+  const gap = Math.max(0, cell - size * MONO_ADVANCE);
+  return { letterSpacing: `${String(gap)}px`, paddingLeft: `${String(gap / 2)}px`, paddingRight: 0 };
+}
 
 /**
  * A page's form fields, filled where they are (ADR-0168).
@@ -73,6 +90,7 @@ export function FormLayer({
   focus,
   onFocused,
   onTab,
+  highlight = true,
 }: {
   readonly page: number;
   readonly fields: readonly ListedField[];
@@ -91,16 +109,26 @@ export function FormLayer({
    */
   readonly comments?: readonly { readonly rect: ListedField['rect'] }[] | undefined;
   /** A field to take the focus, stamped so asking twice focuses twice: where Tab from another field sent it. */
-  readonly focus?: { readonly index: number; readonly stamp: number } | undefined;
+  readonly focus?: { readonly index: number; readonly stamp: number; readonly say?: FieldProblem | undefined } | undefined;
   /** Told once a focus request has been taken, so it is not taken again by a layer drawn later. */
   readonly onFocused?: ((stamp: number) => void) | undefined;
   /** Tab or Shift+Tab in a field, which has been left and filled: the form's order decides where the focus goes next. */
   readonly onTab?: ((index: number, backwards: boolean, filled: boolean) => void) | undefined;
+  /**
+   * Fields drawn with a light tint and required ones outlined in red, as PDF-XChange shows a form (`forms.highlight`,
+   * on by default). Off, a field shows only the document's own appearance until the pointer is over it.
+   */
+  readonly highlight?: boolean;
 }): ReactElement | null {
   const { i18n } = useLingui();
   // THE TEXT FIELD BEING TYPED IN, by its place in the walk. One at a time: leaving one fills it and closes it.
   const [typing, setTyping] = useState<Typing | undefined>(undefined);
   const root = useRef<HTMLDivElement | null>(null);
+  // WHAT THE PERSON IS TOLD ABOUT ONE FIELD, beside it (ADR-0226): a value its format does not read, a required field
+  // left empty, a button that does nothing here. One at a time; a press on another field puts it away.
+  const [problem, setProblem] = useState<{ readonly index: number; readonly said: FieldProblem } | undefined>(undefined);
+  const idBase = useId();
+  const controlId = (index: number): string => `${idBase}-field-${String(index)}`;
   // A FIELD THE FORM'S ORDER SENT THE FOCUS TO (Tab from another field, perhaps on another page), taken once per stamp
   // while rendering, React's form for state that follows a prop: a text field opens with its words selected, as a
   // tabbed-into box is.
@@ -110,6 +138,8 @@ export function FormLayer({
   if (wantsFocus !== undefined && target !== undefined) {
     setFocusTaken(wantsFocus.stamp);
     if (fieldFill(target).kind === 'text') setTyping({ index: target.index, pressedAt: undefined });
+    // A SENTENCE THE REQUEST CARRIES is shown beside the field it focuses: a required field left empty at a save.
+    if (wantsFocus.say !== undefined) setProblem({ index: target.index, said: wantsFocus.say });
   }
   // ANY OTHER KIND IS FOCUSED WHERE IT IS once it is drawn, and told back so the request is spent.
   useEffect(() => {
@@ -182,14 +212,62 @@ export function FormLayer({
         // THE PLACE IN THE WALK IS THE KEY AND THE IDENTITY, the fill's own handle; and the mark a case finds it by.
         const marks = { 'data-form-field': String(field.index) };
 
-        if (offer.kind === 'toggle') {
-          return (
+        // THE TINT AND THE RED OUTLINE (`forms.highlight`): where a person can write, and where they must.
+        const required = 'required' in offer && offer.required;
+        const look = [
+          'm-page-field',
+          highlight ? 'm-page-field--tint' : '',
+          highlight && required ? 'm-page-field--required' : '',
+        ].filter((name) => name !== '').join(' ');
+        const id = controlId(field.index);
+        const said = problem?.index === field.index ? problem.said : undefined;
+        // WHERE THE SENTENCE GOES: under the field, at its left edge, on the page's own paper.
+        const beside = said === undefined ? null : (
+          <div
+            className="m-page-field-problem"
+            key={`problem-${String(field.index)}`}
+            style={{ left: `${String(box.left)}px`, top: `${String(box.top + box.height)}px` }}
+          >
+            <Problem about={{ field: id }} message={i18n._(said.message, said.values)} />
+          </div>
+        );
+        const tell = (next: FieldProblem | undefined): void => {
+          setProblem(next === undefined ? undefined : { index: field.index, said: next });
+        };
+        const pressed = (event: PointerEvent): void => {
+          if (problem !== undefined && problem.index !== field.index) setProblem(undefined);
+          onSelect?.(field.index, modeOf(event));
+        };
+
+        if (offer.kind === 'button') {
+          return [
             <button
               {...marks}
+              id={id}
+              key={field.index}
+              aria-label={i18n._(FORM_FIELD_PRESS, { name: field.name })}
+              className={look}
+              onClick={() => {
+                // SAID, NOT RUN (invariant 24): what a form's button is set to do is the document's content.
+                tell({ message: FORM_BUTTON_NO_SCRIPTS, values: {} });
+              }}
+              onPointerDown={pressed}
+              style={at}
+              type="button"
+            />,
+            beside,
+          ];
+        }
+
+        if (offer.kind === 'toggle') {
+          return [
+            <button
+              {...marks}
+              id={id}
               key={field.index}
               aria-checked={offer.on}
               aria-label={field.name}
-              className="m-page-field"
+              className={look}
               onClick={(event) => {
                 // CTRL AND SHIFT EXTEND THE SELECTION and fill nothing, as they do in the list.
                 if (modified(event)) return;
@@ -197,45 +275,125 @@ export function FormLayer({
                 // widget is toggled (measured), so an option that could not be cleared would hide a state it allows.
                 fill({ set: 'button', on: !offer.on });
               }}
-              onPointerDown={(event) => {
-                onSelect?.(field.index, modeOf(event));
-              }}
+              onPointerDown={pressed}
               role={offer.radio ? 'radio' : 'checkbox'}
               style={at}
               type="button"
-            />
-          );
+            />,
+            beside,
+          ];
         }
 
-        if (offer.kind === 'choice') {
-          return (
+        if (offer.kind === 'choices') {
+          return [
             <select
               {...marks}
+              id={id}
               key={field.index}
               aria-label={field.name}
-              className="m-page-field m-page-field--choice"
+              className={`${look} m-page-field--choice`}
+              multiple
               onChange={(event) => {
-                fill({ set: 'choice', option: event.currentTarget.value });
+                // EVERY OPTION NOW CHOSEN, in one fill: a list that takes several is filled with what it holds.
+                fill({ set: 'choices', options: [...event.currentTarget.selectedOptions].map((option) => option.value) });
               }}
-              onPointerDown={(event) => {
-                onSelect?.(field.index, modeOf(event));
-              }}
+              onPointerDown={pressed}
               style={at}
-              value={offer.held}
+              value={[...offer.held]}
             >
-              <ChoiceOptions offer={offer} />
-            </select>
-          );
+              {offer.options.map((option, place) => (
+                <option key={place} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>,
+            beside,
+          ];
         }
 
-        if (typing?.index === field.index) {
-          const size = offer.lines ? Math.min(box.height * LINE_FILL, LINES_POINTS * geometry.zoom) : box.height * LINE_FILL;
-          return (
+        if (offer.kind === 'choice' && offer.editable && typing?.index === field.index) {
+          // A DROPDOWN THAT TAKES TYPING: a box offering the document's options, whose words are the value.
+          const listId = `${id}-options`;
+          return [
             <FieldTextBox
               key={field.index}
               marks={marks}
               autoFocus
               className="m-page-field-editor"
+              name={field.name}
+              offer={{ kind: 'text', held: offer.held, lines: false, maxLength: null, comb: false, masked: false, required: offer.required, format: null }}
+              list={listId}
+              pressedAt={typing.pressedAt}
+              selectsAll={typing.pressedAt === undefined}
+              onCancel={() => {
+                setTyping(undefined);
+              }}
+              onCommit={(text) => {
+                fill({ set: 'choice', option: text });
+              }}
+              onDone={() => {
+                setTyping(undefined);
+              }}
+              style={{ ...at, fontSize: `${String(box.height * LINE_FILL)}px` }}
+            />,
+            <datalist id={listId} key={`options-${String(field.index)}`}>
+              {offer.choices.filter((choice) => choice !== '').map((choice, place) => (
+                <option key={place} value={choice} />
+              ))}
+            </datalist>,
+          ];
+        }
+
+        if (offer.kind === 'choice' && offer.editable) {
+          return [
+            <button
+              {...marks}
+              id={id}
+              key={field.index}
+              aria-label={i18n._(FORM_FIELD_FILL_IN, { name: field.name })}
+              className={`${look} m-page-field--text`}
+              onClick={(event) => {
+                if (modified(event)) return;
+                setTyping({ index: field.index, pressedAt: event.detail === 0 ? undefined : { x: event.clientX, y: event.clientY } });
+              }}
+              onPointerDown={pressed}
+              style={at}
+              type="button"
+            />,
+            beside,
+          ];
+        }
+
+        if (offer.kind === 'choice') {
+          return [
+            <select
+              {...marks}
+              id={id}
+              key={field.index}
+              aria-label={field.name}
+              className={`${look} m-page-field--choice`}
+              onChange={(event) => {
+                fill({ set: 'choice', option: event.currentTarget.value });
+              }}
+              onPointerDown={pressed}
+              style={at}
+              value={offer.held}
+            >
+              <ChoiceOptions offer={offer} />
+            </select>,
+            beside,
+          ];
+        }
+
+        if (typing?.index === field.index) {
+          const size = offer.lines ? Math.min(box.height * LINE_FILL, LINES_POINTS * geometry.zoom) : box.height * LINE_FILL;
+          return [
+            <FieldTextBox
+              key={field.index}
+              id={id}
+              marks={marks}
+              autoFocus
+              className={offer.comb ? 'm-page-field-editor m-page-field-editor--comb' : 'm-page-field-editor'}
               name={field.name}
               offer={offer}
               pressedAt={typing.pressedAt}
@@ -251,35 +409,39 @@ export function FormLayer({
                 setTyping(undefined);
               }}
               onCommit={(text) => {
-                fill({ set: 'text', text });
+                fill({ set: 'text', text: storedText(text, offer) });
+              }}
+              onLeave={(text) => {
+                tell(leftFieldProblem(field.name, text, offer));
               }}
               onDone={() => {
                 setTyping(undefined);
               }}
-              style={{ ...at, fontSize: `${String(size)}px` }}
-            />
-          );
+              style={{ ...at, fontSize: `${String(size)}px`, ...combCells(offer, box.width, size) }}
+            />,
+            beside,
+          ];
         }
 
-        return (
+        return [
           <button
             {...marks}
+            id={id}
             key={field.index}
             aria-label={i18n._(FORM_FIELD_FILL_IN, { name: field.name })}
-            className="m-page-field m-page-field--text"
+            className={`${look} m-page-field--text`}
             onClick={(event) => {
               if (modified(event)) return;
               // A PRESS OPENS THE BOX WITH THE CARET WHERE IT LANDED; a keyboard's Enter or Space on the control is a
               // click with no place (`detail` 0), and opens it with the words selected, as Tab does.
               setTyping({ index: field.index, pressedAt: event.detail === 0 ? undefined : { x: event.clientX, y: event.clientY } });
             }}
-            onPointerDown={(event) => {
-              onSelect?.(field.index, modeOf(event));
-            }}
+            onPointerDown={pressed}
             style={at}
             type="button"
-          />
-        );
+          />,
+          beside,
+        ];
       })}
     </div>
   );

@@ -5955,6 +5955,40 @@ optgroup {
   cursor: text;
 }
 
+/* THE FIELDS A PERSON CAN FILL, washed light blue as PDF-XChange washes them (`forms.highlight`), so a form shows
+   where to write before anything is pressed. Under the document's own appearance it would be hidden, so it is a
+   multiplied wash over it: the field's words and edge stay as dark as the document drew them. */
+.m-page-field--tint {
+  background: var(--field-tint);
+  mix-blend-mode: multiply;
+}
+
+/* A REQUIRED FIELD is outlined in red (ADR-0226), where it is on the paper. */
+.m-page-field--required {
+  outline: 1px solid var(--field-required);
+  outline-offset: 0;
+}
+
+/* WHAT A PERSON IS TOLD ABOUT ONE FIELD, under it on the page: on a floating surface, where the problem colour is
+   declared, rather than on the paper, where it is not. */
+.m-page-field-problem {
+  position: absolute;
+  z-index: 1;
+  max-inline-size: 28em;
+  margin-block-start: var(--space-2);
+  padding: var(--space-4) var(--space-6);
+  border: 1px solid var(--border); /* decorative: the edge of a note that holds a sentence, nothing to press */
+  border-radius: var(--radius-6);
+  background: var(--float);
+  box-shadow: var(--shadow);
+  pointer-events: auto;
+}
+
+/* A COMB FIELD types one character to a cell, in a monospaced face whose spacing `combCells` sets from the field. */
+.m-page-field-editor--comb {
+  font-family: 'Courier New', Courier, monospace;
+}
+
 .m-page-field--choice {
   appearance: none;
   color: transparent;

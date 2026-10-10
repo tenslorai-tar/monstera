@@ -45,12 +45,14 @@ const ON_PAPER: readonly string[] = ['--page'];
 /** No marks on a page, one identity for every page without any. */
 const NO_MARKS: readonly DifferenceMark[] = [];
 const NO_SPOTS: readonly Spot[] = [];
+const NO_FIELDS: readonly ListedField[] = [];
 import { type PageAnnotation, usePageAnnotations } from './usePageAnnotations.js';
 import { usePageRotations } from './usePageRotations.js';
 import { type PageTextAnswer, usePageText } from './usePageText.js';
 import { type PageLinkOnPage, usePageLinks } from './usePageLinks.js';
 import { FormLayer, type PageFill } from './forms/FormLayer.js';
 import type { SelectMode } from './forms/fieldSelection.js';
+import type { FieldProblem } from './forms/fieldCheck.js';
 import type { ListedField } from './forms/fieldFill.js';
 import { usePageFormFields } from './forms/usePageFormFields.js';
 import { useSelectedTextPages } from './useSelectedTextPages.js';
@@ -207,6 +209,8 @@ export interface PageListProps {
   readonly onFollowLink: ((followed: FollowedLink) => void) | undefined;
   /** Whether each link's edge is drawn: the Comment section is on show, where links are made. */
   readonly linksOutlined: boolean;
+  /** Whether a form's fields are washed and its required ones outlined (`viewing.highlight-fields`, ADR-0226). */
+  readonly fieldsHighlighted?: boolean;
   /**
    * Fills a form field a person pressed on its page (ADR-0168), named by page, walk index and the version its list was
    * read at, or `undefined` where this list fills none — the comparison view's panes. With it, each visible page draws
@@ -223,7 +227,9 @@ export interface PageListProps {
         readonly reveal: { readonly page: number; readonly index: number; readonly stamp: number } | undefined;
         readonly onSelect: (page: number, index: number, mode: SelectMode) => void;
         /** A field the form's order sends the focus to, stamped (ADR-0226 Decision 3). */
-        readonly focus?: { readonly page: number; readonly index: number; readonly stamp: number } | undefined;
+        readonly focus?:
+          | { readonly page: number; readonly index: number; readonly stamp: number; readonly say?: FieldProblem | undefined }
+          | undefined;
         readonly onFocused?: (stamp: number) => void;
         /** Tab or Shift+Tab in a field on a page: the form's order decides where the focus goes. */
         readonly onTab?: (page: number, index: number, backwards: boolean, filled: boolean) => void;
@@ -475,6 +481,7 @@ export function PageList({
   showGrid,
   onFollowLink,
   linksOutlined,
+  fieldsHighlighted = true,
   onFillField,
   fieldSelection,
   unit,
@@ -1313,8 +1320,12 @@ export function PageList({
           // be pressed where the link is not.
           links={sizes.has(page) && onFollowLink !== undefined ? pageLinks.get(page) : undefined}
           linksOutlined={linksOutlined}
+          fieldsHighlighted={fieldsHighlighted}
           onFollowLink={onFollowLink}
-          fields={sizes.has(page) && fillOnPage !== undefined ? pageFields.get(page) : undefined}
+          // NONE RATHER THAN ABSENT while the list is read again: a fill moves the version and the list is read afresh,
+          // and a layer unmounted for that moment loses what it holds, the box being typed in, the sentence beside a
+          // field and where Tab sent the focus (ADR-0226). Mounted with none, it draws nothing until the list arrives.
+          fields={sizes.has(page) && fillOnPage !== undefined ? (pageFields.get(page) ?? NO_FIELDS) : undefined}
           onFillField={fillOnPage}
           selectedFields={fieldSelection === undefined ? undefined : selectedOnPage(fieldSelection.selected, page)}
           revealField={fieldSelection?.reveal?.page === page ? fieldSelection.reveal : undefined}
@@ -1535,6 +1546,7 @@ function PageSlot({
   grid,
   links,
   linksOutlined,
+  fieldsHighlighted,
   onFollowLink,
   fields,
   onFillField,
@@ -1597,6 +1609,7 @@ function PageSlot({
   /** This page's links, or `undefined` before they are known, the slot is measured, or where none are followed. */
   readonly links: readonly PageLinkOnPage[] | undefined;
   readonly linksOutlined: boolean;
+  readonly fieldsHighlighted: boolean;
   readonly onFollowLink: ((followed: FollowedLink) => void) | undefined;
   /** This page's form fields, or `undefined` before they are known, the slot is measured, or where none are filled. */
   readonly fields: readonly ListedField[] | undefined;
@@ -1605,7 +1618,7 @@ function PageSlot({
   readonly selectedFields: ReadonlySet<number> | undefined;
   readonly revealField: { readonly index: number; readonly stamp: number } | undefined;
   readonly onSelectField: ((index: number, mode: SelectMode) => void) | undefined;
-  readonly focusField: { readonly index: number; readonly stamp: number } | undefined;
+  readonly focusField: { readonly index: number; readonly stamp: number; readonly say?: FieldProblem | undefined } | undefined;
   readonly onFocusedField: ((stamp: number) => void) | undefined;
   readonly onTabField: ((index: number, backwards: boolean, filled: boolean) => void) | undefined;
   /** The scroller the slot sits in, whose box decides which tiles are wanted. */
@@ -1773,6 +1786,7 @@ function PageSlot({
         focus={focusField}
         onFocused={onFocusedField}
         onTab={onTabField}
+        highlight={fieldsHighlighted}
       />
     );
 

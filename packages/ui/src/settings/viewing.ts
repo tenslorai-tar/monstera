@@ -5,6 +5,8 @@ import {
   RESTORE_SESSION_TITLE,
   DARK_PAGE_DESCRIPTION,
   DARK_PAGE_TITLE,
+  FIELD_HIGHLIGHT_DESCRIPTION,
+  FIELD_HIGHLIGHT_TITLE,
   GRID_DESCRIPTION,
   GRID_DIVISIONS_DESCRIPTION,
   GRID_DIVISIONS_OPTION_TITLES,
@@ -240,6 +242,20 @@ export const SPLIT_VIEW_SETTING: SettingDefinition<z.ZodBoolean> = {
   category: 'viewing',
   // REMEMBERED: split view is a layout the ribbon and Ctrl+Shift+E turn on, not a preference.
   remembered: true,
+};
+
+/**
+ * Whether a form's fields are washed light blue and its required ones outlined in red (ADR-0226), as PDF-XChange shows a
+ * form. **On by default**: a person opening a form sees where to write before anything is pressed. Display only, never
+ * written into a document.
+ */
+export const FIELD_HIGHLIGHT_SETTING: SettingDefinition<z.ZodBoolean> = {
+  id: 'viewing.highlight-fields',
+  title: FIELD_HIGHLIGHT_TITLE,
+  description: FIELD_HIGHLIGHT_DESCRIPTION,
+  schema: z.boolean(),
+  fallback: true,
+  category: 'viewing',
 };
 
 export const GRID_SETTING: SettingDefinition<z.ZodBoolean> = {

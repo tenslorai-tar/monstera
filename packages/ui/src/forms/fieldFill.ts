@@ -1,4 +1,4 @@
-import type { ChannelResult } from '@monstera/contract';
+import type { ChannelResult, FieldFormat } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 
 import { FORMS_MANY_VALUES, FORMS_NOT_FILLABLE, FORMS_READ_ONLY, FORMS_TOO_LONG } from '../messages/en.js';
@@ -17,8 +17,18 @@ export type ListedField = ChannelResult<'document.formFields'>['fields'][number]
  * - `none`: nothing here, with the sentence that says why.
  */
 export type FillOffer =
-  | { readonly kind: 'text'; readonly held: string; readonly lines: boolean }
-  | { readonly kind: 'toggle'; readonly on: boolean; readonly radio: boolean }
+  | {
+      readonly kind: 'text';
+      readonly held: string;
+      readonly lines: boolean;
+      /** The rules the field's dictionary sets (ADR-0226 Decision 4), enforced where the person types. */
+      readonly maxLength: number | null;
+      readonly comb: boolean;
+      readonly masked: boolean;
+      readonly required: boolean;
+      readonly format: FieldFormat | null;
+    }
+  | { readonly kind: 'toggle'; readonly on: boolean; readonly radio: boolean; readonly required: boolean }
   | {
       readonly kind: 'choice';
       readonly held: string;
@@ -27,7 +37,23 @@ export type FillOffer =
        * the field holds when the document does not offer it, so it is shown rather than read as empty.
        */
       readonly choices: readonly string[];
+      /** A dropdown that also takes typing: what is typed is its value, offered or not. */
+      readonly editable: boolean;
+      readonly required: boolean;
     }
+  | {
+      /** A list that takes several values: what it holds, and its options in the document's order (ADR-0226 Decision 5). */
+      readonly kind: 'choices';
+      readonly held: readonly string[];
+      readonly options: readonly string[];
+      readonly required: boolean;
+    }
+  /**
+   * A push button. It is pressed and says what it cannot do (invariant 24, ADR-0193): what a form's button is set to do
+   * is the document's content, which opening a document never runs, and a control that pressed and said nothing would
+   * be the display-only defect.
+   */
+  | { readonly kind: 'button' }
   | {
       readonly kind: 'none';
       readonly reason: MessageKey;
@@ -50,10 +76,25 @@ export function fieldFill(field: ListedField): FillOffer {
   if (field.cut === true) return { kind: 'none', reason: FORMS_TOO_LONG };
   if (field.kind === 'text') {
     const held = field.values[0] ?? '';
-    return { kind: 'text', held, lines: field.multiline || LINE_BREAK.test(held) };
+    return {
+      kind: 'text',
+      held,
+      lines: field.multiline || LINE_BREAK.test(held),
+      maxLength: field.maxLength,
+      comb: field.comb,
+      masked: field.masked,
+      required: field.required,
+      format: field.format,
+    };
   }
   if (field.kind === 'checkbox' || field.kind === 'radio') {
-    return { kind: 'toggle', on: field.on === true, radio: field.kind === 'radio' };
+    return { kind: 'toggle', on: field.on === true, radio: field.kind === 'radio', required: field.required };
+  }
+  // A LIST THAT TAKES SEVERAL is filled with several (ADR-0226 Decision 5); one holding a value it does not offer keeps
+  // it, listed after the document's options, for the one-value list's reason below.
+  if (field.kind === 'listbox' && field.multiSelect) {
+    const unlisted = field.values.filter((value) => !field.options.includes(value));
+    return { kind: 'choices', held: field.values, options: [...field.options, ...unlisted], required: field.required };
   }
   if (field.kind === 'dropdown' || field.kind === 'listbox') {
     if (field.values.length > 1) {
@@ -61,7 +102,14 @@ export function fieldFill(field: ListedField): FillOffer {
     }
     const held = field.values[0] ?? '';
     const offered = held === '' || field.options.includes(held);
-    return { kind: 'choice', held, choices: ['', ...field.options, ...(offered ? [] : [held])] };
+    return {
+      kind: 'choice',
+      held,
+      choices: ['', ...field.options, ...(offered ? [] : [held])],
+      editable: field.kind === 'dropdown' && field.editable,
+      required: field.required,
+    };
   }
+  if (field.kind === 'button') return { kind: 'button' };
   return { kind: 'none', reason: FORMS_NOT_FILLABLE };
 }

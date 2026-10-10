@@ -1,8 +1,10 @@
 import {
   AUTOSCROLL_TITLE,
   DARK_PAGE_TITLE,
+  FIELD_HIGHLIGHT_TITLE,
   GRID_TITLE,
   GROUP_DISPLAY,
+  GROUP_MANAGE,
   LOUPE_TITLE,
   MENU_GROUP_SHOW,
   PALETTE_TITLE,
@@ -13,6 +15,7 @@ import { type UiCommand, VISIBLE } from '../registries/commands.js';
 import { hasDocument } from './documentCommands.js';
 import {
   DARK_PAGE_SETTING,
+  FIELD_HIGHLIGHT_SETTING,
   GRID_SETTING,
   LOUPE_SETTING,
   RULERS_SETTING,
@@ -229,6 +232,29 @@ export function autoscrollCommand(deps: {
     checked: () => deps.autoscrolling(),
     run: (): void => {
       deps.onToggle();
+    },
+  };
+}
+
+/**
+ * *Highlight fields* (ADR-0226): a form's fields washed light blue and its required ones outlined in red. In the Forms
+ * tab, where a form is filled and made, and in View › Show beside the other display switches.
+ */
+export function toggleFieldHighlightCommand(deps: { readonly settings: SettingsStore }): UiCommand {
+  return {
+    id: 'view.toggle-field-highlight',
+    feedback: VISIBLE,
+    icon: 'TextCursorInput',
+    title: FIELD_HIGHLIGHT_TITLE,
+    placements: [
+      { surface: 'ribbon', section: 'forms', group: GROUP_MANAGE, order: 78 },
+      { surface: 'menu-bar', menu: 'view', group: 3, order: 55, caption: MENU_GROUP_SHOW },
+    ],
+    when: hasDocument,
+    // ON UNLESS SET OFF: the setting's own fallback is `true`, and a store that has never written it answers nothing.
+    checked: () => deps.settings.get(FIELD_HIGHLIGHT_SETTING.id) !== false,
+    run: (): void => {
+      deps.settings.set(FIELD_HIGHLIGHT_SETTING.id, deps.settings.get(FIELD_HIGHLIGHT_SETTING.id) === false);
     },
   };
 }

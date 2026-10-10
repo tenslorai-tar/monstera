@@ -1684,6 +1684,16 @@ export const LINK_FOLLOW_NOT_OPENED = messageKey('toast.link.not-opened');
 export const LINK_FOLLOW_UNAVAILABLE = messageKey('toast.link.unavailable');
 export const LINK_ADDED = messageKey('toast.link.added');
 export const FORM_FIELD_FILL_IN = messageKey('surface.form-layer.fill-in');
+export const FIELD_HIGHLIGHT_TITLE = messageKey('setting.viewing.highlight-fields.title');
+export const FIELD_HIGHLIGHT_DESCRIPTION = messageKey('setting.viewing.highlight-fields.description');
+export const FORM_FIELD_WANTS_NUMBER = messageKey('surface.form-layer.wants-number');
+export const FORM_FIELD_WANTS_PERCENT = messageKey('surface.form-layer.wants-percent');
+export const FORM_FIELD_WANTS_DATE = messageKey('surface.form-layer.wants-date');
+export const FORM_FIELD_WANTS_TIME = messageKey('surface.form-layer.wants-time');
+export const FORM_FIELD_REQUIRED_EMPTY = messageKey('surface.form-layer.required-empty');
+export const FORM_FIELD_REQUIRED_LEFT = messageKey('surface.form-layer.required-left');
+export const FORM_BUTTON_NO_SCRIPTS = messageKey('surface.form-layer.button-no-scripts');
+export const FORM_FIELD_PRESS = messageKey('surface.form-layer.press');
 export const FLATTEN_FORM_TITLE = messageKey('dialog.flatten-form.title');
 export const FLATTEN_FORM_EXPLAINS = messageKey('dialog.flatten-form.explains');
 export const FLATTEN_FORM_APPLY = messageKey('dialog.flatten-form.apply');
@@ -4335,6 +4345,20 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [LINK_FOLLOW_UNAVAILABLE]: 'The link could not be opened, because the document could not be read just now.',
   [LINK_ADDED]: 'Link added.',
   [FORM_FIELD_FILL_IN]: 'Fill in {name}',
+  [FIELD_HIGHLIGHT_TITLE]: 'Highlight fields',
+  [FIELD_HIGHLIGHT_DESCRIPTION]:
+    'Shows a form’s fields with a light blue wash and its required fields with a red outline, so you can see where to write. The document is not changed.',
+  // THE FIELD KEEPS WHAT WAS TYPED: the sentence says what the field expects, and nothing is thrown away.
+  [FORM_FIELD_WANTS_NUMBER]: '{name} expects a number, such as {example}. What you typed is kept.',
+  [FORM_FIELD_WANTS_PERCENT]: '{name} expects a percentage, such as {example}. What you typed is kept.',
+  [FORM_FIELD_WANTS_DATE]: '{name} expects a date, such as {example}. What you typed is kept.',
+  [FORM_FIELD_WANTS_TIME]: '{name} expects a time, such as {example}. What you typed is kept.',
+  [FORM_FIELD_REQUIRED_EMPTY]: '{name} must be filled in.',
+  [FORM_FIELD_REQUIRED_LEFT]:
+    'The document was saved, and some required fields are still empty. The first is ready to fill, and every one is outlined in red on the page.',
+  [FORM_BUTTON_NO_SCRIPTS]:
+    'Monstera does not run what a form’s buttons are set to do, such as a script or sending the form, so pressing this button does nothing here. Every other part of the form works.',
+  [FORM_FIELD_PRESS]: 'Press {name}',
   [FLATTEN_FORM_TITLE]: 'Flatten the form',
   [FLATTEN_FORM_EXPLAINS]:
     'Every field’s contents are drawn onto its page and the form is removed, so the fields can no longer be filled in. Comments are not affected. The only way back is Undo, in this session.',

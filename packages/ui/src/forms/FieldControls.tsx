@@ -40,6 +40,9 @@ export function FieldTextBox({
   pressedAt,
   onTab,
   selectsAll = false,
+  id,
+  list,
+  onLeave,
 }: {
   /** Data attributes a surface finds the box by. */
   readonly marks?: Readonly<Record<`data-${string}`, string>>;
@@ -67,6 +70,15 @@ export function FieldTextBox({
   readonly onTab?: ((backwards: boolean, filled: boolean) => void) | undefined;
   /** The words are selected when the box first takes focus with no press to place the caret: reached by Tab. */
   readonly selectsAll?: boolean;
+  /** The element's id, for a sentence beside the box that names it (`Problem`). */
+  readonly id?: string;
+  /** The id of a `datalist` whose options the box offers: a dropdown that also takes typing. */
+  readonly list?: string;
+  /**
+   * Told what the box holds once it has been left with a change, after the commit: where the page says what is wrong
+   * with the value (a format, a required field), and never where it decides whether to fill.
+   */
+  readonly onLeave?: (text: string) => void;
 }): ReactElement {
   const shown = useRef<string | undefined>(undefined);
   const cancelled = useRef(false);
@@ -75,6 +87,7 @@ export function FieldTextBox({
   const selectAllOnce = useRef(selectsAll);
   const common = {
     ...marks,
+    ...(id === undefined ? {} : { id }),
     'aria-label': name,
     autoFocus,
     className: offer.lines ? `${className} ${className}--lines` : className,
@@ -100,7 +113,11 @@ export function FieldTextBox({
       }
     },
     onBlur: (event: FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-      if (!cancelled.current && event.currentTarget.value !== shown.current) onCommit(event.currentTarget.value);
+      const value = event.currentTarget.value;
+      if (!cancelled.current && value !== shown.current) {
+        onCommit(value);
+        onLeave?.(value);
+      }
       onDone?.();
     },
     onKeyDown: (event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -123,7 +140,15 @@ export function FieldTextBox({
       }
     },
   };
-  return offer.lines ? <textarea rows={rows} {...common} /> : <input type="text" {...common} />;
+  // THE DOCUMENT'S LENGTH LIMIT is enforced where the person types (`/MaxLen`), so a field cannot be given more than it
+  // takes; a value that already holds more is shown whole and kept, never cut by the box.
+  const limit = offer.maxLength !== null && offer.held.length <= offer.maxLength ? offer.maxLength : undefined;
+  return offer.lines ? (
+    <textarea rows={rows} maxLength={limit} {...common} />
+  ) : (
+    // A FIELD THAT MASKS WHAT IS TYPED (`/Ff` Password) is a password box, so its letters are not shown on the page.
+    <input type={offer.masked ? 'password' : 'text'} maxLength={limit} {...(list === undefined ? {} : { list })} {...common} />
+  );
 }
 
 /** The canvas every caret measurement draws nothing on: one per window, made on first use. */

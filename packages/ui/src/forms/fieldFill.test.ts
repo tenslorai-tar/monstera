@@ -34,15 +34,18 @@ function field(over: Partial<ListedField>): ListedField {
 
 describe('fieldFill', () => {
   it('offers a text field for typing, on one line or with line breaks', () => {
-    expect(fieldFill(field({ values: ['Ada'] }))).toStrictEqual({ kind: 'text', held: 'Ada', lines: false });
-    expect(fieldFill(field({ multiline: true }))).toStrictEqual({ kind: 'text', held: '', lines: true });
+    const rules = { maxLength: null, comb: false, masked: false, required: false, format: null };
+    expect(fieldFill(field({ values: ['Ada'] }))).toStrictEqual({ kind: 'text', held: 'Ada', lines: false, ...rules });
+    expect(fieldFill(field({ multiline: true }))).toStrictEqual({ kind: 'text', held: '', lines: true, ...rules });
+    // THE FIELD'S RULES TRAVEL WITH THE OFFER (ADR-0226 Decision 4), each one as the list carried it.
+    expect(fieldFill(field({ maxLength: 4, comb: true, masked: true, required: true }))).toMatchObject({ maxLength: 4, comb: true, masked: true, required: true });
     // A VALUE HOLDING A LINE BREAK is edited with them kept, whatever the field's flag says.
     expect(fieldFill(field({ values: ['a\rb'] }))).toMatchObject({ lines: true });
   });
 
   it('offers a tick box and a radio as a toggle at the widget’s own state', () => {
-    expect(fieldFill(field({ kind: 'checkbox', on: true }))).toStrictEqual({ kind: 'toggle', on: true, radio: false });
-    expect(fieldFill(field({ kind: 'radio', on: false }))).toStrictEqual({ kind: 'toggle', on: false, radio: true });
+    expect(fieldFill(field({ kind: 'checkbox', on: true }))).toStrictEqual({ kind: 'toggle', on: true, radio: false, required: false });
+    expect(fieldFill(field({ kind: 'radio', on: false }))).toStrictEqual({ kind: 'toggle', on: false, radio: true, required: false });
   });
 
   it('offers a choice with the empty choice first, and a held value the document does not offer last', () => {
@@ -50,13 +53,35 @@ describe('fieldFill', () => {
       kind: 'choice',
       held: 'Ms',
       choices: ['', 'Dr', 'Ms'],
+      editable: false,
+      required: false,
     });
     // CONTROL: a value outside the options is shown rather than read as empty.
     expect(fieldFill(field({ kind: 'listbox', options: ['Dr'], values: ['Prof'] }))).toStrictEqual({
       kind: 'choice',
       held: 'Prof',
       choices: ['', 'Dr', 'Prof'],
+      editable: false,
+      required: false,
     });
+    // A DROPDOWN THAT TAKES TYPING says so; a list never does, whatever its flag.
+    expect(fieldFill(field({ kind: 'dropdown', options: ['Dr'], editable: true }))).toMatchObject({ kind: 'choice', editable: true });
+    expect(fieldFill(field({ kind: 'listbox', options: ['Dr'], editable: true }))).toMatchObject({ kind: 'choice', editable: false });
+  });
+
+  it('offers a list that takes several values with everything it holds, and the options in the document’s order (ADR-0226)', () => {
+    expect(fieldFill(field({ kind: 'listbox', multiSelect: true, options: ['a', 'b', 'c'], values: ['c', 'a'] }))).toStrictEqual({
+      kind: 'choices',
+      held: ['c', 'a'],
+      options: ['a', 'b', 'c'],
+      required: false,
+    });
+    // CONTROL: the same two values in a list that takes one cannot be filled here, for the slice's reason.
+    expect(fieldFill(field({ kind: 'listbox', options: ['a', 'b', 'c'], values: ['c', 'a'] }))).toMatchObject({ kind: 'none' });
+  });
+
+  it('offers a push button, which is pressed and says what it cannot do (A1.9)', () => {
+    expect(fieldFill(field({ kind: 'button' }))).toStrictEqual({ kind: 'button' });
   });
 
   it('REFUSES with the reason: read-only, a slice, several values, a kind nobody fills', () => {
@@ -68,7 +93,7 @@ describe('fieldFill', () => {
       reason: FORMS_MANY_VALUES,
       values: { values: 'a, b' },
     });
-    for (const kind of ['signature', 'button', 'other'] as const) {
+    for (const kind of ['signature', 'other'] as const) {
       expect(fieldFill(field({ kind })), kind).toStrictEqual({ kind: 'none', reason: FORMS_NOT_FILLABLE });
     }
   });

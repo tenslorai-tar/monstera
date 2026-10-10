@@ -4,7 +4,7 @@
      equal to it. Regenerate with `npx vitest run packages/ui/src/App.test.tsx -t "manual test checklist" -u`.
      Do not edit by hand. -->
 
-Every command the application registers — 252 — and the checks only the installed window can answer.
+Every command the application registers — 253 — and the checks only the installed window can answer.
 For each command: use it on a real document, see the correct effect, then save, close and reopen and see it kept
 (the wired-tools rule, CLAUDE.md). A command that needs a selection, a second document or a key says so when it
 is not available.
@@ -142,6 +142,7 @@ is not available.
 - [ ] **Draw a dropdown** — Fields · `forms.field-dropdown` · Shows: on screen · Help: *Create form fields*
 - [ ] **Draw a list box** — Fields · `forms.field-listbox` · Shows: on screen · Help: *Create form fields*
 - [ ] **Fields list** — Fields · `view.show-fields` · Shows: on screen · Help: *Delete a form field*
+- [ ] **Highlight fields** — Manage · `view.toggle-field-highlight` · Shows: on screen
 - [ ] **Find fields on this page…** — Manage · `document.find-flat-fields` · Shows: a result dialog · Help: *Find fields on a flat form*
 - [ ] **Flatten form** — Manage · `document.flatten-form` · Shows: a toast · Help: *Flatten a form*
 - [ ] **Tab order…** — Manage · `document.tab-order` · Shows: a toast · Help: *Change a form field*
