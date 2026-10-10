@@ -892,6 +892,100 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-10 — Stage audit of `726be5ae..e8fd8a55` — findings AAAAAAAA-1 to AAAAAAAA-8
+
+The text box styles (ADR-0211), the owner's 0.1.12.0 review fixes (ribbon, panel tabs, the backup move without a
+dialog, ADR-0222's recognised tables, the box read, link pixels), the 0.1.13.0 package, Codex's run (partial comment
+import ADR-0223, protection undo ADR-0224, the caller scan ADR-0225, the live harness), and the first three commits of the
+cloud forms rebuild (ADR-0226, filling under the Select and Hand tools, the field list's fill rules). Read through
+`npm run audit:scope` (37 commits, 199 files) and `git log -p` for every modified test or proof that lost a line. The
+audit was owed when the next commit of the forms rebuild would have taken the range to 209 files; that commit follows
+this one and is outside the range.
+
+**AAAAAAAA-1** (medium, open): the ribbon-fold bound in `renderedScreen.pw.ts` was widened four times (309eef95, 72a6f8d9,
+f1d28519, 406e1254) against one CI reading (room 130.36 against a widest unit of 129.75). Only the last commit states a
+mechanism that fits the evidence (one more unit needs its width and a gap); its own message says every group was drawn
+and nothing scrolled, which contradicts the diagnosis the first one gave and means the footprint branch and the
+`.m-ribbon__rest` branch were not active in the failing case. Each earlier widening still stands, and no case shows the
+final bound failing on the ~200 px defect it guards. Retrying until green, item 1's shape. Owed: revert the three
+widenings that rest on the disproved diagnosis and keep 406e1254's, with a control that fails on the original defect.
+
+**AAAAAAAA-2** (medium, open): `fittedToRaster` (5fa5c252, `ocrClaude.ts`) stretches the model's word frame over the
+raster when the words cover less than 70% of an axis, justified by "a person drags a box around the writing". The same
+path serves whole-page reads (ADR-0202; `composition.ts` sends the whole-page route through `prepared.recognise`), where
+a page whose writing fills its top half would have its invisible text layer stretched over the whole page. No case
+covers a whole-page read. The figures disagree as well: 591 of 1096 in the test, 591 thousandths in the comment, 395 of
+1096 in the commit message. Outside this run's scope (OCR); reported to the owner.
+
+**AAAAAAAA-3** (low, open): `adoptOldBackups` (74709ff1) wraps the scan and the move in one bare `catch {}` returning 0,
+so a programming error reads exactly as "nothing to move", and no test calls the method. Silence on a folder that cannot
+be read is the owner's ruling; the width of the catch is not.
+
+**AAAAAAAA-4** (low, open): `ribbonFolding.ts` keeps "THE SECONDARIES ARE GATHERED AMONG THEMSELVES, after every primary"
+directly above the code that now merges a secondary into the primaries' last run (44582c21), item 7's half-true compound
+claim; the new case named for fold order asserts only which columns hold a secondary.
+
+**AAAAAAAA-5** (low, open): two controls that cannot fail on their own. `recognisedTables.test.ts`' "CONTROL" (b83d5692)
+recomputes a fact the line above it already asserts; `pageLinks.test.ts` (79b71ab3) is named for a web link and a page
+link and adds only a web link, through MuPDF, which by its own comment does not draw a link, so it cannot see the
+renderer where the owner's defect was.
+
+**AAAAAAAA-6** (medium, open): ADR-0222 Decision 4 drops a table that cannot be placed without a word when another table
+is placed, and the new tests pin the silent drop; against *preserve, never drop* and the ADR's own Decision 5.
+
+**AAAAAAAA-7** (low, closed in this rebuild's next commit): a member named `password` on the field list (my own, uncommitted
+when found) tripped `credentialFields.test.ts`, correctly; it is `masked`. Found by the related test run, not by review,
+which is the scan doing its job.
+
+**AAAAAAAA-8** (low, recorded): a `Write` tool call put a real no-break space and a right single quotation mark into a
+regular expression where ` ` and `’` were written (`fieldFormatting.ts`, uncommitted). Lint's
+`no-irregular-whitespace` found it; the line could not be matched by an edit afterwards, CLAUDE.md's third tell, and was
+replaced by line number with the marks built from code points. The class CLAUDE.md records for `0x00` and `0x01`
+reaches printable non-ASCII too, where `guardFiles.mjs` does not look.
+
+Also noted, not findings: ADR corrections rode with features in 74709ff1 and 44582c21 (B4 wants them apart);
+`firstCorrectionsLive.mjs` writes under `_review/codex/run-1`, which is neither tracked nor ignored; `organizeFrames.ts`'
+consumer checks the sampler ran and saw both states but not that it can tell an undrawn frame.
+
+### 1. Root cause or workaround?
+AAAAAAAA-1 is the one workaround: three of four widenings rest on a disproved diagnosis. The forms commits each name their
+mechanism (the form layer under the overlay; a schema that strips undeclared keys).
+
+### 2. Verified against the easy shape only?
+The forms fill cases turn a tool on first, the shape the owner was in; the Hand case drags as well as presses.
+
+### 2a. Has a change to how something is proven moved the coverage?
+`engine/form-fields`' derived bound halves (66,500 to 33,200) with the wider row in the commit after this one, which
+states it in FEATURES row 172.
+
+### 3. Would CI have caught it?
+AAAAAAAA-2 and -6 no: no case reaches them. The rest are CI steps.
+
+### 4. Are the proofs non-vacuous?
+The forms rendered cases fail with the change stashed; the composition case fails with one rule removed from the contract.
+AAAAAAAA-5 names two controls that cannot fail.
+
+### 4a. Resolution test before measuring?
+`fieldCaret.ts` is tested at the boundary between two letters and against kerning.
+
+### 4b. A search with a positive control?
+`organizeFrames.ts` partly (noted above).
+
+### 4c. Does a check derive its extent from the set it governs?
+The engine field bound derives from the smallest row, measured by its own case.
+
+### 5. Executed, or asserted?
+Executed: the related test sets of every changed module, typecheck, lint of the changed files. AAAAAAAA-1's "the bound
+still bites" is asserted in a commit message and was not executed.
+
+### 6. Architecture before the feature?
+ADR-0226 was committed alone before the forms code.
+
+### 7. Do the documents still match the code?
+FEATURES row 172 is corrected for the new bound in the commit after this one; AAAAAAAA-4 is a stale comment, open.
+
+---
+
 ## 2026-10-09 — Stage audit of `d3ab2704..726be5ae` — findings ZZZZZZZ-1 to ZZZZZZZ-3
 
 The merge of the PowerPoint branch (ADR-0210) and the review branch (ADRs 0220, 0221) into the work branch, the post-merge
