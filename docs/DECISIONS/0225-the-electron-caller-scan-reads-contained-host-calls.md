@@ -57,3 +57,13 @@ scan must reproduce its failure, then restoring this correction must pass.
 
 This records the decision before implementation; no scanner code is changed
 in this commit. No product command, host runtime or app-launch option changes.
+
+## Implementation, 2026-10-10
+
+The correction is now built in `scripts/lib/electronBinaryCallers.mjs`.
+`proof:electronbinary` passes all 26 cases, retaining its original 16 and
+adding ten syntax/scope cases. Restoring the original scanner made eleven cases
+fail, including the actual unchanged live harness; restoring this correction
+passed all 26. The resolver table and two subject-file exclusions are unchanged.
+The executable expression must be the resolver call itself: a value starting
+with that call but falling back to `process.execPath` is not certified.

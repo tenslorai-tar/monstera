@@ -48,6 +48,7 @@
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
+import ts from 'typescript';
 
 import { repoRoot } from './gitScope.mjs';
 import { isMain } from './isMain.mjs';
@@ -67,7 +68,7 @@ import { isMain } from './isMain.mjs';
  * out of a tree this repository provisioned. `process.execPath` — the expression two drivers
  * actually wrote — is the Electron binary under Electron and system Node under plain Node, so a
  * host created with it STARTS and runs the wrong runtime. That is still a violation, and so is any
- * other expression, including a bare variable this textual scan cannot follow.
+ * other expression, including a bare variable this scan cannot resolve.
  *
  * Matched by NAME rather than by the whole expression, because a resolver takes arguments — the
  * launcher kind here, a root in a driver — and an equality rule would have every call site spell
@@ -112,59 +113,46 @@ const SANCTIONED = Object.freeze(Object.keys(RESOLVERS));
  * @returns {string | undefined}
  */
 function resolverNamedBy(value) {
-  return SANCTIONED.find((resolver) => value.startsWith(`${resolver}(`));
+  const source = ts.createSourceFile('resolver.js', value, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const statement = source.statements.length === 1 ? source.statements[0] : undefined;
+  if (statement === undefined || !ts.isExpressionStatement(statement) ||
+    !ts.isCallExpression(statement.expression) || !ts.isIdentifier(statement.expression.expression)) return undefined;
+  const name = statement.expression.expression.text;
+  return SANCTIONED.includes(name) ? name : undefined;
 }
 
 /**
- * The program kind the config around a site declares — the nearest `runs:` between the object's
- * opening brace and the property.
- *
- * Textual, for the reason {@link ASSIGNMENT} is: the question is what the author WROTE beside the
- * path, and every call site spells the kind first inside `program: { … }`. A kind written after the
- * path, or through a variable, reads as no kind at all and is reported — the scan cannot follow it,
- * and the alternative to a false positive there is silence about a real mismatch.
- *
- * @param {string} text
- * @param {number} index where the `executablePath` property starts
- * @returns {string | undefined}
+ * A direct property with one unambiguous initializer. Spreads or duplicate
+ * properties can replace the value, so the scan must not certify them.
+ * @param {ts.ObjectLiteralExpression} object
+ * @param {string} name
+ * @returns {ts.Expression | undefined}
  */
-function programKindBefore(text, index) {
-  const opening = text.lastIndexOf('{', index);
-  if (opening === -1) return undefined;
-  const window = text.slice(opening, index);
-  return /runs\s*:\s*['"]([^'"]+)['"]/u.exec(window)?.[1];
+function literalProperty(object, name) {
+  if (object.properties.some((property) => ts.isSpreadAssignment(property))) return undefined;
+  const matches = object.properties.filter((property) =>
+    !ts.isSpreadAssignment(property) &&
+    (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)) && property.name.text === name,
+  );
+  const property = matches.length === 1 ? matches[0] : undefined;
+  return property !== undefined && ts.isPropertyAssignment(property) ? property.initializer : undefined;
 }
 
 /**
- * The property, and whatever was assigned to it up to the end of the line.
- *
- * Deliberately not an expression parser: the question is textual — *which
- * resolver did the author name* — and a partial reimplementation of JavaScript
- * expression syntax would agree with the real rule most of the time, which is
- * the dangerous shape (B3a).
+ * The compiler owns JavaScript syntax (ADR-0225). A property name does not
+ * identify its API: Playwright's executablePath launches the app, not a host.
+ * Recognise direct and member calls, including a literal bracket member.
+ * @param {ts.Node} node
+ * @returns {node is ts.CallExpression}
  */
-const ASSIGNMENT = /executablePath\s*:\s*([^,\n]+)/gu;
-
-/**
- * A file that CREATES a host, whether or not it names the property (ZZZ-2).
- *
- * The assignment scan above reports the bad sites it finds. It says nothing
- * about a host built from a spread, a shared config object or a helper — such a
- * file contributes no site, and the run prints `ok`. That is this instrument's
- * own reassuring answer, one layer further out than the positive control
- * reaches: the control proves the walk can FIND a known file, not that the walk
- * saw every file that creates a host.
- *
- * So the creator set is derived independently and every member must carry at
- * least one site. Requiring the paren is what separates creating a host from
- * mentioning the factory: `electronImports.proof.mjs` and `win32Handle.proof.mjs`
- * both name this module and create nothing.
- *
- * A config assembled in one file and passed to a call in another is reported,
- * deliberately. The scan cannot follow it, and the alternative to a false
- * positive there is silence about a real one.
- */
-const CREATES_HOST = /createWin32HostSurface\s*\(/u;
+function createsHost(node) {
+  if (!ts.isCallExpression(node)) return false;
+  const callee = node.expression;
+  return (ts.isIdentifier(callee) && callee.text === 'createWin32HostSurface') ||
+    (ts.isPropertyAccessExpression(callee) && callee.name.text === 'createWin32HostSurface') ||
+    (ts.isElementAccessExpression(callee) && ts.isStringLiteral(callee.argumentExpression) &&
+      callee.argumentExpression.text === 'createWin32HostSurface');
+}
 
 /**
  * The two files whose SUBJECT is this rule, rather than files that call the
@@ -222,18 +210,39 @@ export function scanElectronBinaryCallers(options = {}) {
   const sites = [];
   /** @type {string[]} */
   const creators = [];
+  /** @type {string[]} */
+  const silent = [];
   for (const file of files) {
     const relativePath = relative(root, file).replaceAll('\\', '/');
     if (SUBJECT_FILES.includes(relativePath)) continue;
-    const text = readFileSync(file, 'utf8');
-    if (CREATES_HOST.test(text)) creators.push(relativePath);
-    for (const match of text.matchAll(ASSIGNMENT)) {
-      const value = (match[1] ?? '').trim().replace(/,$/u, '');
+    const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+    /** @type {ts.CallExpression[]} */
+    const calls = [];
+    /** @param {ts.Node} node */
+    function visit(node) {
+      if (createsHost(node)) calls.push(node);
+      ts.forEachChild(node, visit);
+    }
+    visit(source);
+    if (calls.length > 0) creators.push(relativePath);
+    for (const call of calls) {
+      const config = call.arguments[0];
+      const program = config !== undefined && ts.isObjectLiteralExpression(config)
+        ? literalProperty(config, 'program') : undefined;
+      const executable = program !== undefined && ts.isObjectLiteralExpression(program)
+        ? literalProperty(program, 'executablePath') : undefined;
+      if (executable === undefined) {
+        if (!silent.includes(relativePath)) silent.push(relativePath);
+        continue;
+      }
+      const kind = program !== undefined && ts.isObjectLiteralExpression(program)
+        ? literalProperty(program, 'runs') : undefined;
+      const runs = kind !== undefined && ts.isStringLiteral(kind) ? kind.text : undefined;
+      const value = executable.getText(source);
       const resolver = resolverNamedBy(value);
-      const runs = programKindBefore(text, match.index);
       sites.push({
         file: relativePath,
-        line: text.slice(0, match.index).split('\n').length,
+        line: source.getLineAndCharacterOfPosition(executable.getStart(source)).line + 1,
         value,
         runs,
         // BOTH HALVES: a sanctioned resolver, AND the kind that resolver's path may be run as.
@@ -241,10 +250,7 @@ export function scanElectronBinaryCallers(options = {}) {
       });
     }
   }
-  // A file that creates a host and names the property nowhere. It is not a
-  // clean file; it is a file this scan cannot read, and the two must not share
-  // an output.
-  const silent = creators.filter((file) => !sites.some((site) => site.file === file));
+  // Check EVERY call. A valid sibling does not make a spread/shared config readable.
   return { sites, creators, silent };
 }
 
@@ -281,7 +287,7 @@ export function report(options = {}) {
       `  FAILED  ${site.file}:${String(site.line)} runs \`${site.value}\` as ` +
       `${site.runs === undefined ? 'NO program kind' : `\`runs: '${site.runs}'\``}\n` +
       `          \`${resolver}()\`'s path may only be run as \`runs: '${RESOLVERS[resolver] ?? ''}'\`, written\n` +
-      `          before the path inside \`program: { … }\`. The kind decides what the surface adds:\n` +
+      `          inside \`program: { … }\`. The kind decides what the surface adds:\n` +
       `          Node's interpreter flags handed to LibreOffice were refused with\n` +
       `          \`Error in option: --preserve-symlinks\`, and an Electron host started without\n` +
       `          them dies before its first line.\n`;
@@ -293,8 +299,9 @@ export function report(options = {}) {
   }
   for (const file of silent) {
     output +=
-      `  FAILED  ${file} creates a host and names executablePath nowhere\n` +
-      `          A spread, a shared config object or a helper contributes no site, so this\n` +
+      `  FAILED  ${file} creates a host and names executablePath nowhere in a readable program\n` +
+      `          NO program kind/path can be certified for a spread, duplicate or shared config.\n` +
+      `          An unreadable call contributes no site, even beside a valid call, so this\n` +
       `          file would otherwise read as clean. It is not clean — it is unreadable to\n` +
       `          this scan, and the two must not share an output. Name the property at the\n` +
       `          call, with ${SANCTIONED.join(' or ')}.\n`;

@@ -23,7 +23,7 @@ import { createRoster } from '../lib/passRoster.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 16 });
+const roster = createRoster(failures, { cases: 26 });
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
@@ -327,6 +327,107 @@ try {
   // -------------------------------------------------------------------------
   // 7. AND IT IS GREEN ON THE REAL REPOSITORY, non-vacuously.
   // -------------------------------------------------------------------------
+  {
+    const launch = 'const app = await _electron.launch({ executablePath: electronBinaryPath(ROOT) });\n';
+    const root = fixture('app-launch', `${RIGHT}\n${launch}`);
+    const result = report({ root, control: 'scripts/research/driver.mjs' });
+    const { sites, creators } = scanElectronBinaryCallers({ root });
+    check(
+      'Playwright launches do not acquire the contained-host program contract',
+      result.ok && sites.length === 1 && creators.length === 1,
+      `The actual live-harness false positive. Output:\n${result.output}`,
+    );
+  }
+  {
+    const root = fixture('mixed-launches', `${WRONG}\n` +
+      'const app = await _electron.launch({ executablePath: electronBinaryPath(ROOT) });\n');
+    const { sites, creators } = scanElectronBinaryCallers({ root });
+    check(
+      'CONTROL: a bad host beside an unrelated app launch is still a violation',
+      sites.length === 1 && sites[0]?.ok === false && creators.length === 1,
+      `Exempting the whole file would hide its host. Got ${JSON.stringify(sites)}`,
+    );
+  }
+  {
+    const root = fixture('readable-and-shared', `${RIGHT}\ncreateWin32HostSurface(sharedConfig);\n`);
+    const result = report({ root, control: 'scripts/research/driver.mjs' });
+    check(
+      'a readable host does not hide a second unreadable call in the same file',
+      !result.ok && /readable program/u.test(result.output),
+      `Every call must be inspected, not just one call per file. Output:\n${result.output}`,
+    );
+  }
+  {
+    const root = fixtureFiles('prose', {
+      'driver.mjs': RIGHT,
+      'reader.mjs': '// createWin32HostSurface({ executablePath: process.execPath });\n' +
+        'const text = "createWin32HostSurface({ executablePath: process.execPath })";\n',
+    });
+    const result = report({ root, control: 'scripts/research/driver.mjs' });
+    const { sites, creators } = scanElectronBinaryCallers({ root });
+    check(
+      'comments and strings are neither host creators nor executable sites',
+      result.ok && sites.length === 1 && creators.length === 1,
+      `The compiler owns the syntax. Output:\n${result.output}`,
+    );
+  }
+  {
+    const root = fixture('member', WRONG.replace('createWin32HostSurface(', "hostSurface['createWin32HostSurface']("));
+    const { sites, creators } = scanElectronBinaryCallers({ root });
+    check(
+      'literal bracket member calls are inspected and their bad executable is rejected',
+      sites.length === 1 && sites[0]?.ok === false && creators.length === 1,
+      `Member syntax must not hide a host. Got ${JSON.stringify({ sites, creators })}`,
+    );
+  }
+  {
+    const root = fixture('property-order',
+      "createWin32HostSurface({ program: { executablePath: electronBinaryPath(), runs: 'electron-node' } });\n");
+    const result = report({ root, control: 'scripts/research/driver.mjs' });
+    check(
+      'literal program kind is read from the program regardless of property order',
+      result.ok,
+      `Nearest-brace text is not the object's meaning. Output:\n${result.output}`,
+    );
+  }
+  {
+    const root = fixture('program-spread',
+      RIGHT.replace('commandArguments: [],', 'commandArguments: [], ...replacement,'));
+    const result = report({ root, control: 'scripts/research/driver.mjs' });
+    check(
+      'a program spread that can replace the certified path is unreadable and rejected',
+      !result.ok && /readable program/u.test(result.output),
+      `A literal before a spread is not a certified value. Output:\n${result.output}`,
+    );
+  }
+  {
+    const root = fixture('duplicate-path',
+      RIGHT.replace('commandArguments: [],', 'executablePath: sharedPath, commandArguments: [],'));
+    const result = report({ root, control: 'scripts/research/driver.mjs' });
+    check(
+      'duplicate path properties are rejected rather than certifying the first one',
+      !result.ok && /readable program/u.test(result.output),
+      `The last property wins at runtime. Output:\n${result.output}`,
+    );
+  }
+  {
+    const root = fixture('config-spread', RIGHT.replace('});', '...replacement });'));
+    const result = report({ root, control: 'scripts/research/driver.mjs' });
+    check(
+      'a config spread that can replace the whole program is rejected',
+      !result.ok && /readable program/u.test(result.output),
+      `A nested literal does not certify its surrounding config. Output:\n${result.output}`,
+    );
+  }
+  {
+    const root = fixture('resolver-fallback', config('electron-node', 'electronBinaryPath() || process.execPath'));
+    const result = report({ root, control: 'scripts/research/driver.mjs' });
+    check(
+      'a resolver prefix cannot certify an expression that falls back to system Node',
+      !result.ok && /assigns/u.test(result.output),
+      `The path must be the resolver call itself. Output:\n${result.output}`,
+    );
+  }
   {
     const result = report({});
     check(

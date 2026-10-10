@@ -58,7 +58,7 @@ Each contains:
 
 | ADR | Title | Status |
 |---|---|---|
-| [0225](0225-the-electron-caller-scan-reads-contained-host-calls.md) | The Electron caller scan reads contained host calls | Accepted 2026-10-10; decision before implementation — the compiler syntax tree separates contained hosts from unrelated launch APIs |
+| [0225](0225-the-electron-caller-scan-reads-contained-host-calls.md) | The Electron caller scan reads contained host calls | Accepted and built 2026-10-10 — the compiler syntax tree separates contained hosts from unrelated launch APIs; 26 proof cases and the restored-old-scanner control |
 | [0224](0224-protection-undo-restores-the-whole-protection-record.md) | Protection undo restores the whole protection record | Accepted 2026-10-10; built with the known opening key beside the writer options and 33 native/WASM protection cases |
 | [0223](0223-comment-imports-place-every-valid-record-and-report-every-shortfall.md) | Comment imports place every valid record and report every shortfall | Accepted 2026-10-09; supersedes ADR-0077's whole-file refusal; built with a structured partial-import report |
 | [0001](0001-agpl-on-the-microsoft-store.md) | AGPL-3.0 on the Microsoft Store | Accepted; mechanism corrected 2026-08-17 |
