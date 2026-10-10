@@ -78,7 +78,7 @@ describe('the field list carries what filling needs', () => {
     };
     only('required', 'required', true, false);
     only('comb', 'comb', true, false);
-    only('password', 'secret', true, false);
+    only('masked', 'secret', true, false);
     only('multiSelect', 'several', true, false);
     only('editable', 'typed', true, false);
     expect(byName.get('limited')?.maxLength).toBe(10);

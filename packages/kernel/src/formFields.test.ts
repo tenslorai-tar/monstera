@@ -689,6 +689,8 @@ describe('captureFillFormField and invertFillFormField', () => {
       page: 0,
       index: 2,
       value: { set: 'button', on: true },
+      // NO CALCULATION ON THIS FORM, so none recorded (ADR-0226 Decision 6).
+      calculated: [],
     });
     expect(held.changed).toStrictEqual([null, true, false, true, null, null, null]);
     expect(held.restored).toStrictEqual([null, true, true, false, null, null, null]);
@@ -773,7 +775,7 @@ describe('captureFillFormField and invertFillFormField', () => {
       // PAGE 1, INDEX 0 — the sibling. A capture that stopped at this page
       // would have recorded `{ page: 0, index: 4, on: false }`, whose inverse
       // deselects a group that was never deselected.
-      prior: { page: 1, index: 0, value: { set: 'button', on: true } },
+      prior: { page: 1, index: 0, value: { set: 'button', on: true }, calculated: [] },
     });
   });
 
@@ -820,7 +822,7 @@ describe('captureFillFormField and invertFillFormField', () => {
     );
     expect(captured).toStrictEqual({
       captured: true,
-      prior: { page: 0, index: 5, value: { set: 'choice', option: 'Dutch' } },
+      prior: { page: 0, index: 5, value: { set: 'choice', option: 'Dutch' }, calculated: [] },
     });
   });
 
@@ -1194,7 +1196,7 @@ describe('a long text field (the listing cuts it, nothing else does)', () => {
     );
     expect(captured).toStrictEqual({
       captured: true,
-      prior: { page: 0, index: 0, value: { set: 'text', text: value } },
+      prior: { page: 0, index: 0, value: { set: 'text', text: value }, calculated: [] },
     });
   });
 });

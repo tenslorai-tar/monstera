@@ -95,6 +95,15 @@ describe('the document-wide lists’ hostile-host bounds', () => {
       readOnly: true,
       multiline: false,
       rect: null,
+      // THE FILL RULES AT THEIR SHORTEST (ADR-0226 Decision 4): `true` is shorter than `false`, `null` than any number.
+      required: true,
+      maxLength: null,
+      comb: true,
+      masked: true,
+      multiSelect: true,
+      editable: true,
+      calculated: true,
+      format: null,
     };
     const answer = { fields: [smallest], truncated: false };
     expect(engineChannels['engine/form-fields'].result.safeParse(answer).success).toBe(true);

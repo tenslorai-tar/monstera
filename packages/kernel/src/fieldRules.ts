@@ -37,6 +37,32 @@ export function nearest(object: PDFObject, key: string): PDFObject {
   return object.get(key);
 }
 
+/** The dictionary that holds a field's `/T`: the widget itself where the two are merged, else its nearest parent with one. */
+export function fieldDictionaryOf(object: PDFObject): PDFObject {
+  let at = object;
+  for (let hop = 0; hop < MAX_FIELD_ANCESTRY; hop += 1) {
+    if (!at.get('T').isNull()) return at;
+    const parent = at.get('Parent');
+    if (!parent.isDictionary()) break;
+    at = parent;
+  }
+  return object;
+}
+
+/** The fully qualified name of a field object: each `/T` from the root down, joined by dots. */
+export function qualifiedNameOf(object: PDFObject): string {
+  const parts: string[] = [];
+  let at = object;
+  for (let hop = 0; hop < MAX_FIELD_ANCESTRY; hop += 1) {
+    const partial = at.get('T');
+    if (partial.isString()) parts.unshift(partial.asString());
+    const parent = at.get('Parent');
+    if (!parent.isDictionary()) break;
+    at = parent;
+  }
+  return parts.join('.');
+}
+
 /** The script of one `/AA` action, or `undefined` where the action is absent, and `null` where it is one with no readable script. */
 export function scriptOf(action: PDFObject): string | null | undefined {
   if (action.isNull()) return undefined;
@@ -51,7 +77,7 @@ export interface FieldRules {
   readonly maxLength: number | null;
   /** A text field drawn one character to a cell, `maxLength` cells across. */
   readonly comb: boolean;
-  readonly password: boolean;
+  readonly masked: boolean;
   /** A list that takes several values. */
   readonly multiSelect: boolean;
   /** A dropdown that also takes typing. */
@@ -81,7 +107,7 @@ export function fieldRulesOf(widget: PDFWidget): FieldRules {
     required: (bits & FLAG.required) !== 0,
     maxLength: limit > 0 ? limit : null,
     comb: text && limit > 0 && (bits & FLAG.comb) !== 0,
-    password: text && (bits & FLAG.password) !== 0,
+    masked: text && (bits & FLAG.password) !== 0,
     multiSelect: choice && widget.isListBox() && (bits & FLAG.multiSelect) !== 0,
     editable: choice && widget.isComboBox() && (bits & FLAG.edit) !== 0,
     format,

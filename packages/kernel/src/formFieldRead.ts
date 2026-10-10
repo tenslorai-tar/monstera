@@ -4,7 +4,7 @@ import type { PDFDocument, PDFObject, PDFWidget } from './mupdfRaw.js';
 
 import type { MupdfSession } from './engineSeam.js';
 import { faceOfFont, parseDefaultAppearance } from './fieldActions.js';
-import { MAX_FIELD_ANCESTRY, fieldRulesOf, nearest } from './fieldRules.js';
+import { fieldRulesOf, nearest, qualifiedNameOf } from './fieldRules.js';
 import { kindOf, onStateKeyOf } from './formFields.js';
 import { withDocument } from './mupdfWriter.js';
 import { frameOf, readRect } from './pageAnnotations.js';
@@ -60,20 +60,6 @@ function borderWidthOf(object: PDFObject): number {
   return 1;
 }
 
-/** The fully qualified name of a field object: each `/T` from the root down. */
-function qualifiedName(object: PDFObject): string {
-  const parts: string[] = [];
-  let at = object;
-  for (let hop = 0; hop < MAX_FIELD_ANCESTRY; hop += 1) {
-    const partial = at.get('T');
-    if (partial.isString()) parts.unshift(partial.asString());
-    const parent = at.get('Parent');
-    if (!parent.isDictionary()) break;
-    at = parent;
-  }
-  return parts.join('.');
-}
-
 /**
  * The export values of a radio group's options in the order the widgets sit, or the choices of a choice field: each a
  * string, or the value AND the text shown where a document lists the two apart (`/Opt` pairs), so an edit that sends
@@ -118,7 +104,7 @@ function calculationPositionOf(document: PDFDocument, name: string): number | nu
   const order = acroForm(document, 'CO');
   if (!order.isArray()) return null;
   for (let at = 0; at < order.length; at += 1) {
-    if (qualifiedName(order.get(at)) === name) return at;
+    if (qualifiedNameOf(order.get(at)) === name) return at;
   }
   return null;
 }

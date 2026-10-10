@@ -19,6 +19,18 @@ export {
 } from './channel.js';
 export { CREDENTIAL_NAME, credentialFields } from './credentialFields.js';
 export {
+  type FormatCheck,
+  calculate,
+  calculatedText,
+  checkFieldValue,
+  fieldNumber,
+  formatFieldValue,
+  parseFieldDate,
+  parseFieldNumber,
+  parseFieldTime,
+  storedNumber,
+} from './fieldFormatting.js';
+export {
   LIFTED_CREDENTIALS_MAX,
   PROTECTION_TERMS_MAX,
   liftCredentials,

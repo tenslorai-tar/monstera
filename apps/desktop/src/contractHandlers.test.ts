@@ -2712,7 +2712,7 @@ describe('a field’s fill rules cross from main to the renderer intact', () => 
     required: true,
     maxLength: 8,
     comb: true,
-    password: true,
+    masked: true,
     multiSelect: true,
     editable: true,
     calculated: true,

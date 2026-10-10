@@ -5245,7 +5245,7 @@ export const channels = {
             required: z.boolean(),
             maxLength: z.number().int().positive().nullable(),
             comb: z.boolean(),
-            password: z.boolean(),
+            masked: z.boolean(),
             multiSelect: z.boolean(),
             editable: z.boolean(),
             calculated: z.boolean(),

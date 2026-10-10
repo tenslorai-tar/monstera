@@ -20,7 +20,7 @@ function field(page: number, index: number, over: Partial<ListedField> = {}): Li
     required: false,
     maxLength: null,
     comb: false,
-    password: false,
+    masked: false,
     multiSelect: false,
     editable: false,
     calculated: false,

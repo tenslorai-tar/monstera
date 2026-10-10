@@ -2364,6 +2364,15 @@ export type FormDataFormat = z.infer<typeof formDataFormatSchema>;
 export const MAX_FIELD_VALUE = 4096;
 
 /**
+ * How many options a fill of a list that takes several values may name, and how long each may be. A request's worst is
+ * measured with every character at its widest JSON escape, six bytes (`hostRoutes.test.ts`), so the product must sit
+ * inside one 262,144-byte frame of the engine host's pipe with room for the rest of the command: 128 options of 256
+ * characters is 196,608 bytes at worst. A list with more chosen at once is not a list a person picks from.
+ */
+export const MAX_FILLED_CHOICES = 128;
+export const MAX_FILLED_CHOICE = 256;
+
+/**
  * What a fill puts in a field, split by WHAT IS BEING SET rather than by the
  * field's type.
  *
@@ -2415,6 +2424,17 @@ export const fieldFillSchema = z.discriminatedUnion('set', [
        * `["Dr","Mr","Ms"]` reads back as `Professor`.
        */
       option: z.string().max(MAX_FIELD_VALUE),
+    })
+    .strict(),
+  z
+    .object({
+      set: z.literal('choices'),
+      /**
+       * Several of the options a list that takes several values offers, in the document's order (ADR-0226 Decision
+       * 5). Empty clears it. A list that takes one value refuses this, as a text field refuses a choice: the document
+       * decides, at apply.
+       */
+      options: z.array(z.string().max(MAX_FILLED_CHOICE)).max(MAX_FILLED_CHOICES).readonly(),
     })
     .strict(),
   z

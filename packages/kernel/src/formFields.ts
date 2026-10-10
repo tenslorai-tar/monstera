@@ -3,7 +3,8 @@ import { MAX_FIELD_VALUE } from '@monstera/contract/host';
 import type { PDFDocument, PDFObject, PDFPage, PDFWidget } from './mupdfRaw.js';
 
 import { BoundedList } from './boundedList.js';
-import { MAX_FIELD_ANCESTRY, fieldRulesOf } from './fieldRules.js';
+import { type CalculatedValue, calculatedValues, recalculate, restoreCalculated, writeShown } from './fieldCalculation.js';
+import { MAX_FIELD_ANCESTRY, fieldDictionaryOf, fieldRulesOf } from './fieldRules.js';
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { ENGINE_FORM_FIELDS_MAX } from './host/engineChannels.js';
@@ -240,7 +241,7 @@ export interface ListedField {
   readonly required: boolean;
   readonly maxLength: number | null;
   readonly comb: boolean;
-  readonly password: boolean;
+  readonly masked: boolean;
   readonly multiSelect: boolean;
   readonly editable: boolean;
   /** Its value is worked out from other fields', by a calculation of ours or a script that is never run. */
@@ -357,13 +358,13 @@ export function onStateKeyOf(object: PDFObject): string | undefined {
 }
 
 /** The members of a listed field that say how it is filled, from the one reader of a field's rules. */
-function listedRules(widget: PDFWidget): Pick<ListedField, 'required' | 'maxLength' | 'comb' | 'password' | 'multiSelect' | 'editable' | 'calculated' | 'format'> {
+function listedRules(widget: PDFWidget): Pick<ListedField, 'required' | 'maxLength' | 'comb' | 'masked' | 'multiSelect' | 'editable' | 'calculated' | 'format'> {
   const rules = fieldRulesOf(widget);
   return {
     required: rules.required,
     maxLength: rules.maxLength,
     comb: rules.comb,
-    password: rules.password,
+    masked: rules.masked,
     multiSelect: rules.multiSelect,
     editable: rules.editable,
     calculated: rules.calculation !== null || rules.customCalculation,
@@ -505,10 +506,51 @@ export function refuseUnfillable(widget: PDFWidget, value: FieldFill): void {
     }
     return;
   }
+  if (value.set === 'choices') {
+    // SEVERAL VALUES ONLY WHERE THE DOCUMENT TAKES SEVERAL (ADR-0226 Decision 5): a list whose `/Ff` says multiple
+    // selection. A one-value list given two would hold a state its own reader says it cannot.
+    if (!widget.isListBox() || !fieldRulesOf(widget).multiSelect) {
+      throw new Error(`Several options cannot fill a ${kind} field that takes one ("${widget.getName()}").`);
+    }
+    const offered = widget.getOptions();
+    const unlisted = value.options.find((option) => !offered.includes(option));
+    if (unlisted !== undefined) {
+      throw new Error(`The field "${widget.getName()}" does not offer the option ${JSON.stringify(unlisted)}.`);
+    }
+    return;
+  }
   if (!widget.isCheckbox() && !widget.isRadioButton()) {
     throw new Error(`An on-state cannot fill a ${kind} field ("${widget.getName()}").`);
   }
 }
+
+/**
+ * Puts several options into a list that takes several (ADR-0226 Decision 5). MuPDF's own setter names one value, so
+ * the field's `/V` is written as an array of the stored values, and `/I` as their places in `/Opt`, on the dictionary
+ * that holds `/T`: measured 2026-10-10, written on the widget of a field pdf-lib made, the array is where no reader
+ * looks, and written on the field pdf-lib reads both values back. Then each widget of the field is redrawn.
+ */
+function setChoices(document: PDFDocument, widget: PDFWidget, options: readonly string[]): void {
+  const shown = widget.getOptions(false);
+  // THE DOCUMENT'S ORDER, whatever order the person picked them in, and each once.
+  const picked = shown.flatMap((option, at) => (options.includes(option) ? [at] : []));
+  const field = fieldDictionaryOf(widget.getObject());
+  if (picked.length === 0) {
+    field.delete('V');
+    field.delete('I');
+  } else {
+    const values = document.newArray();
+    const places = document.newArray();
+    for (const at of picked) {
+      values.push(document.newString(choiceStoredOf(widget, shown[at] ?? '')));
+      places.push(document.newInteger(at));
+    }
+    field.put('V', picked.length === 1 ? document.newString(choiceStoredOf(widget, shown[picked[0] ?? 0] ?? '')) : values);
+    field.put('I', places);
+  }
+  widget.update();
+}
+
 
 /**
  * How many toggles it can take to reach a requested state.
@@ -563,15 +605,19 @@ function setButton(widget: PDFWidget, on: boolean): void {
  * and the read-only refusal are the fill row's, and an import that wrote values
  * its own way would agree with them until a document disagreed.
  */
-export function fillWidget(widget: PDFWidget, value: FieldFill): void {
-  fill(widget, value);
+export function fillWidget(document: PDFDocument, widget: PDFWidget, value: FieldFill): void {
+  fill(document, widget, value);
 }
 
-/** Puts one value into one widget, having refused everything the document forbids. */
-function fill(widget: PDFWidget, value: FieldFill): void {
+/**
+ * Puts one value into one widget, having refused everything the document forbids. A text field with a format this
+ * application reads shows its value formatted, as a reader shows it, and stores it as typed (`writeShown`).
+ */
+function fill(document: PDFDocument, widget: PDFWidget, value: FieldFill): void {
   refuseUnfillable(widget, value);
-  if (value.set === 'text') widget.setTextValue(value.text);
+  if (value.set === 'text') writeShown(document, [widget], value.text, fieldRulesOf(widget).format);
   else if (value.set === 'choice') widget.setChoiceValue(choiceStoredOf(widget, value.option));
+  else if (value.set === 'choices') setChoices(document, widget, value.options);
   else setButton(widget, value.on);
 }
 
@@ -586,7 +632,10 @@ function fill(widget: PDFWidget, value: FieldFill): void {
 export const applyFillFormField: Apply<'mupdf', 'fillFormField'> = (session, command) =>
   withDocument(session, (document) => {
     const loaded = pageAt(document, command.page, document.countPages());
-    fill(widgetAt(loaded, command.index), command.value);
+    fill(document, widgetAt(loaded, command.index), command.value);
+    // THE FORM'S CALCULATIONS IN THE SAME COMMAND (ADR-0226 Decision 6), so a fill and the totals it moves are one
+    // undo step: a total worked out by a second command would be a second step a person never took.
+    recalculate(document);
   });
 
 /**
@@ -645,6 +694,11 @@ export interface PriorFieldValue {
   readonly page: number;
   readonly index: number;
   readonly value: FieldFill;
+  /**
+   * Every calculated field's value before the fill worked it out again (ADR-0226 Decision 6), written back exactly by
+   * the inverse rather than worked out from the restored value: a total that arrived out of date comes back out of date.
+   */
+  readonly calculated: readonly CalculatedValue[];
 }
 
 /**
@@ -683,6 +737,21 @@ export function captureFillFormField(
     const loaded = pageAt(document, command.page, document.countPages());
     const widget = widgetAt(loaded, command.index);
     refuseUnfillable(widget, command.value);
+    const calculated = calculatedValues(document);
+    if (calculated === undefined) {
+      return {
+        captured: false,
+        reason: 'the form works out more fields than a prior carries, so a checkpoint restores them instead',
+      };
+    }
+
+    // A LIST THAT TAKES SEVERAL holds a prior one fill can say: the options it held, in its own order.
+    if (command.value.set === 'choices' || (widget.isListBox() && fieldRulesOf(widget).multiSelect && command.value.set === 'choice')) {
+      return {
+        captured: true,
+        prior: { page: command.page, index: command.index, value: { set: 'choices', options: fieldValues(widget) }, calculated },
+      };
+    }
 
     if (command.value.set !== 'button') {
       const holds = fieldValues(widget);
@@ -733,6 +802,7 @@ export function captureFillFormField(
             command.value.set === 'text'
               ? { set: 'text', text: held }
               : { set: 'choice', option: held },
+          calculated,
         },
       };
     }
@@ -753,8 +823,8 @@ export function captureFillFormField(
           ? // NOTHING OF THIS FIELD IS ON, so the inverse turns off whatever the
             // command turned on — which for a checkbox is this widget and for a
             // group is the one that ends up lit, both reached by the same write.
-            { page: command.page, index: command.index, value: { set: 'button', on: false } }
-          : { page: found.page, index: found.index, value: { set: 'button', on: true } },
+            { page: command.page, index: command.index, value: { set: 'button', on: false }, calculated }
+          : { page: found.page, index: found.index, value: { set: 'button', on: true }, calculated },
     };
   });
 }
@@ -771,7 +841,8 @@ export function captureFillFormField(
 export const invertFillFormField: Invert<'mupdf', 'fillFormField'> = (session, inverse) =>
   withDocument(session, (document) => {
     const loaded = pageAt(document, inverse.page, document.countPages());
-    fill(widgetAt(loaded, inverse.index), inverse.value);
+    fill(document, widgetAt(loaded, inverse.index), inverse.value);
+    restoreCalculated(document, inverse.calculated);
   });
 
 /**

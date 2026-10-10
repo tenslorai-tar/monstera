@@ -99,6 +99,7 @@ import {
 import { z } from 'zod';
 
 import { HUMAN_CHECKS } from '../accessibilityRules.js';
+import { MAX_CALCULATED_NAME, MAX_CALCULATED_PRIORS, MAX_CALCULATED_TEXT } from '../fieldCalculation.js';
 import type { CommandPrior } from '../commandLog.js';
 import { type DeclaredCommands, declaredCommands } from '../commandDeclarations.js';
 import type { KindsRoutedTo } from '../commandRouting.js';
@@ -438,9 +439,12 @@ export const ENGINE_ANNOTATION_CONTENTS_MAX = 512;
  * longer than this is still a value, and refusing the field would hide it from
  * the list it belongs in.
  */
-export const ENGINE_FORM_FIELDS_MAX = 66_500;
-/** The fewest bytes one form field serialises to on this wire. Measured by `engineChannels.test.ts`. */
-export const SMALLEST_FORM_FIELD_BYTES = 125;
+export const ENGINE_FORM_FIELDS_MAX = 33_200;
+/**
+ * The fewest bytes one form field serialises to on this wire. Measured by `engineChannels.test.ts`: 125 until the fill
+ * rules joined the row (ADR-0226 Decision 4, 2026-10-10), 251 since, which halves the hostile-host bound above.
+ */
+export const SMALLEST_FORM_FIELD_BYTES = 251;
 export const ENGINE_FORM_FIELD_TEXT_MAX = 512;
 /** How many skipped fields an import's report names, and how much of each name: shown, so cut to what a row can hold. */
 export const ENGINE_IMPORT_SKIPS_MAX = MAX_IMPORT_SKIPS;
@@ -603,7 +607,7 @@ const engineFormFieldSchema = z
     required: z.boolean(),
     maxLength: z.number().int().positive().nullable(),
     comb: z.boolean(),
-    password: z.boolean(),
+    masked: z.boolean(),
     multiSelect: z.boolean(),
     editable: z.boolean(),
     calculated: z.boolean(),
@@ -959,6 +963,15 @@ const capturedPriorSchema = z.discriminatedUnion('kind', [
           page: z.number().int().nonnegative(),
           index: z.number().int().nonnegative(),
           value: fieldFillSchema,
+          /** Each calculated field's value before the fill (ADR-0226 Decision 6), restored exactly by the inverse. */
+          calculated: z
+            .array(
+              z
+                .object({ name: z.string().max(MAX_CALCULATED_NAME), text: z.string().max(MAX_CALCULATED_TEXT) })
+                .strict(),
+            )
+            .max(MAX_CALCULATED_PRIORS)
+            .readonly(),
         })
         .strict(),
     })

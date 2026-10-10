@@ -70,10 +70,10 @@ async function placedOf(bytes: Uint8Array, touch: boolean): Promise<{ readonly p
         placed.push({ name: widget.getName(), kind: widget.getFieldType(), page, bounds: widget.getBounds() });
         if (!touch || widget.isReadOnly()) continue;
         if (widget.isCheckbox() || widget.isRadioButton()) {
-          fillWidget(widget, { set: 'button', on: true });
-          fillWidget(widget, { set: 'button', on: false });
-        } else if (widget.isText()) fillWidget(widget, { set: 'text', text: 'AB12 3CD' });
-        else if (widget.isChoice()) fillWidget(widget, { set: 'choice', option: widget.getOptions()[0] ?? '' });
+          fillWidget(document, widget, { set: 'button', on: true });
+          fillWidget(document, widget, { set: 'button', on: false });
+        } else if (widget.isText()) fillWidget(document, widget, { set: 'text', text: 'AB12 3CD' });
+        else if (widget.isChoice()) fillWidget(document, widget, { set: 'choice', option: widget.getOptions()[0] ?? '' });
       }
     }
   });

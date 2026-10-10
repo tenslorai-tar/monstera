@@ -169,7 +169,7 @@ function field(over: Partial<ChannelField>): ChannelField {
     required: false,
     maxLength: null,
     comb: false,
-    password: false,
+    masked: false,
     multiSelect: false,
     editable: false,
     calculated: false,

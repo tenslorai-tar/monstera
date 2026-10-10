@@ -7,6 +7,7 @@ import type { FieldFill, FormDataFormat, FormDataImportFormat, IMPORT_SKIP_REASO
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { ENGINE_IMPORT_SKIPS_MAX, ENGINE_IMPORT_SKIP_NAME_MAX } from './host/engineChannels.js';
+import { recalculate } from './fieldCalculation.js';
 import { fieldValues, fillWidget, onState, onStateKey, refuseUnfillable } from './formFields.js';
 import { fdfFile, pdfName, pdfString, xmlCanCarry, xmlEscaped } from './interchangeEncoding.js';
 import { withDocument } from './mupdfWriter.js';
@@ -681,7 +682,10 @@ export const applyImportFormData: Apply<'mupdf', 'importFormData'> = (session, c
     if (matched === 0) throw new NoMatchingFieldsError(plan.named);
     // THE PLAN WAS MADE BEFORE ANYTHING WAS WRITTEN, so a fill's own refusal cannot leave the form half filled: each
     // planned value has already passed the rules `fillWidget` applies.
-    for (const { widget, value } of plan.fills) fillWidget(widget, value);
+    for (const { widget, value } of plan.fills) fillWidget(document, widget, value);
+    // THE FORM'S CALCULATIONS AFTER THE LAST VALUE LANDS (ADR-0226 Decision 6), as after a fill: an import is filling,
+    // and a total left holding the file's figure while its parts hold the new ones is a form that disagrees with itself.
+    recalculate(document);
   });
 
 /**

@@ -267,7 +267,7 @@ export interface ShimFormField {
   readonly required?: boolean;
   readonly maxLength?: number | null;
   readonly comb?: boolean;
-  readonly password?: boolean;
+  readonly masked?: boolean;
   readonly multiSelect?: boolean;
   readonly editable?: boolean;
   readonly calculated?: boolean;
@@ -279,7 +279,7 @@ const PLAIN_RULES = {
   required: false,
   maxLength: null,
   comb: false,
-  password: false,
+  masked: false,
   multiSelect: false,
   editable: false,
   calculated: false,

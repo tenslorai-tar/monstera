@@ -23,7 +23,7 @@ function field(over: Partial<ListedField>): ListedField {
     required: false,
     maxLength: null,
     comb: false,
-    password: false,
+    masked: false,
     multiSelect: false,
     editable: false,
     calculated: false,
