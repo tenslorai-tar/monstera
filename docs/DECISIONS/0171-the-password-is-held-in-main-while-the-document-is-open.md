@@ -422,3 +422,11 @@ Rejected:
   session, and the terms held in the old one go with it, which is why the prior is held in main.
 - **Wiping each file before removing it**: the bytes reach the disk the moment they are written, and a crash leaves
   them; the defect is the write, not the removal.
+
+## Correction, 2026-10-10 — undo keeps the whole known protection record
+
+[ADR-0224](0224-protection-undo-restores-the-whole-protection-record.md) extends
+the protected prior with the known opening password beside `passwordTerms`.
+Restoring the terms with an absent opening key kept the saved file locked but
+made a direct kernel pdf-lib command after undo refuse to read it. Both fields
+follow this decision's existing credential lift and held-entry lifetime.

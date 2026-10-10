@@ -92,3 +92,11 @@ unprotected, which is every handler test; the production entry supplies it, load
 - The two copies of the document in memory during a command (the protected serialise and the readable copy) are transient and
   bounded by the document, as the serialise already was.
 - `proof:pdflibprotected` (17 cases, with controls) reads each result with the WASM build of MuPDF, which did not write it.
+
+## Correction, 2026-10-10 — protection undo retains the opening key
+
+[ADR-0224](0224-protection-undo-restores-the-whole-protection-record.md) makes
+the prior retain both parts of the structured protection record. The inverse
+formerly restored only its writer options and discarded a known opening key,
+so this decision's readable-copy step failed after a direct kernel undo.
+The saved-file password remained intact in the native app checks.
