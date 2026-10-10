@@ -256,6 +256,18 @@ async function joined(formFields: HostFormFieldsReader): Promise<{
   };
 }
 
+/** The fill rules of a field that has none (ADR-0226 Decision 4). */
+const PLAIN = {
+  required: false,
+  maxLength: null,
+  comb: false,
+  password: false,
+  multiSelect: false,
+  editable: false,
+  calculated: false,
+  format: null,
+} as const;
+
 /** One field of the named kind, with every other value left plain. */
 function field(kind: ListedField['kind'], index: number): ListedField {
   return {
@@ -269,6 +281,14 @@ function field(kind: ListedField['kind'], index: number): ListedField {
     readOnly: false,
     multiline: false,
     rect: { x0: 1, y0: 2, x1: 3, y1: 4 },
+    required: false,
+    maxLength: null,
+    comb: false,
+    password: false,
+    multiSelect: false,
+    editable: false,
+    calculated: false,
+    format: null,
   };
 }
 
@@ -333,7 +353,8 @@ describe('engine/form-fields', () => {
           // TWO VALUES, which is the state the wire carried as none until
           // 2026-09-08: a schema whose `values` was a string would refine the
           // array away, and a transport that took the first would answer one.
-          { ...field('listbox', 2), values: ['English', 'Dutch'], options: ['English', 'Dutch'] },
+          // AND THE FILL RULES A DEFAULT WOULD FLATTEN (ADR-0226 Decision 4): `true` where `false` is a dropped flag.
+          { ...field('listbox', 2), values: ['English', 'Dutch'], options: ['English', 'Dutch'], multiSelect: true, required: true, calculated: true },
         ],
         truncated: false,
       }),
@@ -351,6 +372,7 @@ describe('engine/form-fields', () => {
           readOnly: false,
           multiline: false,
           rect: null,
+          ...PLAIN,
         },
         {
           page: 0,
@@ -363,6 +385,7 @@ describe('engine/form-fields', () => {
           readOnly: true,
           multiline: false,
           rect: { x0: 1, y0: 2, x1: 3, y1: 4 },
+          ...PLAIN,
         },
         {
           page: 0,
@@ -375,6 +398,10 @@ describe('engine/form-fields', () => {
           readOnly: false,
           multiline: false,
           rect: { x0: 1, y0: 2, x1: 3, y1: 4 },
+          ...PLAIN,
+          multiSelect: true,
+          required: true,
+          calculated: true,
         },
       ]);
       expect(incidents).toStrictEqual([]);

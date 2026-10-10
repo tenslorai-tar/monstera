@@ -31,6 +31,14 @@ function field(over: Partial<ListedField> & Pick<ListedField, 'index'>): ListedF
     readOnly: false,
     multiline: false,
     rect: { x0: 10, y0: 700, x1: 110, y1: 720 },
+    required: false,
+    maxLength: null,
+    comb: false,
+    password: false,
+    multiSelect: false,
+    editable: false,
+    calculated: false,
+    format: null,
     ...over,
   };
 }

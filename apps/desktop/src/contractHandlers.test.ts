@@ -2690,6 +2690,48 @@ describe('a document-wide list answers in parts', () => {
 });
 
 /**
+ * A FIELD'S FILL RULES CROSS INTACT (ADR-0226 Decision 4), from what `main` reads to what the renderer parses. The
+ * renderer's schema for a row is a zod object, which STRIPS a key it does not declare rather than refusing it, so a
+ * rule the kernel reads and the contract does not name would vanish at the boundary with no error anywhere. This names
+ * both ends: the row `main` answers and the row the contract's own result schema parses out of it.
+ */
+describe('a field’s fill rules cross from main to the renderer intact', () => {
+  const OPENED = { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' } as const;
+  const row = {
+    page: 0,
+    index: 0,
+    kind: 'text',
+    name: 'price',
+    values: [],
+    on: null,
+    options: [],
+    readOnly: false,
+    multiline: false,
+    rect: { x0: 1, y0: 2, x1: 3, y1: 4 },
+    // EVERY RULE AT ITS NON-DEFAULT, so a member stripped or defaulted on the way is visible.
+    required: true,
+    maxLength: 8,
+    comb: true,
+    password: true,
+    multiSelect: true,
+    editable: true,
+    calculated: true,
+    format: { kind: 'percent', decimals: 1, separators: 'dot-comma' },
+  } as const;
+  const commands = {
+    formFields: () => Promise.resolve({ version: asDocVersion(3), fields: [row], truncated: false }),
+  } as unknown as DocumentCommands;
+  const { handlers } = harness(OPENED, () => Promise.resolve(null), undefined, { commands });
+
+  it('every rule main answers is in the row the renderer parses', async () => {
+    const answer = await handlers['document.formFields']({ docId: A_DOC, from: 0 });
+    if (!answer.ok) throw new Error('the field list was refused');
+    const parsed = channels['document.formFields'].result.parse(answer.value);
+    expect(parsed.fields).toStrictEqual([row]);
+  });
+});
+
+/**
  * A PAGE PAST ONE PART of its text blocks or its objects (finding AAAAAAA-1, ADR-0130): the real handlers answer it a
  * part at a time, and EVERY PART PASSES THE CONTRACT'S OWN RESULT SCHEMA — the check that refused such a page as
  * `internal` when it crossed whole. The fixtures are the breaking sizes: 600 blocks (a dense table page) and 8,400

@@ -59,6 +59,7 @@ import {
   formDataImportFormatSchema,
   annotationDataFormatSchema,
   annotationImportReportSchema,
+  fieldFormatSchema,
   formFieldKindSchema,
   formFieldHandleSchema,
   formFieldReadSchema,
@@ -5234,6 +5235,21 @@ export const channels = {
              * the field, so no surface may start an edit from a slice: it would save the slice over the rest.
              */
             cut: z.literal(true).exactOptional(),
+            /**
+             * What filling it must respect (ADR-0226 Decision 4): whether it is required, its length limit, whether
+             * it is drawn a character to a cell, whether it hides what is typed, whether a list takes several values
+             * and a dropdown takes typing, whether it is worked out from other fields, and the format this
+             * application can read (`null` for none, and for a script it cannot read, which is never run). Bounded
+             * scalars only: a tooltip per field is what put the list past its answer bound (ADR-0193 Decision 10).
+             */
+            required: z.boolean(),
+            maxLength: z.number().int().positive().nullable(),
+            comb: z.boolean(),
+            password: z.boolean(),
+            multiSelect: z.boolean(),
+            editable: z.boolean(),
+            calculated: z.boolean(),
+            format: fieldFormatSchema.nullable(),
           }),
         )
         .max(FORM_FIELDS_PART)

@@ -6,7 +6,27 @@ import { nextFillable } from './fieldOrder.js';
 const RECT = { x0: 0, y0: 0, x1: 10, y1: 10 };
 
 function field(page: number, index: number, over: Partial<ListedField> = {}): ListedField {
-  return { page, index, kind: 'text', name: `f${String(page)}_${String(index)}`, values: [], on: null, options: [], readOnly: false, multiline: false, rect: RECT, ...over };
+  return {
+    page,
+    index,
+    kind: 'text',
+    name: `f${String(page)}_${String(index)}`,
+    values: [],
+    on: null,
+    options: [],
+    readOnly: false,
+    multiline: false,
+    rect: RECT,
+    required: false,
+    maxLength: null,
+    comb: false,
+    password: false,
+    multiSelect: false,
+    editable: false,
+    calculated: false,
+    format: null,
+    ...over,
+  };
 }
 
 describe('nextFillable', () => {

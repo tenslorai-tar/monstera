@@ -10,6 +10,7 @@ import {
   type ContractHandlers,
   type DeclaredOf,
   type FileAccess,
+  type FieldFormat,
   type FormFieldKind,
   type FormFieldRead,
   type ImportSkipped,
@@ -258,7 +259,32 @@ export interface ShimFormField {
   readonly rect: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number } | null;
   /** The channel's mark for a value listed as a slice of a longer one. */
   readonly cut?: true;
+  /**
+   * What filling it must respect (ADR-0226 Decision 4). OPTIONAL HERE, and the one member that is: a case that is not
+   * about these rules names none, and the shim answers {@link PLAIN_RULES} for each it leaves out. A case about them
+   * names the ones it means, so what the channel carries is still exactly what the case set up.
+   */
+  readonly required?: boolean;
+  readonly maxLength?: number | null;
+  readonly comb?: boolean;
+  readonly password?: boolean;
+  readonly multiSelect?: boolean;
+  readonly editable?: boolean;
+  readonly calculated?: boolean;
+  readonly format?: FieldFormat | null;
 }
+
+/** The rules of a field that has none: not required, no limit, one value, no format. */
+const PLAIN_RULES = {
+  required: false,
+  maxLength: null,
+  comb: false,
+  password: false,
+  multiSelect: false,
+  editable: false,
+  calculated: false,
+  format: null,
+} as const;
 
 export interface BrowserShimOptions {
   readonly version?: string;
@@ -2343,7 +2369,12 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
       const fields = fieldLists.length > 1 ? (fieldLists.shift() ?? []) : (fieldLists[0] ?? []);
       return Promise.resolve(
-        ok({ version: asDocVersion(current), fields: fields.slice(from), next: null, truncated: false }),
+        ok({
+          version: asDocVersion(current),
+          fields: fields.slice(from).map((field) => ({ ...PLAIN_RULES, ...field })),
+          next: null,
+          truncated: false,
+        }),
       );
     },
 

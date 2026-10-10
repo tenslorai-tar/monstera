@@ -1,8 +1,9 @@
-import type { AnnotationRect, CommandOfKind, FieldFill, FormFieldKind } from '@monstera/contract';
+import type { AnnotationRect, CommandOfKind, FieldFill, FieldFormat, FormFieldKind } from '@monstera/contract';
 import { MAX_FIELD_VALUE } from '@monstera/contract/host';
 import type { PDFDocument, PDFObject, PDFPage, PDFWidget } from './mupdfRaw.js';
 
 import { BoundedList } from './boundedList.js';
+import { MAX_FIELD_ANCESTRY, fieldRulesOf } from './fieldRules.js';
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { ENGINE_FORM_FIELDS_MAX } from './host/engineChannels.js';
@@ -68,8 +69,8 @@ const MAX_FIELD_OPTIONS = 512;
  */
 const MAX_FIELD_VALUES = 256;
 
-/** How far up a `/Parent` chain an inherited key is looked for. */
-export const MAX_FIELD_ANCESTRY = 32;
+/** How far up a `/Parent` chain an inherited key is looked for: `fieldRules.ts`', the one reader of a field's inherited rules. */
+export { MAX_FIELD_ANCESTRY };
 
 /**
  * What this field's `/V` holds, as a list — the ONE answer to *what value does
@@ -235,6 +236,16 @@ export interface ListedField {
   readonly rect: AnnotationRect | null;
   /** Present and true where a value in {@link values} is a slice of a longer one — {@link listedValues}. */
   readonly cut?: true;
+  /** What filling it must respect, read by `fieldRules.ts` (ADR-0226 Decision 4): bounded scalars, never a tooltip. */
+  readonly required: boolean;
+  readonly maxLength: number | null;
+  readonly comb: boolean;
+  readonly password: boolean;
+  readonly multiSelect: boolean;
+  readonly editable: boolean;
+  /** Its value is worked out from other fields', by a calculation of ours or a script that is never run. */
+  readonly calculated: boolean;
+  readonly format: FieldFormat | null;
 }
 
 /**
@@ -345,6 +356,21 @@ export function onStateKeyOf(object: PDFObject): string | undefined {
   return name;
 }
 
+/** The members of a listed field that say how it is filled, from the one reader of a field's rules. */
+function listedRules(widget: PDFWidget): Pick<ListedField, 'required' | 'maxLength' | 'comb' | 'password' | 'multiSelect' | 'editable' | 'calculated' | 'format'> {
+  const rules = fieldRulesOf(widget);
+  return {
+    required: rules.required,
+    maxLength: rules.maxLength,
+    comb: rules.comb,
+    password: rules.password,
+    multiSelect: rules.multiSelect,
+    editable: rules.editable,
+    calculated: rules.calculation !== null || rules.customCalculation,
+    format: rules.format,
+  };
+}
+
 /**
  * Every AcroForm field in the document, in page order.
  *
@@ -399,6 +425,7 @@ export function readFormFields(
           multiline: kind === 'text' && widget.isMultiline(),
           rect: transform === null ? null : readRect(widget, transform),
           ...(listed.cut ? { cut: true as const } : {}),
+          ...listedRules(widget),
         });
       }
     }

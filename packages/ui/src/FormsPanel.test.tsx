@@ -166,6 +166,14 @@ function field(over: Partial<ChannelField>): ChannelField {
     readOnly: false,
     multiline: false,
     rect: null,
+    required: false,
+    maxLength: null,
+    comb: false,
+    password: false,
+    multiSelect: false,
+    editable: false,
+    calculated: false,
+    format: null,
     ...over,
   };
 }

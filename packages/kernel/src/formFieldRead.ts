@@ -3,8 +3,9 @@ import type { AnnotationColour, FieldChoice, FormFieldHandle, FormFieldRead } fr
 import type { PDFDocument, PDFObject, PDFWidget } from './mupdfRaw.js';
 
 import type { MupdfSession } from './engineSeam.js';
-import { faceOfFont, parseCalculation, parseDefaultAppearance, parseFormat } from './fieldActions.js';
-import { MAX_FIELD_ANCESTRY, kindOf, onStateKeyOf } from './formFields.js';
+import { faceOfFont, parseDefaultAppearance } from './fieldActions.js';
+import { MAX_FIELD_ANCESTRY, fieldRulesOf, nearest } from './fieldRules.js';
+import { kindOf, onStateKeyOf } from './formFields.js';
 import { withDocument } from './mupdfWriter.js';
 import { frameOf, readRect } from './pageAnnotations.js';
 
@@ -24,22 +25,6 @@ import { frameOf, readRect } from './pageAnnotations.js';
 /** How many characters of a tooltip or a default value cross. Past `MAX_FIELD_TOOLTIP` and `MAX_FIELD_DEFAULT`. */
 const MAX_TOOLTIP = 1024;
 const MAX_DEFAULT = 4096;
-
-/** `/Ff` bit 2: the field must be filled before a form is submitted. */
-const REQUIRED_BIT = 2;
-
-/** The first object of a field's ancestry that holds the key, nearest first. */
-function nearest(object: PDFObject, key: string): PDFObject {
-  let at = object;
-  for (let hop = 0; hop < MAX_FIELD_ANCESTRY; hop += 1) {
-    const found = at.get(key);
-    if (!found.isNull()) return found;
-    const parent = at.get('Parent');
-    if (!parent.isDictionary()) break;
-    at = parent;
-  }
-  return object.get(key);
-}
 
 /** A string entry, or `null` where it is absent or not a string. */
 function textOf(object: PDFObject): string | null {
@@ -73,13 +58,6 @@ function borderWidthOf(object: PDFObject): number {
     if (third.isNumber()) return third.asNumber();
   }
   return 1;
-}
-
-/** The script of one `/AA` action, or `undefined` where the action is absent, and `null` where it is one with no readable script. */
-function scriptOf(action: PDFObject): string | null | undefined {
-  if (action.isNull()) return undefined;
-  const js = action.get('JS');
-  return js.isString() ? js.asString() : null;
 }
 
 /** The fully qualified name of a field object: each `/T` from the root down. */
@@ -153,12 +131,8 @@ function readOne(document: PDFDocument, widget: PDFWidget, page: number, index: 
   const da = textOf(nearest(object, 'DA')) ?? textOf(acroForm(document, 'DA')) ?? undefined;
   const font = parseDefaultAppearance(da);
   const baseFont = font === undefined ? undefined : acroForm(document, 'DR', 'Font', font.resource, 'BaseFont');
-  const flags = nearest(object, 'Ff');
-  const aa = nearest(object, 'AA');
-  const formatScript = aa.isNull() ? undefined : scriptOf(aa.get('F'));
-  const calculationScript = aa.isNull() ? undefined : scriptOf(aa.get('C'));
-  const format = typeof formatScript === 'string' ? (parseFormat(formatScript) ?? null) : null;
-  const calculation = typeof calculationScript === 'string' ? (parseCalculation(calculationScript) ?? null) : null;
+  const rules = fieldRulesOf(widget);
+  const { format, calculation } = rules;
   const dv = nearest(object, 'DV');
   const tooltip = textOf(nearest(object, 'TU'));
   return {
@@ -167,7 +141,7 @@ function readOne(document: PDFDocument, widget: PDFWidget, page: number, index: 
     kind,
     name,
     tooltip: tooltip === null ? null : tooltip.slice(0, MAX_TOOLTIP),
-    required: flags.isNumber() && (flags.asNumber() & REQUIRED_BIT) !== 0,
+    required: rules.required,
     readOnly: widget.isReadOnly(),
     defaultValue: dv.isName() ? dv.asName() : dv.isString() ? dv.asString().slice(0, MAX_DEFAULT) : null,
     font: faceOfFont(baseFont?.isName() ? baseFont.asName() : undefined, font?.resource),
@@ -180,10 +154,10 @@ function readOne(document: PDFDocument, widget: PDFWidget, page: number, index: 
     rect,
     format,
     // A script is there and is not one of ours: shown as a script, kept as it is, never run (invariant 24).
-    customFormat: formatScript !== undefined && format === null,
+    customFormat: rules.customFormat,
     calculation,
-    customCalculation: calculationScript !== undefined && calculation === null,
-    calculationPosition: calculation === null && calculationScript === undefined ? null : calculationPositionOf(document, name),
+    customCalculation: rules.customCalculation,
+    calculationPosition: calculation === null && !rules.customCalculation ? null : calculationPositionOf(document, name),
   };
 }
 

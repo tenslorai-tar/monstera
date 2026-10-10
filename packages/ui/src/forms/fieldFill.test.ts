@@ -20,6 +20,14 @@ function field(over: Partial<ListedField>): ListedField {
     readOnly: false,
     multiline: false,
     rect: { x0: 0, y0: 0, x1: 10, y1: 10 },
+    required: false,
+    maxLength: null,
+    comb: false,
+    password: false,
+    multiSelect: false,
+    editable: false,
+    calculated: false,
+    format: null,
     ...over,
   };
 }

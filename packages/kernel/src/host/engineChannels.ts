@@ -33,6 +33,7 @@ import {
   formDataImportFormatSchema,
   annotationDataFormatSchema,
   annotationImportReportSchema,
+  fieldFormatSchema,
   formFieldKindSchema,
   importFormDataSchema,
   importAnnotationsSchema,
@@ -598,6 +599,15 @@ const engineFormFieldSchema = z
     rect: annotationRectSchema.nullable(),
     /** Present and true where a value is a slice of a longer one, exactly optional for the annotation's `cut`. */
     cut: z.literal(true).exactOptional(),
+    /** What filling it must respect (ADR-0226 Decision 4), from `fieldRules.ts`. Bounded scalars. */
+    required: z.boolean(),
+    maxLength: z.number().int().positive().nullable(),
+    comb: z.boolean(),
+    password: z.boolean(),
+    multiSelect: z.boolean(),
+    editable: z.boolean(),
+    calculated: z.boolean(),
+    format: fieldFormatSchema.nullable(),
   })
   .strict();
 
