@@ -88,3 +88,23 @@ The existing `check:jobplacement` is the control: the old placement must be
 rejected and the new placement must pass. The scanner's 26 cases must still
 pass through the shared compiler loader. This correction is recorded in its
 own commit before changing the loader use or workflows.
+
+## Correction, 2026-10-10 — Static import initialization
+
+With the shared compiler loader in place, deliberately moving both scanner
+steps back to Guards made the placement check reject the scanner but miss its
+proof. The proof statically imports a module that loads the compiler during
+initialization. The check follows uncaught function calls but does not
+propagate that initialization failure through static importers.
+
+Treat an uncaught module-scope loader failure as a load-time dependency for
+its static importers and re-exporters, transitively. Keep dynamic imports
+separate: their rejection can be caught by their caller. Do not return to a
+module-level approximation for lazy exported functions; the existing
+per-function call analysis remains unchanged.
+
+The placement proof must compare actual Node execution with both shapes:
+a static import fails before the caller's try/catch; a caught dynamic import
+can report unavailable. Both scanner steps on Guards must then be reported;
+both in the installing matrix must pass. This records that correction before
+changing the placement instrument.
