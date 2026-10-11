@@ -102,3 +102,10 @@ so this decision's readable-copy step failed after a direct kernel undo.
 The saved-file password remained intact in the native app checks. The existing
 `proof:pdflibprotected` now includes the 16 protection-undo comparisons across
 the four schemes, bringing its roster from 17 to 33 cases.
+
+## Amended, 2026-10-11 — a protected document is signed
+
+The first Consequence's refusal is superseded by
+[ADR-0227](0227-a-signature-on-a-protected-document-is-appended-under-the-files-own-key.md): MuPDF appends the
+signature's revision under the file's own key, which is the route this decision named as missing. Decisions 1 to 4 are
+unchanged for the eight pdf-lib commands.
