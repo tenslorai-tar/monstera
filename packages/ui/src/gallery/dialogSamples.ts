@@ -251,21 +251,6 @@ function textForm(field: string, text: string): readonly DialogSample[] {
   ];
 }
 
-/** A form-field dialog that lists choices: opened, filled, and with several choice rows. */
-/** The fields the form already has, which a new field's name is asked against (`fieldNameCheck.ts`). */
-const KNOWN_FIELDS = [{ name: 'full_name', kind: 'text' as const, options: [] }];
-
-function choiceField(name: string): readonly DialogSample[] {
-  const props = { known: KNOWN_FIELDS };
-  return [
-    { state: 'opened', props },
-    { state: 'filled', props, steps: [type('Field name', name), type('Choice', 'Standard delivery')] },
-    { state: 'choices', props, steps: [press('Add a choice'), press('Add a choice'), press('Add a choice')] },
-    // A NAME THE FORM ALREADY HAS, said where it is typed (the refusal that once reached a person as an incident).
-    { state: 'name-taken', props, steps: [type('Field name', 'full_name')] },
-  ];
-}
-
 export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> = {
   'dialog.about': [{ state: 'opened', props: { version: '0.1.1', installChannel: 'store', checksForUpdates: false } }],
   'dialog.components': [
@@ -1143,20 +1128,6 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'search', props: SETTINGS, steps: [type('Search settings', 'page')] },
     { state: 'no-match', props: SETTINGS, steps: [type('Search settings', 'xylophone')] },
   ],
-  'dialog.form-field-radio': [
-    { state: 'opened', props: { known: KNOWN_FIELDS } },
-    {
-      state: 'filled',
-      props: { known: KNOWN_FIELDS },
-      steps: [
-        type('Group name', 'delivery'),
-        type('This option’s value', 'Standard'),
-      ],
-    },
-    { state: 'name-taken', props: { known: KNOWN_FIELDS }, steps: [type('Group name', 'full_name')] },
-  ],
-  'dialog.form-field-dropdown': choiceField('delivery_method'),
-  'dialog.form-field-listbox': choiceField('preferred_days'),
   'dialog.follow-link': [
     { state: 'opened', props: { address: 'https://example.org/annual-report', followable: true, scheme: 'https:' } },
     // ONE UNBROKEN WORD, as a tracking address is: the dialog shows it whole and breaks it anywhere.

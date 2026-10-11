@@ -1,27 +1,14 @@
 import type { FormFieldKind } from '@monstera/contract';
 import { fieldNameClash } from '@monstera/shared';
 import type { MessageKey } from '@monstera/shared';
-import { z } from 'zod';
 
-import {
-  FORM_FIELD_NAME_PARENT,
-  FORM_FIELD_NAME_TAKEN,
-  FORM_FIELD_OPTION_TAKEN,
-} from '../messages/en.js';
+import { FORM_FIELD_NAME_PARENT, FORM_FIELD_NAME_TAKEN } from '../messages/en.js';
 import { fieldNameProblem } from './typedRules.js';
 
 /**
  * A field the document already has, as far as a name is concerned: what it is called, what kind it is, and (for a radio
  * button) the choice it stands for.
  */
-export const KNOWN_FIELD = z
-  .object({
-    name: z.string(),
-    kind: z.enum(['text', 'checkbox', 'radio', 'dropdown', 'listbox', 'signature', 'button', 'other']),
-    options: z.array(z.string()),
-  })
-  .strict();
-
 export interface KnownField {
   readonly name: string;
   readonly kind: FormFieldKind;
@@ -61,20 +48,4 @@ export function fieldNameProblemAmong(
     return undefined;
   }
   return clash === name ? FORM_FIELD_NAME_TAKEN : FORM_FIELD_NAME_PARENT;
-}
-
-/**
- * Whether a radio group already has this choice. Each option of a group has its own value, and two with one value are
- * two widgets that switch on together, which is not a group of choices.
- */
-export function optionProblem(
-  option: string,
-  group: string,
-  known: readonly KnownField[],
-  usedHere: readonly string[],
-): MessageKey | undefined {
-  const wanted = option.trim();
-  if (wanted === '') return undefined;
-  const held = known.filter((field) => field.kind === 'radio' && field.name === group).flatMap((field) => field.options);
-  return [...held, ...usedHere].includes(wanted) ? FORM_FIELD_OPTION_TAKEN : undefined;
 }

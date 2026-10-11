@@ -1,36 +1,34 @@
 ---
 id: create-form-fields
 title: Create form fields
-summary: Draw text fields, tick boxes, radio options, dropdowns and list boxes on a page.
-keywords: [create form, add field, form field, text field, checkbox, tick box, radio button, dropdown, list box, make fillable]
-commands: [forms.field-text, forms.field-checkbox, forms.field-radio, forms.field-dropdown, forms.field-listbox]
-contexts: [dialog.form-field-radio, dialog.form-field-dropdown, dialog.form-field-listbox, forms]
+summary: Add text fields, tick boxes, radio buttons, dropdowns, list boxes, buttons, signature fields and date fields to a page.
+keywords: [create form, add field, form field, text field, checkbox, tick box, radio button, dropdown, list box, button, signature field, date field, make fillable]
+commands: [forms.field-text, forms.field-checkbox, forms.field-radio, forms.field-dropdown, forms.field-listbox, forms.field-button, forms.field-signature, forms.field-date]
+contexts: [forms]
 ---
-You can turn any document into a fillable form by drawing fields on it.
+You can turn any document into a fillable form by adding fields to it.
 
 ## Steps
 
-1. In the rail, choose **Forms**. In the **Fields** group, choose **Text field**, **Tick box**, **Radio option**, **Dropdown** or **List box**.
-2. Drag a box on the page where the field goes.
-3. Give it a **Field name**.
-   - For a text field or a tick box, a small field opens beside the box: type the name and press **Enter**, or click elsewhere on the page. Press **Esc** to leave the field out.
-   - For a radio option, a window asks for the group's name in **Group name**, the same for every option in the group, and this option's in **This option's value**.
-   - For a dropdown or list box, the window asks for each **Choice**; use **Add a choice** for more.
-4. In the window, choose the **Add …** button, for example **Add dropdown**.
+1. In the rail, choose **Forms**. In the **Fields** group, choose the kind of field: **Text field**, **Tick box**, **Radio option**, **Dropdown**, **List box**, **Button**, **Signature** or **Date**.
+2. Click on the page where the field goes. The field gets its usual size. To make it a size of your own, drag a box instead.
+3. The field is named for you, for example "Text1" or "Check Box2". To rename it, select it in the **Fields** list and change the name in the **Properties** tab.
 
-![The Field name field beside the box drawn, with a name typed](screenshot:create-form-fields-1)
+![The Fields group's tools](screenshot:create-form-fields-1)
 
 ## Good to know
 
-- Choosing a field tool draws ONE field and then returns to filling. Double click the tool to draw several in a row, and press **Esc** to stop. For radio options, drag one box for each option: the group's name is asked once and kept until you press **Esc**, and each option needs a value of its own.
-- A new field has a thin dark border so you can see it, and a tick box or radio button also has a white fill.
-- A name another field already has, or a name that starts another's, is said in the name box before anything is drawn.
+- Choosing a field tool adds ONE field and then returns to filling. Double click the tool to add several in a row, and press **Esc** to stop.
+- Radio buttons: click once for each choice. The choices you add before pressing **Esc** belong together as "Group1", with the values "Choice1", "Choice2" and so on, and only one of them can be on.
+- A new dropdown or list box starts with three choices. Change them in the **Properties** tab.
+- A date field is written the way your computer writes dates. Change its format in the **Properties** tab.
+- A signature field is an empty place for a signature. It stays empty until someone signs there.
+- A new field has a thin dark border so you can see it, and a tick box or radio button also has a white fill. It starts empty and unticked.
 - A dot in a name groups fields: "owner.first" and "owner.second" belong together.
-- Signature fields cannot be created yet.
-- New fields start empty; fill them from the **Forms** tab. To change a field afterwards, select it in the **Fields** list and use the **Properties** tab. See "Change a form field".
+- New fields start empty; fill them by clicking them. To change a field afterwards, select it in the **Fields** list and use the **Properties** tab. See "Change a form field".
 - Undo with **Ctrl+Z**.
 
 <!--
 Screenshots to capture:
-1. create-form-fields-1 — Forms section, after dragging with Text field along the Full name line; the Field name field beside the box with "full_name". Frame the field and the box.
+1. create-form-fields-1 — Forms section; the Fields group's tools from Text field to Date. Frame the group.
 -->

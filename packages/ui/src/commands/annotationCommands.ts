@@ -12,10 +12,13 @@ import {
 import { CALLOUT_TOOL_ID } from '../annotations/calloutTool.js';
 import { ERASER_TOOL_ID } from '../annotations/eraserTool.js';
 import {
+  FORM_FIELD_BUTTON_TOOL_ID,
   FORM_FIELD_CHECKBOX_TOOL_ID,
+  FORM_FIELD_DATE_TOOL_ID,
   FORM_FIELD_DROPDOWN_TOOL_ID,
   FORM_FIELD_LISTBOX_TOOL_ID,
   FORM_FIELD_RADIO_TOOL_ID,
+  FORM_FIELD_SIGNATURE_TOOL_ID,
   FORM_FIELD_TEXT_TOOL_ID,
 } from '../annotations/formFieldTools.js';
 import { LINK_ADDRESS_TOOL_ID, LINK_PAGE_TOOL_ID } from '../annotations/linkTools.js';
@@ -69,8 +72,14 @@ import {
   SELECTION_PROPERTIES_TITLE,
   ELLIPSE_TOOL_TITLE,
   ERASER_TOOL_TITLE,
+  FORM_FIELD_BUTTON_TIP,
+  FORM_FIELD_BUTTON_TOOL_TITLE,
   FORM_FIELD_CHECKBOX_TIP,
   FORM_FIELD_CHECKBOX_TOOL_TITLE,
+  FORM_FIELD_DATE_TIP,
+  FORM_FIELD_DATE_TOOL_TITLE,
+  FORM_FIELD_SIGNATURE_TIP,
+  FORM_FIELD_SIGNATURE_TOOL_TITLE,
   FORM_FIELD_DROPDOWN_TIP,
   FORM_FIELD_DROPDOWN_TOOL_TITLE,
   FORM_FIELD_LISTBOX_TIP,
@@ -115,6 +124,9 @@ import {
   RIBBON_FIELD_RADIO,
   RIBBON_FIELD_DROPDOWN,
   RIBBON_FIELD_LISTBOX,
+  RIBBON_FIELD_BUTTON,
+  RIBBON_FIELD_SIGNATURE,
+  RIBBON_FIELD_DATE,
   HIGHLIGHT_TOOL_TITLE,
   INK_TOOL_TITLE,
   LINE_TOOL_TITLE,
@@ -1376,13 +1388,11 @@ export function shapeToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
 }
 
 /**
- * The five create-field tools' commands.
+ * The create-field tools' commands, one per kind `createFormField` makes.
  *
- * A nested list rather than five entries above, because they arrive together and
- * leave together: the set is *what pdf-lib has a factory for*, which is a fact
- * about the writer of record rather than a choice made here. A signature tool is
- * absent for that reason and nothing in this file has to say so — there is no
- * id to give a command to.
+ * A nested list rather than eight entries above, because they arrive together and leave together. The signature field
+ * joined on 2026-10-10 (ADR-0226 Decision 13): pdf-lib declares no factory for it, and the kernel writes its dictionary
+ * through the same writer, so the concern still has one writer.
  *
  * Ordered after every annotation tool. They are the Forms ribbon's, and the
  * quick toolbar orders by number rather than by group, so the numbers are what
@@ -1398,5 +1408,8 @@ export function formFieldToolCommands(deps: ToolCommandDeps): readonly UiCommand
     toolCommand(FORM_FIELD_RADIO_TOOL_ID, { full: FORM_FIELD_RADIO_TOOL_TITLE, ribbon: RIBBON_FIELD_RADIO }, 'CircleDot', 72, deps, fields, undefined, { tip: FORM_FIELD_RADIO_TIP, holdable: false }),
     toolCommand(FORM_FIELD_DROPDOWN_TOOL_ID, { full: FORM_FIELD_DROPDOWN_TOOL_TITLE, ribbon: RIBBON_FIELD_DROPDOWN }, 'ChevronDown', 73, deps, fields, undefined, { tip: FORM_FIELD_DROPDOWN_TIP, holdable: true }),
     toolCommand(FORM_FIELD_LISTBOX_TOOL_ID, { full: FORM_FIELD_LISTBOX_TOOL_TITLE, ribbon: RIBBON_FIELD_LISTBOX }, 'List', 74, deps, fields, undefined, { tip: FORM_FIELD_LISTBOX_TIP, holdable: true }),
+    toolCommand(FORM_FIELD_BUTTON_TOOL_ID, { full: FORM_FIELD_BUTTON_TOOL_TITLE, ribbon: RIBBON_FIELD_BUTTON }, 'RectangleHorizontal', 75, deps, fields, undefined, { tip: FORM_FIELD_BUTTON_TIP, holdable: true }),
+    toolCommand(FORM_FIELD_SIGNATURE_TOOL_ID, { full: FORM_FIELD_SIGNATURE_TOOL_TITLE, ribbon: RIBBON_FIELD_SIGNATURE }, 'Signature', 77, deps, fields, undefined, { tip: FORM_FIELD_SIGNATURE_TIP, holdable: true }),
+    toolCommand(FORM_FIELD_DATE_TOOL_ID, { full: FORM_FIELD_DATE_TOOL_TITLE, ribbon: RIBBON_FIELD_DATE }, 'Calendar', 79, deps, fields, undefined, { tip: FORM_FIELD_DATE_TIP, holdable: true }),
   ];
 }

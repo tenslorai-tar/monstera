@@ -3,48 +3,34 @@ import { createFormFieldSchema } from '@monstera/contract';
 import { viewportPoint } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
-import {
-  FORM_FIELD_DROPDOWN_DIALOG_ID,
-  FORM_FIELD_LISTBOX_DIALOG_ID,
-  FORM_FIELD_RADIO_DIALOG_ID,
-} from '../dialogs/formField.js';
-import {
-  FORM_FIELD_NAME_LABEL,
-  FORM_FIELD_NAME_PARENT,
-  FORM_FIELD_NAME_SEGMENT,
-  FORM_FIELD_NAME_TAKEN,
-} from '../messages/en.js';
-import type { WriteRequest } from '../pageWriting.js';
+import { localDatePattern } from '../forms/datePattern.js';
 import { overlayTransform } from './annotationSpace.js';
 import { PLAIN_STYLE } from './annotationStyle.js';
 import type { KnownField } from './fieldNameCheck.js';
 import {
+  FORM_FIELD_BUTTON_TOOL_ID,
   FORM_FIELD_CHECKBOX_TOOL_ID,
+  FORM_FIELD_DATE_TOOL_ID,
   FORM_FIELD_DROPDOWN_TOOL_ID,
   FORM_FIELD_LISTBOX_TOOL_ID,
   FORM_FIELD_RADIO_TOOL_ID,
+  FORM_FIELD_SIGNATURE_TOOL_ID,
   FORM_FIELD_TEXT_TOOL_ID,
   formFieldTools,
 } from './formFieldTools.js';
 
 /**
- * The five create-field controllers, driven without a DOM: a text field and a checkbox named in a line on the page
- * (ADR-0154), a radio button, a dropdown and a list box through their dialogs.
+ * The create-field controllers, driven without a DOM: a click places the kind's own size, a drag places the box, and
+ * the name is the next free one (ADR-0226 Decisions 11 to 13).
  *
- * This is the UI half of the wired-tools pair: `formFieldCreate.test.ts` proves
- * the command puts a field in the document, and this proves the control
- * dispatches **that** command. Neither alone counts — a kernel proof alone
- * covers a button that dispatches into the void, and a UI test alone covers a
- * command nothing implements.
+ * This is the UI half of the wired-tools pair: `formFieldNew.test.ts` and `formFieldCreate.test.ts` prove the command
+ * puts the field in the document, and this proves the control dispatches **that** command.
  *
  * ## And the pair's blind spot is closed by a THIRD assertion here
  *
- * `CLAUDE.md`: where the two halves speak different coordinate systems the pair
- * proves nothing, because each is correct in its own frame for ever. The frames
- * here are the overlay's CSS pixels and the payload's PDF user space, and the
- * cases below assert the **converted numbers** against a fixture whose crop
- * origin is not zero and whose zoom is not 1 — so a controller that passed
- * pixels straight through fails rather than coincides.
+ * The frames are the overlay's CSS pixels and the payload's PDF user space, and the cases below assert the **converted
+ * numbers** against a fixture whose crop origin is not zero and whose zoom is not 1 — so a controller that passed pixels
+ * straight through fails rather than coincides.
  */
 
 const PAGE: Parameters<typeof overlayTransform>[0] = {
@@ -53,35 +39,25 @@ const PAGE: Parameters<typeof overlayTransform>[0] = {
   zoom: 2,
 };
 
-/**
- * The five tools, each with a dialog answering `answer` and the page answering `typed`, and what was asked of each.
- * A name typed on the page is answered as the line answers it: the words, or `undefined` for none.
- */
-function toolsAnswering(
-  answer: unknown,
-  typed?: string,
-  /** The fields the document already has, which the tools read when they are about to ask for a name. */
-  has?: readonly KnownField[],
-): {
+/** The tools over a form holding `has`, with every ask and every page write recorded: neither may happen. */
+function toolsOver(has: readonly KnownField[] = []): {
   readonly tools: ReturnType<typeof formFieldTools>;
-  readonly asked: { id: string; props: unknown }[];
-  readonly written: WriteRequest[];
+  readonly asked: unknown[];
 } {
-  const asked: { id: string; props: unknown }[] = [];
-  const written: WriteRequest[] = [];
+  const asked: unknown[] = [];
   const tools = formFieldTools({
-    ask: (id, props) => {
-      asked.push({ id, props });
-      return Promise.resolve(answer);
+    ask: (id) => {
+      asked.push(id);
+      return Promise.resolve(undefined);
     },
     write: (request) => {
-      written.push(request);
-      return Promise.resolve(typed);
+      asked.push(request);
+      return Promise.resolve(undefined);
     },
-    ...(has === undefined ? {} : { fields: () => Promise.resolve(has) }),
+    fields: () => Promise.resolve(has),
     style: PLAIN_STYLE,
   });
-  return { tools, asked, written };
+  return { tools, asked };
 }
 
 function toolWithId(tools: ReturnType<typeof formFieldTools>, id: string) {
@@ -90,233 +66,135 @@ function toolWithId(tools: ReturnType<typeof formFieldTools>, id: string) {
   return found;
 }
 
-/** Drives a whole drag and returns whatever `commit` decided. */
-async function drag(
-  tool: { readonly controller: { begin: never } } | ReturnType<typeof formFieldTools>[number],
+/** Drives a whole gesture and returns whatever `commit` decided. */
+async function press(
+  tool: ReturnType<typeof formFieldTools>[number],
   from: readonly [number, number],
-  to: readonly [number, number],
+  to: readonly [number, number] = from,
   page = 3,
 ): Promise<DispatchableCommand | undefined> {
-  const { controller } = tool as ReturnType<typeof formFieldTools>[number];
+  const { controller } = tool;
   const started = controller.begin(viewportPoint(from[0], from[1]));
   const moved = controller.update(started, viewportPoint(to[0], to[1]));
   return controller.commit(moved, page, overlayTransform(PAGE));
 }
 
-describe('formFieldTools — each asks for its own name and builds its own kind', () => {
-  it('the text tool asks the page for the NAME in a line beside the box, and dispatches createFormField with it', async () => {
-    const { tools, asked, written } = toolsAnswering(undefined, 'applicant.name');
+describe('formFieldTools — a click places the kind’s own size, named without asking', () => {
+  it('a click with the text tool places 180 by 20 points opening down and right of it, named Text1', async () => {
+    const { tools, asked } = toolsOver();
 
-    const command = await drag(toolWithId(tools, FORM_FIELD_TEXT_TOOL_ID), [20, 20], [120, 80]);
+    const command = await press(toolWithId(tools, FORM_FIELD_TEXT_TOOL_ID), [20, 20]);
 
-    // BOTH HALVES. The request says it asked the page for a field name beside the box drawn, and no dialog; the
-    // command says the answer reached the payload. Either alone passes for an implementation that asked and ignored,
-    // or built and never asked.
     expect(asked).toStrictEqual([]);
-    expect(written.map(({ check: _rule, ...request }) => request)).toStrictEqual([
-      { page: 3, box: { x0: 60, y0: 390, x1: 110, y1: 360 }, shape: 'line', initial: '', label: FORM_FIELD_NAME_LABEL },
-    ]);
-    // AND THE NAME'S RULE, the one the field dialogs take: a dot with nothing after it is a parent with no name.
-    expect([written[0]?.check?.('applicant.name'), written[0]?.check?.('applicant.')]).toStrictEqual([undefined, FORM_FIELD_NAME_SEGMENT]);
     expect(command).toStrictEqual({
       kind: 'createFormField',
       page: 3,
-      // ONE FIELD IN A LIST. The payload became plural on 2026-09-08 for
-      // flat-field detection, where accepting a page of candidates is one
-      // decision; a drag is one field, and this asserts the tool sends exactly
-      // one rather than however many the list would accept.
       fields: [
         {
-          // THE THIRD NUMBER. (20, 20) at zoom 2 on a crop starting at (50, 100)
-          // is (60, 390) in user space, and (120, 80) is (110, 360). A
-          // controller that passed pixels through would answer (20, 20) and
-          // (120, 80), which is a different rectangle on a different part of
-          // the page.
-          rect: { x0: 60, y0: 390, x1: 110, y1: 360 },
-          name: 'applicant.name',
+          // THE THIRD NUMBER. (20, 20) at zoom 2 on a crop starting at (50, 100) is (60, 390) in user space; 180 by 20
+          // points is 360 by 40 pixels at that zoom, so the far corner is (240, 370). A controller that sized in pixels
+          // would answer a box half that, and one that passed pixels through would answer (20, 20).
+          rect: { x0: 60, y0: 390, x1: 240, y1: 370 },
+          name: 'Text1',
           field: { type: 'text' },
         },
       ],
     });
   });
 
-  it('the checkbox tool is named on the page too, and builds a checkbox', async () => {
-    const { tools, asked, written } = toolsAnswering(undefined, '  applicant.agrees  ');
-
-    const command = await drag(toolWithId(tools, FORM_FIELD_CHECKBOX_TOOL_ID), [20, 20], [40, 40]);
-
-    expect([asked.length, written.length]).toStrictEqual([0, 1]);
-    // TRIMMED by the result schema the dialogs answer with, so a name reaches the command one way.
-    expect(command).toMatchObject({
-      kind: 'createFormField',
-      fields: [{ name: 'applicant.agrees', field: { type: 'checkbox' } }],
-    });
+  it('each kind places its own size and builds its own member', async () => {
+    const { tools } = toolsOver();
+    const sizes: [string, number, number, unknown][] = [
+      [FORM_FIELD_CHECKBOX_TOOL_ID, 12, 12, { type: 'checkbox' }],
+      [FORM_FIELD_DROPDOWN_TOOL_ID, 150, 20, { type: 'dropdown', options: ['Choice1', 'Choice2', 'Choice3'] }],
+      [FORM_FIELD_LISTBOX_TOOL_ID, 150, 60, { type: 'listbox', options: ['Choice1', 'Choice2', 'Choice3'] }],
+      [FORM_FIELD_BUTTON_TOOL_ID, 80, 24, { type: 'button', label: 'Button' }],
+      [FORM_FIELD_SIGNATURE_TOOL_ID, 180, 40, { type: 'signature' }],
+      [FORM_FIELD_DATE_TOOL_ID, 100, 20, { type: 'date', pattern: localDatePattern() }],
+    ];
+    for (const [id, width, height, field] of sizes) {
+      const command = await press(toolWithId(tools, id), [0, 0]);
+      expect(command, id).toMatchObject({ fields: [{ rect: { x0: 50, y0: 400, x1: 50 + width, y1: 400 - height }, field }] });
+    }
   });
 
-  it('the radio tool carries the option, and the name is the GROUP’s', async () => {
-    const { tools, asked } = toolsAnswering({ name: 'applicant.post', option: 'first' });
-
-    const command = await drag(toolWithId(tools, FORM_FIELD_RADIO_TOOL_ID), [20, 20], [40, 40]);
-
-    expect(asked.map((entry) => entry.id)).toStrictEqual([FORM_FIELD_RADIO_DIALOG_ID]);
-    expect(command).toMatchObject({
-      kind: 'createFormField',
-      fields: [{ name: 'applicant.post', field: { type: 'radio', option: 'first' } }],
-    });
+  it('a click near the page’s far corner is moved back so the whole field is on the page', async () => {
+    const { tools } = toolsOver();
+    // The page is 200 by 300 points, 400 by 600 pixels at zoom 2; a text field clicked at (390, 590) would run off.
+    const command = await press(toolWithId(tools, FORM_FIELD_TEXT_TOOL_ID), [390, 590]);
+    expect(command).toMatchObject({ fields: [{ rect: { x0: 70, y0: 120, x1: 250, y1: 100 } }] });
   });
 
-  it('the dropdown and list-box tools carry their options', async () => {
-    const answer = { name: 'applicant.title', options: ['Dr', 'Mr'] };
-
-    const dropdown = toolsAnswering(answer);
-    expect(
-      await drag(toolWithId(dropdown.tools, FORM_FIELD_DROPDOWN_TOOL_ID), [20, 20], [120, 60]),
-    ).toMatchObject({ fields: [{ field: { type: 'dropdown', options: ['Dr', 'Mr'] } }] });
-    expect(dropdown.asked.map((entry) => entry.id)).toStrictEqual([FORM_FIELD_DROPDOWN_DIALOG_ID]);
-
-    const listbox = toolsAnswering(answer);
-    expect(
-      await drag(toolWithId(listbox.tools, FORM_FIELD_LISTBOX_TOOL_ID), [20, 20], [120, 60]),
-    ).toMatchObject({ fields: [{ field: { type: 'listbox', options: ['Dr', 'Mr'] } }] });
-    expect(listbox.asked.map((entry) => entry.id)).toStrictEqual([FORM_FIELD_LISTBOX_DIALOG_ID]);
+  it('the name is the next one the form does not hold, by the writer’s own rule', async () => {
+    const { tools } = toolsOver([
+      { name: 'Text1', kind: 'text', options: [] },
+      { name: 'Text2.inner', kind: 'text', options: [] },
+    ]);
+    expect(await press(toolWithId(tools, FORM_FIELD_TEXT_TOOL_ID), [20, 20])).toMatchObject({ fields: [{ name: 'Text3' }] });
   });
 
   it('every command it builds is one the contract accepts', async () => {
-    // The join the two halves cannot make between them: a tool may build a
-    // well-shaped object that the schema refuses, and the kernel cases construct
-    // their own payloads rather than taking one from here.
-    const { tools } = toolsAnswering({ name: 'a.b', option: 'one', options: ['one', 'two'] }, 'a.b');
-
+    const { tools } = toolsOver();
     for (const tool of tools) {
-      const command = await drag(tool, [20, 20], [120, 80]);
-      expect(createFormFieldSchema.safeParse(command).success).toBe(true);
+      expect(createFormFieldSchema.safeParse(await press(tool, [20, 20])).success, tool.id).toBe(true);
+      expect(createFormFieldSchema.safeParse(await press(tool, [20, 20], [120, 80])).success, tool.id).toBe(true);
+      tool.ended?.();
     }
   });
 });
 
-describe('formFieldTools — when it builds nothing', () => {
-  it('a click that did not drag asks for nothing at all', async () => {
-    const { tools, asked, written } = toolsAnswering({ name: 'applicant.name' }, 'applicant.name');
-
-    const command = await drag(toolWithId(tools, FORM_FIELD_TEXT_TOOL_ID), [20, 20], [22, 21]);
-
-    // THE ASK IS THE ASSERTION, not just the absent command. A tool that asked and then discarded the answer would
-    // produce the same `undefined` while putting a field in front of somebody who clicked by accident.
-    expect(command).toBeUndefined();
-    expect([asked, written]).toStrictEqual([[], []]);
+describe('formFieldTools — a drag places the box', () => {
+  it('a drag places the dragged box, converted to user space', async () => {
+    const { tools } = toolsOver();
+    expect(await press(toolWithId(tools, FORM_FIELD_TEXT_TOOL_ID), [20, 20], [120, 80])).toMatchObject({
+      fields: [{ rect: { x0: 60, y0: 390, x1: 110, y1: 360 } }],
+    });
   });
 
-  it('a drag that is long but not tall is a sliver, not a field', async () => {
-    const { tools, asked, written } = toolsAnswering({ name: 'applicant.name' }, 'applicant.name');
-
-    // BOTH AXES. A distance test accepts 100 by 1, which is a control nobody
-    // can click and — unlike an annotation — one no eraser can find again.
-    expect(await drag(toolWithId(tools, FORM_FIELD_TEXT_TOOL_ID), [20, 20], [120, 21])).toBeUndefined();
-    expect([asked, written]).toStrictEqual([[], []]);
+  it('a drag thinner than six points is grown to six, so the field can be clicked', async () => {
+    const { tools } = toolsOver();
+    // 100 by 6 pixels at zoom 2 is 50 by 3 points: the height grows to 6 points, 12 pixels.
+    expect(await press(toolWithId(tools, FORM_FIELD_TEXT_TOOL_ID), [20, 20], [120, 26])).toMatchObject({
+      fields: [{ rect: { x0: 60, y0: 390, x1: 110, y1: 384 } }],
+    });
   });
 
-  it('nothing typed builds nothing, and a dismissed dialog builds nothing', async () => {
-    const named = toolsAnswering(undefined, undefined);
-    expect(await drag(toolWithId(named.tools, FORM_FIELD_TEXT_TOOL_ID), [20, 20], [120, 80])).toBeUndefined();
-    // It DID ask — which is what separates nothing typed from a gesture too small to have asked anything.
-    expect(named.written).toHaveLength(1);
-
-    const dismissed = toolsAnswering(undefined);
-    expect(await drag(toolWithId(dismissed.tools, FORM_FIELD_RADIO_TOOL_ID), [20, 20], [120, 80])).toBeUndefined();
-    expect(dismissed.asked).toHaveLength(1);
-  });
-
-  it('a radio answer with no option builds nothing rather than a broken command', async () => {
-    // One result schema serves every way a field is named, so `option` is optional there. The
-    // tool is what narrows it, and this is the case that says a missing member
-    // stops the command rather than travelling as `undefined`.
-    const { tools } = toolsAnswering({ name: 'applicant.post' });
-
-    expect(await drag(toolWithId(tools, FORM_FIELD_RADIO_TOOL_ID), [20, 20], [40, 40])).toBeUndefined();
-  });
-
-  it('a choice answer with an empty list builds nothing', async () => {
-    const { tools } = toolsAnswering({ name: 'applicant.title', options: [] });
-
-    expect(
-      await drag(toolWithId(tools, FORM_FIELD_DROPDOWN_TOOL_ID), [20, 20], [120, 60]),
-    ).toBeUndefined();
-  });
-
-  it('CONTROL: the same drag with a usable answer DOES build a command', async () => {
-    // Without this, every case above passes for a tool that builds nothing ever.
-    const { tools } = toolsAnswering({ name: 'applicant.title', options: ['Dr'] });
-
-    expect(
-      await drag(toolWithId(tools, FORM_FIELD_DROPDOWN_TOOL_ID), [20, 20], [120, 60]),
-    ).toMatchObject({ kind: 'createFormField' });
+  it('CONTROL: a press that wobbles less than the drag distance is a click, and places the kind’s size', async () => {
+    const { tools } = toolsOver();
+    expect(await press(toolWithId(tools, FORM_FIELD_TEXT_TOOL_ID), [20, 20], [22, 21])).toMatchObject({
+      fields: [{ rect: { x0: 60, y0: 390, x1: 240, y1: 370 } }],
+    });
   });
 });
 
-const HAS: readonly KnownField[] = [
-  { name: 'Name', kind: 'text', options: [] },
-  { name: 'owner.first', kind: 'text', options: [] },
-  { name: 'plan', kind: 'radio', options: ['Basic'] },
-  { name: 'plan', kind: 'radio', options: ['Pro'] },
-];
+describe('formFieldTools — a radio group is one run of the tool (K6)', () => {
+  it('the first press starts Group1 with Choice1, the next joins it with Choice2, and Esc starts a new group', async () => {
+    const { tools } = toolsOver([{ name: 'Group1', kind: 'radio', options: ['Choice1'] }]);
+    const tool = toolWithId(tools, FORM_FIELD_RADIO_TOOL_ID);
 
-describe('formFieldTools — a name the form cannot take is said as it is typed, with the rule the writer refuses by', () => {
-  it('the text tool refuses a name the form has, and one that is the start of another or has another for its start, and takes a free one', async () => {
-    const { tools, written } = toolsAnswering(undefined, 'Other', HAS);
-    await drag(toolWithId(tools, FORM_FIELD_TEXT_TOOL_ID), [20, 20], [120, 80]);
-    const check = written[0]?.check;
-
-    // THE KNOWN CAUSE, each in words: this reached a person as *something went wrong inside Monstera* because the
-    // writer's refusal does not cross the engine host's boundary.
-    expect(check?.('Name')).toBe(FORM_FIELD_NAME_TAKEN);
-    expect(check?.('owner')).toBe(FORM_FIELD_NAME_PARENT);
-    expect(check?.('Name.nick')).toBe(FORM_FIELD_NAME_PARENT);
-    // AND A FREE NAME PASSES, so the refusals are not a check that refuses everything.
-    expect(check?.('Other')).toBeUndefined();
-    expect(check?.('owner.second')).toBeUndefined();
-  });
-
-  it('a tick box is checked the same way, and a radio option MAY join a radio group of its name', async () => {
-    const box = toolsAnswering(undefined, 'Other', HAS);
-    await drag(toolWithId(box.tools, FORM_FIELD_CHECKBOX_TOOL_ID), [20, 20], [40, 40]);
-    expect(box.written[0]?.check?.('plan')).toBe(FORM_FIELD_NAME_TAKEN);
-
-    const radio = toolsAnswering({ name: 'plan', option: 'Plus' }, undefined, HAS);
-    await drag(toolWithId(radio.tools, FORM_FIELD_RADIO_TOOL_ID), [20, 20], [40, 40]);
-    // THE DIALOG IS TOLD WHAT THE DOCUMENT HAS, so it can apply the same rule to the group and its choice.
-    expect(radio.asked).toStrictEqual([{ id: FORM_FIELD_RADIO_DIALOG_ID, props: { known: HAS } }]);
-    radio.tools.forEach((tool) => tool.ended?.());
-  });
-});
-
-describe('formFieldTools — a radio group is asked for once, until the tool ends', () => {
-  it('the second option asks only for its own value, suggests the next free one, and is forgotten when the tool ends', async () => {
-    const radio = toolsAnswering({ name: 'size', option: 'Option 1' }, undefined, []);
-    const tool = toolWithId(radio.tools, FORM_FIELD_RADIO_TOOL_ID);
-
-    await drag(tool, [20, 20], [40, 40]);
-    await drag(tool, [60, 20], [80, 40]);
-    // THE FIRST ASKS FOR THE GROUP; THE SECOND IS HANDED IT, with the value the first took, and the number after it.
-    expect(radio.asked.map((entry) => entry.props)).toStrictEqual([
-      { known: [] },
-      { known: [], group: 'size', used: ['Option 1'], nextNumber: 2 },
+    const first = await press(tool, [20, 20]);
+    const second = await press(tool, [60, 20]);
+    expect([first, second]).toMatchObject([
+      { fields: [{ name: 'Group2', field: { type: 'radio', option: 'Choice1' } }] },
+      { fields: [{ name: 'Group2', field: { type: 'radio', option: 'Choice2' } }] },
     ]);
 
-    // THE TOOL ENDS (Escape): the next run is a new group, asked for again.
     tool.ended?.();
-    await drag(tool, [20, 60], [40, 80]);
-    expect(radio.asked[2]?.props).toStrictEqual({ known: [] });
+    expect(await press(tool, [20, 60])).toMatchObject({ fields: [{ name: 'Group2', field: { option: 'Choice1' } }] });
     tool.ended?.();
   });
 
-  it('CONTROL: only the radio tool stays on after a field is drawn, the other four are spent by one', () => {
-    const { tools } = toolsAnswering(undefined);
+  it('CONTROL: only the radio tool stays on after a field is placed, every other is spent by one', () => {
+    const { tools } = toolsOver();
     expect(tools.map((tool) => [tool.id, tool.endsAfterOne === true])).toStrictEqual([
       [FORM_FIELD_TEXT_TOOL_ID, true],
       [FORM_FIELD_CHECKBOX_TOOL_ID, true],
       [FORM_FIELD_RADIO_TOOL_ID, false],
       [FORM_FIELD_DROPDOWN_TOOL_ID, true],
       [FORM_FIELD_LISTBOX_TOOL_ID, true],
+      [FORM_FIELD_BUTTON_TOOL_ID, true],
+      [FORM_FIELD_SIGNATURE_TOOL_ID, true],
+      [FORM_FIELD_DATE_TOOL_ID, true],
     ]);
   });
 });

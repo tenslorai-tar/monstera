@@ -15,3 +15,18 @@
 export function fieldNameClash(existing: readonly string[], wanted: string): string | undefined {
   return existing.find((name) => name === wanted || name.startsWith(`${wanted}.`) || wanted.startsWith(`${name}.`));
 }
+
+/**
+ * The name a new field gets without being asked: the kind's word and the smallest number from 1 that collides with
+ * nothing, `Text1`, `Check Box2` (ADR-0226 Decision 11, the owner's K1). Collision is {@link fieldNameClash}'s, so a name
+ * this offers is one the writer accepts.
+ *
+ * Several placed by one gesture are named in one pass with `taken` growing, because the form read before the gesture
+ * does not hold the names the gesture is about to add.
+ */
+export function nextFieldName(existing: readonly string[], word: string): string {
+  for (let number = 1; ; number += 1) {
+    const wanted = `${word}${String(number)}`;
+    if (fieldNameClash(existing, wanted) === undefined) return wanted;
+  }
+}

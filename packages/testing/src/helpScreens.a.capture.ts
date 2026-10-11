@@ -407,13 +407,10 @@ test('create-form-fields-1', async ({ page }) => {
   await openApp(page, openedAs(await formPdf(), 'Membership application.pdf'));
   await openDocument(page);
   await openSection(page, 'Forms');
-  await runCommand(page, 'Draw a text field');
-  // ALONG THE FULL NAME LINE, which sits 154 points down the page.
-  await dragOnPage(page, [180, 140], [520, 156]);
-  // NAMED BESIDE THE BOX DRAWN (ADR-0154), in a line under it.
-  const line = page.getByRole('textbox', { name: 'Field name' });
-  await line.fill('full_name');
-  await shootAround(page, 'create-form-fields-1', [line], 48);
+  // THE FIELDS GROUP'S TOOLS, from the first to the last: a click places a field, and nothing is asked (ADR-0226).
+  const first = page.getByRole('button', { name: 'Text field' });
+  const last = page.getByRole('button', { name: 'Date' });
+  await shootAround(page, 'create-form-fields-1', [first, last], 16);
 });
 
 test('detect-form-fields-1', async ({ page }) => {

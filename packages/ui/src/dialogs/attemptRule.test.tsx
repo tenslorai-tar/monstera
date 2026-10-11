@@ -9,8 +9,6 @@ import {
   DOCUMENT_PASSWORD_EMPTY,
   DOCUMENT_PASSWORD_WRONG,
   EN,
-  FORM_FIELD_DROPDOWN_APPLY,
-  FORM_FIELD_NAME_EMPTY,
   HEADER_FOOTER_APPLY,
   HEADER_FOOTER_EMPTY,
   PROTECT_DOCUMENT_APPLY,
@@ -21,7 +19,6 @@ import {
   WATERMARK_PAGES_NO_TEXT,
 } from '../messages/en.js';
 import DocumentPasswordBody from './DocumentPasswordBody.js';
-import FormFieldDropdownBody from './FormFieldDropdownBody.js';
 import HeaderFooterBody from './HeaderFooterBody.js';
 import HelpBody from './HelpBody.js';
 import { InDialog } from './inDialog.js';
@@ -85,12 +82,6 @@ const CASES: readonly Case[] = [
     body: (resolve) => <WatermarkPagesBody pages={[0]} resolve={resolve} update={vi.fn()} />,
     apply: WATERMARK_PAGES_APPLY,
     missing: WATERMARK_PAGES_NO_TEXT,
-  },
-  {
-    dialog: 'Form field (dropdown)',
-    body: (resolve) => <FormFieldDropdownBody known={[]} resolve={resolve} update={vi.fn()} />,
-    apply: FORM_FIELD_DROPDOWN_APPLY,
-    missing: FORM_FIELD_NAME_EMPTY,
   },
 ];
 

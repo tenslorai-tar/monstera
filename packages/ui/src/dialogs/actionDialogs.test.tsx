@@ -10,8 +10,6 @@ import CloseUnsavedBody from './CloseUnsavedBody.js';
 import CloudViewOnlyBody from './CloudViewOnlyBody.js';
 import DocusignSendBody from './DocusignSendBody.js';
 import DonateBody from './DonateBody.js';
-import FormFieldListboxBody from './FormFieldListboxBody.js';
-import FormFieldRadioBody from './FormFieldRadioBody.js';
 import OpenFromUrlBody from './OpenFromUrlBody.js';
 import ReimportExternalEditBody from './ReimportExternalEditBody.js';
 import SecurityUpdateBody from './SecurityUpdateBody.js';
@@ -64,8 +62,6 @@ const BODIES: readonly { readonly name: string; readonly body: ReactNode; readon
 
 /** Group 3: the shared text forms and the dialogs whose answers are buttons. Same shape, same assertion. */
 const GROUP_3: readonly { readonly name: string; readonly body: ReactNode; readonly firstRow: string | null }[] = [
-  { name: 'Radio button', body: <FormFieldRadioBody known={[]} resolve={ignore} update={ignore} />, firstRow: '' },
-  { name: 'List box', body: <FormFieldListboxBody known={[]} resolve={ignore} update={ignore} />, firstRow: '' },
   { name: 'Open from a URL', body: <OpenFromUrlBody resolve={ignore} update={ignore} />, firstRow: '' },
   { name: 'Send to DocuSign', body: <DocusignSendBody resolve={ignore} update={ignore} />, firstRow: 'Email subject' },
   { name: 'Close with changes', body: <CloseUnsavedBody name="a.pdf" resolve={ignore} update={ignore} />, firstRow: null },

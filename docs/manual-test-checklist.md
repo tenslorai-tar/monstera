@@ -4,7 +4,7 @@
      equal to it. Regenerate with `npx vitest run packages/ui/src/App.test.tsx -t "manual test checklist" -u`.
      Do not edit by hand. -->
 
-Every command the application registers — 253 — and the checks only the installed window can answer.
+Every command the application registers — 256 — and the checks only the installed window can answer.
 For each command: use it on a real document, see the correct effect, then save, close and reopen and see it kept
 (the wired-tools rule, CLAUDE.md). A command that needs a selection, a second document or a key says so when it
 is not available.
@@ -136,12 +136,15 @@ is not available.
 - [ ] **Import form data from JSON…** — Data · `document.import-form-data-json` · Shows: a toast · Help: *Export or import form data*
 - [ ] **Import form data from XFDF…** — Data · `document.import-form-data-xfdf` · Shows: a toast · Help: *Export or import form data*
 - [ ] **Import form data from FDF…** — Data · `document.import-form-data-fdf` · Shows: a toast · Help: *Export or import form data*
-- [ ] **Draw a text field** — Fields · `forms.field-text` · Shows: on screen · Help: *Create form fields*
-- [ ] **Draw a tick box** — Fields · `forms.field-checkbox` · Shows: on screen · Help: *Create form fields*
-- [ ] **Draw a radio option** — Fields · `forms.field-radio` · Shows: on screen · Help: *Create form fields*
-- [ ] **Draw a dropdown** — Fields · `forms.field-dropdown` · Shows: on screen · Help: *Create form fields*
-- [ ] **Draw a list box** — Fields · `forms.field-listbox` · Shows: on screen · Help: *Create form fields*
+- [ ] **Add a text field** — Fields · `forms.field-text` · Shows: on screen · Help: *Create form fields*
+- [ ] **Add a tick box** — Fields · `forms.field-checkbox` · Shows: on screen · Help: *Create form fields*
+- [ ] **Add radio buttons** — Fields · `forms.field-radio` · Shows: on screen · Help: *Create form fields*
+- [ ] **Add a dropdown** — Fields · `forms.field-dropdown` · Shows: on screen · Help: *Create form fields*
+- [ ] **Add a list box** — Fields · `forms.field-listbox` · Shows: on screen · Help: *Create form fields*
+- [ ] **Add a button** — Fields · `forms.field-button` · Shows: on screen · Help: *Create form fields*
 - [ ] **Fields list** — Fields · `view.show-fields` · Shows: on screen · Help: *Delete a form field*
+- [ ] **Add a signature field** — Fields · `forms.field-signature` · Shows: on screen · Help: *Create form fields*
+- [ ] **Add a date field** — Fields · `forms.field-date` · Shows: on screen · Help: *Create form fields*
 - [ ] **Highlight fields** — Manage · `view.toggle-field-highlight` · Shows: on screen
 - [ ] **Find fields on this page…** — Manage · `document.find-flat-fields` · Shows: a result dialog · Help: *Find fields on a flat form*
 - [ ] **Flatten form** — Manage · `document.flatten-form` · Shows: a toast · Help: *Flatten a form*

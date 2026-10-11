@@ -31,7 +31,6 @@ import { TAB_ORDER_DIALOG } from '../dialogs/tabOrder.js';
 import { FLAT_FIELDS_DIALOG } from '../dialogs/flatFields.js';
 import { FLATTEN_FORM_DIALOG } from '../dialogs/flattenForm.js';
 import { FOLLOW_LINK_DIALOG } from '../dialogs/followLink.js';
-import { FORM_FIELD_DIALOGS } from '../dialogs/formField.js';
 import { GENERATE_TOC_DIALOG } from '../dialogs/generateToc.js';
 import { HEADER_FOOTER_DIALOG } from '../dialogs/headerFooter.js';
 import { HELP_DIALOG } from '../dialogs/help.js';
@@ -202,5 +201,4 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   DUPLICATE_PAGES_DIALOG,
   SETTINGS_PROBLEM_DIALOG,
   SETTINGS_DIALOG,
-  ...FORM_FIELD_DIALOGS,
 ];

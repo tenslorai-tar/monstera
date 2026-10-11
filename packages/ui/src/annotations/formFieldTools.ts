@@ -1,152 +1,137 @@
 import type { CreatedField, DispatchableCommand } from '@monstera/contract';
-import type { PageTransform } from '@monstera/shared';
+import type { PageTransform, ViewportPoint } from '@monstera/shared';
+import { nextFieldName, viewportPoint } from '@monstera/shared';
 
-import {
-  FORM_FIELD_DROPDOWN_DIALOG_ID,
-  FORM_FIELD_LISTBOX_DIALOG_ID,
-  FORM_FIELD_RADIO_DIALOG_ID,
-} from '../dialogs/formField.js';
-import { FORM_FIELD_RESULT } from '../dialogs/formFieldResult.js';
-import { FORM_FIELD_NAME_LABEL, HINT_FORM_FIELD } from '../messages/en.js';
+import { localDatePattern } from '../forms/datePattern.js';
+import { HINT_FORM_FIELD } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import { draggedRect } from './annotationSpace.js';
-import { fieldNameProblemAmong } from './fieldNameCheck.js';
 import type { TextToolDeps } from './textTools.js';
 
 /**
- * The five create-field tools — Stage 4's *create fields by drawing*.
+ * The create-field tools: a CLICK puts a field of the kind's own size where it lands, and a DRAG puts one the size of
+ * the box (ADR-0226 Decisions 11 to 13, the owner's K1 and K6).
  *
- * ## Why these are tools and not a panel control
+ * ## Nothing is asked
  *
- * *By drawing* is the row's own wording, and it is the right one: a field's
- * rectangle is the whole of what a person is deciding, and there is no honest
- * way to type one. So this is `shapeTools`' gesture — one drag, two points —
- * with the name typed after it: on the page beside the box for a text field or
- * a checkbox, in a dialog for a field that needs options too.
+ * A new field is named the way the forms people already know name them — `Text1`, `Check Box1`, `Group1` — and a person
+ * renames it in Properties. It was asked for a name in a line on the page and, for a choice, in a dialog, until
+ * 2026-10-10: the owner placed fields faster than any of that let them, and what a dialog asked first is what
+ * Properties asks anyway. A choice field starts with three choices a person edits there.
  *
- * ## FIVE, and the sixth is a measurement rather than a scoping choice
+ * ## A radio group is ONE RUN of the tool
  *
- * The D5 row names six types. Measured 2026-09-08
- * (`scripts/research/formFieldCreate.mjs`), `@cantoo/pdf-lib` declares no
- * signature factory — so a signature field cannot be created without this build
- * writing a field dictionary itself, which is a second writer for the concern
- * §3's matrix assigns to pdf-lib. There is no signature tool here and there is
- * no control that renders and refuses either; the limit is stated in the
- * FEATURES row, where a person can find it.
- *
- * ## One factory, because what differs between them is two values
- *
- * `shapeTools`' rule about when a second factory is warranted: a box tool and a
- * line tool differ in what counts as *too small to be meant*, and these five do
- * not — every one of them is a box, and a box 3 pixels across is a click
- * whichever field it was going to be. What differs is what is asked and the
- * `field` member built from its answer.
+ * The first press starts `GroupN` with `Choice1`; every press after it joins the same group with the next free choice,
+ * until the tool ends (Escape or another tool). That is K6, and it is what a group is on paper: a row of circles, one of
+ * which is on.
  *
  * ## The gesture is a rectangle and the payload is a rectangle, with nothing between
  *
- * Measured 2026-09-08: pdf-lib writes `/Rect` in raw PDF user space verbatim, so
- * `draggedRect`'s output reaches the document unchanged. What the kernel adds is
- * the **turn** — a field on a rotated page needs its content rotated to match,
- * and the pre-image of that rotation as its argument. None of that is expressible
- * here, deliberately: the page's `/Rotate` is document state, and a surface that
- * computed a placement from it would be the renderer holding geometry the kernel
- * owns.
+ * Measured 2026-09-08: pdf-lib writes `/Rect` in raw PDF user space verbatim, so `draggedRect`'s output reaches the
+ * document unchanged. A click's box is built ON SCREEN — the click and the corner its size in points away, at this zoom —
+ * and converted the same way, so it opens down and to the right on a turned page as on an upright one; a box built in
+ * user space would open in whichever direction the page's `/Rotate` points, which is document state this surface does
+ * not hold.
  */
 
 /**
- * How far the pointer must travel before a drag is a field.
- *
- * `shapeTools`' `MINIMUM_DRAG` in both axes, and the reason to check both is
- * sharper here than it is for a rectangle annotation: a field 40 by 1 is not a
- * thin box, it is a control nobody can click, and unlike an annotation there is
- * no eraser tool that finds it. In CSS pixels, because it is about the hand.
+ * How far the pointer must travel before a gesture is a drag rather than a click. In CSS pixels, because it is about the
+ * hand: a press that wobbles three pixels is a click, and a click places the kind's own size.
  */
-const MINIMUM_BOX = 4;
+const MINIMUM_DRAG = 4;
 
-/** What each tool asks for and builds, keyed by nothing — read at construction. */
+/**
+ * The smallest side a dragged field may have, in points: a tick box's smallest workable size. A drag at a high zoom can
+ * be a few points across, and a field that small is a control nobody can click and nothing on the page finds again.
+ */
+const MINIMUM_SIDE = 6;
+
+/** What each tool builds, keyed by nothing — read at construction. */
 interface FieldToolShape {
   readonly id: string;
-  /**
-   * What the tool asks once the box is drawn. A field that needs only a NAME has it typed on the page, in a line beside
-   * the box (ADR-0154, the owner's Group 15); one that needs an option or a list of options keeps its dialog, which
-   * asks for the name with them.
-   */
-  readonly asks: { readonly kind: 'name' } | { readonly kind: 'dialog'; readonly dialog: string };
-  /** Turns the answer into the payload's discriminated member. */
-  readonly build: (answer: {
-    readonly option?: string | undefined;
-    readonly options?: readonly string[] | undefined;
-  }) => CreatedField | undefined;
+  /** The word a new field's name starts with, before its number (K1). */
+  readonly word: string;
+  /** The size a click places, in points (ADR-0226 Decision 12). */
+  readonly size: { readonly width: number; readonly height: number };
+  /** The payload's discriminated member. A radio's is built by its run, so it has none here. */
+  readonly build?: () => CreatedField;
 }
 
-/** The id of the tool that draws a text field. */
+/** The id of the tool that places a text field. */
 export const FORM_FIELD_TEXT_TOOL_ID = 'forms.field-text';
-/** The id of the tool that draws a tick box. */
+/** The id of the tool that places a tick box. */
 export const FORM_FIELD_CHECKBOX_TOOL_ID = 'forms.field-checkbox';
-/** The id of the tool that draws one option of a radio group. */
+/** The id of the tool that places the options of a radio group. */
 export const FORM_FIELD_RADIO_TOOL_ID = 'forms.field-radio';
-/** The id of the tool that draws a dropdown. */
+/** The id of the tool that places a dropdown. */
 export const FORM_FIELD_DROPDOWN_TOOL_ID = 'forms.field-dropdown';
-/** The id of the tool that draws a list box. */
+/** The id of the tool that places a list box. */
 export const FORM_FIELD_LISTBOX_TOOL_ID = 'forms.field-listbox';
+/** The id of the tool that places a push button. */
+export const FORM_FIELD_BUTTON_TOOL_ID = 'forms.field-button';
+/** The id of the tool that places a signature field. */
+export const FORM_FIELD_SIGNATURE_TOOL_ID = 'forms.field-signature';
+/** The id of the tool that places a date field. */
+export const FORM_FIELD_DATE_TOOL_ID = 'forms.field-date';
 
-/** Whether a tool id is one of the five that draw a form field. */
-export function isFormFieldTool(id: string): boolean {
-  return [
-    FORM_FIELD_TEXT_TOOL_ID,
-    FORM_FIELD_CHECKBOX_TOOL_ID,
-    FORM_FIELD_RADIO_TOOL_ID,
-    FORM_FIELD_DROPDOWN_TOOL_ID,
-    FORM_FIELD_LISTBOX_TOOL_ID,
-  ].includes(id);
-}
+/** The choices a new dropdown or list box starts with, edited in Properties. */
+const STARTING_CHOICES = ['Choice1', 'Choice2', 'Choice3'];
 
 const SHAPES: readonly FieldToolShape[] = [
-  {
-    id: FORM_FIELD_TEXT_TOOL_ID,
-    asks: { kind: 'name' },
-    build: () => ({ type: 'text' }),
-  },
+  { id: FORM_FIELD_TEXT_TOOL_ID, word: 'Text', size: { width: 180, height: 20 }, build: () => ({ type: 'text' }) },
   {
     id: FORM_FIELD_CHECKBOX_TOOL_ID,
-    asks: { kind: 'name' },
+    word: 'Check Box',
+    size: { width: 12, height: 12 },
     build: () => ({ type: 'checkbox' }),
   },
-  {
-    id: FORM_FIELD_RADIO_TOOL_ID,
-    asks: { kind: 'dialog', dialog: FORM_FIELD_RADIO_DIALOG_ID },
-    // `undefined` WHEN THE ANSWER LACKS WHAT THIS KIND NEEDS, which is the same
-    // outcome a dismissed dialog produces. One result schema serves every way a
-    // field is named, so `option` is optional there and it is the tool — the one thing
-    // that knows which kind it is creating — that narrows it. A cast would make
-    // a dialog answering the wrong shape into a command carrying `undefined`.
-    build: (answer) => (answer.option === undefined ? undefined : { type: 'radio', option: answer.option }),
-  },
+  { id: FORM_FIELD_RADIO_TOOL_ID, word: 'Group', size: { width: 12, height: 12 } },
   {
     id: FORM_FIELD_DROPDOWN_TOOL_ID,
-    asks: { kind: 'dialog', dialog: FORM_FIELD_DROPDOWN_DIALOG_ID },
-    build: (answer) =>
-      answer.options === undefined || answer.options.length === 0
-        ? undefined
-        : { type: 'dropdown', options: answer.options },
+    word: 'Dropdown',
+    size: { width: 150, height: 20 },
+    build: () => ({ type: 'dropdown', options: STARTING_CHOICES }),
   },
   {
     id: FORM_FIELD_LISTBOX_TOOL_ID,
-    asks: { kind: 'dialog', dialog: FORM_FIELD_LISTBOX_DIALOG_ID },
-    build: (answer) =>
-      answer.options === undefined || answer.options.length === 0
-        ? undefined
-        : { type: 'listbox', options: answer.options },
+    word: 'List Box',
+    size: { width: 150, height: 60 },
+    build: () => ({ type: 'listbox', options: STARTING_CHOICES }),
+  },
+  {
+    id: FORM_FIELD_BUTTON_TOOL_ID,
+    word: 'Button',
+    size: { width: 80, height: 24 },
+    // THE WORDS ON A NEW BUTTON ARE THE DOCUMENT'S, like its name, so they are the kind's word and not a message in the
+    // application's language: a form made here and sent abroad would otherwise carry the maker's interface language.
+    build: () => ({ type: 'button', label: 'Button' }),
+  },
+  {
+    id: FORM_FIELD_SIGNATURE_TOOL_ID,
+    word: 'Signature',
+    size: { width: 180, height: 40 },
+    build: () => ({ type: 'signature' }),
+  },
+  {
+    id: FORM_FIELD_DATE_TOOL_ID,
+    word: 'Date',
+    size: { width: 100, height: 20 },
+    build: () => ({ type: 'date', pattern: localDatePattern() }),
   },
 ];
 
+/** Whether a tool id is one of those that place a form field. */
+export function isFormFieldTool(id: string): boolean {
+  return SHAPES.some((shape) => shape.id === id);
+}
+
 /**
- * THE RADIO GROUP A RUN OF DRAGS IS BUILDING, remembered until the tool ends (the owner, 2026-10-07): the first option
- * asks for the group's name and every later one only for its own value. NOT in the tool's closure, because the registry
- * is rebuilt whenever one of its inputs moves (`App.tsx`) and a group held in a tool would be lost to a rebuild in the
- * middle of a run; keyed by the application's `ask`, which is stable across a rebuild, so a run belongs to the
- * application that is drawing it and not to a module every test would share. `ended` is what clears it.
+ * THE RADIO GROUP A RUN OF PRESSES IS BUILDING, remembered until the tool ends (the owner, 2026-10-07, and K6). NOT in
+ * the tool's closure, because the registry is rebuilt whenever one of its inputs moves (`App.tsx`) and a group held in
+ * a tool would be lost to a rebuild in the middle of a run; keyed by the application's `ask`, which is stable across a
+ * rebuild, so a run belongs to the application that is placing it and not to a module every test would share. `ended`
+ * is what clears it.
  */
 interface RadioRun {
   group: string | undefined;
@@ -162,17 +147,52 @@ function radioRunOf(deps: TextToolDeps): RadioRun {
   return fresh;
 }
 
+/** Whether a gesture moved far enough in both directions to be a drag. */
+function dragged(gesture: Gesture): boolean {
+  const from = startOf(gesture);
+  const to = endOf(gesture);
+  return Math.abs(to.x - from.x) >= MINIMUM_DRAG && Math.abs(to.y - from.y) >= MINIMUM_DRAG;
+}
+
+/**
+ * The box a gesture places, on screen: the dragged box grown to the smallest side, or the kind's own size opening down
+ * and to the right of a click and moved back inside the page where it would run off it.
+ */
+function placedBox(gesture: Gesture, shape: FieldToolShape, transform: PageTransform): { from: ViewportPoint; to: ViewportPoint } {
+  const from = startOf(gesture);
+  const least = MINIMUM_SIDE * transform.scale;
+  if (dragged(gesture)) {
+    const to = endOf(gesture);
+    const x = Math.min(from.x, to.x);
+    const y = Math.min(from.y, to.y);
+    return {
+      from: viewportPoint(x, y),
+      to: viewportPoint(x + Math.max(Math.abs(to.x - from.x), least), y + Math.max(Math.abs(to.y - from.y), least)),
+    };
+  }
+  const width = shape.size.width * transform.scale;
+  const height = shape.size.height * transform.scale;
+  const x = Math.max(0, Math.min(from.x, transform.viewport.width - width));
+  const y = Math.max(0, Math.min(from.y, transform.viewport.height - height));
+  return { from: viewportPoint(x, y), to: viewportPoint(x + width, y + height) };
+}
+
 function fieldTool(shape: FieldToolShape, deps: TextToolDeps): UiTool {
   const run = radioRunOf(deps);
+  // THE PREVIEW IS THE DRAG ONLY: a click's box appears as the field itself a moment later, and a preview drawn for a
+  // press that has not moved would flash the kind's box under every pointer that goes down.
   const drawn = (gesture: Gesture): ToolPreview | undefined => {
+    if (!dragged(gesture)) return undefined;
     const from = startOf(gesture);
     const to = endOf(gesture);
-    const width = Math.abs(to.x - from.x);
-    const height = Math.abs(to.y - from.y);
-    if (width < MINIMUM_BOX || height < MINIMUM_BOX) return undefined;
-    return { shape: 'rect', x: Math.min(from.x, to.x), y: Math.min(from.y, to.y), width, height };
+    return {
+      shape: 'rect',
+      x: Math.min(from.x, to.x),
+      y: Math.min(from.y, to.y),
+      width: Math.abs(to.x - from.x),
+      height: Math.abs(to.y - from.y),
+    };
   };
-
 
   const controller: ToolController = {
     ...pointerPath,
@@ -181,75 +201,46 @@ function fieldTool(shape: FieldToolShape, deps: TextToolDeps): UiTool {
       page: number,
       transform: PageTransform,
     ): Promise<DispatchableCommand | undefined> => {
-      // THE SAME THRESHOLD AS THE PREVIEW, read from it rather than restated —
-      // here it also decides whether anything is asked at all, so the two coming
-      // apart would be a name field or a dialog appearing for a drag that showed no box.
-      if (drawn(gesture) === undefined) return undefined;
+      // THE RECTANGLE IS BUILT BEFORE THE READ, from the transform the overlay read at pointer-up: the read is a round
+      // trip, and the page may be at another zoom when it answers.
+      const box = placedBox(gesture, shape, transform);
+      const rect = draggedRect(box.from, box.to, transform);
 
-      // THE RECTANGLE IS BUILT BEFORE THE ASK, from the transform the overlay
-      // read at pointer-up. Building it after would convert a gesture using
-      // whatever zoom the page is at when the person finishes typing.
-      const rect = draggedRect(startOf(gesture), endOf(gesture), transform);
-
-      // THE FIELDS THE DOCUMENT HAS, read now and not when the tool was chosen: a field drawn a moment ago is in it. A
-      // name the form already has is a KNOWN CAUSE and is said before anything is sent, with the rule the writer refuses
-      // by (`fieldNameClash`), where it reached a person as *something went wrong inside Monstera*.
+      // THE FIELDS THE DOCUMENT HAS, read now and not when the tool was chosen: a field placed a moment ago is in it.
+      // A form that cannot be read names from an empty one, and the writer's own refusal (`fieldNameClash`) still
+      // stands behind the name.
       const known = (await deps.fields?.()) ?? [];
+      const names = known.map((field) => field.name);
 
-      // THE NAME TYPED ON THE PAGE, by the rule the field dialogs take too, and parsed by the same result schema those
-      // answer with, so a name reaches the command one way whichever asked for it.
-      let asked: unknown;
-      if (shape.asks.kind === 'name') {
-        const name = await deps.write({
-          page,
-          box: rect,
-          shape: 'line',
-          initial: '',
-          label: FORM_FIELD_NAME_LABEL,
-          check: (typed) => fieldNameProblemAmong(typed, known, false),
-        });
-        asked = name === undefined ? undefined : { name };
-      } else if (shape.id === FORM_FIELD_RADIO_TOOL_ID) {
-        const held = new Set(
-          known.filter((field) => field.kind === 'radio' && field.name === run.group).flatMap((field) => field.options),
-        );
-        for (const used of run.used) held.add(used);
-        let nextNumber = 1;
-        while (held.has(`Option ${String(nextNumber)}`)) nextNumber += 1;
-        asked = await deps.ask(shape.asks.dialog, {
-          known,
-          ...(run.group === undefined ? {} : { group: run.group, used: run.used, nextNumber }),
-        });
+      let name: string;
+      let field: CreatedField;
+      if (shape.build === undefined) {
+        // K6: THE FIRST PRESS STARTS A GROUP, every later one joins it with the next choice its group does not hold.
+        const group = run.group ?? nextFieldName(names, shape.word);
+        const held = [
+          ...known.filter((entry) => entry.kind === 'radio' && entry.name === group).flatMap((entry) => entry.options),
+          ...(run.group === undefined ? [] : run.used),
+        ];
+        let number = 1;
+        while (held.includes(`Choice${String(number)}`)) number += 1;
+        const option = `Choice${String(number)}`;
+        run.used = [...(run.group === undefined ? [] : run.used), option];
+        run.group = group;
+        name = group;
+        field = { type: 'radio', option };
       } else {
-        asked = await deps.ask(shape.asks.dialog, { known });
-      }
-      const answered = FORM_FIELD_RESULT.safeParse(asked);
-      // NOTHING TYPED, A DISMISSED DIALOG AND A REFUSED ANSWER are all `undefined` — the same outcome a drag too small to
-      // see already produces. The gate is the absence of a value rather than a flag.
-      if (!answered.success) return undefined;
-
-      const field = shape.build(answered.data);
-      if (field === undefined) return undefined;
-
-      if (field.type === 'radio') {
-        run.group = answered.data.name;
-        run.used = [...run.used, field.option];
+        name = nextFieldName(names, shape.word);
+        field = shape.build();
       }
 
-      // ONE FIELD IN A LIST, because a drag is one field and the payload became
-      // plural for a different caller — flat-field detection, where accepting a
-      // page of candidates is one decision. A tool that sent several would be a
-      // gesture nobody makes.
-      return {
-        kind: 'createFormField',
-        page,
-        fields: [{ rect, name: answered.data.name, field }],
-      };
+      // ONE FIELD IN A LIST, because a press is one field and the payload became plural for a different caller —
+      // flat-field detection, where accepting a page of candidates is one decision.
+      return { kind: 'createFormField', page, fields: [{ rect, name, field }] };
     },
     preview: drawn,
   };
 
-  // A RADIO GROUP IS SEVERAL DRAWS of one tool, so it ends on Escape alone; every other field is one drawing.
+  // A RADIO GROUP IS SEVERAL PRESSES of one tool, so it ends on Escape alone; every other field is one press.
   return {
     id: shape.id,
     controller,
@@ -266,7 +257,7 @@ function fieldTool(shape: FieldToolShape, deps: TextToolDeps): UiTool {
   };
 }
 
-/** The five, for the composition root. */
+/** The field tools, for the composition root. */
 export function formFieldTools(deps: TextToolDeps): readonly UiTool[] {
   return SHAPES.map((shape) => fieldTool(shape, deps));
 }

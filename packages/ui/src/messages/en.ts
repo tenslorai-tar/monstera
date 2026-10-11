@@ -1708,26 +1708,17 @@ export const FORM_FIELD_CHECKBOX_TOOL_TITLE = messageKey('command.forms.field-ch
 export const FORM_FIELD_RADIO_TOOL_TITLE = messageKey('command.forms.field-radio');
 export const FORM_FIELD_DROPDOWN_TOOL_TITLE = messageKey('command.forms.field-dropdown');
 export const FORM_FIELD_LISTBOX_TOOL_TITLE = messageKey('command.forms.field-listbox');
-export const FORM_FIELD_RADIO_TITLE = messageKey('dialog.form-field-radio.title');
-export const FORM_FIELD_DROPDOWN_TITLE = messageKey('dialog.form-field-dropdown.title');
-export const FORM_FIELD_LISTBOX_TITLE = messageKey('dialog.form-field-listbox.title');
-export const FORM_FIELD_RADIO_APPLY = messageKey('dialog.form-field-radio.apply');
-export const FORM_FIELD_DROPDOWN_APPLY = messageKey('dialog.form-field-dropdown.apply');
-export const FORM_FIELD_LISTBOX_APPLY = messageKey('dialog.form-field-listbox.apply');
-export const FORM_FIELD_NAME_LABEL = messageKey('dialog.form-field.name');
-export const FORM_FIELD_GROUP_LABEL = messageKey('dialog.form-field.group');
-export const FORM_FIELD_GROUP_NOTE = messageKey('dialog.form-field.group-note');
-export const FORM_FIELD_OPTION_LABEL = messageKey('dialog.form-field.option');
-export const FORM_FIELD_OPTIONS_LABEL = messageKey('dialog.form-field.options');
-export const FORM_FIELD_ADD_OPTION = messageKey('dialog.form-field.add-option');
-export const FORM_FIELD_REMOVE_OPTION = messageKey('dialog.form-field.remove-option');
+export const FORM_FIELD_BUTTON_TOOL_TITLE = messageKey('command.forms.field-button');
+export const FORM_FIELD_SIGNATURE_TOOL_TITLE = messageKey('command.forms.field-signature');
+export const FORM_FIELD_DATE_TOOL_TITLE = messageKey('command.forms.field-date');
+export const FORM_FIELD_BUTTON_TIP = messageKey('command.forms.field-button.tip');
+export const FORM_FIELD_SIGNATURE_TIP = messageKey('command.forms.field-signature.tip');
+export const FORM_FIELD_DATE_TIP = messageKey('command.forms.field-date.tip');
 export const FORM_FIELD_NAME_EMPTY = messageKey('dialog.form-field.name-empty');
 export const FORM_FIELD_NAME_TOO_LONG = messageKey('dialog.form-field.name-too-long');
 export const FORM_FIELD_NAME_SEGMENT = messageKey('dialog.form-field.name-segment');
 export const FORM_FIELD_NAME_TAKEN = messageKey('dialog.form-field.name-taken');
 export const FORM_FIELD_NAME_PARENT = messageKey('dialog.form-field.name-parent');
-export const FORM_FIELD_OPTION_TAKEN = messageKey('dialog.form-field.option-taken');
-export const FORM_FIELD_GROUP_KNOWN = messageKey('dialog.form-field.group-known');
 export const FORM_FIELD_OPTION_SUGGESTION = messageKey('dialog.form-field.option-suggestion');
 export const FORM_FIELD_OPTIONS_EMPTY = messageKey('dialog.form-field.options-empty');
 export const FORMS_KIND_TEXT = messageKey('surface.forms.kind.text');
@@ -3042,6 +3033,9 @@ export const RIBBON_FIELD_CHECKBOX = messageKey('ribbon.field-checkbox');
 export const RIBBON_FIELD_RADIO = messageKey('ribbon.field-radio');
 export const RIBBON_FIELD_DROPDOWN = messageKey('ribbon.field-dropdown');
 export const RIBBON_FIELD_LISTBOX = messageKey('ribbon.field-listbox');
+export const RIBBON_FIELD_BUTTON = messageKey('ribbon.field-button');
+export const RIBBON_FIELD_SIGNATURE = messageKey('ribbon.field-signature');
+export const RIBBON_FIELD_DATE = messageKey('ribbon.field-date');
 export const RIBBON_COMMENTS_IMPORT_XFDF = messageKey('ribbon.comments-import-xfdf');
 export const RIBBON_COMMENTS_IMPORT_FDF = messageKey('ribbon.comments-import-fdf');
 export const RIBBON_COMMENTS_IMPORT_JSON = messageKey('ribbon.comments-import-json');
@@ -4363,41 +4357,29 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FLATTEN_FORM_EXPLAINS]:
     'Every field’s contents are drawn onto its page and the form is removed, so the fields can no longer be filled in. Comments are not affected. The only way back is Undo, in this session.',
   [FLATTEN_FORM_APPLY]: 'Flatten form',
-  // THE TOOLS SAY "DRAW", which is what the gesture is and what separates them
-  // from the Forms panel's controls: those fill a field that exists, these put
-  // one on the page.
-  [FORM_FIELD_TEXT_TOOL_TITLE]: 'Draw a text field',
+  // THE TOOLS SAY "ADD", which separates them from the Forms panel's controls: those fill a field that exists, these put
+  // one on the page, with a click or a drag.
+  [FORM_FIELD_TEXT_TOOL_TITLE]: 'Add a text field',
   [FORM_FIELD_TEXT_TIP]:
-    'Text field: drag a box on the page where people type, then name it. Double click to draw several in a row, and press Esc to stop.',
+    'Text field: click where people will type, or drag a box. Double click the tool to add several in a row, and press Esc to stop.',
   [FORM_FIELD_CHECKBOX_TIP]:
-    'Tick box: drag a small square that people tick on or off, then name it. Double click to draw several in a row, and press Esc to stop.',
+    'Tick box: click where people tick on or off, or drag a square. Double click the tool to add several in a row, and press Esc to stop.',
   [FORM_FIELD_RADIO_TIP]:
-    'Radio button: drag a circle for each choice. Choices given the same group name belong together and only one can be on. Press Esc when the group is done.',
+    'Radio buttons: click once for each choice. The choices you add in one go belong together and only one can be on. Press Esc when the group is done.',
   [FORM_FIELD_DROPDOWN_TIP]:
-    'Dropdown: drag a box where people pick one choice from a list. Double click to draw several in a row, and press Esc to stop.',
+    'Dropdown: click where people pick one choice from a list, then set the choices in Properties.',
   [FORM_FIELD_LISTBOX_TIP]:
-    'List box: drag a box that shows a list of choices people pick from. Double click to draw several in a row, and press Esc to stop.',
-  [FORM_FIELD_CHECKBOX_TOOL_TITLE]: 'Draw a tick box',
-  [FORM_FIELD_RADIO_TOOL_TITLE]: 'Draw a radio option',
-  [FORM_FIELD_DROPDOWN_TOOL_TITLE]: 'Draw a dropdown',
-  [FORM_FIELD_LISTBOX_TOOL_TITLE]: 'Draw a list box',
-  [FORM_FIELD_RADIO_TITLE]: 'New radio option',
-  [FORM_FIELD_DROPDOWN_TITLE]: 'New dropdown',
-  [FORM_FIELD_LISTBOX_TITLE]: 'New list box',
-  [FORM_FIELD_RADIO_APPLY]: 'Add radio option',
-  [FORM_FIELD_DROPDOWN_APPLY]: 'Add dropdown',
-  [FORM_FIELD_LISTBOX_APPLY]: 'Add list box',
-  [FORM_FIELD_NAME_LABEL]: 'Field name',
-  // THE GROUP'S NAME, not this widget's, and the label says so because a radio
-  // group is one field with several widgets — so drawing a second option means
-  // typing the SAME name again, which is the one thing about radio groups
-  // people get wrong.
-  [FORM_FIELD_GROUP_LABEL]: 'Group name',
-  [FORM_FIELD_GROUP_NOTE]: 'Type the same name for every option in this group.',
-  [FORM_FIELD_OPTION_LABEL]: 'This option’s value',
-  [FORM_FIELD_OPTIONS_LABEL]: 'Choice',
-  [FORM_FIELD_ADD_OPTION]: 'Add a choice',
-  [FORM_FIELD_REMOVE_OPTION]: 'Remove this choice',
+    'List box: click where a list of choices is shown, then set the choices in Properties.',
+  [FORM_FIELD_BUTTON_TIP]: 'Button: click where a button goes. Set its words in Properties.',
+  [FORM_FIELD_SIGNATURE_TIP]: 'Signature field: click where someone will sign later. It stays empty until they do.',
+  [FORM_FIELD_DATE_TIP]: 'Date field: click where a date goes. It is written the way your computer writes dates.',
+  [FORM_FIELD_CHECKBOX_TOOL_TITLE]: 'Add a tick box',
+  [FORM_FIELD_RADIO_TOOL_TITLE]: 'Add radio buttons',
+  [FORM_FIELD_DROPDOWN_TOOL_TITLE]: 'Add a dropdown',
+  [FORM_FIELD_LISTBOX_TOOL_TITLE]: 'Add a list box',
+  [FORM_FIELD_BUTTON_TOOL_TITLE]: 'Add a button',
+  [FORM_FIELD_SIGNATURE_TOOL_TITLE]: 'Add a signature field',
+  [FORM_FIELD_DATE_TOOL_TITLE]: 'Add a date field',
   // NAMES WHAT IS MISSING rather than what is wrong: the field is empty when
   // the dialog opens, so this is the first sentence a person reads.
   [FORM_FIELD_NAME_EMPTY]: 'Give the field a name so it can be filled in and read back.',
@@ -4412,8 +4394,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FORM_FIELD_NAME_TAKEN]: 'This form already has a field with that name. Choose another name.',
   [FORM_FIELD_NAME_PARENT]:
     'That name clashes with another field, because a dot groups fields. Choose a name that is not the start of another field’s name, and does not start with one.',
-  [FORM_FIELD_OPTION_TAKEN]: 'This group already has a choice with that value. Give each choice its own value.',
-  [FORM_FIELD_GROUP_KNOWN]: 'Adding a choice to the group “{group}”.',
   [FORM_FIELD_OPTION_SUGGESTION]: 'Option {number}',
   [FORM_FIELD_OPTIONS_EMPTY]: 'Give it at least one choice, or nobody can pick anything.',
   [FORMS_KIND_TEXT]: 'Text',
@@ -4610,7 +4590,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [HINT_SIGNATURE_FIELD]: 'Drag out a box where the signature will go. You add your signature and your certificate next.',
   [HINT_BARCODE]: 'Drag out a box where the barcode should sit.',
   [HINT_SIGNATURE]: 'Click where your signature belongs. This is a picture, not a digital signature.',
-  [HINT_FORM_FIELD]: 'Drag out a box for the field.',
+  [HINT_FORM_FIELD]: 'Click where the field goes, or drag out a box for it. Rename it in Properties.',
   [HINT_HAND]: 'Drag to slide the page around.',
   [HINT_EDIT_TEXT]: 'Click a block of words and start changing them.',
   [HINT_EDIT_OBJECTS]: 'Click an object to pick it, then drag it where you like.',
@@ -6482,6 +6462,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RIBBON_FIELD_RADIO]: 'Radio option',
   [RIBBON_FIELD_DROPDOWN]: 'Dropdown',
   [RIBBON_FIELD_LISTBOX]: 'List box',
+  [RIBBON_FIELD_BUTTON]: 'Button',
+  [RIBBON_FIELD_SIGNATURE]: 'Signature',
+  [RIBBON_FIELD_DATE]: 'Date',
   [RIBBON_COMMENTS_IMPORT_XFDF]: 'Import XFDF',
   [RIBBON_COMMENTS_IMPORT_FDF]: 'Import FDF',
   [RIBBON_COMMENTS_IMPORT_JSON]: 'Import JSON',

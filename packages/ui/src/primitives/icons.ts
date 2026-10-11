@@ -14,6 +14,7 @@ import {
   Bold,
   Bookmark,
   Braces,
+  Calendar,
   Camera,
   Check,
   ChevronDown,
@@ -221,6 +222,7 @@ export const ICONS = {
   Bold,
   Bookmark,
   Braces,
+  Calendar,
   Camera,
   // THE MENU BAR'S MARK beside a command that is on (ADR-0107).
   Check,

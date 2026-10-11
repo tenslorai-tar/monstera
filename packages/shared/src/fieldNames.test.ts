@@ -1,6 +1,22 @@
 import { describe, expect, it } from 'vitest';
 
-import { fieldNameClash } from './fieldNames.js';
+import { fieldNameClash, nextFieldName } from './fieldNames.js';
+
+describe('nextFieldName', () => {
+  it('is the kind word and 1 on a form with none of that kind', () => {
+    expect(nextFieldName(['Name'], 'Text')).toBe('Text1');
+    expect(nextFieldName([], 'Check Box')).toBe('Check Box1');
+  });
+
+  it('skips a number already taken, and one that would be a parent of a taken name', () => {
+    expect(nextFieldName(['Text1', 'Text2'], 'Text')).toBe('Text3');
+    expect(nextFieldName(['Text1.inner'], 'Text')).toBe('Text2');
+  });
+
+  it('CONTROL: a gap is filled, so the answer is the smallest free number and not one past the count', () => {
+    expect(nextFieldName(['Text2'], 'Text')).toBe('Text1');
+  });
+});
 
 describe('fieldNameClash', () => {
   const existing = ['Name', 'owner.first', 'plan'];
