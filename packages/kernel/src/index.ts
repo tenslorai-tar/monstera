@@ -400,7 +400,6 @@ export {
   type SignatureAppearanceRefusal,
   SignatureAppearanceRefusedError,
   SignatureCredentialRefusedError,
-  SignatureProtectedDocumentError,
   SignatureTooLargeError,
   type TimestampRefusal,
   TimestampRefusedError,

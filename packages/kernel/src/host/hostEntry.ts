@@ -192,9 +192,14 @@ const engineHandlers = createEngineHandlers({
   },
   // A SIGNATURE'S PLACEHOLDER, here for the same reason and loaded the same way (ADR-0148): it parses the whole
   // document and decodes the picture. The key half is `main`'s and this process never loads it.
-  prepareSignature: async (image, request) => {
+  // A PROTECTED DOCUMENT'S SIGNATURE is appended under its own key (ADR-0227), loaded with the first signature.
+  protectedImage: async (session) => {
+    const { protectedImageOf } = await import('../documentProtection.js');
+    return protectedImageOf(session);
+  },
+  prepareSignature: async (image, request, protectedBy) => {
     const { prepareSignature } = await import('../signaturePlaceholder.js');
-    return prepareSignature(image, request);
+    return prepareSignature(image, request, protectedBy);
   },
   // AND FOR THE SAME REASON, with a second one on top: a raster is the one
   // payload that scales with what the user dragged, so it is built here and

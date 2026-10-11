@@ -1504,14 +1504,10 @@ export const FIELD_EDIT_REFUSALS = [
 export const PROTECTION_REFUSALS = ['protection-not-reproducible'] as const;
 
 /**
- * {@link PICTURE_REFUSALS}, and the two only a signature meets: its appearance's picture would not decode, and the
- * document is protected, which this build cannot sign (`SignatureProtectedDocumentError`).
+ * {@link PICTURE_REFUSALS}, and the one only a signature meets: its appearance's picture would not decode. A protected
+ * document is signed under its own key (ADR-0227), not refused.
  */
-export const PLACEHOLDER_REFUSALS = [
-  'signature-picture-unreadable',
-  'signature-document-protected',
-  ...PICTURE_REFUSALS,
-] as const;
+export const PLACEHOLDER_REFUSALS = ['signature-picture-unreadable', ...PICTURE_REFUSALS] as const;
 
 /** {@link carriesAsset} over a pdf-lib wire command: both halves from `declaredCommands`, as there. */
 function pdfLibCarriesAsset(

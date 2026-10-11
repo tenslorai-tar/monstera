@@ -455,8 +455,10 @@ export function heldPasswordOf(session: MupdfSession): string | undefined {
  * **Takes bytes and a password and never a session**, and that is the design: MuPDF writing a document with its
  * encryption off replaces the key of the document it wrote (measured 2026-10-08, the session's `/Encrypt` was gone from
  * its trailer afterwards), so doing it to a live session would leave that session writing every later save unprotected.
- * Here the document is opened, written and destroyed, and nothing a session holds is touched. The only caller is a
- * pdf-lib command, whose result is protected again before it leaves this process.
+ * Here the document is opened, written and destroyed, and nothing a session holds is touched. Its two callers are a
+ * pdf-lib command, whose result is protected again before it leaves this process, and a signature on a protected
+ * document ({@link appendedUnderKey}), which relies on the copy keeping every object's number: `garbage` alone frees what
+ * nothing references and renumbers nothing.
  */
 export function unprotectedImage(image: ByteImage, password: string | undefined): Promise<ByteImage> {
   return promised(() => {
@@ -469,6 +471,114 @@ export function unprotectedImage(image: ByteImage, password: string | undefined)
       document.destroy();
     }
   });
+}
+
+/**
+ * One revision another library wrote on a protected document's readable copy: its bytes, the numbers of the objects it
+ * wrote, and the largest number the copy had before it, so a number above it is an object the revision created.
+ */
+export interface ReadableRevision {
+  readonly bytes: ByteImage;
+  readonly written: readonly number[];
+  readonly existing: number;
+}
+
+/**
+ * `image`, a protected document's bytes, with one revision appended UNDER ITS OWN KEY: the revision `revise` writes on
+ * the readable copy, re-written by MuPDF incrementally
+ * ([ADR-0227](../../../docs/DECISIONS/0227-a-signature-on-a-protected-document-is-appended-under-the-files-own-key.md)).
+ *
+ * **The readable copy is {@link unprotectedImage}'s, and it must keep every object's number**, or an object the revision
+ * changed would land on another object here. It does: its `garbage` is MuPDF's first level, which frees what nothing
+ * references and renumbers nothing (`pdf-write.c` renumbers from `garbage=compact` up). A signed protected file serialises
+ * by appending, so a gap another program left is still there when it is signed, and `protectedSign.test.ts` holds that
+ * case.
+ *
+ * **A created object gets a NEW number here** rather than the one the revision gave it. The readable copy has no
+ * `/Encrypt` object, so the revision's next free number can be this file's `/Encrypt`, and writing over it would drop the
+ * protection.
+ *
+ * **`pretty`** is the token shape `@signpdf` reads (ADR-0054 Decision 3): MuPDF's default prints
+ * `/ByteRange[0/**********…]` and `/Contents<…>`, which neither `findByteRange` (it splits on spaces) nor `SignPdf.sign`
+ * (it searches for `/Contents ` with a space) can find; `pretty` prints both with spaces. MuPDF writes a signature
+ * dictionary's `/Contents` in clear and every other string of the revision encrypted (`pdf-crypt.c`, `is_signature`).
+ *
+ * The two readable images exist only in this process's memory. What this answers is protected.
+ */
+export async function appendedUnderKey(
+  image: ByteImage,
+  password: string | undefined,
+  revise: (readable: ByteImage) => Promise<ReadableRevision>,
+): Promise<ByteImage> {
+  const revision = await revise(await unprotectedImage(image, password));
+  return promised(() => {
+    const target = openedWith(image, password);
+    const source = mupdf.PDFDocument.openDocument(revision.bytes, 'application/pdf');
+    try {
+      if (!(source instanceof mupdf.PDFDocument)) throw new Error('The revised readable copy is not a PDF.');
+      // A FILE MUPDF REPAIRED ON OPENING has no intact original to append to. `image` is this build's own serialise, so
+      // reaching here is a defect in that serialise rather than something the document did.
+      if (!target.canBeSavedIncrementally()) throw new Error('The protected image cannot be appended to.');
+      const created = new Map<number, number>();
+      for (const number of revision.written) {
+        if (number > revision.existing) created.set(number, target.createObject().asIndirect());
+      }
+      const renumbered = (number: number): number => created.get(number) ?? number;
+      for (const number of revision.written) {
+        const from = source.newIndirect(number);
+        const into = target.newIndirect(renumbered(number));
+        into.writeObject(copiedInto(target, from.resolve(), renumbered));
+        // RAW, with its own `/Filter`: the bytes are what the revision wrote, and MuPDF encrypts them on the way out.
+        if (from.isStream()) into.writeRawStream(from.readRawStream());
+      }
+      return bufferBytes(target.saveToBuffer('incremental,pretty'));
+    } finally {
+      source.destroy();
+      target.destroy();
+    }
+  });
+}
+
+/** `image` opened with `password`, refused as {@link mupdfWriter}'s open refuses one. */
+function openedWith(image: ByteImage, password: string | undefined): mupdf.PDFDocument {
+  const document = mupdf.PDFDocument.openDocument(image, 'application/pdf');
+  if (!(document instanceof mupdf.PDFDocument)) {
+    document.destroy();
+    throw new Error('Opened document is not a PDF, so no PDF writer may act on it.');
+  }
+  if (document.authenticatePassword(password ?? '') === 0) {
+    document.destroy();
+    throw new DocumentLocked(password === undefined ? 'needs-password' : 'wrong-password');
+  }
+  return document;
+}
+
+/**
+ * `from`, a direct object of another document, rebuilt in `into`, with every reference renumbered. A dictionary keeps its
+ * keys in their order, which `@signpdf` relies on: it takes the first `/Contents ` after the `/ByteRange` it found.
+ */
+function copiedInto(into: mupdf.PDFDocument, from: mupdf.PDFObject, renumbered: (number: number) => number): mupdf.PDFObject {
+  if (from.isIndirect()) return into.newIndirect(renumbered(from.asIndirect()));
+  if (from.isDictionary()) {
+    const dictionary = into.newDictionary();
+    from.forEach((value, key) => {
+      dictionary.put(String(key), copiedInto(into, value, renumbered));
+    });
+    return dictionary;
+  }
+  if (from.isArray()) {
+    const array = into.newArray();
+    from.forEach((value) => {
+      array.push(copiedInto(into, value, renumbered));
+    });
+    return array;
+  }
+  if (from.isName()) return into.newName(from.asName());
+  if (from.isString()) return into.newByteString(from.asByteString());
+  if (from.isInteger()) return into.newInteger(from.asNumber());
+  if (from.isReal()) return into.newReal(from.asNumber());
+  if (from.isBoolean()) return into.newBoolean(from.asBoolean());
+  return into.newNull();
 }
 
 /**

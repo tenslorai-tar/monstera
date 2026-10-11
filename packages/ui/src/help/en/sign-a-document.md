@@ -32,6 +32,7 @@ A digital signature proves who signed a document and shows whether it has change
 - This signature is invisible on the page. To show one, see "Add a visible signature".
 - Sign last: changes made after signing show up as changes when the signature is checked.
 - Saving after you sign keeps the signature, and so does signing again: a second signature is added after the first, and both verify. A redaction, a flattened form, a new password or an edit to the text rewrites the whole file and breaks it; Monstera asks before making one of those, and offers to make it on a copy instead (see "Save your changes").
+- A document protected with a password can be signed. The signature is added to the protected file, which keeps its password and permissions.
 
 <!--
 Screenshots to capture:

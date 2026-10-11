@@ -66,7 +66,6 @@ import {
   joinPlaceholderAsset,
   taggedPrior,
 } from './engineChannels.js';
-import { SignatureProtectedDocumentError } from '../signingRefusals.js';
 import { pdfLibRefusalCodeOf, placeholderRefusalCodeOf, protectionRefusalCodeOf } from './hostRefusals.js';
 import { type CopyEngine, openCopy } from '../openCopy.js';
 
@@ -542,10 +541,23 @@ export interface EngineHandlerParts {
    */
   readonly protectedWriting?: (session: MupdfSession) => Promise<ProtectedWriting | undefined>;
   /**
-   * How this process writes a signature's placeholder and prepares its ranges. `prepareSignature` —
-   * `engine/prepareSignature` (ADR-0148).
+   * A session's bytes as its next save writes them where that save is protected, and the password they open with, or
+   * `undefined` for a session written unprotected (ADR-0227). Absent means every session is unprotected, `protectedWriting`'s
+   * reason.
    */
-  readonly prepareSignature: (image: ByteImage, request: PlaceholderRequest) => Promise<PreparedSignature>;
+  readonly protectedImage?: (
+    session: MupdfSession,
+  ) => Promise<{ readonly image: ByteImage; readonly password: string | undefined } | undefined>;
+  /**
+   * How this process writes a signature's placeholder and prepares its ranges. `prepareSignature` —
+   * `engine/prepareSignature` (ADR-0148). Given `protectedBy`, the image is protected and opens with that password, and
+   * the placeholder is appended under the file's own key (ADR-0227).
+   */
+  readonly prepareSignature: (
+    image: ByteImage,
+    request: PlaceholderRequest,
+    protectedBy?: { readonly password: string | undefined },
+  ) => Promise<PreparedSignature>;
   readonly snapshot: HostSnapshot;
   /** How this process writes the form's data out. `engine/exportFormData`. */
   readonly exportFormData: HostFormDataExport;
@@ -595,6 +607,7 @@ export function createEngineHandlers({
   extract,
   applyPdfLib,
   protectedWriting,
+  protectedImage,
   prepareSignature,
   snapshot,
   exportFormData,
@@ -865,23 +878,20 @@ export function createEngineHandlers({
           new Error('the signature request and the picture sent with it disagree about whether it carries one'),
         );
       }
-      // A PROTECTED DOCUMENT IS REFUSED BY NAME, BEFORE ANY WORK (ADR-0220). A signature covers the finished file, so a
-      // protected document would need its placeholder written after its protection, which pdf-lib cannot do and MuPDF's
-      // rewrite undoes (measured 2026-10-08). Without this the serialise below is the protected one and pdf-lib refuses it
-      // as an internal failure the person is told nothing about.
-      try {
-        if ((await protectedWriting?.(held.session)) !== undefined) throw new SignatureProtectedDocumentError();
-      } catch (error) {
-        return failed(placeholderRefusalCodeOf(error) ?? 'apply-failed', error);
-      }
+      // A PROTECTED DOCUMENT is signed on the bytes its next save writes, protected, and the placeholder is appended
+      // under the file's own key (ADR-0227). The protected bytes are that save's serialise, so a failure to make them is
+      // the serialise's.
       let image: ByteImage;
+      let protectedBy: { readonly password: string | undefined } | undefined;
       try {
-        image = await writer.serialise(held.session);
+        const protection = await protectedImage?.(held.session);
+        image = protection?.image ?? (await writer.serialise(held.session));
+        protectedBy = protection === undefined ? undefined : { password: protection.password };
       } catch (error) {
         return failed('serialise-failed', error);
       }
       try {
-        const prepared = await prepareSignature(image, whole);
+        const prepared = await prepareSignature(image, whole, protectedBy);
         const written = await files.writeOutput(held.outputDirectory, into, prepared.bytes);
         return { ok: true, value: { bytes: written, byteRange: [...prepared.byteRange] } };
       } catch (error) {

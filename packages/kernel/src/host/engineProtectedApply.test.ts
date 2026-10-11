@@ -40,13 +40,23 @@ interface Trace {
 }
 
 type Protection = ((session: MupdfSession) => Promise<ProtectedWriting | undefined>) | undefined;
+type ProtectedImage =
+  | ((session: MupdfSession) => Promise<{ readonly image: ByteImage; readonly password: string | undefined } | undefined>)
+  | undefined;
 
-function build(protectedWriting: Protection) {
-  const trace: { serialised: number; appliedTo: ByteImage[]; written: ByteImage[]; preparedOver: ByteImage[] } = {
+function build(protectedWriting: Protection, protectedImage?: ProtectedImage) {
+  const trace: {
+    serialised: number;
+    appliedTo: ByteImage[];
+    written: ByteImage[];
+    preparedOver: ByteImage[];
+    preparedWith: ({ readonly password: string | undefined } | undefined)[];
+  } = {
     serialised: 0,
     appliedTo: [],
     written: [],
     preparedOver: [],
+    preparedWith: [],
   };
   const session = { engine: 'mupdf' } as MupdfSession;
   const held = new Map<string, HostSession>([['h1', { session, ...AREA }]]);
@@ -96,8 +106,10 @@ function build(protectedWriting: Protection) {
         return Promise.resolve(RESULT);
       },
       ...(protectedWriting === undefined ? {} : { protectedWriting }),
-      prepareSignature: (image) => {
+      ...(protectedImage === undefined ? {} : { protectedImage }),
+      prepareSignature: (image, _request, protectedBy) => {
         trace.preparedOver.push(image);
+        trace.preparedWith.push(protectedBy);
         return Promise.resolve({ bytes: RESULT, byteRange: [0, 1, 2, 3] as const });
       },
       snapshot: refuse('write a PNG out'),
@@ -124,8 +136,8 @@ async function apply(protectedWriting: Protection) {
 }
 
 /** A signature's placeholder over the same session: the request is the smallest an invisible signature can be. */
-async function sign(protectedWriting: Protection) {
-  const { wrapped, trace } = build(protectedWriting);
+async function sign(protectedWriting: Protection, protectedImage?: ProtectedImage) {
+  const { wrapped, trace } = build(protectedWriting, protectedImage);
   const answer = await wrapped['engine/prepareSignature']({
     session: 'h1',
     request: placeholderRequestOf({ kind: 'signDocument', bytes: new Uint8Array(), passphrase: 'unused' }),
@@ -197,38 +209,37 @@ describe('engine/applyPdfLib on a protected session', () => {
   });
 });
 
-describe('engine/prepareSignature on a protected session (ADR-0220)', () => {
-  const protectedSession = () =>
-    Promise.resolve({
-      plain: () => Promise.resolve(READABLE),
-      protect: () => Promise.resolve(SEALED),
-      permissionPasswordReplaced: false,
-    });
+describe('engine/prepareSignature on a protected session (ADR-0227)', () => {
+  // THE pdf-lib ROUTE'S REFUSAL, armed: a document opened with its owner password whose user password is unknown cannot be
+  // written protected again by that route, and is signed by this one, which keeps the key rather than reproducing terms.
+  const notReproducible: Protection = () => Promise.reject(new ProtectionNotReproducible('the user password is not known'));
 
-  it('is refused by name before any work: a protected document cannot be signed by this build', async () => {
-    const { answer, trace } = await sign(protectedSession);
+  it('is prepared over the protected bytes, with the password they open with, and never the plain serialise', async () => {
+    const { answer, trace } = await sign(notReproducible, () => Promise.resolve({ image: SEALED, password: 'open' }));
+    expect(answer.ok).toBe(true);
+    expect(trace.preparedOver).toStrictEqual([SEALED]);
+    expect(trace.preparedWith).toStrictEqual([{ password: 'open' }]);
+    // THE WRITER'S SERIALISE IS NOT TAKEN a second time: the protected bytes are that serialise already.
+    expect(trace.serialised).toBe(0);
+    expect(trace.written).toStrictEqual([RESULT]);
+  });
+
+  it('a failure to make the protected bytes is the serialise’s, and nothing is prepared or written', async () => {
+    const { answer, trace } = await sign(undefined, () => Promise.reject(new Error('the serialise failed')));
     expect(answer.ok).toBe(false);
     if (answer.ok) return;
-    expect(answer.error.code).toBe('signature-document-protected');
-    // NOTHING WAS TAKEN OR WRITTEN: not the protected serialise, not a placeholder, not a file.
-    expect(trace.serialised).toBe(0);
+    expect(answer.error.code).toBe('serialise-failed');
     expect(trace.preparedOver).toStrictEqual([]);
     expect(trace.written).toStrictEqual([]);
   });
 
-  it('is refused by the same name where the protection could not even be written again', async () => {
-    const { answer } = await sign(() => Promise.reject(new ProtectionNotReproducible('the user password is not known')));
-    expect(answer.ok).toBe(false);
-    if (answer.ok) return;
-    expect(answer.error.code).toBe('signature-document-protected');
-  });
-
   it('CONTROL: a session whose bytes carry no protection is serialised and prepared as it always was', async () => {
     for (const none of [undefined, () => Promise.resolve(undefined)]) {
-      const { answer, trace } = await sign(none);
+      const { answer, trace } = await sign(notReproducible, none);
       expect(answer.ok).toBe(true);
       expect(trace.serialised).toBe(1);
       expect(trace.preparedOver).toStrictEqual([PROTECTED]);
+      expect(trace.preparedWith).toStrictEqual([undefined]);
     }
   });
 });

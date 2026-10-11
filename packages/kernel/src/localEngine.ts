@@ -1,7 +1,7 @@
 import { serialiseIntoFile } from './checkpointFile.js';
 import { type RegisteredWriter, localMupdfExecution } from './commandSpecs.js';
 import type { MupdfSession } from './engineSeam.js';
-import { protectedWritingOf } from './documentProtection.js';
+import { protectedImageOf, protectedWritingOf } from './documentProtection.js';
 import { mupdfWriter } from './mupdfWriter.js';
 import { NO_TIMESTAMPS, type RequestTimestamp, signpdfExecutionWith } from './documentSign.js';
 import { applyPdfLibImage, hostedPdfLibExecution } from './pdfLibWriter.js';
@@ -71,10 +71,13 @@ export function localSignpdfWriterWith(requestTimestamp: RequestTimestamp): Regi
   return {
     serialise: (session) => mupdfWriter.serialise(session),
     serialiseInto: serialiseIntoFile((session: MupdfSession) => mupdfWriter.serialise(session)),
-    ...signpdfExecutionWith(
-      async (session, request) => prepareSignature(await mupdfWriter.serialise(session), request),
-      requestTimestamp,
-    ),
+    // A PROTECTED DOCUMENT is signed under its own key, as the host does (ADR-0227).
+    ...signpdfExecutionWith(async (session, request) => {
+      const protection = await protectedImageOf(session);
+      return protection === undefined
+        ? prepareSignature(await mupdfWriter.serialise(session), request)
+        : prepareSignature(protection.image, request, { password: protection.password });
+    }, requestTimestamp),
   };
 }
 

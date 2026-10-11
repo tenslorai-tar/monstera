@@ -234,19 +234,41 @@ export async function protectedWritingOf(session: MupdfSession): Promise<Protect
   };
 }
 
+/**
+ * Whether `session`'s next serialise is protected, and the password those bytes open with — the one rule both routes take,
+ * so a pdf-lib command and a signature cannot disagree about whether a document is protected.
+ */
+function protectedSerialise(session: MupdfSession): { readonly password: string | undefined } | undefined {
+  const asked = protectionTermsOf(session);
+  if (asked !== undefined) return asked.options === 'encrypt=none' ? undefined : { password: asked.userPassword };
+  return accessFor(session) === 1 ? undefined : { password: heldPasswordOf(session) };
+}
+
+/**
+ * A protected document's bytes as its next save writes them, and the password they open with, or `undefined` where that
+ * save writes none — what a signature is appended to under the file's own key
+ * ([ADR-0227](../../../docs/DECISIONS/0227-a-signature-on-a-protected-document-is-appended-under-the-files-own-key.md)).
+ *
+ * **No terms are reproduced**, unlike {@link protectedWritingOf}: an incremental save keeps the key the bytes already
+ * have, so a document opened with its owner password whose user password is unknown is signed rather than refused.
+ */
+export async function protectedImageOf(
+  session: MupdfSession,
+): Promise<{ readonly image: ByteImage; readonly password: string | undefined } | undefined> {
+  const protection = protectedSerialise(session);
+  if (protection === undefined) return undefined;
+  return { image: await mupdfWriter.serialise(session), password: protection.password };
+}
+
 async function termsToProtectWith(
   session: MupdfSession,
 ): Promise<
   { readonly terms: string; readonly userPassword: string | undefined; readonly ownerReplaced: boolean } | undefined
 > {
+  if (protectedSerialise(session) === undefined) return undefined;
   const asked = protectionTermsOf(session);
-  if (asked !== undefined) {
-    return asked.options === 'encrypt=none'
-      ? undefined
-      : { terms: asked.options, userPassword: asked.userPassword, ownerReplaced: false };
-  }
+  if (asked !== undefined) return { terms: asked.options, userPassword: asked.userPassword, ownerReplaced: false };
   const access = accessFor(session);
-  if (access === 1) return undefined;
   if (access === 4) {
     throw new ProtectionNotReproducible(
       'The document was opened with its owner password and has a different password to open it, which is not known here, ' +

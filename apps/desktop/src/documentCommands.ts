@@ -144,7 +144,6 @@ import {
   type ReadSignature,
   SignatureAppearanceRefusedError,
   SignatureCredentialRefusedError,
-  SignatureProtectedDocumentError,
   SignatureTooLargeError,
   TimestampRefusedError,
   TimestampUnreachableError,
@@ -6458,9 +6457,6 @@ export class DocumentCommands {
       }
       if (error instanceof SignatureCredentialRefusedError) return { kind: 'wrong-passphrase' };
       if (error instanceof SignatureTooLargeError) return { kind: 'signature-too-large' };
-      // A PROTECTED DOCUMENT, refused by the host before anything is written (ADR-0220): the sentence says what to do about
-      // the password, where it used to be an incident id.
-      if (error instanceof SignatureProtectedDocumentError) return { kind: 'document-protected' };
       // THE AUTHORITY'S FAILURES, three sentences rather than one: unreachable is
       // *try again or choose another*, refused is *that service will not do this*,
       // and unverifiable is *it answered with something this build would not

@@ -3,6 +3,7 @@ import type { PDFDocument, PDFPage, PDFRef } from '@cantoo/pdf-lib';
 
 import type { ByteImage } from './engineSeam.js';
 import { PngPixelsRefused, checkPngPixels } from './imageDimensions.js';
+import { type ReadableRevision, appendedUnderKey } from './mupdfWriter.js';
 import { appendRevision, openForWriting } from './pdfLibSession.js';
 import { type DrawableMark, drawSignature, signatureBox } from './signatureDrawing.js';
 import { type PlaceholderRequest, type PreparedSignature, reservedSignatureBytes } from './signatureHole.js';
@@ -291,6 +292,36 @@ function placeSignature(
  */
 export async function withSignaturePlaceholder(image: ByteImage, request: PlaceholderRequest): Promise<ByteImage> {
   const document = await openForWriting(image);
+  await placedOn(document, request);
+  return appendRevision(document, { useObjectStreams: false });
+}
+
+/**
+ * The placement on a protected document's readable copy, as the revision {@link appendedUnderKey} re-writes under the
+ * file's key ([ADR-0227](../../../docs/DECISIONS/0227-a-signature-on-a-protected-document-is-appended-under-the-files-own-key.md)).
+ *
+ * **Which objects the revision holds is pdf-lib's own answer**, `context.snapshot.shouldSave`, the rule its incremental
+ * writer applies to the same objects a moment later; and the largest number before placing is the one that snapshot was
+ * taken against. Nothing here decides what a revision contains.
+ */
+async function placedRevision(readable: ByteImage, request: PlaceholderRequest): Promise<ReadableRevision> {
+  const document = await openForWriting(readable);
+  const { context } = document;
+  const existing = context.largestObjectNumber;
+  await placedOn(document, request);
+  const { snapshot } = context;
+  if (snapshot === undefined) throw new Error('pdf-lib opened the readable copy without an incremental snapshot');
+  // A PLACEMENT DELETES NOTHING, and a deletion would be a free entry this copy cannot carry across.
+  if (snapshot.deletedCount !== 0) throw new Error('the placement deleted an object, which a revision copied by number cannot carry');
+  const written = context
+    .enumerateIndirectObjects()
+    .map(([ref]) => ref.objectNumber)
+    .filter((number) => snapshot.shouldSave(number));
+  return { bytes: await appendRevision(document, { useObjectStreams: false }), written, existing };
+}
+
+/** The placement itself: the page, the appearance, and the dictionaries {@link placeSignature} writes. */
+async function placedOn(document: PDFDocument, request: PlaceholderRequest): Promise<void> {
   // THE FIRST PAGE FOR AN INVISIBLE SIGNATURE, which has no page a person
   // chose; the placement's page for a visible one, refused rather than clamped
   // when the document does not have it — a signature drawn on a different page
@@ -309,7 +340,11 @@ export async function withSignaturePlaceholder(image: ByteImage, request: Placeh
       ? undefined
       : await appearanceFor(document, page, request.appearance);
   placeSignature(document, page, request, placed);
-  return appendRevision(document, { useObjectStreams: false });
+}
+
+/** The password a protected image opens with, for {@link prepareSignature}. */
+export interface OpensWith {
+  readonly password: string | undefined;
 }
 
 /**
@@ -329,8 +364,18 @@ export async function withSignaturePlaceholder(image: ByteImage, request: Placeh
  * its numbers. `extractSignature` is not used: it reads the FIRST `/ByteRange`, which is another signature's in a
  * document signed before.
  */
-export async function prepareSignature(image: ByteImage, request: PlaceholderRequest): Promise<PreparedSignature> {
-  return preparePlaced(await withSignaturePlaceholder(image, request));
+export async function prepareSignature(
+  image: ByteImage,
+  request: PlaceholderRequest,
+  protectedBy?: OpensWith,
+): Promise<PreparedSignature> {
+  // A PROTECTED IMAGE is placed on its readable copy and the revision appended under its own key (ADR-0227); the range
+  // step below is the same for both, because the token shape it reads is the same.
+  const placed =
+    protectedBy === undefined
+      ? await withSignaturePlaceholder(image, request)
+      : await appendedUnderKey(image, protectedBy.password, (readable) => placedRevision(readable, request));
+  return preparePlaced(placed);
 }
 
 /**
