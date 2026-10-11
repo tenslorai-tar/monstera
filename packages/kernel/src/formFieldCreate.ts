@@ -1,4 +1,4 @@
-import { PDFRadioGroup, StandardFonts, degrees, rgb } from '@cantoo/pdf-lib';
+import { PDFRadioGroup, PDFString, StandardFonts, degrees, rgb } from '@cantoo/pdf-lib';
 import type { PDFDocument, PDFFont, PDFPage } from '@cantoo/pdf-lib';
 
 import type { AnnotationRect, CommandOfKind, CreatedField } from '@monstera/contract';
@@ -6,6 +6,8 @@ import { fieldNameClash, snapRotation } from '@monstera/shared';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert } from './engineSeam.js';
+import { setFormat } from './formFieldEdit.js';
+import { pageAt } from './pdfLibPages.js';
 import { appendRevision, openForWriting } from './pdfLibSession.js';
 
 /**
@@ -144,23 +146,8 @@ function preImage(
   }
 }
 
-/**
- * The page a command names, or a named refusal.
- *
- * `applyWatermarkPages`' shape and its wording, because a page index out of
- * range is one refusal whatever the command does with the page.
- */
-export function pageAt(document: PDFDocument, index: number): PDFPage {
-  const pages = document.getPages();
-  const page = pages[index];
-  if (!Number.isInteger(index) || index < 0 || page === undefined) {
-    throw new RangeError(
-      `Page ${String(index)} is outside this document, which has ${String(pages.length)} ` +
-        'page(s). Page indices are zero-based.',
-    );
-  }
-  return page;
-}
+/** The page a command names, or a named refusal: `pdfLibPages.ts`', re-exported for the callers that took it here. */
+export { pageAt };
 
 /**
  * The existing field name that stops `wanted` being created, or `undefined`.
@@ -220,8 +207,10 @@ function put(
   field: CreatedField,
   at: ReturnType<typeof preImage>,
   rotation: number,
+  /** The rectangle in user space, inset for the border: what a kind built from its dictionary is written at. */
+  rect: AnnotationRect,
 ): void {
-  const drawn = { ...at, borderWidth: FIELD_BORDER, borderColor: FIELD_BORDER_COLOUR, rotate: degrees(rotation) };
+  const drawn ={ ...at, borderWidth: FIELD_BORDER, borderColor: FIELD_BORDER_COLOUR, rotate: degrees(rotation) };
   // THE SMALL, TWO-STATE KINDS ALSO TAKE A FILL; a text field, a dropdown and a list box are drawn as an outlined box.
   const placement = field.type === 'checkbox' || field.type === 'radio' ? { ...drawn, backgroundColor: FIELD_FILL } : drawn;
   const existing = form.getFieldMaybe(name);
@@ -255,6 +244,21 @@ function put(
     case 'text':
       form.createTextField(name).addToPage(page, { ...placement, font });
       return;
+    case 'date': {
+      // A TEXT FIELD THAT CARRIES A DATE FORMAT, written by the edit writer's own `setFormat` (B3a), so a reader shows
+      // the date in the pattern and this application checks it where it is filled.
+      const date = form.createTextField(name);
+      date.addToPage(page, { ...placement, font });
+      setFormat(date, { kind: 'date', pattern: field.pattern });
+      return;
+    }
+    case 'button':
+      // NO ACTION: what a button does is a script or a submission, neither of which this application writes.
+      form.createButton(name).addToPage(field.label, page, { ...placement, font });
+      return;
+    case 'signature':
+      putSignatureField(form, page, name, rect, rotation);
+      return;
     case 'checkbox':
       form.createCheckBox(name).addToPage(page, placement);
       return;
@@ -275,6 +279,51 @@ function put(
       return unhandled;
     }
   }
+}
+
+/**
+ * A signature field: the empty place a signature is later put (ADR-0226 Decision 13).
+ *
+ * pdf-lib has a reader for one (`PDFSignature`) and no factory, so it is built from the dictionary as ISO 32000-1
+ * 12.7.4.5 writes it: a widget merged with its field, `/FT /Sig`, its name, its place and the page it is on, added to
+ * `/AcroForm /Fields` and to the page's `/Annots`. It is DRAWN, with the border and white fill every new field has,
+ * because a field without an appearance is one a reader shows nowhere (measured for the other kinds on 2026-10-07),
+ * and its `/MK /R` says how far it is turned, as pdf-lib writes it for the kinds it makes.
+ */
+function putSignatureField(
+  form: ReturnType<PDFDocument['getForm']>,
+  page: PDFPage,
+  name: string,
+  rect: AnnotationRect,
+  rotation: number,
+): void {
+  const context = form.doc.context;
+  const x0 = Math.min(rect.x0, rect.x1);
+  const y0 = Math.min(rect.y0, rect.y1);
+  const width = Math.abs(rect.x1 - rect.x0);
+  const height = Math.abs(rect.y1 - rect.y0);
+  const half = FIELD_BORDER / 2;
+  // A WHITE BOX AND ITS BORDER, drawn in the rectangle's own space: it looks the same at every turn of the page, so no
+  // turning matrix is owed, where text drawn in it would need one.
+  const drawing =
+    `q 1 1 1 rg 0 0 ${String(width)} ${String(height)} re f ` +
+    `0.2 0.2 0.2 RG ${String(FIELD_BORDER)} w ${String(half)} ${String(half)} ${String(width - FIELD_BORDER)} ${String(height - FIELD_BORDER)} re S Q`;
+  const appearance = context.stream(drawing, { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, width, height] });
+  const widget = context.obj({
+    Type: 'Annot',
+    Subtype: 'Widget',
+    FT: 'Sig',
+    T: PDFString.of(name),
+    Rect: [x0, y0, x0 + width, y0 + height],
+    F: 4,
+    P: page.ref,
+    BS: { W: FIELD_BORDER },
+    MK: { BC: [0.2, 0.2, 0.2], BG: [1, 1, 1], R: rotation },
+    AP: { N: context.register(appearance) },
+  });
+  const ref = context.register(widget);
+  form.acroForm.addField(ref);
+  page.node.addAnnot(ref);
 }
 
 /**
@@ -349,7 +398,7 @@ export const applyCreateFormField: Apply<'pdf-lib', 'createFormField'> = async (
   const form = document.getForm();
   for (const placement of command.fields) {
     const inset = insetForBorder(placement.rect, FIELD_BORDER);
-    put(form, page, font, placement.name, placement.field, preImage(inset, rotation), rotation);
+    put(form, page, font, placement.name, placement.field, preImage(inset, rotation), rotation, inset);
   }
 
   // NO APPEARANCE PASS. `updateFieldAppearances` regenerates every field in the

@@ -4735,6 +4735,16 @@ const fieldNameSchema = z
  * also what they did.
  */
 const createdTextField = z.object({ type: z.literal('text') }).strict();
+
+/**
+ * A date format's pattern: `d`, `dd`, `m`, `mm`, `mmm`, `mmmm`, `yy`, `yyyy` and the separators `/`, `-`, `.`, `,` and a
+ * space. Named once because a created date field and a set date format are the same rule (B3a).
+ */
+const fieldDatePatternSchema = z
+  .string()
+  .min(1)
+  .max(32)
+  .regex(/^(?:d{1,2}|m{1,4}|y{2}|y{4}|[/\-., ])+$/u);
 const createdCheckboxField = z.object({ type: z.literal('checkbox') }).strict();
 const createdRadioField = z
   .object({
@@ -4767,6 +4777,19 @@ export const createdFieldSchema = z.discriminatedUnion('type', [
   createdTextField,
   createdCheckboxField,
   createdRadioField,
+  /**
+   * A push button, with the words drawn on it (ADR-0226 Decision 13). It is made with no action: what a button does
+   * when pressed is a script or a submission, which this application neither writes nor runs (invariant 24).
+   */
+  z
+    .object({ type: z.literal('button'), label: z.string().min(1).max(MAX_FIELD_OPTION) })
+    .strict(),
+  /** A signature field: the empty place a signature is later put (`/FT /Sig`), built from the dictionary. */
+  z.object({ type: z.literal('signature') }).strict(),
+  /** A date field: a text field carrying a date format, written by `fieldActions.ts` as every reader reads it. */
+  z
+    .object({ type: z.literal('date'), pattern: fieldDatePatternSchema })
+    .strict(),
   z
     .object({
       type: z.literal('dropdown'),
@@ -4934,8 +4957,7 @@ export const fieldFormatSchema = z.discriminatedUnion('kind', [
   z
     .object({
       kind: z.literal('date'),
-      /** `d`, `dd`, `m`, `mm`, `mmm`, `mmmm`, `yy`, `yyyy` and the separators `/`, `-`, `.`, `,` and a space. */
-      pattern: z.string().min(1).max(32).regex(/^(?:d{1,2}|m{1,4}|y{2}|y{4}|[/\-., ])+$/u),
+      pattern: fieldDatePatternSchema,
     })
     .strict(),
   z

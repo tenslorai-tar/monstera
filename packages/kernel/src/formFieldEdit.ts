@@ -33,7 +33,7 @@ import {
   withFontSize,
 } from './fieldActions.js';
 import { type PageFrame, placeOnPage, rotationOf } from './fieldPlacement.js';
-import { pageAt } from './formFieldCreate.js';
+import { pageAt } from './pdfLibPages.js';
 import { pagesOf } from './pageScope.js';
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert } from './engineSeam.js';
@@ -233,7 +233,7 @@ function additionalActions(field: PDFField): PDFDict {
  * `null` removes only a format this application wrote: a custom script a person's own tooling put there is not one it can
  * show, and taking it away because a pane said *none* would drop what the file held.
  */
-function setFormat(field: PDFField, format: FieldFormat | null): void {
+export function setFormat(field: PDFField, format: FieldFormat | null): void {
   const aa = additionalActions(field);
   if (format === null) {
     const existing = scriptOf(aa.lookupMaybe(PDFName.of('F'), PDFDict));
