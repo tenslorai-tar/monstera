@@ -1,3 +1,5 @@
+import { MAX_CHARACTER_SPACING } from '@monstera/contract';
+
 import {
   type BoxLook,
   type Family,
@@ -79,7 +81,17 @@ export function styleStringOf(look: BoxLook): string {
     // THE PADDING LIVES HERE AND NOT IN `/RD`: MuPDF's `update()` applies `/RD` to the annotation's rectangle and zeroes it
     // (measured 2026-10-08, 1.28.0: a 4-point `/RD` shrank `/Rect` by 4 on every side), so the margin would eat the box.
     `padding: ${String(look.padding)}pt`,
+    // CHARACTER SPACING IN `em`, the wire's fraction of the size, written only where there is some (ADR-0228).
+    ...(look.spacing === 0 ? [] : [`letter-spacing: ${String(look.spacing)}em`]),
   ].join('; ');
+}
+
+/** A `letter-spacing` in `em` as the wire's fraction, held to the bound; `undefined` for any other shape. */
+function spacingOfStyle(text: string | undefined): number | undefined {
+  const match = /^(-?\d+(?:\.\d+)?)\s*em$/iu.exec(text?.trim() ?? '');
+  if (match === null) return undefined;
+  const value = Number(match[1]);
+  return Math.max(-MAX_CHARACTER_SPACING, Math.min(MAX_CHARACTER_SPACING, value));
 }
 
 /** The properties of a style string, by name, lower-cased. */
@@ -120,6 +132,7 @@ export function lookOfStyleString(style: string, base: BoxLook = DEFAULT_LOOK, l
     align: align === 'left' || align === 'center' || align === 'right' || align === 'justify' ? (align) : base.align,
     lineHeight: Number.isFinite(lineHeight) && lineHeight >= MIN_LINE_HEIGHT && lineHeight <= MAX_LINE_HEIGHT ? lineHeight : base.lineHeight,
     colour: colour ?? base.colour,
+    spacing: spacingOfStyle(properties.get('letter-spacing')) ?? base.spacing,
   };
 }
 
@@ -134,6 +147,8 @@ function spanOf(run: TextRun, look: BoxLook): string {
     parts.push(`text-decoration:${[underline ? 'underline' : '', strike ? 'line-through' : ''].filter(Boolean).join(' ') || 'none'}`);
   }
   if (run.colour !== undefined && hex(run.colour) !== hex(look.colour)) parts.push(`color:${hex(run.colour)}`);
+  if (run.highlight !== undefined && run.highlight !== null) parts.push(`background-color:${hex(run.highlight)}`);
+  if (run.spacing !== undefined && run.spacing !== look.spacing) parts.push(`letter-spacing:${String(run.spacing)}em`);
   const text = escapeXml(run.text);
   return parts.length === 0 ? text : `<span style="${parts.join(';')}">${text}</span>`;
 }
@@ -171,6 +186,8 @@ export function runsOfRichText(rich: string): TextRun[] | undefined {
       const properties = propertiesOf(/style="([^"]*)"/u.exec(span[1] ?? '')?.[1] ?? '');
       const decoration = properties.get('text-decoration');
       const colour = colourOfHex(properties.get('color') ?? '');
+      const highlight = colourOfHex(properties.get('background-color') ?? '');
+      const spacing = spacingOfStyle(properties.get('letter-spacing'));
       runs.push({
         text: unescapeXml((span[2] ?? '').replace(/<[^>]*>/gu, '')),
         ...(properties.has('font-weight') ? { bold: /bold|[6-9]00/iu.test(properties.get('font-weight') ?? '') } : {}),
@@ -179,12 +196,19 @@ export function runsOfRichText(rich: string): TextRun[] | undefined {
           ? {}
           : { underline: decoration.includes('underline'), strike: decoration.includes('line-through') }),
         ...(colour === undefined ? {} : { colour }),
+        ...(highlight === undefined ? {} : { highlight }),
+        ...(spacing === undefined ? {} : { spacing }),
       });
       cursor = span.index + span[0].length;
     }
     if (cursor < inner.length) runs.push({ text: unescapeXml(inner.slice(cursor).replace(/<[^>]*>/gu, '')) });
   });
   return runs.filter((run) => run.text !== '');
+}
+
+/** Two colours a run may or may not say are one: both unsaid, or both the same colour. */
+function sameOptional(one: Rgb | undefined, other: Rgb | undefined): boolean {
+  return one === undefined ? other === undefined : other !== undefined && hex(one) === hex(other);
 }
 
 /** The runs with their equal neighbours joined, so a restyle of a stretch that already matched does not split a word in two. */
@@ -199,7 +223,9 @@ export function normalisedRuns(runs: readonly TextRun[]): TextRun[] {
       last.italic === run.italic &&
       last.underline === run.underline &&
       last.strike === run.strike &&
-      (last.colour === undefined ? run.colour === undefined : run.colour !== undefined && hex(last.colour) === hex(run.colour));
+      last.spacing === run.spacing &&
+      sameOptional(last.colour, run.colour) &&
+      sameOptional(last.highlight ?? undefined, run.highlight ?? undefined);
     if (same) joined[joined.length - 1] = { ...last, text: last.text + run.text };
     else joined.push(run);
   }

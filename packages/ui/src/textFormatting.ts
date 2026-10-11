@@ -1,4 +1,10 @@
-import { type BlockFormatting, type BlockMarkSet, PARAGRAPH_ALIGNMENTS, type ParagraphProps } from '@monstera/contract';
+import {
+  type BlockFormatting,
+  type BlockMarkSet,
+  MAX_CHARACTER_SPACING,
+  PARAGRAPH_ALIGNMENTS,
+  type ParagraphProps,
+} from '@monstera/contract';
 import { tokensOf } from '@monstera/shared';
 
 /**
@@ -23,6 +29,15 @@ import { tokensOf } from '@monstera/shared';
 
 /** What a span of words is, where the person chose; a missing key is the run's own. */
 export type Fmt = BlockMarkSet;
+
+/**
+ * Points typed for character spacing as the wire's fraction of `size`, held to the bound either way (ADR-0228): the one
+ * conversion every spacing field takes, the editor's and a text box's.
+ */
+export function spacingOf(points: number, size: number): number {
+  const fraction = points / Math.max(size, 0.01);
+  return Math.round(Math.max(-MAX_CHARACTER_SPACING, Math.min(MAX_CHARACTER_SPACING, fraction)) * 10000) / 10000;
+}
 
 /** The class of a span the formatting made. */
 export const FORMAT_CLASS = 'm-text-editor__fmt';

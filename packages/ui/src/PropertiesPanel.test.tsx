@@ -414,6 +414,25 @@ describe('PropertiesPanel with marks selected', () => {
     expect(store.get(ANNOTATION_FONT_SETTING.id)).toBe('Carlito');
   });
 
+  it('CHARACTER SPACING is typed in points and sent as the fraction of the size, held to the bound it says (ADR-0228)', () => {
+    const { restyled } = mounted({ ...ONE, items: [TEXT_BOX] });
+    const field = screen.getByRole('spinbutton', { name: 'Character spacing in points' });
+    // THE BOUND AT 12 POINTS: 0.12 of the size.
+    expect(screen.getByText(/Up to 1\.4 points either way/u)).toBeTruthy();
+    fireEvent.change(field, { target: { value: '0.6' } });
+    fireEvent.blur(field);
+    expect(restyled.at(-1)).toStrictEqual({ text: { spacing: 0.05 } });
+    // PAST THE BOUND, held to it rather than refused.
+    fireEvent.change(field, { target: { value: '5' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    expect(restyled.at(-1)).toStrictEqual({ text: { spacing: 0.12 } });
+    // CONTROL: the box's own spacing, typed again, sends nothing.
+    const before = restyled.length;
+    fireEvent.change(field, { target: { value: '0' } });
+    fireEvent.blur(field);
+    expect(restyled).toHaveLength(before);
+  });
+
   it('a box drawn in a real family SHOWS that family by name, not its `/DA` class', () => {
     mounted({ ...ONE, items: [{ ...TEXT_BOX, typed: { ...TEXT_BOX.typed, family: 'Carlito' } }] });
     expect(screen.getByRole('button', { name: 'Font: Carlito' })).toBeTruthy();

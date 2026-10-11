@@ -20,6 +20,15 @@
 import { DEFAULT_TEXT_LINE_HEIGHT, MAX_TEXT_LINE_HEIGHT, MAX_TEXT_PADDING, MIN_TEXT_LINE_HEIGHT } from '@monstera/shared';
 
 import { hasRightToLeftLetter, lineSpans, paragraphDirection, paragraphLevels } from './bidiOrder.js';
+import {
+  HIGHLIGHT_ABOVE,
+  HIGHLIGHT_BELOW,
+  STRIKE_RISE,
+  UNDERLINE_DROP,
+  UNDERLINE_THICKNESS,
+  spaceable,
+  spacedBy,
+} from './markFigures.js';
 
 /** An RGB colour, each channel 0 to 1, as every annotation here carries one. */
 export type Rgb = readonly [number, number, number];
@@ -75,6 +84,10 @@ export interface RunStyle {
   readonly underline?: boolean | undefined;
   readonly strike?: boolean | undefined;
   readonly colour?: Rgb | undefined;
+  /** A colour behind the words, `null` for none over a box that has one (ADR-0228 Decision 1). */
+  readonly highlight?: Rgb | null | undefined;
+  /** Character spacing, a fraction of the size (ADR-0228 Decision 1). */
+  readonly spacing?: number | undefined;
 }
 
 /** A stretch of the box's words and what it says of itself. The runs, joined, are the box's `/Contents`. */
@@ -98,6 +111,8 @@ export interface BoxLook {
   readonly fill: Rgb | null;
   /** The margin between the box's edge and its words, in points, on every side. */
   readonly padding: number;
+  /** The whole box's character spacing, a fraction of the size: 0 for none (ADR-0228 Decision 1). */
+  readonly spacing: number;
   /** The border's width in points, and its colour (`/BS`, `/C`). */
   readonly borderWidth: number;
   readonly borderColour: Rgb;
@@ -116,6 +131,7 @@ export const DEFAULT_LOOK: BoxLook = {
   lineHeight: DEFAULT_TEXT_LINE_HEIGHT,
   fill: null,
   padding: 0,
+  spacing: 0,
   borderWidth: 0,
   borderColour: [0, 0, 0],
 };
@@ -244,6 +260,10 @@ export interface Piece {
   readonly colour: Rgb;
   readonly underline: boolean;
   readonly strike: boolean;
+  /** The colour behind the piece, or `null`. */
+  readonly highlight: Rgb | null;
+  /** Points `Tc` adds after every character the piece shows. */
+  readonly spacing: number;
   readonly x: number;
   readonly width: number;
 }
@@ -269,6 +289,9 @@ interface Token {
   readonly colour: Rgb;
   readonly underline: boolean;
   readonly strike: boolean;
+  readonly highlight: Rgb | null;
+  /** Character spacing, a fraction of the size. */
+  readonly spacing: number;
   /** Where the token's text begins in its paragraph, so a line's words can be put in drawing order. */
   readonly offset: number;
   readonly paragraph: number;
@@ -288,6 +311,8 @@ function tokensOf(runs: readonly TextRun[], look: BoxLook): { readonly tokens: T
       colour: run.colour ?? look.colour,
       underline: run.underline ?? look.underline,
       strike: run.strike ?? look.strike,
+      highlight: run.highlight ?? null,
+      spacing: run.spacing ?? look.spacing,
     };
     for (const part of run.text.split(/(\r\n|\n|\r|[ \t]+)/u)) {
       if (part === '') continue;
@@ -330,10 +355,14 @@ export function layoutBox(
   // A STRETCH IS SET RIGHT TO LEFT where it holds a right-to-left letter; a neutral one goes with its paragraph.
   const rtlOf = (token: Token): boolean =>
     hasRightToLeftLetter(token.text) || (token.kind === 'space' && directions[token.paragraph] === 'rtl');
+  // CHARACTER SPACING IN POINTS, by the one rule both page writers take (`spacedBy`): after every character, and never in
+  // a joined right-to-left script.
+  const spacingOf = (token: Token): number => token.spacing * look.size;
   const setOf = (token: Token, text: string): SetToken | undefined => {
     const pieces = setter.set(text, token.style, look.size, rtlOf(token));
     if (pieces === undefined) return undefined;
-    return { ...token, text, pieces, width: pieces.reduce((sum, piece) => sum + piece.width, 0) };
+    const spaced = pieces.reduce((sum, piece) => sum + spacedBy(piece.text, spacingOf(token)), 0);
+    return { ...token, text, pieces, width: pieces.reduce((sum, piece) => sum + piece.width, 0) + spaced };
   };
 
   interface Row { tokens: SetToken[]; ended: 'wrap' | 'break' | 'end'; paragraph: number }
@@ -409,7 +438,8 @@ export function layoutBox(
     for (const token of drawingOrder(one.tokens, levels[one.paragraph])) {
       const extra = token.kind === 'space' ? stretch : 0;
       token.pieces.forEach((set, index) => {
-        const own = set.width + (index === token.pieces.length - 1 ? extra : 0);
+        const spacing = spaceable(set.text) ? spacingOf(token) : 0;
+        const own = set.width + spacedBy(set.text, spacingOf(token)) + (index === token.pieces.length - 1 ? extra : 0);
         const previous = pieces.at(-1);
         // ADJACENT PIECES OF ONE STYLE ARE ONE DRAW, so an underline runs across a phrase and not word by word.
         if (
@@ -417,6 +447,8 @@ export function layoutBox(
           sameColour(previous.colour, token.colour) &&
           previous.underline === token.underline &&
           previous.strike === token.strike &&
+          sameHighlight(previous.highlight, token.highlight) &&
+          previous.spacing === spacing &&
           stretch === 0
         ) {
           pieces[pieces.length - 1] = {
@@ -433,6 +465,8 @@ export function layoutBox(
             colour: token.colour,
             underline: token.underline,
             strike: token.strike,
+            highlight: token.highlight,
+            spacing,
             x,
             width: own,
           });
@@ -473,6 +507,11 @@ function drawingOrder(tokens: readonly SetToken[], paragraph: ReturnType<typeof 
 /** Two colours are one when each channel is. */
 export function sameColour(one: Rgb, other: Rgb): boolean {
   return one[0] === other[0] && one[1] === other[1] && one[2] === other[2];
+}
+
+/** Two highlights are one when both are none or both are one colour. */
+function sameHighlight(one: Rgb | null, other: Rgb | null): boolean {
+  return one === null || other === null ? one === other : sameColour(one, other);
 }
 
 const fixed = (value: number): string => {
@@ -516,8 +555,20 @@ export function appearanceContent(layout: Layout, look: BoxLook): string {
   // THE WORDS ARE CLIPPED TO THE BOX: a box too short for its lines shows the ones that fit, as every reader's does.
   const inset = look.borderWidth;
   ops.push('q', `${fixed(inset)} ${fixed(inset)} ${fixed(width - 2 * inset)} ${fixed(height - 2 * inset)} re W n`);
+  /** The `Tc` in force: none at the stream's start. */
+  let spacing = 0;
   for (const line of layout.lines) {
     const y = height - line.baseline;
+    // THE HIGHLIGHTS FIRST, the whole line's, so no word of the line is drawn under a neighbour's colour.
+    for (const piece of line.pieces) {
+      if (piece.highlight === null) continue;
+      ops.push(
+        'q',
+        colourOps(piece.highlight, false),
+        `${fixed(piece.x)} ${fixed(y - look.size * HIGHLIGHT_BELOW)} ${fixed(piece.width)} ${fixed(look.size * (HIGHLIGHT_ABOVE + HIGHLIGHT_BELOW))} re f`,
+        'Q',
+      );
+    }
     for (const piece of line.pieces) {
       const name = names.get(piece.face);
       if (piece.text.trim() !== '' && name !== undefined) {
@@ -525,17 +576,26 @@ export function appearanceContent(layout: Layout, look: BoxLook): string {
           'BT',
           colourOps(piece.colour, false),
           `/${name} ${fixed(look.size)} Tf`,
+          // `Tc` IS TEXT STATE AND OUTLIVES ET, so it is said wherever a piece's differs from the one in force.
+          ...(piece.spacing === spacing ? [] : [`${fixed(piece.spacing)} Tc`]),
           `${fixed(piece.x)} ${fixed(y)} Td`,
           ...piece.shows,
           'ET',
         );
+        spacing = piece.spacing;
       }
-      const stroke = Math.max(0.5, look.size * 0.06);
+      // THE RULES BY THE PAGE WRITERS' FIGURES (`markFigures.ts`), so a struck word is struck at one height everywhere.
+      const stroke = Math.max(0.5, look.size * UNDERLINE_THICKNESS);
       if (piece.underline) {
-        ops.push('q', colourOps(piece.colour, false), `${fixed(piece.x)} ${fixed(y - look.size * 0.14)} ${fixed(piece.width)} ${fixed(stroke)} re f`, 'Q');
+        ops.push(
+          'q',
+          colourOps(piece.colour, false),
+          `${fixed(piece.x)} ${fixed(y - look.size * UNDERLINE_DROP - stroke)} ${fixed(piece.width)} ${fixed(stroke)} re f`,
+          'Q',
+        );
       }
       if (piece.strike) {
-        ops.push('q', colourOps(piece.colour, false), `${fixed(piece.x)} ${fixed(y + look.size * 0.26)} ${fixed(piece.width)} ${fixed(stroke)} re f`, 'Q');
+        ops.push('q', colourOps(piece.colour, false), `${fixed(piece.x)} ${fixed(y + look.size * STRIKE_RISE)} ${fixed(piece.width)} ${fixed(stroke)} re f`, 'Q');
       }
     }
   }

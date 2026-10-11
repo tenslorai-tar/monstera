@@ -45,6 +45,7 @@ import {
   refocusOpenEditor,
   removeOpenBlock,
 } from './textEditorControl.js';
+import { spacingOf } from './textFormatting.js';
 
 /**
  * The Properties panel while words are being edited in place (the owner's K11 and C1 to C5): the formatting that floated
@@ -85,12 +86,6 @@ const TEXT_VERBS = new Set(['bold', 'italic', 'underline', 'strike', 'superscrip
 /** A colour as `#rrggbb`. */
 function hexOf(colour: { readonly r: number; readonly g: number; readonly b: number } | undefined): string | undefined {
   return colour === undefined ? undefined : `#${[colour.r, colour.g, colour.b].map((value) => value.toString(16).padStart(2, '0')).join('')}`;
-}
-
-/** Points typed for character spacing as the wire's fraction of `size`, held to the bound either way. */
-export function spacingOf(points: number, size: number): number {
-  const fraction = points / Math.max(size, 0.01);
-  return Math.round(Math.max(-MAX_CHARACTER_SPACING, Math.min(MAX_CHARACTER_SPACING, fraction)) * 10000) / 10000;
 }
 
 /** A `#rrggbb` as the contract's colour, or `undefined` for anything else. */

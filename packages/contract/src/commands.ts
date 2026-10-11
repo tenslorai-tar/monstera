@@ -1407,6 +1407,19 @@ export const MAX_TEXT_RUNS = 16;
 export const MAX_TEXT_RUN_CHARS = 1024;
 
 /**
+ * The most character spacing any words may ask, as a fraction of their size, either way
+ * ([ADR-0228](../../../docs/DECISIONS/0228-the-formatting-set-is-whole-in-both-text-writers-and-a-tab-is-a-marked-gap.md)
+ * Decision 1): a page-text mark's, a text box's and a text box run's, one meaning for one control. Measured: PDFium's text
+ * page and MuPDF read the words cleanly at 0.125 em and read a space between every letter at 0.15 em, so a wider value
+ * would make words search, copy and the editor's own read no longer see as words. A FRACTION RATHER THAN POINTS, so the
+ * bound is the wire's and not a check each writer makes against a size it may not be told.
+ */
+export const MAX_CHARACTER_SPACING = 0.12;
+
+/** Character spacing as the wire carries it: a fraction of the size, {@link MAX_CHARACTER_SPACING} either way. */
+export const characterSpacingSchema = z.number().min(-MAX_CHARACTER_SPACING).max(MAX_CHARACTER_SPACING);
+
+/**
  * How a text mark's words are drawn, as the file says: the type size, colour, face and the side the lines sit against
  * — a `/FreeText`'s `/DA` and `/Q`. The four fields every text draft carries, under the same bounds, so a value read is
  * one a draft could write back; a mark whose `/DA` says something outside them carries none (ADR-0154 Decision 3).
@@ -1431,6 +1444,8 @@ export const annotationWordsStyleSchema = z
     lineHeight: z.number().min(MIN_TEXT_LINE_HEIGHT).max(MAX_TEXT_LINE_HEIGHT).exactOptional(),
     fill: z.tuple([z.number().min(0).max(1), z.number().min(0).max(1), z.number().min(0).max(1)]).exactOptional(),
     padding: z.number().min(0).max(MAX_TEXT_PADDING).exactOptional(),
+    /** The box's own character spacing where it has some (ADR-0228). */
+    spacing: characterSpacingSchema.exactOptional(),
     /**
      * Present and true where Monstera cannot draw this box's styles: a callout, or words outside the base 14 in a
      * process with no fonts bound (K2). The panel says so, and offers the standard faces alone.
@@ -1460,6 +1475,10 @@ export const annotationTextRunSchema = z
     underline: z.boolean().optional(),
     strike: z.boolean().optional(),
     colour: annotationColourSchema.optional(),
+    /** A colour drawn behind the run's words, or `null` for none (ADR-0228 Decision 1). */
+    highlight: annotationColourSchema.nullable().optional(),
+    /** The run's character spacing, a fraction of the size (ADR-0228 Decision 1). */
+    spacing: characterSpacingSchema.optional(),
   })
   .strict();
 
@@ -1490,6 +1509,8 @@ export const annotationTextStyleSchema = z
     /** The fill behind the words, or `null` to take it away. */
     fill: annotationColourSchema.nullable().optional(),
     padding: z.number().min(0).max(MAX_TEXT_PADDING).optional(),
+    /** The whole box's character spacing, a fraction of the size (ADR-0228 Decision 1). */
+    spacing: characterSpacingSchema.optional(),
     /** The box's words as runs, replacing its words: joined, they are its `/Contents`. */
     words: z.array(annotationTextRunSchema).min(1).max(MAX_TEXT_RUNS).optional(),
   })
@@ -5830,16 +5851,6 @@ export const TEXT_FIT_MODES = ['reflow', 'shrink'] as const;
  */
 export const MAX_BLOCK_MARKS = 960;
 
-/**
- * The most character spacing a mark may ask, as a fraction of the words' size, either way
- * ([ADR-0228](../../../docs/DECISIONS/0228-the-formatting-set-is-whole-in-both-text-writers-and-a-tab-is-a-marked-gap.md)
- * Decision 1). Measured: PDFium's text page and MuPDF read the words cleanly at 0.125 em and read a space between every
- * letter at 0.15 em, so a wider value would make a block search, copy and the editor's own read no longer see as words.
- * A FRACTION RATHER THAN POINTS, so the bound is the wire's and not a check each writer makes against a size it may not
- * be told.
- */
-export const MAX_CHARACTER_SPACING = 0.12;
-
 /** A colour of a mark, in 0 to 255 per channel. */
 const markColourSchema = z
   .object({ r: z.number().int().min(0).max(255), g: z.number().int().min(0).max(255), b: z.number().int().min(0).max(255) })
@@ -5856,7 +5867,7 @@ export const blockMarkSetSchema = z
     /** A colour drawn behind the words, or `null` for none (ADR-0228 Decision 1). */
     highlight: markColourSchema.nullable(),
     /** Space added after each character, as a fraction of the words' size: {@link MAX_CHARACTER_SPACING} either way. */
-    spacing: z.number().min(-MAX_CHARACTER_SPACING).max(MAX_CHARACTER_SPACING),
+    spacing: characterSpacingSchema,
     /** Absolute, in points. */
     size: z.number().min(1).max(400),
     colour: markColourSchema,

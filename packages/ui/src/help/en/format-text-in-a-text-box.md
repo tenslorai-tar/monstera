@@ -12,7 +12,7 @@ A text box and typed text can be set in a font, a size and a colour, in bold, it
 
 1. Choose the **Select** tool and click the box.
 2. Open the **Properties** tab. A **Text** section appears.
-3. Under **Text**, choose a **Font**, type a **Font size** and press **Enter**, pick a **Text colour**, and choose **Left**, **Centre**, **Right** or **Justify** under **Align**. Tick **Bold**, **Italic**, **Underline** or **Strikethrough**, type a **Line spacing** or **Padding** and press **Enter**, and tick **Fill the box** to pick a **Fill colour**.
+3. Under **Text**, choose a **Font**, type a **Font size** and press **Enter**, pick a **Text colour**, and choose **Left**, **Centre**, **Right** or **Justify** under **Align**. Tick **Bold**, **Italic**, **Underline** or **Strikethrough**, type a **Line spacing**, a **Character spacing in points** or **Padding** and press **Enter**, and tick **Fill the box** to pick a **Fill colour**. Character spacing goes up to about an eighth of the font size either way, as for text on the page.
 4. To make the box bigger or smaller, drag any of the eight small squares on its edge: a corner changes both sides, a side changes only that side.
 
 ![A text box selected, with the Text section in Properties](screenshot:format-text-in-a-text-box-1)

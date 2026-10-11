@@ -13,6 +13,7 @@ import {
   DEFAULT_TEXT_LINE_HEIGHT,
   MAX_ANNOTATION_TEXT,
   MAX_TEXT_LINE_HEIGHT,
+  MAX_CHARACTER_SPACING,
   MAX_TEXT_PADDING,
   MIN_ANNOTATION_FONT,
   MIN_TEXT_LINE_HEIGHT,
@@ -52,6 +53,8 @@ import {
   PROPERTIES_BOX_FILL,
   PROPERTIES_BOX_FILL_COLOUR,
   PROPERTIES_BOX_PADDING,
+  TEXT_FORMAT_CHARACTER_SPACING,
+  TEXT_FORMAT_CHARACTER_SPACING_BOUND,
   PROPERTIES_LINE_SPACING,
   PROPERTIES_STYLE_BOLD,
   PROPERTIES_STYLE_ITALIC,
@@ -78,6 +81,7 @@ import {
   MEASURE_UNIT_TITLE,
   UNIT_TITLES,
 } from './messages/en.js';
+import { spacingOf } from './textFormatting.js';
 import { kindWord } from './ObjectEditLayer.js';
 import { type ObjectFill, type ObjectPick, recolourable } from './objectEditing.js';
 import { pdfjsPageOf } from './pageNumbering.js';
@@ -729,6 +733,16 @@ function TextSection({
     const next = Number(padding);
     if (Number.isFinite(next) && next >= 0 && next <= MAX_TEXT_PADDING && next !== (typed.padding ?? 0)) onChange({ padding: next });
   };
+  // CHARACTER SPACING IN POINTS, sent as the wire's fraction of the box's size by the one conversion (ADR-0228).
+  const lettersId = useId();
+  const lettersNoteId = useId();
+  const [letters, setLetters] = useState(String(Math.round((typed.spacing ?? 0) * typed.fontSize * 100) / 100));
+  const sendLetters = (): void => {
+    const points = Number(letters);
+    if (!Number.isFinite(points)) return;
+    const next = spacingOf(points, typed.fontSize);
+    if (next !== (typed.spacing ?? 0)) onChange({ spacing: next });
+  };
   return (
     <>
     <div className="m-properties__text" data-properties-text="" role="group" aria-label={i18n._(PROPERTIES_TEXT_HEADING)}>
@@ -833,6 +847,29 @@ function TextSection({
               value={spacing}
             />
           </div>
+          <div className="m-properties__row m-properties__row--inline">
+            <label className="m-properties__label" htmlFor={lettersId}>
+              {i18n._(TEXT_FORMAT_CHARACTER_SPACING)}
+            </label>
+            <input
+              aria-describedby={lettersNoteId}
+              className="m-properties__number"
+              id={lettersId}
+              onBlur={sendLetters}
+              onChange={(event) => {
+                setLetters(event.target.value);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') sendLetters();
+              }}
+              step={0.1}
+              type="number"
+              value={letters}
+            />
+          </div>
+          <p className="m-properties__meta" id={lettersNoteId}>
+            {i18n._(TEXT_FORMAT_CHARACTER_SPACING_BOUND, { points: String(Math.round(MAX_CHARACTER_SPACING * typed.fontSize * 10) / 10) })}
+          </p>
         </>
       )}
     </div>

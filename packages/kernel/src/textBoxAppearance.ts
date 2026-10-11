@@ -1,3 +1,5 @@
+import { MAX_CHARACTER_SPACING } from '@monstera/contract';
+
 import { editFaces, editFacesBound } from './editFaces.js';
 import { familyClass } from './fontResolver.js';
 import { Font, type PDFAnnotation, type PDFDocument, type PDFObject } from './mupdfRaw.js';
@@ -246,6 +248,8 @@ export interface StyledBoxChange {
   /** `null` takes the fill away. */
   readonly fill?: Rgb | null | undefined;
   readonly padding?: number | undefined;
+  /** The whole box's character spacing, a fraction of the size (ADR-0228). */
+  readonly spacing?: number | undefined;
   readonly words?: readonly TextRun[] | undefined;
 }
 
@@ -279,6 +283,7 @@ export function writeStyleFacts(
     lineHeight: clamp(change.lineHeight ?? base.lineHeight, MIN_LINE_HEIGHT, MAX_LINE_HEIGHT),
     fill: change.fill === undefined ? base.fill : change.fill,
     padding: clamp(change.padding ?? base.padding, 0, MAX_PADDING),
+    spacing: clamp(change.spacing ?? base.spacing, -MAX_CHARACTER_SPACING, MAX_CHARACTER_SPACING),
   };
   const runs = change.words === undefined ? now.runs : normalisedRuns(change.words);
   // THE PLAIN WORDS ARE THE RUNS JOINED, so a restyle that names words keeps `/Contents` and `/RC` one text.

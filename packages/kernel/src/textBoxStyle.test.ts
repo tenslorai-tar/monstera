@@ -114,6 +114,42 @@ describe('appearanceContent', () => {
     expect(count(appearanceContent(plain, look()))).toBe(0);
   });
 
+  it('a HIGHLIGHT is its colour behind the piece, drawn before any word of its line (ADR-0228)', () => {
+    const style = look();
+    const box = layoutBox(200, 40, style, [{ text: 'plain ' }, { text: 'lit', highlight: [1, 0.9, 0.4] }], setter);
+    if (box === undefined) throw new Error('no layout');
+    const content = appearanceContent(box, style);
+    // 'plain ' is 36 wide, so the colour starts there and is as wide as 'lit', 18; from 0.24 under the baseline to 0.9 over.
+    const rect = /1 0\.9 0\.4 rg\n36 [\d.]+ 18 13\.68 re f/u.exec(content);
+    expect(rect).not.toBeNull();
+    expect(content.indexOf(rect?.[0] ?? '')).toBeLessThan(content.indexOf('BT'));
+    // CONTROL: the same words with no highlight draw no rectangle at all.
+    const plain = layoutBox(200, 40, style, [{ text: 'plain lit' }], setter);
+    if (plain === undefined) throw new Error('no layout');
+    expect(appearanceContent(plain, style)).not.toContain('re f');
+  });
+
+  it('CHARACTER SPACING widens a run by the spacing after each character and is said as Tc, then taken off again', () => {
+    const style = look();
+    // 0.1 OF 12 POINTS is 1.2 points after each of three characters.
+    const box = layoutBox(200, 40, style, [{ text: 'abc', spacing: 0.1 }, { text: ' def' }], setter);
+    if (box === undefined) throw new Error('no layout');
+    const [spaced, after] = box.lines[0]?.pieces ?? [];
+    expect(spaced?.width).toBeCloseTo(18 + 3 * 1.2, 5);
+    expect(after?.x).toBeCloseTo(18 + 3 * 1.2, 5);
+    const content = appearanceContent(box, style);
+    expect(content).toContain('1.2 Tc');
+    expect(content.indexOf('0 Tc')).toBeGreaterThan(content.indexOf('1.2 Tc'));
+    // THE WHOLE BOX's spacing is every run's, by the same rule.
+    const whole = layoutBox(200, 40, look({ spacing: 0.1 }), [{ text: 'abc' }], setter);
+    expect(whole?.lines[0]?.pieces[0]?.width).toBeCloseTo(18 + 3 * 1.2, 5);
+    // CONTROL: no spacing anywhere, no Tc said, and the run its own width.
+    const plain = layoutBox(200, 40, style, [{ text: 'abc def' }], setter);
+    if (plain === undefined) throw new Error('no layout');
+    expect(appearanceContent(plain, style)).not.toContain('Tc');
+    expect(plain.lines[0]?.pieces[0]?.width).toBe(42);
+  });
+
   it('escapes a parenthesis and a backslash, and writes Latin-1 and the euro in their WinAnsi codes', () => {
     expect(pdfString('a(b)\\c')).toBe('(a\\(b\\)\\\\c)');
     expect(pdfString('é€')).toBe('(\\351\\200)');
@@ -198,6 +234,22 @@ describe('/RC and /DS', () => {
     expect(back?.find((run) => run.text === 'red')?.underline).toBe(true);
     // CONTROL: a box with no styled run writes no span at all.
     expect(richTextOf([{ text: 'just words' }], style)).not.toContain('<span');
+  });
+
+  it('/RC and /DS carry a run’s highlight and spacing and the box’s spacing, and read them back (ADR-0228)', () => {
+    const runs = [{ text: 'lit', highlight: [1, 1, 0] as const, spacing: 0.05 }, { text: ' plain' }];
+    const spaced = look({ spacing: -0.02 });
+    const rich = richTextOf(runs, spaced);
+    expect(rich).toContain('background-color:#ffff00');
+    expect(rich).toContain('letter-spacing:0.05em');
+    const back = runsOfRichText(rich);
+    expect(back?.[0]).toStrictEqual({ text: 'lit', highlight: [1, 1, 0], spacing: 0.05 });
+    expect(lookOfStyleString(styleStringOf(spaced)).spacing).toBe(-0.02);
+    // A SPACING PAST THE BOUND, written by hand, is read at the bound rather than past it.
+    expect(lookOfStyleString('letter-spacing: 0.5em').spacing).toBe(0.12);
+    // CONTROL: a box with no spacing writes none, and two runs that differ only in highlight stay two.
+    expect(styleStringOf(look())).not.toContain('letter-spacing');
+    expect(normalisedRuns([{ text: 'a', highlight: [1, 1, 0] }, { text: 'b' }])).toHaveLength(2);
   });
 
   it('answers undefined for a shape it does not read', () => {

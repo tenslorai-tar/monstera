@@ -165,6 +165,47 @@ async function typedOf(session: Awaited<ReturnType<typeof mupdfWriter.open>>): P
   return first !== undefined && 'typed' in first ? first.typed : undefined;
 }
 
+describe('a text box’s character spacing and highlight (ADR-0228), against the real engine', () => {
+  it('draws the spacing as Tc and the highlight behind its words, and MuPDF still reads the words as words', async () => {
+    const session = await mupdfWriter.open(await added(textBox('Helvetica', 'Spaced words here')));
+    let bytes: Uint8Array;
+    try {
+      await applyStyleAnnotation(session, {
+        kind: 'styleAnnotation',
+        page: 0,
+        indices: [0],
+        text: { spacing: 0.1, words: [{ text: 'Spaced', highlight: [1, 1, 0] }, { text: ' words here' }] },
+        version: asDocVersion(1),
+      });
+      bytes = await mupdfWriter.serialise(session);
+      expect((await typedOf(session))?.spacing).toBe(0.1);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+    const { content } = await appearanceOf(bytes);
+    // 0.1 OF 14 POINTS, and the yellow behind the first word before its words are drawn.
+    expect(content).toContain('1.4 Tc');
+    expect(content.indexOf('1 1 0 rg')).toBeGreaterThanOrEqual(0);
+    expect(content.indexOf('1 1 0 rg')).toBeLessThan(content.indexOf('BT'));
+    // THE BOUND'S REASON: at 0.1 of the size MuPDF reads no space between the letters.
+    expect(await readText(bytes)).toContain('Spaced words here');
+  });
+
+  it('CONTROL: the same box restyled with no spacing says no Tc and draws no colour behind its words', async () => {
+    const session = await mupdfWriter.open(await added(textBox('Helvetica', 'Spaced words here')));
+    let bytes: Uint8Array;
+    try {
+      await applyStyleAnnotation(session, { kind: 'styleAnnotation', page: 0, indices: [0], text: { bold: true }, version: asDocVersion(1) });
+      bytes = await mupdfWriter.serialise(session);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+    const { content } = await appearanceOf(bytes);
+    expect(content).not.toContain('Tc');
+    expect(content).not.toContain('1 1 0 rg');
+  });
+});
+
 describe('with no fonts bound', () => {
   it('a real family falls back to the engine’s base 14 and the panel says the styles are unavailable', async () => {
     const session = await mupdfWriter.open(await added(textBox('Carlito', 'No catalogue')));
