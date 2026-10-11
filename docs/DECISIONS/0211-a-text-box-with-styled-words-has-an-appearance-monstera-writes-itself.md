@@ -78,3 +78,26 @@ control on the screen that styles words in one reader only, which the owner's pr
 screen*). Open for the owner: whether a script outside the base 14 should block the styles (Decision 2) or embed a face, and
 whether the per-word editor may wait behind the box-level styles (bold and italic for the whole box, a fill, line spacing),
 which need only Decisions 1 to 6 and none of Decision 7.
+
+## Amendment, 2026-10-11: Decision 2 is superseded — a text box is set in a real font and embeds what it uses (the owner's K2)
+
+The owner's K2 (the cloud bundle's resolutions, accepted): **text boxes use real installed fonts.** Decision 2's *the faces
+are the base 14* and its rejected alternative *embed a font for the styled runs* are withdrawn together. What replaces them:
+
+1. **The face is the one font picker's**, the same list the in-place editor and the Annotation font setting take (B3a): a
+   family on this computer, a family Monstera bundles, or one of the base 14. The base 14 stay a choice and stay unembedded.
+2. **A face that is not base 14 is embedded, subset to the characters the box draws**, by the resolver that already makes
+   the in-place editor's subsets in a contained host (ADR-0172). A family whose licence forbids embedding is set in the
+   resolver's stand-in, and the Properties tab says so in words, as the picker does.
+3. **Decision 3's metrics come from the face itself**, read in the host through the resolver's own face reader, so the line
+   a person saw break is still the line the appearance breaks, with one owner of where a line ends.
+4. **A script outside the base 14** (Decision 2's refusal) is drawn by the same route, since an embedded face can carry it.
+
+Rejected: keeping the base 14 and listing installed fonts in the picker. A font chosen and silently drawn as Helvetica is the
+defect this ADR's Context records of MuPDF's `/DA`, moved one layer up.
+
+**Built: nothing of this amendment yet, 2026-10-11.** What did land in the same run is the part that does not need the
+writer: the Annotation font setting stores a real family name (Helvetica, Times or Courier) chosen in the one picker, and the
+picker offers only those three for a text box, so no family is offered that the writer would not set. The writer's half is
+the appearance writer's font program (embedding a subset into the `/AP` stream's resources), host-side metrics for wrapping,
+and the two-reader proof per face; it is owed and recorded as not built.
