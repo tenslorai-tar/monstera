@@ -1110,6 +1110,25 @@ export const annotationFontSchema = z.enum(ANNOTATION_FONTS);
 export type AnnotationFont = z.infer<typeof annotationFontSchema>;
 
 /**
+ * Each face by the family name a person knows and the one font picker lists (the owner's K4): what the Annotation font
+ * setting stores and the Properties tab shows, and how either turns back into the face the writer takes. One table, so
+ * the name shown and the face written cannot come apart.
+ */
+export const ANNOTATION_FONT_FAMILIES = { sans: 'Helvetica', serif: 'Times', mono: 'Courier' } as const satisfies Readonly<
+  Record<AnnotationFont, string>
+>;
+
+/** A family name the text box writer sets: one of {@link ANNOTATION_FONT_FAMILIES}' values. */
+export type AnnotationFontFamily = (typeof ANNOTATION_FONT_FAMILIES)[AnnotationFont];
+
+/** The face a family name stands for, or `undefined` for a family the text box writer cannot set. */
+export function annotationFontOf(family: AnnotationFontFamily): AnnotationFont;
+export function annotationFontOf(family: string): AnnotationFont | undefined;
+export function annotationFontOf(family: string): AnnotationFont | undefined {
+  return ANNOTATION_FONTS.find((font) => ANNOTATION_FONT_FAMILIES[font].toLowerCase() === family.toLowerCase());
+}
+
+/**
  * Which way a text box's paragraphs run — the editing setting Part F calls *RTL text* (ADR-0128).
  *
  * **The order of the letters is not this.** MuPDF's layout engine orders each run by the Unicode bidi algorithm and

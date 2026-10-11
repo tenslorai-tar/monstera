@@ -1910,9 +1910,9 @@ export const EDITING_FONT_SANS = messageKey('setting.editing.annotation-font.san
 export const EDITING_FONT_SERIF = messageKey('setting.editing.annotation-font.serif');
 export const EDITING_FONT_MONO = messageKey('setting.editing.annotation-font.mono');
 export const EDITING_FONT_OPTION_TITLES = {
-  sans: EDITING_FONT_SANS,
-  serif: EDITING_FONT_SERIF,
-  mono: EDITING_FONT_MONO,
+  Helvetica: EDITING_FONT_SANS,
+  Times: EDITING_FONT_SERIF,
+  Courier: EDITING_FONT_MONO,
 } as const;
 export const EDITING_DIRECTION_TITLE = messageKey('setting.editing.text-direction.title');
 export const EDITING_DIRECTION_DESCRIPTION = messageKey('setting.editing.text-direction.description');
@@ -1942,9 +1942,6 @@ export const PROPERTIES_FONT_SIZE = messageKey('surface.properties.font-size');
 export const PROPERTIES_TEXT_HEADING = messageKey('surface.properties.text.heading');
 export const PROPERTIES_TEXT_COLOUR = messageKey('surface.properties.text.colour');
 export const PROPERTIES_FONT = messageKey('surface.properties.text.font');
-export const PROPERTIES_FONT_SANS = messageKey('surface.properties.text.font-sans');
-export const PROPERTIES_FONT_SERIF = messageKey('surface.properties.text.font-serif');
-export const PROPERTIES_FONT_MONO = messageKey('surface.properties.text.font-mono');
 export const PROPERTIES_ALIGN = messageKey('surface.properties.text.align');
 export const PROPERTIES_ALIGN_LEFT = messageKey('surface.properties.text.align-left');
 export const PROPERTIES_ALIGN_CENTER = messageKey('surface.properties.text.align-center');
@@ -4572,9 +4569,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EDITING_FONT_TITLE]: 'Annotation font',
   [EDITING_FONT_DESCRIPTION]:
     'The typeface new text boxes, callouts and typed text are set in. All three are built into every PDF reader, so the words look the same wherever the file is opened.',
-  [EDITING_FONT_OPTION_TITLES.sans]: 'Sans serif (Helvetica)',
-  [EDITING_FONT_OPTION_TITLES.serif]: 'Serif (Times)',
-  [EDITING_FONT_OPTION_TITLES.mono]: 'Monospace (Courier)',
+  [EDITING_FONT_OPTION_TITLES.Helvetica]: 'Helvetica',
+  [EDITING_FONT_OPTION_TITLES.Times]: 'Times',
+  [EDITING_FONT_OPTION_TITLES.Courier]: 'Courier',
   [EDITING_DIRECTION_TITLE]: 'Text direction',
   [EDITING_DIRECTION_DESCRIPTION]:
     'Which side the lines of new text boxes, callouts and typed text start from. Choose right to left for Hebrew, Arabic and other languages written from the right. Letters always appear in the right order and joined as the language needs, whichever you choose.',
@@ -4608,9 +4605,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PROPERTIES_TEXT_HEADING]: 'Text',
   [PROPERTIES_TEXT_COLOUR]: 'Text colour',
   [PROPERTIES_FONT]: 'Font',
-  [PROPERTIES_FONT_SANS]: 'Sans',
-  [PROPERTIES_FONT_SERIF]: 'Serif',
-  [PROPERTIES_FONT_MONO]: 'Mono',
   [PROPERTIES_ALIGN]: 'Align',
   [PROPERTIES_ALIGN_LEFT]: 'Left',
   [PROPERTIES_ALIGN_CENTER]: 'Centre',

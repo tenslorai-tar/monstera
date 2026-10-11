@@ -21,10 +21,14 @@ function listOf(client: ContractClient): Promise<NonNullable<FontList>> {
   return reading;
 }
 
-/** The font list, read on first use; `undefined` while it is read. */
-export function useFontList(client: ContractClient): FontList {
+/**
+ * The font list, read the first time `wanted` is true and held after it; `undefined` until then and while it is read.
+ * Not at start: a session that never formats words never asks main to read a computer's fonts.
+ */
+export function useFontList(client: ContractClient, wanted: boolean): FontList {
   const [list, setList] = useState<FontList>(undefined);
   useEffect(() => {
+    if (!wanted) return undefined;
     let current = true;
     void listOf(client).then((read) => {
       if (current) setList(read);
@@ -32,6 +36,6 @@ export function useFontList(client: ContractClient): FontList {
     return () => {
       current = false;
     };
-  }, [client]);
+  }, [client, wanted]);
   return list;
 }

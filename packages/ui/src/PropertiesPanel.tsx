@@ -5,7 +5,8 @@ import {
   type AnnotationAlign,
   type AnnotationBlend,
   type AnnotationColour,
-  type AnnotationFont,
+  ANNOTATION_FONT_FAMILIES,
+  annotationFontOf,
   type AnnotationTextStyle,
   MAX_ANNOTATION_AUTHOR,
   MAX_ANNOTATION_BORDER,
@@ -24,6 +25,7 @@ import { type ReactElement, useEffect, useId, useState } from 'react';
 
 import { ANNOTATION_KIND_LABELS } from './AnnotationsPanel.js';
 import { ColourSwatches } from './ColourChoice.js';
+import { type DocumentFont, FontPicker, type FontList } from './FontPicker.js';
 import { STARTING_STYLE_COLOUR, colourFromHex, hexFromColour } from './annotations/annotationStyle.js';
 import { type WordsOf, type WordsToEdit, markOf } from './annotations/markWords.js';
 import type { AnnotationSelection, SelectedAnnotation } from './annotations/selectTool.js';
@@ -58,9 +60,6 @@ import {
   PROPERTIES_STYLE_UNDERLINE,
   PROPERTIES_STYLES_UNAVAILABLE,
   PROPERTIES_FONT,
-  PROPERTIES_FONT_MONO,
-  PROPERTIES_FONT_SANS,
-  PROPERTIES_FONT_SERIF,
   PROPERTIES_FONT_SIZE,
   PROPERTIES_LINE_WIDTH,
   PROPERTIES_TEXT_COLOUR,
@@ -363,7 +362,7 @@ export function PropertiesPanel({
     // THE TEXT SETTINGS THE TOOLS READ: a new text box starts in the face and at the size just chosen (item 14b). The
     // colour is the shared annotation colour's, set by the row above, so a text colour is not written to it.
     if ('text' in next) {
-      if (next.text.font !== undefined) settings.set(ANNOTATION_FONT_SETTING.id, next.text.font);
+      if (next.text.font !== undefined) settings.set(ANNOTATION_FONT_SETTING.id, ANNOTATION_FONT_FAMILIES[next.text.font]);
       if (next.text.fontSize !== undefined) settings.set(ANNOTATION_FONT_SIZE_SETTING.id, next.text.fontSize);
     }
   };
@@ -623,11 +622,11 @@ function WidthRow({
   );
 }
 
-const FONT_LABELS: Readonly<Record<AnnotationFont, MessageKey>> = {
-  sans: PROPERTIES_FONT_SANS,
-  serif: PROPERTIES_FONT_SERIF,
-  mono: PROPERTIES_FONT_MONO,
-};
+/** The faces a text box is set in, by name, in the picker's order: the contract's one table. */
+const TEXT_BOX_FAMILIES = ANNOTATION_FONTS.map((font) => ANNOTATION_FONT_FAMILIES[font]);
+/** A text box's picker lists no computer's fonts and none of the document's (K2 is not built). */
+const NO_OTHER_FONTS: FontList = { listed: true, families: [] };
+const NO_DOCUMENT_FONTS: readonly DocumentFont[] = [];
 
 const ALIGN_OPTIONS: readonly SegmentedOption<AnnotationAlign>[] = ANNOTATION_ALIGNMENTS.map((value) => ({
   value,
@@ -664,7 +663,6 @@ function TextSection({
   readonly onChange: (text: AnnotationTextStyle) => void;
 }): ReactElement {
   const { i18n } = useLingui();
-  const fontId = useId();
   const sizeId = useId();
   const [size, setSize] = useState(String(typed.fontSize));
   const sendSize = (): void => {
@@ -690,25 +688,22 @@ function TextSection({
   return (
     <div className="m-properties__text" data-properties-text="" role="group" aria-label={i18n._(PROPERTIES_TEXT_HEADING)}>
       <h3 className="m-properties__subtitle">{i18n._(PROPERTIES_TEXT_HEADING)}</h3>
-      <div className="m-properties__row m-properties__row--inline">
-        <label className="m-properties__label" htmlFor={fontId}>
-          {i18n._(PROPERTIES_FONT)}
-        </label>
-        <select
-          className="m-properties__number"
-          id={fontId}
-          onChange={(event) => {
-            const font = ANNOTATION_FONTS.find((each) => each === event.target.value);
+      {/* THE ONE FONT PICKER (the owner's D1 and K4), offering the faces a text box is written in: the standard fonts
+          (ADR-0211 Decision 2). A computer's fonts are not offered until the text box writer embeds them (K2). */}
+      <div className="m-properties__row">
+        <span className="m-properties__label">{i18n._(PROPERTIES_FONT)}</span>
+        <FontPicker
+          builtIn={TEXT_BOX_FAMILIES}
+          inDocument={NO_DOCUMENT_FONTS}
+          label={PROPERTIES_FONT}
+          list={NO_OTHER_FONTS}
+          onPick={(family) => {
+            const font = annotationFontOf(family);
             if (font !== undefined && font !== typed.font) onChange({ font });
           }}
-          value={typed.font}
-        >
-          {ANNOTATION_FONTS.map((font) => (
-            <option key={font} value={font}>
-              {i18n._(FONT_LABELS[font])}
-            </option>
-          ))}
-        </select>
+          unset={PROPERTIES_FONT}
+          value={ANNOTATION_FONT_FAMILIES[typed.font]}
+        />
       </div>
       <div className="m-properties__row m-properties__row--inline">
         <label className="m-properties__label" htmlFor={sizeId}>

@@ -4555,10 +4555,11 @@ for (const [typed, expected] of [
 // THE FACE A NEW TEXT BOX IS SET IN, as the App composes it: `editing.annotation-font` read into the tools' style and
 // carried on the command the page SENDS. The kernel's case proves each face lands in the document; this one crosses
 // the join between the stored setting and the tool, which no unit case holds. The first row is the control — nothing
-// stored, the sans default.
+// stored, the sans default. `mono` is what a build before K4 stored, read as Courier; `Times` is a real name as stored now.
 for (const [stored, expected] of [
   [undefined, 'sans'],
   ['mono', 'mono'],
+  ['Times', 'serif'],
 ] as const) {
   test(`a new text box is set in ${expected} when the font setting is ${stored ?? 'unset'}`, async ({ page }) => {
     const bytes = await onePagePdf();

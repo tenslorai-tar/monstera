@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
 import { SettingsRegistry } from '../registries/settings.js';
-import { AUTHOR_NAME_SETTING, MEASURE_RATIO_SETTING, MEASURE_UNIT_SETTING, OCR_LANGUAGE_SETTING, authorFor, measureScaleOf } from './editing.js';
+import { annotationFontOf } from '@monstera/contract';
+
+import {
+  ANNOTATION_FONT_SETTING,
+  AUTHOR_NAME_SETTING,
+  MEASURE_RATIO_SETTING,
+  MEASURE_UNIT_SETTING,
+  OCR_LANGUAGE_SETTING,
+  authorFor,
+  measureScaleOf,
+} from './editing.js';
 
 /**
  * What a measurement reads in (the owner's item 14a): the page's physical length in the unit chosen, times the
@@ -66,5 +76,27 @@ describe('the recognition languages a person chose before they became a set', ()
     expect(registry.read(OCR_LANGUAGE_SETTING.id, ['fra', 'eng'])).toStrictEqual(['fra', 'eng']);
     expect(registry.read(OCR_LANGUAGE_SETTING.id, 'klingon')).toStrictEqual(['eng']);
     expect(registry.read(OCR_LANGUAGE_SETTING.id, ['eng', 'eng'])).toStrictEqual(['eng']);
+  });
+});
+
+/** *Annotation font* stored a face's class until the owner's K4, and stores a real font name now. */
+describe('the annotation font a person chose before it was a font name (K4)', () => {
+  const registry = new SettingsRegistry([ANNOTATION_FONT_SETTING]);
+
+  it('sans, serif and mono are read as Helvetica, Times and Courier, each the face it always was', () => {
+    // SERIF and MONO, not only sans: the fallback is Helvetica, so a case on `sans` alone could not tell the migration
+    // from a refusal.
+    expect(['sans', 'serif', 'mono'].map((stored) => registry.read(ANNOTATION_FONT_SETTING.id, stored))).toStrictEqual([
+      'Helvetica',
+      'Times',
+      'Courier',
+    ]);
+    // AND THE FACE WRITTEN IS UNCHANGED by the move: each name turns back into the class it was stored as.
+    expect((['Helvetica', 'Times', 'Courier'] as const).map((family) => annotationFontOf(family))).toStrictEqual(['sans', 'serif', 'mono']);
+  });
+
+  it('CONTROL: a stored name is read as it is, and a value no build wrote falls back to Helvetica', () => {
+    expect(registry.read(ANNOTATION_FONT_SETTING.id, 'Courier')).toBe('Courier');
+    expect(registry.read(ANNOTATION_FONT_SETTING.id, 'Comic Sans')).toBe('Helvetica');
   });
 });

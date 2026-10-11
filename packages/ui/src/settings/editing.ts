@@ -1,7 +1,7 @@
 import {
-  type AnnotationFont,
+  ANNOTATION_FONT_FAMILIES,
+  type AnnotationFontFamily,
   annotationAuthorSchema,
-  annotationFontSchema,
   annotationOpacitySchema,
   MAX_ANNOTATION_BORDER,
   MAX_ANNOTATION_FONT,
@@ -442,20 +442,28 @@ export const ANNOTATION_FONT_SIZE_SETTING: SettingDefinition<z.ZodNumber> = {
   category: 'editing',
 };
 
+/** The family names the setting holds: the faces the text box writer sets, by the names a person knows (K4). */
+const ANNOTATION_FAMILY_NAMES = [ANNOTATION_FONT_FAMILIES.sans, ANNOTATION_FONT_FAMILIES.serif, ANNOTATION_FONT_FAMILIES.mono] as const;
+
 /**
- * What typeface a new text box, callout or typewriter is set in — Part F's *"font"* (`BUILD-PROMPT.md`:614). One of the
- * contract's three base-14 faces, so what a person picks is what every viewer draws; *Sans serif* by default, the
- * Helvetica every text mark was set in before this was a choice.
+ * What typeface a new text box, callout or typewriter is set in — Part F's *"font"* (`BUILD-PROMPT.md`:614), stored as a
+ * REAL FONT NAME since the owner's K4: Helvetica, Times or Courier, the faces the text box writer sets (ADR-0211 Decision
+ * 2), each turned into the face the writer takes by the contract's one table (`annotationFontOf`). Helvetica by default,
+ * the face every text mark was set in before this was a choice.
+ *
+ * A value an older build stored is the face's class, `sans`, `serif` or `mono`, and is read as the family it always was.
  */
-export const ANNOTATION_FONT_SETTING: SettingDefinition<z.ZodEnum<{ [K in AnnotationFont]: K }>> = {
+export const ANNOTATION_FONT_SETTING: SettingDefinition<z.ZodEnum<{ [K in AnnotationFontFamily]: K }>> = {
   id: 'editing.annotation-font',
   title: EDITING_FONT_TITLE,
   description: EDITING_FONT_DESCRIPTION,
-  schema: annotationFontSchema,
-  fallback: 'sans',
+  schema: z.enum(ANNOTATION_FAMILY_NAMES),
+  fallback: 'Helvetica',
   category: 'editing',
   optionTitles: EDITING_FONT_OPTION_TITLES,
+  migrate: (stored) => (stored === 'sans' || stored === 'serif' || stored === 'mono' ? ANNOTATION_FONT_FAMILIES[stored] : stored),
 };
+
 
 /**
  * Which side a new text box's, callout's or typed text's lines start from — Part F's *"RTL text"*

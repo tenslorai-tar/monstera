@@ -4,6 +4,7 @@ import {
   type AnnotationStamp,
   ANTHROPIC_KEY_SETTING_ID,
   AZURE_KEY_SETTING_ID,
+  annotationFontOf,
   CHAT_HISTORY_SETTING_ID,
   type ContractClient,
   DOCUSIGN_INTEGRATION_KEY_SETTING_ID,
@@ -780,7 +781,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const toasts = useSyncExternalStore(toastStore.subscribe, () => toastStore.getState().toasts);
   // WHETHER THE IN-PLACE TEXT EDITOR IS OPEN, from the one place it registers (ADR-0180).
   const textEditorOpen = useSyncExternalStore(onEditorChange, editorIsOpen);
-  const fontList = useFontList(client);
+  const fontList = useFontList(client, textEditorOpen);
   // THE PROPERTIES TAB COMES FORWARD when an editor opens, since the formatting is there (K11); a closed panel stays
   // closed, and the ribbon's Format group and the keys still reach the same formatting.
   useEffect(() => {
@@ -2612,7 +2613,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         opacity: styleOpacity,
         lineWidth: styleLineWidth,
         fontSize: styleFontSize,
-        font: styleFont,
+        // THE STORED FAMILY'S FACE, by the contract's one table (K4).
+        font: annotationFontOf(styleFont),
         direction: styleDirection,
       }),
     [styleColour, styleDirection, styleFont, styleFontSize, styleLineWidth, styleOpacity],

@@ -341,7 +341,11 @@ describe('PropertiesPanel with marks selected', () => {
   it('a TEXT BOX shows a Text section, and each control sends ONE property of its words', () => {
     const { restyled, store } = mounted({ ...ONE, items: [TEXT_BOX] });
     expect(document.querySelector('[data-properties-text]')).not.toBeNull();
-    fireEvent.change(screen.getByRole('combobox', { name: 'Font' }), { target: { value: 'serif' } });
+    // THE ONE FONT PICKER, by the real names (K4): Times is the serif face the writer takes.
+    fireEvent.click(screen.getByRole('button', { name: 'Font: Helvetica' }));
+    const times = document.querySelector('[data-font-choice="Times"]');
+    if (times === null) throw new Error('Times is not offered');
+    fireEvent.click(times);
     expect(restyled).toStrictEqual([{ text: { font: 'serif' } }]);
     fireEvent.click(screen.getByRole('button', { name: 'Right' }));
     expect(restyled.at(-1)).toStrictEqual({ text: { align: 'right' } });
@@ -352,7 +356,7 @@ describe('PropertiesPanel with marks selected', () => {
     fireEvent.blur(size);
     expect(restyled.at(-1)).toStrictEqual({ text: { fontSize: 18 } });
     // *Use as default* is ticked, so the face and size just chosen are what the next text box starts in.
-    expect(store.get(ANNOTATION_FONT_SETTING.id)).toBe('serif');
+    expect(store.get(ANNOTATION_FONT_SETTING.id)).toBe('Times');
     expect(store.get(ANNOTATION_FONT_SIZE_SETTING.id)).toBe(18);
   });
 
