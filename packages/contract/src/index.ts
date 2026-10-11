@@ -460,6 +460,7 @@ export {
   FLAT_FIELD_KINDS,
   MAX_FONT_FAMILIES,
   MAX_FONT_FAMILY_NAME,
+  FONT_FAMILIES_PAGE,
   fontFamilySchema,
   type FontFamilyEntry,
   FIELD_VISIBILITIES,

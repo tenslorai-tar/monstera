@@ -6,6 +6,9 @@ import {
   DOCUMENT_ACCESS_VALUES,
   DOCUMENT_PASSWORD_MAX_CHARS,
   FLAT_FIELD_KINDS,
+  MAX_CALCULATED_NAME,
+  MAX_CALCULATED_PRIORS,
+  MAX_CALCULATED_TEXT,
   MAX_MERGE_DOCUMENTS,
   addAnnotationSchema,
   textRewriteSchema,
@@ -100,7 +103,6 @@ import {
 import { z } from 'zod';
 
 import { HUMAN_CHECKS } from '../accessibilityRules.js';
-import { MAX_CALCULATED_NAME, MAX_CALCULATED_PRIORS, MAX_CALCULATED_TEXT } from '../fieldCalculation.js';
 import type { CommandPrior } from '../commandLog.js';
 import { type DeclaredCommands, declaredCommands } from '../commandDeclarations.js';
 import type { KindsRoutedTo } from '../commandRouting.js';

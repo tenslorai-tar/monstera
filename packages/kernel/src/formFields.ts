@@ -9,7 +9,7 @@ import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { ENGINE_FORM_FIELDS_MAX } from './host/engineChannels.js';
 import { withDocument, withDocumentRemoving } from './mupdfWriter.js';
-import { frameOf, pageAt, readRect } from './pageAnnotations.js';
+import { frameOf, pageAt, readRect, redraw } from './pageAnnotations.js';
 
 /**
  * Reading a document's AcroForm fields — Stage 4's foundation.
@@ -550,7 +550,7 @@ function setChoices(document: PDFDocument, widget: PDFWidget, options: readonly 
     field.put('V', picked.length === 1 ? document.newString(choiceStoredOf(widget, shown[picked[0] ?? 0] ?? '')) : values);
     field.put('I', places);
   }
-  widget.update();
+  redraw(widget, document);
 }
 
 

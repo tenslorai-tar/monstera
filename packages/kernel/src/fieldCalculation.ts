@@ -1,8 +1,17 @@
-import { calculate, calculatedText, fieldNumber, formatFieldValue } from '@monstera/contract/host';
+import {
+  MAX_CALCULATED_NAME,
+  MAX_CALCULATED_PRIORS,
+  MAX_CALCULATED_TEXT,
+  calculate,
+  calculatedText,
+  fieldNumber,
+  formatFieldValue,
+} from '@monstera/contract/host';
 import type { FieldCalculation, FieldFormat } from '@monstera/contract';
 
 import { fieldDictionaryOf, fieldRulesOf, qualifiedNameOf } from './fieldRules.js';
 import type { PDFDocument, PDFWidget } from './mupdfRaw.js';
+import { redraw } from './pageAnnotations.js';
 
 /**
  * A form's calculations, worked out by this application's own code while it is filled (ADR-0226 Decision 6), and a
@@ -15,15 +24,6 @@ export interface CalculatedValue {
   readonly name: string;
   readonly text: string;
 }
-
-/**
- * How many calculated fields a fill's prior may name, and how long each name and value may be. A form past any of them
- * is filled with a checkpoint for its undo, which restores it exactly too. A calculated value is a number, so 64
- * characters is far past any real one; the three bounds' product, about 37 KiB, crosses the host's pipe in one frame.
- */
-export const MAX_CALCULATED_PRIORS = 64;
-export const MAX_CALCULATED_NAME = 512;
-export const MAX_CALCULATED_TEXT = 64;
 
 /** One field of the form as calculation sees it: its widgets, its value, its format, and its calculation of ours. */
 interface FormField {
@@ -106,7 +106,7 @@ export function writeShown(document: PDFDocument, widgets: readonly PDFWidget[],
   // DRAWN NOW, from the shown text: a setter marks the widget for redrawing, and MuPDF redraws a marked widget when the
   // session is saved, from `/V` as it is then (measured 2026-10-10: the saved stream showed `1234.5`). A redraw here
   // clears the mark, and `/V` put back on the dictionary below sets none.
-  for (const widget of widgets) widget.update();
+  for (const widget of widgets) redraw(widget, document);
   const first = widgets[0];
   if (first === undefined) return;
   fieldDictionaryOf(first.getObject()).put('V', document.newString(text));

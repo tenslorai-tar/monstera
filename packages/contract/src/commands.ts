@@ -4461,6 +4461,23 @@ export const MAX_WORKBOOK_SHEET_NAME = 255;
  */
 export const MAX_FONT_FAMILIES = 4096;
 export const MAX_FONT_FAMILY_NAME = 128;
+/**
+ * How many calculated fields a fill's prior may name, and how long each name and value may be (the kernel's
+ * `fieldCalculation.ts`). A form past any of them is filled with a checkpoint for its undo, which restores it exactly too.
+ * A calculated value is a number, so 64 characters is far past any real one; the three bounds' product, about 37 KiB,
+ * crosses the host's pipe in one frame. Here rather than beside the calculation, because the MuPDF host's channel map
+ * bounds its wire with them, and a channel map that imported a module drawing appearances imported the whole annotation
+ * writer back into itself: an import cycle that left the bounds undefined while the schemas were built.
+ */
+export const MAX_CALCULATED_PRIORS = 64;
+export const MAX_CALCULATED_NAME = 512;
+export const MAX_CALCULATED_TEXT = 64;
+
+/**
+ * The families one answer of the compose host's list carries: a page, because the whole list at its worst is 3.4 MB of
+ * JSON against the host's 256 KiB frame (`hostRoutes.test.ts`), and a page of 256 at its worst is about 218 KB.
+ */
+export const FONT_FAMILIES_PAGE = 256;
 
 /** One font family a picker lists: its name, where it is, what its licence allows, and its bold and italic. */
 export const fontFamilySchema = z
