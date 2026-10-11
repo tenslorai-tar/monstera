@@ -113,8 +113,10 @@ export function siblingNames(target: string, copies: number): ReturnType<SaveFil
     temp: unpredictableSibling(target),
     previous: `${target}.monstera-previous`,
     backups: Array.from({ length: kept }, (_unused, index) => backup(index)),
-    // THE ONES A SHORTER CHOICE NO LONGER KEEPS, up to the longest choice: a person who keeps three after keeping ten
-    // is not left with seven copies nothing will ever update or remove.
-    retired: Array.from({ length: MAX_BACKUP_COPIES - kept }, (_unused, index) => backup(kept + index)),
+    // NOTHING IS RETIRED BESIDE A FILE (CR-SEC-20). A person's backups have been kept in Monstera's own folder since
+    // ADR-0198, where a shorter choice's leftovers are retired (`dataFolderNames`); what still takes these names is the
+    // cloud working copy, whose count is fixed, so no shorter choice ever left a `.bak2` here. Deleting `.bak2` to
+    // `.bak10` by name beside a file deletes what another program put there, which ADR-0139's ledger exists to prevent.
+    retired: [],
   };
 }

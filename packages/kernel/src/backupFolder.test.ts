@@ -72,6 +72,25 @@ describe('backups in the data folder', () => {
     expect(readdirSync(folder).sort()).toStrictEqual(['report.pdf', 'report.pdf.bak', 'report.pdf.bak2']);
   });
 
+  it('CR-SEC-20: a save beside a file deletes no .bak2 to .bak10 it finds there, which another program may have made', async () => {
+    const { folder, target } = scene();
+    // ANOTHER PROGRAM'S BACKUPS beside the file, at the names a shorter choice used to retire.
+    writeFileSync(join(folder, 'report.pdf.bak2'), 'theirs');
+    writeFileSync(join(folder, 'report.pdf.bak10'), 'theirs too');
+    await save(target, 'version 2', siblingNames(target, 1));
+    expect(readdirSync(folder).sort()).toStrictEqual(['report.pdf', 'report.pdf.bak', 'report.pdf.bak10', 'report.pdf.bak2']);
+    expect(readFileSync(join(folder, 'report.pdf.bak2'), 'utf8')).toBe('theirs');
+  });
+
+  it('CONTROL: in Monstera’s own folder a shorter choice’s leftovers ARE retired, so the case above is the beside-the-file rule', async () => {
+    const { root, target } = scene();
+    await save(target, 'version 2', dataFolderNames(root, 3, (path) => siblingNames(path, 0).temp)(target));
+    await save(target, 'version 3', dataFolderNames(root, 3, (path) => siblingNames(path, 0).temp)(target));
+    expect((await listStoredBackups(root, target)).map((backup) => backup.id)).toStrictEqual(['1.pdf', '2.pdf']);
+    await save(target, 'version 4', dataFolderNames(root, 1, (path) => siblingNames(path, 0).temp)(target));
+    expect((await listStoredBackups(root, target)).map((backup) => backup.id)).toStrictEqual(['1.pdf']);
+  });
+
   it('a RESTORE returns the OLDER bytes, and writes a copy: the backup is left as it was and a file already there is never overwritten', async () => {
     const { folder, root, target } = scene();
     const names = dataFolderNames(root, 3, (path) => siblingNames(path, 0).temp);

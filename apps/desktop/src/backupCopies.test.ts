@@ -1,4 +1,4 @@
-import { BACKUP_COPIES, BACKUP_COPIES_SETTING_ID, MAX_BACKUP_COPIES } from '@monstera/contract';
+import { BACKUP_COPIES, BACKUP_COPIES_SETTING_ID } from '@monstera/contract';
 import { siblingNames } from '@monstera/kernel';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -18,7 +18,7 @@ describe('backup copies to keep, as a save reads the setting', () => {
     expect(backupCopiesIn({ [BACKUP_COPIES_SETTING_ID]: 'none' })).toBe(1);
   });
 
-  it('names the kept copies newest first, and retires every name up to the longest choice', () => {
+  it('names the kept copies newest first, and retires NOTHING beside the file (CR-SEC-20)', () => {
     const three = siblingNames('C:/d/report.pdf', 3);
     // THE TEMP'S NAME IS NEW AT EVERY CALL (CR-SEC-17): beside the target, attributable, and nothing another account
     // could have created first.
@@ -28,13 +28,13 @@ describe('backup copies to keep, as a save reads the setting', () => {
       temp: three.temp,
       previous: 'C:/d/report.pdf.monstera-previous',
       backups: ['C:/d/report.pdf.bak', 'C:/d/report.pdf.bak2', 'C:/d/report.pdf.bak3'],
-      retired: Array.from({ length: MAX_BACKUP_COPIES - 3 }, (_unused, index) => `C:/d/report.pdf.bak${String(index + 4)}`),
+      retired: [],
     });
     // ONE keeps the name every save wrote before this was a choice.
     expect(siblingNames('C:/d/report.pdf', 1).backups).toStrictEqual(['C:/d/report.pdf.bak']);
     const none = siblingNames('C:/d/report.pdf', 0);
     expect(none.backups).toStrictEqual([]);
-    expect(none.retired).toHaveLength(MAX_BACKUP_COPIES);
+    expect(none.retired).toStrictEqual([]);
   });
 
   it('the save’s names READ THE SETTING AT EACH SAVE — a change applies to the next save with nothing rebuilt', () => {
