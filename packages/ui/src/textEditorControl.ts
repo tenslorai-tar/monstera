@@ -35,6 +35,44 @@ export interface OpenEditor {
     readonly remove: () => void;
     readonly nudge: (nudge: Nudge) => void;
   };
+  /** Writes the words and closes the editor, as the focus leaving it does. */
+  readonly finish: () => void;
+}
+
+/**
+ * The attribute that marks an element whose focus is the open editor's own (the owner's K11): the Properties panel's text
+ * section. A focus moving from the words into it does not write and close the editor, as a focus moving within the
+ * editor's frame does not; the section finishes the editor itself when the focus leaves both ({@link leavesEditor}).
+ */
+export const KEEPS_EDITOR = 'data-keeps-editor';
+
+/** Whether a focus arriving at `node` stays with the open editor: inside an element marked {@link KEEPS_EDITOR}. */
+export function keepsEditor(node: EventTarget | null): boolean {
+  return node instanceof Element && node.closest(`[${KEEPS_EDITOR}]`) !== null;
+}
+
+/**
+ * Whether a focus going to `node` leaves the open editor altogether: not into its words, and not into an element that
+ * keeps it. `null` (the focus going to nothing focusable) leaves it, as it does the editor's own frame.
+ */
+export function leavesEditor(node: EventTarget | null): boolean {
+  if (keepsEditor(node)) return false;
+  const editor = open;
+  if (editor === undefined) return false;
+  const frame = editor.root.closest('.m-text-editor-frame') ?? editor.root;
+  return !(node instanceof Node && frame.contains(node));
+}
+
+/** Finishes the open editor, for a surface that keeps it and is left. */
+export function finishOpenEditor(): boolean {
+  if (open === undefined) return false;
+  open.finish();
+  return true;
+}
+
+/** Puts the focus back in the open editor's words, after a value control that took it was used. */
+export function refocusOpenEditor(): void {
+  open?.root.focus();
 }
 
 let open: OpenEditor | undefined;
@@ -125,7 +163,7 @@ function paragraphOf(root: HTMLElement, node: Node): Node | undefined {
   return undefined;
 }
 
-/** A formatting action: what a command, a chord or the editor's bar asks. */
+/** A formatting action: what a command, a chord or the Properties panel's text section asks. */
 export type FormatAction =
   | { readonly kind: 'toggle'; readonly property: 'bold' | 'italic' | 'underline' }
   | { readonly kind: 'rise'; readonly rise: 'superscript' | 'subscript' }
@@ -134,6 +172,23 @@ export type FormatAction =
   | { readonly kind: 'indent'; readonly steps: number }
   | { readonly kind: 'list'; readonly list: 'bullet' | 'number' }
   | { readonly kind: 'spacing'; readonly lineSpacing: number | null };
+
+/** The sizes a step up or down moves through, a word processor's list. */
+const SIZE_STEPS = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72] as const;
+/** The largest a step goes; past the list it moves by ten, to the contract's bound. */
+const MAX_STEPPED_SIZE = 400;
+
+/** The size one step up (`+1`) or down (`-1`) from `size`: the next on the list, then tens past it, never under one. */
+export function steppedSize(size: number, direction: 1 | -1): number {
+  if (direction === 1) {
+    const next = SIZE_STEPS.find((step) => step > size);
+    return next ?? Math.min(MAX_STEPPED_SIZE, Math.floor(size / 10) * 10 + 10);
+  }
+  const top = SIZE_STEPS[SIZE_STEPS.length - 1] ?? 72;
+  if (size > top) return Math.max(top, Math.ceil(size / 10) * 10 - 10);
+  const previous = [...SIZE_STEPS].reverse().find((step) => step < size);
+  return previous ?? Math.max(1, size - 1);
+}
 
 /** Runs `action` on the open editor, answering whether anything changed. */
 export function formatOpenEditor(action: FormatAction): boolean {

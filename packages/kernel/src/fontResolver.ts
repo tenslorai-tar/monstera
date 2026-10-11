@@ -96,6 +96,19 @@ export const STAND_INS: Readonly<Record<string, string>> = {
   caladea: 'Caladea',
 };
 
+/**
+ * The family each bundled one is drawn to the measure of, as a person knows it: what a picker says beside a bundled
+ * name, *Carlito (looks like Calibri)*. Beside {@link STAND_INS} because it is the same fact read the other way, and a
+ * test holds each pair to that table, so the two cannot come to disagree.
+ */
+export const LOOKS_LIKE: Readonly<Record<string, string>> = {
+  Arimo: 'Arial',
+  Tinos: 'Times New Roman',
+  Cousine: 'Courier New',
+  Carlito: 'Calibri',
+  Caladea: 'Cambria',
+};
+
 /** The bundled family for each class. */
 export const CLASS_FAMILIES: Readonly<Record<FamilyClass, string>> = { sans: 'Arimo', serif: 'Tinos', mono: 'Cousine' };
 

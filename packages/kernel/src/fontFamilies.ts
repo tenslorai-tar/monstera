@@ -1,5 +1,7 @@
+import { MAX_FONT_FAMILIES } from '@monstera/contract/host';
+
 import type { FontEmbedding } from './fontFaces.js';
-import type { CandidateFace } from './fontResolver.js';
+import { type CandidateFace, LOOKS_LIKE } from './fontResolver.js';
 
 /**
  * The font families a person may choose from, made from the faces a host's catalogue read (the owner's D2: *one real font
@@ -24,10 +26,9 @@ export interface FontFamily {
   /** Whether it has a bold face and an italic face of its own (a variable face's `wght` range counts for bold). */
   readonly bold: boolean;
   readonly italic: boolean;
+  /** For a bundled family drawn to another's measure, that family's name (`LOOKS_LIKE`): never shown AS that family. */
+  readonly looksLike?: string;
 }
-
-/** How many families one answer lists. A Windows machine ships about 200; a designer's machine can hold thousands. */
-export const MAX_FONT_FAMILIES = 4096;
 
 const EMBEDDING_RANK: Readonly<Record<FontEmbedding, number>> = { subset: 2, whole: 1, never: 0 };
 
@@ -50,6 +51,11 @@ export function fontFamiliesOf(faces: readonly Pick<CandidateFace, 'family' | 'o
     held.italic ||= face.italic;
   }
   return [...byName.values()]
+    .map((family): FontFamily => {
+      // ONLY A BUNDLED ONE looks like another: an installed Carlito is a font the person put there, and is listed as itself.
+      const like = family.origin === 'bundled' ? LOOKS_LIKE[family.name] : undefined;
+      return like === undefined ? family : { ...family, looksLike: like };
+    })
     .sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }))
     .slice(0, MAX_FONT_FAMILIES);
 }

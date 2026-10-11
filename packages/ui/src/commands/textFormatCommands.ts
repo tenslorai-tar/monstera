@@ -23,7 +23,8 @@ import type { MessageKey } from '@monstera/shared';
  * The in-place editor's formatting commands
  * ([ADR-0180](../../../../docs/DECISIONS/0180-formatting-is-marks-over-a-blocks-words-and-a-block-is-moved-resized-and-added-by-its-own-commands.md)
  * Decisions 1 to 3): bold, italic, underline, superscript, subscript, alignment, bullets, numbering and indent, each a
- * projection of the one table below, so the ribbon, the palette and the editor's bar act through one function.
+ * projection of the one table below, so the ribbon, the palette and the Properties panel's text section act through one
+ * function.
  *
  * ## Only while an editor is open, and a press does not close it
  *
@@ -32,8 +33,9 @@ import type { MessageKey } from '@monstera/shared';
  *
  * ## The size, the colour, the font and the line spacing are VALUES
  *
- * A command is a verb that takes nothing, and these take a number, a colour or a name, so they live on the editor's own
- * bar, as the status bar's zoom and page field stay the bar's (ADR-0067). They call the same {@link formatOpenEditor}.
+ * A command is a verb that takes nothing, and these take a number, a colour or a name, so they live in the Properties
+ * panel's text section (`TextFormatPanel`, the owner's K11), as the status bar's zoom and page field stay the bar's
+ * (ADR-0067). They call the same {@link formatOpenEditor}.
  */
 interface Entry {
   readonly id: string;

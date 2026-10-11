@@ -279,11 +279,11 @@ const SHIM_FONT_FAMILIES = [
   { name: 'Arial', origin: 'installed', embedding: 'subset' },
   { name: 'Calibri', origin: 'installed', embedding: 'subset' },
   { name: 'Cambria', origin: 'installed', embedding: 'subset' },
-  { name: 'Carlito', origin: 'bundled', embedding: 'subset' },
+  { name: 'Carlito', origin: 'bundled', embedding: 'subset', looksLike: 'Calibri' },
   { name: 'Courier New', origin: 'installed', embedding: 'subset' },
   { name: 'Segoe UI', origin: 'installed', embedding: 'subset' },
   { name: 'Times New Roman', origin: 'installed', embedding: 'subset' },
-  { name: 'Tinos', origin: 'bundled', embedding: 'subset' },
+  { name: 'Tinos', origin: 'bundled', embedding: 'subset', looksLike: 'Times New Roman' },
 ] as const;
 
 /** The rules of a field that has none: not required, no limit, one value, no format. */
@@ -707,7 +707,14 @@ export interface BrowserShimOptions {
    * What `app.fontFamilies` lists. Absent is a short list of families a Windows machine holds, so a picker case sees
    * installed names by default; `null` is a build with no host to read them (`listed: false`).
    */
-  readonly fontFamilies?: readonly { readonly name: string; readonly origin: 'installed' | 'bundled'; readonly embedding: 'subset' | 'whole' | 'never' }[] | null;
+  readonly fontFamilies?:
+    | readonly {
+        readonly name: string;
+        readonly origin: 'installed' | 'bundled';
+        readonly embedding: 'subset' | 'whole' | 'never';
+        readonly looksLike?: string;
+      }[]
+    | null;
   /**
    * What `document.formFieldProperties` answers beyond a list's own members, by field name: a tooltip, a format, a
    * calculation. Absent is the defaults of a field that has none of them.
@@ -1161,8 +1168,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     'app.ocrLanguages': () =>
       Promise.resolve(ok({ languages: [...(options.ocrLanguages ?? ['eng'])] })),
 
-    // A BROWSER HOLDS NO NATIVE COMPONENT (ADR-0122), so each is present by name only, and verified when asked — the
-    // dialog's states, with nothing standing for a version the shim does not have.
+    // THE FONT PICKER'S LIST: the case's, or a few a Windows machine holds; `null` is a build with no host to ask.
     'app.fontFamilies': () =>
       Promise.resolve(
         options.fontFamilies === null
@@ -1172,6 +1178,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
               families: (options.fontFamilies ?? SHIM_FONT_FAMILIES).map((family) => ({ ...family, bold: true, italic: true })),
             }),
       ),
+    // A BROWSER HOLDS NO NATIVE COMPONENT (ADR-0122), so each is present by name only, and verified when asked — the
+    // dialog's states, with nothing standing for a version the shim does not have.
     'app.components': ({ verify }) =>
       Promise.resolve(
         ok({

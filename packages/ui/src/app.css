@@ -6528,41 +6528,112 @@ optgroup {
   margin: 0;
 }
 
-/* THE EDITOR'S BAR sits on the float for the reason above: it floats over paper. */
-.m-text-format-bar {
-  position: absolute;
-  /* ABOVE THE TOP HANDLES, which lie outside the frame by their target's side. */
-  inset-block-end: calc(100% + var(--m-handle-reach) + var(--space-4));
-  inset-inline-start: 0;
-  z-index: 2;
+/* THE PROPERTIES PANEL WHILE WORDS ARE EDITED (K11): Text, Paragraph and Box, each a titled group of the panel's rows. */
+.m-text-properties__section {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-4);
-  inline-size: max-content;
-  max-inline-size: 36em;
-  padding: var(--space-4);
-  border: 1px solid var(--border-control);
-  border-radius: var(--radius-4);
-  background: var(--float);
-  color: var(--text);
-  font-family: var(--font-ui);
-  font-size: var(--font-chrome-12);
-  box-shadow: var(--shadow);
+  flex-direction: column;
+  gap: var(--space-8);
 }
 
-.m-text-format-bar__select,
-.m-text-format-bar__size {
+.m-text-properties__title {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
+  font-weight: 600;
+}
+
+.m-text-properties__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  font-size: var(--font-chrome-12);
+}
+
+.m-text-properties__verbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.m-text-properties__select,
+.m-text-properties__size,
+.m-font-picker__face,
+.m-font-picker__search {
   block-size: var(--control-height, auto);
   border: 1px solid var(--border-control);
   border-radius: var(--radius-4);
   background: var(--surface-input, var(--float));
   color: var(--text);
   font: inherit;
+  font-size: var(--font-chrome-12);
 }
 
-.m-text-format-bar__size {
-  inline-size: 4.5em;
+.m-text-properties__size {
+  inline-size: 5em;
+}
+
+/* THE ONE FONT PICKER: a field that reads the font, and under it, in place, its search and its grouped list. */
+.m-font-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.m-font-picker__face {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  padding-inline: var(--space-8);
+  cursor: pointer;
+}
+
+.m-font-picker__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.m-font-picker__search {
+  padding-inline: var(--space-8);
+}
+
+.m-font-picker__list {
+  max-block-size: 18em;
+  overflow-y: auto;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+  background: var(--float);
+}
+
+.m-font-picker__group {
+  margin: 0;
+  padding: var(--space-4) var(--space-8);
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
+  font-weight: 600;
+}
+
+.m-font-picker__option {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-8);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.m-font-picker__option[aria-selected='true'],
+.m-font-picker__option:hover {
+  background: var(--surface2);
+}
+
+.m-font-picker__note {
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: var(--font-chrome-12);
 }
 
 /* A SPAN THE FORMATTING MADE keeps the run's own line box: its size is the person's, its place is the run's. */

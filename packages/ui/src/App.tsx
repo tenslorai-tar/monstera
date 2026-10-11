@@ -403,6 +403,12 @@ import {
 import { AssistantPanel } from './AssistantPanel.js';
 import type { DropOpener, EventSubscriber } from './bridge.js';
 import { PropertiesPanel, type StyleChange } from './PropertiesPanel.js';
+import { TextFormatPanel } from './TextFormatPanel.js';
+import { useFontList } from './fontList.js';
+import type { DocumentFont } from './FontPicker.js';
+
+/** The fonts a document carries, which no read names yet: the picker's first group is empty until one does. */
+const NO_DOCUMENT_FONTS: readonly DocumentFont[] = [];
 import { GRID_DIVISION_COUNTS, type GridLook, type RulerUnit } from './rulerGeometry.js';
 import { useSetting } from './useSetting.js';
 import type { SettingsStore } from './settingsStore.js';
@@ -774,6 +780,12 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const toasts = useSyncExternalStore(toastStore.subscribe, () => toastStore.getState().toasts);
   // WHETHER THE IN-PLACE TEXT EDITOR IS OPEN, from the one place it registers (ADR-0180).
   const textEditorOpen = useSyncExternalStore(onEditorChange, editorIsOpen);
+  const fontList = useFontList(client);
+  // THE PROPERTIES TAB COMES FORWARD when an editor opens, since the formatting is there (K11); a closed panel stays
+  // closed, and the ribbon's Format group and the keys still reach the same formatting.
+  useEffect(() => {
+    if (textEditorOpen) settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'properties');
+  }, [settings, textEditorOpen]);
   const toast = useCallback<ShowToast>(
     (kind, message, action) => {
       toastStore.getState().show(kind, message, action);
@@ -4680,7 +4692,11 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
                   selected the authoring settings (ADR-0102). */}
               {/* SELECTED FORM FIELDS take the tab while no mark or object is selected (ADR-0193): the tool slot
                   holds one of them at a time, and a field is selected from the Fields list or the page. */}
-              {selectedHandles.length > 0 && selection === undefined && objectSelection === undefined ? (
+              {/* WORDS BEING EDITED IN PLACE take the tab while the editor is open (the owner's K11): the formatting that
+                  floated over the page in a bar. */}
+              {textEditorOpen ? (
+                <TextFormatPanel fonts={fontList} inDocument={NO_DOCUMENT_FONTS} />
+              ) : selectedHandles.length > 0 && selection === undefined && objectSelection === undefined ? (
                 <FieldPropertiesPanel
                   context={context}
                   known={formFieldList.fields.map((field) => ({ name: field.name, kind: field.kind, options: field.options }))}

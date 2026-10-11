@@ -4475,9 +4475,10 @@ export const MAX_CALCULATED_TEXT = 64;
 
 /**
  * The families one answer of the compose host's list carries: a page, because the whole list at its worst is 3.4 MB of
- * JSON against the host's 256 KiB frame (`hostRoutes.test.ts`), and a page of 256 at its worst is about 218 KB.
+ * JSON against the host's 256 KiB frame (`hostRoutes.test.ts`). An entry at its worst is two 128-character names, each
+ * escaped six bytes a character, about 1.6 KB, so a page of 128 is about 210 KB.
  */
-export const FONT_FAMILIES_PAGE = 256;
+export const FONT_FAMILIES_PAGE = 128;
 
 /** One font family a picker lists: its name, where it is, what its licence allows, and its bold and italic. */
 export const fontFamilySchema = z
@@ -4487,6 +4488,8 @@ export const fontFamilySchema = z
     embedding: z.enum(['subset', 'whole', 'never']),
     bold: z.boolean(),
     italic: z.boolean(),
+    /** For a bundled family drawn to another's measure, that family: the picker says *Carlito (looks like Calibri)*. */
+    looksLike: z.string().min(1).max(MAX_FONT_FAMILY_NAME).optional(),
   })
   .strict();
 

@@ -1626,7 +1626,6 @@ export const TEXT_FORMAT_BULLETS = messageKey('command.text.format.bullets');
 export const TEXT_FORMAT_NUMBERING = messageKey('command.text.format.numbering');
 export const TEXT_FORMAT_INDENT_MORE = messageKey('command.text.format.indent-more');
 export const TEXT_FORMAT_INDENT_LESS = messageKey('command.text.format.indent-less');
-export const TEXT_FORMAT_BAR_LABEL = messageKey('surface.text-format.bar');
 export const TEXT_BLOCK_REMOVE = messageKey('surface.text-block.remove');
 export const TEXT_MENU_LABEL = messageKey('surface.text-editor.menu');
 export const TEXT_MENU_NO_SUGGESTIONS = messageKey('surface.text-editor.menu.no-suggestions');
@@ -1644,11 +1643,6 @@ export const TEXT_HANDLE_TURN = messageKey('surface.text-block.handle-turn');
 export const TEXT_FORMAT_FAMILY = messageKey('surface.text-format.family');
 export const TEXT_FORMAT_FAMILY_RUN = messageKey('surface.text-format.family-run');
 export const TEXT_FORMAT_SIZE = messageKey('surface.text-format.size');
-export const TEXT_FORMAT_FAMILY_ARIAL = messageKey('surface.text-format.family-arial');
-export const TEXT_FORMAT_FAMILY_CALIBRI = messageKey('surface.text-format.family-calibri');
-export const TEXT_FORMAT_FAMILY_CAMBRIA = messageKey('surface.text-format.family-cambria');
-export const TEXT_FORMAT_FAMILY_TIMES = messageKey('surface.text-format.family-times');
-export const TEXT_FORMAT_FAMILY_COURIER = messageKey('surface.text-format.family-courier');
 export const TEXT_FORMAT_COLOUR_CUSTOM = messageKey('surface.text-format.colour-custom');
 export const TEXT_FORMAT_COLOUR_AUTO = messageKey('surface.text-format.colour-auto');
 export const TEXT_FORMAT_COLOUR_BLACK = messageKey('surface.text-format.colour-black');
@@ -1662,6 +1656,27 @@ export const TEXT_FORMAT_SPACING = messageKey('surface.text-format.spacing');
 export const TEXT_FORMAT_SPACING_SINGLE = messageKey('surface.text-format.spacing-single');
 export const TEXT_FORMAT_SPACING_ONE_HALF = messageKey('surface.text-format.spacing-one-half');
 export const TEXT_FORMAT_SPACING_DOUBLE = messageKey('surface.text-format.spacing-double');
+// THE ONE FONT PICKER (the owner's D1 to D4): its search, its groups, and what it says of a font in words.
+export const FONT_PICKER_SEARCH = messageKey('surface.font-picker.search');
+export const FONT_PICKER_LIST = messageKey('surface.font-picker.list');
+export const FONT_GROUP_DOCUMENT = messageKey('surface.font-picker.group-document');
+export const FONT_GROUP_RECENT = messageKey('surface.font-picker.group-recent');
+export const FONT_GROUP_COMPUTER = messageKey('surface.font-picker.group-computer');
+export const FONT_GROUP_BUNDLED = messageKey('surface.font-picker.group-bundled');
+export const FONT_GROUP_BUILT_IN = messageKey('surface.font-picker.group-built-in');
+export const FONT_LOOKS_LIKE = messageKey('surface.font-picker.looks-like');
+export const FONT_PARTIAL = messageKey('surface.font-picker.partial');
+export const FONT_NOT_EMBEDDABLE = messageKey('surface.font-picker.not-embeddable');
+export const FONT_LIST_UNREAD = messageKey('surface.font-picker.unread');
+export const FONT_LIST_READING = messageKey('surface.font-picker.reading');
+export const FONT_NONE_MATCH = messageKey('surface.font-picker.none-match');
+// THE PROPERTIES PANEL WHILE WORDS ARE BEING EDITED (the owner's K11 and C1 to C5): the floating bar's controls, moved.
+export const TEXT_PROPERTIES_LABEL = messageKey('surface.text-properties.label');
+export const TEXT_PROPERTIES_HEADING = messageKey('surface.text-properties.heading');
+export const TEXT_PROPERTIES_TEXT = messageKey('surface.text-properties.text');
+export const TEXT_PROPERTIES_PARAGRAPH = messageKey('surface.text-properties.paragraph');
+export const TEXT_PROPERTIES_BOX = messageKey('surface.text-properties.box');
+export const TEXT_PROPERTIES_HINT = messageKey('surface.text-properties.hint');
 export const PAGE_IMAGE_ONLY = messageKey('surface.page.image-only');
 /** What the page area says until its first page is drawn, in place of empty slots. */
 export const PAGE_OPENING = messageKey('surface.page.opening');
@@ -4340,7 +4355,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TEXT_FORMAT_NUMBERING]: 'Numbering',
   [TEXT_FORMAT_INDENT_MORE]: 'Increase indent',
   [TEXT_FORMAT_INDENT_LESS]: 'Decrease indent',
-  [TEXT_FORMAT_BAR_LABEL]: 'Text formatting',
   [TEXT_BLOCK_REMOVE]: 'Remove this text',
   [TEXT_MENU_LABEL]: 'Text editing',
   [TEXT_MENU_NO_SUGGESTIONS]: 'No suggestions',
@@ -4358,11 +4372,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TEXT_FORMAT_FAMILY]: 'Font',
   [TEXT_FORMAT_FAMILY_RUN]: 'As on the page',
   [TEXT_FORMAT_SIZE]: 'Size in points',
-  [TEXT_FORMAT_FAMILY_ARIAL]: 'Arial',
-  [TEXT_FORMAT_FAMILY_CALIBRI]: 'Calibri',
-  [TEXT_FORMAT_FAMILY_CAMBRIA]: 'Cambria',
-  [TEXT_FORMAT_FAMILY_TIMES]: 'Times New Roman',
-  [TEXT_FORMAT_FAMILY_COURIER]: 'Courier New',
   [TEXT_FORMAT_COLOUR_CUSTOM]: 'Other text colour',
   [TEXT_FORMAT_COLOUR_AUTO]: 'Text colour as on the page',
   [TEXT_FORMAT_COLOUR_BLACK]: 'Black',
@@ -4376,6 +4385,25 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TEXT_FORMAT_SPACING_SINGLE]: 'Single',
   [TEXT_FORMAT_SPACING_ONE_HALF]: '1.5',
   [TEXT_FORMAT_SPACING_DOUBLE]: 'Double',
+  [FONT_PICKER_SEARCH]: 'Search fonts',
+  [FONT_PICKER_LIST]: 'Fonts',
+  [FONT_GROUP_DOCUMENT]: 'In this document',
+  [FONT_GROUP_RECENT]: 'Recent',
+  [FONT_GROUP_COMPUTER]: 'On this computer',
+  [FONT_GROUP_BUNDLED]: 'Included with Monstera',
+  [FONT_GROUP_BUILT_IN]: 'Built into PDF',
+  [FONT_LOOKS_LIKE]: '{name} (looks like {like})',
+  [FONT_PARTIAL]: '{name} (partial: only the letters this document uses)',
+  [FONT_NOT_EMBEDDABLE]: 'Its licence does not allow it inside a PDF, so a similar font is used instead.',
+  [FONT_LIST_UNREAD]: 'The fonts on this computer could not be listed, so the fonts every PDF has are offered.',
+  [FONT_LIST_READING]: 'Reading the fonts on this computer…',
+  [FONT_NONE_MATCH]: 'No font matches “{query}”.',
+  [TEXT_PROPERTIES_LABEL]: 'Text being edited',
+  [TEXT_PROPERTIES_HEADING]: 'Editing text',
+  [TEXT_PROPERTIES_TEXT]: 'Text',
+  [TEXT_PROPERTIES_PARAGRAPH]: 'Paragraph',
+  [TEXT_PROPERTIES_BOX]: 'Box',
+  [TEXT_PROPERTIES_HINT]: 'These change the words you have selected, or the paragraph the cursor is in.',
   // SAYS WHAT THE PAGE IS, not what the application cannot do. A reader looking
   // at words they cannot select has one question — why — and *this page is a
   // picture* answers it. It deliberately does not say *scanned*: the kernel

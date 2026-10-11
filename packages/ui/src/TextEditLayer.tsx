@@ -43,8 +43,7 @@ import {
 import { composing } from './surfaces/shortcuts.js';
 import { joinEdits, neighbourOf, splitEdits, wordsOfBlock } from './textBlockOps.js';
 import { type EditorOps, type EditorSpelling, TextEditorMenu } from './TextEditorMenu.js';
-import { TextFormatBar } from './TextFormatBar.js';
-import { formatOpenEditor, registerEditor } from './textEditorControl.js';
+import { formatOpenEditor, keepsEditor, openEditorState, registerEditor, steppedSize } from './textEditorControl.js';
 import { insertTab, isFormatted, readEditor } from './textFormatting.js';
 import {
   dragged,
@@ -972,11 +971,12 @@ function BlockEditor({
   useEffect(() => {
     zoomNow.current = geometry.zoom;
   }, [geometry.zoom]);
-  // THE BLOCK'S OWN ACTIONS, for the bar's Remove and the keys' steps, read through a ref so the registration made once
+  // THE BLOCK'S OWN ACTIONS, for the Properties panel's Remove and finish and the keys' steps, read through a ref so the registration made once
   // for this editor's life always reaches the latest of them.
-  const actions = useRef<{ remove: () => void; nudge: (step: Nudge) => void }>({
+  const actions = useRef<{ remove: () => void; nudge: (step: Nudge) => void; finish: () => void }>({
     remove: () => undefined,
     nudge: () => undefined,
+    finish: () => undefined,
   });
   useEffect(() => {
     const element = area.current;
@@ -991,6 +991,9 @@ function BlockEditor({
         nudge: (step) => {
           actions.current.nudge(step);
         },
+      },
+      finish: () => {
+        actions.current.finish();
       },
     });
   }, []);
@@ -1148,8 +1151,12 @@ function BlockEditor({
       nudge: (step) => {
         if (placeable) setPlacement((now) => nudged(step, now, block.box, geometry.zoom));
       },
+      // THE FRAME'S OWN RULE, for a surface that keeps the editor and is left: words that were refused are not re-sent.
+      finish: () => {
+        if (problem === undefined && !menuOpen.current) void finish();
+      },
     };
-  }, [block.box, finishWith, geometry.zoom, placeable]);
+  }, [block.box, finish, finishWith, geometry.zoom, placeable, problem]);
   // READABLE BY THE LAYER, which asks for this write when another block is clicked and must not replace words that were
   // refused (`stuckRef`).
   useEffect(() => {
@@ -1253,6 +1260,22 @@ function BlockEditor({
         formatOpenEditor({ kind: 'toggle', property });
         return;
       }
+      // ALIGNMENT BY THE WORD PROCESSOR'S KEYS: L, E and R. Ctrl+J has no key here: no paragraph is set justified (the
+      // contract's alignments are three).
+      const align = event.key === 'l' ? 'left' : event.key === 'e' ? 'center' : event.key === 'r' ? 'right' : undefined;
+      if (align !== undefined) {
+        event.preventDefault();
+        event.stopPropagation();
+        formatOpenEditor({ kind: 'align', align });
+        return;
+      }
+    }
+    // THE SIZE A STEP UP OR DOWN, Ctrl+Shift+> and <, by the key's place so a layout that puts > elsewhere still reaches it.
+    if ((event.ctrlKey || event.metaKey) && event.shiftKey && !event.altKey && (event.code === 'Period' || event.code === 'Comma')) {
+      event.preventDefault();
+      event.stopPropagation();
+      formatOpenEditor({ kind: 'set', change: { size: steppedSize(openEditorState()?.size ?? block.style.size, event.code === 'Period' ? 1 : -1) } });
+      return;
     }
     // A COMPOSITION'S ESCAPE cancels the candidate, and is not the editor's (`composing`).
     if (event.key !== 'Escape') return;
@@ -1276,17 +1299,19 @@ function BlockEditor({
     // the editor inside it, so the handles enclose a line typed past the last.
     <div
       className="m-text-editor-frame"
-      // THE FRAME, NOT THE EDITOR, IS WHAT LOSES THE FOCUS: it moves between the words and the bar's own fields (a size, a
-      // colour) without writing, and writes only when it leaves both.
+      // THE FRAME, NOT THE EDITOR, IS WHAT LOSES THE FOCUS: it moves between the words and the handles without writing,
+      // and writes only when it leaves both.
       onBlur={(event) => {
         if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
+        // INTO THE PROPERTIES PANEL'S TEXT SECTION, which formats these words: not finished, and the section finishes it
+        // when the focus leaves both (`leavesEditor`).
+        if (keepsEditor(event.relatedTarget)) return;
         // THE RIGHT-CLICK MENU HAS THE FOCUS while it is open, in a popup outside this element: the words are not finished.
         if (menuOpen.current) return;
         if (problem === undefined) void finish();
       }}
       style={{ ...boxStyle(placed), height: 'auto', minHeight: placed.height }}
     >
-      <TextFormatBar />
       {/* THE PLACER: what the person has done to the block so far, shown as a transform over the editor and its handles so
           the bar and the sentences stay upright where they are. The measure is its width, so the words wrap at it live. */}
       <div

@@ -16,6 +16,7 @@ import {
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN, SPELLING_DICTIONARY_FULL } from './messages/en.js';
 import { type PageBlocks, TextEditLayer } from './TextEditLayer.js';
+import { TextFormatPanel } from './TextFormatPanel.js';
 
 /**
  * The in-place editor's surface (ADR-0096), cased on what a person does: sees
@@ -134,6 +135,8 @@ function mount(overrides: Partial<Parameters<typeof TextEditLayer>[0]> = {}) {
         runFonts={() => Promise.resolve(NO_RUN_FONTS)}
         {...overrides}
       />
+      {/* THE PROPERTIES PANEL'S TEXT SECTION beside the page, as the app draws it while an editor is open (K11). */}
+      <TextFormatPanel fonts={undefined} inDocument={[]} />
     </Wrapped>
   );
   const view = render(layer(overrides.blocks ?? BLOCKS));
@@ -541,10 +544,10 @@ describe('Edit text on the page (ADR-0096)', () => {
       expect(sent[0]?.formatting?.place).toStrictEqual({ move: { x: 1, y: 10 } });
     });
 
-    it('the bar’s Remove empties the block and writes it, which is what removes a block', async () => {
+    it('the Properties panel’s Remove empties the block and writes it, which is what removes a block', async () => {
       const { view, sent } = openForPlacing();
       await act(async () => {
-        fireEvent.click(find(view.container, '[data-text-format-bar] button[aria-label="Remove this text"]'));
+        fireEvent.click(find(view.container, '[data-text-properties] button[aria-label="Remove this text"]'));
         await Promise.resolve();
       });
       expect(sent.map((one) => one.text)).toStrictEqual(['']);
@@ -1104,28 +1107,53 @@ describe('Edit text on the page (ADR-0096)', () => {
       expect(editor.textContent.length).toBeGreaterThan(before.length);
     });
 
-    it('a focus that moves to the bar does not write, and one that leaves both does', async () => {
+    it('a focus that moves into the Properties panel’s text section does not write, and one that leaves both does', async () => {
       const { view, editor, formats } = openWithSelection(0, 4);
-      const bar = find(view.container, '[data-text-format-bar]');
-      const field = find(bar, 'select');
+      const section = find(view.container, '[data-text-properties]');
+      const field = find(section, 'select');
       await act(async () => {
         fireEvent.blur(editor, { relatedTarget: field });
         await Promise.resolve();
       });
       expect(formats).toHaveLength(0);
       expect(view.container.querySelector('[data-text-editor]')).not.toBeNull();
+      // LEFT FROM THE SECTION to nothing: the section finishes the edit, since the words' own blur has passed.
       await act(async () => {
-        fireEvent.blur(editor);
+        fireEvent.blur(field, { relatedTarget: null });
         await Promise.resolve();
       });
       expect(formats).toHaveLength(1);
     });
 
-    it('a press on a bar button keeps the focus in the editor, and a press on a field does not', () => {
+    it('CONTROL: a focus moving from the section BACK INTO THE WORDS does not write', async () => {
+      const { view, editor, formats } = openWithSelection(0, 4);
+      const field = find(find(view.container, '[data-text-properties]'), 'select');
+      await act(async () => {
+        fireEvent.blur(editor, { relatedTarget: field });
+        fireEvent.blur(field, { relatedTarget: editor });
+        await Promise.resolve();
+      });
+      expect(formats).toHaveLength(0);
+    });
+
+    it('a press on a section button keeps the focus in the editor, and a press on a field does not', () => {
       const { view } = openWithSelection(0, 4);
-      const bar = find(view.container, '[data-text-format-bar]');
-      expect(fireEvent.mouseDown(find(bar, 'button'))).toBe(false);
-      expect(fireEvent.mouseDown(find(bar, 'input'))).toBe(true);
+      const section = find(view.container, '[data-text-properties]');
+      expect(fireEvent.mouseDown(find(section, 'button[aria-label="Bold"]'))).toBe(false);
+      expect(fireEvent.mouseDown(find(section, 'input'))).toBe(true);
+    });
+
+    it('Ctrl+E centres the paragraph and Ctrl+Shift+> sets the next size up, both from the keys alone', async () => {
+      const { editor, formats } = openWithSelection(0, 4);
+      fireEvent.keyDown(editor, { key: 'e', ctrlKey: true });
+      fireEvent.keyDown(editor, { key: '>', code: 'Period', ctrlKey: true, shiftKey: true });
+      await act(async () => {
+        fireEvent.keyDown(editor, { key: 'Escape' });
+        await Promise.resolve();
+      });
+      expect(formats[0]?.paragraphs?.[0]?.align).toBe('center');
+      // THE BLOCK IS SET AT 11 POINTS, so a step up is 12, the next on the list.
+      expect(formats[0]?.marks?.[0]?.set.size).toBe(12);
     });
   });
 
