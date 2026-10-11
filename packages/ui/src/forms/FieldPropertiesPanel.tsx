@@ -121,6 +121,7 @@ import {
   FIELD_PROPS_VISIBILITY_VISIBLE,
   PROPERTIES_CUSTOM_COLOUR,
 } from '../messages/en.js';
+import { type DocumentFont, FontPicker, type FontList } from '../FontPicker.js';
 import { pdfjsPageOf } from '../pageNumbering.js';
 import { Button } from '../primitives/Button.js';
 import { IconButton } from '../primitives/IconButton.js';
@@ -166,6 +167,10 @@ export interface FieldPropertiesPanelProps {
 /** The date patterns offered. Each is in the grammar `fieldFormatSchema` writes, and they are data and never translated. */
 const DATE_PATTERNS = ['m/d/yyyy', 'mm/dd/yyyy', 'dd/mm/yyyy', 'dd.mm.yyyy', 'yyyy-mm-dd', 'd mmmm yyyy', 'mmm d, yyyy'] as const;
 const TIME_PATTERNS = ['HH:MM', 'h:MM tt', 'HH:MM:ss', 'h:MM:ss tt'] as const;
+
+/** A field's picker lists no computer's fonts and none of the document's: its `/DA` names a standard font. */
+const NO_OTHER_FONTS: FontList = { listed: true, families: [] };
+const NO_DOCUMENT_FONTS: readonly DocumentFont[] = [];
 
 const FONT_LABELS: Readonly<Record<(typeof FIELD_FONTS)[number], MessageKey>> = {
   helvetica: FIELD_PROPS_FONT_HELVETICA,
@@ -361,15 +366,24 @@ function Controls({
           />
           {kind.text ? (
             <>
-              <SelectRow
-                label={FIELD_PROPS_FONT}
-                value={props.font}
-                options={FIELD_FONTS.map((font) => ({ value: font, label: i18n._(FONT_LABELS[font]) }))}
-                onChange={(font) => {
-                  const chosen = FIELD_FONTS.find((each) => each === font);
-                  if (chosen !== undefined) onEdit({ font: chosen });
-                }}
-              />
+              {/* THE ONE FONT PICKER (the owner's E2), offering what a field's appearance can name: the standard fonts
+                  its `/DA` writes. A computer's fonts would have to be embedded in the form's resources, which the
+                  field writer does not do, so they are not offered rather than offered and dropped. */}
+              <div className="m-properties__row">
+                <span className="m-properties__label">{i18n._(FIELD_PROPS_FONT)}</span>
+                <FontPicker
+                  builtIn={FIELD_FONTS.map((font) => i18n._(FONT_LABELS[font]))}
+                  inDocument={NO_DOCUMENT_FONTS}
+                  label={FIELD_PROPS_FONT}
+                  list={NO_OTHER_FONTS}
+                  onPick={(family) => {
+                    const chosen = FIELD_FONTS.find((font) => i18n._(FONT_LABELS[font]) === family);
+                    if (chosen !== undefined) onEdit({ font: chosen });
+                  }}
+                  unset={FONT_LABELS[props.font]}
+                  value={i18n._(FONT_LABELS[props.font])}
+                />
+              </div>
               <NumberRow
                 label={FIELD_PROPS_FONT_SIZE}
                 min={0}

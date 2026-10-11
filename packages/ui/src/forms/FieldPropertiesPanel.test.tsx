@@ -164,7 +164,11 @@ describe('the field properties pane', () => {
 
   it('sends the face, and the size only when it is a figure in range', async () => {
     const seen = mounted(TEXT);
-    fireEvent.change(await screen.findByLabelText('Font'), { target: { value: 'times' } });
+    // THE ONE FONT PICKER (E2): opened, Times chosen from the standard fonts a field's appearance can name.
+    fireEvent.click(await screen.findByRole('button', { name: 'Font: Helvetica' }));
+    const times = document.querySelector('[data-font-choice="Times"]');
+    if (times === null) throw new Error('Times is not offered');
+    fireEvent.click(times);
     const size = screen.getByLabelText('Size (0 is automatic)');
     fireEvent.change(size, { target: { value: '999' } });
     fireEvent.blur(size);
@@ -350,7 +354,7 @@ describe('the field properties pane', () => {
     cleanup();
     mounted({ ...TEXT, kind: 'checkbox', name: 'agree' });
     await screen.findByLabelText('Tooltip');
-    expect(screen.queryByLabelText('Font')).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Font:/u })).toBeNull();
     expect(screen.queryByLabelText('Format')).toBeNull();
   });
 
