@@ -1940,6 +1940,9 @@ export const PROPERTIES_LINE_WIDTH = messageKey('surface.properties.line-width')
 export const PROPERTIES_WIDTH_VALUE = messageKey('surface.properties.width-value');
 export const PROPERTIES_FONT_SIZE = messageKey('surface.properties.font-size');
 export const PROPERTIES_TEXT_HEADING = messageKey('surface.properties.text.heading');
+// A TEXT BOX'S PROPERTIES (the owner's text E4): the box's own look, and the comment's details folded at the foot.
+export const PROPERTIES_BOX_HEADING = messageKey('surface.properties.box.heading');
+export const PROPERTIES_COMMENT_DETAILS = messageKey('surface.properties.comment-details');
 export const PROPERTIES_TEXT_COLOUR = messageKey('surface.properties.text.colour');
 export const PROPERTIES_FONT = messageKey('surface.properties.text.font');
 export const PROPERTIES_ALIGN = messageKey('surface.properties.text.align');
@@ -4603,6 +4606,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PROPERTIES_WIDTH_VALUE]: '{width, number} pt',
   [PROPERTIES_FONT_SIZE]: 'Font size',
   [PROPERTIES_TEXT_HEADING]: 'Text',
+  [PROPERTIES_BOX_HEADING]: 'Box',
+  [PROPERTIES_COMMENT_DETAILS]: 'Comment details',
   [PROPERTIES_TEXT_COLOUR]: 'Text colour',
   [PROPERTIES_FONT]: 'Font',
   [PROPERTIES_ALIGN]: 'Align',

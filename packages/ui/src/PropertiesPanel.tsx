@@ -21,7 +21,7 @@ import {
   measureUnitSchema,
 } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
-import { type ReactElement, useEffect, useId, useState } from 'react';
+import { type ReactElement, type ReactNode, useEffect, useId, useState } from 'react';
 
 import { ANNOTATION_KIND_LABELS } from './AnnotationsPanel.js';
 import { ColourSwatches } from './ColourChoice.js';
@@ -64,6 +64,8 @@ import {
   PROPERTIES_LINE_WIDTH,
   PROPERTIES_TEXT_COLOUR,
   PROPERTIES_TEXT_HEADING,
+  PROPERTIES_BOX_HEADING,
+  PROPERTIES_COMMENT_DETAILS,
   PROPERTIES_NEW_HEADING,
   PROPERTIES_NEW_HINT,
   PROPERTIES_OPACITY,
@@ -367,25 +369,9 @@ export function PropertiesPanel({
     }
   };
 
-  return (
-    <section aria-label={i18n._(STYLE_PANEL_LABEL)} className="m-properties">
-      <header className="m-properties__head">
-        <h2 className="m-properties__title">{i18n._(ANNOTATION_KIND_LABELS[first.kind])}</h2>
-        <p className="m-properties__meta">
-          {i18n._(PROPERTIES_WHERE, { count: selection.items.length, page: pdfjsPageOf(selection.page) })}
-        </p>
-        {/* WHEN IT WAS MADE, read-only (ADR-0103): a mark carrying no date says nothing rather than
-            showing one nobody wrote. The instant is formatted in the reader's own locale. */}
-        {created === null ? null : (
-          <p className="m-properties__meta" data-properties-created={created}>
-            {i18n._(PROPERTIES_CREATED, {
-              when: new Intl.DateTimeFormat(i18n.locale, { dateStyle: 'medium', timeStyle: 'short' }).format(
-                new Date(created),
-              ),
-            })}
-          </p>
-        )}
-      </header>
+  /** The mark's own look: its colour, opacity and line width. For a text box, the Box group's first rows. */
+  const lookRows = (
+    <>
       <ColourRow
         auto={false}
         current={hex}
@@ -413,44 +399,85 @@ export function PropertiesPanel({
           }}
         />
       )}
-      <div className="m-properties__row">
-        <span className="m-properties__label" aria-hidden="true">
-          {i18n._(PROPERTIES_BLEND)}
-        </span>
-        {/* THE BLEND THE APPEARANCE IS DRAWN IN, the walk's reading rather than the dictionary's
-            claim (ADR-0103). Not written to the authoring settings: it differs by kind, and a
-            remembered blend would turn a person's next rectangle into a multiply. */}
-        <SegmentedControl
-          label={PROPERTIES_BLEND}
-          onChange={(blend) => {
-            onRestyle(selection, { blend });
-          }}
-          options={BLEND_OPTIONS}
-          value={first.blend}
-        />
-      </div>
-      {first.typed === undefined ? null : (
-        // A TEXT BOX, TYPEWRITER OR CALLOUT: the face, size, colour and side its words are drawn in, for the whole box.
-        <TextSection
-          // A NEW SET OF FIELDS PER MARK AND PER SIZE, so a typed size never outlives the mark it was typed for.
-          key={`${String(selection.page)}:${String(first.index)}:${String(first.typed.fontSize)}`}
-          typed={first.typed}
-          onChange={(text) => {
-            change({ text });
-          }}
-        />
+    </>
+  );
+  const blendRow = (
+    <div className="m-properties__row">
+      <span className="m-properties__label" aria-hidden="true">
+        {i18n._(PROPERTIES_BLEND)}
+      </span>
+      {/* THE BLEND THE APPEARANCE IS DRAWN IN, the walk's reading rather than the dictionary's
+          claim (ADR-0103). Not written to the authoring settings: it differs by kind, and a
+          remembered blend would turn a person's next rectangle into a multiply. */}
+      <SegmentedControl
+        label={PROPERTIES_BLEND}
+        onChange={(blend) => {
+          onRestyle(selection, { blend });
+        }}
+        options={BLEND_OPTIONS}
+        value={first.blend}
+      />
+    </div>
+  );
+  const authorRow =
+    only === undefined ? null : (
+      <AuthorRow
+        // A NEW FIELD PER MARK AND PER NAME, `CommentRow`'s reason.
+        key={`${String(selection.page)}:${String(only.index)}:${only.author}`}
+        author={only.author}
+        onCommit={(author) => {
+          onAuthor(selection, author);
+        }}
+      />
+    );
+
+  return (
+    <section aria-label={i18n._(STYLE_PANEL_LABEL)} className="m-properties">
+      <header className="m-properties__head">
+        <h2 className="m-properties__title">{i18n._(ANNOTATION_KIND_LABELS[first.kind])}</h2>
+        <p className="m-properties__meta">
+          {i18n._(PROPERTIES_WHERE, { count: selection.items.length, page: pdfjsPageOf(selection.page) })}
+        </p>
+        {/* WHEN IT WAS MADE, read-only (ADR-0103): a mark carrying no date says nothing rather than
+            showing one nobody wrote. The instant is formatted in the reader's own locale. */}
+        {created === null ? null : (
+          <p className="m-properties__meta" data-properties-created={created}>
+            {i18n._(PROPERTIES_CREATED, {
+              when: new Intl.DateTimeFormat(i18n.locale, { dateStyle: 'medium', timeStyle: 'short' }).format(
+                new Date(created),
+              ),
+            })}
+          </p>
+        )}
+      </header>
+      {first.typed === undefined ? (
+        <>
+          {lookRows}
+          {blendRow}
+          {authorRow}
+        </>
+      ) : (
+        // A TEXT BOX, TYPEWRITER OR CALLOUT (the owner's text E4): its Text, then its Box — the border, opacity and width
+        // the other marks show at the top are the box's own look here — and the comment's details folded at the foot.
+        // The box's words are edited ON THE PAGE, so no comment field is shown for them.
+        <>
+          <TextSection
+            // A NEW SET OF FIELDS PER MARK AND PER SIZE, so a typed size never outlives the mark it was typed for.
+            box={lookRows}
+            key={`${String(selection.page)}:${String(first.index)}:${String(first.typed.fontSize)}`}
+            typed={first.typed}
+            onChange={(text) => {
+              change({ text });
+            }}
+          />
+          <details className="m-properties__details" data-properties-comment-details="">
+            <summary className="m-properties__subtitle">{i18n._(PROPERTIES_COMMENT_DETAILS)}</summary>
+            {blendRow}
+            {authorRow}
+          </details>
+        </>
       )}
-      {only === undefined ? null : (
-        <AuthorRow
-          // A NEW FIELD PER MARK AND PER NAME, `CommentRow`'s reason.
-          key={`${String(selection.page)}:${String(only.index)}:${only.author}`}
-          author={only.author}
-          onCommit={(author) => {
-            onAuthor(selection, author);
-          }}
-        />
-      )}
-      {only === undefined ? null : (
+      {only === undefined || first.typed !== undefined ? null : (
         <CommentRow
           // A NEW FIELD PER MARK AND PER TEXT, so a draft never outlives the mark it was typed for,
           // and the text a carried selection brings back replaces the draft that produced it.
@@ -657,9 +684,12 @@ const STYLE_TOGGLES = [
  */
 function TextSection({
   typed,
+  box,
   onChange,
 }: {
   readonly typed: NonNullable<SelectedAnnotation['typed']>;
+  /** The box's own look (border colour, opacity, width), first in the Box group (the owner's text E4). */
+  readonly box: ReactNode;
   readonly onChange: (text: AnnotationTextStyle) => void;
 }): ReactElement {
   const { i18n } = useLingui();
@@ -686,6 +716,7 @@ function TextSection({
     if (Number.isFinite(next) && next >= 0 && next <= MAX_TEXT_PADDING && next !== (typed.padding ?? 0)) onChange({ padding: next });
   };
   return (
+    <>
     <div className="m-properties__text" data-properties-text="" role="group" aria-label={i18n._(PROPERTIES_TEXT_HEADING)}>
       <h3 className="m-properties__subtitle">{i18n._(PROPERTIES_TEXT_HEADING)}</h3>
       {/* THE ONE FONT PICKER (the owner's D1 and K4), offering the faces a text box is written in: the standard fonts
@@ -788,6 +819,14 @@ function TextSection({
               value={spacing}
             />
           </div>
+        </>
+      )}
+    </div>
+    <div className="m-properties__text" data-properties-box="" role="group" aria-label={i18n._(PROPERTIES_BOX_HEADING)}>
+      <h3 className="m-properties__subtitle">{i18n._(PROPERTIES_BOX_HEADING)}</h3>
+      {box}
+      {typed.stylesUnavailable === true ? null : (
+        <>
           <div className="m-properties__row m-properties__row--inline">
             <label className="m-properties__label" htmlFor={paddingId}>
               {i18n._(PROPERTIES_BOX_PADDING)}
@@ -834,6 +873,7 @@ function TextSection({
         </>
       )}
     </div>
+    </>
   );
 }
 

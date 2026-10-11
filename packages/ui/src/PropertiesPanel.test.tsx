@@ -338,6 +338,25 @@ describe('PropertiesPanel with marks selected', () => {
     typed: { fontSize: 12, colour: [0, 0, 0] as [number, number, number], font: 'sans' as const, direction: 'left-to-right' as const },
   };
 
+  it('a TEXT BOX shows Text, then Box, then its comment details FOLDED, and no comment field for its words (E4)', () => {
+    mounted({ ...ONE, items: [TEXT_BOX] });
+    const groups = [...document.querySelectorAll('[data-properties-text], [data-properties-box], [data-properties-comment-details]')];
+    expect(groups.map((group) => group.getAttribute('aria-label') ?? group.tagName)).toStrictEqual(['Text', 'Box', 'DETAILS']);
+    // THE BOX'S LOOK is in the Box group: its border colour's swatches sit inside it.
+    expect(document.querySelector('[data-properties-box] [role="radiogroup"], [data-properties-box] button')).not.toBeNull();
+    const details = document.querySelector('[data-properties-comment-details]');
+    expect(details?.hasAttribute('open')).toBe(false);
+    expect(details?.textContent).toContain('Blend');
+    expect(details?.textContent).toContain('Author');
+    expect(screen.queryByRole('textbox', { name: 'Comment' })).toBeNull();
+  });
+
+  it('CONTROL: a mark that is not a text box keeps its comment field and its blend unfolded', () => {
+    mounted(ONE);
+    expect(document.querySelector('[data-properties-comment-details]')).toBeNull();
+    expect(screen.getByRole('textbox', { name: 'Comment' })).not.toBeNull();
+  });
+
   it('a TEXT BOX shows a Text section, and each control sends ONE property of its words', () => {
     const { restyled, store } = mounted({ ...ONE, items: [TEXT_BOX] });
     expect(document.querySelector('[data-properties-text]')).not.toBeNull();
