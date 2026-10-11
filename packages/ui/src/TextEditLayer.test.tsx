@@ -15,7 +15,7 @@ import {
 } from './commands/documentCommands.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN, SPELLING_DICTIONARY_FULL } from './messages/en.js';
-import { type PageBlocks, TextEditLayer } from './TextEditLayer.js';
+import { type PageBlocks, TextEditLayer, nearbyStyle } from './TextEditLayer.js';
 import { TextFormatPanel } from './TextFormatPanel.js';
 
 /**
@@ -806,11 +806,29 @@ describe('Edit text on the page (ADR-0096)', () => {
         fireEvent.keyDown(editor, { key: 'Escape' });
         await Promise.resolve();
       });
-      // THE PAGE IS 792 HIGH AT ZOOM 1: a press 200 down is 592 up, and the first baseline an ascent (9.6) below that.
+      // THE PAGE IS 792 HIGH AT ZOOM 1: a press 200 down is 592 up, eight points under the paragraph (its box starts at
+      // 600), so the box takes that paragraph's style (B4.3): 11 points, bold serif, its blue. The first baseline is an
+      // ascent (0.8 of 11) below the press.
       expect(inserts).toHaveLength(1);
-      expect(inserts[0]?.insert).toStrictEqual({ left: 100, baseline: 582.4, measure: 360, size: 12, text: 'A new note' });
+      expect(inserts[0]?.insert).toStrictEqual({
+        left: 100,
+        baseline: 583.2,
+        measure: 360,
+        size: 11,
+        base: { family: 'Times New Roman', bold: true, italic: false, colour: { r: 20, g: 40, b: 60 } },
+        text: 'A new note',
+      });
       expect(inserts[0]?.version).toBe(7);
       expect(onAdded).toHaveBeenCalledTimes(1);
+    });
+
+    it('CONTROL: on a page with no words the box starts in 12-point black Arial, so the case above is the nearby style', () => {
+      expect(nearbyStyle([], { x: 100, y: 592 })).toBeUndefined();
+      // AND THE NEAREST WINS, not the first: a press beside the heading takes the heading's.
+      const [heading, paragraph] = BLOCKS.blocks;
+      if (heading === undefined || paragraph === undefined) throw new Error('the fixture has two blocks');
+      const near = (style: typeof STYLE, top: number) => ({ ...paragraph, box: { ...paragraph.box, y0: top - 10, y1: top }, style });
+      expect(nearbyStyle([near(STYLE, 700), near(OTHER, 400)], { x: 100, y: 395 })?.size).toBe(9);
     });
 
     it('carries the marks the person gave the words, and has no handles of its own', async () => {

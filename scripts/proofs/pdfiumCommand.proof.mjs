@@ -270,7 +270,7 @@ const failures = [];
 // edit keeps: invisible text stays invisible, with a visible control and the fixture's own, and 143 from ADR-0180's
 // marks: bold, colour, size, underline, superscript and a restated mark, then alignment, line spacing and an indent, each
 // with the control that separates the mark from the fixture.
-const roster = createRoster(failures, { cases: 222 });
+const roster = createRoster(failures, { cases: 223 });
 
 /**
  * @param {string} name
@@ -2952,6 +2952,27 @@ async function placeCases() {
     'an added box takes marks as an edit does: its bold word is bold and the rest of it is not',
     heavy?.style.bold === true && plain?.style.bold === false,
     `heavy ${String(heavy?.style.bold)}, plain ${String(plain?.style.bold)}`,
+  );
+  // THE NEARBY STYLE (the owner's B4.3): the editor sends the nearest words' style as `base`, and the box is set in it.
+  // The box above, sent with no base, is the control: plain, upright and black.
+  const styled = await send([], [
+    {
+      left: 100,
+      baseline: 120,
+      measure: 200,
+      size: 12,
+      base: { family: 'Times New Roman', bold: true, colour: { r: 200, g: 0, b: 0 } },
+      text: 'styled like its neighbour',
+    },
+  ]);
+  const near = await runStarting(styled, 'styled');
+  record(
+    'an added box is set in its base: the family’s face, its weight and its colour; one sent without a base is not',
+    // BY THE FONT'S NAME, not the read's `serif`: a standard Times face has no descriptor, and the read takes its class
+    // from the descriptor's flags, so it reports `serif: false` for Times-Bold (measured 2026-10-11).
+    /Times/u.test(near?.style.font ?? '') && near?.style.bold === true && near.style.colour.r > 150 && near.style.colour.g < 60 &&
+      !/Times/u.test(note?.style.font ?? 'Times') && note?.style.bold === false && note.style.colour.r < 60,
+    `${JSON.stringify(near?.style)} against ${JSON.stringify(note?.style)}`,
   );
 }
 

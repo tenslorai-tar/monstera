@@ -593,7 +593,7 @@ export function TextEditLayer({
               event.detail === 0
                 ? { x: NEW_TEXT_MARGIN * geometry.zoom, y: NEW_TEXT_MARGIN * geometry.zoom }
                 : { x: event.clientX - edge.left, y: event.clientY - edge.top };
-            setFresh({ made: freshBox(css, geometry), version: blocks.version });
+            setFresh({ made: freshBox(css, geometry, blocks.blocks), version: blocks.version });
             setNext(undefined);
           }}
           type="button"
@@ -642,9 +642,16 @@ export function TextEditLayer({
   );
 }
 
-/** The margin a new box keeps from the page's edge, in points, and the size and colour its words start in. */
+/** The margin a new box keeps from the page's edge, in points, and the style its words start in on a page with none. */
 const NEW_TEXT_MARGIN = 36;
-const NEW_TEXT_SIZE = 12;
+const NEW_TEXT_STYLE: TextBlock['style'] = {
+  size: 12,
+  colour: { r: 0, g: 0, b: 0 },
+  serif: false,
+  mono: false,
+  italic: false,
+  bold: false,
+};
 
 /** A box of new text as the editor opens it: a synthetic block holding one empty run, and where it goes on the page. */
 interface FreshBox {
@@ -655,18 +662,44 @@ interface FreshBox {
 }
 
 /**
- * The box a press at `css` (the layer's pixels) begins: its top left where the person pressed, the measure the page's
- * margin leaves it and a first baseline one ascent below its top. The block it is drawn as is the editor's own shape, with
- * a run no page holds (index 0 names no object: nothing reads it, since a box is written by its words alone).
+ * The style of the block nearest a point of the page (the owner's B4.3: added text picks up the nearby font, size and
+ * colour), by the distance from the point to each block's box, which is nothing inside one. `undefined` on a page with
+ * no block, where the new words take {@link NEW_TEXT_STYLE}.
  */
-function freshBox(css: { readonly x: number; readonly y: number }, geometry: OverlayPage): FreshBox {
+export function nearbyStyle(blocks: readonly TextBlock[], at: { readonly x: number; readonly y: number }): TextBlock['style'] | undefined {
+  let nearest: { style: TextBlock['style']; far: number } | undefined;
+  for (const block of blocks) {
+    const dx = Math.max(block.box.x0 - at.x, 0, at.x - block.box.x1);
+    const dy = Math.max(block.box.y0 - at.y, 0, at.y - block.box.y1);
+    const far = Math.hypot(dx, dy);
+    if (nearest === undefined || far < nearest.far) nearest = { style: block.style, far };
+  }
+  return nearest?.style;
+}
+
+/**
+ * The family a block's class reads as, for an added box's `base`: the block read names its words' kind (serif, mono) and
+ * not their font, so the class's standard family is what the resolver is asked for, which the run's own font stands in
+ * for where the page has it.
+ */
+function familyOfClass(style: TextBlock['style']): string {
+  return style.mono ? 'Courier New' : style.serif ? 'Times New Roman' : 'Arial';
+}
+
+/**
+ * The box a press at `css` (the layer's pixels) begins: its top left where the person pressed, the measure the page's
+ * margin leaves it and a first baseline one ascent below its top, in the style of the nearest words on the page. The block
+ * it is drawn as is the editor's own shape, with a run no page holds (index 0 names no object: nothing reads it, since a
+ * box is written by its words alone).
+ */
+function freshBox(css: { readonly x: number; readonly y: number }, geometry: OverlayPage, blocks: readonly TextBlock[]): FreshBox {
   const [x0, , x1] = geometry.crop;
   const at = toPdf(viewportPoint(css.x, css.y), overlayTransform(geometry));
+  const style = nearbyStyle(blocks, at) ?? NEW_TEXT_STYLE;
   const left = Math.min(Math.max(at.x, x0), Math.max(x0, x1 - NEW_TEXT_MARGIN));
   const measure = Math.min(Math.max(x1 - NEW_TEXT_MARGIN - left, 80), 360);
-  const baseline = at.y - NEW_TEXT_SIZE * 0.8;
-  const style = { size: NEW_TEXT_SIZE, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false };
-  const box = { x0: left, y0: at.y - NEW_TEXT_SIZE * 1.2, x1: left + measure, y1: at.y };
+  const baseline = at.y - style.size * 0.8;
+  const box = { x0: left, y0: at.y - style.size * 1.2, x1: left + measure, y1: at.y };
   return {
     block: {
       box,
@@ -682,11 +715,14 @@ function freshBox(css: { readonly x: number; readonly y: number }, geometry: Ove
 
 /** The wire's box from what the editor says of it: its words, with the marks and paragraph settings the person gave them. */
 function insertOf(made: FreshBox, text: string, formatting: BlockFormatting): PageInsert {
+  const { style } = made.block;
   return {
     left: made.left,
     baseline: made.baseline,
     measure: made.measure,
-    size: NEW_TEXT_SIZE,
+    size: style.size,
+    // THE STYLE THE BOX OPENED IN, the nearby words' (B4.3): what each writer sets the words in before any mark.
+    base: { family: familyOfClass(style), bold: style.bold, italic: style.italic, colour: style.colour },
     text,
     ...(formatting.marks === undefined ? {} : { marks: [...formatting.marks] }),
     ...(formatting.paragraphs === undefined ? {} : { paragraphs: [...formatting.paragraphs] }),
