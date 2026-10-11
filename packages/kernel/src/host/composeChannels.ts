@@ -10,6 +10,7 @@ import {
   MAX_WORKBOOK_ROW,
   MAX_WORKBOOK_SHEET_NAME,
   MAX_FONT_FAMILIES,
+  FONT_FAMILIES_PAGE,
   channel,
   fontFamilySchema,
   fileAnswered,
@@ -443,10 +444,13 @@ export const composeChannels = {
    */
   'engine/font-families': channel(
     'Lists the font families this host can set text in, installed and bundled.',
-    z.object({ session: sessionSchema }).strict(),
+    // A PAGE AT A TIME from `from` (`FONT_FAMILIES_PAGE`), and `next` where the list goes on: the caller reads on until it
+    // is `null`, so the list is whole and each answer fits the frame.
+    z.object({ session: sessionSchema, from: z.number().int().min(0).max(MAX_FONT_FAMILIES) }).strict(),
     z
       .object({
-        families: z.array(fontFamilySchema).max(MAX_FONT_FAMILIES),
+        families: z.array(fontFamilySchema).max(FONT_FAMILIES_PAGE),
+        next: z.number().int().min(1).max(MAX_FONT_FAMILIES).nullable(),
       })
       .strict(),
     ['no-such-session'],

@@ -3979,12 +3979,20 @@ function composeHostBinding(
       return answer.value.kind === 'sized' ? { width: answer.value.width, height: answer.value.height } : null;
     },
 
-    // THE FONT FAMILIES (the owner's D2): names and flags only, read once per host, and a failure code is a fault.
+    // THE FONT FAMILIES (the owner's D2): names and flags only, a page at a time until the host says the list ends, and a
+    // failure code is a fault. A `next` that does not move forward ends the read, so a host answering wrong cannot loop it.
     fontFamilies: async () => {
       const built = await ensure();
-      const answer = await built.client['engine/font-families']({ session: built.session });
-      if (!answer.ok) throw new Error(`the compose host could not list its fonts: ${answer.error.code}`);
-      return answer.value.families;
+      const families: FontFamilyEntry[] = [];
+      for (let from: number | null = 0; from !== null; ) {
+        const answer = await built.client['engine/font-families']({ session: built.session, from });
+        if (!answer.ok) throw new Error(`the compose host could not list its fonts: ${answer.error.code}`);
+        families.push(...answer.value.families);
+        const next = answer.value.next;
+        if (next !== null && next <= from) throw new Error(`the compose host's font list went back from ${String(from)} to ${String(next)}`);
+        from = next;
+      }
+      return families;
     },
 
     // A SCANNED SIGNATURE PDF (`signaturePicture.ts`): `imageSize`'s steps, and the PNG taken from the area against the

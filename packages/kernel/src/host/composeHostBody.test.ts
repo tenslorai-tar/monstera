@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   ENGINE_HOST_FRAME_MAX_BYTES,
+  FONT_FAMILIES_PAGE,
   FRAME_HEADER_BYTES,
   MAX_BOXED_CHARACTERS,
   MAX_IMPORT_IMAGES,
@@ -463,7 +464,7 @@ describe('the compose host body', () => {
       read: () => new Uint8Array(),
     };
     const { session } = await openArea(files, undefined, undefined, () => held);
-    stream.feed(request('f1', 'engine/font-families', { session }));
+    stream.feed(request('f1', 'engine/font-families', { session, from: 0 }));
     await stream.whenSent(2);
     expect(answerIn(stream.sent[1])).toMatchObject({
       body: {
@@ -473,16 +474,38 @@ describe('the compose host body', () => {
             { name: 'Arial', origin: 'installed', embedding: 'subset', bold: false, italic: true },
             { name: 'Calibri', origin: 'installed', embedding: 'subset', bold: true, italic: false },
           ],
+          next: null,
         },
       },
     });
     expect(files.read.size).toBe(0);
   });
 
+  it('answers a long list a page at a time, each page from where the last ended', async () => {
+    const files = emptyFiles();
+    const face = { origin: 'installed' as const, embedding: 'subset' as const, unicodes: new Set<number>(), weights: null, path: 'x', faceIndex: 0, weight: 400, italic: false };
+    // PAST ONE PAGE, named so the order they are listed in is the order they were made in.
+    const names = Array.from({ length: FONT_FAMILIES_PAGE + 44 }, (_, at) => `Family ${String(at).padStart(4, '0')}`);
+    const held: FaceSource = { faces: names.map((family, at) => ({ ...face, id: String(at), family })), read: () => new Uint8Array() };
+    const { session } = await openArea(files, undefined, undefined, () => held);
+    stream.feed(request('p1', 'engine/font-families', { session, from: 0 }));
+    await stream.whenSent(2);
+    stream.feed(request('p2', 'engine/font-families', { session, from: FONT_FAMILIES_PAGE }));
+    await stream.whenSent(3);
+    const first = answerIn(stream.sent[1]) as { body: { value: { families: { name: string }[]; next: number | null } } };
+    const second = answerIn(stream.sent[2]) as { body: { value: { families: { name: string }[]; next: number | null } } };
+    expect(first.body.value.families).toHaveLength(FONT_FAMILIES_PAGE);
+    expect(first.body.value.next).toBe(FONT_FAMILIES_PAGE);
+    // THE SECOND PAGE BEGINS WHERE THE FIRST ENDED: a handler that ignored `from` answers the first page again, which has
+    // the same length bound and a `next`, and only its first name separates the two.
+    expect(second.body.value.families.map((family) => family.name)).toStrictEqual(names.slice(FONT_FAMILIES_PAGE));
+    expect(second.body.value.next).toBeNull();
+  });
+
   it('CONTROL: the font families of an area this host does not hold are no-such-session', async () => {
     const files = emptyFiles();
     await openArea(files);
-    stream.feed(request('f2', 'engine/font-families', { session: 'not-held' }));
+    stream.feed(request('f2', 'engine/font-families', { session: 'not-held', from: 0 }));
     await stream.whenSent(2);
     expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: false, error: { code: 'no-such-session' } } });
   });

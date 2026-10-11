@@ -1,5 +1,5 @@
 import type { Handlers } from '@monstera/contract';
-import { cappedBoxes } from '@monstera/contract/host';
+import { FONT_FAMILIES_PAGE, cappedBoxes } from '@monstera/contract/host';
 
 import type { FaceSource } from '../fontCatalogue.js';
 import { fontFamiliesOf } from '../fontFamilies.js';
@@ -357,16 +357,19 @@ export function createComposeHandlers({
       }
     },
 
+    // THE FONT FAMILIES, from the catalogue the composers set text from, so the list is what this host can set. A host
+    // started without its fonts throws here as it does for a composer: a fault of the build, never a person's answer. A
+    // page from `from`, and where the next begins.
+    'engine/font-families': ({ session, from }) => {
+      if (areas.lookup(session) === undefined) return Promise.resolve(gone);
+      const all = fontFamiliesOf(faces().faces);
+      const end = from + FONT_FAMILIES_PAGE;
+      return Promise.resolve({ ok: true, value: { families: all.slice(from, end), next: end < all.length ? end : null } });
+    },
+
     // `composeWith`'s decisions over a list: a missing source is the transport's, a
     // named refusal is an answer, and anything else propagates as a fault. Each image
     // is read when the composer reaches it, so the host holds one picked file at once.
-    // THE FONT FAMILIES, from the catalogue the composers set text from, so the list is what this host can set. A host
-    // started without its fonts throws here as it does for a composer: a fault of the build, never a person's answer.
-    'engine/font-families': ({ session }) => {
-      if (areas.lookup(session) === undefined) return Promise.resolve(gone);
-      return Promise.resolve({ ok: true, value: { families: fontFamiliesOf(faces().faces) } });
-    },
-
     'engine/compose-images': async ({ session, images, into }) => {
       const held = areas.lookup(session);
       if (held === undefined) return gone;

@@ -205,6 +205,7 @@ describe('browser shim', () => {
       'app.acknowledgeSecurityUpdate',
       'app.clearBackups',
       'app.components',
+      'app.fontFamilies',
       'app.info',
       'app.ocrLanguages',
       'app.openStore',
