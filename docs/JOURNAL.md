@@ -892,6 +892,114 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-11 — Stage audit of `e8fd8a55..8d0a8325` — findings BBBBBBBB-1 to BBBBBBBB-11
+
+The cloud forms and text rebuild (ADR-0226 Decisions 14 to 16, the ADR-0180 correction, the ADR-0211 amendment), the font
+list, Add text, the Properties panel's formatting, the importers that name what they leave out, CR-SEC-20, and ADR-0227
+before its code. Read through `npm run audit:scope` (47 commits, 194 files) and `git log -p` over every one of the 57
+modified tests and proofs, split across four read-only readers whose claims were checked before being recorded here (one
+was wrong; BBBBBBBB-9). Owed when the protected-signing commit would have taken the range to 208 files; that commit follows
+this one and is outside the range.
+
+**BBBBBBBB-1** (medium, closed in the commit after this one): the CONTROL in `formFieldEdit.test.ts` (464b536e) that a
+text field is never given MultiSelect read `multiSelect` back through `fieldRules.ts`, which answers false for any text
+field whatever its bits say, so a writer that set the bit passed. It now compares the text field's raw `/Ff`; with the
+writer's `instanceof PDFOptionList` guard removed, it goes red.
+
+**BBBBBBBB-2** (medium, open): `FormsPanel.test.tsx`' rewrite for the tree (4b213ebd) dropped cases whose behaviour is
+still in the product, with no reason in the message: Flatten offered while the list is truncated (`FormsPanel.tsx`'s own
+comment says so), a push button's row saying it is not fillable, the truncation case's negative half, the focus kept after
+a composing Enter (CR-COR-07), a value the document does not offer shown, a radio option drawn as a radio. Two titles still
+say CONTROL for checks their bodies no longer make, and the new several-values list has no panel case. Owed: the cases back.
+
+**BBBBBBBB-3** (medium, open): `pdfLibProtected.proof.mjs`' `setTabOrder` case (f402da9e) runs on a form with one widget,
+so it cannot see an order, and does not compare permissions; the commit's title says a tab order on a protected form is
+proven, and what is proven is that the protection survives the command. Owed: two or more widgets and the order read back.
+
+**BBBBBBBB-4** (low, open): Detect's case in `ui/commands/documentCommands.test.ts` (93f27d17) went from the strict list of
+sends to `created(sent)`, so neither `docId` nor the candidates request's page is asserted any more; no mechanism given.
+
+**BBBBBBBB-5** (low, open): controls that cannot fail on their own or claim more than they check. `flatFields.test.ts`
+(93f27d17): one exercises only the test's own `overlap()`, and the unflattened twin draws no boxes, so a broken detector
+also proposes nothing. `formFieldEdit.test.ts` (1cb458c6): a duplicate refusal repeats the case above it.
+`formFlattenKeeps.test.ts` (29d69617): never checks the kept widgets had ink before. `composeHostBody.test.ts` (e6f52e3e):
+the empty-skip half. `TextEditLayer.test.tsx` (72d0c906) names 12-point black Arial and asserts none of the three.
+`PropertiesPanel.test.tsx` (3ce4f81e) names blend and does not assert it. `FieldPropertiesPanel.test.tsx` (cd35925a)
+promises *the last one left cannot be removed* in a comment and asserts only the first-cannot-go-up half. The visibility
+case (db37da6f) sets visible on a field that already is.
+
+**BBBBBBBB-6** (low, open): `ImportFormDataResultBody.test.tsx` (9470725f) derives its expected count from
+`IMPORT_SKIP_REASONS.length`, item 4c's direction: a reason leaving the list shrinks the count and the case agrees.
+
+**BBBBBBBB-7** (low, open): `composeImages` (e6f52e3e) counts an image toward the set's pixel total in its header pass,
+and an image whose decode then fails in the second pass has spent that budget, so a later picture can be left out for
+room it never used. The second pass's `catch` is as wide as the refusal it replaced: any failure of `addImagePage` reads
+as an unreadable picture.
+
+**BBBBBBBB-8** (low, open): `fontFamiliesOf` (44d2009c) keeps the first 4,096 families by name and drops the rest without a
+word, against *preserve, never drop*; past the bound a family late in the alphabet is simply absent from the picker.
+
+**BBBBBBBB-9** (low, recorded): the reader's account of BBBBBBBB-1 said bit 22 on a text field is DoNotSpellCheck, and the
+first repair asserted `spellCheck` on that premise. The mutation stayed green: DoNotSpellCheck is bit 23, and bit 22 is
+unassigned on a text field. A reader's mechanism is a claim like any other; the mutation is what tested it.
+
+**BBBBBBBB-10** (low, open): the radio allowance *may join a group of its own name* lost its only case with the name line
+(beeef9a2); the rule still lives in the field name check and nothing exercises it.
+
+**BBBBBBBB-11** (low, recorded): PDFium's read takes `serif` from the descriptor flags alone, so a standard Times face reads
+as sans (27fad997 records why the case matches by name), and no case crosses composition's text-block font mapping against
+a real engine (7eada317). The second needs the Windows host.
+
+Not findings: the deleted dialog cases (beeef9a2, the dialogs left with their callers), the reversed Ctrl-press fill
+(9d2293ec, behaviour changed and stated), the `fieldArrangeCommands` count of nine (spreads need three fields), the
+`'expects'` allowance (2dad0cda, a verb). The K4 commit (49452a1e) came before the ADR-0211 amendment (cd15ff9b) and stays
+inside Decision 2: Helvetica, Times and Courier are base 14.
+
+### 1. Root cause or workaround?
+Each fix names its mechanism: two writers of an appearance became one (`redraw`), the font list's frame was a payload sized
+by the machine's font count (paged), an empty row has no line box (`br`), CR-SEC-20 deleted names another program owns.
+No workaround found.
+
+### 2. Verified against the easy shape only?
+BBBBBBBB-3 and the visibility case are easy shapes. Protected signing (after this range) was first green on a fixture that
+is always collected; the hard shape, a signed protected file with a gap in its numbers, was added and goes red under
+`garbage=compact`.
+
+### 2a. Has a change to how something is proven moved the coverage?
+BBBBBBBB-6.
+
+### 3. Would CI have caught it?
+Push 2's run of 6741cb78 is green on every job but Visual baselines, the rendered suite included (accessibility gate, both
+legs). None of BBBBBBBB-2 to -10 is a red CI could show: each is a case that is absent or cannot fail.
+
+### 4. Are the proofs non-vacuous?
+BBBBBBBB-1, -5 and -9. Mutations run in this audit: the MultiSelect guard (red after the repair), and for ADR-0227 the
+renumbering, `pretty` and a compacted readable copy (each red).
+
+### 4a. Resolution test before measuring?
+No measuring instrument entered the range; the walk scripts (`liveWalk.mjs`, `formsWalk.mjs`, `textWalk.mjs`) have not run
+and need Windows.
+
+### 4b. A search with a positive control?
+`fontFamiliesOf` reads a catalogue; an empty catalogue lists the base 14 alone, and nothing says the read found nothing.
+Folded into BBBBBBBB-8's row as the same module's silence.
+
+### 4c. Does a check derive its extent from the set it governs?
+BBBBBBBB-6.
+
+### 5. Executed, or asserted?
+Executed: related test sets, typecheck, lint of changed files, the four mutations above. Asserted: f402da9e's *tab order
+proven* (BBBBBBBB-3).
+
+### 6. Architecture before the feature?
+ADR-0226 D14, D15 and D16, the ADR-0180 correction and ADR-0227 each committed alone before their code.
+
+### 7. Do the documents still match the code?
+`unprotectedImage`'s comment said its one caller is a pdf-lib command; corrected with ADR-0227's code. FEATURES row 197
+said signing a protected document is refused; corrected in the same commit.
+
+---
+
 ## 2026-10-10 — Stage audit of `726be5ae..e8fd8a55` — findings AAAAAAAA-1 to AAAAAAAA-8
 
 The text box styles (ADR-0211), the owner's 0.1.12.0 review fixes (ribbon, panel tabs, the backup move without a
