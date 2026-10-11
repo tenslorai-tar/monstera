@@ -3258,19 +3258,20 @@ export const deleteFormFieldsSchema = z.object({
 }).strict();
 
 /**
- * Burns every form field's appearance into the page and removes the form.
+ * Burns form fields' appearances into the page and removes them from the form: every field, or the ones selected.
  *
- * ## A payload with nothing in it, and that is the engine's shape
+ * ## The engine bakes; this build only chooses what it sees
  *
- * MuPDF's `bake(bakeAnnots, bakeWidgets)` takes no page and no field list, so
- * there is no scope to name. A per-field or per-page flatten would be this
+ * MuPDF's `bake(bakeAnnots, bakeWidgets)` takes no page and no field list. A
+ * per-field flatten that drew each field's appearance itself would be this
  * build re-deriving *which objects make up this field's appearance* — the
- * engine's own rule, and B3a's second opinion.
+ * engine's own rule, and B3a's second opinion. So a flatten of the selected
+ * fields (ADR-0226 Decision 16) puts the others aside for the bake and back
+ * after it, and the engine bakes exactly as it bakes the whole form.
  *
- * **No `version` either**, unlike the fill and the delete beside it. Those name
- * positions in a walk an answer produced and are refused if the document has
- * moved; this names nothing, so there is no answer it could be stale against.
- * `targets: 'none'` says the same thing on the other side of the boundary.
+ * **It carries a version** since 2026-10-11: the selection names positions in
+ * the widget walk an answer produced, so it is refused if the document has
+ * moved, as the fill and the delete beside it are.
  *
  * ## It flattens the FORM, not the comments
  *
@@ -3291,6 +3292,26 @@ export const deleteFormFieldsSchema = z.object({
  */
 export const flattenFormFieldsSchema = z.object({
   kind: z.literal('flattenFormFields'),
+  /**
+   * The whole form, or only the widgets a person selected, each by its page and its place in that page's widget walk
+   * (ADR-0226 Decision 16, the owner's G1). Bounded as a delete is, for its reason.
+   *
+   * **No name beside each place**, unlike the handle the field edits carry: this command crosses to the MuPDF host's
+   * 256 KiB frame, and 1,024 handles with a 512-character name each measured 3,222,286 bytes at worst
+   * (`hostRoutes.test.ts`, 2026-10-11). The version is what refuses a walk that moved, as it is for the delete.
+   */
+  fields: z.union([
+    z.literal('all'),
+    z
+      .array(z.object({ page: z.number().int().nonnegative(), index: z.number().int().nonnegative() }).strict())
+      .min(1)
+      .max(MAX_DELETED_FIELDS),
+  ]),
+  /**
+   * The version the fields were read at. A selection names places in the widget walk, so it carries one, and so does
+   * the whole form's, so the one command has one rule: the paragraphs above said *no version* while it named nothing.
+   */
+  version: docVersionSchema,
 }).strict();
 
 /**
@@ -6601,6 +6622,7 @@ export function targetVersionOf(command: Command): DocVersion | undefined {
   if (command.kind === 'duplicateFormField') return command.version;
   if (command.kind === 'deleteFormFields') return command.version;
   if (command.kind === 'setTabOrder') return command.version;
+  if (command.kind === 'flattenFormFields') return command.version;
   if (command.kind === 'replaceTextObject') return command.version;
   if (command.kind === 'placePageObject') return command.version;
   if (command.kind === 'recolorPageObjects') return command.version;
@@ -6671,7 +6693,9 @@ export type NamesAFormField =
   | 'duplicateFormField'
   // A TAB ORDER a person gave names its fields by their place in the widget walk (ADR-0226 Decision 15), and a row or
   // column order is composed against the same walk, so every tab order carries the version it was read at.
-  | 'setTabOrder';
+  | 'setTabOrder'
+  // A FLATTEN OF THE SELECTED FIELDS names them by their places in the walk (ADR-0226 Decision 16).
+  | 'flattenFormFields';
 const _theFieldNameIsACommandKind: NamesAFormField extends CommandKind ? true : never = true;
 void _theFieldNameIsACommandKind;
 

@@ -1576,10 +1576,8 @@ const declarations = {
     reproducible: true,
     replay: 'reapply-intent',
     sources: 'none',
-    // NAMES NOTHING, unlike the two form commands above it. `bake` takes no
-    // page and no field list, so there is no answer this could be stale
-    // against — which is also why its payload carries no version.
-    targets: 'none',
+    // THE WIDGET WALK since it may name the selected fields (ADR-0226 Decision 16): their handles are positions in it.
+    targets: 'field',
     reads: 'none',
     asset: 'none',
     // THE FIRST COMMAND ON THIS AXIS THAT IS NOT `'ordinary'`, and the reason

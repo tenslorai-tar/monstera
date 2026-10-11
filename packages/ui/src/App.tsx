@@ -1426,9 +1426,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * (`flattenForm` in `documentCommands.ts`, where the reason it takes no handle is written).
    */
   const flattenActiveForm = useCallback((): void => {
-    if (activeId === undefined) return;
-    void flattenForm({ client, onApplied: applied, ask, stamp, signatures, toast }, activeId);
-  }, [activeId, applied, ask, client, signatures, stamp, toast]);
+    if (activeId === undefined || openVersion === undefined) return;
+    void flattenForm({ client, onApplied: applied, ask, stamp, signatures, toast }, activeId, openVersion, selectedHandles);
+  }, [activeId, applied, ask, client, openVersion, selectedHandles, signatures, stamp, toast]);
 
   /**
    * Removing everything the select tool has picked.
@@ -3776,7 +3776,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // ALIGN AND SAME SIZE for the selected form fields (ADR-0193), at the Properties tab's foot.
         ...fieldArrangeCommands({ placed: () => placedFields, apply: arrangeSelectedFields }),
         copyFieldToPagesCommand({ single: () => singleField, ask, apply: copyFieldToPages }),
-        flattenFormCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        flattenFormCommand({ client, onApplied: applied, ask, stamp, signatures, toast, selectedFields: () => selectedHandles }),
         tabOrderCommand({ client, onApplied: applied, ask, stamp, signatures, toast, orderByClicking }),
         // EDIT TEXT, a MODE in the tool slot (ADR-0096): it toggles as a drawing
         // tool's command does, and `editing` below is what the mode draws.
@@ -3987,6 +3987,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       stamp,
       // THE SELECTED FORM FIELDS AND WHERE THEY ARE (ADR-0193), which align and same size read.
       placedFields,
+      selectedHandles,
       arrangeSelectedFields,
       singleField,
       copyFieldToPages,

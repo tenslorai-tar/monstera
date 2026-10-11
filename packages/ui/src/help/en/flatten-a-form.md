@@ -6,13 +6,14 @@ keywords: [flatten, flatten form, lock form, make permanent, remove fields, fina
 commands: [document.flatten-form]
 contexts: [forms]
 ---
-Flattening turns a filled form into ordinary page content. What is in the fields stays visible, but the fields are gone and cannot be filled in again.
+Flatten turns the form into an ordinary page. Whatever is typed or ticked stays exactly as it looks, but nobody can change it any more. Use it before you send a final copy.
 
 ## Steps
 
 1. Fill in the form.
-2. In the rail, choose **Forms**, then **Flatten** in the **Manage** group (its full name is **Flatten form**).
-3. Monstera says what flattening removes. Choose **Flatten form** to go ahead, or close the window to keep the form. A message at the bottom of the window says when it is done.
+2. To flatten only some fields, select them first: choose **Edit fields** and click them, or pick them in the **Fields list**.
+3. In the rail, choose **Forms**, then **Flatten** in the **Manage** group (its full name is **Flatten form**).
+4. Monstera says what flattening does. With fields selected, choose **The whole form** or **Only the selected fields**. Choose **Flatten form** to go ahead, or close the window to keep the form. A message at the bottom of the window says when it is done.
 
 ![The Manage group with Flatten](screenshot:flatten-a-form-1)
 

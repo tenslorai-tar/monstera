@@ -2,6 +2,7 @@ import { PDFArray, PDFDict, PDFDocument, PDFName, PDFString, StandardFonts } fro
 import { describe, expect, it } from 'vitest';
 
 import type { CommandKind, Command } from '@monstera/contract';
+import { asDocVersion } from '@monstera/shared';
 
 import { commandSpecs } from './commandSpecs.js';
 import { declaredCommands } from './commandDeclarations.js';
@@ -275,7 +276,7 @@ interface RemovalCase {
 const REMOVAL_CASES: Readonly<Record<string, RemovalCase>> = {
   flattenFormFields: {
     fixture: form,
-    payload: { kind: 'flattenFormFields' },
+    payload: { kind: 'flattenFormFields', fields: 'all', version: asDocVersion(1) },
     // WIDGETS AND FIELDS, both. This was `.widgets` alone for one range (audit of
     // `622f794..4971b60`), narrowed when the table became per kind — while the case
     // it replaced asserted both counts were zero. A flatten that collected every

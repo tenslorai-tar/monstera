@@ -84,7 +84,7 @@ async function flattenedKeeps(bytes: Uint8Array, touch: boolean): Promise<{ read
   const { placed, session } = await placedOf(bytes, touch);
   try {
     const before = inkOf(await mupdfWriter.serialise(session), placed, true);
-    await applyFlattenFormFields(session, { kind: 'flattenFormFields' });
+    await applyFlattenFormFields(session, { kind: 'flattenFormFields', fields: 'all', version: asDocVersion(1) });
     const after = inkOf(await mupdfWriter.serialise(session), placed, false);
     const lost = [...before].filter(([key, ink]) => (after.get(key) ?? 0) < ink * 0.8).map(([key, ink]) => `${key}: ${String(ink)} -> ${String(after.get(key))}`);
     return { lost, fields: before.size, ink: [...before.values()].reduce((sum, ink) => sum + ink, 0) };
@@ -139,7 +139,7 @@ describe('flatten keeps what the page shows', () => {
       await fill('date_of_birth', { set: 'text', text: '01/02/1990' });
       await fill('events', { set: 'button', on: true });
       const before = inkOf(await mupdfWriter.serialise(session), placed, true);
-      await applyFlattenFormFields(session, { kind: 'flattenFormFields' });
+      await applyFlattenFormFields(session, { kind: 'flattenFormFields', fields: 'all', version: asDocVersion(1) });
       const after = inkOf(await mupdfWriter.serialise(session), placed, false);
       const lost = [...before].filter(([key, ink]) => (after.get(key) ?? 0) < ink * 0.8).map(([key]) => key);
       expect(before.size, 'control: the reading covers every field of the form').toBeGreaterThan(60);
@@ -172,5 +172,99 @@ describe('flatten keeps what the page shows', () => {
     });
     const kept = await flattenedKeeps(created, true);
     expect(kept.lost).toStrictEqual([]);
+  });
+});
+
+/**
+ * Flattening only the selected fields (ADR-0226 Decision 16, the owner's G1): the chosen widgets are in the page's own
+ * content afterwards and gone from the form, and every other widget is still a widget with its field and its value.
+ * Read with {@link inkOf} as above, so *in the page's content* is a pixel reading with widgets off.
+ */
+describe('flatten only the selected fields', () => {
+  /** Every widget's handle, name and place, read through the engine whose walk the handles name. */
+  async function widgetsOf(bytes: Uint8Array): Promise<{ handle: { page: number; index: number; name: string }; placed: Placed; group: boolean }[]> {
+    const session = await mupdfWriter.open(bytes);
+    try {
+      return await withDocument(session, (document) => {
+        const found: { handle: { page: number; index: number; name: string }; placed: Placed; group: boolean }[] = [];
+        for (let page = 0; page < document.countPages(); page += 1) {
+          document.loadPage(page).getWidgets().forEach((widget, index) => {
+            found.push({
+              handle: { page, index, name: widget.getName() },
+              placed: { name: widget.getName(), kind: widget.getFieldType(), page, bounds: widget.getBounds() },
+              group: widget.isRadioButton(),
+            });
+          });
+        }
+        return found;
+      });
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }
+
+  it('bakes the chosen widgets into their pages, takes them out of the form, and leaves every other field as it was', async () => {
+    const { session: touched } = await placedOf(await buildFormTestPdf(), true);
+    const filled = await mupdfWriter.serialise(touched);
+    await mupdfWriter.close(touched);
+    const before = await widgetsOf(filled);
+    // ONE OPTION OF A RADIO GROUP, a text field on the first page and one on a later page: the shapes that differ.
+    const radio = before.find((each) => each.group);
+    const texts = before.filter((each) => each.placed.kind === 'text' && !each.group);
+    const onFirst = texts.find((each) => each.handle.page === 0);
+    const onLater = texts.find((each) => each.handle.page > 0);
+    if (radio === undefined || onFirst === undefined || onLater === undefined) throw new Error('the fixture lacks a shape');
+    const chosen = [radio, onFirst, onLater];
+    const others = before.filter((each) => !chosen.includes(each));
+    const inked = inkOf(filled, chosen.map((each) => each.placed), true);
+
+    const session = await mupdfWriter.open(filled);
+    let after: Uint8Array;
+    try {
+      await applyFlattenFormFields(session, {
+        kind: 'flattenFormFields',
+        fields: chosen.map((each) => ({ page: each.handle.page, index: each.handle.index })),
+        version: asDocVersion(1),
+      });
+      after = await mupdfWriter.serialise(session);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+
+    // IN THE PAGE: each chosen widget's ink is there with widgets off, which only a bake into the content gives.
+    const baked = inkOf(after, chosen.map((each) => each.placed), false);
+    for (const [key, ink] of inked) expect(baked.get(key) ?? 0, key).toBeGreaterThanOrEqual(ink * 0.8);
+    // OUT OF THE FORM, and ONLY those: every other widget is still a widget, by name, and the radio's group keeps its others.
+    const left = await widgetsOf(after);
+    expect(left.map((each) => each.placed.name).sort()).toStrictEqual(others.map((each) => each.placed.name).sort());
+    expect(left.filter((each) => each.placed.name === radio.placed.name).length).toBe(
+      before.filter((each) => each.placed.name === radio.placed.name).length - 1,
+    );
+    // CONTROL: the fields not chosen are NOT in the page's content, so the reading above is the bake's and not a page
+    // that drew every field.
+    const unbaked = inkOf(after, others.slice(0, 5).map((each) => each.placed), false);
+    expect([...unbaked.values()].every((ink) => ink === 0)).toBe(true);
+  });
+
+  it('CONTROL: refuses a place no widget holds before anything changes, and the form is as it was', async () => {
+    const bytes = await buildFormTestPdf();
+    const before = await widgetsOf(bytes);
+    const first = before[0];
+    if (first === undefined) throw new Error('the fixture has no field');
+    const session = await mupdfWriter.open(bytes);
+    try {
+      await expect(
+        applyFlattenFormFields(session, {
+          kind: 'flattenFormFields',
+          // A REAL PLACE FIRST, so a flatten that worked through the list until it failed would have baked it.
+          fields: [{ page: first.handle.page, index: first.handle.index }, { page: 0, index: 999 }],
+          version: asDocVersion(1),
+        }),
+      ).rejects.toBeInstanceOf(RangeError);
+      const after = await widgetsOf(await mupdfWriter.serialise(session));
+      expect(after.length).toBe(before.length);
+    } finally {
+      await mupdfWriter.close(session);
+    }
   });
 });

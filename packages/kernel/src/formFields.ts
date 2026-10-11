@@ -1105,12 +1105,13 @@ export const invertDeleteFormFields: Invert<'mupdf', 'deleteFormFields'> = (): P
  * keep the comments editable* is what this row promises. Flattening annotations
  * is D7's *sanitize / flatten document* and is not smuggled in here.
  *
- * ## The whole document, because that is what the engine offers
+ * ## The engine bakes whatever it is shown
  *
- * `bake` takes no page and no field list. A per-field flatten would be this
- * build re-deriving *which objects make up this field's appearance*, which is
- * the engine's rule (B3a) — and the payload says so by having no members at
- * all beyond its kind.
+ * `bake` takes no page and no field list. A per-field flatten that drew each
+ * appearance itself would be this build re-deriving *which objects make up
+ * this field's appearance*, which is the engine's rule (B3a). So the selected
+ * fields' flatten (ADR-0226 Decision 16) changes what the bake is shown, in
+ * {@link flattenSome}, and never how it bakes.
  *
  * ## It is a REMOVAL, and that is why it uses the other helper
  *
@@ -1121,10 +1122,82 @@ export const invertDeleteFormFields: Invert<'mupdf', 'deleteFormFields'> = (): P
  * than the catalog. {@link withDocumentRemoving} records the fact on the
  * session, and `serialise` collects from then on.
  */
-export const applyFlattenFormFields: Apply<'mupdf', 'flattenFormFields'> = (session) =>
+export const applyFlattenFormFields: Apply<'mupdf', 'flattenFormFields'> = (session, command) =>
   withDocumentRemoving(session, (document) => {
-    document.bake(false, true);
+    if (command.fields === 'all') {
+      document.bake(false, true);
+      return;
+    }
+    flattenSome(document, command.fields);
   });
+
+/**
+ * Bakes the named widgets and no other (ADR-0226 Decision 16).
+ *
+ * MuPDF's bake walks each page's `/Annots` and then deletes `/AcroForm` whole, so: every widget not named is put aside
+ * from its page's `/Annots` for the bake, the form is put back after it, each page's array is put back without the
+ * baked widgets in the order it had, and the baked widgets leave the field tree — {@link pruneEmptyFields} taking a
+ * parent no widget is left under, and the calculation order with it. A field that is a value only, on no page, is not
+ * in any `/Annots` and is not touched. A place no widget holds is refused (`widgetAt`) before anything changes; a walk
+ * that moved is the version's to refuse, at the bus, as it is for the delete.
+ */
+function flattenSome(document: PDFDocument, places: readonly { readonly page: number; readonly index: number }[]): void {
+  const chosen = new Set<number>();
+  for (const place of places) {
+    const widget = widgetAt(pageAt(document, place.page, document.countPages()), place.index);
+    const object = widget.getObject();
+    // A WIDGET IS AN INDIRECT OBJECT in every file a reader accepts (`/Annots` and `/Kids` must both reach it).
+    if (object.isIndirect()) chosen.add(object.asIndirect());
+  }
+  const isChosen = (entry: PDFObject): boolean => entry.isIndirect() && chosen.has(entry.asIndirect());
+
+  const pages = document.countPages();
+  const kept: (PDFObject[] | undefined)[] = [];
+  for (let page = 0; page < pages; page += 1) {
+    const found = document.findPage(page);
+    const annots = found.get('Annots');
+    if (!annots.isArray()) {
+      kept.push(undefined);
+      continue;
+    }
+    const all: PDFObject[] = [];
+    for (let at = 0; at < annots.length; at += 1) all.push(annots.get(at));
+    kept.push(all.filter((entry) => !isChosen(entry)));
+    // ONLY THE CHOSEN for the bake: a widget the bake cannot see is a widget it leaves as a field.
+    const only = document.newArray();
+    for (const entry of all.filter(isChosen)) only.push(entry);
+    found.put('Annots', only);
+  }
+
+  const root = document.getTrailer().get('Root');
+  const form = root.get('AcroForm');
+  document.bake(false, true);
+  if (!form.isNull()) root.put('AcroForm', form);
+  for (let page = 0; page < pages; page += 1) {
+    const back = kept[page];
+    if (back === undefined) continue;
+    const array = document.newArray();
+    for (const entry of back) array.push(entry);
+    document.findPage(page).put('Annots', array);
+  }
+
+  // THE BAKED WIDGETS LEAVE THE TREE: a merged field and widget from `/Fields`, a widget from its parent's `/Kids`.
+  const fields = form.isNull() ? form : form.get('Fields');
+  if (!fields.isArray()) return;
+  const sweep = (array: PDFObject): void => {
+    for (let index = array.length - 1; index >= 0; index -= 1) {
+      const node = array.get(index);
+      if (isChosen(node)) {
+        array.delete(index);
+        continue;
+      }
+      const kids = node.get('Kids');
+      if (kids.isArray()) sweep(kids);
+    }
+  };
+  sweep(fields);
+  pruneEmptyFields(document);
+}
 
 /**
  * Reports that a flatten's prior state is not recorded, and validates nothing.

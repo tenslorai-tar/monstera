@@ -18,6 +18,7 @@ import {
   FLATTEN_FORM_TIP,
   TAB_ORDER_TIP,
   TOAST_ACTIVE_CONTENT_REMOVED,
+  TOAST_FIELDS_FLATTENED,
   TOAST_FORM_FLATTENED,
   TOAST_TAB_ORDER_SET,
   TOAST_FORM_DATA_IMPORTED,
@@ -6309,29 +6310,95 @@ describe('protectDocumentCommand', () => {
     });
   });
 
-  describe('flattenFormCommand (F-F1)', () => {
-    it('ASKS FIRST, then flattens, then SAYS it did', async () => {
+  describe('flattenFormCommand (F-F1, G1)', () => {
+    const SELECTED = [
+      { page: 0, index: 2, name: 'postcode' },
+      { page: 1, index: 0, name: 'signed_on' },
+    ];
+
+    it('ASKS FIRST, then flattens the whole form at the version it asked at, then SAYS it did', async () => {
       const { client, sent } = recordingClient();
       const said: unknown[] = [];
-      const asked: string[] = [];
+      const asked: unknown[] = [];
       await flattenFormCommand({
         client,
         toast: (_kind, message) => said.push(message),
         stamp,
         signatures,
         onApplied: () => undefined,
-        ask: (id) => {
+        selectedFields: () => [],
+        ask: (id, props) => {
           // NOTHING SENT YET when the question opens: a dialog asked after the command would be a notice, not a question.
-          asked.push(`${id} after ${String(sent.length)} sent`);
-          return Promise.resolve({ flatten: true });
+          asked.push({ id, props, sent: sent.length });
+          return Promise.resolve({ flatten: true, scope: 'all' });
         },
       }).run(CONTEXT);
 
-      expect(asked).toStrictEqual(['dialog.flatten-form after 0 sent']);
+      // WITH NOTHING SELECTED the window is told so, and offers no choice.
+      expect(asked).toStrictEqual([{ id: 'dialog.flatten-form', props: { selected: 0 }, sent: 0 }]);
       expect(sent).toStrictEqual([
-        { id: 'document.execute', params: { docId: DOC, command: { kind: 'flattenFormFields' } } },
+        {
+          id: 'document.execute',
+          params: { docId: DOC, command: { kind: 'flattenFormFields', fields: 'all', version: CONTEXT.version } },
+        },
       ]);
       expect(said).toStrictEqual([TOAST_FORM_FLATTENED]);
+    });
+
+    it('ONLY THE SELECTED FIELDS when that is chosen, named by their handles, and says so', async () => {
+      const { client, sent } = recordingClient();
+      const said: unknown[] = [];
+      const asked: unknown[] = [];
+      await flattenFormCommand({
+        client,
+        toast: (_kind, message) => said.push(message),
+        stamp,
+        signatures,
+        onApplied: () => undefined,
+        selectedFields: () => SELECTED,
+        ask: (_id, props) => {
+          asked.push(props);
+          return Promise.resolve({ flatten: true, scope: 'selected' });
+        },
+      }).run(CONTEXT);
+      expect(asked).toStrictEqual([{ selected: 2 }]);
+      expect(sent).toStrictEqual([
+        {
+          id: 'document.execute',
+          // THE PLACES, without the names: the version is what refuses a walk that moved.
+          params: {
+            docId: DOC,
+            command: {
+              kind: 'flattenFormFields',
+              fields: [
+                { page: 0, index: 2 },
+                { page: 1, index: 0 },
+              ],
+              version: CONTEXT.version,
+            },
+          },
+        },
+      ]);
+      expect(said).toStrictEqual([TOAST_FIELDS_FLATTENED]);
+    });
+
+    it('CONTROL: with fields selected, choosing the whole form flattens the whole form', async () => {
+      const { client, sent } = recordingClient();
+      await flattenFormCommand({
+        client,
+        toast: () => undefined,
+        stamp,
+        signatures,
+        onApplied: () => undefined,
+        selectedFields: () => SELECTED,
+        ask: () => Promise.resolve({ flatten: true, scope: 'all' }),
+      }).run(CONTEXT);
+      expect(sent).toStrictEqual([
+        {
+          id: 'document.execute',
+          params: { docId: DOC, command: { kind: 'flattenFormFields', fields: 'all', version: CONTEXT.version } },
+        },
+      ]);
     });
 
     it('CONTROL: a DISMISSED question dispatches nothing and says nothing', async () => {
@@ -6343,6 +6410,7 @@ describe('protectDocumentCommand', () => {
         stamp,
         signatures,
         onApplied: () => undefined,
+        selectedFields: () => SELECTED,
         ask: () => Promise.resolve(undefined),
       }).run(CONTEXT);
 
@@ -6359,9 +6427,10 @@ describe('protectDocumentCommand', () => {
         stamp,
         signatures,
         onApplied: () => undefined,
+        selectedFields: () => [],
         ask: (id) => {
           asked.push(id);
-          return Promise.resolve(id === 'dialog.flatten-form' ? { flatten: true } : undefined);
+          return Promise.resolve(id === 'dialog.flatten-form' ? { flatten: true, scope: 'all' } : undefined);
         },
       }).run(CONTEXT);
 
@@ -6382,11 +6451,13 @@ describe('protectDocumentCommand', () => {
         ask: () => Promise.resolve(undefined),
         markPlaces: () => undefined,
         orderByClicking: () => undefined,
+        selectedFields: () => [],
       };
       const tips = [detectFlatFieldsCommand(deps), flattenFormCommand(deps), tabOrderCommand(deps)].map((command) => command.tip);
       expect(tips).toStrictEqual([DETECT_FIELDS_TIP, FLATTEN_FORM_TIP, TAB_ORDER_TIP]);
       expect(EN[DETECT_FIELDS_TIP]).toMatch(/^Detect: /u);
-      expect(EN[FLATTEN_FORM_TIP]).toMatch(/^Flatten: /u);
+      // THE OWNER'S OWN SENTENCE (G1), which names the control first as the others' do.
+      expect(EN[FLATTEN_FORM_TIP]).toMatch(/^Flatten turns the form into an ordinary page\./u);
       expect(EN[TAB_ORDER_TIP]).toMatch(/^Tab order: /u);
     });
   });

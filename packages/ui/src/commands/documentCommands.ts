@@ -9,6 +9,7 @@ import {
   type FailureOf,
   type FormDataFormat,
   type FormDataImportFormat,
+  type FormFieldHandle,
   type OptimizeSetting,
   type PageInsert,
   type PageSet,
@@ -285,6 +286,7 @@ import {
   TOAST_SIGNED_COPY_SAVED,
   TOAST_SNAPSHOT_SAVED,
   TOAST_ACTIVE_CONTENT_REMOVED,
+  TOAST_FIELDS_FLATTENED,
   TOAST_FORM_FLATTENED,
   TOAST_DOCUMENT_SIGNED,
   TOAST_SENT_TO_PRINTER,
@@ -3897,26 +3899,46 @@ export const importFormDataFdfCommand = importFormDataCommand(
  * tools are the answer for the rest.
  */
 /**
- * Flattening the whole form: every field's value burnt into the page, the fields gone.
+ * Flattening the form: the whole of it, or the fields selected (ADR-0226 Decision 16), each field's value burnt into the
+ * page and the field gone.
  *
  * **One function with two triggers** — v5-08's Forms › Manage › *Flatten*, and the Forms panel's own
  * button, which calls this rather than a second dispatch beside it.
  *
- * **Takes no handle**: MuPDF's `bake` acts on the document and names neither a page nor a field, so
- * there is no answer this could be composed against and therefore no version to be refused on.
- * `targets: 'none'` says the same thing from the declaration side. It is one command and one undo.
+ * **The version is the one the selection was read at**, which the caller passes with it: the selected fields are named
+ * by their places in the widget walk, so a flatten composed against an older walk is refused rather than flattening
+ * another field. It is one command and one undo.
  *
  * **Asked first and confirmed after** (the owner's F-F1). The undo is a checkpoint, which closing the document drops,
  * and a flatten changes nothing the page shows: each field's appearance is what gets drawn. So the dialog is the only
  * place a person learns what the control removes, and the toast is the only sign that it ran. Dismissing dispatches
- * nothing, and a refused flatten says its own problem through {@link applyDocumentCommand} rather than the toast.
+ * nothing, and a refused flatten says its own problem through {@link applyDocumentCommand} rather than the toast. The
+ * dialog offers *only the selected fields* when some are selected.
  */
-export async function flattenForm(deps: DocumentCommandDeps & WritesAFile, docId: DocId): Promise<void> {
-  if (!FLATTEN_FORM_RESULT.safeParse(await deps.ask(FLATTEN_FORM_DIALOG_ID, {})).success) return;
-  if (await applyDocumentCommand(deps, docId, { kind: 'flattenFormFields' })) confirmDone(deps, TOAST_FORM_FLATTENED);
+export async function flattenForm(
+  deps: DocumentCommandDeps & WritesAFile,
+  docId: DocId,
+  version: DocVersion,
+  selected: readonly FormFieldHandle[],
+): Promise<void> {
+  const answer = FLATTEN_FORM_RESULT.safeParse(await deps.ask(FLATTEN_FORM_DIALOG_ID, { selected: selected.length }));
+  if (!answer.success) return;
+  // A SELECTION THAT EMPTIED while the question was open is the whole form's question no longer: nothing is flattened.
+  if (answer.data.scope === 'selected' && selected.length === 0) return;
+  // THE PLACES, NOT THE NAMES: the version refuses a walk that moved (`flattenFormFieldsSchema`).
+  const fields = answer.data.scope === 'selected' ? selected.map(({ page, index }) => ({ page, index })) : 'all';
+  if (await applyDocumentCommand(deps, docId, { kind: 'flattenFormFields', fields, version })) {
+    confirmDone(deps, answer.data.scope === 'selected' ? TOAST_FIELDS_FLATTENED : TOAST_FORM_FLATTENED);
+  }
 }
 
-export function flattenFormCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
+export function flattenFormCommand(
+  deps: DocumentCommandDeps &
+    WritesAFile & {
+      /** The fields selected in the open document, read when the command runs. */
+      readonly selectedFields: () => readonly FormFieldHandle[];
+    },
+): UiCommand {
   return {
     id: 'document.flatten-form',
     // OUT OF SIGHT: a flattened field is drawn from its own appearance, so the page shows nothing new.
@@ -3929,8 +3951,8 @@ export function flattenFormCommand(deps: DocumentCommandDeps & WritesAFile): UiC
     placements: [{ surface: 'ribbon', section: 'forms', group: GROUP_MANAGE, order: 82 }],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined) return;
-      await flattenForm(deps, context.docId);
+      if (context.docId === undefined || context.version === undefined) return;
+      await flattenForm(deps, context.docId, context.version, deps.selectedFields());
     },
   };
 }

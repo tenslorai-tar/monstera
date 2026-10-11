@@ -191,6 +191,38 @@ test.describe('the Forms tab', () => {
     await expect(page.locator('[data-form-selected]')).toHaveCount(0);
   });
 
+  test('Flatten with a field selected offers ONLY THE SELECTED FIELD, and sends that field by its handle (G1)', async ({ page }) => {
+    const sent: { channel: string; params: unknown }[] = [];
+    await openForms(page, sent);
+    await openSection(page, 'Forms');
+    await runCommand(page, 'Fields list');
+    await page.locator('.m-forms-jump', { hasText: 'Full name' }).click();
+    await page.getByRole('button', { name: 'Flatten' }).first().click();
+    const dialog = page.getByRole('dialog', { name: 'Flatten the form' });
+    await expect(dialog.getByText(/turns the form into an ordinary page/u)).toBeVisible();
+    // THE WHOLE FORM IS THE FIRST CHOICE, as the control's name says.
+    await expect(dialog.getByLabel(/The whole form/u)).toBeChecked();
+    await dialog.getByLabel(/Only the selected field/u).check();
+    await dialog.getByRole('button', { name: 'Flatten form' }).click();
+    const flattens = sent.filter((call) => call.channel === 'document.execute');
+    expect(flattens).toHaveLength(1);
+    expect(flattens[0]?.params).toMatchObject({
+      command: { kind: 'flattenFormFields', fields: [{ page: 0, index: 0 }] },
+    });
+  });
+
+  test('CONTROL: Flatten with nothing selected offers no choice and flattens the whole form', async ({ page }) => {
+    const sent: { channel: string; params: unknown }[] = [];
+    await openForms(page, sent);
+    await openSection(page, 'Forms');
+    await page.getByRole('button', { name: 'Flatten' }).first().click();
+    const dialog = page.getByRole('dialog', { name: 'Flatten the form' });
+    await expect(dialog.getByRole('radiogroup')).toHaveCount(0);
+    await dialog.getByRole('button', { name: 'Flatten form' }).click();
+    const flattens = sent.filter((call) => call.channel === 'document.execute');
+    expect(flattens[0]?.params).toMatchObject({ command: { kind: 'flattenFormFields', fields: 'all' } });
+  });
+
   test('a selected field shows its properties in the Properties tab, and a control sends exactly one editFormFields for it', async ({ page }) => {
     const sent: { channel: string; params: unknown }[] = [];
     await openForms(page, sent);
@@ -274,7 +306,7 @@ test.describe('the Forms tab', () => {
     await openForms(page, sent);
     await openSection(page, 'Forms');
     await expect(page.getByRole('button', { name: 'Detect' }).first()).toHaveAccessibleDescription(/finds empty lines and boxes beside a label/u);
-    await expect(page.getByRole('button', { name: 'Flatten' }).first()).toHaveAccessibleDescription(/prints what is typed in every field/u);
+    await expect(page.getByRole('button', { name: 'Flatten' }).first()).toHaveAccessibleDescription(/turns the form into an ordinary page/u);
     await expect(page.getByRole('button', { name: 'Tab order' }).first()).toHaveAccessibleDescription(/how the Tab key moves/u);
     // NOTHING WAS SENT BY LOOKING.
     expect(sent.filter((call) => call.channel === 'document.execute')).toStrictEqual([]);

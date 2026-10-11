@@ -244,7 +244,7 @@ describe('the declaration table', () => {
     expect(declared).toContain('replacePage');
   });
 
-  it('CONTROL: exactly twenty kinds declare a target, and the rest answer none', () => {
+  it('CONTROL: exactly twenty-one kinds declare a target, and the rest answer none', () => {
     // The targets axis's version of the control above, and it carries the
     // second half as well. `never extends X` would satisfy one type-level line
     // on its own; and a table where EVERY command declared a target would
@@ -270,6 +270,8 @@ describe('the declaration table', () => {
       'setLinkOutline',
       'fillFormField',
       'deleteFormFields',
+      // A FLATTEN OF THE SELECTED FIELDS names their places in the walk (ADR-0226 Decision 16).
+      'flattenFormFields',
       // THE TWO THAT CHANGE OR COPY A FIELD THAT EXISTS (ADR-0193): their handles are positions in the widget walk.
       'editFormFields',
       'duplicateFormField',

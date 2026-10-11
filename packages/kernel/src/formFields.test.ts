@@ -1054,7 +1054,7 @@ async function formWithComment(): Promise<Uint8Array> {
 describe('applyFlattenFormFields', () => {
   it('empties the form: no widget in the walk and no field pdf-lib can list', async () => {
     const flattened = await onSession(await form(), async (session) => {
-      await applyFlattenFormFields(session, { kind: 'flattenFormFields' });
+      await applyFlattenFormFields(session, { kind: 'flattenFormFields', fields: 'all', version: asDocVersion(1) });
       return await mupdfWriter.serialise(session);
     });
 
@@ -1068,7 +1068,7 @@ describe('applyFlattenFormFields', () => {
   it('draws what the fields said into the page’s own content stream', async () => {
     const bytes = await form();
     const flattened = await onSession(bytes, async (session) => {
-      await applyFlattenFormFields(session, { kind: 'flattenFormFields' });
+      await applyFlattenFormFields(session, { kind: 'flattenFormFields', fields: 'all', version: asDocVersion(1) });
       return await mupdfWriter.serialise(session);
     });
 
@@ -1086,7 +1086,7 @@ describe('applyFlattenFormFields', () => {
     // can see a flatten, and this case is where that is noticed.
     const bytes = await form();
     const flattened = await onSession(bytes, async (session) => {
-      await applyFlattenFormFields(session, { kind: 'flattenFormFields' });
+      await applyFlattenFormFields(session, { kind: 'flattenFormFields', fields: 'all', version: asDocVersion(1) });
       return await mupdfWriter.serialise(session);
     });
 
@@ -1102,7 +1102,7 @@ describe('applyFlattenFormFields', () => {
     expect(before.annotations).toHaveLength(1);
 
     const flattened = await onSession(bytes, async (session) => {
-      await applyFlattenFormFields(session, { kind: 'flattenFormFields' });
+      await applyFlattenFormFields(session, { kind: 'flattenFormFields', fields: 'all', version: asDocVersion(1) });
       return await mupdfWriter.serialise(session);
     });
 
@@ -1117,7 +1117,7 @@ describe('applyFlattenFormFields', () => {
     // by mistake, and there is nothing incorrect about flattening nothing.
     const bytes = await marked();
     const flattened = await onSession(bytes, async (session) => {
-      await applyFlattenFormFields(session, { kind: 'flattenFormFields' });
+      await applyFlattenFormFields(session, { kind: 'flattenFormFields', fields: 'all', version: asDocVersion(1) });
       return await mupdfWriter.serialise(session);
     });
 

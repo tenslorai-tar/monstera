@@ -2056,6 +2056,12 @@ export const TOAST_SENT_TO_PRINTER = messageKey('toast.sent-to-printer');
 export const TOAST_DOCUMENT_SIGNED = messageKey('toast.document-signed');
 export const TOAST_ACTIVE_CONTENT_REMOVED = messageKey('toast.active-content-removed');
 export const TOAST_FORM_FLATTENED = messageKey('toast.form-flattened');
+export const TOAST_FIELDS_FLATTENED = messageKey('toast.fields-flattened');
+export const FLATTEN_FORM_SCOPE = messageKey('dialog.flatten-form.scope');
+export const FLATTEN_FORM_ALL = messageKey('dialog.flatten-form.all');
+export const FLATTEN_FORM_SELECTED = messageKey('dialog.flatten-form.selected');
+export const FLATTEN_FORM_ALL_NOTE = messageKey('dialog.flatten-form.all.note');
+export const FLATTEN_FORM_SELECTED_NOTE = messageKey('dialog.flatten-form.selected.note');
 export const TOAST_TRANSITION_SET = messageKey('toast.transition-set');
 export const TOAST_PROTECTION_SET = messageKey('toast.protection-set');
 export const TOAST_FORM_DATA_IMPORTED = messageKey('toast.form-data-imported');
@@ -4122,7 +4128,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [DETECT_FIELDS_TIP]:
     'Detect: finds empty lines and boxes beside a label on this page and offers each one as a field. You see how many it found and choose which to add before anything changes.',
   [FLATTEN_FORM_TIP]:
-    'Flatten: prints what is typed in every field onto the page and removes the fields, so the form can no longer be filled in. You are asked first.',
+    'Flatten turns the form into an ordinary page. Whatever is typed or ticked stays exactly as it looks, but nobody can change it any more. Use it before you send a final copy. You are asked first.',
   [TAB_ORDER_TIP]: 'Tab order: choose how the Tab key moves from field to field when someone fills in this form.',
   [TAB_ORDER_COMMAND_TITLE]: 'Tab order…',
   [RIBBON_TAB_ORDER]: 'Tab order',
@@ -4430,7 +4436,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FORM_FIELD_PRESS]: 'Press {name}',
   [FLATTEN_FORM_TITLE]: 'Flatten the form',
   [FLATTEN_FORM_EXPLAINS]:
-    'Every field’s contents are drawn onto its page and the form is removed, so the fields can no longer be filled in. Comments are not affected. The only way back is Undo, in this session.',
+    'Flatten turns the form into an ordinary page. Whatever is typed or ticked stays exactly as it looks, but nobody can change it any more. Use it before you send a final copy. You can undo it until you close the document.',
   [FLATTEN_FORM_APPLY]: 'Flatten form',
   // THE TOOLS SAY "ADD", which separates them from the Forms panel's controls: those fill a field that exists, these put
   // one on the page, with a click or a drag.
@@ -4838,6 +4844,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TOAST_DOCUMENT_SIGNED]: 'Document signed. Save to keep the signature.',
   [TOAST_ACTIVE_CONTENT_REMOVED]: 'Active content removed. Save to keep the change.',
   [TOAST_FORM_FLATTENED]: 'Form flattened. Save to keep the change.',
+  [TOAST_FIELDS_FLATTENED]: 'The selected fields are flattened. Save to keep the change.',
+  [FLATTEN_FORM_SCOPE]: 'Flatten',
+  [FLATTEN_FORM_ALL]: 'The whole form',
+  [FLATTEN_FORM_ALL_NOTE]: 'Every field in the document.',
+  [FLATTEN_FORM_SELECTED_NOTE]: 'The other fields can still be filled in.',
+  [FLATTEN_FORM_SELECTED]: '{count, plural, one {Only the selected field} other {Only the # selected fields}}',
   [TOAST_TRANSITION_SET]: 'Page transition set. It plays when the document is presented.',
   [TOAST_PROTECTION_SET]: 'Password and permissions set. They are applied when you save.',
   [TOAST_FORM_DATA_IMPORTED]: 'Form data imported into the fields.',

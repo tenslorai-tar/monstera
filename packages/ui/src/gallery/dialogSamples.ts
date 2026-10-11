@@ -466,7 +466,10 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     },
   ],
   'dialog.signature-break': [{ state: 'opened', props: { signatures: 2 } }],
-  'dialog.flatten-form': [{ state: 'opened', props: {} }],
+  'dialog.flatten-form': [
+    { state: 'opened', props: { selected: 0 } },
+    { state: 'with-selection', props: { selected: 3 } },
+  ],
   'dialog.signed-edit': [{ state: 'opened', props: {} }],
   'dialog.sign-again': [
     { state: 'one', props: { count: 1, unreadable: false } },
