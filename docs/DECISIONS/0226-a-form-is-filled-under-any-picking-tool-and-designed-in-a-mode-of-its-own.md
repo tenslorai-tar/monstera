@@ -88,6 +88,11 @@ with it.
     follows the widget walk, which is `/Annots`' order, and so does every reader that ignores `/Tabs`; a `/Tabs` alone
     changed only the readers that read it, and this application's Tab was not one of them. A given order is the fields
     of one page, named by their handles; the fields not named follow them in the order they had.
+16. **Flatten may take only the selected fields** (the owner's G1). `flattenFormFields` names `all` or the fields'
+    handles, and so carries the version it was read at. MuPDF's bake has no field list: it bakes every widget in a
+    page's `/Annots` and then removes `/AcroForm`. So the widgets not chosen are put aside from `/Annots` for the bake
+    and put back in their places, the form is put back, and the chosen widgets are taken out of the field tree, a
+    parent with no widget left going with them. A value-only field, on no page, stays.
 
 ## Rejected alternatives
 
@@ -104,5 +109,7 @@ with it.
 - **One create per page when Detect runs on all pages.** Undo would take back one page of a decision made once.
 - **Tab following `/Tabs` by sorting at the press.** Two orders would then exist, ours and the file's, and a reader
   that ignores `/Tabs` would still walk the old one.
+- **Flattening a field by drawing its appearance into the page ourselves.** A second baker beside MuPDF's, with its own
+  opinion of which appearance state shows and how a rotated widget's matrix composes (B3a).
 - **A new command for a given order.** It is the same concern on the same writer; `setTabOrder` takes the order as
   one of its values.
