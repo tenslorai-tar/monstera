@@ -117,3 +117,81 @@ export function marqueeTakes(
     .filter(({ box }) => box.x0 < marquee.x1 && marquee.x0 < box.x1 && box.y0 < marquee.y1 && marquee.y0 < box.y1)
     .map(({ index }) => index);
 }
+
+/** How near, in CSS pixels, an edge has to come to another field's before it snaps to it. */
+export const SNAP_REACH = 5;
+
+/** A guide line a snap draws: a vertical one at `x`, or a horizontal one at `y`, across the page. */
+export interface Guide {
+  readonly axis: 'x' | 'y';
+  readonly at: number;
+}
+
+/**
+ * The nearest of `lines` to any of `ours`, within `reach`: how far to shift so they meet, and where. `undefined` when
+ * none is near enough, which is no snap on that axis.
+ */
+function nearest(ours: readonly number[], lines: readonly number[], reach: number): { readonly shift: number; readonly at: number } | undefined {
+  let best: { shift: number; at: number } | undefined;
+  for (const own of ours) {
+    for (const line of lines) {
+      const shift = line - own;
+      if (Math.abs(shift) <= reach && (best === undefined || Math.abs(shift) < Math.abs(best.shift))) best = { shift, at: line };
+    }
+  }
+  return best;
+}
+
+/** Each box's left, centre and right, or top, middle and bottom: the lines a field lines up on. */
+function linesOf(boxes: readonly Pixels[], axis: 'x' | 'y'): number[] {
+  return boxes.flatMap((box) => (axis === 'x' ? [box.x0, (box.x0 + box.x1) / 2, box.x1] : [box.y0, (box.y0 + box.y1) / 2, box.y1]));
+}
+
+/**
+ * A move snapped to the other fields (the owner's B2, as PDF-XChange does): the travel adjusted so the moving selection's
+ * left, centre or right meets another field's, and its top, middle or bottom, each axis on its own and only within
+ * {@link SNAP_REACH}, with a guide line where it met.
+ */
+export function snappedMove(
+  moving: Pixels,
+  others: readonly Pixels[],
+  travel: readonly [number, number],
+  reach = SNAP_REACH,
+): { readonly travel: readonly [number, number]; readonly guides: readonly Guide[] } {
+  const at = moved(moving, travel[0], travel[1]);
+  const x = nearest(linesOf([at], 'x'), linesOf(others, 'x'), reach);
+  const y = nearest(linesOf([at], 'y'), linesOf(others, 'y'), reach);
+  return {
+    travel: [travel[0] + (x?.shift ?? 0), travel[1] + (y?.shift ?? 0)],
+    guides: [...(x === undefined ? [] : [{ axis: 'x' as const, at: x.at }]), ...(y === undefined ? [] : [{ axis: 'y' as const, at: y.at }])],
+  };
+}
+
+/**
+ * A handle's point snapped to the other fields' edges and centres, on the axes the handle moves: a side handle moves one,
+ * a corner two. The same reach and the same guides as {@link snappedMove}.
+ */
+export function snappedHandle(
+  point: readonly [number, number],
+  handle: Handle,
+  others: readonly Pixels[],
+  reach = SNAP_REACH,
+): { readonly point: readonly [number, number]; readonly guides: readonly Guide[] } {
+  const x = handle.includes('e') || handle.includes('w') ? nearest([point[0]], linesOf(others, 'x'), reach) : undefined;
+  const y = handle.includes('n') || handle.includes('s') ? nearest([point[1]], linesOf(others, 'y'), reach) : undefined;
+  return {
+    point: [point[0] + (x?.shift ?? 0), point[1] + (y?.shift ?? 0)],
+    guides: [...(x === undefined ? [] : [{ axis: 'x' as const, at: x.at }]), ...(y === undefined ? [] : [{ axis: 'y' as const, at: y.at }])],
+  };
+}
+
+/** The box around several: what a move of a selection lines up as one. */
+export function around(boxes: readonly Pixels[]): Pixels | undefined {
+  if (boxes.length === 0) return undefined;
+  return {
+    x0: Math.min(...boxes.map((box) => box.x0)),
+    y0: Math.min(...boxes.map((box) => box.y0)),
+    x1: Math.max(...boxes.map((box) => box.x1)),
+    y1: Math.max(...boxes.map((box) => box.y1)),
+  };
+}

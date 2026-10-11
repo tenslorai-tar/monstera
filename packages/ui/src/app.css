@@ -6697,6 +6697,23 @@ optgroup {
   outline-offset: 2px;
 }
 
+/* A SNAP'S GUIDE LINE, across the whole page, in the accent: where the moving field met another's edge or centre. */
+.m-field-guide {
+  position: absolute;
+  pointer-events: none;
+  background: var(--accent-on-paper, var(--accent));
+}
+
+.m-field-guide--x {
+  inset-block: 0;
+  inline-size: 1px;
+}
+
+.m-field-guide--y {
+  inset-inline: 0;
+  block-size: 1px;
+}
+
 /* TAB ORDER'S NUMBER, in the box's top left corner on the chrome's surface: the number Tab will reach the field at. */
 .m-tab-order-box__number {
   position: absolute;

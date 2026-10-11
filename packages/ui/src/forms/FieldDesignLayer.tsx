@@ -8,9 +8,11 @@ import { overlayTransform } from '../annotations/annotationSpace.js';
 import { CORNER_REACH } from '../annotations/selectTool.js';
 import { FIELD_DESIGN_BOX, FIELD_DESIGN_LAYER_LABEL } from '../messages/en.js';
 import {
+  type Guide,
   HANDLES,
   type Handle,
   type Pixels,
+  around,
   handleAt,
   marqueeOf,
   marqueeTakes,
@@ -19,6 +21,8 @@ import {
   pixelsOf,
   rectOfPixels,
   resized,
+  snappedHandle,
+  snappedMove,
 } from './fieldDesign.js';
 import type { ListedField } from './fieldFill.js';
 import { type SelectMode, modeOf } from './fieldSelection.js';
@@ -130,24 +134,51 @@ export function FieldDesignLayer({
     return corner === undefined ? [0, 0] : [event.clientX - corner.left, event.clientY - corner.top];
   };
 
+  /**
+   * Where the pointer counts as being once the gesture snaps to the other fields (the owner's B2), and the guide lines
+   * that say what it met. ONE answer the drawing and the release both take, so what is drawn is what is sent.
+   */
+  const snapOf = (gesture: Drag, to: readonly [number, number]): { readonly to: readonly [number, number]; readonly guides: readonly Guide[] } => {
+    if (gesture.kind === 'move') {
+      const carried = around(placed.filter(({ field }) => gesture.carried.includes(field.index)).map(({ box }) => box));
+      if (carried === undefined) return { to, guides: [] };
+      const others = placed.filter(({ field }) => !gesture.carried.includes(field.index)).map(({ box }) => box);
+      const snap = snappedMove(carried, others, [to[0] - gesture.from[0], to[1] - gesture.from[1]]);
+      return { to: [gesture.from[0] + snap.travel[0], gesture.from[1] + snap.travel[1]], guides: snap.guides };
+    }
+    if (gesture.kind === 'resize') {
+      const target = placed.find(({ field }) => field.index === gesture.index);
+      if (target === undefined) return { to, guides: [] };
+      const at = handleAt(target.box, gesture.handle);
+      const others = placed.filter(({ field }) => field.index !== gesture.index).map(({ box }) => box);
+      const snap = snappedHandle([at[0] + to[0] - gesture.from[0], at[1] + to[1] - gesture.from[1]], gesture.handle, others);
+      return { to: [gesture.from[0] + snap.point[0] - at[0], gesture.from[1] + snap.point[1] - at[1]], guides: snap.guides };
+    }
+    return { to, guides: [] };
+  };
+  const live = drag === undefined ? undefined : snapOf(drag, drag.to);
+
   /** Where a box is drawn while a gesture is in flight. */
   const drawnAt = (index: number, box: Pixels): Pixels => {
-    if (drag?.kind === 'move' && drag.carried.includes(index)) {
-      return moved(box, drag.to[0] - drag.from[0], drag.to[1] - drag.from[1]);
+    const to = live?.to;
+    if (drag?.kind === 'move' && to !== undefined && drag.carried.includes(index)) {
+      return moved(box, to[0] - drag.from[0], to[1] - drag.from[1]);
     }
-    if (drag?.kind === 'resize' && drag.index === index) {
+    if (drag?.kind === 'resize' && to !== undefined && drag.index === index) {
       // THE HANDLE FOLLOWS THE POINTER BY ITS TRAVEL, so a press a few pixels off the handle's centre does not jump.
       const at = handleAt(box, drag.handle);
-      return resized(box, drag.handle, [at[0] + drag.to[0] - drag.from[0], at[1] + drag.to[1] - drag.from[1]], LEAST);
+      return resized(box, drag.handle, [at[0] + to[0] - drag.from[0], at[1] + to[1] - drag.from[1]], LEAST);
     }
     return box;
   };
 
   const finish = (event: React.PointerEvent): void => {
     if (drag?.pointer !== event.pointerId) return;
-    const to = pointOf(event);
+    const pointer = pointOf(event);
     setDrag(undefined);
-    const travelled = Math.hypot(to[0] - drag.from[0], to[1] - drag.from[1]) >= MINIMUM_DRAG;
+    // WHETHER IT TRAVELLED is the pointer's own question; WHERE IT LANDS is the snapped one.
+    const travelled = Math.hypot(pointer[0] - drag.from[0], pointer[1] - drag.from[1]) >= MINIMUM_DRAG;
+    const to = drag.kind === 'marquee' ? pointer : snapOf(drag, pointer).to;
     if (drag.kind === 'marquee') {
       // A PRESS ON EMPTY PAPER THAT SWEPT NOTHING clears the selection; a sweep takes what it overlaps.
       if (!travelled) {
@@ -257,6 +288,16 @@ export function FieldDesignLayer({
               />
             );
           })}
+      {/* THE GUIDES A SNAP DREW, across the page, while the gesture is on: decoration, never a target. */}
+      {(live?.guides ?? []).map((guide) => (
+        <span
+          aria-hidden="true"
+          className={`m-field-guide m-field-guide--${guide.axis}`}
+          data-field-guide={guide.axis}
+          key={`${guide.axis}${String(guide.at)}`}
+          style={guide.axis === 'x' ? { left: guide.at } : { top: guide.at }}
+        />
+      ))}
       {drag?.kind === 'marquee' ? (
         <div
           aria-hidden="true"

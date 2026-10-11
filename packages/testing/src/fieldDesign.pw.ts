@@ -121,6 +121,33 @@ test.describe('Edit fields', () => {
     expect((rect?.x1 ?? 0) - (rect?.x0 ?? 0)).toBeCloseTo(NAME.x1 - NAME.x0, 1);
   });
 
+  test('a move that brings a field within a few pixels of another field’s edge SNAPS to it, with a guide line while it is held', async ({ page }) => {
+    const sent: Sent = [];
+    await designing(page, sent);
+    const at = await boxOf(page.locator('[data-field-box="1"]'));
+    const from = { x: at.x + at.width / 2, y: at.y + at.height / 2 };
+    // THREE PIXELS RIGHT of the column both fields stand in, and down the page.
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(from.x + 3, from.y + 40, { steps: 4 });
+    await expect(page.locator('[data-field-guide="x"]').first()).toBeVisible();
+    await page.mouse.up();
+    await expect(page.locator('[data-field-guide]')).toHaveCount(0);
+    const edit = commands(sent)[0] as { edits: { set: { rect: typeof EMAIL } }[] };
+    // ON THE COLUMN, exactly: the three pixels were taken back.
+    expect(edit.edits[0]?.set.rect.x0).toBeCloseTo(EMAIL.x0, 3);
+  });
+
+  test('CONTROL: a move that stops well away from every edge lands where the pointer put it', async ({ page }) => {
+    const sent: Sent = [];
+    await designing(page, sent);
+    const zoom = await zoomOf(page);
+    const at = await boxOf(page.locator('[data-field-box="1"]'));
+    await drag(page, { x: at.x + at.width / 2, y: at.y + at.height / 2 }, { x: 15, y: 40 });
+    const edit = commands(sent)[0] as { edits: { set: { rect: typeof EMAIL } }[] };
+    expect(edit.edits[0]?.set.rect.x0).toBeCloseTo(EMAIL.x0 + 15 / zoom, 1);
+  });
+
   test('a drag from NEAR AN EDGE of the box moves it too, and a press that does not travel sends nothing', async ({ page }) => {
     const sent: Sent = [];
     await designing(page, sent);
