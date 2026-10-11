@@ -6,6 +6,11 @@ import {
   TEXT_FORMAT_COLOUR_ORANGE,
   TEXT_FORMAT_COLOUR_PURPLE,
   TEXT_FORMAT_COLOUR_RED,
+  TEXT_HIGHLIGHT_BLUE,
+  TEXT_HIGHLIGHT_GREEN,
+  TEXT_HIGHLIGHT_ORANGE,
+  TEXT_HIGHLIGHT_PINK,
+  TEXT_HIGHLIGHT_YELLOW,
 } from './messages/en.js';
 
 /**
@@ -25,3 +30,18 @@ export const TEXT_COLOURS = [
 
 /** What the custom colour shows while no colour is chosen: a colour input cannot show none. */
 export const TEXT_COLOUR_FALLBACK = '#000000';
+
+/**
+ * The colours a highlight is offered in (ADR-0228): the pale marker colours a document's highlights are, each named, so
+ * black words stay readable over them. Data written into a page, as {@link TEXT_COLOURS} is.
+ */
+export const HIGHLIGHT_COLOURS = [
+  { hex: '#fff176', title: TEXT_HIGHLIGHT_YELLOW },
+  { hex: '#a5d6a7', title: TEXT_HIGHLIGHT_GREEN },
+  { hex: '#81d4fa', title: TEXT_HIGHLIGHT_BLUE },
+  { hex: '#f8bbd0', title: TEXT_HIGHLIGHT_PINK },
+  { hex: '#ffcc80', title: TEXT_HIGHLIGHT_ORANGE },
+] as const;
+
+/** What the custom highlight shows while none is chosen. */
+export const HIGHLIGHT_COLOUR_FALLBACK = '#fff176';

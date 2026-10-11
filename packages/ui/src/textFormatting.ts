@@ -1,4 +1,4 @@
-import type { BlockFormatting, BlockMarkSet } from '@monstera/contract';
+import { type BlockFormatting, type BlockMarkSet, PARAGRAPH_ALIGNMENTS, type ParagraphProps } from '@monstera/contract';
 import { tokensOf } from '@monstera/shared';
 
 /**
@@ -34,14 +34,18 @@ export const INDENT_STEP = 18;
 const BULLET = /^•\s/u;
 const NUMBER = /^\d+\.\s/u;
 
-/** How a paragraph the person set is carried in its element. */
-interface ParagraphSetting {
-  align?: 'left' | 'center' | 'right';
-  leftIndent?: number;
-  firstIndent?: number;
-  lineSpacing?: number;
-  spaceBefore?: number;
-}
+/** How a paragraph the person set is carried in its element: the contract's paragraph settings, named once there (B3a). */
+type ParagraphSetting = Omit<ParagraphProps, 'block' | 'paragraph'>;
+
+/** The `data-*` name each paragraph setting is carried under, the one table both its reader and its writer take. */
+const PARAGRAPH_KEYS: Readonly<Record<keyof ParagraphSetting, string>> = {
+  align: 'align',
+  leftIndent: 'left',
+  firstIndent: 'first',
+  lineSpacing: 'spacing',
+  spaceBefore: 'before',
+  spaceAfter: 'after',
+};
 
 const FMT = 'fmt';
 
@@ -83,8 +87,13 @@ export interface FormatState {
   readonly bold: boolean;
   readonly italic: boolean;
   readonly underline: boolean;
+  readonly strike: boolean;
   readonly size?: number;
   readonly colour?: { readonly r: number; readonly g: number; readonly b: number };
+  /** The colour behind the words, where the person set one (ADR-0228). */
+  readonly highlight?: { readonly r: number; readonly g: number; readonly b: number };
+  /** Character spacing as a fraction of the size, where the person set one (ADR-0228). */
+  readonly spacing?: number;
   readonly family?: string;
   readonly rise?: 'superscript' | 'subscript';
 }
@@ -97,6 +106,9 @@ export function stateAt(node: Node, root: HTMLElement): FormatState {
     bold: fmt.bold ?? base.bold,
     italic: fmt.italic ?? base.italic,
     underline: fmt.underline ?? false,
+    strike: fmt.strike ?? false,
+    ...(fmt.highlight === undefined || fmt.highlight === null ? {} : { highlight: fmt.highlight }),
+    ...(fmt.spacing === undefined ? {} : { spacing: fmt.spacing }),
     ...((fmt.size ?? base.size) === undefined ? {} : { size: fmt.size ?? base.size ?? 0 }),
     ...(fmt.colour === undefined ? {} : { colour: fmt.colour }),
     ...(fmt.family === undefined ? {} : { family: fmt.family }),
@@ -111,8 +123,13 @@ function paint(span: HTMLElement, root: HTMLElement, zoom: number): void {
   span.classList.add(FORMAT_CLASS);
   span.style.fontWeight = fmt.bold === undefined ? '' : fmt.bold ? '700' : '400';
   span.style.fontStyle = fmt.italic === undefined ? '' : fmt.italic ? 'italic' : 'normal';
-  span.style.textDecoration = fmt.underline === true ? 'underline' : '';
+  span.style.textDecoration = [fmt.underline === true ? 'underline' : '', fmt.strike === true ? 'line-through' : ''].filter(Boolean).join(' ');
   span.style.color = fmt.colour === undefined ? '' : `rgb(${String(fmt.colour.r)}, ${String(fmt.colour.g)}, ${String(fmt.colour.b)})`;
+  const { highlight } = fmt;
+  span.style.backgroundColor =
+    highlight === undefined || highlight === null ? '' : `rgb(${String(highlight.r)}, ${String(highlight.g)}, ${String(highlight.b)})`;
+  // THE WIRE'S FRACTION OF THE SIZE IS CSS'S `em`, so what is drawn while typing is what the writer sets.
+  span.style.letterSpacing = fmt.spacing === undefined ? '' : `${String(fmt.spacing)}em`;
   span.style.fontFamily = fmt.family ?? '';
   const size = fmt.size ?? (fmt.rise === undefined ? undefined : base.size);
   if (size === undefined) {
@@ -172,6 +189,15 @@ export function formatRange(root: HTMLElement, range: Range, change: { readonly 
     if (next.size === 0) span.removeAttribute('data-fmt');
     else span.dataset[FMT] = JSON.stringify(Object.fromEntries(next));
     paint(span, root, zoom);
+  }
+  // THE RANGE SELECTS THE WORDS IT FORMATTED AGAIN. A browser keeps a range live across the splits and the wrapping
+  // above, and a boundary inside a node that was moved collapses to that node's old parent: measured on pinned Chromium,
+  // the range left covering no word, so what the words are read as nothing and the next format took the whole paragraph.
+  const first = parts[0];
+  const last = parts.at(-1);
+  if (first !== undefined && last !== undefined) {
+    range.setStart(first, 0);
+    range.setEnd(last, last.length);
   }
   return parts.length > 0;
 }
@@ -265,13 +291,19 @@ export function readEditor(root: HTMLElement): { text: string; formatting: Block
 }
 
 function settingOf(element: HTMLElement): ParagraphSetting {
-  const { align, left, first, spacing, before } = element.dataset;
+  const read = (key: keyof ParagraphSetting): string | undefined => element.dataset[PARAGRAPH_KEYS[key]];
+  const align = PARAGRAPH_ALIGNMENTS.find((each) => each === read('align'));
+  const number = (key: Exclude<keyof ParagraphSetting, 'align'>): Partial<Record<typeof key, number>> => {
+    const raw = read(key);
+    return raw === undefined ? {} : { [key]: Number(raw) };
+  };
   return {
-    ...(align === 'left' || align === 'center' || align === 'right' ? { align } : {}),
-    ...(left === undefined ? {} : { leftIndent: Number(left) }),
-    ...(first === undefined ? {} : { firstIndent: Number(first) }),
-    ...(spacing === undefined ? {} : { lineSpacing: Number(spacing) }),
-    ...(before === undefined ? {} : { spaceBefore: Number(before) }),
+    ...(align === undefined ? {} : { align }),
+    ...number('leftIndent'),
+    ...number('firstIndent'),
+    ...number('lineSpacing'),
+    ...number('spaceBefore'),
+    ...number('spaceAfter'),
   };
 }
 
@@ -312,6 +344,14 @@ export function wordAt(root: HTMLElement, node: Node, offset: number): { word: s
   return { word: token.text, range };
 }
 
+/** How the paragraph holding `node` is set, where the person set it: the settings the panel's fields show. */
+export function paragraphSettingAt(root: HTMLElement, node: Node): ParagraphSetting {
+  for (let at: Node | null = node; at !== null && at !== root; at = at.parentNode) {
+    if (at.parentNode === root && at instanceof HTMLElement && at.tagName === 'DIV') return settingOf(at);
+  }
+  return {};
+}
+
 /** The place, among the editor's paragraphs, of the one holding `node`: what a split before a paragraph names. */
 export function paragraphAt(root: HTMLElement, node: Node): number | undefined {
   const { paragraphs } = paragraphsOf(root);
@@ -340,8 +380,9 @@ function paragraphElementsIn(root: HTMLElement, range: Range): HTMLElement[] {
 
 /** Draws a paragraph's settings from its `data-*`: the one place its inline style is made. */
 function paintParagraph(element: HTMLElement, zoom: number): void {
-  const { align, left, first, spacing, before } = element.dataset;
+  const { align, left, first, spacing, before, after } = element.dataset;
   element.style.textAlign = align ?? '';
+  element.style.marginBottom = after === undefined ? '' : `${String(Number(after) * zoom)}px`;
   const leftIndent = left === undefined ? undefined : Number(left);
   const firstIndent = first === undefined ? undefined : Number(first);
   element.style.paddingLeft = leftIndent === undefined ? '' : `${String(leftIndent * zoom)}px`;
@@ -358,16 +399,9 @@ export function setParagraphs(
   zoom = 1,
 ): number {
   const elements = paragraphElementsIn(root, range);
-  const keys: Record<keyof ParagraphSetting, string> = {
-    align: 'align',
-    leftIndent: 'left',
-    firstIndent: 'first',
-    lineSpacing: 'spacing',
-    spaceBefore: 'before',
-  };
   for (const element of elements) {
     for (const [key, value] of Object.entries(change) as [keyof ParagraphSetting, string | number | null | undefined][]) {
-      const name = `data-${keys[key]}`;
+      const name = `data-${PARAGRAPH_KEYS[key]}`;
       if (value === null || value === undefined) element.removeAttribute(name);
       else element.setAttribute(name, String(value));
     }

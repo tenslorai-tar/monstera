@@ -2,6 +2,7 @@ import type { IconName } from '../primitives/icons.js';
 import {
   GROUP_FORMAT,
   TEXT_FORMAT_ALIGN_CENTER,
+  TEXT_FORMAT_ALIGN_JUSTIFY,
   TEXT_FORMAT_ALIGN_LEFT,
   TEXT_FORMAT_ALIGN_RIGHT,
   TEXT_FORMAT_BOLD,
@@ -10,6 +11,7 @@ import {
   TEXT_FORMAT_INDENT_MORE,
   TEXT_FORMAT_ITALIC,
   TEXT_FORMAT_NUMBERING,
+  TEXT_FORMAT_STRIKE,
   TEXT_FORMAT_SUBSCRIPT,
   TEXT_FORMAT_SUPERSCRIPT,
   TEXT_FORMAT_UNDERLINE,
@@ -22,7 +24,8 @@ import type { MessageKey } from '@monstera/shared';
 /**
  * The in-place editor's formatting commands
  * ([ADR-0180](../../../../docs/DECISIONS/0180-formatting-is-marks-over-a-blocks-words-and-a-block-is-moved-resized-and-added-by-its-own-commands.md)
- * Decisions 1 to 3): bold, italic, underline, superscript, subscript, alignment, bullets, numbering and indent, each a
+ * Decisions 1 to 3, and ADR-0228): bold, italic, underline, strikethrough, superscript, subscript, alignment (justify
+ * among it), bullets, numbering and indent, each a
  * projection of the one table below, so the ribbon, the palette and the Properties panel's text section act through one
  * function.
  *
@@ -57,6 +60,13 @@ export const FORMAT_ENTRIES: readonly Entry[] = [
     on: (state) => state.underline,
   },
   {
+    id: 'text.format.strike',
+    title: TEXT_FORMAT_STRIKE,
+    icon: 'Strikethrough',
+    action: { kind: 'toggle', property: 'strike' },
+    on: (state) => state.strike,
+  },
+  {
     id: 'text.format.superscript',
     title: TEXT_FORMAT_SUPERSCRIPT,
     icon: 'Superscript',
@@ -73,6 +83,7 @@ export const FORMAT_ENTRIES: readonly Entry[] = [
   { id: 'text.format.align-left', title: TEXT_FORMAT_ALIGN_LEFT, icon: 'AlignLeft', action: { kind: 'align', align: 'left' } },
   { id: 'text.format.align-center', title: TEXT_FORMAT_ALIGN_CENTER, icon: 'AlignCenter', action: { kind: 'align', align: 'center' } },
   { id: 'text.format.align-right', title: TEXT_FORMAT_ALIGN_RIGHT, icon: 'AlignRight', action: { kind: 'align', align: 'right' } },
+  { id: 'text.format.align-justify', title: TEXT_FORMAT_ALIGN_JUSTIFY, icon: 'AlignJustify', action: { kind: 'align', align: 'justify' } },
   { id: 'text.format.bullets', title: TEXT_FORMAT_BULLETS, icon: 'List', action: { kind: 'list', list: 'bullet' } },
   { id: 'text.format.numbering', title: TEXT_FORMAT_NUMBERING, icon: 'ListOrdered', action: { kind: 'list', list: 'number' } },
   { id: 'text.format.indent-more', title: TEXT_FORMAT_INDENT_MORE, icon: 'IndentIncrease', action: { kind: 'indent', steps: 1 } },

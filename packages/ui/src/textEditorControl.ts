@@ -1,9 +1,12 @@
+import type { PARAGRAPH_ALIGNMENTS } from '@monstera/contract';
+
 import {
   type Fmt,
   type FormatState,
   allWords,
   formatRange,
   indentParagraphs,
+  paragraphSettingAt,
   setParagraphs,
   stateAt,
   toggleList,
@@ -172,13 +175,15 @@ function paragraphOf(root: HTMLElement, node: Node): Node | undefined {
 
 /** A formatting action: what a command, a chord or the Properties panel's text section asks. */
 export type FormatAction =
-  | { readonly kind: 'toggle'; readonly property: 'bold' | 'italic' | 'underline' }
+  | { readonly kind: 'toggle'; readonly property: 'bold' | 'italic' | 'underline' | 'strike' }
   | { readonly kind: 'rise'; readonly rise: 'superscript' | 'subscript' }
   | { readonly kind: 'set'; readonly change: { readonly [K in keyof Fmt]?: Fmt[K] | null } }
-  | { readonly kind: 'align'; readonly align: 'left' | 'center' | 'right' }
+  | { readonly kind: 'align'; readonly align: (typeof PARAGRAPH_ALIGNMENTS)[number] }
   | { readonly kind: 'indent'; readonly steps: number }
   | { readonly kind: 'list'; readonly list: 'bullet' | 'number' }
-  | { readonly kind: 'spacing'; readonly lineSpacing: number | null };
+  | { readonly kind: 'spacing'; readonly lineSpacing: number | null }
+  /** Points below the paragraphs, before the next one (ADR-0228), or `null` to take the person's setting off. */
+  | { readonly kind: 'space-after'; readonly points: number | null };
 
 /** The sizes a step up or down moves through, a word processor's list. */
 const SIZE_STEPS = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72] as const;
@@ -203,17 +208,22 @@ export function formatOpenEditor(action: FormatAction): boolean {
   if (editor === undefined) return false;
   const range = target(editor);
   const zoom = editor.zoom();
+  /** The words formatted are what the editor has selected now, whichever range they were reached through. */
+  const keeping = (changed: boolean): boolean => {
+    if (changed && !range.collapsed) remembered = range.cloneRange();
+    return changed;
+  };
   switch (action.kind) {
     case 'toggle': {
       const on = allWords(editor.root, range, (state) => state[action.property]);
-      return formatRange(editor.root, range, { [action.property]: on ? false : true }, zoom);
+      return keeping(formatRange(editor.root, range, { [action.property]: on ? false : true }, zoom));
     }
     case 'rise': {
       const on = allWords(editor.root, range, (state) => state.rise === action.rise);
-      return formatRange(editor.root, range, { rise: on ? null : action.rise }, zoom);
+      return keeping(formatRange(editor.root, range, { rise: on ? null : action.rise }, zoom));
     }
     case 'set':
-      return formatRange(editor.root, range, action.change, zoom);
+      return keeping(formatRange(editor.root, range, action.change, zoom));
     case 'align':
       return setParagraphs(editor.root, range, { align: action.align }, zoom) > 0;
     case 'indent':
@@ -222,7 +232,17 @@ export function formatOpenEditor(action: FormatAction): boolean {
       return toggleList(editor.root, range, action.list, zoom) > 0;
     case 'spacing':
       return setParagraphs(editor.root, range, { lineSpacing: action.lineSpacing }, zoom) > 0;
+    case 'space-after':
+      return setParagraphs(editor.root, range, { spaceAfter: action.points }, zoom) > 0;
   }
+}
+
+/** How the paragraph at the selection is set, for the fields that show a paragraph's setting; `undefined` with none open. */
+export function openParagraphState(): ReturnType<typeof paragraphSettingAt> | undefined {
+  const editor = open;
+  if (editor === undefined) return undefined;
+  const range = remembered ?? target(editor);
+  return paragraphSettingAt(editor.root, range.startContainer);
 }
 
 /** What the words at the selection are now, for the controls that show a state; `undefined` with no editor open. */

@@ -111,6 +111,56 @@ test.describe('Formatting in the Properties panel (K11)', () => {
     await expect(panel.getByRole('option', { name: 'Carlito (looks like Calibri)' })).toBeVisible();
   });
 
+  test('strikethrough, a highlight, character spacing, Ctrl+J and space after reach the one write (ADR-0228)', async ({ page }) => {
+    const sent: { channel: string; params: unknown }[] = [];
+    await openBlock(page, sent);
+    await page.keyboard.press('Control+A');
+    const panel = page.locator('[data-text-properties]');
+    await panel.getByRole('button', { name: 'Strikethrough' }).click();
+    await panel.getByRole('group', { name: 'Highlight' }).getByRole('button', { name: 'Yellow highlight' }).click();
+    const letters = panel.getByRole('spinbutton', { name: 'Character spacing in points' });
+    // THE BOUND AT THIS SIZE IS SAID: 0.12 of 12 points.
+    await expect(panel.getByText('Up to 1.4 points either way at this size.', { exact: false })).toBeVisible();
+    await letters.fill('0.6');
+    // STILL A FIELD AFTER THE FORMAT IT SENT: the words read as nothing once their range collapsed, and the field went
+    // disabled under the cursor (measured before `formatRange` selected the words again).
+    await expect(letters).toBeEnabled();
+    await expect(letters).toBeFocused();
+    await letters.press('Enter');
+    await expect(page.locator('[data-text-editor]')).toBeFocused();
+    // AN UPPER-CASE J, as Caps Lock sends it: a chord compared in lower case alone went unanswered.
+    await page.keyboard.press('Control+J');
+    await expect(page.locator('[data-text-editor] > div').first()).toHaveAttribute('data-align', 'justify');
+    const after = panel.getByRole('spinbutton', { name: 'Space after the paragraph in points' });
+    await after.fill('6');
+    await after.press('Enter');
+    expect(sent.filter((one) => one.channel === 'document.execute')).toHaveLength(0);
+
+    await page.locator('canvas[data-page-canvas="0"]').click({ position: { x: 40, y: 600 } });
+    await expect.poll(() => marksSent(sent)).toStrictEqual([
+      expect.objectContaining({ set: { strike: true, highlight: { r: 255, g: 241, b: 118 }, spacing: 0.05 } }),
+    ]);
+    const paragraphs = sent.flatMap(({ channel, params }) => {
+      const command = (params as { command?: { kind?: string; paragraphs?: unknown[] } }).command;
+      return channel === 'document.execute' && command?.kind === 'editTextBlock' ? (command.paragraphs ?? []) : [];
+    });
+    expect(paragraphs).toStrictEqual([expect.objectContaining({ paragraph: 0, align: 'justify', spaceAfter: 6 })]);
+  });
+
+  test('a size typed digit by digit formats the selected word only, not its paragraph from the second digit on', async ({ page }) => {
+    const sent: { channel: string; params: unknown }[] = [];
+    await openBlock(page, sent);
+    await page.locator('[data-text-editor]').getByText('A paragraph of words').dblclick({ position: { x: 40, y: 6 } });
+    const size = page.locator('[data-text-properties]').getByRole('spinbutton', { name: 'Size in points' });
+    // TWO KEYSTROKES, TWO FORMATS: the first wraps the word in a span of its own, which a live range does not survive.
+    await size.fill('');
+    await size.pressSequentially('18');
+    await size.press('Enter');
+    await page.locator('canvas[data-page-canvas="0"]').click({ position: { x: 40, y: 600 } });
+    // `paragraph` IS WORDS 2 TO 11, and is the one mark: the words around it were never formatted.
+    await expect.poll(() => marksSent(sent)).toStrictEqual([{ block: 0, from: 2, to: 11, set: { size: 18 } }]);
+  });
+
   test('CONTROL: a press on Bold in the panel keeps the focus in the words, where a click on the page ends the edit', async ({ page }) => {
     const sent: { channel: string; params: unknown }[] = [];
     await openBlock(page, sent);

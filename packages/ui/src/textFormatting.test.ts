@@ -7,6 +7,7 @@ import {
   indentParagraphs,
   INDENT_STEP,
   isFormatted,
+  paragraphSettingAt,
   readEditor,
   replaceRange,
   setParagraphs,
@@ -119,6 +120,33 @@ describe('formatRange', () => {
     expect(formatRange(root, rangeOver(firstText(root), 2, 2), { bold: true })).toBe(false);
   });
 
+  it('sends a strike, a highlight and character spacing as marks, and draws them as the writer will (ADR-0228)', () => {
+    const root = editorOf('one two three');
+    const node = firstText(root);
+    formatRange(root, rangeOver(node, 4, 7), { strike: true, highlight: { r: 255, g: 241, b: 118 }, spacing: 0.05 });
+    expect(readEditor(root).formatting.marks).toEqual([
+      { from: 4, to: 7, set: { strike: true, highlight: { r: 255, g: 241, b: 118 }, spacing: 0.05 } },
+    ]);
+    const span = root.querySelector<HTMLElement>('[data-fmt]');
+    expect(span?.style.textDecoration).toBe('line-through');
+    expect(span?.style.backgroundColor).toBe('rgb(255, 241, 118)');
+    // THE WIRE'S FRACTION IS CSS'S EM, so the typing box draws the spacing the page will have.
+    expect(span?.style.letterSpacing).toBe('0.05em');
+    const inner = span?.firstChild;
+    if (!(inner instanceof Text)) throw new Error('no span text');
+    expect(stateAt(inner, root)).toMatchObject({ strike: true, highlight: { r: 255, g: 241, b: 118 }, spacing: 0.05 });
+    // CONTROL: the highlight taken off leaves the strike and the spacing, and nothing behind the words.
+    formatRange(root, rangeOver(inner, 0, 3), { highlight: null });
+    expect(readEditor(root).formatting.marks?.[0]?.set).toEqual({ strike: true, spacing: 0.05 });
+    expect(root.querySelector<HTMLElement>('[data-fmt]')?.style.backgroundColor).toBe('');
+  });
+
+  it('draws an underline and a strike together on one span', () => {
+    const root = editorOf('both');
+    formatRange(root, rangeOver(firstText(root), 0, 4), { underline: true, strike: true });
+    expect(root.querySelector<HTMLElement>('[data-fmt]')?.style.textDecoration).toBe('underline line-through');
+  });
+
   it('draws the size at the editor zoom and a raised word smaller', () => {
     const root = editorOf('x2');
     formatRange(root, rangeOver(firstText(root), 1, 2), { size: 20, rise: 'superscript' }, 2);
@@ -172,6 +200,22 @@ describe('paragraph settings', () => {
     expect(readEditor(root).formatting.paragraphs).toEqual([{ paragraph: 1, align: 'center' }]);
     // CONTROL: the first paragraph, outside the range, carries nothing.
     expect(root.children[0]?.getAttribute('data-align')).toBeNull();
+  });
+
+  it('sends a justified paragraph and its space after, and reads them back for the panel (ADR-0228)', () => {
+    const root = editorOf('first', 'second');
+    const range = rangeOver(firstText(root, 0), 0, 3);
+    setParagraphs(root, range, { align: 'justify', spaceAfter: 12 }, 2);
+    expect(readEditor(root).formatting.paragraphs).toEqual([{ paragraph: 0, align: 'justify', spaceAfter: 12 }]);
+    const first = root.children[0] as HTMLElement;
+    expect(first.style.textAlign).toBe('justify');
+    // AT ZOOM 2, so the gap drawn while typing is the gap the page will have at that zoom.
+    expect(first.style.marginBottom).toBe('24px');
+    expect(paragraphSettingAt(root, firstText(root, 0))).toEqual({ align: 'justify', spaceAfter: 12 });
+    // CONTROL: the space after taken off is gone from what is sent, and the second paragraph never carried any.
+    setParagraphs(root, range, { spaceAfter: null });
+    expect(readEditor(root).formatting.paragraphs).toEqual([{ paragraph: 0, align: 'justify' }]);
+    expect(paragraphSettingAt(root, firstText(root, 1))).toEqual({});
   });
 
   it('steps the indent and never below none', () => {

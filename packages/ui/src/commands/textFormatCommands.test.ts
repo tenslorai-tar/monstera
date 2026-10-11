@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { CommandContext } from '../registries/commands.js';
 import { registerEditor } from '../textEditorControl.js';
+import { readEditor } from '../textFormatting.js';
 import { FORMAT_ENTRIES, textFormatCommands } from './textFormatCommands.js';
 
 /**
@@ -57,5 +58,42 @@ describe('the formatting commands', () => {
     const before = root.innerHTML;
     void bold.run({} as never);
     expect(root.innerHTML).toBe(before);
+  });
+
+  it('strikethrough marks the words and justify sets the paragraph, through the open editor (ADR-0228)', () => {
+    const command = (id: string) => {
+      const found = COMMANDS.find((each) => each.id === id);
+      if (found === undefined) throw new Error(`no ${id} command`);
+      return found;
+    };
+    const root = document.createElement('div');
+    const row = document.createElement('div');
+    row.textContent = 'words';
+    root.append(row);
+    document.body.append(root);
+    const range = document.createRange();
+    range.selectNodeContents(row);
+    const selection = document.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    const unregister = registerEditor({
+      root,
+      zoom: () => 1,
+      block: { remove: () => undefined, nudge: () => undefined },
+      finish: () => undefined,
+      fonts: [],
+    });
+    document.dispatchEvent(new Event('selectionchange'));
+    void command('text.format.strike').run({} as never);
+    void command('text.format.align-justify').run({} as never);
+    expect(readEditor(root).formatting).toStrictEqual({
+      marks: [{ from: 0, to: 5, set: { strike: true } }],
+      paragraphs: [{ paragraph: 0, align: 'justify' }],
+    });
+    // THE STRIKE IS A TOGGLE: pressed again over struck words it takes the line off.
+    expect(command('text.format.strike').checked?.(EDITING)).toBe(true);
+    void command('text.format.strike').run({} as never);
+    expect(readEditor(root).formatting.marks?.[0]?.set).toStrictEqual({ strike: false });
+    unregister();
   });
 });

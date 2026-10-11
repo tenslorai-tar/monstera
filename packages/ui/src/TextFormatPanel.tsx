@@ -1,4 +1,5 @@
 import { useLingui } from '@lingui/react';
+import { MAX_CHARACTER_SPACING } from '@monstera/contract';
 import { type ReactElement, useId, useState, useSyncExternalStore } from 'react';
 
 import { ColourSwatches } from './ColourChoice.js';
@@ -6,11 +7,17 @@ import { FORMAT_ENTRIES } from './commands/textFormatCommands.js';
 import { type DocumentFont, FontPicker, type FontList } from './FontPicker.js';
 import {
   TEXT_BLOCK_REMOVE,
+  TEXT_FORMAT_CHARACTER_SPACING,
+  TEXT_FORMAT_CHARACTER_SPACING_BOUND,
   TEXT_FORMAT_COLOUR_AUTO,
   TEXT_FORMAT_COLOUR_CUSTOM,
   TEXT_FORMAT_FAMILY,
   TEXT_FORMAT_FAMILY_RUN,
+  TEXT_FORMAT_HIGHLIGHT,
+  TEXT_FORMAT_HIGHLIGHT_CUSTOM,
+  TEXT_FORMAT_HIGHLIGHT_NONE,
   TEXT_FORMAT_SIZE,
+  TEXT_FORMAT_SPACE_AFTER,
   TEXT_FORMAT_SPACING,
   TEXT_FORMAT_SPACING_DOUBLE,
   TEXT_FORMAT_SPACING_ONE_HALF,
@@ -24,7 +31,7 @@ import {
 } from './messages/en.js';
 import { IconButton } from './primitives/IconButton.js';
 import { ICONS } from './primitives/icons.js';
-import { TEXT_COLOUR_FALLBACK, TEXT_COLOURS } from './textColours.js';
+import { HIGHLIGHT_COLOUR_FALLBACK, HIGHLIGHT_COLOURS, TEXT_COLOUR_FALLBACK, TEXT_COLOURS } from './textColours.js';
 import {
   KEEPS_EDITOR,
   editorRevision,
@@ -34,6 +41,7 @@ import {
   onEditorChange,
   openEditorFonts,
   openEditorState,
+  openParagraphState,
   refocusOpenEditor,
   removeOpenBlock,
 } from './textEditorControl.js';
@@ -55,11 +63,11 @@ import {
  * through the one {@link formatOpenEditor} (B3a). The values — font, size, colour, spacing — are this section's own, as
  * the status bar's zoom is the bar's (ADR-0067).
  *
- * ## What is not here, and why
+ * ## Character spacing is typed in points and sent as a fraction of the size
  *
- * Strikethrough, highlight, justified paragraphs and space after a paragraph are not offered: the mark set and the
- * paragraph settings the editing engine writes carry none of them (`blockMarkSetSchema`, `PARAGRAPH_ALIGNMENTS`), and a
- * control that changed nothing on the page is a defect, not a placeholder.
+ * The wire bounds it to {@link MAX_CHARACTER_SPACING} of the words' size either way (ADR-0228, measured), so the field is
+ * in the points a person knows, converted at the size of the words at the selection, and its note says the bound at
+ * that size. A value past it is held to the bound rather than refused.
  */
 
 const SPACINGS = [
@@ -72,7 +80,18 @@ const SPACINGS = [
 const EDITOR_BUILT_IN = ['Helvetica', 'Times', 'Courier'] as const;
 
 /** The verbs that change words, and the ones that change a paragraph, by the table's ids. */
-const TEXT_VERBS = new Set(['bold', 'italic', 'underline', 'superscript', 'subscript'].map((name) => `text.format.${name}`));
+const TEXT_VERBS = new Set(['bold', 'italic', 'underline', 'strike', 'superscript', 'subscript'].map((name) => `text.format.${name}`));
+
+/** A colour as `#rrggbb`. */
+function hexOf(colour: { readonly r: number; readonly g: number; readonly b: number } | undefined): string | undefined {
+  return colour === undefined ? undefined : `#${[colour.r, colour.g, colour.b].map((value) => value.toString(16).padStart(2, '0')).join('')}`;
+}
+
+/** Points typed for character spacing as the wire's fraction of `size`, held to the bound either way. */
+export function spacingOf(points: number, size: number): number {
+  const fraction = points / Math.max(size, 0.01);
+  return Math.round(Math.max(-MAX_CHARACTER_SPACING, Math.min(MAX_CHARACTER_SPACING, fraction)) * 10000) / 10000;
+}
 
 /** A `#rrggbb` as the contract's colour, or `undefined` for anything else. */
 function rgbOf(hex: string): { r: number; g: number; b: number } | undefined {
@@ -90,7 +109,7 @@ export interface TextFormatPanelProps {
 const SUBSET_TAG = /^[A-Z]{6}\+/u;
 
 export function TextFormatPanel({ fonts }: TextFormatPanelProps): ReactElement {
-  const { _ } = useLingui();
+  const { _, i18n } = useLingui();
   // RE-READ ON EVERY CHANGE of the selection or the formatting, since the state is the editor's and not a snapshot.
   useSyncExternalStore(onEditorChange, editorRevision);
   const state = openEditorState();
@@ -98,12 +117,18 @@ export function TextFormatPanel({ fonts }: TextFormatPanelProps): ReactElement {
   const inDocument: DocumentFont[] = openEditorFonts().map((name) => ({ name, partial: SUBSET_TAG.test(name) }));
   const sizeId = useId();
   const spacingId = useId();
+  const letterId = useId();
+  const letterNoteId = useId();
+  const afterId = useId();
   const [size, setSize] = useState<string | undefined>(undefined);
+  const [letters, setLetters] = useState<string | undefined>(undefined);
+  const [after, setAfter] = useState<string | undefined>(undefined);
   const shown = size ?? (state?.size === undefined ? '' : String(Math.round(state.size * 10) / 10));
-  const hex =
-    state?.colour === undefined
-      ? undefined
-      : `#${[state.colour.r, state.colour.g, state.colour.b].map((value) => value.toString(16).padStart(2, '0')).join('')}`;
+  const hex = hexOf(state?.colour);
+  // THE SIZE THE SPACING IS A FRACTION OF: the words' at the selection, or the field cannot convert and stays empty.
+  const wordSize = state?.size;
+  const lettersShown =
+    letters ?? (state?.spacing === undefined || wordSize === undefined ? '' : String(Math.round(state.spacing * wordSize * 100) / 100));
   const verb = (entry: (typeof FORMAT_ENTRIES)[number]): ReactElement => (
     <IconButton
       icon={ICONS[entry.icon]}
@@ -195,6 +220,55 @@ export function TextFormatPanel({ fonts }: TextFormatPanelProps): ReactElement {
           }}
           presets={TEXT_COLOURS}
         />
+        {/* THE COLOUR BEHIND THE WORDS (ADR-0228): a mark's highlight, none being the first choice. */}
+        <div aria-label={_(TEXT_FORMAT_HIGHLIGHT)} className="m-text-properties__row" role="group">
+          <span>{_(TEXT_FORMAT_HIGHLIGHT)}</span>
+          <ColourSwatches
+            auto={state?.highlight === undefined}
+            autoLabel={TEXT_FORMAT_HIGHLIGHT_NONE}
+            current={hexOf(state?.highlight)}
+            customLabel={TEXT_FORMAT_HIGHLIGHT_CUSTOM}
+            fallback={HIGHLIGHT_COLOUR_FALLBACK}
+            layout="start"
+            onPick={(picked) => {
+              const rgb = picked === undefined ? undefined : rgbOf(picked);
+              formatOpenEditor({ kind: 'set', change: { highlight: rgb ?? null } });
+            }}
+            presets={HIGHLIGHT_COLOURS}
+          />
+        </div>
+        <label className="m-text-properties__row" htmlFor={letterId}>
+          <span>{_(TEXT_FORMAT_CHARACTER_SPACING)}</span>
+          <input
+            aria-describedby={letterNoteId}
+            className="m-text-properties__size"
+            disabled={wordSize === undefined}
+            id={letterId}
+            onBlur={() => {
+              setLetters(undefined);
+            }}
+            onChange={(event) => {
+              setLetters(event.target.value);
+              const points = Number(event.target.value);
+              if (event.target.value === '' || !Number.isFinite(points) || wordSize === undefined) return;
+              formatOpenEditor({ kind: 'set', change: { spacing: points === 0 ? null : spacingOf(points, wordSize) } });
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                refocusOpenEditor();
+              }
+            }}
+            step={0.1}
+            type="number"
+            value={lettersShown}
+          />
+        </label>
+        <p className="m-properties__meta" id={letterNoteId}>
+          {wordSize === undefined
+            ? null
+            : i18n._(TEXT_FORMAT_CHARACTER_SPACING_BOUND, { points: String(Math.round(MAX_CHARACTER_SPACING * wordSize * 10) / 10) })}
+        </p>
       </div>
 
       <div aria-label={_(TEXT_PROPERTIES_PARAGRAPH)} className="m-text-properties__section" role="group">
@@ -218,6 +292,34 @@ export function TextFormatPanel({ fonts }: TextFormatPanelProps): ReactElement {
               </option>
             ))}
           </select>
+        </label>
+        {/* SPACE AFTER THE PARAGRAPH (ADR-0228), in points; empty or nought takes the person's setting off. */}
+        <label className="m-text-properties__row" htmlFor={afterId}>
+          <span>{_(TEXT_FORMAT_SPACE_AFTER)}</span>
+          <input
+            className="m-text-properties__size"
+            id={afterId}
+            max={500}
+            min={0}
+            onBlur={() => {
+              setAfter(undefined);
+            }}
+            onChange={(event) => {
+              setAfter(event.target.value);
+              const points = Number(event.target.value);
+              if (event.target.value === '' || points === 0) formatOpenEditor({ kind: 'space-after', points: null });
+              else if (Number.isFinite(points) && points > 0 && points <= 500) formatOpenEditor({ kind: 'space-after', points });
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                refocusOpenEditor();
+              }
+            }}
+            step={1}
+            type="number"
+            value={after ?? String(openParagraphState()?.spaceAfter ?? '')}
+          />
         </label>
       </div>
 

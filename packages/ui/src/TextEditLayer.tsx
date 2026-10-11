@@ -1308,16 +1308,18 @@ function BlockEditor({
     }
     // THE CHORDS OF FORMATTING, the editor's own while it has the focus: the page's shortcuts do not reach a field.
     if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey) {
-      const property = event.key === 'b' ? 'bold' : event.key === 'i' ? 'italic' : event.key === 'u' ? 'underline' : undefined;
+      // THE LETTER IN EITHER CASE: with Caps Lock on, Ctrl+B arrives as `B` (measured on pinned Chromium, where every chord
+      // below went unanswered), and Caps Lock is not a different command.
+      const key = event.key.toLowerCase();
+      const property = key === 'b' ? 'bold' : key === 'i' ? 'italic' : key === 'u' ? 'underline' : undefined;
       if (property !== undefined) {
         event.preventDefault();
         event.stopPropagation();
         formatOpenEditor({ kind: 'toggle', property });
         return;
       }
-      // ALIGNMENT BY THE WORD PROCESSOR'S KEYS: L, E and R. Ctrl+J has no key here: no paragraph is set justified (the
-      // contract's alignments are three).
-      const align = event.key === 'l' ? 'left' : event.key === 'e' ? 'center' : event.key === 'r' ? 'right' : undefined;
+      // ALIGNMENT BY THE WORD PROCESSOR'S KEYS: L, E, R and J (ADR-0228: a paragraph may be justified).
+      const align = key === 'l' ? 'left' : key === 'e' ? 'center' : key === 'r' ? 'right' : key === 'j' ? 'justify' : undefined;
       if (align !== undefined) {
         event.preventDefault();
         event.stopPropagation();

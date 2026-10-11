@@ -29,13 +29,15 @@ It is one box at a time, and then you are back in Edit text, where the new block
 
 While a block is open, the **Properties** tab shows three groups for it. They change the words you have selected, or the paragraph the cursor is in.
 
-- **Text**: the font, the size, **Bold**, **Italic**, **Underline**, **Superscript**, **Subscript** and the colour.
-- **Paragraph**: alignment, bullets and numbering, indent and line spacing.
+- **Text**: the font, the size, **Bold**, **Italic**, **Underline**, **Strikethrough**, **Superscript**, **Subscript**, the colour, a **Highlight** colour behind the words, and **Character spacing in points**.
+- **Paragraph**: alignment (left, centre, right or **Justify**), bullets and numbering, indent, line spacing and the space after the paragraph.
 - **Box**: **Remove this text** takes the block off the page.
 
 Choosing something there keeps the block open, so you can go on typing; click the page away from the block, or press **Esc**, when you are done. The same buttons are in the **Edit** rail's **Format** group.
 
-The keys work as in a word processor: **Ctrl+B**, **Ctrl+I** and **Ctrl+U** for bold, italic and underline, **Ctrl+L**, **Ctrl+E** and **Ctrl+R** to align left, centre and right, and **Ctrl+Shift** with the greater-than or less-than key to make the text a size bigger or smaller. Bold, italic and underline switch off again when every selected word already has them. **Tab** moves to the next tab stop.
+Character spacing is typed in points and can open the letters up or close them together by up to about an eighth of the text size either way; the field says how much that is for the selected words. Wider than that, search and copy would read a space between every letter, so the spacing stops there. Hebrew, Arabic and other right-to-left words are never spaced out, because a gap would break the joins between their letters.
+
+The keys work as in a word processor: **Ctrl+B**, **Ctrl+I** and **Ctrl+U** for bold, italic and underline, **Ctrl+L**, **Ctrl+E**, **Ctrl+R** and **Ctrl+J** to align left, centre, right and justified, and **Ctrl+Shift** with the greater-than or less-than key to make the text a size bigger or smaller. Bold, italic and underline switch off again when every selected word already has them. **Tab** moves to the next tab stop.
 
 ## Choose a font
 
@@ -81,8 +83,9 @@ A font whose licence does not allow it to be put inside a PDF says so under its 
 - Text that the page turns, slants or mirrors, and text that runs up or down the page, cannot be edited in place. When a page has any, Edit text says which kind it found, in one sentence for each, so you know which text is not yours to edit and why.
 - Hebrew, Arabic and other right-to-left text is edited as you read it. Type the words in the order you would say them: each paragraph runs the way its own letters run, and Monstera writes the line in the order the page draws it, with brackets turned to face the words they hold and Arabic letters joined into their connected shapes, so the line looks right on the page and reads back as you typed it. A line that mixes Latin and Hebrew, or Latin and Arabic, is set in one font where one font has all its letters, which means its Latin words take that font and not the page’s own. A line whose letters no single font has is written in more than one font, and it still reads as one line: its words stay in the order you typed and editing one word moves nothing else. A lam followed by an alef is drawn as the single combined letter. One thing is not drawn as a specialist typesetter would: a mark above or below an Arabic letter sits where its own glyph puts it, which can differ slightly from where the font's positioning rules would put it.
 - If your words run past the edge of the page, nothing is lost: the change is made with every word, and the editor opens again over the block with "This text no longer fits on the page" above it, so you can shorten what you wrote. Words past the edge are kept in the file but cannot be seen on the page, found by search or printed until they fit. When you close the editor, the block keeps a solid outline and the same sentence.
-- Text that grows can overlap what is below it; check the page afterwards. Justified text loses its even edges when edited, and a paragraph cannot be set justified from **Paragraph**: the choices are left, centre and right.
-- Strikethrough, highlight, character spacing and space after a paragraph are not offered for page text yet.
+- Text that grows can overlap what is below it; check the page afterwards.
+- A justified paragraph widens the spaces of each wrapped line so it reaches the right edge; its last line is not stretched. A line with very few spaces is widened only so far, because a very wide space reads as the end of a line to search and copy, so such a line can stop a little short of the edge.
+- Strikethrough, underline and highlight are drawn on the page as lines and colour behind the words, which is how every PDF program draws them. Once the block is written they belong to the page: if you open the block again later and move or retype those words, the line or colour stays where it was drawn, and taking the formatting off does not remove it. Check the page after editing such words a second time, and use **Ctrl+Z** to put the earlier change back if needed.
 - To change a word everywhere in the document, see "Find and replace text".
 
 <!--

@@ -1617,11 +1617,13 @@ export const GROUP_FORMAT = messageKey('surface.ribbon.group.format');
 export const TEXT_FORMAT_BOLD = messageKey('command.text.format.bold');
 export const TEXT_FORMAT_ITALIC = messageKey('command.text.format.italic');
 export const TEXT_FORMAT_UNDERLINE = messageKey('command.text.format.underline');
+export const TEXT_FORMAT_STRIKE = messageKey('command.text.format.strike');
 export const TEXT_FORMAT_SUPERSCRIPT = messageKey('command.text.format.superscript');
 export const TEXT_FORMAT_SUBSCRIPT = messageKey('command.text.format.subscript');
 export const TEXT_FORMAT_ALIGN_LEFT = messageKey('command.text.format.align-left');
 export const TEXT_FORMAT_ALIGN_CENTER = messageKey('command.text.format.align-center');
 export const TEXT_FORMAT_ALIGN_RIGHT = messageKey('command.text.format.align-right');
+export const TEXT_FORMAT_ALIGN_JUSTIFY = messageKey('command.text.format.align-justify');
 export const TEXT_FORMAT_BULLETS = messageKey('command.text.format.bullets');
 export const TEXT_FORMAT_NUMBERING = messageKey('command.text.format.numbering');
 export const TEXT_FORMAT_INDENT_MORE = messageKey('command.text.format.indent-more');
@@ -1656,6 +1658,17 @@ export const TEXT_FORMAT_SPACING = messageKey('surface.text-format.spacing');
 export const TEXT_FORMAT_SPACING_SINGLE = messageKey('surface.text-format.spacing-single');
 export const TEXT_FORMAT_SPACING_ONE_HALF = messageKey('surface.text-format.spacing-one-half');
 export const TEXT_FORMAT_SPACING_DOUBLE = messageKey('surface.text-format.spacing-double');
+export const TEXT_FORMAT_HIGHLIGHT = messageKey('surface.text-format.highlight');
+export const TEXT_FORMAT_HIGHLIGHT_NONE = messageKey('surface.text-format.highlight-none');
+export const TEXT_FORMAT_HIGHLIGHT_CUSTOM = messageKey('surface.text-format.highlight-custom');
+export const TEXT_HIGHLIGHT_YELLOW = messageKey('surface.text-format.highlight-yellow');
+export const TEXT_HIGHLIGHT_GREEN = messageKey('surface.text-format.highlight-green');
+export const TEXT_HIGHLIGHT_BLUE = messageKey('surface.text-format.highlight-blue');
+export const TEXT_HIGHLIGHT_PINK = messageKey('surface.text-format.highlight-pink');
+export const TEXT_HIGHLIGHT_ORANGE = messageKey('surface.text-format.highlight-orange');
+export const TEXT_FORMAT_CHARACTER_SPACING = messageKey('surface.text-format.character-spacing');
+export const TEXT_FORMAT_CHARACTER_SPACING_BOUND = messageKey('surface.text-format.character-spacing-bound');
+export const TEXT_FORMAT_SPACE_AFTER = messageKey('surface.text-format.space-after');
 // THE ONE FONT PICKER (the owner's D1 to D4): its search, its groups, and what it says of a font in words.
 export const FONT_PICKER_SEARCH = messageKey('surface.font-picker.search');
 export const FONT_PICKER_LIST = messageKey('surface.font-picker.list');
@@ -4353,11 +4366,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TEXT_FORMAT_BOLD]: 'Bold',
   [TEXT_FORMAT_ITALIC]: 'Italic',
   [TEXT_FORMAT_UNDERLINE]: 'Underline',
+  [TEXT_FORMAT_STRIKE]: 'Strikethrough',
   [TEXT_FORMAT_SUPERSCRIPT]: 'Superscript',
   [TEXT_FORMAT_SUBSCRIPT]: 'Subscript',
   [TEXT_FORMAT_ALIGN_LEFT]: 'Align left',
   [TEXT_FORMAT_ALIGN_CENTER]: 'Centre',
   [TEXT_FORMAT_ALIGN_RIGHT]: 'Align right',
+  [TEXT_FORMAT_ALIGN_JUSTIFY]: 'Justify',
   [TEXT_FORMAT_BULLETS]: 'Bullets',
   [TEXT_FORMAT_NUMBERING]: 'Numbering',
   [TEXT_FORMAT_INDENT_MORE]: 'Increase indent',
@@ -4392,6 +4407,18 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TEXT_FORMAT_SPACING_SINGLE]: 'Single',
   [TEXT_FORMAT_SPACING_ONE_HALF]: '1.5',
   [TEXT_FORMAT_SPACING_DOUBLE]: 'Double',
+  [TEXT_FORMAT_HIGHLIGHT]: 'Highlight',
+  [TEXT_FORMAT_HIGHLIGHT_NONE]: 'No highlight',
+  [TEXT_FORMAT_HIGHLIGHT_CUSTOM]: 'Other highlight colour',
+  [TEXT_HIGHLIGHT_YELLOW]: 'Yellow highlight',
+  [TEXT_HIGHLIGHT_GREEN]: 'Green highlight',
+  [TEXT_HIGHLIGHT_BLUE]: 'Blue highlight',
+  [TEXT_HIGHLIGHT_PINK]: 'Pink highlight',
+  [TEXT_HIGHLIGHT_ORANGE]: 'Orange highlight',
+  [TEXT_FORMAT_CHARACTER_SPACING]: 'Character spacing in points',
+  [TEXT_FORMAT_CHARACTER_SPACING_BOUND]:
+    'Up to {points} points either way at this size. Wider, and search and copy would read a space between every letter.',
+  [TEXT_FORMAT_SPACE_AFTER]: 'Space after the paragraph in points',
   [FONT_PICKER_SEARCH]: 'Search fonts',
   [FONT_PICKER_LIST]: 'Fonts',
   [FONT_GROUP_DOCUMENT]: 'In this document',

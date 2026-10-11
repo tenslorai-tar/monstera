@@ -4,7 +4,7 @@
      equal to it. Regenerate with `npx vitest run packages/ui/src/App.test.tsx -t "manual test checklist" -u`.
      Do not edit by hand. -->
 
-Every command the application registers — 263 — and the checks only the installed window can answer.
+Every command the application registers — 265 — and the checks only the installed window can answer.
 For each command: use it on a real document, see the correct effect, then save, close and reopen and see it kept
 (the wired-tools rule, CLAUDE.md). A command that needs a selection, a second document or a key says so when it
 is not available.
@@ -75,11 +75,13 @@ is not available.
 - [ ] **Bold** — Format · `text.format.bold` · Shows: on screen
 - [ ] **Italic** — Format · `text.format.italic` · Shows: on screen
 - [ ] **Underline** — Format · `text.format.underline` · Shows: on screen
+- [ ] **Strikethrough** — Format · `text.format.strike` · Shows: on screen
 - [ ] **Superscript** — Format · `text.format.superscript` · Shows: on screen
 - [ ] **Subscript** — Format · `text.format.subscript` · Shows: on screen
 - [ ] **Align left** — Format · `text.format.align-left` · Shows: on screen
 - [ ] **Centre** — Format · `text.format.align-center` · Shows: on screen
 - [ ] **Align right** — Format · `text.format.align-right` · Shows: on screen
+- [ ] **Justify** — Format · `text.format.align-justify` · Shows: on screen
 - [ ] **Bullets** — Format · `text.format.bullets` · Shows: on screen
 - [ ] **Numbering** — Format · `text.format.numbering` · Shows: on screen
 - [ ] **Increase indent** — Format · `text.format.indent-more` · Shows: on screen
