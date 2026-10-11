@@ -46,6 +46,7 @@ import { decodedImage, withDocument } from './mupdfWriter.js';
 import { displayedBox } from './pageBoxes.js';
 import { snapRotation } from './rotatePages.js';
 import { canDraw, daFaceOf, isStyled, isStylable, readStyledBox, restyled, writeStyleFacts } from './textBoxAppearance.js';
+import { type SetAside, refaced, setAside } from './fieldFaces.js';
 import { DEFAULT_LOOK, type TextRun, base14Of } from './textBoxStyle.js';
 import { pageInDocument, pagesOf } from './pageScope.js';
 import { glyphLinesOf, heldToTheirLines } from './redactionQuads.js';
@@ -1426,8 +1427,11 @@ const BLEND_STATE = 'MonsteraBlend';
  * @param annotations the annotations on `page` this caller created or changed
  */
 export function redrawPage(page: PDFPage, annotations: readonly PDFAnnotation[], document: PDFDocument): void {
+  const asides = annotations.map(setAside);
   page.update();
-  for (const annotation of annotations) redrawn(annotation, document);
+  annotations.forEach((annotation, at) => {
+    redrawn(annotation, document, asides[at]);
+  });
 }
 
 /**
@@ -1441,15 +1445,22 @@ export function redrawPage(page: PDFPage, annotations: readonly PDFAnnotation[],
  * is left exactly as MuPDF drew it.
  */
 export function redraw(annotation: PDFAnnotation, document: PDFDocument): void {
+  const aside = setAside(annotation);
   annotation.update();
-  redrawn(annotation, document);
+  redrawn(annotation, document, aside);
 }
 
-/** What both redraws add to the appearance MuPDF just drew: the blend, and a measurement's reading. */
-function redrawn(annotation: PDFAnnotation, document: PDFDocument): void {
+/**
+ * What both redraws add to the appearance MuPDF just drew: the blend, and a measurement's reading.
+ *
+ * @param aside a field in a real family emptied before the update (`setAside`), so the update drew its base
+ */
+function redrawn(annotation: PDFAnnotation, document: PDFDocument, aside: SetAside | undefined): void {
   // A BOX MONSTERA STYLED has its appearance written over what MuPDF just drew (ADR-0211), BEFORE the blend: the blend patches
-  // the stream that is there.
+  // the stream that is there. A FIELD IN A REAL FAMILY has its value drawn the same way (ADR-0229), over the empty-value
+  // appearance this redraw's update just drew.
   restyled(annotation, document);
+  refaced(aside, document);
   reblend(annotation, document);
   relabel(annotation, document);
 }

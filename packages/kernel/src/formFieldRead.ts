@@ -4,7 +4,8 @@ import type { PDFDocument, PDFObject, PDFWidget } from './mupdfRaw.js';
 
 import type { MupdfSession } from './engineSeam.js';
 import { faceOfFont, parseDefaultAppearance, textColourOf } from './fieldActions.js';
-import { fieldRulesOf, nearest, qualifiedNameOf } from './fieldRules.js';
+import { FIELD_FAMILY_MARKER, familyOfMarker } from './fieldFamily.js';
+import { borderWidthOf, fieldRulesOf, nearest, qualifiedNameOf } from './fieldRules.js';
 import { kindOf, onStateKeyOf } from './formFields.js';
 import { withDocument } from './mupdfWriter.js';
 import { frameOf, readRect } from './pageAnnotations.js';
@@ -46,18 +47,6 @@ function colourOf(array: PDFObject): AnnotationColour | null {
     return [(1 - (parts[0] ?? 0)) * (1 - k), (1 - (parts[1] ?? 0)) * (1 - k), (1 - (parts[2] ?? 0)) * (1 - k)];
   }
   return null;
-}
-
-/** The border width a widget draws with: `/BS /W`, else the third number of `/Border`, else the format's own default of 1. */
-function borderWidthOf(object: PDFObject): number {
-  const width = object.get('BS', 'W');
-  if (width.isNumber()) return width.asNumber();
-  const border = object.get('Border');
-  if (border.isArray() && border.length >= 3) {
-    const third = border.get(2);
-    if (third.isNumber()) return third.asNumber();
-  }
-  return 1;
 }
 
 /**
@@ -131,6 +120,7 @@ function readOne(document: PDFDocument, widget: PDFWidget, page: number, index: 
     readOnly: widget.isReadOnly(),
     defaultValue: dv.isName() ? dv.asName() : dv.isString() ? dv.asString().slice(0, MAX_DEFAULT) : null,
     font: faceOfFont(baseFont?.isName() ? baseFont.asName() : undefined, font?.resource),
+    family: familyOfMarker(textOf(nearest(object, FIELD_FAMILY_MARKER)), kind),
     fontSize: font?.size ?? 0,
     borderColour: colourOf(object.get('MK', 'BC')),
     fillColour: colourOf(object.get('MK', 'BG')),

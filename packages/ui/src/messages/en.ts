@@ -3255,6 +3255,7 @@ export const FIELD_EDIT_DUPLICATE_SIGNATURE = messageKey('dialog.command-problem
 export const FIELD_EDIT_ENCRYPTED = messageKey('dialog.command-problem.field-edit.encrypted');
 export const FIELD_EDIT_COMB_WITHOUT_LENGTH = messageKey('dialog.command-problem.field-edit.comb-without-length');
 export const FIELD_EDIT_COMB_EXCLUDES = messageKey('dialog.command-problem.field-edit.comb-excludes');
+export const FIELD_EDIT_FAMILY_KIND = messageKey('dialog.command-problem.field-edit.family-kind');
 // CLOUD STORAGE (ADR-0091).
 export const CLOUD_TITLE = messageKey('dialog.cloud.title');
 export const CLOUD_COMMAND_TITLE = messageKey('command.cloud.storage');
@@ -6983,4 +6984,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'A field shows one character per box only when it has a most number of characters. Set that first. Nothing was changed.',
   [FIELD_EDIT_COMB_EXCLUDES]:
     'A field with one character per box cannot also take several lines or hide what is typed. Turn the other off first. Nothing was changed.',
+  [FIELD_EDIT_FAMILY_KIND]:
+    'This kind of field can use Helvetica, Times or Courier only. Choose one of those. Nothing was changed.',
 };

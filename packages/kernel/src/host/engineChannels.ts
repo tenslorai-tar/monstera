@@ -1496,6 +1496,7 @@ export const FIELD_EDIT_REFUSALS = [
   'field-edit-encrypted',
   'field-edit-comb-without-length',
   'field-edit-comb-excludes',
+  'field-edit-family-kind',
 ] as const;
 
 /**

@@ -1294,6 +1294,10 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     }
     return handles;
   }, [fieldSelection, formFieldList.fields, openVersion]);
+  // A FIELD'S FONT PICKER offers this computer's fonts and the document's for the kinds Monstera draws in a real family
+  // (ADR-0229): read once a field is selected, as the text editor's are once it opens.
+  const fieldFontList = useFontList(client, selectedHandles.length > 0);
+  const fieldDocumentFonts = useDocumentFonts(client, activeId, openVersion, selectedHandles.length > 0);
   const readFieldProperties = useCallback(
     async (handles: readonly FormFieldHandle[]): Promise<readonly (FormFieldRead | null)[]> => {
       if (activeId === undefined) return handles.map(() => null);
@@ -4703,6 +4707,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
               ) : selectedHandles.length > 0 && selection === undefined && objectSelection === undefined ? (
                 <FieldPropertiesPanel
                   context={context}
+                  documentFonts={fieldDocumentFonts}
+                  fonts={fieldFontList}
                   known={formFieldList.fields.map((field) => ({ name: field.name, kind: field.kind, options: field.options }))}
                   onEdit={editSelectedFields}
                   read={readFieldProperties}

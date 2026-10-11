@@ -4,7 +4,8 @@ import type { MupdfSession } from './engineSeam.js';
 import { protectedImageOf, protectedWritingOf } from './documentProtection.js';
 import { mupdfWriter } from './mupdfWriter.js';
 import { NO_TIMESTAMPS, type RequestTimestamp, signpdfExecutionWith } from './documentSign.js';
-import { applyPdfLibImage, hostedPdfLibExecution } from './pdfLibWriter.js';
+import { applyPdfLibWithFaces } from './pdfLibFieldFaces.js';
+import { hostedPdfLibExecution } from './pdfLibWriter.js';
 import { stagedBytes } from './savePipeline.js';
 import { prepareSignature } from './signaturePlaceholder.js';
 
@@ -55,7 +56,7 @@ export const localPdfLibWriter: RegisteredWriter<'pdf-lib'> = {
   ...hostedPdfLibExecution(async (session, command, reads) => {
     const protection = await protectedWritingOf(session);
     const image = protection === undefined ? await mupdfWriter.serialise(session) : await protection.plain();
-    const result = await applyPdfLibImage(image, command, reads);
+    const result = await applyPdfLibWithFaces(image, command, reads);
     return stagedBytes(protection === undefined ? result : await protection.protect(result));
   }),
 };

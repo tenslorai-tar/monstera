@@ -6,6 +6,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { ReactElement, ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import type { FontList } from '../FontPicker.js';
 import { activateCatalogue, i18n } from '../i18n.js';
 import { EN } from '../messages/en.js';
 import { CommandRegistry, type CommandContext } from '../registries/commands.js';
@@ -49,6 +50,7 @@ const TEXT: FormFieldRead = {
   readOnly: false,
   defaultValue: null,
   font: 'helvetica',
+  family: null,
   fontSize: 0,
   borderColour: [0.2, 0.2, 0.2],
   fillColour: null,
@@ -75,6 +77,12 @@ const TEXT: FormFieldRead = {
 
 const handleOf = (field: FormFieldRead): FormFieldHandle => ({ page: field.page, index: field.index, name: field.name });
 
+/** This computer's fonts as `app.fontFamilies` answers them: one bundled family, which is what a field can be set in. */
+const COMPUTER_FONTS: FontList = {
+  listed: true,
+  families: [{ name: 'Carlito', origin: 'bundled', looksLike: 'Calibri', embedding: 'subset', bold: true, italic: true }],
+};
+
 interface Mounted {
   readonly edits: FormFieldProperties[];
   readonly reads: (readonly FormFieldHandle[])[];
@@ -87,6 +95,8 @@ function mounted(field: FormFieldRead, selected: readonly FormFieldHandle[] = [h
     <Wrapped>
       <FieldPropertiesPanel
         context={CONTEXT}
+        documentFonts={[{ name: 'ABCDEF+Lato-Regular', partial: true }]}
+        fonts={COMPUTER_FONTS}
         known={[
           { name: 'email', kind: 'text', options: [] },
           { name: 'phone', kind: 'text', options: [] },
@@ -172,10 +182,34 @@ describe('the field properties pane', () => {
     const size = screen.getByLabelText('Size (0 is automatic)');
     fireEvent.change(size, { target: { value: '999' } });
     fireEvent.blur(size);
-    expect(seen.edits, 'a size past the bound is not sent').toStrictEqual([{ font: 'times' }]);
+    // A STANDARD FONT takes any real family away, since a text field may hold one (ADR-0229).
+    expect(seen.edits, 'a size past the bound is not sent').toStrictEqual([{ font: 'times', family: null }]);
     fireEvent.change(size, { target: { value: '14' } });
     fireEvent.blur(size);
-    expect(seen.edits).toStrictEqual([{ font: 'times' }, { fontSize: 14 }]);
+    expect(seen.edits).toStrictEqual([{ font: 'times', family: null }, { fontSize: 14 }]);
+  });
+
+  it('offers a text field this computer’s fonts and the document’s, and sends the family chosen (A8.4)', async () => {
+    const seen = mounted(TEXT);
+    fireEvent.click(await screen.findByRole('button', { name: 'Font: Helvetica' }));
+    expect(document.querySelector('[data-font-choice="Lato-Regular"]'), 'the document’s font').not.toBeNull();
+    const carlito = document.querySelector('[data-font-choice="Carlito"]');
+    if (carlito === null) throw new Error('Carlito is not offered');
+    fireEvent.click(carlito);
+    expect(seen.edits).toStrictEqual([{ family: 'Carlito' }]);
+  });
+
+  it('shows the field’s real family as its font', async () => {
+    mounted({ ...TEXT, family: 'Carlito' });
+    expect(await screen.findByRole('button', { name: 'Font: Carlito' })).toBeTruthy();
+  });
+
+  it('CONTROL: a list box is offered the standard fonts alone, since its value is drawn in them', async () => {
+    mounted({ ...TEXT, kind: 'listbox', name: 'many' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Font: Helvetica' }));
+    expect(document.querySelector('[data-font-choice="Carlito"]')).toBeNull();
+    expect(document.querySelector('[data-font-choice="Lato-Regular"]')).toBeNull();
+    expect(document.querySelector('[data-font-choice="Times"]')).not.toBeNull();
   });
 
   it('takes a border colour away with None, and a fill colour is offered the same way', async () => {
@@ -364,6 +398,8 @@ describe('the field properties pane', () => {
       <Wrapped>
         <FieldPropertiesPanel
           context={CONTEXT}
+          documentFonts={[]}
+          fonts={COMPUTER_FONTS}
           known={[]}
           onEdit={(set) => {
             edits.push(set);

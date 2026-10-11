@@ -2396,6 +2396,13 @@ void _everyNameIsWritten;
  * MuPDF answers `radiobutton` and `combobox`, and a reader is shown `radio` and
  * `dropdown` because those are the words on the form the document came from.
  */
+/**
+ * The field kinds whose value Monstera's own appearance draws in a real font (ADR-0229 Decision 4): a text field and a
+ * dropdown. Every other kind is offered the standard faces alone, and the writer refuses a family on it, so the picker and
+ * the writer read one list.
+ */
+export const REAL_FONT_FIELD_KINDS = ['text', 'dropdown'] as const;
+
 export const formFieldKindSchema = z.enum([
   'text',
   'checkbox',
@@ -5186,6 +5193,11 @@ export const formFieldPropertiesSchema = z
     defaultValue: z.string().max(MAX_FIELD_DEFAULT).nullable(),
     /** The face the field's text is set in, one of the standard three. */
     font: z.enum(FIELD_FONTS),
+    /**
+     * A real family the field's text is drawn in by Monstera's own appearance (ADR-0229), `font` then the standard face a
+     * reader that draws its own falls back to; `null` takes it away. Only a kind in {@link REAL_FONT_FIELD_KINDS}.
+     */
+    family: annotationFamilySchema.nullable(),
     /** The size of its text in points; `0` is the reader's automatic size. */
     fontSize: z.number().min(0).max(200),
     /** The border's colour, or none (`/MK /BC`). */
@@ -5268,6 +5280,8 @@ export const formFieldReadSchema = z
     readOnly: z.boolean(),
     defaultValue: z.string().max(MAX_FIELD_DEFAULT).nullable(),
     font: z.enum(FIELD_FONTS),
+    /** The real family Monstera draws the field's text in, or `null` for `font` alone (ADR-0229). */
+    family: annotationFamilySchema.nullable(),
     fontSize: z.number().min(0).max(200),
     borderColour: annotationColourSchema.nullable(),
     fillColour: annotationColourSchema.nullable(),

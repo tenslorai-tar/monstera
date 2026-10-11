@@ -25,6 +25,8 @@ import { fieldNameClash } from '@monstera/shared';
 
 import type { FieldFace } from './fieldActions.js';
 import { FieldEditRefusedError } from './fieldEditRefusal.js';
+import { FIELD_FAMILY_MARKER, drawsFieldFamily, familyOfMarker, fieldFontOf } from './fieldFamily.js';
+import { base14Of } from './textBoxStyle.js';
 import {
   calculationScript,
   faceOfFont,
@@ -580,10 +582,36 @@ function followCalculations(form: ReturnType<PDFDocument['getForm']>, was: strin
   }
 }
 
-/** What changing a field's members asks of its appearance. */
-function changesLook(set: FormFieldProperties): boolean {
+/** The kind a pdf-lib field is, in the contract's words, as far as which kinds take a real family. */
+function kindOfField(field: PDFField): string {
+  return field instanceof PDFTextField ? 'text' : field instanceof PDFDropdown ? 'dropdown' : 'other';
+}
+
+/**
+ * Writes or takes away the field's real family (ADR-0229 Decision 1): the private marker on the field dictionary, which
+ * Monstera's appearance draws the value in. A standard face sent alone, or a family that IS one, takes it away, since `/DA`
+ * then says the whole of it. Refused on a kind that appearance does not draw, so nothing stores a family nothing draws.
+ */
+function setFamily(field: PDFField, set: FormFieldProperties): void {
+  const marker = PDFName.of(FIELD_FAMILY_MARKER);
+  if (set.family === undefined) {
+    if (set.font !== undefined) field.acroField.dict.delete(marker);
+    return;
+  }
+  const kind = kindOfField(field);
+  if (set.family !== null && base14Of(set.family) === undefined && !drawsFieldFamily(kind)) {
+    throw new FieldEditRefusedError('family-kind', `A ${kind} field is drawn in the standard faces alone.`);
+  }
+  const family = set.family === null ? null : familyOfMarker(set.family, kind);
+  if (family === null) field.acroField.dict.delete(marker);
+  else field.acroField.dict.set(marker, PDFHexString.fromText(family));
+}
+
+/** What changing a field's members asks of its appearance: also what the real family's finishing step asks (ADR-0229). */
+export function changesLook(set: FormFieldProperties): boolean {
   return (
     set.font !== undefined ||
+    set.family !== undefined ||
     set.fontSize !== undefined ||
     set.borderColour !== undefined ||
     set.fillColour !== undefined ||
@@ -641,8 +669,10 @@ export const applyEditFormFields: Apply<'pdf-lib', 'editFormFields'> = async (im
     const { set } = edit;
     const { field, widget } = at;
     const before = widget.lookupMaybe(PDFName.of('DA'), PDFString)?.asString() ?? field.acroField.getDefaultAppearance();
-    const face = set.font ?? faceOf(form, before);
+    // A REAL FAMILY decides the standard face `/DA` falls back to (ADR-0229 Decision 1), as `font` does where it is sent alone.
+    const face = set.family === undefined || set.family === null ? (set.font ?? faceOf(form, before)) : fieldFontOf(set.family);
     const size = set.fontSize ?? sizeOf(before);
+    setFamily(field, set);
 
     if (set.name !== undefined) rename(form, field, set.name);
     if (set.tooltip !== undefined) {

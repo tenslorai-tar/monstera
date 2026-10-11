@@ -2480,6 +2480,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
               readOnly: found.readOnly,
               defaultValue: null,
               font: 'helvetica' as const,
+              family: null,
               fontSize: 0,
               borderColour: [0.2, 0.2, 0.2] as [number, number, number],
               fillColour: null,

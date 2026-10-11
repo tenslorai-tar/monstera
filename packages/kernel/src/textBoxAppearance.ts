@@ -10,6 +10,7 @@ import {
   type BoxLook,
   type Face,
   type Family,
+  type Layout,
   type Measure,
   type Rgb,
   type TextRun,
@@ -26,6 +27,7 @@ import {
   faceNames,
   firstOf,
   layoutBox,
+  nearestBase14,
   writable,
 } from './textBoxStyle.js';
 
@@ -112,7 +114,7 @@ const FAMILY_OF_DA: ReadonlyMap<string, Family> = new Map([
  * family itself where it is one, else the base 14 nearest the family's class.
  */
 export function daFaceOf(family: Family): 'Helv' | 'TiRo' | 'Cour' {
-  const base = base14Of(family) ?? (({ sans: 'Helvetica', serif: 'Times', mono: 'Courier' } as const)[familyClass(family)]);
+  const base = nearestBase14(family, familyClass);
   return base === 'Times' ? 'TiRo' : base === 'Courier' ? 'Cour' : 'Helv';
 }
 
@@ -174,7 +176,7 @@ function isBase14Face(face: string): face is Face {
  * the resolver's faces for every other word where this process holds a catalogue (ADR-0228 Decision 3). A process with
  * none sets the base 14 alone, and a word they cannot write leaves the box to the engine, as before real fonts.
  */
-function settersFor(document: PDFDocument): { readonly setter: Typesetter; readonly resolver: TextBoxFaces | undefined } {
+export function settersFor(document: PDFDocument): { readonly setter: Typesetter; readonly resolver: TextBoxFaces | undefined } {
   const base = base14Typesetter(engineMeasure);
   // BOUND AND NOT LOADED IS A FAULT, not a fallback: `localMupdfExecution` loads the catalogue before any command runs, so
   // `editFaces` throwing here names the process that skipped it rather than drawing a chosen face as Helvetica.
@@ -194,6 +196,22 @@ export function canDraw(text: string, family: Family): boolean {
 }
 
 /**
+ * The font dictionary a layout's stream names, under `faceNames`' names: a base-14 face as the dictionary every viewer
+ * carries, every other as the resolver embedded it. EVERY EMBEDDED FACE IS WRITTEN ONCE THE LAYOUT IS KNOWN, subset to what
+ * was drawn. The one way a text box's and a form field's (ADR-0229) appearance name their fonts.
+ */
+export function layoutFonts(document: PDFDocument, layout: Layout, resolver: TextBoxFaces | undefined): PDFObject {
+  const fonts = document.newDictionary();
+  const embedded = resolver?.finish() ?? new Map<string, PDFObject>();
+  for (const [face, name] of faceNames(layout)) {
+    const font = isBase14Face(face) ? fontDictionary(document, face) : embedded.get(face);
+    if (font === undefined) throw new Error(`the face ${face} an appearance drew was written by no typesetter`);
+    fonts.put(name, font);
+  }
+  return fonts;
+}
+
+/**
  * Writes `/AP /N` from the box's own four facts. **Answers `false` for a box it cannot draw** — a word no face this process
  * holds can write, a box with no room — and then writes nothing, so the engine's appearance stands with the plain words.
  */
@@ -210,15 +228,7 @@ export function drawStyledAppearance(annotation: PDFAnnotation, document: PDFDoc
   for (const edge of [0, 0, x1 - x0, y1 - y0]) box.push(edge);
   stream.put('BBox', box);
   const resources = document.newDictionary();
-  const fonts = document.newDictionary();
-  // EVERY EMBEDDED FACE IS WRITTEN ONCE THE LAYOUT IS KNOWN, subset to what the box drew.
-  const embedded = resolver?.finish() ?? new Map<string, PDFObject>();
-  for (const [face, name] of faceNames(layout)) {
-    const font = isBase14Face(face) ? fontDictionary(document, face) : embedded.get(face);
-    if (font === undefined) throw new Error(`the face ${face} a text box drew was written by no typesetter`);
-    fonts.put(name, font);
-  }
-  resources.put('Font', fonts);
+  resources.put('Font', layoutFonts(document, layout, resolver));
   stream.put('Resources', resources);
   const made = document.addStream(appearanceContent(layout, look), stream);
   const appearances = annotation.getObject().get('AP');

@@ -4,6 +4,8 @@ import type { PDFDocument, PDFObject, PDFPage, PDFWidget } from './mupdfRaw.js';
 
 import { BoundedList } from './boundedList.js';
 import { type CalculatedValue, calculatedValues, recalculate, restoreCalculated, writeShown } from './fieldCalculation.js';
+import { kindOf } from './fieldKind.js';
+import { redrawFamily } from './fieldWidgets.js';
 import { MAX_FIELD_ANCESTRY, fieldDictionaryOf, fieldRulesOf } from './fieldRules.js';
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
@@ -249,41 +251,8 @@ export interface ListedField {
   readonly format: FieldFormat | null;
 }
 
-/**
- * What kind of field a widget is, asked through MuPDF's own predicates.
- *
- * **The predicates rather than `getFieldType()`'s string**, because the
- * classification is MuPDF's rule and re-deriving it from a name would be a
- * second opinion about it (B3a) — one that agrees until a version spells a type
- * differently. The string is still what answers `signature`, which has no
- * predicate of its own.
- *
- * **Push button before checkbox**, because `isButton()` covers all three and
- * the order is what separates them. Measured names, 2026-09-07: `text`,
- * `checkbox`, `radiobutton`, `combobox`, `listbox`, `signature`.
- */
-export function kindOf(widget: PDFWidget): FormFieldKind {
-  if (widget.isPushButton()) return 'button';
-  if (widget.isCheckbox()) return 'checkbox';
-  if (widget.isRadioButton()) return 'radio';
-  if (widget.isText()) return 'text';
-  if (widget.isComboBox()) return 'dropdown';
-  if (widget.isListBox()) return 'listbox';
-  // `'other'` IS THE HONEST ANSWER for a type this build cannot name — and it
-  // is UNREACHABLE against MuPDF 1.28.0, measured 2026-09-07 while auditing.
-  // A widget whose `/FT` is `/Xx`, and a widget with no `/FT` at all, both
-  // resolve to `getFieldType() === 'button'` with `isPushButton()` true: the
-  // engine defaults an unknown or absent type to push button, so every widget
-  // it hands us matches a predicate above.
-  //
-  // KEPT RATHER THAN DELETED, for JJJ-1's reason. The fact it encodes is true,
-  // and removing it would leave this function with no fallback the day a
-  // version answers with a string these predicates do not cover — which is a
-  // false positive manufactured to tidy away a branch. `formFields.test.ts`
-  // carries the reading, so the claim expires with the version rather than
-  // sitting here as an assertion nobody can date.
-  return widget.getFieldType() === 'signature' ? 'signature' : 'other';
-}
+// WHAT KIND OF FIELD A WIDGET IS lives in `fieldKind.ts`, which the field appearance's finishing step reads too.
+export { kindOf } from './fieldKind.js';
 
 /**
  * Whether this widget is the one the field's value names.
@@ -618,8 +587,11 @@ export function fillWidget(document: PDFDocument, widget: PDFWidget, value: Fiel
 function fill(document: PDFDocument, widget: PDFWidget, value: FieldFill): void {
   refuseUnfillable(widget, value);
   if (value.set === 'text') writeShown(document, [widget], value.text, fieldRulesOf(widget).format);
-  else if (value.set === 'choice') widget.setChoiceValue(choiceStoredOf(widget, value.option));
-  else if (value.set === 'choices') setChoices(document, widget, value.options);
+  else if (value.set === 'choice') {
+    widget.setChoiceValue(choiceStoredOf(widget, value.option));
+    // A DROPDOWN IN A REAL FAMILY is drawn now, in its family, rather than by MuPDF at the save (ADR-0229).
+    redrawFamily(document, widget);
+  } else if (value.set === 'choices') setChoices(document, widget, value.options);
   else setButton(widget, value.on);
 }
 

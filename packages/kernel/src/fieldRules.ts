@@ -15,6 +15,21 @@ import type { PDFObject, PDFWidget } from './mupdfRaw.js';
 /** How far up a `/Parent` chain an inherited key is looked for. */
 export const MAX_FIELD_ANCESTRY = 32;
 
+/**
+ * The border width a widget draws with: `/BS /W`, else the third number of `/Border`, else the format's own default of 1.
+ * One reading, which the Properties read and the field appearance's finishing step both take.
+ */
+export function borderWidthOf(object: PDFObject): number {
+  const width = object.get('BS', 'W');
+  if (width.isNumber()) return width.asNumber();
+  const border = object.get('Border');
+  if (border.isArray() && border.length >= 3) {
+    const third = border.get(2);
+    if (third.isNumber()) return third.asNumber();
+  }
+  return 1;
+}
+
 /** `/Ff` bits, ISO 32000-1 Tables 226, 228 and 230, numbered from 1 as the standard numbers them. */
 const FLAG = {
   required: 1 << 1,

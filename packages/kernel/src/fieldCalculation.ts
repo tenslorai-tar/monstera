@@ -11,6 +11,7 @@ import type { FieldCalculation, FieldFormat } from '@monstera/contract';
 
 import { fieldDictionaryOf, fieldRulesOf, qualifiedNameOf } from './fieldRules.js';
 import type { PDFDocument, PDFWidget } from './mupdfRaw.js';
+import { redrawFamily } from './fieldWidgets.js';
 import { redraw } from './pageAnnotations.js';
 
 /**
@@ -102,7 +103,12 @@ export function calculatedValues(document: PDFDocument): readonly CalculatedValu
 export function writeShown(document: PDFDocument, widgets: readonly PDFWidget[], text: string, format: FieldFormat | null): void {
   const shown = format === null ? text : formatFieldValue(text, format);
   for (const widget of widgets) widget.setTextValue(shown);
-  if (shown === text) return;
+  if (shown === text) {
+    // A FIELD IN A REAL FAMILY is drawn now, in its family, rather than by MuPDF at the save (ADR-0229, `fieldWidgets.ts`).
+    const first = widgets[0];
+    if (first !== undefined) redrawFamily(document, first);
+    return;
+  }
   // DRAWN NOW, from the shown text: a setter marks the widget for redrawing, and MuPDF redraws a marked widget when the
   // session is saved, from `/V` as it is then (measured 2026-10-10: the saved stream showed `1234.5`). A redraw here
   // clears the mark, and `/V` put back on the dictionary below sets none.

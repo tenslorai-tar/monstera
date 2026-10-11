@@ -73,6 +73,14 @@ export function base14Of(family: Family): Base14Family | undefined {
   return BASE14_FAMILIES.find((each) => each.toLowerCase() === lower);
 }
 
+/**
+ * The base-14 family a family falls back to where a reader draws the words itself (ADR-0228 Decision 3): the family where it
+ * is one, else the one nearest its class. The ONE rule a text box's `/DA` and a form field's (ADR-0229) both take.
+ */
+export function nearestBase14(family: Family, classOf: (family: Family) => 'sans' | 'serif' | 'mono'): Base14Family {
+  return base14Of(family) ?? ({ sans: 'Helvetica', serif: 'Times', mono: 'Courier' } as const)[classOf(family)];
+}
+
 /** The base-14 face for a base-14 family, bold and italic. */
 export function faceFor(family: Base14Family, bold: boolean, italic: boolean): Face {
   const [regular, boldFace, italicFace, boldItalicFace] = FACES[family];
@@ -352,9 +360,13 @@ export function layoutBox(
   look: BoxLook,
   runs: readonly TextRun[],
   setter: Typesetter,
+  /** `false` keeps each paragraph on one line, as a single-line form field's value is (ADR-0229): aligned, never wrapped. */
+  wraps = true,
 ): Layout | undefined {
   const inner = width - 2 * look.padding - 2 * look.borderWidth;
   if (!(inner > 0) || !(look.size > 0)) return undefined;
+  /** How wide a line may grow before it wraps: the box's inner width, or without end where nothing wraps. */
+  const room = wraps ? inner : Infinity;
   const { tokens, paragraphs } = tokensOf(runs, look);
   const directions = paragraphs.map((text) => paragraphDirection(text));
   const levels = paragraphs.map((text, at) => paragraphLevels(text, directions[at] ?? 'ltr'));
@@ -393,7 +405,7 @@ export function layoutBox(
     row.paragraph = token.paragraph;
     if (token.kind === 'tab') {
       // A TAB GOES TO THE NEXT STOP, and to the next line where that stop is past the edge, where it is a whole stop.
-      if (row.tokens.length > 0 && nextTabStop(used, 0) > inner) finish('wrap');
+      if (row.tokens.length > 0 && nextTabStop(used, 0) > room) finish('wrap');
       const here = nextTabStop(used, 0) - used;
       row.tokens.push({ ...token, pieces: [], width: here });
       used += here;
@@ -404,7 +416,7 @@ export function layoutBox(
     if (token.kind === 'space') {
       // A space that would start a line is dropped.
       if (row.tokens.length === 0) continue;
-      if (used + set.width > inner) {
+      if (used + set.width > room) {
         finish('wrap');
         continue;
       }
@@ -414,7 +426,7 @@ export function layoutBox(
     }
     let rest = set;
     for (;;) {
-      if (used + rest.width <= inner) {
+      if (used + rest.width <= room) {
         row.tokens.push(rest);
         used += rest.width;
         break;

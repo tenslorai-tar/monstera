@@ -5,6 +5,7 @@ import {
   FIELD_ALIGNMENTS,
   FIELD_CALCULATIONS,
   FIELD_FONTS,
+  REAL_FONT_FIELD_KINDS,
   FIELD_VISIBILITIES,
   MAX_FIELD_LENGTH,
   MAX_FIELD_OPTION,
@@ -159,6 +160,12 @@ export interface FieldPropertiesPanelProps {
   readonly read: (handles: readonly FormFieldHandle[]) => Promise<readonly (FormFieldRead | null)[]>;
   /** Changes every selected field by the members named. */
   readonly onEdit: (set: FormFieldProperties) => void;
+  /**
+   * The fonts this computer has and the document's own, for a kind Monstera draws in a real family (ADR-0229): offered
+   * there and nowhere else, so the picker offers only what the writer draws.
+   */
+  readonly fonts: FontList;
+  readonly documentFonts: readonly DocumentFont[];
   /** Where the foot's commands come from (`properties` placements), and what they run with. */
   readonly registry: CommandRegistry;
   readonly context: CommandContext;
@@ -168,7 +175,7 @@ export interface FieldPropertiesPanelProps {
 const DATE_PATTERNS = ['m/d/yyyy', 'mm/dd/yyyy', 'dd/mm/yyyy', 'dd.mm.yyyy', 'yyyy-mm-dd', 'd mmmm yyyy', 'mmm d, yyyy'] as const;
 const TIME_PATTERNS = ['HH:MM', 'h:MM tt', 'HH:MM:ss', 'h:MM:ss tt'] as const;
 
-/** A field's picker lists no computer's fonts and none of the document's: its `/DA` names a standard font. */
+/** A kind Monstera does not draw in a real family lists no computer's fonts and none of the document's: its `/DA` names a standard font. */
 const NO_OTHER_FONTS: FontList = { listed: true, families: [] };
 const NO_DOCUMENT_FONTS: readonly DocumentFont[] = [];
 
@@ -217,6 +224,8 @@ export function FieldPropertiesPanel({
   known,
   read,
   onEdit,
+  fonts,
+  documentFonts,
   registry,
   context,
 }: FieldPropertiesPanelProps): ReactElement {
@@ -257,7 +266,15 @@ export function FieldPropertiesPanel({
       ) : (
         // A NEW SET OF CONTROLS PER FIELD AND PER READ, so a draft never outlives the field it was typed for and a value
         // that arrives after a change replaces the draft that produced it.
-        <Controls key={`${key}:${JSON.stringify(props)}`} props={props} single={single} known={known} onEdit={onEdit} />
+        <Controls
+          key={`${key}:${JSON.stringify(props)}`}
+          documentFonts={documentFonts}
+          fonts={fonts}
+          known={known}
+          onEdit={onEdit}
+          props={props}
+          single={single}
+        />
       )}
       {single ? null : <p className="m-properties__meta">{i18n._(FIELD_PROPS_ONE_ONLY)}</p>}
       {foot.length === 0 ? null : (
@@ -282,14 +299,20 @@ function Controls({
   single,
   known,
   onEdit,
+  fonts,
+  documentFonts,
 }: {
   readonly props: FormFieldRead;
   readonly single: boolean;
   readonly known: readonly KnownField[];
   readonly onEdit: (set: FormFieldProperties) => void;
+  readonly fonts: FontList;
+  readonly documentFonts: readonly DocumentFont[];
 }): ReactElement {
   const { i18n } = useLingui();
   const kind = has(props.kind);
+  /** Whether Monstera draws this kind's value in a real family: the contract's one list, which the writer also reads. */
+  const real = (REAL_FONT_FIELD_KINDS as readonly string[]).includes(props.kind);
   const others = known.filter((field) => field.name !== props.name);
   const radio = props.kind === 'radio';
   return (
@@ -366,22 +389,25 @@ function Controls({
           />
           {kind.text ? (
             <>
-              {/* THE ONE FONT PICKER (the owner's E2), offering what a field's appearance can name: the standard fonts
-                  its `/DA` writes. A computer's fonts would have to be embedded in the form's resources, which the
-                  field writer does not do, so they are not offered rather than offered and dropped. */}
+              {/* THE ONE FONT PICKER (the owner's E2), offering what the writer draws (ADR-0229): a text field's and a
+                  dropdown's value is drawn by Monstera's own appearance in any family, so they are offered this
+                  computer's fonts and the document's; every other kind keeps the standard fonts its `/DA` writes, so a
+                  family it cannot show is never offered and then dropped. */}
               <div className="m-properties__row">
                 <span className="m-properties__label">{i18n._(FIELD_PROPS_FONT)}</span>
                 <FontPicker
                   builtIn={FIELD_FONTS.map((font) => i18n._(FONT_LABELS[font]))}
-                  inDocument={NO_DOCUMENT_FONTS}
+                  inDocument={real ? documentFonts : NO_DOCUMENT_FONTS}
                   label={FIELD_PROPS_FONT}
-                  list={NO_OTHER_FONTS}
+                  list={real ? fonts : NO_OTHER_FONTS}
                   onPick={(family) => {
                     const chosen = FIELD_FONTS.find((font) => i18n._(FONT_LABELS[font]) === family);
-                    if (chosen !== undefined) onEdit({ font: chosen });
+                    // A STANDARD FONT takes a real family away; any other is the family, where this kind draws one.
+                    if (chosen !== undefined) onEdit(real ? { font: chosen, family: null } : { font: chosen });
+                    else if (real) onEdit({ family });
                   }}
                   unset={FONT_LABELS[props.font]}
-                  value={i18n._(FONT_LABELS[props.font])}
+                  value={props.family ?? i18n._(FONT_LABELS[props.font])}
                 />
               </div>
               <NumberRow

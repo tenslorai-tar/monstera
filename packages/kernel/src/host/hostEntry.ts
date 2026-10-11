@@ -182,9 +182,10 @@ const engineHandlers = createEngineHandlers({
   // already holds the document, so `main` neither receives the image nor parses it. LOADED ON THE FIRST pdf-lib
   // command, never at start: a static import charges every MuPDF host pdf-lib's library whether or not the document
   // ever meets a pdf-lib command, and that fixed cost is what §9.17's host budget and `proof:hostload` hold.
+  // A FIELD IN A REAL FAMILY is drawn again after pdf-lib's edit of it, in this process and this command (ADR-0229).
   applyPdfLib: async (image, command, reads) => {
-    const { applyPdfLibImage } = await import('../pdfLibWriter.js');
-    return applyPdfLibImage(image, command, reads);
+    const { applyPdfLibWithFaces } = await import('../pdfLibFieldFaces.js');
+    return applyPdfLibWithFaces(image, command, reads);
   },
   // A PROTECTED DOCUMENT'S pdf-lib COMMAND is read plain and written protected again in this process (ADR-0220), loaded
   // with the first pdf-lib command for the reason above.
