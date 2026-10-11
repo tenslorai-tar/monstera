@@ -43,7 +43,7 @@ The keys work as in a word processor: **Ctrl+B**, **Ctrl+I** and **Ctrl+U** for 
 
 The font field opens one list, the same wherever you choose a font in Monstera. Type in **Search fonts** to narrow it. Each name is shown in its own typeface where this computer can draw it.
 
-- **In this document**: the fonts the file already uses.
+- **In this document**: the fonts the file already uses, on every page and in its form fields. One that is not on this computer is drawn in a font that looks like it.
 - **Recent**: the fonts you chose since Monstera started.
 - **On this computer**: the fonts installed on this computer.
 - **Included with Monstera**: fonts that come with Monstera. Each says which font it looks like, for example “Carlito (looks like Calibri)”: it has the same letter widths, so a line breaks in the same place, but it is not that font. Where this computer has Calibri itself, Calibri is used.

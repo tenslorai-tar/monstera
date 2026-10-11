@@ -21,7 +21,11 @@ async function onePage(): Promise<Uint8Array> {
   return document.save();
 }
 
-async function openBlock(page: Page, sent: { channel: string; params: unknown }[]): Promise<void> {
+async function openBlock(
+  page: Page,
+  sent: { channel: string; params: unknown }[],
+  documentFonts: readonly { name: string; partial: boolean }[] = [],
+): Promise<void> {
   const bytes = await onePage();
   await page.setViewportSize({ width: 1800, height: 1000 });
   await bridgeUnder(
@@ -30,6 +34,7 @@ async function openBlock(page: Page, sent: { channel: string; params: unknown }[
     {
       opens: [{ kind: 'opened' as const, docId: ID, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Format.pdf' }],
       documentBytes: new Map([[ID, bytes]]),
+      documentFonts,
       textBlocks: [
         {
           box: { x0: 100, y0: 686, x1: 400, y1: 700 },
@@ -109,6 +114,25 @@ test.describe('Formatting in the Properties panel (K11)', () => {
     // THE COMPUTER'S, from the shim's list, and a bundled one said to look like another.
     await expect(panel.getByRole('group', { name: 'On this computer' }).getByRole('option', { name: 'Calibri' })).toBeVisible();
     await expect(panel.getByRole('option', { name: 'Carlito (looks like Calibri)' })).toBeVisible();
+  });
+
+  // THE WHOLE DOCUMENT'S FONTS (B2.8): the two below are on no run of the open page, so only `document.fonts` can put them
+  // there, and the case above, whose document read names none, is the control that the page's own font alone is listed.
+  test('In this document lists every font the document names, the page’s own first and each once', async ({ page }) => {
+    const sent: { channel: string; params: unknown }[] = [];
+    await openBlock(page, sent, [
+      { name: 'ABCDEF+Lato-Regular', partial: true },
+      { name: 'QWERTY+Garamond', partial: true },
+      { name: 'Courier', partial: false },
+    ]);
+    const panel = page.locator('[data-text-properties]');
+    await panel.getByRole('button', { name: /^Font:/u }).click();
+    await expect(panel.getByRole('listbox').getByRole('group').first().getByRole('option')).toHaveText([
+      'Garamond (partial: only the letters this document uses)',
+      'Lato-Regular (partial: only the letters this document uses)',
+      'Courier',
+    ]);
+    expect(sent.filter((one) => one.channel === 'document.fonts').length).toBeGreaterThan(0);
   });
 
   test('strikethrough, a highlight, character spacing, Ctrl+J and space after reach the one write (ADR-0228)', async ({ page }) => {

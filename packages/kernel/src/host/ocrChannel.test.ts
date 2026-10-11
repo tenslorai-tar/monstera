@@ -159,6 +159,9 @@ async function joined(ocr: HostOcrReader): Promise<{
       layers: () => {
         throw new Error('a recognition must not read the layers');
       },
+      fonts: () => {
+        throw new Error('a recognition must not read the fonts');
+      },
       annotations: () => {
         throw new Error('a recognition must not list annotations');
       },

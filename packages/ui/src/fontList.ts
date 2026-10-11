@@ -1,7 +1,8 @@
 import type { ContractClient } from '@monstera/contract';
+import type { DocId, DocVersion } from '@monstera/shared';
 import { useEffect, useState } from 'react';
 
-import type { FontList } from './FontPicker.js';
+import type { DocumentFont, FontList } from './FontPicker.js';
 
 /**
  * The fonts this computer has, asked of main once a session (`app.fontFamilies`) and held: the list does not change while
@@ -38,4 +39,37 @@ export function useFontList(client: ContractClient, wanted: boolean): FontList {
     };
   }, [client, wanted]);
   return list;
+}
+
+const NO_FONTS: readonly DocumentFont[] = [];
+
+/**
+ * Every font the document names (`document.fonts`, the owner's B2.8), for the picker's *In this document*; none while
+ * `wanted` is false, while it is read, or where the read is refused, since the page's own fonts are still offered.
+ * Read again at each `version`, because an edit can add a font.
+ */
+export function useDocumentFonts(
+  client: ContractClient,
+  docId: DocId | undefined,
+  version: DocVersion | undefined,
+  wanted: boolean,
+): readonly DocumentFont[] {
+  // HELD WITH THE DOCUMENT IT IS OF, so a tab switched to never shows the last tab's fonts while its own are read.
+  const [read, setRead] = useState<{ readonly docId: DocId; readonly fonts: readonly DocumentFont[] } | undefined>(undefined);
+  useEffect(() => {
+    if (!wanted || docId === undefined) return undefined;
+    let current = true;
+    void client['document.fonts']({ docId }).then(
+      (answer) => {
+        if (current) setRead({ docId, fonts: answer.ok ? answer.value.fonts : NO_FONTS });
+      },
+      () => {
+        if (current) setRead({ docId, fonts: NO_FONTS });
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [client, docId, version, wanted]);
+  return wanted && read !== undefined && read.docId === docId ? read.fonts : NO_FONTS;
 }

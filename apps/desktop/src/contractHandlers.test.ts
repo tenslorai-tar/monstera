@@ -50,7 +50,7 @@ import { NO_RECENT_PICTURES, createRecentPictures } from './recentPictures.js';
 import { createHeldPicture } from './heldPicture.js';
 import { unusedLibrarySurface } from './personalLibrary.js';
 import { NO_REVIEW_PROMPT, createEngagement, reviewPrompt } from './engagement.js';
-import type { DocumentCommands, ImageRead } from './documentCommands.js';
+import { type DocumentCommands, type ImageRead, MissingSessionError } from './documentCommands.js';
 import type { ScannedSignaturePicture } from './signaturePicture.js';
 import { type LaunchDocuments, createLaunchDocuments } from './launchDocuments.js';
 import { type RecentFiles, createRecentFiles } from './recentFiles.js';
@@ -2838,6 +2838,35 @@ describe('a dense page’s blocks and objects answer in parts the contract accep
     expect(channels['document.textBlocks'].result.safeParse(answer).success).toBe(false);
     expect(channels['document.textBlocks'].result.safeParse({ ...answer, blocks: blocks.slice(0, 1) }).success).toBe(true);
     expect(channels['document.pageObjects'].result.safeParse({ ...whole, objects }).success).toBe(false);
+  });
+});
+
+describe('document.fonts', () => {
+  const OPENED = { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' } as const;
+  const fonts = [
+    { name: 'Helvetica', partial: false },
+    { name: 'ABCDEF+Lato-Regular', partial: true },
+  ];
+
+  it('answers the document’s fonts, each with its subset flag, in a shape the contract accepts', async () => {
+    const commands = {
+      fonts: () => Promise.resolve({ version: asDocVersion(3), fonts, truncated: true }),
+    } as unknown as DocumentCommands;
+    const { handlers } = harness(OPENED, () => Promise.resolve(null), undefined, { commands });
+    const answer = await handlers['document.fonts']({ docId: A_DOC });
+    if (!answer.ok) throw new Error(`refused: ${answer.error.code}`);
+    expect(answer.value).toStrictEqual({ version: asDocVersion(3), fonts, truncated: true });
+    expect(channels['document.fonts'].result.safeParse(answer.value).success).toBe(true);
+  });
+
+  // A BUILD WITH NO HOST has no session to read, and that is a code the picker shows nothing for rather than a throw.
+  it('a document with no engine session answers engine-unavailable', async () => {
+    const commands = {
+      fonts: () => Promise.reject(new MissingSessionError(A_DOC, 'mupdf')),
+    } as unknown as DocumentCommands;
+    const { handlers } = harness(OPENED, () => Promise.resolve(null), undefined, { commands });
+    const answer = await handlers['document.fonts']({ docId: A_DOC });
+    expect(answer.ok ? null : answer.error.code).toBe('engine-unavailable');
   });
 });
 

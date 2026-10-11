@@ -115,6 +115,7 @@ import {
   accessFor,
   localMupdfExecution,
   openCopy,
+  readDocumentFonts,
 } from '@monstera/kernel/engine';
 import { type DocId, type DocVersion, asDocId, asDocVersion, asFileHandle } from '@monstera/shared';
 
@@ -153,6 +154,7 @@ import {
   suggestedTextName,
   type PickDirectory,
   type DocumentLayersReader,
+  type DocumentFontsReader,
   type DocumentPageLinksReader,
   type DocumentWordBoxesReader,
   type CopySource,
@@ -420,6 +422,8 @@ const noPageRuns: DocumentPageRunsReader = () =>
 
 const noLayers: DocumentLayersReader = () =>
   Promise.reject(new Error('this case does not read the layers'));
+
+const noFonts: DocumentFontsReader = () => Promise.reject(new Error('this case does not read the fonts'));
 
 /**
  * A restore that refuses, for every case whose log holds no terminal entry.
@@ -800,6 +804,12 @@ const localLayers: DocumentLayersReader = (id, sessions) => {
   return readLayers(held);
 };
 
+const localFonts: DocumentFontsReader = (id, sessions) => {
+  const held = sessions.mupdf;
+  if (held === undefined) throw new MissingSessionError(id, 'mupdf');
+  return readDocumentFonts(held);
+};
+
 /** Every page of the three-page fixture, in order. */
 const ALL_PAGES = [0, 1, 2];
 
@@ -874,6 +884,7 @@ const INERT = {
   // `commandBus.test.ts` is where the pre-read's resolution is.
   ocr: noOcr,
   layers: noLayers,
+  fonts: noFonts,
   signatures: () => Promise.reject(new Error('this case does not read signatures')),
   // EVERY SAVE ASKS, since item 6 — the answer also says whether the save is a removal's — so the inert answer is the
   // ordinary one: an unsigned document, and not a removal.
@@ -973,6 +984,7 @@ const LOCAL_READS = {
   wordBoxes: localWordBoxes,
   destinations: localDestinations,
   layers: localLayers,
+  fonts: localFonts,
   annotations: localAnnotations,
   annotationCopy: localAnnotationCopy,
   annotationWords: localAnnotationWords,

@@ -84,6 +84,7 @@ async function joined(parts: {
       ocr: refuse('recognise a page'),
       destinations: refuse('read the outline'),
       layers: refuse('read the layers'),
+      fonts: refuse('read the fonts'),
       annotations: refuse('list annotations'),
       formFields: refuse('read the fields'),
       duplicates: refuse('look for duplicates'),

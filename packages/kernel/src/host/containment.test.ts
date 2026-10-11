@@ -551,6 +551,9 @@ describe('the engine host answers a containment probe', () => {
     layers: () => {
       throw new Error('a containment probe must not read the layers');
     },
+    fonts: () => {
+      throw new Error('a containment probe must not read the fonts');
+    },
     annotations: () => {
       throw new Error('a containment probe must not list annotations');
     },

@@ -22,6 +22,7 @@ import { DocumentLocked } from '../engineSeam.js';
 import type { PageGeometryReader } from '../pageGeometry.js';
 import type { ListedDestinations } from '../destinations.js';
 import type { ListedLayers } from '../layers.js';
+import type { ListedDocumentFonts } from '../documentFonts.js';
 import type { ReadSignature } from '../signatureRead.js';
 import type { PlaceholderRequest, PreparedSignature } from '../signatureHole.js';
 import type { FlatFieldCandidate } from '../flatFields.js';
@@ -155,6 +156,9 @@ export type HostDestinationsReader = (session: MupdfSession) => Promise<ListedDe
 
 /** Reads the document's layers. Injected for the readers above's reason. */
 export type HostLayersReader = (session: MupdfSession) => Promise<ListedLayers>;
+
+/** Reads every font the document names. Injected for the readers above's reason. */
+export type HostFontsReader = (session: MupdfSession) => Promise<ListedDocumentFonts>;
 
 /**
  * Reading and verifying a document's signatures.
@@ -517,6 +521,8 @@ export interface EngineHandlerParts {
   readonly ocr: HostOcrReader;
   readonly destinations: HostDestinationsReader;
   readonly layers: HostLayersReader;
+  /** Every font the document names (B2.8). `engine/fonts`. */
+  readonly fonts: HostFontsReader;
   readonly annotations: HostAnnotationsReader;
   /** How this process reads named marks for the clipboard. `engine/annotation-records`. */
   readonly annotationRecords: HostAnnotationRecordsReader;
@@ -599,6 +605,7 @@ export function createEngineHandlers({
   ocr,
   destinations,
   layers,
+  fonts,
   annotations,
   annotationRecords,
   annotationWords,
@@ -1050,6 +1057,13 @@ export function createEngineHandlers({
       if (held === undefined) return gone;
       const listed = await layers(held.session);
       return { ok: true, value: { layers: [...listed.layers], truncated: listed.truncated } };
+    },
+
+    'engine/fonts': async ({ session }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      const listed = await fonts(held.session);
+      return { ok: true, value: { fonts: [...listed.fonts], truncated: listed.truncated } };
     },
 
     'engine/signatures': async ({ session }) => {

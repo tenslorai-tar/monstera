@@ -927,6 +927,9 @@ export interface BrowserShimOptions {
    */
   readonly signatures?: ChannelResult<'document.signatures'>;
 
+  /** The fonts `document.fonts` names: none unless a case gives some, which is what a document with no text answers. */
+  readonly documentFonts?: readonly { readonly name: string; readonly partial: boolean }[];
+
   /**
    * What `document.recent` answers.
    *
@@ -1325,6 +1328,14 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' as const }));
       return Promise.resolve(
         ok(options.signatures ?? { signatures: [], unreadable: false }),
+      );
+    },
+
+    'document.fonts': ({ docId }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' as const }));
+      return Promise.resolve(
+        ok({ version: asDocVersion(current), fonts: options.documentFonts ?? [], truncated: false }),
       );
     },
 

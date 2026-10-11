@@ -91,6 +91,7 @@ const MUPDF_READS = [
   'engine/ocr-page',
   'engine/destinations',
   'engine/layers',
+  'engine/fonts',
   'engine/annotations',
   // THE CLIPBOARD'S COPY IS ONE OF MuPDF'S READS for `engine/exportAnnotations`' reason: it walks
   // MuPDF's annotation dictionaries through the interchange's one reader of entries.

@@ -136,7 +136,7 @@ function mount(overrides: Partial<Parameters<typeof TextEditLayer>[0]> = {}) {
         {...overrides}
       />
       {/* THE PROPERTIES PANEL'S TEXT SECTION beside the page, as the app draws it while an editor is open (K11). */}
-      <TextFormatPanel fonts={undefined} />
+      <TextFormatPanel fonts={undefined} documentFonts={[]} />
     </Wrapped>
   );
   const view = render(layer(overrides.blocks ?? BLOCKS));

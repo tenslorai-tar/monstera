@@ -100,6 +100,8 @@ import {
   type ListedField,
   type Layer,
   type ListedLayers,
+  type ListedDocumentFonts,
+  type DocumentFontName,
   type LinkAddress,
   type ListedPageLinks,
   type PageLink,
@@ -2173,6 +2175,16 @@ export interface DocumentLayers {
   readonly truncated: boolean;
 }
 
+/** Reads every font the document names (B2.8). Injected for {@link DocumentPageText}'s reason. */
+export type DocumentFontsReader = (docId: DocId, sessions: DocumentSessions) => Promise<ListedDocumentFonts>;
+
+/** The fonts, stamped with the version the lane read them at, and whether the walk stopped at its bound. */
+export interface DocumentFonts {
+  readonly version: DocVersion;
+  readonly fonts: readonly DocumentFontName[];
+  readonly truncated: boolean;
+}
+
 /**
  * Lists every annotation, and says whether the bound stopped the walk.
  *
@@ -2408,6 +2420,7 @@ export interface DocumentCommandsParts {
   /** Which objects a page's runs are, through the PDFium host — `editTextOperators`' pre-read (ADR-0176). */
   readonly pageRuns: DocumentPageRunsReader;
   readonly layers: DocumentLayersReader;
+  readonly fonts: DocumentFontsReader;
   /**
    * Reads and verifies the document's signatures, in the contained host.
    *
@@ -2680,6 +2693,7 @@ export class DocumentCommands {
   readonly #ocr: DocumentOcrReader;
   readonly #pageRuns: DocumentPageRunsReader;
   readonly #layers: DocumentLayersReader;
+  readonly #fonts: DocumentFontsReader;
   readonly #signatures: (session: MupdfSession) => Promise<readonly ReadSignature[]>;
   readonly #signaturesKept: (session: MupdfSession) => Promise<NextSave>;
   readonly #restore: DocumentRestore;
@@ -2783,6 +2797,7 @@ export class DocumentCommands {
     this.#ocr = parts.ocr;
     this.#pageRuns = parts.pageRuns;
     this.#layers = parts.layers;
+    this.#fonts = parts.fonts;
     this.#signatures = parts.signatures;
     this.#signaturesKept = parts.signaturesKept;
     this.#restore = parts.restore;
@@ -3352,6 +3367,21 @@ export class DocumentCommands {
     });
 
     return { version, layers: value.layers, truncated: value.truncated };
+  }
+
+  /** Every font the document names, inside the document's lane: `layers`' guards in `layers`' order (B2.8). */
+  async fonts(docId: DocId): Promise<DocumentFonts> {
+    const { version, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return this.#fonts(docId, sessions);
+    });
+
+    return { version, fonts: value.fonts, truncated: value.truncated };
   }
 
   /**

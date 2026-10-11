@@ -64,6 +64,7 @@ import {
   formFieldKindSchema,
   formFieldHandleSchema,
   formFieldReadSchema,
+  documentFontSchema,
   fontFamilySchema,
   MAX_FONT_FAMILIES,
   MAX_FONT_FAMILY_NAME,
@@ -4932,6 +4933,22 @@ export const channels = {
    * Whole-document for `document.destinations`' reason: layers are structure,
    * read once when a document opens. And in PARTS for its reason too (ADR-0130): the renderer reads them whole.
    */
+  /**
+   * Every font the document names, for the font picker's *In this document* (the owner's B2.8): the fonts of every page,
+   * of the forms they draw and of the form fields, each once, as the document states them. A READ for the layers' reason,
+   * and bounded by the picker's own list bound, saying when it stopped there.
+   */
+  'document.fonts': channel(
+    'Every font the document names, for the font picker.',
+    z.object({ docId: docIdSchema }),
+    z.object({
+      version: docVersionSchema,
+      fonts: z.array(documentFontSchema).max(MAX_FONT_FAMILIES).readonly(),
+      truncated: z.boolean(),
+    }),
+    ['document-not-open', 'document-busy', 'document-poisoned', 'engine-unavailable'],
+  ),
+
   'document.layers': channel(
     'One part of the document’s optional-content groups, with each one’s current visibility.',
     z.object({ docId: docIdSchema, from: listPartFromSchema }),

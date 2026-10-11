@@ -98,18 +98,25 @@ function rgbOf(hex: string): { r: number; g: number; b: number } | undefined {
 export interface TextFormatPanelProps {
   /** The fonts this computer has, as `app.fontFamilies` answered, or `undefined` while it is asked. */
   readonly fonts: FontList;
+  /** Every font the document names (`document.fonts`): none while it is read, and none in a build that cannot read it. */
+  readonly documentFonts: readonly DocumentFont[];
 }
 
 /** A subset's tag, six capitals and a plus (PDF 32000-1, 9.6.4), which says the font holds only the letters used. */
 const SUBSET_TAG = /^[A-Z]{6}\+/u;
 
-export function TextFormatPanel({ fonts }: TextFormatPanelProps): ReactElement {
+export function TextFormatPanel({ fonts, documentFonts }: TextFormatPanelProps): ReactElement {
   const { _, i18n } = useLingui();
   // RE-READ ON EVERY CHANGE of the selection or the formatting, since the state is the editor's and not a snapshot.
   useSyncExternalStore(onEditorChange, editorRevision);
   const state = openEditorState();
-  // THE PAGE'S OWN FONTS, the picker's first group: the names the read gave the open editor's page.
-  const inDocument: DocumentFont[] = openEditorFonts().map((name) => ({ name, partial: SUBSET_TAG.test(name) }));
+  // THE PICKER'S FIRST GROUP IS THE WHOLE DOCUMENT'S (B2.8): the open editor's page first, which the editor already holds
+  // and so is there before the document's read answers, then every other font the document names. The picker lists each
+  // name once.
+  const inDocument: DocumentFont[] = [
+    ...openEditorFonts().map((name) => ({ name, partial: SUBSET_TAG.test(name) })),
+    ...documentFonts,
+  ];
   const sizeId = useId();
   const spacingId = useId();
   const letterId = useId();

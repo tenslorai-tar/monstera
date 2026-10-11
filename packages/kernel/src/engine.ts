@@ -42,6 +42,7 @@ export {
   type Layer,
   type ListedLayers,
 } from './layers.js';
+export { readDocumentFonts } from './documentFonts.js';
 export {
   applyDeletePages,
   applyDuplicatePage,

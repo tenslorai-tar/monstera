@@ -468,6 +468,8 @@ export {
   FONT_FAMILIES_PAGE,
   fontFamilySchema,
   type FontFamilyEntry,
+  documentFontSchema,
+  type DocumentFontEntry,
   FIELD_VISIBILITIES,
   MAX_FIELD_LENGTH,
   IMPORT_SKIP_REASONS,

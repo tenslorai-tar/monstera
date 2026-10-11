@@ -3,6 +3,8 @@ import {
   type CommandOfKind,
   accessibilitySpotsSchema,
   displayBoxSchema,
+  documentFontSchema,
+  MAX_FONT_FAMILIES,
   DOCUMENT_ACCESS_VALUES,
   DOCUMENT_PASSWORD_MAX_CHARS,
   FLAT_FIELD_KINDS,
@@ -2900,6 +2902,23 @@ export const engineChannels = {
       .object({
         layers: z.array(engineLayerSchema).max(ENGINE_LAYERS_MAX),
         /** Whether the bound stopped the walk. See `engine/destinations`. */
+        truncated: z.boolean(),
+      })
+      .strict(),
+    ['no-such-session'],
+  ),
+
+  /**
+   * Every font the document names (the owner's B2.8): whole-document for `engine/layers`' reason, a property of the
+   * document's resources read when a picker opens over it, and bounded by the picker's own list bound.
+   */
+  'engine/fonts': fileAnswered(
+    'Reads every font the document names from a session this host holds.',
+    z.object({ session: sessionSchema }).strict(),
+    z
+      .object({
+        fonts: z.array(documentFontSchema).max(MAX_FONT_FAMILIES),
+        /** Whether the bound stopped the walk. See `engine/layers`. */
         truncated: z.boolean(),
       })
       .strict(),

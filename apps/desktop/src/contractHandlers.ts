@@ -578,6 +578,7 @@ export function createContractHandlers(deps: {
     'document.pageLinks': pageLinksHandler(deps.commands),
     'document.pageWordBoxes': pageWordBoxesHandler(deps.commands),
     'document.destinations': destinationsHandler(deps.commands),
+    'document.fonts': fontsHandler(deps.commands),
     'document.layers': layersHandler(deps.commands),
     'document.signatures': signaturesHandler(deps.commands),
     'document.annotations': annotationsHandler(deps.commands),
@@ -2866,6 +2867,22 @@ function layersHandler(commands: DocumentCommands): ContractHandlers['document.l
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/** Every font the document names, for the font picker. `signaturesHandler`'s codes: a read that needs a session. */
+function fontsHandler(commands: DocumentCommands): ContractHandlers['document.fonts'] {
+  return async ({ docId }): Promise<Awaited<ReturnType<ContractHandlers['document.fonts']>>> => {
+    try {
+      const read = await commands.fonts(docId);
+      return ok({ version: read.version, fonts: read.fonts.map((font) => ({ ...font })), truncated: read.truncated });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      if (thrown instanceof MissingSessionError) return err({ code: 'engine-unavailable' });
       throw thrown;
     }
   };

@@ -42,6 +42,7 @@ import type {
   HostAnnotationWordsReader,
   HostFieldPropertiesReader,
   HostFlatFieldsReader,
+  HostFontsReader,
   HostFormFieldsReader,
   HostLayersReader,
   HostLinkAddressReader,
@@ -496,6 +497,11 @@ export function remoteMupdfLayers(
       'engine/layers',
       await client['engine/layers']({ session: sessions.handleFor(session) }),
     );
+}
+
+/** Every font the document names, over the boundary. See {@link remoteMupdfLayers}. */
+export function remoteMupdfFonts(client: ClientApi<EngineChannels>, sessions: RemoteSessions): HostFontsReader {
+  return async (session) => answered('engine/fonts', await client['engine/fonts']({ session: sessions.handleFor(session) }));
 }
 
 /**

@@ -4557,6 +4557,20 @@ export const fontFamilySchema = z
 
 /** See {@link fontFamilySchema}. */
 export type FontFamilyEntry = z.infer<typeof fontFamilySchema>;
+
+/**
+ * One font a document names, for the picker's *In this document* (the owner's B2.8): the name it states, its subset tag
+ * kept, and whether it is a subset, which the picker says in words.
+ */
+export const documentFontSchema = z
+  .object({
+    name: z.string().min(1).max(MAX_FONT_FAMILY_NAME),
+    partial: z.boolean(),
+  })
+  .strict();
+
+/** See {@link documentFontSchema}. */
+export type DocumentFontEntry = z.infer<typeof documentFontSchema>;
 /**
  * Part PDFs ONE JOIN takes (decision C): the compose host's `engine/join-pdfs` list. It bounded a whole workbook import
  * until 2026-10-02, and a workbook of 1,025 visible sheets was refused at it (JOURNAL, *No document-size refusals*, table

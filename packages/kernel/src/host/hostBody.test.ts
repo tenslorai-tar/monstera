@@ -167,6 +167,9 @@ function start(stream: HostByteStream) {
     layers: () => {
       throw new Error('no case here reads the layers');
     },
+    fonts: () => {
+      throw new Error('no case here reads the fonts');
+    },
     annotations: () => {
       throw new Error('no case here lists annotations');
     },

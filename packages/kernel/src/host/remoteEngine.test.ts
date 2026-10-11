@@ -27,6 +27,7 @@ import { readPageGeometry } from '../pageGeometry.js';
 import { readPageRewrite } from '../pageRewrite.js';
 import { readDestinations } from '../destinations.js';
 import { readLayers } from '../layers.js';
+import { readDocumentFonts } from '../documentFonts.js';
 import { checkAccessibility } from '../accessibilityCheck.js';
 import {
   copyAnnotationData,
@@ -349,6 +350,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
       },
       destinations: readDestinations,
       layers: readLayers,
+      fonts: readDocumentFonts,
       // THE REAL READERS, so the parts assembled here are the production ones —
       // and NO CASE IN THIS FILE DRIVES EITHER. The comment here used to say
       // *the annotation cases below*, which named cases that have never
@@ -864,6 +866,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         layers: () => {
           throw new Error('unused');
         },
+        fonts: () => {
+          throw new Error('unused');
+        },
         annotations: () => {
           throw new Error('unused');
         },
@@ -1026,6 +1031,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         },
         layers: () => {
           throw new Error('the rotation-refusal case must not read the layers');
+        },
+        fonts: () => {
+          throw new Error('the rotation-refusal case must not read the fonts');
         },
         annotations: () => {
           throw new Error('the rotation-refusal case must not list annotations');

@@ -318,6 +318,18 @@ const handlers: ContractHandlers = {
         truncated: false,
       }),
     ),
+  // ONE WHOLE AND ONE PARTIAL, so a boundary that dropped the flag is not a boundary that carried it.
+  'document.fonts': () =>
+    Promise.resolve(
+      ok({
+        version: asDocVersion(1),
+        fonts: [
+          { name: 'Helvetica', partial: false },
+          { name: 'ABCDEF+Lato-Regular', partial: true },
+        ],
+        truncated: false,
+      }),
+    ),
   // ONE VISIBLE AND ONE HIDDEN, because a fixture where everything is visible
   // cannot tell a boundary that carried the flag from one that dropped it.
   'document.layers': () =>

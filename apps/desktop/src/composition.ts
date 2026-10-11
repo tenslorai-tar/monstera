@@ -86,6 +86,7 @@ import {
   type HostAnnotationDataExport,
   type HostPageImage,
   type HostFormFieldsReader,
+  type HostFontsReader,
   type HostLayersReader,
   type HostPageFillsReader,
   type HostPageRewriteReader,
@@ -151,6 +152,7 @@ import {
   remoteMupdfAnnotationImportPlan,
   remoteMupdfFlatFields,
   remoteMupdfFormFields,
+  remoteMupdfFonts,
   remoteMupdfLayers,
   remoteMupdfSignatures,
   remoteMupdfSignaturesKept,
@@ -1320,6 +1322,12 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
       return engineHost.layers(session);
     },
+    // THE FONTS, a read like the layers (B2.8).
+    fonts: (docId, sessions) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return engineHost.fonts(session);
+    },
     // THE SIGNATURES, a read like the ones above, and the ONLY one that takes
     // a session rather than a `DocId` — because the host serialises its own
     // session for the bytes a `/ByteRange` indexes into, so this side never
@@ -2089,6 +2097,8 @@ function engineSessionOpener(
   readonly ocr: HostOcrReader;
   /** The document's layers, from whichever host is live. */
   readonly layers: HostLayersReader;
+  /** Every font the document names, from whichever host is live (B2.8). */
+  readonly fonts: HostFontsReader;
   /** The document's signatures, verified in the contained host. */
   readonly signatures: (session: MupdfSession) => Promise<readonly ReadSignature[]>;
   /** How many signatures, and whether the next save keeps them — the writer's own decision, in the host. */
@@ -2420,6 +2430,19 @@ function engineSessionOpener(
       );
     }
     return layers(session);
+  };
+
+  /** The font reader's half of the same registration. See {@link pageText}. */
+  let fonts: HostFontsReader | null = null;
+
+  const readFontsThroughHost: HostFontsReader = (session) => {
+    if (fonts === null) {
+      throw new Error(
+        'A font read reached the engine with no host font reader registered. A session was resolved for this ' +
+          'document, so one was issued by a host — the supervisor and the host connection have diverged.',
+      );
+    }
+    return fonts(session);
   };
 
   /** The signature reader's half of the same registration. See {@link pageText}. */
@@ -2809,6 +2832,7 @@ function engineSessionOpener(
     destinations = remoteMupdfDestinations(client, remote);
     ocr = remoteMupdfOcr(client, remote);
     layers = remoteMupdfLayers(client, remote);
+    fonts = remoteMupdfFonts(client, remote);
     signatures = remoteMupdfSignatures(client, remote);
     signaturesKept = remoteMupdfSignaturesKept(client, remote);
     annotations = remoteMupdfAnnotations(client, remote);
@@ -3190,6 +3214,7 @@ function engineSessionOpener(
     destinations: readDestinationsThroughHost,
     ocr: recogniseThroughHost,
     layers: readLayersThroughHost,
+    fonts: readFontsThroughHost,
     signatures: readSignaturesThroughHost,
     signaturesKept: readSignaturesKeptThroughHost,
     annotations: readAnnotationsThroughHost,

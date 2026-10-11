@@ -405,7 +405,7 @@ import { AssistantPanel } from './AssistantPanel.js';
 import type { DropOpener, EventSubscriber } from './bridge.js';
 import { PropertiesPanel, type StyleChange } from './PropertiesPanel.js';
 import { TextFormatPanel } from './TextFormatPanel.js';
-import { useFontList } from './fontList.js';
+import { useDocumentFonts, useFontList } from './fontList.js';
 import { GRID_DIVISION_COUNTS, type GridLook, type RulerUnit } from './rulerGeometry.js';
 import { useSetting } from './useSetting.js';
 import type { SettingsStore } from './settingsStore.js';
@@ -1200,6 +1200,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const [fieldSelection, setFieldSelection] = useState<FieldSelection | undefined>(undefined);
   const [fieldReveal, setFieldReveal] = useState<{ page: number; index: number; stamp: number } | undefined>(undefined);
   const openVersion = open?.version;
+  const documentFonts = useDocumentFonts(client, activeId, openVersion, textEditorOpen);
   const selectedFieldKeys = useMemo(
     () => new Set(liveKeys(fieldSelection, openVersion)),
     [fieldSelection, openVersion],
@@ -4698,7 +4699,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
               {/* WORDS BEING EDITED IN PLACE take the tab while the editor is open (the owner's K11): the formatting that
                   floated over the page in a bar. */}
               {textEditorOpen ? (
-                <TextFormatPanel fonts={fontList} />
+                <TextFormatPanel fonts={fontList} documentFonts={documentFonts} />
               ) : selectedHandles.length > 0 && selection === undefined && objectSelection === undefined ? (
                 <FieldPropertiesPanel
                   context={context}

@@ -173,6 +173,9 @@ async function joined(): Promise<{
       layers: () => {
         throw new Error('unused');
       },
+      fonts: () => {
+        throw new Error('unused');
+      },
       annotations: readAnnotations,
       formFields: () => {
         throw new Error('unused');

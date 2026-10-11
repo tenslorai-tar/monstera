@@ -1499,6 +1499,7 @@ export const handlers: ContractHandlers = {
   'document.destinations': () =>
     Promise.resolve(ok({ version: asDocVersion(1), destinations: [], next: null, truncated: false })),
   'document.layers': () => Promise.resolve(ok({ version: asDocVersion(1), layers: [], next: null, truncated: false })),
+  'document.fonts': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], truncated: false })),
   'document.annotations': () =>
     Promise.resolve(ok({ version: asDocVersion(1), annotations: [], next: null, truncated: false })),
   'document.formFields': () =>
@@ -1710,6 +1711,7 @@ export const handlers: ContractHandlers = {
   'document.destinations': () =>
     Promise.resolve(ok({ version: asDocVersion(1), destinations: [], next: null, truncated: false })),
   'document.layers': () => Promise.resolve(ok({ version: asDocVersion(1), layers: [], next: null, truncated: false })),
+  'document.fonts': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], truncated: false })),
   'document.annotations': () =>
     Promise.resolve(ok({ version: asDocVersion(1), annotations: [], next: null, truncated: false })),
   'document.formFields': () =>
@@ -2002,6 +2004,7 @@ export const shim: ContractClient = {
   'document.destinations': () =>
     Promise.resolve(ok({ version: asDocVersion(1), destinations: [], next: null, truncated: false })),
   'document.layers': () => Promise.resolve(ok({ version: asDocVersion(1), layers: [], next: null, truncated: false })),
+  'document.fonts': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], truncated: false })),
   'document.annotations': () =>
     Promise.resolve(ok({ version: asDocVersion(1), annotations: [], next: null, truncated: false })),
   'document.formFields': () =>
