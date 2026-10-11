@@ -1488,6 +1488,8 @@ export const FIELD_ARRANGE_CENTRE_VERTICALLY = messageKey('command.forms.centre-
 export const FIELD_ARRANGE_SAME_WIDTH = messageKey('command.forms.same-width.title');
 export const FIELD_ARRANGE_SAME_HEIGHT = messageKey('command.forms.same-height.title');
 export const FIELD_ARRANGE_SAME_SIZE = messageKey('command.forms.same-size.title');
+export const FIELD_ARRANGE_DISTRIBUTE_HORIZONTALLY = messageKey('command.forms.distribute-horizontally.title');
+export const FIELD_ARRANGE_DISTRIBUTE_VERTICALLY = messageKey('command.forms.distribute-vertically.title');
 // THE PROPERTIES PANE FOR SELECTED FORM FIELDS (ADR-0193).
 export const FIELD_PROPS_LABEL = messageKey('properties.field.label');
 export const FIELD_PROPS_ACTIONS = messageKey('properties.field.actions');
@@ -1727,6 +1729,28 @@ export const FIELD_DESIGN_LAYER_LABEL = messageKey('surface.field-design.layer')
 export const FIELD_DESIGN_BOX = messageKey('surface.field-design.box');
 export const FIELD_DUPLICATE_TITLE = messageKey('command.forms.duplicate-field');
 export const FIELD_PROPERTIES_TITLE = messageKey('command.forms.field-properties');
+/** The field Properties panel's folding sections and the rows the owner's E1 added (ADR-0226). */
+export const FIELD_PROPS_SECTION_GENERAL = messageKey('surface.field-properties.section.general');
+export const FIELD_PROPS_SECTION_APPEARANCE = messageKey('surface.field-properties.section.appearance');
+export const FIELD_PROPS_SECTION_OPTIONS = messageKey('surface.field-properties.section.options');
+export const FIELD_PROPS_SECTION_FORMAT = messageKey('surface.field-properties.section.format');
+export const FIELD_PROPS_SECTION_CALCULATE = messageKey('surface.field-properties.section.calculate');
+export const FIELD_PROPS_VISIBILITY = messageKey('surface.field-properties.visibility');
+export const FIELD_PROPS_VISIBILITY_VISIBLE = messageKey('surface.field-properties.visibility.visible');
+export const FIELD_PROPS_VISIBILITY_HIDDEN = messageKey('surface.field-properties.visibility.hidden');
+export const FIELD_PROPS_VISIBILITY_NO_PRINT = messageKey('surface.field-properties.visibility.no-print');
+export const FIELD_PROPS_ALIGNMENT = messageKey('surface.field-properties.alignment');
+export const FIELD_PROPS_ALIGNMENT_LEFT = messageKey('surface.field-properties.alignment.left');
+export const FIELD_PROPS_ALIGNMENT_CENTRE = messageKey('surface.field-properties.alignment.centre');
+export const FIELD_PROPS_ALIGNMENT_RIGHT = messageKey('surface.field-properties.alignment.right');
+export const FIELD_PROPS_MAX_LENGTH = messageKey('surface.field-properties.max-length');
+export const FIELD_PROPS_COMB = messageKey('surface.field-properties.comb');
+export const FIELD_PROPS_MASKED = messageKey('surface.field-properties.masked');
+export const FIELD_PROPS_BUTTON_LABEL = messageKey('surface.field-properties.button-label');
+export const FIELD_PROPS_GROUP_NAME = messageKey('surface.field-properties.group-name');
+export const FIELD_PROPS_RADIO_VALUES = messageKey('surface.field-properties.radio-values');
+export const FORM_SETTINGS_TITLE = messageKey('surface.form-settings.title');
+export const FORM_SETTINGS_HINT = messageKey('surface.form-settings.hint');
 export const DELETE_FIELDS_TITLE = messageKey('dialog.delete-fields.title');
 export const DELETE_FIELDS_EXPLAINS = messageKey('dialog.delete-fields.explains');
 export const DELETE_FIELDS_APPLY = messageKey('dialog.delete-fields.apply');
@@ -3156,6 +3180,8 @@ export const FIELD_EDIT_OPTIONS_RADIO_LABELS = messageKey('dialog.command-proble
 export const FIELD_EDIT_DUPLICATE_RADIO = messageKey('dialog.command-problem.field-edit.duplicate-radio');
 export const FIELD_EDIT_DUPLICATE_SIGNATURE = messageKey('dialog.command-problem.field-edit.duplicate-signature');
 export const FIELD_EDIT_ENCRYPTED = messageKey('dialog.command-problem.field-edit.encrypted');
+export const FIELD_EDIT_COMB_WITHOUT_LENGTH = messageKey('dialog.command-problem.field-edit.comb-without-length');
+export const FIELD_EDIT_COMB_EXCLUDES = messageKey('dialog.command-problem.field-edit.comb-excludes');
 // CLOUD STORAGE (ADR-0091).
 export const CLOUD_TITLE = messageKey('dialog.cloud.title');
 export const CLOUD_COMMAND_TITLE = messageKey('command.cloud.storage');
@@ -4114,6 +4140,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FIELD_ARRANGE_SAME_WIDTH]: 'Same width as the first field',
   [FIELD_ARRANGE_SAME_HEIGHT]: 'Same height as the first field',
   [FIELD_ARRANGE_SAME_SIZE]: 'Same size as the first field',
+  [FIELD_ARRANGE_DISTRIBUTE_HORIZONTALLY]: 'Spread evenly across',
+  [FIELD_ARRANGE_DISTRIBUTE_VERTICALLY]: 'Spread evenly down',
   [FIELD_PROPS_LABEL]: 'Field properties',
   [FIELD_PROPS_ACTIONS]: 'Selected fields',
   [FIELD_PROPS_HEADING_ONE]: 'Field',
@@ -4622,6 +4650,27 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FIELD_DESIGN_BOX]: 'Field {name}',
   [FIELD_DUPLICATE_TITLE]: 'Duplicate field',
   [FIELD_PROPERTIES_TITLE]: 'Field properties',
+  [FIELD_PROPS_SECTION_GENERAL]: 'General',
+  [FIELD_PROPS_SECTION_APPEARANCE]: 'Appearance',
+  [FIELD_PROPS_SECTION_OPTIONS]: 'Options',
+  [FIELD_PROPS_SECTION_FORMAT]: 'Format',
+  [FIELD_PROPS_SECTION_CALCULATE]: 'Calculate',
+  [FIELD_PROPS_VISIBILITY]: 'Shown',
+  [FIELD_PROPS_VISIBILITY_VISIBLE]: 'Visible',
+  [FIELD_PROPS_VISIBILITY_HIDDEN]: 'Hidden',
+  [FIELD_PROPS_VISIBILITY_NO_PRINT]: 'Visible but not printed',
+  [FIELD_PROPS_ALIGNMENT]: 'Alignment',
+  [FIELD_PROPS_ALIGNMENT_LEFT]: 'Left',
+  [FIELD_PROPS_ALIGNMENT_CENTRE]: 'Centre',
+  [FIELD_PROPS_ALIGNMENT_RIGHT]: 'Right',
+  [FIELD_PROPS_MAX_LENGTH]: 'Most characters (0 for no limit)',
+  [FIELD_PROPS_COMB]: 'One character per box',
+  [FIELD_PROPS_MASKED]: 'Hide what is typed (password)',
+  [FIELD_PROPS_BUTTON_LABEL]: 'Words on the button',
+  [FIELD_PROPS_GROUP_NAME]: 'Group name',
+  [FIELD_PROPS_RADIO_VALUES]: 'Each option’s value, one per line, in the order the options sit',
+  [FORM_SETTINGS_TITLE]: 'Form',
+  [FORM_SETTINGS_HINT]: 'Select a field on the page or in the Fields list to see and change its properties.',
   [DELETE_FIELDS_TITLE]: 'Delete fields',
   [DELETE_FIELDS_EXPLAINS]:
     '{count, plural, other {# fields are selected.}} They and anything typed in them will be removed from the form. Undo brings them back.',
@@ -6777,4 +6826,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FIELD_EDIT_DUPLICATE_RADIO]: 'A radio option belongs to its group, so it cannot be copied on its own. Nothing was changed.',
   [FIELD_EDIT_DUPLICATE_SIGNATURE]: 'A signature field is signed once, so it cannot be copied. Nothing was changed.',
   [FIELD_EDIT_ENCRYPTED]: 'This document is encrypted, and form fields cannot be changed in an encrypted document. Nothing was changed.',
+  [FIELD_EDIT_COMB_WITHOUT_LENGTH]:
+    'A field shows one character per box only when it has a most number of characters. Set that first. Nothing was changed.',
+  [FIELD_EDIT_COMB_EXCLUDES]:
+    'A field with one character per box cannot also take several lines or hide what is typed. Turn the other off first. Nothing was changed.',
 };

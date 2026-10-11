@@ -3,7 +3,7 @@ import type { FormFieldHandle, FormFieldKind } from '@monstera/contract';
 import { FIELD_COPY_DIALOG_ID } from '../dialogs/fieldCopy.js';
 import type { FieldCopyAnswer } from '../dialogs/fieldCopyResult.js';
 import type { IconName } from '../primitives/icons.js';
-import { type Arrangement, type PlacedField, arrange } from '../forms/arrange.js';
+import { type Arrangement, DISTRIBUTE_AT_LEAST, type Distribution, type PlacedField, arrange } from '../forms/arrange.js';
 import {
   FIELD_COPY_COMMAND_TITLE,
   FIELD_ARRANGE_ALIGN_BOTTOM,
@@ -12,6 +12,8 @@ import {
   FIELD_ARRANGE_ALIGN_TOP,
   FIELD_ARRANGE_CENTRE_HORIZONTALLY,
   FIELD_ARRANGE_CENTRE_VERTICALLY,
+  FIELD_ARRANGE_DISTRIBUTE_HORIZONTALLY,
+  FIELD_ARRANGE_DISTRIBUTE_VERTICALLY,
   FIELD_ARRANGE_SAME_HEIGHT,
   FIELD_ARRANGE_SAME_SIZE,
   FIELD_ARRANGE_SAME_WIDTH,
@@ -94,8 +96,34 @@ export function copyFieldToPagesCommand(deps: FieldCopyDeps): UiCommand {
   };
 }
 
-/** The arrange commands. */
+const DISTRIBUTIONS: readonly { readonly kind: Distribution; readonly title: MessageKey; readonly icon: IconName }[] = [
+  { kind: 'distribute-horizontally', title: FIELD_ARRANGE_DISTRIBUTE_HORIZONTALLY, icon: 'GripHorizontal' },
+  { kind: 'distribute-vertically', title: FIELD_ARRANGE_DISTRIBUTE_VERTICALLY, icon: 'GripVertical' },
+];
+
+/** The arrange commands, and the two that spread three or more fields evenly (the owner's B3, E3). */
 export function fieldArrangeCommands(deps: FieldArrangeDeps): readonly UiCommand[] {
+  const spread = DISTRIBUTIONS.map(
+    ({ kind, title, icon }, at): UiCommand => ({
+      id: `forms.arrange.${kind}`,
+      feedback: VISIBLE,
+      title,
+      icon,
+      placements: [
+        { surface: 'properties', order: 40 + at },
+        { surface: 'context-menu', context: 'field', order: 40 + at },
+      ],
+      when: () => deps.placed().length >= DISTRIBUTE_AT_LEAST,
+      run: (): void => {
+        const moved = arrange(kind, deps.placed());
+        if (moved.length > 0) deps.apply(moved);
+      },
+    }),
+  );
+  return [...arranged(deps), ...spread];
+}
+
+function arranged(deps: FieldArrangeDeps): readonly UiCommand[] {
   return ARRANGEMENTS.map(
     ({ kind, title, icon }, at): UiCommand => ({
       id: `forms.arrange.${kind}`,

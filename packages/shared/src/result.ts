@@ -90,6 +90,8 @@ export const FIELD_EDIT_REASONS = [
   'duplicate-radio',
   'duplicate-signature',
   'encrypted',
+  'comb-without-length',
+  'comb-excludes',
 ] as const;
 export type FieldEditReason = (typeof FIELD_EDIT_REASONS)[number];
 

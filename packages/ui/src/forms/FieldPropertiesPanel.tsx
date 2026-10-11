@@ -1,8 +1,12 @@
 import { useLingui } from '@lingui/react';
 import {
   type AnnotationColour,
+  FIELD_ALIGNMENTS,
   FIELD_CALCULATIONS,
   FIELD_FONTS,
+  FIELD_VISIBILITIES,
+  MAX_FIELD_LENGTH,
+  MAX_FIELD_OPTION,
   FIELD_SEPARATORS,
   type FieldCalculation,
   type FieldChoice,
@@ -17,7 +21,7 @@ import {
   choiceValueOf,
 } from '@monstera/contract';
 import type { DocVersion, MessageKey } from '@monstera/shared';
-import { type ReactElement, useEffect, useId, useState } from 'react';
+import { type ReactElement, type ReactNode, useEffect, useId, useState } from 'react';
 
 import { ColourSwatches } from '../ColourChoice.js';
 import { type KnownField, fieldNameProblemAmong } from '../annotations/fieldNameCheck.js';
@@ -83,6 +87,25 @@ import {
   FIELD_PROPS_TOOLTIP,
   FIELD_PROPS_UNREADABLE,
   FIELD_PROPS_WHERE,
+  FIELD_PROPS_ALIGNMENT,
+  FIELD_PROPS_ALIGNMENT_CENTRE,
+  FIELD_PROPS_ALIGNMENT_LEFT,
+  FIELD_PROPS_ALIGNMENT_RIGHT,
+  FIELD_PROPS_BUTTON_LABEL,
+  FIELD_PROPS_COMB,
+  FIELD_PROPS_GROUP_NAME,
+  FIELD_PROPS_MASKED,
+  FIELD_PROPS_MAX_LENGTH,
+  FIELD_PROPS_RADIO_VALUES,
+  FIELD_PROPS_SECTION_APPEARANCE,
+  FIELD_PROPS_SECTION_CALCULATE,
+  FIELD_PROPS_SECTION_FORMAT,
+  FIELD_PROPS_SECTION_GENERAL,
+  FIELD_PROPS_SECTION_OPTIONS,
+  FIELD_PROPS_VISIBILITY,
+  FIELD_PROPS_VISIBILITY_HIDDEN,
+  FIELD_PROPS_VISIBILITY_NO_PRINT,
+  FIELD_PROPS_VISIBILITY_VISIBLE,
   PROPERTIES_CUSTOM_COLOUR,
 } from '../messages/en.js';
 import { pdfjsPageOf } from '../pageNumbering.js';
@@ -249,75 +272,56 @@ function Controls({
   const { i18n } = useLingui();
   const kind = has(props.kind);
   const others = known.filter((field) => field.name !== props.name);
+  const radio = props.kind === 'radio';
   return (
     <>
-      {single ? (
-        <TextRow
-          label={FIELD_PROPS_NAME}
-          max={512}
-          value={props.name}
-          check={(typed) => fieldNameProblemAmong(typed, others, false)}
-          onCommit={(name) => {
-            onEdit({ name: name.trim() });
-          }}
-        />
-      ) : null}
-      <TextRow
-        label={FIELD_PROPS_TOOLTIP}
-        max={MAX_FIELD_TOOLTIP}
-        value={props.tooltip ?? ''}
-        onCommit={(tooltip) => {
-          onEdit({ tooltip: tooltip === '' ? null : tooltip });
-        }}
-      />
-      <CheckRow
-        label={FIELD_PROPS_REQUIRED}
-        value={props.required}
-        onChange={(required) => {
-          onEdit({ required });
-        }}
-      />
-      <CheckRow
-        label={FIELD_PROPS_READ_ONLY}
-        value={props.readOnly}
-        onChange={(readOnly) => {
-          onEdit({ readOnly });
-        }}
-      />
-      {kind.value ? (
-        <TextRow
-          label={FIELD_PROPS_DEFAULT}
-          max={single ? MAX_FIELD_DEFAULT : 512}
-          value={props.defaultValue ?? ''}
-          onCommit={(defaultValue) => {
-            onEdit({ defaultValue: defaultValue === '' ? null : defaultValue });
-          }}
-        />
-      ) : null}
-      {kind.text ? (
-        <>
-          <SelectRow
-            label={FIELD_PROPS_FONT}
-            value={props.font}
-            options={FIELD_FONTS.map((font) => ({ value: font, label: i18n._(FONT_LABELS[font]) }))}
-            onChange={(font) => {
-              const chosen = FIELD_FONTS.find((each) => each === font);
-              if (chosen !== undefined) onEdit({ font: chosen });
+      <Section title={FIELD_PROPS_SECTION_GENERAL}>
+        {single ? (
+          <TextRow
+            // A RADIO'S NAME IS ITS GROUP'S (the owner's C5): every option of the group carries it.
+            label={radio ? FIELD_PROPS_GROUP_NAME : FIELD_PROPS_NAME}
+            max={512}
+            value={props.name}
+            check={(typed) => fieldNameProblemAmong(typed, others, false)}
+            onCommit={(name) => {
+              onEdit({ name: name.trim() });
             }}
           />
-          <NumberRow
-            label={FIELD_PROPS_FONT_SIZE}
-            min={0}
-            max={200}
-            value={props.fontSize}
-            onCommit={(fontSize) => {
-              onEdit({ fontSize });
-            }}
-          />
-        </>
-      ) : null}
+        ) : null}
+        <TextRow
+          label={FIELD_PROPS_TOOLTIP}
+          max={MAX_FIELD_TOOLTIP}
+          value={props.tooltip ?? ''}
+          onCommit={(tooltip) => {
+            onEdit({ tooltip: tooltip === '' ? null : tooltip });
+          }}
+        />
+        <SelectRow
+          label={FIELD_PROPS_VISIBILITY}
+          value={props.visibility}
+          options={FIELD_VISIBILITIES.map((each) => ({ value: each, label: i18n._(VISIBILITY_LABELS[each]) }))}
+          onChange={(visibility) => {
+            const chosen = FIELD_VISIBILITIES.find((each) => each === visibility);
+            if (chosen !== undefined) onEdit({ visibility: chosen });
+          }}
+        />
+        <CheckRow
+          label={FIELD_PROPS_READ_ONLY}
+          value={props.readOnly}
+          onChange={(readOnly) => {
+            onEdit({ readOnly });
+          }}
+        />
+        <CheckRow
+          label={FIELD_PROPS_REQUIRED}
+          value={props.required}
+          onChange={(required) => {
+            onEdit({ required });
+          }}
+        />
+      </Section>
       {kind.look ? (
-        <>
+        <Section title={FIELD_PROPS_SECTION_APPEARANCE}>
           <ColourRow
             label={FIELD_PROPS_BORDER_COLOUR}
             colour={props.borderColour}
@@ -341,51 +345,160 @@ function Controls({
               onEdit({ fillColour });
             }}
           />
-        </>
+          {kind.text ? (
+            <>
+              <SelectRow
+                label={FIELD_PROPS_FONT}
+                value={props.font}
+                options={FIELD_FONTS.map((font) => ({ value: font, label: i18n._(FONT_LABELS[font]) }))}
+                onChange={(font) => {
+                  const chosen = FIELD_FONTS.find((each) => each === font);
+                  if (chosen !== undefined) onEdit({ font: chosen });
+                }}
+              />
+              <NumberRow
+                label={FIELD_PROPS_FONT_SIZE}
+                min={0}
+                max={200}
+                value={props.fontSize}
+                onCommit={(fontSize) => {
+                  onEdit({ fontSize });
+                }}
+              />
+            </>
+          ) : null}
+        </Section>
       ) : null}
-      {props.kind === 'text' ? (
-        <CheckRow
-          label={FIELD_PROPS_MULTILINE}
-          value={props.multiline}
-          onChange={(multiline) => {
-            onEdit({ multiline });
-          }}
-        />
-      ) : null}
-      {single && kind.choices ? (
-        <OptionsRow
-          options={props.options}
-          withValues={props.kind !== 'radio'}
-          onCommit={(options) => {
-            onEdit({ options });
-          }}
-        />
-      ) : null}
+      <Section title={FIELD_PROPS_SECTION_OPTIONS}>
+        {props.kind === 'text' ? (
+          <>
+            <SelectRow
+              label={FIELD_PROPS_ALIGNMENT}
+              value={props.alignment}
+              options={FIELD_ALIGNMENTS.map((each) => ({ value: each, label: i18n._(ALIGNMENT_LABELS[each]) }))}
+              onChange={(alignment) => {
+                const chosen = FIELD_ALIGNMENTS.find((each) => each === alignment);
+                if (chosen !== undefined) onEdit({ alignment: chosen });
+              }}
+            />
+            <NumberRow
+              label={FIELD_PROPS_MAX_LENGTH}
+              min={0}
+              max={MAX_FIELD_LENGTH}
+              value={props.maxLength ?? 0}
+              onCommit={(maxLength) => {
+                onEdit({ maxLength: maxLength === 0 ? null : Math.round(maxLength) });
+              }}
+            />
+            <CheckRow
+              label={FIELD_PROPS_COMB}
+              value={props.comb}
+              onChange={(comb) => {
+                onEdit({ comb });
+              }}
+            />
+            <CheckRow
+              label={FIELD_PROPS_MULTILINE}
+              value={props.multiline}
+              onChange={(multiline) => {
+                onEdit({ multiline });
+              }}
+            />
+            <CheckRow
+              label={FIELD_PROPS_MASKED}
+              value={props.masked}
+              onChange={(masked) => {
+                onEdit({ masked });
+              }}
+            />
+          </>
+        ) : null}
+        {props.kind === 'button' ? (
+          <TextRow
+            label={FIELD_PROPS_BUTTON_LABEL}
+            max={MAX_FIELD_OPTION}
+            value={props.buttonLabel ?? ''}
+            onCommit={(buttonLabel) => {
+              if (buttonLabel.trim() !== '') onEdit({ buttonLabel });
+            }}
+          />
+        ) : null}
+        {kind.value ? (
+          <TextRow
+            label={FIELD_PROPS_DEFAULT}
+            max={single ? MAX_FIELD_DEFAULT : 512}
+            value={props.defaultValue ?? ''}
+            onCommit={(defaultValue) => {
+              onEdit({ defaultValue: defaultValue === '' ? null : defaultValue });
+            }}
+          />
+        ) : null}
+        {single && kind.choices ? (
+          <OptionsRow
+            options={props.options}
+            withValues={!radio}
+            label={radio ? FIELD_PROPS_RADIO_VALUES : FIELD_PROPS_OPTIONS}
+            onCommit={(options) => {
+              onEdit({ options });
+            }}
+          />
+        ) : null}
+      </Section>
       {kind.value ? (
-        <FormatRows
-          format={props.format}
-          custom={props.customFormat}
-          onChange={(format) => {
-            onEdit({ format });
-          }}
-        />
+        <Section title={FIELD_PROPS_SECTION_FORMAT}>
+          <FormatRows
+            format={props.format}
+            custom={props.customFormat}
+            onChange={(format) => {
+              onEdit({ format });
+            }}
+          />
+        </Section>
       ) : null}
       {single && props.kind === 'text' ? (
-        <CalculationRows
-          calculation={props.calculation}
-          custom={props.customCalculation}
-          position={props.calculationPosition}
-          onChange={(calculation) => {
-            onEdit({ calculation });
-          }}
-          onPosition={(calculationPosition) => {
-            onEdit({ calculationPosition });
-          }}
-        />
+        <Section title={FIELD_PROPS_SECTION_CALCULATE}>
+          <CalculationRows
+            calculation={props.calculation}
+            custom={props.customCalculation}
+            position={props.calculationPosition}
+            onChange={(calculation) => {
+              onEdit({ calculation });
+            }}
+            onPosition={(calculationPosition) => {
+              onEdit({ calculationPosition });
+            }}
+          />
+        </Section>
       ) : null}
     </>
   );
 }
+
+/**
+ * One of the panel's folding sections (the owner's E1): a native disclosure, open at first, so the keyboard and a screen
+ * reader treat it as one with no code of its own.
+ */
+function Section({ title, children }: { readonly title: MessageKey; readonly children: ReactNode }): ReactElement {
+  const { i18n } = useLingui();
+  return (
+    <details className="m-properties__section" open>
+      <summary className="m-properties__section-title">{i18n._(title)}</summary>
+      {children}
+    </details>
+  );
+}
+
+const VISIBILITY_LABELS: Readonly<Record<(typeof FIELD_VISIBILITIES)[number], MessageKey>> = {
+  visible: FIELD_PROPS_VISIBILITY_VISIBLE,
+  hidden: FIELD_PROPS_VISIBILITY_HIDDEN,
+  'no-print': FIELD_PROPS_VISIBILITY_NO_PRINT,
+};
+
+const ALIGNMENT_LABELS: Readonly<Record<(typeof FIELD_ALIGNMENTS)[number], MessageKey>> = {
+  left: FIELD_PROPS_ALIGNMENT_LEFT,
+  centre: FIELD_PROPS_ALIGNMENT_CENTRE,
+  right: FIELD_PROPS_ALIGNMENT_RIGHT,
+};
 
 /** A text box that sends when focus leaves it changed, and says why a value is refused instead of sending it. */
 function TextRow({
@@ -605,10 +718,13 @@ export function choicesOfDrafts(texts: string, values: string | null): readonly 
 function OptionsRow({
   options,
   withValues,
+  label,
   onCommit,
 }: {
   readonly options: readonly FieldChoice[];
   readonly withValues: boolean;
+  /** What the first box is called: a list's choices, or a radio group's values. */
+  readonly label: MessageKey;
   readonly onCommit: (options: readonly FieldChoice[]) => void;
 }): ReactElement {
   const { i18n } = useLingui();
@@ -631,7 +747,7 @@ function OptionsRow({
   return (
     <div className="m-properties__row">
       <label className="m-properties__label" htmlFor={textId}>
-        {i18n._(FIELD_PROPS_OPTIONS)}
+        {i18n._(label)}
       </label>
       <textarea
         className="m-properties__comment"

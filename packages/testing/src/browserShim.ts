@@ -2436,6 +2436,12 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
               calculation: null,
               customCalculation: false,
               calculationPosition: null,
+              alignment: 'left' as const,
+              maxLength: null,
+              comb: false,
+              masked: false,
+              visibility: 'visible' as const,
+              buttonLabel: null,
               ...(options.fieldProperties?.[found.name] ?? {}),
             };
           }),

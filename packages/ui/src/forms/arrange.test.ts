@@ -78,3 +78,24 @@ describe('arranging form fields', () => {
     expect(rects(arrange('same-width', [A, turned]))).toStrictEqual({ f3: { x0: 130, y0: 450, x1: 230, y1: 480 } });
   });
 });
+
+describe('spreading form fields evenly', () => {
+  // THREE IN A ROW, 20 wide each, from 0 to 200: the middle one at 30 is moved to 90, so both gaps are 70.
+  const row = [0, 30, 180].map((x, at): PlacedField => ({ field: handle(at), rect: { x0: x, y0: 100, x1: x + 20, y1: 120 } }));
+
+  it('across: the outermost stay, the middle one moves so every gap is the same', () => {
+    expect(rects(arrange('distribute-horizontally', row))).toStrictEqual({ f1: { x0: 90, y0: 100, x1: 110, y1: 120 } });
+  });
+
+  it('down: from the top, the LARGEST y, the middle one moves', () => {
+    const column = [500, 470, 300].map((y, at): PlacedField => ({ field: handle(at), rect: { x0: 0, y0: y - 20, x1: 20, y1: y } }));
+    // From the top at 500 to the last one's foot at 280, three 20 tall: the gaps are 80, so the middle one's top is at 400.
+    expect(rects(arrange('distribute-vertically', column))).toStrictEqual({ f1: { x0: 0, y0: 380, x1: 20, y1: 400 } });
+  });
+
+  it('CONTROL: two fields have nothing between them, and an even row is no command', () => {
+    expect(arrange('distribute-horizontally', row.slice(0, 2))).toStrictEqual([]);
+    const even = [0, 90, 180].map((x, at): PlacedField => ({ field: handle(at), rect: { x0: x, y0: 100, x1: x + 20, y1: 120 } }));
+    expect(arrange('distribute-horizontally', even)).toStrictEqual([]);
+  });
+});

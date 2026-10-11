@@ -1,6 +1,7 @@
 import {
   EncryptedPDFError,
   PDFArray,
+  PDFButton,
   PDFCheckBox,
   PDFDict,
   PDFDropdown,
@@ -14,6 +15,7 @@ import {
   PDFString,
   PDFTextField,
   StandardFonts,
+  TextAlignment,
 } from '@cantoo/pdf-lib';
 import type { PDFDocument, PDFField, PDFFont, PDFPage } from '@cantoo/pdf-lib';
 
@@ -188,6 +190,58 @@ function setCharacteristic(widget: PDFDict, key: 'BC' | 'BG', colour: readonly [
   }
   mk.set(PDFName.of(key), context.obj(colourArray(colour)));
 }
+
+/** The words a push button shows (`/MK /CA`); its appearance is drawn again from them by {@link regenerate}. */
+function setButtonLabel(widget: PDFDict, label: string): void {
+  let mk = widget.lookupMaybe(PDFName.of('MK'), PDFDict);
+  if (mk === undefined) {
+    mk = widget.context.obj({});
+    widget.set(PDFName.of('MK'), mk);
+  }
+  mk.set(PDFName.of('CA'), text(label));
+}
+
+/** The annotation flags that decide whether a widget shows (PDF 32000-1 table 165): Hidden, Print, NoView. */
+const FLAG_HIDDEN = 1 << 1;
+const FLAG_PRINT = 1 << 2;
+const FLAG_NO_VIEW = 1 << 5;
+
+/** Shown, hidden, or shown and left off a print: one flag word, the other flags it holds kept as they were. */
+function setVisibility(widget: PDFDict, visibility: NonNullable<FormFieldProperties['visibility']>): void {
+  const held = widget.lookupMaybe(PDFName.of('F'), PDFNumber)?.asNumber() ?? 0;
+  const cleared = held & ~(FLAG_HIDDEN | FLAG_PRINT | FLAG_NO_VIEW);
+  const flags = visibility === 'hidden' ? cleared | FLAG_HIDDEN : visibility === 'visible' ? cleared | FLAG_PRINT : cleared;
+  widget.set(PDFName.of('F'), PDFNumber.of(flags));
+}
+
+/**
+ * A text field's alignment, length, cells and masking, through pdf-lib's own setters, which write `/Q`, `/MaxLen` and
+ * the `/Ff` bits as the format defines them. Cells need a length to divide the field by, so cells on a field with no
+ * length is refused in words rather than written as a flag no reader can draw.
+ */
+function setTextRules(field: PDFTextField, set: FormFieldProperties): void {
+  // CELLS EXCLUDE LINE BREAKS AND MASKING (PDF 32000-1 table 228), and pdf-lib's `enableCombing` turns the other two off
+  // without a word. So the field's state after this edit is worked out first, and cells beside either is refused, never
+  // written as one of them quietly undone.
+  const comb = set.comb ?? field.isCombed();
+  if (comb && ((set.multiline ?? field.isMultiline()) || (set.masked ?? field.isPassword()))) {
+    throw new FieldEditRefusedError('comb-excludes', 'A field with one character per cell cannot also take line breaks or hide what is typed.');
+  }
+  if (set.alignment !== undefined) field.setAlignment(ALIGNMENT[set.alignment]);
+  if (set.maxLength !== undefined) field.setMaxLength(set.maxLength ?? undefined);
+  if (set.masked !== undefined) {
+    if (set.masked) field.enablePassword();
+    else field.disablePassword();
+  }
+  if (set.comb !== undefined) {
+    if (!set.comb) field.disableCombing();
+    else if (field.getMaxLength() === undefined) {
+      throw new FieldEditRefusedError('comb-without-length', 'A field shows one character per cell only when it has a most characters.');
+    } else field.enableCombing();
+  }
+}
+
+const ALIGNMENT = { left: TextAlignment.Left, centre: TextAlignment.Center, right: TextAlignment.Right } as const;
 
 function setBorderWidth(widget: PDFDict, width: number): void {
   const context = widget.context;
@@ -535,7 +589,11 @@ function changesLook(set: FormFieldProperties): boolean {
     set.borderWidth !== undefined ||
     set.options !== undefined ||
     set.multiline !== undefined ||
-    set.rect !== undefined
+    set.rect !== undefined ||
+    set.alignment !== undefined ||
+    set.comb !== undefined ||
+    set.masked !== undefined ||
+    set.buttonLabel !== undefined
   );
 }
 
@@ -554,6 +612,8 @@ function regenerate(field: PDFField, font: PDFFont, da: { readonly size: number 
     return;
   }
   if (field instanceof PDFCheckBox || field instanceof PDFRadioGroup) field.updateAppearances();
+  // A BUTTON'S WORDS are drawn from `/MK /CA`, so a new label is a new appearance.
+  if (field instanceof PDFButton) field.updateAppearances(font);
 }
 
 /** Applies each edit and returns the new document. */
@@ -613,6 +673,9 @@ export const applyEditFormFields: Apply<'pdf-lib', 'editFormFields'> = async (im
       const box = rectOf(set.rect);
       widget.set(PDFName.of('Rect'), document.context.obj([box.x, box.y, box.x + box.width, box.y + box.height]));
     }
+    if (field instanceof PDFTextField) setTextRules(field, set);
+    if (set.visibility !== undefined) setVisibility(widget, set.visibility);
+    if (set.buttonLabel !== undefined && field instanceof PDFButton) setButtonLabel(widget, set.buttonLabel);
     if (set.format !== undefined) setFormat(field, set.format);
     if (set.calculation !== undefined) setCalculation(form, field, set.calculation);
     if (set.calculationPosition !== undefined) moveInCalculationOrder(form, field, set.calculationPosition);

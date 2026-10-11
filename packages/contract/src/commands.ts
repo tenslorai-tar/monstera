@@ -4993,6 +4993,18 @@ export const fieldCalculationSchema = z
 /** See {@link fieldCalculationSchema}. */
 export type FieldCalculation = z.infer<typeof fieldCalculationSchema>;
 
+/** How a text field's words sit across it: `/Q` 0, 1 and 2, in that order. */
+export const FIELD_ALIGNMENTS = ['left', 'centre', 'right'] as const;
+
+/** Whether a widget shows: on screen and on paper, on neither, or on screen only (PDF-XChange's three). */
+export const FIELD_VISIBILITIES = ['visible', 'hidden', 'no-print'] as const;
+
+/**
+ * The longest `/MaxLen` a Properties edit writes: a text field's bound on what it takes, far past any form a person
+ * fills, and the value `MAX_FIELD_TEXT` a fill may hold.
+ */
+export const MAX_FIELD_LENGTH = 65_536;
+
 /**
  * What one field's properties may be set to. EVERY MEMBER IS OPTIONAL and a member present is set, so a change is the
  * members it names and nothing else: a command that restated the whole field would write back what it read, which is a
@@ -5034,6 +5046,18 @@ export const formFieldPropertiesSchema = z
     calculation: fieldCalculationSchema.nullable(),
     /** Where it sits in the form's calculation order (`/CO`), from 0; a position past the end is the end. */
     calculationPosition: z.number().int().min(0).max(4096),
+    /** How a text field's words sit across it (`/Q`): the owner's E1 *alignment*. */
+    alignment: z.enum(FIELD_ALIGNMENTS),
+    /** The most characters a text field takes (`/MaxLen`), or `null` for no limit. */
+    maxLength: z.number().int().min(1).max(MAX_FIELD_LENGTH).nullable(),
+    /** One character per cell (`/Ff` bit 25); a reader draws the cells from the length, so it needs one. */
+    comb: z.boolean(),
+    /** The characters drawn as dots (`/Ff` bit 14, a password field). Named for what it does, never what it holds. */
+    masked: z.boolean(),
+    /** Whether the widget is shown, hidden, or shown and left off a print (`/F` bits 2 and 3). */
+    visibility: z.enum(FIELD_VISIBILITIES),
+    /** The words on a push button (`/MK /CA`). */
+    buttonLabel: z.string().min(1).max(MAX_FIELD_OPTION),
   })
   .partial()
   .strict();
@@ -5098,6 +5122,14 @@ export const formFieldReadSchema = z
     customCalculation: z.boolean(),
     /** Where it sits in the form's calculation order, or `null` for a field that is not calculated. */
     calculationPosition: z.number().int().nonnegative().nullable(),
+    alignment: z.enum(FIELD_ALIGNMENTS),
+    /** As the document holds it, which may be past what an edit writes; `null` for none. */
+    maxLength: z.number().int().nonnegative().nullable(),
+    comb: z.boolean(),
+    masked: z.boolean(),
+    visibility: z.enum(FIELD_VISIBILITIES),
+    /** A push button's words, or `null` for a field that is not one or a button with none. */
+    buttonLabel: z.string().max(MAX_FIELD_OPTION).nullable(),
   })
   .strict();
 

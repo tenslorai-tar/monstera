@@ -4,7 +4,7 @@
      equal to it. Regenerate with `npx vitest run packages/ui/src/App.test.tsx -t "manual test checklist" -u`.
      Do not edit by hand. -->
 
-Every command the application registers — 261 — and the checks only the installed window can answer.
+Every command the application registers — 263 — and the checks only the installed window can answer.
 For each command: use it on a real document, see the correct effect, then save, close and reopen and see it kept
 (the wired-tools rule, CLAUDE.md). A command that needs a selection, a second document or a key says so when it
 is not available.
@@ -294,6 +294,8 @@ is not available.
 - [ ] **Same width as the first field** · `forms.arrange.same-width` · Shows: on screen
 - [ ] **Same height as the first field** · `forms.arrange.same-height` · Shows: on screen
 - [ ] **Same size as the first field** · `forms.arrange.same-size` · Shows: on screen · Help: *Change a form field*
+- [ ] **Spread evenly across** · `forms.arrange.distribute-horizontally` · Shows: on screen
+- [ ] **Spread evenly down** · `forms.arrange.distribute-vertically` · Shows: on screen
 
 ## Start screen
 

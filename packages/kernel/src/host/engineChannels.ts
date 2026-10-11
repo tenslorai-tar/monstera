@@ -1489,6 +1489,8 @@ export const FIELD_EDIT_REFUSALS = [
   'field-edit-duplicate-radio',
   'field-edit-duplicate-signature',
   'field-edit-encrypted',
+  'field-edit-comb-without-length',
+  'field-edit-comb-excludes',
 ] as const;
 
 /**

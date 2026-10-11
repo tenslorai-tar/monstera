@@ -61,6 +61,12 @@ const TEXT: FormFieldRead = {
   calculation: null,
   customCalculation: false,
   calculationPosition: null,
+  alignment: 'left',
+  maxLength: null,
+  comb: false,
+  masked: false,
+  visibility: 'visible',
+  buttonLabel: null,
 };
 
 const handleOf = (field: FormFieldRead): FormFieldHandle => ({ page: field.page, index: field.index, name: field.name });
@@ -270,10 +276,37 @@ describe('the field properties pane', () => {
     expect(choicesOfDrafts('', null), 'no choices').toBeNull();
   });
 
-  it('a radio group has the one box, the values, and no stored values', async () => {
+  it('a radio group has the one box, the values, and no stored values; its name is the GROUP’s (C5)', async () => {
     mounted({ ...TEXT, kind: 'radio', name: 'plan', options: ['basic', 'plus'] });
-    await screen.findByLabelText('Choices');
+    await screen.findByLabelText('Each option’s value, one per line, in the order the options sit');
     expect(screen.queryByLabelText('Stored values')).toBeNull();
+    expect(screen.getByLabelText<HTMLInputElement>('Group name').value).toBe('plan');
+  });
+
+  it('a text field offers alignment, a most-characters limit, cells and masking, each sending its one member (E1)', async () => {
+    const { edits } = mounted(TEXT);
+    fireEvent.change(await screen.findByLabelText('Alignment'), { target: { value: 'right' } });
+    const length = screen.getByLabelText('Most characters (0 for no limit)');
+    fireEvent.change(length, { target: { value: '6' } });
+    fireEvent.blur(length);
+    fireEvent.click(screen.getByLabelText('One character per box'));
+    fireEvent.click(screen.getByLabelText('Hide what is typed (password)'));
+    fireEvent.change(screen.getByLabelText('Shown'), { target: { value: 'no-print' } });
+    expect(edits).toStrictEqual([{ alignment: 'right' }, { maxLength: 6 }, { comb: true }, { masked: true }, { visibility: 'no-print' }]);
+  });
+
+  it('a push button offers its words, and a limit of 0 sends no limit', async () => {
+    const { edits } = mounted({ ...TEXT, kind: 'button', name: 'send', buttonLabel: 'Send' });
+    const words = await screen.findByLabelText('Words on the button');
+    fireEvent.change(words, { target: { value: 'Submit' } });
+    fireEvent.blur(words);
+    expect(edits).toStrictEqual([{ buttonLabel: 'Submit' }]);
+    cleanup();
+    const text = mounted({ ...TEXT, maxLength: 9 });
+    const length = await screen.findByLabelText('Most characters (0 for no limit)');
+    fireEvent.change(length, { target: { value: '0' } });
+    fireEvent.blur(length);
+    expect(text.edits).toStrictEqual([{ maxLength: null }]);
   });
 
   it('CONTROL: a text field has no choices to set, and a tick box has no font', async () => {

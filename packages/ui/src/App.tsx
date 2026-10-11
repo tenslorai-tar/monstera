@@ -299,6 +299,7 @@ import {
 import { nextFillable } from './forms/fieldOrder.js';
 import { type FieldProblem, emptyRequired } from './forms/fieldCheck.js';
 import { FieldPropertiesPanel } from './forms/FieldPropertiesPanel.js';
+import { FormSettingsPanel } from './forms/FormSettingsPanel.js';
 import type { PlacedField } from './forms/arrange.js';
 import { besideRect } from './forms/fieldDesign.js';
 import { DELETE_FIELDS_DIALOG_ID, DELETE_FIELDS_RESULT } from './dialogs/deleteFields.js';
@@ -4032,8 +4033,10 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   );
   // OUTLINED WHERE LINKS ARE MADE: the Comment section, whose ribbon holds the two link tools — and WHILE EITHER IS ARMED,
   // wherever the person went since (the owner's review of 2026-10-07: every link on the page shows while one is being made).
-  const linksOutlined =
-    useSetting(settings, RIBBON_SECTION_SETTING) === 'comment' || toolId === LINK_ADDRESS_TOOL_ID || toolId === LINK_PAGE_TOOL_ID;
+  const ribbonSection = useSetting(settings, RIBBON_SECTION_SETTING);
+  const linksOutlined = ribbonSection === 'comment' || toolId === LINK_ADDRESS_TOOL_ID || toolId === LINK_PAGE_TOOL_ID;
+  /** The Forms section, or *Edit fields* wherever it was chosen: where the Properties tab is the form's (E4). */
+  const inFormsSection = ribbonSection === 'forms' || inFieldDesign;
   const fieldsHighlighted = useSetting(settings, FIELD_HIGHLIGHT_SETTING);
 
   /**
@@ -4603,6 +4606,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
                   selected={selectedHandles}
                   version={open.version}
                 />
+              ) : inFormsSection && selection === undefined && objectSelection === undefined ? (
+                // NOTHING SELECTED IN FORMS (the owner's E4): the form's settings, never a mark's colour and opacity.
+                <FormSettingsPanel settings={settings} />
               ) : (
                 <PropertiesPanel
                   measuring={toolId !== undefined && MEASURE_TOOL_IDS.has(toolId)}

@@ -354,6 +354,59 @@ describe('copying a field onto other pages', () => {
   });
 });
 
+describe('a text field’s alignment, length, cells, masking and visibility, and a button’s words (E1)', () => {
+  it('each is written as the format defines it, read back by MuPDF and by pdf-lib', async () => {
+    const original = await buildFormTestPdf();
+    const handle = await handleOf(original, 'email');
+    const edited = await applyEditFormFields(original, editing(handle, { alignment: 'centre', maxLength: 8, comb: true, visibility: 'no-print' }));
+    const props = await read(await throughMupdf(edited), handle);
+    expect([props.alignment, props.maxLength, props.comb, props.masked, props.visibility]).toStrictEqual(['centre', 8, true, false, 'no-print']);
+    // THE SECOND READER: pdf-lib's own getters on the same bytes.
+    const second = (await PDFDocument.load(edited)).getForm().getTextField('email');
+    expect([second.getAlignment(), second.getMaxLength(), second.isCombed()]).toStrictEqual([1, 8, true]);
+    const flags = second.acroField.getWidgets()[0]?.dict.get(PDFName.of('F'));
+    expect(flags?.toString()).toBe('0');
+    const masked = await applyEditFormFields(original, editing(handle, { masked: true }));
+    expect((await read(await throughMupdf(masked), handle)).masked).toBe(true);
+    expect((await PDFDocument.load(masked)).getForm().getTextField('email').isPassword()).toBe(true);
+  });
+
+  it('CONTROL: cells beside masking is refused, never one of the two quietly undone (pdf-lib turns masking off)', async () => {
+    const original = await buildFormTestPdf();
+    const handle = await handleOf(original, 'email');
+    await expect(applyEditFormFields(original, editing(handle, { maxLength: 8, comb: true, masked: true }))).rejects.toMatchObject({
+      reason: 'comb-excludes',
+    });
+  });
+
+  it('hidden is the Hidden flag, and visible prints', async () => {
+    const original = await buildFormTestPdf();
+    const handle = await handleOf(original, 'email');
+    expect((await read(await applyEditFormFields(original, editing(handle, { visibility: 'hidden' })), handle)).visibility).toBe('hidden');
+    expect((await read(await applyEditFormFields(original, editing(handle, { visibility: 'visible' })), handle)).visibility).toBe('visible');
+  });
+
+  it('CONTROL: cells on a field with no length is refused in words, and nothing is written', async () => {
+    const original = await buildFormTestPdf();
+    const handle = await handleOf(original, 'email');
+    await expect(applyEditFormFields(original, editing(handle, { maxLength: null, comb: true }))).rejects.toMatchObject({
+      reason: 'comb-without-length',
+    });
+  });
+
+  it('a push button’s words are written into /MK /CA and its appearance drawn again', async () => {
+    const blank = await PDFDocument.create();
+    const page = blank.addPage([300, 300]);
+    blank.getForm().createButton('Send').addToPage('Send', page, { x: 20, y: 20, width: 80, height: 24 });
+    const original = await blank.save();
+    const handle = await handleOf(original, 'Send');
+    const edited = await applyEditFormFields(original, editing(handle, { buttonLabel: 'Submit' }));
+    expect((await read(await throughMupdf(edited), handle)).buttonLabel).toBe('Submit');
+    const widget = (await PDFDocument.load(edited)).getForm().getButton('Send').acroField.getWidgets()[0];
+    expect(widget?.getAppearanceCharacteristics()?.getCaptions().normal).toBe('Submit');
+  });
+});
+
 describe('copying a field to one place, its own page allowed (ADR-0226 Decision 8)', () => {
   it('a duplicate on its own page lands at the place named, a new field with a free name, the original where it was', async () => {
     const original = await buildFormTestPdf();

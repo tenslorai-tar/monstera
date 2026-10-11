@@ -84,7 +84,7 @@ describe('the copy-to-pages command', () => {
 });
 
 describe('the arrange commands', () => {
-  it('registers nine, each at the Properties tab and each with a title', () => {
+  it('registers nine and the two spreads, each at the Properties tab and each with a title', () => {
     const { commands } = built([A, B]);
     expect(commands.map((command) => command.id)).toStrictEqual([
       'forms.arrange.align-left',
@@ -96,6 +96,8 @@ describe('the arrange commands', () => {
       'forms.arrange.same-width',
       'forms.arrange.same-height',
       'forms.arrange.same-size',
+      'forms.arrange.distribute-horizontally',
+      'forms.arrange.distribute-vertically',
     ]);
     for (const command of commands) {
       // AT THE TAB'S FOOT, and in *Edit fields*' right-click menu (ADR-0226 Decision 7).
@@ -103,10 +105,16 @@ describe('the arrange commands', () => {
     }
   });
 
-  it('is hidden for fewer than two fields, and present for two (control)', () => {
+  it('is hidden for fewer than two fields, and present for two (control); a spread needs three', () => {
     for (const command of built([A]).commands) expect(command.when?.(CONTEXT)).toBe(false);
     for (const command of built([]).commands) expect(command.when?.(CONTEXT)).toBe(false);
-    for (const command of built([A, B]).commands) expect(command.when?.(CONTEXT)).toBe(true);
+    const two = built([A, B]).commands;
+    expect(two.filter((command) => command.when?.(CONTEXT) === true).map((command) => command.id)).not.toContain(
+      'forms.arrange.distribute-horizontally',
+    );
+    expect(two.filter((command) => command.when?.(CONTEXT) === true)).toHaveLength(9);
+    const third: PlacedField = { field: { page: 0, index: 9, name: 'third' }, rect: { x0: 400, y0: 450, x1: 420, y1: 480 } };
+    for (const command of built([A, B, third]).commands) expect(command.when?.(CONTEXT)).toBe(true);
   });
 
   it('hands the places of the fields that move to apply, in one call', () => {

@@ -1,4 +1,4 @@
-import { MAX_READ_FIELDS, choiceOf } from '@monstera/contract/host';
+import { MAX_FIELD_OPTION, MAX_READ_FIELDS, choiceOf } from '@monstera/contract/host';
 import type { AnnotationColour, FieldChoice, FormFieldHandle, FormFieldRead } from '@monstera/contract';
 import type { PDFDocument, PDFObject, PDFWidget } from './mupdfRaw.js';
 
@@ -144,7 +144,30 @@ function readOne(document: PDFDocument, widget: PDFWidget, page: number, index: 
     calculation,
     customCalculation: rules.customCalculation,
     calculationPosition: calculation === null && !rules.customCalculation ? null : calculationPositionOf(document, name),
+    alignment: alignmentOf(nearest(object, 'Q')),
+    maxLength: rules.maxLength,
+    comb: rules.comb,
+    masked: rules.masked,
+    visibility: visibilityOf(object.get('F')),
+    buttonLabel: kind === 'button' ? textOf(object.get('MK', 'CA'))?.slice(0, MAX_FIELD_OPTION) ?? null : null,
   };
+}
+
+/** `/Q` as a word: 0 left, 1 centre, 2 right, and the format's default (left) for anything else. */
+function alignmentOf(object: PDFObject): FormFieldRead['alignment'] {
+  const quadding = object.isNumber() ? object.asNumber() : 0;
+  return quadding === 1 ? 'centre' : quadding === 2 ? 'right' : 'left';
+}
+
+/** The annotation flags that decide whether a widget shows: Hidden (bit 2) wins over Print (bit 3). */
+const HIDDEN = 1 << 1;
+const PRINT = 1 << 2;
+
+/** `/F` as one of the three a person chooses between. */
+function visibilityOf(object: PDFObject): FormFieldRead['visibility'] {
+  const flags = object.isNumber() ? object.asNumber() : 0;
+  if ((flags & HIDDEN) !== 0) return 'hidden';
+  return (flags & PRINT) !== 0 ? 'visible' : 'no-print';
 }
 
 /**
