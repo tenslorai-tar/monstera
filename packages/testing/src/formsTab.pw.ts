@@ -191,6 +191,24 @@ test.describe('the Forms tab', () => {
     await expect(page.locator('[data-form-selected]')).toHaveCount(0);
   });
 
+  test('a list that takes several values is filled from the Fields list with every option chosen, in one fill', async ({ page }) => {
+    const sent: { channel: string; params: unknown }[] = [];
+    const topics: ShimFormField = { ...LISTED, index: 1, kind: 'listbox', name: 'Topics', options: ['Art', 'Maths', 'Music'], multiSelect: true, rect: null };
+    await openForms(page, sent, [LISTED, topics]);
+    await openSection(page, 'Forms');
+    await runCommand(page, 'Fields list');
+    // THE LIST'S CONTROL, in the panel: the page holds no widget for this field (`rect: null`).
+    await page.locator('select.m-forms-choice[aria-label="Topics"]').selectOption(['Art', 'Music']);
+    const fills = (): unknown[] =>
+      sent
+        .filter((call) => call.channel === 'document.execute')
+        .map((call) => (call.params as { command: { kind: string } }).command)
+        .filter((command) => command.kind === 'fillFormField');
+    await expect.poll(fills).toStrictEqual([
+      { kind: 'fillFormField', page: 0, index: 1, version: 1, value: { set: 'choices', options: ['Art', 'Music'] } },
+    ]);
+  });
+
   test('Flatten with a field selected offers ONLY THE SELECTED FIELD, and sends that field by its handle (G1)', async ({ page }) => {
     const sent: { channel: string; params: unknown }[] = [];
     await openForms(page, sent);

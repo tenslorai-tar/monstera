@@ -215,6 +215,8 @@ describe('FormsPanel — filling in place', () => {
     fireEvent.change(input, { target: { value: 'にほんご' } });
     fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
     expect(fills).toStrictEqual([]);
+    // THE BOX IS STILL WHERE THE PERSON IS TYPING: the composing Enter neither filled nor closed it.
+    expect(document.activeElement).toBe(input);
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(fills).toMatchObject([{ value: { set: 'text', text: 'にほんご' } }]);
   });
@@ -281,6 +283,46 @@ describe('FormsPanel — filling in place', () => {
     expect(screen.getByText('This field is not one that can be filled here.')).toBeTruthy();
     expect(fills).toStrictEqual([]);
   });
+
+  it('CONTROL: the same long value NOT cut by the listing opens its box, so the cut is what keeps it', async () => {
+    await panel([field({ name: 'long', values: ['a'.repeat(512)] })]);
+    expect(openBox('long').value).toBe('a'.repeat(512));
+  });
+
+  it('SEPARATES read-only from not fillable: a push button and a signature say they are not fillable, never read-only', async () => {
+    await panel([
+      field({ name: 'applicant.reference', values: ['LOCKED'], readOnly: true }),
+      field({ name: 'submit', index: 1, kind: 'button' }),
+      field({ name: 'applicant.signature', index: 2, kind: 'signature' }),
+    ]);
+    expect(screen.getAllByText('The document marks this field read-only.')).toHaveLength(1);
+    expect(screen.getAllByText('This field is not one that can be filled here.')).toHaveLength(2);
+  });
+
+  it('draws a radio group’s options as radios of ONE group, and a second group as another', async () => {
+    await panel([
+      field({ name: 'post', kind: 'radio', on: true, index: 1, options: ['First'] }),
+      field({ name: 'post', kind: 'radio', on: false, index: 2, options: ['Second'] }),
+      field({ name: 'size', kind: 'radio', on: false, index: 3, options: ['Large'] }),
+    ]);
+    const groupOf = (name: string): string | null => screen.getByRole('radio', { name }).getAttribute('data-group');
+    expect(groupOf('post: First')).not.toBeNull();
+    expect(groupOf('post: First')).toBe(groupOf('post: Second'));
+    expect(groupOf('size: Large')).not.toBe(groupOf('post: First'));
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
+  });
+
+  // THE FILL FROM THIS LIST is `formsTab.pw.ts`' case, in Chromium: jsdom does not refresh `selectedOptions` when an
+  // option's `selected` is set (measured 2026-10-11: every option read `selected: true` while the collection still held
+  // one), so a change here cannot reach the handler the way a browser's does.
+  it('a list that takes several values is a list that takes several, showing every value it holds', async () => {
+    await panel([
+      field({ name: 'interests', kind: 'listbox', multiSelect: true, values: ['Art', 'Sport'], options: ['Art', 'Music', 'Sport'], index: 4 }),
+    ]);
+    const list = screen.getByLabelText<HTMLSelectElement>('interests');
+    expect(list.multiple).toBe(true);
+    expect([...list.options].filter((option) => option.selected).map((option) => option.value)).toStrictEqual(['Art', 'Sport']);
+  });
 });
 
 describe('FormsPanel — selecting', () => {
@@ -315,9 +357,20 @@ describe('FormsPanel — selecting', () => {
 });
 
 describe('FormsPanel — the states', () => {
-  it('says the bound stopped the walk rather than showing a short list quietly; CONTROL: an unstopped list does not', async () => {
+  it('says the bound stopped the walk rather than showing a short list quietly', async () => {
     await panel([field({ name: 'one' })], { truncated: true });
     expect(screen.getByText('This document carries more form fields than can be read, so the rest are not listed.')).toBeTruthy();
+  });
+
+  it('CONTROL: an unstopped list does not say the rest are not listed', async () => {
+    await panel([field({ name: 'one' })]);
+    expect(screen.queryByText(/the rest are not listed/u)).toBeNull();
+  });
+
+  it('offers Flatten while the list is truncated, because flattening acts on the document and not on the rows listed', async () => {
+    const { flattens } = await panel([field({ name: 'one' })], { truncated: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Flatten form' }));
+    expect(flattens()).toBe(1);
   });
 
   it('a REFUSAL is its own state, not an empty form', async () => {
@@ -326,7 +379,7 @@ describe('FormsPanel — the states', () => {
     expect(screen.queryByText('This document has no form fields.')).toBeNull();
   });
 
-  it('CONTROL: it renders the empty case as empty, and asks the channel for the document it was given', async () => {
+  it('CONTROL: it renders the empty case as empty', async () => {
     await panel([]);
     expect(screen.getByText('This document has no form fields.')).toBeTruthy();
   });
