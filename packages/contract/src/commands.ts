@@ -5823,8 +5823,27 @@ export const TEXT_FIT_MODES = ['reflow', 'shrink'] as const;
 /**
  * The most marks and paragraph settings one edit may carry (invariant L11): a person formats spans by hand, so a
  * thousand is two orders over any real edit, and a translation sends none.
+ *
+ * 1024 until ADR-0228 gave a mark three more properties: the worst edit then read 8,420,695 bytes against the 8 MiB file
+ * a PDFium command crosses in (`commands.test.ts`, 2026-10-11), and 960 is where it fits again. Still two orders over a
+ * real edit.
  */
-export const MAX_BLOCK_MARKS = 1024;
+export const MAX_BLOCK_MARKS = 960;
+
+/**
+ * The most character spacing a mark may ask, as a fraction of the words' size, either way
+ * ([ADR-0228](../../../docs/DECISIONS/0228-the-formatting-set-is-whole-in-both-text-writers-and-a-tab-is-a-marked-gap.md)
+ * Decision 1). Measured: PDFium's text page and MuPDF read the words cleanly at 0.125 em and read a space between every
+ * letter at 0.15 em, so a wider value would make a block search, copy and the editor's own read no longer see as words.
+ * A FRACTION RATHER THAN POINTS, so the bound is the wire's and not a check each writer makes against a size it may not
+ * be told.
+ */
+export const MAX_CHARACTER_SPACING = 0.12;
+
+/** A colour of a mark, in 0 to 255 per channel. */
+const markColourSchema = z
+  .object({ r: z.number().int().min(0).max(255), g: z.number().int().min(0).max(255), b: z.number().int().min(0).max(255) })
+  .strict();
 
 /** What a mark makes its words: the properties it names, and only those ([ADR-0180](../../../docs/DECISIONS/0180-formatting-is-marks-over-a-blocks-words-and-a-block-is-moved-resized-and-added-by-its-own-commands.md) Decision 1). */
 export const blockMarkSetSchema = z
@@ -5832,13 +5851,17 @@ export const blockMarkSetSchema = z
     bold: z.boolean(),
     italic: z.boolean(),
     underline: z.boolean(),
+    /** A line through the words (ADR-0228 Decision 1). */
+    strike: z.boolean(),
+    /** A colour drawn behind the words, or `null` for none (ADR-0228 Decision 1). */
+    highlight: markColourSchema.nullable(),
+    /** Space added after each character, as a fraction of the words' size: {@link MAX_CHARACTER_SPACING} either way. */
+    spacing: z.number().min(-MAX_CHARACTER_SPACING).max(MAX_CHARACTER_SPACING),
     /** Absolute, in points. */
     size: z.number().min(1).max(400),
-    colour: z
-      .object({ r: z.number().int().min(0).max(255), g: z.number().int().min(0).max(255), b: z.number().int().min(0).max(255) })
-      .strict(),
-    /** A family the resolver knows, by name. */
-    family: z.string().min(1).max(128),
+    colour: markColourSchema,
+    /** A family the resolver knows, by name: the one bound a family name has. */
+    family: z.string().min(1).max(MAX_FONT_FAMILY_NAME),
     rise: z.enum(['superscript', 'subscript']),
   })
   .partial()
@@ -5862,8 +5885,8 @@ export const blockMarkSchema = z
 
 export type BlockMark = z.infer<typeof blockMarkSchema>;
 
-/** The alignments a paragraph may be set in. */
-export const PARAGRAPH_ALIGNMENTS = ['left', 'center', 'right'] as const;
+/** The alignments a paragraph may be set in: justify widens a wrapped line's spaces to the measure (ADR-0228 Decision 1). */
+export const PARAGRAPH_ALIGNMENTS = ['left', 'center', 'right', 'justify'] as const;
 
 /**
  * How one paragraph is set, where the person said: absent means as the read found it (ADR-0180 Decision 2). `block` and
@@ -5879,6 +5902,8 @@ export const paragraphPropsSchema = z
     /** A multiple of the block's pitch. */
     lineSpacing: z.number().min(0.5).max(5).optional(),
     spaceBefore: z.number().min(0).max(500).optional(),
+    /** Points below the paragraph's last line, before the next paragraph (ADR-0228 Decision 1). */
+    spaceAfter: z.number().min(0).max(500).optional(),
   })
   .strict();
 

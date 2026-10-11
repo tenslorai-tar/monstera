@@ -201,8 +201,16 @@ describe('the block edit payload (ADR-0142)', () => {
 
     it('REFUSES a style the contract does not name, a size no page holds, and a paragraph the words do not have', () => {
       const marks = (list: readonly object[]) => ({ ...withMarks, marks: list });
-      expect(editTextBlockSchema.safeParse(marks([{ block: 0, from: 0, to: 2, set: { strike: true } }])).success).toBe(false);
+      expect(editTextBlockSchema.safeParse(marks([{ block: 0, from: 0, to: 2, set: { blink: true } }])).success).toBe(false);
       expect(editTextBlockSchema.safeParse(marks([{ block: 0, from: 0, to: 2, set: { size: 4000 } }])).success).toBe(false);
+      // SPACING PAST THE MEASURED BOUND either way (ADR-0228): 0.13 of the size reads as a space between letters.
+      expect(editTextBlockSchema.safeParse(marks([{ block: 0, from: 0, to: 2, set: { spacing: 0.13 } }])).success).toBe(false);
+      expect(editTextBlockSchema.safeParse(marks([{ block: 0, from: 0, to: 2, set: { spacing: -0.13 } }])).success).toBe(false);
+      // CONTROL: the formatting set ADR-0228 names, at its bounds, is accepted.
+      const named = { strike: true, highlight: { r: 255, g: 230, b: 0 }, spacing: 0.12 };
+      expect(editTextBlockSchema.safeParse(marks([{ block: 0, from: 0, to: 2, set: named }])).success).toBe(true);
+      expect(editTextBlockSchema.safeParse(marks([{ block: 0, from: 0, to: 2, set: { highlight: null, spacing: -0.12 } }])).success).toBe(true);
+      expect(editTextBlockSchema.safeParse({ ...withMarks, paragraphs: [{ block: 0, paragraph: 1, align: 'justify', spaceAfter: 12 }] }).success).toBe(true);
       expect(editTextBlockSchema.safeParse({ ...withMarks, paragraphs: [{ block: 0, paragraph: 2, align: 'left' }] }).success).toBe(false);
       // CONTROL: the second paragraph of that block is there.
       expect(editTextBlockSchema.safeParse({ ...withMarks, paragraphs: [{ block: 0, paragraph: 1, align: 'left' }] }).success).toBe(true);

@@ -574,6 +574,8 @@ export type Row =
       readonly width: number;
       /** Whether it is its paragraph's first line, which takes the paragraph's first-line indent. */
       readonly first: boolean;
+      /** Whether it ends its paragraph: a justified paragraph's last line is not stretched (ADR-0228 Decision 1). */
+      readonly last: boolean;
       /** Whether it starts a paragraph that was not there: it takes the block's paragraph spacing above it. */
       readonly opens: boolean;
       /** The old line it stands in for, whose gap above it it keeps, or -1. */
@@ -736,6 +738,8 @@ export function planBlock(
           pieces: line.pieces,
           width: line.width,
           first: lineNumber + at === 0,
+          // THE PARAGRAPH'S LAST LINE, unless the layout stopped where the old lines resume, which then end it.
+          last: at === laid.length - 1 && stoppedAt === undefined,
           opens: at === 0 && relaidFrom < 0 && opens,
           replaces: stands,
           paragraph: place,

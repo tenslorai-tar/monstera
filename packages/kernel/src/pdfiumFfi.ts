@@ -11,7 +11,14 @@ import koffi, { type KoffiFunc, type TypeObject } from 'koffi';
 
 import { editFaces, editFacesBound } from './editFaces.js';
 import { arabicForms, lettersOfForms } from './arabicForms.js';
-import { drawnOrder, drawnRightToLeft, drewTheGlyphs, isBidirectional, logicalOf, readBackOf } from './bidiOrder.js';
+import {
+  drawnOrder,
+  drawnRightToLeft,
+  drewTheGlyphs,
+  isBidirectional,
+  logicalOf,
+  readBackOf,
+} from './bidiOrder.js';
 import { paperCoverFor, type PixelBox, type Rgb } from './paperColour.js';
 import { resolveRuns } from './fontResolver.js';
 import { type EditPiece, editPieces } from './editPieces.js';
@@ -20,6 +27,19 @@ import type { BoxedInEdit, ByteImage, EngineWriter, ImageSession, PdfiumSession 
 import type { CatalogueFace, FaceSource } from './fontCatalogue.js';
 import type { PageRuns } from './operatorEdit.js';
 import { FIT_STEPS, type FlowLine, MIN_FIT, type Measure, NO_MARK, planBlock } from './paragraphFlow.js';
+import {
+  HIGHLIGHT_ABOVE,
+  HIGHLIGHT_BELOW,
+  JUSTIFY_CAP,
+  RISE_SCALE,
+  STRIKE_RISE,
+  SUBSCRIPT_DROP,
+  SUPERSCRIPT_RISE,
+  UNDERLINE_DROP,
+  UNDERLINE_THICKNESS,
+  spaceable,
+  spacedBy,
+} from './markFigures.js';
 import { type Alignment, blockShape, paragraphSpacing } from './paragraphShape.js';
 import { type ProgramFace, faceOf, programFace } from './fontFace.js';
 import { readFace } from './fontFaces.js';
@@ -174,6 +194,7 @@ interface Bound {
   readonly setStrokeWidth: Native;
   readonly newRect: Native;
   readonly setDrawMode: Native;
+  readonly setPositions: Native;
   readonly removeObject: Native;
   readonly destroyObject: Native;
   readonly countFormObjects: Native;
@@ -531,6 +552,10 @@ export function openPdfium(libraryPath: string): void {
     // what every producer draws (ADR-0180 Decision 4).
     newRect: native(library.func('void *FPDFPageObj_CreateNewRect(float x, float y, float w, float h)')),
     setDrawMode: native(library.func('int FPDFPath_SetDrawMode(void *path, int fillmode, int stroke)')),
+    // EACH CHARACTER'S PLACE AFTER THE FIRST, in the object's own units before its matrix: the one way PDFium's edit API
+    // states a glyph's position, written as `TJ` adjustments (ADR-0228, `scripts/research/pdfiumPositions.mjs`). Character
+    // spacing and a justified line's spaces are both this.
+    setPositions: native(library.func('int FPDFText_SetPositions(void *object, const float *positions, size_t count)')),
     // REMOVE UNLINKS AND HANDS OWNERSHIP BACK; `FPDFPageObj_Destroy` is what
     // frees it. Calling the first without the second leaks the object for the
     // life of the process, and calling the second on an object still on a page
@@ -2229,17 +2254,6 @@ async function fitScales(
 }
 
 /**
- * How a superscript or subscript is set (ADR-0180 Decision 4): at this fraction of the size the words would have, raised
- * or dropped by these fractions of it, the figures word processors use.
- */
-const RISE_SCALE = 0.65;
-const SUPERSCRIPT_RISE = 0.33;
-const SUBSCRIPT_DROP = 0.12;
-/** The rule under underlined words: this fraction of their size thick, this far below the baseline. */
-const UNDERLINE_THICKNESS = 0.06;
-const UNDERLINE_DROP = 0.12;
-
-/**
  * What a mark asks of the face a word is set in (ADR-0180 Decision 4): a weight, a slant or a family, each only where it
  * is named. The size, the colour, the underline and the rise are applied to the objects after they are written.
  */
@@ -2270,6 +2284,8 @@ interface PieceWriter {
   readonly writePieces: (object: unknown, text: string, restyle?: Restyle, forced?: boolean) => unknown[];
   /** Where the pen stands after the last of these objects, where it was set in a face this edit loaded. */
   readonly endOf: (objects: readonly unknown[]) => number | undefined;
+  /** Widens an object's words where they stand, per character and per space; how much further on the next words start. */
+  readonly spread: (object: unknown, perCharacter: number, perSpace: number) => number;
   /** The standard font a restyled word is set in where no catalogue is bound. */
   readonly standardFontRestyled: (object: unknown, restyle: Restyle) => unknown;
   /** A new text object appended to the page for an added box, in the standard face its family names. */
@@ -2398,6 +2414,68 @@ function pieceWriter(
         } finally {
           if (numberFrom(bindings.removeObject(sheet, probe), 'FPDFPage_RemoveObject') === 1) bindings.destroyObject(probe);
         }
+      };
+      /**
+       * Widens `object`'s words where they stand (ADR-0228 Decision 1): `perCharacter` page units after every character
+       * (character spacing) and `perSpace` more after every space (a justified line), answering how much further on the
+       * words after it start — its last character's share included, which no position can state — or 0 where its
+       * characters could not be placed one by one.
+       *
+       * THE NATURAL PLACES ARE READ, never computed: a copy of the object alone on the scratch page, each character's loose
+       * box, since the object's font may be one this edit loaded and a run's own font answers no advance by code. Each
+       * place after the first is then the natural offset plus what is added before it, in the object's own units (page
+       * units over its matrix's scale), which is what `FPDFText_SetPositions` takes.
+       *
+       * ZERO, NOT A GUESS, where the text page reads a different number of characters than the object was set to say (a
+       * ligature, a surrogate pair split): the places would be applied to the wrong characters.
+       */
+      const spread = (object: unknown, perCharacter: number, perSpace: number): number => {
+        const said = setBy.get(object);
+        if (said === undefined || (perCharacter === 0 && perSpace === 0)) return 0;
+        const characters = Array.from(said.text);
+        const font: unknown = bindings.textFont(object);
+        if (font === null) return 0;
+        const probe = makeTextLike(bindings, document, object, 0, font);
+        if (!setOn(probe, said.text, said.rtl)) {
+          bindings.destroyObject(probe);
+          return 0;
+        }
+        const matrix = matrixOn(bindings, object);
+        setMatrixOn(bindings, probe, { ...matrixOn(bindings, probe), e: 72, f: 396 });
+        const sheet = scratchPage();
+        if (numberFrom(bindings.insertObject(sheet, probe), 'FPDFPage_InsertObject') !== 1) {
+          throw refusedAt('object', 'FPDFPage_InsertObject refused a probe on the scratch page');
+        }
+        const lefts: number[] = [];
+        try {
+          const textPage: unknown = bindings.loadTextPage(sheet);
+          if (textPage === null) throw refusedAt('page', 'PDFium could not load the scratch page to space a line');
+          try {
+            const count = numberFrom(bindings.countChars(textPage), 'FPDFText_CountChars');
+            for (let at = 0; at < count; at += 1) {
+              if (numberFrom(bindings.charGenerated(textPage, at), 'FPDFText_IsGenerated') === 1) continue;
+              const loose: Record<string, number> = {};
+              if (numberFrom(bindings.looseCharBox(textPage, at, loose), 'FPDFText_GetLooseCharBox') !== 1) return 0;
+              lefts.push(loose['left'] ?? 0);
+            }
+          } finally {
+            bindings.closeTextPage(textPage);
+          }
+        } finally {
+          if (numberFrom(bindings.removeObject(sheet, probe), 'FPDFPage_RemoveObject') === 1) bindings.destroyObject(probe);
+        }
+        if (lefts.length !== characters.length || Math.abs(matrix.a) < 1e-6) return 0;
+        const origin = lefts[0] ?? 0;
+        const places: number[] = [];
+        let added = 0;
+        for (let at = 1; at < characters.length; at += 1) {
+          added += perCharacter + (characters[at - 1] === ' ' ? perSpace : 0);
+          places.push(((lefts[at] ?? 0) - origin + added) / matrix.a);
+        }
+        if (places.length > 0 && numberFrom(bindings.setPositions(object, Float32Array.from(places), places.length), 'FPDFText_SetPositions') !== 1) {
+          return 0;
+        }
+        return added + perCharacter + (characters.at(-1) === ' ' ? perSpace : 0);
       };
       /** What each object of a piece was set to say, and the direction it was drawn in, for {@link endOf}. */
       const setBy = new Map<unknown, { readonly text: string; readonly rtl: boolean | undefined }>();
@@ -2757,8 +2835,17 @@ function pieceWriter(
       const writePieces = (object: unknown, text: string, restyle?: Restyle, forced?: boolean): unknown[] => {
         // A WORD THE PERSON MADE BOLD, ITALIC OR ANOTHER FAMILY is set in a face that is that, whichever font the run is
         // in (ADR-0180 Decision 4): the run's own font is not preferred, because it is the wrong one by definition.
-        if (restyle !== undefined && !inPiecesHere) return [writeRestyledTwin(object, text, restyle)];
-        if (!inPiecesHere) return [write(object, text)];
+        // WHAT EACH OBJECT WAS SET TO SAY is kept whichever way it was written, for `endOf` and `spread`.
+        if (restyle !== undefined && !inPiecesHere) {
+          const twin = writeRestyledTwin(object, text, restyle);
+          setBy.set(twin, { text, rtl: undefined });
+          return [twin];
+        }
+        if (!inPiecesHere) {
+          const own = write(object, text);
+          setBy.set(own, { text, rtl: undefined });
+          return [own];
+        }
         if (restyle === undefined && setOn(object, text, forced) && carries(object, text, undefined, forced)) {
           if (mode === 'write') record(object, text, forced);
           pieceTexts.set(object, text);
@@ -2900,6 +2987,7 @@ function pieceWriter(
         write,
         writePieces,
         endOf,
+        spread,
         trimPieces,
         record,
         standardFontLike,
@@ -3158,7 +3246,7 @@ function layOutBlocks(
           const scaledX = (x: number): number => blockLeft + (x - blockLeft) * scale;
           // HOW EACH PARAGRAPH IS SET: the block's shape with what the person set over it (ADR-0180 Decision 2).
           const settings = new Map(block.paragraphs.map((setting) => [setting.paragraph, setting]));
-          const setFor = (place: number): { align: Alignment; leftEdge: number; first: number; centre: number } => {
+          const setFor = (place: number): { align: Alignment | 'justify'; leftEdge: number; first: number; centre: number } => {
             const own = settings.get(place);
             const align = own?.align ?? shape.align;
             const leftEdge = own?.leftIndent === undefined ? shape.left : blockLeft + own.leftIndent;
@@ -3191,9 +3279,14 @@ function layOutBlocks(
                 (setting.leftIndent !== undefined && Math.abs(blockLeft + setting.leftIndent - shape.left) > 0.5) ||
                 (setting.firstIndent !== undefined && Math.abs(setting.firstIndent - shape.firstIndent) > 0.5) ||
                 (setting.lineSpacing !== undefined && Math.abs(setting.lineSpacing - 1) > 0.01) ||
-                (setting.spaceBefore !== undefined && setting.spaceBefore > 0.5),
+                (setting.spaceBefore !== undefined && setting.spaceBefore > 0.5) ||
+                (setting.spaceAfter !== undefined && setting.spaceAfter > 0.5),
             )
             .map((setting) => setting.paragraph);
+          // SPACE AFTER A PARAGRAPH is the gap above the next one's first line, so the paragraph after it is set again too.
+          for (const setting of block.paragraphs) {
+            if (setting.spaceAfter !== undefined && setting.spaceAfter > 0.5) changedSettings.push(setting.paragraph + 1);
+          }
           // A NEW MEASURE SETS EVERY PARAGRAPH AGAIN, words or not: the lines the old measure broke are not the lines the
           // new one does.
           const everyParagraph =
@@ -3226,7 +3319,9 @@ function layOutBlocks(
                   };
             const size = set.size ?? style.size;
             const factor = (size / Math.max(style.size, 0.01)) * (set.rise === undefined ? 1 : RISE_SCALE);
-            return { set, style, restyle, size, factor };
+            // CHARACTER SPACING IN PAGE UNITS, at the size the words are drawn: the wire's fraction of that size.
+            const spacing = (set.spacing ?? 0) * size * (set.rise === undefined ? 1 : RISE_SCALE);
+            return { set, style, restyle, size, factor, spacing };
           };
           const changes = (run: number, mark: number): boolean => {
             const { set, style } = markStyle(runsById.get(run) ?? firstRun, mark);
@@ -3237,22 +3332,39 @@ function layOutBlocks(
               (set.colour !== undefined &&
                 (set.colour.r !== style.colour.r || set.colour.g !== style.colour.g || set.colour.b !== style.colour.b)) ||
               (set.family !== undefined && !style.font.toLowerCase().includes(set.family.toLowerCase())) ||
-              // NOT READABLE, so a mark that asks for it is a change: an underline is a line the page may or may not have.
+              // NOT READABLE, so a mark that asks for it is a change: an underline, a strike and a highlight are drawings the
+              // page may or may not have, and spacing is a position the read does not answer.
               set.underline === true ||
+              set.strike === true ||
+              (set.highlight !== undefined && set.highlight !== null) ||
+              (set.spacing !== undefined && set.spacing !== 0) ||
               set.rise !== undefined
             );
           };
           const measure = blockMeasure(bindings, document, pen, runsById, firstRun, lines.flat(), (run, mark) => {
-            const { restyle, factor } = markStyle(run, mark);
-            return { restyle, factor };
+            const { restyle, factor, spacing } = markStyle(run, mark);
+            return { restyle, factor, spacing };
           });
           const plan = planBlock(flow, block.text.replace(/\r\n?/gu, '\n'), measure, limits, {
             marks: block.marks.map(({ from, to }) => ({ from, to })),
             changes,
             forced,
           });
-          /** The lines to draw under underlined words, made once the baselines are known. */
-          const underlines: { left: number; width: number; size: number; colour: [number, number, number]; first: unknown; last: unknown }[] = [];
+          /**
+           * The drawings marks ask of their words, made once the baselines are known (ADR-0228 Decision 1): a line under
+           * them, a line through them, and a colour behind them, which goes in front of the words' first object so the
+           * words are drawn over it.
+           */
+          const drawings: {
+            kind: 'under' | 'through' | 'behind';
+            left: number;
+            width: number;
+            size: number;
+            colour: [number, number, number];
+            first: unknown;
+            last: unknown;
+            before: unknown;
+          }[] = [];
 
           /** The visual lines the block will have, top to bottom. `rise` is a run's offset from its line's baseline. */
           const visual: {
@@ -3320,9 +3432,28 @@ function layOutBlocks(
                 };
               },
             );
+            // A JUSTIFIED PARAGRAPH'S WRAPPED LINE widens its spaces to the measure; its last line, and a line a hard break
+            // ends, are not stretched (ADR-0228 Decision 1). The gap is capped at JUSTIFY_CAP of the words' size: past it
+            // a reader reads the gap as the end of a line (measured, `scripts/research/pdfiumPositions.mjs`).
+            const stretchable = spaceable;
+            const spaces =
+              set.align === 'justify' && !row.last
+                ? units.reduce(
+                    (sum, unit, at) =>
+                      sum +
+                      (stretchable(unit.text)
+                        ? Array.from(at === units.length - 1 ? unit.text.trimEnd() : unit.text).filter((each) => each === ' ').length
+                        : 0),
+                    0,
+                  )
+                : 0;
+            const smallest = Math.min(...units.map((unit) => pen.styleOfObject((runsById.get(unit.piece.run) ?? firstRun).object).size));
+            const perSpace = spaces === 0 ? 0 : Math.max(0, Math.min((blockRight - x - row.width) / spaces, JUSTIFY_CAP * smallest));
             for (const { piece, text: stretchText, rtl: forced, width: stretchWidth } of units) {
               const source = runsById.get(piece.run) ?? firstRun;
               const made = makeTextLike(bindings, document, source.object, left);
+              // WHAT THE WORDS FOLLOW in the page's order, which a colour behind them is inserted after.
+              const behind = after;
               insertAfter(made, after);
               let rise = matrixOn(bindings, source.object).f - (baselines[lineOfRun.get(source) ?? 0] ?? 0);
               const marked = piece.mark === NO_MARK ? undefined : markStyle(source, piece.mark);
@@ -3349,16 +3480,31 @@ function layOutBlocks(
                 }
                 if (marked.set.rise === 'superscript') rise += SUPERSCRIPT_RISE * marked.size;
                 if (marked.set.rise === 'subscript') rise -= SUBSCRIPT_DROP * marked.size;
-                if (marked.set.underline === true) {
-                  const colour = marked.set.colour ?? marked.style.colour;
-                  underlines.push({
-                    left,
-                    width: stretchWidth,
-                    size: marked.size * (marked.set.rise === undefined ? 1 : RISE_SCALE),
-                    colour: [colour.r, colour.g, colour.b],
-                    first: laid[0] ?? made,
-                    last: laid.at(-1) ?? made,
-                  });
+              }
+              // CHARACTER SPACING AND A JUSTIFIED LINE'S SPACES, each object widened where it stands and the ones after it
+              // in the piece moved on by what the ones before it gained. Nothing for words in a joined right-to-left script
+              // (`spacedBy`), whose letters a gap would part.
+              const perCharacter = marked === undefined || !stretchable(stretchText) ? 0 : marked.spacing;
+              const perSpaceHere = stretchable(stretchText) ? perSpace : 0;
+              let widened = 0;
+              if (perCharacter !== 0 || perSpaceHere !== 0) {
+                for (const object of laid) {
+                  moveBy(bindings, object, widened, 0);
+                  widened += pen.spread(object, perCharacter, perSpaceHere);
+                }
+              }
+              // HOW WIDE THE WORDS ARE DRAWN: their own advances, and what was added where it could be.
+              const drawnWidth = stretchWidth - (marked === undefined ? 0 : spacedBy(stretchText, marked.spacing)) + widened;
+              if (marked !== undefined) {
+                const drawnSize = marked.size * (marked.set.rise === undefined ? 1 : RISE_SCALE);
+                const colour = marked.set.colour ?? marked.style.colour;
+                const ink: [number, number, number] = [colour.r, colour.g, colour.b];
+                const at = { left, width: drawnWidth, size: drawnSize, first: laid[0] ?? made, last: laid.at(-1) ?? made, before: behind };
+                if (marked.set.underline === true) drawings.push({ kind: 'under', colour: ink, ...at });
+                if (marked.set.strike === true) drawings.push({ kind: 'through', colour: ink, ...at });
+                const { highlight } = marked.set;
+                if (highlight !== undefined && highlight !== null) {
+                  drawings.push({ kind: 'behind', colour: [highlight.r, highlight.g, highlight.b], ...at });
                 }
               }
               for (const object of laid) objects.push({ object, rise });
@@ -3366,18 +3512,26 @@ function layOutBlocks(
               // A ROW DRAWN IN THE ORDER IT IS SEEN goes on from where the pen stands, not from where the plan measured it
               // would: the plan adds the advance of each letter alone, which for joined Arabic is wider than the joined
               // letters are, and a stretch placed by it left a gap wide enough to end the line (measured 2026-10-06, 29 pt).
-              left = (stretches === undefined ? undefined : pen.endOf(laid)) ?? left + stretchWidth;
+              // A WIDENED PIECE is never a joined right-to-left one, so it goes on by the width it was drawn at.
+              left =
+                widened !== 0
+                  ? left + drawnWidth
+                  : ((stretches === undefined ? undefined : pen.endOf(laid)) ?? left + drawnWidth);
             }
             anchor = after;
             // THE GAP ABOVE THIS LINE: the person's own where they set the paragraph's spacing, else the gap the line it
             // stands in had, else the block's pitch (and its paragraph spacing where it opens a paragraph).
             const lineGap = pitch * (own?.lineSpacing ?? 1);
-            const spaced = own?.lineSpacing !== undefined || own?.spaceBefore !== undefined;
+            // THE SPACE AFTER THE PARAGRAPH ABOVE, added to this one's space before: the two are the person's, and the
+            // block's own paragraph spacing stands in only where neither was set (ADR-0228 Decision 1).
+            const afterAbove = row.first && visual.length > 0 ? settings.get(row.paragraph - 1)?.spaceAfter : undefined;
+            const between = (own?.spaceBefore ?? (afterAbove === undefined ? spacing : 0)) + (afterAbove ?? 0);
+            const spaced = own?.lineSpacing !== undefined || own?.spaceBefore !== undefined || afterAbove !== undefined;
             visual.push({
               objects,
               oldBaseline: undefined,
               gapAbove: spaced
-                ? lineGap + (row.first && visual.length > 0 ? (own.spaceBefore ?? spacing) : 0)
+                ? lineGap + (row.first && visual.length > 0 ? between : 0)
                 : row.replaces > 0
                   ? (baselines[row.replaces - 1] ?? 0) - (baselines[row.replaces] ?? 0)
                   : pitch + (row.opens ? spacing : 0),
@@ -3401,20 +3555,27 @@ function layOutBlocks(
               }
             }
           }
-          // THE LINES UNDER UNDERLINED WORDS, now that the baselines are where they end: a filled rectangle a little below
-          // the baseline, as long as the words are wide, inserted after the last object it underlines so the page reads
-          // in the order it is seen.
+          // THE DRAWINGS MARKS ASK, now that the baselines are where they end, each a filled rectangle as long as the words
+          // are wide: a line a little below the baseline and one through the words at STRIKE_RISE, each inserted after the
+          // last object it marks so the page reads in the order it is seen; and a colour behind the words, from below their
+          // descenders to above their capitals, inserted BEFORE their first object so they are drawn over it.
           const rules: unknown[] = [];
-          for (const line of underlines) {
-            const thickness = Math.max(0.5, UNDERLINE_THICKNESS * line.size);
-            const baselineAt = matrixOn(bindings, line.first).f;
-            const rule: unknown = bindings.newRect(line.left, baselineAt - UNDERLINE_DROP * line.size - thickness, line.width, thickness);
-            if (rule === null) throw refusedAt('object', 'FPDFPageObj_CreateNewRect refused the line under underlined words');
-            bindings.setFillColour(rule, line.colour[0], line.colour[1], line.colour[2], 255);
+          for (const drawing of drawings) {
+            const thickness = Math.max(0.5, UNDERLINE_THICKNESS * drawing.size);
+            const baselineAt = matrixOn(bindings, drawing.first).f;
+            const [bottom, height] =
+              drawing.kind === 'under'
+                ? [baselineAt - UNDERLINE_DROP * drawing.size - thickness, thickness]
+                : drawing.kind === 'through'
+                  ? [baselineAt + STRIKE_RISE * drawing.size, thickness]
+                  : [baselineAt - HIGHLIGHT_BELOW * drawing.size, (HIGHLIGHT_ABOVE + HIGHLIGHT_BELOW) * drawing.size];
+            const rule: unknown = bindings.newRect(drawing.left, bottom, drawing.width, height);
+            if (rule === null) throw refusedAt('object', `FPDFPageObj_CreateNewRect refused a ${drawing.kind} drawing`);
+            bindings.setFillColour(rule, drawing.colour[0], drawing.colour[1], drawing.colour[2], 255);
             if (numberFrom(bindings.setDrawMode(rule, 1, 0), 'FPDFPath_SetDrawMode') !== 1) {
-              throw refusedAt('object', 'FPDFPath_SetDrawMode refused the line under underlined words');
+              throw refusedAt('object', `FPDFPath_SetDrawMode refused a ${drawing.kind} drawing`);
             }
-            insertAfter(rule, line.last);
+            insertAfter(rule, drawing.kind === 'behind' ? drawing.before : drawing.last);
             rules.push(rule);
           }
           // THE BLOCK PLACED, now that it ends as it will: every object it is made of, its kept lines, the lines set
@@ -3548,8 +3709,14 @@ function blockMeasure(
   runs: ReadonlyMap<number, HeldRun>,
   fallback: HeldRun,
   block: readonly HeldRun[],
-  /** What a mark makes of a run's words: the face it asks and the factor its size and rise scale a width by. */
-  styleFor: (run: HeldRun, mark: number) => { readonly restyle: Restyle | undefined; readonly factor: number },
+  /**
+   * What a mark makes of a run's words: the face it asks, the factor its size and rise scale a width by, and the page
+   * units its character spacing adds after each character.
+   */
+  styleFor: (
+    run: HeldRun,
+    mark: number,
+  ) => { readonly restyle: Restyle | undefined; readonly factor: number; readonly spacing: number },
 ): Measure {
   const inkRight = (source: unknown, text: string, font?: unknown): number | undefined => {
     const probe = makeTextLike(bindings, document, source, 0, font);
@@ -3644,8 +3811,9 @@ function blockMeasure(
     // A MARKED PIECE: the face it asks (where it asks one), scaled by its size and its rise. The size is applied to the
     // objects after they are written, so the width is the unscaled one times the factor.
     if (mark !== NO_MARK) {
-      const { restyle, factor } = styleFor(run, mark);
-      return factor * (restyle === undefined ? plainWidth(run, text) : restyledWidth(run, restyle, text));
+      const { restyle, factor, spacing } = styleFor(run, mark);
+      const width = factor * (restyle === undefined ? plainWidth(run, text) : restyledWidth(run, restyle, text));
+      return width + spacedBy(text, spacing);
     }
     return plainWidth(run, text);
   };

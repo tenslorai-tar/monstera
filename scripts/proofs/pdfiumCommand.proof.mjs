@@ -269,8 +269,9 @@ const failures = [];
 // wraps bold, a centred line and an indented first line kept, and a control beside each, and 129 from the render mode an
 // edit keeps: invisible text stays invisible, with a visible control and the fixture's own, and 143 from ADR-0180's
 // marks: bold, colour, size, underline, superscript and a restated mark, then alignment, line spacing and an indent, each
-// with the control that separates the mark from the fixture.
-const roster = createRoster(failures, { cases: 223 });
+// with the control that separates the mark from the fixture. 231 from ADR-0228's formatting set: a strike and its
+// control against the underline, a highlight, spacing and its control, justify and its control, and space after.
+const roster = createRoster(failures, { cases: 231 });
 
 /**
  * @param {string} name
@@ -3910,7 +3911,7 @@ async function formatCases() {
   const soft = block.lines.map((line) => line.soft);
   const words = paragraphsOfLines(block.lines.map((line) => ({ text: lineText(line.runs), soft: line.soft })));
   /**
-   * @param {{ marks?: { from: number; to: number; set: object }[]; paragraphs?: { paragraph: number; align?: 'left' | 'center' | 'right'; leftIndent?: number; firstIndent?: number; lineSpacing?: number; spaceBefore?: number }[]; text?: string }} extra
+   * @param {{ marks?: { from: number; to: number; set: object }[]; paragraphs?: Omit<import('../../packages/contract/dist/commands.js').ParagraphProps, 'block'>[]; text?: string }} extra
    */
   const format = (extra) =>
     localPdfiumExecution.apply({
@@ -3993,6 +3994,81 @@ async function formatCases() {
   );
   record('CONTROL: with no underline mark the page has no rule', (await objectKinds(original)).length === 0, 'rules before the edit');
 
+  // STRIKETHROUGH: one rule as wide as the words, THROUGH them, above the baseline the underline sits under (ADR-0228).
+  const struck = await format({ marks: [{ ...at('reviewer'), set: { strike: true } }] });
+  const strikes = await objectKinds(struck);
+  const struckWord = await runOf(struck, 'reviewer');
+  record(
+    'a strike mark draws one rule through its words, as wide as they are, above the baseline and under their tops',
+    strikes.length === 1 && struckWord !== undefined && strikes[0] !== undefined &&
+      Math.abs(strikes[0].right - strikes[0].left - reviewerWidth) < 1 &&
+      strikes[0].bottom > struckWord.bottom + 1 &&
+      strikes[0].top < struckWord.top - 1,
+    `${String(strikes.length)} rule(s); ${JSON.stringify(strikes[0])} against a line ${String(struckWord?.bottom)}..${String(struckWord?.top)}`,
+  );
+  record(
+    'CONTROL: the underline’s rule is below the words’ bottom, so the strike’s place above is the strike’s',
+    rules[0] !== undefined && strikes[0] !== undefined && rules[0].top < strikes[0].bottom,
+    `underline top ${String(rules[0]?.top)}, strike bottom ${String(strikes[0]?.bottom)}`,
+  );
+
+  // HIGHLIGHT: a rectangle in the colour, as wide as the words, from under them to over them, BEFORE them in the page's
+  // order so they are drawn over it.
+  const highlighted = await format({ marks: [{ ...at('reviewer'), set: { highlight: { r: 255, g: 230, b: 0 } } }] });
+  const everything = await (async () => {
+    const session = await pdfiumWriter.open(highlighted);
+    try {
+      return await pageObjects(session, 0);
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  })();
+  const behind = everything.find((object) => object.kind === 'path');
+  const litWord = await runOf(highlighted, 'reviewer');
+  const wordObjects = everything.filter(
+    (object) => object.kind === 'text' && behind !== undefined && object.left >= behind.left - 0.5 && object.right <= behind.right + 0.5,
+  );
+  record(
+    'a highlight mark draws its colour behind its words: as wide as they are, covering them, and earlier in the page’s order',
+    behind !== undefined && litWord !== undefined &&
+      behind.fill?.red === 255 && behind.fill.green === 230 && behind.fill.blue === 0 &&
+      Math.abs(behind.right - behind.left - reviewerWidth) < 1 &&
+      behind.bottom < litWord.bottom && behind.top > litWord.top - 1 &&
+      wordObjects.length > 0 && wordObjects.every((object) => object.index > behind.index),
+    `${JSON.stringify(behind)}; the words' objects at ${JSON.stringify(wordObjects.map((object) => object.index))}`,
+  );
+
+  // CHARACTER SPACING: the word's own object drawn wider by the spacing after each letter, and the editor's reading of
+  // its line still the words, with no space read between the letters (the bound's reason, ADR-0228).
+  /** The width of the object that says `word` alone, from the reading that is NOT joined into lines. */
+  const objectWidth = async (/** @type {Uint8Array} */ bytes, /** @type {string} */ word) => {
+    const session = await pdfiumWriter.open(bytes);
+    try {
+      const own = (await objectRuns(session, 0)).runs.find((run) => run.text.trim() === word);
+      return own === undefined ? undefined : own.right - own.left;
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  };
+  const spacedOut = await format({ marks: [{ ...at('reviewer'), set: { spacing: 0.1 } }] });
+  const wide = await objectWidth(spacedOut, 'reviewer');
+  const spacedLine = await runOf(spacedOut, 'reviewer');
+  const plainMarked = await format({ marks: [{ ...at('reviewer'), set: { colour: { r: 0, g: 0, b: 1 } } }] });
+  const narrow = await objectWidth(plainMarked, 'reviewer');
+  record(
+    'a spacing mark of 0.1 sets each letter of its word 0.1 of the size further on, and the line still reads as its words',
+    wide !== undefined && narrow !== undefined &&
+      // EIGHT LETTERS, SEVEN GAPS INSIDE THE WORD that its ink spans: 7 x 1.1 points.
+      Math.abs(wide - narrow - 7 * 1.1) < 1 &&
+      /\bkeen reviewer reads\b/u.test(spacedLine?.text ?? ''),
+    `reviewer ${String(wide?.toFixed(2))} wide against ${String(narrow?.toFixed(2))} with a colour alone; line ${JSON.stringify(spacedLine?.text)}`,
+  );
+  record(
+    'CONTROL: the colour mark made the word its own object too, so the width compared is the same object’s without spacing',
+    narrow !== undefined && Math.abs(narrow - reviewerWidth) < 2,
+    `${String(narrow?.toFixed(2))} against the font's ${reviewerWidth.toFixed(2)}`,
+  );
+
   // SUPERSCRIPT: smaller, and higher than the words beside it.
   const raised = await format({ marks: [{ ...at('lazy'), set: { rise: 'superscript' } }] });
   const lazy = await runOf(raised, 'lazy');
@@ -4067,6 +4143,39 @@ async function formatCases() {
     'a left indent of 30 points moves every line of the paragraph in by 30',
     indentedBlock !== undefined && indentedBlock.lines.every((line) => Math.abs(line.box.x0 - (lefts[0] ?? 0) - 30) < 2),
     `lefts ${JSON.stringify(indentedBlock?.lines.map((line) => Math.round(line.box.x0 * 10) / 10))} against ${String(lefts[0])}`,
+  );
+
+  // JUSTIFY (ADR-0228): every wrapped line ends at the block's right edge, and the paragraph's last line does not. Set
+  // with a 30-point indent, so the lines wrap afresh at a narrower measure, where left-set lines end ragged (the control).
+  const justified = await format({ paragraphs: [{ paragraph: 0, align: 'justify', leftIndent: 30 }] });
+  const justifiedBlock = (await blocksOf(justified)).blocks[0];
+  const rights = justifiedBlock?.lines.map((line) => line.box.x1) ?? [];
+  const edge = Math.max(...block.lines.map((line) => line.box.x1));
+  record(
+    'a justify setting ends every wrapped line of the paragraph at its right edge, and leaves its last line short',
+    rights.length >= 3 &&
+      rights.slice(0, -1).every((right) => Math.abs(right - edge) < 2) &&
+      (rights.at(-1) ?? edge) < edge - 5 &&
+      justifiedBlock?.lines.map((line) => lineText(line.runs)).join(' ').replace(/\s+/gu, ' ').trim() === words.replace(/\s+/gu, ' ').trim(),
+    `rights ${JSON.stringify(rights.map((right) => Math.round(right * 10) / 10))} against ${edge.toFixed(1)}`,
+  );
+  const ragged = (indentedBlock?.lines ?? []).slice(0, -1).map((line) => line.box.x1);
+  record(
+    'CONTROL: the same indent set left ends its wrapped lines ragged, so their one right edge is the justify’s',
+    ragged.length >= 2 && Math.max(...ragged) - Math.min(...ragged) > 2,
+    `rights set left ${JSON.stringify(ragged.map((right) => Math.round(right * 10) / 10))}`,
+  );
+
+  // SPACE AFTER: a second paragraph sits that much lower.
+  const twoParagraphs = `${words}\nA second paragraph`;
+  const plainTwo = await format({ text: twoParagraphs });
+  const spacedTwo = await format({ text: twoParagraphs, paragraphs: [{ paragraph: 0, spaceAfter: 18 }] });
+  const secondAt = async (/** @type {Uint8Array} */ bytes) => (await runOf(bytes, 'second'))?.bottom ?? 0;
+  const drop = (await secondAt(plainTwo)) - (await secondAt(spacedTwo));
+  record(
+    'a space-after setting of 18 points puts the next paragraph 18 points lower than the same words without it',
+    Math.abs(drop - 18) < 1.5,
+    `the second paragraph ${drop.toFixed(2)} lower`,
   );
 }
 

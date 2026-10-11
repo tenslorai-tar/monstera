@@ -3,6 +3,19 @@ import { type Result, err, ok } from '@monstera/shared';
 
 import type { PageFont } from './pageFonts.js';
 import { type BlockPlan, type FlowLine, type Measure, NO_MARK, type Row, largestFit, planBlock } from './paragraphFlow.js';
+import {
+  HIGHLIGHT_ABOVE,
+  HIGHLIGHT_BELOW,
+  JUSTIFY_CAP,
+  RISE_SCALE,
+  STRIKE_RISE,
+  SUBSCRIPT_DROP,
+  SUPERSCRIPT_RISE,
+  UNDERLINE_DROP,
+  UNDERLINE_THICKNESS,
+  spaceable,
+  spacedBy,
+} from './markFigures.js';
 import { type Alignment, blockShape, paragraphSpacing } from './paragraphShape.js';
 import {
   type Matrix,
@@ -230,6 +243,12 @@ interface SegmentStyle {
   /** How far above the line's baseline, in user space. */
   readonly rise: number;
   readonly underline: boolean;
+  /** A line through the words (ADR-0228 Decision 1). */
+  readonly strike: boolean;
+  /** The colour drawn behind the words, in 0 to 255, or none. */
+  readonly highlight: readonly [number, number, number] | undefined;
+  /** User-space units `Tc` adds after every code shown. */
+  readonly spacing: number;
 }
 
 interface Segment {
@@ -247,12 +266,6 @@ interface Segment {
   readonly verbatim?: string;
 }
 
-/** How a superscript or subscript is set, and the rule under underlined words: the PDFium writer's figures. */
-const RISE_SCALE = 0.65;
-const SUPERSCRIPT_RISE = 0.33;
-const SUBSCRIPT_DROP = 0.12;
-const UNDERLINE_THICKNESS = 0.06;
-const UNDERLINE_DROP = 0.12;
 
 interface VisualLine {
   readonly baseline: number;
@@ -705,7 +718,9 @@ function write(
       const factor = (size / Math.max(sizePt, 0.01)) * (set.rise === undefined ? 1 : RISE_SCALE);
       const rise =
         set.rise === 'superscript' ? SUPERSCRIPT_RISE * size : set.rise === 'subscript' ? -SUBSCRIPT_DROP * size : 0;
-      return { set, source, font, sizePt, restyle, size, factor, rise };
+      // CHARACTER SPACING IN USER SPACE, at the size the words are drawn: the wire's fraction of that size.
+      const spacing = (set.spacing ?? 0) * size * (set.rise === undefined ? 1 : RISE_SCALE);
+      return { set, source, font, sizePt, restyle, size, factor, rise, spacing };
     };
     const changes = (runId: number, mark: number): boolean => {
       const { set, font, sizePt } = markStyle(byId.get(runId) ?? firstRun, mark);
@@ -717,6 +732,9 @@ function write(
         set.colour !== undefined ||
         (set.family !== undefined && !(font.face ?? '').toLowerCase().includes(set.family.toLowerCase())) ||
         set.underline === true ||
+        set.strike === true ||
+        (set.highlight !== undefined && set.highlight !== null) ||
+        (set.spacing !== undefined && set.spacing !== 0) ||
         set.rise !== undefined
       );
     };
@@ -746,15 +764,18 @@ function write(
       const source = sourceOf(run);
       const marked = mark === NO_MARK ? undefined : markStyle(run, mark);
       const unit = placed(run.first).unit * (marked?.factor ?? 1) * shrink;
-      return tokens(text).reduce((sum, token) => {
-        const pieces = piecesOf(source, token, restyleOf(marked));
-        return pieces === null ? sum : sum + widthOfPieces(source, pieces, unit);
-      }, 0);
+      return (
+        tokens(text).reduce((sum, token) => {
+          const pieces = piecesOf(source, token, restyleOf(marked));
+          return pieces === null ? sum : sum + widthOfPieces(source, pieces, unit);
+        }, 0) + spacedBy(text, (marked?.spacing ?? 0) * shrink)
+      );
     };
 
     /**
      * Lays out `words` set in `source`'s state from `x` on `line`, answering where it ended. `marked` is the mark that
-     * styles them, where one does: its face, its size and rise, its colour and its rule.
+     * styles them, where one does: its face, its size and rise, its colour, its drawings and its spacing. `perSpace` is
+     * what a justified line adds after each space (ADR-0228 Decision 1).
      */
     const layOut = (
       source: ShowOperator,
@@ -762,8 +783,13 @@ function write(
       x: number,
       line: VisualLine,
       marked?: ReturnType<typeof markStyle>,
+      perSpace = 0,
     ): number => {
       const unit = placed(indexOf.get(source) ?? -1).unit * (marked?.factor ?? 1) * shrink;
+      // NO SPACING NOR STRETCH IN A JOINED RIGHT-TO-LEFT SCRIPT, the measure's own rule (`spacedBy`).
+      const spacing = spaceable(words) ? (marked?.spacing ?? 0) * shrink : 0;
+      const stretch = spaceable(words) ? perSpace : 0;
+      const highlight = marked?.set.highlight ?? null;
       const style: SegmentStyle | undefined =
         marked === undefined && shrink === 1
           ? undefined
@@ -772,6 +798,9 @@ function write(
               factor: (marked?.factor ?? 1) * shrink,
               rise: (marked?.rise ?? 0) * shrink,
               underline: marked?.set.underline === true,
+              strike: marked?.set.strike === true,
+              highlight: highlight === null ? undefined : [highlight.r, highlight.g, highlight.b],
+              spacing,
             };
       let cursor = x;
       for (const token of tokens(words)) {
@@ -799,16 +828,21 @@ function write(
           } else {
             line.segments.push({ source, font: piece.font, codes: [...piece.codes], text, x: at, style });
           }
-          at += widths[k] ?? 0;
+          // `Tc` MOVES THE PEN AFTER EVERY CODE SHOWN, so the spacing is the codes' count's.
+          at += (widths[k] ?? 0) + spacing * piece.codes.length;
         }
-        cursor += width;
+        // A SPACE NO FONT CARRIES is no code, and still takes its spacing, as the measure counts it; a justified line's
+        // space then moves the pen on, which starts the next word in a segment of its own at its own `Tm`.
+        cursor += width + (pieces.length === 0 ? spacedBy(token, spacing) : spacing * pieces.reduce((sum, piece) => sum + piece.codes.length, 0));
+        if (token === ' ') cursor += stretch;
       }
       return cursor;
     };
     const segmentWidth = (segment: Segment): number =>
       (advanceOf(segment.font, segment.codes, segment.source.state) ?? 0) *
-      placed(indexOf.get(segment.source) ?? -1).unit *
-      (segment.style?.factor ?? 1);
+        placed(indexOf.get(segment.source) ?? -1).unit *
+        (segment.style?.factor ?? 1) +
+      (segment.style?.spacing ?? 0) * segment.codes.length;
     /**
      * Carries `line`'s operators to the block's new place as they are, `dy` lower than they stood, each an object of its
      * own at the origin it was drawn from: its codes, its kerning and its font are the page's. False where one cannot be
@@ -866,7 +900,7 @@ function write(
     // HOW EACH PARAGRAPH IS SET: the block's shape with what the person set over it (ADR-0180 Decision 2), as the PDFium
     // writer reads it. Edges are origins here, since an operator is placed by where its glyph is drawn from.
     const settings = new Map((block.paragraphs ?? []).map((setting) => [setting.paragraph, setting]));
-    const setFor = (place: number): { align: Alignment; leftEdge: number; first: number; centre: number } => {
+    const setFor = (place: number): { align: Alignment | 'justify'; leftEdge: number; first: number; centre: number } => {
       const given = settings.get(place);
       const align = given?.align ?? shape.align;
       const leftEdge = given?.leftIndent === undefined ? restOrigin : blockLeft + given.leftIndent;
@@ -895,9 +929,14 @@ function write(
             (setting.leftIndent !== undefined && Math.abs(blockLeft + setting.leftIndent - restOrigin) > 0.5) ||
             (setting.firstIndent !== undefined && Math.abs(setting.firstIndent - shape.firstIndent) > 0.5) ||
             (setting.lineSpacing !== undefined && Math.abs(setting.lineSpacing - 1) > 0.01) ||
-            (setting.spaceBefore !== undefined && setting.spaceBefore > 0.5),
+            (setting.spaceBefore !== undefined && setting.spaceBefore > 0.5) ||
+            (setting.spaceAfter !== undefined && setting.spaceAfter > 0.5),
         )
         .map((setting) => setting.paragraph),
+      // SPACE AFTER A PARAGRAPH is the gap above the next one's first line, so the paragraph after it is set again too.
+      ...(block.paragraphs ?? [])
+        .filter((setting) => setting.spaceAfter !== undefined && setting.spaceAfter > 0.5)
+        .map((setting) => setting.paragraph + 1),
       // A NEW MEASURE SETS EVERY PARAGRAPH AGAIN, words or not: the lines the old measure broke are not the lines the new
       // one does.
       ...(measured ? Array.from({ length: text.split('\n').length }, (_, paragraph) => paragraph) : []),
@@ -915,14 +954,17 @@ function write(
       let above = baselines[0] ?? 0;
       for (const [at, row] of rows.entries()) {
         const given = row.kind === 'new' ? settings.get(row.paragraph) : undefined;
-        const spaced = given?.lineSpacing !== undefined || given?.spaceBefore !== undefined;
+        // THE SPACE AFTER THE PARAGRAPH ABOVE, added to this one's space before, the PDFium writer's rule (ADR-0228).
+        const afterAbove = row.kind === 'new' && row.first && at > 0 ? settings.get(row.paragraph - 1)?.spaceAfter : undefined;
+        const between = (given?.spaceBefore ?? (afterAbove === undefined ? spacing : 0)) + (afterAbove ?? 0);
+        const spaced = given?.lineSpacing !== undefined || given?.spaceBefore !== undefined || afterAbove !== undefined;
         const gap =
           row.kind === 'old'
             ? oldGap(row.line)
             : row.kind === 'blank'
               ? pitch + (row.opens ? spacing : 0)
               : spaced
-                ? pitch * (given.lineSpacing ?? 1) + (row.first && at > 0 ? (given.spaceBefore ?? spacing) : 0)
+                ? pitch * (given?.lineSpacing ?? 1) + (row.first && at > 0 ? between : 0)
                 : row.replaces > 0
                   ? oldGap(row.replaces)
                   : pitch + (row.opens ? spacing : 0);
@@ -1014,8 +1056,29 @@ function write(
               : set.leftEdge + (row.first ? set.first : 0);
       const placedLine: VisualLine = { baseline: target, segments: [] };
       visual.push(placedLine);
+      // A JUSTIFIED PARAGRAPH'S WRAPPED LINE widens its spaces to the measure, capped as the PDFium writer caps it; its last
+      // line is not stretched (ADR-0228 Decision 1).
+      const setting = row.pieces.slice(untouched);
+      const spaces =
+        set.align === 'justify' && !row.last
+          ? setting.reduce(
+              (sum, piece, at) =>
+                sum +
+                (spaceable(piece.text)
+                  ? Array.from(at === setting.length - 1 ? piece.text.trimEnd() : piece.text).filter((each) => each === ' ').length
+                  : 0),
+              0,
+            )
+          : 0;
+      const smallest = Math.min(
+        ...setting.map((piece) => {
+          const run = byId.get(piece.run) ?? firstRun;
+          return sourceOf(run).state.size * placed(run.first).unit * shrink;
+        }),
+      );
+      const perSpace = spaces === 0 ? 0 : Math.max(0, Math.min((blockRight - x - row.width) / spaces, JUSTIFY_CAP * smallest));
       let cursor = x;
-      for (const piece of row.pieces.slice(untouched)) {
+      for (const piece of setting) {
         const run = byId.get(piece.run) ?? firstRun;
         cursor = layOut(
           sourceOf(run),
@@ -1023,6 +1086,7 @@ function write(
           cursor,
           placedLine,
           piece.mark === NO_MARK ? undefined : markStyle(run, piece.mark),
+          perSpace,
         );
       }
       laid.push(row.pieces.map((piece) => piece.text).join(''));
@@ -1082,8 +1146,16 @@ function write(
     let fontSize = 0;
     /** Whether the fill colour in force is a mark's, so the next segment starts from the source's own again. */
     let tinted = false;
-    /** The rules under underlined words, drawn after the text object, in the same space. */
+    /** The rules under and through marked words, drawn after the text object, in the same space. */
     const rules: string[] = [];
+    /** The colours behind highlighted words, drawn BEFORE the text object, in the same space, so the words are over them. */
+    const behind: string[] = [];
+    /**
+     * The `Tc` this writer last said, or `null` while it has said none and the page's own is in force. Once said it is
+     * said again wherever it differs from what the next segment needs: a source's settings replayed need not name a `Tc`,
+     * so a mark's spacing would otherwise carry on into the words after it, the fill colour's reason (`tinted`).
+     */
+    let said: number | null = null;
     for (const segment of segments) {
       const style = segment.style;
       if (segment.source !== replayed || tinted) {
@@ -1112,24 +1184,41 @@ function write(
         font = segment.font.resource;
         fontSize = size;
       }
+      // CHARACTER SPACING AS `Tc`, in the unscaled text space `Tc` is stated in: the user-space spacing over the units one
+      // text-space unit is on the page, on top of the source's own (ADR-0228 Decision 1).
+      const unit = placed(indexOf.get(segment.source) ?? -1).unit;
+      const wanted = segment.source.state.charSpacing + (style?.spacing === undefined || style.spacing === 0 || unit === 0 ? 0 : style.spacing / unit);
+      if ((said !== null || wanted !== segment.source.state.charSpacing) && (said === null || Math.abs(said - wanted) > 1e-6)) {
+        parts.push(`${num(wanted)} Tc`);
+        said = wanted;
+      }
       const [a, b, c, d] = segment.source.state.matrix;
       const raised = segment.baseline + (style?.rise ?? 0);
       const [e, f] = apply(toBt, segment.x, raised);
       parts.push(`${[a, b, c, d, e, f].map(num).join(' ')} Tm ${segment.verbatim ?? `${hexOf(segment.font, segment.codes)} Tj`}`);
-      if (style?.underline === true) {
-        // THE RULE: this wide, a little under the baseline, in the words' colour where a mark set one and else black —
-        // the page's own fill is not something its operators can be asked.
-        const pointSize = segment.source.state.size * placed(indexOf.get(segment.source) ?? -1).unit * (style.factor === 0 ? 1 : style.factor);
+      // A RECTANGLE AS WIDE AS THE SEGMENT from `bottom` to `top` above the baseline, in the space the words are written in.
+      const drawn = (bottom: number, top: number, colour: readonly number[]): string => {
+        const [x0, y0] = apply(toBt, segment.x, raised + bottom);
+        const [x1, y1] = apply(toBt, segment.x + segmentWidth(segment), raised + top);
+        return `q ${colour.map((channel) => num(channel / 255)).join(' ')} rg ${[Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0)].map(num).join(' ')} re f Q`;
+      };
+      if (style !== undefined && (style.underline || style.strike || style.highlight !== undefined)) {
+        // THE RULES: this thick, under the baseline and through the words, in the words' colour where a mark set one and
+        // else black — the page's own fill is not something its operators can be asked. The highlight in its own colour.
+        const pointSize = segment.source.state.size * unit * (style.factor === 0 ? 1 : style.factor);
         const thickness = Math.max(0.5, UNDERLINE_THICKNESS * pointSize);
-        const [x0, y0] = apply(toBt, segment.x, raised - UNDERLINE_DROP * pointSize - thickness);
-        const [x1, y1] = apply(toBt, segment.x + segmentWidth(segment), raised - UNDERLINE_DROP * pointSize);
-        const colour = style.colour ?? [0, 0, 0];
-        rules.push(
-          `q ${colour.map((channel) => num(channel / 255)).join(' ')} rg ${[Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0)].map(num).join(' ')} re f Q`,
-        );
+        const ink = style.colour ?? [0, 0, 0];
+        if (style.underline) rules.push(drawn(-UNDERLINE_DROP * pointSize - thickness, -UNDERLINE_DROP * pointSize, ink));
+        if (style.strike) rules.push(drawn(STRIKE_RISE * pointSize, STRIKE_RISE * pointSize + thickness, ink));
+        if (style.highlight !== undefined) behind.push(drawn(-HIGHLIGHT_BELOW * pointSize, HIGHLIGHT_ABOVE * pointSize, style.highlight));
       }
     }
     parts.push(...(rules.length === 0 ? ['ET Q\n'] : ['ET', ...rules, 'Q\n']));
+    // THE COLOURS BEHIND go between the `q` (and the placement's `cm`) and the `BT`, so they are drawn first.
+    if (behind.length > 0) {
+      if (cm === null) parts.splice(0, 1, 'q', ...behind, 'BT');
+      else parts.splice(2, 0, ...behind);
+    }
     // BEFORE THE FIRST EDITED OPERATOR'S BT, so inside its marked content; for lines only added below the block, before
     // its last run's, whose marked content they continue.
     if (insert !== undefined) {

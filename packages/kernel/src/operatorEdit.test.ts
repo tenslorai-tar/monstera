@@ -461,6 +461,36 @@ describe('editOperators on paragraphs (ADR-0179)', () => {
       expect(under).toMatch(/q 0 0 0 rg 92 [\d.]+ 15 [\d.]+ re f Q/u);
     });
 
+    it('draws a line THROUGH struck words at STRIKE_RISE, as wide as they are (ADR-0228)', () => {
+      // `bbb` at 92, 15 wide; the line 2.6 above the baseline (0.26 of 10) and 0.6 thick.
+      expect(object({ strike: true })).toMatch(/q 0 0 0 rg 92 102\.6 15 0\.6 re f Q/u);
+      // CONTROL: an underline is the same rule under the baseline, so the case above is the strike's place.
+      expect(object({ underline: true })).not.toMatch(/ 102\.6 15 /u);
+    });
+
+    it('draws a highlight in its colour BEHIND the words: before the BT, from under the descenders to over the capitals', () => {
+      const written = object({ highlight: { r: 255, g: 255, b: 0 } });
+      const rect = /q 1 1 0 rg 92 97\.6 15 11\.4 re f Q/u.exec(written);
+      expect(rect).not.toBeNull();
+      expect(written.indexOf(rect?.[0] ?? '')).toBeLessThan(written.indexOf('BT'));
+      // CONTROL: the colour mark paints the words, not a rectangle behind them.
+      expect(object({ colour: { r: 255, g: 255, b: 0 } })).not.toContain(' re f Q');
+    });
+
+    it('sets character spacing as Tc, and says the page’s own again for the words after (ADR-0228)', () => {
+      // -0.1 of 10 points is a point closer, in a space where one text-space unit is one point. TIGHTER, so the line
+      // keeps its words: a wider `bbb` no longer fits the measure and `ccc` wraps, which is the layout being right.
+      const written = object({ spacing: -0.1 });
+      expect(written).toContain('-1 Tc');
+      expect(written.indexOf('0 Tc', written.indexOf('-1 Tc') + 5)).toBeGreaterThan(written.indexOf('-1 Tc'));
+      // THE SPACE AFTER `bbb` STARTS 3 POINTS SOONER: its three letters each a point closer.
+      expect(written).toContain('1 0 0 1 104 100 Tm');
+      // CONTROL: no spacing asked, no Tc said, and the space where the letters' own advances put it.
+      const plain = object({ colour: { r: 255, g: 0, b: 0 } });
+      expect(plain).not.toContain('Tc');
+      expect(plain).toContain('1 0 0 1 107 100 Tm');
+    });
+
     it('asks the faces for the weight a bold mark names, and refuses by name where there are none', () => {
       const asked: unknown[] = [];
       const face: PageFont = { ...font('Face1', 'abcdefghijklmnopqrstuvwxyz'), face: 'Arimo', weight: 700 };
@@ -479,6 +509,41 @@ describe('editOperators on paragraphs (ADR-0179)', () => {
       // CONTROL: with no faces the page cannot set a word bold, and says which letters.
       expect(marked({ bold: true })).toStrictEqual({ ok: false, error: { reason: 'needs-a-face', characters: ['b'] } });
     });
+  });
+
+  it('JUSTIFIES a wrapped line by widening its spaces, capped, and leaves the paragraph’s last line alone (ADR-0228)', () => {
+    // `aaa bbb` (35 wide) over `cccccccccccc` (60 wide), one paragraph: the measure is 60, so the first line has 25 to
+    // spare over its one space, which the cap holds to 0.6 of the size, 6.
+    const content = bytes(['BT /F1 10 Tf 1 0 0 1 72 100 Tm (aaa bbb) Tj ET', 'BT /F1 10 Tf 1 0 0 1 72 88 Tm (cccccccccccc) Tj ET'].join('\n'));
+    const page: PageRuns = { textObjects: [0, 1], runs: [inked(0, 'aaa bbb', 72, 107), inked(1, 'cccccccccccc', 72, 132)] };
+    const edit = (align: 'justify' | 'left') =>
+      editOperators(content, fonts, page, [
+        { lines: [[0], [1]], soft: [true, false], text: 'aaa bbb cccccccccccc', paragraphs: [{ paragraph: 0, align }] },
+      ]);
+    const justified = edit('justify');
+    if (!justified.ok) throw new Error(`refused: ${JSON.stringify(justified.error)}`);
+    const [object = ''] = inserted(justified.value);
+    // `bbb` AT 98: 72, `aaa` 15, the space 5 and the 6 it gained.
+    expect(object).toContain('1 0 0 1 98 100 Tm <626262>');
+    // THE LAST LINE IS NOT STRETCHED: `cccccccccccc` from the left edge, one segment.
+    expect(object).toContain('1 0 0 1 72 88 Tm <636363636363636363636363>');
+    // CONTROL: the same edit set left puts `bbb` where the letters' own advances do, so the 6 is the justify's.
+    const left = edit('left');
+    expect(left.ok).toBe(false);
+  });
+
+  it('puts SPACE AFTER a paragraph above the next one’s first line, and nothing above a line within it (ADR-0228)', () => {
+    const content = bytes(['BT /F1 10 Tf 1 0 0 1 72 100 Tm (aaa) Tj ET', 'BT /F1 10 Tf 1 0 0 1 72 88 Tm (bbb) Tj ET'].join('\n'));
+    const page: PageRuns = { textObjects: [0, 1], runs: [inked(0, 'aaa', 72, 87), inked(1, 'bbb', 72, 87)] };
+    const result = editOperators(content, fonts, page, [
+      { lines: [[0], [1]], soft: [false, false], text: 'aaa\nbbb', paragraphs: [{ paragraph: 0, spaceAfter: 10 }] },
+    ]);
+    if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+    // `bbb` 10 LOWER than the 12 the lines were apart: 100 - 22.
+    expect(inserted(result.value)[0]).toContain('1 0 0 1 72 78 Tm <626262>');
+    // CONTROL: the same paragraphs with nothing set are unchanged, so the 10 is the setting's.
+    const plain = editOperators(content, fonts, page, [{ lines: [[0], [1]], soft: [false, false], text: 'aaa\nbbb' }]);
+    expect(plain).toStrictEqual({ ok: false, error: { reason: 'unchanged' } });
   });
 
   it('keeps a centred line centred when its words change', () => {

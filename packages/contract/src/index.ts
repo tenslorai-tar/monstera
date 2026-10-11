@@ -415,6 +415,7 @@ export {
   type BlockPlace,
   type PageInsert,
   MAX_BLOCK_MARKS,
+  MAX_CHARACTER_SPACING,
   MAX_BLOCK_PLACES,
   MAX_INSERT_TEXT,
   MAX_PAGE_INSERTS,
