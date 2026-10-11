@@ -95,3 +95,24 @@ object states a glyph's own position, and it writes `TJ` adjustments.
   name `spaceAfter`. Older blocks read as before: absence is *as the read found it*.
 - `proof:pdfiumcommand` gains cases for each property against PDFium's and MuPDF's reads, and the text box proof reads
   each style back from the page in a second reader.
+
+## Correction, 2026-10-11 — what the build measured that the table above did not
+
+Three statements above were recorded more strongly than the probe supported, and the build found each:
+
+- **The table's *"`A B` (the mark is not read)"* row hid where the space came from.** On an edit's own bytes the lone
+  marked space produces NO character in PDFium's text page; the space it reads there is one the text page GENERATES for
+  the gap. So *"the block's read takes a marked object's `/ActualText`"* could not be done by reading characters: the walk
+  (`walkRuns`) adds each marked text object the text page skipped as a run of its own, in index order, takes back the
+  generated space it stands for, and lets it reach the words after it so the line stays one line. Read with
+  `scripts/research/pdfiumPositions.mjs`' calls on the bytes `proof:pdfiumcommand` writes.
+- **Decision 1 put character spacing on the wire *"in points"*.** It is a fraction of the size, bounded by the schema
+  (`MAX_CHARACTER_SPACING`), so the bound is the wire's own rather than a check each writer makes against a size it may
+  not be told; the panels take points and convert at the words' size (`spacingOf`).
+- **A no-break space was tried as the tab's glyph** so that the text page would give it a character. An embedded subset
+  font refused it (`TextNotWritableError` on the proof's fixture), so the gap stays a plain space, which every font a
+  page sets text in carries.
+
+The build also found a defect older than this decision: a block's edges were read from each run's first object only, so a
+line an earlier edit wrote as several objects was measured at that object's width. It is fixed where it was found
+(`b2be9256`), with a case in `proof:pdfiumcommand`.
