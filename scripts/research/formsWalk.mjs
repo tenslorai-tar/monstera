@@ -13,13 +13,14 @@
  * Tab and Shift+Tab, a tick box, a radio and a dropdown; Edit fields, a placed field, a move with a snap, its
  * Properties (A2, A3, E1, C6); the Fields list (A4); Detect on a flattened copy, page and all pages, with the count
  * (A5, F4); Flatten of the selected fields (A6, G1); a tab order given by clicking (H1); the three exports read back in
- * with no warning (A7); and save and reopen.
+ * with no warning (A7); a text field set in a real font and read back as drawn in it (A8.4, ADR-0229); and save and
+ * reopen.
  */
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect } from '@playwright/test';
-import { PDFDocument, PDFTextField } from '@cantoo/pdf-lib';
+import { PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream, PDFString, PDFTextField } from '@cantoo/pdf-lib';
 import { root, startWalk } from './liveWalk.mjs';
 
 const source = process.argv[2] ?? join(root, '_review/test-files/form-test.pdf');
@@ -28,6 +29,29 @@ if (!existsSync(source)) throw new Error(`No form at ${source}. Pass the path to
 const walk = await startWalk('forms');
 const { page, output, copyOf, open, saveTo, command, section, pressOn, step, finish } = walk;
 const form = await copyOf(source);
+
+/**
+ * The fields of a saved file that carry a real family (ADR-0229), each with the fonts its first widget's appearance names
+ * by BaseFont, read by pdf-lib: a family stored but drawn in Helvetica shows here as a name with no matching font.
+ * @param {string} path
+ */
+async function savedFieldFamilies(path) {
+  const document = await PDFDocument.load(await readFile(path), { updateMetadata: false });
+  const found = [];
+  for (const field of document.getForm().getFields()) {
+    const family = field.acroField.dict.lookup(PDFName.of('MonsteraFamily'));
+    if (!(family instanceof PDFString || family instanceof PDFHexString)) continue;
+    const appearance = field.acroField.getWidgets()[0]?.getNormalAppearance();
+    const resources = appearance instanceof PDFRawStream ? appearance.dict.lookupMaybe(PDFName.of('Resources'), PDFDict) : undefined;
+    const fonts = [];
+    for (const [, ref] of resources?.lookupMaybe(PDFName.of('Font'), PDFDict)?.entries() ?? []) {
+      const base = document.context.lookup(ref, PDFDict).lookupMaybe(PDFName.of('BaseFont'), PDFName);
+      if (base !== undefined) fonts.push(base.decodeText());
+    }
+    found.push({ field: field.getName(), family: family.decodeText(), fonts });
+  }
+  return found;
+}
 
 /** What the saved file's text fields hold, read by pdf-lib rather than by the app that wrote it. @param {string} path */
 async function savedValues(path) {
@@ -106,6 +130,16 @@ await step('the Properties tab changes the text colour, the size and the tooltip
   await tooltip.blur();
 });
 
+await step('A8.4: the selected text field’s font set to Calibri, offered among this computer’s fonts and drawn in it', async () => {
+  await page.getByRole('button', { name: /^Font:/u }).first().click();
+  const search = page.getByRole('combobox', { name: 'Search fonts' });
+  await search.fill('Calibri');
+  const offered = await page.locator('[data-font-choice]').evaluateAll((each) => each.map((node) => node.getAttribute('data-font-choice')));
+  await search.press('Enter');
+  await expect(page.getByRole('button', { name: 'Font: Calibri' }).first()).toBeVisible();
+  return { calibriOffered: offered.includes('Calibri') };
+});
+
 await step('Escape puts the selection down, a second Escape leaves Edit fields, and filling is back', async () => {
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
@@ -141,7 +175,7 @@ await step('save as, and the saved file holds the typed value, read by a second 
   await expect.poll(() => existsSync(saved), { timeout: 20_000 }).toBe(true);
   const read = await savedValues(saved);
   expect(Object.values(read.values).some((value) => value.includes('Ada Lovelace'))).toBe(true);
-  return { fields: read.count };
+  return { fields: read.count, fieldsInARealFont: await savedFieldFamilies(saved) };
 });
 
 for (const [format, extension] of /** @type {const} */ ([['JSON', 'json'], ['XFDF', 'xfdf'], ['FDF', 'fdf']])) {

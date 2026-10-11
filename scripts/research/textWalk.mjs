@@ -12,14 +12,16 @@
  *
  * Steps 1 to 7 are the bundle's walk; step 8 is the owner's CJK check (answer 3 of 2026-10-11): Chinese and Japanese
  * typed with Add text, saved, and read back as their own letters rather than missing-character boxes, with the font that
- * drew them named, so whether this Windows install leaves a CJK gap is a measurement and not a guess.
+ * drew them named, so whether this Windows install leaves a CJK gap is a measurement and not a guess. Steps 10 to 14 walk
+ * what the second cloud round built (ADR-0228): the formatting set, Tab, the document's fonts in the picker, and a text
+ * box styled word by word while typed and set in a real font, each read back from the saved file.
  */
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { expect } from '@playwright/test';
-import { PDFDict, PDFDocument, PDFName } from '@cantoo/pdf-lib';
+import { PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream, PDFString } from '@cantoo/pdf-lib';
 import { root, startWalk } from './liveWalk.mjs';
 
 const sample = process.argv[2] ?? join(root, '_review/test-files/sample5.pdf');
@@ -144,10 +146,11 @@ await step('5. a text box from the Comment tab: drawn, typed, Arial 11, a blue b
   await expect(properties.getByRole('group', { name: 'Text' })).toBeVisible();
   await expect(properties.getByRole('group', { name: 'Box' })).toBeVisible();
   await properties.getByRole('button', { name: /^Font:/u }).click();
-  // A TEXT BOX IS SET IN THE STANDARD FONTS until K2 is built: Arial is not offered there, and that is the finding.
+  // A TEXT BOX IS SET IN ANY FONT since K2 (ADR-0228 Decision 3): Arial is offered there, and chosen.
   const offered = await properties.locator('[data-font-choice]').evaluateAll((each) => each.map((node) => node.getAttribute('data-font-choice')));
-  await page.keyboard.press('Escape');
-  return { textBoxFontsOffered: offered };
+  await properties.getByRole('combobox', { name: 'Search fonts' }).fill('Arial');
+  await properties.getByRole('combobox', { name: 'Search fonts' }).press('Enter');
+  return { textBoxFontsOffered: offered.length, arialOffered: offered.includes('Arial') };
 });
 
 const saved = join(output, 'walked.pdf');
@@ -217,5 +220,109 @@ if (existsSync(handwritten)) {
     return { blocks: await page.locator('[data-text-block]').count() };
   });
 }
+
+/**
+ * The FreeText annotations of a saved file's first page, read by pdf-lib: each one's `/RC` and the fonts its appearance
+ * names by BaseFont, so a style that only looked right on screen does not pass. @param {string} path
+ */
+async function savedTextBoxes(path) {
+  const loaded = await PDFDocument.load(await readFile(path), { updateMetadata: false, ignoreEncryption: true });
+  const annots = loaded.getPages()[0]?.node.Annots();
+  const boxes = [];
+  for (let at = 0; at < (annots?.size() ?? 0); at += 1) {
+    const annot = annots?.lookupMaybe(at, PDFDict);
+    if (annot?.lookupMaybe(PDFName.of('Subtype'), PDFName)?.decodeText() !== 'FreeText') continue;
+    const rc = annot.lookup(PDFName.of('RC'));
+    const ap = annot.lookupMaybe(PDFName.of('AP'), PDFDict)?.lookup(PDFName.of('N'));
+    const fonts = [];
+    const resources = ap instanceof PDFRawStream ? ap.dict.lookupMaybe(PDFName.of('Resources'), PDFDict) : undefined;
+    for (const [, ref] of resources?.lookupMaybe(PDFName.of('Font'), PDFDict)?.entries() ?? []) {
+      const base = loaded.context.lookup(ref, PDFDict).lookupMaybe(PDFName.of('BaseFont'), PDFName);
+      if (base !== undefined) fonts.push(base.decodeText());
+    }
+    boxes.push({ rc: rc instanceof PDFString || rc instanceof PDFHexString ? rc.decodeText() : '', fonts });
+  }
+  return boxes;
+}
+
+const formatted = await copyOf(sample);
+await step('10. ADR-0228: strikethrough, a highlight, character spacing, Ctrl+J and space after on a paragraph, written once', async () => {
+  await open(formatted);
+  await section('Edit');
+  await command('Edit text on the page');
+  await page.locator('[data-text-block]').nth(1).click();
+  await expect(editor()).toBeFocused();
+  await page.keyboard.press('Control+Shift+ArrowRight');
+  await panel().getByRole('button', { name: 'Strikethrough' }).click();
+  await panel().getByRole('group', { name: 'Highlight' }).getByRole('button', { name: 'Yellow highlight' }).click();
+  const spacing = panel().getByRole('spinbutton', { name: 'Character spacing in points' });
+  await spacing.fill('0.5');
+  await spacing.press('Enter');
+  await page.keyboard.press('Control+A');
+  await page.keyboard.press('Control+J');
+  const after = panel().getByRole('spinbutton', { name: /Space after/u });
+  await after.fill('6');
+  await after.press('Enter');
+  await page.locator('canvas.m-page').first().click({ position: { x: 10, y: 10 } });
+  await expect(editor()).toHaveCount(0);
+});
+
+await step('11. K8: Tab in Edit text types a tab, the words after it move to the next stop, and the focus stays in the words', async () => {
+  await page.locator('[data-text-block]').nth(2).click();
+  await expect(editor()).toBeFocused();
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Tab');
+  await expect(editor()).toBeFocused();
+  const tabbed = await editor().evaluate((element) => element.textContent?.startsWith('\t') ?? false);
+  await page.locator('canvas.m-page').first().click({ position: { x: 10, y: 10 } });
+  return { tabInTheWords: tabbed };
+});
+
+await step('12. B2.8: In this document lists the fonts of every page, not only the open block’s', async () => {
+  await page.locator('[data-text-block]').first().click();
+  await panel().getByRole('button', { name: /^Font:/u }).click();
+  const group = panel().getByRole('listbox').getByRole('group', { name: 'In this document' });
+  const listed = await group.locator('[data-font-choice]').evaluateAll((each) => each.map((node) => node.getAttribute('data-font-choice')));
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  return { documentFonts: listed };
+});
+
+await step('13. B5.8 and K2: a text box typed with Ctrl+B mid-sentence, in Calibri from its Properties', async () => {
+  await section('Comment');
+  await command('Text box');
+  const surface = page.getByLabel('Draw on page 1');
+  const box = await surface.boundingBox();
+  if (box === null) throw new Error('no drawing surface');
+  await page.mouse.move(box.x + 80, box.y + 320);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 360, box.y + 400, { steps: 6 });
+  await page.mouse.up();
+  await page.keyboard.type('Plain then ');
+  await page.keyboard.press('Control+B');
+  await page.keyboard.type('bold');
+  await page.keyboard.press('Control+B');
+  await page.keyboard.type(' words');
+  await page.keyboard.press('Escape');
+  await page.locator('[data-annotation-index]').last().click();
+  const properties = page.getByRole('complementary', { name: 'Properties' });
+  await properties.getByRole('button', { name: /^Font:/u }).click();
+  await properties.getByRole('combobox', { name: 'Search fonts' }).fill('Calibri');
+  await properties.getByRole('combobox', { name: 'Search fonts' }).press('Enter');
+});
+
+const formattedSaved = join(output, 'formatted.pdf');
+await step('14. saved: the paragraph’s words, the tab, the text box’s bold run and its embedded Calibri are in the file', async () => {
+  await saveTo(formattedSaved);
+  await page.keyboard.press('Control+Shift+S');
+  await expect.poll(() => existsSync(formattedSaved), { timeout: 30_000 }).toBe(true);
+  const boxes = await savedTextBoxes(formattedSaved);
+  const walked = boxes.find((each) => each.rc.includes('bold'));
+  return {
+    pageFonts: await savedFonts(formattedSaved),
+    textBoxBoldRun: walked?.rc.includes('font-weight:bold') ?? false,
+    textBoxFonts: walked?.fonts ?? [],
+  };
+});
 
 await finish();
