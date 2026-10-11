@@ -1027,6 +1027,11 @@ function BlockEditor({
             row.append(join);
           }
         }
+        // A PARAGRAPH WITH NO WORDS KEEPS A LINE: an empty `span` in a `div` lays out no line box, and Chromium then has no
+        // position in it to type at, so every key fired and nothing was inserted (a new box of Add text is one such
+        // paragraph). The break is the placeholder the browser gives an emptied line itself, and `readEditor` reads it
+        // as nothing.
+        if (row.textContent === '') row.append(owner.createElement('br'));
         return row;
       }),
     );
@@ -1035,8 +1040,12 @@ function BlockEditor({
     // a paragraph opens it there and not at its end. A key, or a point outside the words, leaves it at the end.
     if (click !== undefined && caretAt(element, click)) return;
     const range = owner.createRange();
-    range.selectNodeContents(element);
-    range.collapse(false);
+    // AT THE END OF THE LAST LINE, inside it: the end of the editor itself is after its last `div`, which is a place to
+    // type only where the browser happens to move the caret back into a line, and it does not into an empty one.
+    const lastRow = element.lastElementChild;
+    if (lastRow !== null && lastRow.textContent === '') range.setStart(lastRow, 0);
+    else range.selectNodeContents(element);
+    range.collapse(lastRow !== null && lastRow.textContent === '');
     const selection = owner.getSelection();
     selection?.removeAllRanges();
     selection?.addRange(range);
