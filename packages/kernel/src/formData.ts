@@ -328,18 +328,36 @@ export interface ImportedField {
  * an arbitrary JSON document matches nothing and the import reports success
  * over a file that was never one of ours.
  *
+ * **The records are read one at a time** ({@link importedJsonRecordSchema}): a file that is ours and carries one record
+ * of the wrong shape is ours, and refusing it would cost the person every field that was fine (Codex R1-a).
+ *
  * Bounded by the file's bytes, not per axis: see the note above.
  */
 const importedJsonSchema = z.object({
   format: z.literal(FORM_DATA_JSON_MARKER),
   version: z.literal(FORM_DATA_JSON_VERSION),
-  fields: z.array(
-    z.object({
-      name: z.string(),
-      values: z.array(z.string()),
-    }),
-  ),
+  fields: z.array(z.unknown()),
 });
+
+/** One record of the JSON: a name and its values, every one text. */
+const importedJsonRecordSchema = z.object({
+  name: z.string(),
+  values: z.array(z.string()),
+});
+
+/**
+ * What a data file says: the fields it names, and the records nothing could be read from, each named as well as it can
+ * be — by its own name where it has one, else by its place in the file — so an import says which it passed over.
+ */
+export interface ParsedFormData {
+  readonly fields: readonly ImportedField[];
+  readonly unreadable: readonly string[];
+}
+
+/** A record named by its place in the file, counted from 1 as a person counts: what a record with no name is called. */
+function recordAt(index: number): string {
+  return `#${String(index + 1)}`;
+}
 
 /** A form-data file this build will not read. */
 export class UnreadableFormDataError extends Error {
@@ -369,12 +387,9 @@ export class NoMatchingFieldsError extends Error {
  * and a hand-written check would be a second opinion about it. What the schema
  * adds is the shape, the marker and the bounds.
  */
-export function parseFormData(
-  bytes: Uint8Array,
-  format: FormDataImportFormat,
-): readonly ImportedField[] {
+export function parseFormData(bytes: Uint8Array, format: FormDataImportFormat): ParsedFormData {
   if (format === 'json') return parseJson(bytes);
-  if (format === 'xfdf') return parseXfdf(bytes);
+  if (format === 'xfdf') return { fields: parseXfdf(bytes), unreadable: [] };
   return parseFdf(bytes);
 }
 
@@ -402,7 +417,7 @@ function parseXfdf(bytes: Uint8Array): readonly ImportedField[] {
   return readXfdf(text);
 }
 
-function parseJson(bytes: Uint8Array): readonly ImportedField[] {
+function parseJson(bytes: Uint8Array): ParsedFormData {
   let decoded: unknown;
   try {
     // `fatal: true` SO INVALID UTF-8 IS A REFUSAL rather than a run of
@@ -420,7 +435,19 @@ function parseJson(bytes: Uint8Array): readonly ImportedField[] {
       `it is JSON, but not this build's form data — ${parsed.error.issues[0]?.message ?? 'wrong shape'}`,
     );
   }
-  return parsed.data.fields;
+  const fields: ImportedField[] = [];
+  const unreadable: string[] = [];
+  parsed.data.fields.forEach((record, index) => {
+    const read = importedJsonRecordSchema.safeParse(record);
+    if (read.success) {
+      fields.push(read.data);
+      return;
+    }
+    // NAMED AS WELL AS IT CAN BE: its own name where that much is text, else its place in the file.
+    const name = typeof record === 'object' && record !== null && 'name' in record ? record.name : undefined;
+    unreadable.push(typeof name === 'string' ? name : recordAt(index));
+  });
+  return { fields, unreadable };
 }
 
 /**
@@ -430,13 +457,15 @@ function parseJson(bytes: Uint8Array): readonly ImportedField[] {
  * so this opens the bytes as a document under the FDF magic string and walks
  * `/Root /FDF /Fields`, which is the structure PDF 32000-1 Annex L describes.
  *
- * **A tolerant read of a hostile file.** Every entry that does not answer a
- * name is skipped rather than throwing, because one malformed object in a file
- * a stranger wrote should not cost the caller the fields that were fine — and
- * the empty result is what refuses, one level up, where the message can say
- * which of *nothing matched* and *nothing was there* happened.
+ * **A tolerant read of a hostile file.** An entry that does not answer a name,
+ * or whose value is not text, is passed over rather than throwing, because one
+ * malformed object in a file a stranger wrote should not cost the caller the
+ * fields that were fine — and it is NAMED, never dropped in silence (Codex
+ * R1-a): by its `/T` where that is text, else by its place in the list. The
+ * empty result is what refuses, one level up, where the message can say which
+ * of *nothing matched* and *nothing was there* happened.
  */
-function parseFdf(bytes: Uint8Array): readonly ImportedField[] {
+function parseFdf(bytes: Uint8Array): ParsedFormData {
   let document: mupdf.Document;
   try {
     document = mupdf.PDFDocument.openDocument(bytes, 'application/vnd.fdf');
@@ -451,28 +480,39 @@ function parseFdf(bytes: Uint8Array): readonly ImportedField[] {
     if (!list.isArray()) {
       throw new UnreadableFormDataError('it has no /Root /FDF /Fields array');
     }
-    const found: ImportedField[] = [];
+    const fields: ImportedField[] = [];
+    const unreadable: string[] = [];
     for (let index = 0; index < list.length; index += 1) {
       const entry = list.get(index);
-      if (!entry.isDictionary()) continue;
-      const name = entry.get('T');
-      if (!name.isString()) continue;
-      found.push({ name: name.asString(), values: fdfEntryValues(entry.get('V')) });
+      const name = entry.isDictionary() ? entry.get('T') : null;
+      if (name === null || !name.isString()) {
+        unreadable.push(recordAt(index));
+        continue;
+      }
+      const values = fdfEntryValues(entry.get('V'));
+      if (values === null) unreadable.push(name.asString());
+      else fields.push({ name: name.asString(), values });
     }
-    return found;
+    return { fields, unreadable };
   } finally {
     document.destroy();
   }
 }
 
-/** What one FDF entry's `/V` holds, as strings. {@link fieldValues}' shape. */
-function fdfEntryValues(value: PDFObject): readonly string[] {
+/**
+ * What one FDF entry's `/V` holds, as strings, {@link fieldValues}' shape — or `null` when it holds something that is
+ * not text (a number, a dictionary, an array with one), which the import names rather than reading as empty. An entry
+ * with no `/V` holds no value, which is a value.
+ */
+function fdfEntryValues(value: PDFObject): readonly string[] | null {
+  if (value.isNull()) return [];
   if (value.isArray()) {
     const found: string[] = [];
     for (let index = 0; index < value.length; index += 1) {
       const entry = value.get(index);
       const text = entry.isName() ? entry.asName() : entry.isString() ? entry.asString() : null;
-      if (text !== null) found.push(text);
+      if (text === null) return null;
+      found.push(text);
     }
     return found;
   }
@@ -480,7 +520,7 @@ function fdfEntryValues(value: PDFObject): readonly string[] {
   // export's own branch read backwards.
   if (value.isName()) return [value.asName()];
   if (value.isString()) return [value.asString()];
-  return [];
+  return null;
 }
 
 /**
@@ -571,8 +611,9 @@ export function planFormImport(
   bytes: Uint8Array,
   format: FormDataImportFormat,
 ): FormImportPlan {
+  const parsed = parseFormData(bytes, format);
   const named = new Map<string, readonly string[]>();
-  for (const field of parseFormData(bytes, format)) named.set(field.name, field.values);
+  for (const field of parsed.fields) named.set(field.name, field.values);
 
   const fills: { widget: PDFWidget; value: FieldFill }[] = [];
   const skipped: ImportSkip[] = [];
@@ -615,6 +656,7 @@ export function planFormImport(
     }
   }
   for (const name of named.keys()) if (!found.has(name)) skip(name, 'not-in-document');
+  for (const name of parsed.unreadable) skip(name, 'unreadable-record');
 
   return { fills, skipped, named: named.size };
 }

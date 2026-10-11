@@ -12,6 +12,7 @@ import {
   IMPORT_SKIP_OPTION_NOT_OFFERED,
   IMPORT_SKIP_READ_ONLY,
   IMPORT_SKIP_SEVERAL_VALUES,
+  IMPORT_SKIP_UNREADABLE_RECORD,
 } from '../messages/en.js';
 
 /** The sentence for each reason a field was left alone. A Record, so a reason added to the contract is a compile error here. */
@@ -21,6 +22,7 @@ const REASON_MESSAGE: Readonly<Record<ImportSkipped['reason'], MessageKey>> = {
   'several-values': IMPORT_SKIP_SEVERAL_VALUES,
   'option-not-offered': IMPORT_SKIP_OPTION_NOT_OFFERED,
   'cannot-be-filled': IMPORT_SKIP_CANNOT_BE_FILLED,
+  'unreadable-record': IMPORT_SKIP_UNREADABLE_RECORD,
 };
 
 /**

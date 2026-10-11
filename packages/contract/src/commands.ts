@@ -4621,6 +4621,8 @@ export const IMPORT_SKIP_REASONS = [
   'several-values',
   'option-not-offered',
   'cannot-be-filled',
+  // A RECORD OF THE FILE no field can be read from: no name, or a value that is not text. The rest of the file is read.
+  'unreadable-record',
 ] as const;
 
 /** How many skipped fields an import's report names, and how much of each name: shown, so cut to what a row can hold. */

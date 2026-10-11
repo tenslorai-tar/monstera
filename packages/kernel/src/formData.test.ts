@@ -496,6 +496,55 @@ describe('applyImportFormData', () => {
     expect(after.find((field) => field.name === 'hostile.fdf')?.values).toStrictEqual(['landed']);
   });
 
+  it('READS THE RECORDS EITHER SIDE OF A MALFORMED JSON ONE, and names it (A7.5)', async () => {
+    // ONE RECORD OF THE WRONG SHAPE in a file that is ours: a value that is a number, and a record with no name. The
+    // records before and after it apply, so a reader that refused the file, or stopped at the bad record, leaves one unfilled.
+    const document = await form({ ticked: false, filled: false });
+    const mixed = new TextEncoder().encode(
+      JSON.stringify({
+        format: 'monstera-form-data',
+        version: 1,
+        fields: [
+          { name: 'hostile.fdf', values: ['applied before'] },
+          { name: 'hostile.xml', values: [42] },
+          { values: ['nobody'] },
+          { name: 'hostile.quote', values: ['applied after'] },
+        ],
+      }),
+    );
+    const { plan, after } = await onSession(document, async (session) => {
+      const planned = await withDocument(session, (opened) => planFormImport(opened, mixed, 'json'));
+      await applyImportFormData(session, { kind: 'importFormData', format: 'json', bytes: mixed });
+      return { plan: planned, after: await readFormData(session) };
+    });
+    // NAMED BY ITS OWN NAME where it has one, else by its place in the file.
+    expect(plan.skipped).toStrictEqual([
+      { name: 'hostile.xml', reason: 'unreadable-record' },
+      { name: '#3', reason: 'unreadable-record' },
+    ]);
+    expect(after.find((field) => field.name === 'hostile.fdf')?.values).toStrictEqual(['applied before']);
+    expect(after.find((field) => field.name === 'hostile.quote')?.values).toStrictEqual(['applied after']);
+  });
+
+  it('NAMES AN FDF ENTRY with no name or a value that is not text, rather than passing over it in silence (A7.5)', async () => {
+    const document = await form({ ticked: false, filled: false });
+    const fdf = new TextEncoder().encode(
+      '%FDF-1.2\n1 0 obj\n<< /FDF << /Fields [ << /T (hostile.fdf) /V (landed) >> << /V (orphan) >> ' +
+        '<< /T (hostile.quote) /V 42 >> ] >> >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n',
+    );
+    const { plan, after } = await onSession(document, async (session) => {
+      const planned = await withDocument(session, (opened) => planFormImport(opened, fdf, 'fdf'));
+      await applyImportFormData(session, { kind: 'importFormData', format: 'fdf', bytes: fdf });
+      return { plan: planned, after: await readFormData(session) };
+    });
+    expect(plan.skipped).toStrictEqual([
+      { name: '#2', reason: 'unreadable-record' },
+      { name: 'hostile.quote', reason: 'unreadable-record' },
+    ]);
+    // CONTROL: the readable entry beside them is filled, so the names above are not an import that read nothing.
+    expect(after.find((field) => field.name === 'hostile.fdf')?.values).toStrictEqual(['landed']);
+  });
+
   it('PUTS A RADIO GROUP ON THE RIGHT WIDGET, which no widget can decide alone', async () => {
     // The one place a field's value means different things to different
     // widgets: the file names the chosen option's EXPORT value, and each widget
@@ -555,8 +604,9 @@ describe('parseFormData, a large form', () => {
       expect(bytes.byteLength).toBeLessThan(MAX_FORM_DATA_BYTES);
       expect(LONG.length).toBeGreaterThan(4096);
       const read = parseFormData(bytes, format);
-      expect(read).toHaveLength(5000);
-      expect(read.at(-1)).toStrictEqual({ name: 'section49.field4999', values: [LONG] });
+      expect(read.fields).toHaveLength(5000);
+      expect(read.fields.at(-1)).toStrictEqual({ name: 'section49.field4999', values: [LONG] });
+      expect(read.unreadable).toStrictEqual([]);
     });
   }
 });

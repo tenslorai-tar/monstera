@@ -352,6 +352,7 @@ export const IMPORT_SKIP_READ_ONLY = messageKey('dialog.import-form-data-result.
 export const IMPORT_SKIP_SEVERAL_VALUES = messageKey('dialog.import-form-data-result.several-values');
 export const IMPORT_SKIP_OPTION_NOT_OFFERED = messageKey('dialog.import-form-data-result.option-not-offered');
 export const IMPORT_SKIP_CANNOT_BE_FILLED = messageKey('dialog.import-form-data-result.cannot-be-filled');
+export const IMPORT_SKIP_UNREADABLE_RECORD = messageKey('dialog.import-form-data-result.unreadable-record');
 export const PAGE_TRANSITION_TITLE = messageKey('dialog.page-transition.title');
 export const PAGE_TRANSITION_REPLACE = messageKey('dialog.page-transition.replace');
 export const PAGE_TRANSITION_DISSOLVE = messageKey('dialog.page-transition.dissolve');
@@ -5434,6 +5435,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [IMPORT_SKIP_SEVERAL_VALUES]: 'The file gives several values, and this field takes one.',
   [IMPORT_SKIP_OPTION_NOT_OFFERED]: 'The value is not one of the field’s choices.',
   [IMPORT_SKIP_CANNOT_BE_FILLED]: 'This kind of field cannot take that value.',
+  // A NAME BEGINNING WITH # is the record's place in the file, which is all a record with no name can be called by.
+  [IMPORT_SKIP_UNREADABLE_RECORD]:
+    'This entry in the file could not be read: it has no field name, or its value is not text. The rest of the file was read.',
   [IMPORT_FORM_DATA_TOO_LARGE]:
     'Nothing was changed. Monstera reads form data files up to {megabytes} MB, and that one is larger.',
   [PAGE_TRANSITION_TITLE]: 'Page transition',

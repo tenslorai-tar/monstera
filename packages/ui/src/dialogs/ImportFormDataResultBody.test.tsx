@@ -33,7 +33,7 @@ describe('the import result dialog', () => {
       </Wrapped>,
     );
     expect(screen.getByText('Filled 12 fields.')).toBeTruthy();
-    expect(screen.getByText(/5 fields were left as they were/u)).toBeTruthy();
+    expect(screen.getByText(new RegExp(`${String(IMPORT_SKIP_REASONS.length)} fields were left as they were`, 'u'))).toBeTruthy();
     const sentences = skipped.map((skip) => screen.getByText(skip.name).parentElement?.textContent ?? '');
     expect(new Set(sentences.map((text) => text.replace(/^field_\d+/u, ''))).size).toBe(IMPORT_SKIP_REASONS.length);
     for (const sentence of sentences) expect(sentence.length).toBeGreaterThan('field_0'.length + 10);
