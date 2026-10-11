@@ -476,9 +476,13 @@ describe('the text colour, typing in a dropdown, several in a list and spelling 
     expect((await read(reread, region)).editable).toBe(!before.region.editable);
     expect((await read(reread, interests)).multiSelect).toBe(!before.interests.multiSelect);
     expect((await read(reread, email)).spellCheck).toBe(!before.email.spellCheck);
-    // CONTROL: a flag a field does not have is not set on it: a text field is never a list that takes several.
+    // CONTROL: a flag a field does not have is not set on it: a text field is never a list that takes several. Read as
+    // the RAW /Ff, because the reader answers `multiSelect` false for any text field whatever its bits say, so a check
+    // through it passes for a writer that sets the bit.
     const ignored = await applyEditFormFields(original, editing(email, { multiSelect: true }));
-    expect((await read(await throughMupdf(ignored), email)).multiSelect).toBe(false);
+    const flags = async (bytes: Uint8Array): Promise<number> =>
+      (await PDFDocument.load(bytes, { updateMetadata: false })).getForm().getTextField('email').acroField.getFlags();
+    expect(await flags(ignored)).toBe(await flags(original));
   });
 });
 
