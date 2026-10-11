@@ -151,11 +151,15 @@ describe('formFieldTools — a drag places the box', () => {
     });
   });
 
-  it('a drag thinner than six points is grown to six, so the field can be clicked', async () => {
+  it('a drag smaller than the kind’s minimum is grown to it, so the field can be clicked', async () => {
     const { tools } = toolsOver();
-    // 100 by 6 pixels at zoom 2 is 50 by 3 points: the height grows to 6 points, 12 pixels.
+    // 100 by 6 pixels at zoom 2 is 50 by 3 points: a text field's height grows to 12 points, 24 pixels.
     expect(await press(toolWithId(tools, FORM_FIELD_TEXT_TOOL_ID), [20, 20], [120, 26])).toMatchObject({
-      fields: [{ rect: { x0: 60, y0: 390, x1: 110, y1: 384 } }],
+      fields: [{ rect: { x0: 60, y0: 390, x1: 110, y1: 378 } }],
+    });
+    // A tick box's minimum is 8 points: 6 by 6 pixels is 3 by 3 points, grown to 8 by 8.
+    expect(await press(toolWithId(tools, FORM_FIELD_CHECKBOX_TOOL_ID), [20, 20], [26, 26])).toMatchObject({
+      fields: [{ rect: { x0: 60, y0: 390, x1: 68, y1: 382 } }],
     });
   });
 

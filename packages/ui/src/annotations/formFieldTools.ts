@@ -41,19 +41,19 @@ import type { TextToolDeps } from './textTools.js';
  */
 const MINIMUM_DRAG = 4;
 
-/**
- * The smallest side a dragged field may have, in points: a tick box's smallest workable size. A drag at a high zoom can
- * be a few points across, and a field that small is a control nobody can click and nothing on the page finds again.
- */
-const MINIMUM_SIDE = 6;
-
 /** What each tool builds, keyed by nothing — read at construction. */
 interface FieldToolShape {
   readonly id: string;
   /** The word a new field's name starts with, before its number (K1). */
   readonly word: string;
-  /** The size a click places, in points (ADR-0226 Decision 12). */
+  /** The size a click places, in points (ADR-0226 Decision 9). */
   readonly size: { readonly width: number; readonly height: number };
+  /**
+   * The smallest a drag may make it, in points: a drag at a high zoom can be a few points across, and a field that small
+   * is a control nobody can click and nothing on the page finds again. Smaller than {@link size}, so a drag can still
+   * make a field smaller than a click does.
+   */
+  readonly least: { readonly width: number; readonly height: number };
   /** The payload's discriminated member. A radio's is built by its run, so it has none here. */
   readonly build?: () => CreatedField;
 }
@@ -75,34 +75,49 @@ export const FORM_FIELD_SIGNATURE_TOOL_ID = 'forms.field-signature';
 /** The id of the tool that places a date field. */
 export const FORM_FIELD_DATE_TOOL_ID = 'forms.field-date';
 
+/** The smallest a field holding one line of words is made by a drag: room for a few characters at a readable size. */
+const LINE = { width: 24, height: 12 };
+/** The smallest a tick box or a radio is made by a drag: a mark a pointer can still find. */
+const MARK = { width: 8, height: 8 };
+
 /** The choices a new dropdown or list box starts with, edited in Properties. */
 const STARTING_CHOICES = ['Choice1', 'Choice2', 'Choice3'];
 
 const SHAPES: readonly FieldToolShape[] = [
-  { id: FORM_FIELD_TEXT_TOOL_ID, word: 'Text', size: { width: 180, height: 20 }, build: () => ({ type: 'text' }) },
+  {
+    id: FORM_FIELD_TEXT_TOOL_ID,
+    word: 'Text',
+    size: { width: 180, height: 20 },
+    least: LINE,
+    build: () => ({ type: 'text' }),
+  },
   {
     id: FORM_FIELD_CHECKBOX_TOOL_ID,
     word: 'Check Box',
     size: { width: 12, height: 12 },
+    least: MARK,
     build: () => ({ type: 'checkbox' }),
   },
-  { id: FORM_FIELD_RADIO_TOOL_ID, word: 'Group', size: { width: 12, height: 12 } },
+  { id: FORM_FIELD_RADIO_TOOL_ID, word: 'Group', size: { width: 12, height: 12 }, least: MARK },
   {
     id: FORM_FIELD_DROPDOWN_TOOL_ID,
     word: 'Dropdown',
     size: { width: 150, height: 20 },
+    least: LINE,
     build: () => ({ type: 'dropdown', options: STARTING_CHOICES }),
   },
   {
     id: FORM_FIELD_LISTBOX_TOOL_ID,
-    word: 'List Box',
+    word: 'List',
     size: { width: 150, height: 60 },
+    least: { width: 24, height: 24 },
     build: () => ({ type: 'listbox', options: STARTING_CHOICES }),
   },
   {
     id: FORM_FIELD_BUTTON_TOOL_ID,
     word: 'Button',
     size: { width: 80, height: 24 },
+    least: LINE,
     // THE WORDS ON A NEW BUTTON ARE THE DOCUMENT'S, like its name, so they are the kind's word and not a message in the
     // application's language: a form made here and sent abroad would otherwise carry the maker's interface language.
     build: () => ({ type: 'button', label: 'Button' }),
@@ -111,12 +126,14 @@ const SHAPES: readonly FieldToolShape[] = [
     id: FORM_FIELD_SIGNATURE_TOOL_ID,
     word: 'Signature',
     size: { width: 180, height: 40 },
+    least: { width: 48, height: 16 },
     build: () => ({ type: 'signature' }),
   },
   {
     id: FORM_FIELD_DATE_TOOL_ID,
     word: 'Date',
     size: { width: 100, height: 20 },
+    least: LINE,
     build: () => ({ type: 'date', pattern: localDatePattern() }),
   },
 ];
@@ -160,15 +177,13 @@ function dragged(gesture: Gesture): boolean {
  */
 function placedBox(gesture: Gesture, shape: FieldToolShape, transform: PageTransform): { from: ViewportPoint; to: ViewportPoint } {
   const from = startOf(gesture);
-  const least = MINIMUM_SIDE * transform.scale;
   if (dragged(gesture)) {
     const to = endOf(gesture);
     const x = Math.min(from.x, to.x);
     const y = Math.min(from.y, to.y);
-    return {
-      from: viewportPoint(x, y),
-      to: viewportPoint(x + Math.max(Math.abs(to.x - from.x), least), y + Math.max(Math.abs(to.y - from.y), least)),
-    };
+    const width = Math.max(Math.abs(to.x - from.x), shape.least.width * transform.scale);
+    const height = Math.max(Math.abs(to.y - from.y), shape.least.height * transform.scale);
+    return { from: viewportPoint(x, y), to: viewportPoint(x + width, y + height) };
   }
   const width = shape.size.width * transform.scale;
   const height = shape.size.height * transform.scale;
