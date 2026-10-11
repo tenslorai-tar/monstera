@@ -265,7 +265,7 @@ test.describe('the Forms tab', () => {
     const copies = sent.filter((call) => call.channel === 'document.execute');
     expect(copies.length).toBe(1);
     expect(copies[0]?.params).toMatchObject({
-      command: { kind: 'duplicateFormField', field: { page: 0, index: 0, name: 'Full name' }, pages: [2] },
+      command: { kind: 'duplicateFormField', field: { page: 0, index: 0, name: 'Full name' }, to: { kind: 'pages', pages: [2] } },
     });
   });
 

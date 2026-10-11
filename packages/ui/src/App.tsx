@@ -1315,7 +1315,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   /** Copies the one selected field onto the pages named (ADR-0193): one command, and the selection stays on the field. */
   const copyFieldToPages = useCallback(
     (field: FormFieldHandle, pages: readonly number[]): void => {
-      sendFieldCommand((version) => ({ kind: 'duplicateFormField', field, pages: pageSetOf(pages), version }));
+      sendFieldCommand((version) => ({ kind: 'duplicateFormField', field, to: { kind: 'pages', pages: pageSetOf(pages) }, version }));
     },
     [sendFieldCommand],
   );

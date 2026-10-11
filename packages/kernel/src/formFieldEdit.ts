@@ -683,10 +683,16 @@ export const applyDuplicateFormField: Apply<'pdf-lib', 'duplicateFormField'> = a
   const sourceNumber = document.getPages().indexOf(source);
   const sourceRect = widgetRectOf(widget);
 
-  for (const target of pagesOf(command.pages, document.getPageCount())) {
-    if (target === sourceNumber) throw new RangeError('A field is copied onto other pages, and page ' + String(target) + ' is its own.');
+  // ONE PLACE, its own page allowed (a paste or a duplicate), or THE SAME PLACE on each of several other pages.
+  const targets =
+    command.to.kind === 'place' ? [command.to.page] : pagesOf(command.to.pages, document.getPageCount());
+  for (const target of targets) {
+    if (command.to.kind === 'pages' && target === sourceNumber) {
+      throw new RangeError('A field is copied onto other pages, and page ' + String(target) + ' is its own.');
+    }
     const page = pageAt(document, target);
-    const name = freeName(taken, `${field.getName().replaceAll('.', '_')}_p${String(target + 1)}`);
+    const base = field.getName().replaceAll('.', '_');
+    const name = freeName(taken, command.to.kind === 'place' ? base : `${base}_p${String(target + 1)}`);
     taken.push(name);
 
     const merged = field.acroField.dict === widget;
@@ -701,8 +707,11 @@ export const applyDuplicateFormField: Apply<'pdf-lib', 'duplicateFormField'> = a
     if (widgetDict.get(PDFName.of('AS')) !== undefined) widgetDict.set(PDFName.of('AS'), PDFName.of('Off'));
     widgetDict.set(PDFName.of('P'), page.ref);
     widgetDict.delete(PDFName.of('Parent'));
-    // THE SAME PLACE, NOT THE SAME NUMBERS: a page of another size, origin or turn would put the copy elsewhere or off it.
-    if (sourceRect !== undefined) {
+    if (command.to.kind === 'place') {
+      const box = rectOf(command.to.rect);
+      widgetDict.set(PDFName.of('Rect'), context.obj([box.x, box.y, box.x + box.width, box.y + box.height]));
+    } else if (sourceRect !== undefined) {
+      // THE SAME PLACE, NOT THE SAME NUMBERS: a page of another size, origin or turn would put the copy elsewhere or off it.
       const placed = placeOnPage(sourceRect, visibleFrameOf(source), visibleFrameOf(page));
       widgetDict.set(PDFName.of('Rect'), context.obj([placed.x0, placed.y0, placed.x1, placed.y1]));
     }

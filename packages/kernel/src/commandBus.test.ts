@@ -2785,7 +2785,7 @@ describe('a form-field change is ONE undo step', () => {
     await run(bus, context, inputs, (version) => ({
       kind: 'duplicateFormField',
       field: handles.email,
-      pages: [1, 2],
+      to: { kind: 'pages', pages: [1, 2] },
       version,
     }));
     states.push(await summary(await host.current()));

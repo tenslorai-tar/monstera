@@ -5149,17 +5149,25 @@ export const editFormFieldsSchema = z
   .strict();
 
 /**
- * Copies one field onto other pages, at the same place (ADR-0193): the owner's *duplicate a field across pages*.
+ * Copies one field: onto other pages at the same place (ADR-0193, the owner's *duplicate a field across pages*), or to
+ * ONE place on one page, its own included, which is how a paste and a duplicate are written (ADR-0226 Decision 8).
  *
  * Each copy is a new field with a name of its own (`name_p2`, made unique), because a second widget with the SAME name
  * is not a copy but another place for the one field, which shows one value everywhere.
+ *
+ * `to` is a discriminated pair rather than a page set with an optional place beside it, so *a place on several pages*
+ * and *neither* are not shapes a command can have.
  */
 export const duplicateFormFieldSchema = z
   .object({
     kind: z.literal('duplicateFormField'),
     field: formFieldHandleSchema,
-    /** The pages to copy it onto, zero-based, none of them its own: a page set, so a run of pages is one entry. */
-    pages: pageSetSchema,
+    to: z.discriminatedUnion('kind', [
+      /** The pages to copy it onto, zero-based, none of them its own: a page set, so a run of pages is one entry. */
+      z.object({ kind: z.literal('pages'), pages: pageSetSchema }).strict(),
+      /** One place on one page, in PDF user space; the field's own page is allowed. */
+      z.object({ kind: z.literal('place'), page: z.number().int().nonnegative(), rect: annotationRectSchema }).strict(),
+    ]),
     version: docVersionSchema,
   })
   .strict();

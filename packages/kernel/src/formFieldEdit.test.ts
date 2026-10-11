@@ -320,7 +320,7 @@ describe('copying a field onto other pages', () => {
     const original = await buildFormTestPdf();
     const handle = await handleOf(original, 'email');
     const before = (await withSession(original, (session) => readFormFields(session))).fields;
-    const copied = await applyDuplicateFormField(original, { kind: 'duplicateFormField', field: handle, pages: [1, 2], version: VERSION });
+    const copied = await applyDuplicateFormField(original, { kind: 'duplicateFormField', field: handle, to: { kind: 'pages', pages: [1, 2] }, version: VERSION });
     const after = (await withSession(await throughMupdf(copied), (session) => readFormFields(session))).fields;
     expect(after.length).toBe(before.length + 2);
     const names = after.filter((field) => field.name.startsWith('email')).map((field) => `${String(field.page)}:${field.name}`);
@@ -334,8 +334,8 @@ describe('copying a field onto other pages', () => {
   it('a copy starts empty and copies a second time under a free name', async () => {
     const original = await buildFormTestPdf();
     const handle = await handleOf(original, 'email');
-    const once = await applyDuplicateFormField(original, { kind: 'duplicateFormField', field: handle, pages: [1], version: VERSION });
-    const twice = await applyDuplicateFormField(once, { kind: 'duplicateFormField', field: handle, pages: [1], version: VERSION });
+    const once = await applyDuplicateFormField(original, { kind: 'duplicateFormField', field: handle, to: { kind: 'pages', pages: [1] }, version: VERSION });
+    const twice = await applyDuplicateFormField(once, { kind: 'duplicateFormField', field: handle, to: { kind: 'pages', pages: [1] }, version: VERSION });
     const names = (await withSession(twice, (session) => readFormFields(session))).fields.map((field) => field.name);
     expect(names).toContain('email_p2');
     expect(names).toContain('email_p2_2');
@@ -345,11 +345,43 @@ describe('copying a field onto other pages', () => {
     const original = await buildFormTestPdf();
     const radio = await handleOf(original, 'plan');
     await expect(
-      applyDuplicateFormField(original, { kind: 'duplicateFormField', field: radio, pages: [1], version: VERSION }),
+      applyDuplicateFormField(original, { kind: 'duplicateFormField', field: radio, to: { kind: 'pages', pages: [1] }, version: VERSION }),
     ).rejects.toMatchObject({ reason: 'duplicate-radio' });
     const text = await handleOf(original, 'email');
     await expect(
-      applyDuplicateFormField(original, { kind: 'duplicateFormField', field: text, pages: [0], version: VERSION }),
+      applyDuplicateFormField(original, { kind: 'duplicateFormField', field: text, to: { kind: 'pages', pages: [0] }, version: VERSION }),
+    ).rejects.toBeInstanceOf(RangeError);
+  });
+});
+
+describe('copying a field to one place, its own page allowed (ADR-0226 Decision 8)', () => {
+  it('a duplicate on its own page lands at the place named, a new field with a free name, the original where it was', async () => {
+    const original = await buildFormTestPdf();
+    const handle = await handleOf(original, 'email');
+    const was = (await read(original, handle)).rect;
+    if (was === null) throw new Error('the fixture field has no place');
+    const place = { x0: was.x0 + 20, y0: was.y0 - 40, x1: was.x1 + 20, y1: was.y1 - 40 };
+    const copied = await applyDuplicateFormField(original, {
+      kind: 'duplicateFormField',
+      field: handle,
+      to: { kind: 'place', page: 0, rect: place },
+      version: VERSION,
+    });
+    const after = (await withSession(await throughMupdf(copied), (session) => readFormFields(session))).fields;
+    const copy = after.find((field) => field.name === 'email_2');
+    expect(copy?.page).toBe(0);
+    expect(copy?.rect).toStrictEqual(place);
+    // THE ORIGINAL STAYS, and pdf-lib, the second reader, finds both by name.
+    expect(after.find((field) => field.name === 'email')?.rect).toStrictEqual(was);
+    const form = (await PDFDocument.load(copied)).getForm();
+    expect([form.getTextField('email').getName(), form.getTextField('email_2').getName()]).toStrictEqual(['email', 'email_2']);
+  });
+
+  it('CONTROL: the same page as a page set is still refused, so the place is what allows it', async () => {
+    const original = await buildFormTestPdf();
+    const handle = await handleOf(original, 'email');
+    await expect(
+      applyDuplicateFormField(original, { kind: 'duplicateFormField', field: handle, to: { kind: 'pages', pages: [0] }, version: VERSION }),
     ).rejects.toBeInstanceOf(RangeError);
   });
 });

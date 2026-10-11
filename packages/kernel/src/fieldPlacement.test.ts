@@ -131,7 +131,7 @@ describe('copying a field across pages of different sizes', () => {
     } finally {
       await mupdfWriter.close(session);
     }
-    const copied = await applyDuplicateFormField(original, { kind: 'duplicateFormField', field: handle, pages: [1, 2, 3], version: asDocVersion(1) });
+    const copied = await applyDuplicateFormField(original, { kind: 'duplicateFormField', field: handle, to: { kind: 'pages', pages: [1, 2, 3] }, version: asDocVersion(1) });
     const reopened = await (async () => {
       const again = await mupdfWriter.open(copied);
       try {
