@@ -77,6 +77,11 @@ with it.
 13. **`createFormField` makes three more kinds:** a push button, a signature field (`/FT /Sig`, built from the
     dictionary because pdf-lib has no factory for one) and a date field (a text field carrying a date format, written
     by `fieldActions.ts`).
+14. **Detect reads the current page, and its preview offers *All pages*** (the owner's K7). Accepting the proposals of
+    every page is one decision, so it is one `createFormField`: a placement may name its own page, and one that names
+    none goes on the command's. This amends `createFormField`'s *"a per-field page would be a different feature nobody
+    asked for"*; K7 asks for it. A detected small circle is a radio, and the circles of one row are one group named by
+    the words left of the first.
 
 ## Rejected alternatives
 
@@ -90,3 +95,4 @@ with it.
   could answer; a read per press would make the caret wait on the host.
 - **Running a document's own calculation scripts.** Invariant 24.
 - **A name box beside a new field, or a dialog.** The owner's K1.
+- **One create per page when Detect runs on all pages.** Undo would take back one page of a decision made once.
