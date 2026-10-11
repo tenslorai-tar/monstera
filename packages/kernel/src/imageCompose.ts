@@ -117,9 +117,11 @@ export async function composeImages(images: readonly ImportImage[]): Promise<Com
     }
   }
 
-  const first = [...skipped].sort((a, b) => (a.item ?? 0) - (b.item ?? 0))[0];
+  // IN THE ORDER PICKED: the first pass names a pixel bound before the second names a decode, whatever their places.
+  const inOrder = [...skipped].sort((a, b) => a.item - b.item);
+  const first = inOrder[0];
   if (document.getPageCount() === 0 && first !== undefined) {
     throw new ComposeRefused(first.reason, null, `image ${String(first.item)} could not be made a page, and no other was picked`, first.item);
   }
-  return { pdf: await document.save(), skipped: [...skipped].sort((a, b) => (a.item ?? 0) - (b.item ?? 0)) };
+  return { pdf: await document.save(), skipped: inOrder };
 }
