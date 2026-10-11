@@ -162,6 +162,32 @@ function tooltipOf(bytes, password) {
 }
 
 /**
+ * The first page's widget partial names (`/T`) in `/Annots` order, which is the tab order (ADR-0226 Decision 15), as the
+ * second reader reads it with `password`.
+ *
+ * @param {Uint8Array} bytes
+ * @param {string} password
+ * @returns {string[]}
+ */
+function annotNamesOf(bytes, password) {
+  const document = /** @type {wasm.PDFDocument} */ (wasm.PDFDocument.openDocument(bytes, 'application/pdf'));
+  try {
+    if (document.authenticatePassword(password) === 0) return [];
+    const annots = document.findPage(0).get('Annots');
+    /** @type {string[]} */
+    const names = [];
+    for (let at = 0; at < annots.length; at += 1) {
+      const annot = annots.get(at);
+      const own = annot.get('T');
+      names.push((own.isNull() ? annot.get('Parent').get('T') : own).asString());
+    }
+    return names;
+  } finally {
+    document.destroy();
+  }
+}
+
+/**
  * `bytes` as a MuPDF session, written by MuPDF with the protection a person's file would carry.
  *
  * @param {any} kernel
@@ -270,11 +296,20 @@ async function main(/** @type {any} */ kernel) {
       const field = await runCommand(
         kernel,
         session,
-        { kind: 'createFormField', page: 0, fields: [{ rect: { x0: 100, y0: 100, x1: 220, y1: 124 }, name: 'applicant.name', field: { type: 'text' } }] },
+        // TWO FIELDS, placed so the two tab orders differ: the first top right, the second bottom left. A row walk keeps
+        // them as created; a column walk puts the bottom-left one first.
+        {
+          kind: 'createFormField',
+          page: 0,
+          fields: [
+            { rect: { x0: 300, y0: 600, x1: 420, y1: 624 }, name: 'applicant.name', field: { type: 'text' } },
+            { rect: { x0: 100, y0: 100, x1: 220, y1: 124 }, name: 'applicant.city', field: { type: 'text' } },
+          ],
+        },
         undefined,
       );
       const withField = read(field, USER);
-      check('createFormField: the field is on the protected page, which stays protected', withField.widgets === 1 && withField.encrypted && read(field).access === 0, JSON.stringify(withField.widgets));
+      check('createFormField: the fields are on the protected page, which stays protected', withField.widgets === 2 && withField.encrypted && read(field).access === 0, JSON.stringify(withField.widgets));
       // A FIELD'S PROPERTIES AND THE TAB ORDER on the protected form (A3.2): the property is in the result, which opens
       // only with the password and keeps the document's permissions.
       const created = await open(field, USER);
@@ -295,10 +330,19 @@ async function main(/** @type {any} */ kernel) {
         );
         const ordered = await runCommand(kernel, created, { kind: 'setTabOrder', pages: 'all', order: 'column', version }, undefined);
         const orderedRead = read(ordered, USER);
+        // THE ORDER IS READ BACK, against the order the fields were created in, so a command that wrote nothing fails.
+        const createdOrder = annotNamesOf(field, USER);
+        const columnOrder = annotNamesOf(ordered, USER);
         check(
-          'setTabOrder: the protected result keeps its field and opens only with the password',
-          orderedRead.widgets === 1 && orderedRead.encrypted && read(ordered).access === 0,
-          JSON.stringify(orderedRead.widgets),
+          'setTabOrder: the protected result is in the column order, keeps its fields and permissions, and opens only with the password',
+          // THE PARTIAL NAMES, `/T` under the shared `applicant` parent.
+          createdOrder.join() === 'name,city' &&
+            columnOrder.join() === 'city,name' &&
+            orderedRead.widgets === 2 &&
+            orderedRead.encrypted &&
+            orderedRead.permissions === before.permissions &&
+            read(ordered).access === 0,
+          JSON.stringify({ createdOrder, columnOrder, widgets: orderedRead.widgets }),
         );
       } finally {
         await kernel.mupdfWriter.close(created);
