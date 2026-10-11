@@ -54,7 +54,18 @@ const BODIES: readonly { readonly name: string; readonly body: ReactNode; readon
   },
   {
     name: 'Fields from lines',
-    body: <FlatFieldsBody alreadyFields={0} candidates={[{ name: 'name', label: 'Name', kind: 'text' }]} truncated={false} resolve={ignore} update={ignore} />,
+    body: (
+      <FlatFieldsBody
+        alreadyFields={0}
+        all={false}
+        candidates={[{ key: '0:0', page: 1, name: 'name', label: 'Name', kind: 'text' }]}
+        fields={0}
+        pageCount={1}
+        truncated={false}
+        resolve={ignore}
+        update={ignore}
+      />
+    ),
     // A LIST TO CONFIRM, not questions: no row, and the footer all the same.
     firstRow: null,
   },

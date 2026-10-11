@@ -1530,89 +1530,187 @@ describe('delete pages — the mutation-dialog gate', () => {
     ]);
   });
 
-  it('DETECTION ASKS, REVIEWS, AND SENDS ONE COMMAND CARRYING WHAT WAS TICKED', async () => {
-    // THE UI HALF, and the join no other case can make: the channel answers
-    // candidates, the dialog answers NAMES, and this rejoins them with the
-    // rectangles the channel returned. A command that sent the rectangles back
-    // out of the dialog would have two sources for one geometry, and the one
-    // that came through a form control is the one that can be wrong.
-    const sent: { id: string; params: unknown }[] = [];
-    const asked: unknown[] = [];
-    const client = createClient(channels, (id, params) => {
-      sent.push({ id, params });
-      if (id === 'document.flatFieldCandidates') {
+  describe('Detect fields (F1-F3, K7)', () => {
+    const BOX = { x0: 0, y0: 0, x1: 1, y1: 1 };
+    /** A client whose detection answers `onPage` for each page, whose field list holds `existing`, and which records every send. */
+    const detecting = (
+      onPage: (page: number) => readonly Record<string, unknown>[],
+      existing: readonly string[] = [],
+    ): { client: ReturnType<typeof createClient<typeof channels>>; sent: { id: string; params: unknown }[] } => {
+      const sent: { id: string; params: unknown }[] = [];
+      const client = createClient(channels, (id, params) => {
+        sent.push({ id, params });
+        if (id === 'document.flatFieldCandidates') {
+          const { page } = params as { page: number };
+          return Promise.resolve(ok({ version: asDocVersion(1), candidates: onPage(page), truncated: false, alreadyFields: 3 }));
+        }
+        if (id === 'document.formFields') {
+          return Promise.resolve(
+            ok({
+              version: asDocVersion(1),
+              fields: existing.map((name, index) => ({
+                page: 0,
+                index,
+                kind: 'text',
+                name,
+                values: [],
+                on: null,
+                options: [],
+                readOnly: false,
+                multiline: false,
+                rect: null,
+                required: false,
+                maxLength: null,
+                comb: false,
+                masked: false,
+                multiSelect: false,
+                editable: false,
+                calculated: false,
+                format: null,
+              })),
+              next: null,
+              truncated: false,
+            }),
+          );
+        }
         return Promise.resolve(
-          ok({
-            version: asDocVersion(1),
-            candidates: [
-              { rect: { x0: 10, y0: 20, x1: 110, y1: 40 }, label: 'Name:', name: 'Name', kind: 'text' },
-              { rect: { x0: 10, y0: 60, x1: 110, y1: 80 }, label: 'Date:', name: 'Date', kind: 'text' },
-              { rect: { x0: 10, y0: 100, x1: 24, y1: 114 }, label: 'Send me the newsletter', name: 'Newsletter', kind: 'checkbox' },
-            ],
-            truncated: false,
-            alreadyFields: 3,
-          }),
+          ok({ version: asDocVersion(2), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }),
         );
-      }
-      return Promise.resolve(
-        ok({ version: asDocVersion(2), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }),
+      });
+      return { client, sent };
+    };
+    const created = (sent: readonly { id: string; params: unknown }[]): unknown =>
+      sent.filter((each) => each.id === 'document.execute').map((each) => (each.params as { command: unknown }).command);
+
+    it('ASKS, REVIEWS, AND SENDS ONE COMMAND CARRYING WHAT WAS TICKED, each kind as its own field', async () => {
+      // THE UI HALF, and the join no other case can make: the channel answers
+      // candidates, the dialog answers KEYS, and this rejoins them with the
+      // rectangles the channel returned. A command that sent the rectangles back
+      // out of the dialog would have two sources for one geometry, and the one
+      // that came through a form control is the one that can be wrong.
+      const { client, sent } = detecting(
+        () => [
+          { rect: { x0: 10, y0: 20, x1: 110, y1: 40 }, label: 'Name:', name: 'Name', kind: 'text', shown: BOX },
+          { rect: { x0: 10, y0: 60, x1: 110, y1: 80 }, label: 'Date:', name: 'Date', kind: 'text', shown: BOX },
+          { rect: { x0: 10, y0: 100, x1: 24, y1: 114 }, label: 'Send me the newsletter', name: 'Newsletter', kind: 'checkbox', shown: BOX },
+          // TWO OPTIONS OF ONE GROUP share its name, which is why the answer is keys: by name, ticking one would tick both.
+          { rect: { x0: 10, y0: 120, x1: 22, y1: 132 }, label: 'Standard', name: 'Delivery', kind: 'radio', option: 'Standard', shown: BOX },
+          { rect: { x0: 60, y0: 120, x1: 72, y1: 132 }, label: 'Express', name: 'Delivery', kind: 'radio', option: 'Express', shown: BOX },
+        ],
+        ['Existing', 'Group', 'Group'],
       );
+      const asked: unknown[] = [];
+      await detectFlatFieldsCommand({
+        client,
+        stamp,
+        signatures,
+        onApplied: () => undefined,
+        markPlaces: () => undefined,
+        // ONE TEXT AND ONE RADIO REJECTED, which is what makes this a review rather than a confirmation.
+        ask: (_id, props) => {
+          asked.push(props);
+          return Promise.resolve({ kind: 'accept', accepted: ['3:1', '3:2', '3:4'] });
+        },
+      }).run(CONTEXT);
+
+      // THE WINDOW IS TOLD each place's kind, the document's field count BY NAME (a radio group's two widgets are one
+      // field), and how many were left out because they already hold a field.
+      expect(asked).toStrictEqual([
+        {
+          candidates: [
+            { key: '3:0', page: 4, name: 'Name', label: 'Name:', kind: 'text' },
+            { key: '3:1', page: 4, name: 'Date', label: 'Date:', kind: 'text' },
+            { key: '3:2', page: 4, name: 'Newsletter', label: 'Send me the newsletter', kind: 'checkbox' },
+            { key: '3:3', page: 4, name: 'Delivery', label: 'Standard', kind: 'radio', option: 'Standard' },
+            { key: '3:4', page: 4, name: 'Delivery', label: 'Express', kind: 'radio', option: 'Express' },
+          ],
+          all: false,
+          pageCount: 10,
+          fields: 2,
+          truncated: false,
+          alreadyFields: 3,
+        },
+      ]);
+      expect(created(sent)).toStrictEqual([
+        {
+          kind: 'createFormField',
+          page: 3,
+          // ONE COMMAND, one entry, and the rectangle is the CHANNEL'S.
+          fields: [
+            { rect: { x0: 10, y0: 60, x1: 110, y1: 80 }, name: 'Date', page: 3, field: { type: 'text' } },
+            { rect: { x0: 10, y0: 100, x1: 24, y1: 114 }, name: 'Newsletter', page: 3, field: { type: 'checkbox' } },
+            { rect: { x0: 60, y0: 120, x1: 72, y1: 132 }, name: 'Delivery', page: 3, field: { type: 'radio', option: 'Express' } },
+          ],
+        },
+      ]);
     });
 
-    await detectFlatFieldsCommand({
-      client,
-      stamp,
-      signatures,
-      onApplied: () => undefined,
-      // ONE OF THE TWO REJECTED, which is what makes this a review rather than
-      // a confirmation: a command that sent everything it was offered would
-      // pass a case where the reader accepted both.
-      ask: (_id, props) => {
-        asked.push(props);
-        return Promise.resolve({ accepted: ['Date', 'Newsletter'] });
-      },
-    }).run(CONTEXT);
-
-    // THE WINDOW IS TOLD each place's kind and how many were left out because they already hold a field.
-    expect(asked).toStrictEqual([
-      {
-        candidates: [
-          { name: 'Name', label: 'Name:', kind: 'text' },
-          { name: 'Date', label: 'Date:', kind: 'text' },
-          { name: 'Newsletter', label: 'Send me the newsletter', kind: 'checkbox' },
-        ],
-        truncated: false,
-        alreadyFields: 3,
-      },
-    ]);
-
-    expect(sent).toStrictEqual([
-      { id: 'document.flatFieldCandidates', params: { docId: DOC, page: 3 } },
-      {
-        id: 'document.execute',
-        params: {
-          docId: DOC,
-          command: {
-            kind: 'createFormField',
-            page: 3,
-            // ONE COMMAND, one entry, and the rectangle is the CHANNEL'S.
-            fields: [
-              {
-                rect: { x0: 10, y0: 60, x1: 110, y1: 80 },
-                name: 'Date',
-                field: { type: 'text' },
-              },
-              // A SMALL SQUARE IS A TICK BOX, which the old command sent as text for every candidate.
-              {
-                rect: { x0: 10, y0: 100, x1: 24, y1: 114 },
-                name: 'Newsletter',
-                field: { type: 'checkbox' },
-              },
-            ],
-          },
+    it('MARKS EVERY PROPOSAL ON ITS PAGE while the review is open, and takes the marks away when it closes', async () => {
+      const { client } = detecting(() => [
+        { rect: { x0: 10, y0: 20, x1: 110, y1: 40 }, label: 'Name:', name: 'Name', kind: 'text', shown: { x0: 10, y0: 752, x1: 110, y1: 772 } },
+      ]);
+      const marks: unknown[] = [];
+      let markedWhileOpen: unknown;
+      await detectFlatFieldsCommand({
+        client,
+        stamp,
+        signatures,
+        onApplied: () => undefined,
+        markPlaces: (spots) => {
+          marks.push(spots);
         },
-      },
-    ]);
+        ask: () => {
+          markedWhileOpen = marks[marks.length - 1];
+          return Promise.resolve(undefined);
+        },
+      }).run(CONTEXT);
+      // THE DISPLAY BOX, never the PDF rectangle: the spotlight draws in display space, and the two differ here.
+      expect(markedWhileOpen).toStrictEqual([{ page: 3, box: { x0: 10, y0: 752, x1: 110, y1: 772 } }]);
+      expect(marks[marks.length - 1]).toBeUndefined();
+    });
+
+    it('ALL PAGES reads every page, keeps what was read for this one, and accepts across pages as ONE create', async () => {
+      const { client, sent } = detecting((page) =>
+        page === 3 || page === 7
+          ? [{ rect: { x0: page, y0: 0, x1: 100, y1: 20 }, label: `On ${String(page)}`, name: `On_${String(page)}`, kind: 'text', shown: BOX }]
+          : [],
+      );
+      const replies: unknown[] = [];
+      await detectFlatFieldsCommand({
+        client,
+        stamp,
+        signatures,
+        onApplied: () => undefined,
+        markPlaces: () => undefined,
+        ask: async (_id, _props, onUpdate) => {
+          await new Promise<void>((done) => {
+            onUpdate?.({ kind: 'all-pages' }, (props) => {
+              replies.push(props);
+              done();
+            });
+          });
+          return { kind: 'accept', accepted: ['3:0', '7:0'] };
+        },
+      }).run(CONTEXT);
+
+      const reads = sent.filter((each) => each.id === 'document.flatFieldCandidates').map((each) => (each.params as { page: number }).page);
+      // PAGE 3 ONCE: the review opened on it, and reading it again would be the same answer twice.
+      expect(reads).toStrictEqual([3, 0, 1, 2, 4, 5, 6, 7, 8, 9]);
+      expect(replies).toHaveLength(1);
+      expect((replies[0] as { all: boolean; candidates: { page: number }[] }).all).toBe(true);
+      expect((replies[0] as { candidates: { page: number }[] }).candidates.map((each) => each.page)).toStrictEqual([4, 8]);
+      // CONTROL: each placement names ITS page; a create that put both on the command's page would put page 8's on page 4.
+      expect(created(sent)).toStrictEqual([
+        {
+          kind: 'createFormField',
+          page: 3,
+          fields: [
+            { rect: { x0: 3, y0: 0, x1: 100, y1: 20 }, name: 'On_3', page: 3, field: { type: 'text' } },
+            { rect: { x0: 7, y0: 0, x1: 100, y1: 20 }, name: 'On_7', page: 7, field: { type: 'text' } },
+          ],
+        },
+      ]);
+    });
   });
 
   it('EDIT TEXT TURNS THE MODE ON, and off again — it opens no dialog and sends nothing', () => {
@@ -2210,11 +2308,22 @@ describe('delete pages — the mutation-dialog gate', () => {
   it('SENDS NOTHING when the review is dismissed, which is the mutation-dialog gate', async () => {
     // A dismissal must dispatch nothing, and the absence of a value is the
     // guard rather than a flag beside it.
+    // A PROPOSAL ON OFFER, so a command that created what it was shown on any answer would send it.
     const sent: string[] = [];
     const client = createClient(channels, (id) => {
       sent.push(id);
+      if (id === 'document.formFields') {
+        return Promise.resolve(ok({ version: asDocVersion(1), fields: [], next: null, truncated: false }));
+      }
       return Promise.resolve(
-        ok({ version: asDocVersion(1), candidates: [], truncated: false, alreadyFields: 0 }),
+        ok({
+          version: asDocVersion(1),
+          candidates: [
+            { rect: { x0: 10, y0: 20, x1: 110, y1: 40 }, label: 'Name:', name: 'Name', kind: 'text', shown: { x0: 0, y0: 0, x1: 1, y1: 1 } },
+          ],
+          truncated: false,
+          alreadyFields: 0,
+        }),
       );
     });
 
@@ -2223,10 +2332,11 @@ describe('delete pages — the mutation-dialog gate', () => {
       stamp,
       signatures,
       onApplied: () => undefined,
+      markPlaces: () => undefined,
       ask: () => Promise.resolve(undefined),
     }).run(CONTEXT);
 
-    expect(sent).toStrictEqual(['document.flatFieldCandidates']);
+    expect(sent).toStrictEqual(['document.flatFieldCandidates', 'document.formFields']);
   });
 
   it('BATES DISPATCHES THE PARTS, not a formatted identifier', async () => {
@@ -6263,7 +6373,15 @@ describe('protectDocumentCommand', () => {
   describe('what Detect, Flatten and Tab order say they do', () => {
     it('each carries a one sentence tip that names it, so the ribbon can show what the control does before it is pressed', () => {
       const { client } = recordingClient();
-      const deps = { client, toast: () => undefined, stamp, signatures, onApplied: () => undefined, ask: () => Promise.resolve(undefined) };
+      const deps = {
+        client,
+        toast: () => undefined,
+        stamp,
+        signatures,
+        onApplied: () => undefined,
+        ask: () => Promise.resolve(undefined),
+        markPlaces: () => undefined,
+      };
       const tips = [detectFlatFieldsCommand(deps), flattenFormCommand(deps), tabOrderCommand(deps)].map((command) => command.tip);
       expect(tips).toStrictEqual([DETECT_FIELDS_TIP, FLATTEN_FORM_TIP, TAB_ORDER_TIP]);
       expect(EN[DETECT_FIELDS_TIP]).toMatch(/^Detect: /u);

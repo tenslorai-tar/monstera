@@ -385,8 +385,6 @@ export const invertCreateFormField: Invert<'pdf-lib', 'createFormField'> = (_ima
  */
 export const applyCreateFormField: Apply<'pdf-lib', 'createFormField'> = async (image, command) => {
   const document = await openForWriting(image);
-  const page = pageAt(document, command.page);
-  const rotation = snapRotation(page.getRotation().angle);
   const font = await document.embedFont(StandardFonts.Helvetica);
 
   // ONE FORM, RESOLVED ONCE, and the loop is what makes accepting twenty
@@ -397,6 +395,10 @@ export const applyCreateFormField: Apply<'pdf-lib', 'createFormField'> = async (
   // handed, so a throw leaves the caller's bytes untouched by construction.
   const form = document.getForm();
   for (const placement of command.fields) {
+    // A PLACEMENT MAY NAME ITS OWN PAGE (Detect's *All pages*, ADR-0226 Decision 14); one that names none takes the
+    // command's. `pageAt` refuses a page the document does not have, the same for both.
+    const page = pageAt(document, 'page' in placement && placement.page !== undefined ? placement.page : command.page);
+    const rotation = snapRotation(page.getRotation().angle);
     const inset = insetForBorder(placement.rect, FIELD_BORDER);
     put(form, page, font, placement.name, placement.field, preImage(inset, rotation), rotation, inset);
   }

@@ -4862,8 +4862,13 @@ export const createdFieldPlacementSchema = z.object({
   field: createdFieldSchema,
 }).strict();
 
-/** One of several fields a create mints: {@link createdFieldPlacementSchema} with a kind that carries no options. */
-const simpleFieldPlacementSchema = createdFieldPlacementSchema.extend({ field: simpleCreatedFieldSchema }).strict();
+/**
+ * One of several fields a create mints: {@link createdFieldPlacementSchema} with a kind that carries no options, and the
+ * page it goes on when that is not the command's (ADR-0226 Decision 14: Detect's *All pages* is one decision).
+ */
+const simpleFieldPlacementSchema = createdFieldPlacementSchema
+  .extend({ field: simpleCreatedFieldSchema, page: z.number().int().nonnegative().optional() })
+  .strict();
 
 export const createFormFieldSchema = z.object({
   kind: z.literal('createFormField'),
@@ -4880,8 +4885,9 @@ export const createFormFieldSchema = z.object({
    * arriving on the other walk.
    *
    * The page is shared for the same reason the rectangle is shared on
-   * `placeImage`: *these fields, on this page* is what the request means, and a
-   * per-field page would be a different feature nobody asked for.
+   * `placeImage`: *these fields, on this page* is what the request means. One of
+   * several may name its own, which is Detect's *All pages* accepted as one
+   * decision (ADR-0226 Decision 14, the owner's K7).
    *
    * **MANY SIMPLE FIELDS, OR ONE OF ANY KIND** (ADR-0138 Decision 3). Detection sends text fields and a tool sends
    * one, so no caller sends several choice fields — and that combination was the whole of the command's worst, 256
@@ -4992,6 +4998,13 @@ export const fieldCalculationSchema = z
 
 /** See {@link fieldCalculationSchema}. */
 export type FieldCalculation = z.infer<typeof fieldCalculationSchema>;
+
+/**
+ * What a detected place may be (the owner's F1): a text field, a tick box (a small square), or a radio (a small circle).
+ * Named once, here where the engine's channel can take it too, so it, the renderer's channel and the review dialog
+ * cannot answer three different sets (B3a).
+ */
+export const FLAT_FIELD_KINDS = ['text', 'checkbox', 'radio'] as const;
 
 /** How a text field's words sit across it: `/Q` 0, 1 and 2, in that order. */
 export const FIELD_ALIGNMENTS = ['left', 'centre', 'right'] as const;

@@ -682,7 +682,12 @@ export interface BrowserShimOptions {
     readonly rect: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
     readonly label: string;
     readonly name: string;
-    readonly kind?: 'text' | 'checkbox';
+    readonly kind?: 'text' | 'checkbox' | 'radio';
+    readonly option?: string;
+    /** The page it is proposed on; absent proposes it on every page asked about. */
+    readonly page?: number;
+    /** Where the preview marks it; absent marks it at `rect`'s numbers, since the shim draws no page geometry. */
+    readonly shown?: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
   }[];
   /** How many places `document.flatFieldCandidates` says already hold a field. Absent is none. */
   readonly flatFieldsAlready?: number;
@@ -2386,13 +2391,19 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
      * a dialog with no rows — which cannot say whether the accept sends what
      * was ticked.
      */
-    'document.flatFieldCandidates': ({ docId }) => {
+    'document.flatFieldCandidates': ({ docId, page }) => {
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
       return Promise.resolve(
         ok({
           version: asDocVersion(current),
-          candidates: (options.flatFieldCandidates ?? []).map((candidate) => ({ ...candidate, kind: candidate.kind ?? 'text' })),
+          candidates: (options.flatFieldCandidates ?? [])
+            .filter((candidate) => candidate.page === undefined || candidate.page === page)
+            .map(({ page: _page, ...candidate }) => ({
+              ...candidate,
+              kind: candidate.kind ?? 'text',
+              shown: candidate.shown ?? candidate.rect,
+            })),
           truncated: false,
           alreadyFields: options.flatFieldsAlready ?? 0,
         }),

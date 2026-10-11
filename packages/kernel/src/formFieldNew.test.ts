@@ -155,3 +155,43 @@ describe('a new tick box and a new radio', () => {
     expect(inkInside(ticked, radio, true)).toBeGreaterThan(0);
   });
 });
+
+describe('one create across pages (ADR-0226 Decision 14, Detect’s All pages)', () => {
+  it('puts each field on the page it names, and one that names none on the command’s, as MuPDF reads them', async () => {
+    const document = await PDFDocument.create();
+    for (let at = 0; at < 3; at += 1) document.addPage([400, 400]);
+    const rect = { x0: 40, y0: 300, x1: 160, y1: 320 };
+    const bytes = await applyCreateFormField(await document.save(), {
+      kind: 'createFormField',
+      page: 1,
+      fields: [
+        { rect, name: 'OnFirst', page: 0, field: { type: 'text' } },
+        { rect, name: 'OnCommand', field: { type: 'text' } },
+        // CONTROL: the command's page is 1, so a create that ignored a placement's page would put this one on page 1.
+        { rect, name: 'OnThird', page: 2, field: { type: 'checkbox' } },
+      ],
+    });
+    const session = await mupdfWriter.open(bytes);
+    try {
+      const { fields } = await readFormFields(session);
+      expect(fields.map((field) => [field.name, field.page])).toStrictEqual([
+        ['OnFirst', 0],
+        ['OnCommand', 1],
+        ['OnThird', 2],
+      ]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('refuses a page the document does not have, and leaves the bytes it was handed', async () => {
+    const before = await blank();
+    await expect(
+      applyCreateFormField(before, {
+        kind: 'createFormField',
+        page: 0,
+        fields: [{ rect: { x0: 40, y0: 300, x1: 160, y1: 320 }, name: 'Nowhere', page: 5, field: { type: 'text' } }],
+      }),
+    ).rejects.toThrow();
+  });
+});

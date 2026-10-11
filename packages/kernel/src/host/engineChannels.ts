@@ -5,6 +5,7 @@ import {
   displayBoxSchema,
   DOCUMENT_ACCESS_VALUES,
   DOCUMENT_PASSWORD_MAX_CHARS,
+  FLAT_FIELD_KINDS,
   MAX_MERGE_DOCUMENTS,
   addAnnotationSchema,
   textRewriteSchema,
@@ -3115,7 +3116,9 @@ export const engineChannels = {
                 rect: annotationRectSchema,
                 label: z.string().max(ENGINE_FLAT_LABEL_MAX),
                 name: z.string().max(ENGINE_FLAT_LABEL_MAX),
-                kind: z.enum(['text', 'checkbox']),
+                kind: z.enum(FLAT_FIELD_KINDS),
+                option: z.string().min(1).max(ENGINE_FLAT_LABEL_MAX).optional(),
+                shown: displayBoxSchema,
               })
               .strict(),
           )

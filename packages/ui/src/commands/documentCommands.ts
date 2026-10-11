@@ -65,8 +65,10 @@ import { GENERATE_TOC_DIALOG_ID, GENERATE_TOC_RESULT } from '../dialogs/generate
 import { HEADER_FOOTER_DIALOG_ID } from '../dialogs/headerFooter.js';
 import type { HeaderFooterAnswer } from '../dialogs/headerFooterResult.js';
 import type { DuplicatePagesAnswer } from '../dialogs/duplicatePagesResult.js';
+import type { Spot } from '../accessibility/view.js';
 import { FLAT_FIELDS_DIALOG_ID } from '../dialogs/flatFields.js';
-import type { FlatFieldsAnswer } from '../dialogs/flatFieldsResult.js';
+import { FLAT_FIELDS_RESULT, type FlatFieldsAnswer } from '../dialogs/flatFieldsResult.js';
+import type { DialogReports } from '../registries/dialogs.js';
 import { type EditableObject, OBJECT_FILTERS, type ObjectFilter, type PageObjects } from '../objectEditing.js';
 import { BOXED_CHARACTERS_DIALOG_ID } from '../dialogs/boxedCharacters.js';
 import { UNSEALED_COPIES_DIALOG_ID } from '../dialogs/unsealedCopies.js';
@@ -3965,7 +3967,22 @@ export function tabOrderCommand(deps: DocumentCommandDeps & WritesAFile): UiComm
   };
 }
 
-export function detectFlatFieldsCommand(deps: DocumentCommandDeps): UiCommand {
+/**
+ * What Detect needs beyond the document commands: an `ask` that hears the review's reports (its *Find on all pages*),
+ * and `markPlaces`, which marks the proposals on their pages while the review is open (`undefined` takes them away).
+ */
+export interface DetectFieldsDeps extends DocumentCommandDeps {
+  readonly ask: (id: string, props: unknown, onUpdate?: DialogReports) => Promise<unknown>;
+  readonly markPlaces: (spots: readonly Spot[] | undefined) => void;
+}
+
+/** One proposal as the command holds it: the kernel's answer for one page, and the page it was read on. */
+type Proposal = ChannelResult<'document.flatFieldCandidates'>['candidates'][number] & {
+  readonly page: number;
+  readonly key: string;
+};
+
+export function detectFlatFieldsCommand(deps: DetectFieldsDeps): UiCommand {
   return {
     id: 'document.find-flat-fields',
     feedback: RESULT_DIALOG,
@@ -3980,46 +3997,118 @@ export function detectFlatFieldsCommand(deps: DocumentCommandDeps): UiCommand {
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined || context.page === undefined) return;
+      const { docId, page } = context;
+      if (docId === undefined || page === undefined) return;
 
-      const found = await deps.client['document.flatFieldCandidates']({
-        docId: context.docId,
-        page: context.page,
-      });
-      if (!found.ok) {
-        reportProblem(deps, found.error);
-        return;
-      }
+      // ONE PAGE'S PROPOSALS, keyed by page and place so a radio group's options, which share a name, stay apart.
+      const readPage = async (at: number): Promise<{ proposals: Proposal[]; truncated: boolean; already: number } | undefined> => {
+        const found = await deps.client['document.flatFieldCandidates']({ docId, page: at });
+        if (!found.ok) {
+          reportProblem(deps, found.error);
+          return undefined;
+        }
+        return {
+          proposals: found.value.candidates.map((candidate, index) => ({ ...candidate, page: at, key: `${String(at)}:${String(index)}` })),
+          truncated: found.value.truncated,
+          already: found.value.alreadyFields,
+        };
+      };
+      const first = await readPage(page);
+      if (first === undefined) return;
+      let proposals = first.proposals;
+      let truncated = first.truncated;
+      let already = first.already;
+      let all = false;
 
-      const chosen = (await deps.ask(FLAT_FIELDS_DIALOG_ID, {
-        candidates: found.value.candidates.map((candidate) => ({
-          name: candidate.name,
-          label: candidate.label,
-          kind: candidate.kind,
+      // HOW MANY FIELDS THE DOCUMENT HAS, said first when it has any (F3). A radio group is one field over several
+      // widgets, so fields are counted by name. Unread is said as none rather than refusing the review.
+      const listed = await readWholeList(
+        (from) => deps.client['document.formFields']({ docId, from }),
+        (part) => part.fields,
+      ).catch(() => undefined);
+      const fields = listed?.ok === true ? new Set(listed.value.items.map((field) => field.name)).size : 0;
+
+      const propsOf = (): unknown => ({
+        candidates: proposals.map((proposal) => ({
+          key: proposal.key,
+          page: pdfjsPageOf(proposal.page),
+          name: proposal.name,
+          label: proposal.label,
+          kind: proposal.kind,
+          ...(proposal.option === undefined ? {} : { option: proposal.option }),
         })),
-        truncated: found.value.truncated,
-        alreadyFields: found.value.alreadyFields,
-      })) as FlatFieldsAnswer | undefined;
-      // A DISMISSAL DISPATCHES NOTHING, which is the mutation-dialog gate: the
-      // absence of a value is the guard rather than a flag beside it.
-      if (chosen === undefined) return;
+        all,
+        pageCount: context.pageCount ?? 1,
+        fields,
+        truncated,
+        alreadyFields: already,
+      });
+      const mark = (): void => {
+        deps.markPlaces(proposals.map((proposal) => ({ page: proposal.page, box: proposal.shown })));
+      };
 
-      const fields = found.value.candidates
-        .filter((candidate) => chosen.accepted.includes(candidate.name))
-        .map((candidate) => ({
-          rect: candidate.rect,
-          name: candidate.name,
-          field: candidate.kind === 'checkbox' ? ({ type: 'checkbox' } as const) : ({ type: 'text' } as const),
+      mark();
+      let chosen: FlatFieldsAnswer | undefined;
+      try {
+        const answer = FLAT_FIELDS_RESULT.safeParse(
+          await deps.ask(FLAT_FIELDS_DIALOG_ID, propsOf(), (report, reply) => {
+            const parsed = FLAT_FIELDS_RESULT.safeParse(report);
+            if (!parsed.success || parsed.data.kind !== 'all-pages' || all) return;
+            void (async () => {
+              // EVERY PAGE, read one at a time in page order, the current page's answer kept rather than read twice.
+              const pages = context.pageCount ?? 1;
+              const gathered: Proposal[] = [];
+              let clipped = false;
+              let left = 0;
+              for (let at = 0; at < pages; at += 1) {
+                const read = at === page ? first : await readPage(at);
+                if (read === undefined) return;
+                gathered.push(...read.proposals);
+                clipped ||= read.truncated;
+                left += read.already;
+              }
+              proposals = gathered;
+              truncated = clipped;
+              already = left;
+              all = true;
+              mark();
+              reply(propsOf());
+            })();
+          }),
+        );
+        // A DISMISSAL DISPATCHES NOTHING, which is the mutation-dialog gate: the
+        // absence of a value is the guard rather than a flag beside it.
+        chosen = answer.success ? answer.data : undefined;
+      } finally {
+        // THE MARKS GO WITH THE WINDOW, however it closed.
+        deps.markPlaces(undefined);
+      }
+      if (chosen?.kind !== 'accept') return;
+      const accepted = chosen.accepted;
+
+      const fieldsToMake = proposals
+        .filter((proposal) => accepted.includes(proposal.key))
+        .map((proposal) => ({
+          rect: proposal.rect,
+          name: proposal.name,
+          // EACH ON ITS OWN PAGE (ADR-0226 Decision 14): every page's proposals accepted at once are one create.
+          page: proposal.page,
+          field:
+            proposal.kind === 'radio'
+              ? ({ type: 'radio', option: proposal.option ?? proposal.name } as const)
+              : proposal.kind === 'checkbox'
+                ? ({ type: 'checkbox' } as const)
+                : ({ type: 'text' } as const),
         }));
       // NOTHING TICKED CANNOT REACH HERE — the result schema refuses an empty
       // list and the button is disabled — but the command refuses one too, so
       // the check is here rather than trusting two layers above it.
-      if (fields.length === 0) return;
+      if (fieldsToMake.length === 0) return;
 
-      await applyDocumentCommand(deps, context.docId, {
+      await applyDocumentCommand(deps, docId, {
         kind: 'createFormField',
-        page: context.page,
-        fields,
+        page,
+        fields: fieldsToMake,
       });
     },
   };

@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest';
 
 import type { MupdfSession } from './engineSeam.js';
 import { detectFlatFields } from './flatFields.js';
+import { readFormFields } from './formFields.js';
+import { buildFormTestPdf } from './formTestForm.js';
+import * as mupdf from './mupdfRaw.js';
 import { mupdfWriter } from './mupdfWriter.js';
 
 /**
@@ -340,5 +343,143 @@ describe('detectFlatFields on the page that was reported', () => {
     document.getForm().createTextField('Signature').addToPage(document.getPage(0), { x: 60, y: 300, width: 100, height: 20, font });
     const found = await detected(await document.save());
     expect(found.candidates.map((candidate) => candidate.name)).toStrictEqual(['Signature_2']);
+  });
+});
+
+/**
+ * Circles and rows of squares (the owner's F1): a row of small circles is ONE radio group named by the words left of
+ * it, each option by its own word; a row of squares with no words of their own is named by the row's one word, and a
+ * row under it in the same columns carries on its numbering.
+ */
+async function choicesPage(options: { readonly shiftSecondRow?: number } = {}): Promise<Uint8Array> {
+  const document = await PDFDocument.create();
+  const page = document.addPage([PAGE.width, PAGE.height]);
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const ink = { borderWidth: INK.width, borderColor: INK.colour };
+
+  page.drawText('Delivery:', { x: 60, y: 700, size: INK.size, font });
+  for (const [at, word] of ['Standard', 'Express', 'Pickup'].entries()) {
+    const x = 150 + at * 90;
+    page.drawCircle({ x: x + 6, y: 704, size: 6, ...ink });
+    page.drawText(word, { x: x + 16, y: 700, size: INK.size, font });
+  }
+
+  page.drawText('Many boxes', { x: 60, y: 600, size: INK.size, font });
+  for (const row of [0, 1]) {
+    for (let at = 0; at < 5; at += 1) {
+      const x = 150 + at * 30 + (row === 1 ? (options.shiftSecondRow ?? 0) : 0);
+      page.drawRectangle({ x, y: 596 - row * 20, width: 15, height: 15, ...ink });
+    }
+  }
+  return document.save();
+}
+
+describe('detectFlatFields on circles and rows of squares (F1)', () => {
+  it('makes a row of circles ONE radio group, each option named by its own word', async () => {
+    const found = await detected(await choicesPage());
+    const radios = found.candidates.filter((candidate) => candidate.kind === 'radio');
+    expect(radios.map((candidate) => [candidate.name, candidate.option])).toStrictEqual([
+      ['Delivery', 'Standard'],
+      ['Delivery', 'Express'],
+      ['Delivery', 'Pickup'],
+    ]);
+  });
+
+  it('numbers a grid of word-less squares from the row word, and carries the numbering into the row below it', async () => {
+    const found = await detected(await choicesPage());
+    const boxes = found.candidates.filter((candidate) => candidate.kind === 'checkbox');
+    expect(boxes.map((candidate) => candidate.name)).toStrictEqual(
+      Array.from({ length: 10 }, (_unused, at) => `Many_boxes_${String(at + 1)}`),
+    );
+    // EACH ON ITS OWN SQUARE: the first row's tenth-of-the-way boxes, then the second row's, in reading order.
+    // WITHIN THE STROKE: a box's bounds take in half its one-point border.
+    expect(Math.abs((boxes[0]?.rect.x0 ?? 0) - 150)).toBeLessThanOrEqual(1);
+    expect(Math.abs((boxes[5]?.rect.x0 ?? 0) - 150)).toBeLessThanOrEqual(1);
+    expect(boxes[5]?.rect.y0).toBeLessThan(boxes[0]?.rect.y0 ?? 0);
+  });
+
+  it('CONTROL: a second row in OTHER columns is not the grid carried on, so it is not numbered into it', async () => {
+    const found = await detected(await choicesPage({ shiftSecondRow: 7 }));
+    const boxes = found.candidates.filter((candidate) => candidate.kind === 'checkbox');
+    expect(boxes.map((candidate) => candidate.name)).toStrictEqual(
+      Array.from({ length: 5 }, (_unused, at) => `Many_boxes_${String(at + 1)}`),
+    );
+  });
+
+  it('marks each proposal where the page shows it, in display space, which a preview draws', async () => {
+    const found = await detected(await choicesPage());
+    const first = found.candidates[0];
+    if (first === undefined) throw new Error('nothing was proposed');
+    // DISPLAY SPACE IS Y-DOWN on this upright page from the origin: the same box, its y measured from the top.
+    expect(first.shown.x0).toBeCloseTo(first.rect.x0, 3);
+    expect(first.shown.y0).toBeCloseTo(PAGE.height - first.rect.y1, 3);
+  });
+});
+
+/** How much of one box another covers, over the two together: what *at the right place* means below. */
+function overlap(a: { x0: number; y0: number; x1: number; y1: number }, b: { x0: number; y0: number; x1: number; y1: number }): number {
+  const width = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0);
+  const height = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
+  if (width <= 0 || height <= 0) return 0;
+  const shared = width * height;
+  const area = (box: typeof a): number => (box.x1 - box.x0) * (box.y1 - box.y0);
+  return shared / (area(a) + area(b) - shared);
+}
+
+/**
+ * The owner's F4 on the built twin of form-test.pdf: flatten it, run Detect on each page, and count the field places
+ * found at the right place with the right kind. The owner's own file is measured by the walk script and is not
+ * committed; the twin draws no column headings over its table, so its line items are the misses it is expected to have.
+ */
+describe('Detect on a flattened form (F4)', () => {
+  const measure = async (bytes: Uint8Array): Promise<{ hits: number; wrongKind: number; extra: number; already: number }> => {
+    const before = await mupdfWriter.open(await buildFormTestPdf());
+    const { fields } = await readFormFields(before);
+    await mupdfWriter.close(before);
+    const places = new Map<string, (typeof fields)[number]>();
+    for (const field of fields) if (field.rect !== null) places.set(`${String(field.page)}:${JSON.stringify(field.rect)}`, field);
+    return onSession(bytes, async (session) => {
+      let hits = 0;
+      let wrongKind = 0;
+      let extra = 0;
+      let already = 0;
+      for (const page of new Set(fields.map((field) => field.page))) {
+        const found = await detectFlatFields(session, page);
+        already += found.alreadyFields;
+        for (const candidate of found.candidates) {
+          const place = [...places.values()].find((field) => field.page === page && field.rect !== null && overlap(field.rect, candidate.rect) > 0.3);
+          if (place === undefined) {
+            extra += 1;
+            continue;
+          }
+          hits += 1;
+          const expected = place.kind === 'radio' ? 'radio' : place.kind === 'checkbox' ? 'checkbox' : 'text';
+          if (candidate.kind !== expected) wrongKind += 1;
+        }
+      }
+      return { hits, wrongKind, extra, already };
+    });
+  };
+
+  it('finds the places at the right place with the right kind, and proposes nothing that is not a field', async () => {
+    const flat = mupdf.PDFDocument.openDocument(await buildFormTestPdf(), 'application/pdf') as mupdf.PDFDocument;
+    flat.bake(false, true);
+    const result = await measure(flat.saveToBuffer('').asUint8Array());
+    // MEASURED 2026-10-11: 39 of the twin's 68 widget places (63 fields), every kind right, nothing extra.
+    expect(result).toStrictEqual({ hits: 39, wrongKind: 0, extra: 0, already: 0 });
+  });
+
+  it('CONTROL: the place test tells a box from its neighbour, so a count of hits is not a count of proposals', () => {
+    // A ROW OF TICK BOXES 15 apart is the closest the form puts two places: the box itself is a hit, the next is not.
+    const box = { x0: 199.5, y0: 384.5, x1: 214.5, y1: 399.5 };
+    expect(overlap(box, box)).toBe(1);
+    expect(overlap(box, { ...box, x0: box.x0 + 30, x1: box.x1 + 30 })).toBe(0);
+    // MORE THAN HALF A BOX OFF is a miss, and less than half is a hit: the threshold sits between the two.
+    expect(overlap(box, { ...box, x0: box.x0 + 9, x1: box.x1 + 9 })).toBeLessThan(0.3);
+    expect(overlap(box, { ...box, x0: box.x0 + 5, x1: box.x1 + 5 })).toBeGreaterThan(0.3);
+  });
+
+  it('CONTROL: on the form before it is flattened its fields are widgets, not page content, so nothing is proposed', async () => {
+    expect(await measure(await buildFormTestPdf())).toStrictEqual({ hits: 0, wrongKind: 0, extra: 0, already: 0 });
   });
 });

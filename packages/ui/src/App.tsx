@@ -2639,13 +2639,21 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const markBarcode = useCallback((spot: Spot | undefined) => {
     setBarcodeMark((held) => (spot === undefined ? undefined : { spot, arrival: (held?.arrival ?? 0) + 1 }));
   }, []);
+  // DETECT'S PROPOSALS (the owner's F2): every place the review lists, marked on its page through the same spotlight while
+  // the review is open, and taken away when it closes (`detectFlatFieldsCommand`).
+  const [proposalMarks, setProposalMarks] = useState<readonly Spot[] | undefined>(undefined);
+  const markPlaces = useCallback((spots: readonly Spot[] | undefined) => {
+    setProposalMarks(spots);
+  }, []);
   const spotlights = useMemo<ReadonlyMap<number, readonly Spot[]> | undefined>(() => {
-    const spots = [marked?.spot, barcodeMark?.spot].filter((spot): spot is Spot => spot !== undefined);
+    const spots = [marked?.spot, barcodeMark?.spot, ...(proposalMarks ?? [])].filter(
+      (spot): spot is Spot => spot !== undefined,
+    );
     if (spots.length === 0) return undefined;
     const byPage = new Map<number, Spot[]>();
     for (const spot of spots) byPage.set(spot.page, [...(byPage.get(spot.page) ?? []), spot]);
     return byPage;
-  }, [barcodeMark, marked]);
+  }, [barcodeMark, marked, proposalMarks]);
   const markedArrival = marked?.arrival;
   const markedPage = marked?.spot.page;
   useEffect(() => {
@@ -3705,7 +3713,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         exportAnnotationsXfdfCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         exportAnnotationsFdfCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         exportAnnotationsJsonCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
-        detectFlatFieldsCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        detectFlatFieldsCommand({ client, onApplied: applied, ask, stamp, signatures, markPlaces }),
         // ALIGN AND SAME SIZE for the selected form fields (ADR-0193), at the Properties tab's foot.
         ...fieldArrangeCommands({ placed: () => placedFields, apply: arrangeSelectedFields }),
         copyFieldToPagesCommand({ single: () => singleField, ask, apply: copyFieldToPages }),
@@ -3823,6 +3831,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       chosenShortcuts,
       chooseTool,
       markBarcode,
+      markPlaces,
       holdTool,
       windowEdit,
       startSignature,

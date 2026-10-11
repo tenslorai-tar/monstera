@@ -3,14 +3,18 @@ import { type ReactElement, useState } from 'react';
 
 import {
   FLAT_FIELDS_ACCEPT,
+  FLAT_FIELDS_ALL_PAGES,
   FLAT_FIELDS_ALL_TEXT,
   FLAT_FIELDS_ALREADY,
   FLAT_FIELDS_FOUND,
   FLAT_FIELDS_GUESSED,
+  FLAT_FIELDS_HAS_FOUND,
+  FLAT_FIELDS_KIND_RADIO,
   FLAT_FIELDS_KIND_TEXT,
   FLAT_FIELDS_KIND_TICK,
   FLAT_FIELDS_NONE,
   FLAT_FIELDS_NONE_NEW,
+  FLAT_FIELDS_PAGE,
   FLAT_FIELDS_TRUNCATED,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
@@ -41,26 +45,54 @@ import type { FlatFieldsAnswer } from './flatFieldsResult.js';
  */
 export default function FlatFieldsBody({
   candidates,
+  all,
+  pageCount,
+  fields,
   truncated,
   alreadyFields,
   resolve,
+  update,
 }: {
-  readonly candidates: readonly { readonly name: string; readonly label: string; readonly kind: 'text' | 'checkbox' }[];
+  readonly candidates: readonly {
+    readonly key: string;
+    readonly page: number;
+    readonly name: string;
+    readonly label: string;
+    readonly kind: 'text' | 'checkbox' | 'radio';
+    readonly option?: string | undefined;
+  }[];
+  readonly all: boolean;
+  readonly pageCount: number;
+  readonly fields: number;
   readonly truncated: boolean;
   readonly alreadyFields: number;
 } & DialogAnswering<FlatFieldsAnswer>): ReactElement {
   const { _ } = useLingui();
+  // REJECTED, NOT ACCEPTED, is what is held: a reply that brings every page's proposals keeps what was unticked, and
+  // ticks every proposal it brings that the reader has not seen.
   const [rejected, setRejected] = useState<readonly string[]>([]);
-  const accepted = candidates
-    .map((candidate) => candidate.name)
-    .filter((name) => !rejected.includes(name));
+  const accepted = candidates.map((candidate) => candidate.key).filter((key) => !rejected.includes(key));
+  // EVERY PAGE, OFFERED ONCE (the owner's K7): the current page is the default, and a one-page document has no other.
+  const findAll =
+    all || pageCount < 2 ? undefined : (
+      <Button
+        label={FLAT_FIELDS_ALL_PAGES}
+        onClick={() => {
+          update({ kind: 'all-pages' });
+        }}
+      />
+    );
 
   return (
     <div className="m-flat-fields">
       <p className="m-flat-fields__guessed">{_(FLAT_FIELDS_GUESSED)}</p>
-      {/* THE COUNT FIRST, so the window says what it found before it lists it: a window that opens on a list says nothing
-          about a page where the list is short because the form already has its fields. */}
-      <p className="m-flat-fields__found">{_(FLAT_FIELDS_FOUND, { count: candidates.length })}</p>
+      {/* THE COUNT FIRST, so the window says what it found before it lists it — and, on a document that has fields, what
+          it has, in the same sentence (F3). */}
+      <p className="m-flat-fields__found">
+        {fields > 0
+          ? _(FLAT_FIELDS_HAS_FOUND, { fields, count: candidates.length })
+          : _(FLAT_FIELDS_FOUND, { count: candidates.length })}
+      </p>
       {alreadyFields > 0 ? (
         <p className="m-flat-fields__already">{_(FLAT_FIELDS_ALREADY, { count: alreadyFields })}</p>
       ) : null}
@@ -72,21 +104,21 @@ export default function FlatFieldsBody({
           <p className="m-flat-fields__none">{_(alreadyFields > 0 ? FLAT_FIELDS_NONE_NEW : FLAT_FIELDS_NONE)}</p>
           {/* A FOOTER IN THIS STATE TOO: with none the dialog had no button at all, only the title bar's close, and
               sat outside the pattern's width (the gallery, 2026-10-03). Nothing found, so its one button is Close. */}
-          <DialogFooter dismissal="close" />
+          <DialogFooter aside={findAll} dismissal="close" />
         </>
       ) : (
         <>
           <ul className="m-dialog-list m-flat-fields__list">
             {candidates.map((candidate) => (
-              <li className="m-flat-fields__row" key={candidate.name}>
+              <li className="m-flat-fields__row" key={candidate.key}>
                 <label className="m-flat-fields__label">
                   <input
-                    checked={!rejected.includes(candidate.name)}
+                    checked={!rejected.includes(candidate.key)}
                     onChange={(event) => {
                       setRejected((held) =>
                         event.currentTarget.checked
-                          ? held.filter((name) => name !== candidate.name)
-                          : [...held, candidate.name],
+                          ? held.filter((key) => key !== candidate.key)
+                          : [...held, candidate.key],
                       );
                     }}
                     type="checkbox"
@@ -94,18 +126,28 @@ export default function FlatFieldsBody({
                   {/* THE DOCUMENT'S OWN WORDS, and the derived name beside
                       them. The label is what the reader recognises on the page;
                       the name is what the field will be called, and a person
-                      confirming a proposal needs to see both. */}
+                      confirming a proposal needs to see both. A radio's name is
+                      its group's, and its option says which one it is. */}
                   <span className="m-flat-fields__caption">{candidate.label}</span>
-                  <span className="m-flat-fields__name">{candidate.name}</span>
-                  <span className="m-flat-fields__kind">
-                    {_(candidate.kind === 'checkbox' ? FLAT_FIELDS_KIND_TICK : FLAT_FIELDS_KIND_TEXT)}
+                  <span className="m-flat-fields__name">
+                    {candidate.option === undefined ? candidate.name : `${candidate.name} › ${candidate.option}`}
                   </span>
+                  <span className="m-flat-fields__kind">
+                    {_(
+                      candidate.kind === 'checkbox'
+                        ? FLAT_FIELDS_KIND_TICK
+                        : candidate.kind === 'radio'
+                          ? FLAT_FIELDS_KIND_RADIO
+                          : FLAT_FIELDS_KIND_TEXT,
+                    )}
+                  </span>
+                  {all ? <span className="m-flat-fields__page">{_(FLAT_FIELDS_PAGE, { page: candidate.page })}</span> : null}
                 </label>
               </li>
             ))}
           </ul>
           <p className="m-flat-fields__kinds">{_(FLAT_FIELDS_ALL_TEXT)}</p>
-          <DialogFooter>
+          <DialogFooter aside={findAll}>
             <Button
               disabled={accepted.length === 0}
               label={FLAT_FIELDS_ACCEPT}
@@ -115,7 +157,7 @@ export default function FlatFieldsBody({
                 // empty list, and a resolve that reached it would surface as an
                 // internal error over a button the reader could press.
                 if (accepted.length === 0) return;
-                resolve({ accepted });
+                resolve({ kind: 'accept', accepted });
               }}
               values={{ count: accepted.length }}
               variant="primary"

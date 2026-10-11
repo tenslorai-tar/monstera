@@ -32,6 +32,7 @@ import { TRANSLATION_LANGUAGE_IDS } from './translationLanguages.js';
 import { POWERPOINT_FALLBACK_LISTED_MAX, POWERPOINT_MODES } from './powerpointModes.js';
 import { WORD_MODES } from './wordModes.js';
 import {
+  FLAT_FIELD_KINDS,
   MAX_ANNOTATION_BORDER,
   MAX_REMOVED_ANNOTATIONS,
   MAX_ANNOTATION_TEXT,
@@ -5299,10 +5300,14 @@ export const channels = {
             rect: annotationRectSchema,
             /** The text beside it, as a person reads it. */
             label: z.string().max(MAX_FLAT_FIELD_LABEL),
-            /** A name derived from the label, unique within this answer and among the fields the document has. */
+            /** A name derived from the label, unique within this answer and among the fields the document has; a radio's is its group's. */
             name: z.string().max(MAX_FLAT_FIELD_LABEL),
-            /** A small square with its word beside it is a tick box; anything else is a text field. */
-            kind: z.enum(['text', 'checkbox']),
+            /** A small square is a tick box, a small circle a radio; anything else is a text field. */
+            kind: z.enum(FLAT_FIELD_KINDS),
+            /** A radio's own value within its group, from the word beside it. */
+            option: z.string().min(1).max(MAX_FLAT_FIELD_LABEL).optional(),
+            /** Where it is in the page's display space at scale 1: what the preview marks on the page (F2). */
+            shown: displayBoxSchema,
           }),
         )
         .max(MAX_FLAT_FIELD_CANDIDATES)

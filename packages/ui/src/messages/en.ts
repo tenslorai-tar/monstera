@@ -1559,6 +1559,10 @@ export const FLAT_FIELDS_ALREADY = messageKey('dialog.flat-fields.already');
 export const FLAT_FIELDS_NONE_NEW = messageKey('dialog.flat-fields.none-new');
 export const FLAT_FIELDS_KIND_TEXT = messageKey('dialog.flat-fields.kind-text');
 export const FLAT_FIELDS_KIND_TICK = messageKey('dialog.flat-fields.kind-tick');
+export const FLAT_FIELDS_KIND_RADIO = messageKey('dialog.flat-fields.kind-radio');
+export const FLAT_FIELDS_ALL_PAGES = messageKey('dialog.flat-fields.all-pages');
+export const FLAT_FIELDS_HAS_FOUND = messageKey('dialog.flat-fields.has-found');
+export const FLAT_FIELDS_PAGE = messageKey('dialog.flat-fields.page');
 export const EDIT_TEXT_COMMAND_TITLE = messageKey('command.text.edit');
 export const TEXT_EDIT_LAYER_LABEL = messageKey('surface.text-edit.layer');
 export const TEXT_EDIT_BLOCK_LABEL = messageKey('surface.text-edit.block');
@@ -4206,8 +4210,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FLAT_FIELDS_NONE]: 'Nothing on this page looks like a place to write.',
   [FLAT_FIELDS_TRUNCATED]: 'There were more than Monstera lists here, so this page may have others.',
   [FLAT_FIELDS_ALL_TEXT]:
-    'A line or a wide box becomes a text field and a small square becomes a tick box. Use the Forms tools to draw a dropdown, a list or a radio button.',
-  [FLAT_FIELDS_ACCEPT]: '{count, plural, one {Create # field} other {Create # fields}}',
+    'A line or a wide box becomes a text field, a small square a tick box and a small circle a radio button. Use the Forms tools to draw a dropdown or a list.',
+  [FLAT_FIELDS_ACCEPT]: '{count, plural, one {Add # field} other {Add # fields}}',
   [FLAT_FIELDS_FOUND]:
     '{count, plural, =0 {Found no new places for a field.} one {Found # place for a field.} other {Found # places for fields.}}',
   [FLAT_FIELDS_ALREADY]:
@@ -4215,6 +4219,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FLAT_FIELDS_NONE_NEW]: 'Every place on this page that looks like a field already has one.',
   [FLAT_FIELDS_KIND_TEXT]: 'Text field',
   [FLAT_FIELDS_KIND_TICK]: 'Tick box',
+  [FLAT_FIELDS_KIND_RADIO]: 'Radio button',
+  [FLAT_FIELDS_ALL_PAGES]: 'Find on all pages',
+  // ONE PLAIN SENTENCE, the owner's F3: what the document has, then what was found.
+  [FLAT_FIELDS_HAS_FOUND]:
+    '{fields, plural, one {This document has # field} other {This document has # fields}}, and Monstera found {count, plural, =0 {no new places} one {# new place} other {# new places}} for a field.',
+  [FLAT_FIELDS_PAGE]: 'Page {page}',
   [EDIT_TEXT_COMMAND_TITLE]: 'Edit text on the page',
   [TEXT_EDIT_LAYER_LABEL]: 'Editable text on page {page}',
   // THE BLOCK'S OWN FIRST WORDS name it, so a person moving through the page

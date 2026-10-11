@@ -1,3 +1,4 @@
+import { FLAT_FIELD_KINDS } from '@monstera/contract';
 import { lazy } from 'react';
 import { z } from 'zod';
 
@@ -43,7 +44,13 @@ export const FLAT_FIELDS_DIALOG_ID = 'dialog.flat-fields';
  * This said every candidate became a text field until 2026-10-07, because the detector measured nothing about what
  * separates a tick box from a rule. The owner's form-test.pdf is full of small squares with their words on the right,
  * and a text field over each was the wrong field. A square 6 to 26 points each way and about as wide as high is a tick
- * box (`flatFields.ts`' `tickSized`); the row names the kind, so a person can untick a guess.
+ * box (`flatFields.ts`' `tickSized`); the row names the kind, so a person can untick a guess. A small circle is a radio,
+ * and the circles of one row are one group (the owner's F1).
+ *
+ * ## The proposals are marked ON THE PAGE while the window is open (F2)
+ *
+ * A list of words is a list a person has to match against the page by eye. The command marks every proposal through the
+ * spotlight the barcode list and the accessibility tools use, and takes the marks away when the window closes.
  *
  * ## The places that already hold a field are COUNTED, not listed
  *
@@ -56,7 +63,27 @@ export const FLAT_FIELDS_DIALOG = declareDialog({
   title: FLAT_FIELDS_TITLE,
   props: z
     .object({
-      candidates: z.array(z.object({ name: z.string(), label: z.string(), kind: z.enum(['text', 'checkbox']) })),
+      candidates: z.array(
+        z
+          .object({
+            /** Which proposal this is, for the answer: its page and its place in that page's answer. */
+            key: z.string().min(1),
+            /** The page it is on, from 1: said on each row once every page was read. */
+            page: z.number().int().positive(),
+            name: z.string(),
+            label: z.string(),
+            kind: z.enum(FLAT_FIELD_KINDS),
+            /** A radio's option within its group. */
+            option: z.string().optional(),
+          })
+          .strict(),
+      ),
+      /** Whether every page was read, which takes *Find on all pages* away and says each row's page. */
+      all: z.boolean(),
+      /** How many pages the document has, which decides whether *Find on all pages* is offered. */
+      pageCount: z.number().int().positive(),
+      /** How many fields the document has already, said first when it has any (F3). */
+      fields: z.number().int().nonnegative(),
       truncated: z.boolean(),
       /** Places that look like a field and already hold one, left out of the list so none is made twice. */
       alreadyFields: z.number().int().nonnegative(),

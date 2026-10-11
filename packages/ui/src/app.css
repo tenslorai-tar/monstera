@@ -2584,7 +2584,8 @@ optgroup {
  * name is what the field will be called — a distinction that has to survive
  * being read quickly, and colour is what carries it without a second line.
  */
-.m-flat-fields__name {
+.m-flat-fields__name,
+.m-flat-fields__page {
   color: var(--muted);
 }
 
