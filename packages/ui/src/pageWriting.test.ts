@@ -1,7 +1,8 @@
+import { MAX_TEXT_RUN_CHARS, MAX_TEXT_RUNS } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
 
 import { WRITE_TEXT_BOX_LABEL, WRITE_TOO_LONG } from './messages/en.js';
-import { type WriteEnd, type WriteRequest, draftOf, settle } from './pageWriting.js';
+import { type WriteEnd, type WriteRequest, draftOf, runsFit, settle, styledRunsFor } from './pageWriting.js';
 
 /**
  * How a request for words on the page ends (ADR-0154 Decision 1 and its correction): one rule the editor, the
@@ -89,5 +90,39 @@ describe('draftOf', () => {
     const second = draftOf('');
     first.keep('typed into the first');
     expect(second.read()).toBe('');
+  });
+});
+
+describe('words styled one by one while typed (B5.8)', () => {
+  it('the runs are cut where the answer was trimmed, each keeping its style', () => {
+    expect(styledRunsFor('Plain bold', [{ text: '  Plain ' }, { text: 'bold', bold: true }, { text: ' \n' }])).toStrictEqual([
+      { text: 'Plain ' },
+      { text: 'bold', bold: true },
+    ]);
+  });
+
+  it('CONTROL: runs that say no style are the plain words, which a command carries as its text alone', () => {
+    expect(styledRunsFor('Plain words', [{ text: 'Plain ' }, { text: 'words' }])).toBeUndefined();
+  });
+
+  it('runs that do not make the answered words are not sent: another box’s styles are never put on these words', () => {
+    expect(styledRunsFor('Other words', [{ text: 'Plain ' }, { text: 'bold', bold: true }])).toBeUndefined();
+  });
+
+  it('a run past the wire’s bound is sent as pieces in its style, and never cut inside a character', () => {
+    const long = '𝒜'.repeat(MAX_TEXT_RUN_CHARS);
+    const runs = styledRunsFor(long, [{ text: long, italic: true }]) ?? [];
+    expect(runs.map((run) => run.text).join('')).toBe(long);
+    expect(runs.every((run) => run.italic === true && run.text.length <= MAX_TEXT_RUN_CHARS)).toBe(true);
+    // A SURROGATE PAIR WHOLE in every piece: an even number of units, each starting on the pair's first half.
+    expect(runs.every((run) => run.text.length % 2 === 0 && run.text.codePointAt(0) === 0x1d49c)).toBe(true);
+  });
+
+  it('the bound is the wire’s, counted in pieces: one run more than a box carries does not fit', () => {
+    const many = Array.from({ length: MAX_TEXT_RUNS + 1 }, (_, at) => ({ text: `w${String(at)} `, bold: at % 2 === 0 }));
+    expect(runsFit(many)).toBe(false);
+    expect(runsFit(many.slice(0, MAX_TEXT_RUNS))).toBe(true);
+    // PLAIN WORDS ARE NO RUNS AT ALL, however many pieces they would be.
+    expect(runsFit(many.map(({ text }) => ({ text })))).toBe(true);
   });
 });

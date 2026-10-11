@@ -1,4 +1,12 @@
-import type { AnnotationColour, AnnotationFont, AnnotationRect, TextDirection } from '@monstera/contract';
+import {
+  type AnnotationColour,
+  type AnnotationFont,
+  type AnnotationRect,
+  type AnnotationTextRun,
+  MAX_TEXT_RUN_CHARS,
+  MAX_TEXT_RUNS,
+  type TextDirection,
+} from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 
 /**
@@ -46,6 +54,78 @@ export interface WriteRequest {
    * Words the rule refuses are said to be at once; nothing typed, only once the person has tried to finish.
    */
   readonly check?: (text: string) => MessageKey | undefined;
+  /**
+   * Where a block's words styled one by one while typed are kept (the owner's B5.8): present, the box takes Ctrl+B, Ctrl+I
+   * and Ctrl+U on the words chosen. The asker holds it and reads it once the words are answered ({@link styledRunsFor}).
+   */
+  readonly styled?: StyledWords;
+}
+
+/** A run of typed words and the styles a key gave them: the text box's own run, so nothing is translated on the way. */
+export type TypedRun = Pick<AnnotationTextRun, 'text' | 'bold' | 'italic' | 'underline' | 'strike'>;
+
+/**
+ * The runs a styled request's words were typed in, kept as they change, so an editor drawn again when its document
+ * returns starts from them as it starts from its {@link Draft}.
+ */
+export interface StyledWords {
+  readonly read: () => readonly TypedRun[];
+  readonly keep: (runs: readonly TypedRun[]) => void;
+}
+
+export function styledWords(): StyledWords {
+  let runs: readonly TypedRun[] = [];
+  return {
+    read: () => runs,
+    keep: (next) => {
+      runs = next;
+    },
+  };
+}
+
+/** Whether any run says a style: runs that say none are the plain words, which a command carries as its text alone. */
+function anyStyle(runs: readonly TypedRun[]): boolean {
+  return runs.some((run) => run.bold === true || run.italic === true || run.underline === true || run.strike === true);
+}
+
+/** The runs as the wire takes them: a run longer than {@link MAX_TEXT_RUN_CHARS} as pieces of that length in its style. */
+function wireRuns(runs: readonly TypedRun[]): TypedRun[] {
+  return runs.flatMap((run) => {
+    const characters = Array.from(run.text);
+    const pieces: TypedRun[] = [];
+    // BY CODE POINT, so a piece never ends inside a character a surrogate pair spells: half the bound in code points is
+    // at most the bound in the UTF-16 units the schema counts.
+    for (let at = 0; at < characters.length; at += MAX_TEXT_RUN_CHARS / 2) {
+      pieces.push({ ...run, text: characters.slice(at, at + MAX_TEXT_RUN_CHARS / 2).join('') });
+    }
+    return pieces;
+  });
+}
+
+/** Whether the runs fit what one text box may carry, {@link MAX_TEXT_RUNS} of them as the wire cuts them. */
+export function runsFit(runs: readonly TypedRun[]): boolean {
+  return !anyStyle(runs) || wireRuns(runs).length <= MAX_TEXT_RUNS;
+}
+
+/**
+ * The runs the answered `text` was typed in, or `undefined` where none says a style. The answer is the words with the
+ * space around them taken off where the asker trims them, so the runs are cut the same way; runs that do not make the
+ * text are not the words that were answered, and answer `undefined` rather than another box's styles.
+ */
+export function styledRunsFor(text: string, runs: readonly TypedRun[]): readonly TypedRun[] | undefined {
+  if (!anyStyle(runs)) return undefined;
+  const joined = runs.map((run) => run.text).join('');
+  const from = joined.indexOf(text);
+  if (from < 0 || joined.slice(0, from).trim() !== '' || joined.slice(from + text.length).trim() !== '') return undefined;
+  const cut: TypedRun[] = [];
+  let at = 0;
+  for (const run of runs) {
+    const start = Math.max(at, from);
+    const end = Math.min(at + run.text.length, from + text.length);
+    if (end > start) cut.push({ ...run, text: run.text.slice(start - at, end - at) });
+    at += run.text.length;
+  }
+  return anyStyle(cut) ? wireRuns(cut) : undefined;
 }
 
 /**

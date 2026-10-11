@@ -39,6 +39,23 @@ export function spacingOf(points: number, size: number): number {
   return Math.round(Math.max(-MAX_CHARACTER_SPACING, Math.min(MAX_CHARACTER_SPACING, fraction)) * 10000) / 10000;
 }
 
+/**
+ * The style a word processor's chord toggles — Ctrl+B, Ctrl+I, Ctrl+U, or ⌘ for Ctrl — or `undefined` for any other key: the
+ * one table every editor that takes them reads (B3a). THE LETTER IN EITHER CASE: with Caps Lock on, Ctrl+B arrives as `B`
+ * (measured on pinned Chromium, where every chord went unanswered), and Caps Lock is not a different command.
+ */
+export function toggleChord(event: {
+  readonly key: string;
+  readonly ctrlKey: boolean;
+  readonly metaKey: boolean;
+  readonly altKey: boolean;
+  readonly shiftKey: boolean;
+}): 'bold' | 'italic' | 'underline' | undefined {
+  if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return undefined;
+  const key = event.key.toLowerCase();
+  return key === 'b' ? 'bold' : key === 'i' ? 'italic' : key === 'u' ? 'underline' : undefined;
+}
+
 /** The class of a span the formatting made. */
 export const FORMAT_CLASS = 'm-text-editor__fmt';
 
@@ -217,6 +234,15 @@ export function formatRange(root: HTMLElement, range: Range, change: { readonly 
   return parts.length > 0;
 }
 
+/**
+ * What a toggle sets over `range`: OFF as `false` where every word already has the style, ON otherwise. Off is a value and
+ * not the key taken away, because a span nested inside a styled one would otherwise inherit the outer style back
+ * (`effectiveFmt` reads inner over outer, and an absent key says nothing). The one rule both editors toggle by (B3a).
+ */
+export function toggled(root: HTMLElement, range: Range, property: 'bold' | 'italic' | 'underline' | 'strike'): Partial<Record<typeof property, boolean>> {
+  return { [property]: !allWords(root, range, (state) => state[property]) };
+}
+
 /** Whether every word `range` covers is already what `has` says: a toggle's question, asked before it flips. */
 export function allWords(root: HTMLElement, range: Range, has: (state: FormatState) => boolean): boolean {
   const nodes = covered(root, range);
@@ -303,6 +329,41 @@ export function readEditor(root: HTMLElement): { text: string; formatting: Block
     text,
     formatting: { ...(marks.length === 0 ? {} : { marks }), ...(settings.length === 0 ? {} : { paragraphs: settings }) },
   };
+}
+
+/**
+ * The editor's words as runs of the four styles a key gives (a text box being typed, B5.8): {@link readEditor}'s marks cut
+ * the words, so the runs and the marks are one reading of the editor rather than two. A run says only what is on.
+ */
+export function typedRunsOf(root: HTMLElement): { text: string; runs: { text: string; bold?: true; italic?: true; underline?: true; strike?: true }[] } {
+  const { text, formatting } = readEditor(root);
+  const runs: { text: string; bold?: true; italic?: true; underline?: true; strike?: true }[] = [];
+  // NEIGHBOURS IN ONE STYLE ARE ONE RUN: a style turned off is a mark of its own (`toggled`), and words beside it that never
+  // had the style read the same, so counting them apart would spend the box's bound on nothing.
+  const push = (run: (typeof runs)[number]): void => {
+    const last = runs.at(-1);
+    const { text: _lastText, ...lastStyle } = last ?? { text: '' };
+    const { text: _runText, ...runStyle } = run;
+    if (last !== undefined && JSON.stringify(lastStyle) === JSON.stringify(runStyle)) last.text += run.text;
+    else runs.push(run);
+  };
+  let at = 0;
+  const plain = (to: number): void => {
+    if (to > at) push({ text: text.slice(at, to) });
+  };
+  for (const mark of formatting.marks ?? []) {
+    plain(mark.from);
+    push({
+      text: text.slice(mark.from, mark.to),
+      ...(mark.set.bold === true ? { bold: true } : {}),
+      ...(mark.set.italic === true ? { italic: true } : {}),
+      ...(mark.set.underline === true ? { underline: true } : {}),
+      ...(mark.set.strike === true ? { strike: true } : {}),
+    });
+    at = mark.to;
+  }
+  plain(text.length);
+  return { text, runs };
 }
 
 function settingOf(element: HTMLElement): ParagraphSetting {

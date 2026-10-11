@@ -1728,6 +1728,7 @@ export const WRITE_TYPEWRITER_LABEL = messageKey('surface.write.typewriter');
 export const WRITE_CALLOUT_LABEL = messageKey('surface.write.callout');
 export const WRITE_NOTE_LABEL = messageKey('surface.write.note');
 export const WRITE_TOO_LONG = messageKey('surface.write.too-long');
+export const WRITE_TOO_MANY_STYLES = messageKey('surface.write.too-many-styles');
 export const FORMS_FLATTEN = messageKey('surface.forms.flatten');
 export const FORMS_FLATTEN_CONFIRM = messageKey('surface.forms.flatten-confirm');
 export const LINK_ON_PAGE_TO_PAGE = messageKey('surface.link-layer.to-page');
@@ -4417,7 +4418,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TEXT_HIGHLIGHT_ORANGE]: 'Orange highlight',
   [TEXT_FORMAT_CHARACTER_SPACING]: 'Character spacing in points',
   [TEXT_FORMAT_CHARACTER_SPACING_BOUND]:
-    'Up to {points} points either way at this size. Wider, and search and copy would read a space between every letter.',
+    'Up to {points} pt either way at this size. Wider, and search and copy would read a space between every letter.',
   [TEXT_FORMAT_SPACE_AFTER]: 'Space after the paragraph in points',
   [FONT_PICKER_SEARCH]: 'Search fonts',
   [FONT_PICKER_LIST]: 'Fonts',
@@ -4482,6 +4483,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [WRITE_CALLOUT_LABEL]: 'Callout',
   [WRITE_NOTE_LABEL]: 'Comment',
   [WRITE_TOO_LONG]: 'That is too long for one annotation. Shorten it, or use several.',
+  [WRITE_TOO_MANY_STYLES]:
+    'This box has too many differently styled stretches of words. Make some of them the same, or use another box.',
   // SAYS WHAT IT REMOVES, not just "Delete" — the annotation panel's argument
   // one walk along. The rows beside it name similar fields, and a bare verb on
   // a list of similar rows is the label a person clicks on the wrong line. It

@@ -418,7 +418,7 @@ describe('PropertiesPanel with marks selected', () => {
     const { restyled } = mounted({ ...ONE, items: [TEXT_BOX] });
     const field = screen.getByRole('spinbutton', { name: 'Character spacing in points' });
     // THE BOUND AT 12 POINTS: 0.12 of the size.
-    expect(screen.getByText(/Up to 1\.4 points either way/u)).toBeTruthy();
+    expect(screen.getByText(/Up to 1\.4 pt either way/u)).toBeTruthy();
     fireEvent.change(field, { target: { value: '0.6' } });
     fireEvent.blur(field);
     expect(restyled.at(-1)).toStrictEqual({ text: { spacing: 0.05 } });

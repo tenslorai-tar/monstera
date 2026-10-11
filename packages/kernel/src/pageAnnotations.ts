@@ -8,6 +8,7 @@ import {
   type AnnotationPoint,
   type AnnotationRect,
   type AnnotationStamp,
+  type AnnotationTextRun,
   type AnnotationTextStyle,
   type AnnotationWordsStyle,
   type CommandOfKind,
@@ -45,7 +46,7 @@ import { decodedImage, withDocument } from './mupdfWriter.js';
 import { displayedBox } from './pageBoxes.js';
 import { snapRotation } from './rotatePages.js';
 import { canDraw, daFaceOf, isStyled, isStylable, readStyledBox, restyled, writeStyleFacts } from './textBoxAppearance.js';
-import { DEFAULT_LOOK, base14Of } from './textBoxStyle.js';
+import { DEFAULT_LOOK, type TextRun, base14Of } from './textBoxStyle.js';
 import { pageInDocument, pagesOf } from './pageScope.js';
 import { glyphLinesOf, heldToTheirLines } from './redactionQuads.js';
 import { type SignatureBox, type SignatureDrawing, drawSignature, signatureBox } from './signatureDrawing.js';
@@ -744,9 +745,34 @@ function daFaceOfDraft(draft: { readonly font: AnnotationFont; readonly family?:
  * written into the style facts, and the redraw that finishes the command draws it in that face. A base-14 family stays the
  * engine's, as every box before real fonts.
  */
-function realFamily(annotation: PDFAnnotation, draft: { readonly family?: string | undefined }, document: PDFDocument): void {
-  if (draft.family === undefined || base14Of(draft.family) !== undefined) return;
-  writeStyleFacts(annotation, document, { family: draft.family });
+function realFamily(
+  annotation: PDFAnnotation,
+  draft: { readonly family?: string | undefined; readonly text: string; readonly words?: readonly AnnotationTextRun[] | undefined },
+  document: PDFDocument,
+): void {
+  // WORDS STYLED ONE BY ONE WHILE TYPED (B5.8) are the box's style as a restyle's `words` are, through the one writer. Joined
+  // they ARE the text: runs saying other words than `/Contents` would make a reader that draws `/RC` and one that draws the
+  // plain words show two boxes.
+  const words = draft.words?.map(runFact);
+  if (words !== undefined && words.map((run) => run.text).join('') !== draft.text) {
+    throw new RangeError('a text box’s styled runs must join to its words');
+  }
+  if (words === undefined && (draft.family === undefined || base14Of(draft.family) !== undefined)) return;
+  writeStyleFacts(annotation, document, { ...(draft.family === undefined ? {} : { family: draft.family }), ...(words === undefined ? {} : { words }) });
+}
+
+/** A run as the wire carries it, as the appearance's writer takes it: each fact present only where the run says it. */
+function runFact(run: AnnotationTextRun): TextRun {
+  return {
+    text: run.text,
+    ...(run.bold === undefined ? {} : { bold: run.bold }),
+    ...(run.italic === undefined ? {} : { italic: run.italic }),
+    ...(run.underline === undefined ? {} : { underline: run.underline }),
+    ...(run.strike === undefined ? {} : { strike: run.strike }),
+    ...(run.colour === undefined ? {} : { colour: [...run.colour] as [number, number, number] }),
+    ...(run.highlight === undefined || run.highlight === null ? {} : { highlight: [...run.highlight] as [number, number, number] }),
+    ...(run.spacing === undefined ? {} : { spacing: run.spacing }),
+  };
 }
 
 /** The base-14 family each of {@link BASE14_FACE}'s names is, by the name the picker lists. */
@@ -868,16 +894,7 @@ function writeWordsStyle(annotation: PDFAnnotation, text: AnnotationTextStyle, d
     fill: text.fill === undefined ? undefined : text.fill === null ? null : [...text.fill],
     padding: text.padding,
     spacing: text.spacing,
-    words: text.words?.map((run) => ({
-      text: run.text,
-      ...(run.bold === undefined ? {} : { bold: run.bold }),
-      ...(run.italic === undefined ? {} : { italic: run.italic }),
-      ...(run.underline === undefined ? {} : { underline: run.underline }),
-      ...(run.strike === undefined ? {} : { strike: run.strike }),
-      ...(run.colour === undefined ? {} : { colour: [...run.colour] as [number, number, number] }),
-      ...(run.highlight === undefined || run.highlight === null ? {} : { highlight: [...run.highlight] as [number, number, number] }),
-      ...(run.spacing === undefined ? {} : { spacing: run.spacing }),
-    })),
+    words: text.words?.map(runFact),
   }, before);
 }
 

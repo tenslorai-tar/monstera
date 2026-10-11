@@ -45,7 +45,7 @@ import { composing } from './surfaces/shortcuts.js';
 import { joinEdits, neighbourOf, splitEdits, wordsOfBlock } from './textBlockOps.js';
 import { type EditorOps, type EditorSpelling, TextEditorMenu } from './TextEditorMenu.js';
 import { formatOpenEditor, keepsEditor, openEditorState, registerEditor, steppedSize } from './textEditorControl.js';
-import { insertTab, isFormatted, readEditor } from './textFormatting.js';
+import { insertTab, isFormatted, readEditor, toggleChord } from './textFormatting.js';
 import {
   dragged,
   type Handle,
@@ -1309,10 +1309,8 @@ function BlockEditor({
     }
     // THE CHORDS OF FORMATTING, the editor's own while it has the focus: the page's shortcuts do not reach a field.
     if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey) {
-      // THE LETTER IN EITHER CASE: with Caps Lock on, Ctrl+B arrives as `B` (measured on pinned Chromium, where every chord
-      // below went unanswered), and Caps Lock is not a different command.
       const key = event.key.toLowerCase();
-      const property = key === 'b' ? 'bold' : key === 'i' ? 'italic' : key === 'u' ? 'underline' : undefined;
+      const property = toggleChord(event);
       if (property !== undefined) {
         event.preventDefault();
         event.stopPropagation();

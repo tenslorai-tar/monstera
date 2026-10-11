@@ -125,6 +125,101 @@ for (const look of LOOKS) {
   });
 }
 
+test('WORDS STYLED WHILE TYPED (B5.8): Ctrl+B at the caret sets the next words, Ctrl+I on chosen words sets those, and both reach the one command', async ({
+  page,
+}) => {
+  const executed: Executed[] = [];
+  await opened(page, LOOKS[0], 1, executed);
+  await chooseTool(page, 'Text box');
+  await dragOn(page, [80, 60], [380, 160]);
+  const box = page.getByRole('textbox', { name: 'Text box' });
+  await expect(box).toBeFocused();
+  await page.keyboard.type('Plain ');
+  await page.keyboard.press('Control+B');
+  await page.keyboard.type('bold');
+  await page.keyboard.press('Control+B');
+  await page.keyboard.type(' then slanted');
+  // THE LAST WORD CHOSEN BY KEYS, as a person selects while typing.
+  for (const _letter of 'slanted') await page.keyboard.press('Shift+ArrowLeft');
+  await page.keyboard.press('Control+I');
+  // DRAWN AS IT WILL BE, before anything is sent: each word in the style its chord gave, and the words typed after Ctrl+B
+  // was pressed again NOT bold, though the caret was inside the bold words when they were typed.
+  const weightOf = (word: string): Promise<string> =>
+    box.evaluate((element, wanted) => {
+      const walker = element.ownerDocument.createTreeWalker(element, 4);
+      for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+        if (node.textContent?.includes(wanted) === true && node.parentElement !== null) {
+          const style = getComputedStyle(node.parentElement);
+          return `${style.fontWeight} ${style.fontStyle}`;
+        }
+      }
+      return 'absent';
+    }, word);
+  expect(await weightOf('bold')).toBe('700 normal');
+  expect(await weightOf(' then ')).toBe('400 normal');
+  expect(await weightOf('slanted')).toBe('400 italic');
+  await page.keyboard.press('Escape');
+  await expect.poll(() => executed.length).toBe(1);
+  expect(executed[0]?.command).toMatchObject({
+    kind: 'addAnnotation',
+    annotation: {
+      type: 'text-box',
+      text: 'Plain bold then slanted',
+      words: [{ text: 'Plain ' }, { text: 'bold', bold: true }, { text: ' then ' }, { text: 'slanted', italic: true }],
+    },
+  });
+});
+
+test('CONTROL: words typed with no chord are sent as the text alone, with no runs', async ({ page }) => {
+  const executed: Executed[] = [];
+  await opened(page, LOOKS[0], 1, executed);
+  await chooseTool(page, 'Text box');
+  await dragOn(page, [80, 60], [380, 160]);
+  await page.keyboard.type('Plain words');
+  await page.keyboard.press('Escape');
+  await expect.poll(() => executed.length).toBe(1);
+  expect(executed[0]?.command.annotation).toMatchObject({ type: 'text-box', text: 'Plain words' });
+  expect(executed[0]?.command.annotation).not.toHaveProperty('words');
+});
+
+test('A STYLE THAT WOULD MAKE MORE RUNS THAN ONE BOX CARRIES is not applied, and the box says why', async ({ page }) => {
+  const executed: Executed[] = [];
+  await opened(page, LOOKS[0], 1, executed);
+  await chooseTool(page, 'Text box');
+  await dragOn(page, [40, 40], [560, 300]);
+  const box = page.getByRole('textbox', { name: 'Text box' });
+  const refusal = /too many differently styled stretches/u;
+  // FIFTEEN RUNS: every other word bold by the caret's chord, ending plain.
+  for (let word = 0; word < 15; word += 1) {
+    if (word % 2 === 1) await page.keyboard.press('Control+B');
+    await page.keyboard.type(`w${String(word)}`);
+    if (word % 2 === 1) await page.keyboard.press('Control+B');
+    await page.keyboard.type(' ');
+  }
+  await page.keyboard.type('mid last');
+  // CHOSEN WORDS: bold in the middle of the last plain run would make it three, seventeen in all. Not applied, and said.
+  for (const _letter of ' last') await page.keyboard.press('ArrowLeft');
+  for (const _letter of 'mid') await page.keyboard.press('Shift+ArrowLeft');
+  await page.keyboard.press('Control+B');
+  await expect(box).toHaveAccessibleDescription(refusal);
+  await expect(box).toHaveText(/w14 mid last$/u);
+  // AT THE CARET: bold at the end is the sixteenth run and fits; plain after it would be the seventeenth, so the words are
+  // typed in the style around them and the box says why — what is typed is never dropped.
+  await page.keyboard.press('End');
+  await page.keyboard.press('Control+B');
+  await page.keyboard.type('!');
+  await expect(box).not.toHaveAccessibleDescription(refusal);
+  await page.keyboard.press('Control+B');
+  await page.keyboard.type('?');
+  await expect(box).toHaveAccessibleDescription(refusal);
+  await expect(box).toHaveText(/mid last!\?$/u);
+  await page.keyboard.press('Escape');
+  await expect.poll(() => executed.length).toBe(1);
+  const words = executed[0]?.command.annotation?.['words'] as readonly { text: string; bold?: boolean }[] | undefined;
+  expect(words?.length).toBe(16);
+  expect(words?.at(-1)).toStrictEqual({ text: '!?', bold: true });
+});
+
 test('TYPEWRITER: a click opens a box that GROWS with the words, and Escape finishes them', async ({ page }) => {
   const executed: Executed[] = [];
   await opened(page, LOOKS[0], 1, executed);
@@ -189,7 +284,7 @@ test('A REQUEST BELONGS TO ITS DOCUMENT: another on show takes the box off the p
     (tab as HTMLButtonElement).click();
   });
   const box = page.getByRole('textbox', { name: 'Text box' });
-  await expect(box).toHaveValue('half a sentence');
+  await expect(box).toHaveText('half a sentence');
   await expect(box).toBeFocused();
   await page.keyboard.type(' and the rest');
   await page.keyboard.press('Escape');
@@ -408,7 +503,8 @@ test('a TYPEWRITER CLICK on typed words edits them rather than placing a second 
 
   // CONTROL: a click BESIDE the words still places a new typewriter, starting empty.
   await page.mouse.click(mark.x + mark.width / 2, mark.y + mark.height + 120);
-  await expect(box).toHaveValue('');
+  // A NEW BOX TAKES STYLES WORD BY WORD (B5.8), so it is an editable rather than a field: its words are its text.
+  await expect(box).toHaveText('');
   await page.keyboard.type('Received');
   await page.keyboard.press('Escape');
   await expect.poll(() => executed.length).toBe(2);

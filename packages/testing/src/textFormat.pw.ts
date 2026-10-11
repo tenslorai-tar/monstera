@@ -144,7 +144,7 @@ test.describe('Formatting in the Properties panel (K11)', () => {
     await panel.getByRole('group', { name: 'Highlight' }).getByRole('button', { name: 'Yellow highlight' }).click();
     const letters = panel.getByRole('spinbutton', { name: 'Character spacing in points' });
     // THE BOUND AT THIS SIZE IS SAID: 0.12 of 12 points.
-    await expect(panel.getByText('Up to 1.4 points either way at this size.', { exact: false })).toBeVisible();
+    await expect(panel.getByText('Up to 1.4 pt either way at this size.', { exact: false })).toBeVisible();
     await letters.fill('0.6');
     // STILL A FIELD AFTER THE FORMAT IT SENT: the words read as nothing once their range collapsed, and the field went
     // disabled under the cursor (measured before `formatRange` selected the words again).

@@ -10,6 +10,7 @@ import {
   setParagraphs,
   stateAt,
   toggleList,
+  toggled,
 } from './textFormatting.js';
 import type { Nudge } from './textPlacement.js';
 
@@ -214,10 +215,8 @@ export function formatOpenEditor(action: FormatAction): boolean {
     return changed;
   };
   switch (action.kind) {
-    case 'toggle': {
-      const on = allWords(editor.root, range, (state) => state[action.property]);
-      return keeping(formatRange(editor.root, range, { [action.property]: on ? false : true }, zoom));
-    }
+    case 'toggle':
+      return keeping(formatRange(editor.root, range, toggled(editor.root, range, action.property), zoom));
     case 'rise': {
       const on = allWords(editor.root, range, (state) => state.rise === action.rise);
       return keeping(formatRange(editor.root, range, { rise: on ? null : action.rise }, zoom));

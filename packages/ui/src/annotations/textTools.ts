@@ -17,7 +17,7 @@ import {
   WRITE_TOO_LONG,
   WRITE_TYPEWRITER_LABEL,
 } from '../messages/en.js';
-import type { Write, WriteRequest } from '../pageWriting.js';
+import { type StyledWords, type Write, type WriteRequest, styledRunsFor, styledWords } from '../pageWriting.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import { draggedRect } from './annotationSpace.js';
@@ -186,7 +186,10 @@ function boxTextTool(
       // `transform`, the one read at pointer-up, which is what the rule protects.
       const dragged = clicked ? undefined : draggedRect(startOf(gesture), endOf(gesture), transform);
 
+      // A TEXT BOX AND A TYPEWRITER take styles word by word while typed (B5.8): both are boxes Monstera draws.
+      const styled = styledWords();
       const text = await writeAnnotationWords(deps, {
+        styled,
         page,
         // A CLICK'S BOX before any words is `clickedRect`'s for none — one line at the point clicked — so the box
         // a person types into and the box the annotation is made from are one rule.
@@ -199,6 +202,7 @@ function boxTextTool(
       // already produces: there is nothing to build a command from.
       if (text === undefined) return undefined;
       const rect = dragged ?? clickedRect(startOf(gesture), text, deps.style.fontSize, transform);
+      const words = styledRunsFor(text, styled.read());
 
       return {
         kind: 'addAnnotation',
@@ -213,6 +217,7 @@ function boxTextTool(
           font: deps.style.font,
           family: deps.style.family,
           direction: deps.style.direction,
+          ...(words === undefined ? {} : { words: words.map((run) => ({ ...run })) }),
         },
       };
     },
@@ -278,6 +283,8 @@ export interface AnnotationWords {
    */
   readonly colour: AnnotationColour | undefined;
   readonly grows: boolean;
+  /** Where words styled one by one while typed are kept, for a box whose styles Monstera draws (B5.8). */
+  readonly styled?: StyledWords;
 }
 
 /**
@@ -308,6 +315,7 @@ export async function writeAnnotationWords(
           },
         }),
     grows: words.grows,
+    ...(words.styled === undefined ? {} : { styled: words.styled }),
   });
 }
 

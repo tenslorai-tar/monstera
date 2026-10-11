@@ -206,6 +206,46 @@ describe('a text box’s character spacing and highlight (ADR-0228), against the
   });
 });
 
+describe('a text box whose words were styled one by one while typed (B5.8)', () => {
+  const RUNS: NonNullable<Extract<AnnotationDraft, { type: 'text-box' }>['words']> = [
+    { text: 'Plain ' },
+    { text: 'bold', bold: true },
+    { text: ' and ' },
+    { text: 'red', colour: [1, 0, 0] },
+  ];
+
+  it('is placed with its runs as /RC and an appearance Monstera draws, and they survive a save and a reopen', async () => {
+    const bytes = await added({ ...textBox('Helvetica', 'Plain bold and red'), words: RUNS });
+    const { fonts, content } = await appearanceOf(bytes);
+    expect(fonts.map((font) => font.name)).toContain('Helvetica-Bold');
+    expect(content).toContain('1 0 0 rg');
+    expect(await readText(bytes)).toContain('Plain bold and red');
+    // REOPENED FROM THE SAVED BYTES: the runs are the file's, not the session's.
+    const session = await mupdfWriter.open(bytes);
+    try {
+      const rich = await withDocument(session, (document) => {
+        const page = document.loadPage(0);
+        if (!(page instanceof mupdf.PDFPage)) throw new Error('not a PDF page');
+        return page.getAnnotations()[0]?.getObject().get('RC').asString() ?? '';
+      });
+      expect(rich).toContain('font-weight:bold');
+      expect(rich).toContain('#ff0000');
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('CONTROL: the same words placed with no runs draw no bold face and no red', async () => {
+    const { fonts, content } = await appearanceOf(await added(textBox('Helvetica', 'Plain bold and red')));
+    expect(fonts.map((font) => font.name)).not.toContain('Helvetica-Bold');
+    expect(content).not.toContain('1 0 0 rg');
+  });
+
+  it('refuses runs that do not join to the box’s words, which would make two readers show two boxes', async () => {
+    await expect(added({ ...textBox('Helvetica', 'Other words'), words: RUNS })).rejects.toThrow(/join to its words/u);
+  });
+});
+
 describe('with no fonts bound', () => {
   it('a real family falls back to the engine’s base 14 and the panel says the styles are unavailable', async () => {
     const session = await mupdfWriter.open(await added(textBox('Carlito', 'No catalogue')));

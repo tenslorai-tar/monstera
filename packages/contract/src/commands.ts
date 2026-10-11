@@ -1993,6 +1993,11 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
       family: annotationFamilySchema.optional(),
       /** The side the lines sit against, {@link TEXT_DIRECTIONS}. */
       direction: textDirectionSchema,
+      /**
+       * The words as runs where some were styled one by one while typed (the owner's B5.8): joined they are `text`, which a
+       * writer refuses them otherwise, and they are written as `/RC` and `/DS` with an appearance Monstera draws.
+       */
+      words: z.array(annotationTextRunSchema).min(1).max(MAX_TEXT_RUNS).optional(),
     })
     .strict(),
   z
@@ -2256,6 +2261,8 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
       family: annotationFamilySchema.optional(),
       /** The side the lines sit against, {@link TEXT_DIRECTIONS}. */
       direction: textDirectionSchema,
+      /** The words as runs, `text-box`' field and its rule. */
+      words: z.array(annotationTextRunSchema).min(1).max(MAX_TEXT_RUNS).optional(),
     })
     .strict(),
   z
