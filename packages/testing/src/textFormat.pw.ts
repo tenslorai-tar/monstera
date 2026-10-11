@@ -177,11 +177,43 @@ test.describe('Formatting in the Properties panel (K11)', () => {
     await page.locator('[data-text-editor]').getByText('A paragraph of words').dblclick({ position: { x: 40, y: 6 } });
     const size = page.locator('[data-text-properties]').getByRole('spinbutton', { name: 'Size in points' });
     // TWO KEYSTROKES, TWO FORMATS: the first wraps the word in a span of its own, which a live range does not survive.
+    // AND THE FIELD IS FILLED AT ONCE after the double-click, before the browser's queued `selectionchange` has run: the
+    // word is remembered as the focus leaves the words, not only when that event arrives.
     await size.fill('');
     await size.pressSequentially('18');
     await size.press('Enter');
     await page.locator('canvas[data-page-canvas="0"]').click({ position: { x: 40, y: 600 } });
     // `paragraph` IS WORDS 2 TO 11, and is the one mark: the words around it were never formatted.
+    await expect.poll(() => marksSent(sent)).toStrictEqual([{ block: 0, from: 2, to: 11, set: { size: 18 } }]);
+  });
+
+  // THE RACE, MADE DETERMINISTIC: the word is chosen and the focus moved to the size field in ONE task, so the browser's
+  // `selectionchange` for the choice is still queued when the focus leaves the words, and by the time it runs the
+  // selection is the field's. What the field formats must still be the word, not the paragraph the caret was in.
+  test('a word chosen and the focus moved to the size field in the same moment still formats that word only', async ({ page }) => {
+    const sent: { channel: string; params: unknown }[] = [];
+    await openBlock(page, sent);
+    const size = page.locator('[data-text-properties]').getByRole('spinbutton', { name: 'Size in points' });
+    await size.evaluate((field) => {
+      const editor = document.querySelector('[data-text-editor]');
+      const walker = editor === null ? null : document.createTreeWalker(editor, 4);
+      for (let node = walker?.nextNode() ?? null; node !== null; node = walker?.nextNode() ?? null) {
+        const at = node.textContent?.indexOf('paragraph') ?? -1;
+        if (at < 0) continue;
+        const range = document.createRange();
+        range.setStart(node, at);
+        range.setEnd(node, at + 'paragraph'.length);
+        document.getSelection()?.removeAllRanges();
+        document.getSelection()?.addRange(range);
+        break;
+      }
+      (field as HTMLInputElement).focus();
+    });
+    await expect(size).toBeFocused();
+    await size.fill('');
+    await size.pressSequentially('18');
+    await size.press('Enter');
+    await page.locator('canvas[data-page-canvas="0"]').click({ position: { x: 40, y: 600 } });
     await expect.poll(() => marksSent(sent)).toStrictEqual([{ block: 0, from: 2, to: 11, set: { size: 18 } }]);
   });
 

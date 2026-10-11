@@ -114,9 +114,15 @@ export function registerEditor(editor: OpenEditor): () => void {
     }
   };
   document.addEventListener('selectionchange', keep);
+  // AS THE FOCUS LEAVES THE WORDS, too: `selectionchange` is a queued task that reads the selection when it RUNS, so words
+  // chosen and a field focused within one task are read after the selection became the field's, and the next format
+  // fell back to the whole paragraph (measured on pinned Chromium, `textFormat.pw.ts`' same-moment case). `focusout` runs
+  // inside the focus move, while the selection is still the words'.
+  editor.root.addEventListener('focusout', keep);
   announce();
   return () => {
     document.removeEventListener('selectionchange', keep);
+    editor.root.removeEventListener('focusout', keep);
     if (open === editor) {
       open = undefined;
       remembered = undefined;
