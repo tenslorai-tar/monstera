@@ -101,7 +101,8 @@ test('the FORMS TAB shows each field’s whole name', async ({ page }) => {
   await openDocument(page);
   await page.getByRole('tablist', { name: 'Document panels' }).getByRole('tab', { name: 'Forms' }).click();
   const panel = page.getByRole('tabpanel', { name: 'Forms' });
-  await expect(panel.getByRole('textbox', { name: 'Full name' })).toBeVisible();
+  // THE VALUE READS AS WORDS until it is pressed (A4), so the row is waited for by its value's button.
+  await expect(panel.getByRole('button', { name: 'Full name', exact: true })).toBeVisible();
   // NOT CUT: the name's button shows all of its text — no ellipsis means its content fits the box it has.
   const cut = await panel.locator('.m-forms-jump').evaluateAll((buttons) =>
     buttons.filter((button) => button.scrollWidth > button.clientWidth + 1).map((button) => button.textContent),

@@ -1,6 +1,6 @@
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import { type Locator, type Page, expect, test } from '@playwright/test';
 
 import type { ShimFormField } from './browserShim.js';
 import { samplePdf } from './helpScreensHarness.js';
@@ -220,22 +220,30 @@ for (const look of LOOKS) {
     );
     await page.getByRole('tablist', { name: 'Document panels' }).getByRole('tab', { name: 'Forms' }).click();
     const panel = page.getByRole('tabpanel', { name: 'Forms' });
-    const address = panel.getByLabel('address', { exact: true });
-    const previous = panel.getByLabel('previous address', { exact: true });
+    // THE LIST READS EACH VALUE AS WORDS, and a press opens the field's box in place (A4): the box is where a line break
+    // could be rewritten, so each is opened and left untouched.
+    const opened = async (name: string): Promise<Locator> => {
+      await panel.getByRole('button', { name, exact: true }).click();
+      const box = panel.getByRole('textbox', { name, exact: true });
+      await expect(box).toBeFocused();
+      return box;
+    };
+    const address = await opened('address');
     await expect(address).toHaveValue('1 High Street\nLeeds');
+    await page.keyboard.press('Tab');
     // THE MEASUREMENT this case rests on, read where it happens: Chromium shows the CR as a line feed.
+    const previous = await opened('previous address');
     await expect(previous).toHaveValue('2 Low Road\nYork');
-    expect(await panel.getByLabel('notes', { exact: true }).evaluate((element) => element.tagName)).toBe('TEXTAREA');
-
-    await address.focus();
-    await previous.focus();
-    await panel.getByLabel('notes', { exact: true }).focus();
+    await page.keyboard.press('Tab');
+    const notes = await opened('notes');
+    expect(await notes.evaluate((element) => element.tagName)).toBe('TEXTAREA');
     await page.keyboard.press('Tab');
     expect(fills(sent)).toStrictEqual([]);
 
     // CONTROL: an edit is sent, with its line break.
-    await address.fill('1 High Street\nLeeds LS1');
-    await previous.focus();
+    const edited = await opened('address');
+    await edited.fill('1 High Street\nLeeds LS1');
+    await page.keyboard.press('Tab');
     await expect.poll(() => fills(sent)).toStrictEqual([
       { kind: 'fillFormField', page: 0, index: 0, version: 1, value: { set: 'text', text: '1 High Street\nLeeds LS1' } },
     ]);

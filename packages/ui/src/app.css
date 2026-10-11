@@ -1929,9 +1929,12 @@ optgroup {
  * it is the document's own word, and *F.* for *First name* was the owner's review of 0.1.6.0. `align-items: center`,
  * because a mark and a `<select>` have no text baseline to share with the name.
  */
+/* THE NAME TAKES TWO THIRDS: it is what a person scans the list by, and at an even split a panel of its default width
+   left a name 117 px wide, so a long one read a word or two a line (layoutReview.pw.ts, 2026-10-11). The value beside
+   it is a field's answer, usually short, and wraps where it is not. */
 .m-forms-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
   align-items: center;
   gap: var(--space-2) var(--space-8);
   padding-block: var(--space-2);
