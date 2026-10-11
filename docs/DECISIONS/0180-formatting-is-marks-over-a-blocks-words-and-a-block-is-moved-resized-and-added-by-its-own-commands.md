@@ -135,3 +135,27 @@ The statement that a Type 3 page *says it does not move or add text yet* is remo
 [ADR-0188](0188-a-type-3-page-is-moved-resized-turned-added-to-joined-and-split-by-the-operator-writer.md): the operator writer
 applies `places` (a move, a scale about the top left, a turn about the centre, a measure) and `inserts` through the same
 block wire, and a join and a split, which were always edits, work on such a page.
+
+## Correction, 2026-10-11: the formatting that takes a value is in the Properties panel; no bar floats over the words
+
+The owner's K11 (the cloud bundle's resolutions, accepted): the editor's floating bar is removed, and the formatting it
+held is in the Properties panel's text section (`TextFormatPanel`), in three groups, *Text*, *Paragraph* and *Box*, while
+an editor is open. The 2026-10-06 correction above cites *the editor's bar* beside the status bar's zoom as a control that
+takes a value and is its own; that reasoning stands and moves with the controls: the font, the size, the colour and the
+line spacing are the section's own, and the verbs in it are the one table the ribbon's Format group and the palette
+project, through the one `formatOpenEditor`.
+
+**What this changes is where the editor's focus may go without ending the edit.** The bar sat inside the editor's frame,
+so a focus moving to its fields was a focus inside the frame, and the frame wrote only when the focus left it. The panel
+is elsewhere in the window. So an element whose focus is the open editor's own is marked once, `KEEPS_EDITOR`
+(`textEditorControl.ts`): the frame does not write when the focus moves into a marked element, and the marked element
+finishes the editor when the focus leaves both (`leavesEditor`). One named rule with two callers, rather than a list of
+selectors in the frame, so a later surface that formats the words takes the marker and nothing else.
+
+Rejected: the panel's fields refocusing the words after every keystroke, which makes a size of two digits impossible to
+type; and a portal for the font list, which would put the list outside the marked element and end the edit on the first
+press in it.
+
+What the section does not offer, and why: strikethrough, highlight, justified paragraphs and space after a paragraph.
+Decision 1's mark set and Decision 2's paragraph settings carry none of them, and a control that changes nothing on the
+page is a defect rather than a placeholder. Each needs those decisions widened and both writers taught it.
