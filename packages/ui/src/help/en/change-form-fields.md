@@ -19,10 +19,10 @@ Every field has properties you can change after it is drawn: its name, what it l
 
 - **Name** (one field at a time), **Tooltip**, **Required** and **Read only**. A dot in a name makes a group, so renaming "a.b" to "c.b" moves the field under the group "c", which is made if the form has none. A group left empty is taken away, and a calculation Monstera wrote that adds the field up follows its new name. A name another field already has, or runs through, is said in the name box and not sent.
 - **Default value** for a text field, dropdown or list box.
-- **Font**, **Size (0 is automatic)**, **Border colour**, **Border width** and **Fill colour**. Choose **None** to take a colour away.
-- **Several lines** for a text field.
-- **Choices** for a dropdown, a list box or a radio group, one on each line. For a radio group these are the values of its options in the order they sit.
-- **Stored values** for a dropdown or a list box, when the document keeps something other than the text people read. Each line belongs to the choice on the same line above, and a line left empty keeps the choice itself. Changing a choice's text keeps what is stored for it.
+- **Font**, **Size (0 is automatic)**, **Text colour**, **Border colour**, **Border width** and **Fill colour**. Choose **None** to take a border or fill colour away.
+- **Several lines**, **Check spelling** for a text field; **Allow typing** for a dropdown; **Allow several** for a list box.
+- **Choices** for a dropdown, a list box or a radio group, one row each. **Add a choice** adds one, **Sort A to Z** sorts them, and each row has buttons to move it up or down and to remove it. For a radio group these are the values of its options in the order they sit.
+- Beside each choice of a dropdown or a list box, what the document stores for it, when that is something other than the text people read. Leave it empty to keep the choice itself. Changing a choice's text keeps what is stored for it.
 - **Format**: a number (decimal places, separators, negative numbers and a currency sign), a percentage, a date or a time.
 - **Calculation**: the sum, product, average, smallest or largest of other fields you name, and where it falls in the calculation order.
 

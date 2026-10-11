@@ -6697,6 +6697,34 @@ optgroup {
   outline-offset: 2px;
 }
 
+/* A FIELD'S CHOICES as a list: each row its text, what it stores, and its three buttons; Add and Sort under it. */
+.m-field-options__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.m-field-options__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.m-field-options__text,
+.m-field-options__value {
+  flex: 1 1 0;
+  min-inline-size: 0;
+}
+
+.m-field-options__actions {
+  display: flex;
+  gap: var(--space-8);
+  margin-block-start: var(--space-6);
+}
+
 /* A SNAP'S GUIDE LINE, across the whole page, in the accent: where the moving field met another's edge or centre. */
 .m-field-guide {
   position: absolute;

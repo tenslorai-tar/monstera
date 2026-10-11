@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { activateCatalogue, i18n } from '../i18n.js';
 import { EN } from '../messages/en.js';
 import { CommandRegistry, type CommandContext } from '../registries/commands.js';
-import { FieldPropertiesPanel, choicesOfDrafts } from './FieldPropertiesPanel.js';
+import { FieldPropertiesPanel, choicesOfRows } from './FieldPropertiesPanel.js';
 
 /**
  * The Properties tab for selected form fields (ADR-0193).
@@ -252,22 +252,36 @@ describe('the field properties pane', () => {
     expect(seen.edits).toStrictEqual([{ calculationPosition: 2 }]);
   });
 
-  it('offers choices for a dropdown and not for a text field, one a line, and refuses a repeated one (control)', async () => {
+  it('offers choices for a dropdown as a list, one row each, and refuses a repeated one (control)', async () => {
     const dropdown: FormFieldRead = { ...TEXT, kind: 'dropdown', name: 'region', options: ['North', 'South'] };
     const seen = mounted(dropdown);
-    const choices = await screen.findByLabelText('Choices');
-    fireEvent.change(choices, { target: { value: 'North\nSouth\nNorth' } });
-    fireEvent.blur(choices);
+    const second = await screen.findByLabelText('Choice 2');
+    fireEvent.change(second, { target: { value: 'North' } });
+    fireEvent.blur(second);
     expect(seen.edits, 'a choice given twice is not sent').toStrictEqual([]);
-    fireEvent.change(choices, { target: { value: 'North\nSouth\nEast' } });
-    fireEvent.blur(choices);
-    expect(seen.edits).toStrictEqual([{ options: ['North', 'South', 'East'] }]);
+    fireEvent.change(second, { target: { value: 'East' } });
+    fireEvent.blur(second);
+    expect(seen.edits).toStrictEqual([{ options: ['North', 'East'] }]);
+  });
+
+  it('adds, moves, removes and sorts choices, each sent at once (C6)', async () => {
+    const seen = mounted({ ...TEXT, kind: 'listbox', name: 'fruit', options: ['Pear', 'Apple'] });
+    fireEvent.click(await screen.findByRole('button', { name: 'Add a choice' }));
+    expect(seen.edits.at(-1)).toStrictEqual({ options: ['Pear', 'Apple', 'Choice 3'] });
+    fireEvent.click(screen.getByRole('button', { name: 'Move choice 3 up' }));
+    expect(seen.edits.at(-1)).toStrictEqual({ options: ['Pear', 'Choice 3', 'Apple'] });
+    fireEvent.click(screen.getByRole('button', { name: 'Remove choice 2' }));
+    expect(seen.edits.at(-1)).toStrictEqual({ options: ['Pear', 'Apple'] });
+    fireEvent.click(screen.getByRole('button', { name: 'Sort A to Z' }));
+    expect(seen.edits.at(-1)).toStrictEqual({ options: ['Apple', 'Pear'] });
+    // CONTROLS: the first cannot go up, and the last one left cannot be removed.
+    expect(screen.getByRole('button', { name: 'Move choice 1 up' })).toHaveProperty('disabled', true);
   });
 
   it('shows the text a person reads and the value apart, and an edit of the text keeps the value (control: a plain list shows none)', async () => {
     const plain: FormFieldRead = { ...TEXT, kind: 'listbox', name: 'plain', options: ['one', 'two'] };
     mounted(plain);
-    expect((await screen.findByLabelText<HTMLTextAreaElement>('Stored values')).value, 'control: a list with no pairs has no stored values').toBe('\n');
+    expect((await screen.findByLabelText<HTMLInputElement>('Stored value of choice 1')).value, 'control: a list with no pairs has no stored values').toBe('');
     cleanup();
     const paired: FormFieldRead = {
       ...TEXT,
@@ -276,30 +290,30 @@ describe('the field properties pane', () => {
       options: [{ value: 'r', label: 'Red' }, { value: 'g', label: 'Green' }, 'plain'],
     };
     const seen = mounted(paired);
-    const texts = await screen.findByLabelText<HTMLTextAreaElement>('Choices');
-    const values = await screen.findByLabelText<HTMLTextAreaElement>('Stored values');
-    expect(texts.value).toBe('Red\nGreen\nplain');
-    expect(values.value).toBe('r\ng\n');
-    fireEvent.blur(texts);
+    const first = await screen.findByLabelText<HTMLInputElement>('Choice 1');
+    expect(first.value).toBe('Red');
+    expect(screen.getByLabelText<HTMLInputElement>('Stored value of choice 2').value).toBe('g');
+    expect(screen.getByLabelText<HTMLInputElement>('Stored value of choice 3').value).toBe('');
+    fireEvent.blur(first);
     expect(seen.edits, 'leaving a box with nothing changed sends nothing').toStrictEqual([]);
-    fireEvent.change(texts, { target: { value: 'Crimson\nGreen\nplain' } });
-    fireEvent.blur(texts);
+    fireEvent.change(first, { target: { value: 'Crimson' } });
+    fireEvent.blur(first);
     expect(seen.edits).toStrictEqual([{ options: [{ value: 'r', label: 'Crimson' }, { value: 'g', label: 'Green' }, 'plain'] }]);
   });
 
-  it('chooses what the two boxes send: a line with no value stores its text, and what cannot be sent is not', () => {
-    expect(choicesOfDrafts('Red\nGreen', 'r\n')).toStrictEqual([{ value: 'r', label: 'Red' }, 'Green']);
-    expect(choicesOfDrafts('Red\nGreen', null)).toStrictEqual(['Red', 'Green']);
-    expect(choicesOfDrafts('Red\nGreen', 'r\ng\nb'), 'more values than choices').toBeNull();
-    expect(choicesOfDrafts('Red\nGreen', 'x\nx'), 'the same value twice').toBeNull();
-    expect(choicesOfDrafts('Red\n\nGreen', null), 'a choice with no text').toBeNull();
-    expect(choicesOfDrafts('', null), 'no choices').toBeNull();
+  it('chooses what the rows send: a row with no value stores its text, and what cannot be sent is not', () => {
+    expect(choicesOfRows([{ text: 'Red', value: 'r' }, { text: 'Green', value: '' }], true)).toStrictEqual([{ value: 'r', label: 'Red' }, 'Green']);
+    expect(choicesOfRows([{ text: 'Red', value: 'r' }], false), 'a radio’s rows have no value').toStrictEqual(['Red']);
+    expect(choicesOfRows([{ text: 'Red', value: 'x' }, { text: 'Green', value: 'x' }], true), 'the same value twice').toBeNull();
+    expect(choicesOfRows([{ text: '', value: '' }], true), 'a choice with no text').toBeNull();
+    expect(choicesOfRows([], true), 'no choices').toBeNull();
   });
 
-  it('a radio group has the one box, the values, and no stored values; its name is the GROUP’s (C5)', async () => {
+  it('a radio group has the one box per option, the values, and no stored values; its name is the GROUP’s (C5)', async () => {
     mounted({ ...TEXT, kind: 'radio', name: 'plan', options: ['basic', 'plus'] });
     await screen.findByLabelText('Each option’s value, one per line, in the order the options sit');
-    expect(screen.queryByLabelText('Stored values')).toBeNull();
+    expect(screen.getByLabelText<HTMLInputElement>('Choice 2').value).toBe('plus');
+    expect(screen.queryByLabelText('Stored value of choice 1')).toBeNull();
     expect(screen.getByLabelText<HTMLInputElement>('Group name').value).toBe('plan');
   });
 

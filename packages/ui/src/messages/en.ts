@@ -1526,8 +1526,15 @@ export const FIELD_PROPS_COLOUR_WHITE = messageKey('properties.field.colour-whit
 export const FIELD_PROPS_BORDER_WIDTH = messageKey('properties.field.border-width');
 export const FIELD_PROPS_MULTILINE = messageKey('properties.field.multiline');
 export const FIELD_PROPS_OPTIONS = messageKey('properties.field.options');
-export const FIELD_PROPS_OPTIONS_HINT = messageKey('properties.field.options-hint');
-export const FIELD_PROPS_OPTION_VALUES = messageKey('properties.field.option-values');
+export const FIELD_PROPS_OPTION_TEXT = messageKey('properties.field.option-text');
+export const FIELD_PROPS_OPTION_VALUE = messageKey('properties.field.option-value');
+export const FIELD_PROPS_OPTION_VALUE_SAME = messageKey('properties.field.option-value-same');
+export const FIELD_PROPS_OPTION_UP = messageKey('properties.field.option-up');
+export const FIELD_PROPS_OPTION_DOWN = messageKey('properties.field.option-down');
+export const FIELD_PROPS_OPTION_REMOVE = messageKey('properties.field.option-remove');
+export const FIELD_PROPS_OPTION_ADD = messageKey('properties.field.option-add');
+export const FIELD_PROPS_OPTION_SORT = messageKey('properties.field.option-sort');
+export const FIELD_PROPS_OPTION_WORD = messageKey('properties.field.option-word');
 export const FIELD_PROPS_OPTION_VALUES_HINT = messageKey('properties.field.option-values-hint');
 export const FIELD_PROPS_FORMAT = messageKey('properties.field.format');
 export const FIELD_PROPS_FORMAT_NONE = messageKey('properties.field.format.none');
@@ -4201,9 +4208,16 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FIELD_PROPS_BORDER_WIDTH]: 'Border width',
   [FIELD_PROPS_MULTILINE]: 'Several lines',
   [FIELD_PROPS_OPTIONS]: 'Choices',
-  [FIELD_PROPS_OPTIONS_HINT]: 'One choice on each line, as people read it. For a radio group these are the values of its options, in the order they sit.',
-  [FIELD_PROPS_OPTION_VALUES]: 'Stored values',
-  [FIELD_PROPS_OPTION_VALUES_HINT]: 'Optional. On each line, what the document keeps for the choice on the same line above. Leave a line empty to keep the choice itself.',
+  [FIELD_PROPS_OPTION_TEXT]: 'Choice {number}',
+  [FIELD_PROPS_OPTION_VALUE]: 'Stored value of choice {number}',
+  [FIELD_PROPS_OPTION_VALUE_SAME]: 'Same as the choice',
+  [FIELD_PROPS_OPTION_UP]: 'Move choice {number} up',
+  [FIELD_PROPS_OPTION_DOWN]: 'Move choice {number} down',
+  [FIELD_PROPS_OPTION_REMOVE]: 'Remove choice {number}',
+  [FIELD_PROPS_OPTION_ADD]: 'Add a choice',
+  [FIELD_PROPS_OPTION_SORT]: 'Sort A to Z',
+  [FIELD_PROPS_OPTION_WORD]: 'Choice',
+  [FIELD_PROPS_OPTION_VALUES_HINT]: 'Beside each choice, what the document keeps for it, which can differ from what people read. Leave it empty to keep the choice itself.',
   [FIELD_PROPS_FORMAT]: 'Format',
   [FIELD_PROPS_FORMAT_NONE]: 'None',
   [FIELD_PROPS_FORMAT_NUMBER]: 'Number',

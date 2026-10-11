@@ -1,4 +1,5 @@
 import { useLingui } from '@lingui/react';
+import { ArrowDown, ArrowUp, Trash2 } from 'lucide-react';
 import {
   type AnnotationColour,
   FIELD_ALIGNMENTS,
@@ -77,9 +78,16 @@ import {
   FIELD_PROPS_NEGATIVE_RED,
   FIELD_PROPS_ONE_ONLY,
   FIELD_PROPS_OPTIONS,
-  FIELD_PROPS_OPTIONS_HINT,
-  FIELD_PROPS_OPTION_VALUES,
+  FIELD_PROPS_OPTION_ADD,
+  FIELD_PROPS_OPTION_DOWN,
+  FIELD_PROPS_OPTION_REMOVE,
+  FIELD_PROPS_OPTION_SORT,
+  FIELD_PROPS_OPTION_TEXT,
+  FIELD_PROPS_OPTION_UP,
+  FIELD_PROPS_OPTION_VALUE,
+  FIELD_PROPS_OPTION_VALUE_SAME,
   FIELD_PROPS_OPTION_VALUES_HINT,
+  FIELD_PROPS_OPTION_WORD,
   FIELD_PROPS_READ_ONLY,
   FIELD_PROPS_REQUIRED,
   FIELD_PROPS_SEPARATORS,
@@ -115,6 +123,7 @@ import {
 } from '../messages/en.js';
 import { pdfjsPageOf } from '../pageNumbering.js';
 import { Button } from '../primitives/Button.js';
+import { IconButton } from '../primitives/IconButton.js';
 import type { CommandContext, CommandRegistry } from '../registries/commands.js';
 import { propertiesModel } from '../surfaces/projections.js';
 
@@ -734,32 +743,45 @@ function ColourRow({
   );
 }
 
-/** The lines of a box, each trimmed, without the empty ones that trail. */
-function linesOf(draft: string): string[] {
-  const lines = draft.split('\n').map((line) => line.trim());
-  while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
-  return lines;
+/** One choice as the editor holds it: the text a person reads, and what the document stores, empty for the text itself. */
+export interface ChoiceRow {
+  readonly text: string;
+  readonly value: string;
+}
+
+/** A field's choices as editor rows: a plain choice stores its own text, so its value box starts empty. */
+export function rowsOfChoices(options: readonly FieldChoice[]): ChoiceRow[] {
+  return options.map((choice) => ({ text: choiceLabelOf(choice), value: typeof choice === 'string' ? '' : choice.value }));
 }
 
 /**
- * What the two boxes say, as the choices an edit sends, or `null` while they cannot be sent: a choice with no text, two
- * with the same stored value, or more stored values than choices. The values are lines aligned with the texts, and a
- * line left empty stores the text itself, so a document that never listed the two apart sees nothing change.
+ * What the rows say, as the choices an edit sends, or `null` while they cannot be sent: no choice, a choice with no text,
+ * or two with the same stored value. A row whose value is empty stores its text, so a document that never listed the
+ * two apart sees nothing change.
  */
-export function choicesOfDrafts(texts: string, values: string | null): readonly FieldChoice[] | null {
-  const shown = linesOf(texts);
-  if (shown.length === 0 || shown.some((line) => line === '')) return null;
-  const stored = values === null ? [] : linesOf(values);
-  if (stored.length > shown.length) return null;
-  const choices = shown.map((text, at) => choiceOf(stored[at] === undefined || stored[at] === '' ? text : stored[at], text));
+export function choicesOfRows(rows: readonly ChoiceRow[], withValues: boolean): readonly FieldChoice[] | null {
+  const trimmed = rows.map((row) => ({ text: row.text.trim(), value: withValues ? row.value.trim() : '' }));
+  if (trimmed.length === 0 || trimmed.some((row) => row.text === '')) return null;
+  const choices = trimmed.map((row) => choiceOf(row.value === '' ? row.text : row.value, row.text));
   return new Set(choices.map(choiceValueOf)).size === choices.length ? choices : null;
 }
 
+/** A choice name nobody has given yet, for *Add*: *Choice 4* after three. */
+function nextChoiceText(rows: readonly ChoiceRow[], word: string): string {
+  const taken = new Set(rows.map((row) => row.text.trim()));
+  for (let at = rows.length + 1; ; at += 1) {
+    const candidate = `${word} ${String(at)}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+}
+
 /**
- * The choices: the text a person reads on each line, and for a dropdown or a list a second box with what the document
- * stores for the same line. Sent on leaving a box when they changed and can be sent.
+ * The choices as a list (the owner's C6): each row its text and, for a dropdown or a list, what the document stores for
+ * it, with *Move up*, *Move down* and *Remove* on the row, and *Add* and *Sort* under the list. A change to a box is
+ * sent on leaving it; a button sends at once. Nothing that cannot be sent is (`choicesOfRows`), and the row stays as the
+ * person left it to be put right.
  *
- * A radio group has no text apart from its value, so it has the one box.
+ * A radio group has no text apart from its value, so its rows have the one box.
  */
 function OptionsRow({
   options,
@@ -769,61 +791,139 @@ function OptionsRow({
 }: {
   readonly options: readonly FieldChoice[];
   readonly withValues: boolean;
-  /** What the first box is called: a list's choices, or a radio group's values. */
+  /** What the list is called: a list's choices, or a radio group's values. */
   readonly label: MessageKey;
   readonly onCommit: (options: readonly FieldChoice[]) => void;
 }): ReactElement {
   const { i18n } = useLingui();
-  const textId = useId();
-  const valueId = useId();
-  const [texts, setTexts] = useState(options.map(choiceLabelOf).join('\n'));
-  // A line is empty where the text is the value, so a list without pairs shows an empty box and says so.
-  const [values, setValues] = useState(options.map((choice) => (typeof choice === 'string' ? '' : choice.value)).join('\n'));
-  const sendable = choicesOfDrafts(texts, withValues ? values : null);
-  const unchanged =
-    sendable !== null &&
-    sendable.length === options.length &&
-    sendable.every((choice, at) => {
-      const was = options[at];
-      return was !== undefined && choiceValueOf(choice) === choiceValueOf(was) && choiceLabelOf(choice) === choiceLabelOf(was);
-    });
-  const commit = (): void => {
-    if (sendable !== null && !unchanged) onCommit(sendable);
+  const labelId = useId();
+  const [rows, setRows] = useState<ChoiceRow[]>(() => rowsOfChoices(options));
+  // WHAT THE DOCUMENT HOLDS AS FAR AS THIS EDITOR KNOWS: the field's choices as read, then each list it sent since. A
+  // change compared with the read alone would send nothing when a person put back what was read after other changes.
+  const [held, setHeld] = useState(options);
+  const [read, setRead] = useState(options);
+  if (read !== options) {
+    // A NEW READ of the field, taken while rendering (React's form for state that follows a prop).
+    setRead(options);
+    setHeld(options);
+    setRows(rowsOfChoices(options));
+  }
+  const send = (next: readonly ChoiceRow[]): void => {
+    const sendable = choicesOfRows(next, withValues);
+    if (sendable === null) return;
+    const unchanged =
+      sendable.length === held.length &&
+      sendable.every((choice, at) => {
+        const was = held[at];
+        return was !== undefined && choiceValueOf(choice) === choiceValueOf(was) && choiceLabelOf(choice) === choiceLabelOf(was);
+      });
+    if (unchanged) return;
+    setHeld(sendable);
+    onCommit(sendable);
+  };
+  const change = (next: ChoiceRow[], now: boolean): void => {
+    setRows(next);
+    if (now) send(next);
+  };
+  const edit = (at: number, part: Partial<ChoiceRow>): void => {
+    change(rows.map((row, index) => (index === at ? { ...row, ...part } : row)), false);
+  };
+  const move = (at: number, by: -1 | 1): void => {
+    const next = [...rows];
+    const [taken] = next.splice(at, 1);
+    if (taken === undefined) return;
+    next.splice(at + by, 0, taken);
+    change(next, true);
   };
   return (
-    <div className="m-properties__row">
-      <label className="m-properties__label" htmlFor={textId}>
+    <div aria-labelledby={labelId} className="m-properties__row m-field-options" role="group">
+      <span className="m-properties__label" id={labelId}>
         {i18n._(label)}
-      </label>
-      <textarea
-        className="m-properties__comment"
-        id={textId}
-        onBlur={commit}
-        onChange={(event) => {
-          setTexts(event.target.value);
-        }}
-        rows={4}
-        value={texts}
-      />
-      <p className="m-properties__meta">{i18n._(FIELD_PROPS_OPTIONS_HINT)}</p>
-      {withValues ? (
-        <>
-          <label className="m-properties__label" htmlFor={valueId}>
-            {i18n._(FIELD_PROPS_OPTION_VALUES)}
-          </label>
-          <textarea
-            className="m-properties__comment"
-            id={valueId}
-            onBlur={commit}
-            onChange={(event) => {
-              setValues(event.target.value);
-            }}
-            rows={4}
-            value={values}
-          />
-          <p className="m-properties__meta">{i18n._(FIELD_PROPS_OPTION_VALUES_HINT)}</p>
-        </>
-      ) : null}
+      </span>
+      <ol className="m-field-options__list">
+        {rows.map((row, at) => (
+          <li className="m-field-options__row" key={at}>
+            <input
+              aria-label={i18n._(FIELD_PROPS_OPTION_TEXT, { number: at + 1 })}
+              className="m-field-options__text"
+              onBlur={() => {
+                send(rows);
+              }}
+              onChange={(event) => {
+                edit(at, { text: event.target.value });
+              }}
+              type="text"
+              value={row.text}
+            />
+            {withValues ? (
+              <input
+                aria-label={i18n._(FIELD_PROPS_OPTION_VALUE, { number: at + 1 })}
+                className="m-field-options__value"
+                onBlur={() => {
+                  send(rows);
+                }}
+                onChange={(event) => {
+                  edit(at, { value: event.target.value });
+                }}
+                placeholder={i18n._(FIELD_PROPS_OPTION_VALUE_SAME)}
+                type="text"
+                value={row.value}
+              />
+            ) : null}
+            <IconButton
+              disabled={at === 0}
+              icon={ArrowUp}
+              label={FIELD_PROPS_OPTION_UP}
+              onClick={() => {
+                move(at, -1);
+              }}
+              size="dense"
+              values={{ number: at + 1 }}
+            />
+            <IconButton
+              disabled={at === rows.length - 1}
+              icon={ArrowDown}
+              label={FIELD_PROPS_OPTION_DOWN}
+              onClick={() => {
+                move(at, 1);
+              }}
+              size="dense"
+              values={{ number: at + 1 }}
+            />
+            <IconButton
+              disabled={rows.length === 1}
+              icon={Trash2}
+              label={FIELD_PROPS_OPTION_REMOVE}
+              onClick={() => {
+                change(
+                  rows.filter((_row, index) => index !== at),
+                  true,
+                );
+              }}
+              size="dense"
+              values={{ number: at + 1 }}
+            />
+          </li>
+        ))}
+      </ol>
+      <div className="m-field-options__actions">
+        <Button
+          label={FIELD_PROPS_OPTION_ADD}
+          onClick={() => {
+            change([...rows, { text: nextChoiceText(rows, i18n._(FIELD_PROPS_OPTION_WORD)), value: '' }], true);
+          }}
+        />
+        <Button
+          label={FIELD_PROPS_OPTION_SORT}
+          onClick={() => {
+            change(
+              [...rows].sort((a, b) => a.text.localeCompare(b.text)),
+              true,
+            );
+          }}
+        />
+      </div>
+      {withValues ? <p className="m-properties__meta">{i18n._(FIELD_PROPS_OPTION_VALUES_HINT)}</p> : null}
     </div>
   );
 }
