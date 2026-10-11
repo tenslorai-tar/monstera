@@ -64,6 +64,8 @@ import {
   formFieldKindSchema,
   formFieldHandleSchema,
   formFieldReadSchema,
+  fontFamilySchema,
+  MAX_FONT_FAMILIES,
   MAX_READ_FIELDS,
   MAX_IMPORT_SKIPS,
   importSkippedSchema,
@@ -1670,6 +1672,24 @@ export const channels = {
       // the answer is a subset of a closed enum, so `max` is the enum's own size
       // rather than a number somebody picked.
       languages: z.array(ocrLanguageSchema).max(OCR_LANGUAGES.length),
+    }),
+  ),
+
+  /**
+   * The font families this computer and Monstera can set text in, for the one font picker (the owner's D2): the fonts
+   * installed in Windows' system font folder and the open fonts Monstera bundles, as the font resolver reads them
+   * (ADR-0172), with what each family's licence allows.
+   *
+   * `listed: false` where no host could read them (a build without the engine, or off Windows): the picker still offers
+   * the document's own fonts and the fonts built into PDF, and says the computer's could not be read, never an empty
+   * list that reads as *no fonts installed*.
+   */
+  'app.fontFamilies': channel(
+    'Lists the font families installed on this computer and bundled with Monstera.',
+    z.object({}),
+    z.object({
+      listed: z.boolean(),
+      families: z.array(fontFamilySchema).max(MAX_FONT_FAMILIES),
     }),
   ),
 

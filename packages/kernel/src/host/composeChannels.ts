@@ -9,7 +9,9 @@ import {
   MAX_WORKBOOK_PARTS,
   MAX_WORKBOOK_ROW,
   MAX_WORKBOOK_SHEET_NAME,
+  MAX_FONT_FAMILIES,
   channel,
+  fontFamilySchema,
   fileAnswered,
   fileRequested,
   insertImagePageSchema,
@@ -431,6 +433,23 @@ export const composeChannels = {
       .strict(),
     composeResultSchema,
     ['no-such-session', 'asset-missing'],
+  ),
+
+  /**
+   * The font families this host can set text in: the installed fonts and the bundled set, as its catalogue read them
+   * (`fontFamiliesOf`, the owner's D2). The compose host answers because it holds no document and already reads the
+   * catalogue for the composers, so the picker lists exactly what the resolver can set (B3a). Names and flags cross,
+   * never a path or a font's bytes.
+   */
+  'engine/font-families': channel(
+    'Lists the font families this host can set text in, installed and bundled.',
+    z.object({ session: sessionSchema }).strict(),
+    z
+      .object({
+        families: z.array(fontFamilySchema).max(MAX_FONT_FAMILIES),
+      })
+      .strict(),
+    ['no-such-session'],
   ),
 };
 

@@ -274,6 +274,18 @@ export interface ShimFormField {
   readonly format?: FieldFormat | null;
 }
 
+/** The families `app.fontFamilies` answers by default: a few a Windows machine holds, and two Monstera bundles. */
+const SHIM_FONT_FAMILIES = [
+  { name: 'Arial', origin: 'installed', embedding: 'subset' },
+  { name: 'Calibri', origin: 'installed', embedding: 'subset' },
+  { name: 'Cambria', origin: 'installed', embedding: 'subset' },
+  { name: 'Carlito', origin: 'bundled', embedding: 'subset' },
+  { name: 'Courier New', origin: 'installed', embedding: 'subset' },
+  { name: 'Segoe UI', origin: 'installed', embedding: 'subset' },
+  { name: 'Times New Roman', origin: 'installed', embedding: 'subset' },
+  { name: 'Tinos', origin: 'bundled', embedding: 'subset' },
+] as const;
+
 /** The rules of a field that has none: not required, no limit, one value, no format. */
 const PLAIN_RULES = {
   required: false,
@@ -691,6 +703,11 @@ export interface BrowserShimOptions {
   }[];
   /** How many places `document.flatFieldCandidates` says already hold a field. Absent is none. */
   readonly flatFieldsAlready?: number;
+  /**
+   * What `app.fontFamilies` lists. Absent is a short list of families a Windows machine holds, so a picker case sees
+   * installed names by default; `null` is a build with no host to read them (`listed: false`).
+   */
+  readonly fontFamilies?: readonly { readonly name: string; readonly origin: 'installed' | 'bundled'; readonly embedding: 'subset' | 'whole' | 'never' }[] | null;
   /**
    * What `document.formFieldProperties` answers beyond a list's own members, by field name: a tooltip, a format, a
    * calculation. Absent is the defaults of a field that has none of them.
@@ -1146,6 +1163,15 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
 
     // A BROWSER HOLDS NO NATIVE COMPONENT (ADR-0122), so each is present by name only, and verified when asked — the
     // dialog's states, with nothing standing for a version the shim does not have.
+    'app.fontFamilies': () =>
+      Promise.resolve(
+        options.fontFamilies === null
+          ? ok({ listed: false, families: [] })
+          : ok({
+              listed: true,
+              families: (options.fontFamilies ?? SHIM_FONT_FAMILIES).map((family) => ({ ...family, bold: true, italic: true })),
+            }),
+      ),
     'app.components': ({ verify }) =>
       Promise.resolve(
         ok({

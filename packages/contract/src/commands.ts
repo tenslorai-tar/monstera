@@ -4454,6 +4454,27 @@ export const MAX_IMPORT_IMAGES = 500;
 export const MAX_WORKBOOK_ROW = 1_048_576;
 /** A sheet name as a file may spell it: Excel's own limit is 31, and a file past it is still read, to this bound. */
 export const MAX_WORKBOOK_SHEET_NAME = 255;
+
+/**
+ * How many font families one list may name, and how long a name may be: a Windows machine ships about 200 families and a
+ * designer's can hold thousands; a family name is a few words (`fontFamiliesOf` in the kernel).
+ */
+export const MAX_FONT_FAMILIES = 4096;
+export const MAX_FONT_FAMILY_NAME = 128;
+
+/** One font family a picker lists: its name, where it is, what its licence allows, and its bold and italic. */
+export const fontFamilySchema = z
+  .object({
+    name: z.string().min(1).max(MAX_FONT_FAMILY_NAME),
+    origin: z.enum(['installed', 'bundled']),
+    embedding: z.enum(['subset', 'whole', 'never']),
+    bold: z.boolean(),
+    italic: z.boolean(),
+  })
+  .strict();
+
+/** See {@link fontFamilySchema}. */
+export type FontFamilyEntry = z.infer<typeof fontFamilySchema>;
 /**
  * Part PDFs ONE JOIN takes (decision C): the compose host's `engine/join-pdfs` list. It bounded a whole workbook import
  * until 2026-10-02, and a workbook of 1,025 visible sheets was refused at it (JOURNAL, *No document-size refusals*, table

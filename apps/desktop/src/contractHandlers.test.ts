@@ -13,6 +13,7 @@ import {
   SHOWN_SCHEME_MAX,
   blockEditOf,
   channels,
+  type FontFamilyEntry,
 } from '@monstera/contract';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -147,6 +148,8 @@ function harness(
     readonly fileIdentity?: IdentityReader;
     /** The recent store, for a case about what a previous run left; a fresh one with a fixed clock otherwise. */
     readonly recent?: RecentFiles;
+    /** The compose host's font list, for the picker's cases; no host otherwise. */
+    readonly fontFamilies?: (() => Promise<readonly FontFamilyEntry[]>) | null;
   } = {},
 ) {
   const capabilities = new CapabilityRegistry();
@@ -274,6 +277,7 @@ function harness(
     // machine with nothing provisioned is in, and a fixture in it would make
     // every case here exercise that one.
     ocrLanguages: () => Promise.resolve(['eng' as const]),
+    fontFamilies: overrides.fontFamilies ?? null,
     components: () => Promise.resolve([]),
   });
   return {
@@ -590,6 +594,29 @@ describe('app.openWebPage', () => {
     // true` exactly like a correct one. Only the recorded call separates them.
     expect(webPages).toStrictEqual(['donate']);
     expect(answer).toStrictEqual({ ok: true, value: { opened: true } });
+  });
+});
+
+describe('app.fontFamilies', () => {
+  const ARIAL: FontFamilyEntry = { name: 'Arial', origin: 'installed', embedding: 'subset', bold: true, italic: true };
+
+  it('answers the families the compose host listed, as listed', async () => {
+    const { handlers } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, {
+      fontFamilies: () => Promise.resolve([ARIAL]),
+    });
+
+    expect(await handlers['app.fontFamilies']({})).toStrictEqual({
+      ok: true,
+      value: { listed: true, families: [ARIAL] },
+    });
+  });
+
+  it('CONTROL: no compose host is NOT LISTED, never an empty list read as a machine with no fonts', async () => {
+    // The list a host could answer is also empty on a machine whose fonts were all unreadable, so only `listed`
+    // separates the two, and the picker says different things for each.
+    const { handlers } = harness({ kind: 'absent' }, () => Promise.resolve(null));
+
+    expect(await handlers['app.fontFamilies']({})).toStrictEqual({ ok: true, value: { listed: false, families: [] } });
   });
 });
 

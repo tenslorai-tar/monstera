@@ -319,6 +319,7 @@ describe('the compose host channel set', () => {
         'engine/signature-from-scan',
         'engine/workbook-outline',
         'engine/workbook-part',
+        'engine/font-families',
       ].sort(),
     );
   });
@@ -448,6 +449,42 @@ describe('the compose host body', () => {
     // satisfied by a handler that read the file and threw the bytes away.
     expect(calls).toStrictEqual([]);
     expect(files.written.size).toBe(0);
+  });
+
+  it('lists the font families its catalogue holds, by name and flag, and reads no file to do it (D2)', async () => {
+    const files = emptyFiles();
+    const face = { origin: 'installed' as const, embedding: 'subset' as const, unicodes: new Set<number>(), weights: null, path: 'x', faceIndex: 0 };
+    const held: FaceSource = {
+      faces: [
+        { ...face, id: 'a', family: 'Calibri', weight: 400, italic: false },
+        { ...face, id: 'b', family: 'Calibri', weight: 700, italic: false },
+        { ...face, id: 'c', family: 'Arial', weight: 400, italic: true },
+      ],
+      read: () => new Uint8Array(),
+    };
+    const { session } = await openArea(files, undefined, undefined, () => held);
+    stream.feed(request('f1', 'engine/font-families', { session }));
+    await stream.whenSent(2);
+    expect(answerIn(stream.sent[1])).toMatchObject({
+      body: {
+        ok: true,
+        value: {
+          families: [
+            { name: 'Arial', origin: 'installed', embedding: 'subset', bold: false, italic: true },
+            { name: 'Calibri', origin: 'installed', embedding: 'subset', bold: true, italic: false },
+          ],
+        },
+      },
+    });
+    expect(files.read.size).toBe(0);
+  });
+
+  it('CONTROL: the font families of an area this host does not hold are no-such-session', async () => {
+    const files = emptyFiles();
+    await openArea(files);
+    stream.feed(request('f2', 'engine/font-families', { session: 'not-held' }));
+    await stream.whenSent(2);
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: false, error: { code: 'no-such-session' } } });
   });
 
   it('composes the named source and writes the PDF under the name main chose', async () => {

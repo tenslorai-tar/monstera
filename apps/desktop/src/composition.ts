@@ -32,6 +32,7 @@ import {
   type AiModel,
   type WordMode,
   type PageSet,
+  type FontFamilyEntry,
   createClient,
   defaultModel,
   storedSetting,
@@ -1938,6 +1939,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // way. An empty answer is the state a machine with no provisioned models is
       // in, and the OCR dialog is where that is said.
       ocrLanguages: provisionedOcrLanguages,
+      // THE ONE FONT LIST, from the compose host that already reads the catalogue for the composers (the owner's D2).
+      fontFamilies: composeHost === null ? null : composeHost.fontFamilies,
       components: (verify) => componentStatuses({ verify }),
       titleBarOverlay: (overlay) => {
         if (shellWindow === null) return false;
@@ -3560,6 +3563,8 @@ function composeHostBinding(
   readonly workbooks: WorkbookComposer;
   readonly imageSize: NonNullable<AttachmentReaders['pictureSize']>;
   readonly signatureFromScan: ScanSignature;
+  /** The font families the host can set text in, for the one font picker (`engine/font-families`). */
+  readonly fontFamilies: () => Promise<readonly FontFamilyEntry[]>;
   readonly close: () => Promise<void>;
 } {
   /** What one built host holds. Cleared together, or not at all. */
@@ -3972,6 +3977,14 @@ function composeHostBinding(
       );
       if (!answer.ok) throw new Error(`the compose host could not size the picture: ${answer.error.code}`);
       return answer.value.kind === 'sized' ? { width: answer.value.width, height: answer.value.height } : null;
+    },
+
+    // THE FONT FAMILIES (the owner's D2): names and flags only, read once per host, and a failure code is a fault.
+    fontFamilies: async () => {
+      const built = await ensure();
+      const answer = await built.client['engine/font-families']({ session: built.session });
+      if (!answer.ok) throw new Error(`the compose host could not list its fonts: ${answer.error.code}`);
+      return answer.value.families;
     },
 
     // A SCANNED SIGNATURE PDF (`signaturePicture.ts`): `imageSize`'s steps, and the PNG taken from the area against the
