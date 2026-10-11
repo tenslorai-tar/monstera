@@ -104,7 +104,9 @@ import {
   fileHandleSchema,
   COMPOSE_REFUSALS,
   MAX_BOXED_CHARACTERS,
+  MAX_COMPOSE_SKIPS,
   boxedCharacterSchema,
+  importSkippedPartSchema,
   OPTIMIZE_SETTING_NAMES,
   URL_FETCH_REFUSALS,
   FILE_ACCESS,
@@ -1441,6 +1443,17 @@ const composedImportOutcomeSchema = z.discriminatedUnion('kind', [
      */
     file: z.string().min(1).max(MAX_DOCUMENT_NAME_LENGTH).nullable(),
   }),
+  /**
+   * Opened, and some parts of the source were LEFT OUT — named, never left for the person to find (Codex's importer
+   * audit): a CSV record RFC 4180 does not allow, by its line; a picked image that could not be made a page, by its
+   * file's name. Every other part is in the document.
+   */
+  openedSchema.extend({
+    kind: z.literal('opened-with-skips'),
+    skipped: z.array(importSkippedPartSchema).min(1).max(MAX_COMPOSE_SKIPS),
+    /** Parts past the named ones, COUNTED, `opened-incomplete`'s rule. */
+    skippedMore: z.number().int().min(0),
+  }),
   importContestedSchema,
   importWriteFailedSchema,
 ]);
@@ -1464,6 +1477,9 @@ const textImportOutcomeSchema = z.discriminatedUnion('kind', [
     boxed: z.array(boxedCharacterSchema).min(1).max(MAX_BOXED_CHARACTERS),
     /** Places past the named ones, COUNTED, `opened-incomplete`'s rule. */
     more: z.number().int().min(0),
+    /** And the parts left out, `opened-with-skips`' list, EMPTY where none was: a source can have both. */
+    skipped: z.array(importSkippedPartSchema).max(MAX_COMPOSE_SKIPS),
+    skippedMore: z.number().int().min(0),
   }),
 ]);
 

@@ -660,6 +660,13 @@ export {
   type DocusignRefusalKind,
   COMPOSE_REFUSALS,
   type ComposeRefusal,
+  // What an import left out while composing the rest (Codex's importer audit).
+  COMPOSE_SKIPS,
+  MAX_COMPOSE_SKIPS,
+  composeSkipSchema,
+  type ComposeSkip,
+  importSkippedPartSchema,
+  type ImportSkippedPart,
   // How many places of a boxed character a text import names, and the shape of one (ADR-0172).
   MAX_BOXED_CHARACTERS,
   boxedCharacterSchema,

@@ -1,4 +1,4 @@
-import type { ComposeRefusal } from '@monstera/contract';
+import type { ComposeRefusal, ComposeSkip } from '@monstera/contract';
 
 /**
  * What every composer and the compose host's handlers share: a refusal, a page size and what a composition answers
@@ -45,10 +45,14 @@ export interface BoxedPosition {
   readonly column: number | null;
 }
 
-/** What a composer answers: the PDF, and every place a character in it is drawn as the box. */
+/**
+ * What a composer answers: the PDF, every place a character in it is drawn as the box, and every part of the source it
+ * left out with why (a CSV record RFC 4180 does not allow), empty where it left out nothing.
+ */
 export interface ComposedSource {
   readonly pdf: Uint8Array;
   readonly boxed: readonly BoxedPosition[];
+  readonly skipped: readonly ComposeSkip[];
 }
 
 /** A block of the source a composer set, by its one-based lines: `from` to `to`, `to` included. */

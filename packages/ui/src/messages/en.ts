@@ -2516,6 +2516,23 @@ export const SETTINGS_EXPORT = messageKey('dialog.settings.export');
 export const SETTINGS_IMPORT = messageKey('dialog.settings.import');
 export const TOAST_SETTINGS_IMPORTED = messageKey('toast.settings-imported');
 export const TOAST_SETTINGS_IMPORTED_PARTLY = messageKey('toast.settings-imported-partly');
+// WHAT AN IMPORT LEFT OUT while composing the rest: a CSV record by its line, a picture by its file (Codex's importer audit).
+export const IMPORT_SKIPPED_TITLE = messageKey('dialog.import-skipped.title');
+export const IMPORT_SKIPPED_INTRO = messageKey('dialog.import-skipped.intro');
+export const IMPORT_SKIPPED_LINE = messageKey('dialog.import-skipped.line');
+export const IMPORT_SKIPPED_PICTURE = messageKey('dialog.import-skipped.picture');
+export const IMPORT_SKIP_QUOTE_NEVER_CLOSED = messageKey('dialog.import-skipped.quote-never-closed');
+export const IMPORT_SKIP_TEXT_AFTER_QUOTE = messageKey('dialog.import-skipped.text-after-quote');
+export const IMPORT_SKIP_QUOTE_INSIDE = messageKey('dialog.import-skipped.quote-inside-field');
+export const IMPORT_SKIP_IMAGE_UNREADABLE = messageKey('dialog.import-skipped.image-unreadable');
+export const IMPORT_SKIP_TOO_MANY_PIXELS = messageKey('dialog.import-skipped.too-many-pixels');
+// WHAT A SETTINGS IMPORT LEFT OUT, each value by name with why (Codex's importer audit).
+export const SETTINGS_IMPORT_RESULT_TITLE = messageKey('dialog.import-settings-result.title');
+export const SETTINGS_IMPORT_APPLIED = messageKey('dialog.import-settings-result.applied');
+export const SETTINGS_IMPORT_LEFT = messageKey('dialog.import-settings-result.left');
+export const SETTINGS_SKIP_NOT_IN_VERSION = messageKey('dialog.import-settings-result.not-in-version');
+export const SETTINGS_SKIP_SECRET = messageKey('dialog.import-settings-result.secret');
+export const SETTINGS_SKIP_NOT_ACCEPTED = messageKey('dialog.import-settings-result.not-accepted');
 export const TOAST_SETTINGS_UNREADABLE = messageKey('toast.settings-unreadable');
 export const SETTINGS_RESET = messageKey('dialog.settings.reset');
 export const SETTINGS_DONE = messageKey('dialog.settings.done');
@@ -5341,7 +5358,23 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SETTINGS_EXPORT]: 'Export settings…',
   [SETTINGS_IMPORT]: 'Import settings…',
   [TOAST_SETTINGS_IMPORTED]: 'Settings imported.',
-  [TOAST_SETTINGS_IMPORTED_PARTLY]: 'Settings imported. Some in the file are not used by this version and were left out.',
+  [TOAST_SETTINGS_IMPORTED_PARTLY]: 'Settings imported. Some values in the file were left out, and the window that opens says which and why.',
+  [IMPORT_SKIPPED_TITLE]: 'Some of the file was left out',
+  [IMPORT_SKIPPED_INTRO]:
+    '{count, plural, one {The new document has everything else in it. # part was left out:} other {The new document has everything else in it. # parts were left out:}}',
+  [IMPORT_SKIPPED_LINE]: 'Line {line}',
+  [IMPORT_SKIPPED_PICTURE]: 'A picture',
+  [IMPORT_SKIP_QUOTE_NEVER_CLOSED]: 'A quotation mark opens a field here and is never closed, so this line was left out.',
+  [IMPORT_SKIP_TEXT_AFTER_QUOTE]: 'There is text after a closing quotation mark, so this row was left out.',
+  [IMPORT_SKIP_QUOTE_INSIDE]: 'A quotation mark is inside a field that does not start with one, so this row was left out.',
+  [IMPORT_SKIP_IMAGE_UNREADABLE]: 'This picture could not be read, so it is not a page.',
+  [IMPORT_SKIP_TOO_MANY_PIXELS]: 'This picture has more pixels than one import can take, so it is not a page.',
+  [SETTINGS_IMPORT_RESULT_TITLE]: 'Settings imported',
+  [SETTINGS_IMPORT_APPLIED]: '{count, plural, =0 {No setting was changed.} one {Set # setting.} other {Set # settings.}}',
+  [SETTINGS_IMPORT_LEFT]: '{count, plural, one {# value was left out:} other {# values were left out:}}',
+  [SETTINGS_SKIP_NOT_IN_VERSION]: 'This version of Monstera has no setting by that name.',
+  [SETTINGS_SKIP_SECRET]: 'A key or password is never imported from a file. Enter it in Settings.',
+  [SETTINGS_SKIP_NOT_ACCEPTED]: 'The value in the file is not one this setting can take, so the setting kept its own.',
   [TOAST_SETTINGS_UNREADABLE]: 'That file is not a Monstera settings file. Nothing was changed.',
   [SETTINGS_RESET]: 'Reset to defaults',
   [SETTINGS_DONE]: 'Done',

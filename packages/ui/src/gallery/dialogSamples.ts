@@ -703,6 +703,32 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'outside', props: { pageCount: 6, from: 0 }, steps: [type('Pages', '9')] },
   ],
   'dialog.tab-order': [{ state: 'opened', props: {} }],
+  'dialog.import-skipped': [
+    {
+      state: 'rows-and-pictures',
+      props: {
+        skipped: [
+          { reason: 'quote-never-closed', line: 14, file: null },
+          { reason: 'image-unreadable', line: null, file: 'scan 3.png' },
+          { reason: 'too-many-pixels', line: null, file: 'panorama.png' },
+        ],
+        more: 0,
+      },
+    },
+  ],
+  'dialog.import-settings-result': [
+    {
+      state: 'left-some',
+      props: {
+        applied: 18,
+        skipped: [
+          { id: 'old.removed-setting', reason: 'not-in-this-version' },
+          { id: 'appearance.thumbnail-size', title: 'setting.viewing-thumbnail-size.title', reason: 'not-accepted' },
+        ],
+        more: 0,
+      },
+    },
+  ],
   'dialog.import-form-data-result': [
     {
       state: 'left-some',

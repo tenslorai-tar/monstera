@@ -140,7 +140,7 @@ describe('newFromMarkdownCommand', () => {
     const boxed = [{ character: '中', line: 12, column: 4 }];
     const opened = { docId: COMPOSED, version: 1, byteLength: 2048, name: 'notes.pdf' };
     const { client } = recording({
-      'document.newFromMarkdown': ok({ kind: 'opened-with-boxes', ...opened, boxed, more: 3 }),
+      'document.newFromMarkdown': ok({ kind: 'opened-with-boxes', ...opened, boxed, more: 3, skipped: [], skippedMore: 0 }),
     });
     const { calls, record, ask } = callbacks();
 
@@ -405,12 +405,42 @@ describe('newFromCsvCommand', () => {
   it('OPENS the table, THEN names the characters it draws as boxes', async () => {
     const boxed = [{ character: '中', line: 4, column: 1 }];
     const opened = { docId: COMPOSED, version: 1, byteLength: 2048, name: 'table.pdf' };
-    const { client } = recording({ 'document.newFromCsv': ok({ kind: 'opened-with-boxes', ...opened, boxed, more: 0 }) });
+    const { client } = recording({
+      'document.newFromCsv': ok({ kind: 'opened-with-boxes', ...opened, boxed, more: 0, skipped: [], skippedMore: 0 }),
+    });
     const { calls, record, ask } = callbacks();
     await newFromCsvCommand({ client, ask, onOpened: record('opened'), onAlreadyOpen: record('already-open') }).run(CONTEXT);
     expect(calls).toStrictEqual([
       { name: 'opened', value: opened },
       { name: 'ask', value: { id: 'dialog.boxed-characters', props: { from: 'import', boxed, more: 0 } } },
+    ]);
+  });
+
+  it('OPENS the table, THEN names each record it LEFT OUT by its line (Codex’s importer audit)', async () => {
+    const skipped = [{ reason: 'quote-never-closed' as const, line: 7, file: null }];
+    const opened = { docId: COMPOSED, version: 1, byteLength: 2048, name: 'table.pdf' };
+    const { client } = recording({ 'document.newFromCsv': ok({ kind: 'opened-with-skips', ...opened, skipped, skippedMore: 1 }) });
+    const { calls, record, ask } = callbacks();
+    await newFromCsvCommand({ client, ask, onOpened: record('opened'), onAlreadyOpen: record('already-open') }).run(CONTEXT);
+    expect(calls).toStrictEqual([
+      { name: 'opened', value: opened },
+      { name: 'ask', value: { id: 'dialog.import-skipped', props: { skipped, more: 1 } } },
+    ]);
+  });
+
+  it('CONTROL: a table with both boxes and records left out names both, boxes first', async () => {
+    const boxed = [{ character: '中', line: 4, column: 1 }];
+    const skipped = [{ reason: 'text-after-quote' as const, line: 2, file: null }];
+    const opened = { docId: COMPOSED, version: 1, byteLength: 2048, name: 'table.pdf' };
+    const { client } = recording({
+      'document.newFromCsv': ok({ kind: 'opened-with-boxes', ...opened, boxed, more: 0, skipped, skippedMore: 0 }),
+    });
+    const { calls, record, ask } = callbacks();
+    await newFromCsvCommand({ client, ask, onOpened: record('opened'), onAlreadyOpen: record('already-open') }).run(CONTEXT);
+    expect(calls.map((call) => (call.name === 'ask' ? (call.value as { id: string }).id : call.name))).toStrictEqual([
+      'opened',
+      'dialog.boxed-characters',
+      'dialog.import-skipped',
     ]);
   });
 });
@@ -531,6 +561,19 @@ describe('newFromImagesCommand', () => {
     expect(sent).toStrictEqual([{ id: 'document.newFromImages', params: {} }]);
     expect(calls).toStrictEqual([
       { name: 'opened', value: { docId: COMPOSED, version: 1, byteLength: 8192, name: 'scans.pdf' } },
+    ]);
+  });
+
+  it('OPENS the pages it made, THEN names each picture it LEFT OUT by its file (Codex’s importer audit)', async () => {
+    const skipped = [{ reason: 'image-unreadable' as const, line: null, file: 'scan 3.png' }];
+    const { client } = recording({
+      'document.newFromImages': ok({ kind: 'opened-with-skips', docId: COMPOSED, version: asDocVersion(1), byteLength: 8192, name: 'scans.pdf', skipped, skippedMore: 0 }),
+    });
+    const { calls, record, ask } = callbacks();
+    await newFromImagesCommand({ client, ask, onOpened: record('opened'), onAlreadyOpen: record('already-open') }).run(CONTEXT);
+    expect(calls).toStrictEqual([
+      { name: 'opened', value: { docId: COMPOSED, version: 1, byteLength: 8192, name: 'scans.pdf' } },
+      { name: 'ask', value: { id: 'dialog.import-skipped', props: { skipped, more: 0 } } },
     ]);
   });
 

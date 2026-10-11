@@ -3,6 +3,7 @@ import { type FileHandle, asFileHandle, err, messageKey, ok } from '@monstera/sh
 import { describe, expect, it } from 'vitest';
 
 import { SETTINGS_DIALOG, SETTINGS_DIALOG_ID } from '../dialogs/settings.js';
+import { IMPORT_SETTINGS_RESULT_DIALOG_ID } from '../dialogs/importSettingsResult.js';
 import { SETTINGS_PROBLEM_DIALOG_ID } from '../dialogs/settingsProblem.js';
 import { SettingsRegistry } from '../registries/settings.js';
 import { ALL_SETTINGS } from '../settings/all.js';
@@ -538,25 +539,42 @@ describe('showSettingsCommand', () => {
       expect(settings.get(OCR_LANGUAGE_SETTING.id)).toStrictEqual(['deu']);
       expect(settings.get(THUMBNAIL_SIZE_SETTING.id)).toBe(THUMBNAIL_SIZE_SETTING.fallback);
       expect(toasts).toStrictEqual([`done ${TOAST_SETTINGS_IMPORTED_PARTLY}`]);
+      // EACH ONE LEFT OUT IS NAMED, with why (Codex's importer audit): it was a count.
+      expect(asked.filter((entry) => entry.id === IMPORT_SETTINGS_RESULT_DIALOG_ID).map((entry) => entry.props)).toStrictEqual([
+        {
+          applied: 2,
+          skipped: [
+            { id: 'no.such-setting', reason: 'not-in-this-version' },
+            { id: THUMBNAIL_SIZE_SETTING.id, title: THUMBNAIL_SIZE_SETTING.title, reason: 'not-accepted' },
+          ],
+          more: 0,
+        },
+      ]);
       // OPENED AGAIN, on what the file changed.
       const openings = asked.filter((entry) => entry.id === SETTINGS_DIALOG_ID);
       expect(openings).toHaveLength(2);
       expect((openings[1]?.props as { values: Record<string, unknown> }).values[THEME_SETTING.id]).toBe('dark');
     });
 
-    it('a file whose every value is read says so plainly', async () => {
-      const { run, toasts } = harness({ answer: IMPORT, imported: { kind: 'read', values: { [THEME_SETTING.id]: 'light' } } });
+    it('a file whose every value is read says so plainly, and CONTROL: opens no window naming what was left out', async () => {
+      const { run, toasts, asked } = harness({ answer: IMPORT, imported: { kind: 'read', values: { [THEME_SETTING.id]: 'light' } } });
       await run();
       expect(toasts).toStrictEqual([`done ${TOAST_SETTINGS_IMPORTED}`]);
+      expect(asked.filter((entry) => entry.id === IMPORT_SETTINGS_RESULT_DIALOG_ID)).toStrictEqual([]);
     });
 
-    it('a SECRET in the file is never set, whatever main let through', async () => {
-      const { run, settings } = harness({
+    it('a SECRET in the file is never set, whatever main let through, and is named as a secret', async () => {
+      const { run, settings, asked } = harness({
         answer: IMPORT,
         imported: { kind: 'read', values: { [AZURE_DI_KEY_SETTING.id]: 'a-key-from-a-file' } },
       });
       await run();
       expect(settings.get(AZURE_DI_KEY_SETTING.id)).toBe(AZURE_DI_KEY_SETTING.fallback);
+      expect(asked.find((entry) => entry.id === IMPORT_SETTINGS_RESULT_DIALOG_ID)?.props).toStrictEqual({
+        applied: 0,
+        skipped: [{ id: AZURE_DI_KEY_SETTING.id, title: AZURE_DI_KEY_SETTING.title, reason: 'secret' }],
+        more: 0,
+      });
     });
 
     it('a file that is not a settings file changes nothing, says so, and returns to Settings', async () => {

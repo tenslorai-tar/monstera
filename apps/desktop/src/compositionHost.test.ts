@@ -11,7 +11,7 @@ import {
   type PreparedSignature,
 } from '@monstera/kernel';
 import { prepareSignature } from '@monstera/kernel/engine';
-import { type BoxedCharacter, blockEditOf, replacementFieldsOf } from '@monstera/contract';
+import { type BoxedCharacter, type ComposeSkip, blockEditOf, replacementFieldsOf } from '@monstera/contract';
 import { ok } from '@monstera/shared';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 
@@ -2019,6 +2019,8 @@ const COMPOSED_BYTES = [0x25, 0x50, 0x44, 0x46, 0x2d, 0x37];
  */
 function composePeer(
   boxed: { readonly places: readonly BoxedCharacter[]; readonly more: number } = { places: [], more: 0 },
+  /** The parts every composer answers it left out, and how many more it counts; none by default, `boxed`'s reason. */
+  skipped: { readonly parts: readonly ComposeSkip[]; readonly more: number } = { parts: [], more: 0 },
 ): ComposePeerLog {
   let area: { snapshot: string; output: string } | null = null;
   const sources: string[] = [];
@@ -2049,7 +2051,14 @@ function composePeer(
           writeFileSync(join(area.output, into), new Uint8Array(COMPOSED_BYTES));
           return {
             ok: true,
-            value: { kind: 'composed', bytes: COMPOSED_BYTES.length, boxed: [...boxed.places], more: boxed.more },
+            value: {
+              kind: 'composed',
+              bytes: COMPOSED_BYTES.length,
+              boxed: [...boxed.places],
+              more: boxed.more,
+              skipped: [...skipped.parts],
+              skippedMore: skipped.more,
+            },
           };
         }
         // EVERY LISTED IMAGE, read at the call and recorded with its decoder, so a case
@@ -2069,7 +2078,10 @@ function composePeer(
             );
           }
           writeFileSync(join(area.output, into), new Uint8Array(COMPOSED_BYTES));
-          return { ok: true, value: { kind: 'composed', bytes: COMPOSED_BYTES.length, boxed: [], more: 0 } };
+          return {
+            ok: true,
+            value: { kind: 'composed', bytes: COMPOSED_BYTES.length, boxed: [], more: 0, skipped: [...skipped.parts], skippedMore: skipped.more },
+          };
         }
         default:
           return null;
@@ -2298,6 +2310,49 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
     expect([...readFileSync(destination)]).toStrictEqual(COMPOSED_BYTES);
     // The suggested name is the FIRST PAGE's file, which is the first in name order.
     expect(suggested).toStrictEqual(['page 2.pdf']);
+  }, 120_000);
+
+  it('carries an image the host LEFT OUT through the whole root, named by its FILE, never its place or its path', async () => {
+    // THE HOP NEITHER HALF CROSSES: the composer's case asserts the place it leaves out, the command's case the dialog it
+    // opens, and between them this root turns the host's place into the name the person knows (Codex's importer audit).
+    const mupdf = platformAnswering(serialisingEngine());
+    // PLACE 2 IN NAME ORDER is `page 10.png`, which the picker answered FIRST: a root that named by the picker's order
+    // would name `page 2.jpg`.
+    const third = platformAnswering(composePeer(undefined, { parts: [{ reason: 'image-unreadable', line: null, item: 2 }], more: 0 }).peer);
+    const tenth = join(scratch, 'page 10.png');
+    const second = join(scratch, 'page 2.jpg');
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickImages: () => Promise.resolve([tenth, second]),
+      sizeImage: () => Promise.resolve(16),
+      readImage: (path) => Promise.resolve({ kind: 'read' as const, bytes: new TextEncoder().encode(path) }),
+      pickDestination: () => Promise.resolve(join(scratch, 'skipped.pdf')),
+      enginePlatform: mupdf.platform,
+      composePlatform: third.platform,
+    });
+    expect(await handlers['document.newFromImages']({})).toMatchObject({
+      ok: true,
+      value: { kind: 'opened-with-skips', skipped: [{ reason: 'image-unreadable', line: null, file: 'page 10.png' }], skippedMore: 0 },
+    });
+  }, 120_000);
+
+  it('carries a CSV record the host LEFT OUT through the whole root, by its line', async () => {
+    const mupdf = platformAnswering(serialisingEngine());
+    const third = platformAnswering(composePeer(undefined, { parts: [{ reason: 'quote-never-closed', line: 4, item: null }], more: 2 }).peer);
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickCsv: () => Promise.resolve(join(scratch, 'rows.csv')),
+      readCsv: () => Promise.resolve({ kind: 'read' as const, bytes: new TextEncoder().encode('a,b\n') }),
+      pickDestination: () => Promise.resolve(join(scratch, 'rows.pdf')),
+      enginePlatform: mupdf.platform,
+      composePlatform: third.platform,
+    });
+    expect(await handlers['document.newFromCsv']({})).toMatchObject({
+      ok: true,
+      value: { kind: 'opened-with-skips', skipped: [{ reason: 'quote-never-closed', line: 4, file: null }], skippedMore: 2 },
+    });
   }, 120_000);
 
   it('CONTROL: with no compose platform the import is refused before any picker opens', async () => {

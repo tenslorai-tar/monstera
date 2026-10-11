@@ -38,6 +38,8 @@ import {
   MAX_TEXT_LAYER_LINE,
   type PageImageFormat,
   type BoxedCharacter,
+  type ComposeSkip,
+  type ImportSkippedPart,
   type ComposeRefusal,
   type UrlFetchRefusal,
   type RequestedSignatureMark,
@@ -1047,6 +1049,9 @@ export type ComposedImport =
       /** Every place a character is drawn as the missing-character box, the first named and the rest counted (ADR-0172). */
       readonly boxed: readonly BoxedCharacter[];
       readonly more: number;
+      /** Every part of the source left out with why, the first named and the rest counted (Codex's importer audit). */
+      readonly skipped: readonly ComposeSkip[];
+      readonly skippedMore: number;
     }
   | {
       readonly kind: 'refused';
@@ -1084,6 +1089,9 @@ export type ComposeImportOutcome =
       readonly destination: string;
       readonly boxed: readonly BoxedCharacter[];
       readonly more: number;
+      /** Each part left out: its reason, and its source line or the picked file's NAME (never its path). */
+      readonly skipped: readonly ImportSkippedPart[];
+      readonly skippedMore: number;
     }
   | { readonly kind: 'cancelled' }
   | { readonly kind: 'too-large'; readonly limitBytes: number }
@@ -6035,7 +6043,8 @@ export class DocumentCommands {
     if (composed.kind === 'refused') {
       return { kind: 'composition-refused', reason: composed.reason, line: composed.line, file: null };
     }
-    return this.#writeComposed(composed, picked);
+    // A TEXT SOURCE'S PART IS A LINE, and names no file: the one file is the one the person picked.
+    return this.#writeComposed(composed, picked, composed.skipped.map((skip) => ({ reason: skip.reason, line: skip.line, file: null })));
   }
 
   /**
@@ -6105,8 +6114,16 @@ export class DocumentCommands {
       return { kind: 'composition-refused', reason: composed.reason, line: composed.line, file };
     }
 
+    // AN IMAGE LEFT OUT IS NAMED BY ITS FILE, here where the position was made, for the refusal's reason above.
+    const skipped = composed.skipped.map((skip): ImportSkippedPart => {
+      const named = skip.item === null ? undefined : ordered[skip.item - 1];
+      if (skip.item !== null && named === undefined) {
+        throw new Error(`the compose host left out image ${String(skip.item)} of ${String(ordered.length)} sent`);
+      }
+      return { reason: skip.reason, line: null, file: named === undefined ? null : fileNameOf(named) };
+    });
     // `ordered` is not empty: an empty pick answered `cancelled` above.
-    return this.#writeComposed(composed, ordered[0] ?? 'images');
+    return this.#writeComposed(composed, ordered[0] ?? 'images', skipped);
   }
 
   /**
@@ -6132,7 +6149,8 @@ export class DocumentCommands {
     if (composed.kind === 'refused') {
       return { kind: 'composition-refused', reason: composed.reason, line: composed.line, file: null };
     }
-    return this.#writeComposed(composed, 'camera.jpg');
+    // A FRAME LEFT OUT has no name a person knows it by, for the refusal's reason above.
+    return this.#writeComposed(composed, 'camera.jpg', composed.skipped.map((skip) => ({ reason: skip.reason, line: null, file: null })));
   }
 
   /**
@@ -6247,8 +6265,9 @@ export class DocumentCommands {
    * destinations are refused are one decision whatever the source was.
    */
   async #writeComposed(
-    { pdf, boxed, more }: Extract<ComposedImport, { readonly kind: 'composed' }>,
+    { pdf, boxed, more, skippedMore }: Extract<ComposedImport, { readonly kind: 'composed' }>,
     picked: string,
+    skipped: readonly ImportSkippedPart[],
   ): Promise<ComposeImportOutcome> {
     const destination = await this.#copy.pick(suggestedComposedName(picked));
     if (destination === null) return { kind: 'cancelled' };
@@ -6268,7 +6287,7 @@ export class DocumentCommands {
       return { kind: 'destination-contested', openElsewhere: written.others.length };
     }
     if (written.kind === 'write-failed') return { kind: 'write-failed' };
-    return { kind: 'written', destination, boxed, more };
+    return { kind: 'written', destination, boxed, more, skipped, skippedMore };
   }
 
   /**

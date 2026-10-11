@@ -61,8 +61,12 @@ export async function composeCsv(source: Uint8Array, page: ComposePageSize, face
     throw new ComposeRefused('not-utf8', null, 'the source is not UTF-8 text');
   }
 
-  const records = readCsv(text);
+  const { records, skipped } = readCsv(text);
   if (!records.some((record) => record.cells.some((cell) => cell.trim() !== ''))) {
+    // NOTHING READABLE because every record was malformed is the malformed refusal, naming the first; a file of empty
+    // fields is the empty one.
+    const first = skipped[0];
+    if (first !== undefined) throw new ComposeRefused('malformed-csv', first.line, `line ${String(first.line)} has ${first.what}`);
     throw new ComposeRefused('nothing-to-draw', null, 'the source holds no field with anything in it');
   }
 
@@ -86,7 +90,12 @@ export async function composeCsv(source: Uint8Array, page: ComposePageSize, face
   drawTable(rows, writer, 0);
 
   fonts.finish();
-  return { pdf: await document.save(), boxed: boxedPositions(text, fonts.boxed, blocks) };
+  return {
+    pdf: await document.save(),
+    boxed: boxedPositions(text, fonts.boxed, blocks),
+    // EACH RECORD LEFT OUT, by its line, so the import names it after it opens (Codex's importer audit).
+    skipped: skipped.map((skip) => ({ reason: skip.what, line: skip.line, item: null })),
+  };
 }
 
 /** One field's runs: its lines, with a hard break between them. */

@@ -119,7 +119,8 @@ export async function composeMarkdown(
     );
   }
   fonts.finish();
-  return { pdf: await document.save(), boxed: boxedPositions(text, fonts.boxed, walker.blocks) };
+  // NOTHING LEFT OUT: Markdown has no grammar a source can break, so every line is composed.
+  return { pdf: await document.save(), boxed: boxedPositions(text, fonts.boxed, walker.blocks), skipped: [] };
 }
 
 /** The inline style a run inherits from the tags open around it. */

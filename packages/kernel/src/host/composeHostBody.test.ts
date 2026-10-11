@@ -7,6 +7,7 @@ import {
   FONT_FAMILIES_PAGE,
   FRAME_HEADER_BYTES,
   MAX_BOXED_CHARACTERS,
+  MAX_COMPOSE_SKIPS,
   MAX_IMPORT_IMAGES,
   MAX_PAGE_COORDINATE,
   encodeFrame,
@@ -15,7 +16,7 @@ import {
 
 import { type ComposePageSize, ComposeRefused, type ComposedSource } from '../composeOutcome.js';
 import type { FaceSource } from '../fontCatalogue.js';
-import type { ImportImage } from '../imageCompose.js';
+import type { ComposedImages, ImportImage } from '../imageCompose.js';
 import { TOKEN_BYTES } from '../token.js';
 import { composeChannels } from './composeChannels.js';
 import { signatureFromScan } from '../signatureScan.js';
@@ -116,10 +117,10 @@ type StubComposer = (source: Uint8Array, page: ComposePageSize, faces: FaceSourc
  */
 function start(
   files: Files,
-  compose: StubComposer = () => Promise.resolve({ pdf: COMPOSED, boxed: [] }),
-  images: (images: readonly ImportImage[]) => Promise<Uint8Array> = async (listed) => {
+  compose: StubComposer = () => Promise.resolve({ pdf: COMPOSED, boxed: [], skipped: [] }),
+  images: (images: readonly ImportImage[]) => Promise<ComposedImages> = async (listed) => {
     for (const image of listed) await image.read();
-    return COMPOSED;
+    return { pdf: COMPOSED, skipped: [] };
   },
   faces: () => FaceSource = () => FACES,
 ) {
@@ -273,7 +274,7 @@ function request(
 async function openArea(
   files: Files,
   compose?: StubComposer,
-  images?: (images: readonly ImportImage[]) => Promise<Uint8Array>,
+  images?: (images: readonly ImportImage[]) => Promise<ComposedImages>,
   faces?: () => FaceSource,
 ): Promise<{ session: string; calls: string[] }> {
   stream = stubStream();
@@ -531,7 +532,7 @@ describe('the compose host body', () => {
   it('names the first boxed characters and COUNTS the rest — CONTROL: a short list is named whole', async () => {
     const many = Array.from({ length: MAX_BOXED_CHARACTERS + 6 }, (_, at) => ({ character: '中', line: at + 1, column: 1 }));
     const files = emptyFiles();
-    const { session } = await openArea(files, () => Promise.resolve({ pdf: COMPOSED, boxed: many }));
+    const { session } = await openArea(files, () => Promise.resolve({ pdf: COMPOSED, boxed: many, skipped: [] }));
     files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([1]));
     stream.feed(composeRequest(session));
     await stream.whenSent(2);
@@ -541,11 +542,30 @@ describe('the compose host body', () => {
 
     const few = many.slice(0, 3);
     const others = emptyFiles();
-    const { session: second } = await openArea(others, () => Promise.resolve({ pdf: COMPOSED, boxed: few }));
+    const { session: second } = await openArea(others, () => Promise.resolve({ pdf: COMPOSED, boxed: few, skipped: [] }));
     others.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([1]));
     stream.feed(composeRequest(second));
     await stream.whenSent(2);
     expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true, value: { kind: 'composed', boxed: few, more: 0 } } });
+  });
+
+  it('carries the parts a composer LEFT OUT, the first named and the rest counted — CONTROL: none is an empty list', async () => {
+    const many = Array.from({ length: MAX_COMPOSE_SKIPS + 2 }, (_, at) => ({ reason: 'quote-never-closed' as const, line: at + 1, item: null }));
+    const files = emptyFiles();
+    const { session } = await openArea(files, () => Promise.resolve({ pdf: COMPOSED, boxed: [], skipped: many }));
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([1]));
+    stream.feed(composeRequest(session));
+    await stream.whenSent(2);
+    const answer = answerIn(stream.sent[1]) as { body: { value: { skipped: unknown[]; skippedMore: number } } };
+    expect(answer.body.value.skipped).toStrictEqual(many.slice(0, MAX_COMPOSE_SKIPS));
+    expect(answer.body.value.skippedMore).toBe(2);
+
+    const others = emptyFiles();
+    const { session: second } = await openArea(others);
+    others.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([1]));
+    stream.feed(composeRequest(second));
+    await stream.whenSent(2);
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true, value: { kind: 'composed', skipped: [], skippedMore: 0 } } });
   });
 
   it('reports a host started WITHOUT ITS FONTS as a fault with an incident, never a refusal of the file', async () => {

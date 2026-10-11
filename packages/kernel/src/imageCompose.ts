@@ -1,5 +1,6 @@
 import { PDFDocument } from '@cantoo/pdf-lib';
 
+import type { ComposeSkip } from '@monstera/contract';
 import { MAX_IMPORT_PNG_PIXELS } from '@monstera/contract/host';
 
 import { ComposeRefused } from './composeOutcome.js';
@@ -20,8 +21,8 @@ import { type EmbeddableImageType, addImagePage } from './pageImage.js';
  *
  * `embedPng` decodes every pixel, and its cost follows pixels rather than bytes — the
  * table on `MAX_IMPORT_IMAGE_PIXELS` is the measurement. So every PNG's header is read
- * first, and a set that breaks either pixel bound is refused before any decoder runs:
- * a refusal found after twenty seconds of decoding the images before it would be the
+ * first, and an image that breaks either pixel bound is left out before any decoder
+ * runs: found after twenty seconds of decoding the images before it, it would be the
  * same answer, paid for. A JPEG is not decoded by `embedJpg`, which reads its header
  * and carries the bytes, so main's byte bound is the one that bounds it.
  *
@@ -40,17 +41,35 @@ export interface ImportImage {
   readonly read: () => Promise<Uint8Array>;
 }
 
+/** What a set of images makes: the PDF, and each picked image left out with why, by its one-based place. */
+export interface ComposedImages {
+  readonly pdf: Uint8Array;
+  readonly skipped: readonly ComposeSkip[];
+}
+
 /**
- * Makes a new PDF with one page per image, in the order given, answering its bytes.
+ * Makes a new PDF with one page per image, in the order given, answering its bytes and the images it left out.
  *
- * @throws ComposeRefused `image-unreadable` for a PNG whose header states no size or an
- *   image the decoder refuses, and `too-many-pixels` for a PNG past either pixel bound —
- *   each naming the image's one-based position
+ * **One image the decoder refuses, or one past a pixel bound, is LEFT OUT AND NAMED, never the whole set refused**
+ * (Codex's importer audit, the owner's *a user is never refused because of their document*): every other picked image
+ * is a page, in the order picked. The set's own pixel bound leaves out the image that would cross it, so the images
+ * before it are kept and a smaller one after it still fits.
+ *
+ * @throws ComposeRefused `nothing-to-draw` for no image given, and the first left-out image's own reason where every
+ *   image was left out, naming its one-based position
  */
-export async function composeImages(images: readonly ImportImage[]): Promise<Uint8Array> {
+export async function composeImages(images: readonly ImportImage[]): Promise<ComposedImages> {
   if (images.length === 0) {
     throw new ComposeRefused('nothing-to-draw', null, 'no image was given to compose');
   }
+  /** An image's two reasons only, which are both a skip and, where every image is one, the refusal. */
+  type ImageSkip = ComposeSkip & { readonly reason: 'image-unreadable' | 'too-many-pixels'; readonly item: number };
+  const skipped: ImageSkip[] = [];
+  const left = new Set<number>();
+  const leaveOut = (item: number, reason: ImageSkip['reason']): void => {
+    skipped.push({ reason, line: null, item });
+    left.add(item);
+  };
 
   // THE FIRST PASS: every PNG's size, from its header, and both bounds held.
   let pngPixels = 0;
@@ -65,23 +84,16 @@ export async function composeImages(images: readonly ImportImage[]): Promise<Uin
       size = checkPngPixels(await image.read());
     } catch (error) {
       if (!(error instanceof PngPixelsRefused)) throw error;
-      throw new ComposeRefused(
-        error.reason === 'no-header' ? 'image-unreadable' : 'too-many-pixels',
-        null,
-        `image ${String(item)}: ${error.message}`,
-        item,
-      );
+      leaveOut(item, error.reason === 'no-header' ? 'image-unreadable' : 'too-many-pixels');
+      continue;
+    }
+    // THE SET'S TOTAL is this import's own bound, and no other route has a set: the image that would cross it is left
+    // out and does not count towards it.
+    if (pngPixels + size.width * size.height > MAX_IMPORT_PNG_PIXELS) {
+      leaveOut(item, 'too-many-pixels');
+      continue;
     }
     pngPixels += size.width * size.height;
-    // THE SET'S TOTAL is this import's own bound, and no other route has a set.
-    if (pngPixels > MAX_IMPORT_PNG_PIXELS) {
-      throw new ComposeRefused(
-        'too-many-pixels',
-        null,
-        `image ${String(item)} is ${String(size.width)} × ${String(size.height)}, which passes a pixel bound`,
-        item,
-      );
-    }
   }
 
   // PINNED, for `markdownCompose.ts`' reason: a composition that differed on every
@@ -91,22 +103,23 @@ export async function composeImages(images: readonly ImportImage[]): Promise<Uin
   // THE SECOND PASS: the pages.
   for (const [index, image] of images.entries()) {
     const item = index + 1;
+    if (left.has(item)) continue;
     const bytes = await image.read();
     try {
       await addImagePage(document, bytes, image.mediaType, document.getPageCount());
-    } catch (error) {
+    } catch {
       // THE DECODER REFUSING IS THE ANSWER, and it is the only call inside this try.
       // `insertImage`'s rule one process along: pdf-lib names no error class for bytes
       // that are not the type they were routed as, so what this try can catch is
-      // exactly the decode and the page it makes.
-      throw new ComposeRefused(
-        'image-unreadable',
-        null,
-        `image ${String(item)} was refused by its decoder: ${error instanceof Error ? error.message : String(error)}`,
-        item,
-      );
+      // exactly the decode and the page it makes. No page is left behind for it:
+      // `addImagePage` inserts the page only after the image has embedded.
+      leaveOut(item, 'image-unreadable');
     }
   }
 
-  return document.save();
+  const first = [...skipped].sort((a, b) => (a.item ?? 0) - (b.item ?? 0))[0];
+  if (document.getPageCount() === 0 && first !== undefined) {
+    throw new ComposeRefused(first.reason, null, `image ${String(first.item)} could not be made a page, and no other was picked`, first.item);
+  }
+  return { pdf: await document.save(), skipped: [...skipped].sort((a, b) => (a.item ?? 0) - (b.item ?? 0)) };
 }

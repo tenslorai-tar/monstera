@@ -50,10 +50,17 @@ describe('composeCsv', () => {
     await expect(compose(Uint8Array.of(0x61, 0xff, 0x2c, 0x62))).rejects.toMatchObject({ reason: 'not-utf8', line: null });
   });
 
-  it('carries the reader’s refusal and its line', async () => {
-    const refusal = compose('a,b\nc,"open\n');
+  it('composes the rest and NAMES a record it left out by its line (Codex’s importer audit)', async () => {
+    const { pdf, skipped } = await compose('a,b\nc,"open\nd,e\n');
+    expect(skipped).toStrictEqual([{ reason: 'quote-never-closed', line: 2, item: null }]);
+    const [first] = await shownText(pdf);
+    expect(first).toContain('d');
+  });
+
+  it('CONTROL: a file whose EVERY record is malformed is refused, naming the first line, not composed blank', async () => {
+    const refusal = compose('a,"b"c\nx"y\n');
     await expect(refusal).rejects.toBeInstanceOf(ComposeRefused);
-    await expect(refusal).rejects.toMatchObject({ reason: 'malformed-csv', line: 2 });
+    await expect(refusal).rejects.toMatchObject({ reason: 'malformed-csv', line: 1 });
   });
 
   it('draws a character no face carries as a box and names it on the line a person finds it — after a two-line field', async () => {

@@ -3729,6 +3729,8 @@ function composeHostBinding(
         pdf: await takeComposed(area, into, answer.value.bytes),
         boxed: answer.value.boxed,
         more: answer.value.more,
+        skipped: answer.value.skipped,
+        skippedMore: answer.value.skippedMore,
       };
     },
 
@@ -3777,6 +3779,9 @@ function composeHostBinding(
           pdf: await takeComposed(area, into, answer.value.bytes),
           boxed: answer.value.boxed,
           more: answer.value.more,
+          // EACH IMAGE LEFT OUT, by its place in this list, which `composeImageFiles` turns into the file's name.
+          skipped: answer.value.skipped,
+          skippedMore: answer.value.skippedMore,
         };
       } finally {
         await Promise.all(

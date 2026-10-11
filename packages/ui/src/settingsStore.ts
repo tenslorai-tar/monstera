@@ -1,4 +1,16 @@
+import type { MessageKey } from '@monstera/shared';
+
 import type { SettingDefinition, SettingsRegistry } from './registries/settings.js';
+
+/** Why an imported value was left out. */
+export const SKIPPED_SETTING_REASONS = ['not-in-this-version', 'secret', 'not-accepted'] as const;
+
+/** One value an imported settings file named and this build left out: the id it gave, the setting's title where there is one, and why. */
+export interface SkippedSetting {
+  readonly id: string;
+  readonly title?: MessageKey;
+  readonly reason: (typeof SKIPPED_SETTING_REASONS)[number];
+}
 
 /**
  * The renderer's live settings values.
@@ -91,16 +103,26 @@ export class SettingsStore {
 
   /**
    * Applies a settings file a person imported (`BUILD-PROMPT.md`:630): each value this build reads — migrated and
-   * validated by the registry's one reading — is set, and the rest are left out and counted. A secret is never set
-   * here, whatever the file says: a key is entered in its own field, and `settings.save` refuses a write carrying one.
+   * validated by the registry's one reading — is set, and each one left out is NAMED with why (Codex's importer audit):
+   * a setting this version does not have, a secret, or a value the setting does not take. A secret is never set here,
+   * whatever the file says: a key is entered in its own field, and `settings.save` refuses a write carrying one.
    */
-  importValues(values: Readonly<Record<string, unknown>>): { readonly applied: number; readonly skipped: number } {
+  importValues(values: Readonly<Record<string, unknown>>): { readonly applied: number; readonly skipped: readonly SkippedSetting[] } {
     let applied = 0;
-    let skipped = 0;
+    const skipped: SkippedSetting[] = [];
     for (const [id, value] of Object.entries(values)) {
-      const accepted = this.#registry.get(id)?.secret === true ? undefined : this.#registry.accept(id, value);
+      const definition = this.#registry.get(id);
+      if (definition === undefined) {
+        skipped.push({ id, reason: 'not-in-this-version' });
+        continue;
+      }
+      if (definition.secret === true) {
+        skipped.push({ id, title: definition.title, reason: 'secret' });
+        continue;
+      }
+      const accepted = this.#registry.accept(id, value);
       if (accepted === undefined) {
-        skipped += 1;
+        skipped.push({ id, title: definition.title, reason: 'not-accepted' });
         continue;
       }
       this.set(id, accepted.value);

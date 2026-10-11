@@ -3,6 +3,8 @@ import { z } from 'zod';
 import {
   COMPOSE_REFUSALS,
   MAX_BOXED_CHARACTERS,
+  MAX_COMPOSE_SKIPS,
+  composeSkipSchema,
   MAX_IMPORT_IMAGES,
   boxedCharacterSchema,
   MAX_PAGE_COORDINATE,
@@ -99,6 +101,9 @@ const composeResultSchema = z.discriminatedUnion('kind', [
       bytes: z.number().int().nonnegative(),
       boxed: z.array(boxedCharacterSchema).max(MAX_BOXED_CHARACTERS),
       more: z.number().int().min(0),
+      /** Each part of the source left out with why, the first named and the rest counted (Codex's importer audit). */
+      skipped: z.array(composeSkipSchema).max(MAX_COMPOSE_SKIPS),
+      skippedMore: z.number().int().min(0),
     })
     .strict(),
   z

@@ -1,9 +1,10 @@
-import type { BoxedCharacter, ChannelResult, ComposeRefusal } from '@monstera/contract';
+import type { BoxedCharacter, ChannelResult, ComposeRefusal, ImportSkippedPart } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
 
 import { BOXED_CHARACTERS_DIALOG_ID } from '../dialogs/boxedCharacters.js';
 import { CAMERA_CAPTURE_DIALOG_ID, CAMERA_CAPTURE_RESULT } from '../dialogs/cameraCapture.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
+import { IMPORT_SKIPPED_DIALOG_ID } from '../dialogs/importSkipped.js';
 import { INSERT_MARKDOWN_DIALOG_ID } from '../dialogs/insertMarkdown.js';
 import type { InsertMarkdownAnswer } from '../dialogs/insertMarkdownResult.js';
 import { WORKBOOK_INCOMPLETE_DIALOG_ID } from '../dialogs/workbookIncomplete.js';
@@ -94,9 +95,11 @@ export function markdownImportProblem(
     // outcome a channel gains later is a lint error here instead of a silence. And
     // `opened-incomplete` OPENED too, so it is no problem of the import's: the rows it
     // lacks have their own dialog, which the Office command opens (decision C). So did
-    // `opened-with-boxes`, whose boxed characters the text imports name (ADR-0172).
+    // `opened-with-boxes`, whose boxed characters the text imports name (ADR-0172), and `opened-with-skips`, which
+    // opened with every other part and whose parts left out the import names.
     case 'opened-incomplete':
     case 'opened-with-boxes':
+    case 'opened-with-skips':
     case 'cancelled':
     case 'opened':
     case 'already-open':
@@ -287,13 +290,15 @@ export function newFromImagesCommand(deps: {
         return;
       }
       const result = answer.value;
-      if (result.kind === 'opened') {
+      if (result.kind === 'opened' || result.kind === 'opened-with-skips') {
         deps.onOpened({
           docId: result.docId,
           version: result.version,
           byteLength: result.byteLength,
           name: result.name,
         });
+        // THE PICTURES LEFT OUT, by file name, beside the document that holds the rest.
+        if (result.kind === 'opened-with-skips') tellSkipped(deps, result.skipped, result.skippedMore);
         return;
       }
       if (result.kind === 'already-open') {
@@ -336,13 +341,15 @@ export function newFromCaptureCommand(deps: {
         return;
       }
       const result = answer.value;
-      if (result.kind === 'opened') {
+      if (result.kind === 'opened' || result.kind === 'opened-with-skips') {
         deps.onOpened({
           docId: result.docId,
           version: result.version,
           byteLength: result.byteLength,
           name: result.name,
         });
+        // THE PICTURES LEFT OUT, by file name, beside the document that holds the rest.
+        if (result.kind === 'opened-with-skips') tellSkipped(deps, result.skipped, result.skippedMore);
         return;
       }
       if (result.kind === 'already-open') {
@@ -446,8 +453,14 @@ function openedText(
   },
   result: ChannelResult<'document.newFromMarkdown'>,
 ): boolean {
-  if (result.kind !== 'opened' && result.kind !== 'opened-with-boxes') return false;
+  if (result.kind !== 'opened' && result.kind !== 'opened-with-boxes' && result.kind !== 'opened-with-skips') return false;
   deps.onOpened({ docId: result.docId, version: result.version, byteLength: result.byteLength, name: result.name });
   if (result.kind === 'opened-with-boxes') tellBoxed(deps, result.boxed, result.more);
+  if (result.kind !== 'opened') tellSkipped(deps, result.skipped, result.skippedMore);
   return true;
+}
+
+/** The parts an import left out, named beside the document it opened (Codex's importer audit); nothing where none was. */
+function tellSkipped(deps: { readonly ask: DocumentCommandDeps['ask'] }, skipped: readonly ImportSkippedPart[], more: number): void {
+  if (skipped.length > 0) void deps.ask(IMPORT_SKIPPED_DIALOG_ID, { skipped: [...skipped], more });
 }

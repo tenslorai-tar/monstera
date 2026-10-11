@@ -1142,8 +1142,13 @@ function newFromImportHandler(
       // THE BOXED CHARACTERS RIDE WITH THE OPEN (ADR-0172), the Office import's rule for rows it lacks: a document
       // that opened is told which characters it draws as the box, and an open that answered anything else answers
       // that — the file on disk is the same either way.
-      if (opened.kind !== 'opened' || composed.boxed.length === 0) return ok(opened);
-      return ok({ ...opened, kind: 'opened-with-boxes', boxed: [...composed.boxed], more: composed.more });
+      // AND THE PARTS LEFT OUT ride with it the same way (Codex's importer audit): with the boxes where there are any,
+      // on their own where there are none.
+      if (opened.kind !== 'opened') return ok(opened);
+      const skipped = { skipped: [...composed.skipped], skippedMore: composed.skippedMore };
+      if (composed.boxed.length > 0) return ok({ ...opened, kind: 'opened-with-boxes', boxed: [...composed.boxed], more: composed.more, ...skipped });
+      if (composed.skipped.length > 0) return ok({ ...opened, kind: 'opened-with-skips', ...skipped });
+      return ok(opened);
     } catch (thrown) {
       if (thrown instanceof EngineUnavailableError) return err({ code: 'engine-unavailable' });
       throw thrown;
@@ -1164,7 +1169,10 @@ function newFromCaptureHandler(
     try {
       const composed = await deps.commands.composeCapturedFrames(frames);
       if (composed.kind !== 'written') return ok(composeRefusal(composed));
-      return ok((await openPath(deps, composed.destination)).outcome);
+      const opened = (await openPath(deps, composed.destination)).outcome;
+      // A FRAME LEFT OUT is said too, with no name: a frame has none a person knows it by.
+      if (opened.kind !== 'opened' || composed.skipped.length === 0) return ok(opened);
+      return ok({ ...opened, kind: 'opened-with-skips', skipped: [...composed.skipped], skippedMore: composed.skippedMore });
     } catch (thrown) {
       if (thrown instanceof EngineUnavailableError) return err({ code: 'engine-unavailable' });
       throw thrown;
@@ -1191,7 +1199,10 @@ function newFromImagesHandler(
         return ok({ kind: 'images-too-large', limitBytes: composed.limitBytes });
       }
       if (composed.kind !== 'written') return ok(composeRefusal(composed));
-      return ok((await openPath(deps, composed.destination)).outcome);
+      const opened = (await openPath(deps, composed.destination)).outcome;
+      // THE IMAGES LEFT OUT, by file name, ride with the open (Codex's importer audit), as the text imports' do.
+      if (opened.kind !== 'opened' || composed.skipped.length === 0) return ok(opened);
+      return ok({ ...opened, kind: 'opened-with-skips', skipped: [...composed.skipped], skippedMore: composed.skippedMore });
     } catch (thrown) {
       if (thrown instanceof EngineUnavailableError) return err({ code: 'engine-unavailable' });
       throw thrown;

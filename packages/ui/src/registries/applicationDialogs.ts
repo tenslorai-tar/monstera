@@ -28,6 +28,8 @@ import { EXTERNAL_EDIT_PROBLEM_DIALOG } from '../dialogs/externalEditProblem.js'
 import { EXTRACT_PAGES_DIALOG } from '../dialogs/extractPages.js';
 import { FIELD_COPY_DIALOG } from '../dialogs/fieldCopy.js';
 import { IMPORT_FORM_DATA_RESULT_DIALOG } from '../dialogs/importFormDataResult.js';
+import { IMPORT_SETTINGS_RESULT_DIALOG } from '../dialogs/importSettingsResult.js';
+import { IMPORT_SKIPPED_DIALOG } from '../dialogs/importSkipped.js';
 import { TAB_ORDER_DIALOG } from '../dialogs/tabOrder.js';
 import { FLAT_FIELDS_DIALOG } from '../dialogs/flatFields.js';
 import { FLATTEN_FORM_DIALOG } from '../dialogs/flattenForm.js';
@@ -184,6 +186,8 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   EXTRACT_PAGES_DIALOG,
   FIELD_COPY_DIALOG,
   IMPORT_FORM_DATA_RESULT_DIALOG,
+  IMPORT_SETTINGS_RESULT_DIALOG,
+  IMPORT_SKIPPED_DIALOG,
   TAB_ORDER_DIALOG,
   SPLIT_DOCUMENT_DIALOG,
   EXPORT_PAGE_IMAGES_DIALOG,

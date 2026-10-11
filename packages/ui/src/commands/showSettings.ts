@@ -8,6 +8,7 @@ import {
   DIALOG_SETTINGS,
   controlFor,
 } from '../dialogs/settings.js';
+import { IMPORT_SETTINGS_RESULT_DIALOG_ID, MAX_NAMED_SETTINGS } from '../dialogs/importSettingsResult.js';
 import { SETTINGS_PROBLEM_DIALOG_ID } from '../dialogs/settingsProblem.js';
 import {
   GROUP_APPLICATION,
@@ -264,8 +265,16 @@ export function showSettingsCommand(deps: {
       }
       if (read.value.kind === 'unreadable') deps.toast('problem', TOAST_SETTINGS_UNREADABLE);
       if (read.value.kind === 'read') {
-        const { skipped } = deps.settings.importValues(read.value.values);
-        confirmDone(deps, skipped === 0 ? TOAST_SETTINGS_IMPORTED : TOAST_SETTINGS_IMPORTED_PARTLY);
+        const { applied, skipped } = deps.settings.importValues(read.value.values);
+        confirmDone(deps, skipped.length === 0 ? TOAST_SETTINGS_IMPORTED : TOAST_SETTINGS_IMPORTED_PARTLY);
+        // EACH VALUE LEFT OUT, NAMED with why (Codex's importer audit), before Settings opens again.
+        if (skipped.length > 0) {
+          await deps.ask(IMPORT_SETTINGS_RESULT_DIALOG_ID, {
+            applied,
+            skipped: skipped.slice(0, MAX_NAMED_SETTINGS),
+            more: Math.max(0, skipped.length - MAX_NAMED_SETTINGS),
+          });
+        }
       }
       await open();
   }

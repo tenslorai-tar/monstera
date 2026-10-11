@@ -549,6 +549,59 @@ export const COMPOSE_REFUSALS = [
   'too-many-pixels',
 ] as const;
 
+/**
+ * Why a PART of a source picked for import was left out while the rest was composed (Codex's importer audit, the
+ * owner's *a user is never refused because of their document*): a CSV record RFC 4180 does not allow, or one picked image
+ * the decoder refused or that is past a pixel bound. {@link COMPOSE_REFUSALS}' place and reason: two wires carry it. The
+ * whole source is refused only where nothing in it can be composed.
+ */
+export const COMPOSE_SKIPS = [
+  /** A CSV record holding a quoted field never closed; it is left out as the one line it opened on. */
+  'quote-never-closed',
+  /** A CSV record with text after a closing quote. */
+  'text-after-quote',
+  /** A CSV record with a quote inside an unquoted field, a leading space before a quote included. */
+  'quote-inside-field',
+  /** A picked image the decoder refused, or a PNG whose header states no size. */
+  'image-unreadable',
+  /** A picked PNG larger than one image may be, or one that would take the set past the import's pixel bound. */
+  'too-many-pixels',
+] as const;
+
+/** How many skipped parts an import NAMES; past it, they are counted. */
+export const MAX_COMPOSE_SKIPS = 64;
+
+/** One part of a source left out: why, and where — a one-based line for a text source, a one-based item for a set of files. */
+export const composeSkipSchema = z
+  .object({
+    reason: z.enum(COMPOSE_SKIPS),
+    line: z.number().int().positive().nullable(),
+    item: z.number().int().positive().nullable(),
+  })
+  .strict();
+
+/** One of {@link composeSkipSchema}. */
+export type ComposeSkip = z.infer<typeof composeSkipSchema>;
+
+/** How long a picked file's name may be where an import names it. */
+const MAX_SKIPPED_FILE_NAME = 255;
+
+/**
+ * One part of an import left out, as the RENDERER is told it: {@link composeSkipSchema}'s reason, with the source line
+ * for a text source and the picked file's NAME for a set of files — main turns the host's position into the name the
+ * person knows, and never sends a path.
+ */
+export const importSkippedPartSchema = z
+  .object({
+    reason: z.enum(COMPOSE_SKIPS),
+    line: z.number().int().positive().nullable(),
+    file: z.string().min(1).max(MAX_SKIPPED_FILE_NAME).nullable(),
+  })
+  .strict();
+
+/** One of {@link importSkippedPartSchema}. */
+export type ImportSkippedPart = z.infer<typeof importSkippedPartSchema>;
+
 /** How many places of a boxed character a text import NAMES; past it, `more` counts the rest. */
 export const MAX_BOXED_CHARACTERS = 64;
 

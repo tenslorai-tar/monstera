@@ -1,10 +1,10 @@
-import type { Handlers } from '@monstera/contract';
-import { FONT_FAMILIES_PAGE, cappedBoxes } from '@monstera/contract/host';
+import type { ComposeSkip, Handlers } from '@monstera/contract';
+import { FONT_FAMILIES_PAGE, MAX_COMPOSE_SKIPS, cappedBoxes } from '@monstera/contract/host';
 
 import type { FaceSource } from '../fontCatalogue.js';
 import { fontFamiliesOf } from '../fontFamilies.js';
 import { type ComposePageSize, ComposeRefused, type ComposedSource } from '../composeOutcome.js';
-import type { ImportImage } from '../imageCompose.js';
+import type { ComposedImages, ImportImage } from '../imageCompose.js';
 import { pictureSize } from '../pictureSize.js';
 import type { ScannedSignature } from '../signatureScan.js';
 import {
@@ -109,12 +109,17 @@ export interface ComposeHandlerParts {
   readonly composeMarkdown: SourceComposer;
   /** How this process composes a CSV source. */
   readonly composeCsv: SourceComposer;
-  /** How this process makes pages from a list of images. `composeImages` in the host. */
-  readonly composeImages: (images: readonly ImportImage[]) => Promise<Uint8Array>;
+  /** How this process makes pages from a list of images, and which it left out. `composeImages` in the host. */
+  readonly composeImages: (images: readonly ImportImage[]) => Promise<ComposedImages>;
 }
 
 /** An image the snapshot directory does not hold, told apart from a decoder's refusal. */
 class SourceMissing extends Error {}
+
+/** The skipped parts an answer names, and how many past them it counts: `cappedBoxes`' split for the frame's sake. */
+function cappedSkips(skipped: readonly ComposeSkip[]): { skipped: ComposeSkip[]; skippedMore: number } {
+  return { skipped: skipped.slice(0, MAX_COMPOSE_SKIPS), skippedMore: Math.max(0, skipped.length - MAX_COMPOSE_SKIPS) };
+}
 
 export function createComposeHandlers({
   areas,
@@ -190,6 +195,7 @@ export function createComposeHandlers({
           bytes,
           // THE ONE CAP (`cappedBoxes`), which the PDFium host's answer takes too: two would cut a list two ways.
           ...cappedBoxes({ boxed: composed.boxed, more: 0 }),
+          ...cappedSkips(composed.skipped),
         },
       };
     };
@@ -374,9 +380,9 @@ export function createComposeHandlers({
       const held = areas.lookup(session);
       if (held === undefined) return gone;
 
-      let pdf: Uint8Array;
+      let composed: ComposedImages;
       try {
-        pdf = await composeImages(
+        composed = await composeImages(
           images.map(({ from, mediaType }) => ({
             mediaType,
             read: () =>
@@ -396,9 +402,9 @@ export function createComposeHandlers({
         throw error;
       }
 
-      const bytes = await files.writeOutput(held.outputDirectory, into, pdf);
-      // AN IMAGE DRAWS NO TEXT, so it boxes nothing.
-      return { ok: true, value: { kind: 'composed', bytes, boxed: [], more: 0 } };
+      const bytes = await files.writeOutput(held.outputDirectory, into, composed.pdf);
+      // AN IMAGE DRAWS NO TEXT, so it boxes nothing; an image left out is named by its place among those picked.
+      return { ok: true, value: { kind: 'composed', bytes, boxed: [], more: 0, ...cappedSkips(composed.skipped) } };
     },
   };
 }

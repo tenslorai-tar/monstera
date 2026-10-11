@@ -76,11 +76,13 @@ describe('composeImages', () => {
       { mediaType: 'image/jpeg', bytes: jpegOf(50, 60) },
     ]);
 
-    expect(await sizesOf(await composeImages(images))).toStrictEqual([
+    const composed = await composeImages(images);
+    expect(await sizesOf(composed.pdf)).toStrictEqual([
       { width: 300, height: 200 },
       { width: 100, height: 400 },
       { width: 50, height: 60 },
     ]);
+    expect(composed.skipped).toStrictEqual([]);
   });
 
   it('scales a page past the format’s limit down to it, keeping the picture’s shape', async () => {
@@ -91,46 +93,66 @@ describe('composeImages', () => {
       { mediaType: 'image/jpeg', bytes: jpegOf(50, 60) },
     ]);
 
-    expect(await sizesOf(await composeImages(images))).toStrictEqual([
+    expect(await sizesOf((await composeImages(images)).pdf)).toStrictEqual([
       { width: MAX_PAGE_COORDINATE, height: MAX_PAGE_COORDINATE / 2 },
       { width: 50, height: 60 },
     ]);
   });
 
-  it('refuses a PNG past the per-image bound BEFORE any decoder runs, naming it', async () => {
+  it('LEAVES OUT a PNG past the per-image bound BEFORE any decoder runs, naming it, and makes the rest pages', async () => {
     // THE DECISION IS THE ORDER. A header-only PNG is refused by the decoder too, so a
-    // composer that decoded first would answer `image-unreadable` — and the JPEG first in
-    // the list would already be a page. The reads say no second pass began.
+    // composer that decoded first would name `image-unreadable`. The reads say the PNG
+    // was read once, for its header, and never handed to a decoder.
     const side = Math.ceil(Math.sqrt(MAX_IMPORT_IMAGE_PIXELS)) + 1;
     const { images, reads } = recorded([
       { mediaType: 'image/jpeg', bytes: jpegOf(10, 10) },
       { mediaType: 'image/png', bytes: pngHeaderOf(side, side) },
     ]);
 
-    await expect(composeImages(images)).rejects.toMatchObject({ reason: 'too-many-pixels', item: 2 });
-    expect(reads).toStrictEqual([2]);
+    const composed = await composeImages(images);
+    expect(composed.skipped).toStrictEqual([{ reason: 'too-many-pixels', line: null, item: 2 }]);
+    expect(await sizesOf(composed.pdf)).toStrictEqual([{ width: 10, height: 10 }]);
+    expect(reads).toStrictEqual([2, 1]);
   });
 
-  it('refuses a SET past the total bound, naming the image that crossed it', async () => {
+  it('leaves out the image that takes a SET past the total bound, and keeps a smaller one after it', async () => {
     // EIGHTY MEGAPIXELS EACH, every one under the per-image bound: only the running
-    // total can refuse the third, and it must be named rather than the first.
+    // total can leave out the third. The fourth is small and still fits.
     const { images } = recorded([
       { mediaType: 'image/png', bytes: pngHeaderOf(10_000, 8_000) },
       { mediaType: 'image/png', bytes: pngHeaderOf(10_000, 8_000) },
       { mediaType: 'image/png', bytes: pngHeaderOf(10_000, 8_000) },
+      { mediaType: 'image/jpeg', bytes: jpegOf(20, 20) },
     ]);
 
-    await expect(composeImages(images)).rejects.toMatchObject({ reason: 'too-many-pixels', item: 3 });
+    // THE HEADERS DECODE TO NOTHING, so 1 and 2 are left out by the decoder: the case is about which reason 3 gets.
+    const composed = await composeImages(images);
+    expect(composed.skipped).toStrictEqual([
+      { reason: 'image-unreadable', line: null, item: 1 },
+      { reason: 'image-unreadable', line: null, item: 2 },
+      { reason: 'too-many-pixels', line: null, item: 3 },
+    ]);
+    expect(await sizesOf(composed.pdf)).toStrictEqual([{ width: 20, height: 20 }]);
   });
 
-  it('refuses bytes routed as PNG with no PNG header, and bytes the decoder refuses, by position', async () => {
+  it('leaves out bytes routed as PNG with no PNG header, and bytes the decoder refuses, by position', async () => {
     const noHeader = recorded([
       { mediaType: 'image/jpeg', bytes: jpegOf(10, 10) },
       { mediaType: 'image/png', bytes: jpegOf(10, 10) },
     ]);
-    await expect(composeImages(noHeader.images)).rejects.toMatchObject({ reason: 'image-unreadable', item: 2 });
+    expect((await composeImages(noHeader.images)).skipped).toStrictEqual([{ reason: 'image-unreadable', line: null, item: 2 }]);
 
-    // A HEADER THE BOUND ACCEPTS AND A DECODER DOES NOT: refused in the second pass.
+    // A HEADER THE BOUND ACCEPTS AND A DECODER DOES NOT, beside one it takes: left out in the second pass.
+    const undecodable = recorded([
+      { mediaType: 'image/png', bytes: pngHeaderOf(10, 10) },
+      { mediaType: 'image/jpeg', bytes: jpegOf(30, 40) },
+    ]);
+    const composed = await composeImages(undecodable.images);
+    expect(composed.skipped).toStrictEqual([{ reason: 'image-unreadable', line: null, item: 1 }]);
+    expect(await sizesOf(composed.pdf)).toStrictEqual([{ width: 30, height: 40 }]);
+  });
+
+  it('CONTROL: a set with NO image that can be a page is refused, naming the first, rather than an empty PDF', async () => {
     const undecodable = recorded([{ mediaType: 'image/png', bytes: pngHeaderOf(10, 10) }]);
     const refusal = composeImages(undecodable.images);
     await expect(refusal).rejects.toBeInstanceOf(ComposeRefused);
@@ -148,7 +170,7 @@ describe('composeImages', () => {
   });
 
   it('is reproducible: the same images make the same bytes', async () => {
-    const make = () => composeImages(recorded([{ mediaType: 'image/jpeg', bytes: jpegOf(40, 30) }]).images);
+    const make = async () => (await composeImages(recorded([{ mediaType: 'image/jpeg', bytes: jpegOf(40, 30) }]).images)).pdf;
     expect(await make()).toStrictEqual(await make());
   });
 });
