@@ -52,7 +52,7 @@ const SAME = 'one-for-both-0220';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 33 });
+const roster = createRoster(failures, { cases: 35 });
 
 /** @param {string} name @param {boolean} held @param {string} detail */
 function check(name, held, detail) {
@@ -137,6 +137,28 @@ function read(bytes, password) {
   const canPrint = document.hasPermission('print');
   document.destroy();
   return { access, encrypted, permissions, version, pages, text, widgets, canPrint };
+}
+
+/**
+ * The first widget's tooltip (`/TU`), as the second reader reads it with `password`, or `undefined`.
+ *
+ * @param {Uint8Array} bytes
+ * @param {string} password
+ */
+function tooltipOf(bytes, password) {
+  const document = /** @type {wasm.PDFDocument} */ (wasm.PDFDocument.openDocument(bytes, 'application/pdf'));
+  try {
+    if (document.authenticatePassword(password) === 0) return undefined;
+    const page = document.loadPage(0);
+    const widget = page instanceof wasm.PDFPage ? page.getWidgets()[0] : undefined;
+    // ON THE FIELD, which is the widget's parent where the two are not one dictionary (pdf-lib makes them so).
+    const object = widget?.getObject();
+    const own = object?.get('TU');
+    const tooltip = own === undefined || own.isNull() ? object?.get('Parent').get('TU') : own;
+    return tooltip === undefined || tooltip.isNull() ? undefined : tooltip.asString();
+  } finally {
+    document.destroy();
+  }
 }
 
 /**
@@ -253,6 +275,34 @@ async function main(/** @type {any} */ kernel) {
       );
       const withField = read(field, USER);
       check('createFormField: the field is on the protected page, which stays protected', withField.widgets === 1 && withField.encrypted && read(field).access === 0, JSON.stringify(withField.widgets));
+      // A FIELD'S PROPERTIES AND THE TAB ORDER on the protected form (A3.2): the property is in the result, which opens
+      // only with the password and keeps the document's permissions.
+      const created = await open(field, USER);
+      try {
+        const handle = { page: 0, index: 0, name: 'applicant.name' };
+        const version = /** @type {any} */ (1);
+        const edited = await runCommand(
+          kernel,
+          created,
+          { kind: 'editFormFields', edits: [{ field: handle, set: { tooltip: 'Your full name', required: true } }], version },
+          undefined,
+        );
+        const tooltip = tooltipOf(edited, USER);
+        check(
+          'editFormFields: the protected result holds the new tooltip, opens only with the password and keeps the permissions',
+          tooltip === 'Your full name' && read(edited).access === 0 && read(edited, USER).permissions === before.permissions,
+          JSON.stringify({ tooltip }),
+        );
+        const ordered = await runCommand(kernel, created, { kind: 'setTabOrder', pages: 'all', order: 'column', version }, undefined);
+        const orderedRead = read(ordered, USER);
+        check(
+          'setTabOrder: the protected result keeps its field and opens only with the password',
+          orderedRead.widgets === 1 && orderedRead.encrypted && read(ordered).access === 0,
+          JSON.stringify(orderedRead.widgets),
+        );
+      } finally {
+        await kernel.mupdfWriter.close(created);
+      }
       const toc = await runCommand(
         kernel,
         session,
