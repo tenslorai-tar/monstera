@@ -50,6 +50,8 @@ const NOT_A_PLURAL_NOUN: ReadonlySet<string> = new Set([
   'puts',
   'fixes',
   'publishes',
+  // A FIELD'S NAME then what it takes, in the form layer's fill problems: *{name} expects a date*.
+  'expects',
   // A KEY then what it does, in the status bar's tips: *{undoKey} undoes it*.
   'brings',
   'undoes',
