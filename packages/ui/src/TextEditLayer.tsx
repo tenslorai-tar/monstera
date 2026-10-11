@@ -496,6 +496,7 @@ export function TextEditLayer({
               }
               spell={spell}
               stuckRef={stuckRef}
+              pageFonts={fontsOfPage(blocks.blocks)}
               // THE BLOCK'S POSITION AND THE VERSION, so a new read — or the
               // same slot holding a different block — is a new editor rather
               // than old words in a new place.
@@ -635,6 +636,7 @@ export function TextEditLayer({
           placed={place(freshOpen.block.box, geometry)}
           runFonts={() => Promise.resolve(NO_RUN_FONTS)}
           stuckRef={stuckRef}
+          pageFonts={fontsOfPage(blocks.blocks)}
         />
       ) : null}
       {notes.length > 0 ? <div className="m-page-mode__notes">{notes}</div> : null}
@@ -721,8 +723,9 @@ function insertOf(made: FreshBox, text: string, formatting: BlockFormatting): Pa
     baseline: made.baseline,
     measure: made.measure,
     size: style.size,
-    // THE STYLE THE BOX OPENED IN, the nearby words' (B4.3): what each writer sets the words in before any mark.
-    base: { family: familyOfClass(style), bold: style.bold, italic: style.italic, colour: style.colour },
+    // THE STYLE THE BOX OPENED IN, the nearby words' (B4.3): what each writer sets the words in before any mark. The font
+    // by the run's own name where the read gave one; the resolver strips a subset's tag (`normaliseFamily`).
+    base: { family: style.font ?? familyOfClass(style), bold: style.bold, italic: style.italic, colour: style.colour },
     text,
     ...(formatting.marks === undefined ? {} : { marks: [...formatting.marks] }),
     ...(formatting.paragraphs === undefined ? {} : { paragraphs: [...formatting.paragraphs] }),
@@ -864,6 +867,17 @@ interface BlockEditorProps {
   readonly finishingRef: React.RefObject<(() => Promise<void>) | undefined>;
   /** Where this editor says whether it holds words it could not write. */
   readonly stuckRef: React.RefObject<boolean>;
+  /** The names of the fonts the page's text is drawn in (`fontsOfPage`), registered for the font picker. */
+  readonly pageFonts: readonly string[];
+}
+
+/** The distinct names of the fonts a page's blocks are drawn in, in reading order: the picker's *In this document*. */
+export function fontsOfPage(blocks: readonly TextBlock[]): string[] {
+  const names = new Set<string>();
+  for (const block of blocks) {
+    for (const line of block.lines) for (const run of line.runs) if (run.style.font !== undefined) names.add(run.style.font);
+  }
+  return [...names];
 }
 
 /**
@@ -989,6 +1003,7 @@ function BlockEditor({
   restructure,
   finishingRef,
   stuckRef,
+  pageFonts,
 }: BlockEditorProps): ReactElement {
   const { _ } = useLingui();
   const original = wordsOf(block);
@@ -1001,6 +1016,8 @@ function BlockEditor({
   // THE READ THIS EDITOR OPENED WITH, kept for its life: the layer hands a new function each render, and the block it
   // reads for is this editor's until it closes (`key`), so a second read would only load the same fonts again.
   const [readFonts] = useState(() => runFonts);
+  // THE PAGE'S FONT NAMES as the editor opened, kept for its life for `readFonts`' reason.
+  const [pageFontsAtOpen] = useState(() => pageFonts);
   useRunFonts(area, readFonts, useId());
   // THE EDITOR IS OPEN, for the formatting commands to act on (ADR-0180): registered for its life, at the zoom now.
   const zoomNow = useRef(geometry.zoom);
@@ -1031,8 +1048,10 @@ function BlockEditor({
       finish: () => {
         actions.current.finish();
       },
+      // THE PAGE AS THE EDITOR OPENED OVER IT: a newer read is a new editor (`key`), so this is registered once.
+      fonts: pageFontsAtOpen,
     });
-  }, []);
+  }, [pageFontsAtOpen]);
 
   // THE RUNS, each in its own style, and the caret at the end. The block is this editor's for its whole life — a new
   // read or another block is a new editor (`key`) — so this runs once.

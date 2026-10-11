@@ -11,7 +11,8 @@ import { LOOKS, bridgeUnder } from './pageBridge.js';
  */
 
 const ID = asDocId('00000000-0000-4000-8000-0000000000b8');
-const RUN = { size: 12, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false } as const;
+/** A run in a subset font, named as a page names it: the picker lists it under *In this document* without the tag. */
+const RUN = { size: 12, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false, font: 'QWERTY+Garamond' } as const;
 
 async function onePage(): Promise<Uint8Array> {
   const document = await PDFDocument.create();
@@ -95,6 +96,19 @@ test.describe('Formatting in the Properties panel (K11)', () => {
       expect.objectContaining({ set: expect.objectContaining({ family: 'Times New Roman', size: 18 }) }),
     ]);
     expect(sent.filter((one) => one.channel === 'document.execute')).toHaveLength(1);
+  });
+
+  test('the font picker lists the page’s own font first, its subset tag stripped and said partial, then this computer’s', async ({ page }) => {
+    const sent: { channel: string; params: unknown }[] = [];
+    await openBlock(page, sent);
+    const panel = page.locator('[data-text-properties]');
+    await panel.getByRole('button', { name: /^Font:/u }).click();
+    const groups = panel.getByRole('listbox').getByRole('group');
+    await expect(groups.first()).toHaveAccessibleName('In this document');
+    await expect(groups.first().getByRole('option')).toHaveText(['Garamond (partial: only the letters this document uses)']);
+    // THE COMPUTER'S, from the shim's list, and a bundled one said to look like another.
+    await expect(panel.getByRole('group', { name: 'On this computer' }).getByRole('option', { name: 'Calibri' })).toBeVisible();
+    await expect(panel.getByRole('option', { name: 'Carlito (looks like Calibri)' })).toBeVisible();
   });
 
   test('CONTROL: a press on Bold in the panel keeps the focus in the words, where a click on the page ends the edit', async ({ page }) => {

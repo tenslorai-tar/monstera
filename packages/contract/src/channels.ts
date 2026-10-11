@@ -66,6 +66,7 @@ import {
   formFieldReadSchema,
   fontFamilySchema,
   MAX_FONT_FAMILIES,
+  MAX_FONT_FAMILY_NAME,
   MAX_READ_FIELDS,
   MAX_IMPORT_SKIPS,
   importSkippedSchema,
@@ -906,6 +907,12 @@ export const textBlockStyleSchema = z
     mono: z.boolean(),
     italic: z.boolean(),
     bold: z.boolean(),
+    /**
+     * The name of the font the run is drawn in, as the page states it (a subset's tag included), where the page names
+     * one: what the font picker lists *In this document* and what added text near it is set in (the owner's D2 and B4.3).
+     * A name, never the font's program, which crosses only by `document.runFonts`.
+     */
+    font: z.string().min(1).max(MAX_FONT_FAMILY_NAME).optional(),
   })
   .strict();
 

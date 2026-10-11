@@ -37,6 +37,13 @@ export interface OpenEditor {
   };
   /** Writes the words and closes the editor, as the focus leaving it does. */
   readonly finish: () => void;
+  /** The names of the fonts the page's text is drawn in, as the read gave them: the picker's *In this document*. */
+  readonly fonts: readonly string[];
+}
+
+/** The fonts of the page the open editor is on, or none with no editor open. */
+export function openEditorFonts(): readonly string[] {
+  return open?.fonts ?? [];
 }
 
 /**

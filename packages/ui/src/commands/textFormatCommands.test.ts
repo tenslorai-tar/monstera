@@ -47,6 +47,7 @@ describe('the formatting commands', () => {
       zoom: () => 1,
       block: { remove: () => undefined, nudge: () => undefined },
       finish: () => undefined,
+      fonts: [],
     });
     document.dispatchEvent(new Event('selectionchange'));
     void bold.run({} as never);

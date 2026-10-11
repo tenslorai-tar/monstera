@@ -32,6 +32,7 @@ import {
   formatOpenEditor,
   leavesEditor,
   onEditorChange,
+  openEditorFonts,
   openEditorState,
   refocusOpenEditor,
   removeOpenBlock,
@@ -83,15 +84,18 @@ function rgbOf(hex: string): { r: number; g: number; b: number } | undefined {
 export interface TextFormatPanelProps {
   /** The fonts this computer has, as `app.fontFamilies` answered, or `undefined` while it is asked. */
   readonly fonts: FontList;
-  /** The fonts the document carries, for the picker's first group. */
-  readonly inDocument: readonly DocumentFont[];
 }
 
-export function TextFormatPanel({ fonts, inDocument }: TextFormatPanelProps): ReactElement {
+/** A subset's tag, six capitals and a plus (PDF 32000-1, 9.6.4), which says the font holds only the letters used. */
+const SUBSET_TAG = /^[A-Z]{6}\+/u;
+
+export function TextFormatPanel({ fonts }: TextFormatPanelProps): ReactElement {
   const { _ } = useLingui();
   // RE-READ ON EVERY CHANGE of the selection or the formatting, since the state is the editor's and not a snapshot.
   useSyncExternalStore(onEditorChange, editorRevision);
   const state = openEditorState();
+  // THE PAGE'S OWN FONTS, the picker's first group: the names the read gave the open editor's page.
+  const inDocument: DocumentFont[] = openEditorFonts().map((name) => ({ name, partial: SUBSET_TAG.test(name) }));
   const sizeId = useId();
   const spacingId = useId();
   const [size, setSize] = useState<string | undefined>(undefined);

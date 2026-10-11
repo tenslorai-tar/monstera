@@ -15,7 +15,7 @@ import {
 } from './commands/documentCommands.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN, SPELLING_DICTIONARY_FULL } from './messages/en.js';
-import { type PageBlocks, TextEditLayer, nearbyStyle } from './TextEditLayer.js';
+import { type PageBlocks, TextEditLayer, fontsOfPage, nearbyStyle } from './TextEditLayer.js';
 import { TextFormatPanel } from './TextFormatPanel.js';
 
 /**
@@ -136,7 +136,7 @@ function mount(overrides: Partial<Parameters<typeof TextEditLayer>[0]> = {}) {
         {...overrides}
       />
       {/* THE PROPERTIES PANEL'S TEXT SECTION beside the page, as the app draws it while an editor is open (K11). */}
-      <TextFormatPanel fonts={undefined} inDocument={[]} />
+      <TextFormatPanel fonts={undefined} />
     </Wrapped>
   );
   const view = render(layer(overrides.blocks ?? BLOCKS));
@@ -777,14 +777,14 @@ describe('Edit text on the page (ADR-0096)', () => {
   });
 
   describe('adding a box of new text (ADR-0180 Decision 6)', () => {
-    function mountAdding() {
+    function mountAdding(blocks?: PageBlocks) {
       const inserts: { insert: PageInsert; version: number }[] = [];
       const onInsert = vi.fn((insert: PageInsert, read: BlocksRead) => {
         inserts.push({ insert, version: read.version });
         return Promise.resolve<BlockCommit>('written');
       });
       const onAdded = vi.fn();
-      const made = mount({ adding: true, onInsert, onAdded });
+      const made = mount({ adding: true, onInsert, onAdded, ...(blocks === undefined ? {} : { blocks }) });
       return { ...made, inserts, onAdded };
     }
 
@@ -820,6 +820,28 @@ describe('Edit text on the page (ADR-0096)', () => {
       });
       expect(inserts[0]?.version).toBe(7);
       expect(onAdded).toHaveBeenCalledTimes(1);
+    });
+
+    it('a box beside words whose font the page names is set in THAT font, by its name, and the page’s fonts are listed once each', async () => {
+      const named = { ...STYLE, font: 'ABCDEF+Garamond' };
+      const blocks: PageBlocks = {
+        ...BLOCKS,
+        blocks: BLOCKS.blocks.map((block) => ({
+          ...block,
+          style: named,
+          lines: block.lines.map((line) => ({ ...line, runs: line.runs.map((run) => ({ ...run, style: named })) })),
+        })),
+      };
+      expect(fontsOfPage(blocks.blocks)).toStrictEqual(['ABCDEF+Garamond']);
+      const { view, inserts } = mountAdding(blocks);
+      fireEvent.click(find(view.container, '[data-text-add-surface]'), { clientX: 100, clientY: 200, detail: 1 });
+      const editor = editorIn(view.container);
+      typeInto(editor, 'Beside it');
+      await act(async () => {
+        fireEvent.keyDown(editor, { key: 'Escape' });
+        await Promise.resolve();
+      });
+      expect(inserts[0]?.insert.base?.family).toBe('ABCDEF+Garamond');
     });
 
     it('CONTROL: on a page with no words the box starts in 12-point black Arial, so the case above is the nearby style', () => {

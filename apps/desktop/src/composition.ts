@@ -15,6 +15,7 @@ import {
   type EventPayload,
   isNetworkOcrEngine,
   MIN_SNAPSHOT_SCALE,
+  MAX_FONT_FAMILY_NAME,
   MAX_TABLE_CELLS,
   MAX_TABLE_CELL_TEXT,
   type NetworkOcrEngine,
@@ -1469,7 +1470,6 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         blocks: groupIntoBlocks(
           upright.map((run) => ({
             ...run,
-            // THE FONT CROSSES NO FURTHER: it is read for the grouping's change of setting and left here.
             setting: settingOf(run.style),
             style: {
               size: run.style.size,
@@ -1478,6 +1478,9 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
               mono: run.style.mono,
               italic: run.style.italic,
               bold: run.style.bold,
+              // THE FONT'S NAME, for the picker's *In this document* and added text beside the run (D2, B4.3); a page that
+              // names none, or a name past the wire's bound, sends none rather than a cut name nothing would resolve.
+              ...(run.style.font === '' || run.style.font.length > MAX_FONT_FAMILY_NAME ? {} : { font: run.style.font }),
             },
           })),
         ),

@@ -406,10 +406,6 @@ import type { DropOpener, EventSubscriber } from './bridge.js';
 import { PropertiesPanel, type StyleChange } from './PropertiesPanel.js';
 import { TextFormatPanel } from './TextFormatPanel.js';
 import { useFontList } from './fontList.js';
-import type { DocumentFont } from './FontPicker.js';
-
-/** The fonts a document carries, which no read names yet: the picker's first group is empty until one does. */
-const NO_DOCUMENT_FONTS: readonly DocumentFont[] = [];
 import { GRID_DIVISION_COUNTS, type GridLook, type RulerUnit } from './rulerGeometry.js';
 import { useSetting } from './useSetting.js';
 import type { SettingsStore } from './settingsStore.js';
@@ -4697,7 +4693,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
               {/* WORDS BEING EDITED IN PLACE take the tab while the editor is open (the owner's K11): the formatting that
                   floated over the page in a bar. */}
               {textEditorOpen ? (
-                <TextFormatPanel fonts={fontList} inDocument={NO_DOCUMENT_FONTS} />
+                <TextFormatPanel fonts={fontList} />
               ) : selectedHandles.length > 0 && selection === undefined && objectSelection === undefined ? (
                 <FieldPropertiesPanel
                   context={context}
