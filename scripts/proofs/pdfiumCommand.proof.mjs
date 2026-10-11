@@ -2968,8 +2968,10 @@ async function placeCases() {
   const near = await runStarting(styled, 'styled');
   record(
     'an added box is set in its base: the family’s face, its weight and its colour; one sent without a base is not',
-    // BY THE FONT'S NAME, not the read's `serif`: a standard Times face has no descriptor, and the read takes its class
-    // from the descriptor's flags, so it reports `serif: false` for Times-Bold (measured 2026-10-11).
+    // BY THE FONT'S NAME, not the read's `serif`: a standard Times face has no descriptor, and the read takes its kind
+    // from the descriptor's flags alone (`styleOf`), so it reports `serif: false` for Times-Bold (measured 2026-10-11).
+    // Reading the kind from the name as well moves the twin a StandardEncoding Times-Roman is written through onto its
+    // own name, which the twin case above refuses; that is its own decision, not this case's.
     /Times/u.test(near?.style.font ?? '') && near?.style.bold === true && near.style.colour.r > 150 && near.style.colour.g < 60 &&
       !/Times/u.test(note?.style.font ?? 'Times') && note?.style.bold === false && note.style.colour.r < 60,
     `${JSON.stringify(near?.style)} against ${JSON.stringify(note?.style)}`,
