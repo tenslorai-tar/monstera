@@ -1436,6 +1436,11 @@ export const FORMS_LABEL = messageKey('surface.forms.label');
 export const FORMS_EMPTY = messageKey('surface.forms.empty');
 export const FORMS_UNAVAILABLE = messageKey('surface.forms.unavailable');
 export const FORMS_TRUNCATED = messageKey('surface.forms.truncated');
+/** The Fields list's search, its page headings, an empty value and a search that matched nothing (the owner's K3). */
+export const FORMS_SEARCH = messageKey('surface.forms.search');
+export const FORMS_PAGE = messageKey('surface.forms.page');
+export const FORMS_EMPTY_VALUE = messageKey('surface.forms.empty-value');
+export const FORMS_NO_MATCH = messageKey('surface.forms.no-match');
 export const FORMS_ROW = messageKey('surface.forms.row');
 export const FORMS_GO_TO_PAGE = messageKey('surface.forms.go-to-page');
 export const FORMS_READ_ONLY = messageKey('surface.forms.read-only');
@@ -1667,7 +1672,6 @@ export const WRITE_TYPEWRITER_LABEL = messageKey('surface.write.typewriter');
 export const WRITE_CALLOUT_LABEL = messageKey('surface.write.callout');
 export const WRITE_NOTE_LABEL = messageKey('surface.write.note');
 export const WRITE_TOO_LONG = messageKey('surface.write.too-long');
-export const FORMS_DELETE = messageKey('surface.forms.delete');
 export const FORMS_FLATTEN = messageKey('surface.forms.flatten');
 export const FORMS_FLATTEN_CONFIRM = messageKey('surface.forms.flatten-confirm');
 export const LINK_ON_PAGE_TO_PAGE = messageKey('surface.link-layer.to-page');
@@ -1723,6 +1727,9 @@ export const FIELD_DESIGN_LAYER_LABEL = messageKey('surface.field-design.layer')
 export const FIELD_DESIGN_BOX = messageKey('surface.field-design.box');
 export const FIELD_DUPLICATE_TITLE = messageKey('command.forms.duplicate-field');
 export const FIELD_PROPERTIES_TITLE = messageKey('command.forms.field-properties');
+export const DELETE_FIELDS_TITLE = messageKey('dialog.delete-fields.title');
+export const DELETE_FIELDS_EXPLAINS = messageKey('dialog.delete-fields.explains');
+export const DELETE_FIELDS_APPLY = messageKey('dialog.delete-fields.apply');
 export const FORM_FIELD_NAME_EMPTY = messageKey('dialog.form-field.name-empty');
 export const FORM_FIELD_NAME_TOO_LONG = messageKey('dialog.form-field.name-too-long');
 export const FORM_FIELD_NAME_SEGMENT = messageKey('dialog.form-field.name-segment');
@@ -4036,6 +4043,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FORMS_EMPTY]: 'This document has no form fields.',
   [FORMS_UNAVAILABLE]: 'The form fields in this document could not be read.',
   [FORMS_TRUNCATED]: 'This document carries more form fields than can be read, so the rest are not listed.',
+  [FORMS_SEARCH]: 'Search fields',
+  [FORMS_PAGE]: 'Page {page}',
+  [FORMS_EMPTY_VALUE]: 'Empty',
+  [FORMS_NO_MATCH]: 'No field has that in its name.',
   // THE FIELD'S OWN NAME, which is document data rather than a catalogue
   // string — a form's vocabulary belongs to whoever wrote the form. The kind
   // is beside it because two fields can share a name: a radio group is one
@@ -4322,7 +4333,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // a list of similar rows is the label a person clicks on the wrong line. It
   // also says FIELD rather than value, because the two are different actions
   // and the control next to it performs the other one.
-  [FORMS_DELETE]: 'Delete this field',
   // NAMES THE CONSEQUENCE, not the verb. "Flatten" is the operation's name in
   // every PDF tool and it says nothing to a person who has not met it, so the
   // label says what changes about their document — and the confirmation says
@@ -4612,6 +4622,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FIELD_DESIGN_BOX]: 'Field {name}',
   [FIELD_DUPLICATE_TITLE]: 'Duplicate field',
   [FIELD_PROPERTIES_TITLE]: 'Field properties',
+  [DELETE_FIELDS_TITLE]: 'Delete fields',
+  [DELETE_FIELDS_EXPLAINS]:
+    '{count, plural, other {# fields are selected.}} They and anything typed in them will be removed from the form. Undo brings them back.',
+  [DELETE_FIELDS_APPLY]: 'Delete the fields',
   [SNAPSHOT_TOOL_TITLE]: 'Snapshot a region',
   [PLACE_IMAGE_TOOL_TITLE]: 'Place an image',
   // SAYS WHAT THE DRAG PRODUCES. "OCR region" is the row's name and means nothing

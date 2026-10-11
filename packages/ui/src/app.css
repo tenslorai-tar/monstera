@@ -1885,31 +1885,66 @@ optgroup {
   padding: 0;
 }
 
+/* THE SEARCH at the top of the list (the owner's D1): narrows the rows by name. */
+.m-forms-search {
+  box-sizing: border-box;
+  inline-size: 100%;
+  margin-block-end: var(--space-8);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+/* A PAGE'S GROUP, its number as a small heading, as PDF-XChange's tree is grouped. */
+.m-forms-page + .m-forms-page {
+  margin-block-start: var(--space-8);
+}
+
+.m-forms-page__title {
+  margin: 0 0 var(--space-4);
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+  font-weight: 600;
+}
+
 /*
- * A row is the field's name on its own line, and the control with its Delete beneath it.
- *
- * TWO LINES, because one did not fit: the name, a 12rem control and a Delete that may not shrink shared a panel
- * about 280 px wide, and the name was left about 40 — *F.* and *E.* for *First name* and *Email* (the owner's review
- * of 0.1.6.0). The name is the document's own word, so it wraps rather than being cut.
- *
- * `align-items: center` rather than the annotation row's `baseline`, and it is
- * the controls that decide it: a tick box and a `<select>` have no text baseline
- * to share with the button beside them, so baseline alignment puts them a few
- * pixels off the row they belong to.
+ * A row is the field's kind and name, and its value beside it (the owner's K3). The name wraps rather than being cut:
+ * it is the document's own word, and *F.* for *First name* was the owner's review of 0.1.6.0. `align-items: center`,
+ * because a mark and a `<select>` have no text baseline to share with the name.
  */
 .m-forms-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas:
-    'name name'
-    'control delete';
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   align-items: center;
   gap: var(--space-2) var(--space-8);
-  padding-block: var(--space-4);
+  padding-block: var(--space-2);
 }
 
-.m-forms-jump {
-  grid-area: name;
+/* A RADIO GROUP'S ROW holds its options under the name, across both columns. */
+.m-forms-row--group {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.m-forms-options {
+  list-style: none;
+  margin: 0;
+  padding-inline-start: var(--space-16);
+}
+
+.m-forms-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.m-forms-jump,
+.m-forms-option__name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
   min-inline-size: 0;
   padding: var(--space-2) var(--space-4);
   background: none;
@@ -1920,23 +1955,66 @@ optgroup {
   overflow-wrap: anywhere;
 }
 
-.m-forms-text,
-.m-forms-choice,
-.m-forms-check,
-.m-forms-locked {
-  grid-area: control;
-  justify-self: start;
+.m-forms-jump__name {
+  min-inline-size: 0;
 }
 
 .m-forms-jump:hover,
-.m-forms-jump:focus-visible {
+.m-forms-jump:focus-visible,
+.m-forms-option__name:hover,
+.m-forms-option__name:focus-visible {
   background: var(--surface2);
 }
 
 /* A SELECTED ROW is drawn by its edge and its weight, so it does not rest on colour alone. */
-.m-forms-jump[aria-pressed='true'] {
+.m-forms-jump[aria-pressed='true'],
+.m-forms-option__name[aria-pressed='true'] {
   border-color: var(--accent-on-paper, var(--accent));
   font-weight: 600;
+}
+
+/* THE VALUE, as words until it is clicked; an empty one says so, muted, rather than showing an empty box. */
+.m-forms-value {
+  min-inline-size: 0;
+  padding: var(--space-2) var(--space-4);
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text);
+  cursor: text;
+  text-align: start;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.m-forms-value--empty {
+  color: var(--muted);
+}
+
+.m-forms-value:hover,
+.m-forms-value:focus-visible {
+  border-color: var(--border-control);
+}
+
+/* A TICK BOX'S OR A RADIO'S MARK, pressed to fill. */
+.m-forms-mark {
+  display: inline-flex;
+  justify-self: start;
+  padding: var(--space-2);
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.m-forms-mark:hover,
+.m-forms-mark:focus-visible {
+  background: var(--surface2);
+}
+
+.m-forms-text,
+.m-forms-choice,
+.m-forms-locked {
+  justify-self: start;
 }
 
 /*
@@ -1945,7 +2023,7 @@ optgroup {
  * A text input sized by the space a row's name left over would be a different
  * width on every row, keyed on how long the field's own name happens to be —
  * and the name is the document's, so the layout would be the document's too.
- * The name has its own line now, so the column is the panel's less Delete's.
+ * The value has its own column, half the row.
  */
 .m-forms-text,
 .m-forms-choice {
@@ -1970,28 +2048,6 @@ optgroup {
  */
 .m-forms-locked {
   color: var(--muted);
-}
-
-/*
- * Deleting the field, beside the control that fills it.
- *
- * The annotations panel's remove control, and it does not shrink for that
- * control's reason: a destructive action whose width depends on the row beside
- * it is one a person clicks on the wrong line.
- */
-.m-forms-delete {
-  grid-area: delete;
-  padding: var(--space-2) var(--space-4);
-  background: none;
-  border: 1px solid transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.m-forms-delete:hover,
-.m-forms-delete:focus-visible {
-  background: var(--surface2);
-  color: var(--text);
 }
 
 /*

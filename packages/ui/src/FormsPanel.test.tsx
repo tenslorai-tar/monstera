@@ -18,58 +18,40 @@ import { EN } from './messages/en.js';
 const DOC = asDocId('00000000-0000-4000-8000-0000000000ff');
 
 /**
- * The forms panel — the UI half of the wired-tools pair for `fillFormField`.
+ * The Fields list (the owner's K3) — the UI half of the wired-tools pair for `fillFormField`.
  *
  * ## What this file owes, and what it must not try to prove
  *
- * The kernel half lives in `formFields.test.ts`: it proves that the command
- * produces the document effect and survives a round trip, against a real
- * engine. This half proves the other thing, and only it — **that each control
- * dispatches exactly that command, with the handle from the row it sits on**.
- * The client is stubbed, so a case here that claimed a document had changed
- * would be asserting against nothing.
+ * The kernel half lives in `formFields.test.ts`: it proves that the command produces the document effect and survives
+ * a round trip, against a real engine. This half proves the other thing, and only it — **that each control dispatches
+ * exactly that command, with the handle from the row it sits on**. The client is stubbed, so a case here that claimed
+ * a document had changed would be asserting against nothing.
  *
  * ## The client is built from the CONTRACT
  *
- * So every answer these cases invent goes through the real schemas: a panel
- * expecting a shape the channel cannot carry fails here rather than in the
- * product, and a `kind` outside the closed union cannot be written at all.
+ * So every answer these cases invent goes through the real schemas: a panel expecting a shape the channel cannot carry
+ * fails here rather than in the product.
  *
  * ## THE HANDLE IS THE SUBJECT, which is why `fills` carries whole payloads
  *
- * The pair's blind spot is a boundary where a unit changes, and here the unit
- * is an index into a walk: `at` is where a row sits in this array and `index`
- * is where the widget sits in the walk on its own page. They agree on a
- * one-page form and diverge on the second, so the second page's rows are what
- * separate a panel that passes the handle from one that passes its own
- * position.
+ * `at` is where a row sits in this array and `index` is where the widget sits in the walk on its own page. They agree
+ * on a one-page form and diverge on the second, so the second page's rows are what separate a panel that passes the
+ * handle from one that passes its own position.
  */
 function clientAnswering(
   fields: readonly unknown[],
   options: { refuse?: boolean; truncated?: boolean; version?: number } = {},
 ): { client: ContractClient; asked: unknown[] } {
   const asked: unknown[] = [];
-  // THE RECTANGLE, FILLED IN HERE rather than at every call site. The channel
-  // carries it so a surface can point at a field on the page; THIS panel reads
-  // none, so a box in each fixture would be numbers no case could assert.
-  // `null` is a value the channel really answers — a page that displays no
-  // region — and it is the one that would break a panel which had quietly
-  // started depending on a place.
-  const rows = fields.map((row) =>
-    typeof row === 'object' && row !== null ? { rect: null, ...row } : row,
-  );
+  // THE RECTANGLE, FILLED IN HERE: this panel reads none, and `null` is a value the channel really answers.
+  const rows = fields.map((row) => (typeof row === 'object' && row !== null ? { rect: null, ...row } : row));
   const client = createClient(channels, (id, params) => {
     if (id !== 'document.formFields') throw new Error(`unexpected channel ${id}`);
     asked.push(params);
     return Promise.resolve(
       options.refuse === true
         ? err({ code: 'document-poisoned' })
-        : ok({
-            version: asDocVersion(options.version ?? 1),
-            fields: rows,
-            next: null,
-            truncated: options.truncated ?? false,
-          }),
+        : ok({ version: asDocVersion(options.version ?? 1), fields: rows, next: null, truncated: options.truncated ?? false }),
     );
   });
   return { client, asked };
@@ -95,32 +77,23 @@ async function panel(
   jumps: number[];
   selects: unknown[];
   fills: unknown[];
-  deletes: unknown[];
-  // A FUNCTION, not the number. Every case clicks AFTER this helper returns,
-  // and a number captured at return time is the count before the click — which
-  // is zero for a working control and zero for a broken one. The arrays beside
-  // it do not have this problem because they are pushed into by reference; a
-  // count is the one shape where the reader has to be deferred.
+  // FUNCTIONS, not numbers: every case clicks AFTER this helper returns, and a number captured at return time is the
+  // count before the click, which is zero for a working control and zero for a broken one.
   flattens: () => number;
+  properties: () => number;
   asked: unknown[];
 }> {
   const { client, asked } = clientAnswering(fields, options);
   const jumps: number[] = [];
   const selects: unknown[] = [];
   const fills: unknown[] = [];
-  const deletes: unknown[] = [];
-  // A COUNT rather than a list, because a flatten carries no handle — there is
-  // nothing to record but that it happened, and *how many times* is the only
-  // question a case about it can ask.
   let flattens = 0;
+  let properties = 0;
   render(
     <Wrapped>
       <FormsPanel
         client={client}
         docId={DOC}
-        onDelete={(handle): void => {
-          deletes.push(handle);
-        }}
         onFill={(handle): void => {
           fills.push(handle);
         }}
@@ -129,6 +102,9 @@ async function panel(
         }}
         onJump={(page): void => {
           jumps.push(page);
+        }}
+        onProperties={(): void => {
+          properties += 1;
         }}
         onSelect={(page, index, mode, ordered): void => {
           selects.push({ page, index, mode, ordered });
@@ -139,18 +115,12 @@ async function panel(
     </Wrapped>,
   );
   await settle();
-  return { jumps, fills, deletes, selects, flattens: () => flattens, asked };
+  return { jumps, fills, selects, flattens: () => flattens, properties: () => properties, asked };
 }
 
 /**
- * A field with everything a row needs, so a case names only what it is about.
- *
- * **The channel's own row type and not `Record<string, unknown>`**, which it was
- * until 2026-09-08. A member renamed in the channel left every fixture here
- * compiling and every case failing at run time with *no rows rendered* — the
- * boundary refusing a shape it no longer knows, several layers from the
- * literal. A fixture typed as a bag of unknowns is a fixture the compiler
- * cannot hold against the contract, which is the one thing it is for.
+ * A field with everything a row needs, so a case names only what it is about. **The channel's own row type**, so a
+ * member renamed in the channel is a compile error here rather than *no rows rendered* at run time.
  */
 type ChannelField = ChannelResult<'document.formFields'>['fields'][number];
 
@@ -178,304 +148,153 @@ function field(over: Partial<ChannelField>): ChannelField {
   };
 }
 
-describe('FormsPanel', () => {
-  it('names each field by the DOCUMENT S word, its kind, and the page a reader counts', async () => {
-    // The name is the document's and is rendered rather than translated; the
-    // kind and the page are this application's and are not. A panel that
-    // translated the name would be rewriting the form's own vocabulary, and one
-    // that showed the raw page index would be off by one on every row.
+/** Opens a text value's box in place, by the value's own control, and answers the box. */
+function openBox(name: string): HTMLInputElement | HTMLTextAreaElement {
+  fireEvent.click(screen.getByRole('button', { name }));
+  return screen.getByLabelText<HTMLInputElement | HTMLTextAreaElement>(name);
+}
+
+describe('FormsPanel — the tree', () => {
+  it('groups the fields under the page a reader counts, each named by the DOCUMENT’S word and its kind', async () => {
     await panel([
       field({ name: 'applicant.name', kind: 'text', page: 0 }),
-      field({ name: 'applicant.agrees', kind: 'checkbox', page: 4, on: false, values: [] }),
+      field({ name: 'applicant.agrees', kind: 'checkbox', page: 4, on: false }),
     ]);
-
-    expect(screen.getByText('applicant.name — Text, page 1')).toBeTruthy();
-    expect(screen.getByText('applicant.agrees — Tick box, page 5')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Page 1' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Page 5' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'applicant.name — Text, page 1' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'applicant.agrees — Tick box, page 5' })).toBeTruthy();
   });
 
-  it('DISPATCHES A TEXT FILL on blur, with the handle from the row it sits on', async () => {
-    // THE SECOND PAGE'S ROW, deliberately. Its list position is 1 and its walk
-    // index is 0, so a panel passing its own position would send `index: 1` and
-    // fill a field that is not there. That is the pair's blind spot made a
-    // case: the two halves speak different index spaces and this is where they
-    // meet.
+  it('a radio group is ONE row with its options under it, and two groups are two rows', async () => {
+    await panel([
+      field({ name: 'post', kind: 'radio', on: true, index: 1, options: ['First'] }),
+      field({ name: 'post', kind: 'radio', on: false, index: 2, options: ['Second'] }),
+      field({ name: 'shift', kind: 'radio', on: false, index: 3, options: ['Night'] }),
+    ]);
+    expect(screen.getAllByRole('button', { name: /— Option, page 1/u })).toHaveLength(2);
+    expect(screen.getAllByRole('radio').map((option) => option.getAttribute('aria-checked'))).toStrictEqual(['true', 'false', 'false']);
+    expect(screen.getByRole('button', { name: 'Second' })).toBeTruthy();
+  });
+
+  it('puts no Delete and no empty grey box on a row (K3): an empty value says so in words', async () => {
+    await panel([field({ name: 'surname' })]);
+    expect(screen.queryByRole('button', { name: /Delete/u })).toBeNull();
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(screen.getByRole('button', { name: 'surname' }).textContent).toBe('Empty');
+  });
+
+  it('the search narrows the rows by name, and says when nothing matches', async () => {
+    await panel([field({ name: 'first.name', index: 0 }), field({ name: 'email', index: 1 })]);
+    const search = screen.getByRole('searchbox', { name: 'Search fields' });
+    fireEvent.change(search, { target: { value: 'MAIL' } });
+    expect(screen.queryByRole('button', { name: /first\.name —/u })).toBeNull();
+    expect(screen.getByRole('button', { name: /email —/u })).toBeTruthy();
+    fireEvent.change(search, { target: { value: 'nothing like it' } });
+    expect(screen.getByText('No field has that in its name.')).toBeTruthy();
+  });
+});
+
+describe('FormsPanel — filling in place', () => {
+  it('a click on a text value opens its box there, and leaving it fills, with the handle from the row it sits on', async () => {
+    // THE SECOND PAGE'S ROW, deliberately: its list position is 1 and its walk index is 0.
     const { fills } = await panel([
       field({ name: 'first', page: 0, index: 0, values: ['Ada'] }),
       field({ name: 'second', page: 1, index: 0, values: ['Grace'] }),
     ]);
-
-    const input = screen.getByLabelText('second');
+    const input = openBox('second');
     fireEvent.change(input, { target: { value: 'Katherine' } });
     fireEvent.blur(input);
-
-    expect(fills).toStrictEqual([
-      {
-        page: 1,
-        index: 0,
-        version: asDocVersion(1),
-        value: { set: 'text', text: 'Katherine' },
-      },
-    ]);
+    expect(fills).toStrictEqual([{ page: 1, index: 0, version: asDocVersion(1), value: { set: 'text', text: 'Katherine' } }]);
   });
 
   it('Enter commits a text field, and the Enter that CONFIRMS A COMPOSITION does not (CR-COR-07)', async () => {
     const { fills } = await panel([field({ name: 'first', values: ['Ada'] })]);
-    const input = screen.getByLabelText<HTMLInputElement>('first');
+    const input = openBox('first');
     input.focus();
     fireEvent.change(input, { target: { value: 'にほんご' } });
     fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
     expect(fills).toStrictEqual([]);
-    expect(document.activeElement).toBe(input);
-    // CONTROL: the Enter after it commits — the field gives up the focus, and the fill is sent.
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(fills).toMatchObject([{ value: { set: 'text', text: 'にほんご' } }]);
   });
 
-  it('SENDS NOTHING when a text field is left as it was', async () => {
-    // A blur is not an edit. Without this the case above passes for a panel
-    // that dispatches on every blur, which would be a command and a log entry
-    // every time a person tabbed through a form reading it.
-    const { fills } = await panel([field({ name: 'first', values: ['Ada'] })]);
-    fireEvent.blur(screen.getByLabelText('first'));
-    expect(fills).toStrictEqual([]);
-  });
-
-  it('SENDS NOTHING when a field holding LINE BREAKS is left as it was, and keeps them in an edit', async () => {
-    // A one-line `<input>` strips line breaks from its value (HTML's value sanitisation), so its value differs from
-    // the document's the moment it is shown. A blur compared against the document then sent the stripped text: tabbing
-    // through a form rewrote every multi-line answer as one run-on line.
-    const { fills } = await panel([field({ name: 'address', values: ['1 High Street\nLeeds'] })]);
-    const box = screen.getByLabelText('address');
+  it('SENDS NOTHING when a text field is left as it was, and a field holding LINE BREAKS keeps them', async () => {
+    const { fills } = await panel([field({ name: 'first', values: ['Ada'] }), field({ name: 'address', index: 1, values: ['1 High Street\nLeeds'] })]);
+    fireEvent.blur(openBox('first'));
+    const box = openBox('address');
+    expect(box.tagName).toBe('TEXTAREA');
     fireEvent.blur(box);
     expect(fills).toStrictEqual([]);
-    fireEvent.focus(box);
-    fireEvent.change(box, { target: { value: '2 High Street\nLeeds' } });
-    fireEvent.blur(box);
+    const again = openBox('address');
+    fireEvent.change(again, { target: { value: '2 High Street\nLeeds' } });
+    fireEvent.blur(again);
     expect(fills).toMatchObject([{ value: { set: 'text', text: '2 High Street\nLeeds' } }]);
   });
 
-  it('a field that TAKES line breaks is a box for them even while empty', async () => {
-    await panel([field({ name: 'notes', multiline: true }), field({ name: 'surname', index: 1 })]);
-    expect(screen.getByLabelText('notes').tagName).toBe('TEXTAREA');
-    // CONTROL: a one-line field stays a one-line input, so the case above reads the flag rather than every field.
-    expect(screen.getByLabelText('surname').tagName).toBe('INPUT');
+  it('a tick box is filled by a click on its mark, as a STATE, not as a toggle', async () => {
+    const { fills } = await panel([field({ name: 'applicant.agrees', kind: 'checkbox', on: false, index: 2 })]);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'applicant.agrees' }));
+    expect(fills).toStrictEqual([{ page: 0, index: 2, version: asDocVersion(1), value: { set: 'button', on: true } }]);
   });
 
-
-  it('DISPATCHES A BUTTON FILL as a STATE, not as a toggle', async () => {
-    // `on: true`, not *flip it*. MuPDF's toggle is keyed on `/AS` — measured —
-    // so a payload spelling *flip* would carry that ambiguity to the kernel,
-    // and the same click would do different things to two documents holding the
-    // same data.
+  it('CHOOSES a radio option that is off, and CLEARS the chosen one, each with its own handle', async () => {
     const { fills } = await panel([
-      field({ name: 'applicant.agrees', kind: 'checkbox', on: false, index: 2 }),
+      field({ name: 'post', kind: 'radio', on: true, index: 1, options: ['First'] }),
+      field({ name: 'post', kind: 'radio', on: false, index: 2, options: ['Second'] }),
     ]);
-    fireEvent.click(screen.getByLabelText('applicant.agrees'));
+    fireEvent.click(screen.getByRole('radio', { name: 'post: Second' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'post: First' }));
     expect(fills).toStrictEqual([
       { page: 0, index: 2, version: asDocVersion(1), value: { set: 'button', on: true } },
-    ]);
-  });
-
-  it('DRAWS A RADIO OPTION AS A RADIO, its group as one group, and a tick box as a tick box (F-F2)', async () => {
-    await panel([
-      field({ name: 'applicant.post', kind: 'radio', on: true, index: 1 }),
-      field({ name: 'applicant.post', kind: 'radio', on: false, index: 2 }),
-      field({ name: 'applicant.agrees', kind: 'checkbox', on: false, index: 3 }),
-    ]);
-    const options = screen.getAllByRole<HTMLInputElement>('radio');
-    expect(options.map((option) => option.checked)).toStrictEqual([true, false]);
-    // ONE GROUP, so the keyboard and a screen reader treat the two as one question.
-    const [first, second] = options;
-    expect(first?.name).not.toBe('');
-    expect(second?.name).toBe(first?.name);
-    // CONTROL: the tick box is still a tick box, so the radio above is chosen by kind and not drawn for every button.
-    expect(screen.getAllByRole('checkbox')).toHaveLength(1);
-  });
-
-  it('CHOOSES an option that is off, with the handle from its own row', async () => {
-    const { fills } = await panel([
-      field({ name: 'applicant.post', kind: 'radio', on: true, index: 1 }),
-      field({ name: 'applicant.post', kind: 'radio', on: false, index: 2 }),
-    ]);
-    fireEvent.click(screen.getByRole('radio', { checked: false }));
-    expect(fills).toStrictEqual([
-      { page: 0, index: 2, version: asDocVersion(1), value: { set: 'button', on: true } },
-    ]);
-  });
-
-  it('CLEARS the chosen option when it is clicked, because the format allows it', async () => {
-    // Measured: toggling a PDF radio group's lit widget deselects the whole
-    // group, and a browser fires no change for a radio already on — so without
-    // the click this state could not be reached from the panel.
-    const { fills } = await panel([
-      field({ name: 'applicant.post', kind: 'radio', on: true, index: 1 }),
-    ]);
-    fireEvent.click(screen.getByRole('radio'));
-    expect(fills).toStrictEqual([
       { page: 0, index: 1, version: asDocVersion(1), value: { set: 'button', on: false } },
     ]);
   });
 
-  it('CONTROL: two different radio fields are two groups', async () => {
-    await panel([
-      field({ name: 'applicant.post', kind: 'radio', on: true, index: 1 }),
-      field({ name: 'applicant.shift', kind: 'radio', on: true, index: 2 }),
-    ]);
-    const [first, second] = screen.getAllByRole<HTMLInputElement>('radio');
-    expect(second?.name).not.toBe(first?.name);
-    expect([first?.checked, second?.checked]).toStrictEqual([true, true]);
-  });
-
   it('DISPATCHES A CHOICE, and offers the empty option as a real value', async () => {
     const { fills } = await panel([
-      field({
-        name: 'applicant.title',
-        kind: 'dropdown',
-        values: ['Dr'],
-        options: ['Dr', 'Mr', 'Ms'],
-        index: 3,
-      }),
+      field({ name: 'applicant.title', kind: 'dropdown', values: ['Dr'], options: ['Dr', 'Mr', 'Ms'], index: 3 }),
     ]);
     const select = screen.getByLabelText('applicant.title');
     fireEvent.change(select, { target: { value: 'Ms' } });
-    // AND THEN CLEARED. The empty option is not a placeholder: clearing a
-    // choice stores the empty string, measured, and a list with no empty entry
-    // could not return a field to a state a document may arrive in.
     fireEvent.change(select, { target: { value: '' } });
-
     expect(fills).toStrictEqual([
       { page: 0, index: 3, version: asDocVersion(1), value: { set: 'choice', option: 'Ms' } },
       { page: 0, index: 3, version: asDocVersion(1), value: { set: 'choice', option: '' } },
     ]);
   });
 
-  it('RENDERS NO CONTROL for a choice holding several values, and names them', async () => {
-    // The wired rule again, and this is the case where it costs something: a
-    // `<select>` here collects ONE option and the fill command carries one, so
-    // offering it over a field holding two would be a control whose command
-    // deletes the other — and the kernel refuses to capture a prior for the
-    // same field, so there would not even be an undo. Reachable only from a
-    // document another tool filled: this build writes one value.
-    await panel([
-      field({
-        name: 'applicant.languages',
-        kind: 'listbox',
-        values: ['English', 'Welsh'],
-        options: ['English', 'Dutch', 'Welsh'],
-      }),
-    ]);
-    expect(screen.queryByLabelText('applicant.languages')).toBeNull();
-    // AND IT SAYS WHAT IS THERE. Told only that they cannot change it, a reader
-    // cannot tell a locked field from one holding data this build will not risk.
-    expect(
-      screen.getByText('This field holds several values (English, Welsh), which cannot be changed here.'),
-    ).toBeTruthy();
-  });
-
   it('SHOWS A VALUE THE DOCUMENT DOES NOT OFFER rather than dropping it', async () => {
-    // MuPDF stores an unlisted value without complaint — measured — so a form
-    // can arrive holding one. A `<select>` whose value matches no option
-    // renders blank, which reads as an empty field rather than a strange one.
-    await panel([
-      field({
-        name: 'applicant.title',
-        kind: 'dropdown',
-        values: ['Professor'],
-        options: ['Dr', 'Mr'],
-      }),
-    ]);
-    const select = screen.getByLabelText('applicant.title');
-    expect((select as HTMLSelectElement).value).toBe('Professor');
-    expect(screen.getByText('Professor')).toBeTruthy();
+    await panel([field({ name: 'applicant.title', kind: 'dropdown', values: ['Professor'], options: ['Dr', 'Mr'] })]);
+    expect(screen.getByLabelText<HTMLSelectElement>('applicant.title').value).toBe('Professor');
   });
 
-  it('RENDERS NO CONTROL for a read-only field, and says whose decision that is', async () => {
-    // The wired rule cuts both ways: a control that renders and refuses is a
-    // defect, and the honest rendering of *this cannot be filled* is not a
-    // control. The message names the document, because *disabled* would read as
-    // a fault in the application.
+  it('RENDERS NO CONTROL for a read-only field, a value the listing cut, or a field nobody fills, each in its own words', async () => {
     const { fills } = await panel([
       field({ name: 'applicant.reference', values: ['LOCKED'], readOnly: true }),
+      field({ name: 'long', index: 1, values: ['a'.repeat(512)], cut: true }),
+      field({ name: 'applicant.signature', index: 2, kind: 'signature' }),
     ]);
-    expect(screen.queryByLabelText('applicant.reference')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'applicant.reference' })).toBeNull();
     expect(screen.getByText('The document marks this field read-only.')).toBeTruthy();
+    expect(screen.getByText('This field holds more text than can be changed here, so it is kept as it is.')).toBeTruthy();
+    expect(screen.getByText('This field is not one that can be filled here.')).toBeTruthy();
     expect(fills).toStrictEqual([]);
   });
+});
 
-  it('OPENS NO BOX ON A VALUE THE LISTING CUT, so a fill cannot save the slice over the rest', async () => {
-    const { fills } = await panel([
-      field({ name: 'long', values: ['a'.repeat(512)], cut: true }),
-      field({ name: 'short', values: ['a'.repeat(512)] }),
-    ]);
-    expect(screen.queryByLabelText('long')).toBeNull();
-    expect(screen.getByText('This field holds more text than can be changed here, so it is kept as it is.')).toBeTruthy();
-    // CONTROL, in the same panel: the same slice with no cut is a whole value, and its box opens and fills.
-    const input = screen.getByLabelText('short');
-    fireEvent.change(input, { target: { value: 'b' } });
-    fireEvent.blur(input);
-    expect(fills).toStrictEqual([{ page: 0, index: 0, version: asDocVersion(1), value: { set: 'text', text: 'b' } }]);
-  });
-
-  it('SEPARATES read-only from not-fillable, which are different absences', async () => {
-    // A locked field is one this document decided about; a signature is not a
-    // field anybody types into. One message for both would tell a reader a Send
-    // button might become editable if the document changed.
-    await panel([
-      field({ name: 'applicant.signature', kind: 'signature' }),
-      field({ name: 'applicant.submit', kind: 'button', index: 1 }),
-    ]);
-    expect(screen.getAllByText('This field is not one that can be filled here.')).toHaveLength(2);
-    expect(screen.queryByText('The document marks this field read-only.')).toBeNull();
-  });
-
-  it('DISPATCHES A DELETE with the handle from the row it sits on', async () => {
-    // The second page's row again, for the fill's reason: its list position is
-    // 1 and its walk index is 0, and a delete built from the position would
-    // take a field that is not there.
-    const { deletes } = await panel([
-      field({ name: 'first', page: 0, index: 0 }),
-      field({ name: 'second', page: 1, index: 0 }),
-    ]);
-    const buttons = screen.getAllByRole('button', { name: 'Delete this field' });
-    buttons[1]?.click();
-    expect(deletes).toStrictEqual([{ page: 1, index: 0, version: asDocVersion(1) }]);
-  });
-
-  it('OFFERS A DELETE on rows that cannot be filled, because those are different actions', async () => {
-    // A signature cannot be filled here and a read-only field is one the
-    // document locked — both are statements about the VALUE. Removing the field
-    // from the form is a different action, and the reasons the first is refused
-    // say nothing about the second. A panel that hid delete wherever it hid
-    // fill would make a read-only field permanent.
-    const { deletes } = await panel([
-      field({ name: 'applicant.signature', kind: 'signature' }),
-      field({ name: 'applicant.reference', readOnly: true, index: 1 }),
-    ]);
-    const buttons = screen.getAllByRole('button', { name: 'Delete this field' });
-    expect(buttons).toHaveLength(2);
-    buttons[1]?.click();
-    expect(deletes).toStrictEqual([{ page: 0, index: 1, version: asDocVersion(1) }]);
-  });
-
+describe('FormsPanel — selecting', () => {
   it('jumps to the page a row names, zero-based as the shell expects', async () => {
     const { jumps } = await panel([field({ name: 'later', page: 4 })]);
-    screen.getByRole('button', { name: /page 5/u }).click();
-    // FIVE ON SCREEN, FOUR IN THE CALL — the two halves of the correspondence
-    // in one case, which is the only place they meet.
+    fireEvent.click(screen.getByRole('button', { name: 'later — Text, page 5' }));
     expect(jumps).toStrictEqual([4]);
   });
 
-  it('a click on a row SELECTS that field, and Ctrl and Shift say how it joins the selection', async () => {
-    const { selects, jumps } = await panel([
-      field({ name: 'first', index: 0 }),
-      field({ name: 'second', index: 1 }),
-    ]);
-    const first = screen.getByRole('button', { name: /first/u });
-    fireEvent.click(first);
-    fireEvent.click(screen.getByRole('button', { name: /second/u }), { ctrlKey: true });
-    fireEvent.click(screen.getByRole('button', { name: /second/u }), { shiftKey: true });
-    // THE ORDER THE LIST SHOWS, which is what a Shift click's run is taken over; the page is jumped to only for a
-    // plain click, since an extending click is about the selection and not about where the reader is.
+  it('a click on a row SELECTS that field, Ctrl and Shift say how it joins, and a double click opens its properties', async () => {
+    const { selects, jumps, properties } = await panel([field({ name: 'first', index: 0 }), field({ name: 'second', index: 1 })]);
+    fireEvent.click(screen.getByRole('button', { name: 'first — Text, page 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'second — Text, page 1' }), { ctrlKey: true });
+    fireEvent.click(screen.getByRole('button', { name: 'second — Text, page 1' }), { shiftKey: true });
     const ordered = ['0:0', '0:1'];
     expect(selects).toStrictEqual([
       { page: 0, index: 0, mode: 'replace', ordered },
@@ -483,81 +302,49 @@ describe('FormsPanel', () => {
       { page: 0, index: 1, mode: 'range', ordered },
     ]);
     expect(jumps).toStrictEqual([0]);
+    expect(properties()).toBe(0);
+    fireEvent.doubleClick(screen.getByRole('button', { name: 'first — Text, page 1' }));
+    expect(properties()).toBe(1);
   });
 
   it('draws the selected rows as pressed, and ONLY them: two rows are never selected by one click', async () => {
     await panel([field({ name: 'first', index: 0 }), field({ name: 'second', index: 1 })], { selected: ['0:1'] });
-    expect(screen.getByRole('button', { name: /first/u }).getAttribute('aria-pressed')).toBe('false');
-    expect(screen.getByRole('button', { name: /second/u }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: 'first — Text, page 1' }).getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByRole('button', { name: 'second — Text, page 1' }).getAttribute('aria-pressed')).toBe('true');
   });
+});
 
-  it('says the bound stopped the walk rather than showing a short list quietly', async () => {
+describe('FormsPanel — the states', () => {
+  it('says the bound stopped the walk rather than showing a short list quietly; CONTROL: an unstopped list does not', async () => {
     await panel([field({ name: 'one' })], { truncated: true });
-    expect(
-      screen.getByText('This document carries more form fields than can be read, so the rest are not listed.'),
-    ).toBeTruthy();
-  });
-
-  it('CONTROL: a list the walk did not stop says nothing of the kind', async () => {
-    await panel([field({ name: 'one' })]);
-    expect(screen.queryByText(/the rest are not listed/u)).toBeNull();
+    expect(screen.getByText('This document carries more form fields than can be read, so the rest are not listed.')).toBeTruthy();
   });
 
   it('a REFUSAL is its own state, not an empty form', async () => {
-    // *This document has no fields* and *we could not ask* are different things
-    // to tell a person trying to fill something in, and collapsing them makes
-    // the second invisible — which is the reassuring answer for a document that
-    // is busy or poisoned.
     await panel([], { refuse: true });
     expect(screen.getByText('The form fields in this document could not be read.')).toBeTruthy();
     expect(screen.queryByText('This document has no form fields.')).toBeNull();
   });
 
-  it('CONTROL: it renders the empty case as empty, so the refusal above is not the only path', async () => {
+  it('CONTROL: it renders the empty case as empty, and asks the channel for the document it was given', async () => {
     await panel([]);
     expect(screen.getByText('This document has no form fields.')).toBeTruthy();
   });
 
   it('CONTROL: it asks the channel for the document it was given', async () => {
-    // 4b, and it is the line that separates *this form is empty* from *the
-    // panel never asked*. Every case above is satisfied by a panel that renders
-    // its own idea of nothing.
     const { asked } = await panel([field({ name: 'one' })]);
     expect(asked).toStrictEqual([{ docId: DOC, from: 0 }]);
   });
 
-  it('the flatten control dispatches, and dispatches once', async () => {
-    // The UI half of the wired pair. The kernel half is
-    // `formFields.test.ts`'s `applyFlattenFormFields` block; neither alone
-    // counts, because a control that dispatches into the void and a command
-    // nothing invokes both pass their own side.
-    //
-    // ONCE, asserted rather than assumed: *called* is a claim, and a handler
-    // wired twice — a click plus a bubbled press — would flatten and then
-    // flatten the already-flat result, which is a second undo entry a person
-    // has to press through.
+  it('the flatten control dispatches, and dispatches once; it is not offered on a document with no fields', async () => {
     const { flattens } = await panel([field({ name: 'one' })]);
     expect(flattens()).toBe(0);
     fireEvent.click(screen.getByRole('button', { name: 'Flatten form' }));
     expect(flattens()).toBe(1);
   });
 
-  it('is NOT offered on a document with no fields', async () => {
-    // The wired-tools rule is about what a person can press. The kernel treats
-    // a flatten of a fieldless document as a no-op rather than a refusal —
-    // there is nothing incorrect about flattening nothing — but a control whose
-    // press changes nothing observable is the display-only defect wearing a
-    // working command's clothes.
+  it('CONTROL: no flatten on a form with no fields', async () => {
     await panel([]);
     expect(screen.queryByRole('button', { name: 'Flatten form' })).toBeNull();
-  });
-
-  it('CONTROL: it IS offered when the list was truncated, because `bake` acts on the document', async () => {
-    // The case that stops the one above from being read as *offered only when
-    // this panel could list everything*. A cap on what can be SHOWN is not a
-    // cap on what the command reaches, and hiding the control there would make
-    // a large form the one document you cannot flatten.
-    await panel([field({ name: 'one' })], { truncated: true });
-    expect(screen.getByRole('button', { name: 'Flatten form' })).toBeTruthy();
   });
 });

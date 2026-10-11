@@ -11,6 +11,7 @@ import { COMMAND_PROBLEM_DIALOG } from '../dialogs/commandProblem.js';
 import { COMPONENTS_DIALOG } from '../dialogs/components.js';
 import { CROP_PAGES_DIALOG } from '../dialogs/cropPages.js';
 import { DELETE_PAGES_DIALOG } from '../dialogs/deletePages.js';
+import { DELETE_FIELDS_DIALOG } from '../dialogs/deleteFields.js';
 import { DOCUMENT_PASSWORD_DIALOG } from '../dialogs/documentPassword.js';
 import { DOCUSIGN_NOTICE_DIALOG } from '../dialogs/docusignNotice.js';
 import { DOCUSIGN_SEND_DIALOG } from '../dialogs/docusignSend.js';
@@ -127,6 +128,7 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   HISTORY_TRIMMED_DIALOG,
   PERMISSION_PASSWORD_REPLACED_DIALOG,
   DELETE_PAGES_DIALOG,
+  DELETE_FIELDS_DIALOG,
   STAMP_DIALOG,
   SIGNATURE_BREAK_DIALOG,
   SIGN_AGAIN_DIALOG,

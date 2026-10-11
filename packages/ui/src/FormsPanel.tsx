@@ -7,8 +7,8 @@ import { ChoiceOptions, FieldTextBox } from './forms/FieldControls.js';
 import { type ListedField, fieldFill } from './forms/fieldFill.js';
 import { type FieldKey, type SelectMode, fieldKey, modeOf } from './forms/fieldSelection.js';
 import {
-  FORMS_DELETE,
   FORMS_EMPTY,
+  FORMS_EMPTY_VALUE,
   FORMS_FLATTEN,
   FORMS_FLATTEN_CONFIRM,
   FORMS_GO_TO_PAGE,
@@ -21,61 +21,51 @@ import {
   FORMS_KIND_SIGNATURE,
   FORMS_KIND_TEXT,
   FORMS_LABEL,
+  FORMS_NO_MATCH,
   FORMS_NOT_FILLABLE,
+  FORMS_PAGE,
   FORMS_ROW,
+  FORMS_SEARCH,
   FORMS_TRUNCATED,
   FORMS_UNAVAILABLE,
 } from './messages/en.js';
+import { Icon } from './primitives/Icon.js';
+import type { IconName } from './primitives/icons.js';
 import { pdfjsPageOf } from './pageNumbering.js';
 import { readWholeList } from './readWholeList.js';
 
 /**
- * Every AcroForm field in the document, with the control that fills it.
+ * Every AcroForm field in the document: the Fields list (the owner's K3, ADR-0226).
  *
- * ## Six types is six controls, and that is the row's own words
+ * ## A tree by page, a kind's icon, the name, the value
  *
- * `docs/FEATURES.md`'s D5 row asks for *render and fill all AcroForm field
- * types*, and a panel that showed one control for all of them would be
- * answering a different question. A tick box, a set of options and a list of
- * choices are three different gestures, and the kernel refuses a value aimed at
- * the wrong one — measured, because MuPDF does not.
+ * PDF-XChange's shape: the fields grouped under the page they sit on, each row the field's kind as an icon and its own
+ * name, and its value beside it. A radio group is ONE row with its options under it, because the options are one
+ * field. A search box at the top narrows the rows by name. There is no Delete on a row: removing a field is the Delete
+ * key and the right-click menu, which are the registered command every other surface uses (`annotate.delete-selection`).
+ *
+ * ## The value is filled IN PLACE, and the page stays the primary way to fill (A1.2)
+ *
+ * A text value reads as words; a click on it opens the field's box where the words were, and leaving it fills. A tick
+ * box and a radio option are filled by a click on their mark. A dropdown and a list are a list of their options. No
+ * empty grey box sits on a row waiting to be typed into: an empty value says so in words.
  *
  * ## A FIELD IS NAMED BY ITS PLACE IN THE WALK, never by its name
  *
- * Measured 2026-09-07: both widgets of a radio group answer `applicant.post`,
- * so the name is what a person reads and `index` is what points. Every control
- * here dispatches `{ page, index, version }` taken from the answer it was built
- * from, exactly as `AnnotationsPanel` does — and taken from the STATE rather
- * than from the `version` prop, so the handle cannot be built from a value that
- * can never disagree.
+ * Measured 2026-09-07: both widgets of a radio group answer `applicant.post`, so the name is what a person reads and
+ * `index` is what points. Every control here dispatches `{ page, index, version }` taken from the answer it was built
+ * from, exactly as `AnnotationsPanel` does, and taken from the STATE rather than from the `version` prop, so the
+ * handle cannot be built from a value that can never disagree.
  *
  * ## The row shows the field's own name, which is document data
  *
- * A form's vocabulary belongs to whoever wrote the form, so `name` is rendered
- * rather than translated — the same treatment `AnnotationsPanel` gives a
- * foreign annotation's note. What is translated is everything around it: the
- * kind, the page, and the two reasons a control may be absent.
+ * A form's vocabulary belongs to whoever wrote the form, so `name` is rendered rather than translated, the same
+ * treatment `AnnotationsPanel` gives a foreign annotation's note. What is translated is everything around it.
  *
  * ## Read-only and unfillable are DIFFERENT ABSENCES
  *
- * A locked field is one this document decided about; a signature or a push
- * button is not a field anybody types into. Collapsing them would tell a reader
- * that a Send button might become editable if the document changed, and would
- * hide the one fact a person can act on — asking whoever produced the form.
- *
- * ## Raw controls rather than the `Input` primitive, and the reason is B9
- *
- * `primitives/Input.tsx` types its `label` as a `MessageKey`, which is
- * ADR-0029 Decision 6 working: a text-bearing prop a string literal cannot
- * satisfy. A form field's label is **the document's own name for it**, which is
- * data rather than a catalogue entry and can never be a key — so the primitive
- * is not the wrong choice here, it is one that cannot express this label. The
- * accessible name comes from `aria-label` on each control, which is what makes
- * one row's input distinguishable from another's to a screen reader.
- *
- * A widened primitive taking *either* a key or a string is the shape to avoid:
- * it would make the wrong choice available at every other call site, which is
- * exactly the guarantee the `MessageKey` type is there to give.
+ * A locked field is one this document decided about; a signature or a push button is not a field anybody types into.
+ * Collapsing them would tell a reader that a Send button might become editable if the document changed.
  */
 export function FormsPanel({
   client,
@@ -84,8 +74,8 @@ export function FormsPanel({
   onJump,
   selected,
   onSelect,
+  onProperties,
   onFill,
-  onDelete,
   onFlatten,
 }: {
   readonly client: ContractClient;
@@ -102,12 +92,13 @@ export function FormsPanel({
    * outlines it on its page and brings it into view. `ordered` is every row in the order shown.
    */
   readonly onSelect: (page: number, index: number, mode: SelectMode, ordered: readonly FieldKey[]) => void;
+  /** A double click on a row's name: its properties, in the Properties tab. */
+  readonly onProperties: () => void;
   /**
    * Fills one field, named by the handle the row was built from.
    *
-   * Dispatched from the SURFACE for `AnnotationsPanel.onRemove`'s reason: a
-   * registered command's `run` takes no arguments, because a menu, a chord and
-   * the palette all invoke it and none of them can supply a handle. A row can.
+   * Dispatched from the SURFACE for `AnnotationsPanel.onRemove`'s reason: a registered command's `run` takes no
+   * arguments, because a menu, a chord and the palette all invoke it and none of them can supply a handle. A row can.
    */
   readonly onFill: (handle: {
     readonly page: number;
@@ -116,38 +107,14 @@ export function FormsPanel({
     readonly value: FieldFill;
   }) => void;
   /**
-   * Deletes one field, named by the handle the row was built from.
-   *
-   * **Offered on every row, including the ones with no fill control.** A
-   * signature, a push button and a read-only field cannot be *filled* here, and
-   * that is a statement about the value; removing the field from the document
-   * is a different action, and the reasons the first is refused say nothing
-   * about the second. A document's read-only flag governs filling, not editing
-   * the form's structure.
-   */
-  readonly onDelete: (handle: {
-    readonly page: number;
-    readonly index: number;
-    readonly version: DocVersion;
-  }) => void;
-  /**
-   * Flattens the whole form.
-   *
-   * **No handle at all**, unlike the two above, and that is the engine's shape
-   * rather than a simplification: MuPDF's `bake` takes no page and no field
-   * list, so there is nothing to name and no version to be stale against.
-   *
-   * **The command asks first** (`dialogs/flattenForm.ts`), which is the owner's
-   * F-F1 and departs from `dialogs/deletePages.ts`' *no confirmation over an
-   * undoable command* for a reason that ruling does not meet: a deleted page
-   * is gone from the screen, and a flattened field is drawn from its own appearance.
-   * Nothing on the page says the form is gone, and the checkpoint that undoes
-   * it is dropped when the document closes.
+   * Flattens the whole form. **No handle at all**: MuPDF's `bake` takes no page and no field list. **The command asks
+   * first** (`dialogs/flattenForm.ts`), the owner's F-F1.
    */
   readonly onFlatten: () => void;
 }): ReactElement | null {
   const { i18n } = useLingui();
   const [state, setState] = useState<PanelState>({ kind: 'idle' });
+  const [query, setQuery] = useState('');
   const panelId = useId();
 
   useEffect(() => {
@@ -160,18 +127,11 @@ export function FormsPanel({
     ).then(
       (answer) => {
         if (cancelled) return;
-        // A REFUSAL IS ITS OWN STATE, not an empty list — `AnnotationsPanel`'s
-        // rule, and the reason is the same: *this document has no fields* and
-        // *we could not ask* are different things to tell a person about a form
-        // they are trying to fill in.
+        // A REFUSAL IS ITS OWN STATE, not an empty list: *this document has no fields* and *we could not ask* are
+        // different things to tell a person about a form they are trying to fill in.
         setState(
           answer.ok
-            ? {
-                kind: 'listed',
-                version,
-                fields: answer.value.items,
-                truncated: answer.value.last.truncated,
-              }
+            ? { kind: 'listed', version, fields: answer.value.items, truncated: answer.value.last.truncated }
             : { kind: 'unavailable', version },
         );
       },
@@ -185,147 +145,169 @@ export function FormsPanel({
     };
   }, [client, docId, version]);
 
-  // THE STATE CARRIES THE VERSION IT DESCRIBES. Showing the previous version's
-  // fields while the new answer is in flight would be rows whose indices point
-  // into a walk that has moved, and every control on them writes.
+  // THE STATE CARRIES THE VERSION IT DESCRIBES. Showing the previous version's fields while the new answer is in flight
+  // would be rows whose indices point into a walk that has moved, and every control on them writes.
   if (docId === undefined || version === undefined || state.kind === 'idle') return null;
   if (state.version !== version) return null;
 
+  if (state.kind === 'unavailable') {
+    return (
+      <section className="m-forms-panel" aria-label={i18n._(FORMS_LABEL)}>
+        <p className="m-forms-empty">{i18n._(FORMS_UNAVAILABLE)}</p>
+      </section>
+    );
+  }
+  if (state.fields.length === 0) {
+    return (
+      <section className="m-forms-panel" aria-label={i18n._(FORMS_LABEL)}>
+        <p className="m-forms-empty">{i18n._(FORMS_EMPTY)}</p>
+      </section>
+    );
+  }
+
+  const wanted = query.trim().toLowerCase();
+  const shown = wanted === '' ? state.fields : state.fields.filter((field) => field.name.toLowerCase().includes(wanted));
+  const ordered = shown.map((field) => fieldKey(field.page, field.index));
+  const fill = (field: ListedField) => (value: FieldFill): void => {
+    // FROM THE STATE, not the prop: the handle is *page, index and the version its walk was read at*.
+    onFill({ page: field.page, index: field.index, version: state.version, value });
+  };
+  const choose = (field: ListedField, mode: SelectMode): void => {
+    // ONE CLICK SELECTS ONE FIELD, outlines it on its page and brings it into view; the page is jumped to first so the
+    // outline has a page to be on.
+    if (mode === 'replace') onJump(field.page);
+    onSelect(field.page, field.index, mode, ordered);
+  };
+
   return (
     <section className="m-forms-panel" aria-label={i18n._(FORMS_LABEL)}>
-      {state.kind === 'unavailable' ? (
-        <p className="m-forms-empty">{i18n._(FORMS_UNAVAILABLE)}</p>
-      ) : state.fields.length === 0 ? (
-        <p className="m-forms-empty">{i18n._(FORMS_EMPTY)}</p>
-      ) : (
-        <>
+      <input
+        aria-label={i18n._(FORMS_SEARCH)}
+        className="m-forms-search"
+        onChange={(event) => {
+          setQuery(event.currentTarget.value);
+        }}
+        placeholder={i18n._(FORMS_SEARCH)}
+        type="search"
+        value={query}
+      />
+      {shown.length === 0 ? <p className="m-forms-empty">{i18n._(FORMS_NO_MATCH)}</p> : null}
+      {pagesOf(shown).map(({ page, rows }) => (
+        <section className="m-forms-page" key={page}>
+          <h3 className="m-forms-page__title">{i18n._(FORMS_PAGE, { page: pdfjsPageOf(page) })}</h3>
           <ul className="m-forms-list">
-            {state.fields.map((field, at) => (
-              // THE LIST POSITION IS THE REACT KEY and NOT the handle, for
-              // `AnnotationsPanel`'s reason: `at` is where the row sits in this
-              // array and `field.index` is where the widget sits in the walk on
-              // its own page. They agree on a one-page form and diverge on the
-              // second page, so a handle built from `at` would fill the wrong
-              // field on every document but the simplest.
-              <li
-                className="m-forms-row"
-                data-form-row-selected={selected.has(fieldKey(field.page, field.index)) ? 'true' : undefined}
-                key={at}
-              >
-                <button
-                  aria-pressed={selected.has(fieldKey(field.page, field.index))}
-                  className="m-forms-jump"
-                  onClick={(event) => {
-                    // ONE CLICK SELECTS ONE FIELD, outlines it on its page and brings it into view; a second click with
-                    // Ctrl takes it out again. The page is jumped to first so the outline has a page to be on.
-                    const mode = modeOf(event);
-                    if (mode === 'replace') onJump(field.page);
-                    onSelect(
-                      field.page,
-                      field.index,
-                      mode,
-                      state.fields.map((each) => fieldKey(each.page, each.index)),
-                    );
-                  }}
-                  title={i18n._(FORMS_GO_TO_PAGE, { page: pdfjsPageOf(field.page) })}
-                  type="button"
+            {rows.map((row) =>
+              row.kind === 'group' ? (
+                <li className="m-forms-row m-forms-row--group" key={`group:${row.name}`}>
+                  <NameButton
+                    chosen={row.options.some((option) => selected.has(fieldKey(option.page, option.index)))}
+                    field={row.options[0] ?? row.first}
+                    onChoose={choose}
+                    onProperties={onProperties}
+                  />
+                  <ul className="m-forms-options">
+                    {row.options.map((option) => (
+                      <li
+                        className="m-forms-option"
+                        data-form-row-selected={selected.has(fieldKey(option.page, option.index)) ? 'true' : undefined}
+                        key={option.index}
+                      >
+                        <FieldValue field={option} group={`${panelId}:${row.name}`} onFill={fill(option)} />
+                        <button
+                          aria-pressed={selected.has(fieldKey(option.page, option.index))}
+                          className="m-forms-option__name"
+                          onClick={(event) => {
+                            choose(option, modeOf(event));
+                          }}
+                          type="button"
+                        >
+                          {optionName(option)}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ) : (
+                <li
+                  className="m-forms-row"
+                  data-form-row-selected={selected.has(fieldKey(row.field.page, row.field.index)) ? 'true' : undefined}
+                  key={row.field.index}
                 >
-                  {i18n._(FORMS_ROW, {
-                    // THE DOCUMENT'S OWN WORD for this field, rendered rather
-                    // than translated. A form's vocabulary is not this
-                    // application's to rewrite.
-                    name: field.name,
-                    kind: i18n._(KIND_LABELS[field.kind]),
-                    page: pdfjsPageOf(field.page),
-                  })}
-                </button>
-                <FieldControl
-                  field={field}
-                  group={`${panelId}:${field.name}`}
-                  onFill={(value) => {
-                    onFill({
-                      page: field.page,
-                      index: field.index,
-                      // FROM THE STATE, not the prop. The guard above returns
-                      // null unless they are equal, and taking it from the
-                      // answer anyway is the point: the handle is *page, index
-                      // and the version its walk was read at*, and a version
-                      // that can never disagree is a guard that cannot fire.
-                      version: state.version,
-                      value,
-                    });
-                  }}
-                />
-                <button
-                  className="m-forms-delete"
-                  onClick={() => {
-                    onDelete({
-                      page: field.page,
-                      index: field.index,
-                      // FROM THE STATE, for the fill's reason: the handle is
-                      // *page, index and the version its walk was read at*, and
-                      // a version that can never disagree is a guard that
-                      // cannot fire.
-                      version: state.version,
-                    });
-                  }}
-                  title={i18n._(FORMS_DELETE)}
-                  type="button"
-                >
-                  {i18n._(FORMS_DELETE)}
-                </button>
-              </li>
-            ))}
+                  <NameButton
+                    chosen={selected.has(fieldKey(row.field.page, row.field.index))}
+                    field={row.field}
+                    onChoose={choose}
+                    onProperties={onProperties}
+                  />
+                  <FieldValue field={row.field} group={`${panelId}:${row.field.name}`} onFill={fill(row.field)} />
+                </li>
+              ),
+            )}
           </ul>
-          {state.truncated ? <p className="m-forms-empty">{i18n._(FORMS_TRUNCATED)}</p> : null}
-          {/* INSIDE THE BRANCH THAT HAS FIELDS, so it is not offered on a
-              document with none. The kernel treats that as a no-op rather than
-              a refusal — there is nothing incorrect about flattening nothing —
-              but a control whose press changes nothing observable is the
-              display-only defect wearing a working command's clothes. The
-              wired-tools rule is about what a person can press.
-
-              AND IT IS OFFERED EVEN WHEN EVERY FIELD IS TRUNCATED AWAY, which
-              is deliberate: `bake` acts on the document, not on the rows this
-              panel managed to list, so a limit on what can be SHOWN is not a
-              limit on what this does. */}
-          <button
-            className="m-forms-flatten"
-            onClick={onFlatten}
-            title={i18n._(FORMS_FLATTEN_CONFIRM)}
-            type="button"
-          >
-            {i18n._(FORMS_FLATTEN)}
-          </button>
-        </>
-      )}
+        </section>
+      ))}
+      {state.truncated ? <p className="m-forms-empty">{i18n._(FORMS_TRUNCATED)}</p> : null}
+      {/* INSIDE THE BRANCH THAT HAS FIELDS, so it is not offered on a document with none, and OFFERED EVEN WHEN EVERY
+          FIELD IS TRUNCATED AWAY: `bake` acts on the document, not on the rows this panel managed to list. */}
+      <button className="m-forms-flatten" onClick={onFlatten} title={i18n._(FORMS_FLATTEN_CONFIRM)} type="button">
+        {i18n._(FORMS_FLATTEN)}
+      </button>
     </section>
   );
 }
 
+/** A row's name: a click selects, a double click opens its properties. The kind is its icon and its accessible name. */
+function NameButton({
+  field,
+  chosen,
+  onChoose,
+  onProperties,
+}: {
+  readonly field: ListedField;
+  readonly chosen: boolean;
+  readonly onChoose: (field: ListedField, mode: SelectMode) => void;
+  readonly onProperties: () => void;
+}): ReactElement {
+  const { i18n } = useLingui();
+  return (
+    <button
+      aria-label={i18n._(FORMS_ROW, { name: field.name, kind: i18n._(KIND_LABELS[field.kind]), page: pdfjsPageOf(field.page) })}
+      aria-pressed={chosen}
+      className="m-forms-jump"
+      onClick={(event) => {
+        onChoose(field, modeOf(event));
+      }}
+      onDoubleClick={onProperties}
+      title={i18n._(FORMS_GO_TO_PAGE, { page: pdfjsPageOf(field.page) })}
+      type="button"
+    >
+      <Icon name={KIND_ICONS[field.kind]} size="dense" />
+      {/* THE DOCUMENT'S OWN WORD for this field, rendered rather than translated. */}
+      <span className="m-forms-jump__name">{field.name}</span>
+    </button>
+  );
+}
+
+/** What a radio option stands for: its own value, the one thing that tells one option from another. */
+function optionName(option: ListedField): string {
+  return option.options[0] ?? option.name;
+}
+
 /**
- * The control for one field, chosen by what the document says the field is.
+ * A field's value, filled where it is shown.
  *
  * ## The two absences are separate, and neither is a disabled control
  *
- * A read-only field and an unfillable one both render as text with a reason,
- * rather than as a control that is present and refuses. The wired-tools rule
- * cuts both ways: a control that renders and does nothing is a defect, and the
- * honest rendering of *this cannot be filled* is not a control at all.
+ * A read-only field and an unfillable one both render as text with a reason, rather than as a control that is present
+ * and refuses. A control that renders and does nothing is a defect, and the honest rendering of *this cannot be filled*
+ * is not a control at all.
  *
- * ## Uncontrolled, deliberately
+ * ## The document is the state
  *
- * Every control here shows the document's value and reports a change; none
- * holds a draft. The document is the state, the command is how it moves, and a
- * local copy would be a second answer to *what does this field say* — which is
- * the state that survives a failed command and shows a value the file does not
- * have.
- *
- * A text field therefore commits on blur and on Enter rather than per
- * keystroke: a command per character would be a log entry per character, and
- * §4's one-intent-one-entry is what that would break.
+ * Every control here shows the document's value and reports a change; none holds a draft, which would be a second
+ * answer to *what does this field say*. A text value commits when its box is left or on Enter, not per keystroke.
  */
-function FieldControl({
+function FieldValue({
   field,
   group,
   onFill,
@@ -336,8 +318,9 @@ function FieldControl({
   readonly onFill: (value: FieldFill) => void;
 }): ReactElement {
   const { i18n } = useLingui();
-  // WHAT MAY BE DONE WITH IT is `fieldFill`'s, which the page's form layer takes too (ADR-0168 Decision 2): read-only,
-  // a value listed as a slice, several values and a kind nobody fills are refused by both or neither.
+  // THE BOX OPEN IN PLACE, with where the press landed so the caret goes there (ADR-0226 Decision 3), or none.
+  const [typing, setTyping] = useState<{ readonly at: { readonly x: number; readonly y: number } | undefined } | undefined>();
+  // WHAT MAY BE DONE WITH IT is `fieldFill`'s, which the page's form layer takes too (ADR-0168 Decision 2).
   const offer = fieldFill(field);
 
   if (offer.kind === 'none') return <span className="m-forms-locked">{i18n._(offer.reason, offer.values)}</span>;
@@ -366,64 +349,81 @@ function FieldControl({
   }
 
   if (offer.kind === 'text') {
+    if (typing !== undefined) {
+      return (
+        <FieldTextBox
+          autoFocus
+          className="m-forms-text"
+          // THE FIELD'S OWN NAME AS THE ACCESSIBLE NAME: the document's string, and the only thing that tells one row's
+          // box from another's to a screen reader.
+          name={field.name}
+          offer={offer}
+          onCancel={() => {
+            setTyping(undefined);
+          }}
+          onCommit={(text) => {
+            onFill({ set: 'text', text });
+          }}
+          onDone={() => {
+            setTyping(undefined);
+          }}
+          pressedAt={typing.at}
+          rows={TEXT_ROWS}
+          selectsAll={typing.at === undefined}
+        />
+      );
+    }
     return (
-      <FieldTextBox
-        className="m-forms-text"
-        // THE FIELD'S OWN NAME AS THE ACCESSIBLE NAME. B9 asks for no literal user-facing string; this is the
-        // document's string, and it is the only thing that distinguishes one row's control from another's to a screen
-        // reader.
-        name={field.name}
-        offer={offer}
-        onCommit={(text) => {
-          onFill({ set: 'text', text });
+      <button
+        aria-label={field.name}
+        className={offer.held === '' ? 'm-forms-value m-forms-value--empty' : 'm-forms-value'}
+        onClick={(event) => {
+          // A KEYBOARD'S PRESS (`detail` 0) has no place, and opens the box with its words selected, as Tab does.
+          setTyping({ at: event.detail === 0 ? undefined : { x: event.clientX, y: event.clientY } });
         }}
-        rows={TEXT_ROWS}
-      />
+        type="button"
+      >
+        {offer.held === '' ? i18n._(FORMS_EMPTY_VALUE) : offer.held}
+      </button>
     );
   }
 
   if (offer.kind === 'toggle' && !offer.radio) {
     return (
-      <input
-        className="m-forms-check"
+      <button
+        aria-checked={offer.on}
         aria-label={field.name}
-        // `checked` AND NOT `defaultChecked`: this one really is controlled by
-        // the document, because a tick is a whole intent and the command runs
-        // on the click. The re-read after the version moves is what changes it.
-        checked={offer.on}
-        onChange={(event) => {
-          onFill({ set: 'button', on: event.currentTarget.checked });
+        className="m-forms-mark"
+        // A TICK IS A WHOLE INTENT and the command runs on the click; the re-read after the version moves is what
+        // changes the mark.
+        onClick={() => {
+          onFill({ set: 'button', on: !offer.on });
         }}
-        type="checkbox"
-      />
+        role="checkbox"
+        type="button"
+      >
+        <Icon name={offer.on ? 'SquareCheck' : 'Square'} size="dense" />
+      </button>
     );
   }
 
   if (offer.kind === 'toggle') {
     return (
-      <input
-        className="m-forms-check"
-        aria-label={field.name}
-        checked={offer.on}
-        // ONE GROUP PER FIELD NAME, which is what makes the options one radio
-        // group to the keyboard and to a screen reader: every widget of a PDF
-        // radio group answers the same name. Scoped by the panel, so a field
-        // called what some other control in the window is called is not
-        // grouped with it.
-        name={group}
-        // CHOOSING is a change, and CLEARING is a click on the chosen one,
-        // because a browser fires no change for a radio that is already on. A
-        // PDF radio group deselects when its lit widget is toggled — measured
-        // — so an option that could not be cleared here would hide a state the
-        // document has and the format allows.
-        onChange={() => {
-          onFill({ set: 'button', on: true });
-        }}
+      <button
+        aria-checked={offer.on}
+        aria-label={`${field.name}: ${optionName(field)}`}
+        className="m-forms-mark"
+        data-group={group}
+        // CHOOSING an option that is off, and CLEARING the chosen one: a PDF radio group deselects when its lit widget
+        // is toggled (measured), so an option that could not be cleared here would hide a state the document allows.
         onClick={() => {
-          if (offer.on) onFill({ set: 'button', on: false });
+          onFill({ set: 'button', on: !offer.on });
         }}
-        type="radio"
-      />
+        role="radio"
+        type="button"
+      >
+        <Icon name={offer.on ? 'CircleDot' : 'Circle'} size="dense" />
+      </button>
     );
   }
 
@@ -434,11 +434,7 @@ function FieldControl({
       onChange={(event) => {
         onFill({ set: 'choice', option: event.currentTarget.value });
       }}
-      // A LIST SHOWS SEVERAL ROWS and a dropdown shows one, which is the
-      // whole difference between the two kinds at this level. Both write one
-      // option: `/Ff`'s multi-select bit is a document capability this build
-      // does not yet write, and offering it would be a control whose command
-      // cannot express what it collected.
+      // A LIST SHOWS SEVERAL ROWS and a dropdown shows one, which is the whole difference between the two kinds here.
       size={field.kind === 'listbox' ? Math.min(field.options.length, LIST_ROWS) : undefined}
       value={offer.held}
     >
@@ -447,30 +443,48 @@ function FieldControl({
   );
 }
 
+/** One row of a page: a field, or a radio group with its options under it. */
+type Row =
+  | { readonly kind: 'field'; readonly field: ListedField }
+  | { readonly kind: 'group'; readonly name: string; readonly first: ListedField; readonly options: readonly ListedField[] };
+
 /**
- * How many rows of a list are shown at once.
- *
- * A number in a component, and it is the exception §10.2 names rather than a
- * magic one: `size` is a count of rows in a `<select>`, not a length in pixels,
- * and there is no token for *how many options a reader can see*.
+ * The fields grouped by page in the walk's order, a radio group's options gathered under its first one on that page.
+ * The walk's order and not the name's: a person reads a page top to bottom, and the walk is the document's own order.
+ */
+function pagesOf(fields: readonly ListedField[]): readonly { readonly page: number; readonly rows: readonly Row[] }[] {
+  const pages = new Map<number, Row[]>();
+  for (const field of fields) {
+    const rows = pages.get(field.page) ?? [];
+    if (!pages.has(field.page)) pages.set(field.page, rows);
+    if (field.kind === 'radio') {
+      const at = rows.findIndex((row) => row.kind === 'group' && row.name === field.name);
+      const group = rows[at];
+      if (group?.kind === 'group') {
+        rows[at] = { ...group, options: [...group.options, field] };
+        continue;
+      }
+      rows.push({ kind: 'group', name: field.name, first: field, options: [field] });
+      continue;
+    }
+    rows.push({ kind: 'field', field });
+  }
+  return [...pages.entries()].sort(([a], [b]) => a - b).map(([page, rows]) => ({ page, rows }));
+}
+
+/**
+ * How many rows of a list are shown at once. A count of rows in a `<select>`, not a length in pixels, so it is the
+ * exception §10.2 names rather than a magic number.
  */
 const LIST_ROWS = 4;
 
 /** How many lines a multi-line text field's box shows at once: a count of rows, `LIST_ROWS`' exception. */
 const TEXT_ROWS = 3;
 
-/**
- * A label per kind, which is what the contract's closed union buys.
- *
- * A `Record` over the union rather than a lookup with a fallback:
- * `AnnotationsPanel`'s argument, and its recorded defect — the copy that went on
- * satisfying the table while the channel grew past it. The type is imported.
- */
+/** A label per kind, which is what the contract's closed union buys: a `Record` over the union, never a fallback. */
 const KIND_LABELS: Record<FormFieldKind, MessageKey> = {
   text: FORMS_KIND_TEXT,
-  // THE WORDS ON A FORM, not the format's. A person ticks a box and chooses an
-  // option; `/Btn` with the radio flag is a term of art nobody filling in a
-  // form has met.
+  // THE WORDS ON A FORM, not the format's: a person ticks a box and chooses an option.
   checkbox: FORMS_KIND_CHECKBOX,
   radio: FORMS_KIND_RADIO,
   dropdown: FORMS_KIND_DROPDOWN,
@@ -480,12 +494,21 @@ const KIND_LABELS: Record<FormFieldKind, MessageKey> = {
   other: FORMS_KIND_OTHER,
 };
 
+/** The icon per kind, the same glyph its tool has on the ribbon, so a row and the tool that made it look alike. */
+const KIND_ICONS: Record<FormFieldKind, IconName> = {
+  text: 'TextCursor',
+  checkbox: 'SquareCheck',
+  radio: 'CircleDot',
+  dropdown: 'ChevronDown',
+  listbox: 'List',
+  signature: 'Signature',
+  button: 'RectangleHorizontal',
+  other: 'File',
+};
+
 /**
- * What the panel is showing.
- *
- * Three states rather than a list plus a flag: *refused, and here are no
- * fields* would be a state nothing can produce and every reader has to rule
- * out (B5).
+ * What the panel is showing. Three states rather than a list plus a flag: *refused, and here are no fields* would be a
+ * state nothing can produce and every reader has to rule out (B5).
  */
 type PanelState =
   | { readonly kind: 'idle' }

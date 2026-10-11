@@ -136,7 +136,7 @@ is not available.
 - [ ] **Import form data from JSON…** — Data · `document.import-form-data-json` · Shows: a toast · Help: *Export or import form data*
 - [ ] **Import form data from XFDF…** — Data · `document.import-form-data-xfdf` · Shows: a toast · Help: *Export or import form data*
 - [ ] **Import form data from FDF…** — Data · `document.import-form-data-fdf` · Shows: a toast · Help: *Export or import form data*
-- [ ] **Edit fields** — Fields · `forms.edit-fields` · Shows: on screen
+- [ ] **Edit fields** — Fields · `forms.edit-fields` · Shows: on screen · Help: *Delete a form field*
 - [ ] **Add a text field** — Fields · `forms.field-text` · Shows: on screen · Help: *Create form fields*
 - [ ] **Add a tick box** — Fields · `forms.field-checkbox` · Shows: on screen · Help: *Create form fields*
 - [ ] **Add radio buttons** — Fields · `forms.field-radio` · Shows: on screen · Help: *Create form fields*
@@ -236,7 +236,7 @@ is not available.
 - [ ] **Copy** · `annotate.copy-selection` · Shows: a toast · Help: *Select, move, resize and delete annotations*
 - [ ] **Strikethrough** · `text.strikeout` · Shows: on screen · Help: *Highlight, underline or strike through text*
 - [ ] **Add comment** · `text.comment` · Shows: on screen · Help: *Add a note (sticky note)*
-- [ ] **Delete selection** · `annotate.delete-selection` · Shows: on screen · Help: *Select, move, resize and delete annotations*
+- [ ] **Delete selection** · `annotate.delete-selection` · Shows: on screen · Help: *Delete a form field*
 - [ ] **Mark for redaction** · `text.redact` · Shows: on screen · Help: *Redact (permanently remove) content*
 - [ ] **Search for this** · `text.search` · Shows: on screen · Help: *Find words in a document*
 - [ ] **Ask AI** · `ai.ask-selection` · Shows: on screen · Help: *Ask AI about selected text or a comment*

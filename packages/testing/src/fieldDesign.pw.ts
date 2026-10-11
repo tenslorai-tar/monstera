@@ -226,6 +226,44 @@ test.describe('Edit fields', () => {
     await expect(page.locator('.m-page-field-editor')).toBeVisible();
   });
 
+  test('the Fields list fills a value in place, and Delete there removes the selected field', async ({ page }) => {
+    const sent: Sent = [];
+    await open(page, sent);
+    await runCommand(page, 'Fields list');
+    const list = page.locator('.m-forms-panel');
+    // THE VALUE IS WORDS until it is clicked, and the click opens the field's box where they were.
+    await list.getByRole('button', { name: 'Email', exact: true }).click();
+    await list.getByRole('textbox', { name: 'Email' }).fill('ada@example.org');
+    await list.getByRole('textbox', { name: 'Email' }).press('Enter');
+    await expect.poll(() => commands(sent).length).toBe(1);
+    expect(commands(sent)[0]).toMatchObject({ kind: 'fillFormField', page: 0, index: 1, value: { set: 'text', text: 'ada@example.org' } });
+    // THE ROW SELECTED and the list holding the focus: Delete is the field's.
+    await list.getByRole('button', { name: /^Full name — /u }).click();
+    await page.keyboard.press('Delete');
+    await expect.poll(() => commands(sent).length).toBe(2);
+    expect(commands(sent)[1]).toMatchObject({ kind: 'deleteFormFields', page: 0, indices: [0] });
+  });
+
+  test('CONTROL: with a field selected from the list but the focus on the page, Delete removes nothing', async ({ page }) => {
+    const sent: Sent = [];
+    await open(page, sent);
+    await runCommand(page, 'Fields list');
+    const row = page.locator('.m-forms-panel').getByRole('button', { name: /^Full name — /u });
+    await row.click();
+    // THE FOCUS LEAVES THE LIST and the selection STAYS (the row is still pressed): only the focus differs from the
+    // case above, so a Delete that removed the field here would be one keyed on the selection alone.
+    await row.evaluate((element) => {
+      (element as HTMLElement).blur();
+    });
+    await expect(row).toHaveAttribute('aria-pressed', 'true');
+    await page.keyboard.press('Delete');
+    // AND THE SAME PRESS WITH THE FOCUS BACK does remove it, so the wait below is long enough to see one.
+    await row.focus();
+    await page.keyboard.press('Delete');
+    await expect.poll(() => commands(sent).length).toBe(1);
+    expect(commands(sent)).toMatchObject([{ kind: 'deleteFormFields', indices: [0] }]);
+  });
+
   test('a click with the text field tool places a field at the press and turns Edit fields on', async ({ page }) => {
     const sent: Sent = [];
     await open(page, sent);

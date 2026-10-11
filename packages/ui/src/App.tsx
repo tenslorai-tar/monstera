@@ -301,6 +301,7 @@ import { type FieldProblem, emptyRequired } from './forms/fieldCheck.js';
 import { FieldPropertiesPanel } from './forms/FieldPropertiesPanel.js';
 import type { PlacedField } from './forms/arrange.js';
 import { besideRect } from './forms/fieldDesign.js';
+import { DELETE_FIELDS_DIALOG_ID, DELETE_FIELDS_RESULT } from './dialogs/deleteFields.js';
 import { type FieldToCopy, copyFieldToPagesCommand, fieldArrangeCommands } from './commands/fieldArrangeCommands.js';
 import { EDIT_FIELDS_TOOL_ID, editFieldsCommand, fieldDesignCommands } from './commands/fieldDesignCommands.js';
 import { useFormFieldList } from './forms/useFormFieldList.js';
@@ -427,7 +428,8 @@ import {
 import type { Spot } from './accessibility/view.js';
 import { type SpellingDeps, startReview } from './spelling/reviewRun.js';
 import { QuickToolbar } from './surfaces/QuickToolbar.js';
-import { type MenuAt, NO_MENU, menuGroups } from './surfaces/ContextMenu.js';
+import { ContextMenuArea, type MenuAt, NO_MENU, menuGroups } from './surfaces/ContextMenu.js';
+import type { MenuContext } from './registries/placement.js';
 import { type TextSelection, readTextSelection } from './TextLayer.js';
 import {
   type TextSelectionDeps,
@@ -578,6 +580,12 @@ const NO_DOCUMENT_SUBSCRIBE = (): (() => void) => (): void => undefined;
 
 /** No pages ticked — one stable empty list, so a context memo does not rebuild for a new `[]` each render. */
 const NO_PAGES: readonly number[] = [];
+
+/** The Fields list's right-click menu: the field commands' own context. */
+const FIELD_MENU: readonly MenuContext[] = ['field'];
+
+/** No field selected for the field commands, one identity so a memo over it does not rebuild. */
+const NO_PLACED: readonly (PlacedField & { readonly kind: FormFieldKind })[] = [];
 
 /**
  * How far in from the page's top-right corner an answer's note is placed, in PDF points: half an
@@ -1411,27 +1419,6 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   );
 
   /**
-   * Deleting one form field, from the row that names it.
-   *
-   * `removeAnnotation`'s shape on the widget walk. The payload is plural
-   * because a person can select several rows and remove them together, and this
-   * surface is a list of rows with a control each — the one place where *these*
-   * would have to be invented rather than collected.
-   */
-  const deleteFormField = useCallback(
-    (handle: { page: number; index: number; version: DocVersion }): void => {
-      if (activeId === undefined) return;
-      void applyDocumentCommand({ client, onApplied: applied, ask, stamp, signatures }, activeId, {
-        kind: 'deleteFormFields',
-        page: handle.page,
-        indices: [handle.index],
-        version: handle.version,
-      });
-    },
-    [activeId, applied, ask, client, signatures, stamp],
-  );
-
-  /**
    * The Forms panel's Flatten, which runs the same function as the ribbon's *Flatten* command
    * (`flattenForm` in `documentCommands.ts`, where the reason it takes no handle is written).
    */
@@ -2227,15 +2214,28 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   useEffect(() => {
     fieldDesignOn.current = inFieldDesign;
   }, [inFieldDesign]);
-  const designedFields = useMemo((): readonly (PlacedField & { readonly kind: FormFieldKind })[] => {
-    if (!inFieldDesign) return [];
+  const selectedPlaced = useMemo((): readonly (PlacedField & { readonly kind: FormFieldKind })[] => {
     const byKey = new Map(formFieldList.fields.map((field) => [fieldKey(field.page, field.index), field]));
     return selectedHandles.flatMap((field) => {
       const listed = byKey.get(fieldKey(field.page, field.index));
       return listed?.rect === null || listed?.rect === undefined ? [] : [{ field, rect: listed.rect, kind: listed.kind }];
     });
-  }, [formFieldList.fields, inFieldDesign, selectedHandles]);
-  const readDesignedFields = useCallback(() => designedFields, [designedFields]);
+  }, [formFieldList.fields, selectedHandles]);
+  const designedFields = inFieldDesign ? selectedPlaced : NO_PLACED;
+  /**
+   * What the field commands act on: the selection while *Edit fields* is on, AND while the Fields list has the focus
+   * (the owner's D2: Delete and the right-click menu there). Read from the focus when a command asks, as the Edit
+   * menu reads a focused text field, so a selection the list made is never deleted by a Delete pressed on the page.
+   */
+  const readDesignedFields = useCallback(
+    () => (inFieldDesign || document.activeElement?.closest('.m-forms-panel') != null ? selectedPlaced : NO_PLACED),
+    [inFieldDesign, selectedPlaced],
+  );
+  /** A field's properties, in the Properties tab, shown even where the panel is a sheet. */
+  const showFieldProperties = useCallback((): void => {
+    settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'properties');
+    presence.show('end');
+  }, [presence, settings]);
   /**
    * THE FIELDS A GESTURE IS ABOUT TO ADD, selected once the list read at the version it produced holds them: the keys the
    * form had before, so what is new is what was not there. A copy and a new widget are appended to their page's walk, so
@@ -2306,10 +2306,14 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const fieldSelectionDeps = useMemo(
     () => ({
       selected: readDesignedFields,
-      onDelete: (fields: readonly PlacedField[]): void => {
+      onDelete: async (fields: readonly PlacedField[]): Promise<void> => {
+        // SEVERAL ARE ASKED ABOUT FIRST (the owner's D2); one goes at once, and Undo brings it back.
+        if (fields.length > 1 && !DELETE_FIELDS_RESULT.safeParse(await ask(DELETE_FIELDS_DIALOG_ID, { count: fields.length })).success) {
+          return;
+        }
         // ONE COMMAND PER PAGE, the writer's shape (`deleteFormFields` names one page's walk), sent in turn.
         const pages = [...new Set(fields.map((each) => each.field.page))];
-        void sendFieldCommandsInTurn(
+        await sendFieldCommandsInTurn(
           pages.map((page) => (version: DocVersion): DispatchableCommand => ({
             kind: 'deleteFormFields',
             page,
@@ -2322,7 +2326,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         sendFieldEdits(moved.map((each) => ({ field: each.field, set: { rect: each.rect } })));
       },
     }),
-    [readDesignedFields, sendFieldCommandsInTurn, sendFieldEdits],
+    [ask, readDesignedFields, sendFieldCommandsInTurn, sendFieldEdits],
   );
   const fieldDesign = useMemo(
     () =>
@@ -4656,19 +4660,25 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
             // Keyed on the version, and every control writes, so a row from a previous
             // version's walk would fill a field by arithmetic.
             forms: (
-              <FormsPanel
-                client={client}
-                docId={open.docId}
-                onDelete={deleteFormField}
-                onFill={fillFormField}
-                onFlatten={flattenActiveForm}
-                onJump={navigator.jumpTo}
-                onSelect={(page, index, mode, ordered) => {
-                  selectField(page, index, mode, ordered, true);
-                }}
-                selected={selectedFieldKeys}
-                version={open.version}
-              />
+              // THE FIELD MENU on a right-click in the list (the owner's D2): the same registered commands as *Edit
+              // fields*' menu, which read the selection the list made while the list has the focus. ALWAYS the field
+              // menu, never one chosen by the selection: the area renders a different tree with and without a menu, so
+              // switching on the selection remounted the list and took the focus from the row just clicked.
+              <ContextMenuArea context={context} menus={FIELD_MENU} registry={registry}>
+                <FormsPanel
+                  client={client}
+                  docId={open.docId}
+                  onFill={fillFormField}
+                  onFlatten={flattenActiveForm}
+                  onJump={navigator.jumpTo}
+                  onProperties={showFieldProperties}
+                  onSelect={(page, index, mode, ordered) => {
+                    selectField(page, index, mode, ordered, true);
+                  }}
+                  selected={selectedFieldKeys}
+                  version={open.version}
+                />
+              </ContextMenuArea>
             ),
             // Keyed on the version: its own toggle is a command that moves it.
             layers: (

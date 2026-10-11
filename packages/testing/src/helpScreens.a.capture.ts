@@ -596,12 +596,11 @@ test('delete-form-fields-1', async ({ page }) => {
     ],
   });
   await openDocument(page);
-  const panel = page.locator('.m-document-panel');
-  await panel.getByRole('tab', { name: 'Forms' }).click();
-  const remove = panel.getByRole('button', { name: 'Delete this field' }).first();
-  await expect(remove).toBeVisible();
-  // ITS TOOLTIP ON KEYBOARD FOCUS, standing in for the pointer the picture cannot keep.
-  await remove.focus();
-  await page.keyboard.press('Shift');
-  await shootAround(page, 'delete-form-fields-1', [panel.locator('li').first(), page.locator('.m-tooltip')], 8);
+  await openSection(page, 'Forms');
+  // EDIT FIELDS, the first field selected with its handles (ADR-0226 Decision 7).
+  await runCommand(page, 'Edit fields');
+  const box = page.locator('[data-field-box="0"]');
+  await box.click();
+  await expect(page.locator('[data-field-handle]')).toHaveCount(8);
+  await shootAround(page, 'delete-form-fields-1', [box], 24);
 });
