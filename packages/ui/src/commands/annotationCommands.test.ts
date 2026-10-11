@@ -8,6 +8,9 @@ import {
   GROUP_REDACT,
   GROUP_SHAPES,
   GROUP_STAMPS,
+  CALLOUT_TIP,
+  TEXT_BOX_TIP,
+  TYPEWRITER_TIP,
   TOAST_COPIED,
   WRITE_EDIT_COMMENT_LABEL,
   WRITE_REPLY_LABEL,
@@ -50,6 +53,9 @@ import {
   rectangleToolCommand,
   selectionPropertiesCommand,
   shapeToolCommands,
+  calloutToolCommand,
+  textBoxToolCommand,
+  typewriterToolCommand,
 } from './annotationCommands.js';
 
 /**
@@ -302,6 +308,30 @@ describe('rectangleToolCommand', () => {
     // SHAPES since the Comment ribbon took the owner's groups (2026-09-23).
     expect(built(undefined).command.placements).toStrictEqual([
       { surface: 'ribbon', section: 'comment', group: GROUP_SHAPES, order: 40, size: 'icon' },
+    ]);
+  });
+});
+
+describe('Text box and Typewriter: in the Edit tab and the Comment tab (K10, corrected by the owner 2026-10-11)', () => {
+  const tools = { activeTool: () => undefined, onSelect: () => undefined };
+  const sectionsOf = (command: ReturnType<typeof textBoxToolCommand>): string[] =>
+    command.placements.flatMap((placement) => (placement.surface === 'ribbon' ? [placement.section] : []));
+
+  it('each is placed in both tabs, and is ONE command there: a second placement, not a second wiring', () => {
+    for (const command of [textBoxToolCommand(tools), typewriterToolCommand(tools)]) {
+      expect(sectionsOf(command)).toStrictEqual(['comment', 'edit']);
+    }
+  });
+
+  it('CONTROL: Callout is in the Comment tab only, so the case above reads placements and not every tool', () => {
+    expect(sectionsOf(calloutToolCommand(tools))).toStrictEqual(['comment']);
+  });
+
+  it('each tooltip says what the tool makes (E3): a comment, not the page', () => {
+    expect([textBoxToolCommand(tools).tip, typewriterToolCommand(tools).tip, calloutToolCommand(tools).tip]).toStrictEqual([
+      TEXT_BOX_TIP,
+      TYPEWRITER_TIP,
+      CALLOUT_TIP,
     ]);
   });
 });

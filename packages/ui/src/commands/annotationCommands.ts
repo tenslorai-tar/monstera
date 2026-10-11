@@ -159,6 +159,9 @@ import {
   TOOL_STICKY_NOTE_TITLE,
   TOOL_TEXT_BOX_TITLE,
   TYPEWRITER_TOOL_TITLE,
+  TEXT_BOX_TIP,
+  TYPEWRITER_TIP,
+  CALLOUT_TIP,
   UNDERLINE_TOOL_TITLE,
 } from '../messages/en.js';
 import type { ObjectPick } from '../objectEditing.js';
@@ -442,7 +445,7 @@ export function redactToolCommand(deps: ToolCommandDeps): UiCommand {
  */
 export function textBoxToolCommand(deps: ToolCommandDeps): UiCommand {
   // AND ON EDIT › TEXT, beside Edit text: a text box is how new words are put on a page.
-  return alsoOn(toolCommand(TEXT_BOX_TOOL_ID, TOOL_TEXT_BOX_TITLE, 'TextCursorInput', 46, deps, MARKUP_SMALL), {
+  return alsoOn({ ...toolCommand(TEXT_BOX_TOOL_ID, TOOL_TEXT_BOX_TITLE, 'TextCursorInput', 46, deps, MARKUP_SMALL), tip: TEXT_BOX_TIP }, {
     surface: 'ribbon',
     section: 'edit',
     group: GROUP_TEXT,
@@ -552,7 +555,7 @@ export function strikeoutToolCommand(deps: ToolCommandDeps): UiCommand {
  * on never learns how many presses it takes.
  */
 export function calloutToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(CALLOUT_TOOL_ID, CALLOUT_TOOL_TITLE, 'MessageSquareQuote', 55, deps, MARKUP_SMALL);
+  return { ...toolCommand(CALLOUT_TOOL_ID, CALLOUT_TOOL_TITLE, 'MessageSquareQuote', 55, deps, MARKUP_SMALL), tip: CALLOUT_TIP };
 }
 
 /**
@@ -567,7 +570,7 @@ export function calloutToolCommand(deps: ToolCommandDeps): UiCommand {
  */
 export function typewriterToolCommand(deps: ToolCommandDeps): UiCommand {
   // AND ON EDIT › TEXT, where the record's D4 lists it too.
-  return alsoOn(toolCommand(TYPEWRITER_TOOL_ID, TYPEWRITER_TOOL_TITLE, 'Keyboard', 46.5, deps, MARKUP_SMALL), {
+  return alsoOn({ ...toolCommand(TYPEWRITER_TOOL_ID, TYPEWRITER_TOOL_TITLE, 'Keyboard', 46.5, deps, MARKUP_SMALL), tip: TYPEWRITER_TIP }, {
     surface: 'ribbon',
     section: 'edit',
     group: GROUP_TEXT,

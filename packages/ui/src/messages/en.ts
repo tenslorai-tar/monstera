@@ -1458,6 +1458,12 @@ export const FLAT_FIELDS_TRUNCATED = messageKey('dialog.flat-fields.truncated');
 export const DETECT_FIELDS_TIP = messageKey('command.forms.detect.tip');
 export const FLATTEN_FORM_TIP = messageKey('command.forms.flatten.tip');
 export const TAB_ORDER_TIP = messageKey('command.forms.tab-order.tip');
+// WHAT EACH WAY OF PUTTING WORDS ON A PAGE MAKES, one sentence each (the owner's text E3): the page's own text, or a comment.
+export const EDIT_TEXT_TIP = messageKey('command.edit.text.tip');
+export const ADD_TEXT_TIP = messageKey('command.edit.add-text.tip');
+export const TEXT_BOX_TIP = messageKey('command.comment.text-box.tip');
+export const TYPEWRITER_TIP = messageKey('command.comment.typewriter.tip');
+export const CALLOUT_TIP = messageKey('command.comment.callout.tip');
 // THE ORDER THE TAB KEY WALKS A FORM'S FIELDS (ADR-0193).
 export const TAB_ORDER_COMMAND_TITLE = messageKey('command.forms.tab-order.title');
 export const RIBBON_TAB_ORDER = messageKey('surface.ribbon.tab-order');
@@ -4142,6 +4148,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FLATTEN_FORM_TIP]:
     'Flatten turns the form into an ordinary page. Whatever is typed or ticked stays exactly as it looks, but nobody can change it any more. Use it before you send a final copy. You are asked first.',
   [TAB_ORDER_TIP]: 'Tab order: choose how the Tab key moves from field to field when someone fills in this form.',
+  [EDIT_TEXT_TIP]: 'Edit text: changes the words already on the page, in place, as part of the page.',
+  [ADD_TEXT_TIP]: 'Add text: types new words into the page itself, like the page’s own text.',
+  [TEXT_BOX_TIP]: 'Text box: a comment box with a border, on top of the page.',
+  [TYPEWRITER_TIP]: 'Typewriter: words typed on top of the page as a comment, with no box around them.',
+  [CALLOUT_TIP]: 'Callout: a comment box with a line pointing at the place it is about.',
   [TAB_ORDER_COMMAND_TITLE]: 'Tab order…',
   [RIBBON_TAB_ORDER]: 'Tab order',
   [TAB_ORDER_TITLE]: 'Tab order',
