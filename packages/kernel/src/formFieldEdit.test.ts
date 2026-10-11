@@ -1,3 +1,5 @@
+import { inflateSync } from 'node:zlib';
+
 import { PDFDict, PDFDocument, PDFName, PDFRawStream, PDFString } from '@cantoo/pdf-lib';
 import { describe, expect, it } from 'vitest';
 
@@ -436,6 +438,47 @@ describe('copying a field to one place, its own page allowed (ADR-0226 Decision 
     await expect(
       applyDuplicateFormField(original, { kind: 'duplicateFormField', field: handle, to: { kind: 'pages', pages: [0] }, version: VERSION }),
     ).rejects.toBeInstanceOf(RangeError);
+  });
+});
+
+describe('the text colour, typing in a dropdown, several in a list and spelling (E1)', () => {
+  it('writes the text colour into the default appearance, draws the field in it, and MuPDF reads it back', async () => {
+    const original = await buildFormTestPdf();
+    const handle = await handleOf(original, 'email');
+    // CONTROL: the fixture's text is black, so the colour read below is the edit's.
+    expect((await read(original, handle)).textColour).toStrictEqual([0, 0, 0]);
+    const edited = await applyEditFormFields(original, editing(handle, { textColour: [0.8, 0.1, 0.1] }));
+    const after = await read(await throughMupdf(edited), handle);
+    expect(after.textColour).toStrictEqual([0.8, 0.1, 0.1]);
+    // DRAWN IN IT: the appearance pdf-lib wrote sets that fill before the words.
+    // The stream is deflated, as pdf-lib writes it.
+    expect(inflateSync(new Uint8Array(await appearanceOf(edited, handle))).toString('latin1')).toMatch(/0\.8 0\.1 0\.1 rg/u);
+    // THE SIZE IS KEPT: the colour replaces the colour and nothing beside it.
+    expect(after.fontSize).toBe((await read(original, handle)).fontSize);
+  });
+
+  it('turns typing in a dropdown, several choices in a list, and spelling on and off, as MuPDF reads them', async () => {
+    const original = await buildFormTestPdf();
+    const region = await handleOf(original, 'region');
+    const interests = await handleOf(original, 'interests');
+    const email = await handleOf(original, 'email');
+    const before = { region: await read(original, region), interests: await read(original, interests), email: await read(original, email) };
+    const edited = await applyEditFormFields(original, {
+      kind: 'editFormFields',
+      edits: [
+        { field: region, set: { editable: !before.region.editable } },
+        { field: interests, set: { multiSelect: !before.interests.multiSelect } },
+        { field: email, set: { spellCheck: !before.email.spellCheck } },
+      ],
+      version: VERSION,
+    });
+    const reread = await throughMupdf(edited);
+    expect((await read(reread, region)).editable).toBe(!before.region.editable);
+    expect((await read(reread, interests)).multiSelect).toBe(!before.interests.multiSelect);
+    expect((await read(reread, email)).spellCheck).toBe(!before.email.spellCheck);
+    // CONTROL: a flag a field does not have is not set on it: a text field is never a list that takes several.
+    const ignored = await applyEditFormFields(original, editing(email, { multiSelect: true }));
+    expect((await read(await throughMupdf(ignored), email)).multiSelect).toBe(false);
   });
 });
 

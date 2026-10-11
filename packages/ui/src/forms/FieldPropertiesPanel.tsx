@@ -65,6 +65,11 @@ import {
   FIELD_PROPS_HEADING_ONE,
   FIELD_PROPS_LABEL,
   FIELD_PROPS_MULTILINE,
+  FIELD_PROPS_EDITABLE,
+  FIELD_PROPS_MULTI_SELECT,
+  FIELD_PROPS_SPELL_CHECK,
+  FIELD_PROPS_TEXT_COLOUR,
+  FIELD_PROPS_TEXT_COLOUR_BLACK,
   FIELD_PROPS_NAME,
   FIELD_PROPS_NEGATIVE,
   FIELD_PROPS_NEGATIVE_MINUS,
@@ -365,6 +370,15 @@ function Controls({
                   onEdit({ fontSize });
                 }}
               />
+              {/* THE TEXT'S COLOUR, its first choice *Black*, which is what a field naming none is drawn in. */}
+              <ColourRow
+                autoLabel={FIELD_PROPS_TEXT_COLOUR_BLACK}
+                label={FIELD_PROPS_TEXT_COLOUR}
+                colour={props.textColour}
+                onPick={(textColour) => {
+                  onEdit({ textColour: textColour ?? [0, 0, 0] });
+                }}
+              />
             </>
           ) : null}
         </Section>
@@ -412,6 +426,33 @@ function Controls({
               }}
             />
           </>
+        ) : null}
+        {props.kind === 'dropdown' ? (
+          <CheckRow
+            label={FIELD_PROPS_EDITABLE}
+            value={props.editable}
+            onChange={(editable) => {
+              onEdit({ editable });
+            }}
+          />
+        ) : null}
+        {props.kind === 'listbox' ? (
+          <CheckRow
+            label={FIELD_PROPS_MULTI_SELECT}
+            value={props.multiSelect}
+            onChange={(multiSelect) => {
+              onEdit({ multiSelect });
+            }}
+          />
+        ) : null}
+        {props.kind === 'text' || props.kind === 'dropdown' ? (
+          <CheckRow
+            label={FIELD_PROPS_SPELL_CHECK}
+            value={props.spellCheck}
+            onChange={(spellCheck) => {
+              onEdit({ spellCheck });
+            }}
+          />
         ) : null}
         {props.kind === 'button' ? (
           <TextRow
@@ -651,15 +692,20 @@ function NumberRow({
   );
 }
 
-/** A colour that may be none: the swatches, with *None* first. */
+/**
+ * A colour that may be none: the swatches, with *None* first — or, where the property cannot be none and a field naming
+ * none is drawn in a reader's own colour, that colour's word (`autoLabel`, *Black* for text).
+ */
 function ColourRow({
   label,
   colour,
   onPick,
+  autoLabel = FIELD_PROPS_COLOUR_NONE,
 }: {
   readonly label: MessageKey;
   readonly colour: AnnotationColour | null;
   readonly onPick: (colour: AnnotationColour | null) => void;
+  readonly autoLabel?: MessageKey;
 }): ReactElement {
   const { i18n } = useLingui();
   const labelId = useId();
@@ -672,7 +718,7 @@ function ColourRow({
         presets={FIELD_COLOURS}
         current={colour === null ? undefined : hexFromColour(colour)}
         auto={colour === null}
-        autoLabel={FIELD_PROPS_COLOUR_NONE}
+        autoLabel={autoLabel}
         customLabel={PROPERTIES_CUSTOM_COLOUR}
         fallback={FIELD_COLOUR_FALLBACK}
         onPick={(hex) => {

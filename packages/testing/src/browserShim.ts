@@ -2453,6 +2453,10 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
               masked: false,
               visibility: 'visible' as const,
               buttonLabel: null,
+              textColour: null,
+              editable: false,
+              multiSelect: false,
+              spellCheck: found.kind === 'text' || found.kind === 'dropdown',
               ...(options.fieldProperties?.[found.name] ?? {}),
             };
           }),

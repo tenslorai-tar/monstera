@@ -33,6 +33,7 @@ import {
   parseDefaultAppearance,
   parseFormat,
   withFontSize,
+  withTextColour,
 } from './fieldActions.js';
 import { type PageFrame, placeOnPage, rotationOf, seenAt } from './fieldPlacement.js';
 import { pageAt } from './pdfLibPages.js';
@@ -593,7 +594,8 @@ function changesLook(set: FormFieldProperties): boolean {
     set.alignment !== undefined ||
     set.comb !== undefined ||
     set.masked !== undefined ||
-    set.buttonLabel !== undefined
+    set.buttonLabel !== undefined ||
+    set.textColour !== undefined
   );
 }
 
@@ -665,6 +667,25 @@ export const applyEditFormFields: Apply<'pdf-lib', 'editFormFields'> = async (im
       field.acroField.setDefaultAppearance(withFontSize(field.acroField.getDefaultAppearance(), size));
       const own = widget.lookupMaybe(PDFName.of('DA'), PDFString);
       if (own !== undefined) widget.set(PDFName.of('DA'), PDFString.of(withFontSize(own.asString(), size)));
+    }
+    // THE TEXT'S COLOUR, in the default appearance at both levels a reader looks, as the size is: pdf-lib's appearance
+    // providers read the colour from there when the field is drawn again below.
+    if (set.textColour !== undefined) {
+      field.acroField.setDefaultAppearance(withTextColour(field.acroField.getDefaultAppearance(), set.textColour));
+      const own = widget.lookupMaybe(PDFName.of('DA'), PDFString);
+      if (own !== undefined) widget.set(PDFName.of('DA'), PDFString.of(withTextColour(own.asString(), set.textColour)));
+    }
+    if (set.editable !== undefined && field instanceof PDFDropdown) {
+      if (set.editable) field.enableEditing();
+      else field.disableEditing();
+    }
+    if (set.multiSelect !== undefined && field instanceof PDFOptionList) {
+      if (set.multiSelect) field.enableMultiselect();
+      else field.disableMultiselect();
+    }
+    if (set.spellCheck !== undefined && (field instanceof PDFTextField || field instanceof PDFDropdown)) {
+      if (set.spellCheck) field.enableSpellChecking();
+      else field.disableSpellChecking();
     }
     if (set.borderColour !== undefined) setCharacteristic(widget, 'BC', set.borderColour);
     if (set.fillColour !== undefined) setCharacteristic(widget, 'BG', set.fillColour);

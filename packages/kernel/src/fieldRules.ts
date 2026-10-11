@@ -21,6 +21,7 @@ const FLAG = {
   password: 1 << 13,
   edit: 1 << 18,
   multiSelect: 1 << 21,
+  doNotSpellCheck: 1 << 22,
   comb: 1 << 24,
 } as const;
 
@@ -82,6 +83,8 @@ export interface FieldRules {
   readonly multiSelect: boolean;
   /** A dropdown that also takes typing. */
   readonly editable: boolean;
+  /** Whether a reader checks the spelling of what is typed: a text field or a dropdown without `DoNotSpellCheck`. */
+  readonly spellCheck: boolean;
   /** The format this application can read, or `null`; a script it cannot read is not one, and `customFormat` says so. */
   readonly format: FieldFormat | null;
   readonly customFormat: boolean;
@@ -110,6 +113,7 @@ export function fieldRulesOf(widget: PDFWidget): FieldRules {
     masked: text && (bits & FLAG.password) !== 0,
     multiSelect: choice && widget.isListBox() && (bits & FLAG.multiSelect) !== 0,
     editable: choice && widget.isComboBox() && (bits & FLAG.edit) !== 0,
+    spellCheck: (text || (choice && widget.isComboBox())) && (bits & FLAG.doNotSpellCheck) === 0,
     format,
     customFormat: formatScript !== undefined && format === null,
     calculation,

@@ -1759,6 +1759,11 @@ export const FIELD_PROPS_ALIGNMENT_RIGHT = messageKey('surface.field-properties.
 export const FIELD_PROPS_MAX_LENGTH = messageKey('surface.field-properties.max-length');
 export const FIELD_PROPS_COMB = messageKey('surface.field-properties.comb');
 export const FIELD_PROPS_MASKED = messageKey('surface.field-properties.masked');
+export const FIELD_PROPS_EDITABLE = messageKey('surface.field-properties.editable');
+export const FIELD_PROPS_MULTI_SELECT = messageKey('surface.field-properties.multi-select');
+export const FIELD_PROPS_SPELL_CHECK = messageKey('surface.field-properties.spell-check');
+export const FIELD_PROPS_TEXT_COLOUR = messageKey('surface.field-properties.text-colour');
+export const FIELD_PROPS_TEXT_COLOUR_BLACK = messageKey('surface.field-properties.text-colour.black');
 export const FIELD_PROPS_BUTTON_LABEL = messageKey('surface.field-properties.button-label');
 export const FIELD_PROPS_GROUP_NAME = messageKey('surface.field-properties.group-name');
 export const FIELD_PROPS_RADIO_VALUES = messageKey('surface.field-properties.radio-values');
@@ -4700,6 +4705,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FIELD_PROPS_MAX_LENGTH]: 'Most characters (0 for no limit)',
   [FIELD_PROPS_COMB]: 'One character per box',
   [FIELD_PROPS_MASKED]: 'Hide what is typed (password)',
+  [FIELD_PROPS_EDITABLE]: 'Allow typing',
+  [FIELD_PROPS_MULTI_SELECT]: 'Allow several',
+  [FIELD_PROPS_SPELL_CHECK]: 'Check spelling',
+  [FIELD_PROPS_TEXT_COLOUR]: 'Text colour',
+  [FIELD_PROPS_TEXT_COLOUR_BLACK]: 'Black',
   [FIELD_PROPS_BUTTON_LABEL]: 'Words on the button',
   [FIELD_PROPS_GROUP_NAME]: 'Group name',
   [FIELD_PROPS_RADIO_VALUES]: 'Each option’s value, one per line, in the order the options sit',

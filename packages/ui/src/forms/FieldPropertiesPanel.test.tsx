@@ -67,6 +67,10 @@ const TEXT: FormFieldRead = {
   masked: false,
   visibility: 'visible',
   buttonLabel: null,
+  textColour: null,
+  editable: false,
+  multiSelect: false,
+  spellCheck: true,
 };
 
 const handleOf = (field: FormFieldRead): FormFieldHandle => ({ page: field.page, index: field.index, name: field.name });
@@ -133,6 +137,22 @@ describe('the field properties pane', () => {
     fireEvent.change(box, { target: { value: '' } });
     fireEvent.blur(box);
     expect(seen.edits).toStrictEqual([{ tooltip: null }]);
+  });
+
+  it('offers Allow typing on a dropdown, Allow several on a list, Check spelling on both text kinds, and sends each as ticked', async () => {
+    const dropdown: FormFieldRead = { ...TEXT, kind: 'dropdown', name: 'region', options: ['North', 'South'] };
+    const seen = mounted(dropdown);
+    fireEvent.click(await screen.findByLabelText('Allow typing'));
+    fireEvent.click(screen.getByLabelText('Check spelling'));
+    // CONTROL: a dropdown is not a list, so it is not offered several.
+    expect(screen.queryByLabelText('Allow several')).toBeNull();
+    expect(seen.edits).toStrictEqual([{ editable: true }, { spellCheck: false }]);
+    cleanup();
+    const list = mounted({ ...TEXT, kind: 'listbox', name: 'interests', options: ['Music'] });
+    fireEvent.click(await screen.findByLabelText('Allow several'));
+    expect(screen.queryByLabelText('Allow typing')).toBeNull();
+    expect(screen.queryByLabelText('Check spelling')).toBeNull();
+    expect(list.edits).toStrictEqual([{ multiSelect: true }]);
   });
 
   it('sends Required and Read only as each is ticked', async () => {

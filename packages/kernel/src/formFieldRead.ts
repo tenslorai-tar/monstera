@@ -3,7 +3,7 @@ import type { AnnotationColour, FieldChoice, FormFieldHandle, FormFieldRead } fr
 import type { PDFDocument, PDFObject, PDFWidget } from './mupdfRaw.js';
 
 import type { MupdfSession } from './engineSeam.js';
-import { faceOfFont, parseDefaultAppearance } from './fieldActions.js';
+import { faceOfFont, parseDefaultAppearance, textColourOf } from './fieldActions.js';
 import { fieldRulesOf, nearest, qualifiedNameOf } from './fieldRules.js';
 import { kindOf, onStateKeyOf } from './formFields.js';
 import { withDocument } from './mupdfWriter.js';
@@ -150,6 +150,10 @@ function readOne(document: PDFDocument, widget: PDFWidget, page: number, index: 
     masked: rules.masked,
     visibility: visibilityOf(object.get('F')),
     buttonLabel: kind === 'button' ? textOf(object.get('MK', 'CA'))?.slice(0, MAX_FIELD_OPTION) ?? null : null,
+    textColour: textColourOf(da),
+    editable: rules.editable,
+    multiSelect: rules.multiSelect,
+    spellCheck: rules.spellCheck,
   };
 }
 

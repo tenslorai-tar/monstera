@@ -64,6 +64,41 @@ export function withFontSize(da: string | undefined, size: number): string {
 }
 
 /**
+ * `/DA`'s colour operator: one, three or four numbers and `g`, `rg` or `k`. pdf-lib's appearance providers read the LAST
+ * one, so this reads and replaces the last one too, and a default appearance carries the same colour for both.
+ */
+const COLOUR = /(\d*\.\d+|\d+)(?:[\0\t\n\f\r ]+(\d*\.\d+|\d+))?(?:[\0\t\n\f\r ]+(\d*\.\d+|\d+))?(?:[\0\t\n\f\r ]+(\d*\.\d+|\d+))?[\0\t\n\f\r ]+(g|rg|k)(?![^\0\t\n\f\r ])/gu;
+
+/** The last colour operator in a default appearance, where it is and what it says, or `undefined` for none. */
+function lastColour(da: string): { readonly at: number; readonly length: number; readonly parts: readonly number[]; readonly space: string } | undefined {
+  let found: { at: number; length: number; parts: number[]; space: string } | undefined;
+  for (const match of da.matchAll(COLOUR)) {
+    const parts = [match[1], match[2], match[3], match[4]].filter((part): part is string => part !== undefined).map(Number);
+    found = { at: match.index, length: match[0].length, parts, space: match[5] ?? 'g' };
+  }
+  return found;
+}
+
+/** The colour a field's text is drawn in, from its default appearance, as RGB; `null` where it names none (black). */
+export function textColourOf(da: string | undefined): [number, number, number] | null {
+  const colour = da === undefined ? undefined : lastColour(da);
+  if (colour === undefined) return null;
+  const [a = 0, b = 0, c = 0, d = 0] = colour.parts.map((part) => Math.min(1, Math.max(0, part)));
+  if (colour.space === 'g') return [a, a, a];
+  if (colour.space === 'rg') return [a, b, c];
+  return [(1 - a) * (1 - d), (1 - b) * (1 - d), (1 - c) * (1 - d)];
+}
+
+/** A default appearance whose text colour is `colour`, keeping the face, the size and everything else it says. */
+export function withTextColour(da: string | undefined, colour: readonly [number, number, number]): string {
+  const current = da ?? '/Helv 0 Tf 0 g';
+  const operator = `${colour.map((part) => String(Math.round(part * 1000) / 1000)).join(' ')} rg`;
+  const found = lastColour(current);
+  if (found === undefined) return `${current} ${operator}`.trim();
+  return `${current.slice(0, found.at)}${operator}${current.slice(found.at + found.length)}`;
+}
+
+/**
  * Which of the standard three a font is: by its `/BaseFont`, or by the resource name where the file names no font.
  * Anything else is read as Helvetica, which is what a reader falls back to.
  */

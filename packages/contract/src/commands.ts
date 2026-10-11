@@ -5094,6 +5094,14 @@ export const formFieldPropertiesSchema = z
     visibility: z.enum(FIELD_VISIBILITIES),
     /** The words on a push button (`/MK /CA`). */
     buttonLabel: z.string().min(1).max(MAX_FIELD_OPTION),
+    /** The colour the field's text is drawn in, written into its default appearance (`/DA`). */
+    textColour: annotationColourSchema,
+    /** Whether a dropdown also takes words typed into it (`/Ff` bit 19, Edit). */
+    editable: z.boolean(),
+    /** Whether a list takes several choices at once (`/Ff` bit 22, MultiSelect). */
+    multiSelect: z.boolean(),
+    /** Whether a reader checks the spelling of what is typed (`/Ff` bit 23, DoNotSpellCheck, read the other way). */
+    spellCheck: z.boolean(),
   })
   .partial()
   .strict();
@@ -5166,6 +5174,11 @@ export const formFieldReadSchema = z
     visibility: z.enum(FIELD_VISIBILITIES),
     /** A push button's words, or `null` for a field that is not one or a button with none. */
     buttonLabel: z.string().max(MAX_FIELD_OPTION).nullable(),
+    /** The text's colour from the default appearance, or `null` where it names none (a reader draws black). */
+    textColour: annotationColourSchema.nullable(),
+    editable: z.boolean(),
+    multiSelect: z.boolean(),
+    spellCheck: z.boolean(),
   })
   .strict();
 
