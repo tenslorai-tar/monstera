@@ -1714,6 +1714,15 @@ export const FORM_FIELD_DATE_TOOL_TITLE = messageKey('command.forms.field-date')
 export const FORM_FIELD_BUTTON_TIP = messageKey('command.forms.field-button.tip');
 export const FORM_FIELD_SIGNATURE_TIP = messageKey('command.forms.field-signature.tip');
 export const FORM_FIELD_DATE_TIP = messageKey('command.forms.field-date.tip');
+/** *Edit fields* (ADR-0226 Decision 7): the mode, its page layer, and what it offers on a field. */
+export const EDIT_FIELDS_TITLE = messageKey('command.forms.edit-fields');
+export const EDIT_FIELDS_TIP = messageKey('command.forms.edit-fields.tip');
+export const RIBBON_EDIT_FIELDS = messageKey('ribbon.edit-fields');
+export const HINT_EDIT_FIELDS = messageKey('tool.hint.edit-fields');
+export const FIELD_DESIGN_LAYER_LABEL = messageKey('surface.field-design.layer');
+export const FIELD_DESIGN_BOX = messageKey('surface.field-design.box');
+export const FIELD_DUPLICATE_TITLE = messageKey('command.forms.duplicate-field');
+export const FIELD_PROPERTIES_TITLE = messageKey('command.forms.field-properties');
 export const FORM_FIELD_NAME_EMPTY = messageKey('dialog.form-field.name-empty');
 export const FORM_FIELD_NAME_TOO_LONG = messageKey('dialog.form-field.name-too-long');
 export const FORM_FIELD_NAME_SEGMENT = messageKey('dialog.form-field.name-segment');
@@ -4594,6 +4603,15 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [HINT_HAND]: 'Drag to slide the page around.',
   [HINT_EDIT_TEXT]: 'Click a block of words and start changing them.',
   [HINT_EDIT_OBJECTS]: 'Click an object to pick it, then drag it where you like.',
+  [HINT_EDIT_FIELDS]: 'Click a field to select it, drag it to move it, or drag a handle to resize it.',
+  [EDIT_FIELDS_TITLE]: 'Edit fields',
+  [EDIT_FIELDS_TIP]:
+    'Edit fields: select, move and resize the form’s fields, and copy, paste or delete them. Press Esc to go back to filling the form.',
+  [RIBBON_EDIT_FIELDS]: 'Edit fields',
+  [FIELD_DESIGN_LAYER_LABEL]: 'Form fields on page {page}',
+  [FIELD_DESIGN_BOX]: 'Field {name}',
+  [FIELD_DUPLICATE_TITLE]: 'Duplicate field',
+  [FIELD_PROPERTIES_TITLE]: 'Field properties',
   [SNAPSHOT_TOOL_TITLE]: 'Snapshot a region',
   [PLACE_IMAGE_TOOL_TITLE]: 'Place an image',
   // SAYS WHAT THE DRAG PRODUCES. "OCR region" is the row's name and means nothing

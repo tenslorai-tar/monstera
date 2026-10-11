@@ -219,6 +219,8 @@ describe('pasteAnnotationsCommand — main mints the import from the clipboard i
         deleteMarks: idle,
         pasteMarks: command,
         selectAllMarks: idle,
+        copyFields: idle,
+        pasteFields: idle,
       }),
     ]);
     const map = shortcutsFor(registry);

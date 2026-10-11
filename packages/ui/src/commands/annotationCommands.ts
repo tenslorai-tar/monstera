@@ -11,6 +11,7 @@ import {
 } from '../annotations/shapeTools.js';
 import { CALLOUT_TOOL_ID } from '../annotations/calloutTool.js';
 import { ERASER_TOOL_ID } from '../annotations/eraserTool.js';
+import type { PlacedField } from '../forms/arrange.js';
 import {
   FORM_FIELD_BUTTON_TOOL_ID,
   FORM_FIELD_CHECKBOX_TOOL_ID,
@@ -653,7 +654,11 @@ function alsoOnThePill(command: UiCommand, order: number): UiCommand {
  * selection does nothing because there is nothing registered, not because a
  * handler decided to return early.
  */
-export function deleteSelectionCommand(deps: SelectionCommandDeps, objects: ObjectSelectionDeps): UiCommand {
+export function deleteSelectionCommand(
+  deps: SelectionCommandDeps,
+  objects: ObjectSelectionDeps,
+  fields: FieldSelectionDeps,
+): UiCommand {
   return {
     id: 'annotate.delete-selection',
     feedback: VISIBLE,
@@ -666,13 +671,20 @@ export function deleteSelectionCommand(deps: SelectionCommandDeps, objects: Obje
     placements: [
       { surface: 'context-menu', context: 'annotation', order: 50 },
       { surface: 'context-menu', context: 'object', order: 50 },
+      // AND LAST IN THE FIELD MENU (ADR-0226 Decision 7).
+      { surface: 'context-menu', context: 'field', order: 50 },
       { surface: 'properties', order: 20 },
     ],
     shortcut: 'Delete',
-    when: () => deps.selection() !== undefined || objects.picked() !== undefined,
+    when: () => deps.selection() !== undefined || objects.picked() !== undefined || fields.selected().length > 0,
     run: (): void => {
-      // ONE DELETE FOR EITHER SELECTION (ADR-0153 Decision 5): the tool slot holds one of the two at a time, so
-      // there is never both — and a second command claiming the key would be refused by the shortcut map.
+      // ONE DELETE FOR EVERY SELECTION (ADR-0153 Decision 5): the tool slot holds one mode at a time, so there is never
+      // two — and a second command claiming the key would be refused by the shortcut map.
+      const chosen = fields.selected();
+      if (chosen.length > 0) {
+        fields.onDelete(chosen);
+        return;
+      }
       const picked = objects.picked();
       if (picked !== undefined) {
         objects.onRemove(picked);
@@ -683,6 +695,19 @@ export function deleteSelectionCommand(deps: SelectionCommandDeps, objects: Obje
       deps.onDelete(selection);
     },
   };
+}
+
+/**
+ * What the commands that act on a selection read of *Edit fields*' (ADR-0226 Decision 7): the selected fields with their
+ * places, only while the mode is on, so outside it these commands never take the key for a field selection the Fields
+ * list made.
+ */
+export interface FieldSelectionDeps {
+  readonly selected: () => readonly PlacedField[];
+  /** Removes them, by the writer of record (MuPDF's `deleteFormFields`). */
+  readonly onDelete: (fields: readonly PlacedField[]) => void;
+  /** Sends their new places as one `editFormFields`. */
+  readonly onPlace: (moved: readonly PlacedField[]) => void;
 }
 
 /** What the commands that act on a selection read of Edit object's (ADR-0153 Decision 5). */
@@ -1056,6 +1081,7 @@ export function nudgeSelectionCommand(
   direction: keyof typeof NUDGES,
   far: boolean,
   deps: SelectionCommandDeps,
+  fields: FieldSelectionDeps,
 ): UiCommand {
   const [dx, dy] = NUDGES[direction];
   const step = far ? NUDGE_FAR : NUDGE;
@@ -1073,8 +1099,24 @@ export function nudgeSelectionCommand(
     // WITHOUT A SELECTION THE ARROWS ARE NOT REGISTERED AT ALL, which is what
     // keeps them from taking the key away from the scroller. A handler that
     // returned early would still have swallowed the press.
-    when: () => deps.selection() !== undefined,
+    when: () => deps.selection() !== undefined || fields.selected().length > 0,
     run: (): void => {
+      // THE FIELDS *EDIT FIELDS* HAS SELECTED, a point (or ten) along the page's own axes, as one command.
+      const chosen = fields.selected();
+      if (chosen.length > 0) {
+        fields.onPlace(
+          chosen.map((each) => ({
+            field: each.field,
+            rect: {
+              x0: each.rect.x0 + dx * step,
+              y0: each.rect.y0 + dy * step,
+              x1: each.rect.x1 + dx * step,
+              y1: each.rect.y1 + dy * step,
+            },
+          })),
+        );
+        return;
+      }
       const selection = deps.selection();
       if (selection === undefined) return;
       deps.onPlace({
@@ -1096,10 +1138,10 @@ export function nudgeSelectionCommand(
 }
 
 /** All eight nudges, so the composition root names the set once. */
-export function nudgeSelectionCommands(deps: SelectionCommandDeps): readonly UiCommand[] {
+export function nudgeSelectionCommands(deps: SelectionCommandDeps, fields: FieldSelectionDeps): readonly UiCommand[] {
   return (Object.keys(NUDGES) as (keyof typeof NUDGES)[]).flatMap((direction) => [
-    nudgeSelectionCommand(direction, false, deps),
-    nudgeSelectionCommand(direction, true, deps),
+    nudgeSelectionCommand(direction, false, deps, fields),
+    nudgeSelectionCommand(direction, true, deps, fields),
   ]);
 }
 

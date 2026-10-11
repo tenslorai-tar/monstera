@@ -3948,7 +3948,11 @@ export function tabOrderCommand(deps: DocumentCommandDeps & WritesAFile): UiComm
     title: TAB_ORDER_COMMAND_TITLE,
     ribbonTitle: RIBBON_TAB_ORDER,
     tip: TAB_ORDER_TIP,
-    placements: [{ surface: 'ribbon', section: 'forms', group: GROUP_MANAGE, order: 84 }],
+    // AND IN *EDIT FIELDS*' MENU, after arranging (ADR-0226 Decision 7).
+    placements: [
+      { surface: 'ribbon', section: 'forms', group: GROUP_MANAGE, order: 84 },
+      { surface: 'context-menu', context: 'field', order: 45 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;

@@ -48,8 +48,11 @@ export const SECTION_IDS = ['home', 'organize', 'edit', 'comment', 'forms', 'pro
  */
 export type StartScreenSlot = 'primary' | 'shortcut' | 'footer';
 
-/** Where a context menu was opened. §7's five contexts; `object` is Edit object's selected object (ADR-0153). */
-export type MenuContext = 'page' | 'annotation' | 'selection' | 'tab' | 'object';
+/**
+ * Where a context menu was opened. §7's five contexts; `object` is Edit object's selected object (ADR-0153), and `field`
+ * the fields *Edit fields* has selected (ADR-0226 Decision 7).
+ */
+export type MenuContext = 'page' | 'annotation' | 'selection' | 'tab' | 'object' | 'field';
 
 /** How a ribbon placement is drawn (ADR-0194). */
 export type RibbonSize = 'large' | 'small' | 'icon';

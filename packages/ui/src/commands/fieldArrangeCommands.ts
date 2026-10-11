@@ -75,7 +75,10 @@ export function copyFieldToPagesCommand(deps: FieldCopyDeps): UiCommand {
     feedback: VISIBLE,
     title: FIELD_COPY_COMMAND_TITLE,
     icon: 'CopyPlus',
-    placements: [{ surface: 'properties', order: 20 }],
+    placements: [
+      { surface: 'properties', order: 20 },
+      { surface: 'context-menu', context: 'field', order: 25 },
+    ],
     when: (context) => {
       const chosen = deps.single();
       return chosen !== undefined && chosen.kind !== 'radio' && chosen.kind !== 'signature' && (context.pageCount ?? 0) > 1;
@@ -101,7 +104,11 @@ export function fieldArrangeCommands(deps: FieldArrangeDeps): readonly UiCommand
       icon,
       // AFTER A MARK'S OWN FOOT (Reply 10, Delete 20): fields and marks are never selected together, and the order keeps
       // the nine in the table's.
-      placements: [{ surface: 'properties', order: 30 + at }],
+      // AND IN *EDIT FIELDS*' MENU, in the same order (ADR-0226 Decision 7).
+      placements: [
+        { surface: 'properties', order: 30 + at },
+        { surface: 'context-menu', context: 'field', order: 30 + at },
+      ],
       when: () => deps.placed().length >= 2,
       run: (): void => {
         const moved = arrange(kind, deps.placed());

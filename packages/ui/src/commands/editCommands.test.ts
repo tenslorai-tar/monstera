@@ -38,6 +38,9 @@ function harness(options: {
   readonly pasteable?: boolean;
   readonly markable?: boolean;
   readonly copyWorks?: boolean;
+  /** Fields selected in *Edit fields*, and fields copied there. */
+  readonly fields?: boolean;
+  readonly fieldsPasteable?: boolean;
 }): { readonly byId: (id: string) => UiCommand; readonly calls: string[] } {
   const calls: string[] = [];
   const deps: EditDeps = {
@@ -52,6 +55,8 @@ function harness(options: {
     deleteMarks: page('annotate.delete-selection', calls, () => options.marks === true),
     pasteMarks: page('annotate.paste', calls, () => options.pasteable === true),
     selectAllMarks: page('annotate.select-all', calls, () => options.markable === true),
+    copyFields: page('forms.copy-fields', calls, () => options.fields === true),
+    pasteFields: page('forms.paste-fields', calls, () => options.fieldsPasteable === true),
   };
   const commands = editCommands(deps);
   const byId = (id: string): UiCommand => {
@@ -109,6 +114,19 @@ describe('the Edit menu’s verbs, on the PAGE', () => {
     const marksOnly = harness({ marks: true });
     await marksOnly.byId('edit.copy').run(CONTEXT);
     expect(marksOnly.calls).toStrictEqual(['annotate.copy-selection']);
+  });
+
+  it('the FIELDS Edit fields has selected come before the page’s text and marks, for Copy, Cut and Paste (ADR-0226)', async () => {
+    const { byId, calls } = harness({ fields: true, fieldsPasteable: true, text: true, marks: true, pasteable: true });
+    await byId('edit.copy').run(CONTEXT);
+    await byId('edit.cut').run(CONTEXT);
+    await byId('edit.paste').run(CONTEXT);
+    expect(calls).toStrictEqual(['forms.copy-fields', 'forms.copy-fields', 'annotate.delete-selection', 'forms.paste-fields']);
+    // CONTROL: with no field selected or copied, the page's own halves answer as before.
+    const page = harness({ text: true, pasteable: true });
+    await page.byId('edit.copy').run(CONTEXT);
+    await page.byId('edit.paste').run(CONTEXT);
+    expect(page.calls).toStrictEqual(['text.copy', 'annotate.paste']);
   });
 
   it('Cut is COPY THEN DELETE, and runs nothing through the browser', async () => {

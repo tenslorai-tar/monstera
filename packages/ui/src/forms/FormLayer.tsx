@@ -1,6 +1,6 @@
 import { useLingui } from '@lingui/react';
 import type { FieldFill } from '@monstera/contract';
-import { type CSSProperties, type MouseEvent, type PointerEvent, type ReactElement, useEffect, useId, useRef, useState } from 'react';
+import { type CSSProperties, type ReactElement, useEffect, useId, useRef, useState } from 'react';
 
 import { type OverlayPage, pdfRectOnScreen } from '../annotations/annotationSpace.js';
 import { FORM_BUTTON_NO_SCRIPTS, FORM_FIELD_FILL_IN, FORM_FIELD_PRESS } from '../messages/en.js';
@@ -9,15 +9,9 @@ import { ChoiceOptions, FieldTextBox } from './FieldControls.js';
 import { type FieldProblem, leftFieldProblem, storedText } from './fieldCheck.js';
 import { fieldPressArea } from './fieldHoles.js';
 import { type FillOffer, type ListedField, fieldFill } from './fieldFill.js';
-import { type SelectMode, modeOf } from './fieldSelection.js';
 
 /** No place on the page is selected. */
 const NO_SELECTION: ReadonlySet<number> = new Set();
-
-/** Whether a press carries a modifier that extends a selection rather than acts on the field. */
-function modified(event: MouseEvent): boolean {
-  return modeOf(event) !== 'replace';
-}
 
 /** The text field being typed in: its place in the walk, and where the press that opened it landed, if a press did. */
 interface Typing {
@@ -85,7 +79,6 @@ export function FormLayer({
   onFill,
   selected = NO_SELECTION,
   reveal,
-  onSelect,
   comments,
   focus,
   onFocused,
@@ -100,8 +93,6 @@ export function FormLayer({
   readonly selected?: ReadonlySet<number>;
   /** A request to bring one selected field into view, stamped so asking twice scrolls twice. */
   readonly reveal?: { readonly index: number; readonly stamp: number } | undefined;
-  /** A press on a field's control selects it, the way a click on its row in the Fields list does. */
-  readonly onSelect?: ((index: number, mode: SelectMode) => void) | undefined;
   /**
    * The comments on this page while a tool that picks is on (ADR-0226 Decision 1): the layer is then above that tool's
    * surface, and a press on a comment over a field is the tool's, so each comment is taken out of the field's press
@@ -234,9 +225,9 @@ export function FormLayer({
         const tell = (next: FieldProblem | undefined): void => {
           setProblem(next === undefined ? undefined : { index: field.index, said: next });
         };
-        const pressed = (event: PointerEvent): void => {
+        // A PRESS ONLY FILLS (ADR-0226 Decision 7): selecting a field is *Edit fields*' and the Fields list's.
+        const pressed = (): void => {
           if (problem !== undefined && problem.index !== field.index) setProblem(undefined);
-          onSelect?.(field.index, modeOf(event));
         };
 
         if (offer.kind === 'button') {
@@ -268,9 +259,7 @@ export function FormLayer({
               aria-checked={offer.on}
               aria-label={field.name}
               className={look}
-              onClick={(event) => {
-                // CTRL AND SHIFT EXTEND THE SELECTION and fill nothing, as they do in the list.
-                if (modified(event)) return;
+              onClick={() => {
                 // A RADIO'S CHOSEN OPTION CLEARS on a press, the panel's rule: a PDF group deselects when its lit
                 // widget is toggled (measured), so an option that could not be cleared would hide a state it allows.
                 fill({ set: 'button', on: !offer.on });
@@ -353,7 +342,6 @@ export function FormLayer({
               aria-label={i18n._(FORM_FIELD_FILL_IN, { name: field.name })}
               className={`${look} m-page-field--text`}
               onClick={(event) => {
-                if (modified(event)) return;
                 setTyping({ index: field.index, pressedAt: event.detail === 0 ? undefined : { x: event.clientX, y: event.clientY } });
               }}
               onPointerDown={pressed}
@@ -431,7 +419,6 @@ export function FormLayer({
             aria-label={i18n._(FORM_FIELD_FILL_IN, { name: field.name })}
             className={`${look} m-page-field--text`}
             onClick={(event) => {
-              if (modified(event)) return;
               // A PRESS OPENS THE BOX WITH THE CARET WHERE IT LANDED; a keyboard's Enter or Space on the control is a
               // click with no place (`detail` 0), and opens it with the words selected, as Tab does.
               setTyping({ index: field.index, pressedAt: event.detail === 0 ? undefined : { x: event.clientX, y: event.clientY } });

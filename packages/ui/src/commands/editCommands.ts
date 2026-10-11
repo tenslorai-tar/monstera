@@ -44,6 +44,12 @@ export interface EditDeps {
   readonly deleteMarks: UiCommand;
   readonly pasteMarks: UiCommand;
   readonly selectAllMarks: UiCommand;
+  /**
+   * *Edit fields*' halves (ADR-0226 Decision 7): copying the selected fields and pasting copied ones. Asked after a text
+   * field and before the page's text and marks, since while the mode is on the fields are what is selected on the page.
+   */
+  readonly copyFields: UiCommand;
+  readonly pasteFields: UiCommand;
 }
 
 /** Whether a field has text selected in it — what *Cut* and *Copy* in a field need. */
@@ -74,12 +80,19 @@ export function editCommands(deps: EditDeps): readonly UiCommand[] {
     placements: [{ surface: 'menu-bar', menu: 'edit', group: 1, order: 10 }],
     when: (context) => {
       const field = deps.field();
-      return field === undefined ? can(deps.copyMarks, context) && can(deps.deleteMarks, context) : selectsText(field);
+      if (field !== undefined) return selectsText(field);
+      return (can(deps.copyFields, context) || can(deps.copyMarks, context)) && can(deps.deleteMarks, context);
     },
     run: async (context): Promise<void> => {
       const field = deps.field();
       if (field !== undefined) {
         inField(deps, field, 'cut');
+        return;
+      }
+      // FIELDS ARE HELD IN THIS WINDOW, so their copy cannot fail the way a mark's trip to main can.
+      if (can(deps.copyFields, context)) {
+        await deps.copyFields.run(context);
+        await deps.deleteMarks.run(context);
         return;
       }
       if (await deps.copyMarksFor(context)) await deps.deleteMarks.run(context);
@@ -101,12 +114,16 @@ export function editCommands(deps: EditDeps): readonly UiCommand[] {
     when: (context) => {
       const field = deps.field();
       if (field !== undefined) return selectsText(field);
-      return can(deps.copyText, context) || can(deps.copyMarks, context);
+      return can(deps.copyFields, context) || can(deps.copyText, context) || can(deps.copyMarks, context);
     },
     run: async (context): Promise<void> => {
       const field = deps.field();
       if (field !== undefined) {
         inField(deps, field, 'copy');
+        return;
+      }
+      if (can(deps.copyFields, context)) {
+        await deps.copyFields.run(context);
         return;
       }
       // THE PAGE'S TEXT FIRST: text selected on the page is what a person just did, and a mark selection lasts only
@@ -123,14 +140,15 @@ export function editCommands(deps: EditDeps): readonly UiCommand[] {
     placements: [{ surface: 'menu-bar', menu: 'edit', group: 1, order: 30 }],
     // A FIELD IS ALWAYS PASTABLE: the renderer may not read the clipboard (§2), so whether it holds text is not known
     // here, and pasting nothing into a field changes nothing.
-    when: (context) => deps.field() !== undefined || can(deps.pasteMarks, context),
+    when: (context) => deps.field() !== undefined || can(deps.pasteFields, context) || can(deps.pasteMarks, context),
     run: async (context): Promise<void> => {
       const field = deps.field();
       if (field !== undefined) {
         inField(deps, field, 'paste');
         return;
       }
-      await deps.pasteMarks.run(context);
+      // FIELDS FIRST WHILE THEY CAN BE PASTED: that is only while *Edit fields* is on, where the page is the form's.
+      await (can(deps.pasteFields, context) ? deps.pasteFields : deps.pasteMarks).run(context);
     },
   };
   const selectAll: UiCommand = {

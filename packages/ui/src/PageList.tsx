@@ -19,11 +19,12 @@ import type { AnnotationSelection } from './annotations/selectTool.js';
 import { SelectionLayer } from './SelectionLayer.js';
 import { type TextEditing, TextEditPage } from './TextEditLayer.js';
 import { type ObjectEditing, ObjectEditPage } from './ObjectEditLayer.js';
+import { type FieldEditing, FieldDesignLayer } from './forms/FieldDesignLayer.js';
 import { InlineWriter } from './InlineWriter.js';
 import type { Draft, WriteRequest } from './pageWriting.js';
 
 /** What a press on the page edits, when a mode rather than a drawing tool holds the tool slot. */
-export type PageEditing = TextEditing | ObjectEditing;
+export type PageEditing = TextEditing | ObjectEditing | FieldEditing;
 
 /** The one pending request for words on a page, its draft, and where its answer goes (ADR-0154). */
 export interface PageWriting {
@@ -46,12 +47,12 @@ const ON_PAPER: readonly string[] = ['--page'];
 const NO_MARKS: readonly DifferenceMark[] = [];
 const NO_SPOTS: readonly Spot[] = [];
 const NO_FIELDS: readonly ListedField[] = [];
+const NO_INDICES: ReadonlySet<number> = new Set();
 import { type PageAnnotation, usePageAnnotations } from './usePageAnnotations.js';
 import { usePageRotations } from './usePageRotations.js';
 import { type PageTextAnswer, usePageText } from './usePageText.js';
 import { type PageLinkOnPage, usePageLinks } from './usePageLinks.js';
 import { FormLayer, type PageFill } from './forms/FormLayer.js';
-import type { SelectMode } from './forms/fieldSelection.js';
 import type { FieldProblem } from './forms/fieldCheck.js';
 import type { ListedField } from './forms/fieldFill.js';
 import { usePageFormFields } from './forms/usePageFormFields.js';
@@ -225,7 +226,6 @@ export interface PageListProps {
     | {
         readonly selected: ReadonlySet<string>;
         readonly reveal: { readonly page: number; readonly index: number; readonly stamp: number } | undefined;
-        readonly onSelect: (page: number, index: number, mode: SelectMode) => void;
         /** A field the form's order sends the focus to, stamped (ADR-0226 Decision 3). */
         readonly focus?:
           | { readonly page: number; readonly index: number; readonly stamp: number; readonly say?: FieldProblem | undefined }
@@ -1329,13 +1329,6 @@ export function PageList({
           onFillField={fillOnPage}
           selectedFields={fieldSelection === undefined ? undefined : selectedOnPage(fieldSelection.selected, page)}
           revealField={fieldSelection?.reveal?.page === page ? fieldSelection.reveal : undefined}
-          onSelectField={
-            fieldSelection === undefined
-              ? undefined
-              : (index, mode) => {
-                  fieldSelection.onSelect(page, index, mode);
-                }
-          }
           focusField={fieldSelection?.focus?.page === page ? fieldSelection.focus : undefined}
           onFocusedField={fieldSelection?.onFocused}
           onTabField={
@@ -1552,7 +1545,6 @@ function PageSlot({
   onFillField,
   selectedFields,
   revealField,
-  onSelectField,
   focusField,
   onFocusedField,
   onTabField,
@@ -1614,10 +1606,9 @@ function PageSlot({
   /** This page's form fields, or `undefined` before they are known, the slot is measured, or where none are filled. */
   readonly fields: readonly ListedField[] | undefined;
   readonly onFillField: ((fill: PageFill) => void) | undefined;
-  /** Which places in this page's widget walk are selected, which one to bring into view, and what a press does. */
+  /** Which places in this page's widget walk are selected, and which one to bring into view. */
   readonly selectedFields: ReadonlySet<number> | undefined;
   readonly revealField: { readonly index: number; readonly stamp: number } | undefined;
-  readonly onSelectField: ((index: number, mode: SelectMode) => void) | undefined;
   readonly focusField: { readonly index: number; readonly stamp: number; readonly say?: FieldProblem | undefined } | undefined;
   readonly onFocusedField: ((stamp: number) => void) | undefined;
   readonly onTabField: ((index: number, backwards: boolean, filled: boolean) => void) | undefined;
@@ -1778,7 +1769,6 @@ function PageSlot({
         fields={fields}
         geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
         onFill={onFillField}
-        onSelect={onSelectField}
         page={page}
         reveal={revealField}
         {...(selectedFields === undefined ? {} : { selected: selectedFields })}
@@ -1914,7 +1904,24 @@ function PageSlot({
       {/* OVER THE TEXT AND ITS MARKS, as the drawing overlay is: while Edit text or
           Edit object is on, a press on an outline is the mode's, and nothing else
           holds the pointer — the modes share one slot and never mount together. */}
-      {editing === undefined || size === undefined ? null : editing.mode === 'objects' ? (
+      {editing === undefined || size === undefined ? null : editing.mode === 'fields' ? (
+        <FieldDesignLayer
+          fields={fields ?? NO_FIELDS}
+          geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
+          onClear={editing.onClear}
+          onMarquee={(indices, adding) => {
+            editing.onMarquee(page, indices, adding);
+          }}
+          onPlace={(placements) => {
+            editing.onPlace(page, placements);
+          }}
+          onSelect={(index, mode) => {
+            editing.onSelect(page, index, mode);
+          }}
+          page={page}
+          selected={selectedFields ?? NO_INDICES}
+        />
+      ) : editing.mode === 'objects' ? (
         <ObjectEditPage
           editing={editing}
           geometry={{ crop: size.crop, rotation: size.rotation, zoom }}

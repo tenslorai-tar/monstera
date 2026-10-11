@@ -4,7 +4,7 @@
      equal to it. Regenerate with `npx vitest run packages/ui/src/App.test.tsx -t "manual test checklist" -u`.
      Do not edit by hand. -->
 
-Every command the application registers — 256 — and the checks only the installed window can answer.
+Every command the application registers — 261 — and the checks only the installed window can answer.
 For each command: use it on a real document, see the correct effect, then save, close and reopen and see it kept
 (the wired-tools rule, CLAUDE.md). A command that needs a selection, a second document or a key says so when it
 is not available.
@@ -136,6 +136,7 @@ is not available.
 - [ ] **Import form data from JSON…** — Data · `document.import-form-data-json` · Shows: a toast · Help: *Export or import form data*
 - [ ] **Import form data from XFDF…** — Data · `document.import-form-data-xfdf` · Shows: a toast · Help: *Export or import form data*
 - [ ] **Import form data from FDF…** — Data · `document.import-form-data-fdf` · Shows: a toast · Help: *Export or import form data*
+- [ ] **Edit fields** — Fields · `forms.edit-fields` · Shows: on screen
 - [ ] **Add a text field** — Fields · `forms.field-text` · Shows: on screen · Help: *Create form fields*
 - [ ] **Add a tick box** — Fields · `forms.field-checkbox` · Shows: on screen · Help: *Create form fields*
 - [ ] **Add radio buttons** — Fields · `forms.field-radio` · Shows: on screen · Help: *Create form fields*
@@ -220,6 +221,10 @@ is not available.
 - [ ] **Close tab** · `document.close-tab` · Shows: on screen · Help: *Close a document that has unsaved changes*
 - [ ] **Copy** · `text.copy` · Shows: a toast · Help: *Select and copy text*
 - [ ] **Edit comment…** · `annotate.edit-selection` · Shows: on screen · Help: *Edit a comment or reply to it*
+- [ ] **Field properties** · `forms.field-properties` · Shows: on screen
+- [ ] **Copy** · `forms.copy-fields` · Shows: on screen
+- [ ] **Paste** · `forms.paste-fields` · Shows: on screen
+- [ ] **Duplicate field** · `forms.duplicate-field` · Shows: on screen
 - [ ] **Close other tabs** · `document.close-others` · Shows: on screen · Help: *Use right-click menus*
 - [ ] **Highlight** · `text.highlight` · Shows: on screen · Help: *Highlight, underline or strike through text*
 - [ ] **Reply…** · `annotate.reply-selection` · Shows: on screen · Help: *Edit a comment or reply to it*

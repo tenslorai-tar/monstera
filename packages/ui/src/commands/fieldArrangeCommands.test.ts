@@ -98,7 +98,8 @@ describe('the arrange commands', () => {
       'forms.arrange.same-size',
     ]);
     for (const command of commands) {
-      expect(command.placements.map((placement) => placement.surface)).toStrictEqual(['properties']);
+      // AT THE TAB'S FOOT, and in *Edit fields*' right-click menu (ADR-0226 Decision 7).
+      expect(command.placements.map((placement) => placement.surface)).toStrictEqual(['properties', 'context-menu']);
     }
   });
 

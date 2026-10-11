@@ -180,8 +180,7 @@ describe('FormLayer', () => {
     expect(fills).toStrictEqual([]);
   });
 
-  it('OUTLINES a selected field where it is, fillable or not, and a press with Ctrl selects it and fills nothing', () => {
-    const picks: unknown[] = [];
+  it('OUTLINES a selected field where it is, fillable or not, and a press only fills, Ctrl or not (ADR-0226 Decision 7)', () => {
     const fills: PageFill[] = [];
     const { container } = render(
       <Wrapped>
@@ -190,9 +189,6 @@ describe('FormLayer', () => {
           geometry={{ crop: [0, 0, 612, 792], rotation: 0, zoom: 2 }}
           onFill={(fill) => {
             fills.push(fill);
-          }}
-          onSelect={(index, mode) => {
-            picks.push({ index, mode });
           }}
           page={2}
           selected={new Set([1])}
@@ -203,12 +199,9 @@ describe('FormLayer', () => {
     expect(container.querySelector('[data-form-selected="1"]')).not.toBeNull();
     expect(container.querySelector('[data-form-selected="0"]')).toBeNull();
     const tick = must(at(container, 0));
+    // SELECTING IS EDIT FIELDS', so a press with Ctrl held is a press like any other and ticks the box.
     fireEvent.pointerDown(tick, { ctrlKey: true });
     fireEvent.click(tick, { ctrlKey: true });
-    expect(picks).toStrictEqual([{ index: 0, mode: 'toggle' }]);
-    // NOTHING WAS FILLED by the extending press; CONTROL: the plain one fills.
-    expect(fills).toStrictEqual([]);
-    fireEvent.click(tick);
     expect(fills).toHaveLength(1);
   });
 

@@ -119,8 +119,8 @@ test.describe('the Forms tab', () => {
     await expect(page.locator('.m-page-field-editor')).toBeVisible();
   });
 
-  /** Draws a box on the drawing surface of the first page, and names it on the page. */
-  async function drawNamed(page: Page, name: string, at: readonly [number, number] = [200, 400]): Promise<void> {
+  /** Drags a box on the drawing surface of the first page: a field is placed with nothing asked (ADR-0226 Decision 10). */
+  async function drawField(page: Page, at: readonly [number, number] = [200, 400]): Promise<void> {
     const surface = page.locator('[data-annotation-overlay="0"]');
     const box = await surface.boundingBox();
     if (box === null) throw new Error('the drawing surface is not on screen');
@@ -128,16 +128,14 @@ test.describe('the Forms tab', () => {
     await page.mouse.down();
     await page.mouse.move(box.x + at[0] + 140, box.y + at[1] + 30, { steps: 6 });
     await page.mouse.up();
-    await page.getByRole('textbox', { name: 'Field name' }).fill(name);
-    await page.keyboard.press('Enter');
   }
 
-  test('a field tool is spent by ONE field: the create is sent, the drawing surface goes, the page fills again', async ({ page }) => {
+  test('a field tool is spent by ONE field: the create is sent, the drawing surface goes, and Edit fields holds the page', async ({ page }) => {
     const sent: { channel: string; params: unknown }[] = [];
     await openForms(page, sent);
     await openSection(page, 'Forms');
     await page.getByRole('button', { name: /^Text field/u }).first().click();
-    await drawNamed(page, 'Nickname');
+    await drawField(page);
 
     await expect
       .poll(() => sent.filter((call) => call.channel === 'document.execute').length)
@@ -146,6 +144,8 @@ test.describe('the Forms tab', () => {
       'createFormField',
     );
     await expect(page.locator('[data-annotation-overlay]')).toHaveCount(0);
+    // THE NEW FIELD IS DESIGNED, not filled (ADR-0226 Decision 9): the mode the tool hands the page to.
+    await expect(page.locator('[data-field-design-layer]').first()).toBeAttached();
   });
 
   test('a DOUBLE CLICK on the button keeps the tool on for several fields, and Escape ends it', async ({ page }) => {
@@ -155,11 +155,11 @@ test.describe('the Forms tab', () => {
     await page.getByRole('button', { name: /^Text field/u }).first().dblclick();
     await expect(page.locator('[data-annotation-overlay]').first()).toBeAttached();
 
-    await drawNamed(page, 'First');
+    await drawField(page);
     await expect.poll(() => sent.filter((call) => call.channel === 'document.execute').length).toBe(1);
     // STILL ON after one field, which is the whole of what the double click bought.
     await expect(page.locator('[data-annotation-overlay]').first()).toBeAttached();
-    await drawNamed(page, 'Second', [200, 460]);
+    await drawField(page, [200, 460]);
     await expect.poll(() => sent.filter((call) => call.channel === 'document.execute').length).toBe(2);
 
     await page.keyboard.press('Escape');
@@ -295,22 +295,17 @@ test.describe('the Forms tab', () => {
     expect(orders[0]?.params).toMatchObject({ command: { kind: 'setTabOrder', pages: 'all', order: 'column' } });
   });
 
-  test('a name the form already has is said where it is typed, in words, and nothing is sent', async ({ page }) => {
+  test('a new field is named for its kind with nothing asked, by the first number the form does not hold (K1)', async ({ page }) => {
     const sent: { channel: string; params: unknown }[] = [];
-    await openForms(page, sent);
+    // THE FORM ALREADY HOLDS Text1, so the new one is Text2: the name is read from the form, not counted from zero.
+    await openForms(page, sent, [LISTED, { ...LISTED, index: 1, name: 'Text1', rect: { x0: 180, y0: 586, x1: 520, y1: 606 } }]);
     await openSection(page, 'Forms');
     await page.getByRole('button', { name: /^Text field/u }).first().click();
-    const surface = page.locator('[data-annotation-overlay="0"]');
-    const box = await surface.boundingBox();
-    if (box === null) throw new Error('the drawing surface is not on screen');
-    await page.mouse.move(box.x + 200, box.y + 400);
-    await page.mouse.down();
-    await page.mouse.move(box.x + 340, box.y + 430, { steps: 6 });
-    await page.mouse.up();
-    // `Full name` is the form's one field.
-    await page.getByRole('textbox', { name: 'Field name' }).fill('Full name');
-    await expect(page.getByText('This form already has a field with that name. Choose another name.')).toBeVisible();
-    await page.keyboard.press('Enter');
-    expect(sent.filter((call) => call.channel === 'document.execute')).toStrictEqual([]);
+    await drawField(page);
+    await expect.poll(() => sent.filter((call) => call.channel === 'document.execute').length).toBe(1);
+    expect(sent.find((call) => call.channel === 'document.execute')?.params).toMatchObject({
+      command: { kind: 'createFormField', fields: [{ name: 'Text2', field: { type: 'text' } }] },
+    });
+    await expect(page.getByRole('textbox', { name: 'Field name' })).toHaveCount(0);
   });
 });

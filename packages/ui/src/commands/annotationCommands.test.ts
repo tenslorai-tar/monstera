@@ -308,6 +308,8 @@ describe('rectangleToolCommand', () => {
 
 /** No object selected on the page, for the cases about the annotation selection (ADR-0153). */
 const NO_OBJECT = { picked: (): undefined => undefined, onRemove: (): undefined => undefined };
+/** No field selected, which is every case outside *Edit fields*. */
+const NO_FIELDS = { selected: () => [], onDelete: (): undefined => undefined, onPlace: (): undefined => undefined };
 
 describe('deleteSelectionCommand', () => {
   const SELECTION = {
@@ -327,7 +329,7 @@ describe('deleteSelectionCommand', () => {
         deleted.push(selection);
       },
       onPlace: () => undefined,
-    }, NO_OBJECT);
+    }, NO_OBJECT, NO_FIELDS);
     void command.run(WITH_DOCUMENT);
     // BOTH INDICES IN ONE CALL. A command that dispatched per item would be
     // five undo steps for one decision, and every handle after the first would
@@ -345,9 +347,9 @@ describe('deleteSelectionCommand', () => {
       onDelete: (): undefined => undefined,
       onPlace: (): undefined => undefined,
     };
-    expect(deleteSelectionCommand(deps, NO_OBJECT).when?.(WITH_DOCUMENT)).toBe(false);
+    expect(deleteSelectionCommand(deps, NO_OBJECT, NO_FIELDS).when?.(WITH_DOCUMENT)).toBe(false);
     expect(
-      deleteSelectionCommand({ ...deps, selection: () => SELECTION }, NO_OBJECT).when?.(WITH_DOCUMENT),
+      deleteSelectionCommand({ ...deps, selection: () => SELECTION }, NO_OBJECT, NO_FIELDS).when?.(WITH_DOCUMENT),
     ).toBe(true);
   });
 
@@ -364,11 +366,29 @@ describe('deleteSelectionCommand', () => {
     const command = deleteSelectionCommand(
       { selection: () => undefined, onDelete: (selection) => deleted.push(selection), onPlace: () => undefined },
       { picked: () => pick, onRemove: (picked) => removed.push(picked) },
+      NO_FIELDS,
     );
     expect(command.when?.(WITH_DOCUMENT)).toBe(true);
     void command.run(WITH_DOCUMENT);
     expect(removed).toStrictEqual([pick]);
     expect(deleted).toStrictEqual([]);
+  });
+
+  it('removes the fields Edit fields has selected, and nothing else, with the same key (ADR-0226 Decision 7)', () => {
+    const marks: unknown[] = [];
+    const removedFields: unknown[] = [];
+    const chosen = [{ field: { page: 0, index: 2, name: 'Text1' }, rect: { x0: 0, y0: 0, x1: 10, y1: 10 } }];
+    const command = deleteSelectionCommand(
+      { selection: () => undefined, onDelete: (selection) => marks.push(selection), onPlace: () => undefined },
+      NO_OBJECT,
+      { selected: () => chosen, onDelete: (fields) => removedFields.push(fields), onPlace: () => undefined },
+    );
+    expect(command.when?.(WITH_DOCUMENT)).toBe(true);
+    void command.run(WITH_DOCUMENT);
+    expect(removedFields).toStrictEqual([chosen]);
+    expect(marks).toStrictEqual([]);
+    // CONTROL: with no field selected the command does not exist, so Delete is free for the page.
+    expect(deleteSelectionCommand({ selection: () => undefined, onDelete: () => undefined, onPlace: () => undefined }, NO_OBJECT, NO_FIELDS).when?.(WITH_DOCUMENT)).toBe(false);
   });
 
   it('reads the selection THROUGH the function, not from what it was built with', () => {
@@ -380,7 +400,7 @@ describe('deleteSelectionCommand', () => {
       selection: () => current,
       onDelete: () => undefined,
       onPlace: () => undefined,
-    }, NO_OBJECT);
+    }, NO_OBJECT, NO_FIELDS);
     expect(command.when?.(WITH_DOCUMENT)).toBe(false);
     current = SELECTION;
     expect(command.when?.(WITH_DOCUMENT)).toBe(true);
@@ -396,7 +416,7 @@ describe('deleteSelectionCommand', () => {
       selection: () => SELECTION,
       onDelete: () => undefined,
       onPlace: () => undefined,
-    }, NO_OBJECT);
+    }, NO_OBJECT, NO_FIELDS);
     expect(command.shortcut).toBe('Delete');
     // LAST in the owner's order for that menu — edit, reply, properties, copy, delete — which is
     // why this is 50 rather than 10, with the gaps held for the items still owed. And second at
@@ -405,6 +425,8 @@ describe('deleteSelectionCommand', () => {
     expect(command.placements).toStrictEqual([
       { surface: 'context-menu', context: 'annotation', order: 50 },
       { surface: 'context-menu', context: 'object', order: 50 },
+      // AND LAST IN *EDIT FIELDS*' MENU (ADR-0226 Decision 7).
+      { surface: 'context-menu', context: 'field', order: 50 },
       { surface: 'properties', order: 20 },
     ]);
   });
@@ -821,7 +843,7 @@ describe('nudgeSelectionCommands', () => {
         onPlace: (command) => {
           sent.push(command);
         },
-      }),
+      }, NO_FIELDS),
       sent,
     };
   }
@@ -848,6 +870,24 @@ describe('nudgeSelectionCommands', () => {
     expect(fire('left', sent, commands)).toMatchObject({
       placements: [{ index: 1, rect: { x0: 9, y0: 20, x1: 29, y1: 40 } }],
     });
+  });
+
+  it('moves the fields Edit fields has selected instead, as one placement of each (ADR-0226 Decision 7)', () => {
+    const placed: unknown[] = [];
+    const marks: unknown[] = [];
+    const commands = nudgeSelectionCommands(
+      { selection: () => SELECTION, onDelete: () => undefined, onPlace: (command) => marks.push(command) },
+      {
+        selected: () => [{ field: { page: 0, index: 2, name: 'Text1' }, rect: { x0: 10, y0: 20, x1: 30, y1: 40 } }],
+        onDelete: () => undefined,
+        onPlace: (moved) => placed.push(moved),
+      },
+    );
+    const far = commands.find((command) => command.id === 'annotate.nudge-right-far');
+    void far?.run(WITH_DOCUMENT);
+    expect(placed).toStrictEqual([[{ field: { page: 0, index: 2, name: 'Text1' }, rect: { x0: 20, y0: 20, x1: 40, y1: 40 } }]]);
+    // THE FIELDS WIN while the mode has any: the marks are another mode's, and one key moves one selection.
+    expect(marks).toStrictEqual([]);
   });
 
   it('has a Shift version that moves ten, and it is a SEPARATE entry', () => {

@@ -12,6 +12,7 @@ import {
   pageSetOf,
   type FieldFill,
   type FormFieldHandle,
+  type FormFieldKind,
   type FormFieldProperties,
   type FormFieldRead,
   MAX_READ_FIELDS,
@@ -272,6 +273,7 @@ import {
   CLOSE_LABEL,
   CONTEXT_PANEL_TAB_ACCESSIBILITY,
   HINT_EDIT_OBJECTS,
+  HINT_EDIT_FIELDS,
   HINT_ADD_TEXT,
   HINT_EDIT_TEXT,
   HINT_HAND,
@@ -298,7 +300,9 @@ import { nextFillable } from './forms/fieldOrder.js';
 import { type FieldProblem, emptyRequired } from './forms/fieldCheck.js';
 import { FieldPropertiesPanel } from './forms/FieldPropertiesPanel.js';
 import type { PlacedField } from './forms/arrange.js';
+import { besideRect } from './forms/fieldDesign.js';
 import { type FieldToCopy, copyFieldToPagesCommand, fieldArrangeCommands } from './commands/fieldArrangeCommands.js';
+import { EDIT_FIELDS_TOOL_ID, editFieldsCommand, fieldDesignCommands } from './commands/fieldDesignCommands.js';
 import { useFormFieldList } from './forms/useFormFieldList.js';
 import type { AnnotationStyle } from './annotations/annotationStyle.js';
 import { styleFrom } from './annotations/annotationStyle.js';
@@ -581,12 +585,13 @@ const NO_PAGES: readonly number[] = [];
  */
 const NOTE_MARGIN = 36;
 
-/** What the three modes that share the tool slot wait for, the drawing tools' `hint` for the status line. */
+/** What the modes that share the tool slot wait for, the drawing tools' `hint` for the status line. */
 const MODE_HINTS: ReadonlyMap<string, MessageKey> = new Map([
   [HAND_TOOL_ID, HINT_HAND],
   [EDIT_TEXT_TOOL_ID, HINT_EDIT_TEXT],
   [EDIT_TEXT_ADD_TOOL_ID, HINT_ADD_TEXT],
   [EDIT_OBJECTS_TOOL_ID, HINT_EDIT_OBJECTS],
+  [EDIT_FIELDS_TOOL_ID, HINT_EDIT_FIELDS],
 ]);
 
 export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onRegistries }: AppProps): ReactElement {
@@ -1237,9 +1242,6 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     () => ({
       selected: selectedFieldKeys,
       reveal: fieldReveal,
-      onSelect: (page: number, index: number, mode: SelectMode): void => {
-        selectField(page, index, mode);
-      },
       // HELD UNTIL THE FILL TAB SENT HAS LANDED: the fill moves the version, the page's list is read again and its layer
       // drawn anew, so a focus given before that would be given to a control about to be replaced.
       focus: fieldFocus !== undefined && fieldFocus.after !== openVersion ? fieldFocus : reminderFocus,
@@ -1260,7 +1262,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         setFieldFocus({ page: next.page, index: next.index, stamp: focusStamps.current, after: filled ? openVersion : undefined });
       },
     }),
-    [fieldFocus, fieldReveal, fieldsInOrder, openVersion, reminderFocus, requiredReminder, selectField, selectedFieldKeys, toast],
+    [fieldFocus, fieldReveal, fieldsInOrder, openVersion, reminderFocus, requiredReminder, selectedFieldKeys, toast],
   );
   const selectedHandles = useMemo((): readonly FormFieldHandle[] => {
     const byKey = new Map(formFieldList.fields.map((field) => [fieldKey(field.page, field.index), field]));
@@ -1352,6 +1354,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   );
   // ESCAPE AND A PRESS ON EMPTY PAGE DESELECT, only while something is selected: a press on a field's own control is the
   // selection's and a press on the page's paper is not.
+  /** Whether *Edit fields* is on, for the window listener below, which is registered once (written in an effect). */
+  const fieldDesignOn = useRef(false);
   useEffect(() => {
     // REGISTERED WHETHER OR NOT ANYTHING IS SELECTED: clearing nothing is no re-render, and a listener that waited for
     // the selection's render was one a press in the same moment could beat.
@@ -1363,11 +1367,19 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       // NOT `defaultPrevented`: the shortcut handler claims Escape for the command that holds it before this window
       // listener runs, so that test would never be true. A key typed in a field or inside a dialog is theirs.
       const inDialog = target instanceof Element && target.closest('[role="dialog"]') !== null;
-      if (event.key === 'Escape' && !typing && !inDialog) setFieldSelection(undefined);
+      // NOT WHILE *EDIT FIELDS* IS ON: there the first Escape puts the selection down and the second the mode, which
+      // `stopTool` decides from one reading; clearing here first would re-render before it asks, and it would see none.
+      if (event.key === 'Escape' && !typing && !inDialog && !fieldDesignOn.current) setFieldSelection(undefined);
     };
     const onDown = (event: PointerEvent): void => {
       const target = event.target;
-      if (target instanceof Element && target.closest('.m-page-slot') !== null && target.closest('[data-form-field]') === null) {
+      // NOT IN *EDIT FIELDS*' LAYER, which decides a press on its own paper itself: a marquee starts there.
+      if (
+        target instanceof Element &&
+        target.closest('.m-page-slot') !== null &&
+        target.closest('[data-form-field]') === null &&
+        target.closest('[data-field-design-layer]') === null
+      ) {
         setFieldSelection(undefined);
       }
     };
@@ -2206,6 +2218,163 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     }),
     [activeId, readObjectSelection, sendObject],
   );
+
+  /**
+   * *EDIT FIELDS* (ADR-0226 Decision 7): the selected fields with their places and kinds, only while the mode is on, so
+   * Delete, the arrows and the clipboard verbs never take a key for a selection the Fields list made while filling.
+   */
+  const inFieldDesign = toolId === EDIT_FIELDS_TOOL_ID;
+  useEffect(() => {
+    fieldDesignOn.current = inFieldDesign;
+  }, [inFieldDesign]);
+  const designedFields = useMemo((): readonly (PlacedField & { readonly kind: FormFieldKind })[] => {
+    if (!inFieldDesign) return [];
+    const byKey = new Map(formFieldList.fields.map((field) => [fieldKey(field.page, field.index), field]));
+    return selectedHandles.flatMap((field) => {
+      const listed = byKey.get(fieldKey(field.page, field.index));
+      return listed?.rect === null || listed?.rect === undefined ? [] : [{ field, rect: listed.rect, kind: listed.kind }];
+    });
+  }, [formFieldList.fields, inFieldDesign, selectedHandles]);
+  const readDesignedFields = useCallback(() => designedFields, [designedFields]);
+  /**
+   * THE FIELDS A GESTURE IS ABOUT TO ADD, selected once the list read at the version it produced holds them: the keys the
+   * form had before, so what is new is what was not there. A copy and a new widget are appended to their page's walk, so
+   * every key that was there still names the same field.
+   */
+  const [newFieldsFrom, setNewFieldsFrom] = useState<{ readonly docId: DocId; readonly before: ReadonlySet<string> } | undefined>();
+  // TAKEN WHILE RENDERING, React's form for state that follows another: the list at the new version holds them.
+  const freshFields =
+    newFieldsFrom === undefined || newFieldsFrom.docId !== activeId || openVersion === undefined
+      ? []
+      : formFieldList.fields.filter((field) => !newFieldsFrom.before.has(fieldKey(field.page, field.index)));
+  if (freshFields.length > 0 && openVersion !== undefined) {
+    const keys = freshFields.map((field) => fieldKey(field.page, field.index));
+    setFieldSelection({ version: openVersion, keys, anchor: keys[0] });
+    setNewFieldsFrom(undefined);
+  }
+  const expectNewFields = useCallback((): void => {
+    if (activeId === undefined) return;
+    setNewFieldsFrom({ docId: activeId, before: new Set(formFieldList.fields.map((field) => fieldKey(field.page, field.index))) });
+  }, [activeId, formFieldList.fields]);
+  /**
+   * Several field commands IN TURN, each at the version the one before produced: a copy and a delete name a field by its
+   * place in a walk at a version, so they cannot share one. Stops at the first that does not land.
+   */
+  const sendFieldCommandsInTurn = useCallback(
+    async (builds: readonly ((version: DocVersion) => DispatchableCommand)[]): Promise<void> => {
+      if (activeId === undefined || openVersion === undefined) return;
+      let version = openVersion;
+      for (const build of builds) {
+        const held: { produced?: DocVersion } = {};
+        const landed = await applyDocumentCommand(
+          {
+            client,
+            onApplied: (answer) => {
+              held.produced = answer.version;
+              applied(answer);
+            },
+            ask,
+            stamp,
+            signatures,
+          },
+          activeId,
+          build(version),
+        );
+        if (!landed || held.produced === undefined) return;
+        version = held.produced;
+      }
+    },
+    [activeId, applied, ask, client, openVersion, signatures, stamp],
+  );
+  /** Copies of the given fields a little below and to the right of each (ADR-0226 Decision 8), the copies selected. */
+  const copyFieldsBeside = useCallback(
+    (fields: readonly PlacedField[]): void => {
+      expectNewFields();
+      void sendFieldCommandsInTurn(
+        fields.map((each) => (version: DocVersion): DispatchableCommand => ({
+          kind: 'duplicateFormField',
+          field: each.field,
+          to: { kind: 'place', page: each.field.page, rect: besideRect(each.rect) },
+          version,
+        })),
+      );
+    },
+    [expectNewFields, sendFieldCommandsInTurn],
+  );
+  /** The fields *Copy* holds, in the document they were copied from: a copy is a new field of that form, never another's. */
+  const [fieldClipboard, setFieldClipboard] = useState<{ readonly docId: DocId; readonly fields: readonly PlacedField[] } | undefined>();
+  const fieldSelectionDeps = useMemo(
+    () => ({
+      selected: readDesignedFields,
+      onDelete: (fields: readonly PlacedField[]): void => {
+        // ONE COMMAND PER PAGE, the writer's shape (`deleteFormFields` names one page's walk), sent in turn.
+        const pages = [...new Set(fields.map((each) => each.field.page))];
+        void sendFieldCommandsInTurn(
+          pages.map((page) => (version: DocVersion): DispatchableCommand => ({
+            kind: 'deleteFormFields',
+            page,
+            indices: fields.filter((each) => each.field.page === page).map((each) => each.field.index),
+            version,
+          })),
+        );
+      },
+      onPlace: (moved: readonly PlacedField[]): void => {
+        sendFieldEdits(moved.map((each) => ({ field: each.field, set: { rect: each.rect } })));
+      },
+    }),
+    [readDesignedFields, sendFieldCommandsInTurn, sendFieldEdits],
+  );
+  const fieldDesign = useMemo(
+    () =>
+      fieldDesignCommands({
+        selected: readDesignedFields,
+        copy: (fields) => {
+          if (activeId !== undefined) setFieldClipboard({ docId: activeId, fields });
+        },
+        canPaste: () => inFieldDesign && fieldClipboard !== undefined && fieldClipboard.docId === activeId,
+        paste: () => {
+          if (fieldClipboard !== undefined && fieldClipboard.docId === activeId) copyFieldsBeside(fieldClipboard.fields);
+        },
+        duplicate: copyFieldsBeside,
+        settings,
+        presence,
+      }),
+    [activeId, copyFieldsBeside, fieldClipboard, inFieldDesign, presence, readDesignedFields, settings],
+  );
+  /** *Edit fields* as the page list draws it, or `undefined` while the mode is off: the slot's third value. */
+  const fieldEditing = useMemo<PageListProps['editing']>(() => {
+    if (!inFieldDesign || openVersion === undefined) return undefined;
+    const version = openVersion;
+    const ordered = fieldsInOrder.map((field) => fieldKey(field.page, field.index));
+    const handleOf = (page: number, index: number): FormFieldHandle | undefined => {
+      const listed = fieldsInOrder.find((field) => field.page === page && field.index === index);
+      return listed === undefined ? undefined : { page, index, name: listed.name };
+    };
+    return {
+      mode: 'fields',
+      onSelect: (page, index, mode) => {
+        selectField(page, index, mode, ordered);
+      },
+      onMarquee: (page, indices, adding) => {
+        const swept = indices.map((index) => fieldKey(page, index));
+        setFieldSelection((current) => {
+          const held = adding ? liveKeys(current, version) : [];
+          const keys = [...held, ...swept.filter((key) => !held.includes(key))];
+          return keys.length === 0 ? undefined : { version, keys, anchor: swept[0] ?? current?.anchor };
+        });
+      },
+      onClear: () => {
+        setFieldSelection(undefined);
+      },
+      onPlace: (page, placements) => {
+        const edits = placements.flatMap((placement) => {
+          const field = handleOf(page, placement.index);
+          return field === undefined ? [] : [{ field, set: { rect: placement.rect } }];
+        });
+        if (edits.length > 0) sendFieldEdits(edits);
+      },
+    };
+  }, [fieldsInOrder, inFieldDesign, openVersion, selectField, sendFieldEdits]);
 
   /** Fills the selected object with `colour`, from the Properties tab. */
   const recolourObject = useCallback(
@@ -3181,7 +3350,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     const textCopy = copySelectionCommand(textDeps);
     const marksCopyDeps = { ...selectionDeps, client, ask, onCopied: setCopiedCount, toast };
     const marksCopy = copyAnnotationsCommand(marksCopyDeps);
-    const marksDelete = deleteSelectionCommand(selectionDeps, objectDeps);
+    const marksDelete = deleteSelectionCommand(selectionDeps, objectDeps, fieldSelectionDeps);
     const marksPaste = pasteAnnotationsCommand({ client, onApplied: applied, ask, stamp, signatures, hasCopied: readHasCopied });
     const marksSelectAll = selectAllMarksCommand({ marksOn, selectAll: selectAllOn });
     // RECOGNISING FIRST, for the exports whose output is the text (ADR-0118): the searchable export's walk, composed
@@ -3235,8 +3404,16 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           deleteMarks: marksDelete,
           pasteMarks: marksPaste,
           selectAllMarks: marksSelectAll,
+          copyFields: fieldDesign.copy,
+          pasteFields: fieldDesign.paste,
         }),
         marksSelectAll,
+        // *EDIT FIELDS* (ADR-0226 Decision 7): the mode, and what its right-click menu and Ctrl+D offer on a field.
+        editFieldsCommand({ activeTool: readTool, onSelect: chooseTool }),
+        fieldDesign.properties,
+        fieldDesign.copy,
+        fieldDesign.paste,
+        fieldDesign.duplicate,
         startScreenCommand({ showStart }),
         // FILE › RECENT › CLEAR LIST (ADR-0143), built above because the start screen's button runs it too.
         clearRecent,
@@ -3601,7 +3778,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         openAssistantCommand({ open: openAssistant }),
         marksCopy,
         selectionPropertiesCommand({ ...selectionDeps, settings, presence }, objectDeps),
-        ...nudgeSelectionCommands(selectionDeps),
+        ...nudgeSelectionCommands(selectionDeps, fieldSelectionDeps),
         toggleRulersCommand({ settings }),
         toggleGridCommand({ settings }),
         toggleDarkPageCommand({ settings }),
@@ -3704,6 +3881,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       readObjectFilter,
       enterObjects,
       objectDeps,
+      // *EDIT FIELDS*' selection, clipboard and commands (ADR-0226 Decision 7), rebuilt as the selection moves.
+      fieldDesign,
+      fieldSelectionDeps,
       settings,
       // THE SIGNATURES QUESTION'S TWO INPUTS (ADR-0149), stable while the store and the opener are.
       signatures,
@@ -3813,21 +3993,26 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
             page,
           );
         }
+        // A NEW FIELD IS SELECTED once the form is read again (ADR-0226 Decision 9): what the form held before it is
+        // taken now, so what is new is what was not there.
+        if (command.kind === 'createFormField') expectNewFields();
         const moved = await send(docId, command);
         // A LINK ADDED IS SAID (item 14c): PDF.js draws no mark for a link, and its outline is drawn only in the Comment
         // section, while the command palette starts the two link tools from any. A refusal says its own problem.
         if (moved && command.kind === 'addLink') toast('done', LINK_ADDED);
-        // A FIELD TOOL IS SPENT BY ONE FIELD (the owner, 2026-10-07): once the create has landed the drawing surface comes
-        // off and the page is for filling again, unless the person kept the tool on with a double click. A refused
-        // create leaves it on, since nothing was drawn.
+        // A FIELD TOOL IS SPENT BY ONE FIELD (the owner, 2026-10-07): once the create has landed the tool is put down
+        // and *Edit fields* holds the new field selected with its properties open (ADR-0226 Decision 9), unless the
+        // person kept the tool on with a double click. A refused create leaves it on, since nothing was drawn.
         if (moved && command.kind === 'createFormField' && tool.endsAfterOne === true && keptTool !== tool.id) {
-          setToolId(undefined);
+          setToolId(EDIT_FIELDS_TOOL_ID);
+          settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'properties');
+          presence.show('end');
         }
         return moved;
       },
       selection,
     };
-  }, [applied, ask, client, keptTool, open, registry, selection, send, signatures, stamp, style, toast, toolId, tools]);
+  }, [applied, ask, client, expectNewFields, keptTool, open, presence, registry, selection, send, settings, signatures, stamp, style, toast, toolId, tools]);
 
   /**
    * A link pressed on a page or in the Links panel, followed by the one route (ADR-0167): a page link jumps, a web link
@@ -3993,8 +4178,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     };
   }, [objectFilter, objectSelection, open, readObjects, sendObject]);
 
-  /** The one mode the page lists draw: the tool slot holds at most one of the two, so at most one is defined. */
-  const pageEditing = editing ?? objectEditing;
+  /** The one mode the page lists draw: the tool slot holds at most one of the three, so at most one is defined. */
+  const pageEditing = editing ?? objectEditing ?? fieldEditing;
 
   // The start screen's context: no document focused. `hasSelection` and `dirty`
   // are false because there is nothing to select in and nothing to dirty — not
@@ -4044,9 +4229,14 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       setObjectPicked(undefined);
       return true;
     }
+    // *EDIT FIELDS* WITH A SELECTION: the first Escape puts the selection down, the second the mode (ADR-0226 Decision 7).
+    if (toolId === EDIT_FIELDS_TOOL_ID && designedFields.length > 0) {
+      setFieldSelection(undefined);
+      return true;
+    }
     setToolId(undefined);
     return true;
-  }, [objectSelection, selection, toolId]);
+  }, [designedFields.length, objectSelection, selection, toolId]);
   // THE RECOGNISE BUTTON'S TARGET (ADR-0181 Decision 9): the one `document.ocr` command, run for the page the button is on
   // and not for the grid's ticked pages, so what it walks is the page that said it has no text.
   useEffect(() => {
@@ -4118,11 +4308,13 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         ...(selection?.page === page ? (['annotation'] as const) : []),
         // THE SELECTED OBJECT'S MENU first on its own page (ADR-0153 Decision 5), the annotation menu's rule.
         ...(objectSelection?.page === page ? (['object'] as const) : []),
+        // AND *EDIT FIELDS*' MENU on a page holding a selected field (ADR-0226 Decision 7).
+        ...(designedFields.some((each) => each.field.page === page) ? (['field'] as const) : []),
         'page',
       ]);
       return groups.length === 0 ? undefined : { context: at, groups };
     },
-    [context, objectSelection?.page, registry, selection?.page, textSelection?.page],
+    [context, designedFields, objectSelection?.page, registry, selection?.page, textSelection?.page],
   );
 
   /**
