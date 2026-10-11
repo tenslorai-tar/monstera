@@ -485,7 +485,7 @@ function parseFdf(bytes: Uint8Array): ParsedFormData {
     for (let index = 0; index < list.length; index += 1) {
       const entry = list.get(index);
       const name = entry.isDictionary() ? entry.get('T') : null;
-      if (name === null || !name.isString()) {
+      if (name?.isString() !== true) {
         unreadable.push(recordAt(index));
         continue;
       }
