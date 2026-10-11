@@ -1,29 +1,31 @@
 /**
  * A text box's styled words, laid out and drawn by Monstera
- * ([ADR-0211](../../../docs/DECISIONS/0211-a-text-box-with-styled-words-has-an-appearance-monstera-writes-itself.md)).
+ * ([ADR-0211](../../../docs/DECISIONS/0211-a-text-box-with-styled-words-has-an-appearance-monstera-writes-itself.md),
+ * [ADR-0228](../../../docs/DECISIONS/0228-the-formatting-set-is-whole-in-both-text-writers-and-a-tab-is-a-marked-gap.md)).
  *
  * MuPDF draws a FreeText in three faces with one style and nothing more (measured 2026-10-08, 1.28.0), so bold on a word, a
  * fill, justified lines and the line pitch are written here: the words as `/Contents`, the styled runs as `/RC`, the box's own
- * style as `/DS`, the fill as `/IC` and the margins as `/RD` — and the appearance, which every reader but Acrobat draws
- * instead of the others, as a function of those. This module is PURE: the width of a word is asked of a `Measure` the
- * caller hands in, so the one place that knows where a line ends (B3a) is testable without an engine, and the engine's
- * own faces answer it where it runs.
+ * style as `/DS`, the fill as `/IC` — and the appearance, which every reader but Acrobat draws instead of the others, as a
+ * function of those.
  *
- * ## The faces are the base 14, and a script they cannot write is refused whole
+ * ## This module is PURE, and the faces are a {@link Typesetter} handed in
  *
- * Nothing is embedded. `/RC`'s runs and this module's lines are drawn in Helvetica, Times or Courier, regular, bold, italic
- * or bold italic, in WinAnsi. A character outside WinAnsi — Hebrew, Arabic, CJK — makes {@link layoutBox} answer
- * `undefined`: the caller leaves the engine's appearance in place and the panel says the styles are not available for that
- * box. Never a style dropped on some of its words (*preserve, never drop*).
+ * It owns where a line ends (B3a) and nothing about a font. A word's pieces, their faces and their widths come from the
+ * typesetter the caller hands in, so the one place that breaks lines is testable without an engine, and the engine's faces
+ * answer it where it runs: the base 14 for a word a standard face can write, the resolver's embedded faces for every other
+ * (K2, ADR-0228 Decision 3). A word NO typesetter can set makes {@link layoutBox} answer `undefined`, and the caller leaves
+ * the engine's appearance in place — never a style dropped on some of the words (*preserve, never drop*).
  */
 
 import { DEFAULT_TEXT_LINE_HEIGHT, MAX_TEXT_LINE_HEIGHT, MAX_TEXT_PADDING, MIN_TEXT_LINE_HEIGHT } from '@monstera/shared';
 
+import { hasRightToLeftLetter, lineSpans, paragraphDirection, paragraphLevels } from './bidiOrder.js';
+
 /** An RGB colour, each channel 0 to 1, as every annotation here carries one. */
 export type Rgb = readonly [number, number, number];
 
-/** The three families a person chooses between. */
-export type Family = 'sans' | 'serif' | 'mono';
+/** A family, by the name a person chose it under: one of the base 14's three, or a face the resolver knows (K2). */
+export type Family = string;
 
 /** The base 14's twelve text faces, by their PostScript names. */
 export type Face =
@@ -40,14 +42,24 @@ export type Face =
   | 'Courier-Oblique'
   | 'Courier-BoldOblique';
 
-const FACES: Readonly<Record<Family, readonly [Face, Face, Face, Face]>> = {
-  sans: ['Helvetica', 'Helvetica-Bold', 'Helvetica-Oblique', 'Helvetica-BoldOblique'],
-  serif: ['Times-Roman', 'Times-Bold', 'Times-Italic', 'Times-BoldItalic'],
-  mono: ['Courier', 'Courier-Bold', 'Courier-Oblique', 'Courier-BoldOblique'],
+/** The base 14's three text families, by the names the font picker lists them under. */
+export const BASE14_FAMILIES = ['Helvetica', 'Times', 'Courier'] as const;
+export type Base14Family = (typeof BASE14_FAMILIES)[number];
+
+const FACES: Readonly<Record<Base14Family, readonly [Face, Face, Face, Face]>> = {
+  Helvetica: ['Helvetica', 'Helvetica-Bold', 'Helvetica-Oblique', 'Helvetica-BoldOblique'],
+  Times: ['Times-Roman', 'Times-Bold', 'Times-Italic', 'Times-BoldItalic'],
+  Courier: ['Courier', 'Courier-Bold', 'Courier-Oblique', 'Courier-BoldOblique'],
 };
 
-/** The face for a family, bold and italic. */
-export function faceFor(family: Family, bold: boolean, italic: boolean): Face {
+/** The base-14 family a name is, ignoring case, or `undefined` for any other family. */
+export function base14Of(family: Family): Base14Family | undefined {
+  const lower = family.trim().toLowerCase();
+  return BASE14_FAMILIES.find((each) => each.toLowerCase() === lower);
+}
+
+/** The base-14 face for a base-14 family, bold and italic. */
+export function faceFor(family: Base14Family, bold: boolean, italic: boolean): Face {
   const [regular, boldFace, italicFace, boldItalicFace] = FACES[family];
   if (bold && italic) return boldItalicFace;
   return bold ? boldFace : italic ? italicFace : regular;
@@ -84,7 +96,7 @@ export interface BoxLook {
   readonly lineHeight: number;
   /** The fill behind the words, or `null` for none (`/IC`). */
   readonly fill: Rgb | null;
-  /** The margin between the box's edge and its words, in points, on every side (`/RD`). */
+  /** The margin between the box's edge and its words, in points, on every side. */
   readonly padding: number;
   /** The border's width in points, and its colour (`/BS`, `/C`). */
   readonly borderWidth: number;
@@ -93,7 +105,7 @@ export interface BoxLook {
 
 /** The look a box starts from: what MuPDF's own text box says, so a box restyled in one field changes only that field. */
 export const DEFAULT_LOOK: BoxLook = {
-  family: 'sans',
+  family: 'Helvetica',
   size: 12,
   colour: [0, 0, 0],
   bold: false,
@@ -113,11 +125,54 @@ export const MIN_LINE_HEIGHT = MIN_TEXT_LINE_HEIGHT;
 export const MAX_LINE_HEIGHT = MAX_TEXT_LINE_HEIGHT;
 export const MAX_PADDING = MAX_TEXT_PADDING;
 
-/** The width of `text` in `face` at `size`, in points. */
+/** The width of `text` in `face` at `size`, in points: the base 14's own widths, which the engine answers. */
 export type Measure = (face: Face, text: string, size: number) => number;
 
+/** The family, weight and slant a stretch of words asks for. */
+export interface FaceStyle {
+  readonly family: Family;
+  readonly bold: boolean;
+  readonly italic: boolean;
+}
+
+/**
+ * A stretch of words in one face, how wide it is drawn at the size asked, and the operators that draw it with `Tf` set:
+ * a WinAnsi string for the base 14, an embedded face's codes for the resolver's. `face` is the typesetter's own key.
+ *
+ * **The operators come with the width, decided once**, so a piece is drawn by exactly the glyphs it was measured by: a
+ * right-to-left word is shaped once, in its direction, and two pieces drawn one after the other are two shows in sequence,
+ * never a joined text shaped again.
+ */
+export interface SetPiece {
+  readonly face: string;
+  readonly text: string;
+  readonly width: number;
+  readonly show: string;
+}
+
+/**
+ * What sets words in faces: the pieces `text` is drawn as, in logical order, each in one face and with its width at `size`,
+ * or `undefined` where this setter cannot draw it. `rtl` says the stretch is drawn right to left, which a shaper needs.
+ */
+export interface Typesetter {
+  set(text: string, style: FaceStyle, size: number, rtl: boolean): readonly SetPiece[] | undefined;
+}
+
+/** The first typesetter that can set a stretch, so a word goes to the base 14 where they write it and to the resolver otherwise. */
+export function firstOf(...setters: readonly Typesetter[]): Typesetter {
+  return {
+    set: (text, style, size, rtl) => {
+      for (const setter of setters) {
+        const pieces = setter.set(text, style, size, rtl);
+        if (pieces !== undefined) return pieces;
+      }
+      return undefined;
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
-// WinAnsi
+// WinAnsi, and the base 14 as a typesetter
 
 /** Windows-1252's 0x80–0x9F, the only place it differs from Latin-1; `undefined` is a hole. */
 const WIN_1252_HIGH: readonly (number | undefined)[] = [
@@ -138,7 +193,7 @@ export function winAnsiCode(point: number): number | undefined {
   return WIN_ANSI_OF.get(point);
 }
 
-/** Whether every character of `text` (but a line break) has a WinAnsi code. */
+/** Whether every character of `text` (but a line break or a tab) has a WinAnsi code. */
 export function writable(text: string): boolean {
   for (const character of text) {
     const point = character.codePointAt(0) ?? 0;
@@ -160,13 +215,32 @@ export function pdfString(text: string): string {
   return `(${out})`;
 }
 
+/**
+ * The base 14 as a typesetter: a stretch in a base-14 family that WinAnsi can write is one piece in that family's face,
+ * unembedded (ADR-0228 Decision 3); anything else is not this setter's.
+ */
+export function base14Typesetter(measure: Measure): Typesetter {
+  return {
+    set: (text, style, size, rtl) => {
+      const family = base14Of(style.family);
+      // A RIGHT-TO-LEFT STRETCH IS NEVER THE BASE 14'S: WinAnsi holds no right-to-left letter, and a neutral run the bidi
+      // algorithm drew right to left is set with its neighbours.
+      if (family === undefined || rtl || !writable(text)) return undefined;
+      const face = faceFor(family, style.bold, style.italic);
+      return [{ face, text, width: measure(face, text, size), show: `${pdfString(text)} Tj` }];
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Layout
 
 /** One drawn piece of a line: a stretch in one face and colour, with its decorations. */
 export interface Piece {
   readonly text: string;
-  readonly face: Face;
+  readonly face: string;
+  /** The set pieces' operators, drawn one after the other from the piece's start. */
+  readonly shows: readonly string[];
   readonly colour: Rgb;
   readonly underline: boolean;
   readonly strike: boolean;
@@ -187,156 +261,210 @@ export interface Layout {
   readonly lines: readonly Line[];
 }
 
-/** A word, or a space, or a break, with the style it is drawn in. */
+/** A word, or a space, or a break, with the style it is drawn in and, for a word or a space, how it is set. */
 interface Token {
   readonly text: string;
   readonly kind: 'word' | 'space' | 'break';
-  readonly face: Face;
+  readonly style: FaceStyle;
   readonly colour: Rgb;
   readonly underline: boolean;
   readonly strike: boolean;
+  /** Where the token's text begins in its paragraph, so a line's words can be put in drawing order. */
+  readonly offset: number;
+  readonly paragraph: number;
 }
 
-function tokensOf(runs: readonly TextRun[], look: BoxLook): Token[] {
+interface SetToken extends Token {
+  readonly pieces: readonly SetPiece[];
+  readonly width: number;
+}
+
+function tokensOf(runs: readonly TextRun[], look: BoxLook): { readonly tokens: Token[]; readonly paragraphs: string[] } {
   const tokens: Token[] = [];
+  const paragraphs = [''];
   for (const run of runs) {
-    const bold = run.bold ?? look.bold;
-    const italic = run.italic ?? look.italic;
     const style = {
-      face: faceFor(look.family, bold, italic),
+      style: { family: look.family, bold: run.bold ?? look.bold, italic: run.italic ?? look.italic },
       colour: run.colour ?? look.colour,
       underline: run.underline ?? look.underline,
       strike: run.strike ?? look.strike,
     };
     for (const part of run.text.split(/(\r\n|\n|\r|[ \t]+)/u)) {
       if (part === '') continue;
-      if (/^(\r\n|\n|\r)$/u.test(part)) tokens.push({ ...style, text: part, kind: 'break' });
-      else if (/^[ \t]+$/u.test(part)) tokens.push({ ...style, text: ' '.repeat(part.length), kind: 'space' });
-      else tokens.push({ ...style, text: part, kind: 'word' });
+      const paragraph = paragraphs.length - 1;
+      const offset = paragraphs[paragraph]?.length ?? 0;
+      if (/^(\r\n|\n|\r)$/u.test(part)) {
+        tokens.push({ ...style, text: part, kind: 'break', offset, paragraph });
+        paragraphs.push('');
+        continue;
+      }
+      const text = /^[ \t]+$/u.test(part) ? ' '.repeat(part.length) : part;
+      tokens.push({ ...style, text, kind: /^[ \t]+$/u.test(part) ? 'space' : 'word', offset, paragraph });
+      paragraphs[paragraph] = (paragraphs[paragraph] ?? '') + text;
     }
   }
-  return tokens;
+  return { tokens, paragraphs };
 }
 
 /**
- * Lays `runs` out in a box `width` by `height` points, or answers `undefined` for a box it cannot draw (a character outside
- * WinAnsi, or no room for any text at all).
+ * Lays `runs` out in a box `width` by `height` points, or answers `undefined` for a box it cannot draw (a word no typesetter
+ * can set, or no room for any text at all).
  *
  * Greedy, the way every word processor breaks: a word goes on the line while it fits, a word wider than the line is cut at
  * the character that no longer fits, a space that would start a line is dropped, a hard break starts one. A `justify` box
- * spreads each line but the last (and any ended by a hard break) across the width by widening its spaces.
+ * spreads each line but the last (and any ended by a hard break) across the width by widening its spaces. A line holding
+ * right-to-left words is drawn in the order the bidirectional algorithm gives (rules L1 and L2, `bidiOrder.ts`).
  */
 export function layoutBox(
   width: number,
   height: number,
   look: BoxLook,
   runs: readonly TextRun[],
-  measure: Measure,
+  setter: Typesetter,
 ): Layout | undefined {
-  if (!runs.every((run) => writable(run.text))) return undefined;
   const inner = width - 2 * look.padding - 2 * look.borderWidth;
   if (!(inner > 0) || !(look.size > 0)) return undefined;
+  const { tokens, paragraphs } = tokensOf(runs, look);
+  const directions = paragraphs.map((text) => paragraphDirection(text));
+  const levels = paragraphs.map((text, at) => paragraphLevels(text, directions[at] ?? 'ltr'));
+  // A STRETCH IS SET RIGHT TO LEFT where it holds a right-to-left letter; a neutral one goes with its paragraph.
+  const rtlOf = (token: Token): boolean =>
+    hasRightToLeftLetter(token.text) || (token.kind === 'space' && directions[token.paragraph] === 'rtl');
+  const setOf = (token: Token, text: string): SetToken | undefined => {
+    const pieces = setter.set(text, token.style, look.size, rtlOf(token));
+    if (pieces === undefined) return undefined;
+    return { ...token, text, pieces, width: pieces.reduce((sum, piece) => sum + piece.width, 0) };
+  };
 
-  interface Row { pieces: Token[]; widths: number[]; ended: 'wrap' | 'break' | 'end' }
+  interface Row { tokens: SetToken[]; ended: 'wrap' | 'break' | 'end'; paragraph: number }
   const rows: Row[] = [];
-  let row: Row = { pieces: [], widths: [], ended: 'end' };
+  let row: Row = { tokens: [], ended: 'end', paragraph: 0 };
   let used = 0;
-  const widthOf = (token: Token): number => measure(token.face, token.text, look.size);
   const finish = (ended: Row['ended']): void => {
     // A line does not END in a space it would have to show: the trailing ones are dropped from the width.
-    while (row.pieces.at(-1)?.kind === 'space') {
-      row.pieces.pop();
-      row.widths.pop();
-    }
+    while (row.tokens.at(-1)?.kind === 'space') row.tokens.pop();
     row.ended = ended;
     rows.push(row);
-    row = { pieces: [], widths: [], ended: 'end' };
+    row = { tokens: [], ended: 'end', paragraph: row.paragraph };
     used = 0;
   };
 
-  for (const token of tokensOf(runs, look)) {
+  for (const token of tokens) {
     if (token.kind === 'break') {
       finish('break');
+      row.paragraph = token.paragraph + 1;
       continue;
     }
+    row.paragraph = token.paragraph;
+    const set = setOf(token, token.text);
+    if (set === undefined) return undefined;
     if (token.kind === 'space') {
       // A space that would start a line is dropped.
-      if (row.pieces.length === 0) continue;
-      const wide = widthOf(token);
-      if (used + wide > inner) {
+      if (row.tokens.length === 0) continue;
+      if (used + set.width > inner) {
         finish('wrap');
         continue;
       }
-      row.pieces.push(token);
-      row.widths.push(wide);
-      used += wide;
+      row.tokens.push(set);
+      used += set.width;
       continue;
     }
-    let rest = token;
+    let rest = set;
     for (;;) {
-      const wide = widthOf(rest);
-      if (used + wide <= inner) {
-        row.pieces.push(rest);
-        row.widths.push(wide);
-        used += wide;
+      if (used + rest.width <= inner) {
+        row.tokens.push(rest);
+        used += rest.width;
         break;
       }
-      if (row.pieces.length > 0) {
+      if (row.tokens.length > 0) {
         finish('wrap');
         continue;
       }
       // A WORD WIDER THAN THE LINE is cut at the character that no longer fits (at least one, so it always advances).
-      let count = 1;
       const characters = Array.from(rest.text);
-      while (count < characters.length && measure(rest.face, characters.slice(0, count + 1).join(''), look.size) <= inner) count += 1;
-      const head = characters.slice(0, count).join('');
-      row.pieces.push({ ...rest, text: head });
-      row.widths.push(measure(rest.face, head, look.size));
+      let count = 1;
+      while (count < characters.length && (setOf(rest, characters.slice(0, count + 1).join(''))?.width ?? Infinity) <= inner) count += 1;
+      const head = setOf(rest, characters.slice(0, count).join(''));
+      const tail = characters.slice(count).join('');
+      if (head === undefined) return undefined;
+      row.tokens.push(head);
       finish('wrap');
-      rest = { ...rest, text: characters.slice(count).join('') };
-      if (rest.text === '') break;
+      if (tail === '') break;
+      const next = setOf({ ...rest, offset: rest.offset + head.text.length }, tail);
+      if (next === undefined) return undefined;
+      rest = next;
     }
   }
-  if (row.pieces.length > 0 || rows.length === 0) finish('end');
+  if (row.tokens.length > 0 || rows.length === 0) finish('end');
 
   const pitch = look.size * look.lineHeight;
   const top = look.padding + look.borderWidth;
   const lines: Line[] = rows.map((one, at) => {
-    const natural = one.widths.reduce((sum, each) => sum + each, 0);
-    const spaces = one.pieces.filter((piece) => piece.kind === 'space').length;
+    const natural = one.tokens.reduce((sum, token) => sum + token.width, 0);
+    const spaces = one.tokens.filter((token) => token.kind === 'space').length;
     const stretch = look.align === 'justify' && one.ended === 'wrap' && spaces > 0 ? (inner - natural) / spaces : 0;
     const slack = inner - natural;
     let x = top + (look.align === 'center' ? slack / 2 : look.align === 'right' ? slack : 0);
     const pieces: Piece[] = [];
-    one.pieces.forEach((token, index) => {
-      const own = (one.widths[index] ?? 0) + (token.kind === 'space' ? stretch : 0);
-      const previous = pieces.at(-1);
-      // ADJACENT PIECES OF ONE STYLE ARE ONE DRAW, so an underline runs across a phrase and not word by word.
-      if (
-        previous?.face === token.face &&
-        sameColour(previous.colour, token.colour) &&
-        previous.underline === token.underline &&
-        previous.strike === token.strike &&
-        stretch === 0
-      ) {
-        pieces[pieces.length - 1] = { ...previous, text: previous.text + token.text, width: previous.width + own };
-      } else {
-        pieces.push({
-          text: token.text,
-          face: token.face,
-          colour: token.colour,
-          underline: token.underline,
-          strike: token.strike,
-          x,
-          width: own,
-        });
-      }
-      x += own;
-    });
+    for (const token of drawingOrder(one.tokens, levels[one.paragraph])) {
+      const extra = token.kind === 'space' ? stretch : 0;
+      token.pieces.forEach((set, index) => {
+        const own = set.width + (index === token.pieces.length - 1 ? extra : 0);
+        const previous = pieces.at(-1);
+        // ADJACENT PIECES OF ONE STYLE ARE ONE DRAW, so an underline runs across a phrase and not word by word.
+        if (
+          previous?.face === set.face &&
+          sameColour(previous.colour, token.colour) &&
+          previous.underline === token.underline &&
+          previous.strike === token.strike &&
+          stretch === 0
+        ) {
+          pieces[pieces.length - 1] = {
+            ...previous,
+            text: previous.text + set.text,
+            shows: [...previous.shows, set.show],
+            width: previous.width + own,
+          };
+        } else {
+          pieces.push({
+            text: set.text,
+            face: set.face,
+            shows: [set.show],
+            colour: token.colour,
+            underline: token.underline,
+            strike: token.strike,
+            x,
+            width: own,
+          });
+        }
+        x += own;
+      });
+    }
     // THE BASELINE: half the leading above the glyphs, and the ascent below that.
     return { baseline: top + at * pitch + (pitch - look.size) / 2 + look.size * 0.8, pieces };
   });
   return { width, height, lines };
+}
+
+/**
+ * A line's tokens in the order they are drawn, left to right. A line with no right-to-left letter and a left-to-right
+ * paragraph is drawn as typed; any other is put in the order rules L1 and L2 give, each token taking the level of its
+ * first character (a token is one word or one run of spaces, which the algorithm does not split in practice).
+ */
+function drawingOrder(tokens: readonly SetToken[], paragraph: ReturnType<typeof paragraphLevels> | undefined): readonly SetToken[] {
+  const first = tokens[0];
+  const last = tokens.at(-1);
+  if (paragraph === undefined || first === undefined || last === undefined) return tokens;
+  if (paragraph.direction === 'ltr' && !tokens.some((token) => hasRightToLeftLetter(token.text))) return tokens;
+  const spans = lineSpans(paragraph, first.offset, last.offset + last.text.length);
+  const ordered: SetToken[] = [];
+  for (const span of spans) {
+    const inside = tokens.filter((token) => token.offset >= span.start && token.offset < span.end);
+    ordered.push(...(span.rtl ? [...inside].reverse() : inside));
+  }
+  // EVERY TOKEN ONCE: a token the spans did not hold (an offset the algorithm's text does not have) keeps its place at the end.
+  for (const token of tokens) if (!ordered.includes(token)) ordered.push(token);
+  return ordered;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -356,8 +484,8 @@ const colourOps = (colour: Rgb, stroke: boolean): string =>
   `${colour.map(fixed).join(' ')} ${stroke ? 'RG' : 'rg'}`;
 
 /** The resource names of the faces a layout uses, `F1`… in the order first met, so a stream and its dictionary agree. */
-export function faceNames(layout: Layout): ReadonlyMap<Face, string> {
-  const names = new Map<Face, string>();
+export function faceNames(layout: Layout): ReadonlyMap<string, string> {
+  const names = new Map<string, string>();
   for (const line of layout.lines) {
     for (const piece of line.pieces) {
       if (piece.text.trim() !== '' && !names.has(piece.face)) names.set(piece.face, `F${String(names.size + 1)}`);
@@ -398,7 +526,7 @@ export function appearanceContent(layout: Layout, look: BoxLook): string {
           colourOps(piece.colour, false),
           `/${name} ${fixed(look.size)} Tf`,
           `${fixed(piece.x)} ${fixed(y)} Td`,
-          `${pdfString(piece.text)} Tj`,
+          ...piece.shows,
           'ET',
         );
       }

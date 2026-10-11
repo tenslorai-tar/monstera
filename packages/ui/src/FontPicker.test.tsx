@@ -73,6 +73,15 @@ describe('fontGroups, the one font list’s groups (D1 to D4)', () => {
     expect(groups.flatMap((group) => group.choices.map((choice) => choice.family))).toStrictEqual(['Carlito']);
   });
 
+  it('RECENT offers only what this picker offers elsewhere: a family another consumer chose that this one cannot set is not offered', () => {
+    // A callout's picker: the standard faces alone. Carlito was chosen for a text box in the same session.
+    const standard = fontGroups({ listed: true, families: [] }, [], ['Carlito', 'Times'], ['Helvetica', 'Times', 'Courier'], '');
+    expect(standard.find((group) => group.title === FONT_GROUP_RECENT)?.choices.map((choice) => choice.family)).toStrictEqual(['Times']);
+    // CONTROL: where Carlito IS offered (a text box's picker over the list), Recent offers it.
+    const full = fontGroups(LIST, [], ['Carlito', 'Times'], ['Helvetica', 'Times', 'Courier'], '');
+    expect(full.find((group) => group.title === FONT_GROUP_RECENT)?.choices.map((choice) => choice.family)).toStrictEqual(['Carlito', 'Times']);
+  });
+
   it('CONTROL: with no list read the fonts every PDF has are still offered, so the picker is never empty', () => {
     const groups = fontGroups({ listed: false, families: [] }, [], [], BUILT_INTO_PDF, '');
     expect(groups.map((group) => group.title)).toStrictEqual([FONT_GROUP_BUILT_IN]);

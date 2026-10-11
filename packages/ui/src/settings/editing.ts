@@ -1,7 +1,7 @@
 import {
   ANNOTATION_FONT_FAMILIES,
-  type AnnotationFontFamily,
   annotationAuthorSchema,
+  annotationFamilySchema,
   annotationOpacitySchema,
   MAX_ANNOTATION_BORDER,
   MAX_ANNOTATION_FONT,
@@ -26,7 +26,6 @@ import {
   EDITING_DIRECTION_OPTION_TITLES,
   EDITING_DIRECTION_TITLE,
   EDITING_FONT_DESCRIPTION,
-  EDITING_FONT_OPTION_TITLES,
   EDITING_FONT_SIZE_TITLE,
   EDITING_FONT_TITLE,
   EDITING_IMAGE_PAGES_TITLE,
@@ -442,25 +441,25 @@ export const ANNOTATION_FONT_SIZE_SETTING: SettingDefinition<z.ZodNumber> = {
   category: 'editing',
 };
 
-/** The family names the setting holds: the faces the text box writer sets, by the names a person knows (K4). */
-const ANNOTATION_FAMILY_NAMES = [ANNOTATION_FONT_FAMILIES.sans, ANNOTATION_FONT_FAMILIES.serif, ANNOTATION_FONT_FAMILIES.mono] as const;
-
 /**
  * What typeface a new text box, callout or typewriter is set in — Part F's *"font"* (`BUILD-PROMPT.md`:614), stored as a
- * REAL FONT NAME since the owner's K4: Helvetica, Times or Courier, the faces the text box writer sets (ADR-0211 Decision
- * 2), each turned into the face the writer takes by the contract's one table (`annotationFontOf`). Helvetica by default,
- * the face every text mark was set in before this was a choice.
+ * REAL FONT NAME since the owner's K4, and ANY family the one font picker offers since K2
+ * ([ADR-0228](../../../../docs/DECISIONS/0228-the-formatting-set-is-whole-in-both-text-writers-and-a-tab-is-a-marked-gap.md)
+ * Decision 3): a text box and a typewriter are drawn in it, embedded; a callout's words are the engine's, so a callout
+ * takes the base-14 face nearest it. Helvetica by default, the face every text mark was set in before this was a choice.
+ *
+ * **Its control is DECLARED** (`font`): no schema shape says *a family from the computer's and Monstera's list*.
  *
  * A value an older build stored is the face's class, `sans`, `serif` or `mono`, and is read as the family it always was.
  */
-export const ANNOTATION_FONT_SETTING: SettingDefinition<z.ZodEnum<{ [K in AnnotationFontFamily]: K }>> = {
+export const ANNOTATION_FONT_SETTING: SettingDefinition<typeof annotationFamilySchema> = {
   id: 'editing.annotation-font',
   title: EDITING_FONT_TITLE,
   description: EDITING_FONT_DESCRIPTION,
-  schema: z.enum(ANNOTATION_FAMILY_NAMES),
-  fallback: 'Helvetica',
+  schema: annotationFamilySchema,
+  fallback: ANNOTATION_FONT_FAMILIES.sans,
   category: 'editing',
-  optionTitles: EDITING_FONT_OPTION_TITLES,
+  control: 'font',
   migrate: (stored) => (stored === 'sans' || stored === 'serif' || stored === 'mono' ? ANNOTATION_FONT_FAMILIES[stored] : stored),
 };
 

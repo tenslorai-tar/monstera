@@ -95,8 +95,11 @@ describe('the annotation font a person chose before it was a font name (K4)', ()
     expect((['Helvetica', 'Times', 'Courier'] as const).map((family) => annotationFontOf(family))).toStrictEqual(['sans', 'serif', 'mono']);
   });
 
-  it('CONTROL: a stored name is read as it is, and a value no build wrote falls back to Helvetica', () => {
+  it('CONTROL: a stored name is read as it is, ANY family since K2, and a value that is no name falls back to Helvetica', () => {
     expect(registry.read(ANNOTATION_FONT_SETTING.id, 'Courier')).toBe('Courier');
-    expect(registry.read(ANNOTATION_FONT_SETTING.id, 'Comic Sans')).toBe('Helvetica');
+    // A REAL FAMILY is a name the writer draws (ADR-0228 Decision 3), so it is kept rather than read as Helvetica.
+    expect(registry.read(ANNOTATION_FONT_SETTING.id, 'Carlito')).toBe('Carlito');
+    expect(registry.read(ANNOTATION_FONT_SETTING.id, '')).toBe('Helvetica');
+    expect(registry.read(ANNOTATION_FONT_SETTING.id, 12)).toBe('Helvetica');
   });
 });

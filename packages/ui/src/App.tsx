@@ -2154,6 +2154,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     [open?.version, picked, toolId],
   );
   const readSelection = useCallback(() => selection, [selection]);
+  // THE FONTS A SELECTED TEXT BOX'S PICKER OFFERS (K2), the same held list the editor's picker reads, asked the first
+  // time a mark with words is selected.
+  const markFontList = useFontList(client, selection?.items.some((item) => item.typed !== undefined) ?? false);
 
   /**
    * Edit object's selected object as the page shows it (ADR-0153 Decision 4): in the document on show, at its version,
@@ -2609,8 +2612,10 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         opacity: styleOpacity,
         lineWidth: styleLineWidth,
         fontSize: styleFontSize,
-        // THE STORED FAMILY'S FACE, by the contract's one table (K4).
-        font: annotationFontOf(styleFont),
+        // THE STORED FAMILY'S FACE, by the contract's one table (K4), for a standard family. Any other is sent by name
+        // and the kernel takes its `/DA` class from the face itself (K2), so this class is only the typing box's fallback.
+        font: annotationFontOf(styleFont) ?? 'sans',
+        family: styleFont,
         direction: styleDirection,
       }),
     [styleColour, styleDirection, styleFont, styleFontSize, styleLineWidth, styleOpacity],
@@ -4718,6 +4723,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
                   registry={registry}
                   selection={selection}
                   settings={settings}
+                  fonts={markFontList}
                   object={objectSelection === undefined ? undefined : { pick: objectSelection, onRecolour: recolourObject }}
                 />
               )}

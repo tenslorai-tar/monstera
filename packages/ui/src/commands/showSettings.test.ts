@@ -36,6 +36,10 @@ const HELD_OPENAI = {
   models: [{ id: 'gpt-held', label: 'GPT held', capabilities: { vision: null, streaming: null } }],
 };
 const HELD_FALLBACK = { source: 'fallback' as const, models: [] };
+const FONTS = {
+  listed: true,
+  families: [{ name: 'Carlito', origin: 'bundled' as const, embedding: 'subset' as const, bold: true, italic: true, looksLike: 'Calibri' }],
+};
 /** The one command the Keyboard page lists in these cases, registered on Ctrl+G. */
 const GRID_ROW: ShortcutRow = {
   id: 'view.toggle-grid',
@@ -52,6 +56,7 @@ function harness(options: {
   readonly heldRefuses?: boolean;
   /** `app.info` fails, so the Updates page has no version to show. */
   readonly infoRefuses?: boolean;
+  readonly fontsRefuse?: boolean;
   /** What `window.copyText` answers: whether the text reached the clipboard. */
   readonly copied?: boolean;
   readonly saveRefuses?: boolean;
@@ -130,6 +135,10 @@ function harness(options: {
           ? err({ code: 'internal', incident: 'test' })
           : ok({ version: '0.1.12.0', installChannel: 'store' as const, userName: 'Tester' }),
       );
+    }
+    // THE FONTS A `font` ROW OFFERS (K2): one bundled family, so a case can see this answer is the one handed on.
+    if (id === 'app.fontFamilies') {
+      return Promise.resolve(options.fontsRefuse === true ? err({ code: 'internal', incident: 'test' }) : ok(FONTS));
     }
     if (id === 'window.copyText') return Promise.resolve(ok({ copied: options.copied ?? true }));
     if (id === 'app.openStore') return Promise.resolve(ok({ opened: true }));
@@ -321,8 +330,9 @@ describe('showSettingsCommand', () => {
     await run();
 
     expect(settings.get(THEME_SETTING.id)).toBe(before);
-    // THE THREE READS A OPENING MAKES, and nothing that writes: the version is `app.info`'s, read for the Updates page.
-    expect(sent.map((call) => call.id)).toStrictEqual(['settings.loadSecrets', 'ai.models.held', 'app.info']);
+    // THE FOUR READS A OPENING MAKES, and nothing that writes: the version is `app.info`'s, read for the Updates page,
+    // and the fonts `app.fontFamilies`', for the font row (K2).
+    expect(sent.map((call) => call.id)).toStrictEqual(['settings.loadSecrets', 'ai.models.held', 'app.info', 'app.fontFamilies']);
     expect(secretsChanged()).toBe(0);
   });
 
@@ -357,6 +367,16 @@ describe('showSettingsCommand', () => {
       const failed = harness({ infoRefuses: true });
       await failed.run();
       expect((failed.asked[0]?.props as { version?: string }).version).toBeUndefined();
+    });
+
+    it('opens with the fonts main lists, for the font row (K2); with none read, opens without them', async () => {
+      const read = harness({});
+      await read.run();
+      expect((read.asked[0]?.props as { fonts?: unknown }).fonts).toStrictEqual(FONTS);
+      // CONTROL: a failed read is no list, which the row says could not be read, never an empty one.
+      const failed = harness({ fontsRefuse: true });
+      await failed.run();
+      expect((failed.asked[0]?.props as { fonts?: unknown }).fonts).toBeUndefined();
     });
 
     it('Copy sends the version through main and says Copied on main’s word only', async () => {

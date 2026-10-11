@@ -217,9 +217,10 @@ export interface SettingDefinition<Schema extends z.ZodType = z.ZodType> {
   /**
    * A control DECLARED by the setting where no schema shape can say what it is — `ai-models`, a model per provider
    * chosen from a list the dialog is handed ([ADR-0117](../../../../docs/DECISIONS/0117-an-ai-model-is-chosen-per-provider-from-the-fetched-list.md)
-   * Decision 3). Absent for every setting whose schema decides, which is all the others.
+   * Decision 3) — and `font`, a family from the one font picker (K2, ADR-0228 Decision 3). Absent for every setting
+   * whose schema decides, which is all the others.
    */
-  readonly control?: 'ai-models';
+  readonly control?: 'ai-models' | 'font';
   /** Reads a stored value written by an older build. */
   readonly migrate?: (stored: unknown) => unknown;
 }
@@ -338,8 +339,9 @@ export class SettingsRegistry {
       }
       // WHETHER A TEXT FIELD RUNS LONG IS DECIDED, never defaulted (ADR-0157): a text setting says it, a secret is a key
       // and runs long by definition, and nothing else has a text field for it to describe — a remembered setting is
-      // state the application keeps, and is never a row.
-      const text = setting.schema instanceof z.ZodString && setting.secret !== true && setting.remembered !== true;
+      // state the application keeps, and is never a row, and a DECLARED control is drawn as itself, never as a field.
+      const text =
+        setting.schema instanceof z.ZodString && setting.secret !== true && setting.remembered !== true && setting.control === undefined;
       if (text && setting.runsLong === undefined) {
         throw new Error(
           `Setting "${setting.id}" is a text setting that does not say whether its value runs long, so its field ` +

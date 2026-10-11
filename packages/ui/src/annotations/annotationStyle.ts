@@ -39,6 +39,11 @@ export interface AnnotationStyle {
   readonly fontSize: number;
   /** Typeface, for the tools that set text (`editing.annotation-font`). */
   readonly font: AnnotationFont;
+  /**
+   * The family by name (K2): any the picker offers. A text box and a typewriter are drawn in it; {@link font} is the
+   * base-14 class a reader that draws neither the appearance nor the rich text uses.
+   */
+  readonly family: string;
   /** The side text lines sit against, for the tools that set text (`editing.text-direction`). */
   readonly direction: TextDirection;
 }
@@ -59,6 +64,7 @@ export const PLAIN_STYLE: AnnotationStyle = {
   lineWidth: 2,
   fontSize: 12,
   font: 'sans',
+  family: 'Helvetica',
   direction: 'left-to-right',
 };
 
@@ -131,6 +137,7 @@ export function styleFrom(stored: {
   readonly lineWidth: number;
   readonly fontSize: number;
   readonly font: AnnotationFont;
+  readonly family: string;
   readonly direction: TextDirection;
 }): AnnotationStyle {
   const chosen = colourFromHex(stored.colour);
@@ -140,6 +147,7 @@ export function styleFrom(stored: {
     lineWidth: stored.lineWidth,
     fontSize: stored.fontSize,
     font: stored.font,
+    family: stored.family,
     direction: stored.direction,
   };
 }

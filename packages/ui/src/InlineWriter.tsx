@@ -224,6 +224,8 @@ export function InlineWriter({ request, draft, geometry, onDone }: InlineWriterP
             : { inlineSize: box.width }),
           padding: TEXT_INSET * geometry.zoom,
           fontSize: style.fontSize * geometry.zoom,
+          // THE FAMILY THE PAGE WILL DRAW, by name, the font picker's way; the class's generic face where it is absent.
+          ...(style.family === undefined ? {} : { fontFamily: `"${style.family}", var(--m-kind-face)` }),
           color: hexFromColour(style.colour),
         }}
       />

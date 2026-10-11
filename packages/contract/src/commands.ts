@@ -1110,6 +1110,23 @@ export const annotationFontSchema = z.enum(ANNOTATION_FONTS);
 export type AnnotationFont = z.infer<typeof annotationFontSchema>;
 
 /**
+ * How many font families one list may name, and how long a name may be: a Windows machine ships about 200 families and a
+ * designer's can hold thousands; a family name is a few words (`fontFamiliesOf` in the kernel). Here, before the schemas
+ * that take a family, so each is defined when they are.
+ */
+export const MAX_FONT_FAMILIES = 4096;
+export const MAX_FONT_FAMILY_NAME = 128;
+
+/**
+ * The family a text mark is set in by NAME, as the one font picker lists it (K2,
+ * [ADR-0228](../../../docs/DECISIONS/0228-the-formatting-set-is-whole-in-both-text-writers-and-a-tab-is-a-marked-gap.md)
+ * Decision 3): Helvetica, Times or Courier, drawn in the base 14 unembedded, or any family the resolver knows, embedded as a
+ * subset. Beside {@link annotationFontSchema}, which stays the base-14 class a reader that draws neither `/AP` nor `/RC` is
+ * given; where both are sent the kernel takes the class from the family, so the two cannot disagree.
+ */
+export const annotationFamilySchema = z.string().min(1).max(MAX_FONT_FAMILY_NAME);
+
+/**
  * Each face by the family name a person knows and the one font picker lists (the owner's K4): what the Annotation font
  * setting stores and the Properties tab shows, and how either turns back into the face the writer takes. One table, so
  * the name shown and the face written cannot come apart.
@@ -1399,6 +1416,8 @@ export const annotationWordsStyleSchema = z
     fontSize: z.number().min(MIN_ANNOTATION_FONT).max(MAX_ANNOTATION_FONT),
     colour: annotationColourSchema,
     font: annotationFontSchema,
+    /** The family by name a box Monstera styled is set in (K2); absent, `font`'s base-14 family. */
+    family: annotationFamilySchema.exactOptional(),
     direction: textDirectionSchema,
     // THE SIDE THE LINES SIT AGAINST, from `/Q`, which the Properties tab shows and sets (item 14b); `justify` is `/DS`'s
     // (ADR-0211). Optional, so a walk written before it reads as it did.
@@ -1412,7 +1431,10 @@ export const annotationWordsStyleSchema = z
     lineHeight: z.number().min(MIN_TEXT_LINE_HEIGHT).max(MAX_TEXT_LINE_HEIGHT).exactOptional(),
     fill: z.tuple([z.number().min(0).max(1), z.number().min(0).max(1), z.number().min(0).max(1)]).exactOptional(),
     padding: z.number().min(0).max(MAX_TEXT_PADDING).exactOptional(),
-    /** Present and true where Monstera cannot draw this box's styles (a script outside the base 14, or a callout): the panel says so. */
+    /**
+     * Present and true where Monstera cannot draw this box's styles: a callout, or words outside the base 14 in a
+     * process with no fonts bound (K2). The panel says so, and offers the standard faces alone.
+     */
     stylesUnavailable: z.literal(true).exactOptional(),
   })
   .strict();
@@ -1455,6 +1477,8 @@ export type AnnotationTextRun = z.infer<typeof annotationTextRunSchema>;
 export const annotationTextStyleSchema = z
   .object({
     font: annotationFontSchema.optional(),
+    /** The family by name (K2); where it is sent, the box's `/DA` class is taken from it and `font` is not read. */
+    family: annotationFamilySchema.optional(),
     fontSize: z.number().min(MIN_ANNOTATION_FONT).max(MAX_ANNOTATION_FONT).optional(),
     colour: annotationColourSchema.optional(),
     align: annotationAlignSchema.optional(),
@@ -1942,8 +1966,10 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
        * that has to grow later is the one it rejected.
        */
       fontSize: z.number().min(MIN_ANNOTATION_FONT).max(MAX_ANNOTATION_FONT),
-      /** The typeface, {@link ANNOTATION_FONTS}. */
+      /** The typeface, {@link ANNOTATION_FONTS}: the base-14 class, which `family` decides where both are sent. */
       font: annotationFontSchema,
+      /** The family by name ({@link annotationFamilySchema}); absent, the box is set in `font`'s base-14 face. */
+      family: annotationFamilySchema.optional(),
       /** The side the lines sit against, {@link TEXT_DIRECTIONS}. */
       direction: textDirectionSchema,
     })
@@ -2166,8 +2192,10 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
       colour: annotationColourSchema,
       opacity: annotationOpacitySchema,
       fontSize: z.number().min(MIN_ANNOTATION_FONT).max(MAX_ANNOTATION_FONT),
-      /** The typeface, {@link ANNOTATION_FONTS}. */
+      /** The typeface, {@link ANNOTATION_FONTS}: the base-14 class, which `family` decides where both are sent. */
       font: annotationFontSchema,
+      /** The family by name ({@link annotationFamilySchema}); absent, the box is set in `font`'s base-14 face. */
+      family: annotationFamilySchema.optional(),
       /** The side the lines sit against, {@link TEXT_DIRECTIONS}. */
       direction: textDirectionSchema,
     })
@@ -2201,8 +2229,10 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
       colour: annotationColourSchema,
       opacity: annotationOpacitySchema,
       fontSize: z.number().min(MIN_ANNOTATION_FONT).max(MAX_ANNOTATION_FONT),
-      /** The typeface, {@link ANNOTATION_FONTS}. */
+      /** The typeface, {@link ANNOTATION_FONTS}: the base-14 class, which `family` decides where both are sent. */
       font: annotationFontSchema,
+      /** The family by name ({@link annotationFamilySchema}); absent, the box is set in `font`'s base-14 face. */
+      family: annotationFamilySchema.optional(),
       /** The side the lines sit against, {@link TEXT_DIRECTIONS}. */
       direction: textDirectionSchema,
     })
@@ -4472,12 +4502,6 @@ export const MAX_WORKBOOK_ROW = 1_048_576;
 /** A sheet name as a file may spell it: Excel's own limit is 31, and a file past it is still read, to this bound. */
 export const MAX_WORKBOOK_SHEET_NAME = 255;
 
-/**
- * How many font families one list may name, and how long a name may be: a Windows machine ships about 200 families and a
- * designer's can hold thousands; a family name is a few words (`fontFamiliesOf` in the kernel).
- */
-export const MAX_FONT_FAMILIES = 4096;
-export const MAX_FONT_FAMILY_NAME = 128;
 /**
  * How many calculated fields a fill's prior may name, and how long each name and value may be (the kernel's
  * `fieldCalculation.ts`). A form past any of them is filled with a checkpoint for its undo, which restores it exactly too.

@@ -89,6 +89,12 @@ interface Mounted {
   readonly read: number[];
 }
 
+/** The computer's and Monstera's fonts as main lists them: one bundled family a text box can be drawn in (K2). */
+const FONTS = {
+  listed: true,
+  families: [{ name: 'Carlito', origin: 'bundled' as const, embedding: 'subset' as const, bold: true, italic: true }],
+};
+
 function mounted(
   selection: AnnotationSelection | undefined,
   foot: readonly UiCommand[] = [],
@@ -128,6 +134,7 @@ function mounted(
         selection={selection}
         settings={store}
         measuring={measuring}
+        fonts={FONTS}
       />
     </Wrapped>,
   );
@@ -360,12 +367,12 @@ describe('PropertiesPanel with marks selected', () => {
   it('a TEXT BOX shows a Text section, and each control sends ONE property of its words', () => {
     const { restyled, store } = mounted({ ...ONE, items: [TEXT_BOX] });
     expect(document.querySelector('[data-properties-text]')).not.toBeNull();
-    // THE ONE FONT PICKER, by the real names (K4): Times is the serif face the writer takes.
+    // THE ONE FONT PICKER, by the real names (K4), sent BY NAME (K2): the kernel draws the family and takes `/DA`'s class.
     fireEvent.click(screen.getByRole('button', { name: 'Font: Helvetica' }));
     const times = document.querySelector('[data-font-choice="Times"]');
     if (times === null) throw new Error('Times is not offered');
     fireEvent.click(times);
-    expect(restyled).toStrictEqual([{ text: { font: 'serif' } }]);
+    expect(restyled).toStrictEqual([{ text: { family: 'Times' } }]);
     fireEvent.click(screen.getByRole('button', { name: 'Right' }));
     expect(restyled.at(-1)).toStrictEqual({ text: { align: 'right' } });
     const size = screen.getAllByRole('spinbutton').find((each) => (each as HTMLInputElement).value === '12');
@@ -395,6 +402,28 @@ describe('PropertiesPanel with marks selected', () => {
     expect(restyled.at(-1)).toStrictEqual({ text: { padding: 6 } });
     fireEvent.click(screen.getByRole('checkbox', { name: 'Fill the box' }));
     expect(restyled.at(-1)).toStrictEqual({ text: { fill: [1, 1, 0.8] } });
+  });
+
+  it('a text box is offered the computer’s and Monstera’s fonts (K2), and a family chosen is sent by name and kept as the default', () => {
+    const { restyled, store } = mounted({ ...ONE, items: [TEXT_BOX] });
+    fireEvent.click(screen.getByRole('button', { name: 'Font: Helvetica' }));
+    const carlito = document.querySelector('[data-font-choice="Carlito"]');
+    if (carlito === null) throw new Error('Carlito is not offered');
+    fireEvent.click(carlito);
+    expect(restyled).toStrictEqual([{ text: { family: 'Carlito' } }]);
+    expect(store.get(ANNOTATION_FONT_SETTING.id)).toBe('Carlito');
+  });
+
+  it('a box drawn in a real family SHOWS that family by name, not its `/DA` class', () => {
+    mounted({ ...ONE, items: [{ ...TEXT_BOX, typed: { ...TEXT_BOX.typed, family: 'Carlito' } }] });
+    expect(screen.getByRole('button', { name: 'Font: Carlito' })).toBeTruthy();
+  });
+
+  it('CONTROL: a mark Monstera cannot draw — a callout — is offered the standard faces alone', () => {
+    mounted({ ...ONE, items: [{ ...TEXT_BOX, typed: { ...TEXT_BOX.typed, stylesUnavailable: true as const } }] });
+    fireEvent.click(screen.getByRole('button', { name: 'Font: Helvetica' }));
+    expect(document.querySelector('[data-font-choice="Times"]')).not.toBeNull();
+    expect(document.querySelector('[data-font-choice="Carlito"]')).toBeNull();
   });
 
   it('a box that cannot take the styles says so and draws no style control', () => {

@@ -7,6 +7,7 @@ import {
   MAX_LINE_HEIGHT,
   MAX_PADDING,
   MIN_LINE_HEIGHT,
+  base14Of,
 } from './textBoxStyle.js';
 
 /**
@@ -21,7 +22,28 @@ import {
  * keeps the plain words and says so rather than guessing.
  */
 
-const FAMILY_NAME: Readonly<Record<Family, string>> = { sans: 'Helvetica', serif: 'Times New Roman', mono: 'Courier New' };
+/**
+ * How a family is named in `/DS`'s `font`: quoted where its name holds a space or a comma, as CSS writes one.
+ *
+ * **A box styled before real fonts (ADR-0228 Decision 3) named its three faces `Helvetica`, `Times New Roman` and `Courier
+ * New`, and meant the base 14.** Such a box carries the marker's first form, and {@link familyOfStyleString} reads those
+ * names back as the base 14 for it alone, so a box nobody touched is drawn as it was.
+ */
+function familyName(family: Family): string {
+  return /[\s,]/u.test(family) ? `'${family.replace(/'/gu, '')}'` : family;
+}
+
+/** The family a `/DS` `font` names, its first family where it lists several, quotes taken off; `undefined` where it names none. */
+export function familyOfStyleString(font: string, legacy: boolean): Family | undefined {
+  // THE SIZE ENDS THE FAMILY in the shape this module and Acrobat write (`Helvetica,sans-serif 12.0pt`); CSS's own order
+  // puts it first (`12pt Helvetica`), and either is read.
+  const withoutSize = font.replace(/\d+(?:\.\d+)?\s*pt/iu, ' ').trim();
+  const first = withoutSize.split(',')[0]?.trim().replace(/^['"]|['"]$/gu, '').trim() ?? '';
+  if (first === '') return undefined;
+  if (!legacy) return first;
+  const lower = first.toLowerCase();
+  return lower.includes('courier') ? 'Courier' : lower.includes('times') ? 'Times' : lower.includes('helvetica') ? 'Helvetica' : base14Of(first) ?? first;
+}
 
 const hex = (colour: Rgb): string =>
   `#${colour.map((channel) => Math.round(Math.min(1, Math.max(0, channel)) * 255).toString(16).padStart(2, '0')).join('')}`;
@@ -47,7 +69,7 @@ const unescapeXml = (text: string): string =>
 /** The box's `/DS`: every field of the look the appearance reads, so `/DS` alone rebuilds it. */
 export function styleStringOf(look: BoxLook): string {
   return [
-    `font: ${FAMILY_NAME[look.family]} ${String(look.size)}pt`,
+    `font: ${familyName(look.family)} ${String(look.size)}pt`,
     `font-weight: ${look.bold ? 'bold' : 'normal'}`,
     `font-style: ${look.italic ? 'italic' : 'normal'}`,
     `text-decoration: ${[look.underline ? 'underline' : '', look.strike ? 'line-through' : ''].filter(Boolean).join(' ') || 'none'}`,
@@ -71,13 +93,16 @@ function propertiesOf(style: string): Map<string, string> {
   return found;
 }
 
-/** `base` with what a `/DS` says over it; a property it does not know or cannot read leaves the base's. */
-export function lookOfStyleString(style: string, base: BoxLook = DEFAULT_LOOK): BoxLook {
+/**
+ * `base` with what a `/DS` says over it; a property it does not know or cannot read leaves the base's.
+ *
+ * @param legacy the box was styled before real fonts, so its family names mean the base 14 ({@link familyOfStyleString})
+ */
+export function lookOfStyleString(style: string, base: BoxLook = DEFAULT_LOOK, legacy = false): BoxLook {
   const properties = propertiesOf(style);
   const font = properties.get('font');
   const sizeMatch = font === undefined ? null : /(\d+(?:\.\d+)?)\s*pt/iu.exec(font);
-  const lower = (font ?? '').toLowerCase();
-  const family: Family = lower.includes('courier') ? 'mono' : lower.includes('times') ? 'serif' : lower.includes('helvetica') ? 'sans' : base.family;
+  const family: Family = (font === undefined ? undefined : familyOfStyleString(font, legacy)) ?? base.family;
   const decoration = properties.get('text-decoration') ?? '';
   const align = properties.get('text-align');
   const lineHeight = Number(properties.get('line-height'));

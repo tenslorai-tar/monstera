@@ -2,6 +2,7 @@ import type { Command, CommandKind, CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult, CommandPrior } from './commandLog.js';
 import { declaredCommands } from './commandDeclarations.js';
+import { loadEditFaces } from './editFaces.js';
 import type { ApplyRequest, CommandExecution, KindsRoutedTo } from './commandRouting.js';
 import { type Capture, type DrawnBoxes, type Invert, type MupdfSession, NO_BOXES, type PreReadValue } from './engineSeam.js';
 import {
@@ -516,6 +517,11 @@ export const localMupdfExecution: CommandExecution<'mupdf'> = {
     // already holds the session `readDestinations` takes. Under ADR-0069 the request carries the field either way.
     reads,
   }: ApplyRequest<'mupdf', K>): Promise<DrawnBoxes> {
+    // THE CATALOGUE A TEXT BOX IS DRAWN FROM is loaded before any command, once per process (K2, ADR-0228 Decision 3): a
+    // redraw is synchronous and may draw a box in an embedded face whatever the command was (a move, a rotation, an
+    // import), so the one place every MuPDF command passes is where it is made ready. A process bound to no fonts, and a
+    // second call, do nothing. The cost is the font module's load on a host's first command, not at its start.
+    await loadEditFaces();
     // A SPEC DECLARING A PRE-READ TAKES IT where every other takes its sources: `Apply`'s shape for a live-session
     // writer with sources `'none'` and a read. The bus has resolved it against this command, so its absence here is
     // the bus's defect and is refused by name rather than handed on as `undefined`. It answers the characters it drew

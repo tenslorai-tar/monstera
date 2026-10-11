@@ -100,6 +100,7 @@ describe('calloutTool', () => {
         opacity: 1,
         fontSize: 12,
         font: 'sans',
+        family: 'Helvetica',
         direction: 'left-to-right',
       },
     });

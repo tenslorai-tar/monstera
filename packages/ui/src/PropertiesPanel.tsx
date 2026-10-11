@@ -6,7 +6,6 @@ import {
   type AnnotationBlend,
   type AnnotationColour,
   ANNOTATION_FONT_FAMILIES,
-  annotationFontOf,
   type AnnotationTextStyle,
   MAX_ANNOTATION_AUTHOR,
   MAX_ANNOTATION_BORDER,
@@ -135,6 +134,8 @@ export interface PropertiesPanelProps {
    * never both set.
    */
   readonly object?: { readonly pick: ObjectPick; readonly onRecolour: (colour: ObjectFill) => void } | undefined;
+  /** The computer's and Monstera's fonts, which a text box's and a typewriter's picker offers (K2); `undefined` while read. */
+  readonly fonts?: FontList;
 }
 
 /**
@@ -181,6 +182,7 @@ export function PropertiesPanel({
   context,
   measuring = false,
   object,
+  fonts,
 }: PropertiesPanelProps): ReactElement {
   const { i18n } = useLingui();
   const measureUnit = useSetting(settings, MEASURE_UNIT_SETTING);
@@ -364,7 +366,8 @@ export function PropertiesPanel({
     // THE TEXT SETTINGS THE TOOLS READ: a new text box starts in the face and at the size just chosen (item 14b). The
     // colour is the shared annotation colour's, set by the row above, so a text colour is not written to it.
     if ('text' in next) {
-      if (next.text.font !== undefined) settings.set(ANNOTATION_FONT_SETTING.id, ANNOTATION_FONT_FAMILIES[next.text.font]);
+      if (next.text.family !== undefined) settings.set(ANNOTATION_FONT_SETTING.id, next.text.family);
+      else if (next.text.font !== undefined) settings.set(ANNOTATION_FONT_SETTING.id, ANNOTATION_FONT_FAMILIES[next.text.font]);
       if (next.text.fontSize !== undefined) settings.set(ANNOTATION_FONT_SIZE_SETTING.id, next.text.fontSize);
     }
   };
@@ -466,6 +469,9 @@ export function PropertiesPanel({
             box={lookRows}
             key={`${String(selection.page)}:${String(first.index)}:${String(first.typed.fontSize)}`}
             typed={first.typed}
+            // A MARK MONSTERA CANNOT DRAW — a callout, whose words the engine draws with its leader — is offered the
+            // standard faces alone, which the engine sets; the kernel says which in `stylesUnavailable`.
+            fonts={selection.items.some((item) => item.typed?.stylesUnavailable === true) ? STANDARD_ONLY : fonts}
             onChange={(text) => {
               change({ text });
             }}
@@ -651,8 +657,13 @@ function WidthRow({
 
 /** The faces a text box is set in, by name, in the picker's order: the contract's one table. */
 const TEXT_BOX_FAMILIES = ANNOTATION_FONTS.map((font) => ANNOTATION_FONT_FAMILIES[font]);
-/** A text box's picker lists no computer's fonts and none of the document's (K2 is not built). */
-const NO_OTHER_FONTS: FontList = { listed: true, families: [] };
+/** The family a mark's words are in by name: the one it was drawn in (K2), else its `/DA` class's standard face. */
+function familyOfTyped(typed: NonNullable<SelectedAnnotation['typed']>): string {
+  return typed.family ?? ANNOTATION_FONT_FAMILIES[typed.font];
+}
+
+/** A callout's picker: the standard faces alone, said as a list, since nothing else is offered rather than unread. */
+const STANDARD_ONLY: FontList = { listed: true, families: [] };
 const NO_DOCUMENT_FONTS: readonly DocumentFont[] = [];
 
 const ALIGN_OPTIONS: readonly SegmentedOption<AnnotationAlign>[] = ANNOTATION_ALIGNMENTS.map((value) => ({
@@ -685,9 +696,12 @@ const STYLE_TOGGLES = [
 function TextSection({
   typed,
   box,
+  fonts,
   onChange,
 }: {
   readonly typed: NonNullable<SelectedAnnotation['typed']>;
+  /** What the picker offers beyond the standard faces: the font list for a box Monstera draws, nothing for a callout. */
+  readonly fonts: FontList;
   /** The box's own look (border colour, opacity, width), first in the Box group (the owner's text E4). */
   readonly box: ReactNode;
   readonly onChange: (text: AnnotationTextStyle) => void;
@@ -719,21 +733,21 @@ function TextSection({
     <>
     <div className="m-properties__text" data-properties-text="" role="group" aria-label={i18n._(PROPERTIES_TEXT_HEADING)}>
       <h3 className="m-properties__subtitle">{i18n._(PROPERTIES_TEXT_HEADING)}</h3>
-      {/* THE ONE FONT PICKER (the owner's D1 and K4), offering the faces a text box is written in: the standard fonts
-          (ADR-0211 Decision 2). A computer's fonts are not offered until the text box writer embeds them (K2). */}
+      {/* THE ONE FONT PICKER (the owner's D1 and K4), offering what the writer draws: the standard faces, and for a box
+          Monstera draws, every font of the computer's and Monstera's, embedded (K2, ADR-0228 Decision 3). Sent by
+          name, so the kernel draws the family and takes `/DA`'s class from it. */}
       <div className="m-properties__row">
         <span className="m-properties__label">{i18n._(PROPERTIES_FONT)}</span>
         <FontPicker
           builtIn={TEXT_BOX_FAMILIES}
           inDocument={NO_DOCUMENT_FONTS}
           label={PROPERTIES_FONT}
-          list={NO_OTHER_FONTS}
+          list={fonts}
           onPick={(family) => {
-            const font = annotationFontOf(family);
-            if (font !== undefined && font !== typed.font) onChange({ font });
+            if (family.toLowerCase() !== familyOfTyped(typed).toLowerCase()) onChange({ family });
           }}
           unset={PROPERTIES_FONT}
-          value={ANNOTATION_FONT_FAMILIES[typed.font]}
+          value={familyOfTyped(typed)}
         />
       </div>
       <div className="m-properties__row m-properties__row--inline">

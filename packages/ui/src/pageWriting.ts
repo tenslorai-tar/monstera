@@ -21,6 +21,8 @@ export interface WriteStyle {
   readonly colour: AnnotationColour;
   /** The face KIND the page will draw them in; the renderer has no base-14 font, so a face of the same kind. */
   readonly font: AnnotationFont;
+  /** The family by name the page will draw them in (K2), which the box shows them in where this computer has it. */
+  readonly family?: string;
   readonly direction: TextDirection;
 }
 

@@ -1,4 +1,5 @@
 import {
+  ANNOTATION_FONT_FAMILIES,
   type AnnotationBlend,
   type AnnotationDraft,
   type AnnotationFont,
@@ -43,8 +44,8 @@ import { ENGINE_ANNOTATIONS_MAX } from './host/engineChannels.js';
 import { decodedImage, withDocument } from './mupdfWriter.js';
 import { displayedBox } from './pageBoxes.js';
 import { snapRotation } from './rotatePages.js';
-import { isStyled, isStylable, readStyledBox, restyled, writeStyleFacts } from './textBoxAppearance.js';
-import { DEFAULT_LOOK, writable } from './textBoxStyle.js';
+import { canDraw, daFaceOf, isStyled, isStylable, readStyledBox, restyled, writeStyleFacts } from './textBoxAppearance.js';
+import { DEFAULT_LOOK, base14Of } from './textBoxStyle.js';
 import { pageInDocument, pagesOf } from './pageScope.js';
 import { glyphLinesOf, heldToTheirLines } from './redactionQuads.js';
 import { type SignatureBox, type SignatureDrawing, drawSignature, signatureBox } from './signatureDrawing.js';
@@ -733,6 +734,26 @@ const FACE_OF: ReadonlyMap<string, AnnotationFont> = new Map(
   (Object.entries(BASE14_FACE) as [AnnotationFont, string][]).map(([face, name]) => [name, face]),
 );
 
+/** A text draft's `/DA` face: from its family by name where it names one (K2), else its base-14 class. */
+function daFaceOfDraft(draft: { readonly font: AnnotationFont; readonly family?: string | undefined }): string {
+  return draft.family === undefined ? BASE14_FACE[draft.font] : daFaceOf(draft.family);
+}
+
+/**
+ * A new text box or typewriter in a family the base 14 are not is Monstera's to draw from the start (K2): its family is
+ * written into the style facts, and the redraw that finishes the command draws it in that face. A base-14 family stays the
+ * engine's, as every box before real fonts.
+ */
+function realFamily(annotation: PDFAnnotation, draft: { readonly family?: string | undefined }, document: PDFDocument): void {
+  if (draft.family === undefined || base14Of(draft.family) !== undefined) return;
+  writeStyleFacts(annotation, document, { family: draft.family });
+}
+
+/** The base-14 family each of {@link BASE14_FACE}'s names is, by the name the picker lists. */
+const FAMILY_OF_FACE: ReadonlyMap<string, string> = new Map(
+  (Object.entries(BASE14_FACE) as [AnnotationFont, string][]).map(([face, name]) => [name, ANNOTATION_FONT_FAMILIES[face]]),
+);
+
 /**
  * How a text mark's words are drawn, read as the writers above write it — `/DA` through MuPDF's own reader, `/Q` as
  * {@link writeDirection} writes it — or nothing (ADR-0154 Decision 3).
@@ -753,12 +774,15 @@ function wordsStyleOf(annotation: PDFAnnotation): { readonly typed?: AnnotationW
   // leader is the engine's, and a character the base 14 cannot write cannot be drawn in a face of ours.
   const styled = isStyled(annotation) ? readStyledBox(annotation) : undefined;
   const contents = annotation.getContents();
-  const unavailable = !isStylable(annotation) || !(styled === undefined ? writable(contents) : styled.runs.every((run) => writable(run.text)));
+  const family = styled?.look.family ?? ANNOTATION_FONT_FAMILIES[face];
+  const unavailable = !isStylable(annotation) || !canDraw(styled === undefined ? contents : styled.runs.map((run) => run.text).join(''), family);
   return {
     typed: {
       fontSize: size,
       colour,
       font: face,
+      // THE FAMILY BY NAME where Monstera styled the box (K2): the name the picker shows, which `/DA`'s class cannot say.
+      ...(styled === undefined ? {} : { family: styled.look.family }),
       direction: annotation.getQuadding() === 2 ? 'right-to-left' : 'left-to-right',
       // THE SIDE THE LINES SIT AGAINST, which the Properties tab shows (item 14b); `/Q` says it, and 2 is also how
       // right-to-left is written (`writeDirection`), so the two are one stored value read as two words. Justify is `/DS`'s.
@@ -792,10 +816,14 @@ function wordsStyleOf(annotation: PDFAnnotation): { readonly typed?: AnnotationW
 function writeWordsStyle(annotation: PDFAnnotation, text: AnnotationTextStyle, document: PDFDocument): void {
   // READ BEFORE `/DA` IS SET: MuPDF's `setDefaultAppearance` deletes `/DS` (measured 2026-10-08, 1.28.0).
   const before = isStyled(annotation) ? readStyledBox(annotation) : undefined;
-  if (text.font !== undefined || text.fontSize !== undefined || text.colour !== undefined) {
+  // THE FAMILY BY NAME DECIDES THE CLASS where it is sent (K2): `/DA` keeps the base 14 nearest it, for a reader that draws
+  // neither `/AP` nor `/RC`, and `font` is not read beside it, so the two cannot disagree.
+  const daFace = text.family !== undefined ? daFaceOf(text.family) : text.font === undefined ? undefined : BASE14_FACE[text.font];
+  const family = text.family ?? (text.font === undefined ? undefined : ANNOTATION_FONT_FAMILIES[text.font]);
+  if (daFace !== undefined || text.fontSize !== undefined || text.colour !== undefined) {
     const now = annotation.getDefaultAppearance();
     annotation.setDefaultAppearance(
-      text.font === undefined ? now.font : BASE14_FACE[text.font],
+      daFace ?? now.font,
       text.fontSize ?? now.size,
       text.colour === undefined ? [...now.color] : [...text.colour],
     );
@@ -811,7 +839,9 @@ function writeWordsStyle(annotation: PDFAnnotation, text: AnnotationTextStyle, d
     text.fill !== undefined ||
     text.padding !== undefined ||
     text.words !== undefined ||
-    text.align === 'justify';
+    text.align === 'justify' ||
+    // A FAMILY THE BASE 14 ARE NOT is drawn only by Monstera's own appearance (K2): MuPDF would paint it in Helvetica.
+    (family !== undefined && base14Of(family) === undefined);
   // ONCE A BOX CARRIES MONSTERA'S STYLE every change to its look goes through the one writer, or `/DS` would keep the OLD size
   // and colour and read them back over the new `/DA` (ADR-0211 Decision 1: the appearance is a function of the four facts).
   if (!styles && !isStyled(annotation)) return;
@@ -819,11 +849,12 @@ function writeWordsStyle(annotation: PDFAnnotation, text: AnnotationTextStyle, d
   const words = text.words?.map((run) => run.text).join('') ?? annotation.getContents();
   // THE RUNS TOGETHER ARE A TEXT BOX'S WORDS and are held to its bound, which the wire's per-run bound cannot say.
   if (words.length > MAX_ANNOTATION_TEXT) throw new RangeError(`a text box holds at most ${String(MAX_ANNOTATION_TEXT)} characters`);
-  if (!isStylable(annotation) || !writable(words)) {
-    throw new RangeError('this text mark cannot take styles: a callout, or words in a script the base 14 faces cannot write');
+  const drawnIn = family ?? before?.look.family ?? FAMILY_OF_FACE.get(annotation.getDefaultAppearance().font) ?? DEFAULT_LOOK.family;
+  if (!isStylable(annotation) || !canDraw(words, drawnIn)) {
+    throw new RangeError('this text mark cannot take styles: a callout, or words this process holds no face for');
   }
   writeStyleFacts(annotation, document, {
-    family: text.font,
+    family,
     size: text.fontSize,
     colour: text.colour,
     bold: text.bold,
@@ -1002,7 +1033,7 @@ const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T
     subtype: 'FreeText',
     bounds: (draft, transform) => placedRect(draft.rect, transform),
     degenerate: (draft) => draft.rect.x0 === draft.rect.x1 || draft.rect.y0 === draft.rect.y1,
-    write: (annotation, draft, transform): void => {
+    write: (annotation, draft, transform, on): void => {
       annotation.setRect(placedRect(draft.rect, transform));
       // THE TEXT IS `/Contents`, which is the format's own answer for a
       // `/FreeText` and not a second opinion: §12.5.6.6 says the text a
@@ -1019,10 +1050,11 @@ const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T
       // resource dictionary the font name resolves through, and a `/DA` naming
       // a font no `/DR` carries renders as nothing.
       //
-      // THE FACE A PERSON CHOSE, as the base-14 name MuPDF writes (`BASE14_FACE`): a face every viewer has, so
-      // nothing is embedded and nothing can go missing on another machine.
-      annotation.setDefaultAppearance(BASE14_FACE[draft.font], draft.fontSize, [...draft.colour]);
+      // THE FACE A PERSON CHOSE: the base-14 name MuPDF writes (`BASE14_FACE`) for a standard family, and for any other the
+      // base 14 nearest it in `/DA`, with the family drawn by Monstera's own appearance (K2, `realFamily`).
+      annotation.setDefaultAppearance(daFaceOfDraft(draft), draft.fontSize, [...draft.colour]);
       writeDirection(annotation, draft.direction);
+      realFamily(annotation, draft, on.document);
       // NOTHING SETS A BORDER HERE, AND THE OBJECT HAS ONE. Measured
       // 2026-09-06: `createAnnotation('FreeText')` on MuPDF 1.28.0 produces
       // `/AP /BS /CL /Contents /DA /F /P /RD /Rect /Subtype /Type` — so a `/BS`
@@ -1082,8 +1114,9 @@ const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T
     write: (annotation, draft, transform, on): void => {
       annotation.setRect(placedRect(draft.rect, transform));
       annotation.setContents(draft.text);
-      annotation.setDefaultAppearance(BASE14_FACE[draft.font], draft.fontSize, [...draft.colour]);
+      annotation.setDefaultAppearance(daFaceOfDraft(draft), draft.fontSize, [...draft.colour]);
       writeDirection(annotation, draft.direction);
+      realFamily(annotation, draft, on.document);
       // NO BORDER, which is the whole difference from the row above and is why
       // that row now sets one. MuPDF's own default is already this, so nothing
       // is called — stated rather than left as an absence somebody removes.
@@ -1102,7 +1135,9 @@ const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T
     write: (annotation, draft, transform, on): void => {
       annotation.setRect(placedRect(draft.rect, transform));
       annotation.setContents(draft.text);
-      annotation.setDefaultAppearance(BASE14_FACE[draft.font], draft.fontSize, [...draft.colour]);
+      // A CALLOUT'S WORDS ARE THE ENGINE'S (its leader is drawn with them), so its family is the `/DA` class alone, and the
+      // picker offers a callout the base 14 only.
+      annotation.setDefaultAppearance(daFaceOfDraft(draft), draft.fontSize, [...draft.colour]);
       writeDirection(annotation, draft.direction);
       const [at] = placedPoints([draft.at], transform);
       if (at === undefined) throw new Error('a callout has a point it leads from');

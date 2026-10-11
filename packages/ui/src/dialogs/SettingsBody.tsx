@@ -1,5 +1,7 @@
 import { useLingui } from '@lingui/react';
 import {
+  ANNOTATION_FONTS,
+  ANNOTATION_FONT_FAMILIES,
   type AI_LIST_PROBLEMS,
   AI_PROVIDERS,
   AI_PROVIDER_IDS,
@@ -85,6 +87,7 @@ import {
   SETTINGS_UPDATES_NOTE,
   SETTINGS_VIEWING_NOTE,
 } from '../messages/en.js';
+import { type DocumentFont, FontPicker, type FontList } from '../FontPicker.js';
 import { Button } from '../primitives/Button.js';
 import { Icon } from '../primitives/Icon.js';
 import { Input } from '../primitives/Input.js';
@@ -643,6 +646,51 @@ function KeyCheck({
   );
 }
 
+/** What a `font` row offers built in: the three standard faces a text mark can be set in (K4). */
+const BUILT_IN_FAMILIES = ANNOTATION_FONTS.map((font) => ANNOTATION_FONT_FAMILIES[font]);
+
+/**
+ * A `font` setting's row (K2): the one font picker, over the list main answered when the dialog opened. A read that
+ * failed is the picker's own *could not be read*, never an empty list.
+ */
+function FontRow({
+  setting,
+  draft,
+  fonts,
+  onChoose,
+}: {
+  readonly setting: SettingDefinition;
+  readonly draft: unknown;
+  readonly fonts: NonNullable<FontList> | undefined;
+  readonly onChoose: (family: string) => void;
+}): ReactElement {
+  const { _ } = useLingui();
+  const labelId = useId();
+  return (
+    <div className="m-settings-row" data-setting={setting.id}>
+      <div className="m-settings-row__text">
+        <span className="m-settings-row__label" id={labelId}>
+          {_(setting.title)}
+        </span>
+        {setting.description === undefined ? null : <span className="m-settings-row__note">{_(setting.description)}</span>}
+      </div>
+      {/* A GROUP NAMED BY THE ROW'S LABEL, as every other row's control is: the picker's own button says the family. */}
+      <div aria-labelledby={labelId} className="m-settings-row__control" role="group">
+        <FontPicker
+          builtIn={BUILT_IN_FAMILIES}
+          inDocument={NO_DOCUMENT_FONTS}
+          label={setting.title}
+          list={fonts ?? { listed: false, families: [] }}
+          onPick={onChoose}
+          unset={setting.title}
+          value={typeof draft === 'string' ? draft : undefined}
+        />
+      </div>
+    </div>
+  );
+}
+const NO_DOCUMENT_FONTS: readonly DocumentFont[] = [];
+
 /** Where a held list came from, in words — ADR-0117 Decision 3's *"with the source said"*. */
 const LIST_SOURCE_WORDS: Readonly<Record<AiModelListAnswer['source'], MessageKey>> = {
   fetched: SETTINGS_AI_MODELS_FETCHED,
@@ -829,6 +877,7 @@ export default function SettingsBody({
   refreshed = {},
   shortcuts,
   version,
+  fonts,
   resolve,
   update,
 }: {
@@ -842,6 +891,8 @@ export default function SettingsBody({
   readonly shortcuts?: { readonly rows: readonly ShortcutListRow[]; readonly dropped: readonly string[] } | undefined;
   /** The installed version, `app.info`'s, for the Updates page; absent where nothing supplies it. */
   readonly version?: string | undefined;
+  /** The fonts main listed when the dialog opened, for a `font` row; absent where that read failed. */
+  readonly fonts?: NonNullable<FontList> | undefined;
 } & DialogAnswering<SettingsAnswer>): ReactElement {
   const { _ } = useLingui();
   const [drafts, setDrafts] = useState<Readonly<Record<string, unknown>>>(() =>
@@ -968,6 +1019,16 @@ export default function SettingsBody({
           changeValue(setting, value);
         }}
         storedSecrets={storedSecrets}
+      />
+    ) : controlFor(setting) === 'font' ? (
+      <FontRow
+        draft={draftFor(setting)}
+        fonts={fonts}
+        key={setting.id}
+        onChoose={(family) => {
+          changeValue(setting, family);
+        }}
+        setting={setting}
       />
     ) : controlFor(setting) === 'ai-models' ? (
       <ModelRow

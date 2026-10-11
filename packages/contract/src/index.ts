@@ -302,6 +302,7 @@ export {
   type AnnotationFont,
   type AnnotationFontFamily,
   annotationFontSchema,
+  annotationFamilySchema,
   TEXT_DIRECTIONS,
   type TextDirection,
   textDirectionSchema,

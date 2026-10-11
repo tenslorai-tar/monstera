@@ -113,9 +113,19 @@ describe('textBoxTool', () => {
         opacity: 1,
         fontSize: 12,
         font: 'sans',
+        family: 'Helvetica',
         direction: 'left-to-right',
       },
     });
+  });
+
+  it('sends the chosen FAMILY by name (K2), on the page and in the command — the case above, Helvetica, is the control', async () => {
+    const { tool, asked } = toolAnswering('see figure 3', { ...PLAIN_STYLE, family: 'Carlito' });
+    const command = await drag(tool, [20, 20], [120, 80]);
+    expect(asked[0]?.style?.family).toBe('Carlito');
+    expect(command?.kind === 'addAnnotation' && command.annotation.type === 'text-box' ? command.annotation.family : undefined).toBe(
+      'Carlito',
+    );
   });
 
   it('sets the words in the reader’s chosen FACE (`editing.annotation-font`), on the page and in the command — the case above, on sans, is the control', async () => {

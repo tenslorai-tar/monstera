@@ -1905,15 +1905,6 @@ export const EDITING_LINE_WIDTH_TITLE = messageKey('setting.editing.annotation-l
 export const EDITING_FONT_SIZE_TITLE = messageKey('setting.editing.annotation-font-size');
 export const EDITING_FONT_TITLE = messageKey('setting.editing.annotation-font.title');
 export const EDITING_FONT_DESCRIPTION = messageKey('setting.editing.annotation-font.description');
-/** `editing.annotation-font`'s members, each its own exported key as the other option sets are. */
-export const EDITING_FONT_SANS = messageKey('setting.editing.annotation-font.sans');
-export const EDITING_FONT_SERIF = messageKey('setting.editing.annotation-font.serif');
-export const EDITING_FONT_MONO = messageKey('setting.editing.annotation-font.mono');
-export const EDITING_FONT_OPTION_TITLES = {
-  Helvetica: EDITING_FONT_SANS,
-  Times: EDITING_FONT_SERIF,
-  Courier: EDITING_FONT_MONO,
-} as const;
 export const EDITING_DIRECTION_TITLE = messageKey('setting.editing.text-direction.title');
 export const EDITING_DIRECTION_DESCRIPTION = messageKey('setting.editing.text-direction.description');
 /** `editing.text-direction`'s members, each its own exported key as the other option sets are. */
@@ -4587,10 +4578,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EDITING_FONT_SIZE_TITLE]: 'Annotation font size',
   [EDITING_FONT_TITLE]: 'Annotation font',
   [EDITING_FONT_DESCRIPTION]:
-    'The typeface new text boxes, callouts and typed text are set in. All three are built into every PDF reader, so the words look the same wherever the file is opened.',
-  [EDITING_FONT_OPTION_TITLES.Helvetica]: 'Helvetica',
-  [EDITING_FONT_OPTION_TITLES.Times]: 'Times',
-  [EDITING_FONT_OPTION_TITLES.Courier]: 'Courier',
+    'The typeface new text boxes, callouts and typed text are set in. A font from this computer or one included with Monstera is saved inside the file, so the words look the same wherever it is opened. Callouts use the built-in font closest to it.',
   [EDITING_DIRECTION_TITLE]: 'Text direction',
   [EDITING_DIRECTION_DESCRIPTION]:
     'Which side the lines of new text boxes, callouts and typed text start from. Choose right to left for Hebrew, Arabic and other languages written from the right. Letters always appear in the right order and joined as the language needs, whichever you choose.',

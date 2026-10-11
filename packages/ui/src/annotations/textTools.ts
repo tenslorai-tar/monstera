@@ -211,6 +211,7 @@ function boxTextTool(
           opacity: deps.style.opacity,
           fontSize: deps.style.fontSize,
           font: deps.style.font,
+          family: deps.style.family,
           direction: deps.style.direction,
         },
       };
@@ -302,6 +303,7 @@ export async function writeAnnotationWords(
             fontSize: deps.style.fontSize,
             colour: deps.style.colour(colour),
             font: deps.style.font,
+            family: deps.style.family,
             direction: deps.style.direction,
           },
         }),

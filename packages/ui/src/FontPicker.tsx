@@ -92,14 +92,20 @@ export function fontGroups(
     return [{ family: name, label: font.partial ? { key: FONT_PARTIAL, values: { name } } : undefined, note: undefined }];
   });
   const known = new Map(families.map((entry) => [entry.name.toLowerCase(), entry]));
+  // RECENT IS A SHORTCUT INTO THE OTHER GROUPS, never a group of its own: the list is the session's, shared by every
+  // picker, so a family chosen in one consumer that another cannot set (a real font, then a callout's picker) would be
+  // offered where choosing it is refused.
+  const offered = new Set([...seen, ...known.keys(), ...builtIn.map((family) => family.toLowerCase())]);
   const groups: FontGroup[] = [
     { title: FONT_GROUP_DOCUMENT, choices: document },
     {
       title: FONT_GROUP_RECENT,
-      choices: recent.map((family) => {
-        const entry = known.get(family.toLowerCase());
-        return entry === undefined ? plain(family) : ofEntry(entry);
-      }),
+      choices: recent
+        .filter((family) => offered.has(family.toLowerCase()))
+        .map((family) => {
+          const entry = known.get(family.toLowerCase());
+          return entry === undefined ? plain(family) : ofEntry(entry);
+        }),
     },
     { title: FONT_GROUP_COMPUTER, choices: families.filter((entry) => entry.origin === 'installed').map(ofEntry) },
     { title: FONT_GROUP_BUNDLED, choices: families.filter((entry) => entry.origin === 'bundled').map(ofEntry) },

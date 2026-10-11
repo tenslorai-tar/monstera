@@ -1,4 +1,4 @@
-import { AI_PROVIDER_IDS, AZURE_DI_PAGES, SECRET_SETTING_IDS, aiModelListSchema } from '@monstera/contract';
+import { AI_PROVIDER_IDS, AZURE_DI_PAGES, MAX_FONT_FAMILIES, SECRET_SETTING_IDS, aiModelListSchema, fontFamilySchema } from '@monstera/contract';
 import { lazy } from 'react';
 import { z } from 'zod';
 
@@ -14,7 +14,7 @@ import { KEYBOARD_SHORTCUTS_RESULT, SHORTCUT_DROPPED, SHORTCUT_ROWS } from './ke
 export const SETTINGS_DIALOG_ID = 'dialog.settings';
 
 /** The control a setting's schema derives ([ADR-0056](../../../../docs/DECISIONS/0056-the-settings-dialog-derives-a-control-from-a-schema-and-a-secret-is-write-only.md) Decision 2). */
-export type SettingControl = 'boolean' | 'enum' | 'choices' | 'number' | 'text' | 'secret' | 'colour' | 'ai-models';
+export type SettingControl = 'boolean' | 'enum' | 'choices' | 'number' | 'text' | 'secret' | 'colour' | 'ai-models' | 'font';
 
 /**
  * Which control a setting gets, or `undefined` for a kind with none.
@@ -169,6 +169,11 @@ export const SETTINGS_DIALOG = declareDialog({
       shortcuts: z.object({ rows: SHORTCUT_ROWS, dropped: SHORTCUT_DROPPED }).strict().optional(),
       /** The installed version, `app.info`'s, which the Updates page shows and copies. Absent where nothing supplies it. */
       version: z.string().min(1).max(64).optional(),
+      /**
+       * The fonts `app.fontFamilies` answered when the dialog opened, for a `font` row's picker (K2). Absent where the
+       * read failed: the picker then says the computer's could not be read, and still offers the built-in three.
+       */
+      fonts: z.object({ listed: z.boolean(), families: z.array(fontFamilySchema).max(MAX_FONT_FAMILIES) }).strict().optional(),
     })
     .strict(),
   result: SETTINGS_RESULT,

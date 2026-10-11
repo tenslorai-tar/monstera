@@ -1,19 +1,30 @@
+import { editFaces, editFacesBound } from './editFaces.js';
+import { familyClass } from './fontResolver.js';
 import { Font, type PDFAnnotation, type PDFDocument, type PDFObject } from './mupdfRaw.js';
+import { TextBoxFaces } from './textBoxFaces.js';
 import { lookOfStyleString, normalisedRuns, richTextOf, runsOfRichText, styleStringOf } from './textBoxRichText.js';
 import {
   type BoxAlign,
   type BoxLook,
   type Face,
+  type Family,
   type Measure,
   type Rgb,
   type TextRun,
+  type Typesetter,
+  BASE14_FAMILIES,
   DEFAULT_LOOK,
   MAX_LINE_HEIGHT,
   MAX_PADDING,
   MIN_LINE_HEIGHT,
   appearanceContent,
+  base14Of,
+  base14Typesetter,
+  faceFor,
   faceNames,
+  firstOf,
   layoutBox,
+  writable,
 } from './textBoxStyle.js';
 
 /**
@@ -42,6 +53,12 @@ import {
 /** The private key that says Monstera wrote this box's style. */
 export const STYLE_MARKER = 'MonsteraStyle';
 
+/**
+ * The marker's value since real fonts (ADR-0228 Decision 3): a number, where a box styled before carries `true`. The two forms
+ * read a `/DS` family differently (`familyOfStyleString`), so a box nobody touched is drawn as it was.
+ */
+const STYLE_VERSION = 2;
+
 /** MuPDF's own face names for `Face`, which is also what the base 14's `/BaseFont` is. */
 const faces = new Map<Face, Font>();
 
@@ -69,9 +86,32 @@ export function isStylable(annotation: PDFAnnotation): boolean {
   return !intent.isName() || intent.asName() === 'FreeTextTypeWriter';
 }
 
-/** Whether Monstera wrote this box's style. */
+/** Whether Monstera wrote this box's style, in either of the marker's forms. */
 export function isStyled(annotation: PDFAnnotation): boolean {
-  return annotation.getType() === 'FreeText' && annotation.getObject().get(STYLE_MARKER).isBoolean();
+  if (annotation.getType() !== 'FreeText') return false;
+  const marker = annotation.getObject().get(STYLE_MARKER);
+  return marker.isBoolean() || marker.isNumber();
+}
+
+/** Whether the box was styled before real fonts, so its `/DS` names the base 14 under their old names. */
+function styledBeforeRealFonts(annotation: PDFAnnotation): boolean {
+  return annotation.getObject().get(STYLE_MARKER).isBoolean();
+}
+
+/** The base-14 family each of MuPDF's three `/DA` faces is: the family a box that names none of its own is drawn in. */
+const FAMILY_OF_DA: ReadonlyMap<string, Family> = new Map([
+  ['Helv', 'Helvetica'],
+  ['TiRo', 'Times'],
+  ['Cour', 'Courier'],
+]);
+
+/**
+ * The `/DA` face a family is drawn in by a reader that draws neither `/AP` nor `/RC` (ADR-0228 Decision 3): the base-14
+ * family itself where it is one, else the base 14 nearest the family's class.
+ */
+export function daFaceOf(family: Family): 'Helv' | 'TiRo' | 'Cour' {
+  const base = base14Of(family) ?? (({ sans: 'Helvetica', serif: 'Times', mono: 'Courier' } as const)[familyClass(family)]);
+  return base === 'Times' ? 'TiRo' : base === 'Courier' ? 'Cour' : 'Helv';
 }
 
 const ALIGN_OF_Q: readonly BoxAlign[] = ['left', 'center', 'right'];
@@ -88,6 +128,7 @@ export function readStyledBox(annotation: PDFAnnotation): { readonly look: BoxLo
   const da = annotation.getDefaultAppearance();
   const base: BoxLook = {
     ...DEFAULT_LOOK,
+    family: FAMILY_OF_DA.get(da.font) ?? DEFAULT_LOOK.family,
     size: da.size > 0 ? da.size : DEFAULT_LOOK.size,
     colour: da.color.length === 3 ? [da.color[0], da.color[1], da.color[2]] : DEFAULT_LOOK.colour,
     align: ALIGN_OF_Q[annotation.getQuadding()] ?? 'left',
@@ -95,7 +136,7 @@ export function readStyledBox(annotation: PDFAnnotation): { readonly look: BoxLo
     borderWidth: annotation.hasBorder() ? annotation.getBorderWidth() : 0,
   };
   const ds = object.get('DS');
-  const styled = ds.isString() ? lookOfStyleString(ds.asString(), base) : base;
+  const styled = ds.isString() ? lookOfStyleString(ds.asString(), base, styledBeforeRealFonts(annotation)) : base;
   const look: BoxLook = { ...styled, borderColour: styled.colour };
   const contents = annotation.getContents();
   const rc = object.get('RC');
@@ -117,14 +158,48 @@ function fontDictionary(document: PDFDocument, face: Face): PDFObject {
   return dictionary;
 }
 
+/** The base 14's twelve faces, by the key the base-14 typesetter gives a piece: `faceFor`'s, every combination. */
+const BASE14_FACES: ReadonlySet<string> = new Set<Face>(
+  BASE14_FAMILIES.flatMap((family) => [false, true].flatMap((bold) => [false, true].map((italic) => faceFor(family, bold, italic)))),
+);
+
+function isBase14Face(face: string): face is Face {
+  return BASE14_FACES.has(face);
+}
+
 /**
- * Writes `/AP /N` from the box's own four facts. **Answers `false` for a box it cannot draw** — a script outside WinAnsi, a
- * box with no room — and then writes nothing, so the engine's appearance stands with the plain words.
+ * The typesetters a box is set with in this process: the base 14 for a word a standard face writes in a standard family, and
+ * the resolver's faces for every other word where this process holds a catalogue (ADR-0228 Decision 3). A process with
+ * none sets the base 14 alone, and a word they cannot write leaves the box to the engine, as before real fonts.
+ */
+function settersFor(document: PDFDocument): { readonly setter: Typesetter; readonly resolver: TextBoxFaces | undefined } {
+  const base = base14Typesetter(engineMeasure);
+  // BOUND AND NOT LOADED IS A FAULT, not a fallback: `localMupdfExecution` loads the catalogue before any command runs, so
+  // `editFaces` throwing here names the process that skipped it rather than drawing a chosen face as Helvetica.
+  const source = editFacesBound() ? editFaces() : null;
+  if (source === null) return { setter: base, resolver: undefined };
+  const resolver = new TextBoxFaces(document, source);
+  return { setter: firstOf(base, resolver), resolver };
+}
+
+/**
+ * Whether this process can draw `text` in `family` at all, before any layout: anywhere it holds a catalogue (a character no
+ * face has is the box, kept as text), and otherwise only in a base-14 family WinAnsi writes. The ONE rule both the restyle's
+ * refusal and the read's *styles unavailable* take, so the panel never offers a style the writer then refuses.
+ */
+export function canDraw(text: string, family: Family): boolean {
+  return editFacesBound() || (base14Of(family) !== undefined && writable(text));
+}
+
+/**
+ * Writes `/AP /N` from the box's own four facts. **Answers `false` for a box it cannot draw** — a word no face this process
+ * holds can write, a box with no room — and then writes nothing, so the engine's appearance stands with the plain words.
  */
 export function drawStyledAppearance(annotation: PDFAnnotation, document: PDFDocument): boolean {
   const [x0, y0, x1, y1] = annotation.getRect();
   const { look, runs } = readStyledBox(annotation);
-  const layout = layoutBox(x1 - x0, y1 - y0, look, runs, engineMeasure);
+  const { setter, resolver } = settersFor(document);
+  const layout = layoutBox(x1 - x0, y1 - y0, look, runs, setter);
   if (layout === undefined) return false;
   const stream = document.newDictionary();
   stream.put('Type', document.newName('XObject'));
@@ -134,7 +209,13 @@ export function drawStyledAppearance(annotation: PDFAnnotation, document: PDFDoc
   stream.put('BBox', box);
   const resources = document.newDictionary();
   const fonts = document.newDictionary();
-  for (const [face, name] of faceNames(layout)) fonts.put(name, fontDictionary(document, face));
+  // EVERY EMBEDDED FACE IS WRITTEN ONCE THE LAYOUT IS KNOWN, subset to what the box drew.
+  const embedded = resolver?.finish() ?? new Map<string, PDFObject>();
+  for (const [face, name] of faceNames(layout)) {
+    const font = isBase14Face(face) ? fontDictionary(document, face) : embedded.get(face);
+    if (font === undefined) throw new Error(`the face ${face} a text box drew was written by no typesetter`);
+    fonts.put(name, font);
+  }
   resources.put('Font', fonts);
   stream.put('Resources', resources);
   const made = document.addStream(appearanceContent(layout, look), stream);
@@ -202,7 +283,9 @@ export function writeStyleFacts(
   const runs = change.words === undefined ? now.runs : normalisedRuns(change.words);
   // THE PLAIN WORDS ARE THE RUNS JOINED, so a restyle that names words keeps `/Contents` and `/RC` one text.
   if (change.words !== undefined) annotation.setContents(runs.map((run) => run.text).join(''));
-  object.put(STYLE_MARKER, true);
+  // THE MARKER'S SECOND FORM, so `/DS` is read with the family names it was written with (STYLE_VERSION). A box styled before
+  // real fonts is read in its first form and written back in this one, under the base-14 names it meant.
+  object.put(STYLE_MARKER, STYLE_VERSION);
   object.put('DS', document.newString(styleStringOf(look)));
   object.put('RC', document.newString(richTextOf(runs, look)));
   annotation.setQuadding(Q_OF_ALIGN[look.align]);
