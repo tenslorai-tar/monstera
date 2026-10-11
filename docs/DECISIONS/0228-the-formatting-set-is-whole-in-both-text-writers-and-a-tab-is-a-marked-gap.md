@@ -1,0 +1,97 @@
+# ADR-0228 — The formatting set is whole in both text writers, and a tab is a marked gap
+
+- **Status:** Accepted
+- **Date:** 2026-10-11
+- **Amends:**
+  [ADR-0180](0180-formatting-is-marks-over-a-blocks-words-and-a-block-is-moved-resized-and-added-by-its-own-commands.md)
+  Decision 1 (the properties a mark may name) and Decision 2 (a paragraph's settings), and its Decision 8 (*Tab inserts
+  spaces to the next stop*), which K8 withdraws;
+  [ADR-0211](0211-a-text-box-with-styled-words-has-an-appearance-monstera-writes-itself.md) Decision 1 (the facts `/DS`
+  and `/RC` carry), and records how its 2026-10-11 amendment (K2, real fonts) is built;
+  [ADR-0067](0067-the-status-bar-is-a-projection-around-two-value-controls.md)'s reasoning, extended to the ribbon's
+  Format group, which gains two value controls of its own.
+- **Decided by:** the owner's instruction of 2026-10-11 to build every row still marked NOT BUILT: B3.3 (strikethrough,
+  highlight, justify, space after), B3.4 (Ctrl+J), B1.29 (character spacing), B1.8 and K8 (*Tab in Edit text inserts a
+  tab character*), B5.7 and K2 (text boxes in real fonts), B5.8 (per-word formatting while typing a text box), and the
+  TEXT spec's C3 (Font and Size boxes in the ribbon's Format group).
+
+## What was measured
+
+`scripts/research/pdfiumPositions.mjs`, 2026-10-11, PDFium 155.0.8044.0 (Linux, the pinned build) and MuPDF 1.28.0 (the
+shim), on one generated page in Helvetica 20:
+
+| written | content stream | PDFium's text page reads | MuPDF reads |
+|---|---|---|---|
+| `AB CD`, no positions (control) | `[<4142204344>] TJ` | the advances | `AB CD` |
+| each character 1 pt, 2 pt, 2.5 pt further on (`FPDFText_SetPositions`) | `[<41> -50 <42> ...] TJ` | `AB CD` | `AB CD` |
+| each character 3 pt and 4 pt further on | the same shape | `A B C D` | `A B C D` |
+| each character 1 pt and 2 pt closer | negative adjustments | `AB CD` | `AB CD` |
+| the space 6 pt and 12 pt wider | `[<414220> -300 <4344>] TJ` | `AB CD` | `AB CD` |
+| the space 30 pt wider | `-1500` | `AB CD` | `AB \nCD` |
+| `A\tB` as text | `<41FF42>`: the tab became `ÿ` | `AÿB` | `AÿB` |
+| `A`, then a lone space marked `/Span <</ActualText (\t)>>`, then `B` at the next stop, three objects | `/Span <<...>> BDC ... EMC` around the space only | `A B` (the mark is not read) | `A\t` then `B` |
+| the same mark on ONE object holding `A B` | the mark around the whole object | nothing | `\t` (the whole object's text replaced) |
+
+PDFium's public edit API has no setter for `Tc` or `Tw`; `FPDFText_SetPositions` (experimental) is the one way a text
+object states a glyph's own position, and it writes `TJ` adjustments.
+
+## Decision
+
+1. **The formatting set is the TEXT spec's C2, in both writers** (page text and a text box), each property written by
+   the one writer that writes the words it belongs to (B3):
+   - **Strikethrough** is a filled rectangle through the words, the page-text writer's underline turned up to the
+     x-height; a text box already draws one.
+   - **Highlight** is a filled rectangle of the chosen colour BEHIND the words: inserted before the line's text
+     objects on the page, drawn under the piece in a text box's appearance. A mark carries it as `highlight`; a text
+     box run as `background-color` in `/RC`.
+   - **Justify** joins `PARAGRAPH_ALIGNMENTS`. The page-text writer widens a wrapped line's spaces with
+     `FPDFText_SetPositions`; the last line of a paragraph, and a line a hard break ends, are not stretched (the text
+     box writer's rule, one rule).
+   - **Space after** joins a paragraph's settings beside space before, in points.
+   - **Character spacing** is a mark property, `spacing`, in points, **bounded to ±0.12 of the size**: the measurement
+     above reads cleanly at 0.125 em and invents a space between every letter at 0.15 em in both readers, so a wider
+     value would make a block that search, copy and the editor's own read no longer see as words. The page-text writer
+     writes it with `FPDFText_SetPositions`; a text box writes `Tc` and `letter-spacing` under the same bound, one
+     meaning for one control.
+2. **A tab is a marked gap** (K8, withdrawing ADR-0180 Decision 8). The editor holds U+0009. The page-text writer never
+   writes the character itself (measured: it becomes `ÿ`): it writes a lone space in the run's font, as its own text
+   object, marked `/Span <</ActualText (\t)>>`, and starts the next words at the next stop, every 36 points from the
+   block's left edge (the editor's `TAB_STOP`). The block's read takes a marked object's `/ActualText` as its text, so
+   the tab comes back to the editor; MuPDF and every reader that honours `/ActualText` read a tab. A text box keeps the
+   tab in `/Contents` and `/RC`, and its layout advances to the next stop. In form filling Tab still moves to the next
+   field.
+3. **A text box in a real font (K2) is set word by word.** A word a base-14 face can write, in a box whose family is
+   Helvetica, Times or Courier, is drawn in that face, unembedded, as before. Every other word goes to the resolver
+   (ADR-0172) over the catalogue the MuPDF host already binds for Type 3 pages (ADR-0177): the chosen family where it
+   carries the word, the nearest face otherwise (K9), the box glyph for a character no face has. Those words are drawn as
+   codes of a CID font subset to what the box draws, written through `mupdfCidSink`, so a text box and a Type 3 page
+   embed fonts by one opinion. Widths are the faces' own (`ShapingFace`), so the line that breaks is the line drawn.
+   `/DS` and `/RC` carry the family by name; `/DA` keeps the nearest base-14 face, from the face's own class, for a
+   reader that draws neither. A process with no catalogue bound draws base 14 only and refuses what they cannot write,
+   as today.
+4. **Per-word formatting in a text box is the open editor's selection** (ADR-0211 Decision 7). While a box is being typed
+   in, Bold, Italic, Underline, Strikethrough, a colour, a highlight and character spacing apply to the selected words;
+   with nothing selected they apply to the whole box, as the Properties tab does now. The editor holds the runs and
+   commits them as the restyle's `words`; the kernel stays the only writer of `/RC`.
+5. **The ribbon's Format group gains two value controls of its own, Font and Size**, beside its commands, as the status
+   bar has its page field and zoom slider (ADR-0067): each holds a value, so neither is a command, and each sets the
+   value through the same path as the Properties panel's Text section. The commands in the group stay projections of the
+   registry.
+
+## Rejected alternatives
+
+- **Character spacing and justify as one text object per character or word.** The readers infer spaces from gaps the
+  same way for separate objects, so it costs objects and reads no better; and an edit's own read would see dozens of runs
+  where there was one.
+- **A tab as a raw U+0009.** Measured: written as `ÿ`.
+- **The `/ActualText` mark on the run that holds the tab.** Measured: it replaces the run's whole text in MuPDF.
+- **Character spacing unbounded.** Measured: past 0.15 em both readers read a space between every letter.
+- **Embedding a whole installed font for a text box.** ADR-0172 subsets; a whole face is kept only where the subsetter
+  fails, as there.
+
+## Consequences
+
+- A paragraph's `align` may be `justify` on the wire; a mark may name `strike`, `highlight` and `spacing`; a paragraph may
+  name `spaceAfter`. Older blocks read as before: absence is *as the read found it*.
+- `proof:pdfiumcommand` gains cases for each property against PDFium's and MuPDF's reads, and the text box proof reads
+  each style back from the page in a second reader.

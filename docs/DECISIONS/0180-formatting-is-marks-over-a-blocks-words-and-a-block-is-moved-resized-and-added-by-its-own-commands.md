@@ -159,3 +159,9 @@ press in it.
 What the section does not offer, and why: strikethrough, highlight, justified paragraphs and space after a paragraph.
 Decision 1's mark set and Decision 2's paragraph settings carry none of them, and a control that changes nothing on the
 page is a defect rather than a placeholder. Each needs those decisions widened and both writers taught it.
+
+## Amended, 2026-10-11 — the set is widened, and Tab inserts a tab
+
+[ADR-0228](0228-the-formatting-set-is-whole-in-both-text-writers-and-a-tab-is-a-marked-gap.md) widens Decision 1's mark
+set (strikethrough, highlight, character spacing) and Decision 2's paragraph settings (justify, space after), and
+withdraws Decision 8: Tab inserts a tab character, written as a marked gap (the owner's K8).
