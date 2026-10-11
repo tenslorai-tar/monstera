@@ -82,6 +82,12 @@ with it.
     none goes on the command's. This amends `createFormField`'s *"a per-field page would be a different feature nobody
     asked for"*; K7 asks for it. A detected small circle is a radio, and the circles of one row are one group named by
     the words left of the first.
+15. **A tab order is the order of a page's widgets in its `/Annots`** (amends ADR-0193's tab order, the owner's H1).
+    `setTabOrder` puts the widgets in that order as well as setting `/Tabs`: by rows (top to bottom, then left to
+    right), by columns, or in an order a person gave by clicking the fields one after another. The Tab key on the page
+    follows the widget walk, which is `/Annots`' order, and so does every reader that ignores `/Tabs`; a `/Tabs` alone
+    changed only the readers that read it, and this application's Tab was not one of them. A given order is the fields
+    of one page, named by their handles; the fields not named follow them in the order they had.
 
 ## Rejected alternatives
 
@@ -96,3 +102,7 @@ with it.
 - **Running a document's own calculation scripts.** Invariant 24.
 - **A name box beside a new field, or a dialog.** The owner's K1.
 - **One create per page when Detect runs on all pages.** Undo would take back one page of a decision made once.
+- **Tab following `/Tabs` by sorting at the press.** Two orders would then exist, ours and the file's, and a reader
+  that ignores `/Tabs` would still walk the old one.
+- **A new command for a given order.** It is the same concern on the same writer; `setTabOrder` takes the order as
+  one of its values.
