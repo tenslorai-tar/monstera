@@ -1838,8 +1838,9 @@ const declarations = {
     reproducible: true,
     replay: 'reapply-intent',
     sources: 'none',
-    // PAGES, which a page walk names and a field walk does not: `/Tabs` is a page's.
-    targets: 'none',
+    // THE WIDGET WALK (ADR-0226 Decision 15): the order puts a page's widgets in order, and a given one names them by
+    // their places in the walk, so a stale one would order the wrong fields.
+    targets: 'field',
     reads: 'none',
     asset: 'none',
     purpose: 'ordinary',

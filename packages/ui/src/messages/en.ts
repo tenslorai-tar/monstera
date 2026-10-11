@@ -1471,6 +1471,14 @@ export const TAB_ORDER_STRUCTURE = messageKey('dialog.tab-order.structure');
 export const TAB_ORDER_STRUCTURE_NOTE = messageKey('dialog.tab-order.structure.note');
 export const TAB_ORDER_APPLY = messageKey('dialog.tab-order.apply');
 export const TOAST_TAB_ORDER_SET = messageKey('toast.tab-order-set');
+export const TAB_ORDER_CLICK = messageKey('dialog.tab-order.click');
+export const TAB_ORDER_CLICK_NOTE = messageKey('dialog.tab-order.click.note');
+export const TAB_ORDER_BOX = messageKey('surface.tab-order.box');
+export const TAB_ORDER_LAYER_LABEL = messageKey('surface.tab-order.layer');
+export const TAB_ORDER_BAR = messageKey('surface.tab-order.bar');
+export const TAB_ORDER_BAR_SET = messageKey('surface.tab-order.set');
+export const TAB_ORDER_BAR_CANCEL = messageKey('surface.tab-order.cancel');
+export const TOAST_TAB_ORDER_GIVEN = messageKey('toast.tab-order-given');
 // COPYING A FORM FIELD ONTO OTHER PAGES (ADR-0193).
 export const FIELD_COPY_COMMAND_TITLE = messageKey('command.forms.copy-to-pages.title');
 export const FIELD_COPY_TITLE = messageKey('dialog.field-copy.title');
@@ -4128,6 +4136,15 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TAB_ORDER_STRUCTURE_NOTE]: 'Follow the document’s own structure, which is what a screen reader reads.',
   [TAB_ORDER_APPLY]: 'Set the tab order',
   [TOAST_TAB_ORDER_SET]: 'Tab order set on every page. Save to keep the change.',
+  [TAB_ORDER_CLICK]: 'In the order I click',
+  [TAB_ORDER_CLICK_NOTE]: 'Each field on the page shows its number. Click the fields one after another in the order you want.',
+  [TAB_ORDER_BOX]: 'Field {name}, number {number}',
+  [TAB_ORDER_LAYER_LABEL]: 'Tab order of the fields on page {page}',
+  [TAB_ORDER_BAR]:
+    'Click the fields in the order the Tab key should go through them. Click one again to take it out. {count, plural, =0 {None chosen yet.} one {# chosen.} other {# chosen.}}',
+  [TAB_ORDER_BAR_SET]: 'Set this order',
+  [TAB_ORDER_BAR_CANCEL]: 'Cancel',
+  [TOAST_TAB_ORDER_GIVEN]: 'Tab order set. Save to keep the change.',
   [FIELD_COPY_COMMAND_TITLE]: 'Copy to other pages…',
   [FIELD_COPY_TITLE]: 'Copy this field to other pages',
   [FIELD_COPY_LABEL]: 'Pages',

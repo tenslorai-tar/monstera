@@ -20,11 +20,12 @@ import { SelectionLayer } from './SelectionLayer.js';
 import { type TextEditing, TextEditPage } from './TextEditLayer.js';
 import { type ObjectEditing, ObjectEditPage } from './ObjectEditLayer.js';
 import { type FieldEditing, FieldDesignLayer } from './forms/FieldDesignLayer.js';
+import { type TabOrderEditing, TabOrderLayer } from './forms/TabOrderLayer.js';
 import { InlineWriter } from './InlineWriter.js';
 import type { Draft, WriteRequest } from './pageWriting.js';
 
 /** What a press on the page edits, when a mode rather than a drawing tool holds the tool slot. */
-export type PageEditing = TextEditing | ObjectEditing | FieldEditing;
+export type PageEditing = TextEditing | ObjectEditing | FieldEditing | TabOrderEditing;
 
 /** The one pending request for words on a page, its draft, and where its answer goes (ADR-0154). */
 export interface PageWriting {
@@ -1920,6 +1921,16 @@ function PageSlot({
           }}
           page={page}
           selected={selectedFields ?? NO_INDICES}
+        />
+      ) : editing.mode === 'tab-order' ? (
+        <TabOrderLayer
+          fields={fields ?? NO_FIELDS}
+          geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
+          onPick={(index) => {
+            editing.onPick(page, index);
+          }}
+          page={page}
+          picked={editing.picked}
         />
       ) : editing.mode === 'objects' ? (
         <ObjectEditPage

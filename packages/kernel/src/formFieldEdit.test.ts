@@ -1,4 +1,4 @@
-import { PDFDict, PDFDocument, PDFName, PDFRawStream } from '@cantoo/pdf-lib';
+import { PDFDict, PDFDocument, PDFName, PDFRawStream, PDFString } from '@cantoo/pdf-lib';
 import { describe, expect, it } from 'vitest';
 
 import type { CommandOfKind, FormFieldHandle, FormFieldProperties, FormFieldRead } from '@monstera/contract';
@@ -247,7 +247,7 @@ describe('editing a field that exists', () => {
     const encrypted = await encryptedCopy(original);
     const handle: FormFieldHandle = { page: 0, index: 0, name: 'full_name' };
     await expect(applyEditFormFields(encrypted, editing(handle, { required: true }))).rejects.toMatchObject({ reason: 'encrypted' });
-    await expect(applySetTabOrder(encrypted, { kind: 'setTabOrder', pages: [0], order: 'row' })).rejects.toMatchObject({ reason: 'encrypted' });
+    await expect(applySetTabOrder(encrypted, { kind: 'setTabOrder', pages: [0], order: 'row', version: VERSION })).rejects.toMatchObject({ reason: 'encrypted' });
   });
 });
 
@@ -442,11 +442,97 @@ describe('copying a field to one place, its own page allowed (ADR-0226 Decision 
 describe('the order the Tab key walks', () => {
   it('sets /Tabs on each named page and no other', async () => {
     const original = await buildFormTestPdf();
-    const edited = await applySetTabOrder(original, { kind: 'setTabOrder', pages: [0, 2], order: 'column' });
+    const edited = await applySetTabOrder(original, { kind: 'setTabOrder', pages: [0, 2], order: 'column', version: VERSION });
     expect(await tabsOf(edited)).toStrictEqual(['C', undefined, 'C']);
     expect(await tabsOf(original), 'control: the fixture starts with none').toStrictEqual([undefined, undefined, undefined]);
-    const row = await applySetTabOrder(edited, { kind: 'setTabOrder', pages: [1], order: 'structure' });
+    const row = await applySetTabOrder(edited, { kind: 'setTabOrder', pages: [1], order: 'structure', version: VERSION });
     expect(await tabsOf(row)).toStrictEqual(['C', 'S', 'C']);
+  });
+
+  /**
+   * Four fields made OUT of reading order — bottom left, top left, top right, bottom right — with a comment between two
+   * of them, on a page that may be turned. The walk MuPDF answers is the order the app's Tab follows (ADR-0226
+   * Decision 15), so it is read through MuPDF, the engine that walks it.
+   */
+  async function scrambled(rotate = 0): Promise<Uint8Array> {
+    const document = await PDFDocument.create();
+    const page = document.addPage([400, 400]);
+    const form = document.getForm();
+    // ON SCREEN the grid is the same whatever the turn: each place is written where it lands once the page is turned.
+    const places: Record<string, { x: number; y: number }> = {
+      bottomLeft: { x: 40, y: 100 },
+      topLeft: { x: 40, y: 300 },
+      topRight: { x: 220, y: 300 },
+      bottomRight: { x: 220, y: 100 },
+    };
+    const turned = (at: { x: number; y: number }): { x: number; y: number } =>
+      rotate === 90 ? { x: 400 - at.y - 20, y: at.x } : at;
+    const box = (at: { x: number; y: number }): { x: number; y: number; width: number; height: number } =>
+      rotate === 90 ? { ...turned(at), width: 20, height: 140 } : { ...at, width: 140, height: 20 };
+    for (const name of ['bottomLeft', 'topLeft']) form.createTextField(name).addToPage(page, box(places[name] ?? { x: 0, y: 0 }));
+    // A COMMENT IN THE MIDDLE of the widgets: its place in /Annots is kept.
+    const note = document.context.obj({ Type: 'Annot', Subtype: 'Text', Rect: [10, 10, 30, 30], Contents: PDFString.of('kept') });
+    page.node.addAnnot(document.context.register(note));
+    for (const name of ['topRight', 'bottomRight']) form.createTextField(name).addToPage(page, box(places[name] ?? { x: 0, y: 0 }));
+    if (rotate !== 0) page.node.set(PDFName.of('Rotate'), document.context.obj(rotate));
+    return document.save();
+  }
+
+  async function walk(bytes: Uint8Array): Promise<{ fields: string[]; subtypes: string[] }> {
+    const session = await mupdfWriter.open(bytes);
+    try {
+      const { fields } = await readFormFields(session);
+      const document = await PDFDocument.load(bytes);
+      const annots = document.getPage(0).node.Annots();
+      const subtypes: string[] = [];
+      for (let at = 0; at < (annots?.size() ?? 0); at += 1) {
+        subtypes.push(annots?.lookupMaybe(at, PDFDict)?.lookupMaybe(PDFName.of('Subtype'), PDFName)?.decodeText() ?? '');
+      }
+      return { fields: fields.map((field) => field.name), subtypes };
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }
+
+  it('puts the widgets in ROW order in the walk, keeps the comment in its place, and CONTROL: they started out of it', async () => {
+    const original = await scrambled();
+    expect((await walk(original)).fields).toStrictEqual(['bottomLeft', 'topLeft', 'topRight', 'bottomRight']);
+    const edited = await applySetTabOrder(original, { kind: 'setTabOrder', pages: [0], order: 'row', version: VERSION });
+    expect(await walk(edited)).toStrictEqual({
+      fields: ['topLeft', 'topRight', 'bottomLeft', 'bottomRight'],
+      subtypes: ['Widget', 'Widget', 'Text', 'Widget', 'Widget'],
+    });
+    expect(await tabsOf(edited)).toStrictEqual(['R']);
+  });
+
+  it('puts them in COLUMN order, which differs from rows on the same page', async () => {
+    const edited = await applySetTabOrder(await scrambled(), { kind: 'setTabOrder', pages: [0], order: 'column', version: VERSION });
+    expect((await walk(edited)).fields).toStrictEqual(['topLeft', 'bottomLeft', 'topRight', 'bottomRight']);
+  });
+
+  it('reads rows as a person sees a TURNED page, not along the user space', async () => {
+    const edited = await applySetTabOrder(await scrambled(90), { kind: 'setTabOrder', pages: [0], order: 'row', version: VERSION });
+    expect((await walk(edited)).fields).toStrictEqual(['topLeft', 'topRight', 'bottomLeft', 'bottomRight']);
+  });
+
+  it('puts a GIVEN order first and the fields not named after them in the order they had, with no /Tabs', async () => {
+    const original = await scrambled();
+    const given = [await handleOf(original, 'bottomRight'), await handleOf(original, 'topLeft')];
+    const edited = await applySetTabOrder(original, { kind: 'setTabOrder', pages: 'all', order: { given }, version: VERSION });
+    expect((await walk(edited)).fields).toStrictEqual(['bottomRight', 'topLeft', 'bottomLeft', 'topRight']);
+    expect(await tabsOf(edited)).toStrictEqual([undefined]);
+  });
+
+  it('CONTROL: refuses a given handle whose field has moved, rather than ordering the wrong one', async () => {
+    const original = await scrambled();
+    await expect(
+      applySetTabOrder(original, {
+        kind: 'setTabOrder',
+        pages: 'all',
+        order: { given: [{ page: 0, index: 0, name: 'topLeft' }] },
+        version: VERSION,
+      }),
+    ).rejects.toBeInstanceOf(FieldEditRefusedError);
   });
 });
 

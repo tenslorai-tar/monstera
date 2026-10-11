@@ -131,7 +131,7 @@ import { textFormatCommands } from './commands/textFormatCommands.js';
 import { editorIsOpen, onEditorChange } from './textEditorControl.js';
 import { proceeds, settlePendingRedactions } from './commands/pendingRedactions.js';
 import type { PendingRedactionOccasion } from './dialogs/pendingRedactions.js';
-import { confirmCopied } from './commands/confirmWritten.js';
+import { confirmCopied, confirmDone } from './commands/confirmWritten.js';
 import { editCommands } from './commands/editCommands.js';
 import { exitCommand, startScreenCommand } from './commands/windowCommands.js';
 import { checkForUpdatesCommand } from './commands/checkForUpdates.js';
@@ -282,6 +282,7 @@ import {
   LINK_ADDED,
   SPLIT_SECOND_LABEL,
   TOAST_DISMISS,
+  TOAST_TAB_ORDER_GIVEN,
 } from './messages/en.js';
 import type { OverlayPage } from './annotations/annotationSpace.js';
 import { annotationTools } from './annotations/annotationTools.js';
@@ -300,6 +301,7 @@ import { nextFillable } from './forms/fieldOrder.js';
 import { type FieldProblem, emptyRequired } from './forms/fieldCheck.js';
 import { FieldPropertiesPanel } from './forms/FieldPropertiesPanel.js';
 import { FormSettingsPanel } from './forms/FormSettingsPanel.js';
+import { TabOrderBar } from './forms/TabOrderLayer.js';
 import type { PlacedField } from './forms/arrange.js';
 import { besideRect } from './forms/fieldDesign.js';
 import { DELETE_FIELDS_DIALOG_ID, DELETE_FIELDS_RESULT } from './dialogs/deleteFields.js';
@@ -2346,6 +2348,63 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       }),
     [activeId, copyFieldsBeside, fieldClipboard, inFieldDesign, presence, readDesignedFields, settings],
   );
+  /**
+   * *Tab order* by clicking (ADR-0226 Decision 15): the fields clicked so far, for one document at one version. A version
+   * that moves under it ends it, since the clicks name places in a walk that has changed.
+   */
+  const [tabOrdering, setTabOrdering] = useState<
+    { readonly docId: DocId; readonly version: DocVersion; readonly picked: readonly string[] } | undefined
+  >(undefined);
+  const orderByClicking = useCallback((docId: DocId, version: DocVersion): void => {
+    setToolId(undefined);
+    setTabOrdering({ docId, version, picked: [] });
+  }, []);
+  const tabOrderLive = tabOrdering !== undefined && tabOrdering.docId === activeId && tabOrdering.version === openVersion;
+  const tabOrderEditing = useMemo<PageListProps['editing']>(() => {
+    if (!tabOrderLive) return undefined;
+    return {
+      mode: 'tab-order',
+      picked: tabOrdering.picked,
+      onPick: (page, index) => {
+        const key = fieldKey(page, index);
+        // A SECOND CLICK TAKES IT OUT, so a wrong click is undone where it was made.
+        setTabOrdering((held) =>
+          held === undefined
+            ? undefined
+            : { ...held, picked: held.picked.includes(key) ? held.picked.filter((each) => each !== key) : [...held.picked, key] },
+        );
+      },
+    };
+  }, [tabOrderLive, tabOrdering]);
+  // ESCAPE PUTS IT DOWN, setting nothing, as Escape leaves every mode; only while it is on, so it takes no key from others.
+  useEffect(() => {
+    if (!tabOrderLive) return undefined;
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape' || (event.target instanceof Element && event.target.closest('[role="dialog"]') !== null)) return;
+      setTabOrdering(undefined);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [tabOrderLive]);
+  /** Sends the clicked order as one `setTabOrder`, its handles read from the list the numbers were drawn from. */
+  const setClickedOrder = useCallback((): void => {
+    if (!tabOrderLive) return;
+    const given = tabOrdering.picked.flatMap((key) => {
+      const field = fieldsInOrder.find((each) => fieldKey(each.page, each.index) === key);
+      return field === undefined ? [] : [{ page: field.page, index: field.index, name: field.name }];
+    });
+    setTabOrdering(undefined);
+    if (given.length === 0) return;
+    const command = { kind: 'setTabOrder', pages: 'all', order: { given }, version: tabOrdering.version } as const;
+    void (async () => {
+      // SAID ONLY ONCE IT LANDED: a refusal says its own sentence, and a toast before it would say both.
+      if (await applyDocumentCommand({ client, onApplied: applied, ask, stamp, signatures }, tabOrdering.docId, command)) {
+        confirmDone({ toast }, TOAST_TAB_ORDER_GIVEN);
+      }
+    })();
+  }, [applied, ask, client, fieldsInOrder, signatures, stamp, tabOrderLive, tabOrdering, toast]);
   /** *Edit fields* as the page list draws it, or `undefined` while the mode is off: the slot's third value. */
   const fieldEditing = useMemo<PageListProps['editing']>(() => {
     if (!inFieldDesign || openVersion === undefined) return undefined;
@@ -3718,7 +3777,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         ...fieldArrangeCommands({ placed: () => placedFields, apply: arrangeSelectedFields }),
         copyFieldToPagesCommand({ single: () => singleField, ask, apply: copyFieldToPages }),
         flattenFormCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
-        tabOrderCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        tabOrderCommand({ client, onApplied: applied, ask, stamp, signatures, toast, orderByClicking }),
         // EDIT TEXT, a MODE in the tool slot (ADR-0096): it toggles as a drawing
         // tool's command does, and `editing` below is what the mode draws.
         editTextCommand({ activeTool: readTool, onSelect: setToolId }),
@@ -3832,6 +3891,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       chooseTool,
       markBarcode,
       markPlaces,
+      orderByClicking,
       holdTool,
       windowEdit,
       startSignature,
@@ -4195,7 +4255,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   }, [objectFilter, objectSelection, open, readObjects, sendObject]);
 
   /** The one mode the page lists draw: the tool slot holds at most one of the three, so at most one is defined. */
-  const pageEditing = editing ?? objectEditing ?? fieldEditing;
+  const pageEditing = tabOrderEditing ?? editing ?? objectEditing ?? fieldEditing;
 
   // The start screen's context: no document focused. `hasSelection` and `dirty`
   // are false because there is nothing to select in and nothing to dirty — not
@@ -4559,7 +4619,21 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           // §10.3's RIGHT CONTEXTUAL PANEL, built here where its state lives, and hosted by
           // `PageCanvas`' row beside the page area (design pass D).
           // §10.3's FLOATING QUICK TOOLBAR, placed inside the page area it floats over (pass F).
-          quickToolbar={<QuickToolbar registry={registry} context={context} settings={settings} />}
+          quickToolbar={
+            <>
+              <QuickToolbar registry={registry} context={context} settings={settings} />
+              {/* WHILE A TAB ORDER IS BEING CLICKED, what to do and the two ways out, over the page it is clicked on. */}
+              {tabOrderLive ? (
+                <TabOrderBar
+                  count={tabOrdering.picked.length}
+                  onCancel={() => {
+                    setTabOrdering(undefined);
+                  }}
+                  onSet={setClickedOrder}
+                />
+              ) : null}
+            </>
+          }
           menuAt={menuAt}
           contextPanel={
             <ContextPanel

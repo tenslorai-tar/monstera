@@ -102,3 +102,14 @@ export function placeOnPage(rect: PlacedRect, from: PageFrame, to: PageFrame): P
   const y0 = Math.min(Math.max(there.y - height / 2, to.y), to.y + to.height - height);
   return { x0, y0, x1: x0 + width, y1: y0 + height };
 }
+
+/**
+ * Where a rectangle is as a person sees the page: as fractions of the visible page from its top left, `u` across and
+ * `v` down, whatever way the page is turned. What a row or a column order sorts by (ADR-0226 Decision 15), since a
+ * page turned a quarter has its rows running up the user space's x.
+ */
+export function seenAt(rect: PlacedRect, frame: PageFrame): { readonly u0: number; readonly v0: number; readonly u1: number; readonly v1: number } {
+  const a = toUnit(frame, rect.x0, rect.y0);
+  const b = toUnit(frame, rect.x1, rect.y1);
+  return { u0: Math.min(a.u, b.u), v0: Math.min(a.v, b.v), u1: Math.max(a.u, b.u), v1: Math.max(a.v, b.v) };
+}

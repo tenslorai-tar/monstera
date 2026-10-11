@@ -34,7 +34,7 @@ import {
   parseFormat,
   withFontSize,
 } from './fieldActions.js';
-import { type PageFrame, placeOnPage, rotationOf } from './fieldPlacement.js';
+import { type PageFrame, placeOnPage, rotationOf, seenAt } from './fieldPlacement.js';
 import { pageAt } from './pdfLibPages.js';
 import { pagesOf } from './pageScope.js';
 import type { CaptureResult } from './commandLog.js';
@@ -794,11 +794,89 @@ export const applyDuplicateFormField: Apply<'pdf-lib', 'duplicateFormField'> = a
 
 const TAB_NAME = { row: 'R', column: 'C', structure: 'S' } as const;
 
-/** Sets `/Tabs` on each named page. */
+/** A widget's place on its page as a person sees it, and its place in the walk, for ordering. */
+interface Placed {
+  readonly ref: PDFRef | PDFDict;
+  readonly dict: PDFDict;
+  readonly seen: { readonly u0: number; readonly v0: number; readonly u1: number; readonly v1: number } | undefined;
+}
+
+/**
+ * The page's widgets in reading order: by ROWS, top to bottom and each row left to right, or by COLUMNS, left to right
+ * and each column top to bottom. A widget is in a row when its middle is level with the row's first widget, so two
+ * fields a point apart in height are one row. A widget with no `/Rect` keeps its place after the ones that have one.
+ */
+function readingOrder(widgets: readonly Placed[], by: 'row' | 'column'): Placed[] {
+  const across = (box: NonNullable<Placed['seen']>): readonly [number, number] => (by === 'row' ? [box.u0, box.u1] : [box.v0, box.v1]);
+  const down = (box: NonNullable<Placed['seen']>): readonly [number, number] => (by === 'row' ? [box.v0, box.v1] : [box.u0, box.u1]);
+  const placed = widgets.filter((widget) => widget.seen !== undefined);
+  const lines: Placed[][] = [];
+  for (const widget of [...placed].sort((a, b) => down(a.seen ?? ZERO)[0] - down(b.seen ?? ZERO)[0])) {
+    const [top, bottom] = down(widget.seen ?? ZERO);
+    const middle = (top + bottom) / 2;
+    const line = lines.find((each) => {
+      const first = each[0]?.seen;
+      if (first === undefined) return false;
+      const [start, end] = down(first);
+      return middle >= start && middle <= end;
+    });
+    if (line === undefined) lines.push([widget]);
+    else line.push(widget);
+  }
+  return [
+    ...lines.flatMap((line) => line.sort((a, b) => across(a.seen ?? ZERO)[0] - across(b.seen ?? ZERO)[0])),
+    ...widgets.filter((widget) => widget.seen === undefined),
+  ];
+}
+const ZERO = { u0: 0, v0: 0, u1: 0, v1: 0 } as const;
+
+/**
+ * Puts each named page's widgets in the order asked, in its `/Annots`, and sets `/Tabs` (ADR-0226 Decision 15).
+ *
+ * The widgets move among the places widgets hold in the array, so every other annotation keeps its place, and the
+ * array keeps its members: nothing is added or dropped. A given order names its fields by handle, each checked against
+ * the field it was read as (`locate`); the page's other widgets follow them in the order they had. A given order's page
+ * carries no `/Tabs`, which every reader takes as the array's order; a row, column or structure order names its own.
+ */
 export const applySetTabOrder: Apply<'pdf-lib', 'setTabOrder'> = async (image, command) => {
   const document = await open(image);
-  for (const index of pagesOf(command.pages, document.getPageCount())) {
-    pageAt(document, index).node.set(PDFName.of('Tabs'), PDFName.of(TAB_NAME[command.order]));
+  const order = command.order;
+  const given = typeof order === 'string' ? undefined : order.given;
+  const pages =
+    given === undefined ? pagesOf(command.pages, document.getPageCount()) : [...new Set(given.map((handle) => handle.page))];
+  for (const index of pages) {
+    const page = pageAt(document, index);
+    const annots = page.node.Annots();
+    const frame = visibleFrameOf(page);
+    const slots: number[] = [];
+    const widgets: Placed[] = [];
+    for (let at = 0; at < (annots?.size() ?? 0); at += 1) {
+      const dict = annots?.lookupMaybe(at, PDFDict);
+      const ref = annots?.get(at);
+      if (dict?.lookup(SUBTYPE) !== WIDGET || !(ref instanceof PDFRef || ref instanceof PDFDict)) continue;
+      const rect = widgetRectOf(dict);
+      slots.push(at);
+      widgets.push({ ref, dict, seen: rect === undefined ? undefined : seenAt(rect, frame) });
+    }
+    let ordered: Placed[];
+    if (given === undefined) {
+      ordered = order === 'structure' ? widgets : readingOrder(widgets, order === 'column' ? 'column' : 'row');
+      page.node.set(PDFName.of('Tabs'), PDFName.of(TAB_NAME[order === 'column' ? 'column' : order === 'structure' ? 'structure' : 'row']));
+    } else {
+      const named = given
+        .filter((handle) => handle.page === index)
+        .map((handle) => locate(document, handle).widget);
+      const first = widgets.filter((widget) => named.includes(widget.dict));
+      first.sort((a, b) => named.indexOf(a.dict) - named.indexOf(b.dict));
+      ordered = [...first, ...widgets.filter((widget) => !named.includes(widget.dict))];
+      page.node.delete(PDFName.of('Tabs'));
+    }
+    // THE SAME PLACES, NEW OCCUPANTS: only the slots widgets held are written, so a comment between two fields stays
+    // where it was in the page's drawing order.
+    slots.forEach((slot, at) => {
+      const widget = ordered[at];
+      if (widget !== undefined) annots?.set(slot, widget.ref);
+    });
   }
   return appendRevision(document);
 };

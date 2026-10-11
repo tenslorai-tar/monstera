@@ -3941,7 +3941,13 @@ export function flattenFormCommand(deps: DocumentCommandDeps & WritesAFile): UiC
  * Asked first, for the flatten's reason in the other direction: a person has to say which of three orders, and dismissing
  * the question sets nothing. The toast says it ran, since a tab order changes nothing the page shows.
  */
-export function tabOrderCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
+export function tabOrderCommand(
+  deps: DocumentCommandDeps &
+    WritesAFile & {
+      /** Puts the page into numbering the fields as they are clicked, for this document at this version. */
+      readonly orderByClicking: (docId: DocId, version: DocVersion) => void;
+    },
+): UiCommand {
   return {
     id: 'document.tab-order',
     // OUT OF SIGHT: the order shows only when Tab is pressed, so the toast is the sign that it ran.
@@ -3957,10 +3963,22 @@ export function tabOrderCommand(deps: DocumentCommandDeps & WritesAFile): UiComm
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined) return;
+      if (context.docId === undefined || context.version === undefined) return;
       const answer = TAB_ORDER_RESULT.safeParse(await deps.ask(TAB_ORDER_DIALOG_ID, {}));
       if (!answer.success) return;
-      if (await applyDocumentCommand(deps, context.docId, { kind: 'setTabOrder', pages: 'all', order: answer.data.order })) {
+      // CLICKING SETS NOTHING YET: the order is the fields a person clicks next, sent when they say it is done.
+      if (answer.data.order === 'click') {
+        deps.orderByClicking(context.docId, context.version);
+        return;
+      }
+      if (
+        await applyDocumentCommand(deps, context.docId, {
+          kind: 'setTabOrder',
+          pages: 'all',
+          order: answer.data.order,
+          version: context.version,
+        })
+      ) {
         confirmDone(deps, TOAST_TAB_ORDER_SET);
       }
     },

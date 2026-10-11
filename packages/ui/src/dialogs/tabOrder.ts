@@ -8,8 +8,11 @@ import { declareDialog } from '../registries/dialogs.js';
 /** The id *Tab order* opens to ask how the Tab key walks the form. */
 export const TAB_ORDER_DIALOG_ID = 'dialog.tab-order';
 
-/** What the dialog answers with: one of the three orders a reader knows (`/Tabs`'s `R`, `C` and `S`). */
-export const TAB_ORDER_RESULT = z.object({ order: z.enum(TAB_ORDERS) }).strict();
+/**
+ * What the dialog answers with: one of the three orders a reader knows (`/Tabs`'s `R`, `C` and `S`), or `click`, which
+ * sets nothing yet and puts the page into numbering the fields as they are clicked (ADR-0226 Decision 15).
+ */
+export const TAB_ORDER_RESULT = z.object({ order: z.enum([...TAB_ORDERS, 'click']) }).strict();
 
 /** The order a person chose. */
 export type TabOrderAnswer = z.infer<typeof TAB_ORDER_RESULT>;

@@ -5222,12 +5222,31 @@ export const duplicateFormFieldSchema = z
 /** The order a reader moves through a page's fields (`/Tabs`): by row, by column or by the document's structure. */
 export const TAB_ORDERS = ['row', 'column', 'structure'] as const;
 
-/** Sets the order the Tab key moves through each named page's fields (ADR-0193). */
+/**
+ * How many fields a given tab order may name: {@link MAX_DELETED_FIELDS}' bound, for its reason. Each is clicked by hand,
+ * and at its worst (a 512-character name each) the payload has to fit the pdf-lib host's file ceiling, which 4,096 did
+ * not (12,981,501 bytes against 8,388,608, `hostRoutes.test.ts`, 2026-10-11).
+ */
+export const MAX_TAB_ORDER_FIELDS = MAX_DELETED_FIELDS;
+
+/**
+ * Sets the order the Tab key moves through each named page's fields (ADR-0193, ADR-0226 Decision 15).
+ *
+ * The order is the page's widgets put in that order in its `/Annots`, which this application's Tab and every reader
+ * that ignores `/Tabs` follow, and `/Tabs` beside it for the readers that read it. **A given order** is the fields a
+ * person clicked, one after another, named by their handles: those fields first in that order, and the page's others
+ * after them in the order they had. Its handles name the pages it orders, so `pages` says nothing more for it.
+ */
 export const setTabOrderSchema = z
   .object({
     kind: z.literal('setTabOrder'),
     pages: z.union([z.literal('all'), pageSetSchema]),
-    order: z.enum(TAB_ORDERS),
+    order: z.union([
+      z.enum(TAB_ORDERS),
+      z.object({ given: z.array(formFieldHandleSchema).min(1).max(MAX_TAB_ORDER_FIELDS) }).strict(),
+    ]),
+    /** The version the fields were read at: a row order sorts the walk it was read against, and a given one names it. */
+    version: docVersionSchema,
   })
   .strict();
 
@@ -6581,6 +6600,7 @@ export function targetVersionOf(command: Command): DocVersion | undefined {
   if (command.kind === 'editFormFields') return command.version;
   if (command.kind === 'duplicateFormField') return command.version;
   if (command.kind === 'deleteFormFields') return command.version;
+  if (command.kind === 'setTabOrder') return command.version;
   if (command.kind === 'replaceTextObject') return command.version;
   if (command.kind === 'placePageObject') return command.version;
   if (command.kind === 'recolorPageObjects') return command.version;
@@ -6644,7 +6664,14 @@ void _thatNameIsACommandKind;
  * union of both: this package cannot import the kernel, so the half checkable
  * here is only that the name is a real kind.
  */
-export type NamesAFormField = 'fillFormField' | 'deleteFormFields' | 'editFormFields' | 'duplicateFormField';
+export type NamesAFormField =
+  | 'fillFormField'
+  | 'deleteFormFields'
+  | 'editFormFields'
+  | 'duplicateFormField'
+  // A TAB ORDER a person gave names its fields by their place in the widget walk (ADR-0226 Decision 15), and a row or
+  // column order is composed against the same walk, so every tab order carries the version it was read at.
+  | 'setTabOrder';
 const _theFieldNameIsACommandKind: NamesAFormField extends CommandKind ? true : never = true;
 void _theFieldNameIsACommandKind;
 

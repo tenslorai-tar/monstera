@@ -3,6 +3,8 @@ import { useState } from 'react';
 
 import {
   TAB_ORDER_APPLY,
+  TAB_ORDER_CLICK,
+  TAB_ORDER_CLICK_NOTE,
   TAB_ORDER_COLUMN,
   TAB_ORDER_COLUMN_NOTE,
   TAB_ORDER_LABEL,
@@ -33,6 +35,7 @@ export default function TabOrderBody({ resolve }: DialogAnswering<TabOrderAnswer
           { value: 'row', label: TAB_ORDER_ROW, note: TAB_ORDER_ROW_NOTE },
           { value: 'column', label: TAB_ORDER_COLUMN, note: TAB_ORDER_COLUMN_NOTE },
           { value: 'structure', label: TAB_ORDER_STRUCTURE, note: TAB_ORDER_STRUCTURE_NOTE },
+          { value: 'click', label: TAB_ORDER_CLICK, note: TAB_ORDER_CLICK_NOTE },
         ]}
         value={order}
       />

@@ -295,6 +295,66 @@ test.describe('the Forms tab', () => {
     expect(orders[0]?.params).toMatchObject({ command: { kind: 'setTabOrder', pages: 'all', order: 'column' } });
   });
 
+  test('IN THE ORDER I CLICK numbers the fields on the page, takes clicks at a field’s middle and near its edge, and sends that order once', async ({ page }) => {
+    const sent: { channel: string; params: unknown }[] = [];
+    // THREE FIELDS IN A ROW, listed in the order the file has them.
+    const row = [0, 1, 2].map((index) => ({
+      ...LISTED,
+      index,
+      name: `F${String(index + 1)}`,
+      rect: { x0: 72 + index * 160, y0: 500, x1: 212 + index * 160, y1: 520 },
+    }));
+    await openForms(page, sent, row);
+    await openSection(page, 'Forms');
+    await page.getByRole('button', { name: 'Tab order' }).first().click();
+    await page.getByLabel(/In the order I click/u).check();
+    await page.getByRole('button', { name: 'Set the tab order' }).click();
+    // NOTHING SENT BY CHOOSING IT: the order is the clicks still to come.
+    expect(sent.filter((call) => call.channel === 'document.execute')).toStrictEqual([]);
+
+    const box = (index: number) => page.locator(`[data-tab-order-box="${String(index)}"]`);
+    // BEFORE A CLICK each field shows the number it has now.
+    await expect(box(0)).toHaveText('1');
+    await expect(box(2)).toHaveText('3');
+
+    // THE THIRD FIELD AT ITS MIDDLE, then the first NEAR ITS LEFT EDGE, with real pointer events.
+    const third = await box(2).boundingBox();
+    const first = await box(0).boundingBox();
+    if (third === null || first === null) throw new Error('the fields are not drawn');
+    await page.mouse.click(third.x + third.width / 2, third.y + third.height / 2);
+    await page.mouse.click(first.x + 3, first.y + first.height / 2);
+    await expect(box(2)).toHaveText('1');
+    await expect(box(0)).toHaveText('2');
+    await expect(box(1)).toHaveText('3');
+    await expect(page.getByText(/2 chosen\./u)).toBeVisible();
+
+    await page.getByRole('button', { name: 'Set this order' }).click();
+    await expect(page.locator('[data-tab-order-layer]')).toHaveCount(0);
+    const orders = sent.filter((call) => call.channel === 'document.execute');
+    expect(orders).toHaveLength(1);
+    expect(orders[0]?.params).toMatchObject({
+      command: {
+        kind: 'setTabOrder',
+        pages: 'all',
+        order: { given: [{ page: 0, index: 2, name: 'F3' }, { page: 0, index: 0, name: 'F1' }] },
+      },
+    });
+  });
+
+  test('CONTROL: Escape while clicking a tab order sets nothing and leaves the page filling again', async ({ page }) => {
+    const sent: { channel: string; params: unknown }[] = [];
+    await openForms(page, sent);
+    await openSection(page, 'Forms');
+    await page.getByRole('button', { name: 'Tab order' }).first().click();
+    await page.getByLabel(/In the order I click/u).check();
+    await page.getByRole('button', { name: 'Set the tab order' }).click();
+    await page.locator('[data-tab-order-box="0"]').click();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('[data-tab-order-layer]')).toHaveCount(0);
+    await expect(page.locator('[data-form-field="0"]')).toBeVisible();
+    expect(sent.filter((call) => call.channel === 'document.execute')).toStrictEqual([]);
+  });
+
   test('a new field is named for its kind with nothing asked, by the first number the form does not hold (K1)', async ({ page }) => {
     const sent: { channel: string; params: unknown }[] = [];
     // THE FORM ALREADY HOLDS Text1, so the new one is Text2: the name is read from the form, not counted from zero.

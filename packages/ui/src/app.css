@@ -6697,6 +6697,48 @@ optgroup {
   outline-offset: 2px;
 }
 
+/* TAB ORDER'S NUMBER, in the box's top left corner on the chrome's surface: the number Tab will reach the field at. */
+.m-tab-order-box__number {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  min-inline-size: 1.6em;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--accent);
+  border-radius: 0 0 var(--radius-4) 0;
+  background: var(--float-bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--font-chrome-11);
+  font-weight: 600;
+  line-height: 1.5;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* WHAT TO DO while a tab order is being clicked, over the top of the page area and out of the pages' way. */
+.m-tab-order-bar {
+  position: absolute;
+  z-index: 2;
+  inset-block-start: var(--space-8);
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  max-inline-size: calc(100% - 2 * var(--space-16));
+  padding: var(--space-6) var(--space-8);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-6);
+  background: var(--float-bg);
+  color: var(--text);
+  box-shadow: var(--float-shadow);
+}
+
+.m-tab-order-bar__text {
+  font-size: var(--font-chrome-12);
+}
+
 .m-field-box--selected {
   border-style: solid;
   border-width: 2px;

@@ -6381,6 +6381,7 @@ describe('protectDocumentCommand', () => {
         onApplied: () => undefined,
         ask: () => Promise.resolve(undefined),
         markPlaces: () => undefined,
+        orderByClicking: () => undefined,
       };
       const tips = [detectFlatFieldsCommand(deps), flattenFormCommand(deps), tabOrderCommand(deps)].map((command) => command.tip);
       expect(tips).toStrictEqual([DETECT_FIELDS_TIP, FLATTEN_FORM_TIP, TAB_ORDER_TIP]);
@@ -6390,8 +6391,8 @@ describe('protectDocumentCommand', () => {
     });
   });
 
-  describe('tabOrderCommand (ADR-0193)', () => {
-    it('ASKS which order, then sets it on every page with ONE setTabOrder, then says it did', async () => {
+  describe('tabOrderCommand (ADR-0193, ADR-0226 Decision 15)', () => {
+    it('ASKS which order, then sets it on every page with ONE setTabOrder at the version it was asked at, then says it did', async () => {
       const { client, sent } = recordingClient();
       const said: unknown[] = [];
       const asked: string[] = [];
@@ -6401,6 +6402,7 @@ describe('protectDocumentCommand', () => {
         stamp,
         signatures,
         onApplied: () => undefined,
+        orderByClicking: () => undefined,
         ask: (id) => {
           asked.push(`${id} after ${String(sent.length)} sent`);
           return Promise.resolve({ order: 'column' });
@@ -6409,24 +6411,45 @@ describe('protectDocumentCommand', () => {
 
       expect(asked).toStrictEqual(['dialog.tab-order after 0 sent']);
       expect(sent).toStrictEqual([
-        { id: 'document.execute', params: { docId: DOC, command: { kind: 'setTabOrder', pages: 'all', order: 'column' } } },
+        {
+          id: 'document.execute',
+          params: { docId: DOC, command: { kind: 'setTabOrder', pages: 'all', order: 'column', version: CONTEXT.version } },
+        },
       ]);
       expect(said).toStrictEqual([TOAST_TAB_ORDER_SET]);
     });
 
-    it('CONTROL: a dismissed question, and an answer that is not one of the three orders, send nothing', async () => {
+    it('IN THE ORDER I CLICK sends nothing yet and puts the page into clicking, for this document at this version', async () => {
+      const { client, sent } = recordingClient();
+      const started: unknown[] = [];
+      await tabOrderCommand({
+        client,
+        toast: () => undefined,
+        stamp,
+        signatures,
+        onApplied: () => undefined,
+        orderByClicking: (docId, version) => started.push({ docId, version }),
+        ask: () => Promise.resolve({ order: 'click' }),
+      }).run(CONTEXT);
+      expect(sent).toStrictEqual([]);
+      expect(started).toStrictEqual([{ docId: DOC, version: CONTEXT.version }]);
+    });
+
+    it('CONTROL: a dismissed question, and an answer that is not one of the orders, send nothing and start nothing', async () => {
       for (const answer of [undefined, { order: 'diagonal' }, {}]) {
         const { client, sent } = recordingClient();
         const said: unknown[] = [];
+        const started: unknown[] = [];
         await tabOrderCommand({
           client,
           toast: (_kind, message) => said.push(message),
           stamp,
           signatures,
           onApplied: () => undefined,
+          orderByClicking: () => started.push(true),
           ask: () => Promise.resolve(answer),
         }).run(CONTEXT);
-        expect([sent, said]).toStrictEqual([[], []]);
+        expect([sent, said, started]).toStrictEqual([[], [], []]);
       }
     });
   });
