@@ -532,6 +532,23 @@ describe('editOperators on paragraphs (ADR-0179)', () => {
     expect(left.ok).toBe(false);
   });
 
+  it('sets a TAB as a marked space and the next words at the next stop from the block’s left (ADR-0228)', () => {
+    // A LINE WIDE ENOUGH for the tab at its widest, a whole stop, so the edit stays one line.
+    const content = bytes('BT /F1 10 Tf 1 0 0 1 72 100 Tm (aaa bbb ccc ddd eee) Tj ET');
+    const page: PageRuns = { textObjects: [0], runs: [inked(0, 'aaa bbb ccc ddd eee', 72, 167)] };
+    const result = editOperators(content, fonts, page, [{ lines: [[0]], soft: [false], text: 'aaa\tbbb' }]);
+    if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+    const [object = ''] = inserted(result.value);
+    // THE GAP: one space where `aaa` ends (72 + 15), said to be a tab.
+    expect(object).toContain('/Span <</ActualText <FEFF0009>>> BDC 1 0 0 1 87 100 Tm <20> Tj EMC');
+    // `bbb` AT THE FIRST STOP, 36 from the block's left edge.
+    expect(object).toContain('1 0 0 1 108 100 Tm <626262>');
+    // CONTROL: a space there sets `bbb` a space on, and nothing is marked.
+    const spaced = editOperators(content, fonts, page, [{ lines: [[0]], soft: [false], text: 'aaa bbb' }]);
+    if (!spaced.ok) throw new Error(`refused: ${JSON.stringify(spaced.error)}`);
+    expect(inserted(spaced.value)[0]).not.toContain('ActualText');
+  });
+
   it('puts SPACE AFTER a paragraph above the next one’s first line, and nothing above a line within it (ADR-0228)', () => {
     const content = bytes(['BT /F1 10 Tf 1 0 0 1 72 100 Tm (aaa) Tj ET', 'BT /F1 10 Tf 1 0 0 1 72 88 Tm (bbb) Tj ET'].join('\n'));
     const page: PageRuns = { textObjects: [0, 1], runs: [inked(0, 'aaa', 72, 87), inked(1, 'bbb', 72, 87)] };

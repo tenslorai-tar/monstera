@@ -3,6 +3,7 @@ import type { BlockFormatting, EditedBlock, PageInsert, WindowEditAction } from 
 import type { MessageKey } from '@monstera/shared';
 import {
   type DocVersion,
+  TAB_STOP,
   joinAfterLine,
   lineText,
   pdfPoint,
@@ -1299,11 +1300,11 @@ function BlockEditor({
         return;
       }
     }
-    // TAB INSERTS A TAB, not a move of the focus out of the words: spaces to the next stop (ADR-0180 Decision 8).
+    // TAB INSERTS A TAB, the character, not a move of the focus out of the words (the owner's K8, ADR-0228 Decision 2).
     if (event.key === 'Tab' && !event.ctrlKey && !event.altKey && !event.metaKey) {
       event.preventDefault();
       event.stopPropagation();
-      if (area.current !== null && !event.shiftKey) insertTab(area.current, geometry.zoom);
+      if (area.current !== null && !event.shiftKey) insertTab(area.current);
       return;
     }
     // THE CHORDS OF FORMATTING, the editor's own while it has the focus: the page's shortcuts do not reach a field.
@@ -1422,6 +1423,8 @@ function BlockEditor({
           // could not do. The page is written by the writer's own reading of the same line (`lineDirection`), which agrees
           // for every line that is mostly one script.
           unicodeBidi: 'plaintext',
+          // A TAB IS DRAWN AT THE STOP THE PAGE WILL SET IT AT (ADR-0228 Decision 2): the shared stop, at the zoom shown.
+          tabSize: `${String(TAB_STOP * geometry.zoom)}px`,
           ...(block.shape.align === 'left' && block.shape.firstIndent !== 0
             ? {
                 paddingLeft: Math.max(0, -block.shape.firstIndent) * geometry.zoom,

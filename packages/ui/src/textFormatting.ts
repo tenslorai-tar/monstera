@@ -473,9 +473,6 @@ export function toggleList(root: HTMLElement, range: Range, kind: 'bullet' | 'nu
   return elements.length;
 }
 
-/** Points between tab stops, from the editor's left edge (ADR-0180 Decision 8): the half inch word processors use. */
-export const TAB_STOP = 36;
-
 /** Inserts `text` where the caret is, replacing a selection, and tells the editor it changed as typing does. */
 function insertAtCaret(root: HTMLElement, text: string): void {
   const selection = root.ownerDocument.getSelection();
@@ -493,26 +490,12 @@ function insertAtCaret(root: HTMLElement, text: string): void {
 }
 
 /**
- * A Tab: spaces to the next tab stop, measured from where the caret is, because a page's text has no tab character to
- * set and a run of spaces is what a tab becomes on paper (ADR-0180 Decision 8). Where the caret has no measurable place
- * (no layout), four spaces.
+ * A Tab: the tab character itself (the owner's K8, ADR-0228 Decision 2), which the editor draws at the next stop
+ * (`tab-size`, the shared {@link TAB_STOP}) and the writer sets as a marked gap to the same stop. Its words keep the tab,
+ * so search, copy and the next edit read one where it was typed.
  */
-export function insertTab(root: HTMLElement, zoom: number): void {
-  const selection = root.ownerDocument.getSelection();
-  if (selection === null || selection.rangeCount === 0) return;
-  const stop = TAB_STOP * zoom;
-  const caretX = (): number | undefined => {
-    const rect = selection.getRangeAt(0).getBoundingClientRect();
-    if (rect.width === 0 && rect.height === 0 && rect.left === 0) return undefined;
-    return rect.left - root.getBoundingClientRect().left;
-  };
-  const at = caretX();
-  if (at === undefined) {
-    insertAtCaret(root, '    ');
-    return;
-  }
-  const target = (Math.floor(at / stop) + 1) * stop;
-  for (let spaces = 0; spaces < 24 && (caretX() ?? target) < target - 0.5; spaces += 1) insertAtCaret(root, ' ');
+export function insertTab(root: HTMLElement): void {
+  insertAtCaret(root, '\t');
 }
 
 /**

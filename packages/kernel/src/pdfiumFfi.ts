@@ -6,7 +6,7 @@ import {
   type PageInsert,
   type ParagraphProps,
 } from '@monstera/contract/host';
-import type { EditStep } from '@monstera/shared';
+import { type EditStep, TAB_STOP, nextTabStop } from '@monstera/shared';
 import koffi, { type KoffiFunc, type TypeObject } from 'koffi';
 
 import { editFaces, editFacesBound } from './editFaces.js';
@@ -1388,8 +1388,21 @@ function walkRuns(
     }
 
     const chars = numberFrom(bindings.countChars(textPage), 'FPDFText_CountChars');
+    /**
+     * Each object's `/ActualText`, read once per object: where a marked-content span says what its object's text IS, that
+     * is the object's text, whatever glyphs draw it (PDF 32000-1, 14.9.4). PDFium's text page does not read it (measured
+     * 2026-10-11, `scripts/research/pdfiumPositions.mjs`: a space marked as a tab read as a space), so the walk does, and a
+     * tab this editor wrote as a marked gap comes back as the tab it was typed as (ADR-0228 Decision 2).
+     */
+    const actualTexts = new Map<number, string | undefined>();
+    const actualOf = (index: number): string | undefined => {
+      if (!actualTexts.has(index)) actualTexts.set(index, actualTextOf(bindings, bindings.getObject(handle, index)));
+      return actualTexts.get(index);
+    };
     /** index -> the run being accumulated. Insertion order is reading order. */
     const runs = new Map<number, WalkedRun>();
+    /** The runs whose last character is a space the text page GENERATED, not one an object draws. */
+    const generatedTail = new Set<WalkedRun>();
     const ends = new Map<number, number>();
     const glyphs = new Map<number, { char: string; left: number }[]>();
     let unaddressable = 0;
@@ -1418,11 +1431,13 @@ function walkRuns(
         continue;
       }
       // THE PENDING SPACE, resolved now that the next drawn character is known:
-      // kept only when no generated line break came between them.
-      if (previous !== undefined && pending.includes(' ') && !/[\r\n]/u.test(pending)) {
+      // kept only when no generated line break came between them, and not after a tab, which IS the gap it stands for.
+      if (previous !== undefined && pending.includes(' ') && !/[\r\n]/u.test(pending) && !previous.text.endsWith('\t')) {
         previous.text += ' ';
+        generatedTail.add(previous);
       }
       pending = '';
+      const actual = actualOf(index);
 
       const left = [0];
       const right = [0];
@@ -1449,10 +1464,21 @@ function walkRuns(
           top: Number.NEGATIVE_INFINITY,
         };
         runs.set(index, held);
+        // A MARKED OBJECT'S TEXT IS ITS ACTUAL TEXT, said once for the object, in place of the glyphs that draw it.
+        if (actual !== undefined) held.text = actual;
       }
-      held.text += character;
+      if (actual === undefined) held.text += character;
+      generatedTail.delete(held);
       const loose: Record<string, number> = {};
       const hasLoose = numberFrom(bindings.looseCharBox(textPage, at, loose), 'FPDFText_GetLooseCharBox') === 1;
+      // A MARKED OBJECT WITH NO INK still has a place, its characters' advance: a tab written as a lone marked space is a
+      // run of the line it sits in, where an unmarked run of spaces is left out below.
+      if (!inked && actual !== undefined && hasLoose) {
+        held.left = Math.min(held.left, loose['left'] ?? x0);
+        held.right = Math.max(held.right, loose['right'] ?? x1);
+        held.bottom = Math.min(held.bottom, loose['bottom'] ?? low);
+        held.top = Math.max(held.top, loose['top'] ?? high);
+      }
       if (hasLoose) {
         ends.set(index, Math.max(ends.get(index) ?? Number.NEGATIVE_INFINITY, loose['right'] ?? Number.NEGATIVE_INFINITY));
       }
@@ -1471,6 +1497,48 @@ function walkRuns(
         held.top = Math.max(held.top, high);
       }
       previous = held;
+    }
+
+    // A MARKED OBJECT THE TEXT PAGE GAVE NO CHARACTER is still the text its mark says: a tab written as a lone space has
+    // no character in PDFium's text page at all, which generates a space in its place (measured 2026-10-11 on an edit's
+    // own bytes: `quick`, a generated space, `brown`). Such an object is a run of its own, in the reading order its index
+    // gives, with the box its object has, and the space the text page generated where it stands is taken back, since the
+    // object IS that gap. An object a character was read from never reaches here.
+    const extra: [number, WalkedRun][] = [];
+    for (let at = 0; at < objects; at += 1) {
+      if (runs.has(at)) continue;
+      const object: unknown = bindings.getObject(handle, at);
+      if (numberFrom(bindings.objectType(object), 'FPDFPageObj_GetType') !== TEXT_OBJECT) continue;
+      const actual = actualOf(at);
+      if (actual === undefined || actual === '') continue;
+      const box = boundsOf(bindings, object);
+      extra.push([at, { text: actual, drawn: '', left: box.left, right: Math.max(box.right, box.left), bottom: box.bottom, top: box.top }]);
+    }
+    if (extra.length > 0) {
+      const ordered = [...runs.entries()];
+      for (const [at, run] of extra) {
+        // AFTER THE RUN OF THE NEAREST OBJECT BEFORE IT, whose generated tail is the gap this object is.
+        const before = ordered.reduce((best, [index], position) => (index < at && (best < 0 || index > (ordered[best]?.[0] ?? -1)) ? position : best), -1);
+        const held = ordered[before]?.[1];
+        if (held !== undefined && generatedTail.has(held)) {
+          held.text = held.text.slice(0, -1);
+          generatedTail.delete(held);
+        }
+        // THE LINE'S HEIGHT, where the object's own box is only its baseline: a lone space has no ink to give it one.
+        if (held !== undefined && run.top - run.bottom < 0.5) {
+          run.bottom = held.bottom;
+          run.top = held.top;
+        }
+        ordered.splice(before + 1, 0, [at, run]);
+        // A GAP REACHES THE WORDS AFTER IT on its line: what it is, and what keeps a line that a tab parts one line and
+        // one block rather than two columns.
+        const after = ordered[before + 2]?.[1];
+        if (after !== undefined && after.left > run.right && after.bottom < run.top && after.top > run.bottom) run.right = after.left;
+        ends.set(at, run.right);
+        glyphs.set(at, [{ char: run.text, left: run.left }]);
+      }
+      runs.clear();
+      for (const [index, run] of ordered) runs.set(index, run);
     }
 
     return {
@@ -3187,7 +3255,11 @@ function layOutBlocks(
 
           // THE BLOCK'S EDGES, in the measure every later comparison uses: the
           // objects' own bounds, read before anything moves or scales.
-          const edges = lines.flat().map((run) => boundsOf(bindings, run.object));
+          // EVERY OBJECT OF EVERY RUN, its first and the members the join added: a line an earlier edit wrote as several
+          // objects (a mark's words, a tab's gap) ends where its LAST object does, and its first object's edge read as the
+          // block's measured a second edit of it at that object's width (measured 2026-10-11: a line ending at 248.7 read as
+          // ending at 119.7, and every line after the change wrapped at about fifty points).
+          const edges = lines.flat().flatMap((run) => [run.object, ...run.extras]).map((object) => boundsOf(bindings, object));
           const blockLeft = Math.min(...edges.map((edge) => edge.left));
           const blockTop = Math.max(...edges.map((edge) => edge.top));
           // A ONE-LINE BLOCK WRAPS AT ITS COLUMN (ADR-0097 4a): its own right edge is only where
@@ -3449,7 +3521,30 @@ function layOutBlocks(
                 : 0;
             const smallest = Math.min(...units.map((unit) => pen.styleOfObject((runsById.get(unit.piece.run) ?? firstRun).object).size));
             const perSpace = spaces === 0 ? 0 : Math.max(0, Math.min((blockRight - x - row.width) / spaces, JUSTIFY_CAP * smallest));
-            for (const { piece, text: stretchText, rtl: forced, width: stretchWidth } of units) {
+            /**
+             * A TAB IS A MARKED GAP (the owner's K8, ADR-0228 Decision 2): a lone space in the run's font, as an object of its
+             * own so its mark says only its own text, marked `/ActualText (\t)`, and the next words at the next stop from the
+             * block's left edge. Never the character itself, which a standard font writes as `ÿ` (measured).
+             */
+            const writeTab = ({ piece, rtl: forced }: (typeof units)[number]): void => {
+              const source = runsById.get(piece.run) ?? firstRun;
+              const gap = makeTextLike(bindings, document, source.object, left);
+              insertAfter(gap, after);
+              const laid = writePieces(gap, ' ', undefined, forced);
+              const rise = matrixOn(bindings, source.object).f - (baselines[lineOfRun.get(source) ?? 0] ?? 0);
+              for (const object of laid) {
+                const mark: unknown = bindings.addMark(object, 'Span');
+                if (mark === null) throw refusedAt('object', 'FPDFPageObj_AddMark refused the mark of a tab');
+                if (numberFrom(bindings.markSetString(document, object, mark, ACTUAL_TEXT, '\t'), 'FPDFPageObjMark_SetStringParam') !== 1) {
+                  throw refusedAt('object', 'FPDFPageObjMark_SetStringParam refused the text of a tab');
+                }
+                objects.push({ object, rise });
+              }
+              after = laid.at(-1) ?? gap;
+              left = nextTabStop(left, blockLeft);
+            };
+            /** One stretch of words with no tab in it, in its run's style and its mark's. */
+            const writeStretch = ({ piece, text: stretchText, rtl: forced, width: stretchWidth }: (typeof units)[number]): void => {
               const source = runsById.get(piece.run) ?? firstRun;
               const made = makeTextLike(bindings, document, source.object, left);
               // WHAT THE WORDS FOLLOW in the page's order, which a colour behind them is inserted after.
@@ -3517,6 +3612,14 @@ function layOutBlocks(
                 widened !== 0
                   ? left + drawnWidth
                   : ((stretches === undefined ? undefined : pen.endOf(laid)) ?? left + drawnWidth);
+            };
+            for (const unit of units) {
+              const parts = unit.text.split('\t');
+              for (const [at, part] of parts.entries()) {
+                if (at > 0) writeTab(unit);
+                if (part === '') continue;
+                writeStretch(parts.length === 1 ? unit : { ...unit, text: part, width: measure(unit.piece.run, unit.piece.mark, part) });
+              }
             }
             anchor = after;
             // THE GAP ABOVE THIS LINE: the person's own where they set the paragraph's spacing, else the gap the line it
@@ -3806,7 +3909,13 @@ function blockMeasure(
     if (widths.some((width) => width === null)) throw new TextNotWritableError(pen.uncarriedIn(run.object, text));
     return widths.reduce<number>((sum, width) => sum + (width ?? 0), 0);
   };
-  return (id, mark, text) => {
+  const measure: Measure = (id, mark, text) => {
+    // A TAB IS AT MOST A WHOLE STOP WIDE, and where it ends depends on where it starts, which a width cannot know: the
+    // plan takes the widest, so a line it fits is never wider when drawn (ADR-0228 Decision 2).
+    if (text.includes('\t')) {
+      const parts = text.split('\t');
+      return parts.reduce((sum, part) => sum + (part === '' ? 0 : measure(id, mark, part)), 0) + (parts.length - 1) * TAB_STOP;
+    }
     const run = runs.get(id) ?? fallback;
     // A MARKED PIECE: the face it asks (where it asks one), scaled by its size and its rise. The size is applied to the
     // objects after they are written, so the width is the unscaled one times the factor.
@@ -3817,6 +3926,7 @@ function blockMeasure(
     }
     return plainWidth(run, text);
   };
+  return measure;
 }
 
 /**
@@ -3915,6 +4025,26 @@ function markString(
  * A continuation line takes the marks of the line it continues, so one sequence's number may stand on more than one
  * object on the page.
  */
+/** The marked-content parameter that says what its content's text is (PDF 32000-1, 14.9.4). */
+const ACTUAL_TEXT = 'ActualText';
+
+/** What a text object's marks say its text IS, where one carries an `/ActualText`; `undefined` where none does. */
+function actualTextOf(bindings: Bound, object: unknown): string | undefined {
+  const count = numberFrom(bindings.countMarks(object), 'FPDFPageObj_CountMarks');
+  for (let at = 0; at < count; at += 1) {
+    const mark: unknown = bindings.getMark(object, at);
+    if (mark === null) continue;
+    const kind = numberFrom(bindings.markParamType(mark, ACTUAL_TEXT), 'FPDFPageObjMark_GetParamValueType');
+    if (kind !== MARK_STRING) continue;
+    const text = markString(
+      (buffer, length, needed) => bindings.markParamString(mark, ACTUAL_TEXT, buffer, length, needed),
+      'FPDFPageObjMark_GetParamStringValue',
+    );
+    if (text !== null) return text;
+  }
+  return undefined;
+}
+
 function copyMarks(bindings: Bound, document: unknown, from: unknown, to: unknown): void {
   const count = numberFrom(bindings.countMarks(from), 'FPDFPageObj_CountMarks');
   for (let at = 0; at < count; at += 1) {
@@ -3930,7 +4060,10 @@ function copyMarks(bindings: Bound, document: unknown, from: unknown, to: unknow
         (buffer, length, needed) => bindings.markParamKey(mark, index, buffer, length, needed),
         'FPDFPageObjMark_GetParamKey',
       );
-      if (key === null || key === '') continue;
+      // AN /ActualText IS ITS OWN OBJECT'S TEXT, never the words a new object holds: carried onto a line set in the style of
+      // a marked tab, it would make a reader read that whole line as a tab (measured, `scripts/research/pdfiumPositions.mjs`:
+      // the mark on an object replaces all of its text in MuPDF).
+      if (key === null || key === '' || key === ACTUAL_TEXT) continue;
       const kind = numberFrom(bindings.markParamType(mark, key), 'FPDFPageObjMark_GetParamValueType');
       if (kind === MARK_NUMBER) {
         const value = [0];

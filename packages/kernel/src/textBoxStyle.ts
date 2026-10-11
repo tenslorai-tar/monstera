@@ -17,7 +17,13 @@
  * the engine's appearance in place — never a style dropped on some of the words (*preserve, never drop*).
  */
 
-import { DEFAULT_TEXT_LINE_HEIGHT, MAX_TEXT_LINE_HEIGHT, MAX_TEXT_PADDING, MIN_TEXT_LINE_HEIGHT } from '@monstera/shared';
+import {
+  DEFAULT_TEXT_LINE_HEIGHT,
+  MAX_TEXT_LINE_HEIGHT,
+  MAX_TEXT_PADDING,
+  MIN_TEXT_LINE_HEIGHT,
+  nextTabStop,
+} from '@monstera/shared';
 
 import { hasRightToLeftLetter, lineSpans, paragraphDirection, paragraphLevels } from './bidiOrder.js';
 import {
@@ -284,7 +290,8 @@ export interface Layout {
 /** A word, or a space, or a break, with the style it is drawn in and, for a word or a space, how it is set. */
 interface Token {
   readonly text: string;
-  readonly kind: 'word' | 'space' | 'break';
+  /** A tab is a gap to the next stop from the box's inner left (ADR-0228 Decision 2), as wide as where it starts says. */
+  readonly kind: 'word' | 'space' | 'tab' | 'break';
   readonly style: FaceStyle;
   readonly colour: Rgb;
   readonly underline: boolean;
@@ -314,7 +321,7 @@ function tokensOf(runs: readonly TextRun[], look: BoxLook): { readonly tokens: T
       highlight: run.highlight ?? null,
       spacing: run.spacing ?? look.spacing,
     };
-    for (const part of run.text.split(/(\r\n|\n|\r|[ \t]+)/u)) {
+    for (const part of run.text.split(/(\r\n|\n|\r|\t| +)/u)) {
       if (part === '') continue;
       const paragraph = paragraphs.length - 1;
       const offset = paragraphs[paragraph]?.length ?? 0;
@@ -323,9 +330,8 @@ function tokensOf(runs: readonly TextRun[], look: BoxLook): { readonly tokens: T
         paragraphs.push('');
         continue;
       }
-      const text = /^[ \t]+$/u.test(part) ? ' '.repeat(part.length) : part;
-      tokens.push({ ...style, text, kind: /^[ \t]+$/u.test(part) ? 'space' : 'word', offset, paragraph });
-      paragraphs[paragraph] = (paragraphs[paragraph] ?? '') + text;
+      tokens.push({ ...style, text: part, kind: part === '\t' ? 'tab' : /^ +$/u.test(part) ? 'space' : 'word', offset, paragraph });
+      paragraphs[paragraph] = (paragraphs[paragraph] ?? '') + part;
     }
   }
   return { tokens, paragraphs };
@@ -385,6 +391,14 @@ export function layoutBox(
       continue;
     }
     row.paragraph = token.paragraph;
+    if (token.kind === 'tab') {
+      // A TAB GOES TO THE NEXT STOP, and to the next line where that stop is past the edge, where it is a whole stop.
+      if (row.tokens.length > 0 && nextTabStop(used, 0) > inner) finish('wrap');
+      const here = nextTabStop(used, 0) - used;
+      row.tokens.push({ ...token, pieces: [], width: here });
+      used += here;
+      continue;
+    }
     const set = setOf(token, token.text);
     if (set === undefined) return undefined;
     if (token.kind === 'space') {
@@ -436,14 +450,22 @@ export function layoutBox(
     let x = top + (look.align === 'center' ? slack / 2 : look.align === 'right' ? slack : 0);
     const pieces: Piece[] = [];
     for (const token of drawingOrder(one.tokens, levels[one.paragraph])) {
+      // A TAB DRAWS NOTHING and moves the pen to where it was laid out to end.
+      if (token.kind === 'tab') {
+        x += token.width;
+        continue;
+      }
       const extra = token.kind === 'space' ? stretch : 0;
       token.pieces.forEach((set, index) => {
         const spacing = spaceable(set.text) ? spacingOf(token) : 0;
         const own = set.width + spacedBy(set.text, spacingOf(token)) + (index === token.pieces.length - 1 ? extra : 0);
         const previous = pieces.at(-1);
-        // ADJACENT PIECES OF ONE STYLE ARE ONE DRAW, so an underline runs across a phrase and not word by word.
+        // ADJACENT PIECES OF ONE STYLE ARE ONE DRAW, so an underline runs across a phrase and not word by word. ADJACENT, so a
+        // piece after a gap the pen jumped (a tab) starts a draw of its own at its own place.
         if (
-          previous?.face === set.face &&
+          previous !== undefined &&
+          Math.abs(previous.x + previous.width - x) < 1e-6 &&
+          previous.face === set.face &&
           sameColour(previous.colour, token.colour) &&
           previous.underline === token.underline &&
           previous.strike === token.strike &&

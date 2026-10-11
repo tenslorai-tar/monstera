@@ -150,6 +150,19 @@ describe('appearanceContent', () => {
     expect(plain.lines[0]?.pieces[0]?.width).toBe(42);
   });
 
+  it('a TAB moves the next words to the next stop, 36 points from the inner left, and draws nothing (ADR-0228)', () => {
+    const box = layoutBox(200, 40, look(), [{ text: 'ab\tcd' }], setter);
+    const pieces = box?.lines[0]?.pieces ?? [];
+    expect(pieces.map((piece) => [piece.text, piece.x])).toStrictEqual([
+      ['ab', 0],
+      ['cd', 36],
+    ]);
+    // A TAB PAST A STOP goes to the one after it: 'abcdefg' is 42 wide, so the next stop is 72.
+    expect(layoutBox(200, 40, look(), [{ text: 'abcdefg\tx' }], setter)?.lines[0]?.pieces.at(-1)?.x).toBe(72);
+    // CONTROL: a space where the tab was puts the words one space on, not at the stop.
+    expect(layoutBox(200, 40, look(), [{ text: 'ab cd' }], setter)?.lines[0]?.pieces.map((piece) => piece.text)).toStrictEqual(['ab cd']);
+  });
+
   it('escapes a parenthesis and a backslash, and writes Latin-1 and the euro in their WinAnsi codes', () => {
     expect(pdfString('a(b)\\c')).toBe('(a\\(b\\)\\\\c)');
     expect(pdfString('é€')).toBe('(\\351\\200)');

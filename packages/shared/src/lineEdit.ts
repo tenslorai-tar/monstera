@@ -72,6 +72,19 @@ export function lineText(runs: readonly LineRun[]): string {
 }
 
 /**
+ * Points between tab stops, from the left edge of the words a tab is in: the half inch word processors use. ONE figure
+ * for every writer that sets a tab and the editor that shows one
+ * ([ADR-0228](../../../docs/DECISIONS/0228-the-formatting-set-is-whole-in-both-text-writers-and-a-tab-is-a-marked-gap.md)
+ * Decision 2), so the stop a person sees while typing is the stop the page gets.
+ */
+export const TAB_STOP = 36;
+
+/** Where the next tab stop after `at` is, measured from `left`, in the same units: never `at` itself. */
+export function nextTabStop(at: number, left: number, stop: number = TAB_STOP): number {
+  return left + (Math.floor((at - left) / stop + 1e-9) + 1) * stop;
+}
+
+/**
  * What stands between a line's text and the next line's in a paragraph's words
  * ([ADR-0179](../../../docs/DECISIONS/0179-a-paragraph-is-the-editors-unit-and-a-reflow-keeps-each-word-in-its-own-style.md)):
  * one space where the line ended in a soft wrap, nothing where it already ends in white space, and a line break where

@@ -1,5 +1,5 @@
 import type { BlockMarkSet, BlockPlace, EditedBlock, PageInsert } from '@monstera/contract/host';
-import { type Result, err, ok } from '@monstera/shared';
+import { type Result, TAB_STOP, err, nextTabStop, ok } from '@monstera/shared';
 
 import type { PageFont } from './pageFonts.js';
 import { type BlockPlan, type FlowLine, type Measure, NO_MARK, type Row, largestFit, planBlock } from './paragraphFlow.js';
@@ -264,6 +264,8 @@ interface Segment {
    * ADR-0188): its glyphs, its kerning and its font are the page's, not a re-setting of its words.
    */
   readonly verbatim?: string;
+  /** A tab's gap: a space marked as the tab it stands for, never joined to the words beside it (ADR-0228 Decision 2). */
+  readonly tab?: true;
 }
 
 
@@ -287,9 +289,9 @@ function pieceTexts(pieces: readonly FacePiece[], word: string): string[] {
   return texts.map((text) => text ?? word.slice(known));
 }
 
-/** Each typed line split into words and the spaces between them, one space a token. */
+/** Each typed line split into words and the spaces and tabs between them, one space or tab a token. */
 function tokens(text: string): string[] {
-  return text.match(/ |[^ ]+/gu) ?? [];
+  return text.match(/ |\t|[^ \t]+/gu) ?? [];
 }
 
 class Refused extends Error {
@@ -766,9 +768,11 @@ function write(
       const unit = placed(run.first).unit * (marked?.factor ?? 1) * shrink;
       return (
         tokens(text).reduce((sum, token) => {
+          // A TAB IS AT MOST A WHOLE STOP, the PDFium writer's rule: where it ends depends on where it starts.
+          if (token === '\t') return sum + TAB_STOP;
           const pieces = piecesOf(source, token, restyleOf(marked));
           return pieces === null ? sum : sum + widthOfPieces(source, pieces, unit);
-        }, 0) + spacedBy(text, (marked?.spacing ?? 0) * shrink)
+        }, 0) + spacedBy(text.replace(/\t/gu, ''), (marked?.spacing ?? 0) * shrink)
       );
     };
 
@@ -804,6 +808,19 @@ function write(
             };
       let cursor = x;
       for (const token of tokens(words)) {
+        // A TAB IS A MARKED GAP (ADR-0228 Decision 2): a space shown as a segment of its own, which the emission wraps in
+        // `/Span <</ActualText (tab)>>`, and the next words at the next stop from the block's left edge. A font with no
+        // space draws nothing there, and the gap is still the stop's.
+        if (token === '\t') {
+          const gap = piecesOf(source, ' ', restyleOf(marked));
+          const piece = gap?.length === 1 ? gap[0] : undefined;
+          if (piece !== undefined) {
+            faces?.drawn([piece]);
+            line.segments.push({ source, font: piece.font, codes: [...piece.codes], text: '\t', x: cursor, style, tab: true });
+          }
+          cursor = nextTabStop(cursor, blockLeft);
+          continue;
+        }
         const pieces = piecesOf(source, token, restyleOf(marked));
         if (pieces === null) continue;
         faces?.drawn(pieces);
@@ -818,6 +835,7 @@ function write(
           // ONE SEGMENT for words that follow on in one font and state: a glyph's advance places the next exactly there.
           if (
             last?.verbatim === undefined &&
+            last?.tab !== true &&
             last?.source === source &&
             last.font === piece.font &&
             last.style === style &&
@@ -1195,7 +1213,9 @@ function write(
       const [a, b, c, d] = segment.source.state.matrix;
       const raised = segment.baseline + (style?.rise ?? 0);
       const [e, f] = apply(toBt, segment.x, raised);
-      parts.push(`${[a, b, c, d, e, f].map(num).join(' ')} Tm ${segment.verbatim ?? `${hexOf(segment.font, segment.codes)} Tj`}`);
+      const shown = `${[a, b, c, d, e, f].map(num).join(' ')} Tm ${segment.verbatim ?? `${hexOf(segment.font, segment.codes)} Tj`}`;
+      // A TAB'S GAP SAYS IT IS A TAB: marked content around its one space, its text the tab in UTF-16 (ADR-0228 Decision 2).
+      parts.push(segment.tab === true ? `/Span <</ActualText <FEFF0009>>> BDC ${shown} EMC` : shown);
       // A RECTANGLE AS WIDE AS THE SEGMENT from `bottom` to `top` above the baseline, in the space the words are written in.
       const drawn = (bottom: number, top: number, colour: readonly number[]): string => {
         const [x0, y0] = apply(toBt, segment.x, raised + bottom);

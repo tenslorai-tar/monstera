@@ -270,8 +270,10 @@ const failures = [];
 // edit keeps: invisible text stays invisible, with a visible control and the fixture's own, and 143 from ADR-0180's
 // marks: bold, colour, size, underline, superscript and a restated mark, then alignment, line spacing and an indent, each
 // with the control that separates the mark from the fixture. 231 from ADR-0228's formatting set: a strike and its
-// control against the underline, a highlight, spacing and its control, justify and its control, and space after.
-const roster = createRoster(failures, { cases: 231 });
+// control against the underline, a highlight, spacing and its control, justify and its control, and space after. 234
+// from its Decision 2: a tab read back at its stop, its control, and a second edit that keeps one tab. 235 from the
+// second edit's measure, which read a line written as several objects at its first object's width.
+const roster = createRoster(failures, { cases: 235 });
 
 /**
  * @param {string} name
@@ -4164,6 +4166,74 @@ async function formatCases() {
     'CONTROL: the same indent set left ends its wrapped lines ragged, so their one right edge is the justify’s',
     ragged.length >= 2 && Math.max(...ragged) - Math.min(...ragged) > 2,
     `rights set left ${JSON.stringify(ragged.map((right) => Math.round(right * 10) / 10))}`,
+  );
+
+  // TAB (ADR-0228 Decision 2): written as a marked gap, the words after it at a stop from the block's left, and READ
+  // BACK as the tab it was typed as, by the editor's own reading.
+  const tabWords = words.replace('quick brown', 'quick\tbrown');
+  const tabbed = await format({ text: tabWords });
+  const tabRead = await blocksOf(tabbed);
+  const tabText = paragraphsOfLines((tabRead.blocks[0]?.lines ?? []).map((line) => ({ text: lineText(line.runs), soft: line.soft })));
+  // THE OBJECT `brown` STARTS, from the reading that is not joined: the editor's joins the tab and the words after it.
+  const brownRun = await (async () => {
+    const session = await pdfiumWriter.open(tabbed);
+    try {
+      return (await objectRuns(session, 0)).runs.find((run) => run.text.startsWith('brown'));
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  })();
+  const fromLeft = brownRun === undefined ? Number.NaN : brownRun.left - block.box.x0;
+  record(
+    'a tab is read back as a tab, and the words after it start at a stop 36 points apart from the block’s left edge',
+    tabText.includes('quick\tbrown') && Math.abs(fromLeft - Math.round(fromLeft / 36) * 36) < 1.5 && Math.round(fromLeft / 36) >= 1,
+    `read ${JSON.stringify(tabText.slice(0, 30))}; brown ${fromLeft.toFixed(2)} from the left`,
+  );
+  record('CONTROL: the page read no tab before the edit', !words.includes('\t'), JSON.stringify(words.slice(0, 20)));
+  // A SECOND EDIT of the tabbed block keeps one tab: no line set in the style of the tab's object carries its mark.
+  const again = await (async () => {
+    const reread = tabRead.blocks[0];
+    if (reread === undefined) return undefined;
+    return localPdfiumExecution.apply({
+      session: tabbed,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf([
+          {
+            lines: reread.lines.map((line) => line.runs.map((run) => run.index)),
+            soft: reread.lines.map((line) => line.soft),
+            text: tabText.replace('lazy', 'lazier'),
+          },
+        ]),
+        fit: 'reflow',
+        version: 1,
+      }),
+      sources: [],
+      reads: undefined,
+    }).then(
+      (bytes) => bytes,
+      (error) => (error instanceof Error ? error.message : String(error)),
+    );
+  })();
+  const againText =
+    again === undefined || typeof again === 'string'
+      ? ''
+      : paragraphsOfLines(((await blocksOf(again)).blocks[0]?.lines ?? []).map((line) => ({ text: lineText(line.runs), soft: line.soft })));
+  // THE SECOND EDIT KEEPS THE PARAGRAPH'S MEASURE: a line the first edit wrote as several objects (here, the tab's line) is
+  // measured to its last object, so the lines after the change wrap where they did. Measured before that: every line after
+  // the change wrapped at about fifty points, at the width of each line's first object.
+  const againLines = again === undefined || typeof again === 'string' ? [] : ((await blocksOf(again)).blocks[0]?.lines ?? []);
+  record(
+    'a second edit of a line an edit wrote as several objects keeps the paragraph’s measure: its wrapped lines still fill it',
+    againLines.length === (tabRead.blocks[0]?.lines.length ?? -1) &&
+      againLines.slice(0, -1).every((line) => line.soft && line.box.x1 > edge - 40),
+    JSON.stringify(againLines.map((line) => [lineText(line.runs), Math.round(line.box.x1)])),
+  );
+  record(
+    'a second edit of the tabbed words keeps exactly one tab where it was, and every word reads as typed',
+    againText.split('\t').length === 2 && againText.includes('quick\tbrown fox') && againText.includes('lazier'),
+    `${typeof again === 'string' ? `refused: ${again}; ` : ''}read ${JSON.stringify(againText.slice(0, 60))}; the first read ${JSON.stringify(tabText)}`,
   );
 
   // SPACE AFTER: a second paragraph sits that much lower.

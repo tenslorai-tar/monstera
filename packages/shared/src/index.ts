@@ -91,6 +91,8 @@ export {
 export {
   type LineRun,
   type RunReplacement,
+  TAB_STOP,
+  nextTabStop,
   joinAfterLine,
   lineText,
   paragraphsOfLines,

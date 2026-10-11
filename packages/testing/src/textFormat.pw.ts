@@ -161,6 +161,26 @@ test.describe('Formatting in the Properties panel (K11)', () => {
     await expect.poll(() => marksSent(sent)).toStrictEqual([{ block: 0, from: 2, to: 11, set: { size: 18 } }]);
   });
 
+  test('Tab in the words types a TAB CHARACTER, drawn at the next stop, and the one write carries it (K8)', async ({ page }) => {
+    const sent: { channel: string; params: unknown }[] = [];
+    await openBlock(page, sent);
+    const editor = page.locator('[data-text-editor]');
+    await page.keyboard.press('Home');
+    await page.keyboard.press('Tab');
+    // THE FOCUS STAYS IN THE WORDS, and the editor holds the character, at the shared stop's width.
+    await expect(editor).toBeFocused();
+    await expect.poll(() => editor.evaluate((element) => element.textContent.startsWith('\t'))).toBe(true);
+    expect(await editor.evaluate((element) => getComputedStyle(element).tabSize)).not.toBe('8');
+    await page.locator('canvas[data-page-canvas="0"]').click({ position: { x: 40, y: 600 } });
+    const texts = (): string[] =>
+      sent.flatMap(({ channel, params }) => {
+        const command = (params as { command?: { kind?: string; texts?: string[]; text?: string } }).command;
+        if (channel !== 'document.execute' || command?.kind !== 'editTextBlock') return [];
+        return JSON.stringify(command).includes('\\tA paragraph of words') ? ['tab'] : ['no tab'];
+      });
+    await expect.poll(texts).toStrictEqual(['tab']);
+  });
+
   test('CONTROL: a press on Bold in the panel keeps the focus in the words, where a click on the page ends the edit', async ({ page }) => {
     const sent: { channel: string; params: unknown }[] = [];
     await openBlock(page, sent);

@@ -37,7 +37,7 @@ Choosing something there keeps the block open, so you can go on typing; click th
 
 Character spacing is typed in points and can open the letters up or close them together by up to about an eighth of the text size either way; the field says how much that is for the selected words. Wider than that, search and copy would read a space between every letter, so the spacing stops there. Hebrew, Arabic and other right-to-left words are never spaced out, because a gap would break the joins between their letters.
 
-The keys work as in a word processor: **Ctrl+B**, **Ctrl+I** and **Ctrl+U** for bold, italic and underline, **Ctrl+L**, **Ctrl+E**, **Ctrl+R** and **Ctrl+J** to align left, centre, right and justified, and **Ctrl+Shift** with the greater-than or less-than key to make the text a size bigger or smaller. Bold, italic and underline switch off again when every selected word already has them. **Tab** moves to the next tab stop.
+The keys work as in a word processor: **Ctrl+B**, **Ctrl+I** and **Ctrl+U** for bold, italic and underline, **Ctrl+L**, **Ctrl+E**, **Ctrl+R** and **Ctrl+J** to align left, centre, right and justified, and **Ctrl+Shift** with the greater-than or less-than key to make the text a size bigger or smaller. Bold, italic and underline switch off again when every selected word already has them. **Tab** types a tab: the words after it move to the next tab stop, every half inch from the left edge of the block, and the tab is kept in the text, so copying or searching the page finds it and editing the block again shows it where you typed it. In a form, **Tab** still moves to the next field.
 
 ## Choose a font
 
