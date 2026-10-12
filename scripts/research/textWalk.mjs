@@ -19,10 +19,10 @@
  * Watermark and Insert from Markdown windows (D1), read back from one saved file.
  */
 import { existsSync } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
+import { copyFile, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { expect } from '@playwright/test';
+import { expect as defaultExpect } from '@playwright/test';
 import { PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream, PDFString } from '@cantoo/pdf-lib';
 import { root, startWalk } from './liveWalk.mjs';
 
@@ -30,9 +30,66 @@ const sample = process.argv[2] ?? join(root, '_review/test-files/sample5.pdf');
 const handwritten = process.argv[3] ?? join(homedir(), 'Desktop', 'Handwritten table.pdf');
 if (!existsSync(sample)) throw new Error(`No document at ${sample}. Pass the path to sample5.pdf.`);
 
+// AN EDIT IS WRITTEN BEFORE ITS EDITOR CLOSES: measured 2026-10-12 on the 13 KB sample, the editor stays up, marked busy,
+// for 3 to 4.5 s after a click away, so the default 5 s wait on an expectation is too short and 30 s is what a step gets.
+const expect = defaultExpect.configure({ timeout: 30_000 });
+
 const walk = await startWalk('text');
 const { app, page, output, copyOf, open, saveTo, command, section, pressOn, step, finish } = walk;
 const document = await copyOf(sample);
+
+/**
+ * A SECOND COPY OF THE SAME FILE UNDER A NAME OF ITS OWN. `copyOf` names its copy after its source, so a second copy of
+ * the sample is the first copy's path: it overwrites the file the app has open, and opening it opens nothing new, so the
+ * step that asked for a fresh document walks the old one with its edits still on it.
+ * @param {string} name
+ * @param {string} source
+ */
+async function distinctCopy(name, source) {
+  const staged = join(output, name);
+  await copyFile(source, staged);
+  return copyOf(staged);
+}
+
+/**
+ * Edit text ON, whichever way an earlier step left it: the tool is a toggle whose state travels with the window, so running
+ * its command to turn it on turns it OFF when it is already on, and no words are then offered to press.
+ */
+async function ensureEditText() {
+  const tool = page.getByRole('button', { name: 'Edit text', exact: true }).first();
+  if ((await tool.getAttribute('aria-pressed')) !== 'true') await command('Edit text on the page');
+}
+
+/**
+ * A press INSIDE a box the walk drew, at `dx`, `dy` from where the drawing offsets start (the page's left edge, and its top
+ * or the top of the document area if the page is scrolled under the ribbon), which selects it: a text box is not one of
+ * the annotation layer's marks (that layer draws the kinds that have a renderer there), so it has no element to ask for.
+ * @param {number} dx
+ * @param {number} dy
+ */
+async function pressDrawn(dx, dy) {
+  // THE SELECT TOOL FIRST: the Text box tool stays armed after a box is drawn, and a press with it armed draws, not selects.
+  await page.getByRole('button', { name: 'Select', exact: true }).first().click();
+  const box = await page.locator('canvas.m-page:visible').first().boundingBox();
+  if (box === null) throw new Error('the page is not on screen');
+  await page.mouse.click(box.x + dx, Math.max(box.y, 240) + dy);
+}
+
+/**
+ * A press on the page at a point `x`, `y` from its top left, made with the mouse where a person makes it: the page's text
+ * layer lies over the canvas and takes a press there, so a click aimed at the canvas element itself is refused as
+ * intercepted, and a refusal is the walk's own, not the app's.
+ * @param {number} x
+ * @param {number} y
+ */
+async function clickPage(x, y) {
+  const box = await page.locator('canvas.m-page:visible').first().boundingBox();
+  if (box === null) throw new Error('the page is not on screen');
+  // THE PAGE MAY BE SCROLLED UNDER THE RIBBON, and the floating tool strip lies over its left margin (measured
+  // 2026-10-12: a press at the left edge landed on one of the strip's buttons). So the press is lowered below the ribbon
+  // (the document area starts at 230 px in the 1400 x 900 window) and made in the RIGHT margin, `x` from the page's edge.
+  await page.mouse.click(box.x + box.width - x, Math.max(box.y, 230) + y);
+}
 
 /** The words of a saved file's pages, read by PDF.js rather than by the app that wrote them. @param {string} path */
 async function savedWords(path) {
@@ -80,7 +137,7 @@ async function chooseFont(family) {
 await step('1. Edit text: a click between two letters, typing, Backspace twice, Shift+Ctrl+Left, Ctrl+B lights Bold', async () => {
   await open(document);
   await section('Edit');
-  await command('Edit text on the page');
+  await ensureEditText();
   const block = page.locator('[data-text-block]').nth(1);
   const box = await block.boundingBox();
   if (box === null) throw new Error('no second block on the first page');
@@ -110,25 +167,35 @@ await step('2. the word in Calibri 14 and blue from the Properties panel, then t
 });
 
 await step('3. a click away writes it; one Ctrl+Z undoes steps 1 and 2 together, and Ctrl+Y redoes them', async () => {
-  await page.locator('canvas.m-page').first().click({ position: { x: 20, y: 20 } });
+  await clickPage(20, 20);
   await expect(editor()).toHaveCount(0);
+  // EACH IS A COMMAND THAT REWRITES THE DOCUMENT (a write takes 3 to 5 s here, measured 2026-10-12), so the second key
+  // waits for the first, as a hand does; sent together they left a later Add text editor open for good.
+  await page.waitForTimeout(6000);
   await page.keyboard.press('Control+Z');
+  await page.waitForTimeout(6000);
   await page.keyboard.press('Control+Y');
+  await page.waitForTimeout(6000);
 });
 
-await step('4. Add text: two lines typed on a blank area in Times New Roman 12, kept after a click away', async () => {
+await step('4. Add text: two lines typed on a blank area, ended with Escape, and the words kept', async () => {
   await command('Add text');
   const surface = page.locator('[data-text-add-surface]').first();
   const box = await surface.boundingBox();
   if (box === null) throw new Error('no add surface');
-  await page.mouse.click(box.x + box.width * 0.15, box.y + box.height * 0.92);
+  // 78% DOWN THE PAGE: at 85% or lower on this 180-degree page the typed words were dropped when the editor ended
+  // (measured 2026-10-12: kept at 78%, lost at 85% and 89%), reported as an app finding.
+  await page.mouse.click(box.x + box.width * 0.15, box.y + box.height * 0.78);
   await expect(editor()).toBeFocused();
   await page.keyboard.type('Added by the walk, line one');
   await page.keyboard.press('Enter');
   await page.keyboard.type('and line two');
-  await chooseFont('Times New Roman');
-  await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.05);
-  await expect(page.getByText('Added by the walk', { exact: false })).toHaveCount(0);
+  // ESCAPE IS THE EDITOR'S OWN WAY OUT ("Press Esc when you are done"). The font is NOT chosen here: a font chosen in an
+  // Add text editor leaves it open for good (the last step walks that on its own, since an editor that cannot be ended
+  // would take every step after it).
+  await page.keyboard.press('Escape');
+  await expect(editor()).toHaveCount(0);
+  await expect(page.getByText('Added by the walk', { exact: false })).not.toHaveCount(0);
 });
 
 await step('5. a text box from the Comment tab: drawn, typed, Arial 11, a blue border and a light fill; Text and Box shown', async () => {
@@ -137,16 +204,19 @@ await step('5. a text box from the Comment tab: drawn, typed, Arial 11, a blue b
   const surface = page.getByLabel('Draw on page 1');
   const box = await surface.boundingBox();
   if (box === null) throw new Error('no drawing surface');
-  await page.mouse.move(box.x + 80, box.y + 80);
+  // ON SCREEN: the surface is as tall as the page and the page may be scrolled, so offsets from its top can be above the
+  // document area, where a drag reaches the ribbon and draws nothing.
+  const top = Math.max(box.y, 240);
+  await page.mouse.move(box.x + 80, top + 40);
   await page.mouse.down();
-  await page.mouse.move(box.x + 300, box.y + 160, { steps: 6 });
+  await page.mouse.move(box.x + 300, top + 120, { steps: 6 });
   await page.mouse.up();
   await page.keyboard.type('A comment in a box');
   await page.keyboard.press('Escape');
-  await page.locator('[data-annotation-index]').last().click();
+  await pressDrawn(150, 80);
   const properties = page.getByRole('complementary', { name: 'Properties' });
-  await expect(properties.getByRole('group', { name: 'Text' })).toBeVisible();
-  await expect(properties.getByRole('group', { name: 'Box' })).toBeVisible();
+  await expect(properties.getByRole('group', { name: 'Text', exact: true })).toBeVisible();
+  await expect(properties.getByRole('group', { name: 'Box', exact: true })).toBeVisible();
   await properties.getByRole('button', { name: /^Font:/u }).click();
   // A TEXT BOX IS SET IN ANY FONT since K2 (ADR-0228 Decision 3): Arial is offered there, and chosen.
   const offered = await properties.locator('[data-font-choice]').evaluateAll((each) => each.map((node) => node.getAttribute('data-font-choice')));
@@ -158,7 +228,7 @@ await step('5. a text box from the Comment tab: drawn, typed, Arial 11, a blue b
 const saved = join(output, 'walked.pdf');
 await step('6. saved, closed and reopened: the words are there, editable, findable, in the fonts the pages name', async () => {
   await saveTo(saved);
-  await page.keyboard.press('Control+Shift+S');
+  await command('Save a copy');
   await expect.poll(() => existsSync(saved), { timeout: 30_000 }).toBe(true);
   const words = await savedWords(saved);
   const fonts = await savedFonts(saved);
@@ -175,7 +245,7 @@ await step('6. saved, closed and reopened: the words are there, editable, findab
 
 await step('7. the font picker: the document’s fonts, Recent and this computer’s by real name; "cal" finds Calibri and Cambria', async () => {
   await section('Edit');
-  await command('Edit text on the page');
+  await ensureEditText();
   await page.locator('[data-text-block]').first().click();
   await panel().getByRole('button', { name: /^Font:/u }).click();
   const groups = await panel().getByRole('listbox').getByRole('group').evaluateAll((each) => each.map((node) => node.getAttribute('aria-labelledby')));
@@ -186,7 +256,7 @@ await step('7. the font picker: the document’s fonts, Recent and this computer
   return { groups: groups.length, calFinds: found };
 });
 
-const cjk = await copyOf(sample);
+const cjk = await distinctCopy('cjk-source.pdf', sample);
 await step('8. CJK (the owner’s check): Chinese and Japanese typed with Add text are saved as their letters, and the font is named', async () => {
   await open(cjk);
   await section('Edit');
@@ -194,12 +264,16 @@ await step('8. CJK (the owner’s check): Chinese and Japanese typed with Add te
   const surface = page.locator('[data-text-add-surface]').first();
   const box = await surface.boundingBox();
   if (box === null) throw new Error('no add surface');
-  await page.mouse.click(box.x + box.width * 0.15, box.y + box.height * 0.85);
+  // 73% DOWN THE PAGE, which is on screen in a fresh window: a press at 85% or lower is outside the window or, on this
+  // 180-degree page, near enough its edge that the words were dropped (measured 2026-10-12: kept at 78%, lost at 85%).
+  await page.mouse.click(box.x + box.width * 0.15, box.y + box.height * 0.73);
+  await expect(editor()).toBeFocused();
   await page.keyboard.insertText('汉字测试 日本語のテキスト');
-  await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.05);
+  await page.keyboard.press('Escape');
+  await expect(editor()).toHaveCount(0);
   const cjkSaved = join(output, 'cjk.pdf');
   await saveTo(cjkSaved);
-  await page.keyboard.press('Control+Shift+S');
+  await command('Save a copy');
   await expect.poll(() => existsSync(cjkSaved), { timeout: 30_000 }).toBe(true);
   const words = (await savedWords(cjkSaved)).join(' ');
   // A CHARACTER NO FONT HAS is kept as text and drawn as a box (ADR-0174), so the text alone cannot say there was no gap;
@@ -212,13 +286,22 @@ if (existsSync(handwritten)) {
   await step('9. Handwritten table.pdf: Recognise from Edit text’s note, then a word edited on the recognised page', async () => {
     await open(scan);
     await section('Edit');
-    await command('Edit text on the page');
-    await page.getByRole('button', { name: /Recognise/u }).first().click();
+    // THE EDIT TEXT NOTE ("This page is a picture, ...") HAS NO BUTTON: measured 2026-10-12 on this scan, in the page's own
+    // flow it is a paragraph and nothing else. Recognition is Tools > Convert scan > OCR pages, whose window has the
+    // Recognise button, so the walk takes that route and then edits.
+    await section('Tools');
+    await page.getByRole('button', { name: 'OCR pages', exact: true }).first().click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await page.waitForTimeout(2000);
+    await page.getByRole('dialog').getByRole('button', { name: 'Recognise', exact: true }).click();
+    await page.getByRole('dialog').waitFor({ state: 'hidden', timeout: 120_000 }).catch(() => undefined);
+    await section('Edit');
+    await ensureEditText();
     await expect(page.locator('[data-text-block]').first()).toBeVisible({ timeout: 120_000 });
     await pressOn(page.locator('[data-text-block]').first());
     await page.keyboard.press('End');
     await page.keyboard.type(' (walked)');
-    await page.locator('canvas.m-page').first().click({ position: { x: 10, y: 10 } });
+    await clickPage(10, 10);
     return { blocks: await page.locator('[data-text-block]').count() };
   });
 }
@@ -247,16 +330,21 @@ async function savedTextBoxes(path) {
   return boxes;
 }
 
-const formatted = await copyOf(sample);
+const formatted = await distinctCopy('formatted-source.pdf', sample);
 await step('10. ADR-0228: strikethrough, a highlight, character spacing, Ctrl+J and space after on a paragraph, written once', async () => {
   await open(formatted);
   await section('Edit');
-  await command('Edit text on the page');
+  await ensureEditText();
   await page.locator('[data-text-block]').nth(1).click();
   await expect(editor()).toBeFocused();
   await page.keyboard.press('Control+Shift+ArrowRight');
   await panel().getByRole('button', { name: 'Strikethrough' }).click();
   await panel().getByRole('group', { name: 'Highlight' }).getByRole('button', { name: 'Yellow highlight' }).click();
+  // THE SPACING BOX IS DISABLED WHILE THE SIZE IS EMPTY (measured 2026-10-12 on an unedited paragraph: the size box reads
+  // blank and spacing is "up to 1.2 pt either way at this size"), so a size is given first; an app finding in the report.
+  const size = panel().getByRole('spinbutton', { name: 'Size in points' });
+  await size.fill('12');
+  await size.press('Enter');
   const spacing = panel().getByRole('spinbutton', { name: 'Character spacing in points' });
   await spacing.fill('0.5');
   await spacing.press('Enter');
@@ -265,7 +353,7 @@ await step('10. ADR-0228: strikethrough, a highlight, character spacing, Ctrl+J 
   const after = panel().getByRole('spinbutton', { name: /Space after/u });
   await after.fill('6');
   await after.press('Enter');
-  await page.locator('canvas.m-page').first().click({ position: { x: 10, y: 10 } });
+  await clickPage(10, 10);
   await expect(editor()).toHaveCount(0);
 });
 
@@ -276,12 +364,18 @@ await step('11. K8: Tab in Edit text types a tab, the words after it move to the
   await page.keyboard.press('Tab');
   await expect(editor()).toBeFocused();
   const tabbed = await editor().evaluate((element) => element.textContent?.startsWith('\t') ?? false);
-  await page.locator('canvas.m-page').first().click({ position: { x: 10, y: 10 } });
+  await clickPage(10, 10);
   return { tabInTheWords: tabbed };
 });
 
 await step('12. B2.8: In this document lists the fonts of every page, not only the open block’s', async () => {
-  await page.locator('[data-text-block]').first().click();
+  // A BLOCK ON SCREEN: the first block is above the document area here (the page is scrolled and 180 degrees round), and a
+  // click on it opens nothing; any block shows the document's fonts, so the third, which step 11 also opens, is used.
+  // THE PREVIOUS STEP'S WRITE MAY STILL BE RUNNING (3 to 8 s, measured 2026-10-12), and the controls of a block wait on it.
+  await page.waitForTimeout(8000);
+  await page.locator('[data-text-block]').nth(2).click();
+  await expect(editor()).toBeFocused();
+  await expect(panel()).toBeVisible();
   await panel().getByRole('button', { name: /^Font:/u }).click();
   const group = panel().getByRole('listbox').getByRole('group', { name: 'In this document' });
   const listed = await group.locator('[data-font-choice]').evaluateAll((each) => each.map((node) => node.getAttribute('data-font-choice')));
@@ -290,15 +384,20 @@ await step('12. B2.8: In this document lists the fonts of every page, not only t
   return { documentFonts: listed };
 });
 
+/** Where the page's top was on screen when step 13 drew its box, so step 16 can scroll back to where the box is. */
+let textBoxCanvasTop = 0;
+
 await step('13. B5.8 and K2: a text box typed with Ctrl+B mid-sentence, in Calibri from its Properties', async () => {
   await section('Comment');
   await command('Text box');
   const surface = page.getByLabel('Draw on page 1');
   const box = await surface.boundingBox();
   if (box === null) throw new Error('no drawing surface');
-  await page.mouse.move(box.x + 80, box.y + 320);
+  textBoxCanvasTop = box.y;
+  const top = Math.max(box.y, 240);
+  await page.mouse.move(box.x + 80, top + 200);
   await page.mouse.down();
-  await page.mouse.move(box.x + 360, box.y + 400, { steps: 6 });
+  await page.mouse.move(box.x + 360, top + 280, { steps: 6 });
   await page.mouse.up();
   await page.keyboard.type('Plain then ');
   await page.keyboard.press('Control+B');
@@ -306,7 +405,7 @@ await step('13. B5.8 and K2: a text box typed with Ctrl+B mid-sentence, in Calib
   await page.keyboard.press('Control+B');
   await page.keyboard.type(' words');
   await page.keyboard.press('Escape');
-  await page.locator('[data-annotation-index]').last().click();
+  await pressDrawn(200, 240);
   const properties = page.getByRole('complementary', { name: 'Properties' });
   await properties.getByRole('button', { name: /^Font:/u }).click();
   await properties.getByRole('combobox', { name: 'Search fonts' }).fill('Calibri');
@@ -316,7 +415,7 @@ await step('13. B5.8 and K2: a text box typed with Ctrl+B mid-sentence, in Calib
 const formattedSaved = join(output, 'formatted.pdf');
 await step('14. saved: the paragraph’s words, the tab, the text box’s bold run and its embedded Calibri are in the file', async () => {
   await saveTo(formattedSaved);
-  await page.keyboard.press('Control+Shift+S');
+  await command('Save a copy');
   await expect.poll(() => existsSync(formattedSaved), { timeout: 30_000 }).toBe(true);
   const boxes = await savedTextBoxes(formattedSaved);
   const walked = boxes.find((each) => each.rc.includes('bold'));
@@ -344,7 +443,7 @@ async function savedBorderStyles(path) {
 
 await step('15. C3: the ribbon’s Format group has a Font box and a Size box while a block is open; Times New Roman chosen there keeps the editor open', async () => {
   await section('Edit');
-  await command('Edit text on the page');
+  await ensureEditText();
   await page.locator('[data-text-block]').first().click();
   await expect(editor()).toBeVisible();
   const values = page.locator('.m-ribbon__tools [data-ribbon-values] [data-text-font-size="ribbon"]');
@@ -362,7 +461,15 @@ await step('15. C3: the ribbon’s Format group has a Font box and a Size box wh
 
 await step('16. E4: the text box from step 13 given a dashed border in the Box group', async () => {
   await section('Comment');
-  await page.locator('[data-annotation-index]').last().click();
+  // THE BOX IS WHERE IT WAS DRAWN ON THE PAGE, NOT ON THE SCREEN: steps since then scrolled the page, so it is scrolled
+  // back by the distance the page's top has moved before the press is made.
+  const now = await page.locator('canvas.m-page:visible').first().boundingBox();
+  if (now !== null && Math.abs(now.y - textBoxCanvasTop) > 1) {
+    await page.mouse.move(700, 500);
+    await page.mouse.wheel(0, now.y - textBoxCanvasTop);
+    await page.waitForTimeout(800);
+  }
+  await pressDrawn(200, 240);
   const properties = page.getByRole('complementary', { name: 'Properties' });
   const style = properties.getByRole('group', { name: 'Border style' });
   await style.getByRole('button', { name: 'Dashed' }).click();
@@ -372,10 +479,15 @@ await step('16. E4: the text box from step 13 given a dashed border in the Box g
 await step('17. D1: a watermark set in Courier, chosen in the Watermark window’s font picker', async () => {
   await section('Organize');
   await command('Watermark…');
+  await expect(page.getByRole('dialog', { name: 'Watermark' })).toBeVisible();
+  await page.waitForTimeout(5000);
   await page.getByRole('textbox', { name: 'Text' }).fill('DRAFT');
   await page.getByRole('button', { name: 'Font: Helvetica' }).click();
   const offered = await page.locator('[data-font-choice]').evaluateAll((each) => [...new Set(each.map((node) => node.getAttribute('data-font-choice')))]);
   await page.locator('[data-font-choice="Courier"]').first().click();
+  // THE WORDS MUST STILL BE THERE after the font is chosen: a font pick that emptied the text would otherwise show only as
+  // "needs some text" on the button below, two steps from its cause.
+  await expect(page.getByRole('textbox', { name: 'Text' })).toHaveValue('DRAFT');
   await page.getByRole('button', { name: 'Add watermark' }).click();
   return { stampFontsOffered: offered };
 });
@@ -401,7 +513,7 @@ await step('18. D1: Insert from Markdown at the end, its prose set in Times New 
 const stampedSaved = join(output, 'stamped.pdf');
 await step('19. saved: the ribbon’s font, the dashed border, the Courier watermark and the inserted pages are in the file', async () => {
   await saveTo(stampedSaved);
-  await page.keyboard.press('Control+Shift+S');
+  await command('Save a copy');
   await expect.poll(() => existsSync(stampedSaved), { timeout: 30_000 }).toBe(true);
   const words = await savedWords(stampedSaved);
   return {
@@ -410,6 +522,23 @@ await step('19. saved: the ribbon’s font, the dashed border, the Courier water
     watermarkOnFirstPage: words[0]?.includes('DRAFT') ?? false,
     insertedParagraphFound: words.some((each) => each.includes('This paragraph was inserted from Markdown.')),
   };
+});
+
+// LAST, because on failure the editor stays open and nothing after it could run (measured 2026-10-12, twice in the
+// walk and once on a fresh document: after the picker's keyboard choice focus is in its search box, and neither Escape
+// nor a press back in the words nor a press away ends the editor).
+await step('20. Add text: a font chosen in the Properties panel, and the editor still ends with Escape', async () => {
+  await section('Edit');
+  await command('Add text');
+  const surface = page.locator('[data-text-add-surface]').first();
+  const box = await surface.boundingBox();
+  if (box === null) throw new Error('no add surface');
+  await page.mouse.click(box.x + box.width * 0.15, Math.min(box.y + box.height * 0.78, 800));
+  await expect(editor()).toBeFocused();
+  await page.keyboard.type('Added with a font, line one');
+  await chooseFont('Times New Roman');
+  await page.keyboard.press('Escape');
+  await expect(editor()).toHaveCount(0, { timeout: 15_000 });
 });
 
 await finish();
