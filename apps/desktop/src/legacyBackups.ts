@@ -82,9 +82,35 @@ export async function moveLegacyBackups(
       }
       if ((await provenance.deleteIfMade(source)) === 'deleted') moved += 1;
       else kept += 1;
-    } catch {
+    } catch (cause) {
+      // A FILE THE SYSTEM WOULD NOT COPY OR STAT stays where it is; anything else is a defect and is not counted as a file.
+      if (!isFileSystemFailure(cause)) throw cause;
       kept += 1;
     }
   }
   return { moved, kept };
+}
+
+/**
+ * Whether `cause` is the operating system refusing a file operation — a Node system error, which carries its errno name
+ * (`EACCES`, `EBUSY`, `ENOENT`) as a string `code` — as against a defect, which carries none.
+ */
+export function isFileSystemFailure(cause: unknown): boolean {
+  return cause instanceof Error && typeof (cause as NodeJS.ErrnoException).code === 'string';
+}
+
+/**
+ * The scan and the move together, at an open: how many moved. SILENT ON A FOLDER THE SYSTEM REFUSES (the owner's ruling,
+ * ADR-0198 Decision 5: a folder that cannot be read or written keeps its files, and the next open tries again), and only on
+ * that: a failure that is not the system's propagates, so a defect never reads as *nothing to move* (AAAAAAAA-3).
+ */
+export async function adoptLegacyBackups(root: string, path: string, provenance: BackupProvenance): Promise<number> {
+  try {
+    const scan = await scanLegacyBackups(path, provenance);
+    if (scan.proven.length === 0) return 0;
+    return (await moveLegacyBackups(root, path, scan, provenance)).moved;
+  } catch (cause) {
+    if (!isFileSystemFailure(cause)) throw cause;
+    return 0;
+  }
 }

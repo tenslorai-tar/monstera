@@ -194,7 +194,7 @@ import { readFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
 import type { BackupProvenance } from './backupLedger.js';
-import { moveLegacyBackups, scanLegacyBackups } from './legacyBackups.js';
+import { adoptLegacyBackups } from './legacyBackups.js';
 import { type EditableSources, editablePages, emptyReport } from './editablePowerPoint.js';
 import { DocusignOutcomeRefused, type DocusignSession } from './docusignSession.js';
 import {
@@ -4338,15 +4338,9 @@ export class DocumentCommands {
     if (this.#documents.nameOf(docId) === undefined) throw new DocumentNotOpenError(docId, 'move old backups');
     const store = this.#backups;
     if (store === undefined) return 0;
-    try {
-      const { value: path } = await this.#documents.run(docId, (context) => Promise.resolve(context.path));
-      const scan = await scanLegacyBackups(path, this.#save.provenance);
-      if (scan.proven.length === 0) return 0;
-      return (await moveLegacyBackups(store.root, path, scan, this.#save.provenance)).moved;
-    } catch {
-      // NOTHING IS SAID: a folder that cannot be read or written keeps its files, and the next open tries again.
-      return 0;
-    }
+    const { value: path } = await this.#documents.run(docId, (context) => Promise.resolve(context.path));
+    // NOTHING IS SAID for a folder the system refuses, and only for that (`adoptLegacyBackups`).
+    return adoptLegacyBackups(store.root, path, this.#save.provenance);
   }
 
   /** Deletes every kept version in Monstera's own folder (Settings › Privacy › Clear backups); how many went. */

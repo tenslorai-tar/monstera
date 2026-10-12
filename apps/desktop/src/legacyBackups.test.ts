@@ -7,7 +7,7 @@ import { listStoredBackups, readFileIdentity } from '@monstera/kernel';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createBackupProvenance } from './backupLedger.js';
-import { moveLegacyBackups, scanLegacyBackups } from './legacyBackups.js';
+import { adoptLegacyBackups, isFileSystemFailure, moveLegacyBackups, scanLegacyBackups } from './legacyBackups.js';
 import { createEphemeralSettings } from './settingsFile.js';
 
 /**
@@ -92,5 +92,39 @@ describe('the old .bak files beside a file', () => {
     expect((await listStoredBackups(root, target)).map((backup) => backup.id).sort()).toStrictEqual(['1.pdf', '2.pdf']);
     expect(readFileSync(join(root, readdirSync(root)[0] ?? '', '1.pdf'), 'utf8')).toBe('older one');
     expect(readFileSync(join(root, readdirSync(root)[0] ?? '', '2.pdf'), 'utf8')).toBe('older two');
+  });
+});
+
+describe('adopting them at an open (AAAAAAAA-3)', () => {
+  /** The product's provenance with `wasMade` answering `fails` instead: what a ledger the system refused, or a defect, does. */
+  const failing = (fails: Error) => ({ ...provenance(), wasMade: () => Promise.reject(fails) });
+  const systemRefusal = (): Error => Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+
+  it('moves the proven ones and answers how many', async () => {
+    const { root, target } = scene();
+    const ledger = provenance();
+    writeFileSync(`${target}.bak`, 'version two');
+    await ledger.made(`${target}.bak`);
+    expect(await adoptLegacyBackups(root, target, ledger)).toBe(1);
+  });
+
+  it('a folder the SYSTEM REFUSES is silent, answering none, and keeps the file where it is', async () => {
+    const { root, target } = scene();
+    writeFileSync(`${target}.bak`, 'version two');
+    expect(await adoptLegacyBackups(root, target, failing(systemRefusal()))).toBe(0);
+    expect(readFileSync(`${target}.bak`, 'utf8')).toBe('version two');
+  });
+
+  it('CONTROL: a failure that is NOT the system’s propagates, so a defect never reads as nothing to move', async () => {
+    const { root, target } = scene();
+    writeFileSync(`${target}.bak`, 'version two');
+    const defect = new TypeError('cannot read properties of undefined');
+    await expect(adoptLegacyBackups(root, target, failing(defect))).rejects.toBe(defect);
+  });
+
+  it('isFileSystemFailure: a Node system error is, an error with no code is not', () => {
+    expect(isFileSystemFailure(systemRefusal())).toBe(true);
+    expect(isFileSystemFailure(new TypeError('x'))).toBe(false);
+    expect(isFileSystemFailure('EACCES')).toBe(false);
   });
 });
