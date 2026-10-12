@@ -190,6 +190,29 @@ test('a save with every required field filled says nothing about them', async ({
   await expect(page.locator('.m-page-field-problem')).toHaveCount(0);
 });
 
+test('the pointer is an I-beam over a field a person types in and a hand over the rest (A8.5)', async ({ page }) => {
+  await open(page, []);
+  /** The cursor the element under the middle of field `index` shows: what the person sees, not a class name. */
+  const pointerOver = async (index: number): Promise<string> => {
+    const field = page.locator(`[data-form-layer="0"] [data-form-field="${String(index)}"]`);
+    await expect(field).toBeVisible();
+    const box = await field.boundingBox();
+    if (box === null) throw new Error(`field ${String(index)} has no box`);
+    return page.evaluate(
+      ({ x, y }) => {
+        const under = document.elementFromPoint(x, y);
+        return under === null ? 'nothing' : getComputedStyle(under).cursor;
+      },
+      { x: box.x + box.width / 2, y: box.y + box.height / 2 },
+    );
+  };
+  expect(await pointerOver(0)).toBe('text');
+  // A DROPDOWN THAT TAKES TYPING is typed in too.
+  expect(await pointerOver(5)).toBe('text');
+  // CONTROL: a list a person picks from shows the hand, so the two above are the kinds and not the layer's default.
+  expect(await pointerOver(4)).toBe('pointer');
+});
+
 test('fields are washed and a required one outlined in red, until Highlight fields is turned off', async ({ page }) => {
   const sent: Sent = [];
   await open(page, sent);
