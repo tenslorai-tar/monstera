@@ -714,25 +714,34 @@ describe('a link leaves the page under it as it was (the owner’s review of 0.1
   const BOX = { x0: 10, y0: 90, x1: 150, y1: 160 };
   const darkness = (pixels: readonly number[]): number => pixels.filter((value) => value < 128).length;
 
-  async function linked(border: 'none' | 'thin'): Promise<Uint8Array> {
+  const WEB = { kind: 'uri', uri: 'https://example.org/a' } as const;
+  /** A link to the page's own first page: the one-page fixture has no other, and a page link is what is being read. */
+  const PAGE = { kind: 'page', page: 0 } as const;
+
+  async function linked(border: 'none' | 'thin', target: typeof WEB | typeof PAGE = WEB): Promise<Uint8Array> {
     const session = await mupdfWriter.open(await pageWithText());
     try {
-      await applyAddLink(session, { kind: 'addLink', page: 0, rect: BOX, target: { kind: 'uri', uri: 'https://example.org/a' }, border });
+      await applyAddLink(session, { kind: 'addLink', page: 0, rect: BOX, target, border });
       return await mupdfWriter.serialise(session);
     } finally {
       await mupdfWriter.close(session);
     }
   }
 
-  it('keeps the words under a web link and a page link as dark as they were, with the thin outline on', async () => {
+  // WHAT THIS READS IS THE FILE, as the engine draws it: a link is not drawn by MuPDF (the control below says why), so a
+  // white area that only a RENDERER draws over a link is out of its reach. That half is the viewer's and is not proven
+  // here (AAAAAAAA-5); this proves the file a link leaves behind covers nothing.
+  it('the FILE keeps the words under a web link and a page link as dark as they were, with the thin outline on', async () => {
     const before = darkness(pixelsUnder(await pageWithText(), BOX));
     // THE TEXT IS THERE, or "as dark as it was" is a comparison of two blanks.
     expect(before).toBeGreaterThan(500);
-    const thin = darkness(pixelsUnder(await linked('thin'), BOX));
-    const none = darkness(pixelsUnder(await linked('none'), BOX));
-    // THE OUTLINE ONLY ADDS: dark pixels are never fewer than the page's own.
-    expect(thin).toBeGreaterThanOrEqual(before);
-    expect(none).toBe(before);
+    for (const target of [WEB, PAGE]) {
+      const thin = darkness(pixelsUnder(await linked('thin', target), BOX));
+      const none = darkness(pixelsUnder(await linked('none', target), BOX));
+      // THE OUTLINE ONLY ADDS: dark pixels are never fewer than the page's own.
+      expect(thin, target.kind).toBeGreaterThanOrEqual(before);
+      expect(none, target.kind).toBe(before);
+    }
   });
 
   it('CONTROL: an opaque white mark over the same box DOES cover the words, so the reading can see a cover when there is one', async () => {

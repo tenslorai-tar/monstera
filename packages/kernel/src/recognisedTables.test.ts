@@ -36,9 +36,12 @@ describe('a service’s table, read once (ADR-0222)', () => {
     expect(table.cells).toHaveLength(header.length + data.length);
     // EVERY CELL IS KEPT where it was put, the fourth column's included.
     expect(table.cells.filter((each) => each.column === 3).map((each) => each.text)).toStrictEqual(['36', '12']);
-    // CONTROL: the rule this replaced — a grid declared three wide — would have refused exactly this answer.
-    const declaredColumns = 3;
-    expect(table.cells.some((each) => each.column + each.columnSpan > declaredColumns)).toBe(true);
+    // CONTROL: THE WIDTH IS THE CELLS', NOT THE HEADER'S. A header of one cell over the same rows is the same four columns,
+    // where a grid sized by its first row (the rule this replaced read the header's three) would be one wide and lose
+    // three columns of every row.
+    const narrowHeader = recognisedTable([cell(0, 0, 'Names Hours Minutes Seconds'), ...data], ...BOUNDS);
+    expect(narrowHeader.columns).toBe(4);
+    expect(narrowHeader.cells.filter((each) => each.column === 3).map((each) => each.text)).toStrictEqual(['36', '12']);
   });
 
   it('leaves a place no cell covers as an empty cell, never as a refusal', () => {
