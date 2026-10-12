@@ -9,6 +9,7 @@ import {
   captureCreateFormField,
   invertCreateFormField,
 } from './formFieldCreate.js';
+import { FieldEditRefusedError } from './fieldEditRefusal.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 
 /**
@@ -47,6 +48,15 @@ const PLACED_RECT = [100, 100, 220, 124] as const;
  * what makes a green here mean the guard ran.
  */
 const OURS = /either is a path prefix of the other/iu;
+
+/**
+ * This build's refusal of a taken name, BY ITS REASON (A2.5): the reason is what the person's message is chosen by, and a
+ * plain `Error` carrying the same words reaches them as *Something went wrong*, which is the defect this separates.
+ */
+const refusedAsTaken =
+  (words: RegExp) =>
+  (error: unknown): boolean =>
+    error instanceof FieldEditRefusedError && error.reason === 'name-taken' && words.test(error.message);
 
 /** One placement, which is what these cases vary. */
 const TEXT_FIELD: CommandOfKind<'createFormField'>['fields'][number] = {
@@ -321,15 +331,13 @@ describe('createFormField — what it refuses', () => {
   it('refuses a name the document already carries, and says so in its OWN words', async () => {
     const taken = await pageOf({ existing: 'applicant.name' });
 
-    await expect(applyCreateFormField(taken, creating())).rejects.toThrow(OURS);
+    await expect(applyCreateFormField(taken, creating())).rejects.toSatisfy(refusedAsTaken(OURS));
   });
 
   it('refuses a name that is a PREFIX of an existing one, because a dot makes a parent', async () => {
     const taken = await pageOf({ existing: 'applicant.name' });
 
-    await expect(applyCreateFormField(taken, creating({ name: 'applicant' }))).rejects.toThrow(
-      OURS,
-    );
+    await expect(applyCreateFormField(taken, creating({ name: 'applicant' }))).rejects.toSatisfy(refusedAsTaken(OURS));
   });
 
   it('refuses a name UNDER an existing one, which is the same collision the other way', async () => {
@@ -340,7 +348,7 @@ describe('createFormField — what it refuses', () => {
 
     await expect(
       applyCreateFormField(taken, creating({ name: 'applicant.name' })),
-    ).rejects.toThrow(OURS);
+    ).rejects.toSatisfy(refusedAsTaken(OURS));
   });
 
   it('accepts a SIBLING under the same parent, so the rule is not a ban on shared prefixes', async () => {
@@ -361,7 +369,7 @@ describe('createFormField — what it refuses', () => {
 
     await expect(
       applyCreateFormField(taken, creating({ field: { type: 'radio', option: 'first' } })),
-    ).rejects.toThrow(/not a radio group/u);
+    ).rejects.toSatisfy(refusedAsTaken(/not a radio group/u));
   });
 
   it('refuses a page index outside the document', async () => {

@@ -6,6 +6,7 @@ import { fieldNameClash, snapRotation } from '@monstera/shared';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert } from './engineSeam.js';
+import { FieldEditRefusedError } from './fieldEditRefusal.js';
 import { setFormat } from './formFieldEdit.js';
 import { pageAt } from './pdfLibPages.js';
 import { appendRevision, openForWriting } from './pdfLibSession.js';
@@ -220,7 +221,9 @@ function put(
     // a bundler's mangling can change without anything failing to compile, and
     // the failure would be *every existing group refuses its second option*.
     if (existing !== undefined && !(existing instanceof PDFRadioGroup)) {
-      throw new Error(
+      // A NAMED REFUSAL, so the person reads that the name is taken rather than that something went wrong (A2.5).
+      throw new FieldEditRefusedError(
+        'name-taken',
         `A field called "${name}" already exists and is not a radio group, so this option ` +
           'cannot join it. Radio options share one field; every other kind needs a name of ' +
           'its own.',
@@ -233,7 +236,8 @@ function put(
 
   const clash = collidingName(form, name);
   if (clash !== undefined) {
-    throw new Error(
+    throw new FieldEditRefusedError(
+      'name-taken',
       `A field called "${name}" cannot be created because this document already has ` +
         `"${clash}". A dot in a name makes a parent in the field tree, so two names collide ` +
         'when either is a path prefix of the other, not only when they are equal.',
