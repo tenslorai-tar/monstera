@@ -14,7 +14,8 @@
  * Properties (A2, A3, E1, C6); the Fields list (A4); Detect on a flattened copy, page and all pages, with the count
  * (A5, F4); Flatten of the selected fields (A6, G1); a tab order given by clicking (H1); the three exports read back in
  * with no warning (A7); a text field set in a real font and read back as drawn in it (A8.4, ADR-0229); and save and
- * reopen.
+ * reopen. The last step walks the third round's forms fix: a radio group's name typed for another radio is refused in
+ * words rather than joining the group (BBBBBBBB-10).
  */
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
@@ -224,6 +225,28 @@ await step('the whole form flattened, then Detect on the flat page proposes plac
   };
   await dialog.getByRole('button', { name: /^Add \d+ fields?$/u }).click();
   return { marksOnFirstPage: marks, proposedOnFirstPage: onPage, proposedOnAllPages: allPages, kinds };
+});
+
+const named = await copyOf(source);
+await step('BBBBBBBB-10: a radio group’s name typed for another radio is refused in words, never joined to that group', async () => {
+  await open(named);
+  await command('Edit fields');
+  const paper = await page.locator('canvas.m-page').first().boundingBox();
+  if (paper === null) throw new Error('the page is not on screen');
+  await page.getByRole('button', { name: /^Radio/u }).first().click();
+  await page.mouse.click(paper.x + paper.width - 60, paper.y + 40);
+  await page.keyboard.press('Escape');
+  const first = await page.getByLabel('Name', { exact: true }).inputValue();
+  await page.getByRole('button', { name: /^Radio/u }).first().click();
+  await page.mouse.click(paper.x + paper.width - 60, paper.y + 90);
+  await page.keyboard.press('Escape');
+  const name = page.getByLabel('Name', { exact: true });
+  const second = await name.inputValue();
+  await name.fill(first);
+  await name.blur();
+  const refused = page.getByText('This form already has a field with that name. Choose another name.');
+  await expect(refused).toBeVisible();
+  return { firstGroup: first, secondGroup: second, refusedInWords: await refused.isVisible() };
 });
 
 await finish();

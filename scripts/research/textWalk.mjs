@@ -14,10 +14,12 @@
  * typed with Add text, saved, and read back as their own letters rather than missing-character boxes, with the font that
  * drew them named, so whether this Windows install leaves a CJK gap is a measurement and not a guess. Steps 10 to 14 walk
  * what the second cloud round built (ADR-0228): the formatting set, Tab, the document's fonts in the picker, and a text
- * box styled word by word while typed and set in a real font, each read back from the saved file.
+ * box styled word by word while typed and set in a real font, each read back from the saved file. Steps 15 to 19 walk
+ * the third round (Part D): the ribbon's Font box (C3), a dashed text box border (E4), and the one font picker in the
+ * Watermark and Insert from Markdown windows (D1), read back from one saved file.
  */
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { expect } from '@playwright/test';
@@ -29,7 +31,7 @@ const handwritten = process.argv[3] ?? join(homedir(), 'Desktop', 'Handwritten t
 if (!existsSync(sample)) throw new Error(`No document at ${sample}. Pass the path to sample5.pdf.`);
 
 const walk = await startWalk('text');
-const { page, output, copyOf, open, saveTo, command, section, pressOn, step, finish } = walk;
+const { app, page, output, copyOf, open, saveTo, command, section, pressOn, step, finish } = walk;
 const document = await copyOf(sample);
 
 /** The words of a saved file's pages, read by PDF.js rather than by the app that wrote them. @param {string} path */
@@ -322,6 +324,91 @@ await step('14. saved: the paragraph’s words, the tab, the text box’s bold r
     pageFonts: await savedFonts(formattedSaved),
     textBoxBoldRun: walked?.rc.includes('font-weight:bold') ?? false,
     textBoxFonts: walked?.fonts ?? [],
+  };
+});
+
+/** The border style each saved text box states in its /BS, by its words. @param {string} path */
+async function savedBorderStyles(path) {
+  const loaded = await PDFDocument.load(await readFile(path), { updateMetadata: false, ignoreEncryption: true });
+  const annots = loaded.getPages()[0]?.node.Annots();
+  const styles = [];
+  for (let at = 0; at < (annots?.size() ?? 0); at += 1) {
+    const annot = annots?.lookupMaybe(at, PDFDict);
+    if (annot?.lookupMaybe(PDFName.of('Subtype'), PDFName)?.decodeText() !== 'FreeText') continue;
+    const style = annot.lookupMaybe(PDFName.of('BS'), PDFDict)?.lookupMaybe(PDFName.of('S'), PDFName)?.decodeText() ?? 'none';
+    const contents = annot.lookup(PDFName.of('Contents'));
+    styles.push({ words: contents instanceof PDFString || contents instanceof PDFHexString ? contents.decodeText() : '', style });
+  }
+  return styles;
+}
+
+await step('15. C3: the ribbon’s Format group has a Font box and a Size box while a block is open; Times New Roman chosen there keeps the editor open', async () => {
+  await section('Edit');
+  await command('Edit text on the page');
+  await page.locator('[data-text-block]').first().click();
+  await expect(editor()).toBeVisible();
+  const values = page.locator('.m-ribbon__tools [data-ribbon-values] [data-text-font-size="ribbon"]');
+  await expect(values).toBeVisible();
+  await page.keyboard.press('Control+A');
+  await values.getByRole('button', { name: /^Font:/u }).click();
+  const search = page.getByRole('combobox', { name: 'Search fonts' });
+  await search.fill('Times New Roman');
+  await search.press('Enter');
+  const stillOpen = await editor().isVisible();
+  const named = await values.getByRole('button', { name: /^Font:/u }).textContent();
+  await page.keyboard.press('Escape');
+  return { editorStayedOpen: stillOpen, ribbonFontReads: named };
+});
+
+await step('16. E4: the text box from step 13 given a dashed border in the Box group', async () => {
+  await section('Comment');
+  await page.locator('[data-annotation-index]').last().click();
+  const properties = page.getByRole('complementary', { name: 'Properties' });
+  const style = properties.getByRole('group', { name: 'Border style' });
+  await style.getByRole('button', { name: 'Dashed' }).click();
+  return { dashedPressed: await style.getByRole('button', { name: 'Dashed' }).getAttribute('aria-pressed') };
+});
+
+await step('17. D1: a watermark set in Courier, chosen in the Watermark window’s font picker', async () => {
+  await section('Organize');
+  await command('Watermark…');
+  await page.getByRole('textbox', { name: 'Text' }).fill('DRAFT');
+  await page.getByRole('button', { name: 'Font: Helvetica' }).click();
+  const offered = await page.locator('[data-font-choice]').evaluateAll((each) => [...new Set(each.map((node) => node.getAttribute('data-font-choice')))]);
+  await page.locator('[data-font-choice="Courier"]').first().click();
+  await page.getByRole('button', { name: 'Add watermark' }).click();
+  return { stampFontsOffered: offered };
+});
+
+const markdownSource = join(output, 'walk-notes.md');
+const markdownPages = join(output, 'walk-notes.pdf');
+await step('18. D1: Insert from Markdown at the end, its prose set in Times New Roman chosen in the insert window', async () => {
+  await writeFile(markdownSource, '# Walk notes\n\nThis paragraph was inserted from Markdown.\n\n```\nlet code = 1;\n```\n');
+  await app.evaluate(({ dialog }, picked) => {
+    dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [picked] });
+  }, markdownSource);
+  await saveTo(markdownPages);
+  await command('Insert from Markdown…');
+  await page.getByRole('button', { name: /^Font:/u }).click();
+  const search = page.getByRole('combobox', { name: 'Search fonts' });
+  await search.fill('Times New Roman');
+  await search.press('Enter');
+  await page.getByRole('button', { name: 'Choose file…' }).click();
+  await expect.poll(() => existsSync(markdownPages), { timeout: 60_000 }).toBe(true);
+  return { insertedFonts: await savedFonts(markdownPages) };
+});
+
+const stampedSaved = join(output, 'stamped.pdf');
+await step('19. saved: the ribbon’s font, the dashed border, the Courier watermark and the inserted pages are in the file', async () => {
+  await saveTo(stampedSaved);
+  await page.keyboard.press('Control+Shift+S');
+  await expect.poll(() => existsSync(stampedSaved), { timeout: 30_000 }).toBe(true);
+  const words = await savedWords(stampedSaved);
+  return {
+    pageFonts: await savedFonts(stampedSaved),
+    textBoxBorders: await savedBorderStyles(stampedSaved),
+    watermarkOnFirstPage: words[0]?.includes('DRAFT') ?? false,
+    insertedParagraphFound: words.some((each) => each.includes('This paragraph was inserted from Markdown.')),
   };
 });
 
