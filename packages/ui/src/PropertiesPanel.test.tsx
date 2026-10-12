@@ -357,6 +357,8 @@ describe('PropertiesPanel with marks selected', () => {
     expect(details?.hasAttribute('open')).toBe(false);
     expect(details?.textContent).toContain('Blend');
     expect(details?.textContent).toContain('Author');
+    // THE BLEND CONTROL ITSELF is in the fold, which the word above does not separate from a label left behind.
+    expect(screen.getByRole('group', { name: 'Blend', hidden: true }).closest('details')).toBe(details);
     expect(screen.queryByRole('textbox', { name: 'Comment' })).toBeNull();
   });
 
@@ -364,6 +366,8 @@ describe('PropertiesPanel with marks selected', () => {
     mounted(ONE);
     expect(document.querySelector('[data-properties-comment-details]')).toBeNull();
     expect(screen.getByRole('textbox', { name: 'Comment' })).not.toBeNull();
+    // THE BLEND the title names, read as a control and not as a word: shown, and inside no fold.
+    expect(screen.getByRole('group', { name: 'Blend' }).closest('details')).toBeNull();
   });
 
   it('a TEXT BOX shows a Text section, and each control sends ONE property of its words', () => {

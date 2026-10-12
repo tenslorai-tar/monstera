@@ -370,6 +370,15 @@ describe('the field properties pane', () => {
     expect(seen.edits.at(-1)).toStrictEqual({ options: ['Apple', 'Pear'] });
     // CONTROLS: the first cannot go up, and the last one left cannot be removed.
     expect(screen.getByRole('button', { name: 'Move choice 1 up' })).toHaveProperty('disabled', true);
+    // WHILE TWO ARE LEFT either may go, so the disabled one below is the count's doing and not the button's.
+    expect(screen.getByRole('button', { name: 'Remove choice 2' })).toHaveProperty('disabled', false);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove choice 2' }));
+    expect(seen.edits.at(-1)).toStrictEqual({ options: ['Apple'] });
+    const sent = seen.edits.length;
+    const last = screen.getByRole('button', { name: 'Remove choice 1' });
+    expect(last).toHaveProperty('disabled', true);
+    fireEvent.click(last);
+    expect(seen.edits, 'the last choice left is not removed').toHaveLength(sent);
   });
 
   it('shows the text a person reads and the value apart, and an edit of the text keeps the value (control: a plain list shows none)', async () => {

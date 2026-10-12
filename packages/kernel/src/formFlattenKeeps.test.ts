@@ -217,6 +217,9 @@ describe('flatten only the selected fields', () => {
     const chosen = [radio, onFirst, onLater];
     const others = before.filter((each) => !chosen.includes(each));
     const inked = inkOf(filled, chosen.map((each) => each.placed), true);
+    // EACH CHOSEN WIDGET HAD INK TO KEEP: a widget that drew nothing would make *as much ink after* hold of nothing.
+    expect(inked.size).toBe(chosen.length);
+    for (const [key, ink] of inked) expect(ink, key).toBeGreaterThan(0);
 
     const session = await mupdfWriter.open(filled);
     let after: Uint8Array;
@@ -244,6 +247,9 @@ describe('flatten only the selected fields', () => {
     // that drew every field.
     const unbaked = inkOf(after, others.slice(0, 5).map((each) => each.placed), false);
     expect([...unbaked.values()].every((ink) => ink === 0)).toBe(true);
+    // AND THOSE FIVE DRAW INK AS WIDGETS, so *none in the page* is about where they are and not that they draw nothing.
+    const drawn = inkOf(after, others.slice(0, 5).map((each) => each.placed), true);
+    for (const [key, ink] of drawn) expect(ink, key).toBeGreaterThan(0);
   });
 
   it('CONTROL: refuses a place no widget holds before anything changes, and the form is as it was', async () => {

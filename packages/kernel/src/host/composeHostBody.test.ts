@@ -562,7 +562,7 @@ describe('the compose host body', () => {
     expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true, value: { kind: 'composed', boxed: few, more: 0 } } });
   });
 
-  it('carries the parts a composer LEFT OUT, the first named and the rest counted — CONTROL: none is an empty list', async () => {
+  it('carries the parts a composer LEFT OUT, the first named and the rest counted — CONTROL: a short list is named whole', async () => {
     const many = Array.from({ length: MAX_COMPOSE_SKIPS + 2 }, (_, at) => ({ reason: 'quote-never-closed' as const, line: at + 1, item: null }));
     const files = emptyFiles();
     const { session } = await openArea(files, () => Promise.resolve({ pdf: COMPOSED, boxed: [], skipped: many }));
@@ -573,12 +573,16 @@ describe('the compose host body', () => {
     expect(answer.body.value.skipped).toStrictEqual(many.slice(0, MAX_COMPOSE_SKIPS));
     expect(answer.body.value.skippedMore).toBe(2);
 
+    // A SHORT LIST, NOT AN EMPTY ONE: an empty list is also what a handler that dropped the composer's list answers, and a
+    // handler that cut every list to the bound's remainder or counted from the wrong end differs from the right one only
+    // under the bound.
+    const few = many.slice(0, 3);
     const others = emptyFiles();
-    const { session: second } = await openArea(others);
+    const { session: second } = await openArea(others, () => Promise.resolve({ pdf: COMPOSED, boxed: [], skipped: few }));
     others.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([1]));
     stream.feed(composeRequest(second));
     await stream.whenSent(2);
-    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true, value: { kind: 'composed', skipped: [], skippedMore: 0 } } });
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true, value: { kind: 'composed', skipped: few, skippedMore: 0 } } });
   });
 
   it('reports a host started WITHOUT ITS FONTS as a fault with an incident, never a refusal of the file', async () => {

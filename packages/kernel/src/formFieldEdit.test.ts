@@ -384,8 +384,11 @@ describe('a text field’s alignment, length, cells, masking and visibility, and
   it('hidden is the Hidden flag, and visible prints', async () => {
     const original = await buildFormTestPdf();
     const handle = await handleOf(original, 'email');
-    expect((await read(await applyEditFormFields(original, editing(handle, { visibility: 'hidden' })), handle)).visibility).toBe('hidden');
-    expect((await read(await applyEditFormFields(original, editing(handle, { visibility: 'visible' })), handle)).visibility).toBe('visible');
+    const hidden = await applyEditFormFields(original, editing(handle, { visibility: 'hidden' }));
+    expect((await read(hidden, handle)).visibility).toBe('hidden');
+    // VISIBLE IS WRITTEN OVER THE HIDDEN COPY, not over a field that already is: an edit that wrote nothing for `visible`
+    // would pass on the original and is red here.
+    expect((await read(await applyEditFormFields(hidden, editing(handle, { visibility: 'visible' })), handle)).visibility).toBe('visible');
   });
 
   it('CONTROL: cells on a field with no length is refused in words, and nothing is written', async () => {
@@ -432,9 +435,20 @@ describe('copying a field to one place, its own page allowed (ADR-0226 Decision 
     expect([form.getTextField('email').getName(), form.getTextField('email_2').getName()]).toStrictEqual(['email', 'email_2']);
   });
 
-  it('CONTROL: the same page as a page set is still refused, so the place is what allows it', async () => {
+  it('CONTROL: the SAME page and the same field, the only difference the target’s kind: a place is copied, a page set refused', async () => {
+    // BOTH HALVES IN ONE CASE, which the refusal alone (asserted above, for another reason) does not separate: a command
+    // that refused its own page for every target would pass that half and fail this one's first.
     const original = await buildFormTestPdf();
     const handle = await handleOf(original, 'email');
+    const was = (await read(original, handle)).rect;
+    if (was === null) throw new Error('the fixture field has no place');
+    const copied = await applyDuplicateFormField(original, {
+      kind: 'duplicateFormField',
+      field: handle,
+      to: { kind: 'place', page: 0, rect: { ...was, y0: was.y0 - 40, y1: was.y1 - 40 } },
+      version: VERSION,
+    });
+    expect((await withSession(copied, (session) => readFormFields(session))).fields.some((field) => field.name === 'email_2')).toBe(true);
     await expect(
       applyDuplicateFormField(original, { kind: 'duplicateFormField', field: handle, to: { kind: 'pages', pages: [0] }, version: VERSION }),
     ).rejects.toBeInstanceOf(RangeError);

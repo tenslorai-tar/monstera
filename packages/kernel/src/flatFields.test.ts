@@ -432,12 +432,17 @@ function overlap(a: { x0: number; y0: number; x1: number; y1: number }, b: { x0:
  * committed; the twin draws no column headings over its table, so its line items are the misses it is expected to have.
  */
 describe('Detect on a flattened form (F4)', () => {
-  const measure = async (bytes: Uint8Array): Promise<{ hits: number; wrongKind: number; extra: number; already: number }> => {
+  /** `shift` moves every known place right by that many points, which only the place test's control uses. */
+  const measure = async (bytes: Uint8Array, shift = 0): Promise<{ hits: number; wrongKind: number; extra: number; already: number }> => {
     const before = await mupdfWriter.open(await buildFormTestPdf());
     const { fields } = await readFormFields(before);
     await mupdfWriter.close(before);
     const places = new Map<string, (typeof fields)[number]>();
-    for (const field of fields) if (field.rect !== null) places.set(`${String(field.page)}:${JSON.stringify(field.rect)}`, field);
+    for (const field of fields) {
+      if (field.rect === null) continue;
+      const rect = { ...field.rect, x0: field.rect.x0 + shift, x1: field.rect.x1 + shift };
+      places.set(`${String(field.page)}:${JSON.stringify(rect)}`, { ...field, rect });
+    }
     return onSession(bytes, async (session) => {
       let hits = 0;
       let wrongKind = 0;
@@ -461,25 +466,35 @@ describe('Detect on a flattened form (F4)', () => {
     });
   };
 
-  it('finds the places at the right place with the right kind, and proposes nothing that is not a field', async () => {
+  const flattened = async (): Promise<Uint8Array> => {
     const flat = mupdf.PDFDocument.openDocument(await buildFormTestPdf(), 'application/pdf') as mupdf.PDFDocument;
     flat.bake(false, true);
-    const result = await measure(flat.saveToBuffer('').asUint8Array());
+    return flat.saveToBuffer('').asUint8Array();
+  };
+
+  it('finds the places at the right place with the right kind, and proposes nothing that is not a field', async () => {
     // MEASURED 2026-10-11: 39 of the twin's 68 widget places (63 fields), every kind right, nothing extra.
-    expect(result).toStrictEqual({ hits: 39, wrongKind: 0, extra: 0, already: 0 });
+    expect(await measure(await flattened())).toStrictEqual({ hits: 39, wrongKind: 0, extra: 0, already: 0 });
   });
 
-  it('CONTROL: the place test tells a box from its neighbour, so a count of hits is not a count of proposals', () => {
-    // A ROW OF TICK BOXES 15 apart is the closest the form puts two places: the box itself is a hit, the next is not.
+  it('CONTROL: the same proposals against every place moved off the page are all extra, so a hit is a place', async () => {
+    // RUN ON THE DETECTOR'S OWN PROPOSALS, which the count above is made of, rather than on boxes this file chose: a
+    // place test that matched any proposal would still count 39 hits here. OFF THE PAGE and not one box over, because a
+    // text field is wide: measured 2026-10-12, a 30-point shift still leaves 27 hits, each a wide field overlapping
+    // itself, which is the threshold working and not a control.
+    expect(await measure(await flattened(), 2000)).toStrictEqual({ hits: 0, wrongKind: 0, extra: 39, already: 0 });
+    // AND THE THRESHOLD SITS BETWEEN A HIT AND A MISS: more than half a box off is a miss, less than half a hit.
     const box = { x0: 199.5, y0: 384.5, x1: 214.5, y1: 399.5 };
-    expect(overlap(box, box)).toBe(1);
-    expect(overlap(box, { ...box, x0: box.x0 + 30, x1: box.x1 + 30 })).toBe(0);
-    // MORE THAN HALF A BOX OFF is a miss, and less than half is a hit: the threshold sits between the two.
     expect(overlap(box, { ...box, x0: box.x0 + 9, x1: box.x1 + 9 })).toBeLessThan(0.3);
     expect(overlap(box, { ...box, x0: box.x0 + 5, x1: box.x1 + 5 })).toBeGreaterThan(0.3);
   });
 
-  it('CONTROL: on the form before it is flattened its fields are widgets, not page content, so nothing is proposed', async () => {
-    expect(await measure(await buildFormTestPdf())).toStrictEqual({ hits: 0, wrongKind: 0, extra: 0, already: 0 });
+  it('CONTROL: the form before it is flattened, whose fields are widgets, proposes nothing where its flattened twin proposes 39', async () => {
+    // BOTH HALVES IN ONE CASE: *nothing proposed* alone is also what a detector that never proposes anything answers,
+    // so the case asserts the same detector proposes on the same geometry once it is page content.
+    const before = await measure(await buildFormTestPdf());
+    const after = await measure(await flattened());
+    expect(before).toStrictEqual({ hits: 0, wrongKind: 0, extra: 0, already: 0 });
+    expect(after.hits).toBeGreaterThan(0);
   });
 });

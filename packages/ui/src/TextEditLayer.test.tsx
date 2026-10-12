@@ -844,8 +844,24 @@ describe('Edit text on the page (ADR-0096)', () => {
       expect(inserts[0]?.insert.base?.family).toBe('ABCDEF+Garamond');
     });
 
-    it('CONTROL: on a page with no words the box starts in 12-point black Arial, so the case above is the nearby style', () => {
+    it('CONTROL: on a page with no words the box starts in 12-point black Arial, so the case above is the nearby style', async () => {
       expect(nearbyStyle([], { x: 100, y: 592 })).toBeUndefined();
+      // THE SAME PRESS AND WORDS on a page with no blocks: the size, the family and the colour the claim names, each read
+      // from what is sent, since a default that was the paragraph's style above would differ from it in all three.
+      const { view, inserts } = mountAdding({ ...BLOCKS, blocks: [] });
+      fireEvent.click(find(view.container, '[data-text-add-surface]'), { clientX: 100, clientY: 200, detail: 1 });
+      const editor = editorIn(view.container);
+      typeInto(editor, 'A new note');
+      await act(async () => {
+        fireEvent.keyDown(editor, { key: 'Escape' });
+        await Promise.resolve();
+      });
+      expect(inserts).toHaveLength(1);
+      expect(inserts[0]?.insert).toMatchObject({
+        size: 12,
+        base: { family: 'Arial', bold: false, italic: false, colour: { r: 0, g: 0, b: 0 } },
+        text: 'A new note',
+      });
       // AND THE NEAREST WINS, not the first: a press beside the heading takes the heading's.
       const [heading, paragraph] = BLOCKS.blocks;
       if (heading === undefined || paragraph === undefined) throw new Error('the fixture has two blocks');
