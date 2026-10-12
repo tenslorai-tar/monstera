@@ -860,6 +860,7 @@ function wordsStyleOf(annotation: PDFAnnotation): { readonly typed?: AnnotationW
       ...(styled?.look.fill == null ? {} : { fill: [...styled.look.fill] as [number, number, number] }),
       ...(styled !== undefined && styled.look.padding > 0 ? { padding: styled.look.padding } : {}),
       ...(styled !== undefined && styled.look.spacing !== 0 ? { spacing: styled.look.spacing } : {}),
+      ...(styled?.look.dashed === true ? { dashed: true as const } : {}),
       ...(unavailable ? { stylesUnavailable: true as const } : {}),
     },
   };
@@ -905,6 +906,7 @@ function writeWordsStyle(annotation: PDFAnnotation, text: AnnotationTextStyle, d
     text.fill !== undefined ||
     text.padding !== undefined ||
     text.spacing !== undefined ||
+    text.borderStyle !== undefined ||
     text.words !== undefined ||
     text.align === 'justify' ||
     // A FAMILY THE BASE 14 ARE NOT is drawn only by Monstera's own appearance (K2): MuPDF would paint it in Helvetica.
@@ -933,6 +935,7 @@ function writeWordsStyle(annotation: PDFAnnotation, text: AnnotationTextStyle, d
     fill: text.fill === undefined ? undefined : text.fill === null ? null : [...text.fill],
     padding: text.padding,
     spacing: text.spacing,
+    borderStyle: text.borderStyle,
     words: text.words?.map(runFact),
   }, before);
 }

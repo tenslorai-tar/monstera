@@ -1420,6 +1420,12 @@ export const MAX_CHARACTER_SPACING = 0.12;
 export const characterSpacingSchema = z.number().min(-MAX_CHARACTER_SPACING).max(MAX_CHARACTER_SPACING);
 
 /**
+ * How a text box's border may be drawn (the owner's text E4): `/BS /S` is `S` or `D`. The other three of the format's
+ * styles (beveled, inset, underline) are a widget's and are drawn by no reader on a free text, so they are not offered.
+ */
+export const TEXT_BOX_BORDER_STYLES = ['solid', 'dashed'] as const;
+
+/**
  * How a text mark's words are drawn, as the file says: the type size, colour, face and the side the lines sit against
  * — a `/FreeText`'s `/DA` and `/Q`. The four fields every text draft carries, under the same bounds, so a value read is
  * one a draft could write back; a mark whose `/DA` says something outside them carries none (ADR-0154 Decision 3).
@@ -1446,6 +1452,8 @@ export const annotationWordsStyleSchema = z
     padding: z.number().min(0).max(MAX_TEXT_PADDING).exactOptional(),
     /** The box's own character spacing where it has some (ADR-0228). */
     spacing: characterSpacingSchema.exactOptional(),
+    /** Present and true where the box's border is dashed (E4); absent is solid, the format's default. */
+    dashed: z.literal(true).exactOptional(),
     /**
      * Present and true where Monstera cannot draw this box's styles: a callout, or words outside the base 14 in a
      * process with no fonts bound (K2). The panel says so, and offers the standard faces alone.
@@ -1511,6 +1519,8 @@ export const annotationTextStyleSchema = z
     padding: z.number().min(0).max(MAX_TEXT_PADDING).optional(),
     /** The whole box's character spacing, a fraction of the size (ADR-0228 Decision 1). */
     spacing: characterSpacingSchema.optional(),
+    /** How the box's border is drawn (`/BS /S`, and `/D` for dashed): the owner's text E4. */
+    borderStyle: z.enum(TEXT_BOX_BORDER_STYLES).optional(),
     /** The box's words as runs, replacing its words: joined, they are its `/Contents`. */
     words: z.array(annotationTextRunSchema).min(1).max(MAX_TEXT_RUNS).optional(),
   })

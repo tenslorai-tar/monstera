@@ -7,6 +7,7 @@ import {
   type AnnotationColour,
   ANNOTATION_FONT_FAMILIES,
   type AnnotationTextStyle,
+  TEXT_BOX_BORDER_STYLES,
   MAX_ANNOTATION_AUTHOR,
   MAX_ANNOTATION_BORDER,
   MAX_ANNOTATION_FONT,
@@ -54,6 +55,9 @@ import {
   PROPERTIES_ALIGN_RIGHT,
   PROPERTIES_BOX_FILL,
   PROPERTIES_BOX_FILL_COLOUR,
+  PROPERTIES_BOX_BORDER_DASHED,
+  PROPERTIES_BOX_BORDER_SOLID,
+  PROPERTIES_BOX_BORDER_STYLE,
   PROPERTIES_BOX_PADDING,
   TEXT_FORMAT_CHARACTER_SPACING,
   TEXT_FORMAT_CHARACTER_SPACING_BOUND,
@@ -888,6 +892,20 @@ function TextSection({
       {box}
       {typed.stylesUnavailable === true ? null : (
         <>
+          {/* THE BORDER'S STYLE (the owner's text E4), the kernel's `/BS`: solid or dashed, beside its colour and width. */}
+          <div className="m-properties__row">
+            <span className="m-properties__label" aria-hidden="true">
+              {i18n._(PROPERTIES_BOX_BORDER_STYLE)}
+            </span>
+            <SegmentedControl
+              label={PROPERTIES_BOX_BORDER_STYLE}
+              onChange={(borderStyle) => {
+                onChange({ borderStyle });
+              }}
+              options={BORDER_STYLE_OPTIONS}
+              value={typed.dashed === true ? 'dashed' : 'solid'}
+            />
+          </div>
           <div className="m-properties__row m-properties__row--inline">
             <label className="m-properties__label" htmlFor={paddingId}>
               {i18n._(PROPERTIES_BOX_PADDING)}
@@ -939,6 +957,12 @@ function TextSection({
 }
 
 /** The blend's two choices, in v5-02's order. */
+/** A text box's two border styles, the contract's list in its order (E4). */
+const BORDER_STYLE_OPTIONS: readonly SegmentedOption<(typeof TEXT_BOX_BORDER_STYLES)[number]>[] = TEXT_BOX_BORDER_STYLES.map((style) => ({
+  value: style,
+  label: style === 'solid' ? PROPERTIES_BOX_BORDER_SOLID : PROPERTIES_BOX_BORDER_DASHED,
+}));
+
 const BLEND_OPTIONS: readonly SegmentedOption<AnnotationBlend>[] = [
   { value: 'multiply', label: PROPERTIES_BLEND_MULTIPLY },
   { value: 'normal', label: PROPERTIES_BLEND_NORMAL },

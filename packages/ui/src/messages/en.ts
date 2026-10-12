@@ -1986,6 +1986,9 @@ export const PROPERTIES_LINE_SPACING = messageKey('surface.properties.text.line-
 export const PROPERTIES_BOX_FILL = messageKey('surface.properties.text.box-fill');
 export const PROPERTIES_BOX_FILL_COLOUR = messageKey('surface.properties.text.box-fill-colour');
 export const PROPERTIES_BOX_PADDING = messageKey('surface.properties.text.box-padding');
+export const PROPERTIES_BOX_BORDER_STYLE = messageKey('surface.properties.text.box-border-style');
+export const PROPERTIES_BOX_BORDER_SOLID = messageKey('surface.properties.text.box-border-solid');
+export const PROPERTIES_BOX_BORDER_DASHED = messageKey('surface.properties.text.box-border-dashed');
 export const PROPERTIES_STYLES_UNAVAILABLE = messageKey('surface.properties.text.styles-unavailable');
 export const PROPERTIES_COMMENT = messageKey('surface.properties.comment');
 export const PROPERTIES_NEW_HEADING = messageKey('surface.properties.new-heading');
@@ -4692,6 +4695,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PROPERTIES_BOX_FILL]: 'Fill the box',
   [PROPERTIES_BOX_FILL_COLOUR]: 'Fill colour',
   [PROPERTIES_BOX_PADDING]: 'Padding',
+  [PROPERTIES_BOX_BORDER_STYLE]: 'Border style',
+  [PROPERTIES_BOX_BORDER_SOLID]: 'Solid',
+  [PROPERTIES_BOX_BORDER_DASHED]: 'Dashed',
   [PROPERTIES_STYLES_UNAVAILABLE]:
     'This box cannot take bold, italic, fill and the other styles: it is a callout, or it holds letters the built-in fonts cannot write.',
   [PROPERTIES_COMMENT]: 'Comment',

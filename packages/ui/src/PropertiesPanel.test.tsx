@@ -425,6 +425,20 @@ describe('PropertiesPanel with marks selected', () => {
     expect(restyled.at(-1)).toStrictEqual({ text: { fill: [1, 1, 0.8] } });
   });
 
+  it('the Box group’s BORDER STYLE shows what the box has and sends the one chosen (E4)', () => {
+    const { restyled } = mounted({ ...ONE, items: [TEXT_BOX] });
+    const group = screen.getByRole('group', { name: 'Border style' });
+    expect(group.closest('[data-properties-box]')).not.toBeNull();
+    // SOLID IS SHOWN for a box the read says nothing dashed of, and choosing Dashed sends that one member.
+    expect(screen.getByRole('button', { name: 'Solid' }).getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'Dashed' }));
+    expect(restyled).toStrictEqual([{ text: { borderStyle: 'dashed' } }]);
+    cleanup();
+    // CONTROL: a box the read says is dashed shows Dashed, so the state above is the read's and not a fixed default.
+    mounted({ ...ONE, items: [{ ...TEXT_BOX, typed: { ...TEXT_BOX.typed, dashed: true as const } }] });
+    expect(screen.getByRole('button', { name: 'Dashed' }).getAttribute('aria-pressed')).toBe('true');
+  });
+
   it('a text box is offered the computer’s and Monstera’s fonts (K2), and a family chosen is sent by name and kept as the default', () => {
     const { restyled, store } = mounted({ ...ONE, items: [TEXT_BOX] });
     fireEvent.click(screen.getByRole('button', { name: 'Font: Helvetica' }));

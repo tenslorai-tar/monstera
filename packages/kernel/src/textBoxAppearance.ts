@@ -17,6 +17,7 @@ import {
   type TextRun,
   type Typesetter,
   BASE14_FAMILIES,
+  BOX_DASH,
   DEFAULT_LOOK,
   MAX_LINE_HEIGHT,
   MAX_PADDING,
@@ -139,6 +140,8 @@ export function readStyledBox(annotation: PDFAnnotation): { readonly look: BoxLo
     align: ALIGN_OF_Q[annotation.getQuadding()] ?? 'left',
     fill: rgbOf(object.get('IC')),
     borderWidth: annotation.hasBorder() ? annotation.getBorderWidth() : 0,
+    // `/BS /S`, the one place the border's style is kept: the appearance is drawn from it, never the other way.
+    dashed: annotation.hasBorder() && annotation.getBorderStyle() === 'Dashed',
   };
   const ds = object.get('DS');
   const styled = ds.isString() ? lookOfStyleString(ds.asString(), base, styledBeforeRealFonts(annotation)) : base;
@@ -261,6 +264,8 @@ export interface StyledBoxChange {
   readonly padding?: number | undefined;
   /** The whole box's character spacing, a fraction of the size (ADR-0228). */
   readonly spacing?: number | undefined;
+  /** How the border is drawn (E4), written to `/BS`. */
+  readonly borderStyle?: 'solid' | 'dashed' | undefined;
   readonly words?: readonly TextRun[] | undefined;
 }
 
@@ -310,6 +315,13 @@ export function writeStyleFacts(
     const colour = document.newArray();
     for (const channel of look.fill) colour.push(channel);
     object.put('IC', colour);
+  }
+  // THE BORDER'S STYLE IS `/BS`'s (E4): `/S /D` with the dash Monstera draws, or `/S /S` with none, so the read above and a
+  // reader that draws its own border from `/BS` agree with the appearance.
+  if (change.borderStyle !== undefined) {
+    annotation.setBorderStyle(change.borderStyle === 'dashed' ? 'Dashed' : 'Solid');
+    if (change.borderStyle === 'dashed') annotation.setBorderDashPattern([...BOX_DASH]);
+    else annotation.clearBorderDash();
   }
   // `/RD` is NOT written: see `styleStringOf` for why the margin is `/DS`'s.
 }

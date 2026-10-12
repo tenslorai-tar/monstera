@@ -113,7 +113,15 @@ export interface BoxLook {
   /** The border's width in points, and its colour (`/BS`, `/C`). */
   readonly borderWidth: number;
   readonly borderColour: Rgb;
+  /** Whether the border is dashed (`/BS /S /D`, drawn in {@link BOX_DASH}): the owner's text E4. */
+  readonly dashed: boolean;
 }
+
+/**
+ * The dash a dashed box border is drawn and written in, points on and off: `/BS /D` and the appearance's `d` say the same
+ * array, so a reader that draws its own border from `/BS` draws the dash Monstera drew.
+ */
+export const BOX_DASH: readonly number[] = [3, 3];
 
 /** The look a box starts from: what MuPDF's own text box says, so a box restyled in one field changes only that field. */
 export const DEFAULT_LOOK: BoxLook = {
@@ -131,6 +139,7 @@ export const DEFAULT_LOOK: BoxLook = {
   spacing: 0,
   borderWidth: 0,
   borderColour: [0, 0, 0],
+  dashed: false,
 };
 
 // THE BOUNDS ARE THE CONTRACT'S, so the schema that refuses a value and the writer that clamps one cannot disagree (B3a).
@@ -565,6 +574,7 @@ export function appearanceContent(layout: Layout, look: BoxLook): string {
       'q',
       colourOps(look.borderColour, true),
       `${fixed(look.borderWidth)} w`,
+      ...(look.dashed ? [`[${BOX_DASH.map(fixed).join(' ')}] 0 d`] : []),
       `${fixed(half)} ${fixed(half)} ${fixed(width - look.borderWidth)} ${fixed(height - look.borderWidth)} re S`,
       'Q',
     );

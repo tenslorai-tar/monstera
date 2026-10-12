@@ -1,4 +1,4 @@
-import { PDFDocument as LibDocument } from '@cantoo/pdf-lib';
+import { PDFDict, PDFDocument as LibDocument, PDFName } from '@cantoo/pdf-lib';
 import type { AnnotationDraft, AnnotationWordsStyle, CommandOfKind, TextBoxLook } from '@monstera/contract';
 import { asDocVersion } from '@monstera/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -164,6 +164,61 @@ async function typedOf(session: Awaited<ReturnType<typeof mupdfWriter.open>>): P
   const first = annotations[0];
   return first !== undefined && 'typed' in first ? first.typed : undefined;
 }
+
+describe('a text box’s border style (the owner’s text E4), against the real engine', () => {
+  /** A box with a 2-point border restyled to `borderStyle`, saved, and read back: the walk's answer, `/BS`, and the stream. */
+  async function bordered(borderStyle: 'solid' | 'dashed', from?: Uint8Array) {
+    const session = await mupdfWriter.open(from ?? (await added(textBox('Helvetica', 'A boxed note'))));
+    let bytes: Uint8Array;
+    try {
+      await applyStyleAnnotation(session, {
+        kind: 'styleAnnotation',
+        page: 0,
+        indices: [0],
+        borderWidth: 2,
+        text: { borderStyle },
+        version: asDocVersion(1),
+      });
+      bytes = await mupdfWriter.serialise(session);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+    // SAVED AND OPENED AGAIN, so what is read is the file's and not the session's.
+    const reopened = await mupdfWriter.open(bytes);
+    let typed: AnnotationWordsStyle | undefined;
+    try {
+      typed = await typedOf(reopened);
+    } finally {
+      await mupdfWriter.close(reopened);
+    }
+    // THE SECOND READER: pdf-lib reads `/BS` off the dictionary as written.
+    const library = await LibDocument.load(bytes);
+    const annotation = library.getPage(0).node.Annots()?.lookup(0, PDFDict);
+    const border = annotation?.lookupMaybe(PDFName.of('BS'), PDFDict);
+    const style = border?.get(PDFName.of('S'))?.toString();
+    const dash = border?.get(PDFName.of('D'))?.toString();
+    return { bytes, typed, style, dash, content: (await appearanceOf(bytes)).content };
+  }
+
+  it('a dashed border is written to /BS, drawn as a dash in the appearance, and read back after a reopen', async () => {
+    const dashed = await bordered('dashed');
+    expect(dashed.typed?.dashed).toBe(true);
+    expect(dashed.style).toBe('/D');
+    expect(dashed.dash).toBe('[ 3 3 ]');
+    expect(dashed.content).toContain('[3 3] 0 d');
+    expect(dashed.content).toContain('2 w');
+  });
+
+  it('CONTROL: solid takes the dash away again — the walk says no dash, /BS says S, and the stream sets none', async () => {
+    const solid = await bordered('solid', (await bordered('dashed')).bytes);
+    expect(solid.typed?.dashed).toBeUndefined();
+    expect(solid.style).toBe('/S');
+    expect(solid.content).not.toContain(' d\n');
+    expect(solid.content).not.toContain('[3 3]');
+    // THE BORDER IS STILL DRAWN, so the absence above is the dash's and not the border's.
+    expect(solid.content).toContain('2 w');
+  });
+});
 
 describe('a text box’s character spacing and highlight (ADR-0228), against the real engine', () => {
   it('draws the spacing as Tc and the highlight behind its words, and MuPDF still reads the words as words', async () => {
