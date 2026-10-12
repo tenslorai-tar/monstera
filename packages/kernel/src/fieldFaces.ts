@@ -2,7 +2,7 @@ import { kindOf } from './fieldKind.js';
 import { FIELD_FAMILY_MARKER, drawsFieldFamily, familyOfMarker } from './fieldFamily.js';
 import { type FieldFace, faceOfFont, parseDefaultAppearance, textColourOf } from './fieldActions.js';
 import { type FieldBorderStyle, borderOps, opsText } from './fieldMarks.js';
-import { borderStyleOf, borderWidthOf, fieldDictionaryOf, nearest } from './fieldRules.js';
+import { borderStyleOf, borderWidthOf, fieldDictionaryOf, masksItsValue, nearest } from './fieldRules.js';
 import { type PDFAnnotation, type PDFDocument, type PDFObject, PDFWidget } from './mupdfRaw.js';
 import { canDraw, layoutFonts, settersFor } from './textBoxAppearance.js';
 import {
@@ -53,7 +53,7 @@ const fixed = (value: number): string => {
 /** The value a field shows: a dropdown's chosen option by its label where the document lists labels apart from values. */
 function shownValue(widget: PDFWidget, kind: string): string {
   const value = widget.getValue();
-  if (kind !== 'dropdown') return widget.isPassword() ? '*'.repeat(Array.from(value).length) : value;
+  if (kind !== 'dropdown') return masksItsValue(widget) ? '*'.repeat(Array.from(value).length) : value;
   const exports = widget.getOptions(true);
   const labels = widget.getOptions(false);
   const at = exports.indexOf(value);
@@ -136,9 +136,9 @@ export function setAside(annotation: PDFAnnotation, document: PDFDocument): SetA
   const marker = nearest(object, FIELD_FAMILY_MARKER);
   const real = familyOfMarker(marker.isString() ? marker.asString() : null, kind);
   const style = borderStyleOf(object);
-  // DRAWN BY MONSTERA where the field carries a real family or a border that is not solid (ADR-0230 Decision 2): the words
-  // of a field with only a style are set in the standard face its `/DA` names, by the same typesetter.
-  if (real === null && style === 'solid') return undefined;
+  // DRAWN BY MONSTERA where the field carries a real family, a border that is not solid (ADR-0230 Decision 2) or a mask: the
+  // words of a field with only a style or a mask are set in the standard face its `/DA` names, by the same typesetter.
+  if (real === null && style === 'solid' && !masksItsValue(annotation)) return undefined;
   const family = real ?? standardFamilyOf(annotation, document);
   const shown = shownValue(annotation, kind);
   // WORDS THIS PROCESS CANNOT SET are left to the engine, which draws them in the standard face `/DA` names: the text box's

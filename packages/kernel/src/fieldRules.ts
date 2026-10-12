@@ -146,6 +146,17 @@ export function fieldRulesOf(widget: PDFWidget): FieldRules {
   };
 }
 
+/**
+ * Whether a field shows a mask in place of its value: a text field flagged as a password.
+ *
+ * MuPDF 1.28.0 draws a text field's appearance from its value and never reads this flag (`pdf-appearance.c` has no branch on
+ * `PDF_TX_FIELD_IS_PASSWORD`), so a password field it draws carries its value in the stream and a flatten puts that value on
+ * the page. Such a field is therefore always drawn by Monstera, and every place that decides who draws a field takes this.
+ */
+export function masksItsValue(widget: PDFWidget): boolean {
+  return widget.isText() && widget.isPassword();
+}
+
 /** How a widget's border is drawn, from `/BS /S` (ADR-0230): solid where it names none. */
 export function borderStyleOf(object: PDFObject): FieldBorderStyle {
   const style = object.get('BS', 'S');

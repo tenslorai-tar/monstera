@@ -21,7 +21,7 @@ import { existsSync } from 'node:fs';
 import { copyFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect } from '@playwright/test';
-import { PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream, PDFString, PDFTextField } from '@cantoo/pdf-lib';
+import { PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream, PDFString, PDFTextField, decodePDFRawStream } from '@cantoo/pdf-lib';
 import { root, startWalk } from './liveWalk.mjs';
 
 const source = process.argv[2] ?? join(root, '_review/test-files/form-test.pdf');
@@ -264,6 +264,60 @@ await step('BBBBBBBB-10: a radio group’s name typed for another radio is refus
   const refused = page.getByText('This form already has a field with that name. Choose another name.');
   await expect(refused).toBeVisible();
   return { firstGroup: first, secondGroup: second, refusedInWords: await refused.isVisible() };
+});
+
+/**
+ * Every stream of a saved file, decoded, as one Latin-1 text: where a flattened field's words can be, whichever stream the
+ * bake put them in. @param {string} path
+ */
+async function savedStreamsText(path) {
+  const document = await PDFDocument.load(await readFile(path), { updateMetadata: false });
+  const parts = [];
+  for (const [, object] of document.context.enumerateIndirectObjects()) {
+    if (!(object instanceof PDFRawStream)) continue;
+    try {
+      parts.push(Buffer.from(decodePDFRawStream(object).decode()).toString('latin1'));
+    } catch {
+      // A STREAM PDF-LIB CANNOT DECODE (an image filter) holds no words, and is counted so the reading says what it skipped.
+      parts.push('');
+    }
+  }
+  return parts.join('\n');
+}
+
+const PIN = '4821';
+const forPassword = join(output, 'form-for-password.pdf');
+await copyFile(source, forPassword);
+const masked = await copyOf(forPassword);
+await step('L1: a password field filled with a PIN and flattened is masked in the SAVED file, never the digits', async () => {
+  await open(masked);
+  await command('Edit fields');
+  const paper = await page.locator('canvas.m-page:visible').first().boundingBox();
+  if (paper === null) throw new Error('the page is not on screen');
+  await page.getByRole('button', { name: /^Text field/u }).first().click();
+  await page.mouse.click(paper.x + paper.width - 80, paper.y + 60);
+  const name = await page.getByLabel('Name', { exact: true }).inputValue();
+  await page.getByLabel('Hide what is typed (password)').check();
+  await page.waitForTimeout(1500);
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  // A FIELD'S MARK IS ITS INDEX; its name is in the control's accessible label.
+  await pressOn(page.locator(`[data-form-field][aria-label*="${name}"]`).first());
+  await page.keyboard.type(PIN);
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(1500);
+  await page.getByRole('button', { name: 'Flatten' }).first().click();
+  await page.getByRole('dialog', { name: 'Flatten the form' }).getByRole('button', { name: 'Flatten form' }).click();
+  await page.waitForTimeout(1500);
+  const file = join(output, 'form-password-flattened.pdf');
+  await saveTo(file);
+  await command('Save a copy');
+  await expect.poll(() => existsSync(file), { timeout: 20_000 }).toBe(true);
+  const streams = await savedStreamsText(file);
+  // THE DIGITS IN NO STREAM, as a literal string or as hex: the field's own words are the only place a PIN could be.
+  const hex = Buffer.from(PIN, 'latin1').toString('hex');
+  expect(streams.includes(`(${PIN})`) || streams.toLowerCase().includes(`<${hex}>`)).toBe(false);
+  return { field: name, maskInSavedFile: streams.includes('(****)'), digitsInSavedFile: streams.includes(PIN) };
 });
 
 await finish();

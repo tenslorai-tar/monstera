@@ -1,5 +1,5 @@
 import { FIELD_FAMILY_MARKER } from './fieldFamily.js';
-import { borderStyleOf, fieldDictionaryOf, nearest } from './fieldRules.js';
+import { borderStyleOf, fieldDictionaryOf, masksItsValue, nearest } from './fieldRules.js';
 import type { PDFDocument, PDFObject, PDFWidget } from './mupdfRaw.js';
 import { redraw } from './pageAnnotations.js';
 
@@ -55,12 +55,28 @@ export function widgetsOfField(document: PDFDocument, widget: PDFWidget): PDFWid
 
 /**
  * Whether Monstera draws this field (ADR-0229, ADR-0230, ADR-0231): it carries a real family, read up the field's ancestry as
- * every inherited key is, or it is a list box, whose options MuPDF never draws, or a text field or a dropdown whose border is
- * not solid. `fieldFaces.ts`' `setAside` decides the drawing by the same three facts.
+ * every inherited key is, or it is a list box, whose options MuPDF never draws, or a password field, whose value MuPDF draws
+ * unmasked ({@link masksItsValue}), or a text field or a dropdown whose border is not solid. `fieldFaces.ts`' `setAside`
+ * decides the drawing by the same four facts.
  */
 export function drawnByMonstera(widget: PDFWidget): boolean {
-  if (nearest(widget.getObject(), FIELD_FAMILY_MARKER).isString() || widget.isListBox()) return true;
+  if (nearest(widget.getObject(), FIELD_FAMILY_MARKER).isString() || widget.isListBox() || masksItsValue(widget)) return true;
   return (widget.isText() || widget.isComboBox()) && borderStyleOf(widget.getObject()) !== 'solid';
+}
+
+/**
+ * Redraws every password widget a bake is about to burn in, so the page gets the mask whoever drew the appearance before:
+ * another writer's appearance may carry the value in clear, and a bake keeps whatever appearance it finds. Every bake in
+ * this kernel calls this first.
+ *
+ * @param baked which widgets the bake will burn in; every widget where absent
+ */
+export function remaskBeforeBake(document: PDFDocument, baked?: (widget: PDFWidget) => boolean): void {
+  for (let page = 0; page < document.countPages(); page += 1) {
+    for (const widget of document.loadPage(page).getWidgets()) {
+      if (masksItsValue(widget) && (baked === undefined || baked(widget))) redraw(widget, document);
+    }
+  }
 }
 
 /** Redraws every widget of `widget`'s field where Monstera draws it; any other field is left to MuPDF. */

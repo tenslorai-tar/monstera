@@ -5,7 +5,7 @@ import type { PDFDocument, PDFObject, PDFPage, PDFWidget } from './mupdfRaw.js';
 import { BoundedList } from './boundedList.js';
 import { type CalculatedValue, calculatedValues, recalculate, restoreCalculated, writeShown } from './fieldCalculation.js';
 import { kindOf } from './fieldKind.js';
-import { redrawFamily } from './fieldWidgets.js';
+import { redrawFamily, remaskBeforeBake } from './fieldWidgets.js';
 import { MAX_FIELD_ANCESTRY, fieldDictionaryOf, fieldRulesOf } from './fieldRules.js';
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
@@ -1102,6 +1102,7 @@ export const invertDeleteFormFields: Invert<'mupdf', 'deleteFormFields'> = (): P
 export const applyFlattenFormFields: Apply<'mupdf', 'flattenFormFields'> = (session, command) =>
   withDocumentRemoving(session, (document) => {
     if (command.fields === 'all') {
+      remaskBeforeBake(document);
       document.bake(false, true);
       return;
     }
@@ -1148,6 +1149,7 @@ function flattenSome(document: PDFDocument, places: readonly { readonly page: nu
 
   const root = document.getTrailer().get('Root');
   const form = root.get('AcroForm');
+  remaskBeforeBake(document, (widget) => isChosen(widget.getObject()));
   document.bake(false, true);
   if (!form.isNull()) root.put('AcroForm', form);
   for (let page = 0; page < pages; page += 1) {

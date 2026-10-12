@@ -2,6 +2,7 @@ import type { PdfSanitizePart } from '@monstera/contract';
 import type * as mupdf from './mupdfRaw.js';
 
 import type { CaptureResult } from './commandLog.js';
+import { remaskBeforeBake } from './fieldWidgets.js';
 import type { Apply, MupdfSession } from './engineSeam.js';
 import { withDocument, withDocumentRemoving } from './mupdfWriter.js';
 
@@ -341,6 +342,7 @@ function stripExternalActions(document: mupdf.PDFDocument): void {
  * change, so the annotations go in too.
  */
 function flatten(document: mupdf.PDFDocument): void {
+  remaskBeforeBake(document);
   document.bake(true, true);
 }
 
