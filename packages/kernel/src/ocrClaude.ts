@@ -135,6 +135,12 @@ export interface ClaudeRequest {
   readonly rotation: Rotation;
   readonly origin: readonly [number, number];
   readonly scale: number;
+  /**
+   * Whether a person DREW this region around the writing, as against a whole page sent to be read (ADR-0202). Only a
+   * drawn region is one the writing fills, which is {@link fittedToRaster}'s premise; a page's writing may fill its top
+   * half and nothing else. Required, so a route that does not say which it is does not compile.
+   */
+  readonly drawn: boolean;
   /** Injected so the cases drive the protocol with no network and no key. */
   readonly fetchImpl?: typeof fetch;
 }
@@ -602,7 +608,8 @@ const FEWEST_WORDS_FOR_SPAN = 4;
  * What stays true of an approximate frame is the ORDER and the proportions, so where the words of a read span less than
  * {@link TRUSTED_SPAN} of an axis (and there are enough of them to judge), that axis is stretched so they span the raster
  * less a margin. A person drags a box AROUND the writing, so the writing fills it. Each axis is judged alone, and a read that
- * already spans its raster is not touched: this never moves a frame the model got right.
+ * already spans its raster is not touched: this never moves a frame the model got right. A WHOLE PAGE is never fitted
+ * (`ClaudeRequest.drawn`): its writing may fill its top half, and stretching it would lay the text layer over the blank rest.
  */
 export function fittedToRaster(
   boxes: readonly (readonly [number, number, number, number])[],
@@ -657,7 +664,9 @@ function pageFrom(data: z.infer<typeof answerSchema>, request: ClaudeRequest): R
       return { text: word.text, box: [x1, y1, x2, y2] as const };
     }),
   );
-  const fitted = fittedToRaster(checked.flat().map((word) => word.box), width, height);
+  // A DRAWN REGION ONLY: a whole page's words keep the model's frame, since nothing says the writing fills the page.
+  const boxes = checked.flat().map((word) => word.box);
+  const fitted = request.drawn ? fittedToRaster(boxes, width, height) : boxes;
   let next = 0;
 
   const lines: RecognisedLine[] = [];

@@ -1303,6 +1303,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
           rotation: raster.rotation,
           origin: raster.origin,
           scale,
+          drawn: rect !== undefined,
         });
       }
 
@@ -4169,7 +4170,8 @@ function azureCredentials(
 }
 
 /** One region's raster and the frame it sits in, as every network recogniser takes it. */
-type RegionRaster = Omit<AzureRequest, 'fetchImpl'>;
+/** A raster to read, and whether a person drew it around the writing (`ClaudeRequest.drawn`); a whole page is not drawn. */
+type RegionRaster = Omit<AzureRequest, 'fetchImpl'> & { readonly drawn: boolean };
 
 /**
  * One network engine's route, split where the work splits

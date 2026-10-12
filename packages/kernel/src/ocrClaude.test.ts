@@ -43,6 +43,7 @@ const FRAME = {
   rotation: 0 as const,
   origin: [0, 0] as const,
   scale: 1,
+  drawn: true,
 };
 
 /**
@@ -218,7 +219,10 @@ describe('a raster the MODEL would resize is refused before anything is sent (th
 
 describe('fittedToRaster — a frame the model drew too small is stretched back over the raster', () => {
   type Box = readonly [number, number, number, number];
-  /** The owner's table as Haiku 4.5 answered it on 2026-10-09: four columns whose words end at 591 of 1096. */
+  /**
+   * The owner's table as Haiku 4.5 answered it on 2026-10-09 when asked in thousandths: four columns whose words end at
+   * 591 (`fittedToRaster`'s comment has all three readings), placed here on the 1096 × 893 raster as the frame takes them.
+   */
   const compressed: Box[] = [
     [12, 2, 93, 45],
     [113, 2, 200, 45],
@@ -251,6 +255,28 @@ describe('fittedToRaster — a frame the model drew too small is stretched back 
     expect(fittedToRaster(spread, 1096, 893)).toStrictEqual(spread);
     const corner = compressed.slice(0, 3);
     expect(fittedToRaster(corner, 1096, 893)).toStrictEqual(corner);
+  });
+
+  it('a WHOLE PAGE keeps the model’s frame, and CONTROL: the same answer for a region the person drew is stretched (AAAAAAAA-2)', async () => {
+    // WRITING IN THE TOP HALF OF A PAGE, which is what a whole-page read can be: four words across, none below 104 of 893.
+    const topHalf = { lines: [{ words: compressed.slice(0, 4).map((box, at) => ({ text: `w${String(at)}`, box: [...box] })) }] };
+    const read = async (drawn: boolean) => {
+      const { fetchImpl } = service(() => answer(topHalf));
+      const page = await recogniseThroughClaude(CREDENTIALS, {
+        png: pngHeader(1096, 893),
+        ...FRAME,
+        crop: [0, 0, 1096, 893],
+        drawn,
+        fetchImpl,
+      });
+      return page.lines[0]?.words.map((word) => word.box) ?? [];
+    };
+    const page = await read(false);
+    const region = await read(true);
+    // THE PAGE: each word's box is the model's, put into PDF space at scale 1 on a 0..893 crop, so x is unchanged.
+    expect(page.map((box) => box[2])).toStrictEqual(compressed.slice(0, 4).map((box) => box[2]));
+    // THE REGION: stretched across to the raster less a margin, which a page read must never be.
+    expect(region.at(-1)?.[2]).toBeCloseTo(1096 * 0.98, 5);
   });
 
   it('judges each axis alone: a read wide enough across is stretched only down', () => {
