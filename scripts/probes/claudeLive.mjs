@@ -147,6 +147,8 @@ async function recognise(raster) {
         rotation: raster.rotation,
         origin: raster.origin,
         scale: Number(scale),
+        // A REGION, snapshotted around the drawn word: the case `ClaudeRequest.drawn` names.
+        drawn: true,
       },
     );
   } catch (error) {
