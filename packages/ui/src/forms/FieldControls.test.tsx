@@ -13,7 +13,7 @@ import { FieldTextBox } from './FieldControls.js';
  * never re-rendered would pass against it.
  */
 describe('a field box sends what was typed, whatever renders in between', () => {
-  const offer = { kind: 'text', held: 'Ada', lines: false, maxLength: null, comb: false, masked: false, required: false, format: null } as const;
+  const offer = { kind: 'text', held: 'Ada', lines: false, maxLength: null, comb: false, masked: false, required: false, format: null, range: null } as const;
 
   it('sends the typed value after a render in the middle of typing', () => {
     const sent: string[] = [];

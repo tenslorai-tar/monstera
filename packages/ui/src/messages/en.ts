@@ -1748,6 +1748,9 @@ export const FORM_FIELD_FILL_IN = messageKey('surface.form-layer.fill-in');
 export const FIELD_HIGHLIGHT_TITLE = messageKey('setting.viewing.highlight-fields.title');
 export const FIELD_HIGHLIGHT_DESCRIPTION = messageKey('setting.viewing.highlight-fields.description');
 export const FORM_FIELD_WANTS_NUMBER = messageKey('surface.form-layer.wants-number');
+export const FORM_FIELD_WANTS_BETWEEN = messageKey('surface.form-layer.wants-between');
+export const FORM_FIELD_WANTS_AT_LEAST = messageKey('surface.form-layer.wants-at-least');
+export const FORM_FIELD_WANTS_AT_MOST = messageKey('surface.form-layer.wants-at-most');
 export const FORM_FIELD_WANTS_PERCENT = messageKey('surface.form-layer.wants-percent');
 export const FORM_FIELD_WANTS_DATE = messageKey('surface.form-layer.wants-date');
 export const FORM_FIELD_WANTS_TIME = messageKey('surface.form-layer.wants-time');
@@ -1795,6 +1798,23 @@ export const FIELD_PROPS_VISIBILITY_VISIBLE = messageKey('surface.field-properti
 export const FIELD_PROPS_VISIBILITY_HIDDEN = messageKey('surface.field-properties.visibility.hidden');
 export const FIELD_PROPS_VISIBILITY_NO_PRINT = messageKey('surface.field-properties.visibility.no-print');
 export const FIELD_PROPS_ALIGNMENT = messageKey('surface.field-properties.alignment');
+export const FIELD_PROPS_BORDER_STYLE = messageKey('surface.field-properties.border-style');
+export const FIELD_PROPS_BORDER_SOLID = messageKey('surface.field-properties.border-solid');
+export const FIELD_PROPS_BORDER_DASHED = messageKey('surface.field-properties.border-dashed');
+export const FIELD_PROPS_BORDER_BEVELED = messageKey('surface.field-properties.border-beveled');
+export const FIELD_PROPS_BORDER_INSET = messageKey('surface.field-properties.border-inset');
+export const FIELD_PROPS_BORDER_UNDERLINE = messageKey('surface.field-properties.border-underline');
+export const FIELD_PROPS_CHECK_STYLE = messageKey('surface.field-properties.check-style');
+export const FIELD_PROPS_CHECK_CHECK = messageKey('surface.field-properties.check-check');
+export const FIELD_PROPS_CHECK_CIRCLE = messageKey('surface.field-properties.check-circle');
+export const FIELD_PROPS_CHECK_CROSS = messageKey('surface.field-properties.check-cross');
+export const FIELD_PROPS_CHECK_DIAMOND = messageKey('surface.field-properties.check-diamond');
+export const FIELD_PROPS_CHECK_SQUARE = messageKey('surface.field-properties.check-square');
+export const FIELD_PROPS_CHECK_STAR = messageKey('surface.field-properties.check-star');
+export const FIELD_PROPS_VALIDATION = messageKey('surface.field-properties.validation');
+export const FIELD_PROPS_VALIDATION_LEAST = messageKey('surface.field-properties.validation-least');
+export const FIELD_PROPS_VALIDATION_MOST = messageKey('surface.field-properties.validation-most');
+export const FIELD_PROPS_VALIDATION_SCRIPT = messageKey('surface.field-properties.validation-script');
 export const FIELD_PROPS_ALIGNMENT_LEFT = messageKey('surface.field-properties.alignment.left');
 export const FIELD_PROPS_ALIGNMENT_CENTRE = messageKey('surface.field-properties.alignment.centre');
 export const FIELD_PROPS_ALIGNMENT_RIGHT = messageKey('surface.field-properties.alignment.right');
@@ -3256,6 +3276,7 @@ export const FIELD_EDIT_ENCRYPTED = messageKey('dialog.command-problem.field-edi
 export const FIELD_EDIT_COMB_WITHOUT_LENGTH = messageKey('dialog.command-problem.field-edit.comb-without-length');
 export const FIELD_EDIT_COMB_EXCLUDES = messageKey('dialog.command-problem.field-edit.comb-excludes');
 export const FIELD_EDIT_FAMILY_KIND = messageKey('dialog.command-problem.field-edit.family-kind');
+export const FIELD_EDIT_STYLE_KIND = messageKey('dialog.command-problem.field-edit.style-kind');
 // CLOUD STORAGE (ADR-0091).
 export const CLOUD_TITLE = messageKey('dialog.cloud.title');
 export const CLOUD_COMMAND_TITLE = messageKey('command.cloud.storage');
@@ -4521,6 +4542,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'Shows a form’s fields with a light blue wash and its required fields with a red outline, so you can see where to write. The document is not changed.',
   // THE FIELD KEEPS WHAT WAS TYPED: the sentence says what the field expects, and nothing is thrown away.
   [FORM_FIELD_WANTS_NUMBER]: '{name} expects a number, such as {example}. What you typed is kept.',
+  [FORM_FIELD_WANTS_BETWEEN]: '{name} expects a number from {min} to {max}. What you typed is kept.',
+  [FORM_FIELD_WANTS_AT_LEAST]: '{name} expects a number of at least {min}. What you typed is kept.',
+  [FORM_FIELD_WANTS_AT_MOST]: '{name} expects a number of at most {max}. What you typed is kept.',
   [FORM_FIELD_WANTS_PERCENT]: '{name} expects a percentage, such as {example}. What you typed is kept.',
   [FORM_FIELD_WANTS_DATE]: '{name} expects a date, such as {example}. What you typed is kept.',
   [FORM_FIELD_WANTS_TIME]: '{name} expects a time, such as {example}. What you typed is kept.',
@@ -4786,6 +4810,23 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FIELD_PROPS_VISIBILITY_HIDDEN]: 'Hidden',
   [FIELD_PROPS_VISIBILITY_NO_PRINT]: 'Visible but not printed',
   [FIELD_PROPS_ALIGNMENT]: 'Alignment',
+  [FIELD_PROPS_BORDER_STYLE]: 'Border style',
+  [FIELD_PROPS_BORDER_SOLID]: 'Solid',
+  [FIELD_PROPS_BORDER_DASHED]: 'Dashed',
+  [FIELD_PROPS_BORDER_BEVELED]: 'Bevelled',
+  [FIELD_PROPS_BORDER_INSET]: 'Inset',
+  [FIELD_PROPS_BORDER_UNDERLINE]: 'Underline',
+  [FIELD_PROPS_CHECK_STYLE]: 'Check style',
+  [FIELD_PROPS_CHECK_CHECK]: 'Check',
+  [FIELD_PROPS_CHECK_CIRCLE]: 'Circle',
+  [FIELD_PROPS_CHECK_CROSS]: 'Cross',
+  [FIELD_PROPS_CHECK_DIAMOND]: 'Diamond',
+  [FIELD_PROPS_CHECK_SQUARE]: 'Square',
+  [FIELD_PROPS_CHECK_STAR]: 'Star',
+  [FIELD_PROPS_VALIDATION]: 'Validate',
+  [FIELD_PROPS_VALIDATION_LEAST]: 'Least',
+  [FIELD_PROPS_VALIDATION_MOST]: 'Most',
+  [FIELD_PROPS_VALIDATION_SCRIPT]: 'Validate: this field has a script of its own, which is kept and not run.',
   [FIELD_PROPS_ALIGNMENT_LEFT]: 'Left',
   [FIELD_PROPS_ALIGNMENT_CENTRE]: 'Centre',
   [FIELD_PROPS_ALIGNMENT_RIGHT]: 'Right',
@@ -6986,4 +7027,5 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'A field with one character per box cannot also take several lines or hide what is typed. Turn the other off first. Nothing was changed.',
   [FIELD_EDIT_FAMILY_KIND]:
     'This kind of field can use Helvetica, Times or Courier only. Choose one of those. Nothing was changed.',
+  [FIELD_EDIT_STYLE_KIND]: 'This kind of field does not take that setting. Nothing was changed.',
 };

@@ -95,6 +95,8 @@ export const FIELD_EDIT_REASONS = [
   // A REAL FAMILY on a kind Monstera's appearance does not draw (ADR-0229 Decision 5): the picker never offers one, so only a
   // renderer older than the field's kind can send it.
   'family-kind',
+  // A BORDER STYLE, A CHECK STYLE OR A RANGE on a kind that does not take it (ADR-0230): the Properties panel offers none.
+  'style-kind',
 ] as const;
 export type FieldEditReason = (typeof FIELD_EDIT_REASONS)[number];
 

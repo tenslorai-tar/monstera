@@ -2,7 +2,12 @@ import { useLingui } from '@lingui/react';
 import { ArrowDown, ArrowUp, Trash2 } from 'lucide-react';
 import {
   type AnnotationColour,
+  BORDER_STYLE_FIELD_KINDS,
   FIELD_ALIGNMENTS,
+  FIELD_BORDER_STYLES,
+  FIELD_CHECK_STYLES,
+  type FieldRange,
+  fieldRangeSchema,
   FIELD_CALCULATIONS,
   FIELD_FONTS,
   REAL_FONT_FIELD_KINDS,
@@ -31,8 +36,25 @@ import { colourFromHex, hexFromColour } from '../annotations/annotationStyle.js'
 import { FIELD_COLOURS, FIELD_COLOUR_FALLBACK } from './fieldColours.js';
 import {
   FIELD_PROPS_ACTIONS,
+  FIELD_PROPS_BORDER_BEVELED,
   FIELD_PROPS_BORDER_COLOUR,
+  FIELD_PROPS_BORDER_DASHED,
+  FIELD_PROPS_BORDER_INSET,
+  FIELD_PROPS_BORDER_SOLID,
+  FIELD_PROPS_BORDER_STYLE,
+  FIELD_PROPS_BORDER_UNDERLINE,
   FIELD_PROPS_BORDER_WIDTH,
+  FIELD_PROPS_CHECK_CHECK,
+  FIELD_PROPS_CHECK_CIRCLE,
+  FIELD_PROPS_CHECK_CROSS,
+  FIELD_PROPS_CHECK_DIAMOND,
+  FIELD_PROPS_CHECK_SQUARE,
+  FIELD_PROPS_CHECK_STAR,
+  FIELD_PROPS_CHECK_STYLE,
+  FIELD_PROPS_VALIDATION,
+  FIELD_PROPS_VALIDATION_LEAST,
+  FIELD_PROPS_VALIDATION_MOST,
+  FIELD_PROPS_VALIDATION_SCRIPT,
   FIELD_PROPS_CALCULATION,
   FIELD_PROPS_CALCULATION_AVERAGE,
   FIELD_PROPS_CALCULATION_CUSTOM,
@@ -380,6 +402,18 @@ function Controls({
               onEdit({ borderWidth });
             }}
           />
+          {/* A BORDER STYLE where Monstera draws one (ADR-0230): a list box's and a push button's stay solid, so none is offered. */}
+          {(BORDER_STYLE_FIELD_KINDS as readonly string[]).includes(props.kind) ? (
+            <SelectRow
+              label={FIELD_PROPS_BORDER_STYLE}
+              value={props.borderStyle}
+              options={FIELD_BORDER_STYLES.map((each) => ({ value: each, label: i18n._(BORDER_STYLE_LABELS[each]) }))}
+              onChange={(style) => {
+                const chosen = FIELD_BORDER_STYLES.find((each) => each === style);
+                if (chosen !== undefined) onEdit({ borderStyle: chosen });
+              }}
+            />
+          ) : null}
           <ColourRow
             label={FIELD_PROPS_FILL_COLOUR}
             colour={props.fillColour}
@@ -387,6 +421,17 @@ function Controls({
               onEdit({ fillColour });
             }}
           />
+          {props.kind === 'checkbox' || props.kind === 'radio' ? (
+            <SelectRow
+              label={FIELD_PROPS_CHECK_STYLE}
+              value={props.checkStyle}
+              options={FIELD_CHECK_STYLES.map((each) => ({ value: each, label: i18n._(CHECK_STYLE_LABELS[each]) }))}
+              onChange={(style) => {
+                const chosen = FIELD_CHECK_STYLES.find((each) => each === style);
+                if (chosen !== undefined) onEdit({ checkStyle: chosen });
+              }}
+            />
+          ) : null}
           {kind.text ? (
             <>
               {/* THE ONE FONT PICKER (the owner's E2), offering what the writer draws (ADR-0229): a text field's and a
@@ -474,6 +519,18 @@ function Controls({
                 onEdit({ masked });
               }}
             />
+            {/* VALIDATE (ADR-0230): a number range, checked where the field is filled. A script this application did not
+                write is kept and said, never replaced by an empty range. */}
+            {props.customValidation ? (
+              <p className="m-properties__meta">{i18n._(FIELD_PROPS_VALIDATION_SCRIPT)}</p>
+            ) : (
+              <RangeRow
+                range={props.validation}
+                onCommit={(validation) => {
+                  onEdit({ validation });
+                }}
+              />
+            )}
           </>
         ) : null}
         {props.kind === 'dropdown' ? (
@@ -582,6 +639,23 @@ const VISIBILITY_LABELS: Readonly<Record<(typeof FIELD_VISIBILITIES)[number], Me
   visible: FIELD_PROPS_VISIBILITY_VISIBLE,
   hidden: FIELD_PROPS_VISIBILITY_HIDDEN,
   'no-print': FIELD_PROPS_VISIBILITY_NO_PRINT,
+};
+
+const BORDER_STYLE_LABELS: Readonly<Record<(typeof FIELD_BORDER_STYLES)[number], MessageKey>> = {
+  solid: FIELD_PROPS_BORDER_SOLID,
+  dashed: FIELD_PROPS_BORDER_DASHED,
+  beveled: FIELD_PROPS_BORDER_BEVELED,
+  inset: FIELD_PROPS_BORDER_INSET,
+  underline: FIELD_PROPS_BORDER_UNDERLINE,
+};
+
+const CHECK_STYLE_LABELS: Readonly<Record<(typeof FIELD_CHECK_STYLES)[number], MessageKey>> = {
+  check: FIELD_PROPS_CHECK_CHECK,
+  circle: FIELD_PROPS_CHECK_CIRCLE,
+  cross: FIELD_PROPS_CHECK_CROSS,
+  diamond: FIELD_PROPS_CHECK_DIAMOND,
+  square: FIELD_PROPS_CHECK_SQUARE,
+  star: FIELD_PROPS_CHECK_STAR,
 };
 
 const ALIGNMENT_LABELS: Readonly<Record<(typeof FIELD_ALIGNMENTS)[number], MessageKey>> = {
@@ -695,6 +769,77 @@ function SelectRow({
           </option>
         ))}
       </select>
+    </div>
+  );
+}
+
+/**
+ * Validate's two ends, the least and the most, either left empty for open (ADR-0230 Decision 5). Sends when focus leaves
+ * either and the pair is a range the contract takes, the least not past the most; both empty takes the range away.
+ */
+function RangeRow({
+  range,
+  onCommit,
+}: {
+  readonly range: FieldRange | null;
+  readonly onCommit: (range: FieldRange | null) => void;
+}): ReactElement {
+  const { i18n } = useLingui();
+  const leastId = useId();
+  const mostId = useId();
+  const [least, setLeast] = useState(range?.min === null || range === null ? '' : String(range.min));
+  const [most, setMost] = useState(range?.max === null || range === null ? '' : String(range.max));
+  const commit = (): void => {
+    const end = (text: string): number | null | undefined => {
+      if (text.trim() === '') return null;
+      const number = Number(text);
+      return Number.isFinite(number) ? number : undefined;
+    };
+    const min = end(least);
+    const max = end(most);
+    if (min === undefined || max === undefined) return;
+    if (min === null && max === null) {
+      if (range !== null) onCommit(null);
+      return;
+    }
+    const parsed = fieldRangeSchema.safeParse({ min, max });
+    if (parsed.success && (parsed.data.min !== range?.min || parsed.data.max !== range.max)) onCommit(parsed.data);
+  };
+  return (
+    <div className="m-properties__row" role="group" aria-label={i18n._(FIELD_PROPS_VALIDATION)}>
+      <span className="m-properties__label">{i18n._(FIELD_PROPS_VALIDATION)}</span>
+      <div className="m-properties__row m-properties__row--inline">
+        <label className="m-properties__label" htmlFor={leastId}>
+          {i18n._(FIELD_PROPS_VALIDATION_LEAST)}
+        </label>
+        <input
+          className="m-properties__number"
+          id={leastId}
+          onBlur={commit}
+          onChange={(event) => {
+            setLeast(event.target.value);
+          }}
+          step="any"
+          type="number"
+          value={least}
+        />
+      </div>
+      <div className="m-properties__row m-properties__row--inline">
+        <label className="m-properties__label" htmlFor={mostId}>
+          {i18n._(FIELD_PROPS_VALIDATION_MOST)}
+        </label>
+        <input
+          className="m-properties__number"
+          id={mostId}
+          onBlur={commit}
+          onChange={(event) => {
+            setMost(event.target.value);
+          }}
+          step="any"
+          type="number"
+          value={most}
+        />
+      </div>
     </div>
   );
 }

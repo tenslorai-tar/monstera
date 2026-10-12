@@ -310,7 +310,7 @@ export function FormLayer({
               autoFocus
               className="m-page-field-editor"
               name={field.name}
-              offer={{ kind: 'text', held: offer.held, lines: false, maxLength: null, comb: false, masked: false, required: offer.required, format: null }}
+              offer={{ kind: 'text', held: offer.held, lines: false, maxLength: null, comb: false, masked: false, required: offer.required, format: null, range: null }}
               list={listId}
               pressedAt={typing.pressedAt}
               selectsAll={typing.pressedAt === undefined}

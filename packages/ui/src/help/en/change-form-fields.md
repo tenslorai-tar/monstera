@@ -2,7 +2,7 @@
 id: change-form-fields
 title: Change a form field
 summary: Rename, restyle, format, calculate, align, copy and set the tab order of the fields you have drawn.
-keywords: [field properties, rename field, tooltip, required, read only, default value, font, border, fill, number format, date format, calculation, align fields, same size, copy field, tab order]
+keywords: [field properties, rename field, tooltip, required, read only, default value, font, border, border style, check style, validate, fill, number format, date format, calculation, align fields, same size, copy field, tab order]
 commands: [forms.arrange.align-left, forms.arrange.same-size, forms.copy-to-pages, document.tab-order]
 contexts: [dialog.field-copy, dialog.tab-order, forms]
 ---
@@ -21,6 +21,9 @@ Every field has properties you can change after it is drawn: its name, what it l
 - **Default value** for a text field, dropdown or list box.
 - **Font**, **Size (0 is automatic)**, **Text colour**, **Border colour**, **Border width** and **Fill colour**. Choose **None** to take a border or fill colour away.
 - A text field or a dropdown can use any font in the list, from this computer, from Monstera or already in the document: Monstera draws what the field shows in it, and it stays in that font when the field is filled, printed or flattened. Another app that redraws the field while someone types in it uses Helvetica, Times or Courier, whichever is closest. A list box, a tick box and a radio button use Helvetica, Times or Courier.
+- **Border style** for a text field, a dropdown, a tick box or a radio button: solid, dashed, bevelled, inset or underline. A list box and a button keep a solid border.
+- **Check style** for a tick box or a radio button: a check, a circle, a cross, a diamond, a square or a star. It applies to every option of a radio group.
+- **Validate** for a text field: the least and the most number it takes. Leave one empty for no limit on that side. When someone fills the field with a number outside it, Monstera says so and keeps what they typed.
 - **Several lines**, **Check spelling** for a text field; **Allow typing** for a dropdown; **Allow several** for a list box.
 - **Choices** for a dropdown, a list box or a radio group, one row each. **Add a choice** adds one, **Sort A to Z** sorts them, and each row has buttons to move it up or down and to remove it. For a radio group these are the values of its options in the order they sit.
 - Beside each choice of a dropdown or a list box, what the document stores for it, when that is something other than the text people read. Leave it empty to keep the choice itself. Changing a choice's text keeps what is stored for it.

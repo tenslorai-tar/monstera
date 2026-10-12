@@ -1,4 +1,5 @@
-import type { FIELD_FONTS, FieldCalculation, FieldFormat } from '@monstera/contract';
+import type { FIELD_BORDER_STYLES, FIELD_CHECK_STYLES, FIELD_FONTS, FieldCalculation, FieldFormat, FieldRange } from '@monstera/contract';
+import { fieldRangeSchema } from '@monstera/contract/host';
 
 /**
  * A field's format and calculation, as the standard Acrobat calls every reader knows, written and read as DATA.
@@ -217,6 +218,61 @@ export function parseFormat(script: string): FieldFormat | undefined {
     return pattern === undefined ? undefined : { kind: 'time', pattern };
   }
   return undefined;
+}
+
+/**
+ * Each border style by its `/BS /S` name, and each check style by the ZapfDingbats character Acrobat writes in `/MK /CA`
+ * (ADR-0230): ONE table, which the writer writes from and the reader reads back through.
+ */
+export const BORDER_STYLE_NAME: Readonly<Record<FieldBorderStyle, string>> = {
+  solid: 'S',
+  dashed: 'D',
+  beveled: 'B',
+  inset: 'I',
+  underline: 'U',
+};
+export const CHECK_CHARACTER: Readonly<Record<FieldCheckStyle, string>> = {
+  check: '4',
+  circle: 'l',
+  cross: '8',
+  diamond: 'u',
+  square: 'n',
+  star: 'H',
+};
+
+/** The border style a `/BS /S` name is; solid for none or one the format does not define. */
+export function borderStyleOfName(name: string | undefined): FieldBorderStyle {
+  return (Object.entries(BORDER_STYLE_NAME) as [FieldBorderStyle, string][]).find(([, each]) => each === name)?.[0] ?? 'solid';
+}
+
+/** The check style a `/MK /CA` character is; a check for none or one Acrobat does not offer. */
+export function checkStyleOfCharacter(character: string | undefined): FieldCheckStyle {
+  return (Object.entries(CHECK_CHARACTER) as [FieldCheckStyle, string][]).find(([, each]) => each === character)?.[0] ?? 'check';
+}
+
+type FieldBorderStyle = (typeof FIELD_BORDER_STYLES)[number];
+type FieldCheckStyle = (typeof FIELD_CHECK_STYLES)[number];
+
+/**
+ * The script a validation range is written as (ADR-0230 Decision 5): Acrobat's `AFRange_Validate(bGreaterThan,
+ * nGreaterThan, bLessThan, nLessThan)`, an open end written `false, 0`.
+ */
+export function rangeScript(range: FieldRange): string {
+  const end = (value: number | null): string => (value === null ? 'false, 0' : `true, ${String(value)}`);
+  return `AFRange_Validate(${end(range.min)}, ${end(range.max)});`;
+}
+
+const NUMBER_LITERAL = String.raw`(-?\d+(?:\.\d+)?(?:e[+-]?\d+)?)`;
+const RANGE = new RegExp(String.raw`^AFRange_Validate\((true|false), ?${NUMBER_LITERAL}, ?(true|false), ?${NUMBER_LITERAL}\);?$`, 'u');
+
+/** The range a `/V` script writes, or `undefined` for anything that is not exactly one this module writes. */
+export function parseRange(script: string): FieldRange | undefined {
+  const match = RANGE.exec(script.trim());
+  if (match === null) return undefined;
+  const min = match[1] === 'true' ? Number(match[2]) : null;
+  const max = match[3] === 'true' ? Number(match[4]) : null;
+  const parsed = fieldRangeSchema.safeParse({ min, max });
+  return parsed.success ? parsed.data : undefined;
 }
 
 /** The script a calculation is written as. */

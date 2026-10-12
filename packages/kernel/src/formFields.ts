@@ -1,4 +1,4 @@
-import type { AnnotationRect, CommandOfKind, FieldFill, FieldFormat, FormFieldKind } from '@monstera/contract';
+import type { AnnotationRect, CommandOfKind, FieldFill, FieldFormat, FieldRange, FormFieldKind } from '@monstera/contract';
 import { MAX_FIELD_VALUE } from '@monstera/contract/host';
 import type { PDFDocument, PDFObject, PDFPage, PDFWidget } from './mupdfRaw.js';
 
@@ -249,6 +249,8 @@ export interface ListedField {
   /** Its value is worked out from other fields', by a calculation of ours or a script that is never run. */
   readonly calculated: boolean;
   readonly format: FieldFormat | null;
+  /** The number range it accepts, checked where it is filled (ADR-0230); absent where it has none. */
+  readonly range?: FieldRange;
 }
 
 // WHAT KIND OF FIELD A WIDGET IS lives in `fieldKind.ts`, which the field appearance's finishing step reads too.
@@ -327,7 +329,9 @@ export function onStateKeyOf(object: PDFObject): string | undefined {
 }
 
 /** The members of a listed field that say how it is filled, from the one reader of a field's rules. */
-function listedRules(widget: PDFWidget): Pick<ListedField, 'required' | 'maxLength' | 'comb' | 'masked' | 'multiSelect' | 'editable' | 'calculated' | 'format'> {
+function listedRules(
+  widget: PDFWidget,
+): Pick<ListedField, 'required' | 'maxLength' | 'comb' | 'masked' | 'multiSelect' | 'editable' | 'calculated' | 'format' | 'range'> {
   const rules = fieldRulesOf(widget);
   return {
     required: rules.required,
@@ -338,6 +342,7 @@ function listedRules(widget: PDFWidget): Pick<ListedField, 'required' | 'maxLeng
     editable: rules.editable,
     calculated: rules.calculation !== null || rules.customCalculation,
     format: rules.format,
+    ...(rules.validation === null ? {} : { range: rules.validation }),
   };
 }
 

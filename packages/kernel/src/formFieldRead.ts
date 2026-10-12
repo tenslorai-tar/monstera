@@ -5,7 +5,7 @@ import type { PDFDocument, PDFObject, PDFWidget } from './mupdfRaw.js';
 import type { MupdfSession } from './engineSeam.js';
 import { faceOfFont, parseDefaultAppearance, textColourOf } from './fieldActions.js';
 import { FIELD_FAMILY_MARKER, familyOfMarker } from './fieldFamily.js';
-import { borderWidthOf, fieldRulesOf, nearest, qualifiedNameOf } from './fieldRules.js';
+import { borderStyleOf, borderWidthOf, checkStyleOf, fieldRulesOf, nearest, qualifiedNameOf } from './fieldRules.js';
 import { kindOf, onStateKeyOf } from './formFields.js';
 import { withDocument } from './mupdfWriter.js';
 import { frameOf, readRect } from './pageAnnotations.js';
@@ -125,6 +125,10 @@ function readOne(document: PDFDocument, widget: PDFWidget, page: number, index: 
     borderColour: colourOf(object.get('MK', 'BC')),
     fillColour: colourOf(object.get('MK', 'BG')),
     borderWidth: Math.min(12, Math.max(0, borderWidthOf(object))),
+    borderStyle: borderStyleOf(object),
+    checkStyle: checkStyleOf(object, kind === 'radio'),
+    validation: rules.validation,
+    customValidation: rules.customValidation,
     options: optionsOf(widget, object),
     multiline: kind === 'text' && widget.isMultiline(),
     rect,

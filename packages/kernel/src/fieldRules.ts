@@ -1,6 +1,9 @@
-import type { FieldCalculation, FieldFormat } from '@monstera/contract';
+import type { FIELD_BORDER_STYLES, FIELD_CHECK_STYLES, FieldCalculation, FieldFormat, FieldRange } from '@monstera/contract';
 
-import { parseCalculation, parseFormat } from './fieldActions.js';
+import { borderStyleOfName, checkStyleOfCharacter, parseCalculation, parseFormat, parseRange } from './fieldActions.js';
+
+type FieldBorderStyle = (typeof FIELD_BORDER_STYLES)[number];
+type FieldCheckStyle = (typeof FIELD_CHECK_STYLES)[number];
 import type { PDFObject, PDFWidget } from './mupdfRaw.js';
 
 /**
@@ -106,6 +109,9 @@ export interface FieldRules {
   /** The calculation this application can read, or `null`. */
   readonly calculation: FieldCalculation | null;
   readonly customCalculation: boolean;
+  /** The number range this application can read (ADR-0230), or `null`; a script it did not write is `customValidation`. */
+  readonly validation: FieldRange | null;
+  readonly customValidation: boolean;
 }
 
 /** The rules of the field one widget belongs to. A flag is read by the kinds it is defined for, never for the rest. */
@@ -120,6 +126,8 @@ export function fieldRulesOf(widget: PDFWidget): FieldRules {
   const calculationScript = aa.isNull() ? undefined : scriptOf(aa.get('C'));
   const format = typeof formatScript === 'string' ? (parseFormat(formatScript) ?? null) : null;
   const calculation = typeof calculationScript === 'string' ? (parseCalculation(calculationScript) ?? null) : null;
+  const validationScript = aa.isNull() ? undefined : scriptOf(aa.get('V'));
+  const validation = typeof validationScript === 'string' ? (parseRange(validationScript) ?? null) : null;
   const limit = text ? widget.getMaxLen() : 0;
   return {
     required: (bits & FLAG.required) !== 0,
@@ -133,5 +141,22 @@ export function fieldRulesOf(widget: PDFWidget): FieldRules {
     customFormat: formatScript !== undefined && format === null,
     calculation,
     customCalculation: calculationScript !== undefined && calculation === null,
+    validation,
+    customValidation: validationScript !== undefined && validation === null,
   };
+}
+
+/** How a widget's border is drawn, from `/BS /S` (ADR-0230): solid where it names none. */
+export function borderStyleOf(object: PDFObject): FieldBorderStyle {
+  const style = object.get('BS', 'S');
+  return borderStyleOfName(style.isName() ? style.asName() : undefined);
+}
+
+/**
+ * The mark a tick box or a radio shows when on, from `/MK /CA` (ADR-0230); where it names none, what every reader draws: a
+ * check for a tick box and a dot for a radio, which is the circle style.
+ */
+export function checkStyleOf(object: PDFObject, radio: boolean): FieldCheckStyle {
+  const character = object.get('MK', 'CA');
+  return checkStyleOfCharacter(character.isString() ? character.asString() : radio ? 'l' : '4');
 }

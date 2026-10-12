@@ -34,7 +34,7 @@ function field(over: Partial<ListedField>): ListedField {
 
 describe('fieldFill', () => {
   it('offers a text field for typing, on one line or with line breaks', () => {
-    const rules = { maxLength: null, comb: false, masked: false, required: false, format: null };
+    const rules = { maxLength: null, comb: false, masked: false, required: false, format: null, range: null };
     expect(fieldFill(field({ values: ['Ada'] }))).toStrictEqual({ kind: 'text', held: 'Ada', lines: false, ...rules });
     expect(fieldFill(field({ multiline: true }))).toStrictEqual({ kind: 'text', held: '', lines: true, ...rules });
     // THE FIELD'S RULES TRAVEL WITH THE OFFER (ADR-0226 Decision 4), each one as the list carried it.

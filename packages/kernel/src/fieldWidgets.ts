@@ -1,5 +1,5 @@
 import { FIELD_FAMILY_MARKER } from './fieldFamily.js';
-import { fieldDictionaryOf, nearest } from './fieldRules.js';
+import { borderStyleOf, fieldDictionaryOf, nearest } from './fieldRules.js';
 import type { PDFDocument, PDFObject, PDFWidget } from './mupdfRaw.js';
 import { redraw } from './pageAnnotations.js';
 
@@ -53,14 +53,19 @@ export function widgetsOfField(document: PDFDocument, widget: PDFWidget): PDFWid
   return found;
 }
 
-/** Whether the field carries a real family: the marker, read up the field's ancestry as every inherited key is. */
-export function carriesFamily(widget: PDFWidget): boolean {
-  return nearest(widget.getObject(), FIELD_FAMILY_MARKER).isString();
+/**
+ * Whether Monstera draws this field (ADR-0229, ADR-0230): it carries a real family, read up the field's ancestry as every
+ * inherited key is, or it is a text field or a dropdown whose border is not solid. `fieldFaces.ts`' `setAside` decides the
+ * drawing by the same two facts.
+ */
+export function drawnByMonstera(widget: PDFWidget): boolean {
+  if (nearest(widget.getObject(), FIELD_FAMILY_MARKER).isString()) return true;
+  return (widget.isText() || widget.isComboBox()) && borderStyleOf(widget.getObject()) !== 'solid';
 }
 
-/** Redraws every widget of `widget`'s field where the field carries a real family; a field without one is left to MuPDF. */
+/** Redraws every widget of `widget`'s field where Monstera draws it; any other field is left to MuPDF. */
 export function redrawFamily(document: PDFDocument, widget: PDFWidget): boolean {
-  if (!carriesFamily(widget)) return false;
+  if (!drawnByMonstera(widget)) return false;
   for (const each of widgetsOfField(document, widget)) redraw(each, document);
   return true;
 }

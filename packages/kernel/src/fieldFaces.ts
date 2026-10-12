@@ -1,7 +1,8 @@
 import { kindOf } from './fieldKind.js';
-import { FIELD_FAMILY_MARKER, familyOfMarker } from './fieldFamily.js';
-import { parseDefaultAppearance, textColourOf } from './fieldActions.js';
-import { borderWidthOf, fieldDictionaryOf, nearest } from './fieldRules.js';
+import { FIELD_FAMILY_MARKER, drawsFieldFamily, familyOfMarker } from './fieldFamily.js';
+import { type FieldFace, faceOfFont, parseDefaultAppearance, textColourOf } from './fieldActions.js';
+import { type FieldBorderStyle, borderOps, opsText } from './fieldMarks.js';
+import { borderStyleOf, borderWidthOf, fieldDictionaryOf, nearest } from './fieldRules.js';
 import { type PDFAnnotation, type PDFDocument, type PDFObject, PDFWidget } from './mupdfRaw.js';
 import { canDraw, layoutFonts, settersFor } from './textBoxAppearance.js';
 import {
@@ -69,6 +70,9 @@ export interface SetAside {
   /** The field dictionary that holds `/V`, and what it held. */
   readonly field: PDFObject;
   readonly kept: PDFObject;
+  /** The border's style, and its colour lifted for the base where that style is drawn here (ADR-0230), else `null`. */
+  readonly style: FieldBorderStyle;
+  readonly borderColour: PDFObject | null;
 }
 
 /**
@@ -76,20 +80,42 @@ export interface SetAside {
  * are drawn on — and answers what was set aside; `undefined` for any other annotation, which the redraw draws as before.
  * The redraw's own `update` is the one that draws the base (ADR-0103: only `redraw` and `redrawPage` call it).
  */
-export function setAside(annotation: PDFAnnotation): SetAside | undefined {
+export function setAside(annotation: PDFAnnotation, document: PDFDocument): SetAside | undefined {
   if (!(annotation instanceof PDFWidget)) return undefined;
   const kind = kindOf(annotation);
-  const marker = nearest(annotation.getObject(), FIELD_FAMILY_MARKER);
-  const family = familyOfMarker(marker.isString() ? marker.asString() : null, kind);
-  if (family === null) return undefined;
+  if (!drawsFieldFamily(kind)) return undefined;
+  const object = annotation.getObject();
+  const marker = nearest(object, FIELD_FAMILY_MARKER);
+  const real = familyOfMarker(marker.isString() ? marker.asString() : null, kind);
+  const style = borderStyleOf(object);
+  // DRAWN BY MONSTERA where the field carries a real family or a border that is not solid (ADR-0230 Decision 2): the words
+  // of a field with only a style are set in the standard face its `/DA` names, by the same typesetter.
+  if (real === null && style === 'solid') return undefined;
+  const family = real ?? standardFamilyOf(annotation, document);
   const shown = shownValue(annotation, kind);
   // WORDS THIS PROCESS CANNOT SET are left to the engine, which draws them in the standard face `/DA` names: the text box's
   // one rule (`canDraw`), so a field is never emptied for words nothing then draws (preserve, never drop).
   if (!canDraw(shown, family)) return undefined;
-  const field = fieldDictionaryOf(annotation.getObject());
+  // THE BORDER COLOUR IS LIFTED with the value where the style is not solid, so MuPDF's base draws no border of its own
+  // (measured: with no `/MK /BC` the base is the background and the inset clip alone).
+  const characteristics = object.get('MK');
+  const borderColour = style !== 'solid' && characteristics.isDictionary() ? characteristics.get('BC') : null;
+  if (borderColour !== null && !borderColour.isNull()) characteristics.delete('BC');
+  const field = fieldDictionaryOf(object);
   const kept = field.get('V');
   annotation.setTextValue('');
-  return { widget: annotation, kind, family, shown, field, kept };
+  return { widget: annotation, kind, family, shown, field, kept, style, borderColour: borderColour?.isArray() === true ? borderColour : null };
+}
+
+/** Each standard face by the family name the typesetter takes. */
+const STANDARD_FAMILY: Readonly<Record<FieldFace, string>> = { helvetica: 'Helvetica', times: 'Times', courier: 'Courier' };
+
+/** The standard family a field's `/DA` names, read through the form's resources as the Properties read reads it. */
+function standardFamilyOf(widget: PDFWidget, document: PDFDocument): string {
+  const da = nearest(widget.getObject(), 'DA');
+  const font = parseDefaultAppearance(da.isString() ? da.asString() : undefined);
+  const base = font === undefined ? undefined : document.getTrailer().get('Root', 'AcroForm', 'DR', 'Font', font.resource, 'BaseFont');
+  return STANDARD_FAMILY[faceOfFont(base?.isName() === true ? base.asName() : undefined, font?.resource)];
 }
 
 /** The look a field's words are drawn in: its family, its `/DA` size and colour, `/Q`, and its border's inset. */
@@ -229,28 +255,37 @@ function streamDictionary(document: PDFDocument, base: PDFObject, fonts: PDFObje
  */
 export function refaced(aside: SetAside | undefined, document: PDFDocument): boolean {
   if (aside === undefined) return false;
-  const { widget: annotation, kind, family, shown: value, field, kept } = aside;
+  const { widget: annotation, kind, family, shown: value, field, kept, style, borderColour } = aside;
+  const object = annotation.getObject();
   // PUT BACK THROUGH THE OBJECT, which leaves nothing for the engine to redraw: measured, the next update draws nothing.
   if (kept.isNull()) field.delete('V');
   else field.put('V', kept);
-  if (value === '') return true;
-  const base = annotation.getObject().get('AP', 'N');
+  if (borderColour !== null) object.get('MK').put('BC', borderColour);
+  const base = object.get('AP', 'N');
   const box = base.get('BBox');
   if (!base.isStream() || !box.isArray() || box.length !== 4) return false;
   const width = box.get(2).asNumber() - box.get(0).asNumber();
   const height = box.get(3).asNumber() - box.get(1).asNumber();
-  const { setter, resolver } = settersFor(document);
-  const laid = layoutOf(annotation, kind, family, value, width, height, setter);
-  if (laid === undefined) return false;
-  const { look, layout } = laid;
-  // THE WORDS ARE DRAWN IN THE BOX'S OWN SPACE, offset by its origin, with no border or fill of their own: those are the base's.
-  const words = appearanceContent(layout, { ...look, fill: null, borderWidth: 0 });
   const origin = `1 0 0 1 ${fixed(box.get(0).asNumber())} ${fixed(box.get(1).asNumber())} cm`;
+  // THE BORDER BY ITS STYLE, after the base's `EMC` and so outside its inset clip, in the box's own space (ADR-0230).
+  const colour = borderColour === null ? null : Array.from({ length: borderColour.length }, (_unused, at) => borderColour.get(at).asNumber());
+  const border = opsText(borderOps(style, width, height, borderWidthOf(object), colour));
+  const framed = border === '' ? '' : `q\n${origin}\n${border}\nQ\n`;
   const content = base.readStream().asString();
+  let words = '';
+  let fonts: PDFObject | undefined;
+  if (value !== '') {
+    const { setter, resolver } = settersFor(document);
+    const laid = layoutOf(annotation, kind, family, value, width, height, setter);
+    if (laid !== undefined) {
+      // THE WORDS ARE DRAWN IN THE BOX'S OWN SPACE, with no border or fill of their own: those are the base's and the style's.
+      words = `q\n${origin}\n${appearanceContent(laid.layout, { ...laid.look, fill: null, borderWidth: 0 })}Q\n`;
+      fonts = layoutFonts(document, laid.layout, resolver);
+    }
+  }
   const end = content.lastIndexOf('Q\nEMC');
-  const drawn = `q\n${origin}\n${words}Q\n`;
-  const next = end < 0 ? `${content}\n${drawn}` : `${content.slice(0, end)}${drawn}${content.slice(end)}`;
-  const made = document.addStream(next, streamDictionary(document, base, layoutFonts(document, layout, resolver)));
-  annotation.getObject().get('AP').put('N', made);
+  const inner = end < 0 ? `${content}\n${words}` : `${content.slice(0, end)}${words}${content.slice(end)}`;
+  const made = document.addStream(`${inner}${inner.endsWith('\n') ? '' : '\n'}${framed}`, streamDictionary(document, base, fonts ?? document.newDictionary()));
+  object.get('AP').put('N', made);
   return true;
 }

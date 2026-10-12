@@ -2397,6 +2397,35 @@ void _everyNameIsWritten;
  * `dropdown` because those are the words on the form the document came from.
  */
 /**
+ * How a field's border is drawn (`/BS /S`: S, D, B, I, U), and the kinds whose border Monstera draws in a style other than
+ * solid (ADR-0230): a list box's and a push button's stay solid, so their Properties offer none.
+ */
+export const FIELD_BORDER_STYLES = ['solid', 'dashed', 'beveled', 'inset', 'underline'] as const;
+export const BORDER_STYLE_FIELD_KINDS = ['text', 'dropdown', 'checkbox', 'radio'] as const;
+
+/** The mark a tick box or a radio shows when on (`/MK /CA`, ZapfDingbats as Acrobat writes it), drawn by Monstera (ADR-0230). */
+export const FIELD_CHECK_STYLES = ['check', 'circle', 'cross', 'diamond', 'square', 'star'] as const;
+
+/** The most a validation range may name either way: past any number a form holds, short of what loses integer precision. */
+export const MAX_FIELD_RANGE = 1e15;
+
+/**
+ * A number field's range (ADR-0230 Decision 5): the least and the most it accepts, either open where `null`, written as
+ * `AFRange_Validate` and never run, checked where the field is filled.
+ */
+export const fieldRangeSchema = z
+  .object({
+    min: z.number().min(-MAX_FIELD_RANGE).max(MAX_FIELD_RANGE).nullable(),
+    max: z.number().min(-MAX_FIELD_RANGE).max(MAX_FIELD_RANGE).nullable(),
+  })
+  .strict()
+  .refine((range) => range.min !== null || range.max !== null, 'a range names at least one end')
+  .refine((range) => range.min === null || range.max === null || range.min <= range.max, 'the least is not more than the most');
+
+/** See {@link fieldRangeSchema}. */
+export type FieldRange = z.infer<typeof fieldRangeSchema>;
+
+/**
  * The field kinds whose value Monstera's own appearance draws in a real font (ADR-0229 Decision 4): a text field and a
  * dropdown. Every other kind is offered the standard faces alone, and the writer refuses a family on it, so the picker and
  * the writer read one list.
@@ -5206,6 +5235,12 @@ export const formFieldPropertiesSchema = z
     fillColour: annotationColourSchema.nullable(),
     /** The border's width in points (`/BS /W`). */
     borderWidth: z.number().min(0).max(12),
+    /** How the border is drawn (`/BS /S`), on a kind in {@link BORDER_STYLE_FIELD_KINDS} (ADR-0230). */
+    borderStyle: z.enum(FIELD_BORDER_STYLES),
+    /** The mark a tick box or a radio shows when on (`/MK /CA`, ADR-0230). */
+    checkStyle: z.enum(FIELD_CHECK_STYLES),
+    /** The number range a text field accepts, or `null` for none (`/AA /V`, ADR-0230 Decision 5). */
+    validation: fieldRangeSchema.nullable(),
     /** The choices of a dropdown or a list, or the export values of a radio group's options in the order they sit. */
     options: z.array(fieldChoiceSchema).min(1).max(MAX_FIELD_OPTIONS).readonly(),
     /** Whether a text field takes line breaks. */
@@ -5286,6 +5321,11 @@ export const formFieldReadSchema = z
     borderColour: annotationColourSchema.nullable(),
     fillColour: annotationColourSchema.nullable(),
     borderWidth: z.number().min(0).max(12),
+    borderStyle: z.enum(FIELD_BORDER_STYLES),
+    checkStyle: z.enum(FIELD_CHECK_STYLES),
+    /** The range this application reads, or `null`; a script it did not write is `customValidation` (ADR-0230). */
+    validation: fieldRangeSchema.nullable(),
+    customValidation: z.boolean(),
     // A document may hold an empty value, so a read is as lenient as the file; an edit is not (fieldChoiceSchema).
     options: z
       .array(

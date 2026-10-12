@@ -109,6 +109,10 @@ describe('the document-wide lists’ hostile-host bounds', () => {
     expect(engineChannels['engine/form-fields'].result.safeParse(answer).success).toBe(true);
     expect(JSON.stringify(smallest).length).toBe(SMALLEST_FORM_FIELD_BYTES);
     expect(ENGINE_FORM_FIELDS_MAX).toBe(derived(SMALLEST_FORM_FIELD_BYTES));
+    // A RANGE IS PRESENT ONLY WHERE A FIELD HAS ONE (ADR-0230), which is what leaves the smallest row where it was.
+    const ranged = { fields: [{ ...smallest, range: { min: 1, max: null } }], truncated: false };
+    expect(engineChannels['engine/form-fields'].result.safeParse(ranged).success).toBe(true);
+    expect(engineChannels['engine/form-fields'].result.safeParse({ fields: [{ ...smallest, range: null }], truncated: false }).success).toBe(false);
   });
 
   it('outline entries: the smallest entry the schema accepts, and the bound it derives', () => {

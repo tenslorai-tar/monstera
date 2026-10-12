@@ -1,4 +1,4 @@
-import type { ChannelResult, FieldFormat } from '@monstera/contract';
+import type { ChannelResult, FieldFormat, FieldRange } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 
 import { FORMS_MANY_VALUES, FORMS_NOT_FILLABLE, FORMS_READ_ONLY, FORMS_TOO_LONG } from '../messages/en.js';
@@ -27,6 +27,8 @@ export type FillOffer =
       readonly masked: boolean;
       readonly required: boolean;
       readonly format: FieldFormat | null;
+      /** The number range it accepts (ADR-0230), checked where it is filled, or `null`. */
+      readonly range: FieldRange | null;
     }
   | { readonly kind: 'toggle'; readonly on: boolean; readonly radio: boolean; readonly required: boolean }
   | {
@@ -85,6 +87,7 @@ export function fieldFill(field: ListedField): FillOffer {
       masked: field.masked,
       required: field.required,
       format: field.format,
+      range: field.range ?? null,
     };
   }
   if (field.kind === 'checkbox' || field.kind === 'radio') {

@@ -55,6 +55,10 @@ const TEXT: FormFieldRead = {
   borderColour: [0.2, 0.2, 0.2],
   fillColour: null,
   borderWidth: 1,
+  borderStyle: 'solid',
+  checkStyle: 'check',
+  validation: null,
+  customValidation: false,
   options: [],
   multiline: false,
   rect: { x0: 0, y0: 0, x1: 10, y1: 10 },
@@ -221,6 +225,57 @@ describe('the field properties pane', () => {
     expect(seen.edits).toStrictEqual([{ borderColour: null }]);
     for (const none of nones.slice(1)) fireEvent.click(none);
     expect(seen.edits.at(-1)).toStrictEqual({ fillColour: null });
+  });
+
+  it('sends a border style, and offers none on a list box, whose border stays solid (A3.1)', async () => {
+    const seen = mounted(TEXT);
+    fireEvent.change(await screen.findByLabelText('Border style'), { target: { value: 'dashed' } });
+    expect(seen.edits).toStrictEqual([{ borderStyle: 'dashed' }]);
+    // CONTROL: a text field offers no check style.
+    expect(screen.queryByLabelText('Check style')).toBeNull();
+  });
+
+  it('CONTROL: a list box is offered no border style', async () => {
+    mounted({ ...TEXT, kind: 'listbox', name: 'many' });
+    await screen.findByLabelText('Tooltip');
+    expect(screen.queryByLabelText('Border style')).toBeNull();
+  });
+
+  it('shows a radio’s check style and sends the one chosen', async () => {
+    const seen = mounted({ ...TEXT, kind: 'radio', name: 'plan', checkStyle: 'circle' });
+    const style = await screen.findByLabelText('Check style');
+    expect(style).toHaveProperty('value', 'circle');
+    fireEvent.change(style, { target: { value: 'star' } });
+    expect(seen.edits).toStrictEqual([{ checkStyle: 'star' }]);
+  });
+
+  it('sends a range once focus leaves it, an open end as null, and nothing for the least past the most (control)', async () => {
+    const seen = mounted(TEXT);
+    const least = await screen.findByLabelText('Least');
+    const most = screen.getByLabelText('Most');
+    fireEvent.change(least, { target: { value: '5' } });
+    fireEvent.change(most, { target: { value: '1' } });
+    fireEvent.blur(most);
+    expect(seen.edits).toStrictEqual([]);
+    fireEvent.change(most, { target: { value: '' } });
+    fireEvent.blur(most);
+    expect(seen.edits).toStrictEqual([{ validation: { min: 5, max: null } }]);
+  });
+
+  it('shows a range already on the field, and emptying both its ends takes it away', async () => {
+    const seen = mounted({ ...TEXT, validation: { min: 1, max: 9 } });
+    const least = await screen.findByLabelText('Least');
+    expect(least).toHaveProperty('value', '1');
+    fireEvent.change(least, { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('Most'), { target: { value: '' } });
+    fireEvent.blur(least);
+    expect(seen.edits).toStrictEqual([{ validation: null }]);
+  });
+
+  it('CONTROL: a field with a script of its own shows that it is kept and no range to replace it', async () => {
+    mounted({ ...TEXT, customValidation: true });
+    expect(await screen.findByText(/has a script of its own/u)).toBeTruthy();
+    expect(screen.queryByLabelText('Least')).toBeNull();
   });
 
   it('sends a new name only when no other field holds it, and says why where one does (control)', async () => {

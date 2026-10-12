@@ -1,8 +1,11 @@
-import { type FieldFormat, checkFieldValue, formatFieldValue, storedNumber } from '@monstera/contract';
+import { type FieldFormat, checkFieldValue, fieldNumber, formatFieldValue, storedNumber } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 
 import {
   FORM_FIELD_REQUIRED_EMPTY,
+  FORM_FIELD_WANTS_AT_LEAST,
+  FORM_FIELD_WANTS_AT_MOST,
+  FORM_FIELD_WANTS_BETWEEN,
   FORM_FIELD_WANTS_DATE,
   FORM_FIELD_WANTS_NUMBER,
   FORM_FIELD_WANTS_PERCENT,
@@ -75,6 +78,16 @@ export function leftFieldProblem(name: string, typed: string, offer: Extract<Fil
     const check = checkFieldValue(typed, offer.format);
     if (!check.fits) {
       return { message: WANTS[check.wants], values: { name, example: formatFieldValue(SAMPLE[check.wants], offer.format) } };
+    }
+  }
+  // A RANGE (ADR-0230 Decision 5) is checked on the number the field reads, its format's or a plain one; words that are
+  // no number at all were named above where a format asks for one, and a range on its own says so here.
+  if (offer.range !== null && typed.trim() !== '') {
+    const number = fieldNumber(typed, offer.format);
+    const { min, max } = offer.range;
+    if (number === undefined || (min !== null && number < min) || (max !== null && number > max)) {
+      const message = min === null ? FORM_FIELD_WANTS_AT_MOST : max === null ? FORM_FIELD_WANTS_AT_LEAST : FORM_FIELD_WANTS_BETWEEN;
+      return { message, values: { name, min: String(min ?? ''), max: String(max ?? '') } };
     }
   }
   if (offer.required && typed.trim() === '') return { message: FORM_FIELD_REQUIRED_EMPTY, values: { name } };

@@ -40,6 +40,7 @@ import {
   annotationDataFormatSchema,
   annotationImportReportSchema,
   fieldFormatSchema,
+  fieldRangeSchema,
   formFieldKindSchema,
   importFormDataSchema,
   importAnnotationsSchema,
@@ -617,6 +618,8 @@ const engineFormFieldSchema = z
     editable: z.boolean(),
     calculated: z.boolean(),
     format: fieldFormatSchema.nullable(),
+    /** Present only on a field that has one (ADR-0230), as `cut` is, so the smallest row and the bound it derives stay put. */
+    range: fieldRangeSchema.exactOptional(),
   })
   .strict();
 
@@ -1497,6 +1500,7 @@ export const FIELD_EDIT_REFUSALS = [
   'field-edit-comb-without-length',
   'field-edit-comb-excludes',
   'field-edit-family-kind',
+  'field-edit-style-kind',
 ] as const;
 
 /**

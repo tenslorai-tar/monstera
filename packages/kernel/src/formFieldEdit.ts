@@ -19,21 +19,36 @@ import {
 } from '@cantoo/pdf-lib';
 import type { PDFDocument, PDFField, PDFFont, PDFPage } from '@cantoo/pdf-lib';
 
-import { choiceLabelOf, choiceValueOf } from '@monstera/contract/host';
-import type { AnnotationRect, CommandOfKind, FieldChoice, FieldFormat, FormFieldHandle, FormFieldProperties } from '@monstera/contract';
+import { BORDER_STYLE_FIELD_KINDS, choiceLabelOf, choiceValueOf } from '@monstera/contract/host';
+import type {
+  AnnotationRect,
+  CommandOfKind,
+  FIELD_BORDER_STYLES,
+  FIELD_CHECK_STYLES,
+  FieldChoice,
+  FieldFormat,
+  FieldRange,
+  FormFieldHandle,
+  FormFieldProperties,
+} from '@monstera/contract';
 import { fieldNameClash } from '@monstera/shared';
 
 import type { FieldFace } from './fieldActions.js';
 import { FieldEditRefusedError } from './fieldEditRefusal.js';
 import { FIELD_FAMILY_MARKER, drawsFieldFamily, familyOfMarker, fieldFontOf } from './fieldFamily.js';
 import { base14Of } from './textBoxStyle.js';
+import { checkBoxAppearance, namesButtonStyle, radioAppearance } from './buttonAppearance.js';
 import {
+  BORDER_STYLE_NAME,
+  CHECK_CHARACTER,
   calculationScript,
   faceOfFont,
   formatScripts,
   parseCalculation,
   parseDefaultAppearance,
   parseFormat,
+  parseRange,
+  rangeScript,
   withFontSize,
   withTextColour,
 } from './fieldActions.js';
@@ -303,6 +318,42 @@ export function setFormat(field: PDFField, format: FieldFormat | null): void {
   const scripts = formatScripts(format);
   aa.set(PDFName.of('F'), scriptAction(aa.context, scripts.format));
   aa.set(PDFName.of('K'), scriptAction(aa.context, scripts.keystroke));
+}
+
+/**
+ * Writes or removes a text field's number range (ADR-0230 Decision 5), `setFormat`'s rule: `null` removes only a range this
+ * application wrote, and a custom validation script is kept.
+ */
+function setValidation(field: PDFField, range: FieldRange | null): void {
+  const aa = additionalActions(field);
+  if (range === null) {
+    const existing = scriptOf(aa.lookupMaybe(PDFName.of('V'), PDFDict));
+    if (existing !== undefined && parseRange(existing) !== undefined) aa.delete(PDFName.of('V'));
+    return;
+  }
+  aa.set(PDFName.of('V'), scriptAction(aa.context, rangeScript(range)));
+}
+
+/** How a widget's border is drawn (`/BS /S`, ADR-0230): a dash is written for a dashed one, and taken away otherwise. */
+function setBorderStyle(widget: PDFDict, style: (typeof FIELD_BORDER_STYLES)[number]): void {
+  let bs = widget.lookupMaybe(PDFName.of('BS'), PDFDict);
+  if (bs === undefined) {
+    bs = widget.context.obj({ W: PDFNumber.of(1) });
+    widget.set(PDFName.of('BS'), bs);
+  }
+  bs.set(PDFName.of('S'), PDFName.of(BORDER_STYLE_NAME[style]));
+  if (style === 'dashed') bs.set(PDFName.of('D'), widget.context.obj([3]));
+  else bs.delete(PDFName.of('D'));
+}
+
+/** The mark a tick box or a radio shows when on (`/MK /CA`, ADR-0230): Acrobat's ZapfDingbats character for the style. */
+function setCheckStyle(widget: PDFDict, style: (typeof FIELD_CHECK_STYLES)[number]): void {
+  let mk = widget.lookupMaybe(PDFName.of('MK'), PDFDict);
+  if (mk === undefined) {
+    mk = widget.context.obj({});
+    widget.set(PDFName.of('MK'), mk);
+  }
+  mk.set(PDFName.of('CA'), PDFString.of(CHECK_CHARACTER[style]));
 }
 
 function calculationOrder(form: ReturnType<PDFDocument['getForm']>): PDFArray {
@@ -582,9 +633,37 @@ function followCalculations(form: ReturnType<PDFDocument['getForm']>, was: strin
   }
 }
 
-/** The kind a pdf-lib field is, in the contract's words, as far as which kinds take a real family. */
+/** The kind a pdf-lib field is, in the contract's words, as far as which kinds take a family, a style or a range. */
 function kindOfField(field: PDFField): string {
-  return field instanceof PDFTextField ? 'text' : field instanceof PDFDropdown ? 'dropdown' : 'other';
+  if (field instanceof PDFTextField) return 'text';
+  if (field instanceof PDFDropdown) return 'dropdown';
+  if (field instanceof PDFCheckBox) return 'checkbox';
+  if (field instanceof PDFRadioGroup) return 'radio';
+  return 'other';
+}
+
+/**
+ * Writes a border style, a check style and a range (ADR-0230), each refused on a kind that does not take it, so nothing
+ * stores a style nothing draws: a border style other than solid on a text field, a dropdown or a tick box; a check style
+ * on a tick box or a radio, on every widget of it, since the mark is the field's; a range on a text field.
+ */
+function setStyles(field: PDFField, widget: PDFDict, set: FormFieldProperties): void {
+  const kind = kindOfField(field);
+  const refuse = (what: string): never => {
+    throw new FieldEditRefusedError('style-kind', `A ${kind} field does not take ${what}.`);
+  };
+  if (set.borderStyle !== undefined) {
+    if (set.borderStyle !== 'solid' && !(BORDER_STYLE_FIELD_KINDS as readonly string[]).includes(kind)) refuse('a border style');
+    setBorderStyle(widget, set.borderStyle);
+  }
+  if (set.checkStyle !== undefined) {
+    if (kind !== 'checkbox' && kind !== 'radio') refuse('a check style');
+    for (const each of field.acroField.getWidgets()) setCheckStyle(each.dict, set.checkStyle);
+  }
+  if (set.validation !== undefined) {
+    if (kind !== 'text') refuse('a range');
+    setValidation(field, set.validation);
+  }
 }
 
 /**
@@ -612,6 +691,8 @@ export function changesLook(set: FormFieldProperties): boolean {
   return (
     set.font !== undefined ||
     set.family !== undefined ||
+    set.borderStyle !== undefined ||
+    set.checkStyle !== undefined ||
     set.fontSize !== undefined ||
     set.borderColour !== undefined ||
     set.fillColour !== undefined ||
@@ -641,7 +722,11 @@ function regenerate(field: PDFField, font: PDFFont, da: { readonly size: number 
     }
     return;
   }
-  if (field instanceof PDFCheckBox || field instanceof PDFRadioGroup) field.updateAppearances();
+  // A BUTTON THAT NAMES A STYLE is drawn by Monstera's provider, which draws it; one that names none keeps pdf-lib's own
+  // drawing, so a form nobody styled is drawn as it always was (ADR-0230 Decision 3).
+  const styled = field.acroField.getWidgets().some(namesButtonStyle);
+  if (field instanceof PDFCheckBox) field.updateAppearances(styled ? checkBoxAppearance : undefined);
+  if (field instanceof PDFRadioGroup) field.updateAppearances(styled ? radioAppearance : undefined);
   // A BUTTON'S WORDS are drawn from `/MK /CA`, so a new label is a new appearance.
   if (field instanceof PDFButton) field.updateAppearances(font);
 }
@@ -720,6 +805,7 @@ export const applyEditFormFields: Apply<'pdf-lib', 'editFormFields'> = async (im
     if (set.borderColour !== undefined) setCharacteristic(widget, 'BC', set.borderColour);
     if (set.fillColour !== undefined) setCharacteristic(widget, 'BG', set.fillColour);
     if (set.borderWidth !== undefined) setBorderWidth(widget, set.borderWidth);
+    setStyles(field, widget, set);
     if (set.rect !== undefined) {
       const box = rectOf(set.rect);
       widget.set(PDFName.of('Rect'), document.context.obj([box.x, box.y, box.x + box.width, box.y + box.height]));

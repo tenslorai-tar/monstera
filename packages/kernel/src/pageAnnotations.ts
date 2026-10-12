@@ -1427,7 +1427,7 @@ const BLEND_STATE = 'MonsteraBlend';
  * @param annotations the annotations on `page` this caller created or changed
  */
 export function redrawPage(page: PDFPage, annotations: readonly PDFAnnotation[], document: PDFDocument): void {
-  const asides = annotations.map(setAside);
+  const asides = annotations.map((annotation) => setAside(annotation, document));
   page.update();
   annotations.forEach((annotation, at) => {
     redrawn(annotation, document, asides[at]);
@@ -1445,7 +1445,7 @@ export function redrawPage(page: PDFPage, annotations: readonly PDFAnnotation[],
  * is left exactly as MuPDF drew it.
  */
 export function redraw(annotation: PDFAnnotation, document: PDFDocument): void {
-  const aside = setAside(annotation);
+  const aside = setAside(annotation, document);
   annotation.update();
   redrawn(annotation, document, aside);
 }

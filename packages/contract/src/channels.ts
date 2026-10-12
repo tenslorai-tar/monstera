@@ -61,6 +61,7 @@ import {
   annotationDataFormatSchema,
   annotationImportReportSchema,
   fieldFormatSchema,
+  fieldRangeSchema,
   formFieldKindSchema,
   formFieldHandleSchema,
   formFieldReadSchema,
@@ -5311,6 +5312,8 @@ export const channels = {
             editable: z.boolean(),
             calculated: z.boolean(),
             format: fieldFormatSchema.nullable(),
+            /** The number range it accepts (ADR-0230), checked where it is filled; absent where the field has none. */
+            range: fieldRangeSchema.exactOptional(),
           }),
         )
         .max(FORM_FIELDS_PART)
