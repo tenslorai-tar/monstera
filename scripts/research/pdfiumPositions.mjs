@@ -33,6 +33,7 @@ import { inflateSync } from 'node:zlib';
 import { PDFDocument, PDFName, PDFRawStream, PDFArray } from '@cantoo/pdf-lib';
 import koffi from 'koffi';
 
+import { NATIVE_ENGINE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { pdfiumLibrary } from '../provision/pdfium.mjs';
 import { shimLibraryPath } from '../provision/mupdf.mjs';
 
@@ -173,6 +174,8 @@ function pdfiumRead(bytes) {
   return chars;
 }
 
+// THE ENGINE'S BUILT BINDING, refused when older than its source, so what this reads is the code as it stands.
+refuseStaleBuild(REPO_ROOT, NATIVE_ENGINE, 1);
 // A LITERAL SPECIFIER, relative to this file, so the Electron-import scan can read what it loads.
 const raw = await import('../../packages/kernel/dist/mupdfRaw.js');
 raw.openMupdfShim(shimLibraryPath(REPO_ROOT));
