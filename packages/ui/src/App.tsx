@@ -4202,6 +4202,14 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       },
       onCommit: (page, block, text, read, formatting) => commitTextBlock(deps, docId, page, block, text, read, formatting),
       runFonts: (page, block, read) => readRunFonts(client, docId, page, block, read),
+      // EVERYTHING BUT TEXT, which the blocks already are: a refused read is no note rather than a second report, since
+      // the note is a courtesy after a write that already landed (B1.6).
+      objects: async (page) => {
+        const answer = await readPageObjects(client, docId, page);
+        if (!answer.ok) return undefined;
+        const { version, objects } = answer.objects;
+        return { version, boxes: objects.filter((object) => object.kind !== 'text').map((object) => object.box) };
+      },
       // THE RIGHT-CLICK MENU'S TWO HALVES: the browser's own verbs (the Edit menu's, through the one `windowEdit`) and the
       // spelling checker's answers (the review's, through the one personal dictionary).
       native: windowEdit,

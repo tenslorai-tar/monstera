@@ -1053,6 +1053,67 @@ describe('Edit text on the page (ADR-0096)', () => {
     expect(view.container.textContent).not.toContain('no longer fits');
   });
 
+  /** A block of one line at `y0`..`y0 + 10`, beside the paragraph the write grows down to 540. */
+  const beside = (y0: number): PageBlocks['blocks'][number] => ({
+    box: { x0: 80, y0, x1: 200, y1: y0 + 10 },
+    lines: [{ runs: [{ index: 60, text: 'Footnote', style: STYLE }], box: { x0: 80, y0, x1: 200, y1: y0 + 10 }, soft: false }],
+    style: STYLE,
+    shape: LEFT,
+  });
+  const COVERS = 'The words you wrote now run over something else on this page';
+  /** Writes the paragraph so its read comes back grown to 540, with `others` beside it on the page. */
+  const writeGrown = async (made: ReturnType<typeof mount>, others: PageBlocks['blocks']) => {
+    made.answerWith('written');
+    fireEvent.click(find(made.view.container, '[data-text-block="1"]'));
+    typeInto(editorIn(made.view.container), TYPED);
+    await act(async () => {
+      fireEvent.keyDown(editorIn(made.view.container), { key: 'Escape' });
+      await Promise.resolve();
+    });
+    const read = grown(540);
+    await act(async () => {
+      made.show({ ...read, blocks: [...read.blocks, ...others] });
+      await Promise.resolve();
+    });
+  };
+
+  it('A WRITE THAT GROWS OVER OTHER WORDS says so, with how to put it back (B1.6)', async () => {
+    const made = mount();
+    await writeGrown(made, [beside(550)]);
+    expect(made.view.container.textContent).toContain(COVERS);
+  });
+
+  it('CONTROL: words the block ALREADY ran over before the write are not news, and growth over nothing says nothing', async () => {
+    const already = mount();
+    await writeGrown(already, [beside(610)]);
+    expect(already.view.container.textContent).not.toContain(COVERS);
+    const clear = mount();
+    await writeGrown(clear, [beside(400)]);
+    expect(clear.view.container.textContent).not.toContain(COVERS);
+  });
+
+  it('a write that grows over a PICTURE OR DRAWING says so, from the page’s objects at the same version (B1.6)', async () => {
+    const objects = vi.fn(() => Promise.resolve({ version: asDocVersion(8), boxes: [{ x0: 90, y0: 545, x1: 150, y1: 580 }] }));
+    const made = mount({ objects });
+    await writeGrown(made, []);
+    expect(made.view.container.textContent).toContain(COVERS);
+    // ONE READ for the write, not one per render.
+    expect(objects).toHaveBeenCalledTimes(1);
+  });
+
+  it('CONTROL: objects answered at ANOTHER version say nothing, nor does an object the write did not reach', async () => {
+    const stale = mount({
+      objects: () => Promise.resolve({ version: asDocVersion(7), boxes: [{ x0: 90, y0: 545, x1: 150, y1: 580 }] }),
+    });
+    await writeGrown(stale, []);
+    expect(stale.view.container.textContent).not.toContain(COVERS);
+    const away = mount({
+      objects: () => Promise.resolve({ version: asDocVersion(8), boxes: [{ x0: 90, y0: 100, x1: 150, y1: 200 }] }),
+    });
+    await writeGrown(away, []);
+    expect(away.view.container.textContent).not.toContain(COVERS);
+  });
+
   it('the REOPENED editor closes on Escape with nothing to write, and stays closed; the page then says why', async () => {
     const { view, answerWith, show } = mount();
     answerWith('written');

@@ -33,6 +33,7 @@ import {
   TEXT_EDIT_TURNED,
   TEXT_EDIT_VERTICAL,
   TEXT_EDIT_TRUNCATED,
+  TEXT_EDIT_COVERS,
   TEXT_EDIT_UNADDRESSABLE,
   TEXT_EDIT_UNREADABLE,
   TEXT_ADD_SURFACE,
@@ -123,6 +124,8 @@ export interface TextEditLayerProps {
   readonly onCommit: (block: TextBlock, text: string, read: BlocksRead, formatting?: BlockFormatting) => Promise<BlockCommit>;
   /** The fonts the open block's runs are drawn in, rebuilt by the host, from the read that named it (ADR-0175, ADR-0232). */
   readonly runFonts: (block: TextBlock, read: BlocksRead) => Promise<RunFonts>;
+  /** The page's pictures and drawings, for the note that a written block now runs over one (B1.6); absent reads none. */
+  readonly objects?: () => Promise<{ readonly version: DocVersion; readonly boxes: readonly TextBlock['box'][] } | undefined>;
   /** Unpacks the page's blocked-in text so it can be edited. */
   readonly onPromote: () => void;
   /** Recognises a page that has no text, so a scan's words can be edited (ADR-0181 Decision 9); absent offers nothing. */
@@ -187,6 +190,15 @@ export function pastItsPage(box: TextBlock['box'], crop: OverlayPage['crop']): b
     box.x1 > x1 + PAGE_EDGE_TOLERANCE ||
     box.y1 > y1 + PAGE_EDGE_TOLERANCE
   );
+}
+
+/**
+ * How many of `others` a block grown from `before` to `after` now covers that it did not cover before (B1.6). A thing the
+ * block already lay over (a background behind it, a word it overlapped as the page arrived) is not counted: only what the
+ * growth reached. The block itself is not among `others`.
+ */
+export function newlyCovered(before: TextBlock['box'], after: TextBlock['box'], others: readonly TextBlock['box'][]): number {
+  return others.filter((box) => overlaps(after, box) && !overlaps(before, box)).length;
 }
 
 /**
@@ -353,6 +365,7 @@ export function TextEditLayer({
   onRestructure,
   onCommit,
   runFonts,
+  objects,
   onPromote,
   onRecognise,
   onLeave,
@@ -380,6 +393,37 @@ export function TextEditLayer({
     written === undefined || blocks === undefined || blocks.version === written.version
       ? -1
       : blocks.blocks.findIndex((block) => overlaps(block.box, written.box) && pastItsPage(block.box, geometry.crop));
+  // THE BLOCK A WRITE GREW, in the read after it, and what it now runs over that it did not before (B1.6): the other
+  // blocks of the same read at once, derived for `regrown`'s reason, and the pictures and drawings when their read arrives.
+  const grown =
+    written === undefined || blocks === undefined || blocks.version === written.version
+      ? undefined
+      : blocks.blocks.find((block) => overlaps(block.box, written.box));
+  const coveredWords =
+    grown === undefined || written === undefined || blocks === undefined
+      ? 0
+      : newlyCovered(
+          written.box,
+          grown.box,
+          blocks.blocks.filter((block) => block !== grown).map((block) => block.box),
+        );
+  const [coveredObjects, setCoveredObjects] = useState<{ readonly version: DocVersion; readonly count: number }>();
+  const readAt = blocks?.version;
+  useEffect(() => {
+    if (grown === undefined || written === undefined || objects === undefined || readAt === undefined) return undefined;
+    let current = true;
+    void objects().then((read) => {
+      // THE OBJECTS OF THE SAME VERSION as the blocks, or none: boxes of another document say nothing about this one.
+      if (current && read?.version === readAt) {
+        setCoveredObjects({ version: readAt, count: newlyCovered(written.box, grown.box, read.boxes) });
+      }
+    });
+    return () => {
+      current = false;
+    };
+  }, [grown, written, objects, readAt]);
+  const covers =
+    grown !== undefined && (coveredWords > 0 || (coveredObjects !== undefined && coveredObjects.version === readAt && coveredObjects.count > 0));
   /**
    * The block a click chose WHILE ANOTHER WAS OPEN, held until that one is written and the page read again, and then
    * opened where it now is (ADR-0180 Decision 8): the open editor is written first and the next opens after it, one
@@ -450,6 +494,9 @@ export function TextEditLayer({
       );
     }
     if (blocks.truncated) notes.push(<p key="truncated">{_(TEXT_EDIT_TRUNCATED)}</p>);
+    // A WRITE THAT GREW OVER SOMETHING is said, not undone (B1.6): the block grows and nothing else moves, so the person
+    // is told what it now covers and how to put it back.
+    if (covers) notes.push(<p key="covers" role="status">{_(TEXT_EDIT_COVERS)}</p>);
     // THE KINDS THE PAGE HAS, each in its own sentence, in a fixed order (ADR-0181 Decision 7).
     const angled = blocks.angled;
     if (angled.turned > 0) notes.push(<p key="turned">{_(TEXT_EDIT_TURNED)}</p>);
@@ -766,6 +813,11 @@ export interface TextEditing {
   readonly spell: EditorSpelling;
   /** Writes blocks joined or split, in one command. */
   readonly onRestructure: (page: number, edits: EditedBlock[], read: BlocksRead) => Promise<BlockCommit>;
+  /**
+   * The boxes of a page's pictures and drawings (everything but text, which the blocks are), at the version they were
+   * read, for the note that a written block now runs over one (B1.6); `undefined` where the read was refused.
+   */
+  readonly objects: (page: number) => Promise<{ readonly version: DocVersion; readonly boxes: readonly TextBlock['box'][] } | undefined>;
 }
 
 /**
@@ -795,6 +847,9 @@ export function TextEditPage({
 }): ReactElement {
   const [answer, setAnswer] = useState<{ readonly version: DocVersion; readonly blocks: PageBlocks | undefined }>();
   const { read, version } = editing;
+  // ONE FUNCTION PER PAGE AND EDITING, so the layer's read of the page's objects runs once per write rather than once
+  // per render.
+  const pageObjects = useCallback(() => editing.objects(page), [editing, page]);
   useEffect(() => {
     let current = true;
     void read(page).then((blocks) => {
@@ -821,6 +876,7 @@ export function TextEditPage({
       onRestructure={(edits, read) => editing.onRestructure(page, edits, read)}
       onInsert={(insert, read) => editing.onInsert(page, insert, read)}
       runFonts={(block, read) => editing.runFonts(page, block, read)}
+      objects={pageObjects}
       onPromote={() => {
         editing.onPromote(page);
       }}
