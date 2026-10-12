@@ -1633,16 +1633,26 @@ describe('delete pages — the mutation-dialog gate', () => {
           alreadyFields: 3,
         },
       ]);
-      expect(created(sent)).toStrictEqual([
+      // EVERY SEND, in order and whole: the candidates of the page on show, the document's fields, and the one command,
+      // each for THIS document. A filter on the command alone would pass a read of another page or another document.
+      expect(sent).toStrictEqual([
+        { id: 'document.flatFieldCandidates', params: { docId: CONTEXT.docId, page: 3 } },
+        { id: 'document.formFields', params: { docId: CONTEXT.docId, from: 0 } },
         {
-          kind: 'createFormField',
-          page: 3,
-          // ONE COMMAND, one entry, and the rectangle is the CHANNEL'S.
-          fields: [
-            { rect: { x0: 10, y0: 60, x1: 110, y1: 80 }, name: 'Date', page: 3, field: { type: 'text' } },
-            { rect: { x0: 10, y0: 100, x1: 24, y1: 114 }, name: 'Newsletter', page: 3, field: { type: 'checkbox' } },
-            { rect: { x0: 60, y0: 120, x1: 72, y1: 132 }, name: 'Delivery', page: 3, field: { type: 'radio', option: 'Express' } },
-          ],
+          id: 'document.execute',
+          params: {
+            docId: CONTEXT.docId,
+            command: {
+              kind: 'createFormField',
+              page: 3,
+              // ONE COMMAND, one entry, and the rectangle is the CHANNEL'S.
+              fields: [
+                { rect: { x0: 10, y0: 60, x1: 110, y1: 80 }, name: 'Date', page: 3, field: { type: 'text' } },
+                { rect: { x0: 10, y0: 100, x1: 24, y1: 114 }, name: 'Newsletter', page: 3, field: { type: 'checkbox' } },
+                { rect: { x0: 60, y0: 120, x1: 72, y1: 132 }, name: 'Delivery', page: 3, field: { type: 'radio', option: 'Express' } },
+              ],
+            },
+          },
         },
       ]);
     });
