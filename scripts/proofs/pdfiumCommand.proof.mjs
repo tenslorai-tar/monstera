@@ -274,7 +274,7 @@ const failures = [];
 // control against the underline, a highlight, spacing and its control, justify and its control, and space after. 234
 // from its Decision 2: a tab read back at its stop, its control, and a second edit that keeps one tab. 235 from the
 // second edit's measure, which read a line written as several objects at its first object's width.
-const roster = createRoster(failures, { cases: 239 });
+const roster = createRoster(failures, { cases: 241 });
 
 /**
  * @param {string} name
@@ -551,6 +551,7 @@ async function main() {
   await replaceAtCases();
   await promotionCases();
   await unpackCases();
+  await denseCases();
   await nestedPromotionCases();
   await blockEditCases();
   await paragraphCases();
@@ -1820,6 +1821,64 @@ async function formsOf(bytes) {
   } finally {
     await pdfiumWriter.close(session);
   }
+}
+
+/** How many runs the dense page carries: a dense page in the thousands (B1.18), against the host's 41,700 per page. */
+const DENSE_RUNS = 6000;
+
+/** One page of {@link DENSE_RUNS} separate text objects, each a short word, set small in a grid. */
+async function aDensePage() {
+  const document = await PDFDocument.create();
+  const page = document.addPage([612, 792]);
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  for (let at = 0; at < DENSE_RUNS; at += 1) {
+    page.drawText(`w${String(at)}`, { x: 10 + (at % 60) * 10, y: 780 - Math.floor(at / 60) * 7.8, size: 3, font });
+  }
+  return document.save();
+}
+
+/** A very dense page is read whole and edited where its last run is, never refused for size (B1.18). */
+async function denseCases() {
+  const dense = await aDensePage();
+  const session = await pdfiumWriter.open(dense);
+  /** @type {Awaited<ReturnType<typeof textRuns>>} */
+  let read;
+  try {
+    read = await textRuns(session, 0);
+  } finally {
+    await pdfiumWriter.close(session);
+  }
+  // RUNS, NOT OBJECTS: objects abutting on one baseline in one style are one run (`textRunJoin.ts`), so the 6,000 words
+  // read as a few hundred runs (379, measured 2026-10-12). What must hold is that every WORD is read.
+  const words = new Set(read.runs.flatMap((run) => run.text.split(/\s+/u)));
+  const missing = Array.from({ length: DENSE_RUNS }, (_unused, at) => `w${String(at)}`).filter((word) => !words.has(word));
+  const last = read.runs.find((run) => run.text.split(/\s+/u).includes(`w${String(DENSE_RUNS - 1)}`));
+  record(
+    `a page of ${String(DENSE_RUNS)} text objects is read whole: every word, none unaddressable`,
+    missing.length === 0 && read.unaddressable === 0 && last !== undefined,
+    `${String(read.runs.length)} runs read, ${String(missing.length)} words missing (${missing.slice(0, 5).join(' ')}), ${String(read.unaddressable)} unaddressable`,
+  );
+  const started = Date.now();
+  const edited = await localPdfiumExecution.apply({
+    session: dense,
+    command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+      kind: 'editTextBlock',
+      page: 0,
+      ...blockEditOf([{ lines: [[last?.index ?? 0]], soft: [false], text: 'DENSE' }]),
+      fit: 'reflow',
+      version: 1,
+    }),
+    sources: [],
+    reads: undefined,
+  });
+  const seconds = (Date.now() - started) / 1000;
+  const after = await textOf(edited);
+  // CONTROL: the first word is still there, so the edit changed the run it named and kept the page.
+  record(
+    'and the run holding its LAST word is edited and read back, the first word kept',
+    after.includes('DENSE') && /\bw0\b/u.test(after) && !after.includes(`w${String(DENSE_RUNS - 1)}`),
+    `edit took ${seconds.toFixed(1)} s; the page reads ${JSON.stringify(after.slice(-40))}`,
+  );
 }
 
 async function unpackCases() {
