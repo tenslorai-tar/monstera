@@ -1,7 +1,7 @@
 import { FIELD_FONTS, MAX_FONT_FAMILY_NAME, REAL_FONT_FIELD_KINDS } from '@monstera/contract/host';
 
 import { familyClass } from './fontResolver.js';
-import { base14Of, nearestBase14 } from './textBoxStyle.js';
+import { base14Of, nearestBase14 } from './base14Families.js';
 
 /**
  * A form field's real family ([ADR-0229](../../../docs/DECISIONS/0229-a-form-field-in-a-real-font-has-an-appearance-monstera-draws.md)):

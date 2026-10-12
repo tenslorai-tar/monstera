@@ -36,7 +36,7 @@ import { fieldNameClash } from '@monstera/shared';
 import type { FieldFace } from './fieldActions.js';
 import { FieldEditRefusedError } from './fieldEditRefusal.js';
 import { FIELD_FAMILY_MARKER, drawsFieldFamily, familyOfMarker, fieldFontOf } from './fieldFamily.js';
-import { base14Of } from './textBoxStyle.js';
+import { base14Of } from './base14Families.js';
 import { checkBoxAppearance, namesButtonStyle, radioAppearance } from './buttonAppearance.js';
 import {
   BORDER_STYLE_NAME,

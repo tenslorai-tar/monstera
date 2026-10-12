@@ -25,6 +25,7 @@ import {
   nextTabStop,
 } from '@monstera/shared';
 
+import { type Base14Family, type Family, base14Of } from './base14Families.js';
 import { hasRightToLeftLetter, lineSpans, paragraphDirection, paragraphLevels } from './bidiOrder.js';
 import {
   HIGHLIGHT_ABOVE,
@@ -39,8 +40,8 @@ import {
 /** An RGB colour, each channel 0 to 1, as every annotation here carries one. */
 export type Rgb = readonly [number, number, number];
 
-/** A family, by the name a person chose it under: one of the base 14's three, or a face the resolver knows (K2). */
-export type Family = string;
+// THE NAMES ARE `base14Families.ts`', which imports nothing, so a caller that asks only about a name loads no typesetter.
+export { BASE14_FAMILIES, type Base14Family, type Family, base14Of, nearestBase14 } from './base14Families.js';
 
 /** The base 14's twelve text faces, by their PostScript names. */
 export type Face =
@@ -57,29 +58,11 @@ export type Face =
   | 'Courier-Oblique'
   | 'Courier-BoldOblique';
 
-/** The base 14's three text families, by the names the font picker lists them under. */
-export const BASE14_FAMILIES = ['Helvetica', 'Times', 'Courier'] as const;
-export type Base14Family = (typeof BASE14_FAMILIES)[number];
-
 const FACES: Readonly<Record<Base14Family, readonly [Face, Face, Face, Face]>> = {
   Helvetica: ['Helvetica', 'Helvetica-Bold', 'Helvetica-Oblique', 'Helvetica-BoldOblique'],
   Times: ['Times-Roman', 'Times-Bold', 'Times-Italic', 'Times-BoldItalic'],
   Courier: ['Courier', 'Courier-Bold', 'Courier-Oblique', 'Courier-BoldOblique'],
 };
-
-/** The base-14 family a name is, ignoring case, or `undefined` for any other family. */
-export function base14Of(family: Family): Base14Family | undefined {
-  const lower = family.trim().toLowerCase();
-  return BASE14_FAMILIES.find((each) => each.toLowerCase() === lower);
-}
-
-/**
- * The base-14 family a family falls back to where a reader draws the words itself (ADR-0228 Decision 3): the family where it
- * is one, else the one nearest its class. The ONE rule a text box's `/DA` and a form field's (ADR-0229) both take.
- */
-export function nearestBase14(family: Family, classOf: (family: Family) => 'sans' | 'serif' | 'mono'): Base14Family {
-  return base14Of(family) ?? ({ sans: 'Helvetica', serif: 'Times', mono: 'Courier' } as const)[classOf(family)];
-}
 
 /** The base-14 face for a base-14 family, bold and italic. */
 export function faceFor(family: Base14Family, bold: boolean, italic: boolean): Face {
