@@ -390,6 +390,13 @@ describe('ribbonUnits — a run of small tools is columns of at most three (ADR-
     const entries = [tool('crop', 'small'), tool('resize', 'small'), tool('straighten', 'small'), tool('transitions', 'small', true)];
     const units = ribbonUnits(entries);
     expect(units.map((unit) => unit.entries.some((entry) => entry.secondary))).toStrictEqual([false, true]);
+    // THE ORDER ITSELF (AAAAAAAA-4): folded one column deep, the column holding the secondary is the one in the More,
+    // EVEN WHERE THE SECONDARY WAS LISTED FIRST, which is what *the secondaries fold first* means and a check of which
+    // columns hold one does not say.
+    const listedFirst = [tool('transitions', 'small', true), tool('crop', 'small'), tool('resize', 'small'), tool('straighten', 'small')];
+    const split = splitFold(listedFirst, { shown: 1, more: true });
+    expect(split.folded.map((entry) => entry.command.id)).toStrictEqual(['straighten', 'transitions']);
+    expect(split.shown.flatMap((unit) => unit.entries.map((entry) => entry.command.id))).toStrictEqual(['crop', 'resize']);
   });
 
   it('a folded column puts EVERY member in the More, one command per line, and nothing is in both', () => {

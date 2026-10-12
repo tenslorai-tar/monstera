@@ -314,8 +314,9 @@ export function ribbonUnits<T extends UnitEntry>(entries: readonly T[]): readonl
       });
     });
 
-  // THE SECONDARIES ARE GATHERED AMONG THEMSELVES, after every primary: they fold first, a column of them at a time,
-  // and a column of secondaries is the same unit to the fold as a column of primaries.
+  // THE SECONDARIES ARE GATHERED APART FROM THE PRIMARIES, and every column that holds a secondary comes after every
+  // column that holds none, so the secondaries fold first, a column at a time. A column is not always one or the other:
+  // the run the two lists share is balanced as one, below, and that column holds both.
   const primaries = gather(entries.filter((entry) => !entry.secondary));
   const secondaries = gather(entries.filter((entry) => entry.secondary));
   // BUT ONE RUN OF ONE SIZE IS ONE RUN, whichever list its tools came from. The two were gathered apart and a run never
