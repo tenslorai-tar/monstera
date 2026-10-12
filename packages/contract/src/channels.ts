@@ -3117,7 +3117,16 @@ export const channels = {
         message: 'the review grid’s edits are MuPDF’s tables’, so only the automatic engine takes them',
       }),
     z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
+      z.object({
+        kind: z.literal('copied'),
+        bytes: z.number().int().nonnegative(),
+        ...WRITTEN,
+        /**
+         * Tables a service returned that could not be placed and are not in the workbook (ADR-0222 Decision 4, corrected
+         * 2026-10-12): said in the confirmation, never dropped without a word. Always 0 for the automatic engine.
+         */
+        tablesLeftOut: z.number().int().nonnegative(),
+      }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
       z.object({ kind: z.literal('write-failed') }),

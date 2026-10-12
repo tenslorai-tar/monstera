@@ -62,6 +62,7 @@ import {
   parsePageTables,
   readDocumentRange,
   readFileIdentity,
+  type PlacedTables,
   type RecognisedTable,
   type RegisteredWriter,
   SignatureAppearanceRefusedError,
@@ -4905,18 +4906,21 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
         { row: 1, column: 1, rowSpan: 1, columnSpan: 1, text: '12' },
       ],
     };
+    /** A page's answer as a service reader gives it: the tables placed, and how many it could not place. */
+    const placed = (tables: readonly RecognisedTable[], leftOut = 0): Promise<PlacedTables> => Promise.resolve({ tables, leftOut });
 
     it('asks the service for EVERY page, in order, and writes its span as a merge', async () => {
       const destination = join(mkdtempSync(join(directory, 'xlsx-')), 'service.xlsx');
       const asked: string[] = [];
       const { commands, picked } = exportingTo(destination, (_doc, _sessions, page, engine) => {
         asked.push(`${engine}:${String(page)}`);
-        return Promise.resolve(page === 1 ? [SPANNED] : []);
+        return placed(page === 1 ? [SPANNED] : []);
       });
 
       const outcome = await commands.exportExcel(tablesDoc, 'sheet-per-page', await unreviewed(commands, tablesDoc), 'azure');
 
       expect(outcome?.kind).toBe('copied');
+      expect(outcome?.kind === 'copied' ? outcome.tablesLeftOut : undefined).toBe(0);
       expect(picked).toStrictEqual(['tables.pdf:xlsx']);
       expect(asked).toStrictEqual(['azure:0', 'azure:1', 'azure:2']);
       // THE SERVICE'S TABLE, NOT MUPDF'S: page 2's ruled grid would put `Item` here.
@@ -4934,7 +4938,7 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
         asked.push(page);
         return page === 1
           ? Promise.reject(new AzureRecognitionRefused('rejected', 'Azure answered 400: the page was refused'))
-          : Promise.resolve([SPANNED]);
+          : placed([SPANNED]);
       });
 
       expect(
@@ -4958,7 +4962,7 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
       const { commands } = exportingTo(destination, (_doc, _sessions, page) => {
         // READ BEFORE THE PAGE IS COUNTED: page 0 sees 0 done, page 1 sees 1, page 2 sees 2 — of the 3 asked.
         seen.push(commandsOf.current?.exportProgress(tablesDoc));
-        return Promise.resolve(page === 1 ? [SPANNED] : []);
+        return placed(page === 1 ? [SPANNED] : []);
       });
       commandsOf.current = commands;
       expect(commands.exportProgress(tablesDoc)).toStrictEqual({ kind: 'idle' });
@@ -4982,7 +4986,7 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
         asked.push(page);
         // THE PERSON PRESSES CANCEL while page 1 is being read: page 2 must not be sent.
         if (page === 1) expect(commandsOf.current?.cancelExport(tablesDoc)).toBe(true);
-        return Promise.resolve([SPANNED]);
+        return placed([SPANNED]);
       });
       commandsOf.current = commands;
 
@@ -4996,7 +5000,7 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
       const asked: number[] = [];
       const { commands } = exportingTo(destination, (_doc, _sessions, page) => {
         asked.push(page);
-        return Promise.resolve([SPANNED]);
+        return placed([SPANNED]);
       });
       expect(commands.cancelExport(tablesDoc)).toBe(false);
 
@@ -5006,12 +5010,24 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
 
     it('answers NO TABLES, writing nothing, when the service finds none on any page', async () => {
       const destination = join(mkdtempSync(join(directory, 'xlsx-')), 'none.xlsx');
-      const { commands } = exportingTo(destination, () => Promise.resolve([]));
+      const { commands } = exportingTo(destination, () => placed([]));
 
       expect(
         await commands.exportExcel(tablesDoc, 'sheet-per-page', await unreviewed(commands, tablesDoc), 'claude'),
       ).toStrictEqual({ kind: 'no-tables', picturePages: 0 });
       expect(existsSync(destination)).toBe(false);
+    });
+
+    it('COUNTS the tables a service read and this build could not place, across pages, with the written file (AAAAAAAA-6)', async () => {
+      const destination = join(mkdtempSync(join(directory, 'xlsx-')), 'left-out.xlsx');
+      // ONE LEFT OUT beside the placed table on page 1, and two on page 2, where nothing was placed: three in all.
+      const { commands } = exportingTo(destination, (_doc, _sessions, page) =>
+        placed(page === 1 ? [SPANNED] : [], page === 1 ? 1 : page === 2 ? 2 : 0),
+      );
+      const outcome = await commands.exportExcel(tablesDoc, 'sheet-per-page', await unreviewed(commands, tablesDoc), 'claude');
+      expect(outcome?.kind === 'copied' ? outcome.tablesLeftOut : outcome).toBe(3);
+      // THE PLACED TABLE IS STILL WRITTEN: counting is not dropping the rest.
+      expect(sheetsOf(destination)).toStrictEqual([{ name: '2', strings: ['Totals', 'North'] }]);
     });
 
     it('CONTROL: a thrown value that is no service refusal is a DEFECT, and is not dressed as one', async () => {
@@ -5028,7 +5044,7 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
       const asked: number[] = [];
       const { commands, picked } = exportingTo(null, (_doc, _sessions, page) => {
         asked.push(page);
-        return Promise.resolve([]);
+        return placed([]);
       });
       const { version } = await commands.pageTables(tablesDoc, 0);
 

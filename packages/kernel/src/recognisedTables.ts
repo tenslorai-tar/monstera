@@ -121,17 +121,26 @@ export function recognisedTable(cells: readonly RecognisedCell[], maxCells: numb
   return { kind: 'recognised', rows, columns, cells: [...placed.values()] };
 }
 
+/** A page's tables as a service answered them: those placed, and how many could not be (ADR-0222 Decision 4, corrected). */
+export interface PlacedTables {
+  readonly tables: readonly RecognisedTable[];
+  /** Tables the service returned that could not be placed: counted, so the person is told, never dropped without a word. */
+  readonly leftOut: number;
+}
+
 /**
- * Every table a service answered, each placed on its own: a table that cannot be placed is left out and the others are kept
- * (ADR-0222 Decision 4). The answer is refused only when the service returned tables and NONE could be placed — the first
- * refusal, whose sentence says why — so a page whose second table is unusable still gives its first.
+ * Every table a service answered, each placed on its own: a table that cannot be placed is left out, COUNTED, and the others
+ * are kept (ADR-0222 Decision 4, corrected 2026-10-12). The answer is refused only when the service returned tables and NONE
+ * could be placed — the first refusal, whose sentence says why — so a page whose second table is unusable still gives its
+ * first, and says it left one out.
  */
 export function placedTables(
   tables: readonly (readonly RecognisedCell[])[],
   maxCells: number,
   maxText: number,
-): readonly RecognisedTable[] {
+): PlacedTables {
   const placed: RecognisedTable[] = [];
+  let leftOut = 0;
   let firstRefusal: RecognisedTableRefused | undefined;
   for (const cells of tables) {
     try {
@@ -139,10 +148,11 @@ export function placedTables(
     } catch (thrown) {
       if (!(thrown instanceof RecognisedTableRefused)) throw thrown;
       firstRefusal ??= thrown;
+      leftOut += 1;
     }
   }
   if (placed.length === 0 && firstRefusal !== undefined) throw firstRefusal;
-  return placed;
+  return { tables: placed, leftOut };
 }
 
 /** Whether `cell`'s span covers the place at `row`, `column`. */

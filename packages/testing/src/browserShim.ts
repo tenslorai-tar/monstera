@@ -2046,7 +2046,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (typeof chosen === 'object') {
         return Promise.resolve(ok({ kind: 'refused' as const, openElsewhere: chosen.openElsewhere }));
       }
-      return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen, written: wrote() }));
+      return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen, written: wrote(), tablesLeftOut: 0 }));
     },
     // THE POWERPOINT EXPORT'S SHIM, the same option and the same single-file outcomes.
     'document.exportPowerPoint': ({ docId }) => {

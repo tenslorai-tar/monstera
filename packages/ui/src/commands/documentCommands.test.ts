@@ -26,6 +26,7 @@ import {
   TOAST_COPY_SAVED,
   TOAST_DOCUMENT_SIGNED,
   TOAST_EXCEL_SAVED,
+  TOAST_EXCEL_SAVED_TABLES_LEFT_OUT,
   TOAST_FILES_SAVED,
   TOAST_FORM_DATA_SAVED,
   TOAST_IMAGES_SAVED,
@@ -4071,7 +4072,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     }
 
     it('opens on the page ON SHOW, moves when asked, and sends every page’s edits with the version read', async () => {
-      const { client, sent } = reviewing({ kind: 'copied', bytes: 9, written: WRITTEN });
+      const { client, sent } = reviewing({ kind: 'copied', bytes: 9, written: WRITTEN, tablesLeftOut: 0 });
       const asked: { id: string; props: unknown }[] = [];
       // THE PAGE ROW AS LEFT on page 4 rides the move, and the export's pages are the ones it parsed to (ADR-0161).
       const left = { every: false, text: '3, 5-7' };
@@ -4160,7 +4161,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     });
 
     it('opens a page AGAIN with the edits typed on it before', async () => {
-      const { client } = reviewing({ kind: 'copied', bytes: 9, written: WRITTEN });
+      const { client } = reviewing({ kind: 'copied', bytes: 9, written: WRITTEN, tablesLeftOut: 0 });
       const opened: unknown[] = [];
       const typed = [{ table: 0, row: 0, column: 0, text: 'A' }];
       const every = { every: true, text: '' };
@@ -4188,7 +4189,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     });
 
     it('stops with REVIEW-CHANGED, exporting nothing, when a page is read at another version', async () => {
-      const { client, sent } = reviewing({ kind: 'copied', bytes: 9, written: WRITTEN }, (page) => (page === 3 ? 5 : 6));
+      const { client, sent } = reviewing({ kind: 'copied', bytes: 9, written: WRITTEN, tablesLeftOut: 0 }, (page) => (page === 3 ? 5 : 6));
       const spoken: unknown[] = [];
 
       await exportExcelCommand({
@@ -4214,7 +4215,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     });
 
     it('CONTROL: a DISMISSED grid exports nothing', async () => {
-      const { client, sent } = reviewing({ kind: 'copied', bytes: 9, written: WRITTEN });
+      const { client, sent } = reviewing({ kind: 'copied', bytes: 9, written: WRITTEN, tablesLeftOut: 0 });
 
       await exportExcelCommand({
         settleMarks: NOTHING_MARKED,
@@ -4393,7 +4394,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       if (id === 'document.pageTables') {
         return Promise.resolve(ok({ version: asDocVersion(5), pageCount: 10, tables: [], truncated: false }));
       }
-      return Promise.resolve(ok({ kind: 'copied', bytes: 9, written: WRITTEN }));
+      return Promise.resolve(ok({ kind: 'copied', bytes: 9, written: WRITTEN, tablesLeftOut: 0 }));
     });
     await exportExcelCommand({
       settleMarks: NOTHING_MARKED,
@@ -4443,7 +4444,7 @@ describe('delete pages — the mutation-dialog gate', () => {
           // THE DOCUMENT MOVES WHEN THE WALK WRITES: the first read (the dialog's) is version 5, the one after the walk 8.
           return Promise.resolve(ok({ version: asDocVersion(reads === 1 ? 5 : 8), pageCount: 10, tables: tableOf(page), truncated: false }));
         }
-        return Promise.resolve(ok({ kind: 'copied', bytes: 9, written: WRITTEN }));
+        return Promise.resolve(ok({ kind: 'copied', bytes: 9, written: WRITTEN, tablesLeftOut: 0 }));
       });
       const done = exportExcelCommand({
         settleMarks: NOTHING_MARKED,
@@ -6949,7 +6950,19 @@ describe('every file write confirms, and its Show in folder reveals the file the
       message: TOAST_EXCEL_SAVED,
       answers: {
         'document.pageTables': { version: asDocVersion(5), pageCount: 10, tables: [], truncated: false },
-        'document.exportExcel': COPIED,
+        'document.exportExcel': { ...COPIED, tablesLeftOut: 0 },
+      },
+      dialogs: [{ kind: 'export', layout: 'one-sheet', engine: 'automatic', edits: [], pages: [0] }],
+      run: (deps) => exportExcelCommand(deps).run(CONTEXT),
+    },
+    {
+      // A TABLE THE SERVICE READ AND THIS BUILD COULD NOT PLACE is said, never dropped without a word (AAAAAAAA-6); the
+      // case above, with none left out, is the control that this sentence is the count's doing.
+      name: 'Excel with tables left out',
+      message: TOAST_EXCEL_SAVED_TABLES_LEFT_OUT,
+      answers: {
+        'document.pageTables': { version: asDocVersion(5), pageCount: 10, tables: [], truncated: false },
+        'document.exportExcel': { ...COPIED, tablesLeftOut: 2 },
       },
       dialogs: [{ kind: 'export', layout: 'one-sheet', engine: 'automatic', edits: [], pages: [0] }],
       run: (deps) => exportExcelCommand(deps).run(CONTEXT),

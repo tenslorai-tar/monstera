@@ -2105,6 +2105,7 @@ export const TOAST_TEXT_SAVED = messageKey('toast.text-saved');
 export const TOAST_WORD_SAVED = messageKey('toast.word-saved');
 export const TOAST_POWERPOINT_SAVED = messageKey('toast.powerpoint-saved');
 export const TOAST_EXCEL_SAVED = messageKey('toast.excel-saved');
+export const TOAST_EXCEL_SAVED_TABLES_LEFT_OUT = messageKey('toast.excel-saved-tables-left-out');
 export const TOAST_PDFA_SAVED = messageKey('toast.pdfa-saved');
 export const TOAST_FORM_DATA_SAVED = messageKey('toast.form-data-saved');
 export const TOAST_COMMENTS_SAVED = messageKey('toast.comments-saved');
@@ -4979,6 +4980,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TOAST_WORD_SAVED]: 'Word file saved',
   [TOAST_POWERPOINT_SAVED]: 'PowerPoint file saved',
   [TOAST_EXCEL_SAVED]: 'Excel file saved',
+  [TOAST_EXCEL_SAVED_TABLES_LEFT_OUT]: 'Excel file saved. Some tables the service read could not be placed in it and are not in the file.',
   [TOAST_PDFA_SAVED]: 'PDF/A file saved',
   [TOAST_FORM_DATA_SAVED]: 'Form data saved',
   [TOAST_COMMENTS_SAVED]: 'Comments saved',

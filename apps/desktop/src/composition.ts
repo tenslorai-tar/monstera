@@ -68,7 +68,7 @@ import {
   recogniseThroughClaude,
   readTablesThroughClaude,
   readTablesThroughAzure,
-  type RecognisedTable,
+  type PlacedTables,
   type RecognisedPage,
   type HostOcrReader,
   recogniseThroughAzure,
@@ -4200,7 +4200,7 @@ interface NetworkRecogniser {
      * The same service asked for a whole page's TABLES (ADR-0086), with the credentials the
      * check above already read. REQUIRED, for {@link accepts}' reason.
      */
-    readonly readTables: (png: Uint8Array) => Promise<readonly RecognisedTable[]>;
+    readonly readTables: (png: Uint8Array) => Promise<PlacedTables>;
   }>;
 }
 

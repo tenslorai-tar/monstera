@@ -242,7 +242,7 @@ export {
 } from './ocrClaude.js';
 // A SERVICE'S TABLE (ADR-0086): the type main passes to the sheet writer, and the refusal a grid
 // that contradicts itself raises.
-export { type RecognisedTable, RecognisedTableRefused } from './recognisedTables.js';
+export { type PlacedTables, type RecognisedTable, RecognisedTableRefused } from './recognisedTables.js';
 export {
   type ChatAnswer,
   type ChatImage,

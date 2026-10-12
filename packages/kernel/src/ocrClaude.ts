@@ -5,7 +5,7 @@ import { z } from 'zod';
 
 import { anthropicErrorMessage, isAnthropicOutOfCredit } from './anthropicCredit.js';
 import type { RecognisedLine, RecognisedPage, RecognisedWord } from './ocrRecognise.js';
-import { type RecognisedTable, placedTables } from './recognisedTables.js';
+import { type PlacedTables, placedTables } from './recognisedTables.js';
 
 /**
  * Recognition by Anthropic's Claude — D6's fourth recogniser, added 2026-09-12
@@ -446,7 +446,7 @@ export async function readTablesThroughClaude(
   credentials: ClaudeCredentials,
   request: { readonly png: Uint8Array; readonly fetchImpl?: typeof fetch },
   bounds: { readonly maxCells: number; readonly maxText: number },
-): Promise<readonly RecognisedTable[]> {
+): Promise<PlacedTables> {
   const parsed = await askClaudeAboutImage(credentials, request, TABLE_INSTRUCTION, TABLE_SCHEMA, 'the page');
   const answer = tableAnswerSchema.safeParse(parsed);
   if (!answer.success) {

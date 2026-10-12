@@ -279,6 +279,7 @@ import {
   TOAST_COPY_SAVED,
   TOAST_TOC_STALE,
   TOAST_EXCEL_SAVED,
+  TOAST_EXCEL_SAVED_TABLES_LEFT_OUT,
   TOAST_FILES_SAVED,
   TOAST_FORM_DATA_SAVED,
   TOAST_IMAGES_SAVED,
@@ -3287,7 +3288,8 @@ export function exportExcelCommand(
       }
       const outcome = answer.value;
       if (outcome.kind === 'copied') {
-        confirmWritten(deps, TOAST_EXCEL_SAVED, outcome.written);
+        // A TABLE THE SERVICE READ AND THIS BUILD COULD NOT PLACE is said with the confirmation (ADR-0222 D4, corrected).
+        confirmWritten(deps, outcome.tablesLeftOut > 0 ? TOAST_EXCEL_SAVED_TABLES_LEFT_OUT : TOAST_EXCEL_SAVED, outcome.written);
         return;
       }
       if (outcome.kind === 'cancelled') return;

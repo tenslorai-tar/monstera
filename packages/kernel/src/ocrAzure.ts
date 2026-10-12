@@ -3,7 +3,7 @@ import type { PdfPoint, Rotation } from '@monstera/shared';
 import { onOrigin, pageTransform, serviceOrigin, toPdf, viewportPoint } from '@monstera/shared';
 
 import type { RecognisedLine, RecognisedPage, RecognisedWord } from './ocrRecognise.js';
-import { type RecognisedTable, placedTables } from './recognisedTables.js';
+import { type PlacedTables, placedTables } from './recognisedTables.js';
 
 /**
  * Azure Document Intelligence — **the recogniser that runs in `main`**.
@@ -566,7 +566,7 @@ export async function readTablesThroughAzure(
   request: { readonly png: Uint8Array; readonly fetchImpl?: typeof fetch },
   bounds: { readonly maxCells: number; readonly maxText: number },
   clock: AzureClock = REAL_CLOCK,
-): Promise<readonly RecognisedTable[]> {
+): Promise<PlacedTables> {
   const answer = await analyseThroughAzure(credentials, 'prebuilt-layout', request, clock);
   const whole = (value: unknown, fallback?: number): number =>
     typeof value === 'number' ? value : (fallback ?? Number.NaN);

@@ -2323,7 +2323,9 @@ function exportExcelHandler(commands: DocumentCommands, mint: MintWritten): Cont
     try {
       const outcome = await commands.exportExcel(docId, layout, { version, edits, pages }, engine);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
-      if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes, written: mint(outcome.destination) } as const);
+      if (outcome.kind === 'copied') {
+        return ok({ kind: 'copied', bytes: outcome.bytes, written: mint(outcome.destination), tablesLeftOut: outcome.tablesLeftOut } as const);
+      }
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
       if (outcome.kind === 'changed') return ok({ kind: 'changed' } as const);
       if (outcome.kind === 'service-refused') return ok({ ...outcome });

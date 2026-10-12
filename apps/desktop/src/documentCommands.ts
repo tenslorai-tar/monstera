@@ -166,7 +166,7 @@ import {
   AzureRecognitionRefused,
   ClaudeRecognitionRefused,
   NoTablesToWrite,
-  type RecognisedTable,
+  type PlacedTables,
   RecognisedTableRefused,
   type PageWordBoxes,
   pagesOf,
@@ -1470,7 +1470,12 @@ export type DocumentPageTables = (
  * that no page holds a table, with how many pages are a picture with no text.
  */
 export type ExcelOutcome =
-  | CopyOutcome
+  | Exclude<CopyOutcome, { readonly kind: 'copied' }>
+  /**
+   * Written, and how many tables a service returned that could not be placed (ADR-0222 Decision 4, corrected): said, never
+   * dropped without a word. Always 0 for the PDF's own tables, which are placed by this build.
+   */
+  | (Extract<CopyOutcome, { readonly kind: 'copied' }> & { readonly tablesLeftOut: number })
   | { readonly kind: 'no-tables'; readonly picturePages: number }
   | { readonly kind: 'changed' }
   | ServiceRefusal;
@@ -1500,7 +1505,7 @@ export type NetworkTableReader = (
   sessions: DocumentSessions,
   page: number,
   engine: NetworkTableEngine,
-) => Promise<readonly RecognisedTable[]>;
+) => Promise<PlacedTables>;
 
 /**
  * A picture of one page for a vision ask (ADR-0090): drawn in the engine host within the image
@@ -5563,12 +5568,14 @@ export class DocumentCommands {
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
-      return await writeStreamedDocument(
+      const written = await writeStreamedDocument(
         this.#save.deps,
         this.#copy.checkTarget,
         () => Promise.resolve(ooxmlPackage(spreadsheetParts(this.#tablePages(docId, sessions, byPage, review.pages), layout))),
         destination,
       );
+      // THE PDF'S OWN TABLES are placed by this build, so none is left out.
+      return written.kind === 'copied' ? { ...written, tablesLeftOut: 0 } : written;
     });
 
     return value;
@@ -5615,13 +5622,16 @@ export class DocumentCommands {
       // THE READ IS REPORTED AND CAN BE STOPPED while it runs (ADR-0202 Decision 5): two small facts kept in a map main owns,
       // dropped when the export ends however it ends, so a later export of the same document starts from nothing.
       this.#reading.set(docId, { done: 0, total: pagesOf(pages, (await this.#geometry(docId, sessions, [])).pageCount).length, stop: false });
+      const leftOut = { count: 0 };
       try {
-        return await writeStreamedDocument(
+        const written = await writeStreamedDocument(
           this.#save.deps,
           this.#copy.checkTarget,
-          () => Promise.resolve(ooxmlPackage(spreadsheetParts(this.#servicePages(docId, sessions, engine, pages), layout))),
+          () => Promise.resolve(ooxmlPackage(spreadsheetParts(this.#servicePages(docId, sessions, engine, pages, leftOut), layout))),
           destination,
         );
+        // READ AFTER THE WRITE, which pulled every page: the count is whole only once the zip has asked for the last one.
+        return written.kind === 'copied' ? { ...written, tablesLeftOut: leftOut.count } : written;
       } catch (thrown) {
         if (thrown instanceof NoTablesToWrite) return { kind: 'no-tables', picturePages: 0 };
         if (thrown instanceof PageRefused) return serviceRefusal(engine, thrown.page, thrown.original);
@@ -5656,26 +5666,31 @@ export class DocumentCommands {
     return true;
   }
 
-  /** Each page's tables as the service reads them, one request per page, as the zip pulls them. */
+  /**
+   * Each page's tables as the service reads them, one request per page, as the zip pulls them. `leftOut` is added to for
+   * every table a service returned that could not be placed (ADR-0222 Decision 4, corrected), so the export says so.
+   */
   async *#servicePages(
     docId: DocId,
     sessions: DocumentSessions,
     engine: NetworkTableEngine,
     pages: PageSet,
+    leftOut: { count: number },
   ): AsyncIterable<SpreadsheetPage> {
     const { pageCount } = await this.#geometry(docId, sessions, []);
     for (const page of pagesOf(pages, pageCount)) {
       // CHECKED BETWEEN PAGES, before a request is paid for: a stop the person asked for costs at most the page in hand.
       const reading = this.#reading.get(docId);
       if (reading?.stop === true) throw new ExportCancelled();
-      let tables: readonly RecognisedTable[];
+      let read: PlacedTables;
       try {
-        tables = await this.#networkTables(docId, sessions, page, engine);
+        read = await this.#networkTables(docId, sessions, page, engine);
       } catch (thrown) {
         throw new PageRefused(page, thrown);
       }
+      leftOut.count += read.leftOut;
       if (reading !== undefined) reading.done += 1;
-      yield { page, tables, edits: [] };
+      yield { page, tables: read.tables, edits: [] };
     }
   }
 

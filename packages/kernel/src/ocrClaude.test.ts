@@ -526,8 +526,9 @@ describe('readTablesThroughClaude (ADR-0086)', () => {
 
   it('asks for tables in the TABLE schema and answers the grid with its span', async () => {
     const { fetchImpl, calls } = service(() => answer(MERGED));
-    const tables = await readTablesThroughClaude(CREDENTIALS, { png: pngHeader(400, 600), fetchImpl }, BOUNDS);
+    const { tables, leftOut } = await readTablesThroughClaude(CREDENTIALS, { png: pngHeader(400, 600), fetchImpl }, BOUNDS);
 
+    expect(leftOut).toBe(0);
     expect(tables).toStrictEqual([
       {
         kind: 'recognised',
@@ -576,7 +577,7 @@ describe('readTablesThroughClaude (ADR-0086)', () => {
       ],
     };
     const { fetchImpl } = service(() => answer(overlapping));
-    const tables = await readTablesThroughClaude(CREDENTIALS, { png: pngHeader(400, 600), fetchImpl }, BOUNDS);
+    const { tables } = await readTablesThroughClaude(CREDENTIALS, { png: pngHeader(400, 600), fetchImpl }, BOUNDS);
     expect(tables[0]?.cells.map((each) => each.text)).toStrictEqual(['merged also here']);
   });
 
@@ -599,7 +600,7 @@ describe('readTablesThroughClaude (ADR-0086)', () => {
       ],
     };
     const { fetchImpl } = service(() => answer(ragged));
-    const [table] = await readTablesThroughClaude(CREDENTIALS, { png: pngHeader(400, 600), fetchImpl }, BOUNDS);
+    const [table] = (await readTablesThroughClaude(CREDENTIALS, { png: pngHeader(400, 600), fetchImpl }, BOUNDS)).tables;
     expect(table).toMatchObject({ rows: 7, columns: 4 });
     expect(table?.cells).toHaveLength(3 + 6 * 4);
     expect(table?.cells.find((each) => each.row === 6 && each.column === 3)?.text).toBe('41');
@@ -607,6 +608,9 @@ describe('readTablesThroughClaude (ADR-0086)', () => {
 
   it('answers no tables for a page with none, which is an answer and not a refusal', async () => {
     const { fetchImpl } = service(() => answer({ tables: [] }));
-    expect(await readTablesThroughClaude(CREDENTIALS, { png: pngHeader(400, 600), fetchImpl }, BOUNDS)).toStrictEqual([]);
+    expect(await readTablesThroughClaude(CREDENTIALS, { png: pngHeader(400, 600), fetchImpl }, BOUNDS)).toStrictEqual({
+      tables: [],
+      leftOut: 0,
+    });
   });
 });

@@ -80,14 +80,17 @@ describe('a service’s table, read once (ADR-0222)', () => {
 });
 
 describe('placedTables — each table is its own answer', () => {
-  it('keeps the tables that were placed and leaves out the one that cannot be', () => {
+  it('keeps the tables that were placed and COUNTS the one that cannot be, never dropping it without a word (AAAAAAAA-6)', () => {
     const placed = placedTables([[cell(0, 0, 'a')], [cell(-1, 0, 'bad')], [cell(0, 0, 'c')]], ...BOUNDS);
-    expect(placed.map((table) => table.cells[0]?.text)).toStrictEqual(['a', 'c']);
+    expect(placed.tables.map((table) => table.cells[0]?.text)).toStrictEqual(['a', 'c']);
+    expect(placed.leftOut).toBe(1);
+    // CONTROL: every table placed leaves nothing out, so the count above is the bad table's.
+    expect(placedTables([[cell(0, 0, 'a')], [cell(0, 0, 'c')]], ...BOUNDS).leftOut).toBe(0);
   });
 
   it('refuses the answer, with the first sentence, only when none could be placed — and answers nothing for no table', () => {
     expect(() => placedTables([[cell(-1, 0, 'bad')], []], ...BOUNDS)).toThrow(/row -1/u);
     // CONTROL: a page with no table is an empty answer, not a refusal.
-    expect(placedTables([], ...BOUNDS)).toStrictEqual([]);
+    expect(placedTables([], ...BOUNDS)).toStrictEqual({ tables: [], leftOut: 0 });
   });
 });

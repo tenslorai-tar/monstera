@@ -509,7 +509,8 @@ describe('readTablesThroughAzure (ADR-0086)', () => {
 
   it('asks the LAYOUT model, reads the grid with its span, and deletes the result', async () => {
     const { fetchImpl, asked, deleted } = service(accepted(), [layout()]);
-    const tables = await readTablesThroughAzure(CREDENTIALS, { png: PNG, fetchImpl }, BOUNDS, INSTANT);
+    const { tables, leftOut } = await readTablesThroughAzure(CREDENTIALS, { png: PNG, fetchImpl }, BOUNDS, INSTANT);
+    expect(leftOut).toBe(0);
 
     expect(asked[0]).toBe(
       'https://example.cognitiveservices.azure.com/documentintelligence/documentModels/' +
@@ -547,7 +548,7 @@ describe('readTablesThroughAzure (ADR-0086)', () => {
         },
       });
     const { fetchImpl } = service(accepted(), [past]);
-    const [table] = await readTablesThroughAzure(CREDENTIALS, { png: PNG, fetchImpl }, BOUNDS, INSTANT);
+    const [table] = (await readTablesThroughAzure(CREDENTIALS, { png: PNG, fetchImpl }, BOUNDS, INSTANT)).tables;
     expect(table).toMatchObject({ rows: 1, columns: 4 });
     // CONTROL: a cell with no row at all cannot be placed, and the answer is refused.
     const noRow = (): Response =>
