@@ -1520,6 +1520,26 @@ export const annotationTextStyleSchema = z
 export type AnnotationTextStyle = z.infer<typeof annotationTextStyleSchema>;
 
 /**
+ * How a NEW text box is set beyond its face, size and colour (B5.9): the members of {@link annotationTextStyleSchema} the
+ * draft has no field of its own for, taken from it so the two cannot disagree on a bound. What *Use as default for new
+ * annotations* keeps from the Text section, and what a text box is drawn with when it is made.
+ */
+export const textBoxLookSchema = annotationTextStyleSchema.pick({
+  align: true,
+  bold: true,
+  italic: true,
+  underline: true,
+  strike: true,
+  lineHeight: true,
+  fill: true,
+  padding: true,
+  spacing: true,
+});
+
+/** See {@link textBoxLookSchema}. */
+export type TextBoxLook = z.infer<typeof textBoxLookSchema>;
+
+/**
  * How opaque an annotation is drawn — `/CA`, from 0.1 to 1.
  *
  * ## On EVERY member, because it is a property of an annotation
@@ -1998,6 +2018,11 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
        * writer refuses them otherwise, and they are written as `/RC` and `/DS` with an appearance Monstera draws.
        */
       words: z.array(annotationTextRunSchema).min(1).max(MAX_TEXT_RUNS).optional(),
+      /**
+       * The rest of the box's look, where *Use as default* kept one (B5.9): written by the one writer a restyle uses, so a box
+       * made in a look and a box restyled to it are the same box. Absent, the box is set as MuPDF's own text box is.
+       */
+      look: textBoxLookSchema.optional(),
     })
     .strict(),
   z

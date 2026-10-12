@@ -371,6 +371,8 @@ export {
   annotationAlignSchema,
   annotationTextRunSchema,
   annotationTextStyleSchema,
+  textBoxLookSchema,
+  type TextBoxLook,
   annotationDraftSchema,
   annotationRectSchema,
   batesNumberPagesSchema,

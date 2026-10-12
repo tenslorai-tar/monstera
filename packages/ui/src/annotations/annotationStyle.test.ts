@@ -25,7 +25,7 @@ const PAGE: Parameters<typeof overlayTransform>[0] = { crop: [0, 0, 200, 300], r
 
 /** A style that has chosen `colour`, with everything else moved off its default. */
 function chosen(colour: AnnotationColour): AnnotationStyle {
-  return { colour: () => colour, opacity: 0.4, lineWidth: 5, fontSize: 20, font: 'mono', family: 'Carlito', direction: 'right-to-left' };
+  return { colour: () => colour, opacity: 0.4, lineWidth: 5, fontSize: 20, font: 'mono', family: 'Carlito', direction: 'right-to-left', look: { bold: true } };
 }
 
 function drawn(tool: ReturnType<typeof rectangleTool>): Record<string, unknown> {
@@ -66,7 +66,15 @@ describe('hexFromColour and colourFromHex', () => {
 
 describe('styleFrom — the stored settings, as the style the tools draw in', () => {
   // EVERY NUMBER OFF ITS DEFAULT, so a resolver that answered `PLAIN_STYLE` is seen.
-  const stored = { opacity: 0.4, lineWidth: 5, fontSize: 20, font: 'serif' as const, family: 'Caladea', direction: 'right-to-left' as const };
+  const stored = {
+    opacity: 0.4,
+    lineWidth: 5,
+    fontSize: 20,
+    font: 'serif' as const,
+    family: 'Caladea',
+    direction: 'right-to-left' as const,
+    look: { align: 'center' as const, padding: 4 },
+  };
   const HIGHLIGHT_OWN: AnnotationColour = [1, 0.9, 0.2];
 
   it('a stored colour is EVERY tool’s colour, and the numbers pass through', () => {
@@ -81,6 +89,8 @@ describe('styleFrom — the stored settings, as the style the tools draw in', ()
       'Caladea',
       'right-to-left',
     ]);
+    // THE KEPT LOOK PASSES THROUGH TOO (B5.9), off its empty default, so a resolver that dropped it is seen.
+    expect(style.look).toStrictEqual({ align: 'center', padding: 4 });
   });
 
   it('CONTROL: the setting’s own no-choice value hands each tool its OWN colour', () => {

@@ -13,6 +13,7 @@ import {
   ocrLanguagesSchema,
   type TextDirection,
   textDirectionSchema,
+  textBoxLookSchema,
   AZURE_ENDPOINT_STORED,
   AZURE_KEY_SETTING_ID,
 } from '@monstera/contract';
@@ -28,6 +29,7 @@ import {
   EDITING_FONT_DESCRIPTION,
   EDITING_FONT_SIZE_TITLE,
   EDITING_FONT_TITLE,
+  EDITING_TEXT_BOX_LOOK_TITLE,
   EDITING_IMAGE_PAGES_TITLE,
   EDITING_LINE_WIDTH_TITLE,
   EDITING_OPACITY_TITLE,
@@ -430,6 +432,22 @@ export const AZURE_DI_KEY_SETTING: SettingDefinition<z.ZodString> = {
   // Beside its endpoint, on the OCR page: the two are one service.
   category: 'ocr',
   secret: true,
+};
+
+/**
+ * How a new text box is set beyond its face, size and colour, as *Use as default for new annotations* kept it from the
+ * Text section (B5.9): bold, italic, underline, strikethrough, alignment, line spacing, fill, margin and spacing. Empty
+ * until a person restyles a box with the default ticked, which makes a box as MuPDF's own text box is.
+ *
+ * REMEMBERED, never a row: its control is the Properties tab's own Text section, with *Use as default* ticked.
+ */
+export const TEXT_BOX_LOOK_SETTING: SettingDefinition<typeof textBoxLookSchema> = {
+  id: 'editing.text-box-look',
+  title: EDITING_TEXT_BOX_LOOK_TITLE,
+  schema: textBoxLookSchema,
+  fallback: {},
+  category: 'editing',
+  remembered: true,
 };
 
 /** What size a new text box, callout or typewriter is set in. */

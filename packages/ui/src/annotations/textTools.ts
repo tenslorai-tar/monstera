@@ -218,6 +218,8 @@ function boxTextTool(
           family: deps.style.family,
           direction: deps.style.direction,
           ...(words === undefined ? {} : { words: words.map((run) => ({ ...run })) }),
+          // A TEXT BOX IS MADE IN THE LOOK KEPT AS THE DEFAULT (B5.9); a typewriter draws no box and has no look to keep.
+          ...(type === 'text-box' && Object.keys(deps.style.look).length > 0 ? { look: { ...deps.style.look } } : {}),
         },
       };
     },

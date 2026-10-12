@@ -10,6 +10,7 @@ import {
   type AnnotationStamp,
   type AnnotationTextRun,
   type AnnotationTextStyle,
+  type TextBoxLook,
   type AnnotationWordsStyle,
   type CommandOfKind,
   type LineEnding,
@@ -45,7 +46,16 @@ import { ENGINE_ANNOTATIONS_MAX } from './host/engineChannels.js';
 import { decodedImage, withDocument } from './mupdfWriter.js';
 import { displayedBox } from './pageBoxes.js';
 import { snapRotation } from './rotatePages.js';
-import { canDraw, daFaceOf, isStyled, isStylable, readStyledBox, restyled, writeStyleFacts } from './textBoxAppearance.js';
+import {
+  type StyledBoxChange,
+  canDraw,
+  daFaceOf,
+  isStyled,
+  isStylable,
+  readStyledBox,
+  restyled,
+  writeStyleFacts,
+} from './textBoxAppearance.js';
 import { type SetAside, refaced, setAside } from './fieldFaces.js';
 import { DEFAULT_LOOK, type TextRun, base14Of } from './textBoxStyle.js';
 import { pageInDocument, pagesOf } from './pageScope.js';
@@ -748,7 +758,12 @@ function daFaceOfDraft(draft: { readonly font: AnnotationFont; readonly family?:
  */
 function realFamily(
   annotation: PDFAnnotation,
-  draft: { readonly family?: string | undefined; readonly text: string; readonly words?: readonly AnnotationTextRun[] | undefined },
+  draft: {
+    readonly family?: string | undefined;
+    readonly text: string;
+    readonly words?: readonly AnnotationTextRun[] | undefined;
+    readonly look?: TextBoxLook | undefined;
+  },
   document: PDFDocument,
 ): void {
   // WORDS STYLED ONE BY ONE WHILE TYPED (B5.8) are the box's style as a restyle's `words` are, through the one writer. Joined
@@ -758,8 +773,31 @@ function realFamily(
   if (words !== undefined && words.map((run) => run.text).join('') !== draft.text) {
     throw new RangeError('a text box’s styled runs must join to its words');
   }
-  if (words === undefined && (draft.family === undefined || base14Of(draft.family) !== undefined)) return;
-  writeStyleFacts(annotation, document, { ...(draft.family === undefined ? {} : { family: draft.family }), ...(words === undefined ? {} : { words }) });
+  // A LOOK KEPT AS THE DEFAULT (B5.9) is written by the same writer a restyle uses, so the box is made as it would be restyled.
+  const look = lookFact(draft.look);
+  if (words === undefined && look === undefined && (draft.family === undefined || base14Of(draft.family) !== undefined)) return;
+  writeStyleFacts(annotation, document, {
+    ...(draft.family === undefined ? {} : { family: draft.family }),
+    ...(words === undefined ? {} : { words }),
+    ...look,
+  });
+}
+
+/** A kept look as the appearance's writer takes it, each fact only where it says one; `undefined` for no fact at all. */
+function lookFact(look: TextBoxLook | undefined): StyledBoxChange | undefined {
+  if (look === undefined) return undefined;
+  const change: StyledBoxChange = {
+    ...(look.align === undefined ? {} : { align: look.align }),
+    ...(look.bold === undefined ? {} : { bold: look.bold }),
+    ...(look.italic === undefined ? {} : { italic: look.italic }),
+    ...(look.underline === undefined ? {} : { underline: look.underline }),
+    ...(look.strike === undefined ? {} : { strike: look.strike }),
+    ...(look.lineHeight === undefined ? {} : { lineHeight: look.lineHeight }),
+    ...(look.fill === undefined ? {} : { fill: look.fill === null ? null : ([...look.fill] as [number, number, number]) }),
+    ...(look.padding === undefined ? {} : { padding: look.padding }),
+    ...(look.spacing === undefined ? {} : { spacing: look.spacing }),
+  };
+  return Object.keys(change).length === 0 ? undefined : change;
 }
 
 /** A run as the wire carries it, as the appearance's writer takes it: each fact present only where the run says it. */

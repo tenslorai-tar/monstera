@@ -146,6 +146,15 @@ describe('textBoxTool', () => {
     ).toBe('right-to-left');
   });
 
+  it('makes the box in the LOOK kept as the default (B5.9); a style with none sends no look', async () => {
+    const look = { bold: true, align: 'center' as const, fill: [1, 1, 0] as [number, number, number] };
+    const kept = await drag(toolAnswering('see figure 3', { ...PLAIN_STYLE, look }).tool, [20, 20], [120, 80]);
+    expect(kept?.kind === 'addAnnotation' && kept.annotation.type === 'text-box' ? kept.annotation.look : undefined).toStrictEqual(look);
+    // CONTROL: PLAIN_STYLE keeps no look, and the command carries no `look` member at all.
+    const plain = await drag(toolAnswering('see figure 3', PLAIN_STYLE).tool, [20, 20], [120, 80]);
+    expect(plain?.kind === 'addAnnotation' && Object.hasOwn(plain.annotation, 'look')).toBe(false);
+  });
+
   it('sends NOTHING when the page answers no words', async () => {
     // `undefined` from `write` is nothing typed, and the outcome is the one a drag too small to see already produces:
     // no command. That is the gate — there is no value to build from — rather than a flag anybody checks.

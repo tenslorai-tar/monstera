@@ -19,6 +19,8 @@ import {
   MIN_TEXT_LINE_HEIGHT,
   MIN_ANNOTATION_OPACITY,
   measureUnitSchema,
+  type TextBoxLook,
+  textBoxLookSchema,
 } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 import { type ReactElement, type ReactNode, useEffect, useId, useState } from 'react';
@@ -98,6 +100,7 @@ import {
   MEASURE_RATIO_SETTING,
   MEASURE_UNIT_SETTING,
   STYLE_AS_DEFAULT_SETTING,
+  TEXT_BOX_LOOK_SETTING,
 } from './settings/editing.js';
 import type { SettingsStore } from './settingsStore.js';
 import { propertiesModel } from './surfaces/projections.js';
@@ -199,6 +202,7 @@ export function PropertiesPanel({
   const opacitySetting = useSetting(settings, ANNOTATION_OPACITY_SETTING);
   const widthSetting = useSetting(settings, ANNOTATION_LINE_WIDTH_SETTING);
   const fontSize = useSetting(settings, ANNOTATION_FONT_SIZE_SETTING);
+  const textBoxLook = useSetting(settings, TEXT_BOX_LOOK_SETTING);
   const fontSizeId = useId();
 
   if (selection === undefined && object !== undefined) {
@@ -373,6 +377,12 @@ export function PropertiesPanel({
       if (next.text.family !== undefined) settings.set(ANNOTATION_FONT_SETTING.id, next.text.family);
       else if (next.text.font !== undefined) settings.set(ANNOTATION_FONT_SETTING.id, ANNOTATION_FONT_FAMILIES[next.text.font]);
       if (next.text.fontSize !== undefined) settings.set(ANNOTATION_FONT_SIZE_SETTING.id, next.text.fontSize);
+      // AND THE REST OF THE SECTION (B5.9): each member the box's look has, merged into what was kept, so a new text box
+      // is made bold, centred, filled or inset as the one just restyled. The contract's one list of those members decides.
+      const look = Object.fromEntries(
+        Object.entries(next.text).filter(([member]) => Object.hasOwn(textBoxLookSchema.shape, member)),
+      ) as TextBoxLook;
+      if (Object.keys(look).length > 0) settings.set(TEXT_BOX_LOOK_SETTING.id, { ...textBoxLook, ...look });
     }
   };
 

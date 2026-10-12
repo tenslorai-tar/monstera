@@ -23,6 +23,7 @@ import {
   ANNOTATION_LINE_WIDTH_SETTING,
   ANNOTATION_OPACITY_SETTING,
   STYLE_AS_DEFAULT_SETTING,
+  TEXT_BOX_LOOK_SETTING,
 } from './settings/editing.js';
 import { SettingsStore } from './settingsStore.js';
 
@@ -384,6 +385,21 @@ describe('PropertiesPanel with marks selected', () => {
     // *Use as default* is ticked, so the face and size just chosen are what the next text box starts in.
     expect(store.get(ANNOTATION_FONT_SETTING.id)).toBe('Times');
     expect(store.get(ANNOTATION_FONT_SIZE_SETTING.id)).toBe(18);
+  });
+
+  it('the style controls kept as the default become how the next text box is set (B5.9); unticked, they are not', () => {
+    const { store } = mounted({ ...ONE, items: [TEXT_BOX] });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Bold' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Justify' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Fill the box' }));
+    // MERGED, each control adding its member to what was kept, so the third does not take the first two away.
+    expect(store.get(TEXT_BOX_LOOK_SETTING.id)).toStrictEqual({ bold: true, align: 'justify', fill: [1, 1, 0.8] });
+    cleanup();
+    // CONTROL: the same press with *Use as default* unticked keeps nothing.
+    const unticked = mounted({ ...ONE, items: [TEXT_BOX] });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Use as default for new annotations' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Bold' }));
+    expect(unticked.store.get(TEXT_BOX_LOOK_SETTING.id)).toStrictEqual({});
   });
 
   it('the style controls (ADR-0211) each send ONE property: bold, justify, line spacing, padding and a fill', () => {

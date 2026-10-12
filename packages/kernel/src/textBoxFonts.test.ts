@@ -1,5 +1,5 @@
 import { PDFDocument as LibDocument } from '@cantoo/pdf-lib';
-import type { AnnotationDraft, AnnotationWordsStyle, CommandOfKind } from '@monstera/contract';
+import type { AnnotationDraft, AnnotationWordsStyle, CommandOfKind, TextBoxLook } from '@monstera/contract';
 import { asDocVersion } from '@monstera/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -243,6 +243,42 @@ describe('a text box whose words were styled one by one while typed (B5.8)', () 
 
   it('refuses runs that do not join to the box’s words, which would make two readers show two boxes', async () => {
     await expect(added({ ...textBox('Helvetica', 'Other words'), words: RUNS })).rejects.toThrow(/join to its words/u);
+  });
+});
+
+describe('a text box made in a look kept as the default (B5.9)', () => {
+  const LOOK: TextBoxLook = { bold: true, align: 'center', fill: [1, 1, 0], padding: 6 };
+
+  /** The box's `/Q` as the saved file holds it. */
+  async function quaddingOf(bytes: Uint8Array): Promise<number> {
+    const session = await mupdfWriter.open(bytes);
+    try {
+      return await withDocument(session, (document) => {
+        const page = document.loadPage(0);
+        if (!(page instanceof mupdf.PDFPage)) throw new Error('not a PDF page');
+        const q = page.getAnnotations()[0]?.getObject().get('Q');
+        return q?.isNumber() === true ? q.asNumber() : 0;
+      });
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }
+
+  it('is drawn bold, centred, filled and inset as made, by the writer a restyle uses, and survives a save and a reopen', async () => {
+    const bytes = await added({ ...textBox('Helvetica', 'Kept look'), look: LOOK });
+    const { fonts, content } = await appearanceOf(bytes);
+    expect(fonts.map((font) => font.name)).toContain('Helvetica-Bold');
+    expect(content).toContain('1 1 0 rg');
+    expect(await quaddingOf(bytes)).toBe(1);
+    expect(await readText(bytes)).toContain('Kept look');
+  });
+
+  it('CONTROL: the same box with no look is drawn plain, left and unfilled', async () => {
+    const bytes = await added(textBox('Helvetica', 'Kept look'));
+    const { fonts, content } = await appearanceOf(bytes);
+    expect(fonts.map((font) => font.name)).not.toContain('Helvetica-Bold');
+    expect(content).not.toContain('1 1 0 rg');
+    expect(await quaddingOf(bytes)).toBe(0);
   });
 });
 

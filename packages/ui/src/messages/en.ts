@@ -1937,6 +1937,7 @@ export const EDITING_AUTHOR_NAME_DESCRIPTION = messageKey('setting.editing.autho
 export const EDITING_OPACITY_TITLE = messageKey('setting.editing.annotation-opacity');
 export const EDITING_LINE_WIDTH_TITLE = messageKey('setting.editing.annotation-line-width');
 export const EDITING_FONT_SIZE_TITLE = messageKey('setting.editing.annotation-font-size');
+export const EDITING_TEXT_BOX_LOOK_TITLE = messageKey('setting.editing.text-box-look');
 export const EDITING_FONT_TITLE = messageKey('setting.editing.annotation-font.title');
 export const EDITING_FONT_DESCRIPTION = messageKey('setting.editing.annotation-font.description');
 export const EDITING_DIRECTION_TITLE = messageKey('setting.editing.text-direction.title');
@@ -4631,6 +4632,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EDITING_OPACITY_TITLE]: 'Annotation opacity',
   [EDITING_LINE_WIDTH_TITLE]: 'Annotation line width',
   [EDITING_FONT_SIZE_TITLE]: 'Annotation font size',
+  [EDITING_TEXT_BOX_LOOK_TITLE]: 'How a new text box is set',
   [EDITING_FONT_TITLE]: 'Annotation font',
   [EDITING_FONT_DESCRIPTION]:
     'The typeface new text boxes, callouts and typed text are set in. A font from this computer or one included with Monstera is saved inside the file, so the words look the same wherever it is opened. Callouts use the built-in font closest to it.',

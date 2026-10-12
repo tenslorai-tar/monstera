@@ -70,6 +70,9 @@ describe('the registered settings', () => {
       'appearance.float-bar-position',
       'appearance.tips-shown',
       'editing.personal-dictionary',
+      // HOW A NEW TEXT BOX IS SET (B5.9), an object of the Text section's members whose control is that section itself,
+      // with *Use as default for new annotations* ticked: a row here would be a second place to set nine values.
+      'editing.text-box-look',
       'keyboard.shortcuts',
     ]);
 
