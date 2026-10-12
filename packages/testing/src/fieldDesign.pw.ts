@@ -81,6 +81,16 @@ async function zoomOf(page: Page): Promise<number> {
   return (await boxOf(page.locator('[data-field-box="0"]'))).width / (NAME.x1 - NAME.x0);
 }
 
+/**
+ * The commands sent once there are `count` of them. A command reaches `sent` through the page's exposed binding, which
+ * the test process hears AFTER `mouse.up()` resolves, so a read straight after a gesture races the bridge: measured on
+ * the windows runner, a drag's one command was not there yet (CI run 38207412421) while Linux had it in time.
+ */
+async function sentOnce(sent: Sent, count: number): Promise<unknown[]> {
+  await expect.poll(() => commands(sent).length).toBe(count);
+  return commands(sent);
+}
+
 async function drag(page: Page, from: { x: number; y: number }, by: { x: number; y: number }): Promise<void> {
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
@@ -109,8 +119,7 @@ test.describe('Edit fields', () => {
     const zoom = await zoomOf(page);
     const at = await boxOf(page.locator('[data-field-box="0"]'));
     await drag(page, { x: at.x + at.width / 2, y: at.y + at.height / 2 }, { x: 40, y: 20 });
-    const sentNow = commands(sent);
-    expect(sentNow).toHaveLength(1);
+    const sentNow = await sentOnce(sent, 1);
     const edit = sentNow[0] as { kind: string; edits: { field: { index: number }; set: { rect: typeof NAME } }[] };
     expect(edit.kind).toBe('editFormFields');
     expect(edit.edits.map((each) => each.field.index)).toStrictEqual([0]);
@@ -133,7 +142,7 @@ test.describe('Edit fields', () => {
     await expect(page.locator('[data-field-guide="x"]').first()).toBeVisible();
     await page.mouse.up();
     await expect(page.locator('[data-field-guide]')).toHaveCount(0);
-    const edit = commands(sent)[0] as { edits: { set: { rect: typeof EMAIL } }[] };
+    const edit = (await sentOnce(sent, 1))[0] as { edits: { set: { rect: typeof EMAIL } }[] };
     // ON THE COLUMN, exactly: the three pixels were taken back.
     expect(edit.edits[0]?.set.rect.x0).toBeCloseTo(EMAIL.x0, 3);
   });
@@ -144,7 +153,7 @@ test.describe('Edit fields', () => {
     const zoom = await zoomOf(page);
     const at = await boxOf(page.locator('[data-field-box="1"]'));
     await drag(page, { x: at.x + at.width / 2, y: at.y + at.height / 2 }, { x: 15, y: 40 });
-    const edit = commands(sent)[0] as { edits: { set: { rect: typeof EMAIL } }[] };
+    const edit = (await sentOnce(sent, 1))[0] as { edits: { set: { rect: typeof EMAIL } }[] };
     expect(edit.edits[0]?.set.rect.x0).toBeCloseTo(EMAIL.x0 + 15 / zoom, 1);
   });
 
@@ -154,9 +163,9 @@ test.describe('Edit fields', () => {
     const at = await boxOf(page.locator('[data-field-box="1"]'));
     // TWO PIXELS IN from the left edge and the bottom: still the box, not the paper beside it.
     await page.mouse.click(at.x + 2, at.y + at.height - 2);
-    expect(commands(sent)).toStrictEqual([]);
     await drag(page, { x: at.x + 2, y: at.y + at.height - 2 }, { x: 0, y: -30 });
-    const edit = commands(sent)[0] as { edits: { field: { index: number }; set: { rect: typeof EMAIL } }[] };
+    // ONE COMMAND IN ALL, and it is the move: a press that had sent one would put an unmoved rect first, or make two.
+    const edit = (await sentOnce(sent, 1))[0] as { edits: { field: { index: number }; set: { rect: typeof EMAIL } }[] };
     expect(edit.edits[0]?.field.index).toBe(1);
     expect(edit.edits[0]?.set.rect.y0).toBeGreaterThan(EMAIL.y0);
   });
@@ -171,7 +180,7 @@ test.describe('Edit fields', () => {
     await expect(page.locator('[data-field-handle]')).toHaveCount(8);
     const handle = await boxOf(page.locator('[data-field-handle="se"]'));
     await drag(page, { x: handle.x + handle.width / 2, y: handle.y + handle.height / 2 }, { x: 30, y: 16 });
-    const edit = commands(sent)[0] as { kind: string; edits: { set: { rect: typeof NAME } }[] };
+    const edit = (await sentOnce(sent, 1))[0] as { kind: string; edits: { set: { rect: typeof NAME } }[] };
     expect(edit.kind).toBe('editFormFields');
     const rect = edit.edits[0]?.set.rect;
     // THE TOP LEFT CORNER STAYS; the right edge and the bottom follow the pointer.
