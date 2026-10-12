@@ -73,6 +73,52 @@ export interface SetAside {
   /** The border's style, and its colour lifted for the base where that style is drawn here (ADR-0230), else `null`. */
   readonly style: FieldBorderStyle;
   readonly borderColour: PDFObject | null;
+  /** A list box's rows (ADR-0231), which MuPDF's base draws none of; absent for every other kind. */
+  readonly list?: ListRows;
+}
+
+/** What a list box shows: its options as people read them, from the top index down, and which of them are chosen. */
+interface ListRows {
+  readonly labels: readonly string[];
+  readonly chosen: ReadonlySet<number>;
+  readonly top: number;
+}
+
+/** The rows of a list box: `/I` names the chosen ones where the file has it, else `/V` by its export values. */
+function listRowsOf(widget: PDFWidget): ListRows {
+  const object = widget.getObject();
+  const labels = widget.getOptions(false);
+  const exports = widget.getOptions(true);
+  const chosen = new Set<number>();
+  const places = nearest(object, 'I');
+  if (places.isArray()) {
+    for (let at = 0; at < places.length; at += 1) {
+      const place = places.get(at);
+      if (place.isNumber()) chosen.add(place.asNumber());
+    }
+  } else {
+    const value = nearest(object, 'V');
+    const values = value.isArray() ? Array.from({ length: value.length }, (_unused, at) => value.get(at)) : [value];
+    for (const each of values) {
+      const at = each.isString() ? exports.indexOf(each.asString()) : -1;
+      if (at >= 0) chosen.add(at);
+    }
+  }
+  const top = nearest(object, 'TI');
+  return { labels, chosen, top: top.isNumber() ? Math.max(0, Math.min(labels.length - 1, Math.trunc(top.asNumber()))) : 0 };
+}
+
+/**
+ * A list box set aside (ADR-0231): nothing is emptied, since MuPDF's base draws no option whatever the value, and nothing is
+ * lifted, since a list box's border stays solid (ADR-0230 Decision 4). `undefined` where an option cannot be set, leaving the
+ * list to the engine.
+ */
+function listAside(widget: PDFWidget, document: PDFDocument): SetAside | undefined {
+  const family = standardFamilyOf(widget, document);
+  const list = listRowsOf(widget);
+  if (!list.labels.every((label) => canDraw(label, family))) return undefined;
+  const field = fieldDictionaryOf(widget.getObject());
+  return { widget, kind: 'listbox', family, shown: '', field, kept: field.get('V'), style: 'solid', borderColour: null, list };
 }
 
 /**
@@ -83,6 +129,8 @@ export interface SetAside {
 export function setAside(annotation: PDFAnnotation, document: PDFDocument): SetAside | undefined {
   if (!(annotation instanceof PDFWidget)) return undefined;
   const kind = kindOf(annotation);
+  // EVERY LIST BOX: MuPDF draws one with no options (ADR-0231, measured), so its rows are always Monstera's.
+  if (kind === 'listbox') return listAside(annotation, document);
   if (!drawsFieldFamily(kind)) return undefined;
   const object = annotation.getObject();
   const marker = nearest(object, FIELD_FAMILY_MARKER);
@@ -230,6 +278,45 @@ function layoutOf(
   }
 }
 
+/** A list box's row pitch as a multiple of its size: pdf-lib's for Helvetica, measured 11.1 for 10 pt on the owner's form (ADR-0231). */
+const LIST_PITCH = 1.11;
+/** The fill behind a chosen row: pdf-lib's own, so a list it drew and one drawn here look alike. */
+const LIST_CHOSEN = '0.6 0.757 0.855 rg';
+
+/**
+ * A list box's rows laid out from its top index down while a row's top is inside the box, each option on one line at its
+ * own baseline, and the chosen rows' fills in the box's PDF space; `undefined` where an option cannot be set.
+ */
+function listLayout(
+  widget: PDFWidget,
+  family: string,
+  list: ListRows,
+  width: number,
+  height: number,
+  setter: Typesetter,
+): { readonly look: BoxLook; readonly layout: Layout; readonly fills: string } | undefined {
+  const da = nearest(widget.getObject(), 'DA');
+  const stated = parseDefaultAppearance(da.isString() ? da.asString() : undefined)?.size ?? 0;
+  const look = lookOf(widget, family, stated > 0 ? stated : AUTO_START);
+  const pitch = look.size * LIST_PITCH;
+  const inset = look.padding + look.borderWidth;
+  const lines: Line[] = [];
+  const fills: string[] = [];
+  for (let row = 0; list.top + row < list.labels.length && inset + row * pitch < height; row += 1) {
+    const at = list.top + row;
+    // THE BASELINE pdf-lib draws at: one pitch below the row's top (measured 13.1 for the first row of a 10 pt list inset 2).
+    const baseline = inset + (row + 1) * pitch;
+    if (list.chosen.has(at)) {
+      const bottom = height - (baseline + look.size * DESCENT);
+      fills.push(`q\n${LIST_CHOSEN}\n${fixed(inset)} ${fixed(bottom)} ${fixed(width - 2 * inset)} ${fixed(pitch)} re f\nQ`);
+    }
+    const laid = layoutBox(width, height, look, [{ text: list.labels[at] ?? '' }], setter, false);
+    if (laid === undefined) return undefined;
+    lines.push({ baseline, pieces: laid.lines[0]?.pieces ?? [] });
+  }
+  return { look, layout: { width, height, lines }, fills: fills.length === 0 ? '' : `${fills.join('\n')}\n` };
+}
+
 /** The base appearance's own stream dictionary, every entry but its length and filter, with `fonts` as its fonts. */
 function streamDictionary(document: PDFDocument, base: PDFObject, fonts: PDFObject): PDFObject {
   const dictionary = document.newDictionary();
@@ -274,7 +361,15 @@ export function refaced(aside: SetAside | undefined, document: PDFDocument): boo
   const content = base.readStream().asString();
   let words = '';
   let fonts: PDFObject | undefined;
-  if (value !== '') {
+  if (aside.list !== undefined) {
+    const { setter, resolver } = settersFor(document);
+    const laid = listLayout(annotation, family, aside.list, width, height, setter);
+    if (laid !== undefined) {
+      // THE CHOSEN ROWS' FILLS UNDER THE WORDS, both inside the base's clip.
+      words = `q\n${origin}\n${laid.fills}${appearanceContent(laid.layout, { ...laid.look, fill: null, borderWidth: 0 })}Q\n`;
+      fonts = layoutFonts(document, laid.layout, resolver);
+    }
+  } else if (value !== '') {
     const { setter, resolver } = settersFor(document);
     const laid = layoutOf(annotation, kind, family, value, width, height, setter);
     if (laid !== undefined) {

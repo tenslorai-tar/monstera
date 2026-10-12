@@ -54,12 +54,12 @@ export function widgetsOfField(document: PDFDocument, widget: PDFWidget): PDFWid
 }
 
 /**
- * Whether Monstera draws this field (ADR-0229, ADR-0230): it carries a real family, read up the field's ancestry as every
- * inherited key is, or it is a text field or a dropdown whose border is not solid. `fieldFaces.ts`' `setAside` decides the
- * drawing by the same two facts.
+ * Whether Monstera draws this field (ADR-0229, ADR-0230, ADR-0231): it carries a real family, read up the field's ancestry as
+ * every inherited key is, or it is a list box, whose options MuPDF never draws, or a text field or a dropdown whose border is
+ * not solid. `fieldFaces.ts`' `setAside` decides the drawing by the same three facts.
  */
 export function drawnByMonstera(widget: PDFWidget): boolean {
-  if (nearest(widget.getObject(), FIELD_FAMILY_MARKER).isString()) return true;
+  if (nearest(widget.getObject(), FIELD_FAMILY_MARKER).isString() || widget.isListBox()) return true;
   return (widget.isText() || widget.isComboBox()) && borderStyleOf(widget.getObject()) !== 'solid';
 }
 
