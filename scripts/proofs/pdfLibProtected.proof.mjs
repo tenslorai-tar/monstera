@@ -224,15 +224,15 @@ async function runCommand(/** @type {any} */ kernel, /** @type {any} */ session,
 
 /** One command per family, with what its result must hold. */
 const COMMANDS = /** @type {const} */ ([
-  ['watermarkPages', { kind: 'watermarkPages', pages: 'all', text: 'DRAFT', opacity: 0.3, rotationDegrees: 45, fontSize: 36 }, undefined],
+  ['watermarkPages', { kind: 'watermarkPages', pages: 'all', text: 'DRAFT', opacity: 0.3, rotationDegrees: 45, family: 'Helvetica', fontSize: 36 }, undefined],
   [
     'headerFooterPages',
-    { kind: 'headerFooterPages', pages: 'all', header: { left: 'Monstera', centre: '', right: '' }, footer: { left: '', centre: '', right: '' }, fontSize: 10, marginPoints: 36 },
+    { kind: 'headerFooterPages', pages: 'all', header: { left: 'Monstera', centre: '', right: '' }, footer: { left: '', centre: '', right: '' }, family: 'Helvetica', fontSize: 10, marginPoints: 36 },
     undefined,
   ],
   [
     'batesNumberPages',
-    { kind: 'batesNumberPages', pages: 'all', prefix: 'ABC-', suffix: '', start: 1, digits: 4, edge: 'footer', slot: 'right', fontSize: 9, marginPoints: 36 },
+    { kind: 'batesNumberPages', pages: 'all', prefix: 'ABC-', suffix: '', start: 1, digits: 4, edge: 'footer', slot: 'right', family: 'Helvetica', fontSize: 9, marginPoints: 36 },
     undefined,
   ],
 ]);

@@ -21,6 +21,7 @@ import { Input } from '../primitives/Input.js';
 import { Problem } from '../primitives/Problem.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import { PageScopeChoice } from './PageScopeChoice.js';
+import { DEFAULT_STAMP_FAMILY, StampFontRow } from './StampFontRow.js';
 import type { WatermarkPagesAnswer } from './watermarkPagesResult.js';
 
 /**
@@ -86,6 +87,7 @@ export default function WatermarkPagesBody({
   const { _ } = useLingui();
   const [text, setText] = useState('');
   const [appearance, setAppearance] = useState<Appearance>(DEFAULTS);
+  const [family, setFamily] = useState(DEFAULT_STAMP_FAMILY);
   const [everyPage, setEveryPage] = useState(true);
 
   const trimmed = text.trim();
@@ -147,6 +149,7 @@ export default function WatermarkPagesBody({
           />
         </DialogRow>
       </div>
+      <StampFontRow value={family} onPick={setFamily} />
       <div ref={sizeField}>
         <DialogRow label={WATERMARK_PAGES_SIZE}>
           <Input
@@ -176,7 +179,7 @@ export default function WatermarkPagesBody({
             // refuses an opacity above 1 and empty text, and a mismatch would be
             // a thrown `DialogResultRejected` over the user's document.
             if (parsed === null || trimmed.length === 0) return;
-            resolve({ pages: everyPage ? 'all' : [...pages], text: trimmed, ...parsed });
+            resolve({ pages: everyPage ? 'all' : [...pages], text: trimmed, family, ...parsed });
           }}
         />
       </DialogFooter>
@@ -199,7 +202,7 @@ function fractionOfPercent(percent: number): number {
 }
 
 /** The parsed appearance, or `null` if a field is text that is not a number. */
-function readAppearance(appearance: Appearance): Omit<WatermarkPagesAnswer, 'pages' | 'text'> | null {
+function readAppearance(appearance: Appearance): Omit<WatermarkPagesAnswer, 'pages' | 'text' | 'family'> | null {
   const opacity = readNumber(appearance.opacity, DEFAULT_OPACITY);
   const rotation = readNumber(appearance.rotationDegrees, DEFAULT_ROTATION, { signed: true });
   const size = readNumber(appearance.fontSize, DEFAULT_SIZE);

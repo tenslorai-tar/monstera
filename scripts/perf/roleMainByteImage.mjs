@@ -192,7 +192,7 @@ const executed = await documents.run(outcome.docId, (context) =>
   bus.execute(
     { mupdf: hostSession },
     context,
-    { kind: 'watermarkPages', pages: 'all', text: 'DRAFT', opacity: 0.3, rotationDegrees: 45, fontSize: 48 },
+    { kind: 'watermarkPages', pages: 'all', text: 'DRAFT', opacity: 0.3, rotationDegrees: 45, family: 'Helvetica', fontSize: 48 },
     inputs,
   ),
 );
@@ -206,7 +206,7 @@ if (process.argv.includes('--twice')) {
       bus.execute(
         { mupdf: hostSession },
         context,
-        { kind: 'watermarkPages', pages: 'all', text: 'AGAIN', opacity: 0.3, rotationDegrees: 45, fontSize: 48 },
+        { kind: 'watermarkPages', pages: 'all', text: 'AGAIN', opacity: 0.3, rotationDegrees: 45, family: 'Helvetica', fontSize: 48 },
         inputs,
       ),
     ),

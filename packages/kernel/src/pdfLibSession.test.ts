@@ -49,6 +49,7 @@ describe('a pdf-lib command appends its revision (ADR-0127)', () => {
       text: 'DRAFT',
       opacity: 0.3,
       rotationDegrees: 45,
+      family: 'Helvetica',
       fontSize: 36,
     });
 

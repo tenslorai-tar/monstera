@@ -27,6 +27,7 @@ import { SegmentedControl } from '../primitives/SegmentedControl.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { BatesNumberAnswer } from './batesNumberResult.js';
 import { PageScopeChoice } from './PageScopeChoice.js';
+import { DEFAULT_STAMP_FAMILY, StampFontRow } from './StampFontRow.js';
 
 /** Where the stamp can sit, as the two axes the command carries. */
 const EDGES = [
@@ -85,6 +86,7 @@ export default function BatesNumberBody({
   const [digits, setDigits] = useState(DEFAULT_DIGITS);
   const [edge, setEdge] = useState<(typeof EDGES)[number]['key']>('footer');
   const [slot, setSlot] = useState<(typeof SLOTS)[number]['key']>('right');
+  const [family, setFamily] = useState(DEFAULT_STAMP_FAMILY);
   const [everyPage, setEveryPage] = useState(true);
   const numbersRef = useRef<HTMLDivElement>(null);
 
@@ -166,6 +168,7 @@ export default function BatesNumberBody({
           onChange={setSlot}
         />
       </DialogRow>
+      <StampFontRow value={family} onPick={setFamily} />
       <PageScopeChoice className="m-bates-number__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
       <Problem message={ready ? undefined : _(BATES_NUMBER_NOT_A_NUMBER)} about={{ within: numbersRef }} />
       <DialogFooter>
@@ -185,6 +188,7 @@ export default function BatesNumberBody({
               digits: digitsValue,
               edge,
               slot,
+              family,
               fontSize: Number(DEFAULT_SIZE),
               marginPoints: Number(DEFAULT_MARGIN),
             });

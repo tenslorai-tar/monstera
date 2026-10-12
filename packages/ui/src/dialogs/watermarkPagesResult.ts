@@ -1,3 +1,4 @@
+import { STAMP_FAMILIES } from '@monstera/contract';
 import { z } from 'zod';
 
 /**
@@ -27,6 +28,7 @@ export const WATERMARK_PAGES_RESULT = z
     text: z.string().min(1).max(200),
     opacity: z.number().min(0).max(1),
     rotationDegrees: z.number().min(-360).max(360),
+    family: z.enum(STAMP_FAMILIES),
     fontSize: z.number().positive().max(1000),
   })
   .strict();

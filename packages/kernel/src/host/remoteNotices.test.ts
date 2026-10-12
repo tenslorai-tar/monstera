@@ -12,7 +12,7 @@ import { createRemoteSessions, remotePdfLibHost, type SessionAssets } from './re
  * into the answer is `engineProtectedApply.test.ts`'s. This holds the third link, the one between them.
  */
 
-const COMMAND = { kind: 'watermarkPages', pages: 'all', text: 'DRAFT', opacity: 0.3, rotationDegrees: 45, fontSize: 36 } as const;
+const COMMAND = { kind: 'watermarkPages', pages: 'all', text: 'DRAFT', opacity: 0.3, rotationDegrees: 45, family: 'Helvetica', fontSize: 36 } as const;
 
 const ASSETS: SessionAssets = {
   name: () => 'asset',

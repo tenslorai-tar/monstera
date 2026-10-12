@@ -1,9 +1,10 @@
-import { StandardFonts, rgb } from '@cantoo/pdf-lib';
+import { rgb } from '@cantoo/pdf-lib';
 import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert } from './engineSeam.js';
 import { pageInDocument, pagesOf } from './pageScope.js';
+import { STAMP_FONT } from './pageStamp.js';
 import { pageFrame, upright } from './pdfLibFrame.js';
 import { appendRevision, openForWriting } from './pdfLibSession.js';
 
@@ -150,7 +151,7 @@ export const applyWatermarkPages: Apply<'pdf-lib', 'watermarkPages'> = async (im
     pageInDocument(page, pages.length);
   }
 
-  const font = await document.embedFont(StandardFonts.Helvetica);
+  const font = await document.embedFont(STAMP_FONT[command.family]);
   const radians = (command.rotationDegrees * Math.PI) / 180;
   const colour = rgb(WATERMARK_GREY, WATERMARK_GREY, WATERMARK_GREY);
 

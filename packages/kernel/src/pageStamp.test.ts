@@ -53,6 +53,7 @@ const STAMP: CommandOfKind<'headerFooterPages'> = {
   pages: 'all',
   header: { left: 'Monstera', centre: '', right: '' },
   footer: { left: '', centre: 'Page {n} of {N}', right: '' },
+  family: 'Helvetica',
   fontSize: 10,
   marginPoints: 36,
 };
@@ -291,6 +292,7 @@ describe('batesNumberPages', () => {
     digits: 4,
     edge: 'footer',
     slot: 'right',
+    family: 'Helvetica',
     fontSize: 9,
     marginPoints: 36,
   };

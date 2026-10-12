@@ -295,6 +295,7 @@ export const WATERMARK_PAGES_TEXT = messageKey('dialog.watermark-pages.text');
 export const WATERMARK_PAGES_OPACITY = messageKey('dialog.watermark-pages.opacity');
 export const WATERMARK_PAGES_ROTATION = messageKey('dialog.watermark-pages.rotation');
 export const WATERMARK_PAGES_SIZE = messageKey('dialog.watermark-pages.size');
+export const STAMP_FONT = messageKey('dialog.stamp.font');
 export const WATERMARK_PAGES_APPLY = messageKey('dialog.watermark-pages.apply');
 export const WATERMARK_PAGES_NO_TEXT = messageKey('dialog.watermark-pages.no-text');
 export const WATERMARK_PAGES_NOT_A_NUMBER = messageKey('dialog.watermark-pages.not-a-number');
@@ -6854,6 +6855,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [WATERMARK_PAGES_OPACITY]: 'Opacity (%)',
   [WATERMARK_PAGES_ROTATION]: 'Angle (degrees)',
   [WATERMARK_PAGES_SIZE]: 'Size (points)',
+  [STAMP_FONT]: 'Font',
   [WATERMARK_PAGES_APPLY]: 'Add watermark',
   [WATERMARK_PAGES_NO_TEXT]: 'A watermark needs some text.',
   [WATERMARK_PAGES_NOT_A_NUMBER]:

@@ -293,6 +293,14 @@ export const cropPagesSchema = z.object({
 }).strict();
 
 /**
+ * The families a page stamp (a watermark, a header or footer, a Bates number) may be set in, the TEXT spec's D1: the
+ * three standard faces its writer embeds. An installed family needs a font program in that writer, which it does not
+ * have; the one font picker offers these three there, by name, and nothing it could not set.
+ */
+export const STAMP_FAMILIES = ['Helvetica', 'Times', 'Courier'] as const;
+export type StampFamily = (typeof STAMP_FAMILIES)[number];
+
+/**
  * Draw a text watermark across pages.
  *
  * **The first command routed to a byte-image writer**
@@ -344,6 +352,8 @@ export const watermarkPagesSchema = z.object({
   rotationDegrees: z.number().min(-360).max(360),
   /** Type size in points. Bounded above so one command cannot ask for a page-sized glyph run. */
   fontSize: z.number().positive().max(1000),
+  /** The face the text is set in, one of {@link STAMP_FAMILIES}. */
+  family: z.enum(STAMP_FAMILIES),
 }).strict();
 
 /**
@@ -407,6 +417,8 @@ export const headerFooterPagesSchema = z.object({
   footer: stampSlotsSchema,
   /** Type size in points. */
   fontSize: z.number().positive().max(1000),
+  /** The face the text is set in, one of {@link STAMP_FAMILIES}. */
+  family: z.enum(STAMP_FAMILIES),
   /**
    * How far in from the page's edge the text sits, in points.
    *
@@ -459,6 +471,8 @@ export const batesNumberPagesSchema = z.object({
   slot: z.enum(['left', 'centre', 'right']),
   /** Type size in points. */
   fontSize: z.number().positive().max(1000),
+  /** The face the text is set in, one of {@link STAMP_FAMILIES}. */
+  family: z.enum(STAMP_FAMILIES),
   /** How far in from the page's edge, in points. */
   marginPoints: z.number().nonnegative().max(500),
 }).strict();

@@ -81,6 +81,7 @@ const DRAFT: CommandOfKind<'watermarkPages'> = {
   text: 'DRAFT',
   opacity: 0.3,
   rotationDegrees: 45,
+  family: 'Helvetica',
   fontSize: 36,
 };
 

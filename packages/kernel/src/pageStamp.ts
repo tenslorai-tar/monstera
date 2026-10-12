@@ -1,5 +1,5 @@
 import { StandardFonts, rgb } from '@cantoo/pdf-lib';
-import type { CommandOfKind } from '@monstera/contract';
+import type { CommandOfKind, StampFamily } from '@monstera/contract';
 import { STAMP_TOKENS } from '@monstera/contract/host';
 
 import type { CaptureResult } from './commandLog.js';
@@ -120,6 +120,16 @@ export const invertHeaderFooterPages: Invert<'pdf-lib', 'headerFooterPages'> = (
 };
 
 /**
+ * The standard font each stamp family is set in (the TEXT spec's D1): the one map the watermark, the header and footer
+ * and the Bates number take, so the three cannot set one family in two faces (B3a).
+ */
+export const STAMP_FONT: Readonly<Record<StampFamily, StandardFonts>> = {
+  Helvetica: StandardFonts.Helvetica,
+  Times: StandardFonts.TimesRoman,
+  Courier: StandardFonts.Courier,
+};
+
+/**
  * Draws the header and footer slots and returns the new document.
  *
  * ## The vertical placement is the margin, measured from the right edge each way
@@ -138,6 +148,7 @@ export const invertHeaderFooterPages: Invert<'pdf-lib', 'headerFooterPages'> = (
  * and enough to make a *this document has no footer* assertion false. So an
  * empty slot is skipped.
  */
+
 export const applyHeaderFooterPages: Apply<'pdf-lib', 'headerFooterPages'> = async (
   image,
   command,
@@ -152,7 +163,7 @@ export const applyHeaderFooterPages: Apply<'pdf-lib', 'headerFooterPages'> = asy
     pageInDocument(page, pages.length);
   }
 
-  const font = await document.embedFont(StandardFonts.Helvetica);
+  const font = await document.embedFont(STAMP_FONT[command.family]);
   const total = pages.length;
 
   for (const index of targets) {
@@ -308,7 +319,7 @@ export const applyBatesNumberPages: Apply<'pdf-lib', 'batesNumberPages'> = async
     pageInDocument(page, pages.length);
   }
 
-  const font = await document.embedFont(StandardFonts.Helvetica);
+  const font = await document.embedFont(STAMP_FONT[command.family]);
 
   for (const [position, index] of targets.entries()) {
     const page = pages[index];

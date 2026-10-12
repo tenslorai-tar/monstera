@@ -1684,6 +1684,7 @@ export function headerFooterCommand(deps: DocumentCommandDeps): UiCommand {
         pages: answer.pages === 'all' ? 'all' : [...answer.pages],
         header: answer.header,
         footer: answer.footer,
+        family: answer.family,
         fontSize: answer.fontSize,
         marginPoints: answer.marginPoints,
       });
@@ -1726,6 +1727,7 @@ export function batesNumberCommand(deps: DocumentCommandDeps): UiCommand {
         digits: answer.digits,
         edge: answer.edge,
         slot: answer.slot,
+        family: answer.family,
         fontSize: answer.fontSize,
         marginPoints: answer.marginPoints,
       });
@@ -2313,6 +2315,7 @@ export function watermarkPagesCommand(deps: DocumentCommandDeps): UiCommand {
         text: answer.text,
         opacity: answer.opacity,
         rotationDegrees: answer.rotationDegrees,
+        family: answer.family,
         fontSize: answer.fontSize,
       });
     },

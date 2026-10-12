@@ -12,7 +12,7 @@ Headers and footers put text at the top and bottom of pages, on the left, in the
 
 1. In the rail, choose **Organize**, then **Headers…** in the **Marks** group (**Headers and footers…**).
 2. Under **Header** and **Footer**, type text in any of **Left**, **Centre** and **Right**. Type `{n}` for the page number and `{N}` for the number of pages, for example `Page {n} of {N}`.
-3. Set **Size (points)** and **Margin (points)** if you want.
+3. Choose a **Font** (Helvetica, Times or Courier, the fonts every PDF reader has), and set **Size (points)** and **Margin (points)** if you want.
 4. Choose **This page** or **All pages**, then **Add**.
 
 ![The Headers and footers window with a footer reading Page {n} of {N}](screenshot:headers-and-footers-1)

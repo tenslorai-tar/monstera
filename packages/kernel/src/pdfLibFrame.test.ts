@@ -112,6 +112,7 @@ const STAMP: CommandOfKind<'headerFooterPages'> = {
   pages: 'all',
   header: { left: '', centre: 'Annual report', right: '' },
   footer: { left: '', centre: 'Page {n} of {N}', right: '' },
+  family: 'Helvetica',
   fontSize: 10,
   marginPoints: MARGIN,
 };
@@ -160,6 +161,7 @@ describe('the pdf-lib drawing commands on a turned page whose box does not start
       digits: 4,
       edge: 'footer',
       slot: 'right',
+      family: 'Helvetica',
       fontSize: 9,
       marginPoints: MARGIN,
     };
@@ -176,6 +178,7 @@ describe('the pdf-lib drawing commands on a turned page whose box does not start
       text: 'DRAFT',
       opacity: 0.3,
       rotationDegrees: 0,
+      family: 'Helvetica',
       fontSize: 36,
     };
     const draft = lineReading(await linesOn(await applyWatermarkPages(await turnedPage(), watermark)), 'DRAFT');
@@ -279,6 +282,7 @@ describe('the pdf-lib drawing commands on a turned page whose box does not start
       text: 'DRAFT',
       opacity: 0.3,
       rotationDegrees: 30,
+      family: 'Helvetica',
       fontSize: 36,
     };
     for (const bytes of [await uprightPage(), await turnedPage()]) {

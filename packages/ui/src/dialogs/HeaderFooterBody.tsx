@@ -24,6 +24,7 @@ import { Problem } from '../primitives/Problem.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { HeaderFooterAnswer } from './headerFooterResult.js';
 import { PageScopeChoice } from './PageScopeChoice.js';
+import { DEFAULT_STAMP_FAMILY, StampFontRow } from './StampFontRow.js';
 
 /** The two edges, in the order a page has them. */
 const EDGES = [
@@ -92,6 +93,7 @@ export default function HeaderFooterBody({
 } & DialogAnswering<HeaderFooterAnswer>): ReactElement {
   const { _ } = useLingui();
   const [slots, setSlots] = useState<Slots>(EMPTY_SLOTS);
+  const [family, setFamily] = useState(DEFAULT_STAMP_FAMILY);
   const [fontSize, setFontSize] = useState(DEFAULT_SIZE);
   const [margin, setMargin] = useState(DEFAULT_MARGIN);
   const [everyPage, setEveryPage] = useState(true);
@@ -136,6 +138,7 @@ export default function HeaderFooterBody({
         </div>
       ))}
       <p className="m-header-footer__tokens">{_(HEADER_FOOTER_TOKENS, { page: STAMP_TOKENS.page, count: STAMP_TOKENS.count })}</p>
+      <StampFontRow value={family} onPick={setFamily} />
       <div ref={sizeRef}>
         <DialogRow label={HEADER_FOOTER_SIZE}>
           <Input
@@ -184,6 +187,7 @@ export default function HeaderFooterBody({
               // text object the kernel has no reason to skip.
               header: trimmed(slots.header),
               footer: trimmed(slots.footer),
+              family,
               fontSize: size,
               marginPoints: inset,
             });

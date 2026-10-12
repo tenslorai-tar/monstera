@@ -1,3 +1,4 @@
+import { STAMP_FAMILIES } from '@monstera/contract';
 import { z } from 'zod';
 
 /**
@@ -24,10 +25,11 @@ export const HEADER_FOOTER_RESULT = z
     pages: z.union([z.literal('all'), z.array(z.number().int().nonnegative()).min(1)]),
     header: slots,
     footer: slots,
+    family: z.enum(STAMP_FAMILIES),
     fontSize: z.number().positive().max(1000),
     marginPoints: z.number().nonnegative().max(500),
   })
   .strict();
 
-/** The six slots, the type size, the margin and the scope. */
+/** The six slots, the font, the type size, the margin and the scope. */
 export type HeaderFooterAnswer = z.infer<typeof HEADER_FOOTER_RESULT>;

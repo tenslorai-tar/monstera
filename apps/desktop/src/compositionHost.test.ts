@@ -1825,7 +1825,7 @@ describe('the composition root, a HOSTED pdf-lib command (ADR-0121 Decision 3)',
     if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
     const executed = await handlers['document.execute']({
       docId: opened.value.docId,
-      command: { kind: 'watermarkPages', pages: 'all', text: 'DRAFT', opacity: 0.3, rotationDegrees: 45, fontSize: 48 },
+      command: { kind: 'watermarkPages', pages: 'all', text: 'DRAFT', opacity: 0.3, rotationDegrees: 45, family: 'Helvetica', fontSize: 48 },
     });
 
     expect(executed.ok, JSON.stringify(executed)).toBe(true);
