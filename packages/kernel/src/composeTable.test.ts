@@ -1,6 +1,8 @@
 import { PDFDocument } from '@cantoo/pdf-lib';
 import { describe, expect, it } from 'vitest';
 
+import { COMPOSED_FAMILY_DEFAULT } from '@monstera/contract';
+
 import { BODY_SIZE } from './composeLayout.js';
 import { COLUMN_MAX_EMS, TABLE_FLOOR_SIZE, planTable } from './composeTable.js';
 import { composeCsv as composeCsvWith } from './csvCompose.js';
@@ -12,11 +14,11 @@ import { contentOf, readLines } from './shownText.js';
 const FACES = faceSourceOf([{ path: process.env['MONSTERA_FONTS_DIRECTORY'] ?? '', origin: 'bundled' }]);
 
 async function composeCsv(source: Uint8Array, page: { width: number; height: number }): Promise<Uint8Array> {
-  return (await composeCsvWith(source, page, FACES)).pdf;
+  return (await composeCsvWith(source, page, FACES, COMPOSED_FAMILY_DEFAULT)).pdf;
 }
 
 async function composeMarkdown(source: Uint8Array, page: { width: number; height: number }): Promise<Uint8Array> {
-  return (await composeMarkdownWith(source, page, FACES)).pdf;
+  return (await composeMarkdownWith(source, page, FACES, COMPOSED_FAMILY_DEFAULT)).pdf;
 }
 
 /** US Letter, upright. */

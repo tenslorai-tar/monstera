@@ -1,7 +1,7 @@
 import { useLingui } from '@lingui/react';
 import { type ReactElement, useId, useState, useSyncExternalStore } from 'react';
 
-import { type DocumentFont, FontPicker, type FontList, SUBSET_TAG } from './FontPicker.js';
+import { type DocumentFont, FontPicker, type FontList, RESOLVED_BUILT_IN, SUBSET_TAG } from './FontPicker.js';
 import { TEXT_FORMAT_FAMILY, TEXT_FORMAT_FAMILY_RUN, TEXT_FORMAT_SIZE } from './messages/en.js';
 import {
   KEEPS_EDITOR,
@@ -28,8 +28,6 @@ import {
  * ribbon the font list floats over the window, since the ribbon's row clips what grows out of it.
  */
 
-/** The standard fonts the in-place editor sets, through the resolver's stand-ins: Symbol and ZapfDingbats have none. */
-const EDITOR_BUILT_IN = ['Helvetica', 'Times', 'Courier'] as const;
 
 export interface TextFontSizeProps {
   /** The fonts this computer has, as `app.fontFamilies` answered, or `undefined` while it is asked. */
@@ -66,7 +64,7 @@ export function TextFontSize({ fonts, documentFonts, place }: TextFontSizeProps)
       }}
     >
       <FontPicker
-        builtIn={EDITOR_BUILT_IN}
+        builtIn={RESOLVED_BUILT_IN}
         floating={place === 'ribbon'}
         inDocument={inDocument}
         label={TEXT_FORMAT_FAMILY}

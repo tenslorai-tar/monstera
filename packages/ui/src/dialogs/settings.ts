@@ -1,4 +1,4 @@
-import { AI_PROVIDER_IDS, AZURE_DI_PAGES, MAX_FONT_FAMILIES, SECRET_SETTING_IDS, aiModelListSchema, fontFamilySchema } from '@monstera/contract';
+import { AI_PROVIDER_IDS, AZURE_DI_PAGES, SECRET_SETTING_IDS, aiModelListSchema, listedFontFamiliesSchema } from '@monstera/contract';
 import { lazy } from 'react';
 import { z } from 'zod';
 
@@ -173,10 +173,7 @@ export const SETTINGS_DIALOG = declareDialog({
        * The fonts `app.fontFamilies` answered when the dialog opened, for a `font` row's picker (K2). Absent where the
        * read failed: the picker then says the computer's could not be read, and still offers the built-in three.
        */
-      fonts: z
-        .object({ listed: z.boolean(), families: z.array(fontFamilySchema).max(MAX_FONT_FAMILIES), more: z.number().int().min(0) })
-        .strict()
-        .optional(),
+      fonts: listedFontFamiliesSchema.optional(),
     })
     .strict(),
   result: SETTINGS_RESULT,

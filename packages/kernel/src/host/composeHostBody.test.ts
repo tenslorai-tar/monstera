@@ -109,7 +109,10 @@ const COMPOSED = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x37]);
 const FACES: FaceSource = { faces: [], read: () => new Uint8Array() };
 
 /** What a stubbed composer answers. */
-type StubComposer = (source: Uint8Array, page: ComposePageSize, faces: FaceSource) => Promise<ComposedSource>;
+type StubComposer = (source: Uint8Array, page: ComposePageSize, faces: FaceSource, family: string) => Promise<ComposedSource>;
+
+/** The family every request here names: not the default, so a handler that dropped it and set Arimo is seen (D1). */
+const FAMILY = 'Tinos';
 
 /**
  * @param files what `readSnapshot` will find, and where `writeOutput` records.
@@ -183,17 +186,17 @@ function start(
         loopback: { kind: 'refused', code: 'ETIMEDOUT' },
       }),
     faces,
-    composeMarkdown: (source, page, given) => {
-      // THE SOURCE'S BYTES, THE PAGE AND WHETHER IT WAS HANDED THE HOST'S FACES, recorded so a case can assert the
-      // handler passed what the named file held and what the host holds rather than something else.
-      calls.push(`compose:${[...source].join(',')}:${String(page.width)}x${String(page.height)}:${given === FACES ? 'faces' : 'other'}`);
-      return compose(source, page, given);
+    composeMarkdown: (source, page, given, family) => {
+      // THE SOURCE'S BYTES, THE PAGE, WHETHER IT WAS HANDED THE HOST'S FACES AND THE FAMILY ASKED FOR, recorded so a case
+      // can assert the handler passed what the named file held, what the host holds and what main sent.
+      calls.push(`compose:${[...source].join(',')}:${String(page.width)}x${String(page.height)}:${given === FACES ? 'faces' : 'other'}:${family}`);
+      return compose(source, page, given, family);
     },
     // ITS OWN PREFIX, so a case can say WHICH composer a channel reached. Both answer
     // the same shape, so the answer alone cannot tell them apart.
-    composeCsv: (source, page, given) => {
-      calls.push(`csv:${[...source].join(',')}:${String(page.width)}x${String(page.height)}:${given === FACES ? 'faces' : 'other'}`);
-      return compose(source, page, given);
+    composeCsv: (source, page, given, family) => {
+      calls.push(`csv:${[...source].join(',')}:${String(page.width)}x${String(page.height)}:${given === FACES ? 'faces' : 'other'}:${family}`);
+      return compose(source, page, given, family);
     },
     // EACH IMAGE'S DECODER AND THE BYTES ITS READ ANSWERED, recorded as the composer reads
     // them — so a case can assert the handler bound each entry to the file it named.
@@ -298,7 +301,7 @@ function emptyFiles(): Files {
 
 /** Asks the host to compose `IN` into `OUT` at US Letter. */
 function composeRequest(session: string): Uint8Array {
-  return request('c1', 'engine/compose-markdown', { session, from: IN, into: OUT, page: LETTER });
+  return request('c1', 'engine/compose-markdown', { session, from: IN, into: OUT, page: LETTER, family: FAMILY });
 }
 
 describe('the compose host channel set', () => {
@@ -335,12 +338,12 @@ describe('the compose host channel set', () => {
     const { session, calls } = await openArea(files);
     files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([97, 44, 98]));
 
-    stream.feed(request('v1', 'engine/compose-csv', { session, from: IN, into: OUT, page: LETTER }));
+    stream.feed(request('v1', 'engine/compose-csv', { session, from: IN, into: OUT, page: LETTER, family: FAMILY }));
     await stream.whenSent(2);
-    stream.feed(request('m1', 'engine/compose-markdown', { session, from: IN, into: OUT, page: LETTER }));
+    stream.feed(request('m1', 'engine/compose-markdown', { session, from: IN, into: OUT, page: LETTER, family: FAMILY }));
     await stream.whenSent(3);
 
-    expect(calls).toStrictEqual(['csv:97,44,98:612x792:faces', 'compose:97,44,98:612x792:faces']);
+    expect(calls).toStrictEqual(['csv:97,44,98:612x792:faces:Tinos', 'compose:97,44,98:612x792:faces:Tinos']);
   });
 
   it('binds each listed image to the file it names, in order, and answers the composition', async () => {
@@ -436,7 +439,7 @@ describe('the compose host channel set', () => {
 
   it('bounds the page by the format, and CONTROL: accepts the limit itself', () => {
     const params = composeChannels['engine/compose-markdown'].params;
-    const at = (width: number) => ({ session: 's', from: IN, into: OUT, page: { width, height: 792 } });
+    const at = (width: number) => ({ session: 's', from: IN, into: OUT, page: { width, height: 792 }, family: FAMILY });
     expect(params.safeParse(at(MAX_PAGE_COORDINATE)).success).toBe(true);
     expect(params.safeParse(at(MAX_PAGE_COORDINATE + 1)).success).toBe(false);
   });
@@ -539,7 +542,7 @@ describe('the compose host body', () => {
     // alone would pass on a handler that wrote nowhere.
     expect(files.written.get(`${AREA.outputDirectory}|${OUT}`)).toStrictEqual(COMPOSED);
     // AND THE COMPOSER SAW THE FILE'S BYTES, THE PAGE ASKED FOR AND THE HOST'S FACES.
-    expect(calls).toStrictEqual(['compose:35,32,72:612x792:faces']);
+    expect(calls).toStrictEqual(['compose:35,32,72:612x792:faces:Tinos']);
   });
 
   it('names the first boxed characters and COUNTS the rest — CONTROL: a short list is named whole', async () => {

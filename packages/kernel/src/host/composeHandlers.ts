@@ -39,7 +39,12 @@ import type { HostArea, HostFilesystem, HostSessions } from './engineHandlers.js
  */
 
 /** How this process sets a source as PDF bytes, and where it drew a box. `composeMarkdown` and `composeCsv` in the host. */
-export type SourceComposer = (source: Uint8Array, page: ComposePageSize, faces: FaceSource) => Promise<ComposedSource>;
+export type SourceComposer = (
+  source: Uint8Array,
+  page: ComposePageSize,
+  faces: FaceSource,
+  family: string,
+) => Promise<ComposedSource>;
 
 /**
  * How this process rewrites a document's images — the shim in the host, a fake in a proof.
@@ -157,7 +162,7 @@ export function createComposeHandlers({
    */
   const composeWith =
     (composer: SourceComposer): Handlers<ComposeChannels>['engine/compose-markdown'] =>
-    async ({ session, from, into, page }) => {
+    async ({ session, from, into, page, family }) => {
       const held = areas.lookup(session);
       if (held === undefined) return gone;
 
@@ -172,7 +177,7 @@ export function createComposeHandlers({
 
       let composed: ComposedSource;
       try {
-        composed = await composer(source, page, faces());
+        composed = await composer(source, page, faces(), family);
       } catch (error) {
         // ONLY A NAMED REFUSAL IS AN ANSWER. Anything else is a defect in this
         // build, and it propagates so the body reports `internal` rather than

@@ -1074,6 +1074,8 @@ export type ComposeImport =
       format: ImportFormat,
       source: Uint8Array,
       page: { readonly width: number; readonly height: number },
+      /** The family the prose is set in (D1). */
+      family: string,
     ) => Promise<ComposedImport>)
   | null;
 
@@ -6061,7 +6063,12 @@ export class DocumentCommands {
    * there is no size of the target to set a composition at. A reader for sizes is a
    * row of its own; until then both routes compose at US Letter, and the row says so.
    */
-  async composeImportFile(format: ImportFormat, target?: DocId): Promise<ComposeImportOutcome> {
+  async composeImportFile(
+    format: ImportFormat,
+    // NAMED, never positional: a `DocId` is a branded string, so `(format, family, target)` would take a target where the
+    // family belongs and compile.
+    { family, target }: { readonly family: string; readonly target?: DocId },
+  ): Promise<ComposeImportOutcome> {
     if (target !== undefined && this.#documents.nameOf(target) === undefined) {
       throw new DocumentNotOpenError(target, `append an imported ${format} file`);
     }
@@ -6080,7 +6087,7 @@ export class DocumentCommands {
     }
     if (read.kind === 'unreadable') return { kind: 'unreadable' };
 
-    const composed = await compose(format, read.bytes, COMPOSED_PAGE);
+    const composed = await compose(format, read.bytes, COMPOSED_PAGE, family);
     if (composed.kind === 'refused') {
       return { kind: 'composition-refused', reason: composed.reason, line: composed.line, file: null };
     }

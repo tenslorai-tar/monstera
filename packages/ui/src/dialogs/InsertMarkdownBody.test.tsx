@@ -34,14 +34,14 @@ describe('InsertMarkdownBody', () => {
     const { resolve } = opened();
     expect(screen.getByRole('button', { name: 'At the end' }).getAttribute('aria-pressed')).toBe('true');
     choose();
-    expect(answered(resolve)).toStrictEqual({ at: 9 });
+    expect(answered(resolve)).toStrictEqual({ at: 9, family: 'Arimo' });
   });
 
   it('AT THE START is position 0 — the control for the end above, which is the page count', () => {
     const { resolve } = opened();
     fireEvent.click(screen.getByRole('button', { name: 'At the start' }));
     choose();
-    expect(answered(resolve)).toStrictEqual({ at: 0 });
+    expect(answered(resolve)).toStrictEqual({ at: 0, family: 'Arimo' });
   });
 
   it('AFTER PAGE N is N, counted from 1 on screen: after page 3 is 3', () => {
@@ -51,7 +51,22 @@ describe('InsertMarkdownBody', () => {
     expect(screen.getByRole('textbox', { name: 'Page' })).toHaveProperty('value', '4');
     fireEvent.change(screen.getByRole('textbox', { name: 'Page' }), { target: { value: '3' } });
     choose();
-    expect(answered(resolve)).toStrictEqual({ at: 3 });
+    expect(answered(resolve)).toStrictEqual({ at: 3, family: 'Arimo' });
+  });
+
+  it('ANSWERS THE FONT PICKED in the one picker, from the computer’s list main handed it (D1) — CONTROL: the cases above answer the default', () => {
+    const fonts = {
+      listed: true,
+      families: [{ name: 'Tinos', origin: 'bundled' as const, embedding: 'subset' as const, bold: true, italic: true, looksLike: 'Times New Roman' }],
+      more: 0,
+    };
+    const { resolve } = opened({ fonts });
+    fireEvent.click(screen.getByRole('button', { name: 'Font: Arimo' }));
+    const tinos = document.querySelector('[data-font-choice="Tinos"]');
+    if (tinos === null) throw new Error('Tinos, from the list main handed the dialog, is not offered');
+    fireEvent.click(tinos);
+    choose();
+    expect(answered(resolve)).toStrictEqual({ at: 9, family: 'Tinos' });
   });
 
   it('a page this document lacks is SAID on the press and nothing is answered — CONTROL: the page field is not shown for the start or the end', () => {

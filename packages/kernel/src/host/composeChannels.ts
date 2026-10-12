@@ -14,6 +14,7 @@ import {
   MAX_FONT_FAMILIES,
   FONT_FAMILIES_PAGE,
   channel,
+  composedFamilySchema,
   fontFamilySchema,
   fileAnswered,
   fileRequested,
@@ -75,6 +76,8 @@ const composeRequestSchema = z
         height: z.number().gt(0).max(MAX_PAGE_COORDINATE),
       })
       .strict(),
+    /** The family the prose is set in, by name, which this host's resolver finds (D1). */
+    family: composedFamilySchema,
   })
   .strict();
 

@@ -37,6 +37,13 @@ const CONTEXT: CommandContext = {
 };
 
 /** A client that records every call and answers each channel from a table. */
+/** The computer's fonts as main lists them, which the insert question is handed for its picker (D1). */
+const FONTS = {
+  listed: true,
+  families: [{ name: 'Tinos', origin: 'bundled' as const, embedding: 'subset' as const, bold: true, italic: true, looksLike: 'Times New Roman' }],
+  more: 0,
+};
+
 function recording(answers: Readonly<Record<string, unknown>>): {
   readonly client: ContractClient;
   readonly sent: { id: string; params: unknown }[];
@@ -44,7 +51,7 @@ function recording(answers: Readonly<Record<string, unknown>>): {
   const sent: { id: string; params: unknown }[] = [];
   const client = createClient(channels, (id, params) => {
     sent.push({ id, params });
-    const answer = answers[id];
+    const answer = id === 'app.fontFamilies' && answers[id] === undefined ? ok(FONTS) : answers[id];
     if (answer === undefined) throw new Error(`this case does not answer ${id}`);
     return Promise.resolve(answer);
   });
@@ -62,7 +69,7 @@ const signatures = {
 };
 
 function callbacks(
-  position: unknown = { at: 10 },
+  position: unknown = { at: 10, family: 'Tinos' },
   // A DEFAULT PARAMETER CANNOT SAY *CLOSED*: an explicit `undefined` takes the default, so the closed question is its own flag.
   closed = false,
 ): {
@@ -215,8 +222,11 @@ describe('appendMarkdownCommand', () => {
       onActivate: record('activate'),
     }).run(CONTEXT);
 
-    // `at: 10`, the page count, and not 4: the pages go at the END.
-    expect(sent).toStrictEqual([{ id: 'document.appendMarkdown', params: { docId: DOC, at: 10 } }]);
+    // `at: 10`, the page count, and not 4: the pages go at the END. And the FAMILY the question answered, never the default.
+    expect(sent).toStrictEqual([
+      { id: 'app.fontFamilies', params: {} },
+      { id: 'document.appendMarkdown', params: { docId: DOC, at: 10, family: 'Tinos' } },
+    ]);
     // THE ORDER IS THE DECISION. `applied` names the active document, so it must run
     // before the composed tab is added and activated; `activate` last brings the
     // target back, and a command that skipped it leaves the reader on the new tab.
@@ -258,13 +268,16 @@ describe('appendMarkdownCommand', () => {
       return { sent, where };
     };
 
-    const start = await run({ at: 0 });
-    // THE QUESTION CARRIES THE DOCUMENT'S OWN SIZE AND THE PAGE ON SHOW, which bound and seed its position.
-    expect(start.where).toStrictEqual([{ id: 'dialog.insert-markdown', props: { pageCount: 10, page: 3 } }]);
-    expect(start.sent).toStrictEqual([{ id: 'document.appendMarkdown', params: { docId: DOC, at: 0 } }]);
-    expect((await run({ at: 3 })).sent).toStrictEqual([{ id: 'document.appendMarkdown', params: { docId: DOC, at: 3 } }]);
+    const start = await run({ at: 0, family: 'Arimo' });
+    // THE QUESTION CARRIES THE DOCUMENT'S OWN SIZE, THE PAGE ON SHOW AND MAIN'S FONT LIST, which bound and seed its answer.
+    expect(start.where).toStrictEqual([{ id: 'dialog.insert-markdown', props: { pageCount: 10, page: 3, fonts: FONTS } }]);
+    const appendsOf = (sent: { id: string; params: unknown }[]) => sent.filter((each) => each.id === 'document.appendMarkdown');
+    expect(appendsOf(start.sent)).toStrictEqual([{ id: 'document.appendMarkdown', params: { docId: DOC, at: 0, family: 'Arimo' } }]);
+    expect(appendsOf((await run({ at: 3, family: 'Tinos' })).sent)).toStrictEqual([
+      { id: 'document.appendMarkdown', params: { docId: DOC, at: 3, family: 'Tinos' } },
+    ]);
     // CONTROL: a question closed unanswered is a change of mind. Nothing is picked, composed or written.
-    expect((await run(undefined, true)).sent).toStrictEqual([]);
+    expect(appendsOf((await run(undefined, true)).sent)).toStrictEqual([]);
   });
 
   it('NAMES the characters the added pages draw as boxes, after the document is back in front', async () => {

@@ -66,9 +66,10 @@ import {
   formFieldHandleSchema,
   formFieldReadSchema,
   documentFontSchema,
-  fontFamilySchema,
+  listedFontFamiliesSchema,
   MAX_FONT_FAMILIES,
   MAX_FONT_FAMILY_NAME,
+  composedFamilySchema,
   MAX_READ_FIELDS,
   MAX_IMPORT_SKIPS,
   importSkippedSchema,
@@ -1715,11 +1716,7 @@ export const channels = {
   'app.fontFamilies': channel(
     'Lists the font families installed on this computer and bundled with Monstera.',
     z.object({}),
-    z.object({
-      listed: z.boolean(),
-      families: z.array(fontFamilySchema).max(MAX_FONT_FAMILIES),
-      more: z.number().int().min(0),
-    }),
+    listedFontFamiliesSchema,
   ),
 
   /**
@@ -3544,7 +3541,8 @@ export const channels = {
    */
   'document.appendMarkdown': channel(
     'Composes a Markdown file into a new PDF, opens it, and merges it into this document.',
-    z.object({ docId: docIdSchema, at: z.number().int().nonnegative() }),
+    // THE FAMILY ITS PROSE IS SET IN, chosen in the insert dialog's font picker (D1).
+    z.object({ docId: docIdSchema, at: z.number().int().nonnegative(), family: composedFamilySchema }),
     z.discriminatedUnion('kind', [
       z.object({
         kind: z.literal('appended'),

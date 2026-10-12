@@ -84,12 +84,14 @@ const TAB_SPACES = 4;
  * @param source the file's bytes, exactly as picked
  * @param page the size every page is set at
  * @param faces the catalogue the text is set from
+ * @param family the family the prose is set in; code stays Cousine
  * @throws ComposeRefused for a source that is not UTF-8 or draws nothing at all
  */
 export async function composeMarkdown(
   source: Uint8Array,
   page: ComposePageSize,
   faces: FaceSource,
+  family: string,
 ): Promise<ComposedSource> {
   let text: string;
   try {
@@ -106,7 +108,7 @@ export async function composeMarkdown(
   // creation and modification dates by default, and a composition that differed
   // on every run could not be compared with itself.
   const document = await PDFDocument.create({ updateMetadata: false });
-  const fonts = new ComposeFonts(document, faces);
+  const fonts = new ComposeFonts(document, faces, family);
   const writer = new PageWriter(document, fonts, page);
   const walker = new BlockWalker(tokens, writer);
   walker.walk();

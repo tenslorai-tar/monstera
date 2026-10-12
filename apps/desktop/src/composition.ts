@@ -201,10 +201,9 @@ import {
   type AnnotationDataSource,
   type CertificateSource,
   type ImageSource,
-  type ComposedImport,
+  type ComposeImport,
   type ComposeImages,
   type ImageFilesSource,
-  type ImportFormat,
   type ImportSource,
   type PickDestination,
   type PickOffice,
@@ -3591,11 +3590,9 @@ function composeHostBinding(
   /** Each host call's deadline and how each host's memory is watched (ADR-0023 §3, corrected 2026-10-03). */
   policy: HostPolicy,
 ): {
-  readonly compose: (
-    format: ImportFormat,
-    source: Uint8Array,
-    page: { readonly width: number; readonly height: number },
-  ) => Promise<ComposedImport>;
+  // `documentCommands.ts`' ONE STATEMENT of the signature, never a second spelling of it here that a new parameter has to
+  // be added to twice (B3a).
+  readonly compose: NonNullable<ComposeImport>;
   readonly composeImages: NonNullable<ComposeImages>;
   readonly optimize: OptimizeSource;
   readonly keepInlineImages: PdfiumInputKeeper;
@@ -3725,7 +3722,7 @@ function composeHostBinding(
     }));
 
   return {
-    compose: async (format, source, page) => {
+    compose: async (format, source, page, family) => {
       const built = await ensure();
       const area = { snapshotDirectory: built.paths.snapshot, outputDirectory: built.paths.output };
       const from = areas.mintName();
@@ -3740,6 +3737,7 @@ function composeHostBinding(
         from,
         into,
         page: { width: page.width, height: page.height },
+        family,
       };
       // THE CHANNEL NAMES THE PARSER. Each format has its own, so the host never has
       // to trust a field in the request to decide which parser reads a picked file.

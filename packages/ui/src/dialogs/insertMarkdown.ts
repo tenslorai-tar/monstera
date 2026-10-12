@@ -1,3 +1,4 @@
+import { listedFontFamiliesSchema } from '@monstera/contract';
 import { lazy } from 'react';
 import { z } from 'zod';
 
@@ -11,9 +12,9 @@ export const INSERT_MARKDOWN_DIALOG_ID = 'dialog.insert-markdown';
 /**
  * Where a Markdown file's pages go: at the start, at the end, or after a page — the position row of *Insert from PDF*
  * ([ADR-0040](../../../../docs/DECISIONS/0040-a-command-names-a-second-document-by-docid.md)), without the source rows, because
- * the source is a file the next step picks.
+ * the source is a file the next step picks — and the font its prose is set in, in the one picker (D1).
  *
- * ## It answers a position and nothing else
+ * ## It answers a position and a font, and nothing else
  *
  * The file is picked, read and converted in `main` after this answer (`document.appendMarkdown`, which has taken `at` since
  * the command was *append*), so the dialog neither holds nor names a document, and the whole converted content is inserted.
@@ -27,6 +28,8 @@ export const INSERT_MARKDOWN_DIALOG = declareDialog({
       pageCount: z.number().int().positive(),
       /** The page on show, zero-based: *after page* starts on it. */
       page: z.number().int().nonnegative(),
+      /** The fonts `app.fontFamilies` answered when the dialog opened; absent where the read failed. */
+      fonts: listedFontFamiliesSchema.optional(),
     })
     .strict(),
   result: INSERT_MARKDOWN_RESULT,

@@ -28,7 +28,7 @@ import { type OutlineCommand, type ShapedGlyph, ShapingFace } from './textShapin
  * ## A role asks the resolver; the resolver decides
  *
  * A composer sets text in five ROLES — body, bold, italic, bold italic and code. Each role is a request to
- * `fontResolver.ts` for the bundled family that stands for it (Arimo for prose, Cousine for code), so Latin, Greek
+ * `fontResolver.ts` for the family that stands for it (the person's choice for prose, Cousine for code), so Latin, Greek
  * and Cyrillic are set in the same face on every machine, and any other script goes to the first face in the
  * catalogue that carries the whole word. A character no face carries is drawn as the missing-character box, `□` from
  * a face that has one, under a code whose `ToUnicode` is the character itself: the page shows the person something
@@ -51,14 +51,19 @@ import { type OutlineCommand, type ShapedGlyph, ShapingFace } from './textShapin
 /** The faces a composer sets text in. */
 export type FaceRole = 'regular' | 'bold' | 'italic' | 'boldItalic' | 'mono';
 
-/** What each role asks the resolver for. */
-const ROLE_REQUESTS: Readonly<Record<FaceRole, FontRequest>> = {
-  regular: { family: 'Arimo', bold: false, italic: false, own: [] },
-  bold: { family: 'Arimo', bold: true, italic: false, own: [] },
-  italic: { family: 'Arimo', bold: false, italic: true, own: [] },
-  boldItalic: { family: 'Arimo', bold: true, italic: true, own: [] },
-  mono: { family: 'Cousine', bold: false, italic: false, own: [] },
-};
+/**
+ * What each role asks the resolver for: the four prose roles the family the person chose (D1), code Cousine whatever was
+ * chosen, because a monospaced block set in a proportional face loses its columns.
+ */
+function roleRequests(prose: string): Readonly<Record<FaceRole, FontRequest>> {
+  return {
+    regular: { family: prose, bold: false, italic: false, own: [] },
+    bold: { family: prose, bold: true, italic: false, own: [] },
+    italic: { family: prose, bold: false, italic: true, own: [] },
+    boldItalic: { family: prose, bold: true, italic: true, own: [] },
+    mono: { family: 'Cousine', bold: false, italic: false, own: [] },
+  };
+}
 
 /** U+25A1 WHITE SQUARE, the missing-character box. */
 const BOX = 0x25a1;
@@ -122,11 +127,15 @@ export class ComposeFonts {
   readonly #faces: ReadonlyMap<string, CatalogueFace>;
   readonly #boxed: BoxedCharacter[] = [];
   readonly #boxFace: CatalogueFace;
+  readonly #requests: Readonly<Record<FaceRole, FontRequest>>;
 
+  /** @param prose the family the four prose roles ask for; REQUIRED, so a composer cannot forget the person's choice. */
   constructor(
     private readonly document: PDFDocument,
     private readonly source: FaceSource,
+    prose: string,
   ) {
+    this.#requests = roleRequests(prose);
     this.#faces = new Map(source.faces.map((face) => [face.id, face]));
     const boxFace = source.faces.find((face) => face.unicodes.has(BOX) && face.embedding !== 'never');
     // A BUILD FAULT, never the document's: the bundled sans and serif faces all carry the box, so a catalogue without
@@ -170,7 +179,7 @@ export class ComposeFonts {
   /** `text` resolved and shaped, stretch by stretch, in drawing order. */
   #shape(text: string, role: FaceRole, rtl: boolean): Shaped[] {
     const stretches: Shaped[] = [];
-    for (const run of resolveRuns(text, ROLE_REQUESTS[role], this.source.faces)) {
+    for (const run of resolveRuns(text, this.#requests[role], this.source.faces)) {
       const face = run.face === null ? undefined : this.#faces.get(run.face.id);
       if (run.missing.length > 0 || face === undefined) {
         // THE BOX, from the run's own face where it carries one so the box matches the text around it.

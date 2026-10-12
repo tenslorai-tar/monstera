@@ -51,7 +51,12 @@ const TAB_SPACES = 4;
  * @throws ComposeRefused for a source that is not UTF-8, breaks RFC 4180 or has no field with anything in it — never
  *   for its width, which `composeTable.ts` fits, and never for its characters
  */
-export async function composeCsv(source: Uint8Array, page: ComposePageSize, faces: FaceSource): Promise<ComposedSource> {
+export async function composeCsv(
+  source: Uint8Array,
+  page: ComposePageSize,
+  faces: FaceSource,
+  family: string,
+): Promise<ComposedSource> {
   let text: string;
   try {
     // `ignoreBOM` false, the default: a leading byte-order mark is consumed, never
@@ -73,7 +78,7 @@ export async function composeCsv(source: Uint8Array, page: ComposePageSize, face
   // PINNED, for `markdownCompose.ts`' reason: a composition that differed on every
   // run could not be compared with itself.
   const document = await PDFDocument.create({ updateMetadata: false });
-  const fonts = new ComposeFonts(document, faces);
+  const fonts = new ComposeFonts(document, faces, family);
   const writer = new PageWriter(document, fonts, page);
 
   // A RECORD SPANS ITS FIRST LINE AND ONE MORE FOR EACH LINE BREAK INSIDE A QUOTED FIELD, which is where a box drawn

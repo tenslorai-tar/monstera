@@ -59,6 +59,12 @@ export interface DocumentFont {
 /** The standard fonts every PDF reader has, by the names a person knows (PDF 32000-1, 9.6.2.2). */
 export const BUILT_INTO_PDF = ['Helvetica', 'Times', 'Courier', 'Symbol', 'ZapfDingbats'] as const;
 
+/**
+ * The standard fonts a consumer offers when the font resolver sets its words (the in-place editor, an imported Markdown
+ * file): each through the resolver's bundled stand in. Symbol and ZapfDingbats have none, so they are not offered.
+ */
+export const RESOLVED_BUILT_IN = ['Helvetica', 'Times', 'Courier'] as const;
+
 /** One font the list offers: the name sent, what is said, and what is said beneath it. */
 export interface FontChoice {
   readonly family: string;

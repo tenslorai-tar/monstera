@@ -440,6 +440,7 @@ export const INSERT_MARKDOWN_START = messageKey('dialog.insert-markdown.start');
 export const INSERT_MARKDOWN_END = messageKey('dialog.insert-markdown.end');
 export const INSERT_MARKDOWN_AFTER = messageKey('dialog.insert-markdown.after');
 export const INSERT_MARKDOWN_PAGE = messageKey('dialog.insert-markdown.page');
+export const INSERT_MARKDOWN_FONT = messageKey('dialog.insert-markdown.font');
 export const INSERT_MARKDOWN_RANGE = messageKey('dialog.insert-markdown.range');
 export const INSERT_MARKDOWN_APPLY = messageKey('dialog.insert-markdown.apply');
 export const REPLACE_PAGE_COMMAND_TITLE = messageKey('command.replace-page.title');
@@ -5741,6 +5742,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [INSERT_MARKDOWN_END]: 'At the end',
   [INSERT_MARKDOWN_AFTER]: 'After page',
   [INSERT_MARKDOWN_PAGE]: 'Page',
+  [INSERT_MARKDOWN_FONT]: 'Font',
   // SAID ON THE PRESS, under the row, `INSERT_FROM_PDF_RANGE`'s reason.
   [INSERT_MARKDOWN_RANGE]: 'Choose a page of this document, from 1 to {last}.',
   [INSERT_MARKDOWN_APPLY]: 'Choose file…',

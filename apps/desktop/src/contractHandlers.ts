@@ -1,6 +1,7 @@
 import {
   AI_PROVIDERS,
   AI_PROVIDER_IDS,
+  COMPOSED_FAMILY_DEFAULT,
   ANNOTATIONS_PART,
   DESTINATIONS_PART,
   FORM_FIELDS_PART,
@@ -1137,7 +1138,8 @@ function newFromImportHandler(
   // would be two opinions about how an import is opened and answered.
   return async (): Promise<Awaited<ReturnType<ContractHandlers['document.newFromMarkdown']>>> => {
     try {
-      const composed = await deps.commands.composeImportFile(format);
+      // NO DIALOG ASKS for a new document's font, so it is set as every composition was before D1.
+      const composed = await deps.commands.composeImportFile(format, { family: COMPOSED_FAMILY_DEFAULT });
       if (composed.kind !== 'written') return ok(composeRefusal(composed));
       const opened = (await openPath(deps, composed.destination)).outcome;
       // THE BOXED CHARACTERS RIDE WITH THE OPEN (ADR-0172), the Office import's rule for rows it lacks: a document
@@ -1242,9 +1244,10 @@ function appendMarkdownHandler(
   return async ({
     docId,
     at,
+    family,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.appendMarkdown']>>> => {
     try {
-      const composed = await deps.commands.composeImportFile('markdown', docId);
+      const composed = await deps.commands.composeImportFile('markdown', { family, target: docId });
       if (composed.kind !== 'written') return ok(composeRefusal(composed));
 
       const { outcome, sessions } = await openPath(deps, composed.destination);

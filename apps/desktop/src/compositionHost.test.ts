@@ -2004,6 +2004,8 @@ interface ComposePeerLog {
   readonly fromPaths: string[];
   /** Which compose channel each call arrived on, so a case can assert the route. */
   readonly channels: string[];
+  /** The family each call asked the prose to be set in (D1). */
+  readonly families: string[];
 }
 
 /** The bytes the compose peer answers as its PDF. */
@@ -2029,11 +2031,13 @@ function composePeer(
   const sources: string[] = [];
   const fromPaths: string[] = [];
   const channels: string[] = [];
+  const families: string[] = [];
 
   return {
     sources,
     fromPaths,
     channels,
+    families,
     peer: (channel, params) => {
       switch (channel) {
         case 'engine/probe-containment':
@@ -2047,7 +2051,8 @@ function composePeer(
         case 'engine/compose-csv': {
           if (area === null) throw new Error(`${channel} arrived before engine/open`);
           channels.push(channel);
-          const { from, into } = params as { from: string; into: string };
+          const { from, into, family } = params as { from: string; into: string; family: string };
+          families.push(family);
           const source = join(area.snapshot, from);
           fromPaths.push(source);
           sources.push(existsSync(source) ? readFileSync(source, 'utf8') : '(absent at the call)');
@@ -2199,7 +2204,8 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
     if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
     const opensBefore = spy(mupdf.harness.calls, 'peer.request:engine/open');
 
-    const appended = await handlers['document.appendMarkdown']({ docId: opened.value.docId, at: 1 });
+    // NOT THE DEFAULT, so a hop that dropped the family and composed in Arimo fails below.
+    const appended = await handlers['document.appendMarkdown']({ docId: opened.value.docId, at: 1, family: 'Tinos' });
     expect(appended.ok, JSON.stringify(appended)).toBe(true);
     if (!appended.ok) throw new Error('unreachable');
     expect(appended.value.kind, JSON.stringify(appended.value)).toBe('appended');
@@ -2211,6 +2217,8 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
     expect(appended.value.opened.name).toBe('appended-from-markdown.pdf');
     expect(appended.value.boxed).toStrictEqual(boxedPlaces);
     expect(appended.value.more).toBe(0);
+    // THE CHOSEN FAMILY CROSSED THE ROOT to the compose host's request, the pair's middle (D1).
+    expect(compose.families).toStrictEqual(['Tinos']);
 
     // THE MERGE REACHED THE ENGINE HOST, after the composed document got a session
     // there: at least one more `engine/open` than before, then an `engine/apply`.

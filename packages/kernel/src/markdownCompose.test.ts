@@ -1,6 +1,8 @@
 import { PDFDocument } from '@cantoo/pdf-lib';
 import { describe, expect, it } from 'vitest';
 
+import { COMPOSED_FAMILY_DEFAULT } from '@monstera/contract';
+
 import { ComposeRefused } from './composeOutcome.js';
 import { faceSourceOf } from './fontCatalogue.js';
 import { composeMarkdown } from './markdownCompose.js';
@@ -24,7 +26,7 @@ function bytesOf(text: string): Uint8Array {
 }
 
 async function compose(text: string): Promise<{ pdf: Uint8Array; boxed: readonly { character: string; line: number; column: number | null }[] }> {
-  return composeMarkdown(bytesOf(text), LETTER, FACES);
+  return composeMarkdown(bytesOf(text), LETTER, FACES, COMPOSED_FAMILY_DEFAULT);
 }
 
 /** Every page's text as a reader copies it, one line per line. */
@@ -75,7 +77,7 @@ describe('composeMarkdown', () => {
   });
 
   it('refuses a source that is not UTF-8, by name', async () => {
-    const refusal = composeMarkdown(Uint8Array.of(0x48, 0x69, 0xff, 0xfe, 0x21), LETTER, FACES);
+    const refusal = composeMarkdown(Uint8Array.of(0x48, 0x69, 0xff, 0xfe, 0x21), LETTER, FACES, COMPOSED_FAMILY_DEFAULT);
     await expect(refusal).rejects.toBeInstanceOf(ComposeRefused);
     await expect(refusal).rejects.toMatchObject({ reason: 'not-utf8', line: null });
   });

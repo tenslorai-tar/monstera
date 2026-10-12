@@ -1141,6 +1141,17 @@ export const MAX_FONT_FAMILY_NAME = 128;
 export const annotationFamilySchema = z.string().min(1).max(MAX_FONT_FAMILY_NAME);
 
 /**
+ * The family a composed document's prose is set in (an imported Markdown or CSV file, the TEXT spec's D1): any family the
+ * one font picker lists, which the compose host's resolver finds installed, stands in for with a bundled face, or matches
+ * by class. Code is set in Cousine whatever is chosen, because a monospaced block in a proportional face breaks its
+ * columns.
+ */
+export const composedFamilySchema = z.string().min(1).max(MAX_FONT_FAMILY_NAME);
+
+/** What a composition is set in where nobody chose: Arimo, the bundled face every composition was set in before D1. */
+export const COMPOSED_FAMILY_DEFAULT = 'Arimo';
+
+/**
  * Each face by the family name a person knows and the one font picker lists (the owner's K4): what the Annotation font
  * setting stores and the Properties tab shows, and how either turns back into the face the writer takes. One table, so
  * the name shown and the face written cannot come apart.
@@ -4655,6 +4666,18 @@ export interface ListedFontFamilies {
   readonly families: readonly FontFamilyEntry[];
   readonly more: number;
 }
+
+/**
+ * What `app.fontFamilies` answers, and what a dialog that offers the one font picker is handed: the ONE statement of the
+ * list's shape, so the channel and every dialog prop carrying its answer cannot disagree (B3a).
+ */
+export const listedFontFamiliesSchema = z
+  .object({
+    listed: z.boolean(),
+    families: z.array(fontFamilySchema).max(MAX_FONT_FAMILIES),
+    more: z.number().int().min(0),
+  })
+  .strict();
 
 /**
  * One font a document names, for the picker's *In this document* (the owner's B2.8): the name it states, its subset tag

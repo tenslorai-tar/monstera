@@ -397,15 +397,19 @@ export function appendMarkdownCommand(
 
       // WHERE FIRST, then the file (the owner's 2026-10-07 recording): at the start, at the end or after a page, the whole
       // converted content going there. Closed unanswered is a change of mind, and nothing is picked or written.
+      // THE FONTS THE PICKER OFFERS (D1), main's one list; a failed read leaves the picker saying it could not be read.
+      const fonts = await deps.client['app.fontFamilies']({});
       const where = (await deps.ask(INSERT_MARKDOWN_DIALOG_ID, {
         pageCount: context.pageCount,
         page: context.page ?? 0,
+        ...(fonts.ok ? { fonts: fonts.value } : {}),
       })) as InsertMarkdownAnswer | undefined;
       if (where === undefined) return;
 
       const answer = await deps.client['document.appendMarkdown']({
         docId: target,
         at: where.at,
+        family: where.family,
       });
       if (!answer.ok) {
         reportProblem(deps, answer.error);

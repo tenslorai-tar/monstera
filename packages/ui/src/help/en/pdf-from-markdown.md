@@ -18,7 +18,7 @@ To make a new PDF:
 To add the pages to the open document:
 
 1. Choose **Insert Markdown…** (**Insert from Markdown…**) in the **Create** group.
-2. Under **Where**, choose **At the start**, **At the end** or **After page** and type the page. Then choose **Choose file…**.
+2. Under **Where**, choose **At the start**, **At the end** or **After page** and type the page. Under **Font**, choose the font the text is set in, from the same list as everywhere else; code stays in a fixed-width font. Then choose **Choose file…**.
 3. Pick the file and choose where to save the new pages' PDF. It opens in a tab, and all of its pages are added to your document where you chose.
 
 ![The Create group in Tools with From Markdown… and Insert Markdown…](screenshot:pdf-from-markdown-1)
@@ -28,7 +28,7 @@ To add the pages to the open document:
 - Every page is US Letter size.
 - The file must be UTF-8 text, up to 4 MB.
 - Text in any language is kept. Greek, Cyrillic, Hebrew and Arabic come with Monstera, and a paragraph in Hebrew or Arabic reads right to left from the right margin. Thai, Chinese and Japanese lines break between words.
-- Text is set in the fonts Monstera carries, and a script they do not cover, such as Chinese or Japanese, in a font installed on this computer whose licence allows it. A character no font here can draw is shown as a box. Once the PDF opens, Monstera lists each one with its line and column in your file. The box copies as the character you wrote.
+- A new PDF from Markdown is set in Arimo (it looks like Arial); **Insert from Markdown** uses the font you choose. Text is set in the fonts Monstera carries or that font, and a script they do not cover, such as Chinese or Japanese, in a font installed on this computer whose licence allows it. A character no font here can draw is shown as a box. Once the PDF opens, Monstera lists each one with its line and column in your file. The box copies as the character you wrote.
 - A table too wide for the page turns its pages sideways and sets its text smaller, and one wider still continues on further pages, its first column repeated on each.
 
 <!--

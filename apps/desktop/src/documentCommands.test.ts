@@ -5909,6 +5909,8 @@ describe('composeMarkdownFile: what an import answers before anything is written
   }
 
   const TEXT = { kind: 'read' as const, bytes: new TextEncoder().encode('# Title\n') };
+  /** Not the default, so a family dropped on the way to the composer reads as the default and fails. */
+  const CHOSEN = { family: 'Tinos' };
 
   it('REFUSES BEFORE THE PICKER where no compose host can exist', async () => {
     // THE DECISION IS THE CALL NOT MADE: an answer of `engine-unavailable` after a
@@ -5924,7 +5926,7 @@ describe('composeMarkdownFile: what an import answers before anything is written
       compose: null,
     });
 
-    await expect(commands.composeImportFile('markdown')).rejects.toBeInstanceOf(EngineUnavailableError);
+    await expect(commands.composeImportFile('markdown', CHOSEN)).rejects.toBeInstanceOf(EngineUnavailableError);
     expect(markdown.calls).toStrictEqual([]);
   });
 
@@ -5939,7 +5941,7 @@ describe('composeMarkdownFile: what an import answers before anything is written
       compose: () => Promise.reject(new Error('this case composes nothing')),
     });
 
-    await expect(commands.composeImportFile('markdown', asDocId('never-opened'))).rejects.toBeInstanceOf(
+    await expect(commands.composeImportFile('markdown', { ...CHOSEN, target: asDocId('never-opened') })).rejects.toBeInstanceOf(
       DocumentNotOpenError,
     );
     expect(markdown.calls).toStrictEqual([]);
@@ -5962,7 +5964,7 @@ describe('composeMarkdownFile: what an import answers before anything is written
 
     // THE LIMIT IS MAIN'S CONSTANT, never the file's size: a sentence reading *larger
     // than 4.0000002 MB* would state the file rather than the rule.
-    expect(await commands.composeImportFile('markdown')).toStrictEqual({
+    expect(await commands.composeImportFile('markdown', CHOSEN)).toStrictEqual({
       kind: 'too-large',
       limitBytes: MAX_MARKDOWN_BYTES,
     });
@@ -5973,6 +5975,7 @@ describe('composeMarkdownFile: what an import answers before anything is written
   it('CARRIES THE HOST’S REFUSAL AND ITS LINE, and asks for no destination', async () => {
     const markdown = markdownFrom('notes.md', TEXT);
     const pages: unknown[] = [];
+    const families: string[] = [];
     const commands = new DocumentCommands({
       ...INERT,
       documents: service,
@@ -5981,13 +5984,14 @@ describe('composeMarkdownFile: what an import answers before anything is written
       imports: { markdown: markdown.source, csv: noImportFile },
       // `noCopying` rejects its picker, so a refusal that went on to ask for a
       // destination fails here rather than answering.
-      compose: (_format, _source, page) => {
+      compose: (_format, _source, page, family) => {
         pages.push(page);
+        families.push(family);
         return Promise.resolve({ kind: 'refused', reason: 'malformed-csv', line: 7, item: null });
       },
     });
 
-    expect(await commands.composeImportFile('markdown')).toStrictEqual({
+    expect(await commands.composeImportFile('markdown', CHOSEN)).toStrictEqual({
       kind: 'composition-refused',
       reason: 'malformed-csv',
       line: 7,
@@ -5995,6 +5999,8 @@ describe('composeMarkdownFile: what an import answers before anything is written
     });
     // US LETTER, the one size both routes compose at, stated in points.
     expect(pages).toStrictEqual([{ width: 612, height: 792 }]);
+    // THE FAMILY THE PERSON CHOSE reaches the composer (D1), never the default.
+    expect(families).toStrictEqual(['Tinos']);
   });
 
   it('CONTROL: a dismissed picker reads nothing and composes nothing', async () => {
@@ -6012,7 +6018,7 @@ describe('composeMarkdownFile: what an import answers before anything is written
       },
     });
 
-    expect(await commands.composeImportFile('markdown')).toStrictEqual({ kind: 'cancelled' });
+    expect(await commands.composeImportFile('markdown', CHOSEN)).toStrictEqual({ kind: 'cancelled' });
     expect(markdown.calls).toStrictEqual(['pick']);
     expect(composed).toStrictEqual([]);
   });
@@ -6036,7 +6042,7 @@ describe('composeMarkdownFile: what an import answers before anything is written
       },
     });
 
-    expect(await commands.composeImportFile('csv')).toStrictEqual({
+    expect(await commands.composeImportFile('csv', CHOSEN)).toStrictEqual({
       kind: 'too-large',
       limitBytes: MAX_CSV_BYTES,
     });
@@ -6057,7 +6063,7 @@ describe('composeMarkdownFile: what an import answers before anything is written
         return Promise.resolve({ kind: 'refused', reason: 'nothing-to-draw', line: null, item: null });
       },
     });
-    expect(await second.composeImportFile('csv')).toStrictEqual({
+    expect(await second.composeImportFile('csv', CHOSEN)).toStrictEqual({
       kind: 'composition-refused',
       reason: 'nothing-to-draw',
       line: null,

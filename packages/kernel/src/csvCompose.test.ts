@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { COMPOSED_FAMILY_DEFAULT } from '@monstera/contract';
+
 import { ComposeRefused, type ComposedSource } from './composeOutcome.js';
 import { composeCsv } from './csvCompose.js';
 import { faceSourceOf } from './fontCatalogue.js';
@@ -16,7 +18,7 @@ function bytesOf(text: string): Uint8Array {
 }
 
 function compose(source: Uint8Array | string): Promise<ComposedSource> {
-  return composeCsv(typeof source === 'string' ? bytesOf(source) : source, LETTER, FACES);
+  return composeCsv(typeof source === 'string' ? bytesOf(source) : source, LETTER, FACES, COMPOSED_FAMILY_DEFAULT);
 }
 
 /** Every page's text as a reader copies it, one line per line. */
