@@ -37,7 +37,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdir, readdir, rm, stat } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -264,11 +264,17 @@ export async function writeGlue(root) {
 async function buildMupdfUnix(root, force) {
   const source = mupdfSourcePath(root);
   const libraries = join(source, 'build', 'release');
-  if (!force && existsSync(join(libraries, 'libmupdf.a')) && existsSync(join(libraries, 'libmupdf-third.a'))) {
-    process.stderr.write(`  libmupdf.a already built\n`);
+  const disabled = [...handlerDisableFlags(), ...LAYOUT_ENGINE_FLAGS].map((flag) => flag.replace(/^\/D/u, '-D')).join(' ');
+  const xcflags = `-fPIC ${SECTION_FLAGS} ${disabled}`;
+  // THE LIBRARIES ARE REUSED ONLY WHEN BUILT WITH THESE FLAGS: a library built before a flag changed is a different
+  // artefact under the same name, and reusing it would link the old one while the script reads as the new.
+  const stamp = join(libraries, 'monstera-xcflags.txt');
+  const built = existsSync(join(libraries, 'libmupdf.a')) && existsSync(join(libraries, 'libmupdf-third.a'));
+  if (!force && built && existsSync(stamp) && (await readFile(stamp, 'utf8')) === xcflags) {
+    process.stderr.write(`  libmupdf.a already built with these flags\n`);
     return;
   }
-  const disabled = [...handlerDisableFlags(), ...LAYOUT_ENGINE_FLAGS].map((flag) => flag.replace(/^\/D/u, '-D')).join(' ');
+  if (built) await rm(libraries, { recursive: true, force: true });
   const { availableParallelism } = await import('node:os');
   process.stderr.write(`  building MuPDF ${MUPDF_VERSION} static libraries with make (several minutes)\n`);
   const made = spawnSync(
@@ -281,7 +287,7 @@ async function buildMupdfUnix(root, force) {
       'HAVE_X11=no',
       'HAVE_GLUT=no',
       'HAVE_CURL=no',
-      `XCFLAGS=-fPIC ${disabled}`,
+      `XCFLAGS=${xcflags}`,
       'XCXXFLAGS=-fPIC',
       'libs',
     ],
@@ -293,7 +299,20 @@ async function buildMupdfUnix(root, force) {
       throw new Error(`make reported success but ${join(libraries, name)} does not exist.`);
     }
   }
+  await writeFile(stamp, xcflags);
 }
+
+/**
+ * Every function and datum in its own section, so the shim's link keeps what the shim reaches and nothing else.
+ *
+ * GNU ld links a static library by OBJECT: a reference to any symbol in an object brings the whole object in. Measured
+ * 2026-10-12: `pdf-xref.c` calls `pdf_drop_js`, which lives in `pdf-js.o` beside `pdf_enable_js`, and `pdf_enable_js`
+ * calls MuJS's `js_newstate`, so the Linux shim carried the JavaScript interpreter (`proof:activecontent` found
+ * `Array.prototype.forEach`) although nothing the shim exports reaches it. MSVC links by function (`/Gy`, `/OPT:REF`),
+ * which is why the Windows shim had none. With a section per function and `--gc-sections` at the link, GNU ld does the
+ * same, and invariant 24's absence holds on both platforms for the same reason: the call graph.
+ */
+const SECTION_FLAGS = '-ffunction-sections -fdata-sections';
 
 /**
  * The shim as a shared object: the shim, MuPDF's generated binding and its runtime, linked against the static
@@ -313,6 +332,8 @@ async function buildShimUnix(root) {
       '-shared',
       '-fPIC',
       '-O2',
+      ...SECTION_FLAGS.split(' '),
+      '-Wl,--gc-sections',
       '-D_FORTIFY_SOURCE=2',
       '-fstack-protector-strong',
       '-I',

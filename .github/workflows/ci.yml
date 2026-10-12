@@ -163,6 +163,13 @@ jobs:
       - name: Prove MuPDF's binding generator and the port's pins
         run: node scripts/ci/annotate.mjs scripts/provision/mupdfGlue.proof.mjs
 
+      # INVARIANT 24 ON THE LINUX SHIM TOO. The `shim` job runs this proof on
+      # Windows only, so the Linux shim, which GNU ld linked by object and which
+      # carried MuJS until the build linked by section, was checked by nothing.
+      - name: Prove the Linux shim links no JavaScript interpreter
+        if: runner.os == 'Linux'
+        run: node scripts/ci/annotate.mjs scripts/security/activeContentProof.mjs
+
       # Build precedes the proofs that resolve compiled output: the boundary
       # proof lints imports of `@monstera/*`, which resolve through each
       # package's exports map to dist.
