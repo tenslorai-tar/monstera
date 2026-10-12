@@ -927,6 +927,10 @@ names it. BBBBBBBB-7's budget half was kept, not changed, with its reason writte
 AAAAAAAA-1's bound was measured at the minimum window in every section here; the windows runner is the other shape and
 the case now refuses a row More rather than measuring it.
 
+### 2a. Has a change to how something is proven moved the coverage?
+Only towards stronger: AAAAAAAA-5 added a rendered pixel comparison beside the kernel half, BBBBBBBB-4 asserts each send
+whole. Nothing asserted became derived, so nothing became unverifiable on the job that installs nothing.
+
 ### 3. Would CI have caught it?
 CCCCCCCC-1 and -2 were caught by CI on windows only; ubuntu was green on both.
 
@@ -934,6 +938,13 @@ CCCCCCCC-1 and -2 were caught by CI on windows only; ubuntu was green on both.
 Mutations run: `newlyCovered` ignoring the earlier box, the compose catch widened back, the ribbon bound at 10 px; each red.
 The four modified proofs with the most deletions were read: each replaced its assertions under a changed signature or a
 decided behaviour (ADR-0227, B1.26, K2, A2.5), none loosened.
+
+### 4a. Resolution test before measuring?
+One instrument measures here: the ribbon fold bound (AAAAAAAA-1), which reads a rendered width. Its resolution was the
+10 px mutation above, a difference smaller than one button, going red. No other figure in the range was measured.
+
+### 4b. A search with a positive control?
+Nothing in the range is a search. BBBBBBBB-6's anchor list is a comparison, and its direction is item 4's.
 
 ### 4c. Does a check derive its extent from the set it governs?
 BBBBBBBB-6 closed with an independent list.
