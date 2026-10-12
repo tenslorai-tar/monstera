@@ -24,7 +24,18 @@ afterEach(() => {
   cleanup();
 });
 
+/**
+ * THE REASONS THIS DIALOG SPEAKS, named independently of the contract's list (CLAUDE.md item 4c): the case below derives
+ * its rows from that list, which catches a reason added with no sentence and agrees with a reason taken away. This one
+ * is the anchor for the second direction, so a reason leaving is a visible edit here rather than a shorter, green case.
+ */
+const SPOKEN = ['not-in-document', 'read-only', 'several-values', 'option-not-offered', 'cannot-be-filled', 'unreadable-record'];
+
 describe('the import result dialog', () => {
+  it('CONTROL: the contract lists exactly the reasons this dialog was written to speak, none fewer', () => {
+    expect([...IMPORT_SKIP_REASONS]).toStrictEqual(SPOKEN);
+  });
+
   it('says how many were filled and names each field left alone, with a different sentence for each reason', () => {
     const skipped = IMPORT_SKIP_REASONS.map((reason, at) => ({ name: `field_${String(at)}`, reason }));
     render(
