@@ -16,7 +16,7 @@ import { innerWidthOf } from './useRibbonFold.js';
 /** A group of `count` buttons, each `each` wide, with `chrome` of padding and separator. */
 function group(count: number, each = 60, chrome = 10): GroupWidths {
   // NO GAP AND NO CAPTION, so every case above the gap's own states its arithmetic in buttons and chrome alone.
-  return { buttons: Array.from({ length: count }, () => each), chrome, caption: 0, gap: 0 };
+  return { buttons: Array.from({ length: count }, () => each), chrome, caption: 0, gap: 0, values: 0 };
 }
 
 const MORE = 40;
@@ -79,7 +79,7 @@ describe('foldGroups', () => {
     // One 22 px icon under a 57 px caption, 13 of chrome: the group draws 13 + 57 = 70, not 13 + 22 = 35. Two of them
     // are 140. At 110 available a fold that counted the buttons alone believed 70 and drew both, 30 past its row —
     // the Comment ribbon's Measure and Links groups under a wider font, 25 px past it on 2026-10-08.
-    const icons: GroupWidths = { buttons: [22], chrome: 13, caption: 57, gap: 0 };
+    const icons: GroupWidths = { buttons: [22], chrome: 13, caption: 57, gap: 0, values: 0 };
 
     // The one left gets 110 − the row's 40 More = 70, which is exactly its 13 + 57.
     expect(foldRow([icons, icons], 110, MORE, 0).hiddenFrom).toBe(1);
@@ -92,13 +92,23 @@ describe('foldGroups', () => {
     // Three 60 px buttons, 10 of chrome, 8 between neighbours: 10 + 180 + 2 × 8 = 206. Without the
     // gaps it is 190, so 200 available separates the two: a fold that ignored gaps draws all three
     // and runs 6 px past its row, which is what one section did at 1024 on 2026-09-24.
-    const spaced: GroupWidths = { buttons: [60, 60, 60], chrome: 10, caption: 0, gap: 8 };
+    const spaced: GroupWidths = { buttons: [60, 60, 60], chrome: 10, caption: 0, gap: 8, values: 0 };
 
     // Folded to one button and a More: 10 + 60 + 40 + 8 = 118, inside 200. Two and a More would be
     // 10 + 120 + 40 + 16 = 186, also inside — and the loop stops at the first fold that fits.
     expect(foldGroups([spaced], 200, MORE)).toStrictEqual([{ shown: 2, more: true }]);
     // CONTROL: with the room the gaps need, nothing folds.
     expect(foldGroups([spaced], 206, MORE)).toStrictEqual([{ shown: 3, more: false }]);
+  });
+
+  it('charges a group’s VALUE controls in its row with one gap, and never folds them (ADR-0228 Decision 5)', () => {
+    // THE SAME THREE BUTTONS with 100 px of Font and Size before them: 10 + 100 + 8 + 180 + 2 × 8 = 314.
+    const valued: GroupWidths = { buttons: [60, 60, 60], chrome: 10, caption: 0, gap: 8, values: 100 };
+    expect(foldGroups([valued], 314, MORE)).toStrictEqual([{ shown: 3, more: false }]);
+    // ONE PIXEL SHORT folds a button: the values were charged, or 206 of room would have held all three.
+    expect(foldGroups([valued], 313, MORE)).toStrictEqual([{ shown: 2, more: true }]);
+    // CONTROL: the same group with no values fits at 206, so the fold above is the values' doing.
+    expect(foldGroups([{ ...valued, values: 0 }], 206, MORE)).toStrictEqual([{ shown: 3, more: false }]);
   });
 
   it('a group with ONE button never folds: it has nothing to fold into a More', () => {
@@ -130,8 +140,8 @@ describe('foldGroups', () => {
     // More costs more than the 30 px button it hid. A rule that asked only whether the next step
     // helps would refuse to fold this group at all and leave the row over its budget with a 200 px
     // button still on screen. Its floor, 10 + 200 + 40 = 250, is what makes the fold worth starting.
-    const wide: GroupWidths = { buttons: [200, 30, 30], chrome: 10, caption: 0, gap: 0 };
-    const narrow: GroupWidths = { buttons: [30, 30, 30], chrome: 10, caption: 0, gap: 0 };
+    const wide: GroupWidths = { buttons: [200, 30, 30], chrome: 10, caption: 0, gap: 0, values: 0 };
+    const narrow: GroupWidths = { buttons: [30, 30, 30], chrome: 10, caption: 0, gap: 0, values: 0 };
 
     const folded = foldGroups([wide, narrow], 340, MORE);
 
@@ -145,15 +155,15 @@ describe('foldGroups', () => {
     // One button of 30 and a More of 40: every fold of this group makes it wider, at every depth.
     // So it keeps both buttons and the row stays too wide — the honest answer, against a loop that
     // would hide a control and gain nothing.
-    const stubborn: GroupWidths = { buttons: [30, 30], chrome: 10, caption: 0, gap: 0 };
+    const stubborn: GroupWidths = { buttons: [30, 30], chrome: 10, caption: 0, gap: 0, values: 0 };
 
     expect(foldGroups([stubborn], 1, MORE)).toStrictEqual([{ shown: 2, more: false }]);
   });
 
   it('CONTROL: the same groups at their natural width are untouched, so a fold means a shortage', () => {
     // Without this, every case above could be satisfied by a function that always folds.
-    const wide: GroupWidths = { buttons: [200, 30, 30], chrome: 10, caption: 0, gap: 0 };
-    const narrow: GroupWidths = { buttons: [30, 30, 30], chrome: 10, caption: 0, gap: 0 };
+    const wide: GroupWidths = { buttons: [200, 30, 30], chrome: 10, caption: 0, gap: 0, values: 0 };
+    const narrow: GroupWidths = { buttons: [30, 30, 30], chrome: 10, caption: 0, gap: 0, values: 0 };
 
     expect(foldGroups([wide, narrow], 370, MORE)).toStrictEqual([
       { shown: 3, more: false },

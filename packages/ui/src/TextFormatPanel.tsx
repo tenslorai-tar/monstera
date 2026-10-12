@@ -4,19 +4,16 @@ import { type ReactElement, useId, useState, useSyncExternalStore } from 'react'
 
 import { ColourSwatches } from './ColourChoice.js';
 import { FORMAT_ENTRIES } from './commands/textFormatCommands.js';
-import { type DocumentFont, FontPicker, type FontList } from './FontPicker.js';
+import type { DocumentFont, FontList } from './FontPicker.js';
 import {
   TEXT_BLOCK_REMOVE,
   TEXT_FORMAT_CHARACTER_SPACING,
   TEXT_FORMAT_CHARACTER_SPACING_BOUND,
   TEXT_FORMAT_COLOUR_AUTO,
   TEXT_FORMAT_COLOUR_CUSTOM,
-  TEXT_FORMAT_FAMILY,
-  TEXT_FORMAT_FAMILY_RUN,
   TEXT_FORMAT_HIGHLIGHT,
   TEXT_FORMAT_HIGHLIGHT_CUSTOM,
   TEXT_FORMAT_HIGHLIGHT_NONE,
-  TEXT_FORMAT_SIZE,
   TEXT_FORMAT_SPACE_AFTER,
   TEXT_FORMAT_SPACING,
   TEXT_FORMAT_SPACING_DOUBLE,
@@ -39,13 +36,13 @@ import {
   formatOpenEditor,
   leavesEditor,
   onEditorChange,
-  openEditorFonts,
   openEditorState,
   openParagraphState,
   refocusOpenEditor,
   removeOpenBlock,
 } from './textEditorControl.js';
 import { spacingOf } from './textFormatting.js';
+import { TextFontSize } from './TextFontSize.js';
 
 /**
  * The Properties panel while words are being edited in place (the owner's K11 and C1 to C5): the formatting that floated
@@ -77,9 +74,6 @@ const SPACINGS = [
   { value: 2, title: TEXT_FORMAT_SPACING_DOUBLE },
 ] as const;
 
-/** The standard fonts the in-place editor sets, through the resolver's stand-ins: Symbol and ZapfDingbats have none. */
-const EDITOR_BUILT_IN = ['Helvetica', 'Times', 'Courier'] as const;
-
 /** The verbs that change words, and the ones that change a paragraph, by the table's ids. */
 const TEXT_VERBS = new Set(['bold', 'italic', 'underline', 'strike', 'superscript', 'subscript'].map((name) => `text.format.${name}`));
 
@@ -102,30 +96,17 @@ export interface TextFormatPanelProps {
   readonly documentFonts: readonly DocumentFont[];
 }
 
-/** A subset's tag, six capitals and a plus (PDF 32000-1, 9.6.4), which says the font holds only the letters used. */
-const SUBSET_TAG = /^[A-Z]{6}\+/u;
-
 export function TextFormatPanel({ fonts, documentFonts }: TextFormatPanelProps): ReactElement {
   const { _, i18n } = useLingui();
   // RE-READ ON EVERY CHANGE of the selection or the formatting, since the state is the editor's and not a snapshot.
   useSyncExternalStore(onEditorChange, editorRevision);
   const state = openEditorState();
-  // THE PICKER'S FIRST GROUP IS THE WHOLE DOCUMENT'S (B2.8): the open editor's page first, which the editor already holds
-  // and so is there before the document's read answers, then every other font the document names. The picker lists each
-  // name once.
-  const inDocument: DocumentFont[] = [
-    ...openEditorFonts().map((name) => ({ name, partial: SUBSET_TAG.test(name) })),
-    ...documentFonts,
-  ];
-  const sizeId = useId();
   const spacingId = useId();
   const letterId = useId();
   const letterNoteId = useId();
   const afterId = useId();
-  const [size, setSize] = useState<string | undefined>(undefined);
   const [letters, setLetters] = useState<string | undefined>(undefined);
   const [after, setAfter] = useState<string | undefined>(undefined);
-  const shown = size ?? (state?.size === undefined ? '' : String(Math.round(state.size * 10) / 10));
   const hex = hexOf(state?.colour);
   // THE SIZE THE SPACING IS A FRACTION OF: the words' at the selection, or the field cannot convert and stays empty.
   const wordSize = state?.size;
@@ -169,45 +150,8 @@ export function TextFormatPanel({ fonts, documentFonts }: TextFormatPanelProps):
 
       <div aria-label={_(TEXT_PROPERTIES_TEXT)} className="m-text-properties__section" role="group">
         <h3 className="m-text-properties__title">{_(TEXT_PROPERTIES_TEXT)}</h3>
-        <FontPicker
-          builtIn={EDITOR_BUILT_IN}
-          inDocument={inDocument}
-          label={TEXT_FORMAT_FAMILY}
-          list={fonts}
-          onPick={(family) => {
-            formatOpenEditor({ kind: 'set', change: { family } });
-            refocusOpenEditor();
-          }}
-          unset={TEXT_FORMAT_FAMILY_RUN}
-          value={state?.family}
-        />
-        <label className="m-text-properties__row" htmlFor={sizeId}>
-          <span>{_(TEXT_FORMAT_SIZE)}</span>
-          <input
-            className="m-text-properties__size"
-            id={sizeId}
-            max={400}
-            min={1}
-            onBlur={() => {
-              setSize(undefined);
-            }}
-            onChange={(event) => {
-              setSize(event.target.value);
-              const points = Number(event.target.value);
-              if (Number.isFinite(points) && points >= 1 && points <= 400) formatOpenEditor({ kind: 'set', change: { size: points } });
-            }}
-            onKeyDown={(event) => {
-              // ENTER RETURNS TO THE WORDS, with the size set.
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                refocusOpenEditor();
-              }
-            }}
-            step={0.5}
-            type="number"
-            value={shown}
-          />
-        </label>
+        {/* THE FONT AND SIZE the ribbon's Format group draws too: one component (ADR-0228 Decision 5, B3a). */}
+        <TextFontSize documentFonts={documentFonts} fonts={fonts} place="panel" />
         <div className="m-text-properties__verbs">{FORMAT_ENTRIES.filter((entry) => TEXT_VERBS.has(entry.id)).map(verb)}</div>
         <ColourSwatches
           auto={state?.colour === undefined}

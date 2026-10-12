@@ -4490,6 +4490,25 @@ optgroup {
   gap: var(--space-2);
 }
 
+/* A GROUP'S OWN VALUE CONTROLS (ADR-0228 Decision 5): Edit › Format's Font and Size, stacked like a column of small
+   tools so the group keeps the ribbon's height. Its box is what the fold charges (`GroupWidths.values`). */
+.m-ribbon__values {
+  display: flex;
+  flex: none;
+  align-items: center;
+}
+
+.m-text-font-size {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.m-text-font-size--ribbon {
+  gap: var(--space-2);
+  inline-size: 11em;
+}
+
 /* A GROUP'S OVERFLOW (the owner's `document-light-narrow.png`): the tools that did not fit, in the
    group they belong to. It draws as a tool button so a folded group reads as a group — the chevron
    is what says it opens rather than runs. */
@@ -6600,6 +6619,20 @@ optgroup {
 
 .m-font-picker__search {
   padding-inline: var(--space-8);
+}
+
+/* A FLOATING LIST (the ribbon's Font, ADR-0228 Decision 5): carried to the body and placed under its button, so the
+   ribbon's clipped row cannot cut it. No z-index: a portal at the end of the body stacks above by order, as a menu does. */
+.m-font-picker__open--floating {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-6);
+  background: var(--surface);
+  box-shadow: var(--shadow);
 }
 
 .m-font-picker__list {

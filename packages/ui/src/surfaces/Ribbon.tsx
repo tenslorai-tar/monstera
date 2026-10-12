@@ -1,6 +1,6 @@
 import { Menu } from '@base-ui/react/menu';
 import { useLingui } from '@lingui/react';
-import { type ReactElement, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type ReactElement, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import {
   RAIL_MORE,
@@ -95,6 +95,12 @@ export interface RibbonProps {
    * command asked twice rings twice. The opener has already brought its section to the front.
    */
   readonly showing?: { readonly id: string; readonly stamp: number } | undefined;
+  /**
+   * A group's own VALUE controls, by its caption key (ADR-0228 Decision 5: Edit › Format's Font and Size), drawn first in
+   * its row and never folded. Each holds a value, so it is not a command and the registry does not hold it, as the status
+   * bar's page field and zoom slider are the bar's own (ADR-0067). Absent for a group that has none.
+   */
+  readonly values?: ReadonlyMap<MessageKey, ReactNode> | undefined;
 }
 
 /** How long a *Show me* ring stays: three pulses of the animation in `app.css`. */
@@ -138,7 +144,7 @@ const SECTION_ICONS: Readonly<Record<SectionId, IconName>> = {
   tools: 'Wrench',
 };
 
-export function Ribbon({ registry, context, settings, showing }: RibbonProps): ReactElement | null {
+export function Ribbon({ registry, context, settings, showing, values }: RibbonProps): ReactElement | null {
   const { i18n } = useLingui();
   const chosen = useSetting(settings, RIBBON_SECTION_SETTING);
   const mode = useSetting(settings, LAYOUT_MODE_SETTING);
@@ -473,6 +479,13 @@ export function Ribbon({ registry, context, settings, showing }: RibbonProps): R
         {groupsOf(sections, active).slice(0, fold.hiddenFrom).map((group, index) => (
           <div className="m-ribbon__group" key={group.group} ref={fold.groupRef(index)}>
             <div className="m-ribbon__buttons">
+              {/* THE GROUP'S OWN VALUE CONTROLS, first and never folded: the fold reads this box's width and charges it
+                  (`GroupWidths.values`), and finds each button by its own `data-command`, so nothing here moves them. */}
+              {values?.get(group.group) === undefined ? null : (
+                <div className="m-ribbon__values" data-ribbon-values="">
+                  {values.get(group.group)}
+                </div>
+              )}
               {splitFold(group.entries, fold.folds?.[index]).shown.map((unit) => {
                 // A NAMED MENU (ADR-0101): one button opening its members, drawn by the same
                 // component as the group's More, glyph from its first member.

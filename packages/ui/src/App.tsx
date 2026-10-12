@@ -280,6 +280,7 @@ import {
   HINT_HAND,
   FORM_FIELD_REQUIRED_EMPTY,
   FORM_FIELD_REQUIRED_LEFT,
+  GROUP_FORMAT,
   LINK_ADDED,
   SPLIT_SECOND_LABEL,
   TOAST_DISMISS,
@@ -405,6 +406,7 @@ import {
 import { AssistantPanel } from './AssistantPanel.js';
 import type { DropOpener, EventSubscriber } from './bridge.js';
 import { PropertiesPanel, type StyleChange } from './PropertiesPanel.js';
+import { TextFontSize } from './TextFontSize.js';
 import { TextFormatPanel } from './TextFormatPanel.js';
 import { useDocumentFonts, useFontList } from './fontList.js';
 import { GRID_DIVISION_COUNTS, type GridLook, type RulerUnit } from './rulerGeometry.js';
@@ -1202,6 +1204,11 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const [fieldReveal, setFieldReveal] = useState<{ page: number; index: number; stamp: number } | undefined>(undefined);
   const openVersion = open?.version;
   const documentFonts = useDocumentFonts(client, activeId, openVersion, textEditorOpen);
+  /** Edit › Format's own value controls (ADR-0228 Decision 5): the Properties panel's Font and Size, as one component. */
+  const ribbonFormatValues = useMemo(
+    () => new Map([[GROUP_FORMAT, <TextFontSize documentFonts={documentFonts} fonts={fontList} key="font-size" place="ribbon" />]]),
+    [documentFonts, fontList],
+  );
   const selectedFieldKeys = useMemo(
     () => new Set(liveKeys(fieldSelection, openVersion)),
     [fieldSelection, openVersion],
@@ -4583,7 +4590,15 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // caller's request can reach the scroller that mounts after it
         // (`PageList`'s `revealedStart`).
         <>
-        <Ribbon registry={registry} context={context} settings={settings} showing={showing} />
+        <Ribbon
+          registry={registry}
+          context={context}
+          settings={settings}
+          showing={showing}
+          // EDIT › FORMAT'S FONT AND SIZE while words are being edited (ADR-0228 Decision 5): the panel's own component, so
+          // both set a value by one rule.
+          values={textEditorOpen ? ribbonFormatValues : undefined}
+        />
         {/* THE BODY AREA, one element whatever the view renders: a scroller, a
             loading placeholder or a failed canvas. Each of those is otherwise a
             grid item the shell would have to name, and a new state would land in

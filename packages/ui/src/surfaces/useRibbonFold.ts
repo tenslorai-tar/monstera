@@ -60,6 +60,7 @@ interface GroupFrame {
   readonly chrome: number;
   readonly caption: number;
   readonly gap: number;
+  readonly values: number;
 }
 
 /** Everything a fold is computed from: what was measured, kept across renders. */
@@ -108,6 +109,8 @@ export function useRibbonFold(section: RibbonSection | undefined): RibbonFold {
         chrome: Math.max(element.getBoundingClientRect().width - innerWidthOf(element), 0),
         caption: captionWidth(element),
         gap: buttonGap(element),
+        // THE GROUP'S OWN VALUE CONTROLS (ADR-0228 Decision 5), read on their box; none drawn reads as none.
+        values: element.querySelector<HTMLElement>('[data-ribbon-values]')?.getBoundingClientRect().width ?? 0,
       });
       // THE ROW'S BUTTONS, from the one function that defines them: the primaries, a named menu as one, then the
       // secondaries (ADR-0098's correction, ADR-0101). A button folded away keeps what it was last measured at.
@@ -193,7 +196,7 @@ export function useRibbonFold(section: RibbonSection | undefined): RibbonFold {
         if (width === undefined) return null;
         buttons.push(width);
       }
-      widths.push({ buttons, chrome: frame.chrome, caption: frame.caption, gap: frame.gap });
+      widths.push({ buttons, chrome: frame.chrome, caption: frame.caption, gap: frame.gap, values: frame.values });
     }
     return foldRow(widths, metrics.room, metrics.more, metrics.gap);
   }, [metrics, section]);
@@ -229,7 +232,7 @@ function same<T>(left: T | undefined, right: T): boolean {
   if (typeof right === 'object' && right !== null && typeof left === 'object' && left !== null) {
     const a = left as unknown as GroupFrame;
     const b = right as unknown as GroupFrame;
-    return a.chrome === b.chrome && a.caption === b.caption && a.gap === b.gap;
+    return a.chrome === b.chrome && a.caption === b.caption && a.gap === b.gap && a.values === b.values;
   }
   return left === right;
 }

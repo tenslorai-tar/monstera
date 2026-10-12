@@ -1,7 +1,8 @@
 import { useLingui } from '@lingui/react';
 import type { FontFamilyEntry } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
-import { type ReactElement, useId, useMemo, useRef, useState } from 'react';
+import { type ReactElement, type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import {
   FONT_GROUP_BUILT_IN,
@@ -20,6 +21,7 @@ import {
   FONT_PICKER_SEARCH,
 } from './messages/en.js';
 import { Icon } from './primitives/Icon.js';
+import { KEEPS_EDITOR } from './textEditorControl.js';
 
 /**
  * The ONE font picker (the owner's D1 to D4): every place a person chooses a font takes this, so the list, its groups and
@@ -69,8 +71,8 @@ export interface FontGroup {
   readonly choices: readonly FontChoice[];
 }
 
-/** A tag of six capitals and a plus, which a subset's name begins with (PDF 32000-1, 9.6.4). */
-const SUBSET_TAG = /^[A-Z]{6}\+/u;
+/** A tag of six capitals and a plus, which a subset's name begins with (PDF 32000-1, 9.6.4). The one copy (B3a). */
+export const SUBSET_TAG = /^[A-Z]{6}\+/u;
 
 /** The groups a picker shows for `query`, each without an empty one, in the owner's order. Pure, for its tests. */
 export function fontGroups(
@@ -141,12 +143,37 @@ export interface FontPickerProps {
   readonly inDocument: readonly DocumentFont[];
   readonly builtIn: readonly string[];
   readonly onPick: (family: string) => void;
+  /**
+   * The list opens FLOATING over the window, under the button, rather than in the flow: for a picker in a row that
+   * clips what grows out of it (the ribbon, ADR-0228 Decision 5). It closes on a press outside it, and is marked as part
+   * of the open text editor's surface so a focus moving into it keeps the words being edited.
+   */
+  readonly floating?: boolean;
 }
 
-export function FontPicker({ label, value, unset, list, inDocument, builtIn, onPick }: FontPickerProps): ReactElement {
+export function FontPicker({ label, value, unset, list, inDocument, builtIn, onPick, floating = false }: FontPickerProps): ReactElement {
   const { _ } = useLingui();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const face = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  /** Where a floating list sits: under the button, read when it opens. */
+  const [floatAt, setFloatAt] = useState<{ readonly left: number; readonly top: number; readonly width: number } | undefined>();
+  // A FLOATING LIST CLOSES ON A PRESS OUTSIDE IT AND ITS BUTTON, as a menu does; the in-flow list is closed by its own
+  // surface, which holds it.
+  useEffect(() => {
+    if (!floating || !open) return undefined;
+    const away = (event: PointerEvent): void => {
+      const target = event.target as Node | null;
+      if (target !== null && (face.current?.contains(target) === true || panel.current?.contains(target) === true)) return;
+      setOpen(false);
+      setQuery('');
+    };
+    document.addEventListener('pointerdown', away, true);
+    return () => {
+      document.removeEventListener('pointerdown', away, true);
+    };
+  }, [floating, open]);
   const [active, setActive] = useState(0);
   const listId = useId();
   const optionId = (at: number): string => `${listId}-${String(at)}`;
@@ -169,19 +196,34 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
         aria-label={`${_(label)}: ${value ?? _(unset)}`}
         className="m-font-picker__face"
         onClick={() => {
+          if (floating && face.current !== null) {
+            const box = face.current.getBoundingClientRect();
+            setFloatAt({ left: box.left, top: box.bottom + FLOAT_BELOW, width: Math.max(box.width, FLOAT_MIN_WIDTH) });
+          }
           setOpen((now) => !now);
           setActive(0);
           // THE SEARCH TAKES THE KEYS once the list is open, so a person types a name at once.
           requestAnimationFrame(() => search.current?.focus());
         }}
+        ref={face}
         style={value === undefined ? undefined : { fontFamily: `"${value}"` }}
         type="button"
       >
         <span className="m-font-picker__name">{value ?? _(unset)}</span>
         <Icon name="ChevronDown" size="dense" />
       </button>
-      {open ? (
-        <div className="m-font-picker__open">
+      {open ? floated(
+        <div
+          className={floating ? 'm-font-picker__open m-font-picker__open--floating' : 'm-font-picker__open'}
+          data-font-picker=""
+          ref={panel}
+          {...(floating ? { [KEEPS_EDITOR]: '' } : {})}
+          style={
+            floating && floatAt !== undefined
+              ? { insetInlineStart: floatAt.left, insetBlockStart: floatAt.top, inlineSize: floatAt.width }
+              : undefined
+          }
+        >
           <input
             aria-activedescendant={flat.length === 0 ? undefined : optionId(Math.min(active, flat.length - 1))}
             aria-autocomplete="list"
@@ -259,8 +301,18 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
           {flat.length === 0 && list !== undefined ? (
             <p className="m-font-picker__note">{_(FONT_NONE_MATCH, { query })}</p>
           ) : null}
-        </div>
+        </div>,
+        floating,
       ) : null}
     </div>
   );
+}
+
+/** How far below its button a floating list opens, and the narrowest it is drawn: a name and its note fit. */
+const FLOAT_BELOW = 4;
+const FLOAT_MIN_WIDTH = 260;
+
+/** The open list where it is drawn: in the flow, or carried to the body so no row that clips can cut it. */
+function floated(panel: ReactElement, floating: boolean): ReactNode {
+  return floating ? createPortal(panel, document.body) : panel;
 }

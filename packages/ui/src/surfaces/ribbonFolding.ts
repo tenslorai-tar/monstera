@@ -45,6 +45,12 @@ export interface GroupWidths {
    * section 4.7 px past its row at 1024.
    */
   readonly gap: number;
+  /**
+   * The width of the group's own VALUE controls (ADR-0228 Decision 5: Edit › Format's Font and Size), drawn first in its
+   * row and never folded: each holds a value, so it is not a command a More could list. 0 for a group with none. Charged
+   * with one gap to the first button, as a button beside it would be.
+   */
+  readonly values: number;
 }
 
 /** What the ribbon draws for one group. */
@@ -68,6 +74,8 @@ function widthOf(group: GroupWidths, shown: number, moreWidth: number): number {
   if (folded) buttons += moreWidth;
   const items = shown + (folded ? 1 : 0);
   buttons += group.gap * Math.max(items - 1, 0);
+  // THE VALUE CONTROLS SIT IN THE SAME ROW, before the buttons, a gap apart from the first.
+  if (group.values > 0) buttons += group.values + (items > 0 ? group.gap : 0);
   // THE WIDER OF THE TWO, not their sum: the caption sits beneath the buttons, not beside them.
   return group.chrome + Math.max(buttons, group.caption);
 }

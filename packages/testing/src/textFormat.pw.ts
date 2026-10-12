@@ -25,6 +25,8 @@ async function openBlock(
   page: Page,
   sent: { channel: string; params: unknown }[],
   documentFonts: readonly { name: string; partial: boolean }[] = [],
+  /** The ribbon's section at the start: Edit, where Edit text is reached, for a case about the Format group. */
+  section?: 'edit',
 ): Promise<void> {
   const bytes = await onePage();
   await page.setViewportSize({ width: 1800, height: 1000 });
@@ -35,6 +37,7 @@ async function openBlock(
       opens: [{ kind: 'opened' as const, docId: ID, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Format.pdf' }],
       documentBytes: new Map([[ID, bytes]]),
       documentFonts,
+      ...(section === undefined ? {} : { settings: { 'appearance.ribbon-section': section } }),
       textBlocks: [
         {
           box: { x0: 100, y0: 686, x1: 400, y1: 700 },
@@ -101,6 +104,38 @@ test.describe('Formatting in the Properties panel (K11)', () => {
       expect.objectContaining({ set: expect.objectContaining({ family: 'Times New Roman', size: 18 }) }),
     ]);
     expect(sent.filter((one) => one.channel === 'document.execute')).toHaveLength(1);
+  });
+
+  test('the RIBBON’S Format group has Font and Size too (C3): chosen there, they keep the editor open and write once', async ({ page }) => {
+    const sent: { channel: string; params: unknown }[] = [];
+    // THE EDIT TAB ON SHOW FROM THE START, where Edit text is reached: choosing a tab moves the focus out of the words,
+    // which ends the edit, as a click anywhere outside them does.
+    await openBlock(page, sent, [], 'edit');
+    await page.keyboard.press('Control+A');
+    const values = page.locator('.m-ribbon__tools [data-ribbon-values] [data-text-font-size="ribbon"]');
+    await expect(values).toBeVisible();
+    await values.getByRole('button', { name: /^Font:/u }).click();
+    // THE LIST FLOATS over the window, outside the ribbon's clipped row, and its search takes the keys.
+    const search = page.getByRole('combobox', { name: 'Search fonts' });
+    await expect(search).toBeFocused();
+    expect(await search.evaluate((field) => field.closest('.m-ribbon__tools') === null)).toBe(true);
+    await search.fill('Times New');
+    await search.press('Enter');
+    await expect(page.locator('[data-text-editor]')).toBeFocused();
+    const size = values.getByRole('spinbutton', { name: 'Size in points' });
+    await size.fill('18');
+    await size.press('Enter');
+    await expect(page.locator('[data-text-editor]')).toBeFocused();
+    expect(sent.filter((one) => one.channel === 'document.execute')).toHaveLength(0);
+    // THE PANEL SHOWS WHAT THE RIBBON SET, being the same component over the same editor.
+    await expect(page.locator('[data-text-properties] [data-text-font-size="panel"]').getByRole('spinbutton', { name: 'Size in points' })).toHaveValue('18');
+
+    await page.locator('canvas[data-page-canvas="0"]').click({ position: { x: 40, y: 600 } });
+    await expect.poll(() => marksSent(sent)).toStrictEqual([
+      expect.objectContaining({ set: expect.objectContaining({ family: 'Times New Roman', size: 18 }) }),
+    ]);
+    // CONTROL: with the editor closed the Format group and its values are gone, so they are the editor's and not the tab's.
+    await expect(page.locator('[data-ribbon-values]')).toHaveCount(0);
   });
 
   test('the font picker lists the page’s own font first, its subset tag stripped and said partial, then this computer’s', async ({ page }) => {
