@@ -121,8 +121,8 @@ export interface TextEditLayerProps {
   readonly onRestructure?: (edits: EditedBlock[], read: BlocksRead) => Promise<BlockCommit>;
   /** Writes one block's new words, at the version the blocks were read at and by the writer that read named. */
   readonly onCommit: (block: TextBlock, text: string, read: BlocksRead, formatting?: BlockFormatting) => Promise<BlockCommit>;
-  /** The fonts the open block's runs are drawn in, rebuilt by the host, at the version it was read at (ADR-0175). */
-  readonly runFonts: (block: TextBlock, version: DocVersion) => Promise<RunFonts>;
+  /** The fonts the open block's runs are drawn in, rebuilt by the host, from the read that named it (ADR-0175, ADR-0232). */
+  readonly runFonts: (block: TextBlock, read: BlocksRead) => Promise<RunFonts>;
   /** Unpacks the page's blocked-in text so it can be edited. */
   readonly onPromote: () => void;
   /** Recognises a page that has no text, so a scan's words can be edited (ADR-0181 Decision 9); absent offers nothing. */
@@ -532,7 +532,7 @@ export function TextEditLayer({
               paper={paperAround(placed, paperAt)}
               past={pastItsPage(block.box, geometry.crop)}
               placed={placed}
-              runFonts={() => runFonts(block, blocks.version)}
+              runFonts={() => runFonts(block, blocks)}
             />
           );
         }
@@ -748,8 +748,8 @@ export interface TextEditing {
     read: BlocksRead,
     formatting?: BlockFormatting,
   ) => Promise<BlockCommit>;
-  /** The fonts one block's runs are drawn in, as the host rebuilt them, at the version the block was read at (ADR-0175). */
-  readonly runFonts: (page: number, block: TextBlock, version: DocVersion) => Promise<RunFonts>;
+  /** The fonts one block's runs are drawn in, as the host rebuilt them, from the read that named the block (ADR-0175, ADR-0232). */
+  readonly runFonts: (page: number, block: TextBlock, read: BlocksRead) => Promise<RunFonts>;
   readonly onPromote: (page: number) => void;
   /** Recognises a page that has no text (the one `document.ocr` command), so a scan's words can be edited. */
   readonly onRecognise: (page: number) => void;
@@ -820,7 +820,7 @@ export function TextEditPage({
       spell={editing.spell}
       onRestructure={(edits, read) => editing.onRestructure(page, edits, read)}
       onInsert={(insert, read) => editing.onInsert(page, insert, read)}
-      runFonts={(block, at) => editing.runFonts(page, block, at)}
+      runFonts={(block, read) => editing.runFonts(page, block, read)}
       onPromote={() => {
         editing.onPromote(page);
       }}

@@ -454,7 +454,15 @@ const basePdfiumChannels = {
    */
   'engine/text-runs': fileAnswered(
     'Answers a page’s text runs: which object each is, what it says, where it is and how it is set.',
-    z.object({ session: sessionSchema, ...byteImageWire.read, page: z.number().int().nonnegative() }).strict(),
+    z
+      .object({
+        session: sessionSchema,
+        ...byteImageWire.read,
+        page: z.number().int().nonnegative(),
+        /** Read with the page's forms moved onto it in this process's memory, and nothing saved (ADR-0232). */
+        unpack: z.literal(true).exactOptional(),
+      })
+      .strict(),
     z
       .object({
         runs: z
@@ -690,6 +698,8 @@ const basePdfiumChannels = {
         page: z.number().int().nonnegative(),
         /** The runs' first objects, as `engine/text-runs` named them. */
         indices: z.array(z.number().int().nonnegative()).min(1).max(MAX_FONT_RUNS),
+        /** Named on the page unpacked in memory, as `engine/text-runs` with `unpack` named them (ADR-0232). */
+        unpack: z.literal(true).exactOptional(),
       })
       .strict(),
     z

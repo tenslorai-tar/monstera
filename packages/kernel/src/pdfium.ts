@@ -12,6 +12,7 @@ export {
   pageRuns,
   placeObject,
   renderPageBitmap,
+  unpackedIfAsked,
   renderPageBitmapWithoutText,
   objectMatrix,
   removeObjects,

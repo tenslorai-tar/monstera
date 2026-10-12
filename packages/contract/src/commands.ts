@@ -6306,7 +6306,17 @@ export function blocksOfEdit(edit: BlockEdit): EditedBlock[] {
  * An object named in two lines is two opinions about which line it is in, and
  * the boundary refuses it, as `replaceTextObjectSchema` refuses one named twice.
  */
-export const editTextBlockSchema = blockEditCommandSchema('editTextBlock');
+export const editTextBlockSchema = blockEditCommandObject('editTextBlock')
+  .extend({
+    /**
+     * The blocks name the page with its forms' content moved onto it, as the read that offered them was taken
+     * ([ADR-0232](../../../docs/DECISIONS/0232-packed-text-is-unpacked-by-the-edit-that-changes-it.md)): the writer moves
+     * them first, in this command, so the indices name the same objects. Absent for a page read as it is.
+     */
+    unpack: z.literal(true).exactOptional(),
+  })
+  // ACROSS BLOCKS, not only within one: a run in two blocks would be written twice.
+  .refine((command) => blockEditAgrees(command), blockEditDisagrees());
 
 /**
  * {@link editTextBlockSchema}'s intent for a page whose text includes a Type 3 font, which PDFium cannot regenerate
@@ -6315,7 +6325,11 @@ export const editTextBlockSchema = blockEditCommandSchema('editTextBlock');
  * by one function, so the editor sends one block wire to either writer and the two kinds cannot drift apart; the reading
  * says per page which one the page needs (Decision 1), and the renderer picks the kind from it.
  */
-export const editTextOperatorsSchema = blockEditCommandSchema('editTextOperators');
+// NO `unpack`: a page whose text is in a Type 3 font is never read unpacked (ADR-0232 Decision 5).
+export const editTextOperatorsSchema = blockEditCommandObject('editTextOperators').refine(
+  (command) => blockEditAgrees(command),
+  blockEditDisagrees(),
+);
 
 /**
  * Which of the two a page's text is rewritten by (ADR-0176 Decision 1): `objects` for {@link editTextBlockSchema},
@@ -6325,8 +6339,18 @@ export const editTextOperatorsSchema = blockEditCommandSchema('editTextOperators
 export const textRewriteSchema = z.enum(['objects', 'operators']);
 export type TextRewrite = z.infer<typeof textRewriteSchema>;
 
+/**
+ * Whether a page is read again unpacked
+ * ([ADR-0232](../../../docs/DECISIONS/0232-packed-text-is-unpacked-by-the-edit-that-changes-it.md) Decision 1): only where its
+ * plain read found characters no object holds, and only where PDFium writes it, since the operator writer names the page
+ * as it is. The one rule, so a page with nothing packed, a logo form among them, is never unpacked.
+ */
+export function readsUnpacked(unaddressable: number, rewrite: TextRewrite): boolean {
+  return unaddressable > 0 && rewrite === 'objects';
+}
+
 /** A block edit command of `kind`: {@link editTextBlockSchema}'s fields, declared once for both kinds. */
-function blockEditCommandSchema<K extends 'editTextBlock' | 'editTextOperators'>(kind: K) {
+function blockEditCommandObject<K extends 'editTextBlock' | 'editTextOperators'>(kind: K) {
   return z
     .object({
       kind: z.literal(kind),
@@ -6348,11 +6372,12 @@ function blockEditCommandSchema<K extends 'editTextBlock' | 'editTextOperators'>
       /** The version the blocks were read at. Refused if the document has moved. */
       version: docVersionSchema,
     })
-    .strict()
-    // ACROSS BLOCKS, not only within one: a run in two blocks would be written twice.
-    .refine((command) => blockEditAgrees(command), {
-      message: 'the starts must describe the lists, and an object may be named once in a block edit',
-    });
+    .strict();
+}
+
+/** What both kinds are refused with by their one rule, `blockEditAgrees`, a function so both declarations above can name it. */
+function blockEditDisagrees(): { readonly message: string } {
+  return { message: 'the starts must describe the lists, and an object may be named once in a block edit' };
 }
 
 export const commandSchema = z.discriminatedUnion('kind', [

@@ -4599,6 +4599,16 @@ function composed(child: ObjectMatrix, form: ObjectMatrix): ObjectMatrix {
 }
 
 /**
+ * The page as a read that offered packed text named it
+ * ([ADR-0232](../../../docs/DECISIONS/0232-packed-text-is-unpacked-by-the-edit-that-changes-it.md)): promoted where `unpack`
+ * says so, and untouched otherwise. The ONE rule for it, which the host's text read, its run-font read and the block edit
+ * all call, so an index from an unpacked read names one object in every one of them.
+ */
+export async function unpackedIfAsked(session: PdfiumSession, page: number, unpack: boolean): Promise<void> {
+  if (unpack) await promoteFormObjects(session, page);
+}
+
+/**
  * Promotes every Form XObject's content onto the page, matrices composed in.
  *
  * ## What this is for

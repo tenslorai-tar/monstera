@@ -3188,9 +3188,9 @@ function renderPageHandler(commands: DocumentCommands): ContractHandlers['docume
  * a defect that is recorded as one.
  */
 function runFontsHandler(commands: DocumentCommands): ContractHandlers['document.runFonts'] {
-  return async ({ docId, page, indices }): Promise<Awaited<ReturnType<ContractHandlers['document.runFonts']>>> => {
+  return async ({ docId, page, indices, unpack }): Promise<Awaited<ReturnType<ContractHandlers['document.runFonts']>>> => {
     try {
-      const { version, fonts, runs } = await commands.runFonts(docId, page, indices);
+      const { version, fonts, runs } = await commands.runFonts(docId, page, indices, unpack === true);
       return ok({ version, fonts, runs });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });

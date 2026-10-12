@@ -10,6 +10,7 @@ import {
   replaceTextObjects,
   replacementsKeepTheirObjects,
   textObjectText,
+  unpackedIfAsked,
 } from './pdfiumFfi.js';
 
 /**
@@ -243,6 +244,9 @@ export async function applyEditTextBlock(
   command: CommandOfKind<'editTextBlock'>,
 ): Promise<AppliedImage> {
   return onImage(image, async (session) => {
+    // PACKED TEXT IS UNPACKED BY THIS EDIT (ADR-0232): the read that named these objects moved the page's forms onto it in
+    // memory, by the same deterministic promotion, so this page is made the page those indices describe before they are used.
+    await unpackedIfAsked(session, command.page, command.unpack === true);
     // ONE FIT FOR THE COMMAND, laid out per block as before (ADR-0142).
     const blocks = blocksOfEdit(command).map((block) => ({ ...block, fit: command.fit }));
     const boxed = await editTextBlocks(session, command.page, blocks, command.inserts ?? []);

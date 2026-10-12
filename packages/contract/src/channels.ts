@@ -5570,6 +5570,13 @@ export const channels = {
        * Type 3 font. The same block wire either way, so the editor does not change; the page decides the command.
        */
       rewrite: textRewriteSchema,
+      /**
+       * The page was read with its forms' content moved onto it, in the engine's memory only
+       * ([ADR-0232](../../../docs/DECISIONS/0232-packed-text-is-unpacked-by-the-edit-that-changes-it.md)): the blocks name
+       * that page's objects, so an edit of them is sent with `unpack` and a run-font read with it. Absent for a page read as
+       * it is, which is every page with no text packed inside a form.
+       */
+      unpacked: z.literal(true).exactOptional(),
     }),
     ['document-not-open', 'document-poisoned', 'engine-unavailable'],
   ),
@@ -5733,6 +5740,8 @@ export const channels = {
       page: z.number().int().nonnegative(),
       /** The runs' first objects, as `document.textBlocks` named them. */
       indices: z.array(z.number().int().min(0).max(MAX_OBJECT_INDEX)).min(1).max(MAX_FONT_RUNS).readonly(),
+      /** The read that named them was `unpacked` (ADR-0232), so the indices name that page's objects. */
+      unpack: z.literal(true).exactOptional(),
     }),
     z
       .object({

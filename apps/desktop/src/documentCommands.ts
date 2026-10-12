@@ -2108,6 +2108,8 @@ export type DocumentRunFontsReader = (
   sessions: DocumentSessions,
   page: number,
   indices: readonly number[],
+  /** The indices name the page read unpacked (ADR-0232). */
+  unpack: boolean,
 ) => Promise<{ readonly fonts: readonly Uint8Array<ArrayBuffer>[]; readonly runs: readonly (number | null)[] }>;
 
 /**
@@ -3683,6 +3685,7 @@ export class DocumentCommands {
     docId: DocId,
     page: number,
     indices: readonly number[],
+    unpack: boolean,
   ): Promise<{
     readonly version: DocVersion;
     readonly fonts: readonly Uint8Array<ArrayBuffer>[];
@@ -3695,7 +3698,7 @@ export class DocumentCommands {
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
-      return this.#runFonts(docId, sessions, page, indices);
+      return this.#runFonts(docId, sessions, page, indices, unpack);
     });
     return { version, fonts: value.fonts, runs: value.runs };
   }

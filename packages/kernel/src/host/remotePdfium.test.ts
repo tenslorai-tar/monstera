@@ -466,24 +466,28 @@ describe('main’s PDFium writer', () => {
   it('cuts a block’s fonts out of one file by the sizes the host answered, and for none takes nothing', async () => {
     const transfer = stubTransfer();
     let sizes = [3, 2];
+    const unpacked: unknown[] = [];
     const peer: Peer = {
       asked: [],
       answer: (channel, params) => {
         expect(channel).toBe('engine/run-fonts');
         expect(params).toMatchObject({ page: 2, indices: [6, 7, 9] });
+        unpacked.push((params as { unpack?: true }).unpack);
         if (sizes.length > 0) transfer.outputs.set((params as { into: string }).into, new Uint8Array([1, 2, 3, 8, 9]));
         return { ok: true, value: { sizes, runs: sizes.length > 0 ? [1, null, 0] : [null, null, null] } };
       },
     };
     const { runFonts } = harness(peer, transfer);
-    const read = await runFonts(imageOf(new Uint8Array([5])), 2, [6, 7, 9]);
+    const read = await runFonts(imageOf(new Uint8Array([5])), 2, [6, 7, 9], true);
     expect(read.fonts.map((font) => Array.from(font))).toStrictEqual([[1, 2, 3], [8, 9]]);
     expect(read.runs).toStrictEqual([1, null, 0]);
     sizes = [];
     transfer.log.length = 0;
-    expect(await runFonts(imageOf(new Uint8Array([5])), 2, [6, 7, 9])).toStrictEqual({ fonts: [], runs: [null, null, null] });
+    expect(await runFonts(imageOf(new Uint8Array([5])), 2, [6, 7, 9], false)).toStrictEqual({ fonts: [], runs: [null, null, null] });
     expect(transfer.log.some((entry) => entry.startsWith('take:'))).toBe(false);
     expect(transfer.log.at(-1)?.startsWith('remove:')).toBe(true);
+    // UNPACK CROSSES ONLY WHEN ASKED (ADR-0232), so the second, plain read named none.
+    expect(unpacked).toStrictEqual([true, undefined]);
   });
 
   describe('a page’s runs with their members (ADR-0176’s pageRuns)', () => {
@@ -530,7 +534,7 @@ describe('main’s PDFium writer', () => {
       },
     };
     const { runFonts } = harness(peer, transfer);
-    await expect(runFonts(imageOf(new Uint8Array([5])), 0, [1])).rejects.toBeInstanceOf(EngineSerialiseMismatch);
+    await expect(runFonts(imageOf(new Uint8Array([5])), 0, [1], false)).rejects.toBeInstanceOf(EngineSerialiseMismatch);
   });
 
   /**
@@ -549,11 +553,11 @@ describe('main’s PDFium writer', () => {
       },
     };
     const { runFonts } = harness(peer, transfer);
-    await expect(runFonts(imageOf(new Uint8Array([5])), 0, [1, 4])).rejects.toThrow(/answered 1 runs for 2 asked/u);
+    await expect(runFonts(imageOf(new Uint8Array([5])), 0, [1, 4], false)).rejects.toThrow(/answered 1 runs for 2 asked/u);
     runs = [0, 1];
-    await expect(runFonts(imageOf(new Uint8Array([5])), 0, [1, 4])).rejects.toThrow(/past the 1 it answered/u);
+    await expect(runFonts(imageOf(new Uint8Array([5])), 0, [1, 4], false)).rejects.toThrow(/past the 1 it answered/u);
     runs = [0, 0];
-    expect((await runFonts(imageOf(new Uint8Array([5])), 0, [1, 4])).runs).toStrictEqual([0, 0]);
+    expect((await runFonts(imageOf(new Uint8Array([5])), 0, [1, 4], false)).runs).toStrictEqual([0, 0]);
   });
 
   it('reads a page’s text runs through the same input write', async () => {
@@ -599,11 +603,13 @@ describe('main’s PDFium writer', () => {
         },
       },
     ];
+    const sent: unknown[] = [];
     const peer: Peer = {
       asked: [],
       answer: (channel, params) => {
         expect(channel).toBe('engine/text-runs');
         expect(params).toMatchObject({ page: 4 });
+        sent.push(params);
         return { ok: true, value: { runs, truncated: false, unaddressable: 9 } };
       },
     };
@@ -613,7 +619,11 @@ describe('main’s PDFium writer', () => {
     // what the host said: a `toMatchObject` on the indices would pass against
     // one that dropped the text and the extent, and both are what the grouping
     // and the chooser above it are made of.
-    expect(await textRuns(imageOf(new Uint8Array([5])), 4)).toStrictEqual({ runs, truncated: false, unaddressable: 9 });
+    expect(await textRuns(imageOf(new Uint8Array([5])), 4, false)).toStrictEqual({ runs, truncated: false, unaddressable: 9 });
     expect(transfer.log).toStrictEqual(['write:001', 'remove:001']);
+    // UNPACK CROSSES ONLY WHEN ASKED (ADR-0232): a plain read names no `unpack`, which the strict wire would also take.
+    await textRuns(imageOf(new Uint8Array([5])), 4, true);
+    expect(sent.map((params) => (params as { unpack?: true }).unpack)).toStrictEqual([undefined, true]);
+    expect(Object.hasOwn(sent[0] as object, 'unpack')).toBe(false);
   });
 });

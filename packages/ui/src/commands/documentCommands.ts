@@ -4364,7 +4364,7 @@ export type TextBlock = ChannelResult<'document.textBlocks'>['blocks'][number];
  * What a block's edit is sent BY, from the read its blocks came from: the version they were read at, and the writer the
  * page named (ADR-0176 Decision 1). One pair, so an edit cannot carry the version of one read and the writer of another.
  */
-export type BlocksRead = Pick<ChannelResult<'document.textBlocks'>, 'version' | 'rewrite'>;
+export type BlocksRead = Pick<ChannelResult<'document.textBlocks'>, 'version' | 'rewrite' | 'unpacked'>;
 
 /** The command each writer the page names is rewritten by, with the same block wire (ADR-0176 Decision 1). */
 const BLOCK_EDIT_KIND = { objects: 'editTextBlock', operators: 'editTextOperators' } as const satisfies Record<
@@ -4399,15 +4399,16 @@ export async function readRunFonts(
   docId: DocId,
   page: number,
   block: TextBlock,
-  version: DocVersion,
+  /** The read that named the block: its version, and whether it named the page unpacked (ADR-0232). */
+  read: BlocksRead,
 ): Promise<RunFonts> {
   const indices = [...new Set(block.lines.flatMap((line) => line.runs.map((run) => run.index)))];
   const fonts: Uint8Array<ArrayBuffer>[] = [];
   const runs = new Map<number, number>();
   for (let from = 0; from < indices.length; from += MAX_FONT_RUNS) {
     const asked = indices.slice(from, from + MAX_FONT_RUNS);
-    const answer = await client['document.runFonts']({ docId, page, indices: asked });
-    if (!answer.ok || answer.value.version !== version) return NO_RUN_FONTS;
+    const answer = await client['document.runFonts']({ docId, page, indices: asked, ...(read.unpacked === true ? { unpack: true } : {}) });
+    if (!answer.ok || answer.value.version !== read.version) return NO_RUN_FONTS;
     const base = fonts.length;
     fonts.push(...answer.value.fonts);
     asked.forEach((index, at) => {
@@ -4498,7 +4499,17 @@ async function sendBlockEdit(
   const applied = await applyDocumentCommand(
     deps,
     docId,
-    { kind: BLOCK_EDIT_KIND[read.rewrite], page, ...blockEditOf(blocks, inserts), fit: 'reflow', version: read.version },
+    read.rewrite === 'objects'
+      ? {
+          kind: BLOCK_EDIT_KIND.objects,
+          page,
+          ...blockEditOf(blocks, inserts),
+          fit: 'reflow',
+          version: read.version,
+          // THE INDICES NAME THE PAGE AS THE READ SAW IT: unpacked, so the writer unpacks it first (ADR-0232).
+          ...(read.unpacked === true ? { unpack: true } : {}),
+        }
+      : { kind: BLOCK_EDIT_KIND.operators, page, ...blockEditOf(blocks, inserts), fit: 'reflow', version: read.version },
     {
       keep: (error) => {
         // A FAILURE THAT CARRIES SOMETHING passes whole, so the editor can name the characters or show the reference.

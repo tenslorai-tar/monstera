@@ -1320,13 +1320,13 @@ describe('Edit text draws each run in its own font where the host rebuilt one (A
 
   it('reads the open block’s fonts ONCE, and draws the runs that share one in it while the run with none keeps its kind', async () => {
     const { added } = withFonts();
-    const read = vi.fn((_block: TextBlock, _version: number) => Promise.resolve(SHARED));
+    const read = vi.fn((_block: TextBlock, _read: BlocksRead) => Promise.resolve(SHARED));
     const { view, show } = mount({ runFonts: read });
     fireEvent.click(find(view.container, '[data-text-block="1"]'));
     await settle();
     expect(read).toHaveBeenCalledTimes(1);
     expect(read.mock.calls[0]?.[0].lines.map((line) => line.runs.map((run) => run.index))).toStrictEqual([[8, 9], [11]]);
-    expect(read.mock.calls[0]?.[1]).toBe(7);
+    expect(read.mock.calls[0]?.[1].version).toBe(7);
     // ONE FACE for the one font, built from its bytes, and added to the document's fonts.
     expect(FakeFace.built.map((face) => Array.from(face.bytes))).toStrictEqual([[0, 1, 0, 0, 7]]);
     expect(added).toStrictEqual(FakeFace.built);

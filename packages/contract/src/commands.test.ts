@@ -7,8 +7,10 @@ import {
   blockEditOf,
   blocksOfEdit,
   editTextBlockSchema,
+  editTextOperatorsSchema,
   ocrPageSchema,
   replaceTextObjectSchema,
+  readsUnpacked,
   replacementFieldsOf,
   replacementsOf,
   styleAnnotationSchema,
@@ -365,5 +367,23 @@ describe('withTargetVersion (ADR-0149)', () => {
   it('CONTROL: a command that names no version comes back as it was', () => {
     const rotate = { kind: 'rotatePages' as const, pages: [0], quarterTurns: 1 as const };
     expect(withTargetVersion(rotate, asDocVersion(1))).toStrictEqual(rotate);
+  });
+});
+
+describe('which page is read again unpacked (ADR-0232)', () => {
+  it('a page PDFium writes, with characters no object holds, and no other', () => {
+    expect(readsUnpacked(36, 'objects')).toBe(true);
+    // CONTROL: nothing packed, a logo form's page among them, is never unpacked.
+    expect(readsUnpacked(0, 'objects')).toBe(false);
+    // CONTROL: the operator writer names the page as it is, so its page is not unpacked whatever it holds.
+    expect(readsUnpacked(36, 'operators')).toBe(false);
+  });
+
+  it('an edit carries unpack only as editTextBlock, and the strict operators command refuses it', () => {
+    const wire = { page: 0, ...blockEditOf([{ lines: [[1]], soft: [false], text: 'x' }]), fit: 'reflow', version: 1 };
+    expect(editTextBlockSchema.safeParse({ kind: 'editTextBlock', ...wire, unpack: true }).success).toBe(true);
+    expect(editTextBlockSchema.safeParse({ kind: 'editTextBlock', ...wire, unpack: false }).success).toBe(false);
+    expect(editTextOperatorsSchema.safeParse({ kind: 'editTextOperators', ...wire, unpack: true }).success).toBe(false);
+    expect(editTextOperatorsSchema.safeParse({ kind: 'editTextOperators', ...wire }).success).toBe(true);
   });
 });

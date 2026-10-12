@@ -83,6 +83,7 @@ import {
   HAND_TOOL_ID,
   handToolCommand,
   selectTextCommand,
+  type BlocksRead,
   type TextBlock,
   commitTextBlock,
   NO_RUN_FONTS,
@@ -1942,6 +1943,23 @@ describe('delete pages — the mutation-dialog gate', () => {
       },
     ]);
     expect(applied).toHaveLength(1);
+  });
+
+  it('A BLOCK FROM AN UNPACKED READ is sent with unpack, so the writer unpacks the page first (ADR-0232)', async () => {
+    // THE UI HALF OF THE WIRED PAIR for B1.26. Its kernel half is `proof:pdfiumcommand`'s unpack cases, which edit packed
+    // text through the real library with this flag and refuse the same indices without it. The case above is its control:
+    // the same edit from a plain read sends no `unpack`, which the strict command would also take.
+    const sent: unknown[] = [];
+    const client = createClient(channels, (_id, params) => {
+      sent.push((params as { command: unknown }).command);
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
+    });
+    const deps = { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures };
+    await commitTextBlock(deps, DOC, 3, BLOCK, 'The quick brown dog jumps over', { version: asDocVersion(7), rewrite: 'objects', unpacked: true });
+    expect(sent[0]).toMatchObject({ kind: 'editTextBlock', unpack: true, version: 7 });
+    // AN `operators` PAGE IS NEVER READ UNPACKED; were a read to say so, its command still carries no `unpack`, which it has no field for.
+    await commitTextBlock(deps, DOC, 3, BLOCK, 'The quick brown dog jumps over', { version: asDocVersion(7), rewrite: 'operators', unpacked: true });
+    expect(Object.hasOwn(sent[1] as object, 'unpack')).toBe(false);
   });
 
   it('ON A PAGE THE READ NAMED `operators` the same edit is sent as editTextOperators, with the same wire (ADR-0176)', async () => {
@@ -7193,6 +7211,9 @@ describe('readRunFonts', () => {
    * A block of `count` runs, each its own object, with the FIRST RUN ALSO ON A LINE OF ITS OWN: a read that named runs
    * by where they sit rather than once each would ask for it twice.
    */
+  /** The read the blocks came from: version 4, a page PDFium writes, read as it is. */
+  const AT_FOUR: BlocksRead = { version: asDocVersion(4), rewrite: 'objects' };
+
   function blockOf(count: number): TextBlock {
     const runs = Array.from({ length: count }, (_, index) => ({ index, text: 'w', style: STYLE }));
     return {
@@ -7212,10 +7233,13 @@ describe('readRunFonts', () => {
       asked.push(params);
       return Promise.resolve(ok({ version: asDocVersion(4), fonts: [new Uint8Array([1, 2])], runs: [0, null, 0] }));
     });
-    const read = await readRunFonts(client, DOC, 3, blockOf(3), asDocVersion(4));
+    const read = await readRunFonts(client, DOC, 3, blockOf(3), AT_FOUR);
     expect(asked).toStrictEqual([{ docId: DOC, page: 3, indices: [0, 1, 2] }]);
     expect(read.fonts.map((font) => Array.from(font))).toStrictEqual([[1, 2]]);
     expect([...read.runs]).toStrictEqual([[0, 0], [2, 0]]);
+    // A BLOCK FROM AN UNPACKED READ asks about the page as that read saw it (ADR-0232); the plain read above named none.
+    await readRunFonts(client, DOC, 3, blockOf(3), { ...AT_FOUR, unpacked: true });
+    expect(asked.at(-1)).toStrictEqual({ docId: DOC, page: 3, indices: [0, 1, 2], unpack: true });
   });
 
   it('a block past one read asks in reads of MAX_FONT_RUNS, and the second read’s places follow the first’s fonts', async () => {
@@ -7228,7 +7252,7 @@ describe('readRunFonts', () => {
         ok({ version: asDocVersion(4), fonts: [new Uint8Array([asked.length])], runs: indices.map(() => 0) }),
       );
     });
-    const read = await readRunFonts(client, DOC, 0, blockOf(MAX_FONT_RUNS + 2), asDocVersion(4));
+    const read = await readRunFonts(client, DOC, 0, blockOf(MAX_FONT_RUNS + 2), AT_FOUR);
     expect(asked.map((indices) => indices.length)).toStrictEqual([MAX_FONT_RUNS, 2]);
     expect(read.fonts.map((font) => Array.from(font))).toStrictEqual([[1], [2]]);
     expect([read.runs.get(MAX_FONT_RUNS - 1), read.runs.get(MAX_FONT_RUNS), read.runs.get(MAX_FONT_RUNS + 1)]).toStrictEqual([0, 1, 1]);
@@ -7236,10 +7260,10 @@ describe('readRunFonts', () => {
 
   it('an answer at ANOTHER version, or a refusal, is no fonts', async () => {
     const moved = clientAnswering('document.runFonts', { version: asDocVersion(5), fonts: [new Uint8Array([1])], runs: [0] });
-    expect(await readRunFonts(moved, DOC, 0, blockOf(1), asDocVersion(4))).toBe(NO_RUN_FONTS);
-    expect(await readRunFonts(clientFailing('document-poisoned'), DOC, 0, blockOf(1), asDocVersion(4))).toBe(NO_RUN_FONTS);
+    expect(await readRunFonts(moved, DOC, 0, blockOf(1), AT_FOUR)).toBe(NO_RUN_FONTS);
+    expect(await readRunFonts(clientFailing('document-poisoned'), DOC, 0, blockOf(1), AT_FOUR)).toBe(NO_RUN_FONTS);
     // CONTROL: the same answer at the block's own version is read.
     const same = clientAnswering('document.runFonts', { version: asDocVersion(4), fonts: [new Uint8Array([1])], runs: [0] });
-    expect((await readRunFonts(same, DOC, 0, blockOf(1), asDocVersion(4))).runs.get(0)).toBe(0);
+    expect((await readRunFonts(same, DOC, 0, blockOf(1), AT_FOUR)).runs.get(0)).toBe(0);
   });
 });

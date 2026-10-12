@@ -36,6 +36,7 @@ import {
   type FontFamilyEntry,
   createClient,
   defaultModel,
+  readsUnpacked,
   storedSetting,
 } from '@monstera/contract';
 import {
@@ -1441,7 +1442,14 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       if (pdfiumHost === null) throw new EngineUnavailableError('reading a page’s text');
       const mupdf = sessions.mupdf;
       if (mupdf === undefined) throw new MissingSessionError(docId, 'mupdf');
-      const found = await pdfiumHost.textRuns(await currentImage(docId, sessions), page);
+      const image = await currentImage(docId, sessions);
+      const rewrite = await engineHost.pageRewrite(mupdf, page);
+      const plain = await pdfiumHost.textRuns(image, page, false);
+      // TEXT PACKED INSIDE A FORM IS READ UNPACKED (ADR-0232): only where the plain read found characters no object holds,
+      // and only on a page PDFium writes, the host reads it again with its forms moved onto it in memory. An edit of these
+      // blocks is sent with `unpack`, which moves them in the same command, so a page nobody edits is never changed.
+      const unpacked = readsUnpacked(plain.unaddressable, rewrite);
+      const found = unpacked ? await pdfiumHost.textRuns(image, page, true) : plain;
       // THE GROUPING IS MAIN'S, and this is the only place it happens.
       //
       // ADR-0049 permits a grouping of ours where no engine answers, and its
@@ -1501,7 +1509,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         unaddressable: found.unaddressable,
         // THE PAGE'S WRITER, MuPDF's reading (ADR-0176 Decision 1): the PDFium API has no query for a font's type,
         // and the session MuPDF holds is the document these runs were read from.
-        rewrite: await engineHost.pageRewrite(mupdf, page),
+        rewrite,
+        ...(unpacked ? { unpacked: true as const } : {}),
       };
     },
     // THE OTHER ENGINE'S SECOND READ, and it groups nothing — an object is what
@@ -1551,9 +1560,9 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     },
     // A BLOCK'S RUN FONTS, rebuilt in the PDFium host from the runs' own programs and checked there (ADR-0175): this
     // layer only carries them. A process with no PDFium host has none, and the editor draws every run in its kind of face.
-    runFonts: async (docId, sessions, page, indices) => {
+    runFonts: async (docId, sessions, page, indices, unpack) => {
       if (pdfiumHost === null) return { fonts: [], runs: indices.map(() => null) };
-      const { fonts, runs } = await pdfiumHost.runFonts(await currentImage(docId, sessions), page, indices);
+      const { fonts, runs } = await pdfiumHost.runFonts(await currentImage(docId, sessions), page, indices, unpack);
       // EACH COPIED INTO A BUFFER OF ITS OWN: they are views cut from one file read, and structured clone sends a view's
       // whole buffer to the renderer, so a font sent as a view would carry its neighbours with it (`DocumentRunFontsReader`).
       return { fonts: fonts.map((font) => new Uint8Array(font)), runs };
@@ -3517,11 +3526,11 @@ function pdfiumHostBinding(
       // THE IDENTITY WRITTEN OUT, for the same reason: a checkpoint of bytes already in hand starts no host.
       serialiseInto: serialiseIntoFile((session: ImageSession) => Promise.resolve(session.bytes)),
     },
-    textRuns: async (image, page) => (await ensure()).textRuns(image, page),
+    textRuns: async (image, page, unpack) => (await ensure()).textRuns(image, page, unpack),
     pageObjects: async (image, page) => (await ensure()).pageObjects(image, page),
     renderPage: async (image, page, width, height, withoutText) =>
       (await ensure()).renderPage(image, page, width, height, withoutText),
-    runFonts: async (image, page, indices) => (await ensure()).runFonts(image, page, indices),
+    runFonts: async (image, page, indices, unpack) => (await ensure()).runFonts(image, page, indices, unpack),
     pageRuns: async (image, page) => (await ensure()).pageRuns(image, page),
     pageContent: async (image, page) => (await ensure()).pageContent(image, page),
     close: async () => {

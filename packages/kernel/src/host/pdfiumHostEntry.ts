@@ -11,6 +11,7 @@ import {
   renderPageBitmapWithoutText,
   runFonts,
   textRuns,
+  unpackedIfAsked,
 } from '../pdfium.js';
 import { bindEditFaces } from '../editFaces.js';
 import { faceSourceOf, fontFoldersOf } from '../fontCatalogue.js';
@@ -130,8 +131,11 @@ const handlers = createPdfiumHandlers({
   // refused by the call that wanted it — `engine-refused` — rather than at a
   // moment when there is no document to speak of.
   // EACH READ OPENS THROUGH `onImage`, the one opener that takes the key the frame carried (ADR-0171's addendum).
-  textRuns: (image, page) =>
+  textRuns: (image, page, unpack) =>
     onImage(image, async (session) => {
+      // UNPACKED IN THIS PROCESS'S MEMORY ONLY (ADR-0232): the session is never serialised from a read, and the promotion is
+      // the one an edit sent with `unpack` makes, so the indices answered here are the ones that edit writes.
+      await unpackedIfAsked(session, page, unpack);
       const found = await textRuns(session, page);
       // THE WALK IS WHAT KNOWS THERE WAS MORE, so the flag is computed here
       // rather than by the handler from the array it is handed — which would
@@ -168,7 +172,11 @@ const handlers = createPdfiumHandlers({
       };
     }),
   // REBUILT HERE, in the contained process, from the runs' own programs (ADR-0175): the document's program never leaves.
-  runFonts: (image, page, indices) => onImage(image, (session) => runFonts(session, page, indices)),
+  runFonts: (image, page, indices, unpack) =>
+    onImage(image, async (session) => {
+      await unpackedIfAsked(session, page, unpack);
+      return runFonts(session, page, indices);
+    }),
   pageRuns: (image, page) => onImage(image, (session) => pageRuns(session, page)),
 });
 

@@ -4183,6 +4183,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
             unaddressable: last.unaddressable,
             // EVERY PART CARRIES THE PAGE'S WRITER; the last one's is the page's, read at the same version.
             rewrite: last.rewrite,
+            // AND WHETHER IT WAS READ UNPACKED (ADR-0232), which every edit and run-font read of these blocks repeats.
+            ...(last.unpacked === true ? { unpacked: true as const } : {}),
           };
         }
         if (!refusal.reported) {
@@ -4196,7 +4198,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         return undefined;
       },
       onCommit: (page, block, text, read, formatting) => commitTextBlock(deps, docId, page, block, text, read, formatting),
-      runFonts: (page, block, version) => readRunFonts(client, docId, page, block, version),
+      runFonts: (page, block, read) => readRunFonts(client, docId, page, block, read),
       // THE RIGHT-CLICK MENU'S TWO HALVES: the browser's own verbs (the Edit menu's, through the one `windowEdit`) and the
       // spelling checker's answers (the review's, through the one personal dictionary).
       native: windowEdit,

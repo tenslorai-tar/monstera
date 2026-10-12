@@ -129,6 +129,7 @@ const {
   runFonts,
   textObjectIndices,
   textRuns,
+  unpackedIfAsked,
 } = await import('../../packages/kernel/dist/pdfiumFfi.js');
 // THE KERNEL'S OWN NUMBERING of a page's text operators (ADR-0176 Decision 3), which `pageRuns` is joined against.
 const { joinedContent, showOperators, textObjectCount } = await import('../../packages/kernel/dist/textOperators.js');
@@ -273,7 +274,7 @@ const failures = [];
 // control against the underline, a highlight, spacing and its control, justify and its control, and space after. 234
 // from its Decision 2: a tab read back at its stop, its control, and a second edit that keeps one tab. 235 from the
 // second edit's measure, which read a line written as several objects at its first object's width.
-const roster = createRoster(failures, { cases: 235 });
+const roster = createRoster(failures, { cases: 239 });
 
 /**
  * @param {string} name
@@ -549,6 +550,7 @@ async function main() {
   await replaceAllCases();
   await replaceAtCases();
   await promotionCases();
+  await unpackCases();
   await nestedPromotionCases();
   await blockEditCases();
   await paragraphCases();
@@ -1777,6 +1779,115 @@ async function textInsideAForm() {
   if (form === undefined) throw new Error('embedPdf produced no page');
   page.drawPage(form, { x: 40, y: 80, xScale: 1.2, yScale: 1.2 });
   return outer.save();
+}
+
+const UNPACKED_EDIT = 'EDITED WHERE IT WAS PACKED';
+
+/** A page with words of its own and a form that draws only a rectangle: a logo placed on a page, carrying no text. */
+async function aFormWithNoText() {
+  const inner = await PDFDocument.create();
+  inner.addPage([100, 60]).drawRectangle({ x: 5, y: 5, width: 90, height: 50, color: rgb(0.9, 0.2, 0.2) });
+  const outer = await PDFDocument.create();
+  const [logo] = await outer.embedPdf(await inner.save());
+  if (logo === undefined) throw new Error('embedPdf produced no page');
+  const page = outer.addPage([400, 300]);
+  page.drawText(ON_THE_PAGE, { x: 30, y: 260, size: 14, font: await outer.embedFont(StandardFonts.Helvetica) });
+  page.drawPage(logo, { x: 200, y: 40 });
+  return outer.save();
+}
+
+/**
+ * Packed text edited directly ([ADR-0232](../../docs/DECISIONS/0232-packed-text-is-unpacked-by-the-edit-that-changes-it.md)):
+ * the read and the edit take the page through `unpackedIfAsked`, the one rule the host's reads and the block edit call.
+ *
+ * @param {Uint8Array} bytes @param {boolean} unpack
+ */
+async function runsAsRead(bytes, unpack) {
+  const session = await pdfiumWriter.open(bytes);
+  try {
+    await unpackedIfAsked(session, 0, unpack);
+    return await textRuns(session, 0);
+  } finally {
+    await pdfiumWriter.close(session);
+  }
+}
+
+/** The page's objects of kind `form`, read from bytes. @param {Uint8Array} bytes */
+async function formsOf(bytes) {
+  const session = await pdfiumWriter.open(bytes);
+  try {
+    return (await pageObjects(session, 0)).filter((/** @type {{ kind: string }} */ object) => object.kind === 'form').length;
+  } finally {
+    await pdfiumWriter.close(session);
+  }
+}
+
+async function unpackCases() {
+  const original = await textInsideAForm();
+  const plain = await runsAsRead(original, false);
+  const unpacked = await runsAsRead(original, true);
+  const packed = unpacked.runs.find((run) => run.text.includes(INSIDE_FIRST));
+  /** @param {boolean} unpack */
+  const editing = (unpack) =>
+    /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+      kind: 'editTextBlock',
+      page: 0,
+      ...blockEditOf([{ lines: [[packed?.index ?? 0]], soft: [false], text: UNPACKED_EDIT }]),
+      fit: 'reflow',
+      version: 1,
+      ...(unpack ? { unpack: true } : {}),
+    });
+  record(
+    'an UNPACKED read names the packed words, which the plain read leaves unaddressable',
+    plain.unaddressable > 0 && !plain.runs.some((run) => run.text.includes(INSIDE_FIRST)) && packed !== undefined && unpacked.unaddressable === 0,
+    `plain: ${String(plain.unaddressable)} unaddressable; unpacked: ${String(unpacked.unaddressable)}, packed run ${packed === undefined ? 'not found' : String(packed.index)}`,
+  );
+
+  const edited = await localPdfiumExecution.apply({ session: original, command: editing(true), sources: [], reads: undefined });
+  const after = await textOf(edited);
+  record(
+    'an edit sent with unpack writes the packed words in ONE command, and the rest of the page reads as it did',
+    after.includes(UNPACKED_EDIT) && !after.includes(INSIDE_FIRST) && after.includes(INSIDE_SECOND) && after.includes(ON_THE_PAGE),
+    `the page reads ${JSON.stringify(after.slice(0, 120))}`,
+  );
+
+  // CONTROL: the same indices WITHOUT unpack name the page as it is, so the packed words are not what is written. Without
+  // this, a writer that unpacked every page would pass the case above.
+  let without = '(refused)';
+  try {
+    without = await textOf(await localPdfiumExecution.apply({ session: original, command: editing(false), sources: [], reads: undefined }));
+  } catch {
+    // REFUSED is one of the two outcomes the control allows: the index names nothing on the page as it is.
+  }
+  record(
+    'CONTROL: the same edit without unpack does not write the packed words',
+    without === '(refused)' || without.includes(INSIDE_FIRST),
+    `without unpack the page reads ${JSON.stringify(without.slice(0, 120))}`,
+  );
+
+  // A FORM WITH NO TEXT IS NEVER UNPACKED: its page's plain read finds nothing packed, so main reads it plain and an edit is
+  // sent without unpack, and the logo stays one form.
+  const logo = await aFormWithNoText();
+  const logoRead = await runsAsRead(logo, false);
+  const word = logoRead.runs.find((run) => run.text.includes(ON_THE_PAGE));
+  const logoEdited = await localPdfiumExecution.apply({
+    session: logo,
+    command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+      kind: 'editTextBlock',
+      page: 0,
+      ...blockEditOf([{ lines: [[word?.index ?? 0]], soft: [false], text: UNPACKED_EDIT }]),
+      fit: 'reflow',
+      version: 1,
+    }),
+    sources: [],
+    reads: undefined,
+  });
+  const logoAfter = logoEdited;
+  record(
+    'CONTROL: a page whose form carries no text reads with nothing packed, and its edit leaves the form a form',
+    logoRead.unaddressable === 0 && (await formsOf(logo)) === 1 && (await formsOf(logoAfter)) === 1 && (await textOf(logoAfter)).includes(UNPACKED_EDIT),
+    `${String(logoRead.unaddressable)} unaddressable; forms before ${String(await formsOf(logo))}, after ${String(await formsOf(logoAfter))}`,
+  );
 }
 
 /** Normalize-then-edit, as a command. */

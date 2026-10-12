@@ -82,6 +82,8 @@ import {
 export type HostTextRunsReader = (
   image: ImageSession,
   page: number,
+  /** Read the page with its forms' content moved onto it in memory, as an edit sent with `unpack` writes it (ADR-0232). */
+  unpack: boolean,
 ) => Promise<{
   /** `pdfiumFfi.ts`' own type, named by an erased import so no binding loads here. */
   readonly runs: readonly TextRun[];
@@ -115,6 +117,8 @@ export type HostRunFontsReader = (
   image: ImageSession,
   page: number,
   indices: readonly number[],
+  /** The indices name the page unpacked in memory, as the text runs read with `unpack` named them (ADR-0232). */
+  unpack: boolean,
 ) => Promise<{ readonly fonts: readonly Uint8Array[]; readonly runs: readonly (number | null)[] }>;
 
 /**
@@ -393,7 +397,7 @@ export function createPdfiumHandlers({
       return { ok: true, value: { bytes: written, ...cappedBoxes(inverted) } };
     },
 
-    'engine/text-runs': async ({ session, from, password, page }) => {
+    'engine/text-runs': async ({ session, from, password, page, unpack }) => {
       const held = areas.lookup(session);
       if (held === undefined) return gone;
       let image: ImageSession;
@@ -403,7 +407,7 @@ export function createPdfiumHandlers({
         return failed('asset-missing');
       }
       try {
-        const found = await textRuns(image, page);
+        const found = await textRuns(image, page, unpack === true);
         // BOUNDED WHERE THE WALK IS and forwarded rather than re-derived: a
         // handler computing `truncated` from the array's length would answer
         // *you asked for that many* every time. The slice here is belt to the
@@ -506,7 +510,7 @@ export function createPdfiumHandlers({
       return { ok: true, value: { bytes: written } };
     },
 
-    'engine/run-fonts': async ({ session, from, password, into, page, indices }) => {
+    'engine/run-fonts': async ({ session, from, password, into, page, indices, unpack }) => {
       const held = areas.lookup(session);
       if (held === undefined) return gone;
       let image: ImageSession;
@@ -517,7 +521,7 @@ export function createPdfiumHandlers({
       }
       let read;
       try {
-        read = await runFonts(image, page, indices);
+        read = await runFonts(image, page, indices, unpack === true);
       } catch {
         // `engine/render-page`'s reason: a page or an object this document does not have is the request's.
         return failed('engine-refused');

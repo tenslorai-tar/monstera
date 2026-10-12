@@ -432,19 +432,19 @@ export function remotePdfiumTextRuns(
   client: ClientApi<PdfiumChannels>,
   held: () => PdfiumArea,
   transfer: PdfiumTransfer,
-): (image: ImageSession, page: number) => Promise<{
+): (image: ImageSession, page: number, unpack: boolean) => Promise<{
   readonly runs: readonly TextRun[];
   readonly truncated: boolean;
   readonly unaddressable: number;
 }> {
-  return async (image, page) => {
+  return async (image, page, unpack) => {
     const { session, area } = held();
     const from = transfer.mintName();
     await transfer.writeSnapshot(area, from, image.bytes);
     try {
       return answered(
         'engine/text-runs',
-        await client['engine/text-runs']({ session, from, password: frameKey(image), page }),
+        await client['engine/text-runs']({ session, from, password: frameKey(image), page, ...(unpack ? { unpack: true } : {}) }),
       );
     } finally {
       await transfer.removeSnapshot(area, from);
@@ -522,8 +522,8 @@ export function remotePdfiumRunFonts(
   client: ClientApi<PdfiumChannels>,
   held: () => PdfiumArea,
   transfer: PdfiumTransfer,
-): (image: ImageSession, page: number, indices: readonly number[]) => Promise<RunFonts> {
-  return async (image, page, indices) => {
+): (image: ImageSession, page: number, indices: readonly number[], unpack: boolean) => Promise<RunFonts> {
+  return async (image, page, indices, unpack) => {
     const { session, area } = held();
     const from = transfer.mintName();
     const into = transfer.mintName();
@@ -531,7 +531,15 @@ export function remotePdfiumRunFonts(
     try {
       const { sizes, runs } = answered(
         'engine/run-fonts',
-        await client['engine/run-fonts']({ session, from, password: frameKey(image), into, page, indices: [...indices] }),
+        await client['engine/run-fonts']({
+          session,
+          from,
+          password: frameKey(image),
+          into,
+          page,
+          indices: [...indices],
+          ...(unpack ? { unpack: true } : {}),
+        }),
       );
       if (runs.length !== indices.length) {
         throw new EngineCallFailed('engine/run-fonts', `answered ${String(runs.length)} runs for ${String(indices.length)} asked`);
