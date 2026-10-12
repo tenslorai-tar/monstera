@@ -18,7 +18,7 @@
  * words rather than joining the group (BBBBBBBB-10).
  */
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { copyFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect } from '@playwright/test';
 import { PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream, PDFString, PDFTextField } from '@cantoo/pdf-lib';
@@ -120,7 +120,11 @@ await step('the new field moves with a drag, snaps to another field’s edge wit
   await page.mouse.move(at.x + at.width / 2 - 40, at.y + at.height / 2 + 120, { steps: 8 });
   const guides = await page.locator('[data-field-guide]').count();
   await page.mouse.up();
+  // THE MOVE IS A COMMAND AND THE ARROW READS THE VERSION IT LEFT: a key sent in the same millisecond is answered with the
+  // "out of date" dialog (measured 2026-10-12, a 1500 ms wait clears it), so the walk waits for the move to settle.
+  await page.waitForTimeout(1500);
   await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(1500);
   return { guidesWhileHeld: guides };
 });
 
@@ -135,6 +139,9 @@ await step('A8.4: the selected text field’s font set to Calibri, offered among
   await page.getByRole('button', { name: /^Font:/u }).first().click();
   const search = page.getByRole('combobox', { name: 'Search fonts' });
   await search.fill('Calibri');
+  // THIS COMPUTER'S FONTS ARE READ AFTER THE PICKER OPENS (measured 2026-10-12: absent at 1.5 s, present by 4 s), so the
+  // walk waits for the list to arrive; a Calibri that never arrives still fails here, with the list as it stood.
+  await page.locator('[data-font-choice="Calibri"]').first().waitFor({ timeout: 20_000 });
   const offered = await page.locator('[data-font-choice]').evaluateAll((each) => each.map((node) => node.getAttribute('data-font-choice')));
   await search.press('Enter');
   await expect(page.getByRole('button', { name: 'Font: Calibri' }).first()).toBeVisible();
@@ -227,20 +234,30 @@ await step('the whole form flattened, then Detect on the flat page proposes plac
   return { marksOnFirstPage: marks, proposedOnFirstPage: onPage, proposedOnAllPages: allPages, kinds };
 });
 
-const named = await copyOf(source);
+// A COPY UNDER A NAME OF ITS OWN: `copyOf` names its copy after the source, so a second copy of the same file is the first
+// one's path, which is already open and already flattened, and opening an open path changes nothing.
+const forNaming = join(output, 'form-for-naming.pdf');
+await copyFile(source, forNaming);
+const named = await copyOf(forNaming);
 await step('BBBBBBBB-10: a radio group’s name typed for another radio is refused in words, never joined to that group', async () => {
   await open(named);
   await command('Edit fields');
-  const paper = await page.locator('canvas.m-page').first().boundingBox();
+  const paper = await page.locator('canvas.m-page:visible').first().boundingBox();
   if (paper === null) throw new Error('the page is not on screen');
   await page.getByRole('button', { name: /^Radio/u }).first().click();
   await page.mouse.click(paper.x + paper.width - 60, paper.y + 40);
+  // A RADIO'S NAME IS ITS GROUP'S, so its field is labelled "Group name"; it is read while the placed field is still
+  // selected (Escape puts the selection down and the panel with it). The tool stays armed after a placement and a second
+  // press on the page would join the same group, so the first Escape ends the run and the tool is armed afresh, but only
+  // when it is not armed still: pressing an armed tool puts it down.
+  const groupName = page.getByLabel('Group name', { exact: true });
+  const first = await groupName.inputValue();
   await page.keyboard.press('Escape');
-  const first = await page.getByLabel('Name', { exact: true }).inputValue();
-  await page.getByRole('button', { name: /^Radio/u }).first().click();
+  const radioTool = page.getByRole('button', { name: /^Radio/u }).first();
+  if ((await radioTool.getAttribute('aria-pressed')) !== 'true') await radioTool.click();
   await page.mouse.click(paper.x + paper.width - 60, paper.y + 90);
-  await page.keyboard.press('Escape');
-  const name = page.getByLabel('Name', { exact: true });
+  await expect(groupName).not.toHaveValue(first);
+  const name = groupName;
   const second = await name.inputValue();
   await name.fill(first);
   await name.blur();

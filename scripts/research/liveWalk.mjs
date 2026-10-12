@@ -91,12 +91,17 @@ export async function startWalk(walk) {
     await app.evaluate(({ dialog }, picked) => {
       dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [picked] });
     }, path);
-    const skip = page.getByRole('button', { name: /later|skip|not now/iu });
-    if ((await skip.count()) === 1 && (await skip.isVisible())) await skip.click();
+    // THE FIRST-RUN "Set up the AI assistant" DIALOG ARRIVES A VARIABLE TIME AFTER LAUNCH (absent at 0 s, present by 1 s,
+    // measured 2026-10-12 over three launches), so it is waited for rather than counted once: a count taken before it
+    // arrives finds none, and the dialog then covers the Open button for the rest of the run.
+    const skip = page.getByRole('dialog').getByRole('button', { name: /later|skip|not now/iu });
+    await skip.first().waitFor({ state: 'visible', timeout: 5000 }).catch(() => undefined);
+    if ((await skip.count()) >= 1 && (await skip.first().isVisible())) await skip.first().click();
     const button = page.getByRole('button', { name: /^Open PDF/u }).first();
     if ((await button.count()) > 0 && (await button.isVisible())) await button.click();
     else await page.keyboard.press('Control+O');
-    await page.locator('canvas.m-page').first().waitFor({ state: 'visible', timeout: 30_000 });
+    // THE VISIBLE ONE: a second open document leaves the first tab's canvases mounted and hidden, and `.first()` is theirs.
+    await page.locator('canvas.m-page:visible').first().waitFor({ state: 'visible', timeout: 30_000 });
   };
 
   /** Answers the next save-as picker with `path`. @param {string} path */
@@ -141,7 +146,11 @@ export async function startWalk(walk) {
       const facts = await work();
       record = { name, outcome: 'passed', screenshot, ...(facts === undefined ? {} : { facts }) };
     } catch (error) {
-      record = { name, outcome: 'failed', problem: error instanceof Error ? error.message.slice(0, 2000) : String(error), screenshot };
+      // WHAT WAS OPEN, WORDED, BEFORE THE ESCAPE BELOW PUTS IT DOWN: the screenshot is taken after it, so a dialog that
+      // blocked the step is otherwise in neither the record nor the picture.
+      const open = await page.locator('[role=dialog]').allInnerTexts().catch(() => /** @type {string[]} */ ([]));
+      const blocked = open.length === 0 ? '' : `\n[a dialog was open: ${open.map((text) => text.replaceAll(/\s+/gu, ' ').slice(0, 200)).join(' | ')}]`;
+      record = { name, outcome: 'failed', problem: (error instanceof Error ? error.message.slice(0, 2000) : String(error)) + blocked, screenshot };
       // A DIALOG LEFT OPEN by a failed step would take the next step's presses, so it is put down.
       await page.keyboard.press('Escape').catch(() => undefined);
     }
