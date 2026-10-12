@@ -52,3 +52,21 @@ correct data.
   corrected by pointer.
 - The proof is the ragged answer itself: a header with three cells over rows of four is written whole as 4 columns; the control
   is the same answer under the old rule, which refuses.
+
+## Correction, 2026-10-12 — a table left out is counted and said, never dropped without a word (AAAAAAAA-6)
+
+Decision 4 kept the tables that could be placed and refused only when none could, and the tests written with it pinned what
+followed from that: **a table that could not be placed beside one that could was dropped without a word.** That is against
+*preserve, never drop* and against this record's own Decision 5, whose whole point is that a message says what happened.
+
+What cannot be kept is the table itself: Decision 2's refusals are a table with no cell, an index that is not a whole number
+from zero, or a grid or text past the bound, and none of those can be written as a sheet. What can be kept is the fact.
+
+**Decision 4 now reads:** each table is its own answer, and one that cannot be placed does not take the others with it. The
+callers keep the tables that were placed, **count the ones that were not**, and refuse only when none was placed (the unchanged
+`service-refused` outcome). The count travels with the written workbook (`document.exportExcel`'s `copied` answer carries
+`tablesLeftOut`), and the confirmation says that some of the tables the service read could not be placed and are not in it.
+
+**Rejected:** writing an unplaceable table's words into a sheet of their own. The refusals are of structure the sheet needs
+(a place for each cell), so such a sheet would be this build inventing the layout Decision 1's rejected alternatives refuse to
+invent. Refusing the whole export for one such table is rejected for Decision 4's original reason.
