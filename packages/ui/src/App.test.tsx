@@ -326,7 +326,7 @@ const SETTINGS_OPEN_ANSWERS = {
   'app.info': { version: '0.0.0', installChannel: 'development', userName: 'A. Tester' },
   'ai.models.held': Object.fromEntries(AI_PROVIDER_IDS.map((provider) => [provider, { source: 'fallback', models: [] }])),
   // THE FONTS THE ANNOTATION FONT'S ROW OFFERS (K2): the dialog asks `app.fontFamilies` as it opens.
-  'app.fontFamilies': { listed: true, families: [] },
+  'app.fontFamilies': { listed: true, families: [], more: 0 },
 };
 
 /** The answers a case needs to reach a document with the toolbar showing. */

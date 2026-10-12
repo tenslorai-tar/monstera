@@ -4626,6 +4626,12 @@ export const fontFamilySchema = z
 /** See {@link fontFamilySchema}. */
 export type FontFamilyEntry = z.infer<typeof fontFamilySchema>;
 
+/** A computer's font families as a host lists them: what the list holds, and how many past its bound it could not. */
+export interface ListedFontFamilies {
+  readonly families: readonly FontFamilyEntry[];
+  readonly more: number;
+}
+
 /**
  * One font a document names, for the picker's *In this document* (the owner's B2.8): the name it states, its subset tag
  * kept, and whether it is a subset, which the picker says in words.

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   ENGINE_HOST_FRAME_MAX_BYTES,
   FONT_FAMILIES_PAGE,
+  MAX_FONT_FAMILIES,
   FRAME_HEADER_BYTES,
   MAX_BOXED_CHARACTERS,
   MAX_COMPOSE_SKIPS,
@@ -501,6 +502,18 @@ describe('the compose host body', () => {
     // the same length bound and a `next`, and only its first name separates the two.
     expect(second.body.value.families.map((family) => family.name)).toStrictEqual(names.slice(FONT_FAMILIES_PAGE));
     expect(second.body.value.next).toBeNull();
+  });
+
+  it('carries the count of families past the list’s bound on the page that ends it, through the channel’s schema', async () => {
+    const files = emptyFiles();
+    const face = { origin: 'installed' as const, embedding: 'subset' as const, unicodes: new Set<number>(), weights: null, path: 'x', faceIndex: 0, weight: 400, italic: false };
+    const names = Array.from({ length: MAX_FONT_FAMILIES + 3 }, (_, at) => `Family ${String(at).padStart(4, '0')}`);
+    const held: FaceSource = { faces: names.map((family, at) => ({ ...face, id: String(at), family })), read: () => new Uint8Array() };
+    const { session } = await openArea(files, undefined, undefined, () => held);
+    const last = MAX_FONT_FAMILIES - FONT_FAMILIES_PAGE;
+    stream.feed(request('m1', 'engine/font-families', { session, from: last }));
+    await stream.whenSent(2);
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true, value: { next: null, more: 3 } } });
   });
 
   it('CONTROL: the font families of an area this host does not hold are no-such-session', async () => {

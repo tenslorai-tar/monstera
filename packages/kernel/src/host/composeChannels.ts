@@ -456,6 +456,8 @@ export const composeChannels = {
       .object({
         families: z.array(fontFamilySchema).max(FONT_FAMILIES_PAGE),
         next: z.number().int().min(1).max(MAX_FONT_FAMILIES).nullable(),
+        // THE FAMILIES PAST THE LIST'S BOUND, counted on every page so the last one read carries it (`fontFamiliesOf`).
+        more: z.number().int().min(0),
       })
       .strict(),
     ['no-such-session'],

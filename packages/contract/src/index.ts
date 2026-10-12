@@ -477,6 +477,7 @@ export {
   FONT_FAMILIES_PAGE,
   fontFamilySchema,
   type FontFamilyEntry,
+  type ListedFontFamilies,
   documentFontSchema,
   type DocumentFontEntry,
   FIELD_VISIBILITIES,

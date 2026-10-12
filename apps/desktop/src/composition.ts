@@ -34,6 +34,7 @@ import {
   type WordMode,
   type PageSet,
   type FontFamilyEntry,
+  type ListedFontFamilies,
   createClient,
   defaultModel,
   readsUnpacked,
@@ -3601,7 +3602,7 @@ function composeHostBinding(
   readonly imageSize: NonNullable<AttachmentReaders['pictureSize']>;
   readonly signatureFromScan: ScanSignature;
   /** The font families the host can set text in, for the one font picker (`engine/font-families`). */
-  readonly fontFamilies: () => Promise<readonly FontFamilyEntry[]>;
+  readonly fontFamilies: () => Promise<ListedFontFamilies>;
   readonly close: () => Promise<void>;
 } {
   /** What one built host holds. Cleared together, or not at all. */
@@ -4026,15 +4027,18 @@ function composeHostBinding(
     fontFamilies: async () => {
       const built = await ensure();
       const families: FontFamilyEntry[] = [];
+      let more = 0;
       for (let from: number | null = 0; from !== null; ) {
         const answer = await built.client['engine/font-families']({ session: built.session, from });
         if (!answer.ok) throw new Error(`the compose host could not list its fonts: ${answer.error.code}`);
         families.push(...answer.value.families);
+        // THE LAST PAGE'S COUNT of what the list could not hold: every page carries it, and the last read is the latest.
+        more = answer.value.more;
         const next = answer.value.next;
         if (next !== null && next <= from) throw new Error(`the compose host's font list went back from ${String(from)} to ${String(next)}`);
         from = next;
       }
-      return families;
+      return { families, more };
     },
 
     // A SCANNED SIGNATURE PDF (`signaturePicture.ts`): `imageSize`'s steps, and the PNG taken from the area against the

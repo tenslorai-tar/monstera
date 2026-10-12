@@ -1391,7 +1391,7 @@ import { ok, asDocVersion } from '@monstera/shared';
 export const handlers: ContractHandlers = {
   'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development', userName: 'A. Tester' })),
   'app.ocrLanguages': () => Promise.resolve(ok({ languages: [] })),
-  'app.fontFamilies': () => Promise.resolve(ok({ listed: false, families: [] })),
+  'app.fontFamilies': () => Promise.resolve(ok({ listed: false, families: [], more: 0 })),
   'app.components': () => Promise.resolve(ok({ components: [] })),
   'app.reviewPrompt': () => Promise.resolve(ok({ due: false })),
   'app.review': () => Promise.resolve(ok({ opened: false })),
@@ -1605,7 +1605,7 @@ import { ok, asDocVersion } from '@monstera/shared';
 export const handlers: ContractHandlers = {
   'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development', userName: 'A. Tester' })),
   'app.ocrLanguages': () => Promise.resolve(ok({ languages: [] })),
-  'app.fontFamilies': () => Promise.resolve(ok({ listed: false, families: [] })),
+  'app.fontFamilies': () => Promise.resolve(ok({ listed: false, families: [], more: 0 })),
   'app.components': () => Promise.resolve(ok({ components: [] })),
   'app.reviewPrompt': () => Promise.resolve(ok({ due: false })),
   'app.review': () => Promise.resolve(ok({ opened: false })),
@@ -1898,7 +1898,7 @@ import { ok, asDocVersion } from '@monstera/shared';
 export const shim: ContractClient = {
   'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development', userName: 'A. Tester' })),
   'app.ocrLanguages': () => Promise.resolve(ok({ languages: [] })),
-  'app.fontFamilies': () => Promise.resolve(ok({ listed: false, families: [] })),
+  'app.fontFamilies': () => Promise.resolve(ok({ listed: false, families: [], more: 0 })),
   'app.components': () => Promise.resolve(ok({ components: [] })),
   'app.reviewPrompt': () => Promise.resolve(ok({ due: false })),
   'app.review': () => Promise.resolve(ok({ opened: false })),

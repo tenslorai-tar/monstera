@@ -680,7 +680,7 @@ function FontRow({
           builtIn={BUILT_IN_FAMILIES}
           inDocument={NO_DOCUMENT_FONTS}
           label={setting.title}
-          list={fonts ?? { listed: false, families: [] }}
+          list={fonts ?? { listed: false, families: [], more: 0 }}
           onPick={onChoose}
           unset={setting.title}
           value={typeof draft === 'string' ? draft : undefined}

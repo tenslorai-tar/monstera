@@ -1175,10 +1175,11 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     'app.fontFamilies': () =>
       Promise.resolve(
         options.fontFamilies === null
-          ? ok({ listed: false, families: [] })
+          ? ok({ listed: false, families: [], more: 0 })
           : ok({
               listed: true,
               families: (options.fontFamilies ?? SHIM_FONT_FAMILIES).map((family) => ({ ...family, bold: true, italic: true })),
+              more: 0,
             }),
       ),
     // A BROWSER HOLDS NO NATIVE COMPONENT (ADR-0122), so each is present by name only, and verified when asked — the

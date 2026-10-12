@@ -677,7 +677,7 @@ function familyOfTyped(typed: NonNullable<SelectedAnnotation['typed']>): string 
 }
 
 /** A callout's picker: the standard faces alone, said as a list, since nothing else is offered rather than unread. */
-const STANDARD_ONLY: FontList = { listed: true, families: [] };
+const STANDARD_ONLY: FontList = { listed: true, families: [], more: 0 };
 const NO_DOCUMENT_FONTS: readonly DocumentFont[] = [];
 
 const ALIGN_OPTIONS: readonly SegmentedOption<AnnotationAlign>[] = ANNOTATION_ALIGNMENTS.map((value) => ({

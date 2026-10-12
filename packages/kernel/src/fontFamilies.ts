@@ -32,8 +32,18 @@ export interface FontFamily {
 
 const EMBEDDING_RANK: Readonly<Record<FontEmbedding, number>> = { subset: 2, whole: 1, never: 0 };
 
-/** The families `faces` make, by name, sorted as a person reads them; a face with no family name is left out. */
-export function fontFamiliesOf(faces: readonly Pick<CandidateFace, 'family' | 'origin' | 'embedding' | 'weight' | 'italic' | 'weights'>[]): FontFamily[] {
+/** What a catalogue lists: the families a picker can hold, and how many it could not, which the picker says. */
+export interface ListedFamilies {
+  readonly families: FontFamily[];
+  /** The families past `MAX_FONT_FAMILIES`, the last by name: counted, never dropped without a word (BBBBBBBB-8). */
+  readonly more: number;
+}
+
+/**
+ * The families `faces` make, by name, sorted as a person reads them; a face with no family name is left out. Past
+ * `MAX_FONT_FAMILIES` the rest are counted in `more`, since the bound is the frame's and a computer may hold more.
+ */
+export function fontFamiliesOf(faces: readonly Pick<CandidateFace, 'family' | 'origin' | 'embedding' | 'weight' | 'italic' | 'weights'>[]): ListedFamilies {
   const byName = new Map<string, { name: string; origin: 'installed' | 'bundled'; embedding: FontEmbedding; bold: boolean; italic: boolean }>();
   for (const face of faces) {
     const name = face.family.trim();
@@ -50,12 +60,12 @@ export function fontFamiliesOf(faces: readonly Pick<CandidateFace, 'family' | 'o
     held.bold ||= bold;
     held.italic ||= face.italic;
   }
-  return [...byName.values()]
+  const sorted = [...byName.values()]
     .map((family): FontFamily => {
       // ONLY A BUNDLED ONE looks like another: an installed Carlito is a font the person put there, and is listed as itself.
       const like = family.origin === 'bundled' ? LOOKS_LIKE[family.name] : undefined;
       return like === undefined ? family : { ...family, looksLike: like };
     })
-    .sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }))
-    .slice(0, MAX_FONT_FAMILIES);
+    .sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
+  return { families: sorted.slice(0, MAX_FONT_FAMILIES), more: Math.max(0, sorted.length - MAX_FONT_FAMILIES) };
 }

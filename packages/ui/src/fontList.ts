@@ -15,8 +15,8 @@ function listOf(client: ContractClient): Promise<NonNullable<FontList>> {
   const held = asked.get(client);
   if (held !== undefined) return held;
   const reading = client['app.fontFamilies']({}).then(
-    (answer) => (answer.ok ? answer.value : { listed: false, families: [] }),
-    () => ({ listed: false, families: [] }),
+    (answer) => (answer.ok ? answer.value : { listed: false, families: [], more: 0 }),
+    () => ({ listed: false, families: [], more: 0 }),
   );
   asked.set(client, reading);
   return reading;

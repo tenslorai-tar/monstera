@@ -85,6 +85,7 @@ const handleOf = (field: FormFieldRead): FormFieldHandle => ({ page: field.page,
 const COMPUTER_FONTS: FontList = {
   listed: true,
   families: [{ name: 'Carlito', origin: 'bundled', looksLike: 'Calibri', embedding: 'subset', bold: true, italic: true }],
+  more: 0,
 };
 
 interface Mounted {

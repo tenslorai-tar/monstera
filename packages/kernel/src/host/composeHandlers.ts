@@ -368,9 +368,9 @@ export function createComposeHandlers({
     // page from `from`, and where the next begins.
     'engine/font-families': ({ session, from }) => {
       if (areas.lookup(session) === undefined) return Promise.resolve(gone);
-      const all = fontFamiliesOf(faces().faces);
+      const { families: all, more } = fontFamiliesOf(faces().faces);
       const end = from + FONT_FAMILIES_PAGE;
-      return Promise.resolve({ ok: true, value: { families: all.slice(from, end), next: end < all.length ? end : null } });
+      return Promise.resolve({ ok: true, value: { families: all.slice(from, end), next: end < all.length ? end : null, more } });
     },
 
     // `composeWith`'s decisions over a list: a missing source is the transport's, a

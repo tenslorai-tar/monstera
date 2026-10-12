@@ -58,7 +58,9 @@ const handlers: ContractHandlers = {
   'app.ocrLanguages': () => Promise.resolve(ok({ languages: ['eng' as const] })),
   'app.components': () => Promise.resolve(ok({ components: [] })),
   'app.fontFamilies': () =>
-    Promise.resolve(ok({ listed: true, families: [{ name: 'Arial', origin: 'installed' as const, embedding: 'subset' as const, bold: true, italic: true }] })),
+    Promise.resolve(
+      ok({ listed: true, families: [{ name: 'Arial', origin: 'installed' as const, embedding: 'subset' as const, bold: true, italic: true }], more: 0 }),
+    ),
   'document.open': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   // `unlocked` WITH THE OWNER BIT, rather than the user bit or the variant with
   // no number in it. `2` is what a handler that hard-coded the commonest answer

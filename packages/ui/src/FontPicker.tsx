@@ -9,6 +9,7 @@ import {
   FONT_GROUP_COMPUTER,
   FONT_GROUP_DOCUMENT,
   FONT_GROUP_RECENT,
+  FONT_LIST_MORE,
   FONT_LIST_READING,
   FONT_LIST_UNREAD,
   FONT_LOOKS_LIKE,
@@ -38,7 +39,14 @@ import { Icon } from './primitives/Icon.js';
  */
 
 /** The fonts a computer's list read, or that none could be (`listed: false`), or `undefined` while it is being read. */
-export type FontList = { readonly listed: boolean; readonly families: readonly FontFamilyEntry[] } | undefined;
+export type FontList =
+  | {
+      readonly listed: boolean;
+      readonly families: readonly FontFamilyEntry[];
+      /** Families past the list's bound, the last by name: said under the list, never left out without a word. */
+      readonly more: number;
+    }
+  | undefined;
 
 /** A font a document carries, by the name its program states, and whether it is a subset. */
 export interface DocumentFont {
@@ -209,6 +217,9 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
           />
           {list === undefined ? <p className="m-font-picker__note">{_(FONT_LIST_READING)}</p> : null}
           {list?.listed === false ? <p className="m-font-picker__note">{_(FONT_LIST_UNREAD)}</p> : null}
+          {list !== undefined && list.more > 0 ? (
+            <p className="m-font-picker__note">{_(FONT_LIST_MORE, { count: list.more })}</p>
+          ) : null}
           <div aria-label={_(FONT_PICKER_LIST)} className="m-font-picker__list" id={listId} role="listbox">
             {groups.map((group, index) => {
               const headingId = `${listId}-${group.title}`;

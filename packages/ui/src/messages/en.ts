@@ -1682,6 +1682,7 @@ export const FONT_LOOKS_LIKE = messageKey('surface.font-picker.looks-like');
 export const FONT_PARTIAL = messageKey('surface.font-picker.partial');
 export const FONT_NOT_EMBEDDABLE = messageKey('surface.font-picker.not-embeddable');
 export const FONT_LIST_UNREAD = messageKey('surface.font-picker.unread');
+export const FONT_LIST_MORE = messageKey('surface.font-picker.more');
 export const FONT_LIST_READING = messageKey('surface.font-picker.reading');
 export const FONT_NONE_MATCH = messageKey('surface.font-picker.none-match');
 // THE PROPERTIES PANEL WHILE WORDS ARE BEING EDITED (the owner's K11 and C1 to C5): the floating bar's controls, moved.
@@ -4456,6 +4457,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FONT_PARTIAL]: '{name} (partial: only the letters this document uses)',
   [FONT_NOT_EMBEDDABLE]: 'Its licence does not allow it inside a PDF, so a similar font is used instead.',
   [FONT_LIST_UNREAD]: 'The fonts on this computer could not be listed, so the fonts every PDF has are offered.',
+  // THE FAMILIES PAST THE LIST'S BOUND are the last by name, so a family a person cannot find is told apart from one
+  // this computer does not have.
+  [FONT_LIST_MORE]:
+    '{count, plural, one {One more font family is on this computer than this list can hold: the last by name is not listed.} other {# more font families are on this computer than this list can hold: the last by name are not listed.}}',
   [FONT_LIST_READING]: 'Reading the fonts on this computer…',
   [FONT_NONE_MATCH]: 'No font matches “{query}”.',
   [TEXT_PROPERTIES_LABEL]: 'Text being edited',

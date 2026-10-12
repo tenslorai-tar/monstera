@@ -94,6 +94,7 @@ interface Mounted {
 const FONTS = {
   listed: true,
   families: [{ name: 'Carlito', origin: 'bundled' as const, embedding: 'subset' as const, bold: true, italic: true }],
+  more: 0,
 };
 
 function mounted(

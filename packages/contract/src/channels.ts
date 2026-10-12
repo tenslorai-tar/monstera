@@ -1708,6 +1708,9 @@ export const channels = {
    * `listed: false` where no host could read them (a build without the engine, or off Windows): the picker still offers
    * the document's own fonts and the fonts built into PDF, and says the computer's could not be read, never an empty
    * list that reads as *no fonts installed*.
+   *
+   * `more` is how many families the list could not hold past `MAX_FONT_FAMILIES` (the last by name), which the picker
+   * says in words: a family left out without a word would read as one this computer does not have.
    */
   'app.fontFamilies': channel(
     'Lists the font families installed on this computer and bundled with Monstera.',
@@ -1715,6 +1718,7 @@ export const channels = {
     z.object({
       listed: z.boolean(),
       families: z.array(fontFamilySchema).max(MAX_FONT_FAMILIES),
+      more: z.number().int().min(0),
     }),
   ),
 

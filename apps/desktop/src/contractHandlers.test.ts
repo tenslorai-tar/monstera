@@ -14,6 +14,7 @@ import {
   blockEditOf,
   channels,
   type FontFamilyEntry,
+  type ListedFontFamilies,
 } from '@monstera/contract';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -149,7 +150,7 @@ function harness(
     /** The recent store, for a case about what a previous run left; a fresh one with a fixed clock otherwise. */
     readonly recent?: RecentFiles;
     /** The compose host's font list, for the picker's cases; no host otherwise. */
-    readonly fontFamilies?: (() => Promise<readonly FontFamilyEntry[]>) | null;
+    readonly fontFamilies?: (() => Promise<ListedFontFamilies>) | null;
   } = {},
 ) {
   const capabilities = new CapabilityRegistry();
@@ -602,12 +603,13 @@ describe('app.fontFamilies', () => {
 
   it('answers the families the compose host listed, as listed', async () => {
     const { handlers } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, {
-      fontFamilies: () => Promise.resolve([ARIAL]),
+      fontFamilies: () => Promise.resolve({ families: [ARIAL], more: 7 }),
     });
 
+    // AND THE COUNT PAST THE BOUND, as the host counted it: a handler that dropped it would answer 0, which reads as none.
     expect(await handlers['app.fontFamilies']({})).toStrictEqual({
       ok: true,
-      value: { listed: true, families: [ARIAL] },
+      value: { listed: true, families: [ARIAL], more: 7 },
     });
   });
 
@@ -616,7 +618,7 @@ describe('app.fontFamilies', () => {
     // separates the two, and the picker says different things for each.
     const { handlers } = harness({ kind: 'absent' }, () => Promise.resolve(null));
 
-    expect(await handlers['app.fontFamilies']({})).toStrictEqual({ ok: true, value: { listed: false, families: [] } });
+    expect(await handlers['app.fontFamilies']({})).toStrictEqual({ ok: true, value: { listed: false, families: [], more: 0 } });
   });
 });
 

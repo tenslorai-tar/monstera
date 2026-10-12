@@ -36,6 +36,7 @@ const LIST = {
     family({ name: 'Locked Sans', embedding: 'never' }),
     family({ name: 'Carlito', origin: 'bundled', looksLike: 'Calibri' }),
   ],
+  more: 0,
 } as const;
 
 describe('fontGroups, the one font list’s groups (D1 to D4)', () => {
@@ -75,7 +76,7 @@ describe('fontGroups, the one font list’s groups (D1 to D4)', () => {
 
   it('RECENT offers only what this picker offers elsewhere: a family another consumer chose that this one cannot set is not offered', () => {
     // A callout's picker: the standard faces alone. Carlito was chosen for a text box in the same session.
-    const standard = fontGroups({ listed: true, families: [] }, [], ['Carlito', 'Times'], ['Helvetica', 'Times', 'Courier'], '');
+    const standard = fontGroups({ listed: true, families: [], more: 0 },[], ['Carlito', 'Times'], ['Helvetica', 'Times', 'Courier'], '');
     expect(standard.find((group) => group.title === FONT_GROUP_RECENT)?.choices.map((choice) => choice.family)).toStrictEqual(['Times']);
     // CONTROL: where Carlito IS offered (a text box's picker over the list), Recent offers it.
     const full = fontGroups(LIST, [], ['Carlito', 'Times'], ['Helvetica', 'Times', 'Courier'], '');
@@ -83,7 +84,7 @@ describe('fontGroups, the one font list’s groups (D1 to D4)', () => {
   });
 
   it('CONTROL: with no list read the fonts every PDF has are still offered, so the picker is never empty', () => {
-    const groups = fontGroups({ listed: false, families: [] }, [], [], BUILT_INTO_PDF, '');
+    const groups = fontGroups({ listed: false, families: [], more: 0 },[], [], BUILT_INTO_PDF, '');
     expect(groups.map((group) => group.title)).toStrictEqual([FONT_GROUP_BUILT_IN]);
   });
 });
@@ -127,13 +128,27 @@ describe('FontPicker', () => {
 
   it('says in words when the computer’s fonts could not be listed, and still offers Helvetica', () => {
     const onPick = vi.fn();
-    const view = mount(onPick, { listed: false, families: [] });
+    const view = mount(onPick, { listed: false, families: [], more: 0 });
     fireEvent.click(view.getByRole('button', { name: 'Font: As on the page' }));
     expect(view.container.textContent).toContain('could not be listed');
     const helvetica = view.container.querySelector('[data-font-choice="Helvetica"]');
     if (helvetica === null) throw new Error('Helvetica is not offered');
     fireEvent.click(helvetica);
     expect(onPick).toHaveBeenCalledWith('Helvetica');
+  });
+
+  it('says in words that MORE families are on the computer than the list holds, and how many (BBBBBBBB-8)', () => {
+    const view = mount(() => undefined, { ...LIST, more: 3 });
+    fireEvent.click(view.getByRole('button', { name: 'Font: As on the page' }));
+    expect(view.container.textContent).toContain('3 more font families are on this computer than this list can hold');
+    // THE LIST IS STILL THE LIST: the families it holds are offered as before.
+    expect(view.container.querySelector('[data-font-choice="Arial"]')).not.toBeNull();
+  });
+
+  it('CONTROL: a list with nothing past its bound says nothing of more', () => {
+    const view = mount(() => undefined, LIST);
+    fireEvent.click(view.getByRole('button', { name: 'Font: As on the page' }));
+    expect(view.container.textContent).not.toContain('than this list can hold');
   });
 
   it('Escape closes the list and goes no further, so an editor around it is not finished by the key', () => {

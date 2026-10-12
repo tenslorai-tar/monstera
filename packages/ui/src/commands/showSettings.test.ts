@@ -39,6 +39,7 @@ const HELD_FALLBACK = { source: 'fallback' as const, models: [] };
 const FONTS = {
   listed: true,
   families: [{ name: 'Carlito', origin: 'bundled' as const, embedding: 'subset' as const, bold: true, italic: true, looksLike: 'Calibri' }],
+  more: 0,
 };
 /** The one command the Keyboard page lists in these cases, registered on Ctrl+G. */
 const GRID_ROW: ShortcutRow = {

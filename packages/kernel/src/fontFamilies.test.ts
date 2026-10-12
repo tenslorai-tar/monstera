@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { MAX_FONT_FAMILIES } from '@monstera/contract/host';
+
 import { fontFamiliesOf } from './fontFamilies.js';
 import { LOOKS_LIKE, STAND_INS, normaliseFamily } from './fontResolver.js';
 
@@ -15,10 +17,24 @@ const face = (over: Partial<Face>): Face => ({
   ...over,
 });
 
+/** The families listed, for the cases about what a family is; the bound's own cases read `more` too. */
+const familiesOf = (faces: readonly Face[]) => fontFamiliesOf(faces).families;
+
 describe('fontFamiliesOf, the one list a font picker shows', () => {
+  it('COUNTS the families past the list’s bound, the last by name, rather than dropping them without a word', () => {
+    // NAMED so the last by name is known: `Family 0000` … `Family 4097`, two past the bound.
+    const names = Array.from({ length: MAX_FONT_FAMILIES + 2 }, (_, at) => `Family ${String(at).padStart(4, '0')}`);
+    const listed = fontFamiliesOf([...names].reverse().map((family) => face({ family })));
+    expect(listed.more).toBe(2);
+    expect(listed.families).toHaveLength(MAX_FONT_FAMILIES);
+    expect(listed.families.at(-1)?.name).toBe(names[MAX_FONT_FAMILIES - 1]);
+    // CONTROL: a list exactly at the bound has nothing more to say, so the count above is the overflow and not a size.
+    expect(fontFamiliesOf(names.slice(0, MAX_FONT_FAMILIES).map((family) => face({ family }))).more).toBe(0);
+  });
+
   it('makes one family of a family’s faces, with its bold and italic, sorted as a person reads', () => {
     expect(
-      fontFamiliesOf([
+      familiesOf([
         face({ family: 'Times New Roman' }),
         face({ family: 'Arial' }),
         face({ family: 'Arial', weight: 700 }),
@@ -34,7 +50,7 @@ describe('fontFamiliesOf, the one list a font picker shows', () => {
 
   it('lists a family the computer has as installed even where Monstera bundles it too, and a variable face’s range as bold', () => {
     expect(
-      fontFamiliesOf([
+      familiesOf([
         face({ family: 'Carlito', origin: 'bundled', weights: { min: 400, max: 700 } }),
         face({ family: 'Carlito', origin: 'installed' }),
       ]),
@@ -42,18 +58,18 @@ describe('fontFamiliesOf, the one list a font picker shows', () => {
   });
 
   it('takes the least restricted licence of a family’s faces, and keeps a family no face may embed, to be said so', () => {
-    expect(fontFamiliesOf([face({ embedding: 'never' }), face({ embedding: 'whole', weight: 700 })])[0]?.embedding).toBe('whole');
-    expect(fontFamiliesOf([face({ family: 'Locked', embedding: 'never' })])).toStrictEqual([
+    expect(familiesOf([face({ embedding: 'never' }), face({ embedding: 'whole', weight: 700 })])[0]?.embedding).toBe('whole');
+    expect(familiesOf([face({ family: 'Locked', embedding: 'never' })])).toStrictEqual([
       { name: 'Locked', origin: 'installed', embedding: 'never', bold: false, italic: false },
     ]);
   });
 
   it('says which family a BUNDLED one looks like, and never of an installed one of the same name', () => {
-    expect(fontFamiliesOf([face({ family: 'Carlito', origin: 'bundled' }), face({ family: 'Tinos', origin: 'bundled' })])).toStrictEqual([
+    expect(familiesOf([face({ family: 'Carlito', origin: 'bundled' }), face({ family: 'Tinos', origin: 'bundled' })])).toStrictEqual([
       { name: 'Carlito', origin: 'bundled', embedding: 'subset', bold: false, italic: false, looksLike: 'Calibri' },
       { name: 'Tinos', origin: 'bundled', embedding: 'subset', bold: false, italic: false, looksLike: 'Times New Roman' },
     ]);
-    expect(fontFamiliesOf([face({ family: 'Carlito', origin: 'installed' })])[0]?.looksLike).toBeUndefined();
+    expect(familiesOf([face({ family: 'Carlito', origin: 'installed' })])[0]?.looksLike).toBeUndefined();
   });
 
   it('LOOKS_LIKE is STAND_INS read the other way: each named family stands in for the one it looks like', () => {
@@ -65,6 +81,6 @@ describe('fontFamiliesOf, the one list a font picker shows', () => {
   });
 
   it('CONTROL: a document’s own face and a face with no family name are not families a picker offers', () => {
-    expect(fontFamiliesOf([face({ origin: 'own' }), face({ origin: 'sibling' }), face({ family: '  ' })])).toStrictEqual([]);
+    expect(familiesOf([face({ origin: 'own' }), face({ origin: 'sibling' }), face({ family: '  ' })])).toStrictEqual([]);
   });
 });

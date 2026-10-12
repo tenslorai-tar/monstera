@@ -41,7 +41,7 @@ import {
   type MainHandlers,
   type PreloadHandlers,
   type OcrLanguage,
-  type FontFamilyEntry,
+  type ListedFontFamilies,
   type SpellingLanguage,
   type StorePage,
   type WindowEditAction,
@@ -365,7 +365,7 @@ export function createContractHandlers(deps: {
    * host to ask: a build without the engine, which `app.fontFamilies` answers as `listed: false`. Optional only for the
    * handler fixtures that ask nothing of fonts; the composition root always passes it.
    */
-  readonly fontFamilies?: (() => Promise<readonly FontFamilyEntry[]>) | null;
+  readonly fontFamilies?: (() => Promise<ListedFontFamilies>) | null;
   /** The native components and their states (ADR-0122). `componentStatuses`, where the source is the resolver's. */
   readonly components: (verify: boolean) => Promise<readonly ComponentStatus[]>;
   /**
@@ -438,8 +438,8 @@ export function createContractHandlers(deps: {
     // THE PICKER'S LIST: no host is `listed: false`, said by the picker, never an empty list read as *no fonts*.
     'app.fontFamilies': async () =>
       deps.fontFamilies === null || deps.fontFamilies === undefined
-        ? ok({ listed: false, families: [] })
-        : ok({ listed: true, families: [...(await deps.fontFamilies())] }),
+        ? ok({ listed: false, families: [], more: 0 })
+        : await deps.fontFamilies().then(({ families, more }) => ok({ listed: true, families: [...families], more })),
     // AN ARRAY COPY, for `app.ocrLanguages`' reason (ADR-0122).
     'app.components': async ({ verify }) => ok({ components: [...(await deps.components(verify))] }),
     'document.open': openDocumentHandler(deps),
