@@ -5,7 +5,9 @@ import {
   type DocVersion,
   TAB_STOP,
   joinAfterLine,
+  NEW_TEXT_MARGIN,
   lineText,
+  newTextBox,
   pdfPoint,
   toPdf,
   toViewport,
@@ -692,8 +694,7 @@ export function TextEditLayer({
   );
 }
 
-/** The margin a new box keeps from the page's edge, in points, and the style its words start in on a page with none. */
-const NEW_TEXT_MARGIN = 36;
+/** The style a new box's words start in on a page with none. */
 const NEW_TEXT_STYLE: TextBlock['style'] = {
   size: 12,
   colour: { r: 0, g: 0, b: 0 },
@@ -743,13 +744,12 @@ function familyOfClass(style: TextBlock['style']): string {
  * box is written by its words alone).
  */
 function freshBox(css: { readonly x: number; readonly y: number }, geometry: OverlayPage, blocks: readonly TextBlock[]): FreshBox {
-  const [x0, , x1] = geometry.crop;
+  const [x0, y0, x1, y1] = geometry.crop;
   const at = toPdf(viewportPoint(css.x, css.y), overlayTransform(geometry));
   const style = nearbyStyle(blocks, at) ?? NEW_TEXT_STYLE;
-  const left = Math.min(Math.max(at.x, x0), Math.max(x0, x1 - NEW_TEXT_MARGIN));
-  const measure = Math.min(Math.max(x1 - NEW_TEXT_MARGIN - left, 80), 360);
-  const baseline = at.y - style.size * 0.8;
-  const box = { x0: left, y0: at.y - style.size * 1.2, x1: left + measure, y1: at.y };
+  // THE WHOLE BOX ON THE PAGE, at every turn (`newTextBox`, the one rule the kernel's proof takes too).
+  const { left, measure, top, baseline, bottom } = newTextBox(at, { x0, y0, x1, y1 }, style.size);
+  const box = { x0: left, y0: bottom, x1: left + measure, y1: top };
   return {
     block: {
       box,

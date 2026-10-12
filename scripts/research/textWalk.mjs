@@ -524,6 +524,67 @@ await step('19. saved: the ribbon’s font, the dashed border, the Courier water
   };
 });
 
+/**
+ * What is under a point of the window: the class of the topmost element, so a press can be told apart from one that
+ * landed on something other than the page. @param {number} x @param {number} y
+ */
+async function underPoint(x, y) {
+  return page.evaluate(
+    ([px, py]) => {
+      const dom = /** @type {{ elementFromPoint: (x: number, y: number) => { className: unknown } | null }} */ (Reflect.get(globalThis, 'document'));
+      const found = dom.elementFromPoint(px ?? 0, py ?? 0);
+      return found === null ? 'nothing' : String(found.className);
+    },
+    [x, y],
+  );
+}
+
+const forW1 = await distinctCopy('for-w1.pdf', sample);
+await step('W1: Add text at 85%, 89% and 95% down the first (turned) page, each pressed ON SCREEN, is in the saved file', async () => {
+  await open(forW1);
+  await section('Edit');
+  /** @type {Record<string, unknown>} */
+  const facts = {};
+  for (const down of [0.85, 0.89, 0.95]) {
+    if ((await page.getByRole('button', { name: 'Add text', exact: true }).first().getAttribute('aria-pressed')) !== 'true') {
+      await command('Add text');
+    }
+    const surface = page.locator('[data-text-add-surface]').first();
+    let box = await surface.boundingBox();
+    if (box === null) throw new Error('no add surface');
+    // THE POINT SCROLLED INTO THE DOCUMENT AREA FIRST: a press below the window's foot, or on the status bar, is a press
+    // on something that is not the page, and words typed after it go nowhere — which reads exactly like a drop.
+    const viewport = page.viewportSize() ?? { width: 1400, height: 900 };
+    const bottom = viewport.height - 80;
+    let target = box.y + box.height * down;
+    if (target > bottom) {
+      await page.mouse.move(box.x + box.width / 2, 500);
+      await page.mouse.wheel(0, target - 500);
+      await page.waitForTimeout(800);
+      box = await surface.boundingBox();
+      if (box === null) throw new Error('no add surface');
+      target = box.y + box.height * down;
+    }
+    const x = box.x + box.width * 0.15;
+    const under = await underPoint(x, target);
+    const words = `W1 at ${String(Math.round(down * 100))} percent`;
+    await page.mouse.click(x, target);
+    await expect(editor()).toBeFocused();
+    await page.keyboard.type(words);
+    await page.keyboard.press('Escape');
+    await expect(editor()).toHaveCount(0);
+    facts[`${String(Math.round(down * 100))}%`] = { pressedAtWindowY: Math.round(target), under };
+  }
+  const saved = join(output, 'w1-saved.pdf');
+  await saveTo(saved);
+  await command('Save a copy');
+  await expect.poll(() => existsSync(saved), { timeout: 20_000 }).toBe(true);
+  // READ BACK by PDF.js, and from the FIRST PAGE, where they were pressed.
+  const first = (await savedWords(saved))[0] ?? '';
+  for (const down of [85, 89, 95]) expect(first.includes(`W1 at ${String(down)} percent`)).toBe(true);
+  return { ...facts, firstPageHoldsAll: true };
+});
+
 // LAST, because on failure the editor stays open and nothing after it could run (measured 2026-10-12, twice in the
 // walk and once on a fresh document: after the picker's keyboard choice focus is in its search box, and neither Escape
 // nor a press back in the words nor a press away ends the editor).
