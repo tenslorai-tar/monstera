@@ -892,6 +892,64 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-12 — Stage audit of `8d0a8325..1fd98f2a` — findings CCCCCCCC-1 to CCCCCCCC-6
+
+The cloud rebuild's Parts A to C: the seven rows built in Part A, A3.1 and A6.1 (ADR-0231), the ten unverified rows
+(ADR-0232 for B1.26), B5.9 and C3, and the closures of BBBBBBBB-4 to -8 and -10 and AAAAAAAA-1 to -6 (the ADR-0222
+correction committed alone before its code). Read through `npm run audit:scope` (54 commits, 200 files) and the diff of
+every modified proof with five or more deletions; owed when the next commit would have taken the range to 201 files.
+
+**CCCCCCCC-1** (medium, closed in the next commit): `fieldDesign.pw.ts` read the bridge's sent commands straight after a
+gesture in five cases; the binding reaches the test after `mouse.up()` resolves, and the windows runner read a drag's one
+command as none (CI run 38207412421). The file's other cases already polled. Not swept beyond this file.
+
+**CCCCCCCC-2** (low, closed in the next commit): `textFormat.pw.ts` asserted one platform's double-click: Chromium on
+Windows selects the word with its trailing space, so the runner sent 2 to 12 where ubuntu sent 2 to 11.
+
+**CCCCCCCC-3** (low, open): AAAAAAAA-2's `drawn` flag is set at the composition root from whether a region was named, and
+no root case drives a whole-page network read, so the choice is held by the type alone.
+
+**CCCCCCCC-4** (low, open): the windows unit run of d3064a5b timed out in `chatHistory.test.ts:48` and never reached the
+rendered suite, so CCCCCCCC-1 and -2 could not be dated to a commit. The timeout is the second seen on that case.
+
+**CCCCCCCC-5** (low, open): the escape guard denies a single-quoted regex ending in an anchor followed by a pipe, as in
+`grep -E '\.(ts|tsx)$' | xargs …`, as ANSI-C quoting: it reads the closing `$'` as an opener. Measured twice on 2026-10-12;
+neither command wrote a file. A false positive of the kind the guard pins on purpose is a decision; this one is not pinned.
+
+**CCCCCCCC-6** (low, recorded): four stray reflexes were denied by the guard in this range's last session (`node -e`
+twice, `sed -i` twice), each typed while doing something else; nothing was written. Counted from the session, not recalled.
+
+### 1. Root cause or workaround?
+CCCCCCCC-2's fix accepts two selections; the cause (a platform's editing rule) is outside this repository and the case
+names it. BBBBBBBB-7's budget half was kept, not changed, with its reason written into the code (a time bound).
+
+### 2. Verified against the easy shape only?
+AAAAAAAA-1's bound was measured at the minimum window in every section here; the windows runner is the other shape and
+the case now refuses a row More rather than measuring it.
+
+### 3. Would CI have caught it?
+CCCCCCCC-1 and -2 were caught by CI on windows only; ubuntu was green on both.
+
+### 4. Are the proofs non-vacuous?
+Mutations run: `newlyCovered` ignoring the earlier box, the compose catch widened back, the ribbon bound at 10 px; each red.
+The four modified proofs with the most deletions were read: each replaced its assertions under a changed signature or a
+decided behaviour (ADR-0227, B1.26, K2, A2.5), none loosened.
+
+### 4c. Does a check derive its extent from the set it governs?
+BBBBBBBB-6 closed with an independent list.
+
+### 5. Executed, or asserted?
+Executed: related tests per item, typecheck, lint, the rendered cases named, `proof:contract`. Asserted: the windows
+behaviour of CCCCCCCC-1 and -2 until the next run.
+
+### 6. Architecture before the feature?
+ADR-0231, ADR-0232 and the ADR-0222 correction each committed alone before their code.
+
+### 7. Do the documents still match the code?
+`ribbonFolding.ts`' half-true comment corrected (AAAAAAAA-4); FEATURES row 248 carries the table count.
+
+---
+
 ## 2026-10-11 — Stage audit of `e8fd8a55..8d0a8325` — findings BBBBBBBB-1 to BBBBBBBB-11
 
 The cloud forms and text rebuild (ADR-0226 Decisions 14 to 16, the ADR-0180 correction, the ADR-0211 amendment), the font
