@@ -28,6 +28,7 @@ async function openWithLinks(
   look: (typeof LOOKS)[number],
   section: 'home' | 'comment',
   sent: { channel: string; params: unknown }[],
+  links: readonly (typeof TO_PAGE_TWO | typeof TO_WEB)[] = [TO_PAGE_TWO, TO_WEB],
 ): Promise<void> {
   const bytes = await samplePdf();
   await page.setViewportSize({ width: 1280, height: 860 });
@@ -37,7 +38,7 @@ async function openWithLinks(
     {
       opens: [{ kind: 'opened' as const, docId: ID, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Sample.pdf' }],
       documentBytes: new Map([[ID, bytes]]),
-      pageLinks: [[TO_PAGE_TWO, TO_WEB]],
+      pageLinks: [[...links]],
       settings: { 'appearance.ribbon-section': section },
     },
     (channel, params) => {
@@ -47,7 +48,7 @@ async function openWithLinks(
   await page.goto('/');
   await page.getByRole('button', { name: /^Open PDF/u }).first().click();
   await expect(page.locator('canvas.m-page').first()).toBeAttached();
-  await expect(page.locator('[data-link-layer="0"] [data-page-link="1"]')).toBeAttached();
+  if (links.length > 0) await expect(page.locator(`[data-link-layer="0"] [data-page-link="${String(links.length - 1)}"]`)).toBeAttached();
 }
 
 for (const look of LOOKS) {
@@ -70,6 +71,33 @@ for (const look of LOOKS) {
     await expect(page.locator('.m-tooltip', { hasText: 'Open https://example.org/annual-report' })).toBeVisible();
     expect(await link.evaluate((element) => getComputedStyle(element).outlineStyle)).toBe('solid');
     expect(await link.evaluate((element) => getComputedStyle(element).cursor)).toBe('pointer');
+  });
+
+  test(`the words under a link are drawn as they are with no link at all, ${look.name}`, async ({ page, context }) => {
+    // THE RENDERER'S HALF of the owner's report of 0.1.12.0 (the linked area was white): `pageLinks.test.ts` reads the
+    // FILE through the engine, which draws no link, so only the viewer's own layer can put a box over the words. The
+    // same page is opened twice, with its links and with none, and the pixels inside the web link's box compared.
+    await openWithLinks(page, look, 'home', []);
+    const plain = await context.newPage();
+    await openWithLinks(plain, look, 'home', [], []);
+    for (const each of [page, plain]) await each.mouse.move(0, 0);
+    const slot = await page.locator('.m-page-slot').first().boundingBox();
+    if (slot === null) throw new Error('the first page has no box');
+    const scale = slot.width / 612;
+    const clip = {
+      x: slot.x + TO_WEB.bounds.x0 * scale,
+      y: slot.y + TO_WEB.bounds.y0 * scale,
+      width: (TO_WEB.bounds.x1 - TO_WEB.bounds.x0) * scale,
+      height: (TO_WEB.bounds.y1 - TO_WEB.bounds.y0) * scale,
+    };
+    const same = async (): Promise<boolean> => (await page.screenshot({ clip })).equals(await plain.screenshot({ clip }));
+    // POLLED, because each page's canvas is drawn when its render lands; a box over the words would never agree.
+    await expect.poll(same).toBe(true);
+    // CONTROL: a link that DID draw a white box is seen by this reading, so its agreement above is the words and not a
+    // comparison that cannot tell two pictures apart.
+    await page.addStyleTag({ content: '[data-page-link] { background: rgb(255, 255, 255) !important; }' });
+    expect(await same()).toBe(false);
+    await plain.close();
   });
 
   test(`in the Comment section every link's edge is drawn, ${look.name}`, async ({ page }) => {
