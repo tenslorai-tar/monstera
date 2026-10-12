@@ -3,7 +3,7 @@ import type { DocId } from '@monstera/shared';
 
 import { type AnnotationSelection, carrySelection } from '../annotations/selectTool.js';
 import { readWholeList } from '../readWholeList.js';
-import { type Applied, type DocumentCommandDeps, applyDocumentCommand } from './documentCommands.js';
+import { type Applied, type DocumentCommandDeps, applyDocumentCommand, sameWalk } from './documentCommands.js';
 
 /** Replaces the selection with what a function of the current one answers — a state setter's shape. */
 export type CarrySelection = (
@@ -32,34 +32,39 @@ export type CarrySelection = (
  *
  * @returns whether the document moved, as `applyDocumentCommand` answers it
  */
-export async function applyCarrying(
+export function applyCarrying(
   deps: DocumentCommandDeps & { readonly carry: CarrySelection },
   docId: DocId,
   command: DispatchableCommand,
 ): Promise<boolean> {
   if (!keepsTheAnnotationWalk(command)) return applyDocumentCommand(deps, docId, command);
 
-  const held: { answer?: Applied } = {};
-  const moved = await applyDocumentCommand(
+  // THE VERSION IT WAS SENT AT, which the lane may have moved on from the one it was composed at; and the read and the carry
+  // IN THE LANE, so the next command of a run is sent after this one's selection has been carried.
+  let sentAt = command.version;
+  return applyDocumentCommand(
     {
       ...deps,
-      onApplied: (answer) => {
-        held.answer = answer;
-      },
+      onApplied: () => undefined,
     },
     docId,
     command,
+    {
+      sentAt: (version) => {
+        sentAt = version;
+      },
+      settle: async (produced: Applied) => {
+        const read = await readWholeList(
+          (from) => deps.client['document.annotations']({ docId, from }),
+          (part) => part.annotations,
+        ).catch(() => undefined);
+        const walk = read?.ok === true ? { version: read.value.version, annotations: read.value.items } : undefined;
+        const composed = { page: command.page, version: sentAt };
+        deps.onApplied(produced);
+        deps.carry((current) =>
+          carrySelection(current, composed, produced.version, walk, (a, b) => sameWalk(deps.client, docId, 'annotation', a, b)),
+        );
+      },
+    },
   );
-  const produced = held.answer;
-  if (!moved || produced === undefined) return moved;
-
-  const read = await readWholeList(
-    (from) => deps.client['document.annotations']({ docId, from }),
-    (part) => part.annotations,
-  ).catch(() => undefined);
-  const walk = read?.ok === true ? { version: read.value.version, annotations: read.value.items } : undefined;
-  const composed = { page: command.page, version: command.version };
-  deps.onApplied(produced);
-  deps.carry((current) => carrySelection(current, composed, produced.version, walk));
-  return true;
 }

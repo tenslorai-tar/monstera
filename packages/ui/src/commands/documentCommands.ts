@@ -23,8 +23,13 @@ import {
   MAX_FONT_RUNS,
   blockEditOf,
   pageSetOf,
+  type CommandWalk,
+  targetVersionOf,
+  walkKeptBy,
+  walkNamedBy,
   withPageRuns,
   withStamp,
+  withTargetVersion,
 } from '@monstera/contract';
 import { type DocId, type DocVersion, type Failure, type MessageKey, lineText, paragraphsOfLines } from '@monstera/shared';
 
@@ -631,7 +636,90 @@ export function hasDocument(context: CommandContext): boolean {
 }
 
 /**
+ * One document's commands as this renderer sends them: in turn, and with the moves its own commands made.
+ *
+ * ## Why a lane here, when main already runs a document's commands in turn
+ *
+ * Main's lane orders them, and each keeps the version it was composed against, so a command composed before the previous
+ * one landed is refused as out of date (`commandBus.ts`' stale check). A surface composes from what it last read, and what
+ * it read is refreshed only after the answer and a re-read: a colour picker dragged, a nudge straight after a drag, a
+ * held arrow key, all composed at a version their own previous command had already moved (the owner's O6 and W6). The
+ * refusal was right — the target was named at an old version — but the move was this renderer's own.
+ *
+ * ## The move is followed only where it KEPT THE WALK the command names
+ *
+ * A command whose target was named at version N, sent after this renderer's own command moved the document from N to
+ * N+1, is sent at N+1 only when that move kept the walk the target is an index into (`walkKeptBy` against `walkNamedBy`:
+ * ADR-0102's sets, and the field walk's). Then the index names the same item at N+1, which is the whole of what the stale
+ * check protects. A move that added or removed an item, any walk but the target's, or anything this renderer did not
+ * send — another window's command, an undo — is not followed, and the command is refused as before.
+ */
+interface Lane {
+  tail: Promise<void>;
+  /** Each move this renderer's own walk-keeping commands made: from the version a command was sent at, to the one it produced. */
+  readonly moved: Map<DocVersion, { readonly to: DocVersion; readonly walk: CommandWalk }>;
+}
+
+/** The moves a lane remembers; a command composed further back than this many of its own moves is refused as out of date. */
+const LANE_MOVES = 64;
+
+const LANES = new WeakMap<ContractClient, Map<DocId, Lane>>();
+
+function laneOf(client: ContractClient, docId: DocId): Lane {
+  let byDocument = LANES.get(client);
+  if (byDocument === undefined) {
+    byDocument = new Map();
+    LANES.set(client, byDocument);
+  }
+  let lane = byDocument.get(docId);
+  if (lane === undefined) {
+    lane = { tail: Promise.resolve(), moved: new Map() };
+    byDocument.set(docId, lane);
+  }
+  return lane;
+}
+
+/** `version` followed through every move of `lane` that kept `walk`: the version a target named at `version` is current at. */
+function followed(lane: Lane, version: DocVersion, walk: CommandWalk): DocVersion {
+  let at = version;
+  for (let steps = 0; steps < LANE_MOVES; steps += 1) {
+    const move = lane.moved.get(at);
+    if (move?.walk !== walk) break;
+    at = move.to;
+  }
+  return at;
+}
+
+/**
+ * Whether a target named at `a` and one named at `b` name the same items of `walk` in `docId`: the same version, or one
+ * reached from the other through this renderer's own moves that kept that walk. For a surface carrying a selection across
+ * its own commands, which may land in either order relative to the read it holds.
+ */
+export function sameWalk(client: ContractClient, docId: DocId, walk: CommandWalk, a: DocVersion, b: DocVersion): boolean {
+  const lane = laneOf(client, docId);
+  return reaches(lane, a, b, walk) || reaches(lane, b, a, walk);
+}
+
+/** Whether `to` is `from` or one of the versions `from` is followed through by {@link followed}. */
+function reaches(lane: Lane, from: DocVersion, to: DocVersion, walk: CommandWalk): boolean {
+  let at = from;
+  for (let steps = 0; steps <= LANE_MOVES; steps += 1) {
+    if (at === to) return true;
+    const move = lane.moved.get(at);
+    if (move?.walk !== walk) return false;
+    at = move.to;
+  }
+  return false;
+}
+
+/**
  * Sends one command and handles every way it can end.
+ *
+ * ## In this document's lane
+ *
+ * After every command this renderer sent to the same document before it, and at the version a walk-keeping move of its own
+ * left its target at ({@link Lane}). What `settle` does runs in the lane too, so a caller's read after its command lands
+ * before the next command is sent.
  *
  * ## Extracted for a SECOND caller, which is a surface rather than a command
  *
@@ -677,11 +765,41 @@ export async function applyDocumentCommand(
     readonly joinsStep?: DocVersion;
     /** Told the version this command produced, for the next command of the gesture to join. Only when it applied. */
     readonly produced?: (version: DocVersion) => void;
+    /**
+     * Told the version the command's target was SENT at, which is later than the one it was composed at where the lane
+     * followed this renderer's own move ({@link Lane}): what a caller carrying a selection compares with. Only for a
+     * command that names a target at a version, and before it is sent.
+     */
+    readonly sentAt?: (version: DocVersion) => void;
+    /** Run in the lane once the command applied, after `onApplied`: a caller's read of what it produced. */
+    readonly settle?: (applied: Applied) => Promise<void>;
   } = {},
+): Promise<boolean> {
+  const lane = laneOf(deps.client, docId);
+  const run = lane.tail.then(() => sendInLane(lane, deps, docId, command, options));
+  lane.tail = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
+async function sendInLane(
+  lane: Lane,
+  deps: DocumentCommandDeps,
+  docId: DocId,
+  command: DispatchableCommand,
+  options: Parameters<typeof applyDocumentCommand>[3] & object,
 ): Promise<boolean> {
   // PAGES AS RUNS (decision D), here where every command leaves the renderer, so no surface has to remember: a
   // selection of ten thousand pages in one stretch crosses as one entry, and every command fits a host's frame.
-  const sent = withPageRuns(withStamp(command, deps.stamp()));
+  const stamped = withPageRuns(withStamp(command, deps.stamp()));
+  // THIS RENDERER'S OWN MOVES FOLLOWED where they kept the walk the target is in (the lane's header).
+  const composedAt = targetVersionOf(stamped);
+  const walk = walkNamedBy(stamped);
+  const sent = composedAt === undefined || walk === undefined ? stamped : withTargetVersion(stamped, followed(lane, composedAt, walk));
+  const sentAt = targetVersionOf(sent);
+  if (sentAt !== undefined) options.sentAt?.(sentAt);
   const joins = options.joinsStep === undefined ? {} : { joinsStep: options.joinsStep };
   let answer = await deps.client['document.execute']({ docId, command: sent, ...joins });
 
@@ -716,8 +834,17 @@ export async function applyDocumentCommand(
     }
     return false;
   }
+  // A MOVE THAT KEPT A WALK is remembered, from the version the command was sent at, so a command composed before it
+  // landed is sent where its target now is.
+  const kept = walkKeptBy(sent);
+  if (kept !== undefined && sentAt !== undefined) {
+    lane.moved.set(sentAt, { to: answer.value.version, walk: kept });
+    const oldest = lane.moved.keys().next();
+    if (lane.moved.size > LANE_MOVES && oldest.done !== true) lane.moved.delete(oldest.value);
+  }
   deps.onApplied(answer.value);
   options.produced?.(answer.value.version);
+  await options.settle?.(answer.value);
 
   // INVARIANT 18, AFTER `onApplied` and not instead of it, and guarded on a
   // positive count because the dialog's schema refuses zero.

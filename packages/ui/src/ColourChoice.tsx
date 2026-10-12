@@ -1,6 +1,6 @@
 import { useLingui } from '@lingui/react';
 import type { MessageKey } from '@monstera/shared';
-import type { ReactElement } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 
 /**
  * A row of colour swatches and a custom colour: the one colour control of the application.
@@ -62,17 +62,71 @@ export function ColourSwatches({
         />
       ))}
       <span className="m-colour-custom" data-pressed={!auto && current !== undefined && !preset ? 'true' : undefined}>
-        <input
-          aria-label={i18n._(customLabel)}
-          className="m-colour-custom__input"
-          onChange={(event) => {
-            onPick(event.target.value);
-          }}
-          type="color"
-          value={current ?? fallback}
-        />
+        <CustomColour className="m-colour-custom__input" label={i18n._(customLabel)} value={current ?? fallback} onPick={onPick} />
       </span>
     </div>
+  );
+}
+
+/**
+ * A colour input that answers ONCE, when the person lets go: the one custom colour input of the application.
+ *
+ * A colour input fires `input` at every step of a drag in its picker, and React's `onChange` is that event. Answered at
+ * each step, a drag was dozens of document commands, each composed against the version the drag began on: the first
+ * applied and every later one was refused as out of date, the last among them, so the colour picked did not stick
+ * (the owner's O6). So a step only moves what the input shows, and the DOM's own `change`, which the picker fires when
+ * it closes on a new colour, is what answers. A value that arrives from outside while nothing is being picked replaces
+ * what is shown.
+ */
+export function CustomColour({
+  label,
+  value,
+  onPick,
+  className,
+  marks,
+}: {
+  readonly label: string;
+  readonly value: string;
+  readonly onPick: (hex: string) => void;
+  readonly className?: string;
+  /** Data attributes a caller finds the input by. */
+  readonly marks?: Readonly<Record<`data-${string}`, string>>;
+}): ReactElement {
+  const [shown, setShown] = useState(value);
+  const input = useRef<HTMLInputElement>(null);
+  const picked = useRef(onPick);
+  useEffect(() => {
+    picked.current = onPick;
+  }, [onPick]);
+  // A VALUE FROM OUTSIDE, such as the selection changing, is what the input shows from then on.
+  const [from, setFrom] = useState(value);
+  if (from !== value) {
+    setFrom(value);
+    setShown(value);
+  }
+  useEffect(() => {
+    const element = input.current;
+    if (element === null) return undefined;
+    const answer = (): void => {
+      picked.current(element.value);
+    };
+    element.addEventListener('change', answer);
+    return () => {
+      element.removeEventListener('change', answer);
+    };
+  }, []);
+  return (
+    <input
+      {...marks}
+      aria-label={label}
+      className={className}
+      onChange={(event) => {
+        setShown(event.target.value);
+      }}
+      ref={input}
+      type="color"
+      value={shown}
+    />
   );
 }
 

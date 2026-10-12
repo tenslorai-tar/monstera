@@ -177,6 +177,8 @@ export function carryPick(
   current: ObjectPick | undefined,
   command: DispatchableCommand,
   produced: DocVersion,
+  /** The version the command was sent at, where the command lane moved it on from the one it was composed at. */
+  sentAt?: DocVersion,
 ): ObjectPick | undefined {
   if (current === undefined) return undefined;
   // THE WALK THE OBJECT IS IN DECIDES: a placement of a stamp keeps the annotation walk and says nothing of PDFium's.
@@ -188,6 +190,6 @@ export function carryPick(
       : keepsTheObjectWalk(command)
         ? command
         : undefined;
-  if (kept?.page !== current.page || kept.version !== current.version) return undefined;
+  if (kept?.page !== current.page || (sentAt ?? kept.version) !== current.version) return undefined;
   return { ...current, version: produced };
 }

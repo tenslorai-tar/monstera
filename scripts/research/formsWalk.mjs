@@ -54,6 +54,20 @@ async function savedFieldFamilies(path) {
   return found;
 }
 
+/** Every widget's `/MK /BC` in a saved file, as numbers, read by pdf-lib. @param {string} path */
+async function savedBorderColours(path) {
+  const document = await PDFDocument.load(await readFile(path), { updateMetadata: false });
+  /** @type {number[][]} */
+  const found = [];
+  for (const field of document.getForm().getFields()) {
+    for (const widget of field.acroField.getWidgets()) {
+      const colour = widget.getOrCreateAppearanceCharacteristics().getBorderColor();
+      if (colour !== undefined) found.push(colour);
+    }
+  }
+  return found;
+}
+
 /** What the saved file's text fields hold, read by pdf-lib rather than by the app that wrote it. @param {string} path */
 async function savedValues(path) {
   const document = await PDFDocument.load(await readFile(path), { updateMetadata: false });
@@ -120,12 +134,31 @@ await step('the new field moves with a drag, snaps to another field’s edge wit
   await page.mouse.move(at.x + at.width / 2 - 40, at.y + at.height / 2 + 120, { steps: 8 });
   const guides = await page.locator('[data-field-guide]').count();
   await page.mouse.up();
-  // THE MOVE IS A COMMAND AND THE ARROW READS THE VERSION IT LEFT: a key sent in the same millisecond is answered with the
-  // "out of date" dialog (measured 2026-10-12, a 1500 ms wait clears it), so the walk waits for the move to settle.
-  await page.waitForTimeout(1500);
-  await page.keyboard.press('ArrowRight');
-  await page.waitForTimeout(1500);
-  return { guidesWhileHeld: guides };
+  // W6: AN ARROW STRAIGHT AFTER THE MOVE, and three more as a held key sends them, with no wait: the command lane sends
+  // each where the one before left the field (measured 2026-10-12 before the lane: the first arrow raised "out of date").
+  for (let press = 0; press < 4; press += 1) await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(3000);
+  const outOfDate = await page.getByText(/was out of date/u).count();
+  expect(outOfDate).toBe(0);
+  return { guidesWhileHeld: guides, outOfDateDialogs: outOfDate };
+});
+
+await step('O6: the custom border colour dragged through many colours, with no out-of-date dialog, and the last one kept', async () => {
+  const group = page.getByRole('group', { name: 'Border colour' });
+  const custom = group.getByLabel('Custom colour');
+  // A DRAG IN THE PICKER, as Chromium reports one: an input event per step, then a change when it closes.
+  await custom.evaluate((input) => {
+    const element = /** @type {{ value: string, dispatchEvent: (event: Event) => boolean }} */ (/** @type {unknown} */ (input));
+    for (const hex of ['#200000', '#400000', '#600000', '#800000', '#a00000', '#c00010']) {
+      element.value = hex;
+      element.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await page.waitForTimeout(3000);
+  const outOfDate = await page.getByText(/was out of date/u).count();
+  expect(outOfDate).toBe(0);
+  return { outOfDateDialogs: outOfDate, shown: await custom.inputValue() };
 });
 
 await step('the Properties tab changes the text colour, the size and the tooltip of the selected field', async () => {
@@ -183,7 +216,11 @@ await step('save as, and the saved file holds the typed value, read by a second 
   await expect.poll(() => existsSync(saved), { timeout: 20_000 }).toBe(true);
   const read = await savedValues(saved);
   expect(Object.values(read.values).some((value) => value.includes('Ada Lovelace'))).toBe(true);
-  return { fields: read.count, fieldsInARealFont: await savedFieldFamilies(saved) };
+  // O6 READ BACK: the last colour the drag ended on, #c00010, is a widget's border colour in the saved file.
+  const borders = await savedBorderColours(saved);
+  const kept = borders.some(([r = 0, g = 0, b = 0]) => Math.abs(r - 0xc0 / 255) < 0.01 && g < 0.01 && Math.abs(b - 0x10 / 255) < 0.01);
+  expect(kept).toBe(true);
+  return { fields: read.count, fieldsInARealFont: await savedFieldFamilies(saved), draggedColourKept: kept };
 });
 
 for (const [format, extension] of /** @type {const} */ ([['JSON', 'json'], ['XFDF', 'xfdf'], ['FDF', 'fdf']])) {

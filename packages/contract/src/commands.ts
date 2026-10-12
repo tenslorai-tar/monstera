@@ -3384,6 +3384,58 @@ export function keepsTheObjectWalk<C extends { readonly kind: string }>(
 }
 
 /**
+ * The form-field commands that leave the WIDGET walk as it was: the same widgets, of the same kinds, at the same places in
+ * each page's walk. {@link KEEPS_THE_ANNOTATION_WALK}'s rule on the widget walk. An edit changes a field's dictionary and
+ * its widget's geometry and appearance in place; it adds, removes and reorders no widget, and the kernel proves it against
+ * the engine (`fieldWalkKeeping.test.ts`). A duplicate adds widgets and a delete removes them, so neither is here.
+ */
+export const KEEPS_THE_FIELD_WALK: ReadonlySet<FieldWalkKeepingKind> = new Set(['editFormFields'] as const);
+
+/** The kinds {@link KEEPS_THE_FIELD_WALK} names. */
+export type FieldWalkKeepingKind = 'editFormFields';
+
+/** The three walks a command can name an item in by its index, each at a version. */
+export type CommandWalk = 'annotation' | 'field' | 'object';
+
+/**
+ * Which walk each versioned kind names its target in: a total map over the three name types below, so a kind added to one
+ * of them is a compile error here until it says which walk it is.
+ */
+const WALK_NAMED_BY: Readonly<Record<NamesAnAnnotation | NamesAFormField | NamesATextObject, CommandWalk>> = {
+  removeAnnotation: 'annotation',
+  placeAnnotation: 'annotation',
+  styleAnnotation: 'annotation',
+  editAnnotationText: 'annotation',
+  setAnnotationAuthor: 'annotation',
+  replyToAnnotation: 'annotation',
+  fillFormField: 'field',
+  deleteFormFields: 'field',
+  editFormFields: 'field',
+  duplicateFormField: 'field',
+  setTabOrder: 'field',
+  flattenFormFields: 'field',
+  replaceTextObject: 'object',
+  placePageObject: 'object',
+  recolorPageObjects: 'object',
+  deletePageObjects: 'object',
+  editTextBlock: 'object',
+  editTextOperators: 'object',
+};
+
+/** The walk `command` names its target in, or `undefined` for a kind that names none of the three. */
+export function walkNamedBy(command: { readonly kind: string }): CommandWalk | undefined {
+  return Object.hasOwn(WALK_NAMED_BY, command.kind) ? WALK_NAMED_BY[command.kind as keyof typeof WALK_NAMED_BY] : undefined;
+}
+
+/** The walk `command` leaves as it was, by the three sets above, or `undefined` where it keeps none of them. */
+export function walkKeptBy(command: { readonly kind: string }): CommandWalk | undefined {
+  if (keepsTheAnnotationWalk(command)) return 'annotation';
+  if (keepsTheObjectWalk(command)) return 'object';
+  if ((KEEPS_THE_FIELD_WALK as ReadonlySet<string>).has(command.kind)) return 'field';
+  return undefined;
+}
+
+/**
  * How many form fields one deletion may name.
  *
  * {@link MAX_REMOVED_ANNOTATIONS}' argument on the other walk: this is *how

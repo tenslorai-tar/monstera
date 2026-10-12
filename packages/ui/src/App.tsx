@@ -39,6 +39,7 @@ import {
 
 import {
   applyDocumentCommand,
+  sameWalk,
   askToDeletePages,
   imagePagesFor,
   placeImage,
@@ -1322,14 +1323,21 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const sendFieldCommand = useCallback(
     (build: (version: DocVersion) => DispatchableCommand): void => {
       if (activeId === undefined || openVersion === undefined) return;
-      const version = openVersion;
-      const command = build(version);
+      // THE VERSION IT WAS SENT AT is what the selection is carried from: the command lane may have followed this renderer's
+      // own previous edit, so a nudge composed before that edit landed is sent, and carried, at the version it left.
+      let sentAt = openVersion;
+      const command = build(sentAt);
+      const docId = activeId;
       void applyDocumentCommand(
         {
           client,
           onApplied: (answer) => {
             applied(answer);
-            setFieldSelection((current) => carryFieldSelection(current, version, answer.version));
+            setFieldSelection((current) =>
+              current !== undefined && sameWalk(client, docId, 'field', current.version, sentAt)
+                ? carryFieldSelection({ ...current, version: sentAt }, sentAt, answer.version)
+                : current,
+            );
           },
           ask,
           stamp,
@@ -1337,6 +1345,11 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         },
         activeId,
         command,
+        {
+          sentAt: (version) => {
+            sentAt = version;
+          },
+        },
       );
     },
     [activeId, applied, ask, client, openVersion, signatures, stamp],
@@ -2196,7 +2209,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    */
   const sendObject = useCallback(
     async (docId: DocId, command: DispatchableCommand): Promise<void> => {
-      const held: { produced?: DocVersion } = {};
+      const held: { produced?: DocVersion; sentAt?: DocVersion } = {};
       const moved = await applyDocumentCommand(
         {
           client,
@@ -2210,12 +2223,18 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         },
         docId,
         command,
+        {
+          // CARRIED FROM WHERE IT WAS SENT, which the command lane may have moved on from where it was composed.
+          sentAt: (version) => {
+            held.sentAt = version;
+          },
+        },
       );
-      const { produced } = held;
+      const { produced, sentAt } = held;
       if (!moved || produced === undefined) return;
       setObjectPicked((current) => {
         if (current?.docId !== docId) return current;
-        const pick = carryPick(current.pick, command, produced);
+        const pick = carryPick(current.pick, command, produced, sentAt);
         return pick === undefined ? undefined : { docId, pick };
       });
     },

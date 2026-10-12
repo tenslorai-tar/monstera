@@ -157,9 +157,15 @@ export function carrySelection(
   composed: { readonly page: number; readonly version: DocVersion },
   produced: DocVersion,
   walk: AnnotationSnapshot | undefined,
+  /**
+   * Whether two versions name the same marks: the same version, or one reached from the other through this renderer's own
+   * moves that kept the walk (`sameWalk`, the command lane's). A selection read at either end of such a move, and a read
+   * made after a later one, still name the marks by the same positions.
+   */
+  same: (a: DocVersion, b: DocVersion) => boolean = (a, b) => a === b,
 ): AnnotationSelection | undefined {
-  if (current?.page !== composed.page || current.version !== composed.version) return current;
-  if (walk?.version !== produced) return undefined;
+  if (current?.page !== composed.page || !same(current.version, composed.version)) return current;
+  if (walk === undefined || !same(produced, walk.version)) return undefined;
   const items: SelectedAnnotation[] = [];
   for (const item of current.items) {
     const entry = walk.annotations.find((candidate) => candidate.page === current.page && candidate.index === item.index);
@@ -167,7 +173,8 @@ export function carrySelection(
     if (carried === undefined) return undefined;
     items.push(carried);
   }
-  return { page: current.page, version: produced, items };
+  // AT THE READ'S VERSION, which is `produced` or a later one of this renderer's own moves: the items are that read's.
+  return { page: current.page, version: walk.version, items };
 }
 
 /**

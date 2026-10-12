@@ -24,6 +24,7 @@ import {
   LINKS_TRUNCATED,
   LINKS_UNAVAILABLE,
 } from './messages/en.js';
+import { CustomColour } from './ColourChoice.js';
 import type { FollowedLink } from './LinkLayer.js';
 import { pdfjsPageOf } from './pageNumbering.js';
 import { readWholeList } from './readWholeList.js';
@@ -173,13 +174,12 @@ export function LinksPanel({
                     </option>
                   ))}
                 </select>
-                <input
-                  type="color"
-                  aria-label={i18n._(LINKS_OUTLINE_COLOUR, { number: at + 1 })}
-                  data-links-colour={String(at)}
+                <CustomColour
+                  label={i18n._(LINKS_OUTLINE_COLOUR, { number: at + 1 })}
+                  marks={{ 'data-links-colour': String(at) }}
                   value={hexOf(link.colour)}
-                  onChange={(event) => {
-                    const colour = rgbOf(event.target.value);
+                  onPick={(hex) => {
+                    const colour = rgbOf(hex);
                     if (colour !== undefined) onOutline({ kind: 'setLinkOutline', page: state.page, index: at, colour, version: state.version });
                   }}
                 />

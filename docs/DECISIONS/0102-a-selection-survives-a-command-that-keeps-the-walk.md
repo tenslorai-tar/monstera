@@ -109,3 +109,18 @@ would stay drawn while the command's `when` had hidden it everywhere else.
   commit."* The Properties tab renders every selected mark's comment, so *Edit* is offered on every kind.
 - *Use as default* writes the same four settings the style controls write today; nothing new is stored
   about a mark.
+
+## Correction, 2026-10-12: the sets have a second reader, and a third member
+
+The walk-keeping sets decided only whether a selection is carried. From 2026-10-12 they also decide whether
+the renderer's one dispatcher sends a command at a later version than it was composed at
+(`applyDocumentCommand`'s lane, `packages/ui/src/commands/documentCommands.ts`): a command whose target was
+named at version N, sent after this renderer's own command moved the document from N to N+1 while keeping
+the walk the target is in, is sent at N+1, because the index names the same item there. That is this ADR's
+own premise, read a second time. The owner's O6 and W6 (a dragged colour picker and a nudge straight after
+a move, each refused as out of date) were commands composed before their own predecessor landed.
+
+`KEEPS_THE_FIELD_WALK` (`editFormFields`) joins the two sets, proven against the engine in
+`packages/kernel/src/fieldWalkKeeping.test.ts` with a duplicate as its control. A move made by anything this
+renderer did not send, or one that added or removed an item, is never followed, and the command is refused
+as before.
