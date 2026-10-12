@@ -53,12 +53,15 @@ const CASES = [
   ...SHAPES.map((shape) => `CONTROL: ${shape} — without the step, the edit LOSES the picture`),
   ...SHAPES.map((shape) => `${shape} — the step converts it, and after the edit the picture is drawn as it was`),
   'CONTROL: an image XObject is unchanged — the step converts nothing and writes nothing',
+  // B1.17's other half: a picture that is ALREADY an XObject needs no step, and the edit draws it as it was. The CONTROL cases
+  // above are what make a zero here mean something, since each shows the same comparator counting a lost picture.
+  'an image XObject — with no step at all, after the edit the picture is drawn as it was',
 ];
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 12 });
-if (CASES.length !== 12) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 12`);
+const roster = createRoster(failures, { cases: 13 });
+if (CASES.length !== 13) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 13`);
 
 /** @param {string} name @param {boolean} held @param {string} detail */
 function check(name, held, detail) {
@@ -270,9 +273,20 @@ async function run(pdfium, sharp) {
     writeFileSync(input, pages.xobject);
     const counted = keepInlineImages(input, output, 0);
     check(
-      CASES[CASES.length - 1] ?? '',
+      CASES[CASES.length - 2] ?? '',
       counted.converted === 0 && counted.left === 0 && !existsSync(output),
       `the step converted ${String(counted.converted)}, left ${String(counted.left)}, and ${existsSync(output) ? 'WROTE a file' : 'wrote nothing'}`,
+    );
+
+    const xobjectBefore = await square(pdfium, pages.xobject);
+    const xobjectAfter = await edited(pdfium, pages.xobject, false);
+    const xobjectBy = differing(xobjectBefore, await square(pdfium, xobjectAfter.saved));
+    // NOT AN EMPTY SQUARE: a red picture on a blue square, so a page that drew neither would not read as unchanged.
+    const red = xobjectBefore.filter(([r, g, b]) => (r ?? 0) > 200 && (g ?? 0) < 50 && (b ?? 0) < 50).length;
+    check(
+      CASES[CASES.length - 1] ?? '',
+      red > xobjectBefore.length / 2 && xobjectBy === 0 && xobjectAfter.text.includes('Edited'),
+      `${String(red)} of ${String(xobjectBefore.length)} pixels red before; after the edit ${String(xobjectBy)} differ and the text reads "${xobjectAfter.text}"`,
     );
   } finally {
     rmSync(scratch, { recursive: true, force: true });
