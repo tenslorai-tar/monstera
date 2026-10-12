@@ -1,4 +1,4 @@
-import { MAX_FONT_FAMILIES, MAX_FONT_FAMILY_NAME } from '@monstera/contract';
+import { MAX_FONT_FAMILIES, MAX_FONT_FAMILY_NAME } from '@monstera/contract/host';
 
 import { BoundedList } from './boundedList.js';
 import type { MupdfSession } from './engineSeam.js';

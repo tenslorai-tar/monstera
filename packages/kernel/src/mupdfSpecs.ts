@@ -561,6 +561,9 @@ export const localMupdfExecution: CommandExecution<'mupdf'> = {
     kind: K,
     inverse: CommandPrior[K],
   ): Promise<void> {
-    return (specFor({ kind } as Command).invert as Invert<'mupdf', K>)(session, inverse);
+    // THE ROUTING REFUSAL STAYS SYNCHRONOUS: the spec is found before anything is awaited.
+    const invert = specFor({ kind } as Command).invert as Invert<'mupdf', K>;
+    // AN UNDO REDRAWS TOO, and can be a restarted host's first call, so it makes the catalogue ready as `apply` does.
+    return loadEditFaces().then(() => invert(session, inverse));
   },
 };

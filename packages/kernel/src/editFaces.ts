@@ -41,8 +41,21 @@ export function bindEditFolders(bundled: string, installed: string | null): void
   deferred = { bundled, installed };
 }
 
-/** Completes a {@link bindEditFolders} binding by loading the catalogue's module; nothing to do for any other. */
+/**
+ * The typesetter that sets a text box's or a field's words in the catalogue's faces, loaded with the catalogue and never
+ * before it: it brings HarfBuzz, pdf-lib and the CID-font writer, which a MuPDF host that draws no real font never loads
+ * (ADR-0177). Imported statically by `textBoxAppearance.ts` until 2026-10-12, which put all three in that host's fixed cost
+ * and breached §9.17's 100 MB base on CI (104.3 and 107.0 MB against 84 MB the run before, read on run 38181560707).
+ */
+let typesetting: typeof import('./textBoxFaces.js') | null = null;
+
+/**
+ * Completes a {@link bindEditFolders} binding by loading the catalogue's module, and loads the typesetter for any binding;
+ * nothing to do where nothing is bound.
+ */
 export async function loadEditFaces(): Promise<void> {
+  if (bound === null && deferred === null) return;
+  typesetting ??= await import('./textBoxFaces.js');
   const folders = deferred;
   if (folders === null) return;
   const { faceSourceOf, fontFoldersOf } = await import('./fontCatalogue.js');
@@ -73,4 +86,14 @@ export function editFaces(): FaceSource | null {
   if (bound === null) return null;
   read ??= bound();
   return read;
+}
+
+/**
+ * The typesetter {@link loadEditFaces} loaded, for a caller that draws in the catalogue's faces synchronously.
+ *
+ * @throws where it was not loaded: drawing a chosen face as Helvetica because a step was skipped is the fault this names
+ */
+export function editTypesetting(): typeof import('./textBoxFaces.js') {
+  if (typesetting === null) throw new Error('the edit faces were bound and drawn in before loadEditFaces loaded their typesetter');
+  return typesetting;
 }

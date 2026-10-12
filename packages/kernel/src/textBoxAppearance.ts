@@ -1,9 +1,10 @@
-import { MAX_CHARACTER_SPACING } from '@monstera/contract';
+import { MAX_CHARACTER_SPACING } from '@monstera/contract/host';
 
-import { editFaces, editFacesBound } from './editFaces.js';
+import { editFaces, editFacesBound, editTypesetting } from './editFaces.js';
 import { familyClass } from './fontResolver.js';
 import { Font, type PDFAnnotation, type PDFDocument, type PDFObject } from './mupdfRaw.js';
-import { TextBoxFaces } from './textBoxFaces.js';
+// A TYPE ONLY: the class is loaded with the catalogue (`loadEditFaces`), so a host that draws no real font never loads it.
+import type { TextBoxFaces } from './textBoxFaces.js';
 import { lookOfStyleString, normalisedRuns, richTextOf, runsOfRichText, styleStringOf } from './textBoxRichText.js';
 import {
   type BoxAlign,
@@ -182,7 +183,7 @@ export function settersFor(document: PDFDocument): { readonly setter: Typesetter
   // `editFaces` throwing here names the process that skipped it rather than drawing a chosen face as Helvetica.
   const source = editFacesBound() ? editFaces() : null;
   if (source === null) return { setter: base, resolver: undefined };
-  const resolver = new TextBoxFaces(document, source);
+  const resolver = new (editTypesetting().TextBoxFaces)(document, source);
   return { setter: firstOf(base, resolver), resolver };
 }
 

@@ -1,4 +1,4 @@
-import { MAX_CHARACTER_SPACING } from '@monstera/contract';
+import { MAX_CHARACTER_SPACING } from '@monstera/contract/host';
 
 import {
   type BoxLook,

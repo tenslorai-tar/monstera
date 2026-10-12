@@ -1,9 +1,27 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { bindEditFaces, bindEditFolders, editFaces, editFacesBound, loadEditFaces } from './editFaces.js';
+import { bindEditFaces, bindEditFolders, editFaces, editFacesBound, editTypesetting, loadEditFaces } from './editFaces.js';
 
 /** The provisioned bundled set, which the vitest setup names, as the PDFium proofs read it. */
 const BUNDLED = process.env['MONSTERA_FONTS_DIRECTORY'] ?? '';
+
+// FIRST IN THE FILE, because the typesetter, once loaded, stays loaded for the module's life.
+describe('the typesetter is loaded with the catalogue and never before it (ADR-0177)', () => {
+  afterEach(() => {
+    bindEditFaces(null);
+  });
+
+  it('CONTROL: with nothing bound a load loads no typesetter, and drawing in a face is refused by name', async () => {
+    await loadEditFaces();
+    expect(() => editTypesetting()).toThrow(/before loadEditFaces loaded their typesetter/u);
+  });
+
+  it('a load with folders bound makes it ready, for a redraw that runs synchronously after it', async () => {
+    bindEditFolders(BUNDLED, null);
+    await loadEditFaces();
+    expect(editTypesetting().TextBoxFaces).toBeTypeOf('function');
+  });
+});
 
 describe('the edit faces bound by their folders (ADR-0177)', () => {
   afterEach(() => {
