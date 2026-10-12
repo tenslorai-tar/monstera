@@ -8,6 +8,7 @@ import {
   GROUP_REDACT,
   GROUP_SHAPES,
   GROUP_STAMPS,
+  GROUP_TEXT,
   CALLOUT_TIP,
   TEXT_BOX_TIP,
   TYPEWRITER_TIP,
@@ -54,6 +55,8 @@ import {
   selectionPropertiesCommand,
   shapeToolCommands,
   calloutToolCommand,
+  placeBarcodeToolCommand,
+  placeImageToolCommand,
   textBoxToolCommand,
   typewriterToolCommand,
 } from './annotationCommands.js';
@@ -325,6 +328,15 @@ describe('Text box and Typewriter: in the Edit tab and the Comment tab (K10, cor
 
   it('CONTROL: Callout is in the Comment tab only, so the case above reads placements and not every tool', () => {
     expect(sectionsOf(calloutToolCommand(tools))).toStrictEqual(['comment']);
+  });
+
+  it('Place image and Barcode stay in Edit › Text, beside the text box (the owner, 2026-10-07; Part C)', () => {
+    const editText = (command: ReturnType<typeof textBoxToolCommand>): boolean =>
+      command.placements.some((placement) => placement.surface === 'ribbon' && placement.section === 'edit' && placement.group === GROUP_TEXT);
+    expect(editText(placeImageToolCommand(tools)), 'Place image').toBe(true);
+    expect(editText(placeBarcodeToolCommand(tools)), 'Barcode').toBe(true);
+    // CONTROL: the check can say no, on a tool that is not in Edit at all.
+    expect(editText(calloutToolCommand(tools))).toBe(false);
   });
 
   it('each tooltip says what the tool makes (E3): a comment, not the page', () => {
