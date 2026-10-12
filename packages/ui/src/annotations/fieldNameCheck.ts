@@ -26,14 +26,12 @@ export interface KnownField {
  * engine host's boundary. A name the document already has is a known cause, so it is said here, in words, before
  * anything is sent.
  *
- * **A radio option may join a radio group of the same name**, which is what drawing the second option of a group is;
- * a radio named for any other kind of field is the same collision as any other.
+ * **A typed name never joins a radio group.** Joining one is what the radio tool's run does with the group name it chose
+ * itself (`nextFieldName`, ADR-0226 Decision 11), never a name a person types; a rename to another group's name is the
+ * same collision as any other. The allowance this once took for a typed radio name lost its last caller with the name
+ * line (BBBBBBBB-10), and a branch no caller reaches is a rule nothing checks.
  */
-export function fieldNameProblemAmong(
-  typed: string,
-  known: readonly KnownField[],
-  joiningRadio: boolean,
-): MessageKey | undefined {
+export function fieldNameProblemAmong(typed: string, known: readonly KnownField[]): MessageKey | undefined {
   const own = fieldNameProblem(typed);
   if (own !== undefined) return own;
   const name = typed.trim();
@@ -42,10 +40,5 @@ export function fieldNameProblemAmong(
     name,
   );
   if (clash === undefined) return undefined;
-  if (joiningRadio && clash === name && known.some((field) => field.name === name && field.kind === 'radio')) {
-    // EVERY WIDGET OF THE GROUP IS LISTED UNDER ITS NAME, so a clash with the exact name may still be a PARENT clash
-    // with another field; only an exact radio match joins.
-    return undefined;
-  }
   return clash === name ? FORM_FIELD_NAME_TAKEN : FORM_FIELD_NAME_PARENT;
 }

@@ -346,7 +346,7 @@ function Controls({
             label={radio ? FIELD_PROPS_GROUP_NAME : FIELD_PROPS_NAME}
             max={512}
             value={props.name}
-            check={(typed) => fieldNameProblemAmong(typed, others, false)}
+            check={(typed) => fieldNameProblemAmong(typed, others)}
             onCommit={(name) => {
               onEdit({ name: name.trim() });
             }}
