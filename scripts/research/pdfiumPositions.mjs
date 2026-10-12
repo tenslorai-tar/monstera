@@ -173,7 +173,8 @@ function pdfiumRead(bytes) {
   return chars;
 }
 
-const raw = await import(`${REPO_ROOT}/packages/kernel/dist/mupdfRaw.js`);
+// A LITERAL SPECIFIER, relative to this file, so the Electron-import scan can read what it loads.
+const raw = await import('../../packages/kernel/dist/mupdfRaw.js');
 raw.openMupdfShim(shimLibraryPath(REPO_ROOT));
 
 /** What MuPDF's structured text reads. @param {Uint8Array} bytes */
