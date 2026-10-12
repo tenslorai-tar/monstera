@@ -1,5 +1,5 @@
 import { PDFDocument } from '@cantoo/pdf-lib';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { MAX_IMPORT_IMAGE_PIXELS, MAX_PAGE_COORDINATE } from '@monstera/contract';
 
@@ -126,6 +126,8 @@ describe('composeImages', () => {
     ]);
 
     // THE HEADERS DECODE TO NOTHING, so 1 and 2 are left out by the decoder: the case is about which reason 3 gets.
+    // And it pins that a decode which FAILED STAYS COUNTED: the bound is decoding time and their decoder ran, so 3 is
+    // still past it (refunding 1 and 2 would make it a page).
     const composed = await composeImages(images);
     expect(composed.skipped).toStrictEqual([
       { reason: 'image-unreadable', line: null, item: 1 },
@@ -167,6 +169,20 @@ describe('composeImages', () => {
     const gone = new Error('the file went');
     const images: ImportImage[] = [{ mediaType: 'image/jpeg', read: () => Promise.reject(gone) }];
     await expect(composeImages(images)).rejects.toBe(gone);
+  });
+
+  it('CONTROL: a failure AFTER the decode is not the picture’s — it propagates, and no image is named unreadable', async () => {
+    // THE DECODE SUCCEEDS (a JPEG header is all `embedJpg` reads) and making its page fails: what a catch as wide as
+    // the call would report as an unreadable picture, and the whole set refused for it.
+    const broken = new Error('the page could not be made');
+    const insert = vi.spyOn(PDFDocument.prototype, 'insertPage').mockImplementation(() => {
+      throw broken;
+    });
+    try {
+      await expect(composeImages(recorded([{ mediaType: 'image/jpeg', bytes: jpegOf(10, 10) }]).images)).rejects.toBe(broken);
+    } finally {
+      insert.mockRestore();
+    }
   });
 
   it('is reproducible: the same images make the same bytes', async () => {

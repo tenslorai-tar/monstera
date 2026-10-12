@@ -4,7 +4,7 @@ import { type CommandOfKind, MAX_PAGE_COORDINATE } from '@monstera/contract/host
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, ByteImage, Invert } from './engineSeam.js';
-import { checkPngPixels } from './imageDimensions.js';
+import { ImageDecodeRefused, checkPngPixels } from './imageDimensions.js';
 import { appendRevision, openForWriting } from './pdfLibSession.js';
 
 /**
@@ -73,7 +73,8 @@ export type EmbeddableImageType = CommandOfKind<'insertImagePage'>['mediaType'];
  * validation belongs.
  *
  * @param at where the page goes; clamped to the end, per {@link applyInsertImagePage}
- * @throws whatever pdf-lib's decoder throws for bytes that are not the named type
+ * @throws ImageDecodeRefused for bytes the decoder refuses as the named type
+ * @throws PngPixelsRefused for a PNG past the per-image pixel bound, before any decoder runs
  */
 export async function addImagePage(
   document: PDFDocument,
@@ -85,8 +86,13 @@ export async function addImagePage(
   // decodes every pixel, and for Insert image that decode is in `main`. A JPEG is not
   // decoded by `embedJpg`, which reads its header and carries the bytes.
   if (mediaType === 'image/png') checkPngPixels(bytes);
-  const embedded =
-    mediaType === 'image/png' ? await document.embedPng(bytes) : await document.embedJpg(bytes);
+  let embedded: Awaited<ReturnType<PDFDocument['embedPng']>>;
+  try {
+    embedded = mediaType === 'image/png' ? await document.embedPng(bytes) : await document.embedJpg(bytes);
+  } catch (cause) {
+    // AROUND THE DECODE ALONE, so a failure after it is never reported as the picture's.
+    throw new ImageDecodeRefused(`the ${mediaType} decoder refused these bytes`, cause);
+  }
 
   // NEVER PAST THE FORMAT'S PAGE LIMIT. One pixel is one point, and PDF 32000-1 Annex
   // C.2 bounds a page side at `MAX_PAGE_COORDINATE`, so an image more than 14,400 pixels

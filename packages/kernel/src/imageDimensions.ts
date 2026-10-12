@@ -84,6 +84,23 @@ export class PngPixelsRefused extends Error {
 }
 
 /**
+ * pdf-lib's decoder refused the bytes as the type they were routed as: the PICTURE's fault, and the only failure of
+ * `addImagePage` a caller may report as an unreadable picture.
+ *
+ * NAMED around the decode call alone (`pageImage.ts`), because pdf-lib names no error class for it and a malformed file
+ * surfaces as whatever its parser trips on — a plain `Error`, or a `TypeError` from an index past a short chunk — so no
+ * caller can tell the decode's failure from a defect after it by the class thrown. Here and not beside `addImagePage`
+ * for `PngPixelsRefused`' reason: the host's refusal table rethrows it in `main` and must not load pdf-lib to do so.
+ */
+export class ImageDecodeRefused extends Error {
+  override readonly name = 'ImageDecodeRefused';
+
+  constructor(detail: string, cause?: unknown) {
+    super(detail, { cause });
+  }
+}
+
+/**
  * THE ONE PER-IMAGE PIXEL RULE, for every route that hands a PNG to a decoder.
  *
  * The image import and Insert image both call this, so there is one answer to *may

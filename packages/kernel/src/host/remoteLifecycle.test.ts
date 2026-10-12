@@ -50,7 +50,7 @@ import {
   remoteMupdfAnnotationImportPlan,
   type SessionAssets,
 } from './remoteEngine.js';
-import { PngPixelsRefused } from '../imageDimensions.js';
+import { ImageDecodeRefused, PngPixelsRefused } from '../imageDimensions.js';
 import type { PlaceholderRequest } from '../signatureHole.js';
 import { SignatureAppearanceRefusedError } from '../signingRefusals.js';
 import {
@@ -1160,13 +1160,15 @@ describe('a hosted pdf-lib command’s refusal, across the pipe (ADR-0121 Decisi
     const refused = pdfLib(session, { kind: 'insertImagePage', at: 0, bytes: header, mediaType: 'image/png' }, undefined);
     await expect(refused).rejects.toBeInstanceOf(PngPixelsRefused);
     await expect(refused).rejects.toMatchObject({ reason: 'too-many-pixels' });
-    // CONTROL: bytes that are no picture at all are the command's failure, as before.
+    // AND BYTES THAT ARE NO PICTURE arrive as the decoder's refusal, across the real pipe (BBBBBBBB-7): they crossed as
+    // `apply-failed`, every defect's code, so main could only call every failure the picture's.
     const unreadable = pdfLib(
       session,
       { kind: 'insertImagePage', at: 0, bytes: Uint8Array.of(1, 2, 3), mediaType: 'image/jpeg' },
       undefined,
     );
-    await expect(unreadable).rejects.toBeInstanceOf(EngineCallFailed);
+    await expect(unreadable).rejects.toBeInstanceOf(ImageDecodeRefused);
+    await expect(unreadable).rejects.not.toBeInstanceOf(EngineCallFailed);
     await lifecycle.close(session);
   });
 });

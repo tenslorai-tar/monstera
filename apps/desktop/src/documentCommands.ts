@@ -161,6 +161,7 @@ import {
   writeBackupNote,
   UrlFetchRefused,
   checkedUrl,
+  ImageDecodeRefused,
   PngPixelsRefused,
   AzureRecognitionRefused,
   ClaudeRecognitionRefused,
@@ -6003,21 +6004,20 @@ export class DocumentCommands {
       });
       return { kind: 'inserted', ...applied };
     } catch (error) {
-      // A DECODER REFUSING IS AN OUTCOME, and only that one. Every other failure
-      // — a poisoned document, a missing session — is a class the handler
-      // already turns into a declared code, so widening this catch would turn
-      // those into `unreadable` and tell the user their picture was the problem.
-      if (error instanceof DocumentPoisonedError || error instanceof MissingSessionError) {
-        throw error;
-      }
-      if (error instanceof DocumentNotOpenError) throw error;
       // A PNG PAST THE PIXEL BOUND is its own outcome, and refused before `embedPng`
       // runs in this process: *too many pixels* names a thing a person can change,
       // where *unreadable* would blame a picture that is perfectly valid.
       if (error instanceof PngPixelsRefused && error.reason === 'too-many-pixels') {
         return { kind: 'too-many-pixels', limitPixels: MAX_IMPORT_IMAGE_PIXELS };
       }
-      return { kind: 'unreadable' };
+      // THE PICTURE'S OWN REFUSALS ARE AN OUTCOME, and only those: no PNG header, or the
+      // decoder refusing the bytes (`ImageDecodeRefused`, thrown around the decode call
+      // alone). Everything else — a poisoned document, a missing session, a defect after
+      // the decode — propagates as itself, since *unreadable* would tell the person their
+      // picture was the problem. This was a list of classes to let through, which every
+      // class nobody listed fell past.
+      if (error instanceof ImageDecodeRefused || error instanceof PngPixelsRefused) return { kind: 'unreadable' };
+      throw error;
     }
   }
 

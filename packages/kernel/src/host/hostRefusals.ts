@@ -1,7 +1,7 @@
 import { FIELD_EDIT_REASONS } from '@monstera/shared';
 
 import { FieldEditRefusedError } from '../fieldEditRefusal.js';
-import { PngPixelsRefused } from '../imageDimensions.js';
+import { ImageDecodeRefused, PngPixelsRefused } from '../imageDimensions.js';
 import { ProtectionNotReproducible } from '../protectionRefusal.js';
 import { SignatureAppearanceRefusedError } from '../signingRefusals.js';
 import type { FIELD_EDIT_REFUSALS, PICTURE_REFUSALS, PLACEHOLDER_REFUSALS, PROTECTION_REFUSALS } from './engineChannels.js';
@@ -23,9 +23,13 @@ type PlaceholderRefusal = (typeof PLACEHOLDER_REFUSALS)[number];
 
 type FieldEditRefusalCode = (typeof FIELD_EDIT_REFUSALS)[number];
 
-/** A picture's code for `error`, or `undefined` for anything that is not a person's to act on. */
+/**
+ * A picture's code for `error`, or `undefined` for anything that is not a person's to act on. A PNG with no header and
+ * bytes the decoder refused are one code, since a person does one thing about either: pick another picture.
+ */
 export function pictureRefusalCodeOf(error: unknown): PictureRefusal | undefined {
-  return error instanceof PngPixelsRefused && error.reason === 'too-many-pixels' ? 'picture-too-many-pixels' : undefined;
+  if (error instanceof PngPixelsRefused) return error.reason === 'too-many-pixels' ? 'picture-too-many-pixels' : 'picture-unreadable';
+  return error instanceof ImageDecodeRefused ? 'picture-unreadable' : undefined;
 }
 
 /** `engine/applyPdfLib`'s code for `error`: a picture's, or a change to a form field's (ADR-0193). */
@@ -55,6 +59,8 @@ export function hostRefusalFor(code: string): Error | undefined {
       return new SignatureAppearanceRefusedError('unreadable-image', 'the engine host could not decode the signature picture');
     case 'picture-too-many-pixels':
       return new PngPixelsRefused('too-many-pixels', null);
+    case 'picture-unreadable':
+      return new ImageDecodeRefused('the engine host could not decode the picture');
     case 'protection-not-reproducible':
       return new ProtectionNotReproducible('the engine host could not write the document protected as it was');
     default: {

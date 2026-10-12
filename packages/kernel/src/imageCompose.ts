@@ -4,7 +4,7 @@ import type { ComposeSkip } from '@monstera/contract';
 import { MAX_IMPORT_PNG_PIXELS } from '@monstera/contract/host';
 
 import { ComposeRefused } from './composeOutcome.js';
-import { type PixelSize, PngPixelsRefused, checkPngPixels } from './imageDimensions.js';
+import { ImageDecodeRefused, type PixelSize, PngPixelsRefused, checkPngPixels } from './imageDimensions.js';
 import { type EmbeddableImageType, addImagePage } from './pageImage.js';
 
 /**
@@ -88,7 +88,10 @@ export async function composeImages(images: readonly ImportImage[]): Promise<Com
       continue;
     }
     // THE SET'S TOTAL is this import's own bound, and no other route has a set: the image that would cross it is left
-    // out and does not count towards it.
+    // out and does not count towards it. AN IMAGE COUNTED HERE STAYS COUNTED if its decode then fails in the second
+    // pass, because the bound is DECODING TIME (`MAX_IMPORT_PNG_PIXELS`: about 22 s) and that image's decoder ran: a
+    // refusal can come at its last row as well as its first, so a refund would let the set's decode cost pass the bound
+    // by as much as the refunded pictures took.
     if (pngPixels + size.width * size.height > MAX_IMPORT_PNG_PIXELS) {
       leaveOut(item, 'too-many-pixels');
       continue;
@@ -107,12 +110,11 @@ export async function composeImages(images: readonly ImportImage[]): Promise<Com
     const bytes = await image.read();
     try {
       await addImagePage(document, bytes, image.mediaType, document.getPageCount());
-    } catch {
-      // THE DECODER REFUSING IS THE ANSWER, and it is the only call inside this try.
-      // `insertImage`'s rule one process along: pdf-lib names no error class for bytes
-      // that are not the type they were routed as, so what this try can catch is
-      // exactly the decode and the page it makes. No page is left behind for it:
-      // `addImagePage` inserts the page only after the image has embedded.
+    } catch (error) {
+      // THE DECODER REFUSING IS THE ANSWER, and only that: `ImageDecodeRefused` is thrown around the decode call alone,
+      // so a failure after it (making the page, drawing on it) is not reported as the picture's. No page is left behind
+      // for a refusal: `addImagePage` inserts the page only after the image has embedded.
+      if (!(error instanceof ImageDecodeRefused)) throw error;
       leaveOut(item, 'image-unreadable');
     }
   }

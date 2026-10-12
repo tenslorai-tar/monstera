@@ -1479,9 +1479,10 @@ export function joinPlaceholderAsset(
  * `hostRefusals.ts` is the one table both directions read.
  *
  * A picture past the pixel bound is any picture's: Insert image's, run in pdf-lib here since ADR-0121, and a visible
- * signature's.
+ * signature's. A picture its decoder refuses is Insert image's (`ImageDecodeRefused`, thrown around the decode alone);
+ * without its own code it crossed as `apply-failed`, which is every defect's code too.
  */
-export const PICTURE_REFUSALS = ['picture-too-many-pixels'] as const;
+export const PICTURE_REFUSALS = ['picture-too-many-pixels', 'picture-unreadable'] as const;
 
 /**
  * A change to a form field's refusals (ADR-0193), one wire code per reason: `field-edit-` and the reason. They are

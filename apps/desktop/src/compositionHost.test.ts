@@ -1866,8 +1866,11 @@ describe('the composition root, a HOSTED pdf-lib command (ADR-0121 Decision 3)',
     };
 
     expect(await insertingWith('picture-too-many-pixels')).toBe('too-many-pixels');
-    // CONTROL: the host's ordinary failure is still the picture being unreadable, so the outcome above is the code's.
-    expect(await insertingWith('apply-failed')).toBe('unreadable');
+    expect(await insertingWith('picture-unreadable')).toBe('unreadable');
+    // CONTROL: the host's ORDINARY failure is a defect and not the picture's (BBBBBBBB-7): it propagates as the engine's
+    // own failure, for the boundary to answer as one, where a catch that read every failure as the picture told a person
+    // their valid picture could not be read.
+    await expect(insertingWith('apply-failed')).rejects.toThrow(/refused engine\/applyPdfLib: apply-failed/u);
   });
 });
 
