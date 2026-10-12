@@ -20,7 +20,7 @@ import {
   readBackOf,
 } from './bidiOrder.js';
 import { paperCoverFor, type PixelBox, type Rgb } from './paperColour.js';
-import { resolveRuns } from './fontResolver.js';
+import { carries as faceDraws, resolveRuns } from './fontResolver.js';
 import { type EditPiece, editPieces } from './editPieces.js';
 import { inDrawingOrder, visualUnits } from './visualPieces.js';
 import type { BoxedInEdit, ByteImage, EngineWriter, ImageSession, PdfiumSession } from './engineSeam.js';
@@ -2971,7 +2971,7 @@ function pieceWriter(
         // and one code reads as one text.
         const carried = (piece: EditPiece, said: string): boolean =>
           piece.face !== null
-            ? Array.from(said).every((character) => piece.face?.unicodes.has(character.codePointAt(0) ?? 0) === true)
+            ? Array.from(said).every((character) => piece.face !== null && faceDraws(piece.face, character.codePointAt(0) ?? 0))
             : piece.sibling !== null
               ? (siblings[piece.sibling]?.carries(said) ?? false)
               : ownCarries(said);

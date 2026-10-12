@@ -188,6 +188,13 @@ describe('composeMarkdown: every character is drawn (ADR-0172)', () => {
     expect(plain.boxed).toStrictEqual([]);
   });
 
+  it('a CONTROL character is never a refusal: a BEL is a box named by line and column (C3)', async () => {
+    const { pdf, boxed } = await compose('Before.\n\nBell \u0007 here.\n');
+    expect(boxed).toStrictEqual([{ character: '\u0007', line: 3, column: 6 }]);
+    // CONTROL: the line around it is drawn, so the file was composed and not refused.
+    expect((await pagesOf(pdf)).join('\n')).toContain('Before.');
+  });
+
   it('names the exact line inside a paragraph that spans several, and every place a character repeats', async () => {
     const { boxed } = await compose('One line\nthen 中 a second\nand 中 a third.\n');
     expect(boxed).toStrictEqual([

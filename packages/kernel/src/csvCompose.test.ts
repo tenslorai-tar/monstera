@@ -73,6 +73,19 @@ describe('composeCsv', () => {
     expect((await shownText(pdf)).join('\n')).toContain('中文');
   });
 
+  it('a CONTROL character is never a refusal: BEL and NUL are each a box, named on their line and column (C3)', async () => {
+    const { pdf, boxed } = await compose('a,b\nbell \u0007,nul \u0000\n');
+    // NUL WAS DRAWN INVISIBLY AND NAMED NOWHERE until 2026-10-12: the bundled faces map it to an empty glyph.
+    expect(boxed).toStrictEqual([
+      { character: '\u0007', line: 2, column: 6 },
+      { character: '\u0000', line: 2, column: 12 },
+    ]);
+    // CONTROL: the words beside them are drawn, so the record was composed and not refused.
+    const shown = (await shownText(pdf)).join('\n');
+    expect(shown).toContain('bell');
+    expect(shown).toContain('nul');
+  });
+
   it('names a box inside a field that spans lines by the line it is on', async () => {
     const { boxed } = await compose('a,b\n"one\ntwo 中",x\n');
     expect(boxed).toStrictEqual([{ character: '中', line: 3, column: 5 }]);

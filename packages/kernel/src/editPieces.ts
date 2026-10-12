@@ -1,5 +1,5 @@
 import type { CatalogueFace } from './fontCatalogue.js';
-import { type FontRequest, resolveRuns } from './fontResolver.js';
+import { type FontRequest, carries, resolveRuns } from './fontResolver.js';
 
 /**
  * How a run's new text is split when its own font cannot carry all of it
@@ -124,6 +124,7 @@ function carriedBy(
   text: string,
 ): boolean {
   const { face, sibling } = piece;
-  if (face !== null) return Array.from(text).every((character) => face.unicodes.has(character.codePointAt(0) ?? 0));
+  // THE RESOLVER'S RULE for what a face draws (`carries`), so a control a face maps to an empty glyph is the box here too.
+  if (face !== null) return Array.from(text).every((character) => carries(face, character.codePointAt(0) ?? 0));
   return sibling !== null && (siblings[sibling]?.carries(text) ?? false);
 }

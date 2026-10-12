@@ -141,6 +141,18 @@ export function familyClass(family: string | null): FamilyClass {
 
 const IGNORABLE = /\p{Default_Ignorable_Code_Point}/u;
 
+/**
+ * Whether `face` draws `point`: it maps it, and the point is not a control character. A face that maps a control maps it
+ * to a glyph that draws nothing (bundled faces map U+0000 to an empty `NULL` glyph, measured 2026-10-12: a NUL in a CSV
+ * field was drawn invisibly and named nowhere), so a control is drawn by no face and is the box, named by its line, as any
+ * character no face carries is (C3). White space is never asked for: `needed` leaves it out.
+ */
+export function carries(face: { readonly unicodes: ReadonlySet<number> }, point: number): boolean {
+  return !CONTROL.test(String.fromCodePoint(point)) && face.unicodes.has(point);
+}
+
+const CONTROL = /\p{Cc}/u;
+
 /** The code points a face must carry to draw `text`. */
 function needed(text: string): number[] {
   const points: number[] = [];
@@ -218,11 +230,11 @@ export function resolveRuns(text: string, request: FontRequest, catalogue: reado
   for (const { segment, isWordLike } of WORDS.segment(text)) {
     const points = needed(segment);
     const previous = runs.at(-1)?.face ?? null;
-    if (previous !== null && isWordLike !== true && points.every((point) => previous.unicodes.has(point))) {
+    if (previous !== null && isWordLike !== true && points.every((point) => carries(previous, point))) {
       append(segment, previous, []);
       continue;
     }
-    const whole = candidates.find((candidate) => points.every((point) => candidate.unicodes.has(point)));
+    const whole = candidates.find((candidate) => points.every((point) => carries(candidate, point)));
     if (whole !== undefined) {
       append(segment, whole, []);
       continue;
@@ -232,17 +244,17 @@ export function resolveRuns(text: string, request: FontRequest, catalogue: reado
     // no face carries is a box, in the word's face. Splitting a word is the last resort, after the box would otherwise
     // replace something a face can draw.
     const best = candidates.reduce<{ face: CandidateFace; carried: number } | null>((most, face) => {
-      const carried = points.filter((point) => face.unicodes.has(point)).length;
+      const carried = points.filter((point) => carries(face, point)).length;
       return most === null || carried > most.carried ? { face, carried } : most;
     }, null);
     const wordFace = best !== null && best.carried > 0 ? best.face : (previous ?? candidates[0] ?? null);
     for (const { segment: grapheme } of GRAPHEMES.segment(segment)) {
       const wanted = needed(grapheme);
-      if (wanted.every((point) => wordFace?.unicodes.has(point) === true)) {
+      if (wordFace !== null && wanted.every((point) => carries(wordFace, point))) {
         append(grapheme, wordFace, []);
         continue;
       }
-      const other = candidates.find((candidate) => wanted.every((point) => candidate.unicodes.has(point)));
+      const other = candidates.find((candidate) => wanted.every((point) => carries(candidate, point)));
       if (other !== undefined) append(grapheme, other, []);
       else append(grapheme, wordFace, Array.from(grapheme));
     }

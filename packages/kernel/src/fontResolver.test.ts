@@ -100,6 +100,17 @@ describe('resolveRuns: characters no face carries', () => {
     const joined = `ab${JOINER}cd`;
     expect(summary(joined, request())).toStrictEqual([[joined, 'own', '']]);
   });
+
+  it('boxes a CONTROL character even where a face maps it, since what it maps it to draws nothing (C3)', () => {
+    const nul = String.fromCodePoint(0);
+    // EVERY FACE MAPS U+0000 here, as the bundled faces do (to an empty `NULL` glyph).
+    const mapping = [face('arimo', 'bundled', 'Arimo', `${LATIN}${nul}□`)];
+    expect(summary(`ab${nul}cd`, request({ own: [] }), mapping).filter(([, , missing]) => missing !== '')).toStrictEqual([
+      [nul, 'arimo', nul],
+    ]);
+    // CONTROL: the letters beside it are drawn, so only the control is the box.
+    expect(summary('abcd', request({ own: [] }), mapping)).toStrictEqual([['abcd', 'arimo', '']]);
+  });
 });
 
 describe('resolveRuns: weight', () => {
