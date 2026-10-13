@@ -22,10 +22,14 @@
 import { copyFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { expect } from '@playwright/test';
+import { expect as defaultExpect } from '@playwright/test';
 
 import { byRole, processTreeMemory } from '../lib/processMemory.mjs';
 import { root, startWalk } from './liveWalk.mjs';
+
+// AN EDIT IS WRITTEN BEFORE ITS EDITOR CLOSES: textWalk measured 3 to 4.5 s on 2026-10-12 and this run's first
+// attempt left the editor open past the default 5 s on an i5-3230M, so an expectation here waits 30 s, as textWalk's does.
+const expect = defaultExpect.configure({ timeout: 30_000 });
 
 const sample = process.argv[2] ?? join(root, '_review/test-files/sample5.pdf');
 const { app, page, output, open, command, section, step, finish } = await startWalk('memory');
@@ -63,7 +67,11 @@ await step('M2. seven documents open, each scrolled to its end and back with its
   for (const path of copies) {
     await open(path);
     await expect(page.locator('[data-document-layer="active"] .m-page-list canvas.m-page').first()).toBeVisible({ timeout: 60_000 });
-    await page.locator('[data-document-layer="active"] .m-page-list').click({ position: { x: 5, y: 5 } });
+    // THE LIST ITSELF, not only a canvas inside it: for a moment after the third open the list was hidden while the new
+    // layer took over (22:00 run, 'element is not visible' for 30 s), and a canvas seen visible in that moment was the old one's.
+    const list = page.locator('[data-document-layer="active"] .m-page-list');
+    await expect(list).toBeVisible();
+    await list.click({ position: { x: 5, y: 5 } });
     await page.keyboard.press('End');
     await page.waitForTimeout(1500);
     await page.keyboard.press('Home');
@@ -122,7 +130,10 @@ await step('M5. every document closed, then 60 s (Part 7 A): no engine host is l
   for (let left = await page.locator('[data-tab-select]').count(); left > 0; left -= 1) {
     await command('Close tab');
     const unsaved = page.getByRole('dialog', { name: 'Unsaved changes' });
-    if (await unsaved.isVisible().catch(() => false)) await unsaved.getByRole('button', { name: 'Don’t save' }).click();
+    // WAITED FOR, not asked once: the dialog of the edited document arrives after the command returns (22:02 run: asked
+    // at once it was not yet there, and the close then waited 30 s behind it).
+    const asked = await unsaved.waitFor({ state: 'visible', timeout: 4000 }).then(() => true, () => false);
+    if (asked) await unsaved.getByRole('button', { name: 'Don’t save' }).click();
     await expect(page.locator('[data-tab-select]')).toHaveCount(left - 1, { timeout: 30_000 });
   }
   await page.waitForTimeout(60_000);
