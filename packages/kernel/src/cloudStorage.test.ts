@@ -11,6 +11,8 @@ import {
   MAX_SIMPLE_UPLOAD_BYTES,
   UPLOAD_SESSION_CHUNK_BYTES,
   listCloudPdfs,
+  type PdfSource,
+  pdfSourceOf,
   pickedFileId,
   refreshCloudTokens,
   replaceCloudPdf,
@@ -190,7 +192,7 @@ describe('fetching a file', () => {
 describe('Save back (ADR-0091 Decision 6)', () => {
   it('OneDrive sends If-Match with the version it opened, and a 412 is CHANGED ELSEWHERE, not overwritten', async () => {
     const { fetchImpl, seen } = scripted([new Response('{}', { status: 412 })]);
-    await expect(replaceCloudPdf('onedrive', 't', 'id', '"etag-1"', PDF, fetchImpl)).rejects.toMatchObject({
+    await expect(replaceCloudPdf('onedrive', 't', 'id', '"etag-1"', pdfSourceOf(PDF), fetchImpl)).rejects.toMatchObject({
       reason: 'changed-elsewhere',
     });
     expect(seen[0]?.init.method).toBe('PUT');
@@ -199,7 +201,7 @@ describe('Save back (ADR-0091 Decision 6)', () => {
 
   it('Google Drive reads the version first and sends NOTHING when it moved', async () => {
     const { fetchImpl, seen } = scripted([json({ name: 'x.pdf', version: '7' })]);
-    await expect(replaceCloudPdf('google-drive', 't', 'id', '6', PDF, fetchImpl)).rejects.toMatchObject({
+    await expect(replaceCloudPdf('google-drive', 't', 'id', '6', pdfSourceOf(PDF), fetchImpl)).rejects.toMatchObject({
       reason: 'changed-elsewhere',
     });
     expect(seen.map((request) => request.init.method ?? 'GET')).toStrictEqual(['GET']);
@@ -207,7 +209,7 @@ describe('Save back (ADR-0091 Decision 6)', () => {
 
   it('CONTROL: at the version it opened, Google Drive’s upload goes and answers the new version', async () => {
     const { fetchImpl, seen } = scripted([json({ name: 'x.pdf', version: '6' }), json({ version: '7' })]);
-    expect(await replaceCloudPdf('google-drive', 't', 'id', '6', PDF, fetchImpl)).toBe('7');
+    expect(await replaceCloudPdf('google-drive', 't', 'id', '6', pdfSourceOf(PDF), fetchImpl)).toBe('7');
     expect(seen[1]?.init.method).toBe('PATCH');
     expect(seen[1]?.url).toContain('uploadType=media');
   });
@@ -221,12 +223,12 @@ describe('Save back (ADR-0091 Decision 6)', () => {
 describe('a refusal names which of the two it was', () => {
   it('HTTP 403 is FORBIDDEN — a permission on this file, not a sign-in', async () => {
     const { fetchImpl } = scripted([json({ name: 'shared.pdf', version: '6', capabilities: { canEdit: true } }), new Response('{}', { status: 403 })]);
-    await expect(replaceCloudPdf('google-drive', 't', 'id', '6', PDF, fetchImpl)).rejects.toMatchObject({ reason: 'forbidden' });
+    await expect(replaceCloudPdf('google-drive', 't', 'id', '6', pdfSourceOf(PDF), fetchImpl)).rejects.toMatchObject({ reason: 'forbidden' });
   });
 
   it('CONTROL: HTTP 401 on the same request is still UNAUTHORISED', async () => {
     const { fetchImpl } = scripted([json({ name: 'shared.pdf', version: '6', capabilities: { canEdit: true } }), new Response('{}', { status: 401 })]);
-    await expect(replaceCloudPdf('google-drive', 't', 'id', '6', PDF, fetchImpl)).rejects.toMatchObject({ reason: 'unauthorised' });
+    await expect(replaceCloudPdf('google-drive', 't', 'id', '6', pdfSourceOf(PDF), fetchImpl)).rejects.toMatchObject({ reason: 'unauthorised' });
   });
 });
 
@@ -301,7 +303,7 @@ describe('a document past the simple upload, in a session', () => {
       json({ id: 'id', eTag: '"etag-2"' }, 200),
     ]);
 
-    expect(await replaceCloudPdf('onedrive', 't', 'id', '"etag-1"', LARGE, fetchImpl)).toBe('"etag-2"');
+    expect(await replaceCloudPdf('onedrive', 't', 'id', '"etag-1"', pdfSourceOf(LARGE), fetchImpl)).toBe('"etag-2"');
 
     expect(seen[0]?.url).toBe('https://graph.microsoft.com/v1.0/me/drive/items/id/createUploadSession');
     expect(new Headers(seen[0]?.init.headers).get('if-match')).toBe('"etag-1"');
@@ -323,7 +325,7 @@ describe('a document past the simple upload, in a session', () => {
       json({ id: 'new-id' }, 200),
     ]);
 
-    expect(await createCloudPdf('google-drive', 't', 'big.pdf', LARGE, fetchImpl)).toBe('new-id');
+    expect(await createCloudPdf('google-drive', 't', 'big.pdf', pdfSourceOf(LARGE), fetchImpl)).toBe('new-id');
 
     expect(seen[0]?.url).toBe('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id');
     expect(new Headers(seen[0]?.init.headers).get('x-upload-content-length')).toBe(String(LARGE.byteLength));
@@ -332,16 +334,56 @@ describe('a document past the simple upload, in a session', () => {
     expect(seen.slice(1).every((request) => request.init.redirect === 'manual')).toBe(true);
   });
 
+  /** A source that records every read it is asked for, so a case can say what was held at once. */
+  function recordedSource(length: number): { readonly source: PdfSource; readonly reads: [number, number][] } {
+    const reads: [number, number][] = [];
+    return {
+      reads,
+      source: {
+        byteLength: length,
+        read: (offset, end) => {
+          reads.push([offset, end]);
+          return Promise.resolve(new Uint8Array(end - offset));
+        },
+      },
+    };
+  }
+
+  it('a session READS one request’s bytes at a time, never the document (ADR-0165’s remainder, the owner’s Group 10)', async () => {
+    const UPLOAD = 'https://sn3302.up.1drv.com/up/fe6987415ace7X4e1eF866337';
+    const { fetchImpl } = scripted([
+      json({ uploadUrl: UPLOAD }),
+      ...Array.from({ length: CHUNKS - 1 }, (_, index) => json({ nextExpectedRanges: [`${String((index + 1) * UPLOAD_SESSION_CHUNK_BYTES)}-`] }, 202)),
+      json({ id: 'id', eTag: '"etag-2"' }, 200),
+    ]);
+    const { source, reads } = recordedSource(LARGE.byteLength);
+
+    await replaceCloudPdf('onedrive', 't', 'id', '"etag-1"', source, fetchImpl);
+
+    expect(reads).toHaveLength(CHUNKS);
+    expect(reads.every(([offset, end]) => end - offset <= UPLOAD_SESSION_CHUNK_BYTES)).toBe(true);
+    // EVERY BYTE READ ONCE, in order.
+    expect(reads.map(([offset]) => offset)).toStrictEqual(Array.from({ length: CHUNKS }, (_, index) => index * UPLOAD_SESSION_CHUNK_BYTES));
+    expect(reads.at(-1)?.[1]).toBe(LARGE.byteLength);
+  });
+
+  it('CONTROL: a document at the bound is read whole, ONCE, for its one request', async () => {
+    const { fetchImpl } = scripted([json({ id: 'new-id' })]);
+    const { source, reads } = recordedSource(MAX_SIMPLE_UPLOAD_BYTES);
+    await createCloudPdf('onedrive', 't', 'report.pdf', source, fetchImpl);
+    expect(reads).toStrictEqual([[0, MAX_SIMPLE_UPLOAD_BYTES]]);
+  });
+
   it('CONTROL: a document AT the bound still goes in one request, the route the live runs proved', async () => {
     const { fetchImpl, seen } = scripted([json({ id: 'new-id' })]);
-    await createCloudPdf('onedrive', 't', 'report.pdf', new Uint8Array(MAX_SIMPLE_UPLOAD_BYTES), fetchImpl);
+    await createCloudPdf('onedrive', 't', 'report.pdf', pdfSourceOf(new Uint8Array(MAX_SIMPLE_UPLOAD_BYTES)), fetchImpl);
     expect(seen).toHaveLength(1);
     expect(seen[0]?.url).toContain(':/content?');
   });
 
   it('REFUSES a session on a host the provider is not declared to keep content on, and sends it nothing', async () => {
     const { fetchImpl, seen } = scripted([json({ uploadUrl: 'https://uploads.example.org/up/1' })]);
-    await expect(createCloudPdf('onedrive', 't', 'big.pdf', LARGE, fetchImpl)).rejects.toMatchObject({ reason: 'unexpected-answer' });
+    await expect(createCloudPdf('onedrive', 't', 'big.pdf', pdfSourceOf(LARGE), fetchImpl)).rejects.toMatchObject({ reason: 'unexpected-answer' });
     expect(seen).toHaveLength(1);
   });
 
@@ -352,7 +394,7 @@ describe('a document past the simple upload, in a session', () => {
       json({ nextExpectedRanges: ['0-'] }, 202),
       new Response(null, { status: 204 }),
     ]);
-    await expect(createCloudPdf('onedrive', 't', 'big.pdf', LARGE, fetchImpl)).rejects.toMatchObject({ reason: 'unexpected-answer' });
+    await expect(createCloudPdf('onedrive', 't', 'big.pdf', pdfSourceOf(LARGE), fetchImpl)).rejects.toMatchObject({ reason: 'unexpected-answer' });
     expect(seen.map((request) => request.init.method)).toStrictEqual(['POST', 'PUT', 'DELETE']);
   });
 });
@@ -360,7 +402,7 @@ describe('a document past the simple upload, in a session', () => {
 describe('Upload a copy', () => {
   it('Google Drive: one multipart request carrying the name and the document', async () => {
     const { fetchImpl, seen } = scripted([json({ id: 'new-id' })]);
-    expect(await createCloudPdf('google-drive', 't', 'report.pdf', PDF, fetchImpl)).toBe('new-id');
+    expect(await createCloudPdf('google-drive', 't', 'report.pdf', pdfSourceOf(PDF), fetchImpl)).toBe('new-id');
     const sent = Buffer.from(seen[0]?.init.body as Uint8Array).toString('latin1');
     expect(sent).toContain('"name":"report.pdf"');
     expect(sent).toContain('%PDF-1.7');
@@ -368,7 +410,7 @@ describe('Upload a copy', () => {
 
   it('OneDrive: a taken name is RENAMED by the provider, never overwritten', async () => {
     const { fetchImpl, seen } = scripted([json({ id: 'new-id' })]);
-    await createCloudPdf('onedrive', 't', 'report.pdf', PDF, fetchImpl);
+    await createCloudPdf('onedrive', 't', 'report.pdf', pdfSourceOf(PDF), fetchImpl);
     expect(seen[0]?.url).toContain('conflictBehavior=rename');
   });
 });

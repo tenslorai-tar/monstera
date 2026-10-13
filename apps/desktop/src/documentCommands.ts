@@ -4307,11 +4307,12 @@ export class DocumentCommands {
    *   DocumentPoisonedError}, {@link MissingSessionError}.
    */
   /**
-   * The document as it is now, through the flush a save uses — what *Save back* and *Upload a
-   * copy* send to a cloud provider (ADR-0091). In the lane, for `saveCopy`'s reason below, and it
-   * stamps nothing: sending a copy somewhere does not make this document clean.
+   * The document as it is now, STAGED where the engine wrote it and never read into `main` — what *Upload a copy* sends
+   * to a cloud provider (ADR-0091), from a file a part at a time (`sentFromStaged`, ADR-0165's remainder). In the lane,
+   * for `saveCopy`'s reason below, and it stamps nothing: sending a copy somewhere does not make this document clean. The
+   * caller owns the staged image and must place or discard it.
    */
-  async currentImage(docId: DocId): Promise<Uint8Array> {
+  async currentStaged(docId: DocId): Promise<StagedImage> {
     const { value } = await this.#documents.run(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
@@ -4319,7 +4320,7 @@ export class DocumentCommands {
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
-      return await this.#save.flush(docId, sessions);
+      return await this.#save.stage(docId, sessions);
     });
     return value;
   }
@@ -6871,12 +6872,13 @@ export class DocumentCommands {
   /**
    * Saves as {@link save} does and, where the save landed, answers the document's image TAKEN IN THE SAME LANE ENTRY:
    * what a cloud save-back uploads (CR-DOC-04). Taken as a second lane entry it was whatever the document held when
-   * that entry ran, so a command landing between the two was uploaded under the version the save answered.
+   * that entry ran, so a command landing between the two was uploaded under the version the save answered. The image is
+   * STAGED, never read into `main` (ADR-0165's remainder), and the caller owns it: placed by the upload, or discarded.
    */
   async saveAndTake(
     docId: DocId,
     request: { readonly breakSignatures: boolean },
-  ): Promise<{ readonly outcome: SaveRequestOutcome; readonly image: Uint8Array | null }> {
+  ): Promise<{ readonly outcome: SaveRequestOutcome; readonly image: StagedImage | null }> {
     return this.#saveThen(docId, request, true);
   }
 
@@ -6884,10 +6886,10 @@ export class DocumentCommands {
     docId: DocId,
     request: { readonly breakSignatures: boolean },
     take: boolean,
-  ): Promise<{ readonly outcome: SaveRequestOutcome; readonly image: Uint8Array | null }> {
+  ): Promise<{ readonly outcome: SaveRequestOutcome; readonly image: StagedImage | null }> {
     // LISTS AND NOT NULLABLE LOCALS: the lane writes them from a closure, which control-flow analysis cannot see.
     const removalSavedAt: string[] = [];
-    const taken: Uint8Array[] = [];
+    const taken: StagedImage[] = [];
     const { value } = await this.#documents.run(docId, async (context): Promise<SaveRequestOutcome> => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
@@ -6945,7 +6947,7 @@ export class DocumentCommands {
       }
       // THE IMAGE OF THE VERSION JUST SAVED, before this entry ends and the next command can run. From the sessions
       // as they are now: a removal's save has just renewed them from the file it wrote.
-      if (take) taken.push(await this.#save.flush(docId, this.#engine.sessions(docId) ?? sessions));
+      if (take) taken.push(await this.#save.stage(docId, this.#engine.sessions(docId) ?? sessions));
       return outcome;
     });
 

@@ -164,6 +164,35 @@ export const MAX_SIMPLE_UPLOAD_BYTES = 250 * 1024 * 1024;
 export const UPLOAD_SESSION_CHUNK_BYTES = 40 * 1024 * 1024;
 
 /**
+ * A document to send, as its length and its ranges: what *Save back* and *Upload a copy* upload from, so a document past
+ * `main`'s memory ceiling is sent from the file it is staged in, one request's bytes at a time (ADR-0165's named
+ * remainder, the owner's Group 10). A whole document in one array is not a parameter here: a caller holding bytes says
+ * so with {@link pdfSourceOf}, and every other caller reads a file.
+ */
+export interface PdfSource {
+  readonly byteLength: number;
+  /** The bytes from `offset` up to `end`, exclusive: exactly `end - offset` of them, or a throw. */
+  readonly read: (offset: number, end: number) => Promise<Uint8Array>;
+}
+
+/**
+ * The whole of a source, for the one-request routes: only ever a document at or under {@link MAX_SIMPLE_UPLOAD_BYTES},
+ * which every caller has already checked, so what is held is bounded by that figure and never by the document. Throws
+ * past it rather than reading, so a route that forgot the check cannot load a large document whole.
+ */
+async function wholeOf(pdf: PdfSource): Promise<Uint8Array> {
+  if (pdf.byteLength > MAX_SIMPLE_UPLOAD_BYTES) {
+    throw new Error(`a ${String(pdf.byteLength)}-byte document reached a one-request upload, which takes ${String(MAX_SIMPLE_UPLOAD_BYTES)}`);
+  }
+  return pdf.read(0, pdf.byteLength);
+}
+
+/** Bytes already in hand, as a {@link PdfSource}: each read is a view, never a copy. */
+export function pdfSourceOf(bytes: Uint8Array): PdfSource {
+  return { byteLength: bytes.byteLength, read: (offset, end) => Promise.resolve(bytes.subarray(offset, end)) };
+}
+
+/**
  * The file a Picker chose, from its redirect's parameter — the first id of the comma-separated list, or `null` where
  * there is none or it is not an id (ADR-0091, corrected 2026-09-29).
  *
@@ -527,7 +556,7 @@ async function uploadInSession(
   provider: CloudProviderId,
   accessToken: string,
   sessionUrl: string,
-  pdf: Uint8Array,
+  pdf: PdfSource,
   fetchImpl: typeof fetch,
 ): Promise<Readonly<Record<string, unknown>>> {
   const total = pdf.byteLength;
@@ -541,7 +570,8 @@ async function uploadInSession(
         // MANUAL: Google's "more, please" is a 308, which a fetch would otherwise treat as a redirect.
         redirect: 'manual',
         headers: { ...auth, 'content-range': `bytes ${String(offset)}-${String(end - 1)}/${String(total)}` },
-        body: pdf.subarray(offset, end),
+        // ONE REQUEST'S BYTES READ FOR IT, so what is held is a part and never the document.
+        body: await pdf.read(offset, end),
       });
       if (response.status === 200 || response.status === 201) {
         if (end !== total) throw new CloudStorageRefused('unexpected-answer', `the session finished at ${String(end)} of ${String(total)} bytes`);
@@ -640,7 +670,7 @@ export async function replaceCloudPdf(
   accessToken: string,
   fileId: string,
   expected: string,
-  pdf: Uint8Array,
+  pdf: PdfSource,
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
   const id = encodeURIComponent(fileId);
@@ -667,7 +697,7 @@ export async function replaceCloudPdf(
       : await callJson(fetchImpl, `https://graph.microsoft.com/v1.0/me/drive/items/${id}/content`, {
           method: 'PUT',
           headers: { ...bearer(accessToken), 'content-type': 'application/pdf', 'if-match': expected },
-          body: pdf,
+          body: await wholeOf(pdf),
         });
     const version = text(answer['eTag']);
     if (version === null) throw new CloudStorageRefused('unexpected-answer', 'the upload answer carries no eTag');
@@ -702,7 +732,7 @@ export async function replaceCloudPdf(
     : await callJson(fetchImpl, `https://www.googleapis.com/upload/drive/v3/files/${id}?uploadType=media&fields=version`, {
         method: 'PATCH',
         headers: { ...bearer(accessToken), 'content-type': 'application/pdf' },
-        body: pdf,
+        body: await wholeOf(pdf),
       });
   const version = text(answer['version']);
   if (version === null) throw new CloudStorageRefused('unexpected-answer', 'the upload answer carries no version');
@@ -720,7 +750,7 @@ export async function createCloudPdf(
   provider: CloudProviderId,
   accessToken: string,
   name: string,
-  pdf: Uint8Array,
+  pdf: PdfSource,
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
   if (pdf.byteLength > MAX_SIMPLE_UPLOAD_BYTES) {
@@ -779,7 +809,7 @@ export async function createCloudPdf(
     const answer = await callJson(fetchImpl, url, {
       method: 'PUT',
       headers: { ...bearer(accessToken), 'content-type': 'application/pdf' },
-      body: pdf,
+      body: await wholeOf(pdf),
     });
     const created = text(answer['id']);
     if (created === null) throw new CloudStorageRefused('unexpected-answer', 'the upload answer carries no id');
@@ -796,7 +826,7 @@ export async function createCloudPdf(
   const answer = await callJson(fetchImpl, 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
     method: 'POST',
     headers: { ...bearer(accessToken), 'content-type': `multipart/related; boundary=${boundary}` },
-    body: Buffer.concat([head, Buffer.from(pdf), tail]),
+    body: Buffer.concat([head, await wholeOf(pdf), tail]),
   });
   const created = text(answer['id']);
   if (created === null) throw new CloudStorageRefused('unexpected-answer', 'the upload answer carries no id');

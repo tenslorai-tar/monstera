@@ -3976,7 +3976,7 @@ function cloudHandlers(
       const name = deps.commands.nameOf(docId);
       if (name === undefined) return err({ code: 'document-not-open' as const });
       try {
-        await deps.cloud.uploadCopy(docId, provider, name, await deps.commands.currentImage(docId));
+        await deps.cloud.uploadCopy(docId, provider, name, await deps.commands.currentStaged(docId));
         return ok({ kind: 'done' as const });
       } catch (thrown) {
         const refused = documentRefusal(thrown);

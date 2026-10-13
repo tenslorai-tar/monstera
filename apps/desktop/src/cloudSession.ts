@@ -26,6 +26,7 @@ import {
   pkcePair,
   refreshCloudTokens,
   replaceCloudPdf,
+  type StagedImage,
 } from '@monstera/kernel';
 import type { DocId } from '@monstera/shared';
 import { z } from 'zod';
@@ -34,6 +35,7 @@ import { type OpenInBrowser, SignInRefused, signInThroughLoopback } from './docu
 import type { SecretStoreSurface } from './secretStore.js';
 import type { SettingsSurface } from './settingsFile.js';
 import type { ShellFailureSink } from './shellFailure.js';
+import { sentFromStaged } from './stagedUpload.js';
 
 /**
  * Cloud storage, as `main` holds it
@@ -201,10 +203,14 @@ export interface CloudStorage {
    * did not say — or `undefined` for a document not from the cloud.
    */
   canEdit(docId: DocId): boolean | null | undefined;
-  /** Uploads a linked document's saved bytes back to its file, at the version it was opened at. */
-  saveBack(docId: DocId, pdf: Uint8Array): Promise<void>;
-  /** Puts a copy of a document in the provider's storage, and links the document to it. */
-  uploadCopy(docId: DocId, provider: CloudProviderId, name: string, pdf: Uint8Array): Promise<void>;
+  /**
+   * Uploads a linked document's saved bytes back to its file, at the version it was opened at. The document arrives
+   * STAGED and is sent from a file a part at a time (`sentFromStaged`), so a document past `main`'s memory ceiling is
+   * never held whole; the staged image is consumed either way.
+   */
+  saveBack(docId: DocId, pdf: StagedImage): Promise<void>;
+  /** Puts a copy of a document in the provider's storage, and links the document to it. `saveBack`'s staging. */
+  uploadCopy(docId: DocId, provider: CloudProviderId, name: string, pdf: StagedImage): Promise<void>;
   /** Forgets a closed document's link. */
   forget(docId: DocId): void;
 }
@@ -371,6 +377,19 @@ export function createCloudStorage(deps: {
     }
   }
 
+  /**
+   * `step`'s answer, or the staged document discarded and its refusal thrown: what comes before `sentFromStaged`, which
+   * consumes the staged image itself, so a refusal before the move still leaves nothing in the host's directory.
+   */
+  async function discardingOnRefusal<T>(staged: StagedImage, step: () => Promise<T>): Promise<T> {
+    try {
+      return await step();
+    } catch (refused) {
+      await staged.discard();
+      throw refused;
+    }
+  }
+
   /** The working copy's path: one folder per provider and file, named by a hash of the id. */
   function workingPath(provider: CloudProviderId, fileId: string, name: string): string {
     const folder = createHash('sha256').update(fileId).digest('hex').slice(0, 24);
@@ -409,13 +428,21 @@ export function createCloudStorage(deps: {
     saveBack: (docId, pdf) =>
       named('save back', linked.get(docId)?.origin.provider ?? null, async () => {
         const held = linked.get(docId);
-        if (held === undefined) throw new Error('saveBack was asked for a document with no cloud origin');
+        if (held === undefined) {
+          await pdf.discard();
+          throw new Error('saveBack was asked for a document with no cloud origin');
+        }
         const { origin, path } = held;
         // THE PROVIDER ALREADY SAID NO, when the file was opened: nothing is sent, so a view-only file is never asked to
         // take an upload it will refuse. Unknown (`null`) is not no — the upload goes, and a refusal is named `forbidden`.
-        if (origin.canEdit === false) throw new CloudOutcomeRefused('read-only');
-        const access = await token(origin.provider);
-        const version = await replaceCloudPdf(origin.provider, access, origin.fileId, origin.version, pdf, fetchImpl);
+        if (origin.canEdit === false) {
+          await pdf.discard();
+          throw new CloudOutcomeRefused('read-only');
+        }
+        const access = await discardingOnRefusal(pdf, () => token(origin.provider));
+        const version = await sentFromStaged(pdf, deps.workingDirectory, (source) =>
+          replaceCloudPdf(origin.provider, access, origin.fileId, origin.version, source, fetchImpl),
+        );
         const moved = { ...origin, version };
         linked.set(docId, { origin: moved, path });
         // THE COPY'S RECORD MOVES WITH IT, so the copy reopened saves back at the version it now matches.
@@ -426,8 +453,10 @@ export function createCloudStorage(deps: {
       }),
     uploadCopy: (docId, provider, name, pdf) =>
       named('upload a copy', provider, async () => {
-        const access = await token(provider);
-        const fileId = await createCloudPdf(provider, access, name, pdf, fetchImpl);
+        // SIGNED IN BEFORE ANYTHING IS STAGED: a provider this build has no client for refuses here, before a copy of the
+        // document is written anywhere.
+        const access = await discardingOnRefusal(pdf, () => token(provider));
+        const fileId = await sentFromStaged(pdf, deps.workingDirectory, (source) => createCloudPdf(provider, access, name, source, fetchImpl));
         const { version, canEdit } = await describeCloudFile(provider, access, fileId, fetchImpl);
         // LINKED to the new file, so Save back goes there next; the local file stays where it was. Its edit access is
         // the provider's answer for the new file too, rather than assumed from having just made it.

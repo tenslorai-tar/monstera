@@ -30,8 +30,10 @@ import {
   EditRefusedError,
   type IdentityReader,
   StaleTargetError,
+  type StagedImage,
   TextNotWritableError,
   readFileIdentity,
+  stagedBytes,
 } from '@monstera/kernel';
 import { BARCODE_WRITE_FORMATS } from '@monstera/kernel/barcode';
 import {
@@ -2633,16 +2635,18 @@ describe('settings.import (BUILD-PROMPT.md:630)', () => {
 
 describe('cloud.saveBack', () => {
   const DOC = asDocId('00000000-0000-4000-8000-0000000000b1');
+  /** The image the save took, staged: an object the case can recognise by identity at the upload. */
+  const TAKEN = stagedBytes(new Uint8Array([1, 2, 3]));
 
   function withCloud(upload: () => Promise<void>, saved: 'saved' | 'write-failed') {
-    const uploaded: Uint8Array[] = [];
+    const uploaded: StagedImage[] = [];
     // A DOCUMENT WITH A CLOUD ORIGIN, faked at the surface: which provider it came from and what
     // happens to the upload are the only two things this handler asks of it.
     const cloud = {
       ...unconfiguredCloud(),
       originOf: (docId: DocId) => (docId === DOC ? ('onedrive' as const) : null),
       canEdit: (docId: DocId) => (docId === DOC ? false : undefined),
-      saveBack: (_docId: DocId, pdf: Uint8Array) => {
+      saveBack: (_docId: DocId, pdf: StagedImage) => {
         uploaded.push(pdf);
         return upload();
       },
@@ -2652,7 +2656,7 @@ describe('cloud.saveBack', () => {
       saveAndTake: () =>
         Promise.resolve(
           saved === 'saved'
-            ? { outcome: { kind: 'saved' as const, version: asDocVersion(9) }, image: new Uint8Array([1, 2, 3]) }
+            ? { outcome: { kind: 'saved' as const, version: asDocVersion(9) }, image: TAKEN }
             : { outcome: { kind: 'write-failed' as const }, image: null },
         ),
     } as unknown as DocumentCommands;
@@ -2699,7 +2703,9 @@ settings: createEphemeralSettings(),
       value: { kind: 'saved-back', version: asDocVersion(9) },
     });
     // THE SAVE'S OWN IMAGE is what goes up.
-    expect(uploaded).toStrictEqual([new Uint8Array([1, 2, 3])]);
+    // THE STAGED IMAGE THE SAVE TOOK, handed on as it is: never read into `main` on the way (ADR-0165's remainder).
+    expect(uploaded).toHaveLength(1);
+    expect(uploaded[0]).toBe(TAKEN);
   });
 
   it('a refusal AFTER the working copy was saved still names the version, and the refusal', async () => {

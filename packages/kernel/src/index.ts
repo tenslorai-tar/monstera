@@ -735,6 +735,8 @@ export {
   type CloudStorageRefusalReason,
   type CloudTokens,
   MAX_SIMPLE_UPLOAD_BYTES,
+  type PdfSource,
+  pdfSourceOf,
   cloudAuthorizationUrl,
   createCloudPdf,
   describeCloudFile,

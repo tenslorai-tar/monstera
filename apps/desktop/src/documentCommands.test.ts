@@ -19,7 +19,7 @@ import {
 } from '@cantoo/pdf-lib';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import type { FoundBarcode } from '@monstera/kernel';
+import { type FoundBarcode, type StagedImage, placeStaged } from '@monstera/kernel';
 import {
   type AiModel,
   type Command,
@@ -1816,10 +1816,16 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
 
       expect(outcome.kind).toBe('saved');
       if (image === null) throw new Error('a save that landed took no image');
+      // THE IMAGE IS STAGED, never read into `main` (ADR-0165's remainder): placed here to be read.
+      const placed = async (staged: StagedImage): Promise<Uint8Array> => {
+        const file = join(mkdtempSync(join(tmpdir(), 'monstera-taken-')), 'taken.pdf');
+        await placeStaged(staged, file);
+        return new Uint8Array(readFileSync(file));
+      };
       // THE SAVED VERSION'S, as the file on disk holds it: one quarter turn.
-      expect([await rotationIn(image), await rotationIn(new Uint8Array(readFileSync(t.path)))]).toStrictEqual([90, 90]);
+      expect([await rotationIn(await placed(image)), await rotationIn(new Uint8Array(readFileSync(t.path)))]).toStrictEqual([90, 90]);
       // CONTROL: the document moved on behind it, so an image asked for now — the old second entry — would not match.
-      expect(await rotationIn(await t.commands.currentImage(t.saved))).toBe(180);
+      expect(await rotationIn(await placed(await t.commands.currentStaged(t.saved)))).toBe(180);
     });
 
     it('HOLDS BACK a save that would break signatures — the file untouched — and writes it once the person agreed', async () => {

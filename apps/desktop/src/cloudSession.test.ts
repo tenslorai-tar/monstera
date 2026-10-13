@@ -1,6 +1,17 @@
+import { mkdtempSync, readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { SECRET_SETTING_IDS } from '@monstera/contract';
+import { type StagedImage, stagedBytes } from '@monstera/kernel';
 import { asDocId } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
+
+/**
+ * A REAL directory for the working copies, because a Save back now stages the document into a file under it before it is
+ * sent (ADR-0165's remainder). The working copies themselves are still written by a fake, so their paths stay strings.
+ */
+const WORK = mkdtempSync(join(tmpdir(), 'monstera-cloud-'));
 
 import { CloudOutcomeRefused, cloudSessionSecretId, createCloudStorage, safeFileName } from './cloudSession.js';
 import type { SecretStoreSurface } from './secretStore.js';
@@ -123,7 +134,7 @@ function storage(
     secrets,
     clients: { onedrive: configured ? { clientId: 'made-up-id' } : null, 'google-drive': null },
     openInBrowser: shown.openInBrowser,
-    workingDirectory: 'C:/work',
+    workingDirectory: WORK,
     origins,
     maxBytes: 1_000_000,
     fetchImpl: provider.fetchImpl,
@@ -190,18 +201,75 @@ describe('cloud storage in main (ADR-0091)', () => {
     const { cloud, written } = storage(provider);
     const path = await cloud.download('onedrive', 'f1');
     expect(written).toStrictEqual([{ path, bytes: 15 }]);
-    expect(path.replaceAll('\\', '/')).toMatch(/^C:\/work\/onedrive\/[0-9a-f]{24}\/contract\.pdf$/u);
+    expect(path.slice(WORK.length).replaceAll('\\', '/')).toMatch(/^\/onedrive\/[0-9a-f]{24}\/contract\.pdf$/u);
+    expect(path.startsWith(WORK)).toBe(true);
 
     const doc = asDocId('00000000-0000-4000-8000-0000000000c1');
     cloud.link(doc, path);
     expect(cloud.originOf(doc)).toBe('onedrive');
-    await cloud.saveBack(doc, new Uint8Array([1]));
+    await cloud.saveBack(doc, stagedBytes(new Uint8Array([1])));
     expect(provider.uploads[0]?.ifMatch).toBe('"v1"');
 
     // THE NEXT SAVE BACK names the version the last one answered, not the one it opened at.
     provider.uploadStatus = 412;
-    await expect(cloud.saveBack(doc, new Uint8Array([2]))).rejects.toMatchObject({ reason: 'changed-elsewhere' });
+    await expect(cloud.saveBack(doc, stagedBytes(new Uint8Array([2])))).rejects.toMatchObject({ reason: 'changed-elsewhere' });
     expect(provider.uploads[1]?.ifMatch).toBe('"v2"');
+  });
+
+  /** A staged document that records whether it was placed and discarded, and where. */
+  function recordedStaged(bytes: Uint8Array): { readonly staged: StagedImage; readonly placedAt: string[]; readonly discarded: number[] } {
+    const placedAt: string[] = [];
+    const discarded: number[] = [];
+    const inner = stagedBytes(bytes);
+    return {
+      placedAt,
+      discarded,
+      staged: {
+        byteLength: inner.byteLength,
+        place: async (destination) => {
+          placedAt.push(destination);
+          await inner.place(destination);
+        },
+        discard: () => {
+          discarded.push(1);
+          return Promise.resolve();
+        },
+      },
+    };
+  }
+
+  it('SAVE BACK sends from a file it STAGED under the working folder, and leaves no copy behind, sent or refused (ADR-0165)', async () => {
+    const provider = onedrive();
+    const { cloud } = storage(provider);
+    const doc = asDocId('00000000-0000-4000-8000-0000000000c9');
+    cloud.link(doc, await cloud.download('onedrive', 'f1'));
+
+    const landed = recordedStaged(new Uint8Array([1, 2, 3]));
+    await cloud.saveBack(doc, landed.staged);
+    // PLACED ONCE, under the working folder, and the provider was sent its bytes.
+    expect(landed.placedAt).toHaveLength(1);
+    expect(landed.placedAt[0]?.startsWith(join(WORK, '.uploads'))).toBe(true);
+    expect(provider.uploads).toHaveLength(1);
+
+    provider.uploadStatus = 412;
+    const refused = recordedStaged(new Uint8Array([4]));
+    await expect(cloud.saveBack(doc, refused.staged)).rejects.toMatchObject({ reason: 'changed-elsewhere' });
+    // NOTHING LEFT in the folder either way, and each staged image was discarded.
+    expect(readdirSync(join(WORK, '.uploads'))).toStrictEqual([]);
+    expect([landed.discarded.length, refused.discarded.length]).toStrictEqual([1, 1]);
+  });
+
+  it('CONTROL: a Save back refused BEFORE the upload stages nothing and still discards what it was handed', async () => {
+    const provider = onedrive();
+    const { cloud } = storage(provider);
+    const doc = asDocId('00000000-0000-4000-8000-0000000000ca');
+    cloud.link(doc, await cloud.download('onedrive', 'f2'));
+    expect(cloud.canEdit(doc)).toBe(false);
+
+    const handed = recordedStaged(new Uint8Array([1]));
+    await expect(cloud.saveBack(doc, handed.staged)).rejects.toMatchObject({ reason: 'read-only' });
+    expect(handed.placedAt).toStrictEqual([]);
+    expect(handed.discarded).toHaveLength(1);
   });
 
   /**
@@ -216,7 +284,7 @@ describe('cloud storage in main (ADR-0091)', () => {
       cloud.link(doc, await cloud.download('onedrive', 'f2'));
       expect(cloud.canEdit(doc)).toBe(false);
 
-      await expect(cloud.saveBack(doc, new Uint8Array([1]))).rejects.toMatchObject({ reason: 'read-only' });
+      await expect(cloud.saveBack(doc, stagedBytes(new Uint8Array([1])))).rejects.toMatchObject({ reason: 'read-only' });
       expect(provider.uploads).toStrictEqual([]);
       expect(shown.redirects).toHaveLength(1);
       expect(logged).toStrictEqual([{ event: 'cloud-failed', detail: 'save back (onedrive): read-only' }]);
@@ -230,7 +298,7 @@ describe('cloud storage in main (ADR-0091)', () => {
       expect(cloud.canEdit(doc)).toBe(true);
       provider.uploadStatus = 403;
 
-      await expect(cloud.saveBack(doc, new Uint8Array([1]))).rejects.toMatchObject({ reason: 'forbidden' });
+      await expect(cloud.saveBack(doc, stagedBytes(new Uint8Array([1])))).rejects.toMatchObject({ reason: 'forbidden' });
       expect(provider.uploads).toHaveLength(1);
       // ONE SIGN-IN, the first one: the 403 did not send the person round another.
       expect(shown.redirects).toHaveLength(1);
@@ -242,11 +310,11 @@ describe('cloud storage in main (ADR-0091)', () => {
       const { cloud, logged } = storage(provider);
       const doc = asDocId('00000000-0000-4000-8000-0000000000c5');
       cloud.link(doc, await cloud.download('onedrive', 'f1'));
-      await cloud.saveBack(doc, new Uint8Array([1]));
+      await cloud.saveBack(doc, stagedBytes(new Uint8Array([1])));
       expect(logged).toStrictEqual([]);
 
       provider.uploadStatus = 401;
-      await expect(cloud.saveBack(doc, new Uint8Array([2]))).rejects.toMatchObject({ reason: 'unauthorised' });
+      await expect(cloud.saveBack(doc, stagedBytes(new Uint8Array([2])))).rejects.toMatchObject({ reason: 'unauthorised' });
       expect(logged.map((line) => line.detail)).toStrictEqual(['save back (onedrive): unauthorised — graph.microsoft.com answered HTTP 401']);
     });
   });
@@ -361,7 +429,7 @@ describe('cloud storage in main (ADR-0091)', () => {
     const path = await first.download('onedrive', 'f1');
     const opened = asDocId('00000000-0000-4000-8000-0000000000c3');
     first.link(opened, path);
-    await first.saveBack(opened, new Uint8Array([1]));
+    await first.saveBack(opened, stagedBytes(new Uint8Array([1])));
     first.forget(opened);
 
     // A NEW SESSION over what the first kept, as the next run is, and the same copy opened from its path.
@@ -369,7 +437,7 @@ describe('cloud storage in main (ADR-0091)', () => {
     const reopened = asDocId('00000000-0000-4000-8000-0000000000c4');
     later.link(reopened, path);
     expect(later.originOf(reopened)).toBe('onedrive');
-    await later.saveBack(reopened, new Uint8Array([2]));
+    await later.saveBack(reopened, stagedBytes(new Uint8Array([2])));
     // THE DECISION: the upload names the version the first Save back answered. The download's would be refused.
     expect(provider.uploads.map((upload) => upload.ifMatch)).toStrictEqual(['"v1"', '"v2"']);
   });
