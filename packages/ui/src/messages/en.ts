@@ -1616,7 +1616,6 @@ export const TEXT_EDIT_HELD = messageKey('surface.text-edit.held');
 /** A block whose words run past the page's edge: written whole, outlined, and said (the owner's Q7). */
 export const TEXT_EDIT_PAST_PAGE = messageKey('surface.text-edit.past-page');
 // THE EDITOR'S FORMATTING (ADR-0180): the ribbon group, each command, and the bar's own value controls.
-export const GROUP_FORMAT = messageKey('surface.ribbon.group.format');
 export const TEXT_FORMAT_BOLD = messageKey('command.text.format.bold');
 export const TEXT_FORMAT_ITALIC = messageKey('command.text.format.italic');
 export const TEXT_FORMAT_UNDERLINE = messageKey('command.text.format.underline');
@@ -4401,7 +4400,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // THE OWNER'S OWN SENTENCE (Q7), and nothing promised that the editor cannot do: the words are all kept, and the way
   // to make them fit is to shorten them, which the open editor is for.
   [TEXT_EDIT_PAST_PAGE]: 'This text no longer fits on the page',
-  [GROUP_FORMAT]: 'Format',
   [TEXT_FORMAT_BOLD]: 'Bold',
   [TEXT_FORMAT_ITALIC]: 'Italic',
   [TEXT_FORMAT_UNDERLINE]: 'Underline',

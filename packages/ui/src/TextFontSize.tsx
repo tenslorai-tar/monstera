@@ -16,16 +16,15 @@ import {
 } from './textEditorControl.js';
 
 /**
- * The open text editor's FONT AND SIZE, the one pair of value controls for it (the TEXT spec's C3 and D1): drawn in the
- * Properties panel's Text section and in the ribbon's Format group (ADR-0228 Decision 5), one component so the two can
- * never set a size by two rules (B3a). Each holds a value, so neither is a command: both set it through the one
- * {@link formatOpenEditor}, as the Format group's commands do.
+ * The open text editor's FONT AND SIZE, the one pair of value controls for it (the TEXT spec's C3 and D1), drawn in the
+ * Properties panel's Text section. The ribbon drew it too until the owner's N10 removed the ribbon's Format group
+ * (ADR-0228's correction of 2026-10-13). Each holds a value, so neither is a command: both set it through the one
+ * {@link formatOpenEditor}, as the formatting commands do.
  *
  * ## It keeps the editor open
  *
  * Marked {@link KEEPS_EDITOR}, as the panel's section is: a focus moving into it from the words does not write and close
- * the editor, and a focus leaving it for neither the words nor another surface that keeps them finishes the edit. In the
- * ribbon the font list floats over the window, since the ribbon's row clips what grows out of it.
+ * the editor, and a focus leaving it for neither the words nor another surface that keeps them finishes the edit.
  */
 
 
@@ -34,11 +33,9 @@ export interface TextFontSizeProps {
   readonly fonts: FontList;
   /** Every font the document names (`document.fonts`): none while it is read, and none in a build that cannot read it. */
   readonly documentFonts: readonly DocumentFont[];
-  /** Where it is drawn: the panel's stacked rows, or the ribbon's one compact row with a floating list. */
-  readonly place: 'panel' | 'ribbon';
 }
 
-export function TextFontSize({ fonts, documentFonts, place }: TextFontSizeProps): ReactElement {
+export function TextFontSize({ fonts, documentFonts }: TextFontSizeProps): ReactElement {
   const { _ } = useLingui();
   // RE-READ ON EVERY CHANGE of the selection or the formatting, since the state is the editor's and not a snapshot.
   useSyncExternalStore(onEditorChange, editorRevision);
@@ -54,8 +51,8 @@ export function TextFontSize({ fonts, documentFonts, place }: TextFontSizeProps)
   const shown = size ?? (state?.size === undefined ? '' : String(Math.round(state.size * 10) / 10));
   return (
     <div
-      className={place === 'ribbon' ? 'm-text-font-size m-text-font-size--ribbon' : 'm-text-font-size'}
-      data-text-font-size={place}
+      className="m-text-font-size"
+      data-text-font-size="panel"
       {...{ [KEEPS_EDITOR]: '' }}
       // LEFT FOR NEITHER THE WORDS NOR A SURFACE THAT KEEPS THEM: the edit is finished, as a click elsewhere finishes it.
       onBlur={(event) => {
@@ -65,7 +62,6 @@ export function TextFontSize({ fonts, documentFonts, place }: TextFontSizeProps)
     >
       <FontPicker
         builtIn={RESOLVED_BUILT_IN}
-        floating={place === 'ribbon'}
         inDocument={inDocument}
         label={TEXT_FORMAT_FAMILY}
         list={fonts}

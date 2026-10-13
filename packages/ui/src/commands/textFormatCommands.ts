@@ -1,6 +1,5 @@
 import type { IconName } from '../primitives/icons.js';
 import {
-  GROUP_FORMAT,
   TEXT_FORMAT_ALIGN_CENTER,
   TEXT_FORMAT_ALIGN_JUSTIFY,
   TEXT_FORMAT_ALIGN_LEFT,
@@ -93,13 +92,15 @@ export const FORMAT_ENTRIES: readonly Entry[] = [
 const editing = (context: CommandContext): boolean => context.editingText === true;
 
 export function textFormatCommands(): readonly UiCommand[] {
-  return FORMAT_ENTRIES.map((entry, at): UiCommand => ({
+  return FORMAT_ENTRIES.map((entry): UiCommand => ({
     id: entry.id,
     // THE WORDS CHANGE ON THE PAGE UNDER THE PERSON'S EYES, in the editor they are in.
     feedback: VISIBLE,
     title: entry.title,
     icon: entry.icon,
-    placements: [{ surface: 'ribbon', section: 'edit', group: GROUP_FORMAT, order: at }],
+    // NO RIBBON PLACEMENT (the owner's N10, ADR-0228's correction of 2026-10-13): the Properties panel's Text section and
+    // the editor's own keys are where formatting is.
+    placements: [],
     when: editing,
     keepsFocus: true,
     ...(entry.on === undefined

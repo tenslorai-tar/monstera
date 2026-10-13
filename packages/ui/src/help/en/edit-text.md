@@ -33,7 +33,7 @@ While a block is open, the **Properties** tab shows three groups for it. They ch
 - **Paragraph**: alignment (left, centre, right or **Justify**), bullets and numbering, indent, line spacing and the space after the paragraph.
 - **Box**: **Remove this text** takes the block off the page.
 
-Choosing something there keeps the block open, so you can go on typing; click the page away from the block, or press **Esc**, when you are done. The same buttons are in the **Edit** rail's **Format** group, with a **Font** box and a **Size in points** box at its start that do what the panel's do.
+Choosing something there keeps the block open, so you can go on typing; click the page away from the block, or press **Esc**, when you are done. **Ctrl+B**, **Ctrl+I** and **Ctrl+U** work while you type.
 
 Character spacing is typed in points and can open the letters up or close them together by up to about an eighth of the text size either way; the field says how much that is for the selected words. Wider than that, search and copy would read a space between every letter, so the spacing stops there. Hebrew, Arabic and other right-to-left words are never spaced out, because a gap would break the joins between their letters.
 

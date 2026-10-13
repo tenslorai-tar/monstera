@@ -72,20 +72,6 @@ is not available.
 ## Ribbon › Edit
 
 - [ ] **Find** — Find · `document.find` · Shows: on screen · Help: *Find and replace text*
-- [ ] **Bold** — Format · `text.format.bold` · Shows: on screen
-- [ ] **Italic** — Format · `text.format.italic` · Shows: on screen
-- [ ] **Underline** — Format · `text.format.underline` · Shows: on screen
-- [ ] **Strikethrough** — Format · `text.format.strike` · Shows: on screen
-- [ ] **Superscript** — Format · `text.format.superscript` · Shows: on screen
-- [ ] **Subscript** — Format · `text.format.subscript` · Shows: on screen
-- [ ] **Align left** — Format · `text.format.align-left` · Shows: on screen
-- [ ] **Centre** — Format · `text.format.align-center` · Shows: on screen
-- [ ] **Align right** — Format · `text.format.align-right` · Shows: on screen
-- [ ] **Justify** — Format · `text.format.align-justify` · Shows: on screen
-- [ ] **Bullets** — Format · `text.format.bullets` · Shows: on screen
-- [ ] **Numbering** — Format · `text.format.numbering` · Shows: on screen
-- [ ] **Increase indent** — Format · `text.format.indent-more` · Shows: on screen
-- [ ] **Decrease indent** — Format · `text.format.indent-less` · Shows: on screen
 - [ ] **Translate this page…** — Language · `edit.translate-page` · Shows: a toast · Help: *Translate a page*
 - [ ] **Spell check** — Proofing · `document.spell-check` · Shows: on screen · Help: *Check spelling*
 - [ ] **Word count** — Proofing · `document.word-count` · Shows: a result dialog · Help: *Count words and characters*
@@ -327,6 +313,20 @@ is not available.
 - [ ] **Move selection up** · `annotate.nudge-up` · Shows: on screen · Help: *Select, move, resize and delete annotations*
 - [ ] **Move selection up** · `annotate.nudge-up-far` · Shows: on screen · Help: *Select, move, resize and delete annotations*
 - [ ] **Select every comment on this page** · `annotate.select-all` · Shows: on screen
+- [ ] **Centre** · `text.format.align-center` · Shows: on screen
+- [ ] **Justify** · `text.format.align-justify` · Shows: on screen
+- [ ] **Align left** · `text.format.align-left` · Shows: on screen
+- [ ] **Align right** · `text.format.align-right` · Shows: on screen
+- [ ] **Bold** · `text.format.bold` · Shows: on screen
+- [ ] **Bullets** · `text.format.bullets` · Shows: on screen
+- [ ] **Decrease indent** · `text.format.indent-less` · Shows: on screen
+- [ ] **Increase indent** · `text.format.indent-more` · Shows: on screen
+- [ ] **Italic** · `text.format.italic` · Shows: on screen
+- [ ] **Numbering** · `text.format.numbering` · Shows: on screen
+- [ ] **Strikethrough** · `text.format.strike` · Shows: on screen
+- [ ] **Subscript** · `text.format.subscript` · Shows: on screen
+- [ ] **Superscript** · `text.format.superscript` · Shows: on screen
+- [ ] **Underline** · `text.format.underline` · Shows: on screen
 - [ ] **Back** · `view.go-back` · Shows: on screen · Help: *Move between pages*
 - [ ] **Forward** · `view.go-forward` · Shows: on screen · Help: *Move between pages*
 - [ ] **Leave Focus** · `view.leave-focus` · Shows: on screen · Help: *Choose a layout: Ribbon, Studio or Focus*

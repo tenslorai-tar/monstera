@@ -151,7 +151,7 @@ export function TextFormatPanel({ fonts, documentFonts }: TextFormatPanelProps):
       <div aria-label={_(TEXT_PROPERTIES_TEXT)} className="m-text-properties__section" role="group">
         <h3 className="m-text-properties__title">{_(TEXT_PROPERTIES_TEXT)}</h3>
         {/* THE FONT AND SIZE the ribbon's Format group draws too: one component (ADR-0228 Decision 5, B3a). */}
-        <TextFontSize documentFonts={documentFonts} fonts={fonts} place="panel" />
+        <TextFontSize documentFonts={documentFonts} fonts={fonts} />
         <div className="m-text-properties__verbs">{FORMAT_ENTRIES.filter((entry) => TEXT_VERBS.has(entry.id)).map(verb)}</div>
         <ColourSwatches
           auto={state?.colour === undefined}

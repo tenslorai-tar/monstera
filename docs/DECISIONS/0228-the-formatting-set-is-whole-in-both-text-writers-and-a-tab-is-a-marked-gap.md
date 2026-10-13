@@ -133,3 +133,9 @@ indent. Nothing they did is lost:
   fewer.
 
 The C3 row of `docs/FEATURES.md` that Decision 5 built is corrected in the same change.
+
+**And the first bullet overstates, found by the rendered case the same day.** The command palette does not reach these
+commands while words are being edited: opening it moves the focus out of the words, which ends the edit, and each
+command is offered only while an editor is open (`when`). So the Properties panel's Text section and the editor's own
+keys are where formatting is, and the palette is not. The commands stay registered, which is what the panel acts
+through.

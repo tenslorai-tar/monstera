@@ -15,7 +15,8 @@
  * drew them named, so whether this Windows install leaves a CJK gap is a measurement and not a guess. Steps 10 to 14 walk
  * what the second cloud round built (ADR-0228): the formatting set, Tab, the document's fonts in the picker, and a text
  * box styled word by word while typed and set in a real font, each read back from the saved file. Steps 15 to 19 walk
- * the third round (Part D): the ribbon's Font box (C3), a dashed text box border (E4), and the one font picker in the
+ * the third round (Part D) as the owner's N10 left it: no Format group in the ribbon, the words formatted from the
+ * Properties panel and Ctrl+B instead, a dashed text box border (E4), and the one font picker in the
  * Watermark and Insert from Markdown windows (D1), read back from one saved file. Step N14 opens a word processor's page
  * of subset fonts built here and reads the editor's drawn fonts, bold and superscript, then the written file's rise.
  */
@@ -442,22 +443,24 @@ async function savedBorderStyles(path) {
   return styles;
 }
 
-await step('15. C3: the ribbon’s Format group has a Font box and a Size box while a block is open; Times New Roman chosen there keeps the editor open', async () => {
+await step('15. N10: no Format group in the ribbon while a block is open; Ctrl+B and Times New Roman from the Properties panel format the words', async () => {
   await section('Edit');
   await ensureEditText();
   await page.locator('[data-text-block]').first().click();
   await expect(editor()).toBeVisible();
-  const values = page.locator('.m-ribbon__tools [data-ribbon-values] [data-text-font-size="ribbon"]');
-  await expect(values).toBeVisible();
+  // THE OWNER'S DECISION: the ribbon carries none of the formatting commands nor the Font and Size boxes.
+  const ribbon = page.locator('[data-pane="ribbon"]');
+  await expect(ribbon.locator('[data-command]').first()).toBeVisible();
+  expect(await ribbon.locator('[data-command^="text.format."]').count()).toBe(0);
+  expect(await ribbon.locator('[data-ribbon-values]').count()).toBe(0);
   await page.keyboard.press('Control+A');
-  await values.getByRole('button', { name: /^Font:/u }).click();
-  const search = page.getByRole('combobox', { name: 'Search fonts' });
-  await search.fill('Times New Roman');
-  await search.press('Enter');
+  await page.keyboard.press('Control+B');
+  await chooseFont('Times New Roman');
   const stillOpen = await editor().isVisible();
-  const named = await values.getByRole('button', { name: /^Font:/u }).textContent();
-  await page.keyboard.press('Escape');
-  return { editorStayedOpen: stillOpen, ribbonFontReads: named };
+  // A CLICK AWAY WRITES IT, so step 19's saved file holds the bold Times New Roman this step set.
+  await clickPage(20, 20);
+  await expect(editor()).toHaveCount(0);
+  return { editorStayedOpen: stillOpen };
 });
 
 await step('16. E4: the text box from step 13 given a dashed border in the Box group', async () => {
@@ -512,13 +515,16 @@ await step('18. D1: Insert from Markdown at the end, its prose set in Times New 
 });
 
 const stampedSaved = join(output, 'stamped.pdf');
-await step('19. saved: the ribbon’s font, the dashed border, the Courier watermark and the inserted pages are in the file', async () => {
+await step('19. saved: step 15’s bold Times New Roman, the dashed border, the Courier watermark and the inserted pages are in the file', async () => {
   await saveTo(stampedSaved);
   await command('Save a copy');
   await expect.poll(() => existsSync(stampedSaved), { timeout: 30_000 }).toBe(true);
   const words = await savedWords(stampedSaved);
+  const pageFonts = await savedFonts(stampedSaved);
+  // READ BACK: the panel and Ctrl+B of step 15 wrote a bold Times New Roman.
+  expect(pageFonts.some((name) => /Times.*Bold/iu.test(name))).toBe(true);
   return {
-    pageFonts: await savedFonts(stampedSaved),
+    pageFonts,
     textBoxBorders: await savedBorderStyles(stampedSaved),
     watermarkOnFirstPage: words[0]?.includes('DRAFT') ?? false,
     insertedParagraphFound: words.some((each) => each.includes('This paragraph was inserted from Markdown.')),
