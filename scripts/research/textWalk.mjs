@@ -681,7 +681,35 @@ await step('N14: a word processor’s subsets keep their own font, bold and supe
 // LAST, because on failure the editor stays open and nothing after it could run (measured 2026-10-12, twice in the
 // walk and once on a fresh document: after the picker's keyboard choice focus is in its search box, and neither Escape
 // nor a press back in the words nor a press away ends the editor).
-await step('20. Add text: a font chosen in the Properties panel, and the editor still ends with Escape', async () => {
+/**
+ * What the open editor is doing when it will not end (W2): whether a write is in flight (`aria-busy`, set from the moment
+ * the words are sent until the write answers, every way out returning early meanwhile), where the focus is, and whether the
+ * picker's list is still open. Three causes, three different readings.
+ */
+async function editorState() {
+  // THE PAGE'S OWN DOCUMENT, by `globalThis` as `underPoint` reads it: this module's `document` is the sample's path, and
+  // the scripts are checked without the DOM's types.
+  return page.evaluate(() => {
+    /** @typedef {{ tagName: string, getAttribute: (name: string) => string | null }} Node */
+    const dom = /** @type {{ querySelector: (selector: string) => Node | null, activeElement: Node | null }} */ (
+      Reflect.get(globalThis, 'document')
+    );
+    const words = dom.querySelector('[data-text-editor]');
+    const focused = dom.activeElement;
+    return {
+      open: words !== null,
+      busy: words?.getAttribute('aria-busy') ?? null,
+      focus: focused === null ? null : `${focused.tagName.toLowerCase()}${focused.getAttribute('aria-label') === null ? '' : `[${focused.getAttribute('aria-label')}]`}`,
+      listOpen: dom.querySelector('[data-text-properties] [role="listbox"]') !== null,
+    };
+  });
+}
+
+/**
+ * One Add text box at this point of the walk, words typed, a font chosen or not, then Escape: the box's state just before
+ * the key and after it. @param {string} words @param {string | undefined} family
+ */
+async function addThenEscape(words, family) {
   await section('Edit');
   await command('Add text');
   const surface = page.locator('[data-text-add-surface]').first();
@@ -689,10 +717,25 @@ await step('20. Add text: a font chosen in the Properties panel, and the editor 
   if (box === null) throw new Error('no add surface');
   await page.mouse.click(box.x + box.width * 0.15, Math.min(box.y + box.height * 0.78, 800));
   await expect(editor()).toBeFocused();
-  await page.keyboard.type('Added with a font, line one');
-  await chooseFont('Times New Roman');
+  await page.keyboard.type(words);
+  if (family !== undefined) await chooseFont(family);
+  const before = await editorState();
+  const started = Date.now();
   await page.keyboard.press('Escape');
-  await expect(editor()).toHaveCount(0, { timeout: 15_000 });
+  const ended = await expect(editor())
+    .toHaveCount(0, { timeout: 15_000 })
+    .then(() => true, () => false);
+  return { before, ended, after: ended ? undefined : await editorState(), ms: Date.now() - started };
+}
+
+await step('20. W2: Add text with a font chosen in the Properties panel still ends with Escape; a box with no font first is the control', async () => {
+  // THE CONTROL FIRST, AT THE SAME POINT OF THE WALK: if this box will not end either, the font is not the cause, and the
+  // readings say what is (a write that never answered reads `busy: "true"`). Measured 2026-10-12: Ctrl+Z and Ctrl+Y sent
+  // while an edit's write was in flight left a LATER Add text box open for good, with no font chosen.
+  const control = await addThenEscape('Added with no font chosen', undefined);
+  const withFont = control.ended ? await addThenEscape('Added with a font, line one', 'Times New Roman') : undefined;
+  expect({ control: control.ended, withFont: withFont?.ended }).toStrictEqual({ control: true, withFont: true });
+  return { control, withFont };
 });
 
 await finish();
