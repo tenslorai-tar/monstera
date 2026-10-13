@@ -34,13 +34,15 @@
  * contain {@link CONTROL_EDGE} on every run or this refuses to answer, and an
  * empty module graph throws rather than returning an empty list.
  *
- * The graph is textual and reaches only static relative imports between
- * `scripts/**` modules. A proof that shells out to a script it never imports is
- * invisible here, which is a stated limit rather than a silent one — the report
- * prints it whenever it names anything.
+ * The graph is textual. It follows every relative or `@monstera/*` specifier in
+ * `scripts/**` and in the workspaces' `src/**`, a built file on to the source it
+ * was compiled from, and any other existing file as a leaf (L8). A proof that
+ * shells out to a script it never imports is invisible here, which is a stated
+ * limit rather than a silent one — the report prints it whenever it names
+ * anything.
  */
 
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 
 import { builtSourcesFor } from './buildFreshness.mjs';
@@ -145,7 +147,7 @@ const DATA_EXTENSIONS = ['.json', '.toml', '.yml', '.yaml', '.md', '.css'];
  * precedes its terminator, and a side-effect import (`import './x.js';`) has no
  * `from` to run past.
  */
-const RELATIVE_IMPORT = /(?:^|\n)\s*(?:import|export)[^;]*?from\s*['"](\.[^'"]*)['"]/gu;
+const RELATIVE_IMPORT = /(?:^|\n)\s*(?:import|export)[^;]*?from\s*['"]((?:\.|@monstera\/)[^'"]*)['"]/gu;
 
 /**
  * A DYNAMIC import whose specifier is a literal relative path.
@@ -179,7 +181,73 @@ const RELATIVE_IMPORT = /(?:^|\n)\s*(?:import|export)[^;]*?from\s*['"](\.[^'"]*)
  * runs on Guards, which installs nothing — a job move, and a decision rather
  * than a tidy-up.
  */
-const DYNAMIC_RELATIVE_IMPORT = /(?:^|[^\w$])import\s*\(\s*['"](\.[^'"]*)['"]/gu;
+const DYNAMIC_RELATIVE_IMPORT = /(?:^|[^\w$])import\s*\(\s*['"]((?:\.|@monstera\/)[^'"]*)['"]/gu;
+
+/**
+ * A built module's own source: `<workspace>/dist/<path>.js` is compiled from `<workspace>/src/<path>.ts` (or `.tsx`),
+ * which is every workspace's `tsconfig` (`rootDir: ./src`, `outDir: ./dist`, all seven read 2026-10-13).
+ */
+const BUILT_MODULE = /^((?:packages|apps)\/[^/]+)\/dist\/(.+)\.js$/u;
+
+/** The workspaces whose `src` the graph walks, so an edge into a build continues through what the build compiled. */
+const WORKSPACE_ROOTS = ['packages', 'apps'];
+
+/**
+ * Every `<workspace>/src/**` TypeScript module, repo-relative with forward slashes.
+ *
+ * Empty where the root has no workspaces, which is the bare directory the import control's own case drives: the
+ * control is on the `scripts/` edge, and this set only extends what the walk can follow from there.
+ *
+ * @param {string} root
+ * @returns {string[]}
+ */
+function sourceFiles(root) {
+  /** @type {string[]} */
+  const found = [];
+  /** @param {string} directory */
+  const walk = (directory) => {
+    for (const entry of readdirSync(directory)) {
+      if (entry === 'node_modules') continue;
+      const path = join(directory, entry);
+      if (statSync(path).isDirectory()) walk(path);
+      else if (/\.(?:ts|tsx|mts)$/u.test(entry) && !entry.endsWith('.d.ts')) found.push(relative(root, path).replaceAll('\\', '/'));
+    }
+  };
+  for (const workspaces of WORKSPACE_ROOTS) {
+    if (!existsSync(join(root, workspaces))) continue;
+    for (const workspace of readdirSync(join(root, workspaces))) {
+      const source = join(root, workspaces, workspace, 'src');
+      if (existsSync(source)) walk(source);
+    }
+  }
+  return found;
+}
+
+/**
+ * What a `@monstera/<name>[/<entry>]` specifier loads, read from that workspace's own `package.json` `exports` — the
+ * rule Node applies, so the graph does not hold a second opinion about it (B3a).
+ *
+ * @param {string} root
+ * @returns {Map<string, string>} specifier -> repo-relative built file
+ */
+function workspaceExports(root) {
+  /** @type {Map<string, string>} */
+  const found = new Map();
+  if (!existsSync(join(root, 'packages'))) return found;
+  for (const workspace of readdirSync(join(root, 'packages'))) {
+    const manifestPath = join(root, 'packages', workspace, 'package.json');
+    if (!existsSync(manifestPath)) continue;
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    if (typeof manifest.name !== 'string') continue;
+    for (const [entry, target] of Object.entries(manifest.exports ?? {})) {
+      const file = typeof target === 'string' ? target : target?.default;
+      if (typeof file !== 'string') continue;
+      const specifier = entry === '.' ? manifest.name : `${manifest.name}${entry.slice(1)}`;
+      found.set(specifier, `packages/${workspace}/${file.replace(/^\.\//u, '')}`);
+    }
+  }
+  return found;
+}
 
 /**
  * Every `scripts/**` module, repo-relative with forward slashes.
@@ -249,11 +317,54 @@ export function importGraph(root = repoRoot()) {
   /** @type {Map<string, Set<string>>} */
   const graph = new Map();
   const files = moduleFiles(root);
-  const known = new Set(files);
-  /** Each module's source, kept for the data-edge pass below. */
+  const sources = sourceFiles(root);
+  const known = new Set([...files, ...sources]);
+  const exported = workspaceExports(root);
+  /** Each `scripts/` module's source, kept for the data-edge pass below. */
   const texts = new Map();
 
-  for (const file of files) {
+  /**
+   * The node a specifier names, or undefined.
+   *
+   * ## Every edge a specifier states is kept, wherever it lands (L8, 2026-10-13)
+   *
+   * This kept only edges to `scripts/**` modules, so an import of anything else was dropped in silence — and the
+   * reassuring answer came back for a change to it. Measured before the fix, each of these a file the proof imports:
+   *
+   *     eslint.config.js                    -> neither proof:boundaries nor proof:electronimports
+   *     vitest.config.mjs                   -> not proof:domenvironment
+   *     packages/kernel/src/mupdfRaw.ts     -> not proof:ocrrecognise, not proof:scantable
+   *     packages/kernel/src/engineSeam.ts   -> not proof:wordpictures
+   *
+   * The kernel rows had a stand-in, `ARTEFACT_EDGES`, written by hand per proof; it named the modules each proof's
+   * file imports and not what those import, so it agreed with the specifiers most of the time, which is B3a's
+   * dangerous shape. So the walk follows the specifiers instead: a built file to the source it was compiled from, a
+   * workspace name through its `exports`, on through that source's own imports, and any other existing file as a
+   * leaf. `ARTEFACT_EDGES` still answers for the edges no specifier states (a bundle, a spawned compiler).
+   *
+   * @param {string} file the importer
+   * @param {string} specifier
+   * @returns {string | undefined}
+   */
+  const nodeFor = (file, specifier) => {
+    const resolved = specifier.startsWith('.')
+      ? relative(root, resolve(join(root, dirname(file)), specifier)).replaceAll('\\', '/')
+      : exported.get(specifier);
+    if (resolved === undefined) return undefined;
+    if (known.has(resolved)) return resolved;
+    const built = BUILT_MODULE.exec(resolved);
+    const stem = built === null ? resolved.replace(/\.js$/u, '') : `${built[1]}/src/${built[2]}`;
+    // A `.js` specifier inside a source tree names the `.ts` beside it (TypeScript's NodeNext rule).
+    for (const extension of ['.ts', '.tsx', '.mts']) {
+      if (known.has(`${stem}${extension}`)) return `${stem}${extension}`;
+    }
+    // A LEAF: an existing file the graph does not walk, such as a root config. An unresolvable specifier is a typo or
+    // a fixture string, and inventing a node for it would put unreachable names in the graph.
+    const path = join(root, resolved);
+    return existsSync(path) && statSync(path).isFile() ? resolved : undefined;
+  };
+
+  for (const file of [...files, ...sources]) {
     /** @type {Set<string>} */
     const imports = new Set();
     const text = readFileSync(join(root, file), 'utf8');
@@ -261,19 +372,13 @@ export function importGraph(root = repoRoot()) {
       for (const match of text.matchAll(pattern)) {
         const specifier = match[1];
         if (specifier === undefined) continue;
-        const resolved = relative(root, resolve(join(root, dirname(file)), specifier)).replaceAll(
-          '\\',
-          '/',
-        );
-        // Only edges to modules that exist. An unresolvable specifier is a
-        // typo or a package import, and inventing a node for it would put
-        // unreachable names in the graph.
-        if (known.has(resolved)) imports.add(resolved);
+        const node = nodeFor(file, specifier);
+        if (node !== undefined && node !== file) imports.add(node);
       }
     }
 
     graph.set(file, imports);
-    texts.set(file, text);
+    if (file.startsWith('scripts/')) texts.set(file, text);
   }
 
   const control = graph.get(CONTROL_EDGE.from);

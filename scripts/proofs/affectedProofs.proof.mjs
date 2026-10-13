@@ -38,7 +38,7 @@ const ROOT = repoRoot();
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 27 });
+const roster = createRoster(failures, { cases: 33 });
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -386,6 +386,58 @@ function check(name, condition, detail) {
     'a query over the real graph terminates, so no cycle traps the walk',
     answered.examined > 10,
     'gitScope is imported by nearly everything; if a cycle hung the walk this case never returns',
+  );
+}
+
+// ---------------------------------------------------------------------------
+// EVERY EDGE A SPECIFIER STATES (L8, 2026-10-13). The walk kept only edges to
+// `scripts/**` modules, so each change below reached NONE of the proofs that
+// import it — measured before the fix, every row an empty or short list. Each
+// row names its proofs by hand, an anchor the graph cannot agree with by
+// construction (4c), and each separates one of the three ways a specifier now
+// lands: a LEAF file outside the walk, a BUILT file followed to its source, and
+// a source followed through its own imports.
+// ---------------------------------------------------------------------------
+{
+  /** @type {readonly { path: string, proofs: readonly string[], how: string }[]} */
+  const MISSES = [
+    { path: 'eslint.config.js', proofs: ['proof:boundaries', 'proof:electronimports'], how: 'a leaf: a root config the proofs import' },
+    { path: 'vitest.config.mjs', proofs: ['proof:domenvironment'], how: 'a leaf: a root module outside scripts/' },
+    {
+      path: 'packages/kernel/src/mupdfRaw.ts',
+      proofs: ['proof:ocrrecognise', 'proof:scantable'],
+      how: 'a built file: nativeEngine.mjs imports packages/kernel/dist/mupdfRaw.js, which the hand-kept build list for these two omitted',
+    },
+    {
+      path: 'packages/kernel/src/engineSeam.ts',
+      proofs: ['proof:wordpictures'],
+      how: 'a built file the proof itself imports, beside the four its build list names',
+    },
+    {
+      path: 'packages/kernel/src/pageStampDraw.ts',
+      proofs: ['proof:pdflibprotected'],
+      how: 'a source the proof never names: mupdfWriter.ts reaches it, so only a walk through the sources finds it',
+    },
+  ];
+  for (const { path, proofs, how } of MISSES) {
+    const named = affectedProofs([path], { root: ROOT }).proofs.map((proof) => proof.name);
+    const missing = proofs.filter((name) => !named.includes(name));
+    check(
+      `a change to ${path} names ${proofs.join(' and ')} (${how})`,
+      missing.length === 0,
+      `it did not name ${missing.join(', ')}; it named ${named.join(', ') || '(none)'}. That is the reassuring ` +
+        `answer for a file the proof imports.`,
+    );
+  }
+
+  // A WORKSPACE NAME IS FOLLOWED THROUGH ITS OWN `exports`, the rule Node applies, so a subpath export lands on its
+  // source rather than on nothing.
+  const graph = importGraph(ROOT);
+  check(
+    'a `@monstera/contract/host` import is an edge to packages/contract/src/host.ts',
+    graph.get('packages/kernel/src/documentFonts.ts')?.has('packages/contract/src/host.ts') === true,
+    `documentFonts.ts imports '@monstera/contract/host' and the graph carries ` +
+      `${[...(graph.get('packages/kernel/src/documentFonts.ts') ?? [])].join(', ') || 'no edge at all'}.`,
   );
 }
 
