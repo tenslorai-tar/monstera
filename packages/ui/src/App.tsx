@@ -94,7 +94,6 @@ import {
   pageTransitionCommand,
   pageBackgroundCommand,
   resizePagesCommand,
-  deskewPagesCommand,
   generateTocCommand,
   extractPagesCommand,
   insertFromPdfCommand,
@@ -462,6 +461,7 @@ import { CrashReportOffer } from './CrashReportOffer.js';
 import { DocumentTabs } from './surfaces/DocumentTabs.js';
 import { keyboardShortcutsCommand } from './commands/keyboardShortcuts.js';
 import { helpCommand } from './commands/help.js';
+import { deskewPagesCommand } from './commands/pageAdjustments.js';
 import { showMeModel } from './surfaces/projections.js';
 import { shortcutRows, withChosenShortcuts } from './surfaces/shortcutChoice.js';
 import { StartFooter } from './surfaces/StartFooter.js';
@@ -3713,7 +3713,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         pageTransitionCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         pageBackgroundCommand({ client, onApplied: applied, ask, stamp, signatures }),
         resizePagesCommand({ client, onApplied: applied, ask, stamp, signatures }),
-        deskewPagesCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        deskewPagesCommand({ client, onApplied: applied, ask, stamp, signatures, track }),
         // TAKES `track` AS WELL AS THE THREE ABOVE, and it is the first mutating
         // command to: recognition is 3.8–4.4 s per page and this one dispatches
         // once per page, so the status bar is where a reader watches it and where

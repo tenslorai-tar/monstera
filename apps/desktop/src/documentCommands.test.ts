@@ -97,6 +97,7 @@ import {
   readPageLinks,
   readPageText,
   readPageTextJson,
+  readPageAdjustment,
   readPageWordBoxes,
   detectFlatFields,
   readFieldProperties,
@@ -190,6 +191,8 @@ import {
   type DocumentPageText,
   type DocumentPageStructure,
   type DocumentPageTables,
+  type DocumentPageAdjustment,
+  PageOutOfRangeError,
   type ExcelReview,
   type NetworkTableReader,
   type AskPictureReader,
@@ -410,6 +413,9 @@ const noPageStructure: DocumentPageStructure = () =>
 
 const noPageTables: DocumentPageTables = () =>
   Promise.reject(new Error('this case does not read page tables'));
+
+const noPageAdjustment: DocumentPageAdjustment = () =>
+  Promise.reject(new Error('this case does not read a page tool’s outcome'));
 
 const noPageLinks: DocumentPageLinksReader = () =>
   Promise.reject(new Error('this case does not read page links'));
@@ -773,6 +779,13 @@ const localPageTables: DocumentPageTables = async (id, sessions, page) => {
   return parsePageTables(await readPageTextJson(held, page, 'table'));
 };
 
+/** The page-tool read, composed as `composition.ts` composes it, over the host's own reader. */
+const localPageAdjustment: DocumentPageAdjustment = async (id, sessions, page, adjustment) => {
+  const held = sessions.mupdf;
+  if (held === undefined) throw new MissingSessionError(id, 'mupdf');
+  return await readPageAdjustment(held, page, adjustment);
+};
+
 /**
  * The production composition of the link read, the way `composition.ts`
  * assembles it — a session lookup and `readPageLinks`.
@@ -880,6 +893,7 @@ const INERT = {
   pageText: noPageText,
   pageStructure: noPageStructure,
   pageTables: noPageTables,
+  pageAdjustment: noPageAdjustment,
   pageLinks: noPageLinks,
   wordBoxes: noWordBoxes,
   destinations: noDestinations,
@@ -986,6 +1000,7 @@ const LOCAL_READS = {
   pageText: localPageText,
   pageStructure: localPageStructure,
   pageTables: localPageTables,
+  pageAdjustment: localPageAdjustment,
   pageLinks: localPageLinks,
   wordBoxes: localWordBoxes,
   destinations: localDestinations,
@@ -4845,6 +4860,24 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
     // EVERY PAGE of THIS document, as *Every page* sends it.
     return { version, edits: [], pages: [[0, pageCount - 1]] };
   }
+
+  it('reads what each page tool would do to a page through the host’s decision, at the version the lane holds (N3)', async () => {
+    const { commands } = exportingTo(null);
+    const { version } = await commands.pageTables(tablesDoc, 0);
+
+    // A TYPESET PAGE: level already, and holding no single picture to crop — two different answers from one page, so
+    // a handler that answered one tool's outcome for the other is told apart.
+    expect(await commands.pageAdjustment(tablesDoc, 1, 'level')).toStrictEqual({ version, outcome: 'already-level' });
+    expect(await commands.pageAdjustment(tablesDoc, 1, 'crop-to-sheet')).toStrictEqual({ version, outcome: 'not-one-image' });
+  });
+
+  it('REFUSES a page past the end as itself, where the last page is read (control)', async () => {
+    const { commands } = exportingTo(null);
+
+    await expect(commands.pageAdjustment(tablesDoc, 3, 'level')).rejects.toThrow(PageOutOfRangeError);
+    // THE CONTROL: page 2 is the last of three, so the refusal is the bound and not a read that fails on every page.
+    expect((await commands.pageAdjustment(tablesDoc, 2, 'level')).outcome).toBe('already-level');
+  });
 
   it('the review grid reads a page’s cells, and an EDIT replaces that cell’s text in the workbook', async () => {
     const destination = join(mkdtempSync(join(directory, 'xlsx-')), 'edited.xlsx');

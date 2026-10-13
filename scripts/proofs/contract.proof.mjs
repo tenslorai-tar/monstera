@@ -1529,6 +1529,7 @@ export const handlers: ContractHandlers = {
     ),
   'document.pageTables': () =>
     Promise.resolve(ok({ version: asDocVersion(1), pageCount: 1, tables: [], truncated: false })),
+  'document.pageAdjustment': () => Promise.resolve(ok({ version: asDocVersion(1), outcome: 'changes' })),
   'document.pageLinks': () => Promise.resolve(ok({ version: asDocVersion(1), links: [], next: null, truncated: false })),
   'document.destinations': () =>
     Promise.resolve(ok({ version: asDocVersion(1), destinations: [], next: null, truncated: false })),
@@ -1741,6 +1742,7 @@ export const handlers: ContractHandlers = {
     ),
   'document.pageTables': () =>
     Promise.resolve(ok({ version: asDocVersion(1), pageCount: 1, tables: [], truncated: false })),
+  'document.pageAdjustment': () => Promise.resolve(ok({ version: asDocVersion(1), outcome: 'changes' })),
   'document.pageLinks': () => Promise.resolve(ok({ version: asDocVersion(1), links: [], next: null, truncated: false })),
   'document.destinations': () =>
     Promise.resolve(ok({ version: asDocVersion(1), destinations: [], next: null, truncated: false })),
@@ -2034,6 +2036,7 @@ export const shim: ContractClient = {
     ),
   'document.pageTables': () =>
     Promise.resolve(ok({ version: asDocVersion(1), pageCount: 1, tables: [], truncated: false })),
+  'document.pageAdjustment': () => Promise.resolve(ok({ version: asDocVersion(1), outcome: 'changes' })),
   'document.pageLinks': () => Promise.resolve(ok({ version: asDocVersion(1), links: [], next: null, truncated: false })),
   'document.destinations': () =>
     Promise.resolve(ok({ version: asDocVersion(1), destinations: [], next: null, truncated: false })),

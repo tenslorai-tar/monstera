@@ -4,7 +4,8 @@ import { describe, expect, it } from 'vitest';
 import type { CommandOfKind } from '@monstera/contract';
 
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
-import { applyDeskewPages, captureDeskewPages, invertDeskewPages } from './pageDeskew.js';
+import { readPageAdjustment } from './pageAdjustment.js';
+import { applyDeskewPages, captureDeskewPages, invertDeskewPages, pageIsLevel } from './pageDeskew.js';
 import { measurePageSkew } from './pageSkew.js';
 
 /**
@@ -198,6 +199,19 @@ describe('deskewPages', () => {
     const after = await afterApply(await page(DRAWN_AT), ALL);
 
     expect(transformStreams(await streamsOn(after, 0))).toHaveLength(1);
+  });
+
+  it('THE READ BEFORE THE WRITE AGREES WITH IT (N3): Straighten is told a crooked page will change and a level one will not', async () => {
+    // THE SAME TWO PAGES as the two cases above, whose transforms say what the apply did with each.
+    for (const [angle, level] of [[DRAWN_AT, false], [0, true]] as const) {
+      const session = await mupdfWriter.open(await page(angle));
+      try {
+        expect(await pageIsLevel(session, 0), `drawn at ${String(angle)}°`).toBe(level);
+        expect(await readPageAdjustment(session, 0, 'level')).toBe(level ? 'already-level' : 'changes');
+      } finally {
+        await mupdfWriter.close(session);
+      }
+    }
   });
 
   it('LEAVES BOTH BOXES ALONE, because a deskew does not change a page’s size', async () => {

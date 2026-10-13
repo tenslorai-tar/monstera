@@ -45,6 +45,7 @@ import { findDuplicatePages } from '../pageDuplicates.js';
 import { readPageFills } from '../pageFills.js';
 import { buildScannedTablePdf } from '../scanTableFixture.js';
 import { readScanTables } from '../scanTables.js';
+import { readPageAdjustment } from '../pageAdjustment.js';
 import { readPageWordBoxes } from '../wordBoxes.js';
 import { readLinkAddress, readPageLinks } from '../pageLinks.js';
 import { readPageTextJson } from '../pageText.js';
@@ -61,6 +62,7 @@ import {
   remoteMupdfPageText,
   remoteMupdfPageFills,
   remoteMupdfScanTables,
+  remoteMupdfPageAdjustment,
   remoteMupdfPageRewrite,
   remoteMupdfWordBoxes,
   remoteMupdfAccessibility,
@@ -255,6 +257,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
   readonly pageText: ReturnType<typeof remoteMupdfPageText>;
   readonly pageFills: ReturnType<typeof remoteMupdfPageFills>;
   readonly scanTables: ReturnType<typeof remoteMupdfScanTables>;
+  readonly pageAdjustment: ReturnType<typeof remoteMupdfPageAdjustment>;
   readonly pageRewrite: ReturnType<typeof remoteMupdfPageRewrite>;
   readonly wordBoxes: ReturnType<typeof remoteMupdfWordBoxes>;
   readonly accessibility: ReturnType<typeof remoteMupdfAccessibility>;
@@ -343,6 +346,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
       linkAddress: readLinkAddress,
       pageFills: readPageFills,
       scanTables: readScanTables,
+      pageAdjustment: readPageAdjustment,
       pageRewrite: readPageRewrite,
       wordBoxes: readPageWordBoxes,
       // NOT THE REAL READER, where its neighbours above are. `recognisePage`
@@ -411,6 +415,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
     pageText: remoteMupdfPageText(client, sessions),
     pageFills: remoteMupdfPageFills(client, sessions),
     scanTables: remoteMupdfScanTables(client, sessions),
+    pageAdjustment: remoteMupdfPageAdjustment(client, sessions),
     pageRewrite: remoteMupdfPageRewrite(client, sessions),
     wordBoxes: remoteMupdfWordBoxes(client, sessions),
     accessibility: remoteMupdfAccessibility(client, sessions),
@@ -634,6 +639,21 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
     } finally {
       await mupdfWriter.close(scan.session);
       await mupdfWriter.close(vector.session);
+    }
+  });
+
+  it('the PAGE-ADJUSTMENT read crosses the real handler and schema, with the tool it was asked about (N3)', async () => {
+    const page = await joined(ruled);
+    try {
+      // THE TWO TOOLS ANSWER DIFFERENT WORDS for one page — a level grid of vectors: level already, and no single picture to
+      // crop — so a hop that dropped or fixed the tool's name answers one of them wrongly.
+      const level = await page.pageAdjustment(page.token, 0, 'level');
+      const crop = await page.pageAdjustment(page.token, 0, 'crop-to-sheet');
+      expect([level, crop]).toStrictEqual(['already-level', 'not-one-image']);
+      expect(level).toBe(await readPageAdjustment(page.session, 0, 'level'));
+      expect(crop).toBe(await readPageAdjustment(page.session, 0, 'crop-to-sheet'));
+    } finally {
+      await mupdfWriter.close(page.session);
     }
   });
 
@@ -877,6 +897,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         scanTables: () => {
           throw new Error('unused');
         },
+        pageAdjustment: () => {
+          throw new Error('unused');
+        },
         pageRewrite: () => {
           throw new Error('no case here reads which writer a page needs');
         },
@@ -1045,6 +1068,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         },
         scanTables: () => {
           throw new Error('the rotation-refusal case must not read scanned tables');
+        },
+        pageAdjustment: () => {
+          throw new Error('the rotation-refusal case must not read a page adjustment');
         },
         pageRewrite: () => {
           throw new Error('no case here reads which writer a page needs');

@@ -653,6 +653,10 @@ export {
   type TextRewrite,
   textRewriteSchema,
   readsUnpacked,
+  PAGE_ADJUSTMENTS,
+  PAGE_ADJUSTMENT_OUTCOMES,
+  type PageAdjustment,
+  type PageAdjustmentOutcome,
 } from './commands.js';
 export {
   // A command's pages as runs (decision D, finding AAA-1): the renderer writes them, the kernel expands them.

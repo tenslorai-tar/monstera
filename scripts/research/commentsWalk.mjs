@@ -23,11 +23,14 @@
  * - O9: a dismissed picker shows no notice; a long Markdown conversion shows its notice, without a Cancel, until its tab
  *   opens, and the PDF it wrote is read back.
  * - N6: a `.doc`, a two-sheet `.xls` and a `.ppt` from `_review/samples/old-office/` each become a PDF that opens.
+ * - N3: Straighten turns a page tilted 3 degrees upright and says so, and says a level page is already straight; Crop to
+ *   paper crops a photographed sheet and says so. Each read back from the saved file: the turn in its content, the
+ *   sheet's shape in its box.
  */
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNumber, PDFRef, PDFString, StandardFonts, degrees } from '@cantoo/pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNumber, PDFRawStream, PDFRef, PDFString, StandardFonts, decodePDFRawStream, degrees } from '@cantoo/pdf-lib';
 import { expect as defaultExpect } from '@playwright/test';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { root, startWalk } from './liveWalk.mjs';
@@ -557,5 +560,122 @@ for (const { file, expectation } of [
     return { pages: read.length };
   });
 }
+
+/** One page of text lines laid on a baseline turned `angle` degrees, as `pageDeskew.test.ts` lays its own. @param {number} angle */
+async function linesAt(angle) {
+  const document = await PDFDocument.create();
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const added = document.addPage([420, 560]);
+  for (let index = 0; index < 18; index += 1) {
+    added.drawText('The quick brown fox jumps over the lazy dog, again and again.', { x: 40, y: 500 - index * 26, size: 10, font, rotate: degrees(angle) });
+  }
+  return document.save({ useObjectStreams: false });
+}
+
+/**
+ * The turn the first `cm` on page 1 of a saved file applies, in degrees, read from its decoded content streams by
+ * pdf-lib; `null` when no stream on the page opens with one.
+ *
+ * @param {string} path
+ */
+async function firstTurn(path) {
+  const document = await PDFDocument.load(await readFile(path), { updateMetadata: false });
+  const [first] = document.getPages();
+  if (first === undefined) throw new Error('the saved file has no page');
+  const contents = first.node.Contents();
+  const streams = contents instanceof PDFArray ? contents.asArray().map((entry) => document.context.lookup(entry)) : [contents];
+  for (const stream of streams) {
+    if (!(stream instanceof PDFRawStream)) continue;
+    const text = new TextDecoder('latin1').decode(decodePDFRawStream(stream).decode());
+    const cm = /^\s*q\s+(-?[\d.]+)\s+(-?[\d.]+)\s+-?[\d.]+\s+-?[\d.]+\s+-?[\d.]+\s+-?[\d.]+\s+cm/u.exec(text);
+    if (cm !== null) return (Math.atan2(Number(cm[2]), Number(cm[1])) * 180) / Math.PI;
+  }
+  return null;
+}
+
+await step('N3: Straighten turns a page tilted 3 degrees upright, says "The page is now straight.", and the saved page carries the turn', async () => {
+  const tilted = join(output, 'tilted.pdf');
+  await writeFile(tilted, await linesAt(3));
+  await open(tilted);
+  await command('Straighten crooked pages');
+  const dialog = page.getByRole('dialog', { name: 'Straighten' });
+  await expect(dialog).toContainText('The page is now straight.', { timeout: 60_000 });
+  await page.keyboard.press('Escape');
+  const turn = await firstTurn(await saveCopy('tilted-straightened.pdf'));
+  // THE OPPOSITE OF THE TILT, within the measurement's half degree: the sign is what a wrong turn would get wrong.
+  expect(turn).not.toBeNull();
+  expect(Math.abs(Math.abs(turn ?? 0) - 3)).toBeLessThan(0.5);
+  return { turn };
+});
+
+await step('N3: Straighten on a level page says "This page is already straight. Nothing was changed." and the saved page has no turn', async () => {
+  const level = join(output, 'level.pdf');
+  await writeFile(level, await linesAt(0));
+  await open(level);
+  await command('Straighten crooked pages');
+  const dialog = page.getByRole('dialog', { name: 'Straighten' });
+  await expect(dialog).toContainText('This page is already straight. Nothing was changed.', { timeout: 60_000 });
+  await page.keyboard.press('Escape');
+  expect(await firstTurn(await saveCopy('level-unchanged.pdf'))).toBeNull();
+});
+
+/**
+ * A JPEG of a light sheet turned 8 degrees on a dark desk, `width` by `height`: the photograph the crop finds a sheet in.
+ * Drawn on the app's own canvas, because a phone photo is a JPEG and the crop decodes only what MuPDF recognises on its
+ * own: the same picture embedded as raw samples behind `/FlateDecode` reads as *unreadable* (measured 2026-10-13).
+ *
+ * @param {number} width
+ * @param {number} height
+ */
+async function photographJpeg(width, height) {
+  const base64 = await page.evaluate(([w, h]) => {
+    /** @typedef {{ fillStyle: string; fillRect: (x: number, y: number, w: number, h: number) => void; translate: (x: number, y: number) => void; rotate: (a: number) => void }} Pen */
+    const dom = /** @type {{ createElement: (tag: string) => { width: number; height: number; getContext: (kind: string) => Pen | null; toDataURL: (type: string, quality: number) => string } }} */ (
+      Reflect.get(globalThis, 'document')
+    );
+    const canvas = dom.createElement('canvas');
+    canvas.width = w ?? 0;
+    canvas.height = h ?? 0;
+    const pen = canvas.getContext('2d');
+    if (pen === null) throw new Error('the renderer has no 2d canvas');
+    pen.fillStyle = '#282828';
+    pen.fillRect(0, 0, canvas.width, canvas.height);
+    pen.translate(canvas.width / 2, canvas.height / 2);
+    pen.rotate((8 * Math.PI) / 180);
+    pen.fillStyle = '#ebebeb';
+    // A SHEET TALLER THAN WIDE in a photograph wider than tall, so the cropped page's shape is the sheet's and not the photo's.
+    pen.fillRect(-canvas.width * 0.25, -canvas.height * 0.42, canvas.width * 0.5, canvas.height * 0.84);
+    return canvas.toDataURL('image/jpeg', 0.92).split(',')[1] ?? '';
+  }, [width, height]);
+  return Buffer.from(base64, 'base64');
+}
+
+await step('N3: Crop to paper crops a photographed sheet, says "The page is now cropped to the paper.", and the saved page is the sheet', async () => {
+  const document = await PDFDocument.create();
+  const photo = await document.embedJpg(await photographJpeg(800, 600));
+  document.addPage([612, 459]).drawImage(photo, { x: 0, y: 0, width: 612, height: 459 });
+  const photographed = join(output, 'photographed.pdf');
+  await writeFile(photographed, await document.save({ useObjectStreams: false }));
+  await open(photographed);
+  await command('Crop photographed pages to the paper');
+  const dialog = page.getByRole('dialog', { name: 'Crop to paper' });
+  await expect(dialog).toContainText('The page is now cropped to the paper.', { timeout: 60_000 });
+  await page.keyboard.press('Escape');
+  const [read] = await savedPages(await saveCopy('photographed-cropped.pdf'));
+  // THE SHEET IS TALLER THAN WIDE where the photograph was wider than tall, so the page's box changing shape is the crop.
+  expect(read?.height).toBeGreaterThan(read?.width ?? Number.POSITIVE_INFINITY);
+  return { page: read };
+});
+
+await step('N3: Crop to paper on a typed page says no photographed pages, and changes nothing', async () => {
+  const typed = join(output, 'typed.pdf');
+  await writeFile(typed, await linesAt(0));
+  await open(typed);
+  await command('Crop photographed pages to the paper');
+  const dialog = page.getByRole('dialog', { name: 'Crop to paper' });
+  await expect(dialog).toContainText('No photographed pages here.', { timeout: 60_000 });
+  await page.keyboard.press('Escape');
+  expect(await firstTurn(await saveCopy('typed-unchanged.pdf'))).toBeNull();
+});
 
 await finish();

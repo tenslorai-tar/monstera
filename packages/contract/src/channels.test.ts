@@ -480,6 +480,7 @@ const handlers: ContractHandlers = {
   'ai.translateText': () => Promise.resolve(ok({ kind: 'translated' as const, text: '' })),
   'document.openBarcodeLink': () => Promise.resolve(ok({ kind: 'stale' as const })),
   'document.saveBarcodeContact': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.pageAdjustment': () => Promise.resolve(ok({ version: asDocVersion(1), outcome: 'changes' as const })),
   'work.progress': () => Promise.resolve(ok({ kind: 'idle' as const })),
   'work.cancel': () => Promise.resolve(ok({ cancelled: false })),
   'document.listBackups': () => Promise.resolve(ok({ kind: 'listed' as const, versions: [] })),

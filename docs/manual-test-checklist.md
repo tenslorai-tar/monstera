@@ -199,7 +199,7 @@ is not available.
 - [ ] **Make scanned pages searchable** — OCR · `document.ocr` · Shows: a result dialog · Help: *Make scanned pages searchable (OCR)*
 - [ ] **Export a searchable copy** — OCR · `document.export-searchable` · Shows: a toast · Help: *Save a searchable copy of a scan*
 - [ ] **Clean up scanned pages** — OCR · `document.enhance-scans` · Shows: on screen · Help: *Clean up scanned pages*
-- [ ] **Straighten photographed pages** — OCR · `document.straighten-scans` · Shows: on screen · Help: *Straighten photographed pages*
+- [ ] **Crop photographed pages to the paper** — OCR · `document.straighten-scans` · Shows: on screen · Help: *Crop photographed pages to the paper*
 - [ ] **Read barcodes** — OCR · `document.read-barcodes` · Shows: a result dialog · Help: *Add and read barcodes and QR codes*
 - [ ] **Recognise text in a box** — OCR · `tools.ocr-region` · Shows: on screen · Help: *Recognise text in part of a page*
 - [ ] **Send a box to Azure to recognise** — OCR · `tools.cloud-region` · Shows: on screen · Help: *Get and add keys for AI and online reading services*

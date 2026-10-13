@@ -149,6 +149,9 @@ async function joined(ocr: HostOcrReader): Promise<{
       scanTables: () => {
         throw new Error('a recognition must not read scanned tables');
       },
+      pageAdjustment: () => {
+        throw new Error('a recognition must not read a page adjustment');
+      },
       pageRewrite: () => {
         throw new Error('no case here reads which writer a page needs');
       },

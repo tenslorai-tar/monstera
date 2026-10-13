@@ -167,6 +167,9 @@ async function joined(formFields: HostFormFieldsReader): Promise<{
       scanTables: () => {
         throw new Error('a field read must not read scanned tables');
       },
+      pageAdjustment: () => {
+        throw new Error('a field read must not read a page adjustment');
+      },
       pageRewrite: () => {
         throw new Error('no case here reads which writer a page needs');
       },

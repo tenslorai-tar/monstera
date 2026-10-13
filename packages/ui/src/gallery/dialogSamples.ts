@@ -428,7 +428,15 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'stopped', props: { recognised: 3, skipped: 2, stopped: true } },
   ],
   'dialog.enhance-outcome': [{ state: 'opened', props: { pages: 5 } }],
-  'dialog.scan-outcome': [{ state: 'opened', props: { pages: 5 } }],
+  'dialog.scan-outcome': [
+    { state: 'opened', props: { scanned: 5, cropped: 4, unreadable: 1, onePage: false } },
+    // NOTHING CHANGED, said as itself (N3).
+    { state: 'no-sheet', props: { scanned: 1, cropped: 0, unreadable: 0, onePage: true } },
+  ],
+  'dialog.straighten-outcome': [
+    { state: 'opened', props: { pages: 1, straightened: 1 } },
+    { state: 'already-straight', props: { pages: 1, straightened: 0 } },
+  ],
   'dialog.save-problem': [
     { state: 'opened', props: { outcome: 'write-failed' } },
     // THE LONGEST of the causes a save to the document's own file can be told (cloud-4 7b).

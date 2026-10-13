@@ -536,6 +536,9 @@ describe('the engine host answers a containment probe', () => {
     scanTables: () => {
       throw new Error('a containment probe must not read scanned tables');
     },
+    pageAdjustment: () => {
+      throw new Error('a containment probe must not read a page adjustment');
+    },
     pageRewrite: () => {
       throw new Error('no case here reads which writer a page needs');
     },

@@ -92,6 +92,7 @@ import {
   type HostLayersReader,
   type HostPageFillsReader,
   type HostScanTablesReader,
+  type HostPageAdjustmentReader,
   type HostPageRewriteReader,
   type HostPageLinksReader,
   type HostPageTextReader,
@@ -166,6 +167,7 @@ import {
   remoteMupdfOcr,
   remoteMupdfPageFills,
   remoteMupdfScanTables,
+  remoteMupdfPageAdjustment,
   remoteMupdfPageRewrite,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
@@ -1236,6 +1238,12 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       if (read.tables.length === 0) return read;
       return { ...read, tables: withCellFills(read.tables, await engineHost.pageFills(session, page)) };
     },
+    // WHETHER A PAGE TOOL WOULD CHANGE A PAGE (N3): the apply's own decision, read in the host without writing.
+    pageAdjustment: (docId, sessions, page, adjustment) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return engineHost.pageAdjustment(session, page, adjustment);
+    },
     // A PAGE'S WORD BOXES (ADR-0137), the host's walk of its characters, crossed as data.
     wordBoxes: (docId, sessions, page) => {
       const session = sessions.mupdf;
@@ -2139,6 +2147,8 @@ function engineSessionOpener(
   readonly pageFills: HostPageFillsReader;
   /** One scanned page's ruled tables, from whichever host is live (ADR-0233). */
   readonly scanTables: HostScanTablesReader;
+  /** What a page tool would do to one page, from whichever host is live (N3). */
+  readonly pageAdjustment: HostPageAdjustmentReader;
   /** Which writer rewrites one page's text, from whichever host is live (ADR-0176 Decision 1). */
   readonly pageRewrite: HostPageRewriteReader;
   /** One page's word boxes, from whichever host is live (ADR-0137). */
@@ -2426,6 +2436,20 @@ function engineSessionOpener(
       );
     }
     return scanTables(session, page);
+  };
+
+  /** The page-tool read's half of the same registration (N3). See {@link pageText}. */
+  let pageAdjustment: HostPageAdjustmentReader | null = null;
+
+  const readPageAdjustmentThroughHost: HostPageAdjustmentReader = (session, page, adjustment) => {
+    if (pageAdjustment === null) {
+      throw new Error(
+        'A page-tool read reached the engine with no host reader registered. A session was ' +
+          'resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return pageAdjustment(session, page, adjustment);
   };
 
   /** Which writer rewrites a page's text (ADR-0176 Decision 1), the same registration's. See {@link pageText}. */
@@ -2894,6 +2918,7 @@ function engineSessionOpener(
     pageLinks = remoteMupdfPageLinks(client, remote);
     pageFills = remoteMupdfPageFills(client, remote);
     scanTables = remoteMupdfScanTables(client, remote);
+    pageAdjustment = remoteMupdfPageAdjustment(client, remote);
     pageRewrite = remoteMupdfPageRewrite(client, remote);
     wordBoxes = remoteMupdfWordBoxes(client, remote);
     destinations = remoteMupdfDestinations(client, remote);
@@ -3277,6 +3302,7 @@ function engineSessionOpener(
     pageLinks: readPageLinksThroughHost,
     pageFills: readPageFillsThroughHost,
     scanTables: readScanTablesThroughHost,
+    pageAdjustment: readPageAdjustmentThroughHost,
     pageRewrite: readPageRewriteThroughHost,
     wordBoxes: readWordBoxesThroughHost,
     destinations: readDestinationsThroughHost,

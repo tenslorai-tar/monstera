@@ -39,6 +39,8 @@ import {
   annotationRectSchema,
   LISTED_POINTS_MAX,
   MAX_BLANK_PAGES,
+  PAGE_ADJUSTMENTS,
+  PAGE_ADJUSTMENT_OUTCOMES,
   formDataFormatSchema,
   formDataImportFormatSchema,
   annotationDataFormatSchema,
@@ -2799,6 +2801,24 @@ export const engineChannels = {
     // TWO REFUSALS BY NAME: no external link at that place, and an address too long to open as written. Neither is
     // a failure of the host, and main tells the person which.
     ['no-such-session', 'no-such-link', 'address-too-long'],
+  ),
+
+  /**
+   * What a page tool would do to one page, read before it writes (the owner's N3): `readPageAdjustment`, the tools' own
+   * decisions answered without writing. A word out.
+   */
+  'engine/page-adjustment': channel(
+    'Answers whether a page tool would change one page of a session this host holds, and why not where it would not.',
+    z
+      .object({
+        session: sessionSchema,
+        /** Zero-based index, as `commands.ts` declares them. */
+        page: z.number().int().nonnegative(),
+        adjustment: z.enum(PAGE_ADJUSTMENTS),
+      })
+      .strict(),
+    z.object({ outcome: z.enum(PAGE_ADJUSTMENT_OUTCOMES) }).strict(),
+    ['no-such-session'],
   ),
 
   /**

@@ -37,6 +37,8 @@ import {
   MAX_REMOVED_ANNOTATIONS,
   MAX_ANNOTATION_TEXT,
   MAX_IMAGE_BYTES,
+  PAGE_ADJUSTMENTS,
+  PAGE_ADJUSTMENT_OUTCOMES,
   MAX_IMPORT_IMAGES,
   MAX_IMPORT_IMAGE_BYTES,
   MAX_WORKBOOK_ROW,
@@ -4913,6 +4915,19 @@ export const channels = {
    *
    * ## `page` is ZERO-BASED, like every other page index that crosses here
    */
+  /**
+   * What a page tool would do to one page, read before it writes (the owner's N3): Straighten and Crop to the paper change
+   * a page only where there is something to change, and a person told *done* about a page that did not change has been
+   * told something false. One page, for ADR-0035's reason; a word and a version out.
+   */
+  'document.pageAdjustment': channel(
+    'Answers whether a page tool would change one page, and why not where it would not.',
+    z.object({ docId: docIdSchema, page: z.number().int().nonnegative(), adjustment: z.enum(PAGE_ADJUSTMENTS) }).strict(),
+    z.object({ version: docVersionSchema, outcome: z.enum(PAGE_ADJUSTMENT_OUTCOMES) }).strict(),
+    // A PAGE PAST THE END is refused as itself rather than answered as an outcome: no tool reads it, so none says why not.
+    ['document-not-open', 'document-busy', 'document-poisoned', 'page-out-of-range'],
+  ),
+
   'document.pageTables': channel(
     'One page’s tables as MuPDF finds them — each cell’s text, bounded — for the Excel review grid.',
     z.object({

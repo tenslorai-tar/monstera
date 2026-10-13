@@ -90,6 +90,7 @@ function build(protectedWriting: Protection, protectedImage?: ProtectedImage) {
       linkAddress: refuse('read a link address'),
       pageFills: refuse('read the page fills'),
       scanTables: refuse('read scanned tables'),
+      pageAdjustment: refuse('read a page adjustment'),
       wordBoxes: refuse('read the word boxes'),
       ocr: refuse('recognise a page'),
       destinations: refuse('read the outline'),

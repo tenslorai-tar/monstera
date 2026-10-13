@@ -275,6 +275,7 @@ describe('browser shim', () => {
       'document.openWaiting',
       'document.optimize',
       'document.optimizeMeasure',
+      'document.pageAdjustment',
       'document.pageBarcodes',
       'document.pageLinks',
       'document.pageObjects',

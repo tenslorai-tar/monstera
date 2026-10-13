@@ -3,6 +3,7 @@ import * as mupdf from './mupdfRaw.js';
 import { describe, expect, it } from 'vitest';
 
 import { mupdfWriter } from './mupdfWriter.js';
+import { readPageAdjustment } from './pageAdjustment.js';
 import {
   type Point,
   type Quad,
@@ -10,6 +11,7 @@ import {
   captureStraightenScans,
   perspectiveMap,
   sheetCorners,
+  sheetOnPage,
   straightenedPages,
 } from './pageScan.js';
 
@@ -263,6 +265,27 @@ describe('straightenScans', () => {
       expect(after.width).toBeCloseTo(612, 0);
       expect(after.height).toBeCloseTo(459, 0);
       expect(after.image.getWidth()).toBe(PHOTO_WIDTH);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('THE READ BEFORE THE WRITE AGREES WITH IT, page by page, and writes nothing (N3)', async () => {
+    const plain = jpegOf(photograph(() => 128));
+    const bytes = await photographed([[jpegOf(photograph(sheetOnDesk))], [plain], [plain, plain]]);
+    const session = await mupdfWriter.open(bytes);
+    try {
+      const read = [await sheetOnPage(session, 0), await sheetOnPage(session, 1), await sheetOnPage(session, 2)];
+      expect(read).toStrictEqual(['sheet', 'no-sheet', 'not-one-image']);
+      expect(await readPageAdjustment(session, 0, 'crop-to-sheet')).toBe('changes');
+      expect(await readPageAdjustment(session, 1, 'crop-to-sheet')).toBe('no-sheet');
+      // NOTHING WRITTEN by the read: the photographed page keeps its size and its image its pixels.
+      const after = pageOf(await mupdfWriter.serialise(session));
+      expect(after.width).toBeCloseTo(612, 0);
+      expect(after.image.getWidth()).toBe(PHOTO_WIDTH);
+      // AND THE WRITE THEN DOES WHAT THE READ SAID, page for page.
+      const written = await straightenedPages(session, { kind: 'straightenScans', pages: [0, 1, 2] });
+      expect(written.map(({ outcome }) => (outcome === 'straightened' ? 'sheet' : outcome))).toStrictEqual(read);
     } finally {
       await mupdfWriter.close(session);
     }

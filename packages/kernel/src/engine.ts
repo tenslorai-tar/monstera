@@ -13,6 +13,7 @@ export {
 export { commandSpecs, declaredSpecs, localMupdfExecution } from './commandSpecs.js';
 export { readPageGeometry } from './pageGeometry.js';
 export { readPageText, readPageTextJson, type PageTextResult } from './pageText.js';
+export { readPageAdjustment } from './pageAdjustment.js';
 export { readPageFills } from './pageFills.js';
 export { readPageRewrite } from './pageRewrite.js';
 export { readPageWordBoxes } from './wordBoxes.js';

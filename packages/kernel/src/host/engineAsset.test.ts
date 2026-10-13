@@ -161,6 +161,9 @@ async function joined(): Promise<{
       scanTables: () => {
         throw new Error('unused');
       },
+      pageAdjustment: () => {
+        throw new Error('unused');
+      },
       pageRewrite: () => {
         throw new Error('no case here reads which writer a page needs');
       },

@@ -60,6 +60,8 @@ import {
   sourceIdsOf,
   type BoxedInEditEntry,
   cappedBoxes,
+  type PageAdjustment,
+  type PageAdjustmentOutcome,
 } from '@monstera/contract';
 // DECLARATIONS, not specs. This reads `spec.writer` and calls nothing on it, so
 // importing the spec table would bind the MuPDF native library **in main** —
@@ -1497,6 +1499,26 @@ export type DocumentPageTables = (
 ) => Promise<PageTables>;
 
 /**
+ * Reads whether a page tool would change one page, by the decision its apply takes (`readPageAdjustment`), so what the
+ * person is told about each page is the engine's answer rather than a guess from the outside.
+ */
+export type DocumentPageAdjustment = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  page: number,
+  adjustment: PageAdjustment,
+) => Promise<PageAdjustmentOutcome>;
+
+/** A per-page read named a page the document does not have. */
+export class PageOutOfRangeError extends Error {
+  override readonly name = 'PageOutOfRangeError';
+
+  constructor(docId: DocId, page: number, pageCount: number) {
+    super(`Page index ${String(page)} is past the end of document ${docId}, which has ${String(pageCount)} pages.`);
+  }
+}
+
+/**
  * What an Excel export did: a copy's outcomes, or — before any file was picked —
  * that no page holds a table, with how many pages are a picture with no text.
  */
@@ -2446,6 +2468,8 @@ export interface DocumentCommandsParts {
   readonly pageStructure: DocumentPageStructure;
   /** The `table` read of one page — `exportExcel`'s (ADR-0073). */
   readonly pageTables: DocumentPageTables;
+  /** Whether a page tool would change one page — Straighten's and Crop to paper's read (N3). */
+  readonly pageAdjustment: DocumentPageAdjustment;
   /** One page's tables read by a service — `exportExcel`'s network engines (ADR-0086). */
   readonly networkTables: NetworkTableReader;
   /** One page as a picture for a vision ask (ADR-0090). */
@@ -2726,6 +2750,7 @@ export class DocumentCommands {
   readonly #pageText: DocumentPageText;
   readonly #pageStructure: DocumentPageStructure;
   readonly #pageTables: DocumentPageTables;
+  readonly #pageAdjustment: DocumentPageAdjustment;
   readonly #networkTables: NetworkTableReader;
   readonly #askPicture: AskPictureReader;
   readonly #pageLinks: DocumentPageLinksReader;
@@ -2828,6 +2853,7 @@ export class DocumentCommands {
     this.#pageText = parts.pageText;
     this.#pageStructure = parts.pageStructure;
     this.#pageTables = parts.pageTables;
+    this.#pageAdjustment = parts.pageAdjustment;
     this.#networkTables = parts.networkTables;
     this.#askPicture = parts.askPicture;
     this.#pageLinks = parts.pageLinks;
@@ -5770,6 +5796,28 @@ export class DocumentCommands {
       return { pageCount, ...reviewGridOf(tables, MAX_TABLE_CELLS, MAX_TABLE_CELL_TEXT) };
     });
     return { version, ...value };
+  }
+
+  /**
+   * Whether `adjustment` would change one page, and why not where it would not — read in the lane, so the answer is
+   * about the version it names and a command applied after it is checked against that version.
+   */
+  async pageAdjustment(
+    docId: DocId,
+    page: number,
+    adjustment: PageAdjustment,
+  ): Promise<{ readonly version: DocVersion; readonly outcome: PageAdjustmentOutcome }> {
+    const { version, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      const { pageCount } = await this.#geometry(docId, sessions, []);
+      if (page >= pageCount) throw new PageOutOfRangeError(docId, page, pageCount);
+      return await this.#pageAdjustment(docId, sessions, page, adjustment);
+    });
+    return { version, outcome: value };
   }
 
   /**

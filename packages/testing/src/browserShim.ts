@@ -40,6 +40,7 @@ import {
   shownSchemeOf,
   wrapHandlers,
   type BoxedInEditEntry,
+  type PageAdjustmentOutcome,
 } from '@monstera/contract';
 import {
   type DeclaredFailure,
@@ -397,6 +398,11 @@ export interface BrowserShimOptions {
    * target to its version AND seeds the composed tab, `markdownAppends`' rule, the route being the same.
    */
   readonly imageInserts?: readonly ChannelResult<'document.insertImage'>[];
+  /**
+   * What `document.pageAdjustment` answers for a page, by its 0-based index; `changes` for any page not named. A browser
+   * holds no raster to measure, so a case about a page Straighten or Crop to paper would leave alone names it.
+   */
+  readonly pageAdjustments?: Readonly<Record<number, PageAdjustmentOutcome>>;
   /**
    * What the image picker answers, for `document.placeImage`.
    *
@@ -2284,6 +2290,12 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       return Promise.resolve(
         ok({ version: asDocVersion(current), pageCount: linesOf(docId).length, tables: [], truncated: false }),
       );
+    },
+
+    'document.pageAdjustment': ({ docId, page }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      return Promise.resolve(ok({ version: asDocVersion(current), outcome: options.pageAdjustments?.[page] ?? 'changes' }));
     },
 
     'document.pageStructure': ({ docId, page }) => {

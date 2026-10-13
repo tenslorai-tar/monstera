@@ -1,19 +1,20 @@
 ---
 id: straighten-photographed-pages
-title: Straighten photographed pages
-summary: Turn a photo of a sheet of paper, taken at an angle, into a flat, straight page.
-keywords: [document scan, photo of paper, perspective, straighten photo, deskew photo, edge detection, phone photo]
+title: Crop photographed pages to the paper
+summary: Turn a photo of a sheet of paper, taken at an angle, into a flat page that is just the sheet.
+keywords: [document scan, photo of paper, perspective, crop to paper, crop photo, edge detection, phone photo]
 commands: [document.straighten-scans]
 contexts: [dialog.scan-outcome, tools]
 ---
-If a page is a photo of a sheet of paper lying on a desk, Monstera can find the sheet, correct the angle, and make the page just the sheet.
+If a page is a photo of a sheet of paper lying on a desk, Monstera can find the sheet, correct the angle the photo was taken at, and crop the page to just the sheet.
 
 ## Steps
 
-1. In the rail, choose **Tools**, then **Deskew photos** in the **OCR** group (**Straighten photographed pages**).
-2. The **Straighten** window says how many scanned pages were checked. Where a sheet was found, the page is now just the sheet.
+1. In the rail, choose **Tools**, then **Crop to paper** in the **OCR** group (its full name is **Crop photographed pages to the paper**).
+2. Monstera looks for the sheet on each photographed page, then crops the pages where it found one.
+3. The **Crop to paper** window says how many pages were cropped. If no sheet was found, it says so and nothing is changed.
 
-![A photographed page before and after straightening](screenshot:straighten-photographed-pages-1)
+![A photographed page before and after cropping to the paper](screenshot:straighten-photographed-pages-1)
 
 ## Good to know
 
@@ -21,7 +22,7 @@ If a page is a photo of a sheet of paper lying on a desk, Monstera can find the 
 - The result is greyscale.
 - Pages that already have text, and pages made of more than one picture, are left alone.
 - Undo with **Ctrl+Z**.
-- For a scan that is only slightly tilted, see "Straighten crooked scanned pages".
+- To turn a slightly tilted scan upright, use **Straighten** instead: see "Straighten crooked scanned pages".
 
 <!--
 Screenshots to capture:

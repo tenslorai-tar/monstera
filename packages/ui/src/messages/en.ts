@@ -1058,7 +1058,14 @@ export const ENHANCE_OUTCOME_NONE = messageKey('dialog.enhance-outcome.none');
 export const SCAN_COMMAND_TITLE = messageKey('command.straighten-scans.title');
 export const SCAN_OUTCOME_TITLE = messageKey('dialog.scan-outcome.title');
 export const SCAN_OUTCOME_PAGES = messageKey('dialog.scan-outcome.pages');
+export const SCAN_OUTCOME_ONE_PAGE = messageKey('dialog.scan-outcome.one-page');
+export const SCAN_OUTCOME_NO_SHEET = messageKey('dialog.scan-outcome.no-sheet');
+export const SCAN_OUTCOME_UNREADABLE = messageKey('dialog.scan-outcome.unreadable');
 export const SCAN_OUTCOME_NONE = messageKey('dialog.scan-outcome.none');
+export const STRAIGHTEN_OUTCOME_TITLE = messageKey('dialog.straighten-outcome.title');
+export const STRAIGHTEN_OUTCOME_PAGES = messageKey('dialog.straighten-outcome.pages');
+export const STRAIGHTEN_OUTCOME_ONE_PAGE = messageKey('dialog.straighten-outcome.one-page');
+export const STRAIGHTEN_OUTCOME_NONE = messageKey('dialog.straighten-outcome.none');
 export const OCR_TITLE = messageKey('dialog.ocr.title');
 export const OCR_UNAVAILABLE = messageKey('dialog.ocr.unavailable');
 export const OCR_LANGUAGE = messageKey('dialog.ocr.language');
@@ -3101,6 +3108,9 @@ export const OCR_PROGRESS = messageKey('task.ocr');
 export const EXPORT_EXCEL_READING = messageKey('task.export-excel-reading');
 /** The READ's name, because the write is one command and takes no walk. */
 export const ENHANCE_PROGRESS = messageKey('task.enhance');
+/** The read each page tool asks before it writes (N3): what is counted is pages measured, not pages changed. */
+export const STRAIGHTEN_PROGRESS = messageKey('task.straighten');
+export const CROP_TO_PAPER_PROGRESS = messageKey('task.crop-to-paper');
 export const TASK_PROGRESS = messageKey('status.task.progress');
 export const TASK_CANCEL = messageKey('status.task.cancel');
 export const TASK_STARTED = messageKey('status.task.started');
@@ -3801,13 +3811,24 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     '{count, plural, one {Cleaned up one scanned page} other {Cleaned up # scanned pages}}.',
   // THE EMPTY ANSWER SAID OUT LOUD, and it names the reason rather than the count.
   [ENHANCE_OUTCOME_NONE]: 'No scanned pages here — every page already carries text.',
-  [SCAN_COMMAND_TITLE]: 'Straighten photographed pages',
-  [SCAN_OUTCOME_TITLE]: 'Straighten',
-  // WHERE, NOT WHICH: the dialog is told how many scanned pages were looked at, not
-  // which of them held a sheet of paper, so the sentence says what happened to those.
+  // CROPS, and is named for it (N3): this tool finds the sheet of paper in a photograph and makes the page just the
+  // sheet. Turning a tilted page upright is *Straighten*, in Organize, and the two names no longer cross.
+  [SCAN_COMMAND_TITLE]: 'Crop photographed pages to the paper',
+  [SCAN_OUTCOME_TITLE]: 'Crop to paper',
+  // WHAT HAPPENED, counted from each page's own read before the write.
   [SCAN_OUTCOME_PAGES]:
-    '{count, plural, one {Looked for a sheet of paper on one scanned page} other {Looked for a sheet of paper on # scanned pages}}. Where one was found, the page is now just the sheet.',
-  [SCAN_OUTCOME_NONE]: 'No scanned pages here — every page already carries text.',
+    '{count, plural, one {One page is now cropped to the paper.} other {# pages are now cropped to the paper.}}',
+  [SCAN_OUTCOME_ONE_PAGE]: 'The page is now cropped to the paper.',
+  [SCAN_OUTCOME_NO_SHEET]: 'No sheet of paper was found. Nothing was changed.',
+  [SCAN_OUTCOME_UNREADABLE]:
+    '{count, plural, one {One page could not be read, so it was left as it was.} other {# pages could not be read, so they were left as they were.}}',
+  [SCAN_OUTCOME_NONE]: 'No photographed pages here. Every page already carries text, so nothing was changed.',
+  [STRAIGHTEN_OUTCOME_TITLE]: 'Straighten',
+  [STRAIGHTEN_OUTCOME_PAGES]:
+    '{count, plural, one {One page is now straight.} other {# pages are now straight.}}',
+  [STRAIGHTEN_OUTCOME_ONE_PAGE]: 'The page is now straight.',
+  [STRAIGHTEN_OUTCOME_NONE]:
+    '{count, plural, one {This page is already straight.} other {Every page is already straight.}} Nothing was changed.',
   [OCR_TITLE]: 'Recognise text',
   // SAYS WHAT IS MISSING AND WHAT IT IS FOR, which is §10.5's no-binary state: a
   // dialog reading "unavailable" tells a reader nothing they can act on.
@@ -6695,6 +6716,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EXPORT_EXCEL_READING]: 'Reading pages for Excel',
   // NAMES THE READ, which is what the bar actually counts: *looking for scans*.
   [ENHANCE_PROGRESS]: 'Looking for scanned pages',
+  [STRAIGHTEN_PROGRESS]: 'Measuring each page’s tilt',
+  [CROP_TO_PAPER_PROGRESS]: 'Looking for the paper on each page',
   // THE LABEL FIRST, so a screen reader announces what is running before the
   // numbers. "12 of 400" alone is the shape a progress region most often has
   // and the one that says least.
@@ -6812,7 +6835,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RIBBON_OCR]: 'OCR pages',
   [RIBBON_OCR_EXPORT]: 'Searchable copy',
   [RIBBON_ENHANCE]: 'Clean up',
-  [RIBBON_STRAIGHTEN_PHOTOS]: 'Deskew photos',
+  [RIBBON_STRAIGHTEN_PHOTOS]: 'Crop to paper',
   [COPY_SELECTION_TITLE]: 'Copy',
   [HIGHLIGHT_SELECTION_TITLE]: 'Highlight',
   [UNDERLINE_SELECTION_TITLE]: 'Underline',

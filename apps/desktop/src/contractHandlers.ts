@@ -92,6 +92,7 @@ import {
   type ImportFormat,
   InvalidSearchPatternError,
   MissingSessionError,
+  PageOutOfRangeError,
   PageTooLargeToPicture,
 } from './documentCommands.js';
 import type { Assistant } from './assistant.js';
@@ -579,6 +580,7 @@ export function createContractHandlers(deps: {
     'document.pageWordCount': pageWordCountHandler(deps.commands),
     'document.pageStructure': pageStructureHandler(deps.commands),
     'document.pageTables': pageTablesHandler(deps.commands),
+    'document.pageAdjustment': pageAdjustmentHandler(deps.commands),
     'document.pageLinks': pageLinksHandler(deps.commands),
     'document.pageWordBoxes': pageWordBoxesHandler(deps.commands),
     'document.destinations': destinationsHandler(deps.commands),
@@ -2810,6 +2812,22 @@ function pageTablesHandler(commands: DocumentCommands): ContractHandlers['docume
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/** Whether a page tool would change one page; a page past the end refused as itself. */
+function pageAdjustmentHandler(commands: DocumentCommands): ContractHandlers['document.pageAdjustment'] {
+  return async ({ docId, page, adjustment }): Promise<Awaited<ReturnType<ContractHandlers['document.pageAdjustment']>>> => {
+    try {
+      const { version, outcome } = await commands.pageAdjustment(docId, page, adjustment);
+      return ok({ version, outcome });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      if (thrown instanceof PageOutOfRangeError) return err({ code: 'page-out-of-range' });
       throw thrown;
     }
   };

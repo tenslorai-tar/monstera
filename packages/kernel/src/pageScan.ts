@@ -364,8 +364,21 @@ function reduced(source: GreySamples): { readonly grey: Uint8Array; readonly wid
   return { grey, width, height, step };
 }
 
-/** Straightens one page, or answers why not. */
-function straighten(document: PDFDocument, page: number): ScanOutcome {
+/** A page's sheet, found: what the write warps from and to. */
+interface FoundSheet {
+  readonly source: GreySamples;
+  readonly width: number;
+  readonly height: number;
+  readonly map: (u: number, v: number) => Point;
+}
+
+/**
+ * The sheet of paper on one page, or why there is none — THE ONE DECISION whether this tool changes a page, read by the
+ * write below and by `sheetOnPage`, the read a command asks before it writes (the owner's N3), so the two cannot
+ * disagree about which pages will change. `use` runs while the decoded pictures are held, and they are released after
+ * it however it ends.
+ */
+function withSheet<T>(document: PDFDocument, page: number, use: (found: FoundSheet, only: { readonly object: PDFObject; readonly key: string }) => T): Exclude<ScanOutcome, 'straightened'> | T {
   const object: PDFObject = document.loadPage(page).getObject();
   const images = imagesOf(object);
   const only = images[0];
@@ -380,7 +393,6 @@ function straighten(document: PDFDocument, page: number): ScanOutcome {
   if (typeof pixmap === 'string') return 'unreadable';
 
   const grey = greyOf(pixmap);
-  let straightened: mupdf.Pixmap | null = null;
   try {
     const source: GreySamples = {
       samples: grey.getPixels(),
@@ -404,37 +416,59 @@ function straighten(document: PDFDocument, page: number): ScanOutcome {
     }
     const map = perspectiveMap(quad, width, height);
     if (map === null) return 'no-sheet';
-
-    straightened = new mupdf.Pixmap(mupdf.ColorSpace.DeviceGray, [0, 0, width, height], false);
-    // Warped into a copy and handed back: `getPixels` makes no view over engine memory.
-    const target = straightened.getPixels();
-    warpGrey(source, { samples: target, width, height, stride: straightened.getStride() }, map);
-    straightened.setPixels(target);
-    writeGreyJpeg(only.object, straightened);
-
-    // THE PAGE BECOMES THE SHEET'S SHAPE, keeping its longer side, and draws the one
-    // image to fill it. The other boxes described the photograph's page, so they go.
-    const [x0, y0, x1, y1] = document.loadPage(page).getBounds();
-    const longer = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
-    const boxWidth = width >= height ? longer : (longer * width) / height;
-    const boxHeight = width >= height ? (longer * height) / width : longer;
-    const box = document.newArray();
-    for (const value of [0, 0, boxWidth, boxHeight]) box.push(Number(contentNumber(value, COORDINATE_DECIMALS)));
-    object.put('MediaBox', box);
-    object.put('CropBox', box);
-    for (const key of ['TrimBox', 'BleedBox', 'ArtBox']) object.delete(key);
-
-    const name = only.key.replace(/^\//u, '');
-    const operators =
-      `q\n${contentNumber(boxWidth, COORDINATE_DECIMALS)} 0 0 ${contentNumber(boxHeight, COORDINATE_DECIMALS)} 0 0 cm\n` +
-      `/${name} Do\nQ\n`;
-    object.put('Contents', document.addStream(new TextEncoder().encode(operators), document.newDictionary()));
-    return 'straightened';
+    return use({ source, width, height, map }, only);
   } finally {
-    straightened?.destroy();
     if (grey !== pixmap) grey.destroy();
     pixmap.destroy();
   }
+}
+
+/** What one page would come to, read without writing: `withSheet`'s decision, answered for the read channel. */
+export type SheetOnPage = 'sheet' | Exclude<ScanOutcome, 'straightened'>;
+
+/** Whether straightening would change a page — the read a command asks before it writes (N3). */
+export function sheetOnPage(session: MupdfSession, page: number): Promise<SheetOnPage> {
+  return withDocument(session, (document) => {
+    pageInDocument(page, document.countPages());
+    return withSheet(document, page, () => 'sheet' as const);
+  });
+}
+
+/** Straightens one page, or answers why not. */
+function straighten(document: PDFDocument, page: number): ScanOutcome {
+  return withSheet(document, page, ({ source, width, height, map }, only): 'straightened' => {
+    const object: PDFObject = document.loadPage(page).getObject();
+    let straightened: mupdf.Pixmap | null = null;
+    try {
+      straightened = new mupdf.Pixmap(mupdf.ColorSpace.DeviceGray, [0, 0, width, height], false);
+      // Warped into a copy and handed back: `getPixels` makes no view over engine memory.
+      const target = straightened.getPixels();
+      warpGrey(source, { samples: target, width, height, stride: straightened.getStride() }, map);
+      straightened.setPixels(target);
+      writeGreyJpeg(only.object, straightened);
+
+      // THE PAGE BECOMES THE SHEET'S SHAPE, keeping its longer side, and draws the one
+      // image to fill it. The other boxes described the photograph's page, so they go.
+      const [x0, y0, x1, y1] = document.loadPage(page).getBounds();
+      const longer = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
+      const boxWidth = width >= height ? longer : (longer * width) / height;
+      const boxHeight = width >= height ? (longer * height) / width : longer;
+      const box = document.newArray();
+      for (const value of [0, 0, boxWidth, boxHeight]) box.push(Number(contentNumber(value, COORDINATE_DECIMALS)));
+      object.put('MediaBox', box);
+      object.put('CropBox', box);
+      for (const key of ['TrimBox', 'BleedBox', 'ArtBox']) object.delete(key);
+
+      const name = only.key.replace(/^\//u, '');
+      const operators =
+        `q\n${contentNumber(boxWidth, COORDINATE_DECIMALS)} 0 0 ${contentNumber(boxHeight, COORDINATE_DECIMALS)} 0 0 cm\n` +
+        `/${name} Do\nQ\n`;
+      object.put('Contents', document.addStream(new TextEncoder().encode(operators), document.newDictionary()));
+      return 'straightened';
+    } finally {
+      straightened?.destroy();
+    }
+  });
 }
 
 /**

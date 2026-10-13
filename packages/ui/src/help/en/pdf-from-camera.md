@@ -20,7 +20,7 @@ You can use your computer's camera to photograph documents and make them into a 
 
 - The camera is on only while this window is open.
 - If Monstera is not allowed to use the camera, allow it in the Windows camera privacy settings.
-- To square up a photo taken at an angle afterwards, see "Straighten photographed pages".
+- To square up a photo taken at an angle afterwards, see "Crop photographed pages to the paper".
 
 <!--
 Screenshots to capture:

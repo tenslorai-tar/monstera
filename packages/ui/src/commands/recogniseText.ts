@@ -9,7 +9,9 @@ import { ENHANCE_OUTCOME_DIALOG_ID } from '../dialogs/enhanceOutcome.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import { SCAN_OUTCOME_DIALOG_ID } from '../dialogs/scanOutcome.js';
 import { openHelpArticle } from './help.js';
+import { pagesThatChange, readAdjustments } from './pageAdjustments.js';
 import {
+  CROP_TO_PAPER_PROGRESS,
   ENHANCE_COMMAND_TITLE,
   ENHANCE_PROGRESS,
   GROUP_OCR,
@@ -242,14 +244,14 @@ async function imageOnlyPages(
 }
 
 /**
- * Finds the sheet of paper in each scanned page's photograph and straightens it into the
- * page — D9's *Document scan (edge detection)*.
+ * Finds the sheet of paper in each photographed page and crops the page to it, correcting the angle the photograph
+ * was taken at — D9's *Document scan (edge detection)*. It CROPS, and it is named *Crop to paper* for that (the
+ * owner's N3): this was titled *Straighten*, and a person who wanted a tilted scan turned upright got a page that
+ * looked the same, because a scan holds no desk around a sheet to crop.
  *
- * `enhanceScansCommand`'s shape exactly: nothing to choose, so no dialog; the image-only
- * pages as one command, so one undo; and an outcome dialog, because a document with no
- * photographed sheet in it changes nothing and a silent command would read as broken.
- * Which pages actually held a sheet is answered in the kernel, and `document.execute`
- * does not carry it back — `enhanceOutcome.ts`' note, for the same reason.
+ * Nothing to choose, so no dialog; the pages that change as one command, so one undo. WHICH PAGES CHANGE is read
+ * first, page by page, through the kernel's own decision (`document.pageAdjustment`), so the outcome counts pages
+ * cropped rather than pages looked at, and a document with no sheet in it sends nothing.
  */
 export function straightenScansCommand(
   deps: DocumentCommandDeps & { readonly track: TrackTask },
@@ -268,13 +270,20 @@ export function straightenScansCommand(
 
       const scanned = await imageOnlyPages(deps, docId, pageCount);
       if (scanned === null) return;
+      const onePage = pageCount === 1;
       if (scanned.length === 0) {
-        void deps.ask(SCAN_OUTCOME_DIALOG_ID, { pages: 0 });
+        void deps.ask(SCAN_OUTCOME_DIALOG_ID, { scanned: 0, cropped: 0, unreadable: 0, onePage });
         return;
       }
-      const applied = await applyDocumentCommand(deps, docId, { kind: 'straightenScans', pages: scanned });
-      if (!applied) return;
-      void deps.ask(SCAN_OUTCOME_DIALOG_ID, { pages: scanned.length });
+      const outcomes = await readAdjustments(deps, docId, scanned, 'crop-to-sheet', CROP_TO_PAPER_PROGRESS);
+      if (outcomes === null) return;
+      const cropping = pagesThatChange(outcomes);
+      const unreadable = [...outcomes.values()].filter((outcome) => outcome === 'unreadable' || outcome === 'too-large').length;
+      if (cropping.length > 0) {
+        const applied = await applyDocumentCommand(deps, docId, { kind: 'straightenScans', pages: cropping });
+        if (!applied) return;
+      }
+      void deps.ask(SCAN_OUTCOME_DIALOG_ID, { scanned: scanned.length, cropped: cropping.length, unreadable, onePage });
     },
   };
 }

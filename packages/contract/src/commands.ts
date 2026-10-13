@@ -215,6 +215,21 @@ export const swapPagesSchema = z.object({
 }).strict();
 
 /**
+ * The two page tools that change a page only where there is something to change (the owner's N3): `level` turns a tilted
+ * page straight (`deskewPages`), and `crop-to-sheet` crops a photographed page to the sheet of paper in it
+ * (`straightenScans`). Asked of a page BEFORE the write, so the person is told what happened to each page.
+ */
+export const PAGE_ADJUSTMENTS = ['level', 'crop-to-sheet'] as const;
+export type PageAdjustment = (typeof PAGE_ADJUSTMENTS)[number];
+
+/**
+ * What a page tool would do to one page, by the kernel's own decision — the one its write takes: `changes`, or why not.
+ * `already-level` is the levelling tool's; the rest are the crop's (`pageScan.ts`' outcomes).
+ */
+export const PAGE_ADJUSTMENT_OUTCOMES = ['changes', 'already-level', 'no-sheet', 'not-one-image', 'unreadable', 'too-large'] as const;
+export type PageAdjustmentOutcome = (typeof PAGE_ADJUSTMENT_OUTCOMES)[number];
+
+/**
  * The most blank pages one insert adds. A bound so a typed count cannot ask the engine for a million pages; a hundred is
  * more than any document's run of blank pages, and more is a second insert.
  */

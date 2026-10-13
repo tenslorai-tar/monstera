@@ -75,6 +75,7 @@ import { SANITIZE_DOCUMENT_DIALOG } from '../dialogs/sanitizeDocument.js';
 import { SAVE_PROBLEM_DIALOG } from '../dialogs/saveProblem.js';
 import { SCAN_OUTCOME_DIALOG } from '../dialogs/scanOutcome.js';
 import { SECURITY_UPDATE_DIALOG } from '../dialogs/securityUpdate.js';
+import { STRAIGHTEN_OUTCOME_DIALOG } from '../dialogs/straightenOutcome.js';
 import { SERVICE_REFUSED_DIALOG } from '../dialogs/serviceRefused.js';
 import { SETTINGS_DIALOG } from '../dialogs/settings.js';
 import { SETTINGS_PROBLEM_DIALOG } from '../dialogs/settingsProblem.js';
@@ -126,6 +127,7 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   OCR_OUTCOME_DIALOG,
   ENHANCE_OUTCOME_DIALOG,
   SCAN_OUTCOME_DIALOG,
+  STRAIGHTEN_OUTCOME_DIALOG,
   SAVE_PROBLEM_DIALOG,
   CLOSE_UNSAVED_DIALOG,
   COMMAND_PROBLEM_DIALOG,

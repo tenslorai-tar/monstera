@@ -1,4 +1,11 @@
-import { type Command, type ContractClient, type OcrLanguages, channels, createClient } from '@monstera/contract';
+import {
+  type Command,
+  type ContractClient,
+  type OcrLanguages,
+  type PageAdjustmentOutcome,
+  channels,
+  createClient,
+} from '@monstera/contract';
 import { asDocId, asDocVersion, asFileHandle, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -95,10 +102,17 @@ type ScriptedKind = 'text' | 'image-only' | 'empty';
 
 function clientOver(
   kinds: readonly (ScriptedKind | 'refused')[],
-  options: { readonly languages?: readonly string[]; readonly refuseExecute?: boolean } = {},
+  options: {
+    readonly languages?: readonly string[];
+    readonly refuseExecute?: boolean;
+    /** What the crop read answers for a page; `changes` where a page is not named. */
+    readonly adjustments?: Readonly<Record<number, PageAdjustmentOutcome>>;
+  } = {},
 ): {
   client: ContractClient;
   dispatched: Command[];
+  /** The pages the crop read was asked about, in order. */
+  adjusted: number[];
   /** The undo step each dispatched command named to join (ADR-0200), in order; `undefined` where it named none. */
   joins: (number | undefined)[];
   read: number[];
@@ -108,9 +122,16 @@ function clientOver(
   const dispatched: Command[] = [];
   const joins: (number | undefined)[] = [];
   const read: number[] = [];
+  const adjusted: number[] = [];
   const revealed: unknown[] = [];
   let copies = 0;
   const client = createClient(channels, (id, params) => {
+    if (id === 'document.pageAdjustment') {
+      const { page, adjustment } = params as { page: number; adjustment: string };
+      if (adjustment !== 'crop-to-sheet') throw new Error(`a scan command read ${adjustment}`);
+      adjusted.push(page);
+      return Promise.resolve(ok({ version: asDocVersion(1), outcome: options.adjustments?.[page] ?? 'changes' }));
+    }
     if (id === 'file.reveal') {
       revealed.push(params);
       return Promise.resolve(ok({ revealed: true }));
@@ -146,7 +167,7 @@ function clientOver(
     }
     throw new Error(`unexpected channel ${id}`);
   });
-  return { client, dispatched, joins, read, copies: () => copies, revealed };
+  return { client, dispatched, adjusted, joins, read, copies: () => copies, revealed };
 }
 
 /** Records what the command opened, and answers the setup dialog from a script. */
@@ -538,10 +559,10 @@ describe('the recognise-text command', () => {
     expect(opened).toStrictEqual([{ id: ENHANCE_OUTCOME_DIALOG_ID, props: { pages: 0 } }]);
   });
 
-  it('STRAIGHTEN: sends ONE command naming the scanned pages, then its own outcome', async () => {
-    // THE SAME WALK AS ENHANCE, and asserted separately: a straighten command that sent
+  it('CROP TO PAPER: sends ONE command naming the scanned pages, then its own outcome', async () => {
+    // THE SAME WALK AS ENHANCE, and asserted separately: a crop command that sent
     // `enhancePages`, or opened enhance's outcome, would read correctly everywhere else.
-    const { client, dispatched, read } = clientOver(['text', 'image-only', 'empty', 'image-only']);
+    const { client, dispatched, read, adjusted } = clientOver(['text', 'image-only', 'empty', 'image-only']);
     const { ask, opened } = recordingAsk(undefined);
 
     await straightenScansCommand({ client, onApplied: () => undefined, stamp: STAMP, signatures, ask, track: UNTRACKED }).run(
@@ -549,18 +570,63 @@ describe('the recognise-text command', () => {
     );
 
     expect(read).toStrictEqual([0, 1, 2, 3]);
+    // ONLY THE SCANNED PAGES are asked whether they hold a sheet: a page carrying text is never cropped.
+    expect(adjusted).toStrictEqual([1, 3]);
     expect(dispatched).toStrictEqual([{ kind: 'straightenScans', pages: [1, 3] }]);
-    expect(opened).toStrictEqual([{ id: SCAN_OUTCOME_DIALOG_ID, props: { pages: 2 } }]);
+    expect(opened).toStrictEqual([
+      { id: SCAN_OUTCOME_DIALOG_ID, props: { scanned: 2, cropped: 2, unreadable: 0, onePage: false } },
+    ]);
   });
 
-  it('STRAIGHTEN: says so when there is nothing to straighten, and a cancelled walk sends and says nothing', async () => {
+  it('CROP TO PAPER: crops only the pages a sheet was found on, and counts those, not the pages looked at (N3)', async () => {
+    // THE OWNER'S CASE: the dialog said every scanned page was looked at, and nothing on screen changed. Three scanned
+    // pages, one with a sheet, one without, one unreadable: the command names one page and says one was cropped.
+    const { client, dispatched } = clientOver(['image-only', 'image-only', 'image-only'], {
+      adjustments: { 0: 'no-sheet', 2: 'too-large' },
+    });
+    const { ask, opened } = recordingAsk(undefined);
+
+    await straightenScansCommand({ client, onApplied: () => undefined, stamp: STAMP, signatures, ask, track: UNTRACKED }).run(
+      contextWith(3),
+    );
+
+    expect(dispatched).toStrictEqual([{ kind: 'straightenScans', pages: [1] }]);
+    expect(opened).toStrictEqual([
+      { id: SCAN_OUTCOME_DIALOG_ID, props: { scanned: 3, cropped: 1, unreadable: 1, onePage: false } },
+    ]);
+  });
+
+  it('CROP TO PAPER: no sheet anywhere sends NOTHING and says so (control: the same page with a sheet is cropped)', async () => {
+    // THE DECISION IS THE COMMAND NOT SENT: an empty `straightenScans` would be refused by the schema anyway, so what
+    // separates a read-first command from one that sends every scanned page is that `document.execute` is never called.
+    const none = clientOver(['image-only'], { adjustments: { 0: 'no-sheet' } });
+    const told = recordingAsk(undefined);
+    await straightenScansCommand({ client: none.client, onApplied: () => undefined, stamp: STAMP, signatures, ask: told.ask, track: UNTRACKED }).run(
+      contextWith(1),
+    );
+    expect(none.dispatched).toStrictEqual([]);
+    expect(told.opened).toStrictEqual([
+      { id: SCAN_OUTCOME_DIALOG_ID, props: { scanned: 1, cropped: 0, unreadable: 0, onePage: true } },
+    ]);
+
+    const sheet = clientOver(['image-only']);
+    await straightenScansCommand({ client: sheet.client, onApplied: () => undefined, stamp: STAMP, signatures, ask: recordingAsk(undefined).ask, track: UNTRACKED }).run(
+      contextWith(1),
+    );
+    expect(sheet.dispatched).toStrictEqual([{ kind: 'straightenScans', pages: [0] }]);
+  });
+
+  it('CROP TO PAPER: says so when there is nothing to crop, and a cancelled walk sends and says nothing', async () => {
     const empty = clientOver(['text']);
     const told = recordingAsk(undefined);
     await straightenScansCommand({ client: empty.client, onApplied: () => undefined, stamp: STAMP, signatures, ask: told.ask, track: UNTRACKED }).run(
       contextWith(1),
     );
     expect(empty.dispatched).toStrictEqual([]);
-    expect(told.opened).toStrictEqual([{ id: SCAN_OUTCOME_DIALOG_ID, props: { pages: 0 } }]);
+    expect(empty.adjusted).toStrictEqual([]);
+    expect(told.opened).toStrictEqual([
+      { id: SCAN_OUTCOME_DIALOG_ID, props: { scanned: 0, cropped: 0, unreadable: 0, onePage: true } },
+    ]);
 
     // CANCELLED AFTER THE FIRST PAGE: the walk's `null`, not an empty list, so no outcome
     // dialog claims there were no scans in a document the person stopped reading.

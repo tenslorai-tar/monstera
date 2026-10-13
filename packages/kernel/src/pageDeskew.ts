@@ -179,6 +179,21 @@ interface Deskew {
 }
 
 /**
+ * The turn that levels a page, or `null` where it reads level — THE ONE DECISION whether Straighten changes a page, read by
+ * the apply below and by `pageIsLevel`, the read a command asks before it writes (the owner's N3), so the two cannot
+ * disagree about which pages will change.
+ */
+function levellingTurn(skew: PageSkew): number | null {
+  const rotation = deskewRotation(skew);
+  return rotation === 0 ? null : rotation;
+}
+
+/** Whether a page already reads level, so Straighten would leave it as it is — `levellingTurn`'s answer, read alone. */
+export async function pageIsLevel(session: MupdfSession, page: number): Promise<boolean> {
+  return levellingTurn(await measurePageSkew(session, page)) === null;
+}
+
+/**
  * Straightens each named page.
  *
  * **A page that reads level is not written to**, and that is where the absence
@@ -207,8 +222,8 @@ export const applyDeskewPages: Apply<'mupdf', 'deskewPages'> = async (
   return withDocument(session, (document) => {
     const total = document.countPages();
     for (const { page, skew } of deskews) {
-      const rotation = deskewRotation(skew);
-      if (rotation === 0) continue;
+      const rotation = levellingTurn(skew);
+      if (rotation === null) continue;
       const object = pageObject(document, page, total);
       const box = displayedBox(object);
       if (box === null) {

@@ -49,6 +49,7 @@ import type {
   HostOcrReader,
   HostPageFillsReader,
   HostScanTablesReader,
+  HostPageAdjustmentReader,
   HostPageLinksReader,
   HostPageRewriteReader,
   HostPageTextReader,
@@ -425,6 +426,15 @@ export function remoteMupdfScanTables(
       'engine/scan-tables',
       await client['engine/scan-tables']({ session: sessions.handleFor(session), page }),
     ).tables;
+}
+
+/** What a page tool would do to one page, over the boundary (N3) — {@link remoteMupdfPageFills}' shape. */
+export function remoteMupdfPageAdjustment(client: ClientApi<EngineChannels>, sessions: RemoteSessions): HostPageAdjustmentReader {
+  return async (session, page, adjustment) =>
+    answered(
+      'engine/page-adjustment',
+      await client['engine/page-adjustment']({ session: sessions.handleFor(session), page, adjustment }),
+    ).outcome;
 }
 
 /** Which writer rewrites one page's text, over the boundary (ADR-0176 Decision 1) — {@link remoteMupdfPageFills}' shape. */

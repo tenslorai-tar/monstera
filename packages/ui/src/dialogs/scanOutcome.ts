@@ -8,12 +8,9 @@ import { declareDialog } from '../registries/dialogs.js';
 export const SCAN_OUTCOME_DIALOG_ID = 'dialog.scan-outcome';
 
 /**
- * What straightening the scans did.
- *
- * `enhanceOutcome.ts`' shape and its note, one operation along: the page COUNT and not
- * which of them held a sheet, because `document.execute` answers a version and a byte
- * length, and a per-page answer would be a field this build could never fill. The kernel
- * answers it — `pageScan.ts` names each page's outcome and `pageScan.test.ts` asserts it.
+ * What cropping photographed pages to the paper did, counted from each page's own read before the write
+ * (`document.pageAdjustment`, the owner's N3) — so a page that held no sheet is not counted as cropped, which the
+ * sentence this replaced could not tell apart.
  */
 export const SCAN_OUTCOME_DIALOG = declareDialog({
   id: SCAN_OUTCOME_DIALOG_ID,
@@ -21,8 +18,14 @@ export const SCAN_OUTCOME_DIALOG = declareDialog({
   informs: 'message',
   props: z
     .object({
-      /** How many scanned pages were looked at. */
-      pages: z.number().int().nonnegative(),
+      /** How many photographed pages were looked at: pages whose only content is a picture. */
+      scanned: z.number().int().nonnegative(),
+      /** How many of them are now cropped to the sheet found in them. */
+      cropped: z.number().int().nonnegative(),
+      /** How many could not be read and were left as they were. */
+      unreadable: z.number().int().nonnegative(),
+      /** Whether the document is one page, so the sentence says *the page* rather than counting one. */
+      onePage: z.boolean(),
     })
     .strict(),
   component: lazy(() => import('./ScanOutcomeBody.js')),

@@ -94,6 +94,7 @@ async function joined(
       linkAddress: refuse('read a link address'),
       pageFills: refuse('read the page fills'),
       scanTables: refuse('read scanned tables'),
+      pageAdjustment: refuse('read a page adjustment'),
       pageRewrite: refuse('read which writer a page needs'),
       wordBoxes: refuse('read the word boxes'),
       ocr: refuse('recognise a page'),

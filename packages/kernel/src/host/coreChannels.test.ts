@@ -84,6 +84,9 @@ const MUPDF_READS = [
   // A SCANNED PAGE'S RULED TABLES ARE ONE OF MuPDF'S READS for the fills' reason: rasterising the page parses it, and
   // the cells' words are walked from its structured text (ADR-0233).
   'engine/scan-tables',
+  // WHAT A PAGE TOOL WOULD DO TO A PAGE IS ONE OF MuPDF'S READS for the fills' reason: measuring a tilt and finding a sheet
+  // rasterise the page, the same work the tools' own writes do (N3).
+  'engine/page-adjustment',
   // WHICH WRITER REWRITES A PAGE'S TEXT IS ONE OF MuPDF'S READS: the PDFium API has no query for a font's type (ADR-0176).
   'engine/page-rewrite',
   // A PAGE'S WORD BOXES ARE ONE OF MuPDF'S READS: its characters' quads, walked from the structured text (ADR-0137).

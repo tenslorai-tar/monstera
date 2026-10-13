@@ -6,6 +6,8 @@ import type {
   FormFieldHandle,
   FormFieldRead,
   Handlers,
+  PageAdjustment,
+  PageAdjustmentOutcome,
   PageSet,
 } from '@monstera/contract';
 import { cappedBoxes } from '@monstera/contract/host';
@@ -121,6 +123,13 @@ export type HostPageFillsReader = (session: MupdfSession, page: number) => Promi
 
 /** Reads one scanned page's ruled tables from its pixels (ADR-0233): `readScanTables` in the host. */
 export type HostScanTablesReader = (session: MupdfSession, page: number) => Promise<readonly ScanTable[]>;
+
+/** What a page tool would do to one page, read before it writes (N3): `readPageAdjustment` in the host. */
+export type HostPageAdjustmentReader = (
+  session: MupdfSession,
+  page: number,
+  adjustment: PageAdjustment,
+) => Promise<PageAdjustmentOutcome>;
 
 /** Which writer rewrites one page's text (ADR-0176 Decision 1): `readPageRewrite` in the host. */
 export type HostPageRewriteReader = (session: MupdfSession, page: number) => Promise<PageRewrite>;
@@ -519,6 +528,8 @@ export interface EngineHandlerParts {
   readonly pageFills: HostPageFillsReader;
   /** A scanned page's ruled tables. `engine/scan-tables`. */
   readonly scanTables: HostScanTablesReader;
+  /** What a page tool would do to one page (N3). `engine/page-adjustment`. */
+  readonly pageAdjustment: HostPageAdjustmentReader;
   /** Which writer rewrites a page's text (ADR-0176 Decision 1). `engine/page-rewrite`. */
   readonly pageRewrite: HostPageRewriteReader;
   /** A page's word boxes (ADR-0137). `engine/word-boxes`. */
@@ -607,6 +618,7 @@ export function createEngineHandlers({
   linkAddress,
   pageFills,
   scanTables,
+  pageAdjustment,
   pageRewrite,
   wordBoxes,
   ocr,
@@ -1041,6 +1053,13 @@ export function createEngineHandlers({
       if (held === undefined) return gone;
       // NO try/catch, for the link read's reason.
       return { ok: true, value: { tables: [...(await scanTables(held.session, page))] } };
+    },
+
+    'engine/page-adjustment': async ({ session, page, adjustment }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      // NO try/catch, for the link read's reason.
+      return { ok: true, value: { outcome: await pageAdjustment(held.session, page, adjustment) } };
     },
 
     'engine/page-rewrite': async ({ session, page }) => {
