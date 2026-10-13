@@ -183,3 +183,17 @@ with no client secret, chosen in Apps and Keys by answering **No** to *"Is your 
 securely store a client secret?"*, with the app type **Native OS Application** where no CORS is used.
 The discovery documents, read the same day, still list only secret-based token authentication; the
 live run is still what settles that.
+
+## Correction, 2026-10-13 — the live run happened, and settled both
+
+Appended for the owner's list for cloud run 3, item 34, which asked what is left in Save back and DocuSign.
+The two sentences above that wait on *"the live run"* and the heading *"the live run is deferred to Stage
+10"* were overtaken on 2026-09-24 (JOURNAL, *DocuSign end to end*): the owner's run through the application
+signed in, sent, had the document signed and saved the signed copy, on DocuSign's developer (demo)
+environment. A sign-in that completes from this build is a code exchanged with a PKCE verifier and no
+client secret, because this build holds none, so **public-client token exchange is settled as working**;
+the declared ports above are what that run used.
+
+What stays open is not this decision's: **production** is not exercised, because a production integration
+key needs DocuSign's go-live review (JOURNAL 2026-09-24, *DocuSign's row is done*), which is a release step
+for the owner.

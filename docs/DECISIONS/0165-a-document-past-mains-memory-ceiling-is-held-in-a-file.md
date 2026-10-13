@@ -69,3 +69,20 @@ the disk.
 - **A higher ceiling.** ADR-0007: a budget raised to meet the case it refuses can never fail.
 - **A read window, an in-memory cache over the file.** The measurement shows warm file reads at memory's cost, so a
   cache would be a second copy of what the page cache already holds.
+
+## Correction, 2026-10-13 — two of the four paths named above now stream
+
+The owner's list for cloud run 3, item 34, *"Save back / DocuSign (Group 10)"*: this decision's own remainder.
+
+**A cloud *Save back* and *Upload a copy* no longer bring the image into `main`.** The document is STAGED where the
+engine wrote it (`DocumentStage`, ADR-0121), in the same lane entry as before (CR-DOC-04's order is unchanged), moved
+into a private file under the cloud working folder, and sent from that file by range: `PdfSource` in
+`cloudStorage.ts` is a length and a read, and a `Uint8Array` is no longer a parameter there. An upload session reads
+one request's bytes at a time, at most `UPLOAD_SESSION_CHUNK_BYTES` (40 MiB), whatever the document's size; the
+one-request route reads the whole, which it reaches only at or under `MAX_SIMPLE_UPLOAD_BYTES` (250 MiB) and refuses
+above. Every request is byte-identical to what the live runs proved: what changed is where its body is read from.
+The file is removed when the send ends, sent or refused, and the staged image is discarded once.
+
+**Still not reached, and still named:** *Send to DocuSign*, whose envelope carries the document as base64 inside one
+JSON body (up to its 512 MiB bound), and signing (ADR-0148). Streaming DocuSign changes the framing of a request whose
+only proof is a live run on the owner's demo account, so it waits for a run that can prove the new one.
