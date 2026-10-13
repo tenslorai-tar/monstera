@@ -16,7 +16,8 @@
  * what the second cloud round built (ADR-0228): the formatting set, Tab, the document's fonts in the picker, and a text
  * box styled word by word while typed and set in a real font, each read back from the saved file. Steps 15 to 19 walk
  * the third round (Part D): the ribbon's Font box (C3), a dashed text box border (E4), and the one font picker in the
- * Watermark and Insert from Markdown windows (D1), read back from one saved file.
+ * Watermark and Insert from Markdown windows (D1), read back from one saved file. Step N14 opens a word processor's page
+ * of subset fonts built here and reads the editor's drawn fonts, bold and superscript, then the written file's rise.
  */
 import { existsSync } from 'node:fs';
 import { copyFile, readFile, writeFile } from 'node:fs/promises';
@@ -583,6 +584,62 @@ await step('W1: Add text at 85%, 89% and 95% down the first (turned) page, each 
   const first = (await savedWords(saved))[0] ?? '';
   for (const down of [85, 89, 95]) expect(first.includes(`W1 at ${String(down)} percent`)).toBe(true);
   return { ...facts, firstPageHoldsAll: true };
+});
+
+await step('N14: a word processor’s subsets keep their own font, bold and superscript while a block is open, and after it is written', async () => {
+  // A PRODUCER'S PAGE, built from the bundled Carlito (`producerSubsetFixture.ts`): subset fonts with no cmap, a bold
+  // lead-in and a superscript marker raised by a text rise.
+  const { buildProducerSubsetPdf } = await import(join(root, 'packages/kernel/dist/producerSubsetFixture.js'));
+  const { fontsDirectory } = await import(join(root, 'scripts/provision/fonts.mjs'));
+  const fonts = fontsDirectory(root);
+  const producer = join(output, 'producer-subsets.pdf');
+  await writeFile(producer, await buildProducerSubsetPdf(await readFile(join(fonts, 'Carlito-Regular.ttf')), await readFile(join(fonts, 'Carlito-Bold.ttf'))));
+  await open(producer);
+  await section('Edit');
+  await ensureEditText();
+  const block = page.locator('[data-text-block]').first();
+  const box = await block.boundingBox();
+  if (box === null) throw new Error('no block on the producer page');
+  await page.mouse.click(box.x + box.width - 4, box.y + box.height / 2);
+  await expect(editor()).toBeFocused();
+  // EVERY RUN IN ITS OWN FONT, never refused and never left in its kind of face.
+  const runs = editor().locator('.m-text-editor__run');
+  await expect.poll(async () => runs.evaluateAll((spans) => spans.every((span) => (span.getAttribute('data-run-font') ?? '').startsWith('m-run-'))), { timeout: 15_000 }).toBe(true);
+  // IN THE PAGE, where the window's own computed style is the browser's answer.
+  const drawn = await runs.evaluateAll((spans) =>
+    spans.map((span) => {
+      const computed = span.ownerDocument.defaultView?.getComputedStyle(span);
+      return { text: span.textContent, weight: computed?.fontWeight, align: computed?.verticalAlign };
+    }),
+  );
+  const mark = drawn.find((run) => run.text === '12');
+  expect(mark?.align).toMatch(/^[1-9][\d.]*px$/u);
+  expect(drawn[0]?.weight).toBe('700');
+  await page.keyboard.press('End');
+  await page.keyboard.type(' Walked.');
+  await clickPage(20, 20);
+  await expect(editor()).toHaveCount(0);
+  const saved = join(output, 'producer-subsets-saved.pdf');
+  await saveTo(saved);
+  await command('Save a copy');
+  await expect.poll(() => existsSync(saved), { timeout: 30_000 }).toBe(true);
+  // READ BACK: the words, the producer's subsets still named, and the marker still raised above the line by PDF.js.
+  const words = (await savedWords(saved))[0] ?? '';
+  expect(words).toContain('Walked.');
+  const named = await savedFonts(saved);
+  expect(named.some((name) => name.endsWith('+Carlito-Bold'))).toBe(true);
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const task = pdfjs.getDocument({ data: new Uint8Array(await readFile(saved)), useSystemFonts: false });
+  const items = (await (await (await task.promise).getPage(1)).getTextContent()).items.flatMap((item) => ('str' in item ? [item] : []));
+  await task.destroy();
+  const line = items.find((item) => item.str.startsWith('Results'))?.transform[5];
+  const raised = items.find((item) => item.str === '12')?.transform[5];
+  expect(line).toBeDefined();
+  expect(raised).toBeDefined();
+  const rise = (raised ?? 0) - (line ?? 0);
+  expect(rise).toBeGreaterThan(3.9);
+  expect(rise).toBeLessThan(4.0);
+  return { drawn, savedRise: rise, fontsNamed: named };
 });
 
 // LAST, because on failure the editor stays open and nothing after it could run (measured 2026-10-12, twice in the

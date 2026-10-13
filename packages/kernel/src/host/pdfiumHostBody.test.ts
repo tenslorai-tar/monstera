@@ -137,6 +137,7 @@ const RUNS = [
       italic: true,
       bold: false,
       orientation: 'upright' as const,
+      baseline: 703.25,
     },
   },
   {
@@ -156,6 +157,7 @@ const RUNS = [
       italic: false,
       bold: true,
       orientation: 'turned' as const,
+      baseline: 191.5,
     },
   },
 ];

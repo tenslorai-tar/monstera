@@ -10,11 +10,12 @@ const STYLE: JoinStyle = {
   italic: false,
   bold: false,
   orientation: 'upright',
+  baseline: 700,
 };
 
 /** A glyph object at `x` on the baseline `y`, five points wide. */
 function glyph(index: number, text: string, x: number, y = 700, style = STYLE): ObjectRun {
-  return { index, text, drawn: text, left: x, right: x + 5, bottom: y, top: y + 7, style };
+  return { index, text, drawn: text, left: x, right: x + 5, bottom: y, top: y + 7, style: { ...style, baseline: y } };
 }
 
 /** A word drawn one glyph per object, from object `first`, starting at `x`. */
@@ -45,6 +46,9 @@ describe('joinRuns', () => {
       ['a style change', [glyph(0, 'a', 72), glyph(1, 'b', 77, 700, bold)]],
       ['a new line', [glyph(0, 'a', 72), glyph(1, 'b', 77, 688)]],
       ['a line at tight leading, its ink barely touching', [glyph(0, 'a', 72), glyph(1, 'b', 77, 693.5)]],
+      // A SUPERSCRIPT IN THE SAME SIZE AND FACE (the owner's N14): its ink overlaps the line's by 4 of 10, past the
+      // line test's 3, so only the baseline keeps its rise from being joined away.
+      ['a piece raised off the baseline', [glyph(0, 'a', 72), glyph(1, '2', 77, 703)]],
       ['a gap wider than the size', [glyph(0, 'a', 72), glyph(1, 'b', 77 + 11)]],
       ['an overlap deeper than a quarter', [glyph(0, 'a', 72), glyph(1, 'b', 77 - 3)]],
       [

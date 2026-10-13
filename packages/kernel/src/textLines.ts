@@ -66,6 +66,45 @@ export function isEditedInPlace(style: { readonly orientation: Orientation }): b
   return style.orientation === 'upright';
 }
 
+/**
+ * A line's baseline: ITS FIRST RUN'S, the one spelling of that rule (B3a). The writer lays a block's lines out from it and
+ * keeps each object's offset from it (`pdfiumFfi.ts`), and the editor draws each run at that offset ({@link risesOf}),
+ * so what is drawn while a block is open and what is written are one rule's answer. `undefined` for an empty line.
+ */
+export function lineBaselineOf<R>(line: readonly R[], baselineOf: (run: R) => number): number | undefined {
+  const first = line[0];
+  return first === undefined ? undefined : baselineOf(first);
+}
+
+/**
+ * Each run's rise above its line's baseline ({@link lineBaselineOf}), in points: 0 for a run on the line, positive for a
+ * superscript, negative for a subscript.
+ */
+export function risesOf<R>(line: readonly R[], baselineOf: (run: R) => number): number[] {
+  const base = lineBaselineOf(line, baselineOf) ?? 0;
+  return line.map((run) => baselineOf(run) - base);
+}
+
+/**
+ * `blocks` with each run's style made by `runStyle` from its own and its rise ({@link risesOf}), and each block's by
+ * `blockStyle`: where a style that carries a baseline becomes one that carries what an editor draws by, which is the
+ * offset from the line and never the page's coordinate.
+ */
+export function withRises<S extends { readonly baseline: number }, T>(
+  blocks: readonly EditableBlock<S>[],
+  runStyle: (style: S, rise: number) => T,
+  blockStyle: (style: S) => T,
+): EditableBlock<T>[] {
+  return blocks.map((block) => ({
+    ...block,
+    style: blockStyle(block.style),
+    lines: block.lines.map((line) => {
+      const rises = risesOf(line.runs, (run) => run.style.baseline);
+      return { ...line, runs: line.runs.map((run, at) => ({ ...run, style: runStyle(run.style, rises[at] ?? 0) })) };
+    }),
+  }));
+}
+
 /** One text run as the line grouping needs it. `pdfiumFfi.ts`'s `TextRun`, structurally. */
 export interface GroupableRun {
   readonly index: number;

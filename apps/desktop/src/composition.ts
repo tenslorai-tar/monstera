@@ -121,6 +121,7 @@ import {
   groupIntoBlocks,
   isEditedInPlace,
   settingOf,
+  withRises,
   hostedPdfLibExecution,
   nodeFileSurface,
   readAnnounced,
@@ -1501,22 +1502,29 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       };
       const rotated = angled.turned + angled.vertical + angled.slanted + angled.mirrored;
       return {
-        blocks: groupIntoBlocks(
-          upright.map((run) => ({
-            ...run,
-            setting: settingOf(run.style),
-            style: {
-              size: run.style.size,
-              colour: run.style.colour,
-              serif: run.style.serif,
-              mono: run.style.mono,
-              italic: run.style.italic,
-              bold: run.style.bold,
-              // THE FONT'S NAME, for the picker's *In this document* and added text beside the run (D2, B4.3); a page that
-              // names none, or a name past the wire's bound, sends none rather than a cut name nothing would resolve.
-              ...(run.style.font === '' || run.style.font.length > MAX_FONT_FAMILY_NAME ? {} : { font: run.style.font }),
-            },
-          })),
+        // EACH RUN'S RISE FROM ITS LINE (the owner's N14): grouped with the page's baseline, then sent as the offset from
+        // the line's (`withRises`), which is what the writer keeps and what the editor draws a superscript at.
+        blocks: withRises(
+          groupIntoBlocks(
+            upright.map((run) => ({
+              ...run,
+              setting: settingOf(run.style),
+              style: {
+                size: run.style.size,
+                colour: run.style.colour,
+                serif: run.style.serif,
+                mono: run.style.mono,
+                italic: run.style.italic,
+                bold: run.style.bold,
+                // THE FONT'S NAME, for the picker's *In this document* and added text beside the run (D2, B4.3); a page
+                // that names none, or a name past the wire's bound, sends none rather than a cut name nothing would resolve.
+                ...(run.style.font === '' || run.style.font.length > MAX_FONT_FAMILY_NAME ? {} : { font: run.style.font }),
+                baseline: run.style.baseline,
+              },
+            })),
+          ),
+          ({ baseline: _baseline, ...style }, rise) => (rise === 0 ? style : { ...style, rise }),
+          ({ baseline: _baseline, ...style }) => style,
         ),
         truncated: found.truncated,
         rotated,

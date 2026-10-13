@@ -69,6 +69,7 @@ import {
   listedFontFamiliesSchema,
   MAX_FONT_FAMILIES,
   MAX_FONT_FAMILY_NAME,
+  MAX_PAGE_COORDINATE,
   composedFamilySchema,
   MAX_READ_FIELDS,
   MAX_IMPORT_SKIPS,
@@ -920,6 +921,14 @@ export const textBlockStyleSchema = z
      * A name, never the font's program, which crosses only by `document.runFonts`.
      */
     font: z.string().min(1).max(MAX_FONT_FAMILY_NAME).optional(),
+    /**
+     * How far, in points, a run's baseline is above its line's — a superscript's rise, negative for a subscript — where
+     * it is not on the line (the owner's N14). Absent is on the line. The writer keeps each object's offset from the
+     * line's baseline when it writes a block (`lineBaselineOf`), so an editor drawing a run at this offset shows what
+     * will be written.
+     */
+    // BOUNDED BY THE PAGE'S OWN: a run on a line is somewhere on the page.
+    rise: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE).optional(),
   })
   .strict();
 

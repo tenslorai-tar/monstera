@@ -116,11 +116,12 @@ export type PdfiumChannelExcludesEveryOtherKind = Excludes<
  * answered truncated: *"more text than can be outlined at once"*, and the rest could not be edited. The host now joins
  * a run's glyph objects before it answers (`textRunJoin.ts`), so that page answers 60 runs; and what stays here is the
  * bound against a peer that is not a document at all: the most runs an answer within `ENGINE_ANSWER_FILE_MAX_BYTES`
- * (8 MiB, ADR-0125) could carry at the smallest a run can serialise to — {@link SMALLEST_RUN_BYTES}, 200 bytes for a run
- * with no text and no font name, and one more for the comma between runs — which is 41,734, rounded down to 41,700
- * (computed 2026-10-06 by `pdfiumChannels.test.ts`' own division). It was 43,400 until the style said HOW a run is set
- * and not only whether it is upright (ADR-0181 Decision 7), and 45,800 until it carried the font's name (2026-10-03,
- * for the block grouping's change of font). A real page's runs are larger and far fewer.
+ * (8 MiB, ADR-0125) could carry at the smallest a run can serialise to — {@link SMALLEST_RUN_BYTES}, 213 bytes for a run
+ * with no text and no font name, and one more for the comma between runs — which is 39,199, rounded down to 39,100
+ * (computed 2026-10-13 by `pdfiumChannels.test.ts`' own division). It was 41,700 until the style carried the run's
+ * baseline (2026-10-13, the owner's N14: a superscript's rise), 43,400 until the style said HOW a run is set and not only
+ * whether it is upright (ADR-0181 Decision 7), and 45,800 until it carried the font's name (2026-10-03, for the block
+ * grouping's change of font). A real page's runs are larger and far fewer.
  *
  * A literal, not the division: computed at module load, a field added to the schema would move the bound with no line of
  * any diff saying so. `pdfiumChannels.test.ts` holds the literal to the division, so a change to either is a red case
@@ -136,13 +137,13 @@ export type PdfiumChannelExcludesEveryOtherKind = Excludes<
  * believed. Declared above the schemas because a `const` referenced during
  * module evaluation cannot be declared below them.
  */
-export const ENGINE_TEXT_OBJECTS_MAX = 41_700;
+export const ENGINE_TEXT_OBJECTS_MAX = 39_100;
 
 /**
  * The fewest bytes one text run can serialise to on this wire: no text, every number `0`, every flag `true`.
  * Measured by `pdfiumChannels.test.ts` against the schema's own shape, and the divisor of {@link ENGINE_TEXT_OBJECTS_MAX}.
  */
-export const SMALLEST_RUN_BYTES = 200;
+export const SMALLEST_RUN_BYTES = 213;
 
 /**
  * How long a captured run's text may be on this wire.
@@ -512,6 +513,8 @@ const basePdfiumChannels = {
                     bold: z.boolean(),
                     /** How the run is set (`orientationOf`): the editor names the kind of text it will not edit. */
                     orientation: z.enum(['upright', 'turned', 'vertical', 'slanted', 'mirrored']),
+                    /** Where its baseline is, in the page's own coordinates: the matrix's `f`. */
+                    baseline: z.number(),
                   })
                   .strict(),
               })

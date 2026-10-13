@@ -150,6 +150,8 @@ export const PDFIUM_COMMAND = [
   ['packages/kernel/src/subsetName.ts', 'packages/kernel/dist/subsetName.js', 'tsc'],
   // AND THE CHECK a run's font passes before it is offered to the editor (ADR-0175).
   ['packages/kernel/src/runFont.ts', 'packages/kernel/dist/runFont.js', 'tsc'],
+  // AND THE PRODUCER'S PAGE the run font cases read a producer's subsets from (the owner's N14).
+  ['packages/kernel/src/producerSubsetFixture.ts', 'packages/kernel/dist/producerSubsetFixture.js', 'tsc'],
   // AND THE FOUR THE PROOF IMPORTS DIRECTLY, which the case "every registered proof's imports are covered" named
   // (SSSSSSS-2): the operator numbering `pageRuns` is compared against (ADR-0176), the refusals it classifies, the
   // catalogue its face cases read, and the shared barrel its password cases take `HeldPassword` from.

@@ -242,6 +242,82 @@ export function withCmap(font: Uint8Array, pairs: readonly (readonly [number, nu
  * recomputed — THE ONE ASSEMBLER of a font this module writes, so a renamed font and a re-mapped one are laid out alike.
  */
 function withTable(font: Uint8Array, replaced: string, data: Uint8Array): Uint8Array {
+  return withTables(font, new Map([[replaced, data]]));
+}
+
+/** The tags of the tables `font`'s directory lists. */
+export function tableTags(font: Uint8Array): ReadonlySet<string> {
+  if (font.length < 12) return new Set();
+  const view = new DataView(font.buffer, font.byteOffset, font.byteLength);
+  const count = view.getUint16(4);
+  const tags = new Set<string>();
+  for (let index = 0; index < count && 12 + 16 * index + 4 <= font.length; index += 1) {
+    const at = 12 + 16 * index;
+    tags.add(String.fromCharCode(font[at] ?? 0, font[at + 1] ?? 0, font[at + 2] ?? 0, font[at + 3] ?? 0));
+  }
+  return tags;
+}
+
+/** What a synthesised `OS/2` and `post` state, read from the face they are written into. */
+export interface FaceSummary {
+  readonly ascender: number;
+  readonly descender: number;
+  readonly firstChar: number;
+  readonly lastChar: number;
+}
+
+/**
+ * `font` with the tables a browser's font sanitiser requires and a PDF producer's subset leaves out — `OS/2`, `name`
+ * and `post` — written where it has none, and every table it has kept as it is. Each written table states only what the
+ * face's own `hhea` and `cmap` say, and nothing about weight or style, which the page states and the editor gives the
+ * browser beside the font (ADR-0175's correction of 2026-10-13).
+ *
+ * Measured 2026-10-13 in the pinned Chromium (Playwright's build 1234) with `FontFace.load()`: a producer's Carlito
+ * subsets rebuilt with these tables load, and the same rebuilds without them are refused with *Invalid font data*.
+ *
+ * @param postscript the name the `name` table gives the face; printable ASCII without spaces
+ */
+export function withBrowserTables(font: Uint8Array, postscript: string, summary: FaceSummary): Uint8Array {
+  const has = tableTags(font);
+  const edits = new Map<string, Uint8Array>();
+  if (!has.has('OS/2')) edits.set('OS/2', os2Table(summary));
+  if (!has.has('post')) edits.set('post', postTable());
+  if (!has.has('name')) edits.set('name', nameTable(postscript, []));
+  return edits.size === 0 ? font : withTables(font, edits);
+}
+
+/** `OS/2` version 4, regular weight and normal width, its vertical metrics the face's own. */
+function os2Table(summary: FaceSummary): Uint8Array {
+  const out = new Uint8Array(96);
+  const writer = new DataView(out.buffer);
+  writer.setUint16(0, 4);
+  writer.setUint16(4, 400);
+  writer.setUint16(6, 5);
+  // fsSelection: REGULAR (bit 6) and USE_TYPO_METRICS (bit 7), so the typo metrics written are the ones used.
+  writer.setUint16(62, 0x00c0);
+  writer.setUint16(64, Math.min(0xffff, summary.firstChar));
+  writer.setUint16(66, Math.min(0xffff, summary.lastChar));
+  writer.setInt16(68, summary.ascender);
+  writer.setInt16(70, summary.descender);
+  writer.setUint16(74, Math.max(0, summary.ascender));
+  writer.setUint16(76, Math.max(0, -summary.descender));
+  return out;
+}
+
+/** `post` version 3: no glyph names, upright, proportional. */
+function postTable(): Uint8Array {
+  const out = new Uint8Array(32);
+  new DataView(out.buffer).setUint32(0, 0x00030000);
+  return out;
+}
+
+/**
+ * `font` with each named table replaced by its data, added where it has none, or REMOVED where the data is `null` —
+ * {@link withTable}'s assembler for several tables at once, the one this module writes every font through.
+ *
+ * @throws where a table runs past the font's end or the font has no `head` table
+ */
+export function withTables(font: Uint8Array, edits: ReadonlyMap<string, Uint8Array | null>): Uint8Array {
   const view = new DataView(font.buffer, font.byteOffset, font.byteLength);
   const count = view.getUint16(4);
   const tables: { tag: string; data: Uint8Array }[] = [];
@@ -251,12 +327,12 @@ function withTable(font: Uint8Array, replaced: string, data: Uint8Array): Uint8A
     const offset = view.getUint32(at + 8);
     const length = view.getUint32(at + 12);
     if (offset + length > font.length) throw new Error(`the font's ${tag} table runs past its end`);
-    if (tag !== replaced) tables.push({ tag, data: font.slice(offset, offset + length) });
+    if (!edits.has(tag)) tables.push({ tag, data: font.slice(offset, offset + length) });
   }
   const head = tables.find((table) => table.tag === 'head');
   if (head === undefined || head.data.length < 12) throw new Error('the font has no head table');
   head.data.fill(0, 8, 12);
-  tables.push({ tag: replaced, data });
+  for (const [tag, data] of edits) if (data !== null) tables.push({ tag, data });
   tables.sort((left, right) => (left.tag < right.tag ? -1 : left.tag > right.tag ? 1 : 0));
 
   const directory = 12 + 16 * tables.length;

@@ -75,7 +75,7 @@ import { readingOrder, rightToLeftCount } from './readingOrder.js';
 import { type RunBox, replacementsMovingTheirLine } from './replaceLineRule.js';
 import { EditRefusedError, ReplaceMovesLineError, TextNotWritableError, unwritableCharacters } from './textEditRefusals.js';
 import { readInLineOrder } from './bidiLine.js';
-import { type Orientation, isEditedInPlace } from './textLines.js';
+import { type Orientation, isEditedInPlace, lineBaselineOf } from './textLines.js';
 import { type JoinedRun, joinRuns, membersOf } from './textRunJoin.js';
 
 /**
@@ -1112,6 +1112,11 @@ export interface RunStyle {
    * and the editor names the kind (ADR-0181 Decision 7).
    */
   readonly orientation: Orientation;
+  /**
+   * The y of the object's origin in user space, its matrix's `f`: where its baseline is. A superscript's sits above its
+   * line's (`lineBaselineOf`), and an editor that drew it on the line's would lower it while the block is open.
+   */
+  readonly baseline: number;
 }
 
 /**
@@ -1615,6 +1620,7 @@ function styleOf(bindings: Bound, object: unknown, programs: Map<string, Program
     bold: face.bold,
     italic: face.italic,
     orientation: orientationOf(a, b, c, d),
+    baseline: matrix['f'] ?? 0,
   };
 }
 
@@ -1736,6 +1742,7 @@ function drawnGlyphOf(bindings: Bound, font: unknown, point: number): DrawnGlyph
   const path: unknown = bindings.glyphPath(font, point, 1000);
   const segments = path === null ? 0 : numberFrom(bindings.glyphPathSegments(path), 'FPDFGlyphPath_CountGlyphSegments');
   let box: DrawnGlyph['box'] = null;
+  const points: [number, number][] = [];
   for (let at = 0; at < segments; at += 1) {
     const x = [0];
     const y = [0];
@@ -1745,12 +1752,13 @@ function drawnGlyphOf(bindings: Bound, font: unknown, point: number): DrawnGlyph
     // IN EMS, measured, so a thousand times each point is the thousandths the program's reading is in.
     const px = (x[0] ?? 0) * 1000;
     const py = (y[0] ?? 0) * 1000;
+    points.push([px, py]);
     box =
       box === null
         ? { x0: px, y0: py, x1: px, y1: py }
         : { x0: Math.min(box.x0, px), y0: Math.min(box.y0, py), x1: Math.max(box.x1, px), y1: Math.max(box.y1, py) };
   }
-  return { advance: width[0] ?? 0, box };
+  return { advance: width[0] ?? 0, box, points };
 }
 
 /** The most bytes of one base name read: a name is a PDF name, and one this long is not a font's (CR-NAT-12). */
@@ -3294,7 +3302,9 @@ function layOutBlocks(
               });
             }
           }
-          const baselines = lines.map((line) => matrixOn(bindings, (line[0] ?? firstRun).object).f);
+          const baselines = lines.map(
+            (line) => lineBaselineOf(line, (run) => matrixOn(bindings, run.object).f) ?? matrixOn(bindings, firstRun.object).f,
+          );
           const pitch = blockPitch(bindings, firstRun.object, baselines);
 
           // THE BLOCK AS PARAGRAPHS (ADR-0179): which lines end a paragraph, how it is set, and what its words say.

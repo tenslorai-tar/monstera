@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { Blob as HarfBuzzBlob, Face } from 'harfbuzzjs';
 import { describe, expect, it } from 'vitest';
 
-import { subsetFont } from './fontSubset.js';
+import { subsetFont, tableTags, withTables } from './fontSubset.js';
 import { type DrawnGlyph, isSfnt, runFontFor } from './runFont.js';
 import { ShapingFace } from './textShaping.js';
 
@@ -31,8 +31,8 @@ function program(): Uint8Array {
  * What PDFium would read for each of `text`'s characters if it drew the program's own glyphs: the program's advance and
  * ink box, in thousandths. The agreeing reading, which each case below moves away from in one way.
  */
-function drawnAsTheProgram(text: string): Map<number, DrawnGlyph> {
-  const face = new ShapingFace(program(), 0, {});
+function drawnAsTheProgram(text: string, from: Uint8Array = program()): Map<number, DrawnGlyph> {
+  const face = new ShapingFace(from, 0, {});
   const scale = 1000 / face.unitsPerEm;
   const drawn = new Map<number, DrawnGlyph>();
   for (const character of text) {
@@ -47,6 +47,7 @@ function drawnAsTheProgram(text: string): Map<number, DrawnGlyph> {
         xs.length === 0
           ? null
           : { x0: Math.min(...xs) * scale, y0: Math.min(...ys) * scale, x1: Math.max(...xs) * scale, y1: Math.max(...ys) * scale },
+      points: xs.map((x, at) => [x * scale, (ys[at] ?? 0) * scale] as const),
     });
   }
   return drawn;
@@ -94,12 +95,61 @@ describe('runFontFor', () => {
 
   it('declines a run holding a character the program’s cmap does not map, and a glyph PDFium draws no ink for', () => {
     const missing = drawnAsTheProgram('Hello');
-    missing.set('Q'.codePointAt(0) ?? 0, { advance: 500, box: { x0: 0, y0: 0, x1: 400, y1: 600 } });
+    missing.set('Q'.codePointAt(0) ?? 0, { advance: 500, box: { x0: 0, y0: 0, x1: 400, y1: 600 }, points: [] });
     expect(runFontFor(program(), missing)).toBeNull();
     const blank = drawnAsTheProgram('Hello');
     const h = 'H'.codePointAt(0) ?? 0;
-    blank.set(h, { advance: blank.get(h)?.advance ?? 0, box: null });
+    blank.set(h, { advance: blank.get(h)?.advance ?? 0, box: null, points: [] });
     expect(runFontFor(program(), blank)).toBeNull();
+  });
+
+  /**
+   * A PRODUCER'S SUBSET (the owner's N14): glyphs renumbered, and no `cmap`, `OS/2`, `name` or `post` — which glyph a
+   * character is lives only in the PDF's ToUnicode. The run still has its own font: each glyph is found by its shape,
+   * and the rebuilt font maps the page's characters to them and carries the tables a browser requires.
+   */
+  it('rebuilds a producer’s subset that has no cmap, finding each glyph by its shape, with the tables a browser requires', () => {
+    const text = 'Hello bd.';
+    const subset = subsetFont(bundled('Carlito-Regular.ttf'), { unicodes: Array.from(text, (c) => c.codePointAt(0) ?? 0) });
+    if (subset === null) throw new Error('HarfBuzz refused the fixture subset');
+    const bare = withTables(subset, new Map(['cmap', 'OS/2', 'name', 'post'].map((tag) => [tag, null])));
+    // THE FIXTURE IS THE SHAPE: the program itself maps no character at all.
+    expect(new ShapingFace(bare, 0, {}).glyphFor('H'.codePointAt(0) ?? 0)).toBeUndefined();
+    const font = runFontFor(bare, drawnAsTheProgram(text, subset));
+    expect(font).not.toBeNull();
+    if (font === null) return;
+    expect(['cmap', 'OS/2', 'name', 'post'].every((tag) => tableTags(font).has(tag))).toBe(true);
+    const rebuilt = new ShapingFace(font, 0, {});
+    const original = new ShapingFace(subset, 0, {});
+    // EACH CHARACTER DRAWS THE GLYPH THE PAGE DRAWS, outline for outline — b and d included, whose boxes agree.
+    for (const character of new Set(text)) {
+      const point = character.codePointAt(0) ?? 0;
+      expect(JSON.stringify(rebuilt.outline(rebuilt.glyphFor(point) ?? 0)), character).toBe(
+        JSON.stringify(original.outline(original.glyphFor(point) ?? 0)),
+      );
+    }
+  });
+
+  /**
+   * CONTROL: a character whose advance and ink box are another glyph's but whose path is not is no glyph of the program,
+   * so the run has no font rather than the wrong letter. The path PDFium draws for `b` is given `d`'s points: only the
+   * outline check can tell them apart, and without it `b` would be drawn as `d`.
+   */
+  it('CONTROL: finds no glyph for a path the program does not hold, though its advance and box match one', () => {
+    const text = 'bd';
+    const subset = subsetFont(bundled('Carlito-Regular.ttf'), { unicodes: Array.from(text, (c) => c.codePointAt(0) ?? 0) });
+    if (subset === null) throw new Error('HarfBuzz refused the fixture subset');
+    const bare = withTables(subset, new Map([['cmap', null]]));
+    const drawn = drawnAsTheProgram(text, subset);
+    const b = drawn.get('b'.codePointAt(0) ?? 0);
+    const d = drawn.get('d'.codePointAt(0) ?? 0);
+    if (b === undefined || d === undefined) throw new Error('the fixture has no b or d');
+    // A PATH MIRRORED ACROSS b's BOX: the same box and advance, and points no glyph here has.
+    const box = b.box ?? { x0: 0, x1: 0, y0: 0, y1: 0 };
+    drawn.set('b'.codePointAt(0) ?? 0, { ...b, points: b.points.map(([x, y]) => [box.x0 + box.x1 - x, y] as const) });
+    expect(runFontFor(bare, drawn)).toBeNull();
+    // AND THE UNMIRRORED READING IS FOUND, so the decline above is the outline's.
+    expect(runFontFor(bare, drawnAsTheProgram(text, subset))).not.toBeNull();
   });
 
   /** A PROGRAM A BROWSER CANNOT LOAD has no font: bare CFF, as PDFium's substitute for a font not embedded is. */

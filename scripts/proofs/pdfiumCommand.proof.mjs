@@ -112,7 +112,7 @@ if (!existsSync(library)) {
 
 // The proof imports the BUILT modules, so a stale build would prove yesterday's
 // routing and say nothing about the diff under review.
-refuseStaleBuild(root, PDFIUM_COMMAND, 24);
+refuseStaleBuild(root, PDFIUM_COMMAND, 25);
 
 // EVERY EDIT BUILT THROUGH THE CONTRACT'S ONE ENCODER, as the application builds it (ADR-0142).
 const { blockEditOf, replacementFieldsOf } = await import('../../packages/contract/dist/commands.js');
@@ -135,7 +135,7 @@ const {
 const { joinedContent, showOperators, textObjectCount } = await import('../../packages/kernel/dist/textOperators.js');
 // THE ONE HARFBUZZ READER, to read a rebuilt run font back (ADR-0175).
 const { ShapingFace } = await import('../../packages/kernel/dist/textShaping.js');
-const { groupIntoBlocks, settingOf } = await import('../../packages/kernel/dist/textLines.js');
+const { groupIntoBlocks, risesOf, settingOf } = await import('../../packages/kernel/dist/textLines.js');
 const specs = await import('../../packages/kernel/dist/pdfiumSpecs.js');
 // OVER BYTES THAT OPEN WITH NO PASSWORD, as every fixture here but the encrypted one does (`withNoPassword`).
 const localPdfiumExecution = withNoPassword(specs.localPdfiumExecution);
@@ -144,6 +144,9 @@ const { EditRefusedError } = await import('../../packages/kernel/dist/textEditRe
 const { HeldPassword } = await import('../../packages/shared/dist/index.js');
 // THE CATALOGUE AN EDIT SETS A WORD IN, bound as `pdfiumHostEntry.ts` binds it (ADR-0173).
 const { bindEditFaces } = await import('../../packages/kernel/dist/editFaces.js');
+const { PRODUCER_MARK, PRODUCER_SIZE, SUPERSCRIPT_RISE, buildProducerSubsetPdf } = await import(
+  '../../packages/kernel/dist/producerSubsetFixture.js'
+);
 const { faceSourceOf } = await import('../../packages/kernel/dist/fontCatalogue.js');
 
 const FIRST = 'FIRST RUN stays exactly where it is';
@@ -274,7 +277,7 @@ const failures = [];
 // control against the underline, a highlight, spacing and its control, justify and its control, and space after. 234
 // from its Decision 2: a tab read back at its stop, its control, and a second edit that keeps one tab. 235 from the
 // second edit's measure, which read a line written as several objects at its first object's width.
-const roster = createRoster(failures, { cases: 241 });
+const roster = createRoster(failures, { cases: 243 });
 
 /**
  * @param {string} name
@@ -1349,6 +1352,76 @@ async function runFontCases() {
   } finally {
     await pdfiumWriter.close(session);
   }
+  await producerRunFontCases(fonts);
+}
+
+/**
+ * A PRODUCER'S SUBSETS (the owner's N14): Type 0 fonts over TrueType programs with no `cmap`, `OS/2`, `name` or `post`
+ * (`producerSubsetFixture.ts`). Every run on the line has its own font, found by shape — one for the bold lead-in and one
+ * shared by the regular runs — and each rebuilt font maps every character its runs hold to the glyph the page draws.
+ *
+ * @param {string} fonts the bundled fonts' directory
+ */
+async function producerRunFontCases(fonts) {
+  const pdf = await buildProducerSubsetPdf(
+    new Uint8Array(readFileSync(resolve(fonts, 'Carlito-Regular.ttf'))),
+    new Uint8Array(readFileSync(resolve(fonts, 'Carlito-Bold.ttf'))),
+  );
+  const session = await pdfiumWriter.open(pdf);
+  try {
+    const runs = (await objectRuns(session, 0)).runs;
+    const read = await runFonts(session, 0, runs.map((run) => run.index));
+    const unmapped = runs.flatMap((run, at) => {
+      const font = read.fonts[read.runs[at] ?? -1];
+      return font === undefined ? [run.text] : Array.from(run.text, (c) => c).filter((c) => runFontGlyph(font, c) === 0);
+    });
+    record(
+      'a producer’s subsets with no cmap still give every run its own font, bold apart from regular, mapping every character',
+      runs.length === 4 && read.fonts.length === 2 && JSON.stringify(read.runs) === '[0,1,1,1]' && unmapped.length === 0,
+      `${String(runs.length)} runs, ${String(read.fonts.length)} fonts, places ${JSON.stringify(read.runs)}; unmapped ${JSON.stringify(unmapped)}`,
+    );
+
+    // THE RISE THE EDITOR IS GIVEN AND THE RISE THE WRITER LEAVES, named in one place (CLAUDE.md, the wired pair's
+    // blind spot): the superscript's offset from its line by `risesOf` before an edit, and the same offset read back
+    // from the bytes an edit of that block wrote — a word deleted, so no glyph the subsets lack is asked for.
+    const riseOfMark = (/** @type {readonly { text: string, style: { baseline: number } }[]} */ line) => {
+      const rises = risesOf(line, (run) => run.style.baseline);
+      return rises[line.findIndex((run) => run.text === PRODUCER_MARK)];
+    };
+    const shown = riseOfMark(runs);
+    const text = runs.map((run) => run.text).join('').replace(' every', '');
+    // A BYTE-IMAGE WRITER: its session is the document's bytes (ADR-0047).
+    const edited = await localPdfiumExecution.apply({
+      session: pdf,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf([{ lines: [runs.map((run) => run.index)], soft: [false], text }]),
+        fit: 'reflow',
+        version: 1,
+      }),
+      sources: [],
+      reads: undefined,
+    });
+    const written = await pdfiumWriter.open(edited);
+    try {
+      const after = (await objectRuns(written, 0)).runs;
+      const kept = riseOfMark(after);
+      record(
+        'a superscript’s rise the editor draws is the rise the writer keeps: the same offset from its line before and after an edit',
+        shown !== undefined &&
+          Math.abs(shown - PRODUCER_SIZE * SUPERSCRIPT_RISE) < 0.01 &&
+          kept !== undefined &&
+          Math.abs(kept - shown) < 0.01 &&
+          !after.map((run) => run.text).join('').includes('every'),
+        `before ${String(shown)}, after ${String(kept)}; after the edit ${JSON.stringify(after.map((run) => run.text))}`,
+      );
+    } finally {
+      await pdfiumWriter.close(written);
+    }
+  } finally {
+    await pdfiumWriter.close(session);
+  }
 }
 
 /** The glyph `font` maps `character` to, read by the one HarfBuzz reader. @param {Uint8Array} font @param {string} character */
@@ -1823,7 +1896,7 @@ async function formsOf(bytes) {
   }
 }
 
-/** How many runs the dense page carries: a dense page in the thousands (B1.18), against the host's 41,700 per page. */
+/** How many runs the dense page carries: a dense page in the thousands (B1.18), against the host's 39,100 per page. */
 const DENSE_RUNS = 6000;
 
 /** One page of {@link DENSE_RUNS} separate text objects, each a short word, set small in a grid. */

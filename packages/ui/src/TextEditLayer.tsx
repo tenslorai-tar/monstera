@@ -964,9 +964,19 @@ function useRunFonts(
     const added: FontFace[] = [];
     void read().then(async ({ fonts, runs }) => {
       if (fonts.length === 0) return;
+      // EACH FACE DECLARES THE WEIGHT AND SLANT ITS PROGRAM HAS — the page's, as the first run drawn in it states them.
+      // A face declared normal while its run asks for 700 is emboldened by the browser a second time over a program that
+      // is already bold; declared as the page has it, a run as on the page is drawn as the program draws it, and one the
+      // person makes bold is still emboldened, since it asks for more than the face declares.
+      const declared = new Map<number, FontFaceDescriptors>();
+      for (const span of element.querySelectorAll<HTMLElement>('.m-text-editor__run[data-run]')) {
+        const place = runs.get(Number(span.dataset['run']));
+        if (place === undefined || declared.has(place)) continue;
+        declared.set(place, { weight: span.style.fontWeight || '400', style: span.style.fontStyle || 'normal' });
+      }
       const faces = await Promise.all(
         fonts.map((bytes, place) => {
-          const face = new FontFace(familyOf(editor, place), bytes);
+          const face = new FontFace(familyOf(editor, place), bytes, declared.get(place));
           return face.load().then(
             () => face,
             () => undefined,
@@ -1007,6 +1017,9 @@ function drawRun(span: HTMLElement, style: TextBlock['style'], zoom: number): vo
   span.style.fontWeight = style.bold ? '700' : '400';
   span.style.fontStyle = style.italic ? 'italic' : 'normal';
   span.style.color = `rgb(${String(r)}, ${String(g)}, ${String(b)})`;
+  // AT ITS RISE FROM THE LINE, as the page sets it and the writer keeps it (the owner's N14): a length raises the run's
+  // baseline by exactly that, so a superscript stays a superscript while the block is open.
+  span.style.verticalAlign = style.rise === undefined ? '' : `${String(style.rise * zoom)}px`;
 }
 
 /** The handles a block is placed by, and what each says it does. */

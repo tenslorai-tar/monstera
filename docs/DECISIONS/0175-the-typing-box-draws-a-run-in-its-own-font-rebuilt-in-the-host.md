@@ -106,3 +106,31 @@ already reads every character the page draws in that font (`runFonts` in `pdfium
   uses, named for that editor and the font's place, added when the editor opens and removed when it closes. An editor
   closes when the document closes and whenever its version moves (it is keyed by the version), so the faces live no
   longer than Decision 5 allowed, and a name unique to the editor cannot meet another document's.
+
+## Correction, 2026-10-13: a producer's subset, the face's weight, and a superscript's rise (the owner's N14)
+
+The owner opened a block of a word processor's PDF, with embedded subset fonts, bold lead-ins and superscript citation
+markers, and saw it drawn in another font with the bold and the superscripts gone until the edit ended. Three mechanisms,
+each reproduced on `producerSubsetFixture.ts` (Type 0 fonts over TrueType subsets with no `cmap`, `OS/2`, `name` or
+`post`, the shape fontkit and Ghostscript write) against PDFium 155.0.8044.0 on Linux:
+
+1. **No run had its own font.** The check asked the program's own `cmap` for each character's glyph; a producer's subset
+   has none, so `runFonts` answered `[null, null, null, null]` and every run was drawn in its kind of face. The glyph is
+   now found **by its shape** among the program's own where the `cmap` does not name it: its advance, its ink box, and
+   every on-curve point of its outline among the points PDFium draws (which tells a b from a d; a contour with no extent is
+   left out, since PDFium draws none). The rebuilt font maps the page's characters to those glyphs and carries an `OS/2`,
+   `name` and `post` written from the face's own metrics where the program has none: measured in the pinned Chromium,
+   the rebuilds load with them and are refused (*Invalid font data*) without. The fixture now answers `[0, 1, 1, 1]`.
+   A letter the page holds nowhere has no glyph the page vouches for and is drawn in the kind of face.
+2. **A bold face was emboldened again.** Decision 5's `FontFace` was declared with no weight or style, so a run asking for
+   700 had the browser synthesise bold over a program that is already bold. Each face now declares the weight and slant
+   the page states for its runs; a run the person makes bold is still emboldened, since it asks for more.
+3. **A superscript sat on the line.** The read carried no baseline. `RunStyle` now carries the object's (`f`), the join
+   keeps runs on different baselines apart, and each run crosses with its `rise` from its line by `lineBaselineOf` — the
+   rule the writer already laid lines out by, now one named function both call. The proof reads the superscript's rise
+   before an edit and from the bytes the edit wrote, and they agree (3.96 points both).
+
+The decision's proofs, listed here since the FEATURES row points to this record: `proof:pdfiumcommand` (the run fonts,
+the producer's subsets and the superscript's rise against the real library), `runFont.test.ts`, `TextEditLayer.test.tsx`
+(which runs take which face, each face's declared weight and slant, a run's rise), the rendered *DRAWN* case, and
+`proof:rendererpolicy`'s refused `data:` font.

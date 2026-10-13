@@ -8,6 +8,7 @@ import {
   groupIntoLines,
   settingOf,
   softEnds,
+  withRises,
 } from './textLines.js';
 
 /** A block's words from its lines by the one rule the editor and the translation both use (ADR-0179 Decision 2). */
@@ -389,5 +390,40 @@ describe('a block does not continue across a change of SETTING (N4, the owner’
     expect(settingOf({ ...REST, size: 9.1984 })).toBe(settingOf(REST));
     expect(settingOf({ ...REST, colour: { r: 64, g: 64, b: 65 } })).not.toBe(settingOf(REST));
     expect(settingOf({ ...REST, font: 'Nunito-Bold' })).not.toBe(settingOf(REST));
+  });
+});
+
+/**
+ * A run's rise from its line (the owner's N14): the page's baseline becomes the offset from the line's FIRST run's
+ * baseline (`lineBaselineOf`), the rule the writer lays a block's lines out by — so a superscript is drawn raised while
+ * the block is open, as it is written. CONTROL: the line's own runs rise by nothing, and a line whose first run is the
+ * raised one measures the others as lowered, which is the rule's answer and the writer's.
+ */
+describe('withRises', () => {
+  const at = (index: number, text: string, left: number, right: number, baseline: number): BlockableRun<{ baseline: number }> => ({
+    index,
+    text,
+    left,
+    right,
+    bottom: baseline - 2,
+    top: baseline + 8,
+    style: { baseline },
+    setting: 'Body|11.00|0,0,0',
+  });
+
+  it('gives each run its offset from its line’s first run, and the block a style with no baseline', () => {
+    const blocks = withRises(
+      groupIntoBlocks([at(0, 'Results.', 72, 120, 700), at(1, ' The method', 120, 200, 700), at(2, '12', 200, 206, 703.96), at(3, ' tested.', 206, 250, 700)]),
+      (_style, rise) => ({ rise: Math.round(rise * 100) / 100 }),
+      () => ({ rise: Number.NaN }),
+    );
+    expect(blocks[0]?.lines[0]?.runs.map((run) => run.style.rise)).toStrictEqual([0, 0, 3.96, 0]);
+    expect(Number.isNaN(blocks[0]?.style.rise)).toBe(true);
+    const raisedFirst = withRises(
+      groupIntoBlocks([at(0, '1', 72, 78, 703.96), at(1, ' Note', 78, 120, 700)]),
+      (_style, rise) => Math.round(rise * 100) / 100,
+      () => 0,
+    );
+    expect(raisedFirst[0]?.lines[0]?.runs.map((run) => run.style)).toStrictEqual([0, -3.96]);
   });
 });

@@ -581,6 +581,7 @@ describe('main’s PDFium writer', () => {
           italic: true,
           bold: false,
           orientation: 'upright' as const,
+          baseline: 703.25,
         },
       },
       {
@@ -600,6 +601,7 @@ describe('main’s PDFium writer', () => {
           italic: false,
           bold: true,
           orientation: 'turned' as const,
+          baseline: 191.5,
         },
       },
     ];

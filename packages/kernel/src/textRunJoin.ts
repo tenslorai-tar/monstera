@@ -33,7 +33,16 @@ export interface JoinStyle {
   readonly italic: boolean;
   readonly bold: boolean;
   readonly orientation: Orientation;
+  /** The y of the object's baseline in user space. */
+  readonly baseline: number;
 }
+
+/**
+ * How far two objects' baselines may differ and still be one baseline, as a share of the size: a hundredth, past the
+ * rounding a producer writes positions with, and far short of the superscript's rise in `producerSubsetFixture.ts` (a third
+ * of the size).
+ */
+const SAME_BASELINE = 0.01;
 
 /** One object's run, as the walk read it. */
 export interface ObjectRun<Style extends JoinStyle = JoinStyle> {
@@ -111,6 +120,9 @@ function continues(run: JoinedRun, next: ObjectRun): boolean {
   if (size <= 0) return false;
   const overlap = Math.min(run.top, next.top) - Math.max(run.bottom, next.bottom);
   if (overlap < SAME_LINE * size) return false;
+  // ONE BASELINE, as this module's header says a run is: a raised piece of the same size and face — a superscript set
+  // without a smaller size — is a run of its own, so its rise is its own and not lost in a join.
+  if (Math.abs(run.style.baseline - next.style.baseline) > SAME_BASELINE * size) return false;
   const gap = next.left - run.right;
   return gap <= MAX_GAP * size && gap >= -MAX_OVERLAP * size;
 }

@@ -1355,6 +1355,7 @@ describe('Edit text draws each run in its own font where the host rebuilt one (A
     constructor(
       readonly family: string,
       readonly bytes: Uint8Array,
+      readonly descriptors?: FontFaceDescriptors,
     ) {
       FakeFace.built.push(this);
     }
@@ -1421,6 +1422,24 @@ describe('Edit text draws each run in its own font where the host rebuilt one (A
     expect(read).toHaveBeenCalledTimes(1);
   });
 
+  /**
+   * EACH FACE DECLARES THE WEIGHT AND SLANT THE PAGE STATES for its runs (the owner's N14): the bold runs' face is 700
+   * upright and the grey italic run's 400 italic, so the browser draws each program as it is and emboldens or slants
+   * none of them a second time. CONTROL: the two faces declare differently, so a declaration copied from one run to every
+   * face, or left out, fails one of them.
+   */
+  it('declares each face with the weight and slant its page runs have, so the browser synthesises neither', async () => {
+    withFonts();
+    const twoFonts: RunFonts = { fonts: [FONT, new Uint8Array([0, 1, 0, 0, 9])], runs: new Map([[8, 0], [9, 1], [11, 0]]) };
+    const { view } = mount({ runFonts: () => Promise.resolve(twoFonts) });
+    fireEvent.click(find(view.container, '[data-text-block="1"]'));
+    await settle();
+    expect(FakeFace.built.map((face) => face.descriptors)).toStrictEqual([
+      { weight: '700', style: 'normal' },
+      { weight: '400', style: 'italic' },
+    ]);
+  });
+
   it('the faces LEAVE WITH THE EDITOR: removed when it closes, and none before', async () => {
     const { added, removed } = withFonts();
     const { view } = mount({ runFonts: () => Promise.resolve(SHARED) });
@@ -1447,6 +1466,39 @@ describe('Edit text draws each run in its own font where the host rebuilt one (A
     expect(
       Array.from(view.container.querySelectorAll<HTMLElement>('.m-text-editor__run'), (span) => span.dataset['runFont'] ?? null),
     ).toStrictEqual(['refused', null, 'refused']);
+  });
+
+  /**
+   * A SUPERSCRIPT STAYS RAISED while its block is open (the owner's N14): the run is drawn at the rise main answers, a
+   * length CSS raises the baseline by, at the zoom. CONTROL: the line's other runs are not moved, so the rise is the run's.
+   */
+  it('draws a run at its rise from the line, and leaves the line’s own runs on it', () => {
+    const SUPER = { ...OTHER, rise: 3.96 };
+    const [heading, paragraph] = BLOCKS.blocks;
+    if (heading === undefined || paragraph === undefined) throw new Error('the fixture has two blocks');
+    const raised: PageBlocks = {
+      ...BLOCKS,
+      blocks: [
+        heading,
+        {
+          ...paragraph,
+          lines: [
+            {
+              runs: [
+                { index: 8, text: 'Helps with care', style: STYLE },
+                { index: 9, text: '12', style: SUPER },
+              ],
+              box: { x0: 72, y0: 636, x1: 400, y1: 650 },
+              soft: false,
+            },
+          ],
+        },
+      ],
+    };
+    const { view } = mount({ blocks: raised });
+    fireEvent.click(find(view.container, '[data-text-block="1"]'));
+    const aligns = Array.from(view.container.querySelectorAll<HTMLElement>('.m-text-editor__run'), (span) => span.style.verticalAlign);
+    expect(aligns).toStrictEqual(['', '3.96px']);
   });
 
   it('CONTROL: with no fonts answered nothing is built and every run keeps its kind', async () => {

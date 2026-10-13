@@ -160,6 +160,12 @@ export class ShapingFace {
     return this.#font.nominalGlyph(codePoint);
   }
 
+  /** How many glyphs the face holds: `maxp`'s `numGlyphs`, 0 where it has no `maxp`. */
+  glyphCount(): number {
+    const maxp = this.#face.referenceTable('maxp');
+    return maxp === undefined || maxp.length < 6 ? 0 : ((maxp[4] ?? 0) << 8) | (maxp[5] ?? 0);
+  }
+
   /** The glyph's outline at this face's pin, empty for a glyph that draws nothing. */
   outline(glyph: number): OutlineCommand[] {
     return this.#font.glyphToJson(glyph).flatMap((command) =>
