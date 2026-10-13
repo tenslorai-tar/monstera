@@ -3495,13 +3495,18 @@ describe('delete pages — the mutation-dialog gate', () => {
   });
 
   describe('export as PDF/A (ADR-0075)', () => {
-    it('dispatches the document, and shows what was left out only when something was — lines or tags', async () => {
-      for (const [removed, tagsDropped, notices] of [
-        [['not permitted in PDF/A, annotation will not be present in output file'], false, 1],
-        [[], true, 1],
-        [[], false, 0],
+    it('asks the level, dispatches it, and shows what was left out only when something was — named, counted or tags', async () => {
+      const popup = [{ page: 0, kind: 'comment-popup', count: 1 }] as const;
+      for (const [leftOut, leftOutMore, otherLeftOut, tagsDropped, notices] of [
+        [popup, 0, 0, false, 1],
+        [[], 5, 0, false, 1],
+        [[], 0, 2, false, 1],
+        [[], 0, 0, true, 1],
+        [[], 0, 0, false, 0],
       ] as const) {
-        const { client, sent } = recording({ 'document.exportPdfa': { kind: 'copied', bytes: 9, removed, tagsDropped, written: WRITTEN } });
+        const { client, sent } = recording({
+          'document.exportPdfa': { kind: 'copied', bytes: 9, leftOut, leftOutMore, otherLeftOut, tagsDropped, written: WRITTEN },
+        });
         const asked: unknown[] = [];
 
         await exportPdfaCommand({ track: UNTRACKED,
@@ -3514,13 +3519,32 @@ describe('delete pages — the mutation-dialog gate', () => {
           onApplied: () => undefined,
           ask: (id, props) => {
             asked.push({ id, props });
-            return Promise.resolve(undefined);
+            // 3b, NOT THE DEFAULT, so a command that dropped the answer and sent 2 is seen.
+            return Promise.resolve(id === 'dialog.pdfa-level' ? { level: '3b' } : undefined);
           },
         }).run(CONTEXT);
 
-        expect(namedWorkSetAside(sent)).toStrictEqual([{ id: 'document.exportPdfa', params: { docId: DOC } }]);
-        expect(asked).toStrictEqual(notices === 1 ? [{ id: 'dialog.pdfa-removals', props: { removed, tagsDropped } }] : []);
+        expect(namedWorkSetAside(sent)).toStrictEqual([{ id: 'document.exportPdfa', params: { docId: DOC, level: 3 } }]);
+        expect(asked).toStrictEqual([
+          { id: 'dialog.pdfa-level', props: {} },
+          ...(notices === 1 ? [{ id: 'dialog.pdfa-removals', props: { level: 3, leftOut, leftOutMore, otherLeftOut, tagsDropped } }] : []),
+        ]);
       }
+    });
+
+    it('CONTROL: a dismissed level dialog sends nothing', async () => {
+      const { client, sent } = recording({ 'document.exportPdfa': { kind: 'cancelled' } });
+      await exportPdfaCommand({ track: UNTRACKED,
+        settleMarks: NOTHING_MARKED,
+        recogniseFirst: NOTHING_RECOGNISED,
+        client,
+        toast: () => undefined,
+        stamp,
+        signatures,
+        onApplied: () => undefined,
+        ask: () => Promise.resolve(undefined),
+      }).run(CONTEXT);
+      expect(sent).toStrictEqual([]);
     });
 
     it('says so for no converter, no PDF/A, a refused and an unwritable destination, and nothing for a dismissed dialog', async () => {
@@ -3543,6 +3567,8 @@ describe('delete pages — the mutation-dialog gate', () => {
           signatures,
           onApplied: () => undefined,
           ask: (id, props) => {
+            // THE LEVEL ANSWERED and not recorded: what this case reads is what the outcome opens.
+            if (id === 'dialog.pdfa-level') return Promise.resolve({ level: '2b' });
             asked.push({ id, props });
             return Promise.resolve(undefined);
           },
@@ -4568,7 +4594,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       const walks: unknown[] = [];
       const client = createClient(channels, (id) => {
         events.push(`channel ${id}`);
-        return Promise.resolve(ok({ kind: 'copied', bytes: 12, removed: [], tagsDropped: false, written: WRITTEN }));
+        return Promise.resolve(ok({ kind: 'copied', bytes: 12, leftOut: [], leftOutMore: 0, otherLeftOut: 0, tagsDropped: false, written: WRITTEN }));
       });
       return {
         deps: {
@@ -4581,6 +4607,7 @@ describe('delete pages — the mutation-dialog gate', () => {
           ask: (id) => {
             events.push(`dialog ${id}`);
             if (id === 'dialog.export-word') return Promise.resolve({ mode: 'rich', pages: CHOSEN, reading: 'typed' });
+            if (id === 'dialog.pdfa-level') return Promise.resolve({ level: '2b' });
             return Promise.resolve(
               id === 'dialog.export-text' || id === 'dialog.export-layout-text' ? { pages: CHOSEN } : undefined,
             );
@@ -4600,7 +4627,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     it.each([
       ['text', exportTextCommand, 'document.exportText', ['dialog dialog.export-text']],
       ['layout text', exportLayoutTextCommand, 'document.exportText', ['dialog dialog.export-layout-text']],
-      ['PDF/A', exportPdfaCommand, 'document.exportPdfa', []],
+      ['PDF/A', exportPdfaCommand, 'document.exportPdfa', ['dialog dialog.pdfa-level']],
     ] as const)('%s: the walk runs after the export’s own question, over the whole document, and what it recognised is said before the export’s own report', async (_name, build, channel, asked) => {
       const { deps, events, walks } = timeline({ recognised: 2, skipped: 1, stopped: false });
 
@@ -6842,8 +6869,8 @@ describe('every file write confirms, and its Show in folder reveals the file the
     {
       name: 'PDF/A',
       message: TOAST_PDFA_SAVED,
-      answers: { 'document.exportPdfa': { ...COPIED, removed: [], tagsDropped: false } },
-      dialogs: [],
+      answers: { 'document.exportPdfa': { ...COPIED, leftOut: [], leftOutMore: 0, otherLeftOut: 0, tagsDropped: false } },
+      dialogs: [{ level: '2b' }],
       run: (deps) => exportPdfaCommand(deps).run(CONTEXT),
     },
     {

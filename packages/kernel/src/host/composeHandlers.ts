@@ -7,6 +7,7 @@ import { type ComposePageSize, ComposeRefused, type ComposedSource } from '../co
 import { splitCsv } from '../csvSplit.js';
 import type { ComposedImages, ImportImage } from '../imageCompose.js';
 import { pictureSize } from '../pictureSize.js';
+import type { PdfaPreparation } from '../pdfaPreparation.js';
 import type { ScannedSignature } from '../signatureScan.js';
 import {
   WorkbookUnreadable,
@@ -83,6 +84,19 @@ export type InlineImageKeeper = (
 >;
 
 /**
+ * How this process prepares a PDF/A copy (ADR-0075's 2026-10-13 correction) — `prepareForPdfa` over the shim in the
+ * host, a fake in a proof. `optimize`'s shape: the area and two validated names, `missing` the transport's and
+ * `unreadable` the document's.
+ */
+export type PdfaPreparer = (
+  area: HostArea,
+  from: string,
+  into: string,
+  // `ImageOptimizer`'s rule: required, `undefined` where the document opens with none.
+  password: string | undefined,
+) => Promise<({ readonly kind: 'prepared'; readonly bytes: number } & PdfaPreparation) | { readonly kind: 'unreadable' | 'missing' }>;
+
+/**
  * How this process makes a scanned signature PDF a picture — `signatureFromScan` in the host, a fake in a proof. It
  * takes the bytes, since what it opens is a document in memory rather than a path.
  */
@@ -94,6 +108,8 @@ export interface ComposeHandlerParts {
   readonly signatureFromScan: SignatureScanner | null;
   /** How this process keeps inline images, or `null` without the native library — `optimize`'s rule. */
   readonly keepInlineImages: InlineImageKeeper | null;
+  /** How this process prepares a PDF/A copy, or `null` without the native library — `optimize`'s rule. */
+  readonly preparePdfa: PdfaPreparer | null;
   /**
    * How this process rewrites images, or `null` where it was started without the native library
    * — every packaged build until packaging resolves the library's path, and any run whose launcher
@@ -136,6 +152,7 @@ export function createComposeHandlers({
   files,
   keepInlineImages,
   optimize,
+  preparePdfa,
   probe,
   signatureFromScan,
 }: ComposeHandlerParts): Handlers<ComposeChannels> {
@@ -361,6 +378,33 @@ export function createComposeHandlers({
         ok: true,
         value: { kind: 'joined', bytes: await files.writeOutput(held.outputDirectory, into, joined.pdf), pages: [...joined.pages] },
       };
+    },
+
+    // `engine/optimize`'s three decisions, over the PDF/A preparation (ADR-0075's 2026-10-13 correction).
+    'engine/prepare-pdfa': async ({ session, from, password, into }) => {
+      const held = areas.lookup(session);
+      if (held === undefined) return gone;
+      if (preparePdfa === null) return { ok: true, value: { kind: 'unavailable' } };
+
+      const answer = await preparePdfa(held, from, into, password ?? undefined);
+      switch (answer.kind) {
+        case 'missing':
+          return { ok: false, error: { code: 'asset-missing' } };
+        case 'unreadable':
+          return { ok: true, value: { kind: 'unreadable' } };
+        case 'prepared':
+          return {
+            ok: true,
+            value: {
+              kind: 'prepared',
+              bytes: answer.bytes,
+              printed: answer.printed,
+              drawn: answer.drawn,
+              leftOut: answer.leftOut.map((entry) => ({ ...entry })),
+              leftOutMore: answer.leftOutMore,
+            },
+          };
+      }
     },
 
     // `engine/optimize`'s three decisions, over the inline-image keeper (ADR-0126).

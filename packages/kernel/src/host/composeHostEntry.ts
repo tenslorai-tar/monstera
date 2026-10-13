@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { ENGINE_HOST_MAX_IN_FLIGHT } from '@monstera/contract/host';
@@ -8,11 +8,12 @@ import { composeCsv } from '../csvCompose.js';
 import { type FaceSource, faceSourceOf, fontFoldersOf } from '../fontCatalogue.js';
 import { composeImages } from '../imageCompose.js';
 import { composeMarkdown } from '../markdownCompose.js';
-import { MupdfOpenRefused, keepInlineImages, openMupdfShim, rewriteImages } from '../mupdfRaw.js';
+import { Document, MupdfOpenRefused, PDFDocument, keepInlineImages, openMupdfShim, rewriteImages } from '../mupdfRaw.js';
+import { prepareForPdfa } from '../pdfaPreparation.js';
 import { signatureFromScan } from '../signatureScan.js';
 import { cryptoBytes } from '../token.js';
 import { composeChannels } from './composeChannels.js';
-import { type ImageOptimizer, type InlineImageKeeper, createComposeHandlers } from './composeHandlers.js';
+import { type ImageOptimizer, type InlineImageKeeper, type PdfaPreparer, createComposeHandlers } from './composeHandlers.js';
 import { probeContainment } from './containment.js';
 import type { HostArea } from './engineHandlers.js';
 import { sessionFileAnswers } from './fileAnswers.js';
@@ -145,6 +146,39 @@ const keepInlineImagesIn: InlineImageKeeper | null =
           : { kind: 'kept', bytes: (await stat(output)).size, converted: kept.converted, left: kept.left };
       };
 
+/**
+ * The PDF/A preparation over one area (ADR-0075's 2026-10-13 correction), `optimize`'s shape: MuPDF failing to OPEN
+ * the document, or refusing its password, is the document's answer; any later failure is a fault. Written with its
+ * encryption off, because PDF/A forbids encryption and the converter would otherwise read a document it cannot open.
+ */
+const preparePdfaIn: PdfaPreparer | null =
+  shimPath === null
+    ? null
+    : async (area, from, into, password) => {
+        const input = join(area.snapshotDirectory, from);
+        if (!existsSync(input)) return { kind: 'missing' };
+        let document: Document;
+        try {
+          document = Document.openDocument(await readFile(input), 'application/pdf');
+        } catch {
+          return { kind: 'unreadable' };
+        }
+        try {
+          if (!(document instanceof PDFDocument) || document.authenticatePassword(password ?? '') === 0) return { kind: 'unreadable' };
+          const preparation = prepareForPdfa(document);
+          const saved = document.saveToBuffer('garbage,encrypt=none');
+          try {
+            const output = join(area.outputDirectory, into);
+            await writeFile(output, saved.asUint8Array());
+            return { kind: 'prepared', bytes: (await stat(output)).size, ...preparation };
+          } finally {
+            saved.destroy();
+          }
+        } finally {
+          document.destroy();
+        }
+      };
+
 // AREAS, NOT SESSIONS. This host holds no parse between calls, and it holds the
 // granted directories anyway (ADR-0048 Decision 2): a call that carried its own
 // directories would be a channel through which a confused main could redirect
@@ -153,6 +187,7 @@ const areas = createHostSessions<HostArea>(cryptoBytes);
 
 const handlers = createComposeHandlers({
   keepInlineImages: keepInlineImagesIn,
+  preparePdfa: preparePdfaIn,
   optimize,
   // DRAWN WITH THE BOUND LIBRARY, so it is there exactly when Optimize is.
   signatureFromScan: shimPath === null ? null : signatureFromScan,

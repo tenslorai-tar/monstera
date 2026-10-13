@@ -3,7 +3,7 @@ import { rm } from 'node:fs/promises';
 
 import { strFromU8, unzipSync } from 'fflate';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { crc32, deflateSync } from 'node:zlib';
 
 import {
@@ -4361,41 +4361,60 @@ describe('exportText — the document’s words, streamed one page at a time', (
     /** The save's flushed image, distinct from the fixture's own bytes, so the case sees which bytes reached the converter. */
     const FLUSHED = Uint8Array.of(0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37);
 
-    function converter(answer: 'converted' | 'failed'): { readonly source: PdfaSource; readonly given: Uint8Array[] } {
-      const given: Uint8Array[] = [];
+    function converter(answer: 'converted' | 'failed' | 'undeclared'): {
+      readonly source: PdfaSource;
+      readonly given: { pdf: Uint8Array; level: number; opensWith: unknown }[];
+    } {
+      const given: { pdf: Uint8Array; level: number; opensWith: unknown }[] = [];
       return {
         given,
-        source: (pdf) => {
-          given.push(pdf);
+        source: (pdf, level, opensWith) => {
+          given.push({ pdf, level, opensWith });
           if (answer === 'failed') return Promise.reject(new PdfaFailedError({ stage: 'reverted', said: 'reverting to normal PDF output' }));
           return Promise.resolve({
-            removed: ['not permitted in PDF/A, annotation will not be present in output file'],
+            leftOut: [{ page: 0, kind: 'comment-popup', count: 1 }],
+            leftOutMore: 4,
+            otherLeftOut: 2,
             output: (async function* () {
               yield await Promise.resolve(new TextEncoder().encode('%PDF-1.7 as PDF/A'));
+              // THE DECLARATIONS CHECK fails at the end of the stream, after bytes were written to the temporary file.
+              if (answer === 'undeclared') throw new PdfaFailedError({ stage: 'undeclared', missing: 'no /OutputIntents' });
             })(),
           });
         },
       };
     }
 
-    it('hands the converter the SAVE’S FLUSH, writes what it produced, and answers what it removed', async () => {
+    it('hands the converter the SAVE’S FLUSH and the LEVEL chosen, writes what it produced, and names what it left out', async () => {
       const destination = join(mkdtempSync(join(directory, 'pdfa-')), 'archive.pdf');
       const { source, given } = converter('converted');
       const { commands, reads } = exportingTo(null, { pdfa: source, flush: () => Promise.resolve(FLUSHED), copyTo: destination });
 
-      const outcome = await commands.exportPdfa(textDoc, WORK);
+      // LEVEL 3, not the default, so a handler that dropped the person's choice is seen.
+      const outcome = await commands.exportPdfa(textDoc, 3, WORK);
 
       expect(outcome).toStrictEqual({
         kind: 'copied',
         bytes: 17,
-        removed: ['not permitted in PDF/A, annotation will not be present in output file'],
+        leftOut: [{ page: 0, kind: 'comment-popup', count: 1 }],
+        leftOutMore: 4,
+        otherLeftOut: 2,
         // THE REAL STRUCTURE READ on this untagged fixture: nothing to lose, nothing said.
         tagsDropped: false,
         destination,
       });
       expect(readFileSync(destination, 'latin1')).toBe('%PDF-1.7 as PDF/A');
-      expect(given).toStrictEqual([FLUSHED]);
+      expect(given).toStrictEqual([{ pdf: FLUSHED, level: 3, opensWith: undefined }]);
       expect(reads).toStrictEqual([]);
+    });
+
+    it('writes NO file when the output does not declare what was asked, though bytes had streamed (control: declared)', async () => {
+      const destination = join(mkdtempSync(join(directory, 'pdfa-')), 'undeclared.pdf');
+      const { commands } = exportingTo(null, { pdfa: converter('undeclared').source, flush: () => Promise.resolve(FLUSHED), copyTo: destination });
+
+      expect(await commands.exportPdfa(textDoc, 2, WORK)).toStrictEqual({ kind: 'failed' });
+      expect(existsSync(destination)).toBe(false);
+      expect(readdirSync(dirname(destination))).toStrictEqual([]);
     });
 
     it('says the TAGS were dropped when any page carries structure, which Ghostscript never prints', async () => {
@@ -4413,7 +4432,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
         },
       });
 
-      const outcome = await commands.exportPdfa(textDoc, WORK);
+      const outcome = await commands.exportPdfa(textDoc, 2, WORK);
 
       expect(outcome?.kind === 'copied' && outcome.tagsDropped).toBe(true);
       expect(asked).toStrictEqual([0, 1]);
@@ -4424,13 +4443,13 @@ describe('exportText — the document’s words, streamed one page at a time', (
       const { source } = converter('failed');
       const { commands } = exportingTo(null, { pdfa: source, flush: () => Promise.resolve(FLUSHED), copyTo: destination });
 
-      expect(await commands.exportPdfa(textDoc, WORK)).toStrictEqual({ kind: 'failed' });
+      expect(await commands.exportPdfa(textDoc, 2, WORK)).toStrictEqual({ kind: 'failed' });
       expect(existsSync(destination)).toBe(false);
     });
 
     it('CONTROL: answers UNAVAILABLE before any dialog where no converter is provisioned', async () => {
       const { commands } = exportingTo(null, { pdfa: null });
-      expect(await commands.exportPdfa(textDoc, WORK)).toStrictEqual({ kind: 'unavailable' });
+      expect(await commands.exportPdfa(textDoc, 2, WORK)).toStrictEqual({ kind: 'unavailable' });
     });
   });
 

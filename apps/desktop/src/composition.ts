@@ -280,7 +280,7 @@ import type { ConverterPlatform } from './converterSession.js';
 import type { AttachmentReaders } from './askAttachments.js';
 import { createLayoutTextSource } from './layoutText.js';
 import { type WorkbookComposer, createOfficeSource } from './officeConversion.js';
-import { createPdfaSource } from './pdfaConversion.js';
+import { type PdfaPreparer, createPdfaSource } from './pdfaConversion.js';
 import { createAssistant } from './assistant.js';
 import type { PrintDestination } from './printing.js';
 import type { ShareDestination } from './sharing.js';
@@ -1799,7 +1799,11 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // so the export answers unavailable rather than extracting anywhere else (ADR-0071).
     layoutText: layoutTextSource,
     // PDF/A-2b, the contained Ghostscript — `null` where it cannot run, for layout text's reason (ADR-0075).
-    pdfa: pdfaPlatform === null ? null : createPdfaSource(pdfaPlatform, failures),
+    // ITS COPY PREPARED in the compose host (the 2026-10-13 correction); a build without one converts the flush as it is.
+    pdfa:
+      pdfaPlatform === null
+        ? null
+        : createPdfaSource(pdfaPlatform, failures, composeHost?.preparePdfa ?? (() => Promise.resolve({ kind: 'unavailable' } as const))),
     // OFFICE IMPORT, the contained x2t — `null` where it cannot run, for layout text's reason (ADR-0120).
     // A WORKBOOK IN PARTS through the compose host (decision C), which alone reads the file's sheets.
     officeImport: officeImport === null || officeConvert === null ? null : { source: officeImport.source, convert: officeConvert },
@@ -3679,6 +3683,7 @@ function composeHostBinding(
   readonly compose: NonNullable<ComposeImport>;
   readonly composeImages: NonNullable<ComposeImages>;
   readonly optimize: OptimizeSource;
+  readonly preparePdfa: PdfaPreparer;
   readonly keepInlineImages: PdfiumInputKeeper;
   readonly workbooks: WorkbookComposer;
   /** Where a CSV in the area is cut into parts (`engine/csv-split`, the owner's O10). */
@@ -3981,6 +3986,38 @@ function composeHostBinding(
         }
       }
       return { kind: 'optimized', bytes: written, output: output(), discard };
+    },
+
+    // A PDF/A COPY PREPARED (ADR-0075's 2026-10-13 correction): the flush into the area, the preparation in the host, and
+    // the copy LEFT where it was written for the converter to take file to file — `optimize`'s size check first — so
+    // `main` never reads it in beside the flush. The input goes whatever the call answered.
+    preparePdfa: async (pdf, opensWith) => {
+      const built = await ensure();
+      const area = { snapshotDirectory: built.paths.snapshot, outputDirectory: built.paths.output };
+      const from = areas.mintName();
+      const into = areas.mintName();
+      const path = join(area.outputDirectory, into);
+      const discard = (): Promise<void> => removeWorkingFile(path, failures);
+
+      await writeFile(join(area.snapshotDirectory, from), pdf);
+      const answer = await built.client['engine/prepare-pdfa']({
+        session: built.session,
+        from,
+        password: opensWith?.reveal() ?? null,
+        into,
+      }).finally(() => rm(join(area.snapshotDirectory, from), { force: true }));
+
+      if (!answer.ok) {
+        await discard();
+        throw new Error(`the compose host could not prepare the PDF/A copy: ${answer.error.code}`);
+      }
+      if (answer.value.kind !== 'prepared') return { kind: answer.value.kind };
+      const written = (await stat(path)).size;
+      if (written !== answer.value.bytes) {
+        await discard();
+        throw new Error(`the compose host reported ${String(answer.value.bytes)} bytes and the copy holds ${String(written)}`);
+      }
+      return { kind: 'prepared', path, leftOut: answer.value.leftOut, leftOutMore: answer.value.leftOutMore, discard };
     },
 
     // INLINE IMAGES KEPT through a PDFium edit (ADR-0126): the image into this host's area, the rewrite, and — only

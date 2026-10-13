@@ -2291,13 +2291,21 @@ function exportPowerPointHandler(commands: DocumentCommands, mint: MintWritten):
 
 /** The PDF/A export's handler: a copy's outcomes with the removals, and the converter's two refusals. */
 function exportPdfaHandler(commands: DocumentCommands, mint: MintWritten): ContractHandlers['document.exportPdfa'] {
-  return async ({ docId, work }): Promise<Awaited<ReturnType<ContractHandlers['document.exportPdfa']>>> => {
+  return async ({ docId, level, work }): Promise<Awaited<ReturnType<ContractHandlers['document.exportPdfa']>>> => {
     try {
-      const outcome = await commands.exportPdfa(docId, work);
+      const outcome = await commands.exportPdfa(docId, level, work);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       switch (outcome.kind) {
         case 'copied':
-          return ok({ kind: 'copied', bytes: outcome.bytes, removed: outcome.removed, tagsDropped: outcome.tagsDropped, written: mint(outcome.destination) } as const);
+          return ok({
+            kind: 'copied',
+            bytes: outcome.bytes,
+            leftOut: outcome.leftOut.map((entry) => ({ page: entry.page, kind: entry.kind, count: entry.count })),
+            leftOutMore: outcome.leftOutMore,
+            otherLeftOut: outcome.otherLeftOut,
+            tagsDropped: outcome.tagsDropped,
+            written: mint(outcome.destination),
+          } as const);
         case 'refused':
           return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
         case 'write-failed':

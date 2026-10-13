@@ -103,6 +103,7 @@ import { SERVICE_REFUSED_DIALOG_ID } from '../dialogs/serviceRefused.js';
 import { OPTIMIZE_DIALOG_ID, type OptimizeAnswer } from '../dialogs/optimize.js';
 import type { TrackTask } from '../runningTask.js';
 import { withWorkProgress } from './workProgress.js';
+import { PDFA_LEVEL_DIALOG_ID, PDFA_LEVEL_OF, PDFA_LEVEL_RESULT } from '../dialogs/pdfaLevel.js';
 import { PDFA_REMOVALS_DIALOG_ID } from '../dialogs/pdfaRemovals.js';
 import { OCR_OUTCOME_DIALOG_ID, type RecognisedWalk } from '../dialogs/ocrOutcome.js';
 import type { ScanReader } from '../dialogs/scanReader.js';
@@ -291,6 +292,8 @@ import {
   TOAST_IMAGES_SAVED,
   TOAST_PAGES_SAVED,
   TOAST_PDFA_SAVED,
+  TOAST_PDFA_1B_SAVED,
+  TOAST_PDFA_3B_SAVED,
   TOAST_POWERPOINT_SAVED,
   TOAST_SIGNED_COPY_SAVED,
   TOAST_SNAPSHOT_SAVED,
@@ -3308,12 +3311,16 @@ export function exportExcelCommand(
 }
 
 /**
- * Writes the document as PDF/A-2b (ADR-0075): main's save dialog and conversion, then —
- * when something was removed to conform — the removals notice, in the converter's words.
+ * Writes the document as PDF/A (ADR-0075): the level, then main's save dialog and conversion, then — when something
+ * was left out — the notice, in Monstera's words, by kind and page (its 2026-10-13 correction, the owner's N7).
  *
- * **No dialog of its own before the save dialog**: PDF/A is the whole document in an archival form, so there is
- * nothing to choose before the file.
+ * **The level is the one thing asked before the file**, PDF/A-2b selected: PDF/A is the whole document in an archival
+ * form, and the level is what a receiving system may require. A file that kept everything is said in the toast, with
+ * its level; the converter's own words are never shown.
  */
+/** The toast each level is confirmed with: a toast carries no values, so the level is in the key. */
+const PDFA_SAVED: Readonly<Record<1 | 2 | 3, MessageKey>> = { 1: TOAST_PDFA_1B_SAVED, 2: TOAST_PDFA_SAVED, 3: TOAST_PDFA_3B_SAVED };
+
 export function exportPdfaCommand(
   deps: DocumentCommandDeps & RecognisesFirst & WritesAFile & SettlesMarksFirst & ConvertsInMain,
 ): UiCommand {
@@ -3329,10 +3336,15 @@ export function exportPdfaCommand(
       if (context.docId === undefined) return;
       if (!(await deps.settleMarks(context.docId, 'export'))) return;
 
+      // THE LEVEL FIRST, before recognition walks any page: a dismissed choice changes nothing.
+      const chosen = PDFA_LEVEL_RESULT.safeParse(await deps.ask(PDFA_LEVEL_DIALOG_ID, {}));
+      if (!chosen.success) return;
+      const level = PDFA_LEVEL_OF[chosen.data.level];
+
       const walked = await recognisedBeforeExport(deps, context);
       if (walked === false) return;
       const docId = context.docId;
-      const answer = await withWorkProgress(deps, EXPORTING_PDFA, (work) => deps.client['document.exportPdfa']({ docId, work }));
+      const answer = await withWorkProgress(deps, EXPORTING_PDFA, (work) => deps.client['document.exportPdfa']({ docId, level, work }));
       await reportRecognisedBeforeExport(deps, walked);
       if (!answer.ok) {
         reportProblem(deps, answer.error);
@@ -3345,9 +3357,15 @@ export function exportPdfaCommand(
         case 'copied':
           // THE FILE IS WRITTEN EITHER WAY, so it is confirmed either way; what the conversion removed is the
           // dialog's to say, over the toast, when there is anything to say.
-          confirmWritten(deps, TOAST_PDFA_SAVED, outcome.written);
-          if (outcome.removed.length > 0 || outcome.tagsDropped) {
-            void deps.ask(PDFA_REMOVALS_DIALOG_ID, { removed: outcome.removed, tagsDropped: outcome.tagsDropped });
+          confirmWritten(deps, PDFA_SAVED[level], outcome.written);
+          if (outcome.leftOut.length > 0 || outcome.leftOutMore > 0 || outcome.otherLeftOut > 0 || outcome.tagsDropped) {
+            void deps.ask(PDFA_REMOVALS_DIALOG_ID, {
+              level,
+              leftOut: outcome.leftOut,
+              leftOutMore: outcome.leftOutMore,
+              otherLeftOut: outcome.otherLeftOut,
+              tagsDropped: outcome.tagsDropped,
+            });
           }
           return;
         case 'unavailable':

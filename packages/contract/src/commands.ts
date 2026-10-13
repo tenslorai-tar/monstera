@@ -230,6 +230,29 @@ export const PAGE_ADJUSTMENT_OUTCOMES = ['changes', 'already-level', 'no-sheet',
 export type PageAdjustmentOutcome = (typeof PAGE_ADJUSTMENT_OUTCOMES)[number];
 
 /**
+ * The PDF/A levels a person may choose, each Ghostscript's `-dPDFA` part with conformance B (ADR-0075's 2026-10-13
+ * correction). `2` first: it is the default.
+ */
+export const PDFA_LEVELS = [2, 1, 3] as const;
+export type PdfaLevel = (typeof PDFA_LEVELS)[number];
+
+/**
+ * What a PDF/A copy cannot keep, named by kind (ADR-0075's 2026-10-13 correction): a comment's pop-up window, whose link
+ * Ghostscript's pdfwrite cuts though the comment and its text are kept; a mark hidden from view, which PDF/A would make
+ * visible; and the kinds PDF/A forbids outright. What the converter still removes after this, said only in its own
+ * words, is COUNTED beside these and never quoted.
+ */
+export const PDFA_LEFT_OUT_KINDS = ['comment-popup', 'hidden-mark', 'sound', 'movie', '3d'] as const;
+export type PdfaLeftOutKind = (typeof PDFA_LEFT_OUT_KINDS)[number];
+
+/**
+ * The most left-out entries a PDF/A preparation names, one per page and kind; what lies past them is COUNTED, never
+ * dropped. 4096 was refused by the host route check (336,409 bytes at worst against a 262,144-byte frame, 2026-10-13),
+ * and a notice listing more pages than this is past reading anyway.
+ */
+export const MAX_PDFA_LEFT_OUT = 1024;
+
+/**
  * The most blank pages one insert adds. A bound so a typed count cannot ask the engine for a million pages; a hundred is
  * more than any document's run of blank pages, and more is a second insert.
  */

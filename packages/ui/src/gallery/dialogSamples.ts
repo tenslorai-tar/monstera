@@ -1073,28 +1073,24 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'select', props: { dpi: 300, pageCount: 12 }, steps: [press('Select pages'), type('Page numbers', '2-5')] },
   ],
   'dialog.pdfa-removals': [
+    // THE OWNER'S CASE (N7): one note's pop-up on page 1, said by kind and page.
     {
       state: 'opened',
-      props: {
-        removed: [
-          'Annotation set to non-printing, not permitted in PDF/A, annotation will not be present in output file.',
-          'Transparency group found, not permitted in PDF/A-1, reverting to normal PDF output.',
-        ],
-        tagsDropped: false,
-      },
+      props: { level: 2, leftOut: [{ page: 0, kind: 'comment-popup', count: 1 }], leftOutMore: 0, otherLeftOut: 0, tagsDropped: false },
     },
-    { state: 'tags', props: { removed: [], tagsDropped: true } },
+    { state: 'tags', props: { level: 2, leftOut: [], leftOutMore: 0, otherLeftOut: 0, tagsDropped: true } },
     {
       state: 'long',
       props: {
-        removed: Array.from(
-          { length: 24 },
-          (_unused, at) => `Annotation ${String(at + 1)} set to non-printing, not permitted in PDF/A, annotation will not be present in output file.`,
-        ),
+        level: 1,
+        leftOut: Array.from({ length: 24 }, (_unused, at) => ({ page: at, kind: 'comment-popup' as const, count: at + 1 })),
+        leftOutMore: 40,
+        otherLeftOut: 3,
         tagsDropped: true,
       },
     },
   ],
+  'dialog.pdfa-level': [{ state: 'opened', props: {} }],
   'dialog.optimize': [
     { state: 'opened', props: { setting: 'medium', measured: null } },
     { state: 'measured', props: { setting: 'medium', measured: { before: 8_400_000, after: 3_150_000 } } },

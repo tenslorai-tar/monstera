@@ -657,6 +657,11 @@ export {
   PAGE_ADJUSTMENT_OUTCOMES,
   type PageAdjustment,
   type PageAdjustmentOutcome,
+  PDFA_LEVELS,
+  type PdfaLevel,
+  PDFA_LEFT_OUT_KINDS,
+  type PdfaLeftOutKind,
+  MAX_PDFA_LEFT_OUT,
 } from './commands.js';
 export {
   // A command's pages as runs (decision D, finding AAA-1): the renderer writes them, the kernel expands them.

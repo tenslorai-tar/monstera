@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 import {
   COMPOSE_REFUSALS,
+  MAX_PDFA_LEFT_OUT,
+  PDFA_LEFT_OUT_KINDS,
   MAX_BOXED_CHARACTERS,
   MAX_COMPOSE_SKIPS,
   composeSkipSchema,
@@ -239,6 +241,49 @@ export const composeChannels = {
         })
         .strict(),
       z.object({ kind: z.literal('unchanged'), left: z.number().int().nonnegative() }).strict(),
+      z.object({ kind: z.literal('unreadable') }).strict(),
+      z.object({ kind: z.literal('unavailable') }).strict(),
+    ]),
+    ['no-such-session', 'asset-missing'],
+  ),
+
+  /**
+   * Prepares a copy of a document for PDF/A and writes it into the area, unencrypted, as PDF/A requires (ADR-0075's
+   * 2026-10-13 correction): marks given what PDF/A needs, and what cannot be kept removed and named by kind and page
+   * (`pdfaPreparation.ts`). `unreadable` and `unavailable` are `engine/optimize`'s answers.
+   */
+  'engine/prepare-pdfa': channel(
+    'Prepares a copy of a document from the area for PDF/A and writes it into the area, naming what it left out.',
+    z
+      .object({
+        session: sessionSchema,
+        from: outputNameSchema,
+        // `engine/optimize`'s field and reason.
+        password: documentPasswordSchema.nullable(),
+        into: outputNameSchema,
+      })
+      .strict(),
+    z.discriminatedUnion('kind', [
+      z
+        .object({
+          kind: z.literal('prepared'),
+          bytes: z.number().int().positive(),
+          printed: z.number().int().nonnegative(),
+          drawn: z.number().int().nonnegative(),
+          leftOut: z
+            .array(
+              z
+                .object({
+                  page: z.number().int().nonnegative(),
+                  kind: z.enum(PDFA_LEFT_OUT_KINDS),
+                  count: z.number().int().positive(),
+                })
+                .strict(),
+            )
+            .max(MAX_PDFA_LEFT_OUT),
+          leftOutMore: z.number().int().nonnegative(),
+        })
+        .strict(),
       z.object({ kind: z.literal('unreadable') }).strict(),
       z.object({ kind: z.literal('unavailable') }).strict(),
     ]),

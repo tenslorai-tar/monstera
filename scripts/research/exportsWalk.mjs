@@ -13,10 +13,14 @@
  *   computer*, and the workbook read back for every word of the table (ADR-0233).
  * - O10: a CSV of about three mebibytes, past one composition's bound, imported whole in parts with the work and its
  *   Cancel on screen, and the saved PDF read back by PDF.js for its first and last records.
+ * - N7: a two-page sheet with one Note saved as PDF/A-2b: the level asked first, the pop-up named by page in our words,
+ *   no console window while Ghostscript runs, and the saved file read back by pdf-lib for the Note and its declarations.
  */
+import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { PDFArray, PDFDict, PDFDocument, PDFName, PDFString, StandardFonts } from '@cantoo/pdf-lib';
 import { expect as defaultExpect } from '@playwright/test';
 import { strFromU8, unzipSync } from 'fflate';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
@@ -111,6 +115,87 @@ await step('O10: a CSV past one composition’s bound is imported whole, with th
   expect(ends.first).toContain('R1 ');
   expect(ends.last).toContain(`R${String(registerRows)}`);
   return { pages: ends.pages, csvBytes: (await readFile(register)).byteLength };
+});
+
+/**
+ * The owner's N7 document: two pages and one Note on page 1 with its pop-up, as the app's writer leaves them — the Note
+ * printed (`/F 28`) with an appearance, the pop-up with no `/F`, which Ghostscript drops as non-printing.
+ */
+async function notedSheet() {
+  const document = await PDFDocument.create();
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const first = document.addPage([612, 792]);
+  first.drawText('sheet one', { x: 72, y: 700, size: 14, font });
+  document.addPage([612, 792]).drawText('sheet two', { x: 72, y: 700, size: 14, font });
+  const appearance = document.context.register(document.context.stream('', { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 20, 20] }));
+  const note = document.context.obj({ Type: 'Annot', Subtype: 'Text', Rect: [300, 600, 320, 620], F: 28, Contents: PDFString.of('sheet'), T: PDFString.of('Emem') });
+  note.set(PDFName.of('AP'), document.context.obj({ N: appearance }));
+  const noteRef = document.context.register(note);
+  const popupRef = document.context.register(document.context.obj({ Type: 'Annot', Subtype: 'Popup', Rect: [320, 500, 520, 600], Parent: noteRef }));
+  note.set(PDFName.of('Popup'), popupRef);
+  first.node.set(PDFName.of('Annots'), document.context.obj([noteRef, popupRef]));
+  return document.save({ useObjectStreams: false });
+}
+
+/**
+ * Whether a Ghostscript process shows a window, read by PowerShell every 100 ms until `done` settles. A console program
+ * started without CREATE_NO_WINDOW owns a console window, which is what `MainWindowHandle` reports (the owner's N7).
+ *
+ * @param {Promise<unknown>} done
+ */
+async function consoleWindowsWhile(done) {
+  let settled = false;
+  void done.finally(() => {
+    settled = true;
+  });
+  let seen = 0;
+  let looked = 0;
+  while (!settled) {
+    const listed = spawnSync(
+      'powershell.exe',
+      ['-NoProfile', '-Command', "(Get-Process gswin64c -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 }).Count"],
+      { encoding: 'utf8', windowsHide: true },
+    );
+    looked += 1;
+    seen += Number(listed.stdout.trim() || '0');
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return { seen, looked };
+}
+
+await step('N7: a noted sheet saved as PDF/A-2b names the pop-up by page, shows no console, and the file declares 2b with the note kept', async () => {
+  const noted = join(output, 'noted.pdf');
+  await writeFile(noted, await notedSheet());
+  await open(noted);
+  const saved = join(output, 'noted-pdfa.pdf');
+  await saveTo(saved);
+  await command('Export as PDF/A…');
+  const level = page.getByRole('dialog', { name: 'Export as PDF/A' });
+  await expect(level.getByRole('radio', { name: /PDF\/A-2b/u })).toBeChecked();
+  await level.getByRole('button', { name: 'Choose where to save…' }).click();
+  const report = page.getByRole('dialog', { name: 'Saved as PDF/A' });
+  const windows = await consoleWindowsWhile(report.waitFor({ state: 'visible', timeout: 120_000 }));
+  await expect(report).toContainText('Saved as PDF/A-2b.');
+  await expect(report).toContainText('One comment pop-up on page 1.');
+  // NEVER THE CONVERTER: neither its name nor its words.
+  expect(await report.textContent()).not.toMatch(/Ghostscript|not permitted/u);
+  await page.keyboard.press('Escape');
+  // NO CONSOLE WINDOW at any reading, and the instrument looked more than once (a single look can miss a flash).
+  expect(windows.looked).toBeGreaterThan(1);
+  expect(windows.seen).toBe(0);
+
+  // READ BACK by pdf-lib: the note and its text on page 1, no pop-up, and the declarations the export checked.
+  const bytes = await readFile(saved);
+  const document = await PDFDocument.load(bytes, { updateMetadata: false });
+  const marks = (document.getPages()[0]?.node.lookupMaybe(PDFName.of('Annots'), PDFArray)?.asArray() ?? [])
+    .map((entry) => document.context.lookup(entry))
+    .filter((entry) => entry instanceof PDFDict)
+    .map((entry) => ({ subtype: String(entry.get(PDFName.of('Subtype'))), contents: String(entry.get(PDFName.of('Contents'))) }));
+  expect(marks).toStrictEqual([{ subtype: '/Text', contents: '(sheet)' }]);
+  const text = bytes.toString('latin1');
+  expect(text).toMatch(/pdfaid:part(=['"]|>)2/u);
+  expect(text).toContain('/OutputIntents');
+  return { marks, consoleReadings: windows.looked };
 });
 
 await finish();

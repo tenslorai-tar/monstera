@@ -21,7 +21,13 @@ import type { ComposedImages, ImportImage } from '../imageCompose.js';
 import { TOKEN_BYTES } from '../token.js';
 import { composeChannels } from './composeChannels.js';
 import { signatureFromScan } from '../signatureScan.js';
-import { type ImageOptimizer, type InlineImageKeeper, type SignatureScanner, createComposeHandlers } from './composeHandlers.js';
+import {
+  type ImageOptimizer,
+  type InlineImageKeeper,
+  type PdfaPreparer,
+  type SignatureScanner,
+  createComposeHandlers,
+} from './composeHandlers.js';
 import { ENGINE_SESSION_ID_MAX_CHARS } from './engineChannels.js';
 import type { HostArea } from './engineHandlers.js';
 import { sessionFileAnswers } from './fileAnswers.js';
@@ -145,6 +151,14 @@ function start(
     },
   };
   const handlers = createComposeHandlers({
+    // `optimize`'s recording, for the same reason: what the request named is what the preparation is handed.
+    preparePdfa:
+      preparer === null
+        ? null
+        : (area, from, into, password) => {
+            calls.push(`pdfa:${area.snapshotDirectory}|${from}->${area.outputDirectory}|${into}|password:${password ?? 'none'}`);
+            return preparer === null ? Promise.reject(new Error('unreachable')) : preparer(area, from, into, password);
+          },
     // `optimize`'s recording, for the same reason: what the request named is what the keeper is handed.
     keepInlineImages:
       keeper === null
@@ -238,6 +252,16 @@ let stream = stubStream();
 /** The rewriter every `start` binds, set by a case before it opens its area; `null` is none bound. */
 let optimizer: ImageOptimizer | null = () => Promise.resolve({ kind: 'optimized', bytes: 1234 });
 let keeper: InlineImageKeeper | null = () => Promise.resolve({ kind: 'kept', bytes: 999, converted: 2, left: 1 });
+/** The preparation's answer: a pop-up named on page 2, counts that differ from each other so a swap is seen. */
+const PREPARED = {
+  kind: 'prepared',
+  bytes: 777,
+  printed: 3,
+  drawn: 1,
+  leftOut: [{ page: 1, kind: 'comment-popup', count: 2 }],
+  leftOutMore: 5,
+} as const;
+let preparer: PdfaPreparer | null = () => Promise.resolve(PREPARED);
 /** The scanned-signature reader every `start` binds: the real one, over the shim the test setup binds; `null` is none. */
 let scanner: SignatureScanner | null = signatureFromScan;
 
@@ -317,6 +341,7 @@ describe('the compose host channel set', () => {
         'engine/compose-markdown',
         'engine/csv-split',
         'engine/keep-inline-images',
+        'engine/prepare-pdfa',
         'engine/open',
         'engine/optimize',
         'engine/probe-containment',
@@ -806,6 +831,40 @@ describe('the compose host — Optimize, MuPDF’s native image rewriter (ADR-00
     expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true, value: { kind: 'unavailable' } } });
     expect(second.calls).toStrictEqual([]);
     keeper = () => Promise.resolve({ kind: 'kept', bytes: 999, converted: 2, left: 1 });
+  });
+
+  it('PREPARE-PDFA hands the preparation the area, both names and the password, and answers what it left out (N7)', async () => {
+    const { session, calls } = await openArea(emptyFiles());
+    stream.feed(request('p1', 'engine/prepare-pdfa', { session, from: IN, password: 'sample-only-0171', into: OUT }));
+    await stream.whenSent(2);
+    expect(answerIn(stream.sent[1])).toMatchObject({
+      body: {
+        ok: true,
+        value: { kind: 'prepared', bytes: 777, printed: 3, drawn: 1, leftOut: [{ page: 1, kind: 'comment-popup', count: 2 }], leftOutMore: 5 },
+      },
+    });
+    expect(calls).toStrictEqual([`pdfa:C:\\snap|${IN}->C:\\out|${OUT}|password:sample-only-0171`]);
+  });
+
+  it('PREPARE-PDFA: a missing source is the transport’s, an unopenable one the document’s, no library calls nothing', async () => {
+    for (const [answer, expected] of [
+      [{ kind: 'missing' }, { ok: false, error: { code: 'asset-missing' } }],
+      [{ kind: 'unreadable' }, { ok: true, value: { kind: 'unreadable' } }],
+    ] as const) {
+      preparer = () => Promise.resolve(answer);
+      const { session } = await openArea(emptyFiles());
+      stream.feed(request('p1', 'engine/prepare-pdfa', { session, from: IN, password: null, into: OUT }));
+      await stream.whenSent(2);
+      expect(answerIn(stream.sent[1])).toMatchObject({ body: expected });
+    }
+
+    preparer = null;
+    const none = await openArea(emptyFiles());
+    stream.feed(request('p2', 'engine/prepare-pdfa', { session: none.session, from: IN, password: null, into: OUT }));
+    await stream.whenSent(2);
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true, value: { kind: 'unavailable' } } });
+    expect(none.calls).toStrictEqual([]);
+    preparer = () => Promise.resolve(PREPARED);
   });
 
   it('KEEP-INLINE-IMAGES takes one page or all, and refuses any other scope a command never makes', () => {

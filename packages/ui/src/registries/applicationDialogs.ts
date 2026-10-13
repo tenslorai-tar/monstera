@@ -61,6 +61,7 @@ import { OPEN_FROM_URL_DIALOG } from '../dialogs/openFromUrl.js';
 import { OPTIMIZE_DIALOG } from '../dialogs/optimize.js';
 import { PAGE_BARCODES_DIALOG } from '../dialogs/pageBarcodes.js';
 import { PAGE_TRANSITION_DIALOG } from '../dialogs/pageTransition.js';
+import { PDFA_LEVEL_DIALOG } from '../dialogs/pdfaLevel.js';
 import { PDFA_REMOVALS_DIALOG } from '../dialogs/pdfaRemovals.js';
 import { PENDING_REDACTIONS_DIALOG } from '../dialogs/pendingRedactions.js';
 import { PLACE_BARCODE_DIALOG } from '../dialogs/placeBarcode.js';
@@ -205,6 +206,7 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   EXPORT_EXCEL_DIALOG,
   SERVICE_REFUSED_DIALOG,
   PRINT_DIALOG,
+  PDFA_LEVEL_DIALOG,
   PDFA_REMOVALS_DIALOG,
   OPTIMIZE_DIALOG,
   PAGE_BARCODES_DIALOG,

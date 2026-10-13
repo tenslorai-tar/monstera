@@ -149,7 +149,8 @@ function mintName(): ReturnType<typeof sessionDirectoryName> {
  */
 export async function convertDocument(
   platform: ConverterPlatform,
-  source: Uint8Array,
+  /** The input's bytes, or a function that places the input at the path it is given. */
+  source: Uint8Array | ((input: string) => Promise<void>),
   conversion: Conversion,
   failed: (failure: ConversionFailure) => Error,
 ): Promise<Converted> {
@@ -172,7 +173,9 @@ export async function convertDocument(
   try {
     const input = join(paths.snapshot, conversion.input);
     const output = join(paths.output, conversion.output);
-    await writeFile(input, source);
+    // A SOURCE THAT PLACES ITSELF is a file copied in (a prepared PDF/A copy), so main never reads it into memory.
+    if (typeof source === 'function') await source(input);
+    else await writeFile(input, source);
 
     let commandArguments: readonly string[];
     if (conversion.kind === 'arguments') {

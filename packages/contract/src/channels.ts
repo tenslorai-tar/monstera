@@ -39,6 +39,9 @@ import {
   MAX_IMAGE_BYTES,
   PAGE_ADJUSTMENTS,
   PAGE_ADJUSTMENT_OUTCOMES,
+  PDFA_LEVELS,
+  PDFA_LEFT_OUT_KINDS,
+  MAX_PDFA_LEFT_OUT,
   MAX_IMPORT_IMAGES,
   MAX_IMPORT_IMAGE_BYTES,
   MAX_WORKBOOK_ROW,
@@ -3194,13 +3197,35 @@ export const channels = {
    * where it produced no PDF/A file, which is then not written.
    */
   'document.exportPdfa': channel(
-    'Writes the document as PDF/A-2b to a file the user picks, saying what the conversion removed.',
-    z.object({ docId: docIdSchema, ...NAMED_WORK }).strict(),
+    'Writes the document as PDF/A at the level the person chose, to a file they pick, naming what it left out.',
+    z
+      .object({
+        docId: docIdSchema,
+        level: z.union([z.literal(PDFA_LEVELS[0]), z.literal(PDFA_LEVELS[1]), z.literal(PDFA_LEVELS[2])]),
+        ...NAMED_WORK,
+      })
+      .strict(),
     z.discriminatedUnion('kind', [
       z.object({
         kind: z.literal('copied'),
         bytes: z.number().int().nonnegative(),
-        removed: z.array(z.string().max(MAX_PDFA_REMOVAL_CHARS)).max(MAX_PDFA_REMOVALS).readonly(),
+        // WHAT WAS LEFT OUT, by kind and page, in our words (ADR-0075's 2026-10-13 correction): never the converter's.
+        leftOut: z
+          .array(
+            z
+              .object({
+                page: z.number().int().nonnegative(),
+                kind: z.enum(PDFA_LEFT_OUT_KINDS),
+                count: z.number().int().positive(),
+              })
+              .strict(),
+          )
+          .max(MAX_PDFA_LEFT_OUT)
+          .readonly(),
+        /** Items left out past the named entries' bound: counted, so nothing removed goes unsaid. */
+        leftOutMore: z.number().int().nonnegative(),
+        /** How many further things the converter said it removed, counted because its words are never shown. */
+        otherLeftOut: z.number().int().nonnegative().max(MAX_PDFA_REMOVALS),
         /** The document was tagged and the file carries no structure tree — which Ghostscript does not print. */
         tagsDropped: z.boolean(),
         ...WRITTEN,

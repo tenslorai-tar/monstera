@@ -18,28 +18,39 @@ afterEach(() => {
 });
 
 describe('PdfaRemovalsBody', () => {
-  it('lists each removal in the converter’s own words, marked as English', () => {
-    const removed = [
-      'not permitted in PDF/A, annotation will not be present in output file',
-      'Transparency group not permitted in PDF/A, removing',
-    ];
+  it('says the level, then what was left out by kind and 1-based page, in Monstera’s words (the owner’s N7)', () => {
     render(
       <Wrapped>
-        <PdfaRemovalsBody removed={removed} tagsDropped={false} />
+        <PdfaRemovalsBody
+          level={3}
+          leftOut={[
+            { page: 0, kind: 'comment-popup', count: 1 },
+            { page: 4, kind: 'hidden-mark', count: 2 },
+          ]}
+          leftOutMore={7}
+          otherLeftOut={1}
+          tagsDropped={false}
+        />
       </Wrapped>,
     );
 
-    expect(screen.getByText(/The PDF\/A file was saved/u)).toBeTruthy();
-    const items = screen.getAllByRole('listitem');
-    expect(items.map((item) => item.textContent)).toStrictEqual(removed);
-    expect(items.every((item) => item.getAttribute('lang') === 'en')).toBe(true);
+    // LEVEL 3, not the default, so a body that said 2b whatever was asked is seen.
+    expect(screen.getByText('Saved as PDF/A-3b.')).toBeTruthy();
+    expect(screen.getAllByRole('listitem').map((item) => item.textContent)).toStrictEqual([
+      'One comment pop-up on page 1. The comments and their text are kept.',
+      '2 hidden marks on page 5.',
+      '7 more items like these on later pages.',
+      'One other item the archival format cannot hold.',
+    ]);
+    // NEVER THE CONVERTER: neither its name nor its words appear.
+    expect(document.body.textContent).not.toMatch(/Ghostscript|not permitted/u);
     expect(screen.queryByText(/screen readers/u)).toBeNull();
   });
 
   it('says the tags were not kept, which the converter never mentions, with no empty list', () => {
     render(
       <Wrapped>
-        <PdfaRemovalsBody removed={[]} tagsDropped />
+        <PdfaRemovalsBody level={2} leftOut={[]} leftOutMore={0} otherLeftOut={0} tagsDropped />
       </Wrapped>,
     );
 

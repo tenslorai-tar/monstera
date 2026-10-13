@@ -62,6 +62,7 @@ import {
   cappedBoxes,
   type PageAdjustment,
   type PageAdjustmentOutcome,
+  type PdfaLevel,
 } from '@monstera/contract';
 // DECLARATIONS, not specs. This reads `spec.writer` and calls nothing on it, so
 // importing the spec table would bind the MuPDF native library **in main** —
@@ -217,7 +218,7 @@ import {
   officeImportFormatOf,
 } from './officeConversion.js';
 import { type WorkHandle, type WorkProgress, WorkInProgress } from './workInProgress.js';
-import { type PdfaSource, PdfaFailedError } from './pdfaConversion.js';
+import { type PdfaLeftOut, type PdfaSource, PdfaFailedError } from './pdfaConversion.js';
 import type { HeldPicture } from './heldPicture.js';
 import { type SignaturePictureSource, pickSignaturePicture } from './signaturePicture.js';
 import type { PersonalLibrary } from './personalLibrary.js';
@@ -2726,12 +2727,17 @@ function inFolder(outcome: SplitOutcome, directory: string): FolderOutcome {
   return outcome.kind === 'split' ? { ...outcome, destination: directory } : outcome;
 }
 
-/** What a PDF/A-2b export did: a copy's outcomes, with what the conversion removed; or no converter; or no PDF/A. */
+/** What a PDF/A export did: a copy's outcomes, with what it left out; or no converter; or no PDF/A. */
 export type ExportPdfaOutcome =
   | {
       readonly kind: 'copied';
       readonly bytes: number;
-      readonly removed: readonly string[];
+      /** What the copy left out, by kind and page (ADR-0075's 2026-10-13 correction). */
+      readonly leftOut: readonly PdfaLeftOut[];
+      /** Items left out past the named entries' bound, counted. */
+      readonly leftOutMore: number;
+      /** How many further things the converter said it removed, counted and never quoted. */
+      readonly otherLeftOut: number;
       /** The document was tagged, and the PDF/A file carries no structure tree. */
       readonly tagsDropped: boolean;
       /** Where the copy went: main's only, as `CopyOutcome`'s is. */
@@ -5289,7 +5295,7 @@ export class DocumentCommands {
    *
    * It does NOT touch the document.
    */
-  async exportPdfa(docId: DocId, work: string): Promise<ExportPdfaOutcome | undefined> {
+  async exportPdfa(docId: DocId, level: PdfaLevel, work: string): Promise<ExportPdfaOutcome | undefined> {
     const suggest = this.#documents.nameOf(docId);
     if (suggest === undefined) throw new DocumentNotOpenError(docId, 'export PDF/A');
 
@@ -5307,7 +5313,9 @@ export class DocumentCommands {
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
-      let removed: readonly string[] = [];
+      let leftOut: readonly PdfaLeftOut[] = [];
+      let leftOutMore = 0;
+      let otherLeftOut = 0;
       let tagsDropped = false;
       try {
         const outcome = await writeStreamedDocument(
@@ -5318,13 +5326,19 @@ export class DocumentCommands {
             // tree and does not say so: measured 2026-09-17, 4 of 4 tagged corpus
             // documents lost it under the export's own arguments.
             tagsDropped = await this.#anyPageTagged(docId, sessions);
-            const converted = await pdfa(await this.#save.flush(docId, sessions));
-            removed = converted.removed;
+            // THE KEY THE DOCUMENT OPENS WITH, `optimize`'s reason: the copy is prepared by opening the flush, and PDF/A
+            // forbids encryption, so the prepared copy is written without it.
+            const converted = await pdfa(await this.#save.flush(docId, sessions), level, this.#engine.opensWith(docId));
+            leftOut = converted.leftOut;
+            leftOutMore = converted.leftOutMore;
+            otherLeftOut = converted.otherLeftOut;
             return converted.output;
           },
           destination,
         );
-        return outcome.kind === 'copied' ? { kind: 'copied', bytes: outcome.bytes, removed, tagsDropped, destination } : outcome;
+        return outcome.kind === 'copied'
+          ? { kind: 'copied', bytes: outcome.bytes, leftOut, leftOutMore, otherLeftOut, tagsDropped, destination }
+          : outcome;
       } catch (thrown) {
         if (thrown instanceof PdfaFailedError) return { kind: 'failed' };
         throw thrown;

@@ -543,8 +543,23 @@ export const OPTIMIZE_NOT_SMALLER = messageKey('dialog.optimize.not-smaller');
 export const OPTIMIZE_SAVE = messageKey('dialog.optimize.save');
 export const OPTIMIZE_KEEPS = messageKey('dialog.optimize.keeps');
 export const PDFA_REMOVALS_SAVED = messageKey('dialog.pdfa-removals.saved');
-export const PDFA_REMOVALS_CONVERTER_WORDS = messageKey('dialog.pdfa-removals.converter-words');
+export const PDFA_REMOVALS_LEFT_OUT = messageKey('dialog.pdfa-removals.left-out');
+export const PDFA_LEFT_OUT_POPUP = messageKey('dialog.pdfa-removals.popup');
+export const PDFA_LEFT_OUT_HIDDEN = messageKey('dialog.pdfa-removals.hidden');
+export const PDFA_LEFT_OUT_SOUND = messageKey('dialog.pdfa-removals.sound');
+export const PDFA_LEFT_OUT_MOVIE = messageKey('dialog.pdfa-removals.movie');
+export const PDFA_LEFT_OUT_3D = messageKey('dialog.pdfa-removals.3d');
+export const PDFA_LEFT_OUT_OTHER = messageKey('dialog.pdfa-removals.other');
+export const PDFA_LEFT_OUT_MORE = messageKey('dialog.pdfa-removals.more');
 export const PDFA_REMOVALS_TAGS = messageKey('dialog.pdfa-removals.tags');
+export const PDFA_LEVEL_TITLE = messageKey('dialog.pdfa-level.title');
+export const PDFA_LEVEL = messageKey('dialog.pdfa-level.level');
+export const PDFA_LEVEL_2B = messageKey('dialog.pdfa-level.2b');
+export const PDFA_LEVEL_2B_NOTE = messageKey('dialog.pdfa-level.2b-note');
+export const PDFA_LEVEL_1B = messageKey('dialog.pdfa-level.1b');
+export const PDFA_LEVEL_1B_NOTE = messageKey('dialog.pdfa-level.1b-note');
+export const PDFA_LEVEL_3B = messageKey('dialog.pdfa-level.3b');
+export const PDFA_LEVEL_3B_NOTE = messageKey('dialog.pdfa-level.3b-note');
 export const PRINT_COMMAND_TITLE = messageKey('command.print.title');
 export const EMAIL_COMMAND_TITLE = messageKey('command.email.title');
 export const PRINT_TITLE = messageKey('dialog.print.title');
@@ -2111,6 +2126,8 @@ export const TOAST_POWERPOINT_SAVED = messageKey('toast.powerpoint-saved');
 export const TOAST_EXCEL_SAVED = messageKey('toast.excel-saved');
 export const TOAST_EXCEL_SAVED_TABLES_LEFT_OUT = messageKey('toast.excel-saved-tables-left-out');
 export const TOAST_PDFA_SAVED = messageKey('toast.pdfa-saved');
+export const TOAST_PDFA_1B_SAVED = messageKey('toast.pdfa-1b-saved');
+export const TOAST_PDFA_3B_SAVED = messageKey('toast.pdfa-3b-saved');
 export const TOAST_FORM_DATA_SAVED = messageKey('toast.form-data-saved');
 export const TOAST_COMMENTS_SAVED = messageKey('toast.comments-saved');
 export const TOAST_SIGNED_COPY_SAVED = messageKey('toast.signed-copy-saved');
@@ -5034,7 +5051,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TOAST_POWERPOINT_SAVED]: 'PowerPoint file saved',
   [TOAST_EXCEL_SAVED]: 'Excel file saved',
   [TOAST_EXCEL_SAVED_TABLES_LEFT_OUT]: 'Excel file saved. Some tables the service read could not be placed in it and are not in the file.',
-  [TOAST_PDFA_SAVED]: 'PDF/A file saved',
+  // ONE KEY PER LEVEL, because a toast carries no values: the level is said, which is what the person chose (N7).
+  [TOAST_PDFA_SAVED]: 'Saved as PDF/A-2b.',
+  [TOAST_PDFA_1B_SAVED]: 'Saved as PDF/A-1b.',
+  [TOAST_PDFA_3B_SAVED]: 'Saved as PDF/A-3b.',
   [TOAST_FORM_DATA_SAVED]: 'Form data saved',
   [TOAST_COMMENTS_SAVED]: 'Comments saved',
   [TOAST_SIGNED_COPY_SAVED]: 'Signed copy saved',
@@ -5926,9 +5946,27 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [OPTIMIZE_NOT_SMALLER]: 'Now {before}. The copy would be {after}, which is not smaller, so it would not be saved.',
   [OPTIMIZE_SAVE]: 'Choose where to save…',
   [OPTIMIZE_KEEPS]: 'The open document is not changed. Only pictures are made smaller.',
-  [PDFA_REMOVALS_SAVED]: 'The PDF/A file was saved. To meet the archival standard, some things were left out of it.',
-  [PDFA_REMOVALS_CONVERTER_WORDS]: 'In the words of the converter, Ghostscript:',
+  // THE LEVEL, NAMED: the file is what the person asked for, and this says which (the owner's N7).
+  [PDFA_REMOVALS_SAVED]: 'Saved as PDF/A-{level}b.',
+  [PDFA_REMOVALS_LEFT_OUT]: 'PDF/A cannot keep these, so they were left out:',
+  // BY KIND AND PAGE, never the converter's words. A pop-up is the window a comment opens in; the comment stays.
+  [PDFA_LEFT_OUT_POPUP]:
+    '{count, plural, one {One comment pop-up} other {# comment pop-ups}} on page {page}. The comments and their text are kept.',
+  [PDFA_LEFT_OUT_HIDDEN]: '{count, plural, one {One hidden mark} other {# hidden marks}} on page {page}.',
+  [PDFA_LEFT_OUT_SOUND]: '{count, plural, one {One sound} other {# sounds}} on page {page}.',
+  [PDFA_LEFT_OUT_MOVIE]: '{count, plural, one {One video} other {# videos}} on page {page}.',
+  [PDFA_LEFT_OUT_3D]: '{count, plural, one {One 3D model} other {# 3D models}} on page {page}.',
+  [PDFA_LEFT_OUT_OTHER]: '{count, plural, one {One other item} other {# other items}} the archival format cannot hold.',
+  [PDFA_LEFT_OUT_MORE]: '{count, plural, one {One more item} other {# more items}} like these on later pages.',
   [PDFA_REMOVALS_TAGS]: 'This document had tags that let screen readers follow it. The PDF/A file does not keep them.',
+  [PDFA_LEVEL_TITLE]: 'Export as PDF/A',
+  [PDFA_LEVEL]: 'Level',
+  [PDFA_LEVEL_2B]: 'PDF/A-2b',
+  [PDFA_LEVEL_2B_NOTE]: 'The usual choice for keeping documents.',
+  [PDFA_LEVEL_1B]: 'PDF/A-1b',
+  [PDFA_LEVEL_1B_NOTE]: 'The oldest level, for systems that ask for it. Cannot keep transparency.',
+  [PDFA_LEVEL_3B]: 'PDF/A-3b',
+  [PDFA_LEVEL_3B_NOTE]: 'Like 2b, and may also carry attached files.',
   [PRINT_COMMAND_TITLE]: 'Print…',
   [EMAIL_COMMAND_TITLE]: 'Email…',
   [PRINT_TITLE]: 'Print',
