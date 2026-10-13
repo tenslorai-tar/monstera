@@ -892,6 +892,112 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-13 — Stage audit of `c481a654..c6f33f43` — findings EEEEEEEE-1 to EEEEEEEE-13
+
+Cloud run 3's Parts 2 to 4 up to N6 (N14, N10, N13, N12, W2 to W5, W7 to W9, N11, L2, L5, O6(b)(c), O8, O5, O7, O3,
+O9, N6) with their ADR corrections and the board's fixes. Read through `npm run audit:scope` (33 commits, 198 files).
+The 40 modified proofs were read per commit (`git log -p`) by two read-only readers; every claim below that came from
+them was checked here before being recorded. Owed when N3's commit would have taken the range past 200 files; that
+commit follows this one and is outside the range.
+
+**EEEEEEEE-1** (medium, open): no command-level or App-level case sends Insert blank pages with a count other than 1
+(`documentCommands.test.ts` 6637, `App.test.tsx` 1719), which is also the default, so a command that dropped the
+dialog's count would pass both. Only `InsertBlankPageBody.test.tsx` answers 5, and it tests the dialog. A fixture the
+bug handles correctly (item 4).
+
+**EEEEEEEE-2** (medium, open): 75a1603e deleted `compositionHost.test.ts`' case that a picture refused past the pixel
+bound is answered as too many pixels and never as unreadable, with BBBBBBBB-7's control that an engine failure is not
+blamed on the picture. Its route (`insertImagePage` over `engine/applyPdfLib`) is gone, so the deletion is legitimate;
+but the commit message does not say so, and the new route (`composeImageFiles` then one merge) has no root case that a
+compose or merge failure is not reported as the picture's fault.
+
+**EEEEEEEE-3** (low, recorded): `pdfiumCommand.proof.mjs`' underline case (011e305e) now requires the rule's bottom
+within 11/3 pt below the word's baseline, where it allowed 1 pt below the line box. Stricter upward (a strike's height
+fails), looser downward; the commit states why (the word is now its own run, so its box ends at its baseline). Its
+case-count comment skips N14's 241 to 243.
+
+**EEEEEEEE-4** (low, open): W4 (8916dd50) corrected `TextEditLayer.test.tsx` to expect Ctrl+B over bold words to send
+`bold: false`. No case in the add-text path now presses Ctrl+B over plain words and expects `bold: true`.
+
+**EEEEEEEE-5** (low, open): the Excel export's progress case no longer asserts the work is still running between the
+method's return and `finishWork`; that duty moved to the handler (covered in `contractHandlers.test.ts`), and the CSV
+case still asserts it.
+
+**EEEEEEEE-6** (low, open): O9's registration check finds a conversion not listed in `CONVERSION_CHANNELS` by its
+NAME (`CONVERTS_BY_NAME`). A conversion named otherwise escapes it, and the check reads as watched. A naming convention
+is not a check (item 4b); the required `work` field is the part that holds.
+
+**EEEEEEEE-7** (medium, open): `liveWalk.mjs` says `_review/walks/` is a directory git does not track, and
+`.gitignore` does not name `_review/` (`git check-ignore -v _review/x` answers nothing). A walk's screenshots are
+binaries; `guardFiles.mjs` refuses them at commit, so the defect is a claim, not a leak.
+
+**EEEEEEEE-8** (low, open): `insertImagePage` is reached by no channel since O3. Removing it touches ADR-0044 and
+`docs/ARCHITECTURE.md`, so it is the owner's call.
+
+**EEEEEEEE-9** (low, open): `buildFreshness.mjs` reports `shared` and `contract` stale after an incremental `tsc`
+that did not re-emit `dist/index.js` while a source in the directory is newer. Worked round here with `tsc --force`;
+CI builds from clean, so it cannot see this.
+
+**EEEEEEEE-10** (low, open): O9's page-image export runs to the end with no per-page progress.
+
+**EEEEEEEE-11** (low, open): `apps/desktop/src/documentCommands.test.ts`' Office fixture names its destination
+`'unused'`, a relative path, so a case that reaches the write writes a file into the repository root. Seen once
+mid-edit, when the `.doc` refusal case stopped refusing during N6; the file was deleted and not committed.
+
+**EEEEEEEE-12** (low, recorded): six reflexes denied by the escape guard in this range (an `awk` redirect, a no-op
+`sed -i`, a `sed -i` on `/dev/null`, a heredoc to `/dev/null`, an `awk` compound with a redirect, `python -c` to read
+a tool result); nothing was written. Counted from the session's notes, made as each happened; its first half was
+summarised and not recounted.
+
+**EEEEEEEE-13** (low, recorded): `selectTool.test.ts`' annotation cases all run with `NO_LINKS` (NNN-1's shape); the
+new link block mixes marks and links, a mark drawn over a link included, so the gap is narrow.
+
+### 1. Root cause or workaround?
+Each item's commit states its mechanism. Two were not reproduced and changed no app code (W2, W3); their walks lost
+the waits that hid them. W8's own defect was not reproduced; a different one was found and fixed (Escape during a
+write). W1's walk case is still unexplained by its fix. No check was loosened to pass.
+
+### 2. Verified against the easy shape only?
+EEEEEEEE-1 is this item. O6(b) was not reproduced in conversion (eight round trips with a control); the walk owns it.
+
+### 2a. Has a change to how something is proven moved the coverage?
+No asserted claim became derived.
+
+### 3. Would CI have caught it?
+Read from runs: 6b56598d and 730ccc19 green on CI and Guards; 0423a16a green but for Visual baselines, red because the
+Comment ribbon gained a button (cloud rule 5). 81a967a2's Guards caught three unguarded dist readers (fixed 6b56598d)
+and a010c679's CI two instrument defects (fixed 5eff994a). 75a1603e..c6f33f43 are not yet pushed, so no run has
+evaluated them. EEEEEEEE-9 is invisible to CI by construction.
+
+### 4. Are the proofs non-vacuous?
+Mutations run and red in this range: O9's every-handler-finishes root case, O3's single merge, N6's xls route, L2's
+three cases. The other items' cases carry controls but were not mutated. EEEEEEEE-1 and -4 are the one-sided fixtures.
+
+### 4a. Resolution test before measuring?
+Not done for O8's slope reading (a box scaled from 1.5 to 31.5 on a near-flat line); it explained a symptom and decided
+nothing a smaller difference would have changed.
+
+### 4b. A search with a positive control?
+EEEEEEEE-6.
+
+### 4c. Does a check derive its extent from the set it governs?
+The every-handler-finishes case loops over `CONVERSION_CHANNELS`, anchored independently by
+`conversionChannels.test.ts`' `toHaveLength(16)`.
+
+### 5. Executed, or asserted?
+Executed here: every proof named in the commits, the real PDFium and MuPDF hosts. Asserted until Windows runs them:
+the walks for W1, W2, W3, W8, the O3, O6(b), O8, O5, O7, O9 and N6 steps, W5's 3 to 8 second finish, O5 in PDF.js.
+
+### 6. Architecture before the feature?
+ADR-0234 before O9; the dated corrections to ADR-0228, -0211, -0229, -0212, -0102, -0043, -0202 and -0120's extension
+each in their own commit before the code.
+
+### 7. Do the documents still match the code?
+Swept for the channels O9 removed (`exportProgress`, `cancelExport`): only ADRs name them, as records. EEEEEEEE-7 is the
+one false claim found.
+
+---
+
 ## 2026-10-13 — Stage audit of `1fd98f2a..c481a654` — findings DDDDDDDD-1 to DDDDDDDD-12
 
 The local agent's last rounds on main (C3, E4, D1 for stamps and Markdown, the walks' fixes, the baselines) and cloud run
