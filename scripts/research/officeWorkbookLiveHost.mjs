@@ -188,6 +188,8 @@ async function main() {
       log: {
         directory: scratch,
         failures: (/** @type {{ event: string, detail: string }} */ failure) => {
+          // A HOST THE SHELL CLOSED ON PURPOSE is not a failure: `hostFileAnswersLiveHost.mjs`' reason.
+          if (failure.event === 'engine-host-closed') return;
           failures.push(`${failure.event}: ${failure.detail}`);
         },
         incidents: (/** @type {{ id: string, channel: string }} */ incident) => {

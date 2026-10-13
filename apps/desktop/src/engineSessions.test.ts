@@ -773,6 +773,8 @@ describe('a host death is reported, and every document is put back through its o
     await onEngineHostEnded(engine, { termination: { code: 'shutdown', detail: 'closed' }, during: undefined, last: undefined }, surface);
 
     expect(surface.reported[0]?.detail).toContain('nothing here is a fault');
+    // FILED AS CLOSED, not gone, so a reader of the log need not tell the two apart by wording.
+    expect(surface.reported[0]?.event).toBe('engine-host-closed');
     expect(surface.rebuilds).toStrictEqual([]);
   });
 

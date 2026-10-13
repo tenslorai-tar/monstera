@@ -273,7 +273,7 @@ import type { OpenExternalEditor } from './openExternalEditor.js';
 import type { SecretStoreSurface } from './secretStore.js';
 import { type ChatHistory, noChatHistory } from './chatHistory.js';
 import { type SettingsSurface, createEphemeralSettings, createJsonFile } from './settingsFile.js';
-import type { ShellFailureSink } from './shellFailure.js';
+import { type ShellFailureSink, engineHostEndingEvent } from './shellFailure.js';
 import type { ShellLog } from './shellLog.js';
 import type { CrashReports } from './crashReports.js';
 import type { ConverterPlatform } from './converterSession.js';
@@ -3526,8 +3526,9 @@ function pdfiumHostBinding(
         // of the log filters on, and *an engine host is gone* is one thing that
         // happened whichever engine it held; a second name for it would split
         // that filter without adding a distinction anybody acts on.
+        // CLOSED ON PURPOSE OR GONE, decided where the MuPDF host's is (`engineHostEndingEvent`).
         failures({
-          event: 'engine-host-gone',
+          event: engineHostEndingEvent(termination),
           detail:
             `the PDFium host ended (${termination.code}): ${termination.detail}. No document is ` +
             'affected: this engine holds no session, so the next edit builds a new host.',
@@ -3778,7 +3779,7 @@ function composeHostBinding(
         // as a pair left by a crash is.
         host = null;
         failures({
-          event: 'engine-host-gone',
+          event: engineHostEndingEvent(termination),
           detail:
             `the compose host ended (${termination.code}): ${termination.detail}. No document is ` +
             'affected: this host holds no session, so the next import builds a new host.',

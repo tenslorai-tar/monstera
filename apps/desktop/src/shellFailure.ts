@@ -100,6 +100,13 @@ export type ShellFailureEvent =
   | 'render-process-gone'
   | 'child-process-gone'
   | 'engine-host-gone'
+  /**
+   * An engine host this shell closed on purpose: at the quit, or when the last document that used it closed (the owner's
+   * Part 7 A). Its own event and not `engine-host-gone`, because the two are now acted on differently: a reader of the
+   * log looking for a host that died, and a live check asserting none did, must not have to tell them apart by wording.
+   * {@link engineHostEndingEvent} is the one place that decides which a termination is.
+   */
+  | 'engine-host-closed'
   // An external converter (§8) that did not produce its output: why it did not,
   // including what it wrote to stderr, which the renderer is never sent.
   | 'converter-failed'
@@ -253,10 +260,15 @@ export function describeChildProcessGone(details: {
  * unchecked spelling test.** `proof:contract` holds the pair that proves it —
  * the wrong code is refused, and the right one still compiles.
  */
+/** Which event a host's ending is filed under: closed on purpose, or gone. The one decision, for every engine host. */
+export function engineHostEndingEvent(termination: HostTermination): 'engine-host-gone' | 'engine-host-closed' {
+  return termination.code === 'shutdown' ? 'engine-host-closed' : 'engine-host-gone';
+}
+
 export function describeEngineHostGone(termination: HostTermination): ShellFailure {
-  const deliberate = termination.code === 'shutdown';
+  const deliberate = engineHostEndingEvent(termination) === 'engine-host-closed';
   return {
-    event: 'engine-host-gone',
+    event: engineHostEndingEvent(termination),
     detail:
       `code=${termination.code} ${termination.detail}. ` +
       (deliberate

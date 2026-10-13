@@ -381,6 +381,9 @@ async function main() {
       log: {
         directory: scratch,
         failures: (/** @type {{ event: string, detail: string }} */ failure) => {
+          // A HOST THE SHELL CLOSED ON PURPOSE is not a host that ended: the hosts stop with the last document
+          // (the owner's Part 7 A), and the shell files that under its own event.
+          if (failure.event === 'engine-host-closed') return;
           failures.push(`${failure.event}: ${failure.detail}`);
         },
         incidents: (/** @type {{ id: string, channel: string }} */ incident) => {

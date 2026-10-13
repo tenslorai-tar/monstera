@@ -644,9 +644,10 @@ try {
 if (!existsSync(logPath)) record('engine hosts contained', false, 'no shell log for this run');
 else {
   const lines = readFileSync(logPath, 'utf8').slice(logBefore).split('\n').filter((line) => line.trim() !== '');
-  // A HOST FAILURE, not the shell ending its hosts as it quits: that line reads `code=shutdown` (MuPDF's wording) or
-  // `ended (shutdown)` (PDFium's), says itself that nothing is a fault, and the run's own close writes one per host.
-  const failures = lines.filter((line) => /engine-host-gone|not contained/u.test(line) && !/code=shutdown|\(shutdown\)/u.test(line));
+  // A HOST FAILURE, not the shell ending its hosts on purpose: those are filed as `engine-host-closed` since the hosts
+  // stop with the last document (the owner's Part 7 A), so the event alone separates them, where this used to read
+  // each host's wording for "shutdown".
+  const failures = lines.filter((line) => /engine-host-gone|not contained/u.test(line));
   const locked = build === 'dev' || lines.some((line) => line.includes('package-data'));
   const worked = steps.length > 0 && steps.every((s) => s.ok);
   record(

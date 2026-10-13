@@ -97,6 +97,8 @@ describe('shell failure messages', () => {
       ],
       ['unresponsive', describeUnresponsive().event],
       ['engine-host-gone', describeEngineHostGone({ code: 'connection-lost', detail: 'x' }).event],
+      // A HOST WE CLOSED is filed apart from one that died (the owner's Part 7 A): a check that no host died reads one.
+      ['engine-host-closed', describeEngineHostGone({ code: 'shutdown', detail: 'x' }).event],
     ];
 
     for (const [expected, actual] of cases) expect(actual).toBe(expected);
@@ -110,7 +112,7 @@ describe('shell failure messages', () => {
     // it did: `describeEngineHostGone` had no row, and its label was pinned
     // only by `contract.proof.mjs`'s IIII-1 cases, in another file by another
     // mechanism. A literal is what a shrinker has to touch separately.
-    expect(cases).toHaveLength(5);
+    expect(cases).toHaveLength(6);
   });
 
   it('every ShellFailureEvent has a message writer, or is deliberately built inline', () => {
@@ -128,12 +130,13 @@ describe('shell failure messages', () => {
       'child-process-gone',
       'unresponsive',
       'engine-host-gone',
+      'engine-host-closed',
     ];
 
-    // Six because `ShellFailureEvent` has six members. A type cannot be counted
-    // at run time, so this is the anchor: adding a seventh without deciding
-    // which list it belongs in reddens here rather than passing in silence.
-    expect([...written, ...inlineOnly]).toHaveLength(6);
-    expect(new Set([...written, ...inlineOnly]).size).toBe(6);
+    // Seven lifecycle events: a type cannot be counted at run time, so this is
+    // the anchor, and adding another without deciding which list it belongs in
+    // reddens here rather than passing in silence.
+    expect([...written, ...inlineOnly]).toHaveLength(7);
+    expect(new Set([...written, ...inlineOnly]).size).toBe(7);
   });
 });
