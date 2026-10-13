@@ -370,14 +370,23 @@ describe('showSettingsCommand', () => {
       expect((failed.asked[0]?.props as { version?: string }).version).toBeUndefined();
     });
 
-    it('opens with the fonts main lists, for the font row (K2); with none read, opens without them', async () => {
+    it('opens with the fonts main lists, for the font row (K2); with none read, opens saying they were not listed', async () => {
       const read = harness({});
       await read.run();
       expect((read.asked[0]?.props as { fonts?: unknown }).fonts).toStrictEqual(FONTS);
-      // CONTROL: a failed read is no list, which the row says could not be read, never an empty one.
+      // CONTROL: a failed read is `listed: false`, which the row says could not be read, never an empty list of fonts.
       const failed = harness({ fontsRefuse: true });
       await failed.run();
-      expect((failed.asked[0]?.props as { fonts?: unknown }).fonts).toBeUndefined();
+      expect((failed.asked[0]?.props as { fonts?: unknown }).fonts).toStrictEqual({ listed: false, families: [], more: 0 });
+    });
+
+    it('W5: the session’s list is read from main once, however many times Settings opens', async () => {
+      const read = harness({});
+      await read.run();
+      await read.run();
+      expect(read.sent.filter((call) => call.id === 'app.fontFamilies')).toHaveLength(1);
+      // CONTROL: the second open still carries the list, so the one read is not an absence of it.
+      expect((read.asked[1]?.props as { fonts?: unknown }).fonts).toStrictEqual(FONTS);
     });
 
     it('Copy sends the version through main and says Copied on main’s word only', async () => {

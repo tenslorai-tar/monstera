@@ -11,7 +11,11 @@ import type { DocumentFont, FontList } from './FontPicker.js';
  */
 const asked = new WeakMap<ContractClient, Promise<NonNullable<FontList>>>();
 
-function listOf(client: ContractClient): Promise<NonNullable<FontList>> {
+/**
+ * The session's font list, asked of main once per client and held: the one way the renderer reads it (B3a), for a hook
+ * ({@link useFontList}) and for a command that hands it to a dialog alike.
+ */
+export function fontListOf(client: ContractClient): Promise<NonNullable<FontList>> {
   const held = asked.get(client);
   if (held !== undefined) return held;
   const reading = client['app.fontFamilies']({}).then(
@@ -31,7 +35,7 @@ export function useFontList(client: ContractClient, wanted: boolean): FontList {
   useEffect(() => {
     if (!wanted) return undefined;
     let current = true;
-    void listOf(client).then((read) => {
+    void fontListOf(client).then((read) => {
       if (current) setList(read);
     });
     return () => {

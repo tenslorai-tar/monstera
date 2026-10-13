@@ -30,6 +30,7 @@ import {
   RIBBON_APPEND_MARKDOWN,
 } from '../messages/en.js';
 import { type UiCommand, VISIBLE } from '../registries/commands.js';
+import { fontListOf } from '../fontList.js';
 import type { TrackTask } from '../runningTask.js';
 import { type DocumentCommandDeps, hasDocument, reportProblem } from './documentCommands.js';
 import { withWorkProgress } from './workProgress.js';
@@ -404,12 +405,13 @@ export function appendMarkdownCommand(
 
       // WHERE FIRST, then the file (the owner's 2026-10-07 recording): at the start, at the end or after a page, the whole
       // converted content going there. Closed unanswered is a change of mind, and nothing is picked or written.
-      // THE FONTS THE PICKER OFFERS (D1), main's one list; a failed read leaves the picker saying it could not be read.
-      const fonts = await deps.client['app.fontFamilies']({});
+      // THE FONTS THE PICKER OFFERS (D1), the session's one held list (`fontListOf`, W5); a failed read is `listed: false`,
+      // which the picker says it could not read.
+      const fonts = await fontListOf(deps.client);
       const where = (await deps.ask(INSERT_MARKDOWN_DIALOG_ID, {
         pageCount: context.pageCount,
         page: context.page ?? 0,
-        ...(fonts.ok ? { fonts: fonts.value } : {}),
+        fonts,
       })) as InsertMarkdownAnswer | undefined;
       if (where === undefined) return;
 

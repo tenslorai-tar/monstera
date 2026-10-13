@@ -290,6 +290,7 @@ import type { ShellDependencies, ShellWindow } from './main.js';
 import { openWebPage } from './webPages.js';
 import { createCloseGate } from './windowClose.js';
 import { removeWorkingFile } from './workingFile.js';
+import { heldRead } from './heldRead.js';
 
 /**
  * Everything creating a contained engine host needs that this file may not hold.
@@ -3776,6 +3777,28 @@ function composeHostBinding(
       throw error;
     }));
 
+  // THE FONT FAMILIES (the owner's D2): names and flags only, a page at a time until the host says the list ends, and a
+  // failure code is a fault. A `next` that does not move forward ends the read, so a host answering wrong cannot loop it.
+  // READ ONCE A SESSION (W5, `heldRead`): the computer's fonts do not change while the application runs, and the first
+  // read is a host start and its catalogue (about 4 s, the owner's reading); a host rebuilt after a fault would pay it
+  // again. A read that fails is not held.
+  const fontFamilies = heldRead(async (): Promise<ListedFontFamilies> => {
+    const built = await ensure();
+    const families: FontFamilyEntry[] = [];
+    let more = 0;
+    for (let from: number | null = 0; from !== null; ) {
+      const answer = await built.client['engine/font-families']({ session: built.session, from });
+      if (!answer.ok) throw new Error(`the compose host could not list its fonts: ${answer.error.code}`);
+      families.push(...answer.value.families);
+      // THE LAST PAGE'S COUNT of what the list could not hold: every page carries it, and the last read is the latest.
+      more = answer.value.more;
+      const next = answer.value.next;
+      if (next !== null && next <= from) throw new Error(`the compose host's font list went back from ${String(from)} to ${String(next)}`);
+      from = next;
+    }
+    return { families, more };
+  });
+
   return {
     compose: async (format, source, page, family) => {
       const built = await ensure();
@@ -4082,24 +4105,7 @@ function composeHostBinding(
       return answer.value.kind === 'sized' ? { width: answer.value.width, height: answer.value.height } : null;
     },
 
-    // THE FONT FAMILIES (the owner's D2): names and flags only, a page at a time until the host says the list ends, and a
-    // failure code is a fault. A `next` that does not move forward ends the read, so a host answering wrong cannot loop it.
-    fontFamilies: async () => {
-      const built = await ensure();
-      const families: FontFamilyEntry[] = [];
-      let more = 0;
-      for (let from: number | null = 0; from !== null; ) {
-        const answer = await built.client['engine/font-families']({ session: built.session, from });
-        if (!answer.ok) throw new Error(`the compose host could not list its fonts: ${answer.error.code}`);
-        families.push(...answer.value.families);
-        // THE LAST PAGE'S COUNT of what the list could not hold: every page carries it, and the last read is the latest.
-        more = answer.value.more;
-        const next = answer.value.next;
-        if (next !== null && next <= from) throw new Error(`the compose host's font list went back from ${String(from)} to ${String(next)}`);
-        from = next;
-      }
-      return { families, more };
-    },
+    fontFamilies,
 
     // A SCANNED SIGNATURE PDF (`signaturePicture.ts`): `imageSize`'s steps, and the PNG taken from the area against the
     // count the host reported, as a composed PDF is. `unavailable` throws: the document engine is the same library, so a

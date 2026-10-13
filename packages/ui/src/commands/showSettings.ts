@@ -25,6 +25,7 @@ import type { DialogReports } from '../registries/dialogs.js';
 import type { SettingsStore } from '../settingsStore.js';
 import type { ShortcutRow } from '../surfaces/shortcutChoice.js';
 import type { ShowToast } from '../toasts.js';
+import { fontListOf } from '../fontList.js';
 import { confirmCopied, confirmDone, confirmWritten } from './confirmWritten.js';
 import { reportProblem } from './documentCommands.js';
 import { applyShortcutAnswer } from './keyboardShortcuts.js';
@@ -173,12 +174,14 @@ export function showSettingsCommand(deps: {
       const shortcutRows = deps.shortcuts.rows();
       const fallbacks = new Map(shortcutRows.map((row) => [row.id, row.fallback]));
 
-      // THE FONTS A `font` ROW OFFERS (K2), main's one list; a failed read leaves the row saying it could not be read.
-      const fonts = await deps.client['app.fontFamilies']({});
+      // THE FONTS A `font` ROW OFFERS (K2), the session's one held list (`fontListOf`, W5); a failed read is
+      // `listed: false`, which the row says it could not read.
+      const fonts = await fontListOf(deps.client);
 
       let shown: SettingsProps = {
         ...(info.ok ? { version: info.value.version } : {}),
-        ...(fonts.ok ? { fonts: fonts.value } : {}),
+        // A COPY, for the dialog's props, whose schema holds a list it may own.
+        fonts: { ...fonts, families: [...fonts.families] },
         shortcuts: {
           rows: shortcutRows.map((row) => ({ ...row, also: [...row.also] })),
           dropped: [...deps.shortcuts.dropped()],
