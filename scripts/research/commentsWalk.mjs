@@ -714,13 +714,13 @@ await step('N4: the File menu starts Open PDF, Open from web address, Cloud stor
   return { titles: titles.slice(0, 5) };
 });
 
-await step('O1: About says what Monstera is, and no line says how the Store updates it', async () => {
+await step('O1: About says what Monstera is, and no line mentions updates', async () => {
   await command('About');
   const dialog = page.getByRole('dialog', { name: 'About Monstera' });
   const lines = await dialog.locator('.m-about__line').allTextContents();
   expect(lines.slice(0, 2)).toStrictEqual(['Monstera is a PDF editor for Windows.', 'Your documents stay on your computer unless you send one.']);
-  // The check is dormant (ADR-0110), so no run asks monsterapdf.com and no update line is drawn at all.
-  expect(lines.filter((line) => line.includes('update'))).toStrictEqual([]);
+  // ADR-0236's correction: no line about updates on any run, whether or not this one asked monsterapdf.com.
+  expect(lines.filter((line) => /update|monsterapdf/iu.test(line))).toStrictEqual([]);
   await dialog.getByRole('button', { name: 'Close' }).click();
   return { lines };
 });

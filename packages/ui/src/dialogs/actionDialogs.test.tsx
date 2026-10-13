@@ -203,35 +203,27 @@ describe('the footers the owner chose for three dialogs (2026-10-02)', () => {
   it('About: Close first, then its two buttons, in the footer', () => {
     render(
       <InDialog>
-        <AboutBody version="1.2.3.0" installChannel="store" checksForUpdates={false} resolve={ignore} update={ignore} />
+        <AboutBody version="1.2.3.0" installChannel="store" resolve={ignore} update={ignore} />
       </InDialog>,
     );
     expect(footer()).toStrictEqual(['Close', 'Source code', 'Third-party licences']);
   });
 
-  // ADR-0236: About says what Monstera is and no line says how a channel is updated. THE CONTROL is the run that
-  // asked monsterapdf.com: its line is drawn by the same paragraph markup, so a query that could not see an
-  // update line would fail there rather than pass the Store case for the wrong reason.
-  const aboutLines = (checksForUpdates: boolean): (string | null)[] => {
+  // ADR-0236 and its correction: About says what Monstera is and no line mentions updates. The body takes no update
+  // status at all, so the run that asked is App.test's case; here the lines are read whole, and the two that must be
+  // there are the control that the query sees the dialog's lines.
+  it('About: says what Monstera is, and no line mentions updates', () => {
     render(
       <InDialog>
-        <AboutBody version="1.2.3.0" installChannel="store" checksForUpdates={checksForUpdates} resolve={ignore} update={ignore} />
+        <AboutBody version="1.2.3.0" installChannel="store" resolve={ignore} update={ignore} />
       </InDialog>,
     );
-    return [...document.querySelectorAll('.m-about__line')].map((line) => line.textContent);
-  };
-
-  it('About: says what Monstera is, and a Store run that did not check says nothing about updates', () => {
-    const lines = aboutLines(false);
+    const lines = [...document.querySelectorAll('.m-about__line')].map((line) => line.textContent);
     expect(lines.slice(0, 2)).toStrictEqual([
       'Monstera is a PDF editor for Windows.',
       'Your documents stay on your computer unless you send one.',
     ]);
-    expect(lines.filter((line) => line?.includes('update') === true)).toStrictEqual([]);
-  });
-
-  it('About: CONTROL — a run that asked monsterapdf.com says so', () => {
-    expect(aboutLines(true).filter((line) => line?.includes('newer version') === true)).toHaveLength(1);
+    expect(lines.filter((line) => /update|monsterapdf/iu.test(line))).toStrictEqual([]);
   });
 
   it('Components: a report — Close first, then Verify files', () => {

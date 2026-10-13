@@ -252,7 +252,7 @@ function textForm(field: string, text: string): readonly DialogSample[] {
 }
 
 export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> = {
-  'dialog.about': [{ state: 'opened', props: { version: '0.1.1', installChannel: 'store', checksForUpdates: false } }],
+  'dialog.about': [{ state: 'opened', props: { version: '0.1.1', installChannel: 'store' } }],
   'dialog.components': [
     { state: 'opened', props: { components: COMPONENTS, verified: false } },
     {

@@ -2,7 +2,7 @@
 id: about-monstera
 title: See the version and licences
 summary: The About window says what Monstera is, shows its version, and links to its source code and licences.
-keywords: [about, version, licence, license, source code, updates, third party, agpl]
+keywords: [about, version, licence, license, source code, third party, agpl]
 commands: [app.about]
 contexts: [dialog.about, tools, start-screen]
 ---

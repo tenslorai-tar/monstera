@@ -4,20 +4,13 @@ import { SECURITY_UPDATE_DIALOG_ID, SECURITY_UPDATE_RESULT } from './dialogs/sec
 
 /**
  * What the renderer makes of main's update status (ADR-0110). **The one reading of it**, so the title bar's
- * indicator, About's line and the security notice cannot disagree about which answers mean what (B3a).
+ * indicator and the security notice cannot disagree about which answers mean what (B3a). About reads none of it
+ * (ADR-0236's correction).
  */
 
 /** Whether the title bar offers the Store: a newer version, an unsupported one, or a security release. */
 export function isUpdateOffered(status: UpdateStatus | undefined): boolean {
   return status?.kind === 'newer' || status?.kind === 'unsupported' || status?.kind === 'security';
-}
-
-/**
- * Whether this run asked monsterapdf.com at all — About's line says so exactly when it did. `unknown` counts: the
- * request was made, and no answer came back. `none`, `dormant` and `off` made no request.
- */
-export function checksForUpdates(status: UpdateStatus | undefined): boolean {
-  return status !== undefined && status.kind !== 'none' && status.kind !== 'dormant' && status.kind !== 'off';
 }
 
 /**

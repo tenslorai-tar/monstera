@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { updateAvailableCommand } from './commands/updateAvailable.js';
 import { SECURITY_UPDATE_DIALOG_ID } from './dialogs/securityUpdate.js';
 import type { CommandContext } from './registries/commands.js';
-import { checksForUpdates, isUpdateOffered, offerSecurityNotice } from './updateStatus.js';
+import { isUpdateOffered, offerSecurityNotice } from './updateStatus.js';
 
 /**
  * The renderer's half of the update check (ADR-0110): which answers show the indicator, and what the indicator and
@@ -50,17 +50,6 @@ describe('which answers mean what — the one reading', () => {
   it('the indicator is offered for newer, unsupported and security, and for nothing else', () => {
     expect(EVERY.filter(isUpdateOffered).map((status) => status.kind)).toStrictEqual(['newer', 'unsupported', 'security']);
     expect(isUpdateOffered(undefined)).toBe(false);
-  });
-
-  it('About says the site was asked exactly when a request was made — unknown included, the three quiet ones not', () => {
-    expect(EVERY.filter(checksForUpdates).map((status) => status.kind)).toStrictEqual([
-      'unknown',
-      'current',
-      'newer',
-      'unsupported',
-      'security',
-    ]);
-    expect(checksForUpdates(undefined)).toBe(false);
   });
 });
 

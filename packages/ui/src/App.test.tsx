@@ -1209,16 +1209,26 @@ describe('App', () => {
       expect(sent.filter((call) => call.id === 'app.openStore')).toStrictEqual([]);
     });
 
-    it('About says monsterapdf.com was asked only on a run that asked', async () => {
-      const { client } = updating({ kind: 'current' });
+    // ADR-0236's correction: About says nothing about updates, even on a run that asked monsterapdf.com — the one
+    // status that used to draw a line, so this fixture is the one the old dialog fails on.
+    it('About says nothing about updates on a run that asked, and opening it asks main nothing about them', async () => {
+      const { client, sent } = updating({ kind: 'current' });
       render(<App client={client} settings={freshSettings()} />);
+      await act(async () => {
+        await new Promise((settle) => setTimeout(settle, 0));
+      });
+      const before = sent.filter((call) => call.id === 'app.updateStatus').length;
       await act(async () => {
         screen.getByRole('button', { name: 'About' }).click();
         await Promise.resolve();
       });
-      expect(await screen.findByText(/Monstera also asks monsterapdf\.com/u)).toBeDefined();
-      // The line is the run's, not the channel's: what Monstera is still sits above it.
-      expect(screen.getByText('Monstera is a PDF editor for Windows.')).toBeDefined();
+      // CONTROL: the dialog's lines are drawn and this query sees them.
+      expect(await screen.findByText('Monstera is a PDF editor for Windows.')).toBeDefined();
+      const lines = [...document.querySelectorAll('.m-about__line')].map((line) => line.textContent);
+      expect(lines.length).toBeGreaterThan(2);
+      expect(lines.filter((line) => /update|monsterapdf/iu.test(line))).toStrictEqual([]);
+      // THE DECISION, not only its end state: About no longer reads the update status at all.
+      expect(sent.filter((call) => call.id === 'app.updateStatus')).toHaveLength(before);
     });
   });
 

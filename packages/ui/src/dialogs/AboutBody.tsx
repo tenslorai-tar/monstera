@@ -13,7 +13,6 @@ import {
   ABOUT_LICENCES,
   ABOUT_LOCAL,
   ABOUT_SOURCE,
-  ABOUT_UPDATES_CHECKED,
   ABOUT_VERSION_LABEL,
   ABOUT_WHAT,
 } from '../messages/en.js';
@@ -35,9 +34,8 @@ const CHANNEL_NAMES: Readonly<Record<Channel, MessageKey>> = {
  * The About dialog's body: what Monstera is, the build, its licence, and the two pages the AGPL and the third-party
  * licences call for (BUILD-PROMPT D12 *"About (version, licences, source offer)"*).
  *
- * **No line says how the build is updated** (ADR-0236). The one update line left is E4's phone-home clause,
- * `ABOUT_UPDATES_CHECKED`, drawn only on a run whose status from main says it asked monsterapdf.com (ADR-0110), so it
- * cannot claim a check that a dormant address or the setting prevented.
+ * **No line mentions updates** (ADR-0236 and its correction), on any run: the body takes no update status, so no
+ * prop can bring one back. The install channel is a fact about where the build came from.
  *
  * ## It renders what main said, and holds no opinion about it
  *
@@ -50,12 +48,10 @@ const CHANNEL_NAMES: Readonly<Record<Channel, MessageKey>> = {
 export default function AboutBody({
   version,
   installChannel,
-  checksForUpdates,
   resolve,
 }: {
   readonly version: string;
   readonly installChannel: Channel;
-  readonly checksForUpdates: boolean;
 } & DialogAnswering<AboutAnswer>): ReactElement {
   const { _ } = useLingui();
 
@@ -72,7 +68,6 @@ export default function AboutBody({
       </dl>
       <p className="m-about__line">{_(ABOUT_WHAT)}</p>
       <p className="m-about__line">{_(ABOUT_LOCAL)}</p>
-      {checksForUpdates ? <p className="m-about__line">{_(ABOUT_UPDATES_CHECKED)}</p> : null}
       <p className="m-about__line">{_(ABOUT_LICENCE)}</p>
       <p className="m-about__line">{_(ABOUT_COPYRIGHT)}</p>
       <DialogFooter dismissal="close">
