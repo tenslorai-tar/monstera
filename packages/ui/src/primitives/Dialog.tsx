@@ -447,13 +447,16 @@ export function DialogFooter({
   const footer = (
     <div className="m-dialog-footer">
       {aside === undefined ? null : <span className="m-dialog-footer__aside">{aside}</span>}
-      {dismissal === 'own' ? null : (
-        <BaseDialog.Close
-          nativeButton
-          render={<Button label={DISMISSAL[dismissal]} {...(only ? { variant: 'primary' as const } : {})} />}
-        />
-      )}
-      {children}
+      {/* THE ANSWER AND THE DISMISSAL TOGETHER, CENTRED in the footer (the owner's N5), whatever stands at its start. */}
+      <span className="m-dialog-footer__buttons">
+        {dismissal === 'own' ? null : (
+          <BaseDialog.Close
+            nativeButton
+            render={<Button label={DISMISSAL[dismissal]} {...(only ? { variant: 'primary' as const } : {})} />}
+          />
+        )}
+        {children}
+      </span>
     </div>
   );
   // IN THE POPUP'S FOOT where there is one (`FooterSlot`); in place where the body is rendered on its own.

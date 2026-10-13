@@ -891,11 +891,14 @@
   margin-block-start: var(--space-2);
 }
 
-/* THE FOOT: Cancel and the one action at the right, above a line, as the end of a Settings page reads. The rows above
-   it need no line of their own, so the last one's is dropped and the footer draws the one that remains. */
+/* THE FOOT: Cancel and the one action CENTRED, above a line (the owner's N5, 2026-10-12; Settings draws its own foot and
+   keeps its buttons at the right). Three columns, so an action apart at the start (`aside`) leaves the buttons centred
+   in the footer rather than in what is left of it. The rows above it need no line of their own, so the last one's is
+   dropped and the footer draws the one that remains. */
 .m-dialog-footer {
-  display: flex;
-  justify-content: flex-end;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
   gap: var(--space-8);
   padding: var(--space-12) var(--space-24) var(--space-24);
   /* decorative: separates the questions from the answer */
@@ -938,11 +941,20 @@
   border-block-end: 0;
 }
 
-/* AN ACTION APART AT THE FOOTER'S START (*Reset all shortcuts*): the buttons at the end stay where every footer has
-   them. */
+/* AN ACTION APART AT THE FOOTER'S START (*Find all*, *Read all*): the first column, so the buttons stay centred where
+   every footer has them. */
 .m-dialog-footer__aside {
   display: flex;
-  margin-inline-end: auto;
+  grid-column: 1;
+  justify-self: start;
+}
+
+.m-dialog-footer__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-8);
+  grid-column: 2;
 }
 
 /* A BROWSED WINDOW'S SECTION (`DialogSection`): a heading in the row's type with its state at the right, a one-line

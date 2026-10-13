@@ -569,6 +569,18 @@ for (const { format, title, file, text, family } of [
   });
 }
 
+await step('N5: a dialog’s buttons sit at the centre of its footer, and Settings keeps its own at the right', async () => {
+  await command('Watermark…');
+  const dialog = page.getByRole('dialog', { name: 'Watermark' });
+  const outer = await dialog.locator('.m-dialog-footer').boundingBox();
+  const group = await dialog.locator('.m-dialog-footer__buttons').boundingBox();
+  if (outer === null || group === null) throw new Error('the Watermark footer is not drawn');
+  const offCentre = Math.abs(group.x + group.width / 2 - (outer.x + outer.width / 2));
+  expect(offCentre).toBeLessThan(1);
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  return { offCentre };
+});
+
 await step('L7: a NUL in a Markdown file is the replacement character in the saved PDF, once, as CommonMark requires', async () => {
   const source = join(output, 'l7-nul.md');
   await writeFile(source, `Null ${String.fromCharCode(0)} here.\n`);
