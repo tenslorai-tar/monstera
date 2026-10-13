@@ -317,7 +317,7 @@ import { LINK_ADDRESS_TOOL_ID, LINK_PAGE_TOOL_ID } from './annotations/linkTools
 import { MEASURE_TOOL_IDS } from './annotations/measureTools.js';
 import { stickyNoteCommand } from './annotations/pointTools.js';
 import { type WordsMark, type WordsToEdit, wordsToEdit } from './annotations/markWords.js';
-import type { AnnotationSelection } from './annotations/selectTool.js';
+import type { AnnotationSelection, LinkSelection } from './annotations/selectTool.js';
 import { SELECT_TOOL_ID, selectionOfNewest, selectionOfPage } from './annotations/selectTool.js';
 import { SIGNATURE_TOOL_ID } from './annotations/signatureTool.js';
 import { chooseSignature, placePlainSignature, signatureCommand } from './commands/signatureCommands.js';
@@ -408,6 +408,8 @@ import type { DropOpener, EventSubscriber } from './bridge.js';
 import { PropertiesPanel, type StyleChange } from './PropertiesPanel.js';
 import { TextFormatPanel } from './TextFormatPanel.js';
 import { useDocumentFonts, useFontList } from './fontList.js';
+import { readOnePageLinks } from './usePageLinks.js';
+import { LinkProperties } from './LinkProperties.js';
 import { GRID_DIVISION_COUNTS, type GridLook, type RulerUnit } from './rulerGeometry.js';
 import { useSetting } from './useSetting.js';
 import type { SettingsStore } from './settingsStore.js';
@@ -1494,13 +1496,29 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * Declared above `send`, which carries it across a command that keeps the walk.
    */
   const [picked, setPicked] = useState<AnnotationSelection | undefined>(undefined);
+  /** The link the select tool picked (the owner's O6(c)), held beside `picked` for its reasons; one or the other is set. */
+  const [linkPicked, setLinkPicked] = useState<LinkSelection | undefined>(undefined);
 
   /** A command sent to one document, carrying the selection across it where it keeps the walk (ADR-0102). */
   const send = useCallback(
     // WHETHER THE VERSION MOVED, handed back: the drawing overlay holds a committed shape until the
     // page redraws with it, and drops it at once when the command was refused.
-    (docId: DocId, command: DispatchableCommand): Promise<boolean> =>
-      applyCarrying({ client, onApplied: applied, ask, stamp, signatures, carry: setPicked }, docId, command),
+    async (docId: DocId, command: DispatchableCommand): Promise<boolean> => {
+      const moved = await applyCarrying({ client, onApplied: applied, ask, stamp, signatures, carry: setPicked }, docId, command);
+      // A LINK MOVED OR SENT ELSEWHERE STAYS SELECTED, read again by its place: `editLink` changes a link and keeps every
+      // place on the page, so the place names the same link at the version the read answers. Only the selection the
+      // command was composed from is carried; any other is left as it is.
+      if (moved && command.kind === 'editLink') {
+        const read = await readOnePageLinks(client, docId, command.page);
+        const link = read?.links[command.index];
+        setLinkPicked((current) =>
+          read !== undefined && link !== undefined && current?.page === command.page && current.index === command.index && current.version === command.version
+            ? { page: command.page, index: command.index, version: read.version, link }
+            : current,
+        );
+      }
+      return moved;
+    },
     [applied, ask, client, signatures, stamp],
   );
 
@@ -2174,6 +2192,18 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     [open?.version, picked, toolId],
   );
   const readSelection = useCallback(() => selection, [selection]);
+  /** The picked link while it names this version and the select tool is on: `selection`'s rule, for its reasons. */
+  const linkSelection = useMemo(
+    () =>
+      linkPicked !== undefined && linkPicked.version === open?.version && toolId === SELECT_TOOL_ID ? linkPicked : undefined,
+    [linkPicked, open?.version, toolId],
+  );
+  const readLinkSelection = useCallback(() => linkSelection, [linkSelection]);
+  const openDocId = open?.docId;
+  const readLinks = useCallback(
+    (page: number) => (openDocId === undefined ? Promise.resolve(undefined) : readOnePageLinks(client, openDocId, page)),
+    [client, openDocId],
+  );
   // THE FONTS A SELECTED TEXT BOX'S PICKER OFFERS (K2), the same held list the editor's picker reads, asked the first
   // time a mark with words is selected.
   const markFontList = useFontList(client, selection?.items.some((item) => item.typed !== undefined) ?? false);
@@ -3118,6 +3148,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           wordsOf,
           onSelect: setPicked,
           selected: readSelection,
+          links: readLinks,
+          onSelectLink: setLinkPicked,
+          selectedLink: readLinkSelection,
           style,
           scale,
           onSnapshot,
@@ -3153,6 +3186,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       onPlacePlainSignature,
       onPlaceStampPicture,
       onSnapshot,
+      readLinkSelection,
+      readLinks,
       readSelection,
       scale,
       style,
@@ -4129,8 +4164,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         return moved;
       },
       selection,
+      link: linkSelection,
     };
-  }, [applied, ask, client, expectNewFields, keptTool, open, presence, registry, selection, send, settings, signatures, stamp, style, toast, toolId, tools]);
+  }, [applied, ask, client, expectNewFields, keptTool, linkSelection, open, presence, registry, selection, send, settings, signatures, stamp, style, toast, toolId, tools]);
 
   /**
    * A link pressed on a page or in the Links panel, followed by the one route (ADR-0167): a page link jumps, a web link
@@ -4757,6 +4793,16 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
               ) : inFormsSection && selection === undefined && objectSelection === undefined ? (
                 // NOTHING SELECTED IN FORMS (the owner's E4): the form's settings, never a mark's colour and opacity.
                 <FormSettingsPanel settings={settings} />
+              ) : linkSelection !== undefined && pageCount !== undefined ? (
+                // A LINK PICKED WITH THE SELECT TOOL (the owner's O6(c)): where it goes, changed by one `editLink`. Keyed on
+                // the link and its version, so what is typed belongs to the link it was typed for.
+                <LinkProperties
+                  key={`${String(linkSelection.page)}:${String(linkSelection.index)}@${String(linkSelection.version)}`}
+                  onEdit={dispatch}
+                  onFollow={onFollowLink}
+                  pageCount={pageCount}
+                  selected={linkSelection}
+                />
               ) : (
                 <PropertiesPanel
                   measuring={toolId !== undefined && MEASURE_TOOL_IDS.has(toolId)}

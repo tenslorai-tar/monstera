@@ -5,6 +5,8 @@ import { pdfPoint, toPdf, toViewport, viewportPoint } from '@monstera/shared';
 import { HINT_SELECT } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
+import type { PageLinkOnPage } from '../usePageLinks.js';
+import { engineBoxInPdf } from './annotationSpace.js';
 import type { AnnotationSnapshot, ErasableAnnotation } from './eraserTool.js';
 import { markAt } from './eraserTool.js';
 import { type ReopenDeps, reopenWords } from './textTools.js';
@@ -207,7 +209,57 @@ export function selectionOfNewest(walk: AnnotationSnapshot, page: number): Annot
   return item === undefined ? undefined : { page, version: walk.version, items: [item] };
 }
 
+/**
+ * A link the select tool picked (the owner's O6(c)): its place among the page's links at one version, `setLinkOutline`'s
+ * handle, and the link as the listing read it.
+ *
+ * **Its own selection beside {@link AnnotationSelection}, never an item in it**: a link's place is a position in
+ * `getLinks()` and an annotation's in the annotation walk, two index spaces (ADR-0212), so one list of items would let a
+ * link's index be sent as an annotation's. One link at a time, because nothing yet acts on several.
+ */
+export interface LinkSelection {
+  readonly page: number;
+  readonly version: DocVersion;
+  readonly index: number;
+  readonly link: PageLinkOnPage;
+}
+
+/** One page's links as the select tool reads them, at the version they were read at. */
+export interface PageLinksRead {
+  readonly version: DocVersion;
+  readonly links: readonly PageLinkOnPage[];
+}
+
+/**
+ * What a drag can grab: a selection's handles and boxes, and nothing about what they are. Annotations and a link both
+ * take this shape, so the hit test and the placement are ONE function for both (B3a), and a link is moved and resized by
+ * exactly the rule a square is.
+ */
+interface Grabbable {
+  readonly page: number;
+  readonly version: DocVersion;
+  readonly items: readonly { readonly index: number; readonly rect: AnnotationRect; readonly kind: string }[];
+}
+
+/** The kind a link's grabbable item carries: box-shaped, so all four sides pull (`SIDE_RESIZABLE_KINDS`). */
+export const LINK_KIND = 'link';
+
+/** A link selection as {@link Grabbable}, its rectangle in PDF space through the page's own transform. */
+export function grabbableLink(selection: LinkSelection, transform: PageTransform): Grabbable {
+  return {
+    page: selection.page,
+    version: selection.version,
+    items: [{ index: selection.index, rect: engineBoxInPdf(selection.link.bounds, transform), kind: LINK_KIND }],
+  };
+}
+
 export interface SelectDeps extends ReopenDeps {
+  /** The page's links, at the version they were read at; `undefined` where none can be read. */
+  readonly links: (page: number) => Promise<PageLinksRead | undefined>;
+  /** Where a picked link goes. `undefined` is *no link is selected*. */
+  readonly onSelectLink: (selection: LinkSelection | undefined) => void;
+  /** The link selected now, read through a function for {@link selected}'s reason. */
+  readonly selectedLink: () => LinkSelection | undefined;
   /** The same read the eraser holds. */
   readonly annotations: () => Promise<AnnotationSnapshot | undefined>;
   /** Where the selection goes. `undefined` is *nothing is selected*. */
@@ -256,6 +308,8 @@ function cornersOf(box: {
  * nobody grabbed; those keep their four corners.
  */
 export const SIDE_RESIZABLE_KINDS: ReadonlySet<string> = new Set([
+  // A LINK'S BOX IS THE REGION A READER CLICKS, so it is the shape (the owner's O6(c)).
+  LINK_KIND,
   'square',
   'circle',
   'text-box',
@@ -363,16 +417,17 @@ interface PixelBox {
  * corner carries the OPPOSITE corner (what a resize keeps fixed) and the direction of its arrow; a side carries the side and
  * the box it pulls.
  */
+type GrabbedItem = Grabbable['items'][number];
 type Grab =
-  | { readonly kind: 'corner'; readonly item: SelectedAnnotation; readonly opposite: { readonly x: number; readonly y: number }; readonly arrow: 'resize-nwse' | 'resize-nesw' }
-  | { readonly kind: 'side'; readonly item: SelectedAnnotation; readonly side: SideHandle; readonly box: PixelBox }
+  | { readonly kind: 'corner'; readonly item: GrabbedItem; readonly opposite: { readonly x: number; readonly y: number }; readonly arrow: 'resize-nwse' | 'resize-nesw' }
+  | { readonly kind: 'side'; readonly item: GrabbedItem; readonly side: SideHandle; readonly box: PixelBox }
   | { readonly kind: 'inside' };
 
 /** The arrow for each of {@link cornersOf}'s four corners, in its order: top-left, top-right, bottom-left, bottom-right. */
 const CORNER_ARROWS = ['resize-nwse', 'resize-nesw', 'resize-nesw', 'resize-nwse'] as const;
 
 function grabbedAt(
-  selection: AnnotationSelection,
+  selection: Grabbable,
   from: ViewportPoint,
   transform: PageTransform,
 ): Grab | undefined {
@@ -402,7 +457,7 @@ function grabbedAt(
 
 /** Where a drag on the selection puts each mark, at the selection's version. */
 interface Placement {
-  readonly version: AnnotationSelection['version'];
+  readonly version: DocVersion;
   readonly placements: readonly { readonly index: number; readonly rect: AnnotationRect }[];
 }
 
@@ -428,7 +483,7 @@ interface Placement {
  * zero-length move and a version bump.
  */
 function placementFor(
-  selection: AnnotationSelection | undefined,
+  selection: Grabbable | undefined,
   gesture: Gesture,
   marquee: ReturnType<typeof marqueeOf>,
   page: number,
@@ -490,7 +545,34 @@ function placementFor(
   };
 }
 
+/**
+ * The link under a point on `page`, at the version the links were read at: the LAST one whose box holds the point, since a
+ * later link is drawn over an earlier one (`LinkLayer` draws them in order).
+ */
+function linkAt(
+  read: PageLinksRead | undefined,
+  page: number,
+  at: ViewportPoint,
+  transform: PageTransform,
+): LinkSelection | undefined {
+  if (read === undefined) return undefined;
+  for (let index = read.links.length - 1; index >= 0; index -= 1) {
+    const link = read.links[index];
+    if (link === undefined) continue;
+    const box = boxOf(engineBoxInPdf(link.bounds, transform), transform);
+    if (box !== null && at.x >= box.x0 && at.x <= box.x1 && at.y >= box.y0 && at.y <= box.y1) {
+      return { page, version: read.version, index, link };
+    }
+  }
+  return undefined;
+}
+
 export function selectTool(deps: SelectDeps): UiTool {
+  /** The selected link as something a drag can grab on `page`, or `undefined` when none is selected there. */
+  const grabbableLinkOn = (page: number, transform: PageTransform): Grabbable | undefined => {
+    const link = deps.selectedLink();
+    return link?.page === page ? grabbableLink(link, transform) : undefined;
+  };
   const controller: ToolController = {
     ...pointerPath,
     commit: async (
@@ -508,6 +590,12 @@ export function selectTool(deps: SelectDeps): UiTool {
       // every editor gets right by asking this question first.
       const moved = placementFor(deps.selected(), gesture, marquee, page, transform);
       if (moved !== undefined) return { kind: 'placeAnnotation', page, ...moved };
+      // A DRAG ON THE SELECTED LINK moves or resizes it by the same rule, and names it by its place at its version.
+      const link = placementFor(grabbableLinkOn(page, transform), gesture, marquee, page, transform);
+      const placed = link?.placements[0];
+      if (link !== undefined && placed !== undefined) {
+        return { kind: 'editLink', page, index: placed.index, rect: placed.rect, version: link.version };
+      }
 
       const snapshot = await deps.annotations();
       if (snapshot === undefined) {
@@ -516,6 +604,7 @@ export function selectTool(deps: SelectDeps): UiTool {
         // or unreadable, and keeping it would draw boxes over a page nobody can
         // name annotations on.
         deps.onSelect(undefined);
+        deps.onSelectLink(undefined);
         return undefined;
       }
 
@@ -542,9 +631,16 @@ export function selectTool(deps: SelectDeps): UiTool {
         .map(selectedFrom)
         .filter((entry): entry is SelectedAnnotation => entry !== undefined);
 
+      // A CLICK ON NO MARK PICKS THE LINK UNDER IT, if there is one: a mark is drawn over a link, so it is asked first.
+      // One selection or the other, never both, since what Properties shows and what a drag moves is one thing.
+      const pickedLink =
+        items.length === 0 && marquee.travelled < MINIMUM_MARQUEE
+          ? linkAt(await deps.links(page), page, startOf(gesture), transform)
+          : undefined;
       deps.onSelect(
         items.length === 0 ? undefined : { page, version: snapshot.version, items },
       );
+      deps.onSelectLink(pickedLink);
       // NEVER A COMMAND. Selecting changes nothing about the document, and a
       // tool that returned one here would put a version bump behind a click
       // that was only meant to point at something.
@@ -559,7 +655,9 @@ export function selectTool(deps: SelectDeps): UiTool {
       // A DRAG ON THE SELECTION IS DRAWN WHERE IT PUTS THE MARKS (ADR-0166), each one's box as the release would
       // place it. The box from the press to the pointer is a marquee's, and drawn for a move it was a ghost that
       // matched neither the mark nor where it went — and then was held there after the release.
-      const moved = placementFor(deps.selected(), gesture, marquee, page, transform);
+      const moved =
+        placementFor(deps.selected(), gesture, marquee, page, transform) ??
+        placementFor(grabbableLinkOn(page, transform), gesture, marquee, page, transform);
       if (moved !== undefined) {
         return {
           shape: 'boxes',
@@ -580,8 +678,9 @@ export function selectTool(deps: SelectDeps): UiTool {
     // THE POINTER SAYS WHAT A PRESS HERE WOULD DO (ADR-0201), from `grabbedAt` — the test the press takes — so a resize
     // arrow is shown only where a drag resizes. A selection belongs to one page, so any other page's is the arrow.
     pointer: (at, page, transform) => {
-      const selection = deps.selected();
-      if (selection?.page !== page) return undefined;
+      const annotations = deps.selected();
+      const selection = annotations?.page === page ? annotations : grabbableLinkOn(page, transform);
+      if (selection === undefined) return undefined;
       const grab = grabbedAt(selection, at, transform);
       if (grab === undefined) return undefined;
       if (grab.kind === 'corner') return grab.arrow;

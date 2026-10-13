@@ -447,6 +447,8 @@ export interface CommandPrior {
   readonly addLink: never;
   /** **`never`**, for `addLink`'s reason: a link has no identity to restore to, and undo is the checkpoint (ADR-0212). */
   readonly setLinkOutline: never;
+  /** **`never`**, for `setLinkOutline`'s reason. */
+  readonly editLink: never;
   /**
    * **`never`**, and the fourth annotation command to say so for a fourth
    * reason — the narrowest of them.

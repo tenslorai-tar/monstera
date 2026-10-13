@@ -145,16 +145,32 @@ export function engineBoxOnScreen(
   box: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number },
   page: OverlayPage,
 ): ScreenBox {
-  const unscaled = unscaledTransform(page);
   const shown = overlayTransform(page);
-  const a = toViewport(toPdf(viewportPoint(box.x0, box.y0), unscaled), shown);
-  const b = toViewport(toPdf(viewportPoint(box.x1, box.y1), unscaled), shown);
+  const rect = engineBoxInPdf(box, shown);
+  const a = toViewport(pdfPoint(rect.x0, rect.y0), shown);
+  const b = toViewport(pdfPoint(rect.x1, rect.y1), shown);
   return {
     left: Math.min(a.x, b.x),
     top: Math.min(a.y, b.y),
     width: Math.abs(b.x - a.x),
     height: Math.abs(b.y - a.y),
   };
+}
+
+/**
+ * A box the ENGINE reported in display space at scale 1, in PDF user space and ordered: the first of
+ * {@link engineBoxOnScreen}'s two conversions, named for a caller that holds the page's transform rather than its
+ * geometry — the select tool, which moves a link by the rectangle `addLink` and `editLink` take. The page's box and turn
+ * come from `transform`; its zoom is not used, since the engine's box is at scale 1.
+ */
+export function engineBoxInPdf(
+  box: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number },
+  transform: PageTransform,
+): AnnotationRect {
+  const unscaled = pageTransform(transform.crop, transform.rotation, 1);
+  const a = toPdf(viewportPoint(box.x0, box.y0), unscaled);
+  const b = toPdf(viewportPoint(box.x1, box.y1), unscaled);
+  return { x0: Math.min(a.x, b.x), y0: Math.min(a.y, b.y), x1: Math.max(a.x, b.x), y1: Math.max(a.y, b.y) };
 }
 
 /**

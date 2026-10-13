@@ -15,7 +15,7 @@ import {
 import { AnnotationLayer } from './AnnotationLayer.js';
 import { AnnotationOverlay } from './AnnotationOverlay.js';
 import type { OverlayPage } from './annotations/annotationSpace.js';
-import type { AnnotationSelection } from './annotations/selectTool.js';
+import type { AnnotationSelection, LinkSelection } from './annotations/selectTool.js';
 import { SelectionLayer } from './SelectionLayer.js';
 import { type TextEditing, TextEditPage } from './TextEditLayer.js';
 import { type ObjectEditing, ObjectEditPage } from './ObjectEditLayer.js';
@@ -317,6 +317,8 @@ export interface PageListProps {
          * act on*.
          */
         readonly selection?: AnnotationSelection | undefined;
+        /** The link the select tool picked, drawn over its own page with the same handles (the owner's O6(c)). */
+        readonly link?: LinkSelection | undefined;
       }
     | undefined;
   /**
@@ -1967,6 +1969,7 @@ function PageSlot({
       {drawing === undefined || size === undefined ? null : (
         <SelectionLayer
           geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
+          link={drawing.link}
           page={page}
           selection={drawing.selection}
         />

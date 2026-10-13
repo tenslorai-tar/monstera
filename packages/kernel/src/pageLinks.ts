@@ -1,4 +1,4 @@
-import type { CommandOfKind, LinkOutline } from '@monstera/contract';
+import type { CommandOfKind, LinkOutline, LinkTarget } from '@monstera/contract';
 import { LINK_OUTLINES, LINK_OUTLINE_DEFAULT_COLOUR } from '@monstera/contract/host';
 import type { PageTransform } from '@monstera/shared';
 import type * as mupdf from './mupdfRaw.js';
@@ -199,54 +199,60 @@ export const applyAddLink: Apply<'mupdf', 'addLink'> = (
   withDocument(session, (document) => {
     const total = document.countPages();
     const loaded = pageWithin(document, command.page, total);
-    const transform = linkTransform(loaded);
-    const rect = placedRect(command.rect, transform);
-    if (rect[0] === rect[2] || rect[1] === rect[3]) {
-      throw new RangeError(
-        'a link with no width or no height covers nothing, so there is no region for a reader ' +
-          'to click. What was asked for was a rectangle whose two corners share an axis.',
-      );
-    }
-    if (!touchesPage(rect, transform)) {
-      throw new RangeError(
-        `that link lies entirely outside page ${String(command.page)}, so nothing would be ` +
-          'clickable.',
-      );
-    }
-
-    let uri: string;
-    if (command.target.kind === 'uri') {
-      uri = command.target.uri;
-    } else {
-      // THE TARGET PAGE IS VALIDATED TOO, and separately: a link to page 900 of
-      // a three-page document is a caller error, and `formatLinkURI` would
-      // happily spell one — `resolveLink` then answers −1 and the reader shows
-      // a link that goes nowhere.
-      pageWithin(document, command.target.page, total);
-      // MuPDF'S OWN SPELLING of an internal destination, never one composed
-      // here. `formatLinkURI` is what `resolveLink` reads back, so the two
-      // halves of *which page does this go to* have one implementation (B3a),
-      // and the `/GoTo` array it produces is the format's rather than a shape
-      // this build guessed at.
-      uri = document.formatLinkURI({
-        chapter: 0,
-        page: command.target.page,
-        type: 'Fit',
-        x: 0,
-        y: 0,
-        width: 0,
-        height: 0,
-        zoom: 0,
-      });
-    }
-
-    const link = loaded.createLink(rect, uri);
+    const rect = linkRect(loaded, command.page, command.rect);
+    const link = loaded.createLink(rect, linkURI(document, command.target, total));
     // DROPPED IMMEDIATELY. `linksOn` says why every `Link` in this module is
     // destroyed rather than left to a finaliser; the object has done its work
     // by the time `createLink` returns.
     link.destroy();
     if (command.border !== undefined) writeLinkBorder(document, loaded, command.border);
   });
+
+/**
+ * A link's rectangle in the frame `createLink` and `Link.setBounds` take, refused where it would cover nothing: the ONE
+ * conversion of a link's rectangle, for a link drawn and a link moved alike (B3a).
+ */
+function linkRect(loaded: mupdf.PDFPage, page: number, asked: CommandOfKind<'addLink'>['rect']): mupdf.Rect {
+  const transform = linkTransform(loaded);
+  const rect = placedRect(asked, transform);
+  if (rect[0] === rect[2] || rect[1] === rect[3]) {
+    throw new RangeError(
+      'a link with no width or no height covers nothing, so there is no region for a reader ' +
+        'to click. What was asked for was a rectangle whose two corners share an axis.',
+    );
+  }
+  if (!touchesPage(rect, transform)) {
+    throw new RangeError(`that link lies entirely outside page ${String(page)}, so nothing would be clickable.`);
+  }
+  return rect;
+}
+
+/**
+ * The URI a link target is written as: the ONE spelling of where a link goes, for a link drawn and a link changed alike.
+ */
+function linkURI(document: mupdf.PDFDocument, target: LinkTarget, total: number): string {
+  if (target.kind === 'uri') return target.uri;
+  // THE TARGET PAGE IS VALIDATED TOO, and separately: a link to page 900 of
+  // a three-page document is a caller error, and `formatLinkURI` would
+  // happily spell one — `resolveLink` then answers −1 and the reader shows
+  // a link that goes nowhere.
+  pageWithin(document, target.page, total);
+  // MuPDF'S OWN SPELLING of an internal destination, never one composed
+  // here. `formatLinkURI` is what `resolveLink` reads back, so the two
+  // halves of *which page does this go to* have one implementation (B3a),
+  // and the `/GoTo` array it produces is the format's rather than a shape
+  // this build guessed at.
+  return document.formatLinkURI({
+    chapter: 0,
+    page: target.page,
+    type: 'Fit',
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+    zoom: 0,
+  });
+}
 
 /**
  * The outline of a link: a one-point blue `/Border` for `thin`, an explicit zero-width one for `none`.
@@ -411,6 +417,81 @@ export function captureSetLinkOutline(
 /** Unreachable, and required by `CommandSpec`'s shape: `CommandPrior['setLinkOutline']` is `never`. */
 export const invertSetLinkOutline: Invert<'mupdf', 'setLinkOutline'> = (): Promise<void> => {
   throw new Error('a link outline change has no inverse yet; undo restores the checkpoint the bus took (ADR-0037)');
+};
+
+/**
+ * Moves or resizes one link that exists, changes where it goes, or both (the owner's O6(c)).
+ *
+ * Through MuPDF's own `Link`: `setBounds` writes `/Rect` in the frame `createLink` took, and `setURI` writes the action
+ * `createLink` wrote, so a link moved or retargeted is written by the same code that made it. Its outline is left as it is:
+ * the dictionary keeps its `/Border` and `/C` (the proof reads them back). Named by its place and refused past the page's
+ * links, `setLinkOutline`'s rule.
+ */
+export const applyEditLink: Apply<'mupdf', 'editLink'> = (
+  session: MupdfSession,
+  command: CommandOfKind<'editLink'>,
+): Promise<void> =>
+  withDocument(session, (document) => {
+    const total = document.countPages();
+    const loaded = pageWithin(document, command.page, total);
+    const links = loaded.getLinks();
+    try {
+      const link = links[command.index];
+      if (link === undefined) {
+        throw new RangeError(
+          `page ${String(command.page)} has ${String(links.length)} link(s), so there is no link at position ${String(command.index)} to change`,
+        );
+      }
+      const dictionary = linkDictionaries(loaded, links.length)[command.index];
+      if (dictionary === undefined) {
+        throw new RangeError(
+          `the links on page ${String(command.page)} cannot be matched one for one to their dictionaries, so none is changed rather than a neighbour`,
+        );
+      }
+      // BOTH READ BEFORE EITHER IS WRITTEN, so a refused target leaves the rectangle as it was.
+      const rect = command.rect === undefined ? undefined : linkRect(loaded, command.page, command.rect);
+      const uri = command.target === undefined ? undefined : linkURI(document, command.target, total);
+      if (rect !== undefined && command.rect !== undefined) {
+        // TWO FRAMES, ONE RECTANGLE. `setBounds` keeps the engine's own copy, which is in the displayed frame `getLinks`
+        // answers in; it writes its argument to `/Rect` UNCONVERTED (measured 2026-10-13: a displayed `[30 50 170 100]` was
+        // stored as `/Rect [30 50 170 100]` on a 200-high page), where `createLink` converts. So `/Rect` is then written in
+        // PDF user space, which is the command's own frame, normalised as the format asks (§12.5.2).
+        link.setBounds(rect);
+        const { x0, y0, x1, y1 } = command.rect;
+        const stored = document.newArray();
+        for (const value of [Math.min(x0, x1), Math.min(y0, y1), Math.max(x0, x1), Math.max(y0, y1)]) stored.push(document.newReal(value));
+        dictionary.put('Rect', stored);
+      }
+      if (uri !== undefined) {
+        link.setURI(uri);
+        // A `/Dest` WINS OVER `/A` (§12.5.6.5's reading order, and MuPDF's): a page link the document brought with one would
+        // keep going there under the action just written, so it goes.
+        dictionary.delete('Dest');
+      }
+    } finally {
+      for (const link of links) link.destroy();
+    }
+  });
+
+/** Reports that a link change records no prior state: `captureSetLinkOutline`'s reason. The page is validated first. */
+export function captureEditLink(
+  session: MupdfSession,
+  command: CommandOfKind<'editLink'>,
+): Promise<CaptureResult<never>> {
+  return withDocument(session, (document) => {
+    pageWithin(document, command.page, document.countPages());
+    return {
+      captured: false,
+      reason:
+        'a link change cannot be recorded as prior state: restoring it needs a handle naming which link on the page it is, ' +
+        'and document.pageLinks answers with a position that is stale once the document moves',
+    };
+  });
+}
+
+/** Unreachable, and required by `CommandSpec`'s shape: `CommandPrior['editLink']` is `never`. */
+export const invertEditLink: Invert<'mupdf', 'editLink'> = (): Promise<void> => {
+  throw new Error('a link change has no inverse yet; undo restores the checkpoint the bus took (ADR-0037)');
 };
 
 /** The page for a validated index, or a named refusal. */

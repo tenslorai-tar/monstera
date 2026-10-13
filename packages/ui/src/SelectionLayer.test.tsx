@@ -120,4 +120,21 @@ describe('SelectionLayer', () => {
     );
     expect(container.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
   });
+
+  it('draws a selected LINK where the link layer draws it, with all eight handles (the owner’s O6(c))', () => {
+    // The engine's box at scale 1 from the crop's top-left: drawn at (200,20) to (300,60) at zoom 2, as `LinkLayer` places it.
+    const link = {
+      page: 3,
+      version: asDocVersion(8),
+      index: 2,
+      link: { kind: 'external' as const, uri: 'https://example.org/', bounds: { x0: 100, y0: 10, x1: 150, y1: 30 }, outline: 'thin' as const },
+    };
+    const { container } = render(<SelectionLayer geometry={GEOMETRY} link={link} page={3} selection={undefined} />);
+    const box = container.querySelector('[data-selection-kind="link"] .m-selection-box');
+    expect([box?.getAttribute('x'), box?.getAttribute('y'), box?.getAttribute('width'), box?.getAttribute('height')]).toStrictEqual(['200', '20', '100', '40']);
+    expect(container.querySelectorAll('[data-selection-kind="link"] [data-selection-handle]')).toHaveLength(8);
+    // CONTROL: on another page the same link draws nothing at all.
+    const elsewhere = render(<SelectionLayer geometry={GEOMETRY} link={link} page={2} selection={undefined} />);
+    expect(elsewhere.container.firstChild).toBeNull();
+  });
 });

@@ -61,15 +61,12 @@ export function usePageLinks(
       for (const page of pages) {
         if (already.has(page)) continue;
         if (stopped()) return;
-        const answer = await readWholeList(
-          (from) => client['document.pageLinks']({ docId, page, from }),
-          (part) => part.links,
-        ).catch(() => undefined);
+        const answer = await readOnePageLinks(client, docId, page);
         if (stopped()) return;
         // A REFUSAL OR ANOTHER VERSION LEAVES THE PAGE OUT: no links drawn is what a page that could not be read shows,
         // and links placed by another version's list would follow the wrong one.
-        if (answer?.ok !== true || answer.value.version !== version) continue;
-        gathered.set(page, answer.value.items);
+        if (answer?.version !== version) continue;
+        gathered.set(page, answer.links);
       }
       if (stopped()) return;
       setAnswered((previous) => {
@@ -96,3 +93,19 @@ export function usePageLinks(
 }
 
 const EMPTY: ReadonlyMap<number, readonly PageLinkOnPage[]> = new Map();
+
+/**
+ * One page's links read whole, with the version they were read at, or `undefined` where the read was refused: the ONE
+ * read of a page's links, for the page layer above and for the select tool, which picks a link by its place in it.
+ */
+export async function readOnePageLinks(
+  client: ContractClient,
+  docId: DocId,
+  page: number,
+): Promise<{ readonly version: DocVersion; readonly links: readonly PageLinkOnPage[] } | undefined> {
+  const answer = await readWholeList(
+    (from) => client['document.pageLinks']({ docId, page, from }),
+    (part) => part.links,
+  ).catch(() => undefined);
+  return answer?.ok === true ? { version: answer.value.version, links: answer.value.items } : undefined;
+}

@@ -3121,6 +3121,34 @@ export const setLinkOutlineSchema = z
   });
 
 /**
+ * Moves or resizes one link that already exists, changes where it goes, or both (the owner's O6(c), 2026-10-12).
+ *
+ * Named as {@link setLinkOutlineSchema} names one: by its place among the page's links, at a version. `rect` is
+ * {@link addLinkSchema}'s rectangle in its frame, so a link moved by the select tool's handles is placed by the same
+ * conversion that placed it when it was drawn; `target` is its union, so a page typed in Properties is formatted by MuPDF's
+ * own rule exactly as one typed on the page was.
+ */
+export const editLinkSchema = z
+  .object({
+    kind: z.literal('editLink'),
+    /** Zero-based index of the page the link sits on. */
+    page: z.number().int().nonnegative(),
+    /** The link's position in the page's links, as `document.pageLinks` listed them. */
+    index: z.number().int().nonnegative(),
+    /** The rectangle it covers after the change, in `addLink`'s frame. */
+    rect: annotationRectSchema.optional(),
+    /** Where it goes after the change. */
+    target: linkTargetSchema.optional(),
+    /** The version the answer naming this link carried. Refused if the document has moved. */
+    version: docVersionSchema,
+  })
+  .strict()
+  // A CHANGE THAT NAMES NOTHING is not a command, `setLinkOutline`'s reason.
+  .refine((command) => command.rect !== undefined || command.target !== undefined, {
+    message: 'a link change names a rectangle, a target or both',
+  });
+
+/**
  * How many annotations one restyle may name.
  *
  * {@link MAX_PLACED_ANNOTATIONS}' number and its argument, stated separately for
@@ -6543,6 +6571,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   placeSignaturePictureSchema,
   addLinkSchema,
   setLinkOutlineSchema,
+  editLinkSchema,
   styleAnnotationSchema,
   editAnnotationTextSchema,
   setAnnotationAuthorSchema,
@@ -6667,6 +6696,8 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // RENDERABLE, and the payload is a position in an answer the renderer was given, an outline from a set of four and a
   // colour: nothing in it is a document's own string.
   setLinkOutlineSchema,
+  // RENDERABLE, `addLink`'s rectangle and target on `setLinkOutline`'s handle.
+  editLinkSchema,
   // RENDERABLE, and its intent is a handful of numbers naming rows of an answer
   // it was given — `removeAnnotation`'s shape with an appearance instead of a
   // deletion.
@@ -6994,6 +7025,7 @@ export function targetVersionOf(command: Command): DocVersion | undefined {
   if (command.kind === 'replacePage') return command.version;
   if (command.kind === 'importPageAsLayer') return command.version;
   if (command.kind === 'setLinkOutline') return command.version;
+  if (command.kind === 'editLink') return command.version;
   return undefined;
 }
 
@@ -7117,6 +7149,6 @@ void _thePageNameIsACommandKind;
  * from the annotation walk (a page carrying links answers zero annotations for them), so folding it into an annotation name would
  * make two index spaces read as one.
  */
-export type NamesALink = 'setLinkOutline';
+export type NamesALink = 'setLinkOutline' | 'editLink';
 const _theLinkNameIsACommandKind: NamesALink extends CommandKind ? true : never = true;
 void _theLinkNameIsACommandKind;

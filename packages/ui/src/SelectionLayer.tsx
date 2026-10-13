@@ -1,8 +1,15 @@
 import type { ReactElement } from 'react';
 
 import type { OverlayPage } from './annotations/annotationSpace.js';
-import { pdfRectOnScreen } from './annotations/annotationSpace.js';
-import { type AnnotationSelection, CORNER_REACH, SIDE_RESIZABLE_KINDS, sidesOf } from './annotations/selectTool.js';
+import { engineBoxOnScreen, pdfRectOnScreen } from './annotations/annotationSpace.js';
+import {
+  type AnnotationSelection,
+  CORNER_REACH,
+  LINK_KIND,
+  type LinkSelection,
+  SIDE_RESIZABLE_KINDS,
+  sidesOf,
+} from './annotations/selectTool.js';
 
 /**
  * What is selected, drawn over the page.
@@ -30,6 +37,8 @@ import { type AnnotationSelection, CORNER_REACH, SIDE_RESIZABLE_KINDS, sidesOf }
 export interface SelectionLayerProps {
   /** The selection, or `undefined` for none. Drawn only on its own page. */
   readonly selection: AnnotationSelection | undefined;
+  /** The link the select tool picked, or `undefined` for none: drawn with the same box and handles on its own page. */
+  readonly link?: LinkSelection | undefined;
   /** Which page this layer sits on, zero-based. */
   readonly page: number;
   /** The page as drawn, for the transform. The overlay's own geometry. */
@@ -38,19 +47,26 @@ export interface SelectionLayerProps {
 
 export function SelectionLayer({
   selection,
+  link,
   page,
   geometry,
 }: SelectionLayerProps): ReactElement | null {
+  // ONE LAYER PER PAGE and one selection per document, so every slot but its own
+  // renders nothing.
+  const drawn = [
+    ...(selection?.page === page
+      ? selection.items.map((item) => ({ key: String(item.index), index: item.index, box: pdfRectOnScreen(item.rect, geometry), kind: item.kind }))
+      : []),
+    // A LINK'S BOX IS THE ENGINE'S, so it is placed by the conversion the link layer draws it with.
+    ...(link?.page === page
+      ? [{ key: `link-${String(link.index)}`, index: link.index, box: engineBoxOnScreen(link.link.bounds, geometry), kind: LINK_KIND }]
+      : []),
+  ];
   // NOTHING AT ALL RATHER THAN AN EMPTY SURFACE, which is `AnnotationOverlay`'s
   // rule and its reason: an element over the page that draws nothing is a thing
   // that can go wrong silently, and *absent* is checkable in a way *inert* is
   // not.
-  if (selection === undefined) return null;
-  // ONE LAYER PER PAGE and one selection per document, so every slot but its own
-  // renders nothing. Written as a second statement rather than folded into the
-  // first: the two conditions are *there is no selection* and *it is not this
-  // page's*, and only the second is about this component.
-  if (selection.page !== page) return null;
+  if (drawn.length === 0) return null;
 
   return (
     <svg
@@ -58,8 +74,8 @@ export function SelectionLayer({
       className="m-selection-layer"
       data-selection-layer={String(page)}
     >
-      {selection.items.map((item) => {
-        const box = pdfRectOnScreen(item.rect, geometry);
+      {drawn.map((item) => {
+        const box = item.box;
         const left = box.left;
         const top = box.top;
         const right = box.left + box.width;
@@ -68,7 +84,7 @@ export function SelectionLayer({
           // THE WALK INDEX IS THE KEY, and here it is the right one: the items are a set of handles at one version, so
           // an index identifies a row across a re-render in a way its position in the array does not once a marquee
           // replaces the selection.
-          <g data-selection-index={String(item.index)} key={item.index}>
+          <g data-selection-index={String(item.index)} data-selection-kind={item.kind} key={item.key}>
             <rect className="m-selection-box" height={bottom - top} width={right - left} x={left} y={top} />
             {/* THE FOUR CORNERS, DRAWN (ADR-0133): a square `CORNER_REACH` across on each, centred on it, which is the
                 select tool's own grab radius — so what is drawn is exactly where a press resizes. */}

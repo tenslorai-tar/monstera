@@ -170,3 +170,42 @@ for (const look of LOOKS) {
     expect(sent.some((call) => call.channel === 'document.execute')).toBe(true);
   });
 }
+
+test('a link is SELECTED with the Select tool, MOVED by a drag, and sent elsewhere from Properties (the owner’s O6(c))', async ({ page }) => {
+  const sent: { channel: string; params: unknown }[] = [];
+  await openWithLinks(page, LOOKS[0], 'comment', sent);
+  const executed = (): unknown[] =>
+    sent
+      .filter((call) => call.channel === 'document.execute')
+      .map((call) => (call.params as { readonly command: unknown }).command);
+  await page.getByRole('button', { name: 'Select', exact: true }).first().click();
+  const slot = await page.locator('.m-page-slot').first().boundingBox();
+  if (slot === null) throw new Error('the first page has no box');
+  const scale = slot.width / 612;
+  const middle = { x: slot.x + 280 * scale, y: slot.y + 128 * scale };
+
+  // A CLICK ON THE WEB LINK selects it: its box and handles are drawn, and Properties says where it goes.
+  await page.mouse.click(middle.x, middle.y);
+  await expect(page.locator('[data-selection-kind="link"] [data-selection-handle]')).toHaveCount(8);
+  await page.getByRole('tab', { name: 'Properties' }).click();
+  await expect(page.locator('[data-link-properties="1"]')).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Address' })).toHaveValue('https://example.org/annual-report');
+  // CONTROL: selecting sent nothing to the document.
+  expect(executed()).toStrictEqual([]);
+
+  // A DRAG INSIDE IT MOVES IT: one editLink naming that link's place at the version it was read at.
+  await page.mouse.move(middle.x, middle.y);
+  await page.mouse.down();
+  await page.mouse.move(middle.x + 40, middle.y + 30, { steps: 6 });
+  await page.mouse.up();
+  await expect.poll(() => executed().length).toBe(1);
+  expect(executed()[0]).toMatchObject({ kind: 'editLink', page: 0, index: 1, version: 1 });
+  expect(executed()[0]).toHaveProperty('rect');
+
+  // STILL SELECTED after the move, and a page typed in Properties sends the link there.
+  await page.getByRole('button', { name: 'A page' }).click();
+  await page.getByRole('textbox', { name: 'Page number' }).fill('2');
+  await page.getByRole('button', { name: 'Change where it goes' }).click();
+  await expect.poll(() => executed().length).toBe(2);
+  expect(executed()[1]).toStrictEqual({ kind: 'editLink', page: 0, index: 1, target: { kind: 'page', page: 1 }, version: 2 });
+});

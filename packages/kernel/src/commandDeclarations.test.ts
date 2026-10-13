@@ -244,7 +244,7 @@ describe('the declaration table', () => {
     expect(declared).toContain('replacePage');
   });
 
-  it('CONTROL: exactly twenty-one kinds declare a target, and the rest answer none', () => {
+  it('CONTROL: exactly twenty-two kinds declare a target, and the rest answer none', () => {
     // The targets axis's version of the control above, and it carries the
     // second half as well. `never extends X` would satisfy one type-level line
     // on its own; and a table where EVERY command declared a target would
@@ -268,6 +268,8 @@ describe('the declaration table', () => {
       'replyToAnnotation',
       // A LINK'S PLACE among the page's links, at a version (ADR-0212): its own walk, so its own member.
       'setLinkOutline',
+      // A LINK MOVED OR SENT ELSEWHERE, on the same handle (the owner's O6(c)).
+      'editLink',
       'fillFormField',
       'deleteFormFields',
       // A FLATTEN OF THE SELECTED FIELDS names their places in the walk (ADR-0226 Decision 16).

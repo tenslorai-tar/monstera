@@ -293,6 +293,9 @@ describe('AnnotationOverlay', () => {
       wordsOf: () => Promise.reject(new Error('this case reads no words')),
       ask: () => Promise.reject(new Error('this case opens no dialog')),
       annotations: () => Promise.resolve(undefined),
+      links: () => Promise.resolve(undefined),
+      onSelectLink: () => undefined,
+      selectedLink: () => undefined,
       onSelect: () => undefined,
       selected: () => ({
         page: 3,

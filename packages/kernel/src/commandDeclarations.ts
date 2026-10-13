@@ -1491,6 +1491,24 @@ const declarations = {
     asset: 'none',
     purpose: 'ordinary',
   },
+  editLink: {
+    kind: 'editLink',
+    display: 'image',
+    // `/Rect` and `/A` on a link, through MuPDF's own `Link` (`addLink`'s reason).
+    writer: 'mupdf',
+    // `setLinkOutline`'s reason: a link has no identity to restore to, so undo restores the checkpoint (ADR-0037).
+    invertible: false,
+    undo: 'checkpoint',
+    // A rectangle and a target from the payload, and no clock.
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    // `setLinkOutline`'s handle: a place among the page's links at one version.
+    targets: 'link',
+    reads: 'none',
+    asset: 'none',
+    purpose: 'ordinary',
+  },
   fillFormField: {
     kind: 'fillFormField',
     display: 'image',

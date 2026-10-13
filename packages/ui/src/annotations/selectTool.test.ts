@@ -4,7 +4,8 @@ import { describe, expect, it } from 'vitest';
 
 import { overlayTransform } from './annotationSpace.js';
 import type { ErasableAnnotation } from './eraserTool.js';
-import type { AnnotationSelection } from './selectTool.js';
+import type { PageLinkOnPage } from '../usePageLinks.js';
+import type { AnnotationSelection, LinkSelection } from './selectTool.js';
 import { SELECT_TOOL_ID, carrySelection, selectTool, selectionOfNewest, selectionOfPage } from './selectTool.js';
 
 /**
@@ -45,6 +46,13 @@ const NO_REOPEN = {
   ask: () => Promise.reject(new Error('this case opens no dialog')),
 } as const;
 
+/** No links on any page, and none selected: these cases are about annotations. */
+const NO_LINKS = {
+  links: () => Promise.resolve(undefined),
+  onSelectLink: () => undefined,
+  selectedLink: () => undefined,
+} as const;
+
 /** PDF x 60–100, y 350–390 — screen (20,20) to (100,100). */
 const A_RECT: AnnotationRect = { x0: 60, y0: 350, x1: 100, y1: 390 };
 const A: ErasableAnnotation = { page: 3, index: 1, rect: A_RECT, ...CARRIED };
@@ -65,7 +73,7 @@ function selecting(
 } {
   const chosen: (AnnotationSelection | undefined)[] = [];
   const tool = selectTool({
-    ...NO_REOPEN,
+    ...NO_REOPEN, ...NO_LINKS,
     annotations: () =>
       Promise.resolve(annotations === undefined ? undefined : { version: VERSION, annotations }),
     onSelect: (selection) => {
@@ -159,7 +167,7 @@ describe('selectTool', () => {
     // version bump behind a click that was only meant to point at something —
     // and would then invalidate the selection it had just made.
     const tool = selectTool({
-      ...NO_REOPEN,
+      ...NO_REOPEN, ...NO_LINKS,
       annotations: () => Promise.resolve({ version: VERSION, annotations: [A] }),
       onSelect: () => undefined,
       selected: () => undefined,
@@ -170,7 +178,7 @@ describe('selectTool', () => {
 
   it('previews the marquee once the gesture is one, and not before', () => {
     const tool = selectTool({
-      ...NO_REOPEN,
+      ...NO_REOPEN, ...NO_LINKS,
       annotations: () => Promise.resolve(undefined),
       onSelect: () => undefined,
       selected: () => undefined,
@@ -266,7 +274,7 @@ describe('selectTool', () => {
     const selected: AnnotationSelection = { page: 3, version: VERSION, items: [{ index: 1, rect: A_RECT, ...CARRIED }] };
     const toolOver = (sel: AnnotationSelection | undefined) =>
       selectTool({
-        ...NO_REOPEN,
+        ...NO_REOPEN, ...NO_LINKS,
         annotations: () => Promise.resolve({ version: VERSION, annotations: [A] }),
         onSelect: () => undefined,
         selected: () => sel,
@@ -327,7 +335,7 @@ describe('selectTool', () => {
       ],
     };
     const tool = selectTool({
-      ...NO_REOPEN,
+      ...NO_REOPEN, ...NO_LINKS,
       annotations: () => Promise.resolve({ version: VERSION, annotations: [A, B] }),
       onSelect: () => undefined,
       selected: () => selected,
@@ -408,7 +416,7 @@ describe('selectTool', () => {
     const words: ErasableAnnotation = { ...A, kind: 'typewriter', contents: 'Due Friday', typed };
     const asked: unknown[] = [];
     const tool = selectTool({
-      ...NO_REOPEN,
+      ...NO_REOPEN, ...NO_LINKS,
       write: (request) => {
         asked.push(request);
         return Promise.resolve('Due Monday');
@@ -432,7 +440,7 @@ describe('selectTool', () => {
 
   it('claims the id its command selects', () => {
     const tool = selectTool({
-      ...NO_REOPEN,
+      ...NO_REOPEN, ...NO_LINKS,
       annotations: () => Promise.resolve(undefined),
       onSelect: () => undefined,
       selected: () => undefined,
@@ -550,5 +558,106 @@ describe('selectionOfNewest (ADR-0133, the signature just placed)', () => {
 
   it('CONTROL: a page with no mark is nothing selected', () => {
     expect(selectionOfNewest({ version: VERSION, annotations: [A] }, 5)).toBeUndefined();
+  });
+});
+
+describe('the select tool and a LINK (the owner’s O6(c): selected, moved and resized like a box)', () => {
+  const LINKS_AT = asDocVersion(8);
+  /**
+   * A web link in the ENGINE's frame, at scale 1 from the crop's top-left: on `PAGE` (crop origin 50,100 top 400, zoom 2)
+   * it is drawn at screen (200,20) to (300,60), which is PDF x 150 to 200, y 370 to 390. Clear of A, so a click on it
+   * reaches no mark.
+   */
+  const LINK: PageLinkOnPage = { kind: 'external', uri: 'https://example.org/', bounds: { x0: 100, y0: 10, x1: 150, y1: 30 }, outline: 'thin' };
+  /** A page link drawn exactly where A is, screen (20,20) to (100,100): what a mark over a link looks like. */
+  const UNDER_A: PageLinkOnPage = { kind: 'internal', page: 0, bounds: { x0: 10, y0: 10, x1: 50, y1: 50 }, outline: 'thin' };
+
+  function linking(links: readonly PageLinkOnPage[], selectedLink?: LinkSelection) {
+    const chosen: (AnnotationSelection | undefined)[] = [];
+    const chosenLinks: (LinkSelection | undefined)[] = [];
+    const asked: number[] = [];
+    const tool = selectTool({
+      ...NO_REOPEN,
+      annotations: () => Promise.resolve({ version: VERSION, annotations: [A] }),
+      onSelect: (selection) => {
+        chosen.push(selection);
+      },
+      selected: () => undefined,
+      links: (page) => {
+        asked.push(page);
+        return Promise.resolve({ version: LINKS_AT, links });
+      },
+      onSelectLink: (selection) => {
+        chosenLinks.push(selection);
+      },
+      selectedLink: () => selectedLink,
+    });
+    const drag = async (from: readonly [number, number], to = from, page = 3): Promise<DispatchableCommand | undefined> => {
+      const started = tool.controller.begin(viewportPoint(from[0], from[1]));
+      return tool.controller.commit(tool.controller.update(started, viewportPoint(to[0], to[1])), page, overlayTransform(PAGE));
+    };
+    return { drag, chosen, chosenLinks, asked, tool };
+  }
+  const SELECTED: LinkSelection = { page: 3, version: LINKS_AT, index: 1, link: LINK };
+
+  it('a click on a link where no mark is SELECTS the link, by its place at the version its page was read at', async () => {
+    const { drag, chosen, chosenLinks, asked } = linking([UNDER_A, LINK]);
+    expect(await drag([250, 40])).toBeUndefined();
+    expect(chosenLinks).toStrictEqual([{ page: 3, version: LINKS_AT, index: 1, link: LINK }]);
+    expect(chosen).toStrictEqual([undefined]);
+    expect(asked).toStrictEqual([3]);
+  });
+
+  it('CONTROL: a click on a mark drawn over a link picks the MARK, and no link', async () => {
+    const { drag, chosen, chosenLinks } = linking([UNDER_A, LINK]);
+    await drag([40, 40]);
+    expect(chosen[0]?.items.map((item) => item.index)).toStrictEqual([1]);
+    expect(chosenLinks).toStrictEqual([undefined]);
+  });
+
+  it('a marquee picks marks only, and a click on nothing clears the link', async () => {
+    const swept = linking([LINK]);
+    await swept.drag([10, 10], [400, 600]);
+    expect(swept.chosenLinks).toStrictEqual([undefined]);
+    const missed = linking([LINK], SELECTED);
+    await missed.drag([400, 300]);
+    expect(missed.chosenLinks).toStrictEqual([undefined]);
+  });
+
+  it('a DRAG inside the selected link MOVES it: one editLink, its place, its version, the rectangle moved in PDF space', async () => {
+    const { drag } = linking([LINK], SELECTED);
+    // +20,+20 screen pixels at zoom 2 is +10 across and 10 DOWN the page, which is −10 in PDF y.
+    expect(await drag([250, 40], [270, 60])).toStrictEqual({
+      kind: 'editLink',
+      page: 3,
+      index: 1,
+      rect: { x0: 160, y0: 360, x1: 210, y1: 380 },
+      version: LINKS_AT,
+    });
+  });
+
+  it('a CORNER resizes it from the opposite corner, and a SIDE pulls that edge alone', async () => {
+    expect(await linking([LINK], SELECTED).drag([300, 60], [320, 80])).toMatchObject({
+      kind: 'editLink',
+      rect: { x0: 150, y0: 360, x1: 210, y1: 390 },
+    });
+    expect(await linking([LINK], SELECTED).drag([300, 40], [340, 40])).toMatchObject({
+      kind: 'editLink',
+      rect: { x0: 150, y0: 370, x1: 220, y1: 390 },
+    });
+  });
+
+  it('CONTROL: a press on the selected link that does not travel, or a drag of it on another page, sends nothing', async () => {
+    expect(await linking([LINK], SELECTED).drag([250, 40])).toBeUndefined();
+    expect(await linking([LINK], SELECTED).drag([250, 40], [270, 60], 2)).toBeUndefined();
+  });
+
+  it('the pointer says what a press on the selected link would do', () => {
+    const { tool } = linking([LINK], SELECTED);
+    const at = (x: number, y: number) => tool.controller.pointer(viewportPoint(x, y), 3, overlayTransform(PAGE));
+    expect(at(250, 40)).toBe('move');
+    expect(at(300, 60)).toBe('resize-nwse');
+    expect(at(300, 40)).toBe('resize-ew');
+    expect(at(400, 300)).toBeUndefined();
   });
 });

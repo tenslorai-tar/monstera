@@ -1,13 +1,22 @@
-import { PDFDocument, PDFName, PDFArray, PDFDict, PDFNumber, PDFString, StandardFonts } from '@cantoo/pdf-lib';
+import { PDFDocument, PDFName, PDFArray, PDFDict, PDFNumber, PDFString, StandardFonts, degrees } from '@cantoo/pdf-lib';
 import { describe, expect, it } from 'vitest';
 
 import type { CommandOfKind } from '@monstera/contract';
-import { asDocVersion } from '@monstera/shared';
+import { asDocVersion, pageTransform, pdfPoint, toPdf, toViewport, viewportPoint } from '@monstera/shared';
 
 import { ColorSpace, PDFDocument as PDFDocumentRaw } from './mupdfRaw.js';
 import { mupdfWriter } from './mupdfWriter.js';
 import { readAnnotations } from './pageAnnotations.js';
-import { applyAddLink, applySetLinkOutline, captureAddLink, readLinkAddress, readPageLinks } from './pageLinks.js';
+import {
+  type PageLink,
+  applyAddLink,
+  applyEditLink,
+  applySetLinkOutline,
+  captureAddLink,
+  captureEditLink,
+  readLinkAddress,
+  readPageLinks,
+} from './pageLinks.js';
 
 /** Applies one `addLink` to a link-free three-page document and serialises. */
 async function written(command: CommandOfKind<'addLink'>): Promise<Uint8Array> {
@@ -760,5 +769,177 @@ describe('a link leaves the page under it as it was (the owner’s review of 0.1
     const bytes = await covered.save({ useObjectStreams: false });
     const before = darkness(pixelsUnder(await pageWithText(), BOX));
     expect(darkness(pixelsUnder(bytes, BOX))).toBeLessThan(before / 4);
+  });
+});
+
+describe('editLink: a link moved, resized or sent somewhere else (the owner’s O6(c))', () => {
+  /** Applies `commands` in order to `bytes` and serialises. */
+  async function edited(bytes: Uint8Array, ...commands: CommandOfKind<'editLink'>[]): Promise<Uint8Array> {
+    const session = await mupdfWriter.open(bytes);
+    try {
+      for (const command of commands) await applyEditLink(session, command);
+      return await mupdfWriter.serialise(session);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }
+  const VERSION = asDocVersion(1);
+  const edit = (index: number, rest: Partial<CommandOfKind<'editLink'>>): CommandOfKind<'editLink'> => ({
+    kind: 'editLink',
+    page: 0,
+    index,
+    version: VERSION,
+    ...rest,
+  });
+  /** Each page-0 link's `/Rect` as the saved bytes say, read by ANOTHER library. */
+  async function rects(bytes: Uint8Array): Promise<number[][]> {
+    const document = await PDFDocument.load(bytes);
+    const annots = document.getPage(0).node.lookup(PDFName.of('Annots'), PDFArray);
+    return annots.asArray().map((entry) => {
+      const rect = (document.context.lookup(entry) as PDFDict).lookup(PDFName.of('Rect'), PDFArray);
+      return rect.asArray().map((value) => (value instanceof PDFNumber ? value.asNumber() : Number.NaN));
+    });
+  }
+  async function listedLinks(bytes: Uint8Array): Promise<readonly PageLink[]> {
+    const session = await mupdfWriter.open(bytes);
+    try {
+      return (await readPageLinks(session, 0)).links;
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }
+
+  it('MOVES and RESIZES the second link to the rectangle asked, in the saved file, and leaves the first where it was', async () => {
+    const result = await edited(await documentWithLinks(), edit(1, { rect: { x0: 30, y0: 100, x1: 170, y1: 150 } }));
+    const [first, second] = await rects(result);
+    expect(second).toStrictEqual([30, 100, 170, 150]);
+    // CONTROL: the neighbour keeps the fixture's rectangle, so a command that moved every link, or the first, fails here.
+    expect(first).toStrictEqual([10, 20, 90, 40]);
+    // AND IT IS STILL THE SAME LINK: it goes where it went before, which a link deleted and drawn again would not prove.
+    expect((await listedLinks(result))[1]).toMatchObject({ kind: 'external', uri: 'https://example.org/thing', bounds: { x0: 30, y0: 50, x1: 170, y1: 100 } });
+  });
+
+  it('sends a web link to a PAGE, and a page link to an ADDRESS, as the listing reads them back', async () => {
+    const result = await edited(
+      await documentWithLinks(),
+      edit(1, { target: { kind: 'page', page: 1 } }),
+      edit(0, { target: { kind: 'uri', uri: 'https://example.org/changed' } }),
+    );
+    const links = await listedLinks(result);
+    expect(links[0]).toMatchObject({ kind: 'external', uri: 'https://example.org/changed' });
+    expect(links[1]).toMatchObject({ kind: 'internal', page: 1 });
+    // CONTROL: the rectangles did not move, since only the targets were asked for.
+    expect(await rects(result)).toStrictEqual([
+      [10, 20, 90, 40],
+      [10, 60, 90, 80],
+    ]);
+  });
+
+  it('KEEPS the outline the link had: a thin blue link moved is still thin and blue', async () => {
+    const added = await written({ kind: 'addLink', page: 0, rect: { x0: 10, y0: 20, x1: 110, y1: 70 }, target: { kind: 'uri', uri: 'https://example.org/a' }, border: 'thin' });
+    const moved = await edited(added, edit(0, { rect: { x0: 40, y0: 40, x1: 140, y1: 90 }, target: { kind: 'page', page: 2 } }));
+    const [link] = await listedLinks(moved);
+    expect(link).toMatchObject({ kind: 'internal', page: 2, outline: 'thin', colour: [0, expect.closeTo(0.4, 5), expect.closeTo(0.8, 5)] });
+    expect(await rects(moved)).toStrictEqual([[40, 40, 140, 90]]);
+  });
+
+  it('REFUSES a place past the page’s links, a rectangle with no area and a page the document lacks, and a refusal changes NOTHING', async () => {
+    const bytes = await documentWithLinks();
+    await expect(edited(bytes, edit(2, { rect: { x0: 1, y0: 1, x1: 50, y1: 50 } }))).rejects.toThrow(/no link at position 2/u);
+    await expect(edited(bytes, edit(0, { rect: { x0: 5, y0: 5, x1: 5, y1: 50 } }))).rejects.toThrow(/no width or no height/u);
+    // BOTH CHECKED BEFORE EITHER IS WRITTEN: a good rectangle beside a target page the document lacks moves nothing.
+    const session = await mupdfWriter.open(bytes);
+    try {
+      await expect(applyEditLink(session, edit(0, { rect: { x0: 50, y0: 50, x1: 150, y1: 150 }, target: { kind: 'page', page: 9 } }))).rejects.toBeInstanceOf(RangeError);
+      expect((await readPageLinks(session, 0)).links[0]?.bounds).toStrictEqual({ x0: 10, y0: 160, x1: 90, y1: 180 });
+    } finally {
+      await mupdfWriter.close(session);
+    }
+    // CONTROL: the same rectangle with a page the document has is applied, so the refusal above was the target's.
+    expect((await rects(await edited(bytes, edit(0, { rect: { x0: 50, y0: 50, x1: 150, y1: 150 }, target: { kind: 'page', page: 2 } }))))[0]).toStrictEqual([50, 50, 150, 150]);
+  });
+
+  it('the SAME session reads the change back, as the engine host does between commands, before any save', async () => {
+    const session = await mupdfWriter.open(await documentWithLinks());
+    try {
+      await applyEditLink(session, edit(0, { rect: { x0: 30, y0: 100, x1: 170, y1: 150 }, target: { kind: 'uri', uri: 'https://example.org/now' } }));
+      expect((await readPageLinks(session, 0)).links[0]).toMatchObject({
+        kind: 'external',
+        uri: 'https://example.org/now',
+        bounds: { x0: 30, y0: 50, x1: 170, y1: 100 },
+      });
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('records no prior state, so undo is the checkpoint', async () => {
+    const session = await mupdfWriter.open(await documentWithLinks());
+    try {
+      expect(await captureEditLink(session, edit(0, { target: { kind: 'page', page: 2 } }))).toMatchObject({ captured: false });
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+});
+
+/**
+ * WHERE A LINK IS DRAWN IS WHERE IT IS SAVED, and where it is shown again (the owner’s O6(b): a web link seemed to land
+ * lower than it was drawn). The two halves either side of the engine are the renderer's — a drag through the page's
+ * transform into PDF space (`draggedRect`), and the engine's box back on screen (`engineBoxOnScreen`) — and both are
+ * `@monstera/shared`'s functions, so this case runs them exactly as the renderer does, around the real writer and reader.
+ */
+describe('a link drawn on screen is saved, and shown again, at the spot it was drawn', () => {
+  /** A 300 by 400 page whose CropBox starts at 50,60 rather than the origin, turned `rotation` degrees. */
+  async function turnedPage(rotation: number): Promise<{ bytes: Uint8Array; crop: { x0: number; y0: number; x1: number; y1: number } }> {
+    const document = await PDFDocument.create();
+    const page = document.addPage([400, 500]);
+    page.setCropBox(50, 60, 300, 400);
+    page.setRotation(degrees(rotation));
+    page.drawText('words', { x: 80, y: 300, size: 12, font: await document.embedFont(StandardFonts.Helvetica) });
+    return { bytes: await document.save({ useObjectStreams: false }), crop: { x0: 50, y0: 60, x1: 350, y1: 460 } };
+  }
+
+  for (const rotation of [0, 90, 180, 270]) {
+    for (const zoom of [1.21, 2]) {
+      it(`at ${String(rotation)} degrees and zoom ${String(zoom)}`, async () => {
+        const { bytes, crop } = await turnedPage(rotation);
+        const shown = pageTransform(crop, rotation, zoom);
+        const unscaled = pageTransform(crop, rotation, 1);
+        // THE DRAG, in CSS pixels from the page's top-left, well inside the page at every zoom and turn.
+        const drawn = { left: 60, top: 90, width: 150, height: 40 };
+        const a = toPdf(viewportPoint(drawn.left, drawn.top), shown);
+        const b = toPdf(viewportPoint(drawn.left + drawn.width, drawn.top + drawn.height), shown);
+        const session = await mupdfWriter.open(bytes);
+        try {
+          await applyAddLink(session, { kind: 'addLink', page: 0, rect: { x0: a.x, y0: a.y, x1: b.x, y1: b.y }, target: { kind: 'uri', uri: 'https://example.org/' } });
+          const [link] = (await readPageLinks(session, 0)).links;
+          if (link === undefined) throw new Error('the link drawn was not read back');
+          const p = toViewport(toPdf(viewportPoint(link.bounds.x0, link.bounds.y0), unscaled), shown);
+          const q = toViewport(toPdf(viewportPoint(link.bounds.x1, link.bounds.y1), unscaled), shown);
+          const back = { left: Math.min(p.x, q.x), top: Math.min(p.y, q.y), width: Math.abs(q.x - p.x), height: Math.abs(q.y - p.y) };
+          for (const key of ['left', 'top', 'width', 'height'] as const) expect(back[key]).toBeCloseTo(drawn[key], 3);
+        } finally {
+          await mupdfWriter.close(session);
+        }
+      });
+    }
+  }
+
+  it('CONTROL: reading the engine’s box as PDF points, the second conversion skipped, lands somewhere else on a turned page', async () => {
+    const { bytes, crop } = await turnedPage(90);
+    const shown = pageTransform(crop, 90, 2);
+    const a = toPdf(viewportPoint(60, 90), shown);
+    const b = toPdf(viewportPoint(210, 130), shown);
+    const session = await mupdfWriter.open(bytes);
+    try {
+      await applyAddLink(session, { kind: 'addLink', page: 0, rect: { x0: a.x, y0: a.y, x1: b.x, y1: b.y }, target: { kind: 'uri', uri: 'https://example.org/' } });
+      const [link] = (await readPageLinks(session, 0)).links;
+      if (link === undefined) throw new Error('the link drawn was not read back');
+      const wrong = toViewport(pdfPoint(link.bounds.x0, link.bounds.y0), shown);
+      expect(Math.abs(wrong.x - 60) + Math.abs(wrong.y - 90)).toBeGreaterThan(10);
+    } finally {
+      await mupdfWriter.close(session);
+    }
   });
 });

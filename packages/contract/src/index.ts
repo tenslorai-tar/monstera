@@ -354,6 +354,7 @@ export {
   addAnnotationSchema,
   addLinkSchema,
   setLinkOutlineSchema,
+  editLinkSchema,
   linkOutlineSchema,
   LINK_OUTLINES,
   LINK_OUTLINE_DEFAULT_COLOUR,

@@ -1742,6 +1742,13 @@ export const LINK_FOLLOW_TOO_LONG = messageKey('toast.link.too-long');
 export const LINK_FOLLOW_NOT_OPENED = messageKey('toast.link.not-opened');
 export const LINK_FOLLOW_UNAVAILABLE = messageKey('toast.link.unavailable');
 export const LINK_ADDED = messageKey('toast.link.added');
+export const LINK_PROPERTIES_HEADING = messageKey('surface.link-properties.heading');
+export const LINK_PROPERTIES_GOES_TO = messageKey('surface.link-properties.goes-to');
+export const LINK_PROPERTIES_TO_PAGE = messageKey('surface.link-properties.to-page');
+export const LINK_PROPERTIES_TO_ADDRESS = messageKey('surface.link-properties.to-address');
+export const LINK_PROPERTIES_APPLY = messageKey('surface.link-properties.apply');
+export const LINK_PROPERTIES_FOLLOW = messageKey('surface.link-properties.follow');
+export const LINK_PROPERTIES_NO_SUCH_PAGE = messageKey('surface.link-properties.no-such-page');
 export const FORM_FIELD_FILL_IN = messageKey('surface.form-layer.fill-in');
 export const FIELD_HIGHLIGHT_TITLE = messageKey('setting.viewing.highlight-fields.title');
 export const FIELD_HIGHLIGHT_DESCRIPTION = messageKey('setting.viewing.highlight-fields.description');
@@ -4530,6 +4537,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [LINK_FOLLOW_NOT_OPENED]: 'Windows has no program to open this link with.',
   [LINK_FOLLOW_UNAVAILABLE]: 'The link could not be opened, because the document could not be read just now.',
   [LINK_ADDED]: 'Link added.',
+  [LINK_PROPERTIES_HEADING]: 'Link',
+  [LINK_PROPERTIES_GOES_TO]: 'Goes to',
+  [LINK_PROPERTIES_TO_PAGE]: 'A page',
+  [LINK_PROPERTIES_TO_ADDRESS]: 'A web address',
+  [LINK_PROPERTIES_APPLY]: 'Change where it goes',
+  [LINK_PROPERTIES_FOLLOW]: 'Follow link',
+  [LINK_PROPERTIES_NO_SUCH_PAGE]: 'Choose a page of this document, from 1 to {last}.',
   [FORM_FIELD_FILL_IN]: 'Fill in {name}',
   [FIELD_HIGHLIGHT_TITLE]: 'Highlight fields',
   [FIELD_HIGHLIGHT_DESCRIPTION]:
