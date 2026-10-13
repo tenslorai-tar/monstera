@@ -4,13 +4,13 @@ title: Set up the AI assistant
 summary: Choose a provider, paste your key, and let Monstera check it before saving, or skip.
 keywords: [set up ai, onboarding, first run, add key, provider, check key, skip ai]
 commands: [ai.setup]
-contexts: [dialog.ai-setup, review]
+contexts: [dialog.ai-setup, review, start-screen]
 ---
-The first time you start Monstera, it offers to set up the AI assistant. You can do it then, later, or never; everything else works without it.
+The first time you start Monstera, the start screen offers to set up the AI assistant, below the Open buttons. You can do it then, later, or never; everything else works without it.
 
 ## Steps
 
-1. In the rail, choose **Review**, then **Set up AI…** in the **AI** group (or accept the offer when Monstera starts).
+1. In the rail, choose **Review**, then **Set up AI…** in the **AI** group (or choose **Set up…** in the offer on the start screen).
 2. Choose a **Provider**.
 3. Paste your **API key**. For Azure OpenAI, also fill in **Azure OpenAI endpoint**.
 4. Choose **Check and save**. Monstera asks the provider whether the key works and saves it only if it does.

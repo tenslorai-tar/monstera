@@ -1382,6 +1382,9 @@ export const PRIVACY_RECENT_PREVIEWS_TITLE = messageKey('setting.privacy.recent-
 /** Settings › Privacy's crash-report switch, and the start screen's offer after a crash (ADR-0109). */
 export const PRIVACY_CRASH_REPORTS_TITLE = messageKey('setting.privacy.crash-reports.title');
 export const PRIVACY_CRASH_REPORTS_DESCRIPTION = messageKey('setting.privacy.crash-reports.description');
+export const AI_SETUP_OFFER = messageKey('surface.ai-setup-offer.question');
+export const AI_SETUP_OFFER_SET_UP = messageKey('surface.ai-setup-offer.set-up');
+export const AI_SETUP_OFFER_SKIP = messageKey('surface.ai-setup-offer.skip');
 export const CRASH_REPORT_OFFER = messageKey('surface.crash-report.offer');
 export const CRASH_REPORT_SHARE = messageKey('surface.crash-report.share');
 export const CRASH_REPORT_DISMISS = messageKey('surface.crash-report.dismiss');
@@ -4136,6 +4139,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PRIVACY_CRASH_REPORTS_TITLE]: 'Keep crash reports',
   [PRIVACY_CRASH_REPORTS_DESCRIPTION]:
     'If Monstera closes unexpectedly, a report is saved on this computer so you can choose to send it to us. Nothing is sent unless you do. Turning this off takes effect the next time Monstera starts, and deletes saved reports.',
+  [AI_SETUP_OFFER]: 'Monstera has an AI assistant. Set it up with a key from a provider you choose?',
+  [AI_SETUP_OFFER_SET_UP]: 'Set up…',
+  [AI_SETUP_OFFER_SKIP]: 'Skip',
   [CRASH_REPORT_OFFER]: 'Monstera closed unexpectedly last time. Send us the crash report?',
   [CRASH_REPORT_SHARE]: 'Share…',
   [CRASH_REPORT_DISMISS]: 'Not now',

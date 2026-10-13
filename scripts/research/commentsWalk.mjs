@@ -140,6 +140,23 @@ async function saveCopy(name) {
   return saved;
 }
 
+// FIRST, before anything opens: the walk's profile is fresh (`--user-data-dir` per run), so this launch is a first run.
+await step('W11: the first-run AI offer is on the start screen below Open, and no dialog arrives over Open', async () => {
+  const offer = page.getByRole('region', { name: /Monstera has an AI assistant/u });
+  await offer.waitFor({ state: 'visible', timeout: 10_000 });
+  // THE MEASURED WINDOW (2026-10-12: the dialog was absent at 0 s and present by 1 s), waited out twice over, so a
+  // dialog still opened on main's answers would be on screen when absence is read.
+  await page.waitForTimeout(2000);
+  expect(await page.getByRole('dialog').count()).toBe(0);
+  const [openButton, drawn] = await Promise.all([
+    page.getByRole('button', { name: /^Open PDF/u }).first().boundingBox(),
+    offer.boundingBox(),
+  ]);
+  if (openButton === null || drawn === null) throw new Error('the start screen draws no Open button or no offer');
+  expect(drawn.y).toBeGreaterThanOrEqual(openButton.y + openButton.height);
+  return { openBottom: Math.round(openButton.y + openButton.height), offerTop: Math.round(drawn.y) };
+});
+
 const source = join(output, 'links.pdf');
 await writeFile(source, await linksDocument());
 

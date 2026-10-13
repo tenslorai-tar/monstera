@@ -458,6 +458,7 @@ import { DocumentPanel, type DocumentPanelProps, type PanelTool } from './surfac
 import { composing, controlOwnsChord, dispatchChord, fieldOwnsChord, shortcutsFor } from './surfaces/shortcuts.js';
 import { RecentFiles } from './RecentFiles.js';
 import { CrashReportOffer } from './CrashReportOffer.js';
+import { AiSetupOffer } from './AiSetupOffer.js';
 import { DocumentTabs } from './surfaces/DocumentTabs.js';
 import { keyboardShortcutsCommand } from './commands/keyboardShortcuts.js';
 import { helpCommand } from './commands/help.js';
@@ -3446,7 +3447,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   }, [openDeps, settings, subscribe]);
 
   /**
-   * *Set up AI…*, held here as well as registered, because the first run starts it by itself —
+   * *Set up AI…*, held here as well as registered, because the start screen's first-run offer starts it —
    * `openCommand`'s shape: the registered command's own `run`, never a second route to the dialog.
    */
   const aiSetup = useMemo(
@@ -3464,16 +3465,17 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   );
 
   /**
-   * THE FIRST RUN offers the AI setup once — BUILD-PROMPT E5's onboarding step — and only when all
-   * three are known: the stored settings have loaded (a Skip is a stored `false`, and the fallback
-   * before the load is `true`), main has answered which keys are stored, and none of the ten
-   * providers has one. Once per launch, by a ref, so a key removed later in this session does not
-   * reopen it.
+   * THE FIRST RUN offers the AI setup — BUILD-PROMPT E5's onboarding step — on the start screen (`AiSetupOffer`), and
+   * only when all three are known: the stored settings have loaded (a Skip is a stored `false`, and the fallback
+   * before the load is `true`), main has answered which keys are stored, and none of the ten providers has one.
+   * Read through the store's own subscription, so a Skip or a stored key takes the offer away in the same render.
    */
-  const settingsLoaded = useSyncExternalStore(
+  const setupAtStart = useSyncExternalStore(
     (listener) => settings.subscribe(listener),
-    () => settings.hydrated,
+    () => settings.hydrated && settings.get(AI_SETUP_AT_START_SETTING.id) === true,
   );
+  const setupOffered =
+    setupAtStart && secretsKnown && !AI_PROVIDER_KEY_SETTING_IDS.some((id) => storedSecrets.includes(id));
 
   // THE BROWSER'S OWN VERB, run by main on this window — the one call the page's text copy, a field's verbs and the
   // in-place editor's right-click menu all make (B3a). A COPY CONFIRMS on main's answer that it ran (`done`), through
@@ -4434,15 +4436,6 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   useShortcuts(registry, context, openDialog !== undefined, stopTool);
   useTheme(settings);
 
-  // THE FIRST-RUN AI SETUP (see `settingsLoaded` above), offered once per launch.
-  const offeredSetup = useRef(false);
-  useEffect(() => {
-    if (offeredSetup.current || !settingsLoaded || !secretsKnown) return;
-    offeredSetup.current = true;
-    if (settings.get(AI_SETUP_AT_START_SETTING.id) !== true) return;
-    if (AI_PROVIDER_KEY_SETTING_IDS.some((id) => storedSecrets.includes(id))) return;
-    void aiSetup.run(context);
-  }, [aiSetup, context, secretsKnown, settings, settingsLoaded, storedSecrets]);
   // THE WINDOW'S OWN CONTROLS, painted like the title bar they sit over, from what the bar computed.
   useWindowControlsOverlay(client);
 
@@ -4630,6 +4623,18 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
               await clearRecent.run(context);
             }}
           />
+          {/* THE FIRST-RUN AI OFFER (see `setupOffered`), after the recent list so arriving with main's answer moves
+              nothing a person may already be pointing at. */}
+          {setupOffered ? (
+            <AiSetupOffer
+              onSetUp={() => {
+                void aiSetup.run(context);
+              }}
+              onSkip={() => {
+                settings.set(AI_SETUP_AT_START_SETTING.id, false);
+              }}
+            />
+          ) : null}
           {/* THE FOOTER, after the recent list because §10.3 puts it there (see `StartFooter`). */}
           <StartFooter registry={registry} context={context} version={appVersion} />
         </div>

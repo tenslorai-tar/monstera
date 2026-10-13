@@ -43,8 +43,8 @@ export function aiSetupCommand(deps: {
     feedback: TOASTS,
     icon: 'Sparkles',
     title: AI_SETUP_COMMAND_TITLE,
-    // THE RIBBON AND THE PALETTE, and the first run opens it by itself. Not the start screen's
-    // footer, which holds About, the log and Settings — and Settings is where a key goes anyway.
+    // THE RIBBON AND THE PALETTE, and the start screen's first-run offer (`AiSetupOffer`) runs it. Not the start
+    // screen's footer, which holds About, the log and Settings — and Settings is where a key goes anyway.
     placements: [{ surface: 'ribbon', section: 'review', group: GROUP_AI, order: 5 }],
     run: async (): Promise<void> => {
       const secrets = await deps.client['settings.loadSecrets']({});

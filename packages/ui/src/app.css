@@ -1270,6 +1270,26 @@ optgroup {
   opacity: 0.45;
 }
 
+/* THE FIRST-RUN AI OFFER (W11), centred like the recent list it follows, in the crash offer's voice: a question and
+   its two actions. */
+.m-ai-offer {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-8);
+  padding-block-end: var(--space-24);
+  color: var(--text);
+}
+
+.m-ai-offer p {
+  margin: 0;
+}
+
+.m-ai-offer__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
 /* THE CRASH REPORT OFFER (ADR-0109), in the recovery offer's voice: a question, its two actions, then where it may
    go and what it may hold, in the quieter colour. */
 .m-crash-offer {

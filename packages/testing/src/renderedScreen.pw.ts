@@ -169,14 +169,19 @@ async function expectNoSeriousViolations(
 // may sit on, and §10.2 now asks 7:1 of the high-contrast theme — none of which the default-theme
 // run could ever have reported on (audit finding IIIIII-2).
 for (const look of LOOKS) {
-  // THE FIRST RUN (E5's onboarding): a fresh install with no AI key opens the setup over the start
-  // screen. Every other case seeds the answered state (`pageBridge.ts`); this one seeds the first.
-  test(`${look.name}: the FIRST-RUN AI SETUP opens by itself and has no serious a11y violations`, async ({
+  // THE FIRST RUN (E5's onboarding): a fresh install with no AI key is offered the setup ON the start screen, below
+  // its Open buttons, and no dialog opens by itself (W11). Every other case seeds the answered state
+  // (`pageBridge.ts`); this one seeds the first.
+  test(`${look.name}: the FIRST-RUN AI SETUP is offered on the start screen and has no serious a11y violations`, async ({
     page,
   }) => {
     await bridgeUnder(page, look, { settings: { [AI_SETUP_AT_START_SETTING_ID]: true } });
 
-    await expectNoSeriousViolations(page, look, 'Everything else in Monstera works without one');
+    const offer = page.getByRole('region', { name: /Monstera has an AI assistant/u });
+    await expectNoSeriousViolations(page, look, 'Monstera has an AI assistant');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await offer.getByRole('button', { name: 'Set up…' }).click();
+
     const dialog = page.getByRole('dialog', { name: 'Set up the AI assistant' });
     await expect(dialog.getByRole('button', { name: 'Skip' })).toBeVisible();
     await expect(dialog.getByRole('button', { name: 'Check and save' })).toBeDisabled();
@@ -184,6 +189,8 @@ for (const look of LOOKS) {
     // SKIP CLOSES IT AND IT STAYS CLOSED: the stored false is what a reload reads.
     await dialog.getByRole('button', { name: 'Skip' }).click();
     await expect(dialog).toBeHidden();
+    // AND THE OFFER GOES WITH IT: the dialog's Skip is the same stored false the offer reads.
+    await expect(offer).toHaveCount(0);
   });
 
   test(`${look.name}: the start screen renders through the contract and has no serious a11y violations`, async ({

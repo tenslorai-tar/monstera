@@ -91,12 +91,8 @@ export async function startWalk(walk) {
     await app.evaluate(({ dialog }, picked) => {
       dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [picked] });
     }, path);
-    // THE FIRST-RUN "Set up the AI assistant" DIALOG ARRIVES A VARIABLE TIME AFTER LAUNCH (absent at 0 s, present by 1 s,
-    // measured 2026-10-12 over three launches), so it is waited for rather than counted once: a count taken before it
-    // arrives finds none, and the dialog then covers the Open button for the rest of the run.
-    const skip = page.getByRole('dialog').getByRole('button', { name: /later|skip|not now/iu });
-    await skip.first().waitFor({ state: 'visible', timeout: 5000 }).catch(() => undefined);
-    if ((await skip.count()) >= 1 && (await skip.first().isVisible())) await skip.first().click();
+    // NO FIRST-RUN DIALOG IS WAITED FOR: the AI setup is offered on the start screen below the Open button (W11), so
+    // nothing arrives over it after launch.
     const button = page.getByRole('button', { name: /^Open PDF/u }).first();
     if ((await button.count()) > 0 && (await button.isVisible())) await button.click();
     else await page.keyboard.press('Control+O');
