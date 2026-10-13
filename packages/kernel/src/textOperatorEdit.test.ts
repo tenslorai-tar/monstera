@@ -76,6 +76,33 @@ describe('applyEditTextOperators', () => {
     });
   });
 
+  it('W9: a TAB typed in a heading is in the saved words: a marked gap, after a save and a reopen (ADR-0228)', async () => {
+    await withChromium(async (session, content) => {
+      const runs = headingRuns(content);
+      await applyEditTextOperators(session, command(runs.runs[0]?.index ?? 0, 'Monstera\tfixture reading.'), runs);
+      const reopened = await mupdfWriter.open(await mupdfWriter.serialise(session));
+      try {
+        const after = new TextDecoder('latin1').decode(
+          await withDocument(reopened, (document) => joinedContent(pageContentStreams(document.findPage(0)))),
+        );
+        // THE TAB AS IT IS WRITTEN: one space marked as the character it stands for, which the editor's reading takes back.
+        expect(after).toContain('/ActualText <FEFF0009>');
+        expect(await pageWords(reopened)).toContain('Monsterafixturereading.');
+      } finally {
+        await mupdfWriter.close(reopened);
+      }
+      // CONTROL: the same words with a space write no mark, so the one above is the tab's.
+    });
+    await withChromium(async (session, content) => {
+      const runs = headingRuns(content);
+      await applyEditTextOperators(session, command(runs.runs[0]?.index ?? 0, 'Monstera fixture reading.'), runs);
+      const after = new TextDecoder('latin1').decode(
+        await withDocument(session, (document) => joinedContent(pageContentStreams(document.findPage(0)))),
+      );
+      expect(after).not.toContain('/ActualText <FEFF0009>');
+    });
+  });
+
   it('refuses a word no font of the page carries, naming its characters, and leaves the page as it came', async () => {
     await withChromium(async (session, content) => {
       const runs = headingRuns(content);

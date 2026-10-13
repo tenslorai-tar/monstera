@@ -373,12 +373,24 @@ await step('10. ADR-0228: strikethrough, a highlight, character spacing, Ctrl+J 
 await step('11. K8: Tab in Edit text types a tab, the words after it move to the next stop, and the focus stays in the words', async () => {
   await page.locator('[data-text-block]').nth(2).click();
   await expect(editor()).toBeFocused();
+  // W9: THE TAB IS LOOKED FOR ANYWHERE IN THE WORDS. This step pressed Home, which goes to the start of the VISUAL line
+  // under the click, and then asked whether the block's whole text STARTS with a tab, which holds only when the click
+  // landed on its first line: `tabInTheWords: false` on 2026-10-12 was that question, not the editor.
   await page.keyboard.press('Home');
   await page.keyboard.press('Tab');
   await expect(editor()).toBeFocused();
-  const tabbed = await editor().evaluate((element) => element.textContent?.startsWith('\t') ?? false);
+  const typed = await editor().evaluate((element) => element.textContent?.includes('\t') ?? false);
   await clickPage(10, 10);
-  return { tabInTheWords: tabbed };
+  await expect(editor()).toHaveCount(0);
+  // READ BACK FROM THE WRITTEN DOCUMENT: the same block opened again is read from the bytes the write produced, by the
+  // reader every edit reads through, so a tab that was not written cannot come back. Step 14 saves these bytes. The
+  // editor closing above is the write answering, so nothing is waited for here.
+  await page.locator('[data-text-block]').nth(2).click();
+  await expect(editor()).toBeFocused();
+  const readBack = await editor().evaluate((element) => element.textContent?.includes('\t') ?? false);
+  await page.keyboard.press('Escape');
+  expect({ typed, readBack }).toStrictEqual({ typed: true, readBack: true });
+  return { tabInTheWords: typed, tabReadBack: readBack };
 });
 
 await step('12. B2.8: In this document lists the fonts of every page, not only the open block’s', async () => {

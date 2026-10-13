@@ -134,6 +134,9 @@ const SAME = 1e-6;
  */
 const SPACE_EM = 0.278;
 
+/** The character a tab's gap is drawn as, under the mark that says it is a tab (ADR-0228 Decision 2): one place, W9. */
+const TAB_GAP = ' ';
+
 /** The number as a content stream writes it: at most six decimals, no trailing zeros, never an exponent. */
 function num(value: number): string {
   const fixed = value.toFixed(6).replace(/\.?0+$/u, '');
@@ -812,7 +815,7 @@ function write(
         // `/Span <</ActualText (tab)>>`, and the next words at the next stop from the block's left edge. A font with no
         // space draws nothing there, and the gap is still the stop's.
         if (token === '\t') {
-          const gap = piecesOf(source, ' ', restyleOf(marked));
+          const gap = piecesOf(source, TAB_GAP, restyleOf(marked));
           const piece = gap?.length === 1 ? gap[0] : undefined;
           if (piece !== undefined) {
             faces?.drawn([piece]);
@@ -1125,7 +1128,9 @@ function write(
     baselinesOut.push({ first: baselines[0] ?? 0, last: previous, lastBefore: baselines.at(-1) ?? 0 });
 
     const segments = visual.flatMap((line) => line.segments.map((segment) => ({ ...segment, baseline: line.baseline })));
-    drawn.push(segments.map((segment) => segment.text).join(''));
+    // WHAT THE CODES SHOW, which the structural read-back reads them as: a tab's segment means a tab and draws its gap
+    // (W9; read as the tab it stood for, every tab edit on this writer was refused as not reading as what it drew).
+    drawn.push(segments.map((segment) => (segment.tab === true ? TAB_GAP : segment.text)).join(''));
     if (segments.length === 0) continue;
     const toBt = ctm === undefined ? null : inverse(ctm);
     if (toBt === null || ctm === undefined) throw new Refused({ reason: 'transformed' });
