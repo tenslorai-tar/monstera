@@ -139,3 +139,26 @@ commands while words are being edited: opening it moves the focus out of the wor
 command is offered only while an editor is open (`when`). So the Properties panel's Text section and the editor's own
 keys are where formatting is, and the palette is not. The commands stay registered, which is what the panel acts
 through.
+
+## Correction, 2026-10-13 — an underline, a strike and a highlight are read back as the words' (L2)
+
+Decision 1 draws each as a filled rectangle beside the page's text objects, and the writer's own comment calls them NOT
+READABLE: nothing on the page said a rectangle was a word's underline. The consequence was the owner's L2. When a block
+was edited again, its words were set afresh and moved, and its rectangles stayed where they were drawn, over nothing or
+over other words; and the editor showed the words with none of them, so what it wrote next carried none either.
+
+What replaces it, for the page-text writer (PDFium's):
+
+1. **Each rectangle Monstera draws is marked as what it is**: an `/Artifact` (PDF 32000-1, 14.8.2.2, so a reader and a
+   screen reader leave it out of the words) whose parameter `MonsteraDecoration` names `under`, `through` or `behind`.
+   A rectangle another producer drew is not marked, stays a drawing, and is left alone.
+2. **One resolver says which run a marked rectangle belongs to** (B3a): the run whose extent it spans, at the place its
+   kind is drawn relative to that run's baseline. The read uses it to give each run its `underline`, `strike` and
+   `highlight`, which the editor draws and the formatting state reads; the writer uses the same answer.
+3. **An edit of a block removes the block's marked rectangles and draws them again** from each piece's run style with
+   the edit's marks over it, so they move with the words, a mark that turns one off is obeyed, and a line kept as it
+   was keeps its own at its new baseline.
+
+The operator writer (a page read as `operators`) is not covered by this correction: its rectangles are content-stream
+operators that its structural read-back and its byte edit do not yet name, and it is recorded as owed.
+
