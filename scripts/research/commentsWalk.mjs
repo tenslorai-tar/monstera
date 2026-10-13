@@ -22,6 +22,7 @@
  *   order; each read back from the saved file, and each taken out again by one Undo.
  * - O9: a dismissed picker shows no notice; a long Markdown conversion shows its notice, without a Cancel, until its tab
  *   opens, and the PDF it wrote is read back.
+ * - N6: a `.doc`, a two-sheet `.xls` and a `.ppt` from `_review/samples/old-office/` each become a PDF that opens.
  */
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
@@ -530,5 +531,31 @@ await step('O9: converting a long Markdown file shows "Converting Markdown to PD
   expect(read.length).toBeGreaterThan(1);
   return { pages: read.length };
 });
+
+/**
+ * N6's samples: a `.doc`, a two-sheet `.xls` and a `.ppt`, which nothing in this repository can make (B10 keeps a binary
+ * fixture out of the commit), so they are read from `_review/samples/old-office/` — put there on the walk machine — and a
+ * step with its sample missing FAILS saying so, never passes.
+ */
+const OLD_OFFICE = join(root, '_review', 'samples', 'old-office');
+for (const { file, expectation } of [
+  { file: 'sample.doc', expectation: 'a Word 97–2003 document' },
+  { file: 'sample.xls', expectation: 'an Excel 97–2003 workbook with TWO visible sheets: the PDF holds both' },
+  { file: 'sample.ppt', expectation: 'a PowerPoint 97–2003 deck' },
+]) {
+  await step(`N6: ${file}, ${expectation}, becomes a PDF that opens; read back from the file`, async () => {
+    const source = join(OLD_OFFICE, file);
+    if (!existsSync(source)) throw new Error(`no sample at ${source}: put ${expectation} there and run the walk again`);
+    const made = join(output, `${file}.pdf`);
+    await pickFiles([source]);
+    await saveTo(made);
+    await command('New PDF from Word, Excel or PowerPoint…');
+    await expect(page.getByRole('tab', { name: new RegExp(`^${file.replace('.', '\\.')}\\.pdf`, 'u') })).toBeVisible({ timeout: 300_000 });
+    const read = await savedPages(made);
+    // TWO SHEETS ARE TWO PARTS, each its own pages: one page would be x2t's active sheet alone, the loss N6 must not have.
+    expect(read.length).toBeGreaterThanOrEqual(file.endsWith('.xls') ? 2 : 1);
+    return { pages: read.length };
+  });
+}
 
 await finish();

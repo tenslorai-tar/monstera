@@ -7024,8 +7024,9 @@ describe('DocumentCommands.convertOfficeFile (ADR-0120)', () => {
     expect(await commands.convertOfficeFile(WORK)).toStrictEqual({ kind: 'written', destination, missing });
   });
 
-  it('REFUSES a name that is not one of the three formats, and reads nothing', async () => {
-    const { commands, recorded } = officeCommands({ picked: 'C:\\Reports\\old.doc', destination: 'unused' });
+  it('REFUSES a name that is not one of the import formats, and reads nothing', async () => {
+    // AN .rtf, which x2t reads and this import does not offer: `.doc` stood here until the binary formats were added (N6).
+    const { commands, recorded } = officeCommands({ picked: 'C:\\Reports\\old.rtf', destination: 'unused' });
 
     expect(await commands.convertOfficeFile(WORK)).toStrictEqual({ kind: 'unreadable' });
     // THE DECISION IS THE READ NOT MADE: the extension names x2t's input, so a file of another kind never reaches it.

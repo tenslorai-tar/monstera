@@ -25,6 +25,7 @@ import {
   type WorkbookComposer,
   type WorkbookSheetOutline,
   X2T_FORMAT_PDF,
+  X2T_FORMAT_XLSX,
   X2T_MAX_PRINT_PAGES,
   createOfficeSource,
   namedBlocks,
@@ -252,7 +253,7 @@ function joinedBlocks(text: string): string[] {
 
 describe('x2tInstructions — the file x2t takes its paths from', () => {
   it('names the session paths absolutely, the tree relatively, and PDF by x2t’s number', () => {
-    const text = x2tInstructions({ input: 'C:\\s\\in.docx', output: 'C:\\o\\out.pdf', scratch: 'C:\\o\\work' });
+    const text = x2tInstructions({ input: 'C:\\s\\in.docx', output: 'C:\\o\\out.pdf', scratch: 'C:\\o\\work' }, X2T_FORMAT_PDF);
     expect(field(text, 'm_sFileFrom')).toBe('C:\\s\\in.docx');
     expect(field(text, 'm_sFileTo')).toBe('C:\\o\\out.pdf');
     expect(field(text, 'm_sTempDir')).toBe('C:\\o\\work');
@@ -264,7 +265,7 @@ describe('x2tInstructions — the file x2t takes its paths from', () => {
   });
 
   it('escapes what XML reserves, so a path cannot end an element and start another', () => {
-    const text = x2tInstructions({ input: 'C:\\a&b\\<x>\'"\\in.docx', output: 'C:\\o.pdf', scratch: 'C:\\w' });
+    const text = x2tInstructions({ input: 'C:\\a&b\\<x>\'"\\in.docx', output: 'C:\\o.pdf', scratch: 'C:\\w' }, X2T_FORMAT_PDF);
     expect(text).not.toContain('a&b');
     expect(text).toContain('a&amp;b\\&lt;x&gt;&apos;&quot;');
     expect(field(text, 'm_sFileFrom')).toBe('C:\\a&b\\<x>\'"\\in.docx');
@@ -276,7 +277,13 @@ describe('x2tInstructions — the file x2t takes its paths from', () => {
    */
   it('sends x2t no layout parameter, which would redraw the workbook', () => {
     const paths = { input: 'C:\\s\\in.xlsx', output: 'C:\\o\\out.pdf', scratch: 'C:\\o\\work' };
-    expect(x2tInstructions(paths)).not.toContain('m_sJsonParams');
+    expect(x2tInstructions(paths, X2T_FORMAT_PDF)).not.toContain('m_sJsonParams');
+  });
+
+  it('asks for an .xlsx by x2t’s own number where a binary workbook passes through one (ADR-0120’s extension)', () => {
+    const text = x2tInstructions({ input: 'C:\\s\\in.xls', output: 'C:\\o\\out.xlsx', scratch: 'C:\\o\\work' }, X2T_FORMAT_XLSX);
+    // 0x0100 + 0x0001, AVS_OFFICESTUDIO_FILE_SPREADSHEET_XLSX at the pinned core tag — and not the PDF's 513.
+    expect(field(text, 'm_nFormatTo')).toBe('257');
   });
 });
 
@@ -287,8 +294,14 @@ describe('officeImportFormatOf — the format a picked name gives', () => {
     expect(officeImportFormatOf('deck.PpTx')).toBe('pptx');
   });
 
+  it('reads the three BINARY formats too (the owner’s N6), each as itself and not as its OOXML sibling', () => {
+    expect(officeImportFormatOf('C:\\old.doc')).toBe('doc');
+    expect(officeImportFormatOf('C:\\Old\\Budget.XLS')).toBe('xls');
+    expect(officeImportFormatOf('talk.Ppt')).toBe('ppt');
+  });
+
   it('refuses every other name, including one that only CONTAINS a format', () => {
-    expect(officeImportFormatOf('C:\\old.doc')).toBeNull();
+    expect(officeImportFormatOf('C:\\old.rtf')).toBeNull();
     expect(officeImportFormatOf('C:\\report.docx.exe')).toBeNull();
     expect(officeImportFormatOf('C:\\folder.docx\\file')).toBeNull();
     expect(officeImportFormatOf('docx')).toBeNull();
@@ -395,6 +408,38 @@ describe('createOfficeSource — a workbook in parts', () => {
     expect(joinedBlocks(await drained(converted.output))).toStrictEqual(['First 1-10', 'Second 1-30']);
     // NEVER THE WHOLE FILE: x2t alone prints only the active sheet.
     expect(built.seen.map((seen) => seen.inputBytes)).toStrictEqual(['part First 1-10', 'part Second 1-30']);
+  });
+
+  it('a BINARY workbook (.xls) becomes an .xlsx in x2t FIRST, and that takes the workbook route — every sheet arrives (N6)', async () => {
+    const built = platform({ echo: true });
+    const host = workbookHost([sheet('First', 10), sheet('Second', 30)]);
+
+    const converted = await createOfficeSource(built.platform, () => undefined, host.composer)(
+      'xls',
+      new TextEncoder().encode('BIFF workbook'),
+    );
+
+    expect(joinedBlocks(await drained(converted.output))).toStrictEqual(['First 1-10', 'Second 1-30']);
+    // THE FIRST RUN is the binary file in, an .xlsx out, by x2t's own number for one.
+    const [first, ...rest] = built.seen;
+    expect(field(first?.instructions ?? '', 'm_sFileFrom')).toMatch(/in\.xls$/u);
+    expect(field(first?.instructions ?? '', 'm_sFileTo')).toMatch(/out\.xlsx$/u);
+    expect(field(first?.instructions ?? '', 'm_nFormatTo')).toBe('257');
+    expect(first?.inputBytes).toBe('BIFF workbook');
+    // AND EACH PART after it is an .xlsx made into a PDF — never the binary file, which the host cannot cut.
+    expect(rest.map((seen) => field(seen.instructions, 'm_nFormatTo'))).toStrictEqual(['513', '513']);
+    expect(rest.map((seen) => seen.inputBytes)).toStrictEqual(['part First 1-10', 'part Second 1-30']);
+  });
+
+  it('CONTROL: a .doc and a .ppt are ONE run each, straight to PDF, as their OOXML siblings are', async () => {
+    for (const format of ['doc', 'ppt'] as const) {
+      const built = platform();
+      const converted = await createOfficeSource(built.platform, () => undefined, workbookHost([]).composer)(format, new Uint8Array(4));
+      expect(await drained(converted.output)).toBe('%PDF-1.7 converted');
+      expect(built.seen).toHaveLength(1);
+      expect(field(built.seen[0]?.instructions ?? '', 'm_sFileFrom')).toMatch(new RegExp(`in\\.${format}$`, 'u'));
+      expect(field(built.seen[0]?.instructions ?? '', 'm_nFormatTo')).toBe('513');
+    }
   });
 
   it('NAMES the rows of a sheet it cannot halve, joined into one block, logs them, and keeps the other sheets', async () => {

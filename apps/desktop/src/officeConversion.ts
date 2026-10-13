@@ -28,13 +28,13 @@ import type { ShellFailureSink } from './shellFailure.js';
 
 /**
  * The Office formats an import converts, by file extension: the three ADR-0120 measured converting
- * inside the container, and no other until it is measured.
+ * inside the container, and the three binary formats its 2026-10-13 extension read x2t taking as input
+ * (the owner's N6) — those three read from x2t's source, and their measurement owed on Windows.
  *
- * ITS OWN SET, not the export's `OfficeFormat` in `documentCommands.ts`, though the two hold the same
- * three today: what this build can WRITE and what x2t has been measured to READ are two facts, and a
- * format added to one says nothing about the other.
+ * ITS OWN SET, not the export's `OfficeFormat` in `documentCommands.ts`: what this build can WRITE and
+ * what x2t READS are two facts, and a format added to one says nothing about the other.
  */
-export const OFFICE_IMPORT_FORMATS = ['docx', 'xlsx', 'pptx'] as const;
+export const OFFICE_IMPORT_FORMATS = ['docx', 'xlsx', 'pptx', 'doc', 'xls', 'ppt'] as const;
 
 /** See {@link OFFICE_IMPORT_FORMATS}. */
 export type OfficeImportFormat = (typeof OFFICE_IMPORT_FORMATS)[number];
@@ -47,6 +47,20 @@ export function officeImportFormatOf(path: string): OfficeImportFormat | null {
 
 /** x2t's number for PDF as an output format, from its own format table. */
 export const X2T_FORMAT_PDF = 513;
+
+/**
+ * x2t's number for an `.xlsx` workbook as an output format: `AVS_OFFICESTUDIO_FILE_SPREADSHEET` (0x0100) + 0x0001, read
+ * 2026-10-13 from ONLYOFFICE core `Common/OfficeFileFormats.h` at `v9.4.0.130`, the tag the shipped build names. A `.xls`
+ * is converted to this first, so the workbook route can print every sheet (ADR-0120's extension).
+ */
+export const X2T_FORMAT_XLSX = 257;
+
+/** What one x2t run writes: the PDF every import ends in, or the `.xlsx` a binary workbook passes through. */
+export type X2tTarget = { readonly format: typeof X2T_FORMAT_PDF; readonly name: 'out.pdf' } | { readonly format: typeof X2T_FORMAT_XLSX; readonly name: 'out.xlsx' };
+
+/** The two targets, each its format and the file name x2t writes it under. */
+export const X2T_PDF: X2tTarget = { format: X2T_FORMAT_PDF, name: 'out.pdf' };
+export const X2T_XLSX: X2tTarget = { format: X2T_FORMAT_XLSX, name: 'out.xlsx' };
 
 /**
  * The bounds §8 puts on this converter: ceilings against a hung or hostile conversion.
@@ -92,12 +106,12 @@ function xmlText(value: string): string {
  * x2t prints the ACTIVE sheet at the author's own page setup, so a workbook's other sheets arrive as parts, each made
  * the active sheet (`workbookParts.ts`), rather than by a parameter that redraws them.
  */
-export function x2tInstructions(paths: InstructedPaths): string {
+export function x2tInstructions(paths: InstructedPaths, format: X2tTarget['format']): string {
   return (
     '<?xml version="1.0" encoding="utf-8"?>\n<TaskQueueDataConvert>' +
     `<m_sFileFrom>${xmlText(paths.input)}</m_sFileFrom>` +
     `<m_sFileTo>${xmlText(paths.output)}</m_sFileTo>` +
-    `<m_nFormatTo>${String(X2T_FORMAT_PDF)}</m_nFormatTo>` +
+    `<m_nFormatTo>${String(format)}</m_nFormatTo>` +
     '<m_sFontDir>fonts</m_sFontDir>' +
     '<m_sAllFontsPath>sdkjs/common/AllFonts.js</m_sAllFontsPath>' +
     '<m_sThemeDir>sdkjs/slide/themes</m_sThemeDir>' +
@@ -204,25 +218,31 @@ export function createOfficeSource(
     report({ event: 'converter-failed', detail: error.message });
     return error;
   };
-  const convertOnce = async (format: OfficeImportFormat, file: Uint8Array): Promise<OfficeConversion> => {
-    const converted = await convertDocument(
+  /** One x2t run: the file under its own extension in, the target out. */
+  const runX2t = (format: OfficeImportFormat, target: X2tTarget, file: Uint8Array): ReturnType<typeof convertDocument> =>
+    convertDocument(
       platform,
       file,
       {
         kind: 'instructions',
         input: `in.${format}`,
-        output: 'out.pdf',
+        output: target.name,
         instructions: 'x2t.xml',
         scratch: 'work',
-        instructionsText: x2tInstructions,
+        instructionsText: (paths) => x2tInstructions(paths, target.format),
         commandArguments: (instructions) => [instructions],
       },
       failed,
     );
+  const convertOnce = async (format: OfficeImportFormat, file: Uint8Array): Promise<OfficeConversion> => {
+    const converted = await runX2t(format, X2T_PDF, file);
     return { output: converted.output, discard: converted.discard, missing: [] };
   };
-  return async (format, file) => {
-    if (format !== 'xlsx') return convertOnce(format, file);
+  return async (format, picked) => {
+    if (format !== 'xlsx' && format !== 'xls') return convertOnce(format, picked);
+    // A BINARY WORKBOOK BECOMES AN `.xlsx` FIRST, in the same contained x2t (ADR-0120's extension): only an OOXML
+    // workbook can be cut into a part per sheet, and x2t alone prints the active sheet and loses the rest in silence.
+    const file = format === 'xls' ? await bytesOf((await runX2t('xls', X2T_XLSX, picked)).output) : picked;
     if (workbooks === null) {
       // SAID, never silent: without the compose host the workbook converts as x2t alone does — its active sheet, to
       // 1,500 pages — and no sheet can be named, because only that host reads the file.
@@ -230,7 +250,7 @@ export function createOfficeSource(
         event: 'converter-failed',
         detail: 'no compose host in this build: the workbook was converted as its active sheet only, and any other sheet is not in the PDF',
       });
-      return convertOnce(format, file);
+      return convertOnce('xlsx', file);
     }
     const converted = await convertWorkbook(workbooks, (part) => convertOnce('xlsx', part), file, failed);
     for (const block of converted.missing) {
@@ -243,6 +263,19 @@ export function createOfficeSource(
     }
     return converted;
   };
+}
+
+/** A converter's output read whole: the `.xlsx` a binary workbook became, which the workbook route takes as bytes. */
+async function bytesOf(output: AsyncIterable<Uint8Array>): Promise<Uint8Array> {
+  const chunks: Uint8Array[] = [];
+  for await (const chunk of output) chunks.push(chunk);
+  const whole = new Uint8Array(chunks.reduce((sum, chunk) => sum + chunk.length, 0));
+  let at = 0;
+  for (const chunk of chunks) {
+    whole.set(chunk, at);
+    at += chunk.length;
+  }
+  return whole;
 }
 
 /**
