@@ -31,3 +31,27 @@
   place a person learns that the app ever contacts the network for updates.
 - **Moving the updates sentence to Settings.** Nothing asked for it, and a sentence moved rather than removed is the
   owner's decision undone by placement.
+
+## Correction, 2026-10-13: About carries no line about updates at all
+
+**Decision 2 read the owner's instruction more narrowly than it was given, and its first rejected alternative is the
+owner's actual decision.** The owner, Part 7 C: *"remove ALL reference to updates in this dialog"*, including the
+conditional line. Decision 2 kept `ABOUT_UPDATES_CHECKED` on the ground that it was not the sentence O1 named; O1
+named the sentence as an example of what About should not say, and this decision answered the example rather than the
+instruction.
+
+So, superseding Decision 2 and the first rejected alternative:
+
+1. **About draws no line about updates on any run.** `ABOUT_UPDATES_CHECKED` is deleted, the dialog's props lose
+   `checksForUpdates`, and `app.about` no longer asks `app.updateStatus`. `checksForUpdates` in `updateStatus.ts`
+   had About as its only caller and goes with it; the title bar's indicator and the security notice read the status
+   through `isUpdateOffered` and `offerSecurityNotice`, unchanged.
+2. **E4's other About clause is superseded as well:** *"Update checks are the only phone-home in the app, and the About
+   panel says so."* The first half stays true and stays ADR-0110's to keep true. The second half moves out of About.
+   Where a person learns that a check contacts monsterapdf.com is the *Check for new versions* setting, which ADR-0110
+   registers with the check going live and which says what is fetched and sent. While the check is dormant there is
+   nothing to say.
+3. **The install channel stays, as a fact about the build.** It names where the build came from, and it says nothing
+   about how the build is updated.
+
+Decided by the owner. The architecture's amendment log carries a row for this correction.
