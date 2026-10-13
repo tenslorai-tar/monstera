@@ -11,7 +11,9 @@ import { render as renderBare, act, fireEvent } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { NO_RUN_FONTS } from './commands/documentCommands.js';
 import { PageList } from './PageList.js';
+import type { PageBlocks, TextEditing } from './TextEditLayer.js';
 import { FIRST_PAGE } from './pageNumbering.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
@@ -690,6 +692,72 @@ describe('PageList', () => {
     await settle();
 
     expect(container.querySelector('[data-page-note="0"]')?.textContent).toContain('picture');
+    // CONTROL FOR W7: outside Edit text the note offers nothing, since recognition there is the OCR command's.
+    expect(container.querySelector('[data-page-note="0"] button')).toBeNull();
+  });
+
+  it('W7: in Edit text, a picture page’s note offers to recognise it, and the press recognises THAT page', async () => {
+    const { client } = clientAnswering([], 'image-only');
+    const onRecognise = vi.fn();
+    const editing: TextEditing = {
+      mode: 'text',
+      version: VERSION,
+      // NO BLOCKS AND ONE UNADDRESSABLE RUN: the read that kept the layer's own offer away, so the note's is the one shown.
+      read: () =>
+        Promise.resolve<PageBlocks>({
+          version: VERSION,
+          blocks: [],
+          truncated: false,
+          rotated: 0,
+          angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 },
+          unaddressable: 1,
+          rewrite: 'objects',
+        }),
+      onCommit: () => Promise.resolve('unchanged'),
+      runFonts: () => Promise.resolve(NO_RUN_FONTS),
+      onPromote: vi.fn(),
+      onRecognise,
+      onLeave: vi.fn(),
+      adding: false,
+      onInsert: () => Promise.resolve('unchanged'),
+      onAdded: vi.fn(),
+      native: vi.fn(),
+      spell: { look: () => Promise.resolve(undefined), keep: vi.fn() },
+      onRestructure: () => Promise.resolve('unchanged'),
+      objects: () => Promise.resolve(undefined),
+    };
+    const { container, getAllByRole } = render(
+      <PageList
+        client={client}
+        view={viewDrawing()}
+        pageCount={5}
+        docId={DOC}
+        version={VERSION}
+        onCurrentPage={vi.fn()}
+        mode={SCALE_1}
+        onZoomStep={vi.fn()}
+        onShownZoom={vi.fn()}
+        goTo={undefined}
+        startAt={FIRST_PAGE.kernel}
+        onWentTo={vi.fn()}
+        loupe={false}
+        rulers={false}
+        showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
+        unit="in"
+        search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
+        secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
+        menuAt={undefined}
+        editing={editing}
+      />,
+    );
+    await settle();
+    const note = container.querySelector('[data-page-note="0"]');
+    const offer = note?.querySelector('button');
+    if (offer === null || offer === undefined) throw new Error('the picture page offers no recognition');
+    fireEvent.click(offer);
+    expect(onRecognise).toHaveBeenCalledWith(0);
+    // ONE SENTENCE ABOUT THE PAGE: the layer does not say *no text* over the note that says it is a picture.
+    expect(getAllByRole('button', { name: /recognise its words/u }).length).toBe(container.querySelectorAll('[data-page-note]').length);
   });
 
   it('CONTROL: a page with no text and no picture is left alone', async () => {

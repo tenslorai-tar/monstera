@@ -294,11 +294,10 @@ if (existsSync(handwritten)) {
   await step('9. Handwritten table.pdf: Recognise from Edit text’s note, then a word edited on the recognised page', async () => {
     await open(scan);
     await section('Edit');
-    // THE EDIT TEXT NOTE ("This page is a picture, ...") HAS NO BUTTON: measured 2026-10-12 on this scan, in the page's own
-    // flow it is a paragraph and nothing else. Recognition is Tools > Convert scan > OCR pages, whose window has the
-    // Recognise button, so the walk takes that route and then edits.
-    await section('Tools');
-    await page.getByRole('button', { name: 'OCR pages', exact: true }).first().click();
+    await ensureEditText();
+    // W7: THE PAGE'S NOTE ("This page is a picture, ...") OFFERS RECOGNITION in Edit text. Measured 2026-10-12 on this scan
+    // it was a paragraph and nothing else, and this step went round it through Tools > OCR pages.
+    await page.locator('[data-page-note] button').first().click();
     await expect(page.getByRole('dialog')).toBeVisible();
     await page.waitForTimeout(2000);
     await page.getByRole('dialog').getByRole('button', { name: 'Recognise', exact: true }).click();

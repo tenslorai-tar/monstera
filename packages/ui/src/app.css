@@ -4314,6 +4314,18 @@ optgroup {
   pointer-events: none;
 }
 
+/* THE NOTE'S ONE ACTION (W7): a link-like button in the note's own words, taking the pointer the note itself passes on. */
+.m-page-note__action {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
 /*
  * §10.3's floating quick toolbar: a vertical pill on the canvas edge.
  *

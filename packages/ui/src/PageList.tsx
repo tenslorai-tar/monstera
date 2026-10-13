@@ -58,7 +58,7 @@ import type { FieldProblem } from './forms/fieldCheck.js';
 import type { ListedField } from './forms/fieldFill.js';
 import { usePageFormFields } from './forms/usePageFormFields.js';
 import { useSelectedTextPages } from './useSelectedTextPages.js';
-import { ANNOTATION_SURFACE_LABEL, PAGE_IMAGE_ONLY, PAGE_LIST_LABEL, PAGE_OPENING } from './messages/en.js';
+import { ANNOTATION_SURFACE_LABEL, PAGE_IMAGE_ONLY, PAGE_LIST_LABEL, PAGE_OPENING, TEXT_EDIT_RECOGNISE } from './messages/en.js';
 import { Icon } from './primitives/Icon.js';
 import { useOnColor } from './primitives/useOnColor.js';
 import type { UiTool } from './registries/tools.js';
@@ -1851,6 +1851,23 @@ function PageSlot({
       {kind === 'image-only' ? (
         <p className="m-page-note" data-page-note={String(page)}>
           {i18n._(PAGE_IMAGE_ONLY)}
+          {/* AND IN EDIT TEXT, THE OFFER TO READ ITS WORDS (W7, ADR-0181 Decision 9), in the note that says the page is a
+              picture rather than in a second note at the same edge: the channel's own attribution decides, not whether a
+              read of the page's blocks came back empty. */}
+          {editing?.mode === 'text' ? (
+            <>
+              {' '}
+              <button
+                className="m-page-note__action"
+                onClick={() => {
+                  editing.onRecognise(page);
+                }}
+                type="button"
+              >
+                {i18n._(TEXT_EDIT_RECOGNISE)}
+              </button>
+            </>
+          ) : null}
         </p>
       ) : null}
       {text === undefined || size === undefined ? null : (
@@ -1944,6 +1961,7 @@ function PageSlot({
           editing={editing}
           geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
           page={page}
+          pictureNoted={kind === 'image-only'}
         />
       )}
       {drawing === undefined || size === undefined ? null : (

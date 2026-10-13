@@ -132,6 +132,8 @@ export interface TextEditLayerProps {
   readonly onPromote: () => void;
   /** Recognises a page that has no text, so a scan's words can be edited (ADR-0181 Decision 9); absent offers nothing. */
   readonly onRecognise?: () => void;
+  /** Whether the page's own note already says it is a picture and makes the offer to recognise it (`PageList`, W7). */
+  readonly pictureNoted?: boolean;
   /** Leaves the mode: Escape pressed with no block open. */
   readonly onLeave: () => void;
   /**
@@ -370,6 +372,7 @@ export function TextEditLayer({
   objects,
   onPromote,
   onRecognise,
+  pictureNoted = false,
   onLeave,
   paperAt,
 }: TextEditLayerProps): ReactElement {
@@ -477,7 +480,9 @@ export function TextEditLayer({
   const notes: ReactElement[] = [];
   if (unreadable && blocks === undefined) notes.push(<p key="unreadable">{_(TEXT_EDIT_UNREADABLE)}</p>);
   if (blocks !== undefined) {
-    if (blocks.blocks.length === 0 && blocks.unaddressable === 0 && blocks.rotated === 0) {
+    // NOT WHERE THE PAGE ITSELF SAYS IT IS A PICTURE: its note says so and makes the offer there (`PageList`, W7), and a
+    // second sentence about the same page, at the same edge, covered the first.
+    if (!pictureNoted && blocks.blocks.length === 0 && blocks.unaddressable === 0 && blocks.rotated === 0) {
       // A PAGE WITH NO TEXT MAY BE A SCAN (ADR-0181 Decision 9): it offers to be recognised, through the command that does
       // it, and the words it finds are then the ones the editor offers. The command asks what each page is, so a page that
       // is blank is told so by it and not by this note.
@@ -835,10 +840,13 @@ export function TextEditPage({
   geometry,
   editing,
   paperAt,
+  pictureNoted,
 }: {
   readonly page: number;
   readonly geometry: OverlayPage;
   readonly editing: TextEditing;
+  /** The layer's `pictureNoted`: the page's own note says it is a picture and offers recognition. */
+  readonly pictureNoted: boolean;
   /**
    * The paper's colour at a point, in CSS pixels from the page's corner — read by the slot from whatever it drew
    * there, a whole page or a tile (E1). `undefined` where nothing is drawn yet.
@@ -885,6 +893,7 @@ export function TextEditPage({
       }}
       page={page}
       paperAt={paperAt}
+      pictureNoted={pictureNoted}
     />
   );
 }
