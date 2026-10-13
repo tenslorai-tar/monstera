@@ -54,6 +54,7 @@ import { repoRoot } from '../lib/gitScope.mjs';
 import { buildScanFixture } from '../perf/largeFixture.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
 import { developmentEnvironment } from '../lib/launchEnvironment.mjs';
+import { byRole, processTreeMemory } from '../lib/processMemory.mjs';
 import { maximise } from './maximiseWindow.mjs';
 import { variantCss, variantSwitches } from './surfaceVariants.mjs';
 
@@ -142,63 +143,10 @@ async function end(child, userData) {
  * @returns {{ pid: number, parent: number, role: string, privateBytes: number }[]}
  */
 function treeMemory(root) {
-  const script =
-    'Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId, PrivatePageCount, CommandLine, Name | ConvertTo-Json -Compress';
-  const all = /** @type {{ ProcessId: number, ParentProcessId: number, PrivatePageCount: number, CommandLine: string | null, Name: string }[]} */ (
-    JSON.parse(execFileSync('powershell.exe', ['-NoProfile', '-Command', script], { encoding: 'utf8', maxBuffer: 64 << 20 }))
-  );
-  if (process.argv.includes('--dump')) {
-    // EVERY PROCESS OF THE APPLICATION'S EXECUTABLE NAME, wherever it hangs and whether its command line is readable.
-    const name = build === 'package' ? 'Monstera.exe' : 'electron.exe';
-    for (const each of all.filter((p) => p.Name.toLowerCase() === name.toLowerCase())) {
-      console.error(`DUMP pid=${String(each.ProcessId)} parent=${String(each.ParentProcessId)} private=${String(each.PrivatePageCount)} cmd=${(each.CommandLine ?? '<unreadable>').slice(-90)}`);
-    }
-  }
-  const inTree = new Set([root]);
-  // THE ENGINE HOSTS BY THEIR ENTRY FILES, wherever their parent is: a host is a process `main` creates itself
-  // (ADR-0022), and the first reading found none under `main` in the tree — so they are named by what they run.
-  for (const process of all) {
-    if (/(?:hostEntry|pdfiumHostEntry|composeHostEntry)\.js/u.test(process.CommandLine ?? '')) inTree.add(process.ProcessId);
-  }
-  for (let grew = true; grew; ) {
-    grew = false;
-    for (const process of all) {
-      if (!inTree.has(process.ProcessId) && inTree.has(process.ParentProcessId)) {
-        inTree.add(process.ProcessId);
-        grew = true;
-      }
-    }
-  }
-  return all
-    .filter((process) => inTree.has(process.ProcessId))
-    .map((process) => {
-      const line = process.CommandLine ?? '';
-      const type = /--type=([a-z-]+)/u.exec(line)?.[1];
-      const host = /(hostEntry|pdfiumHostEntry|composeHostEntry)\.js/u.exec(line)?.[1];
-      const role =
-        process.ProcessId === root
-          ? 'main'
-          : host !== undefined
-            ? `host ${host === 'hostEntry' ? 'mupdf' : host === 'pdfiumHostEntry' ? 'pdfium' : 'compose'}`
-          : type === 'renderer'
-            ? 'renderer'
-            : type === 'gpu-process'
-              ? 'gpu'
-              : type === 'utility'
-                ? 'utility'
-                : type === 'crashpad-handler'
-                  ? 'crashpad'
-                  : (type ?? 'unclassified');
-      return { pid: process.ProcessId, parent: process.ParentProcessId, role, privateBytes: Number(process.PrivatePageCount) };
-    });
-}
-
-/** @param {{ role: string, privateBytes: number }[]} processes */
-function byRole(processes) {
-  /** @type {Record<string, number>} */
-  const sums = {};
-  for (const { role, privateBytes } of processes) sums[role] = (sums[role] ?? 0) + privateBytes;
-  return sums;
+  // THE ONE READER (`processMemory.mjs`), which the memory walk calls too; `--dump` names this build's executable.
+  return processTreeMemory(root, {
+    dump: process.argv.includes('--dump') ? (build === 'package' ? 'Monstera.exe' : 'electron.exe') : null,
+  });
 }
 
 /** Brings every page of the page list on screen, then returns to the top, and lets it settle. @param {any} page */
