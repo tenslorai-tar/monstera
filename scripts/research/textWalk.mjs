@@ -245,12 +245,18 @@ await step('6. saved, closed and reopened: the words are there, editable, findab
   };
 });
 
-await step('7. the font picker: the document’s fonts, Recent and this computer’s by real name; "cal" finds Calibri and Cambria', async () => {
+await step('7. the font picker: the document’s fonts, Recent and this computer’s by name alone (N12); "cal" finds Calibri and Cambria', async () => {
   await section('Edit');
   await ensureEditText();
   await page.locator('[data-text-block]').first().click();
   await panel().getByRole('button', { name: /^Font:/u }).click();
   const groups = await panel().getByRole('listbox').getByRole('group').evaluateAll((each) => each.map((node) => node.getAttribute('aria-labelledby')));
+  // JUST FONTS (N12): every option reads as its name and nothing else, on this computer's real list. Step 19 reads back
+  // the Times New Roman step 15 picks from it.
+  const described = await panel()
+    .getByRole('option')
+    .evaluateAll((each) => each.filter((node) => node.textContent !== node.getAttribute('data-font-choice')).map((node) => node.textContent));
+  expect(described).toStrictEqual([]);
   await panel().getByRole('combobox', { name: 'Search fonts' }).fill('cal');
   const found = await panel().locator('[data-font-choice]').evaluateAll((each) => each.map((node) => node.getAttribute('data-font-choice')));
   await page.keyboard.press('Escape');

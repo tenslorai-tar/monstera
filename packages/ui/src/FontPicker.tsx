@@ -1,8 +1,7 @@
 import { useLingui } from '@lingui/react';
 import type { FontFamilyEntry } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
-import { type ReactElement, type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { type ReactElement, useId, useMemo, useRef, useState } from 'react';
 
 import {
   FONT_GROUP_BUILT_IN,
@@ -13,26 +12,28 @@ import {
   FONT_LIST_MORE,
   FONT_LIST_READING,
   FONT_LIST_UNREAD,
-  FONT_LOOKS_LIKE,
   FONT_NONE_MATCH,
-  FONT_NOT_EMBEDDABLE,
-  FONT_PARTIAL,
   FONT_PICKER_LIST,
   FONT_PICKER_SEARCH,
 } from './messages/en.js';
 import { Icon } from './primitives/Icon.js';
-import { KEEPS_EDITOR } from './textEditorControl.js';
 
 /**
- * The ONE font picker (the owner's D1 to D4): every place a person chooses a font takes this, so the list, its groups and
- * what it says of a font are the same everywhere (B3a).
+ * The ONE font picker (the owner's D1 to D4): every place a person chooses a font takes this, so the list and its groups
+ * are the same everywhere (B3a).
  *
  * ## The groups, in the owner's order
  *
- * *In this document* (a subset's tag stripped, and said to be partial), *Recent* (this session's), *On this computer*,
- * *Included with Monstera* (a bundled family is said to LOOK LIKE the one it is drawn to the measure of, never named as
- * it), and *Built into PDF*, which the caller names because what a consumer can set differs: the in-place editor sets
+ * *In this document* (a subset's tag stripped), *Recent* (this session's), *On this computer*, *Included with Monstera*,
+ * and *Built into PDF*, which the caller names because what a consumer can set differs: the in-place editor sets
  * Helvetica, Times and Courier through the resolver, and Symbol and ZapfDingbats have no face that stands in for them.
+ *
+ * ## Just fonts (the owner's N12)
+ *
+ * A font is its name and nothing more: no sentence beside or under it. A family whose licence forbids embedding is LEFT
+ * OUT rather than listed and explained, since choosing it would set a stand-in; a document's own fonts stay under *In this
+ * document* whatever they are. A bundled family drawn to another's measure is still FOUND by that other's name (typing
+ * *Calibri* finds Carlito), without saying so.
  *
  * ## Inline, never a portal
  *
@@ -65,11 +66,10 @@ export const BUILT_INTO_PDF = ['Helvetica', 'Times', 'Courier', 'Symbol', 'ZapfD
  */
 export const RESOLVED_BUILT_IN = ['Helvetica', 'Times', 'Courier'] as const;
 
-/** One font the list offers: the name sent, what is said, and what is said beneath it. */
+/** One font the list offers: the name sent and shown, and the family it is drawn to the measure of, which a search finds. */
 export interface FontChoice {
   readonly family: string;
-  readonly label: { readonly key: MessageKey; readonly values: Readonly<Record<string, string>> } | undefined;
-  readonly note: MessageKey | undefined;
+  readonly like: string | undefined;
 }
 
 export interface FontGroup {
@@ -90,22 +90,17 @@ export function fontGroups(
 ): FontGroup[] {
   const wanted = query.trim().toLowerCase();
   const matches = (choice: FontChoice): boolean =>
-    wanted === '' ||
-    choice.family.toLowerCase().includes(wanted) ||
-    (choice.label?.values['like']?.toLowerCase().includes(wanted) ?? false);
-  const plain = (family: string): FontChoice => ({ family, label: undefined, note: undefined });
-  const ofEntry = (entry: FontFamilyEntry): FontChoice => ({
-    family: entry.name,
-    label: entry.looksLike === undefined ? undefined : { key: FONT_LOOKS_LIKE, values: { name: entry.name, like: entry.looksLike } },
-    note: entry.embedding === 'never' ? FONT_NOT_EMBEDDABLE : undefined,
-  });
-  const families = list?.families ?? [];
+    wanted === '' || choice.family.toLowerCase().includes(wanted) || (choice.like?.toLowerCase().includes(wanted) ?? false);
+  const plain = (family: string): FontChoice => ({ family, like: undefined });
+  const ofEntry = (entry: FontFamilyEntry): FontChoice => ({ family: entry.name, like: entry.looksLike });
+  // ONLY WHAT CAN BE USED: a family that may not be embedded is never offered, in any group the list feeds (N12).
+  const families = (list?.families ?? []).filter((entry) => entry.embedding !== 'never');
   const seen = new Set<string>();
   const document = inDocument.flatMap((font): FontChoice[] => {
     const name = font.name.replace(SUBSET_TAG, '');
     if (seen.has(name.toLowerCase())) return [];
     seen.add(name.toLowerCase());
-    return [{ family: name, label: font.partial ? { key: FONT_PARTIAL, values: { name } } : undefined, note: undefined }];
+    return [plain(name)];
   });
   const known = new Map(families.map((entry) => [entry.name.toLowerCase(), entry]));
   // RECENT IS A SHORTCUT INTO THE OTHER GROUPS, never a group of its own: the list is the session's, shared by every
@@ -149,37 +144,12 @@ export interface FontPickerProps {
   readonly inDocument: readonly DocumentFont[];
   readonly builtIn: readonly string[];
   readonly onPick: (family: string) => void;
-  /**
-   * The list opens FLOATING over the window, under the button, rather than in the flow: for a picker in a row that
-   * clips what grows out of it (the ribbon, ADR-0228 Decision 5). It closes on a press outside it, and is marked as part
-   * of the open text editor's surface so a focus moving into it keeps the words being edited.
-   */
-  readonly floating?: boolean;
 }
 
-export function FontPicker({ label, value, unset, list, inDocument, builtIn, onPick, floating = false }: FontPickerProps): ReactElement {
+export function FontPicker({ label, value, unset, list, inDocument, builtIn, onPick }: FontPickerProps): ReactElement {
   const { _ } = useLingui();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const face = useRef<HTMLButtonElement>(null);
-  const panel = useRef<HTMLDivElement>(null);
-  /** Where a floating list sits: under the button, read when it opens. */
-  const [floatAt, setFloatAt] = useState<{ readonly left: number; readonly top: number; readonly width: number } | undefined>();
-  // A FLOATING LIST CLOSES ON A PRESS OUTSIDE IT AND ITS BUTTON, as a menu does; the in-flow list is closed by its own
-  // surface, which holds it.
-  useEffect(() => {
-    if (!floating || !open) return undefined;
-    const away = (event: PointerEvent): void => {
-      const target = event.target as Node | null;
-      if (target !== null && (face.current?.contains(target) === true || panel.current?.contains(target) === true)) return;
-      setOpen(false);
-      setQuery('');
-    };
-    document.addEventListener('pointerdown', away, true);
-    return () => {
-      document.removeEventListener('pointerdown', away, true);
-    };
-  }, [floating, open]);
   const [active, setActive] = useState(0);
   const listId = useId();
   const optionId = (at: number): string => `${listId}-${String(at)}`;
@@ -192,7 +162,6 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
     setQuery('');
     onPick(choice.family);
   };
-  const said = (choice: FontChoice): string => (choice.label === undefined ? choice.family : _(choice.label.key, choice.label.values));
   /** Where each group's first choice falls in the one list the keys walk. */
   const starts = groups.map((_group, index) => groups.slice(0, index).reduce((sum, earlier) => sum + earlier.choices.length, 0));
   return (
@@ -202,34 +171,19 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
         aria-label={`${_(label)}: ${value ?? _(unset)}`}
         className="m-font-picker__face"
         onClick={() => {
-          if (floating && face.current !== null) {
-            const box = face.current.getBoundingClientRect();
-            setFloatAt({ left: box.left, top: box.bottom + FLOAT_BELOW, width: Math.max(box.width, FLOAT_MIN_WIDTH) });
-          }
           setOpen((now) => !now);
           setActive(0);
           // THE SEARCH TAKES THE KEYS once the list is open, so a person types a name at once.
           requestAnimationFrame(() => search.current?.focus());
         }}
-        ref={face}
         style={value === undefined ? undefined : { fontFamily: `"${value}"` }}
         type="button"
       >
         <span className="m-font-picker__name">{value ?? _(unset)}</span>
         <Icon name="ChevronDown" size="dense" />
       </button>
-      {open ? floated(
-        <div
-          className={floating ? 'm-font-picker__open m-font-picker__open--floating' : 'm-font-picker__open'}
-          data-font-picker=""
-          ref={panel}
-          {...(floating ? { [KEEPS_EDITOR]: '' } : {})}
-          style={
-            floating && floatAt !== undefined
-              ? { insetInlineStart: floatAt.left, insetBlockStart: floatAt.top, inlineSize: floatAt.width }
-              : undefined
-          }
-        >
+      {open ? (
+        <div className="m-font-picker__open" data-font-picker="">
           <input
             aria-activedescendant={flat.length === 0 ? undefined : optionId(Math.min(active, flat.length - 1))}
             aria-autocomplete="list"
@@ -295,8 +249,7 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
                         role="option"
                       >
                         {/* EACH NAME IN ITS OWN TYPEFACE, where this computer can draw it. */}
-                        <span style={{ fontFamily: `"${choice.family}"` }}>{said(choice)}</span>
-                        {choice.note === undefined ? null : <span className="m-font-picker__note">{_(choice.note)}</span>}
+                        <span style={{ fontFamily: `"${choice.family}"` }}>{choice.family}</span>
                       </div>
                     );
                   })}
@@ -307,18 +260,8 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
           {flat.length === 0 && list !== undefined ? (
             <p className="m-font-picker__note">{_(FONT_NONE_MATCH, { query })}</p>
           ) : null}
-        </div>,
-        floating,
+        </div>
       ) : null}
     </div>
   );
-}
-
-/** How far below its button a floating list opens, and the narrowest it is drawn: a name and its note fit. */
-const FLOAT_BELOW = 4;
-const FLOAT_MIN_WIDTH = 260;
-
-/** The open list where it is drawn: in the flow, or carried to the body so no row that clips can cut it. */
-function floated(panel: ReactElement, floating: boolean): ReactNode {
-  return floating ? createPortal(panel, document.body) : panel;
 }

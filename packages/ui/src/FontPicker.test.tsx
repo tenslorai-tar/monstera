@@ -13,9 +13,6 @@ import {
   FONT_GROUP_COMPUTER,
   FONT_GROUP_DOCUMENT,
   FONT_GROUP_RECENT,
-  FONT_LOOKS_LIKE,
-  FONT_NOT_EMBEDDABLE,
-  FONT_PARTIAL,
   TEXT_FORMAT_FAMILY,
   TEXT_FORMAT_FAMILY_RUN,
 } from './messages/en.js';
@@ -40,7 +37,7 @@ const LIST = {
 } as const;
 
 describe('fontGroups, the one font list’s groups (D1 to D4)', () => {
-  it('lists the groups in the owner’s order, the document’s subset tag stripped and said partial', () => {
+  it('lists the groups in the owner’s order, the document’s subset tag stripped and nothing said of it (N12)', () => {
     const groups = fontGroups(LIST, [{ name: 'ABCDEF+Garamond', partial: true }], ['Arial'], BUILT_INTO_PDF, '');
     expect(groups.map((group) => group.title)).toStrictEqual([
       FONT_GROUP_DOCUMENT,
@@ -49,24 +46,21 @@ describe('fontGroups, the one font list’s groups (D1 to D4)', () => {
       FONT_GROUP_BUNDLED,
       FONT_GROUP_BUILT_IN,
     ]);
-    expect(groups[0]?.choices[0]).toStrictEqual({
-      family: 'Garamond',
-      label: { key: FONT_PARTIAL, values: { name: 'Garamond' } },
-      note: undefined,
-    });
+    expect(groups[0]?.choices[0]).toStrictEqual({ family: 'Garamond', like: undefined });
     expect(groups[4]?.choices.map((choice) => choice.family)).toStrictEqual(['Helvetica', 'Times', 'Courier', 'Symbol', 'ZapfDingbats']);
   });
 
-  it('says a bundled family LOOKS LIKE another and never names it as that family, and says a locked one in words', () => {
-    const groups = fontGroups(LIST, [], [], [], '');
-    const bundled = groups.find((group) => group.title === FONT_GROUP_BUNDLED)?.choices[0];
-    expect(bundled).toStrictEqual({
-      family: 'Carlito',
-      label: { key: FONT_LOOKS_LIKE, values: { name: 'Carlito', like: 'Calibri' } },
-      note: undefined,
-    });
-    const locked = groups.find((group) => group.title === FONT_GROUP_COMPUTER)?.choices.find((choice) => choice.family === 'Locked Sans');
-    expect(locked?.note).toBe(FONT_NOT_EMBEDDABLE);
+  it('LEAVES OUT a family whose licence forbids embedding, from every group the list feeds (N12)', () => {
+    const groups = fontGroups(LIST, [], ['Locked Sans', 'Arial'], [], '');
+    const offered = groups.flatMap((group) => group.choices.map((choice) => choice.family));
+    expect(offered).not.toContain('Locked Sans');
+    // CONTROL: the families beside it in the same list, and in Recent, are offered, so the absence is the licence's.
+    expect(offered).toStrictEqual(['Arial', 'Arial', 'Carlito']);
+  });
+
+  it('CONTROL: a document’s own font stays under In this document whatever its licence, as the owner asked', () => {
+    const groups = fontGroups(LIST, [{ name: 'Locked Sans', partial: false }], [], [], '');
+    expect(groups.find((group) => group.title === FONT_GROUP_DOCUMENT)?.choices.map((choice) => choice.family)).toStrictEqual(['Locked Sans']);
   });
 
   it('a search keeps the names that hold it, and finds Carlito by the family it looks like', () => {
@@ -118,12 +112,16 @@ describe('FontPicker', () => {
     expect(view.queryByRole('listbox')).toBeNull();
   });
 
-  it('draws each name in its own typeface, and says the bundled one as looking like another', () => {
+  it('draws each name in its own typeface and says nothing else of it: every option’s text is its name (N12)', () => {
     const view = mount(() => undefined);
     fireEvent.click(view.getByRole('button', { name: 'Font: As on the page' }));
-    const carlito = view.container.querySelector('[data-font-choice="Carlito"] span');
-    expect(carlito?.textContent).toBe('Carlito (looks like Calibri)');
-    expect((carlito as HTMLElement | null)?.style.fontFamily).toContain('Carlito');
+    const carlito = view.container.querySelector('[data-font-choice="Carlito"]');
+    expect(carlito?.textContent).toBe('Carlito');
+    expect((carlito?.querySelector('span') as HTMLElement | null)?.style.fontFamily).toContain('Carlito');
+    const options = [...view.container.querySelectorAll('[role="option"]')];
+    // NON-VACUOUS: the list has options to compare, the computer's and the built-in ones.
+    expect(options.length).toBeGreaterThan(3);
+    expect(options.filter((option) => option.textContent !== option.getAttribute('data-font-choice'))).toStrictEqual([]);
   });
 
   it('says in words when the computer’s fonts could not be listed, and still offers Helvetica', () => {

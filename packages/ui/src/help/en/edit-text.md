@@ -45,10 +45,10 @@ The font field opens one list, the same wherever you choose a font in Monstera. 
 - **In this document**: the fonts the file already uses, on every page and in its form fields. One that is not on this computer is drawn in a font that looks like it.
 - **Recent**: the fonts you chose since Monstera started.
 - **On this computer**: the fonts installed on this computer.
-- **Included with Monstera**: fonts that come with Monstera. Each says which font it looks like, for example “Carlito (looks like Calibri)”: it has the same letter widths, so a line breaks in the same place, but it is not that font. Where this computer has Calibri itself, Calibri is used.
+- **Included with Monstera**: fonts that come with Monstera. Some have the same letter widths as a common font, so searching for that font finds them too: **Search fonts** with “Calibri” also finds Carlito. Where this computer has Calibri itself, Calibri is used.
 - **Built into PDF**: Helvetica, Times and Courier, which every PDF reader has.
 
-A font whose licence does not allow it to be put inside a PDF says so under its name, and a similar font is used instead. If the list of this computer's fonts cannot be read, the list says so and still offers the fonts built into PDF.
+The list shows only fonts that can be used in a PDF. A font on this computer whose licence does not allow it to be put inside a PDF is not listed. If the list of this computer's fonts cannot be read, the list says so and still offers the fonts built into PDF.
 
 ## Text box or Add text: which do I need?
 

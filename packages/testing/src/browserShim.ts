@@ -274,9 +274,13 @@ export interface ShimFormField {
   readonly format?: FieldFormat | null;
 }
 
-/** The families `app.fontFamilies` answers by default: a few a Windows machine holds, and two Monstera bundles. */
+/**
+ * The families `app.fontFamilies` answers by default: a few a Windows machine holds, two Monstera bundles, and one whose
+ * licence forbids embedding, by a name no real font has, which the one picker must leave out (N12).
+ */
 const SHIM_FONT_FAMILIES = [
   { name: 'Arial', origin: 'installed', embedding: 'subset' },
+  { name: 'Locked Display', origin: 'installed', embedding: 'never' },
   { name: 'Calibri', origin: 'installed', embedding: 'subset' },
   { name: 'Cambria', origin: 'installed', embedding: 'subset' },
   { name: 'Carlito', origin: 'bundled', embedding: 'subset', looksLike: 'Calibri' },

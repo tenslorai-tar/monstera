@@ -160,17 +160,23 @@ test.describe('Formatting in the Properties panel (K11)', () => {
     await expect(page.locator('[data-text-editor]')).toBeFocused();
   });
 
-  test('the font picker lists the page’s own font first, its subset tag stripped and said partial, then this computer’s', async ({ page }) => {
+  test('the font picker lists the page’s own font first, its subset tag stripped, then this computer’s: names alone (N12)', async ({ page }) => {
     const sent: { channel: string; params: unknown }[] = [];
     await openBlock(page, sent);
     const panel = page.locator('[data-text-properties]');
     await panel.getByRole('button', { name: /^Font:/u }).click();
     const groups = panel.getByRole('listbox').getByRole('group');
     await expect(groups.first()).toHaveAccessibleName('In this document');
-    await expect(groups.first().getByRole('option')).toHaveText(['Garamond (partial: only the letters this document uses)']);
-    // THE COMPUTER'S, from the shim's list, and a bundled one said to look like another.
+    await expect(groups.first().getByRole('option')).toHaveText(['Garamond']);
+    // THE COMPUTER'S, from the shim's list, and a bundled one, each by its name and nothing else.
     await expect(panel.getByRole('group', { name: 'On this computer' }).getByRole('option', { name: 'Calibri' })).toBeVisible();
-    await expect(panel.getByRole('option', { name: 'Carlito (looks like Calibri)' })).toBeVisible();
+    await expect(panel.getByRole('option', { name: 'Carlito', exact: true })).toBeVisible();
+    // THE SHIM LISTS A FAMILY WHOSE LICENCE FORBIDS EMBEDDING, and the picker leaves it out; the family beside it in the
+    // same list is the control that the list was read.
+    await expect(panel.locator('[data-font-choice="Locked Display"]')).toHaveCount(0);
+    await expect(panel.locator('[data-font-choice="Arial"]')).not.toHaveCount(0);
+    const texts = await panel.getByRole('option').evaluateAll((each) => each.map((node) => [node.textContent, node.getAttribute('data-font-choice')]));
+    expect(texts.filter(([text, name]) => text !== name)).toStrictEqual([]);
   });
 
   // THE WHOLE DOCUMENT'S FONTS (B2.8): the two below are on no run of the open page, so only `document.fonts` can put them
@@ -185,8 +191,8 @@ test.describe('Formatting in the Properties panel (K11)', () => {
     const panel = page.locator('[data-text-properties]');
     await panel.getByRole('button', { name: /^Font:/u }).click();
     await expect(panel.getByRole('listbox').getByRole('group').first().getByRole('option')).toHaveText([
-      'Garamond (partial: only the letters this document uses)',
-      'Lato-Regular (partial: only the letters this document uses)',
+      'Garamond',
+      'Lato-Regular',
       'Courier',
     ]);
     expect(sent.filter((one) => one.channel === 'document.fonts').length).toBeGreaterThan(0);

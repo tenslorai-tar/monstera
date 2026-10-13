@@ -1670,7 +1670,7 @@ export const TEXT_HIGHLIGHT_PINK = messageKey('surface.text-format.highlight-pin
 export const TEXT_HIGHLIGHT_ORANGE = messageKey('surface.text-format.highlight-orange');
 export const TEXT_FORMAT_CHARACTER_SPACING = messageKey('surface.text-format.character-spacing');
 export const TEXT_FORMAT_SPACE_AFTER = messageKey('surface.text-format.space-after');
-// THE ONE FONT PICKER (the owner's D1 to D4): its search, its groups, and what it says of a font in words.
+// THE ONE FONT PICKER (the owner's D1 to D4): its search, its groups, and what it says of the list (never of a font, N12).
 export const FONT_PICKER_SEARCH = messageKey('surface.font-picker.search');
 export const FONT_PICKER_LIST = messageKey('surface.font-picker.list');
 export const FONT_GROUP_DOCUMENT = messageKey('surface.font-picker.group-document');
@@ -1678,9 +1678,6 @@ export const FONT_GROUP_RECENT = messageKey('surface.font-picker.group-recent');
 export const FONT_GROUP_COMPUTER = messageKey('surface.font-picker.group-computer');
 export const FONT_GROUP_BUNDLED = messageKey('surface.font-picker.group-bundled');
 export const FONT_GROUP_BUILT_IN = messageKey('surface.font-picker.group-built-in');
-export const FONT_LOOKS_LIKE = messageKey('surface.font-picker.looks-like');
-export const FONT_PARTIAL = messageKey('surface.font-picker.partial');
-export const FONT_NOT_EMBEDDABLE = messageKey('surface.font-picker.not-embeddable');
 export const FONT_LIST_UNREAD = messageKey('surface.font-picker.unread');
 export const FONT_LIST_MORE = messageKey('surface.font-picker.more');
 export const FONT_LIST_READING = messageKey('surface.font-picker.reading');
@@ -4445,9 +4442,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FONT_GROUP_COMPUTER]: 'On this computer',
   [FONT_GROUP_BUNDLED]: 'Included with Monstera',
   [FONT_GROUP_BUILT_IN]: 'Built into PDF',
-  [FONT_LOOKS_LIKE]: '{name} (looks like {like})',
-  [FONT_PARTIAL]: '{name} (partial: only the letters this document uses)',
-  [FONT_NOT_EMBEDDABLE]: 'Its licence does not allow it inside a PDF, so a similar font is used instead.',
   [FONT_LIST_UNREAD]: 'The fonts on this computer could not be listed, so the fonts every PDF has are offered.',
   // THE FAMILIES PAST THE LIST'S BOUND are the last by name, so a family a person cannot find is told apart from one
   // this computer does not have.
