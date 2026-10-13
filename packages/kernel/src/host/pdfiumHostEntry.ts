@@ -22,9 +22,8 @@ import { sessionFileAnswers } from './fileAnswers.js';
 import { createHostSessions } from './hostSessions.js';
 import { startEngineHost } from './hostBody.js';
 import { hostFilesystem, hostPipeStream } from './hostNodeSurfaces.js';
-import { ENGINE_TEXT_OBJECTS_MAX } from './pdfiumChannels.js';
 import { pdfiumChannels } from './pdfiumChannels.js';
-import { createPdfiumHandlers } from './pdfiumHandlers.js';
+import { boundedToAnswer, createPdfiumHandlers } from './pdfiumHandlers.js';
 
 /**
  * The **PDFium** engine host's entry point.
@@ -137,18 +136,10 @@ const handlers = createPdfiumHandlers({
       // the one an edit sent with `unpack` makes, so the indices answered here are the ones that edit writes.
       await unpackedIfAsked(session, page, unpack);
       const found = await textRuns(session, page);
-      // THE WALK IS WHAT KNOWS THERE WAS MORE, so the flag is computed here
-      // rather than by the handler from the array it is handed — which would
-      // answer *you asked for that many* every time.
-      return {
-        runs: found.runs.slice(0, ENGINE_TEXT_OBJECTS_MAX),
-        truncated: found.runs.length > ENGINE_TEXT_OBJECTS_MAX,
-        // FORWARDED UNCLIPPED. It counts characters the walk could not place,
-        // which the bound above has nothing to do with — clipping it to the
-        // run bound would report a page's worth of unreachable text as a page's
-        // worth of runs.
-        unaddressable: found.unaddressable,
-      };
+      const { kept, truncated } = boundedToAnswer(found.runs);
+      // `unaddressable` FORWARDED UNCLIPPED: it counts characters the walk could not place, which the run bound has
+      // nothing to do with.
+      return { runs: kept, truncated, unaddressable: found.unaddressable };
     }),
   // THE BITMAP'S OWN BYTES, unconverted. `renderPageBitmap` answers BGRA
   // because that is what PDFium produces and what main's encoder takes; a
@@ -165,11 +156,8 @@ const handlers = createPdfiumHandlers({
   pageContent: (image, page) => onImage(image, (session) => pageContent(session, page)),
   pageObjects: (image, page) =>
     onImage(image, async (session) => {
-      const objects = await pageObjects(session, page);
-      return {
-        objects: objects.slice(0, ENGINE_TEXT_OBJECTS_MAX),
-        truncated: objects.length > ENGINE_TEXT_OBJECTS_MAX,
-      };
+      const { kept, truncated } = boundedToAnswer(await pageObjects(session, page));
+      return { objects: kept, truncated };
     }),
   // REBUILT HERE, in the contained process, from the runs' own programs (ADR-0175): the document's program never leaves.
   runFonts: (image, page, indices, unpack) =>

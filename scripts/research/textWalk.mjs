@@ -25,7 +25,7 @@ import { copyFile, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { expect as defaultExpect } from '@playwright/test';
-import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream, PDFString, decodePDFRawStream } from '@cantoo/pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream, PDFString, StandardFonts, decodePDFRawStream } from '@cantoo/pdf-lib';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { root, startWalk } from './liveWalk.mjs';
 import { savedFonts } from './savedFonts.mjs';
@@ -682,6 +682,43 @@ await step('L2: an underlined word keeps its one underline when its block is edi
   const rules = await savedMarkedRules(l2Saved);
   expect({ drawnUnderlined, rules }).toStrictEqual({ drawnUnderlined: true, rules: 1 });
   return { drawnUnderlined, markedRules: rules };
+});
+
+/**
+ * L6's page: a heading drawn FIRST, then more single-character runs than one answer carries (`ENGINE_TEXT_OBJECTS_MAX`,
+ * 39,100 on 2026-10-13), each on its own baseline so none joins another. The heading is first in the page's own order, so
+ * it is among what is outlined.
+ */
+async function densePage() {
+  const made = await PDFDocument.create({ updateMetadata: false });
+  const font = await made.embedFont(StandardFonts.Helvetica);
+  const sheet = made.addPage([612, 792]);
+  sheet.drawText('Dense page heading', { x: 72, y: 740, size: 14, font });
+  for (let at = 0; at < 39_200; at += 1) sheet.drawText('x', { x: 72 + (at % 400) * 1.2, y: 60 + at * 0.016, size: 0.5, font });
+  const path = join(output, 'l6-dense.pdf');
+  await writeFile(path, await made.save());
+  return path;
+}
+
+const l6Saved = join(output, 'l6.pdf');
+await step('L6: a page with more runs than one answer carries SAYS SO in Edit text, and its heading is still edited and saved', async () => {
+  await open(await densePage());
+  await section('Edit');
+  await ensureEditText();
+  await expect(page.getByText('This page has more text than can be outlined at once')).toBeVisible({ timeout: 60_000 });
+  await page.locator('[data-text-block]').first().click();
+  await expect(editor()).toBeFocused();
+  await page.keyboard.press('Control+Home');
+  await page.keyboard.type('Edited ');
+  await clickPage(10, 10);
+  await expect(editor()).toHaveCount(0);
+  await saveTo(l6Saved);
+  await command('Save a copy');
+  await expect.poll(() => existsSync(l6Saved), { timeout: 60_000 }).toBe(true);
+  // READ BACK by PDF.js: the edited heading is in the file.
+  const words = await savedWords(l6Saved);
+  expect(words[0]).toContain('Edited Dense page heading');
+  return { headingSaved: true };
 });
 
 await step('N14: a word processor’s subsets keep their own font, bold and superscript while a block is open, and after it is written', async () => {

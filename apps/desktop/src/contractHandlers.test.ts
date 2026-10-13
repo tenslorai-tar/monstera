@@ -2882,6 +2882,25 @@ describe('a dense page’s blocks and objects answer in parts the contract accep
     expect(items).toStrictEqual(blocks);
   });
 
+  it('a page the host CUT says so on its LAST part, and on no other (the owner’s L6)', async () => {
+    const cut = harness(OPENED, () => Promise.resolve(null), undefined, {
+      commands: {
+        textBlocks: () =>
+          Promise.resolve({ version: asDocVersion(7), blocks, truncated: true, rotated: 0, angled: NOT_ANGLED, unaddressable: 2, rewrite: 'operators' }),
+      } as unknown as DocumentCommands,
+    });
+    const first = await cut.handlers['document.textBlocks']({ docId: A_DOC, page: 0, from: 0 });
+    if (!first.ok || first.value.next === null) throw new Error('the first part should have a next');
+    const last = await cut.handlers['document.textBlocks']({ docId: A_DOC, page: 0, from: first.value.next });
+    if (!last.ok) throw new Error('the last part was refused');
+    expect([first.value.truncated, last.value.truncated, last.value.next]).toStrictEqual([false, true, null]);
+    // CONTROL: the same page read whole says it on no part, so the flag is the host's and not the paging's.
+    const whole = await handlers['document.textBlocks']({ docId: A_DOC, page: 0, from: 0 });
+    if (!whole.ok || whole.value.next === null) throw new Error('the first part should have a next');
+    const wholeLast = await handlers['document.textBlocks']({ docId: A_DOC, page: 0, from: whole.value.next });
+    expect(wholeLast.ok && wholeLast.value.truncated).toBe(false);
+  });
+
   it('8,400 page objects: seventeen parts, all valid, and together the page', async () => {
     const { items, parts } = await walk('document.pageObjects', (value) => (value as { objects: unknown[] }).objects);
     expect(parts).toBe(17);

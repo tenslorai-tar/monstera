@@ -93,6 +93,16 @@ export type HostTextRunsReader = (
 }>;
 
 /**
+ * A page's whole walk cut to what one answer may carry, and whether it was cut: the ONE place {@link ENGINE_TEXT_OBJECTS_MAX}
+ * is applied to a page's runs or objects (the owner's L6). The walk is what knows there was more, so the flag is computed
+ * from the whole walk here rather than by a handler from the array it is handed, which would answer *you asked for that
+ * many* every time. The editor says so on screen where it is set.
+ */
+export function boundedToAnswer<Item>(walked: readonly Item[]): { readonly kept: Item[]; readonly truncated: boolean } {
+  return { kept: walked.slice(0, ENGINE_TEXT_OBJECTS_MAX), truncated: walked.length > ENGINE_TEXT_OBJECTS_MAX };
+}
+
+/**
  * A page rasterised to BGRA at the size the caller stated.
  *
  * Injected for {@link HostTextRunsReader}'s reason: a handler proof drives this
@@ -409,18 +419,13 @@ export function createPdfiumHandlers({
       try {
         const found = await textRuns(image, page, unpack === true);
         // BOUNDED WHERE THE WALK IS and forwarded rather than re-derived: a
-        // handler computing `truncated` from the array's length would answer
-        // *you asked for that many* every time. The slice here is belt to the
-        // reader's braces — the schema's `.max` would refuse an over-long array
-        // as a malformed answer, which is a violation rather than an outcome.
-        return {
-          ok: true,
-          value: {
-            runs: found.runs.slice(0, ENGINE_TEXT_OBJECTS_MAX),
-            truncated: found.truncated,
-            unaddressable: found.unaddressable,
-          },
-        };
+        // handler computing `truncated` from the array's length alone would answer
+        // *you asked for that many* every time. The bound applied again here is
+        // belt to the reader's braces — the schema's `.max` would refuse an
+        // over-long array as a malformed answer, which is a violation rather than
+        // an outcome — and a cut it makes is SAID, never a silent drop.
+        const { kept, truncated } = boundedToAnswer(found.runs);
+        return { ok: true, value: { runs: kept, truncated: found.truncated || truncated, unaddressable: found.unaddressable } };
       } catch {
         // THE DOCUMENT'S FAULT rather than the host's — a page this document
         // does not have, or one PDFium cannot load. It must not reach the
@@ -450,13 +455,9 @@ export function createPdfiumHandlers({
       }
       try {
         const found = await pageObjects(image, page);
-        return {
-          ok: true,
-          value: {
-            objects: found.objects.slice(0, ENGINE_TEXT_OBJECTS_MAX),
-            truncated: found.truncated,
-          },
-        };
+        // `engine/text-runs`' belt, and a cut it makes is said the same way.
+        const { kept, truncated } = boundedToAnswer(found.objects);
+        return { ok: true, value: { objects: kept, truncated: found.truncated || truncated } };
       } catch {
         return failed('engine-refused');
       }

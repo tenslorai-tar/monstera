@@ -1390,6 +1390,17 @@ describe('Edit text on the page (ADR-0096)', () => {
     const plain = mount();
     for (const [, sentence] of kinds) expect(plain.view.container.textContent).not.toContain(sentence);
   });
+
+  it('SAYS SO when the page has more text than one answer can outline, and outlines what it has (the owner’s L6)', () => {
+    const cut = mount({ blocks: { ...BLOCKS, truncated: true } });
+    expect(cut.view.container.textContent).toContain('This page has more text than can be outlined at once');
+    // WHAT CAME IS STILL OUTLINED: the sentence is beside the blocks, never instead of them.
+    expect(cut.view.container.querySelectorAll('[data-text-block]')).toHaveLength(BLOCKS.blocks.length);
+    cut.view.unmount();
+    // CONTROL: a page read whole says nothing about it.
+    const whole = mount();
+    expect(whole.view.container.textContent).not.toContain('more text than can be outlined');
+  });
 });
 
 /**
