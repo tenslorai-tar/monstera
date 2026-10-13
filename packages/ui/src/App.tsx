@@ -5525,7 +5525,7 @@ function PageCanvas({
   );
 
   const keys = useMemo(() => viewKeysOf(documentKeys, open.docId), [documentKeys, open.docId]);
-  const { ready, failed } = useDocumentView(client, open, moved, askPassword, keys);
+  const { ready, failed, retry } = useDocumentView(client, open, moved, askPassword, keys);
   /**
    * Whether the page area's first frame has been shown (`PageList.onFirstFrame`): until it has, the thumbnail strip
    * asks main for nothing, so the first page is the first work main's lane does for this document.
@@ -5702,13 +5702,21 @@ function PageCanvas({
     // form fields, the layers and the find field come from main, not from PDF.js, so a
     // document PDF.js cannot parse still has all five. Only the Pages panel is empty,
     // because it is the one that draws through the view that failed.
+    //
+    // AND IT SAYS WHY, WITH A WAY ON (the owner's Part 7 B): a page area that only stopped was indistinguishable from
+    // one still opening. *Try again* opens the view again at the same version.
     return (
       <DocumentBody
         settings={settings}
         presence={presence}
         measuresRow={measuresRow}
         panel={<DocumentPanel tool={tool} settings={settings} presence={presence} panels={panels} pages={null} />}
-        page={<canvas className="m-page" data-failed="true" />}
+        page={
+          <div className="m-page-pane" data-first-frame="failed">
+            <canvas className="m-page" data-failed="true" hidden />
+            <ViewProblem onRetry={retry} />
+          </div>
+        }
         contextPanel={contextPanel} quickToolbar={quickToolbar}
       />
     );

@@ -123,12 +123,13 @@ export class DocumentRangeTransport extends PDFDataRangeTransport {
       if (this.#aborted) return;
 
       if (!answer.ok) {
-        // The document closed underneath the view. Nothing to answer with, and
-        // nothing to report as a version move either — this is not staleness, it
-        // is absence, and conflating them would have the owner rebuild a transport
-        // for a document that is gone.
-        this.#aborted = true;
-        return;
+        // A REFUSAL IS REPORTED, whatever its code (the owner's Part 7 B). This branch used to stop in silence on the
+        // ground that a refusal meant the document had closed under the view, so the view was going anyway. That is
+        // true of `document-not-open` on a closing tab and false of every other refusal, and of a tab main lost while
+        // the renderer still shows it: PDF.js then waited for this range for ever, and the tab said *Opening the
+        // document…* with no end. It is still not a version move, so the owner is not told to rebuild for a new
+        // version; it is told the range failed, and a tab already closing has stopped listening.
+        throw new Error(`main refused the range ${String(at)}..${String(Math.min(at + MAX_RANGE_BYTES, end))}: ${answer.error.code}`);
       }
 
       // STALE ON ANY PIECE is stale for the range: pieces from two versions would be a range out of two documents.

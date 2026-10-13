@@ -282,16 +282,46 @@ describe('DocumentRangeTransport', () => {
     expect(transport.aborted).toBe(true);
   });
 
-  it('CONTROL: a read that is answered, and a document that has closed, are not failures', async () => {
+  // THE OWNER'S PART 7 B: a range main REFUSED used to stop the transport in silence, so PDF.js waited for it for ever
+  // and the tab said *Opening the document…* with no end. Every refusal code is told to the owner, naming the code.
+  it('a range main REFUSES, with any code, tells the owner with the code, and is not a version move', async () => {
     const bytes = countingBytes(600);
-    for (const held of [bytes, null]) {
+    for (const code of ['document-not-open', 'internal'] as const) {
+      const refusing = createClient(channels, () => Promise.resolve(err({ code })));
       const onRangeFailed = vi.fn();
+      const onVersionMoved = vi.fn();
       const transport = new DocumentRangeTransport({
-        client: clientOver(held, VERSION),
+        client: refusing,
         docId: DOC,
         version: VERSION,
         byteLength: bytes.byteLength,
-        onVersionMoved: vi.fn(),
+        onVersionMoved,
+        onRangeFailed,
+      });
+      const answered = vi.spyOn(transport, 'onDataRange').mockImplementation(() => undefined);
+
+      transport.requestDataRange(0, 40);
+      await settle();
+
+      expect(onRangeFailed).toHaveBeenCalledTimes(1);
+      expect(String(onRangeFailed.mock.calls[0]?.[0])).toContain(code);
+      expect(onVersionMoved).not.toHaveBeenCalled();
+      expect(answered).not.toHaveBeenCalled();
+      expect(transport.aborted).toBe(true);
+    }
+  });
+
+  it('CONTROL: a read that is answered, and a version that moved, are not failures', async () => {
+    const bytes = countingBytes(600);
+    for (const at of [VERSION, asDocVersion(5)]) {
+      const onRangeFailed = vi.fn();
+      const onVersionMoved = vi.fn();
+      const transport = new DocumentRangeTransport({
+        client: clientOver(bytes, at),
+        docId: DOC,
+        version: VERSION,
+        byteLength: bytes.byteLength,
+        onVersionMoved,
         onRangeFailed,
       });
       vi.spyOn(transport, 'onDataRange').mockImplementation(() => undefined);
@@ -300,6 +330,8 @@ describe('DocumentRangeTransport', () => {
       await settle();
 
       expect(onRangeFailed).not.toHaveBeenCalled();
+      // Each fixture reached its own branch: the moved one reported a move, the current one did not.
+      expect(onVersionMoved).toHaveBeenCalledTimes(at === VERSION ? 0 : 1);
     }
   });
 
@@ -309,13 +341,14 @@ describe('DocumentRangeTransport', () => {
     const client = clientOver(null, VERSION);
 
     const onVersionMoved = vi.fn();
+    const onRangeFailed = vi.fn();
     const transport = new DocumentRangeTransport({
       client,
       docId: DOC,
       version: VERSION,
       byteLength: bytes.byteLength,
       onVersionMoved,
-      onRangeFailed: vi.fn(),
+      onRangeFailed,
     });
     const answered = vi.spyOn(transport, 'onDataRange').mockImplementation(() => undefined);
 
@@ -327,6 +360,9 @@ describe('DocumentRangeTransport', () => {
     // conflating them has the owner rebuild a transport for a document that is
     // gone — a loop rather than an error.
     expect(onVersionMoved).not.toHaveBeenCalled();
+    // TOLD AS A FAILURE, so a tab main no longer holds says so rather than opening for ever; a tab that is closing has
+    // already stopped listening.
+    expect(onRangeFailed).toHaveBeenCalledTimes(1);
     expect(transport.aborted).toBe(true);
   });
 });

@@ -50,11 +50,12 @@ import {
   SIDE_ZOOM_IN,
   SIDE_ZOOM_OUT,
 } from './messages/en.js';
-import { PageList } from './PageList.js';
+import { OpeningState, PageList } from './PageList.js';
 import { FIRST_PAGE, pdfjsPageOf } from './pageNumbering.js';
 import { Icon } from './primitives/Icon.js';
 import { IconButton } from './primitives/IconButton.js';
 import { renderPage } from './renderPage.js';
+import { ViewProblem } from './surfaces/ViewProblem.js';
 import type { RulerUnit } from './rulerGeometry.js';
 import {
   type CompareRow,
@@ -394,6 +395,7 @@ export function SideBySide({
 interface HalfView {
   readonly ready: DocumentView | undefined;
   readonly failed: boolean;
+  readonly retry: () => void;
 }
 
 /** One half: its toolbar — which document, open another, its own zoom — over its own continuous page list. */
@@ -487,10 +489,17 @@ function Half({
           size="dense"
         />
       </div>
+      {/* THE MAIN PANE'S TWO STATES, for the owner's Part 7 B: opening says so, and a failure says why and offers
+          Try again, where this half used to show an empty pane for both. */}
       {view.failed ? (
-        <canvas className="m-page" data-failed="true" />
+        <div className="m-page-pane" data-first-frame="failed">
+          <canvas className="m-page" data-failed="true" hidden />
+          <ViewProblem onRetry={view.retry} />
+        </div>
       ) : ready === undefined ? (
-        <div className="m-page-pane" />
+        <div className="m-page-pane" data-first-frame="pending">
+          <OpeningState />
+        </div>
       ) : (
         <PageList
           client={client}

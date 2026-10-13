@@ -1,6 +1,6 @@
 import type { ContractClient } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { ViewKeys } from './documentKeys.js';
 import { type DocumentView, needsPasswordToParse, openDocumentView } from './documentView.js';
@@ -104,8 +104,19 @@ export function useDocumentView(
   readonly ready: DocumentView | undefined;
   /** Whether the parse threw. Distinct from *not yet*, which `ready` says. */
   readonly failed: boolean;
+  /**
+   * Opens the view again after a failure, at the same version: the page area's *Try again* (the owner's Part 7 B). A
+   * failure is never the last word on a tab, because a range main refused once may be served the next time.
+   */
+  readonly retry: () => void;
 } {
   const [failed, setFailed] = useState(false);
+  // EACH TRY IS AN OPEN: the opening effect depends on it, so a retry runs the same open a new version would.
+  const [attempt, setAttempt] = useState(0);
+  const retry = useCallback((): void => {
+    setFailed(false);
+    setAttempt((tried) => tried + 1);
+  }, []);
   // KEYED BY DOCUMENT, so a view is only ever kept across a version of ITS document. The callers
   // remount per document today; this makes another document's pages unrepresentable rather than
   // relying on that.
@@ -274,7 +285,7 @@ export function useDocumentView(
     return (): void => {
       cancelled = true;
     };
-  }, [byteLength, client, docId, keys, onVersionMoved, requestPassword, version]);
+  }, [attempt, byteLength, client, docId, keys, onVersionMoved, requestPassword, version]);
 
-  return { ready: shown?.docId === docId ? shown.view : undefined, failed };
+  return { ready: shown?.docId === docId ? shown.view : undefined, failed, retry };
 }
