@@ -5,7 +5,7 @@ import { type ReactElement, useCallback, useRef, useState } from 'react';
 
 import type { OverlayPage } from './annotations/annotationSpace.js';
 import { overlayTransform, pointerOn } from './annotations/annotationSpace.js';
-import type { Gesture, ToolPreview, UiTool } from './registries/tools.js';
+import type { Gesture, PreviewCaption, ToolPreview, UiTool } from './registries/tools.js';
 
 /**
  * The annotation overlay — §6's *dispatcher, never a monolithic switch stack*.
@@ -390,6 +390,19 @@ export function AnnotationOverlay({
  * case can assert *an ellipse was previewed* without reading the tag name — a
  * tool that drew the right box with the wrong shape would otherwise pass.
  */
+/**
+ * A measurement's reading beside the shape being drawn (the owner's O8), or nothing. The words are the number and its
+ * unit the contract's `measureLabel` made, which is what the file will say once the shape is drawn.
+ */
+function Caption({ caption }: { readonly caption: PreviewCaption | undefined }): ReactElement | null {
+  if (caption === undefined) return null;
+  return (
+    <text className="m-annotation-caption" data-annotation-caption="" x={caption.x} y={caption.y}>
+      {caption.text}
+    </text>
+  );
+}
+
 function Preview({ preview }: { readonly preview: ToolPreview }): ReactElement {
   switch (preview.shape) {
     case 'rect':
@@ -419,25 +432,31 @@ function Preview({ preview }: { readonly preview: ToolPreview }): ReactElement {
       );
     case 'line':
       return (
-        <line
-          className="m-annotation-preview"
-          data-annotation-preview="line"
-          x1={preview.x1}
-          x2={preview.x2}
-          y1={preview.y1}
-          y2={preview.y2}
-        />
+        <>
+          <line
+            className="m-annotation-preview"
+            data-annotation-preview="line"
+            x1={preview.x1}
+            x2={preview.x2}
+            y1={preview.y1}
+            y2={preview.y2}
+          />
+          <Caption caption={preview.caption} />
+        </>
       );
     case 'path':
       // A POLYLINE AND NOT A `<path>`, because the points are already a list
       // and `points` takes one. Building a `d` string would be this component
       // deciding on a path grammar for a shape that has no curves in it.
       return (
-        <polyline
-          className="m-annotation-preview m-annotation-stroke"
-          data-annotation-preview="path"
-          points={preview.points.map(([x, y]) => `${String(x)},${String(y)}`).join(' ')}
-        />
+        <>
+          <polyline
+            className="m-annotation-preview m-annotation-stroke"
+            data-annotation-preview="path"
+            points={preview.points.map(([x, y]) => `${String(x)},${String(y)}`).join(' ')}
+          />
+          <Caption caption={preview.caption} />
+        </>
       );
     case 'boxes':
       // ONE GROUP, so a case finds the shape once however many marks move; each box in it keeps its own place.
@@ -454,6 +473,15 @@ function Preview({ preview }: { readonly preview: ToolPreview }): ReactElement {
               y={box.y}
             />
           ))}
+          {/* A LINE OR A POLYGON MOVING IS ITS OUTLINE, never a tinted box (the owner's O8). */}
+          {(preview.paths ?? []).map((path, at) => {
+            const points = path.points.map(([x, y]) => `${String(x)},${String(y)}`).join(' ');
+            return path.closed ? (
+              <polygon className="m-annotation-preview m-annotation-stroke" data-annotation-preview-path="" key={`path-${String(at)}`} points={points} />
+            ) : (
+              <polyline className="m-annotation-preview m-annotation-stroke" data-annotation-preview-path="" key={`path-${String(at)}`} points={points} />
+            );
+          })}
         </g>
       );
     default: {

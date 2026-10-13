@@ -463,6 +463,19 @@ const PLACE_SPEC = `  placeAnnotation: {
     replay: 'reapply-intent',
     sources: 'none',
     reads: 'none',
+  },
+  reshapeAnnotation: {
+    kind: 'reshapeAnnotation',
+    writer: 'mupdf',
+    apply: applyReshapeAnnotation,
+    capture: captureReshapeAnnotation,
+    invert: invertReshapeAnnotation,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
   },`;
 
 /**
@@ -1255,6 +1268,9 @@ const SPEC_IMPORTS = `import {
   applyPlaceAnnotation,
   capturePlaceAnnotation,
   invertPlaceAnnotation,
+  applyReshapeAnnotation,
+  captureReshapeAnnotation,
+  invertReshapeAnnotation,
   applyAddLink,
   captureAddLink,
   invertAddLink,
@@ -3980,8 +3996,9 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // 57 since `editFormFields`, `duplicateFormField` and `setTabOrder` (2026-10-07, ADR-0193): three spelt, 53 counted, one.
     // 58 since `setLinkOutline` (2026-10-08, ADR-0212): three spelt, 54 counted, one.
     // 59 since `editLink` (2026-10-13, the owner's O6(c)): three spelt, 55 counted, one.
+    // 60 since `reshapeAnnotation` (2026-10-13, the owner's O8): three spelt, 56 counted, one.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 55 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 56 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

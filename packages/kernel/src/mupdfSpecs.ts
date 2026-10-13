@@ -42,9 +42,12 @@ import {
   capturePlaceImage,
   capturePlaceSignature,
   captureRemoveAnnotation,
+  captureReshapeAnnotation,
   captureStyleAnnotation,
+  applyReshapeAnnotation,
   invertAddAnnotation,
   invertPlaceAnnotation,
+  invertReshapeAnnotation,
   invertPlaceImage,
   invertPlaceSignature,
   invertRemoveAnnotation,
@@ -303,6 +306,12 @@ export const mupdfSpecs = {
     apply: applyPlaceAnnotation,
     capture: capturePlaceAnnotation,
     invert: invertPlaceAnnotation,
+  },
+  reshapeAnnotation: {
+    ...declaredCommands.reshapeAnnotation,
+    apply: applyReshapeAnnotation,
+    capture: captureReshapeAnnotation,
+    invert: invertReshapeAnnotation,
   },
   placeImage: {
     // THE SPREAD CARRIES `asset: 'bytes'` IN, and nothing here reads it — the

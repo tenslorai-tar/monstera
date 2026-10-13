@@ -1,7 +1,8 @@
+import { pdfPoint, toViewport } from '@monstera/shared';
 import type { ReactElement } from 'react';
 
-import type { OverlayPage } from './annotations/annotationSpace.js';
-import { engineBoxOnScreen, pdfRectOnScreen } from './annotations/annotationSpace.js';
+import type { OverlayPage, ScreenBox } from './annotations/annotationSpace.js';
+import { engineBoxOnScreen, overlayTransform, pdfRectOnScreen } from './annotations/annotationSpace.js';
 import {
   type AnnotationSelection,
   CORNER_REACH,
@@ -53,9 +54,23 @@ export function SelectionLayer({
 }: SelectionLayerProps): ReactElement | null {
   // ONE LAYER PER PAGE and one selection per document, so every slot but its own
   // renders nothing.
-  const drawn = [
+  const shown = overlayTransform(geometry);
+  const drawn: readonly {
+    readonly key: string;
+    readonly index: number;
+    readonly box: ScreenBox;
+    readonly kind: string;
+    /** A line's ends or a polygon's corners on screen: where present, these are its handles and its box has none. */
+    readonly points?: readonly { readonly x: number; readonly y: number }[];
+  }[] = [
     ...(selection?.page === page
-      ? selection.items.map((item) => ({ key: String(item.index), index: item.index, box: pdfRectOnScreen(item.rect, geometry), kind: item.kind }))
+      ? selection.items.map((item) => ({
+          key: String(item.index),
+          index: item.index,
+          box: pdfRectOnScreen(item.rect, geometry),
+          kind: item.kind,
+          ...(item.points === undefined ? {} : { points: item.points.map((point) => toViewport(pdfPoint(point.x, point.y), shown)) }),
+        }))
       : []),
     // A LINK'S BOX IS THE ENGINE'S, so it is placed by the conversion the link layer draws it with.
     ...(link?.page === page
@@ -86,14 +101,30 @@ export function SelectionLayer({
           // replaces the selection.
           <g data-selection-index={String(item.index)} data-selection-kind={item.kind} key={item.key}>
             <rect className="m-selection-box" height={bottom - top} width={right - left} x={left} y={top} />
+            {/* A LINE'S ENDS AND A POLYGON'S CORNERS, where the mark has them (the owner's O8): the same reach, drawn where
+                the tool grabs a point, and no box corners, since the tool offers none. */}
+            {item.points?.map((point, at) => (
+              <rect
+                className="m-selection-handle"
+                data-selection-handle={`point-${String(at)}`}
+                height={CORNER_REACH}
+                key={`point-${String(at)}`}
+                width={CORNER_REACH}
+                x={point.x - CORNER_REACH / 2}
+                y={point.y - CORNER_REACH / 2}
+              />
+            ))}
             {/* THE FOUR CORNERS, DRAWN (ADR-0133): a square `CORNER_REACH` across on each, centred on it, which is the
                 select tool's own grab radius — so what is drawn is exactly where a press resizes. */}
-            {[
-              [left, top],
-              [right, top],
-              [left, bottom],
-              [right, bottom],
-            ].map(([x = 0, y = 0]) => (
+            {(item.points === undefined
+              ? [
+                  [left, top],
+                  [right, top],
+                  [left, bottom],
+                  [right, bottom],
+                ]
+              : []
+            ).map(([x = 0, y = 0]) => (
               <rect
                 className="m-selection-handle"
                 data-selection-handle=""

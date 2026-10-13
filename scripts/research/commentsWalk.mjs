@@ -1,10 +1,10 @@
 // @ts-check
 /**
- * The links walk (cloud run 3, the owner's O6(b) and O6(c)): links drawn, selected, moved, sent elsewhere and followed in
- * the running app with a real mouse and keyboard on Windows, each step screenshotted and recorded by `liveWalk.mjs`, and
- * every step that changes the document READ BACK from the saved file by pdf-lib, a reader that is not the writer.
+ * The comments walk (cloud run 3, Part 3): links and measurements drawn, selected, changed and followed in the running
+ * app with a real mouse and keyboard on Windows, each step screenshotted and recorded by `liveWalk.mjs`, and every step
+ * that changes the document READ BACK from the saved file by pdf-lib, a reader that is not the writer.
  *
- *   node scripts/research/linksWalk.mjs
+ *   node scripts/research/commentsWalk.mjs
  *
  * Its document is built here (two pages, the second turned 90 degrees), so the walk needs no file of the owner's. What
  * it walks:
@@ -13,11 +13,14 @@
  *   page. The saved `/Rect` is compared with the drawn box taken into PDF space by `@monstera/shared`'s own transform.
  * - O6(c): the link is selected with Select, moved by a drag, and sent to page 2 from Properties; the saved file holds
  *   the moved `/Rect` and a destination on page 2 with no address. Then, reading, a click on it shows page 2.
+ * - O8: a distance shows its reading while it is drawn; its end, dragged with Select, moves alone and the line stays flat;
+ *   the saved label is worked out again in proportion to the new length, no fill is written, and Undo brings the first
+ *   reading back. An area's corner dragged changes its saved reading.
  */
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRef, StandardFonts, degrees } from '@cantoo/pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNumber, PDFRef, PDFString, StandardFonts, degrees } from '@cantoo/pdf-lib';
 import { expect as defaultExpect } from '@playwright/test';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { root, startWalk } from './liveWalk.mjs';
@@ -29,7 +32,7 @@ refuseStaleBuild(root, [['packages/shared/src/geometry.ts', 'packages/shared/dis
 // A LITERAL SPECIFIER, so `proof:electronimports` can read what this loads.
 const { pageTransform, toPdf, viewportPoint } = await import('../../packages/shared/dist/geometry.js');
 
-const walk = await startWalk('links');
+const walk = await startWalk('comments');
 const { page, output, open, saveTo, command, section, step, finish } = walk;
 
 /** A letter page with words on it, then a second one turned 90 degrees. */
@@ -211,6 +214,140 @@ await step('O6(c): reading, the link is followed with a click, and hovering it s
   await link.click();
   await expect(page.locator('[data-goto-input="true"]')).toHaveValue('2');
   return { linksOnPage1: await page.locator('[data-link-layer="0"] [data-page-link]').count() };
+});
+
+/**
+ * Each measurement on page 1 of a saved file, read by pdf-lib: its subtype, its points (`/L` or `/Vertices`), the
+ * reading it carries and whether it has an interior colour.
+ *
+ * @param {string} path
+ */
+async function savedMeasurements(path) {
+  const document = await PDFDocument.load(await readFile(path), { updateMetadata: false });
+  const annots = document.getPage(0).node.lookupMaybe(PDFName.of('Annots'), PDFArray);
+  /** @param {unknown} value */
+  const numbers = (value) => (value instanceof PDFArray ? value.asArray().map((entry) => (entry instanceof PDFNumber ? entry.asNumber() : Number.NaN)) : []);
+  return (annots?.asArray() ?? [])
+    .map((entry) => document.context.lookup(entry))
+    .filter((entry) => entry instanceof PDFDict && entry.get(PDFName.of('Measure')) !== undefined)
+    .map((entry) => {
+      const mark = /** @type {PDFDict} */ (entry);
+      const contents = mark.lookupMaybe(PDFName.of('Contents'), PDFString, PDFHexString);
+      return {
+        subtype: String(mark.get(PDFName.of('Subtype'))),
+        points: numbers(mark.lookup(PDFName.of('L')) ?? mark.lookup(PDFName.of('Vertices'))),
+        reading: contents?.decodeText() ?? '',
+        filled: mark.get(PDFName.of('IC')) !== undefined,
+      };
+    });
+}
+
+/** The number a reading starts with. @param {string} reading */
+const valueOf = (reading) => Number.parseFloat(reading);
+
+/** A one-page document with words on it, for the measurements. */
+async function measureDocument() {
+  const document = await PDFDocument.create();
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  document.addPage([612, 792]).drawText('Plan: measure the room below.', { x: 72, y: 720, size: 14, font });
+  return document.save({ useObjectStreams: false });
+}
+
+const plan = join(output, 'plan.pdf');
+await writeFile(plan, await measureDocument());
+
+/** Page 1's slot on screen, and its scale. */
+async function planSlot() {
+  const slot = await page.locator('.m-page-slot:visible').first().boundingBox();
+  if (slot === null) throw new Error('page 1 has no box on screen');
+  return { ...slot, scale: slot.width / 612 };
+}
+
+/** @type {{ reading: string; points: number[] } | undefined} */
+let firstDistance;
+await step('O8: a distance shows its reading WHILE it is drawn, and the saved file carries it, unfilled', async () => {
+  await open(plan);
+  await command('Measure distance');
+  const slot = await planSlot();
+  const from = { x: slot.x + 100 * slot.scale, y: slot.y + 300 * slot.scale };
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  // NEARLY FLAT, as a hand draws: 216 points across and a point and a half down.
+  await page.mouse.move(from.x + 216 * slot.scale, from.y + 1.5 * slot.scale, { steps: 10 });
+  const live = await page.locator('[data-annotation-caption]').textContent();
+  expect(live).toMatch(/^\d+\.\d /u);
+  await page.mouse.up();
+  const [distance] = await savedMeasurements(await saveCopy('plan-drawn.pdf'));
+  if (distance === undefined) throw new Error('no measurement in the saved file');
+  expect(distance.reading).toBe(live);
+  expect(distance.filled).toBe(false);
+  firstDistance = distance;
+  return { live, saved: distance.reading, line: distance.points };
+});
+
+await step('O8: its END dragged with Select moves alone, the line stays flat, and the saved reading follows the length', async () => {
+  if (firstDistance === undefined) throw new Error('the distance step did not record its line');
+  const [x0 = 0, y0 = 0, x1 = 0, y1 = 0] = firstDistance.points;
+  const slot = await planSlot();
+  const end = { x: slot.x + x1 * slot.scale, y: slot.y + (792 - y1) * slot.scale };
+  await page.getByRole('button', { name: 'Select', exact: true }).first().click();
+  await page.mouse.click(slot.x + ((x0 + x1) / 2) * slot.scale, slot.y + (792 - (y0 + y1) / 2) * slot.scale);
+  await expect(page.locator('[data-selection-handle="point-1"]')).toBeAttached();
+  await page.mouse.move(end.x, end.y);
+  await page.mouse.down();
+  // 72 POINTS FURTHER along: an end moved by points follows the pointer; it is not a box being stretched.
+  await page.mouse.move(end.x + 72 * slot.scale, end.y, { steps: 10 });
+  await expect(page.locator('[data-annotation-preview="boxes"] rect')).toHaveCount(0);
+  await page.mouse.up();
+  const [moved] = await savedMeasurements(await saveCopy('plan-stretched.pdf'));
+  if (moved === undefined) throw new Error('no measurement in the saved file');
+  const [nx0 = 0, ny0 = 0, nx1 = 0, ny1 = 0] = moved.points;
+  // THE OTHER END DID NOT MOVE, and the line is as flat as it was drawn.
+  expect(Math.abs(nx0 - x0) + Math.abs(ny0 - y0)).toBeLessThan(0.5);
+  expect(Math.abs(ny1 - ny0)).toBeLessThan(Math.abs(y1 - y0) + 1);
+  // THE READING FOLLOWS THE LENGTH, in proportion, whatever the drawing's unit.
+  const before = Math.hypot(x1 - x0, y1 - y0);
+  const after = Math.hypot(nx1 - nx0, ny1 - ny0);
+  expect(valueOf(moved.reading) / valueOf(firstDistance.reading)).toBeCloseTo(after / before, 1);
+  expect(moved.filled).toBe(false);
+  return { before: firstDistance.reading, after: moved.reading, line: moved.points };
+});
+
+await step('O8: Undo brings the first reading and the first line back, in the saved file', async () => {
+  if (firstDistance === undefined) throw new Error('the distance step did not record its line');
+  await page.keyboard.press('Control+Z');
+  const [undone] = await savedMeasurements(await saveCopy('plan-undone.pdf'));
+  expect(undone?.reading).toBe(firstDistance.reading);
+  return { reading: undone?.reading };
+});
+
+await step('O8: an AREA’s corner dragged with Select changes the saved area', async () => {
+  await command('Measure area');
+  const slot = await planSlot();
+  const corners = [
+    [150, 500],
+    [300, 500],
+    [300, 400],
+  ].map(([x = 0, y = 0]) => ({ x: slot.x + x * slot.scale, y: slot.y + (792 - y) * slot.scale }));
+  for (const corner of corners) await page.mouse.click(corner.x, corner.y);
+  const [first] = corners;
+  if (first === undefined) throw new Error('no corners');
+  await page.mouse.click(first.x, first.y);
+  const drawn = (await savedMeasurements(await saveCopy('plan-area.pdf'))).find((each) => each.subtype === '/Polygon');
+  if (drawn === undefined) throw new Error('no area in the saved file');
+  await page.getByRole('button', { name: 'Select', exact: true }).first().click();
+  const [, , top] = corners;
+  if (top === undefined) throw new Error('no third corner');
+  await page.mouse.click(slot.x + 260 * slot.scale, slot.y + (792 - 470) * slot.scale);
+  await page.mouse.move(top.x, top.y);
+  await page.mouse.down();
+  await page.mouse.move(top.x + 60 * slot.scale, top.y, { steps: 10 });
+  await page.mouse.up();
+  const grown = (await savedMeasurements(await saveCopy('plan-area-grown.pdf'))).find((each) => each.subtype === '/Polygon');
+  if (grown === undefined) throw new Error('no area in the saved file');
+  expect(valueOf(grown.reading)).toBeGreaterThan(valueOf(drawn.reading));
+  expect(grown.filled).toBe(false);
+  return { before: drawn.reading, after: grown.reading };
 });
 
 await finish();

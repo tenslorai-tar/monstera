@@ -244,7 +244,7 @@ describe('the declaration table', () => {
     expect(declared).toContain('replacePage');
   });
 
-  it('CONTROL: exactly twenty-two kinds declare a target, and the rest answer none', () => {
+  it('CONTROL: exactly twenty-three kinds declare a target, and the rest answer none', () => {
     // The targets axis's version of the control above, and it carries the
     // second half as well. `never extends X` would satisfy one type-level line
     // on its own; and a table where EVERY command declared a target would
@@ -257,6 +257,8 @@ describe('the declaration table', () => {
       'importPageAsLayer',
       'removeAnnotation',
       'placeAnnotation',
+      // A LINE'S ENDS OR A POLYGON'S CORNERS moved, one mark by its handle (the owner's O8).
+      'reshapeAnnotation',
       'styleAnnotation',
       'editAnnotationText',
       // THE AUTHOR, `editAnnotationText`'s shape with `/T` (ADR-0103).

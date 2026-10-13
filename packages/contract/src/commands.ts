@@ -1229,6 +1229,17 @@ export const MAX_INK_POINTS = 4096;
 export const MAX_POLYGON_POINTS = 256;
 
 /**
+ * The most points a listed line, polygon or polyline carries in the annotation walk, for the select tool's handles on its
+ * ends and corners (the owner's O8).
+ *
+ * BOUNDED BY WHAT AN ENTRY MAY COST, not by what a shape may have: the walk's whole answer from the engine host is one
+ * file of at most 8 MiB (ADR-0125), and a point is two numbers of up to about eighteen characters, so thirty-two are about
+ * 1.2 KB, the size of the 512-character note an entry already carries. A shape with more is listed without them and keeps
+ * its box's handles, which is what every shape had before.
+ */
+export const LISTED_POINTS_MAX = 32;
+
+/**
  * How a polygon's border is drawn — `/BE`, in the format's own vocabulary.
  *
  * **A union rather than `cloudy: true`**, for {@link lineEndingSchema}'s reason
@@ -2871,6 +2882,30 @@ export const placeAnnotationSchema = z.object({
 }).strict();
 
 /**
+ * Moves a line's ends, or a polygon's or polyline's corners, each to where it is asked for (the owner's O8).
+ *
+ * **Its own command and not a placement by points**, for two reasons. A placement maps the mark's box onto another, and a
+ * hand-drawn line is never quite flat: its box is a point or two tall, so stretching it by a taller box scales that slope
+ * into a diagonal (measured in `pageAnnotations.test.ts`). And `placeAnnotation` names up to a thousand marks, so points
+ * on each would size the command past the host's frame; a reshape is one mark's handle, so it names one.
+ *
+ * The points are in PDF user space, as many as the mark has and in the order the walk lists them
+ * (`document.annotations`' `points`), so a reshape moves points and neither adds nor removes one.
+ */
+export const reshapeAnnotationSchema = z
+  .object({
+    kind: z.literal('reshapeAnnotation'),
+    /** Zero-based index of the page it sits on. */
+    page: z.number().int().nonnegative(),
+    /** Its position in the walk that produced the answer this names. */
+    index: z.number().int().nonnegative(),
+    points: z.array(annotationPointSchema).min(2).max(LISTED_POINTS_MAX),
+    /** The version that answer carried. Refused if the document has moved. */
+    version: docVersionSchema,
+  })
+  .strict();
+
+/**
  * Places an image on one or more pages, as an annotation that can be moved.
  *
  * ## THIS IS BOTH ROWS — place image AND stamps
@@ -3371,13 +3406,20 @@ export const replyToAnnotationSchema = z.object({
  */
 export const KEEPS_THE_ANNOTATION_WALK: ReadonlySet<WalkKeepingKind> = new Set([
   'placeAnnotation',
+  // A RESHAPE WRITES THE POINTS of the object its handle names, in place, as a placement writes the geometry.
+  'reshapeAnnotation',
   'styleAnnotation',
   'editAnnotationText',
   'setAnnotationAuthor',
 ] as const);
 
 /** The kinds {@link KEEPS_THE_ANNOTATION_WALK} names. */
-export type WalkKeepingKind = 'placeAnnotation' | 'styleAnnotation' | 'editAnnotationText' | 'setAnnotationAuthor';
+export type WalkKeepingKind =
+  | 'placeAnnotation'
+  | 'reshapeAnnotation'
+  | 'styleAnnotation'
+  | 'editAnnotationText'
+  | 'setAnnotationAuthor';
 
 /** Whether `command` is one of them — the set's one reader for a command in hand. */
 export function keepsTheAnnotationWalk<C extends { readonly kind: string }>(
@@ -3432,6 +3474,7 @@ export type CommandWalk = 'annotation' | 'field' | 'object';
 const WALK_NAMED_BY: Readonly<Record<NamesAnAnnotation | NamesAFormField | NamesATextObject, CommandWalk>> = {
   removeAnnotation: 'annotation',
   placeAnnotation: 'annotation',
+  reshapeAnnotation: 'annotation',
   styleAnnotation: 'annotation',
   editAnnotationText: 'annotation',
   setAnnotationAuthor: 'annotation',
@@ -6566,6 +6609,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   addAnnotationSchema,
   removeAnnotationSchema,
   placeAnnotationSchema,
+  reshapeAnnotationSchema,
   placeImageSchema,
   placeSignatureMarkSchema,
   placeSignaturePictureSchema,
@@ -6685,9 +6729,12 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   removeAnnotationSchema,
   // RENDERABLE, and the same test with a rectangle added: the renderer names
   // rows of an answer it was given and says where each should end up. What it
-  // cannot express is HOW — the geometry a polygon or a stroke is made of never
-  // crosses in either direction, and the kernel maps it.
+  // cannot express is HOW — a placement carries a box, and the kernel maps the
+  // geometry a polygon or a stroke is made of onto it.
   placeAnnotationSchema,
+  // RENDERABLE, and the one place the geometry DOES cross: a line's ends or a polygon's corners, at most thirty-two,
+  // which the renderer was given by the walk and hands back moved. Numbers in PDF space, never the document's own.
+  reshapeAnnotationSchema,
   // RENDERABLE, and the payload is a rectangle plus either a URI a person typed
   // or a page index. What the renderer cannot express is the destination's
   // FORM: a page link is written through MuPDF's own `formatLinkURI`, so the
@@ -7006,6 +7053,7 @@ void _bothNamesAreCommandKinds;
 export function targetVersionOf(command: Command): DocVersion | undefined {
   if (command.kind === 'removeAnnotation') return command.version;
   if (command.kind === 'placeAnnotation') return command.version;
+  if (command.kind === 'reshapeAnnotation') return command.version;
   if (command.kind === 'styleAnnotation') return command.version;
   if (command.kind === 'editAnnotationText') return command.version;
   if (command.kind === 'setAnnotationAuthor') return command.version;
@@ -7055,6 +7103,7 @@ export function withTargetVersion<C extends Command>(command: C, version: DocVer
 export type NamesAnAnnotation =
   | 'removeAnnotation'
   | 'placeAnnotation'
+  | 'reshapeAnnotation'
   | 'styleAnnotation'
   | 'editAnnotationText'
   | 'setAnnotationAuthor'

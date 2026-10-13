@@ -6,7 +6,7 @@ import type {
   DispatchableCommand,
 } from '@monstera/contract';
 import type { PageTransform, ViewportPoint } from '@monstera/shared';
-import { toPdf } from '@monstera/shared';
+import { toPdf, viewportPoint } from '@monstera/shared';
 
 import { HINT_CLOSED_CORNERS, HINT_OPEN_CORNERS } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
@@ -83,6 +83,9 @@ const CLOSING_RADIUS = 12;
  */
 const SEPARATE_VERTICES = 3;
 
+/** How far from the pointer a measurement's live reading is drawn, in CSS pixels: clear of the cursor, above and right. */
+export const CAPTION_OFFSET = 10;
+
 /**
  * The vertices a gesture has actually placed, in the overlay's own pixels.
  *
@@ -144,12 +147,15 @@ function placed(gesture: Gesture, transform: PageTransform, closing: boolean): A
  * @param closes whether landing on the first vertex finishes the shape. False
  *   for connected lines, where the last point is meant to be somewhere else
  * @param draftOf what the vertices become
+ * @param reading what the shape so far measures, drawn beside the pointer while it is drawn: the measurement tools'
+ *   (the owner's O8), and absent for a shape that measures nothing
  */
 export function vertexTool(
   id: string,
   minimum: number,
   closes: boolean,
   draftOf: (points: AnnotationPoint[]) => AnnotationDraft,
+  reading?: (points: readonly AnnotationPoint[]) => string,
 ): UiTool {
   const controller: ToolController = {
     ...pointerPath,
@@ -179,7 +185,7 @@ export function vertexTool(
       if (points.length < minimum) return undefined;
       return { kind: 'addAnnotation', page, annotation: draftOf(points) };
     },
-    preview: (gesture: Gesture): ToolPreview | undefined => {
+    preview: (gesture: Gesture, _page: number, transform: PageTransform): ToolPreview | undefined => {
       const vertices = verticesOf(gesture);
       const [first] = vertices;
       if (first === undefined) return undefined;
@@ -199,10 +205,18 @@ export function vertexTool(
         Math.hypot(live.x - trailing.x, live.y - trailing.y) < 1
           ? []
           : [[live.x, live.y] as const];
-      return {
-        shape: 'path',
-        points: [...vertices.map((vertex) => [vertex.x, vertex.y] as const), ...following],
-      };
+      const points = [...vertices.map((vertex) => [vertex.x, vertex.y] as const), ...following];
+      const end = points[points.length - 1];
+      // THE READING SO FAR, from the points as the payload will carry them, by the function the file's label is made by.
+      const caption =
+        reading === undefined || end === undefined || points.length < 2
+          ? undefined
+          : {
+              text: reading(points.map(([x, y]) => toPdf(viewportPoint(x, y), transform))),
+              x: end[0] + CAPTION_OFFSET,
+              y: end[1] - CAPTION_OFFSET,
+            };
+      return { shape: 'path', points, ...(caption === undefined ? {} : { caption }) };
     },
   };
 

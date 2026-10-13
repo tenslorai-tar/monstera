@@ -121,6 +121,26 @@ describe('SelectionLayer', () => {
     expect(container.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
   });
 
+  it('draws a selected line’s handles on its two ENDS, and no box corners (the owner’s O8)', () => {
+    const [square] = SELECTION.items;
+    if (square === undefined) throw new Error('no item');
+    const line: AnnotationSelection = {
+      ...SELECTION,
+      items: [{ ...square, kind: 'measure-distance', points: [{ x: 60, y: 350 }, { x: 150, y: 351 }] }],
+    };
+    const { container } = render(<SelectionLayer geometry={GEOMETRY} page={3} selection={line} />);
+    const handles = [...container.querySelectorAll('[data-selection-handle]')];
+    expect(handles.map((handle) => handle.getAttribute('data-selection-handle'))).toStrictEqual(['point-0', 'point-1']);
+    // CENTRED ON THE ENDS, as the select tool grabs them: (60,350) is screen (20,100), (150,351) is (200,98).
+    expect(handles.map((handle) => [Number(handle.getAttribute('x')) + CORNER_REACH / 2, Number(handle.getAttribute('y')) + CORNER_REACH / 2])).toStrictEqual([
+      [20, 100],
+      [200, 98],
+    ]);
+    // CONTROL: the square in the same fixture keeps its four corners, so the ends replaced them only where there are ends.
+    const box = render(<SelectionLayer geometry={GEOMETRY} page={3} selection={SELECTION} />);
+    expect(box.container.querySelectorAll('[data-selection-handle=""]')).toHaveLength(4);
+  });
+
   it('draws a selected LINK where the link layer draws it, with all eight handles (the owner’s O6(c))', () => {
     // The engine's box at scale 1 from the crop's top-left: drawn at (200,20) to (300,60) at zoom 2, as `LinkLayer` places it.
     const link = {

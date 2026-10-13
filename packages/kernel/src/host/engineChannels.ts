@@ -35,7 +35,9 @@ import {
   editLinkSchema,
   linkOutlineSchema,
   annotationKindNameSchema,
+  annotationPointSchema,
   annotationRectSchema,
+  LISTED_POINTS_MAX,
   formDataFormatSchema,
   formDataImportFormatSchema,
   annotationDataFormatSchema,
@@ -64,6 +66,7 @@ import {
   PAGE_IMAGE_FORMATS,
   PROTECTION_TERMS_MAX,
   placeAnnotationSchema,
+  reshapeAnnotationSchema,
   styleAnnotationSchema,
   editAnnotationTextSchema,
   setAnnotationAuthorSchema,
@@ -516,6 +519,8 @@ const engineAnnotationSchema = z
      * reason: a surface cannot point at an annotation it cannot locate.
      */
     rect: annotationRectSchema.nullable(),
+    /** A line's ends or a polygon's corners, up to `LISTED_POINTS_MAX`, on those alone (the owner's O8). */
+    points: z.array(annotationPointSchema).min(2).max(LISTED_POINTS_MAX).exactOptional(),
     /**
      * What it is drawn in. `borderWidth` is null where the subtype has no
      * `/BS` — six of the thirteen, measured — and it crosses so a styles panel
@@ -1178,6 +1183,7 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   addAnnotationSchema,
   removeAnnotationSchema,
   placeAnnotationSchema,
+  reshapeAnnotationSchema,
   // WITHOUT ITS IMAGE, and this is the only member that differs from the kernel's
   // own schema for its kind
   // ([ADR-0044](../../../../docs/DECISIONS/0044-an-image-reaches-the-engine-the-way-the-document-does.md)).

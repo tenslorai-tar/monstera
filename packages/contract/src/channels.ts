@@ -48,7 +48,9 @@ import {
   blockEditAgrees,
   blockEditSchema,
   annotationKindNameSchema,
+  annotationPointSchema,
   annotationRectSchema,
+  LISTED_POINTS_MAX,
   annotationColourSchema,
   linkOutlineSchema,
   annotationAuthorSchema,
@@ -5103,6 +5105,11 @@ export const channels = {
              * skips it rather than acting on an invented one.
              */
             rect: annotationRectSchema.nullable(),
+            /**
+             * A line's two ends, or a polygon's or polyline's corners, in PDF user space, on those alone and up to
+             * `LISTED_POINTS_MAX` (the owner's O8): the select tool's handles move each point rather than scaling a box.
+             */
+            points: z.array(annotationPointSchema).min(2).max(LISTED_POINTS_MAX).exactOptional(),
             /**
              * What it is drawn in — `/C`, `/CA` and `/BS`'s width.
              *

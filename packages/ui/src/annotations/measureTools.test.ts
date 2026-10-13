@@ -12,6 +12,7 @@ import {
   MEASURE_PERIMETER_TOOL_ID,
   measureTools as buildMeasureTools,
 } from './measureTools.js';
+import { vertexTool } from './vertexTools.js';
 
 /**
  * The three measurement tools, driven without a DOM.
@@ -133,7 +134,7 @@ describe('the distance tool', () => {
     expect(drag(distanceTool, [20, 20], [21, 20])).toBeUndefined();
   });
 
-  it('previews the line it would draw', () => {
+  it('previews the line it would draw, and WHAT IT MEASURES beside the pointer (the owner’s O8)', () => {
     const started = distanceTool.controller.begin(viewportPoint(20, 20));
     const moved = distanceTool.controller.update(started, viewportPoint(120, 80));
     expect(distanceTool.controller.preview(moved, 3, overlayTransform(PAGE))).toStrictEqual({
@@ -142,6 +143,9 @@ describe('the distance tool', () => {
       y1: 20,
       x2: 120,
       y2: 80,
+      // 100 by 60 pixels at zoom 2 is 50 by 30 points, 58.3 of them, at half a millimetre each: in the drawing's units,
+      // which is the number the file's label will carry, never the pixels.
+      caption: { text: '29.2 mm', x: 130, y: 70 },
     });
   });
 });
@@ -185,6 +189,24 @@ describe('the area and perimeter tools', () => {
     ] as const;
     expect(draw(perimeterTool, twoPoints).command).toBeDefined();
     expect(draw(areaTool, twoPoints).command).toBeUndefined();
+  });
+
+  it('shows the AREA and the PERIMETER so far while they are drawn, in the drawing’s units (the owner’s O8)', () => {
+    let gesture: Gesture | undefined;
+    for (const point of SQUARE) gesture = press(gesture, point);
+    if (gesture === undefined) throw new Error('no gesture');
+    // 100 by 60 pixels at zoom 2 is a 50 by 30 point right triangle: 750 pt², at a quarter of a square millimetre each.
+    expect(areaTool.controller.preview(gesture, 3, overlayTransform(PAGE))).toMatchObject({ caption: { text: '187.5 mm²', x: 130, y: 70 } });
+    // OPEN: 50 + 30 points, at half a millimetre each.
+    expect(perimeterTool.controller.preview(gesture, 3, overlayTransform(PAGE))).toMatchObject({ caption: { text: '40.0 mm' } });
+  });
+
+  it('CONTROL: the same gesture on a vertex tool given no reading, as the polygon and cloud are, previews none', () => {
+    const plain = vertexTool(MEASURE_AREA_TOOL_ID, 3, true, (points) => ({ type: 'measure-area', points, scale: SCALE, colour: [0.1, 0.45, 0.9], opacity: 1, borderWidth: 2 }));
+    let gesture: Gesture | undefined;
+    for (const point of SQUARE) gesture = press(gesture, point);
+    if (gesture === undefined) throw new Error('no gesture');
+    expect(plain.controller.preview(gesture, 3, overlayTransform(PAGE))).not.toHaveProperty('caption');
   });
 });
 

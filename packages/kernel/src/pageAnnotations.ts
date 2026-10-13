@@ -17,8 +17,14 @@ import {
   MAX_ANNOTATION_AUTHOR,
   MAX_ANNOTATION_FONT,
   MAX_ANNOTATION_TEXT,
+  LISTED_POINTS_MAX,
+  MEASURE_PLACES,
   MIN_ANNOTATION_FONT,
+  type MeasureScale,
+  type MeasuredKind,
   type TextDirection,
+  measureLabel,
+  measureUnitSchema,
   strokesOfPlaced,
 } from '@monstera/contract/host';
 import {
@@ -309,6 +315,19 @@ export function readRect(annotation: PDFAnnotation, transform: PageTransform): A
 }
 
 /**
+ * A line's two ends, or a polygon's or polyline's corners, in PDF user space and the order the annotation holds them;
+ * `undefined` for any other mark and for a shape past {@link LISTED_POINTS_MAX}. {@link readRect}'s conversion.
+ */
+function readPoints(annotation: PDFAnnotation, transform: PageTransform): AnnotationPoint[] | undefined {
+  const points = annotation.hasLine() ? annotation.getLine() : annotation.hasVertices() ? annotation.getVertices() : [];
+  if (points.length < 2 || points.length > LISTED_POINTS_MAX) return undefined;
+  return points.map(([x, y]) => {
+    const at = toPdf(viewportPoint(x, y), transform);
+    return { x: at.x, y: at.y };
+  });
+}
+
+/**
  * A point as the degenerate rectangle at it.
  *
  * What a POINT-placed annotation hands the geometry, and it is deliberately a
@@ -563,70 +582,6 @@ const MAX_MARKUP_QUADS = 4096;
 /** The three measurements, which are three shapes the file marks as dimensions. */
 type MeasureDraft = DraftOf<'measure-distance' | 'measure-area' | 'measure-perimeter'>;
 
-/**
- * How many decimal places a measurement's label carries.
- *
- * One, because the number is a reading off a drawing rather than a computation:
- * a drag places a point to within a pixel, and a label with three decimals
- * claims a precision the gesture does not have. `/Measure`'s own `/D` carries
- * the same figure so the two agree.
- */
-const MEASURE_PLACES = 1;
-
-/**
- * The length of a run of points, in PDF points.
- *
- * Summed segment by segment rather than end to end, which is what makes this
- * the perimeter of a run and the length of a line with the same code — a line
- * has one segment.
- */
-function pathLength(points: readonly AnnotationPoint[]): number {
-  let total = 0;
-  for (let at = 1; at < points.length; at += 1) {
-    const from = points[at - 1];
-    const to = points[at];
-    if (from === undefined || to === undefined) continue;
-    total += Math.hypot(to.x - from.x, to.y - from.y);
-  }
-  return total;
-}
-
-/**
- * The area a closed run of points encloses, in square PDF points.
- *
- * The shoelace formula, and the absolute value is what makes it independent of
- * the direction the person drew in — a polygon traced clockwise gives the
- * negative of the same shape traced the other way, and *minus four square
- * metres* is not a reading anybody wants.
- */
-function shoelaceArea(points: readonly AnnotationPoint[]): number {
-  let twice = 0;
-  for (let at = 0; at < points.length; at += 1) {
-    const here = points[at];
-    const next = points[(at + 1) % points.length];
-    if (here === undefined || next === undefined) continue;
-    twice += here.x * next.y - next.x * here.y;
-  }
-  return Math.abs(twice) / 2;
-}
-
-/**
- * A measurement's label — the text a reader sees on the annotation.
- *
- * **An area is squared in both the number and the unit**, which is the half a
- * distance-only implementation gets wrong silently: scaling an area by the
- * length ratio rather than its square is off by that ratio, and the label still
- * reads like a measurement.
- */
-function measureLabel(draft: MeasureDraft): string {
-  const { perPoint, unit } = draft.scale;
-  if (draft.type === 'measure-area') {
-    const value = shoelaceArea(draft.points) * perPoint * perPoint;
-    return `${value.toFixed(MEASURE_PLACES)} ${unit}²`;
-  }
-  const value = pathLength(draft.points) * perPoint;
-  return `${value.toFixed(MEASURE_PLACES)} ${unit}`;
-}
 
 /** What `/IT` and `/Subtype` a measurement is written as. */
 const MEASURED: Readonly<
@@ -682,7 +637,7 @@ function measureKind(type: MeasureDraft['type']): AnnotationKind<MeasureDraft> {
       }
       annotation.setColor([...draft.colour]);
       annotation.setBorderWidth(draft.borderWidth);
-      annotation.setContents(measureLabel(draft));
+      annotation.setContents(measureLabel(draft.type, draft.points, draft.scale));
       annotation.getObject().put('IT', on.document.newName(intent));
       annotation.getObject().put('Measure', measureDictionary(draft, on.document));
     },
@@ -717,6 +672,41 @@ function measureDictionary(draft: MeasureDraft, document: PDFDocument): PDFObjec
   axis.push(format);
   measure.put('X', axis);
   return measure;
+}
+
+/** The measurement kind each dimension `/IT` names: `MEASURED` read the other way. */
+const MEASURED_BY_INTENT: ReadonlyMap<string, MeasuredKind> = new Map(
+  (Object.entries(MEASURED) as [MeasuredKind, (typeof MEASURED)[MeasuredKind]][]).map(([kind, { intent }]) => [intent, kind]),
+);
+
+/**
+ * Works a measurement's reading out again from the geometry it has now (the owner's O8: a distance stayed "2.8 in"
+ * after it was stretched, and the Comment with it).
+ *
+ * The kind comes from `/IT` and the scale from the measurement's own `/Measure` (`/X`'s first number format: `/C` per
+ * point, `/U` the unit), which is what {@link measureDictionary} wrote and what another application recalculates from,
+ * so the label follows the drawing's calibration rather than today's setting. The arithmetic is the contract's
+ * `measureLabel`, the one the drawing tools preview with. A mark that is not a measurement, or one whose `/Measure` this
+ * build cannot read, keeps the words it has: a foreign reading is preserved rather than replaced by a guess.
+ *
+ * The points are the engine's displayed ones, which give the same length and area as PDF space: a turn and a move
+ * change neither.
+ */
+function remeasure(annotation: PDFAnnotation): void {
+  const object = annotation.getObject();
+  const intent = object.get('IT');
+  const kind = intent.isName() ? MEASURED_BY_INTENT.get(intent.asName()) : undefined;
+  if (kind === undefined) return;
+  const axis = object.get('Measure').get('X');
+  const format = axis.isArray() && axis.length > 0 ? axis.get(0) : undefined;
+  if (format?.isDictionary() !== true) return;
+  const perPoint = format.get('C');
+  const unit = measureUnitSchema.safeParse(format.get('U').isString() ? format.get('U').asString() : undefined);
+  if (!perPoint.isNumber() || !(perPoint.asNumber() > 0) || !unit.success) return;
+  const scale: MeasureScale = { perPoint: perPoint.asNumber(), unit: unit.data };
+  const points = annotation.hasLine() ? annotation.getLine() : annotation.hasVertices() ? annotation.getVertices() : [];
+  if (points.length < 2) return;
+  annotation.setContents(measureLabel(kind, points.map(([x, y]) => ({ x, y })), scale));
 }
 
 /**
@@ -2092,6 +2082,12 @@ export interface ListedAnnotation {
    */
   readonly rect: AnnotationRect | null;
   /**
+   * A line's two ends, or a polygon's or polyline's corners, in PDF user space: present only on those, up to
+   * {@link LISTED_POINTS_MAX}, as `cut` is present only where it applies, so the smallest entry and the bound it derives
+   * stay put.
+   */
+  readonly points?: AnnotationPoint[];
+  /**
    * Which mark on this page this one ANSWERS, by its index in this same walk,
    * or `null` — PDF 32000-1 §12.5.6.2's `/IRT` with `/RT /R`.
    *
@@ -2321,10 +2317,13 @@ export function readAnnotations(
       for (const annotation of marks) {
         if (!found.room()) return listedOf(found);
         const contents = annotation.getContents();
+        const points = transform === null ? undefined : readPoints(annotation, transform);
         found.add({
           page,
           index: index++,
           rect: transform === null ? null : readRect(annotation, transform),
+          // A LINE'S ENDS AND A POLYGON'S CORNERS, so the select tool moves each one rather than scaling a box (O8).
+          ...(points === undefined ? {} : { points }),
           inReplyTo: replyTargetOf(annotation, positionOf),
           // `?? 'other'` IS THE WHOLE POINT of the closed union: a subtype this
           // build cannot name is listed rather than dropped, because a panel
@@ -2875,6 +2874,8 @@ export const applyPlaceAnnotation: Apply<'mupdf', 'placeAnnotation'> = (
           annotation.addQuadPoint([ax, ay, bx, by, cx, cy, dx, dy]);
         }
       }
+      // A MEASUREMENT SAYS WHAT IT MEASURES NOW, before the appearance that draws its label is made (the owner's O8).
+      remeasure(annotation);
       // THE APPEARANCE IS REGENERATED, which is what makes the move visible.
       // Without it the dictionary says one place and the `/AP` draws another,
       // and MuPDF's own renderer would still show the move — so a proof that
@@ -3258,6 +3259,62 @@ export const invertPlaceAnnotation: Invert<'mupdf', 'placeAnnotation'> = (): Pro
   throw new Error(
     'a moved annotation has no inverse yet; undo restores the checkpoint the bus took (ADR-0037)',
   );
+};
+
+/**
+ * Moves a line's ends, or a polygon's or polyline's corners, each to where the command asks (the owner's O8).
+ *
+ * Each point goes through {@link placedPoints}, the conversion every annotation's points take when drawn, so a reshaped
+ * line is written by the code that wrote it; nothing is scaled, which is what keeps a nearly flat line flat. A measurement
+ * says what it measures afterwards ({@link remeasure}), before the appearance that draws its label is made.
+ *
+ * **Checked before anything is written**: a mark with no ends or corners is placed by a rectangle and is refused here, and
+ * points that add or drop one are refused, since a reshape moves points.
+ */
+export const applyReshapeAnnotation: Apply<'mupdf', 'reshapeAnnotation'> = (
+  session: MupdfSession,
+  command: CommandOfKind<'reshapeAnnotation'>,
+): Promise<void> =>
+  withDocument(session, (document) => {
+    const loaded = pageAt(document, command.page, document.countPages());
+    const transform = transformFor(loaded);
+    const annotation = annotationAt(loaded, command.index);
+    const has = annotation.hasLine() ? 2 : annotation.hasVertices() ? annotation.getVertices().length : 0;
+    if (has === 0) {
+      throw new RangeError(
+        `annotation ${String(command.index)} has no ends or corners to move, so it is placed by a rectangle, not by points`,
+      );
+    }
+    if (command.points.length !== has) {
+      throw new RangeError(
+        `annotation ${String(command.index)} has ${String(has)} point(s) and the command names ${String(command.points.length)}: a reshape moves points and neither adds nor removes one`,
+      );
+    }
+    const placed = placedPoints(command.points, transform);
+    const [from, to] = placed;
+    if (annotation.hasLine() && from !== undefined && to !== undefined) annotation.setLine(from, to);
+    else annotation.setVertices(placed);
+    remeasure(annotation);
+    redraw(annotation, document);
+  });
+
+/** {@link capturePlaceAnnotation}'s answer for one mark: the page and the handle are resolved first, for its reason. */
+export function captureReshapeAnnotation(
+  session: MupdfSession,
+  command: CommandOfKind<'reshapeAnnotation'>,
+): Promise<CaptureResult<never>> {
+  return withDocument(session, (document) => {
+    annotationAt(pageAt(document, command.page, document.countPages()), command.index);
+    return {
+      captured: false,
+      reason: 'a reshaped annotation is not recorded as prior state yet: undo restores the checkpoint the bus took',
+    };
+  });
+}
+
+/** Unreachable, for {@link invertPlaceAnnotation}'s reason. */
+export const invertReshapeAnnotation: Invert<'mupdf', 'reshapeAnnotation'> = (): Promise<void> => {
+  throw new Error('a reshaped annotation has no inverse yet; undo restores the checkpoint the bus took (ADR-0037)');
 };
 
 /**

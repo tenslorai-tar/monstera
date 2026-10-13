@@ -1267,6 +1267,25 @@ const declarations = {
     asset: 'none',
     purpose: 'ordinary',
   },
+  reshapeAnnotation: {
+    kind: 'reshapeAnnotation',
+    display: 'image',
+    // `placeAnnotation`'s object: `/L` or `/Vertices` and the appearance, in `/Annots`.
+    writer: 'mupdf',
+    // `placeAnnotation`'s reason one step simpler: the prior points are expressible and would restore exactly, and a
+    // checkpoint is what every annotation command takes until a per-target prior exists (`captureStyleAnnotation`).
+    invertible: false,
+    undo: 'checkpoint',
+    // Points from the payload, a label from the shared arithmetic, and no clock.
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    // A walk handle at a version, `placeAnnotation`'s.
+    targets: 'annotation',
+    reads: 'none',
+    asset: 'none',
+    purpose: 'ordinary',
+  },
   placeImage: {
     kind: 'placeImage',
     display: 'image',

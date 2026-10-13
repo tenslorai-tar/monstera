@@ -686,6 +686,8 @@ export interface BrowserShimOptions {
     readonly contents?: string;
     /** How a text mark's words are drawn, for a case about reopening them in their own box. Absent is none read. */
     readonly typed?: AnnotationWordsStyle;
+    /** A line's ends or a polygon's corners, for a case about moving one (the owner's O8). Absent is a box-shaped mark. */
+    readonly points?: { readonly x: number; readonly y: number }[];
   }[];
 
   /**

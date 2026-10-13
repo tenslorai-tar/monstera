@@ -36,6 +36,7 @@ import type { ListedAnnotation } from './pageAnnotations.js';
 import {
   applyAddAnnotation,
   applyPlaceAnnotation,
+  applyReshapeAnnotation,
   applyPlaceImage,
   applyRemoveAnnotation,
   applyStyleAnnotation,
@@ -3287,6 +3288,110 @@ describe('applyAddAnnotation writes a measurement', () => {
     // thing anybody measures. `DISTANCE` is exactly that run.
     expect(await label(DISTANCE)).toBe('50.0 mm');
   });
+
+  describe('a measurement CHANGED says what it measures now (the owner’s O8)', () => {
+    /** `/Contents` of the saved file's first annotation, read by pdf-lib. */
+    async function savedLabel(bytes: Uint8Array): Promise<string> {
+      const contents = (await stored(bytes)).lookup(PDFName.of('Contents'));
+      if (contents instanceof PDFHexString) return contents.decodeText();
+      if (contents instanceof PDFString) return contents.asString();
+      throw new Error('/Contents is neither string type');
+    }
+    /** A number array in the saved file's first annotation, by key. */
+    async function savedNumbers(bytes: Uint8Array, key: string): Promise<number[] | undefined> {
+      const value = (await stored(bytes)).lookup(PDFName.of(key));
+      return value instanceof PDFArray ? value.asArray().map((entry) => (entry instanceof PDFNumber ? entry.asNumber() : Number.NaN)) : undefined;
+    }
+    /** The walk's entry for the first annotation of `bytes`. */
+    async function listedFirst(bytes: Uint8Array): Promise<ListedAnnotation> {
+      const entry = (await onSession(bytes, (session) => readAnnotations(session))).annotations[0];
+      if (entry === undefined) throw new Error('nothing listed');
+      return entry;
+    }
+    /** A box placement through `placeAnnotation`, or points through `reshapeAnnotation`, and the bytes after it. */
+    async function placed(
+      bytes: Uint8Array,
+      placement: CommandOfKind<'placeAnnotation'>['placements'][number] | { readonly index: number; readonly points: { x: number; y: number }[] },
+    ): Promise<Uint8Array> {
+      const session = await mupdfWriter.open(bytes);
+      try {
+        if ('points' in placement) {
+          await applyReshapeAnnotation(session, { kind: 'reshapeAnnotation', page: 0, index: placement.index, points: placement.points, version: asDocVersion(1) });
+        } else {
+          await applyPlaceAnnotation(session, { kind: 'placeAnnotation', page: 0, placements: [placement], version: asDocVersion(1) });
+        }
+        return await mupdfWriter.serialise(session);
+      } finally {
+        await mupdfWriter.close(session);
+      }
+    }
+
+    it('a DISTANCE stretched by its box reads its new length, in the label and the comment alike, read back from the file', async () => {
+      const drawn = await drawnOn(await fixture(), command({ annotation: DISTANCE }));
+      const { rect } = await listedFirst(drawn);
+      if (rect === null) throw new Error('no place');
+      // TWICE AS WIDE, from the left edge: a hundred points become two hundred.
+      const stretched = await placed(drawn, { index: 0, rect: { ...rect, x1: rect.x0 + 2 * (rect.x1 - rect.x0) } });
+      expect(await savedLabel(drawn)).toBe('50.0 mm');
+      const after = await savedLabel(stretched);
+      // CONTROL: the number moved, and moved by the stretch, so a label rewritten with the old value fails here.
+      expect(Number.parseFloat(after)).toBeGreaterThan(90);
+      expect(after.endsWith(' mm')).toBe(true);
+      expect((await listedFirst(stretched)).contents).toBe(after);
+    });
+
+    it('a distance’s END moved by points stays as flat as it was drawn; the box route is what tilted it', async () => {
+      // NEARLY FLAT, as a hand draws one: a point and a half of slope over two hundred.
+      const flat: AnnotationDraft = { ...DISTANCE, points: [{ x: 20, y: 150 }, { x: 160, y: 151.5 }] };
+      const drawn = await drawnOn(await fixture(), command({ annotation: flat }));
+      const listed = await listedFirst(drawn);
+      expect(listed.points).toStrictEqual([{ x: 20, y: 150 }, { x: 160, y: 151.5 }]);
+      const byEnd = await placed(drawn, { index: 0, points: [{ x: 20, y: 150 }, { x: 190, y: 151.5 }] });
+      expect(await savedNumbers(byEnd, 'L')).toStrictEqual([20, 150, 190, 151.5]);
+      expect(await savedLabel(byEnd)).toBe(`${((Math.hypot(170, 1.5) * 0.5).toFixed(1))} mm`);
+      // CONTROL, the owner's mechanism: the same stretch by a box thirty points taller scales the 1.5-point slope with it.
+      if (listed.rect === null) throw new Error('no place');
+      const byBox = await placed(drawn, { index: 0, rect: { ...listed.rect, y0: listed.rect.y0 - 30, x1: listed.rect.x1 + 30 } });
+      const [, y0 = 0, , y1 = 0] = (await savedNumbers(byBox, 'L')) ?? [];
+      expect(Math.abs(y1 - y0)).toBeGreaterThan(10);
+    });
+
+    it('an AREA’s corner moved by points reads the new area, and a PERIMETER’s the new length', async () => {
+      const area = await drawnOn(await fixture(), command({ annotation: AREA }));
+      // THE TOP-RIGHT CORNER pulled fifty points further right: the square becomes a trapezoid of 12,500 pt².
+      const grown = await placed(area, { index: 0, points: [{ x: 10, y: 20 }, { x: 110, y: 20 }, { x: 160, y: 120 }, { x: 10, y: 120 }] });
+      expect(await savedLabel(grown)).toBe('3125.0 mm²');
+      const perimeter = await drawnOn(await fixture(), command({ annotation: PERIMETER }));
+      const longer = await placed(perimeter, { index: 0, points: [{ x: 10, y: 20 }, { x: 110, y: 20 }, { x: 110, y: 170 }, { x: 10, y: 170 }] });
+      // 100 + 150 + 100 points, open, at half a millimetre each.
+      expect(await savedLabel(longer)).toBe('175.0 mm');
+    });
+
+    it('NO FILL is written by a change: a moved or reshaped measurement carries no /IC', async () => {
+      const area = await drawnOn(await fixture(), command({ annotation: AREA }));
+      const { rect } = await listedFirst(area);
+      if (rect === null) throw new Error('no place');
+      expect(await savedNumbers(await placed(area, { index: 0, rect: { x0: rect.x0 + 5, y0: rect.y0 + 5, x1: rect.x1 + 5, y1: rect.y1 + 5 } }), 'IC')).toBeUndefined();
+      expect(await savedNumbers(await placed(area, { index: 0, points: [{ x: 10, y: 20 }, { x: 110, y: 20 }, { x: 140, y: 120 }, { x: 10, y: 120 }] }), 'IC')).toBeUndefined();
+    });
+
+    it('REFUSES points that add or drop one, and points for a mark with no ends or corners', async () => {
+      const distance = await drawnOn(await fixture(), command({ annotation: DISTANCE }));
+      await expect(placed(distance, { index: 0, points: [{ x: 1, y: 1 }, { x: 2, y: 2 }, { x: 3, y: 3 }] })).rejects.toThrow(/neither adds nor removes/u);
+      const square = await drawnOn(await fixture(), command());
+      await expect(placed(square, { index: 0, points: [{ x: 1, y: 1 }, { x: 50, y: 50 }] })).rejects.toThrow(/no ends or corners/u);
+      // CONTROL: a square lists no points, and a distance lists its two.
+      expect((await listedFirst(square)).points).toBeUndefined();
+      expect((await listedFirst(distance)).points).toHaveLength(2);
+    });
+
+    it('a LINE that is not a measurement keeps its words when it is moved: only a dimension is read again', async () => {
+      const line: AnnotationDraft = { type: 'line', from: { x: 20, y: 40 }, to: { x: 120, y: 40 }, ending: 'none', colour: [1, 0, 0], opacity: 1, borderWidth: 2 };
+      const drawn = await drawnOn(await fixture(), command({ annotation: line }));
+      const moved = await placed(drawn, { index: 0, points: [{ x: 20, y: 40 }, { x: 180, y: 40 }] });
+      expect((await listedFirst(moved)).contents).toBe((await listedFirst(drawn)).contents);
+    });
+  });
 });
 
 describe('applyPlaceImage', () => {
@@ -3696,7 +3801,10 @@ describe('the commands that keep the annotation walk', () => {
     opacity: 1,
   };
 
-  /** A square, an ink stroke, a highlight and a note, in that walk order. */
+  /**
+   * A square, an ink stroke, a highlight, a note and a polyline, in that walk order. The polyline is last so the four
+   * before it keep the places every case here names, and it is there for the one member that moves corners.
+   */
   async function fourMarks(): Promise<Uint8Array> {
     let bytes = await drawnOn(await withText(), command({ annotation: SQUARE }));
     bytes = await drawnOn(bytes, command({ annotation: INK }));
@@ -3712,7 +3820,13 @@ describe('the commands that keep the annotation walk', () => {
         },
       }),
     );
-    return drawnOn(bytes, command({ annotation: NOTE }));
+    bytes = await drawnOn(bytes, command({ annotation: NOTE }));
+    return drawnOn(
+      bytes,
+      command({
+        annotation: { type: 'polyline', points: [{ x: 20, y: 40 }, { x: 80, y: 60 }, { x: 140, y: 40 }], colour: [0, 0, 1], opacity: 1, borderWidth: 2 },
+      }),
+    );
   }
 
   /** What a carried handle relies on: each position's kind, and how many there are. */
@@ -3770,6 +3884,14 @@ describe('the commands that keep the annotation walk', () => {
         ],
         version: asDocVersion(1),
       }),
+    reshapeAnnotation: (session) =>
+      applyReshapeAnnotation(session, {
+        kind: 'reshapeAnnotation',
+        page: 0,
+        index: 4,
+        points: [{ x: 20, y: 40 }, { x: 80, y: 90 }, { x: 160, y: 40 }],
+        version: asDocVersion(1),
+      }),
   };
 
   for (const kind of KEEPS_THE_ANNOTATION_WALK) {
@@ -3777,7 +3899,7 @@ describe('the commands that keep the annotation walk', () => {
       const before = await fourMarks();
       const walk = await walkOf(before);
       // THE FIXTURE IS WHAT IT SAYS, or the comparison below compares two empty lists.
-      expect(walk).toStrictEqual(['0:square', '1:ink', '2:highlight', '3:sticky-note']);
+      expect(walk).toStrictEqual(['0:square', '1:ink', '2:highlight', '3:sticky-note', '4:polyline']);
       expect(await walkOf(await after(before, APPLY[kind]))).toStrictEqual(walk);
     });
   }

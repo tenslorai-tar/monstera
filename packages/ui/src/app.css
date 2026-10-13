@@ -7136,6 +7136,22 @@ optgroup {
   stroke-linejoin: round;
 }
 
+/*
+ * A measurement's reading while it is drawn: the preview's colour, with a halo of the paper under it so the number reads
+ * over dense text, as the label the file will carry does.
+ */
+.m-annotation-caption {
+  fill: var(--accent-on-paper, var(--accent));
+  font-family: var(--font-ui);
+  font-size: var(--font-chrome-12);
+  font-weight: 600;
+  paint-order: stroke;
+  stroke: var(--page);
+  stroke-width: 3;
+  stroke-linejoin: round;
+  dominant-baseline: text-after-edge;
+}
+
 /* ─── Signing ────────────────────────────────────────────────────────────── */
 
 .m-sign-document__look {

@@ -1,4 +1,5 @@
 import type { AnnotationColour, MeasureScale, DispatchableCommand } from '@monstera/contract';
+import { measureLabel } from '@monstera/contract';
 import type { PageTransform } from '@monstera/shared';
 import { toPdf } from '@monstera/shared';
 
@@ -6,7 +7,7 @@ import { HINT_MEASURE_DISTANCE } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import type { AnnotationStyle } from './annotationStyle.js';
-import { vertexTool } from './vertexTools.js';
+import { CAPTION_OFFSET, vertexTool } from './vertexTools.js';
 
 /**
  * The three measurement tools — distance, area and perimeter.
@@ -81,11 +82,20 @@ function measured(deps: MeasureDeps): {
  * expects the line to follow the pointer rather than to wait for a second press.
  */
 function distanceTool(deps: MeasureDeps): UiTool {
-  const drawn = (gesture: Gesture): ToolPreview | undefined => {
+  const drawn = (gesture: Gesture, _page?: number, transform?: PageTransform): ToolPreview | undefined => {
     const from = startOf(gesture);
     const to = endOf(gesture);
     if (Math.hypot(to.x - from.x, to.y - from.y) < MINIMUM_DRAG) return undefined;
-    return { shape: 'line', x1: from.x, y1: from.y, x2: to.x, y2: to.y };
+    // THE LENGTH SO FAR beside the pointer (the owner's O8), by the function the file's label is made by.
+    const caption =
+      transform === undefined
+        ? undefined
+        : {
+            text: measureLabel('measure-distance', [toPdf(from, transform), toPdf(to, transform)], deps.scale),
+            x: to.x + CAPTION_OFFSET,
+            y: to.y - CAPTION_OFFSET,
+          };
+    return { shape: 'line', x1: from.x, y1: from.y, x2: to.x, y2: to.y, ...(caption === undefined ? {} : { caption }) };
   };
 
   const controller: ToolController = {
@@ -124,15 +134,19 @@ export function measureTools(deps: MeasureDeps): readonly UiTool[] {
     // THE POLYGON'S AND THE POLYLINE'S GESTURES, taken whole: an area closes
     // and a perimeter does not, which is the one difference `vertexTool`
     // already carries as its `closes` argument.
-    vertexTool(MEASURE_AREA_TOOL_ID, 3, true, (points) => ({
-      type: 'measure-area',
-      points,
-      ...measured(deps),
-    })),
-    vertexTool(MEASURE_PERIMETER_TOOL_ID, 2, false, (points) => ({
-      type: 'measure-perimeter',
-      points,
-      ...measured(deps),
-    })),
+    vertexTool(
+      MEASURE_AREA_TOOL_ID,
+      3,
+      true,
+      (points) => ({ type: 'measure-area', points, ...measured(deps) }),
+      (points) => measureLabel('measure-area', points, deps.scale),
+    ),
+    vertexTool(
+      MEASURE_PERIMETER_TOOL_ID,
+      2,
+      false,
+      (points) => ({ type: 'measure-perimeter', points, ...measured(deps) }),
+      (points) => measureLabel('measure-perimeter', points, deps.scale),
+    ),
   ];
 }

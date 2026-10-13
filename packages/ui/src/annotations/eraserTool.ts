@@ -1,4 +1,10 @@
-import type { AnnotationBlend, AnnotationKindName, AnnotationWordsStyle, DispatchableCommand } from '@monstera/contract';
+import type {
+  AnnotationBlend,
+  AnnotationKindName,
+  AnnotationPoint,
+  AnnotationWordsStyle,
+  DispatchableCommand,
+} from '@monstera/contract';
 import type { DocVersion, PageTransform } from '@monstera/shared';
 import { pdfPoint, toViewport } from '@monstera/shared';
 
@@ -114,6 +120,11 @@ export interface ErasableAnnotation {
    * cannot be read, which is reopened on a card beside it instead.
    */
   readonly typed?: AnnotationWordsStyle;
+  /**
+   * A line's two ends, or a polygon's or polyline's corners, in PDF user space, where the walk carries them (the owner's
+   * O8): the select tool draws a handle on each and moves it alone.
+   */
+  readonly points?: readonly AnnotationPoint[];
 }
 
 /** What the walk answered, and the version it answered at. */

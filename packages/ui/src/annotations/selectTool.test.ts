@@ -313,9 +313,9 @@ describe('selectTool', () => {
       const resized = selecting([A], selected);
       const widthOf = (command: DispatchableCommand | undefined): number => {
         if (command?.kind !== 'placeAnnotation') throw new Error('expected a placement');
-        const rect = command.placements[0]?.rect;
-        if (rect === undefined) throw new Error('expected a rect');
-        return rect.x1 - rect.x0;
+        const placed = command.placements[0];
+        if (placed === undefined || !('rect' in placed)) throw new Error('expected a rect');
+        return placed.rect.x1 - placed.rect.x0;
       };
       expect(widthOf(await resized.drag([100, 60], [140, 60]))).toBe(60);
       expect(pointerAt(100, 60)).toBe('resize-ew');
@@ -558,6 +558,57 @@ describe('selectionOfNewest (ADR-0133, the signature just placed)', () => {
 
   it('CONTROL: a page with no mark is nothing selected', () => {
     expect(selectionOfNewest({ version: VERSION, annotations: [A] }, 5)).toBeUndefined();
+  });
+});
+
+describe('a line’s ENDS and a polygon’s CORNERS are its handles (the owner’s O8)', () => {
+  /**
+   * A distance nearly flat, as a hand draws one: PDF (60,350) to (150,351), on screen (20,100) to (200,98). Its box,
+   * which carries the label, is taller than the line, so a box corner and an end are different places.
+   */
+  const DISTANCE_ITEM = {
+    index: 1,
+    rect: { x0: 55, y0: 340, x1: 155, y1: 360 },
+    ...CARRIED,
+    kind: 'measure-distance',
+    points: [
+      { x: 60, y: 350 },
+      { x: 150, y: 351 },
+    ],
+  } as const;
+  const SELECTED: AnnotationSelection = { page: 3, version: VERSION, items: [DISTANCE_ITEM] };
+
+  it('dragging an END moves that end alone, to the point released on, by points and not by a box', async () => {
+    const { drag } = selecting([], SELECTED);
+    expect(await drag([200, 98], [240, 98])).toStrictEqual({
+      kind: 'reshapeAnnotation',
+      page: 3,
+      index: 1,
+      points: [{ x: 60, y: 350 }, { x: 170, y: 351 }],
+      version: VERSION,
+    });
+  });
+
+  it('CONTROL: the box’s corner is no handle on a line; a press there inside the box MOVES it, keeping its size', async () => {
+    const { drag } = selecting([], SELECTED);
+    const command = await drag([208, 82], [228, 82]);
+    if (command?.kind !== 'placeAnnotation') throw new Error('expected a placement');
+    const [placed] = command.placements;
+    if (placed === undefined || !('rect' in placed)) throw new Error('expected a move by its box');
+    expect(placed.rect.x1 - placed.rect.x0).toBe(100);
+    expect(placed.rect.x0).toBe(65);
+  });
+
+  it('the preview of an end being dragged is the line’s OUTLINE where it goes, never a tinted box', () => {
+    const tool = selectTool({ ...NO_REOPEN, ...NO_LINKS, annotations: () => Promise.resolve(undefined), onSelect: () => undefined, selected: () => SELECTED });
+    const started = tool.controller.begin(viewportPoint(200, 98));
+    const preview = tool.controller.preview(tool.controller.update(started, viewportPoint(240, 98)), 3, overlayTransform(PAGE));
+    expect(preview).toStrictEqual({ shape: 'boxes', boxes: [], paths: [{ points: [[20, 100], [240, 98]], closed: false }] });
+    // AND A MOVE BY THE BOX previews the outline too, carried by the move.
+    const moving = tool.controller.update(tool.controller.begin(viewportPoint(100, 99)), viewportPoint(120, 99));
+    expect(tool.controller.preview(moving, 3, overlayTransform(PAGE))).toMatchObject({ boxes: [], paths: [{ points: [[40, 100], [220, 98]] }] });
+    // THE POINTER says a press on an end moves it.
+    expect(tool.controller.pointer(viewportPoint(20, 100), 3, overlayTransform(PAGE))).toBe('move');
   });
 });
 

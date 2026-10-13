@@ -1,4 +1,4 @@
-import type { AnnotationRect, DispatchableCommand } from '@monstera/contract';
+import type { AnnotationPoint, AnnotationRect, DispatchableCommand } from '@monstera/contract';
 import type { DocVersion, PageTransform, ViewportPoint } from '@monstera/shared';
 import { pdfPoint, toPdf, toViewport, viewportPoint } from '@monstera/shared';
 
@@ -98,6 +98,8 @@ export interface SelectedAnnotation {
   readonly blend: ErasableAnnotation['blend'];
   /** How a text box's words are drawn, carried for the same reason — the Properties tab's Text section (item 14b). */
   readonly typed?: ErasableAnnotation['typed'];
+  /** A line's ends or a polygon's corners, carried from the walk: each is a handle that moves it alone (the owner's O8). */
+  readonly points?: ErasableAnnotation['points'];
 }
 
 /**
@@ -138,6 +140,7 @@ function selectedFrom(entry: ErasableAnnotation): SelectedAnnotation | undefined
     created: entry.created,
     blend: entry.blend,
     ...(entry.typed === undefined ? {} : { typed: entry.typed }),
+    ...(entry.points === undefined ? {} : { points: entry.points }),
   };
 }
 
@@ -238,7 +241,13 @@ export interface PageLinksRead {
 interface Grabbable {
   readonly page: number;
   readonly version: DocVersion;
-  readonly items: readonly { readonly index: number; readonly rect: AnnotationRect; readonly kind: string }[];
+  readonly items: readonly {
+    readonly index: number;
+    readonly rect: AnnotationRect;
+    readonly kind: string;
+    /** A line's ends or a polygon's corners: where present, its handles are these, and its box's corners are not. */
+    readonly points?: readonly AnnotationPoint[] | undefined;
+  }[];
 }
 
 /** The kind a link's grabbable item carries: box-shaped, so all four sides pull (`SIDE_RESIZABLE_KINDS`). */
@@ -419,6 +428,8 @@ interface PixelBox {
  */
 type GrabbedItem = Grabbable['items'][number];
 type Grab =
+  // ONE END OR CORNER of a line or a polygon (the owner's O8): that point moves and no other.
+  | { readonly kind: 'point'; readonly item: GrabbedItem; readonly points: readonly AnnotationPoint[]; readonly at: number }
   | { readonly kind: 'corner'; readonly item: GrabbedItem; readonly opposite: { readonly x: number; readonly y: number }; readonly arrow: 'resize-nwse' | 'resize-nesw' }
   | { readonly kind: 'side'; readonly item: GrabbedItem; readonly side: SideHandle; readonly box: PixelBox }
   | { readonly kind: 'inside' };
@@ -431,7 +442,17 @@ function grabbedAt(
   from: ViewportPoint,
   transform: PageTransform,
 ): Grab | undefined {
+  // A LINE'S ENDS AND A POLYGON'S CORNERS FIRST, and such a mark has no box corners: a box would scale a nearly flat line
+  // into a diagonal (the owner's O8, measured in `pageAnnotations.test.ts`).
   for (const item of selection.items) {
+    if (item.points === undefined) continue;
+    for (const [at, point] of item.points.entries()) {
+      const shown = toViewport(pdfPoint(point.x, point.y), transform);
+      if (Math.hypot(from.x - shown.x, from.y - shown.y) <= CORNER_REACH) return { kind: 'point', item, points: item.points, at };
+    }
+  }
+  for (const item of selection.items) {
+    if (item.points !== undefined) continue;
     const box = boxOf(item.rect, transform);
     if (box === null) continue;
     for (const [at, [cx, cy, ox, oy]] of cornersOf(box).entries()) {
@@ -458,7 +479,10 @@ function grabbedAt(
 /** Where a drag on the selection puts each mark, at the selection's version. */
 interface Placement {
   readonly version: DocVersion;
-  readonly placements: readonly { readonly index: number; readonly rect: AnnotationRect }[];
+  readonly placements: readonly (
+    | { readonly index: number; readonly rect: AnnotationRect }
+    | { readonly index: number; readonly points: readonly AnnotationPoint[] }
+  )[];
 }
 
 /**
@@ -502,6 +526,14 @@ function placementFor(
 
   const grab = grabbedAt(selection, from, transform);
   if (grab === undefined) return undefined;
+  if (grab.kind === 'point') {
+    // THAT POINT WHERE THE POINTER IS, through the one converter; every other point stays where it was.
+    const moved = toPdf(viewportPoint(to.x, to.y), transform);
+    return {
+      placements: [{ index: grab.item.index, points: grab.points.map((point, at) => (at === grab.at ? { x: moved.x, y: moved.y } : point)) }],
+      version: selection.version,
+    };
+  }
   if (grab.kind === 'corner') {
     return {
       placements: [{ index: grab.item.index, rect: pdfBox([grab.opposite.x, grab.opposite.y], [to.x, to.y], transform) }],
@@ -543,6 +575,55 @@ function placementFor(
     })),
     version: selection.version,
   };
+}
+
+/**
+ * The command a drag on the selection sends: one mark's points moved is a `reshapeAnnotation`, and boxes moved or resized
+ * are one `placeAnnotation` naming every mark. A point grab names one mark and a box grab never carries points, so the
+ * two never meet in one drag.
+ */
+function commandOf(page: number, moved: Placement): DispatchableCommand | undefined {
+  const [first] = moved.placements;
+  if (first !== undefined && 'points' in first) {
+    return { kind: 'reshapeAnnotation', page, index: first.index, points: [...first.points], version: moved.version };
+  }
+  const placements = moved.placements.flatMap((placement) => ('rect' in placement ? [placement] : []));
+  return placements.length === 0 ? undefined : { kind: 'placeAnnotation', page, placements, version: moved.version };
+}
+
+/** The kinds whose points close back on the first: a polygon's outline, where a polyline's and a line's stay open. */
+const CLOSED_KINDS: ReadonlySet<string> = new Set(['polygon', 'measure-area']);
+
+/**
+ * What a drag on the selection draws while it is in flight: where the release puts each mark (ADR-0166). A box for a mark
+ * placed by its box, and for a line or a polygon its OUTLINE where it goes — a moved point, or every point moved with the
+ * box — since a tinted box over a line read as the line gaining a fill (the owner's O8).
+ */
+function previewOf(selection: Grabbable, moved: Placement, transform: PageTransform): ToolPreview {
+  const boxes: { x: number; y: number; width: number; height: number }[] = [];
+  const paths: { points: (readonly [number, number])[]; closed: boolean }[] = [];
+  for (const placement of moved.placements) {
+    const item = selection.items.find((candidate) => candidate.index === placement.index);
+    const closed = item !== undefined && CLOSED_KINDS.has(item.kind);
+    const shown = (point: AnnotationPoint): readonly [number, number] => {
+      const at = toViewport(pdfPoint(point.x, point.y), transform);
+      return [at.x, at.y];
+    };
+    if ('points' in placement) {
+      paths.push({ points: placement.points.map(shown), closed });
+      continue;
+    }
+    if (item?.points !== undefined) {
+      // MOVED WITH ITS BOX: a move keeps the box's size, so every point goes by the box's offset.
+      const dx = placement.rect.x0 - item.rect.x0;
+      const dy = placement.rect.y0 - item.rect.y0;
+      paths.push({ points: item.points.map((point) => shown({ x: point.x + dx, y: point.y + dy })), closed });
+      continue;
+    }
+    const box = boxOf(placement.rect, transform);
+    if (box !== null) boxes.push({ x: box.x0, y: box.y0, width: box.x1 - box.x0, height: box.y1 - box.y0 });
+  }
+  return { shape: 'boxes', boxes, ...(paths.length === 0 ? {} : { paths }) };
 }
 
 /**
@@ -589,11 +670,11 @@ export function selectTool(deps: SelectDeps): UiTool {
       // replace the selection with that annotation, which is the interaction
       // every editor gets right by asking this question first.
       const moved = placementFor(deps.selected(), gesture, marquee, page, transform);
-      if (moved !== undefined) return { kind: 'placeAnnotation', page, ...moved };
+      if (moved !== undefined) return commandOf(page, moved);
       // A DRAG ON THE SELECTED LINK moves or resizes it by the same rule, and names it by its place at its version.
       const link = placementFor(grabbableLinkOn(page, transform), gesture, marquee, page, transform);
       const placed = link?.placements[0];
-      if (link !== undefined && placed !== undefined) {
+      if (link !== undefined && placed !== undefined && 'rect' in placed) {
         return { kind: 'editLink', page, index: placed.index, rect: placed.rect, version: link.version };
       }
 
@@ -655,18 +736,12 @@ export function selectTool(deps: SelectDeps): UiTool {
       // A DRAG ON THE SELECTION IS DRAWN WHERE IT PUTS THE MARKS (ADR-0166), each one's box as the release would
       // place it. The box from the press to the pointer is a marquee's, and drawn for a move it was a ghost that
       // matched neither the mark nor where it went — and then was held there after the release.
-      const moved =
-        placementFor(deps.selected(), gesture, marquee, page, transform) ??
-        placementFor(grabbableLinkOn(page, transform), gesture, marquee, page, transform);
-      if (moved !== undefined) {
-        return {
-          shape: 'boxes',
-          boxes: moved.placements.flatMap(({ rect }) => {
-            const box = boxOf(rect, transform);
-            return box === null ? [] : [{ x: box.x0, y: box.y0, width: box.x1 - box.x0, height: box.y1 - box.y0 }];
-          }),
-        };
-      }
+      const annotations = deps.selected();
+      const onAnnotations = placementFor(annotations, gesture, marquee, page, transform);
+      if (annotations !== undefined && onAnnotations !== undefined) return previewOf(annotations, onAnnotations, transform);
+      const link = grabbableLinkOn(page, transform);
+      const onLink = placementFor(link, gesture, marquee, page, transform);
+      if (link !== undefined && onLink !== undefined) return previewOf(link, onLink, transform);
       return {
         shape: 'rect',
         x: marquee.x0,
@@ -684,6 +759,8 @@ export function selectTool(deps: SelectDeps): UiTool {
       const grab = grabbedAt(selection, at, transform);
       if (grab === undefined) return undefined;
       if (grab.kind === 'corner') return grab.arrow;
+      // AN END OR A CORNER of a line or a polygon moves freely, in any direction.
+      if (grab.kind === 'point') return 'move';
       if (grab.kind === 'side') return grab.side === 'left' || grab.side === 'right' ? 'resize-ew' : 'resize-ns';
       return 'move';
     },

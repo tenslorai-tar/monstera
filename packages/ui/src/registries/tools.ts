@@ -345,6 +345,13 @@ export interface ToolController {
  * where the command's rectangle is a pair of document corners whose order says
  * which way the drag ran.
  */
+/** A measurement's reading drawn beside the shape being drawn, at a point in the overlay's own pixels. */
+export interface PreviewCaption {
+  readonly text: string;
+  readonly x: number;
+  readonly y: number;
+}
+
 export type ToolPreview =
   | {
       readonly shape: 'rect' | 'ellipse';
@@ -359,11 +366,15 @@ export type ToolPreview =
       readonly y1: number;
       readonly x2: number;
       readonly y2: number;
+      /** What the line measures while it is drawn, beside its end (the owner's O8); absent for a line that measures nothing. */
+      readonly caption?: PreviewCaption | undefined;
     }
   | {
       readonly shape: 'path';
       /** Every kept point, as `[x, y]` pairs in order. */
       readonly points: readonly (readonly [number, number])[];
+      /** What the path measures while it is drawn, beside its last point; absent for one that measures nothing. */
+      readonly caption?: PreviewCaption | undefined;
     }
   | {
       /** Several rectangles drawn as one shape: a multi-selection moving together (ADR-0166). */
@@ -374,6 +385,11 @@ export type ToolPreview =
         readonly width: number;
         readonly height: number;
       }[];
+      /**
+       * Lines and polygons in the same move, drawn as their outlines and never filled (the owner's O8): a line's preview
+       * as a tinted box read as the line gaining a fill. `closed` joins the last point back to the first.
+       */
+      readonly paths?: readonly { readonly points: readonly (readonly [number, number])[]; readonly closed: boolean }[];
     };
 
 /** One registered tool. */

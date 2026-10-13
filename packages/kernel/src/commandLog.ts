@@ -436,6 +436,8 @@ export interface CommandPrior {
    * strokes or a line, all bounded by the draft schemas that already exist.
    */
   readonly placeAnnotation: never;
+  /** **`never`**, for `placeAnnotation`'s reason: undo is the checkpoint. */
+  readonly reshapeAnnotation: never;
   /**
    * **`never`**, and this is `addAnnotation`'s *not yet* on a weaker footing.
    *
