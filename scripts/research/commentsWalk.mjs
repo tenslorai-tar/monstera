@@ -637,14 +637,16 @@ await step('N8: a right-click in a text field is answered by the one edit menu i
 await step('N9: every left-panel tab draws its panel down to the panel’s foot', async () => {
   /** @type {Record<string, number>} */
   const gaps = {};
-  for (const [tab, box] of [
+  /** @type {readonly (readonly [string, string])[]} */
+  const tabs = [
     ['pages', '.m-thumbnails'],
     ['bookmarks', '.m-links-panel'],
     ['comments', '.m-annotations-panel'],
     ['forms', '.m-forms-panel'],
     ['layers', '.m-layers'],
     ['search', '.m-find-bar'],
-  ]) {
+  ];
+  for (const [tab, box] of tabs) {
     await page.locator(`[data-panel-tab="${tab}"]`).click();
     const body = page.locator(`.m-document-panel__body[data-panel="${tab}"]`);
     const [outer, inner] = await Promise.all([body.boundingBox(), body.locator(box).first().boundingBox()]);
