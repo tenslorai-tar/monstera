@@ -1,6 +1,7 @@
 import { MAX_PDFA_LEFT_OUT, type PdfaLeftOutKind } from '@monstera/contract/host';
 
 import * as mupdf from './mupdfRaw.js';
+import { redrawPage } from './pageAnnotations.js';
 
 /**
  * A copy of a document made ready for Ghostscript's PDF/A pass (ADR-0075's 2026-10-13 correction, the owner's N7):
@@ -100,18 +101,18 @@ export function prepareForPdfa(document: mupdf.PDFDocument): PdfaPreparation {
     }
   }
 
-  // AFTER THE DICTIONARIES, so MuPDF draws only what stays; `update` makes an appearance where a mark has none.
+  // AFTER THE DICTIONARIES, so MuPDF draws only what stays: an appearance made where a mark has none, through the
+  // kernel's one redraw (`redrawPage`, ADR-0103), which keeps a blend and a caret's size as every other redraw does.
   let drawn = 0;
   for (let page = 0; page < pages; page += 1) {
     const loaded = document.loadPage(page);
-    for (const annotation of loaded.getAnnotations()) {
-      if (!annotation.getObject().get('AP').isNull()) continue;
-      // DIRTIED FIRST: `update` alone left a mark with no appearance as it was (measured 2026-10-13), because MuPDF
-      // synthesises only for an annotation it has marked as changed, and setting its flags to themselves marks it.
-      annotation.setFlags(annotation.getFlags());
-      annotation.update();
-      if (!annotation.getObject().get('AP').isNull()) drawn += 1;
-    }
+    const bare = loaded.getAnnotations().filter((annotation) => annotation.getObject().get('AP').isNull());
+    if (bare.length === 0) continue;
+    // DIRTIED FIRST: an update alone left a mark with no appearance as it was (measured 2026-10-13), because MuPDF
+    // synthesises only for an annotation it has marked as changed, and setting its flags to themselves marks it.
+    for (const annotation of bare) annotation.setFlags(annotation.getFlags());
+    redrawPage(loaded, bare, document);
+    drawn += bare.filter((annotation) => !annotation.getObject().get('AP').isNull()).length;
   }
 
   const ordered = [...removed.values()].sort((a, b) => a.page - b.page);
