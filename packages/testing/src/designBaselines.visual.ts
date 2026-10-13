@@ -158,6 +158,15 @@ const DIALOGS: readonly { command: string; title: string; file: string; ready: s
   { command: 'About', title: 'About Monstera', file: 'about', ready: 'Close' },
   { command: 'Components', title: 'Components', file: 'components', ready: 'Close' },
   { command: 'Set up AI…', title: 'Set up the AI assistant', file: 'ai-setup', ready: 'Skip' },
+  // THE DIALOGS THE CLOUD RUNS BUILT OR REBUILT (2026-10-11 to 13), which had no baseline: each a screen a later
+  // change could move with nothing comparing it. Their images are made on Windows (cloud rule 5).
+  { command: 'Convert a scan…', title: 'Convert a scan', file: 'convert-scan', ready: 'Save as Excel' },
+  { command: 'New PDF from Markdown…', title: 'New PDF', file: 'new-from-text', ready: 'Choose file…' },
+  { command: 'Insert from Markdown…', title: 'Insert from Markdown', file: 'insert-markdown', ready: 'Choose file…' },
+  { command: 'Export as PDF/A…', title: 'Export as PDF/A', file: 'pdfa-level', ready: 'Choose where to save…' },
+  { command: 'Headers and footers…', title: 'Headers and footers', file: 'header-footer', ready: 'Add' },
+  { command: 'Bates numbering…', title: 'Bates numbering', file: 'bates', ready: 'Number pages' },
+  { command: 'Insert blank pages…', title: 'Insert blank pages', file: 'insert-blank-pages', ready: 'Insert' },
 ];
 
 /**
