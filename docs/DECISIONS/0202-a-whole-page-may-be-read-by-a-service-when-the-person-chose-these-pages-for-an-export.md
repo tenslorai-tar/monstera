@@ -72,3 +72,11 @@ Decision 5 sent the built-in reader's words into the engine's table read, which 
 (ADR-0073 reading 2), so a printed scan's ruled table was not found (the owner's O2). From
 [ADR-0233](0233-a-scanned-tables-rulings-are-read-from-its-pixels.md) the table read on such a page takes its rulings from
 the page's pixels, and the walk this Decision describes is unchanged.
+
+## Correction, 2026-10-13: the Excel export's two channels are the one work route
+
+Decision 5 gave the Excel export's service read its own `document.exportProgress` and `document.cancelExport`, keyed by
+`DocId`, beside `work.progress` and `work.cancel`, which answer the same question under a name the renderer mints. From
+[ADR-0234](0234-every-conversion-is-named-work-and-shown-from-its-chosen-input.md) the two are removed and the read steps
+and stops under the work's name like every other conversion. The counts, the flag checked between pages and the
+temporary file removed on a stop are unchanged.
