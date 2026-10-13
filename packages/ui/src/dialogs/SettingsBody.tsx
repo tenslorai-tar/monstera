@@ -87,7 +87,7 @@ import {
   SETTINGS_UPDATES_NOTE,
   SETTINGS_VIEWING_NOTE,
 } from '../messages/en.js';
-import { type DocumentFont, FontPicker, type FontList } from '../FontPicker.js';
+import { type DocumentFont, FontPicker, type ReadFontList } from '../FontPicker.js';
 import { Button } from '../primitives/Button.js';
 import { Icon } from '../primitives/Icon.js';
 import { Input } from '../primitives/Input.js';
@@ -661,7 +661,7 @@ function FontRow({
 }: {
   readonly setting: SettingDefinition;
   readonly draft: unknown;
-  readonly fonts: NonNullable<FontList> | undefined;
+  readonly fonts: ReadFontList | undefined;
   readonly onChoose: (family: string) => void;
 }): ReactElement {
   const { _ } = useLingui();
@@ -892,7 +892,7 @@ export default function SettingsBody({
   /** The installed version, `app.info`'s, for the Updates page; absent where nothing supplies it. */
   readonly version?: string | undefined;
   /** The fonts main listed when the dialog opened, for a `font` row; absent where that read failed. */
-  readonly fonts?: NonNullable<FontList> | undefined;
+  readonly fonts?: ReadFontList | undefined;
 } & DialogAnswering<SettingsAnswer>): ReactElement {
   const { _ } = useLingui();
   const [drafts, setDrafts] = useState<Readonly<Record<string, unknown>>>(() =>

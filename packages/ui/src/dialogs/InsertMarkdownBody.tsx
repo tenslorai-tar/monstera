@@ -3,7 +3,7 @@ import { COMPOSED_FAMILY_DEFAULT } from '@monstera/contract';
 import type { ReactElement } from 'react';
 import { useState } from 'react';
 
-import { type DocumentFont, FontPicker, type FontList, RESOLVED_BUILT_IN } from '../FontPicker.js';
+import { type DocumentFont, FontPicker, RESOLVED_BUILT_IN, type ReadFontList } from '../FontPicker.js';
 import {
   INSERT_MARKDOWN_AFTER,
   INSERT_MARKDOWN_APPLY,
@@ -44,7 +44,7 @@ export default function InsertMarkdownBody({
   /** Zero-based, as every page index crossing a boundary here is. */
   readonly page: number;
   /** The fonts main listed when the dialog opened; absent where that read failed, which the picker says in words. */
-  readonly fonts?: NonNullable<FontList> | undefined;
+  readonly fonts?: ReadFontList | undefined;
 } & DialogAnswering<InsertMarkdownAnswer>): ReactElement {
   const { _ } = useLingui();
   // THE ONE PICKER (D1), opening on the face every composition was set in before there was a choice.

@@ -25,7 +25,7 @@ import { type ReactElement, type ReactNode, useEffect, useId, useState } from 'r
 
 import { ANNOTATION_KIND_LABELS } from './AnnotationsPanel.js';
 import { ColourSwatches } from './ColourChoice.js';
-import type { DocumentFont, FontList } from './FontPicker.js';
+import { BUILT_IN_ONLY, type DocumentFont, type FontList } from './FontPicker.js';
 import { STARTING_STYLE_COLOUR, colourFromHex, hexFromColour } from './annotations/annotationStyle.js';
 import { type WordsOf, type WordsToEdit, markOf } from './annotations/markWords.js';
 import type { AnnotationSelection, SelectedAnnotation } from './annotations/selectTool.js';
@@ -665,7 +665,7 @@ function familyOfTyped(typed: NonNullable<SelectedAnnotation['typed']>): string 
 }
 
 /** A callout's picker: the standard faces alone, said as a list, since nothing else is offered rather than unread. */
-const STANDARD_ONLY: FontList = { listed: true, families: [], more: 0 };
+const STANDARD_ONLY: FontList = BUILT_IN_ONLY;
 const NO_DOCUMENT_FONTS: readonly DocumentFont[] = [];
 
 /** A new box fill's first colour: a pale yellow, which a person then changes. */

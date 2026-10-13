@@ -11,6 +11,7 @@ import {
   FONT_GROUP_RECENT,
   FONT_LIST_MORE,
   FONT_LIST_READING,
+  FONT_LIST_EMPTY,
   FONT_LIST_UNREAD,
   FONT_NONE_MATCH,
   FONT_PICKER_LIST,
@@ -41,7 +42,11 @@ import { Icon } from './primitives/Icon.js';
  * panel's text section relies on that: a focus moving into it does not close the editor whose words it formats.
  */
 
-/** The fonts a computer's list read, or that none could be (`listed: false`), or `undefined` while it is being read. */
+/**
+ * The fonts a computer's list read, or that none could be (`listed: false`), or `undefined` while it is being read; or
+ * {@link BUILT_IN_ONLY}, a consumer whose writer sets the standard faces alone. Two values for two facts (the owner's
+ * L5): a list read and found EMPTY is said in words, and a consumer that offers none is not a list that came back empty.
+ */
 export type FontList =
   | {
       readonly listed: boolean;
@@ -49,7 +54,19 @@ export type FontList =
       /** Families past the list's bound, the last by name: said under the list, never left out without a word. */
       readonly more: number;
     }
+  | typeof BUILT_IN_ONLY
   | undefined;
+
+/** A consumer that offers the standard faces alone (a stamp's writer, a callout's, a field kind the writer cannot draw). */
+export const BUILT_IN_ONLY = { builtInOnly: true } as const;
+
+/** A computer's list as main answered it: read, or `listed: false` where it could not be. */
+export type ReadFontList = Exclude<FontList, typeof BUILT_IN_ONLY | undefined>;
+
+/** The computer's list where one was read for this consumer; `undefined` while it is read and for {@link BUILT_IN_ONLY}. */
+function readList(list: FontList): ReadFontList | undefined {
+  return list === undefined || 'builtInOnly' in list ? undefined : list;
+}
 
 /** A font a document carries, by the name its program states, and whether it is a subset. */
 export interface DocumentFont {
@@ -94,7 +111,7 @@ export function fontGroups(
   const plain = (family: string): FontChoice => ({ family, like: undefined });
   const ofEntry = (entry: FontFamilyEntry): FontChoice => ({ family: entry.name, like: entry.looksLike });
   // ONLY WHAT CAN BE USED: a family that may not be embedded is never offered, in any group the list feeds (N12).
-  const families = (list?.families ?? []).filter((entry) => entry.embedding !== 'never');
+  const families = (readList(list)?.families ?? []).filter((entry) => entry.embedding !== 'never');
   const seen = new Set<string>();
   const document = inDocument.flatMap((font): FontChoice[] => {
     const name = font.name.replace(SUBSET_TAG, '');
@@ -155,6 +172,8 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
   const optionId = (at: number): string => `${listId}-${String(at)}`;
   const search = useRef<HTMLInputElement>(null);
   const groups = useMemo(() => fontGroups(list, inDocument, recentlyChosen(), builtIn, query), [list, inDocument, builtIn, query]);
+  /** The computer's list as read, or `undefined` while it is read and where the consumer offers none. */
+  const read = readList(list);
   const flat = groups.flatMap((group) => group.choices);
   const choose = (choice: FontChoice): void => {
     rememberFamily(choice.family);
@@ -218,9 +237,11 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
             value={query}
           />
           {list === undefined ? <p className="m-font-picker__note">{_(FONT_LIST_READING)}</p> : null}
-          {list?.listed === false ? <p className="m-font-picker__note">{_(FONT_LIST_UNREAD)}</p> : null}
-          {list !== undefined && list.more > 0 ? (
-            <p className="m-font-picker__note">{_(FONT_LIST_MORE, { count: list.more })}</p>
+          {read?.listed === false ? <p className="m-font-picker__note">{_(FONT_LIST_UNREAD)}</p> : null}
+          {/* A LIST READ AND FOUND EMPTY (the owner's L5), said, never shown as a picker with nothing to say. */}
+          {read?.listed === true && read.families.length === 0 ? <p className="m-font-picker__note">{_(FONT_LIST_EMPTY)}</p> : null}
+          {read !== undefined && read.more > 0 ? (
+            <p className="m-font-picker__note">{_(FONT_LIST_MORE, { count: read.more })}</p>
           ) : null}
           <div aria-label={_(FONT_PICKER_LIST)} className="m-font-picker__list" id={listId} role="listbox">
             {groups.map((group, index) => {

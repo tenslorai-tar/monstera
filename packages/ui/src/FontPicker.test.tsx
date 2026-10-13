@@ -4,7 +4,7 @@ import type { FontFamilyEntry } from '@monstera/contract';
 import { fireEvent, render } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { BUILT_INTO_PDF, FontPicker, fontGroups } from './FontPicker.js';
+import { BUILT_IN_ONLY, BUILT_INTO_PDF, FontPicker, fontGroups } from './FontPicker.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import {
   EN,
@@ -147,6 +147,25 @@ describe('FontPicker', () => {
     const view = mount(() => undefined, LIST);
     fireEvent.click(view.getByRole('button', { name: 'Font: As on the page' }));
     expect(view.container.textContent).not.toContain('than this list can hold');
+  });
+
+  it('says in words when the computer was read and NO fonts came back, and still offers Helvetica (L5)', () => {
+    const view = mount(() => undefined, { listed: true, families: [], more: 0 });
+    fireEvent.click(view.getByRole('button', { name: 'Font: As on the page' }));
+    expect(view.container.textContent).toContain('No fonts were found on this computer.');
+    expect(view.container.querySelector('[data-font-choice="Helvetica"]')).not.toBeNull();
+  });
+
+  it('CONTROL: a consumer that sets the standard faces alone, and a list that holds fonts, say nothing of an empty list (L5)', () => {
+    const standard = mount(() => undefined, BUILT_IN_ONLY);
+    fireEvent.click(standard.getByRole('button', { name: 'Font: As on the page' }));
+    expect(standard.container.textContent).not.toContain('No fonts were found');
+    // NON-VACUOUS: the open list is drawn, the built-in faces in it.
+    expect(standard.container.querySelector('[data-font-choice="Helvetica"]')).not.toBeNull();
+    standard.unmount();
+    const full = mount(() => undefined, LIST);
+    fireEvent.click(full.getByRole('button', { name: 'Font: As on the page' }));
+    expect(full.container.textContent).not.toContain('No fonts were found');
   });
 
   it('Escape closes the list and goes no further, so an editor around it is not finished by the key', () => {

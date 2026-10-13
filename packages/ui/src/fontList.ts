@@ -2,20 +2,20 @@ import type { ContractClient } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
 import { useEffect, useState } from 'react';
 
-import type { DocumentFont, FontList } from './FontPicker.js';
+import type { DocumentFont, FontList, ReadFontList } from './FontPicker.js';
 
 /**
  * The fonts this computer has, asked of main once a session (`app.fontFamilies`) and held: the list does not change while
  * the application runs, and every picker shows the same one (B3a). A refusal reads as `listed: false`, which the picker
  * says in words and still offers the fonts every PDF has.
  */
-const asked = new WeakMap<ContractClient, Promise<NonNullable<FontList>>>();
+const asked = new WeakMap<ContractClient, Promise<ReadFontList>>();
 
 /**
  * The session's font list, asked of main once per client and held: the one way the renderer reads it (B3a), for a hook
  * ({@link useFontList}) and for a command that hands it to a dialog alike.
  */
-export function fontListOf(client: ContractClient): Promise<NonNullable<FontList>> {
+export function fontListOf(client: ContractClient): Promise<ReadFontList> {
   const held = asked.get(client);
   if (held !== undefined) return held;
   const reading = client['app.fontFamilies']({}).then(

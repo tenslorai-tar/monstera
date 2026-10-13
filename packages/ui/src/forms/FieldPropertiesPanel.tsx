@@ -144,7 +144,7 @@ import {
   FIELD_PROPS_VISIBILITY_VISIBLE,
   PROPERTIES_CUSTOM_COLOUR,
 } from '../messages/en.js';
-import { type DocumentFont, FontPicker, type FontList } from '../FontPicker.js';
+import { BUILT_IN_ONLY, type DocumentFont, FontPicker, type FontList } from '../FontPicker.js';
 import { pdfjsPageOf } from '../pageNumbering.js';
 import { Button } from '../primitives/Button.js';
 import { IconButton } from '../primitives/IconButton.js';
@@ -198,7 +198,7 @@ const DATE_PATTERNS = ['m/d/yyyy', 'mm/dd/yyyy', 'dd/mm/yyyy', 'dd.mm.yyyy', 'yy
 const TIME_PATTERNS = ['HH:MM', 'h:MM tt', 'HH:MM:ss', 'h:MM:ss tt'] as const;
 
 /** A kind Monstera does not draw in a real family lists no computer's fonts and none of the document's: its `/DA` names a standard font. */
-const NO_OTHER_FONTS: FontList = { listed: true, families: [], more: 0 };
+const NO_OTHER_FONTS: FontList = BUILT_IN_ONLY;
 const NO_DOCUMENT_FONTS: readonly DocumentFont[] = [];
 
 const FONT_LABELS: Readonly<Record<(typeof FIELD_FONTS)[number], MessageKey>> = {
