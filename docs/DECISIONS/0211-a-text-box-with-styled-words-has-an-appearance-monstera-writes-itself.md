@@ -101,3 +101,15 @@ writer: the Annotation font setting stores a real family name (Helvetica, Times 
 picker offers only those three for a text box, so no family is offered that the writer would not set. The writer's half is
 the appearance writer's font program (embedding a subset into the `/AP` stream's resources), host-side metrics for wrapping,
 and the two-reader proof per face; it is owed and recorded as not built.
+
+## Correction, 2026-10-13: a family whose licence forbids embedding is not offered (the owner's N12)
+
+The amendment's Decision 2 says a family whose licence forbids embedding *"is set in the resolver's stand-in, and the
+Properties tab says so in words, as the picker does."* The owner's N12 reverses the second half: *"Simply list the fonts that
+are available and usable without all these descriptions."* The one picker now **leaves such a family out** of every group
+built from the computer's list, and says nothing of any font beneath or beside its name: no licence sentence, no *looks
+like*, no *partial*. So no sentence is owed in the Properties tab either, since nothing there can choose such a family.
+
+What stays: the resolver's stand-in for a family that arrives by another road (a setting kept from before, or a document's
+own font under *In this document*, which the owner keeps listed), and Decision 2's embedding of every family that is
+offered. The first half of the sentence is still true; the second is withdrawn.

@@ -70,3 +70,10 @@ here, embeds a font file only through fontkit, which this repository does not in
   to research and pin.
 - **Moving field creation and editing to the MuPDF writer.** About 1,300 lines of pdf-lib field code ported for the
   same appearance this decision draws, and a writer-of-record change for every field property, not only the font.
+
+## Correction, 2026-10-13: the faces whose licence forbids embedding are left out, not marked (the owner's N12)
+
+Decision 5 offers a drawn field kind the text box's families *"with the faces whose licence forbids embedding marked as a
+text box's are."* Since the owner's N12 the one picker marks nothing: such a face is **not listed**, for a text box and so for
+a field (ADR-0211's correction of the same date). The decision's rule, *the picker offers what the writer can draw, decided
+once*, is unchanged and is now stricter: a face the writer would only replace is not offered.
