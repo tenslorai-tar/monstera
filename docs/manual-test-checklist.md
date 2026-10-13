@@ -313,7 +313,7 @@ is not available.
 - [ ] **Move selection up** · `annotate.nudge-up` · Shows: on screen · Help: *Select, move, resize and delete annotations*
 - [ ] **Move selection up** · `annotate.nudge-up-far` · Shows: on screen · Help: *Select, move, resize and delete annotations*
 - [ ] **Select every comment on this page** · `annotate.select-all` · Shows: on screen
-- [ ] **Centre** · `text.format.align-center` · Shows: on screen
+- [ ] **Align centre** · `text.format.align-center` · Shows: on screen
 - [ ] **Justify** · `text.format.align-justify` · Shows: on screen
 - [ ] **Align left** · `text.format.align-left` · Shows: on screen
 - [ ] **Align right** · `text.format.align-right` · Shows: on screen

@@ -6515,36 +6515,67 @@ optgroup {
   margin: 0;
 }
 
-/* THE PROPERTIES PANEL WHILE WORDS ARE EDITED (K11): Text, Paragraph and Box, each a titled group of the panel's rows. */
-.m-text-properties__section {
+/* THE ONE TEXT SECTION (N13, `TextSection.tsx`), and the Box section under it: a titled group each, divided by a rule.
+   Font and size share a row, the size in a fixed column; the buttons wrap in one gap; the numbers are a two-column grid,
+   so every label starts at one edge and every field at another, whatever the label's length. */
+.m-text-section {
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
+  padding-block-start: var(--space-8);
+  border-block-start: 1px solid var(--border-control);
 }
 
-.m-text-properties__title {
+.m-text-section__title {
   margin: 0;
   color: var(--muted);
   font-size: var(--font-chrome-12);
   font-weight: 600;
 }
 
-.m-text-properties__row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.m-text-section__font {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 5em;
+  align-items: start;
   gap: var(--space-8);
-  font-size: var(--font-chrome-12);
 }
 
-.m-text-properties__verbs {
+.m-text-section__buttons {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-4);
 }
 
-.m-text-properties__select,
-.m-text-properties__size,
+.m-text-section__row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.m-text-section__label {
+  font-size: var(--font-chrome-12);
+}
+
+.m-text-section__numbers {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 5em;
+  align-items: center;
+  gap: var(--space-6) var(--space-8);
+}
+
+.m-text-section__number {
+  box-sizing: border-box;
+  inline-size: 100%;
+  block-size: var(--control-height, auto);
+  padding-inline: var(--space-4);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+  background: var(--surface-input, var(--float));
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-chrome-12);
+}
+
 .m-font-picker__face,
 .m-font-picker__search {
   block-size: var(--control-height, auto);
@@ -6554,10 +6585,6 @@ optgroup {
   color: var(--text);
   font: inherit;
   font-size: var(--font-chrome-12);
-}
-
-.m-text-properties__size {
-  inline-size: 5em;
 }
 
 /* THE ONE FONT PICKER: a field that reads the font, and under it, in place, its search and its grouped list. */

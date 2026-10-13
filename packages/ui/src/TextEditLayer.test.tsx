@@ -1227,7 +1227,7 @@ describe('Edit text on the page (ADR-0096)', () => {
     it('a focus that moves into the Properties panel’s text section does not write, and one that leaves both does', async () => {
       const { view, editor, formats } = openWithSelection(0, 4);
       const section = find(view.container, '[data-text-properties]');
-      const field = find(section, 'select');
+      const field = find(section, 'input[type="number"]');
       await act(async () => {
         fireEvent.blur(editor, { relatedTarget: field });
         await Promise.resolve();
@@ -1244,7 +1244,7 @@ describe('Edit text on the page (ADR-0096)', () => {
 
     it('CONTROL: a focus moving from the section BACK INTO THE WORDS does not write', async () => {
       const { view, editor, formats } = openWithSelection(0, 4);
-      const field = find(find(view.container, '[data-text-properties]'), 'select');
+      const field = find(find(view.container, '[data-text-properties]'), 'input[type="number"]');
       await act(async () => {
         fireEvent.blur(editor, { relatedTarget: field });
         fireEvent.blur(field, { relatedTarget: editor });

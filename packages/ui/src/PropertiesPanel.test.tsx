@@ -349,7 +349,7 @@ describe('PropertiesPanel with marks selected', () => {
 
   it('a TEXT BOX shows Text, then Box, then its comment details FOLDED, and no comment field for its words (E4)', () => {
     mounted({ ...ONE, items: [TEXT_BOX] });
-    const groups = [...document.querySelectorAll('[data-properties-text], [data-properties-box], [data-properties-comment-details]')];
+    const groups = [...document.querySelectorAll('[data-text-section], [data-properties-box], [data-properties-comment-details]')];
     expect(groups.map((group) => group.getAttribute('aria-label') ?? group.tagName)).toStrictEqual(['Text', 'Box', 'DETAILS']);
     // THE BOX'S LOOK is in the Box group: its border colour's swatches sit inside it.
     expect(document.querySelector('[data-properties-box] [role="radiogroup"], [data-properties-box] button')).not.toBeNull();
@@ -372,18 +372,17 @@ describe('PropertiesPanel with marks selected', () => {
 
   it('a TEXT BOX shows a Text section, and each control sends ONE property of its words', () => {
     const { restyled, store } = mounted({ ...ONE, items: [TEXT_BOX] });
-    expect(document.querySelector('[data-properties-text]')).not.toBeNull();
+    expect(document.querySelector('[data-text-section]')).not.toBeNull();
     // THE ONE FONT PICKER, by the real names (K4), sent BY NAME (K2): the kernel draws the family and takes `/DA`'s class.
     fireEvent.click(screen.getByRole('button', { name: 'Font: Helvetica' }));
     const times = document.querySelector('[data-font-choice="Times"]');
     if (times === null) throw new Error('Times is not offered');
     fireEvent.click(times);
     expect(restyled).toStrictEqual([{ text: { family: 'Times' } }]);
-    fireEvent.click(screen.getByRole('button', { name: 'Right' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Align right' }));
     expect(restyled.at(-1)).toStrictEqual({ text: { align: 'right' } });
-    const size = screen.getAllByRole('spinbutton').find((each) => (each as HTMLInputElement).value === '12');
-    expect(size).toBeDefined();
-    if (size === undefined) return;
+    const size = screen.getByRole<HTMLInputElement>('spinbutton', { name: 'Size in points' });
+    expect(size.value).toBe('12');
     fireEvent.change(size, { target: { value: '18' } });
     fireEvent.blur(size);
     expect(restyled.at(-1)).toStrictEqual({ text: { fontSize: 18 } });
@@ -394,7 +393,7 @@ describe('PropertiesPanel with marks selected', () => {
 
   it('the style controls kept as the default become how the next text box is set (B5.9); unticked, they are not', () => {
     const { store } = mounted({ ...ONE, items: [TEXT_BOX] });
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Bold' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Bold' }));
     fireEvent.click(screen.getByRole('button', { name: 'Justify' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Fill the box' }));
     // MERGED, each control adding its member to what was kept, so the third does not take the first two away.
@@ -403,13 +402,15 @@ describe('PropertiesPanel with marks selected', () => {
     // CONTROL: the same press with *Use as default* unticked keeps nothing.
     const unticked = mounted({ ...ONE, items: [TEXT_BOX] });
     fireEvent.click(screen.getByRole('checkbox', { name: 'Use as default for new annotations' }));
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Bold' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Bold' }));
     expect(unticked.store.get(TEXT_BOX_LOOK_SETTING.id)).toStrictEqual({});
   });
 
   it('the style controls (ADR-0211) each send ONE property: bold, justify, line spacing, padding and a fill', () => {
     const { restyled } = mounted({ ...ONE, items: [TEXT_BOX] });
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Bold' }));
+    const bold = screen.getByRole('button', { name: 'Bold' });
+    expect(bold.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(bold);
     expect(restyled.at(-1)).toStrictEqual({ text: { bold: true } });
     fireEvent.click(screen.getByRole('button', { name: 'Justify' }));
     expect(restyled.at(-1)).toStrictEqual({ text: { align: 'justify' } });
@@ -452,8 +453,8 @@ describe('PropertiesPanel with marks selected', () => {
   it('CHARACTER SPACING is typed in points and sent as the fraction of the size, held to the bound it says (ADR-0228)', () => {
     const { restyled } = mounted({ ...ONE, items: [TEXT_BOX] });
     const field = screen.getByRole('spinbutton', { name: 'Character spacing in points' });
-    // THE BOUND AT 12 POINTS: 0.12 of the size.
-    expect(screen.getByText(/Up to 1\.4 pt either way/u)).toBeTruthy();
+    // THE BOUND AT 12 POINTS: 0.12 of the size, which the field itself carries rather than a sentence under it (N13).
+    expect([field.getAttribute('min'), field.getAttribute('max')]).toStrictEqual(['-1.44', '1.44']);
     fireEvent.change(field, { target: { value: '0.6' } });
     fireEvent.blur(field);
     expect(restyled.at(-1)).toStrictEqual({ text: { spacing: 0.05 } });
@@ -480,14 +481,42 @@ describe('PropertiesPanel with marks selected', () => {
     expect(document.querySelector('[data-font-choice="Carlito"]')).toBeNull();
   });
 
-  it('a box that cannot take the styles says so and draws no style control', () => {
+  it('a box that cannot take the styles is shown only its font, size, colour and alignment, with no sentence (N13)', () => {
     const { restyled } = mounted({
       ...ONE,
       items: [{ ...TEXT_BOX, typed: { ...TEXT_BOX.typed, stylesUnavailable: true as const } }],
     });
-    expect(screen.queryByRole('checkbox', { name: 'Bold' })).toBeNull();
-    expect(screen.getByText(/cannot take bold, italic, fill/u)).toBeTruthy();
+    const section = document.querySelector('[data-text-section]');
+    if (section === null) throw new Error('the Text section is not drawn');
+    const names = [...section.querySelectorAll('button, input')].map(
+      (control) => control.getAttribute('aria-label') ?? (control as HTMLInputElement).labels?.[0]?.textContent ?? '',
+    );
+    // WHAT IS DRAWN, named: the rows a callout's writer takes, and none it cannot.
+    expect(names).toContain('Size in points');
+    expect(names).toContain('Align right');
+    for (const absent of ['Bold', 'Superscript', 'Justify', 'Line spacing', 'Character spacing in points']) {
+      expect(names).not.toContain(absent);
+    }
+    expect(section.querySelector('p')).toBeNull();
     expect(restyled).toStrictEqual([]);
+  });
+
+  it('CONTROL: a box Monstera draws is shown the style row, justify and the spacings in the same section', () => {
+    mounted({ ...ONE, items: [TEXT_BOX] });
+    const section = document.querySelector('[data-text-section]');
+    expect(section?.querySelector('[aria-label="Bold"]')).not.toBeNull();
+    expect(section?.querySelector('[aria-label="Justify"]')).not.toBeNull();
+    expect(screen.getByRole('spinbutton', { name: 'Line spacing' }).closest('[data-text-section]')).toBe(section);
+  });
+
+  it('a box that draws NO BORDER — a typewriter, `/BS /W 0` — is offered no border style; one with a border is', () => {
+    mounted({ ...ONE, items: [{ ...TEXT_BOX, kind: 'typewriter' as const, style: { ...TEXT_BOX.style, borderWidth: 0 } }] });
+    expect(document.querySelector('[data-properties-box]')).not.toBeNull();
+    expect(screen.queryByRole('group', { name: 'Border style' })).toBeNull();
+    cleanup();
+    // CONTROL: the same box with a one-point border shows it, so the absence above is the width's and not the section's.
+    mounted({ ...ONE, items: [{ ...TEXT_BOX, kind: 'typewriter' as const, style: { ...TEXT_BOX.style, borderWidth: 1 } }] });
+    expect(screen.getByRole('group', { name: 'Border style' })).toBeTruthy();
   });
 
   it('CONTROL: a size that is out of range, or unchanged, sends nothing', () => {
@@ -502,7 +531,7 @@ describe('PropertiesPanel with marks selected', () => {
 
   it('CONTROL: a mark that is not a text box has no Text section', () => {
     mounted({ ...ONE, items: [SQUARE] });
-    expect(document.querySelector('[data-properties-text]')).toBeNull();
+    expect(document.querySelector('[data-text-section]')).toBeNull();
   });
 
   it('offers no comment for TWO marks, which have two', () => {

@@ -1,8 +1,6 @@
 import { useLingui } from '@lingui/react';
 import {
-  ANNOTATION_ALIGNMENTS,
   ANNOTATION_FONTS,
-  type AnnotationAlign,
   type AnnotationBlend,
   type AnnotationColour,
   ANNOTATION_FONT_FAMILIES,
@@ -14,7 +12,6 @@ import {
   DEFAULT_TEXT_LINE_HEIGHT,
   MAX_ANNOTATION_TEXT,
   MAX_TEXT_LINE_HEIGHT,
-  MAX_CHARACTER_SPACING,
   MAX_TEXT_PADDING,
   MIN_ANNOTATION_FONT,
   MIN_TEXT_LINE_HEIGHT,
@@ -28,7 +25,7 @@ import { type ReactElement, type ReactNode, useEffect, useId, useState } from 'r
 
 import { ANNOTATION_KIND_LABELS } from './AnnotationsPanel.js';
 import { ColourSwatches } from './ColourChoice.js';
-import { type DocumentFont, FontPicker, type FontList } from './FontPicker.js';
+import type { DocumentFont, FontList } from './FontPicker.js';
 import { STARTING_STYLE_COLOUR, colourFromHex, hexFromColour } from './annotations/annotationStyle.js';
 import { type WordsOf, type WordsToEdit, markOf } from './annotations/markWords.js';
 import type { AnnotationSelection, SelectedAnnotation } from './annotations/selectTool.js';
@@ -48,31 +45,16 @@ import {
   PROPERTIES_COLOUR,
   PROPERTIES_COMMENT,
   PROPERTIES_CUSTOM_COLOUR,
-  PROPERTIES_ALIGN,
-  PROPERTIES_ALIGN_CENTER,
-  PROPERTIES_ALIGN_LEFT,
-  PROPERTIES_ALIGN_JUSTIFY,
-  PROPERTIES_ALIGN_RIGHT,
   PROPERTIES_BOX_FILL,
   PROPERTIES_BOX_FILL_COLOUR,
   PROPERTIES_BOX_BORDER_DASHED,
   PROPERTIES_BOX_BORDER_SOLID,
   PROPERTIES_BOX_BORDER_STYLE,
   PROPERTIES_BOX_PADDING,
-  TEXT_FORMAT_CHARACTER_SPACING,
-  TEXT_FORMAT_CHARACTER_SPACING_BOUND,
-  PROPERTIES_LINE_SPACING,
-  PROPERTIES_STYLE_BOLD,
-  PROPERTIES_STYLE_ITALIC,
-  PROPERTIES_STYLE_STRIKE,
-  PROPERTIES_STYLE_UNDERLINE,
-  PROPERTIES_STYLES_UNAVAILABLE,
   PROPERTIES_FONT,
   PROPERTIES_FONT_SIZE,
   PROPERTIES_LINE_WIDTH,
-  PROPERTIES_TEXT_COLOUR,
-  PROPERTIES_TEXT_HEADING,
-  PROPERTIES_BOX_HEADING,
+  TEXT_PROPERTIES_BOX,
   PROPERTIES_COMMENT_DETAILS,
   PROPERTIES_NEW_HEADING,
   PROPERTIES_NEW_HINT,
@@ -87,7 +69,8 @@ import {
   MEASURE_UNIT_TITLE,
   UNIT_TITLES,
 } from './messages/en.js';
-import { spacingOf } from './textFormatting.js';
+import { spacingBoundOf, spacingOf } from './textFormatting.js';
+import { TextSection, type TextRow } from './TextSection.js';
 import { kindWord } from './ObjectEditLayer.js';
 import { type ObjectFill, type ObjectPick, recolourable } from './objectEditing.js';
 import { pdfjsPageOf } from './pageNumbering.js';
@@ -482,8 +465,9 @@ export function PropertiesPanel({
         // the other marks show at the top are the box's own look here — and the comment's details folded at the foot.
         // The box's words are edited ON THE PAGE, so no comment field is shown for them.
         <>
-          <TextSection
+          <TextBoxSections
             // A NEW SET OF FIELDS PER MARK AND PER SIZE, so a typed size never outlives the mark it was typed for.
+            bordered={(first.style.borderWidth ?? 0) > 0}
             box={lookRows}
             key={`${String(selection.page)}:${String(first.index)}:${String(first.typed.fontSize)}`}
             typed={first.typed}
@@ -684,228 +668,120 @@ function familyOfTyped(typed: NonNullable<SelectedAnnotation['typed']>): string 
 const STANDARD_ONLY: FontList = { listed: true, families: [], more: 0 };
 const NO_DOCUMENT_FONTS: readonly DocumentFont[] = [];
 
-const ALIGN_OPTIONS: readonly SegmentedOption<AnnotationAlign>[] = ANNOTATION_ALIGNMENTS.map((value) => ({
-  value,
-  label: {
-    left: PROPERTIES_ALIGN_LEFT,
-    center: PROPERTIES_ALIGN_CENTER,
-    right: PROPERTIES_ALIGN_RIGHT,
-    justify: PROPERTIES_ALIGN_JUSTIFY,
-  }[value],
-}));
-
 /** A new box fill's first colour: a pale yellow, which a person then changes. */
 const STARTING_BOX_FILL: AnnotationColour = [1, 1, 0.8];
 
-/** The four on/off styles, each a field of the text style and each its own checkbox. */
-const STYLE_TOGGLES = [
-  { field: 'bold', label: PROPERTIES_STYLE_BOLD },
-  { field: 'italic', label: PROPERTIES_STYLE_ITALIC },
-  { field: 'underline', label: PROPERTIES_STYLE_UNDERLINE },
-  { field: 'strike', label: PROPERTIES_STYLE_STRIKE },
-] as const;
+/** What a box Monstera draws takes beyond font, size, colour and alignment (ADR-0211, ADR-0228). */
+const BOX_ROWS: ReadonlySet<TextRow> = new Set(['style', 'justify', 'lineSpacing', 'spacing']);
+/** A box whose styles its writer cannot draw (a callout): font, size, colour and alignment alone. */
+const NO_ROWS: ReadonlySet<TextRow> = new Set();
 
 /**
- * The Text section of a selected text box, typewriter or callout (the owner's review of 2026-10-07, item 14b): its face,
- * size, colour, the side its lines sit against, and (ADR-0211) bold, italic, underline, strikethrough, line spacing, padding
- * and a fill. **Each control sends one property**, as the rows above do, and applies to the whole box; Monstera writes the
- * appearance itself, so what is shown is what a reader draws. A box that cannot take them says so instead of showing controls.
+ * A selected text box's, typewriter's or callout's two sections (the owner's N13): the one Text section every text tool
+ * shows (`TextSection.tsx`), and the Box section below it with the box's own look. **Each control sends one property**, as
+ * the rows above do, and applies to the whole box; Monstera writes the appearance itself, so what is shown is what a reader
+ * draws. A box whose styles its writer cannot draw (a callout) is shown only the rows it takes, with no sentence about the
+ * others.
  */
-function TextSection({
+function TextBoxSections({
   typed,
   box,
+  bordered,
   fonts,
   onChange,
 }: {
   readonly typed: NonNullable<SelectedAnnotation['typed']>;
   /** What the picker offers beyond the standard faces: the font list for a box Monstera draws, nothing for a callout. */
   readonly fonts: FontList;
-  /** The box's own look (border colour, opacity, width), first in the Box group (the owner's text E4). */
+  /** The box's own look (border colour, opacity, width), first in the Box section (the owner's text E4). */
   readonly box: ReactNode;
+  /** Whether the box draws a border to style: a typewriter's words stand on the page with none (`/BS /W 0`). */
+  readonly bordered: boolean;
   readonly onChange: (text: AnnotationTextStyle) => void;
 }): ReactElement {
   const { i18n } = useLingui();
-  const sizeId = useId();
-  const [size, setSize] = useState(String(typed.fontSize));
-  const sendSize = (): void => {
-    const next = Number(size);
-    if (Number.isFinite(next) && next >= MIN_ANNOTATION_FONT && next <= MAX_ANNOTATION_FONT && next !== typed.fontSize) {
-      onChange({ fontSize: next });
-    }
-  };
-  const spacingId = useId();
   const paddingId = useId();
-  const [spacing, setSpacing] = useState(String(typed.lineHeight ?? DEFAULT_TEXT_LINE_HEIGHT));
   const [padding, setPadding] = useState(String(typed.padding ?? 0));
-  const sendSpacing = (): void => {
-    const next = Number(spacing);
-    if (Number.isFinite(next) && next >= MIN_TEXT_LINE_HEIGHT && next <= MAX_TEXT_LINE_HEIGHT && next !== (typed.lineHeight ?? DEFAULT_TEXT_LINE_HEIGHT)) {
-      onChange({ lineHeight: next });
-    }
-  };
   const sendPadding = (): void => {
     const next = Number(padding);
     if (Number.isFinite(next) && next >= 0 && next <= MAX_TEXT_PADDING && next !== (typed.padding ?? 0)) onChange({ padding: next });
   };
-  // CHARACTER SPACING IN POINTS, sent as the wire's fraction of the box's size by the one conversion (ADR-0228).
-  const lettersId = useId();
-  const lettersNoteId = useId();
-  const [letters, setLetters] = useState(String(Math.round((typed.spacing ?? 0) * typed.fontSize * 100) / 100));
-  const sendLetters = (): void => {
-    const points = Number(letters);
-    if (!Number.isFinite(points)) return;
-    const next = spacingOf(points, typed.fontSize);
-    if (next !== (typed.spacing ?? 0)) onChange({ spacing: next });
-  };
+  const family = familyOfTyped(typed);
   return (
     <>
-    <div className="m-properties__text" data-properties-text="" role="group" aria-label={i18n._(PROPERTIES_TEXT_HEADING)}>
-      <h3 className="m-properties__subtitle">{i18n._(PROPERTIES_TEXT_HEADING)}</h3>
-      {/* THE ONE FONT PICKER (the owner's D1 and K4), offering what the writer draws: the standard faces, and for a box
-          Monstera draws, every font of the computer's and Monstera's, embedded (K2, ADR-0228 Decision 3). Sent by
-          name, so the kernel draws the family and takes `/DA`'s class from it. */}
-      <div className="m-properties__row">
-        <span className="m-properties__label">{i18n._(PROPERTIES_FONT)}</span>
-        <FontPicker
-          builtIn={TEXT_BOX_FAMILIES}
-          inDocument={NO_DOCUMENT_FONTS}
-          label={PROPERTIES_FONT}
-          list={fonts}
-          onPick={(family) => {
-            if (family.toLowerCase() !== familyOfTyped(typed).toLowerCase()) onChange({ family });
-          }}
-          unset={PROPERTIES_FONT}
-          value={familyOfTyped(typed)}
-        />
-      </div>
-      <div className="m-properties__row m-properties__row--inline">
-        <label className="m-properties__label" htmlFor={sizeId}>
-          {i18n._(PROPERTIES_FONT_SIZE)}
-        </label>
-        <input
-          className="m-properties__number"
-          id={sizeId}
-          max={MAX_ANNOTATION_FONT}
-          min={MIN_ANNOTATION_FONT}
-          onBlur={sendSize}
-          onChange={(event) => {
-            setSize(event.target.value);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') sendSize();
-          }}
-          step={1}
-          type="number"
-          value={size}
-        />
-      </div>
-      <ColourRow
-        auto={false}
-        current={hexFromColour(typed.colour)}
-        label={PROPERTIES_TEXT_COLOUR}
-        offerAuto={false}
-        onPick={(picked) => {
-          const colour = picked === undefined ? undefined : colourFromHex(picked);
-          if (colour !== undefined) onChange({ colour });
-        }}
-      />
-      <div className="m-properties__row">
-        <span className="m-properties__label" aria-hidden="true">
-          {i18n._(PROPERTIES_ALIGN)}
-        </span>
-        <SegmentedControl
-          label={PROPERTIES_ALIGN}
-          onChange={(align) => {
-            onChange({ align });
-          }}
-          options={ALIGN_OPTIONS}
-          value={typed.align ?? 'left'}
-        />
-      </div>
-      {typed.stylesUnavailable === true ? (
-        <p className="m-properties__hint">{i18n._(PROPERTIES_STYLES_UNAVAILABLE)}</p>
-      ) : (
-        <>
-          <div className="m-properties__row m-properties__row--inline" role="group">
-            {STYLE_TOGGLES.map(({ field, label }) => (
-              <label className="m-properties__check" key={field}>
-                <input
-                  checked={typed[field] === true}
-                  onChange={(event) => {
-                    onChange({ [field]: event.target.checked });
-                  }}
-                  type="checkbox"
-                />
-                <span>{i18n._(label)}</span>
-              </label>
-            ))}
-          </div>
-          <div className="m-properties__row m-properties__row--inline">
-            <label className="m-properties__label" htmlFor={spacingId}>
-              {i18n._(PROPERTIES_LINE_SPACING)}
-            </label>
-            <input
-              className="m-properties__number"
-              id={spacingId}
-              max={MAX_TEXT_LINE_HEIGHT}
-              min={MIN_TEXT_LINE_HEIGHT}
-              onBlur={sendSpacing}
-              onChange={(event) => {
-                setSpacing(event.target.value);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') sendSpacing();
-              }}
-              step={0.1}
-              type="number"
-              value={spacing}
-            />
-          </div>
-          <div className="m-properties__row m-properties__row--inline">
-            <label className="m-properties__label" htmlFor={lettersId}>
-              {i18n._(TEXT_FORMAT_CHARACTER_SPACING)}
-            </label>
-            <input
-              aria-describedby={lettersNoteId}
-              className="m-properties__number"
-              id={lettersId}
-              onBlur={sendLetters}
-              onChange={(event) => {
-                setLetters(event.target.value);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') sendLetters();
-              }}
-              step={0.1}
-              type="number"
-              value={letters}
-            />
-          </div>
-          <p className="m-properties__meta" id={lettersNoteId}>
-            {i18n._(TEXT_FORMAT_CHARACTER_SPACING_BOUND, { points: String(Math.round(MAX_CHARACTER_SPACING * typed.fontSize * 10) / 10) })}
-          </p>
-        </>
-      )}
-    </div>
-    <div className="m-properties__text" data-properties-box="" role="group" aria-label={i18n._(PROPERTIES_BOX_HEADING)}>
-      <h3 className="m-properties__subtitle">{i18n._(PROPERTIES_BOX_HEADING)}</h3>
+    <TextSection
+      // THE ONE FONT PICKER (the owner's D1 and K4), offering what the writer draws: the standard faces, and for a box
+      // Monstera draws, every font of the computer's and Monstera's, embedded (K2, ADR-0228 Decision 3). Sent by name, so
+      // the kernel draws the family and takes `/DA`'s class from it.
+      font={{ list: fonts, builtIn: TEXT_BOX_FAMILIES, inDocument: NO_DOCUMENT_FONTS, unset: PROPERTIES_FONT }}
+      lineSpacingBounds={{ min: MIN_TEXT_LINE_HEIGHT, max: MAX_TEXT_LINE_HEIGHT, step: 0.1 }}
+      live={false}
+      look={{
+        family,
+        size: typed.fontSize,
+        bold: typed.bold === true,
+        italic: typed.italic === true,
+        underline: typed.underline === true,
+        strike: typed.strike === true,
+        colour: hexFromColour(typed.colour),
+        align: typed.align ?? 'left',
+        lineSpacing: typed.lineHeight ?? DEFAULT_TEXT_LINE_HEIGHT,
+        spacing: Math.round((typed.spacing ?? 0) * typed.fontSize * 100) / 100,
+      }}
+      onAlign={(align) => {
+        onChange({ align });
+      }}
+      onColour={(picked) => {
+        const colour = picked === undefined ? undefined : colourFromHex(picked);
+        if (colour !== undefined) onChange({ colour });
+      }}
+      onFamily={(picked) => {
+        if (picked.toLowerCase() !== family.toLowerCase()) onChange({ family: picked });
+      }}
+      // A BOX HAS NO HIGHLIGHT, RISE OR SPACE AFTER: those rows are not in `BOX_ROWS`, so these are never called.
+      onHighlight={() => undefined}
+      onLineSpacing={(lineHeight) => {
+        onChange({ lineHeight: lineHeight ?? DEFAULT_TEXT_LINE_HEIGHT });
+      }}
+      onRise={() => undefined}
+      onSize={(fontSize) => {
+        onChange({ fontSize });
+      }}
+      onSpaceAfter={() => undefined}
+      // CHARACTER SPACING IN POINTS, sent as the wire's fraction of the box's size by the one conversion (ADR-0228).
+      onSpacing={(points) => {
+        const next = spacingOf(points, typed.fontSize);
+        if (next !== (typed.spacing ?? 0)) onChange({ spacing: next });
+      }}
+      onToggle={(style) => {
+        onChange({ [style]: typed[style] !== true });
+      }}
+      ownColour={false}
+      shows={typed.stylesUnavailable === true ? NO_ROWS : BOX_ROWS}
+      sizeBounds={{ min: MIN_ANNOTATION_FONT, max: MAX_ANNOTATION_FONT, step: 0.5 }}
+      spacingBound={spacingBoundOf(typed.fontSize)}
+    />
+    <div aria-label={i18n._(TEXT_PROPERTIES_BOX)} className="m-text-section" data-properties-box="" role="group">
+      <h3 className="m-text-section__title">{i18n._(TEXT_PROPERTIES_BOX)}</h3>
       {box}
       {typed.stylesUnavailable === true ? null : (
         <>
           {/* THE BORDER'S STYLE (the owner's text E4), the kernel's `/BS`: solid or dashed, beside its colour and width. */}
-          <div className="m-properties__row">
-            <span className="m-properties__label" aria-hidden="true">
-              {i18n._(PROPERTIES_BOX_BORDER_STYLE)}
-            </span>
-            <SegmentedControl
-              label={PROPERTIES_BOX_BORDER_STYLE}
-              onChange={(borderStyle) => {
-                onChange({ borderStyle });
-              }}
-              options={BORDER_STYLE_OPTIONS}
-              value={typed.dashed === true ? 'dashed' : 'solid'}
-            />
-          </div>
+          {bordered ? (
+            <div className="m-properties__row">
+              <span className="m-properties__label" aria-hidden="true">
+                {i18n._(PROPERTIES_BOX_BORDER_STYLE)}
+              </span>
+              <SegmentedControl
+                label={PROPERTIES_BOX_BORDER_STYLE}
+                onChange={(borderStyle) => {
+                  onChange({ borderStyle });
+                }}
+                options={BORDER_STYLE_OPTIONS}
+                value={typed.dashed === true ? 'dashed' : 'solid'}
+              />
+            </div>
+          ) : null}
           <div className="m-properties__row m-properties__row--inline">
             <label className="m-properties__label" htmlFor={paddingId}>
               {i18n._(PROPERTIES_BOX_PADDING)}

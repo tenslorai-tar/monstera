@@ -1669,7 +1669,6 @@ export const TEXT_HIGHLIGHT_BLUE = messageKey('surface.text-format.highlight-blu
 export const TEXT_HIGHLIGHT_PINK = messageKey('surface.text-format.highlight-pink');
 export const TEXT_HIGHLIGHT_ORANGE = messageKey('surface.text-format.highlight-orange');
 export const TEXT_FORMAT_CHARACTER_SPACING = messageKey('surface.text-format.character-spacing');
-export const TEXT_FORMAT_CHARACTER_SPACING_BOUND = messageKey('surface.text-format.character-spacing-bound');
 export const TEXT_FORMAT_SPACE_AFTER = messageKey('surface.text-format.space-after');
 // THE ONE FONT PICKER (the owner's D1 to D4): its search, its groups, and what it says of a font in words.
 export const FONT_PICKER_SEARCH = messageKey('surface.font-picker.search');
@@ -1690,9 +1689,7 @@ export const FONT_NONE_MATCH = messageKey('surface.font-picker.none-match');
 export const TEXT_PROPERTIES_LABEL = messageKey('surface.text-properties.label');
 export const TEXT_PROPERTIES_HEADING = messageKey('surface.text-properties.heading');
 export const TEXT_PROPERTIES_TEXT = messageKey('surface.text-properties.text');
-export const TEXT_PROPERTIES_PARAGRAPH = messageKey('surface.text-properties.paragraph');
 export const TEXT_PROPERTIES_BOX = messageKey('surface.text-properties.box');
-export const TEXT_PROPERTIES_HINT = messageKey('surface.text-properties.hint');
 export const PAGE_IMAGE_ONLY = messageKey('surface.page.image-only');
 /** What the page area says until its first page is drawn, in place of empty slots. */
 export const PAGE_OPENING = messageKey('surface.page.opening');
@@ -1968,29 +1965,16 @@ export const PROPERTIES_OPACITY_VALUE = messageKey('surface.properties.opacity-v
 export const PROPERTIES_LINE_WIDTH = messageKey('surface.properties.line-width');
 export const PROPERTIES_WIDTH_VALUE = messageKey('surface.properties.width-value');
 export const PROPERTIES_FONT_SIZE = messageKey('surface.properties.font-size');
-export const PROPERTIES_TEXT_HEADING = messageKey('surface.properties.text.heading');
-// A TEXT BOX'S PROPERTIES (the owner's text E4): the box's own look, and the comment's details folded at the foot.
-export const PROPERTIES_BOX_HEADING = messageKey('surface.properties.box.heading');
+// A TEXT BOX'S PROPERTIES (the owner's text E4): the comment's details folded at the foot.
 export const PROPERTIES_COMMENT_DETAILS = messageKey('surface.properties.comment-details');
 export const PROPERTIES_TEXT_COLOUR = messageKey('surface.properties.text.colour');
 export const PROPERTIES_FONT = messageKey('surface.properties.text.font');
-export const PROPERTIES_ALIGN = messageKey('surface.properties.text.align');
-export const PROPERTIES_ALIGN_LEFT = messageKey('surface.properties.text.align-left');
-export const PROPERTIES_ALIGN_CENTER = messageKey('surface.properties.text.align-center');
-export const PROPERTIES_ALIGN_RIGHT = messageKey('surface.properties.text.align-right');
-export const PROPERTIES_ALIGN_JUSTIFY = messageKey('surface.properties.text.align-justify');
-export const PROPERTIES_STYLE_BOLD = messageKey('surface.properties.text.bold');
-export const PROPERTIES_STYLE_ITALIC = messageKey('surface.properties.text.italic');
-export const PROPERTIES_STYLE_UNDERLINE = messageKey('surface.properties.text.underline');
-export const PROPERTIES_STYLE_STRIKE = messageKey('surface.properties.text.strike');
-export const PROPERTIES_LINE_SPACING = messageKey('surface.properties.text.line-spacing');
 export const PROPERTIES_BOX_FILL = messageKey('surface.properties.text.box-fill');
 export const PROPERTIES_BOX_FILL_COLOUR = messageKey('surface.properties.text.box-fill-colour');
 export const PROPERTIES_BOX_PADDING = messageKey('surface.properties.text.box-padding');
 export const PROPERTIES_BOX_BORDER_STYLE = messageKey('surface.properties.text.box-border-style');
 export const PROPERTIES_BOX_BORDER_SOLID = messageKey('surface.properties.text.box-border-solid');
 export const PROPERTIES_BOX_BORDER_DASHED = messageKey('surface.properties.text.box-border-dashed');
-export const PROPERTIES_STYLES_UNAVAILABLE = messageKey('surface.properties.text.styles-unavailable');
 export const PROPERTIES_COMMENT = messageKey('surface.properties.comment');
 export const PROPERTIES_NEW_HEADING = messageKey('surface.properties.new-heading');
 export const PROPERTIES_NEW_HINT = messageKey('surface.properties.new-hint');
@@ -4407,7 +4391,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TEXT_FORMAT_SUPERSCRIPT]: 'Superscript',
   [TEXT_FORMAT_SUBSCRIPT]: 'Subscript',
   [TEXT_FORMAT_ALIGN_LEFT]: 'Align left',
-  [TEXT_FORMAT_ALIGN_CENTER]: 'Centre',
+  [TEXT_FORMAT_ALIGN_CENTER]: 'Align centre',
   [TEXT_FORMAT_ALIGN_RIGHT]: 'Align right',
   [TEXT_FORMAT_ALIGN_JUSTIFY]: 'Justify',
   [TEXT_FORMAT_BULLETS]: 'Bullets',
@@ -4453,8 +4437,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TEXT_HIGHLIGHT_PINK]: 'Pink highlight',
   [TEXT_HIGHLIGHT_ORANGE]: 'Orange highlight',
   [TEXT_FORMAT_CHARACTER_SPACING]: 'Character spacing in points',
-  [TEXT_FORMAT_CHARACTER_SPACING_BOUND]:
-    'Up to {points} pt either way at this size. Wider, and search and copy would read a space between every letter.',
   [TEXT_FORMAT_SPACE_AFTER]: 'Space after the paragraph in points',
   [FONT_PICKER_SEARCH]: 'Search fonts',
   [FONT_PICKER_LIST]: 'Fonts',
@@ -4476,9 +4458,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TEXT_PROPERTIES_LABEL]: 'Text being edited',
   [TEXT_PROPERTIES_HEADING]: 'Editing text',
   [TEXT_PROPERTIES_TEXT]: 'Text',
-  [TEXT_PROPERTIES_PARAGRAPH]: 'Paragraph',
   [TEXT_PROPERTIES_BOX]: 'Box',
-  [TEXT_PROPERTIES_HINT]: 'These change the words you have selected, or the paragraph the cursor is in.',
   // SAYS WHAT THE PAGE IS, not what the application cannot do. A reader looking
   // at words they cannot select has one question — why — and *this page is a
   // picture* answers it. It deliberately does not say *scanned*: the kernel
@@ -4683,29 +4663,15 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PROPERTIES_LINE_WIDTH]: 'Line width',
   [PROPERTIES_WIDTH_VALUE]: '{width, number} pt',
   [PROPERTIES_FONT_SIZE]: 'Font size',
-  [PROPERTIES_TEXT_HEADING]: 'Text',
-  [PROPERTIES_BOX_HEADING]: 'Box',
   [PROPERTIES_COMMENT_DETAILS]: 'Comment details',
   [PROPERTIES_TEXT_COLOUR]: 'Text colour',
   [PROPERTIES_FONT]: 'Font',
-  [PROPERTIES_ALIGN]: 'Align',
-  [PROPERTIES_ALIGN_LEFT]: 'Left',
-  [PROPERTIES_ALIGN_CENTER]: 'Centre',
-  [PROPERTIES_ALIGN_RIGHT]: 'Right',
-  [PROPERTIES_ALIGN_JUSTIFY]: 'Justify',
-  [PROPERTIES_STYLE_BOLD]: 'Bold',
-  [PROPERTIES_STYLE_ITALIC]: 'Italic',
-  [PROPERTIES_STYLE_UNDERLINE]: 'Underline',
-  [PROPERTIES_STYLE_STRIKE]: 'Strikethrough',
-  [PROPERTIES_LINE_SPACING]: 'Line spacing',
   [PROPERTIES_BOX_FILL]: 'Fill the box',
   [PROPERTIES_BOX_FILL_COLOUR]: 'Fill colour',
   [PROPERTIES_BOX_PADDING]: 'Padding',
   [PROPERTIES_BOX_BORDER_STYLE]: 'Border style',
   [PROPERTIES_BOX_BORDER_SOLID]: 'Solid',
   [PROPERTIES_BOX_BORDER_DASHED]: 'Dashed',
-  [PROPERTIES_STYLES_UNAVAILABLE]:
-    'This box cannot take bold, italic, fill and the other styles: it is a callout, or it holds letters the built-in fonts cannot write.',
   [PROPERTIES_COMMENT]: 'Comment',
   [PROPERTIES_NEW_HEADING]: 'New annotations',
   [PROPERTIES_NEW_HINT]: 'These set how the next annotation is drawn. Select one on the page to change it.',

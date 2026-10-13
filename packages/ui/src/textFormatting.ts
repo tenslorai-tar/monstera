@@ -40,6 +40,15 @@ export function spacingOf(points: number, size: number): number {
 }
 
 /**
+ * The furthest a spacing field goes either way at `size`, in points to the hundredth, ROUNDED OUTWARD: a field held to it
+ * then hands {@link spacingOf} a value at or past the wire's bound, and `spacingOf` does the holding, so a bound rounded in
+ * (1.4 for 1.44 at 12 points) cannot leave the widest spacing unreachable.
+ */
+export function spacingBoundOf(size: number): number {
+  return Math.ceil(MAX_CHARACTER_SPACING * size * 100 - 1e-9) / 100;
+}
+
+/**
  * The style a word processor's chord toggles — Ctrl+B, Ctrl+I, Ctrl+U, or ⌘ for Ctrl — or `undefined` for any other key: the
  * one table every editor that takes them reads (B3a). THE LETTER IN EITHER CASE: with Caps Lock on, Ctrl+B arrives as `B`
  * (measured on pinned Chromium, where every chord went unanswered), and Caps Lock is not a different command.

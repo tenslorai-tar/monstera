@@ -27,15 +27,14 @@ It is one box at a time, and then you are back in Edit text, where the new block
 
 ## Format text
 
-While a block is open, the **Properties** tab shows three groups for it. They change the words you have selected, or the paragraph the cursor is in.
+While a block is open, the **Properties** tab shows two sections for it. They change the words you have selected, or the paragraph the cursor is in.
 
-- **Text**: the font, the size, **Bold**, **Italic**, **Underline**, **Strikethrough**, **Superscript**, **Subscript**, the colour, a **Highlight** colour behind the words, and **Character spacing in points**.
-- **Paragraph**: alignment (left, centre, right or **Justify**), bullets and numbering, indent, line spacing and the space after the paragraph.
+- **Text**, in this order: the font and the size on one row; **Bold**, **Italic**, **Underline**, **Strikethrough**, **Superscript** and **Subscript**; the text colour; a **Highlight** colour behind the words; alignment (left, centre, right or **Justify**) with bullets, numbering and indent; then **Line spacing**, the space after the paragraph and **Character spacing in points**. A text box, typed text and a callout show the same section.
 - **Box**: **Remove this text** takes the block off the page.
 
 Choosing something there keeps the block open, so you can go on typing; click the page away from the block, or press **Esc**, when you are done. **Ctrl+B**, **Ctrl+I** and **Ctrl+U** work while you type.
 
-Character spacing is typed in points and can open the letters up or close them together by up to about an eighth of the text size either way; the field says how much that is for the selected words. Wider than that, search and copy would read a space between every letter, so the spacing stops there. Hebrew, Arabic and other right-to-left words are never spaced out, because a gap would break the joins between their letters.
+Character spacing is typed in points and can open the letters up or close them together by up to about an eighth of the text size either way, and a larger number is held to that. Wider than that, search and copy would read a space between every letter, so the spacing stops there. Hebrew, Arabic and other right-to-left words are never spaced out, because a gap would break the joins between their letters.
 
 The keys work as in a word processor: **Ctrl+B**, **Ctrl+I** and **Ctrl+U** for bold, italic and underline, **Ctrl+L**, **Ctrl+E**, **Ctrl+R** and **Ctrl+J** to align left, centre, right and justified, and **Ctrl+Shift** with the greater-than or less-than key to make the text a size bigger or smaller. Bold, italic and underline switch off again when every selected word already has them. **Tab** types a tab: the words after it move to the next tab stop, every half inch from the left edge of the block, and the tab is kept in the text, so copying or searching the page finds it and editing the block again shows it where you typed it. In a form, **Tab** still moves to the next field.
 
@@ -90,5 +89,5 @@ A font whose licence does not allow it to be put inside a PDF says so under its 
 
 <!--
 Screenshots to capture:
-1. edit-text-1 — Edit section, Edit text mode on a page with several paragraphs, one block open with the caret in it and the Properties tab showing Text, Paragraph and Box. Frame the page area and the panel.
+1. edit-text-1 — Edit section, Edit text mode on a page with several paragraphs, one block open with the caret in it and the Properties tab showing Text and Box. Frame the page area and the panel.
 -->

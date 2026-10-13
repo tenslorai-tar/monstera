@@ -428,7 +428,10 @@ await step('14. saved: the paragraph’s words, the tab, the text box’s bold r
   };
 });
 
-/** The border style each saved text box states in its /BS, by its words. @param {string} path */
+/**
+ * The border style each saved text box states in its /BS, and the default style its /DS and rich text /RC state, by its
+ * words. @param {string} path
+ */
 async function savedBorderStyles(path) {
   const loaded = await PDFDocument.load(await readFile(path), { updateMetadata: false, ignoreEncryption: true });
   const annots = loaded.getPages()[0]?.node.Annots();
@@ -438,7 +441,14 @@ async function savedBorderStyles(path) {
     if (annot?.lookupMaybe(PDFName.of('Subtype'), PDFName)?.decodeText() !== 'FreeText') continue;
     const style = annot.lookupMaybe(PDFName.of('BS'), PDFDict)?.lookupMaybe(PDFName.of('S'), PDFName)?.decodeText() ?? 'none';
     const contents = annot.lookup(PDFName.of('Contents'));
-    styles.push({ words: contents instanceof PDFString || contents instanceof PDFHexString ? contents.decodeText() : '', style });
+    /** @param {string} key */
+    const said = (key) => {
+      const value = annot.lookup(PDFName.of(key));
+      return value instanceof PDFString || value instanceof PDFHexString ? value.decodeText() : '';
+    };
+    const ds = said('DS');
+    const rc = said('RC');
+    styles.push({ words: contents instanceof PDFString || contents instanceof PDFHexString ? contents.decodeText() : '', style, ds, rc });
   }
   return styles;
 }
@@ -463,7 +473,7 @@ await step('15. N10: no Format group in the ribbon while a block is open; Ctrl+B
   return { editorStayedOpen: stillOpen };
 });
 
-await step('16. E4: the text box from step 13 given a dashed border in the Box group', async () => {
+await step('16. E4 and N13: the text box from step 13 made bold and justified in the one Text section, and dashed in Box', async () => {
   await section('Comment');
   // THE BOX IS WHERE IT WAS DRAWN ON THE PAGE, NOT ON THE SCREEN: steps since then scrolled the page, so it is scrolled
   // back by the distance the page's top has moved before the press is made.
@@ -475,9 +485,20 @@ await step('16. E4: the text box from step 13 given a dashed border in the Box g
   }
   await pressDrawn(200, 240);
   const properties = page.getByRole('complementary', { name: 'Properties' });
+  // THE ONE TEXT SECTION (N13): the box's Bold is the editor's pressed button, no longer a checkbox, and the panel holds
+  // no sentence about the controls.
+  const text = properties.locator('[data-text-section]');
+  await text.getByRole('button', { name: 'Bold' }).click();
+  await expect(text.getByRole('button', { name: 'Bold' })).toHaveAttribute('aria-pressed', 'true');
+  await text.getByRole('button', { name: 'Justify' }).click();
+  await expect(text.getByRole('button', { name: 'Justify' })).toHaveAttribute('aria-pressed', 'true');
   const style = properties.getByRole('group', { name: 'Border style' });
+  expect(await style.evaluate((node) => node.closest('[data-properties-box]') !== null)).toBe(true);
   await style.getByRole('button', { name: 'Dashed' }).click();
-  return { dashedPressed: await style.getByRole('button', { name: 'Dashed' }).getAttribute('aria-pressed') };
+  return {
+    dashedPressed: await style.getByRole('button', { name: 'Dashed' }).getAttribute('aria-pressed'),
+    sentencesInTextSection: await text.locator('p').count(),
+  };
 });
 
 await step('17. D1: a watermark set in Courier, chosen in the Watermark window’s font picker', async () => {
@@ -523,9 +544,12 @@ await step('19. saved: step 15’s bold Times New Roman, the dashed border, the 
   const pageFonts = await savedFonts(stampedSaved);
   // READ BACK: the panel and Ctrl+B of step 15 wrote a bold Times New Roman.
   expect(pageFonts.some((name) => /Times.*Bold/iu.test(name))).toBe(true);
+  // AND STEP 16'S BOX: dashed, and bold and justified as the file's own style strings say, read by pdf-lib (N13).
+  const boxes = await savedBorderStyles(stampedSaved);
+  expect(boxes.some((box) => box.style === 'D' && /bold/iu.test(box.ds + box.rc) && /justify/iu.test(box.ds + box.rc))).toBe(true);
   return {
     pageFonts,
-    textBoxBorders: await savedBorderStyles(stampedSaved),
+    textBoxBorders: boxes,
     watermarkOnFirstPage: words[0]?.includes('DRAFT') ?? false,
     insertedParagraphFound: words.some((each) => each.includes('This paragraph was inserted from Markdown.')),
   };

@@ -6,7 +6,7 @@ import { LOOKS, bridgeUnder } from './pageBridge.js';
 
 /**
  * Formatting words in place on pinned Chromium (the owner's K11 and C1 to C5): no bar floats over the page; the
- * Properties panel shows Text, Paragraph and Box while the editor is open, and what is chosen there reaches the ONE write
+ * Properties panel shows the one Text section and Box while the editor is open (N13), and what is chosen there reaches the ONE write
  * the editor sends when the person clicks away. The kernel is the shim's; what a mark does to the page is the kernel's.
  */
 
@@ -71,13 +71,49 @@ function marksSent(sent: readonly { channel: string; params: unknown }[]): unkno
 }
 
 test.describe('Formatting in the Properties panel (K11)', () => {
-  test('no bar floats over the words, and the panel shows Text, Paragraph and Box while the editor is open', async ({ page }) => {
+  test('no bar floats over the words, and the panel shows the one Text section, then Box, while the editor is open', async ({ page }) => {
     const sent: { channel: string; params: unknown }[] = [];
     await openBlock(page, sent);
     await expect(page.locator('[data-text-format-bar]')).toHaveCount(0);
     const panel = page.locator('[data-text-properties]');
     await expect(panel).toBeVisible();
-    for (const name of ['Text', 'Paragraph', 'Box']) await expect(panel.getByRole('group', { name })).toBeVisible();
+    for (const name of ['Text', 'Box']) await expect(panel.getByRole('group', { name, exact: true })).toBeVisible();
+    // ONE TEXT SECTION (N13): what was the Paragraph group is in it, and no sentence explains the controls.
+    await expect(panel.getByRole('group', { name: 'Paragraph', exact: true })).toHaveCount(0);
+    await expect(panel.locator('p')).toHaveCount(0);
+  });
+
+  test('the Text section is in the owner’s order: font and size, the styles, colour, highlight, alignment, the spacings (N13)', async ({ page }) => {
+    const sent: { channel: string; params: unknown }[] = [];
+    await openBlock(page, sent);
+    const section = page.locator('[data-text-properties] [data-text-section]');
+    const order = await section.evaluate((root) =>
+      [...root.querySelectorAll('button, input, [role="group"]')]
+        .map((control) => {
+          const label = control instanceof HTMLInputElement ? control.labels?.[0]?.textContent : undefined;
+          const name = control.getAttribute('aria-label') ?? label ?? control.textContent;
+          return name.startsWith('Font:') ? 'Font' : name;
+        })
+        .filter((name) =>
+          ['Font', 'Size in points', 'Bold', 'Italic', 'Underline', 'Strikethrough', 'Superscript', 'Subscript', 'Text colour',
+            'Highlight', 'Align left', 'Justify', 'Line spacing', 'Space after the paragraph in points',
+            'Character spacing in points'].includes(name),
+        ),
+    );
+    expect(order).toStrictEqual([
+      'Font', 'Size in points', 'Bold', 'Italic', 'Underline', 'Strikethrough', 'Superscript', 'Subscript', 'Text colour',
+      'Highlight', 'Align left', 'Justify', 'Line spacing', 'Space after the paragraph in points', 'Character spacing in points',
+    ]);
+    // FONT AND SIZE ON ONE ROW, and every spacing field starting at one edge: the layout the order is drawn in.
+    const font = await section.getByRole('button', { name: /^Font:/u }).boundingBox();
+    const size = await section.getByRole('spinbutton', { name: 'Size in points' }).boundingBox();
+    expect(font !== null && size !== null && Math.abs(font.y - size.y) < 4).toBe(true);
+    const lefts = await Promise.all(
+      ['Line spacing', 'Space after the paragraph in points', 'Character spacing in points'].map(
+        async (name) => (await section.getByRole('spinbutton', { name }).boundingBox())?.x,
+      ),
+    );
+    expect(new Set(lefts).size).toBe(1);
   });
 
   test('a font chosen and a size typed in the panel keep the editor open, and the click away writes both, once', async ({ page }) => {
@@ -117,7 +153,7 @@ test.describe('Formatting in the Properties panel (K11)', () => {
     await expect(ribbon.locator('[data-ribbon-values]')).toHaveCount(0);
     // THE PANEL KEEPS FONT, SIZE AND BOLD, and the editor's own key bolds the words.
     const panel = page.locator('[data-text-properties]');
-    await expect(panel.locator('[data-text-font-size="panel"]').getByRole('spinbutton', { name: 'Size in points' })).toBeVisible();
+    await expect(panel.getByRole('spinbutton', { name: 'Size in points' })).toBeVisible();
     await page.keyboard.press('Control+A');
     await page.keyboard.press('Control+B');
     await expect(panel.getByRole('button', { name: 'Bold' })).toHaveAttribute('aria-pressed', 'true');
@@ -164,8 +200,8 @@ test.describe('Formatting in the Properties panel (K11)', () => {
     await panel.getByRole('button', { name: 'Strikethrough' }).click();
     await panel.getByRole('group', { name: 'Highlight' }).getByRole('button', { name: 'Yellow highlight' }).click();
     const letters = panel.getByRole('spinbutton', { name: 'Character spacing in points' });
-    // THE BOUND AT THIS SIZE IS SAID: 0.12 of 12 points.
-    await expect(panel.getByText('Up to 1.4 pt either way at this size.', { exact: false })).toBeVisible();
+    // THE BOUND AT THIS SIZE IS THE FIELD'S OWN: 0.12 of 12 points, with no sentence under it (N13).
+    await expect(letters).toHaveAttribute('max', '1.44');
     await letters.fill('0.6');
     // STILL A FIELD AFTER THE FORMAT IT SENT: the words read as nothing once their range collapsed, and the field went
     // disabled under the cursor (measured before `formatRange` selected the words again).

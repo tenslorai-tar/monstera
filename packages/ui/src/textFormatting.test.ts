@@ -11,6 +11,8 @@ import {
   readEditor,
   replaceRange,
   setParagraphs,
+  spacingBoundOf,
+  spacingOf,
   stateAt,
   toggleList,
   wordAt,
@@ -293,5 +295,18 @@ describe('isFormatted', () => {
     expect(isFormatted({ paragraphs: [{ paragraph: 0, align: 'right' }] })).toBe(true);
     // A BLOCK THAT WAS ONLY PUT SOMEWHERE is a write too: its words are the same and the page is not.
     expect(isFormatted({ place: { move: { x: 4, y: 0 } } })).toBe(true);
+  });
+});
+
+describe('spacingBoundOf', () => {
+  it('the field’s bound, held to by the field, reaches the wire’s widest spacing at every size (N13)', () => {
+    // THE SIZES WHERE ROUNDING MATTERS: 12 points is 1.44 exactly, 10.3 is 1.236, which a bound rounded in would stop short of.
+    for (const size of [12, 10.3, 7, 11.5, 400]) {
+      expect([size, spacingOf(spacingBoundOf(size), size), spacingOf(-spacingBoundOf(size), size)]).toStrictEqual([size, 0.12, -0.12]);
+    }
+  });
+
+  it('CONTROL: the bound the panels spelt before, rounded to the tenth, does not reach it', () => {
+    expect(spacingOf(Math.round(0.12 * 12 * 10) / 10, 12)).toBeLessThan(0.12);
   });
 });
