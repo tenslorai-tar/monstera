@@ -612,6 +612,28 @@ await step('N2: the Edit menu draws no scrollbar, and where it scrolls it fades 
   return read;
 });
 
+await step('N8: a right-click in a text field is answered by the one edit menu in main, and Paste reaches the field', async () => {
+  // THE WIRING, which no unit case can reach: the window's contents carries the one listener (`offerEditMenu`).
+  const listeners = await walk.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.webContents.listenerCount('context-menu') ?? 0);
+  expect(listeners).toBeGreaterThan(0);
+  // THE VERB ITSELF, through the same role the menu's Paste is: Electron's `paste` on the focused field.
+  await walk.app.evaluate(({ clipboard }) => {
+    clipboard.writeText('pasted by the walk');
+  });
+  await command('Find');
+  const field = page.getByRole('searchbox').or(page.getByRole('textbox', { name: /Find/u })).first();
+  await field.click({ button: 'right' });
+  // THE NATIVE MENU is the platform's and cannot be clicked from here; it is put away, and the role is run directly.
+  await page.keyboard.press('Escape');
+  await field.focus();
+  await walk.app.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0]?.webContents.paste();
+  });
+  await expect(field).toHaveValue('pasted by the walk');
+  await page.keyboard.press('Escape');
+  return { listeners };
+});
+
 await step('N4: the File menu starts Open PDF, Open from web address, Cloud storage, Recent, Start screen', async () => {
   await page.locator('.m-menu-bar__trigger[data-menu="file"]').click();
   const popup = page.locator('.m-menu-bar__popup').first();

@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { minimumWindowFor } from '@monstera/shared';
 import { BrowserWindow, type Session, type WebContents, app, screen } from 'electron';
 
+import { offerEditMenu } from './editMenu.js';
 import { type ShellFailureSink, reportRendererFailures } from './shellFailure.js';
 import { PLATFORM_DEFAULT, type WindowMemory, placementFor } from './windowState.js';
 import {
@@ -212,6 +213,8 @@ export function createMainWindow(
   // created without one — which is precisely the state that let a preload fail
   // in silence.
   reportRendererFailures(window.webContents, failures);
+  // EVERY EDITABLE FIELD'S RIGHT-CLICK MENU, subscribed where the contents is born for the same reason (the owner's N8).
+  offerEditMenu(window.webContents);
 
   // THE FLOOR FOLLOWS THE SCREEN: moved to another display, or the scaling or resolution changed, the work area it
   // is measured against is a different one. Unsubscribed when the window goes, since `screen` outlives it.
