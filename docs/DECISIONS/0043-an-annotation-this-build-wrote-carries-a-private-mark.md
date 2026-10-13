@@ -180,3 +180,11 @@ The conservative reading, and it is not free: it makes L5 vacuous rather than
 strict, since a rule that forbids touching everything is one the save pipeline
 already breaks by existing. It also gives the eraser and select nothing to tell
 the person.
+
+## Correction, 2026-10-13 — a second private key, for a highlight over an area (the owner's O7)
+
+The scheme carries one more key of ours: `Monstera_Area`, a boolean on a `/Highlight` drawn over an area rather than a run
+of words. A one-line text highlight is also one axis-aligned quad, so nothing in the format tells the two apart, and the
+two are drawn differently: MuPDF pads a highlight's quads sideways for words (measured: a box 50 points tall painted 9
+points past each side), and an area highlight is drawn by Monstera as exactly its box on every redraw. As with
+`Monstera_Authored`, no other reader acts on the key, and a foreign highlight without it is drawn as MuPDF draws it.
