@@ -892,6 +892,102 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-13 — Stage audit of `1fd98f2a..c481a654` — findings DDDDDDDD-1 to DDDDDDDD-12
+
+The local agent's last rounds on main (C3, E4, D1 for stamps and Markdown, the walks' fixes, the baselines) and cloud run
+3's Part 1 (L1, L9, O6a/W6, W1, ADR-0233 and O2, O10) with the two fixes its first board asked for. Read through `npm run
+audit:scope` (24 commits, 190 files); the eleven local commits were read by one read-only reader whose six claims were
+checked here before being recorded (all six held), and the cloud commits by their author. Owed when N14's commit would
+have taken the range to 207 files; that commit follows this one and is outside the range.
+
+**DDDDDDDD-1** (medium, open): `docs/FEATURES.md` row 151 still says *"Not built: the ribbon's Font and Size boxes"*;
+1365d7f0 built them and did not touch the row. Owed in this run's N10, which removes that group.
+
+**DDDDDDDD-2** (medium, open): `textWalk.mjs` (1efcda50) waits six seconds around Ctrl+Z and Ctrl+Y because *"sent
+together they left a later Add text editor open for good"* — an application defect walked around and named nowhere as
+one — and sleeps 8, 5 and 2 seconds elsewhere where a condition (the editor's busy marker, a dialog) could be waited on.
+
+**DDDDDDDD-3** (low, closed by 42229fcf): `formsWalk.mjs` (af3ed1ee) slept 1.5 s after a move to avoid the *out of date*
+dialog; O6a fixed the cause, and the walk now presses four arrows with no wait and asserts no dialog.
+
+**DDDDDDDD-4** (low, open): `fieldDesign.pw.ts`' `sentOnce` (19e614d0) passes the first moment the count equals, so a
+drag that sends two commands close together can pass; and CCCCCCCC-1's read-straight-after-a-gesture race remains in
+reads of ABSENCE, where it can only pass (`fieldDesign.pw.ts` 113 and 204, `textFormat.pw.ts` 99, 129, 196 and 286).
+
+**DDDDDDDD-5** (low, open): `engineProtectedApply.test.ts:27` and `remoteNotices.test.ts:15` keep their commands as
+untyped `as const` literals, the mechanism 534995a2 named for a red kernel suite at 31d0fc9d; `satisfies` would make the
+next required field a compile error.
+
+**DDDDDDDD-6** (low, open): textWalk's step 4 (1efcda50) now ends Add text with Escape, so its click-away path is walked
+by nothing.
+
+**DDDDDDDD-7** (medium, closed in c481a654): O2's real-Tesseract proof (e70746ee) was pushed without having run, the
+model's host being unreachable from the cloud sandbox, and was red on both CI legs: Tesseract's layout analysis reads no
+word inside a fully ruled grid, so the export wrote empty cells and every recognised ruled form lost its boxes' words.
+The unit case passed because its layer was placed by hand: a fixture the defect could not reach (item 2). Recognition now
+reads each empty ruled cell, with the control that the page as one rectangle reads none.
+
+**DDDDDDDD-8** (medium, closed in 3bb433ba): ADR-0102's dated correction (42229fcf) left its index row reading as
+uncorrected; Guards refused it.
+
+**DDDDDDDD-9** (medium, open): a CSV composed in parts (25f0359c) is not shown to be bounded in the compose host: 12 MiB
+peaked at 2,190 MiB and 24 MiB at 2,680 MiB (Linux, `csvParts.mjs`, `budget.ts`), about 390 MiB under the job limit, so a
+much larger file may end the host. The installed app's reading is owed.
+
+**DDDDDDDD-10** (low, open): O10's rule is not met everywhere. A settings file past its bound is said as too large in a
+toast, which carries no values, so its size is not named; and the image (64 MiB), form and comment data (8 MiB), Office
+(100 MiB) and library picture (2 MiB) bounds remain chosen rather than measured, though each now names the file's size.
+
+**DDDDDDDD-11** (low, open): the compose host answers nothing at all to a file-answered request sent without
+`answerInto` (seen writing `composeHostBody.test.ts`' split case); main always sends one, and a silent no-answer is the
+shape a refusal should have.
+
+**DDDDDDDD-12** (low, recorded): four reflexes denied by the escape guard in this session after its context was
+summarised (a heredoc into a file twice, `node -e` once, `python -c` once); nothing was written. The session's first half
+was summarised and is not counted.
+
+### 1. Root cause or workaround?
+DDDDDDDD-2 and -3 are workarounds in walks; -3's cause is fixed. The cloud fixes each state their mechanism; the one
+fetch from a second host (the English model, verified against the digest `tessdata.mjs` records) is a local diagnosis
+step, not a change to provisioning.
+
+### 2. Verified against the easy shape only?
+DDDDDDDD-7 is this item exactly: a hand-placed layer against real recognition. W1's walk case is still unexplained by its
+fix and is owed on Windows.
+
+### 2a. Has a change to how something is proven moved the coverage?
+No asserted claim became derived.
+
+### 3. Would CI have caught it?
+It did: DDDDDDDD-7 and -8 were the board's two reds on the first push. DDDDDDDD-9 is not reachable from CI.
+
+### 4. Are the proofs non-vacuous?
+Mutations run and red: the CSV line mapping, the fileTooLarge fallback, the scan-table control (the page as one
+rectangle). StatusBar.test.tsx's three task cases moved to TaskNotice.test.tsx and arrived.
+
+### 4a. Resolution test before measuring?
+`csvParts.mjs` reads `ru_maxrss` once and per-part RSS; its 12 and 24 MiB readings differ by 490 MiB and two runs of
+12 MiB by 120 MiB, so the run-to-run spread is stated beside the figures.
+
+### 4b. A search with a positive control?
+Recognition's cell search reads the grids `rasterRulings.ts` finds; its positive control is the scan-table proof's grid
+found before recognition.
+
+### 4c. Does a check derive its extent from the set it governs?
+`fileTooLargeBodies.test.tsx` holds a literal count of the five bodies.
+
+### 5. Executed, or asserted?
+Executed here: every proof named in the commits, with real PDFium and real Tesseract. Asserted: everything the walks
+check, which needs Windows, and DDDDDDDD-9's Windows figure.
+
+### 6. Architecture before the feature?
+ADR-0233 and its correction each in their own commit before their code.
+
+### 7. Do the documents still match the code?
+DDDDDDDD-1 is the one found false; ADR-0102's row is corrected.
+
+---
+
 ## 2026-10-12 — Stage audit of `8d0a8325..1fd98f2a` — findings CCCCCCCC-1 to CCCCCCCC-6
 
 The cloud rebuild's Parts A to C: the seven rows built in Part A, A3.1 and A6.1 (ADR-0231), the ten unverified rows
