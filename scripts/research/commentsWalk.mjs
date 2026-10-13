@@ -581,6 +581,22 @@ await step('N5: a dialog’s buttons sit at the centre of its footer, and Settin
   return { offCentre };
 });
 
+await step('N1: Convert a scan shows three rows, each button at the right with room after its words', async () => {
+  await command('Convert a scan…');
+  const dialog = page.getByRole('dialog', { name: 'Convert a scan' });
+  const gaps = await dialog.locator('.m-convert-scan__row').evaluateAll((items) =>
+    items.map((item) => {
+      const text = item.querySelector('.m-convert-scan__text')?.getBoundingClientRect();
+      const button = item.querySelector('button')?.getBoundingClientRect();
+      return text === undefined || button === undefined ? -1 : Math.round(button.left - text.right);
+    }),
+  );
+  expect(gaps).toHaveLength(3);
+  expect(gaps.every((gap) => gap >= 16)).toBe(true);
+  await dialog.getByRole('button', { name: 'Close' }).or(dialog.getByRole('button', { name: 'Cancel' })).first().click();
+  return { gaps };
+});
+
 await step('L7: a NUL in a Markdown file is the replacement character in the saved PDF, once, as CommonMark requires', async () => {
   const source = join(output, 'l7-nul.md');
   await writeFile(source, `Null ${String.fromCharCode(0)} here.\n`);

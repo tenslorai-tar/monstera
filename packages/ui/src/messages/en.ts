@@ -1067,6 +1067,9 @@ export const CONVERT_SCAN_WORD = messageKey('dialog.convert-scan.word');
 export const CONVERT_SCAN_WORD_BUTTON = messageKey('dialog.convert-scan.word-button');
 export const CONVERT_SCAN_EXCEL = messageKey('dialog.convert-scan.excel');
 export const CONVERT_SCAN_EXCEL_BUTTON = messageKey('dialog.convert-scan.excel-button');
+export const CONVERT_SCAN_SEARCHABLE_NAME = messageKey('dialog.convert-scan.searchable-name');
+export const CONVERT_SCAN_WORD_NAME = messageKey('dialog.convert-scan.word-name');
+export const CONVERT_SCAN_EXCEL_NAME = messageKey('dialog.convert-scan.excel-name');
 export const OCR_COMMAND_TITLE = messageKey('command.ocr.title');
 export const OCR_EXPORT_COMMAND_TITLE = messageKey('command.ocr-export.title');
 export const ENHANCE_COMMAND_TITLE = messageKey('command.enhance-scans.title');
@@ -3808,16 +3811,15 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RIBBON_CONVERT_SCAN]: 'Convert scan',
   [CONVERT_SCAN_TIP]: 'Turn a scanned or handwritten document into a searchable PDF, a Word file or an Excel workbook.',
   [CONVERT_SCAN_TITLE]: 'Convert a scan',
-  [CONVERT_SCAN_INTRO]:
-    'A scan is a picture of a page. Choose what you want it to become. Nothing is sent anywhere until you pick a reading service in the next step.',
-  [CONVERT_SCAN_SEARCHABLE]:
-    'A searchable PDF looks exactly the same, and hidden words are added behind the picture so you can search and copy them.',
+  [CONVERT_SCAN_INTRO]: 'A scan is a picture of a page. Nothing is sent anywhere until you choose a reading service.',
+  [CONVERT_SCAN_SEARCHABLE_NAME]: 'Searchable PDF',
+  [CONVERT_SCAN_SEARCHABLE]: 'Looks the same, with words you can search and copy.',
   [CONVERT_SCAN_SEARCHABLE_BUTTON]: 'Make it searchable',
-  [CONVERT_SCAN_WORD]:
-    'A Word file holds the document’s words so you can edit them. It works from the words in the PDF, so make it searchable first.',
+  [CONVERT_SCAN_WORD_NAME]: 'Word file',
+  [CONVERT_SCAN_WORD]: 'Words you can edit. Make the PDF searchable first.',
   [CONVERT_SCAN_WORD_BUTTON]: 'Save as Word',
-  [CONVERT_SCAN_EXCEL]:
-    'An Excel workbook holds the tables, with each cell in its own box. A reading service such as Claude or Azure can read handwritten tables from the page pictures.',
+  [CONVERT_SCAN_EXCEL_NAME]: 'Excel workbook',
+  [CONVERT_SCAN_EXCEL]: 'Tables, cell by cell. A reading service can read handwritten ones.',
   [CONVERT_SCAN_EXCEL_BUTTON]: 'Save as Excel',
   [OCR_COMMAND_TITLE]: 'Make scanned pages searchable',
   // NAMES THE FILE, because that is the difference from the command above: both
