@@ -26,7 +26,11 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { expect as defaultExpect } from '@playwright/test';
 import { PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream, PDFString } from '@cantoo/pdf-lib';
+import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { root, startWalk } from './liveWalk.mjs';
+
+// THE PRODUCER'S PAGE THE N14 STEP BUILDS, fresh or refused, beside the shell's own edges `startWalk` checks.
+refuseStaleBuild(root, [['packages/kernel/src/producerSubsetFixture.ts', 'packages/kernel/dist/producerSubsetFixture.js', 'tsc']], 1);
 
 const sample = process.argv[2] ?? join(root, '_review/test-files/sample5.pdf');
 const handwritten = process.argv[3] ?? join(homedir(), 'Desktop', 'Handwritten table.pdf');

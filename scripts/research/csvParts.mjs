@@ -16,9 +16,20 @@
 import { COMPOSED_FAMILY_DEFAULT } from '@monstera/contract';
 
 import { fontsDirectory } from '../provision/fonts.mjs';
+import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 
 const ROOT = repoRoot();
+// THE BUILT MODULES THIS READS, fresh or refused: a stale one would print last build's reading under this build's name.
+refuseStaleBuild(
+  ROOT,
+  [
+    ['packages/kernel/src/csvCompose.ts', 'packages/kernel/dist/csvCompose.js', 'tsc'],
+    ['packages/kernel/src/fontCatalogue.ts', 'packages/kernel/dist/fontCatalogue.js', 'tsc'],
+    ['packages/kernel/src/workbookParts.ts', 'packages/kernel/dist/workbookParts.js', 'tsc'],
+  ],
+  3,
+);
 // LITERAL SPECIFIERS, so `proof:electronimports` can read what this loads: none of it may reach Electron.
 const { composeCsv } = await import('../../packages/kernel/dist/csvCompose.js');
 const { faceSourceOf } = await import('../../packages/kernel/dist/fontCatalogue.js');

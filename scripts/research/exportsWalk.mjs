@@ -19,11 +19,14 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect as defaultExpect } from '@playwright/test';
 import { strFromU8, unzipSync } from 'fflate';
-import { startWalk } from './liveWalk.mjs';
+import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { root, startWalk } from './liveWalk.mjs';
 
 // A RECOGNITION AND AN EXPORT take several seconds each on the walk's machine; a step gets thirty.
 const expect = defaultExpect.configure({ timeout: 30_000 });
 
+// THE FIXTURE THIS BUILDS ITS SCAN FROM, fresh or refused, beside the shell's own edges `startWalk` checks.
+refuseStaleBuild(root, [['packages/kernel/src/scanTableFixture.ts', 'packages/kernel/dist/scanTableFixture.js', 'tsc']], 1);
 // A LITERAL SPECIFIER, so `proof:electronimports` can read what this loads.
 const { SCAN_TABLE_ROWS, buildScannedTablePdf } = await import('../../packages/kernel/dist/scanTableFixture.js');
 
