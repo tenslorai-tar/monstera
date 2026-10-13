@@ -116,3 +116,20 @@ Three statements above were recorded more strongly than the probe supported, and
 The build also found a defect older than this decision: a block's edges were read from each run's first object only, so a
 line an earlier edit wrote as several objects was measured at that object's width. It is fixed where it was found
 (`b2be9256`), with a case in `proof:pdfiumcommand`.
+
+## Correction, 2026-10-13 — the ribbon has no Format group (the owner's N10), reversing Decision 5
+
+The owner's decision: *"The options in the properties panel are enough."* The ribbon's Format group, shown while Edit
+text is active, is removed whole: its Font and Size boxes (Decision 5) and its formatting commands' ribbon placements —
+bold, italic, underline, strikethrough, superscript, subscript, the four alignments with justify, bullets, numbering and
+indent. Nothing they did is lost:
+
+- Every one of those commands stays registered, so the command palette and the Properties panel's Text section, which
+  act through the same `formatOpenEditor`, keep them; only the ribbon placement goes. The registry stays the one place a
+  feature is wired; a projection is what was removed.
+- The keyboard shortcuts stay: they are the editor's own keys, handled where the words are typed, and never depended on
+  the ribbon.
+- The Font and Size boxes stay in the Properties panel's Text section, the one `TextFontSize` component with one place
+  fewer.
+
+The C3 row of `docs/FEATURES.md` that Decision 5 built is corrected in the same change.
