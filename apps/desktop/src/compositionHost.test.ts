@@ -1502,6 +1502,91 @@ describe('the composition root, with BOTH engine hosts', () => {
     expect(pdfium.passwords).toStrictEqual(pdfium.inputs.map(() => null));
   });
 
+  // THE OWNER'S PART 7 A (0.1.14.0): after every document closed, the hosts an edit had started stayed alive at full
+  // size until the application quit. The last document out stops them, and the next document builds new ones.
+  it('the LAST document closed stops the MuPDF and PDFium hosts an edit started, and the next document builds new ones', async () => {
+    const mupdf = platformAnswering(serialisingEngine());
+    const second = platformAnswering(pdfiumPeer([]).peer);
+    const names = ['closed-first.pdf', 'opened-after.pdf'];
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickDocument: () => Promise.resolve(aDocument(names.shift() ?? 'more.pdf')),
+      enginePlatform: mupdf.platform,
+      pdfiumPlatform: second.platform,
+    });
+
+    const opened = await handlers['document.open']({});
+    if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+    const edited = await handlers['document.execute']({
+      docId: opened.value.docId,
+      command: { kind: 'replaceTextObject', page: 0, ...replacementFieldsOf([{ index: 2, text: 'hi' }]), version: opened.value.version },
+    });
+    expect(edited.ok, JSON.stringify(edited)).toBe(true);
+    // BOTH HOSTS RUNNING before the close, so what follows is a stop and not a host that never started.
+    expect(spy(mupdf.harness.calls, 'host.createSuspended')).toBe(1);
+    expect(spy(second.harness.calls, 'host.createSuspended')).toBe(1);
+    expect(spy(mupdf.harness.calls, 'host.terminate') + spy(second.harness.calls, 'host.terminate')).toBe(0);
+
+    expect(await handlers['document.close']({ docId: opened.value.docId })).toStrictEqual(ok({ closed: true }));
+    expect(spy(mupdf.harness.calls, 'host.terminate')).toBe(1);
+    expect(spy(second.harness.calls, 'host.terminate')).toBe(1);
+    // AND NOTHING OF THEIRS LEFT ON DISK: every pair either host was granted is removed.
+    const created = (list: readonly string[]): number => list.filter((entry) => entry.startsWith('create:')).length;
+    const removed = (list: readonly string[]): number => list.filter((entry) => entry.startsWith('removeTree:')).length;
+    expect(removed(mupdf.directories)).toBe(created(mupdf.directories));
+    expect(removed(second.directories)).toBe(created(second.directories));
+
+    // THE NEXT DOCUMENT BUILDS A NEW MuPDF HOST, and opens in it: a stopped host is never asked again.
+    const next = await handlers['document.open']({});
+    expect(next.ok && next.value.kind === 'opened', JSON.stringify(next)).toBe(true);
+    // THE SESSION OPENS IN THE DOCUMENT'S LANE after `document.open` has answered, so it is waited for.
+    await vi.waitFor(() => {
+      expect(spy(mupdf.harness.calls, 'peer.request:engine/open')).toBeGreaterThan(2);
+    });
+    expect(spy(mupdf.harness.calls, 'host.createSuspended')).toBe(2);
+  });
+
+  it('CONTROL: closing one of two documents stops no host; closing the second stops them', async () => {
+    // A HANDLE PER OPEN, as a real host issues them (the one-host case's reason), around the serialising engine.
+    const serialising = serialisingEngine();
+    let issued = 0;
+    const mupdf = platformAnswering((channel, params) => {
+      const answer = serialising(channel, params);
+      if (channel !== 'engine/open') return answer;
+      issued += 1;
+      return { ok: true, value: { session: `cd0${String(issued)}`, access: 1 } };
+    });
+    const second = platformAnswering(pdfiumPeer([]).peer);
+    const names = ['kept-a.pdf', 'kept-b.pdf'];
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickDocument: () => Promise.resolve(aDocument(names.shift() ?? 'more.pdf')),
+      enginePlatform: mupdf.platform,
+      pdfiumPlatform: second.platform,
+    });
+    // THE EDIT BEFORE THE SECOND OPEN, so the serialising engine's one output directory is the first document's.
+    const first = await handlers['document.open']({});
+    if (!first.ok || first.value.kind !== 'opened') throw new Error('the first did not open');
+    const edited = await handlers['document.execute']({
+      docId: first.value.docId,
+      command: { kind: 'replaceTextObject', page: 0, ...replacementFieldsOf([{ index: 2, text: 'hi' }]), version: first.value.version },
+    });
+    expect(edited.ok, JSON.stringify(edited)).toBe(true);
+    const other = await handlers['document.open']({});
+    if (!other.ok || other.value.kind !== 'opened') throw new Error('the second did not open');
+    expect(spy(second.harness.calls, 'host.createSuspended')).toBe(1);
+
+    await handlers['document.close']({ docId: first.value.docId });
+    expect(spy(mupdf.harness.calls, 'host.terminate')).toBe(0);
+    expect(spy(second.harness.calls, 'host.terminate')).toBe(0);
+
+    await handlers['document.close']({ docId: other.value.docId });
+    expect(spy(mupdf.harness.calls, 'host.terminate')).toBe(1);
+    expect(spy(second.harness.calls, 'host.terminate')).toBe(1);
+  });
+
   it('an UNLOCKED document’s PDFium command carries its password on every frame, and the rebuild opens with it (ADR-0171)', async () => {
     const PASSWORD = 'sample-only-0171';
     // THE MUPDF HOST OPENS THIS DOCUMENT ONLY WITH ITS PASSWORD, as for a file protected by one; every other answer
@@ -2144,6 +2229,72 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
     expect(third.harness.calls).toContain('peer.request:engine/probe-containment');
     expect(third.harness.calls).toContain('peer.request:engine/compose-markdown');
     expect(mupdf.harness.calls).not.toContain('peer.request:engine/compose-markdown');
+  }, 120_000);
+
+  // THE OWNER'S PART 7 A, for the host that serves calls no document makes: it stops with the last document only where
+  // it is idle by its own account. THE CONTROL is a file left in its area, which a workbook's parts are between calls.
+  for (const held of [false, true]) {
+    it(`the compose host ${held ? 'is KEPT while its area holds a file' : 'stops with the last document when its area is empty'}`, async () => {
+      const mupdf = platformAnswering(serialisingEngine());
+      const compose = composePeer();
+      const third = platformAnswering(compose.peer);
+      // ITS AREA LISTED FROM DISK, as the Win32 surface lists it; the harness's own listing answers *could not look*.
+      const listing: EngineHostPlatform = {
+        ...third.platform,
+        directories: { ...third.platform.directories, listFiles: (path) => readdirSync(path) },
+      };
+      const { handlers } = createShellDependencies({
+        ...harnessSurfaces('the composition-host test'),
+        appInfo,
+        pickMarkdown: () => Promise.resolve(join(scratch, `draft-${String(held)}.md`)),
+        readMarkdown: () => Promise.resolve({ kind: 'read' as const, bytes: new TextEncoder().encode('# Title\n') }),
+        pickDestination: () => Promise.resolve(join(scratch, `composed-${String(held)}.pdf`)),
+        enginePlatform: mupdf.platform,
+        composePlatform: listing,
+      });
+      const answer = await handlers['document.newFromMarkdown']({ family: 'Tinos', work: WORK });
+      if (!answer.ok || answer.value.kind !== 'opened') throw new Error(`the composed document did not open: ${JSON.stringify(answer)}`);
+      expect(spy(third.harness.calls, 'host.createSuspended')).toBe(1);
+
+      const area = third.directories.find((entry) => entry.startsWith('create:'))?.slice('create:'.length);
+      if (area === undefined) throw new Error('the compose host was granted no area');
+      if (held) writeFileSync(join(area, 'a-part-between-calls'), 'held');
+
+      await handlers['document.close']({ docId: answer.value.docId });
+      // THE DOCUMENT ENGINE STOPS EITHER WAY: the area that keeps one host is not a reason to keep the other.
+      expect(spy(mupdf.harness.calls, 'host.terminate')).toBe(1);
+      expect(spy(third.harness.calls, 'host.terminate')).toBe(held ? 0 : 1);
+    }, 120_000);
+  }
+
+  it('the compose host is KEPT while a call no document made is still running in it', async () => {
+    const mupdf = platformAnswering(serialisingEngine());
+    const compose = composePeer();
+    // THE FONT LIST LEFT UNANSWERED, so the call is still running when the last document closes.
+    const third = platformAnswering((channel, params) => (channel === 'engine/font-families' ? null : compose.peer(channel, params)));
+    const listing: EngineHostPlatform = {
+      ...third.platform,
+      directories: { ...third.platform.directories, listFiles: (path) => readdirSync(path) },
+    };
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickMarkdown: () => Promise.resolve(join(scratch, 'draft-running.md')),
+      readMarkdown: () => Promise.resolve({ kind: 'read' as const, bytes: new TextEncoder().encode('# Title\n') }),
+      pickDestination: () => Promise.resolve(join(scratch, 'composed-running.pdf')),
+      enginePlatform: mupdf.platform,
+      composePlatform: listing,
+    });
+    const answer = await handlers['document.newFromMarkdown']({ family: 'Tinos', work: WORK });
+    if (!answer.ok || answer.value.kind !== 'opened') throw new Error(`the composed document did not open: ${JSON.stringify(answer)}`);
+
+    void handlers['app.fontFamilies']({});
+    await vi.waitFor(() => {
+      expect(third.harness.calls).toContain('peer.request:engine/font-families');
+    });
+    await handlers['document.close']({ docId: answer.value.docId });
+    expect(spy(mupdf.harness.calls, 'host.terminate')).toBe(1);
+    expect(spy(third.harness.calls, 'host.terminate')).toBe(0);
   }, 120_000);
 
   it('appends: opens the composed file as a tab, waits for its session, and merges it', async () => {

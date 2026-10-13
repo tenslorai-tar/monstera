@@ -934,6 +934,10 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     teardown: async (docId) => {
       commands.endExternalEdit(docId);
       await engine.releaseOnClose(docId);
+      // THE LAST DOCUMENT OUT STOPS THE HOSTS (the owner's Part 7 A). Here, after the release, because the record left
+      // the service before this document's lane drained: a count read at removal would stop a host its own queued work
+      // still needed. The next document builds a new host, as the first one did.
+      await stopIdleHosts();
     },
     // INVARIANT 22'S CAPABILITY, wired so it exists rather than so it is
     // called. §2 leaves the moment open and requires only that the operation be
@@ -1041,6 +1045,23 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
               return Promise.resolve(false);
             }),
         );
+  /**
+   * Stops the engine hosts when no document is open (the owner's Part 7 A, 0.1.14.0: after every document closed, the
+   * MuPDF, PDFium and compose hosts stayed at 1,939 MB until the application quit).
+   *
+   * The MuPDF and PDFium hosts serve open documents only, and a document's calls run in its lane, which `close` drains
+   * before its teardown; so with none open nothing of theirs is in flight, and each `close` takes its host out of its
+   * holder before its first await, so a document opening next builds a new one. The compose host also serves calls no
+   * document makes (an import, the font list, a chat's attachment) and keeps a workbook's parts in its area between
+   * calls, so it stops only where it is idle by its own account (`retireIfIdle`).
+   *
+   * Read when called, for the reason `teardown` gives: the service is built before the hosts.
+   */
+  const stopIdleHosts = async (): Promise<void> => {
+    if (documents.size !== 0) return;
+    await Promise.all([engineHost.closeHost(), pdfiumHost?.close()]);
+    await composeHost?.retireIfIdle();
+  };
   // THE BACK-REFERENCE CLOSED, one line after the only thing that could close
   // it. `recycleHandle` above was written against this because `create` opens
   // documents from `documents`, so the service exists first and the factory can
@@ -2066,10 +2087,11 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
      * disk for the startup sweep to find, which is a mechanism for a crash
      * rather than a route an ordinary quit should take.
      *
-     * **The host is closed EXPLICITLY, because nothing else does.**
-     * `releaseOnClose` deletes a map entry; the connection's lifetime is the
-     * application's, and {@link engineSessionOpener}'s `closeHost` is the only
-     * thing that can reach it.
+     * **The host is closed EXPLICITLY, because nothing else may have.**
+     * `releaseOnClose` deletes a map entry, and the hosts stop when the last
+     * document's teardown finds none open (`stopIdleHosts`); a quit that closes
+     * them here as well closes nothing twice, and covers a compose host its own
+     * account kept running.
      */
     shutdown: async () => {
       for (const docId of documents.openDocIds()) {
@@ -3692,8 +3714,29 @@ function composeHostBinding(
   readonly signatureFromScan: ScanSignature;
   /** The font families the host can set text in, for the one font picker (`engine/font-families`). */
   readonly fontFamilies: () => Promise<ListedFontFamilies>;
+  /**
+   * Stops the host where it is idle by its own account, and answers whether it stopped: no call of this binding
+   * running, and nothing in its granted area. The area is the account that matters for a workbook, whose parts stay
+   * there between calls and whose joined PDF streams out of it after `join` has answered (the owner's Part 7 A).
+   */
+  readonly retireIfIdle: () => Promise<boolean>;
   readonly close: () => Promise<void>;
 } {
+  /**
+   * This binding's calls running now, counted from the call rather than from the host call inside it, so a call that
+   * has asked for the host and not yet used it counts: `retireIfIdle` must never stop a host between the two.
+   */
+  let running = 0;
+  const counted =
+    <A extends unknown[], R>(call: (...args: A) => Promise<R>) =>
+    async (...args: A): Promise<R> => {
+      running += 1;
+      try {
+        return await call(...args);
+      } finally {
+        running -= 1;
+      }
+    };
   /** What one built host holds. Cleared together, or not at all. */
   interface Live {
     readonly connection: EngineHostConnection;
@@ -3834,7 +3877,7 @@ function composeHostBinding(
     return { families, more };
   });
 
-  return {
+  const calls: Omit<ReturnType<typeof composeHostBinding>, 'retireIfIdle'> = {
     compose: async (format, source, page, family) => {
       const built = await ensure();
       const area = { snapshotDirectory: built.paths.snapshot, outputDirectory: built.paths.output };
@@ -4204,6 +4247,49 @@ function composeHostBinding(
       built.connection.close();
       removeSessionDirectories(platform.directories, built.paths);
     },
+  };
+
+  // READ THROUGH A CALL, for `useDocumentView`'s reason: a variable read is narrowed to its first answer across the
+  // await below, and the second read, the one that matters, would lint as always false.
+  const busy = (): boolean => running !== 0;
+  const retireIfIdle = async (): Promise<boolean> => {
+    const live = host;
+    if (live === null || busy()) return false;
+    const built = await live.catch(() => null);
+    if (built === null) return false;
+    // THROUGH THE PLATFORM'S OWN LISTING, which says `null` where it could not look: that is not an empty area, so a
+    // host whose area cannot be read is left running.
+    const snapshot = platform.directories.listFiles(built.paths.snapshot);
+    const output = platform.directories.listFiles(built.paths.output);
+    if (snapshot === null || output === null || snapshot.length + output.length > 0) return false;
+    // READ AGAIN AFTER THE AWAIT: a call that began meanwhile owns this host now.
+    if (busy() || host !== live) return false;
+    await calls.close();
+    return true;
+  };
+
+  // EVERY CALL COUNTED, the workbook's each, so none of them runs on a host `retireIfIdle` judged idle.
+  const { workbooks } = calls;
+  return {
+    compose: counted(calls.compose),
+    composeImages: counted(calls.composeImages),
+    optimize: counted(calls.optimize),
+    preparePdfa: counted(calls.preparePdfa),
+    keepInlineImages: counted(calls.keepInlineImages),
+    csvSplit: counted(calls.csvSplit),
+    workbooks: {
+      put: counted(workbooks.put),
+      outline: counted(workbooks.outline),
+      part: counted(workbooks.part),
+      pages: counted(workbooks.pages),
+      join: counted(workbooks.join),
+      remove: counted(workbooks.remove),
+    },
+    imageSize: counted(calls.imageSize),
+    fontFamilies: counted(calls.fontFamilies),
+    signatureFromScan: counted(calls.signatureFromScan),
+    retireIfIdle,
+    close: calls.close,
   };
 }
 
