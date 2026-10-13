@@ -584,40 +584,25 @@ const declarations = {
   watermarkPages: {
     kind: 'watermarkPages',
     display: 'image',
-    // THE FIRST COMMAND THAT IS NOT `mupdf`, and the writer is not a choice
-    // made here: §3's matrix at ARCHITECTURE.md:381 assigns "drawing onto pages
-    // (watermark, headers/footers, Bates, OCR text layer)" to @cantoo/pdf-lib
-    // by name. What ADR-0039 settles is how a byte-image writer's session is
-    // obtained and what becomes of its result, not which engine draws.
-    writer: 'pdf-lib',
+    // THE MUPDF WRITER, set in the text boxes' faces (ADR-0235, the owner's L3):
+    // it was the first command routed to the pdf-lib byte-image writer, in that
+    // writer's three standard fonts, beside the one typesetter every other
+    // text Monstera draws takes.
+    writer: 'mupdf',
     // NOT INVERTIBLE, and the reason is the same one `deletePages` gives from
     // the other direction: the prior state of a page that has been drawn on is
-    // its whole content stream, which cannot ride in a serialisable inverse.
-    // §4 reserves checkpoints for the exception and this is one — the entry
-    // records `terminal` and undo restores the bytes (ADR-0037).
-    //
-    // The checkpoint is not an extra cost here. It IS the input image: a
-    // byte-image `apply` consumes the document's current bytes, and the
-    // serialise that produces them is the one the bus already performs for
-    // every terminal entry (ADR-0039).
+    // its whole content stream and the resources the drawing added, which
+    // cannot ride in a serialisable inverse without restoring half of it
+    // (ADR-0235 Decision 4). The entry records `terminal` and undo restores the
+    // bytes (ADR-0037).
     invertible: false,
     undo: 'checkpoint',
-    // AND THAT `false` IS WHAT ADR-0039'S COST ARGUMENT RESTS ON, which the ADR
-    // originally stated backwards. The serialise is paid by
-    // `CommandBus.#sessionFor` for every byte-image command; the checkpoint is
-    // free because `pdfLibWriter.serialise` is the identity on an image already
-    // in hand. So a non-invertible byte-image command pays nothing the bus was
-    // not going to pay, and an invertible one would.
-    //
-    // `commandDeclarations.test.ts` is the trigger, not this comment.
-    // Deliberately NOT a type constraint: §3's matrix assigns form-field
-    // creation to pdf-lib, and that is plausibly invertible.
-    // writes the same content stream. Nothing here mints an identifier, reads a
-    // clock or asks an engine whose version could move — which is the list §3a
-    // names, and each of those is what makes a command `stored-effect`.
-    //
-    // pdf-lib embeds a standard-14 font by name rather than subsetting a file,
-    // so there is no font program whose bytes could differ between runs.
+    // Drawing the same words at the same place writes the same content stream,
+    // and a catalogue face's subset is named by a tag derived from its own bytes
+    // (`fontSubset.ts`' `subsetTag`), so the font program is the same too.
+    // Nothing here mints an identifier, reads a clock or asks an engine whose
+    // version could move — which is the list §3a names. `pageWatermark.test.ts`
+    // applies it twice and compares the bytes.
     reproducible: true,
     replay: 'reapply-intent',
     // Names no second document, so its `apply` takes one session and is
@@ -636,14 +621,10 @@ const declarations = {
   headerFooterPages: {
     kind: 'headerFooterPages',
     display: 'image',
-    // §3's matrix at ARCHITECTURE.md:381 names "drawing onto pages (watermark,
-    // headers/footers, Bates, OCR text layer)" for @cantoo/pdf-lib, so this is
-    // the same assignment `watermarkPages` reads, on the next item in the list.
-    writer: 'pdf-lib',
+    // `watermarkPages`' writer and reason (ADR-0235).
+    writer: 'mupdf',
     // `watermarkPages`' reason unchanged: the prior state of a page that has
-    // been drawn on is its whole content stream. Every command routed to a
-    // byte-image writer is a checkpoint command, and the checkpoint is the
-    // input image the apply already consumes (ADR-0039).
+    // been drawn on is its whole content stream and what the drawing added.
     invertible: false,
     undo: 'checkpoint',
     // Drawing the same slots at the same size onto the same pages writes the
@@ -668,12 +649,10 @@ const declarations = {
   batesNumberPages: {
     kind: 'batesNumberPages',
     display: 'image',
-    // §3's matrix at ARCHITECTURE.md:381 names Bates in the same clause as the
-    // watermark and the headers.
-    writer: 'pdf-lib',
+    // `watermarkPages`' writer and reason (ADR-0235).
+    writer: 'mupdf',
     // Drawn content, so `watermarkPages`' reason unchanged: the prior state is
-    // the page's whole content stream, and the checkpoint is the input image
-    // the apply already consumes (ADR-0039).
+    // the page's whole content stream and what the drawing added.
     invertible: false,
     undo: 'checkpoint',
     // The sequence is a function of `start` and each page's POSITION in the

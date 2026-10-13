@@ -24,6 +24,7 @@ import { Problem } from '../primitives/Problem.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { HeaderFooterAnswer } from './headerFooterResult.js';
 import { PageScopeChoice } from './PageScopeChoice.js';
+import type { ReadFontList } from '../FontPicker.js';
 import { DEFAULT_STAMP_FAMILY, StampFontRow } from './StampFontRow.js';
 
 /** The two edges, in the order a page has them. */
@@ -87,9 +88,11 @@ const DEFAULT_MARGIN = '36';
  */
 export default function HeaderFooterBody({
   pages,
+  fonts,
   resolve,
 }: {
   readonly pages: readonly number[];
+  readonly fonts?: ReadFontList | undefined;
 } & DialogAnswering<HeaderFooterAnswer>): ReactElement {
   const { _ } = useLingui();
   const [slots, setSlots] = useState<Slots>(EMPTY_SLOTS);
@@ -138,7 +141,7 @@ export default function HeaderFooterBody({
         </div>
       ))}
       <p className="m-header-footer__tokens">{_(HEADER_FOOTER_TOKENS, { page: STAMP_TOKENS.page, count: STAMP_TOKENS.count })}</p>
-      <StampFontRow value={family} onPick={setFamily} />
+      <StampFontRow fonts={fonts} value={family} onPick={setFamily} />
       <div ref={sizeRef}>
         <DialogRow label={HEADER_FOOTER_SIZE}>
           <Input

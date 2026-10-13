@@ -640,13 +640,9 @@ export { breaksSignatures } from './signatureKeeping.js';
 export type { RequestTimestamp, SignatureHost } from './documentSign.js';
 export type { PlaceholderRequest, PreparedSignature } from './signatureHole.js';
 export { serialiseIntoFile } from './checkpointFile.js';
-export {
-  applyWatermarkPages,
-  captureWatermarkPages,
-  invertWatermarkPages,
-} from './pageWatermark.js';
-// ON THE BARREL for `watermarkPages`' reason, and it is the first FORM command
-// that may be: the other three route to MuPDF and live behind
+// ON THE BARREL because it is a pdf-lib command and binds nothing native (the page stamps were the first such, until
+// ADR-0235 moved them to the MuPDF writer and behind `@monstera/kernel/engine`). The other three form commands route to
+// MuPDF and live behind
 // `@monstera/kernel/engine`. The import check this file states holds —
 // `formFieldCreate.ts` reaches `@cantoo/pdf-lib`, the contract, `@monstera/shared`
 // and `pdfLibSession.ts`, and none of those binds native code.
@@ -699,16 +695,6 @@ export {
   shownPageNumber,
   tocPageCount,
 } from './pageToc.js';
-export {
-  applyBatesNumberPages,
-  applyHeaderFooterPages,
-  batesIdentifier,
-  captureBatesNumberPages,
-  captureHeaderFooterPages,
-  invertBatesNumberPages,
-  invertHeaderFooterPages,
-  resolveStampTokens,
-} from './pageStamp.js';
 export { type PageScope, pagesOf } from './pageScope.js';
 // ON THE BARREL, and it binds no engine: `node:crypto`, `node:fs`,
 // `node:stream` and `fetch`. Its caller is `main`, which imports this file, and

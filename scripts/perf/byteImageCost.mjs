@@ -1,6 +1,7 @@
 // @ts-check
 /**
- * What the byte-image commands cost on a document with many objects — eight since 2026-09-27.
+ * What the byte-image commands cost on a document with many objects — eight from 2026-09-27, five since the page
+ * stamps moved to the MuPDF writer (ADR-0235).
  *
  * ## The finding this exists to size
  *
@@ -24,6 +25,9 @@
  * reading) create form field and the OCR text layer — and the memory gate could
  * never have shown it: `budgetGate.mjs` measures **peak RSS**, and both of its
  * fixtures were chosen for memory shapes rather than for the axis this costs on.
+ * The first three left the byte-image path with ADR-0235, so their rows are gone
+ * from what this script runs; their readings stay in the table below as the
+ * record of what they cost when they were on it.
  *
  * **EVERY FIGURE HERE IS A `load` PLUS A `save`, AND THERE IS A SECOND SAVE.**
  * Measured 2026-09-07 by `scripts/research/incrementalSaveCost.mjs`: the same
@@ -40,7 +44,7 @@
  * It measures, and it holds a **regression** bound — not a budget. The
  * difference is the whole of its scope: *nothing here may get quietly worse* is
  * a fact-keeper, and *these rows may not cost this much* is a design decision
- * that belongs in an ADR. Whether the eight can leave the byte-image path at all,
+ * that belongs in an ADR. Whether the rest can leave the byte-image path at all,
  * given ADR-0039 exists because MuPDF's writer cannot draw what they draw, is
  * not decided here and is not decidable from a timing.
  *
@@ -88,14 +92,11 @@ import { statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 
 import {
-  applyBatesNumberPages,
   applyCreateFormField,
   applyGenerateToc,
   applyOcrPage,
-  applyHeaderFooterPages,
   applyInsertImagePage,
   applySetPageBackground,
-  applyWatermarkPages,
   declaredCommands,
 } from '@monstera/kernel';
 import { PDFDocument } from '@cantoo/pdf-lib';
@@ -168,49 +169,6 @@ const OUTLINE = [
  * @type {Array<{ kind: string, run: (image: Uint8Array) => Promise<Uint8Array> }>}
  */
 const COMMANDS = [
-  {
-    kind: 'watermarkPages',
-    run: (image) =>
-      applyWatermarkPages(image, {
-        kind: 'watermarkPages',
-        pages: 'all',
-        text: 'DRAFT',
-        opacity: 0.3,
-        rotationDegrees: 45,
-        family: 'Helvetica',
-        fontSize: 48,
-      }),
-  },
-  {
-    kind: 'headerFooterPages',
-    run: (image) =>
-      applyHeaderFooterPages(image, {
-        kind: 'headerFooterPages',
-        pages: 'all',
-        header: { left: 'Left', centre: 'Centre', right: 'Right' },
-        footer: { left: '', centre: 'Page {n} of {total}', right: '' },
-        family: 'Helvetica',
-        fontSize: 10,
-        marginPoints: 24,
-      }),
-  },
-  {
-    kind: 'batesNumberPages',
-    run: (image) =>
-      applyBatesNumberPages(image, {
-        kind: 'batesNumberPages',
-        pages: 'all',
-        prefix: 'MON',
-        suffix: '',
-        start: 1,
-        digits: 6,
-        edge: 'footer',
-        slot: 'right',
-        family: 'Helvetica',
-        fontSize: 10,
-        marginPoints: 24,
-      }),
-  },
   {
     kind: 'setPageBackground',
     run: (image) =>

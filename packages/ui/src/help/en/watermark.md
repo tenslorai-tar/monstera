@@ -12,7 +12,7 @@ A watermark is text drawn across the page, such as DRAFT, usually faint and at a
 
 1. In the rail, choose **Organize**, then **Watermark…** in the **Marks** group.
 2. Type the **Text**.
-3. Set **Opacity (%)**, **Angle (degrees)** and **Size (points)**, or leave them empty for the defaults. Choose a **Font**: Helvetica, Times or Courier, the fonts every PDF reader has.
+3. Set **Opacity (%)**, **Angle (degrees)** and **Size (points)**, or leave them empty for the defaults. Choose a **Font**: Helvetica, Times or Courier, which every PDF reader has, or any font on this computer. A font from this computer is saved inside the PDF, only the letters you used, so the watermark looks the same wherever the file is opened.
 4. Choose **This page** or **All pages**, then **Add watermark**.
 
 ![The Watermark window with Text, Opacity, Angle and Size](screenshot:watermark-1)

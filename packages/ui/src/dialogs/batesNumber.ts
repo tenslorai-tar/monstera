@@ -1,3 +1,4 @@
+import { listedFontFamiliesSchema } from '@monstera/contract';
 import { lazy } from 'react';
 import { z } from 'zod';
 
@@ -21,6 +22,8 @@ export const BATES_NUMBER_DIALOG = declareDialog({
     .object({
       /** The command's `targetPages`, for the scope's first choice (ADR-0104). */
       pages: TARGET_PAGES,
+      /** The fonts `app.fontFamilies` answered when the dialog opened; absent where the read failed (ADR-0235). */
+      fonts: listedFontFamiliesSchema.optional(),
     })
     .strict(),
   result: BATES_NUMBER_RESULT,

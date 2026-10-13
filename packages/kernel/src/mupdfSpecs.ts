@@ -123,6 +123,15 @@ import {
   invertReplacePage,
 } from './pageMerge.js';
 import { applyDeskewPages, captureDeskewPages, invertDeskewPages } from './pageDeskew.js';
+import {
+  applyBatesNumberPages,
+  applyHeaderFooterPages,
+  captureBatesNumberPages,
+  captureHeaderFooterPages,
+  invertBatesNumberPages,
+  invertHeaderFooterPages,
+} from './pageStamp.js';
+import { applyWatermarkPages, captureWatermarkPages, invertWatermarkPages } from './pageWatermark.js';
 import { applyEnhancePages, captureEnhancePages, invertEnhancePages } from './pageEnhance.js';
 import { applyStraightenScans, captureStraightenScans, invertStraightenScans } from './pageScan.js';
 import { applyResizePages, captureResizePages, invertResizePages } from './pageResize.js';
@@ -237,6 +246,26 @@ export const mupdfSpecs = {
     apply: applyDeskewPages,
     capture: captureDeskewPages,
     invert: invertDeskewPages,
+  },
+  // THE PAGE STAMPS, set in the text boxes' faces (ADR-0235). Each invert is UNREACHABLE BY THE TYPE and required by the
+  // table's shape: its prior state is `never`, so undo restores the checkpoint.
+  watermarkPages: {
+    ...declaredCommands.watermarkPages,
+    apply: applyWatermarkPages,
+    capture: captureWatermarkPages,
+    invert: invertWatermarkPages,
+  },
+  headerFooterPages: {
+    ...declaredCommands.headerFooterPages,
+    apply: applyHeaderFooterPages,
+    capture: captureHeaderFooterPages,
+    invert: invertHeaderFooterPages,
+  },
+  batesNumberPages: {
+    ...declaredCommands.batesNumberPages,
+    apply: applyBatesNumberPages,
+    capture: captureBatesNumberPages,
+    invert: invertBatesNumberPages,
   },
   // THE FIRST COMMAND THAT REWRITES AN IMAGE rather than a page attribute or a
   // content stream. Its writer is MuPDF for the same reason `deskewPages`' is: the

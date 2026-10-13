@@ -526,7 +526,7 @@ await step('16. E4 and N13: the text box from step 13 made bold and justified in
   };
 });
 
-await step('17. D1: a watermark set in Courier, chosen in the Watermark window’s font picker', async () => {
+await step('17. D1 and L3: a watermark set in Courier New, one of this computer’s fonts, chosen in the Watermark window’s font picker', async () => {
   await section('Organize');
   await command('Watermark…');
   const dialog = page.getByRole('dialog', { name: 'Watermark' });
@@ -539,7 +539,10 @@ await step('17. D1: a watermark set in Courier, chosen in the Watermark window�
   const typed = { value: await field.inputValue(), ms: Date.now() - opened };
   await dialog.getByRole('button', { name: 'Font: Helvetica' }).click();
   const offered = await dialog.locator('[data-font-choice]').evaluateAll((each) => [...new Set(each.map((node) => node.getAttribute('data-font-choice')))]);
-  await dialog.locator('[data-font-choice="Courier"]').first().click();
+  // A COMPUTER'S FONT (L3, ADR-0235): until the stamps moved to the MuPDF writer the row offered the three built in alone,
+  // so Courier New is a family only the new route can set. Step 19 reads it back from the saved file.
+  expect(offered).toContain('Courier New');
+  await dialog.locator('[data-font-choice="Courier New"]').first().click();
   const picked = { value: await field.inputValue(), ms: Date.now() - opened };
   // THE WORDS MUST STILL BE THERE after the font is chosen: a font pick that emptied the text would otherwise show only as
   // "needs some text" on the button below, two steps from its cause.
@@ -567,7 +570,7 @@ await step('18. D1: Insert from Markdown at the end, its prose set in Times New 
 });
 
 const stampedSaved = join(output, 'stamped.pdf');
-await step('19. saved: step 15’s bold Times New Roman, the dashed border, the Courier watermark and the inserted pages are in the file', async () => {
+await step('19. saved: step 15’s bold Times New Roman, the dashed border, the Courier New watermark and the inserted pages are in the file', async () => {
   await saveTo(stampedSaved);
   await command('Save a copy');
   await expect.poll(() => existsSync(stampedSaved), { timeout: 30_000 }).toBe(true);
@@ -578,6 +581,8 @@ await step('19. saved: step 15’s bold Times New Roman, the dashed border, the 
   // AND STEP 16'S BOX: dashed, and bold and justified as the file's own style strings say, read by pdf-lib (N13).
   const boxes = await savedBorderStyles(stampedSaved);
   expect(boxes.some((box) => box.style === 'D' && /bold/iu.test(box.ds + box.rc) && /justify/iu.test(box.ds + box.rc))).toBe(true);
+  // AND STEP 17'S WATERMARK, in the computer's Courier New rather than the built-in Courier it was set in before L3.
+  expect(pageFonts.some((name) => /Courier\s*New/iu.test(name))).toBe(true);
   return {
     pageFonts,
     textBoxBorders: boxes,

@@ -10,9 +10,11 @@ import { mupdfWriter, withDocument } from './mupdfWriter.js';
 // positive control — *the decoder reads a string the fixture really shows* —
 // stays here, because what is known-present is a property of this fixture.
 import { contentOf, shownOn } from './shownText.js';
+import type { MupdfSession } from './engineSeam.js';
+import { appliedTo } from './mupdfAppliedBytes.js';
 import {
-  applyBatesNumberPages,
-  applyHeaderFooterPages,
+  applyBatesNumberPages as applyBatesNumberOnSession,
+  applyHeaderFooterPages as applyHeaderFooterOnSession,
   batesIdentifier,
   captureBatesNumberPages,
   captureHeaderFooterPages,
@@ -20,6 +22,23 @@ import {
   invertHeaderFooterPages,
   resolveStampTokens,
 } from './pageStamp.js';
+
+// THE MUPDF WRITER'S APPLIES, run on bytes (ADR-0235): each case reads the result back from the bytes, as it did when the
+// writer was pdf-lib's.
+const applyHeaderFooterPages = (image: Uint8Array, command: CommandOfKind<'headerFooterPages'>): Promise<Uint8Array> =>
+  appliedTo(image, applyHeaderFooterOnSession, command);
+const applyBatesNumberPages = (image: Uint8Array, command: CommandOfKind<'batesNumberPages'>): Promise<Uint8Array> =>
+  appliedTo(image, applyBatesNumberOnSession, command);
+
+/** A capture asked as the bus asks it, on a session of `image`. */
+async function capturedOn<C, R>(image: Uint8Array, capture: (session: MupdfSession, command: C) => Promise<R>, command: C): Promise<R> {
+  const session = await mupdfWriter.open(image);
+  try {
+    return await capture(session, command);
+  } finally {
+    await mupdfWriter.close(session);
+  }
+}
 
 /**
  * Headers and footers, read back through **MuPDF** — a different library from
@@ -249,14 +268,14 @@ describe('headerFooterPages', () => {
   });
 
   it('capture always refuses, and names why', async () => {
-    const captured = await captureHeaderFooterPages(STAMP);
+    const captured = await capturedOn(await sizedDocument(), captureHeaderFooterPages, STAMP);
     expect(captured.captured).toBe(false);
     if (captured.captured) throw new Error('capture reported success, which its type forbids');
     expect(captured.reason).toMatch(/content stream/u);
   });
 
   it('invert is unreachable and says so rather than corrupting a document', () => {
-    expect(() => invertHeaderFooterPages(new Uint8Array(), undefined as never)).toThrow(
+    expect(() => invertHeaderFooterPages(undefined as never, undefined as never)).toThrow(
       /no inverse/u,
     );
   });
@@ -372,12 +391,12 @@ describe('batesNumberPages', () => {
   });
 
   it('capture always refuses, and invert is unreachable', async () => {
-    const captured = await captureBatesNumberPages(BATES);
+    const captured = await capturedOn(await sizedDocument(), captureBatesNumberPages, BATES);
     expect(captured.captured).toBe(false);
     if (captured.captured) throw new Error('capture reported success, which its type forbids');
     expect(captured.reason).toMatch(/content stream/u);
 
-    expect(() => invertBatesNumberPages(new Uint8Array(), undefined as never)).toThrow(
+    expect(() => invertBatesNumberPages(undefined as never, undefined as never)).toThrow(
       /no inverse/u,
     );
   });

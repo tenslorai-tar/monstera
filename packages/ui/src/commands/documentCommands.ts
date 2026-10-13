@@ -104,6 +104,7 @@ import { OPTIMIZE_DIALOG_ID, type OptimizeAnswer } from '../dialogs/optimize.js'
 import type { TrackTask } from '../runningTask.js';
 import { withWorkProgress } from './workProgress.js';
 import { PDFA_LEVEL_DIALOG_ID, PDFA_LEVEL_OF, PDFA_LEVEL_RESULT } from '../dialogs/pdfaLevel.js';
+import { fontListOf } from '../fontList.js';
 import { PDFA_REMOVALS_DIALOG_ID } from '../dialogs/pdfaRemovals.js';
 import { OCR_OUTCOME_DIALOG_ID, type RecognisedWalk } from '../dialogs/ocrOutcome.js';
 import type { ScanReader } from '../dialogs/scanReader.js';
@@ -1818,7 +1819,9 @@ export function headerFooterCommand(deps: DocumentCommandDeps): UiCommand {
     run: async (context): Promise<void> => {
       const pages = targetPages(context);
       if (context.docId === undefined || pages.length === 0) return;
-      const answer = (await deps.ask(HEADER_FOOTER_DIALOG_ID, { pages: [...pages] })) as
+      // THE COMPUTER'S FONTS, the session's one held list (ADR-0235): a stamp is set in the text boxes' faces.
+      const fonts = await fontListOf(deps.client);
+      const answer = (await deps.ask(HEADER_FOOTER_DIALOG_ID, { pages: [...pages], fonts })) as
         | HeaderFooterAnswer
         | undefined;
       if (answer === undefined) return;
@@ -1857,7 +1860,8 @@ export function batesNumberCommand(deps: DocumentCommandDeps): UiCommand {
     run: async (context): Promise<void> => {
       const pages = targetPages(context);
       if (context.docId === undefined || pages.length === 0) return;
-      const answer = (await deps.ask(BATES_NUMBER_DIALOG_ID, { pages: [...pages] })) as
+      const fonts = await fontListOf(deps.client);
+      const answer = (await deps.ask(BATES_NUMBER_DIALOG_ID, { pages: [...pages], fonts })) as
         | BatesNumberAnswer
         | undefined;
       if (answer === undefined) return;
@@ -2330,7 +2334,8 @@ export function watermarkPagesCommand(deps: DocumentCommandDeps): UiCommand {
     run: async (context): Promise<void> => {
       const pages = targetPages(context);
       if (context.docId === undefined || pages.length === 0) return;
-      const answer = (await deps.ask(WATERMARK_PAGES_DIALOG_ID, { pages: [...pages] })) as
+      const fonts = await fontListOf(deps.client);
+      const answer = (await deps.ask(WATERMARK_PAGES_DIALOG_ID, { pages: [...pages], fonts })) as
         | WatermarkPagesAnswer
         | undefined;
       if (answer === undefined) return;

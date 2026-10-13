@@ -21,6 +21,7 @@ import { Input } from '../primitives/Input.js';
 import { Problem } from '../primitives/Problem.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import { PageScopeChoice } from './PageScopeChoice.js';
+import type { ReadFontList } from '../FontPicker.js';
 import { DEFAULT_STAMP_FAMILY, StampFontRow } from './StampFontRow.js';
 import type { WatermarkPagesAnswer } from './watermarkPagesResult.js';
 
@@ -80,9 +81,11 @@ const DEFAULTS: Appearance = {
  */
 export default function WatermarkPagesBody({
   pages,
+  fonts,
   resolve,
 }: {
   readonly pages: readonly number[];
+  readonly fonts?: ReadFontList | undefined;
 } & DialogAnswering<WatermarkPagesAnswer>): ReactElement {
   const { _ } = useLingui();
   const [text, setText] = useState('');
@@ -149,7 +152,7 @@ export default function WatermarkPagesBody({
           />
         </DialogRow>
       </div>
-      <StampFontRow value={family} onPick={setFamily} />
+      <StampFontRow fonts={fonts} value={family} onPick={setFamily} />
       <div ref={sizeField}>
         <DialogRow label={WATERMARK_PAGES_SIZE}>
           <Input

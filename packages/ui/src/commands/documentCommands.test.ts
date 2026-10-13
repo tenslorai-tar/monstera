@@ -170,6 +170,19 @@ import type { SourceCommandDeps } from './sourceDocuments.js';
 
 const DOC = asDocId('doc-1');
 
+/**
+ * This computer's fonts as `app.fontFamilies` answers them, which the three stamp dialogs read before they open
+ * (ADR-0235): one installed family, so a dialog handed the unread list instead fails the case that asserts it.
+ */
+const FONTS = {
+  listed: true,
+  families: [{ name: 'Noto Sans', origin: 'installed', embedding: 'subset', bold: true, italic: true }],
+  more: 0,
+} as const;
+
+/** The read every stamp command makes first, before its dialog opens. */
+const FONT_READ = { id: 'app.fontFamilies', params: {} } as const;
+
 /** The handle a faked write answers for what it wrote (the contract's `WRITTEN`). */
 const WRITTEN = asFileHandle('Handle-written-by-the-fake');
 
@@ -1115,25 +1128,30 @@ describe('delete pages — the mutation-dialog gate', () => {
     // is given, and this proves the control sends the one the person chose; the
     // conversion lives in one named function in the body so the two halves
     // cannot hold different numbers without that function changing.
-    const { client, sent } = recording();
+    const { client, sent } = recording({ 'app.fontFamilies': FONTS });
+    const asked: unknown[] = [];
 
     await watermarkPagesCommand({
       client,
       stamp,
       signatures,
       onApplied: () => undefined,
-      ask: () =>
-        Promise.resolve({
+      ask: (_id, props) => {
+        asked.push(props);
+        return Promise.resolve({
           pages: 'all',
           text: 'DRAFT',
           opacity: 0.3,
           rotationDegrees: 45,
           family: 'Times',
           fontSize: 48,
-        }),
+        });
+      },
     }).run(CONTEXT);
 
+    expect(asked).toStrictEqual([expect.objectContaining({ fonts: FONTS })]);
     expect(sent).toStrictEqual([
+      FONT_READ,
       {
         id: 'document.execute',
         params: {
@@ -1159,25 +1177,30 @@ describe('delete pages — the mutation-dialog gate', () => {
     // itself would send "Page 1 of 3" and every page would say 1 — and the
     // kernel proof would stay green, because it would be given exactly what it
     // was asked to draw.
-    const { client, sent } = recording();
+    const { client, sent } = recording({ 'app.fontFamilies': FONTS });
+    const asked: unknown[] = [];
 
     await headerFooterCommand({
       client,
       stamp,
       signatures,
       onApplied: () => undefined,
-      ask: () =>
-        Promise.resolve({
+      ask: (_id, props) => {
+        asked.push(props);
+        return Promise.resolve({
           pages: 'all',
           header: { left: 'Monstera', centre: '', right: '' },
           footer: { left: '', centre: 'Page {n} of {N}', right: '' },
           family: 'Courier',
           fontSize: 10,
           marginPoints: 36,
-        }),
+        });
+      },
     }).run(CONTEXT);
 
+    expect(asked).toStrictEqual([expect.objectContaining({ fonts: FONTS })]);
     expect(sent).toStrictEqual([
+      FONT_READ,
       {
         id: 'document.execute',
         params: {
@@ -2379,15 +2402,17 @@ describe('delete pages — the mutation-dialog gate', () => {
     // would stamp "ABC-0431" on every page — the sequence would stop being a
     // sequence, and `pageStamp.test.ts` would stay green because it would be
     // given exactly what it was asked to draw.
-    const { client, sent } = recording();
+    const { client, sent } = recording({ 'app.fontFamilies': FONTS });
+    const asked: unknown[] = [];
 
     await batesNumberCommand({
       client,
       stamp,
       signatures,
       onApplied: () => undefined,
-      ask: () =>
-        Promise.resolve({
+      ask: (_id, props) => {
+        asked.push(props);
+        return Promise.resolve({
           pages: 'all',
           prefix: 'ABC-',
           suffix: '',
@@ -2398,10 +2423,13 @@ describe('delete pages — the mutation-dialog gate', () => {
           family: 'Times',
           fontSize: 9,
           marginPoints: 36,
-        }),
+        });
+      },
     }).run(CONTEXT);
 
+    expect(asked).toStrictEqual([expect.objectContaining({ fonts: FONTS })]);
     expect(sent).toStrictEqual([
+      FONT_READ,
       {
         id: 'document.execute',
         params: {
@@ -4766,7 +4794,8 @@ describe('delete pages — the mutation-dialog gate', () => {
       ask: () => Promise.resolve(undefined),
     }).run(CONTEXT);
 
-    expect(sent).toStrictEqual([]);
+    // THE FONT LIST IS READ for the dialog to offer, and nothing is executed.
+    expect(sent).toStrictEqual([FONT_READ]);
   });
 
   it('CONTROL: a DISMISSED header-and-footer dialog dispatches nothing', async () => {
@@ -4780,7 +4809,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       ask: () => Promise.resolve(undefined),
     }).run(CONTEXT);
 
-    expect(sent).toStrictEqual([]);
+    expect(sent).toStrictEqual([FONT_READ]);
   });
 
   it('CONTROL: a DISMISSED watermark dialog dispatches nothing', async () => {
@@ -4797,7 +4826,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       ask: () => Promise.resolve(undefined),
     }).run(CONTEXT);
 
-    expect(sent).toStrictEqual([]);
+    expect(sent).toStrictEqual([FONT_READ]);
   });
 
   it('THE DUPLICATE FINDER READS FIRST, then deletes the pages the dialog chose', async () => {
@@ -6485,7 +6514,9 @@ describe('protectDocumentCommand', () => {
 describe('applyDocumentCommand stamps a creation command at the moment it is sent (ADR-0103)', () => {
   function sending(): { readonly client: ContractClient; readonly sent: unknown[] } {
     const sent: unknown[] = [];
-    const client = createClient(channels, (_id, params) => {
+    const client = createClient(channels, (id, params) => {
+      // THE COMMANDS SENT, and nothing a command READS first: a stamp dialog reads the font list before it opens.
+      if (id === 'app.fontFamilies') return Promise.resolve(ok(FONTS));
       sent.push((params as { command: unknown }).command);
       return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
     });
@@ -6665,14 +6696,15 @@ describe('applyDocumentCommand stamps a creation command at the moment it is sen
       expect(inserted.sent).toStrictEqual([{ kind: 'insertBlankPage', at, count: at + 1 }]);
 
       // EVERY PAGE DIALOG is opened with the same pages; a dismissal sends nothing, so only the props are read.
-      for (const factory of [
-        cropPagesCommand,
-        resizePagesCommand,
-        headerFooterCommand,
-        batesNumberCommand,
-        watermarkPagesCommand,
-        pageTransitionCommand,
-      ]) {
+      for (const [factory, also] of [
+        [cropPagesCommand, {}],
+        [resizePagesCommand, {}],
+        // THE STAMP DIALOGS also carry this computer's fonts (ADR-0235).
+        [headerFooterCommand, { fonts: FONTS }],
+        [batesNumberCommand, { fonts: FONTS }],
+        [watermarkPagesCommand, { fonts: FONTS }],
+        [pageTransitionCommand, {}],
+      ] as const) {
         const opened: unknown[] = [];
         const quiet = sending();
         await factory({
@@ -6686,7 +6718,7 @@ describe('applyDocumentCommand stamps a creation command at the moment it is sen
           stamp,
           signatures,
         }).run(context);
-        expect(opened).toStrictEqual([{ pages }]);
+        expect(opened).toStrictEqual([{ pages, ...also }]);
         expect(quiet.sent).toStrictEqual([]);
       }
 

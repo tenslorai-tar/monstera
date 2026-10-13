@@ -35,19 +35,6 @@ import {
 } from './formFieldEdit.js';
 import { applyOcrPage, captureOcrPage, invertOcrPage } from './ocrTextLayer.js';
 import { applyGenerateToc, captureGenerateToc, invertGenerateToc } from './pageToc.js';
-import {
-  applyBatesNumberPages,
-  applyHeaderFooterPages,
-  captureBatesNumberPages,
-  captureHeaderFooterPages,
-  invertBatesNumberPages,
-  invertHeaderFooterPages,
-} from './pageStamp.js';
-import {
-  applyWatermarkPages,
-  captureWatermarkPages,
-  invertWatermarkPages,
-} from './pageWatermark.js';
 
 /**
  * `@cantoo/pdf-lib` as a writer of record — **the first byte-image adapter**
@@ -105,38 +92,19 @@ export const pdfLibWriter: EngineWriter<ByteImage> = {
 /**
  * The pdf-lib half of the routing table.
  *
- * Deliberately **unannotated**: a `CommandSpec<'watermarkPages'>` annotation
+ * Deliberately **unannotated**: a `CommandSpec<'setPageBackground'>` annotation
  * would widen `writer` to the whole union and lose the binding of `apply` to
  * this writer's session type, which is the property ADR-0009 §6 spends
  * `WriterBinding` on. It is checked where it is used — `commandSpecs.ts`
  * spreads it into an object carrying `satisfies CommandSpecs`, so a wrong
  * `apply` shape here is a compile error there.
+ *
+ * The watermark, the headers and footers and the Bates number were here until ADR-0235 moved them to the MuPDF writer.
  */
 export const pdfLibSpecs = {
-  watermarkPages: {
+  setPageBackground: {
     // SPREAD, never restated — `commandDeclarations.ts` is where a command is
     // declared and this layer adds the doing of it (ADR-0026).
-    ...declaredCommands.watermarkPages,
-    apply: applyWatermarkPages,
-    capture: captureWatermarkPages,
-    // UNREACHABLE BY THE TYPE and required by the table's shape, exactly as
-    // `invertDeletePages` is: `CommandPrior['watermarkPages']` is `never`, so
-    // nothing can build an argument for it.
-    invert: invertWatermarkPages,
-  },
-  headerFooterPages: {
-    ...declaredCommands.headerFooterPages,
-    apply: applyHeaderFooterPages,
-    capture: captureHeaderFooterPages,
-    invert: invertHeaderFooterPages,
-  },
-  batesNumberPages: {
-    ...declaredCommands.batesNumberPages,
-    apply: applyBatesNumberPages,
-    capture: captureBatesNumberPages,
-    invert: invertBatesNumberPages,
-  },
-  setPageBackground: {
     ...declaredCommands.setPageBackground,
     apply: applySetPageBackground,
     capture: captureSetPageBackground,

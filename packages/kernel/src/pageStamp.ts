@@ -1,16 +1,16 @@
-import { StandardFonts, rgb } from '@cantoo/pdf-lib';
-import type { CommandOfKind, StampFamily } from '@monstera/contract';
+import type { CommandOfKind } from '@monstera/contract';
 import { STAMP_TOKENS } from '@monstera/contract/host';
 
-import type { CaptureResult } from './commandLog.js';
-import type { Apply, Invert } from './engineSeam.js';
+import type { Apply, Capture, Invert } from './engineSeam.js';
+import { withDocument } from './mupdfWriter.js';
 import { pageInDocument, pagesOf } from './pageScope.js';
-import { pageFrame, upright } from './pdfLibFrame.js';
-import { appendRevision, openForWriting } from './pdfLibSession.js';
+import { PageStamps } from './pageStampDraw.js';
 
 /**
- * Headers and footers — **the second command routed to a byte-image writer**,
- * and the one that says whether `pageWatermark.ts` should have been abstracted.
+ * Headers and footers, and the Bates number — drawn by the MuPDF writer in the text boxes' faces since
+ * [ADR-0235](../../../docs/DECISIONS/0235-stamps-are-drawn-by-the-mupdf-writer-in-the-text-boxes-faces.md) (the owner's
+ * L3), where they were the second command routed to the pdf-lib byte-image writer. What they share with the watermark is
+ * `PageStamps`: setting words and appending the drawing. What follows is why the GEOMETRY stays each command's own.
  *
  * ## It should not have been, and the reason is in the geometry
  *
@@ -55,7 +55,7 @@ import { appendRevision, openForWriting } from './pdfLibSession.js';
  * `pageWatermark.ts`'s reason: §10.2's rule is about components, and this is
  * content written into a file other readers will open.
  */
-const STAMP_BLACK = rgb(0, 0, 0);
+const STAMP_BLACK = 0;
 
 /** The three horizontal positions one edge carries, in reading order. */
 const SLOTS = ['left', 'centre', 'right'] as const;
@@ -97,9 +97,7 @@ const STAMP_TOKEN_PATTERN = new RegExp(
  * no constructible `{ captured: true }` member and this could not report
  * success even if it were written to.
  */
-export const captureHeaderFooterPages: (
-  command: CommandOfKind<'headerFooterPages'>,
-) => Promise<CaptureResult<never>> = (_command) =>
+export const captureHeaderFooterPages: Capture<'mupdf', 'headerFooterPages'> = (_session, _command) =>
   Promise.resolve({
     captured: false,
     reason:
@@ -109,24 +107,14 @@ export const captureHeaderFooterPages: (
   });
 
 /** Invert — unreachable by the type, present because the table's shape requires it. */
-export const invertHeaderFooterPages: Invert<'pdf-lib', 'headerFooterPages'> = (
-  _image,
+export const invertHeaderFooterPages: Invert<'mupdf', 'headerFooterPages'> = (
+  _session,
   _inverse,
 ) => {
   throw new Error(
     'headerFooterPages has no inverse and this is unreachable: its prior state is `never`, so ' +
       'no caller can build an argument for it. Undo restores the checkpoint the bus took.',
   );
-};
-
-/**
- * The standard font each stamp family is set in (the TEXT spec's D1): the one map the watermark, the header and footer
- * and the Bates number take, so the three cannot set one family in two faces (B3a).
- */
-export const STAMP_FONT: Readonly<Record<StampFamily, StandardFonts>> = {
-  Helvetica: StandardFonts.Helvetica,
-  Times: StandardFonts.TimesRoman,
-  Courier: StandardFonts.Courier,
 };
 
 /**
@@ -149,61 +137,37 @@ export const STAMP_FONT: Readonly<Record<StampFamily, StandardFonts>> = {
  * empty slot is skipped.
  */
 
-export const applyHeaderFooterPages: Apply<'pdf-lib', 'headerFooterPages'> = async (
-  image,
-  command,
-) => {
-  const document = await openForWriting(image);
-  const pages = document.getPages();
-  const targets = pagesOf(command.pages, pages.length);
+export const applyHeaderFooterPages: Apply<'mupdf', 'headerFooterPages'> = (session, command) =>
+  withDocument(session, (document) => {
+    const total = document.countPages();
+    const targets = pagesOf(command.pages, total);
 
-  // EVERY PAGE VALIDATED BEFORE THE FIRST IS DRAWN, for `pageCrop.ts`'s reason:
-  // a command naming one page this document does not have changes nothing.
-  for (const page of targets) {
-    pageInDocument(page, pages.length);
-  }
+    // EVERY PAGE VALIDATED BEFORE THE FIRST IS DRAWN, for `pageCrop.ts`'s reason:
+    // a command naming one page this document does not have changes nothing.
+    for (const page of targets) pageInDocument(page, total);
 
-  const font = await document.embedFont(STAMP_FONT[command.family]);
-  const total = pages.length;
+    const stamps = new PageStamps(document, command.family);
+    for (const index of targets) {
+      // THE PAGE AS THE READER SEES IT: its displayed size, and the way from a point on it to user space (CR-COR-01).
+      const { width, height } = stamps.frame(index).viewport;
 
-  for (const index of targets) {
-    const page = pages[index];
-    // NOT REACHABLE — validated above against this same array. The check is
-    // here because `noUncheckedIndexedAccess` is on and a cast would be the one
-    // place this file stopped carrying the property.
-    if (page === undefined) continue;
-    // THE PAGE AS THE READER SEES IT: its displayed size, and the way from a point on it to user space (CR-COR-01).
-    const frame = pageFrame(page, index);
-    const { width, height } = frame.viewport;
+      for (const edge of EDGES) {
+        const fromTop = verticalOrigin(edge, { height, margin: command.marginPoints });
+        for (const slot of SLOTS) {
+          const template = command[edge][slot];
+          if (template.length === 0) continue;
 
-    for (const edge of EDGES) {
-      const fromTop = verticalOrigin(edge, { height, margin: command.marginPoints });
-      for (const slot of SLOTS) {
-        const template = command[edge][slot];
-        if (template.length === 0) continue;
-
-        // PER PAGE, not once. `{n}` differs page to page, so a resolution
-        // hoisted out of this loop stamps page 1's number onto every page — a
-        // defect a single-page fixture cannot see.
-        const text = resolveStampTokens(template, index + 1, total);
-        const x = horizontalOrigin(slot, font.widthOfTextAtSize(text, command.fontSize), {
-          width,
-          margin: command.marginPoints,
-        });
-        page.drawText(text, {
-          ...upright(frame, x, fromTop),
-          size: command.fontSize,
-          font,
-          color: STAMP_BLACK,
-        });
+          // PER PAGE, not once. `{n}` differs page to page, so a resolution
+          // hoisted out of this loop stamps page 1's number onto every page — a
+          // defect a single-page fixture cannot see.
+          const set = stamps.set(resolveStampTokens(template, index + 1, total), command.fontSize);
+          const x = horizontalOrigin(slot, set.width, { width, margin: command.marginPoints });
+          stamps.draw(index, set, command.fontSize, { x, fromTop, turn: 0, grey: STAMP_BLACK, opacity: 1 });
+        }
       }
     }
-  }
-
-  // NO OPTIONS. `updateMetadata` is a **load** option — see `pageWatermark.ts`,
-  // where the measurement behind that sentence is recorded.
-  return appendRevision(document);
-};
+    stamps.finish();
+  });
 
 /**
  * Where a slot's text starts, given how wide it turned out to be.
@@ -270,9 +234,7 @@ export function batesIdentifier(
 /**
  * Capture — which always refuses, exactly as the two above do.
  */
-export const captureBatesNumberPages: (
-  command: CommandOfKind<'batesNumberPages'>,
-) => Promise<CaptureResult<never>> = (_command) =>
+export const captureBatesNumberPages: Capture<'mupdf', 'batesNumberPages'> = (_session, _command) =>
   Promise.resolve({
     captured: false,
     reason:
@@ -282,8 +244,8 @@ export const captureBatesNumberPages: (
   });
 
 /** Invert — unreachable by the type, present because the table's shape requires it. */
-export const invertBatesNumberPages: Invert<'pdf-lib', 'batesNumberPages'> = (
-  _image,
+export const invertBatesNumberPages: Invert<'mupdf', 'batesNumberPages'> = (
+  _session,
   _inverse,
 ) => {
   throw new Error(
@@ -307,40 +269,22 @@ export const invertBatesNumberPages: Invert<'pdf-lib', 'batesNumberPages'> = (
  * `pagesOf` preserves a list verbatim for exactly this kind of reason, and it
  * is stated there.
  */
-export const applyBatesNumberPages: Apply<'pdf-lib', 'batesNumberPages'> = async (
-  image,
-  command,
-) => {
-  const document = await openForWriting(image);
-  const pages = document.getPages();
-  const targets = pagesOf(command.pages, pages.length);
+export const applyBatesNumberPages: Apply<'mupdf', 'batesNumberPages'> = (session, command) =>
+  withDocument(session, (document) => {
+    const total = document.countPages();
+    const targets = pagesOf(command.pages, total);
+    for (const page of targets) pageInDocument(page, total);
 
-  for (const page of targets) {
-    pageInDocument(page, pages.length);
-  }
+    const stamps = new PageStamps(document, command.family);
+    for (const [position, index] of targets.entries()) {
+      const { width, height } = stamps.frame(index).viewport;
 
-  const font = await document.embedFont(STAMP_FONT[command.family]);
-
-  for (const [position, index] of targets.entries()) {
-    const page = pages[index];
-    if (page === undefined) continue;
-    const frame = pageFrame(page, index);
-    const { width, height } = frame.viewport;
-
-    // POSITION IN THE SCOPE, not `index`. The two agree for a whole-document
-    // scope starting at page 0, which is every fixture somebody writes first.
-    const text = batesIdentifier(command, command.start + position);
-    const x = horizontalOrigin(command.slot, font.widthOfTextAtSize(text, command.fontSize), {
-      width,
-      margin: command.marginPoints,
-    });
-    page.drawText(text, {
-      ...upright(frame, x, verticalOrigin(command.edge, { height, margin: command.marginPoints })),
-      size: command.fontSize,
-      font,
-      color: STAMP_BLACK,
-    });
-  }
-
-  return appendRevision(document);
-};
+      // POSITION IN THE SCOPE, not `index`. The two agree for a whole-document
+      // scope starting at page 0, which is every fixture somebody writes first.
+      const set = stamps.set(batesIdentifier(command, command.start + position), command.fontSize);
+      const x = horizontalOrigin(command.slot, set.width, { width, margin: command.marginPoints });
+      const fromTop = verticalOrigin(command.edge, { height, margin: command.marginPoints });
+      stamps.draw(index, set, command.fontSize, { x, fromTop, turn: 0, grey: STAMP_BLACK, opacity: 1 });
+    }
+    stamps.finish();
+  });

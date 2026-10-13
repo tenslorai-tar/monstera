@@ -27,6 +27,7 @@ import { SegmentedControl } from '../primitives/SegmentedControl.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { BatesNumberAnswer } from './batesNumberResult.js';
 import { PageScopeChoice } from './PageScopeChoice.js';
+import type { ReadFontList } from '../FontPicker.js';
 import { DEFAULT_STAMP_FAMILY, StampFontRow } from './StampFontRow.js';
 
 /** Where the stamp can sit, as the two axes the command carries. */
@@ -75,9 +76,11 @@ const DEFAULT_MARGIN = '36';
  */
 export default function BatesNumberBody({
   pages,
+  fonts,
   resolve,
 }: {
   readonly pages: readonly number[];
+  readonly fonts?: ReadFontList | undefined;
 } & DialogAnswering<BatesNumberAnswer>): ReactElement {
   const { _ } = useLingui();
   const [prefix, setPrefix] = useState('');
@@ -168,7 +171,7 @@ export default function BatesNumberBody({
           onChange={setSlot}
         />
       </DialogRow>
-      <StampFontRow value={family} onPick={setFamily} />
+      <StampFontRow fonts={fonts} value={family} onPick={setFamily} />
       <PageScopeChoice className="m-bates-number__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
       <Problem message={ready ? undefined : _(BATES_NUMBER_NOT_A_NUMBER)} about={{ within: numbersRef }} />
       <DialogFooter>

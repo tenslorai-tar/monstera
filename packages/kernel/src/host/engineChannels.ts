@@ -1178,6 +1178,10 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   setPageTransitionSchema,
   resizePagesSchema,
   deskewPagesSchema,
+  // THE PAGE STAMPS, the MuPDF writer's since ADR-0235.
+  watermarkPagesSchema,
+  headerFooterPagesSchema,
+  batesNumberPagesSchema,
   enhancePagesSchema,
   straightenScansSchema,
   mergeDocumentSchema,
@@ -1393,9 +1397,6 @@ export type MupdfChannelExcludesEveryOtherKind = Excludes<ChannelKind, KindsRout
  * bytes cross as an asset in the session's snapshot directory.
  */
 const pdfLibCommandSchema = z.discriminatedUnion('kind', [
-  watermarkPagesSchema,
-  headerFooterPagesSchema,
-  batesNumberPagesSchema,
   setPageBackgroundSchema,
   insertImagePageSchema.omit({ bytes: true }),
   createFormFieldSchema,

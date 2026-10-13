@@ -10,7 +10,7 @@
  * 2026-10-08, the result opened with no password at all and its streams inflated to nothing (`zlib error: incorrect header
  * check`). So all eight commands routed to pdf-lib (Watermark, Headers and footers, Bates numbering, Page background,
  * Insert image, a drawn form field, a table of contents, a recognised page's text) either failed or damaged a protected
- * document.
+ * document. The first three have since moved to the MuPDF writer (ADR-0235), which leaves five.
  *
  * ## What runs
  *
@@ -52,7 +52,7 @@ const SAME = 'one-for-both-0220';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 35 });
+const roster = createRoster(failures, { cases: 34 });
 
 /** @param {string} name @param {boolean} held @param {string} detail */
 function check(name, held, detail) {
@@ -222,20 +222,16 @@ async function runCommand(/** @type {any} */ kernel, /** @type {any} */ session,
   }
 }
 
-/** One command per family, with what its result must hold. */
-const COMMANDS = /** @type {const} */ ([
-  ['watermarkPages', { kind: 'watermarkPages', pages: 'all', text: 'DRAFT', opacity: 0.3, rotationDegrees: 45, family: 'Helvetica', fontSize: 36 }, undefined],
-  [
-    'headerFooterPages',
-    { kind: 'headerFooterPages', pages: 'all', header: { left: 'Monstera', centre: '', right: '' }, footer: { left: '', centre: '', right: '' }, family: 'Helvetica', fontSize: 10, marginPoints: 36 },
-    undefined,
-  ],
-  [
-    'batesNumberPages',
-    { kind: 'batesNumberPages', pages: 'all', prefix: 'ABC-', suffix: '', start: 1, digits: 4, edge: 'footer', slot: 'right', family: 'Helvetica', fontSize: 9, marginPoints: 36 },
-    undefined,
-  ],
-]);
+/**
+ * THE COMMAND EVERY CASE BELOW RUNS: a recognised text layer on page 1, which writes words a reader can find and adds no
+ * page, so a case can ask for the words and the page count at once. It was the Watermark until ADR-0235 moved the page
+ * stamps to the MuPDF writer, which writes a protected document as MuPDF does every other edit.
+ */
+const PROBE = /** @type {const} */ ({
+  command: { kind: 'ocrPage', page: 0, languages: ['eng'], engine: 'tesseract' },
+  reads: { lines: [{ text: 'Probed', box: [30, 100, 120, 116], words: [{ text: 'Probed', box: [30, 100, 120, 116] }] }], confidence: 90, languages: ['eng'] },
+  words: 'Probed',
+});
 
 async function main(/** @type {any} */ kernel) {
   process.stdout.write('# A pdf-lib command on a protected document\n\n');
@@ -252,7 +248,7 @@ async function main(/** @type {any} */ kernel) {
     const session = await open(aes256, USER);
     let refused = '';
     try {
-      await kernel.applyPdfLibImage(await kernel.mupdfWriter.serialise(session), COMMANDS[0][1], undefined);
+      await kernel.applyPdfLibImage(await kernel.mupdfWriter.serialise(session), PROBE.command, PROBE.reads);
     } catch (error) {
       refused = String(error);
     }
@@ -260,19 +256,41 @@ async function main(/** @type {any} */ kernel) {
     check('CONTROL: the command run on the protected image, as it was before, is refused by pdf-lib', /encrypted/iu.test(refused), refused.slice(0, 160));
   }
 
-  // THE THREE PAGE STAMPS, each on a document opened with its user password.
-  for (const [name, command, reads] of COMMANDS) {
+  // THE PROBE on a document opened with its user password.
+  {
     const session = await open(aes256, USER);
     try {
-      const result = await runCommand(kernel, session, command, reads);
+      const result = await runCommand(kernel, session, PROBE.command, PROBE.reads);
       const after = read(result, USER);
       const refusedWithout = read(result).access === 0;
       const wrong = read(result, 'not-the-password').access === 0;
-      const words = name === 'watermarkPages' ? 'DRAFT' : name === 'headerFooterPages' ? 'Monstera' : 'ABC-0001';
       check(
-        `${name}: the result opens only with the password, keeps the document's own permissions, and holds what the command wrote`,
-        refusedWithout && wrong && after.access !== 0 && after.encrypted && after.permissions === before.permissions && after.text.includes(words) && after.text.includes('Original words') && !after.canPrint === !before.canPrint,
+        `${PROBE.command.kind}: the result opens only with the password, keeps the document's own permissions, and holds what the command wrote`,
+        refusedWithout && wrong && after.access !== 0 && after.encrypted && after.permissions === before.permissions && after.text.includes(PROBE.words) && after.text.includes('Original words') && !after.canPrint === !before.canPrint,
         JSON.stringify({ refusedWithout, wrong, after: { ...after, text: after.text.slice(0, 80) }, permissions: before.permissions }),
+      );
+    } finally {
+      await kernel.mupdfWriter.close(session);
+    }
+  }
+
+  // THE PAGE STAMPS, which left pdf-lib for the MuPDF writer (ADR-0235): the case that stood here for them now asks the
+  // writer they moved to, so the move cannot have taken their protected-document behaviour with it.
+  {
+    const session = await open(aes256, USER);
+    try {
+      await kernel.localMupdfExecution.apply({
+        session,
+        command: { kind: 'watermarkPages', pages: 'all', text: 'DRAFT', opacity: 0.3, rotationDegrees: 45, family: 'Helvetica', fontSize: 36 },
+        sources: [],
+        reads: undefined,
+      });
+      const stamped = new Uint8Array(await kernel.mupdfWriter.serialise(session));
+      const after = read(stamped, USER);
+      check(
+        'watermarkPages, by the MuPDF writer: the result opens only with the password, keeps the permissions, and holds the stamp',
+        read(stamped).access === 0 && after.access !== 0 && after.encrypted && after.permissions === before.permissions && after.text.includes('DRAFT') && after.text.includes('Original words'),
+        JSON.stringify({ ...after, text: after.text.slice(0, 60) }),
       );
     } finally {
       await kernel.mupdfWriter.close(session);
@@ -379,10 +397,10 @@ async function main(/** @type {any} */ kernel) {
       const file = await protectedFile(kernel, plain, { encryption, userPassword: USER, ownerPassword: OWNER });
       const session = await open(file, USER);
       try {
-        const result = await runCommand(kernel, session, COMMANDS[0][1], undefined);
+        const result = await runCommand(kernel, session, PROBE.command, PROBE.reads);
         const was = read(file, USER);
         const now = read(result, USER);
-        if (!(now.version === was.version && now.access !== 0 && read(result).access === 0 && now.text.includes('DRAFT'))) {
+        if (!(now.version === was.version && now.access !== 0 && read(result).access === 0 && now.text.includes(PROBE.words))) {
           wrong.push(`${encryption}: V ${String(was.version)} -> ${String(now.version)}, access ${String(now.access)}`);
         }
       } finally {
@@ -397,9 +415,9 @@ async function main(/** @type {any} */ kernel) {
     const file = await protectedFile(kernel, plain, { encryption: 'aes-256', userPassword: SAME, ownerPassword: SAME, permissions: ['copy'] });
     const session = await open(file, SAME);
     try {
-      const result = await runCommand(kernel, session, COMMANDS[0][1], undefined);
+      const result = await runCommand(kernel, session, PROBE.command, PROBE.reads);
       const now = read(result, SAME);
-      check('opened with the one password that is both, the result is opened by it as both', now.access === 6 && now.text.includes('DRAFT'), JSON.stringify(now.access));
+      check('opened with the one password that is both, the result is opened by it as both', now.access === 6 && now.text.includes(PROBE.words), JSON.stringify(now.access));
     } finally {
       await kernel.mupdfWriter.close(session);
     }
@@ -415,12 +433,12 @@ async function main(/** @type {any} */ kernel) {
         sources: [],
         reads: undefined,
       });
-      const result = await runCommand(kernel, session, COMMANDS[0][1], undefined);
+      const result = await runCommand(kernel, session, PROBE.command, PROBE.reads);
       const asUser = read(result, USER);
       const asOwner = read(result, OWNER);
       check(
         'protected in this session, both passwords are kept: the user password opens it restricted and the owner password opens it with every right',
-        asUser.access === 2 && !asUser.canPrint && asOwner.access === 4 && asOwner.canPrint && asUser.text.includes('DRAFT'),
+        asUser.access === 2 && !asUser.canPrint && asOwner.access === 4 && asOwner.canPrint && asUser.text.includes(PROBE.words),
         JSON.stringify({ user: asUser.access, owner: asOwner.access, userCanPrint: asUser.canPrint, ownerCanPrint: asOwner.canPrint }),
       );
     } finally {
@@ -434,11 +452,11 @@ async function main(/** @type {any} */ kernel) {
     const was = read(file);
     const session = await open(file);
     try {
-      const result = await runCommand(kernel, session, COMMANDS[0][1], undefined);
+      const result = await runCommand(kernel, session, PROBE.command, PROBE.reads);
       const now = read(result);
       check(
         'a document with an owner password and no password to open it still opens for everybody, with the same rights withheld',
-        was.access === 2 && now.access === 2 && now.permissions === was.permissions && !now.canPrint && now.text.includes('DRAFT'),
+        was.access === 2 && now.access === 2 && now.permissions === was.permissions && !now.canPrint && now.text.includes(PROBE.words),
         JSON.stringify({ was: was.access, now: now.access, permissions: [was.permissions, now.permissions] }),
       );
     } finally {
@@ -452,7 +470,7 @@ async function main(/** @type {any} */ kernel) {
     let refusal = '';
     let wrote = false;
     try {
-      await runCommand(kernel, session, COMMANDS[0][1], undefined);
+      await runCommand(kernel, session, PROBE.command, PROBE.reads);
       wrote = true;
     } catch (error) {
       refusal = error instanceof Error ? error.name : String(error);
@@ -496,9 +514,9 @@ async function main(/** @type {any} */ kernel) {
   {
     const session = await open(plain);
     try {
-      const result = await runCommand(kernel, session, COMMANDS[0][1], undefined);
+      const result = await runCommand(kernel, session, PROBE.command, PROBE.reads);
       const now = read(result);
-      check('CONTROL: an unprotected document comes out unprotected, with the command applied', !now.encrypted && now.access === 1 && now.text.includes('DRAFT'), JSON.stringify({ ...now, text: '' }));
+      check('CONTROL: an unprotected document comes out unprotected, with the command applied', !now.encrypted && now.access === 1 && now.text.includes(PROBE.words), JSON.stringify({ ...now, text: '' }));
     } finally {
       await kernel.mupdfWriter.close(session);
     }
@@ -509,9 +527,9 @@ async function main(/** @type {any} */ kernel) {
     const session = await open(aes256, USER);
     try {
       await kernel.localMupdfExecution.apply({ session, command: { kind: 'setDocumentProtection', encryption: 'none' }, sources: [], reads: undefined });
-      const result = await runCommand(kernel, session, COMMANDS[0][1], undefined);
+      const result = await runCommand(kernel, session, PROBE.command, PROBE.reads);
       const now = read(result);
-      check('a document whose password was removed in this session is not protected again by the command', !now.encrypted && now.text.includes('DRAFT'), JSON.stringify({ ...now, text: '' }));
+      check('a document whose password was removed in this session is not protected again by the command', !now.encrypted && now.text.includes(PROBE.words), JSON.stringify({ ...now, text: '' }));
     } finally {
       await kernel.mupdfWriter.close(session);
     }
@@ -559,11 +577,11 @@ async function main(/** @type {any} */ kernel) {
         const asOwner = read(restored, OWNER);
         const kept = asUser.access === 2 && asOwner.access === 4 && read(restored).access === 0 && read(restored, 'next-open-0224').access === 0
           && asUser.permissions === original.permissions && asUser.version === original.version && asUser.pages === original.pages && asUser.text === original.text;
-        const marked = await runCommand(kernel, session, COMMANDS[0][1], undefined);
+        const marked = await runCommand(kernel, session, PROBE.command, PROBE.reads);
         const after = read(marked, USER);
-        check(`${encryption}: undoing ${change} keeps both passwords and permissions, and the next Watermark saves protected`,
+        check(`${encryption}: undoing ${change} keeps both passwords and permissions, and the next recognised page saves protected`,
           took && kept && after.access === 2 && read(marked, OWNER).access === 4 && read(marked).access === 0
-            && after.permissions === original.permissions && after.pages === original.pages && after.text.includes('DRAFT') && after.text.includes('Original words'),
+            && after.permissions === original.permissions && after.pages === original.pages && after.text.includes(PROBE.words) && after.text.includes('Original words'),
           JSON.stringify({ took, kept, user: after.access, owner: read(marked, OWNER).access, permissions: after.permissions, pages: after.pages }));
       } finally {
         await kernel.mupdfWriter.close(session);

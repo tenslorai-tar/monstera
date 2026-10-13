@@ -1,4 +1,4 @@
-import { STAMP_FAMILIES } from '@monstera/contract';
+import { annotationFamilySchema } from '@monstera/contract';
 import { z } from 'zod';
 
 /**
@@ -17,7 +17,7 @@ export const BATES_NUMBER_RESULT = z
     digits: z.number().int().min(1).max(12),
     edge: z.enum(['header', 'footer']),
     slot: z.enum(['left', 'centre', 'right']),
-    family: z.enum(STAMP_FAMILIES),
+    family: annotationFamilySchema,
     fontSize: z.number().positive().max(1000),
     marginPoints: z.number().nonnegative().max(500),
   })

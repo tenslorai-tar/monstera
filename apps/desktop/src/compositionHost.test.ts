@@ -1847,7 +1847,7 @@ describe('the composition root, a HOSTED pdf-lib command (ADR-0121 Decision 3)',
     const { handlers } = createShellDependencies({
       ...harnessSurfaces('the composition-host test'),
       appInfo,
-      pickDocument: () => Promise.resolve(aDocument('hosted-watermark.pdf')),
+      pickDocument: () => Promise.resolve(aDocument('hosted-background.pdf')),
       enginePlatform: spy.platform,
       checkpointDirectory: join(scratch, 'checkpoints-hosted'),
     });
@@ -1856,11 +1856,12 @@ describe('the composition root, a HOSTED pdf-lib command (ADR-0121 Decision 3)',
     if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
     const executed = await handlers['document.execute']({
       docId: opened.value.docId,
-      command: { kind: 'watermarkPages', pages: 'all', text: 'DRAFT', opacity: 0.3, rotationDegrees: 45, family: 'Helvetica', fontSize: 48 },
+      // THE PAGE BACKGROUND, a pdf-lib command: the watermark this case ran is the MuPDF writer's since ADR-0235.
+      command: { kind: 'setPageBackground', pages: 'all', red: 1, green: 1, blue: 0.9 },
     });
 
     expect(executed.ok, JSON.stringify(executed)).toBe(true);
-    if (!executed.ok) throw new Error('the watermark should have succeeded');
+    if (!executed.ok) throw new Error('the page background should have succeeded');
     // THE HOST RAN IT — main sent the command, not an image.
     expect(spy.harness.calls).toContain('peer.request:engine/applyPdfLib');
     // THE SESSION WAS REBUILT FROM THE HOST'S OWN FILE: a second open, of exactly what the apply wrote.

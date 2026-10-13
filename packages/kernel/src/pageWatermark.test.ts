@@ -10,11 +10,17 @@ import { mupdfWriter, withDocument } from './mupdfWriter.js';
 // string this fixture really shows* — stays here, because what is known-present
 // is a property of the fixture and not of the decoder.
 import { contentOf, shownOn } from './shownText.js';
+import { appliedTo } from './mupdfAppliedBytes.js';
 import {
-  applyWatermarkPages,
+  applyWatermarkPages as applyWatermarkOnSession,
   captureWatermarkPages,
   invertWatermarkPages,
 } from './pageWatermark.js';
+
+// THE MUPDF WRITER'S APPLY, run on bytes (ADR-0235): each case reads the result back from the bytes, as it did when the
+// writer was pdf-lib's.
+const applyWatermarkPages = (image: Uint8Array, command: CommandOfKind<'watermarkPages'>): Promise<Uint8Array> =>
+  appliedTo(image, applyWatermarkOnSession, command);
 
 /**
  * The watermark, read back through **MuPDF** — a different library from the one
@@ -127,7 +133,41 @@ function textMatrixOf(content: string): readonly number[] {
   return match.slice(1).map(Number);
 }
 
+/** The object numbers every page's `MonsteraStamp` entries of one resource kind point at, read with MuPDF. */
+async function stampObjectsOf(bytes: Uint8Array, kind: 'Font' | 'ExtGState'): Promise<readonly number[]> {
+  const session = await mupdfWriter.open(bytes);
+  try {
+    return await withDocument(session, (document) => {
+      const numbers: number[] = [];
+      for (let index = 0; index < document.countPages(); index += 1) {
+        document
+          .findPage(index)
+          .get('Resources')
+          .get(kind)
+          .forEach((value, key) => {
+            if (String(key).startsWith('MonsteraStamp')) numbers.push(value.isIndirect() ? value.asIndirect() : 0);
+          });
+      }
+      return numbers;
+    });
+  } finally {
+    await mupdfWriter.close(session);
+  }
+}
+
 describe('watermarkPages', () => {
+  it('names ONE font and ONE opacity state from every page, never a copy per page', async () => {
+    const stamped = await applyWatermarkPages(await richDocument(), DRAFT);
+    const fonts = await stampObjectsOf(stamped, 'Font');
+    const states = await stampObjectsOf(stamped, 'ExtGState');
+
+    // EVERY PAGE NAMES BOTH, so the single object below is shared rather than absent from two of the three pages.
+    expect([fonts.length, states.length]).toStrictEqual([PAGE_COUNT, PAGE_COUNT]);
+    // AND EACH IS AN INDIRECT OBJECT: a direct dictionary per page reads as object 0 here and fails the count too.
+    expect([new Set(fonts).size, new Set(states).size]).toStrictEqual([1, 1]);
+    expect(fonts[0]).toBeGreaterThan(0);
+  });
+
   it('draws the text onto every page when the scope is "all"', async () => {
     const stamped = await applyWatermarkPages(await richDocument(), DRAFT);
 
@@ -299,7 +339,8 @@ describe('watermarkPages', () => {
   });
 
   it('capture always refuses, and names why', async () => {
-    const captured = await captureWatermarkPages(DRAFT);
+    const session = await mupdfWriter.open(await richDocument());
+    const captured = await captureWatermarkPages(session, DRAFT).finally(() => mupdfWriter.close(session));
 
     // `CommandPrior['watermarkPages']` is `never`, so `{ captured: true }` is
     // not constructible — this cannot report success even if it were written
@@ -320,7 +361,7 @@ describe('watermarkPages', () => {
     // the point — a body that silently returned the image would make an
     // impossible undo look like a successful one.
     expect(() =>
-      invertWatermarkPages(new Uint8Array(), undefined as never),
+      invertWatermarkPages(undefined as never, undefined as never),
     ).toThrow(/no inverse/u);
   });
 });

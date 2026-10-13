@@ -341,12 +341,26 @@ export const cropPagesSchema = z.object({
 }).strict();
 
 /**
- * The families a page stamp (a watermark, a header or footer, a Bates number) may be set in, the TEXT spec's D1: the
- * three standard faces its writer embeds. An installed family needs a font program in that writer, which it does not
- * have; the one font picker offers these three there, by name, and nothing it could not set.
+ * How many font families one list may name, and how long a name may be: a Windows machine ships about 200 families and a
+ * designer's can hold thousands; a family name is a few words (`fontFamiliesOf` in the kernel). Here, before the schemas
+ * that take a family, so each is defined when they are.
  */
-export const STAMP_FAMILIES = ['Helvetica', 'Times', 'Courier'] as const;
-export type StampFamily = (typeof STAMP_FAMILIES)[number];
+export const MAX_FONT_FAMILIES = 4096;
+export const MAX_FONT_FAMILY_NAME = 128;
+
+/**
+ * The family a text mark is set in by NAME, as the one font picker lists it (K2,
+ * [ADR-0228](../../../docs/DECISIONS/0228-the-formatting-set-is-whole-in-both-text-writers-and-a-tab-is-a-marked-gap.md)
+ * Decision 3): Helvetica, Times or Courier, drawn in the base 14 unembedded, or any family the resolver knows, embedded as a
+ * subset. Beside {@link annotationFontSchema}, which stays the base-14 class a reader that draws neither `/AP` nor `/RC` is
+ * given; where both are sent the kernel takes the class from the family, so the two cannot disagree.
+ *
+ * A page stamp's family is this one (ADR-0235): its words are set by the text box's own typesetter.
+ */
+export const annotationFamilySchema = z.string().min(1).max(MAX_FONT_FAMILY_NAME);
+
+/** What a page stamp is set in where nobody chose: Helvetica, the face every stamp was set in before ADR-0235. */
+export const STAMP_FAMILY_DEFAULT = 'Helvetica';
 
 /**
  * Draw a text watermark across pages.
@@ -400,8 +414,8 @@ export const watermarkPagesSchema = z.object({
   rotationDegrees: z.number().min(-360).max(360),
   /** Type size in points. Bounded above so one command cannot ask for a page-sized glyph run. */
   fontSize: z.number().positive().max(1000),
-  /** The face the text is set in, one of {@link STAMP_FAMILIES}. */
-  family: z.enum(STAMP_FAMILIES),
+  /** The family the text is set in, any the font picker lists (ADR-0235). */
+  family: annotationFamilySchema,
 }).strict();
 
 /**
@@ -465,8 +479,8 @@ export const headerFooterPagesSchema = z.object({
   footer: stampSlotsSchema,
   /** Type size in points. */
   fontSize: z.number().positive().max(1000),
-  /** The face the text is set in, one of {@link STAMP_FAMILIES}. */
-  family: z.enum(STAMP_FAMILIES),
+  /** The family the text is set in, any the font picker lists (ADR-0235). */
+  family: annotationFamilySchema,
   /**
    * How far in from the page's edge the text sits, in points.
    *
@@ -519,8 +533,8 @@ export const batesNumberPagesSchema = z.object({
   slot: z.enum(['left', 'centre', 'right']),
   /** Type size in points. */
   fontSize: z.number().positive().max(1000),
-  /** The face the text is set in, one of {@link STAMP_FAMILIES}. */
-  family: z.enum(STAMP_FAMILIES),
+  /** The family the text is set in, any the font picker lists (ADR-0235). */
+  family: annotationFamilySchema,
   /** How far in from the page's edge, in points. */
   marginPoints: z.number().nonnegative().max(500),
 }).strict();
@@ -1171,22 +1185,6 @@ export const annotationFontSchema = z.enum(ANNOTATION_FONTS);
 
 export type AnnotationFont = z.infer<typeof annotationFontSchema>;
 
-/**
- * How many font families one list may name, and how long a name may be: a Windows machine ships about 200 families and a
- * designer's can hold thousands; a family name is a few words (`fontFamiliesOf` in the kernel). Here, before the schemas
- * that take a family, so each is defined when they are.
- */
-export const MAX_FONT_FAMILIES = 4096;
-export const MAX_FONT_FAMILY_NAME = 128;
-
-/**
- * The family a text mark is set in by NAME, as the one font picker lists it (K2,
- * [ADR-0228](../../../docs/DECISIONS/0228-the-formatting-set-is-whole-in-both-text-writers-and-a-tab-is-a-marked-gap.md)
- * Decision 3): Helvetica, Times or Courier, drawn in the base 14 unembedded, or any family the resolver knows, embedded as a
- * subset. Beside {@link annotationFontSchema}, which stays the base-14 class a reader that draws neither `/AP` nor `/RC` is
- * given; where both are sent the kernel takes the class from the family, so the two cannot disagree.
- */
-export const annotationFamilySchema = z.string().min(1).max(MAX_FONT_FAMILY_NAME);
 
 /**
  * The family a composed document's prose is set in (an imported Markdown or CSV file, the TEXT spec's D1): any family the

@@ -44,7 +44,8 @@ it('protection undo keeps the known opening key for the next pdf-lib command', a
     if (writing === undefined) throw new Error('the restored document lost its protection');
     const plain = await writing.plain();
     expect((await PDFDocument.load(plain)).getPageCount()).toBe(1);
-    const marked = await applyPdfLibImage(plain, { kind: 'watermarkPages', pages: 'all', text: 'Protection undo proof', opacity: 0.3, rotationDegrees: 0, family: 'Helvetica', fontSize: 24 }, undefined);
+    // A PDF-LIB COMMAND: the page background, since the watermark moved to the MuPDF writer (ADR-0235).
+    const marked = await applyPdfLibImage(plain, { kind: 'setPageBackground', pages: 'all', red: 1, green: 1, blue: 0.9 }, undefined);
     const saved = await writing.protect(marked);
     await expect(mupdfWriter.open(saved)).rejects.toThrow('encrypted');
     await mupdfWriter.close(await mupdfWriter.open(saved, original.userPassword));

@@ -12,7 +12,7 @@ Bates numbers are consecutive identifying numbers, such as ABC000431, stamped on
 
 1. In the rail, choose **Organize**, then **Bates numbering…** in the **Marks** group.
 2. Fill in **Prefix**, **Suffix**, **Start at** and **Digits**. The window shows what the first number will look like.
-3. Choose where it goes: **Top** or **Bottom**, and **Left**, **Centre** or **Right**, and its **Font**: Helvetica, Times or Courier, the fonts every PDF reader has.
+3. Choose where it goes: **Top** or **Bottom**, and **Left**, **Centre** or **Right**, and its **Font**: Helvetica, Times or Courier, which every PDF reader has, or any font on this computer, which is saved inside the PDF.
 4. Choose **This page** or **All pages**, then **Number pages**.
 
 ![The Bates numbering window with prefix, start, digits and the preview](screenshot:bates-numbering-1)

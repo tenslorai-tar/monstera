@@ -207,12 +207,19 @@ export function canDraw(text: string, family: Family): boolean {
 export function layoutFonts(document: PDFDocument, layout: Layout, resolver: TextBoxFaces | undefined): PDFObject {
   const fonts = document.newDictionary();
   const embedded = resolver?.finish() ?? new Map<string, PDFObject>();
-  for (const [face, name] of faceNames(layout)) {
-    const font = isBase14Face(face) ? fontDictionary(document, face) : embedded.get(face);
-    if (font === undefined) throw new Error(`the face ${face} an appearance drew was written by no typesetter`);
-    fonts.put(name, font);
-  }
+  for (const [face, name] of faceNames(layout)) fonts.put(name, faceFont(document, face, embedded));
   return fonts;
+}
+
+/**
+ * The font object a piece's face key names: a base-14 face as the dictionary every viewer carries, every other as the
+ * resolver embedded it (`embedded`, its `finish()`'s answer). The ONE answer to that question for every writer that sets
+ * words with {@link settersFor} — a text box's appearance and a page stamp (ADR-0235).
+ */
+export function faceFont(document: PDFDocument, face: string, embedded: ReadonlyMap<string, PDFObject>): PDFObject {
+  const font = isBase14Face(face) ? fontDictionary(document, face) : embedded.get(face);
+  if (font === undefined) throw new Error(`the face ${face} a drawing used was written by no typesetter`);
+  return font;
 }
 
 /**

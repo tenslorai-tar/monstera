@@ -123,17 +123,12 @@ const DELETE_SPEC = `  deletePages: {
   },`;
 
 /**
- * Filler for the newest kind, kept separate for {@link MOVE_SPEC}'s reason.
- *
- * THE FIRST FIXTURE HERE THAT IS NOT A MupdfSession WRITER, and every field
- * differs from its neighbours for a reason the table checks: the writer is
- * pdf-lib, so its apply must take a byte image and return one, and declaring
- * mupdf here would not compile. That is the point of including it rather than
- * reusing a MuPDF spec with a different name.
+ * Filler, kept separate for {@link MOVE_SPEC}'s reason. A MuPDF writer since ADR-0235; the byte-image fixture is
+ * {@link BACKGROUND_SPEC}'s.
  */
 const WATERMARK_SPEC = `  watermarkPages: {
     kind: 'watermarkPages',
-    writer: 'pdf-lib',
+    writer: 'mupdf',
     apply: applyWatermarkPages,
     capture: captureWatermarkPages,
     invert: invertWatermarkPages,
@@ -148,7 +143,7 @@ const WATERMARK_SPEC = `  watermarkPages: {
 /** Filler, kept separate for {@link MOVE_SPEC}'s reason. */
 const HEADER_FOOTER_SPEC = `  headerFooterPages: {
     kind: 'headerFooterPages',
-    writer: 'pdf-lib',
+    writer: 'mupdf',
     apply: applyHeaderFooterPages,
     capture: captureHeaderFooterPages,
     invert: invertHeaderFooterPages,
@@ -163,7 +158,7 @@ const HEADER_FOOTER_SPEC = `  headerFooterPages: {
 /** Filler, kept separate for {@link MOVE_SPEC}'s reason. */
 const BATES_SPEC = `  batesNumberPages: {
     kind: 'batesNumberPages',
-    writer: 'pdf-lib',
+    writer: 'mupdf',
     apply: applyBatesNumberPages,
     capture: captureBatesNumberPages,
     invert: invertBatesNumberPages,
@@ -1320,26 +1315,26 @@ const SPEC_IMPORTS = `import {
   applyEditTextOperators,
   captureEditTextOperators,
   invertEditTextOperators,
-} from '@monstera/kernel/engine';
-// A SECOND IMPORT LINE, and the module it names is the finding rather than an
-// inconvenience: watermarkPages routes to a byte-image writer that runs in
-// main, so its three functions are on the BARREL and not behind the /engine
-// subpath (ADR-0039). That subpath holds what binds a native library, and
-// nothing routed to pdf-lib may be there -- so this line failing to resolve
-// would mean somebody had moved them into it.
-import {
   applyWatermarkPages,
   captureWatermarkPages,
   invertWatermarkPages,
   applyHeaderFooterPages,
   captureHeaderFooterPages,
   invertHeaderFooterPages,
-  applyInsertImagePage,
-  captureInsertImagePage,
-  invertInsertImagePage,
   applyBatesNumberPages,
   captureBatesNumberPages,
   invertBatesNumberPages,
+} from '@monstera/kernel/engine';
+// A SECOND IMPORT LINE, and the module it names is the finding rather than an
+// inconvenience: setPageBackground routes to a byte-image writer that runs in
+// main, so its three functions are on the BARREL and not behind the /engine
+// subpath (ADR-0039). That subpath holds what binds a native library, and
+// nothing routed to pdf-lib may be there -- so this line failing to resolve
+// would mean somebody had moved them into it.
+import {
+  applyInsertImagePage,
+  captureInsertImagePage,
+  invertInsertImagePage,
   applySetPageBackground,
   captureSetPageBackground,
   invertSetPageBackground,
@@ -3055,14 +3050,14 @@ export const spec: CommandSpec<'rotatePages'> = {
     source: `
 import type { ByteImage, CommandSpec } from '@monstera/kernel';
 import type { CommandOfKind, OutlineEntry } from '@monstera/contract';
-export const spec: CommandSpec<'watermarkPages'> = {
-  kind: 'watermarkPages',
+export const spec: CommandSpec<'setPageBackground'> = {
+  kind: 'setPageBackground',
   writer: 'pdf-lib',
   sources: 'none',
   reads: 'outline',
   apply: (
     image: ByteImage,
-    _command: CommandOfKind<'watermarkPages'>,
+    _command: CommandOfKind<'setPageBackground'>,
     _outline: readonly OutlineEntry[],
   ) => Promise.resolve(new Uint8Array(image)),
   capture: () => Promise.resolve({ captured: false, reason: 'stub' }),
@@ -3092,14 +3087,14 @@ export const spec: CommandSpec<'watermarkPages'> = {
     source: `
 import type { ByteImage, CommandSpec } from '@monstera/kernel';
 import type { CommandOfKind, OutlineEntry } from '@monstera/contract';
-export const spec: CommandSpec<'watermarkPages'> = {
-  kind: 'watermarkPages',
+export const spec: CommandSpec<'setPageBackground'> = {
+  kind: 'setPageBackground',
   writer: 'pdf-lib',
   sources: 'none',
   reads: 'none',
   apply: (
     image: ByteImage,
-    _command: CommandOfKind<'watermarkPages'>,
+    _command: CommandOfKind<'setPageBackground'>,
     _outline: readonly OutlineEntry[],
   ) => Promise.resolve(new Uint8Array(image)),
   capture: () => Promise.resolve({ captured: false, reason: 'stub' }),
@@ -3275,8 +3270,8 @@ export const outer: CommandExecution<'mupdf'> = {
     notBecause: null,
     source: `
 import type { ByteImage, CommandSpec } from '@monstera/kernel';
-export const spec: CommandSpec<'watermarkPages'> = {
-  kind: 'watermarkPages',
+export const spec: CommandSpec<'setPageBackground'> = {
+  kind: 'setPageBackground',
   writer: 'pdf-lib',
   sources: 'one',
   reads: 'none',

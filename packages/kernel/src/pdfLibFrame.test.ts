@@ -4,9 +4,19 @@ import { describe, expect, it } from 'vitest';
 
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import { applySetPageBackground } from './pageBackground.js';
-import { applyBatesNumberPages, applyHeaderFooterPages } from './pageStamp.js';
+import { appliedTo } from './mupdfAppliedBytes.js';
+import { applyBatesNumberPages as batesOnSession, applyHeaderFooterPages as headerFooterOnSession } from './pageStamp.js';
 import { applyGenerateToc } from './pageToc.js';
-import { applyWatermarkPages } from './pageWatermark.js';
+import { applyWatermarkPages as watermarkOnSession } from './pageWatermark.js';
+
+// THE STAMPS ARE THE MUPDF WRITER'S since ADR-0235, run on bytes here: the displayed-page placement this file proves is
+// theirs to keep, through the one `PageTransform`, whichever writer draws.
+const applyHeaderFooterPages = (image: Uint8Array, command: CommandOfKind<'headerFooterPages'>): Promise<Uint8Array> =>
+  appliedTo(image, headerFooterOnSession, command);
+const applyBatesNumberPages = (image: Uint8Array, command: CommandOfKind<'batesNumberPages'>): Promise<Uint8Array> =>
+  appliedTo(image, batesOnSession, command);
+const applyWatermarkPages = (image: Uint8Array, command: CommandOfKind<'watermarkPages'>): Promise<Uint8Array> =>
+  appliedTo(image, watermarkOnSession, command);
 
 /**
  * The pdf-lib drawing commands place on the page AS THE READER SEES IT (CR-COR-01).

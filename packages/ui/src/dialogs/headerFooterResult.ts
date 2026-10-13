@@ -1,4 +1,4 @@
-import { STAMP_FAMILIES } from '@monstera/contract';
+import { annotationFamilySchema } from '@monstera/contract';
 import { z } from 'zod';
 
 /**
@@ -25,7 +25,7 @@ export const HEADER_FOOTER_RESULT = z
     pages: z.union([z.literal('all'), z.array(z.number().int().nonnegative()).min(1)]),
     header: slots,
     footer: slots,
-    family: z.enum(STAMP_FAMILIES),
+    family: annotationFamilySchema,
     fontSize: z.number().positive().max(1000),
     marginPoints: z.number().nonnegative().max(500),
   })

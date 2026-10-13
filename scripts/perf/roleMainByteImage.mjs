@@ -92,9 +92,9 @@ const inputs = {
   adopt: async (write) => {
     await write(join(scratch, 'adopted'));
   },
-  outline: () => Promise.reject(new Error('the watermark reads no outline')),
-  ocr: () => Promise.reject(new Error('the watermark recognises nothing')),
-  pageRuns: () => Promise.reject(new Error('the watermark reads no text runs')),
+  outline: () => Promise.reject(new Error('the page background reads no outline')),
+  ocr: () => Promise.reject(new Error('the page background recognises nothing')),
+  pageRuns: () => Promise.reject(new Error('the page background reads no text runs')),
   sources: new Map(),
 };
 
@@ -192,7 +192,8 @@ const executed = await documents.run(outcome.docId, (context) =>
   bus.execute(
     { mupdf: hostSession },
     context,
-    { kind: 'watermarkPages', pages: 'all', text: 'DRAFT', opacity: 0.3, rotationDegrees: 45, family: 'Helvetica', fontSize: 48 },
+    // THE PAGE BACKGROUND, a pdf-lib command: the watermark this ran until ADR-0235 is the MuPDF writer's now.
+    { kind: 'setPageBackground', pages: 'all', red: 1, green: 1, blue: 0.9 },
     inputs,
   ),
 );
@@ -206,7 +207,7 @@ if (process.argv.includes('--twice')) {
       bus.execute(
         { mupdf: hostSession },
         context,
-        { kind: 'watermarkPages', pages: 'all', text: 'AGAIN', opacity: 0.3, rotationDegrees: 45, family: 'Helvetica', fontSize: 48 },
+        { kind: 'setPageBackground', pages: 'all', red: 0.9, green: 1, blue: 1 },
         inputs,
       ),
     ),

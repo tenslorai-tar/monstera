@@ -24,7 +24,8 @@ const READABLE = new Uint8Array([2, 2, 2]);
 const RESULT = new Uint8Array([3, 3, 3]);
 const SEALED = new Uint8Array([4, 4, 4]);
 
-const COMMAND = { kind: 'watermarkPages', pages: 'all', text: 'DRAFT', opacity: 0.3, rotationDegrees: 45, family: 'Helvetica', fontSize: 36 } as const;
+// THE PAGE BACKGROUND, a pdf-lib command: the watermark this case used is the MuPDF writer's since ADR-0235.
+const COMMAND = { kind: 'setPageBackground', pages: 'all', red: 1, green: 1, blue: 0.9 } as const;
 
 function refuse(what: string): () => never {
   return () => {

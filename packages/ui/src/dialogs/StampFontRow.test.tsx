@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import type { FontFamilyEntry } from '@monstera/contract';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -79,14 +80,44 @@ describe('a stamp dialog answers with the font chosen', () => {
     });
   }
 
-  it('offers the three faces a stamp writer can set, and says nothing about the computer’s fonts', () => {
-    const bates = DIALOGS[2];
-    if (bates === undefined) throw new Error('the Bates dialog is not in the table');
-    open(bates);
+  it('offers this computer’s fonts beside the three built in, and sends the one picked (ADR-0235)', () => {
+    const resolve = vi.fn();
+    render(
+      <InDialog>
+        <BatesNumberBody fonts={LISTED} pages={[0]} resolve={resolve} update={vi.fn()} />
+      </InDialog>,
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Font: Helvetica' }));
     const offered = [...document.querySelectorAll('[data-font-choice]')].map((each) => each.getAttribute('data-font-choice'));
     // DISTINCT, because *Recent* is the session's and repeats a family an earlier case picked.
+    expect([...new Set(offered)].sort()).toEqual(['Arimo', 'Courier', 'Helvetica', 'Noto Sans', 'Times']);
+    const arimo = document.querySelector('[data-font-choice="Arimo"]');
+    if (arimo === null) throw new Error('Arimo is not offered');
+    fireEvent.click(arimo);
+    fireEvent.click(screen.getByRole('button', { name: 'Number pages' }));
+    expect(resolve.mock.calls[0]?.[0]).toMatchObject({ family: 'Arimo' });
+  });
+
+  it('CONTROL: where the computer’s list could not be read it says so in words, and still offers the three built in', () => {
+    open(DIALOGS[2] ?? raise('the Bates dialog is not in the table'));
+    fireEvent.click(screen.getByRole('button', { name: 'Font: Helvetica' }));
+    const offered = [...document.querySelectorAll('[data-font-choice]')].map((each) => each.getAttribute('data-font-choice'));
     expect([...new Set(offered)].sort()).toEqual(['Courier', 'Helvetica', 'Times']);
-    expect(document.body.textContent).not.toContain('could not be listed');
+    expect(document.body.textContent).toContain('could not be listed');
   });
 });
+
+const entry = (name: string, origin: 'installed' | 'bundled'): FontFamilyEntry => ({
+  name,
+  origin,
+  embedding: 'subset',
+  bold: true,
+  italic: true,
+});
+
+/** A computer's list as main answers it: one installed family and one bundled. */
+const LISTED = { listed: true, families: [entry('Noto Sans', 'installed'), entry('Arimo', 'bundled')], more: 0 } as const;
+
+function raise(why: string): never {
+  throw new Error(why);
+}

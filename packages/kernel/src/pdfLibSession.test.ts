@@ -2,7 +2,7 @@ import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { describe, expect, it } from 'vitest';
 
 import * as mupdf from './mupdfRaw.js';
-import { applyWatermarkPages } from './pageWatermark.js';
+import { applySetPageBackground } from './pageBackground.js';
 import { appendRevision, openForWriting } from './pdfLibSession.js';
 
 /**
@@ -41,17 +41,10 @@ const startsWith = (whole: Uint8Array, prefix: Uint8Array): boolean =>
   whole.byteLength > prefix.byteLength && prefix.every((byte, at) => whole[at] === byte);
 
 describe('a pdf-lib command appends its revision (ADR-0127)', () => {
-  it('the watermark’s result is its input, byte for byte, with ONE revision appended that MuPDF reads unrepaired', async () => {
+  it('the page background’s result is its input, byte for byte, with ONE revision appended that MuPDF reads unrepaired', async () => {
+    // THE PAGE BACKGROUND, a pdf-lib command: the watermark this case used moved to the MuPDF writer (ADR-0235).
     const input = await document(3);
-    const stamped = await applyWatermarkPages(input, {
-      kind: 'watermarkPages',
-      pages: 'all',
-      text: 'DRAFT',
-      opacity: 0.3,
-      rotationDegrees: 45,
-      family: 'Helvetica',
-      fontSize: 36,
-    });
+    const stamped = await applySetPageBackground(input, { kind: 'setPageBackground', pages: 'all', red: 1, green: 1, blue: 0.9 });
 
     expect(startsWith(stamped, input)).toBe(true);
     expect(readBack(stamped)).toStrictEqual({ versions: readBack(input).versions + 1, repaired: false, pages: 3 });
