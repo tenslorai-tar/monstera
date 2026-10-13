@@ -69,6 +69,9 @@ describe('the registered settings', () => {
       'appearance.accent',
       'appearance.float-bar-position',
       'appearance.tips-shown',
+      // HOW TALL A NEW INSERTION MARK IS (the owner's O5), whose control is a selected caret's Size in Properties with
+      // *Use as default for new annotations* ticked, where the size kept is seen on a mark.
+      'editing.caret-size',
       'editing.personal-dictionary',
       // HOW A NEW TEXT BOX IS SET (B5.9), an object of the Text section's members whose control is that section itself,
       // with *Use as default for new annotations* ticked: a row here would be a second place to set nine values.

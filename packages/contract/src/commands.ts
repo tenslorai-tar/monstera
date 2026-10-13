@@ -1240,6 +1240,15 @@ export const MAX_POLYGON_POINTS = 256;
 export const LISTED_POINTS_MAX = 32;
 
 /**
+ * The smallest and largest insertion mark, by its height in points (the owner's O5). The floor is where a wedge stops
+ * reading as a mark at a reader's ordinary zoom; the ceiling is a hand's width on a letter page, past which a caret is a
+ * shape rather than a mark beside words. Both bound a person's choice, never a document's own caret, which is read as it
+ * is.
+ */
+export const MIN_CARET_SIZE = 4;
+export const MAX_CARET_SIZE = 144;
+
+/**
  * How a polygon's border is drawn — `/BE`, in the format's own vocabulary.
  *
  * **A union rather than `cloudy: true`**, for {@link lineEndingSchema}'s reason
@@ -2161,6 +2170,11 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
       type: z.literal('caret'),
       /** The insertion point, in PDF user space. */
       at: annotationPointSchema,
+      /**
+       * How tall the wedge is, in points (the owner's O5): absent takes the size of the text the caret is placed in, as
+       * the kernel reads it there, and MuPDF's own 14 where there is none. Its width follows at MuPDF's 20 to 14.
+       */
+      size: z.number().min(MIN_CARET_SIZE).max(MAX_CARET_SIZE).optional(),
       /** What the wedge is drawn in. */
       colour: annotationColourSchema,
       opacity: annotationOpacitySchema,

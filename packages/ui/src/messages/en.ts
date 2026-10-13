@@ -1943,6 +1943,8 @@ export const EDITING_OPACITY_TITLE = messageKey('setting.editing.annotation-opac
 export const EDITING_LINE_WIDTH_TITLE = messageKey('setting.editing.annotation-line-width');
 export const EDITING_FONT_SIZE_TITLE = messageKey('setting.editing.annotation-font-size');
 export const EDITING_TEXT_BOX_LOOK_TITLE = messageKey('setting.editing.text-box-look');
+export const EDITING_CARET_SIZE_TITLE = messageKey('setting.editing.caret-size');
+export const PROPERTIES_CARET_SIZE = messageKey('surface.properties.caret-size');
 export const EDITING_FONT_TITLE = messageKey('setting.editing.annotation-font.title');
 export const EDITING_FONT_DESCRIPTION = messageKey('setting.editing.annotation-font.description');
 export const EDITING_DIRECTION_TITLE = messageKey('setting.editing.text-direction.title');
@@ -4640,6 +4642,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EDITING_LINE_WIDTH_TITLE]: 'Annotation line width',
   [EDITING_FONT_SIZE_TITLE]: 'Annotation font size',
   [EDITING_TEXT_BOX_LOOK_TITLE]: 'How a new text box is set',
+  [EDITING_CARET_SIZE_TITLE]: 'How tall a new insertion mark is',
+  [PROPERTIES_CARET_SIZE]: 'Size',
   [EDITING_FONT_TITLE]: 'Annotation font',
   [EDITING_FONT_DESCRIPTION]:
     'The typeface new text boxes, callouts and typed text are set in. A font from this computer or one included with Monstera is saved inside the file, so the words look the same wherever it is opened. Callouts use the built-in font closest to it.',

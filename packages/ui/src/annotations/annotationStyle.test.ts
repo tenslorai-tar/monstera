@@ -25,7 +25,7 @@ const PAGE: Parameters<typeof overlayTransform>[0] = { crop: [0, 0, 200, 300], r
 
 /** A style that has chosen `colour`, with everything else moved off its default. */
 function chosen(colour: AnnotationColour): AnnotationStyle {
-  return { colour: () => colour, opacity: 0.4, lineWidth: 5, fontSize: 20, font: 'mono', family: 'Carlito', direction: 'right-to-left', look: { bold: true } };
+  return { colour: () => colour, opacity: 0.4, lineWidth: 5, fontSize: 20, font: 'mono', family: 'Carlito', direction: 'right-to-left', look: { bold: true }, caretSize: 30 };
 }
 
 function drawn(tool: ReturnType<typeof rectangleTool>): Record<string, unknown> {
@@ -74,6 +74,7 @@ describe('styleFrom — the stored settings, as the style the tools draw in', ()
     family: 'Caladea',
     direction: 'right-to-left' as const,
     look: { align: 'center' as const, padding: 4 },
+    caretSize: 30,
   };
   const HIGHLIGHT_OWN: AnnotationColour = [1, 0.9, 0.2];
 
@@ -91,6 +92,8 @@ describe('styleFrom — the stored settings, as the style the tools draw in', ()
     ]);
     // THE KEPT LOOK PASSES THROUGH TOO (B5.9), off its empty default, so a resolver that dropped it is seen.
     expect(style.look).toStrictEqual({ align: 'center', padding: 4 });
+    // AND THE KEPT CARET SIZE (O5), off its `auto` default.
+    expect(style.caretSize).toBe(30);
   });
 
   it('CONTROL: the setting’s own no-choice value hands each tool its OWN colour', () => {

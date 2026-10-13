@@ -393,6 +393,7 @@ import {
   ANNOTATION_OPACITY_SETTING,
   TEXT_DIRECTION_SETTING,
   TEXT_BOX_LOOK_SETTING,
+  CARET_SIZE_SETTING,
   IMAGE_PAGES_SETTING,
   MEASURE_RATIO_SETTING,
   MEASURE_UNIT_SETTING,
@@ -405,7 +406,7 @@ import {
 } from './settings/editing.js';
 import { AssistantPanel } from './AssistantPanel.js';
 import type { DropOpener, EventSubscriber } from './bridge.js';
-import { PropertiesPanel, type StyleChange } from './PropertiesPanel.js';
+import { PropertiesPanel, type StyleChange, caretRectAt } from './PropertiesPanel.js';
 import { TextFormatPanel } from './TextFormatPanel.js';
 import { useDocumentFonts, useFontList } from './fontList.js';
 import { readOnePageLinks } from './usePageLinks.js';
@@ -2660,6 +2661,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const styleFont = useSetting(settings, ANNOTATION_FONT_SETTING);
   const styleDirection = useSetting(settings, TEXT_DIRECTION_SETTING);
   const styleLook = useSetting(settings, TEXT_BOX_LOOK_SETTING);
+  const styleCaretSize = useSetting(settings, CARET_SIZE_SETTING);
   // THE RESOLUTION IS `styleFrom`'s, where its cases are — a stored value it cannot
   // read, `'auto'` among them, hands each tool its own colour.
   const style = useMemo<AnnotationStyle>(
@@ -2675,8 +2677,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         family: styleFont,
         direction: styleDirection,
         look: styleLook,
+        caretSize: styleCaretSize,
       }),
-    [styleColour, styleDirection, styleFont, styleFontSize, styleLineWidth, styleLook, styleOpacity],
+    [styleCaretSize, styleColour, styleDirection, styleFont, styleFontSize, styleLineWidth, styleLook, styleOpacity],
   );
 
   /**
@@ -3116,6 +3119,18 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       const item = chosen.items[0];
       if (chosen.items.length !== 1 || item === undefined) return;
       dispatch({ kind: 'setAnnotationAuthor', page: chosen.page, index: item.index, author, version: chosen.version });
+    },
+    [dispatch],
+  );
+  /** The selected insertion marks at a size, each about its own centre: one placement, which keeps the walk (O5). */
+  const resizeSelection = useCallback(
+    (chosen: AnnotationSelection, size: number): void => {
+      dispatch({
+        kind: 'placeAnnotation',
+        page: chosen.page,
+        placements: chosen.items.map((item) => ({ index: item.index, rect: caretRectAt(item.rect, size) })),
+        version: chosen.version,
+      });
     },
     [dispatch],
   );
@@ -4810,6 +4825,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
                   onComment={commentSelection}
                   wordsOf={wordsOf}
                   onAuthor={authorSelection}
+                  onResize={resizeSelection}
                   onRestyle={restyleSelection}
                   registry={registry}
                   selection={selection}

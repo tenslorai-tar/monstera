@@ -157,8 +157,11 @@ function shown(value: number | undefined): string {
  * finished outside it is held to it (character spacing, ADR-0228), never while it is still being typed, where `1` on the
  * way to `15` is not yet anything. An emptied field sends `null` where `clears` says it takes the property off, and
  * nothing otherwise.
+ *
+ * Exported as THE Properties tab's number field: a caret's Size takes it too (the owner's O5), so the panel has one
+ * rule for when a typed number is sent.
  */
-function NumberInput({
+export function NumberInput({
   id,
   value,
   bounds,

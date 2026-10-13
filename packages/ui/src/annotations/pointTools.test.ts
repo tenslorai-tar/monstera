@@ -204,6 +204,12 @@ describe('caretTool', () => {
     });
   });
 
+  it('sends the SIZE kept as the default (the owner’s O5); CONTROL: none at `auto`, which the kernel takes from the words', async () => {
+    const sized = buildCaret({ style: { ...PLAIN_STYLE, caretSize: 24 } });
+    expect(await click(sized, [20, 20])).toMatchObject({ annotation: { type: 'caret', size: 24 } });
+    expect(await click(caretTool, [20, 20])).not.toHaveProperty('annotation.size');
+  });
+
   it('answers SYNCHRONOUSLY, unlike the other tool in this file', () => {
     // `commit` may answer now or later and the overlay does not care which — so
     // this pins the one tool for which *now* is the design rather than a

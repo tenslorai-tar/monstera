@@ -3,12 +3,15 @@ import {
   ANNOTATION_FONTS,
   type AnnotationBlend,
   type AnnotationColour,
+  type AnnotationRect,
   ANNOTATION_FONT_FAMILIES,
   type AnnotationTextStyle,
   TEXT_BOX_BORDER_STYLES,
   MAX_ANNOTATION_AUTHOR,
   MAX_ANNOTATION_BORDER,
   MAX_ANNOTATION_FONT,
+  MAX_CARET_SIZE,
+  MIN_CARET_SIZE,
   DEFAULT_TEXT_LINE_HEIGHT,
   MAX_ANNOTATION_TEXT,
   MAX_TEXT_LINE_HEIGHT,
@@ -39,6 +42,7 @@ import {
   PROPERTIES_AS_DEFAULT,
   PROPERTIES_AUTHOR,
   PROPERTIES_BLEND,
+  PROPERTIES_CARET_SIZE,
   PROPERTIES_BLEND_MULTIPLY,
   PROPERTIES_BLEND_NORMAL,
   PROPERTIES_CREATED,
@@ -70,7 +74,7 @@ import {
   UNIT_TITLES,
 } from './messages/en.js';
 import { spacingBoundOf, spacingOf } from './textFormatting.js';
-import { TextSection, type TextRow } from './TextSection.js';
+import { NumberInput, TextSection, type TextRow } from './TextSection.js';
 import { kindWord } from './ObjectEditLayer.js';
 import { type ObjectFill, type ObjectPick, recolourable } from './objectEditing.js';
 import { pdfjsPageOf } from './pageNumbering.js';
@@ -83,6 +87,7 @@ import {
   ANNOTATION_FONT_SIZE_SETTING,
   ANNOTATION_LINE_WIDTH_SETTING,
   ANNOTATION_OPACITY_SETTING,
+  CARET_SIZE_SETTING,
   MAX_MEASURE_RATIO,
   MEASURE_RATIO_SETTING,
   MEASURE_UNIT_SETTING,
@@ -114,6 +119,11 @@ export interface PropertiesPanelProps {
   readonly wordsOf: WordsOf;
   /** Rewrites who the one selected mark names as its author (ADR-0103). */
   readonly onAuthor: (selection: AnnotationSelection, author: string) => void;
+  /**
+   * Sizes the selected insertion marks to `size` points tall, each about its own centre (the owner's O5); absent where the
+   * tab's host offers no placement.
+   */
+  readonly onResize?: ((selection: AnnotationSelection, size: number) => void) | undefined;
   /** Where the foot's commands come from (`properties` placements), and what they run with. */
   readonly registry: CommandRegistry;
   readonly context: CommandContext;
@@ -172,6 +182,7 @@ export function PropertiesPanel({
   onComment,
   wordsOf,
   onAuthor,
+  onResize,
   registry,
   context,
   measuring = false,
@@ -457,6 +468,18 @@ export function PropertiesPanel({
       {first.typed === undefined ? (
         <>
           {lookRows}
+          {/* AN INSERTION MARK'S SIZE (the owner's O5), where every selected mark is one: its height in points, which
+              the kernel keeps through every redraw, and the next caret's too with *Use as default* ticked. */}
+          {onResize !== undefined && selection.items.every((item) => item.kind === 'caret') ? (
+            <CaretSizeRow
+              key={`${String(selection.page)}:${String(first.index)}:${String(caretSizeOf(first.rect))}`}
+              value={caretSizeOf(first.rect)}
+              onPick={(size) => {
+                onResize(selection, size);
+                if (asDefault) settings.set(CARET_SIZE_SETTING.id, size);
+              }}
+            />
+          ) : null}
           {blendRow}
           {authorRow}
         </>
@@ -613,6 +636,52 @@ function OpacityRow({
         step={0.05}
         type="range"
         value={shown}
+      />
+    </div>
+  );
+}
+
+/**
+ * An insertion mark's size: the SHORTER side of its box, which is its height at MuPDF's 20 wide to 14 tall whichever way
+ * the page is turned, rounded to a tenth as a person reads it.
+ */
+export function caretSizeOf(rect: AnnotationRect): number {
+  return Math.round(Math.min(Math.abs(rect.x1 - rect.x0), Math.abs(rect.y1 - rect.y0)) * 10) / 10;
+}
+
+/**
+ * A caret's box at `size` points tall: its own box scaled about its centre, so its proportions and its orientation on a
+ * turned page are kept and only its size changes. The one rule the Size row and its command share.
+ */
+export function caretRectAt(rect: AnnotationRect, size: number): AnnotationRect {
+  const now = Math.min(Math.abs(rect.x1 - rect.x0), Math.abs(rect.y1 - rect.y0));
+  const scale = now === 0 ? 1 : size / now;
+  const cx = (rect.x0 + rect.x1) / 2;
+  const cy = (rect.y0 + rect.y1) / 2;
+  const halfWide = (Math.abs(rect.x1 - rect.x0) * scale) / 2;
+  const halfTall = (Math.abs(rect.y1 - rect.y0) * scale) / 2;
+  return { x0: cx - halfWide, y0: cy - halfTall, x1: cx + halfWide, y1: cy + halfTall };
+}
+
+/** A caret's size row: one number field in points, sent when left or entered, held to the contract's bounds. */
+function CaretSizeRow({ value, onPick }: { readonly value: number; readonly onPick: (size: number) => void }): ReactElement {
+  const { i18n } = useLingui();
+  const id = useId();
+  return (
+    <div className="m-properties__row m-properties__row--inline">
+      <label className="m-properties__label" htmlFor={id}>
+        {i18n._(PROPERTIES_CARET_SIZE)}
+      </label>
+      <NumberInput
+        bounds={{ min: MIN_CARET_SIZE, max: MAX_CARET_SIZE, step: 1 }}
+        clamps
+        clears={false}
+        id={id}
+        live={false}
+        onSend={(size) => {
+          if (size !== null) onPick(size);
+        }}
+        value={value}
       />
     </div>
   );

@@ -48,6 +48,11 @@ export interface AnnotationStyle {
   readonly direction: TextDirection;
   /** How a new text box is set beyond its face, size and colour (`editing.text-box-look`, B5.9); empty for none kept. */
   readonly look: TextBoxLook;
+  /**
+   * How tall a new insertion mark is, in points, or `auto` for the size of the words it is placed in, which the kernel
+   * reads there (`editing.caret-size`, the owner's O5).
+   */
+  readonly caretSize: number | 'auto';
 }
 
 /**
@@ -69,6 +74,7 @@ export const PLAIN_STYLE: AnnotationStyle = {
   family: 'Helvetica',
   direction: 'left-to-right',
   look: {},
+  caretSize: 'auto',
 };
 
 /**
@@ -143,6 +149,7 @@ export function styleFrom(stored: {
   readonly family: string;
   readonly direction: TextDirection;
   readonly look: TextBoxLook;
+  readonly caretSize: number | 'auto';
 }): AnnotationStyle {
   const chosen = colourFromHex(stored.colour);
   return {
@@ -154,5 +161,6 @@ export function styleFrom(stored: {
     family: stored.family,
     direction: stored.direction,
     look: stored.look,
+    caretSize: stored.caretSize,
   };
 }

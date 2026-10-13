@@ -5,7 +5,9 @@ import {
   annotationOpacitySchema,
   MAX_ANNOTATION_BORDER,
   MAX_ANNOTATION_FONT,
+  MAX_CARET_SIZE,
   MIN_ANNOTATION_FONT,
+  MIN_CARET_SIZE,
   type MeasureScale,
   type MeasureUnit,
   measureUnitSchema,
@@ -22,6 +24,7 @@ import { z } from 'zod';
 import {
   EDITING_AUTHOR_NAME_DESCRIPTION,
   EDITING_AUTHOR_NAME_TITLE,
+  EDITING_CARET_SIZE_TITLE,
   EDITING_COLOUR_TITLE,
   EDITING_DIRECTION_DESCRIPTION,
   EDITING_DIRECTION_OPTION_TITLES,
@@ -446,6 +449,21 @@ export const TEXT_BOX_LOOK_SETTING: SettingDefinition<typeof textBoxLookSchema> 
   title: EDITING_TEXT_BOX_LOOK_TITLE,
   schema: textBoxLookSchema,
   fallback: {},
+  category: 'editing',
+  remembered: true,
+};
+
+/**
+ * How tall a new insertion mark is, in points, or `auto` for the size of the words it is placed in (the owner's O5).
+ *
+ * REMEMBERED, never a row: its control is the Properties tab's Size for a selected caret, with *Use as default* ticked,
+ * which is where a person sees the size they are keeping.
+ */
+export const CARET_SIZE_SETTING: SettingDefinition<z.ZodUnion<[z.ZodLiteral<'auto'>, z.ZodNumber]>> = {
+  id: 'editing.caret-size',
+  title: EDITING_CARET_SIZE_TITLE,
+  schema: z.union([z.literal('auto'), z.number().min(MIN_CARET_SIZE).max(MAX_CARET_SIZE)]),
+  fallback: 'auto',
   category: 'editing',
   remembered: true,
 };

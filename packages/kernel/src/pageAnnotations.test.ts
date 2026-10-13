@@ -3394,6 +3394,94 @@ describe('applyAddAnnotation writes a measurement', () => {
   });
 });
 
+/**
+ * An insertion mark at the size it is given (the owner's O5: tiny, its handles only moved it, and nothing in Properties
+ * sized it). MuPDF's `update()` puts a caret back to a fixed 20 by 14 box, so these cases read the saved `/Rect` after the
+ * redraws that follow every command, and after a reopen, where the snap would show.
+ */
+describe('a caret keeps the size it is given', () => {
+  const CARET = { type: 'caret' as const, at: { x: 100, y: 150 }, colour: [1, 0, 0] as [number, number, number], opacity: 1 };
+
+  /** The first annotation's `/Rect` in the saved file, read by pdf-lib. */
+  async function savedRect(bytes: Uint8Array): Promise<number[]> {
+    const document = await PDFDocument.load(bytes, { updateMetadata: false });
+    const annots = document.getPages()[0]?.node.lookup(PDFName.of('Annots'));
+    if (!(annots instanceof PDFArray)) throw new Error('no /Annots');
+    const first = annots.asArray()[0];
+    const dict = first instanceof PDFRef ? document.context.lookup(first, PDFDict) : undefined;
+    const rect = dict?.lookup(PDFName.of('Rect'));
+    if (!(rect instanceof PDFArray)) throw new Error('no /Rect');
+    return rect.asArray().map((value) => (value instanceof PDFNumber ? value.asNumber() : Number.NaN));
+  }
+  const size = (rect: readonly number[]): { wide: number; tall: number } => ({
+    wide: (rect[2] ?? 0) - (rect[0] ?? 0),
+    tall: (rect[3] ?? 0) - (rect[1] ?? 0),
+  });
+
+  it('a SIZE asked is the caret’s height, its width at MuPDF’s 20 to 14, centred on the point, in the saved file', async () => {
+    const rect = await savedRect(await drawnOn(await fixture(), command({ annotation: { ...CARET, size: 28 } })));
+    expect(size(rect).tall).toBeCloseTo(28, 3);
+    expect(size(rect).wide).toBeCloseTo(40, 3);
+    expect(((rect[0] ?? 0) + (rect[2] ?? 0)) / 2).toBeCloseTo(100, 3);
+    expect(((rect[1] ?? 0) + (rect[3] ?? 0)) / 2).toBeCloseTo(150, 3);
+  });
+
+  it('with NO size it takes the size of the words it is placed in; CONTROL: on bare paper, MuPDF’s own 14', async () => {
+    const document = await PDFDocument.create();
+    const page = document.addPage([...MEDIA]);
+    page.drawText('Large words here', { x: 20, y: 150, size: 24, font: await document.embedFont(StandardFonts.Helvetica) });
+    const withWords = await document.save({ useObjectStreams: false });
+    // BETWEEN TWO WORDS of the 24-point line.
+    expect(size(await savedRect(await drawnOn(withWords, command({ annotation: { ...CARET, at: { x: 85, y: 157 } } })))).tall).toBeCloseTo(24, 0);
+    expect(size(await savedRect(await drawnOn(withWords, command({ annotation: { ...CARET, at: { x: 100, y: 250 } } })))).tall).toBeCloseTo(14, 3);
+  });
+
+  it('a RESIZE by its box keeps the box asked, through the redraw that would snap it, and a later restyle and a reopen', async () => {
+    const drawn = await drawnOn(await fixture(), command({ annotation: CARET }));
+    const session = await mupdfWriter.open(drawn);
+    let bytes: Uint8Array;
+    try {
+      await applyPlaceAnnotation(session, { kind: 'placeAnnotation', page: 0, placements: [{ index: 0, rect: { x0: 70, y0: 130, x1: 130, y1: 172 } }], version: asDocVersion(1) });
+      // A RESTYLE REDRAWS IT AGAIN, which is where an `update()` would put it back to 20 by 14.
+      await applyStyleAnnotation(session, { kind: 'styleAnnotation', page: 0, indices: [0], colour: [0, 0, 1], version: asDocVersion(2) });
+      bytes = await mupdfWriter.serialise(session);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+    expect(await savedRect(bytes)).toStrictEqual([70, 130, 130, 172]);
+    // AND THE WALK, read in a fresh session as a reopen is, lists the box asked.
+    const listed = (await onSession(bytes, (fresh) => readAnnotations(fresh))).annotations[0]?.rect;
+    expect(listed).toStrictEqual({ x0: 70, y0: 130, x1: 130, y1: 172 });
+  });
+
+  it('ANOTHER READER draws it at the asked size: the appearance keeps its 20 by 14 box, which every reader maps onto /Rect', async () => {
+    const bytes = await drawnOn(await fixture(), command({ annotation: { ...CARET, size: 42 } }));
+    const document = await PDFDocument.load(bytes, { updateMetadata: false });
+    const annots = document.getPages()[0]?.node.lookup(PDFName.of('Annots'), PDFArray);
+    const caret = annots?.lookup(0, PDFDict);
+    const normal = caret?.lookup(PDFName.of('AP'), PDFDict).lookup(PDFName.of('N'));
+    const box = normal instanceof PDFRawStream ? normal.dict.lookup(PDFName.of('BBox'), PDFArray).asArray().map((value) => (value instanceof PDFNumber ? value.asNumber() : Number.NaN)) : [];
+    expect(box).toStrictEqual([0, 0, 20, 14]);
+    expect(size(await savedRect(bytes)).tall).toBeCloseTo(42, 3);
+    // DRAWN, by MuPDF opening the saved file afresh: the red wedge's ink reaches across most of the 60-point width asked,
+    // where the 20-point snap would leave two thirds of it blank.
+    const reopened = PDFDocumentRaw.openDocument(bytes, 'application/pdf');
+    const pixmap = reopened.loadPage(0).toPixmap(Matrix.identity, ColorSpace.DeviceRGB, false, true);
+    const width = pixmap.getWidth();
+    const samples = pixmap.getPixels();
+    let left = width;
+    let right = 0;
+    for (let at = 0; at < samples.length; at += 3) {
+      if ((samples[at] ?? 0) > 200 && (samples[at + 1] ?? 255) < 80) {
+        const x = (at / 3) % width;
+        left = Math.min(left, x);
+        right = Math.max(right, x);
+      }
+    }
+    expect(right - left).toBeGreaterThan(40);
+  });
+});
+
 describe('applyPlaceImage', () => {
   /**
    * A small PNG, deliberately not square and not a round number.

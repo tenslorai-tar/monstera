@@ -18,7 +18,9 @@ import {
   MAX_ANNOTATION_FONT,
   MAX_ANNOTATION_TEXT,
   LISTED_POINTS_MAX,
+  MAX_CARET_SIZE,
   MEASURE_PLACES,
+  MIN_CARET_SIZE,
   MIN_ANNOTATION_FONT,
   type MeasureScale,
   type MeasuredKind,
@@ -325,6 +327,38 @@ function readPoints(annotation: PDFAnnotation, transform: PageTransform): Annota
     const at = toPdf(viewportPoint(x, y), transform);
     return { x: at.x, y: at.y };
   });
+}
+
+/** MuPDF's own caret, 20 wide by 14 tall (measured 2026-09-06): the size a caret has where nothing gives it another. */
+const CARET_WIDTH = 20;
+const CARET_HEIGHT = 14;
+
+/**
+ * The size of the words at a point on a page, in points: the middle of the character sizes on the line whose box holds
+ * the point, or `undefined` where no line does (the owner's O5, a caret sized to the text it marks). The point and the
+ * lines are both in the engine's displayed frame, which is the one `toStructuredText` answers in.
+ */
+function textSizeAt(page: PDFPage, at: readonly [number, number]): number | undefined {
+  const lines: { box: readonly number[]; sizes: number[] }[] = [];
+  let current: number[] | undefined;
+  page.toStructuredText().walk({
+    beginLine: (bbox) => {
+      current = [];
+      lines.push({ box: bbox, sizes: current });
+    },
+    onChar: (_c, _origin, _font, size) => {
+      current?.push(size);
+    },
+    endLine: () => {
+      current = undefined;
+    },
+  });
+  const [x, y] = at;
+  const line = lines.find(({ box: [x0 = 0, y0 = 0, x1 = 0, y1 = 0], sizes }) => sizes.length > 0 && x >= x0 && x <= x1 && y >= y0 && y <= y1);
+  if (line === undefined) return undefined;
+  const sorted = [...line.sizes].sort((a, b) => a - b);
+  const middle = sorted[Math.floor(sorted.length / 2)];
+  return middle === undefined ? undefined : Math.min(MAX_CARET_SIZE, Math.max(MIN_CARET_SIZE, middle));
 }
 
 /**
@@ -1279,7 +1313,7 @@ const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T
     subtype: 'Caret',
     bounds: (draft, transform) => placedRect(pointBox(draft.at), transform),
     degenerate: () => false,
-    write: (annotation, draft, transform): void => {
+    write: (annotation, draft, transform, on): void => {
       // A DIFFERENT RULE FROM THE NOTE'S, WHICH IS WHY THIS IS A SECOND ENTRY.
       // Measured 2026-09-06 over the same seven requested sizes: a caret is a
       // genuinely fixed 20 by 14 CENTRED on the requested box — every size from
@@ -1292,7 +1326,14 @@ const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T
       // the clamp is visible only when the two answers are compared across a
       // range. Two entries force the comparison and each carries the rule it
       // actually obeys.
-      annotation.setRect(placedRect(pointBox(draft.at), transform));
+      // THE SIZE ASKED, or the size of the words it is placed in (the owner's O5: a mark about 5 px tall beside 17 pt
+      // text), or MuPDF's own where there are none; centred on the point, at MuPDF's 20 to 14. The redraw keeps it
+      // (`heldCaretRect`), where `update()` alone would put it back to 20 by 14.
+      const [at] = placedPoints([draft.at], transform);
+      if (at === undefined) throw new Error('a caret is placed at one point');
+      const tall = draft.size ?? textSizeAt(on.page, at) ?? CARET_HEIGHT;
+      const wide = tall * (CARET_WIDTH / CARET_HEIGHT);
+      annotation.setRect([at[0] - wide / 2, at[1] - tall / 2, at[0] + wide / 2, at[1] + tall / 2]);
       annotation.setColor([...draft.colour]);
       // NO CONTENTS, and the draft has no field for one. A caret is an
       // insertion mark: the annotation IS the position, and text attached to it
@@ -1459,10 +1500,40 @@ const BLEND_STATE = 'MonsteraBlend';
  */
 export function redrawPage(page: PDFPage, annotations: readonly PDFAnnotation[], document: PDFDocument): void {
   const asides = annotations.map((annotation) => setAside(annotation, document));
+  const carets = annotations.map(heldCaretRect);
   page.update();
   annotations.forEach((annotation, at) => {
+    restoreCaretRect(annotation, document, carets[at]);
     redrawn(annotation, document, asides[at]);
   });
+}
+
+/**
+ * A caret's `/Rect` as the file holds it, read before an `update()`, or `undefined` for any other mark (the owner's O5).
+ *
+ * MuPDF's `update()` puts every caret back to a fixed 20 by 14 box centred where it was, measured 2026-10-13 (MuPDF
+ * 1.28.0): a caret set to `[80 80 140 120]` came back `[100 93 120 107]`, so a resize, a size and a size from the text
+ * were all undone as they were drawn. Its appearance keeps its 20 by 14 `/BBox`, and every reader maps an appearance's box
+ * onto `/Rect` (PDF 32000 §12.5.5), so putting the asked `/Rect` back is what draws MuPDF's own wedge at the asked size,
+ * in this build and in any other reader, with no second drawing of a caret.
+ */
+function heldCaretRect(annotation: PDFAnnotation): readonly number[] | undefined {
+  if (annotation.getType() !== 'Caret') return undefined;
+  const rect = annotation.getObject().get('Rect');
+  if (!rect.isArray() || rect.length !== 4) return undefined;
+  const numbers = [0, 1, 2, 3].map((at) => rect.get(at)).map((value) => (value.isNumber() ? value.asNumber() : Number.NaN));
+  return numbers.every(Number.isFinite) ? numbers : undefined;
+}
+
+/**
+ * Puts back the `/Rect` {@link heldCaretRect} read, written into the dictionary in the file's own frame, as it was read.
+ * A raw write rather than `setRect`, which would mark the caret for another `update()` and the same snap.
+ */
+function restoreCaretRect(annotation: PDFAnnotation, document: PDFDocument, held: readonly number[] | undefined): void {
+  if (held === undefined) return;
+  const rect = document.newArray();
+  for (const value of held) rect.push(document.newReal(value));
+  annotation.getObject().put('Rect', rect);
 }
 
 /**
@@ -1477,7 +1548,10 @@ export function redrawPage(page: PDFPage, annotations: readonly PDFAnnotation[],
  */
 export function redraw(annotation: PDFAnnotation, document: PDFDocument): void {
   const aside = setAside(annotation, document);
+  const caret = heldCaretRect(annotation);
   annotation.update();
+  // A CARET KEEPS THE SIZE IT WAS GIVEN, which `update()` would put back to MuPDF's fixed one (the owner's O5).
+  restoreCaretRect(annotation, document, caret);
   redrawn(annotation, document, aside);
 }
 

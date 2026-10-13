@@ -2,7 +2,7 @@
 import { I18nProvider } from '@lingui/react';
 import { annotationOpacitySchema, MIN_ANNOTATION_OPACITY } from '@monstera/contract';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -12,7 +12,7 @@ import { STYLE_PRESETS } from './annotations/stylePresets.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { DELETE_SELECTION_TITLE, EN, REPLY_SELECTION_TITLE } from './messages/en.js';
 import type { ObjectPick } from './objectEditing.js';
-import { PropertiesPanel, type StyleChange } from './PropertiesPanel.js';
+import { PropertiesPanel, type StyleChange, caretRectAt, caretSizeOf } from './PropertiesPanel.js';
 import { CommandRegistry, type CommandContext, type UiCommand } from './registries/commands.js';
 import { SettingsRegistry } from './registries/settings.js';
 import { ALL_SETTINGS } from './settings/all.js';
@@ -22,6 +22,7 @@ import {
   ANNOTATION_FONT_SIZE_SETTING,
   ANNOTATION_LINE_WIDTH_SETTING,
   ANNOTATION_OPACITY_SETTING,
+  CARET_SIZE_SETTING,
   STYLE_AS_DEFAULT_SETTING,
   TEXT_BOX_LOOK_SETTING,
 } from './settings/editing.js';
@@ -649,5 +650,72 @@ describe('PropertiesPanel with an object selected on the page (ADR-0153 Decision
     shown({ ...RULE, object: { ...RULE.object, fill: null } });
     expect(screen.queryByRole('button', { name: 'Yellow' })).toBeNull();
     expect(screen.getByText('Monstera cannot read a colour for this object, so it cannot change it.')).toBeDefined();
+  });
+});
+
+describe('PropertiesPanel for an insertion mark (the owner’s O5)', () => {
+  /** A caret 20 wide by 14 tall, as MuPDF draws one by default. */
+  const CARET = { ...HIGHLIGHT, index: 2, kind: 'caret' as const, rect: { x0: 90, y0: 93, x1: 110, y1: 107 } };
+
+  function withResize(selection: AnnotationSelection): { store: SettingsStore; resized: number[] } {
+    const store = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
+    const resized: number[] = [];
+    render(
+      <Wrapped>
+        <PropertiesPanel
+          context={CONTEXT}
+          onAuthor={() => undefined}
+          onComment={() => undefined}
+          onResize={(chosen, size) => {
+            expect(chosen).toBe(selection);
+            resized.push(size);
+          }}
+          onRestyle={() => undefined}
+          registry={new CommandRegistry([])}
+          selection={selection}
+          settings={store}
+          wordsOf={() => Promise.resolve({ kind: 'problem', problem: { code: 'document-not-open' } })}
+        />
+      </Wrapped>,
+    );
+    return { store, resized };
+  }
+
+  it('shows its SIZE, its height in points, and a size typed and entered resizes it', () => {
+    const { resized, store } = withResize({ page: 3, version: asDocVersion(4), items: [CARET] });
+    act(() => {
+      store.set(STYLE_AS_DEFAULT_SETTING.id, false);
+    });
+    const field = screen.getByRole<HTMLInputElement>('spinbutton', { name: 'Size' });
+    expect(field.value).toBe('14');
+    fireEvent.change(field, { target: { value: '30' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    expect(resized).toStrictEqual([30]);
+    // CONTROL: with *Use as default* off the next caret's size is left as it was.
+    expect(store.get(CARET_SIZE_SETTING.id)).toBe('auto');
+  });
+
+  it('with USE AS DEFAULT ticked, the size typed is kept for the next insertion mark', () => {
+    const { resized, store } = withResize({ page: 3, version: asDocVersion(4), items: [CARET] });
+    act(() => {
+      store.set(STYLE_AS_DEFAULT_SETTING.id, true);
+    });
+    const field = screen.getByRole<HTMLInputElement>('spinbutton', { name: 'Size' });
+    fireEvent.change(field, { target: { value: '24' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    expect(resized).toStrictEqual([24]);
+    expect(store.get(CARET_SIZE_SETTING.id)).toBe(24);
+  });
+
+  it('CONTROL: a square, or a caret selected beside one, shows no Size', () => {
+    withResize({ page: 3, version: asDocVersion(4), items: [CARET, SQUARE] });
+    expect(screen.queryByRole('spinbutton', { name: 'Size' })).toBeNull();
+  });
+
+  it('a caret’s box at a size is its own box scaled about its centre, the way it faces kept', () => {
+    expect(caretRectAt(CARET.rect, 28)).toStrictEqual({ x0: 80, y0: 86, x1: 120, y1: 114 });
+    // TURNED: a caret on a page at 90 degrees is tall in PDF space, and stays so.
+    expect(caretRectAt({ x0: 93, y0: 90, x1: 107, y1: 110 }, 28)).toStrictEqual({ x0: 86, y0: 80, x1: 114, y1: 120 });
+    expect(caretSizeOf(CARET.rect)).toBe(14);
   });
 });

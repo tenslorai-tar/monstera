@@ -213,6 +213,8 @@ export function caretTool(deps: { readonly style: AnnotationStyle }): UiTool {
         annotation: {
           type: 'caret',
           at: clickedAt(gesture, transform),
+          // THE SIZE KEPT AS THE DEFAULT, or none, which the kernel answers with the size of the words placed in (O5).
+          ...(deps.style.caretSize === 'auto' ? {} : { size: deps.style.caretSize }),
           colour: deps.style.colour(CARET_COLOUR),
           opacity: deps.style.opacity,
         },

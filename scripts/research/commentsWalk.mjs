@@ -16,6 +16,7 @@
  * - O8: a distance shows its reading while it is drawn; its end, dragged with Select, moves alone and the line stays flat;
  *   the saved label is worked out again in proportion to the new length, no fill is written, and Undo brings the first
  *   reading back. An area's corner dragged changes its saved reading.
+ * - O5: an insertion mark is as tall as the words it is placed in, and its Size in Properties resizes it; both read back.
  */
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
@@ -249,7 +250,8 @@ const valueOf = (reading) => Number.parseFloat(reading);
 async function measureDocument() {
   const document = await PDFDocument.create();
   const font = await document.embedFont(StandardFonts.Helvetica);
-  document.addPage([612, 792]).drawText('Plan: measure the room below.', { x: 72, y: 720, size: 14, font });
+  // TWENTY POINTS, so an insertion mark sized to the words is told apart from MuPDF's own 14.
+  document.addPage([612, 792]).drawText('Plan: measure the room below.', { x: 72, y: 720, size: 20, font });
   return document.save({ useObjectStreams: false });
 }
 
@@ -348,6 +350,42 @@ await step('O8: an AREA’s corner dragged with Select changes the saved area', 
   expect(valueOf(grown.reading)).toBeGreaterThan(valueOf(drawn.reading));
   expect(grown.filled).toBe(false);
   return { before: drawn.reading, after: grown.reading };
+});
+
+/** Each caret's `/Rect` on page 1 of a saved file, read by pdf-lib. @param {string} path */
+async function savedCarets(path) {
+  const document = await PDFDocument.load(await readFile(path), { updateMetadata: false });
+  const annots = document.getPage(0).node.lookupMaybe(PDFName.of('Annots'), PDFArray);
+  return (annots?.asArray() ?? [])
+    .map((entry) => document.context.lookup(entry))
+    .filter((entry) => entry instanceof PDFDict && entry.get(PDFName.of('Subtype')) === PDFName.of('Caret'))
+    .map((entry) => /** @type {PDFDict} */ (entry).lookup(PDFName.of('Rect'), PDFArray).asArray().map((value) => (value instanceof PDFNumber ? value.asNumber() : Number.NaN)));
+}
+/** A rectangle's height. @param {readonly number[]} rect */
+const tallOf = (rect) => (rect[3] ?? 0) - (rect[1] ?? 0);
+
+await step('O5: an insertion mark placed in the 20-point line is as tall as the words, in the saved file', async () => {
+  await command('Insertion mark');
+  const slot = await planSlot();
+  await page.mouse.click(slot.x + 150 * slot.scale, slot.y + (792 - 727) * slot.scale);
+  const [caret] = await savedCarets(await saveCopy('plan-caret.pdf'));
+  if (caret === undefined) throw new Error('no caret in the saved file');
+  expect(Math.abs(tallOf(caret) - 20)).toBeLessThan(2);
+  return { rect: caret, tall: tallOf(caret) };
+});
+
+await step('O5: its Size typed in Properties resizes it, and the saved file keeps that size', async () => {
+  const slot = await planSlot();
+  await page.getByRole('button', { name: 'Select', exact: true }).first().click();
+  await page.mouse.click(slot.x + 150 * slot.scale, slot.y + (792 - 727) * slot.scale);
+  await page.getByRole('tab', { name: 'Properties' }).click();
+  const size = page.getByRole('spinbutton', { name: 'Size' });
+  await size.fill('32');
+  await size.press('Enter');
+  const [caret] = await savedCarets(await saveCopy('plan-caret-sized.pdf'));
+  if (caret === undefined) throw new Error('no caret in the saved file');
+  expect(Math.abs(tallOf(caret) - 32)).toBeLessThan(0.5);
+  return { rect: caret };
 });
 
 await finish();
