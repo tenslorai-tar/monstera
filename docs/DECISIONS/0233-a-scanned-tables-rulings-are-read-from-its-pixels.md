@@ -72,3 +72,20 @@ read, and a document changed by an export that need not change it.
   the engine would have named is not inferred from an absent ruling.
 - `scripts/proofs/scanTable.proof.mjs` asks the question of real Tesseract output, in CI, where the models are
   provisioned; `packages/kernel/src/scanTables.test.ts` asks it of a layer placed at the words' true places on every run.
+
+## Correction, 2026-10-13: recognition reads each ruled cell, because Tesseract reads none of them
+
+The decision assumed recognition puts the words on the page and this read only has to place them. The first CI run of
+`scanTable.proof.mjs` (run 38333923688, both legs) found the grid and every cell empty, and so did the same proof run
+here with the pinned English model: **Tesseract's layout analysis reads no word inside a fully ruled grid.** On the
+fixture's page, vector and scanned alike, the whole page and the whole table as one region read no line at all, and the
+first cell read alone gives *Region* at confidence 96. The layer this read placed words from was empty, so the export
+wrote a workbook of empty cells, and every recognition of a ruled form lost the words in its boxes, whatever it was
+for.
+
+`recognisePage` now finds the page's grids with this decision's reader (`rulingsOf`, `gridsOf`) on a grey raster made at
+its own scale, so each cell is a rectangle of the image Tesseract already holds, inset past its rulings. After the
+page's read, each cell that holds no word read is recognised as its own rectangle on the same instance, once. A region a
+caller names is the caller's and is read as asked. The confidence answered is then the mean over every word read,
+since the engine's own mean is its last rectangle's. The proof carries the control: the same page read as one rectangle
+gives no word, and with the cells read, the table reads whole.
