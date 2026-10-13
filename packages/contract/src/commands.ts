@@ -2250,7 +2250,26 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
       borderWidth: z.number().min(0).max(MAX_ANNOTATION_BORDER),
     })
     .strict(),
-  textMarkupDraft('highlight'),
+  z.discriminatedUnion('over', [
+    // OVER TEXT, as it always was: `over` is optional so every highlight sent before the area form existed still parses.
+    textMarkupDraft('highlight').extend({ over: z.literal('text').optional() }),
+    z
+      .object({
+        /**
+         * `/Subtype /Highlight` over an AREA (the owner's O7): a box dragged over anything — a picture, a scan, a
+         * diagram — highlighted as words are, with one quad covering the box. The format's own highlight rather than a
+         * tinted square, so other readers draw it as a highlight in its blend, and the walk names it `highlight`: the
+         * difference is the gesture, as a redaction's region and text are one kind.
+         */
+        type: z.literal('highlight'),
+        over: z.literal('area'),
+        /** The box highlighted, in PDF user space. */
+        rect: annotationRectSchema,
+        colour: annotationColourSchema,
+        opacity: annotationOpacitySchema,
+      })
+      .strict(),
+  ]),
   textMarkupDraft('underline'),
   textMarkupDraft('strikeout'),
   measureDraft('measure-distance', 2),

@@ -4,7 +4,7 @@
      equal to it. Regenerate with `npx vitest run packages/ui/src/App.test.tsx -t "manual test checklist" -u`.
      Do not edit by hand. -->
 
-Every command the application registers — 265 — and the checks only the installed window can answer.
+Every command the application registers — 266 — and the checks only the installed window can answer.
 For each command: use it on a real document, see the correct effect, then save, close and reopen and see it kept
 (the wired-tools rule, CLAUDE.md). A command that needs a selection, a second document or a key says so when it
 is not available.
@@ -89,6 +89,7 @@ is not available.
 - [ ] **Link to a web address** — Links · `annotate.link-address` · Shows: on screen · Help: *Add a link to a web page or another page*
 - [ ] **Link to a page** — Links · `annotate.link-page` · Shows: on screen · Help: *Add a link to a web page or another page*
 - [ ] **Highlight text** — Markup · `annotate.highlight` · Shows: on screen · Help: *Highlight, underline or strike through text*
+- [ ] **Highlight an area of the page** — Markup · `annotate.highlight-area` · Shows: on screen · Help: *Highlight, underline or strike through text*
 - [ ] **Underline text** — Markup · `annotate.underline` · Shows: on screen · Help: *Highlight, underline or strike through text*
 - [ ] **Strikethrough text** — Markup · `annotate.strikeout` · Shows: on screen · Help: *Highlight, underline or strike through text*
 - [ ] **Select annotations** — Markup · `annotate.select` · Shows: on screen · Help: *Change how annotations look*

@@ -3,7 +3,7 @@ id: highlight-underline-strike
 title: Highlight, underline or strike through text
 summary: Mark words on a page with a highlight, an underline or a line through them.
 keywords: [highlight, highlighter, underline, strikethrough, strike out, cross out, mark text, markup]
-commands: [annotate.highlight, annotate.underline, annotate.strikeout, text.highlight, text.underline, text.strikeout]
+commands: [annotate.highlight, annotate.highlight-area, annotate.underline, annotate.strikeout, text.highlight, text.underline, text.strikeout]
 contexts: [comment]
 ---
 These tools mark text the way a highlighter or pen would. The marks are saved as real PDF comments, so other PDF readers show them too.
@@ -19,7 +19,7 @@ Or, with text already selected using **Select text**: right-click it and choose 
 
 ## Good to know
 
-- A drag that selects no text makes no mark.
+- A drag that selects no text makes no mark. To highlight a picture, a scan or any other part of the page, choose **Highlight area** in the **Markup** group and drag a box over it.
 - Colour and opacity come from the **Properties** tab; see "Change how annotations look".
 - Undo with **Ctrl+Z**, or remove a mark with **Erase annotation** or the **Comments** list.
 

@@ -1882,6 +1882,7 @@ export const HINT_TYPEWRITER = messageKey('tool.hint.typewriter');
 export const HINT_NOTE = messageKey('tool.hint.note');
 export const HINT_CARET = messageKey('tool.hint.caret');
 export const HINT_HIGHLIGHT = messageKey('tool.hint.highlight');
+export const HINT_HIGHLIGHT_AREA = messageKey('tool.hint.highlight-area');
 export const HINT_UNDERLINE = messageKey('tool.hint.underline');
 export const HINT_STRIKEOUT = messageKey('tool.hint.strikeout');
 export const HINT_REDACT_TEXT = messageKey('tool.hint.redact-text');
@@ -2042,6 +2043,7 @@ export const ANNOTATIONS_KIND_HIGHLIGHT = messageKey('surface.annotations.kind.h
 export const ANNOTATIONS_KIND_UNDERLINE = messageKey('surface.annotations.kind.underline');
 export const ANNOTATIONS_KIND_STRIKEOUT = messageKey('surface.annotations.kind.strikeout');
 export const HIGHLIGHT_TOOL_TITLE = messageKey('command.annotate.highlight');
+export const HIGHLIGHT_AREA_TOOL_TITLE = messageKey('command.annotate.highlight-area');
 export const UNDERLINE_TOOL_TITLE = messageKey('command.annotate.underline');
 export const STRIKEOUT_TOOL_TITLE = messageKey('command.annotate.strikeout');
 export const ANNOTATIONS_KIND_OTHER = messageKey('surface.annotations.kind.other');
@@ -2834,6 +2836,7 @@ export const RIBBON_OPEN = messageKey('surface.ribbon.open');
 /** v5-02's Home › Quick tools captions, the short forms of the tools' full names. */
 export const RIBBON_SELECT = messageKey('surface.ribbon.select');
 export const RIBBON_HIGHLIGHT = messageKey('surface.ribbon.highlight');
+export const RIBBON_HIGHLIGHT_AREA = messageKey('surface.ribbon.highlight-area');
 export const RIBBON_COMMENT = messageKey('surface.ribbon.comment');
 /** §10.3's hand and text-selection tools, v5-02's *Hand* and *Text*. */
 export const HAND_TOOL_TITLE = messageKey('command.hand-tool.title');
@@ -4738,6 +4741,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ANNOTATIONS_KIND_UNDERLINE]: 'Underline',
   [ANNOTATIONS_KIND_STRIKEOUT]: 'Strikethrough',
   [HIGHLIGHT_TOOL_TITLE]: 'Highlight text',
+  [HIGHLIGHT_AREA_TOOL_TITLE]: 'Highlight an area of the page',
+  [RIBBON_HIGHLIGHT_AREA]: 'Highlight area',
   [UNDERLINE_TOOL_TITLE]: 'Underline text',
   // *STRIKETHROUGH* IN THE CONTROL AND `/StrikeOut` IN THE FILE. The format's
   // name is not the word a reader uses, and this row is the reader's. The SAME
@@ -4775,6 +4780,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [HINT_NOTE]: 'Click where the comment should sit.',
   [HINT_CARET]: 'Click the spot where something is missing.',
   [HINT_HIGHLIGHT]: 'Select the words you want to stand out.',
+  [HINT_HIGHLIGHT_AREA]: 'Drag a box over the part of the page you want to stand out, such as a picture or a scan.',
   [HINT_UNDERLINE]: 'Select the words you want underlined.',
   [HINT_STRIKEOUT]: 'Select the words you want crossed out.',
   [HINT_REDACT_TEXT]: 'Select the words you want gone for good.',

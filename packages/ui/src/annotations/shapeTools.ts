@@ -140,7 +140,7 @@ function box(gesture: Gesture): { x: number; y: number; width: number; height: n
  *   carries no border width, which is measured rather than chosen. Passing the
  *   builder keeps this factory free of any branch on which tool it is making
  */
-function boxTool(
+export function boxTool(
   id: string,
   shape: 'rect' | 'ellipse',
   hint: MessageKey,

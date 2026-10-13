@@ -17,6 +17,7 @@
  *   the saved label is worked out again in proportion to the new length, no fill is written, and Undo brings the first
  *   reading back. An area's corner dragged changes its saved reading.
  * - O5: an insertion mark is as tall as the words it is placed in, and its Size in Properties resizes it; both read back.
+ * - O7: Highlight area highlights a box with no words in it, saved as a Highlight at exactly that box, and is listed.
  */
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
@@ -386,6 +387,35 @@ await step('O5: its Size typed in Properties resizes it, and the saved file keep
   if (caret === undefined) throw new Error('no caret in the saved file');
   expect(Math.abs(tallOf(caret) - 32)).toBeLessThan(0.5);
   return { rect: caret };
+});
+
+await step('O7: Highlight area highlights a box with no words in it; the file holds a Highlight at exactly that box, listed in Comments', async () => {
+  await section('Comment');
+  await page.locator('[data-command="annotate.highlight-area"]').first().click();
+  const slot = await planSlot();
+  // AN EMPTY PART OF THE PAGE, where a text highlight would mark nothing.
+  const drawn = { x0: 100, x1: 300, top: 400, bottom: 500 };
+  await page.mouse.move(slot.x + drawn.x0 * slot.scale, slot.y + drawn.top * slot.scale);
+  await page.mouse.down();
+  await page.mouse.move(slot.x + drawn.x1 * slot.scale, slot.y + drawn.bottom * slot.scale, { steps: 10 });
+  await page.mouse.up();
+  const saved = await saveCopy('plan-highlight-area.pdf');
+  const document = await PDFDocument.load(await readFile(saved), { updateMetadata: false });
+  const annots = document.getPage(0).node.lookupMaybe(PDFName.of('Annots'), PDFArray);
+  const highlight = (annots?.asArray() ?? [])
+    .map((entry) => document.context.lookup(entry))
+    .find((entry) => entry instanceof PDFDict && entry.get(PDFName.of('Subtype')) === PDFName.of('Highlight'));
+  if (!(highlight instanceof PDFDict)) throw new Error('no highlight in the saved file');
+  /** @param {string} key */
+  const numbers = (key) => highlight.lookup(PDFName.of(key), PDFArray).asArray().map((value) => (value instanceof PDFNumber ? value.asNumber() : Number.NaN));
+  const rect = numbers('Rect');
+  // THE BOX DRAGGED, in PDF space, and nothing wider: MuPDF alone would pad it sideways.
+  const expected = [drawn.x0, 792 - drawn.bottom, drawn.x1, 792 - drawn.top];
+  expect(Math.max(...rect.map((value, at) => Math.abs(value - (expected[at] ?? 0))))).toBeLessThan(1);
+  expect(numbers('QuadPoints')).toHaveLength(8);
+  await page.getByRole('tab', { name: 'Comments' }).click();
+  await expect(page.locator('.m-annotations-panel').getByText('Highlight').first()).toBeVisible();
+  return { rect, quad: numbers('QuadPoints') };
 });
 
 await finish();

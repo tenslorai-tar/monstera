@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { UiTool } from '../registries/tools.js';
 import { overlayTransform } from './annotationSpace.js';
 import {
+  HIGHLIGHT_AREA_TOOL_ID,
   HIGHLIGHT_TOOL_ID,
   REDACT_TEXT_TOOL_ID,
   STRIKEOUT_TOOL_ID,
@@ -98,13 +99,29 @@ describe('textMarkupTools', () => {
     });
   });
 
-  it('registers the three markups and Redact text, with four ids', () => {
+  it('registers the three markups, Highlight area and Redact text, with five ids', () => {
     expect(textMarkupTools.map((tool) => tool.id)).toStrictEqual([
       HIGHLIGHT_TOOL_ID,
+      HIGHLIGHT_AREA_TOOL_ID,
       UNDERLINE_TOOL_ID,
       STRIKEOUT_TOOL_ID,
       REDACT_TEXT_TOOL_ID,
     ]);
+  });
+
+  it('HIGHLIGHT AREA sends the box dragged as a highlight over an area, in the highlighter’s yellow (the owner’s O7)', () => {
+    const tool = textMarkupTools.find((candidate) => candidate.id === HIGHLIGHT_AREA_TOOL_ID);
+    if (tool === undefined) throw new Error('no Highlight area tool');
+    const transform = overlayTransform({ crop: [50, 100, 250, 400], rotation: 0, zoom: 2 });
+    const started = tool.controller.begin(viewportPoint(20, 20));
+    // 100 by 60 pixels at zoom 2, from (20,20): PDF x 60 to 110, y 390 down to 360, as dragged.
+    expect(tool.controller.commit(tool.controller.update(started, viewportPoint(120, 80)), 3, transform)).toStrictEqual({
+      kind: 'addAnnotation',
+      page: 3,
+      annotation: { type: 'highlight', over: 'area', rect: { x0: 60, y0: 390, x1: 110, y1: 360 }, colour: [1, 0.9, 0.2], opacity: 1 },
+    });
+    // CONTROL: a press that did not travel highlights nothing, as a box tool's click never draws.
+    expect(tool.controller.commit(tool.controller.begin(viewportPoint(20, 20)), 3, transform)).toBeUndefined();
   });
 
   it('REDACT TEXT marks the selected run for redaction, by the selected-text menu’s own builder (14e)', () => {

@@ -532,6 +532,13 @@ function outlineKind(subtype: PDFAnnotationType): AnnotationKind<OutlineDraft> {
 
 /** The three text markups, which the format says are one thing under three names. */
 type MarkupDraft = DraftOf<'highlight' | 'underline' | 'strikeout'>;
+/** A highlight over an area (the owner's O7), and every other markup, which is over a run of text. */
+type AreaMarkupDraft = Extract<MarkupDraft, { readonly over: 'area' }>;
+type TextMarkupDraft = Exclude<MarkupDraft, { readonly over: 'area' }>;
+/** Whether a markup is over an area rather than a run of text: the one test of the two forms. */
+function isAreaMarkup(draft: MarkupDraft): draft is AreaMarkupDraft {
+  return 'over' in draft && draft.over === 'area';
+}
 
 /**
  * A text-markup entry — the first whose geometry comes out of the PAGE.
@@ -566,7 +573,7 @@ type MarkupDraft = DraftOf<'highlight' | 'underline' | 'strikeout'>;
  */
 function markupKind(subtype: PDFAnnotationType): AnnotationKind<MarkupDraft> {
   const ends = (
-    draft: MarkupDraft,
+    draft: TextMarkupDraft,
     transform: PageTransform,
   ): readonly [[number, number], [number, number]] => {
     const [from, to] = placedPoints([draft.from, draft.to], transform);
@@ -580,14 +587,30 @@ function markupKind(subtype: PDFAnnotationType): AnnotationKind<MarkupDraft> {
     // the right way round: a drag entirely off the page selects nothing anyway,
     // and one that touches it is refused later if it caught no text.
     bounds: (draft, transform) =>
-      placedRect(
-        { x0: draft.from.x, y0: draft.from.y, x1: draft.to.x, y1: draft.to.y },
-        transform,
-      ),
+      isAreaMarkup(draft)
+        ? placedRect(draft.rect, transform)
+        : placedRect({ x0: draft.from.x, y0: draft.from.y, x1: draft.to.x, y1: draft.to.y }, transform),
     // A CLICK SELECTS NOTHING, which is the same refusal as an empty run and is
-    // made here so the common case never reaches the engine.
-    degenerate: (draft) => draft.from.x === draft.to.x && draft.from.y === draft.to.y,
+    // made here so the common case never reaches the engine. An area with no width or no height covers nothing.
+    degenerate: (draft) =>
+      isAreaMarkup(draft)
+        ? draft.rect.x0 === draft.rect.x1 || draft.rect.y0 === draft.rect.y1
+        : draft.from.x === draft.to.x && draft.from.y === draft.to.y,
     write: (annotation, draft, transform, on): void => {
+      if (isAreaMarkup(draft)) {
+        // ONE QUAD COVERING THE BOX (the owner's O7), in the displayed frame the text quads are stored in, corners in
+        // MuPDF's quad order: upper left, upper right, lower left, lower right, with y running down that frame. MuPDF
+        // draws a highlight's appearance from its quads in its blend, so the box is highlighted as words are.
+        // NO `setRect`: MuPDF refuses one on a Highlight ("Highlight annotations have no Rect property", measured
+        // 2026-10-13), since its box is the quads'.
+        const [x0, y0, x1, y1] = placedRect(draft.rect, transform);
+        annotation.addQuadPoint([x0, y0, x1, y0, x0, y1, x1, y1]);
+        annotation.setColor([...draft.colour]);
+        // MARKED AS AN AREA, so every redraw draws it as one (`areaHighlighted`): a one-line text highlight is also one
+        // axis-aligned quad, and only the mark tells the two apart.
+        annotation.getObject().put(AREA_KEY, true);
+        return;
+      }
       const [from, to] = ends(draft, transform);
       const quads = on.page.toStructuredText().highlight(from, to, MAX_MARKUP_QUADS);
       if (quads.length === 0) {
@@ -1566,8 +1589,72 @@ function redrawn(annotation: PDFAnnotation, document: PDFDocument, aside: SetAsi
   // appearance this redraw's update just drew.
   restyled(annotation, document);
   refaced(aside, document);
+  // A HIGHLIGHT OVER AN AREA is drawn as its box, over what MuPDF just drew padded for words (O7), before the blend.
+  areaHighlighted(annotation, document);
   reblend(annotation, document);
   relabel(annotation, document);
+}
+
+/**
+ * The private key that says a highlight was drawn over an AREA rather than a run of words (the owner's O7), ADR-0043's
+ * scheme: one more key of ours on an annotation's dictionary, which no other reader acts on.
+ */
+const AREA_KEY = 'Monstera_Area';
+
+/**
+ * Draws a highlight over an area as exactly its box: a fill in its colour, in the Multiply blend and the opacity a
+ * highlight is drawn in, with `/Rect` the box.
+ *
+ * MuPDF draws a highlight's appearance for a run of words, padding each quad sideways by about a fifth of its height to
+ * round the ends (measured 2026-10-13, MuPDF 1.28.0: a box 50 points tall painted 9 points past each side, one 100 tall
+ * 18, with `/Rect` wider still). Over a box that spill is a highlight outside what was dragged, and shrinking the quad
+ * cannot cancel it, since a narrow tall box would have nothing left and its sides would be curved. So the appearance is
+ * written here, in MuPDF's own shape (a form in page space, identity matrix, its box as `/BBox` and `/Rect`, an
+ * ExtGState carrying the blend and opacity), and the walk, the blend control and every reader take it as they take
+ * MuPDF's.
+ */
+function areaHighlighted(annotation: PDFAnnotation, document: PDFDocument): void {
+  const object = annotation.getObject();
+  const mark = object.get(AREA_KEY);
+  if (!mark.isBoolean() || !mark.asBoolean()) return;
+  const quads = object.get('QuadPoints');
+  if (!quads.isArray() || quads.length < 8) return;
+  const corners = [0, 1, 2, 3, 4, 5, 6, 7].map((at) => quads.get(at)).map((value) => (value.isNumber() ? value.asNumber() : Number.NaN));
+  if (!corners.every(Number.isFinite)) return;
+  const xs = corners.filter((_value, at) => at % 2 === 0);
+  const ys = corners.filter((_value, at) => at % 2 === 1);
+  const box = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] as const;
+  const colour = object.get('C');
+  const components = colour.isArray() ? [0, 1, 2, 3].slice(0, colour.length).map((at) => colour.get(at)).map((value) => (value.isNumber() ? value.asNumber() : 0)) : [1, 1, 0];
+  const fill = components.length === 1 ? 'g' : components.length === 4 ? 'k' : 'rg';
+  const opacity = object.get('CA').isNumber() ? object.get('CA').asNumber() : 1;
+  const numbers = (values: readonly number[]): PDFObject => {
+    const array = document.newArray();
+    for (const value of values) array.push(document.newReal(value));
+    return array;
+  };
+  const state = document.newDictionary();
+  state.put('Type', document.newName('ExtGState'));
+  state.put('BM', document.newName('Multiply'));
+  state.put('CA', document.newReal(opacity));
+  state.put('ca', document.newReal(opacity));
+  const states = document.newDictionary();
+  states.put('H', state);
+  const resources = document.newDictionary();
+  resources.put('ExtGState', states);
+  const form = document.newDictionary();
+  form.put('Type', document.newName('XObject'));
+  form.put('Subtype', document.newName('Form'));
+  form.put('BBox', numbers(box));
+  form.put('Matrix', numbers([1, 0, 0, 1, 0, 0]));
+  form.put('Resources', resources);
+  const [x0, y0, x1, y1] = box;
+  const spelt = (values: readonly number[]): string => values.map((value) => contentNumber(value)).join(' ');
+  const content = `/H gs\n${spelt(components)} ${fill}\n${spelt([x0, y0, x1 - x0, y1 - y0])} re\nf\n`;
+  const appearances = document.newDictionary();
+  appearances.put('N', document.addStream(content, form));
+  object.put('AP', appearances);
+  object.put('Rect', numbers(box));
 }
 
 /** What both redraws do after `update()`: the dictionary's `/BM` written back into the appearance MuPDF just drew. */

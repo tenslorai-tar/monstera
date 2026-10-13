@@ -48,6 +48,7 @@ import {
 import { SNAPSHOT_TOOL_ID } from '../annotations/snapshotTool.js';
 import { STAMP_TOOL_ID } from '../annotations/stampTool.js';
 import {
+  HIGHLIGHT_AREA_TOOL_ID,
   HIGHLIGHT_TOOL_ID,
   REDACT_TEXT_TOOL_ID,
   STRIKEOUT_TOOL_ID,
@@ -118,6 +119,7 @@ import {
   RIBBON_PLACE_SIGNATURE,
   RIBBON_COMMENT,
   RIBBON_HIGHLIGHT,
+  RIBBON_HIGHLIGHT_AREA,
   RIBBON_SELECT,
   GROUP_QUICK_TOOLS,
   RIBBON_FIELD_TEXT,
@@ -128,6 +130,7 @@ import {
   RIBBON_FIELD_BUTTON,
   RIBBON_FIELD_SIGNATURE,
   RIBBON_FIELD_DATE,
+  HIGHLIGHT_AREA_TOOL_TITLE,
   HIGHLIGHT_TOOL_TITLE,
   INK_TOOL_TITLE,
   LINE_TOOL_TITLE,
@@ -522,6 +525,19 @@ export function highlightToolCommand(deps: ToolCommandDeps): UiCommand {
     group: GROUP_QUICK_TOOLS,
     order: 104,
   });
+}
+
+/** Highlight area (the owner's O7): beside Highlight text, a box dragged over anything is highlighted. */
+export function highlightAreaToolCommand(deps: ToolCommandDeps): UiCommand {
+  // A SHORT CAPTION UNDER A FULL TITLE, Highlight text's pair, which is what gives the button its tooltip.
+  return toolCommand(
+    HIGHLIGHT_AREA_TOOL_ID,
+    { full: HIGHLIGHT_AREA_TOOL_TITLE, ribbon: RIBBON_HIGHLIGHT_AREA },
+    'SquareDashedMousePointer',
+    36.5,
+    deps,
+    MARKUP_SMALL,
+  );
 }
 
 export function underlineToolCommand(deps: ToolCommandDeps): UiCommand {
@@ -1411,6 +1427,7 @@ export function shapeToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
     eraserToolCommand(deps),
     selectToolCommand(deps),
     highlightToolCommand(deps),
+    highlightAreaToolCommand(deps),
     underlineToolCommand(deps),
     strikeoutToolCommand(deps),
     linkAddressToolCommand(deps),

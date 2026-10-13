@@ -1,12 +1,12 @@
-import type { AnnotationColour, DispatchableCommand } from '@monstera/contract';
+import type { AnnotationColour, AnnotationDraft, DispatchableCommand } from '@monstera/contract';
 import type { MessageKey, PageTransform } from '@monstera/shared';
 import { toPdf } from '@monstera/shared';
 
-import { HINT_HIGHLIGHT, HINT_REDACT_TEXT, HINT_STRIKEOUT, HINT_UNDERLINE } from '../messages/en.js';
+import { HINT_HIGHLIGHT, HINT_HIGHLIGHT_AREA, HINT_REDACT_TEXT, HINT_STRIKEOUT, HINT_UNDERLINE } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import type { AnnotationStyle } from './annotationStyle.js';
-import { STROKE } from './shapeTools.js';
+import { STROKE, boxTool } from './shapeTools.js';
 
 /**
  * Highlight, underline and strikethrough — a drag across text.
@@ -88,20 +88,20 @@ export function markupCommand(
   to: { readonly x: number; readonly y: number },
   style: AnnotationStyle,
 ): DispatchableCommand {
-  return {
-    kind: 'addAnnotation',
-    page,
-    annotation: {
-      type,
-      from: { x: from.x, y: from.y },
-      to: { x: to.x, y: to.y },
-      // THE HIGHLIGHTER'S YELLOW IS ITS OWN, resolved through the style: a
-      // person who has chosen nothing gets a highlighter that highlights,
-      // and one who has chosen gets what they chose on all three.
-      colour: style.colour(MARKUP_COLOURS[type]),
-      opacity: style.opacity,
-    },
+  const parts = {
+    from: { x: from.x, y: from.y },
+    to: { x: to.x, y: to.y },
+    // THE HIGHLIGHTER'S YELLOW IS ITS OWN, resolved through the style: a
+    // person who has chosen nothing gets a highlighter that highlights,
+    // and one who has chosen gets what they chose on all three.
+    colour: style.colour(MARKUP_COLOURS[type]),
+    opacity: style.opacity,
   };
+  // ONE LITERAL PER BRANCH: a highlight has two forms (over text, over an area, O7), so the draft union carries two
+  // `highlight` members and a `type` held as a union of three can no longer be matched to one of them by the compiler.
+  const annotation: AnnotationDraft =
+    type === 'highlight' ? { type, ...parts } : type === 'underline' ? { type, ...parts } : { type, ...parts };
+  return { kind: 'addAnnotation', page, annotation };
 }
 
 /**
@@ -200,9 +200,26 @@ function textRunTool(
 }
 
 /** The text-run tools: the three markups, in the order their controls appear, and Redact text. */
+/**
+ * Highlight area (the owner's O7): a box dragged over anything — a picture, a scan, a diagram — highlighted in the
+ * highlighter's colour and blend. A box tool rather than a run of text, so the kernel is handed the box and draws exactly
+ * it; the draft is a highlight `over: 'area'`, which the walk names a highlight like any other.
+ */
+export const HIGHLIGHT_AREA_TOOL_ID = 'annotate.highlight-area';
+export function highlightAreaTool(style: AnnotationStyle): UiTool {
+  return boxTool(HIGHLIGHT_AREA_TOOL_ID, 'rect', HINT_HIGHLIGHT_AREA, (rect) => ({
+    type: 'highlight',
+    over: 'area',
+    rect,
+    colour: style.colour(MARKUP_COLOURS.highlight),
+    opacity: style.opacity,
+  }));
+}
+
 export function textMarkupTools(style: AnnotationStyle): readonly UiTool[] {
   return [
     markupTool(HIGHLIGHT_TOOL_ID, 'highlight', style),
+    highlightAreaTool(style),
     markupTool(UNDERLINE_TOOL_ID, 'underline', style),
     markupTool(STRIKEOUT_TOOL_ID, 'strikeout', style),
     redactTextTool(style),

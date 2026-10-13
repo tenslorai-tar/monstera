@@ -2764,6 +2764,63 @@ describe('applyAddAnnotation writes text markup as runs of text', () => {
     expect(listed.annotations).toHaveLength(1);
   });
 
+  describe('a highlight over an AREA (the owner’s O7)', () => {
+    /** The margin of `withText`'s page where there are no words, which a text highlight refuses. */
+    const AREA: AnnotationDraft = { type: 'highlight', over: 'area', rect: { x0: 10, y0: 40, x1: 110, y1: 90 }, colour: [1, 0.9, 0.2], opacity: 1 };
+
+    it('highlights a box with NO words in it — where a text highlight is refused — as ONE quad covering the box', async () => {
+      const drawn = await drawnOn(await withText(), command({ annotation: AREA }));
+      const quad = await quadsOf(drawn);
+      expect(quad).toHaveLength(8);
+      // THE BOX ITSELF, stored in PDF space with its upper corners first, as the format orders a quad: MuPDF takes the
+      // quad in the displayed frame and writes it back into the page's own.
+      expect(quad).toStrictEqual([10, 90, 110, 90, 10, 40, 110, 40]);
+    });
+
+    it('is LISTED as a highlight at the box drawn, in its blend, and survives a reopen', async () => {
+      const drawn = await drawnOn(await withText(), command({ annotation: AREA }));
+      const [listed] = (await onSession(drawn, (session) => readAnnotations(session))).annotations;
+      expect({ kind: listed?.kind, blend: listed?.blend }).toStrictEqual({ kind: 'highlight', blend: 'multiply' });
+      // THE BOX DRAWN, as the walk places it: MuPDF's bounds of a highlight's appearance, within a point of the box.
+      const rect = listed?.rect;
+      if (rect === null || rect === undefined) throw new Error('no place');
+      for (const [got, want] of [[rect.x0, 10], [rect.y0, 40], [rect.x1, 110], [rect.y1, 90]] as const) expect(Math.abs(got - want)).toBeLessThan(1.5);
+    });
+
+    it('PAINTS the box in the highlight colour, read from a fresh raster of the saved file; CONTROL: the paper beside it is white', async () => {
+      const drawn = await drawnOn(await withText(), command({ annotation: AREA }));
+      const pixmap = PDFDocumentRaw.openDocument(drawn, 'application/pdf').loadPage(0).toPixmap(Matrix.identity, ColorSpace.DeviceRGB, false, true);
+      const width = pixmap.getWidth();
+      const samples = pixmap.getPixels();
+      const at = (x: number, y: number): readonly number[] => {
+        const offset = (y * width + x) * 3;
+        return [samples[offset] ?? 0, samples[offset + 1] ?? 0, samples[offset + 2] ?? 0];
+      };
+      // INSIDE, in raster pixels from the top: (60, 235) is PDF (60, 65). Yellow: red and green high, blue low.
+      const [r = 0, g = 0, b = 0] = at(60, 235);
+      expect(r).toBeGreaterThan(200);
+      expect(g).toBeGreaterThan(180);
+      expect(b).toBeLessThan(120);
+      expect(at(160, 235)).toStrictEqual([255, 255, 255]);
+      // AND NOTHING SPILLS PAST ITS SIDES: x 4 is six points left of the box, inside the padding MuPDF gives a highlight
+      // for words (it painted from x 1 on a box this tall, measured), and white here.
+      expect(at(4, 235)).toStrictEqual([255, 255, 255]);
+    });
+
+    it('MOVED, it is drawn at its new box and still only there', async () => {
+      const drawn = await drawnOn(await withText(), command({ annotation: AREA }));
+      const moved = await placedIn(drawn, 0, [{ index: 0, rect: { x0: 60, y0: 120, x1: 160, y1: 170 } }]);
+      const [listed] = (await onSession(moved, (session) => readAnnotations(session))).annotations;
+      expect(listed?.rect).toStrictEqual({ x0: 60, y0: 120, x1: 160, y1: 170 });
+      expect(await quadsOf(moved)).toStrictEqual([60, 170, 160, 170, 60, 120, 160, 120]);
+    });
+
+    it('REFUSES an area with no width or no height, and leaves nothing behind', async () => {
+      const blank = await withText();
+      await expect(drawnOn(blank, command({ annotation: { ...AREA, rect: { x0: 10, y0: 40, x1: 10, y1: 90 } } }))).rejects.toBeInstanceOf(RangeError);
+    });
+  });
+
   it('a REDACTION over selected text stores the run’s quads, and spans two lines as two', async () => {
     // The markups' claim on the one kind where being wrong removes a reader's words: a mark placed
     // over a selection names the runs, not the box the selection swept. Two lines is the case that
