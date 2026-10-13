@@ -61,3 +61,40 @@ member predicted the shape: *each walk is its own index space, and the refusals 
   position and the version are what the format's own order and the bus's own check can honestly say.
 - **Make links annotations so the Properties tab covers them.** Measured in `pageLinks.ts`: `createAnnotation('Link')` makes a
   different object that cannot be followed. It would be a rewrite of how links exist for the sake of one control.
+
+## Correction, 2026-10-13 — a link is selected, moved, resized and sent elsewhere (the owner's O6(c))
+
+The owner's words: once created, a link "can't be expanded, moved or clicked". The Context above said the select tool and the
+Properties tab never see a link. That stops being true, and the rejected alternative above stays rejected. Links do not become
+annotations. They get their own selection on the same handle this ADR made.
+
+1. **`editLink` is a second kind on the `'link'` target**, beside `setLinkOutline`: a page, a place, a version, and a rectangle
+   (`addLink`'s, in its frame), a target (`addLink`'s union), or both. Undo is the checkpoint, for Decision 3's reason. The
+   writer converts the rectangle and spells the target through the functions `addLink` uses (`linkRect`, `linkURI`), so a link
+   moved or retargeted is written by the code that made it.
+2. **The select tool picks a link where a click lands on no mark** (a mark is drawn over a link, so it is asked first). The
+   result is a `LinkSelection` held beside the annotation selection, never an item in it, since the two index spaces are
+   this ADR's own reason. One is set at a time. A drag on the selected link moves it, and a corner or a side resizes it, by
+   the hit test and placement the annotations take. The selection is carried across the `editLink` it made by reading the
+   page's links again at the version the command answered, since `editLink` keeps every place on the page.
+3. **The Properties tab shows a selected link**: where it goes, changed by one `editLink`, and *Follow link*, the same route
+   a press on the page takes (ADR-0167).
+
+**Measured while building it (`pageLinks.test.ts`):**
+
+- MuPDF's `Link.setBounds` writes its argument to `/Rect` unconverted, where `createLink` converts from the page's displayed
+  frame: a displayed `[30 50 170 100]` was stored as `/Rect [30 50 170 100]` on a 200-high page, which is that rectangle
+  flipped. The writer therefore gives `setBounds` the displayed rectangle, which is the engine's own copy and what
+  `getLinks` answers in, and then writes `/Rect` itself in PDF user space. A read in the same session and the saved file
+  both say the rectangle asked.
+- `setURI` writes `/A` and leaves a `/Dest`, which a reader prefers, so a page link the document brought kept going to its
+  old page. The writer deletes `/Dest` when it writes a target.
+- **The owner's O6(b), the web link saved lower than it was drawn, does not reproduce in the conversion.** A box dragged on
+  screen, taken through `draggedRect`'s transform into `addLink`, written, read back and placed by `engineBoxOnScreen` lands
+  on the drawn box within a thousandth of a pixel. This held at 0, 90, 180 and 270 degrees, at zooms 1.21 and 2, on a page
+  whose CropBox starts at 50,60. The control reads the engine's box as PDF points and lands elsewhere. What it cannot reach is
+  PDF.js and MuPDF resolving different visible boxes for one page (`annotationSpace.ts` states that gap), and it has not
+  been seen on the owner's file. The Windows walk reads the saved `/Rect` against the drawn spot.
+
+Not built: removing a link (still a row nothing carries), several links selected at once, and a hover tooltip while the select
+tool is on (the overlay is over the links then; reading keeps the hover).
