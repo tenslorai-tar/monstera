@@ -17,7 +17,7 @@ import { type GreyRaster, otsu } from './pageSkew.js';
 /** The shortest run of ink that is a ruling: half an inch, taller than any letter of body text and most headings. */
 const MIN_RULING_INCHES = 0.5;
 /** The thickest band of ink that is a ruling and not a filled shape: four points. */
-const MAX_RULING_INCHES = 4 / 72;
+export const MAX_RULING_INCHES = 4 / 72;
 /** A gap a scanned ruling may have and still be one line: the speckle a scanner leaves, one point. */
 const GAP_INCHES = 1 / 72;
 /** How far a ruling may stop short of the one it meets and still meet it: three points. */

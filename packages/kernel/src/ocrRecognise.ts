@@ -10,8 +10,11 @@ import { ColorSpace, Matrix, Rect } from './mupdfRaw.js';
 import type { MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
 import { displayedBox } from './pageBoxes.js';
+import { ENGINE_SCAN_TABLE_CELLS_MAX } from './host/engineChannels.js';
 import { pageInDocument } from './pageScope.js';
+import { type GreyRaster, greyRasterOfPage } from './pageSkew.js';
 import { scaleWithinPixelBound } from './pageSnapshot.js';
+import { MAX_RULING_INCHES, gridsOf, rulingsOf } from './rasterRulings.js';
 
 /**
  * The Tesseract native boundary — a raster becomes characters and their boxes.
@@ -426,6 +429,62 @@ interface JsonTree {
 }
 
 /**
+ * THE CORE'S OWN JSON RENDERER's lines, each in PDF user space — which is why no tree walker of ours exists: one call
+ * answers blocks, paragraphs, lines and words with a box on each.
+ */
+function linesOf(tree: JsonTree, toPdf: MupdfMatrix): RecognisedLine[] {
+  const lines: RecognisedLine[] = [];
+  for (const block of tree.blocks ?? []) {
+    for (const paragraph of block.paragraphs ?? []) {
+      for (const line of paragraph.lines ?? []) {
+        if (line.bbox === undefined) continue;
+        const words: RecognisedWord[] = [];
+        for (const word of line.words ?? []) {
+          if (word.bbox === undefined || word.text === undefined) continue;
+          words.push({ text: word.text, box: toPdfSpace(word.bbox, toPdf), confidence: word.confidence ?? 0 });
+        }
+        lines.push({ text: line.text ?? '', box: toPdfSpace(line.bbox, toPdf), words });
+      }
+    }
+  }
+  return lines;
+}
+
+/** The most cells one page's grids are read in, cell by cell: the scanned-table read's own bound. */
+const MAX_RULED_CELLS = ENGINE_SCAN_TABLE_CELLS_MAX;
+
+/**
+ * Every cell of every ruled grid on the page, in the raster's pixels and inside its rulings — inset by the widest a
+ * ruling is read as (`rasterRulings.ts`), so a cell's rectangle holds its words and no line of its border.
+ */
+function ruledCellsOf(grey: GreyRaster, dpi: number): RasterBox[] {
+  const inset = Math.ceil(MAX_RULING_INCHES * dpi);
+  const cells: RasterBox[] = [];
+  for (const grid of gridsOf(rulingsOf(grey, dpi), dpi)) {
+    for (let row = 0; row + 1 < grid.rows.length; row += 1) {
+      for (let column = 0; column + 1 < grid.columns.length; column += 1) {
+        const cell = {
+          x0: (grid.columns[column] ?? 0) + inset,
+          y0: (grid.rows[row] ?? 0) + inset,
+          x1: (grid.columns[column + 1] ?? 0) - inset,
+          y1: (grid.rows[row + 1] ?? 0) - inset,
+        };
+        if (cell.x1 > cell.x0 && cell.y1 > cell.y0 && cells.length < MAX_RULED_CELLS) cells.push(cell);
+      }
+    }
+  }
+  return cells;
+}
+
+/** Whether a word's box, in PDF space, has its centre in a cell given in the raster's pixels. */
+function centreIn(box: readonly [number, number, number, number], cell: RasterBox, toPdf: MupdfMatrix): boolean {
+  const [x0, y0, x1, y1] = toPdfSpace(cell, toPdf);
+  const cx = (box[0] + box[2]) / 2;
+  const cy = (box[1] + box[3]) / 2;
+  return cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1;
+}
+
+/**
  * Which page to recognise, and in which language.
  *
  * **The model directory is deliberately not here.** This is what a *caller in
@@ -544,8 +603,12 @@ export async function recognisePage(
       true,
     );
     try {
+      // THE PAGE'S RULED CELLS, in this raster's own pixels: the grey raster is made at the same scale, so a grid read from
+      // it is a rectangle Tesseract can be handed as it stands. Only for a whole-page read; a region is the caller's.
+      const cells = request.region === undefined ? ruledCellsOf(greyRasterOfPage(page, scale), scale * 72) : [];
       return {
         png: new Uint8Array(pixmap.asPNG()),
+        cells,
         toRaster,
         toPdf: Matrix.invert(toRaster),
         // THE RASTER'S OWN SIZE, carried out of here rather than computed from the
@@ -587,33 +650,26 @@ export async function recognisePage(
       api.SetRectangle(rect.left, rect.top, rect.width, rect.height);
     }
     api.Recognize(null);
+    const lines = linesOf(JSON.parse(api.GetJSONText()) as JsonTree, raster.toPdf);
+    let confidence = api.MeanTextConf();
 
-    // THE CORE'S OWN JSON RENDERER, which is why no tree walker of ours exists:
-    // one call answers blocks, paragraphs, lines and words with a box on each.
-    const tree = JSON.parse(api.GetJSONText()) as JsonTree;
-    const lines: RecognisedLine[] = [];
-    for (const block of tree.blocks ?? []) {
-      for (const paragraph of block.paragraphs ?? []) {
-        for (const line of paragraph.lines ?? []) {
-          if (line.bbox === undefined) continue;
-          const words: RecognisedWord[] = [];
-          for (const word of line.words ?? []) {
-            if (word.bbox === undefined || word.text === undefined) continue;
-            words.push({
-              text: word.text,
-              box: toPdfSpace(word.bbox, raster.toPdf),
-              confidence: word.confidence ?? 0,
-            });
-          }
-          lines.push({
-            text: line.text ?? '',
-            box: toPdfSpace(line.bbox, raster.toPdf),
-            words,
-          });
-        }
+    // EACH RULED CELL THE PAGE READ LEFT EMPTY, READ AS ITS OWN RECTANGLE. Tesseract's layout analysis takes a fully
+    // ruled grid for something other than text and answers nothing inside it — measured 2026-10-13 on
+    // `scanTableFixture.ts`' page, vector and scanned alike: the whole page and the whole table as a region read no line,
+    // and the first cell alone reads "Region" at confidence 96. So the grid is found the way the table export finds it
+    // (`rasterRulings.ts`) and each cell the page read put no word in is recognised on the same image, once.
+    const empty = raster.cells.filter((cell) => !lines.some((line) => line.words.some((word) => centreIn(word.box, cell, raster.toPdf))));
+    if (empty.length > 0) {
+      for (const cell of empty) {
+        api.SetRectangle(cell.x0, cell.y0, cell.x1 - cell.x0, cell.y1 - cell.y0);
+        api.Recognize(null);
+        lines.push(...linesOf(JSON.parse(api.GetJSONText()) as JsonTree, raster.toPdf));
       }
+      // THE MEAN OVER EVERY WORD READ, since the engine's own mean is the last rectangle's alone.
+      const words = lines.flatMap((line) => line.words);
+      confidence = words.length === 0 ? 0 : Math.round(words.reduce((sum, word) => sum + word.confidence, 0) / words.length);
     }
-    return { lines, confidence: api.MeanTextConf(), languages: request.languages };
+    return { lines, confidence, languages: request.languages };
   } finally {
     // ENDED IN A FINALLY, because `End` releases the native image and the
     // adapted page. A throw between `SetImageFile` and here would otherwise

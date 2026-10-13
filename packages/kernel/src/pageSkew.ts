@@ -217,11 +217,12 @@ export function skewOfRaster(raster: GreyRaster): PageSkew {
  * (B3a). A page rasterised at a different size is a page with a different
  * argmax.
  */
-export function greyRasterOfPage(page: PDFPage): GreyRaster {
+export function greyRasterOfPage(page: PDFPage, at?: number): GreyRaster {
   // AT `SKEW_DPI`, OR LESS FOR A PAGE SO LARGE THAT IT WOULD PASS THE HOST'S PIXEL BOUND (CR-NAT-06): an angle reads
-  // the same from fewer pixels, and the page is straightened rather than refused.
+  // the same from fewer pixels, and the page is straightened rather than refused. A caller that holds a raster of the
+  // page already names its scale (`at`), so the grey one is pixel for pixel the same grid (`ocrRecognise.ts`).
   const [x0, y0, x1, y1] = page.getBounds();
-  const scale = scaleWithinPixelBound(x1 - x0, y1 - y0, SKEW_DPI / 72);
+  const scale = at ?? scaleWithinPixelBound(x1 - x0, y1 - y0, SKEW_DPI / 72);
   const pixmap = page.toPixmap(
     Matrix.scale(scale, scale),
     ColorSpace.DeviceGray,

@@ -31,7 +31,7 @@ refuseStaleBuild(ROOT, SCAN_TABLE, 6);
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 3 });
+const roster = createRoster(failures, { cases: 4 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -66,11 +66,27 @@ try {
 
   const session = await mupdfWriter.open(scan);
   let recognised;
+  let pageAsOneRectangle;
   try {
     recognised = await recognisePage(session, { page: 0, languages: ['eng'], modelDirectory: tessdataDirectory(ROOT) });
+    // THE PAGE AS ONE RECTANGLE, which reads no cell on its own: a region is the caller's, so recognition's cell reading
+    // does not run, and this is Tesseract's layout analysis alone over the same raster.
+    pageAsOneRectangle = await recognisePage(session, {
+      page: 0,
+      languages: ['eng'],
+      modelDirectory: tessdataDirectory(ROOT),
+      region: [0, 0, 612, 792],
+    });
   } finally {
     await mupdfWriter.close(session);
   }
+  const wordsOf = (/** @type {{ lines: readonly { words: readonly unknown[] }[] }} */ page) =>
+    page.lines.reduce((sum, line) => sum + line.words.length, 0);
+  check(
+    'CONTROL: Tesseract’s layout analysis alone reads no word inside the ruled grid, which is why each cell is read',
+    wordsOf(pageAsOneRectangle) === 0 && wordsOf(recognised) >= 12,
+    `${String(wordsOf(pageAsOneRectangle))} words over the page as one rectangle, ${String(wordsOf(recognised))} with the cells read`,
+  );
   const layered = await applyOcrPage(scan, { kind: 'ocrPage', page: 0, languages: ['eng'], engine: 'tesseract' }, recognised);
   const after = await tablesOf(layered);
   check('the recognised scan is read as ONE table', after.length === 1, `read ${String(after.length)} tables`);
