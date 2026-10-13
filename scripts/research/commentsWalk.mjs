@@ -33,7 +33,7 @@ import { join } from 'node:path';
 import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNumber, PDFRawStream, PDFRef, PDFString, StandardFonts, decodePDFRawStream, degrees } from '@cantoo/pdf-lib';
 import { expect as defaultExpect } from '@playwright/test';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
-import { root, startWalk } from './liveWalk.mjs';
+import { WALK_WINDOW, root, startWalk } from './liveWalk.mjs';
 import { savedFonts, savedWords } from './savedPdf.mjs';
 
 const expect = defaultExpect.configure({ timeout: 20_000 });
@@ -44,7 +44,7 @@ refuseStaleBuild(root, [['packages/shared/src/geometry.ts', 'packages/shared/dis
 const { pageTransform, toPdf, viewportPoint } = await import('../../packages/shared/dist/geometry.js');
 
 const walk = await startWalk('comments');
-const { page, output, open, pickFiles, saveTo, command, section, step, finish } = walk;
+const { page, output, open, pickFiles, saveTo, command, section, step, finish, sizeWindow } = walk;
 
 /** A letter page with words on it, then a second one turned 90 degrees. */
 async function linksDocument() {
@@ -139,6 +139,18 @@ async function saveCopy(name) {
   await expect.poll(() => existsSync(saved), { timeout: 20_000 }).toBe(true);
   return saved;
 }
+
+await step('O11: the page fills the window — main’s content size and the page’s own size are one size, with no band', async () => {
+  // TWO OWNERS READ: main's window and the page. An emulated viewport inside a larger window agrees with the size the
+  // walk asked for and disagrees with main's, which is the band.
+  const [window, drawn] = await Promise.all([
+    walk.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.getContentSize() ?? []),
+    page.evaluate(() => [Reflect.get(globalThis, 'innerWidth'), Reflect.get(globalThis, 'innerHeight')]),
+  ]);
+  expect(drawn).toStrictEqual(window);
+  expect(window).toStrictEqual([WALK_WINDOW.width, WALK_WINDOW.height]);
+  return { window, drawn };
+});
 
 // FIRST, before anything opens: the walk's profile is fresh (`--user-data-dir` per run), so this launch is a first run.
 await step('W11: the first-run AI offer is on the start screen below Open, and no dialog arrives over Open', async () => {
@@ -599,9 +611,10 @@ await step('N5: a dialog’s buttons sit at the centre of its footer, and Settin
 });
 
 await step('N2: the Edit menu draws no scrollbar, and where it scrolls it fades at the edge it continues past', async () => {
-  // A SHORT WINDOW, so the menu has to scroll: half the window is its bound.
-  const before = page.viewportSize();
-  await page.setViewportSize({ width: 1280, height: 420 });
+  // A SHORT WINDOW, so the menu has to scroll: half the window is its bound. The window itself, never an emulated page
+  // (O11), so the screenshot is what a person on a short screen sees.
+  const short = await sizeWindow({ width: 1280, height: 420 });
+  expect(short).toStrictEqual({ width: 1280, height: 420 });
   await page.locator('.m-menu-bar__trigger[data-menu="edit"]').click();
   const popup = page.locator('.m-menu-bar__popup').first();
   await expect(popup).toBeVisible();
@@ -625,7 +638,7 @@ await step('N2: the Edit menu draws no scrollbar, and where it scrolls it fades 
   });
   expect(read).toStrictEqual({ overflows: true, barWidth: 0, below: 1 });
   await page.keyboard.press('Escape');
-  if (before !== null) await page.setViewportSize(before);
+  await sizeWindow(WALK_WINDOW);
   return read;
 });
 

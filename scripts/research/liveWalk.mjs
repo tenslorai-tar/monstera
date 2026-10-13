@@ -32,6 +32,9 @@ import { SHELL_LAUNCH, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
+/** The content size every walk's screenshots are taken at. */
+export const WALK_WINDOW = { width: 1400, height: 900 };
+
 /**
  * @typedef {object} StepRecord
  * @property {string} name
@@ -73,7 +76,43 @@ export async function startWalk(walk) {
   });
   const page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
-  await page.setViewportSize({ width: 1400, height: 900 }).catch(() => undefined);
+
+  /**
+   * Sizes the WINDOW's content area to `size`, and answers what the page then measures.
+   *
+   * Never `page.setViewportSize`: in Electron that is device-metrics emulation inside a native window that keeps its
+   * own size, so a window wider than the emulated page draws the page and an empty band beside it (O11). The window
+   * is the one owner of its size, so the walk asks the window. Unmaximised first, since a maximised window ignores a
+   * content size; a screen whose work area is smaller clamps it, and the answer then says what was drawn instead.
+   *
+   * **Below the application's floor** (`MINIMUM_WINDOW`, or less on a small screen) the floor is lowered for that size
+   * and put back by the next size at or above it: a step that needs a short window gets a real one, as a person on a
+   * small screen has, rather than an emulated page.
+   *
+   * @param {{ width: number; height: number }} size
+   */
+  const sizeWindow = async (size) => {
+    await app.evaluate(({ BrowserWindow }, wanted) => {
+      const [window] = BrowserWindow.getAllWindows();
+      if (window === undefined) throw new Error('the application has no window to size');
+      if (window.isMaximized()) window.unmaximize();
+      const holder = /** @type {{ monsteraWalkFloor?: number[] }} */ (/** @type {unknown} */ (globalThis));
+      holder.monsteraWalkFloor ??= window.getMinimumSize();
+      const [floorWidth = 0, floorHeight = 0] = holder.monsteraWalkFloor;
+      window.setMinimumSize(Math.min(floorWidth, wanted.width), Math.min(floorHeight, wanted.height));
+      window.setContentSize(wanted.width, wanted.height);
+    }, size);
+    // THE PAGE'S OWN READING, once its resize has landed: the window's size is asked of main and the page's of the
+    // page, and both are what the walk's screenshots show.
+    const read = () => page.evaluate(() => ({ width: Reflect.get(globalThis, 'innerWidth'), height: Reflect.get(globalThis, 'innerHeight') }));
+    for (let tries = 0; tries < 50; tries += 1) {
+      const seen = await read();
+      if (seen.width === size.width && seen.height === size.height) return seen;
+      await page.waitForTimeout(100);
+    }
+    return read();
+  };
+  await sizeWindow(WALK_WINDOW);
 
   /** @type {StepRecord[]} */
   const steps = [];
@@ -175,5 +214,5 @@ export async function startWalk(walk) {
     process.exitCode = passed === steps.length ? 0 : 1;
   };
 
-  return { app, page, output, copyOf, open, pickFiles, saveTo, command, section, pressOn, step, finish };
+  return { app, page, output, copyOf, open, pickFiles, saveTo, command, section, pressOn, step, finish, sizeWindow };
 }
