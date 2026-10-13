@@ -634,6 +634,23 @@ await step('N8: a right-click in a text field is answered by the one edit menu i
   return { listeners };
 });
 
+await step('O4: every right-panel tab shows its icon and its whole name, the selected one and the others', async () => {
+  const tabs = page.locator('.m-context-panel__tab');
+  await expect(tabs.first()).toBeVisible();
+  const read = await tabs.evaluateAll((items) =>
+    items.map((item) => {
+      const label = item.querySelector('.m-context-panel__tab-label');
+      return { name: label?.textContent ?? '', glyph: item.querySelector('svg') !== null, whole: label !== null && label.scrollWidth <= label.clientWidth };
+    }),
+  );
+  expect(read).toStrictEqual([
+    { name: 'Properties', glyph: true, whole: true },
+    { name: 'Assistant', glyph: true, whole: true },
+    { name: 'Spelling', glyph: true, whole: true },
+  ]);
+  return { tabs: read };
+});
+
 await step('N9: every left-panel tab draws its panel down to the panel’s foot', async () => {
   /** @type {Record<string, number>} */
   const gaps = {};

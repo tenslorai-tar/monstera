@@ -630,8 +630,9 @@ test('at its MINIMUM width the right contextual panel still holds every Properti
   expect(measured?.headerFits).toBe(true);
   expect(measured?.chevronPast).not.toBeNull();
   expect(measured?.chevronPast ?? Infinity).toBeLessThanOrEqual(0.5);
-  // THE LABEL WAS FOUND — one, the selected tab's — or the empty list below is the reassuring answer from a lookup that saw nothing.
-  expect(measured?.labels).toBe(1);
+  // THE LABELS WERE FOUND — all three, every tab naming itself (the owner's O4) — or the empty list below is the
+  // reassuring answer from a lookup that saw nothing.
+  expect(measured?.labels).toBe(3);
   expect(measured?.cut).toStrictEqual([]);
 });
 
@@ -651,7 +652,7 @@ async function contextTabGlyphs(page: Page): Promise<{ readonly glyphs: number; 
 }
 
 for (const width of [264, 326]) {
-  test(`EVERY right-panel tab draws its glyph at ${String(width)} px, and only the selected tab its name`, async ({ page }) => {
+  test(`EVERY right-panel tab draws its glyph and its name at ${String(width)} px`, async ({ page }) => {
     // THE REGRESSION (found 2026-10-08, 0.1.12.0): a container query hid every tab's glyph below a strip width the default
     // panel (326) is always under, so Properties, Assistant and Spelling were three bare words. The glyph is read by its
     // drawn size, not by being in the markup, which it was all along. 264 is the panel's minimum.
@@ -662,7 +663,8 @@ for (const width of [264, 326]) {
     await expect(page.locator('.m-context-panel__tab').first()).toBeVisible();
     const seen = await contextTabGlyphs(page);
     expect(seen.glyphs).toBe(3);
-    expect(seen.named).toStrictEqual(['spelling']);
+    // EVERY TAB NAMED, the selected one and the two that are not (the owner's O4, 2026-10-12).
+    expect(seen.named).toStrictEqual(['properties', 'assistant', 'spelling']);
     // CONTROL: the same measure on a page whose glyphs are hidden the way the old rule hid them reports none, so the
     // count above is a reading of the drawn glyph and not of the markup.
     await page.addStyleTag({ content: '.m-context-panel__tab > svg { display: none; }' });

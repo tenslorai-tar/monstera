@@ -8378,21 +8378,29 @@ body {
   border-image: linear-gradient(90deg, transparent, var(--border-grad), transparent) 1;
 }
 
-/* THE TABS FILL THE STRIP rather than being 36 themselves: v5's 36 is the strip's outer height with its edge inside,
-   and a 36 px tab in it made the strip 37 (measured 2026-09-27). */
+/* ONE ROW OF TABS IS 36 TALL, the strip's outer height with its edge inside (v5; a 36 px tab in a 36 px strip made it 37,
+   measured 2026-09-27), and the header grows by a row when the tabs wrap (the owner's O4): every tab shows its name, so
+   a narrow panel takes a second row rather than dropping one. */
 .m-context-panel__header {
-  block-size: var(--panel-tabs-right);
+  align-items: flex-start;
 }
 
 .m-context-panel__tabs {
-  align-self: stretch;
+  flex-wrap: wrap;
   min-inline-size: 0; /* the header's rule below: the tabs give way before the chevron does */
+}
+
+.m-context-panel__header > .m-context-panel__tabs + * {
+  align-self: center;
+  block-size: var(--panel-tabs-right);
 }
 
 .m-context-panel__tab {
   display: inline-flex;
   align-items: center;
   gap: var(--space-6);
+  box-sizing: border-box;
+  block-size: calc(var(--panel-tabs-right) - 1px);
   min-inline-size: 0;
   padding-inline: var(--space-10);
   border-radius: 0;
@@ -8416,11 +8424,9 @@ body {
 }
 
 /*
- * EVERY TAB SHOWS ITS GLYPH, and only the selected one its name (the owner's agreement, restored 2026-10-09). From
- * 2026-10-04 a container query took the glyphs away from ALL tabs below a strip width of 363 px, which the default panel
- * (326 px) is always below: the icons had been gone since Spelling was added, and the reason written here was that the three
- * names with glyphs did not fit. One name and three glyphs do: with the selected word at its widest (70.73 px, measured
- * 2026-10-04, Chromium 151) the strip needs about 187 px against the 250 of the panel's minimum.
+ * EVERY TAB SHOWS ITS GLYPH AND ITS NAME (the owner's O4, 2026-10-12). Until then only the selected tab showed its name,
+ * because the three names with glyphs need a strip of about 363 px (measured 2026-10-04, Chromium 151) and the default
+ * panel is 326: the strip now wraps instead, so a name is never the thing that gives way.
  */
 
 /* THE SELECTED TAB is Base UI's `data-active` (1.7's `TabsTabDataAttributes`) — `data-selected`, which this file
