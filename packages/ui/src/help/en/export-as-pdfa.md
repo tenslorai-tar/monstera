@@ -11,7 +11,7 @@ PDF/A is a kind of PDF meant to look the same for decades. Some archives and cou
 ## Steps
 
 1. In the rail, choose **Tools**, then **PDF/A…** in the **Convert** group.
-2. Choose the level. **PDF/A-2b** is the usual choice; pick **1b** or **3b** only if the place you send it asks for one.
+2. Choose the level. **PDF/A-2b** is the usual choice; pick **PDF/A-1b** or **PDF/A-3b** only if the place you send it asks for one.
 3. Choose where to save the copy. Monstera says **Saved as PDF/A-2b.** (or the level you chose).
 4. If anything had to be left out, the **Saved as PDF/A** window lists it by kind and page.
 
