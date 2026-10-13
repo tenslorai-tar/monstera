@@ -49,9 +49,32 @@ function motionDeclarations(body: string): { readonly family: Family; readonly s
   });
 }
 
+/**
+ * A rule whose animation runs on a SCROLL or VIEW timeline: its progress is where the person has scrolled, so it has no
+ * time, which is `STILL`'s own definition of not moving. Keyed on the rule's last `animation-timeline`, since the
+ * `animation` shorthand resets the timeline and only a declaration after it stands.
+ */
+function scrollDriven(body: string): boolean {
+  let driven = false;
+  for (const declaration of body.split(';')) {
+    const colon = declaration.indexOf(':');
+    if (colon < 0) continue;
+    const property = declaration.slice(0, colon).trim();
+    const value = declaration.slice(colon + 1).trim();
+    if (property === 'animation-timeline') driven = /^(?:scroll|view)\(/u.test(value);
+    else if (property === 'animation') driven = false;
+  }
+  return driven;
+}
+
 /** The motion families a rule body STARTS: a motion property set to something that moves. */
 function moves(body: string): Set<Family> {
-  return new Set(motionDeclarations(body).filter((entry) => !entry.still).map((entry) => entry.family));
+  const driven = scrollDriven(body);
+  return new Set(
+    motionDeclarations(body)
+      .filter((entry) => !entry.still && !(driven && entry.family === 'animation'))
+      .map((entry) => entry.family),
+  );
 }
 
 /**
@@ -92,6 +115,16 @@ describe('reduced motion', () => {
     expect([...stills('opacity: 1')]).toStrictEqual([]);
     expect([...stills('')]).toStrictEqual([]);
     expect([...stills('animation: none')]).toStrictEqual(['animation']);
+  });
+
+  it('an animation on a scroll timeline is not motion; the same animation on time is, and a transition beside it is', () => {
+    expect([...moves('animation: m-fade auto linear both; animation-timeline: scroll(nearest)')]).toStrictEqual([]);
+    expect([...moves('animation-name: m-fade; animation-timeline: view()')]).toStrictEqual([]);
+    // CONTROLS: the same name on the document's clock moves; a shorthand AFTER the timeline resets it to time; and a
+    // scroll timeline excuses only its own family.
+    expect([...moves('animation: m-fade 200ms linear both')]).toStrictEqual(['animation']);
+    expect([...moves('animation-timeline: scroll(nearest); animation: m-fade 200ms')]).toStrictEqual(['animation']);
+    expect([...moves('animation-timeline: scroll(); transition: opacity 120ms')]).toStrictEqual(['transition']);
   });
 
   it('every selector that moves is stilled under data-motion="reduced", in the same family', () => {

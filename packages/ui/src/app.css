@@ -8569,27 +8569,30 @@ body {
   block-size: var(--space-16);
   pointer-events: none;
   opacity: 0;
-  /* `auto`: a scroll-driven animation's length is the scroll range, and a duration of time would leave it none. */
-  animation-duration: auto;
-  /* NEAREST, never `self`: on a pseudo-element `self` names the pseudo-element, which does not scroll, so its timeline
-     would be inactive and neither fade would ever show. The menu is the nearest scroll container. */
-  animation-timeline: scroll(nearest);
-  animation-fill-mode: both;
-  animation-timing-function: linear;
 }
 
+/* EACH FADE'S TIMELINE IN THE RULE THAT NAMES IT, after the shorthand, which resets it. `auto`: a scroll-driven
+   animation's length is the scroll range, and a duration of time would leave it none. NEAREST, never `self`: on a
+   pseudo-element `self` names the pseudo-element, which does not scroll, so its timeline would be inactive and neither
+   fade would ever show. The menu is the nearest scroll container.
+
+   NOT MOTION, so not stilled under reduced motion: the opacity follows the person's own scrolling and nothing plays
+   over time. Stilled, both fades would stay at 0 and the cue that a menu continues would go for exactly the people
+   who asked for less movement (`reducedMotion.test.ts` reads a scroll timeline as no time). */
 .m-context-menu::before {
   inset-block-start: 0;
   margin-block-end: calc(-1 * var(--space-16));
   background: linear-gradient(var(--float-bg), transparent);
-  animation-name: m-menu-more-above;
+  animation: m-menu-more-above auto linear both;
+  animation-timeline: scroll(nearest);
 }
 
 .m-context-menu::after {
   inset-block-end: 0;
   margin-block-start: calc(-1 * var(--space-16));
   background: linear-gradient(transparent, var(--float-bg));
-  animation-name: m-menu-more-below;
+  animation: m-menu-more-below auto linear both;
+  animation-timeline: scroll(nearest);
 }
 
 @keyframes m-menu-more-above {
