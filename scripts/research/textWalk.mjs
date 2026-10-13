@@ -510,17 +510,23 @@ await step('16. E4 and N13: the text box from step 13 made bold and justified in
 await step('17. D1: a watermark set in Courier, chosen in the Watermark window’s font picker', async () => {
   await section('Organize');
   await command('Watermark…');
-  await expect(page.getByRole('dialog', { name: 'Watermark' })).toBeVisible();
-  await page.waitForTimeout(5000);
-  await page.getByRole('textbox', { name: 'Text' }).fill('DRAFT');
-  await page.getByRole('button', { name: 'Font: Helvetica' }).click();
-  const offered = await page.locator('[data-font-choice]').evaluateAll((each) => [...new Set(each.map((node) => node.getAttribute('data-font-choice')))]);
-  await page.locator('[data-font-choice="Courier"]').first().click();
+  const dialog = page.getByRole('dialog', { name: 'Watermark' });
+  await expect(dialog).toBeVisible();
+  // AT ONCE, AS A PERSON TYPES (W3): this step waited five seconds here, which is the window the defect lives in, so the
+  // wait hid it. The field is read after the typing and after the pick, so a run that fails says which emptied it.
+  const opened = Date.now();
+  const field = dialog.getByRole('textbox', { name: 'Text' });
+  await field.pressSequentially('DRAFT');
+  const typed = { value: await field.inputValue(), ms: Date.now() - opened };
+  await dialog.getByRole('button', { name: 'Font: Helvetica' }).click();
+  const offered = await dialog.locator('[data-font-choice]').evaluateAll((each) => [...new Set(each.map((node) => node.getAttribute('data-font-choice')))]);
+  await dialog.locator('[data-font-choice="Courier"]').first().click();
+  const picked = { value: await field.inputValue(), ms: Date.now() - opened };
   // THE WORDS MUST STILL BE THERE after the font is chosen: a font pick that emptied the text would otherwise show only as
   // "needs some text" on the button below, two steps from its cause.
-  await expect(page.getByRole('textbox', { name: 'Text' })).toHaveValue('DRAFT');
-  await page.getByRole('button', { name: 'Add watermark' }).click();
-  return { stampFontsOffered: offered };
+  expect({ typed: typed.value, picked: picked.value }).toStrictEqual({ typed: 'DRAFT', picked: 'DRAFT' });
+  await dialog.getByRole('button', { name: 'Add watermark' }).click();
+  return { stampFontsOffered: offered, typed, picked };
 });
 
 const markdownSource = join(output, 'walk-notes.md');
