@@ -348,12 +348,13 @@ await step('10. ADR-0228: strikethrough, a highlight, character spacing, Ctrl+J 
   await page.keyboard.press('Control+Shift+ArrowRight');
   await panel().getByRole('button', { name: 'Strikethrough' }).click();
   await panel().getByRole('group', { name: 'Highlight' }).getByRole('button', { name: 'Yellow highlight' }).click();
-  // THE SPACING BOX IS DISABLED WHILE THE SIZE IS EMPTY (measured 2026-10-12 on an unedited paragraph: the size box reads
-  // blank and spacing is "up to 1.2 pt either way at this size"), so a size is given first; an app finding in the report.
+  // W4: THE SIZE IS SHOWN AND SPACING IS OPEN on an unedited paragraph, with no size typed first. Measured 2026-10-12, the
+  // size box read blank here and the spacing box was disabled, and this step typed a size to get past it. The reading is
+  // recorded, so a failing run says what the field held.
   const size = panel().getByRole('spinbutton', { name: 'Size in points' });
-  await size.fill('12');
-  await size.press('Enter');
+  const sizeShown = await size.inputValue();
   const spacing = panel().getByRole('spinbutton', { name: 'Character spacing in points' });
+  expect({ sizeShown: sizeShown !== '', spacingOpen: await spacing.isEnabled() }).toStrictEqual({ sizeShown: true, spacingOpen: true });
   await spacing.fill('0.5');
   await spacing.press('Enter');
   await page.keyboard.press('Control+A');
@@ -363,6 +364,7 @@ await step('10. ADR-0228: strikethrough, a highlight, character spacing, Ctrl+J 
   await after.press('Enter');
   await clickPage(10, 10);
   await expect(editor()).toHaveCount(0);
+  return { sizeShown };
 });
 
 await step('11. K8: Tab in Edit text types a tab, the words after it move to the next stop, and the focus stays in the words', async () => {

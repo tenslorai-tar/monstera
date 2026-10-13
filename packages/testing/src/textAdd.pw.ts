@@ -127,6 +127,37 @@ test.describe('Add text', () => {
     }
   }
 
+  // W4: THE SIZE IS THE WORDS' SIZE BEFORE THERE ARE ANY, and character spacing can be set before the first letter.
+  test('W4: a new box shows its size before anything is typed, and character spacing is open', async ({ page }) => {
+    const sent: { channel: string; params: unknown }[] = [];
+    await openForAdding(page, sent);
+    const surface = page.locator('[data-text-add-surface]').first();
+    const box = await surface.boundingBox();
+    if (box === null) throw new Error('the add surface has no box');
+    await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.5);
+    await expect(page.locator('[data-text-editor]')).toBeFocused();
+    const panel = page.locator('[data-text-properties]');
+    await expect(panel.getByRole('spinbutton', { name: 'Size in points' })).toHaveValue('12');
+    await expect(panel.getByRole('spinbutton', { name: 'Character spacing in points' })).toBeEnabled();
+    // AND ONCE WORDS ARE TYPED, which land beside the empty run in no run of their own: still the box's size, and the
+    // spacing typed then reaches the one insert as a fraction of it.
+    await page.keyboard.type('Now words');
+    await expect(panel.getByRole('spinbutton', { name: 'Size in points' })).toHaveValue('12');
+    await page.keyboard.press('Control+A');
+    const letters = panel.getByRole('spinbutton', { name: 'Character spacing in points' });
+    await expect(letters).toBeEnabled();
+    await letters.fill('0.6');
+    await letters.press('Enter');
+    await page.keyboard.press('Escape');
+    await expect.poll(() => insertedWords(sent)).toStrictEqual(['Now words']);
+    const marks = sent.flatMap(({ channel, params }) => {
+      if (channel !== 'document.execute') return [];
+      const command = (params as { command?: { inserts?: readonly { marks?: readonly { set?: { spacing?: number } }[] }[] } }).command;
+      return (command?.inserts ?? []).flatMap((insert) => insert.marks ?? []);
+    });
+    expect(marks.map((mark) => mark.set?.spacing)).toStrictEqual([0.05]);
+  });
+
   test('Escape keeps the words too, and a box left empty sends nothing', async ({ page }) => {
     const sent: { channel: string; params: unknown }[] = [];
     await openForAdding(page, sent);

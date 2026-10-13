@@ -888,7 +888,11 @@ describe('Edit text on the page (ADR-0096)', () => {
         fireEvent.keyDown(editor, { key: 'Escape' });
         await Promise.resolve();
       });
-      expect(inserts[0]?.insert.marks).toStrictEqual([{ from: 6, to: 11, set: { bold: true } }]);
+      // THE BOX OPENED IN THE NEARBY WORDS' STYLE, which is bold here (`STYLE`), so its words are bold by `base` and Ctrl+B
+      // takes the bold OFF the chosen word. Until W4 the words typed beside the empty run were read as in no style at all,
+      // so the press sent `bold: true` over bold words and changed nothing on the page.
+      expect(inserts[0]?.insert.base.bold).toBe(true);
+      expect(inserts[0]?.insert.marks).toStrictEqual([{ from: 6, to: 11, set: { bold: false } }]);
     });
 
     it('CONTROL: a block clicked while adding is still edited, since the surface is under the outlines', () => {

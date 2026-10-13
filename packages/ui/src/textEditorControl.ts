@@ -259,5 +259,14 @@ export function openEditorState(): FormatState | undefined {
   for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
     if (range.intersectsNode(node) && (node as Text).data !== '') return stateAt(node, editor.root);
   }
-  return undefined;
+  // NO LETTER AT THE SELECTION — a new box of Add text before its first key, an emptied line: the run the selection
+  // starts in still has a size and a look, and the words typed there take them, so they are what is shown (W4).
+  // The node at the start, and where that is a line rather than a run, the line's first run.
+  const start = range.startContainer;
+  const at = start instanceof Text ? start : (start.childNodes[range.startOffset] ?? start.lastChild ?? start);
+  const run = at instanceof Element && at.closest(RUN) === null ? at.querySelector(RUN) : at;
+  return run === null || run === editor.root ? undefined : stateAt(run, editor.root);
 }
+
+/** A run of the editor, which carries the page's size and look of the words in it (`drawRun`). */
+const RUN = '.m-text-editor__run';

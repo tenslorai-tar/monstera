@@ -1463,6 +1463,8 @@ function BlockEditor({
         className={`m-text-editor ${faceOf(block.style)}`}
         aria-busy={busy}
         contentEditable={busy ? false : 'plaintext-only'}
+        // THE BLOCK'S SIZE IN POINTS, which words in no run take and are read in (`runBase`), as a run carries its own.
+        data-size={block.style.size}
         data-text-editor=""
         onInput={(event) => {
           setText(readEditor(event.currentTarget).text);

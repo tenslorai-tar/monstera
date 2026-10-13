@@ -103,24 +103,34 @@ function fmtOf(element: Element): Fmt {
 /** The formatting a text node has: every ancestor's `data-fmt` up to `root`, inner over outer. */
 export function effectiveFmt(node: Node, root: HTMLElement): Fmt {
   const chain: Fmt[] = [];
-  for (let at: Node | null = node.parentNode; at !== null && at !== root; at = at.parentNode) {
+  for (let at: Node | null = node; at !== null && at !== root; at = at.parentNode) {
     if (at instanceof HTMLElement && at.dataset[FMT] !== undefined) chain.unshift(fmtOf(at));
   }
   return Object.assign({}, ...chain) as Fmt;
 }
 
-/** The page's own style of the run a node is in: weight, slant and size, read from the run's inline style. */
+/**
+ * The page's own style of the run a node is in: weight, slant and size, read from the run's inline style. FROM THE NODE
+ * ITSELF, so a position that is an element (an empty run, which holds no letter to ask from) reads its own run (W4).
+ *
+ * A NODE IN NO RUN IS IN THE BLOCK'S OWN STYLE, which the editor root carries and draws it in: words typed into a new
+ * box land beside its empty run, and a paste or a line typed below the last belongs to no run either (W4).
+ */
 function runBase(node: Node, root: HTMLElement): { bold: boolean; italic: boolean; size: number | undefined } {
-  for (let at: Node | null = node.parentNode; at !== null && at !== root; at = at.parentNode) {
+  for (let at: Node | null = node; at !== null && at !== root; at = at.parentNode) {
     if (at instanceof HTMLElement && at.dataset['size'] !== undefined && at.classList.contains('m-text-editor__run')) {
-      return {
-        bold: Number(at.style.fontWeight) >= 600,
-        italic: at.style.fontStyle === 'italic',
-        size: Number(at.dataset['size']),
-      };
+      return styleOf(at);
     }
   }
-  return { bold: false, italic: false, size: undefined };
+  return root.dataset['size'] === undefined ? { bold: false, italic: false, size: undefined } : styleOf(root);
+}
+
+function styleOf(element: HTMLElement): { bold: boolean; italic: boolean; size: number } {
+  return {
+    bold: Number(element.style.fontWeight) >= 600,
+    italic: element.style.fontStyle === 'italic',
+    size: Number(element.dataset['size']),
+  };
 }
 
 /** What words ARE at a point of the editor: the run's own look with the person's formatting over it. */
