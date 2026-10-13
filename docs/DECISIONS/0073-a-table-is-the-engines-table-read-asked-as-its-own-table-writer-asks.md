@@ -137,3 +137,9 @@ Part F's *auto-OCR scanned pages on export* is a setting, off by default, and wh
 it on the text exports and PDF/A recognise first and report it. The rejection's reason — a
 **silent** mutation — still holds everywhere else, and it still holds for **this** export: point
 5's measurement is why the setting does not reach Excel.
+
+## Correction, 2026-10-13: a scan's rulings are read from its pixels
+
+Decision 5's gap is closed by [ADR-0233](0233-a-scanned-tables-rulings-are-read-from-its-pixels.md): on a page holding a
+picture where this read saw no ruling, the rulings are read from the page raster and each cell takes the characters in
+it. This read is unchanged and is still asked first; a page whose rulings are vectors keeps its answer.

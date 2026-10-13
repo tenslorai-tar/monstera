@@ -65,3 +65,10 @@ the same day: `applyOcrPage` now removes the layers Monstera's own reading wrote
 every font is the glyphless font) before writing a whole-page reading, in the same command and so the same undo step. A
 region read still adds to the page, a text the document had before is never removed, and a reading that finds nothing keeps
 what the page had. The statement above is kept as written; this is the record that it no longer holds.
+
+## Correction, 2026-10-13: the recognise-first walk reached a read that could not see the rulings
+
+Decision 5 sent the built-in reader's words into the engine's table read, which proposes tables from vector paths only
+(ADR-0073 reading 2), so a printed scan's ruled table was not found (the owner's O2). From
+[ADR-0233](0233-a-scanned-tables-rulings-are-read-from-its-pixels.md) the table read on such a page takes its rulings from
+the page's pixels, and the walk this Decision describes is unchanged.
