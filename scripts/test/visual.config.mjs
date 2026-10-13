@@ -60,6 +60,10 @@ export default defineConfig({
       // 36 images by up to 66 pixels each (largest channel delta 40, a shield
       // icon; the rest anti-aliased edges and a panel corner). So the margin under
       // this figure is 34 pixels, not 100, and the planted change still moves 319.
+      //
+      // AND REGENERATION RESPECTS IT (W12): `test:visual:regenerate` runs Playwright's `changed` mode, which rewrites an
+      // image only when it fails this tolerance. `all` mode wrote every image whose bytes moved at all, so that spread
+      // rewrote fifteen untouched baselines in one regeneration (`proof:visualregenerate`).
       maxDiffPixels: 100,
     },
   },

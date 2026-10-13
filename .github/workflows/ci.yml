@@ -1029,6 +1029,11 @@ jobs:
       - name: Accessibility gate — axe on the rendered screen
         run: node scripts/ci/annotate.mjs --npm test:a11y
 
+      # W12: regenerating the baselines rewrites only an image that fails the stated tolerance. Here because this job
+      # has the provisioned browser the proof drives; the visual job itself runs only the comparison.
+      - name: Regenerating the baselines rewrites only what fails the tolerance
+        run: node scripts/ci/annotate.mjs scripts/proofs/visualRegenerate.proof.mjs
+
       # `npm test` used to resolve every @monstera/* specifier through the
       # package's dist build, so the suite could read the last build while a
       # mutation sat in the source it covered — 27/27 green over a deleted line.

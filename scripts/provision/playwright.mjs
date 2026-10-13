@@ -66,7 +66,7 @@ export const BROWSERS_PATH = join(REPO_ROOT, '.tools', 'playwright');
  * decision made by the machine rather than by this repository. The lockfile
  * says which Playwright is installed; this is where that one lives.
  */
-const CLI = join(REPO_ROOT, 'node_modules', 'playwright', 'cli.js');
+export const CLI = join(REPO_ROOT, 'node_modules', 'playwright', 'cli.js');
 
 /**
  * Whether a browser is already present.
