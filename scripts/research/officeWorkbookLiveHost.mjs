@@ -198,7 +198,7 @@ async function main() {
       },
     });
     const started = Date.now();
-    const answer = await handlers['document.newFromOffice']({});
+    const answer = await handlers['document.newFromOffice']({ work: 'live-host' });
     const seconds = Math.round((Date.now() - started) / 1000);
     const product = answer.ok ? await readPdf(scratch, new Uint8Array(readFileSync(destination))) : null;
     if (answer.ok && (answer.value.kind === 'opened' || answer.value.kind === 'opened-incomplete')) {

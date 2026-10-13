@@ -215,7 +215,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'app.components': 'answers one row per native component — the schema caps the list at the six declared ids',
   'settings.load': "carries the user's settings, which no document contributes to",
   'settings.save': 'answers a boolean',
-  'work.progress': 'one bounded work id in; idle, or two counts out, whatever the file the work reads',
+  'work.progress': 'one bounded work id in; idle, or two counts and whether it stops out, whatever the file the work reads',
   'work.cancel': 'one bounded work id in; a boolean out',
   // THE SECRET PAIR, and their answer is the same one `settings.load`'s is:
   // what crosses scales with the number of registered SECRET settings — this
@@ -410,8 +410,6 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'document.exportPowerPoint': 'needs an engine session and a save dialog',
   // The Excel export's ask is a `DocId` and a layout; the tables are read and streamed in main.
   'document.exportExcel': 'needs an engine session and a save dialog',
-  'document.exportProgress': 'needs an export in flight; answers two small counts and a state',
-  'document.cancelExport': 'needs an export in flight; answers one boolean',
   // The print's ask is a `DocId` and a resolution; the pages are rasterised and printed in main.
   'document.print': 'needs an engine session and the system print dialog',
   'document.email': 'needs an engine session and the Windows Share sheet',

@@ -66,10 +66,21 @@ export interface RunningTask {
   readonly done: number;
   readonly total: number;
   readonly cancel: () => void;
+  /**
+   * Whether `cancel` stops it. False for a conversion in main that runs to the end (ADR-0234), where the notice shows no
+   * Cancel: a button that could not stop the work would be the display-only defect with a progress bar attached.
+   */
+  readonly stoppable: boolean;
 }
 
-/** Starts a task, or does nothing where no surface is listening. */
-export type TrackTask = (label: MessageKey, total: number) => TrackedTask;
+/**
+ * Starts a task, or does nothing where no surface is listening. `stopping` is the renderer's own loop by default, which
+ * checks its signal between units; work in main says whether it does.
+ */
+export type TrackTask = (label: MessageKey, total: number, stopping?: TaskStopping) => TrackedTask;
+
+/** Whether a task's Cancel is honoured. */
+export type TaskStopping = 'stops-between-parts' | 'runs-to-the-end';
 
 /**
  * The `track` a command is handed, over a setter the shell owns.
@@ -81,7 +92,7 @@ export type TrackTask = (label: MessageKey, total: number) => TrackedTask;
  * @param publish where the shell keeps the running task.
  */
 export function trackerOver(publish: (task: RunningTask | undefined) => void): TrackTask {
-  return (label, total) => {
+  return (label, total, stopping = 'stops-between-parts') => {
     const controller = new AbortController();
     // THE CANCEL IS THE CONTROLLER'S, captured here rather than looked up when
     // the button is pressed. A reader who cancels one walk while a second has
@@ -90,7 +101,8 @@ export function trackerOver(publish: (task: RunningTask | undefined) => void): T
     const cancel = (): void => {
       controller.abort();
     };
-    publish({ label, done: 0, total, cancel });
+    const stoppable = stopping === 'stops-between-parts';
+    publish({ label, done: 0, total, cancel, stoppable });
     let known = total;
     return {
       signal: controller.signal,
@@ -100,7 +112,7 @@ export function trackerOver(publish: (task: RunningTask | undefined) => void): T
         // Mutating `done` in place would leave React with the same object and
         // nothing to re-render on, which is a progress indicator that reports
         // 0 for the whole walk and then disappears.
-        publish({ label, done, total: known, cancel });
+        publish({ label, done, total: known, cancel, stoppable });
       },
       end: () => {
         publish(undefined);

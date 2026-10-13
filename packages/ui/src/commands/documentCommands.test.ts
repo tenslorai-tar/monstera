@@ -146,6 +146,7 @@ import {
   undoCommand,
   type SignedEditing,
 } from './documentCommands.js';
+import { namedWorkSetAside } from './namedWorkSetAside.js';
 import type { SourceCommandDeps } from './sourceDocuments.js';
 
 /**
@@ -1288,13 +1289,13 @@ describe('delete pages — the mutation-dialog gate', () => {
       sent.push({ id, params });
       return Promise.resolve(ok({ kind: 'copied', bytes: 512, written: WRITTEN }));
     });
-    const deps = { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures, toast: () => undefined };
+    const deps = { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures, toast: () => undefined, track: UNTRACKED };
 
     await exportFormDataJsonCommand(deps).run(CONTEXT);
     await exportFormDataXfdfCommand(deps).run(CONTEXT);
     await exportFormDataFdfCommand(deps).run(CONTEXT);
 
-    expect(sent).toStrictEqual([
+    expect(namedWorkSetAside(sent)).toStrictEqual([
       { id: 'document.exportFormData', params: { docId: DOC, format: 'json' } },
       { id: 'document.exportFormData', params: { docId: DOC, format: 'xfdf' } },
       { id: 'document.exportFormData', params: { docId: DOC, format: 'fdf' } },
@@ -1320,7 +1321,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       Promise.resolve(ok({ kind: 'unrepresentable' as const })),
     );
 
-    await exportFormDataXfdfCommand({
+    await exportFormDataXfdfCommand({ track: UNTRACKED,
       client,
       toast: () => undefined,
       stamp,
@@ -3269,7 +3270,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     });
     const asked: unknown[] = [];
 
-    await exportPageImagesCommand({
+    await exportPageImagesCommand({ track: UNTRACKED,
       settleMarks: NOTHING_MARKED,
       client,
       toast: () => undefined,
@@ -3285,7 +3286,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     // THE PAGE COUNT GOES IN, and every field comes back out unchanged — a
     // command that dropped `quality` or defaulted `format` fails here.
     expect(asked).toStrictEqual([{ id: 'dialog.export-page-images', props: { pageCount: 10 } }]);
-    expect(sent).toStrictEqual([
+    expect(namedWorkSetAside(sent)).toStrictEqual([
       {
         id: 'document.exportPageImages',
         params: { docId: DOC, pages: [0, 4], format: 'jpeg', dpi: 150, quality: 70 },
@@ -3299,7 +3300,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     });
     const spoken: unknown[] = [];
 
-    await exportPageImagesCommand({
+    await exportPageImagesCommand({ track: UNTRACKED,
       settleMarks: NOTHING_MARKED,
       client,
       toast: () => undefined,
@@ -3322,7 +3323,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const { client, sent } = recording({ 'document.exportText': { kind: 'copied', bytes: 12, written: WRITTEN } });
     const asked: unknown[] = [];
 
-    await exportTextCommand({
+    await exportTextCommand({ track: UNTRACKED,
       settleMarks: NOTHING_MARKED,
       recogniseFirst: NOTHING_RECOGNISED,
       client,
@@ -3336,7 +3337,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       },
     }).run(CONTEXT);
 
-    expect(sent).toStrictEqual([{ id: 'document.exportText', params: { docId: DOC, mode: 'plain', pages: CHOSEN_SET } }]);
+    expect(namedWorkSetAside(sent)).toStrictEqual([{ id: 'document.exportText', params: { docId: DOC, mode: 'plain', pages: CHOSEN_SET } }]);
     // ONLY THE PAGES ARE ASKED: the save dialog is main's, and a success is a toast, never a dialog.
     expect(asked).toStrictEqual([{ id: 'dialog.export-text', props: { pageCount: 10 } }]);
   });
@@ -3344,7 +3345,7 @@ describe('delete pages — the mutation-dialog gate', () => {
   it('CONTROL: a DISMISSED pages dialog exports nothing, for PowerPoint and both text exports', async () => {
     for (const command of [exportTextCommand, exportLayoutTextCommand]) {
       const { client, sent } = recording();
-      await command({
+      await command({ track: UNTRACKED,
         settleMarks: NOTHING_MARKED,
         recogniseFirst: NOTHING_RECOGNISED,
         client,
@@ -3358,7 +3359,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     }
     const { client, sent } = recording();
     const recognise = vi.fn(NO_PAGES_TO_RECOGNISE);
-    await exportPowerPointCommand({
+    await exportPowerPointCommand({ track: UNTRACKED,
       settleMarks: NOTHING_MARKED,
       recognisePages: recognise,
       client,
@@ -3396,7 +3397,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       }).run(CONTEXT);
 
       expect(asked).toStrictEqual([{ id: 'dialog.export-word', props: { pageCount: 10, readers: [] } }]);
-      expect(sent).toStrictEqual([{ id: 'document.exportWord', params: { docId: DOC, mode, pages: CHOSEN_SET } }]);
+      expect(namedWorkSetAside(sent)).toStrictEqual([{ id: 'document.exportWord', params: { docId: DOC, mode, pages: CHOSEN_SET } }]);
     }
   });
 
@@ -3408,7 +3409,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       const { client, sent } = recording({ 'document.exportPowerPoint': POWERPOINT_COPIED });
       const asked: unknown[] = [];
 
-      await exportPowerPointCommand({
+      await exportPowerPointCommand({ track: UNTRACKED,
         settleMarks: NOTHING_MARKED,
         recognisePages: NO_PAGES_TO_RECOGNISE,
         client,
@@ -3422,7 +3423,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         },
       }).run(CONTEXT);
 
-      expect(sent).toStrictEqual([{ id: 'document.exportPowerPoint', params: { docId: DOC, mode, pages: CHOSEN_SET } }]);
+      expect(namedWorkSetAside(sent)).toStrictEqual([{ id: 'document.exportPowerPoint', params: { docId: DOC, mode, pages: CHOSEN_SET } }]);
       // NOTHING TO SAY: every page editable and no scan, so the toast tells it and no second dialog opens.
       expect(asked).toStrictEqual([{ id: 'dialog.export-powerpoint', props: { pageCount: 10 } }]);
     }
@@ -3432,7 +3433,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const recognise = vi.fn(NO_PAGES_TO_RECOGNISE);
     for (const mode of ['editable', 'exact'] as const) {
       const { client } = recording({ 'document.exportPowerPoint': POWERPOINT_COPIED });
-      await exportPowerPointCommand({
+      await exportPowerPointCommand({ track: UNTRACKED,
         settleMarks: NOTHING_MARKED,
         recognisePages: recognise,
         client,
@@ -3454,7 +3455,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const asked: { id: string; props: unknown }[] = [];
     const toasts: string[] = [];
 
-    await exportPowerPointCommand({
+    await exportPowerPointCommand({ track: UNTRACKED,
       settleMarks: NOTHING_MARKED,
       recognisePages: () => Promise.resolve({ recognised: 4, skipped: 0, stopped: false }),
       client,
@@ -3480,7 +3481,7 @@ describe('delete pages — the mutation-dialog gate', () => {
   it('a STOPPED recognition writes no file and says how many pages already gained words; no model goes ahead and says so', async () => {
     const stopped = recording({ 'document.exportPowerPoint': POWERPOINT_COPIED });
     const askedStopped: { id: string; props: unknown }[] = [];
-    await exportPowerPointCommand({
+    await exportPowerPointCommand({ track: UNTRACKED,
       settleMarks: NOTHING_MARKED,
       recognisePages: () => Promise.resolve({ recognised: 3, skipped: 0, stopped: true }),
       client: stopped.client,
@@ -3504,7 +3505,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       'document.exportPowerPoint': { kind: 'copied', bytes: 9, fellBack: [2], fellBackCount: 1, written: WRITTEN },
     });
     const askedNoModel: { id: string; props: unknown }[] = [];
-    await exportPowerPointCommand({
+    await exportPowerPointCommand({ track: UNTRACKED,
       settleMarks: NOTHING_MARKED,
       recognisePages: () => Promise.resolve('no-model'),
       client: noModel.client,
@@ -3534,7 +3535,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         const { client, sent } = recording({ 'document.exportPdfa': { kind: 'copied', bytes: 9, removed, tagsDropped, written: WRITTEN } });
         const asked: unknown[] = [];
 
-        await exportPdfaCommand({
+        await exportPdfaCommand({ track: UNTRACKED,
           settleMarks: NOTHING_MARKED,
       recogniseFirst: NOTHING_RECOGNISED,
           client,
@@ -3548,7 +3549,7 @@ describe('delete pages — the mutation-dialog gate', () => {
           },
         }).run(CONTEXT);
 
-        expect(sent).toStrictEqual([{ id: 'document.exportPdfa', params: { docId: DOC } }]);
+        expect(namedWorkSetAside(sent)).toStrictEqual([{ id: 'document.exportPdfa', params: { docId: DOC } }]);
         expect(asked).toStrictEqual(notices === 1 ? [{ id: 'dialog.pdfa-removals', props: { removed, tagsDropped } }] : []);
       }
     });
@@ -3564,7 +3565,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         const { client } = recording({ 'document.exportPdfa': answered });
         const asked: unknown[] = [];
 
-        await exportPdfaCommand({
+        await exportPdfaCommand({ track: UNTRACKED,
           settleMarks: NOTHING_MARKED,
       recogniseFirst: NOTHING_RECOGNISED,
           client,
@@ -4015,7 +4016,7 @@ describe('delete pages — the mutation-dialog gate', () => {
           },
         },
       ]);
-      expect(sent).toStrictEqual([
+      expect(namedWorkSetAside(sent)).toStrictEqual([
         { id: 'document.pageTables', params: { docId: DOC, page: 3 } },
         { id: 'document.pageTables', params: { docId: DOC, page: 4 } },
         {
@@ -4176,7 +4177,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       }).run(CONTEXT);
 
       expect((spoken[0]?.props as { engines: unknown }).engines).toStrictEqual(['automatic', 'claude']);
-      expect(sent.at(-1)).toStrictEqual({
+      expect(namedWorkSetAside(sent).at(-1)).toStrictEqual({
         id: 'document.exportExcel',
         params: {
           docId: DOC,
@@ -4195,14 +4196,18 @@ describe('delete pages — the mutation-dialog gate', () => {
     });
   });
 
-  it('Excel read by a SERVICE: the status bar steps from the polled count, a Cancel reaches main, and the task always ends (ADR-0202)', async () => {
+  it('Excel read by a SERVICE: shown from main’s first running under the export’s own name, stepped, stoppable, and always ended (ADR-0234)', async () => {
     vi.useFakeTimers();
     try {
       const steps: number[] = [];
       const totals: number[] = [];
+      const stopping: unknown[] = [];
       let ended = 0;
       const controller = new AbortController();
       const cancelled: unknown[] = [];
+      const exported: { work?: string }[] = [];
+      // MAIN HAS NOT BEGUN until the file is chosen: idle, then running. The notice must wait for the second.
+      let begun = false;
       let finish: ((value: unknown) => void) | undefined;
       const exporting = new Promise<unknown>((resolve) => {
         finish = resolve;
@@ -4211,11 +4216,14 @@ describe('delete pages — the mutation-dialog gate', () => {
         if (id === 'document.pageTables') {
           return Promise.resolve(ok({ version: asDocVersion(5), pageCount: 10, tables: [], truncated: false }));
         }
-        if (id === 'document.exportProgress') return Promise.resolve(ok({ kind: 'reading', done: 2, total: 3 }));
-        if (id === 'document.cancelExport') {
+        if (id === 'work.progress') {
+          return Promise.resolve(ok(begun ? { kind: 'running', done: 2, total: 3, stoppable: true } : { kind: 'idle' }));
+        }
+        if (id === 'work.cancel') {
           cancelled.push(params);
           return Promise.resolve(ok({ cancelled: true }));
         }
+        exported.push(params as { work?: string });
         return exporting.then((value) => ok(value));
       });
       const running = exportExcelCommand({
@@ -4224,8 +4232,9 @@ describe('delete pages — the mutation-dialog gate', () => {
         toast: () => undefined,
         scanReaders: () => Promise.resolve(['claude'] as const),
         readScans: () => Promise.resolve(undefined),
-        track: (_label, total) => {
+        track: (_label, total, stops) => {
           totals.push(total);
+          stopping.push(stops);
           return {
             signal: controller.signal,
             step: (done) => steps.push(done),
@@ -4245,13 +4254,19 @@ describe('delete pages — the mutation-dialog gate', () => {
           ),
       }).run(CONTEXT) as Promise<void>;
 
-      // LET THE COMMAND REACH THE EXPORT, then let a second pass: the poll's first answer steps the bar.
+      // THE PICKER IS OPEN: main answers idle, and NO notice shows however long it stays open.
       await vi.advanceTimersByTimeAsync(1100);
-      expect(totals).toStrictEqual([CHOSEN.length]);
+      expect(totals).toStrictEqual([]);
+      // THE FILE IS CHOSEN: main begins, and the next poll shows the notice with main's count and its Cancel.
+      begun = true;
+      await vi.advanceTimersByTimeAsync(250);
+      expect(totals).toStrictEqual([3]);
+      expect(stopping).toStrictEqual(['stops-between-parts']);
       expect(steps).toStrictEqual([2]);
-      // THE PERSON PRESSES CANCEL in the status bar: main is told, for the document being exported.
+      // THE PERSON PRESSES CANCEL: main is told, under the NAME THE EXPORT WAS SENT WITH.
       controller.abort();
-      expect(cancelled).toStrictEqual([{ docId: DOC }]);
+      expect(cancelled).toStrictEqual([{ work: exported[0]?.work }]);
+      expect(typeof exported[0]?.work).toBe('string');
       finish?.({ kind: 'cancelled' });
       await running;
       expect(ended).toBe(1);
@@ -4263,7 +4278,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     }
   });
 
-  it('CONTROL: the PDF’s own text shows no task at all — it reads in a moment', async () => {
+  it('CONTROL: an export answered before main ever says running shows no notice — a moment’s work is not announced', async () => {
     const totals: number[] = [];
     const client = createClient(channels, (id) => {
       if (id === 'document.pageTables') {
@@ -4352,7 +4367,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       expect((t.asked[0]?.props as { engines: unknown }).engines).toStrictEqual(['automatic', 'built-in']);
       expect(t.walks).toStrictEqual([{ pages: CHOSEN, reader: 'built-in' }]);
       // THE CHANNEL HAS NO `built-in`: it is asked for `automatic`, at the version the walk made (8), and with no edits.
-      expect(t.sent.at(-1)).toStrictEqual({
+      expect(namedWorkSetAside(t.sent).at(-1)).toStrictEqual({
         id: 'document.exportExcel',
         params: { docId: DOC, layout: 'sheet-per-page', engine: 'automatic', version: asDocVersion(8), pages: CHOSEN_SET, edits: [] },
       });
@@ -4429,7 +4444,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         said,
         plain,
         run: async (): Promise<void> => {
-          await exportWordCommand({
+          await exportWordCommand({ track: UNTRACKED,
             settleMarks: NOTHING_MARKED,
             recogniseFirst: () => {
               plain.count += 1;
@@ -4464,7 +4479,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       const t = scanning();
       await t.run();
       expect(t.walks).toStrictEqual([{ docId: DOC, pages: CHOSEN, reader: 'claude' }]);
-      expect(t.sent).toStrictEqual([{ id: 'document.exportWord', params: { docId: DOC, mode: 'text', pages: CHOSEN_SET } }]);
+      expect(namedWorkSetAside(t.sent)).toStrictEqual([{ id: 'document.exportWord', params: { docId: DOC, mode: 'text', pages: CHOSEN_SET } }]);
       expect(t.plain.count).toBe(0);
       // WHAT THE READING DID is said once, after the export, as the recognise-first export says it.
       expect(t.asked.map((each) => each.id)).toStrictEqual(['dialog.export-word', 'dialog.ocr-outcome']);
@@ -4475,7 +4490,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       await t.run();
       expect(t.walks).toStrictEqual([]);
       expect(t.plain.count).toBe(1);
-      expect(t.sent).toStrictEqual([{ id: 'document.exportWord', params: { docId: DOC, mode: 'rich', pages: CHOSEN_SET } }]);
+      expect(namedWorkSetAside(t.sent)).toStrictEqual([{ id: 'document.exportWord', params: { docId: DOC, mode: 'rich', pages: CHOSEN_SET } }]);
     });
 
     it('a walk the person STOPPED writes NO file and says what was read', async () => {
@@ -4500,7 +4515,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const { client, sent } = recording({ 'document.exportText': { kind: 'copied', bytes: 12, written: WRITTEN } });
     const asked: unknown[] = [];
 
-    await exportLayoutTextCommand({
+    await exportLayoutTextCommand({ track: UNTRACKED,
       settleMarks: NOTHING_MARKED,
       recogniseFirst: NOTHING_RECOGNISED,
       client,
@@ -4516,7 +4531,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
     // ITS OWN DIALOG, titled for the layout export, over the same body as plain text's.
     expect(asked).toStrictEqual([{ id: 'dialog.export-layout-text', props: { pageCount: 10 } }]);
-    expect(sent).toStrictEqual([{ id: 'document.exportText', params: { docId: DOC, mode: 'layout', pages: CHOSEN_SET } }]);
+    expect(namedWorkSetAside(sent)).toStrictEqual([{ id: 'document.exportText', params: { docId: DOC, mode: 'layout', pages: CHOSEN_SET } }]);
   });
 
   it('a layout export with NO CONVERTER, and one that FAILED, each say so through the save problem dialog', async () => {
@@ -4527,7 +4542,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       const { client } = recording({ 'document.exportText': { kind } });
       const spoken: unknown[] = [];
 
-      await exportLayoutTextCommand({
+      await exportLayoutTextCommand({ track: UNTRACKED,
       settleMarks: NOTHING_MARKED,
       recogniseFirst: NOTHING_RECOGNISED,
         client,
@@ -4552,7 +4567,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const { client } = recording({ 'document.exportText': { kind: 'refused', openElsewhere: 1 } });
     const spoken: unknown[] = [];
 
-    await exportTextCommand({
+    await exportTextCommand({ track: UNTRACKED,
       settleMarks: NOTHING_MARKED,
       recogniseFirst: NOTHING_RECOGNISED,
       client,
@@ -4669,7 +4684,7 @@ describe('delete pages — the mutation-dialog gate', () => {
   it('CONTROL: a DISMISSED export-pages-as-images dialog dispatches nothing', async () => {
     const { client, sent } = recording();
 
-    await exportPageImagesCommand({
+    await exportPageImagesCommand({ track: UNTRACKED,
       settleMarks: NOTHING_MARKED,
       client,
       toast: () => undefined,

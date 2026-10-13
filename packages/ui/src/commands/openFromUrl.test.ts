@@ -3,6 +3,8 @@ import { asDocId, asDocVersion, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import type { CommandContext } from '../registries/commands.js';
+import { UNTRACKED } from '../runningTask.js';
+import { namedWorkSetAside } from './namedWorkSetAside.js';
 import { openFromUrlCommand } from './openFromUrl.js';
 
 /**
@@ -51,6 +53,7 @@ function callbacks(typed: unknown): {
   return {
     calls,
     deps: {
+      track: UNTRACKED,
       ask: (id, props) => {
         calls.push({ name: 'ask', value: { id, props } });
         return Promise.resolve(id === 'dialog.open-from-url' ? typed : undefined);
@@ -76,7 +79,7 @@ describe('openFromUrlCommand', () => {
 
     await openFromUrlCommand({ client, ...deps }).run(CONTEXT);
 
-    expect(sent).toStrictEqual([
+    expect(namedWorkSetAside(sent)).toStrictEqual([
       { id: 'document.openFromUrl', params: { url: 'https://example.org/report.pdf' } },
     ]);
     expect(calls).toStrictEqual([

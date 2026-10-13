@@ -20,6 +20,8 @@
  * - O7: Highlight area highlights a box with no words in it, saved as a Highlight at exactly that box, and is listed.
  * - O3: three blank pages put before the first page in one insert, and two pictures after the last page in file-name
  *   order; each read back from the saved file, and each taken out again by one Undo.
+ * - O9: a dismissed picker shows no notice; a long Markdown conversion shows its notice, without a Cancel, until its tab
+ *   opens, and the PDF it wrote is read back.
  */
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
@@ -499,6 +501,34 @@ await step('O3: ONE Undo takes both pictures out, in the saved file', async () =
   const read = await savedPages(await saveCopy('pages-pictures-undone.pdf'));
   expect(read).toHaveLength(2);
   return { pages: read };
+});
+
+await step('O9: a dismissed Markdown picker shows NO notice — nothing was chosen, so nothing is converting', async () => {
+  await pickFiles([]);
+  await command('New PDF from Markdown…');
+  // LONGER THAN THE NOTICE'S FIRST LOOK (200 ms) several times over, so a notice that ignored the picker would be up.
+  await page.waitForTimeout(1500);
+  expect(await page.locator('[data-task-notice]').count()).toBe(0);
+});
+
+await step('O9: converting a long Markdown file shows "Converting Markdown to PDF" from the chosen file until the tab opens; the PDF is written', async () => {
+  // LONG ENOUGH TO TAKE SECONDS in the compose host, so the notice has time to be seen.
+  const markdown = join(output, 'long.md');
+  const paragraph = 'A paragraph of plain words that the composer sets as prose, again and again. ';
+  await writeFile(markdown, Array.from({ length: 4000 }, (_, at) => `## Part ${String(at + 1)}\n\n${paragraph.repeat(6)}\n`).join('\n'));
+  const composed = join(output, 'long.pdf');
+  await pickFiles([markdown]);
+  await saveTo(composed);
+  await command('New PDF from Markdown…');
+  const notice = page.locator('[data-task-notice]');
+  await expect(notice).toContainText('Converting Markdown to PDF', { timeout: 20_000 });
+  // NO CANCEL: one composition runs to the end, and a button that could not stop it would do nothing.
+  expect(await notice.getByRole('button').count()).toBe(0);
+  await expect(page.getByRole('tab', { name: /^long\.pdf/u })).toBeVisible({ timeout: 120_000 });
+  await expect(notice).toHaveCount(0);
+  const read = await savedPages(composed);
+  expect(read.length).toBeGreaterThan(1);
+  return { pages: read.length };
 });
 
 await finish();

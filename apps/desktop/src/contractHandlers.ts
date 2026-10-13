@@ -422,6 +422,8 @@ export function createContractHandlers(deps: {
   // THE HANDLE EVERY WRITE ANSWERS for what it wrote (`WRITTEN`), from the registry that mints every other: a path
   // this process wrote becomes a capability the renderer may name and cannot read.
   const mintWritten: MintWritten = (destination) => deps.capabilities.mint(destination);
+  // EVERY CONVERSION'S NAME IS FINISHED HERE, once its answer is ready however it ended (ADR-0234).
+  const finishing = finishingWork(deps.commands);
   return {
     // THE PRELOAD'S CHANNEL (ADR-0099). The page cannot send it — the bridge's `invoke` refuses its id —
     // so the path here is one `webUtils.getPathForFile` resolved from a file the operating system handed
@@ -445,7 +447,7 @@ export function createContractHandlers(deps: {
     // AN ARRAY COPY, for `app.ocrLanguages`' reason (ADR-0122).
     'app.components': async ({ verify }) => ok({ components: [...(await deps.components(verify))] }),
     'document.open': openDocumentHandler(deps),
-    'document.openFromUrl': openFromUrlHandler(deps),
+    'document.openFromUrl': finishing(openFromUrlHandler(deps)),
     'document.unlock': async ({ docId, password }) => {
       try {
         return ok(await deps.unlockDocument(docId, password));
@@ -489,8 +491,8 @@ export function createContractHandlers(deps: {
     },
     'document.extract': extractHandler(deps.commands, mintWritten),
     'document.snapshotRegion': snapshotRegionHandler(deps.commands, mintWritten),
-    'document.exportFormData': exportFormDataHandler(deps.commands, mintWritten),
-    'document.exportAnnotations': exportAnnotationsHandler(deps.commands, mintWritten),
+    'document.exportFormData': finishing(exportFormDataHandler(deps.commands, mintWritten)),
+    'document.exportAnnotations': finishing(exportAnnotationsHandler(deps.commands, mintWritten)),
     'document.importAnnotations': importAnnotationsHandler(deps.commands),
     'document.copyAnnotations': copyAnnotationsHandler(deps.commands),
     'document.annotationWords': annotationWordsHandler(deps.commands),
@@ -498,21 +500,18 @@ export function createContractHandlers(deps: {
     'document.pasteAnnotations': pasteAnnotationsHandler(deps.commands),
     'document.importFormData': importFormDataHandler(deps.commands),
     'document.split': splitHandler(deps.commands, mintWritten),
-    'document.exportPageImages': exportPageImagesHandler(deps.commands, mintWritten),
-    'document.exportText': exportTextHandler(deps.commands, mintWritten),
-    'document.exportWord': exportWordHandler(deps.commands, mintWritten),
-    'document.exportPowerPoint': exportPowerPointHandler(deps.commands, mintWritten),
-    'document.exportExcel': exportExcelHandler(deps.commands, mintWritten),
-    // NOT IN THE LANE (ADR-0202 Decision 5): the export holds it for its whole length, so a count or a stop that queued
-    // behind it would be answered when there was nothing left to report. Plain reads and a flag of a map main keeps.
-    'document.exportProgress': ({ docId }) => Promise.resolve(ok(deps.commands.exportProgress(docId))),
-    'document.cancelExport': ({ docId }) => Promise.resolve(ok({ cancelled: deps.commands.cancelExport(docId) })),
-    // THE SHARED PAIR for work the renderer named (the owner's O9 and O10), plain reads and a flag for the same reason.
+    'document.exportPageImages': finishing(exportPageImagesHandler(deps.commands, mintWritten)),
+    'document.exportText': finishing(exportTextHandler(deps.commands, mintWritten)),
+    'document.exportWord': finishing(exportWordHandler(deps.commands, mintWritten)),
+    'document.exportPowerPoint': finishing(exportPowerPointHandler(deps.commands, mintWritten)),
+    'document.exportExcel': finishing(exportExcelHandler(deps.commands, mintWritten)),
+    // THE ONE PAIR for work the renderer named (ADR-0234), NOT IN THE LANE: an export holds it for its whole length, so a
+    // count or a stop that queued behind it would be answered when there was nothing left to report.
     'work.progress': ({ work }) => Promise.resolve(ok(deps.commands.workProgress(work))),
     'work.cancel': ({ work }) => Promise.resolve(ok({ cancelled: deps.commands.cancelWork(work) })),
     'document.print': printHandler(deps.commands),
     'document.email': emailHandler(deps.commands),
-    'document.exportPdfa': exportPdfaHandler(deps.commands, mintWritten),
+    'document.exportPdfa': finishing(exportPdfaHandler(deps.commands, mintWritten)),
     'document.optimizeMeasure': optimizeMeasureHandler(deps.commands),
     'document.optimize': optimizeHandler(deps.commands, mintWritten),
     'document.saveCopy': saveCopyHandler(deps.commands, mintWritten),
@@ -542,13 +541,13 @@ export function createContractHandlers(deps: {
         throw thrown;
       }
     },
-    'document.insertImage': insertImageHandler(deps),
-    'document.newFromMarkdown': newFromImportHandler(deps, 'markdown'),
-    'document.newFromCsv': newFromImportHandler(deps, 'csv'),
-    'document.newFromOffice': newFromOfficeHandler(deps),
-    'document.newFromImages': newFromImagesHandler(deps),
-    'document.newFromCapture': newFromCaptureHandler(deps),
-    'document.appendMarkdown': appendMarkdownHandler(deps),
+    'document.insertImage': finishing(insertImageHandler(deps)),
+    'document.newFromMarkdown': finishing(newFromImportHandler(deps, 'markdown')),
+    'document.newFromCsv': finishing(newFromImportHandler(deps, 'csv')),
+    'document.newFromOffice': finishing(newFromOfficeHandler(deps)),
+    'document.newFromImages': finishing(newFromImagesHandler(deps)),
+    'document.newFromCapture': finishing(newFromCaptureHandler(deps)),
+    'document.appendMarkdown': finishing(appendMarkdownHandler(deps)),
     'document.editPageExternally': editPageExternallyHandler(deps.commands),
     'document.awaitExternalEdit': awaitExternalEditHandler(deps.commands),
     'document.reimportExternalEdit': reimportExternalEditHandler(deps),
@@ -1067,6 +1066,23 @@ function saveHandler(commands: DocumentCommands): ContractHandlers['document.sav
  * A refusal by size as the wire carries it: rebuilt field by field for the reason above, and in ONE place, so every
  * handler with a bound answers the file's size beside it (`fileTooLargeSchema`).
  */
+/**
+ * A conversion's handler that FINISHES ITS WORK'S NAME once its answer is ready, however it ended (ADR-0234): the method
+ * began the name when the input was chosen, and the notice stays through whatever the handler does after — an import's
+ * open included — and leaves even where the call threw.
+ */
+function finishingWork(
+  commands: Pick<DocumentCommands, 'finishWork'>,
+): <P extends { readonly work: string }, R>(handler: (params: P) => Promise<R>) => (params: P) => Promise<R> {
+  return (handler) => async (params) => {
+    try {
+      return await handler(params);
+    } finally {
+      commands.finishWork(params.work);
+    }
+  };
+}
+
 function tooLargeAnswer(outcome: FileTooLarge): FileTooLarge {
   return { kind: 'too-large', limitBytes: outcome.limitBytes, fileBytes: outcome.fileBytes };
 }
@@ -1081,9 +1097,10 @@ function insertImageHandler(
   return async ({
     docId,
     at,
+    work,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.insertImage']>>> => {
     try {
-      const composed = await deps.commands.insertImages(docId);
+      const composed = await deps.commands.insertImages(docId, work);
       if (composed.kind === 'too-many-images') return ok({ kind: 'too-many-images', limit: composed.limit });
       if (composed.kind === 'images-too-large') return ok({ kind: 'images-too-large', limitBytes: composed.limitBytes });
       if (composed.kind !== 'written') return ok(composeRefusal(composed));
@@ -1152,13 +1169,13 @@ function newFromImportHandler(
 ): ContractHandlers['document.newFromCsv'] {
   // ONE HANDLER FOR BOTH CHANNELS, which answer one declared union: a copy per format
   // would be two opinions about how an import is opened and answered.
-  return async (params: { readonly work?: string | undefined }): Promise<Awaited<ReturnType<ContractHandlers['document.newFromMarkdown']>>> => {
+  return async (params: { readonly work: string }): Promise<Awaited<ReturnType<ContractHandlers['document.newFromMarkdown']>>> => {
     try {
-      // NO DIALOG ASKS for a new document's font, so it is set as every composition was before D1. THE WORK'S NAME, where
-      // the renderer gave one, is what a file composed in parts reports under (`work.progress`).
+      // NO DIALOG ASKS for a new document's font, so it is set as every composition was before D1. THE WORK'S NAME is what
+      // the import is shown under (ADR-0234).
       const composed = await deps.commands.composeImportFile(format, {
         family: COMPOSED_FAMILY_DEFAULT,
-        ...(params.work === undefined ? {} : { work: params.work }),
+        work: params.work,
       });
       if (composed.kind !== 'written') return ok(composeRefusal(composed));
       const opened = (await openPath(deps, composed.destination)).outcome;
@@ -1188,9 +1205,9 @@ function newFromImportHandler(
 function newFromCaptureHandler(
   deps: OpenPathParts & { readonly commands: DocumentCommands },
 ): ContractHandlers['document.newFromCapture'] {
-  return async ({ frames }): Promise<Awaited<ReturnType<ContractHandlers['document.newFromCapture']>>> => {
+  return async ({ frames, work }): Promise<Awaited<ReturnType<ContractHandlers['document.newFromCapture']>>> => {
     try {
-      const composed = await deps.commands.composeCapturedFrames(frames);
+      const composed = await deps.commands.composeCapturedFrames(frames, work);
       if (composed.kind !== 'written') return ok(composeRefusal(composed));
       const opened = (await openPath(deps, composed.destination)).outcome;
       // A FRAME LEFT OUT is said too, with no name: a frame has none a person knows it by.
@@ -1212,9 +1229,9 @@ function newFromCaptureHandler(
 function newFromImagesHandler(
   deps: OpenPathParts & { readonly commands: DocumentCommands },
 ): ContractHandlers['document.newFromImages'] {
-  return async (): Promise<Awaited<ReturnType<ContractHandlers['document.newFromImages']>>> => {
+  return async ({ work }): Promise<Awaited<ReturnType<ContractHandlers['document.newFromImages']>>> => {
     try {
-      const composed = await deps.commands.composeImageFiles();
+      const composed = await deps.commands.composeImageFiles(work);
       if (composed.kind === 'too-many-images') {
         return ok({ kind: 'too-many-images', limit: composed.limit });
       }
@@ -1332,9 +1349,10 @@ function appendMarkdownHandler(
     docId,
     at,
     family,
+    work,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.appendMarkdown']>>> => {
     try {
-      const composed = await deps.commands.composeImportFile('markdown', { family, target: docId });
+      const composed = await deps.commands.composeImportFile('markdown', { family, target: docId, work });
       if (composed.kind !== 'written') return ok(composeRefusal(composed));
 
       const merged = await mergeComposed(deps, docId, at, composed.destination);
@@ -1944,9 +1962,10 @@ function exportFormDataHandler(
   return async ({
     docId,
     format,
+    work,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.exportFormData']>>> => {
     try {
-      const outcome = await commands.exportFormData(docId, format);
+      const outcome = await commands.exportFormData(docId, format, work);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
@@ -1975,9 +1994,10 @@ function exportAnnotationsHandler(
   return async ({
     docId,
     format,
+    work,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.exportAnnotations']>>> => {
     try {
-      const outcome = await commands.exportAnnotations(docId, format);
+      const outcome = await commands.exportAnnotations(docId, format, work);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
@@ -2158,9 +2178,10 @@ function exportPageImagesHandler(
     format,
     dpi,
     quality,
+    work,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.exportPageImages']>>> => {
     try {
-      const outcome = await commands.exportPageImages(docId, { pages, format, dpi, quality });
+      const outcome = await commands.exportPageImages(docId, { pages, format, dpi, quality }, work);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'split') return ok({ kind: 'split', files: outcome.files, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
@@ -2183,9 +2204,10 @@ function exportTextHandler(commands: DocumentCommands, mint: MintWritten): Contr
     docId,
     mode,
     pages,
+    work,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.exportText']>>> => {
     try {
-      const outcome = await commands.exportText(docId, mode, pages);
+      const outcome = await commands.exportText(docId, mode, pages, work);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       switch (outcome.kind) {
         case 'copied':
@@ -2216,9 +2238,10 @@ function exportWordHandler(commands: DocumentCommands, mint: MintWritten): Contr
     docId,
     mode,
     pages,
+    work,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.exportWord']>>> => {
     try {
-      const outcome = await commands.exportWord(docId, mode, pages);
+      const outcome = await commands.exportWord(docId, mode, pages, work);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
@@ -2238,9 +2261,10 @@ function exportPowerPointHandler(commands: DocumentCommands, mint: MintWritten):
     docId,
     mode,
     pages,
+    work,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.exportPowerPoint']>>> => {
     try {
-      const outcome = await commands.exportPowerPoint(docId, pages, mode);
+      const outcome = await commands.exportPowerPoint(docId, pages, mode, work);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'copied') {
         // THE COUNT IS EXACT AND THE LIST IS WHAT A SENTENCE CAN NAME (ADR-0210).
@@ -2265,9 +2289,9 @@ function exportPowerPointHandler(commands: DocumentCommands, mint: MintWritten):
 
 /** The PDF/A export's handler: a copy's outcomes with the removals, and the converter's two refusals. */
 function exportPdfaHandler(commands: DocumentCommands, mint: MintWritten): ContractHandlers['document.exportPdfa'] {
-  return async ({ docId }): Promise<Awaited<ReturnType<ContractHandlers['document.exportPdfa']>>> => {
+  return async ({ docId, work }): Promise<Awaited<ReturnType<ContractHandlers['document.exportPdfa']>>> => {
     try {
-      const outcome = await commands.exportPdfa(docId);
+      const outcome = await commands.exportPdfa(docId, work);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       switch (outcome.kind) {
         case 'copied':
@@ -2374,9 +2398,10 @@ function exportExcelHandler(commands: DocumentCommands, mint: MintWritten): Cont
     version,
     edits,
     pages,
+    work,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.exportExcel']>>> => {
     try {
-      const outcome = await commands.exportExcel(docId, layout, { version, edits, pages }, engine);
+      const outcome = await commands.exportExcel(docId, layout, { version, edits, pages }, engine, work);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'copied') {
         return ok({ kind: 'copied', bytes: outcome.bytes, written: mint(outcome.destination), tablesLeftOut: outcome.tablesLeftOut } as const);
@@ -3434,8 +3459,8 @@ function redoHandler(commands: DocumentCommands): ContractHandlers['document.red
 function openFromUrlHandler(
   deps: OpenPathParts & { readonly commands: DocumentCommands },
 ): ContractHandlers['document.openFromUrl'] {
-  return async ({ url }): Promise<Awaited<ReturnType<ContractHandlers['document.openFromUrl']>>> => {
-    const fetched = await deps.commands.openFromUrl(url);
+  return async ({ url, work }): Promise<Awaited<ReturnType<ContractHandlers['document.openFromUrl']>>> => {
+    const fetched = await deps.commands.openFromUrl(url, work);
     switch (fetched.kind) {
       case 'cancelled':
         return ok({ kind: 'cancelled' });
@@ -3461,10 +3486,10 @@ function openFromUrlHandler(
 function newFromOfficeHandler(
   deps: OpenPathParts & { readonly commands: DocumentCommands },
 ): ContractHandlers['document.newFromOffice'] {
-  return async (): Promise<Awaited<ReturnType<ContractHandlers['document.newFromOffice']>>> => {
+  return async ({ work }): Promise<Awaited<ReturnType<ContractHandlers['document.newFromOffice']>>> => {
     let converted: Awaited<ReturnType<DocumentCommands['convertOfficeFile']>>;
     try {
-      converted = await deps.commands.convertOfficeFile();
+      converted = await deps.commands.convertOfficeFile(work);
     } catch (thrown) {
       if (thrown instanceof EngineUnavailableError) return err({ code: 'engine-unavailable' });
       throw thrown;

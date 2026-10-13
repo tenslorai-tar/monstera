@@ -2710,8 +2710,6 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     // NO BROWSER TO OPEN: what `main` answers when the system opened nothing.
     'document.openBarcodeLink': () => Promise.resolve(ok({ kind: 'not-opened' as const })),
     'document.saveBarcodeContact': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
-    'document.exportProgress': () => Promise.resolve(ok({ kind: 'idle' as const })),
-    'document.cancelExport': () => Promise.resolve(ok({ cancelled: false })),
     // NO WORK RUNS IN THE SHIM: every name is idle and nothing can be stopped.
     'work.progress': () => Promise.resolve(ok({ kind: 'idle' as const })),
     'work.cancel': () => Promise.resolve(ok({ cancelled: false })),

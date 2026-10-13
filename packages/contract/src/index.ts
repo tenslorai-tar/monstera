@@ -208,6 +208,7 @@ export {
   PAGE_OBJECTS_PART,
   TEXT_BLOCKS_PART,
 } from './channels.js';
+export { CONVERSION_CHANNELS, type ConversionChannel } from './conversionChannels.js';
 export { acceptAnswer, createClient, wrapHandler, wrapHandlers } from './boundary.js';
 export { FOLLOWED_SCHEMES, SHOWN_SCHEME_MAX, isFollowable, schemeOf, shownSchemeOf } from './followedLinks.js';
 export { BRIDGE_KEY, type MonsteraBridge, PRELOAD_CHANNEL_IDS, type PreloadChannelId } from './bridge.js';

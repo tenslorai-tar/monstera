@@ -123,6 +123,9 @@ import { type DocId, type DocVersion, asDocId, asDocVersion, asFileHandle } from
 /** Large enough that capacity is never what these tests are measuring. */
 const AMPLE_CEILING = 64 * 1024 * 1024;
 
+/** The name every conversion here runs under (ADR-0234); a case about the name itself mints its own. */
+const WORK = 'work-under-test';
+
 /** Where this file's services keep checkpoints (ADR-0121): its own, by process, removed after the file. */
 const CHECKPOINTS = join(tmpdir(), `monstera-commands-checkpoints-${String(process.pid)}`);
 
@@ -3138,8 +3141,8 @@ describe('the form data export carries the format all the way to the file', () =
     const asFdf = join(directory, 'exported.fdf');
     const asJson = join(directory, 'exported.json');
 
-    expect((await exportingTo(asFdf).exportFormData(formDoc, 'fdf'))?.kind).toBe('copied');
-    expect((await exportingTo(asJson).exportFormData(formDoc, 'json'))?.kind).toBe('copied');
+    expect((await exportingTo(asFdf).exportFormData(formDoc, 'fdf', WORK))?.kind).toBe('copied');
+    expect((await exportingTo(asJson).exportFormData(formDoc, 'json', WORK))?.kind).toBe('copied');
 
     const fdf = readFileSync(asFdf).toString('latin1');
     const json = readFileSync(asJson).toString('utf8');
@@ -3223,7 +3226,7 @@ describe('the form data export carries the format all the way to the file', () =
       },
     });
 
-    expect(await commands.exportFormData(formDoc, 'fdf')).toBeUndefined();
+    expect(await commands.exportFormData(formDoc, 'fdf', WORK)).toBeUndefined();
     expect(existsSync(untouched)).toBe(false);
   });
 });
@@ -3328,7 +3331,7 @@ describe('annotations exported to a file and imported from it, through the lane 
       const exported = await commandsWith(
         { ...localAnnotationData, pick: () => Promise.resolve(file) },
         exportFlushes,
-      ).exportAnnotations(annotatedDoc, format);
+      ).exportAnnotations(annotatedDoc, format, WORK);
       expect(exported?.kind).toBe('copied');
       // AN EXPORT READS THE ANNOTATIONS AND FLUSHES NOTHING.
       expect(exportFlushes).toStrictEqual([]);
@@ -3715,7 +3718,7 @@ describe('exportPageImages — one image per page, in a folder, all or nothing',
       format: 'jpeg',
       dpi: 72,
       quality: 80,
-    });
+    }, WORK);
 
     // THE FOLDER THE PERSON CHOSE is what a toast's Show in folder opens, not a file in it.
     expect(outcome).toEqual({ kind: 'split', files: 2, destination: folder });
@@ -3736,7 +3739,7 @@ describe('exportPageImages — one image per page, in a folder, all or nothing',
       format: 'png',
       dpi: 72,
       quality: 90,
-    });
+    }, WORK);
 
     // Page 1 is 100×100 and page 3 is 400×500. A main that rasterised one page
     // for every name writes two images of the same size.
@@ -3752,7 +3755,7 @@ describe('exportPageImages — one image per page, in a folder, all or nothing',
       format: 'png',
       dpi: 144,
       quality: 90,
-    });
+    }, WORK);
 
     // 200×300 points at 144 dpi is scale 2. A DPI that went nowhere answers 200×300.
     expect(pngSize(join(folder, 'sized 2.png'))).toEqual([400, 600]);
@@ -3769,7 +3772,7 @@ describe('exportPageImages — one image per page, in a folder, all or nothing',
     });
 
     expect(
-      await commands.exportPageImages(sizedDoc, { pages: [0], format: 'png', dpi: 72, quality: 90 }),
+      await commands.exportPageImages(sizedDoc, { pages: [0], format: 'png', dpi: 72, quality: 90 }, WORK),
     ).toBeUndefined();
   });
 
@@ -3783,7 +3786,7 @@ describe('exportPageImages — one image per page, in a folder, all or nothing',
           ? { kind: 'contested' as const, others: [asDocId('other')] }
           : { kind: 'writable' as const },
       ),
-    ).exportPageImages(sizedDoc, { pages: [0, 1], format: 'png', dpi: 72, quality: 90 });
+    ).exportPageImages(sizedDoc, { pages: [0, 1], format: 'png', dpi: 72, quality: 90 }, WORK);
 
     expect(outcome?.kind).toBe('refused');
     // PAGE 1's NAME WAS FREE and it is still not written: every name is checked
@@ -3937,7 +3940,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
     const destination = join(mkdtempSync(join(directory, 'text-')), 'words.txt');
     const { commands, reads } = exportingTo(destination);
 
-    const outcome = await commands.exportText(textDoc, 'plain', TWO_PAGES);
+    const outcome = await commands.exportText(textDoc, 'plain', TWO_PAGES, WORK);
 
     const written = readFileSync(destination, 'utf8');
     expect(outcome).toEqual({ kind: 'copied', bytes: Buffer.byteLength(written, 'utf8'), destination });
@@ -4009,7 +4012,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
     });
     reads = built.reads;
 
-    await built.commands.exportText(textDoc, 'plain', TWO_PAGES);
+    await built.commands.exportText(textDoc, 'plain', TWO_PAGES, WORK);
 
     // Chunk 1 arrived after ONE read and chunk 2 after TWO. Reading everything
     // first answers [2, 2].
@@ -4019,7 +4022,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
   it('CONTROL: a dismissed picker returns nothing and reads no page', async () => {
     const { commands, reads } = exportingTo(null);
 
-    expect(await commands.exportText(textDoc, 'plain', TWO_PAGES)).toBeUndefined();
+    expect(await commands.exportText(textDoc, 'plain', TWO_PAGES, WORK)).toBeUndefined();
     expect(reads).toEqual([]);
   });
 
@@ -4030,7 +4033,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
         Promise.resolve({ kind: 'contested' as const, others: [asDocId('other')] }),
     });
 
-    expect((await commands.exportText(textDoc, 'plain', TWO_PAGES))?.kind).toBe('refused');
+    expect((await commands.exportText(textDoc, 'plain', TWO_PAGES, WORK))?.kind).toBe('refused');
     // THE DECISION, not the end state: no file either way, but a refusal that came
     // after extracting the document would still have read both pages.
     expect(reads).toEqual([]);
@@ -4042,7 +4045,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       const destination = join(mkdtempSync(join(directory, 'word-')), 'words.docx');
       const { commands, reads, words } = exportingTo(destination);
 
-      const outcome = await commands.exportWord(textDoc, 'text', TWO_PAGES);
+      const outcome = await commands.exportWord(textDoc, 'text', TWO_PAGES, WORK);
 
       expect(outcome?.kind).toBe('copied');
       const files = unzipSync(readFileSync(destination));
@@ -4057,14 +4060,18 @@ describe('exportText — the document’s words, streamed one page at a time', (
       expect(words).toEqual(['text']);
       expect(reads).toEqual([]);
       expect(outcome).toEqual({ kind: 'copied', bytes: readFileSync(destination).byteLength, destination });
+      // THE CHOSEN FILE BEGAN THE WORK (ADR-0234), with no Cancel, and it runs until its handler finishes the name.
+      expect(commands.workProgress(WORK)).toStrictEqual({ kind: 'running', done: 0, total: 0, stoppable: false });
     });
 
     it('CONTROL: a dismissed picker returns nothing and composes nothing', async () => {
       const { commands, reads, words } = exportingTo(null);
 
-      expect(await commands.exportWord(textDoc, 'layout', TWO_PAGES)).toBeUndefined();
+      expect(await commands.exportWord(textDoc, 'layout', TWO_PAGES, WORK)).toBeUndefined();
       expect(reads).toEqual([]);
       expect(words).toEqual([]);
+      // NO WORK WAS BEGUN (ADR-0234): a dismissed picker shows no notice, against the case above, whose chosen file did.
+      expect(commands.workProgress(WORK)).toStrictEqual({ kind: 'idle' });
     });
 
     it('refuses a contested destination BEFORE the engine composes anything', async () => {
@@ -4073,7 +4080,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
         checkTarget: () => Promise.resolve({ kind: 'contested' as const, others: [asDocId('other')] }),
       });
 
-      expect((await commands.exportWord(textDoc, 'rich', TWO_PAGES))?.kind).toBe('refused');
+      expect((await commands.exportWord(textDoc, 'rich', TWO_PAGES, WORK))?.kind).toBe('refused');
       // The decision, not the end state: a refusal after composing leaves no file either.
       expect(words).toEqual([]);
       expect(existsSync(destination)).toBe(false);
@@ -4124,7 +4131,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
         },
       });
 
-      const outcome = await commands.exportPowerPoint(textDoc, TWO_PAGES, 'editable');
+      const outcome = await commands.exportPowerPoint(textDoc, TWO_PAGES, 'editable', WORK);
 
       expect(outcome).toMatchObject({ kind: 'copied', fellBack: [] });
       const files = unzipSync(readFileSync(destination));
@@ -4151,7 +4158,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
         },
       });
 
-      const outcome = await commands.exportPowerPoint(textDoc, TWO_PAGES, 'editable');
+      const outcome = await commands.exportPowerPoint(textDoc, TWO_PAGES, 'editable', WORK);
 
       expect(outcome).toMatchObject({ kind: 'copied', fellBack: [2] });
       const files = unzipSync(readFileSync(destination));
@@ -4171,7 +4178,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
         },
       });
 
-      const outcome = await commands.exportPowerPoint(textDoc, TWO_PAGES, 'exact');
+      const outcome = await commands.exportPowerPoint(textDoc, TWO_PAGES, 'exact', WORK);
 
       expect(outcome).toMatchObject({ kind: 'copied', fellBack: [] });
       const files = unzipSync(readFileSync(destination));
@@ -4183,7 +4190,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       const destination = join(mkdtempSync(join(directory, 'deck-')), 'deck.pptx');
       const { commands } = exportingTo(destination);
 
-      const outcome = await commands.exportPowerPoint(textDoc, TWO_PAGES, 'exact');
+      const outcome = await commands.exportPowerPoint(textDoc, TWO_PAGES, 'exact', WORK);
 
       expect(outcome?.kind).toBe('copied');
       const files = unzipSync(readFileSync(destination));
@@ -4203,7 +4210,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       const destination = join(mkdtempSync(join(directory, 'text-')), 'second.txt');
       const { commands, reads } = exportingTo(destination);
 
-      expect((await commands.exportText(textDoc, 'plain', [1]))?.kind).toBe('copied');
+      expect((await commands.exportText(textDoc, 'plain', [1], WORK))?.kind).toBe('copied');
       expect(readFileSync(destination, 'utf8')).toBe('second page words');
       // THE DECISION: page 1 was never read, so it was not merely trimmed after reading the document.
       expect(reads).toEqual([1]);
@@ -4214,7 +4221,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       const wordPages: PageSet[] = [];
       const { commands } = exportingTo(destination, { wordPages });
 
-      expect((await commands.exportWord(textDoc, 'text', [1]))?.kind).toBe('copied');
+      expect((await commands.exportWord(textDoc, 'text', [1], WORK))?.kind).toBe('copied');
       expect(wordPages).toStrictEqual([[1]]);
       const xml = strFromU8(unzipSync(readFileSync(destination))['word/document.xml'] ?? new Uint8Array());
       expect(xml).toContain('second page words');
@@ -4226,7 +4233,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       const images: PageImageRequest[] = [];
       const { commands } = exportingTo(destination, { images });
 
-      expect((await commands.exportPowerPoint(textDoc, [1], 'exact'))?.kind).toBe('copied');
+      expect((await commands.exportPowerPoint(textDoc, [1], 'exact', WORK))?.kind).toBe('copied');
       const files = unzipSync(readFileSync(destination));
       expect(files['ppt/media/image1.png']).toBeDefined();
       expect(files['ppt/media/image2.png']).toBeUndefined();
@@ -4248,7 +4255,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
         },
       });
 
-      expect((await commands.exportText(textDoc, 'layout', [1]))?.kind).toBe('copied');
+      expect((await commands.exportText(textDoc, 'layout', [1], WORK))?.kind).toBe('copied');
       expect(asked).toStrictEqual([[1]]);
     });
 
@@ -4258,7 +4265,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
 
       // THE DECISION, not only the end state (audit PPPPPPP-2): the page set is refused by its own rule, by name, and no page
       // is read — a walk that reached page 5 and failed there would also leave no file behind.
-      await expect(commands.exportText(textDoc, 'plain', [5])).rejects.toThrow(/Page 5 is outside this document/u);
+      await expect(commands.exportText(textDoc, 'plain', [5], WORK)).rejects.toThrow(/Page 5 is outside this document/u);
       expect(reads).toStrictEqual([]);
       expect(existsSync(destination)).toBe(false);
     });
@@ -4286,7 +4293,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
         },
       });
 
-      const outcome = await commands.exportText(textDoc, 'layout', TWO_PAGES);
+      const outcome = await commands.exportText(textDoc, 'layout', TWO_PAGES, WORK);
 
       expect(outcome).toEqual({ kind: 'copied', bytes: 22, destination });
       expect(readFileSync(destination, 'utf8')).toBe('col one      col two\n\f');
@@ -4300,7 +4307,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       const picked: string[] = [];
       const { commands } = exportingTo('unused.txt', { layoutText: null, picked });
 
-      expect(await commands.exportText(textDoc, 'layout', TWO_PAGES)).toEqual({ kind: 'unavailable' });
+      expect(await commands.exportText(textDoc, 'layout', TWO_PAGES, WORK)).toEqual({ kind: 'unavailable' });
       expect(picked).toEqual([]);
     });
 
@@ -4312,7 +4319,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
           Promise.reject(new LayoutTextFailedError({ stage: 'exit-code', code: 1, said: 'Syntax Error' })),
       });
 
-      const outcome = await commands.exportText(textDoc, 'layout', TWO_PAGES);
+      const outcome = await commands.exportText(textDoc, 'layout', TWO_PAGES, WORK);
 
       expect(outcome?.kind).toBe('failed');
       expect(existsSync(destination)).toBe(false);
@@ -4330,7 +4337,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
         },
       });
 
-      expect((await commands.exportText(textDoc, 'layout', TWO_PAGES))?.kind).toBe('refused');
+      expect((await commands.exportText(textDoc, 'layout', TWO_PAGES, WORK))?.kind).toBe('refused');
       expect(ran).toBe(0);
     });
   });
@@ -4361,7 +4368,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       const { source, given } = converter('converted');
       const { commands, reads } = exportingTo(null, { pdfa: source, flush: () => Promise.resolve(FLUSHED), copyTo: destination });
 
-      const outcome = await commands.exportPdfa(textDoc);
+      const outcome = await commands.exportPdfa(textDoc, WORK);
 
       expect(outcome).toStrictEqual({
         kind: 'copied',
@@ -4391,7 +4398,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
         },
       });
 
-      const outcome = await commands.exportPdfa(textDoc);
+      const outcome = await commands.exportPdfa(textDoc, WORK);
 
       expect(outcome?.kind === 'copied' && outcome.tagsDropped).toBe(true);
       expect(asked).toStrictEqual([0, 1]);
@@ -4402,13 +4409,13 @@ describe('exportText — the document’s words, streamed one page at a time', (
       const { source } = converter('failed');
       const { commands } = exportingTo(null, { pdfa: source, flush: () => Promise.resolve(FLUSHED), copyTo: destination });
 
-      expect(await commands.exportPdfa(textDoc)).toStrictEqual({ kind: 'failed' });
+      expect(await commands.exportPdfa(textDoc, WORK)).toStrictEqual({ kind: 'failed' });
       expect(existsSync(destination)).toBe(false);
     });
 
     it('CONTROL: answers UNAVAILABLE before any dialog where no converter is provisioned', async () => {
       const { commands } = exportingTo(null, { pdfa: null });
-      expect(await commands.exportPdfa(textDoc)).toStrictEqual({ kind: 'unavailable' });
+      expect(await commands.exportPdfa(textDoc, WORK)).toStrictEqual({ kind: 'unavailable' });
     });
   });
 
@@ -4798,7 +4805,7 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
     const destination = join(mkdtempSync(join(directory, 'xlsx-')), 'tables.xlsx');
     const { commands, picked } = exportingTo(destination);
 
-    const outcome = await commands.exportExcel(tablesDoc, 'sheet-per-page', await unreviewed(commands, tablesDoc));
+    const outcome = await commands.exportExcel(tablesDoc, 'sheet-per-page', await unreviewed(commands, tablesDoc), 'automatic', WORK);
 
     expect(outcome?.kind).toBe('copied');
     expect(picked).toStrictEqual(['tables.pdf:xlsx']);
@@ -4814,7 +4821,7 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
     const destination = join(mkdtempSync(join(directory, 'xlsx-')), 'combined.xlsx');
     const { commands } = exportingTo(destination);
 
-    expect((await commands.exportExcel(tablesDoc, 'one-sheet', await unreviewed(commands, tablesDoc)))?.kind).toBe(
+    expect((await commands.exportExcel(tablesDoc, 'one-sheet', await unreviewed(commands, tablesDoc), 'automatic', WORK))?.kind).toBe(
       'copied',
     );
     expect(sheetsOf(destination)).toStrictEqual([
@@ -4825,7 +4832,7 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
   it('answers NO TABLES before any picker, counting the picture page and not the blank one', async () => {
     const { commands, picked } = exportingTo(null);
 
-    expect(await commands.exportExcel(pictureDoc, 'sheet-per-page', await unreviewed(commands, pictureDoc))).toStrictEqual({
+    expect(await commands.exportExcel(pictureDoc, 'sheet-per-page', await unreviewed(commands, pictureDoc), 'automatic', WORK)).toStrictEqual({
       kind: 'no-tables',
       picturePages: 1,
     });
@@ -4856,7 +4863,7 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
       version: grid.version,
       edits: [{ page: 1, table: 0, row: 1, column: 0, text: 'Hex bolt' }],
       pages: THREE_PAGES,
-    });
+    }, 'automatic', WORK);
 
     expect(outcome?.kind).toBe('copied');
     // THE EDITED CELL AND NO OTHER: page 3's first data cell, at the same table,
@@ -4877,7 +4884,7 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
         version,
         edits: [{ page: 1, table: 0, row: 1, column: 3, text: 'no such cell' }],
         pages: THREE_PAGES,
-      }),
+      }, 'automatic', WORK),
     ).toStrictEqual({ kind: 'changed' });
     expect(picked).toStrictEqual([]);
   });
@@ -4891,7 +4898,7 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
         version: asDocVersion(Number(version) + 1),
         edits: [],
         pages: THREE_PAGES,
-      }),
+      }, 'automatic', WORK),
     ).toStrictEqual({ kind: 'changed' });
     expect(picked).toStrictEqual([]);
   });
@@ -4919,7 +4926,7 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
         return placed(page === 1 ? [SPANNED] : []);
       });
 
-      const outcome = await commands.exportExcel(tablesDoc, 'sheet-per-page', await unreviewed(commands, tablesDoc), 'azure');
+      const outcome = await commands.exportExcel(tablesDoc, 'sheet-per-page', await unreviewed(commands, tablesDoc), 'azure', WORK);
 
       expect(outcome?.kind).toBe('copied');
       expect(outcome?.kind === 'copied' ? outcome.tablesLeftOut : undefined).toBe(0);
@@ -4944,7 +4951,7 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
       });
 
       expect(
-        await commands.exportExcel(tablesDoc, 'one-sheet', await unreviewed(commands, tablesDoc), 'azure'),
+        await commands.exportExcel(tablesDoc, 'one-sheet', await unreviewed(commands, tablesDoc), 'azure', WORK),
       ).toStrictEqual({
         kind: 'service-refused',
         engine: 'azure',
@@ -4956,28 +4963,29 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
       expect(existsSync(destination)).toBe(false);
     });
 
-    it('REPORTS how far it has read while it runs, and nothing before or after (ADR-0202)', async () => {
+    it('REPORTS how far it has read under the WORK’S NAME while it runs, stoppable, and nothing before (ADR-0234)', async () => {
       const destination = join(mkdtempSync(join(directory, 'xlsx-')), 'progress.xlsx');
       const seen: unknown[] = [];
       // THE READER CLOSES OVER THE COMMANDS IT IS A PART OF, so they are held by an object it is told of afterwards.
       const commandsOf: { current?: DocumentCommands } = {};
       const { commands } = exportingTo(destination, (_doc, _sessions, page) => {
         // READ BEFORE THE PAGE IS COUNTED: page 0 sees 0 done, page 1 sees 1, page 2 sees 2 — of the 3 asked.
-        seen.push(commandsOf.current?.exportProgress(tablesDoc));
+        seen.push(commandsOf.current?.workProgress(WORK));
         return placed(page === 1 ? [SPANNED] : []);
       });
       commandsOf.current = commands;
-      expect(commands.exportProgress(tablesDoc)).toStrictEqual({ kind: 'idle' });
+      expect(commands.workProgress(WORK)).toStrictEqual({ kind: 'idle' });
 
-      await commands.exportExcel(tablesDoc, 'sheet-per-page', await unreviewed(commands, tablesDoc), 'claude');
+      await commands.exportExcel(tablesDoc, 'sheet-per-page', await unreviewed(commands, tablesDoc), 'claude', WORK);
 
       expect(seen).toStrictEqual([
-        { kind: 'reading', done: 0, total: 3 },
-        { kind: 'reading', done: 1, total: 3 },
-        { kind: 'reading', done: 2, total: 3 },
+        { kind: 'running', done: 0, total: 3, stoppable: true },
+        { kind: 'running', done: 1, total: 3, stoppable: true },
+        { kind: 'running', done: 2, total: 3, stoppable: true },
       ]);
-      // THE ENTRY IS DROPPED WITH THE EXPORT, so the next poll is the answer of a document that is reading nothing.
-      expect(commands.exportProgress(tablesDoc)).toStrictEqual({ kind: 'idle' });
+      // THE HANDLER FINISHES THE NAME (ADR-0234), not the method: the notice stays until the answer is ready.
+      commands.finishWork(WORK);
+      expect(commands.workProgress(WORK)).toStrictEqual({ kind: 'idle' });
     });
 
     it('a STOP between pages writes NO file, reads no page after it, and is answered as a cancelled picker', async () => {
@@ -4987,26 +4995,26 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
       const { commands } = exportingTo(destination, (_doc, _sessions, page) => {
         asked.push(page);
         // THE PERSON PRESSES CANCEL while page 1 is being read: page 2 must not be sent.
-        if (page === 1) expect(commandsOf.current?.cancelExport(tablesDoc)).toBe(true);
+        if (page === 1) expect(commandsOf.current?.cancelWork(WORK)).toBe(true);
         return placed([SPANNED]);
       });
       commandsOf.current = commands;
 
-      expect(await commands.exportExcel(tablesDoc, 'one-sheet', await unreviewed(commands, tablesDoc), 'azure')).toBeUndefined();
+      expect(await commands.exportExcel(tablesDoc, 'one-sheet', await unreviewed(commands, tablesDoc), 'azure', WORK)).toBeUndefined();
       expect(asked).toStrictEqual([0, 1]);
       expect(existsSync(destination)).toBe(false);
     });
 
-    it('CONTROL: a stop with nothing reading is an answer (false), and does not stop the NEXT export', async () => {
+    it('CONTROL: a stop with nothing running is an answer (false), and does not stop the NEXT export', async () => {
       const destination = join(mkdtempSync(join(directory, 'xlsx-')), 'after.xlsx');
       const asked: number[] = [];
       const { commands } = exportingTo(destination, (_doc, _sessions, page) => {
         asked.push(page);
         return placed([SPANNED]);
       });
-      expect(commands.cancelExport(tablesDoc)).toBe(false);
+      expect(commands.cancelWork(WORK)).toBe(false);
 
-      expect((await commands.exportExcel(tablesDoc, 'one-sheet', await unreviewed(commands, tablesDoc), 'azure'))?.kind).toBe('copied');
+      expect((await commands.exportExcel(tablesDoc, 'one-sheet', await unreviewed(commands, tablesDoc), 'azure', WORK))?.kind).toBe('copied');
       expect(asked).toStrictEqual([0, 1, 2]);
     });
 
@@ -5015,7 +5023,7 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
       const { commands } = exportingTo(destination, () => placed([]));
 
       expect(
-        await commands.exportExcel(tablesDoc, 'sheet-per-page', await unreviewed(commands, tablesDoc), 'claude'),
+        await commands.exportExcel(tablesDoc, 'sheet-per-page', await unreviewed(commands, tablesDoc), 'claude', WORK),
       ).toStrictEqual({ kind: 'no-tables', picturePages: 0 });
       expect(existsSync(destination)).toBe(false);
     });
@@ -5026,7 +5034,7 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
       const { commands } = exportingTo(destination, (_doc, _sessions, page) =>
         placed(page === 1 ? [SPANNED] : [], page === 1 ? 1 : page === 2 ? 2 : 0),
       );
-      const outcome = await commands.exportExcel(tablesDoc, 'sheet-per-page', await unreviewed(commands, tablesDoc), 'claude');
+      const outcome = await commands.exportExcel(tablesDoc, 'sheet-per-page', await unreviewed(commands, tablesDoc), 'claude', WORK);
       expect(outcome?.kind === 'copied' ? outcome.tablesLeftOut : outcome).toBe(3);
       // THE PLACED TABLE IS STILL WRITTEN: counting is not dropping the rest.
       expect(sheetsOf(destination)).toStrictEqual([{ name: '2', strings: ['Totals', 'North'] }]);
@@ -5037,7 +5045,7 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
       const { commands } = exportingTo(destination, () => Promise.reject(new TypeError('a bug in this build')));
 
       await expect(
-        commands.exportExcel(tablesDoc, 'sheet-per-page', await unreviewed(commands, tablesDoc), 'claude'),
+        commands.exportExcel(tablesDoc, 'sheet-per-page', await unreviewed(commands, tablesDoc), 'claude', WORK),
       ).rejects.toThrow('a bug in this build');
       expect(existsSync(destination)).toBe(false);
     });
@@ -5051,7 +5059,7 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
       const { version } = await commands.pageTables(tablesDoc, 0);
 
       expect(
-        await commands.exportExcel(tablesDoc, 'sheet-per-page', { version: asDocVersion(Number(version) + 1), edits: [], pages: THREE_PAGES }, 'azure'),
+        await commands.exportExcel(tablesDoc, 'sheet-per-page', { version: asDocVersion(Number(version) + 1), edits: [], pages: THREE_PAGES }, 'azure', WORK),
       ).toStrictEqual({ kind: 'changed' });
       expect(picked).toStrictEqual([]);
       expect(asked).toStrictEqual([]);
@@ -5912,7 +5920,7 @@ describe('composeMarkdownFile: what an import answers before anything is written
 
   const TEXT = { kind: 'read' as const, bytes: new TextEncoder().encode('# Title\n') };
   /** Not the default, so a family dropped on the way to the composer reads as the default and fails. */
-  const CHOSEN = { family: 'Tinos' };
+  const CHOSEN = { family: 'Tinos', work: WORK };
 
   it('REFUSES BEFORE THE PICKER where no compose host can exist', async () => {
     // THE DECISION IS THE CALL NOT MADE: an answer of `engine-unavailable` after a
@@ -5943,7 +5951,7 @@ describe('composeMarkdownFile: what an import answers before anything is written
       compose: () => Promise.reject(new Error('this case composes nothing')),
     });
 
-    await expect(commands.composeImportFile('markdown', { ...CHOSEN, target: asDocId('never-opened') })).rejects.toBeInstanceOf(
+    await expect(commands.composeImportFile('markdown', { ...CHOSEN, target: asDocId('never-opened') , work: WORK })).rejects.toBeInstanceOf(
       DocumentNotOpenError,
     );
     expect(markdown.calls).toStrictEqual([]);
@@ -6122,7 +6130,7 @@ describe('DocumentCommands.composeImageFiles', () => {
 
   it('REFUSES BEFORE THE PICKER where no compose host can exist', async () => {
     const images = imagesFrom(['a.png'], () => 1);
-    await expect(commandsWith(images.source, null).composeImageFiles()).rejects.toBeInstanceOf(
+    await expect(commandsWith(images.source, null).composeImageFiles(WORK)).rejects.toBeInstanceOf(
       EngineUnavailableError,
     );
     expect(images.calls).toStrictEqual([]);
@@ -6145,7 +6153,7 @@ describe('DocumentCommands.composeImageFiles', () => {
 
     // `noCopying` rejects its picker, so a refusal that went on to ask for a destination
     // fails here rather than answering.
-    expect(await commands.composeImageFiles()).toStrictEqual({
+    expect(await commands.composeImageFiles(WORK)).toStrictEqual({
       kind: 'composition-refused',
       reason: 'too-many-pixels',
       line: null,
@@ -6172,14 +6180,14 @@ describe('DocumentCommands.composeImageFiles', () => {
       Array.from({ length: MAX_IMPORT_IMAGES + 1 }, (_, at) => `${String(at)}.png`),
       () => 1,
     );
-    expect(await commandsWith(many.source, composer).composeImageFiles()).toStrictEqual({
+    expect(await commandsWith(many.source, composer).composeImageFiles(WORK)).toStrictEqual({
       kind: 'too-many-images',
       limit: MAX_IMPORT_IMAGES,
     });
     expect(many.calls).toStrictEqual(['pick']);
 
     const gif = imagesFrom(['a.png', 'b.gif'], () => 1);
-    expect(await commandsWith(gif.source, composer).composeImageFiles()).toStrictEqual({
+    expect(await commandsWith(gif.source, composer).composeImageFiles(WORK)).toStrictEqual({
       kind: 'composition-refused',
       reason: 'image-unreadable',
       line: null,
@@ -6187,7 +6195,7 @@ describe('DocumentCommands.composeImageFiles', () => {
     });
 
     const oneLarge = imagesFrom(['a.png', 'b.png'], (path) => (path === 'b.png' ? MAX_IMAGE_BYTES + 1 : 1));
-    expect(await commandsWith(oneLarge.source, composer).composeImageFiles()).toStrictEqual({
+    expect(await commandsWith(oneLarge.source, composer).composeImageFiles(WORK)).toStrictEqual({
       kind: 'too-large',
       limitBytes: MAX_IMAGE_BYTES,
       fileBytes: MAX_IMAGE_BYTES + 1,
@@ -6200,13 +6208,13 @@ describe('DocumentCommands.composeImageFiles', () => {
     const perFile = Math.floor(MAX_IMPORT_IMAGE_BYTES / 5) + 1;
     const set = imagesFrom(['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg', 'e.jpg'], () => perFile);
     expect(perFile).toBeLessThanOrEqual(MAX_IMAGE_BYTES);
-    expect(await commandsWith(set.source, composer).composeImageFiles()).toStrictEqual({
+    expect(await commandsWith(set.source, composer).composeImageFiles(WORK)).toStrictEqual({
       kind: 'images-too-large',
       limitBytes: MAX_IMPORT_IMAGE_BYTES,
     });
 
     const unstated = imagesFrom(['a.png'], () => null);
-    expect(await commandsWith(unstated.source, composer).composeImageFiles()).toStrictEqual({
+    expect(await commandsWith(unstated.source, composer).composeImageFiles(WORK)).toStrictEqual({
       kind: 'unreadable',
     });
 
@@ -6219,7 +6227,7 @@ describe('DocumentCommands.composeImageFiles', () => {
     for (const picked of [null, []]) {
       const images = imagesFrom(picked, () => 1);
       const commands = commandsWith(images.source, () => Promise.reject(new Error('unreachable')));
-      expect(await commands.composeImageFiles()).toStrictEqual({ kind: 'cancelled' });
+      expect(await commands.composeImageFiles(WORK)).toStrictEqual({ kind: 'cancelled' });
       expect(images.calls).toStrictEqual(['pick']);
     }
   });
@@ -6229,7 +6237,7 @@ describe('DocumentCommands.composeImageFiles', () => {
     const commands = commandsWith(images.source, () =>
       Promise.resolve({ kind: 'refused', reason: 'image-unreadable', line: null, item: 2 }),
     );
-    await expect(commands.composeImageFiles()).rejects.toThrow('image 2 of 1');
+    await expect(commands.composeImageFiles(WORK)).rejects.toThrow('image 2 of 1');
   });
 });
 
@@ -6246,7 +6254,7 @@ describe('DocumentCommands.composeCapturedFrames', () => {
       engine: engine(),
       composeImages: null,
     });
-    await expect(commands.composeCapturedFrames([FRAME])).rejects.toBeInstanceOf(EngineUnavailableError);
+    await expect(commands.composeCapturedFrames([FRAME], WORK)).rejects.toBeInstanceOf(EngineUnavailableError);
   });
 
   it('composes every frame AS JPEG, in order, and a refusal names no file and asks for no destination', async () => {
@@ -6269,7 +6277,7 @@ describe('DocumentCommands.composeCapturedFrames', () => {
       },
     });
 
-    expect(await commands.composeCapturedFrames([FRAME, second])).toStrictEqual({
+    expect(await commands.composeCapturedFrames([FRAME, second], WORK)).toStrictEqual({
       kind: 'composition-refused',
       reason: 'image-unreadable',
       line: null,
@@ -6853,11 +6861,11 @@ describe('DocumentCommands.openFromUrl', () => {
       return Promise.resolve(body('%PDF-'));
     }, join(directory, 'never.pdf'));
 
-    expect(await commands.openFromUrl('https://127.0.0.1/a.pdf')).toStrictEqual({
+    expect(await commands.openFromUrl('https://127.0.0.1/a.pdf', WORK)).toStrictEqual({
       kind: 'url-refused',
       reason: 'blocked-address',
     });
-    expect(await commands.openFromUrl('http://example.com/a.pdf')).toStrictEqual({
+    expect(await commands.openFromUrl('http://example.com/a.pdf', WORK)).toStrictEqual({
       kind: 'url-refused',
       reason: 'not-https',
     });
@@ -6872,7 +6880,7 @@ describe('DocumentCommands.openFromUrl', () => {
       destination,
     );
 
-    expect(await commands.openFromUrl('https://example.com/files/Q3%20report.pdf')).toStrictEqual({
+    expect(await commands.openFromUrl('https://example.com/files/Q3%20report.pdf', WORK)).toStrictEqual({
       kind: 'written',
       destination,
     });
@@ -6889,7 +6897,7 @@ describe('DocumentCommands.openFromUrl', () => {
     }
     const { commands } = commandsFetching(() => Promise.resolve(refusing()), destination);
 
-    expect(await commands.openFromUrl('https://example.com/big.pdf')).toStrictEqual({
+    expect(await commands.openFromUrl('https://example.com/big.pdf', WORK)).toStrictEqual({
       kind: 'url-refused',
       reason: 'too-large',
     });
@@ -6902,7 +6910,7 @@ describe('DocumentCommands.openFromUrl', () => {
       () => Promise.reject(new Error('a defect in this build')),
       join(directory, 'defect.pdf'),
     );
-    await expect(commands.openFromUrl('https://example.com/a.pdf')).rejects.toThrow('a defect in this build');
+    await expect(commands.openFromUrl('https://example.com/a.pdf', WORK)).rejects.toThrow('a defect in this build');
   });
 });
 
@@ -6994,7 +7002,7 @@ describe('DocumentCommands.convertOfficeFile (ADR-0120)', () => {
 
   it('REFUSES BEFORE THE PICKER where no converter can run', async () => {
     const { commands, recorded } = officeCommands({ picked: 'C:\\a.docx', unavailable: true });
-    await expect(commands.convertOfficeFile()).rejects.toBeInstanceOf(EngineUnavailableError);
+    await expect(commands.convertOfficeFile(WORK)).rejects.toBeInstanceOf(EngineUnavailableError);
     expect(recorded.calls).toStrictEqual([]);
   });
 
@@ -7002,7 +7010,7 @@ describe('DocumentCommands.convertOfficeFile (ADR-0120)', () => {
     const destination = join(directory, 'Quarterly.pdf');
     const { commands, recorded } = officeCommands({ picked: 'C:\\Reports\\Quarterly.PPTX', destination });
 
-    expect(await commands.convertOfficeFile()).toStrictEqual({ kind: 'written', destination, missing: [] });
+    expect(await commands.convertOfficeFile(WORK)).toStrictEqual({ kind: 'written', destination, missing: [] });
     expect(readFileSync(destination, 'latin1')).toBe('%PDF-1.7 from x2t');
     expect(recorded.converted).toStrictEqual(['pptx:PK office']);
     expect(recorded.asked).toStrictEqual(['Quarterly.pdf']);
@@ -7013,13 +7021,13 @@ describe('DocumentCommands.convertOfficeFile (ADR-0120)', () => {
     const missing = [{ sheet: 'Data', from: 38_251, to: 50_000 }];
     const { commands } = officeCommands({ picked: 'C:\\Reports\\Budget.xlsx', destination, missing });
 
-    expect(await commands.convertOfficeFile()).toStrictEqual({ kind: 'written', destination, missing });
+    expect(await commands.convertOfficeFile(WORK)).toStrictEqual({ kind: 'written', destination, missing });
   });
 
   it('REFUSES a name that is not one of the three formats, and reads nothing', async () => {
     const { commands, recorded } = officeCommands({ picked: 'C:\\Reports\\old.doc', destination: 'unused' });
 
-    expect(await commands.convertOfficeFile()).toStrictEqual({ kind: 'unreadable' });
+    expect(await commands.convertOfficeFile(WORK)).toStrictEqual({ kind: 'unreadable' });
     // THE DECISION IS THE READ NOT MADE: the extension names x2t's input, so a file of another kind never reaches it.
     expect(recorded.calls).toStrictEqual(['pick']);
     expect(recorded.converted).toStrictEqual([]);
@@ -7032,7 +7040,7 @@ describe('DocumentCommands.convertOfficeFile (ADR-0120)', () => {
       read: { kind: 'too-large', byteLength: MAX_OFFICE_IMPORT_BYTES + 4096 },
     });
 
-    expect(await commands.convertOfficeFile()).toStrictEqual({
+    expect(await commands.convertOfficeFile(WORK)).toStrictEqual({
       kind: 'too-large',
       limitBytes: MAX_OFFICE_IMPORT_BYTES,
       fileBytes: MAX_OFFICE_IMPORT_BYTES + 4096,
@@ -7043,14 +7051,14 @@ describe('DocumentCommands.convertOfficeFile (ADR-0120)', () => {
   it('answers a converter refusal WITHOUT asking for a destination', async () => {
     const { commands, recorded } = officeCommands({ picked: 'C:\\broken.xlsx', convert: 'refuses', destination: 'unused' });
 
-    expect(await commands.convertOfficeFile()).toStrictEqual({ kind: 'conversion-failed' });
+    expect(await commands.convertOfficeFile(WORK)).toStrictEqual({ kind: 'conversion-failed' });
     expect(recorded.asked).toStrictEqual([]);
   });
 
   it('DISCARDS the converted PDF unread when the person cancels the save dialog', async () => {
     const { commands, recorded } = officeCommands({ picked: 'C:\\a.docx', destination: null });
 
-    expect(await commands.convertOfficeFile()).toStrictEqual({ kind: 'cancelled' });
+    expect(await commands.convertOfficeFile(WORK)).toStrictEqual({ kind: 'cancelled' });
     expect(recorded.discards).toBe(1);
   });
 
@@ -7058,7 +7066,7 @@ describe('DocumentCommands.convertOfficeFile (ADR-0120)', () => {
     const destination = join(directory, 'held.pdf');
     const { commands, recorded } = officeCommands({ picked: 'C:\\a.docx', destination, contested: true });
 
-    expect(await commands.convertOfficeFile()).toStrictEqual({ kind: 'destination-contested', openElsewhere: 1 });
+    expect(await commands.convertOfficeFile(WORK)).toStrictEqual({ kind: 'destination-contested', openElsewhere: 1 });
     expect(existsSync(destination)).toBe(false);
     expect(recorded.discards).toBe(1);
   });
@@ -7074,7 +7082,7 @@ describe('DocumentCommands.convertOfficeFile (ADR-0120)', () => {
         convert: () => Promise.reject(new Error('a defect in this build')),
       },
     });
-    await expect(broken.convertOfficeFile()).rejects.toThrow('a defect in this build');
+    await expect(broken.convertOfficeFile(WORK)).rejects.toThrow('a defect in this build');
   });
 });
 
@@ -7648,7 +7656,10 @@ describe('composeImportFile: a CSV past the bound is composed in parts', () => {
     expect(`id,name\n${bodies}`).toBe(decoder.decode(FILE));
     expect(readFileSync(destination, 'utf8')).toBe(composed.map((source) => `[${source}]`).join(''));
     expect([...placed.keys()].every((name) => removed.includes(name))).toBe(true);
-    // AND THE WORK HAS ENDED, so its name answers idle.
+    // THE LAST PART COUNTED AND THE WORK STILL RUNNING, stoppable: its handler finishes the name once the file has opened
+    // (ADR-0234), so the notice stays until the result appears.
+    expect(commands.workProgress('import-1')).toStrictEqual({ kind: 'running', done: 3, total: 3, stoppable: true });
+    commands.finishWork('import-1');
     expect(commands.workProgress('import-1')).toStrictEqual({ kind: 'idle' });
   });
 
@@ -7671,6 +7682,6 @@ describe('composeImportFile: a CSV past the bound is composed in parts', () => {
 
   it('CONTROL: with no parts composer the bound is answered, with the file’s size beside it', async () => {
     const plain = new DocumentCommands({ ...INERT, documents: service, bus: bus(), engine: engine(), imports: { markdown: noImportFile, csv: { pick: () => Promise.resolve('register.csv'), read: () => Promise.resolve({ kind: 'too-large', byteLength: FILE.length }) } }, compose: () => Promise.reject(new Error('unreachable')) });
-    expect(await plain.composeImportFile('csv', { family: 'Tinos' })).toStrictEqual({ kind: 'too-large', limitBytes: MAX_CSV_BYTES, fileBytes: FILE.length });
+    expect(await plain.composeImportFile('csv', { family: 'Tinos' , work: WORK })).toStrictEqual({ kind: 'too-large', limitBytes: MAX_CSV_BYTES, fileBytes: FILE.length });
   });
 });

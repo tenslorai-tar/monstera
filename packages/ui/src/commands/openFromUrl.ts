@@ -3,10 +3,12 @@ import type { DocId } from '@monstera/shared';
 
 import { OPEN_FROM_URL_DIALOG_ID, OPEN_FROM_URL_RESULT } from '../dialogs/openFromUrl.js';
 import { URL_OPEN_PROBLEM_DIALOG_ID, type UrlOpenProblem } from '../dialogs/urlOpenProblem.js';
-import { GROUP_CREATE, OPEN_FROM_URL_COMMAND_TITLE, RIBBON_OPEN_FROM_URL } from '../messages/en.js';
+import { GROUP_CREATE, OPEN_FROM_URL_COMMAND_TITLE, RIBBON_OPEN_FROM_URL, URL_FETCHING } from '../messages/en.js';
 import { type UiCommand, VISIBLE } from '../registries/commands.js';
+import type { TrackTask } from '../runningTask.js';
 import { type DocumentCommandDeps, reportProblem } from './documentCommands.js';
 import type { OpenedDocument } from './importMarkdown.js';
+import { withWorkProgress } from './workProgress.js';
 
 /**
  * D9's *Open from URL*: a PDF fetched through main's SSRF guard, saved where the person
@@ -55,6 +57,8 @@ export function urlOpenProblem(answer: ChannelResult<'document.openFromUrl'>): U
 export function openFromUrlCommand(deps: {
   readonly client: DocumentCommandDeps['client'];
   readonly ask: DocumentCommandDeps['ask'];
+  /** Where the fetch is shown from the chosen destination until the tab opens (ADR-0234). */
+  readonly track: TrackTask;
   readonly onOpened: (opened: OpenedDocument) => void;
   readonly onAlreadyOpen: (docId: DocId) => void;
 }): UiCommand {
@@ -73,7 +77,9 @@ export function openFromUrlCommand(deps: {
       const typed = OPEN_FROM_URL_RESULT.safeParse(await deps.ask(OPEN_FROM_URL_DIALOG_ID, {}));
       if (!typed.success) return;
 
-      const answer = await deps.client['document.openFromUrl']({ url: typed.data.text });
+      const answer = await withWorkProgress(deps, URL_FETCHING, (work) =>
+        deps.client['document.openFromUrl']({ url: typed.data.text, work }),
+      );
       if (!answer.ok) {
         reportProblem(deps, answer.error);
         return;

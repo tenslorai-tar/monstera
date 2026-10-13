@@ -8,6 +8,7 @@ import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import { GROUP_COMMENT_FILES, TOAST_COMMENTS_IMPORTED, TOAST_COMMENTS_SAVED } from '../messages/en.js';
 import type { ToastAction } from '../primitives/Toast.js';
 import { type CommandContext, CommandRegistry, type UiCommand } from '../registries/commands.js';
+import { UNTRACKED } from '../runningTask.js';
 import { dispatchChord, shortcutsFor } from '../surfaces/shortcuts.js';
 import {
   exportAnnotationsFdfCommand,
@@ -19,6 +20,7 @@ import {
   pasteAnnotationsCommand,
 } from './annotationData.js';
 import { editCommands } from './editCommands.js';
+import { namedWorkSetAside } from './namedWorkSetAside.js';
 
 /**
  * The six comment-file commands against a validating client. The kernel half — that a file's
@@ -53,6 +55,7 @@ function harness(answer: unknown): {
   return {
     deps: {
       client,
+      track: UNTRACKED,
       ask: (id, props) => {
         opened.push({ id, props });
         return Promise.resolve(undefined);
@@ -92,7 +95,8 @@ describe('the comment-file commands', () => {
     for (const [factory, channel, format] of pairs) {
       const { deps, sent } = harness({ kind: 'cancelled' });
       await factory(deps).run(CONTEXT);
-      expect(sent).toStrictEqual([{ id: channel, params: { docId: DOC, format } }]);
+      // THE EXPORT CARRIES ITS WORK'S NAME and the import none (ADR-0234): checked and set aside by the one helper.
+      expect(namedWorkSetAside(sent)).toStrictEqual([{ id: channel, params: { docId: DOC, format } }]);
     }
   });
 

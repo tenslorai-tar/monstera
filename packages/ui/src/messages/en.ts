@@ -3105,6 +3105,21 @@ export const TASK_PROGRESS = messageKey('status.task.progress');
 export const TASK_CANCEL = messageKey('status.task.cancel');
 export const TASK_STARTED = messageKey('status.task.started');
 export const CSV_CONVERTING = messageKey('status.task.csv-converting');
+export const MARKDOWN_CONVERTING = messageKey('status.task.markdown-converting');
+export const OFFICE_CONVERTING = messageKey('status.task.office-converting');
+export const IMAGES_CONVERTING = messageKey('status.task.images-converting');
+export const CAMERA_CONVERTING = messageKey('status.task.camera-converting');
+export const URL_FETCHING = messageKey('status.task.url-fetching');
+export const MARKDOWN_INSERTING = messageKey('status.task.markdown-inserting');
+export const IMAGES_INSERTING = messageKey('status.task.images-inserting');
+export const EXPORTING_WORD = messageKey('status.task.exporting-word');
+export const EXPORTING_POWERPOINT = messageKey('status.task.exporting-powerpoint');
+export const EXPORTING_EXCEL = messageKey('status.task.exporting-excel');
+export const EXPORTING_TEXT = messageKey('status.task.exporting-text');
+export const EXPORTING_PDFA = messageKey('status.task.exporting-pdfa');
+export const EXPORTING_PAGE_IMAGES = messageKey('status.task.exporting-page-images');
+export const EXPORTING_FORM_DATA = messageKey('status.task.exporting-form-data');
+export const EXPORTING_ANNOTATIONS = messageKey('status.task.exporting-annotations');
 export const CLOSE_TAB_TITLE = messageKey('command.close-tab.title');
 export const CLOSE_OTHERS_TITLE = messageKey('command.close-others.title');
 export const OPEN_SIDE_BY_SIDE_TITLE = messageKey('command.open-side-by-side.title');
@@ -6688,6 +6703,22 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // WORK BEGUN whose size is not known yet: the label alone, never "0 of 0".
   [TASK_STARTED]: '{label}…',
   [CSV_CONVERTING]: 'Converting CSV to PDF',
+  // ONE LINE PER CONVERSION, shown from the chosen input until the result (ADR-0234). Each names what is made from what.
+  [MARKDOWN_CONVERTING]: 'Converting Markdown to PDF',
+  [OFFICE_CONVERTING]: 'Converting the Office file to PDF',
+  [IMAGES_CONVERTING]: 'Making a PDF from the pictures',
+  [CAMERA_CONVERTING]: 'Making a PDF from the camera pictures',
+  [URL_FETCHING]: 'Getting the PDF from the web address',
+  [MARKDOWN_INSERTING]: 'Converting Markdown and adding its pages',
+  [IMAGES_INSERTING]: 'Adding the pictures as pages',
+  [EXPORTING_WORD]: 'Exporting to Word',
+  [EXPORTING_POWERPOINT]: 'Exporting to PowerPoint',
+  [EXPORTING_EXCEL]: 'Exporting tables to Excel',
+  [EXPORTING_TEXT]: 'Exporting the text',
+  [EXPORTING_PDFA]: 'Exporting to PDF/A',
+  [EXPORTING_PAGE_IMAGES]: 'Exporting pages as pictures',
+  [EXPORTING_FORM_DATA]: 'Exporting form data',
+  [EXPORTING_ANNOTATIONS]: 'Exporting comments',
   // "Not saved" and never "Save failed". Invariant 18's whole subject is that
   // the work survives a save that did not happen, and a title naming a failure
   // invites the reading that something was lost.

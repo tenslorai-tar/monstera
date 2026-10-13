@@ -3531,6 +3531,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       toast,
       // THE UNAPPLIED-MARKS QUESTION, asked before any export writes (the owner's item N1).
       settleMarks,
+      // EVERY EXPORT IS SHOWN from the chosen file until it is written (ADR-0234).
+      track,
       recogniseFirst: (docId: DocId, pageCount: number) =>
         recogniseBeforeExport(
           {
@@ -3753,24 +3755,24 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // one command, one undo.
         straightenScansCommand({ client, onApplied: applied, ask, stamp, signatures, track }),
         // O3: the pictures arrive as a tab, and their pages go into this document in one merge.
-        insertImageCommand({ client, onApplied: applied, ask, stamp, signatures, onOpened: opened, onActivate: activate }),
+        insertImageCommand({ client, onApplied: applied, ask, stamp, signatures, track, onOpened: opened, onActivate: activate }),
         // D9's MARKDOWN ROW. The new document arrives as a tab by `openCommand`'s
         // callbacks; the append also adds a tab, then returns to the document it
         // changed (ADR-0060's correction).
-        newFromMarkdownCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
+        newFromMarkdownCommand({ client, ask, track, onOpened: opened, onAlreadyOpen: activate }),
         // D9's CSV ROW, the same callbacks: a composed table arrives as a tab.
         newFromCsvCommand({ client, ask, track, onOpened: opened, onAlreadyOpen: activate }),
         // OFFICE IMPORT (ADR-0120), the same callbacks: the converted PDF arrives as a tab.
-        newFromOfficeCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
+        newFromOfficeCommand({ client, ask, track, onOpened: opened, onAlreadyOpen: activate }),
         // D9's IMAGES ROW, the same callbacks: the composed pages arrive as a tab.
-        newFromImagesCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
+        newFromImagesCommand({ client, ask, track, onOpened: opened, onAlreadyOpen: activate }),
         // D9's OPEN FROM URL, the same callbacks: a fetched document arrives as a tab.
-        openFromUrlCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
+        openFromUrlCommand({ client, ask, track, onOpened: opened, onAlreadyOpen: activate }),
         // CLOUD STORAGE (ADR-0091): the same two callbacks, so a cloud file arrives as a tab.
         cloudStorageCommand({ client, ask, toast, onOpened: opened, onAlreadyOpen: activate, busy }),
         saveBackCommand({ client, ask, toast, onSaved, settleMarks }),
         // D9's WEBCAM ROW, the same callbacks: the pictures arrive as a tab.
-        newFromCaptureCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
+        newFromCaptureCommand({ client, ask, track, onOpened: opened, onAlreadyOpen: activate }),
         // TOOLS › OCR › CONVERT SCAN: says what a scan can become and goes to the registered command that does it.
         convertScanCommand({ ask, runCommand: (id, commandContext) => holder.registry?.get(id)?.run(commandContext) }),
         appendMarkdownCommand({
@@ -3779,6 +3781,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           ask,
           stamp,
           signatures,
+          track,
           onOpened: opened,
           onActivate: activate,
         }),
@@ -3801,7 +3804,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         }),
         extractPagesCommand({ client, onApplied: applied, ask, stamp, signatures, toast, settleMarks }),
         splitDocumentCommand({ client, onApplied: applied, ask, stamp, signatures, toast, settleMarks }),
-        exportPageImagesCommand({ client, onApplied: applied, ask, stamp, signatures, toast, settleMarks }),
+        exportPageImagesCommand({ client, onApplied: applied, ask, stamp, signatures, toast, settleMarks, track }),
         exportTextCommand(exportDeps),
         exportLayoutTextCommand(exportDeps),
         exportWordCommand(exportDeps),
@@ -3813,6 +3816,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           signatures,
           toast,
           settleMarks,
+          track,
           // EDITABLE READS A SCAN'S WORDS FIRST over the chosen pages (ADR-0210): the searchable export's walk, composed here
           // for `recogniseFirst`'s reason.
           recognisePages: (docId: DocId, pages: readonly number[]) =>
@@ -3851,9 +3855,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // to Side by Side rather than a second owner of it: Review › Compare writes the same value.
         openSideBySideCommand({ focused: readActiveId, show: showSideBySide }),
         saveCopyCommand({ client, onApplied: applied, ask, stamp, signatures, toast, settleMarks }),
-        exportFormDataJsonCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
-        exportFormDataXfdfCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
-        exportFormDataFdfCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        exportFormDataJsonCommand({ client, onApplied: applied, ask, stamp, signatures, toast, track }),
+        exportFormDataXfdfCommand({ client, onApplied: applied, ask, stamp, signatures, toast, track }),
+        exportFormDataFdfCommand({ client, onApplied: applied, ask, stamp, signatures, toast, track }),
         importFormDataJsonCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         importFormDataXfdfCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         importFormDataFdfCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
@@ -3863,9 +3867,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         importAnnotationsJsonCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         // THE CLIPBOARD'S PASTE, beside the import it is: main mints the same command.
         marksPaste,
-        exportAnnotationsXfdfCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
-        exportAnnotationsFdfCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
-        exportAnnotationsJsonCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        exportAnnotationsXfdfCommand({ client, onApplied: applied, ask, stamp, signatures, toast, track }),
+        exportAnnotationsFdfCommand({ client, onApplied: applied, ask, stamp, signatures, toast, track }),
+        exportAnnotationsJsonCommand({ client, onApplied: applied, ask, stamp, signatures, toast, track }),
         detectFlatFieldsCommand({ client, onApplied: applied, ask, stamp, signatures, markPlaces }),
         // ALIGN AND SAME SIZE for the selected form fields (ADR-0193), at the Properties tab's foot.
         ...fieldArrangeCommands({ placed: () => placedFields, apply: arrangeSelectedFields }),

@@ -1444,6 +1444,13 @@ const namedOpenOutcomeSchema = z.object({
  */
 /** Past the format's byte bound — refused before it is read into memory, with the file's own size beside the bound. */
 const importTooLargeSchema = fileTooLargeSchema;
+
+/**
+ * THE WORK'S NAME, REQUIRED on every conversion channel (ADR-0234): the renderer mints it (`withWorkProgress`), main
+ * begins work under it once the input is chosen, and the one notice shows while `work.progress` answers `running`. Spread
+ * into each conversion's params, so the field is spelt once.
+ */
+const NAMED_WORK = { work: workIdSchema } as const;
 /** The file could not be read. */
 const importUnreadableSchema = z.object({ kind: z.literal('unreadable') });
 /** Another open document reaches the chosen destination. Nothing was written. */
@@ -1919,7 +1926,7 @@ export const channels = {
 
   'document.openFromUrl': channel(
     'Fetches a PDF from a web address the user gives, saves it where they choose, and opens it.',
-    z.object({ url: z.string().trim().min(1).max(MAX_LINK_URI) }),
+    z.object({ url: z.string().trim().min(1).max(MAX_LINK_URI), ...NAMED_WORK }),
     z.discriminatedUnion('kind', [
       ...openOutcomeSchema.options,
       /** The guard refused the address, a redirect, or the answer. Nothing was written. */
@@ -2949,6 +2956,7 @@ export const channels = {
         format: z.enum(PAGE_IMAGE_FORMATS),
         dpi: z.number().int().min(MIN_PAGE_IMAGE_DPI).max(MAX_PAGE_IMAGE_DPI),
         quality: z.number().int().min(MIN_IMAGE_QUALITY).max(MAX_IMAGE_QUALITY),
+        ...NAMED_WORK,
       })
       .strict(),
     z.discriminatedUnion('kind', [
@@ -2988,7 +2996,7 @@ export const channels = {
    */
   'document.exportFormData': channel(
     'Writes the document’s form data to a file the user picks.',
-    z.object({ docId: docIdSchema, format: formDataFormatSchema }),
+    z.object({ docId: docIdSchema, format: formDataFormatSchema, ...NAMED_WORK }),
     z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
@@ -3027,7 +3035,7 @@ export const channels = {
     'Writes the document’s text to a plain-text file the user picks.',
     // THE PAGES, REQUIRED here and on every export to another format and on Print (ADR-0161): a caller that forgot
     // them would convert the whole document with nothing to say it did. *Every page* is the whole set.
-    z.object({ docId: docIdSchema, mode: z.enum(['plain', 'layout']), pages: pageSetSchema }).strict(),
+    z.object({ docId: docIdSchema, mode: z.enum(['plain', 'layout']), pages: pageSetSchema, ...NAMED_WORK }).strict(),
     z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
@@ -3050,7 +3058,7 @@ export const channels = {
    */
   'document.exportWord': channel(
     'Writes the document as a Word file the user picks.',
-    z.object({ docId: docIdSchema, mode: z.enum(WORD_MODES), pages: pageSetSchema }).strict(),
+    z.object({ docId: docIdSchema, mode: z.enum(WORD_MODES), pages: pageSetSchema, ...NAMED_WORK }).strict(),
     z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
@@ -3072,7 +3080,7 @@ export const channels = {
    */
   'document.exportPowerPoint': channel(
     'Writes the document as a PowerPoint deck the user picks.',
-    z.object({ docId: docIdSchema, mode: z.enum(POWERPOINT_MODES), pages: pageSetSchema }).strict(),
+    z.object({ docId: docIdSchema, mode: z.enum(POWERPOINT_MODES), pages: pageSetSchema, ...NAMED_WORK }).strict(),
     z.discriminatedUnion('kind', [
       z.object({
         kind: z.literal('copied'),
@@ -3121,6 +3129,7 @@ export const channels = {
         version: docVersionSchema,
         /** The pages whose tables are written (ADR-0161). The review still shows any page. */
         pages: pageSetSchema,
+        ...NAMED_WORK,
         edits: z
           .array(
             z
@@ -3175,34 +3184,6 @@ export const channels = {
   ),
 
   /**
-   * How far a service's read of an Excel export's pages has got (ADR-0202 Decision 5): the renderer polls it while the export
-   * is in flight, to step the status bar.
-   *
-   * **It does not enter the document's lane**, which the export holds for its whole length: a progress that waited for the
-   * lane would answer only when there was nothing left to report. Two counts and a state, read from a map main keeps — no
-   * text, no path, and nothing that scales with the document.
-   */
-  'document.exportProgress': channel(
-    'Answers how many pages of a service-read export have been read, while one is in flight.',
-    z.object({ docId: docIdSchema }).strict(),
-    z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('idle') }),
-      z.object({ kind: z.literal('reading'), done: z.number().int().nonnegative(), total: z.number().int().nonnegative() }),
-    ]),
-  ),
-
-  /**
-   * Asks a service-read export to stop (ADR-0202 Decision 5): a flag main checks between pages, after which the temporary file
-   * is removed and the export answers `cancelled`. `cancelled: false` says there was no read in flight to stop — a cancel that
-   * raced the end of the export is an answer, not a fault. Not in the lane, for `document.exportProgress`' reason.
-   */
-  'document.cancelExport': channel(
-    'Asks a service-read export in flight to stop after the page it is on.',
-    z.object({ docId: docIdSchema }).strict(),
-    z.object({ cancelled: z.boolean() }),
-  ),
-
-  /**
    * Writes the document as PDF/A-2b to a file the user picks — D10's *PDF/A-2b export*,
    * Ghostscript's `pdfwrite` in a contained process (ADR-0075).
    *
@@ -3212,7 +3193,7 @@ export const channels = {
    */
   'document.exportPdfa': channel(
     'Writes the document as PDF/A-2b to a file the user picks, saying what the conversion removed.',
-    z.object({ docId: docIdSchema }).strict(),
+    z.object({ docId: docIdSchema, ...NAMED_WORK }).strict(),
     z.discriminatedUnion('kind', [
       z.object({
         kind: z.literal('copied'),
@@ -3441,7 +3422,7 @@ export const channels = {
    */
   'document.insertImage': channel(
     'Inserts the images the user picks as new pages, one page each, into this document.',
-    z.object({ docId: docIdSchema, at: z.number().int().nonnegative() }),
+    z.object({ docId: docIdSchema, at: z.number().int().nonnegative(), ...NAMED_WORK }),
     z.discriminatedUnion('kind', [
       z.object({
         kind: z.literal('inserted'),
@@ -3499,7 +3480,7 @@ export const channels = {
    */
   'document.newFromMarkdown': channel(
     'Composes a Markdown file the user picks as a new PDF, saves it where they choose, and opens it.',
-    z.object({}),
+    z.object(NAMED_WORK).strict(),
     textImportOutcomeSchema,
     ['engine-unavailable'],
   ),
@@ -3514,24 +3495,34 @@ export const channels = {
    */
   'document.newFromCsv': channel(
     'Sets a CSV file the user picks as a table in a new PDF, saves it where they choose, and opens it.',
-    // THE WORK'S NAME, minted by the renderer (`work.progress`): a file composed in parts is reported and can be stopped
-    // under it. Absent, the import runs as before and reports nothing.
-    z.object({ work: workIdSchema.optional() }).strict(),
+    // A file composed in parts is reported and can be stopped under the work's name (ADR-0234).
+    z.object(NAMED_WORK).strict(),
     textImportOutcomeSchema,
     ['engine-unavailable'],
   ),
 
   /**
-   * How far a piece of work the renderer named has got: the shared progress of a conversion that runs in main (the owner's
-   * O9 and O10). The renderer polls it while the work's own call is in flight, to show the work on screen. `idle` for a name
-   * main holds no work under — not begun yet, or already ended. Two counts and a state; never the file, never a path.
+   * How far a piece of work the renderer named has got: the ONE progress of a conversion that runs in main (ADR-0234, the
+   * owner's O9 and O10). The renderer polls it while the work's own call is in flight, to show the work on screen. `idle` for
+   * a name main holds no work under — the input not chosen yet, or the work ended. **It does not enter a document's lane**,
+   * which an export holds for its whole length: a progress that waited for the lane would answer only when there was
+   * nothing left to report. Two counts, a state and whether a stop is honoured; never the file, never a path.
    */
   'work.progress': channel(
     'Answers how far a named piece of work in main has got.',
     z.object({ work: workIdSchema }).strict(),
     z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('idle') }).strict(),
-      z.object({ kind: z.literal('running'), done: z.number().int().nonnegative(), total: z.number().int().nonnegative() }).strict(),
+      z
+        .object({
+          kind: z.literal('running'),
+          done: z.number().int().nonnegative(),
+          /** 0 where the work has not said how many parts it has, or has none. */
+          total: z.number().int().nonnegative(),
+          /** Whether `work.cancel` stops it: work cut into parts stops at its next part; a single conversion cannot. */
+          stoppable: z.boolean(),
+        })
+        .strict(),
     ]),
   ),
 
@@ -3555,7 +3546,7 @@ export const channels = {
    */
   'document.newFromOffice': channel(
     'Converts a Word, Excel or PowerPoint file the user picks to a new PDF, saves it where they choose, and opens it.',
-    z.object({}),
+    z.object(NAMED_WORK).strict(),
     officeImportOutcomeSchema,
     ['engine-unavailable'],
   ),
@@ -3570,7 +3561,7 @@ export const channels = {
    */
   'document.newFromImages': channel(
     'Makes a new PDF with one page per image the user picks, saves it where they choose, and opens it.',
-    z.object({}),
+    z.object(NAMED_WORK).strict(),
     imageImportOutcomeSchema,
     ['engine-unavailable'],
   ),
@@ -3585,7 +3576,7 @@ export const channels = {
    */
   'document.newFromCapture': channel(
     'Makes a new PDF from pictures taken with the camera, saves it where the user chooses, and opens it.',
-    z.object({ frames: capturedFramesSchema }),
+    z.object({ frames: capturedFramesSchema, ...NAMED_WORK }),
     composedImportOutcomeSchema,
     ['engine-unavailable'],
   ),
@@ -3611,7 +3602,7 @@ export const channels = {
   'document.appendMarkdown': channel(
     'Composes a Markdown file into a new PDF, opens it, and merges it into this document.',
     // THE FAMILY ITS PROSE IS SET IN, chosen in the insert dialog's font picker (D1).
-    z.object({ docId: docIdSchema, at: z.number().int().nonnegative(), family: composedFamilySchema }),
+    z.object({ docId: docIdSchema, at: z.number().int().nonnegative(), family: composedFamilySchema, ...NAMED_WORK }),
     z.discriminatedUnion('kind', [
       z.object({
         kind: z.literal('appended'),
@@ -4295,7 +4286,7 @@ export const channels = {
    */
   'document.exportAnnotations': channel(
     'Writes the document’s annotations to a file the user picks.',
-    z.object({ docId: docIdSchema, format: annotationDataFormatSchema }),
+    z.object({ docId: docIdSchema, format: annotationDataFormatSchema, ...NAMED_WORK }),
     z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),

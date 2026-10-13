@@ -29,9 +29,12 @@ export function TaskNotice({ task }: { readonly task: RunningTask | undefined })
           <span aria-live="off">{i18n._(TASK_PROGRESS, { label, done: task.done, total: task.total })}</span>
         )}
       </p>
-      <button className="m-toast__action" onClick={task.cancel} type="button">
-        {i18n._(TASK_CANCEL)}
-      </button>
+      {/* NO CANCEL for work that runs to the end (ADR-0234): a button that could not stop it would do nothing. */}
+      {task.stoppable ? (
+        <button className="m-toast__action" onClick={task.cancel} type="button">
+          {i18n._(TASK_CANCEL)}
+        </button>
+      ) : null}
     </div>
   );
 }

@@ -611,7 +611,7 @@ async function main() {
     if (wordOpened?.ok === true && wordOpened.value.kind === 'opened') {
       const docId = wordOpened.value.docId;
       // THE FIXTURE'S ONE PAGE, as a page set (ADR-0161: the pages are required).
-      wordExported = await observed(() => handlers['document.exportWord']({ docId, mode: 'rich', pages: [0] }));
+      wordExported = await observed(() => handlers['document.exportWord']({ docId, mode: 'rich', pages: [0], work: 'live-host' }));
       await observed(() => handlers['document.close']({ docId }));
       if (wordExported?.ok === true && wordExported.value.kind === 'copied') {
         const { strFromU8, unzipSync } = await import('fflate');

@@ -2,6 +2,7 @@ import {
   ACCESSIBILITY_HUMAN_CHECKS,
   AZURE_KEY_SETTING_ID,
   BARCODE_FORMATS,
+  CONVERSION_CHANNELS,
   MAX_BARCODE_TEXT,
   MAX_IMAGE_BYTES,
   MAX_LIBRARY_PICTURE_BYTES,
@@ -75,6 +76,9 @@ const INERT_ASSISTANT = createAssistant({
 import { createEphemeralSettings } from './settingsFile.js';
 
 const appInfo: AppInfo = { version: '0.0.0', installChannel: 'development', userName: 'A. Tester' };
+
+/** The name every conversion here runs under (ADR-0234). */
+const WORK = 'work-under-test';
 
 /** These cases are about opening; nothing here dispatches a command. */
 const unusedCommands = {} as unknown as DocumentCommands;
@@ -780,18 +784,60 @@ describe('document.saveBarcodeContact', () => {
  * Decision C at the channel: rows of a workbook the PDF does not hold ride with the open, so the person is told — and a
  * document that arrived whole answers exactly what `document.open` does.
  */
+/**
+ * ADR-0234 at the root: EVERY conversion's handler finishes its work's name however it ends, so no notice is left
+ * standing. Each method throws here, the hardest exit, and the case is driven by the contract's own list, so a channel
+ * listed tomorrow is covered without a case being written for it.
+ */
+describe('every conversion handler finishes its work’s name', () => {
+  /** Commands whose every method throws, except `finishWork`, which records the name it was given. */
+  const throwingCommands = (finished: string[]): DocumentCommands =>
+    new Proxy(
+      {},
+      {
+        get: (_target, member) =>
+          member === 'finishWork'
+            ? (work: string) => {
+                finished.push(work);
+              }
+            : () => {
+                throw new Error(`a conversion method was called: ${String(member)}`);
+              },
+      },
+    ) as unknown as DocumentCommands;
+
+  it('finishes the name it was called with, for each of the sixteen, even where the method threw', async () => {
+    const finished: string[] = [];
+    const { handlers } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands: throwingCommands(finished) });
+    for (const id of CONVERSION_CHANNELS) {
+      // THE NAME IS THE CHANNEL'S OWN, so a handler that finished another channel's name, or a fixed one, fails here.
+      const handler = handlers[id] as (params: { readonly work: string }) => Promise<unknown>;
+      await handler({ work: `name-of-${id.replace('document.', '')}` }).catch(() => undefined);
+    }
+    expect(finished).toStrictEqual(CONVERSION_CHANNELS.map((id) => `name-of-${id.replace('document.', '')}`));
+  });
+
+  it('CONTROL: a handler outside the list finishes nothing, so the record above is the wrapper and not the harness', async () => {
+    const finished: string[] = [];
+    const { handlers } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands: throwingCommands(finished) });
+    await handlers['document.importAnnotations']({ docId: A_DOC, format: 'xfdf' }).catch(() => undefined);
+    expect(finished).toStrictEqual([]);
+  });
+});
+
 describe('document.newFromOffice — the rows a workbook lacks', () => {
   const OPENED = { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'Budget.pdf' } as const;
   const converting = (missing: readonly { sheet: string; from: number; to: number }[]): DocumentCommands =>
     ({
       convertOfficeFile: () => Promise.resolve({ kind: 'written', destination: 'C:/docs/Budget.pdf', missing }),
+      finishWork: () => undefined,
     }) as unknown as DocumentCommands;
 
   it('answers opened-incomplete, naming each block, where the converter reported rows missing', async () => {
     const missing = [{ sheet: 'Data', from: 38_251, to: 50_000 }];
     const { handlers, opened } = harness(OPENED, () => Promise.resolve(null), undefined, { commands: converting(missing) });
 
-    const result = await handlers['document.newFromOffice']({});
+    const result = await handlers['document.newFromOffice']({ work: WORK });
 
     expect(result).toStrictEqual({
       ok: true,
@@ -809,7 +855,7 @@ describe('document.newFromOffice — the rows a workbook lacks', () => {
     }));
     const { handlers } = harness(OPENED, () => Promise.resolve(null), undefined, { commands: converting(missing) });
 
-    const result = await handlers['document.newFromOffice']({});
+    const result = await handlers['document.newFromOffice']({ work: WORK });
 
     expect(result).toStrictEqual({
       ok: true,
@@ -828,7 +874,7 @@ describe('document.newFromOffice — the rows a workbook lacks', () => {
   it('CONTROL: answers plain opened where nothing is missing', async () => {
     const { handlers } = harness(OPENED, () => Promise.resolve(null), undefined, { commands: converting([]) });
 
-    const result = await handlers['document.newFromOffice']({});
+    const result = await handlers['document.newFromOffice']({ work: WORK });
 
     expect(result).toStrictEqual({ ok: true, value: { kind: 'opened', docId: A_DOC, version: 1, byteLength: 1024, name: 'Budget.pdf' } });
   });

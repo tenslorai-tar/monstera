@@ -480,8 +480,6 @@ const handlers: ContractHandlers = {
   'ai.translateText': () => Promise.resolve(ok({ kind: 'translated' as const, text: '' })),
   'document.openBarcodeLink': () => Promise.resolve(ok({ kind: 'stale' as const })),
   'document.saveBarcodeContact': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
-  'document.exportProgress': () => Promise.resolve(ok({ kind: 'idle' as const })),
-  'document.cancelExport': () => Promise.resolve(ok({ cancelled: false })),
   'work.progress': () => Promise.resolve(ok({ kind: 'idle' as const })),
   'work.cancel': () => Promise.resolve(ok({ cancelled: false })),
   'document.listBackups': () => Promise.resolve(ok({ kind: 'listed' as const, versions: [] })),
@@ -927,11 +925,13 @@ describe('a block’s run fonts are bounded bytes, and every run names one the a
 
 describe('every export to another format, and Print, REQUIRE their pages (ADR-0161)', () => {
   const docId = asDocId('doc-1');
+  // EACH WITH ITS WORK'S NAME where it is a conversion (ADR-0234), so the one refusal below is the pages' and no other's.
+  const work = 'w1';
   const requests = {
-    'document.exportText': { docId, mode: 'plain', pages: [[0, 2]] },
-    'document.exportWord': { docId, mode: 'rich', pages: [[0, 2]] },
-    'document.exportPowerPoint': { docId, mode: 'editable', pages: [[0, 2]] },
-    'document.exportExcel': { docId, layout: 'one-sheet', engine: 'automatic', version: asDocVersion(3), pages: [[0, 2]], edits: [] },
+    'document.exportText': { docId, mode: 'plain', pages: [[0, 2]], work },
+    'document.exportWord': { docId, mode: 'rich', pages: [[0, 2]], work },
+    'document.exportPowerPoint': { docId, mode: 'editable', pages: [[0, 2]], work },
+    'document.exportExcel': { docId, layout: 'one-sheet', engine: 'automatic', version: asDocVersion(3), pages: [[0, 2]], edits: [], work },
     'document.print': { docId, dpi: 300, pages: [[0, 2]] },
   } as const;
 
@@ -954,6 +954,8 @@ describe('document.exportExcel — which engine reads the tables (ADR-0086)', ()
     version: asDocVersion(3),
     pages: [[0, 2]],
     edits: [{ page: 0, table: 0, row: 0, column: 0, text: 'A' }],
+    // THE WORK'S NAME (ADR-0234), so a refusal below is the engine's or the edits', never the name's absence.
+    work: 'w1',
   };
 
   it('CONTROL: the review grid’s edits are accepted with the AUTOMATIC engine, and no edits with any', () => {

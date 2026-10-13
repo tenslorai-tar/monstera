@@ -13,6 +13,7 @@ import {
   newFromMarkdownCommand,
   newFromOfficeCommand,
 } from './importMarkdown.js';
+import { namedWorkSetAside } from './namedWorkSetAside.js';
 
 /**
  * The UI half of D9's Markdown row: which channel each control reaches, with what,
@@ -115,14 +116,14 @@ describe('newFromMarkdownCommand', () => {
     });
     const { calls, record, ask } = callbacks();
 
-    await newFromMarkdownCommand({
+    await newFromMarkdownCommand({ track: UNTRACKED,
       client,
       ask,
       onOpened: record('opened'),
       onAlreadyOpen: record('already-open'),
     }).run(CONTEXT);
 
-    expect(sent).toStrictEqual([{ id: 'document.newFromMarkdown', params: {} }]);
+    expect(namedWorkSetAside(sent)).toStrictEqual([{ id: 'document.newFromMarkdown', params: {} }]);
     expect(calls).toStrictEqual([
       {
         name: 'opened',
@@ -135,7 +136,7 @@ describe('newFromMarkdownCommand', () => {
     const { client } = recording({ 'document.newFromMarkdown': ok({ kind: 'cancelled' }) });
     const { calls, record, ask } = callbacks();
 
-    await newFromMarkdownCommand({
+    await newFromMarkdownCommand({ track: UNTRACKED,
       client,
       ask,
       onOpened: record('opened'),
@@ -153,7 +154,7 @@ describe('newFromMarkdownCommand', () => {
     });
     const { calls, record, ask } = callbacks();
 
-    await newFromMarkdownCommand({
+    await newFromMarkdownCommand({ track: UNTRACKED,
       client,
       ask,
       onOpened: record('opened'),
@@ -168,7 +169,7 @@ describe('newFromMarkdownCommand', () => {
 
     const plain = recording({ 'document.newFromMarkdown': ok({ kind: 'opened', ...opened }) });
     const after = callbacks();
-    await newFromMarkdownCommand({
+    await newFromMarkdownCommand({ track: UNTRACKED,
       client: plain.client,
       ask: after.ask,
       onOpened: after.record('opened'),
@@ -183,7 +184,7 @@ describe('newFromMarkdownCommand', () => {
     });
     const { calls, record, ask } = callbacks();
 
-    await newFromMarkdownCommand({
+    await newFromMarkdownCommand({ track: UNTRACKED,
       client,
       ask,
       onOpened: record('opened'),
@@ -214,7 +215,7 @@ describe('appendMarkdownCommand', () => {
     });
     const { calls, record, ask } = callbacks();
 
-    await appendMarkdownCommand({
+    await appendMarkdownCommand({ track: UNTRACKED,
       client,
       ask,
       stamp: STAMP,
@@ -225,7 +226,7 @@ describe('appendMarkdownCommand', () => {
     }).run(CONTEXT);
 
     // `at: 10`, the page count, and not 4: the pages go at the END. And the FAMILY the question answered, never the default.
-    expect(sent).toStrictEqual([
+    expect(namedWorkSetAside(sent)).toStrictEqual([
       { id: 'app.fontFamilies', params: {} },
       { id: 'document.appendMarkdown', params: { docId: DOC, at: 10, family: 'Tinos' } },
     ]);
@@ -258,7 +259,7 @@ describe('appendMarkdownCommand', () => {
     ): Promise<{ sent: { id: string; params: unknown }[]; where: { id: string; props: unknown }[] }> => {
       const { client, sent } = recording({ 'document.appendMarkdown': appended });
       const { record, ask, where } = callbacks(position, closed);
-      await appendMarkdownCommand({
+      await appendMarkdownCommand({ track: UNTRACKED,
         client,
         ask,
         stamp: STAMP,
@@ -273,7 +274,8 @@ describe('appendMarkdownCommand', () => {
     const start = await run({ at: 0, family: 'Arimo' });
     // THE QUESTION CARRIES THE DOCUMENT'S OWN SIZE, THE PAGE ON SHOW AND MAIN'S FONT LIST, which bound and seed its answer.
     expect(start.where).toStrictEqual([{ id: 'dialog.insert-markdown', props: { pageCount: 10, page: 3, fonts: FONTS } }]);
-    const appendsOf = (sent: { id: string; params: unknown }[]) => sent.filter((each) => each.id === 'document.appendMarkdown');
+    const appendsOf = (sent: { id: string; params: unknown }[]) =>
+      namedWorkSetAside(sent).filter((each) => each.id === 'document.appendMarkdown');
     expect(appendsOf(start.sent)).toStrictEqual([{ id: 'document.appendMarkdown', params: { docId: DOC, at: 0, family: 'Arimo' } }]);
     expect(appendsOf((await run({ at: 3, family: 'Tinos' })).sent)).toStrictEqual([
       { id: 'document.appendMarkdown', params: { docId: DOC, at: 3, family: 'Tinos' } },
@@ -297,7 +299,7 @@ describe('appendMarkdownCommand', () => {
     });
     const { calls, record, ask } = callbacks();
 
-    await appendMarkdownCommand({
+    await appendMarkdownCommand({ track: UNTRACKED,
       client,
       ask,
       stamp: STAMP,
@@ -320,7 +322,7 @@ describe('appendMarkdownCommand', () => {
     });
     const { calls, record, ask } = callbacks();
 
-    await appendMarkdownCommand({
+    await appendMarkdownCommand({ track: UNTRACKED,
       client,
       ask,
       stamp: STAMP,
@@ -347,7 +349,7 @@ describe('appendMarkdownCommand', () => {
     });
     const { calls, record, ask } = callbacks();
 
-    await appendMarkdownCommand({
+    await appendMarkdownCommand({ track: UNTRACKED,
       client,
       ask,
       stamp: STAMP,
@@ -382,7 +384,7 @@ describe('insertImageCommand (O3)', () => {
   ): Promise<ReturnType<typeof callbacks> & { readonly sent: { id: string; params: unknown }[] }> => {
     const { client, sent } = recording({ 'document.insertImage': answer });
     const recorded = callbacks(position, closed);
-    await insertImageCommand({
+    await insertImageCommand({ track: UNTRACKED,
       client,
       ask: recorded.ask,
       stamp: STAMP,
@@ -398,7 +400,7 @@ describe('insertImageCommand (O3)', () => {
     // `at: 0` IS NOT `page + 1` (4), so a command that ignored the answer and kept the old *after this page* fails here.
     const { where, sent, calls } = await run(inserted(), { at: 0 });
     expect(where).toStrictEqual([{ id: 'dialog.insert-images', props: { pageCount: 10, page: 3 } }]);
-    expect(sent).toStrictEqual([{ id: 'document.insertImage', params: { docId: DOC, at: 0 } }]);
+    expect(namedWorkSetAside(sent)).toStrictEqual([{ id: 'document.insertImage', params: { docId: DOC, at: 0 } }]);
     // REBUILT, THE TAB ADDED, AND THE PERSON BACK ON THE DOCUMENT they inserted into, `appendMarkdownCommand`'s order.
     expect(calls).toStrictEqual([
       { name: 'applied', value: { version: 2, byteLength: 8192 } },
@@ -557,14 +559,14 @@ describe('newFromOfficeCommand (ADR-0120)', () => {
     });
     const { calls, record, ask } = callbacks();
 
-    await newFromOfficeCommand({
+    await newFromOfficeCommand({ track: UNTRACKED,
       client,
       ask,
       onOpened: record('opened'),
       onAlreadyOpen: record('already-open'),
     }).run(CONTEXT);
 
-    expect(sent).toStrictEqual([{ id: 'document.newFromOffice', params: {} }]);
+    expect(namedWorkSetAside(sent)).toStrictEqual([{ id: 'document.newFromOffice', params: {} }]);
     expect(calls).toStrictEqual([
       { name: 'opened', value: { docId: COMPOSED, version: 1, byteLength: 4096, name: 'Budget.pdf' } },
     ]);
@@ -588,7 +590,7 @@ describe('newFromOfficeCommand (ADR-0120)', () => {
     });
     const { calls, record, ask } = callbacks();
 
-    await newFromOfficeCommand({
+    await newFromOfficeCommand({ track: UNTRACKED,
       client,
       ask,
       onOpened: record('opened'),
@@ -607,7 +609,7 @@ describe('newFromOfficeCommand (ADR-0120)', () => {
     const { client } = recording({ 'document.newFromOffice': ok({ kind: 'conversion-failed' }) });
     const { calls, record, ask } = callbacks();
 
-    await newFromOfficeCommand({
+    await newFromOfficeCommand({ track: UNTRACKED,
       client,
       ask,
       onOpened: record('opened'),
@@ -623,7 +625,7 @@ describe('newFromOfficeCommand (ADR-0120)', () => {
     const { client } = recording({ 'document.newFromOffice': ok({ kind: 'cancelled' }) });
     const { calls, record, ask } = callbacks();
 
-    await newFromOfficeCommand({
+    await newFromOfficeCommand({ track: UNTRACKED,
       client,
       ask,
       onOpened: record('opened'),
@@ -649,14 +651,14 @@ describe('newFromImagesCommand', () => {
     });
     const { calls, record, ask } = callbacks();
 
-    await newFromImagesCommand({
+    await newFromImagesCommand({ track: UNTRACKED,
       client,
       ask,
       onOpened: record('opened'),
       onAlreadyOpen: record('already-open'),
     }).run(CONTEXT);
 
-    expect(sent).toStrictEqual([{ id: 'document.newFromImages', params: {} }]);
+    expect(namedWorkSetAside(sent)).toStrictEqual([{ id: 'document.newFromImages', params: {} }]);
     expect(calls).toStrictEqual([
       { name: 'opened', value: { docId: COMPOSED, version: 1, byteLength: 8192, name: 'scans.pdf' } },
     ]);
@@ -668,7 +670,7 @@ describe('newFromImagesCommand', () => {
       'document.newFromImages': ok({ kind: 'opened-with-skips', docId: COMPOSED, version: asDocVersion(1), byteLength: 8192, name: 'scans.pdf', skipped, skippedMore: 0 }),
     });
     const { calls, record, ask } = callbacks();
-    await newFromImagesCommand({ client, ask, onOpened: record('opened'), onAlreadyOpen: record('already-open') }).run(CONTEXT);
+    await newFromImagesCommand({ track: UNTRACKED, client, ask, onOpened: record('opened'), onAlreadyOpen: record('already-open') }).run(CONTEXT);
     expect(calls).toStrictEqual([
       { name: 'opened', value: { docId: COMPOSED, version: 1, byteLength: 8192, name: 'scans.pdf' } },
       { name: 'ask', value: { id: 'dialog.import-skipped', props: { skipped, more: 0 } } },
@@ -698,7 +700,7 @@ describe('newFromImagesCommand', () => {
       const { client } = recording({ 'document.newFromImages': ok(answer) });
       const { calls, record, ask } = callbacks();
 
-      await newFromImagesCommand({
+      await newFromImagesCommand({ track: UNTRACKED,
         client,
         ask,
         onOpened: record('opened'),
@@ -741,7 +743,7 @@ describe('newFromCaptureCommand', () => {
     const { asked, ask } = asking({ frames: [FRAME] });
     const opened: unknown[] = [];
 
-    await newFromCaptureCommand({
+    await newFromCaptureCommand({ track: UNTRACKED,
       client,
       ask,
       onOpened: (document) => {
@@ -751,7 +753,7 @@ describe('newFromCaptureCommand', () => {
     }).run(CONTEXT);
 
     expect(asked).toStrictEqual([{ id: 'dialog.camera-capture', props: {} }]);
-    expect(sent).toStrictEqual([{ id: 'document.newFromCapture', params: { frames: [FRAME] } }]);
+    expect(namedWorkSetAside(sent)).toStrictEqual([{ id: 'document.newFromCapture', params: { frames: [FRAME] } }]);
     expect(opened).toStrictEqual([{ docId: COMPOSED, version: 1, byteLength: 1024, name: 'camera.pdf' }]);
   });
 
@@ -759,7 +761,7 @@ describe('newFromCaptureCommand', () => {
     // THE SECOND ANSWER IS ONE A LOOSER SCHEMA WOULD SEND: bytes, but not a JPEG's.
     for (const taken of [undefined, { frames: [Uint8Array.of(0x89, 0x50, 0x4e, 0x47)] }]) {
       const { client, sent } = recording({});
-      await newFromCaptureCommand({
+      await newFromCaptureCommand({ track: UNTRACKED,
         client,
         ask: asking(taken).ask,
         onOpened: () => undefined,

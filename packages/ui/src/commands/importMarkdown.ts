@@ -17,8 +17,14 @@ import {
 } from '../dialogs/markdownImportProblem.js';
 import {
   APPEND_MARKDOWN_COMMAND_TITLE,
+  CAMERA_CONVERTING,
   CSV_CONVERTING,
   GROUP_CREATE,
+  IMAGES_CONVERTING,
+  IMAGES_INSERTING,
+  MARKDOWN_CONVERTING,
+  MARKDOWN_INSERTING,
+  OFFICE_CONVERTING,
   GROUP_PAGES,
   INSERT_IMAGE_COMMAND_TITLE,
   NEW_FROM_CAMERA_COMMAND_TITLE,
@@ -157,6 +163,8 @@ function refusalProblem(
 export function newFromMarkdownCommand(deps: {
   readonly client: DocumentCommandDeps['client'];
   readonly ask: DocumentCommandDeps['ask'];
+  /** Where the conversion is shown from the chosen file until the tab opens (ADR-0234). */
+  readonly track: TrackTask;
   readonly onOpened: (opened: OpenedDocument) => void;
   readonly onAlreadyOpen: (docId: DocId) => void;
 }): UiCommand {
@@ -169,7 +177,7 @@ export function newFromMarkdownCommand(deps: {
     ribbonTitle: RIBBON_NEW_FROM_MARKDOWN,
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 10, size: 'small' }],
     run: async (): Promise<void> => {
-      const answer = await deps.client['document.newFromMarkdown']({});
+      const answer = await withWorkProgress(deps, MARKDOWN_CONVERTING, (work) => deps.client['document.newFromMarkdown']({ work }));
       if (!answer.ok) {
         reportProblem(deps, answer.error);
         return;
@@ -209,7 +217,7 @@ export function newFromCsvCommand(deps: {
     ribbonTitle: RIBBON_NEW_FROM_CSV,
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 30, size: 'small' }],
     run: async (): Promise<void> => {
-      // ON SCREEN FROM THE CALL ON, with a Cancel: a large file is composed in parts in main and takes minutes.
+      // ON SCREEN FROM THE CHOSEN FILE ON, with a Cancel where it is composed in parts: a large file takes minutes.
       const answer = await withWorkProgress(deps, CSV_CONVERTING, (work) => deps.client['document.newFromCsv']({ work }));
       if (!answer.ok) {
         reportProblem(deps, answer.error);
@@ -238,6 +246,8 @@ export function newFromCsvCommand(deps: {
 export function newFromOfficeCommand(deps: {
   readonly client: DocumentCommandDeps['client'];
   readonly ask: DocumentCommandDeps['ask'];
+  /** Where the conversion is shown from the chosen file until the tab opens (ADR-0234). */
+  readonly track: TrackTask;
   readonly onOpened: (opened: OpenedDocument) => void;
   readonly onAlreadyOpen: (docId: DocId) => void;
 }): UiCommand {
@@ -249,7 +259,7 @@ export function newFromOfficeCommand(deps: {
     ribbonTitle: RIBBON_NEW_FROM_OFFICE,
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 5, size: 'small' }],
     run: async (): Promise<void> => {
-      const answer = await deps.client['document.newFromOffice']({});
+      const answer = await withWorkProgress(deps, OFFICE_CONVERTING, (work) => deps.client['document.newFromOffice']({ work }));
       if (!answer.ok) {
         reportProblem(deps, answer.error);
         return;
@@ -287,6 +297,8 @@ export function newFromOfficeCommand(deps: {
 export function newFromImagesCommand(deps: {
   readonly client: DocumentCommandDeps['client'];
   readonly ask: DocumentCommandDeps['ask'];
+  /** Where the conversion is shown from the chosen pictures until the tab opens (ADR-0234). */
+  readonly track: TrackTask;
   readonly onOpened: (opened: OpenedDocument) => void;
   readonly onAlreadyOpen: (docId: DocId) => void;
 }): UiCommand {
@@ -298,7 +310,7 @@ export function newFromImagesCommand(deps: {
     ribbonTitle: RIBBON_NEW_FROM_IMAGES,
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 40, size: 'small' }],
     run: async (): Promise<void> => {
-      const answer = await deps.client['document.newFromImages']({});
+      const answer = await withWorkProgress(deps, IMAGES_CONVERTING, (work) => deps.client['document.newFromImages']({ work }));
       if (!answer.ok) {
         reportProblem(deps, answer.error);
         return;
@@ -335,6 +347,8 @@ export function newFromImagesCommand(deps: {
 export function newFromCaptureCommand(deps: {
   readonly client: DocumentCommandDeps['client'];
   readonly ask: DocumentCommandDeps['ask'];
+  /** Where the conversion is shown from the pictures taken until the tab opens (ADR-0234). */
+  readonly track: TrackTask;
   readonly onOpened: (opened: OpenedDocument) => void;
   readonly onAlreadyOpen: (docId: DocId) => void;
 }): UiCommand {
@@ -349,7 +363,9 @@ export function newFromCaptureCommand(deps: {
       const taken = CAMERA_CAPTURE_RESULT.safeParse(await deps.ask(CAMERA_CAPTURE_DIALOG_ID, {}));
       if (!taken.success) return;
 
-      const answer = await deps.client['document.newFromCapture']({ frames: taken.data.frames });
+      const answer = await withWorkProgress(deps, CAMERA_CONVERTING, (work) =>
+        deps.client['document.newFromCapture']({ frames: taken.data.frames, work }),
+      );
       if (!answer.ok) {
         reportProblem(deps, answer.error);
         return;
@@ -393,6 +409,8 @@ export function newFromCaptureCommand(deps: {
  */
 export function appendMarkdownCommand(
   deps: DocumentCommandDeps & {
+    /** Where the conversion is shown from the chosen file until the pages are in (ADR-0234). */
+    readonly track: TrackTask;
     readonly onOpened: (opened: OpenedDocument) => void;
     readonly onActivate: (docId: DocId) => void;
   },
@@ -421,11 +439,9 @@ export function appendMarkdownCommand(
       })) as InsertMarkdownAnswer | undefined;
       if (where === undefined) return;
 
-      const answer = await deps.client['document.appendMarkdown']({
-        docId: target,
-        at: where.at,
-        family: where.family,
-      });
+      const answer = await withWorkProgress(deps, MARKDOWN_INSERTING, (work) =>
+        deps.client['document.appendMarkdown']({ docId: target, at: where.at, family: where.family, work }),
+      );
       if (!answer.ok) {
         reportProblem(deps, answer.error);
         return;
@@ -460,6 +476,8 @@ export function appendMarkdownCommand(
  */
 export function insertImageCommand(
   deps: DocumentCommandDeps & {
+    /** Where the insert is shown from the chosen pictures until the pages are in (ADR-0234). */
+    readonly track: TrackTask;
     readonly onOpened: (opened: OpenedDocument) => void;
     readonly onActivate: (docId: DocId) => void;
   },
@@ -481,7 +499,9 @@ export function insertImageCommand(
         | undefined;
       if (where === undefined) return;
 
-      const answer = await deps.client['document.insertImage']({ docId: target, at: where.at });
+      const answer = await withWorkProgress(deps, IMAGES_INSERTING, (work) =>
+        deps.client['document.insertImage']({ docId: target, at: where.at, work }),
+      );
       if (!answer.ok) {
         reportProblem(deps, answer.error);
         return;

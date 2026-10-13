@@ -102,6 +102,7 @@ import { EXPORT_EXCEL_DIALOG_ID, type ExportExcelAnswer } from '../dialogs/expor
 import { SERVICE_REFUSED_DIALOG_ID } from '../dialogs/serviceRefused.js';
 import { OPTIMIZE_DIALOG_ID, type OptimizeAnswer } from '../dialogs/optimize.js';
 import type { TrackTask } from '../runningTask.js';
+import { withWorkProgress } from './workProgress.js';
 import { PDFA_REMOVALS_DIALOG_ID } from '../dialogs/pdfaRemovals.js';
 import { OCR_OUTCOME_DIALOG_ID, type RecognisedWalk } from '../dialogs/ocrOutcome.js';
 import type { ScanReader } from '../dialogs/scanReader.js';
@@ -306,6 +307,13 @@ import {
   TOAST_TEXT_SAVED,
   TOAST_WORD_SAVED,
   EXPORT_EXCEL_READING,
+  EXPORTING_EXCEL,
+  EXPORTING_FORM_DATA,
+  EXPORTING_PAGE_IMAGES,
+  EXPORTING_PDFA,
+  EXPORTING_POWERPOINT,
+  EXPORTING_TEXT,
+  EXPORTING_WORD,
   SCAN_READERS_NONE,
   TOAST_SAVED,
   TOAST_SAVED_CLEARED,
@@ -555,6 +563,14 @@ async function reportRecognisedBeforeExport(
  */
 export interface WritesAFile {
   readonly toast: ShowToast;
+}
+
+/**
+ * A command whose work is a conversion in main (ADR-0234): it runs through `withWorkProgress`, which needs the one notice
+ * to show the work on.
+ */
+export interface ConvertsInMain {
+  readonly track: TrackTask;
 }
 
 /**
@@ -2969,7 +2985,7 @@ export function splitDocumentCommand(deps: DocumentCommandDeps & WritesAFile & S
  * and the two failures reach the save problem dialog.
  */
 export function exportTextCommand(
-  deps: DocumentCommandDeps & RecognisesFirst & WritesAFile & SettlesMarksFirst,
+  deps: DocumentCommandDeps & RecognisesFirst & WritesAFile & SettlesMarksFirst & ConvertsInMain,
 ): UiCommand {
   return {
     id: 'document.export-text',
@@ -2994,7 +3010,7 @@ export function exportTextCommand(
  * does, so one outcome handler serves both.
  */
 export function exportLayoutTextCommand(
-  deps: DocumentCommandDeps & RecognisesFirst & WritesAFile & SettlesMarksFirst,
+  deps: DocumentCommandDeps & RecognisesFirst & WritesAFile & SettlesMarksFirst & ConvertsInMain,
 ): UiCommand {
   return {
     id: 'document.export-layout-text',
@@ -3016,7 +3032,7 @@ export function exportLayoutTextCommand(
  * the way {@link exportTextCommand}'s are.
  */
 export function exportWordCommand(
-  deps: DocumentCommandDeps & RecognisesFirst & ReadsScans & WritesAFile & SettlesMarksFirst,
+  deps: DocumentCommandDeps & RecognisesFirst & ReadsScans & WritesAFile & SettlesMarksFirst & ConvertsInMain,
 ): UiCommand {
   return {
     id: 'document.export-word',
@@ -3063,11 +3079,10 @@ export function exportWordCommand(
         }
       }
       if (walked === false) return;
-      const answer = await deps.client['document.exportWord']({
-        docId: context.docId,
-        mode: chosen.mode,
-        pages: pageSetOf(chosen.pages),
-      });
+      const docId = context.docId;
+      const answer = await withWorkProgress(deps, EXPORTING_WORD, (work) =>
+        deps.client['document.exportWord']({ docId, mode: chosen.mode, pages: pageSetOf(chosen.pages), work }),
+      );
       await reportRecognisedBeforeExport(deps, walked);
       if (!answer.ok) {
         reportProblem(deps, answer.error);
@@ -3090,7 +3105,7 @@ export function exportWordCommand(
  * save dialog and write. A dismissed pages dialog dispatches nothing.
  */
 export function exportPowerPointCommand(
-  deps: DocumentCommandDeps & WritesAFile & SettlesMarksFirst & RecognisesPages,
+  deps: DocumentCommandDeps & WritesAFile & SettlesMarksFirst & RecognisesPages & ConvertsInMain,
 ): UiCommand {
   return {
     id: 'document.export-powerpoint',
@@ -3129,11 +3144,10 @@ export function exportPowerPointCommand(
         return;
       }
 
-      const answer = await deps.client['document.exportPowerPoint']({
-        docId: context.docId,
-        mode: chosen.mode,
-        pages: pageSetOf(chosen.pages),
-      });
+      const docId = context.docId;
+      const answer = await withWorkProgress(deps, EXPORTING_POWERPOINT, (work) =>
+        deps.client['document.exportPowerPoint']({ docId, mode: chosen.mode, pages: pageSetOf(chosen.pages), work }),
+      );
       if (!answer.ok) {
         reportProblem(deps, answer.error);
         return;
@@ -3159,42 +3173,6 @@ export function exportPowerPointCommand(
     },
   };
 }
-
-/**
- * Runs a request main answers only when it has READ the pages, with the status bar showing how far it has got and a Cancel
- * that stops it (ADR-0202 Decision 5).
- *
- * Main reads while the file streams and holds the document's lane for all of it, so progress is POLLED from the two channels
- * that do not enter the lane (`document.exportProgress`), once a second, and a Cancel sends `document.cancelExport` — a flag
- * main checks between pages. The poll and the listener are removed and the task ended however the request ends.
- */
-async function withReadProgress<T>(
-  deps: { readonly client: ContractClient; readonly track: TrackTask },
-  docId: DocId,
-  total: number,
-  run: () => Promise<T>,
-): Promise<T> {
-  const task = deps.track(EXPORT_EXCEL_READING, total);
-  const poll = globalThis.setInterval(() => {
-    void deps.client['document.exportProgress']({ docId }).then((progress) => {
-      if (progress.ok && progress.value.kind === 'reading') task.step(progress.value.done);
-    });
-  }, READ_PROGRESS_INTERVAL_MS);
-  const stop = (): void => {
-    void deps.client['document.cancelExport']({ docId });
-  };
-  task.signal.addEventListener('abort', stop, { once: true });
-  try {
-    return await run();
-  } finally {
-    globalThis.clearInterval(poll);
-    task.signal.removeEventListener('abort', stop);
-    task.end();
-  }
-}
-
-/** How often the read's count is asked for: a page of a service read takes seconds, so once a second shows every page. */
-const READ_PROGRESS_INTERVAL_MS = 1000;
 
 /**
  * Writes the tables MuPDF finds as an Excel workbook (ADR-0072, ADR-0073): the
@@ -3322,12 +3300,13 @@ export function exportExcelCommand(
             ? [...edits].flatMap(([page, made]) => made.map((edit) => ({ page, ...edit })))
             : [],
       };
-      // A SERVICE READS EACH PAGE WHILE THE WORKBOOK STREAMS, in main, and the person is shown how far it has got and can
-      // stop it (ADR-0202 Decision 5). The PDF's own text reads in a moment and shows nothing.
-      const answer =
-        engine === 'claude' || engine === 'azure'
-          ? await withReadProgress(deps, docId, pages.length, () => deps.client['document.exportExcel'](request))
-          : await deps.client['document.exportExcel'](request);
+      // SHOWN FROM THE CHOSEN FILE ON (ADR-0234): a service reads each page while the workbook streams, with a count and a
+      // Cancel main honours between pages; the PDF's own tables show the label alone.
+      const answer = await withWorkProgress(
+        deps,
+        engine === 'claude' || engine === 'azure' ? EXPORT_EXCEL_READING : EXPORTING_EXCEL,
+        (work) => deps.client['document.exportExcel']({ ...request, work }),
+      );
       // WHAT THE READING DID is said whatever became of the export, since the pages changed either way.
       if (walked !== undefined && walked.recognised > 0) await deps.ask(OCR_OUTCOME_DIALOG_ID, walked);
       if (!answer.ok) {
@@ -3374,7 +3353,7 @@ export function exportExcelCommand(
  * nothing to choose before the file.
  */
 export function exportPdfaCommand(
-  deps: DocumentCommandDeps & RecognisesFirst & WritesAFile & SettlesMarksFirst,
+  deps: DocumentCommandDeps & RecognisesFirst & WritesAFile & SettlesMarksFirst & ConvertsInMain,
 ): UiCommand {
   return {
     id: 'document.export-pdfa',
@@ -3390,7 +3369,8 @@ export function exportPdfaCommand(
 
       const walked = await recognisedBeforeExport(deps, context);
       if (walked === false) return;
-      const answer = await deps.client['document.exportPdfa']({ docId: context.docId });
+      const docId = context.docId;
+      const answer = await withWorkProgress(deps, EXPORTING_PDFA, (work) => deps.client['document.exportPdfa']({ docId, work }));
       await reportRecognisedBeforeExport(deps, walked);
       if (!answer.ok) {
         reportProblem(deps, answer.error);
@@ -3624,7 +3604,7 @@ export function emailCommand(deps: DocumentCommandDeps & SettlesMarksFirst): UiC
 }
 
 async function runTextExport(
-  deps: DocumentCommandDeps & RecognisesFirst & WritesAFile & SettlesMarksFirst,
+  deps: DocumentCommandDeps & RecognisesFirst & WritesAFile & SettlesMarksFirst & ConvertsInMain,
   context: CommandContext,
   mode: 'plain' | 'layout',
 ): Promise<void> {
@@ -3639,7 +3619,10 @@ async function runTextExport(
   // AFTER THE PAGES, so a dismissed pages dialog recognises nothing (ADR-0118).
   const walked = await recognisedBeforeExport(deps, context);
   if (walked === false) return;
-  const answer = await deps.client['document.exportText']({ docId: context.docId, mode, pages: pageSetOf(chosen.pages) });
+  const docId = context.docId;
+  const answer = await withWorkProgress(deps, EXPORTING_TEXT, (work) =>
+    deps.client['document.exportText']({ docId, mode, pages: pageSetOf(chosen.pages), work }),
+  );
   await reportRecognisedBeforeExport(deps, walked);
   if (!answer.ok) {
     reportProblem(deps, answer.error);
@@ -3674,7 +3657,7 @@ async function runTextExport(
  * folder to show, `cancelled` says nothing, and the two failures reach the save
  * problem dialog.
  */
-export function exportPageImagesCommand(deps: DocumentCommandDeps & WritesAFile & SettlesMarksFirst): UiCommand {
+export function exportPageImagesCommand(deps: DocumentCommandDeps & WritesAFile & SettlesMarksFirst & ConvertsInMain): UiCommand {
   return {
     id: 'document.export-page-images',
     feedback: TOASTS,
@@ -3696,14 +3679,18 @@ export function exportPageImagesCommand(deps: DocumentCommandDeps & WritesAFile 
       })) as ExportPageImagesAnswer | undefined;
       if (chosen === undefined) return;
 
-      const answer = await deps.client['document.exportPageImages']({
-        docId: context.docId,
-        // AS RUNS, `extract`'s reason: *every page* is one entry at any length.
-        pages: pageSetOf(chosen.pages),
-        format: chosen.format,
-        dpi: chosen.dpi,
-        quality: chosen.quality,
-      });
+      const docId = context.docId;
+      const answer = await withWorkProgress(deps, EXPORTING_PAGE_IMAGES, (work) =>
+        deps.client['document.exportPageImages']({
+          docId,
+          // AS RUNS, `extract`'s reason: *every page* is one entry at any length.
+          pages: pageSetOf(chosen.pages),
+          format: chosen.format,
+          dpi: chosen.dpi,
+          quality: chosen.quality,
+          work,
+        }),
+      );
       if (!answer.ok) {
         reportProblem(deps, answer.error);
         return;
@@ -3750,7 +3737,7 @@ function exportFormDataCommand(
   ribbonTitle: MessageKey,
   order: number,
   icon: IconName,
-): (deps: DocumentCommandDeps & WritesAFile) => UiCommand {
+): (deps: DocumentCommandDeps & WritesAFile & ConvertsInMain) => UiCommand {
   return (deps) => ({
     id,
     feedback: TOASTS,
@@ -3763,10 +3750,10 @@ function exportFormDataCommand(
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
-      const answer = await deps.client['document.exportFormData']({
-        docId: context.docId,
-        format,
-      });
+      const docId = context.docId;
+      const answer = await withWorkProgress(deps, EXPORTING_FORM_DATA, (work) =>
+        deps.client['document.exportFormData']({ docId, format, work }),
+      );
       if (!answer.ok) {
         reportProblem(deps, answer.error);
         return;

@@ -59,6 +59,9 @@ import { pictureName } from './recentPictures.js';
  */
 const appInfo: AppInfo = { version: '0.0.0', installChannel: 'development', userName: 'A. Tester' };
 
+/** The name every conversion here runs under (ADR-0234). */
+const WORK = 'work-under-test';
+
 // The destination picker and the ephemeral stores come from
 // `harnessComposition.ts` — see `composition.test.ts`.
 
@@ -2115,7 +2118,7 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
       composePlatform: third.platform,
     });
 
-    const answer = await handlers['document.newFromMarkdown']({});
+    const answer = await handlers['document.newFromMarkdown']({ work: WORK });
     expect(answer.ok, JSON.stringify(answer)).toBe(true);
     if (!answer.ok) throw new Error('unreachable');
     expect(answer.value.kind, JSON.stringify(answer.value)).toBe('opened');
@@ -2181,7 +2184,7 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
     const opensBefore = spy(mupdf.harness.calls, 'peer.request:engine/open');
 
     // NOT THE DEFAULT, so a hop that dropped the family and composed in Arimo fails below.
-    const appended = await handlers['document.appendMarkdown']({ docId: opened.value.docId, at: 1, family: 'Tinos' });
+    const appended = await handlers['document.appendMarkdown']({ docId: opened.value.docId, at: 1, family: 'Tinos', work: WORK });
     expect(appended.ok, JSON.stringify(appended)).toBe(true);
     if (!appended.ok) throw new Error('unreachable');
     expect(appended.value.kind, JSON.stringify(appended.value)).toBe('appended');
@@ -2224,7 +2227,7 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
       enginePlatform: mupdf.platform,
       composePlatform: third.platform,
     });
-    expect(await handlers['document.newFromMarkdown']({})).toMatchObject({
+    expect(await handlers['document.newFromMarkdown']({ work: WORK })).toMatchObject({
       ok: true,
       value: { kind: 'opened-with-boxes', name: 'boxed.pdf', boxed: places, more: 4 },
     });
@@ -2249,7 +2252,7 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
       composePlatform: third.platform,
     });
 
-    const answer = await handlers['document.newFromCsv']({});
+    const answer = await handlers['document.newFromCsv']({ work: WORK });
     expect(answer.ok, JSON.stringify(answer)).toBe(true);
     if (!answer.ok) throw new Error('unreachable');
     expect(answer.value.kind, JSON.stringify(answer.value)).toBe('opened');
@@ -2285,7 +2288,7 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
       composePlatform: third.platform,
     });
 
-    const answer = await handlers['document.newFromImages']({});
+    const answer = await handlers['document.newFromImages']({ work: WORK });
     expect(answer.ok, JSON.stringify(answer)).toBe(true);
     if (!answer.ok) throw new Error('unreachable');
     expect(answer.value.kind, JSON.stringify(answer.value)).toBe('opened');
@@ -2318,7 +2321,7 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
       enginePlatform: mupdf.platform,
       composePlatform: third.platform,
     });
-    expect(await handlers['document.newFromImages']({})).toMatchObject({
+    expect(await handlers['document.newFromImages']({ work: WORK })).toMatchObject({
       ok: true,
       value: { kind: 'opened-with-skips', skipped: [{ reason: 'image-unreadable', line: null, file: 'page 10.png' }], skippedMore: 0 },
     });
@@ -2351,7 +2354,7 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
     const opened = await handlers['document.open']({});
     if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
 
-    const inserted = await handlers['document.insertImage']({ docId: opened.value.docId, at: 3 });
+    const inserted = await handlers['document.insertImage']({ docId: opened.value.docId, at: 3, work: WORK });
     expect(inserted.ok, JSON.stringify(inserted)).toBe(true);
     if (!inserted.ok || inserted.value.kind !== 'inserted') throw new Error(JSON.stringify(inserted));
     expect(inserted.value.version).toBeGreaterThan(opened.value.version);
@@ -2379,7 +2382,7 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
       enginePlatform: platformAnswering(mergingEngine()).platform,
       composePlatform: platformAnswering(composePeer().peer).platform,
     });
-    expect(await handlers['document.insertImage']({ docId: asDocId('not-open'), at: 0 })).toStrictEqual(
+    expect(await handlers['document.insertImage']({ docId: asDocId('not-open'), at: 0, work: WORK })).toStrictEqual(
       err({ code: 'document-not-open' }),
     );
     expect(picked).toBe(0);
@@ -2397,7 +2400,7 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
       enginePlatform: mupdf.platform,
       composePlatform: third.platform,
     });
-    expect(await handlers['document.newFromCsv']({})).toMatchObject({
+    expect(await handlers['document.newFromCsv']({ work: WORK })).toMatchObject({
       ok: true,
       value: { kind: 'opened-with-skips', skipped: [{ reason: 'quote-never-closed', line: 4, file: null }], skippedMore: 2 },
     });
@@ -2419,7 +2422,7 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
       enginePlatform: mupdf.platform,
     });
 
-    const answer = await handlers['document.newFromMarkdown']({});
+    const answer = await handlers['document.newFromMarkdown']({ work: WORK });
     expect(answer.ok).toBe(false);
     if (answer.ok) throw new Error('unreachable');
     expect(answer.error.code).toBe('engine-unavailable');
@@ -2524,7 +2527,7 @@ describe('the composition root, with the OFFICE converter (ADR-0120)', () => {
       },
     });
 
-    const answer = await handlers['document.newFromOffice']({});
+    const answer = await handlers['document.newFromOffice']({ work: WORK });
     expect(answer.ok, JSON.stringify(answer)).toBe(true);
     if (!answer.ok) throw new Error('unreachable');
     expect(answer.value.kind, JSON.stringify(answer.value)).toBe('opened');
@@ -2545,7 +2548,7 @@ describe('the composition root, with the OFFICE converter (ADR-0120)', () => {
       enginePlatform: mupdf.platform,
     });
 
-    const answer = await handlers['document.newFromOffice']({});
+    const answer = await handlers['document.newFromOffice']({ work: WORK });
     expect(answer.ok).toBe(false);
     if (answer.ok) throw new Error('unreachable');
     expect(answer.error.code).toBe('engine-unavailable');

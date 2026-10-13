@@ -2796,11 +2796,6 @@ export class DocumentCommands {
   readonly #word: DocumentWordExport;
   readonly #pickText: (sourceName: string) => Promise<string | null>;
   readonly #pickContact: (sourceName: string) => Promise<string | null>;
-  /**
-   * The service-read exports in flight, by document (ADR-0202 Decision 5): pages read of pages asked, and whether the person
-   * asked it to stop. Counts and a flag — never text — and one entry per document at most, since the export holds the lane.
-   */
-  readonly #reading = new Map<DocId, { done: number; total: number; stop: boolean }>();
   readonly #layoutText: LayoutTextSource | null;
   readonly #pdfa: PdfaSource | null;
   readonly #officeImport: OfficeImport | null;
@@ -4838,12 +4833,13 @@ export class DocumentCommands {
    * @throws `DocumentNotOpenError` before any dialog appears, for `saveCopy`'s
    *   reason: a document this service does not hold has no name to offer.
    */
-  async exportFormData(docId: DocId, format: FormDataFormat): Promise<CopyOutcome | undefined> {
+  async exportFormData(docId: DocId, format: FormDataFormat, work: string): Promise<CopyOutcome | undefined> {
     const suggest = this.#documents.nameOf(docId);
     if (suggest === undefined) throw new DocumentNotOpenError(docId, 'export form data');
 
     const destination = await this.#formData.pick(suggest, format);
     if (destination === null) return undefined;
+    this.#work.begin(work, 'runs-to-the-end');
 
     const { value } = await this.#documents.run(docId, async (context) => {
       const failures = this.#engine.poisoned(docId);
@@ -4941,12 +4937,13 @@ export class DocumentCommands {
    * {@link exportFormData}'s body and its reasons: the picker before the lane, the encoding in the
    * host, and the write by the one atomic copy route.
    */
-  async exportAnnotations(docId: DocId, format: AnnotationDataFormat): Promise<CopyOutcome | undefined> {
+  async exportAnnotations(docId: DocId, format: AnnotationDataFormat, work: string): Promise<CopyOutcome | undefined> {
     const suggest = this.#documents.nameOf(docId);
     if (suggest === undefined) throw new DocumentNotOpenError(docId, 'export annotations');
 
     const destination = await this.#annotationData.pick(suggest, format);
     if (destination === null) return undefined;
+    this.#work.begin(work, 'runs-to-the-end');
 
     const { value } = await this.#documents.run(docId, async (context) => {
       const failures = this.#engine.poisoned(docId);
@@ -5207,7 +5204,7 @@ export class DocumentCommands {
    * @throws `DocumentNotOpenError` before any dialog appears, for `saveCopy`'s
    *   reason.
    */
-  async exportText(docId: DocId, mode: 'plain' | 'layout', pages: PageSet): Promise<ExportTextOutcome | undefined> {
+  async exportText(docId: DocId, mode: 'plain' | 'layout', pages: PageSet, work: string): Promise<ExportTextOutcome | undefined> {
     const suggest = this.#documents.nameOf(docId);
     if (suggest === undefined) throw new DocumentNotOpenError(docId, 'export text');
 
@@ -5218,6 +5215,7 @@ export class DocumentCommands {
 
     const destination = await this.#pickText(suggest);
     if (destination === null) return undefined;
+    this.#work.begin(work, 'runs-to-the-end');
 
     const { value } = await this.#documents.run(docId, async (): Promise<ExportTextOutcome> => {
       const failures = this.#engine.poisoned(docId);
@@ -5265,7 +5263,7 @@ export class DocumentCommands {
    *
    * It does NOT touch the document.
    */
-  async exportPdfa(docId: DocId): Promise<ExportPdfaOutcome | undefined> {
+  async exportPdfa(docId: DocId, work: string): Promise<ExportPdfaOutcome | undefined> {
     const suggest = this.#documents.nameOf(docId);
     if (suggest === undefined) throw new DocumentNotOpenError(docId, 'export PDF/A');
 
@@ -5274,6 +5272,7 @@ export class DocumentCommands {
 
     const destination = await this.#copy.pick(suggest);
     if (destination === null) return undefined;
+    this.#work.begin(work, 'runs-to-the-end');
 
     const { value } = await this.#documents.run(docId, async (): Promise<ExportPdfaOutcome> => {
       const failures = this.#engine.poisoned(docId);
@@ -5420,12 +5419,13 @@ export class DocumentCommands {
    *
    * It does NOT touch the document: no command, no log entry, no version bump.
    */
-  async exportWord(docId: DocId, mode: WordMode, pages: PageSet): Promise<CopyOutcome | undefined> {
+  async exportWord(docId: DocId, mode: WordMode, pages: PageSet, work: string): Promise<CopyOutcome | undefined> {
     const suggest = this.#documents.nameOf(docId);
     if (suggest === undefined) throw new DocumentNotOpenError(docId, 'export to Word');
 
     const destination = await this.#pickOffice(suggest, 'docx');
     if (destination === null) return undefined;
+    this.#work.begin(work, 'runs-to-the-end');
 
     const { value } = await this.#documents.run(docId, async (context) => {
       const failures = this.#engine.poisoned(docId);
@@ -5460,12 +5460,13 @@ export class DocumentCommands {
    * image export already makes, one page at a time as the zip pulls it, so `main`
    * holds one page's picture. It does NOT touch the document.
    */
-  async exportPowerPoint(docId: DocId, pages: PageSet, mode: PowerPointMode): Promise<PowerPointOutcome | undefined> {
+  async exportPowerPoint(docId: DocId, pages: PageSet, mode: PowerPointMode, work: string): Promise<PowerPointOutcome | undefined> {
     const suggest = this.#documents.nameOf(docId);
     if (suggest === undefined) throw new DocumentNotOpenError(docId, 'export to PowerPoint');
 
     const destination = await this.#pickOffice(suggest, 'pptx');
     if (destination === null) return undefined;
+    this.#work.begin(work, 'runs-to-the-end');
 
     // FILLED AS THE ZIP PULLS PAGES and read once the write has finished (ADR-0210): which pages could not be written editable.
     const report = emptyReport();
@@ -5557,12 +5558,13 @@ export class DocumentCommands {
     docId: DocId,
     layout: SheetLayout,
     review: ExcelReview,
-    engine: (typeof TABLE_ENGINES)[number] = 'automatic',
+    engine: (typeof TABLE_ENGINES)[number],
+    work: string,
   ): Promise<ExcelOutcome | undefined> {
     const suggest = this.#documents.nameOf(docId);
     if (suggest === undefined) throw new DocumentNotOpenError(docId, 'export to Excel');
     if (engine !== 'automatic') {
-      return this.#exportExcelThroughService(docId, suggest, layout, review.version, engine, review.pages);
+      return this.#exportExcelThroughService(docId, suggest, layout, review.version, engine, review.pages, work);
     }
 
     const byPage = new Map<number, TableEdit[]>();
@@ -5597,6 +5599,8 @@ export class DocumentCommands {
     const destination = await this.#pickOffice(suggest, 'xlsx');
     if (destination === null) return undefined;
 
+    // SHOWN FROM THE CHOSEN FILE (ADR-0234), with no Cancel: the engine's table read runs to the end.
+    this.#work.begin(work, 'runs-to-the-end');
     const { value } = await this.#documents.run(docId, async (context) => {
       if (context.version !== review.version) return { kind: 'changed' as const };
       const failures = this.#engine.poisoned(docId);
@@ -5642,6 +5646,7 @@ export class DocumentCommands {
     version: DocVersion,
     engine: NetworkTableEngine,
     pages: PageSet,
+    work: string,
   ): Promise<ExcelOutcome | undefined> {
     const current = await this.#documents.run(docId, (context) => Promise.resolve(context.version));
     if (current.value !== version) return { kind: 'changed' };
@@ -5649,6 +5654,9 @@ export class DocumentCommands {
     const destination = await this.#pickOffice(suggest, 'xlsx');
     if (destination === null) return undefined;
 
+    // THE READ IS REPORTED AND CAN BE STOPPED while it runs, under the work's name (ADR-0234, which replaced ADR-0202
+    // Decision 5's channels); the handler finishes the name however the export ends.
+    const progress = this.#work.begin(work, 'stops-between-parts');
     const { value } = await this.#documents.run(docId, async (context): Promise<ExcelOutcome | undefined> => {
       if (context.version !== version) return { kind: 'changed' };
       const failures = this.#engine.poisoned(docId);
@@ -5656,15 +5664,15 @@ export class DocumentCommands {
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
-      // THE READ IS REPORTED AND CAN BE STOPPED while it runs (ADR-0202 Decision 5): two small facts kept in a map main owns,
-      // dropped when the export ends however it ends, so a later export of the same document starts from nothing.
-      this.#reading.set(docId, { done: 0, total: pagesOf(pages, (await this.#geometry(docId, sessions, [])).pageCount).length, stop: false });
       const leftOut = { count: 0 };
       try {
         const written = await writeStreamedDocument(
           this.#save.deps,
           this.#copy.checkTarget,
-          () => Promise.resolve(ooxmlPackage(spreadsheetParts(this.#servicePages(docId, sessions, engine, pages, leftOut), layout))),
+          () =>
+            Promise.resolve(
+              ooxmlPackage(spreadsheetParts(this.#servicePages(docId, sessions, engine, pages, leftOut, progress), layout)),
+            ),
           destination,
         );
         // READ AFTER THE WRITE, which pulled every page: the count is whole only once the zip has asked for the last one.
@@ -5676,31 +5684,9 @@ export class DocumentCommands {
         // picker's answer (`undefined`) and not a fault.
         if (thrown instanceof ExportCancelled) return undefined;
         throw thrown;
-      } finally {
-        this.#reading.delete(docId);
       }
     });
     return value;
-  }
-
-  /**
-   * How far a service-read export has got, for the renderer's polling (ADR-0202 Decision 5). Not in the lane, which the
-   * export holds: a count that waited for it would answer when there was nothing left to count.
-   */
-  exportProgress(docId: DocId): { readonly kind: 'idle' } | { readonly kind: 'reading'; readonly done: number; readonly total: number } {
-    const reading = this.#reading.get(docId);
-    return reading === undefined ? { kind: 'idle' } : { kind: 'reading', done: reading.done, total: reading.total };
-  }
-
-  /**
-   * Asks the service-read export of this document to stop after the page it is on. `false` says none was reading — the
-   * cancel raced the end — which is an answer. Not in the lane, for {@link exportProgress}' reason.
-   */
-  cancelExport(docId: DocId): boolean {
-    const reading = this.#reading.get(docId);
-    if (reading === undefined) return false;
-    reading.stop = true;
-    return true;
   }
 
   /** How far the work the renderer named has got (`work.progress`). No lane: the work holds none, and a count waits for nothing. */
@@ -5713,6 +5699,11 @@ export class DocumentCommands {
     return this.#work.cancel(work);
   }
 
+  /** Ends the work the renderer named, once its answer is ready (ADR-0234): the handler's, however the call ended. */
+  finishWork(work: string): void {
+    this.#work.finish(work);
+  }
+
   /**
    * Each page's tables as the service reads them, one request per page, as the zip pulls them. `leftOut` is added to for
    * every table a service returned that could not be placed (ADR-0222 Decision 4, corrected), so the export says so.
@@ -5723,12 +5714,14 @@ export class DocumentCommands {
     engine: NetworkTableEngine,
     pages: PageSet,
     leftOut: { count: number },
+    progress: WorkHandle,
   ): AsyncIterable<SpreadsheetPage> {
     const { pageCount } = await this.#geometry(docId, sessions, []);
-    for (const page of pagesOf(pages, pageCount)) {
+    const chosen = pagesOf(pages, pageCount);
+    progress.step(0, chosen.length);
+    for (const [index, page] of chosen.entries()) {
       // CHECKED BETWEEN PAGES, before a request is paid for: a stop the person asked for costs at most the page in hand.
-      const reading = this.#reading.get(docId);
-      if (reading?.stop === true) throw new ExportCancelled();
+      if (progress.stopped()) throw new ExportCancelled();
       let read: PlacedTables;
       try {
         read = await this.#networkTables(docId, sessions, page, engine);
@@ -5736,7 +5729,7 @@ export class DocumentCommands {
         throw new PageRefused(page, thrown);
       }
       leftOut.count += read.leftOut;
-      if (reading !== undefined) reading.done += 1;
+      progress.step(index + 1, chosen.length);
       yield { page, tables: read.tables, edits: [] };
     }
   }
@@ -5960,12 +5953,14 @@ export class DocumentCommands {
       readonly dpi: number;
       readonly quality: number;
     },
+    work: string,
   ): Promise<FolderOutcome | undefined> {
     const suggest = this.#documents.nameOf(docId);
     if (suggest === undefined) throw new DocumentNotOpenError(docId, 'export pages as images');
 
     const directory = await this.#directory();
     if (directory === null) return undefined;
+    this.#work.begin(work, 'runs-to-the-end');
 
     const { value } = await this.#documents.run(docId, async () => {
       const failures = this.#engine.poisoned(docId);
@@ -6017,14 +6012,14 @@ export class DocumentCommands {
    * is up, and that is fine: the merge refuses a closed document, so the
    * outcome is the same refusal it would have been before the dialog appeared.
    */
-  async insertImages(docId: DocId): Promise<ImageImportOutcome> {
+  async insertImages(docId: DocId, work: string): Promise<ImageImportOutcome> {
     // READ BEFORE THE DIALOG, so a document that is not open is refused before
     // a person is asked to choose a file — `saveCopy`'s ordering and its reason.
     if (this.#documents.nameOf(docId) === undefined) {
       throw new DocumentNotOpenError(docId, 'insert images');
     }
     // THE ONE COMPOSITION a set of pictures has (B3a): `document.newFromImages`' order, bounds and parts left out.
-    return this.composeImageFiles();
+    return this.composeImageFiles(work);
   }
 
   /**
@@ -6069,8 +6064,8 @@ export class DocumentCommands {
     }: {
       readonly family: string;
       readonly target?: DocId;
-      /** The name the renderer follows this import under (`work.progress`); a file composed in parts reports under it. */
-      readonly work?: string;
+      /** The name the renderer follows this import under (`work.progress`, ADR-0234); a file composed in parts steps it. */
+      readonly work: string;
     },
   ): Promise<ComposeImportOutcome> {
     if (target !== undefined && this.#documents.nameOf(target) === undefined) {
@@ -6093,12 +6088,14 @@ export class DocumentCommands {
       if (format === 'csv' && parts !== null && source.stream !== undefined && source.range !== undefined) {
         return this.#composeCsvInParts(
           { picked, stream: source.stream, range: source.range },
-          { compose, parts, family, work: this.#work.begin(work) },
+          { compose, parts, family, work: this.#work.begin(work, 'stops-between-parts') },
         );
       }
       return { kind: 'too-large', limitBytes: IMPORT_BYTE_LIMITS[format], fileBytes: read.byteLength };
     }
     if (read.kind === 'unreadable') return { kind: 'unreadable' };
+    // ONE COMPOSITION, from the chosen file to the open: shown with no Cancel, which it could not honour (ADR-0234).
+    this.#work.begin(work, 'runs-to-the-end');
 
     const composed = await compose(format, read.bytes, COMPOSED_PAGE, family);
     if (composed.kind === 'refused') {
@@ -6206,8 +6203,9 @@ export class DocumentCommands {
         [...skipped.values()],
       );
     } finally {
+      // THE WORK IS NOT ENDED HERE: its handler finishes the name once the composed file has opened (ADR-0234), so the
+      // notice stays until the result appears.
       await Promise.all(placed.map((name) => parts.remove(name)));
-      work.end();
     }
   }
 
@@ -6230,12 +6228,13 @@ export class DocumentCommands {
    * The host answers a position in the list it was sent; this method sent that list,
    * so it is where a position becomes the name the person knows the file by.
    */
-  async composeImageFiles(): Promise<ImageImportOutcome> {
+  async composeImageFiles(work: string): Promise<ImageImportOutcome> {
     const compose = this.#composeImages;
     if (compose === null) throw new EngineUnavailableError('Importing images');
 
     const picked = await this.#imageFiles.pick();
     if (picked === null || picked.length === 0) return { kind: 'cancelled' };
+    this.#work.begin(work, 'runs-to-the-end');
     if (picked.length > MAX_IMPORT_IMAGES) return { kind: 'too-many-images', limit: MAX_IMPORT_IMAGES };
 
     const ordered = [...picked].sort((one, other) =>
@@ -6299,9 +6298,11 @@ export class DocumentCommands {
    * Their bounds were the channel's schema, so nothing is counted here. A refusal names
    * no file, because a frame has no name the person knows it by.
    */
-  async composeCapturedFrames(frames: readonly Uint8Array[]): Promise<ComposeImportOutcome> {
+  async composeCapturedFrames(frames: readonly Uint8Array[], work: string): Promise<ComposeImportOutcome> {
     const compose = this.#composeImages;
     if (compose === null) throw new EngineUnavailableError('Making a PDF from the camera');
+    // THE FRAMES ARE THE CHOSEN INPUT: they were taken before the call, so the work begins with it.
+    this.#work.begin(work, 'runs-to-the-end');
 
     const composed = await compose(
       frames.map((bytes) => ({
@@ -6331,12 +6332,13 @@ export class DocumentCommands {
    * `main` holds one read buffer of it — and a dialog cancelled, or a destination refused before
    * the stream is read, removes that area unread.
    */
-  async convertOfficeFile(): Promise<OfficeImportOutcome> {
+  async convertOfficeFile(work: string): Promise<OfficeImportOutcome> {
     const office = this.#officeImport;
     if (office === null) throw new EngineUnavailableError('Importing Office files');
 
     const picked = await office.source.pick();
     if (picked === null) return { kind: 'cancelled' };
+    this.#work.begin(work, 'runs-to-the-end');
     // THE DIALOG'S FILTER IS NOT A CHECK: a typed name reaches here with any extension, and the
     // extension is what names x2t's input.
     const format = officeImportFormatOf(picked);
@@ -6390,7 +6392,7 @@ export class DocumentCommands {
    * a refusal met while it arrives removes that file and leaves the destination as it
    * was. It answers a path, which only the handler opens.
    */
-  async openFromUrl(url: string): Promise<UrlOpenOutcome> {
+  async openFromUrl(url: string, work: string): Promise<UrlOpenOutcome> {
     let checked: URL;
     try {
       checked = checkedUrl(url);
@@ -6401,6 +6403,8 @@ export class DocumentCommands {
 
     const destination = await this.#copy.pick(suggestedUrlName(checked));
     if (destination === null) return { kind: 'cancelled' };
+    // FROM THE CHOSEN DESTINATION: the address was typed before, and the fetch is what takes the time.
+    this.#work.begin(work, 'runs-to-the-end');
 
     try {
       const written = await writeStreamedDocument(

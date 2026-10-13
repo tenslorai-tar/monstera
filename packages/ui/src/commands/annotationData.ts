@@ -10,6 +10,7 @@ import {
   EXPORT_ANNOTATIONS_FDF_TITLE,
   EXPORT_ANNOTATIONS_JSON_TITLE,
   EXPORT_ANNOTATIONS_XFDF_TITLE,
+  EXPORTING_ANNOTATIONS,
   GROUP_COMMENT_FILES,
   IMPORT_ANNOTATIONS_FDF_TITLE,
   IMPORT_ANNOTATIONS_JSON_TITLE,
@@ -27,7 +28,8 @@ import {
 import type { IconName } from '../primitives/icons.js';
 import { TOASTS, type UiCommand, VISIBLE } from '../registries/commands.js';
 import { confirmDone, confirmWritten } from './confirmWritten.js';
-import { type DocumentCommandDeps, type WritesAFile, hasDocument, reportProblem } from './documentCommands.js';
+import { type ConvertsInMain, type DocumentCommandDeps, type WritesAFile, hasDocument, reportProblem } from './documentCommands.js';
+import { withWorkProgress } from './workProgress.js';
 
 /**
  * Review › Comment files — the document's comments to a file, and a file's comments into the
@@ -46,7 +48,7 @@ function exportAnnotationsCommand(
   ribbonTitle: MessageKey,
   order: number,
   icon: IconName,
-): (deps: DocumentCommandDeps & WritesAFile) => UiCommand {
+): (deps: DocumentCommandDeps & WritesAFile & ConvertsInMain) => UiCommand {
   return (deps) => ({
     id,
     feedback: TOASTS,
@@ -57,7 +59,10 @@ function exportAnnotationsCommand(
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
-      const answer = await deps.client['document.exportAnnotations']({ docId: context.docId, format });
+      const docId = context.docId;
+      const answer = await withWorkProgress(deps, EXPORTING_ANNOTATIONS, (work) =>
+        deps.client['document.exportAnnotations']({ docId, format, work }),
+      );
       if (!answer.ok) {
         reportProblem(deps, answer.error);
         return;
