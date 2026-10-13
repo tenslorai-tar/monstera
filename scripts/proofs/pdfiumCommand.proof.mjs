@@ -276,8 +276,9 @@ const failures = [];
 // with the control that separates the mark from the fixture. 231 from ADR-0228's formatting set: a strike and its
 // control against the underline, a highlight, spacing and its control, justify and its control, and space after. 234
 // from its Decision 2: a tab read back at its stop, its control, and a second edit that keeps one tab. 235 from the
-// second edit's measure, which read a line written as several objects at its first object's width.
-const roster = createRoster(failures, { cases: 243 });
+// second edit's measure, which read a line written as several objects at its first object's width. 246 from L2: an
+// underlined word read back underlined, its rule moved with it by a second edit, and the control that turns it off.
+const roster = createRoster(failures, { cases: 246 });
 
 /**
  * @param {string} name
@@ -4231,13 +4232,82 @@ async function formatCases() {
   record(
     'an underline mark draws one rule under its words, as wide as they are, a little below their baseline',
     rules.length === 1 && reviewer !== undefined && rules[0] !== undefined &&
-      // THE WORD'S OWN WIDTH, from the font's metrics (the reading's run is the whole line the object joined into).
+      // THE WORD'S OWN WIDTH, from the font's metrics.
       Math.abs(rules[0].right - rules[0].left - reviewerWidth) < 1 &&
-      rules[0].bottom >= reviewer.bottom - 1 &&
-      rules[0].top <= reviewer.top,
+      // UNDER THE WORD, within a third of its size: its run is its own since L2 (an underlined word is not joined into the
+      // plain words beside it), so its bottom is its own ink's, which for `reviewer` is its baseline.
+      rules[0].top <= reviewer.bottom &&
+      rules[0].bottom >= reviewer.bottom - 11 / 3,
     `${String(rules.length)} rule(s); ${JSON.stringify(rules[0])} against a ${reviewerWidth.toFixed(2)} wide word in a line ${String(reviewer?.bottom)}..${String(reviewer?.top)}`,
   );
   record('CONTROL: with no underline mark the page has no rule', (await objectKinds(original)).length === 0, 'rules before the edit');
+
+  // L2 (ADR-0228's correction of 2026-10-13): THE UNDERLINE IS THE WORD'S. Read back as its run's; an edit of the block
+  // that moves the word draws its rule again under it, where it now is, and takes the old one away; a mark that turns it
+  // off leaves none.
+  /**
+   * One more edit of the page `bytes` hold, read from those bytes: its words through `change`, and `marks` on them. An
+   * edit the writer refuses answers `undefined`, which the case reading it records as its failure, with what was thrown
+   * in `refusedWith`.
+   */
+  let refusedWith = '';
+  const editAgain = async (
+    /** @type {Uint8Array} */ bytes,
+    /** @type {(text: string) => string} */ change,
+    /** @type {(text: string) => { from: number; to: number; set: object }[]} */ marksOf = () => [],
+  ) => {
+    const reread = await blocksOf(bytes);
+    const [only] = reread.blocks;
+    if (only === undefined) return undefined;
+    const text = paragraphsOfLines(only.lines.map((line) => ({ text: lineText(line.runs), soft: line.soft })));
+    const next = change(text);
+    return localPdfiumExecution
+      .apply({
+      session: bytes,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf([
+          { lines: only.lines.map((line) => line.runs.map((run) => run.index)), soft: only.lines.map((line) => line.soft), text: next, marks: marksOf(next), paragraphs: [] },
+        ]),
+        fit: 'reflow',
+        version: 1,
+      }),
+      sources: [],
+      reads: undefined,
+    })
+      .catch((/** @type {unknown} */ thrown) => {
+        refusedWith = String(thrown);
+        return undefined;
+      });
+  };
+  record(
+    'L2: an underlined word is read back underlined, its run its own, and the words beside it are not',
+    reviewer?.style.underline === true && reviewer.text.trim() === 'reviewer' && (await runOf(underlined, 'reads'))?.style.underline === undefined,
+    `reviewer ${JSON.stringify(reviewer?.text)} underline ${String(reviewer?.style.underline)}`,
+  );
+  const moved = await editAgain(underlined, (text) => text.replace('The quick', 'The very much quicker'));
+  const movedRules = moved === undefined ? [] : await objectKinds(moved);
+  const movedWord = moved === undefined ? undefined : await runOf(moved, 'reviewer');
+  record(
+    'L2: an edit that moves the underlined word draws its one rule under it where it now is, and none where it was',
+    movedWord !== undefined && reviewer !== undefined && movedRules.length === 1 && movedRules[0] !== undefined &&
+      // THE WORD MOVED, so a rule left where it was would be elsewhere: non-vacuous.
+      Math.abs(movedWord.left - reviewer.left) + Math.abs(movedWord.bottom - reviewer.bottom) > 5 &&
+      Math.abs(movedRules[0].left - movedWord.left) < 1.5 &&
+      movedRules[0].top <= movedWord.bottom + 0.5 &&
+      movedWord.style.underline === true,
+    `${moved === undefined ? `no edit: ${refusedWith}; ` : ''}${String(movedRules.length)} rule(s) ${JSON.stringify(movedRules[0])}; reviewer was at ${String(reviewer?.left)},${String(reviewer?.bottom)}, now ${String(movedWord?.left)},${String(movedWord?.bottom)}`,
+  );
+  const unmarked =
+    moved === undefined
+      ? undefined
+      : await editAgain(moved, (text) => text, (text) => [{ from: text.indexOf('reviewer'), to: text.indexOf('reviewer') + 'reviewer'.length, set: { underline: false } }]);
+  record(
+    'CONTROL (L2): a mark that turns the underline off leaves no rule, and the word reads back with none',
+    unmarked !== undefined && (await objectKinds(unmarked)).length === 0 && (await runOf(unmarked, 'reviewer'))?.style.underline === undefined,
+    unmarked === undefined ? `no edit: ${refusedWith}` : `${String((await objectKinds(unmarked)).length)} rule(s)`,
+  );
 
   // STRIKETHROUGH: one rule as wide as the words, THROUGH them, above the baseline the underline sits under (ADR-0228).
   const struck = await format({ marks: [{ ...at('reviewer'), set: { strike: true } }] });

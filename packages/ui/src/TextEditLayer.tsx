@@ -1029,6 +1029,12 @@ function drawRun(span: HTMLElement, style: TextBlock['style'], zoom: number): vo
   // AT ITS RISE FROM THE LINE, as the page sets it and the writer keeps it (the owner's N14): a length raises the run's
   // baseline by exactly that, so a superscript stays a superscript while the block is open.
   span.style.verticalAlign = style.rise === undefined ? '' : `${String(style.rise * zoom)}px`;
+  // ITS DECORATIONS AS THE PAGE HAS THEM (the owner's L2): drawn, and said on the run for the formatting state (`runBase`).
+  span.style.textDecoration = [style.underline === true ? 'underline' : '', style.strike === true ? 'line-through' : ''].join(' ').trim();
+  span.style.backgroundColor = style.highlight === undefined ? '' : `rgb(${String(style.highlight.r)}, ${String(style.highlight.g)}, ${String(style.highlight.b)})`;
+  if (style.underline === true) span.dataset['underline'] = '';
+  if (style.strike === true) span.dataset['strike'] = '';
+  if (style.highlight !== undefined) span.dataset['highlight'] = `${String(style.highlight.r)},${String(style.highlight.g)},${String(style.highlight.b)}`;
 }
 
 /** The handles a block is placed by, and what each says it does. */

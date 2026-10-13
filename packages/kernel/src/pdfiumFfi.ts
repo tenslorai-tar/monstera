@@ -20,6 +20,15 @@ import {
   readBackOf,
 } from './bidiOrder.js';
 import { paperCoverFor, type PixelBox, type Rgb } from './paperColour.js';
+import {
+  DECORATION_KEY,
+  DECORATION_TAG,
+  type DecorationKind,
+  type PageDecoration,
+  decorationBand,
+  decorationKindOf,
+  decorationsOf,
+} from './markDecorations.js';
 import { carries as faceDraws, resolveRuns } from './fontResolver.js';
 import { type EditPiece, editPieces } from './editPieces.js';
 import { inDrawingOrder, visualUnits } from './visualPieces.js';
@@ -28,15 +37,10 @@ import type { CatalogueFace, FaceSource } from './fontCatalogue.js';
 import type { PageRuns } from './operatorEdit.js';
 import { FIT_STEPS, type FlowLine, MIN_FIT, type Measure, NO_MARK, planBlock } from './paragraphFlow.js';
 import {
-  HIGHLIGHT_ABOVE,
-  HIGHLIGHT_BELOW,
   JUSTIFY_CAP,
   RISE_SCALE,
-  STRIKE_RISE,
   SUBSCRIPT_DROP,
   SUPERSCRIPT_RISE,
-  UNDERLINE_DROP,
-  UNDERLINE_THICKNESS,
   spaceable,
   spacedBy,
 } from './markFigures.js';
@@ -1117,6 +1121,13 @@ export interface RunStyle {
    * line's (`lineBaselineOf`), and an editor that drew it on the line's would lower it while the block is open.
    */
   readonly baseline: number;
+  /**
+   * The rectangles Monstera drew for the words' marks and marked as theirs (`markDecorations.ts`, the owner's L2): read
+   * back so the editor shows them and an edit draws them again with the words. Present only where the words carry one.
+   */
+  readonly underline?: true;
+  readonly strike?: true;
+  readonly highlight?: { readonly r: number; readonly g: number; readonly b: number };
 }
 
 /**
@@ -1295,12 +1306,13 @@ export function objectRuns(session: PdfiumSession, page: number): Promise<PageTe
       const bindings = api();
       const walked = walkRuns(bindings, handle);
       const programs = new Map<string, ProgramFace | undefined>();
+      const decorations = pageDecorations(bindings, handle).map(({ decoration }) => decoration);
       return {
         runs: [...walked.runs.entries()].map(([index, { drawn: _drawn, ...run }]) => ({
           index,
           last: index,
           ...run,
-          style: styleOf(bindings, bindings.getObject(handle, index), programs),
+          style: withDecorations(styleOf(bindings, bindings.getObject(handle, index), programs), run, decorations),
         })),
         unaddressable: walked.unaddressable,
       };
@@ -1331,11 +1343,14 @@ function joinedWalk(
   walked: { readonly runs: ReadonlyMap<number, WalkedRun> },
 ): JoinedRun<RunStyle>[] {
   const programs = new Map<string, ProgramFace | undefined>();
+  // THE MARKED DECORATIONS EACH OBJECT'S WORDS CARRY, before the join, so an underlined word is never joined into the
+  // plain words beside it (`sameStyle` compares them).
+  const decorations = pageDecorations(bindings, handle).map(({ decoration }) => decoration);
   return joinRuns(
     [...walked.runs.entries()].map(([index, run]) => ({
       index,
       ...run,
-      style: styleOf(bindings, bindings.getObject(handle, index), programs),
+      style: withDecorations(styleOf(bindings, bindings.getObject(handle, index), programs), run, decorations),
     })),
   );
 }
@@ -3240,6 +3255,21 @@ function layOutBlocks(
       );
       const papers = coverBoxes.length === 0 ? [] : coversRoundBoxes(bindings, handle, coverBoxes);
       let coverAt = 0;
+      // THE PAGE'S MARKED DECORATIONS (the owner's L2), read once before any object moves: each block takes the ones its
+      // runs carry, removes them with its old words and draws them again with its new ones.
+      const pageDecos = pageDecorations(bindings, handle);
+      const takenDecos = new Set<unknown>();
+      /** The object just before `object` in the page's order, which a highlight behind it follows; `null` for the first. */
+      const objectBefore = (object: unknown): unknown => {
+        const wanted = String(koffi.address(object));
+        const count = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
+        for (let index = 0; index < count; index += 1) {
+          if (String(koffi.address(bindings.getObject(handle, index))) === wanted) {
+            return index === 0 ? null : (bindings.getObject(handle, index - 1));
+          }
+        }
+        return null;
+      };
 
         for (const [blockAt, block] of blocks.entries()) {
           const { lines } = block;
@@ -3259,6 +3289,23 @@ function layOutBlocks(
                 `Object ${String(run.index)} on page ${String(page)} is not set upright, so it is not edited in place`,
               );
             }
+          }
+          // EACH RUN'S DECORATIONS, by the one resolver the read takes (`decorationsOf`), from where its words and the
+          // rectangles are before anything moves; and the marked rectangles that are this block's, which go with the old
+          // words (the owner's L2). A run's decorations are its words' style, drawn again below from it and the marks.
+          const decorationOfRun = (run: HeldRun, among: readonly PageDecoration[]) =>
+            decorationsOf(
+              { left: run.span.left, right: run.span.right, baseline: matrixOn(bindings, run.object).f, size: pen.styleOfObject(run.object).size },
+              among,
+            );
+          const baseDecorations = new Map(
+            lines.flat().map((run) => [run.index, decorationOfRun(run, pageDecos.map(({ decoration }) => decoration))] as const),
+          );
+          for (const { object, decoration } of pageDecos) {
+            if (takenDecos.has(object)) continue;
+            if (!lines.flat().some((run) => Object.keys(decorationOfRun(run, [decoration])).length > 0)) continue;
+            takenDecos.add(object);
+            removed.push(object);
           }
 
           // THE BLOCK'S EDGES, in the measure every later comparison uses: the
@@ -3407,6 +3454,7 @@ function layOutBlocks(
           };
           const changes = (run: number, mark: number): boolean => {
             const { set, style } = markStyle(runsById.get(run) ?? firstRun, mark);
+            const carried = baseDecorations.get(run) ?? {};
             return (
               (set.bold !== undefined && set.bold !== style.bold) ||
               (set.italic !== undefined && set.italic !== style.italic) ||
@@ -3414,11 +3462,11 @@ function layOutBlocks(
               (set.colour !== undefined &&
                 (set.colour.r !== style.colour.r || set.colour.g !== style.colour.g || set.colour.b !== style.colour.b)) ||
               (set.family !== undefined && !style.font.toLowerCase().includes(set.family.toLowerCase())) ||
-              // NOT READABLE, so a mark that asks for it is a change: an underline, a strike and a highlight are drawings the
-              // page may or may not have, and spacing is a position the read does not answer.
-              set.underline === true ||
-              set.strike === true ||
-              (set.highlight !== undefined && set.highlight !== null) ||
+              // AN UNDERLINE, A STRIKE AND A HIGHLIGHT against what the words carry (the owner's L2: read back by their
+              // marks); spacing is a position the read does not answer, so a mark that asks for it is a change.
+              (set.underline !== undefined && set.underline !== (carried.underline === true)) ||
+              (set.strike !== undefined && set.strike !== (carried.strike === true)) ||
+              (set.highlight !== undefined && !sameRgb(set.highlight ?? undefined, carried.highlight)) ||
               (set.spacing !== undefined && set.spacing !== 0) ||
               set.rise !== undefined
             );
@@ -3600,17 +3648,21 @@ function layOutBlocks(
               }
               // HOW WIDE THE WORDS ARE DRAWN: their own advances, and what was added where it could be.
               const drawnWidth = stretchWidth - (marked === undefined ? 0 : spacedBy(stretchText, marked.spacing)) + widened;
-              if (marked !== undefined) {
-                const drawnSize = marked.size * (marked.set.rise === undefined ? 1 : RISE_SCALE);
-                const colour = marked.set.colour ?? marked.style.colour;
+              // THE DRAWINGS THE WORDS CARRY (the owner's L2) with the mark over them: an underline the words already had is
+              // drawn again where they now are, and a mark that turns it off is obeyed.
+              const carried = baseDecorations.get(piece.run) ?? {};
+              const underline = marked?.set.underline ?? carried.underline === true;
+              const strike = marked?.set.strike ?? carried.strike === true;
+              const highlight = marked?.set.highlight === undefined ? carried.highlight : (marked.set.highlight ?? undefined);
+              if (underline || strike || highlight !== undefined) {
+                const style = marked?.style ?? pen.styleOfObject(source.object);
+                const drawnSize = marked === undefined ? style.size : marked.size * (marked.set.rise === undefined ? 1 : RISE_SCALE);
+                const colour = marked?.set.colour ?? style.colour;
                 const ink: [number, number, number] = [colour.r, colour.g, colour.b];
                 const at = { left, width: drawnWidth, size: drawnSize, first: laid[0] ?? made, last: laid.at(-1) ?? made, before: behind };
-                if (marked.set.underline === true) drawings.push({ kind: 'under', colour: ink, ...at });
-                if (marked.set.strike === true) drawings.push({ kind: 'through', colour: ink, ...at });
-                const { highlight } = marked.set;
-                if (highlight !== undefined && highlight !== null) {
-                  drawings.push({ kind: 'behind', colour: [highlight.r, highlight.g, highlight.b], ...at });
-                }
+                if (underline) drawings.push({ kind: 'under', colour: ink, ...at });
+                if (strike) drawings.push({ kind: 'through', colour: ink, ...at });
+                if (highlight !== undefined) drawings.push({ kind: 'behind', colour: [highlight.r, highlight.g, highlight.b], ...at });
               }
               for (const object of laid) objects.push({ object, rise });
               after = laid.at(-1) ?? made;
@@ -3672,23 +3724,53 @@ function layOutBlocks(
           // are wide: a line a little below the baseline and one through the words at STRIKE_RISE, each inserted after the
           // last object it marks so the page reads in the order it is seen; and a colour behind the words, from below their
           // descenders to above their capitals, inserted BEFORE their first object so they are drawn over it.
+          // A LINE KEPT AS IT WAS keeps the decorations its words carry, drawn again where the line now stands (the owner's
+          // L2): its old rectangles went with the block's, above. A highlight goes before the run's first object.
+          for (const at of kept) {
+            for (const run of lines[at] ?? []) {
+              const carried = baseDecorations.get(run.index) ?? {};
+              if (carried.underline !== true && carried.strike !== true && carried.highlight === undefined) continue;
+              const style = pen.styleOfObject(run.object);
+              const ink: [number, number, number] = [style.colour.r, style.colour.g, style.colour.b];
+              const place = {
+                left: scaledX(run.span.left),
+                width: (run.span.right - run.span.left) * scale,
+                size: style.size,
+                first: run.object,
+                last: run.extras.at(-1) ?? run.object,
+                before: objectBefore(run.object),
+              };
+              if (carried.underline === true) drawings.push({ kind: 'under', colour: ink, ...place });
+              if (carried.strike === true) drawings.push({ kind: 'through', colour: ink, ...place });
+              const { highlight } = carried;
+              if (highlight !== undefined) drawings.push({ kind: 'behind', colour: [highlight.r, highlight.g, highlight.b], ...place });
+            }
+          }
           const rules: unknown[] = [];
           for (const drawing of drawings) {
-            const thickness = Math.max(0.5, UNDERLINE_THICKNESS * drawing.size);
-            const baselineAt = matrixOn(bindings, drawing.first).f;
-            const [bottom, height] =
-              drawing.kind === 'under'
-                ? [baselineAt - UNDERLINE_DROP * drawing.size - thickness, thickness]
-                : drawing.kind === 'through'
-                  ? [baselineAt + STRIKE_RISE * drawing.size, thickness]
-                  : [baselineAt - HIGHLIGHT_BELOW * drawing.size, (HIGHLIGHT_ABOVE + HIGHLIGHT_BELOW) * drawing.size];
-            const rule: unknown = bindings.newRect(drawing.left, bottom, drawing.width, height);
+            // WHERE A KIND IS DRAWN, by the one band the read finds it by (`decorationBand`).
+            const band = decorationBand(drawing.kind, matrixOn(bindings, drawing.first).f, drawing.size);
+            const rule: unknown = bindings.newRect(drawing.left, band.bottom, drawing.width, band.top - band.bottom);
             if (rule === null) throw refusedAt('object', `FPDFPageObj_CreateNewRect refused a ${drawing.kind} drawing`);
             bindings.setFillColour(rule, drawing.colour[0], drawing.colour[1], drawing.colour[2], 255);
             if (numberFrom(bindings.setDrawMode(rule, 1, 0), 'FPDFPath_SetDrawMode') !== 1) {
               throw refusedAt('object', `FPDFPath_SetDrawMode refused a ${drawing.kind} drawing`);
             }
-            insertAfter(rule, drawing.kind === 'behind' ? drawing.before : drawing.last);
+            const anchor = drawing.kind === 'behind' ? drawing.before : drawing.last;
+            if (anchor === null) {
+              if (numberFrom(bindings.insertObjectAt(handle, rule, 0), 'FPDFPage_InsertObjectAtIndex') !== 1) {
+                throw refusedAt('object', `FPDFPage_InsertObjectAtIndex refused a ${drawing.kind} drawing`);
+              }
+            } else {
+              insertAfter(rule, anchor);
+            }
+            // MARKED AS WHAT IT IS (`markDecorations.ts`): an artifact, not words, of this kind, so a later read gives it
+            // back to the words it is drawn for and a later edit draws it again with them.
+            const mark: unknown = bindings.addMark(rule, DECORATION_TAG);
+            if (mark === null) throw refusedAt('object', `FPDFPageObj_AddMark refused the mark of a ${drawing.kind} drawing`);
+            if (numberFrom(bindings.markSetString(document, rule, mark, DECORATION_KEY, drawing.kind), 'FPDFPageObjMark_SetStringParam') !== 1) {
+              throw refusedAt('object', `FPDFPageObjMark_SetStringParam refused the kind of a ${drawing.kind} drawing`);
+            }
             rules.push(rule);
           }
           // THE BLOCK PLACED, now that it ends as it will: every object it is made of, its kept lines, the lines set
@@ -4053,6 +4135,71 @@ function actualTextOf(bindings: Bound, object: unknown): string | undefined {
     if (text !== null) return text;
   }
   return undefined;
+}
+
+/** `FPDFPageObj_GetType`'s answer for a path, which every decoration is. */
+const PATH_OBJECT = 2;
+
+/**
+ * The page's marked decorations (`markDecorations.ts`, the owner's L2): every path object carrying an `/Artifact` mark
+ * whose {@link DECORATION_KEY} names a kind, with its box and fill. A path without that mark is a drawing, not here.
+ */
+function pageDecorations(bindings: Bound, handle: unknown): { readonly object: unknown; readonly decoration: PageDecoration }[] {
+  const found: { object: unknown; decoration: PageDecoration }[] = [];
+  const count = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
+  for (let at = 0; at < count; at += 1) {
+    const object: unknown = bindings.getObject(handle, at);
+    if (object === null || numberFrom(bindings.objectType(object), 'FPDFPageObj_GetType') !== PATH_OBJECT) continue;
+    const kind = decorationKindOfObject(bindings, object);
+    if (kind === undefined) continue;
+    const box = boundsOf(bindings, object);
+    const red = [0];
+    const green = [0];
+    const blue = [0];
+    const alpha = [0];
+    numberFrom(bindings.getFillColour(object, red, green, blue, alpha), 'FPDFPageObj_GetFillColor');
+    found.push({ object, decoration: { kind, ...box, colour: { r: red[0] ?? 0, g: green[0] ?? 0, b: blue[0] ?? 0 } } });
+  }
+  return found;
+}
+
+/** The kind a path object's decoration mark names, or `undefined` where it carries none. */
+function decorationKindOfObject(bindings: Bound, object: unknown): DecorationKind | undefined {
+  const count = numberFrom(bindings.countMarks(object), 'FPDFPageObj_CountMarks');
+  for (let at = 0; at < count; at += 1) {
+    const mark: unknown = bindings.getMark(object, at);
+    if (mark === null) continue;
+    const name = markString((buffer, length, needed) => bindings.markName(mark, buffer, length, needed), 'FPDFPageObjMark_GetName');
+    if (name !== DECORATION_TAG) continue;
+    if (numberFrom(bindings.markParamType(mark, DECORATION_KEY), 'FPDFPageObjMark_GetParamValueType') !== MARK_STRING) continue;
+    const kind = decorationKindOf(
+      markString(
+        (buffer, length, needed) => bindings.markParamString(mark, DECORATION_KEY, buffer, length, needed),
+        'FPDFPageObjMark_GetParamStringValue',
+      ),
+    );
+    if (kind !== undefined) return kind;
+  }
+  return undefined;
+}
+
+/** A run's style with the marked decorations its words carry (`decorationsOf`), each present only where it is. */
+function withDecorations(
+  style: RunStyle,
+  run: { readonly left: number; readonly right: number },
+  decorations: readonly PageDecoration[],
+): RunStyle {
+  if (decorations.length === 0) return style;
+  const carried = decorationsOf({ left: run.left, right: run.right, baseline: style.baseline, size: style.size }, decorations);
+  return { ...style, ...carried };
+}
+
+/** Whether two colours, either absent, are the same: both absent, or the same three channels. */
+function sameRgb(
+  a: { readonly r: number; readonly g: number; readonly b: number } | undefined,
+  b: { readonly r: number; readonly g: number; readonly b: number } | undefined,
+): boolean {
+  return a?.r === b?.r && a?.g === b?.g && a?.b === b?.b;
 }
 
 function copyMarks(bindings: Bound, document: unknown, from: unknown, to: unknown): void {

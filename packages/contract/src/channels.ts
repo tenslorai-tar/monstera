@@ -929,6 +929,20 @@ export const textBlockStyleSchema = z
      */
     // BOUNDED BY THE PAGE'S OWN: a run on a line is somewhere on the page.
     rise: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE).optional(),
+    /**
+     * The underline, strike and highlight Monstera drew for the words and marked as theirs, read back (the owner's L2):
+     * what the editor draws them with and what a later edit draws again. Absent where the words carry none.
+     */
+    underline: z.literal(true).optional(),
+    strike: z.literal(true).optional(),
+    highlight: z
+      .object({
+        r: z.number().int().min(0).max(255),
+        g: z.number().int().min(0).max(255),
+        b: z.number().int().min(0).max(255),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 

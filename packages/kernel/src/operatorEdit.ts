@@ -3,19 +3,8 @@ import { type Result, TAB_STOP, err, nextTabStop, ok } from '@monstera/shared';
 
 import type { PageFont } from './pageFonts.js';
 import { type BlockPlan, type FlowLine, type Measure, NO_MARK, type Row, largestFit, planBlock } from './paragraphFlow.js';
-import {
-  HIGHLIGHT_ABOVE,
-  HIGHLIGHT_BELOW,
-  JUSTIFY_CAP,
-  RISE_SCALE,
-  STRIKE_RISE,
-  SUBSCRIPT_DROP,
-  SUPERSCRIPT_RISE,
-  UNDERLINE_DROP,
-  UNDERLINE_THICKNESS,
-  spaceable,
-  spacedBy,
-} from './markFigures.js';
+import { type DecorationKind, decorationBand } from './markDecorations.js';
+import { JUSTIFY_CAP, RISE_SCALE, SUBSCRIPT_DROP, SUPERSCRIPT_RISE, spaceable, spacedBy } from './markFigures.js';
 import { type Alignment, blockShape, paragraphSpacing } from './paragraphShape.js';
 import {
   type Matrix,
@@ -1231,11 +1220,15 @@ function write(
         // THE RULES: this thick, under the baseline and through the words, in the words' colour where a mark set one and
         // else black — the page's own fill is not something its operators can be asked. The highlight in its own colour.
         const pointSize = segment.source.state.size * unit * (style.factor === 0 ? 1 : style.factor);
-        const thickness = Math.max(0.5, UNDERLINE_THICKNESS * pointSize);
         const ink = style.colour ?? [0, 0, 0];
-        if (style.underline) rules.push(drawn(-UNDERLINE_DROP * pointSize - thickness, -UNDERLINE_DROP * pointSize, ink));
-        if (style.strike) rules.push(drawn(STRIKE_RISE * pointSize, STRIKE_RISE * pointSize + thickness, ink));
-        if (style.highlight !== undefined) behind.push(drawn(-HIGHLIGHT_BELOW * pointSize, HIGHLIGHT_ABOVE * pointSize, style.highlight));
+        // THE ONE BAND each kind is drawn in (`decorationBand`, B3a), here from the baseline at nought.
+        const band = (kind: DecorationKind): [number, number] => {
+          const { bottom, top } = decorationBand(kind, 0, pointSize);
+          return [bottom, top];
+        };
+        if (style.underline) rules.push(drawn(...band('under'), ink));
+        if (style.strike) rules.push(drawn(...band('through'), ink));
+        if (style.highlight !== undefined) behind.push(drawn(...band('behind'), style.highlight));
       }
     }
     parts.push(...(rules.length === 0 ? ['ET Q\n'] : ['ET', ...rules, 'Q\n']));

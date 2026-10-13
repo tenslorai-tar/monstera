@@ -35,6 +35,10 @@ export interface JoinStyle {
   readonly orientation: Orientation;
   /** The y of the object's baseline in user space. */
   readonly baseline: number;
+  /** The marked decorations its words carry (`markDecorations.ts`): words that differ in one are two runs. */
+  readonly underline?: true;
+  readonly strike?: true;
+  readonly highlight?: { readonly r: number; readonly g: number; readonly b: number };
 }
 
 /**
@@ -97,7 +101,12 @@ function sameStyle(a: JoinStyle, b: JoinStyle): boolean {
     a.mono === b.mono &&
     a.italic === b.italic &&
     a.bold === b.bold &&
-    a.orientation === b.orientation
+    a.orientation === b.orientation &&
+    a.underline === b.underline &&
+    a.strike === b.strike &&
+    a.highlight?.r === b.highlight?.r &&
+    a.highlight?.g === b.highlight?.g &&
+    a.highlight?.b === b.highlight?.b
   );
 }
 

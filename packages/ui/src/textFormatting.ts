@@ -116,20 +116,34 @@ export function effectiveFmt(node: Node, root: HTMLElement): Fmt {
  * A NODE IN NO RUN IS IN THE BLOCK'S OWN STYLE, which the editor root carries and draws it in: words typed into a new
  * box land beside its empty run, and a paste or a line typed below the last belongs to no run either (W4).
  */
-function runBase(node: Node, root: HTMLElement): { bold: boolean; italic: boolean; size: number | undefined } {
+function runBase(node: Node, root: HTMLElement): RunLook {
   for (let at: Node | null = node; at !== null && at !== root; at = at.parentNode) {
     if (at instanceof HTMLElement && at.dataset['size'] !== undefined && at.classList.contains('m-text-editor__run')) {
       return styleOf(at);
     }
   }
-  return root.dataset['size'] === undefined ? { bold: false, italic: false, size: undefined } : styleOf(root);
+  return root.dataset['size'] === undefined ? { ...styleOf(root), size: undefined } : styleOf(root);
 }
 
-function styleOf(element: HTMLElement): { bold: boolean; italic: boolean; size: number } {
+/** A run's own look as the editor drew it: weight, slant, size, and the decorations its words carry (the owner's L2). */
+interface RunLook {
+  readonly bold: boolean;
+  readonly italic: boolean;
+  readonly size: number | undefined;
+  readonly underline: boolean;
+  readonly strike: boolean;
+  readonly highlight: { readonly r: number; readonly g: number; readonly b: number } | undefined;
+}
+
+function styleOf(element: HTMLElement): RunLook {
+  const [r = 0, g = 0, b = 0] = (element.dataset['highlight'] ?? '').split(',').map(Number);
   return {
     bold: Number(element.style.fontWeight) >= 600,
     italic: element.style.fontStyle === 'italic',
     size: Number(element.dataset['size']),
+    underline: element.dataset['underline'] !== undefined,
+    strike: element.dataset['strike'] !== undefined,
+    highlight: element.dataset['highlight'] === undefined ? undefined : { r, g, b },
   };
 }
 
@@ -153,12 +167,14 @@ export interface FormatState {
 export function stateAt(node: Node, root: HTMLElement): FormatState {
   const base = runBase(node, root);
   const fmt = effectiveFmt(node, root);
+  // THE PERSON'S HIGHLIGHT over the words' own (L2); `null` is one taken off.
+  const highlight = fmt.highlight === undefined ? base.highlight : (fmt.highlight ?? undefined);
   return {
     bold: fmt.bold ?? base.bold,
     italic: fmt.italic ?? base.italic,
-    underline: fmt.underline ?? false,
-    strike: fmt.strike ?? false,
-    ...(fmt.highlight === undefined || fmt.highlight === null ? {} : { highlight: fmt.highlight }),
+    underline: fmt.underline ?? base.underline,
+    strike: fmt.strike ?? base.strike,
+    ...(highlight === undefined ? {} : { highlight }),
     ...(fmt.spacing === undefined ? {} : { spacing: fmt.spacing }),
     ...((fmt.size ?? base.size) === undefined ? {} : { size: fmt.size ?? base.size ?? 0 }),
     ...(fmt.colour === undefined ? {} : { colour: fmt.colour }),

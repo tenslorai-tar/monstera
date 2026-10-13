@@ -25,7 +25,7 @@ import { copyFile, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { expect as defaultExpect } from '@playwright/test';
-import { PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream, PDFString } from '@cantoo/pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream, PDFString, decodePDFRawStream } from '@cantoo/pdf-lib';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { root, startWalk } from './liveWalk.mjs';
 
@@ -645,6 +645,53 @@ await step('W1: Add text at 85%, 89% and 95% down the first (turned) page, each 
   const first = (await savedWords(saved))[0] ?? '';
   for (const down of [85, 89, 95]) expect(first.includes(`W1 at ${String(down)} percent`)).toBe(true);
   return { ...facts, firstPageHoldsAll: true };
+});
+
+/**
+ * How many rules Monstera drew and marked as a word's on a saved file's first page (`markDecorations.ts`, the owner's L2):
+ * its content streams decoded by pdf-lib, and each `/MonsteraDecoration` named in them counted. @param {string} path
+ */
+async function savedMarkedRules(path) {
+  const loaded = await PDFDocument.load(await readFile(path), { updateMetadata: false, ignoreEncryption: true });
+  const contents = loaded.getPages()[0]?.node.Contents();
+  const streams = contents instanceof PDFArray ? contents.asArray().map((each) => loaded.context.lookup(each)) : [contents];
+  let text = '';
+  for (const stream of streams) {
+    if (stream instanceof PDFRawStream) text += new TextDecoder('latin1').decode(decodePDFRawStream(stream).decode());
+  }
+  return (text.match(/MonsteraDecoration/gu) ?? []).length;
+}
+
+const forL2 = await distinctCopy('for-l2.pdf', sample);
+const l2Saved = join(output, 'l2.pdf');
+await step('L2: an underlined word keeps its one underline when its block is edited again, read back from the saved file', async () => {
+  await open(forL2);
+  await section('Edit');
+  await ensureEditText();
+  await page.locator('[data-text-block]').nth(1).click();
+  await expect(editor()).toBeFocused();
+  await page.keyboard.press('Control+Home');
+  await page.keyboard.press('Control+Shift+ArrowRight');
+  await page.keyboard.press('Control+U');
+  await clickPage(10, 10);
+  await expect(editor()).toHaveCount(0);
+  // OPENED AGAIN: the word is read back underlined, so the editor draws it so (and a second Ctrl+U would take it off).
+  await page.locator('[data-text-block]').nth(1).click();
+  await expect(editor()).toBeFocused();
+  const drawnUnderlined = await editor()
+    .locator('.m-text-editor__run')
+    .evaluateAll((runs) => runs.some((run) => (run.getAttribute('style') ?? '').includes('underline')));
+  // WORDS BEFORE IT, so it moves: its rule must move with it and the old one go.
+  await page.keyboard.press('Control+Home');
+  await page.keyboard.type('Moved along by the walk ');
+  await clickPage(10, 10);
+  await expect(editor()).toHaveCount(0);
+  await saveTo(l2Saved);
+  await command('Save a copy');
+  await expect.poll(() => existsSync(l2Saved), { timeout: 30_000 }).toBe(true);
+  const rules = await savedMarkedRules(l2Saved);
+  expect({ drawnUnderlined, rules }).toStrictEqual({ drawnUnderlined: true, rules: 1 });
+  return { drawnUnderlined, markedRules: rules };
 });
 
 await step('N14: a word processor’s subsets keep their own font, bold and superscript while a block is open, and after it is written', async () => {

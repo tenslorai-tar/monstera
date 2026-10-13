@@ -515,6 +515,17 @@ const basePdfiumChannels = {
                     orientation: z.enum(['upright', 'turned', 'vertical', 'slanted', 'mirrored']),
                     /** Where its baseline is, in the page's own coordinates: the matrix's `f`. */
                     baseline: z.number(),
+                    /** The marked decorations its words carry (`markDecorations.ts`, L2); absent where none. */
+                    underline: z.literal(true).exactOptional(),
+                    strike: z.literal(true).exactOptional(),
+                    highlight: z
+                      .object({
+                        r: z.number().int().min(0).max(255),
+                        g: z.number().int().min(0).max(255),
+                        b: z.number().int().min(0).max(255),
+                      })
+                      .strict()
+                      .exactOptional(),
                   })
                   .strict(),
               })

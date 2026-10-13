@@ -1521,6 +1521,10 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
                 // that names none, or a name past the wire's bound, sends none rather than a cut name nothing would resolve.
                 ...(run.style.font === '' || run.style.font.length > MAX_FONT_FAMILY_NAME ? {} : { font: run.style.font }),
                 baseline: run.style.baseline,
+                // THE DECORATIONS ITS WORDS CARRY (the owner's L2), each only where present.
+                ...(run.style.underline === true ? { underline: true as const } : {}),
+                ...(run.style.strike === true ? { strike: true as const } : {}),
+                ...(run.style.highlight === undefined ? {} : { highlight: run.style.highlight }),
               },
             })),
           ),

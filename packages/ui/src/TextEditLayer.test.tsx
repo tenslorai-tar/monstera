@@ -1210,6 +1210,53 @@ describe('Edit text on the page (ADR-0096)', () => {
       expect(formats[0]?.marks?.[0]?.set).toStrictEqual({ bold: false });
     });
 
+    it('L2: words the page carries underlined are drawn underlined, and Ctrl+U takes it off; plain words take it on', async () => {
+      const underlinedBlocks: PageBlocks = {
+        ...BLOCKS,
+        blocks: BLOCKS.blocks.map((block, at) =>
+          at === 0
+            ? { ...block, lines: block.lines.map((line) => ({ ...line, runs: line.runs.map((run) => ({ ...run, style: { ...run.style, underline: true as const } })) })) }
+            : block,
+        ),
+      };
+      const formats: (BlockFormatting | undefined)[] = [];
+      const onCommit = vi.fn((_block: TextBlock, _text: string, _read: BlocksRead, formatting?: BlockFormatting) => {
+        formats.push(formatting);
+        return Promise.resolve<BlockCommit>('written');
+      });
+      const made = mount({ onCommit, blocks: underlinedBlocks });
+      fireEvent.click(find(made.view.container, '[data-text-block="0"]'));
+      const editor = editorIn(made.view.container);
+      const run = editor.querySelector<HTMLElement>('.m-text-editor__run');
+      // DRAWN AS THE PAGE HAS IT while the block is open.
+      expect(run?.style.textDecoration).toContain('underline');
+      const words = run?.firstChild;
+      if (!(words instanceof Text)) throw new Error('the run holds no words');
+      const range = document.createRange();
+      range.setStart(words, 0);
+      range.setEnd(words, 4);
+      document.getSelection()?.removeAllRanges();
+      document.getSelection()?.addRange(range);
+      fireEvent(document, new Event('selectionchange'));
+      fireEvent.keyDown(editor, { key: 'u', ctrlKey: true });
+      await act(async () => {
+        fireEvent.keyDown(editor, { key: 'Escape' });
+        await Promise.resolve();
+      });
+      expect(formats[0]?.marks?.[0]?.set).toStrictEqual({ underline: false });
+    });
+
+    it('CONTROL (L2): on words the page carries plain, the same chord takes the underline on', async () => {
+      const { editor, formats } = openWithSelection(0, 4, 0);
+      expect(editor.querySelector<HTMLElement>('.m-text-editor__run')?.style.textDecoration ?? '').not.toContain('underline');
+      fireEvent.keyDown(editor, { key: 'u', ctrlKey: true });
+      await act(async () => {
+        fireEvent.keyDown(editor, { key: 'Escape' });
+        await Promise.resolve();
+      });
+      expect(formats[0]?.marks?.[0]?.set).toStrictEqual({ underline: true });
+    });
+
     it('CONTROL: with nothing formatted the write carries no marks, so the case above is the chord and not a default', async () => {
       const { editor, formats } = openWithSelection(0, 4);
       await act(async () => {
