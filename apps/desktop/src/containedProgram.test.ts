@@ -1,6 +1,11 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import {
+  CREATION_FLAGS,
+  PROCESS_CREATION_FLAGS,
   type ContainedProgram,
   type ConverterExecutablePath,
   type ElectronBinaryPath,
@@ -111,5 +116,30 @@ describe('the environment follows from the program', () => {
       expect(handed.join('\n')).not.toContain('not-for-the-host');
       expect(handed.join('\n')).not.toContain('NODE_OPTIONS');
     }
+  });
+});
+
+describe('every contained process is created with no console window (the owner’s N7)', () => {
+  /** Whether a set of creation flags carries `bit`. */
+  const carries = (flags: number, bit: number): boolean => (flags & bit) === bit;
+
+  it('the one flag set carries CREATE_NO_WINDOW beside the three the containment needs', () => {
+    expect(carries(PROCESS_CREATION_FLAGS, 0x08000000)).toBe(true);
+    for (const flag of [CREATION_FLAGS.EXTENDED_STARTUPINFO_PRESENT, CREATION_FLAGS.CREATE_UNICODE_ENVIRONMENT, CREATION_FLAGS.CREATE_SUSPENDED]) {
+      expect(carries(PROCESS_CREATION_FLAGS, flag)).toBe(true);
+    }
+    // CONTROL: the set the owner's build created Ghostscript with is told apart by the same reading, so the check above
+    // is not one any number passes.
+    expect(carries(0x00080000 | 0x00000400 | 0x00000004, 0x08000000)).toBe(false);
+  });
+
+  it('the one creation site passes that set and spells no flag of its own', () => {
+    // A SOURCE READING, because `win32HostSurface.ts` loads koffi and no Linux test can create a process with it: what is
+    // asserted is that the call takes the named set and that no second spelling of a flag exists beside it (B3a).
+    const surface = readFileSync(fileURLToPath(new URL('./win32HostSurface.ts', import.meta.url)), 'utf8');
+    const call = /bindings\.createProcess\(([\s\S]*?)\);/u.exec(surface)?.[1] ?? '';
+    expect(call).toContain('PROCESS_CREATION_FLAGS');
+    expect(surface).not.toMatch(/const CREATE_[A-Z_]+ = 0x/u);
+    expect(surface).not.toMatch(/const EXTENDED_STARTUPINFO_PRESENT = 0x/u);
   });
 });

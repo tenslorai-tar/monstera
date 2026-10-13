@@ -62,6 +62,7 @@ import koffi from 'koffi';
 import {
   type ContainedProgram,
   type ElectronBinaryPath,
+  PROCESS_CREATION_FLAGS,
   commandLineFor,
   environmentFor,
 } from './containedProgram.js';
@@ -233,9 +234,6 @@ export interface Win32HostSurfaceConfig {
 // Win32 constants. Named rather than inlined, and grouped by the call that reads
 // them, because a bare 0x2000 at a call site is unreviewable.
 const PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES = 0x00020009;
-const EXTENDED_STARTUPINFO_PRESENT = 0x00080000;
-const CREATE_UNICODE_ENVIRONMENT = 0x00000400;
-const CREATE_SUSPENDED = 0x00000004;
 const WAIT_OBJECT_0 = 0x00000000;
 const WAIT_TIMEOUT = 0x00000102;
 const STARTF_USESTDHANDLES = 0x00000100;
@@ -795,7 +793,8 @@ export function createWin32HostSurface(config: Win32HostSurfaceConfig): Converte
         null,
         null,
         logHandle !== null,
-        EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT | CREATE_SUSPENDED,
+        // WITH CREATE_NO_WINDOW among them: a console converter otherwise opens a window (`CREATION_FLAGS`).
+        PROCESS_CREATION_FLAGS,
         environmentBlock(config.program),
         config.workingDirectory,
         startup,

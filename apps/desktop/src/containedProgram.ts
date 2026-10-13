@@ -157,6 +157,30 @@ export const NODE_MODE_FLAGS = Object.freeze([
   '--no-stdio-init',
 ] as const);
 
+/**
+ * The `CreateProcessW` creation flags for every contained process, whatever it runs — the one place they are spelt,
+ * so a program added tomorrow cannot be created without them.
+ *
+ * - **`EXTENDED_STARTUPINFO_PRESENT`**: the AppContainer's capabilities ride in the attribute list.
+ * - **`CREATE_UNICODE_ENVIRONMENT`**: the block {@link environmentFor} builds is UTF-16.
+ * - **`CREATE_SUSPENDED`**: the job is assigned before the first instruction (ADR-0022 Decision 8).
+ * - **`CREATE_NO_WINDOW`**: a CONSOLE program started by a process with no console is given a new one unless this is
+ *   passed, and `wShowWindow` is read only under `STARTF_USESHOWWINDOW`, which is not set. Ghostscript's
+ *   `gswin64c.exe`, x2t and pdftotext are console programs, so each conversion flashed a window titled with the
+ *   converter's path (the owner's N7, ADR-0075's 2026-10-13 correction). The engine hosts run `electron.exe`, a GUI
+ *   program, which is why none was seen there; the flag is harmless to it, and kept on every branch so the rule is
+ *   about the creation and not about remembering which programs are consoles.
+ */
+export const CREATION_FLAGS = Object.freeze({
+  EXTENDED_STARTUPINFO_PRESENT: 0x00080000,
+  CREATE_UNICODE_ENVIRONMENT: 0x00000400,
+  CREATE_SUSPENDED: 0x00000004,
+  CREATE_NO_WINDOW: 0x08000000,
+} as const);
+
+/** {@link CREATION_FLAGS}, combined as `CreateProcessW` takes them. */
+export const PROCESS_CREATION_FLAGS = Object.values(CREATION_FLAGS).reduce((all, flag) => all | flag, 0);
+
 /** The environment variable that decides whether the Electron binary is Node or Chromium. */
 const RUN_AS_NODE = 'ELECTRON_RUN_AS_NODE';
 
