@@ -1484,6 +1484,11 @@ function BlockEditor({
         ref={area}
         role="textbox"
         spellCheck
+        // FOCUSABLE WHILE A WRITE IS IN FLIGHT: `contentEditable` false makes a `div` unfocusable, so the focus fell to the
+        // body and the next Escape reached the application's own, which left Edit text under a write still running (W8's
+        // stress case). Kept here, the keys are this editor's, and its Escape does nothing until the write answers. Zero, the
+        // order an editable element has of itself, so the words stay where Tab reaches them.
+        tabIndex={0}
         // THE BLOCK'S OWN VALUES, the base for what belongs to no run — a paste, a line typed below the last — and
         // the spacing and the paper behind them; each run sets its own (`drawRun`). Dynamic, and not design tokens.
         style={{
