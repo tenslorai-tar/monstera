@@ -6627,14 +6627,15 @@ describe('applyDocumentCommand stamps a creation command at the moment it is sen
         client: inserted.client,
         ask: (id, props) => {
           asked.push({ id, props });
-          return Promise.resolve({ at, count: 1 });
+          // A COUNT THAT IS NOT THE DEFAULT, so a command that dropped the dialog's count and sent 1 fails (EEEEEEEE-1).
+          return Promise.resolve({ at, count: at + 1 });
         },
         onApplied: () => undefined,
         stamp,
         signatures,
       }).run(context);
       expect(asked).toStrictEqual([{ id: 'dialog.insert-blank-page', props: { pageCount: CONTEXT.pageCount, page: at - 1 } }]);
-      expect(inserted.sent).toStrictEqual([{ kind: 'insertBlankPage', at, count: 1 }]);
+      expect(inserted.sent).toStrictEqual([{ kind: 'insertBlankPage', at, count: at + 1 }]);
 
       // EVERY PAGE DIALOG is opened with the same pages; a dismissal sends nothing, so only the props are read.
       for (const factory of [
