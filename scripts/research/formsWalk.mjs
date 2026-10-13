@@ -92,6 +92,9 @@ await step('a press at a text field’s middle opens it for typing, and the word
   await expect(page.locator('.m-page-field-editor')).toBeVisible();
   await page.keyboard.type('Ada Lovelace');
   await page.keyboard.press('Enter');
+  // A FILL IS A WRITE (3 to 5 s on this machine): the next press, sent while it lands, was answered with the 'out of
+  // date' dialog (2026-10-13, step 4's screenshot) - an app finding for a hand this fast, waited out here.
+  await page.waitForTimeout(6000);
 });
 
 await step('a press NEAR THE EDGE of another field opens it too, and Tab and Shift+Tab move between fields', async () => {
@@ -102,6 +105,7 @@ await step('a press NEAR THE EDGE of another field opens it too, and Tab and Shi
   await expect(page.locator('.m-page-field-editor')).toBeVisible();
   await page.keyboard.press('Shift+Tab');
   await page.keyboard.press('Escape');
+  await page.waitForTimeout(6000);
 });
 
 await step('a tick box ticks at a press near its corner, and a radio chooses one of its group', async () => {
@@ -109,6 +113,9 @@ await step('a tick box ticks at a press near its corner, and a radio chooses one
   const before = await tick.getAttribute('aria-checked');
   await pressOn(tick, 2);
   await expect(tick).not.toHaveAttribute('aria-checked', before ?? '');
+  // THE TICK IS A WRITE (3 to 5 s here): a second press sent while it lands is answered 'out of date' (2026-10-13, step
+  // 4's screenshot), which is an app finding for a hand that presses twice in a row, and is waited out here.
+  await page.waitForTimeout(6000);
   const radio = page.getByRole('radio').nth(1);
   await pressOn(radio);
   await expect(radio).toHaveAttribute('aria-checked', 'true');
@@ -162,7 +169,9 @@ await step('O6: the custom border colour dragged through many colours, with no o
 });
 
 await step('the Properties tab changes the text colour, the size and the tooltip of the selected field', async () => {
-  await page.getByRole('button', { name: 'Red' }).first().click().catch(() => undefined);
+  // THE TEXT COLOUR'S OWN GROUP: an unscoped `Red` is the Border colour's first, which replaced the border step 7 set and
+  // that step 13 reads back from the saved file (2026-10-13 run: the saved border was the Red swatch's, not #c00010).
+  await page.getByRole('group', { name: 'Text colour' }).getByRole('button', { name: 'Red' }).first().click();
   const tooltip = page.getByLabel('Tooltip', { exact: true });
   await tooltip.fill('Written by the forms walk');
   await tooltip.blur();
@@ -333,8 +342,16 @@ await step('L1: a password field filled with a PIN and flattened is masked in th
   if (paper === null) throw new Error('the page is not on screen');
   await page.getByRole('button', { name: /^Text field/u }).first().click();
   await page.mouse.click(paper.x + paper.width - 80, paper.y + 60);
+  await expect(page.getByLabel('Name', { exact: true })).toHaveValue(/^Text\d+$/u);
+  // A PLACE IS A WRITE (3 to 5 s on this machine, textWalk's reading of 2026-10-12): a property set while it lands is
+  // answered by the panel's next draw (2026-10-13: the checkbox clicked 'did not change its state').
+  await page.waitForTimeout(6000);
   const name = await page.getByLabel('Name', { exact: true }).inputValue();
-  await page.getByLabel('Hide what is typed (password)').check();
+  // CLICKED, THEN WAITED FOR: the box is the field's own property, drawn from the document after its write lands (3 to 5 s
+  // here), and `check()` asks for the new state at once and reported 'did not change its state' (2026-10-13).
+  const hide = page.getByLabel('Hide what is typed (password)');
+  await hide.click();
+  await expect(hide).toBeChecked({ timeout: 30_000 });
   await page.waitForTimeout(1500);
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
