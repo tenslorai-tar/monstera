@@ -62,7 +62,9 @@ export async function modulesLoadedByPath(desktopDist) {
   const table = await import(`file://${resolve(programs).replaceAll('\\', '/')}`);
   const hosts = Object.values(table.ENGINE_HOST_ENTRY_FILE);
   if (hosts.length === 0) throw new Error('ENGINE_HOST_ENTRY_FILE names no host: an empty table is a broken read.');
-  return [...hosts, 'preload.cjs', 'readerWorker.js', 'memorySamplerWorker.js'];
+  // `fontCatalogueWorker.js` is the thread every host reads its fonts in (`fontCatalogueApart.ts`): a package that
+  // lacked it would refuse every word an edit sets in a face it chose.
+  return [...hosts, 'preload.cjs', 'readerWorker.js', 'memorySamplerWorker.js', 'fontCatalogueWorker.js'];
 }
 
 /** A module file, by extension. */

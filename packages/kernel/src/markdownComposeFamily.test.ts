@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { COMPOSED_FAMILY_DEFAULT } from '@monstera/contract';
 
 import { composeCsv } from './csvCompose.js';
-import { faceSourceOf } from './fontCatalogue.js';
+import { faceSourceOf, readCatalogue } from './fontCatalogue.js';
 import { composeMarkdown } from './markdownCompose.js';
 
 /**
@@ -14,7 +14,7 @@ import { composeMarkdown } from './markdownCompose.js';
  * Tinos is chosen because it is bundled, so the reading does not depend on what this machine has installed, and because
  * it is not the default: a composer that dropped the choice sets Arimo, which the first case refuses.
  */
-const FACES = faceSourceOf([{ path: process.env['MONSTERA_FONTS_DIRECTORY'] ?? '', origin: 'bundled' }]);
+const FACES = faceSourceOf([{ path: process.env['MONSTERA_FONTS_DIRECTORY'] ?? '', origin: 'bundled' }], readCatalogue);
 const LETTER = { width: 612, height: 792 };
 const SOURCE = new TextEncoder().encode('# Minutes\n\nThe board met on Tuesday.\n\n```\nlet total = 0;\n```\n');
 

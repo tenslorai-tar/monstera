@@ -9,7 +9,7 @@ import { type CommandOfKind, createClient, type Incident, wrapHandlers } from '@
 import { blockEditOf } from '@monstera/contract/host';
 
 import { bindEditFaces } from '../editFaces.js';
-import { faceSourceOf } from '../fontCatalogue.js';
+import { faceSourceOf, readCatalogue } from '../fontCatalogue.js';
 import type { PageRuns } from '../operatorEdit.js';
 import { pageContentStreams } from '../pageContent.js';
 import { joinedContent, showOperators, textObjectCount } from '../textOperators.js';
@@ -1257,7 +1257,7 @@ function headingRuns(content: Uint8Array): PageRuns {
 
 describe('an operator edit over engine/apply-file answers its boxes (ADR-0177 Decision 7)', () => {
   beforeAll(() => {
-    bindEditFaces(() => faceSourceOf([{ path: process.env['MONSTERA_FONTS_DIRECTORY'] ?? '', origin: 'bundled' }]));
+    bindEditFaces(() => faceSourceOf([{ path: process.env['MONSTERA_FONTS_DIRECTORY'] ?? '', origin: 'bundled' }], readCatalogue));
   });
   afterAll(() => {
     bindEditFaces(null);

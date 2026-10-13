@@ -6,6 +6,7 @@ import { asDocVersion } from '@monstera/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { bindEditFaces, bindEditFolders } from './editFaces.js';
+import { readCatalogue } from './fontCatalogue.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import type { PageRuns } from './operatorEdit.js';
 import { pageContentStreams } from './pageContent.js';
@@ -215,7 +216,7 @@ describe('applyEditTextOperators', () => {
   describe('with the bundled fonts bound (ADR-0177)', () => {
     // BOUND AS THE MuPDF HOST BINDS THEM, by their folders, so the apply's own load of the catalogue is what runs.
     beforeEach(() => {
-      bindEditFolders(process.env['MONSTERA_FONTS_DIRECTORY'] ?? '', null);
+      bindEditFolders(process.env['MONSTERA_FONTS_DIRECTORY'] ?? '', null, readCatalogue);
     });
     afterEach(() => {
       bindEditFaces(null);

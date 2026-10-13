@@ -6,12 +6,12 @@ import { COMPOSED_FAMILY_DEFAULT } from '@monstera/contract';
 import { BODY_SIZE } from './composeLayout.js';
 import { COLUMN_MAX_EMS, TABLE_FLOOR_SIZE, planTable } from './composeTable.js';
 import { composeCsv as composeCsvWith } from './csvCompose.js';
-import { faceSourceOf } from './fontCatalogue.js';
+import { faceSourceOf, readCatalogue } from './fontCatalogue.js';
 import { composeMarkdown as composeMarkdownWith } from './markdownCompose.js';
 import { contentOf, readLines } from './shownText.js';
 
 /** The bundled faces, `markdownCompose.test.ts`' reading and its rule: absent is a failure. */
-const FACES = faceSourceOf([{ path: process.env['MONSTERA_FONTS_DIRECTORY'] ?? '', origin: 'bundled' }]);
+const FACES = faceSourceOf([{ path: process.env['MONSTERA_FONTS_DIRECTORY'] ?? '', origin: 'bundled' }], readCatalogue);
 
 async function composeCsv(source: Uint8Array, page: { width: number; height: number }): Promise<Uint8Array> {
   return (await composeCsvWith(source, page, FACES, COMPOSED_FAMILY_DEFAULT)).pdf;

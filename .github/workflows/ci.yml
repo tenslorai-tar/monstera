@@ -425,6 +425,14 @@ jobs:
           node scripts/ci/annotate.mjs scripts/proofs/type3Edit.proof.mjs
           ${{ runner.os == 'Windows' && '--require-engines' || '' }}
 
+      # The owner's Part 7 A. A host reads every installed font into its catalogue, and harfbuzzjs keeps what it
+      # allocated for each face, so the compose host held 960 MB after one edit. The catalogue is read in a thread that
+      # ends: three reads apart must leave the asking thread a tenth of what three reads in it keep, every thread must
+      # end, and the catalogue must be the same face by face. The in-thread read is the control. The bundled fonts are
+      # provisioned on both legs.
+      - name: Prove a host's font catalogue leaves nothing behind
+        run: node scripts/ci/annotate.mjs scripts/proofs/fontCatalogueApart.proof.mjs
+
       # ADR-0171's addendum. The shim's two readers of a document's content,
       # the inline-image keeper and Optimize's rewriter, open an encrypted
       # document with its password: without it the keeper found nothing and

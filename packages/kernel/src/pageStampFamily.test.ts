@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { CommandOfKind } from '@monstera/contract';
 
 import { bindEditFaces, bindEditFolders, loadEditFaces } from './editFaces.js';
+import { readCatalogue } from './fontCatalogue.js';
 import { appliedTo } from './mupdfAppliedBytes.js';
 import { applyBatesNumberPages, applyHeaderFooterPages } from './pageStamp.js';
 import { applyWatermarkPages } from './pageWatermark.js';
@@ -104,7 +105,7 @@ const BUNDLED = process.env['MONSTERA_FONTS_DIRECTORY'] ?? '';
 
 describe('a page stamp is set in the family it names (ADR-0235)', () => {
   beforeEach(async () => {
-    bindEditFolders(BUNDLED, null);
+    bindEditFolders(BUNDLED, null, readCatalogue);
     await loadEditFaces();
   });
   afterEach(() => {

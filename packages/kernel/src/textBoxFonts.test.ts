@@ -4,6 +4,7 @@ import { asDocVersion } from '@monstera/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { bindEditFaces, bindEditFolders, loadEditFaces } from './editFaces.js';
+import { readCatalogue } from './fontCatalogue.js';
 import * as mupdf from './mupdfRaw.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import { applyAddAnnotation, applyStyleAnnotation, readAnnotations } from './pageAnnotations.js';
@@ -89,7 +90,7 @@ async function added(draft: Extract<AnnotationDraft, { type: 'text-box' }>): Pro
 
 describe('a text box in a real font (K2), with the bundled fonts bound', () => {
   beforeAll(async () => {
-    bindEditFolders(process.env['MONSTERA_FONTS_DIRECTORY'] ?? '', null);
+    bindEditFolders(process.env['MONSTERA_FONTS_DIRECTORY'] ?? '', null, readCatalogue);
     await loadEditFaces();
   });
   afterAll(() => {

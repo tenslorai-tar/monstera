@@ -158,6 +158,8 @@ export const PDFIUM_COMMAND = [
   ['packages/kernel/src/textOperators.ts', 'packages/kernel/dist/textOperators.js', 'tsc'],
   ['packages/kernel/src/textEditRefusals.ts', 'packages/kernel/dist/textEditRefusals.js', 'tsc'],
   ['packages/kernel/src/fontCatalogue.ts', 'packages/kernel/dist/fontCatalogue.js', 'tsc'],
+  // The catalogue is read as the host reads it, in its thread (the owner's Part 7 A).
+  ['packages/kernel/src/fontCatalogueApart.ts', 'packages/kernel/dist/fontCatalogueApart.js', 'tsc'],
   ['packages/shared/src', 'packages/shared/dist/index.js', 'tsc'],
   // RIGHT-TO-LEFT TEXT AND A SCAN'S PAPER (ADR-0181): the order a line is drawn in and read back in, the cut of a line into
   // objects, the Arabic joining forms the proof reads directly, and the paper a scan's cover is coloured from.
@@ -309,6 +311,18 @@ export const TYPE3_EDIT = [
   ['packages/kernel/src', 'packages/kernel/dist/index.js', 'tsc'],
   ['packages/contract/src/commands.ts', 'packages/contract/dist/commands.js', 'tsc'],
   ...NATIVE_ENGINE,
+];
+
+/**
+ * What `fontCatalogueApart.proof.mjs` reads: the reader a host calls, the thread it starts, and the in-thread read both
+ * the thread and the control run.
+ *
+ * @type {BuildEdge[]}
+ */
+export const FONT_CATALOGUE_APART = [
+  ['packages/kernel/src/fontCatalogueApart.ts', 'packages/kernel/dist/fontCatalogueApart.js', 'tsc'],
+  ['packages/kernel/src/fontCatalogueWorker.ts', 'packages/kernel/dist/fontCatalogueWorker.js', 'tsc'],
+  ['packages/kernel/src/fontCatalogue.ts', 'packages/kernel/dist/fontCatalogue.js', 'tsc'],
 ];
 
 /**
@@ -601,6 +615,8 @@ export const ARTEFACT_EDGES = {
   'proof:inlineimages': INLINE_IMAGES,
   // PDFium's reading and MuPDF's operator writer, end to end on a Type 3 page (ADR-0176).
   'proof:type3edit': TYPE3_EDIT,
+  // A HOST'S FONT CATALOGUE, read in a thread that ends, against the in-thread read that keeps HarfBuzz's memory.
+  'proof:fontcatalogueapart': FONT_CATALOGUE_APART,
   'proof:shimpassword': SHIM_PASSWORD,
   // THE WORD EXPORT'S PICTURES, read back by a zip reader and a PNG decoder that are not the writer's.
   'proof:wordpictures': WORD_PICTURES,

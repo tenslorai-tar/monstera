@@ -4,6 +4,7 @@ import { asDocVersion } from '@monstera/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { bindEditFaces, bindEditFolders, loadEditFaces } from './editFaces.js';
+import { readCatalogue } from './fontCatalogue.js';
 import { FieldEditRefusedError } from './fieldEditRefusal.js';
 import { borderOps, checkOps, opsText } from './fieldMarks.js';
 import { readFieldProperties } from './formFieldRead.js';
@@ -94,7 +95,7 @@ const isRefused = (reason: string) => (error: unknown) => error instanceof Field
 
 describe('a field’s border style, check style and number range (A3.1)', () => {
   beforeAll(async () => {
-    bindEditFolders(process.env['MONSTERA_FONTS_DIRECTORY'] ?? '', null);
+    bindEditFolders(process.env['MONSTERA_FONTS_DIRECTORY'] ?? '', null, readCatalogue);
     await loadEditFaces();
   });
   afterAll(() => {

@@ -420,7 +420,8 @@ async function run(pdfium, kernel) {
     check(CASES[6] ?? '', false, 'not reached: the bundled fonts are absent');
     return;
   }
-  kernel.bindEditFolders(fonts, null);
+  // READ APART, as the host reads them, so this proof's faces come through the same thread the host's do.
+  kernel.bindEditFolders(fonts, null, kernel.readCatalogueApart);
   const faced = await edited(bytes, reading, FACED);
   kernel.bindEditFaces(null);
   check(
@@ -441,7 +442,7 @@ async function run(pdfium, kernel) {
 
   // A BOX OF TEXT ADDED TO THE PAGE (ADR-0188), set in the resolver's face where the box says.
   const BOX_WORDS = 'A new box of text';
-  kernel.bindEditFolders(fonts, null);
+  kernel.bindEditFolders(fonts, null, kernel.readCatalogueApart);
   const boxed = await applied([], [{ left: 100, baseline: 400, measure: 200, size: 14, text: BOX_WORDS }]);
   kernel.bindEditFaces(null);
   const boxedRead = boxed.saved === null ? null : await readRuns(boxed.saved);
@@ -496,7 +497,9 @@ if (!existsSync(library) || shim === null) {
   const { joinedContent } = await import('../../packages/kernel/dist/textOperators.js');
   const { pageContentStreams } = await import('../../packages/kernel/dist/pageContent.js');
   const { bindEditFaces, bindEditFolders } = await import('../../packages/kernel/dist/editFaces.js');
+  const { readCatalogueApart } = await import('../../packages/kernel/dist/fontCatalogueApart.js');
   await run(pdfium, {
+    readCatalogueApart,
     blockEditOf,
     mupdfWriter,
     withDocument,

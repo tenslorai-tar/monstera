@@ -4,6 +4,7 @@ import { asDocVersion, newTextBox, pageTransform, toPdf, viewportPoint } from '@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { bindEditFaces, bindEditFolders } from './editFaces.js';
+import { readCatalogue } from './fontCatalogue.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import { applyEditTextOperators } from './textOperatorEdit.js';
 
@@ -106,7 +107,7 @@ async function onThePage(bytes: Uint8Array, insert: PageInsert): Promise<boolean
 describe('text added with Add text is on the page where it was pressed', () => {
   // THE BUNDLED FACES, as the host binds them: an added box is set in one where the page's own fonts do not carry it.
   beforeEach(() => {
-    bindEditFolders(process.env['MONSTERA_FONTS_DIRECTORY'] ?? '', null);
+    bindEditFolders(process.env['MONSTERA_FONTS_DIRECTORY'] ?? '', null, readCatalogue);
   });
   afterEach(() => {
     bindEditFaces(null);

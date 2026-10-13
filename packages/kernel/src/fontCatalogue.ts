@@ -111,13 +111,21 @@ export interface FaceSource {
 }
 
 /**
- * The faces in `folders`, read now, and a reader for their files — what the compose host sets text from, and what
- * its tests do, so the two cannot read a folder differently.
+ * How a catalogue is read: {@link readCatalogue} in this thread, or `readCatalogueApart` in a thread that ends after
+ * it. A host takes the second, because what HarfBuzz keeps from a read stays with the thread that read
+ * (`fontCatalogueApart.ts`); a test or a script whose process ends with it may take the first. Required wherever a
+ * catalogue is read, so the choice is two names at the call site and never a default a host inherits.
+ */
+export type CatalogueReading = (folders: readonly FontFolder[]) => Catalogue;
+
+/**
+ * The faces in `folders`, read now by `reading`, and a reader for their files — what the compose host sets text from,
+ * and what its tests do, so the two cannot read a folder differently.
  *
  * @throws where the folders hold no face at all: a host started without its fonts, never a person's document
  */
-export function faceSourceOf(folders: readonly FontFolder[]): FaceSource {
-  const { faces, unreadable } = readCatalogue(folders);
+export function faceSourceOf(folders: readonly FontFolder[], reading: CatalogueReading): FaceSource {
+  const { faces, unreadable } = reading(folders);
   if (faces.length === 0) {
     throw new Error(`no readable font face in ${folders.map((folder) => folder.path).join(', ')}: ${JSON.stringify(unreadable)}`);
   }

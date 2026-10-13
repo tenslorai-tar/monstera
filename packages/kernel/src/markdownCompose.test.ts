@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { COMPOSED_FAMILY_DEFAULT } from '@monstera/contract';
 
 import { ComposeRefused } from './composeOutcome.js';
-import { faceSourceOf } from './fontCatalogue.js';
+import { faceSourceOf, readCatalogue } from './fontCatalogue.js';
 import { composeMarkdown } from './markdownCompose.js';
 import { type ReadLine, readLines } from './shownText.js';
 
@@ -18,7 +18,7 @@ const RUNAWAY_BOUND_MS = 10_000;
  * The bundled faces, read as the compose host reads them, from the folder `vitest.config.mjs` passes. ABSENT IS A
  * FAILURE, never a skip: `faceSourceOf` throws for a folder with no face in it.
  */
-const FACES = faceSourceOf([{ path: process.env['MONSTERA_FONTS_DIRECTORY'] ?? '', origin: 'bundled' }]);
+const FACES = faceSourceOf([{ path: process.env['MONSTERA_FONTS_DIRECTORY'] ?? '', origin: 'bundled' }], readCatalogue);
 
 /** The source as the picker hands it: bytes, never a string. */
 function bytesOf(text: string): Uint8Array {

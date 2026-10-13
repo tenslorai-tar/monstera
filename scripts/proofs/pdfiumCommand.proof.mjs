@@ -112,7 +112,7 @@ if (!existsSync(library)) {
 
 // The proof imports the BUILT modules, so a stale build would prove yesterday's
 // routing and say nothing about the diff under review.
-refuseStaleBuild(root, PDFIUM_COMMAND, 25);
+refuseStaleBuild(root, PDFIUM_COMMAND, 26);
 
 // EVERY EDIT BUILT THROUGH THE CONTRACT'S ONE ENCODER, as the application builds it (ADR-0142).
 const { blockEditOf, replacementFieldsOf } = await import('../../packages/contract/dist/commands.js');
@@ -148,6 +148,8 @@ const { PRODUCER_MARK, PRODUCER_SIZE, SUPERSCRIPT_RISE, buildProducerSubsetPdf }
   '../../packages/kernel/dist/producerSubsetFixture.js'
 );
 const { faceSourceOf } = await import('../../packages/kernel/dist/fontCatalogue.js');
+// READ APART, as the host reads it (`fontCatalogueApart.ts`), so this proof's faces come through the host's thread.
+const { readCatalogueApart } = await import('../../packages/kernel/dist/fontCatalogueApart.js');
 
 const FIRST = 'FIRST RUN stays exactly where it is';
 const SECOND = 'SECOND RUN is the one that changes';
@@ -686,7 +688,7 @@ async function pieceCases() {
     cyrillicOnBroken,
   );
 
-  bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }]));
+  bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }], readCatalogueApart));
   try {
     /** @type {Uint8Array | undefined} */
     let saved;
@@ -783,7 +785,7 @@ async function pieceCases() {
     // A CHARACTER PAST THE BMP (ADR-0173's correction): `FPDFText_SetText` draws it as code 0, which the live read-back
     // refuses and a reopened page reads as nothing, so only a piece set by its subset's glyph ids is saved reading it.
     const ASTRAL = String.fromCodePoint(0x10140);
-    const carriers = faceSourceOf([{ path: fonts, origin: 'bundled' }]).faces.filter((face) => face.unicodes.has(0x10140));
+    const carriers = faceSourceOf([{ path: fonts, origin: 'bundled' }], readCatalogueApart).faces.filter((face) => face.unicodes.has(0x10140));
     record(
       'PREMISE: a bundled face carries U+10140, so the case below asks the setter and not the catalogue',
       carriers.length > 0,
@@ -812,7 +814,7 @@ async function pieceCases() {
     // (ADR-0174), which is how the person is told. The premise is that no bundled face carries it, or the case would be
     // asking the resolver rather than the box.
     const NONE_CARRY = String.fromCodePoint(0x4e2d);
-    const catalogue = faceSourceOf([{ path: fonts, origin: 'bundled' }]).faces;
+    const catalogue = faceSourceOf([{ path: fonts, origin: 'bundled' }], readCatalogueApart).faces;
     record(
       'PREMISE: no bundled face carries U+4E2D, and one carries the box U+25A1',
       !catalogue.some((face) => face.unicodes.has(0x4e2d)) && catalogue.some((face) => face.unicodes.has(0x25a1)),
@@ -1001,7 +1003,7 @@ async function replacePieceCases() {
     unbound ?? 'it was SAVED',
   );
 
-  bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }]));
+  bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }], readCatalogueApart));
   try {
     let read = '';
     /** @type {readonly { text: string, style: { font: string } }[]} */
@@ -1233,7 +1235,7 @@ async function siblingCases() {
       }),
     };
   };
-  bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }]));
+  bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }], readCatalogueApart));
   try {
     const first = await retype(await aParagraph(), 'The first', [`${BLOCK_LINES[0] ?? ''} Привет`, BLOCK_LINES[1], BLOCK_LINES[2]].join('\n'));
     const both = await retype(first, 'A separate', `${FAR_BELOW} Дом`);
@@ -1304,7 +1306,7 @@ async function runFontCases() {
     record('the bundled fonts are provisioned for the run font cases', false, `${fonts} is absent; run scripts/provision/fonts.mjs`);
     return;
   }
-  bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }]));
+  bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }], readCatalogueApart));
   /** @type {Uint8Array} */
   let edited;
   try {
@@ -3724,7 +3726,7 @@ async function directionCases() {
     record('the bundled fonts are provisioned for the right-to-left cases', false, `${fonts} is absent`);
     return;
   }
-  bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }]));
+  bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }], readCatalogueApart));
   try {
     const original = await aTypeset({ lines: ['Hello world'] });
     const [block] = (await blocksOf(original)).blocks;
@@ -4092,7 +4094,7 @@ async function formatPieceCases() {
     record('the bundled fonts are provisioned for the formatting piece cases', false, `${fonts} is absent`);
     return;
   }
-  bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }]));
+  bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }], readCatalogueApart));
   try {
     const PARAGRAPH = 'The quick brown fox jumps over the lazy dog while the keen reviewer reads every single line twice more today';
     const original = await aTypeset({ text: PARAGRAPH });

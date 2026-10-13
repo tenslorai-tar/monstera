@@ -1,9 +1,22 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { bindEditFaces, bindEditFolders, editFaces, editFacesBound, editTypesetting, loadEditFaces } from './editFaces.js';
+import { type CatalogueReading, readCatalogue } from './fontCatalogue.js';
 
 /** The provisioned bundled set, which the vitest setup names, as the PDFium proofs read it. */
 const BUNDLED = process.env['MONSTERA_FONTS_DIRECTORY'] ?? '';
+
+/** `readCatalogue`, counting its calls: a host binds `readCatalogueApart`, and the binding must read with what it was given. */
+function counting(): { readonly reading: CatalogueReading; readonly calls: () => number } {
+  let calls = 0;
+  return {
+    reading: (folders) => {
+      calls += 1;
+      return readCatalogue(folders);
+    },
+    calls: () => calls,
+  };
+}
 
 // FIRST IN THE FILE, because the typesetter, once loaded, stays loaded for the module's life.
 describe('the typesetter is loaded with the catalogue and never before it (ADR-0177)', () => {
@@ -17,7 +30,7 @@ describe('the typesetter is loaded with the catalogue and never before it (ADR-0
   });
 
   it('a load with folders bound makes it ready, for a redraw that runs synchronously after it', async () => {
-    bindEditFolders(BUNDLED, null);
+    bindEditFolders(BUNDLED, null, readCatalogue);
     await loadEditFaces();
     expect(editTypesetting().TextBoxFaces).toBeTypeOf('function');
   });
@@ -30,18 +43,25 @@ describe('the edit faces bound by their folders (ADR-0177)', () => {
 
   it('reads as bound before the catalogue loads, refuses a read until it has, and then reads the folder', async () => {
     expect(BUNDLED).not.toBe('');
-    bindEditFolders(BUNDLED, null);
+    const reader = counting();
+    bindEditFolders(BUNDLED, null, reader.reading);
     expect(editFacesBound()).toBe(true);
     // A READ BEFORE THE LOAD IS REFUSED BY NAME: answering `null` would refuse a word a bundled face carries.
     expect(() => editFaces()).toThrow(/before loadEditFaces/u);
     await loadEditFaces();
+    // THE READING BOUND IS THE ONE USED, once and only when the faces are first asked for: a host binds the reader
+    // that keeps HarfBuzz's memory out of the host (`fontCatalogueApart.ts`), and a binding that read some other way
+    // would put it back.
+    expect(reader.calls()).toBe(0);
     const source = editFaces();
+    editFaces();
+    expect(reader.calls()).toBe(1);
     expect(source?.faces.length ?? 0).toBeGreaterThan(0);
     expect(source?.faces.every((face) => face.origin === 'bundled')).toBe(true);
   });
 
   it('CONTROL: a binding made while the catalogue loaded is the one that stands', async () => {
-    bindEditFolders(BUNDLED, null);
+    bindEditFolders(BUNDLED, null, readCatalogue);
     const loading = loadEditFaces();
     bindEditFaces(null);
     await loading;

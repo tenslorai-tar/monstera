@@ -4,14 +4,14 @@ import { COMPOSED_FAMILY_DEFAULT } from '@monstera/contract';
 
 import { ComposeRefused, type ComposedSource } from './composeOutcome.js';
 import { composeCsv } from './csvCompose.js';
-import { faceSourceOf } from './fontCatalogue.js';
+import { faceSourceOf, readCatalogue } from './fontCatalogue.js';
 import { readLines } from './shownText.js';
 
 /** US Letter, the size a composed document is set at. */
 const LETTER = { width: 612, height: 792 } as const;
 
 /** The bundled faces, `markdownCompose.test.ts`' reading and its rule: absent is a failure. */
-const FACES = faceSourceOf([{ path: process.env['MONSTERA_FONTS_DIRECTORY'] ?? '', origin: 'bundled' }]);
+const FACES = faceSourceOf([{ path: process.env['MONSTERA_FONTS_DIRECTORY'] ?? '', origin: 'bundled' }], readCatalogue);
 
 function bytesOf(text: string): Uint8Array {
   return new TextEncoder().encode(text);

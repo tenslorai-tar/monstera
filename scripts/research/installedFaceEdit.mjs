@@ -178,7 +178,7 @@ async function twoEdits(source, addition, viaMupdf = false) {
 }
 
 // CONTROLS: the bundled set alone saves the Latin edit and boxes exactly the unassigned code point.
-const bundledSource = faceSourceOf(fontFoldersOf(bundled, null));
+const bundledSource = faceSourceOf(fontFoldersOf(bundled, null), readCatalogue);
 const control = await twoEdits(bundledSource, UNASSIGNED);
 if (control !== `saved, boxed ${JSON.stringify([UNASSIGNED])}`) {
   throw new Error(`The instrument's control failed, so nothing below would be the face: ${control}`);
@@ -195,7 +195,7 @@ process.stdout.write(
 );
 if (carrying.length === 0) throw new Error(`No installed face carries ${IDEOGRAPH}, so this run measured nothing.`);
 
-const everything = faceSourceOf(fontFoldersOf(bundled, installed));
+const everything = faceSourceOf(fontFoldersOf(bundled, installed), readCatalogue);
 process.stdout.write(`all installed faces, as the hosts read them: ${await twoEdits(everything, `${IDEOGRAPH} ${UNASSIGNED}`)}\n`);
 // THE LIVE CASE'S OWN PAGE, which differs from the line above in every way but the edit: a page of glyph objects. Then
 // each character alone, so a refusal names which of the two it is.

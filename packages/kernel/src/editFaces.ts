@@ -1,4 +1,4 @@
-import type { FaceSource } from './fontCatalogue.js';
+import type { CatalogueReading, FaceSource } from './fontCatalogue.js';
 
 /**
  * The catalogue an in-place edit sets a word in when the run's own font cannot carry it
@@ -19,7 +19,8 @@ let read: FaceSource | null = null;
  * Folders bound before the catalogue's module is loaded ({@link bindEditFolders}), which {@link loadEditFaces} turns
  * into the same binding {@link bindEditFaces} makes. Never both: each binding clears the other.
  */
-let deferred: { readonly bundled: string; readonly installed: string | null } | null = null;
+let deferred: { readonly bundled: string; readonly installed: string | null; readonly reading: CatalogueReading } | null =
+  null;
 
 /**
  * Binds the catalogue, read on its first use. A second binding replaces the first, and `null` unbinds, for a proof
@@ -34,11 +35,13 @@ export function bindEditFaces(faces: (() => FaceSource) | null): void {
 /**
  * Binds the catalogue by its FOLDERS, without loading the module that reads them: `fontCatalogue.ts` brings HarfBuzz,
  * which the MuPDF host loads only when an edit needs a face (ADR-0177). {@link loadEditFaces} completes the binding.
+ * `reading` is how the folders are read when they are (`CatalogueReading`): a host passes `readCatalogueApart`, which
+ * brings no HarfBuzz into the process that asks.
  */
-export function bindEditFolders(bundled: string, installed: string | null): void {
+export function bindEditFolders(bundled: string, installed: string | null, reading: CatalogueReading): void {
   bound = null;
   read = null;
-  deferred = { bundled, installed };
+  deferred = { bundled, installed, reading };
 }
 
 /**
@@ -62,7 +65,7 @@ export async function loadEditFaces(): Promise<void> {
   // BOUND ONLY IF NOTHING REBOUND while the module loaded, so a later binding is never overwritten by an earlier one.
   if (deferred === folders) {
     deferred = null;
-    bound = () => faceSourceOf(fontFoldersOf(folders.bundled, folders.installed));
+    bound = () => faceSourceOf(fontFoldersOf(folders.bundled, folders.installed), folders.reading);
   }
 }
 

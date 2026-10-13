@@ -9,6 +9,7 @@ import {
 } from '../annotationInterchange.js';
 import { readPageBarcodes } from '../barcodeReader.js';
 import { bindEditFolders } from '../editFaces.js';
+import { readCatalogueApart } from '../fontCatalogueApart.js';
 import { localMupdfExecution } from '../mupdfSpecs.js';
 import { accessFor, mupdfWriter, signaturesKeptBySave } from '../mupdfWriter.js';
 import { readSignatures } from '../signatureRead.js';
@@ -129,7 +130,9 @@ openMupdfShim(libraryPathFrom(process.argv));
 // chooses from them. Bound by their folders, so neither the catalogue nor HarfBuzz loads until a word needs a face.
 const fontsPath = process.argv[4] === undefined || process.argv[4].length === 0 ? null : process.argv[4];
 const installedPath = process.argv[5] === undefined || process.argv[5].length === 0 ? null : process.argv[5];
-if (fontsPath !== null) bindEditFolders(fontsPath, installedPath);
+// READ APART when they are read (`fontCatalogueApart.ts`), which also keeps HarfBuzz's catalogue read out of this
+// process: the thread loads its own.
+if (fontsPath !== null) bindEditFolders(fontsPath, installedPath, readCatalogueApart);
 
 /**
  * MuPDF's channel set and its handlers, composed HERE rather than in the body

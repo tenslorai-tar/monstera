@@ -32,13 +32,13 @@ refuseStaleBuild(
 );
 // LITERAL SPECIFIERS, so `proof:electronimports` can read what this loads: none of it may reach Electron.
 const { composeCsv } = await import('../../packages/kernel/dist/csvCompose.js');
-const { faceSourceOf } = await import('../../packages/kernel/dist/fontCatalogue.js');
+const { faceSourceOf, readCatalogue } = await import('../../packages/kernel/dist/fontCatalogue.js');
 const { joinPdfs } = await import('../../packages/kernel/dist/workbookParts.js');
 
 const totalMiB = Number(process.argv[2] ?? '4');
 const partMiB = Number(process.argv[3] ?? '1');
 const columns = Number(process.argv[4] ?? '6');
-const FACES = faceSourceOf([{ path: fontsDirectory(ROOT), origin: 'bundled' }]);
+const FACES = faceSourceOf([{ path: fontsDirectory(ROOT), origin: 'bundled' }], readCatalogue);
 const LETTER = { width: 612, height: 792 };
 const encoder = new TextEncoder();
 

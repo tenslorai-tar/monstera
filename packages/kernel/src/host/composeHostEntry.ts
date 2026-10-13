@@ -6,6 +6,7 @@ import { ENGINE_HOST_MAX_IN_FLIGHT } from '@monstera/contract/host';
 
 import { composeCsv } from '../csvCompose.js';
 import { type FaceSource, faceSourceOf, fontFoldersOf } from '../fontCatalogue.js';
+import { readCatalogueApart } from '../fontCatalogueApart.js';
 import { composeImages } from '../imageCompose.js';
 import { composeMarkdown } from '../markdownCompose.js';
 import { Document, MupdfOpenRefused, PDFDocument, keepInlineImages, openMupdfShim, rewriteImages } from '../mupdfRaw.js';
@@ -95,7 +96,7 @@ let catalogue: FaceSource | null = null;
 function faces(): FaceSource {
   if (catalogue === null) {
     if (fontsPath === null) throw new Error('the compose host was started without its fonts folder');
-    catalogue = faceSourceOf(fontFoldersOf(fontsPath, installedPath));
+    catalogue = faceSourceOf(fontFoldersOf(fontsPath, installedPath), readCatalogueApart);
   }
   return catalogue;
 }
