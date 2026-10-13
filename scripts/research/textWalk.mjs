@@ -633,8 +633,9 @@ await step('W1: Add text at 85%, 89% and 95% down the first (turned) page, each 
 await step('N14: a word processor’s subsets keep their own font, bold and superscript while a block is open, and after it is written', async () => {
   // A PRODUCER'S PAGE, built from the bundled Carlito (`producerSubsetFixture.ts`): subset fonts with no cmap, a bold
   // lead-in and a superscript marker raised by a text rise.
-  const { buildProducerSubsetPdf } = await import(join(root, 'packages/kernel/dist/producerSubsetFixture.js'));
-  const { fontsDirectory } = await import(join(root, 'scripts/provision/fonts.mjs'));
+  // LITERAL SPECIFIERS, so `proof:electronimports` can read what this loads.
+  const { buildProducerSubsetPdf } = await import('../../packages/kernel/dist/producerSubsetFixture.js');
+  const { fontsDirectory } = await import('../provision/fonts.mjs');
   const fonts = fontsDirectory(root);
   const producer = join(output, 'producer-subsets.pdf');
   await writeFile(producer, await buildProducerSubsetPdf(await readFile(join(fonts, 'Carlito-Regular.ttf')), await readFile(join(fonts, 'Carlito-Bold.ttf'))));

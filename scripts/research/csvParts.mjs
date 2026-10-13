@@ -13,17 +13,16 @@
  * RESOLUTION, checked before any reading was taken: 1 part against 2 parts of the same bytes must report a different
  * part count and join time, and a 2 MiB total against a 4 MiB one a different page count.
  */
-import { join } from 'node:path';
-
 import { COMPOSED_FAMILY_DEFAULT } from '@monstera/contract';
 
 import { fontsDirectory } from '../provision/fonts.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 
 const ROOT = repoRoot();
-const { composeCsv } = await import(join(ROOT, 'packages/kernel/dist/csvCompose.js'));
-const { faceSourceOf } = await import(join(ROOT, 'packages/kernel/dist/fontCatalogue.js'));
-const { joinPdfs } = await import(join(ROOT, 'packages/kernel/dist/workbookParts.js'));
+// LITERAL SPECIFIERS, so `proof:electronimports` can read what this loads: none of it may reach Electron.
+const { composeCsv } = await import('../../packages/kernel/dist/csvCompose.js');
+const { faceSourceOf } = await import('../../packages/kernel/dist/fontCatalogue.js');
+const { joinPdfs } = await import('../../packages/kernel/dist/workbookParts.js');
 
 const totalMiB = Number(process.argv[2] ?? '4');
 const partMiB = Number(process.argv[3] ?? '1');
