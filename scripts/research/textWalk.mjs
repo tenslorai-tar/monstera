@@ -63,6 +63,10 @@ async function distinctCopy(name, source) {
  * its command to turn it on turns it OFF when it is already on, and no words are then offered to press.
  */
 async function ensureEditText() {
+  // ADD TEXT STAYS ARMED after its editor ends, and its surface covers the whole page, the page note's button included
+  // (2026-10-13, step 9: 'subtree intercepts pointer events' for 30 s). A hand turns it off before pressing the note.
+  const add = page.getByRole('button', { name: 'Add text', exact: true }).first();
+  if ((await add.count()) > 0 && (await add.getAttribute('aria-pressed')) === 'true') await add.click();
   const tool = page.getByRole('button', { name: 'Edit text', exact: true }).first();
   if ((await tool.getAttribute('aria-pressed')) !== 'true') await command('Edit text on the page');
 }
@@ -110,6 +114,18 @@ async function chooseFont(family) {
   const search = panel().getByRole('combobox', { name: 'Search fonts' });
   await search.fill(family);
   await search.press('Enter');
+  // THE EDITOR IS BUSY WHILE THE FONT IS WRITTEN (about 8 s on this machine: aria-busy=true, contenteditable=false, read by a
+  // probe on 2026-10-13), and a click away or an Escape sent then is taken by nothing; when the write ends the editor is
+  // still open and the walk has spent its way out. So the walk waits for the end, as a hand would see it.
+  await page.waitForTimeout(1000);
+  await page.waitForFunction(
+    () => {
+      const open = document.querySelector('[data-text-editor]');
+      return open === null || open.getAttribute('aria-busy') !== 'true';
+    },
+    undefined,
+    { timeout: 60_000 },
+  );
 }
 
 await step('1. Edit text: a click between two letters, typing, Backspace twice, Shift+Ctrl+Left, Ctrl+B lights Bold', async () => {
@@ -358,7 +374,10 @@ await step('11. K8: Tab in Edit text types a tab, the words after it move to the
   await expect(editor()).toHaveCount(0);
   // READ BACK FROM THE WRITTEN DOCUMENT: the same block opened again is read from the bytes the write produced, by the
   // reader every edit reads through, so a tab that was not written cannot come back. Step 14 saves these bytes. The
-  // editor closing above is the write answering, so nothing is waited for here.
+  // editor closing above is the write answering. BUT THE PAGE'S WORDS ARE READ AGAIN AFTER IT, and a block opened before that
+  // read lands shows the old words: 2026-10-13 `readBack: false` here while step 14's saved file held the tab. 8 s is the
+  // longest write this file's own comments measured (step 12).
+  await page.waitForTimeout(8000);
   await page.locator('[data-text-block]').nth(2).click();
   await expect(editor()).toBeFocused();
   const readBack = await editor().evaluate((element) => element.textContent?.includes('\t') ?? false);
@@ -372,6 +391,9 @@ await step('12. B2.8: In this document lists the fonts of every page, not only t
   // click on it opens nothing; any block shows the document's fonts, so the third, which step 11 also opens, is used.
   // THE PREVIOUS STEP'S WRITE MAY STILL BE RUNNING (3 to 8 s, measured 2026-10-12), and the controls of a block wait on it.
   await page.waitForTimeout(8000);
+  // THE TOOL ARMED AGAIN: the Escape that ends step 11's reopened block can also leave Edit text (2026-10-13 screenshot of
+  // this step: no block layer drawn), and this step must not depend on how step 11 ended.
+  await ensureEditText();
   await page.locator('[data-text-block]').nth(2).click();
   await expect(editor()).toBeFocused();
   await expect(panel()).toBeVisible();
@@ -465,9 +487,12 @@ await step('15. N10: no Format group in the ribbon while a block is open; Ctrl+B
   await chooseFont('Times New Roman');
   const stillOpen = await editor().isVisible();
   // A CLICK AWAY WRITES IT, so step 19's saved file holds the bold Times New Roman this step set.
+  // THE WRITE EMBEDS A FONT, which is longer than the 3 to 5 s of a plain edit: the editor was still up after 30 s on
+  // 2026-10-13 (i5-3230M), so the wait is 120 s and its length is recorded.
+  const clickedAt = Date.now();
   await clickPage(20, 20);
-  await expect(editor()).toHaveCount(0);
-  return { editorStayedOpen: stillOpen };
+  await expect(editor()).toHaveCount(0, { timeout: 120_000 });
+  return { editorStayedOpen: stillOpen, writeTookMs: Date.now() - clickedAt };
 });
 
 await step('16. E4 and N13: the text box from step 13 made bold and justified in the one Text section, and dashed in Box', async () => {
@@ -580,6 +605,9 @@ async function underPoint(x, y) {
 
 const forW1 = await distinctCopy('for-w1.pdf', sample);
 await step('W1: Add text at 85%, 89% and 95% down the first (turned) page, each pressed ON SCREEN, is in the saved file', async () => {
+  // THE EDIT TAB FIRST: step 19 leaves the Organize tab up, and a document opened then shows its page grid with no page
+  // canvas for `open` to wait on (2026-10-13, step 20's screenshot).
+  await section('Edit');
   await open(forW1);
   await section('Edit');
   /** @type {Record<string, unknown>} */
@@ -642,6 +670,7 @@ async function savedMarkedRules(path) {
 const forL2 = await distinctCopy('for-l2.pdf', sample);
 const l2Saved = join(output, 'l2.pdf');
 await step('L2: an underlined word keeps its one underline when its block is edited again, read back from the saved file', async () => {
+  await section('Edit');
   await open(forL2);
   await section('Edit');
   await ensureEditText();
@@ -689,6 +718,7 @@ async function densePage() {
 
 const l6Saved = join(output, 'l6.pdf');
 await step('L6: a page with more runs than one answer carries SAYS SO in Edit text, and its heading is still edited and saved', async () => {
+  await section('Edit');
   await open(await densePage());
   await section('Edit');
   await ensureEditText();
@@ -717,6 +747,7 @@ await step('N14: a word processor’s subsets keep their own font, bold and supe
   const fonts = fontsDirectory(root);
   const producer = join(output, 'producer-subsets.pdf');
   await writeFile(producer, await buildProducerSubsetPdf(await readFile(join(fonts, 'Carlito-Regular.ttf')), await readFile(join(fonts, 'Carlito-Bold.ttf'))));
+  await section('Edit');
   await open(producer);
   await section('Edit');
   await ensureEditText();
