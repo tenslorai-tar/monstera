@@ -124,3 +124,25 @@ a move, each refused as out of date) were commands composed before their own pre
 `packages/kernel/src/fieldWalkKeeping.test.ts` with a duplicate as its control. A move made by anything this
 renderer did not send, or one that added or removed an item, is never followed, and the command is refused
 as before.
+
+## Correction, 2026-10-13 — a line's ends and a polygon's corners are its handles (the owner's O8)
+
+The owner: a Distance stayed "2.8 in" after it was stretched, an Area stayed "2.0 in²" after a corner was dragged, the
+Comment kept the old value, and resizing a distance by its box tilted the line and gave it a green fill. Three mechanisms,
+each measured (`pageAnnotations.test.ts`):
+
+1. **The reading was never worked out again.** `placeAnnotation` maps the geometry and redraws the appearance, and
+   nothing rewrote `/Contents`, which is both the label and the Comment. Every geometry change now recomputes it from the
+   points the mark has and the scale in its own `/Measure`, through the contract's `measureLabel`, the one arithmetic the
+   drawing tools' live reading takes too (B3a). A mark whose `/Measure` this build cannot read keeps its words.
+2. **A box scales a slope.** A hand-drawn line is never flat: one drawn 1.5 points out of level has a points-box 1.5 points
+   tall, and a box 31.5 points taller maps that onto 31.5 points, a diagonal. So a line is moved by its two ENDS and a
+   polygon or polyline by its CORNERS: the walk carries their points (up to `LISTED_POINTS_MAX`, 32, bounded by what an
+   entry may cost in the host's 8 MiB answer), the select tool draws a handle on each and offers no box corners, and a drag
+   on one sends **`reshapeAnnotation`**, a new member of `KEEPS_THE_ANNOTATION_WALK` that writes the points of the object its
+   handle names, in place. It is its own command and not a placement by points because `placeAnnotation` names up to 1,024
+   marks, and points on each sized the request at 15.7 MB against the host's 256 KB frame (`hostRoutes.test.ts`); a reshape
+   is one mark. The walk-keeping proof gained a polyline for it.
+3. **The fill was the preview, not the document.** No `/IC` was written and MuPDF drew no fill (a render read 0 green
+   pixels). The select tool previewed every move as a box tinted with the accent, which the overlay holds until the page
+   redraws; over a line it read as the line gaining a fill. A line or polygon being moved is now previewed as its outline.
