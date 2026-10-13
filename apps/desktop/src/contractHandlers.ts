@@ -1,7 +1,6 @@
 import {
   AI_PROVIDERS,
   AI_PROVIDER_IDS,
-  COMPOSED_FAMILY_DEFAULT,
   ANNOTATIONS_PART,
   DESTINATIONS_PART,
   FORM_FIELDS_PART,
@@ -1171,12 +1170,12 @@ function newFromImportHandler(
 ): ContractHandlers['document.newFromCsv'] {
   // ONE HANDLER FOR BOTH CHANNELS, which answer one declared union: a copy per format
   // would be two opinions about how an import is opened and answered.
-  return async (params: { readonly work: string }): Promise<Awaited<ReturnType<ContractHandlers['document.newFromMarkdown']>>> => {
+  return async (params: { readonly family: string; readonly work: string }): Promise<Awaited<ReturnType<ContractHandlers['document.newFromMarkdown']>>> => {
     try {
-      // NO DIALOG ASKS for a new document's font, so it is set as every composition was before D1. THE WORK'S NAME is what
+      // THE FONT the person chose before the picker (the owner's L4), as Insert from Markdown's is. THE WORK'S NAME is what
       // the import is shown under (ADR-0234).
       const composed = await deps.commands.composeImportFile(format, {
-        family: COMPOSED_FAMILY_DEFAULT,
+        family: params.family,
         work: params.work,
       });
       if (composed.kind !== 'written') return ok(composeRefusal(composed));

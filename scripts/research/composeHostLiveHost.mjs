@@ -46,6 +46,9 @@ import { pathToFileURL } from 'node:url';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { formatError } from '../lib/reportError.mjs';
 
+/** The family a new document is set in here: the default the new-PDF window opens on (the owner's L4). */
+const LIVE_FAMILY = 'Arimo';
+
 const ROOT = repoRoot();
 
 /** Where the report goes, given by the driver — a FILE, for `hostRecoveryHost.mjs`' reason. */
@@ -213,7 +216,7 @@ async function main() {
 
     next.bytes = new TextEncoder().encode(SOURCE);
     next.destination = join(scratch, 'composed.pdf');
-    const composed = await observed(() => handlers['document.newFromMarkdown']({ work: 'live-host' }));
+    const composed = await observed(() => handlers['document.newFromMarkdown']({ family: LIVE_FAMILY, work: 'live-host' }));
 
     const header = existsSync(next.destination)
       ? readFileSync(next.destination).subarray(0, 5).toString('latin1')
@@ -230,7 +233,7 @@ async function main() {
     // A CSV TABLE THROUGH THE SAME HOST, on its own channel, read back the same way.
     next.bytes = new TextEncoder().encode(CSV_SOURCE);
     next.destination = join(scratch, 'composed-table.pdf');
-    const csvComposed = await observed(() => handlers['document.newFromCsv']({ work: 'live-host' }));
+    const csvComposed = await observed(() => handlers['document.newFromCsv']({ family: LIVE_FAMILY, work: 'live-host' }));
     /** @type {any} */
     let csvWords = null;
     if (csvComposed?.ok === true && csvComposed.value?.kind === 'opened') {
@@ -243,7 +246,7 @@ async function main() {
     // the container's grant to set any text at all, so this is also the run that shows the grant is enough.
     next.bytes = new TextEncoder().encode(BOXED_SOURCE);
     next.destination = join(scratch, 'composed-boxed.pdf');
-    const boxedComposed = await observed(() => handlers['document.newFromMarkdown']({ work: 'live-host' }));
+    const boxedComposed = await observed(() => handlers['document.newFromMarkdown']({ family: LIVE_FAMILY, work: 'live-host' }));
 
     // PICTURES THROUGH THE SAME HOST, on their own channel, counted by the MuPDF host.
     next.destination = join(scratch, 'composed-images.pdf');
@@ -259,7 +262,7 @@ async function main() {
     // THE CONTROL: bytes that are not UTF-8, which only the composer can refuse.
     next.bytes = new Uint8Array([0xff, 0xfe, 0xfd, 0x0a]);
     next.destination = join(scratch, 'never-written.pdf');
-    const refused = await observed(() => handlers['document.newFromMarkdown']({ work: 'live-host' }));
+    const refused = await observed(() => handlers['document.newFromMarkdown']({ family: LIVE_FAMILY, work: 'live-host' }));
 
     const report = {
       composed,

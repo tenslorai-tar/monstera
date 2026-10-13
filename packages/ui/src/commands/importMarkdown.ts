@@ -9,6 +9,8 @@ import { IMPORT_SKIPPED_DIALOG_ID } from '../dialogs/importSkipped.js';
 import { INSERT_MARKDOWN_DIALOG_ID } from '../dialogs/insertMarkdown.js';
 import type { InsertMarkdownAnswer } from '../dialogs/insertMarkdownResult.js';
 import { INSERT_IMAGES_DIALOG_ID } from '../dialogs/insertImages.js';
+import { NEW_FROM_TEXT_DIALOG_ID } from '../dialogs/newFromText.js';
+import { NEW_FROM_TEXT_RESULT, type NewFromTextAnswer } from '../dialogs/newFromTextResult.js';
 import type { InsertImagesAnswer } from '../dialogs/insertImagesResult.js';
 import { WORKBOOK_INCOMPLETE_DIALOG_ID } from '../dialogs/workbookIncomplete.js';
 import {
@@ -177,7 +179,11 @@ export function newFromMarkdownCommand(deps: {
     ribbonTitle: RIBBON_NEW_FROM_MARKDOWN,
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 10, size: 'small' }],
     run: async (): Promise<void> => {
-      const answer = await withWorkProgress(deps, MARKDOWN_CONVERTING, (work) => deps.client['document.newFromMarkdown']({ work }));
+      const chosen = await chosenFont(deps);
+      if (chosen === undefined) return;
+      const answer = await withWorkProgress(deps, MARKDOWN_CONVERTING, (work) =>
+        deps.client['document.newFromMarkdown']({ family: chosen.family, work }),
+      );
       if (!answer.ok) {
         reportProblem(deps, answer.error);
         return;
@@ -195,10 +201,24 @@ export function newFromMarkdownCommand(deps: {
 }
 
 /**
+ * The font a new PDF from text is set in, asked before main's picker (the owner's L4): the session's one held font list
+ * (`fontListOf`, W5) in the one font row. `undefined` where the dialog was closed unanswered, which is a change of mind:
+ * nothing is picked or written.
+ */
+async function chosenFont(deps: {
+  readonly client: DocumentCommandDeps['client'];
+  readonly ask: DocumentCommandDeps['ask'];
+}): Promise<NewFromTextAnswer | undefined> {
+  const fonts = await fontListOf(deps.client);
+  const answer = NEW_FROM_TEXT_RESULT.safeParse(await deps.ask(NEW_FROM_TEXT_DIALOG_ID, { fonts }));
+  return answer.success ? answer.data : undefined;
+}
+
+/**
  * A new PDF table from a CSV file, opened as a tab.
  *
  * {@link newFromMarkdownCommand}'s shape and callbacks exactly: it needs no document,
- * the ask is nothing, and every answer is one the Markdown import also gives, so the
+ * the ask is the font, and every answer is one the Markdown import also gives, so the
  * same mapping and the same dialog tell the person what happened.
  */
 export function newFromCsvCommand(deps: {
@@ -217,8 +237,12 @@ export function newFromCsvCommand(deps: {
     ribbonTitle: RIBBON_NEW_FROM_CSV,
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 30, size: 'small' }],
     run: async (): Promise<void> => {
+      const chosen = await chosenFont(deps);
+      if (chosen === undefined) return;
       // ON SCREEN FROM THE CHOSEN FILE ON, with a Cancel where it is composed in parts: a large file takes minutes.
-      const answer = await withWorkProgress(deps, CSV_CONVERTING, (work) => deps.client['document.newFromCsv']({ work }));
+      const answer = await withWorkProgress(deps, CSV_CONVERTING, (work) =>
+        deps.client['document.newFromCsv']({ family: chosen.family, work }),
+      );
       if (!answer.ok) {
         reportProblem(deps, answer.error);
         return;

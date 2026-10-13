@@ -97,6 +97,12 @@ function callbacks(
         where.push({ id, props });
         return Promise.resolve(closed ? undefined : position);
       }
+      // THE NEW DOCUMENT'S FONT (the owner's L4) is the same kind of question, asked first and kept apart, answered with a
+      // family that is not the default so a command that sent Arimo whatever was chosen fails.
+      if (id === 'dialog.new-from-text') {
+        where.push({ id, props });
+        return Promise.resolve(closed ? undefined : { family: 'Tinos' });
+      }
       calls.push({ name: 'ask', value: { id, props } });
       return Promise.resolve(undefined);
     },
@@ -104,7 +110,7 @@ function callbacks(
 }
 
 describe('newFromMarkdownCommand', () => {
-  it('SENDS NOTHING and adds the composed document as a tab', async () => {
+  it('SENDS THE FONT CHOSEN AND NOTHING ELSE, and adds the composed document as a tab', async () => {
     const { client, sent } = recording({
       'document.newFromMarkdown': ok({
         kind: 'opened',
@@ -114,7 +120,7 @@ describe('newFromMarkdownCommand', () => {
         name: 'notes.pdf',
       }),
     });
-    const { calls, record, ask } = callbacks();
+    const { calls, where, record, ask } = callbacks();
 
     await newFromMarkdownCommand({ track: UNTRACKED,
       client,
@@ -123,7 +129,12 @@ describe('newFromMarkdownCommand', () => {
       onAlreadyOpen: record('already-open'),
     }).run(CONTEXT);
 
-    expect(namedWorkSetAside(sent)).toStrictEqual([{ id: 'document.newFromMarkdown', params: {} }]);
+    // THE FONT QUESTION FIRST, handed this computer's list, and its answer is what the channel carries (the owner's L4).
+    expect(where).toStrictEqual([{ id: 'dialog.new-from-text', props: { fonts: FONTS } }]);
+    expect(namedWorkSetAside(sent)).toStrictEqual([
+      { id: 'app.fontFamilies', params: {} },
+      { id: 'document.newFromMarkdown', params: { family: 'Tinos' } },
+    ]);
     expect(calls).toStrictEqual([
       {
         name: 'opened',
@@ -143,6 +154,23 @@ describe('newFromMarkdownCommand', () => {
       onAlreadyOpen: record('already-open'),
     }).run(CONTEXT);
 
+    expect(calls).toStrictEqual([]);
+  });
+
+  it('CONTROL: the font question closed unanswered picks no file — the channel is never called', async () => {
+    // ASSERTED AS THE CALL NOT MADE: the channel's own picker would also open nothing if dismissed, so an end state could
+    // not tell a command that skipped the question's answer from one that honoured it.
+    const { client, sent } = recording({});
+    const { calls, record, ask } = callbacks(undefined, true);
+
+    await newFromMarkdownCommand({ track: UNTRACKED,
+      client,
+      ask,
+      onOpened: record('opened'),
+      onAlreadyOpen: record('already-open'),
+    }).run(CONTEXT);
+
+    expect(sent.map((call) => call.id)).toStrictEqual(['app.fontFamilies']);
     expect(calls).toStrictEqual([]);
   });
 
@@ -445,7 +473,7 @@ describe('insertImageCommand (O3)', () => {
 });
 
 describe('newFromCsvCommand', () => {
-  it('SENDS NOTHING on its OWN channel and adds the composed table as a tab', async () => {
+  it('SENDS THE FONT CHOSEN on its OWN channel and adds the composed table as a tab', async () => {
     // THE CHANNEL IS THE DECISION: a CSV command that dispatched on
     // `document.newFromMarkdown` would open a picker for the wrong format and every
     // outcome below would still read correctly.
@@ -468,9 +496,11 @@ describe('newFromCsvCommand', () => {
       onAlreadyOpen: record('already-open'),
     }).run(CONTEXT);
 
-    // THE WORK IS NAMED, so a file composed in parts is shown and can be stopped (`withWorkProgress`).
-    expect(sent.map((call) => call.id)).toStrictEqual(['document.newFromCsv']);
-    expect((sent[0]?.params as { work?: unknown }).work).toMatch(/^[0-9a-f-]{36}$/u);
+    // THE WORK IS NAMED, so a file composed in parts is shown and can be stopped (`withWorkProgress`), and the table is
+    // set in the family the font question answered (the owner's L4).
+    expect(sent.map((call) => call.id)).toStrictEqual(['app.fontFamilies', 'document.newFromCsv']);
+    expect((sent[1]?.params as { work?: unknown }).work).toMatch(/^[0-9a-f-]{36}$/u);
+    expect((sent[1]?.params as { family?: unknown }).family).toBe('Tinos');
     expect(calls).toStrictEqual([
       { name: 'opened', value: { docId: COMPOSED, version: 1, byteLength: 2048, name: 'table.pdf' } },
     ]);

@@ -426,6 +426,9 @@ export const TOAST_RESTORE_GONE = messageKey('toast.restore-version.gone');
 export const INSERT_MARKDOWN_TITLE = messageKey('dialog.insert-markdown.title');
 export const INSERT_MARKDOWN_FONT = messageKey('dialog.insert-markdown.font');
 export const INSERT_MARKDOWN_APPLY = messageKey('dialog.insert-markdown.apply');
+export const NEW_FROM_TEXT_TITLE = messageKey('dialog.new-from-text.title');
+export const NEW_FROM_TEXT_FONT = messageKey('dialog.new-from-text.font');
+export const NEW_FROM_TEXT_APPLY = messageKey('dialog.new-from-text.apply');
 export const REPLACE_PAGE_COMMAND_TITLE = messageKey('command.replace-page.title');
 export const REPLACE_PAGE_TITLE = messageKey('dialog.replace-page.title');
 export const REPLACE_PAGE_LABEL = messageKey('dialog.replace-page.label');
@@ -5795,6 +5798,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [INSERT_MARKDOWN_TITLE]: 'Insert from Markdown',
   [INSERT_MARKDOWN_FONT]: 'Font',
   [INSERT_MARKDOWN_APPLY]: 'Choose file…',
+  [NEW_FROM_TEXT_TITLE]: 'New PDF',
+  [NEW_FROM_TEXT_FONT]: 'Font',
+  [NEW_FROM_TEXT_APPLY]: 'Choose file…',
   [REPLACE_PAGE_COMMAND_TITLE]: 'Replace pages…',
   [REPLACE_PAGE_TITLE]: 'Replace pages',
   [REPLACE_PAGE_LABEL]: 'Replace with',

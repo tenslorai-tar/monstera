@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { COMPOSED_FAMILY_DEFAULT } from '@monstera/contract';
 
+import { composeCsv } from './csvCompose.js';
 import { faceSourceOf } from './fontCatalogue.js';
 import { composeMarkdown } from './markdownCompose.js';
 
@@ -44,5 +45,23 @@ describe('an imported Markdown file is set in the family chosen', () => {
   it('a standard name the picker offers is set in its bundled stand in: Times in Tinos', async () => {
     const composed = await composeMarkdown(SOURCE, LETTER, FACES, 'Times');
     expect(await familiesIn(composed.pdf)).toEqual(['Cousine', 'Tinos']);
+  });
+});
+
+/**
+ * A CSV file's table is set in the family chosen too (the owner's L4), read the same way: before L4 nothing asked for it,
+ * so the composer was handed the default every time and no case could tell it from one that dropped the choice.
+ */
+describe('a CSV file is set in the family chosen', () => {
+  const TABLE = new TextEncoder().encode('Name,Amount\nFirst,1\nSecond,2\n');
+
+  it('sets the table in Tinos when Tinos is chosen', async () => {
+    const composed = await composeCsv(TABLE, LETTER, FACES, 'Tinos');
+    expect(await familiesIn(composed.pdf)).toEqual(['Tinos']);
+  });
+
+  it('CONTROL: the default sets it in Arimo, so the case above is the choice and not the fixture', async () => {
+    const composed = await composeCsv(TABLE, LETTER, FACES, COMPOSED_FAMILY_DEFAULT);
+    expect(await familiesIn(composed.pdf)).toEqual(['Arimo']);
   });
 });

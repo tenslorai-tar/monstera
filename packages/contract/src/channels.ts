@@ -3495,11 +3495,12 @@ export const channels = {
    * and opens it
    * ([ADR-0060](../../../docs/DECISIONS/0060-an-imported-source-is-parsed-in-a-contained-host-that-holds-no-document.md)).
    *
-   * ## THE ASK CARRIES NOTHING, `document.open`'s shape
+   * ## THE ASK CARRIES A FONT AND NOTHING ELSE, `document.open`'s shape otherwise
    *
-   * Main opens both pickers, reads the source, composes it in the compose host,
-   * writes the result and opens it through the one route a document is opened by.
-   * What crosses is the outcome.
+   * The family the words are set in, chosen in the dialog the command opens first (the
+   * owner's L4), `document.appendMarkdown`'s schema. Main opens both pickers, reads the
+   * source, composes it in the compose host, writes the result and opens it through the
+   * one route a document is opened by. What crosses back is the outcome.
    *
    * ## Every open outcome, and the import's own beside them
    *
@@ -3507,7 +3508,7 @@ export const channels = {
    */
   'document.newFromMarkdown': channel(
     'Composes a Markdown file the user picks as a new PDF, saves it where they choose, and opens it.',
-    z.object(NAMED_WORK).strict(),
+    z.object({ family: composedFamilySchema, ...NAMED_WORK }).strict(),
     textImportOutcomeSchema,
     ['engine-unavailable'],
   ),
@@ -3516,14 +3517,14 @@ export const channels = {
    * Sets a CSV file the user picks as a table on new PDF pages, saves it where they
    * choose, and opens it ([ADR-0060](../../../docs/DECISIONS/0060-an-imported-source-is-parsed-in-a-contained-host-that-holds-no-document.md)).
    *
-   * `document.newFromMarkdown`'s shape and outcomes exactly: the ask carries nothing,
+   * `document.newFromMarkdown`'s shape and outcomes exactly: the ask carries the font,
    * main runs both pickers, the compose host reads the file with a strict RFC 4180
    * reader, and what crosses is the open's outcome or the import's own.
    */
   'document.newFromCsv': channel(
     'Sets a CSV file the user picks as a table in a new PDF, saves it where they choose, and opens it.',
     // A file composed in parts is reported and can be stopped under the work's name (ADR-0234).
-    z.object(NAMED_WORK).strict(),
+    z.object({ family: composedFamilySchema, ...NAMED_WORK }).strict(),
     textImportOutcomeSchema,
     ['engine-unavailable'],
   ),

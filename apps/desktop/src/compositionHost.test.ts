@@ -2119,14 +2119,16 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
       composePlatform: third.platform,
     });
 
-    const answer = await handlers['document.newFromMarkdown']({ work: WORK });
+    // A FAMILY THAT IS NOT THE DEFAULT, so a handler that set every new document in Arimo fails here (the owner's L4).
+    const answer = await handlers['document.newFromMarkdown']({ family: 'Tinos', work: WORK });
     expect(answer.ok, JSON.stringify(answer)).toBe(true);
     if (!answer.ok) throw new Error('unreachable');
     expect(answer.value.kind, JSON.stringify(answer.value)).toBe('opened');
     if (answer.value.kind !== 'opened') throw new Error('unreachable');
 
-    // THE HOST READ THE PERSON'S TEXT, and it was on disk when it was asked.
+    // THE HOST READ THE PERSON'S TEXT, and it was on disk when it was asked, and set it in the family they chose.
     expect(compose.sources).toStrictEqual(['# Title\n']);
+    expect(compose.families).toStrictEqual(['Tinos']);
     // AND IT IS GONE NOW: a copy of a picked file does not stay in a directory a
     // contained process may read.
     expect(compose.fromPaths.map((path) => existsSync(path))).toStrictEqual([false]);
@@ -2228,7 +2230,7 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
       enginePlatform: mupdf.platform,
       composePlatform: third.platform,
     });
-    expect(await handlers['document.newFromMarkdown']({ work: WORK })).toMatchObject({
+    expect(await handlers['document.newFromMarkdown']({ family: 'Arimo', work: WORK })).toMatchObject({
       ok: true,
       value: { kind: 'opened-with-boxes', name: 'boxed.pdf', boxed: places, more: 4 },
     });
@@ -2253,13 +2255,15 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
       composePlatform: third.platform,
     });
 
-    const answer = await handlers['document.newFromCsv']({ work: WORK });
+    const answer = await handlers['document.newFromCsv']({ family: 'Cousine', work: WORK });
     expect(answer.ok, JSON.stringify(answer)).toBe(true);
     if (!answer.ok) throw new Error('unreachable');
     expect(answer.value.kind, JSON.stringify(answer.value)).toBe('opened');
 
     expect(compose.channels).toStrictEqual(['engine/compose-csv']);
     expect(compose.sources).toStrictEqual(['a,b\n']);
+    // THE TABLE IN THE FAMILY CHOSEN, not the default (the owner's L4).
+    expect(compose.families).toStrictEqual(['Cousine']);
     expect([...readFileSync(destination)]).toStrictEqual(COMPOSED_BYTES);
   }, 120_000);
 
@@ -2401,7 +2405,7 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
       enginePlatform: mupdf.platform,
       composePlatform: third.platform,
     });
-    expect(await handlers['document.newFromCsv']({ work: WORK })).toMatchObject({
+    expect(await handlers['document.newFromCsv']({ family: 'Arimo', work: WORK })).toMatchObject({
       ok: true,
       value: { kind: 'opened-with-skips', skipped: [{ reason: 'quote-never-closed', line: 4, file: null }], skippedMore: 2 },
     });
@@ -2423,7 +2427,7 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
       enginePlatform: mupdf.platform,
     });
 
-    const answer = await handlers['document.newFromMarkdown']({ work: WORK });
+    const answer = await handlers['document.newFromMarkdown']({ family: 'Arimo', work: WORK });
     expect(answer.ok).toBe(false);
     if (answer.ok) throw new Error('unreachable');
     expect(answer.error.code).toBe('engine-unavailable');

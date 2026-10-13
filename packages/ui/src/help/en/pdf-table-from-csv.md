@@ -4,14 +4,15 @@ title: Make a PDF table from a CSV file
 summary: Turn a CSV spreadsheet file into a PDF with a table.
 keywords: [csv, spreadsheet, table, comma separated, convert csv, data to pdf]
 commands: [document.new-from-csv]
-contexts: [dialog.markdown-import-problem, dialog.boxed-characters, tools]
+contexts: [dialog.new-from-text, dialog.markdown-import-problem, dialog.boxed-characters, tools]
 ---
 A CSV file is a simple spreadsheet saved as text. Monstera can lay it out as a table in a new PDF.
 
 ## Steps
 
 1. In the rail, choose **Tools**, then **From CSV…** in the **Create** group (**New PDF table from CSV…**).
-2. Pick the .csv file, then choose where to save the PDF. It opens in a new tab.
+2. In the **New PDF** window, under **Font**, choose the font the table is set in, from the same list as everywhere else. Then choose **Choose file…**.
+3. Pick the .csv file, then choose where to save the PDF. It opens in a new tab.
 
 ![A PDF table made from a CSV file, with its bold first row](screenshot:pdf-table-from-csv-1)
 

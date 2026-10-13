@@ -28,6 +28,7 @@ import { expect as defaultExpect } from '@playwright/test';
 import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream, PDFString, decodePDFRawStream } from '@cantoo/pdf-lib';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { root, startWalk } from './liveWalk.mjs';
+import { savedFonts } from './savedFonts.mjs';
 
 // THE PRODUCER'S PAGE THE N14 STEP BUILDS, fresh or refused, beside the shell's own edges `startWalk` checks.
 refuseStaleBuild(root, [['packages/kernel/src/producerSubsetFixture.ts', 'packages/kernel/dist/producerSubsetFixture.js', 'tsc']], 1);
@@ -109,22 +110,6 @@ async function savedWords(path) {
   }
   await task.destroy();
   return pages;
-}
-
-/** The fonts a saved file's pages name, by BaseFont, read by pdf-lib (`pdffonts`' question, without Poppler). @param {string} path */
-async function savedFonts(path) {
-  const loaded = await PDFDocument.load(await readFile(path), { updateMetadata: false, ignoreEncryption: true });
-  const names = new Set();
-  for (const each of loaded.getPages()) {
-    const resources = each.node.Resources();
-    const fonts = resources?.lookupMaybe(PDFName.of('Font'), PDFDict);
-    for (const [, ref] of fonts?.entries() ?? []) {
-      const font = loaded.context.lookup(ref, PDFDict);
-      const base = font.lookupMaybe(PDFName.of('BaseFont'), PDFName);
-      if (base !== undefined) names.add(base.decodeText());
-    }
-  }
-  return [...names].sort();
 }
 
 /** The open editor's words. */

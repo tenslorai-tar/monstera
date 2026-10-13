@@ -424,13 +424,13 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // images are read in main and decoded in the compose host, and the answer is the merge's numbers, the tab's, and file
   // NAMES of pictures left out, bounded by `MAX_COMPOSE_SKIPS`.
   'document.insertImage': 'needs an engine session, a compose host, a multi-file open dialog and a save dialog',
-  // THE ASK IS NOTHING, OR A `DocId` AND ONE INDEX, and the source never crosses:
+  // THE ASK IS A FONT'S NAME, OR A `DocId`, ONE INDEX AND A FONT'S NAME, and the source never crosses:
   // main picks and reads the Markdown file, the compose host sets it, and main
   // writes and opens the result. What returns is an open's outcome — a name bounded
   // by `MAX_DOCUMENT_NAME_LENGTH` and numbers — whether the file held one line or
   // four megabytes.
   'document.newFromMarkdown': 'needs a compose host, an open dialog and a save dialog',
-  // `document.newFromMarkdown`'s answer to L11 exactly: the ask is nothing, the file
+  // `document.newFromMarkdown`'s answer to L11 exactly: the ask is a font's name, the file
   // is read in main and parsed in the compose host, and an open's outcome returns.
   'document.newFromCsv': 'needs a compose host, an open dialog and a save dialog',
   // THE SAME ANSWER FROM A CONVERTER (ADR-0120): the ask is nothing, the file is read in main and

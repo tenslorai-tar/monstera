@@ -946,6 +946,10 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'opened', props: { pageCount: 12, page: 2 } },
     { state: 'one-page', props: { pageCount: 1, page: 0 } },
   ],
+  'dialog.new-from-text': [
+    // THE LIST UNREAD, as in the gallery every font row is: the three built in, and the picker's words saying so.
+    { state: 'opened', props: {} },
+  ],
   'dialog.insert-blank-page': [
     // ONE PAGE AFTER THE PAGE ON SHOW, the third of twelve (O3).
     { state: 'opened', props: { pageCount: 12, page: 2 } },

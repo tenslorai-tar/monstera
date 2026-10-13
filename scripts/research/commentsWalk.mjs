@@ -34,6 +34,7 @@ import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNumber, PDFRa
 import { expect as defaultExpect } from '@playwright/test';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { root, startWalk } from './liveWalk.mjs';
+import { savedFonts } from './savedFonts.mjs';
 
 const expect = defaultExpect.configure({ timeout: 20_000 });
 
@@ -510,6 +511,8 @@ await step('O3: ONE Undo takes both pictures out, in the saved file', async () =
 await step('O9: a dismissed Markdown picker shows NO notice — nothing was chosen, so nothing is converting', async () => {
   await pickFiles([]);
   await command('New PDF from Markdown…');
+  // THE FONT QUESTION FIRST (L4), answered with its default; the picker after it is the one dismissed.
+  await page.getByRole('dialog', { name: 'New PDF' }).getByRole('button', { name: 'Choose file…' }).click();
   // LONGER THAN THE NOTICE'S FIRST LOOK (200 ms) several times over, so a notice that ignored the picker would be up.
   await page.waitForTimeout(1500);
   expect(await page.locator('[data-task-notice]').count()).toBe(0);
@@ -524,6 +527,7 @@ await step('O9: converting a long Markdown file shows "Converting Markdown to PD
   await pickFiles([markdown]);
   await saveTo(composed);
   await command('New PDF from Markdown…');
+  await page.getByRole('dialog', { name: 'New PDF' }).getByRole('button', { name: 'Choose file…' }).click();
   const notice = page.locator('[data-task-notice]');
   await expect(notice).toContainText('Converting Markdown to PDF', { timeout: 20_000 });
   // NO CANCEL: one composition runs to the end, and a button that could not stop it would do nothing.
@@ -534,6 +538,36 @@ await step('O9: converting a long Markdown file shows "Converting Markdown to PD
   expect(read.length).toBeGreaterThan(1);
   return { pages: read.length };
 });
+
+/**
+ * L4: a new PDF from Markdown and from CSV, each set in a font of this computer chosen in the font question before the
+ * picker, read back by the saved file's page fonts. Courier New and Georgia, because neither is a family the default
+ * (Arimo) or a built-in face would put in the file.
+ */
+for (const { format, title, file, text, family } of [
+  { format: 'Markdown', title: 'New PDF from Markdown…', file: 'l4-notes.md', text: '# Notes\n\nSet in the chosen font.\n', family: 'Courier New' },
+  { format: 'CSV', title: 'New PDF table from CSV…', file: 'l4-table.csv', text: 'Name,Amount\nFirst,1\nSecond,2\n', family: 'Georgia' },
+]) {
+  await step(`L4: a new PDF from ${format}, set in ${family} chosen before the picker, has ${family} in the saved file`, async () => {
+    const source = join(output, file);
+    await writeFile(source, text);
+    const composed = join(output, file.replace(/\.\w+$/u, '.pdf'));
+    await pickFiles([source]);
+    await saveTo(composed);
+    await command(title);
+    const dialog = page.getByRole('dialog', { name: 'New PDF' });
+    await dialog.getByRole('button', { name: /^Font:/u }).click();
+    const search = dialog.getByRole('combobox', { name: 'Search fonts' });
+    await search.fill(family);
+    await search.press('Enter');
+    await dialog.getByRole('button', { name: 'Choose file…' }).click();
+    await expect.poll(() => existsSync(composed), { timeout: 60_000 }).toBe(true);
+    const fonts = await savedFonts(composed);
+    // READ BACK: the face's PostScript name carries the family without its space (CourierNewPSMT, Georgia).
+    expect(fonts.some((name) => name.replace(/^[A-Z]{6}\+/u, '').replace(/\s/gu, '').toLowerCase().startsWith(family.replace(/\s/gu, '').toLowerCase()))).toBe(true);
+    return { fonts };
+  });
+}
 
 /**
  * N6's samples: a `.doc`, a two-sheet `.xls` and a `.ppt`, which nothing in this repository can make (B10 keeps a binary

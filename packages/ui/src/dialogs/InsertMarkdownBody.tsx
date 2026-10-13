@@ -2,17 +2,15 @@ import { COMPOSED_FAMILY_DEFAULT } from '@monstera/contract';
 import type { ReactElement } from 'react';
 import { useState } from 'react';
 
-import { type DocumentFont, FontPicker, RESOLVED_BUILT_IN, type ReadFontList } from '../FontPicker.js';
+import type { ReadFontList } from '../FontPicker.js';
 import { INSERT_MARKDOWN_APPLY, INSERT_MARKDOWN_FONT } from '../messages/en.js';
 import { useAttempt } from '../primitives/attempt.js';
 import { Button } from '../primitives/Button.js';
-import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
+import { DialogFooter } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import { PagePlacementRow, usePagePlacement } from './PagePlacement.js';
+import { ResolvedFontRow } from './ResolvedFontRow.js';
 import type { InsertMarkdownAnswer } from './insertMarkdownResult.js';
-
-/** None: the composer's resolver reads this computer's and Monstera's fonts, never the target document's. */
-const NO_DOCUMENT_FONTS: readonly DocumentFont[] = [];
 
 /**
  * The insert-from-Markdown dialog's body: where the pages go, by the one placement row every inserting dialog asks
@@ -41,17 +39,7 @@ export default function InsertMarkdownBody({
   return (
     <div className="m-insert-markdown">
       <PagePlacementRow placement={placement} tried={attempt.tried} />
-      <DialogRow label={INSERT_MARKDOWN_FONT}>
-        <FontPicker
-          builtIn={RESOLVED_BUILT_IN}
-          inDocument={NO_DOCUMENT_FONTS}
-          label={INSERT_MARKDOWN_FONT}
-          list={fonts ?? { listed: false, families: [], more: 0 }}
-          onPick={setFamily}
-          unset={INSERT_MARKDOWN_FONT}
-          value={family}
-        />
-      </DialogRow>
+      <ResolvedFontRow fonts={fonts} label={INSERT_MARKDOWN_FONT} value={family} onPick={setFamily} />
       <DialogFooter>
         <Button
           label={INSERT_MARKDOWN_APPLY}
