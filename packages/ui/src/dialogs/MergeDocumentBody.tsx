@@ -6,18 +6,12 @@ import { Suspense, lazy, useRef, useState } from 'react';
 
 import {
   MERGE_DOCUMENT_ADD,
-  MERGE_DOCUMENT_AFTER_PAGE,
   MERGE_DOCUMENT_APPLY,
-  MERGE_DOCUMENT_AT_END,
-  MERGE_DOCUMENT_AT_START,
   MERGE_DOCUMENT_LABEL,
   MERGE_DOCUMENT_MOVE_DOWN,
   MERGE_DOCUMENT_MOVE_UP,
   MERGE_DOCUMENT_NONE,
   MERGE_DOCUMENT_ORDER,
-  MERGE_DOCUMENT_PAGE,
-  MERGE_DOCUMENT_PLACE,
-  MERGE_DOCUMENT_RANGE,
   MERGE_DOCUMENT_PAGES,
   MERGE_DOCUMENT_PAGES_ALL,
   MERGE_DOCUMENT_PAGES_COUNT,
@@ -35,11 +29,11 @@ import { useAttempt } from '../primitives/attempt.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
-import { SegmentedControl } from '../primitives/SegmentedControl.js';
 import { type PageRangeProblem, formatPageRanges, parsePageGroups } from '../pageRanges.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import { rangeProblemSentence } from './pageRangeProblem.js';
-import type { MERGE_PLACEMENTS, MergeDocumentAnswer } from './mergeDocumentResult.js';
+import type { MergeDocumentAnswer } from './mergeDocumentResult.js';
+import { PagePlacementRow, type PagePlacementDraft, usePagePlacement } from './PagePlacement.js';
 import type { SourceDocument } from './sourceDocuments.js';
 
 /**
@@ -99,8 +93,6 @@ function MergePagesField({
  */
 const MergePagePicker = lazy(() => import('./MergePagePicker.js').then((loaded) => ({ default: loaded.MergePagePicker })));
 
-/** Where the merged pages go. */
-type Placement = (typeof MERGE_PLACEMENTS)[number];
 
 /** One listed document, under a key of its own: the same document may be listed twice, so its id cannot be the key. */
 interface Listed {
@@ -194,9 +186,7 @@ export default function MergeDocumentBody({
   readonly choices: readonly SourceDocument[];
   readonly source?: string | undefined;
   readonly pageCount: number;
-  readonly draft?:
-    | { readonly placement: Placement; readonly page: string; readonly documents: readonly Draft[] }
-    | undefined;
+  readonly draft?: { readonly placement: PagePlacementDraft; readonly documents: readonly Draft[] } | undefined;
 } & DialogAnswering<MergeDocumentAnswer>): ReactElement {
   const { _ } = useLingui();
   const [documents, setDocuments] = useState<readonly Listed[]>(() =>
@@ -219,13 +209,9 @@ export default function MergeDocumentBody({
   const rangesOk = [...ranges.values()].every((range) => range.read.ok);
   // THE ROWS WHOSE PAGES ARE SHOWN to choose from, by row key; the choice itself is the row's range text.
   const [picking, setPicking] = useState<ReadonlySet<number>>(new Set());
-  const [placement, setPlacement] = useState<Placement>(draft?.placement ?? 'end');
-  const [typed, setTyped] = useState(draft?.page ?? '1');
+  // AT THE END, as a merge always opened: after the last page, by the one placement row every inserting dialog asks (O3).
+  const placement = usePagePlacement(pageCount, 0, draft?.placement, { side: 'after', page: 'last' });
   const attempt = useAttempt();
-
-  const parsed = Number.parseInt(typed, 10);
-  const named = /^\d+$/u.test(typed.trim()) && Number.isSafeInteger(parsed) && parsed >= 1 && parsed <= pageCount;
-  const problem = placement === 'after' && attempt.tried && !named ? _(MERGE_DOCUMENT_RANGE, { last: pageCount }) : '';
   // EVERY LISTED DOCUMENT MUST STILL BE ONE OFFERED: one closed while the dialog was open is not merged in silently.
   const offered = documents.length > 0 && documents.every((each) => choices.some((choice) => choice.docId === each.docId));
   const full = documents.length >= MAX_MERGE_DOCUMENTS;
@@ -369,37 +355,14 @@ export default function MergeDocumentBody({
               onClick={() => {
                 resolve({
                   kind: 'choose-file',
-                  draft: { placement, page: typed, documents: documents.map((each) => ({ docId: each.docId, pages: each.pages })) },
+                  draft: { placement: placement.value, documents: documents.map((each) => ({ docId: each.docId, pages: each.pages })) },
                 });
               }}
             />
           </div>
         </div>
       </DialogRow>
-      <DialogRow label={MERGE_DOCUMENT_PLACE} problem={problem}>
-        <SegmentedControl<Placement>
-          label={MERGE_DOCUMENT_PLACE}
-          options={[
-            { value: 'start', label: MERGE_DOCUMENT_AT_START },
-            { value: 'end', label: MERGE_DOCUMENT_AT_END },
-            { value: 'after', label: MERGE_DOCUMENT_AFTER_PAGE },
-          ]}
-          value={placement}
-          onChange={setPlacement}
-        />
-        {placement === 'after' ? (
-          // NAMED *Page* for a screen reader and not on screen, where the segment beside it ends in *page*.
-          <span className="m-page-number-field">
-            <Input
-              invalid={problem !== ''}
-              label={MERGE_DOCUMENT_PAGE}
-              labelShownBeside
-              value={typed}
-              onValueChange={setTyped}
-            />
-          </span>
-        ) : null}
-      </DialogRow>
+      <PagePlacementRow placement={placement} tried={attempt.tried} />
       <DialogFooter>
         <Button
           label={MERGE_DOCUMENT_APPLY}
@@ -408,11 +371,10 @@ export default function MergeDocumentBody({
           onClick={() => {
             if (!offered) return;
             attempt.attempt();
-            if (placement === 'after' && !named) return;
+            const { at } = placement;
+            if (at === undefined) return;
             // A RANGE THE DOCUMENT DOES NOT HAVE IS SAID ON ITS ROW and goes no further: nothing is dropped or guessed.
             if (!rangesOk) return;
-            // THE ONE CONVERSION. 1-based on screen, 0-based on the wire.
-            const at = placement === 'start' ? 0 : placement === 'end' ? pageCount : parsed;
             resolve({
               kind: 'merge',
               documents: documents.map((each) => {

@@ -18,7 +18,7 @@ To make a new PDF:
 To add the pages to the open document:
 
 1. Choose **Insert Markdown…** (**Insert from Markdown…**) in the **Create** group.
-2. Under **Where**, choose **At the start**, **At the end** or **After page** and type the page. Under **Font**, choose the font the text is set in, from the same list as everywhere else; code stays in a fixed-width font. Then choose **Choose file…**.
+2. Under **Where**, choose **Before** or **After**, then **The first page**, **The last page** or **Page** and its number; it starts after the last page. Under **Font**, choose the font the text is set in, from the same list as everywhere else; code stays in a fixed-width font. Then choose **Choose file…**.
 3. Pick the file and choose where to save the new pages' PDF. It opens in a tab, and all of its pages are added to your document where you chose.
 
 ![The Create group in Tools with From Markdown… and Insert Markdown…](screenshot:pdf-from-markdown-1)

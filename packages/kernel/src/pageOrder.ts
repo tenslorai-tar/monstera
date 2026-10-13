@@ -453,10 +453,12 @@ export const applyDuplicatePage: Apply<'mupdf', 'duplicatePage'> = (
     );
   });
 
-/** Where an insert put its page, which is what its inverse removes. */
+/** Where an insert put its pages, which is what its inverse removes. */
 export interface PriorPageInsert {
-  /** Zero-based index the new page occupies after the command. */
+  /** Zero-based index the first new page occupies after the command. */
   readonly at: number;
+  /** How many pages went in, from `at` on. */
+  readonly count: number;
 }
 
 /**
@@ -482,18 +484,21 @@ export function captureInsertBlankPage(
           `${String(count)} page(s), so there is nowhere to insert`,
       };
     }
-    return { captured: true, prior: { at: command.at } };
+    return { captured: true, prior: { at: command.at, count: command.count ?? 1 } };
   });
 }
 
-/** Removes the page the insert added. */
+/** Removes the pages the insert added. */
 export const invertInsertBlankPage: Invert<'mupdf', 'insertBlankPage'> = (
   session: MupdfSession,
   inverse: PriorPageInsert,
 ): Promise<void> =>
   withDocument(session, (document) => {
-    // THE SAME RULE AS EVERY OTHER PAGE THAT LEAVES (ADR-0151): a field drawn on the inserted page since goes with it.
-    takePagesOut(document, [inverse.at]);
+    // THE SAME RULE AS EVERY OTHER PAGE THAT LEAVES (ADR-0151): a field drawn on an inserted page since goes with it.
+    takePagesOut(
+      document,
+      Array.from({ length: inverse.count }, (_, offset) => inverse.at + offset),
+    );
   });
 
 /**
@@ -544,12 +549,14 @@ export const applyInsertBlankPage: Apply<'mupdf', 'insertBlankPage'> = (
     const neighbour = leaves[command.at === 0 ? 0 : command.at - 1];
     if (neighbour === undefined) throw new RangeError('the neighbour page vanished');
 
-    const blank = document.addObject(
-      buildBlankPage(document, neighbour.get('MediaBox'), neighbour.get('Rotate')),
+    // EACH PAGE ITS OWN OBJECT: one object listed twice in `/Kids` would be one page shown twice, and a mark made on
+    // one would appear on every other.
+    const blanks = Array.from({ length: command.count ?? 1 }, () =>
+      document.addObject(buildBlankPage(document, neighbour.get('MediaBox'), neighbour.get('Rotate'))),
     );
     setKids(document, [
       ...leaves.slice(0, command.at),
-      blank,
+      ...blanks,
       ...leaves.slice(command.at),
     ]);
   });

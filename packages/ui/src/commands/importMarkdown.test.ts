@@ -6,6 +6,7 @@ import type { CommandContext } from '../registries/commands.js';
 import { UNTRACKED } from '../runningTask.js';
 import {
   appendMarkdownCommand,
+  insertImageCommand,
   newFromCaptureCommand,
   newFromCsvCommand,
   newFromImagesCommand,
@@ -91,7 +92,7 @@ function callbacks(
     ask: (id, props) => {
       // THE POSITION QUESTION IS ANSWERED AND KEPT APART, so every case about what comes after it reads the same list as
       // before: it asks where first, and `position` is what the person answered (the end, as the command always did).
-      if (id === 'dialog.insert-markdown') {
+      if (id === 'dialog.insert-markdown' || id === 'dialog.insert-images') {
         where.push({ id, props });
         return Promise.resolve(closed ? undefined : position);
       }
@@ -359,6 +360,85 @@ describe('appendMarkdownCommand', () => {
     expect(calls).toStrictEqual([
       { name: 'ask', value: { id: 'dialog.markdown-import-problem', props: { reason: 'at-capacity' } } },
     ]);
+  });
+});
+
+describe('insertImageCommand (O3)', () => {
+  const inserted = (skipped: readonly { reason: 'image-unreadable'; line: null; file: string }[] = []) =>
+    ok({
+      kind: 'inserted',
+      version: asDocVersion(2),
+      byteLength: 8192,
+      historyDropped: 0,
+      opened: { docId: COMPOSED, version: asDocVersion(1), byteLength: 4096, name: 'pictures.pdf' },
+      skipped,
+      skippedMore: 0,
+    });
+  const run = async (
+    answer: unknown,
+    position: unknown = { at: 0 },
+    closed = false,
+    context: CommandContext = CONTEXT,
+  ): Promise<ReturnType<typeof callbacks> & { readonly sent: { id: string; params: unknown }[] }> => {
+    const { client, sent } = recording({ 'document.insertImage': answer });
+    const recorded = callbacks(position, closed);
+    await insertImageCommand({
+      client,
+      ask: recorded.ask,
+      stamp: STAMP,
+      signatures,
+      onApplied: recorded.record('applied'),
+      onOpened: recorded.record('opened'),
+      onActivate: recorded.record('activate'),
+    }).run(context);
+    return { ...recorded, sent };
+  };
+
+  it('ASKS WHERE FIRST, after the page on show, then SENDS TWO NUMBERS AND NO BYTES: the position the question answered', async () => {
+    // `at: 0` IS NOT `page + 1` (4), so a command that ignored the answer and kept the old *after this page* fails here.
+    const { where, sent, calls } = await run(inserted(), { at: 0 });
+    expect(where).toStrictEqual([{ id: 'dialog.insert-images', props: { pageCount: 10, page: 3 } }]);
+    expect(sent).toStrictEqual([{ id: 'document.insertImage', params: { docId: DOC, at: 0 } }]);
+    // REBUILT, THE TAB ADDED, AND THE PERSON BACK ON THE DOCUMENT they inserted into, `appendMarkdownCommand`'s order.
+    expect(calls).toStrictEqual([
+      { name: 'applied', value: { version: 2, byteLength: 8192 } },
+      { name: 'opened', value: { docId: COMPOSED, version: 1, byteLength: 4096, name: 'pictures.pdf' } },
+      { name: 'activate', value: DOC },
+    ]);
+  });
+
+  it('the question opens after the LAST TICKED page (ADR-0104) — CONTROL for the page on show above', async () => {
+    const { where } = await run(inserted(), { at: 8 }, false, { ...CONTEXT, selectedPages: [1, 7] });
+    expect(where).toStrictEqual([{ id: 'dialog.insert-images', props: { pageCount: 10, page: 7 } }]);
+  });
+
+  it('CONTROL: a question closed unanswered picks nothing and sends nothing', async () => {
+    const { sent, calls } = await run(inserted(), undefined, true);
+    expect(sent).toStrictEqual([]);
+    expect(calls).toStrictEqual([]);
+  });
+
+  it('NAMES THE PICTURES LEFT OUT, by file, after the document is back in front', async () => {
+    const skipped = [{ reason: 'image-unreadable' as const, line: null, file: 'scan 4.png' }];
+    const { calls } = await run(inserted(skipped));
+    expect(calls.map((call) => call.name)).toStrictEqual(['applied', 'opened', 'activate', 'ask']);
+    expect(calls.at(-1)).toStrictEqual({ name: 'ask', value: { id: 'dialog.import-skipped', props: { skipped, more: 0 } } });
+  });
+
+  it('REPORTS what an import of pictures can end in — too many, and a picture past the bound — and rebuilds nothing', async () => {
+    const tooMany = await run(ok({ kind: 'too-many-images', limit: 500 }));
+    expect(tooMany.calls).toStrictEqual([
+      { name: 'ask', value: { id: 'dialog.markdown-import-problem', props: { reason: 'too-many-images', limit: 500 } } },
+    ]);
+    const tooLarge = await run(ok({ kind: 'too-large', limitBytes: 67_108_864, fileBytes: 71_200_000 }));
+    expect(tooLarge.calls).toStrictEqual([
+      {
+        name: 'ask',
+        value: { id: 'dialog.markdown-import-problem', props: { reason: 'too-large', limitBytes: 67_108_864, fileBytes: 71_200_000 } },
+      },
+    ]);
+    // CONTROL: a dismissed picker is a change of mind and says nothing.
+    expect((await run(ok({ kind: 'cancelled' }))).calls).toStrictEqual([]);
   });
 });
 

@@ -215,6 +215,12 @@ export const swapPagesSchema = z.object({
 }).strict();
 
 /**
+ * The most blank pages one insert adds. A bound so a typed count cannot ask the engine for a million pages; a hundred is
+ * more than any document's run of blank pages, and more is a second insert.
+ */
+export const MAX_BLANK_PAGES = 100;
+
+/**
  * Insert an empty page.
  *
  * ## No size on the wire, and that is a decision rather than a gap
@@ -233,11 +239,15 @@ export const swapPagesSchema = z.object({
  * `at` is where the new page ends up, so `at: 0` puts it first and
  * `at: pageCount` appends. That is the destination frame `movePage`'s own `to`
  * uses, and stating it here is what keeps the two from disagreeing.
+ *
+ * `count` pages go in at `at` as ONE command (the owner's O3), so five blank pages are one undo step rather than five.
+ * Absent is one, which is what the command sent before it could carry a count.
  */
 export const insertBlankPageSchema = z.object({
   kind: z.literal('insertBlankPage'),
-  /** Zero-based index the new page occupies afterwards. */
+  /** Zero-based index the first new page occupies afterwards. */
   at: z.number().int().nonnegative(),
+  count: z.number().int().min(1).max(MAX_BLANK_PAGES).optional(),
 }).strict();
 
 /**

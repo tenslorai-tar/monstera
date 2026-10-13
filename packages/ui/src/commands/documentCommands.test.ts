@@ -105,7 +105,6 @@ import {
   extractPagesCommand,
   insertFromPdfCommand,
   imagePagesFor,
-  insertImageCommand,
   placeImage,
   mergeDocumentCommand,
   replacePageCommand,
@@ -2607,136 +2606,6 @@ describe('delete pages — the mutation-dialog gate', () => {
             heightPoints: 792,
           },
         },
-      },
-    ]);
-  });
-
-  it('AN IMAGE INSERT SENDS TWO NUMBERS AND NO BYTES, at the page AFTER the one being read', async () => {
-    // THE UI HALF, and what it watches is the payload's shape as much as its
-    // values: this command physically cannot send an image, because
-    // `applyDocumentCommand` takes `DispatchableCommand` and the union omits
-    // `insertImagePage`. What it CAN get wrong is the index, and `CONTEXT.page`
-    // is 3 so a literal 0 fails here rather than reading as green.
-    //
-    // `at: 4` and not 3: a person on page 3 inserting a picture means *after
-    // this one*, and inserting at 3 pushes the page they are looking at down.
-    const { client, sent } = recording({
-      'document.insertImage': {
-        kind: 'inserted',
-        version: asDocVersion(2),
-        byteLength: 4096,
-        historyDropped: 0,
-      },
-    });
-    const applied: unknown[] = [];
-
-    await insertImageCommand({
-      client,
-      stamp,
-      signatures,
-      onApplied: (a) => applied.push(a),
-      ask: () => Promise.resolve(undefined),
-    }).run(CONTEXT);
-
-    expect(sent).toStrictEqual([{ id: 'document.insertImage', params: { docId: DOC, at: 4 } }]);
-    // AND THE VIEW WAS REBUILT, with both scalars. A version reported without a
-    // byte length rebinds the transport to the previous image's length, which is
-    // a range past the end of the new document.
-    expect(applied).toStrictEqual([{ version: 2, byteLength: 4096 }]);
-  });
-
-  it('CONTROL: a DISMISSED image picker reports nothing and rebuilds nothing', async () => {
-    // The user closed the dialog, so there is nothing to tell them. This is the
-    // one of the three non-success outcomes that must stay silent, and the two
-    // cases below are the ones that must not.
-    const { client } = recording({ 'document.insertImage': { kind: 'cancelled' } });
-    const applied: unknown[] = [];
-    const opened: unknown[] = [];
-
-    await insertImageCommand({
-      client,
-      stamp,
-      signatures,
-      onApplied: (a) => applied.push(a),
-      ask: (id, props) => {
-        opened.push({ id, props });
-        return Promise.resolve(undefined);
-      },
-    }).run(CONTEXT);
-
-    expect(applied).toStrictEqual([]);
-    expect(opened).toStrictEqual([]);
-  });
-
-  it('REPORTS an unreadable file, because a control that ran and did nothing is the display-only sin', async () => {
-    const { client } = recording({ 'document.insertImage': { kind: 'unreadable' } });
-    const opened: unknown[] = [];
-
-    await insertImageCommand({
-      client,
-      stamp,
-      signatures,
-      onApplied: () => undefined,
-      ask: (id, props) => {
-        opened.push({ id, props });
-        return Promise.resolve(undefined);
-      },
-    }).run(CONTEXT);
-
-    expect(opened).toStrictEqual([
-      { id: 'dialog.insert-image-problem', props: { reason: 'unreadable' } },
-    ]);
-  });
-
-  it('REPORTS a file past the bound, and carries the limit so the sentence can say a number', async () => {
-    // The limit travels from main rather than being restated here: *too large*
-    // with no number is something a person cannot act on, and a constant copied
-    // into the renderer is a second declaration of a bound main owns.
-    const { client } = recording({
-      'document.insertImage': { kind: 'too-large', limitBytes: 67_108_864, fileBytes: 71_200_000 },
-    });
-    const opened: unknown[] = [];
-
-    await insertImageCommand({
-      client,
-      stamp,
-      signatures,
-      onApplied: () => undefined,
-      ask: (id, props) => {
-        opened.push({ id, props });
-        return Promise.resolve(undefined);
-      },
-    }).run(CONTEXT);
-
-    expect(opened).toStrictEqual([
-      {
-        id: 'dialog.insert-image-problem',
-        props: { reason: 'too-large', limitBytes: 67_108_864, fileBytes: 71_200_000 },
-      },
-    ]);
-  });
-
-  it('REPORTS a picture past the PIXEL bound, carrying main’s limit', async () => {
-    const { client } = recording({
-      'document.insertImage': { kind: 'too-many-pixels', limitPixels: 100_000_000 },
-    });
-    const opened: unknown[] = [];
-
-    await insertImageCommand({
-      client,
-      stamp,
-      signatures,
-      onApplied: () => undefined,
-      ask: (id, props) => {
-        opened.push({ id, props });
-        return Promise.resolve(undefined);
-      },
-    }).run(CONTEXT);
-
-    expect(opened).toStrictEqual([
-      {
-        id: 'dialog.insert-image-problem',
-        props: { reason: 'too-many-pixels', limitPixels: 100_000_000 },
       },
     ]);
   });
@@ -6766,10 +6635,22 @@ describe('applyDocumentCommand stamps a creation command at the moment it is sen
       await duplicatePageCommand({ client: duplicated.client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, stamp, signatures }).run(context);
       expect(duplicated.sent).toStrictEqual([{ kind: 'duplicatePage', pages }]);
 
-      // AFTER THE LAST TARGET PAGE, which is the page on show when nothing is ticked.
+      // THE DIALOG OPENS AFTER THE LAST TARGET PAGE, which is the page on show when nothing is ticked (O3), and what
+      // it answers is what is sent.
       const inserted = sending();
-      await insertBlankPageCommand({ client: inserted.client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, stamp, signatures }).run(context);
-      expect(inserted.sent).toStrictEqual([{ kind: 'insertBlankPage', at }]);
+      const asked: unknown[] = [];
+      await insertBlankPageCommand({
+        client: inserted.client,
+        ask: (id, props) => {
+          asked.push({ id, props });
+          return Promise.resolve({ at, count: 1 });
+        },
+        onApplied: () => undefined,
+        stamp,
+        signatures,
+      }).run(context);
+      expect(asked).toStrictEqual([{ id: 'dialog.insert-blank-page', props: { pageCount: CONTEXT.pageCount, page: at - 1 } }]);
+      expect(inserted.sent).toStrictEqual([{ kind: 'insertBlankPage', at, count: 1 }]);
 
       // EVERY PAGE DIALOG is opened with the same pages; a dismissal sends nothing, so only the props are read.
       for (const factory of [

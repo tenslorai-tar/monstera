@@ -18,6 +18,8 @@
  *   reading back. An area's corner dragged changes its saved reading.
  * - O5: an insertion mark is as tall as the words it is placed in, and its Size in Properties resizes it; both read back.
  * - O7: Highlight area highlights a box with no words in it, saved as a Highlight at exactly that box, and is listed.
+ * - O3: three blank pages put before the first page in one insert, and two pictures after the last page in file-name
+ *   order; each read back from the saved file, and each taken out again by one Undo.
  */
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
@@ -35,7 +37,7 @@ refuseStaleBuild(root, [['packages/shared/src/geometry.ts', 'packages/shared/dis
 const { pageTransform, toPdf, viewportPoint } = await import('../../packages/shared/dist/geometry.js');
 
 const walk = await startWalk('comments');
-const { page, output, open, saveTo, command, section, step, finish } = walk;
+const { page, output, open, pickFiles, saveTo, command, section, step, finish } = walk;
 
 /** A letter page with words on it, then a second one turned 90 degrees. */
 async function linksDocument() {
@@ -416,6 +418,87 @@ await step('O7: Highlight area highlights a box with no words in it; the file ho
   await page.getByRole('tab', { name: 'Comments' }).click();
   await expect(page.locator('.m-annotations-panel').getByText('Highlight').first()).toBeVisible();
   return { rect, quad: numbers('QuadPoints') };
+});
+
+/**
+ * Each page of a saved file as pdf-lib reads it: its size, and whether it has any content.
+ *
+ * @param {string} path
+ */
+async function savedPages(path) {
+  const document = await PDFDocument.load(await readFile(path), { updateMetadata: false });
+  return document.getPages().map((each) => ({
+    width: Math.round(each.getWidth()),
+    height: Math.round(each.getHeight()),
+    drawn: each.node.get(PDFName.of('Contents')) !== undefined,
+  }));
+}
+
+/** A letter page with words on it, twice, so a blank page among them shows. */
+async function pagesDocument() {
+  const document = await PDFDocument.create();
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  for (const words of ['The first page.', 'The second page.']) {
+    document.addPage([612, 792]).drawText(words, { x: 72, y: 700, size: 14, font });
+  }
+  return document.save({ useObjectStreams: false });
+}
+
+const pages = join(output, 'pages.pdf');
+await writeFile(pages, await pagesDocument());
+
+await step('O3: three blank pages before the first page are one insert; the saved file has them first, empty, and page-sized', async () => {
+  await open(pages);
+  await command('Insert blank pages…');
+  const dialog = page.getByRole('dialog', { name: 'Insert blank pages' });
+  await dialog.getByRole('textbox', { name: 'How many pages' }).fill('3');
+  await dialog.getByRole('button', { name: 'Before', exact: true }).click();
+  await dialog.getByRole('button', { name: 'The first page', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Insert', exact: true }).click();
+  const read = await savedPages(await saveCopy('pages-blank.pdf'));
+  expect(read.map((each) => each.drawn)).toStrictEqual([false, false, false, true, true]);
+  expect(read.every((each) => each.width === 612 && each.height === 792)).toBe(true);
+  return { pages: read };
+});
+
+await step('O3: ONE Undo takes all three blank pages out, in the saved file', async () => {
+  await page.keyboard.press('Control+Z');
+  const read = await savedPages(await saveCopy('pages-blank-undone.pdf'));
+  expect(read.map((each) => each.drawn)).toStrictEqual([true, true]);
+  return { pages: read };
+});
+
+await step('O3: two pictures after the last page become two pages, in file-name order, one page each, in ONE insert', async () => {
+  // TWO PICTURES OF DIFFERENT SHAPES, so the order is readable off the saved pages: *pic 2* is tall and *pic 10* wide,
+  // and the picker answers them in the order name order is NOT.
+  const tall = join(output, 'pic 2.png');
+  const wide = join(output, 'pic 10.png');
+  await writeFile(tall, await page.screenshot({ clip: { x: 0, y: 0, width: 120, height: 240 } }));
+  await writeFile(wide, await page.screenshot({ clip: { x: 0, y: 0, width: 240, height: 120 } }));
+  await command('Insert images…');
+  const dialog = page.getByRole('dialog', { name: 'Insert images' });
+  await dialog.getByRole('button', { name: 'After', exact: true }).click();
+  await dialog.getByRole('button', { name: 'The last page', exact: true }).click();
+  await pickFiles([wide, tall]);
+  await saveTo(join(output, 'pages-pictures-composed.pdf'));
+  await dialog.getByRole('button', { name: 'Choose images…', exact: true }).click();
+  // THE PICTURES' OWN TAB opens beside this one, and the person is brought back to the document they inserted into.
+  await expect(page.getByRole('tab', { name: /pages-pictures-composed/u })).toBeVisible();
+  const read = await savedPages(await saveCopy('pages-pictures.pdf'));
+  expect(read).toHaveLength(4);
+  const [, , second, third] = read;
+  if (second === undefined || third === undefined) throw new Error('the pictures are not in the saved file');
+  expect(second.height).toBeGreaterThan(second.width);
+  expect(third.width).toBeGreaterThan(third.height);
+  return { pages: read };
+});
+
+await step('O3: ONE Undo takes both pictures out, in the saved file', async () => {
+  await page.getByRole('tab', { name: /^pages\.pdf/u }).first().click();
+  await page.keyboard.press('Control+Z');
+  const read = await savedPages(await saveCopy('pages-pictures-undone.pdf'));
+  expect(read).toHaveLength(2);
+  return { pages: read };
 });
 
 await finish();

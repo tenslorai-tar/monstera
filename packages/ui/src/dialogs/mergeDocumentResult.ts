@@ -1,18 +1,16 @@
 import { MAX_MERGE_DOCUMENTS, MAX_MERGE_PART_ENTRIES, pageSetOfAtMost } from '@monstera/contract';
 import { z } from 'zod';
 
+import { PAGE_PLACEMENT_DRAFT } from './pagePlacementDraft.js';
 import { chooseFileAnswer } from './sourceDocuments.js';
 
 /**
  * What the merge dialog answers with — **its own module for `deletePagesResult.ts`'s forced reason**: the entry imports
  * the body lazily and the body needs this type, so declaring it beside the entry makes the two circular.
  *
- * `at` is zero-based in the TARGET's frame, converted once in the body: *at the start* is 0, *at the end* is the page
- * count, *after page p* is `p`.
+ * `at` is zero-based in the TARGET's frame, converted once by the one placement row (`pagePlacementDraft.ts`): before
+ * the first page is 0, after the last is the page count, after page *p* is `p`.
  */
-
-/** Where the merged pages go. */
-export const MERGE_PLACEMENTS = ['start', 'end', 'after'] as const;
 
 /**
  * The documents merged in, in the order the person set (ADR-0152): each an open document's id, one to the merge's
@@ -37,8 +35,7 @@ const MERGE_DOCUMENT_PARTS = z
  */
 export const MERGE_DOCUMENT_DRAFT = z
   .object({
-    placement: z.enum(MERGE_PLACEMENTS),
-    page: z.string().max(20),
+    placement: PAGE_PLACEMENT_DRAFT,
     /** Each listed document and the page range as typed ('' is every page). */
     documents: z
       .array(z.object({ docId: z.string().min(1), pages: z.string().max(200) }).strict())

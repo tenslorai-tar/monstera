@@ -54,8 +54,8 @@ is not available.
 - [ ] **Table of contents** — Marks · `document.generate-toc` · Shows: on screen · Help: *Add a table of contents*
 - [ ] **Delete pages…** — Pages · `document.delete-pages` · Shows: on screen · Help: *Delete pages*
 - [ ] **Insert from PDF…** — Pages · `document.insert-from-pdf` · Shows: on screen · Help: *Insert pages from another PDF*
-- [ ] **Insert blank page** — Pages · `document.insert-blank-page` · Shows: on screen · Help: *Insert a blank page*
-- [ ] **Insert image…** — Pages · `document.insert-image` · Shows: on screen · Help: *Add a picture as a new page*
+- [ ] **Insert blank pages…** — Pages · `document.insert-blank-page` · Shows: on screen · Help: *Insert blank pages*
+- [ ] **Insert images…** — Pages · `document.insert-image` · Shows: on screen · Help: *Add pictures as new pages*
 - [ ] **Extract pages…** — Pages · `document.extract-pages` · Shows: a toast · Help: *Extract pages to a new PDF*
 - [ ] **Replace pages…** — Pages · `document.replace-page` · Shows: on screen · Help: *Replace pages*
 - [ ] **Duplicate page** — Pages · `document.duplicate-page` · Shows: on screen · Help: *Duplicate a page*

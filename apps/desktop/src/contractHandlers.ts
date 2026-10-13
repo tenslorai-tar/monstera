@@ -77,7 +77,7 @@ import {
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import { basename, isAbsolute, win32 } from 'node:path';
 
-import { type DocId, type FileHandle, err, lineText, ok, paragraphsOfLines } from '@monstera/shared';
+import { type DocId, type DocVersion, type FileHandle, err, lineText, ok, paragraphsOfLines } from '@monstera/shared';
 
 import { executeCommandHandler } from './commandHandlers.js';
 import { editRefusalOf, rewriteRefusalOf } from './editRefusals.js';
@@ -542,7 +542,7 @@ export function createContractHandlers(deps: {
         throw thrown;
       }
     },
-    'document.insertImage': insertImageHandler(deps.commands),
+    'document.insertImage': insertImageHandler(deps),
     'document.newFromMarkdown': newFromImportHandler(deps, 'markdown'),
     'document.newFromCsv': newFromImportHandler(deps, 'csv'),
     'document.newFromOffice': newFromOfficeHandler(deps),
@@ -1071,31 +1071,31 @@ function tooLargeAnswer(outcome: FileTooLarge): FileTooLarge {
   return { kind: 'too-large', limitBytes: outcome.limitBytes, fileBytes: outcome.fileBytes };
 }
 
-function insertImageHandler(commands: DocumentCommands): ContractHandlers['document.insertImage'] {
+/**
+ * Inserts the pictures a person picks as pages of `docId` at `at`, one page each, as ONE merge (the owner's O3):
+ * {@link newFromImagesHandler}'s composition, then {@link mergeComposed}.
+ */
+function insertImageHandler(
+  deps: OpenPathParts & { readonly commands: DocumentCommands },
+): ContractHandlers['document.insertImage'] {
   return async ({
     docId,
     at,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.insertImage']>>> => {
     try {
-      const outcome = await commands.insertImage(docId, at);
-      if (outcome.kind === 'cancelled') return ok({ kind: 'cancelled' } as const);
-      if (outcome.kind === 'unreadable') return ok({ kind: 'unreadable' } as const);
-      if (outcome.kind === 'too-large') {
-        return ok(tooLargeAnswer(outcome));
-      }
-      if (outcome.kind === 'too-many-pixels') {
-        return ok({ kind: 'too-many-pixels', limitPixels: outcome.limitPixels } as const);
-      }
-      return ok({
-        kind: 'inserted',
-        version: outcome.version,
-        byteLength: outcome.byteLength,
-        historyDropped: outcome.historyDropped,
-      } as const);
+      const composed = await deps.commands.insertImages(docId);
+      if (composed.kind === 'too-many-images') return ok({ kind: 'too-many-images', limit: composed.limit });
+      if (composed.kind === 'images-too-large') return ok({ kind: 'images-too-large', limitBytes: composed.limitBytes });
+      if (composed.kind !== 'written') return ok(composeRefusal(composed));
+      const merged = await mergeComposed(deps, docId, at, composed.destination);
+      if (merged.kind !== 'merged') return ok(merged);
+      // THE PICTURES LEFT OUT, by file name, ride with the insert as they ride with a new PDF from images.
+      return ok({ kind: 'inserted', ...merged.applied, skipped: [...composed.skipped], skippedMore: composed.skippedMore });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      if (thrown instanceof EngineUnavailableError) return err({ code: 'engine-unavailable' });
       throw thrown;
     }
   };
@@ -1233,6 +1233,72 @@ function newFromImagesHandler(
   };
 }
 
+/** What {@link mergeComposed} answers: the merge and the tab, or an open's refusal as the wire states it. */
+type ComposedMerge =
+  | {
+      readonly kind: 'merged';
+      readonly applied: {
+        readonly version: DocVersion;
+        readonly byteLength: number;
+        readonly historyDropped: number;
+        readonly opened: { readonly docId: DocId; readonly version: DocVersion; readonly byteLength: number; readonly name: string };
+      };
+    }
+  | { readonly kind: 'absent' }
+  | { readonly kind: 'busy' | 'denied' }
+  | { readonly kind: 'at-capacity'; readonly wouldHold: number; readonly ceiling: number };
+
+/**
+ * Opens a file this build just composed as a tab, and merges every page of it into `docId` at `at` — THE ONE ROUTE a
+ * composition reaches an open document by (B3a), which Insert from Markdown and Insert image both take. Its reasons
+ * are {@link appendMarkdownHandler}'s comment.
+ */
+async function mergeComposed(
+  deps: OpenPathParts & { readonly commands: DocumentCommands },
+  docId: DocId,
+  at: number,
+  destination: string,
+): Promise<ComposedMerge> {
+  const { outcome, sessions } = await openPath(deps, destination);
+  if (outcome.kind === 'absent') return { kind: 'absent' };
+  // A FILE THIS BUILD JUST WROTE CAN STILL BE HELD: a scanner opening it the moment it lands holds it as any
+  // program does, so the refusal is the person's to hear rather than a defect to throw.
+  if (outcome.kind === 'busy' || outcome.kind === 'denied') return { kind: outcome.kind };
+  if (outcome.kind === 'at-capacity') {
+    return { kind: 'at-capacity', wouldHold: outcome.wouldHold, ceiling: outcome.ceiling };
+  }
+  if (outcome.kind !== 'opened') {
+    throw new Error(
+      `the composed file answered ${outcome.kind} on open, and the write that preceded it refuses ` +
+        'a destination an open document reaches',
+    );
+  }
+
+  await sessions;
+  let applied: Awaited<ReturnType<DocumentCommands['execute']>>;
+  try {
+    applied = await deps.commands.execute(docId, {
+      kind: 'mergeDocument',
+      // EVERY PAGE THE SOURCE BECAME: the file was composed for this insert alone.
+      documents: [{ source: outcome.docId, sourcePages: 'all' }],
+      at,
+    });
+  } catch (thrown) {
+    await deps.documents.close(outcome.docId);
+    deps.recent.closed(outcome.docId);
+    throw thrown;
+  }
+  return {
+    kind: 'merged',
+    applied: {
+      version: applied.version,
+      byteLength: applied.byteLength,
+      historyDropped: applied.historyDropped,
+      opened: { docId: outcome.docId, version: outcome.version, byteLength: outcome.byteLength, name: outcome.name },
+    },
+  };
+}
+
 /**
  * Composes a picked Markdown file, opens it as a tab, and merges it into `docId`.
  *
@@ -1261,6 +1327,7 @@ function newFromImagesHandler(
 function appendMarkdownHandler(
   deps: OpenPathParts & { readonly commands: DocumentCommands },
 ): ContractHandlers['document.appendMarkdown'] {
+  // The comment above is `mergeComposed`'s too: this handler and the image insert's take that one route.
   return async ({
     docId,
     at,
@@ -1270,47 +1337,11 @@ function appendMarkdownHandler(
       const composed = await deps.commands.composeImportFile('markdown', { family, target: docId });
       if (composed.kind !== 'written') return ok(composeRefusal(composed));
 
-      const { outcome, sessions } = await openPath(deps, composed.destination);
-      if (outcome.kind === 'absent') return ok({ kind: 'absent' });
-      // A FILE THIS BUILD JUST WROTE CAN STILL BE HELD: a scanner opening it the moment it lands holds it as any
-      // program does, so the refusal is the person's to hear rather than a defect to throw.
-      if (outcome.kind === 'busy' || outcome.kind === 'denied') return ok({ kind: outcome.kind });
-      if (outcome.kind === 'at-capacity') {
-        return ok({ kind: 'at-capacity', wouldHold: outcome.wouldHold, ceiling: outcome.ceiling });
-      }
-      if (outcome.kind !== 'opened') {
-        throw new Error(
-          `the composed file answered ${outcome.kind} on open, and the write that preceded it refuses ` +
-            'a destination an open document reaches',
-        );
-      }
-
-      await sessions;
-      let applied: Awaited<ReturnType<DocumentCommands['execute']>>;
-      try {
-        applied = await deps.commands.execute(docId, {
-          kind: 'mergeDocument',
-          // EVERY PAGE THE MARKDOWN BECAME: the file was composed for this append alone.
-          documents: [{ source: outcome.docId, sourcePages: 'all' }],
-          at,
-        });
-      } catch (thrown) {
-        await deps.documents.close(outcome.docId);
-        deps.recent.closed(outcome.docId);
-        throw thrown;
-      }
-
+      const merged = await mergeComposed(deps, docId, at, composed.destination);
+      if (merged.kind !== 'merged') return ok(merged);
       return ok({
         kind: 'appended',
-        version: applied.version,
-        byteLength: applied.byteLength,
-        historyDropped: applied.historyDropped,
-        opened: {
-          docId: outcome.docId,
-          version: outcome.version,
-          byteLength: outcome.byteLength,
-          name: outcome.name,
-        },
+        ...merged.applied,
         // THE BOXED CHARACTERS, `newFromImportHandler`'s rule: the merged pages draw them as the composed tab does.
         boxed: [...composed.boxed],
         more: composed.more,

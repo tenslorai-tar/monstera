@@ -144,7 +144,7 @@ describe('the Help centre’s articles', () => {
     // *Blank page* IS in the catalogue — as `ribbon.insert-blank` — which is why the wider check passed it.
     expect(SHOWN.has(normal('Blank page'))).toBe(true);
     expect(named('Blank page')).toStrictEqual(['Blank page']);
-    expect(named('Insert blank page')).toStrictEqual([]);
+    expect(named('Insert blank pages…')).toStrictEqual([]);
   });
 
   it('CONTROL: the check sees a bold word that is not Monstera’s', () => {

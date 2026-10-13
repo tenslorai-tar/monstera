@@ -47,6 +47,8 @@ import { INSERT_FROM_PDF_DIALOG } from '../dialogs/insertFromPdf.js';
 import { INSERT_IMAGE_PROBLEM_DIALOG } from '../dialogs/insertImageProblem.js';
 import { CONVERT_SCAN_DIALOG } from '../dialogs/convertScan.js';
 import { INSERT_MARKDOWN_DIALOG } from '../dialogs/insertMarkdown.js';
+import { INSERT_BLANK_PAGE_DIALOG } from '../dialogs/insertBlankPage.js';
+import { INSERT_IMAGES_DIALOG } from '../dialogs/insertImages.js';
 import { RESTORE_VERSION_DIALOG } from '../dialogs/restoreVersion.js';
 import { HELD_COPIES_DIALOG } from '../dialogs/heldCopies.js';
 import { KEPT_BACKUPS_DIALOG } from '../dialogs/keptBackups.js';
@@ -177,6 +179,8 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   MERGE_DOCUMENT_DIALOG,
   INSERT_FROM_PDF_DIALOG,
   INSERT_MARKDOWN_DIALOG,
+  INSERT_BLANK_PAGE_DIALOG,
+  INSERT_IMAGES_DIALOG,
   CONVERT_SCAN_DIALOG,
   RESTORE_VERSION_DIALOG,
   REPLACE_PAGE_DIALOG,

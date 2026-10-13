@@ -886,7 +886,10 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
   ],
   'dialog.merge-document': [
     { state: 'opened', props: { choices: SOURCES, pageCount: 12 } },
-    { state: 'after-page', props: { choices: SOURCES, pageCount: 12, draft: { placement: 'after', page: '4', documents: [] } } },
+    {
+      state: 'after-page',
+      props: { choices: SOURCES, pageCount: 12, draft: { placement: { side: 'after', page: 'page', typed: '4' }, documents: [] } },
+    },
     // SEVERAL DOCUMENTS, one of them twice, in the order they go in (ADR-0152).
     {
       state: 'several',
@@ -894,8 +897,7 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
         choices: SOURCES,
         pageCount: 12,
         draft: {
-          placement: 'end',
-          page: '1',
+          placement: { side: 'after', page: 'last', typed: '1' },
           // THE FIRST TAKES ONLY SOME OF ITS PAGES (ADR-0195), the rest every page.
           documents: [...SOURCES, ...SOURCES.slice(0, 1)].map((source, at) => ({
             docId: source.docId,
@@ -910,7 +912,15 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
   'dialog.insert-from-pdf': [
     // AFTER PAGE 3 OF 12, the page on show.
     { state: 'opened', props: { choices: SOURCES, pageCount: 12, page: 2 } },
-    { state: 'chosen-pages', props: { choices: SOURCES, pageCount: 12, page: 2, draft: { sourcePages: { every: false, text: '2-5' }, placement: 'before', page: '1' } } },
+    {
+      state: 'chosen-pages',
+      props: {
+        choices: SOURCES,
+        pageCount: 12,
+        page: 2,
+        draft: { sourcePages: { every: false, text: '2-5' }, placement: { side: 'before', page: 'first', typed: '1' } },
+      },
+    },
     { state: 'none-open', props: { choices: [], pageCount: 12, page: 2 } },
     { state: 'long', props: { choices: LONG_SOURCES, pageCount: 12, page: 2 } },
   ],
@@ -927,6 +937,14 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     // AT THE END is where it opens; the page on show is the third of twelve.
     { state: 'opened', props: { pageCount: 12, page: 2 } },
     { state: 'one-page', props: { pageCount: 1, page: 0 } },
+  ],
+  'dialog.insert-blank-page': [
+    // ONE PAGE AFTER THE PAGE ON SHOW, the third of twelve (O3).
+    { state: 'opened', props: { pageCount: 12, page: 2 } },
+    { state: 'one-page', props: { pageCount: 1, page: 0 } },
+  ],
+  'dialog.insert-images': [
+    { state: 'opened', props: { pageCount: 12, page: 2 } },
   ],
   'dialog.replace-page': [
     // ONE PAGE FROM A TWELVE-PAGE FILE: the dialog opens on its first page, so the length is kept.

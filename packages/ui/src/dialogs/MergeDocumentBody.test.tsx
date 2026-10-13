@@ -41,32 +41,37 @@ const choose = (number: number, docId: string): void => {
   fireEvent.change(screen.getByRole('combobox', { name: `Document ${String(number)}` }), { target: { value: docId } });
 };
 
+/** Where a merge opens: after the last page, with the field's text as the placement row starts it. */
+const AT_THE_END = { side: 'after', page: 'last', typed: '1' } as const;
+
 describe('MergeDocumentBody', () => {
-  it('OPENS AT THE END with the first document listed, and sends the page count', () => {
+  it('OPENS AT THE END, after the last page, with the first document listed, and sends the page count', () => {
     const { resolve } = opened();
-    expect(screen.getByRole('button', { name: 'At the end' }).getAttribute('aria-pressed')).toBe('true');
-    expect(screen.queryByRole('textbox', { name: 'Page' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'After' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: 'The last page' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.queryByRole('textbox', { name: 'Page number' })).toBeNull();
     expect(screen.getAllByRole('listitem')).toHaveLength(1);
     press('Merge');
     expect(answered(resolve)).toStrictEqual({ kind: 'merge', documents: ALL('d-a'), at: 8 });
   });
 
-  it('AT THE START sends 0 — the control for the case above', () => {
+  it('BEFORE THE FIRST PAGE sends 0 — the control for the case above', () => {
     const { resolve } = opened();
-    press('At the start');
+    press('Before');
+    press('The first page');
     press('Merge');
     expect(answered(resolve)).toStrictEqual({ kind: 'merge', documents: ALL('d-a'), at: 0 });
   });
 
-  it('AFTER PAGE asks for a page of this document, says one it lacks, and sends the page typed', () => {
+  it('AFTER A PAGE asks for a page of this document, says one it lacks, and sends the page typed', () => {
     const { resolve } = opened();
-    press('After page');
-    fireEvent.change(screen.getByRole('textbox', { name: 'Page' }), { target: { value: '9' } });
+    press('Page');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Page number' }), { target: { value: '9' } });
     press('Merge');
     expect(resolve).not.toHaveBeenCalled();
     expect(screen.getByRole('alert').textContent).toBe('Choose a page of this document, from 1 to 8.');
 
-    fireEvent.change(screen.getByRole('textbox', { name: 'Page' }), { target: { value: '3' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Page number' }), { target: { value: '3' } });
     press('Merge');
     expect(answered(resolve)).toStrictEqual({ kind: 'merge', documents: ALL('d-a'), at: 3 });
   });
@@ -104,7 +109,7 @@ describe('MergeDocumentBody', () => {
   });
 
   it('A DOCUMENT NO LONGER OFFERED is not merged in: one listed in the draft but closed since', () => {
-    const { resolve } = opened({ draft: { placement: 'end', page: '1', documents: DRAFT('d-a', 'd-gone') } });
+    const { resolve } = opened({ draft: { placement: AT_THE_END, documents: DRAFT('d-a', 'd-gone') } });
     expect(screen.getByRole('button', { name: 'Merge' }).hasAttribute('disabled')).toBe(true);
     press('Remove document 2');
     press('Merge');
@@ -113,22 +118,23 @@ describe('MergeDocumentBody', () => {
 
   it('CHOOSE FILE answers the list and the place, and reopens with the file just picked added at the end', () => {
     const first = opened();
-    press('After page');
-    fireEvent.change(screen.getByRole('textbox', { name: 'Page' }), { target: { value: '2' } });
+    press('Page');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Page number' }), { target: { value: '2' } });
     press('Choose file…');
+    const placement = { side: 'after', page: 'page', typed: '2' } as const;
     expect(answered(first.resolve)).toStrictEqual({
       kind: 'choose-file',
-      draft: { placement: 'after', page: '2', documents: DRAFT('d-a') },
+      draft: { placement, documents: DRAFT('d-a') },
     });
     cleanup();
 
-    const again = opened({ source: 'd-b', draft: { placement: 'after', page: '2', documents: DRAFT('d-a') } });
+    const again = opened({ source: 'd-b', draft: { placement, documents: DRAFT('d-a') } });
     press('Merge');
     expect(answered(again.resolve)).toStrictEqual({ kind: 'merge', documents: ALL('d-a', 'd-b'), at: 2 });
   });
 
   it('A PICK ALREADY LISTED is not added twice: the command asks again with it chosen after a cancelled pick', () => {
-    const { resolve } = opened({ source: 'd-b', draft: { placement: 'end', page: '1', documents: DRAFT('d-a', 'd-b') } });
+    const { resolve } = opened({ source: 'd-b', draft: { placement: AT_THE_END, documents: DRAFT('d-a', 'd-b') } });
     expect(screen.getAllByRole('listitem')).toHaveLength(2);
     press('Merge');
     expect(answered(resolve)).toStrictEqual({ kind: 'merge', documents: ALL('d-a', 'd-b'), at: 8 });
@@ -190,7 +196,7 @@ describe('MergeDocumentBody', () => {
     press('Choose file…');
     expect(answered(first.resolve)).toStrictEqual({
       kind: 'choose-file',
-      draft: { placement: 'end', page: '1', documents: [{ docId: 'd-a', pages: '2, 4' }] },
+      draft: { placement: AT_THE_END, documents: [{ docId: 'd-a', pages: '2, 4' }] },
     });
   });
 

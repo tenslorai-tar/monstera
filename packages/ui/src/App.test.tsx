@@ -1687,12 +1687,12 @@ describe('App', () => {
       });
     });
 
-    it('THE INSERT-BLANK CONTROL SENDS at ONE PAST the page on screen', async () => {
-      // The UI half of insert blank's pair; `pageOrder.test.ts` says the page
-      // lands there and takes its neighbour's geometry.
+    it('THE INSERT-BLANK CONTROL ASKS, and its dialog opens on ONE PAGE ONE PAST the page on screen (O3)', async () => {
+      // The UI half of insert blank's pair; `pageOrder.test.ts` says the pages
+      // land there, take their neighbour's geometry and leave in one undo.
       //
       // `at: 1` from a document showing page 0 — and the +1 is the assertion,
-      // because a command sending `at: context.page` inserts BEFORE the page
+      // because a dialog opening on `at: context.page` inserts BEFORE the page
       // being read and moves it out from under the reader, which looks like a
       // scroll rather than a bug.
       const { client, sent } = answeringClient({
@@ -1703,13 +1703,20 @@ describe('App', () => {
       await withDocumentOpen();
 
       // A SECONDARY in Pages' More (ADR-0098), so its menu item's full title.
-      await pressCommand('Insert blank page', 'Organize');
+      await pressCommand('Insert blank pages…', 'Organize');
+      // NOTHING IS SENT UNTIL THE DIALOG IS ANSWERED, which is the control for the send below.
+      expect(sent.filter((call) => call.id === 'document.execute')).toHaveLength(0);
+      const dialog = await screen.findByRole('dialog', { name: 'Insert blank pages' });
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Insert' }));
+      await act(async () => {
+        await Promise.resolve();
+      });
 
       const executed = sent.filter((call) => call.id === 'document.execute');
       expect(executed).toHaveLength(1);
       expect(executed[0]?.params).toStrictEqual({
         docId: DOC,
-        command: { kind: 'insertBlankPage', at: 1 },
+        command: { kind: 'insertBlankPage', at: 1, count: 1 },
       });
     });
 

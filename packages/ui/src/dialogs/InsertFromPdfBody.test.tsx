@@ -8,7 +8,8 @@ import { INSERT_FROM_PDF_RESULT } from './insertFromPdfResult.js';
 
 /**
  * Insert from PDF's own rules: which source pages, before or after which page of this document, converted once to the
- * zero-based position the command sends. Every answer is read through the dialog's result schema.
+ * zero-based position the command sends. Every answer is read through the dialog's result schema. Where the pages go is
+ * the one placement row every inserting dialog takes (`PagePlacement.tsx`, the owner's O3).
  */
 afterEach(() => {
   cleanup();
@@ -30,57 +31,69 @@ const answered = (resolve: ReturnType<typeof vi.fn>): unknown => INSERT_FROM_PDF
 const insert = (): void => {
   fireEvent.click(screen.getByRole('button', { name: 'Insert' }));
 };
+const pageNumber = (): HTMLElement => screen.getByRole('textbox', { name: 'Page number' });
 
 describe('InsertFromPdfBody', () => {
   it('OPENS AFTER THE PAGE ON SHOW with every source page, and sends that page as the position', () => {
     // PAGE 4 ON SHOW (zero-based 3): after it is zero-based 4.
     const { resolve } = opened();
     expect(screen.getByText('6 pages')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'After page' }).getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByRole('textbox', { name: 'Page' })).toHaveProperty('value', '4');
+    expect(screen.getByRole('button', { name: 'After' }).getAttribute('aria-pressed')).toBe('true');
+    expect(pageNumber()).toHaveProperty('value', '4');
     insert();
     expect(answered(resolve)).toStrictEqual({ kind: 'insert', source: 'd-a', sourcePages: 'all', at: 4 });
   });
 
   it('BEFORE the page typed is one place earlier — the control for the case above', () => {
     const { resolve } = opened();
-    fireEvent.click(screen.getByRole('button', { name: 'Before page' }));
-    fireEvent.change(screen.getByRole('textbox', { name: 'Page' }), { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Before' }));
+    fireEvent.change(pageNumber(), { target: { value: '1' } });
     insert();
     expect(answered(resolve)).toStrictEqual({ kind: 'insert', source: 'd-a', sourcePages: 'all', at: 0 });
   });
 
-  it('AFTER THE LAST PAGE is the one position past the end', () => {
-    const { resolve } = opened();
-    fireEvent.change(screen.getByRole('textbox', { name: 'Page' }), { target: { value: '9' } });
+  it('AFTER THE LAST PAGE is the one position past the end, typed or chosen; BEFORE THE FIRST is the start', () => {
+    const typed = opened();
+    fireEvent.change(pageNumber(), { target: { value: '9' } });
     insert();
-    expect(answered(resolve)).toStrictEqual({ kind: 'insert', source: 'd-a', sourcePages: 'all', at: 9 });
+    expect(answered(typed.resolve)).toStrictEqual({ kind: 'insert', source: 'd-a', sourcePages: 'all', at: 9 });
+    cleanup();
+    const last = opened();
+    fireEvent.click(screen.getByRole('button', { name: 'The last page' }));
+    insert();
+    expect(answered(last.resolve)).toStrictEqual({ kind: 'insert', source: 'd-a', sourcePages: 'all', at: 9 });
+    cleanup();
+    const first = opened();
+    fireEvent.click(screen.getByRole('button', { name: 'Before' }));
+    fireEvent.click(screen.getByRole('button', { name: 'The first page' }));
+    insert();
+    expect(answered(first.resolve)).toStrictEqual({ kind: 'insert', source: 'd-a', sourcePages: 'all', at: 0 });
   });
 
   it('CHOSEN SOURCE PAGES are answered, and a page this document lacks is said on the press', () => {
     const { resolve } = opened();
     fireEvent.click(screen.getByRole('button', { name: 'Select pages' }));
     fireEvent.change(screen.getByRole('textbox', { name: 'Page numbers' }), { target: { value: '2-3' } });
-    fireEvent.change(screen.getByRole('textbox', { name: 'Page' }), { target: { value: '10' } });
+    fireEvent.change(pageNumber(), { target: { value: '10' } });
     insert();
     expect(resolve).not.toHaveBeenCalled();
     expect(screen.getByRole('alert').textContent).toBe('Choose a page of this document, from 1 to 9.');
 
-    fireEvent.change(screen.getByRole('textbox', { name: 'Page' }), { target: { value: '2' } });
+    fireEvent.change(pageNumber(), { target: { value: '2' } });
     insert();
     expect(answered(resolve)).toStrictEqual({ kind: 'insert', source: 'd-a', sourcePages: [1, 2], at: 2 });
   });
 
   it('CHOOSE FILE answers every entry, and a draft reopens with them', () => {
     const first = opened();
-    fireEvent.click(screen.getByRole('button', { name: 'Before page' }));
-    fireEvent.change(screen.getByRole('textbox', { name: 'Page' }), { target: { value: '7' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Before' }));
+    fireEvent.change(pageNumber(), { target: { value: '7' } });
     fireEvent.click(screen.getByRole('button', { name: 'Choose file…' }));
-    const draft = { sourcePages: { every: true, text: '' }, placement: 'before', page: '7' };
+    const draft = { sourcePages: { every: true, text: '' }, placement: { side: 'before', page: 'page', typed: '7' } } as const;
     expect(answered(first.resolve)).toStrictEqual({ kind: 'choose-file', draft });
     cleanup();
 
-    const again = opened({ draft: { sourcePages: { every: true, text: '' }, placement: 'before', page: '7' } });
+    const again = opened({ draft });
     insert();
     expect(answered(again.resolve)).toStrictEqual({ kind: 'insert', source: 'd-a', sourcePages: 'all', at: 6 });
   });

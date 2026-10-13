@@ -83,6 +83,8 @@ import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { IMPORT_FORM_DATA_PROBLEM_DIALOG_ID } from '../dialogs/importFormDataProblem.js';
 import { IMPORT_FORM_DATA_RESULT_DIALOG_ID } from '../dialogs/importFormDataResult.js';
 import { INSERT_IMAGE_PROBLEM_DIALOG_ID } from '../dialogs/insertImageProblem.js';
+import { INSERT_BLANK_PAGE_DIALOG_ID } from '../dialogs/insertBlankPage.js';
+import type { InsertBlankPageAnswer } from '../dialogs/insertBlankPageResult.js';
 import { EXTRACT_PAGES_DIALOG_ID } from '../dialogs/extractPages.js';
 import type { ExtractPagesAnswer } from '../dialogs/extractPagesResult.js';
 import { INSERT_FROM_PDF_DIALOG_ID } from '../dialogs/insertFromPdf.js';
@@ -208,7 +210,6 @@ import {
   IMPORT_FORM_DATA_JSON_TITLE,
   IMPORT_FORM_DATA_XFDF_TITLE,
   INSERT_FROM_PDF_COMMAND_TITLE,
-  INSERT_IMAGE_COMMAND_TITLE,
   MERGE_DOCUMENT_COMMAND_TITLE,
   PAGE_BACKGROUND_COMMAND_TITLE,
   REPLACE_PAGE_COMMAND_TITLE,
@@ -1514,18 +1515,12 @@ export function rotatePageCommand(
 }
 
 /**
- * Puts an empty page after the one on screen.
+ * Asks how many blank pages and where, then inserts them as ONE command (the owner's O3), so they are one undo step.
  *
- * **After, not before**, and it is the same placement `duplicatePageCommand`
- * uses for the same reason: a reader on page 7 who asks for a blank page is
- * adding to what they have just read, and an insertion *before* moves the page
- * they are looking at out from under them.
- *
- * `context.page + 1` is the only arithmetic any of these commands does, and it
- * is safe for a stated reason rather than an obvious one: `at` is in the
- * DESTINATION frame — `at: pageCount` appends — so the index one past the
- * current page is always legal, including on the last page. Every other bound
- * in `pageOrder.ts` refuses `count`, and this one must not.
+ * **The dialog opens on one page after the page on show**, which is what this command did before it asked: a reader
+ * on page 7 who asks for a blank page is adding to what they have just read, and an insertion *before* moves the page
+ * they are looking at out from under them. `at` is in the DESTINATION frame — `at: pageCount` appends — converted
+ * once by the placement row.
  */
 export function insertBlankPageCommand(deps: DocumentCommandDeps): UiCommand {
   return {
@@ -1540,13 +1535,20 @@ export function insertBlankPageCommand(deps: DocumentCommandDeps): UiCommand {
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      // AFTER THE LAST OF `targetPages` (ADR-0104), which is the page on show when nothing is ticked — so the
-      // reading-view behaviour above is unchanged, and a ticked set gains its page after itself.
+      // AFTER THE LAST OF `targetPages` (ADR-0104) is where the dialog opens: the page on show when nothing is ticked,
+      // and after a ticked set when one is.
       const last = targetPages(context).at(-1);
-      if (context.docId === undefined || last === undefined) return;
-      await applyDocumentCommand(deps, context.docId, {
+      if (context.docId === undefined || context.pageCount === undefined || last === undefined) return;
+      const target = context.docId;
+      // Closed unanswered is a change of mind, and nothing is inserted.
+      const answer = (await deps.ask(INSERT_BLANK_PAGE_DIALOG_ID, { pageCount: context.pageCount, page: last })) as
+        | InsertBlankPageAnswer
+        | undefined;
+      if (answer === undefined) return;
+      await applyDocumentCommand(deps, target, {
         kind: 'insertBlankPage',
-        at: last + 1,
+        at: answer.at,
+        count: answer.count,
       });
     },
   };
@@ -1967,85 +1969,6 @@ export function deskewPagesCommand(deps: DocumentCommandDeps): UiCommand {
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
       await applyDocumentCommand(deps, context.docId, { kind: 'deskewPages', pages: 'all' });
-    },
-  };
-}
-
-/**
- * Inserts an image as a new page, after the page being read.
- *
- * ## IT SENDS TWO NUMBERS AND OPENS NO DIALOG OF ITS OWN
- *
- * The picker is Electron's and runs in **main**, so this command's whole job is
- * to say which document and where. It cannot send an image even by mistake:
- * `applyDocumentCommand` takes `DispatchableCommand`, the renderable union — the
- * command union with `insertImagePage` removed — so a UI command that tried would
- * not compile.
- *
- * That is why this goes through its own channel rather than
- * `document.execute` — the same shape `saveCopyCommand` uses, and for the same
- * reason: what happens here is *ask main to run a dialog and tell me what it
- * did*, which is not a command the renderer could have built.
- *
- * ## AFTER the page being read, not at it
- *
- * `context.page + 1`, because a person on page 3 inserting a picture means
- * *after this one* — inserting at 3 would push the page they are looking at
- * down and leave them staring at the new one, which reads as the wrong page
- * having been replaced.
- */
-export function insertImageCommand(deps: DocumentCommandDeps): UiCommand {
-  return {
-    id: 'document.insert-image',
-    feedback: VISIBLE,
-    icon: 'ImagePlus',
-    title: INSERT_IMAGE_COMMAND_TITLE,
-    placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 16, size: 'small' },
-    ],
-    when: hasDocument,
-    run: async (context): Promise<void> => {
-      // After the last of `targetPages`, `insertBlankPageCommand`'s rule (ADR-0104).
-      const last = targetPages(context).at(-1);
-      if (context.docId === undefined || last === undefined) return;
-
-      const answer = await deps.client['document.insertImage']({
-        docId: context.docId,
-        at: last + 1,
-      });
-      if (!answer.ok) {
-        reportProblem(deps, answer.error);
-        return;
-      }
-
-      // A DISMISSAL CHANGES NOTHING AND IS NOT REPORTED. The other two
-      // non-success outcomes ARE: a user who picked a file and got nothing
-      // needs to know which of the two happened, and silence there is the
-      // display-only failure wearing a different hat.
-      if (answer.value.kind === 'cancelled') return;
-      if (answer.value.kind === 'unreadable') {
-        void deps.ask(INSERT_IMAGE_PROBLEM_DIALOG_ID, { reason: 'unreadable' as const });
-        return;
-      }
-      if (answer.value.kind === 'too-large') {
-        void deps.ask(INSERT_IMAGE_PROBLEM_DIALOG_ID, fileTooLargeProblem(answer.value));
-        return;
-      }
-      if (answer.value.kind === 'too-many-pixels') {
-        void deps.ask(INSERT_IMAGE_PROBLEM_DIALOG_ID, {
-          reason: 'too-many-pixels' as const,
-          limitPixels: answer.value.limitPixels,
-        });
-        return;
-      }
-
-      deps.onApplied({ version: answer.value.version, byteLength: answer.value.byteLength });
-
-      // INVARIANT 18, after `onApplied` and guarded on a positive count for
-      // `applyDocumentCommand`'s reason: the dialog's schema refuses zero.
-      if (answer.value.historyDropped > 0) {
-        void deps.ask(HISTORY_TRIMMED_DIALOG_ID, { dropped: answer.value.historyDropped });
-      }
     },
   };
 }

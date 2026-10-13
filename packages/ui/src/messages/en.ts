@@ -395,12 +395,6 @@ export const DESKEW_PAGES_COMMAND_TITLE = messageKey('command.deskew-pages.title
 export const MERGE_DOCUMENT_COMMAND_TITLE = messageKey('command.merge-document.title');
 export const MERGE_DOCUMENT_TITLE = messageKey('dialog.merge-document.title');
 export const MERGE_DOCUMENT_LABEL = messageKey('dialog.merge-document.label');
-export const MERGE_DOCUMENT_PLACE = messageKey('dialog.merge-document.place');
-export const MERGE_DOCUMENT_AT_START = messageKey('dialog.merge-document.at-start');
-export const MERGE_DOCUMENT_AT_END = messageKey('dialog.merge-document.at-end');
-export const MERGE_DOCUMENT_AFTER_PAGE = messageKey('dialog.merge-document.after-page');
-export const MERGE_DOCUMENT_PAGE = messageKey('dialog.merge-document.page');
-export const MERGE_DOCUMENT_RANGE = messageKey('dialog.merge-document.range');
 export const MERGE_DOCUMENT_APPLY = messageKey('dialog.merge-document.apply');
 export const MERGE_DOCUMENT_ORDER = messageKey('dialog.merge-document.order');
 export const MERGE_DOCUMENT_ROW = messageKey('dialog.merge-document.row');
@@ -421,11 +415,6 @@ export const MERGE_DOCUMENT_PAGES_EMPTY = messageKey('dialog.merge-document.page
 export const INSERT_FROM_PDF_COMMAND_TITLE = messageKey('command.insert-from-pdf.title');
 export const INSERT_FROM_PDF_TITLE = messageKey('dialog.insert-from-pdf.title');
 export const INSERT_FROM_PDF_LABEL = messageKey('dialog.insert-from-pdf.label');
-export const INSERT_FROM_PDF_POSITION = messageKey('dialog.insert-from-pdf.position');
-export const INSERT_FROM_PDF_BEFORE = messageKey('dialog.insert-from-pdf.before');
-export const INSERT_FROM_PDF_AFTER = messageKey('dialog.insert-from-pdf.after');
-export const INSERT_FROM_PDF_PAGE = messageKey('dialog.insert-from-pdf.page');
-export const INSERT_FROM_PDF_RANGE = messageKey('dialog.insert-from-pdf.range');
 export const INSERT_FROM_PDF_APPLY = messageKey('dialog.insert-from-pdf.apply');
 export const RESTORE_VERSION_COMMAND_TITLE = messageKey('command.restore-version.title');
 export const RESTORE_VERSION_TITLE = messageKey('dialog.restore-version.title');
@@ -435,13 +424,7 @@ export const RESTORE_VERSION_RESTORE = messageKey('dialog.restore-version.restor
 export const TOAST_RESTORE_NONE = messageKey('toast.restore-version.none');
 export const TOAST_RESTORE_GONE = messageKey('toast.restore-version.gone');
 export const INSERT_MARKDOWN_TITLE = messageKey('dialog.insert-markdown.title');
-export const INSERT_MARKDOWN_WHERE = messageKey('dialog.insert-markdown.where');
-export const INSERT_MARKDOWN_START = messageKey('dialog.insert-markdown.start');
-export const INSERT_MARKDOWN_END = messageKey('dialog.insert-markdown.end');
-export const INSERT_MARKDOWN_AFTER = messageKey('dialog.insert-markdown.after');
-export const INSERT_MARKDOWN_PAGE = messageKey('dialog.insert-markdown.page');
 export const INSERT_MARKDOWN_FONT = messageKey('dialog.insert-markdown.font');
-export const INSERT_MARKDOWN_RANGE = messageKey('dialog.insert-markdown.range');
 export const INSERT_MARKDOWN_APPLY = messageKey('dialog.insert-markdown.apply');
 export const REPLACE_PAGE_COMMAND_TITLE = messageKey('command.replace-page.title');
 export const REPLACE_PAGE_TITLE = messageKey('dialog.replace-page.title');
@@ -1883,6 +1866,23 @@ export const HINT_NOTE = messageKey('tool.hint.note');
 export const HINT_CARET = messageKey('tool.hint.caret');
 export const HINT_HIGHLIGHT = messageKey('tool.hint.highlight');
 export const HINT_HIGHLIGHT_AREA = messageKey('tool.hint.highlight-area');
+export const PAGE_PLACEMENT_WHERE = messageKey('dialog.page-placement.where');
+export const PAGE_PLACEMENT_SIDE = messageKey('dialog.page-placement.side');
+export const PAGE_PLACEMENT_WHICH = messageKey('dialog.page-placement.which');
+export const PAGE_PLACEMENT_BEFORE = messageKey('dialog.page-placement.before');
+export const PAGE_PLACEMENT_AFTER = messageKey('dialog.page-placement.after');
+export const PAGE_PLACEMENT_FIRST = messageKey('dialog.page-placement.first');
+export const PAGE_PLACEMENT_LAST = messageKey('dialog.page-placement.last');
+export const PAGE_PLACEMENT_PAGE = messageKey('dialog.page-placement.page');
+export const PAGE_PLACEMENT_NUMBER = messageKey('dialog.page-placement.number');
+export const PAGE_PLACEMENT_RANGE = messageKey('dialog.page-placement.range');
+export const INSERT_BLANK_PAGE_DIALOG_TITLE = messageKey('dialog.insert-blank-page.title');
+export const INSERT_BLANK_PAGE_COUNT = messageKey('dialog.insert-blank-page.count');
+export const INSERT_BLANK_PAGE_COUNT_RANGE = messageKey('dialog.insert-blank-page.count-range');
+export const INSERT_BLANK_PAGE_APPLY = messageKey('dialog.insert-blank-page.apply');
+export const INSERT_IMAGES_DIALOG_TITLE = messageKey('dialog.insert-images.title');
+export const INSERT_IMAGES_NOTE = messageKey('dialog.insert-images.note');
+export const INSERT_IMAGES_APPLY = messageKey('dialog.insert-images.apply');
 export const HINT_UNDERLINE = messageKey('tool.hint.underline');
 export const HINT_STRIKEOUT = messageKey('tool.hint.strikeout');
 export const HINT_REDACT_TEXT = messageKey('tool.hint.redact-text');
@@ -3586,7 +3586,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ROTATE_PAGE_270_TITLE]: 'Rotate page 270°',
   // "Blank page" rather than "Insert page": what a person is adding is the
   // noun, and *insert* alone leaves them asking what.
-  [INSERT_BLANK_PAGE_TITLE]: 'Insert blank page',
+  // THE ELLIPSIS, because a dialog asks how many and where (O3).
+  [INSERT_BLANK_PAGE_TITLE]: 'Insert blank pages…',
   [DUPLICATE_PAGE_TITLE]: 'Duplicate page',
   // NAMES WHAT GOES, not the verb alone. *Delete* beside three *Rotate page*
   // controls reads as a mode rather than an action on the page being looked at,
@@ -4781,6 +4782,24 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [HINT_CARET]: 'Click the spot where something is missing.',
   [HINT_HIGHLIGHT]: 'Select the words you want to stand out.',
   [HINT_HIGHLIGHT_AREA]: 'Drag a box over the part of the page you want to stand out, such as a picture or a scan.',
+  [PAGE_PLACEMENT_WHERE]: 'Where',
+  [PAGE_PLACEMENT_SIDE]: 'Before or after',
+  [PAGE_PLACEMENT_WHICH]: 'Which page',
+  [PAGE_PLACEMENT_BEFORE]: 'Before',
+  [PAGE_PLACEMENT_AFTER]: 'After',
+  [PAGE_PLACEMENT_FIRST]: 'The first page',
+  [PAGE_PLACEMENT_LAST]: 'The last page',
+  [PAGE_PLACEMENT_PAGE]: 'Page',
+  [PAGE_PLACEMENT_NUMBER]: 'Page number',
+  [PAGE_PLACEMENT_RANGE]: 'Choose a page of this document, from 1 to {last}.',
+  [INSERT_BLANK_PAGE_DIALOG_TITLE]: 'Insert blank pages',
+  [INSERT_BLANK_PAGE_COUNT]: 'How many pages',
+  [INSERT_BLANK_PAGE_COUNT_RANGE]: 'Type a number of pages from 1 to {limit}.',
+  [INSERT_BLANK_PAGE_APPLY]: 'Insert',
+  [INSERT_IMAGES_DIALOG_TITLE]: 'Insert images',
+  [INSERT_IMAGES_NOTE]:
+    'Each image becomes a page, in the order of the file names. Monstera saves the pages as a PDF where you choose, opens it beside this document, and puts its pages here. Undo takes them all out again.',
+  [INSERT_IMAGES_APPLY]: 'Choose images…',
   [HINT_UNDERLINE]: 'Select the words you want underlined.',
   [HINT_STRIKEOUT]: 'Select the words you want crossed out.',
   [HINT_REDACT_TEXT]: 'Select the words you want gone for good.',
@@ -5687,12 +5706,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [MERGE_DOCUMENT_COMMAND_TITLE]: 'Merge documents…',
   [MERGE_DOCUMENT_TITLE]: 'Merge documents',
   [MERGE_DOCUMENT_LABEL]: 'Merge in',
-  [MERGE_DOCUMENT_PLACE]: 'Place',
-  [MERGE_DOCUMENT_AT_START]: 'At the start',
-  [MERGE_DOCUMENT_AT_END]: 'At the end',
-  [MERGE_DOCUMENT_AFTER_PAGE]: 'After page',
-  [MERGE_DOCUMENT_PAGE]: 'Page',
-  [MERGE_DOCUMENT_RANGE]: 'Choose a page of this document, from 1 to {last}.',
   [MERGE_DOCUMENT_APPLY]: 'Merge',
   [MERGE_DOCUMENT_ORDER]: 'In the order they go in',
   [MERGE_DOCUMENT_ROW]: 'Document {number}',
@@ -5714,12 +5727,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [INSERT_FROM_PDF_COMMAND_TITLE]: 'Insert from PDF…',
   [INSERT_FROM_PDF_TITLE]: 'Insert from PDF',
   [INSERT_FROM_PDF_LABEL]: 'Insert from',
-  [INSERT_FROM_PDF_POSITION]: 'Where',
-  [INSERT_FROM_PDF_BEFORE]: 'Before page',
-  [INSERT_FROM_PDF_AFTER]: 'After page',
-  [INSERT_FROM_PDF_PAGE]: 'Page',
-  // SAID ON THE PRESS, under the row: the page is one of THIS document's, which the source row above is not.
-  [INSERT_FROM_PDF_RANGE]: 'Choose a page of this document, from 1 to {last}.',
   [INSERT_FROM_PDF_APPLY]: 'Insert',
   [RESTORE_VERSION_COMMAND_TITLE]: 'Restore a previous version…',
   [RESTORE_VERSION_TITLE]: 'Restore a previous version',
@@ -5730,14 +5737,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TOAST_RESTORE_NONE]: 'There is no earlier version of this file yet. One is kept each time you save over it.',
   [TOAST_RESTORE_GONE]: 'That version is no longer kept.',
   [INSERT_MARKDOWN_TITLE]: 'Insert from Markdown',
-  [INSERT_MARKDOWN_WHERE]: 'Where',
-  [INSERT_MARKDOWN_START]: 'At the start',
-  [INSERT_MARKDOWN_END]: 'At the end',
-  [INSERT_MARKDOWN_AFTER]: 'After page',
-  [INSERT_MARKDOWN_PAGE]: 'Page',
   [INSERT_MARKDOWN_FONT]: 'Font',
-  // SAID ON THE PRESS, under the row, `INSERT_FROM_PDF_RANGE`'s reason.
-  [INSERT_MARKDOWN_RANGE]: 'Choose a page of this document, from 1 to {last}.',
   [INSERT_MARKDOWN_APPLY]: 'Choose file…',
   [REPLACE_PAGE_COMMAND_TITLE]: 'Replace pages…',
   [REPLACE_PAGE_TITLE]: 'Replace pages',
@@ -6164,7 +6164,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EXPORT_PAGE_IMAGES_UNCHANGED]: 'This document is not changed.',
   [EXPORT_TEXT_COMMAND_TITLE]: 'Export text…',
   [EXPORT_LAYOUT_TEXT_COMMAND_TITLE]: 'Export text with layout…',
-  [INSERT_IMAGE_COMMAND_TITLE]: 'Insert image…',
+  [INSERT_IMAGE_COMMAND_TITLE]: 'Insert images…',
   [INSERT_IMAGE_PROBLEM_TITLE]: 'That image could not be added',
   [INSERT_IMAGE_UNREADABLE]:
     'The file you chose is not a JPEG or PNG this app can read. Your document has not changed.',

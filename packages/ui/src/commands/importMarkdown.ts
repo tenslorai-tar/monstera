@@ -8,6 +8,8 @@ import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { IMPORT_SKIPPED_DIALOG_ID } from '../dialogs/importSkipped.js';
 import { INSERT_MARKDOWN_DIALOG_ID } from '../dialogs/insertMarkdown.js';
 import type { InsertMarkdownAnswer } from '../dialogs/insertMarkdownResult.js';
+import { INSERT_IMAGES_DIALOG_ID } from '../dialogs/insertImages.js';
+import type { InsertImagesAnswer } from '../dialogs/insertImagesResult.js';
 import { WORKBOOK_INCOMPLETE_DIALOG_ID } from '../dialogs/workbookIncomplete.js';
 import {
   MARKDOWN_IMPORT_PROBLEM_DIALOG_ID,
@@ -17,6 +19,8 @@ import {
   APPEND_MARKDOWN_COMMAND_TITLE,
   CSV_CONVERTING,
   GROUP_CREATE,
+  GROUP_PAGES,
+  INSERT_IMAGE_COMMAND_TITLE,
   NEW_FROM_CAMERA_COMMAND_TITLE,
   NEW_FROM_CSV_COMMAND_TITLE,
   NEW_FROM_IMAGES_COMMAND_TITLE,
@@ -29,7 +33,7 @@ import {
   RIBBON_NEW_FROM_CAMERA,
   RIBBON_APPEND_MARKDOWN,
 } from '../messages/en.js';
-import { type UiCommand, VISIBLE } from '../registries/commands.js';
+import { targetPages, type UiCommand, VISIBLE } from '../registries/commands.js';
 import { fontListOf } from '../fontList.js';
 import type { TrackTask } from '../runningTask.js';
 import { type DocumentCommandDeps, hasDocument, reportProblem } from './documentCommands.js';
@@ -68,6 +72,7 @@ export function markdownImportProblem(
   answer:
     | ChannelResult<'document.newFromMarkdown'>
     | ChannelResult<'document.appendMarkdown'>
+    | ChannelResult<'document.insertImage'>
     | ChannelResult<'document.newFromImages'>
     | ChannelResult<'document.newFromOffice'>,
 ): MarkdownImportProblem | null {
@@ -109,6 +114,7 @@ export function markdownImportProblem(
     case 'opened':
     case 'already-open':
     case 'appended':
+    case 'inserted':
       return null;
   }
 }
@@ -435,6 +441,61 @@ export function appendMarkdownCommand(
           void deps.ask(HISTORY_TRIMMED_DIALOG_ID, { dropped: result.historyDropped });
         }
         tellBoxed(deps, result.boxed, result.more);
+        return;
+      }
+      const problem = markdownImportProblem(result);
+      if (problem !== null) void deps.ask(MARKDOWN_IMPORT_PROBLEM_DIALOG_ID, problem);
+    },
+  };
+}
+
+/**
+ * Inserts pictures as pages, one each, where the person chooses (the owner's O3): {@link appendMarkdownCommand}'s
+ * route — where first, then `main`'s picker, which composes the pictures as `document.newFromImages` does and merges
+ * them in ONE `mergeDocument`, so every picture is one undo step.
+ *
+ * It sends two numbers and cannot send an image even by mistake: the picker is `main`'s, and the channel's ask is a
+ * document and a position. The dialog opens after the last of `targetPages` (ADR-0104), the page on show when nothing
+ * is ticked, because a person on page 3 inserting a picture means *after this one*.
+ */
+export function insertImageCommand(
+  deps: DocumentCommandDeps & {
+    readonly onOpened: (opened: OpenedDocument) => void;
+    readonly onActivate: (docId: DocId) => void;
+  },
+): UiCommand {
+  return {
+    id: 'document.insert-image',
+    feedback: VISIBLE,
+    icon: 'ImagePlus',
+    title: INSERT_IMAGE_COMMAND_TITLE,
+    placements: [{ surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 16, size: 'small' }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      const last = targetPages(context).at(-1);
+      if (context.docId === undefined || context.pageCount === undefined || last === undefined) return;
+      const target = context.docId;
+      // Closed unanswered is a change of mind, and nothing is picked or written.
+      const where = (await deps.ask(INSERT_IMAGES_DIALOG_ID, { pageCount: context.pageCount, page: last })) as
+        | InsertImagesAnswer
+        | undefined;
+      if (where === undefined) return;
+
+      const answer = await deps.client['document.insertImage']({ docId: target, at: where.at });
+      if (!answer.ok) {
+        reportProblem(deps, answer.error);
+        return;
+      }
+      const result = answer.value;
+      if (result.kind === 'inserted') {
+        deps.onApplied({ version: result.version, byteLength: result.byteLength });
+        deps.onOpened(result.opened);
+        // THE PERSON STAYS ON THE DOCUMENT THEY INSERTED INTO, `appendMarkdownCommand`'s order.
+        deps.onActivate(target);
+        // INVARIANT 18, after `onApplied` and guarded on a positive count: the dialog's schema refuses zero.
+        if (result.historyDropped > 0) void deps.ask(HISTORY_TRIMMED_DIALOG_ID, { dropped: result.historyDropped });
+        // THE PICTURES LEFT OUT, by file name, beside the pages that went in.
+        tellSkipped(deps, result.skipped, result.skippedMore);
         return;
       }
       const problem = markdownImportProblem(result);

@@ -422,7 +422,10 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // never sent to the renderer (ADR-0087).
   'document.optimizeMeasure': 'needs an engine session and the compose host with the native library',
   'document.optimize': 'needs an engine session, a save dialog and the compose host with the native library',
-  'document.insertImage': 'needs an engine session and an image picker',
+  // `document.appendMarkdown`'s answer to L11 for a set of pictures (O3): the ask is a `DocId` and one index, the
+  // images are read in main and decoded in the compose host, and the answer is the merge's numbers, the tab's, and file
+  // NAMES of pictures left out, bounded by `MAX_COMPOSE_SKIPS`.
+  'document.insertImage': 'needs an engine session, a compose host, a multi-file open dialog and a save dialog',
   // THE ASK IS NOTHING, OR A `DocId` AND ONE INDEX, and the source never crosses:
   // main picks and reads the Markdown file, the compose host sets it, and main
   // writes and opens the result. What returns is an open's outcome — a name bounded

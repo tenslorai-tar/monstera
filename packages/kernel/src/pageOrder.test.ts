@@ -526,7 +526,7 @@ describe('captureInsertBlankPage and invertInsertBlankPage', () => {
       const command = { kind: 'insertBlankPage', at: 1 } as const;
       const capture = await captureInsertBlankPage(session, command);
       if (!capture.captured) throw new Error('the capture was refused');
-      expect(capture.prior).toStrictEqual({ at: 1 });
+      expect(capture.prior).toStrictEqual({ at: 1, count: 1 });
 
       await applyInsertBlankPage(session, command);
       await invertInsertBlankPage(session, capture.prior);
@@ -536,6 +536,42 @@ describe('captureInsertBlankPage and invertInsertBlankPage', () => {
       // page 0's width, so the widths above pass for an inverse that removed
       // the wrong one of the two; only the content separates them.
       expect(await contentsOf(session)).toStrictEqual([true, true, true]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('SEVERAL PAGES ARE ONE COMMAND AND ONE INVERSE (O3): three go in at 1, and undo takes all three and only them', async () => {
+    const session = await mupdfWriter.open(await drawnDocument(3));
+    try {
+      const command = { kind: 'insertBlankPage', at: 1, count: 3 } as const;
+      const capture = await captureInsertBlankPage(session, command);
+      if (!capture.captured) throw new Error('the capture was refused');
+      expect(capture.prior).toStrictEqual({ at: 1, count: 3 });
+
+      await applyInsertBlankPage(session, command);
+      // Three EMPTY pages after page 0, each sized like it — and each its own page object, which the next line checks.
+      expect(await contentsOf(session)).toStrictEqual([true, false, false, false, true, true]);
+      expect(await widthsOf(await mupdfWriter.serialise(session))).toStrictEqual([100, 100, 100, 100, 101, 102]);
+      const pages = await withDocument(session, (document) =>
+        Array.from({ length: document.countPages() }, (_, index) => document.findPage(index).asIndirect()),
+      );
+      expect(new Set(pages).size).toBe(6);
+
+      await invertInsertBlankPage(session, capture.prior);
+      expect(await widthsOf(await mupdfWriter.serialise(session))).toStrictEqual([100, 101, 102]);
+      expect(await contentsOf(session)).toStrictEqual([true, true, true]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('CONTROL: an inverse holding a count of one takes one page of the three, so the count is what the inverse reads', async () => {
+    const session = await mupdfWriter.open(await drawnDocument(3));
+    try {
+      await applyInsertBlankPage(session, { kind: 'insertBlankPage', at: 1, count: 3 });
+      await invertInsertBlankPage(session, { at: 1, count: 1 });
+      expect(await contentsOf(session)).toStrictEqual([true, false, false, true, true]);
     } finally {
       await mupdfWriter.close(session);
     }

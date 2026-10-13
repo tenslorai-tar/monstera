@@ -793,7 +793,7 @@ test('the PAGE MENU opens from the keyboard on a focused thumbnail — Shift+F10
     await page.keyboard.press(key);
     await expect(items.first(), key).toBeVisible();
     // THE OWNER'S PAGE ITEMS, from the registry, in their placement order.
-    await expect(items, key).toHaveText(['Rotate page', 'Insert blank page', 'Extract pages…', 'Delete page']);
+    await expect(items, key).toHaveText(['Rotate page', 'Insert blank pages…', 'Extract pages…', 'Delete page']);
     await page.keyboard.press('Escape');
     await expect(items, key).toHaveCount(0);
   }
@@ -1154,7 +1154,7 @@ test('SELECTED TEXT opens the selected-text menu above the page’s, in the owne
     'Summarise',
     'Translate',
     'Rotate page',
-    'Insert blank page',
+    'Insert blank pages…',
     'Extract pages…',
     'Delete page',
   ]);

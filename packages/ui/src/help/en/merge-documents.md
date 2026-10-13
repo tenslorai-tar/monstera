@@ -14,7 +14,7 @@ Merge adds every page of one or more other documents to the one you are working 
 2. Under **Merge in**, the first other open document is listed. Choose **Add a document** to list another, or **Choose file…** to pick a PDF. A file you pick opens as its own tab and is added to the list.
 3. Change a document in its list, or use the arrows beside it to move it up or down. The documents go in from the top of the list down. The cross removes one.
    To take only some of a document's pages, type them in its **Pages to take** box, like `1-3, 5`, or choose **Choose pages…** to see the pages and click the ones to take. A page left out is faded. The box shows what you chose, and what you type there shows in the pictures. An empty box takes every page.
-4. Under **Place**, choose **At the start**, **At the end** or **After page**. For **After page**, type a page of this document.
+4. Under **Where**, choose **Before** or **After**, then **The first page**, **The last page** or **Page** and its number. It starts after the last page.
 5. Choose **Merge**.
 6. Save the result, or use **Save a copy…** to keep it as a new file.
 

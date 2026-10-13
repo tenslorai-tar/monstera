@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { PAGE_PLACEMENT_DRAFT } from './pagePlacementDraft.js';
 import { PAGE_RANGE_START, SOURCE_PAGES_ANSWER, chooseFileAnswer } from './sourceDocuments.js';
 
 /**
@@ -11,12 +12,11 @@ import { PAGE_RANGE_START, SOURCE_PAGES_ANSWER, chooseFileAnswer } from './sourc
  * conversion happens once, at the surface holding the text, so no command repeats it.
  */
 
-/** What the dialog reopens with after *Choose file…*: the source pages, before or after, and the page as typed. */
+/** What the dialog reopens with after *Choose file…*: the source pages, and where they go (`PagePlacement.tsx`). */
 export const INSERT_FROM_PDF_DRAFT = z
   .object({
     sourcePages: PAGE_RANGE_START,
-    placement: z.enum(['before', 'after']),
-    page: z.string().max(20),
+    placement: PAGE_PLACEMENT_DRAFT,
   })
   .strict();
 

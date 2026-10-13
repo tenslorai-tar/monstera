@@ -104,6 +104,16 @@ export async function startWalk(walk) {
     await page.locator('canvas.m-page:visible').first().waitFor({ state: 'visible', timeout: 30_000 });
   };
 
+  /**
+   * Answers the next open picker with `paths`, without pressing anything: for a picker a command opens itself, such as
+   * Insert images, where several files are picked at once. @param {readonly string[]} paths
+   */
+  const pickFiles = async (paths) => {
+    await app.evaluate(({ dialog }, picked) => {
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [...picked] });
+    }, paths);
+  };
+
   /** Answers the next save-as picker with `path`. @param {string} path */
   const saveTo = async (path) => {
     await app.evaluate(({ dialog }, picked) => {
@@ -169,5 +179,5 @@ export async function startWalk(walk) {
     process.exitCode = passed === steps.length ? 0 : 1;
   };
 
-  return { app, page, output, copyOf, open, saveTo, command, section, pressOn, step, finish };
+  return { app, page, output, copyOf, open, pickFiles, saveTo, command, section, pressOn, step, finish };
 }

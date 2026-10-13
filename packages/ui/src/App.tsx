@@ -96,7 +96,6 @@ import {
   resizePagesCommand,
   deskewPagesCommand,
   generateTocCommand,
-  insertImageCommand,
   extractPagesCommand,
   insertFromPdfCommand,
   mergeDocumentCommand,
@@ -253,6 +252,7 @@ import { editPageExternallyCommand } from './commands/editPageExternally.js';
 import {
   type OpenedDocument,
   appendMarkdownCommand,
+  insertImageCommand,
   newFromCaptureCommand,
   newFromCsvCommand,
   newFromImagesCommand,
@@ -3752,7 +3752,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // D9's DOCUMENT SCAN ROW, enhance's shape and its walk: the image-only pages,
         // one command, one undo.
         straightenScansCommand({ client, onApplied: applied, ask, stamp, signatures, track }),
-        insertImageCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        // O3: the pictures arrive as a tab, and their pages go into this document in one merge.
+        insertImageCommand({ client, onApplied: applied, ask, stamp, signatures, onOpened: opened, onActivate: activate }),
         // D9's MARKDOWN ROW. The new document arrives as a tab by `openCommand`'s
         // callbacks; the append also adds a tab, then returns to the document it
         // changed (ADR-0060's correction).

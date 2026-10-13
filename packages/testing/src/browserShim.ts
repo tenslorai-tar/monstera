@@ -392,13 +392,11 @@ export interface BrowserShimOptions {
    */
   readonly powerPointFellBack?: readonly number[];
   /**
-   * What the image picker answers, for `document.insertImage`.
-   *
-   * Undefined is a **dismissal**, for `copyDestination`'s reason: the outcome a
-   * case gets by saying nothing is the one that changes no document, so a case
-   * about something else cannot silently insert a page.
+   * What `document.insertImage` answers, in order; `cancelled` once the queue is empty, for `copyDestination`'s reason:
+   * the outcome a case gets by saying nothing is the one that changes no document. An `inserted` answer moves the
+   * target to its version AND seeds the composed tab, `markdownAppends`' rule, the route being the same.
    */
-  readonly insertedImage?: 'unreadable' | 'too-large' | { readonly byteLength: number };
+  readonly imageInserts?: readonly ChannelResult<'document.insertImage'>[];
   /**
    * What the image picker answers, for `document.placeImage`.
    *
@@ -1060,6 +1058,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   const queuedUrlOpens = [...(options.urlOpens ?? [])];
   const queuedCaptureNews = [...(options.captureNews ?? [])];
   const queuedMarkdownAppends = [...(options.markdownAppends ?? [])];
+  const queuedImageInserts = [...(options.imageInserts ?? [])];
   const queuedExternalEditSends = [...(options.externalEditSends ?? [])];
   const queuedExternalEditWaits = [...(options.externalEditWaits ?? [])];
   const queuedExternalEditReimports = [...(options.externalEditReimports ?? [])];
@@ -1592,35 +1591,16 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
      * reason: a shim that copied by default would let a case asserting *the
      * status bar says copied* pass without ever choosing that outcome.
      */
-    /**
-     * The image insert, with the same outcome discipline as the copy below.
-     *
-     * A success **bumps the version**, because this one really does change the
-     * document — where a copy leaves it untouched. A shim that answered
-     * `inserted` without bumping would let a case assert *the page count went
-     * up* against a renderer that never rebuilt its view.
-     */
+    /** The image insert, `document.appendMarkdown`'s discipline below, the route being the same (O3). */
     'document.insertImage': ({ docId }) => {
       if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
-      const current = versions.get(docId);
-      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
-
-      const chosen = options.insertedImage;
-      if (chosen === undefined) return Promise.resolve(ok({ kind: 'cancelled' as const }));
-      if (chosen === 'unreadable') return Promise.resolve(ok({ kind: 'unreadable' as const }));
-      if (chosen === 'too-large') {
-        return Promise.resolve(ok({ kind: 'too-large' as const, limitBytes: MAX_IMAGE_BYTES, fileBytes: SHIM_PAST_THE_BOUND + MAX_IMAGE_BYTES }));
+      if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));
+      const answer = queuedImageInserts.shift() ?? { kind: 'cancelled' as const };
+      if (answer.kind === 'inserted') {
+        versions.set(docId, answer.version);
+        versions.set(answer.opened.docId, answer.opened.version);
       }
-      const version = asDocVersion(current + 1);
-      versions.set(docId, version);
-      return Promise.resolve(
-        ok({
-          kind: 'inserted' as const,
-          version,
-          byteLength: chosen.byteLength,
-          historyDropped: 0,
-        }),
-      );
+      return Promise.resolve(ok(answer));
     },
     /**
      * The image placement, with `document.insertImage`'s outcome discipline.

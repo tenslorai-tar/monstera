@@ -30,26 +30,28 @@ const choose = (): void => {
 };
 
 describe('InsertMarkdownBody', () => {
-  it('OPENS AT THE END, which is where the command always put the pages, and sends the page count as the position', () => {
+  it('OPENS AT THE END, after the last page, which is where the command always put the pages, and sends the page count', () => {
     const { resolve } = opened();
-    expect(screen.getByRole('button', { name: 'At the end' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: 'After' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: 'The last page' }).getAttribute('aria-pressed')).toBe('true');
     choose();
     expect(answered(resolve)).toStrictEqual({ at: 9, family: 'Arimo' });
   });
 
-  it('AT THE START is position 0 — the control for the end above, which is the page count', () => {
+  it('BEFORE THE FIRST PAGE is position 0 — the control for the end above, which is the page count', () => {
     const { resolve } = opened();
-    fireEvent.click(screen.getByRole('button', { name: 'At the start' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Before' }));
+    fireEvent.click(screen.getByRole('button', { name: 'The first page' }));
     choose();
     expect(answered(resolve)).toStrictEqual({ at: 0, family: 'Arimo' });
   });
 
   it('AFTER PAGE N is N, counted from 1 on screen: after page 3 is 3', () => {
     const { resolve } = opened();
-    fireEvent.click(screen.getByRole('button', { name: 'After page' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Page' }));
     // THE PAGE ON SHOW, one-based, is what the field starts on: zero-based 3 is page 4.
-    expect(screen.getByRole('textbox', { name: 'Page' })).toHaveProperty('value', '4');
-    fireEvent.change(screen.getByRole('textbox', { name: 'Page' }), { target: { value: '3' } });
+    expect(screen.getByRole('textbox', { name: 'Page number' })).toHaveProperty('value', '4');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Page number' }), { target: { value: '3' } });
     choose();
     expect(answered(resolve)).toStrictEqual({ at: 3, family: 'Arimo' });
   });
@@ -69,11 +71,11 @@ describe('InsertMarkdownBody', () => {
     expect(answered(resolve)).toStrictEqual({ at: 9, family: 'Tinos' });
   });
 
-  it('a page this document lacks is SAID on the press and nothing is answered — CONTROL: the page field is not shown for the start or the end', () => {
+  it('a page this document lacks is SAID on the press and nothing is answered — CONTROL: the page field is not shown for the first or the last page', () => {
     const { resolve } = opened();
-    expect(screen.queryByRole('textbox', { name: 'Page' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'After page' }));
-    fireEvent.change(screen.getByRole('textbox', { name: 'Page' }), { target: { value: '10' } });
+    expect(screen.queryByRole('textbox', { name: 'Page number' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Page' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Page number' }), { target: { value: '10' } });
     choose();
     expect(resolve).not.toHaveBeenCalled();
     expect(screen.getByText('Choose a page of this document, from 1 to 9.')).toBeTruthy();

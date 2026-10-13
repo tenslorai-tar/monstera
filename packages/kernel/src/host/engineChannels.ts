@@ -38,6 +38,7 @@ import {
   annotationPointSchema,
   annotationRectSchema,
   LISTED_POINTS_MAX,
+  MAX_BLANK_PAGES,
   formDataFormatSchema,
   formDataImportFormatSchema,
   annotationDataFormatSchema,
@@ -928,8 +929,8 @@ const capturedPriorSchema = z.discriminatedUnion('kind', [
   z
     .object({
       kind: z.literal('insertBlankPage'),
-      /** Where the new page landed. */
-      prior: z.object({ at: z.number().int().nonnegative() }).strict(),
+      /** Where the new pages landed, and how many. */
+      prior: z.object({ at: z.number().int().nonnegative(), count: z.number().int().min(1).max(MAX_BLANK_PAGES) }).strict(),
     })
     .strict(),
   z

@@ -5022,6 +5022,20 @@ optgroup {
   inline-size: 8ch;
 }
 
+/* WHERE NEW PAGES GO (`PagePlacement.tsx`): the side, then which page, then its number, wrapping in a narrow dialog. */
+.m-page-placement {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+/* WHAT CHOOSE IMAGES DOES NEXT, said before it happens (O3): a line of the dialog's own text, `.m-ai-setup__intro`'s. */
+.m-insert-images__note {
+  margin: 0;
+  color: var(--text);
+}
+
 .m-page-number-field .m-input {
   inline-size: 100%;
   box-sizing: border-box;

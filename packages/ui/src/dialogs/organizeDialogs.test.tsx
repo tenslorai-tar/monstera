@@ -150,8 +150,10 @@ describe('the Organize dialogs in the dialog pattern', () => {
     expect(rows).toStrictEqual(['Insert from', 'Pages', 'Where']);
     expect(screen.getByRole('combobox', { name: 'Insert from' })).toBeTruthy();
     expect(screen.getByRole('group', { name: 'Pages' })).toBeTruthy();
-    expect(screen.getByRole('group', { name: 'Where' })).toBeTruthy();
-    expect(screen.getByRole('textbox', { name: 'Page' })).toBeTruthy();
+    // WHERE is the one placement row (O3): its two choices and the page number, each named.
+    expect(screen.getByRole('group', { name: 'Before or after' })).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'Which page' })).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: 'Page number' })).toBeTruthy();
   });
 
   it('Split’s two ways are CHOICES under their question, each with its sentence, and choosing ranges asks for them', () => {

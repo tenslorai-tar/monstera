@@ -224,7 +224,7 @@ test('insert-a-blank-page-1', async ({ page }) => {
   await openApp(page);
   await openDocument(page);
   const menu = await openGroupMenu(page, 'Organize', 'Pages');
-  await menu.getByRole('menuitem', { name: 'Insert blank page' }).focus();
+  await menu.getByRole('menuitem', { name: 'Insert blank pages…' }).focus();
   await shoot(page, 'insert-a-blank-page-1', menu, 12);
 });
 
@@ -232,7 +232,7 @@ test('insert-an-image-as-a-page-1', async ({ page }) => {
   await openApp(page);
   await openDocument(page);
   const menu = await openGroupMenu(page, 'Organize', 'Pages');
-  await menu.getByRole('menuitem', { name: 'Insert image…' }).focus();
+  await menu.getByRole('menuitem', { name: 'Insert images…' }).focus();
   await shoot(page, 'insert-an-image-as-a-page-1', menu, 12);
 });
 

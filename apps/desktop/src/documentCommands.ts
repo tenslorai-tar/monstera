@@ -21,7 +21,6 @@ import {
   MAX_OFFICE_IMPORT_BYTES,
   MAX_IMPORT_IMAGES,
   MAX_IMPORT_IMAGE_BYTES,
-  MAX_IMPORT_IMAGE_PIXELS,
   MAX_STRUCTURE_NAME,
   MAX_STRUCTURE_NODES,
   MAX_SERVICE_DETAIL,
@@ -163,7 +162,6 @@ import {
   writeBackupNote,
   UrlFetchRefused,
   checkedUrl,
-  ImageDecodeRefused,
   PngPixelsRefused,
   AzureRecognitionRefused,
   ClaudeRecognitionRefused,
@@ -845,20 +843,8 @@ export interface KeptVersion {
  * makes bundling a choice about this surface rather than a workaround for a
  * parameter list.
  */
-/** What {@link DocumentCommands.insertImage} answers. */
-export type InsertImageOutcome =
-  | ({ readonly kind: 'inserted' } & Applied)
-  | { readonly kind: 'cancelled' }
-  | { readonly kind: 'unreadable' }
-  | FileTooLarge
-  | { readonly kind: 'too-many-pixels'; readonly limitPixels: number };
-
 /**
- * What {@link DocumentCommands.placeImage} answers.
- *
- * {@link InsertImageOutcome}'s members with one renamed: `placed` rather than
- * `inserted`, because the two operations differ in what happens to the page
- * count and a caller that treated them alike would be wrong about that.
+ * What {@link DocumentCommands.placeImage} answers: a picture placed on pages, or why not.
  */
 export type PlaceImageOutcome =
   | ({ readonly kind: 'placed' } & Applied)
@@ -6020,75 +6006,25 @@ export class DocumentCommands {
   }
 
   /**
-   * Inserts an image as a new page, from a file the user picks.
+   * Composes the images the user picks into a new PDF, one page each, to be merged into an open document (the owner's
+   * O3): {@link composeImageFiles}, refused first where the document is not open.
    *
    * ## THE PICKER RUNS BEFORE THE LANE, exactly as `saveCopy`'s does
    *
    * A dialog can be up for as long as a person takes, and holding a document's
    * lane for that would block every other operation on it — including the ones
    * a user reaches for while deciding. The document may close while the dialog
-   * is up, and that is fine: `execute` refuses a closed document, so the
+   * is up, and that is fine: the merge refuses a closed document, so the
    * outcome is the same refusal it would have been before the dialog appeared.
-   *
-   * ## The bytes exist in this process and cross nothing
-   *
-   * The renderer asked with two numbers. Main picks, reads, and mints the
-   * command here — so the image is in exactly one process, and
-   * `renderableCommandSchema` makes the alternative unrepresentable rather than
-   * merely unused.
-   *
-   * ## The media type comes from the EXTENSION, and that is routing not validation
-   *
-   * It chooses which pdf-lib decoder runs. Whether the bytes are what the
-   * extension claims is decided by that decoder failing, which arrives here as
-   * a thrown error and leaves as `unreadable` — `documentPicker.ts`' rule that
-   * a filter is a hint to a human, applied one layer along.
    */
-  async insertImage(docId: DocId, at: number): Promise<InsertImageOutcome> {
+  async insertImages(docId: DocId): Promise<ImageImportOutcome> {
     // READ BEFORE THE DIALOG, so a document that is not open is refused before
     // a person is asked to choose a file — `saveCopy`'s ordering and its reason.
     if (this.#documents.nameOf(docId) === undefined) {
-      throw new DocumentNotOpenError(docId, 'insert an image');
+      throw new DocumentNotOpenError(docId, 'insert images');
     }
-
-    const picked = await this.#image.pick();
-    if (picked === null) return { kind: 'cancelled' };
-
-    const mediaType = imageMediaType(picked);
-    // AN EXTENSION THIS BUILD HAS NO DECODER FOR IS `unreadable`, decided before
-    // the read rather than after: the filter is a hint, so a user may reach here
-    // with a `.gif`, and loading it to discover that costs the memory the bound
-    // above exists to refuse.
-    if (mediaType === null) return { kind: 'unreadable' };
-
-    const read = await this.#image.read(picked);
-    if (read.kind === 'too-large') return { kind: 'too-large', limitBytes: MAX_IMAGE_BYTES, fileBytes: read.byteLength };
-    if (read.kind === 'unreadable') return { kind: 'unreadable' };
-
-    try {
-      const applied = await this.execute(docId, {
-        kind: 'insertImagePage',
-        at,
-        bytes: read.bytes,
-        mediaType,
-      });
-      return { kind: 'inserted', ...applied };
-    } catch (error) {
-      // A PNG PAST THE PIXEL BOUND is its own outcome, and refused before `embedPng`
-      // runs in this process: *too many pixels* names a thing a person can change,
-      // where *unreadable* would blame a picture that is perfectly valid.
-      if (error instanceof PngPixelsRefused && error.reason === 'too-many-pixels') {
-        return { kind: 'too-many-pixels', limitPixels: MAX_IMPORT_IMAGE_PIXELS };
-      }
-      // THE PICTURE'S OWN REFUSALS ARE AN OUTCOME, and only those: no PNG header, or the
-      // decoder refusing the bytes (`ImageDecodeRefused`, thrown around the decode call
-      // alone). Everything else — a poisoned document, a missing session, a defect after
-      // the decode — propagates as itself, since *unreadable* would tell the person their
-      // picture was the problem. This was a list of classes to let through, which every
-      // class nobody listed fell past.
-      if (error instanceof ImageDecodeRefused || error instanceof PngPixelsRefused) return { kind: 'unreadable' };
-      throw error;
-    }
+    // THE ONE COMPOSITION a set of pictures has (B3a): `document.newFromImages`' order, bounds and parts left out.
+    return this.composeImageFiles();
   }
 
   /**

@@ -3423,30 +3423,24 @@ export const channels = {
   ),
 
   /**
-   * Inserts an image as a new page, from a file the user picks.
+   * Inserts the images the user picks as new pages, one page each, into this document at `at` (the owner's O3).
    *
    * ## THE ASK CARRIES NO BYTES, and that is the whole reason this is a channel
    *
-   * A renderer that could send an image would be a renderer holding one, and a
-   * multi-megabyte IPC message per insert. It sends **two numbers**: which
-   * document, and where the page goes. Main opens the picker, reads the file,
-   * and mints `insertImagePage` straight into the bus — so the bytes exist in
-   * exactly one process and cross nothing.
+   * A renderer that could send an image would be a renderer holding one. It sends **two numbers**: which document, and
+   * where the pages go, chosen in the one placement row every inserting dialog asks. Main opens the picker and reads
+   * the files.
    *
-   * `document.execute` cannot carry that command either: its params take
-   * `renderableCommandSchema`, which is the command union with this one member
-   * removed, so the capability is unrepresentable rather than merely unused.
+   * ## `document.newFromImages`' composition, then `document.appendMarkdown`'s merge
    *
-   * ## The outcomes are `saveCopy`'s, for the same reason
-   *
-   * A picker a user dismisses is not a failure, so `cancelled` is a declared
-   * outcome rather than an error — the same shape and the same argument as the
-   * destination picker beside it. `unreadable` is separate from `cancelled`
-   * because a file that cannot be decoded is something the user must be told
-   * about, where a dismissal is something they did.
+   * Several pictures are one insert and one undo step, so they are composed into one PDF in the compose host — the
+   * route a new PDF from images already takes, with its order by file name, its bounds and its parts left out — and
+   * merged with the existing `mergeDocument`. ADR-0040 Decision 2 refuses a hidden open, so the composed document is
+   * saved where the user chooses and opened as a tab, `document.appendMarkdown`'s reason and its outcomes, which is
+   * why `inserted` carries the tab that opened.
    */
   'document.insertImage': channel(
-    'Inserts an image as a new page, from a file the user picks.',
+    'Inserts the images the user picks as new pages, one page each, into this document.',
     z.object({ docId: docIdSchema, at: z.number().int().nonnegative() }),
     z.discriminatedUnion('kind', [
       z.object({
@@ -3454,16 +3448,38 @@ export const channels = {
         version: docVersionSchema,
         byteLength: z.number().int().nonnegative(),
         historyDropped: z.number().int().nonnegative(),
+        /** The composed document, open as its own tab. */
+        opened: z.object({
+          docId: docIdSchema,
+          version: docVersionSchema,
+          byteLength: z.number().int().nonnegative(),
+          name: z.string().max(MAX_DOCUMENT_NAME_LENGTH),
+        }),
+        /** The pictures that could not be made a page, by file name, EMPTY where every one was. */
+        skipped: z.array(importSkippedPartSchema).max(MAX_COMPOSE_SKIPS),
+        skippedMore: z.number().int().min(0),
       }),
       z.object({ kind: z.literal('cancelled') }),
-      /** The file was picked and is not an image this build can decode. */
-      z.object({ kind: z.literal('unreadable') }),
-      /** Past {@link MAX_IMAGE_BYTES} — refused before it is read into memory. */
-      fileTooLargeSchema,
-      /** A PNG whose header states more pixels than may be decoded — refused before the decode. */
-      z.object({ kind: z.literal('too-many-pixels'), limitPixels: z.number().int().positive() }),
+      importTooLargeSchema,
+      importUnreadableSchema,
+      z.object({
+        kind: z.literal('composition-refused'),
+        reason: z.enum(COMPOSE_REFUSALS),
+        line: z.number().int().positive().nullable(),
+        file: z.string().min(1).max(MAX_DOCUMENT_NAME_LENGTH).nullable(),
+      }),
+      /** More files were picked than one import takes. Nothing was read. */
+      z.object({ kind: z.literal('too-many-images'), limit: z.number().int().positive() }),
+      /** The picked files together are past the import's byte bound. Nothing was read. */
+      z.object({ kind: z.literal('images-too-large'), limitBytes: z.number().int().positive() }),
+      importContestedSchema,
+      importWriteFailedSchema,
+      /** The composed file was written and could not be opened. */
+      openAtCapacitySchema,
+      openAbsentSchema,
+      openReadRefusedSchema,
     ]),
-    ['document-not-open', 'document-busy', 'document-poisoned'],
+    ['document-not-open', 'document-busy', 'document-poisoned', 'engine-unavailable'],
   ),
 
   /**

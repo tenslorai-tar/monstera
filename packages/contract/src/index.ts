@@ -399,6 +399,7 @@ export {
   type RenderableCommand,
   insertImagePageSchema,
   mergeDocumentSchema,
+  MAX_BLANK_PAGES,
   MAX_MERGE_DOCUMENTS,
   MAX_MERGE_PART_ENTRIES,
   MAX_TOC_ENTRIES,

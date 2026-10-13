@@ -12,7 +12,7 @@ import {
 } from '@monstera/kernel';
 import { prepareSignature } from '@monstera/kernel/engine';
 import { type BoxedCharacter, type ComposeSkip, blockEditOf, replacementFieldsOf } from '@monstera/contract';
-import { ok } from '@monstera/shared';
+import { asDocId, err, ok } from '@monstera/shared';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 
 import { type EngineHostPlatform, createShellDependencies } from './composition.js';
@@ -1118,6 +1118,34 @@ describe('the composition root, with an engine host platform', () => {
 });
 
 /**
+ * An engine a MERGE can run against: one session and one output directory per open document, because a merge holds
+ * two — the target and the composed source — and a serialise must write into the area of the session it names, as a
+ * host does. A merge captures nothing, as the kernel's `captureMergeDocument` says.
+ */
+function mergingEngine(): FakePeer {
+  const outputs = new Map<string, string>();
+  return (channel, params) => {
+    if (channel === 'engine/open') {
+      const session = `ab${String(outputs.size + 10)}`;
+      outputs.set(session, (params as { outputDirectory: string }).outputDirectory);
+      return { ok: true, value: { session, access: 1 } };
+    }
+    if (channel === 'engine/serialise') {
+      const { session, into } = params as { session: string; into: string };
+      const output = outputs.get(session);
+      if (output === undefined) throw new Error(`engine/serialise named an unopened session ${session}`);
+      const bytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d]);
+      writeFileSync(join(output, into), bytes);
+      return { ok: true, value: { bytes: bytes.length } };
+    }
+    if (channel === 'engine/capture') {
+      return { ok: true, value: { captured: false, reason: 'merging has no recordable prior state' } };
+    }
+    return ENGINE(channel, params);
+  };
+}
+
+/**
  * A MuPDF peer that also answers `engine/serialise` with a REAL FILE.
  *
  * {@link ENGINE} does not, because no case above reaches the terminal branch
@@ -1839,39 +1867,6 @@ describe('the composition root, a HOSTED pdf-lib command (ADR-0121 Decision 3)',
     expect(executed.value.byteLength).toBe(result.length);
   });
 
-  it('a picture the host refuses past the PIXEL bound is answered as too many pixels, never as unreadable', async () => {
-    // THE CODE BETWEEN THE PAIR: `documentCommands.test.ts` inserts through pdf-lib in its own process, where the
-    // refusal keeps its class, and `remoteLifecycle.test.ts` crosses the pipe without the outcome a person reads.
-    // Here the host answers the way the real one does and the root decides the outcome.
-    const insertingWith = async (code: string): Promise<unknown> => {
-      // A HOST THAT SERIALISES, because the bus checkpoints before a terminal command and that is a real file.
-      const serving = documentServingEngine(new TextEncoder().encode('%PDF-1.7\n% a document to insert into\n'));
-      const spy = platformAnswering((channel, params) =>
-        channel === 'engine/applyPdfLib' ? { ok: false, error: { code } } : serving(channel, params),
-      );
-      const { handlers } = createShellDependencies({
-        ...harnessSurfaces('the composition-host test'),
-        appInfo,
-        pickDocument: () => Promise.resolve(aDocument(`pixels-${code}.pdf`)),
-        pickImage: () => Promise.resolve(join(scratch, 'a-large-picture.png')),
-        readImage: () => Promise.resolve({ kind: 'read', bytes: Uint8Array.of(0x89, 0x50, 0x4e, 0x47) }),
-        enginePlatform: spy.platform,
-        checkpointDirectory: join(scratch, `checkpoints-pixels-${code}`),
-      });
-      const opened = await handlers['document.open']({});
-      if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
-      const inserted = await handlers['document.insertImage']({ docId: opened.value.docId, at: 0 });
-      if (!inserted.ok) throw new Error(JSON.stringify(inserted));
-      return inserted.value.kind;
-    };
-
-    expect(await insertingWith('picture-too-many-pixels')).toBe('too-many-pixels');
-    expect(await insertingWith('picture-unreadable')).toBe('unreadable');
-    // CONTROL: the host's ORDINARY failure is a defect and not the picture's (BBBBBBBB-7): it propagates as the engine's
-    // own failure, for the boundary to answer as one, where a catch that read every failure as the picture told a person
-    // their valid picture could not be read.
-    await expect(insertingWith('apply-failed')).rejects.toThrow(/refused engine\/applyPdfLib: apply-failed/u);
-  });
 });
 
 describe('the composition root, SAVING (ADR-0121 addendum)', () => {
@@ -2161,26 +2156,7 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
     // target's checkpoint serialise wrote into the composed document's area, which main
     // then could not find. So each open gets its own session, and a serialise writes
     // into the area of the session it names, as a host does.
-    const outputs = new Map<string, string>();
-    const mupdf = platformAnswering((channel, params) => {
-      if (channel === 'engine/open') {
-        const session = `ab${String(outputs.size + 10)}`;
-        outputs.set(session, (params as { outputDirectory: string }).outputDirectory);
-        return { ok: true, value: { session, access: 1 } };
-      }
-      if (channel === 'engine/serialise') {
-        const { session, into } = params as { session: string; into: string };
-        const output = outputs.get(session);
-        if (output === undefined) throw new Error(`engine/serialise named an unopened session ${session}`);
-        const bytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d]);
-        writeFileSync(join(output, into), bytes);
-        return { ok: true, value: { bytes: bytes.length } };
-      }
-      if (channel === 'engine/capture') {
-        return { ok: true, value: { captured: false, reason: 'merging has no recordable prior state' } };
-      }
-      return ENGINE(channel, params);
-    });
+    const mupdf = platformAnswering(mergingEngine());
     // WITH A BOX, so this case also carries the append's own list through the root (ADR-0172).
     const boxedPlaces = [{ character: '中', line: 1, column: 1 }];
     const compose = composePeer({ places: boxedPlaces, more: 0 });
@@ -2346,6 +2322,67 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
       ok: true,
       value: { kind: 'opened-with-skips', skipped: [{ reason: 'image-unreadable', line: null, file: 'page 10.png' }], skippedMore: 0 },
     });
+  }, 120_000);
+
+  it('INSERTS PICKED IMAGES (O3): composes them in name order, opens the result as a tab, and merges every page of it at the place asked, in ONE apply', async () => {
+    // THE PAIR'S MIDDLE: the UI case asserts the dialog's `at` reaches the channel against a stubbed kernel, the merge's
+    // kernel proof asserts the graft against a local writer, and only this root carries `at` from one to the other.
+    const applies: unknown[] = [];
+    const merging = mergingEngine();
+    const mupdf = platformAnswering((channel, params) => {
+      if (channel === 'engine/apply') applies.push(params);
+      return merging(channel, params);
+    });
+    const compose = composePeer(undefined, { parts: [{ reason: 'image-unreadable', line: null, item: 2 }], more: 0 });
+    const third = platformAnswering(compose.peer);
+    const tenth = join(scratch, 'page 10.png');
+    const second = join(scratch, 'page 2.jpg');
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickDocument: () => Promise.resolve(aDocument('insert-images-target.pdf')),
+      pickImages: () => Promise.resolve([tenth, second]),
+      sizeImage: () => Promise.resolve(16),
+      readImage: (path) => Promise.resolve({ kind: 'read' as const, bytes: new TextEncoder().encode(path) }),
+      pickDestination: () => Promise.resolve(join(scratch, 'inserted-images.pdf')),
+      enginePlatform: mupdf.platform,
+      composePlatform: third.platform,
+    });
+    const opened = await handlers['document.open']({});
+    if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+
+    const inserted = await handlers['document.insertImage']({ docId: opened.value.docId, at: 3 });
+    expect(inserted.ok, JSON.stringify(inserted)).toBe(true);
+    if (!inserted.ok || inserted.value.kind !== 'inserted') throw new Error(JSON.stringify(inserted));
+    expect(inserted.value.version).toBeGreaterThan(opened.value.version);
+    expect(inserted.value.opened.name).toBe('inserted-images.pdf');
+    expect(inserted.value.opened.docId).not.toBe(opened.value.docId);
+    // THE PICTURE LEFT OUT, by its file, `newFromImages`' naming through the same composition.
+    expect(inserted.value.skipped).toStrictEqual([{ reason: 'image-unreadable', line: null, file: 'page 10.png' }]);
+    expect(compose.sources).toStrictEqual([`image/jpeg:${second}`, `image/png:${tenth}`]);
+    // ONE MERGE, at 3, of every page of the composed tab — one undo step for every picture.
+    const merges = applies.filter((params) => JSON.stringify(params).includes('"mergeDocument"'));
+    expect(merges).toHaveLength(1);
+    expect(JSON.stringify(merges[0])).toContain('"at":3');
+    expect(JSON.stringify(merges[0])).toContain('"sourcePages":"all"');
+  }, 120_000);
+
+  it('CONTROL: an image insert into a document that is not open is refused BEFORE the picker opens', async () => {
+    let picked = 0;
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickImages: () => {
+        picked += 1;
+        return Promise.resolve([join(scratch, 'never.png')]);
+      },
+      enginePlatform: platformAnswering(mergingEngine()).platform,
+      composePlatform: platformAnswering(composePeer().peer).platform,
+    });
+    expect(await handlers['document.insertImage']({ docId: asDocId('not-open'), at: 0 })).toStrictEqual(
+      err({ code: 'document-not-open' }),
+    );
+    expect(picked).toBe(0);
   }, 120_000);
 
   it('carries a CSV record the host LEFT OUT through the whole root, by its line', async () => {
