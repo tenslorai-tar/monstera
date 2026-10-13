@@ -158,7 +158,7 @@ const failures = [];
  * compares. That cost is the mechanism, not a nuisance: this is the guard
  * `CLAUDE.md` calls *the* mechanism for a rule broken ten times.
  */
-const DECLARED_CASES = 364;
+const DECLARED_CASES = 372;
 
 const roster = createRoster(failures, { cases: DECLARED_CASES });
 
@@ -592,6 +592,26 @@ mustAllow('a double-quoted awk program with a comparison', 'awk "NR > 2 { print 
 mustBlock('a quoted comparison AND a real redirect on the same line', "awk '$2 > 100' data.txt > out.txt");
 mustBlock('a quoted > in the payload of a producer that redirects', "printf 'a > b\\n' > out.txt");
 mustBlock('an UNTERMINATED quote does not disarm the redirect test', 'echo "a > b > out.txt');
+
+// ---------------------------------------------------------------------------
+// A `$` THAT A CLOSING SINGLE QUOTE FOLLOWS IS NOT ANSI-C QUOTING (CCCCCCCC-5,
+// fixed). Bash starts `$'…'` only at an unquoted `$`; inside single quotes `$`
+// is literal. A regex ending in an anchor read `$'` at its closing quote and the
+// line was denied, twice on 2026-10-12, neither command writing anything the
+// rule is about. Masked by the same scanner as a quoted `>`, so the quotes that
+// pair are the shell's and not a second opinion's.
+// ---------------------------------------------------------------------------
+mustAllow('a single-quoted regex ending in an anchor, then a pipe to a redirect', "git ls-files | grep -E '\\.(ts|tsx)$' | xargs grep -l foo > /dev/null");
+mustAllow('an anchored pattern with its output redirected', "grep 'end$' a.txt > out.txt");
+// CONTROLS — each a REAL opener beside a literal `$'`, so a mask that reached the
+// opener would let it through.
+mustBlock('a real $\'…\' straight after a closing single quote', "grep 'abc'$'\\t' in.txt > out.txt");
+mustBlock('a real $\'…\' in a later command after an anchored pattern', "grep 'a$' x; grep $'\\t' y > out.txt");
+// THE ESCAPED QUOTE. `\\'` is a quote character to bash and opens nothing, so the
+// `$'` after it is a real opener. A scanner that paired the escaped quote with
+// the next one would mask that `$` — which is why the scanner takes bash's
+// backslash rule in the same change.
+mustBlock('a real $\'…\' after an escaped quote character', "grep \\'$'\\t' \\' in.txt > out.txt");
 
 // The historical occurrences are stdout redirects and must stay caught. These
 // are the reason the descriptor test is a lookbehind rather than a blanket

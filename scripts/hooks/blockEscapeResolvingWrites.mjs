@@ -832,6 +832,9 @@ export const POWERSHELL_RULES = /** @type {readonly Rule[]} */ ([
 /** The stand-in for a `>` that sits inside quotes. See {@link maskQuotedRedirects}. */
 const MASKED_REDIRECT = '_';
 
+/** The stand-in for a `$` inside single quotes that the closing quote follows. See {@link maskQuotedRedirects}. */
+const MASKED_DOLLAR = '_';
+
 /**
  * Neutralises every `>` that sits INSIDE a quoted run (finding TTT-1).
  *
@@ -873,9 +876,24 @@ export function maskQuotedRedirects(command) {
   let single = false;
   let double = false;
   let out = '';
-  for (const character of command) {
-    if (character === "'" && !double) single = !single;
-    else if (character === '"' && !single) double = !double;
+  const characters = [...command];
+  for (let at = 0; at < characters.length; at += 1) {
+    const character = characters[at] ?? '';
+    // A BACKSLASH OUTSIDE SINGLE QUOTES MAKES THE NEXT CHARACTER LITERAL, which is bash's rule: `\'` is a quote
+    // character and opens nothing. Without it an escaped quote paired with a real one, and a mask applied on that
+    // pairing is a mask on text the shell does not quote — a false negative, the one direction this may not fail in.
+    if (character === '\\' && !single && at + 1 < characters.length) {
+      out += character + (characters[at + 1] ?? '');
+      at += 1;
+      continue;
+    }
+    if (character === "'" && !double) {
+      // A `$` THAT A CLOSING SINGLE QUOTE FOLLOWS IS INSIDE THE QUOTES (CCCCCCCC-5): bash starts `$'…'` only at an
+      // unquoted `$`, and inside single quotes `$` is literal. `grep -E '\.(ts|tsx)$' | … > /dev/null` read the
+      // closing `$'` as ANSI-C quoting and was denied. Masked like a quoted `>`: one character, every offset kept.
+      if (single && out.endsWith('$')) out = `${out.slice(0, -1)}${MASKED_DOLLAR}`;
+      single = !single;
+    } else if (character === '"' && !single) double = !double;
     const quoted = single || double;
     out += character === '>' && quoted ? MASKED_REDIRECT : character;
   }
