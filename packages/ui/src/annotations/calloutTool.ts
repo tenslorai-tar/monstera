@@ -163,5 +163,7 @@ export function calloutTool(deps: TextToolDeps): UiTool {
     },
   };
 
-  return { id: CALLOUT_TOOL_ID, controller, hint: HINT_CALLOUT };
+  // THE I-BEAM, as every text tool (the owner's N11): its words are typed into its box; the drag that draws it is the
+  // overlay's crosshair.
+  return { id: CALLOUT_TOOL_ID, controller, hint: HINT_CALLOUT, cursor: 'text' };
 }

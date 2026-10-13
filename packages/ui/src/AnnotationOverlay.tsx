@@ -329,6 +329,9 @@ export function AnnotationOverlay({
       data-tool={tool.id}
       // THE TOOL'S OWN POINTER (`UiTool.cursor`); the drawing tools say nothing and draw with the crosshair.
       data-cursor={tool.cursor ?? 'crosshair'}
+      // A BOX BEING DRAGGED OUT, which every tool draws with the crosshair, a text tool too (the owner's N11): the pointer
+      // down and moved, so a click that places stays the I-beam.
+      data-drawing={gesture !== undefined && !gesture.done && gesture.points.length > 1 ? '' : undefined}
       onKeyDown={(event): void => {
         // ESCAPE AND ENTER END A GESTURE where the state lives (§6's lifecycle), and are taken from the page's own
         // keys only when they did: a key the drawing did not use still reaches whatever else listens for it.

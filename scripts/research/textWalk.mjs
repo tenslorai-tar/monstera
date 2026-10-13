@@ -189,6 +189,8 @@ await step('4. Add text: two lines typed on a blank area, ended with Escape, and
   const surface = page.locator('[data-text-add-surface]').first();
   const box = await surface.boundingBox();
   if (box === null) throw new Error('no add surface');
+  // N11: THE I-BEAM over the empty page, where a press puts the words.
+  await expect(surface).toHaveCSS('cursor', 'text');
   // 78% DOWN THE PAGE: at 85% or lower on this 180-degree page the typed words were dropped when the editor ended
   // (measured 2026-10-12: kept at 78%, lost at 85% and 89%), reported as an app finding.
   await page.mouse.click(box.x + box.width * 0.15, box.y + box.height * 0.78);

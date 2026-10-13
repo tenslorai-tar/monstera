@@ -74,6 +74,30 @@ test('each TOOL shows its own pointer: the arrow to pick or place, the I-beam on
   }
 });
 
+test('N11: every TEXT tool shows the I-beam, and the crosshair only while its box is dragged out', async ({ page }) => {
+  await openWithText(page, []);
+  // ADD TEXT'S SURFACE needs a page's blocks, which this page has none of: `textAdd.pw.ts` holds its case.
+  for (const title of ['Text box', 'Typewriter', 'Callout']) {
+    await chooseTool(page, title);
+    await expect(page.locator('.m-palette-query')).toHaveCount(0);
+    await expect.poll(() => cursorOverPage(page), title).toBe('text');
+  }
+  // WHILE A BOX IS DRAGGED OUT: Text box, pointer down and moved, then released.
+  await chooseTool(page, 'Text box');
+  await expect.poll(() => cursorOverPage(page), 'Text box before the drag').toBe('text');
+  const slot = await page.locator('.m-page-slot').first().boundingBox();
+  if (slot === null) throw new Error('no page');
+  const x = slot.x + slot.width / 2;
+  const y = slot.y + slot.height / 2;
+  await page.mouse.move(x - 60, y - 30);
+  await page.mouse.down();
+  await page.mouse.move(x, y, { steps: 6 });
+  await expect.poll(() => cursorOverPage(page), 'Text box while dragging').toBe('crosshair');
+  await page.mouse.up();
+  // CONTROL: the pointer up, the drag is over and the box's words are typed: not the crosshair any more.
+  await expect.poll(() => cursorOverPage(page), 'Text box after the drag').not.toBe('crosshair');
+});
+
 test('HIGHLIGHT selects the words as they are dragged over, and marks exactly that selection on release', async ({ page }) => {
   const sent: Sent[] = [];
   await openWithText(page, sent);

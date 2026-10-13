@@ -6215,7 +6215,8 @@ optgroup {
   margin: 0;
   border: 0;
   background: transparent;
-  cursor: crosshair;
+  /* A TEXT TOOL'S I-BEAM (the owner's N11): a press here is where the words go, and nothing is dragged out. */
+  cursor: text;
   pointer-events: auto;
 }
 
@@ -7078,6 +7079,11 @@ optgroup {
 /* A TOOL WHOSE BOX THE WORDS ARE TYPED INTO: the I-beam, which is what a press there is for. */
 .m-annotation-overlay[data-cursor='text'] {
   cursor: text;
+}
+
+/* EXCEPT WHILE ITS BOX IS DRAGGED OUT (the owner's N11): every tool drags with the crosshair. After the I-beam, so it wins. */
+.m-annotation-overlay[data-cursor='text'][data-drawing] {
+  cursor: crosshair;
 }
 
 /* THE ERASER'S OWN POINTER, at one and two device pixels to the CSS pixel, its hotspot the middle of the rubbing edge.

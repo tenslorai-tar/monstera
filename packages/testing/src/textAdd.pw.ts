@@ -127,6 +127,20 @@ test.describe('Add text', () => {
     }
   }
 
+  test('N11: Add text shows the I-beam over the empty page, where a press puts the words', async ({ page }) => {
+    await openForAdding(page, []);
+    const surface = page.locator('[data-text-add-surface]').first();
+    await expect(surface).toHaveCSS('cursor', 'text');
+    // CONTROL: the surface is the element under the page's middle, so the I-beam above is the one a person sees.
+    const box = await surface.boundingBox();
+    if (box === null) throw new Error('the add surface has no box');
+    const under = await page.evaluate(
+      ([x, y]) => document.elementFromPoint(x ?? 0, y ?? 0)?.hasAttribute('data-text-add-surface') ?? false,
+      [box.x + box.width / 2, box.y + box.height / 2],
+    );
+    expect(under).toBe(true);
+  });
+
   // W4: THE SIZE IS THE WORDS' SIZE BEFORE THERE ARE ANY, and character spacing can be set before the first letter.
   test('W4: a new box shows its size before anything is typed, and character spacing is open', async ({ page }) => {
     const sent: { channel: string; params: unknown }[] = [];
