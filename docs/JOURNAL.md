@@ -892,6 +892,78 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-13 — Stage audit of `c6f33f43..6c31e8e5` — findings FFFFFFFF-1 to FFFFFFFF-14
+
+Cloud run 3's Parts 4 (from N3) to 6: N3, N7, L3, L4, L6, L7, Group 10, N5, N1, N2, N4, N8, N9, O4, O1, W11, O11, L8,
+W12, CCCCCCCC-5, the new visual cases and the board's fixes. Read through `npm run audit:scope` (32 commits and 178 files
+at the reading; the five commits after it are this audit's own repairs, -1 to -3). The 48 modified proofs were read per
+commit (`git show <sha> -- <file>`, every commit for every file) by one read-only reader; each claim below was checked
+here before being recorded. Board: Guards green at 8dbf612b (run 38412833395); CI red there on one case on every leg
+(-3), and on the visual job for the expected missing baselines.
+
+**FFFFFFFF-1** (medium, closed `0ef18922`): L3 (2a5c6e39) moved the page stamps to the MuPDF writer and replaced
+`pdfLibProtected.proof.mjs`' three protected-stamp cases with one for the watermark, dropping the wrong-password and
+print-permission conjuncts too; the roster went 35 to 34 and headers, footers and Bates on a protected document were
+asserted nowhere. A loosened check that read as a moved one (item 2a). All three are asked again, with every conjunct.
+
+**FFFFFFFF-2** (medium, closed `8626c57d`): W11 (2fc34240) turned the first-run axe scan onto the start screen, and the
+setup dialog lost the only axe scan it had; the shared helper reloads the page. Now scanned in place.
+
+**FFFFFFFF-3** (medium, closed `6c31e8e5`; the class open): N2's scroll-driven fades failed `reducedMotion.test.ts` on
+every CI leg at 8dbf612b, and nothing local ran it: the per-item set is the changed files' tests and `vitest related`,
+and a test that reads the stylesheets through a glob imports none of them. Third of its kind in two runs, after
+3af9490b (`redrawOwner.test.ts` reads sources by text) and the help suite in cloud-11. The fix stood: a scroll timeline
+is no time, which is the test's own definition of still, and stilling the fades would take the cue away under reduced
+motion. Open: nothing names the source-scanning tests a change reaches, which is L8's question asked of vitest.
+
+**FFFFFFFF-4** (low, recorded): `pageStampFamily.test.ts` (2a5c6e39) reads each page's `/Resources /Font` where it read
+every font object, so *no other face* no longer sees an unreferenced one. Needed (a base-14 face is a direct
+dictionary the old walk could not see) and still fails a face moved into an XObject (the list comes back empty).
+
+**FFFFFFFF-5** (low, recorded): after O1 (ce69093c) no case asserts a development build draws no update line; the Store
+case's control is the asked run, and the line no longer depends on the channel.
+
+**FFFFFFFF-6** (low, open): `scripts/lib/testCaseCounts.mjs` counts `it (` in prose. O1's removed comment `… belongs to
+it (E4).` was counted as a case, and the pre-commit hook reported App.test.tsx one case fewer when none was removed.
+
+**FFFFFFFF-7** (low, open): the escape guard scans a quoted heredoc's body as shell, so a commit message quoting
+ANSI-C syntax beside a `>` was denied (`git commit -F -`, the guard's own control shape); reworded, nothing written.
+
+**FFFFFFFF-8** (low, recorded): CCCCCCCC-3 stays open. A root case for a whole-page network read needs an engine-host
+fake answering geometry and snapshot, a stored key and a stubbed fetch; weighed against the rest of Part 6.
+
+**FFFFFFFF-9** (low, open): CCCCCCCC-4, investigated, not fixed. The Windows run's log says only *Test timed out in
+5000ms* at `chatHistory.test.ts:48` in a suite whose import phase took 245 s (job 114657626935). The rename retry is
+bounded at 5 × 40 ms per write, 0.6 s for that case's three writes, so 4.4 s or more was in the file calls themselves.
+Owed: a timed probe of those calls on a Windows runner under the full suite; not a raised timeout.
+
+**FFFFFFFF-10** (low, recorded): BBBBBBBB-3 was closed by 875f247a: the protected `setTabOrder` case runs on two
+fields, reads the created order `name,city` and the column order `city,name` back, and compares the permissions.
+
+**FFFFFFFF-11** (low, open): EEEEEEEE-9 recurred. A `git stash` round trip moved `pdfLibWriter.ts`' mtime and not its
+content, `npm run build` emitted nothing, and the proof refused a stale `dist`; `tsc --build --force packages/kernel`
+was needed. Freshness reads mtimes and the incremental build reads content.
+
+**FFFFFFFF-12** (low, open): `designBaselines.visual.ts`' `parkPointer` lands on a tall dialog: the PDF/A level capture
+holds the 1b row's hover. Deterministic, so it compares, but the baseline photographs a hover nobody chose.
+
+**FFFFFFFF-13** (low, open): L8's bundle line names four missed proofs and not which. The six misses fixed in 9034ea9a
+were found by measuring every proof's dropped edges; whether they include the owner's four is not known.
+
+**FFFFFFFF-14** (low, recorded): three reflexes denied by the escape guard in this range (`sed -i` on `/dev/null`,
+`node -e` inside a chain, and -7's commit); nothing was written. Counted from this session's notes as each happened.
+
+**Item 1, by fix.** Root cause, each with its mechanism in its commit: W11 (the offer waited on two answers from main
+after the first paint), O11 (viewport emulation inside a native window), L8 (edges dropped outside `scripts/`), W12
+(`all` mode writes without comparing), CCCCCCCC-5 (a quoted `$` read as an opener), N2's follow-up (-3). **Item 3:** CI
+saw -3; nothing else here was CI-blind except the walks (Windows only, O11 and W11's steps). **Items 4a/4b:** the
+instruments changed in the range (`affectedProofs`, the guard's scanner, the new `visualRegenerate` proof) each went
+red with its fix reverted. **Item 7:** the *opens by itself* and *updates are managed by* sweeps find only records.
+**Two unexplained rendered failures** (*caption that grows*, *Components dialog 3 px*) were seen here at d4f5a04b; 6741cb78
+recorded the same two failing in this container at main and green on Ubuntu CI, so they are this machine's.
+
+---
+
 ## 2026-10-13 — Stage audit of `c481a654..c6f33f43` — findings EEEEEEEE-1 to EEEEEEEE-13
 
 Cloud run 3's Parts 2 to 4 up to N6 (N14, N10, N13, N12, W2 to W5, W7 to W9, N11, L2, L5, O6(b)(c), O8, O5, O7, O3,
