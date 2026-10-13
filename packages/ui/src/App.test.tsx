@@ -1111,9 +1111,9 @@ describe('App', () => {
     // assertion; the dialog it sits in is checked by the query's own ancestry.
     expect(await screen.findByRole('dialog', { name: 'About Monstera' })).toBeDefined();
     expect(await screen.findByText('1.2.3')).toBeDefined();
-    // THE CHANNEL IN WORDS, and the update line that belongs to it (E4).
+    // THE CHANNEL IN WORDS, and what Monstera is in place of how a channel is updated (ADR-0236).
     expect(await screen.findByText('Development build')).toBeDefined();
-    expect(await screen.findByText('A development build. It does not check for updates.')).toBeDefined();
+    expect(await screen.findByText('Monstera is a PDF editor for Windows.')).toBeDefined();
     // THE COPYRIGHT HOLDER, inside the dialog: the start screen's footer says it too, so a page-wide query would pass
     // on the footer behind the dialog.
     const about = screen.getByRole('dialog', { name: 'About Monstera' });
@@ -1137,8 +1137,8 @@ describe('App', () => {
         screen.getByRole('button', { name: 'About' }).click();
         await Promise.resolve();
       });
-      // The Store build's own line, against the development one above.
-      expect(await screen.findByText(/Updates are managed by the Microsoft Store/u)).toBeDefined();
+      // The body has arrived (its chunk is lazy) before its buttons are looked for.
+      expect(await screen.findByText(/Your documents stay on your computer/u)).toBeDefined();
       await act(async () => {
         (await screen.findByRole('button', { name: control })).click();
         await Promise.resolve();
@@ -1217,8 +1217,8 @@ describe('App', () => {
         await Promise.resolve();
       });
       expect(await screen.findByText(/Monstera also asks monsterapdf\.com/u)).toBeDefined();
-      // AGAINST the Store build's own line, which the dormant cases above show.
-      expect(screen.queryByText(/Monstera does not check for updates itself/u)).toBeNull();
+      // The line is the run's, not the channel's: what Monstera is still sits above it.
+      expect(screen.getByText('Monstera is a PDF editor for Windows.')).toBeDefined();
     });
   });
 

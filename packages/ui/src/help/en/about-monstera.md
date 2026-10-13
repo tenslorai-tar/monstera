@@ -1,12 +1,12 @@
 ---
 id: about-monstera
 title: See the version and licences
-summary: The About window shows Monstera's version, how it is updated, and links to its source code and licences.
+summary: The About window says what Monstera is, shows its version, and links to its source code and licences.
 keywords: [about, version, licence, license, source code, updates, third party, agpl]
 commands: [app.about]
 contexts: [dialog.about, tools, start-screen]
 ---
-The About window tells you which version of Monstera you have and how it is kept up to date.
+The About window tells you what Monstera is and which version you have.
 
 ## Steps
 
@@ -18,7 +18,7 @@ The About window tells you which version of Monstera you have and how it is kept
 
 ## Good to know
 
-- Updates to the Microsoft Store version are managed by the Microsoft Store. Monstera does not check for or install updates itself.
+- Your documents stay on your computer unless you send one, for example to the assistant or to cloud storage.
 - Monstera is open-source software under the GNU Affero General Public License, version 3 or later. You can read and build its source code.
 
 <!--

@@ -11,12 +11,11 @@ import {
   ABOUT_COPYRIGHT,
   ABOUT_LICENCE,
   ABOUT_LICENCES,
+  ABOUT_LOCAL,
   ABOUT_SOURCE,
   ABOUT_UPDATES_CHECKED,
-  ABOUT_UPDATES_DEVELOPMENT,
-  ABOUT_UPDATES_STORE,
-  ABOUT_UPDATES_WEB,
   ABOUT_VERSION_LABEL,
+  ABOUT_WHAT,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter } from '../primitives/Dialog.js';
@@ -33,23 +32,12 @@ const CHANNEL_NAMES: Readonly<Record<Channel, MessageKey>> = {
 };
 
 /**
- * How this build is updated, per channel (the founding record's E4: *"show 'Updates are managed by Microsoft
- * Store' in About"*, and *"Update checks are the only phone-home in the app, and the About panel says so"*).
- * A build that did not ask monsterapdf.com this run says so here: the Store build never self-updates, and the web
- * channel has no updater — so each line says what is true of this build rather than what a later one will do.
+ * The About dialog's body: what Monstera is, the build, its licence, and the two pages the AGPL and the third-party
+ * licences call for (BUILD-PROMPT D12 *"About (version, licences, source offer)"*).
  *
- * **A run that DID ask says that instead** (`ABOUT_UPDATES_CHECKED`, ADR-0110), decided from main's status for the run
- * rather than from the channel, so the line cannot claim a check that a dormant address or the setting prevented.
- */
-const UPDATE_LINES: Readonly<Record<Channel, MessageKey>> = {
-  store: ABOUT_UPDATES_STORE,
-  web: ABOUT_UPDATES_WEB,
-  development: ABOUT_UPDATES_DEVELOPMENT,
-};
-
-/**
- * The About dialog's body: the build, its licence, how it is updated, and the two pages the AGPL and the
- * third-party licences call for (BUILD-PROMPT D12 *"About (version, licences, source offer)"*).
+ * **No line says how the build is updated** (ADR-0236). The one update line left is E4's phone-home clause,
+ * `ABOUT_UPDATES_CHECKED`, drawn only on a run whose status from main says it asked monsterapdf.com (ADR-0110), so it
+ * cannot claim a check that a dormant address or the setting prevented.
  *
  * ## It renders what main said, and holds no opinion about it
  *
@@ -82,7 +70,9 @@ export default function AboutBody({
         <dt>{_(ABOUT_CHANNEL_LABEL)}</dt>
         <dd>{_(CHANNEL_NAMES[installChannel])}</dd>
       </dl>
-      <p className="m-about__line">{_(checksForUpdates ? ABOUT_UPDATES_CHECKED : UPDATE_LINES[installChannel])}</p>
+      <p className="m-about__line">{_(ABOUT_WHAT)}</p>
+      <p className="m-about__line">{_(ABOUT_LOCAL)}</p>
+      {checksForUpdates ? <p className="m-about__line">{_(ABOUT_UPDATES_CHECKED)}</p> : null}
       <p className="m-about__line">{_(ABOUT_LICENCE)}</p>
       <p className="m-about__line">{_(ABOUT_COPYRIGHT)}</p>
       <DialogFooter dismissal="close">

@@ -899,9 +899,8 @@ export const ABOUT_CHANNEL_LABEL = messageKey('dialog.about.channel');
 export const ABOUT_CHANNEL_STORE = messageKey('dialog.about.channel-store');
 export const ABOUT_CHANNEL_WEB = messageKey('dialog.about.channel-web');
 export const ABOUT_CHANNEL_DEVELOPMENT = messageKey('dialog.about.channel-development');
-export const ABOUT_UPDATES_STORE = messageKey('dialog.about.updates-store');
-export const ABOUT_UPDATES_WEB = messageKey('dialog.about.updates-web');
-export const ABOUT_UPDATES_DEVELOPMENT = messageKey('dialog.about.updates-development');
+export const ABOUT_WHAT = messageKey('dialog.about.what');
+export const ABOUT_LOCAL = messageKey('dialog.about.local');
 export const ABOUT_UPDATES_CHECKED = messageKey('dialog.about.updates-checked');
 export const ABOUT_LICENCE = messageKey('dialog.about.licence');
 export const ABOUT_COPYRIGHT = messageKey('dialog.about.copyright');
@@ -3592,10 +3591,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ABOUT_CHANNEL_STORE]: 'Microsoft Store',
   [ABOUT_CHANNEL_WEB]: 'Download from monsterapdf.com',
   [ABOUT_CHANNEL_DEVELOPMENT]: 'Development build',
-  // E4: the Store updates a Store app, and nothing in this build checks for updates on its own.
-  [ABOUT_UPDATES_STORE]: 'Updates are managed by the Microsoft Store. Monstera does not check for updates itself.',
-  [ABOUT_UPDATES_WEB]: 'This build does not check for updates. Newer versions are on monsterapdf.com.',
-  [ABOUT_UPDATES_DEVELOPMENT]: 'A development build. It does not check for updates.',
+  // ADR-0236: "unless you send one" is load-bearing — the assistant, cloud storage and DocuSign each send a document
+  // when the person asks, so the unconditional sentence would be false of this build.
+  [ABOUT_WHAT]: 'Monstera is a PDF editor for Windows.',
+  [ABOUT_LOCAL]: 'Your documents stay on your computer unless you send one.',
   [ABOUT_UPDATES_CHECKED]:
     'Updates are installed by the Microsoft Store. Monstera also asks monsterapdf.com when it starts whether a newer version is out.',
   [ABOUT_LICENCE]:
