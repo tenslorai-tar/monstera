@@ -962,6 +962,62 @@ red with its fix reverted. **Item 7:** the *opens by itself* and *updates are ma
 **Two unexplained rendered failures** (*caption that grows*, *Components dialog 3 px*) were seen here at d4f5a04b; 6741cb78
 recorded the same two failing in this container at main and green on Ubuntu CI, so they are this machine's.
 
+**The checklist by item, appended 2026-10-13** after Guards at 3e4433ff refused the entry for giving the items in one
+paragraph; nothing above is changed.
+
+### 1. Root cause or workaround?
+
+Root cause throughout, each mechanism in its commit: W11, O11, L8, W12, CCCCCCCC-5 and N2's follow-up (-3), with the
+three audit repairs (-1, -2, -3). No workaround: no timeout raised for CCCCCCCC-4 (-9), and no `touch` of a `dist` for
+-11's stale refusal (a forced build instead).
+
+### 2. Verified against the easy shape only?
+
+L8's cases include a source no proof names (`pageStampDraw.ts` through `mupdfWriter.ts`). The guard's fix is tested
+against an escaped quote beside a real opener. W12's proof runs a change inside and outside the tolerance.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Yes, twice, both found here and repaired: L3's protected-stamp cases (-1) and W11's axe scan (-2). -4 is a narrowing
+recorded with its reason.
+
+### 3. Would CI have caught it?
+
+It did catch -3, on every leg at 8dbf612b. The walks (O11, W11's step and the others) run on Windows only.
+
+### 4. Are the proofs non-vacuous?
+
+Each new or changed check went red with its fix reverted: `affectedProofs` (six cases), the escape guard (two allows,
+and the escaped-quote control with only the backslash rule off), `visualRegenerate` (the `all`-mode control),
+`reducedMotion` (time, shorthand-after and transition controls).
+
+### 4a. Resolution test before measuring?
+
+`visualRegenerate` separates a 3-pixel move (kept) from a 400-pixel change (rewritten). Nothing else measured.
+
+### 4b. A search with a positive control?
+
+`affectedProofs` keeps its three controls and gains six named cases; the guard's scanner change is not a search.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+The new rosters are literals (`affectedProofs` 33, the guard 372, `visualRegenerate` 5, `pdfLibProtected` 36).
+
+### 5. Executed, or asserted?
+
+Executed here: every unit, rendered and proof case named above. Asserted: O11's and W11's walk steps (Windows), and
+-9's arithmetic, which is a bound, not a measurement.
+
+### 6. Architecture before the feature?
+
+ADR-0236 landed alone before O1. W11 needed none: the offer moved within the start screen, and *Set up AI…* is the
+same registered command.
+
+### 7. Do the documents still match the code?
+
+FEATURES rows for About, the first-run offer and visual baselines edited in their commits; help reviewed (item 50).
+The *opens by itself* and *updates are managed by* sweeps find only records.
+
 ---
 
 ## 2026-10-13 — Stage audit of `c481a654..c6f33f43` — findings EEEEEEEE-1 to EEEEEEEE-13
