@@ -242,6 +242,21 @@ export const OCR_RECOGNISE = [
 ];
 
 /**
+ * The scanned-table proof's modules (ADR-0233): the recognition it reads with, the layer writer it writes through, the
+ * ruling finder and the reader under test, and the fixture.
+ *
+ * @type {BuildEdge[]}
+ */
+export const SCAN_TABLE = [
+  ['packages/kernel/src/ocrRecognise.ts', 'packages/kernel/dist/ocrRecognise.js', 'tsc'],
+  ['packages/kernel/src/ocrTextLayer.ts', 'packages/kernel/dist/ocrTextLayer.js', 'tsc'],
+  ['packages/kernel/src/rasterRulings.ts', 'packages/kernel/dist/rasterRulings.js', 'tsc'],
+  ['packages/kernel/src/scanTables.ts', 'packages/kernel/dist/scanTables.js', 'tsc'],
+  ['packages/kernel/src/scanTableFixture.ts', 'packages/kernel/dist/scanTableFixture.js', 'tsc'],
+  ['packages/kernel/src/mupdfWriter.ts', 'packages/kernel/dist/mupdfWriter.js', 'tsc'],
+];
+
+/**
  * The application's form of invariant 9's download rule.
  *
  * One module, and it is the only one that matters: `proof:verifieddownload`
@@ -568,6 +583,8 @@ export const ARTEFACT_EDGES = {
   // the first time that has happened — the four before it were each found by
   // `buildFreshness.proof.mjs` reading the set of proofs that import the guard.
   'proof:ocrrecognise': OCR_RECOGNISE,
+  // ADR-0233's scanned table, read with real recognition. Registered with its entry.
+  'proof:scantable': SCAN_TABLE,
   // THE EIGHTH, and the first found by READING the scan rather than by the scan:
   // it imports the bare specifier `@monstera/kernel`, which resolves to `dist`
   // through the exports map, where `IMPORTS_A_BUILD` looks for a `/dist/` path.

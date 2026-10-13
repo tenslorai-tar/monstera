@@ -506,6 +506,11 @@ jobs:
       - name: Prove recognition answers boxes in the page’s own coordinates
         run: node scripts/ci/annotate.mjs scripts/proofs/ocrRecognise.proof.mjs
 
+      # ADR-0233: a printed scan of a ruled table, recognised by Tesseract, is read
+      # as that table, every cell holding its words. The models are the step above's.
+      - name: Prove a recognised scan's ruled table is read cell by cell
+        run: node scripts/ci/annotate.mjs scripts/proofs/scanTable.proof.mjs
+
       # E2's accuracy score. The corpus is not here, so what runs on the Windows
       # leg is the pair of controls — a constructed page both engines must agree
       # on completely, and two resolution cases proving the scorer can report a

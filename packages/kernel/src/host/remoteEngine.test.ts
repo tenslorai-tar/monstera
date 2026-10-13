@@ -43,6 +43,8 @@ import { readFormFields } from '../formFields.js';
 import { readAnnotationWords, readAnnotations } from '../pageAnnotations.js';
 import { findDuplicatePages } from '../pageDuplicates.js';
 import { readPageFills } from '../pageFills.js';
+import { buildScannedTablePdf } from '../scanTableFixture.js';
+import { readScanTables } from '../scanTables.js';
 import { readPageWordBoxes } from '../wordBoxes.js';
 import { readLinkAddress, readPageLinks } from '../pageLinks.js';
 import { readPageTextJson } from '../pageText.js';
@@ -58,6 +60,7 @@ import {
   remoteMupdfGeometry,
   remoteMupdfPageText,
   remoteMupdfPageFills,
+  remoteMupdfScanTables,
   remoteMupdfPageRewrite,
   remoteMupdfWordBoxes,
   remoteMupdfAccessibility,
@@ -251,6 +254,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
   readonly geometry: ReturnType<typeof remoteMupdfGeometry>;
   readonly pageText: ReturnType<typeof remoteMupdfPageText>;
   readonly pageFills: ReturnType<typeof remoteMupdfPageFills>;
+  readonly scanTables: ReturnType<typeof remoteMupdfScanTables>;
   readonly pageRewrite: ReturnType<typeof remoteMupdfPageRewrite>;
   readonly wordBoxes: ReturnType<typeof remoteMupdfWordBoxes>;
   readonly accessibility: ReturnType<typeof remoteMupdfAccessibility>;
@@ -338,6 +342,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
       pageLinks: readPageLinks,
       linkAddress: readLinkAddress,
       pageFills: readPageFills,
+      scanTables: readScanTables,
       pageRewrite: readPageRewrite,
       wordBoxes: readPageWordBoxes,
       // NOT THE REAL READER, where its neighbours above are. `recognisePage`
@@ -405,6 +410,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
     geometry: remoteMupdfGeometry(client, sessions),
     pageText: remoteMupdfPageText(client, sessions),
     pageFills: remoteMupdfPageFills(client, sessions),
+    scanTables: remoteMupdfScanTables(client, sessions),
     pageRewrite: remoteMupdfPageRewrite(client, sessions),
     wordBoxes: remoteMupdfWordBoxes(client, sessions),
     accessibility: remoteMupdfAccessibility(client, sessions),
@@ -611,6 +617,23 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
     } finally {
       await mupdfWriter.close(type3.session);
       await mupdfWriter.close(plain.session);
+    }
+  });
+
+  it('the SCANNED-TABLE read crosses the real handler and schema, and answers what the reader answers in process (ADR-0233)', async () => {
+    const scan = await joined(await buildScannedTablePdf());
+    const vector = await joined(ruled);
+    try {
+      const crossed = await scan.scanTables(scan.token, 0);
+      // NOT EMPTY, or the equality below would hold for a handler that crossed nothing.
+      expect(crossed).toHaveLength(1);
+      expect(crossed).toStrictEqual(await readScanTables(scan.session, 0));
+      // CONTROL: a page whose grid is vectors and no picture still answers its grid through the same read — main decides
+      // when to ask (`sawRulings`), not this read — so the answer above is the scan's and the wire carries what it is given.
+      expect(await vector.scanTables(vector.token, 0)).toHaveLength(1);
+    } finally {
+      await mupdfWriter.close(scan.session);
+      await mupdfWriter.close(vector.session);
     }
   });
 
@@ -851,6 +874,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         pageFills: () => {
           throw new Error('unused');
         },
+        scanTables: () => {
+          throw new Error('unused');
+        },
         pageRewrite: () => {
           throw new Error('no case here reads which writer a page needs');
         },
@@ -1016,6 +1042,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         },
         pageFills: () => {
           throw new Error('the rotation-refusal case must not read page fills');
+        },
+        scanTables: () => {
+          throw new Error('the rotation-refusal case must not read scanned tables');
         },
         pageRewrite: () => {
           throw new Error('no case here reads which writer a page needs');

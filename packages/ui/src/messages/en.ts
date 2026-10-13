@@ -3822,8 +3822,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EXPORT_EXCEL_SERVICES_NO_KEY]:
     'To read handwritten or scanned pages, add a Claude or Azure key in Settings, or set up the text models on this computer for printed scans.',
   [OCR_OUTCOME_TITLE]: 'Recognition',
+  // WHAT HAPPENED TO THE DOCUMENT, not only what was read (the owner's O2): the words are now in it, which changes it, and
+  // the person is told what that gives them and how to take it back. Every caller of the dialog says it the same way.
   [OCR_OUTCOME_RECOGNISED]:
-    '{count, plural, one {Read the text on one page} other {Read the text on # pages}}.',
+    '{count, plural, one {The text of one page was read and added to this document, so it can be searched and copied.} other {The text of # pages was read and added to this document, so it can be searched and copied.}} Undo takes it out.',
   // THE EMPTY ANSWER SAID OUT LOUD, and it names the reason rather than the
   // count: a document whose pages all carry text has nothing to recognise, and a
   // dialog that simply closed would read as a feature that did not work.

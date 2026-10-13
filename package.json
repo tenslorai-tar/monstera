@@ -158,6 +158,7 @@
     "proof:scannedpages": "node scripts/proofs/scannedPages.proof.mjs",
     "proof:ocrmodels": "node scripts/proofs/ocrModels.proof.mjs",
     "proof:ocrrecognise": "node scripts/proofs/ocrRecognise.proof.mjs",
+    "proof:scantable": "node scripts/proofs/scanTable.proof.mjs",
     "provision:tessdata": "node scripts/provision/tessdata.mjs",
     "proof:editcost": "node scripts/research/editCost.mjs",
     "proof:definedtokens": "node scripts/proofs/definedTokens.proof.mjs",

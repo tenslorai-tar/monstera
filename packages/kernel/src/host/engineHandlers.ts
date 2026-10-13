@@ -45,6 +45,7 @@ import {
   type RecognisedPage,
 } from '../ocrRecognise.js';
 import type { PageFill } from '../cellFills.js';
+import type { ScanTable } from '../scanTableShape.js';
 import type { PageRewrite } from '../pageRewrite.js';
 import type { LinkAddress, ListedPageLinks } from '../pageLinks.js';
 import type { PageWordBoxes } from '../wordBoxes.js';
@@ -117,6 +118,9 @@ export type HostLinkAddressReader = (session: MupdfSession, page: number, index:
 
 /** Reads one page's filled shapes — what a table cell's background is joined from. */
 export type HostPageFillsReader = (session: MupdfSession, page: number) => Promise<readonly PageFill[]>;
+
+/** Reads one scanned page's ruled tables from its pixels (ADR-0233): `readScanTables` in the host. */
+export type HostScanTablesReader = (session: MupdfSession, page: number) => Promise<readonly ScanTable[]>;
 
 /** Which writer rewrites one page's text (ADR-0176 Decision 1): `readPageRewrite` in the host. */
 export type HostPageRewriteReader = (session: MupdfSession, page: number) => Promise<PageRewrite>;
@@ -513,6 +517,8 @@ export interface EngineHandlerParts {
   readonly linkAddress: HostLinkAddressReader;
   /** A page's filled shapes. `engine/page-fills`. */
   readonly pageFills: HostPageFillsReader;
+  /** A scanned page's ruled tables. `engine/scan-tables`. */
+  readonly scanTables: HostScanTablesReader;
   /** Which writer rewrites a page's text (ADR-0176 Decision 1). `engine/page-rewrite`. */
   readonly pageRewrite: HostPageRewriteReader;
   /** A page's word boxes (ADR-0137). `engine/word-boxes`. */
@@ -600,6 +606,7 @@ export function createEngineHandlers({
   pageLinks,
   linkAddress,
   pageFills,
+  scanTables,
   pageRewrite,
   wordBoxes,
   ocr,
@@ -1027,6 +1034,13 @@ export function createEngineHandlers({
       if (held === undefined) return gone;
       // NO try/catch, for the link read's reason.
       return { ok: true, value: { fills: [...(await pageFills(held.session, page))] } };
+    },
+
+    'engine/scan-tables': async ({ session, page }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      // NO try/catch, for the link read's reason.
+      return { ok: true, value: { tables: [...(await scanTables(held.session, page))] } };
     },
 
     'engine/page-rewrite': async ({ session, page }) => {

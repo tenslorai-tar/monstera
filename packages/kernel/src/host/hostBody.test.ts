@@ -152,6 +152,9 @@ function start(stream: HostByteStream) {
     pageFills: () => {
       throw new Error('no case here reads page fills');
     },
+    scanTables: () => {
+      throw new Error('no case here reads scanned tables');
+    },
     pageRewrite: () => {
       throw new Error('no case here reads which writer a page needs');
     },

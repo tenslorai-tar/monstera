@@ -23,7 +23,7 @@ Export tables to Excel reads the tables in your document, lets you check and cor
 
 - **Typed text** works on tables with ruled lines best; a table without lines may be split at its gaps.
 - With Azure or Claude, only the pages you chose are sent, and the window says how many before anything is sent. The bar at the bottom shows how many pages have been read, and **Cancel** there stops after the page in hand and writes no file.
-- **Printed scan, read on this computer** reads the pages you chose first, with nothing leaving your computer, then finds the tables in what it read. The words are also kept, unseen, in your document so it can be searched, and **Undo** (**Ctrl+Z**) takes out all the pages of one reading together. Cancel in the bar stops, and no file is written.
+- **Printed scan, read on this computer** reads the pages you chose first, with nothing leaving your computer, then finds the tables by their ruled lines, with each cell's words and borders. The words are also kept, unseen, in your document so it can be searched, and **Undo** (**Ctrl+Z**) takes out all the pages of one reading together. Cancel in the bar stops, and no file is written.
 - For handwritten tables, use Azure or Claude. Those send your pages to that service, which the window says before anything is sent. You need your own key, and the service bills you directly. See "Get and add keys for AI and online reading services".
 - Cells found by Azure or Claude are written without fonts, borders or shading.
 - If the document has no tables, Monstera says so before asking where to save.

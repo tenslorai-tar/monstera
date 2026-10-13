@@ -141,6 +141,7 @@ export {
   type HostOcrReader,
   type HostPageImage,
   type HostPageFillsReader,
+  type HostScanTablesReader,
   type HostPageRewriteReader,
   type HostPageLinksReader,
   type HostPageTextReader,
@@ -382,6 +383,7 @@ export {
   remoteMupdfSignaturesKept,
   remoteMupdfOcr,
   remoteMupdfPageFills,
+  remoteMupdfScanTables,
   remoteMupdfPageRewrite,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
@@ -544,6 +546,8 @@ export {
   plainTextOf,
   stextOptionsFor,
 } from './textStructure.js';
+// A SCANNED TABLE'S SHAPE (ADR-0233), apart from its reader, which loads the engine.
+export { type ScanTable, type ScanTableLine, pageTablesOfScan, sawRulings } from './scanTableShape.js';
 export { type StructureOutline, structureOutlineOf } from './structureOutline.js';
 // OFFICE EXPORTS (ADR-0072). Pure: strings in, zip chunks out, no engine.
 export { type OoxmlPart, ooxmlPackage, xmlText } from './ooxmlPackage.js';

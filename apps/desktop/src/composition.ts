@@ -91,6 +91,7 @@ import {
   type HostFontsReader,
   type HostLayersReader,
   type HostPageFillsReader,
+  type HostScanTablesReader,
   type HostPageRewriteReader,
   type HostPageLinksReader,
   type HostPageTextReader,
@@ -129,6 +130,8 @@ import {
   parsePageStructure,
   parsePageTables,
   withCellFills,
+  pageTablesOfScan,
+  sawRulings,
   parsePageText,
   pdfiumChannels,
   type ComposeChannels,
@@ -161,6 +164,7 @@ import {
   type ReadSignature,
   remoteMupdfOcr,
   remoteMupdfPageFills,
+  remoteMupdfScanTables,
   remoteMupdfPageRewrite,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
@@ -1214,6 +1218,13 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       const session = sessions.mupdf;
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
       const read = parsePageTables(await engineHost.pageText(session, page, 'table'));
+      // A SCAN'S RULINGS ARE PIXELS, which the engine's read cannot see (ADR-0233): on a page holding a picture where the
+      // engine saw no ruling, the rulings are read from the picture, and where they make a table, those are the page's
+      // tables. A page whose rulings are vectors keeps the engine's answer, so no table is read twice.
+      if (read.images > 0 && !sawRulings(read.tables)) {
+        const scanned = await engineHost.scanTables(session, page);
+        if (scanned.length > 0) return { ...read, tables: pageTablesOfScan(scanned) };
+      }
       if (read.tables.length === 0) return read;
       return { ...read, tables: withCellFills(read.tables, await engineHost.pageFills(session, page)) };
     },
@@ -2097,6 +2108,8 @@ function engineSessionOpener(
   readonly pageLinks: HostPageLinksReader;
   /** One page's filled shapes, from whichever host is live — a table cell's background. */
   readonly pageFills: HostPageFillsReader;
+  /** One scanned page's ruled tables, from whichever host is live (ADR-0233). */
+  readonly scanTables: HostScanTablesReader;
   /** Which writer rewrites one page's text, from whichever host is live (ADR-0176 Decision 1). */
   readonly pageRewrite: HostPageRewriteReader;
   /** One page's word boxes, from whichever host is live (ADR-0137). */
@@ -2370,6 +2383,20 @@ function engineSessionOpener(
       );
     }
     return pageFills(session, page);
+  };
+
+  /** The scanned-table read's half of the same registration (ADR-0233). See {@link pageText}. */
+  let scanTables: HostScanTablesReader | null = null;
+
+  const readScanTablesThroughHost: HostScanTablesReader = (session, page) => {
+    if (scanTables === null) {
+      throw new Error(
+        'A scanned-table read reached the engine with no host reader registered. A session was ' +
+          'resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return scanTables(session, page);
   };
 
   /** Which writer rewrites a page's text (ADR-0176 Decision 1), the same registration's. See {@link pageText}. */
@@ -2837,6 +2864,7 @@ function engineSessionOpener(
     pageText = remoteMupdfPageText(client, remote);
     pageLinks = remoteMupdfPageLinks(client, remote);
     pageFills = remoteMupdfPageFills(client, remote);
+    scanTables = remoteMupdfScanTables(client, remote);
     pageRewrite = remoteMupdfPageRewrite(client, remote);
     wordBoxes = remoteMupdfWordBoxes(client, remote);
     destinations = remoteMupdfDestinations(client, remote);
@@ -3219,6 +3247,7 @@ function engineSessionOpener(
     pageText: readPageTextThroughHost,
     pageLinks: readPageLinksThroughHost,
     pageFills: readPageFillsThroughHost,
+    scanTables: readScanTablesThroughHost,
     pageRewrite: readPageRewriteThroughHost,
     wordBoxes: readWordBoxesThroughHost,
     destinations: readDestinationsThroughHost,

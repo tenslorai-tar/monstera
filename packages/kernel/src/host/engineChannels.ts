@@ -242,6 +242,17 @@ export const SMALLEST_LINK_BYTES = 84;
 export const ENGINE_PAGE_FILLS_MAX = 4096;
 
 /**
+ * The bounds on one page's `engine/scan-tables` answer (ADR-0233): tables, cells across them, and characters in one line
+ * of a cell. A page is a sheet of paper; past these the reader answers its first tables whole rather than being refused.
+ * Declared here, beside the schema, for {@link ENGINE_PAGE_FILLS_MAX}'s reason.
+ */
+export const ENGINE_SCAN_TABLES_MAX = 64;
+export const ENGINE_SCAN_TABLE_CELLS_MAX = 4096;
+export const ENGINE_SCAN_TABLE_TEXT_MAX = 2048;
+/** The lines one cell of a scanned table answers, at most. */
+const ENGINE_SCAN_TABLE_CELL_LINES_MAX = 64;
+
+/**
  * How many tokens one `engine/word-boxes` answer boxes (ADR-0137). A dense page holds a few thousand; the reader stops
  * boxing here and says so, and the tokens past it keep the estimate rather than the page being refused. Declared here
  * for {@link ENGINE_PAGE_FILLS_MAX}'s reason.
@@ -2779,6 +2790,69 @@ export const engineChannels = {
     // TWO REFUSALS BY NAME: no external link at that place, and an address too long to open as written. Neither is
     // a failure of the host, and main tells the person which.
     ['no-such-session', 'no-such-link', 'address-too-long'],
+  ),
+
+  /**
+   * One scanned page's ruled tables, read from its pixels, each cell holding the words of the page's text layer inside it
+   * (ADR-0233). A shape this build owns, bounded here: tables, cells, lines and characters.
+   */
+  'engine/scan-tables': fileAnswered(
+    'Reads the ruled tables of one scanned page from its pixels, in a session this host holds.',
+    z
+      .object({
+        session: sessionSchema,
+        /** Zero-based index, as `commands.ts` declares them. */
+        page: z.number().int().nonnegative(),
+      })
+      .strict(),
+    z
+      .object({
+        tables: z
+          .array(
+            z
+              .object({
+                columns: z.number().int().min(1).max(ENGINE_SCAN_TABLE_CELLS_MAX),
+                rows: z
+                  .array(
+                    z
+                      .array(
+                        z
+                          .array(
+                            z
+                              .object({
+                                text: z.string().max(ENGINE_SCAN_TABLE_TEXT_MAX),
+                                box: z.object({ x0: fillCoordinate, y0: fillCoordinate, x1: fillCoordinate, y1: fillCoordinate }).strict(),
+                                size: z.number().nonnegative().max(10_000),
+                                font: z
+                                  .object({
+                                    name: z.string().max(256),
+                                    family: z.enum(['serif', 'sans-serif', 'monospace']),
+                                    bold: z.boolean(),
+                                    italic: z.boolean(),
+                                  })
+                                  .strict(),
+                              })
+                              .strict(),
+                          )
+                          .max(ENGINE_SCAN_TABLE_CELL_LINES_MAX),
+                      )
+                      .max(ENGINE_SCAN_TABLE_CELLS_MAX),
+                  )
+                  .max(ENGINE_SCAN_TABLE_CELLS_MAX),
+                borders: z
+                  .array(
+                    z
+                      .array(z.object({ top: z.boolean(), left: z.boolean(), bottom: z.boolean(), right: z.boolean() }).strict())
+                      .max(ENGINE_SCAN_TABLE_CELLS_MAX),
+                  )
+                  .max(ENGINE_SCAN_TABLE_CELLS_MAX),
+              })
+              .strict(),
+          )
+          .max(ENGINE_SCAN_TABLES_MAX),
+      })
+      .strict(),
+    ['no-such-session'],
   ),
 
   /**

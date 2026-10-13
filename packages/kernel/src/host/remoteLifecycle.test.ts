@@ -258,6 +258,9 @@ function joined(
       pageFills: () => {
         throw new Error('the lifecycle half must not read page fills');
       },
+      scanTables: () => {
+        throw new Error('the lifecycle half must not read scanned tables');
+      },
       pageRewrite: () => {
         throw new Error('no case here reads which writer a page needs');
       },
@@ -690,6 +693,9 @@ describe('remoteMupdfLifecycle', () => {
         },
         pageFills: () => {
           throw new Error('the byte-size case must not read page fills');
+        },
+        scanTables: () => {
+          throw new Error('the byte-size case must not read scanned tables');
         },
         pageRewrite: () => {
           throw new Error('no case here reads which writer a page needs');

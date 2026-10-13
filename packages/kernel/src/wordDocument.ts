@@ -119,6 +119,9 @@ const FLOW_MARGIN = 72;
  */
 export function baseFontName(name: string): string {
   const unsubset = withoutSubsetTag(name);
+  // RECOGNISED WORDS are set in no font a reader has: the layer's glyphless font draws nothing (ADR-0233's scanned
+  // tables put them in cells), so they take the writers' default.
+  if (unsubset === GLYPHLESS_FONT_NAME) return 'Calibri';
   const hyphen = unsubset.indexOf('-');
   const base = hyphen > 0 ? unsubset.slice(0, hyphen) : unsubset;
   return base.length > 0 ? base : 'Calibri';
