@@ -143,3 +143,22 @@ alone produced no PDF at all.
 **Rejected:** a `spreadsheetLayout` parameter (it redraws the workbook, above); patching sdkjs's constant (the tree is
 ONLYOFFICE's archive, pinned file by file, and a modified script would make this build a modified ONLYOFFICE under its
 Section 7 terms for one number); importing with a warning alone (the owner's rule: only if parts are impossible).
+
+## Extension, 2026-10-13: the binary formats, `.doc`, `.xls` and `.ppt`, through the same x2t (the owner's N6)
+
+*"It cannot import doc, xls and ppt file types."* The import offered the three formats this ADR measured and no other.
+The same x2t reads the three binary ones: read 2026-10-13 from ONLYOFFICE core at the tag the shipped build names
+(`v9.4.0.130`, `X2tConverter/src/ASCConverters.cpp`), `fromDocument` takes `AVS_OFFICESTUDIO_FILE_DOCUMENT_DOC`,
+`fromSpreadsheet` takes `AVS_OFFICESTUDIO_FILE_SPREADSHEET_XLS` and `fromPresentation` takes
+`AVS_OFFICESTUDIO_FILE_PRESENTATION_PPT` (`ppt2pptm_dir`). So no new dependency, and parsing stays where this ADR put it:
+in x2t, in its container.
+
+**`.doc` and `.ppt` are one conversion to PDF**, as `.docx` and `.pptx` are. **`.xls` is converted to `.xlsx` first, by
+the same x2t** (`m_nFormatTo` 257, `AVS_OFFICESTUDIO_FILE_SPREADSHEET_XLSX` = `0x0100 + 0x0001` in
+`Common/OfficeFileFormats.h` at the same tag), and the `.xlsx` then takes the workbook route above — because x2t prints
+the active sheet only, and only an OOXML workbook can be cut into a part per sheet by the compose host. A `.xls` sent
+straight to PDF would lose every sheet but one in silence.
+
+**Not measured, and owed on Windows:** that the shipped `x2t.exe` converts each binary format inside the container, its
+time and job peak beside the figures above, and that a two-sheet `.xls` arrives with both sheets. Read from the source,
+not run; the bounds above are kept until the reading says otherwise.
