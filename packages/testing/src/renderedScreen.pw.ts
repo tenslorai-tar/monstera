@@ -185,6 +185,13 @@ for (const look of LOOKS) {
     const dialog = page.getByRole('dialog', { name: 'Set up the AI assistant' });
     await expect(dialog.getByRole('button', { name: 'Skip' })).toBeVisible();
     await expect(dialog.getByRole('button', { name: 'Check and save' })).toBeDisabled();
+    // THE DIALOG IS SCANNED TOO, in place: `expectNoSeriousViolations` reloads the page, which would take the dialog
+    // away, and this case was the one axe scan the setup dialog had before it stopped opening by itself.
+    await expect(dialog.getByText('Everything else in Monstera works without one')).toBeVisible();
+    const scanned = await new AxeBuilder({ page }).include('.m-dialog').analyze();
+    const blocking = scanned.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
+    expect(blocking.map((violation) => `${String(violation.impact)}: ${violation.id}`)).toStrictEqual([]);
+    expect(scanned.passes.length).toBeGreaterThan(0);
 
     // SKIP CLOSES IT AND IT STAYS CLOSED: the stored false is what a reload reads.
     await dialog.getByRole('button', { name: 'Skip' }).click();
