@@ -657,6 +657,22 @@ describe('App', () => {
     expect(described?.textContent).toBe('Export to Word, Excel, PowerPoint, images and PDF/A.');
   });
 
+  it('the File menu opens with the three ways to open, then Recent, then Start screen (the owner’s N4)', async () => {
+    const { client } = recordingClient({ kind: 'cancelled' });
+    render(<App client={client} settings={freshSettings()} />);
+    await act(async () => {
+      fireEvent.click(within(screen.getByRole('menubar')).getByRole('menuitem', { name: 'File' }));
+      await Promise.resolve();
+    });
+    const popup = await screen.findByRole('menu');
+    // THE MENU'S OWN ORDER, read from what it draws: each item's title in sequence (its chord is beside it, not part of
+    // its name), the submenu's trigger among them.
+    const names = within(popup)
+      .getAllByRole('menuitem')
+      .map((item) => item.querySelector('.m-menu-bar__title')?.textContent ?? '');
+    expect(names.slice(0, 5)).toStrictEqual(['Open PDF…', 'Open from web address…', 'Cloud storage…', 'Recent', 'Start screen']);
+  });
+
   it('the control DISPATCHES document.openSeveral, and nothing else', async () => {
     // The wired-tools requirement, and the second half of the assertion is the
     // one that stops it being vacuous: a component that called every channel it

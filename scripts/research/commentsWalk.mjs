@@ -612,6 +612,16 @@ await step('N2: the Edit menu draws no scrollbar, and where it scrolls it fades 
   return read;
 });
 
+await step('N4: the File menu starts Open PDF, Open from web address, Cloud storage, Recent, Start screen', async () => {
+  await page.locator('.m-menu-bar__trigger[data-menu="file"]').click();
+  const popup = page.locator('.m-menu-bar__popup').first();
+  await expect(popup).toBeVisible();
+  const titles = await popup.locator('[role="menuitem"] .m-menu-bar__title').allTextContents();
+  expect(titles.slice(0, 5)).toStrictEqual(['Open PDF…', 'Open from web address…', 'Cloud storage…', 'Recent', 'Start screen']);
+  await page.keyboard.press('Escape');
+  return { titles: titles.slice(0, 5) };
+});
+
 await step('N1: Convert a scan shows three rows, each button at the right with room after its words', async () => {
   await command('Convert a scan…');
   const dialog = page.getByRole('dialog', { name: 'Convert a scan' });

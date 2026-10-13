@@ -28,8 +28,9 @@ export function clearRecentCommand(deps: {
     feedback: VISIBLE,
     icon: 'ListX',
     title: CLEAR_RECENT_TITLE,
-    // AFTER THE FILES, inside File › Recent, which sits where this placement's order falls: right after Open.
-    placements: [{ surface: 'menu-bar', menu: 'file', group: 0, order: 15, submenu: 'recent' }],
+    // AFTER THE FILES, inside File › Recent, which sits where this placement's order falls: after the three ways to open
+    // (Open PDF 10, from a web address 20, from cloud storage 30) and before Start Screen 40 — the owner's N4 order.
+    placements: [{ surface: 'menu-bar', menu: 'file', group: 0, order: 35, submenu: 'recent' }],
     run: async (): Promise<void> => {
       const answer = await deps.client['document.clearRecent']({});
       if (answer.ok) deps.onCleared();
