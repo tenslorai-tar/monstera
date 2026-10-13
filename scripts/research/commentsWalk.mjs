@@ -634,6 +634,27 @@ await step('N8: a right-click in a text field is answered by the one edit menu i
   return { listeners };
 });
 
+await step('N9: every left-panel tab draws its panel down to the panel’s foot', async () => {
+  /** @type {Record<string, number>} */
+  const gaps = {};
+  for (const [tab, box] of [
+    ['pages', '.m-thumbnails'],
+    ['bookmarks', '.m-links-panel'],
+    ['comments', '.m-annotations-panel'],
+    ['forms', '.m-forms-panel'],
+    ['layers', '.m-layers'],
+    ['search', '.m-find-bar'],
+  ]) {
+    await page.locator(`[data-panel-tab="${tab}"]`).click();
+    const body = page.locator(`.m-document-panel__body[data-panel="${tab}"]`);
+    const [outer, inner] = await Promise.all([body.boundingBox(), body.locator(box).first().boundingBox()]);
+    if (outer === null || inner === null) throw new Error(`the ${tab} tab draws nothing`);
+    gaps[tab] = Math.round(outer.y + outer.height - (inner.y + inner.height));
+  }
+  expect(gaps).toStrictEqual({ pages: 0, bookmarks: 0, comments: 0, forms: 0, layers: 0, search: 0 });
+  return gaps;
+});
+
 await step('N4: the File menu starts Open PDF, Open from web address, Cloud storage, Recent, Start screen', async () => {
   await page.locator('.m-menu-bar__trigger[data-menu="file"]').click();
   const popup = page.locator('.m-menu-bar__popup').first();

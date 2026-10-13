@@ -1545,7 +1545,7 @@ optgroup {
 .m-layers,
 .m-links-panel,
 .m-annotations-panel {
-  max-block-size: 40vh;
+  /* NO HEIGHT OF ITS OWN: the panel's body gives each its share (the owner's N9), and the list scrolls inside it. */
   overflow-y: auto;
   padding: var(--space-8);
   background: var(--bg2);
@@ -1882,11 +1882,10 @@ optgroup {
  * The forms panel: a list of rows, each a jump and the control that fills it.
  *
  * The annotations panel's box, and the same argument for the height — a form is
- * whatever the document holds, so the panel scrolls rather than growing without
- * bound.
+ * whatever the document holds, so the panel scrolls inside the share the panel's
+ * body gives it rather than growing without bound.
  */
 .m-forms-panel {
-  max-block-size: 40vh;
   overflow-y: auto;
   padding: var(--space-8);
   background: var(--bg2);
@@ -3091,6 +3090,8 @@ optgroup {
 }
 
 .m-document-panel__body {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-block-size: 0;
   overflow-y: auto;
@@ -3112,10 +3113,21 @@ optgroup {
   color: var(--text);
 }
 
-/* ONE PANEL IN A TAB TAKES THE TAB. The lists' 40vh share is for the Bookmarks tab, where the outline and the links
- * stack; a tab holding one list left the dock empty below 40vh, with the list scrolling inside a scrolling body. */
-.m-document-panel__body > :only-child {
-  max-block-size: none;
+/* EVERY TAB FILLS THE PANEL TO ITS FOOT (the owner's N9). The body is a column and each panel it holds takes an equal
+ * share of it, so one panel takes the whole and the Bookmarks tab's outline and links take half each, every list
+ * scrolling inside its own share. Measured 2026-10-13 (`panelFill.pw.ts`): before this, every one of the six tabs drew its
+ * box to its content's height and stopped, 314 to 586 px above the foot of a 900 px window; the lists also capped
+ * themselves at 40vh. A wrapper between the body and a panel (the Forms tab's right-click region) passes the share on. A
+ * tool in use keeps its own layout: its heading is not a share. */
+.m-document-panel__body:not(.m-document-panel__tool) > *,
+.m-document-panel__body:not(.m-document-panel__tool) > .m-context-menu-region > * {
+  flex: 1 1 0;
+  min-block-size: 0;
+}
+
+.m-document-panel__body:not(.m-document-panel__tool) > .m-context-menu-region {
+  display: flex;
+  flex-direction: column;
 }
 
 /* THE SLIM EDGE HANDLE §10.3 reopens a collapsed panel with, on the canvas's leading
