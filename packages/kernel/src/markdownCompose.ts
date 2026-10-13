@@ -102,6 +102,9 @@ export async function composeMarkdown(
     throw new ComposeRefused('not-utf8', null, 'the source is not UTF-8 text');
   }
 
+  // THE ONE REPLACEMENT CHARACTER THE FILE DOES NOT SAY is CommonMark's own (§2.3, the owner's L7): a NUL becomes U+FFFD,
+  // made by markdown-it's normaliser and nowhere else, so it is drawn once and never boxed. A CSV has no such rule and
+  // boxes a NUL (`csvCompose.ts`).
   const tokens = new MarkdownIt().parse(text, {});
 
   // PINNED, for `monstera/no-unpinned-pdf-load`'s reason: pdf-lib stamps the

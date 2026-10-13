@@ -197,6 +197,19 @@ describe('composeMarkdown: every character is drawn (ADR-0172)', () => {
     expect((await pagesOf(pdf)).join('\n')).toContain('Before.');
   });
 
+  it('a NUL is the REPLACEMENT CHARACTER, once, drawn and boxed nowhere: CommonMark §2.3 (the owner’s L7)', async () => {
+    // THE SPEC'S RULE, made by markdown-it's normaliser and nowhere else here: *"the Unicode character U+0000 must be
+    // replaced with the REPLACEMENT CHARACTER (U+FFFD)"*. In prose and in code alike, since the rule is the input's.
+    const { pdf, boxed } = await compose('Null \u0000 here.\n\n```\ncode\u0000line\n```\n');
+    const shown = (await pagesOf(pdf)).join('\n');
+    expect(shown).toContain('Null � here.');
+    expect(shown).toContain('code�line');
+    // ONCE: one U+FFFD for each NUL, never a second replacement or a box beside it.
+    expect(shown.split('�')).toHaveLength(3);
+    expect(shown).not.toContain('\u0000');
+    expect(boxed).toStrictEqual([]);
+  });
+
   it('names the exact line inside a paragraph that spans several, and every place a character repeats', async () => {
     const { boxed } = await compose('One line\nthen 中 a second\nand 中 a third.\n');
     expect(boxed).toStrictEqual([

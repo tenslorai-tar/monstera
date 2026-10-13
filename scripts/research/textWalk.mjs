@@ -28,7 +28,7 @@ import { expect as defaultExpect } from '@playwright/test';
 import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream, PDFString, StandardFonts, decodePDFRawStream } from '@cantoo/pdf-lib';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { root, startWalk } from './liveWalk.mjs';
-import { savedFonts } from './savedFonts.mjs';
+import { savedFonts, savedWords } from './savedPdf.mjs';
 
 // THE PRODUCER'S PAGE THE N14 STEP BUILDS, fresh or refused, beside the shell's own edges `startWalk` checks.
 refuseStaleBuild(root, [['packages/kernel/src/producerSubsetFixture.ts', 'packages/kernel/dist/producerSubsetFixture.js', 'tsc']], 1);
@@ -98,19 +98,6 @@ async function clickPage(x, y) {
   await page.mouse.click(box.x + box.width - x, Math.max(box.y, 230) + y);
 }
 
-/** The words of a saved file's pages, read by PDF.js rather than by the app that wrote them. @param {string} path */
-async function savedWords(path) {
-  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  const task = pdfjs.getDocument({ data: new Uint8Array(await readFile(path)), useSystemFonts: false });
-  const loaded = await task.promise;
-  const pages = [];
-  for (let at = 1; at <= loaded.numPages; at += 1) {
-    const content = await (await loaded.getPage(at)).getTextContent();
-    pages.push(content.items.map((item) => ('str' in item ? item.str : '')).join(' '));
-  }
-  await task.destroy();
-  return pages;
-}
 
 /** The open editor's words. */
 const editor = () => page.locator('[data-text-editor]');

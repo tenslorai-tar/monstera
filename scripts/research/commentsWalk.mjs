@@ -34,7 +34,7 @@ import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNumber, PDFRa
 import { expect as defaultExpect } from '@playwright/test';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { root, startWalk } from './liveWalk.mjs';
-import { savedFonts } from './savedFonts.mjs';
+import { savedFonts, savedWords } from './savedPdf.mjs';
 
 const expect = defaultExpect.configure({ timeout: 20_000 });
 
@@ -568,6 +568,23 @@ for (const { format, title, file, text, family } of [
     return { fonts };
   });
 }
+
+await step('L7: a NUL in a Markdown file is the replacement character in the saved PDF, once, as CommonMark requires', async () => {
+  const source = join(output, 'l7-nul.md');
+  await writeFile(source, `Null ${String.fromCharCode(0)} here.\n`);
+  const composed = join(output, 'l7-nul.pdf');
+  await pickFiles([source]);
+  await saveTo(composed);
+  await command('New PDF from Markdown…');
+  await page.getByRole('dialog', { name: 'New PDF' }).getByRole('button', { name: 'Choose file…' }).click();
+  await expect.poll(() => existsSync(composed), { timeout: 60_000 }).toBe(true);
+  // READ BACK by PDF.js: one U+FFFD where the NUL was, and no box list was opened for it.
+  const [words] = await savedWords(composed);
+  expect(words).toContain(`Null ${String.fromCharCode(0xfffd)} here.`);
+  expect((words ?? '').split(String.fromCharCode(0xfffd))).toHaveLength(2);
+  expect(await page.getByRole('dialog', { name: 'Some characters are shown as boxes' }).count()).toBe(0);
+  return { words };
+});
 
 /**
  * N6's samples: a `.doc`, a two-sheet `.xls` and a `.ppt`, which nothing in this repository can make (B10 keeps a binary

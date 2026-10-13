@@ -27,7 +27,7 @@ To add the pages to the open document:
 ## Good to know
 
 - Every page is US Letter size.
-- The file must be UTF-8 text, up to 4 MB.
+- The file must be UTF-8 text, up to 4 MB. A zero character in it is shown as �, as the Markdown standard (CommonMark) requires.
 - Text in any language is kept. Greek, Cyrillic, Hebrew and Arabic come with Monstera, and a paragraph in Hebrew or Arabic reads right to left from the right margin. Thai, Chinese and Japanese lines break between words.
 - The text is set in the font you choose, Arimo (it looks like Arial) unless you choose another. Text is set in that font or the fonts Monstera carries, and a script they do not cover, such as Chinese or Japanese, in a font installed on this computer whose licence allows it. A character no font here can draw is shown as a box. Once the PDF opens, Monstera lists each one with its line and column in your file. The box copies as the character you wrote.
 - A table too wide for the page turns its pages sideways and sets its text smaller, and one wider still continues on further pages, its first column repeated on each.
