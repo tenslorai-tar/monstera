@@ -581,6 +581,37 @@ await step('N5: a dialog’s buttons sit at the centre of its footer, and Settin
   return { offCentre };
 });
 
+await step('N2: the Edit menu draws no scrollbar, and where it scrolls it fades at the edge it continues past', async () => {
+  // A SHORT WINDOW, so the menu has to scroll: half the window is its bound.
+  const before = page.viewportSize();
+  await page.setViewportSize({ width: 1280, height: 420 });
+  await page.locator('.m-menu-bar__trigger[data-menu="edit"]').click();
+  const popup = page.locator('.m-menu-bar__popup').first();
+  await expect(popup).toBeVisible();
+  // THE BAR'S WIDTH IS MEASURED HERE, in the application, where bars are drawn: Playwright's headless Chromium hides
+  // them, so the rendered test can only read the rule.
+  const read = await popup.evaluate((element) => {
+    // THE PAGE'S OWN FUNCTION, reached through its global: this file is Node's, and the callback runs in the page.
+    const computed = /** @type {(node: unknown, pseudo?: string) => { borderLeftWidth: string, borderRightWidth: string, opacity: string }} */ (
+      Reflect.get(globalThis, 'getComputedStyle')
+    );
+    const style = computed(element);
+    const border = parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth);
+    const box = /** @type {{ scrollHeight: number, clientHeight: number, offsetWidth: number, clientWidth: number }} */ (
+      /** @type {unknown} */ (element)
+    );
+    return {
+      overflows: box.scrollHeight > box.clientHeight + 1,
+      barWidth: box.offsetWidth - border - box.clientWidth,
+      below: Number(computed(element, '::after').opacity),
+    };
+  });
+  expect(read).toStrictEqual({ overflows: true, barWidth: 0, below: 1 });
+  await page.keyboard.press('Escape');
+  if (before !== null) await page.setViewportSize(before);
+  return read;
+});
+
 await step('N1: Convert a scan shows three rows, each button at the right with room after its words', async () => {
   await command('Convert a scan…');
   const dialog = page.getByRole('dialog', { name: 'Convert a scan' });

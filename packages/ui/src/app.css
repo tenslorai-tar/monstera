@@ -8514,6 +8514,66 @@ body {
   background: var(--float-bg);
   backdrop-filter: blur(var(--blur-menu)) saturate(1.5);
   box-shadow: var(--float-shadow);
+  /* NO BAR (the owner's N2): a menu that scrolls still scrolls by wheel, keys and touch, and says there is more by the
+     fades below rather than by a bar beside its items. */
+  scrollbar-width: none;
+}
+
+/* MORE BELOW, MORE ABOVE: a fade at the edge the menu continues past, held to that edge by `sticky` and shown by the
+   menu's own scroll position (`scroll(nearest)`). A menu with nothing to scroll has no active timeline, so the animation
+   does not apply and both stay at their base, unseen. Not a mask on the popup: a mask clips its shadow on every side. */
+.m-context-menu::before,
+.m-context-menu::after {
+  content: '';
+  position: sticky;
+  z-index: 1;
+  flex: none;
+  block-size: var(--space-16);
+  pointer-events: none;
+  opacity: 0;
+  /* `auto`: a scroll-driven animation's length is the scroll range, and a duration of time would leave it none. */
+  animation-duration: auto;
+  /* NEAREST, never `self`: on a pseudo-element `self` names the pseudo-element, which does not scroll, so its timeline
+     would be inactive and neither fade would ever show. The menu is the nearest scroll container. */
+  animation-timeline: scroll(nearest);
+  animation-fill-mode: both;
+  animation-timing-function: linear;
+}
+
+.m-context-menu::before {
+  inset-block-start: 0;
+  margin-block-end: calc(-1 * var(--space-16));
+  background: linear-gradient(var(--float-bg), transparent);
+  animation-name: m-menu-more-above;
+}
+
+.m-context-menu::after {
+  inset-block-end: 0;
+  margin-block-start: calc(-1 * var(--space-16));
+  background: linear-gradient(transparent, var(--float-bg));
+  animation-name: m-menu-more-below;
+}
+
+@keyframes m-menu-more-above {
+  0% {
+    opacity: 0;
+  }
+
+  5%,
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes m-menu-more-below {
+  0%,
+  95% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
 }
 
 /* THIRTY TALL, PADDING INCLUDED: under the default content-box the minimum was the content's alone, so every item drew
