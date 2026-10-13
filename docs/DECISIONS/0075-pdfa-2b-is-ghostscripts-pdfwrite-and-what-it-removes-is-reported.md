@@ -91,3 +91,75 @@
   commit, since nothing ships from it.
 - **Unexecuted until the adoption commit**: Ghostscript starting inside the AppContainer
   holding only its input and output, and where it writes temporary files there.
+
+## Correction, 2026-10-13 — what was left out is named in plain words, at a level the person chose (the owner's N7)
+
+Amends `docs/ARCHITECTURE.md` §3's PDF/A row, which said every *not permitted* line is shown to the person.
+
+### What the owner saw
+
+In 0.1.13.0, exporting a two-page sheet with one Note: a console window titled `gswin64c.exe` for two to four seconds;
+a result quoting Ghostscript (*"not permitted in PDF/A, annotation will not be present in output file"*); and the
+Note still in the saved file. No level was offered.
+
+### Readings
+
+Taken 2026-10-13 on Linux with Ubuntu's Ghostscript **10.02.1**, not the shipped 10.08.0 (no Windows here, and the
+conda-forge listing was refused by this sandbox's network policy), with the shipped arguments except that Debian's
+build has no `%rom%`, so the sRGB profile was named by its path. The document was annotated by the app's own writer
+(`applyAddAnnotation`), as the owner's was.
+
+1. **The Note is kept; its Popup is what is dropped.** The Note (`/Text`) carries `/F 28` (Print set) and an
+   appearance. Its Popup carries no `/F`, and Ghostscript prints *"Annotation set to non-printing, not permitted in
+   PDF/A"* and leaves it out. So the message named nothing the person could find, and the reviewer's suspicion holds.
+2. **A pop-up cannot be kept as a pop-up.** Given `/F 4`, the Popup is written, but `pdfwrite` drops both the note's
+   `/Popup` and the Popup's `/Parent`: an orphaned window with nothing to show. ISO 19005-2 exempts Popup from the Print
+   and appearance rules; Ghostscript's pdfwrite does not, and it cannot carry the link either way.
+3. **With pop-ups removed first, Ghostscript removes nothing** and prints no removal line, at `-dPDFA=1`, `2` and `3`.
+4. **The output declares its level**: its XMP metadata holds `pdfaid:part` (1, 2 or 3) and `pdfaid:conformance` B
+   uncompressed, and the catalogue an `/OutputIntents` entry naming `GTS_PDFA1`, at all three levels.
+5. **The console is ours, not Ghostscript's.** `win32HostSurface.ts` creates every contained process with
+   `EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT | CREATE_SUSPENDED`. A console-subsystem program started
+   by a process with no console of its own is given a new one unless `CREATE_NO_WINDOW` is passed, and `wShowWindow` is
+   read only with `STARTF_USESHOWWINDOW`, which is not set. `gswin64c.exe`, `x2t.exe` and `pdftotext.exe` are all
+   console programs, so every converter flashed a window; the engine hosts run `electron.exe`, a GUI program, which is
+   why nobody saw one there. It is the one process-creation site in the product (`shell.openPath` aside, which starts
+   nothing of ours).
+
+### Decision
+
+1. **No contained process gets a console**: `CREATE_NO_WINDOW` is in the creation flags for every program, at the one
+   site, from one named constant set that a test reads. Not `gswin64.exe` instead: it is not among the five pinned
+   files, and swapping one executable would leave x2t and pdftotext flashing.
+2. **The person chooses the level** before the file is picked: PDF/A-2b, the default; PDF/A-1b, for a system that asks
+   for the oldest; PDF/A-3b, which may carry attached files. One line each. Only `-dPDFA` changes. veraPDF validated
+   2b (reading 3 of this ADR); validating 1b and 3b is owed in development, as 2b's was.
+3. **A copy is prepared before Ghostscript reads it, in the compose host** (ADR-0060: it opens what main hands it and
+   holds no document), from the save's own flush:
+   - every markup annotation that is shown on screen but not printed is given the Print flag, and one with no
+     appearance is given MuPDF's, so Ghostscript keeps it;
+   - what cannot be kept is removed there and **named by kind and page**: a comment's pop-up window (reading 2; the
+     comment and its text are kept), a mark hidden from view (making it visible would change what the page shows), and
+     the kinds PDF/A forbids outright (sound, movie, screen, 3D, rich media);
+   - links and form fields are left as they are.
+4. **Ghostscript's words are never shown.** A removal line it still prints is counted and said as *other content the
+   archival format cannot hold*, never quoted, and the converter is not named.
+5. **The output's declarations are checked as it streams to the file**: its `pdfaid:part` must be the chosen level,
+   its conformance B, and an `/OutputIntents` present. A missing one writes no file and says the document could not
+   be made PDF/A. This is a fixed substring match over bytes our converter wrote, not a parse: no structure is read in
+   `main` (threat model §2), and reading 4 is what makes the text findable.
+6. **On success the person reads "Saved as PDF/A-2b."** (the level chosen), then what was left out, if anything.
+
+### Rejected
+
+- **Giving pop-ups the Print flag.** Reading 2: Ghostscript keeps an orphan, which is worse than a named removal.
+- **Clearing a hidden mark's Hidden flag.** It would appear on the page in the archive though it did not on screen.
+- **Quoting Ghostscript, even beside our words.** The owner's ruling, and reading 1 shows its words mislead.
+- **Checking the output with a PDF parser in main.** Threat model §2; reading 4 makes a substring sufficient.
+- **Bundling veraPDF to validate.** Unchanged from this ADR: a Java runtime in the installer.
+
+### Consequences
+
+- `win32HostSurface.ts`' flags, `pdfaArguments` gains the level, a compose-host channel prepares the copy, the
+  contract's PDF/A outcome carries what was left out by kind and page, and the renderer gains a level dialog.
+- **Owed on Windows**: no console for any converter, and Ghostscript 10.08.0 reproducing readings 1 to 4.
