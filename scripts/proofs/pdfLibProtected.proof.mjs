@@ -52,7 +52,7 @@ const SAME = 'one-for-both-0220';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 34 });
+const roster = createRoster(failures, { cases: 36 });
 
 /** @param {string} name @param {boolean} held @param {string} detail */
 function check(name, held, detail) {
@@ -275,22 +275,31 @@ async function main(/** @type {any} */ kernel) {
   }
 
   // THE PAGE STAMPS, which left pdf-lib for the MuPDF writer (ADR-0235): the case that stood here for them now asks the
-  // writer they moved to, so the move cannot have taken their protected-document behaviour with it.
-  {
+  // writer they moved to, so the move cannot have taken their protected-document behaviour with it. ALL THREE, with
+  // every conjunct the pdf-lib case held: the stage audit of c6f33f43.. found the first version of this case asking the
+  // watermark alone and dropping the wrong-password and print-permission checks.
+  for (const [command, words] of /** @type {const} */ ([
+    [{ kind: 'watermarkPages', pages: 'all', text: 'DRAFT', opacity: 0.3, rotationDegrees: 45, family: 'Helvetica', fontSize: 36 }, 'DRAFT'],
+    [
+      { kind: 'headerFooterPages', pages: 'all', header: { left: 'Monstera', centre: '', right: '' }, footer: { left: '', centre: '', right: '' }, family: 'Helvetica', fontSize: 10, marginPoints: 36 },
+      'Monstera',
+    ],
+    [
+      { kind: 'batesNumberPages', pages: 'all', prefix: 'ABC-', suffix: '', start: 1, digits: 4, edge: 'footer', slot: 'right', family: 'Helvetica', fontSize: 9, marginPoints: 36 },
+      'ABC-0001',
+    ],
+  ])) {
     const session = await open(aes256, USER);
     try {
-      await kernel.localMupdfExecution.apply({
-        session,
-        command: { kind: 'watermarkPages', pages: 'all', text: 'DRAFT', opacity: 0.3, rotationDegrees: 45, family: 'Helvetica', fontSize: 36 },
-        sources: [],
-        reads: undefined,
-      });
+      await kernel.localMupdfExecution.apply({ session, command, sources: [], reads: undefined });
       const stamped = new Uint8Array(await kernel.mupdfWriter.serialise(session));
       const after = read(stamped, USER);
+      const refusedWithout = read(stamped).access === 0;
+      const wrong = read(stamped, 'not-the-password').access === 0;
       check(
-        'watermarkPages, by the MuPDF writer: the result opens only with the password, keeps the permissions, and holds the stamp',
-        read(stamped).access === 0 && after.access !== 0 && after.encrypted && after.permissions === before.permissions && after.text.includes('DRAFT') && after.text.includes('Original words'),
-        JSON.stringify({ ...after, text: after.text.slice(0, 60) }),
+        `${command.kind}, by the MuPDF writer: the result opens only with the password, keeps the document's own permissions, and holds the stamp`,
+        refusedWithout && wrong && after.access !== 0 && after.encrypted && after.permissions === before.permissions && after.text.includes(words) && after.text.includes('Original words') && !after.canPrint === !before.canPrint,
+        JSON.stringify({ refusedWithout, wrong, after: { ...after, text: after.text.slice(0, 60) } }),
       );
     } finally {
       await kernel.mupdfWriter.close(session);
