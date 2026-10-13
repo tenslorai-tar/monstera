@@ -334,6 +334,8 @@ describe('browser shim', () => {
       'window.copyText',
       'window.edit',
       'window.titleBarOverlay',
+      'work.cancel',
+      'work.progress',
     ]);
   });
 

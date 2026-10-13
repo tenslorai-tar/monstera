@@ -4614,7 +4614,8 @@ export const MAX_FORM_DATA_BYTES = 8 * 1024 * 1024;
 export const MAX_MARKDOWN_BYTES = 4 * 1024 * 1024;
 
 /**
- * The largest CSV file an import reads, checked before the read.
+ * The largest CSV source ONE composition reads. A larger file is not refused: it is cut at record starts into parts each
+ * within this bound and composed part by part (the owner's O10, `csvSplit.ts`), so this bounds a part's wait, not a file.
  *
  * **One mebibyte, a quarter of Markdown's, and TIME decided it, not memory.**
  * Measured 2026-09-13 with a scratch probe, one shape per process, composing in the

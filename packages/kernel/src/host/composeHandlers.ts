@@ -4,6 +4,7 @@ import { FONT_FAMILIES_PAGE, MAX_COMPOSE_SKIPS, cappedBoxes } from '@monstera/co
 import type { FaceSource } from '../fontCatalogue.js';
 import { fontFamiliesOf } from '../fontFamilies.js';
 import { type ComposePageSize, ComposeRefused, type ComposedSource } from '../composeOutcome.js';
+import { splitCsv } from '../csvSplit.js';
 import type { ComposedImages, ImportImage } from '../imageCompose.js';
 import { pictureSize } from '../pictureSize.js';
 import type { ScannedSignature } from '../signatureScan.js';
@@ -252,6 +253,22 @@ export function createComposeHandlers({
     // A WORKBOOK'S OUTLINE AND PARTS (decision C, `workbookParts.ts`): a file main did not write is the transport's, a
     // package this reader cannot use is `unreadable`, and a print area it cannot narrow is `unsplittable` — each an
     // answer main names to the person, never a fault.
+    'engine/csv-split': async ({ session, from, maxBytes }) => {
+      const held = areas.lookup(session);
+      if (held === undefined) return gone;
+      const source = await readSource(held, from);
+      if (source === null) return { ok: false, error: { code: 'asset-missing' } };
+      let text: string;
+      try {
+        // THE COMPOSER'S OWN DECODE (`csvCompose.ts`): a file that is not UTF-8 is refused here, before any part is composed.
+        text = new TextDecoder('utf-8', { fatal: true }).decode(source);
+      } catch {
+        return { ok: true, value: { kind: 'not-utf8' } };
+      }
+      const split = splitCsv(source, text, maxBytes);
+      return { ok: true, value: { kind: 'split', header: split.header, parts: [...split.parts] } };
+    },
+
     'engine/workbook-outline': async ({ session, from }) => {
       const held = areas.lookup(session);
       if (held === undefined) return gone;

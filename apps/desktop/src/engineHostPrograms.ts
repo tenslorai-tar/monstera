@@ -1,3 +1,5 @@
+import { COMPOSE_HOST_HEAP_LIMIT_MIB } from './budget.js';
+
 /**
  * Which program an engine host runs, and which principal it runs as.
  *
@@ -167,6 +169,14 @@ export function hostCommandArguments(
   }
   // THE SHIM'S PATH SECOND, THE FONTS' THIRD and THE INSTALLED FONTS' FOURTH, each EMPTY where there is none:
   // `composeHostEntry.ts` reads `argv[3]` to `argv[5]` and takes an empty one as absent, so a position never shifts
-  // when the one before it is missing.
-  return [entryPath, pipeName, program.shimPath ?? '', program.fontsPath ?? '', program.installedFontsPath ?? ''];
+  // when the one before it is missing. THE HEAP LIMIT BEFORE THE SCRIPT, where Node takes its own options: they go to
+  // `execArgv`, so the entry's `argv` is the same list (measured on the Electron binary in Node mode, 2026-10-13).
+  return [
+    `--max-old-space-size=${String(COMPOSE_HOST_HEAP_LIMIT_MIB)}`,
+    entryPath,
+    pipeName,
+    program.shimPath ?? '',
+    program.fontsPath ?? '',
+    program.installedFontsPath ?? '',
+  ];
 }

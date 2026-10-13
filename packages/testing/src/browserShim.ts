@@ -1018,6 +1018,9 @@ const SHIM_WORDS = '3\ndocument\npage\nspelling\n';
 /** What the shim's Optimize answers per setting, out of 100,000 bytes — one size each. */
 const SHIM_OPTIMIZED = { high: 90_000, medium: 80_000, low: 50_000 } as const;
 
+/** How far past its bound a refused file is in the shim: a size a dialog shows apart from the bound's. */
+const SHIM_PAST_THE_BOUND = 7 * 1024 * 1024;
+
 /**
  * Builds a browser-side contract client backed by an in-memory stub.
  *
@@ -1600,7 +1603,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (chosen === undefined) return Promise.resolve(ok({ kind: 'cancelled' as const }));
       if (chosen === 'unreadable') return Promise.resolve(ok({ kind: 'unreadable' as const }));
       if (chosen === 'too-large') {
-        return Promise.resolve(ok({ kind: 'too-large' as const, limitBytes: MAX_IMAGE_BYTES }));
+        return Promise.resolve(ok({ kind: 'too-large' as const, limitBytes: MAX_IMAGE_BYTES, fileBytes: SHIM_PAST_THE_BOUND + MAX_IMAGE_BYTES }));
       }
       const version = asDocVersion(current + 1);
       versions.set(docId, version);
@@ -1639,7 +1642,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (chosen === undefined) return Promise.resolve(ok({ kind: 'cancelled' as const }));
       if (chosen === 'unreadable') return Promise.resolve(ok({ kind: 'unreadable' as const }));
       if (chosen === 'too-large') {
-        return Promise.resolve(ok({ kind: 'too-large' as const, limitBytes: MAX_IMAGE_BYTES }));
+        return Promise.resolve(ok({ kind: 'too-large' as const, limitBytes: MAX_IMAGE_BYTES, fileBytes: SHIM_PAST_THE_BOUND + MAX_IMAGE_BYTES }));
       }
       const version = asDocVersion(current + 1);
       versions.set(docId, version);
@@ -1669,7 +1672,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
         const chosen = options.placedImage;
         if (chosen === undefined) return Promise.resolve(ok({ kind: 'cancelled' as const }));
         if (chosen === 'unreadable') return Promise.resolve(ok({ kind: 'unreadable' as const }));
-        if (chosen === 'too-large') return Promise.resolve(ok({ kind: 'too-large' as const, limitBytes: MAX_IMAGE_BYTES }));
+        if (chosen === 'too-large') return Promise.resolve(ok({ kind: 'too-large' as const, limitBytes: MAX_IMAGE_BYTES, fileBytes: SHIM_PAST_THE_BOUND + MAX_IMAGE_BYTES }));
       }
       const version = asDocVersion(current + 1);
       versions.set(docId, version);
@@ -1792,7 +1795,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (chosen === undefined) return Promise.resolve(ok({ kind: 'cancelled' as const }));
       if (chosen === 'unreadable') return Promise.resolve(ok({ kind: 'unreadable' as const }));
       if (chosen === 'too-large') {
-        return Promise.resolve(ok({ kind: 'too-large' as const, limitBytes: MAX_FORM_DATA_BYTES }));
+        return Promise.resolve(ok({ kind: 'too-large' as const, limitBytes: MAX_FORM_DATA_BYTES, fileBytes: SHIM_PAST_THE_BOUND + MAX_FORM_DATA_BYTES }));
       }
       if ('matchedNothing' in chosen) {
         return Promise.resolve(ok({ kind: 'matched-nothing' as const, named: chosen.matchedNothing }));
@@ -2723,6 +2726,9 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     'document.saveBarcodeContact': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
     'document.exportProgress': () => Promise.resolve(ok({ kind: 'idle' as const })),
     'document.cancelExport': () => Promise.resolve(ok({ cancelled: false })),
+    // NO WORK RUNS IN THE SHIM: every name is idle and nothing can be stopped.
+    'work.progress': () => Promise.resolve(ok({ kind: 'idle' as const })),
+    'work.cancel': () => Promise.resolve(ok({ cancelled: false })),
     // NO DATA FOLDER IN A BROWSER: no version was kept, so none is listed and nothing is old to move.
     'document.listBackups': () => Promise.resolve(ok({ kind: 'listed' as const, versions: [] })),
     'document.restoreBackup': () => Promise.resolve(ok({ kind: 'gone' as const })),

@@ -315,6 +315,7 @@ describe('the compose host channel set', () => {
         'engine/compose-csv',
         'engine/compose-images',
         'engine/compose-markdown',
+        'engine/csv-split',
         'engine/keep-inline-images',
         'engine/open',
         'engine/optimize',
@@ -344,6 +345,38 @@ describe('the compose host channel set', () => {
     await stream.whenSent(3);
 
     expect(calls).toStrictEqual(['csv:97,44,98:612x792:faces:Tinos', 'compose:97,44,98:612x792:faces:Tinos']);
+  });
+
+  it('answers where a CSV in the area is cut, and refuses a file that is not UTF-8 before any part', async () => {
+    // A HEADER AND THREE RECORDS, bound so tight each record is its own part: the answer names the header's bytes and each
+    // part's offsets and FILE line, which a handler that split the wrong file or lost the header could not produce.
+    const files = emptyFiles();
+    const { session, calls } = await openArea(files);
+    const csv = new TextEncoder().encode(`h\n${'a'.repeat(600)}\n${'b'.repeat(600)}\n${'c'.repeat(600)}\n`);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, csv);
+    // THE ANSWER IS IN A FILE (ADR-0125): the part list grows with the CSV, and the frame carries its size.
+    stream.feed(request('s1', 'engine/csv-split', { session, from: IN, maxBytes: 1024 }, { answerInto: 'b0b0b0b0' }));
+    await stream.whenSent(2);
+    const answered = (name: string): unknown => JSON.parse(new TextDecoder().decode(files.written.get(`${AREA.outputDirectory}|${name}`)));
+    expect(answerIn(stream.sent[1])).toMatchObject({ id: 's1', answerFile: {} });
+    expect(answered('b0b0b0b0')).toStrictEqual({
+      ok: true,
+      value: {
+        kind: 'split',
+        header: { from: 0, to: 2, lines: 1 },
+        parts: [
+          { from: 2, to: 603, line: 2 },
+          { from: 603, to: 1204, line: 3 },
+          { from: 1204, to: 1805, line: 4 },
+        ],
+      },
+    });
+    // CONTROL: a lone continuation byte is not UTF-8, and nothing was composed for either file.
+    files.read.set(`${AREA.snapshotDirectory}|${OUT}`, new Uint8Array([104, 10, 0x80, 10]));
+    stream.feed(request('s2', 'engine/csv-split', { session, from: OUT, maxBytes: 1024 }, { answerInto: 'b1b1b1b1' }));
+    await stream.whenSent(3);
+    expect(answered('b1b1b1b1')).toStrictEqual({ ok: true, value: { kind: 'not-utf8' } });
+    expect(calls).toStrictEqual([]);
   });
 
   it('binds each listed image to the file it names, in order, and answers the composition', async () => {

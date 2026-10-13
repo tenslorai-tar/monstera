@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import { MARKDOWN_IMPORT_PROBLEM_TITLE } from '../messages/en.js';
 import { declareDialog } from '../registries/dialogs.js';
+import { fileTooLargeProps } from './fileTooLarge.js';
 
 /** The id both Markdown import commands open when an import produced no document. */
 export const MARKDOWN_IMPORT_PROBLEM_DIALOG_ID = 'dialog.markdown-import-problem';
@@ -28,7 +29,7 @@ export const MARKDOWN_IMPORT_PROBLEM_DIALOG_ID = 'dialog.markdown-import-problem
  */
 const markdownImportProblemSchema = z.discriminatedUnion('reason', [
   z.object({ reason: z.literal('unreadable') }),
-  z.object({ reason: z.literal('too-large'), limitBytes: z.number().int().positive() }),
+  fileTooLargeProps,
   z.object({ reason: z.literal('not-utf8') }),
   z.object({ reason: z.literal('nothing-to-draw') }),
   z.object({

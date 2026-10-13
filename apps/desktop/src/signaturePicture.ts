@@ -50,7 +50,8 @@ export type PickedSignaturePicture =
     }
   | { readonly kind: 'cancelled' }
   | { readonly kind: 'unreadable' }
-  | { readonly kind: 'too-large' }
+  /** Past the read's bound: the file's own size, which the person is told beside it. */
+  | { readonly kind: 'too-large'; readonly byteLength: number }
   | { readonly kind: 'scan-blank' }
   | { readonly kind: 'scan-locked' };
 
@@ -69,7 +70,7 @@ export async function pickSignaturePicture(source: SignaturePictureSource): Prom
   const route = routeOf(picked);
   if (route === null) return { kind: 'unreadable' };
   const read = await source.read(picked);
-  if (read.kind === 'too-large') return { kind: 'too-large' };
+  if (read.kind === 'too-large') return { kind: 'too-large', byteLength: read.byteLength };
   if (read.kind === 'unreadable') return { kind: 'unreadable' };
   const name = basename(picked);
 

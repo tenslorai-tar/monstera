@@ -33,6 +33,26 @@ export const docIdSchema = z.string().min(1).max(DOC_ID_MAX_CHARS).transform(asD
 export const docVersionSchema = z.number().int().nonnegative().transform(asDocVersion);
 
 /**
+ * The name the renderer gives a piece of work in main, to follow and stop it (`work.progress`): a random id it mints, so
+ * nothing in it is the file's. `DOC_ID_MAX_CHARS`' bound and reason.
+ */
+export const workIdSchema = z.string().regex(/^[A-Za-z0-9_-]+$/u).min(1).max(DOC_ID_MAX_CHARS);
+
+/**
+ * A picked file refused for its size, before it is read: the bound AND the file's own size, so the person is told both
+ * (the owner's O10: a limit's message gives the file's size and what happens next). ONE SHAPE for every import that has a
+ * bound, so no channel can answer a bound without the size beside it — a channel that spelt its own would be free to leave
+ * the size out, which is what every one of them did until 2026-10-13.
+ */
+export const fileTooLargeSchema = z
+  .object({
+    kind: z.literal('too-large'),
+    limitBytes: z.number().int().positive(),
+    fileBytes: z.number().int().positive(),
+  })
+  .strict();
+
+/**
  * How long a `FileHandle` may be: minted as a `DocId` is, 32 random bytes in base64url (`capabilityRegistry.ts`), so
  * the same bound and for the same reason (CR-SEC-06). Unbounded, a renderer chose how much `main` allocated per call.
  */

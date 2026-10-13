@@ -22,6 +22,7 @@ import {
   START_BUSY,
   START_DENIED,
 } from '../messages/en.js';
+import { fileTooLargeValues } from './fileTooLarge.js';
 import type { MarkdownImportProblem } from './markdownImportProblem.js';
 
 /**
@@ -34,7 +35,7 @@ import type { MarkdownImportProblem } from './markdownImportProblem.js';
  * A default export because `declareDialog` takes a `lazy()` component.
  */
 export default function MarkdownImportProblemBody(props: MarkdownImportProblem): ReactElement {
-  const { _ } = useLingui();
+  const { _, i18n } = useLingui();
   return (
     <div className="m-markdown-import-problem">
       <p>{sentence()}</p>
@@ -46,9 +47,7 @@ export default function MarkdownImportProblemBody(props: MarkdownImportProblem):
       case 'unreadable':
         return _(MARKDOWN_IMPORT_UNREADABLE);
       case 'too-large':
-        return _(MARKDOWN_IMPORT_TOO_LARGE, {
-          megabytes: Math.floor(props.limitBytes / (1024 * 1024)),
-        });
+        return _(MARKDOWN_IMPORT_TOO_LARGE, fileTooLargeValues(i18n, props));
       case 'not-utf8':
         return _(MARKDOWN_IMPORT_NOT_UTF8);
       case 'nothing-to-draw':

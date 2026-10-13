@@ -2568,6 +2568,7 @@ export const SETTINGS_SKIP_NOT_IN_VERSION = messageKey('dialog.import-settings-r
 export const SETTINGS_SKIP_SECRET = messageKey('dialog.import-settings-result.secret');
 export const SETTINGS_SKIP_NOT_ACCEPTED = messageKey('dialog.import-settings-result.not-accepted');
 export const TOAST_SETTINGS_UNREADABLE = messageKey('toast.settings-unreadable');
+export const TOAST_SETTINGS_TOO_LARGE = messageKey('toast.settings-too-large');
 export const SETTINGS_RESET = messageKey('dialog.settings.reset');
 export const SETTINGS_DONE = messageKey('dialog.settings.done');
 export const SETTINGS_AI_PROVIDER_STORED = messageKey('dialog.settings.ai-provider.stored');
@@ -3003,6 +3004,7 @@ export const SIGNATURE_USE = messageKey('dialog.signature.use');
 export const SIGNATURE_PROBLEM_TITLE = messageKey('dialog.signature-problem.title');
 export const SIGNATURE_PROBLEM_UNREADABLE = messageKey('dialog.signature-problem.unreadable');
 export const SIGNATURE_PROBLEM_TOO_LARGE = messageKey('dialog.signature-problem.too-large');
+export const SIGNATURE_PROBLEM_TOO_MANY_PIXELS = messageKey('dialog.signature-problem.too-many-pixels');
 export const SIGNATURE_PROBLEM_ABSENT = messageKey('dialog.signature-problem.absent');
 export const SIGNATURE_PROBLEM_CANNOT_WRITE = messageKey('dialog.signature-problem.cannot-write');
 export const SIGNATURE_PROBLEM_TOO_LONG = messageKey('dialog.signature-problem.too-long');
@@ -3108,6 +3110,8 @@ export const EXPORT_EXCEL_READING = messageKey('task.export-excel-reading');
 export const ENHANCE_PROGRESS = messageKey('task.enhance');
 export const TASK_PROGRESS = messageKey('status.task.progress');
 export const TASK_CANCEL = messageKey('status.task.cancel');
+export const TASK_STARTED = messageKey('status.task.started');
+export const CSV_CONVERTING = messageKey('status.task.csv-converting');
 export const CLOSE_TAB_TITLE = messageKey('command.close-tab.title');
 export const CLOSE_OTHERS_TITLE = messageKey('command.close-others.title');
 export const OPEN_SIDE_BY_SIDE_TITLE = messageKey('command.open-side-by-side.title');
@@ -5456,6 +5460,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SETTINGS_SKIP_SECRET]: 'A key or password is never imported from a file. Enter it in Settings.',
   [SETTINGS_SKIP_NOT_ACCEPTED]: 'The value in the file is not one this setting can take, so the setting kept its own.',
   [TOAST_SETTINGS_UNREADABLE]: 'That file is not a Monstera settings file. Nothing was changed.',
+  [TOAST_SETTINGS_TOO_LARGE]:
+    'That file is too large to be a Monstera settings file. Nothing was changed. Choose the file Export settings made.',
   [SETTINGS_RESET]: 'Reset to defaults',
   [SETTINGS_DONE]: 'Done',
   [SETTINGS_AI_PROVIDER_STORED]: '{provider} — key stored',
@@ -5643,7 +5649,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [IMPORT_SKIP_UNREADABLE_RECORD]:
     'This entry in the file could not be read: it has no field name, or its value is not text. The rest of the file was read.',
   [IMPORT_FORM_DATA_TOO_LARGE]:
-    'Nothing was changed. Monstera reads form data files up to {megabytes} MB, and that one is larger.',
+    'Nothing was changed. That file is {size}, and Monstera reads form data files up to {limit}. ' +
+    'A form data file holds only text, so check that it is the file you meant.',
   [PAGE_TRANSITION_TITLE]: 'Page transition',
   [PAGE_TRANSITION_REPLACE]: 'None',
   [PAGE_TRANSITION_STYLE]: 'Transition',
@@ -6055,7 +6062,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [IMPORT_ANNOTATIONS_UNREADABLE]:
     'This file could not be read as comments in the chosen format. Nothing was added.',
   [IMPORT_ANNOTATIONS_TOO_LARGE]:
-    'Nothing was added. Monstera reads comment files up to {megabytes} MB, and that one is larger.',
+    'Nothing was added. That file is {size}, and Monstera reads comment files up to {limit}. ' +
+    'A comment file holds only text, so check that it is the file you meant.',
   [COMPARE_COMMAND_TITLE]: 'Compare documents…',
   [OPTIMIZE_CHECKING]: 'Checking the size of a smaller copy',
   [READ_BARCODES_COMMAND_TITLE]: 'Read barcodes',
@@ -6177,8 +6185,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [INSERT_IMAGE_UNREADABLE]:
     'The file you chose is not a JPEG or PNG this app can read. Your document has not changed.',
   [INSERT_IMAGE_TOO_LARGE]:
-    'That image is larger than {megabytes} MB, which is the most this app will make a page from. ' +
-    'Your document has not changed.',
+    'That picture is {size}, and the most this app takes is {limit}. Your document has not changed. ' +
+    'Save a smaller copy of the picture and choose that.',
   [INSERT_IMAGE_TOO_MANY_PIXELS]:
     'That picture has more than {megapixels} megapixels, which is the most this app will make a ' +
     'page from. Try a smaller copy of it. Your document has not changed.',
@@ -6239,8 +6247,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [MARKDOWN_IMPORT_PROBLEM_TITLE]: 'The import did not finish',
   [MARKDOWN_IMPORT_UNREADABLE]: 'The file you chose could not be read. Nothing was imported.',
   [MARKDOWN_IMPORT_TOO_LARGE]:
-    'That file is larger than {megabytes} MB, which is the most this app will import. ' +
-    'Nothing was imported.',
+    'That file is {size}, and the most this app imports in one go is {limit}. Nothing was imported. ' +
+    'Split it into smaller files and import each one.',
   [MARKDOWN_IMPORT_NOT_UTF8]:
     'That file is not UTF-8 text, so it cannot be read as Markdown. Nothing was imported.',
   [MARKDOWN_IMPORT_NOTHING_TO_DRAW]: 'That file has no text to put on a page. Nothing was imported.',
@@ -6604,7 +6612,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGNATURE_PROBLEM_TITLE]: 'The signature was not placed',
   [SIGNATURE_PROBLEM_UNREADABLE]:
     'That file is not a PNG or JPEG picture, or a PDF, this app can read. Nothing was placed.',
-  [SIGNATURE_PROBLEM_TOO_LARGE]: 'That file is larger than {limit} megabytes. Nothing was placed.',
+  [SIGNATURE_PROBLEM_TOO_LARGE]:
+    'That file is {size}, and the most this app takes is {limit}. Nothing was placed. Choose a smaller picture of the signature.',
+  [SIGNATURE_PROBLEM_TOO_MANY_PIXELS]:
+    'That picture has more pixels than this app can place. Nothing was placed. Save a smaller copy of it and choose that.',
   [SIGNATURE_PROBLEM_SCAN_BLANK]:
     'No signature was found on the first page of that PDF. Nothing was placed. Scan it on plain paper, or choose a picture of it.',
   [SIGNATURE_PROBLEM_SCAN_LOCKED]:
@@ -6690,6 +6701,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // and the one that says least.
   [TASK_PROGRESS]: '{label} — {done} of {total}',
   [TASK_CANCEL]: 'Cancel',
+  // WORK BEGUN whose size is not known yet: the label alone, never "0 of 0".
+  [TASK_STARTED]: '{label}…',
+  [CSV_CONVERTING]: 'Converting CSV to PDF',
   // "Not saved" and never "Save failed". Invariant 18's whole subject is that
   // the work survives a save that did not happen, and a title naming a failure
   // invites the reading that something was lost.

@@ -215,6 +215,8 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'app.components': 'answers one row per native component — the schema caps the list at the six declared ids',
   'settings.load': "carries the user's settings, which no document contributes to",
   'settings.save': 'answers a boolean',
+  'work.progress': 'one bounded work id in; idle, or two counts out, whatever the file the work reads',
+  'work.cancel': 'one bounded work id in; a boolean out',
   // THE SECRET PAIR, and their answer is the same one `settings.load`'s is:
   // what crosses scales with the number of registered SECRET settings — this
   // build's own set, and a very short one — and no document contributes to it.

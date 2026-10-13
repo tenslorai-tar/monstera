@@ -15,15 +15,12 @@ import {
   STATUS_ZOOM_GROUP,
   STATUS_TOOL_LINE,
   STATUS_ZOOM_SLIDER,
-  TASK_CANCEL,
-  TASK_PROGRESS,
 } from '../messages/en.js';
 import { byteSize } from '../byteSize.js';
 import { kernelPageOf, pdfjsPageOf } from '../pageNumbering.js';
 import { ICONS } from '../primitives/icons.js';
 import { IconButton } from '../primitives/IconButton.js';
 import type { CommandContext, CommandRegistry } from '../registries/commands.js';
-import type { RunningTask } from '../runningTask.js';
 import type { SavedState } from '../savedState.js';
 import { ZOOM_STEPS, type ZoomMode } from '../zoom.js';
 import { statusBarModel, type OrderedEntry } from './projections.js';
@@ -97,7 +94,6 @@ export function StatusBar({
   onZoom,
   registry,
   context,
-  task,
   saved,
   byteLength,
   toolHint,
@@ -117,8 +113,6 @@ export function StatusBar({
   /** Where the bar's buttons are projected from. */
   readonly registry: CommandRegistry;
   readonly context: CommandContext;
-  /** A long command reporting how far it has got, or nothing running. */
-  readonly task: RunningTask | undefined;
   /**
    * Where this document stands against its file, already resolved.
    *
@@ -338,20 +332,6 @@ export function StatusBar({
           </span>
           {buttons(model.zoom.after)}
         </div>
-        {/* THE RUNNING TASK, absent rather than empty when nothing is running, and last, so the
-            numbers a reader checks do not move sideways while one runs. */}
-        {task === undefined ? null : (
-          <span className="m-status-task" data-status-task={String(task.done)}>
-            {i18n._(TASK_PROGRESS, {
-              label: i18n._(task.label),
-              done: task.done,
-              total: task.total,
-            })}
-            <button className="m-status-cancel" onClick={task.cancel} type="button">
-              {i18n._(TASK_CANCEL)}
-            </button>
-          </span>
-        )}
         {/* THE LINE'S RULER: each fact whole and the dot between two, under the line's own rule, out of the region's
             flow and out of reach, so the room is read against every fact's width whatever is shown. Last, so the
             line's neighbour is still the control beside it. */}

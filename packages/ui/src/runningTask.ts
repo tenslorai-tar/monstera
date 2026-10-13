@@ -51,8 +51,11 @@ export interface TrackedTask {
    * which is the display-only defect with a progress bar attached.
    */
   readonly signal: AbortSignal;
-  /** How far it has got. Called after each unit, never before. */
-  readonly step: (done: number) => void;
+  /**
+   * How far it has got. Called after each unit, never before. `total` where the work learnt how many units there are only
+   * once it began — a file cut into parts in main — and the one it started with otherwise.
+   */
+  readonly step: (done: number, total?: number) => void;
   /** Finished, cancelled or refused — all three end it. */
   readonly end: () => void;
 }
@@ -88,14 +91,16 @@ export function trackerOver(publish: (task: RunningTask | undefined) => void): T
       controller.abort();
     };
     publish({ label, done: 0, total, cancel });
+    let known = total;
     return {
       signal: controller.signal,
-      step: (done) => {
+      step: (done, learnt) => {
+        known = learnt ?? known;
         // REPUBLISHED WHOLE, because the status bar reads an immutable value.
         // Mutating `done` in place would leave React with the same object and
         // nothing to re-render on, which is a progress indicator that reports
         // 0 for the whole walk and then disappears.
-        publish({ label, done, total, cancel });
+        publish({ label, done, total: known, cancel });
       },
       end: () => {
         publish(undefined);

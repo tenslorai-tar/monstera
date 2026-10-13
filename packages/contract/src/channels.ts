@@ -103,6 +103,8 @@ import {
   ocrLanguageSchema,
   SECRET_SETTING_IDS,
   docIdSchema,
+  workIdSchema,
+  fileTooLargeSchema,
   docVersionSchema,
   fileHandleSchema,
   COMPOSE_REFUSALS,
@@ -1415,8 +1417,8 @@ const namedOpenOutcomeSchema = z.object({
  * **Declared once** because the Markdown and CSV imports answer the same outcomes,
  * and two copies of this union would be two opinions about what an import can end in.
  */
-/** Past the format's byte bound — refused before it is read into memory. */
-const importTooLargeSchema = z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() });
+/** Past the format's byte bound — refused before it is read into memory, with the file's own size beside the bound. */
+const importTooLargeSchema = fileTooLargeSchema;
 /** The file could not be read. */
 const importUnreadableSchema = z.object({ kind: z.literal('unreadable') });
 /** Another open document reaches the chosen destination. Nothing was written. */
@@ -3432,7 +3434,7 @@ export const channels = {
       /** The file was picked and is not an image this build can decode. */
       z.object({ kind: z.literal('unreadable') }),
       /** Past {@link MAX_IMAGE_BYTES} — refused before it is read into memory. */
-      z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),
+      fileTooLargeSchema,
       /** A PNG whose header states more pixels than may be decoded — refused before the decode. */
       z.object({ kind: z.literal('too-many-pixels'), limitPixels: z.number().int().positive() }),
     ]),
@@ -3471,9 +3473,35 @@ export const channels = {
    */
   'document.newFromCsv': channel(
     'Sets a CSV file the user picks as a table in a new PDF, saves it where they choose, and opens it.',
-    z.object({}),
+    // THE WORK'S NAME, minted by the renderer (`work.progress`): a file composed in parts is reported and can be stopped
+    // under it. Absent, the import runs as before and reports nothing.
+    z.object({ work: workIdSchema.optional() }).strict(),
     textImportOutcomeSchema,
     ['engine-unavailable'],
+  ),
+
+  /**
+   * How far a piece of work the renderer named has got: the shared progress of a conversion that runs in main (the owner's
+   * O9 and O10). The renderer polls it while the work's own call is in flight, to show the work on screen. `idle` for a name
+   * main holds no work under — not begun yet, or already ended. Two counts and a state; never the file, never a path.
+   */
+  'work.progress': channel(
+    'Answers how far a named piece of work in main has got.',
+    z.object({ work: workIdSchema }).strict(),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('idle') }).strict(),
+      z.object({ kind: z.literal('running'), done: z.number().int().nonnegative(), total: z.number().int().nonnegative() }).strict(),
+    ]),
+  ),
+
+  /**
+   * Asks a named piece of work to stop at its next part: a flag main's work checks between parts, after which it removes
+   * what it made and answers `cancelled`. `cancelled: false` says nothing was running under that name.
+   */
+  'work.cancel': channel(
+    'Asks a named piece of work in main to stop at its next part.',
+    z.object({ work: workIdSchema }).strict(),
+    z.object({ cancelled: z.boolean() }).strict(),
   ),
 
   /**
@@ -3561,7 +3589,7 @@ export const channels = {
         more: z.number().int().min(0),
       }),
       z.object({ kind: z.literal('cancelled') }),
-      z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),
+      fileTooLargeSchema,
       z.object({ kind: z.literal('unreadable') }),
       z.object({
         kind: z.literal('composition-refused'),
@@ -4039,7 +4067,7 @@ export const channels = {
       /** The file was picked and the engine could not decode it. */
       z.object({ kind: z.literal('unreadable') }),
       /** Past {@link MAX_IMAGE_BYTES} — refused before it is read into memory. */
-      z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),
+      fileTooLargeSchema,
       /** The library picture named is no longer kept — removed since the chooser opened. */
       z.object({ kind: z.literal('absent') }),
     ]),
@@ -4085,7 +4113,9 @@ export const channels = {
       z.object({ kind: z.literal('cancelled') }),
       /** The picked file is not a PNG or a JPEG this build can decode, nor a PDF it can read. */
       z.object({ kind: z.literal('unreadable') }),
-      z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),
+      fileTooLargeSchema,
+      /** The picture is past the pixel bound its decoder holds to (ADR-0148): not its size in bytes, which is under the bound. */
+      z.object({ kind: z.literal('too-many-pixels') }),
       /** The kept signature named is no longer kept — removed since the dialog opened. */
       z.object({ kind: z.literal('absent') }),
       /** A scanned signature PDF picked at the click, whose first page carries no ink. */
@@ -4135,7 +4165,7 @@ export const channels = {
       z.object({ kind: z.literal('cancelled') }),
       /** Not a PNG or a JPEG by its bytes. */
       z.object({ kind: z.literal('unreadable') }),
-      z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),
+      fileTooLargeSchema,
       /** The library holds {@link MAX_LIBRARY_ENTRIES} of this kind already. */
       z.object({ kind: z.literal('full'), limit: z.number().int().positive() }),
     ]),
@@ -4165,7 +4195,7 @@ export const channels = {
       z.object({ kind: z.literal('cancelled') }).strict(),
       /** Not a PNG or a JPEG by its bytes, nor a PDF this build can read, or it could not be read. */
       z.object({ kind: z.literal('unreadable') }).strict(),
-      z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }).strict(),
+      fileTooLargeSchema,
       /** A scanned signature PDF whose first page carries no ink. */
       z.object({ kind: z.literal('scan-blank') }).strict(),
       /** A scanned signature PDF that needs a password to be read. */
@@ -4254,7 +4284,7 @@ export const channels = {
       z.object({ kind: z.literal('nothing'), report: annotationImportReportSchema }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('unreadable') }),
-      z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),
+      fileTooLargeSchema,
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
@@ -4389,7 +4419,7 @@ export const channels = {
       /** Form data, and none of the fields it names is in this form: the wrong file, and nothing was changed. */
       z.object({ kind: z.literal('matched-nothing'), named: z.number().int().nonnegative() }),
       /** Past {@link MAX_FORM_DATA_BYTES} — refused before it is read. */
-      z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),
+      fileTooLargeSchema,
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
@@ -6496,8 +6526,10 @@ export const channels = {
     z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('read'), values: z.record(z.string(), z.unknown()) }),
       z.object({ kind: z.literal('cancelled') }),
-      /** Not a JSON object, larger than the bound, or not readable. */
+      /** Not a JSON object, or not readable. */
       z.object({ kind: z.literal('unreadable') }),
+      /** Larger than {@link MAX_SETTINGS_FILE_BYTES}, refused before it is read, with the file's size. */
+      fileTooLargeSchema,
     ]),
   ),
 

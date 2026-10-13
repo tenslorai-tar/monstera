@@ -2,6 +2,7 @@ import type { AnnotationRect } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
 
 import { SIGNATURE_TOOL_ID } from '../annotations/signatureTool.js';
+import { fileTooLargeProblem } from '../dialogs/fileTooLarge.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { type HeldSignaturePicture, SIGNATURE_ANSWERS, SIGNATURE_DIALOG_ID, type SignatureLook } from '../dialogs/signature.js';
 import { SIGNATURE_PROBLEM_DIALOG_ID } from '../dialogs/signatureProblem.js';
@@ -63,7 +64,7 @@ export async function chooseSignature(
           await deps.ask(
             SIGNATURE_PROBLEM_DIALOG_ID,
             answer.value.kind === 'too-large'
-              ? { reason: 'too-large', limitBytes: answer.value.limitBytes }
+              ? fileTooLargeProblem(answer.value)
               : { reason: answer.value.kind },
           );
         }
@@ -112,7 +113,7 @@ export async function placePlainSignature(
     // VOIDED for `reportProblem`'s reason: an informational dialog settles only on dismissal.
     void deps.ask(
       SIGNATURE_PROBLEM_DIALOG_ID,
-      outcome.kind === 'too-large' ? { reason: 'too-large', limitBytes: outcome.limitBytes } : { reason: outcome.kind },
+      outcome.kind === 'too-large' ? fileTooLargeProblem(outcome) : { reason: outcome.kind },
     );
     return undefined;
   }

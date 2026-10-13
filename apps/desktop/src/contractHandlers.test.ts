@@ -407,7 +407,11 @@ describe('the person’s library (library.*, and document.placeImage with a kept
     const refused = await harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, {
       library: large.surface,
     }).handlers['library.addPicture']({ kind: 'stamp' });
-    expect(refused.ok ? refused.value : undefined).toStrictEqual({ kind: 'too-large', limitBytes: MAX_LIBRARY_PICTURE_BYTES });
+    expect(refused.ok ? refused.value : undefined).toStrictEqual({
+      kind: 'too-large',
+      limitBytes: MAX_LIBRARY_PICTURE_BYTES,
+      fileBytes: MAX_LIBRARY_PICTURE_BYTES + 1,
+    });
     expect(large.read).toStrictEqual([]);
 
     const small = libraryPicking('small.png', MAX_LIBRARY_PICTURE_BYTES);
@@ -482,7 +486,7 @@ describe('the person’s library (library.*, and document.placeImage with a kept
     const tooLarge = await harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, {
       library: { ...large.surface, held },
     }).handlers['signature.pickPicture']({});
-    expect(tooLarge.ok ? tooLarge.value : undefined).toStrictEqual({ kind: 'too-large', limitBytes: MAX_IMAGE_BYTES });
+    expect(tooLarge.ok ? tooLarge.value : undefined).toStrictEqual({ kind: 'too-large', limitBytes: MAX_IMAGE_BYTES, fileBytes: MAX_IMAGE_BYTES + 1 });
     // NOTHING HELD by either refusal, so no later placement can find a picture the person was told was refused.
     expect(held.held(asFileHandle('anything'))).toBeUndefined();
   });
@@ -2564,11 +2568,16 @@ describe('settings.import (BUILD-PROMPT.md:630)', () => {
     expect(await importing(fileHolding('not json'))).toStrictEqual({ ok: true, value: { kind: 'unreadable' } });
   });
 
-  it('a file over the bound is refused BY ITS SIZE — valid JSON, one byte past it', async () => {
-    // VALID JSON on purpose: a file refused because it failed to parse would pass this case without the size check.
+  it('a file over the bound is refused BY ITS SIZE, with its size — valid JSON, past it', async () => {
+    // VALID JSON on purpose: a file refused because it failed to parse would pass this case without the size check — and
+    // it answers `too-large` with the file's own size, never `unreadable`, which says something else about the file.
     const padding = 'x'.repeat(MAX_SETTINGS_FILE_BYTES);
-    const path = fileHolding(JSON.stringify({ 'appearance.theme': padding }));
-    expect(await importing(path)).toStrictEqual({ ok: true, value: { kind: 'unreadable' } });
+    const text = JSON.stringify({ 'appearance.theme': padding });
+    const path = fileHolding(text);
+    expect(await importing(path)).toStrictEqual({
+      ok: true,
+      value: { kind: 'too-large', limitBytes: MAX_SETTINGS_FILE_BYTES, fileBytes: Buffer.byteLength(text) },
+    });
   });
 
   it('CONTROL: a dismissed picker is cancelled, and reads nothing', async () => {

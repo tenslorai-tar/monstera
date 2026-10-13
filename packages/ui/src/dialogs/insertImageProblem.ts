@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { INSERT_IMAGE_PROBLEM_TITLE } from '../messages/en.js';
 import { declareDialog } from '../registries/dialogs.js';
+import { fileTooLargeProps } from './fileTooLarge.js';
 
 /** The id `insertImageCommand` opens when a picked file did not become a page. */
 export const INSERT_IMAGE_PROBLEM_DIALOG_ID = 'dialog.insert-image-problem';
@@ -42,7 +43,7 @@ export const INSERT_IMAGE_PROBLEM_DIALOG = declareDialog({
   informs: 'message',
   props: z.discriminatedUnion('reason', [
     z.object({ reason: z.literal('unreadable') }),
-    z.object({ reason: z.literal('too-large'), limitBytes: z.number().int().positive() }),
+    fileTooLargeProps,
     z.object({ reason: z.literal('too-many-pixels'), limitPixels: z.number().int().positive() }),
     /** A stamp chosen from the library was removed before it could be placed. */
     z.object({ reason: z.literal('absent') }),

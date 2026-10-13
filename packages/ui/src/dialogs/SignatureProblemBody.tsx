@@ -11,14 +11,14 @@ import {
   SIGNATURE_PROBLEM_TOO_LARGE,
   SIGNATURE_PROBLEM_TOO_LONG,
   SIGNATURE_PROBLEM_UNREADABLE,
+  SIGNATURE_PROBLEM_TOO_MANY_PIXELS,
 } from '../messages/en.js';
-
-/** One megabyte, for saying a byte bound as a person reads one. */
-const MEGABYTE = 1024 * 1024;
+import { type FileTooLargeProps, fileTooLargeValues } from './fileTooLarge.js';
 
 type Problem =
   | { readonly reason: 'unreadable' }
-  | { readonly reason: 'too-large'; readonly limitBytes: number }
+  | FileTooLargeProps
+  | { readonly reason: 'too-many-pixels' }
   | { readonly reason: 'absent' }
   | { readonly reason: 'cannot-write'; readonly characters: string }
   | { readonly reason: 'too-long' }
@@ -37,6 +37,7 @@ const SENTENCES: Readonly<Record<Exclude<Problem['reason'], 'too-large' | 'canno
   blank: SIGNATURE_PROBLEM_BLANK,
   'scan-blank': SIGNATURE_PROBLEM_SCAN_BLANK,
   'scan-locked': SIGNATURE_PROBLEM_SCAN_LOCKED,
+  'too-many-pixels': SIGNATURE_PROBLEM_TOO_MANY_PIXELS,
 };
 
 /**
@@ -44,10 +45,10 @@ const SENTENCES: Readonly<Record<Exclude<Problem['reason'], 'too-large' | 'canno
  * happens before the bus applies anything (`DocumentCommands.placeSignature`), or before anything is sent at all.
  */
 export default function SignatureProblemBody(props: Problem): ReactElement {
-  const { _ } = useLingui();
+  const { _, i18n } = useLingui();
   const sentence =
     props.reason === 'too-large'
-      ? _(SIGNATURE_PROBLEM_TOO_LARGE, { limit: Math.round(props.limitBytes / MEGABYTE) })
+      ? _(SIGNATURE_PROBLEM_TOO_LARGE, fileTooLargeValues(i18n, props))
       : props.reason === 'cannot-write'
         ? _(SIGNATURE_PROBLEM_CANNOT_WRITE, { characters: props.characters })
         : _(SENTENCES[props.reason]);

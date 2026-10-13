@@ -164,6 +164,7 @@ import {
   type ImageFilesSource,
   type ImageSource,
   type ImportSource,
+  type CsvPartsComposer,
   type DocumentAnnotationsReader,
   type DocumentAnnotationCopyReader,
   type DocumentAnnotationWordsReader,
@@ -919,6 +920,7 @@ const INERT = {
   // NO COMPOSE HOST, which is the state a build with no Win32 platform is in — so a
   // case that reached the import without meaning to is refused by name.
   compose: null,
+  csvParts: null,
   imageFiles: noImageFiles,
   composeImages: null,
   // REFUSES BY NAME, like every inert surface: a case that reached the network without
@@ -5962,11 +5964,12 @@ describe('composeMarkdownFile: what an import answers before anything is written
       },
     });
 
-    // THE LIMIT IS MAIN'S CONSTANT, never the file's size: a sentence reading *larger
-    // than 4.0000002 MB* would state the file rather than the rule.
+    // THE LIMIT IS MAIN'S CONSTANT, and the FILE'S SIZE rides beside it (the owner's O10: a limit's message gives the
+    // file's size), never in its place.
     expect(await commands.composeImportFile('markdown', CHOSEN)).toStrictEqual({
       kind: 'too-large',
       limitBytes: MAX_MARKDOWN_BYTES,
+      fileBytes: MAX_MARKDOWN_BYTES + 1,
     });
     expect(markdown.calls).toStrictEqual(['pick', 'read:notes.md']);
     expect(composed).toStrictEqual([]);
@@ -6042,9 +6045,11 @@ describe('composeMarkdownFile: what an import answers before anything is written
       },
     });
 
+    // NO PARTS COMPOSER HERE (`INERT`), so the bound is still answered: the parts route is the next describe's.
     expect(await commands.composeImportFile('csv', CHOSEN)).toStrictEqual({
       kind: 'too-large',
       limitBytes: MAX_CSV_BYTES,
+      fileBytes: MAX_CSV_BYTES + 1,
     });
     expect(csv.calls).toStrictEqual(['pick', 'read:table.csv']);
     expect(markdown.calls).toStrictEqual([]);
@@ -6185,6 +6190,7 @@ describe('DocumentCommands.composeImageFiles', () => {
     expect(await commandsWith(oneLarge.source, composer).composeImageFiles()).toStrictEqual({
       kind: 'too-large',
       limitBytes: MAX_IMAGE_BYTES,
+      fileBytes: MAX_IMAGE_BYTES + 1,
     });
 
     // EVERY FILE UNDER ITS OWN BOUND, and the set over its: only the running total refuses.
@@ -7019,13 +7025,18 @@ describe('DocumentCommands.convertOfficeFile (ADR-0120)', () => {
     expect(recorded.converted).toStrictEqual([]);
   });
 
-  it('answers the contract’s bound, not the file’s size, and converts nothing', async () => {
+  it('answers the contract’s bound AND the file’s size, each as itself, and converts nothing', async () => {
+    // TWO NUMBERS THAT DIFFER, so a handler that answered one where the other belongs is told apart.
     const { commands, recorded } = officeCommands({
       picked: 'C:\\big.docx',
-      read: { kind: 'too-large', byteLength: MAX_OFFICE_IMPORT_BYTES + 1 },
+      read: { kind: 'too-large', byteLength: MAX_OFFICE_IMPORT_BYTES + 4096 },
     });
 
-    expect(await commands.convertOfficeFile()).toStrictEqual({ kind: 'too-large', limitBytes: MAX_OFFICE_IMPORT_BYTES });
+    expect(await commands.convertOfficeFile()).toStrictEqual({
+      kind: 'too-large',
+      limitBytes: MAX_OFFICE_IMPORT_BYTES,
+      fileBytes: MAX_OFFICE_IMPORT_BYTES + 4096,
+    });
     expect(recorded.converted).toStrictEqual([]);
   });
 
@@ -7523,5 +7534,143 @@ describe('a protect in this session: the holder follows it', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+/**
+ * A CSV past one composition's bound is composed whole, in parts, never refused (the owner's O10). The host's half is
+ * stood in for by the kernel's own split (`splitCsv`, which the host runs) and a composer that writes each source back as
+ * its "PDF", so the file written says exactly which bytes each part was composed from and in what order. The CONTROL is
+ * the same file with no parts composer: the bound is answered, with the file's size.
+ */
+describe('composeImportFile: a CSV past the bound is composed in parts', () => {
+  beforeAll(openDocument);
+  // THE HOST'S OWN SPLIT, which the kernel's barrel does not carry: it runs only inside the compose host.
+  let splitCsv: typeof import('../../../packages/kernel/src/csvSplit.js').splitCsv;
+  beforeAll(async () => {
+    ({ splitCsv } = await import('../../../packages/kernel/src/csvSplit.js'));
+  });
+
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  /** A header and enough records to pass the bound several times over. */
+  const FILE = encoder.encode(
+    `id,name\n${Array.from({ length: Math.ceil((MAX_CSV_BYTES * 3) / 20) }, (_unused, at) => `${String(at)},row ${String(at)}`).join('\n')}\n`,
+  );
+
+  function harness(options: { readonly stopAfter?: number; readonly skipLocal?: number } = {}): {
+    readonly commands: DocumentCommands;
+    readonly destination: string;
+    readonly composed: string[];
+    readonly removed: string[];
+    readonly placed: Map<string, Uint8Array>;
+    readonly work: { stop: () => void };
+  } {
+    const destination = join(directory, `csv-in-parts-${String(Math.random()).slice(2)}.pdf`);
+    const placed = new Map<string, Uint8Array>();
+    const composed: string[] = [];
+    const removed: string[] = [];
+    let named = 0;
+    const put = async (source: Uint8Array | AsyncIterable<Uint8Array>): Promise<string> => {
+      const chunks: Uint8Array[] = [];
+      if (source instanceof Uint8Array) chunks.push(source);
+      else for await (const chunk of source) chunks.push(chunk);
+      const name = `area-${String((named += 1))}`;
+      placed.set(name, new Uint8Array(Buffer.concat(chunks)));
+      return name;
+    };
+    const parts: CsvPartsComposer = {
+      put,
+      remove: (name) => {
+        removed.push(name);
+        return Promise.resolve();
+      },
+      split: (name, maxBytes) => {
+        const bytes = placed.get(name) ?? new Uint8Array(0);
+        return Promise.resolve({ kind: 'split' as const, ...splitCsv(bytes, decoder.decode(bytes), maxBytes) });
+      },
+      join: (names) => {
+        const joined = Buffer.concat(names.map((name) => placed.get(name) ?? new Uint8Array(0)));
+        async function* output(): AsyncIterable<Uint8Array> {
+          yield await Promise.resolve(new Uint8Array(joined));
+        }
+        return Promise.resolve({ output: output(), discard: () => undefined });
+      },
+    };
+    const csv: ImportSource = {
+      pick: () => Promise.resolve('register.csv'),
+      read: () => Promise.resolve({ kind: 'too-large', byteLength: FILE.length }),
+      stream: async function* () {
+        yield await Promise.resolve(FILE);
+      },
+      range: (_path, from, to) => Promise.resolve(FILE.slice(from, to)),
+    };
+    const work: { stop: () => void } = { stop: () => undefined };
+    const commands: DocumentCommands = new DocumentCommands({
+      ...INERT,
+      documents: service,
+      bus: bus(),
+      engine: engine(),
+      save: {
+        deps: { checkWriteTarget: () => Promise.reject(new Error('an import writes a copy')), surface: nodeFileSurface, names: (target) => siblingNames(target, 1), wait: () => Promise.resolve() },
+        flush: () => Promise.reject(new Error('an import flushes no document')),
+        stage: () => Promise.reject(new Error('an import flushes no document')),
+        provenance: noSaving.provenance,
+      },
+      copy: { pick: () => Promise.resolve(destination), checkTarget: () => Promise.resolve({ kind: 'writable' }) },
+      imports: { markdown: noImportFile, csv },
+      compose: (_format, source) => {
+        composed.push(decoder.decode(source));
+        if (options.stopAfter !== undefined && composed.length === options.stopAfter) work.stop();
+        // A RECORD LEFT OUT on the part's own line `skipLocal`, which the file must name by ITS line.
+        const skipped = options.skipLocal === undefined ? [] : [{ reason: 'quote-never-closed' as const, line: options.skipLocal, item: null }];
+        return Promise.resolve({ kind: 'composed', pdf: encoder.encode(`[${decoder.decode(source)}]`), boxed: [], more: 0, skipped, skippedMore: 0 });
+      },
+      csvParts: parts,
+    });
+    work.stop = () => {
+      commands.cancelWork('import-1');
+    };
+    return { commands, destination, composed, removed, placed, work };
+  }
+
+  it('composes every part with the header in front, in order, joins them, writes the whole, and leaves nothing in the area', async () => {
+    const { commands, destination, composed, removed, placed } = harness();
+    const outcome = await commands.composeImportFile('csv', { family: 'Tinos', work: 'import-1' });
+    expect(outcome.kind).toBe('written');
+    expect(composed.length).toBeGreaterThanOrEqual(3);
+    for (const source of composed) {
+      expect(source.startsWith('id,name\n')).toBe(true);
+      expect(encoder.encode(source).length).toBeLessThanOrEqual(MAX_CSV_BYTES);
+    }
+    // EVERY RECORD ONCE, in order: the parts' bodies, header taken off, are the file's records.
+    const bodies = composed.map((source) => source.slice('id,name\n'.length)).join('');
+    expect(`id,name\n${bodies}`).toBe(decoder.decode(FILE));
+    expect(readFileSync(destination, 'utf8')).toBe(composed.map((source) => `[${source}]`).join(''));
+    expect([...placed.keys()].every((name) => removed.includes(name))).toBe(true);
+    // AND THE WORK HAS ENDED, so its name answers idle.
+    expect(commands.workProgress('import-1')).toStrictEqual({ kind: 'idle' });
+  });
+
+  it('names a record a part left out by the FILE’s line, never the part’s', async () => {
+    const { commands } = harness({ skipLocal: 3 });
+    const outcome = await commands.composeImportFile('csv', { family: 'Tinos', work: 'import-1' });
+    if (outcome.kind !== 'written') throw new Error(`not written: ${outcome.kind}`);
+    const split = splitCsv(FILE, decoder.decode(FILE), MAX_CSV_BYTES);
+    // LOCAL LINE 3 is the part's second record: the header is line 1 and the part's first record line 2.
+    expect(outcome.skipped.map((skip) => skip.line)).toStrictEqual(split.parts.map((part) => part.line + 1));
+  });
+
+  it('stops at the next part when the person cancels, writes nothing, and leaves nothing in the area', async () => {
+    const { commands, destination, composed, removed, placed } = harness({ stopAfter: 1 });
+    expect(await commands.composeImportFile('csv', { family: 'Tinos', work: 'import-1' })).toStrictEqual({ kind: 'cancelled' });
+    expect(composed).toHaveLength(1);
+    expect(existsSync(destination)).toBe(false);
+    expect([...placed.keys()].every((name) => removed.includes(name))).toBe(true);
+  });
+
+  it('CONTROL: with no parts composer the bound is answered, with the file’s size beside it', async () => {
+    const plain = new DocumentCommands({ ...INERT, documents: service, bus: bus(), engine: engine(), imports: { markdown: noImportFile, csv: { pick: () => Promise.resolve('register.csv'), read: () => Promise.resolve({ kind: 'too-large', byteLength: FILE.length }) } }, compose: () => Promise.reject(new Error('unreachable')) });
+    expect(await plain.composeImportFile('csv', { family: 'Tinos' })).toStrictEqual({ kind: 'too-large', limitBytes: MAX_CSV_BYTES, fileBytes: FILE.length });
   });
 });

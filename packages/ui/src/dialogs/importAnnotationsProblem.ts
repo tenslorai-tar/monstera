@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { IMPORT_ANNOTATIONS_PROBLEM_TITLE } from '../messages/en.js';
 import { declareDialog } from '../registries/dialogs.js';
+import { fileTooLargeProps } from './fileTooLarge.js';
 
 /** The id the annotation imports open when a picked file added nothing. */
 export const IMPORT_ANNOTATIONS_PROBLEM_DIALOG_ID = 'dialog.import-annotations-problem';
@@ -17,7 +18,7 @@ export const IMPORT_ANNOTATIONS_PROBLEM_DIALOG = declareDialog({
   informs: 'message',
   props: z.discriminatedUnion('reason', [
     z.object({ reason: z.literal('unreadable') }),
-    z.object({ reason: z.literal('too-large'), limitBytes: z.number().int().positive() }),
+    fileTooLargeProps,
   ]),
   component: lazy(() => import('./ImportAnnotationsProblemBody.js')),
 });

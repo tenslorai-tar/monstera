@@ -88,6 +88,7 @@ import {
   type ImageSource,
   type PickImage,
   type ComposeImportOutcome,
+  type FileTooLarge,
   type ImportFormat,
   InvalidSearchPatternError,
   MissingSessionError,
@@ -506,6 +507,9 @@ export function createContractHandlers(deps: {
     // behind it would be answered when there was nothing left to report. Plain reads and a flag of a map main keeps.
     'document.exportProgress': ({ docId }) => Promise.resolve(ok(deps.commands.exportProgress(docId))),
     'document.cancelExport': ({ docId }) => Promise.resolve(ok({ cancelled: deps.commands.cancelExport(docId) })),
+    // THE SHARED PAIR for work the renderer named (the owner's O9 and O10), plain reads and a flag for the same reason.
+    'work.progress': ({ work }) => Promise.resolve(ok(deps.commands.workProgress(work))),
+    'work.cancel': ({ work }) => Promise.resolve(ok({ cancelled: deps.commands.cancelWork(work) })),
     'document.print': printHandler(deps.commands),
     'document.email': emailHandler(deps.commands),
     'document.exportPdfa': exportPdfaHandler(deps.commands, mintWritten),
@@ -862,7 +866,11 @@ export function createContractHandlers(deps: {
       // export's `write-failed` is on the other side.
       let parsed: unknown;
       try {
-        if ((await stat(path)).size > MAX_SETTINGS_FILE_BYTES) return ok({ kind: 'unreadable' } as const);
+        const { size } = await stat(path);
+        // PAST THE BOUND, said as itself with the file's size (the owner's O10), never as *not a settings file*.
+        if (size > MAX_SETTINGS_FILE_BYTES) {
+          return ok(tooLargeAnswer({ kind: 'too-large', limitBytes: MAX_SETTINGS_FILE_BYTES, fileBytes: size }));
+        }
         parsed = JSON.parse(await readFile(path, 'utf8'));
       } catch {
         return ok({ kind: 'unreadable' } as const);
@@ -1055,6 +1063,14 @@ function saveHandler(commands: DocumentCommands): ContractHandlers['document.sav
  * would put a fifth kernel member on a wire that declares four the day one is
  * added.
  */
+/**
+ * A refusal by size as the wire carries it: rebuilt field by field for the reason above, and in ONE place, so every
+ * handler with a bound answers the file's size beside it (`fileTooLargeSchema`).
+ */
+function tooLargeAnswer(outcome: FileTooLarge): FileTooLarge {
+  return { kind: 'too-large', limitBytes: outcome.limitBytes, fileBytes: outcome.fileBytes };
+}
+
 function insertImageHandler(commands: DocumentCommands): ContractHandlers['document.insertImage'] {
   return async ({
     docId,
@@ -1065,7 +1081,7 @@ function insertImageHandler(commands: DocumentCommands): ContractHandlers['docum
       if (outcome.kind === 'cancelled') return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'unreadable') return ok({ kind: 'unreadable' } as const);
       if (outcome.kind === 'too-large') {
-        return ok({ kind: 'too-large', limitBytes: outcome.limitBytes } as const);
+        return ok(tooLargeAnswer(outcome));
       }
       if (outcome.kind === 'too-many-pixels') {
         return ok({ kind: 'too-many-pixels', limitPixels: outcome.limitPixels } as const);
@@ -1105,7 +1121,7 @@ function composeRefusal(
     case 'cancelled':
       return { kind: 'cancelled' };
     case 'too-large':
-      return { kind: 'too-large', limitBytes: outcome.limitBytes };
+      return tooLargeAnswer(outcome);
     case 'unreadable':
       return { kind: 'unreadable' };
     case 'composition-refused':
@@ -1133,13 +1149,17 @@ function composeRefusal(
 function newFromImportHandler(
   deps: OpenPathParts & { readonly commands: DocumentCommands },
   format: ImportFormat,
-): ContractHandlers['document.newFromMarkdown'] {
+): ContractHandlers['document.newFromCsv'] {
   // ONE HANDLER FOR BOTH CHANNELS, which answer one declared union: a copy per format
   // would be two opinions about how an import is opened and answered.
-  return async (): Promise<Awaited<ReturnType<ContractHandlers['document.newFromMarkdown']>>> => {
+  return async (params: { readonly work?: string | undefined }): Promise<Awaited<ReturnType<ContractHandlers['document.newFromMarkdown']>>> => {
     try {
-      // NO DIALOG ASKS for a new document's font, so it is set as every composition was before D1.
-      const composed = await deps.commands.composeImportFile(format, { family: COMPOSED_FAMILY_DEFAULT });
+      // NO DIALOG ASKS for a new document's font, so it is set as every composition was before D1. THE WORK'S NAME, where
+      // the renderer gave one, is what a file composed in parts reports under (`work.progress`).
+      const composed = await deps.commands.composeImportFile(format, {
+        family: COMPOSED_FAMILY_DEFAULT,
+        ...(params.work === undefined ? {} : { work: params.work }),
+      });
       if (composed.kind !== 'written') return ok(composeRefusal(composed));
       const opened = (await openPath(deps, composed.destination)).outcome;
       // THE BOXED CHARACTERS RIDE WITH THE OPEN (ADR-0172), the Office import's rule for rows it lacks: a document
@@ -1450,7 +1470,7 @@ function placeImageHandler(commands: DocumentCommands): ContractHandlers['docume
       if (outcome.kind === 'unreadable') return ok({ kind: 'unreadable' } as const);
       if (outcome.kind === 'absent') return ok({ kind: 'absent' } as const);
       if (outcome.kind === 'too-large') {
-        return ok({ kind: 'too-large', limitBytes: outcome.limitBytes } as const);
+        return ok(tooLargeAnswer(outcome));
       }
       return ok({
         kind: 'placed',
@@ -1500,14 +1520,15 @@ function addLibraryPictureHandler(library: {
     if (picked === null) return ok({ kind: 'cancelled' } as const);
     const size = await library.size(picked);
     if (size === null) return ok({ kind: 'unreadable' } as const);
-    if (size > MAX_LIBRARY_PICTURE_BYTES) return ok({ kind: 'too-large', limitBytes: MAX_LIBRARY_PICTURE_BYTES } as const);
+    if (size > MAX_LIBRARY_PICTURE_BYTES) {
+      return ok(tooLargeAnswer({ kind: 'too-large', limitBytes: MAX_LIBRARY_PICTURE_BYTES, fileBytes: size }));
+    }
     const read = await library.read(picked);
-    if (read.kind !== 'read' || read.bytes.byteLength > MAX_LIBRARY_PICTURE_BYTES) {
-      return ok(
-        read.kind === 'unreadable'
-          ? ({ kind: 'unreadable' } as const)
-          : ({ kind: 'too-large', limitBytes: MAX_LIBRARY_PICTURE_BYTES } as const),
-      );
+    if (read.kind === 'unreadable') return ok({ kind: 'unreadable' } as const);
+    // GROWN SINCE IT WAS SIZED: the size it has now, which is the one the read found.
+    const grown = read.kind === 'too-large' ? read.byteLength : read.bytes.byteLength;
+    if (read.kind === 'too-large' || grown > MAX_LIBRARY_PICTURE_BYTES) {
+      return ok(tooLargeAnswer({ kind: 'too-large', limitBytes: MAX_LIBRARY_PICTURE_BYTES, fileBytes: grown }));
     }
     return ok(library.store.addPicture(kind, basename(picked), read.bytes));
   };
@@ -1528,7 +1549,7 @@ function pickSignaturePictureHandler(
 ): ContractHandlers['signature.pickPicture'] {
   return async () => {
     const picked = await pickSignaturePicture(library.signaturePicture);
-    if (picked.kind === 'too-large') return ok({ kind: 'too-large', limitBytes: MAX_IMAGE_BYTES } as const);
+    if (picked.kind === 'too-large') return ok(tooLargeAnswer({ kind: 'too-large', limitBytes: MAX_IMAGE_BYTES, fileBytes: picked.byteLength }));
     if (picked.kind !== 'picture') return ok({ kind: picked.kind });
     const { bytes, mediaType, name } = picked;
     const handle = capabilities.mint(picked.path);
@@ -1855,7 +1876,7 @@ function importFormDataHandler(
       if (outcome.kind === 'unreadable') return ok({ kind: 'unreadable' } as const);
       if (outcome.kind === 'matched-nothing') return ok({ kind: 'matched-nothing', named: outcome.named } as const);
       if (outcome.kind === 'too-large') {
-        return ok({ kind: 'too-large', limitBytes: outcome.limitBytes } as const);
+        return ok(tooLargeAnswer(outcome));
       }
       return ok({
         kind: 'imported',
@@ -2047,7 +2068,7 @@ function importAnnotationsHandler(
       if (outcome.kind === 'cancelled') return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'unreadable') return ok({ kind: 'unreadable' } as const);
       if (outcome.kind === 'too-large') {
-        return ok({ kind: 'too-large', limitBytes: outcome.limitBytes } as const);
+        return ok(tooLargeAnswer(outcome));
       }
       return ok({
         kind: 'imported',
@@ -3421,7 +3442,7 @@ function newFromOfficeHandler(
       case 'cancelled':
         return ok({ kind: 'cancelled' });
       case 'too-large':
-        return ok({ kind: 'too-large', limitBytes: converted.limitBytes });
+        return ok(tooLargeAnswer(converted));
       case 'unreadable':
         return ok({ kind: 'unreadable' });
       case 'conversion-failed':

@@ -207,6 +207,7 @@ import {
   type ImageSource,
   type ComposeImport,
   type ComposeImages,
+  type CsvPartsComposer,
   type ImageFilesSource,
   type ImportSource,
   type PickDestination,
@@ -563,6 +564,9 @@ export interface ShellComposition {
   readonly pickCsv: ImportSource['pick'];
   /** The CSV file's bytes, bounded by `MAX_CSV_BYTES` before the read. */
   readonly readCsv: ImportSource['read'];
+  /** A CSV file past that bound, streamed into the compose host's area and read a part at a time (the owner's O10). */
+  readonly streamCsv: NonNullable<ImportSource['stream']>;
+  readonly rangeCsv: NonNullable<ImportSource['range']>;
   /** Which images a new PDF is made from. Electron's open dialog, several files at once. */
   readonly pickImages: ImageFilesSource['pick'];
   /** Which files go with an assistant question (ADR-0135). Electron's open dialog, any file, several at once. */
@@ -851,6 +855,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     readMarkdown,
     pickCsv,
     readCsv,
+    streamCsv,
+    rangeCsv,
     pickImages,
     sizeImage,
     pickAttachments,
@@ -1637,9 +1643,19 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // the import is refused by name and the source is never parsed here (ADR-0060).
     imports: {
       markdown: { pick: pickMarkdown, read: readMarkdown },
-      csv: { pick: pickCsv, read: readCsv },
+      csv: { pick: pickCsv, read: readCsv, stream: streamCsv, range: rangeCsv },
     },
     compose: composeHost === null ? null : composeHost.compose,
+    // A CSV PAST ONE COMPOSITION'S BOUND, in parts: the area's calls the workbook's parts take, and the host's split.
+    csvParts:
+      composeHost === null
+        ? null
+        : {
+            put: composeHost.workbooks.put,
+            remove: composeHost.workbooks.remove,
+            join: composeHost.workbooks.join,
+            split: composeHost.csvSplit,
+          },
     // IMAGES TO A NEW PDF: the read is `image`'s own bounded read, and the composition
     // is the same compose host's, `null` where it cannot exist.
     imageFiles: { pick: pickImages, size: sizeImage, read: readImage },
@@ -3626,6 +3642,8 @@ function composeHostBinding(
   readonly optimize: OptimizeSource;
   readonly keepInlineImages: PdfiumInputKeeper;
   readonly workbooks: WorkbookComposer;
+  /** Where a CSV in the area is cut into parts (`engine/csv-split`, the owner's O10). */
+  readonly csvSplit: CsvPartsComposer['split'];
   readonly imageSize: NonNullable<AttachmentReaders['pictureSize']>;
   readonly signatureFromScan: ScanSignature;
   /** The font families the host can set text in, for the one font picker (`engine/font-families`). */
@@ -3960,6 +3978,12 @@ function composeHostBinding(
     // snapshot directory under a minted name and stays until `remove`, because the plan reads the workbook once per part.
     // What the host writes — a part workbook, the joined PDF — is read back from the output directory and held to the
     // count it reported, `compose`'s check; a failure code is a fault, and an answer about the file is returned.
+    csvSplit: async (from, maxBytes) => {
+      const built = await ensure();
+      const answer = await built.client['engine/csv-split']({ session: built.session, from, maxBytes });
+      if (!answer.ok) throw new Error(`the compose host could not cut the CSV file: ${answer.error.code}`);
+      return answer.value;
+    },
     workbooks: {
       put: async (source) => {
         const built = await ensure();

@@ -109,7 +109,11 @@ describe('placePlainSignature', () => {
   it('each refusal opens the signature problem with its reason, and moves nothing', async () => {
     for (const [answer, props] of [
       [{ kind: 'unreadable' }, { reason: 'unreadable' }],
-      [{ kind: 'too-large', limitBytes: 67_108_864 }, { reason: 'too-large', limitBytes: 67_108_864 }],
+      [
+        { kind: 'too-large', limitBytes: 67_108_864, fileBytes: 71_200_000 },
+        { reason: 'too-large', limitBytes: 67_108_864, fileBytes: 71_200_000 },
+      ],
+      [{ kind: 'too-many-pixels' }, { reason: 'too-many-pixels' }],
       [{ kind: 'absent' }, { reason: 'absent' }],
       [{ kind: 'scan-blank' }, { reason: 'scan-blank' }],
       [{ kind: 'scan-locked' }, { reason: 'scan-locked' }],

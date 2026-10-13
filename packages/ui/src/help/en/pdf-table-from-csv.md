@@ -18,9 +18,9 @@ A CSV file is a simple spreadsheet saved as text. Monstera can lay it out as a t
 ## Good to know
 
 - The first row is shown in bold as the heading.
-- The file must be UTF-8 text, up to 1 MB.
+- The file must be UTF-8 text. A large file is imported whole, a part at a time: a notice at the bottom of the window counts the parts, and **Cancel** there stops the import with nothing saved.
 - Each column is as wide as what it holds needs. A table too wide for the page turns the page sideways and sets its text smaller, and one wider still continues on further pages, the first column repeated on each so every row is still named.
-- A quote out of place stops the import; the message names the line.
+- A row with a quote out of place is left out and the rest is imported; a list afterwards names each row left out by its line.
 - Text in any language is kept. Greek, Cyrillic, Hebrew and Arabic come with Monstera, and Hebrew and Arabic read right to left. Other scripts, such as Chinese or Japanese, use a font installed on this computer whose licence allows it. A character no font here can draw is shown as a box, and Monstera then lists each one with its line and column. The box copies as the character you wrote.
 
 <!--

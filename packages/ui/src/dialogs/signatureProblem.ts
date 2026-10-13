@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import { SIGNATURE_PROBLEM_TITLE } from '../messages/en.js';
 import { declareDialog } from '../registries/dialogs.js';
+import { fileTooLargeProps } from './fileTooLarge.js';
 
 /** The id the plain Signature opens when nothing was placed (ADR-0133). */
 export const SIGNATURE_PROBLEM_DIALOG_ID = 'dialog.signature-problem';
@@ -28,7 +29,9 @@ export const SIGNATURE_PROBLEM_DIALOG = declareDialog({
   informs: 'message',
   props: z.discriminatedUnion('reason', [
     z.object({ reason: z.literal('unreadable') }).strict(),
-    z.object({ reason: z.literal('too-large'), limitBytes: z.number().int().positive() }).strict(),
+    fileTooLargeProps,
+    // A PICTURE PAST THE PIXEL BOUND, which is not its size in bytes: said as itself rather than as a byte bound it is under.
+    z.object({ reason: z.literal('too-many-pixels') }).strict(),
     z.object({ reason: z.literal('absent') }).strict(),
     z.object({ reason: z.literal('cannot-write'), characters: z.string().min(1).max(MAX_SIGNATURE_FIELD) }).strict(),
     z.object({ reason: z.literal('too-long') }).strict(),

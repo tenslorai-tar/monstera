@@ -1514,7 +1514,7 @@ describe('delete pages — the mutation-dialog gate', () => {
   it('CARRIES THE LIMIT for a file that is too large, because a number is the actionable part', async () => {
     const opened: { id: string; props: unknown }[] = [];
     const client = createClient(channels, () =>
-      Promise.resolve(ok({ kind: 'too-large' as const, limitBytes: 8 * 1024 * 1024 })),
+      Promise.resolve(ok({ kind: 'too-large' as const, limitBytes: 8 * 1024 * 1024, fileBytes: 9_400_000 })),
     );
 
     await importFormDataJsonCommand({
@@ -1532,7 +1532,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     expect(opened).toStrictEqual([
       {
         id: 'dialog.import-form-data-problem',
-        props: { reason: 'too-large', limitBytes: 8 * 1024 * 1024 },
+        props: { reason: 'too-large', limitBytes: 8 * 1024 * 1024, fileBytes: 9_400_000 },
       },
     ]);
   });
@@ -2693,7 +2693,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     // with no number is something a person cannot act on, and a constant copied
     // into the renderer is a second declaration of a bound main owns.
     const { client } = recording({
-      'document.insertImage': { kind: 'too-large', limitBytes: 67_108_864 },
+      'document.insertImage': { kind: 'too-large', limitBytes: 67_108_864, fileBytes: 71_200_000 },
     });
     const opened: unknown[] = [];
 
@@ -2711,7 +2711,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     expect(opened).toStrictEqual([
       {
         id: 'dialog.insert-image-problem',
-        props: { reason: 'too-large', limitBytes: 67_108_864 },
+        props: { reason: 'too-large', limitBytes: 67_108_864, fileBytes: 71_200_000 },
       },
     ]);
   });
@@ -2837,7 +2837,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     // second wording for them would be a second answer to *what happened to my
     // picture*. The limit travels from main rather than being restated here.
     const { client } = recording({
-      'document.placeImage': { kind: 'too-large', limitBytes: 67_108_864 },
+      'document.placeImage': { kind: 'too-large', limitBytes: 67_108_864, fileBytes: 71_200_000 },
     });
     const opened: unknown[] = [];
 
@@ -2858,7 +2858,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     );
 
     expect(opened).toStrictEqual([
-      { id: 'dialog.insert-image-problem', props: { reason: 'too-large', limitBytes: 67_108_864 } },
+      { id: 'dialog.insert-image-problem', props: { reason: 'too-large', limitBytes: 67_108_864, fileBytes: 71_200_000 } },
     ]);
   });
 

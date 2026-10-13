@@ -1,7 +1,7 @@
 import { useLingui } from '@lingui/react';
 import { X } from 'lucide-react';
 import type { MessageKey } from '@monstera/shared';
-import { type ReactElement, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { type ReactElement, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { Icon } from './Icon.js';
 import { IconButton } from './IconButton.js';
@@ -172,6 +172,7 @@ export function ToastStrip({
   dismissLabel,
   onDismiss,
   lifetime,
+  children,
 }: {
   readonly toasts: readonly ToastMessage[];
   /** The × button's accessible name. A prop, for the reason `Button`'s `label` is one. */
@@ -180,8 +181,14 @@ export function ToastStrip({
   readonly onDismiss: (id: number) => void;
   /** How long each stays. Passed in so a test states the duration rather than waiting one. */
   readonly lifetime: number;
+  /**
+   * What stays in the strip above the toasts while it lasts: the work in progress (`TaskNotice`), which is on screen
+   * wherever the person is — the start screen has no status bar — and leaves when the work ends, not on a timer.
+   */
+  readonly children?: ReactNode;
 }): ReactElement {
   const strip = useRef<HTMLDivElement | null>(null);
+  const showing = toasts.length > 0 || (children !== undefined && children !== null && children !== false);
   // CLEAR OF WHAT MUST NOT BE COVERED. The strip sits at the window's bottom-right, which is where the assistant's
   // composer ends, and a save's toast covered its Send button — by 6 px at rest at 1280 × 800 (measured 2026-10-02; a
   // check that caught the toast mid-slide passed). An element that must stay reachable says so with
@@ -190,7 +197,7 @@ export function ToastStrip({
   useLayoutEffect(() => {
     const own = strip.current;
     if (own === null) return;
-    if (toasts.length === 0) {
+    if (!showing) {
       own.style.removeProperty('--m-toasts-clear');
       return;
     }
@@ -203,12 +210,13 @@ export function ToastStrip({
     }
     if (clear > 0) own.style.setProperty('--m-toasts-clear', `${String(clear)}px`);
     else own.style.removeProperty('--m-toasts-clear');
-  }, [toasts]);
+  }, [toasts, showing]);
   return (
     // `aria-live` and not `role="alert"`: alert is assertive, and the status bar below is
     // already this window's one `role="status"` region. Two of those would have a screen reader
     // announce a save twice — once here, and once as the bar's own saved-state text changed.
     <div aria-live="polite" className="m-toasts" ref={strip}>
+      {children}
       {toasts.map((toast) => (
         <ToastRow
           dismissLabel={dismissLabel}

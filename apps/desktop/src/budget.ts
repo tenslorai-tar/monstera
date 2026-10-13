@@ -56,6 +56,25 @@ export const MAIN_DOCUMENT_BYTES_CEILING = 1_610_612_736 - 83_886_080;
  */
 export const ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES = 3_221_225_472;
 
+/**
+ * The compose host's V8 heap limit, in MiB: a gibibyte under its job limit, so V8 collects before the job object ends it.
+ *
+ * **Measured 2026-10-13.** The Electron binary in Node mode (43.7.7, Linux) reports a default heap limit of 4,192 MiB
+ * (`v8.getHeapStatistics().heap_size_limit`), above the job limit, so garbage a composition left could carry the process
+ * past 3 GiB while V8 saw no reason to collect it. `scripts/research/csvParts.mjs` composing a 12 MiB CSV in 1 MiB parts
+ * peaked (`ru_maxrss`) at 2,601 MiB uncapped and 2,069 MiB under this limit; at 1,536 MiB, 1,137. The gibibyte left is for
+ * what lives outside the heap (fonts, buffers). The heaviest one-part composition on record, four mebibytes of Markdown at
+ * 1,742 MiB resident (`MAX_MARKDOWN_BYTES`, 2026-09-13), is under it, so no composition that ran before is refused by it.
+ *
+ * **NOT SHOWN TO BOUND A FILE IN PARTS, and the readings say why** (same script and date, under this limit). A second
+ * 12 MiB run peaked at 2,190 MiB: resident memory climbed over the first five parts to about 2,170 and stayed there for the
+ * last eight, with `external` (buffers outside the heap) level at about 900 MiB. A 24 MiB file in 25 parts peaked at 2,680
+ * MiB, all of it before the join (the join added nothing). So the peak still grew with the file between 12 and 24 MiB, and
+ * 24 MiB left about 390 MiB under the job limit; past that a CSV may end the host, which answers as the host's failure.
+ * Measuring it in the installed app on Windows is owed.
+ */
+export const COMPOSE_HOST_HEAP_LIMIT_MIB = 2048;
+
 /** How a host call's deadline is worked out: a floor, plus an allowance per MiB of the documents open. */
 export interface HostCallDeadlinePolicy {
   readonly floorMs: number;

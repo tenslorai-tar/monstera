@@ -1,4 +1,5 @@
-import { readFile, stat } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { open, readFile, stat } from 'node:fs/promises';
 
 import {
   MAX_ANNOTATION_DATA_BYTES,
@@ -72,9 +73,38 @@ export function readMarkdownFile(path: string, calls: FileReadCalls = NODE_CALLS
   return readWithin(path, MAX_MARKDOWN_BYTES, calls);
 }
 
-/** A CSV file picked to compose. */
+/**
+ * A CSV file picked to compose. Past one composition's bound it is not refused but composed in parts (the owner's O10), for
+ * which `too-large` is the signal, and {@link streamPickedFile} and {@link readPickedRange} are the reads.
+ */
 export function readCsvFile(path: string, calls: FileReadCalls = NODE_CALLS): Promise<BoundedRead> {
   return readWithin(path, MAX_CSV_BYTES, calls);
+}
+
+/** A picked file as a stream, for a source composed in parts: it is written into the compose host's area unread here. */
+export async function* streamPickedFile(path: string): AsyncIterable<Uint8Array> {
+  for await (const chunk of createReadStream(path)) yield chunk as Uint8Array;
+}
+
+/**
+ * One stretch of a picked file, `from` included and `to` not, read where it lies: a part of a source composed in parts,
+ * whose offsets the compose host chose (`csvSplit.ts`), so the whole file is never in memory here.
+ */
+export async function readPickedRange(path: string, from: number, to: number): Promise<Uint8Array> {
+  const file = await open(path, 'r');
+  try {
+    const bytes = new Uint8Array(to - from);
+    let at = 0;
+    while (at < bytes.length) {
+      const { bytesRead } = await file.read(bytes, at, bytes.length - at, from + at);
+      // A FILE THAT SHRANK since its parts were cut ends the read short, and that is a fault, never a short part.
+      if (bytesRead === 0) throw new Error(`the picked file ended at ${String(from + at)} bytes, before ${String(to)}`);
+      at += bytesRead;
+    }
+    return bytes;
+  } finally {
+    await file.close();
+  }
 }
 
 /** A Word, PowerPoint or Excel file picked to convert (ADR-0120). */

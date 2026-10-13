@@ -30,6 +30,17 @@ import {
 } from './engineChannels.js';
 
 /**
+ * The bounds on `engine/csv-split` (the owner's O10). A file's byte offset fits a JavaScript integer exactly; a line is
+ * counted up to the same; a part is at least a mebibyte's worth of the parts bound below, so a hundred thousand parts is a
+ * file of a hundred gibibytes, past any disk the area is on. The ceiling a caller may ask a part to be is 64 MiB, sixteen
+ * times the largest one-part composition measured (Markdown's 4 MiB, `MAX_MARKDOWN_BYTES`).
+ */
+const csvOffset = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
+const MAX_CSV_LINE = Number.MAX_SAFE_INTEGER;
+const MAX_CSV_PARTS = 100_000;
+const MAX_CSV_PART_BYTES_CEILING = 64 * 1024 * 1024;
+
+/**
  * The compose host's channel set
  * ([ADR-0060](../../../../docs/DECISIONS/0060-an-imported-source-is-parsed-in-a-contained-host-that-holds-no-document.md)).
  *
@@ -230,6 +241,32 @@ export const composeChannels = {
       z.object({ kind: z.literal('unchanged'), left: z.number().int().nonnegative() }).strict(),
       z.object({ kind: z.literal('unreadable') }).strict(),
       z.object({ kind: z.literal('unavailable') }).strict(),
+    ]),
+    ['no-such-session', 'asset-missing'],
+  ),
+
+  /**
+   * Where a CSV file in the area is cut into parts that are each composed with its header and joined (the owner's O10):
+   * the header's bytes and each part's, at record starts as the one reader reads records (`csvSplit.ts`). `not-utf8` for
+   * a file that is not UTF-8, the composer's own refusal, said before anything is composed.
+   *
+   * IN A FILE (ADR-0125): the answer grows with the file, one entry per part.
+   */
+  'engine/csv-split': fileAnswered(
+    'Reads where a CSV file in the area is cut into parts of at most a bound.',
+    z.object({ session: sessionSchema, from: outputNameSchema, maxBytes: z.number().int().min(1024).max(MAX_CSV_PART_BYTES_CEILING) }).strict(),
+    z.discriminatedUnion('kind', [
+      z
+        .object({
+          kind: z.literal('split'),
+          header: z
+            .object({ from: csvOffset, to: csvOffset, lines: z.number().int().min(1).max(MAX_CSV_LINE) })
+            .strict()
+            .nullable(),
+          parts: z.array(z.object({ from: csvOffset, to: csvOffset, line: z.number().int().min(1).max(MAX_CSV_LINE) }).strict()).max(MAX_CSV_PARTS),
+        })
+        .strict(),
+      z.object({ kind: z.literal('not-utf8') }).strict(),
     ]),
     ['no-such-session', 'asset-missing'],
   ),

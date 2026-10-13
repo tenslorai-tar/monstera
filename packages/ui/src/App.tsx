@@ -416,6 +416,7 @@ import type { SettingsStore } from './settingsStore.js';
 import { type ShowToast, TOAST_LIFETIME, createToastStore } from './toasts.js';
 import { useUnhandledRejectionReport } from './unhandledRejections.js';
 import { ToastStrip } from './primitives/Toast.js';
+import { TaskNotice } from './surfaces/TaskNotice.js';
 import { ReviewPrompt } from './surfaces/ReviewPrompt.js';
 import { PageGrid } from './surfaces/PageGrid.js';
 import { FocusHint } from './surfaces/FocusHint.js';
@@ -3714,7 +3715,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // changed (ADR-0060's correction).
         newFromMarkdownCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
         // D9's CSV ROW, the same callbacks: a composed table arrives as a tab.
-        newFromCsvCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
+        newFromCsvCommand({ client, ask, track, onOpened: opened, onAlreadyOpen: activate }),
         // OFFICE IMPORT (ADR-0120), the same callbacks: the converted PDF arrives as a tab.
         newFromOfficeCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
         // D9's IMAGES ROW, the same callbacks: the composed pages arrive as a tab.
@@ -4905,7 +4906,6 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           // The bar's buttons are projected from here (ADR-0067).
           registry={registry}
           context={context}
-          task={task}
           saved={saved}
           byteLength={open.byteLength}
           // WHAT THE TOOL THAT IS ON WAITS FOR, by its own hint, so the bar names nothing itself.
@@ -4933,7 +4933,10 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         dismissLabel={TOAST_DISMISS}
         onDismiss={dismissToast}
         lifetime={TOAST_LIFETIME}
-      />
+      >
+        {/* THE ONE PLACE work in progress is shown, over a document and over the start screen alike (the owner's O9). */}
+        <TaskNotice task={task} />
+      </ToastStrip>
       {/* The ONE mount point. `DialogHost` renders nothing when none is open —
           not a hidden dialog — so this is not a control that renders and does
           nothing; it is the seam every dialog arrives through. */}

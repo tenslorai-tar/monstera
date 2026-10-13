@@ -10,6 +10,8 @@ import { createShellDependencies } from './composition.js';
 import {
   readAnnotationDataFile,
   readCsvFile,
+  readPickedRange,
+  streamPickedFile,
   readFormDataFile,
   readImageFile,
   readMarkdownFile,
@@ -372,6 +374,8 @@ startShell(() => {
     readAnnotationData: (path: string) => readAnnotationDataFile(path),
     readMarkdown: (path: string) => readMarkdownFile(path),
     readCsv: (path: string) => readCsvFile(path),
+    streamCsv: streamPickedFile,
+    rangeCsv: readPickedRange,
     // A SIZE AND NOTHING READ, so an image import's bounds are decided before any
     // picked byte is in memory. `null` for a file that cannot be stated — `readImage`'s
     // reason: gone and forbidden are one situation from where the person stands.

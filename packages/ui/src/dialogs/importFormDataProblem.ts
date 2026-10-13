@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { IMPORT_FORM_DATA_PROBLEM_TITLE } from '../messages/en.js';
 import { declareDialog } from '../registries/dialogs.js';
+import { fileTooLargeProps } from './fileTooLarge.js';
 
 /** The id the import commands open when a picked file did not fill the form. */
 export const IMPORT_FORM_DATA_PROBLEM_DIALOG_ID = 'dialog.import-form-data-problem';
@@ -34,7 +35,7 @@ export const IMPORT_FORM_DATA_PROBLEM_DIALOG = declareDialog({
   informs: 'message',
   props: z.discriminatedUnion('reason', [
     z.object({ reason: z.literal('unreadable') }),
-    z.object({ reason: z.literal('too-large'), limitBytes: z.number().int().positive() }),
+    fileTooLargeProps,
     // THE WRONG FILE, said as itself: it is form data and none of its fields is in this form. It was one of three causes
     // this dialog listed for `unreadable` while an apply's reason did not cross the host boundary; the plan names it now.
     z.object({ reason: z.literal('matched-nothing'), named: z.number().int().nonnegative() }),

@@ -1,6 +1,7 @@
 import type { AnnotationDataFormat } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 
+import { fileTooLargeProblem } from '../dialogs/fileTooLarge.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { IMPORT_ANNOTATIONS_PROBLEM_DIALOG_ID } from '../dialogs/importAnnotationsProblem.js';
 import { IMPORT_ANNOTATIONS_RESULT_DIALOG_ID } from '../dialogs/importAnnotationsResult.js';
@@ -108,10 +109,7 @@ function importAnnotationsCommand(
         return;
       }
       if (answer.value.kind === 'too-large') {
-        void deps.ask(IMPORT_ANNOTATIONS_PROBLEM_DIALOG_ID, {
-          reason: 'too-large',
-          limitBytes: answer.value.limitBytes,
-        });
+        void deps.ask(IMPORT_ANNOTATIONS_PROBLEM_DIALOG_ID, fileTooLargeProblem(answer.value));
         return;
       }
       if (answer.value.kind === 'nothing') {

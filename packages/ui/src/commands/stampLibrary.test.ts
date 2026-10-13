@@ -36,7 +36,10 @@ describe('keeping a picture in the library, as the page asks for it', () => {
   it('says each problem through the image problem dialog, AND WAITS for it before settling', async () => {
     for (const [answer, props] of [
       [{ kind: 'unreadable' }, { reason: 'unreadable' }],
-      [{ kind: 'too-large', limitBytes: 2_097_152 }, { reason: 'too-large', limitBytes: 2_097_152 }],
+      [
+        { kind: 'too-large', limitBytes: 2_097_152, fileBytes: 3_100_000 },
+        { reason: 'too-large', limitBytes: 2_097_152, fileBytes: 3_100_000 },
+      ],
       [{ kind: 'full', limit: 16 }, { reason: 'library-full', limit: 16 }],
     ] as const) {
       const order: string[] = [];

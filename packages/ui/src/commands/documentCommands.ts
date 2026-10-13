@@ -39,6 +39,7 @@ import { isFormatted } from '../textFormatting.js';
 import { BATES_NUMBER_DIALOG_ID } from '../dialogs/batesNumber.js';
 import type { BatesNumberAnswer } from '../dialogs/batesNumberResult.js';
 import { COMMAND_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG_ID } from '../dialogs/commandProblem.js';
+import { fileTooLargeProblem } from '../dialogs/fileTooLarge.js';
 import type { CommandProblem } from '../dialogs/problemMessages.js';
 import { CROP_PAGES_DIALOG_ID } from '../dialogs/cropPages.js';
 import { PROTECT_DOCUMENT_DIALOG_ID } from '../dialogs/protectDocument.js';
@@ -1047,10 +1048,7 @@ export async function placeImage(
     return;
   }
   if (answer.value.kind === 'too-large') {
-    void deps.ask(INSERT_IMAGE_PROBLEM_DIALOG_ID, {
-      reason: 'too-large' as const,
-      limitBytes: answer.value.limitBytes,
-    });
+    void deps.ask(INSERT_IMAGE_PROBLEM_DIALOG_ID, fileTooLargeProblem(answer.value));
     return;
   }
   // THE TWO SCALARS, not the whole answer: `Applied` is a version and a byte
@@ -2030,10 +2028,7 @@ export function insertImageCommand(deps: DocumentCommandDeps): UiCommand {
         return;
       }
       if (answer.value.kind === 'too-large') {
-        void deps.ask(INSERT_IMAGE_PROBLEM_DIALOG_ID, {
-          reason: 'too-large' as const,
-          limitBytes: answer.value.limitBytes,
-        });
+        void deps.ask(INSERT_IMAGE_PROBLEM_DIALOG_ID, fileTooLargeProblem(answer.value));
         return;
       }
       if (answer.value.kind === 'too-many-pixels') {
@@ -3951,10 +3946,7 @@ function importFormDataCommand(
         return;
       }
       if (answer.value.kind === 'too-large') {
-        void deps.ask(IMPORT_FORM_DATA_PROBLEM_DIALOG_ID, {
-          reason: 'too-large',
-          limitBytes: answer.value.limitBytes,
-        });
+        void deps.ask(IMPORT_FORM_DATA_PROBLEM_DIALOG_ID, fileTooLargeProblem(answer.value));
         return;
       }
       // THE WRONG FILE: form data, and none of its fields is in this form. Nothing was changed.

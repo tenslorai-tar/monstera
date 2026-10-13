@@ -11,6 +11,8 @@
  *
  * - O2: a printed scan of a ruled table (`scanTableFixture.ts`) exported to Excel with *Printed scan, read on this
  *   computer*, and the workbook read back for every word of the table (ADR-0233).
+ * - O10: a CSV of about three mebibytes, past one composition's bound, imported whole in parts with the work and its
+ *   Cancel on screen, and the saved PDF read back by PDF.js for its first and last records.
  */
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
@@ -58,6 +60,53 @@ await step('O2: a printed scan of a ruled table exported to Excel, read on this 
   const missing = words.filter((word) => !text.includes(word));
   expect(missing).toStrictEqual([]);
   return { wordsInWorkbook: words.length - missing.length, noTablesDialog: await page.getByText(/No tables with ruled lines/u).count() };
+});
+
+/** The words of a saved file's first and last pages and its page count, read by PDF.js. @param {string} path */
+async function endsOf(path) {
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const task = pdfjs.getDocument({ data: new Uint8Array(await readFile(path)), useSystemFonts: false });
+  const loaded = await task.promise;
+  /** @param {number} at */
+  const words = async (at) => (await (await loaded.getPage(at)).getTextContent()).items.map((item) => ('str' in item ? item.str : '')).join(' ');
+  const ends = { pages: loaded.numPages, first: await words(1), last: await words(loaded.numPages) };
+  await task.destroy();
+  return ends;
+}
+
+// A REGISTER FILE PAST ONE COMPOSITION'S BOUND (`MAX_CSV_BYTES`, 1 MiB): about three parts, built here so the walk needs
+// no file of the owner's. Its first and last records are named so the saved PDF can be read back for both ends.
+const registerRows = 160_000;
+const register = join(output, 'register.csv');
+await writeFile(
+  register,
+  `Record,Name,Amount\n${Array.from({ length: registerRows }, (_unused, at) => `R${String(at + 1)},Item ${String(at % 97)},${String((at * 7) % 1000)}`).join('\n')}\n`,
+);
+
+await step('O10: a CSV past one composition’s bound is imported whole, with the work on screen, and both ends are in the PDF', async () => {
+  const { app } = walk;
+  await app.evaluate(({ dialog }, picked) => {
+    dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [picked] });
+  }, register);
+  const saved = join(output, 'register.pdf');
+  await saveTo(saved);
+  await command('New PDF table from CSV…');
+  // THE WORK IS ON SCREEN while it runs, with a Cancel, and counts its parts once main has cut the file.
+  const notice = page.locator('[data-task-notice]');
+  await expect(notice).toContainText('Converting CSV to PDF');
+  await expect(notice).toContainText(/\d+ of \d+/u, { timeout: 120_000 });
+  await expect(notice.getByRole('button')).toBeVisible();
+  await expect(notice).toHaveCount(0, { timeout: 600_000 });
+  // NO REFUSAL: the sentence the owner met is not on screen.
+  const refused = await page.getByText(/which is the most this app will import/u).count();
+  expect(refused).toBe(0);
+  await expect.poll(() => existsSync(saved), { timeout: 60_000 }).toBe(true);
+  const ends = await endsOf(saved);
+  // BOTH ENDS OF THE FILE, read back: the header and the first record on page one, the last record on the last page.
+  expect(ends.first).toContain('Record');
+  expect(ends.first).toContain('R1 ');
+  expect(ends.last).toContain(`R${String(registerRows)}`);
+  return { pages: ends.pages, csvBytes: (await readFile(register)).byteLength };
 });
 
 await finish();

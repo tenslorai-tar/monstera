@@ -392,13 +392,15 @@ async function convertWorkbook(
  * A stage and not a larger join, because the join's list is a host channel's bounded params, and a workbook of 1,025
  * sheets was refused at it (JOURNAL, *No document-size refusals*, table A row 12).
  *
+ * Exported for a CSV composed in parts (`documentCommands.ts`), whose join has the same bound for the same reason.
+ *
  * @param placed every name put into the area, which the caller removes; each stage's PDF joins it
  */
-async function joinedInStages(
-  workbooks: WorkbookComposer,
+export async function joinedInStages(
+  workbooks: Pick<WorkbookComposer, 'put' | 'join'>,
   parts: readonly string[],
   placed: string[],
-  unreadable: (detail: string) => OfficeConversionFailedError,
+  unreadable: (detail: string) => Error,
 ): Promise<readonly string[]> {
   let names = parts;
   while (names.length > MAX_WORKBOOK_PARTS) {

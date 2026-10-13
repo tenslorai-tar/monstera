@@ -1,6 +1,7 @@
 import { type ContractClient, type LibraryKind, signatureFontOf } from '@monstera/contract';
 
 import type { StampDeps, StampPictures } from '../annotations/stampTool.js';
+import { fileTooLargeProblem } from '../dialogs/fileTooLarge.js';
 import { INSERT_IMAGE_PROBLEM_DIALOG_ID } from '../dialogs/insertImageProblem.js';
 import type { KeptSignature } from '../dialogs/signDocument.js';
 import type { StampPicture } from '../dialogs/stampResult.js';
@@ -73,7 +74,7 @@ export async function keepPicture(deps: LibraryPageDeps, kind: LibraryKind): Pro
   const outcome = added.value;
   if (outcome.kind === 'unreadable') await deps.ask(INSERT_IMAGE_PROBLEM_DIALOG_ID, { reason: 'unreadable' });
   if (outcome.kind === 'too-large') {
-    await deps.ask(INSERT_IMAGE_PROBLEM_DIALOG_ID, { reason: 'too-large', limitBytes: outcome.limitBytes });
+    await deps.ask(INSERT_IMAGE_PROBLEM_DIALOG_ID, fileTooLargeProblem(outcome));
   }
   if (outcome.kind === 'full') await deps.ask(INSERT_IMAGE_PROBLEM_DIALOG_ID, { reason: 'library-full', limit: outcome.limit });
 }

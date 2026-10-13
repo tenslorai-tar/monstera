@@ -8,6 +8,7 @@ import {
   INSERT_IMAGE_UNREADABLE,
   LIBRARY_FULL,
 } from '../messages/en.js';
+import { type FileTooLargeProps, fileTooLargeValues } from './fileTooLarge.js';
 
 /**
  * The insert-image problem dialog's body.
@@ -32,12 +33,12 @@ import {
 export default function InsertImageProblemBody(
   props:
     | { readonly reason: 'unreadable' }
-    | { readonly reason: 'too-large'; readonly limitBytes: number }
+    | FileTooLargeProps
     | { readonly reason: 'too-many-pixels'; readonly limitPixels: number }
     | { readonly reason: 'absent' }
     | { readonly reason: 'library-full'; readonly limit: number },
 ): ReactElement {
-  const { _ } = useLingui();
+  const { _, i18n } = useLingui();
 
   switch (props.reason) {
     case 'unreadable':
@@ -49,7 +50,7 @@ export default function InsertImageProblemBody(
     case 'too-large':
       return (
         <div className="m-insert-image-problem">
-          <p>{_(INSERT_IMAGE_TOO_LARGE, { megabytes: Math.floor(props.limitBytes / (1024 * 1024)) })}</p>
+          <p>{_(INSERT_IMAGE_TOO_LARGE, fileTooLargeValues(i18n, props))}</p>
         </div>
       );
     case 'too-many-pixels':

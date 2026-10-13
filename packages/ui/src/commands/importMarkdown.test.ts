@@ -3,6 +3,7 @@ import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import type { CommandContext } from '../registries/commands.js';
+import { UNTRACKED } from '../runningTask.js';
 import {
   appendMarkdownCommand,
   newFromCaptureCommand,
@@ -314,7 +315,7 @@ describe('appendMarkdownCommand', () => {
 
   it('CONTROL: a file past the bound rebuilds nothing and carries the limit', async () => {
     const { client } = recording({
-      'document.appendMarkdown': ok({ kind: 'too-large', limitBytes: 4_194_304 }),
+      'document.appendMarkdown': ok({ kind: 'too-large', limitBytes: 4_194_304, fileBytes: 5_000_000 }),
     });
     const { calls, record, ask } = callbacks();
 
@@ -333,7 +334,7 @@ describe('appendMarkdownCommand', () => {
         name: 'ask',
         value: {
           id: 'dialog.markdown-import-problem',
-          props: { reason: 'too-large', limitBytes: 4_194_304 },
+          props: { reason: 'too-large', limitBytes: 4_194_304, fileBytes: 5_000_000 },
         },
       },
     ]);
@@ -380,11 +381,14 @@ describe('newFromCsvCommand', () => {
     await newFromCsvCommand({
       client,
       ask,
+      track: UNTRACKED,
       onOpened: record('opened'),
       onAlreadyOpen: record('already-open'),
     }).run(CONTEXT);
 
-    expect(sent).toStrictEqual([{ id: 'document.newFromCsv', params: {} }]);
+    // THE WORK IS NAMED, so a file composed in parts is shown and can be stopped (`withWorkProgress`).
+    expect(sent.map((call) => call.id)).toStrictEqual(['document.newFromCsv']);
+    expect((sent[0]?.params as { work?: unknown }).work).toMatch(/^[0-9a-f-]{36}$/u);
     expect(calls).toStrictEqual([
       { name: 'opened', value: { docId: COMPOSED, version: 1, byteLength: 2048, name: 'table.pdf' } },
     ]);
@@ -407,6 +411,7 @@ describe('newFromCsvCommand', () => {
       await newFromCsvCommand({
         client,
         ask,
+        track: UNTRACKED,
         onOpened: record('opened'),
         onAlreadyOpen: record('already-open'),
       }).run(CONTEXT);
@@ -422,7 +427,7 @@ describe('newFromCsvCommand', () => {
       'document.newFromCsv': ok({ kind: 'opened-with-boxes', ...opened, boxed, more: 0, skipped: [], skippedMore: 0 }),
     });
     const { calls, record, ask } = callbacks();
-    await newFromCsvCommand({ client, ask, onOpened: record('opened'), onAlreadyOpen: record('already-open') }).run(CONTEXT);
+    await newFromCsvCommand({ client, ask, track: UNTRACKED, onOpened: record('opened'), onAlreadyOpen: record('already-open') }).run(CONTEXT);
     expect(calls).toStrictEqual([
       { name: 'opened', value: opened },
       { name: 'ask', value: { id: 'dialog.boxed-characters', props: { from: 'import', boxed, more: 0 } } },
@@ -434,7 +439,7 @@ describe('newFromCsvCommand', () => {
     const opened = { docId: COMPOSED, version: 1, byteLength: 2048, name: 'table.pdf' };
     const { client } = recording({ 'document.newFromCsv': ok({ kind: 'opened-with-skips', ...opened, skipped, skippedMore: 1 }) });
     const { calls, record, ask } = callbacks();
-    await newFromCsvCommand({ client, ask, onOpened: record('opened'), onAlreadyOpen: record('already-open') }).run(CONTEXT);
+    await newFromCsvCommand({ client, ask, track: UNTRACKED, onOpened: record('opened'), onAlreadyOpen: record('already-open') }).run(CONTEXT);
     expect(calls).toStrictEqual([
       { name: 'opened', value: opened },
       { name: 'ask', value: { id: 'dialog.import-skipped', props: { skipped, more: 1 } } },
@@ -449,7 +454,7 @@ describe('newFromCsvCommand', () => {
       'document.newFromCsv': ok({ kind: 'opened-with-boxes', ...opened, boxed, more: 0, skipped, skippedMore: 0 }),
     });
     const { calls, record, ask } = callbacks();
-    await newFromCsvCommand({ client, ask, onOpened: record('opened'), onAlreadyOpen: record('already-open') }).run(CONTEXT);
+    await newFromCsvCommand({ client, ask, track: UNTRACKED, onOpened: record('opened'), onAlreadyOpen: record('already-open') }).run(CONTEXT);
     expect(calls.map((call) => (call.name === 'ask' ? (call.value as { id: string }).id : call.name))).toStrictEqual([
       'opened',
       'dialog.boxed-characters',

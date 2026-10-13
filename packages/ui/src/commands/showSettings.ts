@@ -17,6 +17,7 @@ import {
   TOAST_SETTINGS_IMPORTED_PARTLY,
   TOAST_SETTINGS_NOT_SAVED,
   TOAST_SETTINGS_SAVED,
+  TOAST_SETTINGS_TOO_LARGE,
   TOAST_SETTINGS_UNREADABLE,
 } from '../messages/en.js';
 import { type UiCommand, VISIBLE } from '../registries/commands.js';
@@ -268,6 +269,9 @@ export function showSettingsCommand(deps: {
         return;
       }
       if (read.value.kind === 'unreadable') deps.toast('problem', TOAST_SETTINGS_UNREADABLE);
+      // PAST THE BOUND, said as itself rather than as a file that could not be read. A toast carries no values, so the
+      // sizes stay on the wire; the sentence says what the bound means instead, which is that no export reaches it.
+      if (read.value.kind === 'too-large') deps.toast('problem', TOAST_SETTINGS_TOO_LARGE);
       if (read.value.kind === 'read') {
         const { applied, skipped } = deps.settings.importValues(read.value.values);
         confirmDone(deps, skipped.length === 0 ? TOAST_SETTINGS_IMPORTED : TOAST_SETTINGS_IMPORTED_PARTLY);

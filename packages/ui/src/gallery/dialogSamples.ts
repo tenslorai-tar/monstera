@@ -771,7 +771,7 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
       skipped: Array.from({ length: 100 }, (_unused, at) => ({ comment: at + 3, page: at + 4, reason: 'missing-page' })),
     } },
   ],
-  'dialog.insert-image-problem': [{ state: 'opened', props: { reason: 'too-large', limitBytes: 50 * 1024 * 1024 } }],
+  'dialog.insert-image-problem': [{ state: 'opened', props: { reason: 'too-large', limitBytes: 64 * 1024 * 1024, fileBytes: 71_200_000 } }],
   'dialog.markdown-import-problem': [
     { state: 'opened', props: { reason: 'malformed-csv', line: 14 } },
     { state: 'long', props: { reason: 'image-unreadable', file: LONG_NAME.replace(/\.pdf$/u, '.png') } },

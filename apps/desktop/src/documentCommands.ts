@@ -16,6 +16,8 @@ import {
   MAX_LIBRARY_PICTURE_BYTES,
   MAX_MARKDOWN_BYTES,
   MAX_CSV_BYTES,
+  MAX_BOXED_CHARACTERS,
+  MAX_COMPOSE_SKIPS,
   MAX_OFFICE_IMPORT_BYTES,
   MAX_IMPORT_IMAGES,
   MAX_IMPORT_IMAGE_BYTES,
@@ -209,9 +211,12 @@ import {
   type OfficeConversion,
   type OfficeSource,
   type WorkbookBlock,
+  type WorkbookComposer,
   OfficeConversionFailedError,
+  joinedInStages,
   officeImportFormatOf,
 } from './officeConversion.js';
+import { type WorkHandle, type WorkProgress, WorkInProgress } from './workInProgress.js';
 import { type PdfaSource, PdfaFailedError } from './pdfaConversion.js';
 import type { HeldPicture } from './heldPicture.js';
 import { type SignaturePictureSource, pickSignaturePicture } from './signaturePicture.js';
@@ -785,13 +790,23 @@ export interface AnnotationDataSource {
   readonly read: (path: string) => Promise<FormDataRead>;
 }
 
+/**
+ * A picked file refused for its size before it was read: the bound and the file's own size (the owner's O10), the one
+ * shape every import with a bound answers (`fileTooLargeSchema`).
+ */
+export interface FileTooLarge {
+  readonly kind: 'too-large';
+  readonly limitBytes: number;
+  readonly fileBytes: number;
+}
+
 /** What {@link DocumentCommands.importAnnotations} answers. */
 export type ImportAnnotationsOutcome =
   | ({ readonly kind: 'imported'; readonly report: import('@monstera/contract').AnnotationImportReport } & Applied)
   | { readonly kind: 'nothing'; readonly report: import('@monstera/contract').AnnotationImportReport }
   | { readonly kind: 'cancelled' }
   | { readonly kind: 'unreadable' }
-  | { readonly kind: 'too-large'; readonly limitBytes: number };
+  | FileTooLarge;
 
 function suffixed(name: string, word: string): string {
   const dot = name.lastIndexOf('.');
@@ -835,7 +850,7 @@ export type InsertImageOutcome =
   | ({ readonly kind: 'inserted' } & Applied)
   | { readonly kind: 'cancelled' }
   | { readonly kind: 'unreadable' }
-  | { readonly kind: 'too-large'; readonly limitBytes: number }
+  | FileTooLarge
   | { readonly kind: 'too-many-pixels'; readonly limitPixels: number };
 
 /**
@@ -849,7 +864,7 @@ export type PlaceImageOutcome =
   | ({ readonly kind: 'placed' } & Applied)
   | { readonly kind: 'cancelled' }
   | { readonly kind: 'unreadable' }
-  | { readonly kind: 'too-large'; readonly limitBytes: number }
+  | FileTooLarge
   /** The library picture named is no longer kept. */
   | { readonly kind: 'absent' };
 
@@ -900,7 +915,9 @@ export type PlaceSignatureOutcome =
   | ({ readonly kind: 'placed'; readonly kept: 'kept' | 'not-asked' | 'library-full' | 'not-keepable' } & Applied)
   | { readonly kind: 'cancelled' }
   | { readonly kind: 'unreadable' }
-  | { readonly kind: 'too-large'; readonly limitBytes: number }
+  | FileTooLarge
+  /** The picture is past the pixel bound (ADR-0148). */
+  | { readonly kind: 'too-many-pixels' }
   /** The kept signature named is no longer kept. */
   | { readonly kind: 'absent' }
   /** A scanned signature PDF picked at the click: its first page carries no ink, or it needs a password. */
@@ -910,7 +927,8 @@ export type PlaceSignatureOutcome =
 type NoSignatureMark =
   | { readonly kind: 'cancelled' }
   | { readonly kind: 'image-unreadable' }
-  | { readonly kind: 'image-too-large' }
+  /** Past {@link MAX_IMAGE_BYTES}: the picked file's own size, which the person is told beside the bound. */
+  | { readonly kind: 'image-too-large'; readonly fileBytes: number }
   | { readonly kind: 'saved-signature-missing' }
   | { readonly kind: 'scan-blank' }
   | { readonly kind: 'scan-locked' };
@@ -1035,6 +1053,31 @@ export interface ImportSource {
   readonly pick: PickImportFile;
   /** The bytes at a path, bound-checked against the format's byte limit before the read. */
   readonly read: (path: string) => Promise<ImportRead>;
+  /**
+   * The file as a stream, and one stretch of its bytes, for a source composed in parts (the owner's O10). Present for CSV,
+   * whose parts are cut at record starts by the compose host; a format without them is bounded by `read`.
+   */
+  readonly stream?: (path: string) => AsyncIterable<Uint8Array>;
+  readonly range?: (path: string, from: number, to: number) => Promise<Uint8Array>;
+}
+
+/**
+ * The compose host's calls a CSV composed in parts takes (the owner's O10): the area's `put`, `remove` and `join` that a
+ * workbook's parts take (`officeConversion.ts`), and where the file is cut, which only the host can say because finding a
+ * record's start is reading the file (ADR-0060).
+ */
+export interface CsvPartsComposer extends Pick<WorkbookComposer, 'put' | 'remove' | 'join'> {
+  readonly split: (
+    name: string,
+    maxBytes: number,
+  ) => Promise<
+    | {
+        readonly kind: 'split';
+        readonly header: { readonly from: number; readonly to: number; readonly lines: number } | null;
+        readonly parts: readonly { readonly from: number; readonly to: number; readonly line: number }[];
+      }
+    | { readonly kind: 'not-utf8' }
+  >;
 }
 
 /**
@@ -1098,7 +1141,7 @@ export type ComposeImportOutcome =
       readonly skippedMore: number;
     }
   | { readonly kind: 'cancelled' }
-  | { readonly kind: 'too-large'; readonly limitBytes: number }
+  | FileTooLarge
   | { readonly kind: 'unreadable' }
   | {
       readonly kind: 'composition-refused';
@@ -1124,7 +1167,7 @@ export type OfficeImportOutcome =
   /** Written — and `missing` names any rows of a workbook the PDF does not hold (decision C); empty otherwise. */
   | { readonly kind: 'written'; readonly destination: string; readonly missing: readonly WorkbookBlock[] }
   | { readonly kind: 'cancelled' }
-  | { readonly kind: 'too-large'; readonly limitBytes: number }
+  | FileTooLarge
   | { readonly kind: 'unreadable' }
   | { readonly kind: 'conversion-failed' }
   | { readonly kind: 'destination-contested'; readonly openElsewhere: number }
@@ -1875,7 +1918,7 @@ export type ImportFormDataOutcome =
   | { readonly kind: 'cancelled' }
   | { readonly kind: 'unreadable' }
   | { readonly kind: 'matched-nothing'; readonly named: number }
-  | { readonly kind: 'too-large'; readonly limitBytes: number };
+  | FileTooLarge;
 
 /**
  * Proposes fields on one flat page, through whichever host is live.
@@ -2514,6 +2557,8 @@ export interface DocumentCommandsParts {
    * caller reaches by saying nothing.
    */
   readonly compose: ComposeImport;
+  /** The compose host's calls a CSV composed in parts takes, or `null` where `compose` is (the owner's O10). */
+  readonly csvParts: CsvPartsComposer | null;
   /** The image import's picker, sizes and bounded read. See {@link ImageFilesSource}. */
   readonly imageFiles: ImageFilesSource;
   /** The compose host's image composition, or `null` where none can exist — `compose`'s reason. */
@@ -2748,6 +2793,9 @@ export class DocumentCommands {
   readonly #heldPicture: HeldPicture;
   readonly #signaturePicture: SignaturePictureSource;
   readonly #imports: Readonly<Record<ImportFormat, ImportSource>>;
+  readonly #csvParts: CsvPartsComposer | null;
+  /** The work the renderer named and follows (`work.progress`). */
+  readonly #work = new WorkInProgress();
   readonly #compose: ComposeImport;
   readonly #imageFiles: ImageFilesSource;
   readonly #composeImages: ComposeImages;
@@ -2839,6 +2887,7 @@ export class DocumentCommands {
     this.#signaturePicture = parts.signaturePicture;
     this.#imports = parts.imports;
     this.#compose = parts.compose;
+    this.#csvParts = parts.csvParts;
     this.#imageFiles = parts.imageFiles;
     this.#composeImages = parts.composeImages;
     this.#fetchUrl = parts.fetchUrl;
@@ -4865,7 +4914,7 @@ export class DocumentCommands {
     if (picked === null) return { kind: 'cancelled' };
 
     const read = await this.#formData.read(picked);
-    if (read.kind === 'too-large') return { kind: 'too-large', limitBytes: MAX_FORM_DATA_BYTES };
+    if (read.kind === 'too-large') return { kind: 'too-large', limitBytes: MAX_FORM_DATA_BYTES, fileBytes: read.byteLength };
     if (read.kind === 'unreadable') return { kind: 'unreadable' };
 
     try {
@@ -4947,7 +4996,7 @@ export class DocumentCommands {
     if (picked === null) return { kind: 'cancelled' };
 
     const read = await this.#annotationData.read(picked);
-    if (read.kind === 'too-large') return { kind: 'too-large', limitBytes: MAX_ANNOTATION_DATA_BYTES };
+    if (read.kind === 'too-large') return { kind: 'too-large', limitBytes: MAX_ANNOTATION_DATA_BYTES, fileBytes: read.byteLength };
     if (read.kind === 'unreadable') return { kind: 'unreadable' };
 
     // Only the reader/planner can decide a file is unreadable. A broken host
@@ -5668,6 +5717,16 @@ export class DocumentCommands {
     return true;
   }
 
+  /** How far the work the renderer named has got (`work.progress`). No lane: the work holds none, and a count waits for nothing. */
+  workProgress(work: string): WorkProgress {
+    return this.#work.progress(work);
+  }
+
+  /** Asks the work the renderer named to stop at its next part (`work.cancel`). */
+  cancelWork(work: string): boolean {
+    return this.#work.cancel(work);
+  }
+
   /**
    * Each page's tables as the service reads them, one request per page, as the zip pulls them. `leftOut` is added to for
    * every table a service returned that could not be placed (ADR-0222 Decision 4, corrected), so the export says so.
@@ -6003,7 +6062,7 @@ export class DocumentCommands {
     if (mediaType === null) return { kind: 'unreadable' };
 
     const read = await this.#image.read(picked);
-    if (read.kind === 'too-large') return { kind: 'too-large', limitBytes: MAX_IMAGE_BYTES };
+    if (read.kind === 'too-large') return { kind: 'too-large', limitBytes: MAX_IMAGE_BYTES, fileBytes: read.byteLength };
     if (read.kind === 'unreadable') return { kind: 'unreadable' };
 
     try {
@@ -6067,7 +6126,16 @@ export class DocumentCommands {
     format: ImportFormat,
     // NAMED, never positional: a `DocId` is a branded string, so `(format, family, target)` would take a target where the
     // family belongs and compile.
-    { family, target }: { readonly family: string; readonly target?: DocId },
+    {
+      family,
+      target,
+      work,
+    }: {
+      readonly family: string;
+      readonly target?: DocId;
+      /** The name the renderer follows this import under (`work.progress`); a file composed in parts reports under it. */
+      readonly work?: string;
+    },
   ): Promise<ComposeImportOutcome> {
     if (target !== undefined && this.#documents.nameOf(target) === undefined) {
       throw new DocumentNotOpenError(target, `append an imported ${format} file`);
@@ -6083,7 +6151,16 @@ export class DocumentCommands {
 
     const read = await source.read(picked);
     if (read.kind === 'too-large') {
-      return { kind: 'too-large', limitBytes: IMPORT_BYTE_LIMITS[format] };
+      // A CSV PAST ONE PART'S BOUND IS COMPOSED IN PARTS, never refused (the owner's O10): the bound is one composition's,
+      // measured, and the file is cut at record starts into compositions each within it.
+      const parts = this.#csvParts;
+      if (format === 'csv' && parts !== null && source.stream !== undefined && source.range !== undefined) {
+        return this.#composeCsvInParts(
+          { picked, stream: source.stream, range: source.range },
+          { compose, parts, family, work: this.#work.begin(work) },
+        );
+      }
+      return { kind: 'too-large', limitBytes: IMPORT_BYTE_LIMITS[format], fileBytes: read.byteLength };
     }
     if (read.kind === 'unreadable') return { kind: 'unreadable' };
 
@@ -6093,6 +6170,109 @@ export class DocumentCommands {
     }
     // A TEXT SOURCE'S PART IS A LINE, and names no file: the one file is the one the person picked.
     return this.#writeComposed(composed, picked, composed.skipped.map((skip) => ({ reason: skip.reason, line: skip.line, file: null })));
+  }
+
+  /**
+   * A CSV file larger than one composition's bound, composed whole in parts and joined (the owner's O10).
+   *
+   * The file is streamed into the compose host's area, the host says where to cut it — at record starts, as the one
+   * reader reads records (`csvSplit.ts`) — and each part is composed with the header in front, through the same
+   * composition a small file takes, so a part is exactly what a file of that size would be. The parts are joined by the
+   * workbook's join (`joinedInStages`). Bytes pass through `main` one part at a time, never the whole file.
+   *
+   * ## Lines are the FILE's
+   *
+   * A part's composition counts lines from its own first, which is the header; each skipped record and boxed character is
+   * moved to the file's line, and the header's own, which every part reads again, are named once.
+   *
+   * ## Stopping
+   *
+   * The work is checked between parts: a stop removes what was made and answers `cancelled`, and nothing is written.
+   */
+  async #composeCsvInParts(
+    file: {
+      readonly picked: string;
+      readonly stream: NonNullable<ImportSource['stream']>;
+      readonly range: NonNullable<ImportSource['range']>;
+    },
+    { compose, parts, family, work }: { readonly compose: NonNullable<ComposeImport>; readonly parts: CsvPartsComposer; readonly family: string; readonly work: WorkHandle },
+  ): Promise<ComposeImportOutcome> {
+    const placed: string[] = [];
+    try {
+      const whole = await parts.put(file.stream(file.picked));
+      placed.push(whole);
+      const split = await parts.split(whole, MAX_CSV_BYTES);
+      if (split.kind === 'not-utf8') return { kind: 'composition-refused', reason: 'not-utf8', line: null, file: null };
+      const { header } = split;
+      if (header === null) return { kind: 'composition-refused', reason: 'nothing-to-draw', line: null, file: null };
+      const headerBytes = await file.range(file.picked, header.from, header.to);
+      // A FILE OF ONE RECORD past the bound is its header alone, composed whole.
+      const stretches = split.parts.length > 0 ? split.parts : [{ from: header.to, to: header.to, line: 1 + header.lines }];
+      const lineOf = (part: { readonly line: number }, local: number): number =>
+        local <= header.lines ? local : part.line + (local - header.lines - 1);
+      const pdfs: string[] = [];
+      const boxed: BoxedCharacter[] = [];
+      let boxedMore = 0;
+      const skipped = new Map<number, ImportSkippedPart>();
+      let skippedMore = 0;
+      let refused: Extract<ComposedImport, { readonly kind: 'refused' }> | undefined;
+      work.step(0, stretches.length);
+      for (const [index, part] of stretches.entries()) {
+        if (work.stopped()) return { kind: 'cancelled' };
+        const body = part.to > part.from ? await file.range(file.picked, part.from, part.to) : new Uint8Array(0);
+        const source = new Uint8Array(headerBytes.length + body.length);
+        source.set(headerBytes, 0);
+        source.set(body, headerBytes.length);
+        const composed = await compose('csv', source, COMPOSED_PAGE, family);
+        work.step(index + 1, stretches.length);
+        if (composed.kind === 'refused') {
+          // A PART THAT DRAWS NOTHING is left out, and the first such refusal is kept in case no part draws anything,
+          // which is the one case a whole file is refused for (`composeCsv`).
+          refused ??= { ...composed, line: composed.line === null ? null : lineOf(part, composed.line) };
+          continue;
+        }
+        for (const character of composed.boxed) {
+          if (boxed.length < MAX_BOXED_CHARACTERS) boxed.push({ ...character, line: lineOf(part, character.line) });
+          else boxedMore += 1;
+        }
+        boxedMore += composed.more;
+        for (const skip of composed.skipped) {
+          const line = skip.line === null ? null : lineOf(part, skip.line);
+          if (line !== null && skipped.has(line)) continue;
+          if (skipped.size < MAX_COMPOSE_SKIPS) skipped.set(line ?? -skipped.size - 1, { reason: skip.reason, line, file: null });
+          else skippedMore += 1;
+        }
+        skippedMore += composed.skippedMore;
+        const name = await parts.put(composed.pdf);
+        placed.push(name);
+        pdfs.push(name);
+      }
+      if (pdfs.length === 0) {
+        return refused === undefined
+          ? { kind: 'composition-refused', reason: 'nothing-to-draw', line: null, file: null }
+          : { kind: 'composition-refused', reason: refused.reason, line: refused.line, file: null };
+      }
+      if (work.stopped()) return { kind: 'cancelled' };
+      const failed = (detail: string): Error => new Error(`the CSV's parts could not be joined: ${detail}`);
+      const joined = await parts.join(await joinedInStages(parts, pdfs, placed, failed));
+      if (joined === null) throw failed('a part could not be read');
+      const chunks: Uint8Array[] = [];
+      for await (const chunk of joined.output) chunks.push(chunk);
+      const pdf = new Uint8Array(chunks.reduce((sum, chunk) => sum + chunk.length, 0));
+      let at = 0;
+      for (const chunk of chunks) {
+        pdf.set(chunk, at);
+        at += chunk.length;
+      }
+      return await this.#writeComposed(
+        { kind: 'composed', pdf, boxed, more: boxedMore, skipped: [], skippedMore },
+        file.picked,
+        [...skipped.values()],
+      );
+    } finally {
+      await Promise.all(placed.map((name) => parts.remove(name)));
+      work.end();
+    }
   }
 
   /**
@@ -6136,7 +6316,7 @@ export class DocumentCommands {
       }
       const size = await this.#imageFiles.size(path);
       if (size === null) return { kind: 'unreadable' };
-      if (size > MAX_IMAGE_BYTES) return { kind: 'too-large', limitBytes: MAX_IMAGE_BYTES };
+      if (size > MAX_IMAGE_BYTES) return { kind: 'too-large', limitBytes: MAX_IMAGE_BYTES, fileBytes: size };
       totalBytes += size;
       if (totalBytes > MAX_IMPORT_IMAGE_BYTES) {
         return { kind: 'images-too-large', limitBytes: MAX_IMPORT_IMAGE_BYTES };
@@ -6227,7 +6407,7 @@ export class DocumentCommands {
     if (format === null) return { kind: 'unreadable' };
 
     const read = await office.source.read(picked);
-    if (read.kind === 'too-large') return { kind: 'too-large', limitBytes: MAX_OFFICE_IMPORT_BYTES };
+    if (read.kind === 'too-large') return { kind: 'too-large', limitBytes: MAX_OFFICE_IMPORT_BYTES, fileBytes: read.byteLength };
     if (read.kind === 'unreadable') return { kind: 'unreadable' };
 
     let converted: OfficeConversion;
@@ -6384,7 +6564,7 @@ export class DocumentCommands {
       if (picked === null) return { kind: 'cancelled' };
 
       const read = await this.#image.read(picked);
-      if (read.kind === 'too-large') return { kind: 'too-large', limitBytes: MAX_IMAGE_BYTES };
+      if (read.kind === 'too-large') return { kind: 'too-large', limitBytes: MAX_IMAGE_BYTES, fileBytes: read.byteLength };
       if (read.kind === 'unreadable') return { kind: 'unreadable' };
       bytes = read.bytes;
     } else {
@@ -6588,7 +6768,7 @@ export class DocumentCommands {
       case 'unreadable':
         return { kind: 'image-unreadable' };
       case 'too-large':
-        return { kind: 'image-too-large' };
+        return { kind: 'image-too-large', fileBytes: picked.byteLength };
       case 'cancelled':
       case 'scan-blank':
       case 'scan-locked':
@@ -6627,7 +6807,7 @@ export class DocumentCommands {
     const resolved = await this.#markFor(request.mark);
     if (resolved.kind === 'cancelled') return { kind: 'cancelled' };
     if (resolved.kind === 'image-unreadable') return { kind: 'unreadable' };
-    if (resolved.kind === 'image-too-large') return { kind: 'too-large', limitBytes: MAX_IMAGE_BYTES };
+    if (resolved.kind === 'image-too-large') return { kind: 'too-large', limitBytes: MAX_IMAGE_BYTES, fileBytes: resolved.fileBytes };
     if (resolved.kind === 'saved-signature-missing') return { kind: 'absent' };
     if (resolved.kind === 'scan-blank' || resolved.kind === 'scan-locked') return { kind: resolved.kind };
 
@@ -6650,6 +6830,9 @@ export class DocumentCommands {
       if (mark.kind !== 'image') throw error;
       if (error instanceof DocumentPoisonedError || error instanceof MissingSessionError) throw error;
       if (error instanceof DocumentNotOpenError) throw error;
+      // PAST THE PIXEL BOUND (ADR-0148), said as itself: the picture is readable, and *unreadable* would send the person
+      // looking for a fault in a file that has none.
+      if (error instanceof PngPixelsRefused && error.reason === 'too-many-pixels') return { kind: 'too-many-pixels' };
       return { kind: 'unreadable' };
     }
     // PLACED, so the previewed picture has done its one job: released, and the bytes resident in main go with it.

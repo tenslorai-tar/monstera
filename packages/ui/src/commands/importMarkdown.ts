@@ -3,6 +3,7 @@ import type { DocId, DocVersion } from '@monstera/shared';
 
 import { BOXED_CHARACTERS_DIALOG_ID } from '../dialogs/boxedCharacters.js';
 import { CAMERA_CAPTURE_DIALOG_ID, CAMERA_CAPTURE_RESULT } from '../dialogs/cameraCapture.js';
+import { fileTooLargeProblem } from '../dialogs/fileTooLarge.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { IMPORT_SKIPPED_DIALOG_ID } from '../dialogs/importSkipped.js';
 import { INSERT_MARKDOWN_DIALOG_ID } from '../dialogs/insertMarkdown.js';
@@ -14,6 +15,7 @@ import {
 } from '../dialogs/markdownImportProblem.js';
 import {
   APPEND_MARKDOWN_COMMAND_TITLE,
+  CSV_CONVERTING,
   GROUP_CREATE,
   NEW_FROM_CAMERA_COMMAND_TITLE,
   NEW_FROM_CSV_COMMAND_TITLE,
@@ -28,7 +30,9 @@ import {
   RIBBON_APPEND_MARKDOWN,
 } from '../messages/en.js';
 import { type UiCommand, VISIBLE } from '../registries/commands.js';
+import type { TrackTask } from '../runningTask.js';
 import { type DocumentCommandDeps, hasDocument, reportProblem } from './documentCommands.js';
+import { withWorkProgress } from './workProgress.js';
 
 /**
  * D9's Markdown row: a new PDF from a Markdown file, or its pages added to the
@@ -72,7 +76,7 @@ export function markdownImportProblem(
     case 'unreadable':
       return { reason: 'unreadable' };
     case 'too-large':
-      return { reason: 'too-large', limitBytes: answer.limitBytes };
+      return fileTooLargeProblem(answer);
     case 'composition-refused':
       return refusalProblem(answer.reason, answer.line, answer.file);
     case 'too-many-images':
@@ -185,6 +189,8 @@ export function newFromMarkdownCommand(deps: {
 export function newFromCsvCommand(deps: {
   readonly client: DocumentCommandDeps['client'];
   readonly ask: DocumentCommandDeps['ask'];
+  /** Where the conversion is shown while it runs, with its Cancel (`withWorkProgress`, the owner's O9 and O10). */
+  readonly track: TrackTask;
   readonly onOpened: (opened: OpenedDocument) => void;
   readonly onAlreadyOpen: (docId: DocId) => void;
 }): UiCommand {
@@ -196,7 +202,8 @@ export function newFromCsvCommand(deps: {
     ribbonTitle: RIBBON_NEW_FROM_CSV,
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 30, size: 'small' }],
     run: async (): Promise<void> => {
-      const answer = await deps.client['document.newFromCsv']({});
+      // ON SCREEN FROM THE CALL ON, with a Cancel: a large file is composed in parts in main and takes minutes.
+      const answer = await withWorkProgress(deps, CSV_CONVERTING, (work) => deps.client['document.newFromCsv']({ work }));
       if (!answer.ok) {
         reportProblem(deps, answer.error);
         return;

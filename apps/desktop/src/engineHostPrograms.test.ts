@@ -6,6 +6,10 @@ import {
   type EngineHostKind,
   hostCommandArguments,
 } from './engineHostPrograms.js';
+import { COMPOSE_HOST_HEAP_LIMIT_MIB, ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES } from './budget.js';
+
+/** The compose host's heap limit as it is written on its command line. */
+const HEAP = '--max-old-space-size=2048';
 
 /**
  * The facts each contained host owes, asserted where they can be.
@@ -116,7 +120,18 @@ describe('the engine host programs', () => {
         'composeHostEntry.js',
         'pipe',
       ),
-    ).toStrictEqual(['composeHostEntry.js', 'pipe', '', '', '']);
+    ).toStrictEqual([HEAP, 'composeHostEntry.js', 'pipe', '', '', '']);
+  });
+
+  it('gives the compose host its heap limit BEFORE the entry, where Node takes it, and the engine hosts none', () => {
+    const compose = hostCommandArguments({ kind: 'compose', shimPath: null, fontsPath: null, installedFontsPath: null }, 'e.js', 'p');
+    // BEFORE THE SCRIPT: after it, Node would hand it to the entry as its first argument, where the pipe name is read.
+    expect(compose.indexOf(HEAP)).toBeLessThan(compose.indexOf('e.js'));
+    expect(HEAP).toBe(`--max-old-space-size=${String(COMPOSE_HOST_HEAP_LIMIT_MIB)}`);
+    // UNDER THE JOB LIMIT, by the gibibyte the constant's measurement left.
+    expect(COMPOSE_HOST_HEAP_LIMIT_MIB * 1024 * 1024).toBeLessThan(ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES);
+    const mupdf = hostCommandArguments({ kind: 'mupdf', libraryPath: 'l', fontsPath: null, installedFontsPath: null }, 'e.js', 'p');
+    expect(mupdf.some((argument) => argument.startsWith('--max-old-space-size'))).toBe(false);
   });
 
   it('gives the compose host the shim’s path THIRD and the fonts’ FOURTH, where it reads them (ADR-0087, ADR-0172)', () => {
@@ -126,7 +141,7 @@ describe('the engine host programs', () => {
         'composeHostEntry.js',
         'pipe',
       ),
-    ).toStrictEqual(['composeHostEntry.js', 'pipe', 'C:\\s\\monstera_mupdf.dll', 'C:\\f', 'C:\\W\\Fonts']);
+    ).toStrictEqual([HEAP, 'composeHostEntry.js', 'pipe', 'C:\\s\\monstera_mupdf.dll', 'C:\\f', 'C:\\W\\Fonts']);
     // A MISSING SHIM DOES NOT MOVE THE FONTS: the entry reads `argv[4]` and `argv[5]` whatever came before.
     expect(
       hostCommandArguments(
@@ -134,6 +149,6 @@ describe('the engine host programs', () => {
         'composeHostEntry.js',
         'pipe',
       ),
-    ).toStrictEqual(['composeHostEntry.js', 'pipe', '', 'C:\\f', '']);
+    ).toStrictEqual([HEAP, 'composeHostEntry.js', 'pipe', '', 'C:\\f', '']);
   });
 });

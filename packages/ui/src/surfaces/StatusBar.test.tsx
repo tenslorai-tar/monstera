@@ -6,10 +6,9 @@ import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { activateCatalogue, i18n } from '../i18n.js';
-import { EN, HINT_HAND, HINT_NOTE, STATUS_UNSAVED, WORD_COUNT_PROGRESS } from '../messages/en.js';
+import { EN, HINT_HAND, HINT_NOTE, STATUS_UNSAVED } from '../messages/en.js';
 import { CommandRegistry, type CommandContext, type UiCommand } from '../registries/commands.js';
 import type { Placement } from '../registries/placement.js';
-import type { RunningTask } from '../runningTask.js';
 import { savedState, type SavedState } from '../savedState.js';
 import type { ZoomMode } from '../zoom.js';
 import { StatusBar } from './StatusBar.js';
@@ -60,7 +59,6 @@ function drawn(
     readonly page?: number;
     readonly zoom?: number;
     readonly name?: string;
-    readonly task?: RunningTask | undefined;
     readonly commands?: readonly UiCommand[];
     readonly saved?: SavedState;
     readonly byteLength?: number;
@@ -82,7 +80,6 @@ function drawn(
         context={context}
         byteLength={over.byteLength ?? 2_516_582}
         toolHint={over.toolHint}
-        task={over.task}
         // THE DEFAULT IS THE DIRTY ONE, deliberately: every case that does not care renders a
         // document with unsaved changes, so a bar that dropped the cell shows it in none of
         // them. A clean default would make the absent cell and the empty string look alike.
@@ -342,27 +339,6 @@ describe('StatusBar', () => {
       const { form } = field(container);
       fireEvent.submit(form);
       expect(went).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('a running task', () => {
-    it('is ABSENT with nothing running, rather than an empty region', () => {
-      const { container } = drawn();
-      expect(container.querySelector('.m-status-task')).toBeNull();
-    });
-
-    it('names WHAT is running before the numbers, and both of them', () => {
-      const { container } = drawn({ task: { label: WORD_COUNT_PROGRESS, done: 12, total: 400, cancel: vi.fn() } });
-      expect(container.querySelector('.m-status-task')?.textContent).toContain('Counting words — 12 of 400');
-    });
-
-    it('the CANCEL dispatches the task’s own cancel, not a lookup at press time', () => {
-      const cancelled = vi.fn();
-      const { container } = drawn({ task: { label: WORD_COUNT_PROGRESS, done: 12, total: 400, cancel: cancelled } });
-      const button = container.querySelector('.m-status-cancel');
-      if (!(button instanceof HTMLButtonElement)) throw new Error('the task offers a cancel');
-      fireEvent.click(button);
-      expect(cancelled).toHaveBeenCalledTimes(1);
     });
   });
 });
