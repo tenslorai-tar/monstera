@@ -5311,7 +5311,7 @@ for (const look of LOOKS) {
     await page.getByRole('button', { name: 'Open PDF…' }).click();
     await expect(page.locator('canvas.m-page').first()).toBeVisible({ timeout: 20_000 });
 
-    await page.getByRole('button', { name: 'Edit object' }).click();
+    await page.getByRole('button', { name: 'Edit object choices' }).click();
     await page.getByRole('menuitemcheckbox', { name: 'Edit images' }).click();
     const layer = page.getByRole('group', { name: 'Objects on page 1' });
     // ONLY THE IMAGE under Images: the text and the rule are not outlined.
@@ -5343,9 +5343,13 @@ for (const look of LOOKS) {
     await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2, { steps: 5 });
     await page.mouse.up();
     await expect.poll(() => sent.length).toBe(1);
-    const moved = sent[0] as { command: { kind: string; index: number; moveBy: { x: number; y: number } } };
-    expect(moved.command.kind).toBe('placePageObject');
+    const moved = sent[0] as { command: { kind: string; index: number; object: string; ordinal: number; moveBy: { x: number; y: number } } };
+    // WHERE IT IS DRAWN (ADR-0240): a picture is moved by wrapping its own operators, and named by its place among the
+    // page's images as well as by the walk's index, so the engine can check the two name one object.
+    expect(moved.command.kind).toBe('placeDrawnObject');
     expect(moved.command.index).toBe(2);
+    expect(moved.command.object).toBe('image');
+    expect(moved.command.ordinal).toBe(0);
     expect(moved.command.moveBy.x).toBeGreaterThan(0);
     expect(moved.command.moveBy.y).toBeCloseTo(0, 6);
 
