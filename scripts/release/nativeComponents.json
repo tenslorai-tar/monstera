@@ -353,6 +353,7 @@
         { "name": "Caladea (font)", "version": "as distributed with Document Builder 9.4.0", "spdx": "OFL-1.1", "texts": ["caladea/LICENSE.txt"] },
         { "name": "Asana Math (font)", "version": "as distributed with Document Builder 9.4.0", "spdx": "OFL-1.1", "texts": ["asana/LICENSE.txt"] },
         { "name": "OpenSymbol (font)", "version": "as distributed with Document Builder 9.4.0", "spdx": "OFL-1.0", "texts": ["opensymbol/LICENSE.txt"] },
+        { "name": "Noto Sans CJK (font)", "version": "2.004", "spdx": "OFL-1.1", "texts": ["noto-cjk/LICENSE.txt"] },
         { "name": "Microsoft Visual C++ runtime", "version": "14.51.36247", "spdx": "LicenseRef-MicrosoftVisualCpp2015-2022Runtime", "texts": ["vc14_runtime/LICENSE.txt"] }
       ]
     },

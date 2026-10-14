@@ -18,7 +18,8 @@
  * ## The font cache is generated here, BUNDLED FONTS ONLY, and made location-independent
  *
  * `x2t` refuses to convert without a cache (exit 80). Document Builder writes one on start, and by default indexes
- * the machine's fonts; started with `--fonts-system=false` it indexes the tree's own eleven. So it is started once
+ * the machine's fonts; started with `--fonts-system=false` it indexes the tree's own eleven and the two Noto CJK faces
+ * placed beside them ({@link NOTO_CJK}). So it is started once
  * here, on a script that makes nothing, and then removed. {@link bundledOnly} refuses a cache naming any file
  * outside the tree's `fonts/`, so a machine font cannot reach the pins in silence.
  *
@@ -49,8 +50,8 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { extract } from '../lib/extract.mjs';
-import { downloadVerified, fileExists, toolPath } from '../lib/fetchVerified.mjs';
-import { filesUnder, treeProblems, verifyPinnedTree } from '../lib/pinnedTree.mjs';
+import { downloadVerified, fileExists, toolPath, verifyFileDigest } from '../lib/fetchVerified.mjs';
+import { filesUnder, pinsOf, treeProblems, verifyPinnedTree } from '../lib/pinnedTree.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { normaliseLayout } from '../release/generateNotice.mjs';
 import { sameAsCommitted } from './condaForge.mjs';
@@ -121,6 +122,63 @@ export const THIRD_PARTY_TEXTS = {
   x265: { url: 'https://bitbucket.org/multicoreware/x265_git/raw/cfee9638c82b655c5887cedbdf1aa856f81b906a/COPYING', sha256: '1dd4b927dde31c605545dca483ca1a8d9b47fab5dce981f4027e53afa0238b85' },
   pole: { url: 'https://raw.githubusercontent.com/otofoto/Pole/master/pole/LICENSE', sha256: '65cd8e7cce255f865c6f95798f7ca1c9af548950cee016e303da95ee05b9a258' },
 };
+
+/**
+ * Noto Sans CJK for x2t, so a Chinese, Japanese or Korean Office document converts to real characters (cloud run 4,
+ * Part 0.4). x2t is started with `--fonts-system=false` and draws only the tree's fonts, and none of the archive's
+ * eleven carries a CJK glyph.
+ *
+ * ## Which files, and the size, measured 2026-10-14
+ *
+ * One TTC per weight holds every region — Simplified and Traditional Chinese, Japanese, Korean, Hong Kong — sharing
+ * their common glyphs, so Regular and Bold are the smallest set that covers all four scripts in both weights the
+ * owner named. Read from release `Sans2.004`'s `03_NotoSansCJK-OTC.zip` (sha256 below): Regular 19,484,784 bytes and
+ * Bold 20,050,760, 37.7 MiB raw and **30.4 MiB deflated in 64 KiB blocks**, the way MSIX stores a file
+ * (scratchpad `deflateSize.mjs`, level 6). The owner's rule was *bundle if it adds no more than about 30 MB*; it was
+ * taken as within it. SIL OFL 1.1, the release's own `LICENSE`, compared with the committed copy.
+ */
+export const NOTO_CJK = {
+  release: 'Sans2.004',
+  archive: {
+    url: 'https://github.com/notofonts/noto-cjk/releases/download/Sans2.004/03_NotoSansCJK-OTC.zip',
+    name: '03_NotoSansCJK-OTC.zip',
+    sha256: '528f4e1b25ff3badb0321b38d015d954c4c0de926c7830ef50e4a1948f6a3eed',
+    bytes: 104_680_673,
+  },
+  /** Each face file, its digest as read from the verified archive, and where it goes under the tree. */
+  faces: [
+    { member: 'NotoSansCJK-Regular.ttc', sha256: 'b76b0433203017ca80401b2ee0dd69350349871c4b19d504c34dbdd80541690a', into: 'fonts/noto-cjk/NotoSansCJK-Regular.ttc' },
+    { member: 'NotoSansCJK-Bold.ttc', sha256: 'faa5f3656a78b2e2d450d27fe8382c778bc2b6bb5ea29c986664a6a435056ceb', into: 'fonts/noto-cjk/NotoSansCJK-Bold.ttc' },
+  ],
+  licence: { member: 'LICENSE', into: 'noto-cjk/LICENSE.txt' },
+};
+
+/**
+ * Downloads the pinned Noto CJK release, checks each face's digest and the licence against the committed copy, and
+ * places the faces in the tree's `fonts/`, where Document Builder indexes them with the archive's own.
+ *
+ * @param {string} staging
+ * @param {string} tree
+ * @param {string} licences
+ */
+async function placeCjkFaces(staging, tree, licences) {
+  const work = join(staging, 'noto-cjk');
+  await downloadVerified({
+    url: NOTO_CJK.archive.url,
+    allowedHosts: ALLOWED_HOSTS,
+    sha256: NOTO_CJK.archive.sha256,
+    maxBytes: NOTO_CJK.archive.bytes + 1024 * 1024,
+    destination: join(work, NOTO_CJK.archive.name),
+  });
+  extract(work, NOTO_CJK.archive.name, [...NOTO_CJK.faces.map((face) => face.member), NOTO_CJK.licence.member]);
+  await sameAsCommitted(licences, join(work, NOTO_CJK.licence.member), NOTO_CJK.licence.into);
+  for (const face of NOTO_CJK.faces) {
+    await verifyFileDigest({ path: join(work, face.member), sha256: face.sha256, context: `Noto Sans CJK ${NOTO_CJK.release}` });
+    await mkdir(dirname(join(tree, face.into)), { recursive: true });
+    await rename(join(work, face.member), join(tree, face.into));
+  }
+  await rm(work, { recursive: true, force: true });
+}
 
 /** The four font licences the archive carries, by where it carries them and where the notice's copy is. */
 const FONT_TEXTS = [
@@ -390,6 +448,8 @@ export async function stageOnlyOffice({ root, staging }) {
   }
   for (const font of FONT_TEXTS) await sameAsCommitted(licences, join(tree, font.inArchive), font.into);
 
+  // BEFORE THE CACHE, so Document Builder indexes the CJK faces with the archive's own and the cache names them.
+  await placeCjkFaces(staging, tree, licences);
   await generateFontCache(staging, tree);
 
   for (const excluded of ONLYOFFICE_EXCLUDED) {
@@ -476,6 +536,28 @@ if (isMain(import.meta.url)) {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
   const check = process.argv.includes('--check');
   const force = process.argv.includes('--force');
+
+  if (process.argv.includes('--repin')) {
+    // THE ONE ROUTE THAT WRITES THE PINS, run by a person after a deliberate change to what the tree holds (the CJK
+    // faces of 2026-10-14): the tree is staged from the verified downloads exactly as provisioning stages it, and the
+    // pins are read from that tree, never from one found on disk. The font cache is Document Builder's own output and
+    // only a Windows machine makes it, so this runs there; `git diff onlyofficePins.json` is the review.
+    const staging = `${onlyofficeRoot(root)}.repin-${String(process.pid)}`;
+    try {
+      await rm(staging, { recursive: true, force: true });
+      const tree = await stageOnlyOffice({ root, staging });
+      const pins = await pinsOf(tree);
+      const sorted = Object.fromEntries(Object.keys(pins).sort().map((path) => [path, pins[path]]));
+      await writeFile(PINS_PATH, `${JSON.stringify(sorted, null, 2)}\n`);
+      process.stdout.write(`${String(Object.keys(sorted).length)} files pinned in ${PINS_PATH}\n`);
+    } catch (error) {
+      process.stderr.write(`${formatError(error)}\n`);
+      process.exit(1);
+    } finally {
+      await rm(staging, { recursive: true, force: true });
+    }
+    process.exit(0);
+  }
 
   if (check) {
     const executable = x2tPath(root);

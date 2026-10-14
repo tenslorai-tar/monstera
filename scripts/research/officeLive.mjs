@@ -113,8 +113,36 @@ function theme() {
   );
 }
 
-/** The three documents, each carrying one sentence the PDF must read back. */
+/**
+ * Chinese (Simplified and Traditional), Japanese and Korean, each in the face a person's document names for it — fonts
+ * the tree does not carry — so x2t has to choose a bundled face that draws the script (cloud run 4, Part 0.4).
+ */
+const CJK_LINES = [
+  { script: 'zh-Hans', font: 'SimSun', text: '简体中文测试' },
+  { script: 'zh-Hant', font: 'PMingLiU', text: '繁體中文測試' },
+  { script: 'ja', font: 'MS Mincho', text: '日本語のテスト' },
+  { script: 'ko', font: 'Malgun Gothic', text: '한국어 시험' },
+];
+
+/** The three documents, each carrying one sentence the PDF must read back, and the CJK one, which carries four. */
 const DOCUMENTS = {
+  'docx-cjk': {
+    sentence: CJK_LINES.map((line) => line.text).join(' '),
+    bytes: zipOf({
+      ...packageParts(
+        '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>',
+        'word/document.xml',
+      ),
+      'word/document.xml':
+        `${XML}<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>` +
+        CJK_LINES.map(
+          (line) =>
+            `<w:p><w:r><w:rPr><w:rFonts w:ascii="${line.font}" w:eastAsia="${line.font}" w:hAnsi="${line.font}"/>` +
+            `<w:lang w:eastAsia="${line.script}"/></w:rPr><w:t>${line.text}</w:t></w:r></w:p>`,
+        ).join('') +
+        '</w:body></w:document>',
+    }),
+  },
   docx: {
     sentence: 'MONSTERA OFFICE LIVE DOCX',
     bytes: zipOf({
@@ -250,10 +278,11 @@ const failures = [];
 const reports = [];
 
 /**
- * @param {'docx' | 'xlsx' | 'pptx'} format
+ * @param {'docx' | 'xlsx' | 'pptx' | 'docx-cjk'} document
  * @param {number | undefined} memoryLimit
  */
-async function convert(format, memoryLimit) {
+async function convert(document, memoryLimit) {
+  const format = document === 'docx-cjk' ? 'docx' : document;
   const seen = { peak: /** @type {number | null} */ (null) };
   const sink = /** @type {string[]} */ ([]);
   const source = office.createOfficeSource(measured(memoryLimit, seen), (/** @type {{ detail: string }} */ event) => {
@@ -261,7 +290,7 @@ async function convert(format, memoryLimit) {
   });
   const started = Date.now();
   try {
-    const converted = await source(format, DOCUMENTS[format].bytes);
+    const converted = await source(format, DOCUMENTS[document].bytes);
     const chunks = [];
     for await (const chunk of converted.output) chunks.push(chunk);
     return { ok: true, pdf: Buffer.concat(chunks), ms: Date.now() - started, peak: seen.peak, said: sink };
@@ -271,7 +300,7 @@ async function convert(format, memoryLimit) {
 }
 
 try {
-  for (const format of /** @type {const} */ (['docx', 'xlsx', 'pptx'])) {
+  for (const format of /** @type {const} */ (['docx', 'xlsx', 'pptx', 'docx-cjk'])) {
     const result = await convert(format, undefined);
     if (!result.ok || result.pdf === null) {
       failures.push(`${format}: no PDF — ${result.said.join(' | ')}`);
@@ -282,7 +311,12 @@ try {
     const text = spawnSync(pdftotextPath(ROOT), [file, '-'], { encoding: 'utf8' }).stdout.replace(/\s+/gu, ' ').trim();
     const fonts = [...new Set(result.pdf.toString('latin1').match(/\/BaseFont *\/[A-Za-z+-]+/gu) ?? [])];
     const read = text.includes(DOCUMENTS[format].sentence);
-    const ownFonts = fonts.length > 0 && fonts.every((font) => /Carlito|Caladea|Asana|OpenSymbol|ASC/u.test(font));
+    const ownFonts = fonts.length > 0 && fonts.every((font) => /Carlito|Caladea|Asana|OpenSymbol|ASC|NotoSansCJK/u.test(font));
+    // NOT BOXES: the CJK lines must be drawn by the bundled Noto CJK, the one face in the tree that carries them — a
+    // text layer can read back characters a fallback face drew as empty boxes.
+    if (format === 'docx-cjk' && !fonts.some((font) => /NotoSansCJK/u.test(font))) {
+      failures.push(`docx-cjk: no Noto Sans CJK face was embedded, so the CJK lines were drawn by a face without them: ${fonts.join(' ')}`);
+    }
     reports.push(
       `${format}: ${String(result.pdf.length)} B in ${String(result.ms)} ms, job peak ` +
         `${result.peak === null ? 'UNREAD' : `${(result.peak / 1048576).toFixed(1)} MiB`}, fonts ${fonts.join(' ')}, ` +
