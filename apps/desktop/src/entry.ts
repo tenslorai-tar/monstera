@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { open, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -18,7 +18,9 @@ import {
   readMarkdownFile,
   readOfficeFile,
 } from './pickedFileReads.js';
-import { setNativeSource } from './nativeComponents.js';
+import { nativeComponentPath, setNativeSource } from './nativeComponents.js';
+import { FONT_LIST_FILE, fontFoldersFingerprint } from './fontListFile.js';
+import { installedFontsFolder } from './installedFonts.js';
 import {
   createAnnotationDataPicker,
   createDestinationPicker,
@@ -453,6 +455,19 @@ startShell(() => {
     // to send it.
     // TEN ENTRIES, the contract's `MAX_RECENT_ENTRIES` (ADR-0143); not a setting since 2026-10-01.
     recent: createRecentFiles(createJsonFile(app.getPath('userData'), RECENT_FILE)),
+    // THE FONT LIST KEPT ON DISK (ADR-0237), fingerprinted over the two folders the hosts read: the bundled set and the
+    // system's. Listed with readdir and stat; no font file is opened in main.
+    fontList: {
+      file: createJsonFile(app.getPath('userData'), FONT_LIST_FILE),
+      fingerprint: () =>
+        fontFoldersFingerprint([nativeComponentPath('fonts'), installedFontsFolder()], {
+          names: (folder) => readdirSync(folder),
+          stat: (path) => {
+            const found = statSync(path);
+            return { size: found.size, mtimeMs: found.mtimeMs, isFile: found.isFile() };
+          },
+        }),
+    },
     // WHERE a recent file is, for display (ADR-0100): the known folders are Electron's answers and the
     // environment's, resolved here for the working directory's reason.
     recentRoots: knownRoots({

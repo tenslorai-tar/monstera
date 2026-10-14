@@ -19,7 +19,7 @@
  * Usage (Windows): node scripts/research/memoryWalk.mjs [<a .pdf to open seven copies of>]
  */
 
-import { copyFile } from 'node:fs/promises';
+import { copyFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect as defaultExpect } from '@playwright/test';
@@ -103,7 +103,9 @@ await step('M3. ONE Edit text action: a paragraph clicked, a word typed, a click
   // A reader that stopped recognising hosts — an unreadable command line, an executable path that no longer matches —
   // would report M5's "no host is left" in the same voice as a clean close.
   expect(read.hosts).toEqual(expect.arrayContaining(['host mupdf', 'host pdfium']));
-  return read;
+  // ADR-0237: this walk's profile is new, so its first font list is read by the compose host once and kept; a later
+  // session's edit starts none. Recorded rather than asserted here; the file is read back after M5.
+  return { ...read, composeHostAfterEdit: read.hosts.some((role) => role.includes('compose')) };
 });
 
 await step('M4. every tab after the edit (Part 7 B): each draws its page, none is left opening, none failed', async () => {
@@ -144,8 +146,11 @@ await step('M5. every document closed, then 60 s (Part 7 A): no engine host is l
   await page.waitForTimeout(60_000);
   const after = reading();
   expect(after.hosts).toStrictEqual([]);
+  // THE FONT LIST WAS KEPT (ADR-0237), read back from the profile: the next session's edit answers its picker from it.
+  const kept = JSON.parse(await readFile(join(output, 'app-data', 'font-families.json'), 'utf8'));
+  expect(kept.families.length).toBeGreaterThan(0);
   const before = /** @type {ReturnType<typeof reading> | null} */ (atStart);
-  return { ...after, atStartMB: before?.rolesMB ?? null, atStartTotalMB: before?.totalMB ?? null };
+  return { ...after, keptFontFamilies: kept.families.length, atStartMB: before?.rolesMB ?? null, atStartTotalMB: before?.totalMB ?? null };
 });
 
 await finish();

@@ -298,6 +298,7 @@ import { openWebPage } from './webPages.js';
 import { createCloseGate } from './windowClose.js';
 import { removeWorkingFile } from './workingFile.js';
 import { heldRead } from './heldRead.js';
+import { keptFontFamilies } from './fontListFile.js';
 
 /**
  * Everything creating a contained engine host needs that this file may not hold.
@@ -668,6 +669,13 @@ export interface ShellComposition {
    * under `userData`, because only that file may ask Electron where the user's data lives. Absent,
    * every provider is *not configured in this build* — every unit test's position, and a real one.
    */
+  /**
+   * Where the font list is kept and how its folders are fingerprinted
+   * ([ADR-0237](../../../docs/DECISIONS/0237-the-font-list-is-kept-on-disk-so-an-edit-starts-no-compose-host.md)),
+   * resolved in `entry.ts` beside `userData`. Absent, the list is the compose host's each session — every harness's
+   * position, and every unit test's.
+   */
+  readonly fontList?: { readonly file: SettingsSurface; readonly fingerprint: () => string };
   readonly cloud?: {
     readonly clients: Readonly<Record<CloudProviderId, CloudClient | null>>;
     readonly workingDirectory: string;
@@ -893,6 +901,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     chatHistory,
     writeClipboardText,
     cloud: cloudComposition,
+    fontList,
     mediaFoundation,
     sendEvent,
     cannotStart: shellCannotStart,
@@ -2065,7 +2074,14 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // in, and the OCR dialog is where that is said.
       ocrLanguages: provisionedOcrLanguages,
       // THE ONE FONT LIST, from the compose host that already reads the catalogue for the composers (the owner's D2).
-      fontFamilies: composeHost === null ? null : composeHost.fontFamilies,
+      // KEPT ON DISK where the shell gives a file (ADR-0237): an edit's font picker reads the list kept under the font
+      // folders' fingerprint and starts no compose host; a changed fingerprint asks the host once and keeps its answer.
+      fontFamilies:
+        composeHost === null
+          ? null
+          : fontList === undefined
+            ? composeHost.fontFamilies
+            : heldRead(() => keptFontFamilies(fontList.file, fontList.fingerprint, composeHost.fontFamilies)),
       // VERIFY STARTS WHAT IT VERIFIED (Part 0.1): each engine host built and each converter run, the way the application
       // runs them, so a DLL missing from the computer is seen here rather than at a person's first document.
       components: (verify) =>

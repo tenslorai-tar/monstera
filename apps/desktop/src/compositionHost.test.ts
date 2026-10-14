@@ -30,6 +30,7 @@ import {
 } from './engineHostFake.js';
 import type { DirectoryCreationSurface, DirectoryPath } from './sessionDirectories.js';
 import { harnessSurfaces } from './harnessComposition.js';
+import { createEphemeralSettings } from './settingsFile.js';
 import { pictureName } from './recentPictures.js';
 
 /**
@@ -2295,6 +2296,47 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
     await handlers['document.close']({ docId: answer.value.docId });
     expect(spy(mupdf.harness.calls, 'host.terminate')).toBe(1);
     expect(spy(third.harness.calls, 'host.terminate')).toBe(0);
+  }, 120_000);
+
+  /**
+   * ADR-0237 (the owner's 13a): the font picker's list, kept on disk under the font folders' fingerprint, is answered with
+   * NO compose host started, where it was the reason an edit started one (206 MB). CONTROL: a changed fingerprint starts
+   * the host once and keeps its answer, and so does a first run with nothing kept.
+   */
+  it('the font list kept under the same fingerprint starts no compose host; a changed one asks the host once', async () => {
+    const file = createEphemeralSettings();
+    const listOnce = (fingerprint: string) => {
+      const compose = composePeer();
+      const third = platformAnswering((channel, params) =>
+        channel === 'engine/font-families'
+          ? { ok: true, value: { families: [{ name: 'Tinos', origin: 'bundled', embedding: 'subset', bold: true, italic: true }], more: 0, next: null } }
+          : compose.peer(channel, params),
+      );
+      const { handlers } = createShellDependencies({
+        ...harnessSurfaces('the composition-host test'),
+        appInfo,
+        enginePlatform: platformAnswering(serialisingEngine()).platform,
+        composePlatform: third.platform,
+        fontList: { file, fingerprint: () => fingerprint },
+      });
+      return { handlers, calls: third.harness.calls };
+    };
+    const SAME = 'a'.repeat(64);
+
+    const first = listOnce(SAME);
+    const listed = await first.handlers['app.fontFamilies']({});
+    expect(listed).toStrictEqual({ ok: true, value: { listed: true, families: [{ name: 'Tinos', origin: 'bundled', embedding: 'subset', bold: true, italic: true }], more: 0 } });
+    expect(spy(first.calls, 'host.createSuspended')).toBe(1);
+
+    // A LATER SESSION, the same fonts: the kept list, and no host.
+    const later = listOnce(SAME);
+    expect(await later.handlers['app.fontFamilies']({})).toStrictEqual(listed);
+    expect(spy(later.calls, 'host.createSuspended')).toBe(0);
+
+    // CONTROL: a font installed since — a changed fingerprint — is read from the host again.
+    const changed = listOnce('b'.repeat(64));
+    expect(await changed.handlers['app.fontFamilies']({})).toStrictEqual(listed);
+    expect(spy(changed.calls, 'host.createSuspended')).toBe(1);
   }, 120_000);
 
   it('appends: opens the composed file as a tab, waits for its session, and merges it', async () => {
