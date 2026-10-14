@@ -7013,6 +7013,17 @@ optgroup {
   cursor: nesw-resize;
 }
 
+/* THE SIDES (E6): each moves one edge, so each says which way. */
+.m-object-handle--n,
+.m-object-handle--s {
+  cursor: ns-resize;
+}
+
+.m-object-handle--e,
+.m-object-handle--w {
+  cursor: ew-resize;
+}
+
 /*
  * *EDIT FIELDS* (ADR-0226 Decision 7): every field a dashed box with its name, the selected ones solid and movable, the
  * one selected field with eight handles. Edit object's outlines and squares, so the two modes read as one family.

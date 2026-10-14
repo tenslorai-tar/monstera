@@ -1,20 +1,13 @@
 import { useLingui } from '@lingui/react';
 import type { AnnotationRect, DispatchableCommand } from '@monstera/contract';
-import {
-  type DocVersion,
-  type MessageKey,
-  type PageTransform,
-  pdfPoint,
-  toPdf,
-  toViewport,
-  viewportPoint,
-} from '@monstera/shared';
+import { type DocVersion, type MessageKey, toPdf, viewportPoint } from '@monstera/shared';
 import type React from 'react';
 import { type ReactElement, useCallback, useEffect, useRef, useState } from 'react';
 
 import type { OverlayPage } from './annotations/annotationSpace.js';
 import { overlayTransform } from './annotations/annotationSpace.js';
 import { CORNER_REACH } from './annotations/selectTool.js';
+import { HANDLES, type Handle, type Pixels, handleAt, pixelsOf, rectOfPixels, resized } from './forms/fieldDesign.js';
 import {
   OBJECT_EDIT_LAYER_LABEL,
   OBJECT_EDIT_NONE_ALL,
@@ -115,47 +108,23 @@ const NONE: Readonly<Record<ObjectFilter, MessageKey>> = {
   shapes: OBJECT_EDIT_NONE_SHAPES,
 };
 
-/** A box in the overlay's CSS pixels, ordered. */
-interface Pixels {
-  readonly x0: number;
-  readonly y0: number;
-  readonly x1: number;
-  readonly y1: number;
-}
+/** The least a resize leaves of a side, in pixels: `fieldDesign.ts`' rule, so a box is never turned inside out. */
+const LEAST_SIDE = 2;
 
-/** Where a PDF box lands on the drawn page, through the one transform, its corners ordered. */
-function pixelsOf(box: AnnotationRect, transform: PageTransform): Pixels {
-  const a = toViewport(pdfPoint(box.x0, box.y0), transform);
-  const b = toViewport(pdfPoint(box.x1, box.y1), transform);
-  return { x0: Math.min(a.x, b.x), y0: Math.min(a.y, b.y), x1: Math.max(a.x, b.x), y1: Math.max(a.y, b.y) };
-}
-
-/** A box in PDF space from two points in the overlay's pixels, ordered. */
-function pdfBoxOf(a: readonly [number, number], b: readonly [number, number], transform: PageTransform): AnnotationRect {
-  const p = toPdf(viewportPoint(a[0], a[1]), transform);
-  const q = toPdf(viewportPoint(b[0], b[1]), transform);
-  return { x0: Math.min(p.x, q.x), y0: Math.min(p.y, q.y), x1: Math.max(p.x, q.x), y1: Math.max(p.y, q.y) };
-}
-
-/** The four corners of a box, each with the OPPOSITE corner a resize from it holds. */
-function cornersOf(box: Pixels): readonly { readonly name: string; readonly at: readonly [number, number]; readonly held: readonly [number, number] }[] {
-  return [
-    { name: 'nw', at: [box.x0, box.y0], held: [box.x1, box.y1] },
-    { name: 'ne', at: [box.x1, box.y0], held: [box.x0, box.y1] },
-    { name: 'sw', at: [box.x0, box.y1], held: [box.x1, box.y0] },
-    { name: 'se', at: [box.x1, box.y1], held: [box.x0, box.y0] },
-  ];
-}
-
-/** A drag in flight: a move from where it was pressed, or a resize holding one corner. */
+/**
+ * A drag in flight: a move from where it was pressed, or a resize by one of the EIGHT handles (the owner's E6), each
+ * moving the edges it names. The box at the press and the handle are held, and `fieldDesign.ts`' `resized` makes the
+ * box — the rule Edit fields' handles take, so the two modes resize alike.
+ */
 type Drag =
   | { readonly kind: 'move'; readonly pointer: number; readonly from: readonly [number, number]; readonly to: readonly [number, number] }
   | {
       readonly kind: 'resize';
       readonly pointer: number;
-      /** The corner pressed, so a press that did not travel resizes nothing. */
+      readonly handle: Handle;
+      readonly start: Pixels;
+      /** Where the handle was pressed, so a press that did not travel resizes nothing. */
       readonly from: readonly [number, number];
-      readonly held: readonly [number, number];
       readonly to: readonly [number, number];
     };
 
@@ -270,7 +239,7 @@ export function ObjectEditLayer({
       const dy = moved.y - origin.y;
       target = { x0: picked.box.x0 + dx, y0: picked.box.y0 + dy, x1: picked.box.x1 + dx, y1: picked.box.y1 + dy };
     } else {
-      target = pdfBoxOf(drag.held, to, transform);
+      target = rectOfPixels(resized(drag.start, drag.handle, to, LEAST_SIDE), transform);
     }
     const command = placeCommand({ page, version: objects.version, object: picked }, target);
     if (command !== undefined) onCommand(command);
@@ -285,12 +254,7 @@ export function ObjectEditLayer({
       const dy = drag.to[1] - drag.from[1];
       return { x0: box.x0 + dx, y0: box.y0 + dy, x1: box.x1 + dx, y1: box.y1 + dy };
     }
-    return {
-      x0: Math.min(drag.held[0], drag.to[0]),
-      y0: Math.min(drag.held[1], drag.to[1]),
-      x1: Math.max(drag.held[0], drag.to[0]),
-      y1: Math.max(drag.held[1], drag.to[1]),
-    };
+    return resized(drag.start, drag.handle, drag.to, LEAST_SIDE);
   };
 
   /** The CSS an outline is drawn with, grown about its centre to the smallest target a press can find. */
@@ -361,26 +325,24 @@ export function ObjectEditLayer({
       })}
       {picked === undefined || !shownBy(filter, picked)
         ? null
-        : cornersOf(drawnAt(picked)).map((corner) => (
-            <span
-              aria-hidden="true"
-              className={`m-object-handle m-object-handle--${corner.name}`}
-              data-object-handle={corner.name}
-              key={corner.name}
-              onPointerDown={(event) => {
-                if (event.button !== 0) return;
-                event.stopPropagation();
-                layer.current?.setPointerCapture(event.pointerId);
-                begin({ kind: 'resize', pointer: event.pointerId, from: corner.at, held: corner.held, to: corner.at }, picked);
-              }}
-              style={{
-                left: corner.at[0] - CORNER_REACH / 2,
-                top: corner.at[1] - CORNER_REACH / 2,
-                width: CORNER_REACH,
-                height: CORNER_REACH,
-              }}
-            />
-          ))}
+        : HANDLES.map((handle) => {
+            const at = handleAt(drawnAt(picked), handle);
+            return (
+              <span
+                aria-hidden="true"
+                className={`m-object-handle m-object-handle--${handle}`}
+                data-object-handle={handle}
+                key={handle}
+                onPointerDown={(event) => {
+                  if (event.button !== 0) return;
+                  event.stopPropagation();
+                  layer.current?.setPointerCapture(event.pointerId);
+                  begin({ kind: 'resize', pointer: event.pointerId, handle, start: pixelsOf(picked.box, transform), from: at, to: at }, picked);
+                }}
+                style={{ left: at[0] - CORNER_REACH / 2, top: at[1] - CORNER_REACH / 2, width: CORNER_REACH, height: CORNER_REACH }}
+              />
+            );
+          })}
       {objects === undefined ? null : shown.length === 0 || objects.truncated ? (
         <div className="m-page-mode__notes">
           {shown.length === 0 ? <p>{_(NONE[filter])}</p> : null}

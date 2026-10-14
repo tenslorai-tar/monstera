@@ -194,6 +194,30 @@ describe('ObjectEditLayer', () => {
     ]);
   });
 
+  it('EIGHT handles, and a SIDE handle resizes one way only, holding the opposite side (E6)', () => {
+    const { sent, layer } = mounted({ pick: pick(PHOTO) });
+    expect([...layer.querySelectorAll('[data-object-handle]')].map((handle) => handle.getAttribute('data-object-handle'))).toStrictEqual([
+      'nw',
+      'n',
+      'ne',
+      'e',
+      'se',
+      's',
+      'sw',
+      'w',
+    ]);
+    const east = layer.querySelector('[data-object-handle="e"]');
+    if (east === null) throw new Error('no handle');
+    // THE RIGHT SIDE'S MIDDLE is at (100, 60). Dragged to (140, 200), only the width follows: 120 pixels, 60 points,
+    // half again as wide, and the height stays — the pointer's 140 pixels down move nothing.
+    fireEvent.pointerDown(east, { button: 0, clientX: 100, clientY: 60, pointerId: 3 });
+    fireEvent.pointerMove(layer, { clientX: 140, clientY: 200, pointerId: 3 });
+    fireEvent.pointerUp(layer, { clientX: 140, clientY: 200, pointerId: 3 });
+    expect(sent).toStrictEqual([
+      { kind: 'placeDrawnObject', page: 3, index: 7, object: 'image', ordinal: 0, box: PHOTO_BOX, moveBy: { x: 0, y: 0 }, scaleBy: { x: 1.5, y: 1 }, version: V5 },
+    ]);
+  });
+
   it('a PLACED PICTURE is moved by the annotation command, by its own walk’s index', () => {
     const { sent, layer } = mounted({ pick: pick(PLACED) });
     const outline = layer.querySelector('[data-object="stamp:0"]');
