@@ -12,8 +12,9 @@
  * | after one Edit text action | 8 (a PDFium host of 90 MB, a compose host of 960 MB) | 2,101 MB |
  * | every document closed, 60 s later | 8, both new hosts the same size | 1,939 MB; `main` 421 MB against 119 MB at start |
  *
- * What it asserts, and only that: after the edit every tab draws its page and none is left opening (Part 7 B); and
- * after the close no engine host is running (Part 7 A). Every figure is RECORDED in the step's facts for the report,
+ * What it asserts, and only that: after the edit every tab draws its page and none is left opening (Part 7 B); over a
+ * long session of twenty edits in three fonts, no host grows by more than `LAST_TEN_MB` across the last ten (run 4,
+ * Part 2 item 13); and after the close no engine host is running (Part 7 A). Every figure is RECORDED in the step's facts for the report,
  * because what memory a process gives back to Windows is a reading, not something a walk can promise.
  *
  * Usage (Windows): node scripts/research/memoryWalk.mjs [<a .pdf to open seven copies of>]
@@ -26,13 +27,14 @@ import { expect as defaultExpect } from '@playwright/test';
 
 import { byRole, processTreeMemory } from '../lib/processMemory.mjs';
 import { root, startWalk } from './liveWalk.mjs';
+import { textSteps } from './textWalkSteps.mjs';
 
 // AN EDIT IS WRITTEN BEFORE ITS EDITOR CLOSES: textWalk measured 3 to 4.5 s on 2026-10-12 and this run's first
 // attempt left the editor open past the default 5 s on an i5-3230M, so an expectation here waits 30 s, as textWalk's does.
 const expect = defaultExpect.configure({ timeout: 30_000 });
 
 const sample = process.argv[2] ?? join(root, '_review/test-files/sample5.pdf');
-const { app, page, output, open, command, section, step, finish } = await startWalk('memory');
+const { app, page, output, open, command, saveTo, section, step, finish } = await startWalk('memory');
 const launched = app.process().pid;
 if (launched === undefined) throw new Error('the application has no process id to read memory under');
 const mainPid = launched;
@@ -106,6 +108,68 @@ await step('M3. ONE Edit text action: a paragraph clicked, a word typed, a click
   // ADR-0237: this walk's profile is new, so its first font list is read by the compose host once and kept; a later
   // session's edit starts none. Recorded rather than asserted here; the file is read back after M5.
   return { ...read, composeHostAfterEdit: read.hosts.some((role) => role.includes('compose')) };
+});
+
+/** Edits in the long session, and how often it reads memory. */
+const LONG_EDITS = 20;
+const READ_EVERY = 5;
+/**
+ * The most a host may grow over the session's LAST ten edits, in MB. Growth that stops is a cache or an allocator
+ * reaching its working size; growth without bound is a cost per edit, and the PDFium host's was about 5 MB an edit
+ * before ADR-0239's addendum (81 to 184 MB, the owner's reading; +102 MB over five rounds measured in a container on
+ * 2026-10-14). Twenty over ten edits refuses anything at or above 2 MB an edit.
+ */
+const LAST_TEN_MB = 20;
+
+await step('M3b. a long session (Part 2 item 13): twenty edits, three fonts applied in turn, memory read every five', async () => {
+  const { editor, ensureEditText, clickPage, chooseFont } = textSteps({ page, output, saveTo, command });
+  // BUNDLED FAMILIES, so the three are there on every machine and each is a face the edit really sets (ADR-0172).
+  const families = ['Carlito', 'Tinos', 'Arimo'];
+  await ensureEditText();
+  /** @type {{ edit: number; rolesMB: Record<string, number>; totalMB: number }[]} */
+  const readings = [{ edit: 0, ...reading() }];
+  /** @type {{ edit: number; family: string; problem: string | null }[]} */
+  const refused = [];
+  for (let edit = 1; edit <= LONG_EDITS; edit += 1) {
+    const block = page.locator('[data-text-block]').nth(1);
+    const box = await block.boundingBox();
+    if (box === null) throw new Error(`no second text block on the page at edit ${String(edit)}`);
+    await page.mouse.click(box.x + box.width / 2, box.y + Math.min(8, box.height / 2));
+    await expect(editor()).toBeFocused();
+    await page.keyboard.press('Control+A');
+    const family = families[(edit - 1) % families.length] ?? 'Carlito';
+    const samples = await chooseFont(family);
+    const problem = samples.findLast((sample) => sample.problem !== null)?.problem ?? null;
+    if (problem !== null) refused.push({ edit, family, problem });
+    // A WORD TYPED as well as the font, so each edit writes text and a font, as a person's does.
+    if ((await editor().count()) > 0) {
+      await editor().focus();
+      await page.keyboard.press('End');
+      await page.keyboard.type(` ${String(edit)}`);
+      await clickPage(20, 20);
+    }
+    await expect(editor()).toHaveCount(0);
+    if (edit % READ_EVERY === 0) {
+      // THE WRITE AND ITS READS SETTLE before the reading, as M3 waits.
+      await page.waitForTimeout(5000);
+      readings.push({ edit, ...reading() });
+    }
+  }
+  // EVERY FONT CHOICE LANDED: a session whose edits were refused measured nothing about edits.
+  expect(refused).toStrictEqual([]);
+  const tenth = readings.find((each) => each.edit === 10);
+  const last = readings.at(-1);
+  if (tenth === undefined || last === undefined) throw new Error('the session took no reading at edit 10 or at its end');
+  /** Each host's growth over the last ten edits, in MB. */
+  const lastTen = Object.fromEntries(
+    Object.entries(last.rolesMB)
+      .filter(([role]) => role.startsWith('host '))
+      .map(([role, mb]) => [role, mb - (tenth.rolesMB[role] ?? mb)]),
+  );
+  // THE HOSTS AN EDIT RUNS IN ARE READ, so an empty table cannot pass for one where nothing grew.
+  expect(Object.keys(lastTen)).toEqual(expect.arrayContaining(['host mupdf', 'host pdfium']));
+  expect(Object.entries(lastTen).filter(([, grew]) => grew > LAST_TEN_MB)).toStrictEqual([]);
+  return { readings, lastTenMB: lastTen, boundMB: LAST_TEN_MB };
 });
 
 await step('M4. every tab after the edit (Part 7 B): each draws its page, none is left opening, none failed', async () => {
