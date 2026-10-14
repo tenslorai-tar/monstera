@@ -331,6 +331,7 @@ import {
   placeCommand,
   recolourCommand,
   removeCommand,
+  shownBy,
   turnCommand,
 } from './objectEditing.js';
 import type { ObjectFill, PageObjects } from './objectEditing.js';
@@ -2245,16 +2246,21 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * while the mode is on. `selection`'s rule one walk along, and for its reasons — a pick read at another version names
    * whatever is now at that index, and one left standing while somebody draws a rectangle is a selection nothing on
    * screen belongs to, under a Delete key that is not tool-scoped.
+   *
+   * AND ONLY WHILE THE FILTER OUTLINES IT (the owner's E7): a shape picked under Edit all objects is not on screen under
+   * Edit images, and Properties went on describing it. Derived here rather than cleared when the filter changes, so no
+   * path that changes the filter can leave it standing.
    */
   const objectSelection = useMemo(
     () =>
       objectPicked !== undefined &&
       objectPicked.docId === open?.docId &&
       objectPicked.pick.version === open.version &&
-      toolId === EDIT_OBJECTS_TOOL_ID
+      toolId === EDIT_OBJECTS_TOOL_ID &&
+      shownBy(objectFilter, objectPicked.pick.object)
         ? objectPicked.pick
         : undefined,
-    [objectPicked, open?.docId, open?.version, toolId],
+    [objectFilter, objectPicked, open?.docId, open?.version, toolId],
   );
   const readObjectSelection = useCallback(() => objectSelection, [objectSelection]);
 

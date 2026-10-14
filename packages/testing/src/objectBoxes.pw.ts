@@ -141,6 +141,29 @@ test('Properties shows the selected object’s place, size and turn, and a Left 
   expect((sent[0] as { command: unknown }).command).toMatchObject({ kind: 'placeDrawnObject', moveBy: { x: 50, y: 0 }, scaleBy: { x: 1, y: 1 } });
 });
 
+// A FILTER THAT HIDES THE SELECTION DROPS IT (the owner's E7): a shape picked under Edit all objects, then Edit images
+// chosen, left Properties describing the shape.
+test('switching Edit object to Edit images drops a selected shape, and Properties stops describing it', async ({ page }) => {
+  await openApp(page, {
+    pageObjects: [
+      { index: 0, kind: 'path', left: 100, bottom: 300, right: 200, top: 360, fill: { red: 0, green: 0, blue: 255, alpha: 255 } },
+      { index: 1, kind: 'image', left: 300, bottom: 300, right: 400, top: 400, fill: null },
+    ],
+  });
+  await openDocument(page);
+  await openSection(page, 'Edit');
+  const tools = page.getByRole('toolbar', { name: 'Tools', exact: true });
+  await tools.getByRole('button', { name: 'Edit object', exact: true }).click();
+  await page.getByRole('group', { name: 'Objects on page 1' }).locator('[data-object="content:0"]').click();
+  const properties = page.locator('.m-properties').first();
+  // CONTROL: picked, the shape is what Properties describes.
+  await expect(properties.getByText('Kind: Shape')).toBeVisible();
+  await tools.getByRole('button', { name: 'Choices for Edit object' }).click();
+  await page.getByRole('menuitemcheckbox', { name: 'Edit images' }).click();
+  await expect(properties.getByText('Kind: Shape')).toHaveCount(0);
+  await expect(page.getByRole('group', { name: 'Objects on page 1' }).locator('[aria-pressed="true"]')).toHaveCount(0);
+});
+
 const RUN = { size: 12, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false } as const;
 
 // A WORD WRITTEN ONE LETTER PER OBJECT (the owner's E4: a press on *overview* picked its final *w*). The page's block
