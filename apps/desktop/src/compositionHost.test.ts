@@ -1587,6 +1587,104 @@ describe('the composition root, with BOTH engine hosts', () => {
     expect(spy(second.harness.calls, 'host.createSuspended')).toBe(2);
   });
 
+  it('LOW MEMORY stops the idle PDFium host at once, leaves the MuPDF host and the document, and says so (item 13e)', async () => {
+    const mupdf = platformAnswering(serialisingEngine());
+    const second = platformAnswering(pdfiumPeer([]).peer);
+    let available = 90;
+    // THE SHELL'S OWN SINK, which writes each failure line to stderr when no log is given.
+    const written = vi.spyOn(process.stderr, 'write');
+    const logged = (): string[] =>
+      written.mock.calls.map(([line]) => String(line)).filter((line) => line.startsWith('MONSTERA_SHELL_FAILURE memory-low'));
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickDocument: () => Promise.resolve(aDocument('low.pdf')),
+      enginePlatform: mupdf.platform,
+      pdfiumPlatform: second.platform,
+      memoryPressure: { intervalMs: 20, belowFraction: 0.1, read: () => ({ available, total: 100 }) },
+    });
+    const opened = await handlers['document.open']({});
+    if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+    const { docId } = opened.value;
+    const edit = (version: DocVersion) =>
+      handlers['document.execute']({
+        docId,
+        command: { kind: 'replaceTextObject', page: 0, ...replacementFieldsOf([{ index: 2, text: 'hi' }]), version },
+      });
+    const first = await edit(opened.value.version);
+    if (!first.ok) throw new Error(JSON.stringify(first));
+    // CONTROL: readings above the line stop nothing.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(spy(second.harness.calls, 'host.terminate')).toBe(0);
+
+    available = 5;
+    await vi.waitFor(() => {
+      expect(spy(second.harness.calls, 'host.terminate')).toBe(1);
+    });
+    expect(spy(mupdf.harness.calls, 'host.terminate')).toBe(0);
+    await vi.waitFor(() => {
+      expect(logged()).toStrictEqual([
+        'MONSTERA_SHELL_FAILURE memory-low: available memory fell below 10%: PDFium host stopped, compose host kept\n',
+      ]);
+    });
+    // THE DOCUMENT IS AS IT WAS: the next edit lands on the version the first one made.
+    const next = await edit(first.value.version);
+    expect(next.ok, JSON.stringify(next)).toBe(true);
+    written.mockRestore();
+  });
+
+  it('LOW MEMORY while the PDFium host is working leaves it running, and says it was kept (item 13e)', async () => {
+    const mupdf = platformAnswering(serialisingEngine());
+    const pdfium = pdfiumPeer([]);
+    // A CALL THAT DOES NOT FINISH: once holding, the peer answers no apply, so that edit stays in the host.
+    let holding = false;
+    let held = 0;
+    const second = platformAnswering((channel, params) => {
+      if (holding && channel === 'engine/apply') {
+        held += 1;
+        return null;
+      }
+      return pdfium.peer(channel, params);
+    });
+    let available = 90;
+    const written = vi.spyOn(process.stderr, 'write');
+    const logged = (): string[] =>
+      written.mock.calls.map(([line]) => String(line)).filter((line) => line.startsWith('MONSTERA_SHELL_FAILURE memory-low'));
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickDocument: () => Promise.resolve(aDocument('busy.pdf')),
+      enginePlatform: mupdf.platform,
+      pdfiumPlatform: second.platform,
+      memoryPressure: { intervalMs: 20, belowFraction: 0.1, read: () => ({ available, total: 100 }) },
+    });
+    const opened = await handlers['document.open']({});
+    if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+    const { docId } = opened.value;
+    const edit = (version: DocVersion) =>
+      handlers['document.execute']({
+        docId,
+        command: { kind: 'replaceTextObject', page: 0, ...replacementFieldsOf([{ index: 2, text: 'hi' }]), version },
+      });
+    const first = await edit(opened.value.version);
+    if (!first.ok) throw new Error(JSON.stringify(first));
+    holding = true;
+    void edit(first.value.version);
+    await vi.waitFor(() => {
+      expect(held).toBe(1);
+    });
+
+    available = 5;
+    await vi.waitFor(() => {
+      expect(logged()).toStrictEqual([
+        'MONSTERA_SHELL_FAILURE memory-low: available memory fell below 10%: PDFium host kept, compose host kept\n',
+      ]);
+    });
+    expect(spy(second.harness.calls, 'host.terminate')).toBe(0);
+    expect(spy(mupdf.harness.calls, 'host.terminate')).toBe(0);
+    written.mockRestore();
+  });
+
   it('CONTROL: with the shell’s idle time, the same edit leaves the PDFium host running', async () => {
     const mupdf = platformAnswering(serialisingEngine());
     const second = platformAnswering(pdfiumPeer([]).peer);

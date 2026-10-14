@@ -278,6 +278,7 @@ import type { SecretStoreSurface } from './secretStore.js';
 import { type ChatHistory, noChatHistory } from './chatHistory.js';
 import { type SettingsSurface, createEphemeralSettings, createJsonFile } from './settingsFile.js';
 import { idleHost } from './idleRetire.js';
+import { type MemoryPressurePolicy, watchMemoryPressure } from './memoryPressure.js';
 import { type ShellFailureSink, engineHostEndingEvent } from './shellFailure.js';
 import type { ShellLog } from './shellLog.js';
 import type { CrashReports } from './crashReports.js';
@@ -776,6 +777,12 @@ export interface ShellComposition {
    */
   readonly hostIdleMs: number;
   /**
+   * How low memory is noticed (item 13e, `memoryPressure.ts`). Required and undefaulted, for the deadline's reason: the
+   * shell reads the computer's memory with `MEMORY_PRESSURE`'s figures, and a case that fires the signal passes a read
+   * it controls.
+   */
+  readonly memoryPressure: MemoryPressurePolicy;
+  /**
    * The same surfaces under the SECOND AppContainer profile, or `null`.
    *
    * A separate field rather than a flag on the one above, because the two
@@ -927,6 +934,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     hostCallDeadline,
     hostMemorySampling,
     hostIdleMs,
+    memoryPressure,
     pdfiumPlatform = null,
     composePlatform = null,
     layoutTextPlatform = null,
@@ -1101,6 +1109,24 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     await Promise.all([engineHost.closeHost(), pdfiumHost?.close()]);
     await composeHost?.retireIfIdle();
   };
+  /**
+   * LOW MEMORY (item 13e, `memoryPressure.ts`): each host that holds no session is asked to stop where it is idle by its
+   * own account, so one doing work, or with work queued, is left running; the MuPDF host holds the documents' sessions
+   * and is not asked. Logged, so a person's report says the application answered a low reading.
+   */
+  const stopWatchingMemory = watchMemoryPressure(
+    memoryPressure,
+    async () => {
+      const [pdfium, compose] = await Promise.all([pdfiumHost?.retireIfIdle() ?? false, composeHost?.retireIfIdle() ?? false]);
+      failures({
+        event: 'memory-low',
+        detail: `available memory fell below ${String(Math.round(memoryPressure.belowFraction * 100))}%: PDFium host ${pdfium ? 'stopped' : 'kept'}, compose host ${compose ? 'stopped' : 'kept'}`,
+      });
+    },
+    (error: unknown) => {
+      failures({ event: 'memory-low', detail: `a host could not be stopped on low memory: ${String(error)}` });
+    },
+  );
   // THE BACK-REFERENCE CLOSED, one line after the only thing that could close
   // it. `recycleHandle` above was written against this because `create` opens
   // documents from `documents`, so the service exists first and the factory can
@@ -2172,6 +2198,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
      * account kept running.
      */
     shutdown: async () => {
+      stopWatchingMemory();
       for (const docId of documents.openDocIds()) {
         await documents.close(docId);
       }
@@ -3553,6 +3580,8 @@ function pdfiumHostBinding(
   readonly pageContent: PdfiumPageContent;
   /** Whether the PDFium host starts on this computer — `pdfium.dll` loaded, as a first edit loads it. */
   readonly starts: () => Promise<StartReading>;
+  /** Stops the host where no call is running, and answers whether it stopped (item 13b's idle stop, 13e's low memory). */
+  readonly retireIfIdle: () => Promise<boolean>;
   readonly close: () => Promise<void>;
 } {
   /** What one built host holds. Cleared together, or not at all. */
@@ -3793,6 +3822,7 @@ function pdfiumHostBinding(
     runFonts: (image, page, indices, unpack) => counting(async () => (await ensure()).runFonts(image, page, indices, unpack)),
     pageRuns: (image, page) => counting(async () => (await ensure()).pageRuns(image, page)),
     pageContent: (image, page) => counting(async () => (await ensure()).pageContent(image, page)),
+    retireIfIdle,
     close,
   };
 }

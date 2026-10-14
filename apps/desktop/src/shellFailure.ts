@@ -108,6 +108,11 @@ export type ShellFailureEvent =
    * {@link engineHostEndingEvent} is the one place that decides which a termination is.
    */
   | 'engine-host-closed'
+  /**
+   * Available memory fell below the shell's line (run 4 item 13e): which hosts were stopped and which were kept because
+   * they were working. Its own event, so a person's report shows the application answered a low reading.
+   */
+  | 'memory-low'
   // An external converter (§8) that did not produce its output: why it did not,
   // including what it wrote to stderr, which the renderer is never sent.
   | 'converter-failed'
