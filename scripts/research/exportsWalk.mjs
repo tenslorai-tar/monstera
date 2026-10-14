@@ -24,6 +24,7 @@ import { PDFArray, PDFDict, PDFDocument, PDFName, PDFString, StandardFonts } fro
 import { expect as defaultExpect } from '@playwright/test';
 import { strFromU8, unzipSync } from 'fflate';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 import { root, startWalk } from './liveWalk.mjs';
 
 // A RECOGNITION AND AN EXPORT take several seconds each on the walk's machine; a step gets thirty.
@@ -33,6 +34,9 @@ const expect = defaultExpect.configure({ timeout: 30_000 });
 refuseStaleBuild(root, [['packages/kernel/src/scanTableFixture.ts', 'packages/kernel/dist/scanTableFixture.js', 'tsc']], 1);
 // A LITERAL SPECIFIER, so `proof:electronimports` can read what this loads.
 const { SCAN_TABLE_ROWS, buildScannedTablePdf } = await import('../../packages/kernel/dist/scanTableFixture.js');
+// THE ENGINE BOUND IN THIS PROCESS, through the one helper scripts use: the fixture opens a document with the kernel's
+// engine code, which threw "the MuPDF shim is not bound in this process" on 2026-10-14 before any step ran.
+if (bindNativeEngine() === null) throw new Error('the MuPDF shim is not built here, so the walk cannot make its scanned table: node scripts/provision/mupdf.mjs');
 
 const walk = await startWalk('exports');
 const { page, output, open, saveTo, command, step, finish } = walk;
@@ -99,6 +103,9 @@ await step('O10: a CSV past one composition’s bound is imported whole, with th
   const saved = join(output, 'register.pdf');
   await saveTo(saved);
   await command('New PDF table from CSV…');
+  // THE FONT QUESTION FIRST (L4), answered with its default, as commentsWalk's Markdown steps answer it: the picker is
+  // opened by the button after it, and without this press the walk waited 30 s behind the dialog (2026-10-14).
+  await page.getByRole('dialog', { name: 'New PDF' }).getByRole('button', { name: 'Choose file…' }).click();
   // THE WORK IS ON SCREEN while it runs, with a Cancel, and counts its parts once main has cut the file.
   const notice = page.locator('[data-task-notice]');
   await expect(notice).toContainText('Converting CSV to PDF');
