@@ -221,7 +221,7 @@ async function main() {
     before.length === 3 && rectangle !== undefined && text !== undefined,
     `${before.map((object) => object.kind).join(', ')}`,
   );
-  const box = rectangle ?? { index: -1, left: 0, bottom: 0, right: 0, top: 0, fill: null };
+  const box = rectangle ?? { index: -1, left: 0, bottom: 0, right: 0, top: 0, turn: undefined, fill: null };
 
   // ── PLACE ──────────────────────────────────────────────────────────────────
   const place = command('placePageObject', {
@@ -398,13 +398,17 @@ async function main() {
   const turn = command('placePageObject', { page: 0, index: box.index, moveBy: { x: 0, y: 0 }, scaleBy: { x: 1, y: 1 }, rotateBy: 90, version: 1 });
   const turnedBox = (await objectsOf(await localPdfiumExecution.apply({ session: original, command: turn, sources: [], reads: undefined })))[box.index] ?? box;
   record(
-    'a quarter turn reads back about the rectangle’s own centre, its 120 by 40 now 40 by 120',
-    Math.abs((turnedBox.left + turnedBox.right) / 2 - (box.left + box.right) / 2) < 0.01 &&
+    'a quarter turn reads back about the rectangle’s own centre, its 120 by 40 now 40 by 120, and the walk reads it turned 90',
+    // THE TURN THE WALK READS (E6): Properties shows this number, and an upright rectangle reads none.
+    turnedBox.turn === 90 &&
+      box.turn === undefined &&
+      Math.abs((turnedBox.left + turnedBox.right) / 2 - (box.left + box.right) / 2) < 0.01 &&
       Math.abs((turnedBox.bottom + turnedBox.top) / 2 - (box.bottom + box.top) / 2) < 0.01 &&
       Math.abs(turnedBox.right - turnedBox.left - (box.top - box.bottom)) < 0.01 &&
       Math.abs(turnedBox.top - turnedBox.bottom - (box.right - box.left)) < 0.01,
     `${box.left.toFixed(1)},${box.bottom.toFixed(1)} .. ${box.right.toFixed(1)},${box.top.toFixed(1)} -> ` +
-      `${turnedBox.left.toFixed(1)},${turnedBox.bottom.toFixed(1)} .. ${turnedBox.right.toFixed(1)},${turnedBox.top.toFixed(1)}`,
+      `${turnedBox.left.toFixed(1)},${turnedBox.bottom.toFixed(1)} .. ${turnedBox.right.toFixed(1)},${turnedBox.top.toFixed(1)}, ` +
+      `turn ${String(turnedBox.turn)} from ${String(box.turn)}`,
   );
 
   // ── ARRANGE (ADR-0244) ──────────────────────────────────────────────────────

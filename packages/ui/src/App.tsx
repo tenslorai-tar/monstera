@@ -324,7 +324,15 @@ import type { AnnotationSelection, LinkSelection } from './annotations/selectToo
 import { SELECT_TOOL_ID, selectionOfNewest, selectionOfPage } from './annotations/selectTool.js';
 import { SIGNATURE_TOOL_ID } from './annotations/signatureTool.js';
 import { chooseSignature, placePlainSignature, signatureCommand } from './commands/signatureCommands.js';
-import { type ObjectFilter, type ObjectPick, carryPick, recolourCommand, removeCommand } from './objectEditing.js';
+import {
+  type ObjectFilter,
+  type ObjectPick,
+  carryPick,
+  placeCommand,
+  recolourCommand,
+  removeCommand,
+  turnCommand,
+} from './objectEditing.js';
 import type { ObjectFill, PageObjects } from './objectEditing.js';
 import { usePageWriting } from './usePageWriting.js';
 import type { SignatureLook } from './dialogs/signature.js';
@@ -2542,6 +2550,24 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     (colour: ObjectFill): void => {
       if (activeId === undefined || objectSelection === undefined) return;
       const command = recolourCommand(objectSelection, colour);
+      if (command !== undefined) void sendObject(activeId, command);
+    },
+    [activeId, objectSelection, sendObject],
+  );
+  /** Puts the selected object at a box typed in the Properties tab (E6), as a drag to that box would. */
+  const placeObjectAt = useCallback(
+    (target: AnnotationRect): void => {
+      if (activeId === undefined || objectSelection === undefined) return;
+      const command = placeCommand(objectSelection, target);
+      if (command !== undefined) void sendObject(activeId, command);
+    },
+    [activeId, objectSelection, sendObject],
+  );
+  /** Turns the selected object by `degrees`, from the Properties tab's rotation (E6), as the rotate handle would. */
+  const turnObjectBy = useCallback(
+    (degrees: number): void => {
+      if (activeId === undefined || objectSelection === undefined) return;
+      const command = turnCommand(objectSelection, degrees);
       if (command !== undefined) void sendObject(activeId, command);
     },
     [activeId, objectSelection, sendObject],
@@ -4891,7 +4917,11 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
                   selection={selection}
                   settings={settings}
                   fonts={markFontList}
-                  object={objectSelection === undefined ? undefined : { pick: objectSelection, onRecolour: recolourObject }}
+                  object={
+                    objectSelection === undefined
+                      ? undefined
+                      : { pick: objectSelection, onRecolour: recolourObject, onPlace: placeObjectAt, onTurn: turnObjectBy }
+                  }
                 />
               )}
             </ContextPanel>

@@ -2132,6 +2132,8 @@ export interface DocumentPageObject {
   readonly top: number;
   /** The part of the box its clip lets through, absent where nothing narrows it (E3). */
   readonly shown?: { readonly left: number; readonly bottom: number; readonly right: number; readonly top: number };
+  /** How far its own matrix turns it, degrees counter-clockwise; absent where upright (E6). */
+  readonly turn?: number;
   readonly fill: {
     readonly red: number;
     readonly green: number;

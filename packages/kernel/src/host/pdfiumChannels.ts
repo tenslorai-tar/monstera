@@ -650,6 +650,8 @@ const basePdfiumChannels = {
                 top: z.number(),
                 // THE PART ITS CLIP LETS THROUGH, absent where nothing narrows it (E3).
                 shown: z.object({ left: z.number(), bottom: z.number(), right: z.number(), top: z.number() }).strict().optional(),
+                // ITS MATRIX'S TURN, absent where upright (E6).
+                turn: z.number().min(-180).max(180).optional(),
                 fill: z
                   .object({
                     red: z.number().int().min(0).max(255),

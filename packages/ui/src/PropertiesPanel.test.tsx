@@ -612,13 +612,22 @@ describe('PropertiesPanel with an object selected on the page (ADR-0153 Decision
     walked: 3,
   };
 
+  const placed: unknown[] = [];
+  const turned: number[] = [];
   function shown(pick: ObjectPick): string[] {
     const colours: string[] = [];
+    placed.length = 0;
+    turned.length = 0;
     render(
       <Wrapped>
         <PropertiesPanel
           context={CONTEXT}
-          object={{ pick, onRecolour: (colour) => colours.push(JSON.stringify(colour)) }}
+          object={{
+            pick,
+            onRecolour: (colour) => colours.push(JSON.stringify(colour)),
+            onPlace: (target) => placed.push(target),
+            onTurn: (degrees) => turned.push(degrees),
+          }}
           onAuthor={() => undefined}
           onComment={() => undefined}
           wordsOf={() => Promise.reject(new Error('an object has no comment to read'))}
@@ -651,6 +660,51 @@ describe('PropertiesPanel with an object selected on the page (ADR-0153 Decision
     shown({ ...RULE, object: { ...RULE.object, fill: null } });
     expect(screen.queryByRole('button', { name: 'Yellow' })).toBeNull();
     expect(screen.getByText('Monstera cannot read a colour for this object, so it cannot change it.')).toBeDefined();
+  });
+
+  it('shows WHERE it is, how big and how far turned, and a number typed is a placement (E6)', () => {
+    shown({ ...RULE, object: { ...RULE.object, box: { x0: 72, y0: 100, x1: 172, y1: 150 }, turn: 30 } });
+    const field = (name: string): HTMLInputElement => screen.getByLabelText(name);
+    expect([field('Left (pt)').value, field('Bottom (pt)').value, field('Width (pt)').value, field('Height (pt)').value, field('Rotation (°)').value]).toStrictEqual([
+      '72',
+      '100',
+      '100',
+      '50',
+      '30',
+    ]);
+    // LEFT TYPED: the box moves and keeps its size.
+    fireEvent.change(field('Left (pt)'), { target: { value: '90' } });
+    fireEvent.blur(field('Left (pt)'));
+    // WIDTH TYPED and Enter: the left edge stays.
+    fireEvent.change(field('Width (pt)'), { target: { value: '200' } });
+    fireEvent.keyDown(field('Width (pt)'), { key: 'Enter' });
+    expect(placed).toStrictEqual([
+      { x0: 90, y0: 100, x1: 190, y1: 150 },
+      { x0: 72, y0: 100, x1: 272, y1: 150 },
+    ]);
+    // ROTATION TYPED is the angle it should stand at; the command turns BY the difference.
+    fireEvent.change(field('Rotation (°)'), { target: { value: '45' } });
+    fireEvent.blur(field('Rotation (°)'));
+    expect(turned).toStrictEqual([15]);
+  });
+
+  it('CONTROL: a field left as it was, or emptied, sends nothing', () => {
+    shown(RULE);
+    fireEvent.blur(screen.getByLabelText('Left (pt)'));
+    fireEvent.change(screen.getByLabelText('Height (pt)'), { target: { value: '' } });
+    fireEvent.blur(screen.getByLabelText('Height (pt)'));
+    expect(placed).toStrictEqual([]);
+  });
+
+  it('a block of text shows how it is set, and a placed picture, which cannot be turned, has no rotation', () => {
+    shown({ ...RULE, object: { ...RULE.object, kind: 'text', look: { size: 11, bold: true, italic: false, family: 'serif' } } });
+    expect(screen.getByText('Text size (pt): 11')).toBeDefined();
+    expect(screen.getByText('Style: Bold')).toBeDefined();
+    expect(screen.getByText('Font: Serif')).toBeDefined();
+    cleanup();
+    shown({ ...RULE, object: { ...RULE.object, kind: 'picture', source: 'stamp', fill: null } });
+    expect(screen.getByLabelText('Left (pt)')).toBeDefined();
+    expect(screen.queryByLabelText('Rotation (°)')).toBeNull();
   });
 });
 

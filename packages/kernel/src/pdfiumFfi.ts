@@ -4528,6 +4528,12 @@ export interface PageObject {
    */
   readonly shown?: { readonly left: number; readonly bottom: number; readonly right: number; readonly top: number };
   /**
+   * How far its own matrix turns it, in degrees counter-clockwise, where it is turned at all (the owner's E6): the angle
+   * of the matrix's first column. A path drawn slanted under an upright matrix reads as upright, which is what its
+   * matrix says; absent is upright.
+   */
+  readonly turn?: number;
+  /**
    * Its fill colour, or `null` where the engine would not answer.
    *
    * A `null` rather than an opaque black, which is the same distinction
@@ -4756,6 +4762,32 @@ function shownOf(
 }
 
 /**
+ * How far an object's own matrix turns it, in degrees counter-clockwise between −180 and 180 to a hundredth (E6), or
+ * `undefined` where it is upright or its matrix is no turn of an upright box.
+ *
+ * A TURN OF AN UPRIGHT BOX is a rotation after one scale on each axis: the matrix's columns are at right angles. The
+ * answer is where its x-axis points, the first column's angle, which is what a placement's turn adds to. A photo is drawn
+ * under `[w 0 0 h]`, two scales, so the stricter rule {@link turnOf} keeps for a text box, one scale for both, would
+ * answer nothing for it. A MIRROR IS ALLOWED: pdf-lib draws a rectangle under a y-flip, and a Chromium print sets its
+ * page under one, so measured 2026-10-14 a rectangle turned a quarter reads `[0 1 1 0]`, its x-axis at 90. A shear has
+ * no single angle, and none is answered.
+ */
+function objectTurn(bindings: Bound, object: unknown): number | undefined {
+  let matrix: Matrix6;
+  try {
+    matrix = matrixOf(bindings, object);
+  } catch {
+    // A MATRIX PDFium WILL NOT DESCRIBE has no turn to show; the object is still listed, upright.
+    return undefined;
+  }
+  const [a, b, c, d] = matrix;
+  const scale = Math.hypot(a, b) * Math.hypot(c, d);
+  if (!(scale > 0) || Math.abs(a * c + b * d) > scale * 1e-3) return undefined;
+  const degrees = Math.round(((Math.atan2(b, a) * 180) / Math.PI) * 100) / 100;
+  return degrees === 0 ? undefined : degrees;
+}
+
+/**
  * Moves, scales and rotates a block's objects as ONE thing (ADR-0180, corrected 2026-10-06): scaled about `anchor` (its
  * top left), then turned about the centre of what that left, then moved. The three are composed into one matrix and
  * applied to each object once, so the block never stands half placed between steps.
@@ -4862,11 +4894,13 @@ export function pageObjects(session: PdfiumSession, page: number): Promise<reado
           'FPDFPageObj_GetFillColor',
         );
         const shown = shownOf(bindings, object, box);
+        const turn = objectTurn(bindings, object);
         found.push({
           index,
           kind,
           ...box,
           ...(shown === undefined ? {} : { shown }),
+          ...(turn === undefined ? {} : { turn }),
           fill:
             gotFill === 1
               ? {

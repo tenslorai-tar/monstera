@@ -5803,6 +5803,8 @@ export const channels = {
              * window is drawn, picked and moved by what shows, never by the box it would have unclipped.
              */
             shown: z.object({ left: z.number(), bottom: z.number(), right: z.number(), top: z.number() }).optional(),
+            /** How far its own matrix turns it, degrees counter-clockwise; absent where it is upright (E6). */
+            turn: z.number().min(-180).max(180).optional(),
             fill: z
               .object({
                 red: z.number().int().min(0).max(255),

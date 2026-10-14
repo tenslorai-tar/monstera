@@ -120,6 +120,27 @@ test('Edit object’s menu brings the first of two objects forward, and offers n
   expect((sent[0] as { command: unknown }).command).toMatchObject({ kind: 'arrangePageObject', index: 0, toward: 'forward' });
 });
 
+// THE PROPERTIES TAB'S NUMBERS (the owner's E6): the selected photo's place, size and turn, and a Left typed there moves
+// it as a drag would.
+test('Properties shows the selected object’s place, size and turn, and a Left typed there moves it', async ({ page }) => {
+  const sent: unknown[] = [];
+  await openApp(page, { pageObjects: [{ index: 0, kind: 'image', left: 200, bottom: 300, right: 300, top: 380, turn: 30, fill: null }] }, (channel, params) => {
+    if (channel === 'document.execute') sent.push(params);
+  });
+  await openDocument(page);
+  await openSection(page, 'Edit');
+  await page.getByRole('toolbar', { name: 'Tools', exact: true }).getByRole('button', { name: 'Edit object', exact: true }).click();
+  await page.getByRole('group', { name: 'Objects on page 1' }).locator('[data-object="content:0"]').click();
+  const properties = page.locator('.m-properties').first();
+  await expect(properties.getByLabel('Left (pt)')).toHaveValue('200');
+  await expect(properties.getByLabel('Width (pt)')).toHaveValue('100');
+  await expect(properties.getByLabel('Rotation (°)')).toHaveValue('30');
+  await properties.getByLabel('Left (pt)').fill('250');
+  await properties.getByLabel('Left (pt)').press('Enter');
+  await expect.poll(() => sent.length).toBe(1);
+  expect((sent[0] as { command: unknown }).command).toMatchObject({ kind: 'placeDrawnObject', moveBy: { x: 50, y: 0 }, scaleBy: { x: 1, y: 1 } });
+});
+
 const RUN = { size: 12, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false } as const;
 
 // A WORD WRITTEN ONE LETTER PER OBJECT (the owner's E4: a press on *overview* picked its final *w*). The page's block

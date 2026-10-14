@@ -1731,6 +1731,21 @@ export const EDIT_OBJECTS_SHAPES_TITLE = messageKey('command.edit.objects-shapes
 export const PROPERTIES_OBJECT_HEADING = messageKey('surface.properties.object');
 export const PROPERTIES_OBJECT_KIND = messageKey('surface.properties.object-kind');
 export const PROPERTIES_OBJECT_NO_FILL = messageKey('surface.properties.object-no-fill');
+export const PROPERTIES_OBJECT_LEFT = messageKey('surface.properties.object-left');
+export const PROPERTIES_OBJECT_BOTTOM = messageKey('surface.properties.object-bottom');
+export const PROPERTIES_OBJECT_WIDTH = messageKey('surface.properties.object-width');
+export const PROPERTIES_OBJECT_HEIGHT = messageKey('surface.properties.object-height');
+export const PROPERTIES_OBJECT_ROTATION = messageKey('surface.properties.object-rotation');
+export const PROPERTIES_OBJECT_TEXT_SIZE = messageKey('surface.properties.object-text-size');
+export const PROPERTIES_OBJECT_TEXT_STYLE = messageKey('surface.properties.object-text-style');
+export const PROPERTIES_OBJECT_TEXT_FAMILY = messageKey('surface.properties.object-text-family');
+export const TEXT_STYLE_REGULAR = messageKey('surface.properties.text-style-regular');
+export const TEXT_STYLE_BOLD = messageKey('surface.properties.text-style-bold');
+export const TEXT_STYLE_ITALIC = messageKey('surface.properties.text-style-italic');
+export const TEXT_STYLE_BOLD_ITALIC = messageKey('surface.properties.text-style-bold-italic');
+export const TEXT_FAMILY_SERIF = messageKey('surface.properties.text-family-serif');
+export const TEXT_FAMILY_SANS = messageKey('surface.properties.text-family-sans');
+export const TEXT_FAMILY_MONO = messageKey('surface.properties.text-family-mono');
 // UNDER THE MODE'S DOMAIN: the words a person sees for each kind of thing on a page, on its outline and in the
 // Properties tab. A key's FIRST segment may not carry a hyphen (`KEY_SHAPE`), so not an `object-kind.` of their own.
 export const OBJECT_KIND_UNKNOWN = messageKey('surface.object-edit.kind-unknown');
@@ -4586,6 +4601,22 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // SAYS WHOSE LIMITATION IT IS. *Cannot* would read as Monstera refusing; the honest version is that this object has
   // no colour Monstera can read, which is also what tells a person that trying again will not help.
   [PROPERTIES_OBJECT_NO_FILL]: 'Monstera cannot read a colour for this object, so it cannot change it.',
+  // IN POINTS FROM THE PAGE'S LOWER-LEFT CORNER, as PDF measures a page, and said in the label so no number is a guess.
+  [PROPERTIES_OBJECT_LEFT]: 'Left (pt)',
+  [PROPERTIES_OBJECT_BOTTOM]: 'Bottom (pt)',
+  [PROPERTIES_OBJECT_WIDTH]: 'Width (pt)',
+  [PROPERTIES_OBJECT_HEIGHT]: 'Height (pt)',
+  [PROPERTIES_OBJECT_ROTATION]: 'Rotation (°)',
+  [PROPERTIES_OBJECT_TEXT_SIZE]: 'Text size (pt)',
+  [PROPERTIES_OBJECT_TEXT_STYLE]: 'Style',
+  [PROPERTIES_OBJECT_TEXT_FAMILY]: 'Font',
+  [TEXT_STYLE_REGULAR]: 'Regular',
+  [TEXT_STYLE_BOLD]: 'Bold',
+  [TEXT_STYLE_ITALIC]: 'Italic',
+  [TEXT_STYLE_BOLD_ITALIC]: 'Bold italic',
+  [TEXT_FAMILY_SERIF]: 'Serif',
+  [TEXT_FAMILY_SANS]: 'Sans serif',
+  [TEXT_FAMILY_MONO]: 'Monospaced',
   // THE KINDS, as words a person recognises rather than PDF's vocabulary. A
   // reader does not know what a *path* is and does know what a shape is; the
   // one that stays technical is `form`, because it is a PDF form XObject rather

@@ -76,6 +76,7 @@ import {
 import { spacingBoundOf, spacingOf } from './textFormatting.js';
 import { NumberInput, TextSection, type TextRow } from './TextSection.js';
 import { kindWord } from './ObjectEditLayer.js';
+import { ObjectGeometry } from './ObjectGeometry.js';
 import { type ObjectFill, type ObjectPick, recolourable } from './objectEditing.js';
 import { pdfjsPageOf } from './pageNumbering.js';
 import { Button } from './primitives/Button.js';
@@ -137,7 +138,16 @@ export interface PropertiesPanelProps {
    * when none is. The tool slot holds Edit object or the select tool, never both, so this and {@link selection} are
    * never both set.
    */
-  readonly object?: { readonly pick: ObjectPick; readonly onRecolour: (colour: ObjectFill) => void } | undefined;
+  readonly object?:
+    | {
+        readonly pick: ObjectPick;
+        readonly onRecolour: (colour: ObjectFill) => void;
+        /** Puts it at a box typed in, as a drag would (E6). */
+        readonly onPlace: (target: AnnotationRect) => void;
+        /** Turns it by a number of degrees, as the rotate handle would (E6). */
+        readonly onTurn: (degrees: number) => void;
+      }
+    | undefined;
   /** The computer's and Monstera's fonts, which a text box's and a typewriter's picker offers (K2); `undefined` while read. */
   readonly fonts?: FontList;
 }
@@ -215,6 +225,7 @@ export function PropertiesPanel({
             {i18n._(PROPERTIES_OBJECT_KIND)}: {i18n._(kindWord(pick.object.kind))}
           </p>
         </header>
+        <ObjectGeometry onPlace={object.onPlace} onTurn={object.onTurn} pick={pick} />
         {recolourable(pick) && fill !== null ? (
           <ColourRow
             auto={false}

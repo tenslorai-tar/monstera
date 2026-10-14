@@ -237,6 +237,9 @@ async function run(pdfium, kernel) {
   check(
     CASES[9] ?? '',
     turned !== undefined &&
+      // THE TURN PDFium's WALK READS of a photo under two scales (E6), which a one-scale rule would read as none.
+      turned.turn === 90 &&
+      photo.turn === undefined &&
       JSON.stringify(centreOf(turned)) === JSON.stringify(centreOf(photo)) &&
       Math.abs(turned.right - turned.left - (photo.top - photo.bottom)) < 0.5 &&
       Math.abs(turned.top - turned.bottom - (photo.right - photo.left)) < 0.5 &&

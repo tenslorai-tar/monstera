@@ -805,6 +805,8 @@ export interface BrowserShimOptions {
         readonly top: number;
         /** What its clip lets through, where one narrows it (E3), as PDFium's walk answers. */
         readonly shown?: { readonly left: number; readonly bottom: number; readonly right: number; readonly top: number };
+        /** Its matrix's turn, where it is turned (E6), as PDFium's walk answers. */
+        readonly turn?: number;
         readonly fill: {
           readonly red: number;
           readonly green: number;

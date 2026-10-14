@@ -66,8 +66,20 @@ export interface EditableObject {
    * first. Required, so a command built from it cannot name one letter of a block by forgetting the rest.
    */
   readonly members: readonly number[];
+  /** How far its own matrix turns it, degrees counter-clockwise, as PDFium reads it; absent is upright (E6). */
+  readonly turn?: number;
+  /** How a block's text is set, as the block read Edit text opens answers it (E6, ADR-0242); text in a block only. */
+  readonly look?: ObjectTextLook;
   /** Its fill, for page content; `null` for a picture and where PDFium would not say. */
   readonly fill: ObjectFill | null;
+}
+
+/** A block's text as Properties shows it: its size in points and its style, from the block's own base style. */
+export interface ObjectTextLook {
+  readonly size: number;
+  readonly bold: boolean;
+  readonly italic: boolean;
+  readonly family: 'serif' | 'sans' | 'mono';
 }
 
 /** One page's objects at the version both reads answered at, page content first and stamps after. */

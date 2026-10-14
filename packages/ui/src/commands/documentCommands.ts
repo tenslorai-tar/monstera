@@ -4716,7 +4716,22 @@ export async function readPageObjects(
       continue;
     }
     if (block !== undefined) placed.set(block, objects.length);
-    objects.push({ source: 'content', index: object.index, ordinal, kind: object.kind, box: shown, drawn, members: [object.index], fill: object.fill });
+    const style = block === undefined || !blocks.ok ? undefined : blocks.value.items[block]?.style;
+    objects.push({
+      source: 'content',
+      index: object.index,
+      ordinal,
+      kind: object.kind,
+      box: shown,
+      drawn,
+      members: [object.index],
+      fill: object.fill,
+      ...(object.turn === undefined ? {} : { turn: object.turn }),
+      // HOW THE BLOCK IS SET, from its own base style: what Properties shows of text (E6).
+      ...(style === undefined
+        ? {}
+        : { look: { size: style.size, bold: style.bold, italic: style.italic, family: style.mono ? 'mono' : style.serif ? 'serif' : 'sans' } }),
+    });
   }
   for (const mark of marks.value.items) {
     // A PICTURE A PERSON PLACED, on this page and drawn in a region: what the content walk cannot see.
