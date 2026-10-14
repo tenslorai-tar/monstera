@@ -209,6 +209,27 @@ test.describe('the Forms tab', () => {
     ]);
   });
 
+  test('a comb field’s value is ONE LINE in the Fields list, its whole text in the tooltip — CONTROL: a value with a line break keeps it (F11)', async ({ page }) => {
+    const sent: { channel: string; params: unknown }[] = [];
+    const digits = '5663546624'.repeat(4);
+    const comb: ShimFormField = { ...LISTED, index: 1, name: 'Account', values: [digits], comb: true, maxLength: 40, rect: null };
+    const address: ShimFormField = { ...LISTED, index: 2, name: 'Address', values: ['1 High Street\nLeeds'], multiline: true, rect: null };
+    await openForms(page, sent, [LISTED, comb, address]);
+    await openSection(page, 'Forms');
+    await runCommand(page, 'Fields list');
+    const lines = async (name: string): Promise<number> =>
+      page.getByRole('button', { name, exact: true }).evaluate((element) => {
+        const style = getComputedStyle(element);
+        const inner = element.getBoundingClientRect().height - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) - 2;
+        return Math.round(inner / parseFloat(style.lineHeight === 'normal' ? String(parseFloat(style.fontSize) * 1.2) : style.lineHeight));
+      });
+    expect(await lines('Account')).toBe(1);
+    await expect(page.getByRole('button', { name: 'Account', exact: true })).toHaveAttribute('title', digits);
+    // AT LEAST its two lines: the column is narrow, so a long first line may wrap as well, which is the point of keeping
+    // wrapping there. Forty digits on one line in the same column is the separation.
+    expect(await lines('Address')).toBeGreaterThanOrEqual(2);
+  });
+
   test('Flatten with a field selected offers ONLY THE SELECTED FIELD, and sends that field by its handle (G1)', async ({ page }) => {
     const sent: { channel: string; params: unknown }[] = [];
     await openForms(page, sent);

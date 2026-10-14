@@ -382,7 +382,12 @@ function FieldValue({
     return (
       <button
         aria-label={field.name}
-        className={offer.held === '' ? 'm-forms-value m-forms-value--empty' : 'm-forms-value'}
+        // A ONE-LINE VALUE IS ONE LINE (the owner's F11): a comb field's digits broke wherever the column ended, so it is
+        // cut with an ellipsis and its whole text is the tooltip. A value that takes line breaks keeps them.
+        className={['m-forms-value', offer.held === '' ? 'm-forms-value--empty' : '', offer.lines ? '' : 'm-forms-value--line']
+          .filter((name) => name !== '')
+          .join(' ')}
+        {...(offer.lines || offer.held === '' ? {} : { title: offer.held })}
         onClick={(event) => {
           // A KEYBOARD'S PRESS (`detail` 0) has no place, and opens the box with its words selected, as Tab does.
           setTyping({ at: event.detail === 0 ? undefined : { x: event.clientX, y: event.clientY } });

@@ -2022,6 +2022,13 @@ optgroup {
   white-space: pre-wrap;
 }
 
+/* A ONE-LINE VALUE stays on its line, cut at the column's end, never broken inside a word or a run of digits. */
+.m-forms-value--line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+}
+
 .m-forms-value--empty {
   color: var(--muted);
 }
