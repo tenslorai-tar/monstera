@@ -1009,6 +1009,9 @@ function characterAt(bindings: Bound, textPage: unknown, at: number): string {
   return String.fromCharCode(buffer[0] ?? 0);
 }
 
+/** Letters a font is asked about a space with where the words at hand hold none it sets: common in Latin text. */
+const REFERENCE_LETTERS = ['x', 'n', 'o', 'e', 'a', 'H', '0', '.'] as const;
+
 /**
  * What a text page reports for an object that draws `text` — the only form a read-back can be
  * compared in.
@@ -2380,6 +2383,10 @@ interface PieceWriter {
    * its own letters do not decide (`visualUnits`); absent, the text is ordered as its own line is.
    */
   readonly writePieces: (object: unknown, text: string, restyle?: Restyle, forced?: boolean) => unknown[];
+  /** Whether `object`'s font sets `space`, asked between two letters of `around` it carries: the writer's and the plan's one answer. */
+  readonly setsSpace: (object: unknown, space: string, around: string) => boolean;
+  /** Where the pen stands after objects {@link writePieces} answered: the last one's ink, and the advance of any white space it ends with. */
+  readonly penEnd: (objects: readonly unknown[]) => number;
   /** Where the pen stands after the last of these objects, where it was set in a face this edit loaded. */
   readonly endOf: (objects: readonly unknown[]) => number | undefined;
   /** Widens an object's words where they stand, per character and per space; how much further on the next words start. */
@@ -2918,6 +2925,63 @@ function pieceWriter(
       const boxObjects = new Map<unknown, string>();
 
       /**
+       * How far the white space `text` ends with carries the pen past `object`'s ink, in page units: an object's bounds
+       * are its ink, and a space has none — measured 2026-10-14 on PDFium 155, an object of one space has bounds of no
+       * width, so the word placed after it stood flush against the word before and the line read "Costsaresteady" (the
+       * owner's A2a, a producer's font with no space glyph, its spaces set in a catalogue face as pieces of their own).
+       * Read as `layOut`'s `advanceOf` reads a width: the same letter twice, with and without the space between, in the
+       * object's own font, size and scale, so the letters' ink cancels. Zero where nothing ends in white space, or no
+       * letter the font sets can be found to ask with.
+       */
+      const trailingAdvance = (object: unknown, text: string): number => {
+        const space = /\s+$/u.exec(text)?.[0] ?? '';
+        if (space === '') return 0;
+        const font: unknown = bindings.textFont(object);
+        if (font === null) return 0;
+        for (const anchor of REFERENCE_LETTERS) {
+          const probe = makeTextLike(bindings, document, object, 0, font);
+          try {
+            if (!setOn(probe, `${anchor}${anchor}`)) continue;
+            const without = boundsOf(bindings, probe).right;
+            if (!setOn(probe, `${anchor}${space}${anchor}`)) continue;
+            return boundsOf(bindings, probe).right - without;
+          } finally {
+            bindings.destroyObject(probe);
+          }
+        }
+        return 0;
+      };
+      /** Where the pen stands after `objects`, in page units: the last one's ink and its trailing white space's advance. */
+      const penEnd = (objects: readonly unknown[]): number => {
+        const last = objects.at(-1);
+        if (last === undefined) return 0;
+        return Math.max(spanOf(bindings, objects).right, boundsOf(bindings, last).right + trailingAdvance(last, setBy.get(last)?.text ?? ''));
+      };
+      const spaceAnswers = new Map<string, boolean>();
+      /**
+       * WHETHER `object`'S FONT SETS `space`, asked BETWEEN TWO LETTERS of `around` it carries: an object of white space
+       * alone reads back as nothing or as one space whatever the font drew (`asTextPageReads`), so a lone space is no
+       * question at all. Measured 2026-10-14 on PDFium 155 over a producer's subset with no space glyph, whose gaps are
+       * drawn by `TJ` offsets: `" "` read back as carried and `"a a"` did not, and the line was refused whole (the
+       * owner's A2a). Where `around` holds no letter the font carries, nothing can be asked and the space is taken as
+       * set, as before. The writer's split and the layout's width both take this answer, so a line is planned in the
+       * face its spaces are drawn in.
+       */
+      const setsSpace = (object: unknown, space: string, around: string): boolean => {
+        const font: unknown = bindings.textFont(object);
+        // BY THE KINDS OF WHITE SPACE, not their count: a font that sets one space sets two, and the width probe asks
+        // for two on an object that holds nothing else.
+        const key = `${font === null ? 'none' : String(koffi.address(font))}|${[...new Set(space)].sort().join('')}`;
+        const known = spaceAnswers.get(key);
+        if (known !== undefined) return known;
+        const anchor = [...Array.from(around), ...REFERENCE_LETTERS].find((character) => character.trim() !== '' && carries(object, character));
+        if (anchor === undefined) return true;
+        const answer = carries(object, `${anchor}${space}${anchor}`);
+        spaceAnswers.set(key, answer);
+        return answer;
+      };
+
+      /**
        * Writes `text` as the run `object` heads and answers the objects that now say it, in order: `object` alone where
        * its own font carries the text, and otherwise its PIECES (ADR-0173 Decisions 1 to 3) — each word its font cannot
        * carry in the resolver's face, the rest in its own, each placed at the measured right edge of the one before
@@ -2957,7 +3021,7 @@ function pieceWriter(
           const key = `${font}|${segment}`;
           let answer = ownAnswers.get(key);
           if (answer === undefined) {
-            answer = segment.trim() === '' ? true : carries(object, segment);
+            answer = segment.trim() === '' ? setsSpace(object, segment, text) : carries(object, segment);
             ownAnswers.set(key, answer);
           }
           return answer;
@@ -3039,7 +3103,7 @@ function pieceWriter(
           setBy.set(made, { text: unit.text, rtl: unit.rtl });
           if (unit.box) boxObjects.set(made, unit.text);
           objects.push(made);
-          left = boundsOf(bindings, made).right;
+          left = boundsOf(bindings, made).right + trailingAdvance(made, unit.text);
         }
         // THE RUN'S OWN OBJECT GOES where its first piece is in another face, and with it what it was recorded as.
         if (objects[0] !== object) {
@@ -3084,6 +3148,8 @@ function pieceWriter(
         insertAfter,
         write,
         writePieces,
+        setsSpace,
+        penEnd,
         endOf,
         spread,
         trimPieces,
@@ -3971,7 +4037,8 @@ function blockMeasure(
       const object = makeTextLike(bindings, document, run.object, 0);
       pen.insertAfter(object, run.object);
       const objects = pen.writePieces(object, text, restyle);
-      const right = spanOf(bindings, objects).right;
+      // WHERE THE PEN STANDS, which is where the writer puts the next piece: ink alone ends before a trailing space.
+      const right = pen.penEnd(objects);
       for (const each of [object, ...objects]) {
         if (!pen.removed.includes(each)) pen.removed.push(each);
         const at = pen.written.findIndex((entry) => entry.object === each);
@@ -3998,7 +4065,12 @@ function blockMeasure(
     // narrower together than each letter drawn alone, so a plan measured by the letters wrapped a paragraph early
     // (measured 2026-10-06 on the bundled Naskh face: 135 pt planned for a line drawn in 64).
     const each = Array.from(arabicForms(text));
-    const own = each.map((character) => advanceOf('own', run, character));
+    // A SPACE THE RUN'S FONT DOES NOT SET is drawn in the face the writer gives it, so it is measured there: measured
+    // in the run's own font it is that font's missing glyph, and a line planned by it wrapped a word early (the
+    // owner's A2a, 2026-10-14). One answer, the pen's, for the writer and this plan.
+    const own = each.map((character) =>
+      character.trim() === '' && pen.inPieces && !pen.setsSpace(run.object, character, run.text) ? null : advanceOf('own', run, character),
+    );
     if (own.every((width) => width !== null)) return own.reduce((sum, width) => sum + width, 0);
     if (pen.inPieces) {
       return each.reduce((sum, character, at) => sum + (own[at] ?? piecesAdvance(run, character)), 0);

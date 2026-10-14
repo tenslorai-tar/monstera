@@ -176,3 +176,35 @@ export async function buildProducerSubsetPdf(
   page.node.set(PDFName.of('Contents'), document.context.register(document.context.flateStream(new TextEncoder().encode(content))));
   return document.save({ useObjectStreams: false });
 }
+
+/** How far a word gap moves the pen on a {@link buildGapSpacedPdf} page, in thousandths of the size: a quarter em. */
+export const GAP_SPACING = 250;
+
+/**
+ * A page whose producer's subset has NO SPACE GLYPH: every word gap is a `TJ` offset of {@link GAP_SPACING}, as pdfTeX
+ * and some print drivers set a line (the owner's A2a, 2026-10-14). One text object per line, 11 points, a line pitch of
+ * 14, at x 72 from y 300 down.
+ *
+ * @param program the face's program (Carlito-Regular in the cases)
+ * @param lines the page's lines; their spaces are the gaps
+ */
+export async function buildGapSpacedPdf(program: Uint8Array, lines: readonly string[]): Promise<Uint8Array> {
+  const document = await PDFDocument.create();
+  const page = document.addPage([500, 400]);
+  const font = embedProducerFont(document, program, 'Carlito', lines.join('').replaceAll(' ', ''), false);
+  page.node.setFontDictionary(PDFName.of('F1'), font.ref);
+  const content = lines
+    .flatMap((line, at) => [
+      'BT',
+      '/F1 11 Tf',
+      `72 ${String(300 - at * 14)} Td`,
+      `[${line
+        .split(' ')
+        .map((word) => `<${font.show(word)}>`)
+        .join(` -${String(GAP_SPACING)} `)}] TJ`,
+      'ET',
+    ])
+    .join('\n');
+  page.node.set(PDFName.of('Contents'), document.context.register(document.context.flateStream(new TextEncoder().encode(content))));
+  return document.save({ useObjectStreams: false });
+}

@@ -280,7 +280,7 @@ const failures = [];
 // from its Decision 2: a tab read back at its stop, its control, and a second edit that keeps one tab. 235 from the
 // second edit's measure, which read a line written as several objects at its first object's width. 246 from L2: an
 // underlined word read back underlined, its rule moved with it by a second edit, and the control that turns it off.
-const roster = createRoster(failures, { cases: 250 });
+const roster = createRoster(failures, { cases: 253 });
 
 /**
  * @param {string} name
@@ -579,6 +579,7 @@ async function main() {
   await runFontCases();
   await formatPieceCases();
   await fontChangeCases();
+  await gapSpacedCases();
 
   process.stdout.write(
     failures.length > 0
@@ -681,6 +682,93 @@ async function fontChangeCases() {
       'a font chosen for a whole block keeps every space between its words when the page is read',
       whole.refused === '' && whole.text === expected,
       JSON.stringify(whole),
+    );
+  } finally {
+    bindEditFaces(null);
+  }
+}
+
+/**
+ * A line whose font has NO SPACE GLYPH — a producer's subset whose word gaps are `TJ` offsets — takes an edit and gives
+ * it back, with its spaces (the owner's A2a, 2026-10-14: " hi" added and saved, then deleted, and the delete refused
+ * naming the whole line).
+ *
+ * Two mechanisms, both run here: the run's font was taken to set a space without being asked, so the line was written
+ * with spaces its font draws as nothing and its read-back refused it whole; and once the spaces went to a face that
+ * has one, each was an object of its own whose bounds have no width, so the word after it was placed flush. THE CONTROL
+ * is the page as drawn, read the same way: a gap reads as a space, so the readings below are about the writer. Run
+ * 2026-10-14 against each fix removed: without the space asked, the first edit is refused; without the advance, the
+ * line reads back "Costsaresteadyacrossevery".
+ */
+async function gapSpacedCases() {
+  const fonts = fontsDirectory(root);
+  const { buildGapSpacedPdf } = await import('../../packages/kernel/dist/producerSubsetFixture.js');
+  const LINES = ['Costs are steady across every department.', 'Revenue grew across all four areas.'];
+  const pdf = await buildGapSpacedPdf(readFileSync(resolve(fonts, 'Carlito-Regular.ttf')), LINES);
+  bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }], readCatalogueApart));
+  try {
+    /** @param {Uint8Array} bytes */
+    const blockOf = async (bytes) => {
+      const session = await pdfiumWriter.open(bytes);
+      try {
+        const runs = (await textRuns(session, 0)).runs;
+        const lines = groupIntoBlocks(runs.map((run) => ({ ...run, setting: settingOf(run.style) })))[0]?.lines ?? [];
+        return {
+          lines: lines.map((line) => line.runs.map((run) => run.index)),
+          soft: lines.map(() => false),
+          text: paragraphsOfLines(lines.map((line) => ({ text: lineText(line.runs), soft: false }))),
+        };
+      } finally {
+        await pdfiumWriter.close(session);
+      }
+    };
+    /** @param {Uint8Array} bytes */
+    const read = async (bytes) => {
+      const session = await pdfiumWriter.open(bytes);
+      try {
+        return await pageText(session, 0);
+      } finally {
+        await pdfiumWriter.close(session);
+      }
+    };
+    /** @param {Uint8Array} bytes @param {(text: string) => string} change */
+    const edited = async (bytes, change) => {
+      const block = await blockOf(bytes);
+      try {
+        const out = await localPdfiumExecution.apply({
+          session: bytes,
+          command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+            kind: 'editTextBlock',
+            page: 0,
+            ...blockEditOf([{ ...block, text: change(block.text) }]),
+            fit: 'reflow',
+            version: 1,
+          }),
+          sources: [],
+          reads: undefined,
+        });
+        return { bytes: out, text: await read(out), refused: '' };
+      } catch (error) {
+        return { bytes, text: '', refused: error instanceof Error ? `${error.name} ${JSON.stringify(Reflect.get(error, 'characters') ?? error.message)}` : String(error) };
+      }
+    };
+    const drawn = await read(pdf);
+    record(
+      'CONTROL: a line whose gaps are offsets reads back with its spaces, so a reading without them below is the writer’s',
+      drawn === LINES.join('\r\n'),
+      JSON.stringify(drawn),
+    );
+    const added = await edited(pdf, (text) => text.replace('department.', 'department. hi'));
+    record(
+      'a word added to a line whose font has no space glyph is written, and the line reads back with every space',
+      added.refused === '' && added.text === `${LINES[0] ?? ''} hi\r\n${LINES[1] ?? ''}`,
+      JSON.stringify({ text: added.text, refused: added.refused }),
+    );
+    const deleted = await edited(added.bytes, (text) => text.replace(' hi', ''));
+    record(
+      'deleting that word after the first edit is written, not refused: deleting is never refused',
+      added.refused === '' && deleted.refused === '' && deleted.text === LINES.join('\r\n'),
+      JSON.stringify({ text: deleted.text, refused: deleted.refused }),
     );
   } finally {
     bindEditFaces(null);
