@@ -413,6 +413,13 @@ export interface PageListProps {
    * main's lane works for.
    */
   readonly onFirstFrame?: (() => void) | undefined;
+  /**
+   * Told, while `drawsPages` holds, each time every page in the viewport holds its drawing (or failed to draw) — and at
+   * once while the first frame is still pending, whose loading state is a finished screen. For a layer coming forward:
+   * a layer behind gave its pixels back (ADR-0129, corrected 2026-10-14), so the one on show stays until this says the
+   * one arriving is drawn. `undefined` where nothing waits on it.
+   */
+  readonly onViewDrawn?: (() => void) | undefined;
 }
 
 /**
@@ -480,6 +487,7 @@ export function PageList({
   onCurrentPage,
   onPageBox,
   onFirstFrame,
+  onViewDrawn,
   mode,
   onZoomStep,
   onShownZoom,
@@ -977,25 +985,44 @@ export function PageList({
     // THE REVEAL'S REF, read rather than mirrored in state: the reveal effect above runs first in the same commit, and
     // every later change this waits on — a page measured — runs this again.
     if (firstFrame || !revealedStart.current || resolved === undefined || renderZoom !== shown) return;
-    const box = scroller.current?.getBoundingClientRect();
-    if (box === undefined) return;
+    const required = pagesInView(scroller.current, visible, slotFor, [startPage]);
+    if (required === undefined) return;
     const scale = devicePixels() * renderZoom * quality;
-    const inView = [...visible].filter((page) => {
-      const slot = slotFor(page)?.getBoundingClientRect();
-      return slot !== undefined && slot.height > 0 && slot.bottom > box.top && slot.top < box.bottom;
-    });
     const drawn = (page: number): boolean => {
       const size = sizes.get(page);
       return failedPages.has(page) || (size !== undefined && Math.abs(size.drawnAt - scale) < 1e-9);
     };
-    // A SCROLLER WITH NO HEIGHT has no viewport to judge by — laid out nowhere, or not laid out at all — and then the
-    // starting page alone is what the first frame waits for, rather than a page set that can never be complete.
-    const required = box.height > 0 ? inView : [startPage];
     if (!required.includes(startPage) || !required.every(drawn)) return;
     setFirstFrame(true);
     performance.mark('monstera:first-frame');
     onFirstFrame?.();
   }, [failedPages, firstFrame, onFirstFrame, quality, renderZoom, resolved, shown, sized, sizes, slotFor, startPage, visible]);
+  /**
+   * WHICH PAGES HOLD THEIR DRAWING NOW — not the measurement, which outlives the pixels: `sizes` keeps a page's
+   * `drawnAt` after its canvas is given back, so it cannot tell a layer coming forward that its pages are blank. A slot
+   * says when a draw has presented and when its canvas goes (`PageSlot.onPainted`).
+   */
+  const [painted, setPainted] = useState<ReadonlySet<number>>(new Set());
+  const paintedPage = useCallback((page: number, holds: boolean): void => {
+    setPainted((current) => {
+      if (current.has(page) === holds) return current;
+      const next = new Set(current);
+      if (holds) next.add(page);
+      else next.delete(page);
+      return next;
+    });
+  }, []);
+  useEffect(() => {
+    if (onViewDrawn === undefined || !drawsPages) return;
+    // THE LOADING STATE IS A FINISHED SCREEN, so a layer that has not framed may come forward at once.
+    if (!firstFrame) {
+      onViewDrawn();
+      return;
+    }
+    const required = pagesInView(scroller.current, visible, slotFor, NO_PAGES_SHOWN);
+    if (required?.every((page) => painted.has(page) || failedPages.has(page)) !== true) return;
+    onViewDrawn();
+  }, [drawsPages, failedPages, firstFrame, onViewDrawn, painted, slotFor, visible]);
   useEffect(() => {
     // MOUNTED, which is the parser open: the list exists only once PDF.js has the document.
     performance.mark('monstera:parsed');
@@ -1284,13 +1311,17 @@ export function PageList({
           //
           // AND NOT BEFORE THE ZOOM IS RESOLVED: a fit with no page box falls back to 1, and a page drawn at that is
           // the first-open jump — drawn at 100%, then stretched, then drawn again.
-          draw={visible.has(page) && rotations.has(page) && (resolved !== undefined || startBoxRefused)}
+          //
+          // AND NOT BEHIND, the same `drawsPages` the canvas takes: the slot draws when this turns true, so a draw
+          // left true while the tab was behind never ran again for the canvas that came back, which stayed blank.
+          draw={drawsPages && visible.has(page) && rotations.has(page) && (resolved !== undefined || startBoxRefused)}
           rotation={rotations.get(page)}
           size={sizes.get(page) ?? lastKnownBefore(sizes, page) ?? startEstimate}
           zoom={shown}
           renderZoom={renderZoom}
           onMeasured={measured}
           onFailed={failed}
+          onPainted={paintedPage}
           // THE SLOT'S OWN MEASUREMENT, not the inherited estimate: an overlay
           // placed over a page using a neighbour's box would put every
           // rectangle in the wrong frame. `lastKnownBefore` above is a size
@@ -1376,6 +1407,30 @@ export function OpeningState(): ReactElement {
 
 /** The empty visible set, one identity, for a read that must not ask yet. */
 const NOTHING_VISIBLE: ReadonlySet<number> = new Set();
+/** A scroller with no height shows no page, so a layer coming forward waits on none (`pagesInView`). */
+const NO_PAGES_SHOWN: readonly number[] = [];
+
+/**
+ * THE PAGES A FRAME MUST SHOW DRAWN, one rule for the first frame and for a layer coming forward: every page in the
+ * margin whose slot crosses the scroller's box. Where the scroller has no height — laid out nowhere, or not laid out at
+ * all — there is no viewport to judge by, and `fallback` stands in rather than a page set that can never be complete:
+ * the starting page for the first frame, and nothing for a layer coming forward, which shows no page there and must not
+ * wait on one that may not be in the margin to draw. `undefined` before the scroller exists.
+ */
+function pagesInView(
+  scroller: HTMLElement | null,
+  margin: ReadonlySet<number>,
+  slotFor: (page: number) => HTMLElement | undefined,
+  fallback: readonly number[],
+): readonly number[] | undefined {
+  const box = scroller?.getBoundingClientRect();
+  if (box === undefined) return undefined;
+  if (box.height <= 0) return fallback;
+  return [...margin].filter((page) => {
+    const slot = slotFor(page)?.getBoundingClientRect();
+    return slot !== undefined && slot.height > 0 && slot.bottom > box.top && slot.top < box.bottom;
+  });
+}
 
 /** The places in one page's widget walk that a selection of `page:index` keys holds. */
 function selectedOnPage(keys: ReadonlySet<string>, page: number): ReadonlySet<number> {
@@ -1533,6 +1588,7 @@ function PageSlot({
   renderZoom,
   onMeasured,
   onFailed,
+  onPainted,
   drawing,
   editing,
   writing,
@@ -1575,6 +1631,8 @@ function PageSlot({
   readonly onMeasured: (page: number, measured: Measured) => void;
   /** Told that this page would not draw, with `onMeasured`'s need to be stable. */
   readonly onFailed: (page: number) => void;
+  /** Told when a draw has presented (`true`) and when the canvas holding it goes (`false`), with `onMeasured`'s need to be stable. */
+  readonly onPainted: (page: number, holds: boolean) => void;
   readonly drawing: PageListProps['drawing'];
   readonly editing: PageEditing | undefined;
   /** The pending request for words when it is THIS page's, otherwise `undefined`. */
@@ -1694,6 +1752,7 @@ function PageSlot({
         onMeasured(page, { ...measured, drawnAt: scale });
         // MEASURED, not drawn: each tile presents itself, so this is the nearest moment this slot knows of.
         setDrawnWith(view);
+        onPainted(page, true);
         return;
       }
       const target = canvas.current;
@@ -1719,6 +1778,7 @@ function PageSlot({
         rotation: drawn.rotation,
       });
       setDrawnWith(view);
+      onPainted(page, true);
     };
 
     void drawPage().catch((error: unknown) => {
@@ -1748,7 +1808,7 @@ function PageSlot({
     return (): void => {
       superseded.abort();
     };
-  }, [draw, onFailed, onMeasured, page, quality, renderZoom, rotation, secondRasteriser, tiled, view]);
+  }, [draw, onFailed, onMeasured, onPainted, page, quality, renderZoom, rotation, secondRasteriser, tiled, view]);
 
   // HELD DECODED WHILE MOUNTED (`pageResidency.ts`), so a zoom's redraw of a page in the margin does not decode its
   // images again; released when it leaves the margin, and PDF.js then closes them unless the strip is drawing it.
@@ -1763,11 +1823,13 @@ function PageSlot({
   useLayoutEffect(() => {
     const element = canvas.current;
     return (): void => {
+      // NO LONGER HOLDING THE DRAWING, whichever canvas this was: the next one starts blank.
+      onPainted(page, false);
       if (element === null) return;
       element.width = 0;
       element.height = 0;
     };
-  }, [mounted, tiled]);
+  }, [mounted, onPainted, page, tiled]);
 
   // THE PAGE'S FORM FIELDS (ADR-0168), over the text, the links and the marks so a press on a field fills it. Not while
   // Edit text or Edit object holds the page: there a press is the mode's. WHERE in the stack depends on the tool

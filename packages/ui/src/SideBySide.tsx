@@ -508,6 +508,8 @@ function Half({
           docId={shown.docId}
           version={ready.version}
           onCurrentPage={ignorePage}
+          // NOTHING WAITS ON IT: a comparison is never a layer coming forward.
+          onViewDrawn={undefined}
           mode={mode}
           onZoomStep={step}
           onShownZoom={setShownZoom}

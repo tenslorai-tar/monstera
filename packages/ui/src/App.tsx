@@ -647,6 +647,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    */
   const [tabs, setTabs] = useState<readonly OpenDocument[]>([]);
   const [activeId, setActiveId] = useState<DocId | undefined>(undefined);
+  /** The document asked for and not yet on show, whose layer is drawing behind the one that is (`arrived`). */
+  const [arriving, setArriving] = useState<DocId | undefined>(undefined);
   /**
    * Side by Side's two documents, or `undefined` while it is closed (ADR-0131).
    *
@@ -914,14 +916,46 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * still provisional, and ADR-0129 states the expected cost per kept tab and
    * what to do if a measurement breaks it.
    */
-  const activate = useCallback((docId: DocId): void => {
-    setActiveId(docId);
-  }, []);
+  const activate = useCallback(
+    (docId: DocId): void => {
+      // NOTHING ON SHOW TO HOLD — the start screen, whose layers are not mounted — or the document already on show:
+      // the switch is immediate, and a layer mounting fresh shows its loading state, which is a finished screen.
+      if (activeId === undefined || activeId === docId) {
+        setArriving(undefined);
+        setActiveId(docId);
+        return;
+      }
+      setArriving(docId);
+    },
+    [activeId],
+  );
+  /**
+   * The layer coming forward is drawn: it is now the one on show.
+   *
+   * ## Why activation waits for this (ADR-0129, corrected 2026-10-14)
+   *
+   * A layer behind gives back its page canvases, and they are drawn again when it is shown — the owner's item 13c. A
+   * layer brought straight to the front therefore showed its pages blank for the frames a redraw takes, against the
+   * owner's *never show an unfinished screen*. So `activate` names the document ARRIVING: its layer stays hidden and
+   * draws (`DocumentLayer`'s `arriving`), the one on show stays on show, and the switch happens here, when the arriving
+   * layer's viewport is drawn (`PageList.onViewDrawn`). A later activation supersedes it, and a report from a superseded
+   * arrival is told from the current one by the document it names. Handed to the arriving layer alone, so a new
+   * arrival re-renders that layer and no other.
+   */
+  const arrived = useCallback(
+    (docId: DocId): void => {
+      if (arriving !== docId) return;
+      setArriving(undefined);
+      setActiveId(docId);
+    },
+    [arriving],
+  );
   /**
    * *File › Start screen* (ADR-0107): no document in front, every tab kept — `activate`'s one other route, named beside
    * it for the reason above. The start screen draws whenever nothing is active, so this is all it takes.
    */
   const showStart = useCallback((): void => {
+    setArriving(undefined);
     setActiveId(undefined);
   }, []);
 
@@ -1727,6 +1761,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       const released = new Set(docIds);
       const order = tabs;
       setTabs((current) => current.filter((tab) => !released.has(tab.docId)));
+      // A DOCUMENT CLOSED ON ITS WAY FORWARD is no longer arriving; the one on show stays.
+      setArriving((current) => (current !== undefined && released.has(current) ? undefined : current));
       setActiveId((current) => {
         if (current === undefined || !released.has(current)) return current;
         const at = order.findIndex((tab) => tab.docId === current);
@@ -4761,7 +4797,13 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
             renders this element; a background layer renders the same component with its own store's page and
             zoom, so a switch changes props and never remounts. Each layer carries its own boundary, keyed with it. */}
         {tabs.map((tab) => (
-        <DocumentLayer key={tab.docId} tab={tab} store={stores.get(tab.docId)} background={tab.docId === open.docId ? undefined : background}>
+        <DocumentLayer
+          key={tab.docId}
+          tab={tab}
+          store={stores.get(tab.docId)}
+          background={tab.docId === open.docId ? undefined : background}
+          onArrived={tab.docId === arriving ? arrived : undefined}
+        >
         {/* THE ELEMENT ONLY FOR THE LAYER ON SHOW: a layer behind draws its own, and handed this one too it would
             take a new prop on every render here and could never skip one. */}
         {tab.docId !== open.docId ? undefined : (
@@ -4789,6 +4831,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           organize={toolId === undefined ? organize : undefined}
           loupe={loupe}
           drawsPages={!longHidden}
+          onShowable={undefined}
           rulers={rulers}
           showGrid={showGrid}
           onFollowLink={onFollowLink}
@@ -5316,12 +5359,19 @@ const DocumentLayer = memo(function DocumentLayer({
   tab,
   store,
   background,
+  onArrived,
   children,
 }: {
   readonly tab: OpenDocument;
   readonly store: DocumentStore | undefined;
   /** The shared props when this layer is behind; `undefined` when it is the one on show. */
   readonly background: BackgroundLayer | undefined;
+  /**
+   * Told when this layer may be shown, while it is COMING FORWARD (`App.arrived`), else `undefined`: still hidden
+   * behind the one on show, it draws its pages and says when they are drawn, so the switch shows a finished page from
+   * its first frame.
+   */
+  readonly onArrived: ((docId: DocId) => void) | undefined;
   /** The `PageCanvas` element `App` builds for the document on show, and only for it. */
   readonly children?: ReactElement | undefined;
 }): ReactElement {
@@ -5356,8 +5406,10 @@ const DocumentLayer = memo(function DocumentLayer({
             onWentTo={IGNORE}
             onPageCount={state?.counted ?? IGNORE}
             loupe={false}
-            // NOTHING DRAWN BEHIND (ADR-0129, corrected 2026-10-14): the parse and the layout are kept, the pixels given back.
-            drawsPages={false}
+            // NOTHING DRAWN BEHIND (ADR-0129, corrected 2026-10-14): the parse and the layout are kept, the pixels given
+            // back — until the layer is arriving, when it draws out of sight and reports it.
+            drawsPages={onArrived !== undefined}
+            onShowable={onArrived}
             current={state?.page ?? FIRST_PAGE.kernel}
             onJump={IGNORE}
             onMove={IGNORE}
@@ -5431,6 +5483,7 @@ function PageCanvas({
   onFirstFrame,
   loupe,
   drawsPages,
+  onShowable,
   current,
   onJump,
   onMove,
@@ -5494,6 +5547,11 @@ function PageCanvas({
    * scroll offset and mounts no page canvas (ADR-0129, corrected 2026-10-14). Required, so neither layer inherits it.
    */
   readonly drawsPages: boolean;
+  /**
+   * Told, with this document, when this layer may be shown — for the layer COMING FORWARD only (`App.arrived`), and
+   * `undefined` for every other. Required, for `drawsPages`' reason.
+   */
+  readonly onShowable: ((docId: DocId) => void) | undefined;
   /** The page the reader is on, so the thumbnail strip can mark it. */
   readonly current: number;
   /** Takes the reader to a page, recording the jump — click-to-jump's other half. */
@@ -5786,6 +5844,23 @@ function PageCanvas({
     if (pages !== undefined) onPageCount(pages);
   }, [onPageCount, pages]);
 
+  // A LAYER COMING FORWARD SAYS WHEN IT MAY BE SHOWN (`App.arrived`): at once where it shows no drawn pages — failed,
+  // still opening, or the Organize grid — and otherwise when its first pane's viewport is drawn again.
+  const docId = open.docId;
+  const viewDrawn = useMemo(
+    () =>
+      onShowable === undefined
+        ? undefined
+        : (): void => {
+            onShowable(docId);
+          },
+    [docId, onShowable],
+  );
+  const drawsNoPages = failed || ready === undefined || organize !== undefined;
+  useEffect(() => {
+    if (drawsNoPages) viewDrawn?.();
+  }, [drawsNoPages, viewDrawn]);
+
   if (failed) {
     // A CANVAS, and the element is the contract rather than the appearance.
     // `canvasHarness.ts` reads `data-failed` off `canvas.m-page` to tell a parse
@@ -5865,6 +5940,7 @@ function PageCanvas({
       onCurrentPage={split ? reportLeft : reporting === 'first' ? onCurrentPage : ignorePage}
       onPageBox={onPageBox}
       onFirstFrame={firstFrameDone}
+      onViewDrawn={viewDrawn}
       mode={mode}
       onZoomStep={onZoomStep}
       onShownZoom={reporting === 'first' ? onShownZoom : ignoreZoom}
@@ -5921,6 +5997,8 @@ function PageCanvas({
       version={open.version}
       onCurrentPage={reportRight}
       onPageBox={onPageBox}
+      // THE FIRST PANE ALONE SAYS A LAYER MAY COME FORWARD: one decider, and the split's second half draws beside it.
+      onViewDrawn={undefined}
       mode={mode}
       onZoomStep={onZoomStep}
       onShownZoom={reporting === 'second' ? onShownZoom : ignoreZoom}

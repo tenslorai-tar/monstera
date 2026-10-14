@@ -173,6 +173,9 @@ test('a tab behind holds no page canvas, and coming forward redraws it where the
 
   // BACK TO THE SCAN: drawn again, at the place the reader left.
   await page.locator('[data-tab-select]').first().click();
+  // THE SWITCH LANDED, read before anything on the active layer: the scan stays behind until its pages are drawn
+  // again (`App.arrived`), and until then the layer on show is still the note's, whose canvas is visible too.
+  await expect(page.locator('[data-tab-select]').first()).toHaveAttribute('aria-current', 'true', { timeout: 20_000 });
   await expect(page.locator('[data-document-layer="active"] .m-page-list canvas.m-page').first()).toBeVisible({ timeout: 20_000 });
   expect(await page.locator('[data-document-layer="active"] .m-page-list').evaluate((element) => element.scrollTop)).toBe(offset);
   await expect(page.locator('[data-document-layer="background"] canvas.m-page')).toHaveCount(0);
