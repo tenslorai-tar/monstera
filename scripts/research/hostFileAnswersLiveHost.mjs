@@ -369,7 +369,7 @@ async function main() {
     const failures = [];
     const { handlers } = composition.createShellDependencies({
       ...harnessModule.harnessSurfaces('the file-answer live harness'),
-      appInfo: { version: '0.0.0', installChannel: 'development', userName: 'A. Tester' },
+      appInfo: { version: '0.0.0', installChannel: 'development', userName: 'A. Tester', regionalLocale: 'en-GB' },
       pickDocument: () => Promise.resolve(picked.path),
       // THE WORD EXPORT'S DESTINATION, the one Office file this harness writes.
       pickOffice: () => Promise.resolve(join(scratch, 'pictured.docx')),

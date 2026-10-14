@@ -120,6 +120,12 @@ export interface TextToolDeps {
    * already receives rather than on a second interface.
    */
   readonly style: AnnotationStyle;
+  /**
+   * How this computer writes a date, as a language tag (`en-GB`): the pattern a new date field is given, so it agrees
+   * with the Date tool's own words (the owner's F10). Absent is the renderer's default, which is the application's
+   * language rather than the computer's region.
+   */
+  readonly dateLocale?: string | undefined;
 }
 
 /** The registry ids, shared with the commands that select these tools. */

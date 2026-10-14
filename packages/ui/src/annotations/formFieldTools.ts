@@ -55,7 +55,7 @@ interface FieldToolShape {
    */
   readonly least: { readonly width: number; readonly height: number };
   /** The payload's discriminated member. A radio's is built by its run, so it has none here. */
-  readonly build?: () => CreatedField;
+  readonly build?: (deps: TextToolDeps) => CreatedField;
 }
 
 /** The id of the tool that places a text field. */
@@ -134,7 +134,8 @@ const SHAPES: readonly FieldToolShape[] = [
     word: 'Date',
     size: { width: 100, height: 20 },
     least: LINE,
-    build: () => ({ type: 'date', pattern: localDatePattern() }),
+    // THE COMPUTER'S DATE ORDER, as the tool's tooltip says, and never the application language's (the owner's F10).
+    build: (deps) => ({ type: 'date', pattern: localDatePattern(deps.dateLocale) }),
   },
 ];
 
@@ -245,7 +246,7 @@ function fieldTool(shape: FieldToolShape, deps: TextToolDeps): UiTool {
         field = { type: 'radio', option };
       } else {
         name = nextFieldName(names, shape.word);
-        field = shape.build();
+        field = shape.build(deps);
       }
 
       // ONE FIELD IN A LIST, because a press is one field and the payload became plural for a different caller —

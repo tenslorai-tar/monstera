@@ -1671,6 +1671,13 @@ export const channels = {
        * Pack, where the camera cannot start and says why.
        */
       mediaFoundation: z.boolean(),
+      /**
+       * The computer's regional format as a language tag (`en-GB`), which is how the person writes a date, and which
+       * the renderer's own default is not: Electron's renderer takes the application's language, so a British
+       * computer running Monstera in English formatted dates as American (the owner's F10). Empty where the system
+       * names none, and the renderer's default stands.
+       */
+      regionalLocale: z.string().max(64),
     }),
   ),
 

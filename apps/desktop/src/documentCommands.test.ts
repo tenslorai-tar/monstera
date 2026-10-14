@@ -1454,7 +1454,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
             send: () => undefined,
             openInBrowser: () => Promise.resolve(),
           }),
-          appInfo: { version: '0.0.0', installChannel: 'development', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true },
+          appInfo: { version: '0.0.0', installChannel: 'development', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true, regionalLocale: 'en-GB' },
           capabilities: new CapabilityRegistry(),
           commands,
           documents: service,
@@ -2773,7 +2773,7 @@ describe('search is E2s first consumer, through the composition point', () => {
       const handlers = createContractHandlers({
         assistant:
           models === undefined ? assistant : { ...assistant, held: (provider) => ({ ...assistant.held(provider), models }) },
-        appInfo: { version: '0.0.0', installChannel: 'development', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true },
+        appInfo: { version: '0.0.0', installChannel: 'development', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true, regionalLocale: 'en-GB' },
         capabilities: files?.capabilities ?? new CapabilityRegistry(),
         commands: searchCommands(askPicture),
         documents: searchService,

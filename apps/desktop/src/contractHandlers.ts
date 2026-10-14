@@ -217,6 +217,8 @@ export interface AppInfo {
   readonly cloudProviders: readonly CloudProviderId[];
   /** Whether Media Foundation is on this computer — false on a Windows N edition without the Media Feature Pack. */
   readonly mediaFoundation: boolean;
+  /** The computer's regional format, `app.getSystemLocale()`: how the person writes a date (the owner's F10). */
+  readonly regionalLocale: string;
 }
 
 /** What the build itself fixes; the composition root adds what it works out (`composition.ts`). */

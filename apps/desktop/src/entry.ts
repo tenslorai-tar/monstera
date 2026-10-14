@@ -285,6 +285,9 @@ startShell(() => {
       // between launches. The web flavour ADR-0018 keeps has no build; when it gets one it bakes its own.
       installChannel: app.isPackaged ? 'store' : 'development',
       userName: windowsUserName(),
+      // THE REGIONAL FORMAT, not the application's language: Windows' own user locale, which is how this person writes a
+      // date. Cut to the wire's bound, since the operating system decides it.
+      regionalLocale: app.getSystemLocale().slice(0, 64),
     },
     mediaFoundation: hasMediaFoundation(process.platform, process.env['SystemRoot'], existsSync),
     // Built here, for the same reason `AppInfo` is: this is the only file that

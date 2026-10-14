@@ -306,6 +306,39 @@ describe('FormLayer', () => {
     expect(fills).toHaveLength(1);
   });
 
+  it('a DATE FIELD shows its pattern while empty, and a day chosen on its calendar fills it in that pattern (F10)', () => {
+    const { container, fills } = draw([field({ index: 0, format: { kind: 'date', pattern: 'dd/mm/yyyy' }, values: ['07/03/2026'] })]);
+    press(at(container, 0));
+    const editor = must(at(container, 0) as HTMLInputElement | null);
+    expect(editor.getAttribute('placeholder')).toBe('dd/mm/yyyy');
+    expect(editor.getAttribute('aria-expanded')).toBe('false');
+    // ALT+DOWN OPENS IT ON THE DAY THE FIELD HOLDS, and the box keeps the focus.
+    fireEvent.keyDown(editor, { key: 'ArrowDown', altKey: true });
+    const calendar = must(container.querySelector<HTMLElement>('[role="dialog"][aria-label="Calendar"]'));
+    expect(editor.getAttribute('aria-expanded')).toBe('true');
+    expect(calendar.querySelector('[aria-pressed="true"]')?.textContent).toBe('7');
+    // A DAY LATER WITH THE ARROW, then Enter: written in the field's own order, day first.
+    fireEvent.keyDown(editor, { key: 'ArrowRight' });
+    fireEvent.keyDown(editor, { key: 'Enter' });
+    expect(fills).toStrictEqual([{ page: 2, index: 0, value: { set: 'text', text: '08/03/2026' } }]);
+  });
+
+  it('a day PRESSED on the calendar fills the field — CONTROL: Escape closes the calendar and fills nothing', () => {
+    const { container, fills } = draw([field({ index: 0, format: { kind: 'date', pattern: 'mm/dd/yyyy' }, values: ['03/07/2026'] })]);
+    press(at(container, 0));
+    press(must(container.querySelector<HTMLElement>('button[aria-label="Choose a date"]')));
+    const editor = must(at(container, 0) as HTMLInputElement | null);
+    fireEvent.keyDown(editor, { key: 'Escape' });
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    // THE BOX IS STILL OPEN: Escape closed the calendar, not the field.
+    expect(at(container, 0)?.tagName).toBe('INPUT');
+    expect(fills).toStrictEqual([]);
+    press(must(container.querySelector<HTMLElement>('button[aria-label="Choose a date"]')));
+    const twentieth = [...container.querySelectorAll<HTMLButtonElement>('[role="dialog"] td button')].find((day) => day.textContent === '20');
+    press(must(twentieth ?? null));
+    expect(fills).toStrictEqual([{ page: 2, index: 0, value: { set: 'text', text: '03/20/2026' } }]);
+  });
+
   it('a field that takes LINE BREAKS opens a box for them', () => {
     const { container } = draw([field({ index: 0, multiline: true, values: ['1 High Street\nLeeds'] })]);
     press(at(container, 0));

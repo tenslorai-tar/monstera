@@ -268,6 +268,31 @@ for (const look of LOOKS) {
     expect(fills(sent)).toStrictEqual([]);
   });
 
+  test(`a date field shows its pattern and a day pressed on its calendar fills it in that pattern (F10), ${look.name}`, async ({ page }) => {
+    const sent: { channel: string; params: unknown }[] = [];
+    const due: ShimFormField = field({
+      index: 8,
+      name: 'Due',
+      rect: { x0: 340, y0: 300, x1: 480, y1: 320 },
+      format: { kind: 'date', pattern: 'dd/mm/yyyy' },
+      values: ['07/03/2026'],
+    });
+    await openForm(page, look, sent, [[...LISTED, due]]);
+    await page.getByRole('button', { name: 'Fill in Due', exact: true }).click();
+    const box = page.locator('[data-form-layer="0"] input[aria-label="Due"]');
+    await expect(box).toBeFocused();
+    await expect(box).toHaveAttribute('placeholder', 'dd/mm/yyyy');
+    await page.getByRole('button', { name: 'Choose a date', exact: true }).click();
+    // THE BOX KEPT THE FOCUS through the press, so it is still open to fill.
+    await expect(box).toBeFocused();
+    const calendar = page.getByRole('dialog', { name: 'Calendar' });
+    // THE DAYS ARE NAMED IN THE APPLICATION'S LANGUAGE; the value is written in the FIELD'S pattern, day first.
+    await calendar.getByRole('button', { name: /March 20, 2026/u }).click();
+    await expect.poll(() => fills(sent)).toStrictEqual([
+      { kind: 'fillFormField', page: 0, index: 8, version: 1, value: { set: 'text', text: '20/03/2026' } },
+    ]);
+  });
+
   test(`an open dropdown's list moves with the page when it scrolls (F4), ${look.name}`, async ({ page }) => {
     const sent: { channel: string; params: unknown }[] = [];
     await openForm(page, look, sent);

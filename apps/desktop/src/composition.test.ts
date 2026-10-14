@@ -43,7 +43,7 @@ import type { BakedAppInfo as AppInfo } from './contractHandlers.js';
  * so session creation fails — and the property under test is that failing is a
  * **decided** state rather than an absent one.
  */
-const appInfo: AppInfo = { version: '0.0.0', installChannel: 'development', userName: 'A. Tester' };
+const appInfo: AppInfo = { version: '0.0.0', installChannel: 'development', userName: 'A. Tester', regionalLocale: 'en-GB' };
 
 // THE DESTINATION PICKER MOVED TO `harnessComposition.ts`, with its reason:
 // every case here is about opening, poisoning or handler assembly and none

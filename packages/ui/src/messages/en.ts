@@ -1790,6 +1790,11 @@ export const FORM_FIELD_SIGN = messageKey('surface.form-layer.sign');
 export const FORM_SIGN_OFFER = messageKey('surface.form-layer.sign-offer');
 export const FORM_SIGN_MARK = messageKey('surface.form-layer.sign-mark');
 export const FORM_SIGN_CERTIFICATE = messageKey('surface.form-layer.sign-certificate');
+/** A date field's calendar on the page (the owner's F10). */
+export const FORM_DATE_CALENDAR = messageKey('surface.form-layer.date-calendar');
+export const FORM_DATE_OPEN = messageKey('surface.form-layer.date-open');
+export const FORM_DATE_EARLIER = messageKey('surface.form-layer.date-earlier');
+export const FORM_DATE_LATER = messageKey('surface.form-layer.date-later');
 export const FLATTEN_FORM_TITLE = messageKey('dialog.flatten-form.title');
 export const FLATTEN_FORM_EXPLAINS = messageKey('dialog.flatten-form.explains');
 export const FLATTEN_FORM_APPLY = messageKey('dialog.flatten-form.apply');
@@ -4659,6 +4664,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FORM_SIGN_OFFER]: 'Sign this field',
   [FORM_SIGN_MARK]: 'Sign with a typed, drawn or picture signature',
   [FORM_SIGN_CERTIFICATE]: 'Sign with a certificate',
+  [FORM_DATE_CALENDAR]: 'Calendar',
+  [FORM_DATE_OPEN]: 'Choose a date',
+  [FORM_DATE_EARLIER]: 'Previous month',
+  [FORM_DATE_LATER]: 'Next month',
   [FLATTEN_FORM_TITLE]: 'Flatten the form',
   [FLATTEN_FORM_EXPLAINS]:
     'Flatten turns the form into an ordinary page. Whatever is typed or ticked stays exactly as it looks, but nobody can change it any more. Use it before you send a final copy. You can undo it until you close the document.',

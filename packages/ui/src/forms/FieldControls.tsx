@@ -1,7 +1,9 @@
 import { useLingui } from '@lingui/react';
-import { type CSSProperties, type FocusEvent, type KeyboardEvent, type ReactElement, useRef } from 'react';
+import { formatFieldValue, parseFieldDate } from '@monstera/contract';
+import { type CSSProperties, type FocusEvent, type KeyboardEvent, type ReactElement, useId, useRef, useState } from 'react';
 
 import { FORMS_CHOICE_EMPTY } from '../messages/en.js';
+import { type CalendarDay, DateOpen, DatePicker, calendarDayId, dayAfter, isoOf, monthAfter } from './DatePicker.js';
 import { composing } from '../surfaces/shortcuts.js';
 import { caretIndexAt } from './fieldCaret.js';
 import type { FillOffer } from './fieldFill.js';
@@ -43,6 +45,7 @@ export function FieldTextBox({
   id,
   list,
   onLeave,
+  date,
 }: {
   /** Data attributes a surface finds the box by. */
   readonly marks?: Readonly<Record<`data-${string}`, string>>;
@@ -79,9 +82,75 @@ export function FieldTextBox({
    * with the value (a format, a required field), and never where it decides whether to fill.
    */
   readonly onLeave?: (text: string) => void;
+  /**
+   * A DATE FIELD on the page (the owner's F10): its pattern, shown in the empty box as the format it expects, and where
+   * the field is, so a calendar opens under it from a button at its right edge or Alt+Down.
+   */
+  readonly date?: { readonly pattern: string; readonly at: { readonly left: number; readonly top: number; readonly width: number; readonly height: number } };
 }): ReactElement {
   const shown = useRef<string | undefined>(undefined);
   const cancelled = useRef(false);
+  const box = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+  // THE DAY THE CALENDAR IS ON while it is open, and the day the box held when it opened, which it marks.
+  const [opened, setOpened] = useState<{ readonly active: CalendarDay; readonly held: CalendarDay | undefined } | undefined>(undefined);
+  const calendar = opened?.active;
+  const setCalendar = (active: CalendarDay | undefined): void => {
+    setOpened((was) => (active === undefined ? undefined : { active, held: was?.held }));
+  };
+  const calendarId = `${useId()}-calendar`;
+  const toggleCalendar = (): void => {
+    if (opened !== undefined || date === undefined) {
+      setOpened(undefined);
+      return;
+    }
+    const held = parseFieldDate(box.current?.value ?? offer.held, date.pattern);
+    setOpened({ active: held ?? today(), held });
+  };
+  // A DAY CHOSEN is written in the field's own pattern and the box is left, which is what fills it.
+  const pick = (day: CalendarDay): void => {
+    const element = box.current;
+    setCalendar(undefined);
+    if (date === undefined || element === null) return;
+    element.value = formatFieldValue(isoOf(day), { kind: 'date', pattern: date.pattern });
+    element.blur();
+  };
+  // THE KEYBOARD DRIVES AN OPEN CALENDAR FROM THE BOX, which keeps the focus: a day or a week with the arrows, a month
+  // with Page Up and Page Down, Enter to choose, Escape to close it and go on typing.
+  const calendarKey = (event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>): boolean => {
+    if (date === undefined) return false;
+    if (event.altKey && event.key === 'ArrowDown') {
+      event.preventDefault();
+      toggleCalendar();
+      return true;
+    }
+    if (calendar === undefined) return false;
+    const steps: Readonly<Record<string, () => CalendarDay>> = {
+      ArrowLeft: () => dayAfter(calendar, -1),
+      ArrowRight: () => dayAfter(calendar, 1),
+      ArrowUp: () => dayAfter(calendar, -7),
+      ArrowDown: () => dayAfter(calendar, 7),
+      PageUp: () => monthAfter(calendar, -1),
+      PageDown: () => monthAfter(calendar, 1),
+    };
+    const step = steps[event.key];
+    if (step !== undefined) {
+      event.preventDefault();
+      setCalendar(step());
+      return true;
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      pick(calendar);
+      return true;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      setCalendar(undefined);
+      return true;
+    }
+    return false;
+  };
   // THE PRESS IS SPENT BY THE FIRST FOCUS: a later focus, by Tab or by a click, puts the caret where that one says.
   const press = useRef(pressedAt);
   const selectAllOnce = useRef(selectsAll);
@@ -97,6 +166,7 @@ export function FieldTextBox({
     // every commit, so recording on each call took the half-typed value for the shown one whenever the box rendered
     // while a person typed, and the blur then sent nothing (QQQQQQQ-10); a later focus records it afresh.
     ref: (element: HTMLInputElement | HTMLTextAreaElement | null) => {
+      box.current = element;
       if (element !== null && shown.current === undefined) shown.current = element.value;
     },
     onFocus: (event: FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -122,6 +192,7 @@ export function FieldTextBox({
     },
     onKeyDown: (event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       if (composing(event)) return;
+      if (calendarKey(event)) return;
       if (event.key === 'Escape' && onCancel !== undefined) {
         // STOPPED HERE, so the Escape that closes this box does not also leave a tool or close a panel behind it.
         event.stopPropagation();
@@ -143,12 +214,52 @@ export function FieldTextBox({
   // THE DOCUMENT'S LENGTH LIMIT is enforced where the person types (`/MaxLen`), so a field cannot be given more than it
   // takes; a value that already holds more is shown whole and kept, never cut by the box.
   const limit = offer.maxLength !== null && offer.held.length <= offer.maxLength ? offer.maxLength : undefined;
-  return offer.lines ? (
-    <textarea rows={rows} maxLength={limit} {...common} />
-  ) : (
+  if (offer.lines) return <textarea rows={rows} maxLength={limit} {...common} />;
+  if (date === undefined) {
     // A FIELD THAT MASKS WHAT IS TYPED (`/Ff` Password) is a password box, so its letters are not shown on the page.
-    <input type={offer.masked ? 'password' : 'text'} maxLength={limit} {...(list === undefined ? {} : { list })} {...common} />
+    return <input type={offer.masked ? 'password' : 'text'} maxLength={limit} {...(list === undefined ? {} : { list })} {...common} />;
+  }
+  const { at } = date;
+  const button = Math.min(at.height, DATE_BUTTON_MAX);
+  return (
+    <>
+      <input
+        type="text"
+        maxLength={limit}
+        {...common}
+        // THE FORMAT IT EXPECTS, in the empty box: the field's own pattern, which is document data.
+        placeholder={date.pattern}
+        aria-haspopup="dialog"
+        aria-expanded={calendar !== undefined}
+        aria-controls={calendar === undefined ? undefined : calendarId}
+        aria-activedescendant={calendar === undefined ? undefined : calendarDayId(calendarId, calendar.day)}
+        style={{ ...style, paddingRight: `${String(button)}px` }}
+      />
+      <DateOpen
+        onPress={toggleCalendar}
+        style={{ left: `${String(at.left + at.width - button)}px`, top: `${String(at.top)}px`, width: `${String(button)}px`, height: `${String(at.height)}px` }}
+      />
+      {calendar === undefined ? null : (
+        <DatePicker
+          active={calendar}
+          chosen={opened?.held}
+          id={calendarId}
+          onMove={setCalendar}
+          onPick={pick}
+          style={{ left: `${String(at.left)}px`, top: `${String(at.top + at.height)}px` }}
+        />
+      )}
+    </>
   );
+}
+
+/** The widest the calendar's button grows in a tall field: a glyph's press target, not a column. */
+const DATE_BUTTON_MAX = 24;
+
+/** Today, on the computer's own calendar. */
+function today(): CalendarDay {
+  const now = new Date();
+  return { year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate() };
 }
 
 /** The canvas every caret measurement draws nothing on: one per window, made on first use. */

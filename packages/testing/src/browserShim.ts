@@ -313,6 +313,8 @@ export interface BrowserShimOptions {
   readonly cloudProviders?: readonly ('onedrive' | 'google-drive')[];
   /** Whether Media Foundation is on the shim's machine. Defaults to `true`; `false` is a Windows N edition. */
   readonly mediaFoundation?: boolean;
+  /** The computer's regional format the shim reports. Defaults to `en-GB`. */
+  readonly regionalLocale?: string;
   /**
    * Which OCR models this shim's machine has. Defaults to `['eng']`.
    *
@@ -1174,6 +1176,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
           userName: 'Shim User',
           cloudProviders: [...(options.cloudProviders ?? ['onedrive', 'google-drive'])],
           mediaFoundation: options.mediaFoundation ?? true,
+          // A FIXED REGION, for the name's reason: a British computer, whose date order differs from the language's.
+          regionalLocale: options.regionalLocale ?? 'en-GB',
         }),
       ),
 

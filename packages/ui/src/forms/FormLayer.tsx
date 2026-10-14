@@ -508,6 +508,8 @@ export function FormLayer({
                 setTyping(undefined);
               }}
               style={{ ...at, fontSize: `${String(size)}px`, ...combCells(offer, box.width, size) }}
+              // A DATE FIELD shows its pattern while empty and offers a calendar under it (the owner's F10).
+              {...(offer.format?.kind === 'date' ? { date: { pattern: offer.format.pattern, at: box } } : {})}
             />,
             beside,
           ];

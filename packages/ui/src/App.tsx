@@ -1061,6 +1061,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const [cloudProviders, setCloudProviders] = useState<readonly CloudProviderId[] | undefined>(undefined);
   const readCloudProviders = useCallback(() => cloudProviders, [cloudProviders]);
   const [mediaFoundation, setMediaFoundation] = useState<boolean | undefined>(undefined);
+  // THE COMPUTER'S REGIONAL FORMAT from main, until it answers the renderer's own default (the owner's F10).
+  const [regionalLocale, setRegionalLocale] = useState<string | undefined>(undefined);
   const readMediaFoundation = useCallback(() => mediaFoundation, [mediaFoundation]);
   const typedAuthor = useSetting(settings, AUTHOR_NAME_SETTING);
   /**
@@ -2637,6 +2639,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         setUserName(answer.value.userName);
         setCloudProviders(answer.value.cloudProviders);
         setMediaFoundation(answer.value.mediaFoundation);
+        if (answer.value.regionalLocale !== '') setRegionalLocale(answer.value.regionalLocale);
       },
       () => {
         // SWALLOWED ON PURPOSE: a version that cannot be read leaves the footer without its version line, which
@@ -3208,10 +3211,13 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           // THE STAMP LIBRARY: the kept pictures for the chooser, keeping and removing one, and placing one.
           ...stampLibrary({ client, ask, urls: BLOB_URLS }),
           onPlaceStampPicture,
+          // HOW THIS COMPUTER WRITES A DATE, which a new date field is given (the owner's F10).
+          dateLocale: regionalLocale,
         }),
       ),
     [
       ask,
+      regionalLocale,
       // THE STAMP LIBRARY'S CHANNELS go through it.
       client,
       listAnnotations,

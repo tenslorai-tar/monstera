@@ -118,6 +118,23 @@ describe('formFieldTools — a click places the kind’s own size, named without
     }
   });
 
+  it('a date field takes THE COMPUTER’S date order, as the tool says, not the language’s (the owner’s F10)', async () => {
+    const dateOf = async (dateLocale: string): Promise<unknown> => {
+      const tools = formFieldTools({
+        ask: () => Promise.resolve(undefined),
+        write: () => Promise.resolve(undefined),
+        fields: () => Promise.resolve([]),
+        style: PLAIN_STYLE,
+        dateLocale,
+      });
+      return press(toolWithId(tools, FORM_FIELD_DATE_TOOL_ID), [0, 0]);
+    };
+    // A BRITISH COMPUTER writes the day first, whatever language the application speaks.
+    expect(await dateOf('en-GB')).toMatchObject({ fields: [{ field: { type: 'date', pattern: 'dd/mm/yyyy' } }] });
+    // CONTROL: an American one writes the month first, so the region is what decided.
+    expect(await dateOf('en-US')).toMatchObject({ fields: [{ field: { type: 'date', pattern: 'mm/dd/yyyy' } }] });
+  });
+
   it('a click near the page’s far corner is moved back so the whole field is on the page', async () => {
     const { tools } = toolsOver();
     // The page is 200 by 300 points, 400 by 600 pixels at zoom 2; a text field clicked at (390, 590) would run off.
