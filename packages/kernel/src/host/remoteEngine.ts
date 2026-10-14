@@ -34,6 +34,7 @@ import {
   taggedPrior,
 } from './engineChannels.js';
 import { hostRefusalFor } from './hostRefusals.js';
+import type { BoundedPageText } from './pageTextBound.js';
 import { EngineSerialiseMismatch, type SessionAreaSurface, takeAnnounced } from './remoteLifecycle.js';
 import type {
   HostDestinationsReader,
@@ -354,13 +355,23 @@ export function remoteMupdfGeometry(
 export function remoteMupdfPageText(
   client: ClientApi<EngineChannels>,
   sessions: RemoteSessions,
-): HostPageTextReader {
+): RemotePageTextReader {
   return async (session, page, read) =>
     answered(
       'engine/page-text',
       await client['engine/page-text']({ session: sessions.handleFor(session), page, read }),
-    ).json;
+    );
 }
+
+/**
+ * One page's text as the host answered it: MuPDF's JSON, and whether it is the part of the page one answer carries
+ * rather than the whole (`pageTextBound.ts`).
+ */
+export type RemotePageTextReader = (
+  session: Parameters<HostPageTextReader>[0],
+  page: number,
+  read: Parameters<HostPageTextReader>[2],
+) => Promise<BoundedPageText>;
 
 /**
  * One page's links, over the boundary.

@@ -97,7 +97,7 @@ import {
   type HostPageAdjustmentReader,
   type HostPageRewriteReader,
   type HostPageLinksReader,
-  type HostPageTextReader,
+  type RemotePageTextReader,
   type HostWordBoxesReader,
   type HostCallDeadline,
   HostConnectionLost,
@@ -1244,7 +1244,10 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     pageText: async (docId, sessions, page) => {
       const session = sessions.mupdf;
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
-      return parsePageText(await engineHost.pageText(session, page, 'substrate'));
+      // THE PART A DENSE PAGE'S ANSWER CARRIES, said so: `truncated` travels with the page, so the text layer says the
+      // page is not whole rather than the person meeting an error (`pageTextBound.ts`).
+      const answer = await engineHost.pageText(session, page, 'substrate');
+      return { ...parsePageText(answer.json), truncated: answer.truncated };
     },
     // THE LINK READ, composed here for the two reads above's reason. Unlike the
     // text, nothing is parsed on the way through: the host answers a declared
@@ -1262,7 +1265,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     pageStructure: async (docId, sessions, page) => {
       const session = sessions.mupdf;
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
-      return parsePageStructure(await engineHost.pageText(session, page, 'structure'));
+      return parsePageStructure((await engineHost.pageText(session, page, 'structure')).json);
     },
     // THE TABLE READ, the same channel under its own name (ADR-0073) — and each cell's
     // BACKGROUND, joined here from the page's filled shapes, which the table read cannot see
@@ -1270,7 +1273,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     pageTables: async (docId, sessions, page) => {
       const session = sessions.mupdf;
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
-      const read = parsePageTables(await engineHost.pageText(session, page, 'table'));
+      const read = parsePageTables((await engineHost.pageText(session, page, 'table')).json);
       // A SCAN'S RULINGS ARE PIXELS, which the engine's read cannot see (ADR-0233): on a page holding a picture where the
       // engine saw no ruling, the rulings are read from the picture, and where they make a table, those are the page's
       // tables. A page whose rulings are vectors keeps the engine's answer, so no table is read twice.
@@ -2235,8 +2238,8 @@ function engineSessionOpener(
   readonly openedDocument: (docId: DocId) => Promise<void>;
   readonly writers: WriterRegistry;
   readonly geometry: PageGeometryReader;
-  /** One page's structured text as MuPDF's JSON, from whichever host is live. */
-  readonly pageText: HostPageTextReader;
+  /** One page's structured text as MuPDF's JSON, from whichever host is live, and whether it is all of the page. */
+  readonly pageText: RemotePageTextReader;
   /** One page's links, from whichever host is live. */
   readonly pageLinks: HostPageLinksReader;
   /** One page's filled shapes, from whichever host is live — a table cell's background. */
@@ -2481,9 +2484,9 @@ function engineSessionOpener(
    * answering with an empty page. **An empty page is what search reads as *your
    * word is not in this document*,** which is the worst answer available here.
    */
-  let pageText: HostPageTextReader | null = null;
+  let pageText: RemotePageTextReader | null = null;
 
-  const readPageTextThroughHost: HostPageTextReader = (session, page, read) => {
+  const readPageTextThroughHost: RemotePageTextReader = (session, page, read) => {
     if (pageText === null) {
       throw new Error(
         'A text read reached the engine with no host text reader registered. A session was ' +

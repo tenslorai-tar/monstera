@@ -343,6 +343,11 @@ export interface PageText {
    * decides by whether there is text at all.
    */
   readonly imageArea?: number;
+  /**
+   * Whether these blocks are the part of the page one host answer carries rather than all of it (`pageTextBound.ts`).
+   * Optional for `imageArea`'s reason: absent is a whole page.
+   */
+  readonly truncated?: boolean;
 }
 
 /**

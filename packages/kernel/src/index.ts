@@ -390,6 +390,7 @@ export {
   remoteMupdfPageRewrite,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
+  type RemotePageTextReader,
   remoteMupdfWordBoxes,
 } from './host/remoteEngine.js';
 export type { PageWordBoxes } from './wordBoxes.js';

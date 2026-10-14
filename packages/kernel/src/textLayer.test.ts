@@ -60,6 +60,14 @@ describe('textLayerOf', () => {
     expect(layer.truncated).toBe(true);
   });
 
+  // A page the host answered in part (`pageTextBound.ts`) is cut though every line it carries fits the limit; the
+  // control is the case below, the same lines from a whole page.
+  it('says a page the host answered in part was cut, however few lines it carries', () => {
+    const layer = textLayerOf({ ...pageOf(['a', 'b']), truncated: true }, 2, 100);
+    expect(layer.lines).toHaveLength(2);
+    expect(layer.truncated).toBe(true);
+  });
+
   it('a page holding exactly the limit is NOT truncated', () => {
     // The off-by-one that makes the flag dishonest in the reassuring direction:
     // `lines.length === limit` cannot tell a full page from a cut one, and a

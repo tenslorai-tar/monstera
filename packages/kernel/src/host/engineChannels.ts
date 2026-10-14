@@ -2663,6 +2663,11 @@ export const engineChannels = {
          * argument the session id and the correlation id already make.
          */
         json: z.string().max(ENGINE_PAGE_TEXT_MAX_BYTES),
+        /**
+         * Whether `json` is the part of the page that fits one answer rather than the whole of it
+         * (`pageTextBound.ts`): a page past the bound is answered in part and says so, never refused.
+         */
+        truncated: z.boolean(),
       })
       .strict(),
     ['no-such-session'],

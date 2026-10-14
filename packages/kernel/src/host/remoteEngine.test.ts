@@ -5,7 +5,7 @@ import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { type CommandOfKind, createClient, type Incident, wrapHandlers } from '@monstera/contract';
+import { type CommandOfKind, createClient, ENGINE_ANSWER_FILE_MAX_BYTES, type Incident, wrapHandlers } from '@monstera/contract';
 import { blockEditOf } from '@monstera/contract/host';
 
 import { bindEditFaces } from '../editFaces.js';
@@ -524,8 +524,11 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
   it('the TEXT read crosses under the NAME asked for, and the host composes the options', async () => {
     const { session, token, pageText } = await joined(tagged);
     try {
-      const structure = await pageText(token, 0, 'structure');
-      const substrate = await pageText(token, 0, 'substrate');
+      const structureAnswer = await pageText(token, 0, 'structure');
+      const structure = structureAnswer.json;
+      const substrate = (await pageText(token, 0, 'substrate')).json;
+      // A PAGE WELL UNDER ONE ANSWER'S CEILING crosses whole, and says so.
+      expect(structureAnswer.truncated).toBe(false);
 
       // THE STRUCTURE READ carries the document's tags, in the tree's order.
       expect(parsePageStructure(structure).nodes.map((node) => node.role)).toStrictEqual([
@@ -551,11 +554,32 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
     }
   });
 
+  // textWalk's L6 page (step 22): more one-character runs than one answer carries. Its MuPDF JSON is 7,051,845 bytes and
+  // 8,698,371 once written into the answer (measured 2026-10-14), over ENGINE_ANSWER_FILE_MAX_BYTES, which the runtime
+  // turned into `answer-too-large` and the person into an error dialog.
+  it('a page past one answer’s ceiling crosses in part, heading first, says so, and its written answer fits', async () => {
+    const made = await PDFDocument.create({ updateMetadata: false });
+    const font = await made.embedFont(StandardFonts.Helvetica);
+    const sheet = made.addPage([612, 792]);
+    sheet.drawText('Dense page heading', { x: 72, y: 740, size: 14, font });
+    for (let at = 0; at < 39_200; at += 1) sheet.drawText('x', { x: 72 + (at % 400) * 1.2, y: 60 + at * 0.016, size: 0.5, font });
+    const { session, token, pageText } = await joined(await made.save());
+    try {
+      const answer = await pageText(token, 0, 'substrate');
+      expect(answer.truncated).toBe(true);
+      expect(linesOf(parsePageText(answer.json))[0]?.text).toBe('Dense page heading');
+      // THE RUNTIME'S OWN MEASURE: the answer as the file writes it, envelope and all.
+      expect(Buffer.byteLength(JSON.stringify({ ok: true, value: answer }), 'utf8')).toBeLessThanOrEqual(ENGINE_ANSWER_FILE_MAX_BYTES);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }, 60_000);
+
   it('the TABLE read crosses under its name and finds the ruled grid whole (ADR-0073)', async () => {
     const { session, token, pageText } = await joined(ruled);
     try {
-      const tables = parsePageTables(await pageText(token, 0, 'table'));
-      const substrate = parsePageTables(await pageText(token, 0, 'substrate'));
+      const tables = parsePageTables((await pageText(token, 0, 'table')).json);
+      const substrate = parsePageTables((await pageText(token, 0, 'substrate')).json);
 
       // THREE COLUMNS is the separating assertion: the table-hunt flag without
       // `vectors` finds this grid two columns wide (measured 2026-09-17), so a host
@@ -581,7 +605,7 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
     try {
       // THE COMPOSITION ROOT'S JOIN, over the real host handlers and readers: two reads of one
       // page, joined in main. A fill read that crossed nothing would leave every cell plain.
-      const tables = withCellFills(parsePageTables(await pageText(token, 0, 'table')).tables, await pageFills(token, 0));
+      const tables = withCellFills(parsePageTables((await pageText(token, 0, 'table')).json).tables, await pageFills(token, 0));
       const grey = [0.85, 0.85, 0.85];
       expect(
         tables.map((table) => table.rows.map((row) => row.map((cell) => cell.fill?.map((v) => Math.round(v * 100) / 100) ?? null))),

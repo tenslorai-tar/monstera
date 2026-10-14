@@ -127,5 +127,6 @@ export function textLayerOf(
   // its line limit still came from a page with text on it, and deriving the
   // attribution from `kept` would answer `'empty'` for a `limit` of one on a
   // page whose first line is blank.
-  return { lines, truncated: clipped || all.length > limit, kind: pageKindOf(page) };
+  // AND A PAGE THE HOST ANSWERED IN PART is not whole either, whatever the limit (`pageTextBound.ts`).
+  return { lines, truncated: clipped || all.length > limit || page.truncated === true, kind: pageKindOf(page) };
 }

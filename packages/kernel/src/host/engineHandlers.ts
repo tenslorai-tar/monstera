@@ -71,6 +71,7 @@ import {
   taggedPrior,
 } from './engineChannels.js';
 import { pdfLibRefusalCodeOf, placeholderRefusalCodeOf, protectionRefusalCodeOf } from './hostRefusals.js';
+import { boundPageText } from './pageTextBound.js';
 import { type CopyEngine, openCopy } from '../openCopy.js';
 
 /**
@@ -991,7 +992,10 @@ export function createEngineHandlers({
       // shape this build invented; `parsePageText` main-side is the one reader
       // (§3.2), and the schema's size bound is what makes the string safe to
       // carry rather than trust.
-      return { ok: true, value: { json: await pageText(held.session, page, read) } };
+      //
+      // BOUNDED HERE, where the answer is made: a page past one answer's ceiling is answered with the part of it that
+      // fits and `truncated`, rather than replaced by `answer-too-large` after it was made (`pageTextBound.ts`).
+      return { ok: true, value: boundPageText(await pageText(held.session, page, read)) };
     },
 
     'engine/ocr-page': async (request) => {
