@@ -27,7 +27,7 @@
  *   paper crops a photographed sheet and says so. Each read back from the saved file: the turn in its content, the
  *   sheet's shape in its box.
  */
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNumber, PDFRawStream, PDFRef, PDFString, StandardFonts, decodePDFRawStream, degrees } from '@cantoo/pdf-lib';
@@ -44,7 +44,18 @@ refuseStaleBuild(root, [['packages/shared/src/geometry.ts', 'packages/shared/dis
 const { pageTransform, toPdf, viewportPoint } = await import('../../packages/shared/dist/geometry.js');
 
 const walk = await startWalk('comments');
-const { page, output, open, pickFiles, saveTo, command, section, step, finish, sizeWindow } = walk;
+const { page, output, pickFiles, saveTo, command, section, step, finish, sizeWindow } = walk;
+
+/**
+ * Opens a document and lets it settle. A palette command sent the moment the page canvas shows was answered with no
+ * dialog for 30 and 60 s in steps 15 and 36 to 38 (2026-10-13), while the same commands, run by a probe a few seconds
+ * after the open, opened theirs at once.
+ * @param {string} path
+ */
+const open = async (path) => {
+  await walk.open(path);
+  await page.waitForTimeout(4000);
+};
 
 /** A letter page with words on it, then a second one turned 90 degrees. */
 async function linksDocument() {
@@ -119,7 +130,10 @@ async function drawWebLink(index, from, to, address) {
   const slot = await page.locator('.m-page-slot').nth(index).boundingBox();
   if (slot === null) throw new Error(`page ${String(index + 1)} has no box on screen`);
   const drawn = { x0: slot.x + slot.width * from[0], y0: slot.y + slot.height * from[1], x1: slot.x + slot.width * to[0], y1: slot.y + slot.height * to[1] };
-  await page.getByRole('button', { name: 'Web link', exact: true }).first().click();
+  // ONLY WHEN IT IS NOT ON: the tool stays armed after a link is drawn, so a second press on its button turned it off and
+  // the drag that followed drew no link (2026-10-13, step 4's screenshot: a bare box and no Address field).
+  const tool = page.getByRole('button', { name: 'Web link', exact: true }).first();
+  if ((await tool.getAttribute('aria-pressed')) !== 'true') await tool.click();
   await page.mouse.move(drawn.x0, drawn.y0);
   await page.mouse.down();
   await page.mouse.move(drawn.x1, drawn.y1, { steps: 8 });
@@ -130,6 +144,13 @@ async function drawWebLink(index, from, to, address) {
   await expect(page.getByText('Link added.').last()).toBeVisible();
   return { slot, drawn };
 }
+
+/**
+ * A document's tab in the title bar, by its file name. These are `[data-tab-select]` buttons carrying the name as their
+ * text and `title`, not `role=tab` (2026-10-13: five steps waited on a role that no document tab has, while the
+ * converted document was open in the screenshot). @param {RegExp} name
+ */
+const documentTab = (name) => page.locator('[data-tab-select]').filter({ hasText: name });
 
 /** Saves a copy to `name` in the output folder and answers its path once it is written. @param {string} name */
 async function saveCopy(name) {
@@ -207,7 +228,8 @@ await step('O6(b): on page 2, turned 90 degrees, a link is saved where it was dr
   const [link] = (await savedLinks(await saveCopy('links-turned.pdf')))[1] ?? [];
   if (link === undefined) throw new Error('no link on page 2 of the saved file');
   const expected = drawnInPdf(slot, 90, drawn);
-  expect(apart(link.rect, expected)).toBeLessThan(1);
+  // BOTH RECTANGLES IN THE MESSAGE: a bare 'Received: 182.9' says how far apart they are and not which way the turn went.
+  expect(apart(link.rect, expected), `saved ${JSON.stringify(link.rect)}, drawn in PDF space ${JSON.stringify(expected)}, slot ${JSON.stringify(slot)}`).toBeLessThan(1);
   return { drawnPdf: expected, savedRect: link.rect };
 });
 
@@ -384,9 +406,11 @@ await step('O8: an AREA’s corner dragged with Select changes the saved area', 
   await page.mouse.down();
   await page.mouse.move(top.x + 60 * slot.scale, top.y, { steps: 10 });
   await page.mouse.up();
+  // THE DRAG IS A WRITE (3 to 5 s here): a copy saved while it lands holds the area as it was (2026-10-13: 1.4 and 1.4).
+  await page.waitForTimeout(8000);
   const grown = (await savedMeasurements(await saveCopy('plan-area-grown.pdf'))).find((each) => each.subtype === '/Polygon');
   if (grown === undefined) throw new Error('no area in the saved file');
-  expect(valueOf(grown.reading)).toBeGreaterThan(valueOf(drawn.reading));
+  expect(valueOf(grown.reading), `drawn ${JSON.stringify(drawn)}, after the drag ${JSON.stringify(grown)}`).toBeGreaterThan(valueOf(drawn.reading));
   expect(grown.filled).toBe(false);
   return { before: drawn.reading, after: grown.reading };
 });
@@ -519,7 +543,7 @@ await step('O3: two pictures after the last page become two pages, in file-name 
   await saveTo(join(output, 'pages-pictures-composed.pdf'));
   await dialog.getByRole('button', { name: 'Choose images…', exact: true }).click();
   // THE PICTURES' OWN TAB opens beside this one, and the person is brought back to the document they inserted into.
-  await expect(page.getByRole('tab', { name: /pages-pictures-composed/u })).toBeVisible();
+  await expect(documentTab(/pages-pictures-composed/u)).toBeVisible();
   const read = await savedPages(await saveCopy('pages-pictures.pdf'));
   expect(read).toHaveLength(4);
   const [, , second, third] = read;
@@ -530,7 +554,7 @@ await step('O3: two pictures after the last page become two pages, in file-name 
 });
 
 await step('O3: ONE Undo takes both pictures out, in the saved file', async () => {
-  await page.getByRole('tab', { name: /^pages\.pdf/u }).first().click();
+  await documentTab(/pages\.pdf/u).first().click();
   await page.keyboard.press('Control+Z');
   const read = await savedPages(await saveCopy('pages-pictures-undone.pdf'));
   expect(read).toHaveLength(2);
@@ -561,7 +585,7 @@ await step('O9: converting a long Markdown file shows "Converting Markdown to PD
   await expect(notice).toContainText('Converting Markdown to PDF', { timeout: 20_000 });
   // NO CANCEL: one composition runs to the end, and a button that could not stop it would do nothing.
   expect(await notice.getByRole('button').count()).toBe(0);
-  await expect(page.getByRole('tab', { name: /^long\.pdf/u })).toBeVisible({ timeout: 120_000 });
+  await expect(documentTab(/^long\.pdf/u)).toBeVisible({ timeout: 120_000 });
   await expect(notice).toHaveCount(0);
   const read = await savedPages(composed);
   expect(read.length).toBeGreaterThan(1);
@@ -665,7 +689,8 @@ await step('N8: a right-click in a text field is answered by the one edit menu i
 });
 
 await step('O4: every right-panel tab shows its icon and its whole name, the selected one and the others', async () => {
-  const tabs = page.locator('.m-context-panel__tab');
+  // THE VISIBLE PANEL'S: every open document keeps its own panel mounted and hidden, and `.first()` was a hidden one's.
+  const tabs = page.locator('.m-context-panel__tab:visible');
   await expect(tabs.first()).toBeVisible();
   const read = await tabs.evaluateAll((items) =>
     items.map((item) => {
@@ -694,8 +719,8 @@ await step('N9: every left-panel tab draws its panel down to the panel’s foot'
     ['search', '.m-find-bar'],
   ];
   for (const [tab, box] of tabs) {
-    await page.locator(`[data-panel-tab="${tab}"]`).click();
-    const body = page.locator(`.m-document-panel__body[data-panel="${tab}"]`);
+    await page.locator(`[data-panel-tab="${tab}"]:visible`).click();
+    const body = page.locator(`.m-document-panel__body[data-panel="${tab}"]:visible`);
     const [outer, inner] = await Promise.all([body.boundingBox(), body.locator(box).first().boundingBox()]);
     if (outer === null || inner === null) throw new Error(`the ${tab} tab draws nothing`);
     gaps[tab] = Math.round(outer.y + outer.height - (inner.y + inner.height));
@@ -717,17 +742,21 @@ await step('N4: the File menu starts Open PDF, Open from web address, Cloud stor
 await step('O1: About says what Monstera is, and no line mentions updates', async () => {
   await command('About');
   const dialog = page.getByRole('dialog', { name: 'About Monstera' });
+  // WAITED FOR: `allTextContents` answers at once with what is drawn, which was nothing (2026-10-13: an empty list).
+  await expect(dialog.locator('.m-about__line').first()).toBeVisible();
   const lines = await dialog.locator('.m-about__line').allTextContents();
   expect(lines.slice(0, 2)).toStrictEqual(['Monstera is a PDF editor for Windows.', 'Your documents stay on your computer unless you send one.']);
   // ADR-0236's correction: no line about updates on any run, whether or not this one asked monsterapdf.com.
   expect(lines.filter((line) => /update|monsterapdf/iu.test(line))).toStrictEqual([]);
-  await dialog.getByRole('button', { name: 'Close' }).click();
+  // THE DIALOG'S OWN TEXT BUTTON: its corner icon is named Close too, so the bare name matched two controls.
+  await dialog.locator('button.m-button', { hasText: 'Close' }).click();
   return { lines };
 });
 
 await step('N1: Convert a scan shows three rows, each button at the right with room after its words', async () => {
   await command('Convert a scan…');
   const dialog = page.getByRole('dialog', { name: 'Convert a scan' });
+  await expect(dialog.locator('.m-convert-scan__row').first()).toBeVisible();
   const gaps = await dialog.locator('.m-convert-scan__row').evaluateAll((items) =>
     items.map((item) => {
       const text = item.querySelector('.m-convert-scan__text')?.getBoundingClientRect();
@@ -764,11 +793,14 @@ await step('L7: a NUL in a Markdown file is the replacement character in the sav
  * step with its sample missing FAILS saying so, never passes.
  */
 const OLD_OFFICE = join(root, '_review', 'samples', 'old-office');
-for (const { file, expectation } of [
-  { file: 'sample.doc', expectation: 'a Word 97–2003 document' },
-  { file: 'sample.xls', expectation: 'an Excel 97–2003 workbook with TWO visible sheets: the PDF holds both' },
-  { file: 'sample.ppt', expectation: 'a PowerPoint 97–2003 deck' },
+for (const { extension, expectation } of [
+  { extension: '.doc', expectation: 'a Word 97–2003 document' },
+  { extension: '.xls', expectation: 'an Excel 97–2003 workbook with TWO visible sheets: the PDF holds both' },
+  { extension: '.ppt', expectation: 'a PowerPoint 97–2003 deck' },
 ]) {
+  // THE SAMPLE BY ITS EXTENSION: the folder on the walk machine holds the files under the names they were downloaded
+  // with (`file-sample_100kB.doc`, `file_example_XLS_10.xls`, `file_example_PPT_250kB.ppt`, 2026-10-13), not `sample.*`.
+  const file = (existsSync(OLD_OFFICE) ? readdirSync(OLD_OFFICE) : []).find((name) => name.toLowerCase().endsWith(extension)) ?? `sample${extension}`;
   await step(`N6: ${file}, ${expectation}, becomes a PDF that opens; read back from the file`, async () => {
     const source = join(OLD_OFFICE, file);
     if (!existsSync(source)) throw new Error(`no sample at ${source}: put ${expectation} there and run the walk again`);
@@ -776,7 +808,7 @@ for (const { file, expectation } of [
     await pickFiles([source]);
     await saveTo(made);
     await command('New PDF from Word, Excel or PowerPoint…');
-    await expect(page.getByRole('tab', { name: new RegExp(`^${file.replace('.', '\\.')}\\.pdf`, 'u') })).toBeVisible({ timeout: 300_000 });
+    await expect(documentTab(new RegExp(`^${file.replaceAll('.', '\\.')}\\.pdf`, 'u'))).toBeVisible({ timeout: 300_000 });
     const read = await savedPages(made);
     // TWO SHEETS ARE TWO PARTS, each its own pages: one page would be x2t's active sheet alone, the loss N6 must not have.
     expect(read.length).toBeGreaterThanOrEqual(file.endsWith('.xls') ? 2 : 1);
