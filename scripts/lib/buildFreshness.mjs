@@ -343,6 +343,9 @@ export const FONT_WORK_APART = [
   ['packages/kernel/src/composeWorker.ts', 'packages/kernel/dist/composeWorker.js', 'tsc'],
   ['packages/kernel/src/markdownCompose.ts', 'packages/kernel/dist/markdownCompose.js', 'tsc'],
   ['packages/kernel/src/fontCatalogue.ts', 'packages/kernel/dist/fontCatalogue.js', 'tsc'],
+  ['packages/kernel/src/runFont.ts', 'packages/kernel/dist/runFont.js', 'tsc'],
+  ['packages/kernel/src/runFontApart.ts', 'packages/kernel/dist/runFontApart.js', 'tsc'],
+  ['packages/kernel/src/runFontWorker.ts', 'packages/kernel/dist/runFontWorker.js', 'tsc'],
 ];
 
 /**

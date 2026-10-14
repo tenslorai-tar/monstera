@@ -29,7 +29,7 @@ import { createRoster } from '../lib/passRoster.mjs';
 import { fontsDirectory } from '../provision/fonts.mjs';
 
 const ROOT = repoRoot();
-refuseStaleBuild(ROOT, FONT_WORK_APART, 9);
+refuseStaleBuild(ROOT, FONT_WORK_APART, 12);
 
 setFlagsFromString('--expose-gc');
 /** @type {() => void} */
@@ -37,7 +37,7 @@ const collect = runInNewContext('gc');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 8 });
+const roster = createRoster(failures, { cases: 12 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -63,6 +63,9 @@ const { composerApart } = await import('../../packages/kernel/dist/composeApart.
 const { composeMarkdown } = await import('../../packages/kernel/dist/markdownCompose.js');
 const { faceSourceOf, readCatalogue } = await import('../../packages/kernel/dist/fontCatalogue.js');
 const { ComposeRefused } = await import('../../packages/kernel/dist/composeOutcome.js');
+const { forgetRunFonts, runFontsApart } = await import('../../packages/kernel/dist/runFontApart.js');
+const { runFontFor } = await import('../../packages/kernel/dist/runFont.js');
+const { ShapingFace } = await import('../../packages/kernel/dist/textShaping.js');
 
 const fonts = fontsDirectory(ROOT);
 // THE LARGEST BUNDLED FACE, so a use reads as many bytes as the folder offers in one file.
@@ -185,6 +188,91 @@ check(
     "CONTROL: a composer's fault crosses as a failure, never as a refusal",
     thrown instanceof Error && !(thrown instanceof ComposeRefused) && thrown.message.startsWith('a composition failed in its thread'),
     String(thrown),
+  );
+}
+
+// THE RUN FONTS, the PDFium host's read after every edit (ADR-0239's addendum): what PDFium would draw for each letter is
+// read from the program itself here, the agreeing reading `runFont.test.ts` builds, so the rebuild succeeds.
+const carlito = new Uint8Array(readFileSync(join(fonts, 'Carlito-Regular.ttf')));
+const runRequest = (() => {
+  const face = new ShapingFace(carlito, 0, {});
+  const scale = 1000 / face.unitsPerEm;
+  /** @type {Map<number, import('../../packages/kernel/dist/runFont.js').DrawnGlyph>} */
+  const drawn = new Map();
+  for (const character of 'Costs are steady') {
+    const point = character.codePointAt(0) ?? 0;
+    const glyph = face.glyphFor(point) ?? 0;
+    const values = face.outline(glyph).flatMap((command) => command.values);
+    const xs = values.filter((_, at) => at % 2 === 0);
+    const ys = values.filter((_, at) => at % 2 === 1);
+    drawn.set(point, {
+      advance: face.nominalAdvance(glyph) * scale,
+      box:
+        xs.length === 0
+          ? null
+          : { x0: Math.min(...xs) * scale, y0: Math.min(...ys) * scale, x1: Math.max(...xs) * scale, y1: Math.max(...ys) * scale },
+      points: xs.map((x, at) => /** @type {const} */ ([x * scale, (ys[at] ?? 0) * scale])),
+    });
+  }
+  return { program: carlito, drawn };
+})();
+{
+  // MORE ON EACH SIDE THAN THE FREE SPACE ALREADY THERE. HarfBuzz frees only from finalisers, a forced collection runs
+  // them, and WebAssembly memory never shrinks: the face programs made here above leave about 9 MB of freed heap, which
+  // eight 0.6 MB rebuilds fit inside without growing it. Measured 2026-10-14: eight in this thread grew 0.0 MB, so the
+  // control refused; and with `runFontsApart` mutated to rebuild in this thread, eight apart grew nothing either and every
+  // case passed. Sixty read 36 MB, on both sides.
+  const REBUILDS = 60;
+  forgetRunFonts();
+  let rebuiltApart = runFontsApart([runRequest])[0] ?? null;
+  const startRuns = await settled();
+  for (let use = 0; use < REBUILDS; use += 1) {
+    forgetRunFonts();
+    rebuiltApart = runFontsApart([runRequest])[0] ?? null;
+  }
+  const afterRunsApart = await settled();
+  let rebuiltHere = runFontFor(carlito, runRequest.drawn);
+  const beforeRunsHere = await settled();
+  for (let use = 0; use < REBUILDS; use += 1) rebuiltHere = runFontFor(carlito, runRequest.drawn);
+  const afterRunsHere = await settled();
+  const runs = `${String(REBUILDS)} run fonts over ${mb(carlito.length)}: apart grew ${mb(afterRunsApart - startRuns)}, in this thread ${mb(afterRunsHere - beforeRunsHere)}`;
+  check(
+    'CONTROL: run fonts rebuilt in this thread keep at least half the program bytes they read',
+    (afterRunsHere - beforeRunsHere) * 2 >= REBUILDS * carlito.length,
+    runs,
+  );
+  check(
+    'rebuilt apart, the asking thread keeps a tenth or less of what the in-thread rebuild keeps',
+    (afterRunsApart - startRuns) * 10 <= afterRunsHere - beforeRunsHere,
+    runs,
+  );
+  check(
+    'the run font rebuilt apart is the one rebuilt in this thread, byte for byte',
+    rebuiltApart !== null && rebuiltHere !== null && Buffer.from(rebuiltApart).equals(Buffer.from(rebuiltHere)),
+    `${String(rebuiltApart?.length)} bytes apart, ${String(rebuiltHere?.length)} here`,
+  );
+}
+
+// A FONT SEEN BEFORE starts no thread: the editor asks for the same block's fonts after every edit. The control is the
+// same read once the answers are forgotten, which must reach the thread, so the case cannot pass on a counter that never
+// moves.
+{
+  let threadsStarted = 0;
+  const count = () => {
+    threadsStarted += 1;
+  };
+  forgetRunFonts();
+  runFontsApart([runRequest], count);
+  const first = threadsStarted;
+  runFontsApart([runRequest, runRequest], count);
+  const repeat = threadsStarted - first;
+  forgetRunFonts();
+  runFontsApart([runRequest], count);
+  const forgotten = threadsStarted - first - repeat;
+  check(
+    'a read of fonts seen before reaches no thread, and the same read once forgotten does (control)',
+    first === 1 && repeat === 0 && forgotten === 1,
+    `first ${String(first)}, repeat ${String(repeat)}, after forgetting ${String(forgotten)}`,
   );
 }
 

@@ -51,7 +51,8 @@ import { type ProgramFace, faceOf, programFace } from './fontFace.js';
 import { BOX } from './boxFont.js';
 import { faceProgramApart } from './faceProgramApart.js';
 import { type PathGlyph, type PathStep, pathFontFor } from './pathFont.js';
-import { type DrawnGlyph, runFontFor } from './runFont.js';
+import type { DrawnGlyph } from './runFont.js';
+import { type RunFontRequest, runFontsApart } from './runFontApart.js';
 import { withoutSubsetTag } from './subsetName.js';
 import { ShapingFace } from './textShaping.js';
 import {
@@ -1747,30 +1748,37 @@ export function runFonts(session: PdfiumSession, page: number, indices: readonly
   return promised(() =>
     onPage(session, page, (handle) => {
       const bindings = api();
-      const fonts: Uint8Array[] = [];
-      /** Each font met, by address: its place in `fonts`, or `null` for one with none. */
-      const answered = new Map<string, number | null>();
       let textPage: unknown = null;
       try {
-        const runs = indices.map((index) => {
+        // EACH RUN'S FONT, by address, and what PDFium draws in each font met, read first: the programs are then rebuilt
+        // together in one thread that ends (`runFontsApart`), so the read keeps none of what HarfBuzz allocated.
+        const keys = indices.map((index) => {
           const font: unknown = bindings.textFont(textObjectAt(bindings, handle, page, index));
-          if (font === null) return null;
-          const key = String(koffi.address(font));
-          const known = answered.get(key);
-          if (known !== undefined) return known;
+          return font === null ? null : { font, key: String(koffi.address(font)) };
+        });
+        const met = new Map<string, { readonly font: unknown; readonly read: FontOnPage | null }>();
+        for (const each of keys) {
+          if (each === null || met.has(each.key)) continue;
+          if (textPage === null) {
+            textPage = bindings.loadTextPage(handle);
+            if (textPage === null) throw refusedAt('page', 'PDFium could not load the page to read a run’s characters');
+          }
+          met.set(each.key, { font: each.font, read: fontOnPage(bindings, handle, textPage, each.font, each.key) });
+        }
+        const read = [...met.values()].flatMap((each) => (each.read === null ? [] : [each.read]));
+        const rebuilt = runFontsApart(read);
+        const fonts: Uint8Array[] = [];
+        /** Each font met, by address: its place in `fonts`, or `null` for one with none. */
+        const answered = new Map<string, number | null>();
+        for (const [key, each] of met) {
           let at: number | null = null;
-          if (fonts.length < MAX_BLOCK_FONTS) {
-            if (textPage === null) {
-              textPage = bindings.loadTextPage(handle);
-              if (textPage === null) throw refusedAt('page', 'PDFium could not load the page to read a run’s characters');
-            }
-            const rebuilt = fontOfRun(bindings, handle, textPage, font, key);
-            if (rebuilt !== null) at = fonts.push(rebuilt) - 1;
+          if (each.read !== null && fonts.length < MAX_BLOCK_FONTS) {
+            const font = rebuilt[read.indexOf(each.read)] ?? pathFontOf(bindings, each.font, each.read.drawn);
+            if (font !== null) at = fonts.push(font) - 1;
           }
           answered.set(key, at);
-          return at;
-        });
-        return { fonts, runs };
+        }
+        return { fonts, runs: keys.map((each) => (each === null ? null : (answered.get(each.key) ?? null))) };
       } finally {
         if (textPage !== null) bindings.closeTextPage(textPage);
       }
@@ -1778,8 +1786,11 @@ export function runFonts(session: PdfiumSession, page: number, indices: readonly
   );
 }
 
-/** One font's rebuilt program, checked against what PDFium draws for every character the page sets in it, or `null`. */
-function fontOfRun(bindings: Bound, handle: unknown, textPage: unknown, font: unknown, key: string): Uint8Array | null {
+/** One font as the page uses it: its embedded program, and what PDFium draws for every character the page sets in it. */
+type FontOnPage = RunFontRequest;
+
+/** `font`'s program and drawn characters, or `null` where it embeds none or PDFium answers no width for one of them. */
+function fontOnPage(bindings: Bound, handle: unknown, textPage: unknown, font: unknown, key: string): FontOnPage | null {
   const program = embeddedProgramOf(bindings, font);
   if (program === null) return null;
   const inFont: unknown[] = [];
@@ -1798,10 +1809,15 @@ function fontOfRun(bindings: Bound, handle: unknown, textPage: unknown, font: un
     if (glyph === null) return null;
     drawn.set(point, glyph);
   }
-  const rebuilt = runFontFor(program, drawn);
-  if (rebuilt !== null) return rebuilt;
-  // NO FONT FROM THE PROGRAM — a Type 1 or bare CFF program, or a TrueType one whose glyphs do not read as the page's —
-  // so one is built from what PDFium draws for each character (ADR-0238), and the run keeps its own look.
+  return { program, drawn };
+}
+
+/**
+ * The font built from what PDFium draws for each character (ADR-0238), where the program gave none — a Type 1 or bare
+ * CFF program, or a TrueType one whose glyphs do not read as the page's — so the run keeps its own look; `null` where a
+ * character has no path or the font would be too large.
+ */
+function pathFontOf(bindings: Bound, font: unknown, drawn: ReadonlyMap<number, DrawnGlyph>): Uint8Array | null {
   const paths = new Map<number, PathGlyph>();
   for (const point of drawn.keys()) {
     const path = drawnPathOf(bindings, font, point);
