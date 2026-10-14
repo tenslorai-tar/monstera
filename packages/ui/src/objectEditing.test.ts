@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   type EditableObject,
   type ObjectPick,
+  arrangeCommand,
   carryPick,
   objectAt,
   placeCommand,
@@ -23,7 +24,8 @@ const PLACED = unclipped({ source: 'stamp', index: 0, ordinal: 0, kind: 'picture
 const PAGE = [TEXT, RULE, PHOTO, PLACED];
 
 const V3 = asDocVersion(3);
-const pick = (object: EditableObject): ObjectPick => ({ page: 1, version: V3, object });
+/** A page whose walk holds ten objects, so an object at index 9 has none after it. */
+const pick = (object: EditableObject): ObjectPick => ({ page: 1, version: V3, object, walked: 10 });
 
 describe('which objects each filter outlines (ADR-0153 Decision 2)', () => {
   it('Images is the page’s images AND the pictures a person placed; Text and Shapes are neither', () => {
@@ -186,6 +188,25 @@ describe('the command a drag or a handle builds', () => {
     expect(turnCommand(pick(PHOTO), 90)).toMatchObject({ moveBy: { x: 0, y: 0 }, rotateBy: 90 });
     expect(turnCommand(pick(PLACED), 90)).toBeUndefined();
     expect(turnCommand(pick(PHOTO), 0)).toBeUndefined();
+  });
+
+  it('ARRANGES one object a place each way, only where a neighbour is, and never a stamp or a block (ADR-0244)', () => {
+    expect(arrangeCommand(pick(PHOTO), 'forward')).toStrictEqual({ kind: 'arrangePageObject', page: 1, index: 2, toward: 'forward', version: V3 });
+    expect(arrangeCommand(pick(PHOTO), 'backward')).toMatchObject({ toward: 'backward', index: 2 });
+    // NO NEIGHBOUR: the first object has none behind it, and the walk's last (index 9 of ten) none in front.
+    expect(arrangeCommand(pick(TEXT), 'backward')).toBeUndefined();
+    expect(arrangeCommand(pick({ ...PHOTO, index: 9, members: [9] }), 'forward')).toBeUndefined();
+    expect(arrangeCommand(pick(PLACED), 'forward')).toBeUndefined();
+    expect(arrangeCommand(pick(WORD), 'forward')).toBeUndefined();
+  });
+
+  it('the selection FOLLOWS the object it arranged to its new place, and drops for another object’s', () => {
+    const V4 = asDocVersion(4);
+    const forward = arrangeCommand(pick(PHOTO), 'forward');
+    if (forward === undefined) throw new Error('expected an arrangement');
+    expect(carryPick(pick(PHOTO), forward, V4)).toStrictEqual({ ...pick(PHOTO), version: V4, object: { ...PHOTO, index: 3, members: [3] } });
+    // CONTROL: the same command with the rule picked moves the rule's index too, so the pick drops.
+    expect(carryPick(pick(RULE), forward, V4)).toBeUndefined();
   });
 
   it('picks a clipped picture where it shows, never in the part of its placement the window hides', () => {

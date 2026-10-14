@@ -2023,6 +2023,22 @@ const declarations = {
     asset: 'none',
     purpose: 'ordinary',
   },
+  arrangePageObject: {
+    kind: 'arrangePageObject',
+    display: 'image',
+    // PDFium's own list, which keeps each object's state and clip (ADR-0244).
+    writer: 'pdfium',
+    // MOVED BACK by the same call: a page, two places, nothing document-scaled.
+    invertible: true,
+    undo: 'inverse',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    targets: 'text-object',
+    reads: 'none',
+    asset: 'none',
+    purpose: 'ordinary',
+  },
   placeDrawnObject: {
     kind: 'placeDrawnObject',
     display: 'image',

@@ -217,7 +217,8 @@ describe('the declaration table', () => {
       //   the string it held, capped by `PDFIUM_PRIOR_TEXT_MAX` on the wire. Bounded by the contract.
       // - `placePageObjects`' (2026-10-14, ADR-0242) is `placePageObject`'s six floats per object, the list capped at
       //   `MAX_EDITED_OBJECTS` on the command and `ENGINE_TEXT_OBJECTS_MAX` on the wire. Bounded by the contract.
-    ).toStrictEqual(['replaceTextObject', 'placePageObject', 'placePageObjects', 'recolorPageObjects', 'replaceTextAt']);
+      // - `arrangePageObject`'s (2026-10-14, ADR-0244) is a page and two places: three integers. Bounded by the shape.
+    ).toStrictEqual(['replaceTextObject', 'placePageObject', 'placePageObjects', 'arrangePageObject', 'recolorPageObjects', 'replaceTextAt']);
   });
 
   it('CONTROL: some byte-image command is TERMINAL, so the case above is a property and not a description', () => {
@@ -246,7 +247,7 @@ describe('the declaration table', () => {
     expect(declared).toContain('replacePage');
   });
 
-  it('CONTROL: exactly twenty-six kinds declare a target, and the rest answer none', () => {
+  it('CONTROL: exactly twenty-seven kinds declare a target, and the rest answer none', () => {
     // The targets axis's version of the control above, and it carries the
     // second half as well. `never extends X` would satisfy one type-level line
     // on its own; and a table where EVERY command declared a target would
@@ -289,6 +290,8 @@ describe('the declaration table', () => {
       'placePageObject',
       // A BLOCK placed as one, named by its objects' indices in the same walk (ADR-0242).
       'placePageObjects',
+      // AN OBJECT moved a place in front or behind, named by its index in the same walk (ADR-0244).
+      'arrangePageObject',
       // A PICTURE, A FORM OR A SHAPE placed where it is drawn, named by the same walk's index (ADR-0240).
       'placeDrawnObject',
       'recolorPageObjects',

@@ -3627,6 +3627,7 @@ const WALK_NAMED_BY: Readonly<Record<NamesAnAnnotation | NamesAFormField | Names
   placePageObject: 'object',
   placeDrawnObject: 'object',
   placePageObjects: 'object',
+  arrangePageObject: 'object',
   recolorPageObjects: 'object',
   deletePageObjects: 'object',
   editTextBlock: 'object',
@@ -6115,6 +6116,21 @@ export const placePageObjectsSchema = z
   .strict();
 
 /**
+ * Moves one page object one place in front of or behind its neighbour
+ * ([ADR-0244](../../../docs/DECISIONS/0244-arrange-reorders-an-object-through-pdfiums-own-list.md)): what is drawn later
+ * is drawn on top, so `forward` puts it after the next object in the page's list and `backward` before the one before.
+ */
+export const arrangePageObjectSchema = z
+  .object({
+    kind: z.literal('arrangePageObject'),
+    page: z.number().int().nonnegative(),
+    index: objectIndexSchema,
+    toward: z.enum(['forward', 'backward']),
+    version: docVersionSchema,
+  })
+  .strict();
+
+/**
  * Recolours a page's objects — **text objects included**.
  *
  * The *included* is measured rather than hoped: `FPDFPageObj_SetFillColor`
@@ -6858,6 +6874,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   placePageObjectSchema,
   placeDrawnObjectSchema,
   placePageObjectsSchema,
+  arrangePageObjectSchema,
   recolorPageObjectsSchema,
   deletePageObjectsSchema,
   promoteFormObjectsSchema,
@@ -7073,6 +7090,8 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   placeDrawnObjectSchema,
   // RENDERABLE: the indices of one block and the box the renderer outlined, which IS the anchor here (ADR-0242).
   placePageObjectsSchema,
+  // RENDERABLE: an index and a direction; the engine moves the object in its own list (ADR-0244).
+  arrangePageObjectSchema,
   recolorPageObjectsSchema,
   deletePageObjectsSchema,
   // RENDERABLE, and its payload is ONE INTEGER — the smallest on this list. The
@@ -7298,6 +7317,7 @@ export function targetVersionOf(command: Command): DocVersion | undefined {
   if (command.kind === 'placePageObject') return command.version;
   if (command.kind === 'placeDrawnObject') return command.version;
   if (command.kind === 'placePageObjects') return command.version;
+  if (command.kind === 'arrangePageObject') return command.version;
   if (command.kind === 'recolorPageObjects') return command.version;
   if (command.kind === 'deletePageObjects') return command.version;
   if (command.kind === 'editTextBlock') return command.version;
@@ -7407,6 +7427,7 @@ export type NamesATextObject =
   // PDFium's walk index too, carried beside the kind's ordinal the MuPDF writer finds it by (ADR-0240).
   | 'placeDrawnObject'
   | 'placePageObjects'
+  | 'arrangePageObject'
   | 'recolorPageObjects'
   | 'deletePageObjects'
   | 'editTextBlock'

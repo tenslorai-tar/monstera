@@ -1977,6 +1977,8 @@ export const LINK_PAGE_EMPTY = messageKey('surface.write.link-page.empty');
 export const LINK_PAGE_TOO_LONG = messageKey('surface.write.link-page.too-long');
 export const LINK_PAGE_NOT_A_NUMBER = messageKey('surface.write.link-page.not-a-number');
 export const DELETE_SELECTION_TITLE = messageKey('command.annotate.delete-selection');
+export const OBJECT_FORWARD_TITLE = messageKey('command.edit.object-forward.title');
+export const OBJECT_BACKWARD_TITLE = messageKey('command.edit.object-backward.title');
 export const SELECTION_PROPERTIES_TITLE = messageKey('command.annotate.properties');
 export const NUDGE_LEFT_TITLE = messageKey('command.annotate.nudge-left');
 export const NUDGE_RIGHT_TITLE = messageKey('command.annotate.nudge-right');
@@ -5016,6 +5018,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [LINK_PAGE_NOT_A_NUMBER]: 'Type a page number, counting from 1.',
   // EITHER SELECTION'S: the selected marks, or the object Edit object has selected (ADR-0153 Decision 5).
   [DELETE_SELECTION_TITLE]: 'Delete selection',
+  [OBJECT_FORWARD_TITLE]: 'Bring forward',
+  [OBJECT_BACKWARD_TITLE]: 'Send backward',
   [SELECTION_PROPERTIES_TITLE]: 'Properties',
   // ONE NAME FOR BOTH STEPS. The coarse nudge is the same command with Shift
   // held, and a second entry reading *Move selection left further* would be

@@ -227,7 +227,7 @@ export function ObjectEditLayer({
   };
 
   const select = (object: EditableObject | undefined): void => {
-    onPick(object === undefined || objects === undefined ? undefined : { page, version: objects.version, object });
+    onPick(object === undefined || objects === undefined ? undefined : { page, version: objects.version, object, walked: objects.walked });
   };
 
   const onKeyDown = useCallback(
@@ -256,7 +256,7 @@ export function ObjectEditLayer({
         const at = toPdf(viewportPoint(point[0], point[1]), transform);
         return [at.x, at.y];
       };
-      const turned = turnCommand({ page, version: objects.version, object: picked }, Math.round(turnBetween(pdf(drag.centre), pdf(drag.from), pdf(to)) * 10) / 10);
+      const turned = turnCommand({ page, version: objects.version, object: picked, walked: objects.walked }, Math.round(turnBetween(pdf(drag.centre), pdf(drag.from), pdf(to)) * 10) / 10);
       if (turned !== undefined) onCommand(turned);
       return;
     }
@@ -271,7 +271,7 @@ export function ObjectEditLayer({
     } else {
       target = rectOfPixels(resized(drag.start, drag.handle, to, LEAST_SIDE), transform);
     }
-    const command = placeCommand({ page, version: objects.version, object: picked }, target);
+    const command = placeCommand({ page, version: objects.version, object: picked, walked: objects.walked }, target);
     if (command !== undefined) onCommand(command);
   };
 

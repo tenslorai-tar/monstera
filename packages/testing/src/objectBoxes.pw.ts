@@ -98,6 +98,28 @@ test('Edit object turns a picture by its rotate handle, and resizes by eight han
   expect(command.rotateBy).toBeCloseTo(-90, 0);
 });
 
+// ARRANGE (the owner's E6, ADR-0244), on the path a person takes: the object's own menu offers Bring forward for the
+// first of two objects and not Send backward, and choosing it sends the step for that object.
+test('Edit object’s menu brings the first of two objects forward, and offers no step it cannot take', async ({ page }) => {
+  const sent: unknown[] = [];
+  const image = (index: number, left: number) => ({ index, kind: 'image' as const, left, bottom: 300, right: left + 100, top: 400, fill: null });
+  await openApp(page, { pageObjects: [image(0, 100), image(1, 300)] }, (channel, params) => {
+    if (channel === 'document.execute') sent.push(params);
+  });
+  await openDocument(page);
+  await openSection(page, 'Edit');
+  await page.getByRole('toolbar', { name: 'Tools', exact: true }).getByRole('button', { name: 'Edit object', exact: true }).click();
+  const first = page.getByRole('group', { name: 'Objects on page 1' }).locator('[data-object="content:0"]');
+  await first.click({ button: 'right' });
+  const menu = page.getByRole('menu');
+  await expect(menu.getByRole('menuitem', { name: 'Bring forward' })).toBeVisible();
+  // CONTROL: nothing is behind the first object, so its menu has no step that way.
+  await expect(menu.getByRole('menuitem', { name: 'Send backward' })).toHaveCount(0);
+  await menu.getByRole('menuitem', { name: 'Bring forward' }).click();
+  await expect.poll(() => sent.length).toBe(1);
+  expect((sent[0] as { command: unknown }).command).toMatchObject({ kind: 'arrangePageObject', index: 0, toward: 'forward' });
+});
+
 const RUN = { size: 12, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false } as const;
 
 // A WORD WRITTEN ONE LETTER PER OBJECT (the owner's E4: a press on *overview* picked its final *w*). The page's block

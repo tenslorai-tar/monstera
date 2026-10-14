@@ -310,6 +310,7 @@ import type { PlacedField } from './forms/arrange.js';
 import { besideRect } from './forms/fieldDesign.js';
 import { DELETE_FIELDS_DIALOG_ID, DELETE_FIELDS_RESULT } from './dialogs/deleteFields.js';
 import { type FieldToCopy, copyFieldToPagesCommand, fieldArrangeCommands } from './commands/fieldArrangeCommands.js';
+import { objectArrangeCommands } from './commands/objectArrangeCommands.js';
 import { EDIT_FIELDS_TOOL_ID, editFieldsCommand, fieldDesignCommands } from './commands/fieldDesignCommands.js';
 import { useFormFieldList } from './forms/useFormFieldList.js';
 import type { AnnotationStyle } from './annotations/annotationStyle.js';
@@ -2296,6 +2297,11 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         if (activeId === undefined) return;
         void sendObject(activeId, removeCommand(pick));
       },
+      // ARRANGE (ADR-0244), through the same sender, so the selection follows the object to its new place.
+      onArrange: (command: DispatchableCommand): void => {
+        if (activeId === undefined) return;
+        void sendObject(activeId, command);
+      },
     }),
     [activeId, readObjectSelection, sendObject],
   );
@@ -3979,6 +3985,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           claudeReady: () => claudeKeyStored,
         }),
         marksDelete,
+        // BRING FORWARD AND SEND BACKWARD for the selected page object (ADR-0244).
+        ...objectArrangeCommands(objectDeps),
         // WRITE IS PASSED PER COMMAND: only the annotation-menu items that ask for words receive it, and widening
         // `SelectionCommandDeps` would hand every selection command a capability none of the others may use.
         editSelectionCommand({ ...selectionDeps, write, wordsOf, ask }),

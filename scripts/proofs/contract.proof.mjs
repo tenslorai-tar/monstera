@@ -1010,16 +1010,31 @@ const PLACE_DRAWN_SPEC = `  placeDrawnObject: {
     reads: 'none',
   },`;
 
-/**
- * Several page objects placed as one about the group's corner (ADR-0242) — the NEWEST kind since 2026-10-14, and the one
- * the `missing a command kind` case omits. `placePageObject`'s axes: the restore of every matrix is its undo.
- */
+/** Several page objects placed as one about the group's corner (ADR-0242). `placePageObject`'s axes. */
 const PLACE_OBJECTS_SPEC = `  placePageObjects: {
     kind: 'placePageObjects',
     writer: 'pdfium',
     apply: applyPlacePageObjects,
     capture: capturePlacePageObjects,
     invert: invertPlacePageObjects,
+    invertible: true,
+    undo: 'inverse',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`;
+
+/**
+ * One page object moved a place in front or behind (ADR-0244) — the NEWEST kind since 2026-10-14, and the one the
+ * `missing a command kind` case omits. Moved back by the same call, so invertible.
+ */
+const ARRANGE_OBJECT_SPEC = `  arrangePageObject: {
+    kind: 'arrangePageObject',
+    writer: 'pdfium',
+    apply: applyArrangePageObject,
+    capture: captureArrangePageObject,
+    invert: invertArrangePageObject,
     invertible: true,
     undo: 'inverse',
     reproducible: true,
@@ -1425,6 +1440,9 @@ import {
   applyPlacePageObjects,
   capturePlacePageObjects,
   invertPlacePageObjects,
+  applyArrangePageObject,
+  captureArrangePageObject,
+  invertArrangePageObject,
   applyRecolorPageObjects,
   captureRecolorPageObjects,
   invertRecolorPageObjects,
@@ -2330,6 +2348,7 @@ ${PLACE_SIGNATURE_PICTURE_SPEC}
 ${RESET_FORM_SPEC}
 ${PLACE_DRAWN_SPEC}
 ${PLACE_OBJECTS_SPEC}
+${ARRANGE_OBJECT_SPEC}
 ${EDIT_OPERATORS_SPEC}
 };
 `,
@@ -2384,9 +2403,10 @@ ${EDIT_OPERATORS_SPEC}
     // TS2739 naming both and `setAnnotationAuthor`, which this table had been omitting as the newest. SEVEN for seven on
     // `resetForm` (2026-10-14): TS2739 naming it and `placeSignaturePicture`, which this table had been omitting. EIGHT for
     // eight on `placeDrawnObject` the same day (ADR-0240): TS2739 naming it and `resetForm`. NINE for nine on
-    // `placePageObjects` the same day again (ADR-0242): TS2739 naming it and `placeDrawnObject`.
+    // `placePageObjects` the same day again (ADR-0242): TS2739 naming it and `placeDrawnObject`. `arrangePageObject`
+    // (ADR-0244) followed it the same day, and the table was grown by `placePageObjects` before it was omitted.
     because:
-      /Property 'placePageObjects' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'arrangePageObject' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -2462,6 +2482,7 @@ ${PLACE_SIGNATURE_MARK_SPEC}
 ${PLACE_SIGNATURE_PICTURE_SPEC}
 ${RESET_FORM_SPEC}
 ${PLACE_DRAWN_SPEC}
+${PLACE_OBJECTS_SPEC}
 ${EDIT_OPERATORS_SPEC}
 };
 `,
@@ -4064,8 +4085,9 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // 61 since `resetForm` (2026-10-14, the owner's F7): three spelt, 57 counted, one.
     // 62 since `placeDrawnObject` (2026-10-14, ADR-0240): three spelt, 58 counted, one.
     // 63 since `placePageObjects` (2026-10-14, ADR-0242): three spelt, 59 counted, one.
+    // 64 since `arrangePageObject` (2026-10-14, ADR-0244): three spelt, 60 counted, one.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 59 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 60 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

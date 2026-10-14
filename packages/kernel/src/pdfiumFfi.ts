@@ -4990,6 +4990,31 @@ export function placeObjectGroup(
   });
 }
 
+/**
+ * Moves one object from place `from` to place `to` in its page's list (ADR-0244), and regenerates once. PDFium keeps an
+ * object with its own graphics state and clip, so only what is drawn over what changes.
+ *
+ * @throws when either place is off the page's list, before the page is touched.
+ */
+export function moveObjectInList(session: PdfiumSession, page: number, from: number, to: number): Promise<void> {
+  return promised(() => {
+    onPage(session, page, (handle) => {
+      const bindings = api();
+      const total = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
+      if (to < 0 || to >= total) throw refusedAt('object', `page ${String(page)} has no place ${String(to)} among its ${String(total)} objects`);
+      const object = objectAt(bindings, handle, page, from);
+      if (numberFrom(bindings.removeObject(handle, object), 'FPDFPage_RemoveObject') !== 1) {
+        throw refusedAt('object', `FPDFPage_RemoveObject refused object ${String(from)} on page ${String(page)}`);
+      }
+      // TAKEN OUT AND PUT BACK: the page now owns it again, so nothing here leaks or frees it.
+      if (numberFrom(bindings.insertObjectAt(handle, object, to), 'FPDFPage_InsertObjectAtIndex') !== 1) {
+        throw refusedAt('object', `FPDFPage_InsertObjectAtIndex refused place ${String(to)} on page ${String(page)}`);
+      }
+      generate(session, page, handle);
+    });
+  });
+}
+
 /** Puts several objects' matrices back, and regenerates once: {@link placeObjectGroup}'s inverse. */
 export function setObjectMatrices(
   session: PdfiumSession,

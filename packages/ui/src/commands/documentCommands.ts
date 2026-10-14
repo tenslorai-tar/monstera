@@ -4723,7 +4723,15 @@ export async function readPageObjects(
     if (mark.page !== page || mark.pictured !== true || mark.rect === null) continue;
     objects.push({ source: 'stamp', index: mark.index, ordinal: 0, kind: 'picture', box: mark.rect, drawn: mark.rect, members: [mark.index], fill: null });
   }
-  return { ok: true, objects: { version: content.value.version, objects, truncated: content.value.last.truncated || marks.value.last.truncated } };
+  return {
+    ok: true,
+    objects: {
+      version: content.value.version,
+      objects,
+      truncated: content.value.last.truncated || marks.value.last.truncated,
+      walked: content.value.items.length,
+    },
+  };
 }
 
 /** The smallest box holding both. */

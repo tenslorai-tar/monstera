@@ -8,6 +8,7 @@ import {
   fileAnswered,
   deletePageObjectsSchema,
   editTextBlockSchema,
+  arrangePageObjectSchema,
   placePageObjectSchema,
   placePageObjectsSchema,
   promoteFormObjectsSchema,
@@ -85,6 +86,7 @@ const pdfiumCommandSchema = z.discriminatedUnion('kind', [
   replaceTextObjectSchema,
   placePageObjectSchema,
   placePageObjectsSchema,
+  arrangePageObjectSchema,
   recolorPageObjectsSchema,
   deletePageObjectsSchema,
   promoteFormObjectsSchema,
@@ -256,6 +258,15 @@ const pdfiumPriorSchema = z.discriminatedUnion('kind', [
             })
             .strict(),
         })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('arrangePageObject'),
+      /** The place the object went to and the one it came from (ADR-0244): three integers. */
+      prior: z
+        .object({ page: z.number().int().nonnegative(), at: z.number().int().nonnegative(), from: z.number().int().nonnegative() })
         .strict(),
     })
     .strict(),

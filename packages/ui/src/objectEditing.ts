@@ -76,6 +76,8 @@ export interface PageObjects {
   readonly objects: readonly EditableObject[];
   /** Whether the engine's walk stopped at its bound, so the page holds more than is outlined. */
   readonly truncated: boolean;
+  /** How many objects the engine's walk answered: a block is one outline for several of them (ADR-0242). */
+  readonly walked: number;
 }
 
 /** The one selected object: on one page, at one version (Decision 4). */
@@ -83,6 +85,8 @@ export interface ObjectPick {
   readonly page: number;
   readonly version: DocVersion;
   readonly object: EditableObject;
+  /** How many objects PDFium's walk holds on that page: where Bring forward has no further place (ADR-0244). */
+  readonly walked: number;
 }
 
 /** Which kinds each filter outlines (Decision 2's table). */
@@ -240,6 +244,18 @@ export function removeCommand(pick: ObjectPick): DispatchableCommand {
     : { kind: 'deletePageObjects', page: pick.page, indices: [...object.members], version: pick.version };
 }
 
+/**
+ * The command that moves the picked object one place `toward` the front or the back (ADR-0244), or `undefined` where it
+ * has no neighbour that way, or is not one object of page content: a placed picture is the annotation writer's, and a
+ * block is several objects a single step would pull apart.
+ */
+export function arrangeCommand(pick: ObjectPick, toward: 'forward' | 'backward'): DispatchableCommand | undefined {
+  const { object } = pick;
+  if (object.source !== 'content' || object.members.length !== 1) return undefined;
+  if (toward === 'forward' ? object.index + 1 >= pick.walked : object.index === 0) return undefined;
+  return { kind: 'arrangePageObject', page: pick.page, index: object.index, toward, version: pick.version };
+}
+
 /** Whether the picked object has a fill a person may change: page content whose fill PDFium describes. */
 export function recolourable(pick: ObjectPick): boolean {
   return pick.object.source === 'content' && pick.object.fill !== null && pick.object.kind !== 'image';
@@ -270,6 +286,14 @@ export function carryPick(
   sentAt?: DocVersion,
 ): ObjectPick | undefined {
   if (current === undefined) return undefined;
+  // AN ARRANGEMENT OF THIS OBJECT says where it went (ADR-0244 Decision 2): the selection follows it there. One of
+  // another object moved this one's index, and drops it as any change to the walk does.
+  if (command.kind === 'arrangePageObject') {
+    const mine = current.object.source === 'content' && command.page === current.page && command.index === current.object.index;
+    if (!mine || (sentAt ?? command.version) !== current.version) return undefined;
+    const at = command.toward === 'forward' ? command.index + 1 : command.index - 1;
+    return { ...current, version: produced, object: { ...current.object, index: at, members: [at] } };
+  }
   // THE WALK THE OBJECT IS IN DECIDES: a placement of a stamp keeps the annotation walk and says nothing of PDFium's.
   const kept =
     current.object.source === 'stamp'

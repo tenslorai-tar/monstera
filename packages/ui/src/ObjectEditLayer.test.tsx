@@ -38,7 +38,9 @@ const PHOTO_BOX = { left: 60, bottom: 350, right: 100, top: 390 };
 const WORDS: EditableObject = { source: 'content', index: 2, ordinal: 0, kind: 'text', box: { x0: 60, y0: 200, x1: 200, y1: 220 }, drawn: { x0: 60, y0: 200, x1: 200, y1: 220 }, members: [2], fill: { red: 0, green: 0, blue: 0, alpha: 255 } };
 /** A picture placed with Comment › Image: a stamp, index 0 of the annotation walk. */
 const PLACED: EditableObject = { source: 'stamp', index: 0, ordinal: 0, kind: 'picture', box: { x0: 150, y0: 300, x1: 230, y1: 360 }, drawn: { x0: 150, y0: 300, x1: 230, y1: 360 }, members: [0], fill: null };
-const OBJECTS: PageObjects = { version: V5, objects: [WORDS, PHOTO, PLACED], truncated: false };
+/** THE PAGE'S WALK holds twelve objects; two are outlined here, which is any page with more than it shows. */
+const WALKED = 12;
+const OBJECTS: PageObjects = { version: V5, objects: [WORDS, PHOTO, PLACED], truncated: false, walked: WALKED };
 
 afterEach(cleanup);
 
@@ -76,7 +78,7 @@ function mounted(
   return { picks, sent, left, layer };
 }
 
-const pick = (object: EditableObject): ObjectPick => ({ page: 3, version: V5, object });
+const pick = (object: EditableObject): ObjectPick => ({ page: 3, version: V5, object, walked: WALKED });
 
 describe('ObjectEditLayer', () => {
   it('outlines each object WHERE IT IS on the drawn page, through the one transform', () => {
@@ -98,7 +100,7 @@ describe('ObjectEditLayer', () => {
       members: [9],
       fill: null,
     };
-    const { sent, layer } = mounted({ objects: { version: V5, objects: [BLEED], truncated: false }, pick: pick(BLEED) });
+    const { sent, layer } = mounted({ objects: { version: V5, objects: [BLEED], truncated: false, walked: WALKED }, pick: pick(BLEED) });
     const outline = screen.getByRole('button', { name: 'Image, 1 of 1' });
     // (50 − 50) × 2 across, not the −100 px an unclipped box would put it at; (400 − 340) × 2 down; 70 × 2 wide.
     expect([outline.style.left, outline.style.top, outline.style.width, outline.style.height]).toStrictEqual(['0px', '120px', '140px', '80px']);

@@ -11,6 +11,7 @@ import {
   pageObjects,
   pdfiumWriter,
   placeObject,
+  moveObjectInList,
   placeObjectGroup,
   removeObjects,
   setObjectFills,
@@ -197,6 +198,54 @@ export async function invertPlacePageObjects(
 ): Promise<AppliedImage> {
   return onImage(image, async (session) => {
     await setObjectMatrices(session, inverse.page, inverse.objects);
+    return imageAlone(await pdfiumWriter.serialise(session));
+  });
+}
+
+/** What an arrangement has to put back (ADR-0244): the place the object went to, and the one it came from. */
+export interface PriorArrangement {
+  readonly page: number;
+  readonly at: number;
+  readonly from: number;
+}
+
+/** The place an arrangement sends an object to: one on for `forward`, one back for `backward`. */
+function placeAfter(command: CommandOfKind<'arrangePageObject'>): number {
+  return command.toward === 'forward' ? command.index + 1 : command.index - 1;
+}
+
+/** Where the object goes and where it came from: all the undo needs, and nothing document-scaled. */
+export function captureArrangePageObject(
+  _image: ImageSession,
+  command: CommandOfKind<'arrangePageObject'>,
+): Promise<CaptureResult<PriorArrangement>> {
+  return Promise.resolve({ captured: true, prior: { page: command.page, at: placeAfter(command), from: command.index } });
+}
+
+/** Moves the object one place in its page's list, and answers the document's new bytes. */
+export async function applyArrangePageObject(
+  image: ImageSession,
+  command: CommandOfKind<'arrangePageObject'>,
+): Promise<AppliedImage> {
+  return onImage(image, async (session) => {
+    await moveObjectInList(session, command.page, command.index, placeAfter(command));
+    try {
+      return imageAlone(await pdfiumWriter.serialise(session));
+    } catch (error) {
+      // A PAGE PDFium CANNOT WRITE BACK (ADR-0244 Decision 4): the reorder regenerates its text, and a font it cannot
+      // re-encode loses some. Said in words, as a text move's refusal is.
+      if (error instanceof EditRefusedError && error.step === 'read-back') {
+        throw new EditRefusedError('moved-text', error.engineError, 'the object was not moved in front or behind: its page reads back without some of its text', { cause: error });
+      }
+      throw error;
+    }
+  });
+}
+
+/** Moves the object back to the place it came from. */
+export async function invertArrangePageObject(image: ImageSession, inverse: PriorArrangement): Promise<AppliedImage> {
+  return onImage(image, async (session) => {
+    await moveObjectInList(session, inverse.page, inverse.at, inverse.from);
     return imageAlone(await pdfiumWriter.serialise(session));
   });
 }

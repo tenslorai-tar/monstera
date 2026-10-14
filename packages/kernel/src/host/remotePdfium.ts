@@ -192,6 +192,7 @@ export function typedBy(command: CommandOfKind<KindsRoutedTo<'pdfium'>>): string
       return command.replace;
     case 'placePageObject':
     case 'placePageObjects':
+    case 'arrangePageObject':
     case 'recolorPageObjects':
     case 'deletePageObjects':
     case 'promoteFormObjects':

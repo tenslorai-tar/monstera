@@ -103,7 +103,7 @@ async function twoRunsAndARectangle() {
  * @type {string[]}
  */
 const failures = [];
-const roster = createRoster(failures, { cases: 26 });
+const roster = createRoster(failures, { cases: 29 });
 
 /**
  * @param {string} name
@@ -144,6 +144,7 @@ async function textOf(bytes) {
 const OBJECT_KINDS = /** @type {const} */ ([
   'placePageObject',
   'placePageObjects',
+  'arrangePageObject',
   'recolorPageObjects',
   'deletePageObjects',
 ]);
@@ -405,6 +406,25 @@ async function main() {
     `${box.left.toFixed(1)},${box.bottom.toFixed(1)} .. ${box.right.toFixed(1)},${box.top.toFixed(1)} -> ` +
       `${turnedBox.left.toFixed(1)},${turnedBox.bottom.toFixed(1)} .. ${turnedBox.right.toFixed(1)},${turnedBox.top.toFixed(1)}`,
   );
+
+  // ── ARRANGE (ADR-0244) ──────────────────────────────────────────────────────
+  // THE RECTANGLE IS DRAWN SECOND, between the two runs: brought forward it is drawn last, on top of both, and its undo
+  // puts it back between them. Read by kind from reopened bytes, so the order is the saved file's.
+  const kinds = (/** @type {readonly { kind: string }[]} */ objects) => objects.map((object) => object.kind).join(',');
+  const forward = command('arrangePageObject', { page: 0, index: box.index, toward: 'forward', version: 1 });
+  const arrangedPrior = await localPdfiumExecution.capture(original, forward);
+  const arranged = await localPdfiumExecution.apply({ session: original, command: forward, sources: [], reads: undefined });
+  const arrangedObjects = await objectsOf(arranged);
+  record(
+    'Bring forward draws the rectangle after the run that followed it, and keeps it where it was on the page',
+    kinds(before) === 'text,path,text' &&
+      kinds(arrangedObjects) === 'text,text,path' &&
+      Math.abs((arrangedObjects[2]?.left ?? 0) - box.left) < 0.01 &&
+      (await textOf(arranged)) === (await textOf(original)),
+    `${kinds(before)} -> ${kinds(arrangedObjects)}`,
+  );
+  const unarranged = arrangedPrior.captured === true ? await localPdfiumExecution.invert(arranged, 'arrangePageObject', arrangedPrior.prior) : arranged;
+  record('its undo puts it back between the two runs', kinds(await objectsOf(unarranged)) === 'text,path,text', kinds(await objectsOf(unarranged)));
 
   // ── A BLOCK, PLACED AS ONE (ADR-0242) ───────────────────────────────────────
   const word = await lettersOneByOne();

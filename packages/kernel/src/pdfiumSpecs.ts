@@ -5,14 +5,17 @@ import { declaredCommands } from './commandDeclarations.js';
 import type { ApplyRequest, CommandExecution, KindsRoutedTo } from './commandRouting.js';
 import type { AppliedImage, Capture, ImageSession, Invert } from './engineSeam.js';
 import {
+  applyArrangePageObject,
   applyDeletePageObjects,
   applyPlacePageObject,
   applyPlacePageObjects,
   applyRecolorPageObjects,
+  captureArrangePageObject,
   captureDeletePageObjects,
   capturePlacePageObject,
   capturePlacePageObjects,
   captureRecolorPageObjects,
+  invertArrangePageObject,
   invertDeletePageObjects,
   invertPlacePageObject,
   invertPlacePageObjects,
@@ -100,6 +103,12 @@ export const pdfiumSpecs = {
     apply: applyPlacePageObjects,
     capture: capturePlacePageObjects,
     invert: invertPlacePageObjects,
+  },
+  arrangePageObject: {
+    ...declaredCommands.arrangePageObject,
+    apply: applyArrangePageObject,
+    capture: captureArrangePageObject,
+    invert: invertArrangePageObject,
   },
   recolorPageObjects: {
     ...declaredCommands.recolorPageObjects,
