@@ -279,6 +279,11 @@ jobs:
       - name: Prove a package whose programs import a missing DLL is repaired, or not built
         run: node scripts/ci/annotate.mjs scripts/release/dllClosure.proof.mjs
 
+      # The comments walk's N6 step takes the sheets an .xls must become from the file itself; a reader that answered a
+      # constant would pass any PDF. Compound Files built byte by byte, so this needs nothing provisioned.
+      - name: Prove an .xls workbook's visible sheets are counted from its bytes
+        run: node scripts/ci/annotate.mjs scripts/lib/xlsSheets.proof.mjs
+
       # The withdrawn-phrase check unblocked Stage 0 and shipped with no proof.
       # Three false negatives had already got through it — a tilde, a table row,
       # and a phrase wrapped across a line break — each found by grepping the

@@ -22,7 +22,8 @@
  *   order; each read back from the saved file, and each taken out again by one Undo.
  * - O9: a dismissed picker shows no notice; a long Markdown conversion shows its notice, without a Cancel, until its tab
  *   opens, and the PDF it wrote is read back.
- * - N6: a `.doc`, a two-sheet `.xls` and a `.ppt` from `_review/samples/old-office/` each become a PDF that opens.
+ * - N6: a `.doc`, an `.xls` and a `.ppt` from `_review/samples/old-office/` each become a PDF that opens, the `.xls`
+ *   with at least as many pages as the file has visible sheets, counted from its bytes.
  * - N3: Straighten turns a page tilted 3 degrees upright and says so, and says a level page is already straight; Crop to
  *   paper crops a photographed sheet and says so. Each read back from the saved file: the turn in its content, the
  *   sheet's shape in its box.
@@ -33,6 +34,7 @@ import { join } from 'node:path';
 import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNumber, PDFRawStream, PDFRef, PDFString, StandardFonts, decodePDFRawStream, degrees } from '@cantoo/pdf-lib';
 import { expect as defaultExpect } from '@playwright/test';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { visibleSheetCount } from '../lib/xlsSheets.mjs';
 import { WALK_WINDOW, root, startWalk } from './liveWalk.mjs';
 import { savedFonts, savedWords } from './savedPdf.mjs';
 
@@ -788,14 +790,14 @@ await step('L7: a NUL in a Markdown file is the replacement character in the sav
 });
 
 /**
- * N6's samples: a `.doc`, a two-sheet `.xls` and a `.ppt`, which nothing in this repository can make (B10 keeps a binary
+ * N6's samples: a `.doc`, an `.xls` and a `.ppt`, which nothing in this repository can make (B10 keeps a binary
  * fixture out of the commit), so they are read from `_review/samples/old-office/` — put there on the walk machine — and a
  * step with its sample missing FAILS saying so, never passes.
  */
 const OLD_OFFICE = join(root, '_review', 'samples', 'old-office');
 for (const { extension, expectation } of [
   { extension: '.doc', expectation: 'a Word 97–2003 document' },
-  { extension: '.xls', expectation: 'an Excel 97–2003 workbook with TWO visible sheets: the PDF holds both' },
+  { extension: '.xls', expectation: 'an Excel 97–2003 workbook: the PDF holds every visible sheet' },
   { extension: '.ppt', expectation: 'a PowerPoint 97–2003 deck' },
 ]) {
   // THE SAMPLE BY ITS EXTENSION: the folder on the walk machine holds the files under the names they were downloaded
@@ -810,9 +812,12 @@ for (const { extension, expectation } of [
     await command('New PDF from Word, Excel or PowerPoint…');
     await expect(documentTab(new RegExp(`^${file.replaceAll('.', '\\.')}\\.pdf`, 'u'))).toBeVisible({ timeout: 300_000 });
     const read = await savedPages(made);
-    // TWO SHEETS ARE TWO PARTS, each its own pages: one page would be x2t's active sheet alone, the loss N6 must not have.
-    expect(read.length).toBeGreaterThanOrEqual(file.endsWith('.xls') ? 2 : 1);
-    return { pages: read.length };
+    // EVERY VISIBLE SHEET IS ITS OWN PART, each its own pages: fewer pages than sheets would be x2t's active sheet alone,
+    // the loss N6 must not have. The count is the FILE'S, read from its bytes (`xlsSheets.mjs`): the walk machine's
+    // sample has one sheet where the one this step was written against had two (2026-10-14).
+    const sheets = file.toLowerCase().endsWith('.xls') ? visibleSheetCount(new Uint8Array(await readFile(source))) : 1;
+    expect(read.length).toBeGreaterThanOrEqual(sheets);
+    return { pages: read.length, sheets };
   });
 }
 
