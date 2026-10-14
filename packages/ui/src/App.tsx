@@ -11,7 +11,6 @@ import {
   type SecretSettingId,
   type CommandOfKind,
   pageSetOf,
-  type FieldFill,
   type FormFieldHandle,
   type FormFieldKind,
   type FormFieldProperties,
@@ -305,6 +304,7 @@ import { nextFillable } from './forms/fieldOrder.js';
 import { type FieldProblem, emptyRequired } from './forms/fieldCheck.js';
 import { FieldPropertiesPanel } from './forms/FieldPropertiesPanel.js';
 import { FormSettingsPanel } from './forms/FormSettingsPanel.js';
+import type { PageFill } from './forms/FormLayer.js';
 import { TabOrderBar } from './forms/TabOrderLayer.js';
 import type { PlacedField } from './forms/arrange.js';
 import { besideRect } from './forms/fieldDesign.js';
@@ -1445,20 +1445,16 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   }, []);
 
   const fillFormField = useCallback(
-    (handle: {
-      page: number;
-      index: number;
-      version: DocVersion;
-      value: FieldFill;
-    }): void => {
+    (handle: PageFill & { readonly version: DocVersion }): void => {
       if (activeId === undefined) return;
-      void applyDocumentCommand({ client, onApplied: applied, ask, stamp, signatures }, activeId, {
-        kind: 'fillFormField',
-        page: handle.page,
-        index: handle.index,
-        value: handle.value,
-        version: handle.version,
-      });
+      void applyDocumentCommand(
+        { client, onApplied: applied, ask, stamp, signatures },
+        activeId,
+        // A RESET FORM BUTTON PRESSED (the owner's F7) is its own command, naming the button: its action says which fields.
+        'reset' in handle
+          ? { kind: 'resetForm', page: handle.page, index: handle.index, version: handle.version }
+          : { kind: 'fillFormField', page: handle.page, index: handle.index, value: handle.value, version: handle.version },
+      );
     },
     [activeId, applied, ask, client, signatures, stamp],
   );

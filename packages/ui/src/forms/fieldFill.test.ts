@@ -81,7 +81,11 @@ describe('fieldFill', () => {
   });
 
   it('offers a push button, which is pressed and says what it cannot do (A1.9)', () => {
-    expect(fieldFill(field({ kind: 'button' }))).toStrictEqual({ kind: 'button' });
+    expect(fieldFill(field({ kind: 'button' }))).toStrictEqual({ kind: 'button', resets: false });
+  });
+
+  it('offers a Reset form button as one a press carries out (the owner’s F7)', () => {
+    expect(fieldFill(field({ kind: 'button', action: 'reset' }))).toStrictEqual({ kind: 'button', resets: true });
   });
 
   it('REFUSES with the reason: read-only, a slice, several values, a kind nobody fills', () => {

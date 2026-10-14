@@ -1,9 +1,10 @@
+import { PDFDocument, PDFName } from '@cantoo/pdf-lib';
 import { type CommandOfKind, type FieldFill, type FormFieldProperties, KEEPS_THE_FIELD_WALK } from '@monstera/contract';
 import { asDocVersion } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { applyDuplicateFormField, applyEditFormFields } from './formFieldEdit.js';
-import { applyFillFormField } from './formFields.js';
+import { applyFillFormField, applyResetForm } from './formFields.js';
 import { buildFormTestPdf } from './formTestForm.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 
@@ -51,8 +52,29 @@ async function walkOf(bytes: Uint8Array): Promise<string[]> {
 }
 
 describe('the commands that keep the field walk', () => {
-  it('names exactly the edit and the fill', () => {
-    expect([...KEEPS_THE_FIELD_WALK]).toStrictEqual(['editFormFields', 'fillFormField']);
+  it('names exactly the edit, the fill and the reset', () => {
+    expect([...KEEPS_THE_FIELD_WALK]).toStrictEqual(['editFormFields', 'fillFormField', 'resetForm']);
+  });
+
+  // THE OWNER'S F7: a reset writes values and redraws, as a fill does, so it is in the set above; this is the reading
+  // that says so, MuPDF's walk after a reset of every field, against the walk before.
+  it('a reset of every field leaves the walk as it was', async () => {
+    // THE TEST FORM HAS NO PUSH BUTTON, so one whose action is Reset form with no /Fields (every field) is added first.
+    const form = await PDFDocument.load(await buildFormTestPdf());
+    const reset = form.getForm().createButton('walk.reset');
+    reset.addToPage('Reset', form.getPage(0), { x: 20, y: 20, width: 80, height: 20 });
+    reset.acroField.getWidgets()[0]?.dict.set(PDFName.of('A'), form.context.obj({ S: 'ResetForm' }));
+    const bytes = await form.save();
+    const before = await walkOf(bytes);
+    const button = (await placesOf(bytes)).find((place) => place.name === 'walk.reset');
+    if (button === undefined) throw new Error('the added push button is not in the walk');
+    const session = await mupdfWriter.open(bytes);
+    try {
+      await applyResetForm(session, { kind: 'resetForm', page: button.page, index: button.index, version: VERSION });
+      expect(await walkOf(await mupdfWriter.serialise(session))).toStrictEqual(before);
+    } finally {
+      await mupdfWriter.close(session);
+    }
   });
 
   // THE OWNER'S O6a: a second press on a form 3 to 5 s after a fill was refused as out of date, because the lane follows

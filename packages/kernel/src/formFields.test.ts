@@ -10,6 +10,7 @@ import {
   applyDeleteFormFields,
   applyFillFormField,
   applyFlattenFormFields,
+  applyResetForm,
   captureDeleteFormFields,
   captureFillFormField,
   captureFlattenFormFields,
@@ -331,6 +332,104 @@ describe('readFormFields', () => {
       { kind: 'listbox', name: 'applicant.languages', values: ['English', 'Welsh'], on: null },
       { kind: 'dropdown', name: 'applicant.title', values: ['Dr'], on: null },
     ]);
+  });
+
+  describe('a Reset form button (the owner’s F7)', () => {
+    /**
+     * A form with a text field holding a value over its default, a ticked box, a dropdown with a choice, and two reset
+     * buttons: one naming no fields (all of them), one naming the text field alone. Each widget's place on the page is
+     * its creation order.
+     */
+    async function resettable(): Promise<Uint8Array> {
+      const document = await PDFDocument.create();
+      const page = document.addPage([400, 600]);
+      const font = await document.embedFont(StandardFonts.Helvetica);
+      const fields = document.getForm();
+      const name = fields.createTextField('applicant.name');
+      name.setText('Ada');
+      name.addToPage(page, { x: 20, y: 540, width: 160, height: 20, font });
+      name.acroField.dict.set(PDFName.of('DV'), PDFString.of('Your name'));
+      const agrees = fields.createCheckBox('applicant.agrees');
+      agrees.addToPage(page, { x: 20, y: 500, width: 16, height: 16 });
+      agrees.check();
+      const title = fields.createDropdown('applicant.title');
+      title.addOptions(['Dr', 'Mr', 'Ms']);
+      title.select('Dr');
+      title.addToPage(page, { x: 20, y: 460, width: 100, height: 20, font });
+      const everything = fields.createButton('reset.all');
+      everything.addToPage('Reset', page, { x: 20, y: 400, width: 80, height: 20, font });
+      everything.acroField.getWidgets()[0]?.dict.set(PDFName.of('A'), document.context.obj({ S: 'ResetForm' }));
+      const one = fields.createButton('reset.name');
+      one.addToPage('Clear name', page, { x: 120, y: 400, width: 80, height: 20, font });
+      one.acroField
+        .getWidgets()[0]
+        ?.dict.set(PDFName.of('A'), document.context.obj({ S: 'ResetForm', Fields: [PDFString.of('applicant.name')] }));
+      return document.save();
+    }
+
+    const reset = (index: number): CommandOfKind<'resetForm'> => ({ kind: 'resetForm', page: 0, index, version: asDocVersion(1) });
+    const values = async (session: MupdfSession): Promise<Record<string, unknown>> =>
+      Object.fromEntries(
+        (await readFormFields(session)).fields
+          .filter((field) => field.kind !== 'button')
+          .map((field) => [field.name, field.on ?? field.values]),
+      );
+
+    it('the listing names the two reset buttons, and only them', async () => {
+      const answer = await onSession(await resettable(), (session) => readFormFields(session));
+      expect(answer.fields.filter((field) => field.action === 'reset').map((field) => field.name)).toStrictEqual(['reset.all', 'reset.name']);
+    });
+
+    it('a button naming no fields resets every field to its default: text to /DV, the box off, the dropdown empty', async () => {
+      const after = await onSession(await resettable(), async (session) => {
+        // CONTROL, before: the values the reset must move.
+        expect(await values(session)).toStrictEqual({ 'applicant.name': ['Ada'], 'applicant.agrees': true, 'applicant.title': ['Dr'] });
+        await applyResetForm(session, reset(3));
+        return values(session);
+      });
+      expect(after).toStrictEqual({ 'applicant.name': ['Your name'], 'applicant.agrees': false, 'applicant.title': [] });
+    });
+
+    it('a button naming one field resets that field and leaves the others', async () => {
+      const after = await onSession(await resettable(), async (session) => {
+        await applyResetForm(session, reset(4));
+        return values(session);
+      });
+      expect(after).toStrictEqual({ 'applicant.name': ['Your name'], 'applicant.agrees': true, 'applicant.title': ['Dr'] });
+    });
+
+    it('a button EXCLUDING one field resets every other field (the exclude bit, which MuPDF alone resets nothing for)', async () => {
+      const document = await PDFDocument.load(await resettable());
+      const button = document.getForm().getButton('reset.name').acroField.getWidgets()[0];
+      button?.dict.set(
+        PDFName.of('A'),
+        document.context.obj({ S: 'ResetForm', Fields: [PDFString.of('applicant.name')], Flags: 1 }),
+      );
+      const after = await onSession(await document.save(), async (session) => {
+        await applyResetForm(session, reset(4));
+        return values(session);
+      });
+      expect(after).toStrictEqual({ 'applicant.name': ['Ada'], 'applicant.agrees': false, 'applicant.title': [] });
+    });
+
+    it('a button naming the PARENT field resets its descendants', async () => {
+      const document = await PDFDocument.load(await resettable());
+      const button = document.getForm().getButton('reset.name').acroField.getWidgets()[0];
+      button?.dict.set(PDFName.of('A'), document.context.obj({ S: 'ResetForm', Fields: [PDFString.of('applicant')] }));
+      const after = await onSession(await document.save(), async (session) => {
+        await applyResetForm(session, reset(4));
+        return values(session);
+      });
+      expect(after).toStrictEqual({ 'applicant.name': ['Your name'], 'applicant.agrees': false, 'applicant.title': [] });
+    });
+
+    it('CONTROL: a field that is not a Reset form button is refused, and nothing moves', async () => {
+      const after = await onSession(await resettable(), async (session) => {
+        await expect(applyResetForm(session, reset(0))).rejects.toThrow('not a button whose action is Reset form');
+        return values(session);
+      });
+      expect(after).toStrictEqual({ 'applicant.name': ['Ada'], 'applicant.agrees': true, 'applicant.title': ['Dr'] });
+    });
   });
 
   it('NAMES EACH RADIO OPTION BY ITS OWN VALUE: its /Opt entry by place, else its own on-state (the owner’s F9)', async () => {

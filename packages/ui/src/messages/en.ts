@@ -1851,6 +1851,10 @@ export const FIELD_PROPS_SPELL_CHECK = messageKey('surface.field-properties.spel
 export const FIELD_PROPS_TEXT_COLOUR = messageKey('surface.field-properties.text-colour');
 export const FIELD_PROPS_TEXT_COLOUR_BLACK = messageKey('surface.field-properties.text-colour.black');
 export const FIELD_PROPS_BUTTON_LABEL = messageKey('surface.field-properties.button-label');
+export const FIELD_PROPS_ACTION = messageKey('surface.field-properties.action');
+export const FIELD_PROPS_ACTION_NONE = messageKey('surface.field-properties.action-none');
+export const FIELD_PROPS_ACTION_RESET = messageKey('surface.field-properties.action-reset');
+export const FIELD_PROPS_ACTION_OTHER = messageKey('surface.field-properties.action-other');
 export const FIELD_PROPS_GROUP_NAME = messageKey('surface.field-properties.group-name');
 export const FIELD_PROPS_RADIO_VALUES = messageKey('surface.field-properties.radio-values');
 export const FORM_SETTINGS_TITLE = messageKey('surface.form-settings.title');
@@ -4939,6 +4943,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FIELD_PROPS_TEXT_COLOUR]: 'Text colour',
   [FIELD_PROPS_TEXT_COLOUR_BLACK]: 'Black',
   [FIELD_PROPS_BUTTON_LABEL]: 'Words on the button',
+  [FIELD_PROPS_ACTION]: 'Action',
+  [FIELD_PROPS_ACTION_NONE]: 'None',
+  [FIELD_PROPS_ACTION_RESET]: 'Reset the form',
+  [FIELD_PROPS_ACTION_OTHER]:
+    'This button is set to run a script or send the form. Monstera does not run it, and keeps it as the document has it.',
   [FIELD_PROPS_GROUP_NAME]: 'Group name',
   [FIELD_PROPS_RADIO_VALUES]: 'Each option’s value, one per line, in the order the options sit',
   [FORM_SETTINGS_TITLE]: 'Form',

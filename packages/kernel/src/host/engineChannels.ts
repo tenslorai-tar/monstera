@@ -24,6 +24,7 @@ import {
   MAX_ANNOTATION_DATA_BYTES,
   MAX_REMOVED_ANNOTATIONS,
   fillFormFieldSchema,
+  resetFormSchema,
   flattenFormFieldsSchema,
   setDocumentProtectionSchema,
   applyRedactionsSchema,
@@ -642,6 +643,8 @@ const engineFormFieldSchema = z
     range: fieldRangeSchema.exactOptional(),
     /** A radio option's own value (the owner's F9), present only on a radio widget, for `range`'s reason. */
     option: z.string().max(ENGINE_FORM_FIELD_TEXT_MAX).exactOptional(),
+    /** A button whose action is Reset form (the owner's F7), present only on one, for `range`'s reason. */
+    action: z.literal('reset').exactOptional(),
   })
   .strict();
 
@@ -1218,6 +1221,7 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   setLinkOutlineSchema,
   editLinkSchema,
   fillFormFieldSchema,
+  resetFormSchema,
   deleteFormFieldsSchema,
   flattenFormFieldsSchema,
   // CARRIES PASSWORDS ACROSS THIS PIPE, and that is ADR-0055's rule rather than

@@ -2511,6 +2511,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
               masked: false,
               visibility: 'visible' as const,
               buttonLabel: null,
+              buttonAction: null,
               textColour: null,
               editable: false,
               multiSelect: false,

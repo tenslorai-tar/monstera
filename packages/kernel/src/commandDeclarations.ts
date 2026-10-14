@@ -1539,6 +1539,27 @@ const declarations = {
     asset: 'none',
     purpose: 'ordinary',
   },
+  resetForm: {
+    kind: 'resetForm',
+    display: 'image',
+    // MuPDF, for the fill's reason: it writes field values and the appearances that show them (§3's matrix), and the
+    // standard's Reset form is MuPDF's own `pdf_reset_form`.
+    writer: 'mupdf',
+    // NOT INVERTIBLE, for `importFormData`'s reason: the prior is every value the button's action names, across the
+    // document, which the checkpoint restores exactly and an inverse would have to carry whole.
+    invertible: false,
+    undo: 'checkpoint',
+    // The document's defaults decide the writes; nothing mints an identifier or stamps a date.
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    // THE BUTTON PRESSED, by its place in the widget walk at a version: the fill's handle.
+    targets: 'field',
+    reads: 'none',
+    asset: 'none',
+    // It replaces values in place and unlinks nothing.
+    purpose: 'ordinary',
+  },
   deleteFormFields: {
     kind: 'deleteFormFields',
     display: 'image',

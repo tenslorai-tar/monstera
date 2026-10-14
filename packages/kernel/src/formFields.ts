@@ -6,12 +6,12 @@ import { BoundedList } from './boundedList.js';
 import { type CalculatedValue, calculatedValues, recalculate, restoreCalculated, writeShown } from './fieldCalculation.js';
 import { kindOf } from './fieldKind.js';
 import { redrawFamily, remaskBeforeBake } from './fieldWidgets.js';
-import { MAX_FIELD_ANCESTRY, fieldDictionaryOf, fieldRulesOf } from './fieldRules.js';
+import { MAX_FIELD_ANCESTRY, buttonActionOf, fieldDictionaryOf, fieldRulesOf, qualifiedNameOf } from './fieldRules.js';
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { ENGINE_FORM_FIELDS_MAX } from './host/engineChannels.js';
 import { withDocument, withDocumentRemoving } from './mupdfWriter.js';
-import { frameOf, pageAt, readRect, redraw } from './pageAnnotations.js';
+import { frameOf, pageAt, readRect, redraw, redrawPage } from './pageAnnotations.js';
 
 /**
  * Reading a document's AcroForm fields — Stage 4's foundation.
@@ -279,6 +279,8 @@ export interface ListedField {
   readonly range?: FieldRange;
   /** A radio option's own value ({@link radioOptionOf}); present only on a radio widget that names one. */
   readonly option?: string;
+  /** A push button whose action is Reset form ({@link resetsForm}); present only on one. */
+  readonly action?: 'reset';
 }
 
 /**
@@ -456,6 +458,7 @@ export function readFormFields(
           ...(listed.cut ? { cut: true as const } : {}),
           ...listedRules(widget),
           ...optionOf(kind, widget),
+          ...(kind === 'button' && resetsForm(widget) ? { action: 'reset' as const } : {}),
         });
       }
     }
@@ -1265,6 +1268,94 @@ export const captureFlattenFormFields = (session: MupdfSession): Promise<Capture
  * here, so nothing can construct an argument, and throwing rather than
  * resolving keeps a widened type from landing as an undo that did nothing.
  */
+/** Whether a widget's own action is the standard Reset form, by the one reading of a button's action. */
+export function resetsForm(widget: PDFWidget): boolean {
+  return buttonActionOf(widget.getObject()) === 'reset';
+}
+
+/**
+ * Carries out the Reset form action of the button a handle names (the owner's F7).
+ *
+ * ## The values are MuPDF's, which implements the action; the appearances are this build's
+ *
+ * `resetForm` is MuPDF's own reading of `/Fields` and `/Flags` (include, or every field but these): this build reading
+ * them again would be a second opinion about the standard's rule (B3a). It resets the values; the widgets are then
+ * redrawn page by page through {@link redrawPage}, so a field this build draws (a real family, a list, a border) is drawn
+ * as this build draws it, and the form's calculations run, as a fill's do, in the same command.
+ *
+ * A button whose action is not Reset form is refused: the page sends this only for one that is, so another means the
+ * document moved under the press, and running it would carry out something nobody asked for.
+ */
+export const applyResetForm: Apply<'mupdf', 'resetForm'> = (session, command) =>
+  withDocument(session, (document) => {
+    const loaded = pageAt(document, command.page, document.countPages());
+    const button = widgetAt(loaded, command.index);
+    if (!resetsForm(button)) {
+      throw new Error(`the field "${button.getName()}" is not a button whose action is Reset form, so nothing was reset`);
+    }
+    const action = button.getObject().get('A');
+    const named = action.get('Fields');
+    if (named.isArray()) document.resetForm(chosenFields(document, named, action.get('Flags')), false);
+    else document.resetForm(named, false);
+    for (let page = 0; page < document.countPages(); page += 1) {
+      const each = document.loadPage(page);
+      const widgets = each.getWidgets();
+      if (widgets.length > 0) redrawPage(each, widgets, document);
+    }
+    recalculate(document);
+  });
+
+/**
+ * The fields a Reset form's `/Fields` and `/Flags` choose, as references to each chosen field, for MuPDF to reset.
+ *
+ * ## A workaround, because the defect is MuPDF's (1.28.0, `pdf-form.c`)
+ *
+ * Read in its source: `specified_fields` resolves a `/Fields` entry given as a NAME through `pdf_lookup_field`, and
+ * `add_field_hierarchy_to_array` then keeps a field only if its name equals `pdf_load_field_name` of an entry. A string
+ * entry is not a dictionary and has no name, so nothing matches and nothing is reset; measured here, a button naming
+ * `applicant.name` left it as it was. And with the exclude bit set and a list given, it collects only the listed fields
+ * and then excludes them, which resets nothing where the standard resets every OTHER field (ISO 32000-1 table 238).
+ * References in the list work, so this hands MuPDF references, with the include and exclude worked out here.
+ *
+ * Names are matched by this build's one reading of a fully qualified name (`qualifiedNameOf`). An entry naming a parent
+ * field takes in its descendants, as the standard says.
+ */
+function chosenFields(document: PDFDocument, named: PDFObject, flags: PDFObject): PDFObject {
+  const exclude = flags.isNumber() && (Math.trunc(flags.asNumber()) & 1) === 1;
+  const names: string[] = [];
+  for (let at = 0; at < Math.min(named.length, MAX_FIELD_VALUES); at += 1) {
+    const entry = named.get(at);
+    names.push(entry.isString() ? entry.asString() : qualifiedNameOf(entry));
+  }
+  const listed = (name: string): boolean => names.some((each) => each !== '' && (name === each || name.startsWith(`${each}.`)));
+  const chosen = document.newArray();
+  const seen = new Set<number>();
+  for (let page = 0; page < document.countPages(); page += 1) {
+    for (const widget of document.loadPage(page).getWidgets()) {
+      const field = fieldDictionaryOf(widget.getObject());
+      if (!field.isIndirect() || seen.has(field.asIndirect())) continue;
+      seen.add(field.asIndirect());
+      if (listed(qualifiedNameOf(field)) !== exclude) chosen.push(field);
+    }
+  }
+  return chosen;
+}
+
+/**
+ * Not recorded: the prior is every value the action names, across the document, and the checkpoint the bus takes
+ * restores it exactly (`importFormData`'s reason).
+ */
+export const captureResetForm = (session: MupdfSession): Promise<CaptureResult<never>> =>
+  withDocument(session, () => ({
+    captured: false,
+    reason: 'a reset form is undone from the checkpoint the bus took: its prior is every value the action names',
+  }));
+
+/** Unreachable, and required by `CommandSpec`'s shape: undo restores the checkpoint (ADR-0037). */
+export const invertResetForm: Invert<'mupdf', 'resetForm'> = (): Promise<void> => {
+  throw new Error('a reset form has no inverse; undo restores the checkpoint the bus took (ADR-0037)');
+};
+
 export const invertFlattenFormFields: Invert<'mupdf', 'flattenFormFields'> = (): Promise<void> => {
   throw new Error(
     'a flattened form has no inverse; undo restores the checkpoint the bus took (ADR-0037)',

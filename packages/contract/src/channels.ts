@@ -5446,6 +5446,12 @@ export const channels = {
              * option from another (the owner's F9: "Male, Male" for Male and Female).
              */
             option: z.string().max(MAX_FORM_FIELD_TEXT).exactOptional(),
+            /**
+             * A push button whose action is the standard Reset form (the owner's F7), which a press carries out as one
+             * step a person can undo. Present only on such a button; every other action (a script, a submit) is the
+             * document's content and is never run (invariant 24).
+             */
+            action: z.literal('reset').exactOptional(),
           }),
         )
         .max(FORM_FIELDS_PART)

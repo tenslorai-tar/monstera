@@ -73,6 +73,7 @@ const TEXT: FormFieldRead = {
   masked: false,
   visibility: 'visible',
   buttonLabel: null,
+  buttonAction: null,
   textColour: null,
   editable: false,
   multiSelect: false,
@@ -430,6 +431,21 @@ describe('the field properties pane', () => {
     fireEvent.click(screen.getByLabelText('Hide what is typed (password)'));
     fireEvent.change(screen.getByLabelText('Shown'), { target: { value: 'no-print' } });
     expect(edits).toStrictEqual([{ alignment: 'right' }, { maxLength: 6 }, { comb: true }, { masked: true }, { visibility: 'no-print' }]);
+  });
+
+  it('a push button offers its Action, None or Reset the form, and sends the one chosen (the owner’s F7)', async () => {
+    const { edits } = mounted({ ...TEXT, kind: 'button', name: 'clear', buttonLabel: 'Clear', buttonAction: 'none' });
+    const action = await screen.findByLabelText('Action');
+    expect((action as HTMLSelectElement).value).toBe('none');
+    fireEvent.change(action, { target: { value: 'reset' } });
+    expect(edits).toStrictEqual([{ buttonAction: 'reset' }]);
+  });
+
+  it('CONTROL: a button set to run a script is said so and offered no Action, so a choice cannot drop it', async () => {
+    mounted({ ...TEXT, kind: 'button', name: 'send', buttonLabel: 'Send', buttonAction: 'other' });
+    await screen.findByLabelText('Words on the button');
+    expect(screen.queryByLabelText('Action')).toBeNull();
+    expect(screen.getByText(/set to run a script or send the form/u)).toBeTruthy();
   });
 
   it('a push button offers its words, and a limit of 0 sends no limit', async () => {

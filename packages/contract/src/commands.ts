@@ -2746,6 +2746,26 @@ export type FieldFill = z.infer<typeof fieldFillSchema>;
  * command, and a list is exactly what stopped the other three from recording a
  * prior.
  */
+/**
+ * Carries out the Reset form action of the button a person pressed (the owner's F7): every field its `/A` names, or every
+ * field but those, back to its default (`/DV`, else empty or off), as one step a person can undo.
+ *
+ * ## The button names the fields, and the document is where that is read
+ *
+ * `/ResetForm` is one of the standard's actions (ISO 32000-1, 12.6.4.12), not a script, and its `/Fields` and `/Flags`
+ * are the document's. So this names the BUTTON, by its place in the widget walk at a version, and the kernel reads the
+ * action off it; a payload that listed the fields would be a second reading of `/Fields` composed in the renderer.
+ */
+export const resetFormSchema = z.object({
+  kind: z.literal('resetForm'),
+  /** Zero-based index of the page the button sits on. */
+  page: z.number().int().nonnegative(),
+  /** Its position in the widget walk that produced the answer this names. */
+  index: z.number().int().nonnegative(),
+  /** The version that answer carried. Refused if the document has moved. */
+  version: docVersionSchema,
+}).strict();
+
 export const fillFormFieldSchema = z.object({
   kind: z.literal('fillFormField'),
   /** Zero-based index of the page the widget sits on. */
@@ -3542,10 +3562,15 @@ export function keepsTheObjectWalk<C extends { readonly kind: string }>(
  * a second press 3 to 5 s after one, composed before the first's re-read landed, was refused as out of date because the
  * lane did not follow a fill. The same test proves every kind of fill against the engine.
  */
-export const KEEPS_THE_FIELD_WALK: ReadonlySet<FieldWalkKeepingKind> = new Set(['editFormFields', 'fillFormField'] as const);
+export const KEEPS_THE_FIELD_WALK: ReadonlySet<FieldWalkKeepingKind> = new Set([
+  'editFormFields',
+  'fillFormField',
+  // A RESET writes values and redraws, as a fill does, and adds or removes no widget (the owner's F7).
+  'resetForm',
+] as const);
 
 /** The kinds {@link KEEPS_THE_FIELD_WALK} names. */
-export type FieldWalkKeepingKind = 'editFormFields' | 'fillFormField';
+export type FieldWalkKeepingKind = 'editFormFields' | 'fillFormField' | 'resetForm';
 
 /** The three walks a command can name an item in by its index, each at a version. */
 export type CommandWalk = 'annotation' | 'field' | 'object';
@@ -3563,6 +3588,7 @@ const WALK_NAMED_BY: Readonly<Record<NamesAnAnnotation | NamesAFormField | Names
   setAnnotationAuthor: 'annotation',
   replyToAnnotation: 'annotation',
   fillFormField: 'field',
+  resetForm: 'field',
   deleteFormFields: 'field',
   editFormFields: 'field',
   duplicateFormField: 'field',
@@ -5493,6 +5519,9 @@ export const MAX_FIELD_LENGTH = 65_536;
  *
  * `null` where the property can be taken away: a tooltip, a default value, a border or a fill, a format, a calculation.
  */
+/** What a push button may be set to do here (the owner's F7): nothing, or the standard Reset form. */
+export const FIELD_BUTTON_ACTIONS = ['none', 'reset'] as const;
+
 export const formFieldPropertiesSchema = z
   .object({
     /** Renames the field. A dot makes a parent, so the same rule as a create's name applies. */
@@ -5550,6 +5579,12 @@ export const formFieldPropertiesSchema = z
     visibility: z.enum(FIELD_VISIBILITIES),
     /** The words on a push button (`/MK /CA`). */
     buttonLabel: z.string().min(1).max(MAX_FIELD_OPTION),
+    /**
+     * What a push button does when pressed (its `/A`, the owner's F7): nothing, or the standard Reset form. Only these two
+     * are written; a button set to run a script or send the form keeps that action and is not offered a change, so a
+     * choice here can never drop the document's own content.
+     */
+    buttonAction: z.enum(FIELD_BUTTON_ACTIONS),
     /** The colour the field's text is drawn in, written into its default appearance (`/DA`). */
     textColour: annotationColourSchema,
     /** Whether a dropdown also takes words typed into it (`/Ff` bit 19, Edit). */
@@ -5637,6 +5672,11 @@ export const formFieldReadSchema = z
     visibility: z.enum(FIELD_VISIBILITIES),
     /** A push button's words, or `null` for a field that is not one or a button with none. */
     buttonLabel: z.string().max(MAX_FIELD_OPTION).nullable(),
+    /**
+     * What a push button does (the owner's F7): `none`, `reset` (the standard Reset form), or `other` (a script, a submit
+     * or another action, which is never run and is kept as it is); `null` for a field that is not a push button.
+     */
+    buttonAction: z.enum([...FIELD_BUTTON_ACTIONS, 'other']).nullable(),
     /** The text's colour from the default appearance, or `null` where it names none (a reader draws black). */
     textColour: annotationColourSchema.nullable(),
     editable: z.boolean(),
@@ -6704,6 +6744,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   setAnnotationAuthorSchema,
   replyToAnnotationSchema,
   fillFormFieldSchema,
+  resetFormSchema,
   deleteFormFieldsSchema,
   flattenFormFieldsSchema,
   setDocumentProtectionSchema,
@@ -6852,6 +6893,8 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // What it cannot express is WHICH WRITE — `setTextValue`, `setChoiceValue` or
   // a bounded sequence of toggles is the kernel's choice, made from the widget.
   fillFormFieldSchema,
+  // RENDERABLE, a button's place at a version: which fields it resets is the button's own action, read in the kernel.
+  resetFormSchema,
   // RENDERABLE, and `removeAnnotation`'s shape on the widget walk: the renderer
   // names rows of an answer it was given. What it cannot express is what a
   // delete has to do to the field TREE, which is measured behaviour the kernel
@@ -7142,6 +7185,7 @@ export function targetVersionOf(command: Command): DocVersion | undefined {
   if (command.kind === 'setAnnotationAuthor') return command.version;
   if (command.kind === 'replyToAnnotation') return command.version;
   if (command.kind === 'fillFormField') return command.version;
+  if (command.kind === 'resetForm') return command.version;
   if (command.kind === 'editFormFields') return command.version;
   if (command.kind === 'duplicateFormField') return command.version;
   if (command.kind === 'deleteFormFields') return command.version;
@@ -7214,6 +7258,8 @@ void _thatNameIsACommandKind;
  */
 export type NamesAFormField =
   | 'fillFormField'
+  // A RESET names the button pressed, whose action says which fields (the owner's F7).
+  | 'resetForm'
   | 'deleteFormFields'
   | 'editFormFields'
   | 'duplicateFormField'

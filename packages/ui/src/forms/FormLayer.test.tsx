@@ -106,6 +106,16 @@ describe('FormLayer', () => {
     expect(container.querySelector('.m-page-field-problem [role="alert"]')?.textContent).toContain('does not run what a form’s buttons are set to do');
   });
 
+  it('a RESET FORM button pressed sends the reset by its own place, and says nothing about scripts (the owner’s F7)', () => {
+    // The case above is the control: the same button with no Reset form action says what it cannot do and sends nothing.
+    const { container, fills } = draw([field({ index: 5, kind: 'button', name: 'Clear', action: 'reset' })]);
+    const button = at(container, 5);
+    if (button === null) throw new Error('the reset button has no control');
+    fireEvent.click(button);
+    expect(fills).toStrictEqual([{ page: 2, index: 5, reset: true }]);
+    expect(container.querySelector('.m-page-field-problem')).toBeNull();
+  });
+
   it('draws nothing at all over a page with nothing to fill', () => {
     expect(draw([field({ index: 0, readOnly: true })]).container.querySelector('.m-form-layer')).toBeNull();
   });

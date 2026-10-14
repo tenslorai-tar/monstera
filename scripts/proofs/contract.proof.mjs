@@ -974,6 +974,24 @@ const PLACE_SIGNATURE_PICTURE_SPEC = `  placeSignaturePicture: {
     reads: 'none',
   },`;
 
+/**
+ * A Reset form button carried out (the owner's F7) — the NEWEST kind since 2026-10-14, and the one the `missing a
+ * command kind` case omits. `importFormData`'s axes: the prior is every value the action names, so a checkpoint.
+ */
+const RESET_FORM_SPEC = `  resetForm: {
+    kind: 'resetForm',
+    writer: 'mupdf',
+    apply: applyResetForm,
+    capture: captureResetForm,
+    invert: invertResetForm,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`;
+
 const SET_ANNOTATION_AUTHOR_SPEC = `  setAnnotationAuthor: {
     kind: 'setAnnotationAuthor',
     writer: 'mupdf',
@@ -1285,6 +1303,9 @@ const SPEC_IMPORTS = `import {
   applyPlaceSignaturePicture,
   capturePlaceSignature,
   invertPlaceSignature,
+  applyResetForm,
+  captureResetForm,
+  invertResetForm,
   applyFillFormField,
   captureFillFormField,
   invertFillFormField,
@@ -2264,6 +2285,7 @@ ${EDIT_BLOCK_SPEC}
 ${SET_ANNOTATION_AUTHOR_SPEC}
 ${PLACE_SIGNATURE_MARK_SPEC}
 ${PLACE_SIGNATURE_PICTURE_SPEC}
+${RESET_FORM_SPEC}
 ${EDIT_OPERATORS_SPEC}
 };
 `,
@@ -2315,9 +2337,10 @@ ${EDIT_OPERATORS_SPEC}
     // grown by the previous kind either. FIVE for five on `setAnnotationAuthor`
     // (2026-09-24): TS2739 naming it and `editTextBlock`, which this table had
     // been omitting as the newest. SIX for six on `placeSignatureMark` and `placeSignaturePicture` (2026-10-02):
-    // TS2739 naming both and `setAnnotationAuthor`, which this table had been omitting as the newest.
+    // TS2739 naming both and `setAnnotationAuthor`, which this table had been omitting as the newest. SEVEN for seven on
+    // `resetForm` (2026-10-14): TS2739 naming it and `placeSignaturePicture`, which this table had been omitting.
     because:
-      /Property 'placeSignaturePicture' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'resetForm' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -2390,6 +2413,7 @@ ${REPLY_TO_ANNOTATION_SPEC}
 ${EDIT_BLOCK_SPEC}
 ${SET_ANNOTATION_AUTHOR_SPEC}
 ${PLACE_SIGNATURE_MARK_SPEC}
+${PLACE_SIGNATURE_PICTURE_SPEC}
 ${EDIT_OPERATORS_SPEC}
 };
 `,
@@ -3989,8 +4013,9 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // 58 since `setLinkOutline` (2026-10-08, ADR-0212): three spelt, 54 counted, one.
     // 59 since `editLink` (2026-10-13, the owner's O6(c)): three spelt, 55 counted, one.
     // 60 since `reshapeAnnotation` (2026-10-13, the owner's O8): three spelt, 56 counted, one.
+    // 61 since `resetForm` (2026-10-14, the owner's F7): three spelt, 57 counted, one.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 56 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 57 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

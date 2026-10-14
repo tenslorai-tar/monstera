@@ -573,6 +573,12 @@ export interface CommandPrior {
   readonly flattenFormFields: never;
 
   /**
+   * A form reset (the owner's F7): the prior is every value the button's action names, across the document, which the
+   * checkpoint restores exactly. `importFormData`'s reason, at the size of a form.
+   */
+  readonly resetForm: never;
+
+  /**
    * The protection the session stood with before the change
    * ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) Decision 8).
    *

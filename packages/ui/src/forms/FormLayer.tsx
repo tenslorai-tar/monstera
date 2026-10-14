@@ -19,12 +19,14 @@ interface Typing {
   readonly pressedAt: { readonly x: number; readonly y: number } | undefined;
 }
 
-/** One field to fill, named as every fill names it: page, place in the page's widget walk, and the value. */
-export interface PageFill {
-  readonly page: number;
-  readonly index: number;
-  readonly value: FieldFill;
-}
+/**
+ * One field to fill, named as every fill names it: page, place in the page's widget walk, and the value. Or a Reset form
+ * button pressed, named the same way (the owner's F7): it travels the fill's path to the one place a command is sent,
+ * which sends `resetForm` for it.
+ */
+export type PageFill =
+  | { readonly page: number; readonly index: number; readonly value: FieldFill }
+  | { readonly page: number; readonly index: number; readonly reset: true };
 
 /**
  * How much of a one-line field's height its text takes. MuPDF's automatic size, measured 2026-10-05: 15 points in a
@@ -239,7 +241,12 @@ export function FormLayer({
               aria-label={i18n._(FORM_FIELD_PRESS, { name: field.name })}
               className={look}
               onClick={() => {
-                // SAID, NOT RUN (invariant 24): what a form's button is set to do is the document's content.
+                // RESET FORM IS CARRIED OUT, a standard action and not a script (the owner's F7), as one undo step.
+                if (offer.resets) {
+                  onFill({ page, index: field.index, reset: true });
+                  return;
+                }
+                // SAID, NOT RUN (invariant 24): any other action is the document's content.
                 tell({ message: FORM_BUTTON_NO_SCRIPTS, values: {} });
               }}
               onPointerDown={pressed}

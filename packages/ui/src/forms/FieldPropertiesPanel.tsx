@@ -128,6 +128,10 @@ import {
   FIELD_PROPS_ALIGNMENT_LEFT,
   FIELD_PROPS_ALIGNMENT_RIGHT,
   FIELD_PROPS_BUTTON_LABEL,
+  FIELD_PROPS_ACTION,
+  FIELD_PROPS_ACTION_NONE,
+  FIELD_PROPS_ACTION_OTHER,
+  FIELD_PROPS_ACTION_RESET,
   FIELD_PROPS_COMB,
   FIELD_PROPS_GROUP_NAME,
   FIELD_PROPS_MASKED,
@@ -567,6 +571,26 @@ function Controls({
             value={props.buttonLabel ?? ''}
             onCommit={(buttonLabel) => {
               if (buttonLabel.trim() !== '') onEdit({ buttonLabel });
+            }}
+          />
+        ) : null}
+        {/* WHAT THE BUTTON DOES (the owner's F7): nothing, or Reset form. A button set to run a script or send the form is
+            said so and offered no choice, so a choice here can never drop the document's own action. */}
+        {props.kind === 'button' && props.buttonAction === 'other' ? (
+          <p className="m-properties__meta" data-button-action="other">
+            {i18n._(FIELD_PROPS_ACTION_OTHER)}
+          </p>
+        ) : null}
+        {props.kind === 'button' && props.buttonAction !== 'other' ? (
+          <SelectRow
+            label={FIELD_PROPS_ACTION}
+            value={props.buttonAction ?? 'none'}
+            options={[
+              { value: 'none', label: i18n._(FIELD_PROPS_ACTION_NONE) },
+              { value: 'reset', label: i18n._(FIELD_PROPS_ACTION_RESET) },
+            ]}
+            onChange={(value) => {
+              onEdit({ buttonAction: value === 'reset' ? 'reset' : 'none' });
             }}
           />
         ) : null}

@@ -170,12 +170,15 @@ export {
   applyDeleteFormFields,
   applyFillFormField,
   applyFlattenFormFields,
+  applyResetForm,
   captureDeleteFormFields,
   captureFillFormField,
   captureFlattenFormFields,
+  captureResetForm,
   invertDeleteFormFields,
   invertFillFormField,
   invertFlattenFormFields,
+  invertResetForm,
   readFormFields,
 } from './formFields.js';
 export {

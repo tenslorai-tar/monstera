@@ -35,6 +35,7 @@ import { fieldNameClash } from '@monstera/shared';
 
 import type { FieldFace } from './fieldActions.js';
 import { FieldEditRefusedError } from './fieldEditRefusal.js';
+import { buttonActionNamed } from './fieldRules.js';
 import { FIELD_FAMILY_MARKER, drawsFieldFamily, familyOfMarker, fieldFontOf } from './fieldFamily.js';
 import { base14Of } from './base14Families.js';
 import { checkBoxAppearance, namesButtonStyle, radioAppearance } from './buttonAppearance.js';
@@ -217,6 +218,21 @@ function setButtonLabel(widget: PDFDict, label: string): void {
     widget.set(PDFName.of('MK'), mk);
   }
   mk.set(PDFName.of('CA'), text(label));
+}
+
+/**
+ * Sets what a push button does (the owner's F7): no action, or the standard Reset form, which resets every field. A
+ * button holding any other action (a script, a submit) keeps it: overwriting it would drop the document's own content,
+ * and the Properties pane offers no choice for one, so a command that asks is a defect and is thrown as one.
+ */
+function setButtonAction(document: PDFDocument, widget: PDFDict, action: 'none' | 'reset'): void {
+  const held = widget.lookupMaybe(PDFName.of('A'), PDFDict);
+  const subtype = held === undefined ? null : (held.lookupMaybe(PDFName.of('S'), PDFName)?.decodeText() ?? '');
+  if (buttonActionNamed(subtype) === 'other') {
+    throw new Error('this button runs an action Monstera does not write (a script or a submit), and it is kept as it is');
+  }
+  if (action === 'none') widget.delete(PDFName.of('A'));
+  else widget.set(PDFName.of('A'), document.context.obj({ S: 'ResetForm' }));
 }
 
 /** The annotation flags that decide whether a widget shows (PDF 32000-1 table 165): Hidden, Print, NoView. */
@@ -813,6 +829,7 @@ export const applyEditFormFields: Apply<'pdf-lib', 'editFormFields'> = async (im
     if (field instanceof PDFTextField) setTextRules(field, set);
     if (set.visibility !== undefined) setVisibility(widget, set.visibility);
     if (set.buttonLabel !== undefined && field instanceof PDFButton) setButtonLabel(widget, set.buttonLabel);
+    if (set.buttonAction !== undefined && field instanceof PDFButton) setButtonAction(document, widget, set.buttonAction);
     if (set.format !== undefined) setFormat(field, set.format);
     if (set.calculation !== undefined) setCalculation(form, field, set.calculation);
     if (set.calculationPosition !== undefined) moveInCalculationOrder(form, field, set.calculationPosition);

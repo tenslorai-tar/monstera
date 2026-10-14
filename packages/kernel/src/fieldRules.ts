@@ -68,6 +68,28 @@ export function fieldDictionaryOf(object: PDFObject): PDFObject {
   return object;
 }
 
+/**
+ * What a push button's own `/A` does (the owner's F7): nothing, the standard Reset form (ISO 32000-1 12.6.4.12), or
+ * anything else (a script, a submit), which is `other` and is never run. The one reading: the listing, the Properties
+ * read and the reset's own refusal all take it.
+ */
+export function buttonActionOf(object: PDFObject): 'none' | 'reset' | 'other' {
+  const action = object.get('A');
+  if (action.isNull()) return buttonActionNamed(null);
+  const kind = action.isDictionary() ? action.get('S') : action;
+  return buttonActionNamed(kind.isName() ? kind.asName() : '');
+}
+
+/**
+ * THE RULE, over the action's `/S` name: `null` where the button has no `/A`, and any other string (an empty one for
+ * an `/S` that is not a name) where it has one. Its own function so the pdf-lib edit, which reads another object model,
+ * asks this and not a second spelling of it (B3a).
+ */
+export function buttonActionNamed(subtype: string | null): 'none' | 'reset' | 'other' {
+  if (subtype === null) return 'none';
+  return subtype === 'ResetForm' ? 'reset' : 'other';
+}
+
 /** The fully qualified name of a field object: each `/T` from the root down, joined by dots. */
 export function qualifiedNameOf(object: PDFObject): string {
   const parts: string[] = [];

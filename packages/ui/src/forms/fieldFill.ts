@@ -53,9 +53,10 @@ export type FillOffer =
   /**
    * A push button. It is pressed and says what it cannot do (invariant 24, ADR-0193): what a form's button is set to do
    * is the document's content, which opening a document never runs, and a control that pressed and said nothing would
-   * be the display-only defect.
+   * be the display-only defect. A button whose action is the standard Reset form (`resets`) is carried out instead, as one
+   * step a person can undo (the owner's F7): it is a standard action, not a script.
    */
-  | { readonly kind: 'button' }
+  | { readonly kind: 'button'; readonly resets: boolean }
   | {
       readonly kind: 'none';
       readonly reason: MessageKey;
@@ -113,6 +114,6 @@ export function fieldFill(field: ListedField): FillOffer {
       required: field.required,
     };
   }
-  if (field.kind === 'button') return { kind: 'button' };
+  if (field.kind === 'button') return { kind: 'button', resets: field.action === 'reset' };
   return { kind: 'none', reason: FORMS_NOT_FILLABLE };
 }
