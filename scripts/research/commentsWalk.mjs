@@ -386,7 +386,26 @@ await step('O8: Undo brings the first reading and the first line back, in the sa
   return { reading: undone?.reading };
 });
 
-await step('O8: an AREA’s corner dragged with Select changes the saved area', async () => {
+/**
+ * A polygon's area from its saved `/Vertices`, by the shoelace formula, in square points.
+ *
+ * @param {number[]} vertices x, y pairs
+ */
+function shoelace(vertices) {
+  let twice = 0;
+  for (let at = 0; at < vertices.length; at += 2) {
+    const next = (at + 2) % vertices.length;
+    twice += (vertices[at] ?? 0) * (vertices[next + 1] ?? 0) - (vertices[next] ?? 0) * (vertices[at + 1] ?? 0);
+  }
+  return Math.abs(twice) / 2;
+}
+
+// THE READING IS CHECKED AGAINST THE SAVED GEOMETRY, never against "it grew". On 2026-10-14 this step drew a triangle
+// and dragged its third corner SIDEWAYS, from (300, 400) to (360, 400): same base, same height, so both triangles are
+// 7,500 pt² and "1.4 in²" before and after was the right reading, which the step reported as a failure. The drag is now
+// DOWNWARD, which changes the area, and the reading must stand to the shoelace area of the saved corners in the same
+// proportion before and after.
+await step('O8: an AREA’s corner dragged with Select changes the saved area, and the reading follows the saved corners', async () => {
   await command('Measure area');
   const slot = await planSlot();
   const corners = [
@@ -406,15 +425,29 @@ await step('O8: an AREA’s corner dragged with Select changes the saved area', 
   await page.mouse.click(slot.x + 260 * slot.scale, slot.y + (792 - 470) * slot.scale);
   await page.mouse.move(top.x, top.y);
   await page.mouse.down();
-  await page.mouse.move(top.x + 60 * slot.scale, top.y, { steps: 10 });
+  // SIXTY POINTS DOWN: the triangle's height goes from 100 to 160 points, so its area from 7,500 to 12,000 pt².
+  await page.mouse.move(top.x, top.y + 60 * slot.scale, { steps: 10 });
   await page.mouse.up();
-  // THE DRAG IS A WRITE (3 to 5 s here): a copy saved while it lands holds the area as it was (2026-10-13: 1.4 and 1.4).
-  await page.waitForTimeout(8000);
-  const grown = (await savedMeasurements(await saveCopy('plan-area-grown.pdf'))).find((each) => each.subtype === '/Polygon');
+  // THE DRAG IS A WRITE: the saved copy is read until its corners have moved, never after a fixed sleep (GGGGGGGG-3).
+  /** @type {{ subtype: string, points: number[], reading: string, filled: boolean } | undefined} */
+  let grown;
+  let copy = 0;
+  await expect
+    .poll(
+      async () => {
+        copy += 1;
+        grown = (await savedMeasurements(await saveCopy(`plan-area-grown-${String(copy)}.pdf`))).find((each) => each.subtype === '/Polygon');
+        return grown === undefined ? 0 : shoelace(grown.points);
+      },
+      { timeout: 30_000 },
+    )
+    .toBeGreaterThan(shoelace(drawn.points) * 1.2);
   if (grown === undefined) throw new Error('no area in the saved file');
-  expect(valueOf(grown.reading), `drawn ${JSON.stringify(drawn)}, after the drag ${JSON.stringify(grown)}`).toBeGreaterThan(valueOf(drawn.reading));
+  // THE READING STANDS TO THE SAVED CORNERS' AREA as it did before the drag, to the reading's own precision.
+  const perArea = valueOf(drawn.reading) / shoelace(drawn.points);
+  expect(valueOf(grown.reading), `drawn ${JSON.stringify(drawn)}, after the drag ${JSON.stringify(grown)}`).toBeCloseTo(perArea * shoelace(grown.points), 1);
   expect(grown.filled).toBe(false);
-  return { before: drawn.reading, after: grown.reading };
+  return { before: drawn.reading, after: grown.reading, corners: grown.points };
 });
 
 /** Each caret's `/Rect` on page 1 of a saved file, read by pdf-lib. @param {string} path */

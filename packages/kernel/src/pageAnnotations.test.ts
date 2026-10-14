@@ -3424,6 +3424,31 @@ describe('applyAddAnnotation writes a measurement', () => {
       expect(await savedLabel(longer)).toBe('175.0 mm');
     });
 
+    /** The text the saved file's first annotation DRAWS: every literal its normal appearance shows. */
+    async function drawnReading(bytes: Uint8Array): Promise<string> {
+      const document = await PDFDocument.load(bytes, { updateMetadata: false });
+      const annots = document.getPages()[0]?.node.lookup(PDFName.of('Annots'));
+      const first = annots instanceof PDFArray ? annots.asArray()[0] : undefined;
+      const dict = first instanceof PDFRef ? document.context.lookup(first, PDFDict) : undefined;
+      const ap = dict?.lookup(PDFName.of('AP'));
+      const normal = ap instanceof PDFDict ? ap.lookup(PDFName.of('N')) : undefined;
+      const content = normal instanceof PDFRawStream ? new TextDecoder('latin1').decode(decodePDFRawStream(normal).decode()) : '';
+      return [...content.matchAll(/\(([^)]*)\) Tj/gu)].map((match) => match[1] ?? '').join(' ');
+    }
+
+    // THE OWNER'S O8 READING IS THE ONE ON THE PAGE: after a corner was dragged the saved file still DREW the old area.
+    // `/Contents` was right (the case above); this reads the appearance a viewer shows, before and after the drag.
+    it('an AREA’s corner moved by points DRAWS the new reading, and only the new one, read back from the file', async () => {
+      const area = await drawnOn(await fixture(), command({ annotation: AREA }));
+      expect(await drawnReading(area)).toBe('2500.0 mm\xb2');
+      const grown = await placed(area, { index: 0, points: [{ x: 10, y: 20 }, { x: 110, y: 20 }, { x: 160, y: 120 }, { x: 10, y: 120 }] });
+      // CONTROL: the drawn reading is the one /Contents holds after the drag, and the old one is gone from the page.
+      expect(await drawnReading(grown)).toBe('3125.0 mm\xb2');
+      // AND TWICE, as a person drags a corner and then another: each drag draws its own reading over the last one's place.
+      const again = await placed(grown, { index: 0, points: [{ x: 10, y: 20 }, { x: 110, y: 20 }, { x: 160, y: 170 }, { x: 10, y: 120 }] });
+      expect(await drawnReading(again)).toBe(await savedLabel(again));
+    });
+
     it('NO FILL is written by a change: a moved or reshaped measurement carries no /IC', async () => {
       const area = await drawnOn(await fixture(), command({ annotation: AREA }));
       const { rect } = await listedFirst(area);
