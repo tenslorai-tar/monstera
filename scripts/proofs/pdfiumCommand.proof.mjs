@@ -280,7 +280,7 @@ const failures = [];
 // from its Decision 2: a tab read back at its stop, its control, and a second edit that keeps one tab. 235 from the
 // second edit's measure, which read a line written as several objects at its first object's width. 246 from L2: an
 // underlined word read back underlined, its rule moved with it by a second edit, and the control that turns it off.
-const roster = createRoster(failures, { cases: 247 });
+const roster = createRoster(failures, { cases: 250 });
 
 /**
  * @param {string} name
@@ -578,6 +578,7 @@ async function main() {
   await siblingCases();
   await runFontCases();
   await formatPieceCases();
+  await fontChangeCases();
 
   process.stdout.write(
     failures.length > 0
@@ -585,6 +586,105 @@ async function main() {
       : roster.format('PDFium command case'),
   );
   process.exitCode = failures.length === 0 ? 0 : 1;
+}
+
+/**
+ * A font chosen for words that hold a space is written, and the spaces are still there when the page is read (the
+ * owner's A2, 2026-10-14).
+ *
+ * Two defects, both on the path a person takes when they choose a font in the Properties panel:
+ *
+ * - THE REFUSAL: a font's width is measured by writing a character twice (`piecesAdvance`), and the write reads itself
+ *   back through the text page. `asTextPageReads` said an object of spaces alone reads as nothing; PDFium reads two
+ *   spaces as one, so the probe of a space was refused by its own read-back, naming nothing.
+ * - THE LOST SPACES: a whole block restyled left each space in the run's font as an object of its own, and a text page
+ *   reads an object of one space as nothing: the block read back "Quarterlyresultscame…".
+ *
+ * Against a two-line Helvetica block, with the bundled fonts bound as the PDFium host's entry binds them. THE CONTROL
+ * is the page as it was drawn, read the same way, so the comparison below is the font change's doing and not the
+ * reading's. Run against the two rules as they were (2026-10-14), the first case is refused naming nothing and the
+ * second reads "Quarterlyresultscameinabovetheplan."; with only the space rule corrected, the second still fails.
+ */
+async function fontChangeCases() {
+  const fonts = fontsDirectory(root);
+  const LINES = ['Quarterly results came in above the plan.', 'Costs held steady across every department.'];
+  const document = await PDFDocument.create();
+  const page = document.addPage([500, 400]);
+  const helvetica = await document.embedFont(StandardFonts.Helvetica);
+  for (const [at, line] of LINES.entries()) page.drawText(line, { x: 72, y: 300 - at * 14, size: 11, font: helvetica });
+  const pdf = await document.save();
+  bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }], readCatalogueApart));
+  try {
+    const session = await pdfiumWriter.open(pdf);
+    /** @type {{ lines: number[][], soft: boolean[], text: string }} */
+    let block;
+    try {
+      const runs = (await textRuns(session, 0)).runs;
+      const read = groupIntoBlocks(runs.map((run) => ({ ...run, setting: settingOf(run.style) })))[0];
+      const lines = read?.lines ?? [];
+      block = {
+        lines: lines.map((line) => line.runs.map((run) => run.index)),
+        // EVERY LINE ENDED ON PURPOSE, so the case is about the font and not about how a paragraph is re-broken (A4).
+        soft: lines.map(() => false),
+        text: paragraphsOfLines(lines.map((line) => ({ text: lineText(line.runs), soft: false }))),
+      };
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+    /** @param {number} to how far the font is chosen for, from the block's start @returns {Promise<string>} */
+    const written = async (to) => {
+      const marks = [{ from: 0, to, set: { family: 'Caladea' } }];
+      const out = await localPdfiumExecution.apply({
+        session: pdf,
+        command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+          kind: 'editTextBlock',
+          page: 0,
+          ...blockEditOf([{ ...block, marks }]),
+          fit: 'reflow',
+          version: 1,
+        }),
+        sources: [],
+        reads: undefined,
+      });
+      const reopened = await pdfiumWriter.open(out);
+      try {
+        return await pageText(reopened, 0);
+      } finally {
+        await pdfiumWriter.close(reopened);
+      }
+    };
+    /** @param {number} to */
+    const outcome = async (to) => {
+      try {
+        return { text: await written(to), refused: '' };
+      } catch (error) {
+        return { text: '', refused: error instanceof Error ? `${error.name} ${JSON.stringify(Reflect.get(error, 'characters') ?? error.message)}` : String(error) };
+      }
+    };
+    const original = await pdfiumWriter.open(pdf);
+    const plain = { text: await pageText(original, 0), refused: '' };
+    await pdfiumWriter.close(original);
+    const word = await outcome('Quarterly '.length);
+    const whole = await outcome(block.text.length);
+    const expected = LINES.join('\r\n');
+    record(
+      'CONTROL: the page as drawn reads back as its own words, so the readings below compare like with like',
+      plain.refused === '' && plain.text === expected,
+      JSON.stringify(plain),
+    );
+    record(
+      'a font chosen for a word and the space after it is written, not refused: a space’s width is measured without a refusal of its own',
+      word.refused === '' && word.text === expected,
+      JSON.stringify(word),
+    );
+    record(
+      'a font chosen for a whole block keeps every space between its words when the page is read',
+      whole.refused === '' && whole.text === expected,
+      JSON.stringify(whole),
+    );
+  } finally {
+    bindEditFaces(null);
+  }
 }
 
 /**

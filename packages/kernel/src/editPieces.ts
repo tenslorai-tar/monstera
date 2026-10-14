@@ -126,10 +126,29 @@ export function editPieces(
       continue;
     }
     const trailing = /\s+$/u.exec(before.text)?.[0] ?? '';
-    if (trailing === '' || trailing === before.text) continue;
+    if (trailing === '') continue;
     if (!carriedBy(piece, siblings, trailing)) continue;
-    before.text = before.text.slice(0, before.text.length - trailing.length);
+    // A PIECE OF WHITE SPACE ALONE goes whole, and is no piece: the space between two words restyled into one face
+    // (the owner's A2, a font chosen for a whole block) was left in the run's font as an object of its own, and a text
+    // page reads an object of one space as nothing — measured 2026-10-14 on PDFium 155, the block read back
+    // "Quarterlyresultscame…".
     piece.text = `${trailing}${piece.text}`;
+    if (trailing === before.text) {
+      pieces.splice(at - 1, 1);
+      at -= 1;
+    } else {
+      before.text = before.text.slice(0, before.text.length - trailing.length);
+    }
+  }
+  // NEIGHBOURS NOW IN ONE SOURCE ARE ONE PIECE (point 4), as `add` joins them.
+  for (let at = 1; at < pieces.length; at += 1) {
+    const before = pieces[at - 1];
+    const piece = pieces[at];
+    if (before === undefined || piece === undefined) continue;
+    if (before.face !== piece.face || before.sibling !== piece.sibling || before.boxed.length > 0 || piece.boxed.length > 0) continue;
+    before.text += piece.text;
+    pieces.splice(at, 1);
+    at -= 1;
   }
   return pieces;
 }

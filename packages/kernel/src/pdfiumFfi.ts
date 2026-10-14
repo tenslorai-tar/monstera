@@ -1014,14 +1014,20 @@ function characterAt(bindings: Bound, textPage: unknown, at: number): string {
  * compared in.
  *
  * Measured 2026-09-24 (`FPDFText_GetUnicode` over one object on a blank page): two spaces read as
- * ONE, and an object of spaces alone reads as nothing; a single leading or trailing space is kept.
- * So `…org  Plot 14`, a real document's own spacing, read back `…org Plot 14`, and a font that
- * carried it was refused. Compared raw, a read-back is testing the text page's whitespace rule
- * rather than the font; compared through this, it tests the font.
+ * ONE; a single leading or trailing space is kept. So `…org  Plot 14`, a real document's own
+ * spacing, read back `…org Plot 14`, and a font that carried it was refused. Compared raw, a
+ * read-back is testing the text page's whitespace rule rather than the font; compared through
+ * this, it tests the font.
+ *
+ * AN OBJECT OF ONE SPACE reads as nothing, and an object of two or more reads as ONE space —
+ * measured 2026-10-14 on PDFium 155's Linux build, one Helvetica object alone on a page:
+ * `" "` → no text, `"  "` and `"   "` → `" "`. This read *"an object of spaces alone reads as
+ * nothing"* until then, and the width probe of a space (`piecesAdvance` writes the character
+ * twice) was refused by its own read-back: every font change over a selection holding a space
+ * was refused naming no character (the owner's A2, 2026-10-14).
  */
 function asTextPageReads(text: string): string {
-  const collapsed = text.replace(/ {2,}/gu, ' ');
-  return collapsed.trim() === '' ? '' : collapsed;
+  return text === ' ' ? '' : text.replace(/ {2,}/gu, ' ');
 }
 
 /**

@@ -71,6 +71,25 @@ describe('editPieces', () => {
   });
 
   /**
+   * THE OWNER'S A2 (2026-10-14): a font chosen for a whole block leaves only white space in the run's font, so every
+   * space between two restyled words was a piece of its own, and a text page reads an object of one space as nothing.
+   * A space alone goes whole into the word after it, and the words in one face are one piece. CONTROL: a face that does
+   * not carry a space leaves it where it was, so the move is the face's answer.
+   */
+  it('puts a space between two words restyled into one face into that face, as one piece', () => {
+    const restyled = (segment: string): boolean => segment.trim() === '';
+    expect(editPieces('Costs held steady', restyled, REQUEST, CATALOGUE, []).map((piece) => [piece.text, piece.face?.id ?? null])).toStrictEqual([
+      ['Costs held steady', 'arimo'],
+    ]);
+    const noSpace = face('latin', 'Latin', LATIN.replace(' ', ''));
+    expect(editPieces('Costs held', restyled, REQUEST, [noSpace], []).map((piece) => [piece.text, piece.face?.id ?? null])).toStrictEqual([
+      ['Costs', 'latin'],
+      [' ', null],
+      ['held', 'latin'],
+    ]);
+  });
+
+  /**
    * THE OWNER'S " Walked." (2026-10-14): a producer's subset with no W and no k sent "Walked" to a catalogue face and the
    * full stop after it back to the run's own font, a separate object, which PDF.js reads as a separate item: "Walked .".
    * Punctuation stays in the source before it where that source carries it, the resolver's own rule (`resolveRuns`).
