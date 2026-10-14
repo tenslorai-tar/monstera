@@ -71,6 +71,7 @@ import { x2tPath } from '../provision/onlyoffice.mjs';
 import { SHIPPED_PLATFORM, pdfiumLibrary } from '../provision/pdfium.mjs';
 import { pdftotextPath } from '../provision/poppler.mjs';
 import { tessdataDirectory } from '../provision/tessdata.mjs';
+import { repairThenRefuse } from './dllClosure.mjs';
 import { nativeManifest } from './nativeManifest.mjs';
 import { moduleClosure, moduleSpecifiers, modulesLoadedByPath, workspaceTarget } from './shippedModules.mjs';
 import { startsToWindow } from './startCheck.mjs';
@@ -556,7 +557,34 @@ async function main() {
       if (sha256(to) !== digest) throw new Error(`${id}: ${path} does not match its pin; re-provision it.`);
     }
   }
-  writeFileSync(join(stage, 'resources', 'native', 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+  // EVERY IMPORT RESOLVES ON A USER'S PC, repaired before refused (`dllClosure.mjs`): a runtime a program imports and
+  // does not carry is provisioned, pinned, and placed beside it — and the manifest then names it, so the Components
+  // dialog verifies the placed bytes like every other file and does not count them as extra.
+  step('the DLLs every shipped program imports');
+  const { placed } = await repairThenRefuse({
+    stage,
+    provide: async (runtime) => {
+      try {
+        return await runtime.provision(REPO_ROOT);
+      } catch (error) {
+        step(`  ${runtime.name} could not be provisioned: ${formatError(error)}`);
+        return null;
+      }
+    },
+  });
+  const nativeRoot = join(stage, 'resources', 'native');
+  /** @type {Record<string, { files: Record<string, string> }>} */
+  const components = JSON.parse(JSON.stringify(manifest.components));
+  for (const path of placed) {
+    const [id = '..', ...file] = relative(nativeRoot, join(stage, path)).split(sep);
+    const component = components[id];
+    if (component === undefined || file.length === 0) {
+      throw new Error(`${path} was placed outside every native component's folder, so no manifest entry can name it.`);
+    }
+    component.files[file.join('/')] = sha256(join(stage, path));
+    step(`  placed ${path}`);
+  }
+  writeFileSync(join(nativeRoot, 'manifest.json'), `${JSON.stringify({ ...manifest, components }, null, 2)}\n`);
 
   step('notices');
   copyFileSync(join(REPO_ROOT, 'NOTICE'), join(stage, 'NOTICE'));

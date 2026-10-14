@@ -10,6 +10,7 @@ import { type EditStep, TAB_STOP, nextTabStop } from '@monstera/shared';
 import koffi, { type KoffiFunc, type TypeObject } from 'koffi';
 
 import { editFaces, editFacesBound } from './editFaces.js';
+import { loadEngineLibrary } from './engineLibrary.js';
 import { arabicForms, lettersOfForms } from './arabicForms.js';
 import {
   drawnOrder,
@@ -322,7 +323,7 @@ let bound: Bound | undefined;
 export function openPdfium(libraryPath: string): void {
   if (bound !== undefined) return;
 
-  const library = koffi.load(libraryPath);
+  const library = loadEngineLibrary(libraryPath);
 
   // FPDF_FILEWRITE is a struct whose second field is a callback PDFium calls
   // once per block. It is the ONLY way FPDF_SaveAsCopy emits bytes — the public

@@ -50,6 +50,17 @@ export const VC14_RUNTIME = {
 };
 
 /**
+ * Each of {@link VC14_RUNTIME}'s DLLs and its digest — the ONE pin of the runtime's bytes, read 2026-09-27 from a tree
+ * extracted from the verified package. Every program that ships the runtime beside it takes these: Poppler,
+ * Ghostscript, and through `vcRuntime.mjs` the MuPDF shim and ONLYOFFICE's x2t.
+ */
+export const VC14_RUNTIME_BIN = Object.freeze({
+  'msvcp140.dll': '7c26614e1d733892c2deac7e245ce115504b1d80592dd0a01b08e3e5a55f89ca',
+  'vcruntime140.dll': 'd1f4225df2cd877dbf130d5668a021dce3f94118455ff5ec952061c30afc9ce7',
+  'vcruntime140_1.dll': 'a7146c08f89fe5b04541ab507cdb59ff7b44534d4ba3c668a426c6450a03434e',
+});
+
+/**
  * The file in `directory` whose name matches `name` ignoring case, or null.
  * Windows resolves DLL names without case; the packages spell some upper-case.
  *

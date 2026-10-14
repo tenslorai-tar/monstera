@@ -31,7 +31,7 @@
   "components": [
     {
       "name": "MuPDF",
-      "role": "PDF parsing, rendering and writing engine. Statically linked into the shim.",
+      "role": "PDF parsing, rendering and writing engine. Statically linked into the shim, which ships with the Microsoft Visual C++ runtime 14.51.36247 beside it; the runtime's terms are under ONLYOFFICE x2t below.",
       "licence": "AGPL-3.0-or-later",
       "origin": "https://mupdf.com/",
       "source": "https://github.com/ArtifexSoftware/mupdf-downloads/releases",
@@ -352,7 +352,8 @@
         { "name": "Carlito (font)", "version": "1.103", "spdx": "OFL-1.1", "texts": ["carlito/LICENSE.txt"] },
         { "name": "Caladea (font)", "version": "as distributed with Document Builder 9.4.0", "spdx": "OFL-1.1", "texts": ["caladea/LICENSE.txt"] },
         { "name": "Asana Math (font)", "version": "as distributed with Document Builder 9.4.0", "spdx": "OFL-1.1", "texts": ["asana/LICENSE.txt"] },
-        { "name": "OpenSymbol (font)", "version": "as distributed with Document Builder 9.4.0", "spdx": "OFL-1.0", "texts": ["opensymbol/LICENSE.txt"] }
+        { "name": "OpenSymbol (font)", "version": "as distributed with Document Builder 9.4.0", "spdx": "OFL-1.0", "texts": ["opensymbol/LICENSE.txt"] },
+        { "name": "Microsoft Visual C++ runtime", "version": "14.51.36247", "spdx": "LicenseRef-MicrosoftVisualCpp2015-2022Runtime", "texts": ["vc14_runtime/LICENSE.txt"] }
       ]
     },
     {

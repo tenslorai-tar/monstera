@@ -49,7 +49,7 @@ import { downloadVerified, fileExists, toolPath } from '../lib/fetchVerified.mjs
 import { verifyDetached } from '../lib/openpgpVerify.mjs';
 import { treeProblems, verifyPinnedTree } from '../lib/pinnedTree.mjs';
 import { formatError } from '../lib/reportError.mjs';
-import { VC14_RUNTIME, committedLicenceName, installCondaPackage, sameAsCommitted } from './condaForge.mjs';
+import { VC14_RUNTIME, VC14_RUNTIME_BIN, committedLicenceName, installCondaPackage, sameAsCommitted } from './condaForge.mjs';
 import { POPPLER_KEY_FINGERPRINT, popplerKeyPath } from './keys/popplerKey.mjs';
 import { isMain } from '../lib/isMain.mjs';
 
@@ -74,14 +74,12 @@ export const POPPLER_BIN = {
   'liblzma.dll': '8439ed3564a8dbbf6355e29c92e88fdf1f6dee096504149fc051104155c868a9',
   'libpng16.dll': 'fd80ce925fc2bdce591c3f74ac0bbb2b36d72e5f55a0b686aa66453a1e388ff3',
   'libssh2.dll': '69c35872dae1ed72e67388a4c64d51004dd15fc1be0901b2025da721d1496bb4',
-  'msvcp140.dll': '7c26614e1d733892c2deac7e245ce115504b1d80592dd0a01b08e3e5a55f89ca',
   'openjp2.dll': '5d11a0abfa2b679c22f0d91df66bd2abc83acb6988b050ad9e75ea0b0025e2b0',
   'pdftotext.exe': 'eedb0417a5a70eae7901151cb1a8902d7890187c4bd0535ca54e2c3924584db5',
   'poppler.dll': '333805d80f0a301e1626a72ecc7d2b4b149350b44f971927f2a08eb9cb29bb28',
   'psl-5.dll': '24a1963f1684f342fbd2740c498cddd8f4dbf12846414d2b95637a1a24f86ba1',
   'tiff.dll': 'e5555ff9f826a47885c87d9a648f9823d8bf6967b7c848e4d4824abcf518e356',
-  'vcruntime140.dll': 'd1f4225df2cd877dbf130d5668a021dce3f94118455ff5ec952061c30afc9ce7',
-  'vcruntime140_1.dll': 'a7146c08f89fe5b04541ab507cdb59ff7b44534d4ba3c668a426c6450a03434e',
+  ...VC14_RUNTIME_BIN,
   'zlib.dll': 'f4f26ea6300c8449daad4650915e01ac80aafc6ca8b73a50be450f1fb66cdd63',
   'zstd.dll': 'fcc1dc71b7df5489e37a78abab9c31d763570d55e93c67f388058c41c0d7b8df',
 };

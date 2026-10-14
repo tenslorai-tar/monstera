@@ -50,6 +50,8 @@
 
 import koffi from "koffi"
 
+import { loadEngineLibrary } from "./engineLibrary.js"
+
 /* MONSTERA: upstream imported this brand from the generated `mupdf-wasm.d.ts`. */
 declare const _brand: unique symbol
 export type Pointer<B> = number & { readonly [_brand]: B }
@@ -5380,7 +5382,7 @@ let mzApi: MzApi | undefined
 export function openMupdfShim(libraryPath: string): void {
 	if (mzApi !== undefined)
 		return
-	const library = koffi.load(libraryPath)
+	const library = loadEngineLibrary(libraryPath)
 
 	const digest = String(library.func("const char *mzg_upstream_digest(void)")())
 	if (digest !== PORTED_FROM_MUPDF_C)

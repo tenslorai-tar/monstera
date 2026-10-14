@@ -272,6 +272,13 @@ jobs:
       - name: Prove a stale shim is refused rather than measured
         run: node scripts/ci/annotate.mjs scripts/lib/shimBinary.proof.mjs
 
+      # 0.1.15.0 shipped x2t and the MuPDF shim without the VC++ runtime both import, and worked only on a PC that
+      # had one. Packaging now reads every shipped import table, places a pinned runtime beside a program that needs
+      # it, and refuses a package whose imports would not resolve. The fixtures are PE images built byte by byte, so
+      # this runs here, with nothing provisioned.
+      - name: Prove a package whose programs import a missing DLL is repaired, or not built
+        run: node scripts/ci/annotate.mjs scripts/release/dllClosure.proof.mjs
+
       # The withdrawn-phrase check unblocked Stage 0 and shipped with no proof.
       # Three false negatives had already got through it — a tilde, a table row,
       # and a phrase wrapped across a line break — each found by grepping the

@@ -29,6 +29,7 @@
 /**
  * @typedef {object} PeLayout
  * @property {boolean} plus whether the image is PE32+
+ * @property {number} imageBase the preferred load address, which a structure addressed by VA is relative to
  * @property {readonly Section[]} sections
  * @property {(index: number) => { rva: number, size: number }} directory data directory `index`
  * @property {(rva: number) => number} fileOffset where an RVA lives in the file; throws for one in no section
@@ -78,6 +79,7 @@ export function peLayout(bytes) {
 
   return {
     plus,
+    imageBase: plus ? Number(bytes.readBigUInt64LE(optionalAt + 24)) : bytes.readUInt32LE(optionalAt + 28),
     sections,
     directory(index) {
       if (index >= directoryCount) return { rva: 0, size: 0 };
