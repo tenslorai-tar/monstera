@@ -12,7 +12,7 @@ import {
 } from '@monstera/kernel';
 import { prepareSignature } from '@monstera/kernel/engine';
 import { type BoxedCharacter, type ComposeSkip, blockEditOf, replacementFieldsOf } from '@monstera/contract';
-import { asDocId, err, ok } from '@monstera/shared';
+import { type DocVersion, asDocId, err, ok } from '@monstera/shared';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 
 import { type EngineHostPlatform, createShellDependencies } from './composition.js';
@@ -1546,6 +1546,68 @@ describe('the composition root, with BOTH engine hosts', () => {
       expect(spy(mupdf.harness.calls, 'peer.request:engine/open')).toBeGreaterThan(2);
     });
     expect(spy(mupdf.harness.calls, 'host.createSuspended')).toBe(2);
+  });
+
+  it('an IDLE PDFium host is stopped with the document still open, the MuPDF host is not, and the next edit builds a new one (item 13b)', async () => {
+    const mupdf = platformAnswering(serialisingEngine());
+    const second = platformAnswering(pdfiumPeer([]).peer);
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickDocument: () => Promise.resolve(aDocument('idle.pdf')),
+      enginePlatform: mupdf.platform,
+      pdfiumPlatform: second.platform,
+      hostIdleMs: 50,
+    });
+    const opened = await handlers['document.open']({});
+    if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+    const { docId } = opened.value;
+    const edit = (version: DocVersion) =>
+      handlers['document.execute']({
+        docId,
+        command: { kind: 'replaceTextObject', page: 0, ...replacementFieldsOf([{ index: 2, text: 'hi' }]), version },
+      });
+    const first = await edit(opened.value.version);
+    if (!first.ok) throw new Error(JSON.stringify(first));
+    expect(spy(second.harness.calls, 'host.createSuspended')).toBe(1);
+
+    // STOPPED WHILE THE DOCUMENT IS OPEN, and nothing of it left on disk.
+    await vi.waitFor(() => {
+      expect(spy(second.harness.calls, 'host.terminate')).toBe(1);
+    });
+    const created = (list: readonly string[]): number => list.filter((entry) => entry.startsWith('create:')).length;
+    const removed = (list: readonly string[]): number => list.filter((entry) => entry.startsWith('removeTree:')).length;
+    expect(removed(second.directories)).toBe(created(second.directories));
+    // THE MuPDF HOST HOLDS THE DOCUMENT'S SESSION, so no idle stops it.
+    expect(spy(mupdf.harness.calls, 'host.terminate')).toBe(0);
+
+    // THE NEXT EDIT BUILDS A NEW PDFium HOST, and its answer is installed as the first one's was.
+    const next = await edit(first.value.version);
+    expect(next.ok, JSON.stringify(next)).toBe(true);
+    expect(spy(second.harness.calls, 'host.createSuspended')).toBe(2);
+  });
+
+  it('CONTROL: with the shell’s idle time, the same edit leaves the PDFium host running', async () => {
+    const mupdf = platformAnswering(serialisingEngine());
+    const second = platformAnswering(pdfiumPeer([]).peer);
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickDocument: () => Promise.resolve(aDocument('kept.pdf')),
+      enginePlatform: mupdf.platform,
+      pdfiumPlatform: second.platform,
+    });
+    const opened = await handlers['document.open']({});
+    if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+    const edited = await handlers['document.execute']({
+      docId: opened.value.docId,
+      command: { kind: 'replaceTextObject', page: 0, ...replacementFieldsOf([{ index: 2, text: 'hi' }]), version: opened.value.version },
+    });
+    expect(edited.ok, JSON.stringify(edited)).toBe(true);
+    // THE SAME WAIT the case above stopped its host within.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(spy(second.harness.calls, 'host.createSuspended')).toBe(1);
+    expect(spy(second.harness.calls, 'host.terminate')).toBe(0);
   });
 
   it('CONTROL: closing one of two documents stops no host; closing the second stops them', async () => {

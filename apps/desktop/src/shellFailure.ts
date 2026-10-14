@@ -101,8 +101,9 @@ export type ShellFailureEvent =
   | 'child-process-gone'
   | 'engine-host-gone'
   /**
-   * An engine host this shell closed on purpose: at the quit, or when the last document that used it closed (the owner's
-   * Part 7 A). Its own event and not `engine-host-gone`, because the two are now acted on differently: a reader of the
+   * An engine host this shell closed on purpose: at the quit, when the last document that used it closed (the owner's
+   * Part 7 A), or when a host that holds no session had gone `HOST_IDLE_MS` without a call (run 4 item 13b) — and a
+   * close of that kind that threw, which the detail says. Its own event and not `engine-host-gone`, because the two are now acted on differently: a reader of the
    * log looking for a host that died, and a live check asserting none did, must not have to tell them apart by wording.
    * {@link engineHostEndingEvent} is the one place that decides which a termination is.
    */

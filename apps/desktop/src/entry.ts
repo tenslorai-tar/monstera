@@ -6,7 +6,7 @@ import { type EventId, type EventPayload, IncidentLog, isFollowable } from '@mon
 import { sweepCheckpointDirectories } from '@monstera/kernel';
 import { BrowserWindow, app, clipboard, crashReporter, nativeImage, safeStorage, shell } from 'electron';
 
-import { HOST_CALL_DEADLINE, HOST_MEMORY_SAMPLING } from './budget.js';
+import { HOST_CALL_DEADLINE, HOST_IDLE_MS, HOST_MEMORY_SAMPLING } from './budget.js';
 import { createShellDependencies } from './composition.js';
 import {
   readAnnotationDataFile,
@@ -519,6 +519,8 @@ startShell(() => {
     hostCallDeadline: HOST_CALL_DEADLINE,
     // AND HOW EACH HOST'S MEMORY IS WATCHED below the job's limit (the same correction).
     hostMemorySampling: HOST_MEMORY_SAMPLING,
+    // AND HOW LONG A HOST THAT HOLDS NO SESSION MAY IDLE before it is stopped, documents open or not (item 13b).
+    hostIdleMs: HOST_IDLE_MS,
     // THE SECOND ENGINE'S PLATFORM, and `null` on three separate roads: no
     // Win32 surfaces at all, no `pdfium.dll` path supplied, or a container SID
     // that could not be derived. All three end the same way and that is

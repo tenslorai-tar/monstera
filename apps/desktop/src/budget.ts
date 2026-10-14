@@ -120,3 +120,11 @@ export interface HostMemorySampling {
  * sampled every 100 ms.
  */
 export const HOST_MEMORY_SAMPLING: HostMemorySampling = { intervalMs: 100, headroomBytes: 536_870_912 };
+
+/**
+ * How long a host that holds no document's session (PDFium's, ADR-0047, and the compose host, ADR-0060) may go without
+ * a call before it is stopped, while documents stay open: the owner's run 4 item 13b, *"start at about 60 s"*. NOT YET
+ * MEASURED: the next call pays the host's start, which is a `CreateProcessW`, a job, an AppContainer and the containment
+ * check, and has not been read on Windows. The memory walk's restart reading is what replaces this sentence.
+ */
+export const HOST_IDLE_MS = 60_000;

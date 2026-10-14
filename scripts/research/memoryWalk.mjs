@@ -172,6 +172,36 @@ await step('M3b. a long session (Part 2 item 13): twenty edits, three fonts appl
   return { readings, lastTenMB: lastTen, boundMB: LAST_TEN_MB };
 });
 
+await step('M3c. an idle PDFium host stops with documents open (item 13b), and what its restart costs the next edit', async () => {
+  const { editor, ensureEditText, clickPage } = textSteps({ page, output, saveTo, command });
+  /** One edit, timed from the press on the block to its editor closing on the written words. */
+  const timedEdit = async (/** @type {string} */ word) => {
+    await ensureEditText();
+    const block = page.locator('[data-text-block]').nth(1);
+    const box = await block.boundingBox();
+    if (box === null) throw new Error('no second text block on the page');
+    const started = Date.now();
+    await page.mouse.click(box.x + box.width / 2, box.y + Math.min(8, box.height / 2));
+    await expect(editor()).toBeFocused();
+    await page.keyboard.press('End');
+    await page.keyboard.type(` ${word}`);
+    await clickPage(20, 20);
+    await expect(editor()).toHaveCount(0);
+    return Date.now() - started;
+  };
+  // THE SHELL'S IDLE TIME and ten seconds over it (`HOST_IDLE_MS`, 60 s), after M3b's last edit.
+  await page.waitForTimeout(70_000);
+  const idle = reading();
+  // STOPPED WITH SEVEN DOCUMENTS OPEN, while the MuPDF host, which holds their sessions, stays.
+  expect(idle.hosts).toContain('host mupdf');
+  expect(idle.hosts).not.toContain('host pdfium');
+  const coldMs = await timedEdit('cold');
+  const warmMs = await timedEdit('warm');
+  const after = reading();
+  expect(after.hosts).toContain('host pdfium');
+  return { idleHosts: idle.hosts, idleRolesMB: idle.rolesMB, coldEditMs: coldMs, warmEditMs: warmMs, restartCostMs: coldMs - warmMs };
+});
+
 await step('M4. every tab after the edit (Part 7 B): each draws its page, none is left opening, none failed', async () => {
   const tabs = page.locator('[data-tab-select]');
   const count = await tabs.count();

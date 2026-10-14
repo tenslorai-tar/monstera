@@ -277,6 +277,7 @@ import type { OpenExternalEditor } from './openExternalEditor.js';
 import type { SecretStoreSurface } from './secretStore.js';
 import { type ChatHistory, noChatHistory } from './chatHistory.js';
 import { type SettingsSurface, createEphemeralSettings, createJsonFile } from './settingsFile.js';
+import { idleHost } from './idleRetire.js';
 import { type ShellFailureSink, engineHostEndingEvent } from './shellFailure.js';
 import type { ShellLog } from './shellLog.js';
 import type { CrashReports } from './crashReports.js';
@@ -769,6 +770,12 @@ export interface ShellComposition {
    */
   readonly hostMemorySampling: HostMemorySampling;
   /**
+   * How long the PDFium and compose hosts, which hold no document's session, may go without a call before they are
+   * stopped while documents stay open (item 13b). Required and undefaulted, as the deadline is: the shell passes
+   * `HOST_IDLE_MS`, and a case that watches a host stop passes a short one.
+   */
+  readonly hostIdleMs: number;
+  /**
    * The same surfaces under the SECOND AppContainer profile, or `null`.
    *
    * A separate field rather than a flag on the one above, because the two
@@ -919,6 +926,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     enginePlatform = null,
     hostCallDeadline,
     hostMemorySampling,
+    hostIdleMs,
     pdfiumPlatform = null,
     composePlatform = null,
     layoutTextPlatform = null,
@@ -1001,7 +1009,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
   // THE PROCESS'S ONE TELLER where the shell built it (it also gave it to the converters' platforms), so a host and a
   // converter refused in one run are told once.
   const cannotStart = shellCannotStart ?? createCannotStartNotice(sendEvent);
-  const hostPolicy: HostPolicy = { deadline: callDeadline, memorySampling: hostMemorySampling, cannotStart };
+  const hostPolicy: HostPolicy = { deadline: callDeadline, memorySampling: hostMemorySampling, cannotStart, idleMs: hostIdleMs };
 
   // BUILT BEFORE THE BUS, because the bus routes `mupdf` to a writer this
   // returns. The order is the dependency: a writer that talks to the engine
@@ -2213,6 +2221,8 @@ interface HostPolicy {
   readonly memorySampling: HostMemorySampling;
   /** Tells the person, once per component, that a part of Monstera could not start on this computer (Part 0.1). */
   readonly cannotStart: (component: NativeComponentId) => void;
+  /** How long a host that holds no session may go without a call before it is stopped (`HOST_IDLE_MS`, item 13b). */
+  readonly idleMs: number;
 }
 
 /**
@@ -3705,19 +3715,67 @@ function pdfiumHostBinding(
       throw error;
     }));
 
+  /**
+   * Every call that uses the host, counted from the call (`idleRetire.ts`): the host holds nothing between commands
+   * (ADR-0047), so one idle for `idleMs` is stopped while documents stay open, and the next call builds a new one as
+   * the first call did (item 13b).
+   */
+  const { counted, busy } = idleHost(
+    policy.idleMs,
+    () => retireIfIdle(),
+    (error: unknown) => {
+      failures({ event: 'engine-host-closed', detail: `the PDFium host could not be closed after it was idle: ${String(error)}` });
+    },
+  );
+  /** One call to the host, counted; each member below is written out and counts its call through this. */
+  const counting = <R>(call: () => Promise<R>): Promise<R> => counted(call)();
+  // `busy` IS READ THROUGH A CALL, for the compose host's reason: it is read again after the await.
+  const retireIfIdle = async (): Promise<boolean> => {
+    const live = host;
+    if (live === null || busy()) return false;
+    await live.catch(() => null);
+    // READ AGAIN AFTER THE AWAIT: a call that began meanwhile owns this host now.
+    if (busy() || host !== live) return false;
+    await close();
+    return true;
+  };
+
+  const close = async (): Promise<void> => {
+    const live = host;
+    host = null;
+    if (live === null) return;
+    const built = await live.catch(() => null);
+    if (built === null) return;
+    // THE HOST FIRST, THEN THE DIRECTORIES, which is `buildSessions`' ordering
+    // and its reason: the pair is what the contained process reads, so it is
+    // removed once nothing is left to read it. `close()` is the deliberate
+    // path — `onEnded` sees `shutdown` — so the clearing above is what stops
+    // that handler's `host = null` racing this one.
+    //
+    // NO `engine/close` FIRST, and that is a decision rather than an omission.
+    // A document's session is closed on the wire because the document outlives
+    // the call; this area's only holder is the process about to end, so the
+    // channel would buy nothing and would cost a round trip on the quit path.
+    // Invariant 25 makes the host hostile and nothing in the boundary client
+    // bounds a call — a host that accepts the frame and never answers hangs
+    // the shutdown, which is the one place a hang is least recoverable.
+    built.connection.close();
+    removeSessionDirectories(platform.directories, built.paths);
+  };
+
   return {
     // WRITTEN OUT, four members, for the reason `engineSessionOpener`'s registry
     // states: four named members are what a reader can check against
     // `RegisteredWriter`, and a delegating proxy would keep compiling after the
     // interface changed.
     writer: {
-      capture: async (image, command) => (await ensure()).writer.capture(image, command),
+      capture: (image, command) => counting(async () => (await ensure()).writer.capture(image, command)),
       // ONE REQUEST, FORWARDED WHOLE, for the MuPDF delegate's reason (ADR-0069). No
       // PDFium command declares a pre-read or takes a source today, so nothing could
       // observe a drop here yet; forwarding the request keeps that from depending on who
       // adds the first.
-      apply: async (request) => (await ensure()).writer.apply(request),
-      invert: async (image, kind, inverse) => (await ensure()).writer.invert(image, kind, inverse),
+      apply: (request) => counting(async () => (await ensure()).writer.apply(request)),
+      invert: (image, kind, inverse) => counting(async () => (await ensure()).writer.invert(image, kind, inverse)),
       // NO `ensure()`, AND THAT IS THE POINT. `remotePdfiumWriter.serialise` is
       // the identity and makes no call, so awaiting a host here would make a
       // checkpoint on the terminal branch start a process. It is written as the
@@ -3727,36 +3785,15 @@ function pdfiumHostBinding(
       // THE IDENTITY WRITTEN OUT, for the same reason: a checkpoint of bytes already in hand starts no host.
       serialiseInto: serialiseIntoFile((session: ImageSession) => Promise.resolve(session.bytes)),
     },
-    starts: () => hostStarts(ensure, failures),
-    textRuns: async (image, page, unpack) => (await ensure()).textRuns(image, page, unpack),
-    pageObjects: async (image, page) => (await ensure()).pageObjects(image, page),
-    renderPage: async (image, page, width, height, withoutText) =>
-      (await ensure()).renderPage(image, page, width, height, withoutText),
-    runFonts: async (image, page, indices, unpack) => (await ensure()).runFonts(image, page, indices, unpack),
-    pageRuns: async (image, page) => (await ensure()).pageRuns(image, page),
-    pageContent: async (image, page) => (await ensure()).pageContent(image, page),
-    close: async () => {
-      const live = host;
-      host = null;
-      if (live === null) return;
-      const built = await live.catch(() => null);
-      if (built === null) return;
-      // THE HOST FIRST, THEN THE DIRECTORIES, which is `buildSessions`' ordering
-      // and its reason: the pair is what the contained process reads, so it is
-      // removed once nothing is left to read it. `close()` is the deliberate
-      // path — `onEnded` sees `shutdown` — so the clearing above is what stops
-      // that handler's `host = null` racing this one.
-      //
-      // NO `engine/close` FIRST, and that is a decision rather than an omission.
-      // A document's session is closed on the wire because the document outlives
-      // the call; this area's only holder is the process about to end, so the
-      // channel would buy nothing and would cost a round trip on the quit path.
-      // Invariant 25 makes the host hostile and nothing in the boundary client
-      // bounds a call — a host that accepts the frame and never answers hangs
-      // the shutdown, which is the one place a hang is least recoverable.
-      built.connection.close();
-      removeSessionDirectories(platform.directories, built.paths);
-    },
+    starts: () => counting(() => hostStarts(ensure, failures)),
+    textRuns: (image, page, unpack) => counting(async () => (await ensure()).textRuns(image, page, unpack)),
+    pageObjects: (image, page) => counting(async () => (await ensure()).pageObjects(image, page)),
+    renderPage: (image, page, width, height, withoutText) =>
+      counting(async () => (await ensure()).renderPage(image, page, width, height, withoutText)),
+    runFonts: (image, page, indices, unpack) => counting(async () => (await ensure()).runFonts(image, page, indices, unpack)),
+    pageRuns: (image, page) => counting(async () => (await ensure()).pageRuns(image, page)),
+    pageContent: (image, page) => counting(async () => (await ensure()).pageContent(image, page)),
+    close,
   };
 }
 
@@ -3814,20 +3851,17 @@ function composeHostBinding(
   readonly close: () => Promise<void>;
 } {
   /**
-   * This binding's calls running now, counted from the call rather than from the host call inside it, so a call that
-   * has asked for the host and not yet used it counts: `retireIfIdle` must never stop a host between the two.
+   * This binding's calls, counted from the call rather than from the host call inside it, so a call that has asked for
+   * the host and not yet used it counts: `retireIfIdle` must never stop a host between the two. Each one's end asks for
+   * the host to stop `idleMs` after it, by `retireIfIdle`'s account (item 13b, `idleRetire.ts`).
    */
-  let running = 0;
-  const counted =
-    <A extends unknown[], R>(call: (...args: A) => Promise<R>) =>
-    async (...args: A): Promise<R> => {
-      running += 1;
-      try {
-        return await call(...args);
-      } finally {
-        running -= 1;
-      }
-    };
+  const { counted, busy } = idleHost(
+    policy.idleMs,
+    () => retireIfIdle(),
+    (error: unknown) => {
+      failures({ event: 'engine-host-closed', detail: `the compose host could not be closed after it was idle: ${String(error)}` });
+    },
+  );
   /** What one built host holds. Cleared together, or not at all. */
   interface Live {
     readonly connection: EngineHostConnection;
@@ -4338,9 +4372,8 @@ function composeHostBinding(
     },
   };
 
-  // READ THROUGH A CALL, for `useDocumentView`'s reason: a variable read is narrowed to its first answer across the
-  // await below, and the second read, the one that matters, would lint as always false.
-  const busy = (): boolean => running !== 0;
+  // `busy` IS READ THROUGH A CALL, for `useDocumentView`'s reason: a variable read is narrowed to its first answer across
+  // the await below, and the second read, the one that matters, would lint as always false.
   const retireIfIdle = async (): Promise<boolean> => {
     const live = host;
     if (live === null || busy()) return false;

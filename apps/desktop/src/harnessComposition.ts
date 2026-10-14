@@ -1,7 +1,7 @@
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { HOST_CALL_DEADLINE, HOST_MEMORY_SAMPLING } from './budget.js';
+import { HOST_CALL_DEADLINE, HOST_IDLE_MS, HOST_MEMORY_SAMPLING } from './budget.js';
 import type { ShellComposition } from './composition.js';
 import { createRecentFiles } from './recentFiles.js';
 import { createEphemeralSettings } from './settingsFile.js';
@@ -86,6 +86,7 @@ export function harnessSurfaces(
     // THE SHELL'S OWN POLICY: a harness measures the product, and one that freezes a host on purpose overrides it.
     hostCallDeadline: HOST_CALL_DEADLINE,
     hostMemorySampling: HOST_MEMORY_SAMPLING,
+    hostIdleMs: HOST_IDLE_MS,
     pickDocument: () => {
       throw new Error(`${harness} does not open a document, so nothing may pick one`);
     },
