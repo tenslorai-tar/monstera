@@ -41,7 +41,7 @@ async function openBlock(
       textBlocks: [
         {
           box: { x0: 100, y0: 686, x1: 400, y1: 700 },
-          lines: [{ runs: [{ index: 3, text: 'A paragraph of words', style: RUN }], box: { x0: 100, y0: 686, x1: 400, y1: 700 }, soft: false }],
+          lines: [{ runs: [{ index: 3, text: 'A paragraph of words', style: RUN }], box: { x0: 100, y0: 686, x1: 400, y1: 700 }, soft: false, baseline: 690 }],
           style: RUN,
           shape: { align: 'left', firstIndent: 0 },
         },

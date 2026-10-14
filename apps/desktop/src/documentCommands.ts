@@ -154,8 +154,8 @@ import {
   TimestampRefusedError,
   TimestampUnreachableError,
   type DocusignSigner,
-  type EditableBlock,
   EngineCallFailed,
+  type RisenBlock,
   writeDocumentCopy,
   writeDocumentSplit,
   writeStreamedDocument,
@@ -2093,7 +2093,7 @@ export type DocumentTextBlocksReader = (
 /** The blocks, stamped with the version the lane read them at. */
 export interface DocumentTextBlocks {
   readonly version: DocVersion;
-  readonly blocks: readonly EditableBlock<TextBlockStyle>[];
+  readonly blocks: readonly RisenBlock<TextBlockStyle>[];
   readonly truncated: boolean;
   /**
    * Characters on this page set at an angle, which are not offered for editing

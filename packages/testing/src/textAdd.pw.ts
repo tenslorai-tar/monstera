@@ -36,7 +36,7 @@ async function openForAdding(page: Page, sent: { channel: string; params: unknow
       textBlocks: [
         {
           box: { x0: 72, y0: 716, x1: 140, y1: 730 },
-          lines: [{ runs: [{ index: 3, text: 'A heading', style: RUN }], box: { x0: 72, y0: 716, x1: 140, y1: 730 }, soft: false }],
+          lines: [{ runs: [{ index: 3, text: 'A heading', style: RUN }], box: { x0: 72, y0: 716, x1: 140, y1: 730 }, soft: false, baseline: 720 }],
           style: RUN,
           shape: { align: 'left', firstIndent: 0 },
         },

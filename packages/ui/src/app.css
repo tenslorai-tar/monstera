@@ -6328,6 +6328,25 @@ optgroup {
   overflow-wrap: break-word;
   background: var(--page);
   caret-color: var(--accent-on-paper, var(--accent));
+  /* THE OFFSET PARENT of the baseline marker (`useBaselineShift`), so its offset is in the editor's own frame. */
+  position: relative;
+}
+
+/* A BLOCK WHOSE LINES ALL END ON PURPOSE widens rather than wraps (the owner's A7): at least the block's width, as wide as
+   its longest line. */
+.m-text-editor--lines {
+  inline-size: max-content;
+  min-inline-size: calc(100% + 1ch);
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+/* WHERE THE FIRST LINE'S BASELINE IS: a marker of no size standing on it, put in and taken out within one layout. */
+.m-text-editor__baseline {
+  display: inline-block;
+  inline-size: 0;
+  block-size: 0;
+  vertical-align: baseline;
 }
 
 .m-text-editor:focus {

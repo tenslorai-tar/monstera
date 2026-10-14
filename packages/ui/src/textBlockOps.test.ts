@@ -16,6 +16,7 @@ function block(top: number, lines: { runs: [number, string, typeof REGULAR][]; s
       runs: line.runs.map(([index, text, style]) => ({ index, text, style })),
       box: box(72, top - 14 * (at + 1), 300, top - 14 * at),
       soft: line.soft,
+      baseline: top - 14 * (at + 1) + 3,
     })),
     style: REGULAR,
     shape: { align: 'left', firstIndent: 0 },

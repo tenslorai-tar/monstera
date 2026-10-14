@@ -2833,7 +2833,7 @@ describe('a dense page’s blocks and objects answer in parts the contract accep
   const cell = { size: 9, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false };
   const blocks = Array.from({ length: 600 }, (_, at) => ({
     box,
-    lines: [{ runs: [{ index: at, text: `cell ${String(at)}`, style: cell }], box, soft: false }],
+    lines: [{ runs: [{ index: at, text: `cell ${String(at)}`, style: cell }], box, soft: false, baseline: 12 }],
     style: cell,
     shape: { align: 'left', firstIndent: 0 },
   }));

@@ -460,4 +460,19 @@ describe('withRises', () => {
     );
     expect(raisedFirst[0]?.lines[0]?.runs.map((run) => run.style)).toStrictEqual([0, -3.96]);
   });
+
+  /**
+   * THE LINE'S BASELINE crosses with it (the owner's A5 and A7), by the writer's rule: its first run's. CONTROL: a line
+   * whose first run is a raised marker takes the marker's, which is the rule's answer and not the lowest run's.
+   */
+  it('gives each line its baseline, its first run’s', () => {
+    const two = withRises(
+      groupIntoBlocks([at(0, 'First line', 72, 200, 700), at(1, 'Second line', 72, 200, 686)]),
+      () => 0,
+      () => 0,
+    );
+    expect(two[0]?.lines.map((line) => line.baseline)).toStrictEqual([700, 686]);
+    const raised = withRises(groupIntoBlocks([at(0, '1', 72, 78, 703.96), at(1, ' Note', 78, 120, 700)]), () => 0, () => 0);
+    expect(raised[0]?.lines[0]?.baseline).toBe(703.96);
+  });
 });

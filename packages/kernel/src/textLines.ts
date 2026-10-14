@@ -94,15 +94,27 @@ export function withRises<S extends { readonly baseline: number }, T>(
   blocks: readonly EditableBlock<S>[],
   runStyle: (style: S, rise: number) => T,
   blockStyle: (style: S) => T,
-): EditableBlock<T>[] {
+): RisenBlock<T>[] {
   return blocks.map((block) => ({
     ...block,
     style: blockStyle(block.style),
     lines: block.lines.map((line) => {
       const rises = risesOf(line.runs, (run) => run.style.baseline);
-      return { ...line, runs: line.runs.map((run, at) => ({ ...run, style: runStyle(run.style, rises[at] ?? 0) })) };
+      return {
+        ...line,
+        // THE LINE'S BASELINE, by the writer's own rule, in the space its box is in: where the editor puts its own
+        // first baseline, and the distance between two lines' baselines is the spacing it sets (the owner's A5 and A7:
+        // an editor placed at the ink's top with spacing read from the ink's tops sat lower and grew taller than the page).
+        baseline: lineBaselineOf(line.runs, (run) => run.style.baseline) ?? line.box.y0,
+        runs: line.runs.map((run, at) => ({ ...run, style: runStyle(run.style, rises[at] ?? 0) })),
+      };
     }),
   }));
+}
+
+/** A block as it crosses to the editor: its runs' styles carry their rises, and each line its baseline. */
+export interface RisenBlock<S> extends Omit<EditableBlock<S>, 'lines'> {
+  readonly lines: readonly (EditableBlock<S>['lines'][number] & { readonly baseline: number })[];
 }
 
 /** One text run as the line grouping needs it. `pdfiumFfi.ts`'s `TextRun`, structurally. */

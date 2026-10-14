@@ -334,6 +334,7 @@ export {
   type EditableBlock,
   type EditableLine,
   type GroupableRun,
+  type RisenBlock,
   groupIntoBlocks,
   groupIntoLines,
   isEditedInPlace,

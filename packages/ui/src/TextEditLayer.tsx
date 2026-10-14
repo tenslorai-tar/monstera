@@ -337,16 +337,57 @@ function paragraphsOf(block: TextBlock): TextBlock['lines'][number][][] {
 }
 
 /**
- * The distance between a block's lines, in points — its first two lines' tops
- * apart — or `undefined` for a block of one line, which has no spacing of its
- * own to copy and is set at the face's normal spacing.
+ * The distance between a block's lines, in points — its first two lines' BASELINES apart, the writer's own rule
+ * (`blockPitch`) — or `undefined` for a block of one line, which has no spacing of its own to copy and is set at the
+ * face's normal spacing. This read the lines' ink TOPS until the owner's A5 (2026-10-14): a line whose tallest letter
+ * is not the next line's measured the spacing wrong, and the editor grew taller than the block it stood over.
  */
 function pitchOf(block: TextBlock): number | undefined {
   const [first, second] = block.lines;
-  if (first !== undefined && second !== undefined && first.box.y1 > second.box.y1) {
-    return first.box.y1 - second.box.y1;
+  if (first !== undefined && second !== undefined && first.baseline > second.baseline) {
+    return first.baseline - second.baseline;
   }
   return undefined;
+}
+
+/**
+ * How far the editor's words are moved down, in pixels, so its first baseline lies on the page's (the owner's A7,
+ * 2026-10-14: the editor stood at the block's ink top, and a CSS line box puts its half-leading and its face's whole
+ * ascent above the first baseline, so the words sat 2 to 3 pixels low at 100 % and 4 to 5 at 200 %, and a one-line
+ * block reached the line below). Measured, not computed: a zero-size marker at the start of the first line stands on
+ * the line's baseline, and its offset in the editor is where the browser put it, whatever faces the runs are in. Again
+ * when a run's own font arrives, which moves the baseline.
+ */
+function useBaselineShift(
+  area: React.RefObject<HTMLDivElement | null>,
+  block: TextBlock,
+  zoom: number,
+): number {
+  const [shift, setShift] = useState(0);
+  useLayoutEffect(() => {
+    const element = area.current;
+    if (element === null) return;
+    const wanted = (block.box.y1 - (block.lines[0]?.baseline ?? block.box.y0)) * zoom;
+    const measure = (): void => {
+      const row = element.firstElementChild;
+      if (!(row instanceof HTMLElement)) return;
+      const marker = element.ownerDocument.createElement('span');
+      marker.className = 'm-text-editor__baseline';
+      row.prepend(marker);
+      // THE EDITOR IS ITS OFFSET PARENT (`position: relative` in the stylesheet), so the offset is in its own frame and
+      // unaffected by the page's turn, which a client rectangle would include.
+      const at = marker.offsetTop;
+      marker.remove();
+      setShift(wanted - at);
+    };
+    measure();
+    const fonts = element.ownerDocument.fonts;
+    fonts.addEventListener('loadingdone', measure);
+    return () => {
+      fonts.removeEventListener('loadingdone', measure);
+    };
+  }, [area, block, zoom]);
+  return shift;
 }
 
 /** The face kind a block or a run is set in, as the class that names it. */
@@ -758,7 +799,7 @@ function freshBox(css: { readonly x: number; readonly y: number }, geometry: Ove
   return {
     block: {
       box,
-      lines: [{ runs: [{ index: 0, text: '', style }], box, soft: false }],
+      lines: [{ runs: [{ index: 0, text: '', style }], box, soft: false, baseline }],
       style,
       shape: { align: 'left', firstIndent: 0 },
     },
@@ -1203,6 +1244,7 @@ function BlockEditor({
       span.style.fontSize = `${String(Number(span.dataset['size'] ?? '0') * geometry.zoom)}px`;
     }
   }, [geometry.zoom]);
+  const baselineShift = useBaselineShift(area, block, geometry.zoom);
 
   /** Whether a write is in flight: the words are not editable meanwhile, so nothing is typed into a block already sent. */
   const [busy, setBusy] = useState(false);
@@ -1475,7 +1517,10 @@ function BlockEditor({
       <div
         aria-label={_(TEXT_EDIT_EDITOR_LABEL)}
         aria-multiline="true"
-        className={`m-text-editor ${faceOf(block.style)}`}
+        // A BLOCK WHOSE EVERY LINE ENDS ON PURPOSE is not wrapped by the editor: it widens instead (the owner's A7, a
+        // one-line form label wrapped onto a second line, over the field below, because the editor's face was wider
+        // than the page's). Only a paragraph the page wrapped is wrapped here, and a block the person gave a new measure.
+        className={`m-text-editor ${faceOf(block.style)}${block.lines.some((line) => line.soft) || placement.width !== undefined ? '': ' m-text-editor--lines'}`}
         aria-busy={busy}
         contentEditable={busy ? false : 'plaintext-only'}
         // THE BLOCK'S SIZE IN POINTS, which words in no run take and are read in (`runBase`), as a run carries its own.
@@ -1500,6 +1545,8 @@ function BlockEditor({
         style={{
           fontSize: size,
           lineHeight: pitch === undefined ? 'normal' : `${String(pitch * geometry.zoom)}px`,
+          // THE FIRST BASELINE ON THE PAGE'S (`useBaselineShift`): the words moved, the frame where the block is.
+          marginTop: baselineShift,
           fontWeight: block.style.bold ? 700 : 400,
           fontStyle: block.style.italic ? 'italic' : 'normal',
           color: `rgb(${String(r)}, ${String(g)}, ${String(b)})`,

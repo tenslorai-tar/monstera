@@ -41,4 +41,16 @@ import { afterEach } from 'vitest';
 if (typeof document !== 'undefined') {
   const { cleanup } = await import('@testing-library/react');
   afterEach(cleanup);
+  // A FONT SET, which every Chromium document has and happy-dom does not: the editor listens on it for a run's own font
+  // arriving (`useBaselineShift`), and product code written against Chromium's type is not widened for a test DOM. Inert:
+  // nothing is loaded, so nothing is ever announced. Configurable, so a test that watches fonts put in replaces it.
+  if (!('fonts' in document)) {
+    const fonts = Object.assign(new EventTarget(), {
+      add: () => fonts,
+      delete: () => false,
+      check: () => true,
+      ready: Promise.resolve(),
+    });
+    Object.defineProperty(document, 'fonts', { configurable: true, value: fonts });
+  }
 }

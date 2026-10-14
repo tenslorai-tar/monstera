@@ -5628,6 +5628,13 @@ export const channels = {
                        * line of a block is never soft.
                        */
                       soft: z.boolean(),
+                      /**
+                       * The line's baseline, in the space its box is in: its first run's, the writer's own rule
+                       * (`lineBaselineOf`). The editor puts its first baseline here and takes its line spacing from the
+                       * distance between two lines' baselines, so an open block sits where the page's words do and is
+                       * as tall (the owner's A5 and A7). REQUIRED: an editor without it fell back to the ink's top.
+                       */
+                      baseline: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
                     })
                     .strict(),
                 )

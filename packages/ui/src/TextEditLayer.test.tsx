@@ -80,7 +80,7 @@ const BLOCKS: PageBlocks = {
     {
       box: { x0: 72, y0: 700, x1: 300, y1: 740 },
       lines: [
-        { runs: [{ index: 5, text: 'WORK EXPERIENCE', style: STYLE }], box: { x0: 72, y0: 700, x1: 300, y1: 740 }, soft: false },
+        { runs: [{ index: 5, text: 'WORK EXPERIENCE', style: STYLE }], box: { x0: 72, y0: 700, x1: 300, y1: 740 }, soft: false, baseline: 703 },
       ],
       style: STYLE,
       shape: LEFT,
@@ -95,11 +95,13 @@ const BLOCKS: PageBlocks = {
           ],
           box: { x0: 72, y0: 636, x1: 400, y1: 650 },
           soft: false,
+          baseline: 639,
         },
         {
           runs: [{ index: 11, text: 'at every stage.', style: STYLE }],
           box: { x0: 72, y0: 622, x1: 260, y1: 636 },
           soft: false,
+          baseline: 625,
         },
       ],
       style: STYLE,
@@ -690,6 +692,7 @@ describe('Edit text on the page (ADR-0096)', () => {
       runs: [{ index, text, style: REGULAR }],
       box: { x0: 72, y0: top - 14, x1: 300, y1: top },
       soft,
+      baseline: top - 11,
     });
     /** Two blocks one above the other, the upper of two paragraphs, close enough to be one text's continuation. */
     const STACKED: PageBlocks = {
@@ -1032,6 +1035,7 @@ describe('Edit text on the page (ADR-0096)', () => {
             runs: [{ index: 20 + at, text, style: STYLE }],
             box: { x0: 72, y0: 636 - at * pitch, x1: 300, y1: 650 - at * pitch },
             soft: false,
+            baseline: 639 - at * pitch,
           })),
           style: STYLE,
           shape: LEFT,
@@ -1076,7 +1080,7 @@ describe('Edit text on the page (ADR-0096)', () => {
   /** A block of one line at `y0`..`y0 + 10`, beside the paragraph the write grows down to 540. */
   const beside = (y0: number): PageBlocks['blocks'][number] => ({
     box: { x0: 80, y0, x1: 200, y1: y0 + 10 },
-    lines: [{ runs: [{ index: 60, text: 'Footnote', style: STYLE }], box: { x0: 80, y0, x1: 200, y1: y0 + 10 }, soft: false }],
+    lines: [{ runs: [{ index: 60, text: 'Footnote', style: STYLE }], box: { x0: 80, y0, x1: 200, y1: y0 + 10 }, soft: false, baseline: y0 + 2 }],
     style: STYLE,
     shape: LEFT,
   });
@@ -1432,9 +1436,10 @@ describe('Edit text draws each run in its own font where the host rebuilt one (A
     const added: unknown[] = [];
     const removed: unknown[] = [];
     vi.stubGlobal('FontFace', FakeFace);
+    // AN EVENT TARGET, as Chromium's font set is: the editor listens on it for a font's arrival (`useBaselineShift`).
     Object.defineProperty(document, 'fonts', {
       configurable: true,
-      value: { add: (face: unknown) => added.push(face), delete: (face: unknown) => removed.push(face) },
+      value: Object.assign(new EventTarget(), { add: (face: unknown) => added.push(face), delete: (face: unknown) => removed.push(face) }),
     });
     return { added, removed };
   }
@@ -1552,6 +1557,7 @@ describe('Edit text draws each run in its own font where the host rebuilt one (A
               ],
               box: { x0: 72, y0: 636, x1: 400, y1: 650 },
               soft: false,
+              baseline: 639,
             },
           ],
         },

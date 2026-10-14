@@ -1932,8 +1932,9 @@ describe('delete pages — the mutation-dialog gate', () => {
         box: { x0: 72, y0: 700, x1: 300, y1: 711 },
         // THE FIRST LINE ENDS SOFT: the block is one paragraph, "The quick brown fox jumps over" (ADR-0179).
         soft: true,
+        baseline: 703,
       },
-      { runs: [{ index: 2, text: 'jumps over', style: PLAIN }], box: { x0: 72, y0: 686, x1: 190, y1: 697 }, soft: false },
+      { runs: [{ index: 2, text: 'jumps over', style: PLAIN }], box: { x0: 72, y0: 686, x1: 190, y1: 697 }, soft: false, baseline: 689 },
     ],
     style: PLAIN,
     shape: { align: 'left', firstIndent: 0 },
@@ -7177,8 +7178,8 @@ describe('readRunFonts', () => {
     return {
       box,
       lines: [
-        { runs: runs.slice(0, 1), box, soft: false },
-        { runs, box, soft: false },
+        { runs: runs.slice(0, 1), box, soft: false, baseline: box.y0 },
+        { runs, box, soft: false, baseline: box.y0 },
       ],
       style: STYLE,
       shape: { align: 'left', firstIndent: 0 },

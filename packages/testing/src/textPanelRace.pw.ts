@@ -14,7 +14,8 @@ const RUN = { size: 12, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false,
 
 function block(y: number, text: string) {
   const box = { x0: 100, y0: y, x1: 400, y1: y + 14 };
-  return { box, lines: [{ runs: [{ index: 3, text, style: RUN }], box, soft: false }], style: RUN, shape: { align: 'left' as const, firstIndent: 0 } };
+  // THE BASELINE THE PAGE DRAWS IT ON: `drawText` at `y + 4`, the ink box 14 points tall from `y`.
+  return { box, lines: [{ runs: [{ index: 3, text, style: RUN }], box, soft: false, baseline: y + 4 }], style: RUN, shape: { align: 'left' as const, firstIndent: 0 } };
 }
 
 async function open(page: Page, writeMs: number): Promise<void> {
