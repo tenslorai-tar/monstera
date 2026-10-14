@@ -6,6 +6,8 @@ import {
   type ObjectPick,
   arrangeCommand,
   carryPick,
+  isBackdrop,
+  pickingOrder,
   objectAt,
   placeCommand,
   recolourCommand,
@@ -22,6 +24,8 @@ const PHOTO = unclipped({ source: 'content', index: 2, ordinal: 0, kind: 'image'
 /** A picture placed with Comment › Image, over the photo's corner: the same point names both. */
 const PLACED = unclipped({ source: 'stamp', index: 0, ordinal: 0, kind: 'picture', box: { x0: 200, y0: 500, x1: 400, y1: 650 }, fill: null });
 const PAGE = [TEXT, RULE, PHOTO, PLACED];
+/** A US Letter page's crop box, which every object here sits on. */
+const LETTER = { x0: 0, y0: 0, x1: 612, y1: 792 };
 
 const V3 = asDocVersion(3);
 /** A page whose walk holds ten objects, so an object at index 9 has none after it. */
@@ -38,18 +42,30 @@ describe('which objects each filter outlines (ADR-0153 Decision 2)', () => {
 
 describe('the object a press names', () => {
   it('is the TOPMOST under the point: a placed picture over a photo, since stamps are drawn over the page', () => {
-    expect(objectAt(PAGE, 'all', { x: 250, y: 550 })).toBe(PLACED);
+    expect(objectAt(PAGE, 'all', { x: 250, y: 550 }, LETTER)).toBe(PLACED);
     // CONTROL: outside the stamp, the same photo is what the point names.
-    expect(objectAt(PAGE, 'all', { x: 100, y: 450 })).toBe(PHOTO);
+    expect(objectAt(PAGE, 'all', { x: 100, y: 450 }, LETTER)).toBe(PHOTO);
   });
 
   it('is only one the filter outlines, so Text never picks the picture lying over the words', () => {
-    expect(objectAt(PAGE, 'text', { x: 250, y: 550 })).toBeUndefined();
-    expect(objectAt(PAGE, 'text', { x: 100, y: 740 })).toBe(TEXT);
+    expect(objectAt(PAGE, 'text', { x: 250, y: 550 }, LETTER)).toBeUndefined();
+    expect(objectAt(PAGE, 'text', { x: 100, y: 740 }, LETTER)).toBe(TEXT);
   });
 
   it('is nothing on blank paper', () => {
-    expect(objectAt(PAGE, 'all', { x: 580, y: 100 })).toBeUndefined();
+    expect(objectAt(PAGE, 'all', { x: 580, y: 100 }, LETTER)).toBeUndefined();
+  });
+
+  it('finds a page-sized BACKDROP only where nothing else is, however late it is drawn (E9)', () => {
+    // A FULL-PAGE FILL DRAWN LAST, as one over the whole page would be: under the old rule it named every point.
+    const BACKDROP = unclipped({ source: 'content', index: 7, ordinal: 2, kind: 'path', box: { x0: 0, y0: 0, x1: 612, y1: 792 }, fill: { red: 255, green: 255, blue: 255, alpha: 255 } });
+    const page = [...PAGE, BACKDROP];
+    expect(isBackdrop(BACKDROP, LETTER)).toBe(true);
+    expect(objectAt(page, 'all', { x: 100, y: 450 }, LETTER)).toBe(PHOTO);
+    expect(objectAt(page, 'all', { x: 580, y: 100 }, LETTER)).toBe(BACKDROP);
+    expect(pickingOrder(page, LETTER)[0]).toBe(BACKDROP);
+    // CONTROL: the photo covers far less than nine tenths, so it keeps its place in the walk.
+    expect(isBackdrop(PHOTO, LETTER)).toBe(false);
   });
 });
 
@@ -211,8 +227,8 @@ describe('the command a drag or a handle builds', () => {
 
   it('picks a clipped picture where it shows, never in the part of its placement the window hides', () => {
     // INSIDE THE PLACEMENT, LEFT OF THE WINDOW: on the real page that is paper, or whatever is drawn there.
-    expect(objectAt([CLIPPED], 'all', { x: 100, y: 400 })).toBeUndefined();
-    expect(objectAt([CLIPPED], 'all', { x: 300, y: 400 })).toBe(CLIPPED);
+    expect(objectAt([CLIPPED], 'all', { x: 100, y: 400 }, LETTER)).toBeUndefined();
+    expect(objectAt([CLIPPED], 'all', { x: 300, y: 400 }, LETTER)).toBe(CLIPPED);
   });
 
   it('sends NOTHING for a box that did not change, so a click on the selection bumps no version', () => {

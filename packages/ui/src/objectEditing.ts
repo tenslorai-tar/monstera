@@ -114,16 +114,41 @@ export function shownBy(filter: ObjectFilter, object: EditableObject): boolean {
   return SHOWN[filter].has(object.kind);
 }
 
+/** How much of the page an object must cover to be its BACKDROP (E9): nine tenths of the page's area. */
+const BACKDROP_SHARE = 0.9;
+
 /**
- * The object a press at `point` names under `filter`: the TOPMOST one containing it, which is the last in the list —
- * page content in its own drawing order, then stamps, which are drawn over the page. `undefined` on blank paper.
+ * Whether `object` is a backdrop of `page`, its crop box: it covers nine tenths of the page or more. A full-page fill
+ * or a form holding the whole page is drawn behind what a person means to pick, whatever its place in the walk.
+ */
+export function isBackdrop(object: EditableObject, page: AnnotationRect): boolean {
+  const width = Math.min(object.box.x1, page.x1) - Math.max(object.box.x0, page.x0);
+  const height = Math.min(object.box.y1, page.y1) - Math.max(object.box.y0, page.y0);
+  const area = (page.x1 - page.x0) * (page.y1 - page.y0);
+  return width > 0 && height > 0 && area > 0 && width * height >= BACKDROP_SHARE * area;
+}
+
+/**
+ * The order a press finds the page's objects in, BOTTOM FIRST (the owner's E9): its backdrops, then everything else in
+ * its drawing order, page content then stamps. A page-sized fill drawn after the small objects on it lay over them and
+ * took every press; under this order it is found only where nothing else is. The layer draws its outlines in this
+ * order and {@link objectAt} reads it, so the two cannot disagree about what a press names.
+ */
+export function pickingOrder(objects: readonly EditableObject[], page: AnnotationRect): readonly EditableObject[] {
+  return [...objects.filter((object) => isBackdrop(object, page)), ...objects.filter((object) => !isBackdrop(object, page))];
+}
+
+/**
+ * The object a press at `point` names under `filter`: the TOPMOST one containing it in {@link pickingOrder}, so a
+ * backdrop only where nothing else is. `undefined` on blank paper.
  */
 export function objectAt(
   objects: readonly EditableObject[],
   filter: ObjectFilter,
   point: { readonly x: number; readonly y: number },
+  page: AnnotationRect,
 ): EditableObject | undefined {
-  return objects.findLast(
+  return pickingOrder(objects, page).findLast(
     (object) =>
       shownBy(filter, object) &&
       point.x >= object.box.x0 &&

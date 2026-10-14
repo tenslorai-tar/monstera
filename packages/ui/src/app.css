@@ -6984,6 +6984,11 @@ optgroup {
   background: var(--accent-soft);
 }
 
+/* A BACKDROP (E9) shows its outline and no tint: a tint over the whole page says nothing about what a press picks. */
+.m-object--backdrop:hover {
+  background: transparent;
+}
+
 .m-object:focus-visible {
   outline: 2px solid var(--accent-on-paper, var(--accent));
   outline-offset: 2px;

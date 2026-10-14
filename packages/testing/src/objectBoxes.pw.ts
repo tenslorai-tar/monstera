@@ -182,6 +182,33 @@ test('Properties and the status line both say Edit object while it is on, and bo
   await expect(properties.getByRole('heading', { name: 'New annotations' })).toBeVisible();
 });
 
+// A PAGE-SIZED BACKDROP DRAWN LAST (the owner's E9) took every press over the small objects on it. Now a press finds the
+// small object, blank paper finds the backdrop, and Alt finds the backdrop anywhere.
+test('a page-sized backdrop drawn last no longer takes the press meant for a small object, and Alt reaches it', async ({ page }) => {
+  await openApp(page, {
+    pageObjects: [
+      { index: 0, kind: 'image', left: 200, bottom: 300, right: 300, top: 400, fill: null },
+      { index: 1, kind: 'path', left: 0, bottom: 0, right: 612, top: 792, fill: { red: 250, green: 250, blue: 250, alpha: 255 } },
+    ],
+  });
+  await openDocument(page);
+  await openSection(page, 'Edit');
+  await page.getByRole('toolbar', { name: 'Tools', exact: true }).getByRole('button', { name: 'Edit object', exact: true }).click();
+  const layer = page.getByRole('group', { name: 'Objects on page 1' });
+  const photo = layer.locator('[data-object="content:0"]');
+  const backdrop = layer.locator('[data-object="content:1"]');
+  const box = await photo.boundingBox();
+  if (box === null) throw new Error('the photo is not on screen');
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(photo).toHaveAttribute('aria-pressed', 'true');
+  await expect(backdrop).toHaveAttribute('aria-pressed', 'false');
+  // ALT OVER THE SAME PHOTO reaches the backdrop under it.
+  await page.keyboard.down('Alt');
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await page.keyboard.up('Alt');
+  await expect(backdrop).toHaveAttribute('aria-pressed', 'true');
+});
+
 const RUN = { size: 12, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false } as const;
 
 // A WORD WRITTEN ONE LETTER PER OBJECT (the owner's E4: a press on *overview* picked its final *w*). The page's block

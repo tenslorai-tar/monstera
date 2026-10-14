@@ -30,6 +30,9 @@ import {
   type ObjectKind,
   type ObjectPick,
   type PageObjects,
+  isBackdrop,
+  objectAt,
+  pickingOrder,
   placeCommand,
   turnCommand,
   turnable,
@@ -213,7 +216,10 @@ export function ObjectEditLayer({
     return same ? object : { ...object, box };
   };
   const pageObjects = objects?.objects.map(onPage) ?? [];
-  const shown = pageObjects.filter((object) => shownBy(filter, object));
+  // IN PICKING ORDER, bottom first (E9): the outlines stack as they are drawn, so a page-sized backdrop drawn last in the
+  // walk would lie over every small object and take its press.
+  const sheet = { x0: Math.min(cropLeft, cropRight), y0: Math.min(cropBottom, cropTop), x1: Math.max(cropLeft, cropRight), y1: Math.max(cropBottom, cropTop) };
+  const shown = pickingOrder(pageObjects, sheet).filter((object) => shownBy(filter, object));
   // THE PICK AS THIS PAGE'S READ HAS IT: the box comes from the read, so a moved object is outlined where it now is.
   const picked =
     pick === undefined || objects === undefined
@@ -224,6 +230,17 @@ export function ObjectEditLayer({
   const pointOf = (event: React.PointerEvent): readonly [number, number] => {
     const corner = layer.current?.getBoundingClientRect();
     return corner === undefined ? [0, 0] : [event.clientX - corner.left, event.clientY - corner.top];
+  };
+
+  /** The topmost backdrop the filter outlines under a point in the layer's pixels, for an Alt-press (E9). */
+  const backdropAt = (at: readonly [number, number]): EditableObject | undefined => {
+    const point = toPdf(viewportPoint(at[0], at[1]), transform);
+    return objectAt(
+      shown.filter((object) => isBackdrop(object, sheet)),
+      filter,
+      point,
+      sheet,
+    );
   };
 
   const select = (object: EditableObject | undefined): void => {
@@ -345,7 +362,14 @@ export function ObjectEditLayer({
           <button
             aria-label={_(OBJECT_EDIT_OUTLINE, { kind: _(kindWord(object.kind)), position: position + 1, count: shown.length })}
             aria-pressed={selected}
-            className={selected ? 'm-object m-object--selected' : 'm-object'}
+            className={[
+              'm-object',
+              selected ? 'm-object--selected' : '',
+              // A BACKDROP takes no hover tint (E9): a tint over the whole page says nothing about what a press picks.
+              isBackdrop(object, sheet) ? 'm-object--backdrop' : '',
+            ]
+              .filter((name) => name !== '')
+              .join(' ')}
             data-object={`${object.source}:${String(object.index)}`}
             data-object-kind={object.kind}
             key={`${object.source}:${String(object.index)}`}
@@ -354,13 +378,15 @@ export function ObjectEditLayer({
               if (!selected) select(object);
             }}
             onPointerDown={(event) => {
+              // ALT REACHES THE BACKDROP under the pointer (E9), which no plain press over a smaller object can.
+              const at = pointOf(event);
+              const chosen = event.altKey ? (backdropAt(at) ?? object) : object;
               // A SECONDARY PRESS SELECTS TOO, before the browser's context menu opens, so the menu it opens is the
               // object's — the page's menu reads the selection at the right-click.
-              select(object);
+              select(chosen);
               if (event.button !== 0) return;
               event.currentTarget.parentElement?.setPointerCapture(event.pointerId);
-              const at = pointOf(event);
-              begin({ kind: 'move', pointer: event.pointerId, from: at, to: at }, object);
+              begin({ kind: 'move', pointer: event.pointerId, from: at, to: at }, chosen);
             }}
             style={{ ...outlineStyle(box), ...turned(object) }}
             type="button"
