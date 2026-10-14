@@ -2007,6 +2007,26 @@ const declarations = {
     // A transform rewrites the page's content stream and unlinks nothing.
     purpose: 'ordinary',
   },
+  placeDrawnObject: {
+    kind: 'placeDrawnObject',
+    display: 'image',
+    // MuPDF, IN THE PAGE'S OWN CONTENT STREAM (ADR-0240): PDFium's regeneration writes every text object again, and a
+    // font it cannot write back refused a picture's move at read-back (the owner's E1).
+    writer: 'mupdf',
+    // NOT INVERTIBLE, `editTextOperators`' reason: the checkpoint restores the page's content whole.
+    invertible: false,
+    undo: 'checkpoint',
+    // The same instructions wrapped in the same matrix. Nothing mints an identifier or reads a clock.
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    // PDFIUM'S OBJECT INDEX, carried for the selection and the lane; the writer finds the object by kind and ordinal.
+    targets: 'text-object',
+    reads: 'none',
+    asset: 'none',
+    // ORDINARY, `editTextOperators`' reason: one page's content changes and nothing is unlinked.
+    purpose: 'ordinary',
+  },
   recolorPageObjects: {
     kind: 'recolorPageObjects',
     display: 'image',

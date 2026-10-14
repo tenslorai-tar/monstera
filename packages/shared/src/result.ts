@@ -75,8 +75,11 @@ export interface StructuredError {
  * text a native library produced.
  */
 
-/** The step of a PDFium rewrite that refused, from ADR-0169 Decision 3's fixed set. */
-export const EDIT_STEPS = ['open', 'page', 'object', 'set-text', 'matrix', 'generate', 'save', 'read-back'] as const;
+/**
+ * The step of a PDFium rewrite that refused, from ADR-0169 Decision 3's fixed set, and `moved-text`: a text object moved
+ * whose page PDFium could not write back (ADR-0240 Decision 4), which is said in words and has no reference to quote.
+ */
+export const EDIT_STEPS = ['open', 'page', 'object', 'set-text', 'matrix', 'generate', 'save', 'read-back', 'moved-text'] as const;
 export type EditStep = (typeof EDIT_STEPS)[number];
 
 /** Why a change to a form field was refused (ADR-0193): each the person's to act on, and none a defect. */

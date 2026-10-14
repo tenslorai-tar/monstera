@@ -3343,6 +3343,7 @@ export const EDIT_REFUSED_MATRIX = messageKey('dialog.command-problem.edit-refus
 export const EDIT_REFUSED_GENERATE = messageKey('dialog.command-problem.edit-refused.generate');
 export const EDIT_REFUSED_SAVE = messageKey('dialog.command-problem.edit-refused.save');
 export const EDIT_REFUSED_READ_BACK = messageKey('dialog.command-problem.edit-refused.read-back');
+export const EDIT_REFUSED_MOVED_TEXT = messageKey('dialog.command-problem.edit-refused.moved-text');
 // A CHANGE TO A FORM FIELD THAT COULD NOT BE MADE, one sentence per reason (ADR-0193).
 export const FIELD_EDIT_NOT_FOUND = messageKey('dialog.command-problem.field-edit.not-found');
 export const FIELD_EDIT_NAME_TAKEN = messageKey('dialog.command-problem.field-edit.name-taken');
@@ -7191,6 +7192,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EDIT_REFUSED_GENERATE]: 'Monstera couldn’t rebuild the page with your change, so nothing was changed.',
   [EDIT_REFUSED_SAVE]: 'Monstera couldn’t save the edited page, so nothing was changed.',
   [EDIT_REFUSED_READ_BACK]: 'This page uses a font Monstera can’t rewrite yet, so nothing was changed.',
+  [EDIT_REFUSED_MOVED_TEXT]:
+    'This text is set in a font Monstera can’t rewrite yet. Pictures and shapes on this page can be moved and resized, but this text can’t, so nothing was changed.',
   // EACH SAYS WHAT STOPPED IT AND THAT NOTHING WAS CHANGED, and the three a person can fix say how.
   [FIELD_EDIT_NOT_FOUND]: 'That field has moved since the list was read, so nothing was changed. Select it again and try once more.',
   [FIELD_EDIT_NAME_TAKEN]: 'Another field already has that name, or a name that starts with it, so nothing was changed. Choose a different name.',

@@ -2298,9 +2298,13 @@ describe('delete pages — the mutation-dialog gate', () => {
     // THE ENGINE'S OWN INDICES and the walk's own: the second content object is index 9, the last 1033, and the stamp
     // is index 6 of the annotation walk — never its place in either answer.
     expect([read.objects.objects[1]?.index, read.objects.objects[513]?.index]).toStrictEqual([9, 1033]);
+    // EACH ONE'S PLACE AMONG ITS KIND counts across the parts (ADR-0240): the last text object is the 514th, never the
+    // second part's second.
+    expect(read.objects.objects[513]?.ordinal).toBe(513);
     expect(read.objects.objects.at(-1)).toStrictEqual({
       source: 'stamp',
       index: 6,
+      ordinal: 0,
       kind: 'picture',
       box: { x0: 10, y0: 20, x1: 110, y1: 90 },
       fill: null,

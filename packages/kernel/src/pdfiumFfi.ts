@@ -4775,6 +4775,17 @@ function spanOf(bindings: Bound, objects: readonly unknown[]): { left: number; r
  * walk that filtered would make an image the one thing on the page a person
  * could see and not select.
  */
+/** What kind one object is, as {@link pageObjects} names kinds: the one object read, not the page's list. */
+export function objectKind(session: PdfiumSession, page: number, index: number): Promise<PageObject['kind']> {
+  return promised(() =>
+    onPage(session, page, (handle) => {
+      const bindings = api();
+      const object = objectAt(bindings, handle, page, index);
+      return OBJECT_KINDS[numberFrom(bindings.objectType(object), 'FPDFPageObj_GetType')] ?? 'unknown';
+    }),
+  );
+}
+
 export function pageObjects(session: PdfiumSession, page: number): Promise<readonly PageObject[]> {
   return promised(() =>
     onPage(session, page, (handle) => {

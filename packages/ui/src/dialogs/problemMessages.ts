@@ -16,6 +16,7 @@ import {
   EDIT_REFUSED_PAGE,
   EDIT_REFUSED_PASSWORD,
   EDIT_REFUSED_READ_BACK,
+  EDIT_REFUSED_MOVED_TEXT,
   EDIT_REFUSED_SAVE,
   EDIT_REFUSED_SET_TEXT,
   FIELD_EDIT_DUPLICATE_RADIO,
@@ -112,6 +113,8 @@ export function problemParticulars(
 ): { readonly label: MessageKey; readonly value: string } | undefined {
   if (problem.code === 'internal') return { label: PROBLEM_REFERENCE_LABEL, value: problem.incident };
   if (problem.code === 'edit-refused') {
+    // A MOVED TEXT RUN'S FONT is said in words alone (ADR-0240 Decision 4): nothing about it is unknown to quote.
+    if (problem.detail.step === 'moved-text') return undefined;
     return { label: PROBLEM_REFERENCE_LABEL, value: `${problem.detail.step} ${String(problem.detail.engineError)}` };
   }
   if (problem.code === 'command-looped') {
@@ -166,6 +169,7 @@ const STEP_MESSAGE: Readonly<Record<EditStep, MessageKey>> = {
   generate: EDIT_REFUSED_GENERATE,
   save: EDIT_REFUSED_SAVE,
   'read-back': EDIT_REFUSED_READ_BACK,
+  'moved-text': EDIT_REFUSED_MOVED_TEXT,
 };
 
 /**

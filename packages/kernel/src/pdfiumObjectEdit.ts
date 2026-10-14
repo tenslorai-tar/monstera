@@ -2,8 +2,10 @@ import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
 import { type AppliedImage, type ImageSession, imageAlone } from './engineSeam.js';
+import { EditRefusedError } from './textEditRefusals.js';
 import {
   type ObjectMatrix,
+  objectKind,
   objectMatrix,
   onImage,
   pageObjects,
@@ -93,11 +95,21 @@ export async function applyPlacePageObject(
   command: CommandOfKind<'placePageObject'>,
 ): Promise<AppliedImage> {
   return onImage(image, async (session) => {
+    const text = (await objectKind(session, command.page, command.index)) === 'text';
     await placeObject(session, command.page, command.index, {
       moveBy: command.moveBy,
       scaleBy: command.scaleBy,
     });
-    return imageAlone(await pdfiumWriter.serialise(session));
+    try {
+      return imageAlone(await pdfiumWriter.serialise(session));
+    } catch (error) {
+      // A TEXT OBJECT MOVED ON A PAGE PDFium CANNOT WRITE BACK (ADR-0240 Decision 4): every text object is written again
+      // by the move, and a font PDFium cannot re-encode loses some. Said as what it is, never as a step and a number.
+      if (text && error instanceof EditRefusedError && error.step === 'read-back') {
+        throw new EditRefusedError('moved-text', error.engineError, 'the text object was not moved: its page reads back without some of its text', { cause: error });
+      }
+      throw error;
+    }
   });
 }
 

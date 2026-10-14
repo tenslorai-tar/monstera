@@ -12,11 +12,11 @@ import {
   shownBy,
 } from './objectEditing.js';
 
-const TEXT: EditableObject = { source: 'content', index: 0, kind: 'text', box: { x0: 40, y0: 730, x1: 300, y1: 750 }, fill: { red: 0, green: 0, blue: 0, alpha: 255 } };
-const RULE: EditableObject = { source: 'content', index: 1, kind: 'path', box: { x0: 40, y0: 700, x1: 560, y1: 700 }, fill: { red: 0, green: 0, blue: 0, alpha: 255 } };
-const PHOTO: EditableObject = { source: 'content', index: 2, kind: 'image', box: { x0: 40, y0: 400, x1: 280, y1: 580 }, fill: null };
+const TEXT: EditableObject = { source: 'content', index: 0, ordinal: 0, kind: 'text', box: { x0: 40, y0: 730, x1: 300, y1: 750 }, fill: { red: 0, green: 0, blue: 0, alpha: 255 } };
+const RULE: EditableObject = { source: 'content', index: 1, ordinal: 0, kind: 'path', box: { x0: 40, y0: 700, x1: 560, y1: 700 }, fill: { red: 0, green: 0, blue: 0, alpha: 255 } };
+const PHOTO: EditableObject = { source: 'content', index: 2, ordinal: 0, kind: 'image', box: { x0: 40, y0: 400, x1: 280, y1: 580 }, fill: null };
 /** A picture placed with Comment › Image, over the photo's corner: the same point names both. */
-const PLACED: EditableObject = { source: 'stamp', index: 0, kind: 'picture', box: { x0: 200, y0: 500, x1: 400, y1: 650 }, fill: null };
+const PLACED: EditableObject = { source: 'stamp', index: 0, ordinal: 0, kind: 'picture', box: { x0: 200, y0: 500, x1: 400, y1: 650 }, fill: null };
 const PAGE = [TEXT, RULE, PHOTO, PLACED];
 
 const V3 = asDocVersion(3);
@@ -49,12 +49,26 @@ describe('the object a press names', () => {
 });
 
 describe('the command a drag or a handle builds', () => {
-  it('moves PAGE CONTENT by the corners’ difference, at scale one', () => {
+  it('moves a PICTURE where it is drawn, by the corners’ difference at scale one, named by kind, place and box (ADR-0240)', () => {
     expect(placeCommand(pick(PHOTO), { x0: 60, y0: 380, x1: 300, y1: 560 })).toStrictEqual({
-      kind: 'placePageObject',
+      kind: 'placeDrawnObject',
       page: 1,
       index: 2,
+      object: 'image',
+      ordinal: 0,
+      box: { left: 40, bottom: 400, right: 280, top: 580 },
       moveBy: { x: 20, y: -20 },
+      scaleBy: { x: 1, y: 1 },
+      version: V3,
+    });
+  });
+
+  it('CONTROL: TEXT keeps PDFium’s route, where its font is the writer’s question (the owner’s E1)', () => {
+    expect(placeCommand(pick(TEXT), { x0: 50, y0: 730, x1: 310, y1: 750 })).toStrictEqual({
+      kind: 'placePageObject',
+      page: 1,
+      index: 0,
+      moveBy: { x: 10, y: 0 },
       scaleBy: { x: 1, y: 1 },
       version: V3,
     });

@@ -318,6 +318,20 @@ export const TYPE3_EDIT = [
 ];
 
 /**
+ * What `drawnObjectPlace.proof.mjs` runs (ADR-0240): PDFium's reading and route, and MuPDF's placement in the content
+ * stream with the numbering beneath it, on the native engine.
+ *
+ * @type {BuildEdge[]}
+ */
+export const DRAWN_OBJECT_PLACE = [
+  ['packages/kernel/src/drawnObjectPlace.ts', 'packages/kernel/dist/drawnObjectPlace.js', 'tsc'],
+  ['packages/kernel/src/textOperators.ts', 'packages/kernel/dist/textOperators.js', 'tsc'],
+  ['packages/kernel/src/pdfiumFfi.ts', 'packages/kernel/dist/pdfiumFfi.js', 'tsc'],
+  ['packages/kernel/src/pdfiumSpecs.ts', 'packages/kernel/dist/pdfiumSpecs.js', 'tsc'],
+  ...NATIVE_ENGINE,
+];
+
+/**
  * What `fontCatalogueApart.proof.mjs` reads: the reader a host calls, the thread it starts, and the in-thread read both
  * the thread and the control run.
  *
@@ -648,6 +662,8 @@ export const ARTEFACT_EDGES = {
   'proof:fontcatalogueapart': FONT_CATALOGUE_APART,
   // ADR-0239: an edit's face program and a composition made apart. Registered with its entry.
   'proof:fontworkapart': FONT_WORK_APART,
+  // ADR-0240: a drawn object placed in its content stream, against PDFium's own route. Registered with its entry.
+  'proof:drawnobjects': DRAWN_OBJECT_PLACE,
   'proof:shimpassword': SHIM_PASSWORD,
   // THE WORD EXPORT'S PICTURES, read back by a zip reader and a PNG decoder that are not the writer's.
   'proof:wordpictures': WORD_PICTURES,

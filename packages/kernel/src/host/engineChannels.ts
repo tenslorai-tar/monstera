@@ -25,6 +25,7 @@ import {
   MAX_REMOVED_ANNOTATIONS,
   fillFormFieldSchema,
   resetFormSchema,
+  placeDrawnObjectSchema,
   flattenFormFieldsSchema,
   setDocumentProtectionSchema,
   applyRedactionsSchema,
@@ -1227,6 +1228,8 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   editLinkSchema,
   fillFormFieldSchema,
   resetFormSchema,
+  // A DRAWN OBJECT PLACED IN ITS OWN CONTENT STREAM (ADR-0240): a few numbers and the listed box, framed.
+  placeDrawnObjectSchema,
   deleteFormFieldsSchema,
   flattenFormFieldsSchema,
   // CARRIES PASSWORDS ACROSS THIS PIPE, and that is ADR-0055's rule rather than

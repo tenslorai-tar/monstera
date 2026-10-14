@@ -181,6 +181,7 @@ export {
   invertResetForm,
   readFormFields,
 } from './formFields.js';
+export { applyPlaceDrawnObject, capturePlaceDrawnObject, invertPlaceDrawnObject } from './drawnObjectPlace.js';
 export {
   applySetDocumentProtection,
   captureSetDocumentProtection,

@@ -3563,11 +3563,14 @@ export function keepsTheAnnotationWalk<C extends { readonly kind: string }>(
  */
 export const KEEPS_THE_OBJECT_WALK: ReadonlySet<ObjectWalkKeepingKind> = new Set([
   'placePageObject',
+  // A DRAWN OBJECT WRAPPED in `q cm … Q` is still one object of its kind at its place (ADR-0240): measured by
+  // `objectPlacement.test.ts` against PDFium's walk before and after.
+  'placeDrawnObject',
   'recolorPageObjects',
 ] as const);
 
 /** The kinds {@link KEEPS_THE_OBJECT_WALK} names. */
-export type ObjectWalkKeepingKind = 'placePageObject' | 'recolorPageObjects';
+export type ObjectWalkKeepingKind = 'placePageObject' | 'placeDrawnObject' | 'recolorPageObjects';
 
 /** Whether `command` is one of them — the set's one reader for a command in hand. */
 export function keepsTheObjectWalk<C extends { readonly kind: string }>(
@@ -3620,6 +3623,7 @@ const WALK_NAMED_BY: Readonly<Record<NamesAnAnnotation | NamesAFormField | Names
   flattenFormFields: 'field',
   replaceTextObject: 'object',
   placePageObject: 'object',
+  placeDrawnObject: 'object',
   recolorPageObjects: 'object',
   deletePageObjects: 'object',
   editTextBlock: 'object',
@@ -6047,6 +6051,38 @@ export const placePageObjectSchema = z.object({
 }).strict();
 
 /**
+ * Moves and resizes a picture, a form or a shape WHERE IT IS DRAWN
+ * ([ADR-0240](../../../docs/DECISIONS/0240-an-objects-placement-is-edited-where-it-is-drawn.md)): its own instructions
+ * wrapped in the page's content stream, so no text on the page is written again and no font can refuse it.
+ * `placePageObject`'s intent and anchor, for a drawn object.
+ *
+ * Named twice, and both are checked: `index` is its place in PDFium's walk, the one the selection and the command lane
+ * hold, and `object` with `ordinal` is its place among the page's objects of that kind, which is how the writer finds
+ * its instructions. `box` is the box the listing gave, which the found object must land on, so a page that moved under
+ * the listing is refused rather than edited somewhere else.
+ */
+export const placeDrawnObjectSchema = z
+  .object({
+    kind: z.literal('placeDrawnObject'),
+    page: z.number().int().nonnegative(),
+    index: z.number().int().nonnegative(),
+    object: z.enum(['path', 'image', 'form']),
+    ordinal: z.number().int().nonnegative().max(MAX_OBJECT_INDEX),
+    box: z
+      .object({
+        left: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+        bottom: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+        right: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+        top: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+      })
+      .strict(),
+    moveBy: placePageObjectSchema.shape.moveBy,
+    scaleBy: placePageObjectSchema.shape.scaleBy,
+    version: docVersionSchema,
+  })
+  .strict();
+
+/**
  * Recolours a page's objects — **text objects included**.
  *
  * The *included* is measured rather than hoped: `FPDFPageObj_SetFillColor`
@@ -6788,6 +6824,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   importAnnotationsSchema,
   replaceTextObjectSchema,
   placePageObjectSchema,
+  placeDrawnObjectSchema,
   recolorPageObjectsSchema,
   deletePageObjectsSchema,
   promoteFormObjectsSchema,
@@ -6998,6 +7035,9 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // own box into that needs the box, which only the engine has — so the payload
   // says *how much bigger* and the kernel says *about what*.
   placePageObjectSchema,
+  // RENDERABLE, `placePageObject`'s reason: an intent, the box the listing gave and the object's place by kind; the
+  // writer finds its instructions and composes the anchor (ADR-0240).
+  placeDrawnObjectSchema,
   recolorPageObjectsSchema,
   deletePageObjectsSchema,
   // RENDERABLE, and its payload is ONE INTEGER — the smallest on this list. The
@@ -7221,6 +7261,7 @@ export function targetVersionOf(command: Command): DocVersion | undefined {
   if (command.kind === 'flattenFormFields') return command.version;
   if (command.kind === 'replaceTextObject') return command.version;
   if (command.kind === 'placePageObject') return command.version;
+  if (command.kind === 'placeDrawnObject') return command.version;
   if (command.kind === 'recolorPageObjects') return command.version;
   if (command.kind === 'deletePageObjects') return command.version;
   if (command.kind === 'editTextBlock') return command.version;
@@ -7327,6 +7368,8 @@ void _theFieldNameIsACommandKind;
 export type NamesATextObject =
   | 'replaceTextObject'
   | 'placePageObject'
+  // PDFium's walk index too, carried beside the kind's ordinal the MuPDF writer finds it by (ADR-0240).
+  | 'placeDrawnObject'
   | 'recolorPageObjects'
   | 'deletePageObjects'
   | 'editTextBlock'

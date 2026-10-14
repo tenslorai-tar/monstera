@@ -244,7 +244,7 @@ describe('the declaration table', () => {
     expect(declared).toContain('replacePage');
   });
 
-  it('CONTROL: exactly twenty-four kinds declare a target, and the rest answer none', () => {
+  it('CONTROL: exactly twenty-five kinds declare a target, and the rest answer none', () => {
     // The targets axis's version of the control above, and it carries the
     // second half as well. `never extends X` would satisfy one type-level line
     // on its own; and a table where EVERY command declared a target would
@@ -285,6 +285,8 @@ describe('the declaration table', () => {
       'setTabOrder',
       'replaceTextObject',
       'placePageObject',
+      // A PICTURE, A FORM OR A SHAPE placed where it is drawn, named by the same walk's index (ADR-0240).
+      'placeDrawnObject',
       'recolorPageObjects',
       'deletePageObjects',
       // A BLOCK EDIT names the runs a read answered, at that read's version (ADR-0096).

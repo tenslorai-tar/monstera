@@ -455,6 +455,7 @@ export {
   replaceTextAtSchema,
   replaceTextObjectSchema,
   placePageObjectSchema,
+  placeDrawnObjectSchema,
   recolorPageObjectsSchema,
   deletePageObjectsSchema,
   promoteFormObjectsSchema,

@@ -992,6 +992,24 @@ const RESET_FORM_SPEC = `  resetForm: {
     reads: 'none',
   },`;
 
+/**
+ * A picture, a form or a shape placed where it is drawn (ADR-0240) — the NEWEST kind since 2026-10-14, and the one the
+ * `missing a command kind` case omits. `editTextOperators`' axes: the checkpoint is its undo.
+ */
+const PLACE_DRAWN_SPEC = `  placeDrawnObject: {
+    kind: 'placeDrawnObject',
+    writer: 'mupdf',
+    apply: applyPlaceDrawnObject,
+    capture: capturePlaceDrawnObject,
+    invert: invertPlaceDrawnObject,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`;
+
 const SET_ANNOTATION_AUTHOR_SPEC = `  setAnnotationAuthor: {
     kind: 'setAnnotationAuthor',
     writer: 'mupdf',
@@ -1306,6 +1324,9 @@ const SPEC_IMPORTS = `import {
   applyResetForm,
   captureResetForm,
   invertResetForm,
+  applyPlaceDrawnObject,
+  capturePlaceDrawnObject,
+  invertPlaceDrawnObject,
   applyFillFormField,
   captureFillFormField,
   invertFillFormField,
@@ -2286,6 +2307,7 @@ ${SET_ANNOTATION_AUTHOR_SPEC}
 ${PLACE_SIGNATURE_MARK_SPEC}
 ${PLACE_SIGNATURE_PICTURE_SPEC}
 ${RESET_FORM_SPEC}
+${PLACE_DRAWN_SPEC}
 ${EDIT_OPERATORS_SPEC}
 };
 `,
@@ -2338,9 +2360,10 @@ ${EDIT_OPERATORS_SPEC}
     // (2026-09-24): TS2739 naming it and `editTextBlock`, which this table had
     // been omitting as the newest. SIX for six on `placeSignatureMark` and `placeSignaturePicture` (2026-10-02):
     // TS2739 naming both and `setAnnotationAuthor`, which this table had been omitting as the newest. SEVEN for seven on
-    // `resetForm` (2026-10-14): TS2739 naming it and `placeSignaturePicture`, which this table had been omitting.
+    // `resetForm` (2026-10-14): TS2739 naming it and `placeSignaturePicture`, which this table had been omitting. EIGHT for
+    // eight on `placeDrawnObject` the same day (ADR-0240): TS2739 naming it and `resetForm`.
     because:
-      /Property 'resetForm' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'placeDrawnObject' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -2414,6 +2437,7 @@ ${EDIT_BLOCK_SPEC}
 ${SET_ANNOTATION_AUTHOR_SPEC}
 ${PLACE_SIGNATURE_MARK_SPEC}
 ${PLACE_SIGNATURE_PICTURE_SPEC}
+${RESET_FORM_SPEC}
 ${EDIT_OPERATORS_SPEC}
 };
 `,
@@ -4014,8 +4038,9 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // 59 since `editLink` (2026-10-13, the owner's O6(c)): three spelt, 55 counted, one.
     // 60 since `reshapeAnnotation` (2026-10-13, the owner's O8): three spelt, 56 counted, one.
     // 61 since `resetForm` (2026-10-14, the owner's F7): three spelt, 57 counted, one.
+    // 62 since `placeDrawnObject` (2026-10-14, ADR-0240): three spelt, 58 counted, one.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 57 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 58 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

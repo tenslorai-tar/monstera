@@ -49,6 +49,12 @@ describe('an edit PDFium refused says which part of the work refused', () => {
     expect(problemMessage(refused('read-back', 0))).toBe(EDIT_REFUSED_READ_BACK);
   });
 
+  it('a MOVED TEXT RUN is said in words with no reference to quote (ADR-0240) — CONTROL: the read-back shows its reference', () => {
+    expect(english(problemMessage(refused('moved-text', 0)))).toMatch(/^This text is set in a font Monstera can’t rewrite yet\./u);
+    expect(problemParticulars(refused('moved-text', 0))).toBeUndefined();
+    expect(problemParticulars(refused('read-back', 0))?.value).toBe('read-back 0');
+  });
+
   it('PDFium’s password number at OPEN says the document is protected', () => {
     expect(problemMessage(refused('open', PDFIUM_PASSWORD_ERROR))).toBe(EDIT_REFUSED_PASSWORD);
   });

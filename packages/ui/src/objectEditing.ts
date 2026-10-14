@@ -44,6 +44,11 @@ export interface ObjectFill {
 export interface EditableObject {
   readonly source: 'content' | 'stamp';
   readonly index: number;
+  /**
+   * Its place among the page's objects of its own kind, in the walk's order: how a picture, a form or a shape is found
+   * in the page's content to be moved where it is drawn (ADR-0240). 0 for a stamp, whose walk is the annotations'.
+   */
+  readonly ordinal: number;
   readonly kind: ObjectKind;
   /** Its box in PDF space. */
   readonly box: AnnotationRect;
@@ -130,8 +135,7 @@ export function placeCommand(pick: ObjectPick, target: AnnotationRect): Dispatch
   }
   const width = from.x1 - from.x0;
   const height = from.y1 - from.y0;
-  return {
-    kind: 'placePageObject',
+  const placement = {
     page: pick.page,
     index: object.index,
     moveBy: { x: bounded(target.x0 - from.x0), y: bounded(target.y0 - from.y0) },
@@ -141,6 +145,18 @@ export function placeCommand(pick: ObjectPick, target: AnnotationRect): Dispatch
     },
     version: pick.version,
   };
+  // A PICTURE, A FORM OR A SHAPE IS MOVED WHERE IT IS DRAWN (ADR-0240, the owner's E1): PDFium's route writes the page's
+  // text again, and a font it cannot write back refused the move. Text, and what PDFium alone names, keep its route.
+  if (object.kind === 'image' || object.kind === 'form' || object.kind === 'path') {
+    return {
+      kind: 'placeDrawnObject',
+      ...placement,
+      object: object.kind,
+      ordinal: object.ordinal,
+      box: { left: from.x0, bottom: from.y0, right: from.x1, top: from.y1 },
+    };
+  }
+  return { kind: 'placePageObject', ...placement };
 }
 
 /** The command that removes the picked object, by the writer that holds it. */

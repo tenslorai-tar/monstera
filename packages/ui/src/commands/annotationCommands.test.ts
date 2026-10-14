@@ -406,7 +406,7 @@ describe('deleteSelectionCommand', () => {
     const pick = {
       page: 2,
       version: asDocVersion(7),
-      object: { source: 'content' as const, index: 3, kind: 'image' as const, box: { x0: 0, y0: 0, x1: 10, y1: 10 }, fill: null },
+      object: { source: 'content' as const, index: 3, ordinal: 0, kind: 'image' as const, box: { x0: 0, y0: 0, x1: 10, y1: 10 }, fill: null },
     };
     const command = deleteSelectionCommand(
       { selection: () => undefined, onDelete: (selection) => deleted.push(selection), onPlace: () => undefined },
@@ -858,7 +858,7 @@ describe('selectionPropertiesCommand', () => {
     const pick = {
       page: 0,
       version: asDocVersion(1),
-      object: { source: 'content' as const, index: 0, kind: 'path' as const, box: { x0: 0, y0: 0, x1: 10, y1: 10 }, fill: null },
+      object: { source: 'content' as const, index: 0, ordinal: 0, kind: 'path' as const, box: { x0: 0, y0: 0, x1: 10, y1: 10 }, fill: null },
     };
     // CONTROL: the same deps with no object are hidden, so what shows it here is the pick.
     expect(selectionPropertiesCommand(built, NO_OBJECT).when?.(WITH_DOCUMENT)).toBe(false);

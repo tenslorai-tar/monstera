@@ -295,6 +295,45 @@ interface Setting {
 
 const SHOWS = new Set(['Tj', 'TJ', "'", '"']);
 
+/** What an XObject a `Do` names is, from the page's resources: the caller reads them, this module reads tokens. */
+export type XObjectKind = 'image' | 'form' | undefined;
+
+/**
+ * One object PDFium makes of something DRAWN rather than shown ([ADR-0240](../../../docs/DECISIONS/0240-an-objects-placement-is-edited-where-it-is-drawn.md)):
+ * a painted path, an image (an image `Do` or an inline image), a form (a form `Do`) or a shading (`sh`). `ordinal` is its
+ * place among the page's objects of the same kind, outside every form, in content order: PDFium's own order.
+ */
+export interface DrawnObject {
+  readonly kind: 'path' | 'image' | 'form' | 'shading';
+  readonly ordinal: number;
+  /** The instructions that draw it, as byte offsets into the joined content: a path from its first segment to its paint. */
+  readonly start: number;
+  readonly end: number;
+  /** The CTM it is drawn under. */
+  readonly ctm: Matrix;
+  /** Whether a path also sets the clip (`W` or `W*` before its paint), which outlives it. */
+  readonly clips: boolean;
+  /** A path's points, in page space: the corners of its segments and their control points. */
+  readonly points: readonly (readonly [number, number])[];
+}
+
+/** Every object PDFium makes of what a page DRAWS, in order, by kind (ADR-0240 Decision 2). */
+export function drawnObjects(content: Uint8Array, xobject: (name: string) => XObjectKind): readonly DrawnObject[] {
+  return scan(content, xobject).drawn;
+}
+
+/** The painting operators that make a path object; `n` ends a path and paints nothing, so makes none. */
+const PAINTS = new Set(['S', 's', 'f', 'F', 'f*', 'B', 'B*', 'b', 'b*']);
+
+/** The operators that build a path, and how many coordinate pairs each names. */
+const SEGMENTS: ReadonlyMap<string, number> = new Map([['m', 1], ['l', 1], ['c', 3], ['v', 2], ['y', 2], ['h', 0], ['re', 2]]);
+
+/** A point under a matrix, row-vector convention. */
+function apply(matrix: Matrix, x: number, y: number): readonly [number, number] {
+  const [a, b, c, d, e, f] = matrix;
+  return [x * a + y * c + e, x * b + y * d + f];
+}
+
 /** The page's content streams joined, each followed by an end of line so no token runs from one into the next. */
 export function joinedContent(streams: readonly Uint8Array[]): Uint8Array {
   const joined = new Uint8Array(streams.reduce((total, stream) => total + stream.length + 1, 0));
@@ -333,13 +372,25 @@ export function contentEnd(content: Uint8Array): { readonly depth: number; reado
 }
 
 /** The ONE pass over a content stream (the numbering rule and the `q` and `Q` it is read through are stated here once). */
-function scan(content: Uint8Array): {
+function scan(
+  content: Uint8Array,
+  xobject: (name: string) => XObjectKind = () => undefined,
+): {
   readonly operators: readonly ShowOperator[];
   readonly depth: number;
   readonly baseCtm: Matrix;
   readonly ends: ReadonlyMap<number, number>;
+  readonly drawn: readonly DrawnObject[];
 } {
   const found: ShowOperator[] = [];
+  const drawn: DrawnObject[] = [];
+  const counts = { path: 0, image: 0, form: 0, shading: 0 };
+  /** The path being built: where its first segment began, its points in page space, and whether it clips. */
+  let path: { start: number; points: (readonly [number, number])[]; clips: boolean } | null = null;
+  const draw = (kind: DrawnObject['kind'], start: number, end: number, ctmNow: Matrix, clips = false, points: DrawnObject['points'] = []): void => {
+    drawn.push({ kind, ordinal: counts[kind], start, end, ctm: ctmNow, clips, points });
+    counts[kind] += 1;
+  };
   /** Where each text object ends, by where it begins: the offset just past its `ET`. */
   const ends = new Map<number, number>();
   let state: Omit<TextState, 'matrix' | 'line' | 'ctm'> = {
@@ -441,6 +492,32 @@ function scan(content: Uint8Array): {
       default:
         break;
     }
+    // WHAT IS DRAWN (ADR-0240): a path from its first segment to the paint that ends it, which makes an object unless it
+    // is `n`; an image or a form by the `Do` that names it, or an inline image; a shading by `sh`.
+    const segment = SEGMENTS.get(op);
+    if (segment !== undefined) {
+      path ??= { start, points: [], clips: false };
+      const values = operands.flatMap((operand) => (operand.kind === 'number' ? [operand.value] : []));
+      if (op === 're') {
+        const [x = 0, y = 0, w = 0, h = 0] = values;
+        path.points.push(apply(ctm, x, y), apply(ctm, x + w, y), apply(ctm, x + w, y + h), apply(ctm, x, y + h));
+      } else {
+        for (let at = 0; at + 1 < values.length; at += 2) path.points.push(apply(ctm, values[at] ?? 0, values[at + 1] ?? 0));
+      }
+    } else if (op === 'W' || op === 'W*') {
+      if (path !== null) path.clips = true;
+    } else if (PAINTS.has(op) || op === 'n') {
+      if (path !== null && op !== 'n') draw('path', path.start, token.end, ctm, path.clips, path.points);
+      path = null;
+    } else if (op === 'Do') {
+      const name = operands[0];
+      const kind = name?.kind === 'name' ? xobject(name.value) : undefined;
+      if (kind !== undefined) draw(kind, start, token.end, ctm);
+    } else if (op === 'BI') {
+      draw('image', token.start, token.end, ctm);
+    } else if (op === 'sh') {
+      draw('shading', start, token.end, ctm);
+    }
     if (op === "'" || op === '"') {
       if (op === '"') state = { ...state, wordSpacing: number(0), charSpacing: number(1) };
       nextLine(0, -state.leading);
@@ -482,7 +559,7 @@ function scan(content: Uint8Array): {
     }
     operands = [];
   }
-  return { operators: found, depth: saved.length, baseCtm: saved[0]?.ctm ?? ctm, ends };
+  return { operators: found, depth: saved.length, baseCtm: saved[0]?.ctm ?? ctm, ends, drawn };
 }
 
 /** The operator PDFium's text object `object` is, or `undefined` where the content shows fewer. */

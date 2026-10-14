@@ -4680,17 +4680,25 @@ export async function readPageObjects(
   if (!content.ok) return { ok: false, refused: content.error };
   if (!marks.ok) return { ok: false, refused: marks.error };
   if (content.value.version !== marks.value.version) return { ok: false, refused: undefined };
-  const objects: EditableObject[] = content.value.items.map((object) => ({
-    source: 'content',
-    index: object.index,
-    kind: object.kind,
-    box: { x0: object.left, y0: object.bottom, x1: object.right, y1: object.top },
-    fill: object.fill,
-  }));
+  // EACH OBJECT'S PLACE AMONG ITS KIND, in the walk's order: how a drawn object is found in the page's content
+  // (ADR-0240). The whole list was read at one version, so the count is the page's.
+  const seen = new Map<string, number>();
+  const objects: EditableObject[] = content.value.items.map((object) => {
+    const ordinal = seen.get(object.kind) ?? 0;
+    seen.set(object.kind, ordinal + 1);
+    return {
+      source: 'content',
+      index: object.index,
+      ordinal,
+      kind: object.kind,
+      box: { x0: object.left, y0: object.bottom, x1: object.right, y1: object.top },
+      fill: object.fill,
+    };
+  });
   for (const mark of marks.value.items) {
     // A PICTURE A PERSON PLACED, on this page and drawn in a region: what the content walk cannot see.
     if (mark.page !== page || mark.pictured !== true || mark.rect === null) continue;
-    objects.push({ source: 'stamp', index: mark.index, kind: 'picture', box: mark.rect, fill: null });
+    objects.push({ source: 'stamp', index: mark.index, ordinal: 0, kind: 'picture', box: mark.rect, fill: null });
   }
   return { ok: true, objects: { version: content.value.version, objects, truncated: content.value.last.truncated || marks.value.last.truncated } };
 }

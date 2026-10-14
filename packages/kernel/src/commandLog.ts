@@ -748,6 +748,7 @@ export interface CommandPrior {
   readonly editTextBlock: never;
   /** A checkpoint until Decision 7's prior lands (ADR-0176). */
   readonly editTextOperators: never;
+  readonly placeDrawnObject: never;
 }
 
 /**

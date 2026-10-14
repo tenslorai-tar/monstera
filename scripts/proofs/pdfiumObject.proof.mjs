@@ -371,8 +371,10 @@ async function main() {
     `before ${walkOf(before)}; after the removal ${walkOf(removedObjects)}`,
   );
   record(
-    'the contract names exactly the two commands measured to keep it, and not the removal',
-    [...KEEPS_THE_OBJECT_WALK].sort().join(',') === 'placePageObject,recolorPageObjects',
+    // THE THIRD, `placeDrawnObject`, is measured to keep the walk by `proof:drawnobjects` against PDFium (ADR-0240): its
+    // case reads every object's kind in the same order after a photo moved where it is drawn.
+    'the contract names exactly the three commands measured to keep it, and not the removal',
+    [...KEEPS_THE_OBJECT_WALK].sort().join(',') === 'placeDrawnObject,placePageObject,recolorPageObjects',
     [...KEEPS_THE_OBJECT_WALK].join(', '),
   );
 

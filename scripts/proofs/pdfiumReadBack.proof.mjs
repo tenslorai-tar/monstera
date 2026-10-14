@@ -247,13 +247,15 @@ async function main() {
     `${String(blocksOf(helveticaRuns).length)} block(s) read`,
   );
 
-  // EVERY COMMAND, on the Chromium print's CIDFontType2 body: refused at the read-back.
+  // EVERY COMMAND, on the Chromium print's CIDFontType2 body: refused at the read-back. A TEXT RUN MOVED is the same
+  // refusal said as what it is, `moved-text` (ADR-0240 Decision 4), so the person is told in words and no reference.
   const onType3 = commandsFor(chromiumRuns, await objectRunsOf(chromium), CHROMIUM_LINES.body);
   for (const [kind, command] of onType3) {
     const outcome = await outcomeOf(applied(chromium, command));
+    const step = kind === 'placePageObject' ? 'moved-text' : 'read-back';
     record(
-      `${kind} on a page with Type 3 text is refused at the read-back, so nothing is saved`,
-      'step' in outcome && outcome.step === 'read-back',
+      `${kind} on a page with Type 3 text is refused at the ${step === 'read-back' ? 'read-back' : 'read-back, as moved text'}, so nothing is saved`,
+      'step' in outcome && outcome.step === step,
       said(outcome),
     );
   }

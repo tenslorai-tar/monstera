@@ -425,6 +425,14 @@ jobs:
           node scripts/ci/annotate.mjs scripts/proofs/type3Edit.proof.mjs
           ${{ runner.os == 'Windows' && '--require-engines' || '' }}
 
+      # ADR-0240, the owner's E1. A photo and a logo on a page of Type 3 text, moved and resized where they are drawn,
+      # read back by PDFium with every text object as it was. The control is E1 itself: the same photo moved through
+      # PDFium's own route is refused at read-back. Both engines are needed, as for Type 3 edits.
+      - name: Prove a picture and a shape are moved without the page's text being written again
+        run: >
+          node scripts/ci/annotate.mjs scripts/proofs/drawnObjectPlace.proof.mjs
+          ${{ runner.os == 'Windows' && '--require-engines' || '' }}
+
       # The owner's Part 7 A. A host reads every installed font into its catalogue, and harfbuzzjs keeps what it
       # allocated for each face, so the compose host held 960 MB after one edit. The catalogue is read in a thread that
       # ends: three reads apart must leave the asking thread a tenth of what three reads in it keep, every thread must
