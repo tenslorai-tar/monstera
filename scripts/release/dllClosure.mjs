@@ -162,6 +162,13 @@ export function missingDlls(stage) {
     for (const name of delayed) if (!resolves(name, true)) missing.push({ program, dll: name, delayed: true });
   }
   if (read === 0) throw new Error(`The DLL check read no import under ${stage}: an empty read is a broken one.`);
+  // THE POSITIVE CONTROL: the package's own program imports KERNEL32, as every Windows program does. A reader that
+  // returned the wrong table — or names it could not decode — would report nothing missing in the same voice as a
+  // package whose every import resolves.
+  const own = readFileSync(join(stage, 'Monstera.exe'));
+  if (!peImports(own).imports.some((name) => name.toLowerCase() === 'kernel32.dll')) {
+    throw new Error('The DLL check did not find KERNEL32.dll among the imports of Monstera.exe, so it cannot see; it reports nothing.');
+  }
   return missing;
 }
 

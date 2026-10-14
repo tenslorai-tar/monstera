@@ -88,7 +88,7 @@ export function syntheticPe({ imports = [], delayed = [], vaDelay = false }) {
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 14 });
+const roster = createRoster(failures, { cases: 15 });
 const workspace = mkdtempSync(join(tmpdir(), 'monstera-dllclosure-'));
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
@@ -199,6 +199,19 @@ try {
   check("a .node's delay-loaded node.exe is the host process and resolves", missingDlls(addon).length === 0, `reported ${JSON.stringify(missingDlls(addon))}`);
   const notAddon = stageWith({ 'resources/native/x.dll': { delayed: ['NODE.EXE'] } });
   check('node.exe from a module that is not an addon is not excused', missingDlls(notAddon).length === 1, `reported ${JSON.stringify(missingDlls(notAddon))}`);
+
+  const blind = stageWith({ 'Monstera.exe': { imports: ['USER32.dll'] } });
+  let blindRefused = false;
+  try {
+    missingDlls(blind);
+  } catch (error) {
+    blindRefused = error instanceof Error && error.message.includes('cannot see');
+  }
+  check(
+    'the check refuses to report when it cannot find KERNEL32 among the program’s own imports — its positive control',
+    blindRefused,
+    'a reader that saw the wrong table answered "nothing missing"',
+  );
 
   const unknown = stageWith({ 'resources/native/x.dll': { imports: ['madeup.dll'] } });
   check('a DLL no rule names is reported, not assumed to be Windows', missingDlls(unknown).length === 1, `reported ${JSON.stringify(missingDlls(unknown))}`);
