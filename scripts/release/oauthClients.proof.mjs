@@ -17,10 +17,9 @@ import { join } from 'node:path';
 import { createRoster } from '../lib/passRoster.mjs';
 import { cloudClientsModule, writePackagedClients } from './oauthClients.mjs';
 
+// THE SHELL'S OWN MODULE, loaded once through the guarded loader: fresh or refused.
 const module = await cloudClientsModule();
-// A LITERAL SPECIFIER, so `proof:electronimports` can read what this loads.
-/** @type {{ packagedCloudClients: (read: string | null) => Readonly<Record<string, string>> | null }} */
-const shell = await import('../../apps/desktop/dist/cloudClients.js');
+const shell = module;
 
 /** @type {string[]} */
 const failures = [];

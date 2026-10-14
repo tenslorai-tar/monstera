@@ -25,11 +25,15 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { repoRoot } from '../lib/gitScope.mjs';
+
 /**
  * @typedef {{
  *   CLOUD_CLIENT_VARIABLES: Readonly<Record<string, { readonly id: string; readonly secret?: string }>>,
  *   PACKAGED_CLIENTS_FILE: string,
  *   readCloudClients: (env: Readonly<Record<string, string | undefined>>, packaged: Readonly<Record<string, unknown>> | null) => Readonly<Record<string, unknown>>,
+ *   packagedCloudClients: (read: string | null) => Readonly<Record<string, string>> | null,
  * }} CloudClientsModule
  */
 
@@ -40,6 +44,8 @@ import { join } from 'node:path';
  * @returns {Promise<CloudClientsModule>}
  */
 export async function cloudClientsModule() {
+  // FRESH OR REFUSED: a stale build would write the file by last build's names and read it back by them too.
+  refuseStaleBuild(repoRoot(), [['apps/desktop/src/cloudClients.ts', 'apps/desktop/dist/cloudClients.js', 'tsc']], 1);
   return /** @type {CloudClientsModule} */ (await import('../../apps/desktop/dist/cloudClients.js'));
 }
 
