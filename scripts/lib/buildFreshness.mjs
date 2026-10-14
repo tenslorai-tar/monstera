@@ -180,7 +180,12 @@ export const PDFIUM_COMMAND = [
  *
  * @type {BuildEdge[]}
  */
-export const PDFIUM_OBJECT = [...PDFIUM_COMMAND, ['packages/contract/src', 'packages/contract/dist/index.js', 'tsc']];
+export const PDFIUM_OBJECT = [
+  ...PDFIUM_COMMAND,
+  ['packages/contract/src', 'packages/contract/dist/index.js', 'tsc'],
+  // THE ONE PLACEMENT MATRIX (ADR-0243), which every placement this proof reads back is made of.
+  ['packages/kernel/src/objectPlacementMatrix.ts', 'packages/kernel/dist/objectPlacementMatrix.js', 'tsc'],
+];
 
 /**
  * The read-back proof's edges: {@link PDFIUM_COMMAND}'s, and every module the other PDFium commands' specs live in,
@@ -329,6 +334,7 @@ export const DRAWN_OBJECT_PLACE = [
   ['packages/kernel/src/pdfiumFfi.ts', 'packages/kernel/dist/pdfiumFfi.js', 'tsc'],
   ['packages/kernel/src/pdfiumSpecs.ts', 'packages/kernel/dist/pdfiumSpecs.js', 'tsc'],
   ['packages/kernel/src/mupdfWriter.ts', 'packages/kernel/dist/mupdfWriter.js', 'tsc'],
+  ['packages/kernel/src/objectPlacementMatrix.ts', 'packages/kernel/dist/objectPlacementMatrix.js', 'tsc'],
   ...NATIVE_ENGINE,
 ];
 

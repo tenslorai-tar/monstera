@@ -259,7 +259,7 @@ if (!existsSync(library) || shim === null) {
     flag: '--require-engines',
   });
 } else {
-  refuseStaleBuild(ROOT, DRAWN_OBJECT_PLACE, 6);
+  refuseStaleBuild(ROOT, DRAWN_OBJECT_PLACE, 7);
   // LITERAL SPECIFIERS, so `proof:electronimports` and the freshness scan can read what this loads.
   const pdfium = await import('../../packages/kernel/dist/pdfiumFfi.js');
   pdfium.openPdfium(library);
