@@ -280,7 +280,7 @@ const failures = [];
 // from its Decision 2: a tab read back at its stop, its control, and a second edit that keeps one tab. 235 from the
 // second edit's measure, which read a line written as several objects at its first object's width. 246 from L2: an
 // underlined word read back underlined, its rule moved with it by a second edit, and the control that turns it off.
-const roster = createRoster(failures, { cases: 260 });
+const roster = createRoster(failures, { cases: 261 });
 
 /**
  * @param {string} name
@@ -757,6 +757,18 @@ async function faceReadingCases() {
       'CONTROL: the regular face beside it, under the same descriptor, is read regular and serif',
       body?.style.bold === false && body.style.serif,
       JSON.stringify(body?.style),
+    );
+    // ITS OWN GLYPHS IN THE EDITOR (ADR-0238): a bare CFF program is no font a browser loads, so a font is built from
+    // what PDFium draws. Read back by HarfBuzz: each character the run sets maps to a glyph PDFium's width wide (the
+    // descriptor's /Widths, 500). Run before ADR-0238, `runFonts` answered `null` for both runs.
+    const read = await runFonts(session, 0, [lead?.index ?? -1, body?.index ?? -1]);
+    const font = read.fonts[read.runs[0] ?? -1];
+    const face = font === undefined ? null : ShapingFace.readable(font);
+    const widths = Array.from(new Set('Findings.'), (character) => face?.nominalAdvance(face.glyphFor(character.codePointAt(0) ?? 0) ?? 0));
+    record(
+      'a run in a bare CFF program is given a font built from its drawn glyphs, each character at the width PDFium draws it',
+      read.runs.every((place) => place !== null) && face !== null && widths.every((width) => width === 500),
+      `places ${JSON.stringify(read.runs)}, widths ${JSON.stringify(widths)}`,
     );
   } finally {
     await pdfiumWriter.close(session);

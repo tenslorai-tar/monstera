@@ -3,6 +3,7 @@ import {
   type BlockMarkSet,
   type BlockPlace,
   MAX_BLOCK_FONTS,
+  MAX_RUN_FONT_BYTES,
   type PageInsert,
   type ParagraphProps,
 } from '@monstera/contract/host';
@@ -50,6 +51,7 @@ import { type ProgramFace, faceOf, programFace } from './fontFace.js';
 import { readFace } from './fontFaces.js';
 import { BOX, boxFont } from './boxFont.js';
 import { namedSubset } from './fontSubset.js';
+import { type PathGlyph, type PathStep, pathFontFor } from './pathFont.js';
 import { type DrawnGlyph, runFontFor } from './runFont.js';
 import { withoutSubsetTag } from './subsetName.js';
 import { ShapingFace } from './textShaping.js';
@@ -1797,7 +1799,25 @@ function fontOfRun(bindings: Bound, handle: unknown, textPage: unknown, font: un
     if (glyph === null) return null;
     drawn.set(point, glyph);
   }
-  return runFontFor(program, drawn);
+  const rebuilt = runFontFor(program, drawn);
+  if (rebuilt !== null) return rebuilt;
+  // NO FONT FROM THE PROGRAM — a Type 1 or bare CFF program, or a TrueType one whose glyphs do not read as the page's —
+  // so one is built from what PDFium draws for each character (ADR-0238), and the run keeps its own look.
+  const paths = new Map<number, PathGlyph>();
+  for (const point of drawn.keys()) {
+    const path = drawnPathOf(bindings, font, point);
+    if (path === null) return null;
+    paths.set(point, path);
+  }
+  const ascent = [0];
+  const descent = [0];
+  const metrics =
+    numberFrom(bindings.fontAscent(font, 1000, ascent), 'FPDFFont_GetAscent') === 1 &&
+    numberFrom(bindings.fontDescent(font, 1000, descent), 'FPDFFont_GetDescent') === 1
+      ? { ascender: ascent[0] ?? 800, descender: descent[0] ?? -200 }
+      : { ascender: 800, descender: -200 };
+  const built = pathFontFor(paths, metrics);
+  return built === null || built.length > MAX_RUN_FONT_BYTES ? null : built;
 }
 
 /**
@@ -1827,6 +1847,40 @@ function drawnGlyphOf(bindings: Bound, font: unknown, point: number): DrawnGlyph
         : { x0: Math.min(box.x0, px), y0: Math.min(box.y0, py), x1: Math.max(box.x1, px), y1: Math.max(box.y1, py) };
   }
   return { advance: width[0] ?? 0, box, points };
+}
+
+/**
+ * What PDFium draws for `point` in `font` as an outline, in thousandths of an em, y up: its width and each segment of its
+ * glyph path, a Bézier's three points read as one curve. `null` where PDFium answers no width or a segment it cannot
+ * place, which no outline can stand in for.
+ */
+function drawnPathOf(bindings: Bound, font: unknown, point: number): PathGlyph | null {
+  const width = [0];
+  if (numberFrom(bindings.glyphWidth(font, point, 1000, width), 'FPDFFont_GetGlyphWidth') !== 1) return null;
+  const path: unknown = bindings.glyphPath(font, point, 1000);
+  const count = path === null ? 0 : numberFrom(bindings.glyphPathSegments(path), 'FPDFGlyphPath_CountGlyphSegments');
+  const steps: PathStep[] = [];
+  const pending: [number, number][] = [];
+  for (let at = 0; at < count; at += 1) {
+    const segment: unknown = bindings.glyphPathSegment(path, at);
+    const x = [0];
+    const y = [0];
+    if (numberFrom(bindings.segmentPoint(segment, x, y), 'FPDFPathSegment_GetPoint') !== 1) return null;
+    // IN EMS, measured (`drawnGlyphOf`), so a thousand times each point is a thousandth of an em.
+    const here: [number, number] = [(x[0] ?? 0) * 1000, (y[0] ?? 0) * 1000];
+    const kind = numberFrom(bindings.segmentType(segment), 'FPDFPathSegment_GetType');
+    if (kind === SEGMENT_MOVE) steps.push({ kind: 'move', x: here[0], y: here[1] });
+    else if (kind === SEGMENT_LINE) steps.push({ kind: 'line', x: here[0], y: here[1] });
+    else if (kind === SEGMENT_CURVE) {
+      pending.push(here);
+      if (pending.length === 3) {
+        const [[x1, y1], [x2, y2], [x3, y3]] = pending as [[number, number], [number, number], [number, number]];
+        steps.push({ kind: 'curve', x1, y1, x2, y2, x: x3, y: y3 });
+        pending.length = 0;
+      }
+    } else return null;
+  }
+  return pending.length === 0 ? { advance: width[0] ?? 0, steps } : null;
 }
 
 /** The most bytes of one base name read: a name is a PDF name, and one this long is not a font's (CR-NAT-12). */
