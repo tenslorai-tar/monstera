@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { FORMS_MANY_VALUES, FORMS_NOT_FILLABLE, FORMS_READ_ONLY, FORMS_TOO_LONG } from '../messages/en.js';
+import { FORMS_MANY_VALUES, FORMS_NOT_FILLABLE, FORMS_READ_ONLY, FORMS_SIGNED, FORMS_TOO_LONG } from '../messages/en.js';
 import { type ListedField, fieldFill } from './fieldFill.js';
 
 /**
@@ -100,8 +100,14 @@ describe('fieldFill', () => {
       reason: FORMS_MANY_VALUES,
       values: { values: 'a, b' },
     });
-    for (const kind of ['signature', 'other'] as const) {
-      expect(fieldFill(field({ kind })), kind).toStrictEqual({ kind: 'none', reason: FORMS_NOT_FILLABLE });
-    }
+    expect(fieldFill(field({ kind: 'other' }))).toStrictEqual({ kind: 'none', reason: FORMS_NOT_FILLABLE });
+  });
+
+  it('offers an EMPTY signature field for signing, and never a signed one (the owner’s F8)', () => {
+    expect(fieldFill(field({ kind: 'signature' }))).toStrictEqual({ kind: 'sign' });
+    // CONTROL: the same field holding a signature says so, so a signature is never written over another.
+    expect(fieldFill(field({ kind: 'signature', signed: true }))).toStrictEqual({ kind: 'none', reason: FORMS_SIGNED });
+    // READ-ONLY STILL WINS, the document's own word.
+    expect(fieldFill(field({ kind: 'signature', readOnly: true }))).toStrictEqual({ kind: 'none', reason: FORMS_READ_ONLY });
   });
 });

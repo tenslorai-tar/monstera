@@ -5698,6 +5698,29 @@ describe('protectDocumentCommand', () => {
       ]);
     });
 
+    it('a placement IN A FIELD carries the field’s name across with the place (the owner’s F8)', async () => {
+      // THE CASE ABOVE IS THE CONTROL: a placement naming no field sends none.
+      const { client, sent } = signingClient({ kind: 'cancelled' });
+      await signDocument(
+        {
+          client,
+          toast: () => undefined,
+          onApplied: () => undefined,
+          ask: () => Promise.resolve({ passphrase: '', mark: TYPED }),
+        },
+        DOC,
+        { ...PLACEMENT, field: 'applicant.signature' },
+      );
+      const outlined = await outlinedMarkOf(TYPED);
+      if (outlined.kind !== 'ready') throw new Error(outlined.kind);
+      expect(sent).toStrictEqual([
+        {
+          id: 'document.sign',
+          params: { docId: DOC, passphrase: '', appearance: { ...PLACEMENT, field: 'applicant.signature', mark: outlined.mark } },
+        },
+      ]);
+    });
+
     it('a typed name its face CANNOT WRITE asks for no certificate, and says which characters', async () => {
       const { client, sent } = signingClient({ kind: 'cancelled' });
       const shown: { id: string; props: unknown }[] = [];

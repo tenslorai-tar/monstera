@@ -23,6 +23,7 @@ import {
   FORMS_LABEL,
   FORMS_NO_MATCH,
   FORMS_NOT_FILLABLE,
+  FORMS_SIGN_ON_PAGE,
   FORMS_PAGE,
   FORMS_ROW,
   FORMS_SEARCH,
@@ -329,6 +330,8 @@ function FieldValue({
   if (offer.kind === 'none') return <span className="m-forms-locked">{i18n._(offer.reason, offer.values)}</span>;
   // A PUSH BUTTON is pressed on the page, where it says what it cannot do; a second press point here would say it twice.
   if (offer.kind === 'button') return <span className="m-forms-locked">{i18n._(FORMS_NOT_FILLABLE)}</span>;
+  // AN EMPTY SIGNATURE FIELD is signed on the page, where the signature is drawn (the owner's F8); the list says where.
+  if (offer.kind === 'sign') return <span className="m-forms-locked">{i18n._(FORMS_SIGN_ON_PAGE)}</span>;
 
   if (offer.kind === 'choices') {
     return (

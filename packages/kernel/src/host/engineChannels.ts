@@ -648,6 +648,8 @@ const engineFormFieldSchema = z
     action: z.literal('reset').exactOptional(),
     /** How a dropdown or a list box is drawn (the owner's F1), present only on one, for `range`'s reason. */
     look: fieldLookSchema.exactOptional(),
+    /** A signature field that holds a signature (the owner's F8), present only on one, for `range`'s reason. */
+    signed: z.literal(true).exactOptional(),
   })
   .strict();
 

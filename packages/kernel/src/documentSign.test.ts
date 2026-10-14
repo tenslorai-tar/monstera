@@ -6,6 +6,7 @@ import {
   PDFName,
   PDFNumber,
   PDFRawStream,
+  PDFString,
   StandardFonts,
   decodePDFRawStream,
 } from '@cantoo/pdf-lib';
@@ -21,6 +22,7 @@ import { type PlaceholderRequest, placeholderRequestOf } from './signatureHole.j
 import { engineChannels } from './host/engineChannels.js';
 import { signatureValues } from './signatureFields.js';
 import { breaksSignatures } from './signatureKeeping.js';
+import { readFormFields } from './formFields.js';
 import type { ByteImage } from './engineSeam.js';
 import { PngPixelsRefused } from './imageDimensions.js';
 import { mupdfWriter, signaturesKeptBySave, withDocument, withDocumentRemoving } from './mupdfWriter.js';
@@ -925,6 +927,92 @@ describe('a VISIBLE signature', () => {
     const none = invisible.lookup(PDFName.of('Rect'), PDFArray).asArray();
     expect(none.map((value) => (value as PDFNumber).asNumber())).toStrictEqual([0, 0, 0, 0]);
     expect(invisible.lookupMaybe(PDFName.of('AP'), PDFDict)).toBeUndefined();
+  });
+
+  /** The fixture with an empty signature field, `applicant.signature`, a parent and a child as a form tree names it. */
+  async function withEmptyField(): Promise<Uint8Array> {
+    const document = await PDFDocument.load(unsigned, { updateMetadata: false });
+    const { context } = document;
+    const parent = context.obj({ T: PDFString.of('applicant'), Kids: context.obj([]) });
+    const parentRef = context.register(parent);
+    const field = context.obj({
+      Type: PDFName.of('Annot'),
+      Subtype: PDFName.of('Widget'),
+      FT: PDFName.of('Sig'),
+      T: PDFString.of('signature'),
+      Rect: context.obj([100, 100, 300, 180]),
+      F: 4,
+      Parent: parentRef,
+      P: document.getPage(0).ref,
+    });
+    const fieldRef = context.register(field);
+    parent.lookup(PDFName.of('Kids'), PDFArray).push(fieldRef);
+    document.getPage(0).node.addAnnot(fieldRef);
+    document.catalog.set(PDFName.of('AcroForm'), context.obj({ Fields: context.obj([parentRef]) }));
+    return document.save({ useObjectStreams: false });
+  }
+
+  /** The form's fields, and the signature field's value and appearance, read back with pdf-lib. */
+  async function fieldsOf(bytes: Uint8Array): Promise<{ readonly roots: number; readonly value: string | undefined; readonly drawn: boolean; readonly widgets: number }> {
+    const document = await PDFDocument.load(bytes, { updateMetadata: false });
+    const roots = document.catalog.lookup(PDFName.of('AcroForm'), PDFDict).lookup(PDFName.of('Fields'), PDFArray);
+    const parent = roots.lookup(0, PDFDict);
+    const field = parent.lookup(PDFName.of('Kids'), PDFArray).lookup(0, PDFDict);
+    const value = field.lookupMaybe(PDFName.of('V'), PDFDict)?.get(PDFName.of('Type'))?.toString();
+    const annotations = document.getPage(0).node.Annots();
+    return { roots: roots.size(), value, drawn: field.has(PDFName.of('AP')), widgets: annotations?.size() ?? 0 };
+  }
+
+  it('SIGNS INTO THE EMPTY FIELD PRESSED, adding no field beside it (the owner’s F8) — CONTROL: no field named, a second one', async () => {
+    const empty = await withEmptyField();
+    expect(await fieldsOf(empty)).toStrictEqual({ roots: 1, value: undefined, drawn: false, widgets: 1 });
+    const into = await withSignaturePlaceholder(empty, {
+      ...placeholder,
+      appearance: { page: 0, rect: ORDERED, mark: typedLook, field: 'applicant.signature' },
+    });
+    // ITS VALUE IS THE SIGNATURE AND ITS WIDGET THE APPEARANCE: one field, one widget, as the document had.
+    expect(await fieldsOf(into)).toStrictEqual({ roots: 1, value: '/Sig', drawn: true, widgets: 1 });
+    const beside = await withSignaturePlaceholder(empty, { ...placeholder, appearance: { page: 0, rect: ORDERED, mark: typedLook } });
+    expect(await fieldsOf(beside)).toStrictEqual({ roots: 2, value: undefined, drawn: false, widgets: 2 });
+  });
+
+  it('a signature into the pressed field VERIFIES and covers the document, and the field list then calls it signed', async () => {
+    const empty = await withEmptyField();
+    const signed = await applySignDocument(empty, {
+      ...command,
+      bytes: certificate,
+      appearance: { page: 0, rect: ORDERED, mark: typedLook, field: 'applicant.signature' },
+    });
+    const listed = async (bytes: Uint8Array): Promise<unknown> => {
+      const session = await mupdfWriter.open(bytes);
+      try {
+        return (await readFormFields(session)).fields.map((field) => [field.name, field.kind, field.signed]);
+      } finally {
+        await mupdfWriter.close(session);
+      }
+    };
+    // CONTROL: the empty field is listed unsigned, so the page offers it for signing.
+    expect(await listed(empty)).toStrictEqual([['applicant.signature', 'signature', undefined]]);
+    expect(await listed(signed)).toStrictEqual([['applicant.signature', 'signature', true]]);
+    const session = await mupdfWriter.open(signed);
+    try {
+      const read = await readSignatures(session, signed);
+      expect(read.map((each) => [each.coversDocument, each.coversWholeFile])).toStrictEqual([[true, true]]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }, 60_000);
+
+  it('a field ALREADY SIGNED is never signed over: the new signature is a field of its own', async () => {
+    const once = await withSignaturePlaceholder(await withEmptyField(), {
+      ...placeholder,
+      appearance: { page: 0, rect: ORDERED, mark: typedLook, field: 'applicant.signature' },
+    });
+    const twice = await withSignaturePlaceholder(once, {
+      ...placeholder,
+      appearance: { page: 0, rect: ORDERED, mark: typedLook, field: 'applicant.signature' },
+    });
+    expect((await fieldsOf(twice)).roots).toBe(2);
   });
 
   const drawnLook: { kind: 'drawn'; strokes: [number, number][][] } = {

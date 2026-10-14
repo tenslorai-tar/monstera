@@ -87,7 +87,7 @@ describe('FormLayer', () => {
   it('has NO control for a field nobody can fill here — CONTROL: the fillable one beside it has one', () => {
     const { container } = draw([
       field({ index: 0, readOnly: true }),
-      field({ index: 1, kind: 'signature' }),
+      field({ index: 1, kind: 'signature', signed: true }),
       field({ index: 3, values: ['…'], cut: true }),
       field({ index: 4, kind: 'listbox', values: ['a', 'b'] }),
       field({ index: 5, rect: null }),
@@ -114,6 +114,33 @@ describe('FormLayer', () => {
     fireEvent.click(button);
     expect(fills).toStrictEqual([{ page: 2, index: 5, reset: true }]);
     expect(container.querySelector('.m-page-field-problem')).toBeNull();
+  });
+
+  it('an EMPTY SIGNATURE FIELD is tinted and pressed, and offers both ways to sign, each sent with its place and name (F8)', () => {
+    // The CONTROL is the case above: a SIGNED one has no control at all.
+    const { container, fills } = draw([field({ index: 4, kind: 'signature', name: 'applicant.signature' })]);
+    const face = must(at(container, 4));
+    expect(face.className).toContain('m-page-field--tint');
+    expect(face.getAttribute('aria-label')).toBe('Sign applicant.signature');
+    // NOTHING IS SENT BY THE PRESS ITSELF: it offers, and the person chooses.
+    press(face);
+    expect(fills).toStrictEqual([]);
+    const offer = must(container.querySelector<HTMLElement>('[role="group"][aria-label="Sign this field"]'));
+    const choices = [...offer.querySelectorAll<HTMLButtonElement>('button')];
+    expect(choices.map((choice) => choice.textContent)).toStrictEqual([
+      'Sign with a typed, drawn or picture signature',
+      'Sign with a certificate',
+    ]);
+    press(choices[1] ?? null);
+    press(face);
+    press(must(container.querySelector<HTMLElement>('[role="group"] button')));
+    const place = { page: 2, index: 4, rect: { x0: 10, y0: 700, x1: 110, y1: 720 }, name: 'applicant.signature' };
+    expect(fills).toStrictEqual([
+      { ...place, sign: 'certificate' },
+      { ...place, sign: 'mark' },
+    ]);
+    // CLOSED ONCE CHOSEN.
+    expect(container.querySelector('[role="group"]')).toBeNull();
   });
 
   it('draws nothing at all over a page with nothing to fill', () => {

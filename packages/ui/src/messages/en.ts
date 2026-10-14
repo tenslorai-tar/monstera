@@ -1465,6 +1465,9 @@ export const FORMS_ROW = messageKey('surface.forms.row');
 export const FORMS_GO_TO_PAGE = messageKey('surface.forms.go-to-page');
 export const FORMS_READ_ONLY = messageKey('surface.forms.read-only');
 export const FORMS_NOT_FILLABLE = messageKey('surface.forms.not-fillable');
+/** A signature field in the Forms list (the owner's F8): an empty one is signed on the page; a signed one says so. */
+export const FORMS_SIGN_ON_PAGE = messageKey('surface.forms.sign-on-page');
+export const FORMS_SIGNED = messageKey('surface.forms.signed');
 export const FORMS_CHOICE_EMPTY = messageKey('surface.forms.choice-empty');
 export const FORMS_MANY_VALUES = messageKey('surface.forms.many-values');
 export const FORMS_TOO_LONG = messageKey('surface.forms.too-long');
@@ -1782,6 +1785,11 @@ export const FORM_FIELD_REQUIRED_EMPTY = messageKey('surface.form-layer.required
 export const FORM_FIELD_REQUIRED_LEFT = messageKey('surface.form-layer.required-left');
 export const FORM_BUTTON_NO_SCRIPTS = messageKey('surface.form-layer.button-no-scripts');
 export const FORM_FIELD_PRESS = messageKey('surface.form-layer.press');
+/** A signature field on the page, pressed (the owner's F8): what it offers, and its name for a screen reader. */
+export const FORM_FIELD_SIGN = messageKey('surface.form-layer.sign');
+export const FORM_SIGN_OFFER = messageKey('surface.form-layer.sign-offer');
+export const FORM_SIGN_MARK = messageKey('surface.form-layer.sign-mark');
+export const FORM_SIGN_CERTIFICATE = messageKey('surface.form-layer.sign-certificate');
 export const FLATTEN_FORM_TITLE = messageKey('dialog.flatten-form.title');
 export const FLATTEN_FORM_EXPLAINS = messageKey('dialog.flatten-form.explains');
 export const FLATTEN_FORM_APPLY = messageKey('dialog.flatten-form.apply');
@@ -4266,6 +4274,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // and a push button are not fields a person types into at all, which is a
   // different fact from one this document happens to have locked.
   [FORMS_NOT_FILLABLE]: 'This field is not one that can be filled here.',
+  [FORMS_SIGN_ON_PAGE]: 'Press this field on the page to sign it.',
+  [FORMS_SIGNED]: 'This field is signed.',
   // THE EMPTY CHOICE, which is a real value rather than a missing one:
   // measured, clearing a dropdown stores the empty string, and a document may
   // arrive with one already cleared.
@@ -4645,6 +4655,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FORM_BUTTON_NO_SCRIPTS]:
     'Monstera does not run what a form’s buttons are set to do, such as a script or sending the form, so pressing this button does nothing here. Every other part of the form works.',
   [FORM_FIELD_PRESS]: 'Press {name}',
+  [FORM_FIELD_SIGN]: 'Sign {name}',
+  [FORM_SIGN_OFFER]: 'Sign this field',
+  [FORM_SIGN_MARK]: 'Sign with a typed, drawn or picture signature',
+  [FORM_SIGN_CERTIFICATE]: 'Sign with a certificate',
   [FLATTEN_FORM_TITLE]: 'Flatten the form',
   [FLATTEN_FORM_EXPLAINS]:
     'Flatten turns the form into an ordinary page. Whatever is typed or ticked stays exactly as it looks, but nobody can change it any more. Use it before you send a final copy. You can undo it until you close the document.',

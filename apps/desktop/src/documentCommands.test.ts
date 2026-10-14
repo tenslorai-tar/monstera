@@ -5463,15 +5463,21 @@ describe('sign — a visible signature', () => {
     };
 
     /** Signs with a kept look and answers the mark that reached the signer, or the outcome where none did. */
-    const signingWith = async (id: string): Promise<{ outcome: unknown; mark: unknown; certificate: string[] }> => {
+    const signingWith = async (
+      id: string,
+      field?: string,
+    ): Promise<{ outcome: unknown; mark: unknown; field: unknown; certificate: string[] }> => {
       const certificate = recordingCertificate();
       let mark: unknown;
+      let signedField: unknown;
       const recording: RegisteredWriter<'signpdf'> = {
         serialise: (held) => mupdfWriter.serialise(held),
         serialiseInto: serialiseIntoFile((held: MupdfSession) => mupdfWriter.serialise(held)),
         apply: (request) => {
           const command: unknown = request.command;
-          mark = (command as { readonly appearance?: { readonly mark?: unknown } }).appearance?.mark;
+          const appearance = (command as { readonly appearance?: { readonly mark?: unknown; readonly field?: unknown } }).appearance;
+          mark = appearance?.mark;
+          signedField = appearance?.field;
           return Promise.reject(new SignatureCredentialRefusedError());
         },
         capture: () => Promise.resolve({ captured: false as const, reason: 'the recording signer records nothing' }),
@@ -5492,9 +5498,17 @@ describe('sign — a visible signature', () => {
         certificate: certificate.source,
         save: noSaving,
       });
-      const outcome = await commands.sign(docId, { passphrase: '', appearance: { ...placement, mark: { kind: 'saved', id } } });
-      return { outcome, mark, certificate: certificate.asked };
+      const outcome = await commands.sign(docId, {
+        passphrase: '',
+        appearance: { ...placement, mark: { kind: 'saved', id }, ...(field === undefined ? {} : { field }) },
+      });
+      return { outcome, mark, field: signedField, certificate: certificate.asked };
     };
+
+    it('THE FIELD PRESSED reaches the signer with the place, so the signature fills it (the owner’s F8) — CONTROL: none named, none sent', async () => {
+      expect((await signingWith(KEPT_PICTURE, 'applicant.signature')).field).toBe('applicant.signature');
+      expect((await signingWith(KEPT_PICTURE)).field).toBeUndefined();
+    });
 
     it('a kept TYPED signature named only by its id is REFUSED: main has no outline to draw (ADR-0150)', async () => {
       // THE RENDERER SENDS A KEPT TYPED NAME AS ITS OUTLINE (`chosenOfKept`), so this is its defect, answered as one —

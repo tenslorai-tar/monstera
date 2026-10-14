@@ -1,9 +1,18 @@
 import { useLingui } from '@lingui/react';
-import type { FieldFill, FieldLook } from '@monstera/contract';
+import type { AnnotationRect, FieldFill, FieldLook } from '@monstera/contract';
 import { type CSSProperties, type ReactElement, useEffect, useId, useRef, useState } from 'react';
 
 import { type OverlayPage, pdfRectOnScreen } from '../annotations/annotationSpace.js';
-import { FORM_BUTTON_NO_SCRIPTS, FORM_FIELD_FILL_IN, FORM_FIELD_PRESS } from '../messages/en.js';
+import {
+  FORM_BUTTON_NO_SCRIPTS,
+  FORM_FIELD_FILL_IN,
+  FORM_FIELD_PRESS,
+  FORM_FIELD_SIGN,
+  FORM_SIGN_CERTIFICATE,
+  FORM_SIGN_MARK,
+  FORM_SIGN_OFFER,
+} from '../messages/en.js';
+import { Button } from '../primitives/Button.js';
 import { Problem } from '../primitives/Problem.js';
 import { FieldTextBox } from './FieldControls.js';
 import { PageChoiceList, PageDropdown } from './PageChoice.js';
@@ -27,7 +36,19 @@ interface Typing {
  */
 export type PageFill =
   | { readonly page: number; readonly index: number; readonly value: FieldFill }
-  | { readonly page: number; readonly index: number; readonly reset: true };
+  | { readonly page: number; readonly index: number; readonly reset: true }
+  /**
+   * An empty signature field to sign (the owner's F8), with the application's own signing: a typed, drawn or picture
+   * mark, or a certificate. It carries the field's place on the page and its full name, which is where the signature
+   * goes and which field it fills.
+   */
+  | {
+      readonly page: number;
+      readonly index: number;
+      readonly sign: 'mark' | 'certificate';
+      readonly rect: AnnotationRect;
+      readonly name: string;
+    };
 
 /**
  * How much of a one-line field's height its text takes. MuPDF's automatic size, measured 2026-10-05: 15 points in a
@@ -121,6 +142,12 @@ export function FormLayer({
   // WHAT THE PERSON IS TOLD ABOUT ONE FIELD, beside it (ADR-0226): a value its format does not read, a required field
   // left empty, a button that does nothing here. One at a time; a press on another field puts it away.
   const [problem, setProblem] = useState<{ readonly index: number; readonly said: FieldProblem } | undefined>(undefined);
+  // THE SIGNATURE FIELD WHOSE OFFER IS OPEN (the owner's F8), by its place in the walk; one at a time. Its first choice
+  // takes the focus when it opens, so the keyboard is where the offer is.
+  const [offering, setOffering] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    if (offering !== undefined) root.current?.querySelector<HTMLElement>('.m-page-sign-offer button')?.focus();
+  }, [offering]);
   const idBase = useId();
   const controlId = (index: number): string => `${idBase}-field-${String(index)}`;
   // A FIELD THE FORM'S ORDER SENT THE FOCUS TO (Tab from another field, perhaps on another page), taken once per stamp
@@ -261,6 +288,63 @@ export function FormLayer({
               type="button"
             />,
             beside,
+          ];
+        }
+
+        if (offer.kind === 'sign') {
+          const rect = field.rect;
+          const sign = (how: 'mark' | 'certificate'): void => {
+            setOffering(undefined);
+            if (rect !== null) onFill({ page, index: field.index, sign: how, rect, name: field.name });
+          };
+          const offerId = `${id}-sign`;
+          return [
+            <button
+              {...marks}
+              id={id}
+              key={field.index}
+              aria-controls={offering === field.index ? offerId : undefined}
+              aria-expanded={offering === field.index}
+              aria-haspopup="true"
+              aria-label={i18n._(FORM_FIELD_SIGN, { name: field.name })}
+              className={look}
+              onClick={() => {
+                setOffering((open) => (open === field.index ? undefined : field.index));
+              }}
+              onPointerDown={pressed}
+              style={at}
+              type="button"
+            />,
+            // WHAT SIGNING IS OFFERED, under the field on the page: the application's own two ways, each placed in it.
+            offering === field.index ? (
+              <div
+                aria-label={i18n._(FORM_SIGN_OFFER)}
+                className="m-page-field-problem m-page-sign-offer"
+                id={offerId}
+                key={`sign-${String(field.index)}`}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Escape') return;
+                  event.preventDefault();
+                  setOffering(undefined);
+                  document.getElementById(id)?.focus();
+                }}
+                role="group"
+                style={{ left: `${String(box.left)}px`, top: `${String(box.top + box.height)}px` }}
+              >
+                <Button
+                  label={FORM_SIGN_MARK}
+                  onClick={() => {
+                    sign('mark');
+                  }}
+                />
+                <Button
+                  label={FORM_SIGN_CERTIFICATE}
+                  onClick={() => {
+                    sign('certificate');
+                  }}
+                />
+              </div>
+            ) : null,
           ];
         }
 

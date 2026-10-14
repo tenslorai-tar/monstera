@@ -6725,10 +6725,11 @@ export class DocumentCommands {
     | NoSignatureMark
   > {
     if (requested === undefined) return { kind: 'ready', value: undefined };
-    const { mark, page, rect } = requested;
+    const { mark, page, rect, field } = requested;
     const resolved = await this.#markFor(mark);
     if (resolved.kind !== 'ready') return resolved;
-    return { kind: 'ready', value: { page, rect, mark: resolved.mark } };
+    // THE FIELD PRESSED travels with the place (the owner's F8), so the signature fills it rather than sitting beside it.
+    return { kind: 'ready', value: { page, rect, mark: resolved.mark, ...(field === undefined ? {} : { field }) } };
   }
 
   /**

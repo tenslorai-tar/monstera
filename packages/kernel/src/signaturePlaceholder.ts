@@ -241,6 +241,24 @@ function placeSignature(
     );
   }
 
+  // `/AcroForm` WITH `/SigFlags 3` — append-only plus signatures-exist, which
+  // is what tells a reader the document has a signature to check.
+  const catalogue = document.catalog;
+  const existing = catalogue.lookupMaybe(PDFName.of('AcroForm'), PDFDict);
+  const acroForm = existing ?? context.obj({});
+  if (existing === undefined) catalogue.set(PDFName.of('AcroForm'), context.register(acroForm));
+  acroForm.set(PDFName.of('SigFlags'), PDFNumber.of(3));
+
+  // THE FIELD THE PERSON PRESSED, signed where it is (the owner's F8): its value is the signature and its widget takes
+  // the appearance. Nothing new is added to the form, so the document does not end up with the empty field still
+  // waiting beside a second one that holds the signature.
+  const pressed = request.appearance?.field === undefined ? undefined : emptySignatureField(page, request.appearance.field);
+  if (pressed !== undefined) {
+    pressed.field.set(PDFName.of('V'), signatureRef);
+    if (placed !== undefined) pressed.widget.set(PDFName.of('AP'), context.obj({ N: placed.form }));
+    return;
+  }
+
   const widget = context.obj({
     Type: PDFName.of('Annot'),
     Subtype: PDFName.of('Widget'),
@@ -259,17 +277,55 @@ function placeSignature(
   if (placed !== undefined) widget.set(PDFName.of('AP'), context.obj({ N: placed.form }));
   const widgetRef = context.register(widget);
   page.node.addAnnot(widgetRef);
-
-  // `/AcroForm` WITH `/SigFlags 3` — append-only plus signatures-exist, which
-  // is what tells a reader the document has a signature to check.
-  const catalogue = document.catalog;
-  const existing = catalogue.lookupMaybe(PDFName.of('AcroForm'), PDFDict);
-  const acroForm = existing ?? context.obj({});
-  if (existing === undefined) catalogue.set(PDFName.of('AcroForm'), context.register(acroForm));
-  acroForm.set(PDFName.of('SigFlags'), PDFNumber.of(3));
   const fields = acroForm.lookupMaybe(PDFName.of('Fields'), PDFArray) ?? context.obj([]);
   fields.push(widgetRef);
   acroForm.set(PDFName.of('Fields'), fields);
+}
+
+/** How many `/Parent` steps a field name is read through: past any form a person makes, short of a cycle. */
+const MAX_NAME_DEPTH = 32;
+
+/** A field's full name, its own `/T` after every ancestor's joined by dots, as ISO 32000-1 12.7.3.2 builds it. */
+function fullNameOf(field: PDFDict): string {
+  const parts: string[] = [];
+  let at: PDFDict | undefined = field;
+  for (let depth = 0; at !== undefined && depth < MAX_NAME_DEPTH; depth += 1) {
+    const own = at.lookupMaybe(PDFName.of('T'), PDFString, PDFHexString);
+    if (own !== undefined) parts.unshift(own.decodeText());
+    at = at.lookupMaybe(PDFName.of('Parent'), PDFDict);
+  }
+  return parts.join('.');
+}
+
+/** An entry inherited through `/Parent`, as a field's type is (ISO 32000-1 12.7.3.1). */
+function inherited(field: PDFDict, key: string): unknown {
+  let at: PDFDict | undefined = field;
+  for (let depth = 0; at !== undefined && depth < MAX_NAME_DEPTH; depth += 1) {
+    const own = at.get(PDFName.of(key));
+    if (own !== undefined) return own;
+    at = at.lookupMaybe(PDFName.of('Parent'), PDFDict);
+  }
+  return undefined;
+}
+
+/**
+ * The unsigned signature field on this page with this full name: the field dictionary its value goes in, and the
+ * widget its appearance goes on — one dictionary where the two are merged, as they usually are. `undefined` where there
+ * is none or it is signed already, and the signature is then a field of its own at the place, as one drawn anywhere is.
+ */
+function emptySignatureField(page: PDFPage, name: string): { readonly field: PDFDict; readonly widget: PDFDict } | undefined {
+  const annotations = page.node.Annots();
+  if (annotations === undefined) return undefined;
+  for (let at = 0; at < annotations.size(); at += 1) {
+    const widget = annotations.lookupMaybe(at, PDFDict);
+    if (widget?.get(PDFName.of('Subtype')) !== PDFName.of('Widget')) continue;
+    // THE FIELD IS THE WIDGET WHERE IT CARRIES A NAME, else its parent: a field with one widget is usually one object.
+    const field = widget.has(PDFName.of('T')) ? widget : widget.lookupMaybe(PDFName.of('Parent'), PDFDict);
+    if (field === undefined || inherited(field, 'FT') !== PDFName.of('Sig') || fullNameOf(field) !== name) continue;
+    if (field.has(PDFName.of('V'))) return undefined;
+    return { field, widget };
+  }
+  return undefined;
 }
 
 /**

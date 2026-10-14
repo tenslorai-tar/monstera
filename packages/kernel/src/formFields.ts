@@ -7,7 +7,7 @@ import { type CalculatedValue, calculatedValues, recalculate, restoreCalculated,
 import { kindOf } from './fieldKind.js';
 import { choiceLookOf } from './fieldLook.js';
 import { redrawFamily, remaskBeforeBake } from './fieldWidgets.js';
-import { MAX_FIELD_ANCESTRY, buttonActionOf, fieldDictionaryOf, fieldRulesOf, qualifiedNameOf } from './fieldRules.js';
+import { MAX_FIELD_ANCESTRY, buttonActionOf, fieldDictionaryOf, fieldRulesOf, nearest, qualifiedNameOf } from './fieldRules.js';
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { ENGINE_FORM_FIELDS_MAX } from './host/engineChannels.js';
@@ -284,6 +284,8 @@ export interface ListedField {
   readonly action?: 'reset';
   /** How a dropdown or a list box is drawn ({@link choiceLookOf}); present only on one (the owner's F1). */
   readonly look?: FieldLook;
+  /** A signature field that holds a signature; present only on one (the owner's F8). */
+  readonly signed?: true;
 }
 
 /**
@@ -463,6 +465,8 @@ export function readFormFields(
           ...optionOf(kind, widget),
           ...(kind === 'button' && resetsForm(widget) ? { action: 'reset' as const } : {}),
           ...(kind === 'dropdown' || kind === 'listbox' ? { look: choiceLookOf(document, widget.getObject()) } : {}),
+          // A SIGNATURE FIELD HOLDING ONE, whose value is the signature dictionary: never offered for signing again.
+          ...(kind === 'signature' && nearest(widget.getObject(), 'V').isDictionary() ? { signed: true as const } : {}),
         });
       }
     }

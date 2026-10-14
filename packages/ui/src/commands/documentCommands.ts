@@ -4844,7 +4844,7 @@ export async function signDocument(
     ...(answer.timestamp === undefined ? {} : { timestamp: answer.timestamp }),
     ...(placement === undefined || mark === undefined
       ? {}
-      : { appearance: { page: placement.page, rect: placement.rect, mark } }),
+      : { appearance: { ...placement, mark } }),
   });
   if (!signed.ok) {
     reportProblem(deps, signed.error);

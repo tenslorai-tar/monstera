@@ -278,11 +278,14 @@ describe('FormsPanel — filling in place', () => {
     const { fills } = await panel([
       field({ name: 'applicant.reference', values: ['LOCKED'], readOnly: true }),
       field({ name: 'long', index: 1, values: ['a'.repeat(512)], cut: true }),
-      field({ name: 'applicant.signature', index: 2, kind: 'signature' }),
+      field({ name: 'applicant.signature', index: 2, kind: 'signature', signed: true }),
+      field({ name: 'unknown', index: 3, kind: 'other' }),
     ]);
     expect(screen.queryByRole('button', { name: 'applicant.reference' })).toBeNull();
     expect(screen.getByText('The document marks this field read-only.')).toBeTruthy();
     expect(screen.getByText('This field holds more text than can be changed here, so it is kept as it is.')).toBeTruthy();
+    // A SIGNED SIGNATURE FIELD SAYS SO (the owner's F8), and a kind nobody fills says that.
+    expect(screen.getByText('This field is signed.')).toBeTruthy();
     expect(screen.getByText('This field is not one that can be filled here.')).toBeTruthy();
     expect(fills).toStrictEqual([]);
   });
@@ -292,14 +295,16 @@ describe('FormsPanel — filling in place', () => {
     expect(openBox('long').value).toBe('a'.repeat(512));
   });
 
-  it('SEPARATES read-only from not fillable: a push button and a signature say they are not fillable, never read-only', async () => {
+  it('SEPARATES read-only from not fillable: a push button says it is not fillable, never read-only', async () => {
     await panel([
       field({ name: 'applicant.reference', values: ['LOCKED'], readOnly: true }),
       field({ name: 'submit', index: 1, kind: 'button' }),
       field({ name: 'applicant.signature', index: 2, kind: 'signature' }),
     ]);
     expect(screen.getAllByText('The document marks this field read-only.')).toHaveLength(1);
-    expect(screen.getAllByText('This field is not one that can be filled here.')).toHaveLength(2);
+    expect(screen.getAllByText('This field is not one that can be filled here.')).toHaveLength(1);
+    // AN EMPTY SIGNATURE FIELD SAYS WHERE IT IS SIGNED (the owner's F8): on the page, which offers the signing.
+    expect(screen.getAllByText('Press this field on the page to sign it.')).toHaveLength(1);
   });
 
   it('draws a radio group’s options as radios of ONE group, and a second group as another', async () => {

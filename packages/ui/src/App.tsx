@@ -1447,6 +1447,20 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const fillFormField = useCallback(
     (handle: PageFill & { readonly version: DocVersion }): void => {
       if (activeId === undefined) return;
+      // AN EMPTY SIGNATURE FIELD PRESSED (the owner's F8) is signed by the application's own two routes, at the field: a
+      // typed, drawn or picture mark the signature dialog answers, or a certificate written into the field itself.
+      if ('sign' in handle) {
+        const at = { page: handle.page, rect: handle.rect };
+        if (handle.sign === 'certificate') {
+          void signDocument({ client, ask, onApplied: applied, toast }, activeId, { ...at, field: handle.name });
+          return;
+        }
+        void (async (): Promise<void> => {
+          const look = await chooseSignature({ client, ask });
+          if (look !== undefined) await placePlainSignature({ client, ask, onApplied: applied, stamp, toast }, activeId, at.page, at.rect, look);
+        })();
+        return;
+      }
       void applyDocumentCommand(
         { client, onApplied: applied, ask, stamp, signatures },
         activeId,
@@ -1456,7 +1470,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           : { kind: 'fillFormField', page: handle.page, index: handle.index, value: handle.value, version: handle.version },
       );
     },
-    [activeId, applied, ask, client, signatures, stamp],
+    [activeId, applied, ask, client, signatures, stamp, toast],
   );
 
   /**

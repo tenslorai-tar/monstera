@@ -4318,16 +4318,32 @@ const signatureMarkSchema = z.discriminatedUnion('kind', [
 ]);
 
 /**
+ * How long a created field's name may be.
+ *
+ * A **path**, not a label — measured 2026-09-08
+ * (`scripts/research/formFieldCreate.mjs`): a dot in the name makes a parent
+ * node in the field tree, so `owner.first` and `owner.second` are siblings
+ * under `owner`, and creating `owner` beside `owner.first` is refused by
+ * pdf-lib outright. Generous enough that no name a person types meets it, for
+ * {@link MAX_FIELD_VALUE}'s reason.
+ */
+export const MAX_FIELD_NAME = 512;
+
+/**
  * Where a visible signature goes: a page and a rectangle in PDF user space.
  *
  * `placeImage`'s rectangle and its space ({@link annotationRectSchema} says
  * why), on one page — a signature is one field with one widget, and a widget
  * belongs to exactly one page.
+ *
+ * `field` is the document's own empty signature field the person pressed (the owner's F8), by its full name: the
+ * signature is written INTO it rather than beside it as a second field. Absent, a new field is made at the rectangle.
  */
 export const signaturePlacementSchema = z
   .object({
     page: z.number().int().nonnegative(),
     rect: annotationRectSchema,
+    field: z.string().min(1).max(MAX_FIELD_NAME).optional(),
   })
   .strict();
 
@@ -5152,18 +5168,6 @@ export const importSkippedSchema = z
 
 /** See {@link importSkippedSchema}. */
 export type ImportSkipped = z.infer<typeof importSkippedSchema>;
-
-/**
- * How long a created field's name may be.
- *
- * A **path**, not a label — measured 2026-09-08
- * (`scripts/research/formFieldCreate.mjs`): a dot in the name makes a parent
- * node in the field tree, so `owner.first` and `owner.second` are siblings
- * under `owner`, and creating `owner` beside `owner.first` is refused by
- * pdf-lib outright. Generous enough that no name a person types meets it, for
- * {@link MAX_FIELD_VALUE}'s reason.
- */
-export const MAX_FIELD_NAME = 512;
 
 /** How many options a created choice field may offer, and how long each may be. */
 export const MAX_FIELD_OPTIONS = 256;

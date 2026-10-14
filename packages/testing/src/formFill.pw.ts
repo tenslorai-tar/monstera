@@ -252,6 +252,22 @@ for (const look of LOOKS) {
     ]);
   });
 
+  test(`an empty signature field pressed offers signing, and each choice opens its own dialog (F8), ${look.name}`, async ({ page }) => {
+    const sent: { channel: string; params: unknown }[] = [];
+    const signature: ShimFormField = field({ index: 8, kind: 'signature', name: 'Signature1', rect: { x0: 340, y0: 300, x1: 480, y1: 340 } });
+    await openForm(page, look, sent, [[...LISTED, signature]]);
+    const face = page.getByRole('button', { name: 'Sign Signature1', exact: true });
+    await face.click();
+    await page.getByRole('button', { name: 'Sign with a certificate', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Sign document' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await face.click();
+    await page.getByRole('button', { name: 'Sign with a typed, drawn or picture signature', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Signature' })).toBeVisible();
+    // NOTHING WAS WRITTEN by a press or an offer: each signing is its dialog's to finish or cancel.
+    expect(fills(sent)).toStrictEqual([]);
+  });
+
   test(`an open dropdown's list moves with the page when it scrolls (F4), ${look.name}`, async ({ page }) => {
     const sent: { channel: string; params: unknown }[] = [];
     await openForm(page, look, sent);

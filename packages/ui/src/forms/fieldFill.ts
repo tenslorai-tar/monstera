@@ -1,7 +1,7 @@
 import type { ChannelResult, FieldFormat, FieldRange } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 
-import { FORMS_MANY_VALUES, FORMS_NOT_FILLABLE, FORMS_READ_ONLY, FORMS_TOO_LONG } from '../messages/en.js';
+import { FORMS_MANY_VALUES, FORMS_NOT_FILLABLE, FORMS_READ_ONLY, FORMS_SIGNED, FORMS_TOO_LONG } from '../messages/en.js';
 
 /** One field as `document.formFields` lists it: the contract's own row, so this cannot drift from the channel. */
 export type ListedField = ChannelResult<'document.formFields'>['fields'][number];
@@ -59,6 +59,12 @@ export type FillOffer =
    * step a person can undo (the owner's F7): it is a standard action, not a script.
    */
   | { readonly kind: 'button'; readonly resets: boolean }
+  /**
+   * An empty signature field (the owner's F8): pressed on the page, it offers the application's own signing — a typed,
+   * drawn or picture signature, or a certificate — placed in that field. A signed one is `none`, so it is never signed
+   * over.
+   */
+  | { readonly kind: 'sign' }
   | {
       readonly kind: 'none';
       readonly reason: MessageKey;
@@ -118,5 +124,6 @@ export function fieldFill(field: ListedField): FillOffer {
     };
   }
   if (field.kind === 'button') return { kind: 'button', resets: field.action === 'reset' };
+  if (field.kind === 'signature') return field.signed === true ? { kind: 'none', reason: FORMS_SIGNED } : { kind: 'sign' };
   return { kind: 'none', reason: FORMS_NOT_FILLABLE };
 }

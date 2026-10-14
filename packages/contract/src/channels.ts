@@ -5458,6 +5458,11 @@ export const channels = {
              * covers the document's own drawing of the field in its size and colours, never the application's theme.
              */
             look: fieldLookSchema.exactOptional(),
+            /**
+             * A signature field that holds a signature (the owner's F8), present only on one. An empty one is offered
+             * for signing where it is; a signed one never is, so a signature is never written over another.
+             */
+            signed: z.literal(true).exactOptional(),
           }),
         )
         .max(FORM_FIELDS_PART)

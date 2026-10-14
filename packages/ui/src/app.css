@@ -6129,6 +6129,13 @@ optgroup {
   pointer-events: auto;
 }
 
+/* WHAT SIGNING A SIGNATURE FIELD OFFERS (the owner's F8), under it on the problem note's surface: the two ways, stacked. */
+.m-page-sign-offer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
 /* A COMB FIELD types one character to a cell, in a monospaced face whose spacing `combCells` sets from the field. */
 .m-page-field-editor--comb {
   font-family: 'Courier New', Courier, monospace;
