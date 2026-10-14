@@ -92,3 +92,23 @@ makes no object.
   can be moved and resized, but this text can't, so nothing was changed.* The step is `moved-text`, added to
   `EDIT_STEPS`, and only a TEXT object's read-back refusal becomes it; a picture moved through PDFium's route keeps
   `read-back`.
+
+## Addendum, 2026-10-14: a picture moves with the window it shows through (the owner's E3)
+
+**The mechanism.** A magazine's photo is placed larger than it shows and clipped to a window: `q x y w h re W n q … cm
+/Im Do Q Q`. `FPDFPageObj_GetBounds` answers the placement as if unclipped, so the listing outlined a box up to 180 px
+off the picture and past the page edge; and Decision 1 wrapped only the `Do`, so a move would have slid the photo under
+a window that stays.
+
+1. **The listing carries what shows.** PDFium's walk answers each object's `shown` box, its bounds intersected with
+   every path of `FPDFPageObj_GetClipPath`, where that narrows it. The renderer draws, picks and resizes by it, cut
+   again to the page's crop, and still names the object by the engine's box, which Decision 2's check and the scale's
+   anchor read. The renderer's move is computed so the shown corner lands on the target with the scale taken about the
+   engine's corner, which is how both engines apply it.
+2. **A placement wraps the window with its object** where the window holds nothing else: no other drawn object and no
+   text between the window's path and the `Q` that ends it. The outermost such window is taken, so nested windows move
+   together. That span is balanced in `q` and `Q` by construction, and `M` is taken in the CTM at the window's path, so
+   the object still lands under `ctm·P`. The read-back also requires every window it was carried with to be placed by
+   `P`, and every other window unchanged.
+3. **A window that holds anything else stays where it is.** Moving it would move what else it holds, which is the
+   thing Decision 1 exists to prevent; the photo in it moves and shows through the window where it now falls.
