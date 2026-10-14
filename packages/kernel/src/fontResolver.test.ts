@@ -160,6 +160,13 @@ describe('normaliseFamily and familyClass', () => {
     expect(familyClass('MS Sans Serif')).toBe('sans');
     expect(familyClass('Franklin Gothic Book')).toBe('sans');
     expect(familyClass('Book Antiqua')).toBe('serif');
+    // TEX'S FAMILIES (the owner's A1), by the short names pdfTeX embeds. CONTROL: Computer Modern's sans and
+    // typewriter faces are not called serif by the same family's prefix.
+    expect(familyClass('ABCDEF+CMBX10')).toBe('serif');
+    expect(familyClass('CMR12')).toBe('serif');
+    expect(familyClass('NimbusRomNo9L-Medi')).toBe('serif');
+    expect(familyClass('CMSS10')).toBe('sans');
+    expect(familyClass('CMTT10')).toBe('mono');
     expect(familyClass('Bookman Old Style')).toBe('serif');
     expect(familyClass('Times New Roman')).toBe('serif');
   });

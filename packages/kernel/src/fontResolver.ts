@@ -129,6 +129,11 @@ export function normaliseFamily(name: string): string {
 export function familyClass(family: string | null): FamilyClass {
   const name = family === null ? '' : normaliseFamily(family);
   if (/mono|courier|consol|menlo|typewriter|code/u.test(name)) return 'mono';
+  // TEX'S OWN FAMILIES, by their short names (the owner's A1: a serif page whose fonts read as sans while edited):
+  // Computer Modern's `cmr10`, `cmbx12`, `cmti10` are serif, `cmtt` typewriter and `cmss` sans; `NimbusRomNo9L` is
+  // Times as pdfTeX's `times` package embeds it.
+  if (/^cmtt|^lmmono/u.test(name)) return 'mono';
+  if (/^cm(?:r|bx|b|ti|sl|csc|u|fib|dunh)\d/u.test(name) || name.startsWith('nimbusrom')) return 'serif';
   // SANS BEFORE SERIF, because the name is read as one run of letters: *Microsoft Sans Serif* normalises to
   // `microsoftsansserif`, which holds `serif`. And no bare `book`, which is a weight in *Franklin Gothic Book*; the
   // serif families that carry it are named.

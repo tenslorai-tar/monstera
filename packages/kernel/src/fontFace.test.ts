@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { type FontFacts, faceOf, programFace } from './fontFace.js';
@@ -40,6 +44,51 @@ describe('programFace: what an embedded TrueType or OpenType program says about 
     expect(programFace(sfnt(700, 0, { length: 40 }))).toBeUndefined();
     expect(programFace(sfnt(700, 0).subarray(0, 50))).toBeUndefined();
     expect(programFace(new Uint8Array(0))).toBeUndefined();
+  });
+});
+
+/**
+ * THE OWNER'S A1 (2026-10-14): a program with no `OS/2` answered nothing, so a weight PDFium ESTIMATED from `/StemV`
+ * decided, and a serif page's bold lead-ins were drawn plain while edited. Each program's own statement is read.
+ */
+describe('programFace: where a program has no OS/2', () => {
+  /** A TrueType directory holding one `head` table whose `macStyle` (offset 44) is `style`. */
+  const headOnly = (style: number): Uint8Array => {
+    const bytes = new Uint8Array(12 + 16 + 54);
+    const view = new DataView(bytes.buffer);
+    view.setUint32(0, 0x00010000);
+    view.setUint16(4, 1);
+    view.setUint32(12, 0x68656164);
+    view.setUint32(12 + 8, 28);
+    view.setUint32(12 + 12, 54);
+    view.setUint16(28 + 44, style);
+    return bytes;
+  };
+  /** A Type 1 program's clear text, as far as `eexec`. */
+  const type1 = (info: string): Uint8Array =>
+    new TextEncoder().encode(`%!PS-AdobeFont-1.0: Probe 001.000\n/FontName /Probe-Face def\n/FontInfo 8 dict dup begin\n${info}\nend readonly def\ncurrentfile eexec\n`);
+
+  it('reads a TrueType program’s head.macStyle where it sets bold or italic, and NOTHING where it sets neither', () => {
+    expect(programFace(headOnly(1))).toStrictEqual({ weightClass: 700, italic: false });
+    expect(programFace(headOnly(3))).toStrictEqual({ weightClass: 700, italic: true });
+    // CONTROL: a clear macStyle is no statement, and the descriptor decides, as before.
+    expect(programFace(headOnly(0))).toBeUndefined();
+  });
+
+  it('reads a Type 1 program’s /Weight and /ItalicAngle, and NOTHING where it states no weight', () => {
+    expect(programFace(type1('/Weight (Bold) readonly def\n/ItalicAngle 0 def'))).toStrictEqual({ weightClass: 700, italic: false });
+    expect(programFace(type1('/Weight (Medium) readonly def\n/ItalicAngle -12 def'))).toStrictEqual({ weightClass: 500, italic: true });
+    expect(programFace(type1('/ItalicAngle -12 def'))).toBeUndefined();
+  });
+
+  it('reads a bare CFF program’s Top DICT weight and slant (pdf.js’ Foxit faces)', () => {
+    const standard = join(dirname(createRequire(import.meta.url).resolve('pdfjs-dist/package.json')), 'standard_fonts');
+    const read = (file: string) => programFace(new Uint8Array(readFileSync(join(standard, file))));
+    expect(read('FoxitSerif.pfb')).toStrictEqual({ weightClass: 400, italic: false });
+    expect(read('FoxitSerifBold.pfb')).toStrictEqual({ weightClass: 700, italic: false });
+    expect(read('FoxitSerifBoldItalic.pfb')).toStrictEqual({ weightClass: 700, italic: true });
+    // NO ANGLE IN ITS TOP DICT: the program's own name, `ChromFixedOTF-Italic`, is its statement of slant.
+    expect(read('FoxitFixedItalic.pfb')).toStrictEqual({ weightClass: 400, italic: true });
   });
 });
 

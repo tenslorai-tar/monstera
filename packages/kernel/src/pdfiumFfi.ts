@@ -30,7 +30,7 @@ import {
   decorationKindOf,
   decorationsOf,
 } from './markDecorations.js';
-import { carries as faceDraws, resolveRuns } from './fontResolver.js';
+import { carries as faceDraws, familyClass, resolveRuns } from './fontResolver.js';
 import { type EditPiece, editPieces } from './editPieces.js';
 import { inDrawingOrder, visualUnits } from './visualPieces.js';
 import type { BoxedInEdit, ByteImage, EngineWriter, ImageSession, PdfiumSession } from './engineSeam.js';
@@ -1680,8 +1680,11 @@ function styleOf(bindings: Bound, object: unknown, programs: Map<string, Program
     size: (size[0] ?? 0) * Math.hypot(a, b),
     colour: { r: red[0] ?? 0, g: green[0] ?? 0, b: blue[0] ?? 0 },
     font: wireFontName(name),
-    serif: (flags & 2) !== 0,
-    mono: (flags & 1) !== 0,
+    // THE DESCRIPTOR'S FLAG where it is set, and the family's name where it is not: a producer that leaves the flag
+    // clear says nothing by it (pdfTeX writes `/Flags 4`, symbolic, for Computer Modern and Times alike), and a serif
+    // run read as sans was drawn sans while edited (the owner's A1). The name is read by the resolver's own class.
+    serif: (flags & 2) !== 0 || ((flags & 1) === 0 && familyClass(name) === 'serif'),
+    mono: (flags & 1) !== 0 || familyClass(name) === 'mono',
     bold: face.bold,
     italic: face.italic,
     orientation: orientationOf(a, b, c, d),
@@ -4161,12 +4164,11 @@ function kindOfFamily(
   family: string | undefined,
   own: Pick<RunStyle, 'mono' | 'serif'>,
 ): { readonly mono: boolean; readonly serif: boolean } {
-  const asked = (family ?? '').toLowerCase();
-  if (asked === '') return { mono: own.mono, serif: own.serif };
-  return {
-    mono: /courier|mono|consolas/u.test(asked),
-    serif: /times|serif|georgia|garamond|cambria/u.test(asked) && !asked.includes('sans'),
-  };
+  if ((family ?? '') === '') return { mono: own.mono, serif: own.serif };
+  // THE RESOLVER'S CLASS, the one reading of a family name in the kernel (B3a): this read a regex of its own, which
+  // called `Tinos`, `Palatino` and `Book Antiqua` sans where the resolver called them serif.
+  const kind = familyClass(family ?? null);
+  return { mono: kind === 'mono', serif: kind === 'serif' };
 }
 
 /** The one character an added box's text object starts from, which its words replace. */

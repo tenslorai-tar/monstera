@@ -280,7 +280,7 @@ const failures = [];
 // from its Decision 2: a tab read back at its stop, its control, and a second edit that keeps one tab. 235 from the
 // second edit's measure, which read a line written as several objects at its first object's width. 246 from L2: an
 // underlined word read back underlined, its rule moved with it by a second edit, and the control that turns it off.
-const roster = createRoster(failures, { cases: 258 });
+const roster = createRoster(failures, { cases: 260 });
 
 /**
  * @param {string} name
@@ -581,6 +581,7 @@ async function main() {
   await fontChangeCases();
   await gapSpacedCases();
   await spaceReadingCases();
+  await faceReadingCases();
 
   process.stdout.write(
     failures.length > 0
@@ -692,6 +693,73 @@ async function fontChangeCases() {
     );
   } finally {
     bindEditFaces(null);
+  }
+}
+
+/**
+ * A serif page's bold lead-in is read as bold and serif, though its descriptor says neither (the owner's A1,
+ * 2026-10-14: a serif page with bold lead-ins turned plain sans while edited).
+ *
+ * The run is a simple font over a bare CFF program (pdf.js' Foxit Serif Bold, `FontFile3 /Type1C`) whose descriptor
+ * states a stem width, no weight and flags 32 — nonsymbolic only, the serif bit clear. PDFium estimates the weight from
+ * the stems, 400, and the editor drew the run regular, in a sans kind of face. The program states its weight in its
+ * Top DICT and the family's name says serif; both are now read. THE CONTROL is the regular face on the same line under
+ * the same descriptor, read as regular: so bold comes from the program and not from a rule that reads everything bold.
+ * Run without the new readers, the lead-in reads `bold: false, serif: false`.
+ */
+async function faceReadingCases() {
+  const standard = resolve(dirname(createRequire(import.meta.url).resolve('pdfjs-dist/package.json')), 'standard_fonts');
+  const document = await PDFDocument.create();
+  const context = document.context;
+  const sheet = document.addPage([400, 300]);
+  /** @param {string} file @param {string} name */
+  const simple = (file, name) =>
+    context.register(
+      context.obj({
+        Type: 'Font',
+        Subtype: 'Type1',
+        BaseFont: PDFName.of(name),
+        FirstChar: 32,
+        LastChar: 126,
+        Widths: Array.from({ length: 95 }, () => 500),
+        Encoding: 'WinAnsiEncoding',
+        FontDescriptor: context.register(
+          context.obj({
+            Type: 'FontDescriptor',
+            FontName: PDFName.of(name),
+            Flags: 32,
+            FontBBox: [-168, -218, 1000, 898],
+            ItalicAngle: 0,
+            Ascent: 891,
+            Descent: -216,
+            CapHeight: 662,
+            StemV: 80,
+            FontFile3: context.register(context.flateStream(readFileSync(resolve(standard, file)), { Subtype: 'Type1C' })),
+          }),
+        ),
+      }),
+    );
+  sheet.node.setFontDictionary(PDFName.of('FL'), simple('FoxitSerifBold.pfb', 'FoxitSerif-Bold'));
+  sheet.node.setFontDictionary(PDFName.of('FB'), simple('FoxitSerif.pfb', 'FoxitSerif'));
+  const content = ['BT', '/FL 12 Tf', '20 200 Td', '(Findings.) Tj', 'ET', 'BT', '/FB 12 Tf', '90 200 Td', '(The page keeps its look.) Tj', 'ET'].join('\n');
+  sheet.node.set(PDFName.of('Contents'), context.register(context.flateStream(new TextEncoder().encode(content))));
+  const session = await pdfiumWriter.open(await document.save());
+  try {
+    const runs = (await textRuns(session, 0)).runs;
+    const lead = runs.find((run) => run.text.startsWith('Findings'));
+    const body = runs.find((run) => run.text.startsWith('The page'));
+    record(
+      'a bold lead-in in a compact serif program whose descriptor states no weight and no serif flag is read bold and serif',
+      lead?.style.bold === true && lead.style.serif,
+      JSON.stringify(lead?.style),
+    );
+    record(
+      'CONTROL: the regular face beside it, under the same descriptor, is read regular and serif',
+      body?.style.bold === false && body.style.serif,
+      JSON.stringify(body?.style),
+    );
+  } finally {
+    await pdfiumWriter.close(session);
   }
 }
 
@@ -3178,14 +3246,18 @@ async function blockEditCases() {
     twinnedText.includes(accented) ? 'written' : twinnedText.replace(/\s+/gu, ' ').slice(0, 120),
   );
 
-  // A STANDARD-NAMED font twins too, where its twin is a different font. Times-Roman in
-  // StandardEncoding cannot carry `é`; its twin is Helvetica, which this page does not have, so the
-  // twin is a real one — the contrast to the refusal below, whose twin would be the page's own font.
+  // A STANDARD-NAMED serif font is twinned in ITS OWN KIND, which is itself. This case asserted until 2026-10-14 that
+  // Times-Roman in StandardEncoding wrote `é` through a Helvetica twin: it did, because the serif reading took the
+  // descriptor's flag alone, and PDFium answers a standard font's flags as 32 (measured, `fontFace.ts`), so Times read
+  // as sans and was twinned in sans. Read as serif by its name (the owner's A1), its twin is Times-Roman, the font the
+  // page already has, and it is refused as Helvetica is below — never saved as a wrong glyph. Arial, which PDFium takes
+  // as Helvetica, is refused the same way (measured the same day). In the application this path is not reached: the
+  // bundled catalogue is always bound, and a word its font cannot carry is a piece in a catalogue face.
   const timesText = await (await narrowedFixture('Times-Roman')).written();
   record(
-    'a standard-named font whose twin is a DIFFERENT font writes the word through it',
-    timesText.includes(accented),
-    timesText.includes(accented) ? 'written' : timesText.replace(/\s+/gu, ' ').slice(0, 120),
+    'a standard-named serif font is twinned in its own kind, itself, and refused rather than written in another kind',
+    timesText === 'refused: TextNotWritableError',
+    timesText.replace(/\s+/gu, ' ').slice(0, 120),
   );
 
   // THE SCRATCH PAGE LEAVES NOTHING: every write above probed its font on a page appended and deleted
