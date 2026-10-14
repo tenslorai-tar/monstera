@@ -17,7 +17,7 @@ import { harnessSurfaces } from './harnessComposition.js';
 import { type PictureFiles, pictureName } from './recentPictures.js';
 import { createEphemeralSettings } from './settingsFile.js';
 import type { ShellLog } from './shellLog.js';
-import type { AppInfo } from './contractHandlers.js';
+import type { BakedAppInfo as AppInfo } from './contractHandlers.js';
 
 /**
  * The composition root, exercised through the handlers it returns.
@@ -43,7 +43,7 @@ import type { AppInfo } from './contractHandlers.js';
  * so session creation fails — and the property under test is that failing is a
  * **decided** state rather than an absent one.
  */
-const appInfo: AppInfo = { version: '0.0.0', installChannel: 'development', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true };
+const appInfo: AppInfo = { version: '0.0.0', installChannel: 'development', userName: 'A. Tester' };
 
 // THE DESTINATION PICKER MOVED TO `harnessComposition.ts`, with its reason:
 // every case here is about opening, poisoning or handler assembly and none
@@ -106,6 +106,37 @@ describe('the detailed log, as the composition root assembles it (ADR-0119)', ()
   it('CONTROL: a graph with no log answers as before', async () => {
     const deps = createShellDependencies({ ...harnessSurfaces('the composition test'), appInfo });
     expect((await deps.handlers['app.info']({})).ok).toBe(true);
+  });
+});
+
+/**
+ * app.info's cloud providers are the ones cloud storage is given clients for, worked out from the same value here, so
+ * the two cannot disagree: a command offered for a provider whose sign-in answers *not configured* is the defect.
+ */
+describe('app.info, as the root works it out', () => {
+  const answer = async (deps: ReturnType<typeof createShellDependencies>) => {
+    const info = await deps.handlers['app.info']({});
+    if (!info.ok) throw new Error('app.info refused');
+    return info.value;
+  };
+
+  it('reports the providers the cloud composition carries clients for, and no other', async () => {
+    const deps = createShellDependencies({
+      ...harnessSurfaces('the composition test'),
+      appInfo,
+      cloud: { clients: { onedrive: { clientId: 'an-id' }, 'google-drive': null }, workingDirectory: join(scratch, 'cloud') },
+    });
+    expect((await answer(deps)).cloudProviders).toStrictEqual(['onedrive']);
+  });
+
+  // CONTROL: with no cloud composition at all — a harness, a unit test — no provider is reported, where the harnesses
+  // used to claim both while their cloud storage answered *not configured* to every call.
+  it('reports none for a graph given no cloud clients, and the Media Foundation answer it was given', async () => {
+    const full = await answer(createShellDependencies({ ...harnessSurfaces('the composition test'), appInfo }));
+    expect(full.cloudProviders).toStrictEqual([]);
+    expect(full.mediaFoundation).toBe(true);
+    const nEdition = await answer(createShellDependencies({ ...harnessSurfaces('the composition test'), appInfo, mediaFoundation: false }));
+    expect(nEdition.mediaFoundation).toBe(false);
   });
 });
 

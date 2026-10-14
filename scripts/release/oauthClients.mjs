@@ -24,7 +24,6 @@
 
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 
 /**
  * @typedef {{
@@ -35,15 +34,13 @@ import { pathToFileURL } from 'node:url';
  */
 
 /**
- * The desktop build's own module for the client values.
+ * The desktop build's own module for the client values, after `npm run build`. A LITERAL SPECIFIER, so
+ * `proof:electronimports` can read what this loads.
  *
- * @param {string} root the repository root, after `npm run build`
  * @returns {Promise<CloudClientsModule>}
  */
-export async function cloudClientsModule(root) {
-  return /** @type {CloudClientsModule} */ (
-    await import(pathToFileURL(join(root, 'apps', 'desktop', 'dist', 'cloudClients.js')).href)
-  );
+export async function cloudClientsModule() {
+  return /** @type {CloudClientsModule} */ (await import('../../apps/desktop/dist/cloudClients.js'));
 }
 
 /**

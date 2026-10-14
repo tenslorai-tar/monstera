@@ -176,7 +176,7 @@ async function main() {
     const failures = [];
     const { handlers } = composition.createShellDependencies({
       ...harnessModule.harnessSurfaces('the workbook live harness'),
-      appInfo: { version: '0.0.0', installChannel: 'development', userName: 'A. Tester', cloudProviders: [], mediaFoundation: true },
+      appInfo: { version: '0.0.0', installChannel: 'development', userName: 'A. Tester' },
       pickDestination: () => Promise.resolve(destination),
       enginePlatform: platform,
       composePlatform,

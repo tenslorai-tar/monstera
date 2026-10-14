@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { open, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { CLOUD_PROVIDER_IDS, type EventId, type EventPayload, IncidentLog, isFollowable } from '@monstera/contract';
+import { type EventId, type EventPayload, IncidentLog, isFollowable } from '@monstera/contract';
 import { sweepCheckpointDirectories } from '@monstera/kernel';
 import { BrowserWindow, app, clipboard, crashReporter, nativeImage, safeStorage, shell } from 'electron';
 
@@ -282,10 +282,8 @@ startShell(() => {
       // between launches. The web flavour ADR-0018 keeps has no build; when it gets one it bakes its own.
       installChannel: app.isPackaged ? 'store' : 'development',
       userName: windowsUserName(),
-      // WHICH PROVIDERS THIS BUILD CAN SIGN IN TO: a build made without a provider's values hides its commands.
-      cloudProviders: CLOUD_PROVIDER_IDS.filter((provider) => cloudClients[provider] !== null),
-      mediaFoundation: hasMediaFoundation(process.platform, process.env['SystemRoot'], existsSync),
     },
+    mediaFoundation: hasMediaFoundation(process.platform, process.env['SystemRoot'], existsSync),
     // Built here, for the same reason `AppInfo` is: this is the only file that
     // may hold both Electron and the graph. `composition.ts` takes the picker
     // as a value so that everything opening does with what was picked stays

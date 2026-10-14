@@ -591,7 +591,7 @@ async function main() {
   // sign in with their own account; a Store package without them is refused.
   step('cloud clients');
   writePackagedClients({
-    module: await cloudClientsModule(REPO_ROOT),
+    module: await cloudClientsModule(),
     env: process.env,
     resources: join(stage, 'resources'),
     flavour,

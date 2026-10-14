@@ -167,7 +167,7 @@ async function main() {
     const floorMs = CELL === 'deadline' ? SHORT_FLOOR_MS : LONG_FLOOR_MS;
     const { handlers } = composition.createShellDependencies({
       ...harnessModule.harnessSurfaces('the host-deadline harness'),
-      appInfo: { version: '0.0.0', installChannel: 'development', userName: 'A. Tester', cloudProviders: [], mediaFoundation: true },
+      appInfo: { version: '0.0.0', installChannel: 'development', userName: 'A. Tester' },
       pickDocument: () => Promise.resolve(picks.shift() ?? null),
       enginePlatform: platform,
       hostCallDeadline: { floorMs, msPerMiB: 0 },

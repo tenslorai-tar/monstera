@@ -201,8 +201,9 @@ export type UnlockDocument = (
 /**
  * What the application reports about itself.
  *
- * Both fields are **baked at build time** (E4) rather than detected at runtime.
- * `installChannel` decides which update provider is active and the Store build
+ * `version` and `installChannel` are **baked at build time** (E4) rather than detected
+ * at runtime ({@link BakedAppInfo} holds them and the user's name); the cloud providers
+ * and Media Foundation are worked out by the composition root. `installChannel` decides which update provider is active and the Store build
  * must never self-update, so it is a property of the artifact: a value read at
  * runtime could differ between two launches of the same package, which is
  * exactly what an update decision must not do.
@@ -217,6 +218,9 @@ export interface AppInfo {
   /** Whether Media Foundation is on this computer — false on a Windows N edition without the Media Feature Pack. */
   readonly mediaFoundation: boolean;
 }
+
+/** What the build itself fixes; the composition root adds what it works out (`composition.ts`). */
+export type BakedAppInfo = Omit<AppInfo, 'cloudProviders' | 'mediaFoundation'>;
 
 /** What `window.titleBarOverlay` carries, already validated: two `#rrggbb` colours and a whole-pixel height. */
 export interface TitleBarOverlay {

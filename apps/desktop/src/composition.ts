@@ -36,6 +36,7 @@ import {
   type FontFamilyEntry,
   type ListedFontFamilies,
   type NativeComponentId,
+  CLOUD_PROVIDER_IDS,
   createClient,
   defaultModel,
   readsUnpacked,
@@ -189,7 +190,7 @@ import {
   type HostMemorySampling,
   MAIN_DOCUMENT_BYTES_CEILING,
 } from './budget.js';
-import { type AppInfo, type PickDocument, type PickDocuments, createContractHandlers } from './contractHandlers.js';
+import { type AppInfo, type BakedAppInfo, type PickDocument, type PickDocuments, createContractHandlers } from './contractHandlers.js';
 import type { KnownRoot } from './displayLocation.js';
 import { NO_RECENT_PICTURES, type PictureFiles, type RecentPictures, createRecentPictures } from './recentPictures.js';
 import { NO_REQUEST_LOG, createRequestLog, observedHandlers } from './requestLog.js';
@@ -480,7 +481,17 @@ export type EncodePng = (
 ) => Uint8Array<ArrayBuffer>;
 
 export interface ShellComposition {
-  readonly appInfo: AppInfo;
+  /**
+   * What is baked into the build. The rest of `app.info` is worked out here from what the graph is given: the cloud
+   * providers from {@link cloud}'s clients, so `app.info` and cloud storage cannot disagree about which providers this
+   * build can sign in to, and Media Foundation from {@link mediaFoundation}.
+   */
+  readonly appInfo: BakedAppInfo;
+  /**
+   * Whether Media Foundation is on this computer — false on a Windows N edition without the Media Feature Pack —
+   * read in `entry.ts`, which may ask the system; a harness answers as a full edition (`harnessSurfaces`).
+   */
+  readonly mediaFoundation: boolean;
   /**
    * Where undo checkpoints are kept, one directory per document
    * ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md)). `main`'s own storage, granted to no
@@ -882,6 +893,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     chatHistory,
     writeClipboardText,
     cloud: cloudComposition,
+    mediaFoundation,
     sendEvent,
     cannotStart: shellCannotStart,
     recent,
@@ -1913,7 +1925,13 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // EVERY HANDLER TELLS THE DETAILED LOG WHAT IT ANSWERED (ADR-0119): wrapped here, once, so no registration site
     // changes — the digested picker probe among them.
     handlers: observedHandlers(createContractHandlers({
-      appInfo,
+      appInfo: {
+        ...appInfo,
+        // THE PROVIDERS CLOUD STORAGE BELOW IS GIVEN CLIENTS FOR, from the same value: a build or a harness given none
+        // reports none, so no command offers a sign-in that would answer *not configured*.
+        cloudProviders: CLOUD_PROVIDER_IDS.filter((provider) => (cloudComposition?.clients[provider] ?? null) !== null),
+        mediaFoundation,
+      } satisfies AppInfo,
       capabilities,
       commands,
       documents,

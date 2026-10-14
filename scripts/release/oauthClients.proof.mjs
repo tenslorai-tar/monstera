@@ -12,16 +12,15 @@
 
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { join } from 'node:path';
 
 import { createRoster } from '../lib/passRoster.mjs';
 import { cloudClientsModule, writePackagedClients } from './oauthClients.mjs';
 
-const ROOT = resolve(fileURLToPath(new URL('../..', import.meta.url)));
-const module = await cloudClientsModule(ROOT);
+const module = await cloudClientsModule();
+// A LITERAL SPECIFIER, so `proof:electronimports` can read what this loads.
 /** @type {{ packagedCloudClients: (read: string | null) => Readonly<Record<string, string>> | null }} */
-const shell = await import(pathToFileURL(join(ROOT, 'apps', 'desktop', 'dist', 'cloudClients.js')).href);
+const shell = await import('../../apps/desktop/dist/cloudClients.js');
 
 /** @type {string[]} */
 const failures = [];

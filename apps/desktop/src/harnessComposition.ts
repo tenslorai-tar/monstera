@@ -80,6 +80,9 @@ export function harnessSurfaces(
 ): Omit<ShellComposition, 'appInfo'> {
   return {
     checkpointDirectory: join(tmpdir(), 'monstera-harness-checkpoints'),
+    // A FULL WINDOWS EDITION: a harness measures the product as most people have it, and the camera's N-edition
+    // refusal is its own unit case (`cameraCapture`'s dialog test).
+    mediaFoundation: true,
     // THE SHELL'S OWN POLICY: a harness measures the product, and one that freezes a host on purpose overrides it.
     hostCallDeadline: HOST_CALL_DEADLINE,
     hostMemorySampling: HOST_MEMORY_SAMPLING,
