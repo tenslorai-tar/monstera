@@ -4579,6 +4579,18 @@ optgroup {
   pointer-events: none;
 }
 
+/* A MENU WHOSE FACE RUNS A MEMBER (ADR-0241): the face is a tool button, and the chevron beside it a narrow one of the
+   same height, so the pair reads as one tool with a choice rather than as two tools. */
+.m-ribbon__split {
+  display: inline-flex;
+  flex: none;
+}
+
+.m-ribbon__chevron {
+  min-inline-size: 0;
+  padding-inline: var(--space-2);
+}
+
 .m-ribbon__more-label {
   display: inline-flex;
   align-items: center;

@@ -76,6 +76,8 @@ export interface RibbonEntry {
   readonly secondary: boolean;
   /** The menu this entry is drawn under, or `undefined` for its own button (ADR-0101). */
   readonly menu: MessageKey | undefined;
+  /** What the menu's face runs (ADR-0241); `undefined` is a face that only opens the menu. */
+  readonly menuRuns?: 'last' | undefined;
   /** How big it is drawn in this group (ADR-0194); a large button where the placement says nothing. */
   readonly size: RibbonSize;
 }
@@ -125,7 +127,7 @@ function sectionsOf(commands: readonly UiCommand[]): readonly RibbonSection[] {
       // the eight — so this cannot be reached, and is not defended against.
       if (groups === undefined) continue;
       const entries = groups.get(slot.group) ?? [];
-      entries.push({ command, order: slot.order, secondary: slot.secondary, menu: slot.menu, size: slot.size });
+      entries.push({ command, order: slot.order, secondary: slot.secondary, menu: slot.menu, menuRuns: slot.menuRuns, size: slot.size });
       groups.set(slot.group, entries);
     }
   }
@@ -258,6 +260,7 @@ function ribbonSlot(
       readonly order: number;
       readonly secondary: boolean;
       readonly menu: MessageKey | undefined;
+      readonly menuRuns: 'last' | undefined;
       readonly size: RibbonSize;
     }
   | undefined {
@@ -269,6 +272,7 @@ function ribbonSlot(
         order: placement.order,
         secondary: placement.prominence === 'secondary',
         menu: placement.menu,
+        menuRuns: placement.menuRuns,
         size: placement.size ?? 'large',
       };
     case 'quick-toolbar':

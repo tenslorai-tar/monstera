@@ -108,6 +108,14 @@ export type Placement =
        * primaries, so a member cannot be both; the registry refuses the pair.
        */
       readonly menu?: MessageKey;
+      /**
+       * The menu's FACE runs a member ([ADR-0241](../../../../docs/DECISIONS/0241-a-ribbon-menu-may-run-its-last-choice-from-its-face.md)):
+       * the one chosen last from this menu in this window, its first by `order` until then, with a chevron beside
+       * it that opens the menu. Edit object is one mode with four filters, so a press on its face means *turn the
+       * mode on*; Forms › Data's formats have no obvious member and declare nothing. Every placement naming the
+       * menu declares the same, and only with `menu`; the registry refuses either mistake.
+       */
+      readonly menuRuns?: 'last';
     }
   | { readonly surface: 'quick-toolbar'; readonly order: number }
   | { readonly surface: 'context-menu'; readonly context: MenuContext; readonly order: number }

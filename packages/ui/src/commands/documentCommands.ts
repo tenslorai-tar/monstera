@@ -4641,7 +4641,8 @@ export function editObjectsCommands(deps: {
     feedback: VISIBLE,
     icon: OBJECT_FILTER_ICONS[filter],
     title: OBJECT_FILTER_TITLES[filter],
-    placements: [{ surface: 'ribbon', section: 'edit', group: GROUP_TEXT, order: 20 + at, menu: RIBBON_EDIT_OBJECT }],
+    // ONE MODE WITH FOUR FILTERS, so a press on the menu's face turns the mode on with the filter chosen last (ADR-0241).
+    placements: [{ surface: 'ribbon', section: 'edit', group: GROUP_TEXT, order: 20 + at, menu: RIBBON_EDIT_OBJECT, menuRuns: 'last' }],
     when: hasDocument,
     checked: () => on(filter),
     run: (): void => {

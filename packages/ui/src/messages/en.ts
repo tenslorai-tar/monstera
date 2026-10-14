@@ -2794,6 +2794,7 @@ export const RAIL_MORE = messageKey('surface.ribbon.rail-more');
 export const RIBBON_TOOLS_LABEL = messageKey('surface.ribbon.tools');
 export const RIBBON_MORE = messageKey('surface.ribbon.more');
 export const RIBBON_MORE_GROUPS = messageKey('surface.ribbon.more-groups');
+export const RIBBON_MENU_CHOICES = messageKey('surface.ribbon.menu-choices');
 export const SECTION_HOME = messageKey('surface.ribbon.section.home');
 export const SECTION_COMMENT = messageKey('surface.ribbon.section.comment');
 export const SECTION_EDIT = messageKey('surface.ribbon.section.edit');
@@ -6459,6 +6460,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // THE ROW'S OWN MORE, by its name for a screen reader: it begins with the word on its face (WCAG 2.5.3) and names
   // the groups it holds, which is what tells it from the last group's More beside it.
   [RIBBON_MORE_GROUPS]: 'More: {groups}',
+  [RIBBON_MENU_CHOICES]: '{menu} choices',
   [SECTION_HOME]: 'Home',
   [SECTION_COMMENT]: 'Comment',
   [SECTION_EDIT]: 'Edit',

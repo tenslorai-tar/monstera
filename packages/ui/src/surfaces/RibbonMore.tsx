@@ -3,9 +3,10 @@ import { useLingui } from '@lingui/react';
 import type { MessageKey } from '@monstera/shared';
 import type { ReactElement } from 'react';
 
-import { RIBBON_MORE } from '../messages/en.js';
+import { RIBBON_MENU_CHOICES, RIBBON_MORE } from '../messages/en.js';
 import { Icon } from '../primitives/Icon.js';
 import type { IconName } from '../primitives/icons.js';
+import { ToolButton } from '../primitives/ToolButton.js';
 import type { CommandContext } from '../registries/commands.js';
 import type { OrderedEntry } from './projections.js';
 
@@ -43,7 +44,16 @@ export function RibbonMore({
    * Absent, this is the group's *More*. One component for both, so a named menu and *More* cannot
    * drift apart in how they open, what their items are named, or how a keyboard reaches them.
    */
-  readonly named?: { readonly label: MessageKey; readonly icon: IconName; readonly measuredAs: string };
+  readonly named?: {
+    readonly label: MessageKey;
+    readonly icon: IconName;
+    readonly measuredAs: string;
+    /**
+     * A menu whose FACE RUNS a member (ADR-0241): the member chosen last from it, by id, and where a choice is told.
+     * The ribbon holds the value, so the menu draws it and never keeps a second copy.
+     */
+    readonly runs?: { readonly chosen: string | undefined; readonly onPicked: (id: string) => void } | undefined;
+  };
   /**
    * How many tools the WIDTH folded into a group's *More* — since ADR-0098's correction of 2 October, every tool
    * in it, secondaries included, because a secondary is in the row whenever there is room. Written on the trigger
@@ -59,86 +69,129 @@ export function RibbonMore({
 }): ReactElement {
   const { i18n } = useLingui();
   const marks = entries.some((entry) => entry.command.checked?.(context) !== undefined);
+  // THE MEMBERS, for the Help centre's *Show me* (ADR-0112): a closed menu's items are not in the page, so the
+  // trigger is what a ring for one of them lands on.
+  const holds = entries.map((entry) => entry.command.id).join(' ');
+
+  /** The menu's items: ONE definition for a menu, a face's chevron and a group's *More*. */
+  const popup = (onPicked: ((id: string) => void) | undefined): ReactElement => (
+    <Menu.Portal>
+      <Menu.Positioner align="start" side="bottom">
+        {/* A MARK COLUMN ONLY WHERE A MEMBER CAN BE ON, so a menu of plain commands opens on its glyphs rather than
+            on an empty column, and a menu with a checkable member keeps every title at one edge. */}
+        <Menu.Popup className={marks ? 'm-context-menu m-ribbon-menu m-ribbon-menu--marks' : 'm-context-menu m-ribbon-menu'}>
+          {entries.map((entry) => {
+            const checked = entry.command.checked?.(context);
+            const choose = (): void => {
+              // Not awaited, for `QuickToolbar`'s reason: nothing here reads the result.
+              void entry.command.run(context);
+              onPicked?.(entry.command.id);
+              onChosen();
+            };
+            const face = (
+              <>
+                {/* THE COMMAND'S OWN GLYPH, the one its button draws when the row has room — so a tool keeps its
+                    face when the width or a named menu puts it here (PowerPoint's slide, the owner's review of
+                    0.1.9.0). Decorative: the item's name is its title. The registry refuses a ribbon command
+                    without an icon, so `File` is never drawn for one in the shipped graph. */}
+                <span className="m-ribbon-menu__icon" aria-hidden="true">
+                  <Icon name={entry.command.icon ?? 'File'} size="dense" />
+                </span>
+                <span>{i18n._(entry.command.title)}</span>
+                {entry.command.shortcut === undefined ? null : (
+                  <span className="m-context-menu-chord" aria-hidden="true">
+                    {entry.command.shortcut}
+                  </span>
+                )}
+              </>
+            );
+            // A COMMAND THAT SETS A STATE is a checkable item with its mark, the menu bar's rule — so Edit object's
+            // menu says which of its filters is on (ADR-0153), and a screen reader hears it.
+            return checked === undefined ? (
+              <Menu.Item
+                key={entry.command.id}
+                className="m-context-menu-item"
+                data-command={entry.command.id}
+                label={i18n._(entry.command.title)}
+                // THE CHORD ANNOUNCED AS A SHORTCUT and kept out of the item's name, `MenuBar`'s rule.
+                aria-keyshortcuts={entry.command.shortcut}
+                onClick={choose}
+              >
+                {marks ? <span className="m-ribbon-menu__mark" aria-hidden="true" /> : null}
+                {face}
+              </Menu.Item>
+            ) : (
+              <Menu.CheckboxItem
+                key={entry.command.id}
+                className="m-context-menu-item"
+                data-command={entry.command.id}
+                label={i18n._(entry.command.title)}
+                aria-keyshortcuts={entry.command.shortcut}
+                checked={checked}
+                closeOnClick
+                onCheckedChange={choose}
+              >
+                <span className="m-ribbon-menu__mark" aria-hidden="true">
+                  {checked ? <Icon name="Check" size="dense" /> : null}
+                </span>
+                {face}
+              </Menu.CheckboxItem>
+            );
+          })}
+        </Menu.Popup>
+      </Menu.Positioner>
+    </Menu.Portal>
+  );
+
+  // WHAT THE FACE RUNS (ADR-0241): the member chosen last, the first until one is, and the first again should the
+  // chosen one since be hidden by its `when`.
+  const runs = named?.runs === undefined ? undefined : (entries.find((entry) => entry.command.id === named.runs?.chosen) ?? entries[0]);
+  if (named?.runs !== undefined && runs !== undefined) {
+    return (
+      // ONE UNIT TO THE FOLD: it finds a button by `data-command`, so the box holding both parts is what it measures.
+      <span className="m-ribbon__split" data-command={named.measuredAs}>
+        <ToolButton
+          // THE MENU'S CAPTION AS THE NAME, so the words on the face are the words a screen reader hears (WCAG 2.5.3);
+          // the member a press runs is its description and its tooltip.
+          label={named.label}
+          description={runs.command.title}
+          icon={runs.command.icon ?? named.icon}
+          pressed={runs.command.checked?.(context)}
+          keepsFocus={runs.command.keepsFocus}
+          onClick={() => {
+            // Not awaited, for `QuickToolbar`'s reason: nothing here reads the result.
+            void runs.command.run(context);
+            onChosen();
+          }}
+        />
+        <Menu.Root>
+          <Menu.Trigger
+            className="m-tool-button m-ribbon__chevron"
+            data-holds={holds}
+            aria-label={i18n._(RIBBON_MENU_CHOICES, { menu: i18n._(named.label) })}
+            nativeButton
+          >
+            <Icon name="ChevronDown" size="chrome" />
+          </Menu.Trigger>
+          {popup(named.runs.onPicked)}
+        </Menu.Root>
+      </span>
+    );
+  }
 
   return (
     <Menu.Root>
       <Menu.Trigger
         className={named === undefined ? 'm-tool-button m-ribbon__more' : 'm-tool-button m-ribbon__menu'}
         data-command={named?.measuredAs}
-        // THE MEMBERS, for the Help centre's *Show me* (ADR-0112): a closed menu's items are not in the page, so the
-        // trigger is what a ring for one of them lands on.
-        data-holds={entries.map((entry) => entry.command.id).join(' ')}
+        data-holds={holds}
         data-width-folded={widthFolded === undefined ? undefined : String(widthFolded)}
         aria-label={accessibleName}
         nativeButton
       >
         <MoreFace icon={named?.icon ?? 'Ellipsis'} label={i18n._(named?.label ?? RIBBON_MORE)} />
       </Menu.Trigger>
-      <Menu.Portal>
-        <Menu.Positioner align="start" side="bottom">
-          {/* A MARK COLUMN ONLY WHERE A MEMBER CAN BE ON, so a menu of plain commands opens on its glyphs rather than
-              on an empty column, and a menu with a checkable member keeps every title at one edge. */}
-          <Menu.Popup className={marks ? 'm-context-menu m-ribbon-menu m-ribbon-menu--marks' : 'm-context-menu m-ribbon-menu'}>
-            {entries.map((entry) => {
-              const checked = entry.command.checked?.(context);
-              const choose = (): void => {
-                // Not awaited, for `QuickToolbar`'s reason: nothing here reads the result.
-                void entry.command.run(context);
-                onChosen();
-              };
-              const face = (
-                <>
-                  {/* THE COMMAND'S OWN GLYPH, the one its button draws when the row has room — so a tool keeps its
-                      face when the width or a named menu puts it here (PowerPoint's slide, the owner's review of
-                      0.1.9.0). Decorative: the item's name is its title. The registry refuses a ribbon command
-                      without an icon, so `File` is never drawn for one in the shipped graph. */}
-                  <span className="m-ribbon-menu__icon" aria-hidden="true">
-                    <Icon name={entry.command.icon ?? 'File'} size="dense" />
-                  </span>
-                  <span>{i18n._(entry.command.title)}</span>
-                  {entry.command.shortcut === undefined ? null : (
-                    <span className="m-context-menu-chord" aria-hidden="true">
-                      {entry.command.shortcut}
-                    </span>
-                  )}
-                </>
-              );
-              // A COMMAND THAT SETS A STATE is a checkable item with its mark, the menu bar's rule — so Edit object's
-              // menu says which of its filters is on (ADR-0153), and a screen reader hears it.
-              return checked === undefined ? (
-                <Menu.Item
-                  key={entry.command.id}
-                  className="m-context-menu-item"
-                  data-command={entry.command.id}
-                  label={i18n._(entry.command.title)}
-                  // THE CHORD ANNOUNCED AS A SHORTCUT and kept out of the item's name, `MenuBar`'s rule.
-                  aria-keyshortcuts={entry.command.shortcut}
-                  onClick={choose}
-                >
-                  {marks ? <span className="m-ribbon-menu__mark" aria-hidden="true" /> : null}
-                  {face}
-                </Menu.Item>
-              ) : (
-                <Menu.CheckboxItem
-                  key={entry.command.id}
-                  className="m-context-menu-item"
-                  data-command={entry.command.id}
-                  label={i18n._(entry.command.title)}
-                  aria-keyshortcuts={entry.command.shortcut}
-                  checked={checked}
-                  closeOnClick
-                  onCheckedChange={choose}
-                >
-                  <span className="m-ribbon-menu__mark" aria-hidden="true">
-                    {checked ? <Icon name="Check" size="dense" /> : null}
-                  </span>
-                  {face}
-                </Menu.CheckboxItem>
-              );
-            })}
-          </Menu.Popup>
-        </Menu.Positioner>
-      </Menu.Portal>
+      {popup(undefined)}
     </Menu.Root>
   );
 }

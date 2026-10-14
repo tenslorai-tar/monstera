@@ -460,8 +460,8 @@ test('edit-page-objects-1', async ({ page }) => {
   await openDocument(page);
   await openSection(page, 'Edit');
   // THE MODE ON THE PAGE (ADR-0153): every object outlined where it is, and the logo selected with its handles.
-  await page.getByRole('button', { name: 'Edit object' }).click();
-  await page.getByRole('menuitemcheckbox', { name: 'Edit all objects' }).click();
+  // THE FACE ENTERS EDIT ALL OBJECTS (ADR-0241), as the article's first step now says.
+  await page.getByRole('button', { name: 'Edit object', exact: true }).click();
   const layer = page.getByRole('group', { name: 'Objects on page 1' });
   const logo = layer.locator('[data-object="content:23"]');
   await logo.click();

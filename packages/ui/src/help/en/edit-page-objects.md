@@ -10,7 +10,7 @@ Everything drawn on a page (text, shapes, pictures) is a separate object. **Edit
 
 ## Steps
 
-1. In the rail, choose **Edit**, then **Edit object** in the **Text** group, and choose what to work on: **Edit all objects**, **Edit text objects**, **Edit images** or **Edit shapes**. The objects of that kind are outlined on the page, and the menu marks the one that is on.
+1. In the rail, choose **Edit**, then **Edit object** in the **Text** group. It starts with **Edit all objects**, or with what you chose last. To choose what to work on, use the arrow beside it: **Edit all objects**, **Edit text objects**, **Edit images** or **Edit shapes**. The objects of that kind are outlined on the page, and the menu marks the one that is on.
 2. Click an object to select it. Its outline turns solid and gets a handle at each corner.
 3. Then:
    - drag it to move it;
