@@ -99,3 +99,27 @@ decoded images `pageResidency.ts` held for it, by the paths a page leaving the m
 already not mounted behind (Decision 3: its panels mount nothing).
 
 Measured before and after on the owner's seven documents: owed to the Windows memory walk (M2 and M4).
+
+## Correction, 2026-10-14 (later) — the layer arriving draws before it is shown
+
+The correction above stated what a switch pays and not WHERE it is paid, and it was paid on screen. Brought straight to
+the front, the layer arriving showed its pages transparent for the frames their redraw took (`tabSwitchFrames.pw.ts`:
+frames 4 to 7 of a switch, red on CI at the commit that made the change), against the owner's *never show an unfinished
+screen*. The slot's draw was also left keyed to the margin alone, so a canvas mounted on the way forward was never drawn
+at all where the margin had not moved.
+
+The owner's order says the pages are *redrawn when the tab is shown again*; it does not say shown blank. So activation
+became two steps. Activating a document makes it **arriving**: its layer stays hidden behind the one on show, mounts its
+canvases and draws them; the layer on show stays on show; and the switch happens when the arriving layer's viewport
+holds its drawing (`PageList.onViewDrawn`, from a set of pages each slot reports as painted, since a page's measurement
+outlives its pixels). A layer that has not framed, has failed, or shows the Organize grid comes forward at once, because
+each of those shows a finished screen of its own; so does every activation from the start screen, where no layer is
+mounted to hold.
+
+Rejected: **keep the viewport's canvases behind and release only the margin's.** It removes the wait and most of the
+saving, and it is not what the owner ordered. Rejected: **cover the arriving layer with its loading state** — a flash
+of *Opening* on every switch of a document already open.
+
+What it costs: a switch now lands one draw of the viewport after the click instead of on it, with the old document on
+show meanwhile; closing a tab still brings its neighbour straight forward, because the closed layer has nothing left to
+hold, so its first frames draw in.
