@@ -1,5 +1,6 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 
+import { withDrawSlot } from './drawSlots.js';
 import { holdPage, residentPage } from './pageResidency.js';
 
 /**
@@ -155,7 +156,10 @@ export async function renderPage(
   // cleaned once nothing else holds it, so a page drawn once does not keep them for the life of the document.
   const release = holdPage(document, pageNumber);
   try {
-    return await drawPage(document, pageNumber, canvas, scale, rotation, signal, raster);
+    // ONE OF `MAX_DRAWS` AT A TIME (`drawSlots.ts`), whoever is drawing; a draw superseded while it waited never ran.
+    const drawn = await withDrawSlot(signal, () => drawPage(document, pageNumber, canvas, scale, rotation, signal, raster));
+    if (drawn === null) throw new RenderCancelledError(pageNumber);
+    return drawn;
   } finally {
     release();
   }
@@ -395,7 +399,12 @@ export async function renderRegion(
   // HELD FOR THE DRAW, `renderPage`'s reason: a tile decodes the page's images as a whole page does.
   const release = holdPage(document, pageNumber);
   try {
-    await drawRegion(document, pageNumber, canvas, scale, rotation, region, signal);
+    // A SLOT AS A PAGE TAKES ONE (`drawSlots.ts`): a tile holds a scratch canvas and the decoded images as a page does.
+    const drawn = await withDrawSlot(signal, async () => {
+      await drawRegion(document, pageNumber, canvas, scale, rotation, region, signal);
+      return true;
+    });
+    if (drawn === null) throw new RenderCancelledError(pageNumber);
   } finally {
     release();
   }

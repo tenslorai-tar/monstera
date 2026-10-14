@@ -92,6 +92,40 @@ test('a thumbnail strip scrolled through forty pages holds pixels for its margin
   await expect(first).toHaveAttribute('data-drawn', 'true', { timeout: 20_000 });
 });
 
+/** Says the window was hidden, or shown, as Chromium does when an Electron window is minimised and restored. */
+async function windowShown(page: Page, shown: boolean): Promise<void> {
+  await page.evaluate((visible) => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (visible ? 'visible' : 'hidden') });
+    document.dispatchEvent(new Event('visibilitychange'));
+  }, shown);
+}
+
+test('the window hidden for half a minute gives the page on show back, and shown again it is drawn (item 13d)', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const note = await imagePages(3);
+  await bridge(page, {
+    opens: [{ kind: 'opened', docId: NOTE, version: asDocVersion(1), byteLength: note.byteLength, name: 'note.pdf' }],
+    documentBytes: new Map([[NOTE, note]]),
+  });
+  await page.clock.install();
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  const pages = page.locator('[data-document-layer="active"] .m-page-list canvas.m-page');
+  await expect(pages.first()).toBeVisible({ timeout: 20_000 });
+
+  await windowShown(page, false);
+  // CONTROL: hidden, but not yet for half a minute, the page is kept.
+  await page.clock.runFor(20_000);
+  await expect(pages).not.toHaveCount(0);
+  await page.clock.runFor(11_000);
+  await expect(pages).toHaveCount(0);
+  expect(await heldCanvases(page)).toBe(await page.locator('canvas').count());
+
+  await windowShown(page, true);
+  await expect(pages.first()).toBeVisible({ timeout: 20_000 });
+});
+
 test('a tab behind holds no page canvas, and coming forward redraws it where the reader left it', async ({ page }) => {
   test.setTimeout(120_000);
   await page.setViewportSize({ width: 1280, height: 800 });

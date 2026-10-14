@@ -272,6 +272,7 @@ import {
 } from './dialogs/closeUnsaved.js';
 import { type DocumentKeys, viewKeysOf } from './documentKeys.js';
 import { useDocumentView } from './useDocumentView.js';
+import { useLongHidden } from './useLongHidden.js';
 import {
   CLOSE_LABEL,
   CONTEXT_PANEL_TAB_ACCESSIBILITY,
@@ -3243,6 +3244,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   );
   const unit = useSetting(settings, RULER_UNIT_SETTING);
   const loupe = useSetting(settings, LOUPE_SETTING);
+  // THE WINDOW HIDDEN FOR HALF A MINUTE (item 13d): the page on show gives its pixels back too, and draws again when the
+  // window is shown, from the parse it kept.
+  const longHidden = useLongHidden();
   const split = useSetting(settings, SPLIT_VIEW_SETTING);
   const secondRenderer = useSetting(settings, SECOND_RENDERER_SETTING);
   // E1's TILE THRESHOLD, as the scale a page list compares its settled zoom against.
@@ -4728,7 +4732,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           // tools draw, and the grid returns when it is put down. The section, and the selection it counts, are unchanged.
           organize={toolId === undefined ? organize : undefined}
           loupe={loupe}
-          drawsPages
+          drawsPages={!longHidden}
           rulers={rulers}
           showGrid={showGrid}
           onFollowLink={onFollowLink}
