@@ -22,6 +22,7 @@ import {
   SAVE_PDFA_UNAVAILABLE,
   SAVE_PRINT_FAILED,
   SAVE_PRINT_UNAVAILABLE,
+  SAVE_PRINT_NO_PRINTER,
   SAVE_REVIEW_CHANGED,
   SAVE_WRITE_DISK_FULL,
   SAVE_WRITE_FAILED,
@@ -48,6 +49,7 @@ type SaveProblem =
   | 'no-tables-no-text'
   | 'review-changed'
   | 'print-unavailable'
+  | 'print-no-printer'
   | 'print-failed'
   | 'email-unavailable'
   | 'email-failed'
@@ -99,8 +101,9 @@ const MESSAGE: Readonly<Record<SaveProblem, MessageKey>> = {
   'no-tables-no-text': SAVE_NO_TABLES_NO_TEXT,
   // THE REVIEW'S EDITS were made on a version the document is no longer at.
   'review-changed': SAVE_REVIEW_CHANGED,
-  // A PRINT's two: no print dialog on this platform, and a printer that refused a step.
+  // A PRINT's three: no print dialog on this platform, no printer on this computer, and a printer that refused a step.
   'print-unavailable': SAVE_PRINT_UNAVAILABLE,
+  'print-no-printer': SAVE_PRINT_NO_PRINTER,
   'print-failed': SAVE_PRINT_FAILED,
   // EMAILING's two: no Share sheet on this platform, and a step before it that refused.
   'email-unavailable': SAVE_EMAIL_UNAVAILABLE,

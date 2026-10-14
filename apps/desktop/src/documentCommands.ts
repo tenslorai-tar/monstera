@@ -1674,6 +1674,8 @@ export type EmailOutcome =
 export type PrintOutcome =
   | { readonly kind: 'printed'; readonly pages: number }
   | { readonly kind: 'unavailable' }
+  /** The computer has no printer at all — not even *Microsoft Print to PDF*. */
+  | { readonly kind: 'no-printer' }
   | { readonly kind: 'failed' };
 
 /** What the review grid hands an Excel export: the version it read, and the cells changed. */
@@ -5901,6 +5903,9 @@ export class DocumentCommands {
     const name = this.#documents.nameOf(docId);
     if (name === undefined) throw new DocumentNotOpenError(docId, 'print');
     if (this.#print === null) return { kind: 'unavailable' };
+    // NO PRINTER IS ITS OWN ANSWER, said with how to add one. A count that could not be read is not *none*: the dialog
+    // is shown, and it answers for itself.
+    if (this.#print.printers() === 0) return { kind: 'no-printer' };
 
     const { value: listed } = await this.#documents.run(docId, async () => {
       const failures = this.#engine.poisoned(docId);

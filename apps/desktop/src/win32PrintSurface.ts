@@ -106,6 +106,28 @@ interface PrintBindings {
   ) => number;
 }
 
+/** `PRINTER_ENUM_LOCAL | PRINTER_ENUM_CONNECTIONS`: the printers on this computer and the ones it is connected to. */
+const PRINTER_ENUM_LOCAL_AND_CONNECTIONS = 0x2 | 0x4;
+
+/**
+ * How many printers `EnumPrintersW` lists, by its two-call protocol: asked with no buffer, it answers how many bytes it
+ * needs; with none needed and none returned the answer is zero printers. `null` where the count could not be read —
+ * never zero, because *could not look* reported as *none* would tell a person with a printer to add one.
+ *
+ * @param enumerate one `EnumPrintersW` call at level 4 into `buffer` (`null` for the size query)
+ */
+export function printerCount(
+  enumerate: (buffer: Buffer | null, size: number, needed: number[], returned: number[]) => boolean,
+): number | null {
+  const needed = [0];
+  const returned = [0];
+  if (enumerate(null, 0, needed, returned)) return returned[0] ?? null;
+  const bytes = needed[0] ?? 0;
+  if (bytes <= 0) return null;
+  const buffer = Buffer.alloc(bytes);
+  return enumerate(buffer, bytes, needed, returned) ? (returned[0] ?? null) : null;
+}
+
 /** Registered under process-global names, so once — named for this module, for `win32DirectorySurface.ts`' reason. */
 let structsRegistered = false;
 
@@ -283,6 +305,13 @@ export function createWin32PrintSurface(
   returnDefault = false,
 ): PrintDestination {
   return {
+    printers: () => {
+      const winspool = koffi.load('winspool.drv');
+      const enumerate = winspool.func(
+        'bool EnumPrintersW(uint32 flags, const char16_t *name, uint32 level, void *buffer, uint32 size, _Out_ uint32 *needed, _Out_ uint32 *returned)',
+      );
+      return printerCount((buffer, size, needed, returned) => enumerate(PRINTER_ENUM_LOCAL_AND_CONNECTIONS, null, 4, buffer, size, needed, returned) === true);
+    },
     choose: (pageCount: number, start: readonly number[]): PrintChoice | null => {
       const bindings = win32PrintBindings();
       // AN OPAQUE POINTER, typed as one: koffi declares `alloc` as answering `any`.

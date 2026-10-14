@@ -3285,6 +3285,7 @@ export const SAVE_OPTIMIZE_UNAVAILABLE = messageKey('dialog.save-problem.optimiz
 export const SAVE_OPTIMIZE_UNREADABLE = messageKey('dialog.save-problem.optimize-unreadable');
 export const SAVE_OPTIMIZE_CHANGED = messageKey('dialog.save-problem.optimize-changed');
 export const SAVE_PRINT_UNAVAILABLE = messageKey('dialog.save-problem.print-unavailable');
+export const SAVE_PRINT_NO_PRINTER = messageKey('dialog.save-problem.print-no-printer');
 export const SAVE_PRINT_FAILED = messageKey('dialog.save-problem.print-failed');
 export const SAVE_EMAIL_UNAVAILABLE = messageKey('dialog.save-problem.email-unavailable');
 export const SAVE_EMAIL_FAILED = messageKey('dialog.save-problem.email-failed');
@@ -7065,6 +7066,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SAVE_OPTIMIZE_UNREADABLE]: 'This document could not be read to make a smaller copy — a password-protected document is one reason — so no file was written.',
   [SAVE_OPTIMIZE_CHANGED]: 'The document changed after its size was checked, so no file was written. Check the size again.',
   [SAVE_PRINT_UNAVAILABLE]: 'Printing needs the system print dialog, which this copy of Monstera cannot open here, so nothing was printed.',
+  [SAVE_PRINT_NO_PRINTER]:
+    'No printer is set up on this computer, so nothing was printed. Add one in Windows Settings, Bluetooth & devices, Printers & scanners. To keep a copy instead, use Save a copy.',
   [SAVE_PRINT_FAILED]: 'The printer did not accept the document, so it was cancelled and nothing more was sent. Check the printer, then print again.',
   [SAVE_EMAIL_UNAVAILABLE]: 'Emailing uses the Windows Share sheet, which this copy of Monstera cannot open here, so nothing was shared.',
   [SAVE_EMAIL_FAILED]: 'The Windows Share sheet could not be opened for this document, so nothing was shared. Save a copy… and attach it from your mail app instead.',

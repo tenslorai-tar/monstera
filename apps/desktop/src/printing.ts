@@ -37,6 +37,12 @@ export interface PrintChoice {
 /** The system print dialog, or null where there is none. */
 export interface PrintDestination {
   /**
+   * How many printers this computer has — local and connected, *Microsoft Print to PDF* among them — or `null` where
+   * they could not be counted. Asked before the dialog, because with none the dialog has nothing to offer and the
+   * person needs to be told how to add one, not shown an empty list.
+   */
+  readonly printers: () => number | null;
+  /**
    * Shows the dialog for a document of `pageCount` pages, its own *Pages* starting on `start` (zero-based, the
    * application's page row; ADR-0161 Decision 3); null when it is dismissed.
    */

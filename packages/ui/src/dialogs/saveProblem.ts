@@ -57,6 +57,7 @@ export const SAVE_PROBLEM_DIALOG = declareDialog({
       'no-tables-no-text',
       'review-changed',
       'print-unavailable',
+      'print-no-printer',
       'print-failed',
       'email-unavailable',
       'email-failed',

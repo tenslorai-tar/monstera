@@ -3544,7 +3544,12 @@ export function printCommand(
         return;
       }
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
-        outcome: answer.value.kind === 'unavailable' ? 'print-unavailable' : 'print-failed',
+        outcome:
+          answer.value.kind === 'unavailable'
+            ? 'print-unavailable'
+            : answer.value.kind === 'no-printer'
+              ? 'print-no-printer'
+              : 'print-failed',
       });
     },
   };

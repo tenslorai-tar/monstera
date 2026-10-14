@@ -4590,6 +4590,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
     function recordingPrinter(
       pages: readonly number[] | null,
       refuse: { readonly start?: boolean; readonly page?: boolean } = {},
+      printers: number | null = 1,
     ): {
       readonly destination: PrintDestination;
       readonly log: string[];
@@ -4605,6 +4606,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
         drawn,
         starts,
         destination: {
+          printers: () => printers,
           choose: (pageCount, start) => {
             log.push(`dialog for ${String(pageCount)} page(s)`);
             starts.push(start);
@@ -4683,6 +4685,24 @@ describe('exportText — the document’s words, streamed one page at a time', (
 
       expect(await commands.print(textDoc, 300, TWO_PAGES)).toStrictEqual({ kind: 'failed' });
       expect(printer.log).toStrictEqual(['dialog for 2 page(s)', 'start words.pdf', 'release']);
+    });
+
+    it('answers NO-PRINTER on a computer with none, and never opens the dialog or reads a page (Part 0.5)', async () => {
+      const printer = recordingPrinter([0], {}, 0);
+      const images: PageImageRequest[] = [];
+      const { commands } = exportingTo(null, { print: printer.destination, images });
+
+      expect(await commands.print(textDoc, 300, TWO_PAGES)).toStrictEqual({ kind: 'no-printer' });
+      expect(printer.log).toStrictEqual([]);
+      expect(images).toStrictEqual([]);
+    });
+
+    it('CONTROL: a printer count that could NOT be read opens the dialog, which answers for itself', async () => {
+      const printer = recordingPrinter(null, {}, null);
+      const { commands } = exportingTo(null, { print: printer.destination });
+
+      expect(await commands.print(textDoc, 300, TWO_PAGES)).toBeUndefined();
+      expect(printer.log).toStrictEqual(['dialog for 2 page(s)']);
     });
 
     it('CONTROL: answers UNAVAILABLE with no print dialog on the platform, reading nothing', async () => {

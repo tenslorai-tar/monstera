@@ -3330,6 +3330,8 @@ export const channels = {
       z.object({ kind: z.literal('printed'), pages: z.number().int().nonnegative() }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('unavailable') }),
+      /** The computer has no printer at all, so the dialog would offer nothing; nothing was printed (Part 0.5). */
+      z.object({ kind: z.literal('no-printer') }),
       z.object({ kind: z.literal('failed') }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
