@@ -1,6 +1,6 @@
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, type PDFRef, PDFString } from '@cantoo/pdf-lib';
 import { MAX_PDFA_LEFT_OUT } from '@monstera/contract';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import * as mupdf from './mupdfRaw.js';
 import { prepareForPdfa } from './pdfaPreparation.js';
@@ -129,6 +129,29 @@ describe('a PDF/A copy is prepared so the converter keeps what it can, and names
     expect(answer.leftOut).toHaveLength(MAX_PDFA_LEFT_OUT);
     expect(answer.leftOut.at(-1)).toStrictEqual({ page: MAX_PDFA_LEFT_OUT - 1, kind: 'comment-popup', count: 2 });
     expect(answer.leftOutMore).toBe(2);
+  });
+
+  /**
+   * ONLY A PAGE WITH A MARK TO DRAW IS LOADED (item 8, 2026-10-14): loading every page built every annotation on it and
+   * was 1,076 of the case above's 1,600 ms, which took it past its 5 s timeout in a loaded Windows run. Asserted as the
+   * calls made, not the time. CONTROL: the page whose mark has no appearance IS loaded, and is drawn.
+   */
+  it('loads only the pages that keep a mark with no appearance', async () => {
+    const bytes = await documentWith([
+      [{ subtype: 'Square', flags: 4, appearance: true }],
+      [{ subtype: 'Square', flags: 4 }],
+      [{ subtype: 'Text', flags: 4, popup: true, appearance: true }],
+    ]);
+    const document = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
+    try {
+      if (!(document instanceof mupdf.PDFDocument)) throw new Error('not a PDF');
+      const loads = vi.spyOn(document, 'loadPage');
+      const answer = prepareForPdfa(document);
+      expect(loads.mock.calls.map(([page]) => page)).toStrictEqual([1]);
+      expect(answer.drawn).toBe(1);
+    } finally {
+      document.destroy();
+    }
   });
 
   it('a mark with no appearance is given MuPDF’s', async () => {

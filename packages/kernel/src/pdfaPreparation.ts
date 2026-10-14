@@ -75,6 +75,12 @@ export function prepareForPdfa(document: mupdf.PDFDocument): PdfaPreparation {
   let printed = 0;
   const removed = new Map<string, { page: number; kind: PdfaLeftOutKind; count: number }>();
   const pages = document.countPages();
+  /**
+   * The pages that keep a mark with no appearance, found in the walk over the dictionaries below. Only these are LOADED
+   * to be drawn: loading a page builds every annotation on it, and loading all of them was most of this function's time
+   * (measured 2026-10-14, 1,076 ms for 1,025 pages whose notes all had appearances, in `pdfaPreparation.test.ts`).
+   */
+  const bare = new Set<number>();
 
   for (let page = 0; page < pages; page += 1) {
     const annots = document.findPage(page).get('Annots');
@@ -86,6 +92,7 @@ export function prepareForPdfa(document: mupdf.PDFDocument): PdfaPreparation {
       const verdict = verdictOf(annotation);
       if (verdict === 'untouched') continue;
       if (verdict === 'mark') {
+        if (annotation.get('AP').isNull()) bare.add(page);
         annotation.delete('Popup');
         const flags = flagsOf(annotation);
         if ((flags & FLAG.print) === 0 || (flags & FLAG.toggleNoView) !== 0) {
@@ -104,15 +111,15 @@ export function prepareForPdfa(document: mupdf.PDFDocument): PdfaPreparation {
   // AFTER THE DICTIONARIES, so MuPDF draws only what stays: an appearance made where a mark has none, through the
   // kernel's one redraw (`redrawPage`, ADR-0103), which keeps a blend and a caret's size as every other redraw does.
   let drawn = 0;
-  for (let page = 0; page < pages; page += 1) {
+  for (const page of bare) {
     const loaded = document.loadPage(page);
-    const bare = loaded.getAnnotations().filter((annotation) => annotation.getObject().get('AP').isNull());
-    if (bare.length === 0) continue;
+    const marks = loaded.getAnnotations().filter((annotation) => annotation.getObject().get('AP').isNull());
+    if (marks.length === 0) continue;
     // DIRTIED FIRST: an update alone left a mark with no appearance as it was (measured 2026-10-13), because MuPDF
     // synthesises only for an annotation it has marked as changed, and setting its flags to themselves marks it.
-    for (const annotation of bare) annotation.setFlags(annotation.getFlags());
-    redrawPage(loaded, bare, document);
-    drawn += bare.filter((annotation) => !annotation.getObject().get('AP').isNull()).length;
+    for (const annotation of marks) annotation.setFlags(annotation.getFlags());
+    redrawPage(loaded, marks, document);
+    drawn += marks.filter((annotation) => !annotation.getObject().get('AP').isNull()).length;
   }
 
   const ordered = [...removed.values()].sort((a, b) => a.page - b.page);
