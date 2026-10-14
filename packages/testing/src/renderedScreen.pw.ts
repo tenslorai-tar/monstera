@@ -2835,6 +2835,13 @@ test('BELOW THE FLOOR whole groups fold into the row’s More, nothing scrolls s
   await page.getByRole('button', { name: 'Open PDF…' }).click();
   const tools = page.locator('.m-ribbon__tools');
   await expect(tools.locator('.m-tool-button[data-command]').first()).toBeVisible();
+  // THE PAGE COUNT KNOWN before the wide row is read. A document's count arrives after the document, and every command
+  // that needs it is offered only once it is known (`hasPages`): Print, Email and the Word, PowerPoint and page-image
+  // exports. Read before it arrived, the wide row lacked exactly those five, and every narrower row, read later, had
+  // them (CI, ubuntu, run 38589540599). Home's Export menu is where the first of them appears: measured 2026-10-14 with
+  // the CPU throttled 30 times, it held Excel alone when the first tool was drawn, and Word, Excel and PowerPoint once
+  // the count had arrived.
+  await expect(page.locator('[data-holds~="document.export-word"]')).toBeAttached();
   // THE SECTIONS BY ID, read once on the tall window, and each chosen the way a person reaches it: on the rail, or from
   // the rail's More when a short window has folded it there (ADR-0147). By place on the rail, a fold at 640 x 360 made
   // the first place Tools, the active section, and the case compared Tools' row with Home's.
