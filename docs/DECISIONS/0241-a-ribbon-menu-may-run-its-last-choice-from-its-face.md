@@ -41,3 +41,11 @@ the mode on*. The face could not say so, because a menu's face runs nothing.
 
 - `ribbonUnits` carries the declaration with the unit, so the fold and the drawing read one answer.
 - Forms › Data is unchanged; Edit object declares `menuRuns: 'last'`.
+
+## Correction, 2026-10-14
+
+Decision 1 said the face carries the member's title as its accessible NAME. Built, the face's name is the menu's
+caption, the words drawn on it, and the member's title is its DESCRIPTION and its tooltip. A name of *Edit all objects*
+on a face that reads *Edit object* fails WCAG 2.5.3 (the visible label is not in the name), so a person using speech
+input could not press it by what they see. A screen reader still hears what a press will do, as the description. The
+chevron is named *Edit object choices*, so the two parts are told apart.
