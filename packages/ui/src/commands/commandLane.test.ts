@@ -157,6 +157,19 @@ describe('the command lane', () => {
     expect(await together(main, [move(50), move(52)])).toStrictEqual([true, true]);
   });
 
+  // THE OWNER'S O6a: a second press on a form 3 to 5 s after a fill, composed before the fill's re-read landed. A fill
+  // keeps the widget walk (proven against the engine in `fieldWalkKeeping.test.ts`), so what follows it is followed.
+  it('a fill, and a field edit, composed before the previous fill landed are followed', async () => {
+    const main = fakeMain();
+    const fill = (on: boolean): DispatchableCommand => ({ kind: 'fillFormField', page: 0, index: 0, value: { set: 'button', on }, version: START });
+    const move: DispatchableCommand = {
+      kind: 'editFormFields',
+      edits: [{ field: { page: 0, index: 0, name: 'Agree' }, set: { rect: { x0: 50, y0: 10, x1: 66, y1: 26 } } }],
+      version: START,
+    };
+    expect(await together(main, [fill(true), fill(false), move])).toStrictEqual([true, true, true]);
+  });
+
   it('two documents have two lanes: a move in one is never followed in the other', async () => {
     const main = fakeMain();
     const other = asDocId('00000000-0000-4000-8000-0000000000bb');

@@ -3537,11 +3537,15 @@ export function keepsTheObjectWalk<C extends { readonly kind: string }>(
  * each page's walk. {@link KEEPS_THE_ANNOTATION_WALK}'s rule on the widget walk. An edit changes a field's dictionary and
  * its widget's geometry and appearance in place; it adds, removes and reorders no widget, and the kernel proves it against
  * the engine (`fieldWalkKeeping.test.ts`). A duplicate adds widgets and a delete removes them, so neither is here.
+ *
+ * A FILL is here too (the owner's O6a, 2026-10-14): it writes a field's value and redraws its widgets' appearances, and
+ * a second press 3 to 5 s after one, composed before the first's re-read landed, was refused as out of date because the
+ * lane did not follow a fill. The same test proves every kind of fill against the engine.
  */
-export const KEEPS_THE_FIELD_WALK: ReadonlySet<FieldWalkKeepingKind> = new Set(['editFormFields'] as const);
+export const KEEPS_THE_FIELD_WALK: ReadonlySet<FieldWalkKeepingKind> = new Set(['editFormFields', 'fillFormField'] as const);
 
 /** The kinds {@link KEEPS_THE_FIELD_WALK} names. */
-export type FieldWalkKeepingKind = 'editFormFields';
+export type FieldWalkKeepingKind = 'editFormFields' | 'fillFormField';
 
 /** The three walks a command can name an item in by its index, each at a version. */
 export type CommandWalk = 'annotation' | 'field' | 'object';

@@ -1,8 +1,9 @@
-import { type CommandOfKind, type FormFieldProperties, KEEPS_THE_FIELD_WALK } from '@monstera/contract';
+import { type CommandOfKind, type FieldFill, type FormFieldProperties, KEEPS_THE_FIELD_WALK } from '@monstera/contract';
 import { asDocVersion } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { applyDuplicateFormField, applyEditFormFields } from './formFieldEdit.js';
+import { applyFillFormField } from './formFields.js';
 import { buildFormTestPdf } from './formTestForm.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 
@@ -50,8 +51,45 @@ async function walkOf(bytes: Uint8Array): Promise<string[]> {
 }
 
 describe('the commands that keep the field walk', () => {
-  it('names exactly the edit', () => {
-    expect([...KEEPS_THE_FIELD_WALK]).toStrictEqual(['editFormFields']);
+  it('names exactly the edit and the fill', () => {
+    expect([...KEEPS_THE_FIELD_WALK]).toStrictEqual(['editFormFields', 'fillFormField']);
+  });
+
+  // THE OWNER'S O6a: a second press on a form 3 to 5 s after a fill was refused as out of date, because the lane follows
+  // only a command that keeps the walk. A fill of every kind, read back by MuPDF's walk after MuPDF's own writer saved it.
+  it('a fill of every kind — text, choice, several choices, a button on and off — leaves the walk as it was', async () => {
+    const bytes = await buildFormTestPdf();
+    const before = await walkOf(bytes);
+    const places = await placesOf(bytes);
+    const first = (type: string): Place => {
+      const found = places.find((place) => place.type === type);
+      if (found === undefined) throw new Error(`the form has no ${type}`);
+      return found;
+    };
+    const session = await mupdfWriter.open(bytes);
+    try {
+      const options = await withDocument(session, (document) => {
+        const combo = first('combobox');
+        const list = first('listbox');
+        const optionsOf = (place: Place): string[] =>
+          document.loadPage(place.page).getWidgets()[place.index]?.getOptions().map(String) ?? [];
+        return { combo: optionsOf(combo), list: optionsOf(list) };
+      });
+      const fills: [Place, FieldFill][] = [
+        [first('text'), { set: 'text', text: 'Filled by the walk case' }],
+        [first('checkbox'), { set: 'button', on: true }],
+        [first('checkbox'), { set: 'button', on: false }],
+        [first('radiobutton'), { set: 'button', on: true }],
+        [first('combobox'), { set: 'choice', option: options.combo[0] ?? '' }],
+        [first('listbox'), { set: 'choice', option: options.list[0] ?? '' }],
+      ];
+      for (const [place, value] of fills) {
+        await applyFillFormField(session, { kind: 'fillFormField', page: place.page, index: place.index, value, version: VERSION });
+        expect(await walkOf(await mupdfWriter.serialise(session)), `after ${JSON.stringify(value)}`).toStrictEqual(before);
+      }
+    } finally {
+      await mupdfWriter.close(session);
+    }
   });
 
   it('an edit of every kind of field — moved, recoloured, renamed, restyled — leaves the walk as it was', async () => {

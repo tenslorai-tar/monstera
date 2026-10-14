@@ -21,7 +21,7 @@ import { existsSync } from 'node:fs';
 import { copyFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect } from '@playwright/test';
-import { PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream, PDFString, PDFTextField, decodePDFRawStream } from '@cantoo/pdf-lib';
+import { PDFCheckBox, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream, PDFString, PDFTextField, decodePDFRawStream } from '@cantoo/pdf-lib';
 import { root, startWalk } from './liveWalk.mjs';
 
 const source = process.argv[2] ?? join(root, '_review/test-files/form-test.pdf');
@@ -73,10 +73,13 @@ async function savedValues(path) {
   const document = await PDFDocument.load(await readFile(path), { updateMetadata: false });
   /** @type {Record<string, string>} */
   const values = {};
+  /** @type {Record<string, boolean>} */
+  const ticks = {};
   for (const field of document.getForm().getFields()) {
     if (field instanceof PDFTextField) values[field.getName()] = field.getText() ?? '';
+    if (field instanceof PDFCheckBox) ticks[field.getName()] = field.isChecked();
   }
-  return { values, count: document.getForm().getFields().length };
+  return { values, count: document.getForm().getFields().length, ticks };
 }
 
 await step('open the form, and nothing is armed in the Forms tab', async () => {
@@ -92,9 +95,8 @@ await step('a press at a text field’s middle opens it for typing, and the word
   await expect(page.locator('.m-page-field-editor')).toBeVisible();
   await page.keyboard.type('Ada Lovelace');
   await page.keyboard.press('Enter');
-  // A FILL IS A WRITE (3 to 5 s on this machine): the next press, sent while it lands, was answered with the 'out of
-  // date' dialog (2026-10-13, step 4's screenshot) - an app finding for a hand this fast, waited out here.
-  await page.waitForTimeout(6000);
+  // NO WAIT AFTER THE FILL (O6a, 2026-10-14): the next press, sent while the fill lands, was answered 'out of date'
+  // because the command lane did not follow a fill. It does now (KEEPS_THE_FIELD_WALK), so the walk presses on as a hand would.
 });
 
 await step('a press NEAR THE EDGE of another field opens it too, and Tab and Shift+Tab move between fields', async () => {
@@ -108,17 +110,25 @@ await step('a press NEAR THE EDGE of another field opens it too, and Tab and Shi
   await page.waitForTimeout(6000);
 });
 
+/** The tick box pressed three times, by its field name (its accessible name), and how it ended on screen. */
+/** @type {{ name: string, on: boolean } | undefined} */
+let pressedTick;
+
 await step('a tick box ticks at a press near its corner, and a radio chooses one of its group', async () => {
   const tick = page.getByRole('checkbox').first();
   const before = await tick.getAttribute('aria-checked');
+  // THREE PRESSES IN A ROW, NO WAIT (the owner's O6a): each tick is a write of 3 to 5 s here, and the second press used
+  // to be answered 'out of date'. An odd number of presses ends ticked the other way.
   await pressOn(tick, 2);
-  await expect(tick).not.toHaveAttribute('aria-checked', before ?? '');
-  // THE TICK IS A WRITE (3 to 5 s here): a second press sent while it lands is answered 'out of date' (2026-10-13, step
-  // 4's screenshot), which is an app finding for a hand that presses twice in a row, and is waited out here.
-  await page.waitForTimeout(6000);
+  await pressOn(tick, 2);
+  await pressOn(tick, 2);
   const radio = page.getByRole('radio').nth(1);
   await pressOn(radio);
-  await expect(radio).toHaveAttribute('aria-checked', 'true');
+  await expect(tick).not.toHaveAttribute('aria-checked', before ?? '', { timeout: 30_000 });
+  await expect(radio).toHaveAttribute('aria-checked', 'true', { timeout: 30_000 });
+  expect(await page.getByText(/was out of date/u).count()).toBe(0);
+  pressedTick = { name: (await tick.getAttribute('aria-label')) ?? '', on: (await tick.getAttribute('aria-checked')) === 'true' };
+  return { tickBefore: before, pressedTick };
 });
 
 await step('Edit fields shows every field as a box with its name, and a field tool places a field named for its kind', async () => {
@@ -225,6 +235,10 @@ await step('save as, and the saved file holds the typed value, read by a second 
   await expect.poll(() => existsSync(saved), { timeout: 20_000 }).toBe(true);
   const read = await savedValues(saved);
   expect(Object.values(read.values).some((value) => value.includes('Ada Lovelace'))).toBe(true);
+  // O6a READ BACK: the tick box pressed three times in a row is in the saved file as it ended on screen, so the last
+  // press was written, not refused.
+  if (pressedTick === undefined) throw new Error('the tick step did not record its box');
+  expect(read.ticks[pressedTick.name], `the saved ticks: ${JSON.stringify(read.ticks)}`).toBe(pressedTick.on);
   // O6 READ BACK: the last colour the drag ended on, #c00010, is a widget's border colour in the saved file.
   const borders = await savedBorderColours(saved);
   const kept = borders.some(([r = 0, g = 0, b = 0]) => Math.abs(r - 0xc0 / 255) < 0.01 && g < 0.01 && Math.abs(b - 0x10 / 255) < 0.01);
