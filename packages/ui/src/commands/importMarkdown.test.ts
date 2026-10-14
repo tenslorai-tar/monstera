@@ -780,9 +780,10 @@ describe('newFromCaptureCommand', () => {
         opened.push(document);
       },
       onAlreadyOpen: () => undefined,
+      mediaFoundation: () => undefined,
     }).run(CONTEXT);
 
-    expect(asked).toStrictEqual([{ id: 'dialog.camera-capture', props: {} }]);
+    expect(asked).toStrictEqual([{ id: 'dialog.camera-capture', props: { mediaFoundation: true } }]);
     expect(namedWorkSetAside(sent)).toStrictEqual([{ id: 'document.newFromCapture', params: { frames: [FRAME] } }]);
     expect(opened).toStrictEqual([{ docId: COMPOSED, version: 1, byteLength: 1024, name: 'camera.pdf' }]);
   });
@@ -796,6 +797,7 @@ describe('newFromCaptureCommand', () => {
         ask: asking(taken).ask,
         onOpened: () => undefined,
         onAlreadyOpen: () => undefined,
+        mediaFoundation: () => true,
       }).run(CONTEXT);
       expect(sent).toStrictEqual([]);
     }

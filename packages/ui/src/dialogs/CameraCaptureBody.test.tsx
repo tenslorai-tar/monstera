@@ -60,10 +60,10 @@ function camera(answer: () => Promise<MediaStream>): void {
   });
 }
 
-function opened(): { readonly unmount: () => void } {
+function opened(mediaFoundation = true): { readonly unmount: () => void } {
   const { unmount } = render(
     <Wrapped>
-      <CameraCaptureBody resolve={() => undefined} update={() => undefined} />
+      <CameraCaptureBody mediaFoundation={mediaFoundation} resolve={() => undefined} update={() => undefined} />
     </Wrapped>,
   );
   return { unmount };
@@ -82,6 +82,30 @@ describe('CameraCaptureBody', () => {
     opened();
     expect(screen.getByText('No camera was found.')).toBeTruthy();
     expect(TAKE()).toHaveProperty('disabled', true);
+  });
+
+  it('on a Windows N edition without Media Foundation says the Media Feature Pack is needed, and never asks the camera (Part 0.3)', async () => {
+    // THE DECISION IS THE CALL NOT MADE: the camera here would refuse as NotReadableError, which reads as another app
+    // holding it. The control is the case below, where the same platform with Media Foundation asks.
+    let asked = 0;
+    camera(() => {
+      asked += 1;
+      return Promise.reject(new DOMException('no media foundation', 'NotReadableError'));
+    });
+    opened(false);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(document.querySelector('.m-camera-capture__status')?.textContent ?? '').toContain('Media Feature Pack');
+    expect(asked).toBe(0);
+    expect(TAKE()).toHaveProperty('disabled', true);
+    cleanup();
+
+    opened(true);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(asked).toBe(1);
   });
 
   it('names a REFUSED camera and a MISSING one apart, by the error the platform raises', async () => {

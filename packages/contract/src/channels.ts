@@ -1660,6 +1660,16 @@ export const channels = {
        * route to it. Bounded by the author bound, since it is written into `/T` as it is.
        */
       userName: annotationAuthorSchema,
+      /**
+       * The cloud providers this build carries client values for (ADR-0091, corrected 2026-10-14). A build made
+       * without them — a contributor's — has none, and the cloud commands are hidden rather than offered and refused.
+       */
+      cloudProviders: z.array(z.enum(CLOUD_PROVIDER_IDS)).max(CLOUD_PROVIDER_IDS.length),
+      /**
+       * Whether Windows' Media Foundation is on this computer: false on an N or KN edition without the Media Feature
+       * Pack, where the camera cannot start and says why.
+       */
+      mediaFoundation: z.boolean(),
     }),
   ),
 

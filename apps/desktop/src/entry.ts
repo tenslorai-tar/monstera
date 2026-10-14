@@ -1,7 +1,8 @@
+import { existsSync, readFileSync } from 'node:fs';
 import { open, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { type EventId, type EventPayload, IncidentLog, isFollowable } from '@monstera/contract';
+import { CLOUD_PROVIDER_IDS, type EventId, type EventPayload, IncidentLog, isFollowable } from '@monstera/contract';
 import { sweepCheckpointDirectories } from '@monstera/kernel';
 import { BrowserWindow, app, clipboard, crashReporter, nativeImage, safeStorage, shell } from 'electron';
 
@@ -55,7 +56,8 @@ import {
 import { OFFICE_IMPORT_FORMATS } from './officeConversion.js';
 import { describePackageDataCheck } from './packageDataLock.js';
 import { removeRetiredCaches } from './retiredCaches.js';
-import { readCloudClients } from './cloudClients.js';
+import { PACKAGED_CLIENTS_FILE, packagedCloudClients, readCloudClients } from './cloudClients.js';
+import { hasMediaFoundation } from './mediaFoundation.js';
 import { RECENT_FILE, createRecentFiles } from './recentFiles.js';
 import { knownRoots } from './displayLocation.js';
 import { pictureDirectory } from './recentPictures.js';
@@ -150,6 +152,14 @@ startShell(() => {
   // `resources/native` folder, read-only, when packaged — the one file that may ask Electron that — and otherwise the
   // launcher's variables, which is the resolver's own default.
   if (app.isPackaged) setNativeSource({ kind: 'packaged', folder: join(process.resourcesPath, 'native') });
+
+  // THE CLOUD CLIENTS THE PACKAGE CARRIES, read from the same read-only folder (ADR-0091, corrected 2026-10-14). Absent
+  // in development and in a package made without them; then each provider's commands are hidden.
+  const packagedClientsPath = join(process.resourcesPath, PACKAGED_CLIENTS_FILE);
+  const cloudClients = readCloudClients(
+    process.env,
+    packagedCloudClients(app.isPackaged && existsSync(packagedClientsPath) ? readFileSync(packagedClientsPath, 'utf8') : null),
+  );
 
   // WHERE A DIAGNOSTIC GOES WHEN NOBODY IS WATCHING STDERR, which is every
   // packaged run: a Store application has no terminal attached, so until this
@@ -272,6 +282,9 @@ startShell(() => {
       // between launches. The web flavour ADR-0018 keeps has no build; when it gets one it bakes its own.
       installChannel: app.isPackaged ? 'store' : 'development',
       userName: windowsUserName(),
+      // WHICH PROVIDERS THIS BUILD CAN SIGN IN TO: a build made without a provider's values hides its commands.
+      cloudProviders: CLOUD_PROVIDER_IDS.filter((provider) => cloudClients[provider] !== null),
+      mediaFoundation: hasMediaFoundation(process.platform, process.env['SystemRoot'], existsSync),
     },
     // Built here, for the same reason `AppInfo` is: this is the only file that
     // may hold both Electron and the graph. `composition.ts` takes the picker
@@ -427,13 +440,12 @@ startShell(() => {
     writeClipboardText: (text) => {
       clipboard.writeText(text);
     },
-    // CLOUD STORAGE (ADR-0091): client values from the environment. THE PACKAGED FILE IS NOT READ
-    // YET, and that is Stage 10's: it lives in the package's resources, and `no-install-root-writes`
-    // refuses `process.resourcesPath` because a rule cannot tell that read from a write — the
-    // packaging row owes both the file and how it is reached. Working copies under `userData`. No
+    // CLOUD STORAGE (ADR-0091, corrected 2026-10-14): client values from the environment, then from the package's
+    // `oauth-clients.json`, which packaging writes — read here because this is the one file that may ask Electron where
+    // the package is (the native components' folder above is read the same way). Working copies under `userData`. No
     // value is logged here or anywhere: `readCloudClients` answers values or `null`, and says nothing.
     cloud: {
-      clients: readCloudClients(process.env, null),
+      clients: cloudClients,
       workingDirectory: cloudWorkingDirectory,
     },
     // The recent list, beside the settings and in its own document. Not IN the

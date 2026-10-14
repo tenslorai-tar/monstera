@@ -872,7 +872,10 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'opened', props: { access: 'read-only' } },
     { state: 'held', props: { access: 'held' } },
   ],
-  'dialog.camera-capture': [{ state: 'opened', props: {} }],
+  'dialog.camera-capture': [
+    { state: 'opened', props: { mediaFoundation: true } },
+    { state: 'no-media-pack', props: { mediaFoundation: false } },
+  ],
   'dialog.generate-toc': [
     {
       state: 'opened',

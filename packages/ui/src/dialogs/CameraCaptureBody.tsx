@@ -11,6 +11,7 @@ import {
   CAMERA_CAPTURE_DONE,
   CAMERA_CAPTURE_FAILED,
   CAMERA_CAPTURE_FULL,
+  CAMERA_CAPTURE_NO_MEDIA_PACK,
   CAMERA_CAPTURE_PREVIEW,
   CAMERA_CAPTURE_STARTING,
   CAMERA_CAPTURE_TAKE,
@@ -22,7 +23,7 @@ import type { DialogAnswering } from '../registries/dialogs.js';
 import type { CameraCaptureAnswer } from './cameraCapture.js';
 
 /** Where the camera is, as the person is told. `live` is the only state that can take a picture. */
-type CameraState = 'starting' | 'live' | 'denied' | 'absent' | 'failed';
+type CameraState = 'starting' | 'live' | 'denied' | 'absent' | 'failed' | 'no-media-pack';
 
 /** Each state's sentence, or `null` for the one that shows a picture instead. */
 const STATE_SENTENCES: Readonly<Record<CameraState, MessageKey | null>> = {
@@ -31,6 +32,7 @@ const STATE_SENTENCES: Readonly<Record<CameraState, MessageKey | null>> = {
   denied: CAMERA_CAPTURE_DENIED,
   absent: CAMERA_CAPTURE_ABSENT,
   failed: CAMERA_CAPTURE_FAILED,
+  'no-media-pack': CAMERA_CAPTURE_NO_MEDIA_PACK,
 };
 
 /** JPEG at this quality: a page of text stays legible, and a frame stays well under its bound. */
@@ -104,13 +106,17 @@ async function jpegOf(video: HTMLVideoElement): Promise<Uint8Array | null> {
  *
  * A default export because `declareDialog` takes a `lazy()` component.
  */
-export default function CameraCaptureBody({ resolve }: DialogAnswering<CameraCaptureAnswer>): ReactElement {
+export default function CameraCaptureBody({
+  mediaFoundation,
+  resolve,
+}: { readonly mediaFoundation: boolean } & DialogAnswering<CameraCaptureAnswer>): ReactElement {
   const { _ } = useLingui();
   const video = useRef<HTMLVideoElement>(null);
   // DECIDED BEFORE THE EFFECT, so a platform with no media devices renders its sentence
-  // on the first paint rather than through a state set inside the effect.
+  // on the first paint rather than through a state set inside the effect. An N edition without the Media Feature Pack
+  // is said as itself: the camera there fails for the computer's reason, never because another app holds it.
   const [state, setState] = useState<CameraState>(() =>
-    cameraDevices() === undefined ? 'absent' : 'starting',
+    !mediaFoundation ? 'no-media-pack' : cameraDevices() === undefined ? 'absent' : 'starting',
   );
   const [frames, setFrames] = useState<readonly Uint8Array[]>([]);
   const [full, setFull] = useState(false);
@@ -119,7 +125,7 @@ export default function CameraCaptureBody({ resolve }: DialogAnswering<CameraCap
     // THE PLATFORM IS ASKED, not `state`: the effect opens the camera once per mount, and
     // a dependency on the state it sets would close the stream it had just opened.
     const devices = cameraDevices();
-    if (devices === undefined) return undefined;
+    if (devices === undefined || !mediaFoundation) return undefined;
     let closed = false;
     let opened: MediaStream | null = null;
     devices.getUserMedia({ video: true, audio: false }).then(
@@ -140,7 +146,8 @@ export default function CameraCaptureBody({ resolve }: DialogAnswering<CameraCap
       closed = true;
       if (opened !== null) stopAll(opened);
     };
-  }, []);
+    // `mediaFoundation` is a prop of the dialog's one asking and never changes while it is open.
+  }, [mediaFoundation]);
 
   const sentence = STATE_SENTENCES[state];
   const total = frames.reduce((sum, frame) => sum + frame.byteLength, 0);

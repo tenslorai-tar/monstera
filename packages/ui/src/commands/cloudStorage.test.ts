@@ -55,6 +55,26 @@ const STATUS = { providers: [{ provider: 'onedrive', state: 'signed-in' }, { pro
 
 /** A busy note nobody is looking at, for the cases about something else. */
 const NO_BUSY: ShowBusy = () => () => undefined;
+/** A build carrying both providers' client values — the Store package's state (ADR-0091, corrected 2026-10-14). */
+const BOTH = (): readonly ('onedrive' | 'google-drive')[] => ['onedrive', 'google-drive'];
+
+describe('cloud storage in a build that carries no client values (Part 0.2)', () => {
+  const NONE = (): readonly ('onedrive' | 'google-drive')[] => [];
+  const built = createClient(channels, () => Promise.resolve(ok({})));
+  const ask = (): Promise<unknown> => Promise.resolve(undefined);
+
+  it('hides Cloud storage and Save back where the build reaches no provider, and before app.info has answered', () => {
+    for (const reachable of [NONE, () => undefined]) {
+      expect(cloudStorageCommand({ client: built, ask, toast: NO_TOAST, onOpened: () => undefined, onAlreadyOpen: () => undefined, busy: NO_BUSY, reachable }).when?.(START)).toBe(false);
+      expect(saveBackCommand({ client: built, ask, toast: NO_TOAST, onSaved: () => undefined, settleMarks: NOTHING_MARKED, reachable }).when?.(WITH_DOCUMENT)).toBe(false);
+    }
+  });
+
+  it('CONTROL: shows both where the build reaches a provider — the hiding is the values, not the command', () => {
+    expect(cloudStorageCommand({ client: built, ask, toast: NO_TOAST, onOpened: () => undefined, onAlreadyOpen: () => undefined, busy: NO_BUSY, reachable: () => ['google-drive'] }).when?.(START)).toBe(true);
+    expect(saveBackCommand({ client: built, ask, toast: NO_TOAST, onSaved: () => undefined, settleMarks: NOTHING_MARKED, reachable: BOTH }).when?.(WITH_DOCUMENT)).toBe(true);
+  });
+});
 /** A toast nobody reads, likewise. */
 const NO_TOAST: ShowToast = () => undefined;
 /** A file the person may change, as `cloud.access` answers it — the ordinary case, which asks nothing more. */
@@ -73,7 +93,7 @@ describe('Cloud storage…', () => {
       { kind: 'open', provider: 'onedrive', fileId: 'f1' },
     ]);
     const opened: unknown[] = [];
-    await cloudStorageCommand({ client: built, ask, onOpened: (document) => opened.push(document), onAlreadyOpen: () => undefined, busy: NO_BUSY, toast: NO_TOAST }).run(START);
+    await cloudStorageCommand({ client: built, ask, onOpened: (document) => opened.push(document), onAlreadyOpen: () => undefined, busy: NO_BUSY, toast: NO_TOAST, reachable: BOTH }).run(START);
 
     expect(sent.filter((call) => call.id !== 'cloud.status').map((call) => [call.id, call.params])).toStrictEqual([
       ['cloud.list', { provider: 'onedrive' }],
@@ -111,6 +131,7 @@ describe('Cloud storage…', () => {
       client: built,
       ask,
       toast: NO_TOAST,
+      reachable: BOTH,
       onOpened: () => log.push('opened'),
       onAlreadyOpen: () => undefined,
       busy: (message, values) => {
@@ -138,6 +159,7 @@ describe('Cloud storage…', () => {
       client: built,
       ask,
       toast: NO_TOAST,
+      reachable: BOTH,
       onOpened: (document) => log.push(`opened ${document.name}`),
       onAlreadyOpen: () => undefined,
       busy: (message) => {
@@ -161,7 +183,7 @@ describe('Cloud storage…', () => {
     });
     const { ask, shown } = dialogs([{ kind: 'pick', provider: 'google-drive' }, undefined]);
     const opened: unknown[] = [];
-    await cloudStorageCommand({ client: built, ask, onOpened: (document) => opened.push(document), onAlreadyOpen: () => undefined, busy: NO_BUSY, toast: NO_TOAST }).run(START);
+    await cloudStorageCommand({ client: built, ask, onOpened: (document) => opened.push(document), onAlreadyOpen: () => undefined, busy: NO_BUSY, toast: NO_TOAST, reachable: BOTH }).run(START);
     expect((shown[1]?.props as { problem?: string }).problem).toBe('nothing-picked');
     expect(opened).toStrictEqual([]);
   });
@@ -169,7 +191,7 @@ describe('Cloud storage…', () => {
   it('a refused sign-in is SAID on the next showing, by name', async () => {
     const { client: built } = client({ 'cloud.status': STATUS, 'cloud.signIn': { kind: 'refused', reason: 'sign-in-cancelled' } });
     const { ask, shown } = dialogs([{ kind: 'sign-in', provider: 'onedrive' }, undefined]);
-    await cloudStorageCommand({ client: built, ask, onOpened: () => undefined, onAlreadyOpen: () => undefined, busy: NO_BUSY, toast: NO_TOAST }).run(START);
+    await cloudStorageCommand({ client: built, ask, onOpened: () => undefined, onAlreadyOpen: () => undefined, busy: NO_BUSY, toast: NO_TOAST, reachable: BOTH }).run(START);
     expect((shown[1]?.props as { problem?: string }).problem).toBe('sign-in-cancelled');
   });
 
@@ -194,6 +216,7 @@ describe('Cloud storage…', () => {
       client: built,
       ask,
       toast: (_kind, message) => said.push(message),
+      reachable: BOTH,
       onOpened: () => log.push('tab'),
       onAlreadyOpen: () => undefined,
       busy: NO_BUSY,
@@ -216,20 +239,20 @@ describe('Cloud storage…', () => {
       { kind: 'list', provider: 'onedrive' },
       { kind: 'open', provider: 'onedrive', fileId: 'f1' },
     ]);
-    await cloudStorageCommand({ client: built, ask, onOpened: () => undefined, onAlreadyOpen: () => undefined, busy: NO_BUSY, toast: NO_TOAST }).run(START);
+    await cloudStorageCommand({ client: built, ask, onOpened: () => undefined, onAlreadyOpen: () => undefined, busy: NO_BUSY, toast: NO_TOAST, reachable: BOTH }).run(START);
     expect(shown.map((entry) => entry.id)).toStrictEqual([CLOUD_DIALOG_ID, CLOUD_DIALOG_ID]);
   });
 
   it('UPLOAD is offered with a document open and sends it; CONTROL: on the start screen it is not offered', async () => {
     const { client: built, sent } = client({ 'cloud.status': STATUS, 'cloud.uploadCopy': { kind: 'done' } });
     const withDoc = dialogs([{ kind: 'upload', provider: 'onedrive' }, undefined]);
-    await cloudStorageCommand({ client: built, ask: withDoc.ask, onOpened: () => undefined, onAlreadyOpen: () => undefined, busy: NO_BUSY, toast: NO_TOAST }).run(WITH_DOCUMENT);
+    await cloudStorageCommand({ client: built, ask: withDoc.ask, onOpened: () => undefined, onAlreadyOpen: () => undefined, busy: NO_BUSY, toast: NO_TOAST, reachable: BOTH }).run(WITH_DOCUMENT);
     expect((withDoc.shown[0]?.props as { documentOpen: boolean }).documentOpen).toBe(true);
     expect(sent.find((call) => call.id === 'cloud.uploadCopy')?.params).toStrictEqual({ docId: DOC, provider: 'onedrive' });
     expect((withDoc.shown[1]?.props as { note?: string }).note).toBe('uploaded');
 
     const atStart = dialogs([undefined]);
-    await cloudStorageCommand({ client: built, ask: atStart.ask, onOpened: () => undefined, onAlreadyOpen: () => undefined, busy: NO_BUSY, toast: NO_TOAST }).run(START);
+    await cloudStorageCommand({ client: built, ask: atStart.ask, onOpened: () => undefined, onAlreadyOpen: () => undefined, busy: NO_BUSY, toast: NO_TOAST, reachable: BOTH }).run(START);
     expect((atStart.shown[0]?.props as { documentOpen: boolean }).documentOpen).toBe(false);
   });
 });
@@ -264,7 +287,7 @@ describe('Save back to cloud', () => {
     const { client: built, sent } = client({ 'cloud.saveBack': { kind: 'saved-back', version: asDocVersion(7) } });
     const { ask, shown } = dialogs([]);
     const { toast, onSaved, said, wrote } = saving();
-    await saveBackCommand({ client: built, ask, toast, onSaved, settleMarks: NOTHING_MARKED }).run(WITH_DOCUMENT);
+    await saveBackCommand({ client: built, ask, toast, onSaved, settleMarks: NOTHING_MARKED, reachable: BOTH }).run(WITH_DOCUMENT);
     expect(sent).toStrictEqual([{ id: 'cloud.saveBack', params: { docId: DOC } }]);
     expect(wrote).toStrictEqual([{ docId: DOC, version: asDocVersion(7) }]);
     expect(said).toStrictEqual([{ kind: 'done', message: TOAST_SAVED_BACK }]);
@@ -276,7 +299,7 @@ describe('Save back to cloud', () => {
       const { client: built } = client({ 'cloud.saveBack': { kind } });
       const { ask, shown } = dialogs([]);
       const { toast, onSaved, said, wrote } = saving();
-      await saveBackCommand({ client: built, ask, toast, onSaved, settleMarks: NOTHING_MARKED }).run(WITH_DOCUMENT);
+      await saveBackCommand({ client: built, ask, toast, onSaved, settleMarks: NOTHING_MARKED, reachable: BOTH }).run(WITH_DOCUMENT);
       expect(wrote, kind).toStrictEqual([]);
       expect(said, kind).toStrictEqual([]);
       expect(shown, kind).toStrictEqual([{ id: CLOUD_OUTCOME_DIALOG_ID, props: { outcome: kind } }]);
@@ -300,7 +323,7 @@ describe('Save back to cloud', () => {
         return Promise.resolve(id === CLOUD_VIEW_ONLY_DIALOG_ID ? { kind: 'save-copy' } : undefined);
       };
       const { toast, onSaved, said, wrote } = saving();
-      await saveBackCommand({ client: built, ask, toast, onSaved, settleMarks: NOTHING_MARKED }).run(WITH_DOCUMENT);
+      await saveBackCommand({ client: built, ask, toast, onSaved, settleMarks: NOTHING_MARKED, reachable: BOTH }).run(WITH_DOCUMENT);
 
       expect(wrote).toStrictEqual([{ docId: DOC, version: asDocVersion(4) }]);
       expect(shown).toStrictEqual([{ id: CLOUD_VIEW_ONLY_DIALOG_ID, props: { provider: 'google-drive', moment: reason } }]);
@@ -316,7 +339,7 @@ describe('Save back to cloud', () => {
     });
     const { ask, shown } = dialogs([]);
     const { toast, onSaved } = saving();
-    await saveBackCommand({ client: built, ask, toast, onSaved, settleMarks: NOTHING_MARKED }).run(WITH_DOCUMENT);
+    await saveBackCommand({ client: built, ask, toast, onSaved, settleMarks: NOTHING_MARKED, reachable: BOTH }).run(WITH_DOCUMENT);
     expect(shown).toStrictEqual([{ id: CLOUD_OUTCOME_DIALOG_ID, props: { outcome: 'unauthorised' } }]);
     expect(sent.map((call) => call.id)).toStrictEqual(['cloud.saveBack']);
   });
@@ -328,7 +351,7 @@ describe('Save back to cloud', () => {
     });
     const { ask } = dialogs([]);
     const { toast, onSaved, said } = saving();
-    await saveBackCommand({ client: built, ask, toast, onSaved, settleMarks: NOTHING_MARKED }).run(WITH_DOCUMENT);
+    await saveBackCommand({ client: built, ask, toast, onSaved, settleMarks: NOTHING_MARKED, reachable: BOTH }).run(WITH_DOCUMENT);
     expect(sent.map((call) => call.id)).toStrictEqual(['cloud.saveBack', 'cloud.access']);
     expect(said).toStrictEqual([]);
   });
@@ -339,7 +362,7 @@ describe('Save back to cloud', () => {
     });
     const { ask, shown } = dialogs([]);
     const { toast, onSaved, said, wrote } = saving();
-    await saveBackCommand({ client: built, ask, toast, onSaved, settleMarks: NOTHING_MARKED }).run(WITH_DOCUMENT);
+    await saveBackCommand({ client: built, ask, toast, onSaved, settleMarks: NOTHING_MARKED, reachable: BOTH }).run(WITH_DOCUMENT);
     // `document.unsaved` reads clean here — main wrote the working copy before sending — so a tab
     // left dirty would be the disagreement this command exists not to make.
     expect(wrote).toStrictEqual([{ docId: DOC, version: asDocVersion(4) }]);

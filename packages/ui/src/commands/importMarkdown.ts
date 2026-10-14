@@ -378,6 +378,8 @@ export function newFromCaptureCommand(deps: {
   readonly track: TrackTask;
   readonly onOpened: (opened: OpenedDocument) => void;
   readonly onAlreadyOpen: (docId: DocId) => void;
+  /** Whether Media Foundation is on this computer (`app.info`), or `undefined` before it has answered. */
+  readonly mediaFoundation: () => boolean | undefined;
 }): UiCommand {
   return {
     id: 'document.new-from-camera',
@@ -387,7 +389,10 @@ export function newFromCaptureCommand(deps: {
     ribbonTitle: RIBBON_NEW_FROM_CAMERA,
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 60, size: 'small' }],
     run: async (): Promise<void> => {
-      const taken = CAMERA_CAPTURE_RESULT.safeParse(await deps.ask(CAMERA_CAPTURE_DIALOG_ID, {}));
+      // NOT YET ANSWERED READS AS PRESENT: the dialog then tries the camera, and the platform answers for itself.
+      const taken = CAMERA_CAPTURE_RESULT.safeParse(
+        await deps.ask(CAMERA_CAPTURE_DIALOG_ID, { mediaFoundation: deps.mediaFoundation() ?? true }),
+      );
       if (!taken.success) return;
 
       const answer = await withWorkProgress(deps, CAMERA_CONVERTING, (work) =>

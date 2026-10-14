@@ -73,6 +73,7 @@ import { pdftotextPath } from '../provision/poppler.mjs';
 import { tessdataDirectory } from '../provision/tessdata.mjs';
 import { repairThenRefuse } from './dllClosure.mjs';
 import { nativeManifest } from './nativeManifest.mjs';
+import { cloudClientsModule, writePackagedClients } from './oauthClients.mjs';
 import { moduleClosure, moduleSpecifiers, modulesLoadedByPath, workspaceTarget } from './shippedModules.mjs';
 import { startsToWindow } from './startCheck.mjs';
 
@@ -585,6 +586,17 @@ async function main() {
     step(`  placed ${path}`);
   }
   writeFileSync(join(nativeRoot, 'manifest.json'), `${JSON.stringify({ ...manifest, components }, null, 2)}\n`);
+
+  // THE CLOUD CLIENTS (ADR-0091 Decision 2, corrected 2026-10-14): written into the package so every person's copy can
+  // sign in with their own account; a Store package without them is refused.
+  step('cloud clients');
+  writePackagedClients({
+    module: await cloudClientsModule(REPO_ROOT),
+    env: process.env,
+    resources: join(stage, 'resources'),
+    flavour,
+    say: step,
+  });
 
   step('notices');
   copyFileSync(join(REPO_ROOT, 'NOTICE'), join(stage, 'NOTICE'));

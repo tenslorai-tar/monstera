@@ -184,6 +184,15 @@ afterEach(() => {
  * says otherwise"*, and leaving it implicit is what made the next channel a
  * defect rather than a decision.
  */
+/** A Store package's facts: both cloud providers reached, Media Foundation present. */
+const STORE_BUILD_INFO = {
+  version: '0.0.0',
+  installChannel: 'store',
+  userName: 'A. Tester',
+  cloudProviders: ['onedrive', 'google-drive'],
+  mediaFoundation: true,
+} as const;
+
 const OTHER_ANSWERS: Partial<Record<string, unknown>> = {
   // Takes no parameters and answers a boolean. Nothing else in this file's
   // fixtures is shaped like it.
@@ -323,7 +332,7 @@ function answeringClient(answers: Readonly<Record<string, unknown>>): {
 const SETTINGS_OPEN_ANSWERS = {
   'settings.loadSecrets': { stored: [], available: true },
   // The Updates page's installed version (item 6): the dialog asks `app.info` as it opens.
-  'app.info': { version: '0.0.0', installChannel: 'development', userName: 'A. Tester' },
+  'app.info': { version: '0.0.0', installChannel: 'development', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true },
   'ai.models.held': Object.fromEntries(AI_PROVIDER_IDS.map((provider) => [provider, { source: 'fallback', models: [] }])),
   // THE FONTS THE ANNOTATION FONT'S ROW OFFERS (K2): the dialog asks `app.fontFamilies` as it opens.
   'app.fontFamilies': { listed: true, families: [], more: 0 },
@@ -782,6 +791,8 @@ describe('App', () => {
     const client = createClient(channels, (id) => {
       if (id === 'cloud.open') return pending.then((value) => ok(value));
       if (id === 'cloud.status') return Promise.resolve(ok({ providers: [{ provider: 'onedrive', state: 'signed-in' }] }));
+      // A BUILD THAT REACHES A PROVIDER: without it the cloud commands are hidden (ADR-0091, corrected 2026-10-14).
+      if (id === 'app.info') return Promise.resolve(ok(STORE_BUILD_INFO));
       if (id === 'cloud.list') {
         return Promise.resolve(ok({ kind: 'listed', files: [{ id: 'f1', name: 'contract.pdf', size: 9, modified: null }] }));
       }
@@ -964,7 +975,7 @@ describe('App', () => {
   });
 
   it('while a dialog is open the page’s shortcuts do nothing — the key is the dialog’s (ADR-0111)', async () => {
-    const { client, calls } = recordingClient({ version: '1.2.3', installChannel: 'development', userName: 'A. Tester' });
+    const { client, calls } = recordingClient({ version: '1.2.3', installChannel: 'development', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true });
     render(<App client={client} settings={freshSettings()} />);
     await act(async () => {
       screen.getByRole('button', { name: 'About' }).click();
@@ -1096,7 +1107,7 @@ describe('App', () => {
     // application's real version and channel, so it is wrong the moment anything
     // about it breaks — rather than a dialog that renders correctly whatever the
     // application is doing.
-    const { client } = recordingClient({ version: '1.2.3', installChannel: 'development', userName: 'A. Tester' });
+    const { client } = recordingClient({ version: '1.2.3', installChannel: 'development', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true });
     render(<App client={client} settings={freshSettings()} />);
 
     await act(async () => {
@@ -1128,7 +1139,7 @@ describe('App', () => {
       const sent: Sent[] = [];
       const client = createClient(channels, (id, params) => {
         sent.push({ id, params });
-        if (id === 'app.info') return Promise.resolve(ok({ version: '1.2.3', installChannel: 'store', userName: 'A. Tester' }));
+        if (id === 'app.info') return Promise.resolve(ok({ version: '1.2.3', installChannel: 'store', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true }));
         if (id === 'app.openWebPage') return Promise.resolve(ok({ opened: true }));
         return Promise.resolve(ok(OTHER_ANSWERS[id] ?? { kind: 'cancelled' }));
       });
@@ -1161,7 +1172,7 @@ describe('App', () => {
       const client = createClient(channels, (id, params) => {
         sent.push({ id, params });
         if (id === 'app.updateStatus') return Promise.resolve(ok({ status }));
-        if (id === 'app.info') return Promise.resolve(ok({ version: '1.3.0', installChannel: 'store', userName: 'A. Tester' }));
+        if (id === 'app.info') return Promise.resolve(ok({ version: '1.3.0', installChannel: 'store', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true }));
         if (id === 'app.openStore') return Promise.resolve(ok({ opened: true }));
         if (id === 'app.acknowledgeSecurityUpdate') return Promise.resolve(ok({ acknowledged: true }));
         return Promise.resolve(ok(OTHER_ANSWERS[id] ?? { kind: 'cancelled' }));
@@ -1237,7 +1248,7 @@ describe('App', () => {
     // without this the case above passes for a host that mounts every registered
     // dialog and shows one. A mounted-but-closed dialog keeps its body's state
     // across opens, which is the defect Decision 7's laziness exists for.
-    const { client } = recordingClient({ version: '1.2.3', installChannel: 'development', userName: 'A. Tester' });
+    const { client } = recordingClient({ version: '1.2.3', installChannel: 'development', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true });
     render(<App client={client} settings={freshSettings()} />);
 
     await act(async () => {
@@ -2431,6 +2442,8 @@ describe('App', () => {
         if (id === 'cloud.saveBack') {
           return Promise.resolve(ok({ kind: 'saved-back' as const, version: asDocVersion(version) }));
         }
+        // Save back is offered only in a build that reaches a provider (ADR-0091, corrected 2026-10-14).
+        if (id === 'app.info') return Promise.resolve(ok(STORE_BUILD_INFO));
         const answers: Readonly<Record<string, unknown>> = OPEN_DOCUMENT_ANSWERS;
         const answer = answers[id];
         if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
@@ -4293,7 +4306,7 @@ describe('the first-run AI setup (E5 onboarding)', () => {
   async function started(stored: readonly string[], hydrate: Readonly<Record<string, unknown>> | null): Promise<SettingsStore> {
     const client = createClient(channels, (id) => {
       if (id === 'settings.loadSecrets') return Promise.resolve(ok({ stored, available: true }));
-      if (id === 'app.info') return Promise.resolve(ok({ version: '0.0.0', installChannel: 'development', userName: 'A. Tester' }));
+      if (id === 'app.info') return Promise.resolve(ok({ version: '0.0.0', installChannel: 'development', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true }));
       const answer = OTHER_ANSWERS[id];
       if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
       return Promise.resolve(ok(answer));

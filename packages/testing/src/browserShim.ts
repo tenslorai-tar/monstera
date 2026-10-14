@@ -306,6 +306,10 @@ const PLAIN_RULES = {
 export interface BrowserShimOptions {
   readonly version?: string;
   readonly installChannel?: 'store' | 'web' | 'development';
+  /** The cloud providers this shim's build carries client values for. Defaults to both, the Store package's state. */
+  readonly cloudProviders?: readonly ('onedrive' | 'google-drive')[];
+  /** Whether Media Foundation is on the shim's machine. Defaults to `true`; `false` is a Windows N edition. */
+  readonly mediaFoundation?: boolean;
   /**
    * Which OCR models this shim's machine has. Defaults to `['eng']`.
    *
@@ -1165,6 +1169,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
           installChannel: options.installChannel ?? 'development',
           // A FIXED NAME, so what the shim stamps does not depend on who ran it.
           userName: 'Shim User',
+          cloudProviders: [...(options.cloudProviders ?? ['onedrive', 'google-drive'])],
+          mediaFoundation: options.mediaFoundation ?? true,
         }),
       ),
 

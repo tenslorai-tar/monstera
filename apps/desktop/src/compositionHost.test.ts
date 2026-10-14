@@ -57,7 +57,7 @@ import { pictureName } from './recentPictures.js';
  * validating one. What is faked is the platform, which is exactly the boundary
  * `EngineHostPlatform` was introduced to put a fake behind.
  */
-const appInfo: AppInfo = { version: '0.0.0', installChannel: 'development', userName: 'A. Tester' };
+const appInfo: AppInfo = { version: '0.0.0', installChannel: 'development', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true };
 
 /** The name every conversion here runs under (ADR-0234). */
 const WORK = 'work-under-test';

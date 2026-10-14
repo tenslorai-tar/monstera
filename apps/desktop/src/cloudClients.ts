@@ -31,6 +31,24 @@ export const CLOUD_CLIENT_VARIABLES: Readonly<
 /** The packaged file's name in the build's resources. */
 export const PACKAGED_CLIENTS_FILE = 'oauth-clients.json';
 
+/**
+ * The packaged file's values, or `null` where there is no file. A file that is there and is not a JSON object of
+ * strings is THROWN: it is a damaged package, and answering `null` would hide every cloud command as though the build
+ * had been made without them — the reassuring answer to a question nobody asked.
+ *
+ * @param read the file's text, or `null` where it does not exist
+ */
+export function packagedCloudClients(read: string | null): Readonly<Record<string, string>> | null {
+  if (read === null) return null;
+  const parsed: unknown = JSON.parse(read);
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error(`${PACKAGED_CLIENTS_FILE} is not an object of values`);
+  }
+  const entries = Object.entries(parsed);
+  if (!entries.every(([, value]) => typeof value === 'string')) throw new Error(`${PACKAGED_CLIENTS_FILE} holds a value that is not text`);
+  return Object.fromEntries(entries) as Record<string, string>;
+}
+
 /** A value from the environment, then the packaged file; blank is absent. */
 function valueOf(
   name: string,

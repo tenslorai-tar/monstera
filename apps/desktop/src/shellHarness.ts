@@ -380,7 +380,7 @@ startShell(() => {
   // marker set by a harness run and make the next crash-recovery offer silent.
   const dependencies = createShellDependencies({
     ...harnessSurfaces('the shell harness'),
-    appInfo: { version: app.getVersion(), installChannel: 'development', userName: 'Shell Harness' },
+    appInfo: { version: app.getVersion(), installChannel: 'development', userName: 'Shell Harness', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true },
   });
 
   if (quitProbe === null) return dependencies;

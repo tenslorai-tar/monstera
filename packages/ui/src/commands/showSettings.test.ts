@@ -134,7 +134,7 @@ function harness(options: {
       return Promise.resolve(
         options.infoRefuses === true
           ? err({ code: 'internal', incident: 'test' })
-          : ok({ version: '0.1.12.0', installChannel: 'store' as const, userName: 'Tester' }),
+          : ok({ version: '0.1.12.0', installChannel: 'store' as const, userName: 'Tester', cloudProviders: [], mediaFoundation: true }),
       );
     }
     // THE FONTS A `font` ROW OFFERS (K2): one bundled family, so a case can see this answer is the one handed on.

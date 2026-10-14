@@ -23,7 +23,11 @@ export type CameraCaptureAnswer = z.infer<typeof CAMERA_CAPTURE_RESULT>;
 export const CAMERA_CAPTURE_DIALOG = declareDialog({
   id: CAMERA_CAPTURE_DIALOG_ID,
   title: CAMERA_CAPTURE_TITLE,
-  props: z.object({}).strict(),
+  /**
+   * `mediaFoundation` false is a Windows N or KN edition without the Media Feature Pack: Chromium delay-loads Media
+   * Foundation, so the application runs and the camera alone cannot start, and the dialog says why without trying.
+   */
+  props: z.object({ mediaFoundation: z.boolean() }).strict(),
   result: CAMERA_CAPTURE_RESULT,
   component: lazy(() => import('./CameraCaptureBody.js')),
 });

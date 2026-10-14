@@ -977,7 +977,7 @@ export async function reportCanvasPixels(
     ...harnessSurfaces('the canvas harness'),
     settings,
     // A FIXED NAME in the harness, so what it stamps does not depend on who ran it.
-    appInfo: { version: app.getVersion(), installChannel: 'development', userName: 'Canvas Harness' },
+    appInfo: { version: app.getVersion(), installChannel: 'development', userName: 'Canvas Harness', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true },
     // THE ONE SUBSTITUTION, and it is a function returning a path because that
     // is exactly what `PickDocument` is. Nothing downstream can tell this from
     // `createDocumentPicker()` — which is the point of the seam, and the reason

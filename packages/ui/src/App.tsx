@@ -21,6 +21,7 @@ import {
   type DispatchableCommand,
   type UpdateStatus,
   type WindowEditAction,
+  type CloudProviderId,
 } from '@monstera/contract';
 import type { DocId, DocVersion, FileHandle, MessageKey } from '@monstera/shared';
 import { useLingui } from '@lingui/react';
@@ -1054,6 +1055,12 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * nobody rather than waiting.
    */
   const [userName, setUserName] = useState('');
+  // WHAT THIS BUILD AND THIS COMPUTER CAN DO, from `app.info`: the cloud providers the package carries values for
+  // (ADR-0091, corrected 2026-10-14) and whether Media Foundation is here for the camera. `undefined` until it answers.
+  const [cloudProviders, setCloudProviders] = useState<readonly CloudProviderId[] | undefined>(undefined);
+  const readCloudProviders = useCallback(() => cloudProviders, [cloudProviders]);
+  const [mediaFoundation, setMediaFoundation] = useState<boolean | undefined>(undefined);
+  const readMediaFoundation = useCallback(() => mediaFoundation, [mediaFoundation]);
   const typedAuthor = useSetting(settings, AUTHOR_NAME_SETTING);
   /**
    * Who is making a mark and when, asked at the moment a creation command is sent (ADR-0103): the
@@ -2617,6 +2624,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         if (cancelled || !answer.ok) return;
         setAppVersion(answer.value.version);
         setUserName(answer.value.userName);
+        setCloudProviders(answer.value.cloudProviders);
+        setMediaFoundation(answer.value.mediaFoundation);
       },
       () => {
         // SWALLOWED ON PURPOSE: a version that cannot be read leaves the footer without its version line, which
@@ -3780,10 +3789,10 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // D9's OPEN FROM URL, the same callbacks: a fetched document arrives as a tab.
         openFromUrlCommand({ client, ask, track, onOpened: opened, onAlreadyOpen: activate }),
         // CLOUD STORAGE (ADR-0091): the same two callbacks, so a cloud file arrives as a tab.
-        cloudStorageCommand({ client, ask, toast, onOpened: opened, onAlreadyOpen: activate, busy }),
-        saveBackCommand({ client, ask, toast, onSaved, settleMarks }),
+        cloudStorageCommand({ client, ask, toast, onOpened: opened, onAlreadyOpen: activate, busy, reachable: readCloudProviders }),
+        saveBackCommand({ client, ask, toast, onSaved, settleMarks, reachable: readCloudProviders }),
         // D9's WEBCAM ROW, the same callbacks: the pictures arrive as a tab.
-        newFromCaptureCommand({ client, ask, track, onOpened: opened, onAlreadyOpen: activate }),
+        newFromCaptureCommand({ client, ask, track, onOpened: opened, onAlreadyOpen: activate, mediaFoundation: readMediaFoundation }),
         // TOOLS › OCR › CONVERT SCAN: says what a scan can become and goes to the registered command that does it.
         convertScanCommand({ ask, runCommand: (id, commandContext) => holder.registry?.get(id)?.run(commandContext) }),
         appendMarkdownCommand({
@@ -3998,6 +4007,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       // THE KEYS A PERSON CHOSE, so a change in the shortcuts dialog rebuilds the registry and the new key works at once.
       chosenShortcuts,
       chooseTool,
+      // THE PROVIDERS THIS BUILD REACHES, so `app.info`'s answer rebuilds the registry and the cloud commands appear.
+      readCloudProviders,
+      readMediaFoundation,
       markBarcode,
       markPlaces,
       orderByClicking,

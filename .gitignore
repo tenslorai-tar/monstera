@@ -173,3 +173,7 @@ __import_probe__.js
 # working copy may hold the design without it ever reaching a commit.
 assets/Monstera PDF Editor UI Design/
 
+# The cloud client values packaging writes into a package (ADR-0091, corrected 2026-10-14) are never committed,
+# wherever a copy of the file lands.
+oauth-clients.json
+

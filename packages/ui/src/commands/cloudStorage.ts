@@ -72,16 +72,21 @@ export function cloudStorageCommand(deps: {
   readonly onAlreadyOpen: (docId: DocId) => void;
   /** Says a download is under way while `cloud.open` runs. */
   readonly busy: ShowBusy;
+  /** The providers this build can sign in to (`app.info`), or `undefined` before it has answered. */
+  readonly reachable: () => readonly CloudProviderId[] | undefined;
 }): UiCommand {
   return {
     id: 'cloud.storage',
     feedback: VISIBLE,
     icon: 'Cloud',
     title: CLOUD_COMMAND_TITLE,
-    // FILE, beside the other ways a document is opened. It needs no document — it is a way to START with one — so it
-    // declares no `when`, and the menu and the palette reach it on the start screen too. It was Home › File's More
-    // until the menu bar gave the application menus a home (ADR-0107).
+    // FILE, beside the other ways a document is opened. It needs no document — it is a way to START with one — so the
+    // menu and the palette reach it on the start screen too. It was Home › File's More until the menu bar gave the
+    // application menus a home (ADR-0107).
     placements: [{ surface: 'menu-bar', menu: 'file', group: 0, order: 30 }],
+    // HIDDEN IN A BUILD THAT CAN REACH NO PROVIDER (ADR-0091, corrected 2026-10-14): a contributor's build made without
+    // the client values. Offering it there would be a control that can only refuse.
+    when: () => (deps.reachable()?.length ?? 0) > 0,
     run: async (context: CommandContext): Promise<void> => {
       let listing: { provider: CloudProviderId; files: readonly CloudFile[] } | undefined;
       let problem: CloudRefusal | undefined;
@@ -92,7 +97,8 @@ export function cloudStorageCommand(deps: {
         if (!status.ok) return;
         const answered = CLOUD_RESULT.safeParse(
           await deps.ask(CLOUD_DIALOG_ID, {
-            providers: status.value.providers,
+            // ONLY THE PROVIDERS THIS BUILD CAN REACH: one it carries no values for is not offered, for the command's reason.
+            providers: status.value.providers.filter((each) => each.state !== 'not-configured'),
             documentOpen: context.docId !== undefined,
             ...(listing === undefined ? {} : { listing: { provider: listing.provider, files: [...listing.files] } }),
             ...(problem === undefined ? {} : { problem }),
@@ -195,6 +201,8 @@ export function saveBackCommand(
   deps: {
     readonly client: ContractClient;
     readonly ask: (id: string, props: unknown) => Promise<unknown>;
+    /** The providers this build can sign in to (`app.info`), or `undefined` before it has answered. */
+    readonly reachable: () => readonly CloudProviderId[] | undefined;
   } & WritesItsOwnFile &
     SettlesMarksFirst,
 ): UiCommand {
@@ -204,7 +212,7 @@ export function saveBackCommand(
     icon: 'CloudUpload',
     title: SAVE_BACK_TITLE,
     placements: [{ surface: 'menu-bar', menu: 'file', group: 1, order: 30 }],
-    when: hasDocument,
+    when: (context) => hasDocument(context) && (deps.reachable()?.length ?? 0) > 0,
     run: async (context: CommandContext): Promise<void> => {
       const { docId } = context;
       if (docId === undefined) return;

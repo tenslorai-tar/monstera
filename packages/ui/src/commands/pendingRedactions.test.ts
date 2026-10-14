@@ -346,7 +346,7 @@ describe('every save, export, print and send asks before it does anything', () =
     readonly build: (deps: ReturnType<typeof bag>) => UiCommand;
   }[] = [
     { name: 'Save', occasion: 'save', build: (deps) => saveCommand(deps) },
-    { name: 'Save back to cloud', occasion: 'save', build: (deps) => saveBackCommand(deps) },
+    { name: 'Save back to cloud', occasion: 'save', build: (deps) => saveBackCommand({ ...deps, reachable: () => ['onedrive'] }) },
     { name: 'Save a copy', occasion: 'export', build: (deps) => saveCopyCommand(deps) },
     { name: 'Extract pages', occasion: 'export', build: (deps) => extractPagesCommand(deps) },
     { name: 'Split', occasion: 'export', build: (deps) => splitDocumentCommand(deps) },

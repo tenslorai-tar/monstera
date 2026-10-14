@@ -10,6 +10,7 @@ import {
   POWERPOINT_FALLBACK_LISTED_MAX,
   TEXT_BLOCKS_PART,
   type AiModelListAnswer,
+  type CloudProviderId,
   type AiProviderId,
   CHAT_HISTORY_STORED,
   storedSetting,
@@ -211,6 +212,10 @@ export interface AppInfo {
   readonly installChannel: 'store' | 'web' | 'development';
   /** The signed-in Windows user's name — `windowsUserName()` (ADR-0103). */
   readonly userName: string;
+  /** The cloud providers this build carries client values for (ADR-0091, corrected 2026-10-14). */
+  readonly cloudProviders: readonly CloudProviderId[];
+  /** Whether Media Foundation is on this computer — false on a Windows N edition without the Media Feature Pack. */
+  readonly mediaFoundation: boolean;
 }
 
 /** What `window.titleBarOverlay` carries, already validated: two `#rrggbb` colours and a whole-pixel height. */
@@ -435,7 +440,7 @@ export function createContractHandlers(deps: {
     'document.openSeveral': openSeveralHandler(deps),
     // `Promise.resolve`, not `async`: nothing here awaits, and the contract's
     // handler type is asynchronous because the real document channels are.
-    'app.info': () => Promise.resolve(ok({ ...deps.appInfo })),
+    'app.info': () => Promise.resolve(ok({ ...deps.appInfo, cloudProviders: [...deps.appInfo.cloudProviders] })),
     // AN ARRAY COPY, because the answer crosses a boundary that serialises it and
     // the source is a `readonly` the composition root may hold on to.
     'app.ocrLanguages': async () => ok({ languages: [...(await deps.ocrLanguages())] }),

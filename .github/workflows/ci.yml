@@ -433,6 +433,13 @@ jobs:
       - name: Prove a host's font catalogue leaves nothing behind
         run: node scripts/ci/annotate.mjs scripts/proofs/fontCatalogueApart.proof.mjs
 
+      # ADR-0091's 2026-10-14 correction. 0.1.15.0 read the cloud client values from the packager's environment at RUN
+      # time, so cloud storage worked on one PC. Packaging now writes them into the package; this reads the written
+      # file back through the shell's own reader with an EMPTY environment, and refuses a Store package without one.
+      # The values are made up. Needs the desktop build, which this job has.
+      - name: Prove a package carries the cloud client values and reads them back
+        run: node scripts/ci/annotate.mjs scripts/release/oauthClients.proof.mjs
+
       # ADR-0171's addendum. The shim's two readers of a document's content,
       # the inline-image keeper and Optimize's rewriter, open an encrypted
       # document with its password: without it the keeper found nothing and

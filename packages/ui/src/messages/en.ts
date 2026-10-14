@@ -800,6 +800,7 @@ export const CAMERA_CAPTURE_STARTING = messageKey('dialog.camera-capture.startin
 export const CAMERA_CAPTURE_DENIED = messageKey('dialog.camera-capture.denied');
 export const CAMERA_CAPTURE_ABSENT = messageKey('dialog.camera-capture.absent');
 export const CAMERA_CAPTURE_FAILED = messageKey('dialog.camera-capture.failed');
+export const CAMERA_CAPTURE_NO_MEDIA_PACK = messageKey('dialog.camera-capture.no-media-pack');
 export const CAMERA_CAPTURE_FULL = messageKey('dialog.camera-capture.full');
 export const OPEN_FROM_URL_TITLE = messageKey('dialog.open-from-url.title');
 export const OPEN_FROM_URL_LABEL = messageKey('dialog.open-from-url.label');
@@ -6284,6 +6285,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'This app is not allowed to use the camera. Allow it in Windows camera privacy settings, then try again.',
   [CAMERA_CAPTURE_ABSENT]: 'No camera was found.',
   [CAMERA_CAPTURE_FAILED]: 'The camera could not be started. Another app may be using it.',
+  // A WINDOWS N OR KN EDITION: the camera needs Media Foundation, which those editions add with the Media Feature Pack.
+  [CAMERA_CAPTURE_NO_MEDIA_PACK]:
+    'This edition of Windows needs the Media Feature Pack for the camera. Add it in Windows Settings, Apps, Optional features, then try again.',
   [CAMERA_CAPTURE_FULL]: 'That is as many pictures as one PDF can take. Make the PDF, then start another.',
   [OPEN_FROM_URL_TITLE]: 'Open a PDF from a web address',
   [OPEN_FROM_URL_LABEL]: 'Address',
