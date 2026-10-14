@@ -22,7 +22,7 @@ import type { PriorAnnotationAuthor, PriorAnnotationText } from './pageAnnotatio
 // reached from `main` and `pdfiumTextEdit.js` reaches koffi and `pdfium.dll`.
 // The import is erased, so the edge the header above warns about is not
 // created — the same care the `engineSeam.js` line records, on a second engine.
-import type { PriorFills, PriorPlacement } from './pdfiumObjectEdit.js';
+import type { PriorFills, PriorPlacement, PriorPlacements } from './pdfiumObjectEdit.js';
 import type { PriorTextObjects } from './pdfiumTextEdit.js';
 import type { PriorLayerVisibility } from './layers.js';
 import type {
@@ -703,6 +703,8 @@ export interface CommandPrior {
    * across repeated undo and redo accumulates floating-point drift.
    */
   readonly placePageObject: PriorPlacement;
+  /** Every object's own matrix, put back: a group's restore (ADR-0242), bounded by `MAX_EDITED_OBJECTS`. */
+  readonly placePageObjects: PriorPlacements;
   /**
    * One fill per object the recolour named.
    *

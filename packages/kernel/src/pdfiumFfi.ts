@@ -4969,6 +4969,55 @@ export function placeObject(
 }
 
 /**
+ * Moves and resizes SEVERAL objects as one thing (ADR-0242): every one takes the same page matrix, scaled about the
+ * GROUP's lower-left corner and then moved, so a block keeps its shape; then the page regenerates once.
+ *
+ * {@link placeObject}'s matrix with the group's box where that function takes the object's own, and composed onto each
+ * object's existing placement by `FPDFPageObj_Transform` for that function's measured reason.
+ *
+ * @throws when an index names no object on the page, before any object is touched.
+ */
+export function placeObjectGroup(
+  session: PdfiumSession,
+  page: number,
+  indices: readonly number[],
+  placement: ObjectPlacement & { readonly box: { readonly left: number; readonly bottom: number } },
+): Promise<void> {
+  return promised(() => {
+    onPage(session, page, (handle) => {
+      const bindings = api();
+      // EVERY OBJECT FOUND FIRST, so an index that names nothing leaves the page as it was rather than half placed.
+      const objects = indices.map((index) => objectAt(bindings, handle, page, index));
+      const { x: scaleX, y: scaleY } = placement.scaleBy;
+      const e = placement.box.left * (1 - scaleX) + placement.moveBy.x;
+      const f = placement.box.bottom * (1 - scaleY) + placement.moveBy.y;
+      for (const object of objects) bindings.transform(object, scaleX, 0, 0, scaleY, e, f);
+      generate(session, page, handle);
+    });
+  });
+}
+
+/** Puts several objects' matrices back, and regenerates once: {@link placeObjectGroup}'s inverse. */
+export function setObjectMatrices(
+  session: PdfiumSession,
+  page: number,
+  entries: readonly { readonly index: number; readonly matrix: ObjectMatrix }[],
+): Promise<void> {
+  return promised(() => {
+    onPage(session, page, (handle) => {
+      const bindings = api();
+      for (const { index, matrix } of entries) {
+        const object = objectAt(bindings, handle, page, index);
+        if (numberFrom(bindings.setMatrix(object, matrix), 'FPDFPageObj_SetMatrix') !== 1) {
+          throw refusedAt('matrix', `FPDFPageObj_SetMatrix refused object ${String(index)} on page ${String(page)}`);
+        }
+      }
+      generate(session, page, handle);
+    });
+  });
+}
+
+/**
  * Puts one object's matrix back, and regenerates once.
  *
  * `placeObject`'s inverse, and it reads nothing off a command — the matrix it

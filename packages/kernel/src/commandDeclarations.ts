@@ -2007,6 +2007,22 @@ const declarations = {
     // A transform rewrites the page's content stream and unlinks nothing.
     purpose: 'ordinary',
   },
+  placePageObjects: {
+    kind: 'placePageObjects',
+    display: 'image',
+    // PDFium, as one object's placement is: the objects are text, and text keeps PDFium's route (ADR-0242 Decision 3).
+    writer: 'pdfium',
+    // A RESTORE OF EVERY MATRIX, `placePageObject`'s measured reason taken once per object.
+    invertible: true,
+    undo: 'inverse',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    targets: 'text-object',
+    reads: 'none',
+    asset: 'none',
+    purpose: 'ordinary',
+  },
   placeDrawnObject: {
     kind: 'placeDrawnObject',
     display: 'image',

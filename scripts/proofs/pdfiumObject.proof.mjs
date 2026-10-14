@@ -103,7 +103,7 @@ async function twoRunsAndARectangle() {
  * @type {string[]}
  */
 const failures = [];
-const roster = createRoster(failures, { cases: 22 });
+const roster = createRoster(failures, { cases: 25 });
 
 /**
  * @param {string} name
@@ -143,9 +143,24 @@ async function textOf(bytes) {
 /** The three kinds this file drives, as a typed list the loop below reads. */
 const OBJECT_KINDS = /** @type {const} */ ([
   'placePageObject',
+  'placePageObjects',
   'recolorPageObjects',
   'deletePageObjects',
 ]);
+
+/**
+ * A word drawn ONE LETTER PER TEXT OBJECT, as the owner's page drew *overview* (E4): four objects at x 30, 45, 60 and
+ * 75, so a group scaled about its own corner doubles the gaps between them and one scaled object by object does not.
+ *
+ * @returns {Promise<Uint8Array>}
+ */
+async function lettersOneByOne() {
+  const document = await PDFDocument.create();
+  const page = document.addPage([400, 300]);
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  for (const [at, letter] of ['O', 'V', 'E', 'R'].entries()) page.drawText(letter, { x: 30 + 15 * at, y: 150, size: 11, font });
+  return document.save();
+}
 
 /**
  * A command literal typed from the contract's own inference.
@@ -373,9 +388,51 @@ async function main() {
   record(
     // THE THIRD, `placeDrawnObject`, is measured to keep the walk by `proof:drawnobjects` against PDFium (ADR-0240): its
     // case reads every object's kind in the same order after a photo moved where it is drawn.
-    'the contract names exactly the three commands measured to keep it, and not the removal',
-    [...KEEPS_THE_OBJECT_WALK].sort().join(',') === 'placeDrawnObject,placePageObject,recolorPageObjects',
+    'the contract names exactly the four commands measured to keep it, and not the removal',
+    [...KEEPS_THE_OBJECT_WALK].sort().join(',') === 'placeDrawnObject,placePageObject,placePageObjects,recolorPageObjects',
     [...KEEPS_THE_OBJECT_WALK].join(', '),
+  );
+
+  // ── A BLOCK, PLACED AS ONE (ADR-0242) ───────────────────────────────────────
+  const word = await lettersOneByOne();
+  const letters = (await objectsOf(word)).filter((object) => object.kind === 'text');
+  const group = {
+    left: Math.min(...letters.map((letter) => letter.left)),
+    bottom: Math.min(...letters.map((letter) => letter.bottom)),
+    right: Math.max(...letters.map((letter) => letter.right)),
+    top: Math.max(...letters.map((letter) => letter.top)),
+  };
+  const together = command('placePageObjects', {
+    page: 0,
+    indices: letters.map((letter) => letter.index),
+    box: group,
+    moveBy: { x: 10, y: 20 },
+    scaleBy: { x: 2, y: 2 },
+    version: 1,
+  });
+  const groupPrior = await localPdfiumExecution.capture(word, together);
+  const grouped = await localPdfiumExecution.apply({ session: word, command: together, sources: [], reads: undefined });
+  const after = (await objectsOf(grouped)).filter((object) => object.kind === 'text');
+  const gaps = (/** @type {readonly { left: number }[]} */ row) => row.slice(1).map((letter, at) => letter.left - (row[at]?.left ?? 0));
+  record(
+    'a block placed as one keeps its shape: its corner moves by the move, and every gap between its letters doubles',
+    letters.length === 4 &&
+      after.length === 4 &&
+      Math.abs(Math.min(...after.map((letter) => letter.left)) - (group.left + 10)) < 0.05 &&
+      Math.abs(Math.min(...after.map((letter) => letter.bottom)) - (group.bottom + 20)) < 0.05 &&
+      // CONTROL IN THE ASSERTION: each letter scaled about its own corner would keep the gaps at 15, not make them 30.
+      gaps(after).every((gap, at) => Math.abs(gap - 2 * (gaps(letters)[at] ?? 0)) < 0.05) &&
+      (await textOf(grouped)).replace(/\s/gu, '') === 'OVER',
+    `gaps ${gaps(letters).map((gap) => gap.toFixed(2)).join(',')} -> ${gaps(after).map((gap) => gap.toFixed(2)).join(',')}`,
+  );
+  const ungrouped = groupPrior.captured === true ? await localPdfiumExecution.invert(grouped, 'placePageObjects', groupPrior.prior) : grouped;
+  const restored = (await objectsOf(ungrouped)).filter((object) => object.kind === 'text');
+  record(
+    'its undo puts EVERY letter back exactly, from the matrices it captured',
+    groupPrior.captured === true &&
+      groupPrior.prior.objects.length === 4 &&
+      restored.every((letter, at) => Math.abs(letter.left - (letters[at]?.left ?? Number.NaN)) < 0.01 && Math.abs(letter.bottom - (letters[at]?.bottom ?? Number.NaN)) < 0.01),
+    restored.map((letter) => `${letter.left.toFixed(1)},${letter.bottom.toFixed(1)}`).join(' '),
   );
 
   // WHAT A REMOVAL LEAVES BEHIND, and it is measured here because

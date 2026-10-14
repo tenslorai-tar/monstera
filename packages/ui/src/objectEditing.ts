@@ -60,6 +60,12 @@ export interface EditableObject {
    * `box` where nothing narrows it. Required, so no reader can take the shown box for the engine's by leaving it out.
    */
   readonly drawn: AnnotationRect;
+  /**
+   * The walk indices it stands for, ascending (ADR-0242): one for a picture, a shape or a lone text object, and every
+   * text object of a block, so a press on one letter picks the block and a command names all of it. `index` is the
+   * first. Required, so a command built from it cannot name one letter of a block by forgetting the rest.
+   */
+  readonly members: readonly number[];
   /** Its fill, for page content; `null` for a picture and where PDFium would not say. */
   readonly fill: ObjectFill | null;
 }
@@ -173,15 +179,26 @@ export function placeCommand(pick: ObjectPick, target: AnnotationRect): Dispatch
       box: { left: drawn.x0, bottom: drawn.y0, right: drawn.x1, top: drawn.y1 },
     };
   }
+  // A BLOCK OF TEXT MOVES AS ONE (ADR-0242), scaled about the corner of the box its objects make together.
+  const [first, second, ...rest] = object.members;
+  if (first !== undefined && second !== undefined) {
+    const { index: _index, ...group } = placement;
+    return {
+      kind: 'placePageObjects',
+      ...group,
+      indices: [first, second, ...rest],
+      box: { left: drawn.x0, bottom: drawn.y0, right: drawn.x1, top: drawn.y1 },
+    };
+  }
   return { kind: 'placePageObject', ...placement };
 }
 
-/** The command that removes the picked object, by the writer that holds it. */
+/** The command that removes the picked object, by the writer that holds it: every member of a block. */
 export function removeCommand(pick: ObjectPick): DispatchableCommand {
   const { object } = pick;
   return object.source === 'stamp'
     ? { kind: 'removeAnnotation', page: pick.page, indices: [object.index], version: pick.version }
-    : { kind: 'deletePageObjects', page: pick.page, indices: [object.index], version: pick.version };
+    : { kind: 'deletePageObjects', page: pick.page, indices: [...object.members], version: pick.version };
 }
 
 /** Whether the picked object has a fill a person may change: page content whose fill PDFium describes. */
@@ -195,7 +212,7 @@ export function recolourCommand(pick: ObjectPick, colour: ObjectFill): Dispatcha
   return {
     kind: 'recolorPageObjects',
     page: pick.page,
-    indices: [pick.object.index],
+    indices: [...pick.object.members],
     colour,
     version: pick.version,
   };

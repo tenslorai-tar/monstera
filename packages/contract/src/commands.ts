@@ -3566,11 +3566,13 @@ export const KEEPS_THE_OBJECT_WALK: ReadonlySet<ObjectWalkKeepingKind> = new Set
   // A DRAWN OBJECT WRAPPED in `q cm … Q` is still one object of its kind at its place (ADR-0240): measured by
   // `objectPlacement.test.ts` against PDFium's walk before and after.
   'placeDrawnObject',
+  // SEVERAL OBJECTS each given a new matrix by PDFium, `placePageObject`'s measured case taken once per object (ADR-0242).
+  'placePageObjects',
   'recolorPageObjects',
 ] as const);
 
 /** The kinds {@link KEEPS_THE_OBJECT_WALK} names. */
-export type ObjectWalkKeepingKind = 'placePageObject' | 'placeDrawnObject' | 'recolorPageObjects';
+export type ObjectWalkKeepingKind = 'placePageObject' | 'placeDrawnObject' | 'placePageObjects' | 'recolorPageObjects';
 
 /** Whether `command` is one of them — the set's one reader for a command in hand. */
 export function keepsTheObjectWalk<C extends { readonly kind: string }>(
@@ -3624,6 +3626,7 @@ const WALK_NAMED_BY: Readonly<Record<NamesAnAnnotation | NamesAFormField | Names
   replaceTextObject: 'object',
   placePageObject: 'object',
   placeDrawnObject: 'object',
+  placePageObjects: 'object',
   recolorPageObjects: 'object',
   deletePageObjects: 'object',
   editTextBlock: 'object',
@@ -6083,6 +6086,27 @@ export const placeDrawnObjectSchema = z
   .strict();
 
 /**
+ * Moves and resizes SEVERAL page objects as one thing
+ * ([ADR-0242](../../../docs/DECISIONS/0242-edit-object-picks-text-by-the-block-edit-text-reads.md)): a block of text a
+ * producer wrote a word or a letter at a time. Every object takes one page matrix, scaled about the GROUP's lower-left
+ * corner and then moved, so the block keeps its shape; `placePageObject`'s note refuses a list without such an anchor.
+ *
+ * `box` is the group's box as the renderer outlined it, and is the anchor. Two indices at least: one object is
+ * `placePageObject`'s, and the command a person's drag sends is decided by what they picked, never by a list's length.
+ */
+export const placePageObjectsSchema = z
+  .object({
+    kind: z.literal('placePageObjects'),
+    page: z.number().int().nonnegative(),
+    indices: z.array(objectIndexSchema).min(2).max(MAX_EDITED_OBJECTS),
+    box: placeDrawnObjectSchema.shape.box,
+    moveBy: placePageObjectSchema.shape.moveBy,
+    scaleBy: placePageObjectSchema.shape.scaleBy,
+    version: docVersionSchema,
+  })
+  .strict();
+
+/**
  * Recolours a page's objects — **text objects included**.
  *
  * The *included* is measured rather than hoped: `FPDFPageObj_SetFillColor`
@@ -6825,6 +6849,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   replaceTextObjectSchema,
   placePageObjectSchema,
   placeDrawnObjectSchema,
+  placePageObjectsSchema,
   recolorPageObjectsSchema,
   deletePageObjectsSchema,
   promoteFormObjectsSchema,
@@ -7038,6 +7063,8 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // RENDERABLE, `placePageObject`'s reason: an intent, the box the listing gave and the object's place by kind; the
   // writer finds its instructions and composes the anchor (ADR-0240).
   placeDrawnObjectSchema,
+  // RENDERABLE: the indices of one block and the box the renderer outlined, which IS the anchor here (ADR-0242).
+  placePageObjectsSchema,
   recolorPageObjectsSchema,
   deletePageObjectsSchema,
   // RENDERABLE, and its payload is ONE INTEGER — the smallest on this list. The
@@ -7262,6 +7289,7 @@ export function targetVersionOf(command: Command): DocVersion | undefined {
   if (command.kind === 'replaceTextObject') return command.version;
   if (command.kind === 'placePageObject') return command.version;
   if (command.kind === 'placeDrawnObject') return command.version;
+  if (command.kind === 'placePageObjects') return command.version;
   if (command.kind === 'recolorPageObjects') return command.version;
   if (command.kind === 'deletePageObjects') return command.version;
   if (command.kind === 'editTextBlock') return command.version;
@@ -7370,6 +7398,7 @@ export type NamesATextObject =
   | 'placePageObject'
   // PDFium's walk index too, carried beside the kind's ordinal the MuPDF writer finds it by (ADR-0240).
   | 'placeDrawnObject'
+  | 'placePageObjects'
   | 'recolorPageObjects'
   | 'deletePageObjects'
   | 'editTextBlock'

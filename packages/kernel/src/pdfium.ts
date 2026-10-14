@@ -48,15 +48,19 @@ export {
 export {
   applyDeletePageObjects,
   applyPlacePageObject,
+  applyPlacePageObjects,
   applyRecolorPageObjects,
   captureDeletePageObjects,
   capturePlacePageObject,
+  capturePlacePageObjects,
   captureRecolorPageObjects,
   invertDeletePageObjects,
   invertPlacePageObject,
+  invertPlacePageObjects,
   invertRecolorPageObjects,
   type PriorFills,
   type PriorPlacement,
+  type PriorPlacements,
 } from './pdfiumObjectEdit.js';
 export {
   applyPromoteFormObjects,

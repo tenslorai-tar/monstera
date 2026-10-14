@@ -4668,7 +4668,7 @@ export async function readPageObjects(
   | { readonly ok: false; readonly refused: Parameters<typeof reportProblem>[1] | undefined }
 > {
   // EVERY PART, read whole at one version (ADR-0130): a page drawn one glyph per object is thousands of objects.
-  const [content, marks] = await Promise.all([
+  const [content, marks, blocks] = await Promise.all([
     readWholeList(
       (from) => client['document.pageObjects']({ docId, page, from }),
       (part) => part.objects,
@@ -4677,27 +4677,58 @@ export async function readPageObjects(
       (from) => client['document.annotations']({ docId, from }),
       (part) => part.annotations,
     ),
+    // THE BLOCKS EDIT TEXT OPENS (ADR-0242), so a press on one letter picks its block, read where Edit text reads them.
+    readWholeList(
+      (from) => client['document.textBlocks']({ docId, page, from }),
+      (part) => part.blocks,
+    ),
   ]);
   if (!content.ok) return { ok: false, refused: content.error };
   if (!marks.ok) return { ok: false, refused: marks.error };
   if (content.value.version !== marks.value.version) return { ok: false, refused: undefined };
+  // A BLOCK READ THAT WAS REFUSED leaves the text as single objects, never the mode refused (ADR-0242 Decision 1); one
+  // at another version is the document moving between reads, which is read again at the next version.
+  if (blocks.ok && blocks.value.version !== content.value.version) return { ok: false, refused: undefined };
+  const blockOf = new Map<number, number>();
+  if (blocks.ok) {
+    for (const [at, block] of blocks.value.items.entries()) {
+      for (const line of block.lines) for (const run of line.runs) blockOf.set(run.index, at);
+    }
+  }
   // EACH OBJECT'S PLACE AMONG ITS KIND, in the walk's order: how a drawn object is found in the page's content
   // (ADR-0240). The whole list was read at one version, so the count is the page's.
   const seen = new Map<string, number>();
-  const objects: EditableObject[] = content.value.items.map((object) => {
+  const objects: EditableObject[] = [];
+  /** Where each block's object sits in `objects`: at its FIRST member's place, so the drawing order is the walk's. */
+  const placed = new Map<number, number>();
+  for (const object of content.value.items) {
     const ordinal = seen.get(object.kind) ?? 0;
     seen.set(object.kind, ordinal + 1);
     const drawn = { x0: object.left, y0: object.bottom, x1: object.right, y1: object.top };
     // WHAT SHOWS where a clip narrows it (E3), the engine's own box where nothing does.
     const shown = object.shown === undefined ? drawn : { x0: object.shown.left, y0: object.shown.bottom, x1: object.shown.right, y1: object.shown.top };
-    return { source: 'content', index: object.index, ordinal, kind: object.kind, box: shown, drawn, fill: object.fill };
-  });
+    const block = object.kind === 'text' ? blockOf.get(object.index) : undefined;
+    const at = block === undefined ? undefined : placed.get(block);
+    const held = at === undefined ? undefined : objects[at];
+    if (block !== undefined && at !== undefined && held !== undefined) {
+      // ONE MORE MEMBER: the block's boxes grow to hold it, and the command names it with the rest.
+      objects[at] = { ...held, box: union(held.box, shown), drawn: union(held.drawn, drawn), members: [...held.members, object.index] };
+      continue;
+    }
+    if (block !== undefined) placed.set(block, objects.length);
+    objects.push({ source: 'content', index: object.index, ordinal, kind: object.kind, box: shown, drawn, members: [object.index], fill: object.fill });
+  }
   for (const mark of marks.value.items) {
     // A PICTURE A PERSON PLACED, on this page and drawn in a region: what the content walk cannot see.
     if (mark.page !== page || mark.pictured !== true || mark.rect === null) continue;
-    objects.push({ source: 'stamp', index: mark.index, ordinal: 0, kind: 'picture', box: mark.rect, drawn: mark.rect, fill: null });
+    objects.push({ source: 'stamp', index: mark.index, ordinal: 0, kind: 'picture', box: mark.rect, drawn: mark.rect, members: [mark.index], fill: null });
   }
   return { ok: true, objects: { version: content.value.version, objects, truncated: content.value.last.truncated || marks.value.last.truncated } };
+}
+
+/** The smallest box holding both. */
+function union(a: AnnotationRect, b: AnnotationRect): AnnotationRect {
+  return { x0: Math.min(a.x0, b.x0), y0: Math.min(a.y0, b.y0), x1: Math.max(a.x1, b.x1), y1: Math.max(a.y1, b.y1) };
 }
 
 /**

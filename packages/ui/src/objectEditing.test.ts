@@ -12,8 +12,8 @@ import {
   shownBy,
 } from './objectEditing.js';
 
-/** An object nothing clips: what shows is the engine's own box. */
-const unclipped = (object: Omit<EditableObject, 'drawn'>): EditableObject => ({ ...object, drawn: object.box });
+/** One object nothing clips: what shows is the engine's own box, and it stands for itself alone. */
+const unclipped = (object: Omit<EditableObject, 'drawn' | 'members'>): EditableObject => ({ ...object, drawn: object.box, members: [object.index] });
 const TEXT = unclipped({ source: 'content', index: 0, ordinal: 0, kind: 'text', box: { x0: 40, y0: 730, x1: 300, y1: 750 }, fill: { red: 0, green: 0, blue: 0, alpha: 255 } });
 const RULE = unclipped({ source: 'content', index: 1, ordinal: 0, kind: 'path', box: { x0: 40, y0: 700, x1: 560, y1: 700 }, fill: { red: 0, green: 0, blue: 0, alpha: 255 } });
 const PHOTO = unclipped({ source: 'content', index: 2, ordinal: 0, kind: 'image', box: { x0: 40, y0: 400, x1: 280, y1: 580 }, fill: null });
@@ -110,6 +110,7 @@ describe('the command a drag or a handle builds', () => {
     kind: 'image',
     box: { x0: 200, y0: 300, x1: 400, y1: 450 },
     drawn: { x0: 20, y0: 300, x1: 400, y1: 490 },
+    members: [4],
     fill: null,
   };
   /** Where a command puts a point, as both engines apply it: scaled about the engine's corner, then moved. */
@@ -134,6 +135,37 @@ describe('the command a drag or a handle builds', () => {
     const naive = placeCommand(pick({ ...CLIPPED, drawn: CLIPPED.box }), target);
     if (naive?.kind !== 'placeDrawnObject') throw new Error('expected a drawn object’s placement');
     expect(placed({ ...naive, box: { left: 20, bottom: 300, right: 400, top: 490 } }, CLIPPED.box.x0, CLIPPED.box.y0)[0]).toBeCloseTo(140, 6);
+  });
+
+  // A WORD WRITTEN ONE LETTER PER OBJECT (E4): objects 5, 6 and 8 make one block.
+  const WORD: EditableObject = {
+    source: 'content',
+    index: 5,
+    ordinal: 0,
+    kind: 'text',
+    box: { x0: 100, y0: 600, x1: 160, y1: 612 },
+    drawn: { x0: 100, y0: 600, x1: 160, y1: 612 },
+    members: [5, 6, 8],
+    fill: { red: 0, green: 0, blue: 0, alpha: 255 },
+  };
+
+  it('moves a BLOCK as one, about the block’s own corner, naming every object in it (ADR-0242)', () => {
+    expect(placeCommand(pick(WORD), { x0: 110, y0: 580, x1: 230, y1: 604 })).toStrictEqual({
+      kind: 'placePageObjects',
+      page: 1,
+      indices: [5, 6, 8],
+      box: { left: 100, bottom: 600, right: 160, top: 612 },
+      moveBy: { x: 10, y: -20 },
+      scaleBy: { x: 2, y: 2 },
+      version: V3,
+    });
+    // CONTROL: one object alone keeps the single command, so the list above is the block's and not every text's.
+    expect(placeCommand(pick(TEXT), { x0: 50, y0: 730, x1: 310, y1: 750 })?.kind).toBe('placePageObject');
+  });
+
+  it('removes and recolours EVERY object of a block, so no letter is left behind', () => {
+    expect(removeCommand(pick(WORD))).toMatchObject({ kind: 'deletePageObjects', indices: [5, 6, 8] });
+    expect(recolourCommand(pick(WORD), { red: 255, green: 0, blue: 0, alpha: 255 })).toMatchObject({ kind: 'recolorPageObjects', indices: [5, 6, 8] });
   });
 
   it('picks a clipped picture where it shows, never in the part of its placement the window hides', () => {

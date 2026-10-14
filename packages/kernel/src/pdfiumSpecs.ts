@@ -7,12 +7,15 @@ import type { AppliedImage, Capture, ImageSession, Invert } from './engineSeam.j
 import {
   applyDeletePageObjects,
   applyPlacePageObject,
+  applyPlacePageObjects,
   applyRecolorPageObjects,
   captureDeletePageObjects,
   capturePlacePageObject,
+  capturePlacePageObjects,
   captureRecolorPageObjects,
   invertDeletePageObjects,
   invertPlacePageObject,
+  invertPlacePageObjects,
   invertRecolorPageObjects,
 } from './pdfiumObjectEdit.js';
 import {
@@ -91,6 +94,12 @@ export const pdfiumSpecs = {
     apply: applyPlacePageObject,
     capture: capturePlacePageObject,
     invert: invertPlacePageObject,
+  },
+  placePageObjects: {
+    ...declaredCommands.placePageObjects,
+    apply: applyPlacePageObjects,
+    capture: capturePlacePageObjects,
+    invert: invertPlacePageObjects,
   },
   recolorPageObjects: {
     ...declaredCommands.recolorPageObjects,

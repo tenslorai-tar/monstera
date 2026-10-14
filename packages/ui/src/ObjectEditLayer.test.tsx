@@ -32,12 +32,12 @@ const GEOMETRY = {
 
 const V5 = asDocVersion(5);
 /** Lower-left (60, 350) and upper-right (100, 390) in PDF space, so its top-left lands at (20, 20) on screen. */
-const PHOTO: EditableObject = { source: 'content', index: 7, ordinal: 0, kind: 'image', box: { x0: 60, y0: 350, x1: 100, y1: 390 }, drawn: { x0: 60, y0: 350, x1: 100, y1: 390 }, fill: null };
+const PHOTO: EditableObject = { source: 'content', index: 7, ordinal: 0, kind: 'image', box: { x0: 60, y0: 350, x1: 100, y1: 390 }, drawn: { x0: 60, y0: 350, x1: 100, y1: 390 }, members: [7], fill: null };
 /** The photo's box as the command carries it. */
 const PHOTO_BOX = { left: 60, bottom: 350, right: 100, top: 390 };
-const WORDS: EditableObject = { source: 'content', index: 2, ordinal: 0, kind: 'text', box: { x0: 60, y0: 200, x1: 200, y1: 220 }, drawn: { x0: 60, y0: 200, x1: 200, y1: 220 }, fill: { red: 0, green: 0, blue: 0, alpha: 255 } };
+const WORDS: EditableObject = { source: 'content', index: 2, ordinal: 0, kind: 'text', box: { x0: 60, y0: 200, x1: 200, y1: 220 }, drawn: { x0: 60, y0: 200, x1: 200, y1: 220 }, members: [2], fill: { red: 0, green: 0, blue: 0, alpha: 255 } };
 /** A picture placed with Comment › Image: a stamp, index 0 of the annotation walk. */
-const PLACED: EditableObject = { source: 'stamp', index: 0, ordinal: 0, kind: 'picture', box: { x0: 150, y0: 300, x1: 230, y1: 360 }, drawn: { x0: 150, y0: 300, x1: 230, y1: 360 }, fill: null };
+const PLACED: EditableObject = { source: 'stamp', index: 0, ordinal: 0, kind: 'picture', box: { x0: 150, y0: 300, x1: 230, y1: 360 }, drawn: { x0: 150, y0: 300, x1: 230, y1: 360 }, members: [0], fill: null };
 const OBJECTS: PageObjects = { version: V5, objects: [WORDS, PHOTO, PLACED], truncated: false };
 
 afterEach(cleanup);
@@ -89,6 +89,7 @@ describe('ObjectEditLayer', () => {
       kind: 'image',
       box: { x0: 0, y0: 300, x1: 120, y1: 340 },
       drawn: { x0: 0, y0: 280, x1: 120, y1: 360 },
+      members: [9],
       fill: null,
     };
     const { sent, layer } = mounted({ objects: { version: V5, objects: [BLEED], truncated: false }, pick: pick(BLEED) });

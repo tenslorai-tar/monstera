@@ -11,8 +11,10 @@ import {
   pageObjects,
   pdfiumWriter,
   placeObject,
+  placeObjectGroup,
   removeObjects,
   setObjectFills,
+  setObjectMatrices,
   setObjectMatrix,
 } from './pdfiumFfi.js';
 
@@ -47,6 +49,12 @@ export interface PriorPlacement {
   readonly page: number;
   readonly index: number;
   readonly matrix: ObjectMatrix;
+}
+
+/** What a group's placement has to put back (ADR-0242): every object's own matrix, by index. */
+export interface PriorPlacements {
+  readonly page: number;
+  readonly objects: readonly { readonly index: number; readonly matrix: ObjectMatrix }[];
 }
 
 /** What a recolour has to put back: one fill per object it changed. */
@@ -128,6 +136,61 @@ export async function invertPlacePageObject(
 ): Promise<AppliedImage> {
   return onImage(image, async (session) => {
     await setObjectMatrix(session, inverse.page, inverse.index, inverse.matrix);
+    return imageAlone(await pdfiumWriter.serialise(session));
+  });
+}
+
+/** Every named object's matrix before a group's placement (ADR-0242): all of them, or `captured: false` naming one. */
+export async function capturePlacePageObjects(
+  image: ImageSession,
+  command: CommandOfKind<'placePageObjects'>,
+): Promise<CaptureResult<PriorPlacements>> {
+  return onImage(image, async (session) => {
+    const objects: { index: number; matrix: ObjectMatrix }[] = [];
+    for (const index of command.indices) {
+      try {
+        objects.push({ index, matrix: await objectMatrix(session, command.page, index) });
+      } catch {
+        // ALL OR NOTHING, `captureRecolorPageObjects`' rule: an inverse that restored part of a group would leave a
+        // block standing in two places, a state nobody saw.
+        return {
+          captured: false,
+          reason: `page ${String(command.page)} object ${String(index)} is not an object this document has, or PDFium would not describe its placement`,
+        };
+      }
+    }
+    return { captured: true, prior: { page: command.page, objects } };
+  });
+}
+
+/** Moves and resizes the named objects as one, and answers the document's new bytes. */
+export async function applyPlacePageObjects(
+  image: ImageSession,
+  command: CommandOfKind<'placePageObjects'>,
+): Promise<AppliedImage> {
+  return onImage(image, async (session) => {
+    let text = false;
+    for (const index of command.indices) text ||= (await objectKind(session, command.page, index)) === 'text';
+    await placeObjectGroup(session, command.page, command.indices, { box: command.box, moveBy: command.moveBy, scaleBy: command.scaleBy });
+    try {
+      return imageAlone(await pdfiumWriter.serialise(session));
+    } catch (error) {
+      // `applyPlacePageObject`'s sentence for a block, which is what a group of text objects is (ADR-0242 Decision 3).
+      if (text && error instanceof EditRefusedError && error.step === 'read-back') {
+        throw new EditRefusedError('moved-text', error.engineError, 'the text block was not moved: its page reads back without some of its text', { cause: error });
+      }
+      throw error;
+    }
+  });
+}
+
+/** Puts every recorded matrix back, and answers the document's new bytes: a restore, `invertPlacePageObject`'s reason. */
+export async function invertPlacePageObjects(
+  image: ImageSession,
+  inverse: PriorPlacements,
+): Promise<AppliedImage> {
+  return onImage(image, async (session) => {
+    await setObjectMatrices(session, inverse.page, inverse.objects);
     return imageAlone(await pdfiumWriter.serialise(session));
   });
 }

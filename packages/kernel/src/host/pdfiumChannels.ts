@@ -9,6 +9,7 @@ import {
   deletePageObjectsSchema,
   editTextBlockSchema,
   placePageObjectSchema,
+  placePageObjectsSchema,
   promoteFormObjectsSchema,
   recolorPageObjectsSchema,
   replaceAllTextSchema,
@@ -83,6 +84,7 @@ import { pageRunsSchema } from './pageRunsWire.js';
 const pdfiumCommandSchema = z.discriminatedUnion('kind', [
   replaceTextObjectSchema,
   placePageObjectSchema,
+  placePageObjectsSchema,
   recolorPageObjectsSchema,
   deletePageObjectsSchema,
   promoteFormObjectsSchema,
@@ -253,6 +255,29 @@ const pdfiumPriorSchema = z.discriminatedUnion('kind', [
               f: z.number(),
             })
             .strict(),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('placePageObjects'),
+      /** Every object's own matrix, put back (ADR-0242): `placePageObject`'s prior once per object, bounded by the page. */
+      prior: z
+        .object({
+          page: z.number().int().nonnegative(),
+          objects: z
+            .array(
+              z
+                .object({
+                  index: z.number().int().nonnegative(),
+                  matrix: z.object({ a: z.number(), b: z.number(), c: z.number(), d: z.number(), e: z.number(), f: z.number() }).strict(),
+                })
+                .strict(),
+            )
+            .min(1)
+            .max(ENGINE_TEXT_OBJECTS_MAX)
+            .readonly(),
         })
         .strict(),
     })
