@@ -46,7 +46,7 @@ export function packagedCloudClients(read: string | null): Readonly<Record<strin
   }
   const entries = Object.entries(parsed);
   if (!entries.every(([, value]) => typeof value === 'string')) throw new Error(`${PACKAGED_CLIENTS_FILE} holds a value that is not text`);
-  return Object.fromEntries(entries) as Record<string, string>;
+  return Object.fromEntries(entries);
 }
 
 /** A value from the environment, then the packaged file; blank is absent. */
