@@ -78,3 +78,17 @@ makes no object.
 - A placement that cannot be found where the listing put it is refused in words, never applied to something else.
 - The command lane's walk is kept: a wrapped object is still one object of the same kind at the same place in PDFium's
   walk, so `KEEPS_THE_OBJECT_WALK` takes the new command beside `placePageObject`.
+
+## Addendum, 2026-10-14: what building it measured
+
+- **PDFium regenerates per content stream, and that is why E1 needs one stream to show.** `proof:drawnobjects` first
+  put the photo in a stream of its own beside the print's: PDFium's route then moved it and kept every text object,
+  because only the stream holding the moved object is written again. A Chromium print (and the owner's pages) hold
+  text and pictures in ONE stream, which is the shape the proof now builds, and there the same move loses the Type 3
+  text. The Rejected entry's first point stands for that shape; a page whose pictures sit in streams of their own was
+  never affected.
+- **Decision 4's sentence as shipped** ends with *so nothing was changed*, the rule every edit refusal follows
+  (`problemMessages.test.tsx`): *This text is set in a font Monstera can't rewrite yet. Pictures and shapes on this page
+  can be moved and resized, but this text can't, so nothing was changed.* The step is `moved-text`, added to
+  `EDIT_STEPS`, and only a TEXT object's read-back refusal becomes it; a picture moved through PDFium's route keeps
+  `read-back`.
