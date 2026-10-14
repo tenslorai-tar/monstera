@@ -892,6 +892,136 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-14 — Stage audit of `6c31e8e5..ae4f62f5` — findings GGGGGGGG-1 to GGGGGGGG-12
+
+Cloud run 3's Part 7 (A, B, C), the Windows session's walk-script fixes, the 0.1.15.0 baselines and package record, and
+cloud run 4's first Part 0 commit (`f3ac3390`, the VC++ runtime and the DLL check) with this audit's three repairs.
+Called by the commit gate, not chosen: run 4's next commit took the range past one batch (`npm run audit:scope`: 20
+commits, 169 files at the reading). The 19 commits before `f3ac3390` were read per commit (`git show <sha> -- <file>`
+for every modified proof and every changed instrument) by one read-only reader; each claim below that is not marked
+UNVERIFIED was checked here before being recorded. `f3ac3390` was read by its author. Board: not read for these shas
+from this sandbox (UNVERIFIED); run 4 reads it once its first push lands.
+
+**GGGGGGGG-1** (medium, closed `60319c48`): `memoryWalk.mjs` M5 asserted `after.hosts` is empty with no positive
+control (5a86a6d2, 286de765): a host reader that stopped recognising hosts answers the same empty list as a clean
+close. M3 now requires the reader to see `host mupdf` and `host pdfium` after the edit.
+
+**GGGGGGGG-2** (medium, open, an app defect): `commentsWalk.mjs` (11ed2cd3) waits 4 s after each open because a
+palette command sent right after a document opens produced no dialog for 30 to 60 s, by the commit's own probe. That
+is a command dispatched into nothing; the walk sleeps past it and nothing under `docs/` named it. Run 4 carries it
+into Part 1 beside O6a.
+
+**GGGGGGGG-3** (medium, open): `formsWalk.mjs` (0b41328b) waits 6 s three times to pass the *out of date* dialog a
+second press raises while a write lands, and `textWalk.mjs` (528e8a11) and `commentsWalk.mjs` add fixed sleeps where a
+condition was available (textWalk's `waitForTimeout` calls went from 7 to 11). The walks reached 20/20 partly by no
+longer reaching these races. The forms race is run 4's Part 1 item 4; the walks' sleeps are replaced by conditions
+when each walk is next touched for its item.
+
+**GGGGGGGG-4** (medium, open): f865a0ea files every `shutdown` ending as `engine-host-closed`, *closed on purpose at the
+quit or when the last document closed*, but `composition.ts` also closes a started host with `live.value.close()`
+when it is not contained or its area could not be made (seven sites read at 810d7437). Those endings are refusals and
+now read as deliberate. Whether `hostFileAnswersLiveHost.mjs` and `officeWorkbookLiveHost.mjs` still fail on the thrown
+error that follows: UNVERIFIED.
+
+**GGGGGGGG-5** (low, open): `fontCatalogueWorker.ts`' header says it answers *after a module that failed to load*;
+that holds for the catalogue module, imported after the `exit` listener exists, and not for the static imports above
+it (`node:worker_threads`, `@monstera/shared`). The host waits in `Atomics.wait` with no bound, so such a failure would
+block it for ever. Narrow (those two are the platform and this repository's own pure package); recorded with the claim
+to be narrowed or the imports moved after the listener.
+
+**GGGGGGGG-6** (low, closed `2082ba3d`): b3b33381 and d724fc76 removed About's update line; ADR-0110 still described it
+and ARCHITECTURE's registry table named About as a reader of the update providers. Item 7's *a document falsified by
+a commit that never touches it*, again.
+
+**GGGGGGGG-7** (low, open): `buildFreshness.mjs`' `PDFIUM_COMMAND` lists (b45f99c2) gained `fontCatalogueApart.ts` and
+not `fontCatalogueWorker.ts`, which those proofs reach through its `dist` file by path; a worker that is never imported
+is invisible to an imports-covered check. 4c's direction: the failure (a stale worker) makes the set smaller.
+
+**GGGGGGGG-8** (low, recorded): bounds grew in the walks (memoryWalk 30 s on every `expect`; textWalk step 15 up to
+120 s; memoryWalk M5's *no unsaved dialog* decided by a 4 s timed wait, *not yet* read as *absent*). Each waits on a
+condition, so none is a bare bump; the 120 s write is Part 1 item 1's 8 s Tab write and font embedding, not filed as
+a defect until run 4.
+
+**GGGGGGGG-9** (low, recorded): `pageFailure.pw.ts`' header (58780013) states the silent-refusal mechanism as the cause
+of the owner's seven stuck tabs while the commit says which refusal they met is not established (AAAA-8's shape). The
+refused-range case separates; the seven-tabs case likely passed before the fix (UNVERIFIED). The tabs item is
+suspended by the owner for run 4.
+
+**GGGGGGGG-10** (low, recorded): three app findings lived only in commit messages: the shaper's 345 MB for 20 faces
+(8b3d0e00, run 4 Part 2 item 12), `compose-csv` unanswered at 120 s on a 3 MiB CSV (3d396c08, run 4 Part 1 item 5) and
+textWalk steps 11, 15, 22 and 23 (528e8a11, run 4 Part 1).
+
+**GGGGGGGG-11** (low, closed `ae4f62f5`): `dllClosure.mjs` (f3ac3390) guarded against an empty read only; a reader that
+returned the wrong table would still report nothing missing. Every Windows program imports KERNEL32, so the package's
+own program must show it, or the check refuses (case 15).
+
+**GGGGGGGG-12** (low, open, needs Windows): two readings in `f3ac3390` were not executed where they matter. The
+KnownDLLs half of `SYSTEM_DLLS` was recalled on Linux (`scripts/research/systemDlls.mjs` is the reading owed), and
+`loadEngineLibrary` reads `GetLastError` through koffi after `LoadLibraryExW`, which may be overwritten in between; the
+number appears only in a message. The import tables themselves were read from the real archives here.
+
+### 1. Root cause or workaround?
+
+Root cause in Part 7 and in `f3ac3390` (each states its mechanism). The walk fixes are mixed: selectors and scoping are
+root causes, and the fixed sleeps that pass app races are waits around app defects (-2, -3), recorded rather than
+repaired here because each is a run 4 item.
+
+### 2. Verified against the easy shape only?
+
+The DLL check was run against a stage assembled from the real Electron, ONLYOFFICE, PDFium and koffi archives, not
+only the synthetic PE fixtures; the PE32 VA delay form has a fixture and no real file. The shim's own import table
+could not be read here (no MSVC build), so it is the Windows packaging run that first meets it.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+b3b33381's removed About control tested a deleted prop and the matcher became stricter; 58780013 inverted a control on
+purpose and replaced it with two that assert their branch. No coverage moved silently.
+
+### 3. Would CI have caught it?
+
+`fontCatalogueApart`, `pdfiumCommand`, `pdfiumObject`, `pdfiumReadBack`, `type3Edit` and `hostFileAnswersLive` are in
+`ci.yml`; the vitest files run in `npm test`; `pageFailure.pw.ts` runs under `test:a11y`; `dllClosure.proof.mjs` is in
+`guards.yml` from `f3ac3390`. Not in any workflow: every `*Walk.mjs`, `officeWorkbookLiveHost.mjs`, `installedCheck.mjs`
+and `appMemory.mjs` — they need the owner's machine, so a change to them is seen only by the next walk.
+
+### 4. Are the proofs non-vacuous?
+
+`fontCatalogueApart.proof.mjs` carries a positive control (in-thread growth at least half the bytes read). Run 4's new
+connection case was mutated (the exit handler disabled) and went red; `dllClosure.proof.mjs`' two controls each fail
+with the repair or the refusal removed.
+
+### 4a. Resolution test before measuring?
+
+`fontCatalogueApart` states its resolution (28.1 against 0.0 MB). The memory walk's host reader had none for its empty
+answer (-1).
+
+### 4b. A search with a positive control?
+
+Two searches in the range lacked one and both are closed: the memory walk's host list (-1) and the DLL check (-11).
+
+### 4c. Does a check derive its extent from the set it governs?
+
+`buildFreshness`' lists are hand-kept and missed a worker (-7), the shrinking direction; the DLL check's `SYSTEM_DLLS`
+is hand-kept on purpose, so a new import stops the package until it is named.
+
+### 5. Executed, or asserted?
+
+Asserted: the KnownDLLs list and the `GetLastError` reading (-12); -4's harness outcome and -9's before-fix result.
+Everything else recorded here was read or run.
+
+### 6. Architecture before the feature?
+
+No architecture changed in the range. Run 4's next commit adds a declared event (`app.component-cannot-start`),
+registration into ADR-0082's seam.
+
+### 7. Do the documents still match the code?
+
+ADR-0110 and ARCHITECTURE's registry table did not (-6, closed). `entry.ts`' comment that `no-install-root-writes`
+refuses `process.resourcesPath` is false — the rule confines `getPath` and bans `getAppPath`, and line 152 reads
+`process.resourcesPath` — and is corrected by run 4's 0.2 commit, which replaces it.
+
+---
+
 ## 2026-10-13 — Stage audit of `c6f33f43..6c31e8e5` — findings FFFFFFFF-1 to FFFFFFFF-14
 
 Cloud run 3's Parts 4 (from N3) to 6: N3, N7, L3, L4, L6, L7, Group 10, N5, N1, N2, N4, N8, N9, O4, O1, W11, O11, L8,
