@@ -1588,7 +1588,7 @@ data to project from, so every command declares where it appears:
 
 ```ts
 type Placement =
-  | { surface: 'ribbon';        section: SectionId; group: MessageKey; order: number; prominence?: 'secondary'; menu?: MessageKey }
+  | { surface: 'ribbon';        section: SectionId; group: MessageKey; order: number; prominence?: 'secondary'; menu?: MessageKey; menuRuns?: 'last' }
   | { surface: 'quick-toolbar'; order: number }
   | { surface: 'context-menu';  context: 'page' | 'annotation' | 'selection' | 'tab' | 'object'; order: number }
   | { surface: 'start-screen';  slot: 'primary' | 'shortcut' | 'footer'; order: number }
@@ -1662,7 +1662,11 @@ icon-only in Studio.
 group naming the same `menu` draw as one captioned button opening their commands,
 the way *More* does with a name: the owner's Forms › Data is *Export* and *Import*
 over six format commands. A menu is one primary unit of the row, and it does not
-combine with `secondary`.
+combine with `secondary`. **A menu may run its last choice from its face** (amended
+2026-10-14, [ADR-0241](DECISIONS/0241-a-ribbon-menu-may-run-its-last-choice-from-its-face.md)):
+placements declaring `menuRuns: 'last'` draw the face as the member chosen last in
+this window, its first until then, beside a chevron that opens the menu. Every member
+of a menu declares it or none does.
 
 **The Properties tab has a foot** (amended 2026-09-24,
 [ADR-0102](DECISIONS/0102-a-selection-survives-a-command-that-keeps-the-walk.md)).
@@ -3083,6 +3087,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-10-14 | **A ribbon menu may run its last choice from its face** (§7's ribbon placement). The owner's E2: pressing Edit object did nothing, because a named menu's face only opened it. `menuRuns: 'last'` draws the face as the member chosen last in this window (the first until then) beside a chevron that opens the menu; every member declares it or none does. Forms › Data is unchanged. **Rejected:** a fifth *Edit object* command; always the first member; every menu a split button | ADR-0101's *one button opening its commands*, for a menu that declares it | [0241](DECISIONS/0241-a-ribbon-menu-may-run-its-last-choice-from-its-face.md) |
 | 2026-10-14 | **A background view draws nothing** (§6). The owner's run 4 item 13c: seven documents held 759 MB in the dev build against 325 MB in PDF-XChange. A layer behind keeps its parser, its slots' measured sizes and its scroll offset, and mounts no page canvas, so its pixels and decoded images are given back; coming forward redraws the pages in its margin from the kept parse. Takes ADR-0129's fourth rejected alternative, whose reason weighed the switch and not the memory | §6's *"its drawn pages and thumbnails … is mounted from open to close"* | [0129](DECISIONS/0129-an-open-documents-view-lives-until-it-closes.md), correction 2026-10-14 |
 | 2026-10-14 | **A run whose program is not an sfnt is drawn in a font built from its drawn glyphs** (§3's in-place editing row). The owner's A1: a serif page with bold lead-ins turned plain sans while edited. Where an embedded program offers no font for the editor — Type 1, bare CFF, a TrueType one whose glyphs do not read as the page's — the PDFium host writes an OpenType font with CFF outlines from `FPDFFont_GetGlyphPath` and `FPDFFont_GetGlyphWidth`, the page's characters only and nothing of the program. Measured: a CFF-built and a Type 1-built font load in Chromium 151 and set at PDFium's widths. **Rejected:** wrapping a bare CFF program as it is, converting Type 1 charstrings in the host | ADR-0175 Decision 1's *only from an embedded sfnt*, and its rejected *building a font from PDFium's glyph paths* | [0238](DECISIONS/0238-a-run-whose-program-is-not-an-sfnt-is-drawn-in-a-font-built-from-its-drawn-glyphs.md) |
 | 2026-10-13 | **About carries no line about updates** (ADR-0236's correction). The owner's Part 7 C: remove every reference to updates in About, the line drawn on a run that asked monsterapdf.com included. Where a person learns that a check contacts the site is the *Check for new versions* setting, registered when the check goes live (ADR-0110) | `BUILD-PROMPT.md` E4's *"Update checks are the only phone-home in the app, and the About panel says so"*, its second half | [0236](DECISIONS/0236-about-says-what-monstera-is-not-how-it-is-updated.md) |
