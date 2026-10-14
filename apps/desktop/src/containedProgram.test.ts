@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
@@ -141,5 +142,33 @@ describe('every contained process is created with no console window (the ownerâ€
     expect(call).toContain('PROCESS_CREATION_FLAGS');
     expect(surface).not.toMatch(/const CREATE_[A-Z_]+ = 0x/u);
     expect(surface).not.toMatch(/const EXTENDED_STARTUPINFO_PRESENT = 0x/u);
+  });
+
+  /**
+   * THE CHECK THAT DOES NOT DEPEND ON HOW LONG A CONVERSION RUNS (item 9, 2026-10-14). The exports walk looks for a
+   * console window every 100 ms, so a conversion shorter than one look passes unseen. What makes every conversion
+   * windowless is that every process this application creates goes through the one call above; so the shipped code is
+   * scanned for any other way to start one: a `child_process` import, or a binding to a Windows function that starts
+   * a program. CONTROL: the scan finds the one site it must, so an empty answer is never a blind one.
+   */
+  it('no shipped module starts a process any other way than the one creation site', () => {
+    const roots = ['.', '../../../packages/kernel/src', '../../../packages/nodemode/src'].map((root) =>
+      fileURLToPath(new URL(`${root}/`, import.meta.url)),
+    );
+    const files = roots.flatMap((root) =>
+      readdirSync(root, { recursive: true, encoding: 'utf8' })
+        .filter((name) => /\.tsx?$/u.test(name) && !/\.test\.tsx?$/u.test(name) && !name.endsWith('.d.ts'))
+        .map((name) => join(root, name)),
+    );
+    const starters: string[] = [];
+    for (const file of files) {
+      const text = readFileSync(file, 'utf8');
+      if (/from ['"](?:node:)?child_process['"]/u.test(text)) starters.push(`${basename(file)}: child_process`);
+      for (const match of text.matchAll(/func\(\s*['"][^'"]*\b(CreateProcess\w*|ShellExecute\w*|WinExec)\s*\(/gu)) {
+        starters.push(`${basename(file)}: ${match[1] ?? ''}`);
+      }
+    }
+    expect(files.length, 'the scan read the shipped sources').toBeGreaterThan(100);
+    expect(starters).toStrictEqual(['win32HostSurface.ts: CreateProcessW']);
   });
 });

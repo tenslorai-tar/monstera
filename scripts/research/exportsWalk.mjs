@@ -174,6 +174,10 @@ async function notedSheet() {
  * Whether a Ghostscript process shows a window, read by PowerShell every 100 ms until `done` settles. A console program
  * started without CREATE_NO_WINDOW owns a console window, which is what `MainWindowHandle` reports (the owner's N7).
  *
+ * A SECOND WITNESS, NOT THE CHECK: a conversion shorter than one look passes unseen. What does not depend on the
+ * conversion's length is `containedProgram.test.ts`: the one creation site passes CREATE_NO_WINDOW, and no shipped
+ * module starts a process any other way (item 9, 2026-10-14).
+ *
  * @param {Promise<unknown>} done
  */
 async function consoleWindowsWhile(done) {
