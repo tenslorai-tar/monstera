@@ -54,3 +54,24 @@ control against one blob of the font), 20 uses of the edit path over Noto Sans C
 
 - A host's memory after an edit or a composition no longer grows with the fonts it used.
 - A worker entry ships beside the host (`shippedModules.mjs` lists each one a host loads by path).
+
+## Addendum, 2026-10-14: the run fonts, apart and remembered
+
+Part 2 item 11 (*the PDFium host grows from 81 to 184 MB across plain edits*) is a third path of the same kind.
+`runFonts`, the read the editor makes after every edit, rebuilt each run's font from the document's own program
+through HarfBuzz (`runFont.ts`, ADR-0175). Measured in this container (`scratchpad/editLeak2.mjs`, sixty rounds of an
+edit and that read on a fully embedded Carlito page, no forced collection): +102 MB by round 5 and rising, with
+HarfBuzz's WebAssembly memory at 96 to 129 MB. The edit alone levels at +45 MB.
+
+5. **A font's rebuild is made apart, and remembered.** A read's fonts not seen before are rebuilt together in one
+   thread that ends (`runFontApart.ts`). The rebuilt font is plain bytes keyed by the program and what PDFium draws, so
+   it is kept (16 MB of answers, oldest forgotten first) and a read of the same fonts starts no thread.
+
+Rejected for this path: **a thread per read alone.** Measured here, sixty reads grew the process by 362 MB, against
+146 MB in-process: most of it the C library's per-thread memory arenas, which glibc does not return when a thread
+ends (111 MB with `MALLOC_ARENA_MAX=1`). Windows has no per-thread arenas, so that figure does not transfer, but a
+thread per read also costs a thread's start on every editor open, for an answer that has not changed.
+
+Measured with the remembered answers: +103 MB at round 60 against +146 before; with one allocator arena, +58 MB and
+levelling against +76 and rising, and HarfBuzz's memory 15 MB against 129. The Windows memory walk is where the
+shipped figure is read.
