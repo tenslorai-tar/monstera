@@ -120,7 +120,9 @@ async function chooseFont(family) {
   await page.waitForTimeout(1000);
   await page.waitForFunction(
     () => {
-      const open = document.querySelector('[data-text-editor]');
+      // THE PAGE'S OWN DOCUMENT, by name: this file's `document` is the path of the walk's first PDF.
+      const dom = /** @type {{ querySelector: (selector: string) => { getAttribute: (name: string) => string | null } | null }} */ (Reflect.get(globalThis, 'document'));
+      const open = dom.querySelector('[data-text-editor]');
       return open === null || open.getAttribute('aria-busy') !== 'true';
     },
     undefined,
