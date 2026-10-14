@@ -5374,9 +5374,10 @@ for (const look of LOOKS) {
     await dialog.getByRole('button', { name: 'Verify files' }).click();
     // THE REOPENED DIALOG, with the changed row and both notes: the state under test, not the cheap first look.
     await expect(dialog.getByText('1 missing, 2 altered, 0 unexpected')).toBeVisible();
-    const repair = dialog.getByText(/repair or reinstall Monstera/u);
+    const repair = dialog.getByText(/repair or reinstall Monstera/iu);
     await expect(repair).toBeVisible();
-    await expect(dialog.getByText('Every file was checked against the list this build of Monstera was made with.')).toBeVisible();
+    // THE NOTE SAYS VERIFY STARTED EACH PART TOO (Part 0.1, 2026-10-14): a part that cannot start is its own row.
+    await expect(dialog.getByText('Every file was checked against this build’s own list, and each part was started.')).toBeVisible();
 
     // NOTHING INSIDE IT SCROLLS: every element of the dialog that can scroll has no surplus. The premise that the dialog
     // has a scroller at all is not asserted; the surplus is read off every element whose overflow could produce one.

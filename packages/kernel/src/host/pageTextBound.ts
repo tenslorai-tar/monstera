@@ -1,4 +1,5 @@
-import { ENGINE_ANSWER_FILE_MAX_BYTES } from '@monstera/contract';
+// THE HOST'S ENTRY, never the root: the root builds the renderer's channel map at load, which no host serves.
+import { ENGINE_ANSWER_FILE_MAX_BYTES } from '@monstera/contract/host';
 
 /**
  * One page's structured-text JSON cut to what one answer carries, and whether it was cut.

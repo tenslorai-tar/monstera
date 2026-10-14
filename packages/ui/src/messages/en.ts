@@ -3621,10 +3621,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [COMPONENTS_CHANGED_DETAIL]: '{missing} missing, {altered} altered, {extra} unexpected',
   [COMPONENTS_CANNOT_START]: 'Could not start',
   [COMPONENTS_VERIFY]: 'Verify files',
-  [COMPONENTS_VERIFIED_NOTE]:
-    'Every file was checked against the list this build of Monstera was made with, and each part was started.',
-  [COMPONENTS_REPAIR]:
-    'If a component has changed or could not start, repair or reinstall Monstera from Windows Settings, Apps, Installed apps.',
+  // EACH NO LONGER THAN IT WAS BEFORE "could not start" joined it: the dialog's tallest state fits a 760 by 560 window
+  // with nothing to scroll (renderedScreen.pw.ts, the owner's R4), and a longer sentence wrapped to a line it has not got.
+  [COMPONENTS_VERIFIED_NOTE]: 'Every file was checked against this build’s own list, and each part was started.',
+  [COMPONENTS_REPAIR]: 'Changed or did not start? Repair or reinstall Monstera in Windows Settings, Apps, Installed apps.',
   [ABOUT_SOURCE]: 'Source code',
   [ABOUT_LICENCES]: 'Third-party licences',
   // "Rotate page" and not "Rotate": the command rotates the page on screen, and
