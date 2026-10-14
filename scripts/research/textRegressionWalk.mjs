@@ -315,6 +315,39 @@ await step(`7. choosing ${INSTALLED} for the paragraph shows it, keeps its lines
   return { before, after, samples };
 });
 
+await step('7b. every family the font picker lists is drawn in itself, not in the browser’s default (A3)', async () => {
+  // THE INSTRUMENT FOR A3: the picker and the editor draw a family by its CSS name, and a name the system does not
+  // resolve falls to the browser's default face (Times New Roman on Windows) with nothing said. Each listed name is
+  // measured by canvas against two different fallbacks: a name that resolves draws the same width after either, a
+  // name that does not draws as each fallback does. Its positive control is Arial, which every Windows has. Expected
+  // to fail today, naming at least the bundled families (Carlito, Tinos and the rest): the renderer registers no face
+  // for them, so it draws them by a name the system does not have (read 2026-10-14, `app.css` declares Marcellus alone).
+  await openBlock('Every walk step');
+  await panel().getByRole('button', { name: /^Font:/u }).click();
+  const names = await page.locator('[data-font-picker] [role="option"] span').allInnerTexts();
+  await page.keyboard.press('Escape');
+  await commit();
+  const unresolved = await page.evaluate((families) => {
+    const canvas = Reflect.get(globalThis, 'document').createElement('canvas');
+    const context = canvas.getContext('2d');
+    /** @param {string} font */
+    const width = (font) => {
+      context.font = font;
+      return context.measureText('Findings 0123 WMiq').width;
+    };
+    return families.filter((family) => {
+      const serif = width(`40px "${family}", serif`);
+      const mono = width(`40px "${family}", monospace`);
+      return serif === width('40px serif') && mono === width('40px monospace');
+    });
+  }, names);
+  expect(names.length, 'the picker listed no family, so the instrument saw nothing').toBeGreaterThan(0);
+  expect(names, 'Arial is the positive control and the picker lists it').toContain('Arial');
+  expect(unresolved, 'Arial is the positive control and resolves').not.toContain('Arial');
+  expect(unresolved, `families drawn in the browser's default: ${unresolved.join(', ')}`).toStrictEqual([]);
+  return { listed: names.length, unresolved };
+});
+
 await step(`8. ${INSTALLED} chosen with nothing typed: not refused, and the words unchanged`, async () => {
   await openBlock(EVERYDAY.below.slice(0, 15));
   await page.keyboard.press('Control+A');
