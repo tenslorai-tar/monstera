@@ -16,7 +16,8 @@ import { type FontRequest, carries, resolveRuns } from './fontResolver.js';
  *    draw stays in the document's font.
  * 3. A segment no sibling carries goes to the resolver over the catalogue (ADR-0172 Decision 1), whole where a face
  *    carries it whole, by grapheme where none does, and a grapheme no face carries is the box (Decision 8).
- * 4. Neighbouring stretches in one source are one piece.
+ * 4. Neighbouring stretches in one source are one piece, and punctuation after a piece in another source stays in that
+ *    source where it carries it, as the resolver keeps it (`resolveRuns`).
  * 5. The spaces that end an own-font piece before a piece in another source move into that piece, where it carries
  *    them: measured 2026-10-05, pdf.js drops a standard font's trailing space when the next object starts flush against
  *    it, and reads a leading space in the next piece.
@@ -76,7 +77,23 @@ export function editPieces(
     }
     pieces.push({ text: piece, face, sibling, weight, boxed: [...boxed] });
   };
-  for (const { segment } of WORDS.segment(text)) {
+  for (const { segment, isWordLike } of WORDS.segment(text)) {
+    // PUNCTUATION STAYS IN THE SOURCE BEFORE IT where that source carries it, the resolver's own rule (`resolveRuns`): a
+    // full stop after a word set in another face went back to the run's font as an object of its own, which a reader
+    // takes as an item of its own ("Walked ." for " Walked.", the owner's report of 2026-10-14). White space is point
+    // 5's and is not taken here.
+    const previous = pieces.at(-1);
+    if (
+      isWordLike !== true &&
+      !/^\s+$/u.test(segment) &&
+      previous !== undefined &&
+      (previous.face !== null || previous.sibling !== null) &&
+      previous.boxed.length === 0 &&
+      carriedBy(previous, siblings, segment)
+    ) {
+      add(segment, previous.face, previous.sibling, previous.weight, []);
+      continue;
+    }
     if (ownCarries(segment)) {
       add(segment, null, null, 0, []);
       continue;

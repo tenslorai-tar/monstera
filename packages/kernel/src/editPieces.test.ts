@@ -70,6 +70,23 @@ describe('editPieces', () => {
     ]);
   });
 
+  /**
+   * THE OWNER'S " Walked." (2026-10-14): a producer's subset with no W and no k sent "Walked" to a catalogue face and the
+   * full stop after it back to the run's own font, a separate object, which PDF.js reads as a separate item: "Walked .".
+   * Punctuation stays in the source before it where that source carries it, the resolver's own rule (`resolveRuns`).
+   * CONTROL: punctuation after a word in the run's own font stays in the run's own font.
+   */
+  it('keeps punctuation after a word in another face in that face, as the resolver does', () => {
+    const noWk = (segment: string): boolean => OWN_LATIN(segment) && !/[Wk]/u.test(segment);
+    const pieces = (text: string): [string, string | null][] =>
+      editPieces(text, noWk, REQUEST, CATALOGUE, []).map((piece) => [piece.text, piece.face?.id ?? null]);
+    expect(pieces('It was tested Walked.')).toStrictEqual([
+      ['It was tested', null],
+      [' Walked.', 'arimo'],
+    ]);
+    expect(pieces('It was tested, then.')).toStrictEqual([['It was tested, then.', null]]);
+  });
+
   it('boxes a character no source carries, naming it, and keeps the rest of the line', () => {
     const box = String.fromCodePoint(0x4e2d);
     expect(summary(`Hello ${box} world`)).toStrictEqual([

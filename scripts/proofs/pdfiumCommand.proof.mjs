@@ -280,7 +280,7 @@ const failures = [];
 // from its Decision 2: a tab read back at its stop, its control, and a second edit that keeps one tab. 235 from the
 // second edit's measure, which read a line written as several objects at its first object's width. 246 from L2: an
 // underlined word read back underlined, its rule moved with it by a second edit, and the control that turns it off.
-const roster = createRoster(failures, { cases: 246 });
+const roster = createRoster(failures, { cases: 247 });
 
 /**
  * @param {string} name
@@ -1421,6 +1421,48 @@ async function producerRunFontCases(fonts) {
       );
     } finally {
       await pdfiumWriter.close(written);
+    }
+
+    // THE OWNER'S " Walked." (textWalk N14, 2026-10-14): typed at the end of the producer's line, whose subsets hold no W
+    // and no k, so the word goes to a catalogue face. Its full stop went back to the producer's font as an object of its
+    // own, read as "Walked ." by PDF.js. Now the word and its stop are ONE object, on the line and inside the page.
+    bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }], readCatalogueApart));
+    try {
+      const typed = await localPdfiumExecution.apply({
+        session: pdf,
+        command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+          kind: 'editTextBlock',
+          page: 0,
+          ...blockEditOf([{ lines: [runs.map((run) => run.index)], soft: [false], text: `${runs.map((run) => run.text).join('')} Walked.` }]),
+          fit: 'reflow',
+          version: 1,
+        }),
+        sources: [],
+        reads: undefined,
+      });
+      const typedSession = await pdfiumWriter.open(typed);
+      try {
+        const after = (await objectRuns(typedSession, 0)).runs;
+        const walked = after.find((run) => run.text.includes('Walked'));
+        const line = after.find((run) => run.text.includes('tested'));
+        record(
+          'a word typed at the end of a producer’s line in a face its subsets lack keeps its full stop: one object, on the line, inside the page',
+          walked !== undefined &&
+            walked.text.trim() === 'Walked.' &&
+            line !== undefined &&
+            Math.abs(walked.bottom - line.bottom) < 2 &&
+            walked.left >= 0 &&
+            walked.right <= 612 &&
+            walked.bottom >= 0 &&
+            walked.top <= 792 &&
+            walked.right > walked.left,
+          `runs after the edit ${JSON.stringify(after.map((run) => ({ text: run.text, left: run.left, right: run.right, bottom: run.bottom, top: run.top })))}`,
+        );
+      } finally {
+        await pdfiumWriter.close(typedSession);
+      }
+    } finally {
+      bindEditFaces(null);
     }
   } finally {
     await pdfiumWriter.close(session);
