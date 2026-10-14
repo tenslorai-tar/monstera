@@ -892,6 +892,122 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-14 — Stage audit of `ae4f62f5..60d60df5` — findings HHHHHHHH-1 to HHHHHHHH-12
+
+Cloud run 4, Parts 0 to 2, addendum 1's Part A, addendum 2's E1, and the first Part 3 commit: 52 commits, 198 files.
+Called by the commit gate (the next commit, F9, took the range to 201 files). The 50 modified proofs were read hunk by
+hunk by one read-only reader (`git log -p ae4f62f5..60d60df5 -- <file>`); its one weakening claim (-8) was checked
+here. Everything else is from the author's own record of the session. Board: 61aaa48c read (CI red, Guards green; -1,
+-2); 737d6289 not yet read.
+
+**HHHHHHHH-1** (medium, closed `d488594a`): CI's ubuntu leg failed `renderedScreen.pw.ts` *BELOW THE FLOOR* on
+61aaa48c. 4d0b6e9e offered every command that needs the page count only once it is known, and the case read its wide
+row as soon as the first tool was drawn: on a slow runner the five `hasPages` commands were missing from it. Measured
+with the CPU throttled 30 times. The local run passed, so only CI saw the race.
+
+**HHHHHHHH-2** (medium, closed `dbcabbef`): `fontListFile.test.ts` (4649ebb4) spelt the paths its fake answers with
+`/`, so CI's Windows leg failed it. Its fake now joins as the code joins.
+
+**HHHHHHHH-3** (medium, recorded): an instrument with no positive control, used by the author. Typechecks for 313dbf0e
+to 9ad8b161 were read with `grep "rror TS"`, which cannot match `tsc --pretty`'s output (escape codes sit between
+`error` and `TS`), so a failing run would have printed nothing. Found when `npm run build` stopped on an error the
+grep had hidden. The whole tree was then typechecked by exit code (0) with none of those commits' files changed since,
+so none of them carried an error; every later check here reads the exit code.
+
+**HHHHHHHH-4** (medium, open): the rendered tests serve `apps/desktop/dist/renderer` with nothing checking that it is
+fresh. `npm run build` stopped at its typecheck step, the renderer was not rebuilt, and `backgroundTab.pw.ts` ran
+against a bundle from before the change (found by the bundle's timestamp, then confirmed by `grep drawsPages`).
+`buildFreshness.mjs` guards the proofs that import `dist`; nothing guards the Playwright config. This is item 4's
+*the build may have failed and left stale output for the proof to test*, at the level of a whole test runner.
+
+**HHHHHHHH-5** (low, closed before commit in `1adba2d1`): `fontWorkApart.proof.mjs`' run-font cases were vacuous at
+eight rebuilds. HarfBuzz frees from finalisers, the forced collection runs them, and the face programs measured above
+left about 9 MB of free heap, so eight in-process rebuilds grew nothing. With `runFontsApart` mutated to rebuild
+in-process, every case passed; both sides now read sixty, and the mutation turns two cases red.
+
+**HHHHHHHH-6** (low, open, widened from GGGGGGGG-5): every thread that ends (`apartThread.ts`) raises its signal from
+an `exit` listener set up inside `serveApart`. The worker entry's static imports (`apartThread.js` and the module that
+declares the work) load before it exists, so a failure in one of them would leave a synchronous asker waiting with no
+bound. Now four workers instead of one. The imports are this repository's own modules and Node's.
+
+**HHHHHHHH-7** (low, open, widened from GGGGGGGG-7): `PDFIUM_COMMAND`'s freshness list does not name
+`faceProgramWorker.ts` or `runFontWorker.ts`, which `pdfiumCommand.proof.mjs` reaches through `dist` by path. A worker
+nobody imports is invisible to the imports-covered check. The direction is 4c's: a stale worker makes the set smaller.
+
+**HHHHHHHH-8** (low, closed in the next commit): `renderedScreen.pw.ts` (5805c28c) changed `/repair or reinstall
+Monstera/u` to `/iu` instead of matching the new capital. The product string is *"Changed or did not start? Repair or
+reinstall Monstera in Windows Settings, Apps, Installed apps."* That checks less, and it was passed by review as a
+correction.
+
+**HHHHHHHH-9** (low, recorded): `tabSwitchRenders.pw.ts` (6a116002) now settles on the layer on show only, as ADR-0129's
+correction requires. The reason is stated, and no assertion was loosened. Two consequences: no case reads a layer
+behind's first-frame state any more, and the layer coming forward may draw its first frame inside the counted window.
+That can only raise counts that are bounded from below.
+
+**HHHHHHHH-10** (low, recorded): the memory figures for items 11 and 12 were read in this Linux container, where glibc
+keeps a freed thread's arena. That was measured: 362 MB against 111 MB with `MALLOC_ARENA_MAX=1`. The shipped figure is
+the Windows memory walk's (M2, M3b, M3c and M5, NEEDS WINDOWS).
+
+**HHHHHHHH-11** (low, recorded): items 13d and 13f landed in part (41dd18df, 737d6289). Each commit names what is not
+done and why: one cache budget and a one-page margin, and absolute budgets per step, which must come from Windows
+readings.
+
+**HHHHHHHH-12** (low, recorded): the one assertion in the range whose expected outcome flipped is `pdfiumCommand`'s
+Times-Roman case (71e10bf7): it was written through Helvetica, and is now refused in its own kind. The commit states
+the cause. The positive path, a word written through a different-font twin, is still covered by the `twinnedText` case.
+
+### 1. Root cause or workaround?
+
+Root causes throughout, each named in its commit, except where recorded: the run-font memory is answered by a thread
+plus remembered answers, and the thread alone was measured and rejected (ADR-0239's addendum). The board repairs fix
+the test's race and the fake's spelling, not the product.
+
+### 2. Verified against the easy shape only?
+
+Twice the easy shape hid a defect, and both are now in the fixtures. The radio fixtures (F9, next commit) gave each
+widget its own option alone, a shape no document has. And the ribbon case was only run on a fast machine (-1).
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+-9 narrowed a settle condition, with the reason stated. The proofs' rosters only rose (`pdfiumCommand` 246 to 261).
+
+### 3. Would CI have caught it?
+
+It did for -1 and -2. `fontWorkApart.proof.mjs` is added to `ci.yml` in its own commit. The memory walk's new steps run
+on no workflow; they need the owner's machine. -4 is invisible to CI, which always builds first.
+
+### 4. Are the proofs non-vacuous?
+
+Each new proof in the author's commits was mutated, and the case went red: apart in-process, the idle timer's arming,
+the thumbnail release, the hidden-window draw, the `/I` reading and F9's label. -5 was found that way.
+
+### 4a. Resolution test before measuring?
+
+`fontWorkApart` and `fontCatalogueApart` carry their in-thread control. The scratch measurements state their resolution
+check (a 16 MB fill reads 16.0 MB).
+
+### 4b. A search with a positive control?
+
+-3 was a search with none, used by hand.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+-7, again in the shrinking direction.
+
+### 5. Executed, or asserted?
+
+Asserted: the Windows figures (-10), the restart cost of an idle host (13b, M3c owed), and `HOST_IDLE_MS`,
+`HIDDEN_RELEASE_MS` and the low-memory line, each stated in place as a starting figure.
+
+### 6. Architecture before the feature?
+
+Yes. ADR-0237, ADR-0238 and ADR-0239 (and its addendum), and ADR-0129's correction with §6, each in its own commit
+ahead of the code.
+
+### 7. Do the documents still match the code?
+
+§6 was amended with 13c. CLAUDE.md's line on ADR-0023 Decision 16 being open is addendum 1's D3, owed in Part 6.
+
 ## 2026-10-14 — Stage audit of `6c31e8e5..ae4f62f5` — findings GGGGGGGG-1 to GGGGGGGG-12
 
 Cloud run 3's Part 7 (A, B, C), the Windows session's walk-script fixes, the 0.1.15.0 baselines and package record, and
