@@ -134,3 +134,11 @@ The decision's proofs, listed here since the FEATURES row points to this record:
 the producer's subsets and the superscript's rise against the real library), `runFont.test.ts`, `TextEditLayer.test.tsx`
 (which runs take which face, each face's declared weight and slant, a run's rise), the rendered *DRAWN* case, and
 `proof:rendererpolicy`'s refused `data:` font.
+
+## Amended, 2026-10-14: a font built from the drawn glyphs ([ADR-0238](0238-a-run-whose-program-is-not-an-sfnt-is-drawn-in-a-font-built-from-its-drawn-glyphs.md))
+
+Decision 1's *only from an embedded program that is an sfnt* and the Rejected entry *building a font from PDFium's glyph
+paths* are amended there. The entry's stated cost was a cubic-to-quadratic conversion; an OpenType font with CFF outlines
+needs none, since PDFium's paths are cubic too. Where the program offers no font, one is now written from what PDFium
+draws for each character, and a Type 1, bare CFF or check-failing TrueType run is edited in its own glyphs. The
+Consequences' first line no longer holds for those three kinds; it still holds for Type 3 and for a substituted font.
