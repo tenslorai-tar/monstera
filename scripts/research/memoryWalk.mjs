@@ -60,6 +60,8 @@ function reading() {
 
 /** @type {ReturnType<typeof reading> | null} */
 let atStart = null;
+/** @type {ReturnType<typeof reading> | null} */
+let sevenOpen = null;
 await step('M1. the start screen: every process at rest, before any document', () => {
   atStart = reading();
   return Promise.resolve(atStart);
@@ -80,7 +82,8 @@ await step('M2. seven documents open, each scrolled to its end and back with its
     await page.waitForTimeout(1500);
   }
   await page.waitForTimeout(10_000);
-  return reading();
+  sevenOpen = reading();
+  return sevenOpen;
 });
 
 await step('M3. ONE Edit text action: a paragraph clicked, a word typed, a click away', async () => {
@@ -107,7 +110,16 @@ await step('M3. ONE Edit text action: a paragraph clicked, a word typed, a click
   expect(read.hosts).toEqual(expect.arrayContaining(['host mupdf', 'host pdfium']));
   // ADR-0237: this walk's profile is new, so its first font list is read by the compose host once and kept; a later
   // session's edit starts none. Recorded rather than asserted here; the file is read back after M5.
-  return { ...read, composeHostAfterEdit: read.hosts.some((role) => role.includes('compose')) };
+  const compose = Object.entries(read.rolesMB)
+    .filter(([role]) => role.includes('compose'))
+    .reduce((sum, [, mb]) => sum + mb, 0);
+  // THE OWNER'S TARGET FOR AN EDIT (run 4 item 13f): no more than the figure before it plus the PDFium host's own cost.
+  // The compose host is set aside for the first-list reason above, and named in the facts.
+  const before = /** @type {ReturnType<typeof reading> | null} */ (sevenOpen);
+  if (before === null) throw new Error('M2 took no reading');
+  const allowed = before.totalMB + (read.rolesMB['host pdfium'] ?? 0);
+  expect(read.totalMB - compose, `after the edit ${String(read.totalMB)} MB (compose ${String(compose)}), allowed ${String(allowed)}`).toBeLessThanOrEqual(allowed);
+  return { ...read, composeHostAfterEdit: compose > 0, allowedAfterEditMB: allowed };
 });
 
 /** Edits in the long session, and how often it reads memory. */
@@ -244,7 +256,20 @@ await step('M5. every document closed, then 60 s (Part 7 A): no engine host is l
   const kept = JSON.parse(await readFile(join(output, 'app-data', 'font-families.json'), 'utf8'));
   expect(kept.families.length).toBeGreaterThan(0);
   const before = /** @type {ReturnType<typeof reading> | null} */ (atStart);
-  return { ...after, keptFontFamilies: kept.families.length, atStartMB: before?.rolesMB ?? null, atStartTotalMB: before?.totalMB ?? null };
+  if (before === null) throw new Error('M1 took no reading');
+  // THE OWNER'S TARGET FOR A CLOSE (run 4 item 13f): every document closed, within about 10% of the start screen.
+  const allowedMB = Math.round(before.totalMB * 1.1);
+  expect(after.totalMB, `closed ${String(after.totalMB)} MB against ${String(before.totalMB)} at the start`).toBeLessThanOrEqual(allowedMB);
+  return {
+    ...after,
+    keptFontFamilies: kept.families.length,
+    atStartMB: before.rolesMB,
+    atStartTotalMB: before.totalMB,
+    allowedClosedMB: allowedMB,
+    // ELECTRON'S OWN FLOOR, which no change here can take to zero: main, the renderer and the GPU process with nothing
+    // open, read at M1.
+    electronFloorMB: before.totalMB,
+  };
 });
 
 await finish();
