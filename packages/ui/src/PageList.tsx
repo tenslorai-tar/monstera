@@ -200,6 +200,12 @@ export interface PageListProps {
   readonly onWentTo: () => void;
   /** Whether the loupe follows the pointer. `viewing.loupe`. */
   readonly loupe: boolean;
+  /**
+   * Whether a page in the margin mounts its canvas. `false` behind (ADR-0129, corrected 2026-10-14): the slots keep
+   * their measured sizes and the scroller its offset, and no page holds pixels or decoded images; the margin is drawn
+   * again when the layer comes forward.
+   */
+  readonly drawsPages: boolean;
   /** Whether the two rulers are drawn. `viewing.rulers`. */
   readonly rulers: boolean;
   /** The grid overlay as chosen — how big a major square is and how many faint ones it holds — or `false` while it is off. `viewing.grid`. */
@@ -480,6 +486,7 @@ export function PageList({
   goTo,
   onWentTo,
   loupe,
+  drawsPages,
   rulers,
   showGrid,
   onFollowLink,
@@ -1271,7 +1278,7 @@ export function PageList({
           // they part company on every command: a new version empties the rotation answers until the model
           // is asked again, and when one prop did both, the canvases on screen unmounted for those frames
           // and came back empty. Now the canvas keeps the previous drawing until a draw can start.
-          mounted={visible.has(page)}
+          mounted={drawsPages && visible.has(page)}
           // `has`, not a truthy `get`: a page answered with `undefined` is
           // answered, and a page answered with `0` is upright. Both draw.
           //

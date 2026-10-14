@@ -461,6 +461,26 @@ function ThumbCanvas({
     { width: number; height: number; for: { view: DocumentView; page: number; width: number; rotation: number | undefined } } | undefined
   >(undefined);
   const current = size !== undefined && size.for.view === view && size.for.page === page && size.for.width === width && size.for.rotation === rotation;
+  // PIXELS GIVEN BACK when the card leaves the margin (run 4 item 13c): a canvas keeps its backing store for as long as
+  // it is in the page, so a strip scrolled through a long document held every card's. The card keeps its size, so
+  // nothing above it moves, and is drawn again when it comes back near the view; what is held is the margin's cards.
+  const [released, setReleased] = useState(false);
+  useEffect(() => {
+    const element = canvas.current;
+    if (draw || element === null || element.width === 0) return;
+    element.width = 0;
+    element.height = 0;
+    setReleased(true);
+  }, [draw]);
+  // AND ON UNMOUNT, as a page's canvas is (`PageList`): sized to nothing, the store is released now, not when collected.
+  useLayoutEffect(() => {
+    const element = canvas.current;
+    return (): void => {
+      if (element === null) return;
+      element.width = 0;
+      element.height = 0;
+    };
+  }, []);
   // THE LATEST REPORT, read when a draw lands rather than a dependency of the draw: a parent's new callback is not a
   // reason to draw the page again.
   const report = useRef(onDrawn);
@@ -480,6 +500,7 @@ function ThumbCanvas({
       // draw left behind: a canvas 612 points wide in a 96-pixel column (measured 2026-09-18).
       const drawn = await renderPage(view.document, pdfjsPageOf(page), element, { fitWidth: width }, rotation, superseded.signal);
       setSize({ width: drawn.width, height: drawn.height, for: { view, page, width, rotation } });
+      setReleased(false);
       report.current(page, width);
     };
 
@@ -505,7 +526,8 @@ function ThumbCanvas({
       // UNDRAWN, the canvas keeps the browser's default 300 × 150, a 2 : 1 ratio no page has; the stylesheet gives
       // it a portrait page's ratio until the drawing sets its size, so a card is one height drawn or not. `stale` is a
       // drawing made for another width, rotation or version, shown until the redraw lands.
-      data-drawn={size === undefined ? 'false' : current ? 'true' : 'stale'}
+      // `released`: drawn once and given back while out of the margin; its box keeps the drawing's size.
+      data-drawn={size === undefined ? 'false' : released ? 'released' : current ? 'true' : 'stale'}
       style={
         size === undefined
           ? undefined

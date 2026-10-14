@@ -325,6 +325,7 @@ describe('PageList', () => {
         startAt={FIRST_PAGE.kernel}
         onWentTo={vi.fn()}
         loupe={false}
+        drawsPages
         rulers={false}
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
@@ -359,6 +360,7 @@ describe('PageList', () => {
           startAt={FIRST_PAGE.kernel}
           onWentTo={vi.fn()}
           loupe={false}
+          drawsPages
           rulers={false}
           showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
           unit="in"
@@ -418,6 +420,7 @@ describe('PageList', () => {
         startAt={FIRST_PAGE.kernel}
         onWentTo={vi.fn()}
         loupe={false}
+        drawsPages
         rulers={false}
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
@@ -456,6 +459,7 @@ describe('PageList', () => {
         startAt={FIRST_PAGE.kernel}
         onWentTo={vi.fn()}
         loupe={false}
+        drawsPages
         rulers={false}
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
@@ -496,6 +500,7 @@ describe('PageList', () => {
           startAt={FIRST_PAGE.kernel}
           onWentTo={vi.fn()}
           loupe={false}
+          drawsPages
           rulers={false}
           showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
           unit="in"
@@ -541,6 +546,7 @@ describe('PageList', () => {
           startAt={FIRST_PAGE.kernel}
           onWentTo={vi.fn()}
           loupe={false}
+          drawsPages
           rulers={false}
           showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
           unit="in"
@@ -602,6 +608,7 @@ describe('PageList', () => {
         startAt={FIRST_PAGE.kernel}
         onWentTo={vi.fn()}
         loupe={false}
+        drawsPages
         rulers={false}
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
@@ -638,6 +645,7 @@ describe('PageList', () => {
         startAt={FIRST_PAGE.kernel}
         onWentTo={vi.fn()}
         loupe={false}
+        drawsPages
         rulers={false}
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
@@ -681,6 +689,7 @@ describe('PageList', () => {
         startAt={FIRST_PAGE.kernel}
         onWentTo={vi.fn()}
         loupe={false}
+        drawsPages
         rulers={false}
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
@@ -741,6 +750,7 @@ describe('PageList', () => {
         startAt={FIRST_PAGE.kernel}
         onWentTo={vi.fn()}
         loupe={false}
+        drawsPages
         rulers={false}
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
@@ -781,6 +791,7 @@ describe('PageList', () => {
         startAt={FIRST_PAGE.kernel}
         onWentTo={vi.fn()}
         loupe={false}
+        drawsPages
         rulers={false}
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
@@ -811,6 +822,7 @@ describe('PageList', () => {
         startAt={FIRST_PAGE.kernel}
         onWentTo={vi.fn()}
         loupe={false}
+        drawsPages
         rulers={false}
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
@@ -853,6 +865,7 @@ describe('PageList', () => {
         startAt={FIRST_PAGE.kernel}
         onWentTo={vi.fn()}
         loupe={false}
+        drawsPages
         rulers={false}
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
@@ -886,6 +899,7 @@ describe('PageList', () => {
         startAt={FIRST_PAGE.kernel}
         onWentTo={vi.fn()}
         loupe={false}
+        drawsPages
         rulers={false}
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
@@ -932,6 +946,7 @@ describe('PageList', () => {
         startAt={FIRST_PAGE.kernel}
         onWentTo={vi.fn()}
         loupe={false}
+        drawsPages
         rulers={false}
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
@@ -993,6 +1008,7 @@ describe('PageList', () => {
       startAt: FIRST_PAGE.kernel,
       onWentTo: vi.fn(),
       loupe: false,
+      drawsPages: true,
       rulers: false,
       showGrid: false as const, onFollowLink: undefined, linksOutlined: false, onFillField: undefined,
       unit: 'in' as const,
@@ -1040,6 +1056,7 @@ describe('PageList', () => {
         goTo={undefined}
         onWentTo={vi.fn()}
         loupe={false}
+        drawsPages
         rulers={false}
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
@@ -1079,6 +1096,7 @@ describe('PageList', () => {
       goTo: undefined,
       onWentTo: vi.fn(),
       loupe: false,
+      drawsPages: true,
       rulers: false,
       showGrid: false as const, onFollowLink: undefined, linksOutlined: false, onFillField: undefined,
       unit: 'in' as const,
@@ -1117,6 +1135,7 @@ describe('PageList', () => {
       onShownZoom: vi.fn(),
       onWentTo: vi.fn(),
       loupe: false,
+      drawsPages: true,
       rulers: false,
       showGrid: false as const, onFollowLink: undefined, linksOutlined: false, onFillField: undefined,
       unit: 'in' as const,
@@ -1165,6 +1184,7 @@ describe('PageList', () => {
       onShownZoom: vi.fn(),
       onWentTo: wentTo,
       loupe: false,
+      drawsPages: true,
       rulers: false,
       showGrid: false as const, onFollowLink: undefined, linksOutlined: false, onFillField: undefined,
       unit: 'in' as const,
@@ -1216,6 +1236,7 @@ describe('PageList', () => {
         onShownZoom: vi.fn(),
         onWentTo: vi.fn(),
         loupe: false,
+        drawsPages: true,
         rulers: false,
         showGrid: false as const, onFollowLink: undefined, linksOutlined: false, onFillField: undefined,
         unit: 'in' as const,
@@ -1283,6 +1304,7 @@ describe('PageList', () => {
         startAt={FIRST_PAGE.kernel}
           onWentTo={vi.fn()}
           loupe={false}
+          drawsPages
           rulers={false}
           showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
           unit="in"
@@ -1312,6 +1334,7 @@ describe('PageList', () => {
         startAt={FIRST_PAGE.kernel}
             onWentTo={vi.fn()}
             loupe={false}
+            drawsPages
             rulers={false}
             showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
             unit="in"
@@ -1352,6 +1375,7 @@ describe('PageList', () => {
         startAt={FIRST_PAGE.kernel}
             onWentTo={vi.fn()}
             loupe={false}
+            drawsPages
             rulers={false}
             showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
             unit="in"
@@ -1379,6 +1403,7 @@ describe('PageList', () => {
         startAt={FIRST_PAGE.kernel}
             onWentTo={vi.fn()}
             loupe={false}
+            drawsPages
             rulers={false}
             showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
             unit="in"
@@ -1424,6 +1449,7 @@ describe('PageList', () => {
         startAt={FIRST_PAGE.kernel}
         onWentTo={vi.fn()}
         loupe={false}
+        drawsPages
         rulers={false}
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
@@ -1466,6 +1492,7 @@ describe('PageList', () => {
       onShownZoom: extra.onShownZoom ?? vi.fn(),
       onWentTo: extra.onWentTo ?? vi.fn(),
       loupe: false,
+      drawsPages: true,
       rulers: false,
       showGrid: false as const, onFollowLink: undefined, linksOutlined: false, onFillField: undefined,
       unit: 'in' as const,
@@ -1746,6 +1773,7 @@ describe('PageList', () => {
           startAt={FIRST_PAGE.kernel}
           onWentTo={vi.fn()}
           loupe={false}
+          drawsPages
           rulers={false}
           showGrid={showGrid} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
           unit="in"
@@ -1803,6 +1831,7 @@ describe('PageList', () => {
           startAt={FIRST_PAGE.kernel}
           onWentTo={vi.fn()}
           loupe={false}
+          drawsPages
           rulers={true}
           showGrid={{ size: 'auto', divisions: 1 }} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
           unit="in"

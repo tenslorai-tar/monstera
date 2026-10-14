@@ -62,8 +62,10 @@ async function threeOpen(page: Page): Promise<void> {
     await expect(page.locator(`[data-tab-select="${next}"]`)).toBeVisible({ timeout: 20_000 });
   }
   await expect(page.locator('.m-document-layer')).toHaveCount(3);
-  // SETTLED: every layer's first frame is shown, so what the window counts next is the gesture's and not the opening's.
-  await expect(page.locator('.m-page-pane[data-first-frame="pending"]')).toHaveCount(0, { timeout: 20_000 });
+  // SETTLED: the layer on show has its first frame, so what the window counts next is the gesture's and not the
+  // opening's. Only that layer: one behind draws nothing (ADR-0129, corrected 2026-10-14), so a document that went
+  // behind before its first frame keeps it pending until it comes forward.
+  await expect(page.locator('[data-document-layer="active"] .m-page-pane[data-first-frame="pending"]')).toHaveCount(0, { timeout: 20_000 });
   await page.waitForTimeout(1000);
 }
 

@@ -515,6 +515,8 @@ function Half({
           startAt={FIRST_PAGE.kernel}
           onWentTo={onWentTo}
           loupe={false}
+          // ON SHOW whenever it is mounted: the comparison is a view of its own, never a layer behind.
+          drawsPages
           rulers={false}
           showGrid={false}
           // NO LINKS FOLLOWED in a comparison: its pages are read against each other, and a press on one is a place to

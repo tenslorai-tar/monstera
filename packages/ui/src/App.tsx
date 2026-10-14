@@ -4728,6 +4728,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           // tools draw, and the grid returns when it is put down. The section, and the selection it counts, are unchanged.
           organize={toolId === undefined ? organize : undefined}
           loupe={loupe}
+          drawsPages
           rulers={rulers}
           showGrid={showGrid}
           onFollowLink={onFollowLink}
@@ -5290,6 +5291,8 @@ const DocumentLayer = memo(function DocumentLayer({
             onWentTo={IGNORE}
             onPageCount={state?.counted ?? IGNORE}
             loupe={false}
+            // NOTHING DRAWN BEHIND (ADR-0129, corrected 2026-10-14): the parse and the layout are kept, the pixels given back.
+            drawsPages={false}
             current={state?.page ?? FIRST_PAGE.kernel}
             onJump={IGNORE}
             onMove={IGNORE}
@@ -5362,6 +5365,7 @@ function PageCanvas({
   onPageCount,
   onFirstFrame,
   loupe,
+  drawsPages,
   current,
   onJump,
   onMove,
@@ -5420,6 +5424,11 @@ function PageCanvas({
   /** Told once per mount, with this document, when its page area's first frame is shown (`PageList.onFirstFrame`). */
   readonly onFirstFrame: (docId: DocId) => void;
   readonly loupe: boolean;
+  /**
+   * Whether this page area draws its pages: `false` for a layer behind, which keeps its parse, its slots' sizes and its
+   * scroll offset and mounts no page canvas (ADR-0129, corrected 2026-10-14). Required, so neither layer inherits it.
+   */
+  readonly drawsPages: boolean;
   /** The page the reader is on, so the thumbnail strip can mark it. */
   readonly current: number;
   /** Takes the reader to a page, recording the jump — click-to-jump's other half. */
@@ -5802,6 +5811,7 @@ function PageCanvas({
       startAt={current}
       onWentTo={split ? leftWentTo : onWentTo}
       loupe={loupe}
+      drawsPages={drawsPages}
       rulers={rulers}
       showGrid={showGrid}
       onFollowLink={onFollowLink}
@@ -5854,6 +5864,7 @@ function PageCanvas({
       onWentTo={rightWentTo}
       onActivate={activateSecond}
       loupe={loupe}
+      drawsPages={drawsPages}
       rulers={rulers}
       showGrid={showGrid}
       onFollowLink={onFollowLink}
