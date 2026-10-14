@@ -143,12 +143,18 @@ function hex4(value: number): string {
  *
  * @param regular the regular face's program (Carlito-Regular in the cases)
  * @param bold the bold face's program (Carlito-Bold)
+ * @param names the two faces' PostScript names, so a page set in another family (a serif's, in the text regression
+ *   walk) names its own faces rather than Carlito's
  */
-export async function buildProducerSubsetPdf(regular: Uint8Array, bold: Uint8Array): Promise<Uint8Array> {
+export async function buildProducerSubsetPdf(
+  regular: Uint8Array,
+  bold: Uint8Array,
+  names: { readonly regular: string; readonly bold: string } = { regular: 'Carlito', bold: 'Carlito-Bold' },
+): Promise<Uint8Array> {
   const document = await PDFDocument.create();
   const page = document.addPage([612, 792]);
-  const lead = embedProducerFont(document, bold, 'Carlito-Bold', PRODUCER_LEAD, true);
-  const body = embedProducerFont(document, regular, 'Carlito', `${PRODUCER_BODY}${PRODUCER_MARK}${PRODUCER_END}`, false);
+  const lead = embedProducerFont(document, bold, names.bold, PRODUCER_LEAD, true);
+  const body = embedProducerFont(document, regular, names.regular, `${PRODUCER_BODY}${PRODUCER_MARK}${PRODUCER_END}`, false);
   page.node.setFontDictionary(PDFName.of('F1'), lead.ref);
   page.node.setFontDictionary(PDFName.of('F2'), body.ref);
   const size = PRODUCER_SIZE;

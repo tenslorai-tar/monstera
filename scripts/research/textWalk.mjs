@@ -29,6 +29,7 @@ import { PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream, PDFString, S
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { root, startWalk } from './liveWalk.mjs';
 import { savedContent, savedFonts, savedWords } from './savedPdf.mjs';
+import { tabMarks, textSteps } from './textWalkSteps.mjs';
 
 // THE PRODUCER'S PAGE THE N14 STEP BUILDS, fresh or refused, beside the shell's own edges `startWalk` checks.
 refuseStaleBuild(root, [['packages/kernel/src/producerSubsetFixture.ts', 'packages/kernel/dist/producerSubsetFixture.js', 'tsc']], 1);
@@ -59,19 +60,6 @@ async function distinctCopy(name, source) {
 }
 
 /**
- * Edit text ON, whichever way an earlier step left it: the tool is a toggle whose state travels with the window, so running
- * its command to turn it on turns it OFF when it is already on, and no words are then offered to press.
- */
-async function ensureEditText() {
-  // ADD TEXT STAYS ARMED after its editor ends, and its surface covers the whole page, the page note's button included
-  // (2026-10-13, step 9: 'subtree intercepts pointer events' for 30 s). A hand turns it off before pressing the note.
-  const add = page.getByRole('button', { name: 'Add text', exact: true }).first();
-  if ((await add.count()) > 0 && (await add.getAttribute('aria-pressed')) === 'true') await add.click();
-  const tool = page.getByRole('button', { name: 'Edit text', exact: true }).first();
-  if ((await tool.getAttribute('aria-pressed')) !== 'true') await command('Edit text on the page');
-}
-
-/**
  * A press INSIDE a box the walk drew, at `dx`, `dy` from where the drawing offsets start (the page's left edge, and its top
  * or the top of the document area if the page is scrolled under the ribbon), which selects it: a text box is not one of
  * the annotation layer's marks (that layer draws the kinds that have a renderer there), so it has no element to ask for.
@@ -86,66 +74,15 @@ async function pressDrawn(dx, dy) {
   await page.mouse.click(box.x + dx, Math.max(box.y, 240) + dy);
 }
 
-/**
- * A press on the page at a point `x`, `y` from its top left, made with the mouse where a person makes it: the page's text
- * layer lies over the canvas and takes a press there, so a click aimed at the canvas element itself is refused as
- * intercepted, and a refusal is the walk's own, not the app's.
- * @param {number} x
- * @param {number} y
- */
-async function clickPage(x, y) {
-  const box = await page.locator('canvas.m-page:visible').first().boundingBox();
-  if (box === null) throw new Error('the page is not on screen');
-  // THE PAGE MAY BE SCROLLED UNDER THE RIBBON, and the floating tool strip lies over its left margin (measured
-  // 2026-10-12: a press at the left edge landed on one of the strip's buttons). So the press is lowered below the ribbon
-  // (the document area starts at 230 px in the 1400 x 900 window) and made in the RIGHT margin, `x` from the page's edge.
-  await page.mouse.click(box.x + box.width - x, Math.max(box.y, 230) + y);
-}
-
-
-/** The open editor's words. */
-const editor = () => page.locator('[data-text-editor]');
-/** The Properties panel's text section, while an editor is open. */
-const panel = () => page.locator('[data-text-properties]');
-
-/** Chooses `family` in the open picker of the panel's text section, by searching for it. @param {string} family */
-async function chooseFont(family) {
-  await panel().getByRole('button', { name: /^Font:/u }).click();
-  const search = panel().getByRole('combobox', { name: 'Search fonts' });
-  await search.fill(family);
-  await search.press('Enter');
-  // THE EDITOR IS BUSY WHILE THE FONT IS WRITTEN (about 8 s on this machine: aria-busy=true, contenteditable=false, read by a
-  // probe on 2026-10-13), and a click away or an Escape sent then is taken by nothing; when the write ends the editor is
-  // still open and the walk has spent its way out. So the walk waits for the end, as a hand would see it.
-  //
-  // W2, WHAT THE BUSY SPAN IS (2026-10-14): nothing read in the code starts a write on a font choice, and every write that
-  // succeeds closes the editor, so an editor that stays open after one is one whose write was REFUSED (`problem`), after
-  // which a blur is ignored by design. So the editor is sampled every half second until it is not busy, and what it said
-  // is recorded: busy or not, and the refusal sentence if one is on screen. The step's own result carries the samples.
-  /** @type {{ ms: number, busy: boolean, problem: string | null }[]} */
-  const samples = [];
-  const started = Date.now();
-  for (;;) {
-    const state = await page.evaluate(() => {
-      // THE PAGE'S OWN DOCUMENT, by name: this file's `document` is the path of the walk's first PDF.
-      const dom = /** @type {{ querySelector: (selector: string) => { getAttribute: (name: string) => string | null, textContent: string | null } | null }} */ (
-        Reflect.get(globalThis, 'document')
-      );
-      const open = dom.querySelector('[data-text-editor]');
-      const problem = dom.querySelector('.m-text-editor-problem');
-      return { open: open !== null, busy: open?.getAttribute('aria-busy') === 'true', problem: problem?.textContent ?? null };
-    });
-    samples.push({ ms: Date.now() - started, busy: state.busy, problem: state.problem });
-    if (!state.open || (!state.busy && Date.now() - started >= 1000)) break;
-    if (Date.now() - started > 60_000) throw new Error(`the editor was still busy 60 s after the font choice: ${JSON.stringify(samples)}`);
-    await page.waitForTimeout(500);
-  }
-  fontChoiceSamples.push({ family, samples });
-}
-
-/** Every font choice's samples, in the order made, for the steps that report them (W2). */
-/** @type {{ family: string, samples: { ms: number, busy: boolean, problem: string | null }[] }[]} */
+const steps = textSteps(walk);
+const { editor, panel, ensureEditText, clickPage, savedCopy } = steps;
+/** What the editor said while each font choice landed, newest last (W2). */
+/** @type {{ family: string, samples: import('./textWalkSteps.mjs').EditorSample[] }[]} */
 const fontChoiceSamples = [];
+/** @param {string} family */
+const chooseFont = async (family) => {
+  fontChoiceSamples.push({ family, samples: await steps.chooseFont(family) });
+};
 
 await step('1. Edit text: a click between two letters, typing, Backspace twice, Shift+Ctrl+Left, Ctrl+B lights Bold', async () => {
   await open(document);
@@ -378,22 +315,6 @@ await step('10. ADR-0228: strikethrough, a highlight, character spacing, Ctrl+J 
   await expect(editor()).toHaveCount(0);
   return { sizeShown };
 });
-
-/**
- * A copy of the open document saved under `name` in the walk's output, once it is on disk.
- *
- * @param {string} name
- */
-async function savedCopy(name) {
-  const path = join(output, name);
-  await saveTo(path);
-  await command('Save a copy');
-  await expect.poll(() => existsSync(path), { timeout: 60_000 }).toBe(true);
-  return path;
-}
-
-/** How many tabs a page's content marks (ADR-0228: one gap, `/ActualText` U+0009). @param {string} content */
-const tabMarks = (content) => (content.match(/\/ActualText <FEFF0009>/gu) ?? []).length;
 
 await step('11. K8/W9: Tab in Edit text types a tab, it is in the SAVED file, and the write is timed alone', async () => {
   // W9: THE TAB IS LOOKED FOR ANYWHERE IN THE WORDS. Home goes to the start of the VISUAL line under the click, which in
