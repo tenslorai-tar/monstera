@@ -171,6 +171,11 @@ export interface ObjectEditLayerProps {
   readonly onPick: (pick: ObjectPick | undefined) => void;
   readonly onCommand: (command: DispatchableCommand) => void;
   readonly onLeave: () => void;
+  /**
+   * The drawn page's pixels in a box of the WINDOW's CSS pixels, or `undefined` where none are drawn (the owner's E5):
+   * what a drag shows moving, taken once at the press. Absent, a drag moves the outline alone.
+   */
+  readonly pictureOf?: ((box: Pixels) => HTMLCanvasElement | undefined) | undefined;
 }
 
 export function ObjectEditLayer({
@@ -182,11 +187,26 @@ export function ObjectEditLayer({
   onPick,
   onCommand,
   onLeave,
+  pictureOf,
 }: ObjectEditLayerProps): ReactElement {
   const { _ } = useLingui();
   const transform = overlayTransform(geometry);
   const layer = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<Drag | undefined>();
+  // WHAT A DRAG SHOWS MOVING (E5): the object's own pixels, copied once when the press begins, drawn at the box the
+  // drag would put it in and stretched with it, and dropped with the drag. A press that does not travel never draws it.
+  const [picture, setPicture] = useState<HTMLCanvasElement | undefined>();
+  const begin = (next: Drag, object: EditableObject): void => {
+    setDrag(next);
+    const corner = layer.current?.getBoundingClientRect();
+    const box = pixelsOf(object.box, transform);
+    // DRAWN ONLY WHILE A DRAG IS IN FLIGHT, below, so the picture a finished drag left here is never shown again.
+    setPicture(
+      pictureOf === undefined || corner === undefined
+        ? undefined
+        : pictureOf({ x0: box.x0 + corner.left, y0: box.y0 + corner.top, x1: box.x1 + corner.left, y1: box.y1 + corner.top }),
+    );
+  };
 
   // WHAT SHOWS ON THIS PAGE (E3): the page's crop is the last window anything is drawn through, so an object placed past
   // the edge is outlined, picked and resized by the part inside it. One view of the objects, taken by every use below,
@@ -306,6 +326,10 @@ export function ObjectEditLayer({
       ref={layer}
       role="group"
     >
+      {/* THE OBJECT ITSELF, MOVING (E5): under the outlines, so its handles stay on top, and out of reach of a press. */}
+      {drag === undefined || picture === undefined || picked === undefined ? null : (
+        <PicturePreview box={drawnAt(picked)} picture={picture} />
+      )}
       {shown.map((object, position) => {
         const selected = object === picked;
         const box = drawnAt(object);
@@ -328,7 +352,7 @@ export function ObjectEditLayer({
               if (event.button !== 0) return;
               event.currentTarget.parentElement?.setPointerCapture(event.pointerId);
               const at = pointOf(event);
-              setDrag({ kind: 'move', pointer: event.pointerId, from: at, to: at });
+              begin({ kind: 'move', pointer: event.pointerId, from: at, to: at }, object);
             }}
             style={outlineStyle(box)}
             type="button"
@@ -347,7 +371,7 @@ export function ObjectEditLayer({
                 if (event.button !== 0) return;
                 event.stopPropagation();
                 layer.current?.setPointerCapture(event.pointerId);
-                setDrag({ kind: 'resize', pointer: event.pointerId, from: corner.at, held: corner.held, to: corner.at });
+                begin({ kind: 'resize', pointer: event.pointerId, from: corner.at, held: corner.held, to: corner.at }, picked);
               }}
               style={{
                 left: corner.at[0] - CORNER_REACH / 2,
@@ -368,6 +392,26 @@ export function ObjectEditLayer({
 }
 
 /**
+ * A copy of the object's pixels at the box a drag would put it in. The copy is drawn into this canvas at its own size
+ * and the canvas is stretched by its box, so a resize shows the object growing as the result will.
+ */
+function PicturePreview({ box, picture }: { readonly box: Pixels; readonly picture: HTMLCanvasElement }): ReactElement {
+  return (
+    <canvas
+      aria-hidden="true"
+      className="m-object-preview"
+      data-object-preview=""
+      height={picture.height}
+      ref={(element) => {
+        element?.getContext('2d')?.drawImage(picture, 0, 0);
+      }}
+      style={{ left: box.x0, top: box.y0, width: box.x1 - box.x0, height: box.y1 - box.y0 }}
+      width={picture.width}
+    />
+  );
+}
+
+/**
  * One page's object surface: reads the page's objects at the version on screen and draws {@link ObjectEditLayer}.
  *
  * `TextEditPage`'s rule: a read resolving after the version moved is discarded, because objects read at version 4
@@ -377,10 +421,13 @@ export function ObjectEditPage({
   page,
   geometry,
   editing,
+  pictureOf,
 }: {
   readonly page: number;
   readonly geometry: OverlayPage;
   readonly editing: ObjectEditing;
+  /** The drawn page's pixels in a box of the window's pixels: what a drag shows moving (E5). */
+  readonly pictureOf: (box: Pixels) => HTMLCanvasElement | undefined;
 }): ReactElement {
   const [answer, setAnswer] = useState<{ readonly version: DocVersion; readonly objects: PageObjects | undefined }>();
   const { read, version } = editing;
@@ -406,6 +453,7 @@ export function ObjectEditPage({
       onPick={editing.onPick}
       page={page}
       pick={pick?.page === page && pick.version === objects?.version ? pick : undefined}
+      pictureOf={pictureOf}
     />
   );
 }

@@ -43,7 +43,12 @@ const OBJECTS: PageObjects = { version: V5, objects: [WORDS, PHOTO, PLACED], tru
 afterEach(cleanup);
 
 function mounted(
-  options: { readonly filter?: ObjectFilter; readonly pick?: ObjectPick; readonly objects?: PageObjects } = {},
+  options: {
+    readonly filter?: ObjectFilter;
+    readonly pick?: ObjectPick;
+    readonly objects?: PageObjects;
+    readonly pictureOf?: (box: { x0: number; y0: number; x1: number; y1: number }) => HTMLCanvasElement | undefined;
+  } = {},
 ): { readonly picks: (ObjectPick | undefined)[]; readonly sent: DispatchableCommand[]; readonly left: number[]; readonly layer: HTMLElement } {
   const picks: (ObjectPick | undefined)[] = [];
   const sent: DispatchableCommand[] = [];
@@ -59,6 +64,7 @@ function mounted(
         onPick={(pick) => picks.push(pick)}
         page={3}
         pick={options.pick}
+        pictureOf={options.pictureOf}
       />
     </Wrapped>
   );
@@ -130,6 +136,29 @@ describe('ObjectEditLayer', () => {
     const { picks } = mounted();
     fireEvent.pointerDown(screen.getByRole('button', { name: 'Image, 2 of 3' }), { button: 0, clientX: 30, clientY: 30, pointerId: 1 });
     expect(picks).toStrictEqual([pick(PHOTO)]);
+  });
+
+  it('a drag shows THE OBJECT ITSELF moving: its own pixels, taken at the press, drawn where the drag puts it (E5)', () => {
+    const asked: { x0: number; y0: number; x1: number; y1: number }[] = [];
+    const picture = document.createElement('canvas');
+    const { layer } = mounted({
+      pick: pick(PHOTO),
+      pictureOf: (box) => {
+        asked.push(box);
+        return picture;
+      },
+    });
+    const preview = (): HTMLElement | null => layer.querySelector('[data-object-preview]');
+    // CONTROL: nothing is shown before a press, so what appears below is the drag's.
+    expect(preview()).toBeNull();
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Image, 2 of 3' }), { button: 0, clientX: 30, clientY: 30, pointerId: 1 });
+    // THE PHOTO'S OWN BOX, in the window's pixels: the layer is at the window's corner under happy-dom.
+    expect(asked).toStrictEqual([{ x0: 20, y0: 20, x1: 100, y1: 100 }]);
+    fireEvent.pointerMove(layer, { clientX: 50, clientY: 70, pointerId: 1 });
+    expect([preview()?.style.left, preview()?.style.top, preview()?.style.width, preview()?.style.height]).toStrictEqual(['40px', '60px', '80px', '80px']);
+    fireEvent.pointerUp(layer, { clientX: 50, clientY: 70, pointerId: 1 });
+    // GONE WITH THE DRAG: the page's next read draws the object where the command put it.
+    expect(preview()).toBeNull();
   });
 
   it('a DRAG on the selected object moves it by the drag in PDF space, the page’s y the other way up', () => {

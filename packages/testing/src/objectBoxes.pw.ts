@@ -36,6 +36,40 @@ test('Edit object outlines a clipped photo by its window, and a photo bleeding o
   expect(bleed.width / bleed.height).toBeCloseTo(100 / 100, 1);
 });
 
+// THE OBJECT ITSELF MOVES WITH THE POINTER (the owner's E5), not only its outline: the page's own pixels under the
+// picked object, drawn at the box the drag would put it in, while the button is still down.
+test('a drag in Edit object shows the object itself moving, with the page’s own ink, until it is let go', async ({ page }) => {
+  // OVER THE SAMPLE PAGE'S TITLE, 22 pt at (72, 700): a box the page has ink in, so a copy of the right pixels is not
+  // blank, and a copy of the wrong ones would be.
+  await openApp(page, { pageObjects: [{ index: 0, kind: 'text', left: 70, bottom: 694, right: 330, top: 722, fill: { red: 0, green: 0, blue: 0, alpha: 255 } }] });
+  await openDocument(page);
+  await openSection(page, 'Edit');
+  await page.getByRole('toolbar', { name: 'Tools', exact: true }).getByRole('button', { name: 'Edit object', exact: true }).click();
+  const layer = page.getByRole('group', { name: 'Objects on page 1' });
+  const title = layer.locator('[data-object="content:0"]');
+  await title.click();
+  const box = await title.boundingBox();
+  if (box === null) throw new Error('the outline is not on screen');
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 40, box.y + box.height / 2 + 30, { steps: 5 });
+  const preview = layer.locator('[data-object-preview]');
+  await expect(preview).toBeVisible();
+  const moved = await preview.boundingBox();
+  expect(moved?.x).toBeCloseTo(box.x + 40, 0);
+  expect(moved?.y).toBeCloseTo(box.y + 30, 0);
+  // INK IN THE COPY: dark pixels from the title, read from the preview's own canvas.
+  const dark = await preview.evaluate((canvas: HTMLCanvasElement) => {
+    const data = canvas.getContext('2d')?.getImageData(0, 0, canvas.width, canvas.height).data ?? new Uint8ClampedArray();
+    let count = 0;
+    for (let at = 0; at < data.length; at += 4) if ((data[at] ?? 255) < 128 && (data[at + 3] ?? 0) > 0) count += 1;
+    return count;
+  });
+  expect(dark).toBeGreaterThan(20);
+  await page.mouse.up();
+  await expect(preview).toHaveCount(0);
+});
+
 const RUN = { size: 12, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false } as const;
 
 // A WORD WRITTEN ONE LETTER PER OBJECT (the owner's E4: a press on *overview* picked its final *w*). The page's block

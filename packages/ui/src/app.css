@@ -6964,6 +6964,12 @@ optgroup {
   pointer-events: none;
 }
 
+/* THE OBJECT ITSELF, MOVING (E5): its own pixels at the box a drag would put it in, never a target for a press. */
+.m-object-preview {
+  position: absolute;
+  pointer-events: none;
+}
+
 .m-object {
   position: absolute;
   padding: 0;

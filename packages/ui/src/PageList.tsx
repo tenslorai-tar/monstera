@@ -1641,6 +1641,7 @@ function PageSlot({
     [ref],
   );
   const paperAt = useCallback((x: number, y: number): string | undefined => paperIn(own.current, x, y), []);
+  const pictureOf = useCallback((box: { x0: number; y0: number; x1: number; y1: number }) => pictureIn(own.current, box), []);
   // THE VIEW THE PIXELS ON SCREEN CAME FROM, set when a draw has presented: the drawing overlay holds a
   // released shape until this moves past the view it was released over (`AnnotationOverlay.drawnWith`).
   const [drawnWith, setDrawnWith] = useState<DocumentView | undefined>(undefined);
@@ -1973,6 +1974,7 @@ function PageSlot({
           editing={editing}
           geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
           page={page}
+          pictureOf={pictureOf}
         />
       ) : (
         <TextEditPage
@@ -2053,6 +2055,40 @@ function paperIn(slot: HTMLElement | null, x: number, y: number): string | undef
     return `rgb(${String(pixel[0] ?? 255)}, ${String(pixel[1] ?? 255)}, ${String(pixel[2] ?? 255)})`;
   }
   return undefined;
+}
+
+/**
+ * The drawn page's own pixels inside `box`, a rectangle in the WINDOW's CSS pixels, copied into a canvas of their own;
+ * or `undefined` where nothing is drawn there yet. What Edit object shows moving under the pointer (the owner's E5): the
+ * object as it is on the page, taken from every canvas the page is drawn in, tiles included, at the drawing's own
+ * resolution so a picture is not blurred by the copy. In the window's pixels, so no caller has to share this slot's
+ * origin to name a place on it.
+ */
+function pictureIn(slot: HTMLElement | null, box: { x0: number; y0: number; x1: number; y1: number }): HTMLCanvasElement | undefined {
+  if (slot === null || box.x1 <= box.x0 || box.y1 <= box.y0) return undefined;
+  const drawn = [...slot.querySelectorAll<HTMLCanvasElement>('canvas.m-page, canvas.m-page-tile')].filter((canvas) => canvas.getBoundingClientRect().width > 0);
+  const first = drawn[0];
+  if (first === undefined) return undefined;
+  const ratio = first.width / first.getBoundingClientRect().width;
+  const copy = document.createElement('canvas');
+  copy.width = Math.max(1, Math.round((box.x1 - box.x0) * ratio));
+  copy.height = Math.max(1, Math.round((box.y1 - box.y0) * ratio));
+  const into = copy.getContext('2d');
+  if (into === null) return undefined;
+  for (const canvas of drawn) {
+    const place = canvas.getBoundingClientRect();
+    const left = place.left;
+    const top = place.top;
+    // THE PART OF THIS CANVAS INSIDE THE BOX, in the window's pixels, then in the canvas's own and in the copy's.
+    const x0 = Math.max(box.x0, left);
+    const y0 = Math.max(box.y0, top);
+    const x1 = Math.min(box.x1, left + place.width);
+    const y1 = Math.min(box.y1, top + place.height);
+    if (x1 <= x0 || y1 <= y0) continue;
+    const own = canvas.width / place.width;
+    into.drawImage(canvas, (x0 - left) * own, (y0 - top) * own, (x1 - x0) * own, (y1 - y0) * own, (x0 - box.x0) * ratio, (y0 - box.y0) * ratio, (x1 - x0) * ratio, (y1 - y0) * ratio);
+  }
+  return copy;
 }
 
 /**
