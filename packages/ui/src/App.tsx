@@ -2254,13 +2254,13 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const objectSelection = useMemo(
     () =>
       objectPicked !== undefined &&
-      objectPicked.docId === open?.docId &&
-      objectPicked.pick.version === open.version &&
+      objectPicked.docId === openDocId &&
+      objectPicked.pick.version === openVersion &&
       toolId === EDIT_OBJECTS_TOOL_ID &&
       shownBy(objectFilter, objectPicked.pick.object)
         ? objectPicked.pick
         : undefined,
-    [objectFilter, objectPicked, open?.docId, open?.version, toolId],
+    [objectFilter, objectPicked, openDocId, openVersion, toolId],
   );
   const readObjectSelection = useCallback(() => objectSelection, [objectSelection]);
 
