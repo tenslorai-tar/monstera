@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { type FolderListing, fontFoldersFingerprint, keptFontFamilies } from './fontListFile.js';
@@ -17,7 +19,9 @@ function listing(folders: Record<string, Record<string, { size: number; mtimeMs:
     stat: (path) => {
       for (const [folder, files] of Object.entries(folders)) {
         for (const [name, stat] of Object.entries(files)) {
-          if (path === `${folder}/${name}` || path === `${folder}\\${name}`) return { ...stat, isFile: true };
+          // JOINED AS THE CODE JOINS, by `path.join`: on Windows it turns `/bundled` into `\bundled`, which the two
+          // spellings this case once listed by hand did not cover (CI's Windows leg, 2026-10-14).
+          if (path === join(folder, name)) return { ...stat, isFile: true };
         }
       }
       throw new Error(`no file ${path}`);
