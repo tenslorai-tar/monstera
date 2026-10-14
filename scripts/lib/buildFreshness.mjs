@@ -328,6 +328,7 @@ export const DRAWN_OBJECT_PLACE = [
   ['packages/kernel/src/textOperators.ts', 'packages/kernel/dist/textOperators.js', 'tsc'],
   ['packages/kernel/src/pdfiumFfi.ts', 'packages/kernel/dist/pdfiumFfi.js', 'tsc'],
   ['packages/kernel/src/pdfiumSpecs.ts', 'packages/kernel/dist/pdfiumSpecs.js', 'tsc'],
+  ['packages/kernel/src/mupdfWriter.ts', 'packages/kernel/dist/mupdfWriter.js', 'tsc'],
   ...NATIVE_ENGINE,
 ];
 
