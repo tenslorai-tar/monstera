@@ -656,6 +656,18 @@ export function hasDocument(context: CommandContext): boolean {
 }
 
 /**
+ * Whether a document is focused AND its page count is known: the predicate of every command whose `run` needs the count.
+ *
+ * Right after an open the page count arrives after the document does, and such a command offered under
+ * {@link hasDocument} ran and returned at its own `pageCount === undefined` guard: the palette's Insert blank pages
+ * opened nothing for the 30 and 60 s the comments walk waited (2026-10-13, GGGGGGGG-2) — a control dispatching into
+ * nothing. Hidden until it can act is the registry's rule for that.
+ */
+export function hasPages(context: CommandContext): boolean {
+  return context.docId !== undefined && context.pageCount !== undefined;
+}
+
+/**
  * One document's commands as this renderer sends them: in turn, and with the moves its own commands made.
  *
  * ## Why a lane here, when main already runs a document's commands in turn
@@ -1551,7 +1563,7 @@ export function insertBlankPageCommand(deps: DocumentCommandDeps): UiCommand {
       { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 14, size: 'small' },
       { surface: 'context-menu', context: 'page', order: 20 },
     ],
-    when: hasDocument,
+    when: hasPages,
     run: async (context): Promise<void> => {
       // AFTER THE LAST OF `targetPages` (ADR-0104) is where the dialog opens: the page on show when nothing is ticked,
       // and after a ticked set when one is.
@@ -1650,7 +1662,7 @@ export function deletePageCommand(deps: DocumentCommandDeps): UiCommand {
       { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 24, prominence: 'secondary', size: 'small' },
       { surface: 'context-menu', context: 'page', order: 40 },
     ],
-    when: hasDocument,
+    when: hasPages,
     run: async (context): Promise<void> => {
       // `targetPages`' pages (ADR-0104): the ticked ones in the grid, else the page on show. The dialog needs the
       // bound, and `askToDeletePages` holds the one `undefined`-is-a-dismissal gate — so a Cancel here deletes nothing.
@@ -1697,7 +1709,7 @@ export function deletePagesCommand(deps: DocumentCommandDeps): UiCommand {
       // v5-09's *Delete*, first in Pages.
       { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 10, size: 'small' },
     ],
-    when: hasDocument,
+    when: hasPages,
     run: async (context): Promise<void> => {
       // THE FIELD STARTS WITH `targetPages` (ADR-0104): the ticked ones in the grid, else the page on show.
       const pages = targetPages(context);
@@ -2851,7 +2863,7 @@ export function extractPagesCommand(deps: DocumentCommandDeps & WritesAFile & Se
       { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 18, size: 'small' },
       { surface: 'context-menu', context: 'page', order: 30 },
     ],
-    when: hasDocument,
+    when: hasPages,
     run: async (context): Promise<void> => {
       // The field starts with `targetPages`, the delete dialog's rule (ADR-0104).
       const pages = targetPages(context);
@@ -2918,7 +2930,7 @@ export function splitDocumentCommand(deps: DocumentCommandDeps & WritesAFile & S
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_COMBINE, order: 32, size: 'small' },
     ],
-    when: hasDocument,
+    when: hasPages,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.pageCount === undefined) return;
       if (!(await deps.settleMarks(context.docId, 'export'))) return;
@@ -2966,7 +2978,7 @@ export function exportTextCommand(
     // Export, and File is the Home group that writes a file out today.
     // TOOLS › CONVERT, with the other formats a document is written out in (ADR-0107 moved Home's secondaries).
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CONVERT, order: 170, prominence: 'secondary', size: 'small' }],
-    when: hasDocument,
+    when: hasPages,
     run: (context) => runTextExport(deps, context, 'plain'),
   };
 }
@@ -2989,7 +3001,7 @@ export function exportLayoutTextCommand(
     title: EXPORT_LAYOUT_TEXT_COMMAND_TITLE,
     ribbonTitle: RIBBON_EXPORT_LAYOUT_TEXT,
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CONVERT, order: 180, prominence: 'secondary', size: 'small' }],
-    when: hasDocument,
+    when: hasPages,
     run: (context) => runTextExport(deps, context, 'layout'),
   };
 }
@@ -3016,7 +3028,7 @@ export function exportWordCommand(
       { surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 302, menu: RIBBON_EXPORT_OFFICE },
       { surface: 'ribbon', section: 'tools', group: GROUP_CONVERT, order: 110, size: 'small' },
     ],
-    when: hasDocument,
+    when: hasPages,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.pageCount === undefined) return;
       if (!(await deps.settleMarks(context.docId, 'export'))) return;
@@ -3090,7 +3102,7 @@ export function exportPowerPointCommand(
       { surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 305, menu: RIBBON_EXPORT_OFFICE },
       { surface: 'ribbon', section: 'tools', group: GROUP_CONVERT, order: 125, size: 'small' },
     ],
-    when: hasDocument,
+    when: hasPages,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.pageCount === undefined) return;
       if (!(await deps.settleMarks(context.docId, 'export'))) return;
@@ -3336,7 +3348,7 @@ export function exportPdfaCommand(
     title: EXPORT_PDFA_COMMAND_TITLE,
     ribbonTitle: RIBBON_EXPORT_PDFA,
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CONVERT, order: 130, size: 'small' }],
-    when: hasDocument,
+    when: hasPages,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
       if (!(await deps.settleMarks(context.docId, 'export'))) return;
@@ -3516,7 +3528,7 @@ export function printCommand(
       { surface: 'menu-bar', menu: 'file', group: 2, order: 10 },
     ],
     shortcut: 'Ctrl+P',
-    when: hasDocument,
+    when: hasPages,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.pageCount === undefined) return;
       if (!(await deps.settleMarks(context.docId, 'print'))) return;
@@ -3575,7 +3587,7 @@ export function emailCommand(deps: DocumentCommandDeps & SettlesMarksFirst): UiC
       { surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 306 },
       { surface: 'menu-bar', menu: 'file', group: 2, order: 20 },
     ],
-    when: hasDocument,
+    when: hasPages,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
       if (!(await deps.settleMarks(context.docId, 'send'))) return;
@@ -3659,7 +3671,7 @@ export function exportPageImagesCommand(deps: DocumentCommandDeps & WritesAFile 
       { surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 300 },
       { surface: 'ribbon', section: 'tools', group: GROUP_CONVERT, order: 150, prominence: 'secondary', size: 'small' },
     ],
-    when: hasDocument,
+    when: hasPages,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.pageCount === undefined) return;
       if (!(await deps.settleMarks(context.docId, 'export'))) return;

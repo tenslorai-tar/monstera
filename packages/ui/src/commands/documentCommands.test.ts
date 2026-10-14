@@ -145,6 +145,10 @@ import {
   undoCommand,
   type SignedEditing,
 } from './documentCommands.js';
+// THE COMMAND SOURCES AS TEXT, through Vite's `?raw` (this package never imports node:fs), for the page-count scan below.
+import DOCUMENT_COMMANDS_SOURCE from './documentCommands.ts?raw';
+import FIELD_ARRANGE_SOURCE from './fieldArrangeCommands.ts?raw';
+import IMPORT_MARKDOWN_SOURCE from './importMarkdown.ts?raw';
 import { namedWorkSetAside } from './namedWorkSetAside.js';
 import type { SourceCommandDeps } from './sourceDocuments.js';
 
@@ -7219,5 +7223,56 @@ describe('readRunFonts', () => {
     // CONTROL: the same answer at the block's own version is read.
     const same = clientAnswering('document.runFonts', { version: asDocVersion(4), fonts: [new Uint8Array([1])], runs: [0] });
     expect((await readRunFonts(same, DOC, 0, blockOf(1), AT_FOUR)).runs.get(0)).toBe(0);
+  });
+});
+
+/**
+ * A COMMAND THAT NEEDS THE PAGE COUNT IS OFFERED ONLY ONCE IT IS KNOWN (GGGGGGGG-2): right after an open the count arrives
+ * after the document, and Insert blank pages, offered under `hasDocument`, ran into its own `pageCount === undefined`
+ * guard and opened nothing — the comments walk waited 30 and 60 s for a dialog that was never asked for.
+ */
+describe('commands that need the page count', () => {
+  it('Insert blank pages is hidden while the count is unknown, and opens its dialog once it is known', async () => {
+    const asked: string[] = [];
+    const command = insertBlankPageCommand({
+      // NOTHING IS SENT: the dialog is dismissed, so a client that refuses every call is the honest one.
+      client: createClient(channels, () => Promise.reject(new Error('nothing is sent when the dialog is dismissed'))),
+      ask: (id) => {
+        asked.push(id);
+        return Promise.resolve(undefined);
+      },
+      onApplied: () => undefined,
+      stamp,
+      signatures,
+    });
+    const loading: CommandContext = { ...CONTEXT, pageCount: undefined };
+    expect(command.when?.(loading)).toBe(false);
+    // CONTROL: with the count, it is offered and its run asks the dialog.
+    expect(command.when?.(CONTEXT)).toBe(true);
+    await command.run(CONTEXT);
+    expect(asked).toStrictEqual(['dialog.insert-blank-page']);
+  });
+
+  /**
+   * THE CLASS, by the source: every command whose `run` returns at a `pageCount === undefined` guard, or recognises or
+   * exports through the helpers that do, is offered under `hasPages` or a predicate that reads the count itself. A
+   * command written tomorrow with the guard and the weaker predicate fails here, naming itself.
+   */
+  it('every command whose run needs the count is offered under a predicate that knows it', () => {
+    const offenders: string[] = [];
+    const checked: string[] = [];
+    for (const source of [DOCUMENT_COMMANDS_SOURCE, IMPORT_MARKDOWN_SOURCE, FIELD_ARRANGE_SOURCE]) {
+      for (const block of source.split(/\n {4}id: '/u).slice(1)) {
+        const id = block.slice(0, block.indexOf("'"));
+        const needs = /context\.pageCount === undefined|recognisedBeforeExport\(|runTextExport\(/u.test(block.split(/\n {4}id: '/u)[0] ?? '');
+        if (!needs) continue;
+        checked.push(id);
+        if (!/when: hasPages,|when: \(context\) => \{[^}]*context\.pageCount/u.test(block)) offenders.push(id);
+      }
+    }
+    // POSITIVE CONTROL: the scan found the command the walk met, so an empty list of offenders is not a blind one.
+    expect(checked).toContain('document.insert-blank-page');
+    expect(checked.length).toBeGreaterThan(10);
+    expect(offenders).toStrictEqual([]);
   });
 });

@@ -49,14 +49,14 @@ const walk = await startWalk('comments');
 const { page, output, pickFiles, saveTo, command, section, step, finish, sizeWindow } = walk;
 
 /**
- * Opens a document and lets it settle. A palette command sent the moment the page canvas shows was answered with no
- * dialog for 30 and 60 s in steps 15 and 36 to 38 (2026-10-13), while the same commands, run by a probe a few seconds
- * after the open, opened theirs at once.
+ * Opens a document. NO SETTLING SLEEP (GGGGGGGG-2, 2026-10-14): a palette command sent the moment the page canvas showed
+ * opened no dialog for 30 and 60 s in steps 15 and 36 to 38 (2026-10-13), because those commands need the page count,
+ * which arrives after the canvas, and they were offered before it and ran into their own guard. They are offered under
+ * `hasPages` now, so the palette lists them once they can act, and the walk's click waits for the option as a hand would.
  * @param {string} path
  */
 const open = async (path) => {
   await walk.open(path);
-  await page.waitForTimeout(4000);
 };
 
 /** A letter page with words on it, then a second one turned 90 degrees. */

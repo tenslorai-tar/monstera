@@ -44,7 +44,7 @@ import {
 import { targetPages, type UiCommand, VISIBLE } from '../registries/commands.js';
 import { fontListOf } from '../fontList.js';
 import type { TrackTask } from '../runningTask.js';
-import { type DocumentCommandDeps, hasDocument, reportProblem } from './documentCommands.js';
+import { type DocumentCommandDeps, hasPages, reportProblem } from './documentCommands.js';
 import { withWorkProgress } from './workProgress.js';
 
 /**
@@ -454,7 +454,7 @@ export function appendMarkdownCommand(
     title: APPEND_MARKDOWN_COMMAND_TITLE,
     ribbonTitle: RIBBON_APPEND_MARKDOWN,
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 20, size: 'small' }],
-    when: hasDocument,
+    when: hasPages,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.pageCount === undefined) return;
       const target = context.docId;
@@ -520,7 +520,7 @@ export function insertImageCommand(
     icon: 'ImagePlus',
     title: INSERT_IMAGE_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 16, size: 'small' }],
-    when: hasDocument,
+    when: hasPages,
     run: async (context): Promise<void> => {
       const last = targetPages(context).at(-1);
       if (context.docId === undefined || context.pageCount === undefined || last === undefined) return;
