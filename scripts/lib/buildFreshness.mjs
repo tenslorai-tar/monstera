@@ -160,6 +160,10 @@ export const PDFIUM_COMMAND = [
   ['packages/kernel/src/fontCatalogue.ts', 'packages/kernel/dist/fontCatalogue.js', 'tsc'],
   // The catalogue is read as the host reads it, in its thread (the owner's Part 7 A).
   ['packages/kernel/src/fontCatalogueApart.ts', 'packages/kernel/dist/fontCatalogueApart.js', 'tsc'],
+  // AND THE TWO THREADS AN EDIT STARTS BY PATH (ADR-0239): nothing imports a worker, so an imports-covered check cannot
+  // see one, and a stale one would answer last build's face program or run font (HHHHHHHH-7).
+  ['packages/kernel/src/faceProgramWorker.ts', 'packages/kernel/dist/faceProgramWorker.js', 'tsc'],
+  ['packages/kernel/src/runFontWorker.ts', 'packages/kernel/dist/runFontWorker.js', 'tsc'],
   ['packages/shared/src', 'packages/shared/dist/index.js', 'tsc'],
   // RIGHT-TO-LEFT TEXT AND A SCAN'S PAPER (ADR-0181): the order a line is drawn in and read back in, the cut of a line into
   // objects, the Arabic joining forms the proof reads directly, and the paper a scan's cover is coloured from.
@@ -346,6 +350,8 @@ export const FONT_WORK_APART = [
   ['packages/kernel/src/runFont.ts', 'packages/kernel/dist/runFont.js', 'tsc'],
   ['packages/kernel/src/runFontApart.ts', 'packages/kernel/dist/runFontApart.js', 'tsc'],
   ['packages/kernel/src/runFontWorker.ts', 'packages/kernel/dist/runFontWorker.js', 'tsc'],
+  ['packages/kernel/src/composeOutcome.ts', 'packages/kernel/dist/composeOutcome.js', 'tsc'],
+  ['packages/kernel/src/textShaping.ts', 'packages/kernel/dist/textShaping.js', 'tsc'],
 ];
 
 /**
