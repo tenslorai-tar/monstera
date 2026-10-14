@@ -48,9 +48,8 @@ import {
 } from './markFigures.js';
 import { type Alignment, blockShape, paragraphSpacing } from './paragraphShape.js';
 import { type ProgramFace, faceOf, programFace } from './fontFace.js';
-import { readFace } from './fontFaces.js';
-import { BOX, boxFont } from './boxFont.js';
-import { namedSubset } from './fontSubset.js';
+import { BOX } from './boxFont.js';
+import { faceProgramApart } from './faceProgramApart.js';
 import { type PathGlyph, type PathStep, pathFontFor } from './pathFont.js';
 import { type DrawnGlyph, runFontFor } from './runFont.js';
 import { withoutSubsetTag } from './subsetName.js';
@@ -2968,19 +2967,18 @@ function pieceWriter(
         const key = `${face.id}|${String(weight)}`;
         const loaded = faceFonts.get(key);
         if (loaded !== undefined) return loaded;
-        const whole = faces().read(face.path);
-        const named = readFace(whole, face.faceIndex).postscript;
-        // A VARIABLE FACE'S NAME says which instance it is, as the composers name one (`composeFonts.ts`).
-        const postscript = face.weights === null ? named : `${named === '' ? 'Font' : named}-wght${String(weight)}`;
-        const subset = namedSubset(whole, postscript, {
-          unicodes: characters.filter((point) => face.unicodes.has(point)),
+        // MADE APART (ADR-0239): the whole file is read through HarfBuzz in a thread that ends with it.
+        const program = faceProgramApart({
+          kind: 'subset',
+          whole: faces().read(face.path),
           faceIndex: face.faceIndex,
-          axes: face.weights === null ? {} : { wght: weight },
+          variable: face.weights !== null,
+          weight,
+          unicodes: characters.filter((point) => face.unicodes.has(point)),
+          // THE WHOLE FONT only where HarfBuzz refused the subset, the licence allows it, and it is one static face
+          // PDFium can load as it stands (Decision 5).
+          wholeAllowed: face.embedding !== 'never' && face.weights === null && face.faceIndex === 0,
         });
-        // THE WHOLE FONT only where HarfBuzz refused the subset, the licence allows it, and it is one static face
-        // PDFium can load as it stands (Decision 5).
-        const program =
-          subset?.bytes ?? (face.embedding !== 'never' && face.weights === null && face.faceIndex === 0 ? whole : null);
         if (program === null) return null;
         const font: unknown = bindings.loadFont(document, program, program.length, FONT_TRUETYPE, 1);
         if (font === null) return null;
@@ -3004,16 +3002,20 @@ function pieceWriter(
           const key = `box|${candidate.id}|${String(pin)}|${String(point)}`;
           const loaded = faceFonts.get(key);
           if (loaded !== undefined) return loaded;
-          const whole = faces().read(candidate.path);
-          const named = readFace(whole, candidate.faceIndex).postscript;
-          const postscript = candidate.weights === null ? named : `${named === '' ? 'Font' : named}-wght${String(pin)}`;
-          const made = boxFont(whole, candidate.faceIndex, candidate.weights === null ? {} : { wght: pin }, postscript, point);
+          const made = faceProgramApart({
+            kind: 'box',
+            whole: faces().read(candidate.path),
+            faceIndex: candidate.faceIndex,
+            variable: candidate.weights !== null,
+            weight: pin,
+            point,
+          });
           if (made === null) continue;
-          const font: unknown = bindings.loadFont(document, made.bytes, made.bytes.length, FONT_TRUETYPE, 1);
+          const font: unknown = bindings.loadFont(document, made, made.length, FONT_TRUETYPE, 1);
           if (font === null) continue;
-          facePrograms.push(made.bytes);
+          facePrograms.push(made);
           faceFonts.set(key, font);
-          faceGlyphs.set(String(koffi.address(font)), new ShapingFace(made.bytes, 0, {}));
+          faceGlyphs.set(String(koffi.address(font)), new ShapingFace(made, 0, {}));
           return font;
         }
         return null;

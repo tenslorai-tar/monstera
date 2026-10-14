@@ -129,5 +129,13 @@ export function faceSourceOf(folders: readonly FontFolder[], reading: CatalogueR
   if (faces.length === 0) {
     throw new Error(`no readable font face in ${folders.map((folder) => folder.path).join(', ')}: ${JSON.stringify(unreadable)}`);
   }
+  return faceSourceFrom(faces);
+}
+
+/**
+ * Faces already read, and the one reader of their files: what {@link faceSourceOf} answers, and what a thread given a
+ * catalogue's faces as data makes of them (`composeWorker.ts`), so the two read a face's file one way.
+ */
+export function faceSourceFrom(faces: readonly CatalogueFace[]): FaceSource {
   return { faces, read: (path) => new Uint8Array(readFileSync(path)) };
 }

@@ -4,11 +4,10 @@ import { join } from 'node:path';
 
 import { ENGINE_HOST_MAX_IN_FLIGHT } from '@monstera/contract/host';
 
-import { composeCsv } from '../csvCompose.js';
+import { composerApart } from '../composeApart.js';
 import { type FaceSource, faceSourceOf, fontFoldersOf } from '../fontCatalogue.js';
 import { readCatalogueApart } from '../fontCatalogueApart.js';
 import { composeImages } from '../imageCompose.js';
-import { composeMarkdown } from '../markdownCompose.js';
 import { Document, MupdfOpenRefused, PDFDocument, keepInlineImages, openMupdfShim, rewriteImages } from '../mupdfRaw.js';
 import { prepareForPdfa } from '../pdfaPreparation.js';
 import { signatureFromScan } from '../signatureScan.js';
@@ -201,8 +200,9 @@ const handlers = createComposeHandlers({
   files: hostFilesystem,
   probe: probeContainment,
   faces,
-  composeMarkdown,
-  composeCsv,
+  // EACH COMPOSITION IN A THREAD THAT ENDS WITH IT (ADR-0239 Decision 3): what HarfBuzz and pdf-lib kept goes with it.
+  composeMarkdown: composerApart('markdown'),
+  composeCsv: composerApart('csv'),
   composeImages,
 });
 

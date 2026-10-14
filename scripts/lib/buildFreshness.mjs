@@ -323,6 +323,26 @@ export const FONT_CATALOGUE_APART = [
   ['packages/kernel/src/fontCatalogueApart.ts', 'packages/kernel/dist/fontCatalogueApart.js', 'tsc'],
   ['packages/kernel/src/fontCatalogueWorker.ts', 'packages/kernel/dist/fontCatalogueWorker.js', 'tsc'],
   ['packages/kernel/src/fontCatalogue.ts', 'packages/kernel/dist/fontCatalogue.js', 'tsc'],
+  ['packages/kernel/src/apart.ts', 'packages/kernel/dist/apart.js', 'tsc'],
+  ['packages/kernel/src/apartThread.ts', 'packages/kernel/dist/apartThread.js', 'tsc'],
+];
+
+/**
+ * An edit's face program and a composition, each made in a thread that ends (ADR-0239), measured by
+ * `fontWorkApart.proof.mjs` against the same work done in the asking thread.
+ *
+ * @type {readonly BuildEdge[]}
+ */
+export const FONT_WORK_APART = [
+  ['packages/kernel/src/apart.ts', 'packages/kernel/dist/apart.js', 'tsc'],
+  ['packages/kernel/src/apartThread.ts', 'packages/kernel/dist/apartThread.js', 'tsc'],
+  ['packages/kernel/src/faceProgram.ts', 'packages/kernel/dist/faceProgram.js', 'tsc'],
+  ['packages/kernel/src/faceProgramApart.ts', 'packages/kernel/dist/faceProgramApart.js', 'tsc'],
+  ['packages/kernel/src/faceProgramWorker.ts', 'packages/kernel/dist/faceProgramWorker.js', 'tsc'],
+  ['packages/kernel/src/composeApart.ts', 'packages/kernel/dist/composeApart.js', 'tsc'],
+  ['packages/kernel/src/composeWorker.ts', 'packages/kernel/dist/composeWorker.js', 'tsc'],
+  ['packages/kernel/src/markdownCompose.ts', 'packages/kernel/dist/markdownCompose.js', 'tsc'],
+  ['packages/kernel/src/fontCatalogue.ts', 'packages/kernel/dist/fontCatalogue.js', 'tsc'],
 ];
 
 /**
@@ -617,6 +637,8 @@ export const ARTEFACT_EDGES = {
   'proof:type3edit': TYPE3_EDIT,
   // A HOST'S FONT CATALOGUE, read in a thread that ends, against the in-thread read that keeps HarfBuzz's memory.
   'proof:fontcatalogueapart': FONT_CATALOGUE_APART,
+  // ADR-0239: an edit's face program and a composition made apart. Registered with its entry.
+  'proof:fontworkapart': FONT_WORK_APART,
   'proof:shimpassword': SHIM_PASSWORD,
   // THE WORD EXPORT'S PICTURES, read back by a zip reader and a PNG decoder that are not the writer's.
   'proof:wordpictures': WORD_PICTURES,

@@ -34,7 +34,7 @@ import { createRoster } from '../lib/passRoster.mjs';
 import { fontsDirectory } from '../provision/fonts.mjs';
 
 const ROOT = repoRoot();
-refuseStaleBuild(ROOT, FONT_CATALOGUE_APART, 3);
+refuseStaleBuild(ROOT, FONT_CATALOGUE_APART, 5);
 
 // A COLLECTION ON DEMAND, without asking whoever runs this for a flag.
 setFlagsFromString('--expose-gc');
@@ -146,7 +146,7 @@ check(
   }
   check(
     "a read that throws in the thread is answered, and the reader throws the thread's own message rather than waiting",
-    message.startsWith('the font catalogue thread could not read') && /path/iu.test(message),
+    message.startsWith('the font catalogue failed in its thread') && /path/iu.test(message),
     message,
   );
 }

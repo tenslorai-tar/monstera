@@ -433,6 +433,13 @@ jobs:
       - name: Prove a host's font catalogue leaves nothing behind
         run: node scripts/ci/annotate.mjs scripts/proofs/fontCatalogueApart.proof.mjs
 
+      # ADR-0239. The same leak on the two other paths that read a face's whole file: an edit's face program and a
+      # Markdown or CSV composition, each now made in a thread that ends. Eight programs apart must leave the asking
+      # thread a tenth of what eight made in it keep (the control), the answers must be the same bytes, and a composer's
+      # refusal must cross as a refusal while its fault crosses as a fault.
+      - name: Prove an edit's face program and a composition leave nothing behind
+        run: node scripts/ci/annotate.mjs scripts/proofs/fontWorkApart.proof.mjs
+
       # ADR-0091's 2026-10-14 correction. 0.1.15.0 read the cloud client values from the packager's environment at RUN
       # time, so cloud storage worked on one PC. Packaging now writes them into the package; this reads the written
       # file back through the shell's own reader with an EMPTY environment, and refuses a Store package without one.
