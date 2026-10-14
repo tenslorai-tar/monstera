@@ -466,6 +466,21 @@ export function groupIntoBlocks<S>(runs: readonly BlockableRun<S>[]): readonly E
  * again ([ADR-0179](../../../docs/DECISIONS/0179-a-paragraph-is-the-editors-unit-and-a-reflow-keeps-each-word-in-its-own-style.md)
  * Decision 2). The last line ends nothing, so it is never soft.
  *
+ * ## A full line is not always a wrapped one
+ *
+ * Lines of similar length each long enough that the next one's first word would not fit pass the test above whether
+ * or not they were wrapped: four sentences, one to a line, and a block of code, read as one paragraph each, and a font
+ * change that reflowed them joined them (the owner's A4, measured 2026-10-14). So two signs that a break was made ON
+ * PURPOSE keep it, whatever the width says:
+ *
+ * - the line ENDS A SENTENCE (`.`, `!`, `?`, `:`) and the next begins with a capital or a digit;
+ * - the next line starts INDENTED past this one by more than a character, and not by the even amount on both sides a
+ *   shorter centred line has.
+ *
+ * A wrap that happens to fall at a sentence's end is then kept as a break, which costs a ragged line if words are added
+ * before it; reading two sentences as one costs the person's line breaks. Of the two, the one that keeps what the page
+ * said is chosen (the owner's principle: preserve, never drop).
+ *
  * @param lines the block's lines, top to bottom, each its text and its box
  * @param right the block's right edge
  */
@@ -479,6 +494,10 @@ export function softEnds(
     const nextText = next.text.trimStart();
     const firstWord = nextText.split(/\s/u)[0] ?? '';
     const perCharacter = nextText.length === 0 ? 0 : (next.box.x1 - next.box.x0) / nextText.length;
+    if (/[.!?:]["'’”)\]]*$/u.test(line.text.trimEnd()) && /^["'‘“([]*[\p{Lu}\p{Nd}]/u.test(nextText)) return false;
+    const indent = next.box.x0 - line.box.x0;
+    const centred = Math.abs(indent - (line.box.x1 - next.box.x1)) <= perCharacter;
+    if (indent > perCharacter && !centred) return false;
     return firstWord !== '' && line.box.x1 + (firstWord.length + 1) * perCharacter > right;
   });
 }

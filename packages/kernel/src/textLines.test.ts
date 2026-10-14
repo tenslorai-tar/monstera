@@ -44,6 +44,40 @@ describe('softEnds (ADR-0097 4c, ADR-0179 Decision 2)', () => {
     ).toBe('Please send the forms to our office at\n14 Elm Street');
   });
 
+  /**
+   * THE OWNER'S A4 (2026-10-14): four sentences of similar length, one to a line, each too long for the next one's
+   * first word to have fitted after it, were read as one paragraph, and a font change reflowed them into one. CONTROL:
+   * the same widths with a line that ends mid-sentence stay a wrap, so the sentence's end is what keeps the break.
+   */
+  it('keeps a break after a line that ends a sentence when the next begins one', () => {
+    expect(
+      paragraphText(
+        [line('Quarterly results came in above the plan.', 195), line('Costs held steady across every department.', 198), line('Revenue grew in all three regions.', 190)],
+        200,
+      ),
+    ).toBe('Quarterly results came in above the plan.\nCosts held steady across every department.\nRevenue grew in all three regions.');
+    expect(paragraphText([line('Quarterly results came in above the', 195), line('Plan for the year, as forecast.', 190)], 200)).toBe(
+      'Quarterly results came in above the Plan for the year, as forecast.',
+    );
+    expect(paragraphText([line('It came in above the plan.', 195), line('and the board approved it.', 190)], 200)).toBe(
+      'It came in above the plan. and the board approved it.',
+    );
+  });
+
+  /**
+   * A BLOCK OF CODE: its second line is indented, and was read as the first line's wrap. CONTROL: a centred
+   * paragraph's shorter line starts further in by the same amount it ends further in, and is still a wrap.
+   */
+  it('keeps a break before an indented line, and not before a centred one', () => {
+    const at = (text: string, x0: number, x1: number) => ({ text, box: { x0, x1 } });
+    expect(paragraphText([at('function add(first, second, third) {', 0, 190), at('return first + second;', 20, 130)], 200)).toBe(
+      'function add(first, second, third) {\nreturn first + second;',
+    );
+    expect(paragraphText([at('A centred heading that runs long', 0, 195), at('onto a second line', 50, 145)], 200)).toBe(
+      'A centred heading that runs long onto a second line',
+    );
+  });
+
   it('never calls the last line soft: it ends nothing', () => {
     expect(softEnds([line('The quick brown fox', 180)], 200)).toStrictEqual([false]);
   });

@@ -280,7 +280,7 @@ const failures = [];
 // from its Decision 2: a tab read back at its stop, its control, and a second edit that keeps one tab. 235 from the
 // second edit's measure, which read a line written as several objects at its first object's width. 246 from L2: an
 // underlined word read back underlined, its rule moved with it by a second edit, and the control that turns it off.
-const roster = createRoster(failures, { cases: 253 });
+const roster = createRoster(failures, { cases: 254 });
 
 /**
  * @param {string} name
@@ -623,12 +623,18 @@ async function fontChangeCases() {
       const runs = (await textRuns(session, 0)).runs;
       const read = groupIntoBlocks(runs.map((run) => ({ ...run, setting: settingOf(run.style) })))[0];
       const lines = read?.lines ?? [];
+      // THE BREAKS AS THE KERNEL READS THEM, which the editor sends back: two sentences, one to a line, each too long
+      // for the next one's first word to have fitted, which `softEnds` read as one paragraph until the owner's A4.
       block = {
         lines: lines.map((line) => line.runs.map((run) => run.index)),
-        // EVERY LINE ENDED ON PURPOSE, so the case is about the font and not about how a paragraph is re-broken (A4).
-        soft: lines.map(() => false),
-        text: paragraphsOfLines(lines.map((line) => ({ text: lineText(line.runs), soft: false }))),
+        soft: lines.map((line) => line.soft),
+        text: paragraphsOfLines(lines.map((line) => ({ text: lineText(line.runs), soft: line.soft }))),
       };
+      record(
+        'two sentences set one to a line are read as lines ended on purpose, not as one wrapped paragraph',
+        lines.length === 2 && lines.every((line) => !line.soft),
+        JSON.stringify(lines.map((line) => line.soft)),
+      );
     } finally {
       await pdfiumWriter.close(session);
     }
