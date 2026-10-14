@@ -5016,6 +5016,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         dismissLabel={TOAST_DISMISS}
         onDismiss={dismissToast}
         lifetime={TOAST_LIFETIME}
+        anchored={tabs.length > 0}
       >
         {/* THE ONE PLACE work in progress is shown, over a document and over the start screen alike (the owner's O9). */}
         <TaskNotice task={task} />

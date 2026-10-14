@@ -22,7 +22,7 @@ function Wrapped({ children }: { children: ReactNode }): ReactElement {
 function drawn(task: Parameters<typeof TaskNotice>[0]['task']): HTMLElement {
   return render(
     <Wrapped>
-      <ToastStrip toasts={[]} dismissLabel={WORD_COUNT_PROGRESS} onDismiss={() => undefined} lifetime={1000}>
+      <ToastStrip anchored toasts={[]}dismissLabel={WORD_COUNT_PROGRESS} onDismiss={() => undefined} lifetime={1000}>
         <TaskNotice task={task} />
       </ToastStrip>
     </Wrapped>,

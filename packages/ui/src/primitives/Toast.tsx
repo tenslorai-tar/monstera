@@ -172,9 +172,18 @@ export function ToastStrip({
   dismissLabel,
   onDismiss,
   lifetime,
+  anchored,
   children,
 }: {
   readonly toasts: readonly ToastMessage[];
+  /**
+   * Whether a page area is mounted to anchor to. THE ANCHOR IS NAMED ONLY WHILE ONE IS: Chromium's anchor-positioning
+   * data on this strip, which lives for the whole app, keeps a strong reference to the last page pane it anchored to,
+   * and through it that pane's whole subtree — measured 2026-10-14 in Chromium 151, 42 page and thumbnail canvases and
+   * about 686 nodes alive after the last document closed, all released once the strip named no anchor. The retaining
+   * code is Blink's; the strip not naming an anchor that can go is the response here.
+   */
+  readonly anchored: boolean;
   /** The × button's accessible name. A prop, for the reason `Button`'s `label` is one. */
   readonly dismissLabel: MessageKey;
   /** Takes one toast off, by its id. */
@@ -215,7 +224,7 @@ export function ToastStrip({
     // `aria-live` and not `role="alert"`: alert is assertive, and the status bar below is
     // already this window's one `role="status"` region. Two of those would have a screen reader
     // announce a save twice — once here, and once as the bar's own saved-state text changed.
-    <div aria-live="polite" className="m-toasts" ref={strip}>
+    <div aria-live="polite" className={anchored ? 'm-toasts m-toasts--anchored' : 'm-toasts'} ref={strip}>
       {children}
       {toasts.map((toast) => (
         <ToastRow

@@ -7996,7 +7996,6 @@ optgroup {
  */
 .m-toasts {
   position: fixed;
-  position-anchor: --m-page-area;
   /* AND ABOVE whatever marks itself `data-toast-avoid` under the strip (`ToastStrip` sets `--m-toasts-clear`): the
      anchor keeps the strip off every panel, and the clearance keeps it off a control the page area itself holds. */
   inset-block-end: max(
@@ -8009,6 +8008,13 @@ optgroup {
   flex-direction: column;
   gap: var(--space-8);
   pointer-events: none;
+}
+
+/* THE ANCHOR, named only while a page area is mounted (`ToastStrip`'s `anchored`): a strip that named it after the last
+   page pane went kept that pane's whole subtree alive in Chromium, canvases and all. Without it the fallbacks above
+   place the strip at the window's corner, as on the start screen. */
+.m-toasts--anchored {
+  position-anchor: --m-page-area;
 }
 
 .m-toast {

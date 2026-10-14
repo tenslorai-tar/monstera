@@ -23,7 +23,7 @@ function Strip({ kind = 'done' }: { readonly kind?: ToastMessage['kind'] }): Rea
   }, []);
   return (
     <I18nProvider i18n={i18n}>
-      <ToastStrip dismissLabel={DISMISS} lifetime={LIFETIME} onDismiss={onDismiss} toasts={toasts} />
+      <ToastStrip anchored dismissLabel={DISMISS} lifetime={LIFETIME} onDismiss={onDismiss} toasts={toasts} />
     </I18nProvider>
   );
 }
