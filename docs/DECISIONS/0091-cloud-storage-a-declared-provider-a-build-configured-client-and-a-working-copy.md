@@ -167,3 +167,38 @@ cannot change a 403.
   `cloud.uploadCopy` and links the document to it, so the next Save back goes to the copy.
 - **Every cloud failure is logged** as `cloud-failed`: the request, the provider, the reason and the provider's host
   and status. One wrapper runs every public call, so no call can fail without a line.
+
+## Correction, 2026-10-14 — the package carries the client values, and a build without them hides cloud storage
+
+**What was found.** Decision 2's packaged half was never built. `entry.ts` passed `null` for the packaged file, and
+packaging wrote none, so a 0.1.15.0 install read the values only from the environment: cloud storage worked on the
+PC that packaged it, where the variables live in the owner's user profile, and answered *Not available in this build*
+on every other. The comment beside the call gave `no-install-root-writes` as the reason the file could not be read;
+that rule bans `getAppPath` and confines `getPath`, and `entry.ts` already reads `process.resourcesPath` for the native
+components, so the stated reason did not hold.
+
+**The owner's decision, 2026-10-14:** build the values into the package. Every person signs in with their own
+Microsoft or Google account; the values say only which registration they sign in to.
+
+**Why that is sound, on Decision 3's sources:** both are desktop clients. Microsoft's is a public client and holds no
+secret. Google's *Desktop app* secret is one Google's *OAuth 2.0 for iOS & Desktop Apps* says installed apps cannot keep.
+The owner's rule still holds in full: no value is in the repository, a log line or an error message.
+
+### Corrected decision
+
+2. **A client identifier is build configuration, never source, and the package carries it.** Packaging writes
+   `oauth-clients.json` into the package's `resources/` from the packager's environment, under the names
+   `CLOUD_CLIENT_VARIABLES` declares — the desktop build's own module, imported by packaging, so the writer and the
+   reader are one list (B3a) — and reads it back with `readCloudClients` and an empty environment, as a person's PC
+   reads it. **A Store package missing any value is refused**, naming the variable and never the value. `entry.ts`
+   reads the file from `process.resourcesPath`, the folder it already reads for the native components; the
+   environment still wins where both exist. **A build made without a provider's values hides that provider's
+   commands** (`app.info` names the providers this build can reach) rather than offering a sign-in and refusing it:
+   a control that cannot work is not shown (the wired-tools rule).
+
+### Rejected
+
+- **Keeping *Not available in this build* on the surface.** It is accurate for a contributor's build and is a control
+  that does nothing; hiding is what the registry's `when` exists for.
+- **Committing the values as constants.** Unchanged from above: the owner's rule, and forks would inherit this
+  registration.
