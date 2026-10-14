@@ -98,7 +98,12 @@ await step('M3. ONE Edit text action: a paragraph clicked, a word typed, a click
   await expect(page.locator('[data-text-editor]')).toHaveCount(0);
   // A WRITE TAKES 3 TO 5 S (textWalk's reading of 2026-10-12), then the hosts it started settle.
   await page.waitForTimeout(15_000);
-  return reading();
+  const read = reading();
+  // THE POSITIVE CONTROL FOR M5's EMPTY LIST: an edit runs in the MuPDF and PDFium hosts, so the reader must SEE both here.
+  // A reader that stopped recognising hosts — an unreadable command line, an executable path that no longer matches —
+  // would report M5's "no host is left" in the same voice as a clean close.
+  expect(read.hosts).toEqual(expect.arrayContaining(['host mupdf', 'host pdfium']));
+  return read;
 });
 
 await step('M4. every tab after the edit (Part 7 B): each draws its page, none is left opening, none failed', async () => {
