@@ -121,7 +121,33 @@ export { MAX_FIELD_ANCESTRY };
  */
 export function fieldValues(widget: PDFWidget): readonly string[] {
   const stored = storedValues(widget);
-  return widget.isChoice() ? stored.map((value) => choiceTextOf(widget, value)) : stored;
+  if (!widget.isChoice()) return stored;
+  // A LIST WHOSE CHOICE IS RECORDED ONLY BY PLACE (`/I`, ISO 32000-1 table 231), with no `/V`, is a list with that choice
+  // made: other viewers show its rows selected, and this read answered it empty (the owner's F3, *"Italian highlighted
+  // on the page, nothing selected in the Fields list"*). `/V` wins where both are there, as the standard says.
+  const chosen = stored.length > 0 ? stored : chosenByPlace(widget);
+  return chosen.map((value) => choiceTextOf(widget, value));
+}
+
+/** The values a choice field's `/I` names by their places in `/Opt`, inherited as `/V` is; none where it has none. */
+function chosenByPlace(widget: PDFWidget): readonly string[] {
+  let object: PDFObject = widget.getObject();
+  let places = object.get('I');
+  for (let hop = 0; places.isNull() && hop < MAX_FIELD_ANCESTRY; hop += 1) {
+    const parent = object.get('Parent');
+    if (!parent.isDictionary()) break;
+    object = parent;
+    places = object.get('I');
+  }
+  if (!places.isArray()) return [];
+  const options = widget.getOptions(true);
+  const found: string[] = [];
+  for (let index = 0; index < Math.min(places.length, MAX_FIELD_VALUES); index += 1) {
+    const place = places.get(index);
+    const option = place.isNumber() ? options[place.asNumber()] : undefined;
+    if (option !== undefined) found.push(option);
+  }
+  return found;
 }
 
 /**

@@ -333,6 +333,34 @@ describe('readFormFields', () => {
     ]);
   });
 
+  it('READS A LIST WHOSE CHOICE IS ONLY BY PLACE (/I with no /V), and /V wins where both are there (the owner’s F3)', async () => {
+    // A list box recording its choice in `/I` alone was read as holding nothing, while other viewers drew the row
+    // chosen: the page showed "Italian" highlighted and the Fields list showed nothing.
+    const document = await PDFDocument.create();
+    const page = document.addPage([400, 600]);
+    const font = await document.embedFont(StandardFonts.Helvetica);
+    const fields = document.getForm();
+    const byPlace = fields.createOptionList('applicant.language');
+    byPlace.addOptions(['English', 'French', 'Italian']);
+    byPlace.addToPage(page, { x: 20, y: 340, width: 100, height: 60, font });
+    const places = PDFArray.withContext(document.context);
+    places.push(document.context.obj(2));
+    byPlace.acroField.dict.set(PDFName.of('I'), places);
+    byPlace.acroField.dict.delete(PDFName.of('V'));
+    // CONTROL: `/V` and `/I` disagreeing, `/V` is the value.
+    const both = fields.createOptionList('applicant.second');
+    both.addOptions(['English', 'French', 'Italian']);
+    both.addToPage(page, { x: 20, y: 200, width: 100, height: 60, font });
+    const other = PDFArray.withContext(document.context);
+    other.push(document.context.obj(0));
+    both.acroField.dict.set(PDFName.of('I'), other);
+    both.acroField.dict.set(PDFName.of('V'), PDFString.of('French'));
+    expect(await listed(await document.save())).toStrictEqual([
+      { kind: 'listbox', name: 'applicant.language', values: ['Italian'], on: null },
+      { kind: 'listbox', name: 'applicant.second', values: ['French'], on: null },
+    ]);
+  });
+
   it('READS A MERGED FIELD’S OWN /V, which no pdf-lib fixture can exercise', async () => {
     // AAAAAA-2, closed. `fieldValues` reads the widget's dictionary before
     // walking `/Parent`, and every other fixture here puts the value on the
