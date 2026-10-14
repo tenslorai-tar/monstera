@@ -7,7 +7,7 @@ import {
   type LinkOutline,
 } from '@monstera/contract';
 import type { DocId, DocVersion, MessageKey } from '@monstera/shared';
-import { type ReactElement, useEffect, useState } from 'react';
+import { Fragment, type ReactElement, useEffect, useState } from 'react';
 
 import {
   LINKS_EMPTY,
@@ -127,6 +127,9 @@ export function LinksPanel({
 
   return (
     <nav className="m-links-panel" aria-label={i18n._(LINKS_LABEL)}>
+      {/* A HEADING OF ITS OWN (the owner's E1): the list sat under the outline's "no outline" sentence and read as part
+          of it. */}
+      <h3 className="m-panel-heading">{i18n._(LINKS_LABEL)}</h3>
       {state.kind === 'unavailable' ? (
         <p className="m-links-empty">{i18n._(LINKS_UNAVAILABLE)}</p>
       ) : state.links.length === 0 ? (
@@ -153,7 +156,7 @@ export function LinksPanel({
                 ) : (
                   // THE CLAMP IS ON THE TEXT, not on the button: on a padded box, three lines clamped show the top of
                   // the fourth in the padding below them.
-                  <span className="m-links-address">{i18n._(LINKS_EXTERNAL, { uri: link.uri })}</span>
+                  <span className="m-links-address">{addressLine(i18n._(LINKS_EXTERNAL, { uri: SLOT }), link.uri)}</span>
                 )}
               </button>
               <span className="m-links-outline">
@@ -190,6 +193,37 @@ export function LinksPanel({
       )}
       {state.kind === 'links' && state.truncated ? <p className="m-links-empty">{i18n._(LINKS_TRUNCATED)}</p> : null}
     </nav>
+  );
+}
+
+/**
+ * An address in the pieces a line may break between: after each `/` and `.` (the owner's E1: `https://ememn` on one
+ * line and `don.com` on the next, cut where the narrow panel ran out).
+ */
+export function addressPieces(uri: string): string[] {
+  return uri.split(/(?<=[/.])(?=[^/.])/u);
+}
+
+/** Where the address goes in its sentence, a character no address or translation holds. */
+const SLOT = '\u0000';
+
+/**
+ * The sentence an address is said in, with a `<wbr>` between its pieces ({@link addressPieces}): a break the browser may
+ * take that adds no character, so the words read, copied and spoken are the address as it is.
+ */
+function addressLine(sentence: string, uri: string): ReactElement {
+  const [before = '', after = ''] = sentence.split(SLOT);
+  return (
+    <>
+      {before}
+      {addressPieces(uri).map((piece, at) => (
+        <Fragment key={at}>
+          {at === 0 ? null : <wbr />}
+          {piece}
+        </Fragment>
+      ))}
+      {after}
+    </>
   );
 }
 

@@ -6,7 +6,7 @@ import { act, fireEvent, render } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { LinksPanel } from './LinksPanel.js';
+import { LinksPanel, addressPieces } from './LinksPanel.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
 
@@ -339,5 +339,17 @@ describe('LinksPanel', () => {
       await settle();
       expect(asked).toHaveLength(2);
     });
+  });
+});
+
+/**
+ * WHERE AN ADDRESS MAY BREAK (the owner's E1: "https://ememn" / "don.com"): after a `/` or a `.`. CONTROL: the pieces
+ * joined are the address, so nothing else changed.
+ */
+describe('addressPieces', () => {
+  it('breaks after each slash and full stop, and changes nothing else', () => {
+    const pieces = addressPieces('https://ememndon.com/annual/report.pdf');
+    expect(pieces).toStrictEqual(['https://', 'ememndon.', 'com/', 'annual/', 'report.', 'pdf']);
+    expect(pieces.join('')).toBe('https://ememndon.com/annual/report.pdf');
   });
 });

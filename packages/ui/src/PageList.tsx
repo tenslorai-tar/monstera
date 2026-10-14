@@ -36,7 +36,7 @@ export interface PageWriting {
   readonly onDone: (words: string | undefined) => void;
 }
 import { TextLayer, type TextLayerLine, readTextSelection } from './TextLayer.js';
-import { type FollowedLink, LinkLayer } from './LinkLayer.js';
+import { type FollowedLink, LinkLayer, useLinkPointer } from './LinkLayer.js';
 import { type DifferenceMark, DifferenceLayer } from './DifferenceLayer.js';
 import type { Spot } from './accessibility/view.js';
 import { SpotlightLayer } from './SpotlightLayer.js';
@@ -1766,6 +1766,15 @@ function PageSlot({
   // (ADR-0226 Decision 1): under a drawing tool's surface, which keeps every press; above the surface of a tool that
   // picks, with the comments taken out of each field so a press on a comment is still the tool's.
   const fieldsOver = drawing?.tool.fillsFields === true;
+  // THE LINKS UNDER THE POINTER, whatever layer is on top (`useLinkPointer`, the owner's E1): a plain click follows one
+  // where the page is being read — no drawing surface and no mode — and Ctrl+click does wherever a click is a tool's.
+  const linkPointer = useLinkPointer(
+    page,
+    links,
+    size === undefined ? undefined : { crop: size.crop, rotation: size.rotation, zoom },
+    editing === undefined && (drawing === undefined || drawing.tool.fromSelection !== undefined),
+    onFollowLink,
+  );
   const formLayer =
     fields === undefined || size === undefined || onFillField === undefined || editing !== undefined ? null : (
       <FormLayer
@@ -1785,6 +1794,7 @@ function PageSlot({
 
   return (
     <div
+      {...linkPointer.props}
       className="m-page-slot"
       hidden={hidden}
       ref={slotRef}
@@ -2007,6 +2017,7 @@ function PageSlot({
           request={writing.request}
         />
       )}
+      {linkPointer.hover}
     </div>
   );
 }

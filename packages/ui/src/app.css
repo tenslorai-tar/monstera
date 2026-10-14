@@ -2870,9 +2870,18 @@ optgroup {
 .m-layer-name,
 .m-destination-title,
 .m-destination-heading,
+/* A SECTION OF A PANEL, NAMED (the owner's E1, and E2 and C3 after it): larger and heavier than the items under it. */
+.m-panel-heading {
+  margin: var(--space-8) 0 var(--space-4);
+  color: var(--text);
+  font-size: var(--font-chrome-13);
+  font-weight: 700;
+}
+
 .m-links-address {
   min-inline-size: 0;
-  overflow-wrap: anywhere;
+  /* AT A `/` OR A `.` (`breakableAddress`), and mid-word only where one part is wider than the panel. */
+  overflow-wrap: break-word;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
@@ -6034,9 +6043,29 @@ optgroup {
   pointer-events: auto;
 }
 
-.m-page-link:hover,
-.m-link-layer--outlined .m-page-link {
+.m-page-link:hover {
   outline: 1px solid var(--accent-on-paper, var(--accent));
+}
+
+/* WHERE LINKS ARE MADE, each edge in the link's own colour, the one its swatch in the Links list shows. */
+.m-link-layer--outlined .m-page-link {
+  outline: 1px solid var(--m-link-colour, var(--accent-on-paper, var(--accent)));
+}
+
+/* A LINK UNDER THE POINTER IS A HAND IN EVERY TOOL (`useLinkPointer`): over whatever layer is on top there, the drawing
+   surface's own cursor included, which is why the rule outranks theirs. */
+.m-page-slot[data-over-link],
+.m-page-slot[data-over-link] * {
+  cursor: pointer !important;
+}
+
+/* WHERE A LINK GOES, under it: the tooltip's own look, drawn by the page slot so it shows whatever layer has the pointer. */
+.m-link-hover {
+  position: absolute;
+  z-index: 3;
+  margin-block-start: var(--space-4);
+  pointer-events: none;
+  white-space: nowrap;
 }
 
 .m-page-link:focus-visible {

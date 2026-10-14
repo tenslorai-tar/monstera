@@ -274,10 +274,74 @@ await step('O6(c): reading, the link is followed with a click, and hovering it s
   await page.locator('.m-page-slot').first().scrollIntoViewIfNeeded();
   const link = page.locator('[data-link-layer="0"] [aria-label="Go to page 2"]');
   await link.hover();
-  await expect(page.locator('.m-tooltip', { hasText: 'Go to page 2' })).toBeVisible();
+  // THE PAGE SLOT'S HOVER (E1), which shows whatever layer has the pointer.
+  await expect(page.locator('[data-link-hover]', { hasText: 'Go to page 2' })).toBeVisible();
   await link.click();
   await expect(page.locator('[data-goto-input="true"]')).toHaveValue('2');
   return { linksOnPage1: await page.locator('[data-link-layer="0"] [data-page-link]').count() };
+});
+
+await step('E1: with Select on, a link’s hover says Ctrl+click follows, a click selects it, and Ctrl+click goes to page 2', async () => {
+  await section('Comment');
+  await page.getByRole('button', { name: 'Select', exact: true }).first().click();
+  await page.locator('.m-page-slot').first().scrollIntoViewIfNeeded();
+  const link = page.locator('[data-link-layer="0"] [aria-label="Go to page 2"]');
+  const box = await link.boundingBox();
+  if (box === null) throw new Error('the link to page 2 is not on screen');
+  const middle = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  await page.mouse.move(middle.x, middle.y);
+  await expect(page.locator('[data-link-hover]')).toHaveText('Go to page 2 · Ctrl+click to follow');
+  const cursor = await page.evaluate(([x, y]) => {
+    const under = Reflect.get(globalThis, 'document').elementFromPoint(x, y);
+    return under === null ? '' : String(Reflect.get(globalThis, 'getComputedStyle')(under).cursor);
+  }, [middle.x, middle.y]);
+  expect(cursor).toBe('pointer');
+  await page.mouse.click(middle.x, middle.y);
+  await expect(page.locator('[data-selection-kind="link"] [data-selection-handle]')).toHaveCount(8);
+  await page.keyboard.down('Control');
+  await page.mouse.click(middle.x, middle.y);
+  await page.keyboard.up('Control');
+  await expect(page.locator('[data-goto-input="true"]')).toHaveValue('2');
+  return { cursor };
+});
+
+await step('E1: a link resized by its corner is saved at its new size, read back from the file', async () => {
+  await page.locator('.m-page-slot').first().scrollIntoViewIfNeeded();
+  const link = page.locator('[data-link-layer="0"] [aria-label="Go to page 2"]');
+  const box = await link.boundingBox();
+  const slot = await page.locator('.m-page-slot').first().boundingBox();
+  if (box === null || slot === null) throw new Error('the link to page 2 is not on screen');
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  // THE BOTTOM-RIGHT CORNER, the fourth of the four corner handles.
+  const corner = await page.locator('[data-selection-kind="link"] rect[data-selection-handle=""]').nth(3).boundingBox();
+  if (corner === null) throw new Error('the link has no corner handle');
+  const before = (await savedLinks(await saveCopy('links-before-resize.pdf')))[0]?.find((each) => each.toPage === 1);
+  await page.mouse.move(corner.x + corner.width / 2, corner.y + corner.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(corner.x + corner.width / 2 + 50, corner.y + corner.height / 2 + 30, { steps: 8 });
+  await page.mouse.up();
+  const after = (await savedLinks(await saveCopy('links-resized.pdf')))[0]?.find((each) => each.toPage === 1);
+  if (before === undefined || after === undefined) throw new Error('no link to page 2 on page 1 of the saved file');
+  const scale = slot.width / 612;
+  // WIDER BY 50 PIXELS and its bottom 30 lower, which is a smaller y; its top-left where it was.
+  expect(Math.abs((after.rect[2] ?? 0) - (before.rect[2] ?? 0) - 50 / scale)).toBeLessThan(1);
+  expect(Math.abs((after.rect[1] ?? 0) - (before.rect[1] ?? 0) + 30 / scale)).toBeLessThan(1);
+  expect(Math.abs((after.rect[0] ?? 0) - (before.rect[0] ?? 0))).toBeLessThan(1);
+  return { before: before.rect, after: after.rect };
+});
+
+await step('E1: a web link asks first, and Cancel opens nothing', async () => {
+  await page.keyboard.press('Escape');
+  await section('Home');
+  // THE SECOND LINK O6(b) drew, still a web link.
+  const web = page.locator('[data-link-layer="0"] [aria-label^="Open https://example.org/two"]');
+  await page.locator('.m-page-slot').first().scrollIntoViewIfNeeded();
+  await web.click();
+  const dialog = page.getByRole('dialog', { name: 'Open this link?' });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(dialog).toBeHidden();
+  return { asked: true };
 });
 
 /**

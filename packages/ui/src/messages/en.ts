@@ -1748,6 +1748,8 @@ export const FORMS_FLATTEN = messageKey('surface.forms.flatten');
 export const FORMS_FLATTEN_CONFIRM = messageKey('surface.forms.flatten-confirm');
 export const LINK_ON_PAGE_TO_PAGE = messageKey('surface.link-layer.to-page');
 export const LINK_ON_PAGE_TO_ADDRESS = messageKey('surface.link-layer.to-address');
+export const LINK_ON_PAGE_TO_PAGE_CTRL = messageKey('surface.link-layer.to-page-ctrl');
+export const LINK_ON_PAGE_TO_ADDRESS_CTRL = messageKey('surface.link-layer.to-address-ctrl');
 export const FOLLOW_LINK_TITLE = messageKey('dialog.follow-link.title');
 export const FOLLOW_LINK_EXPLAINS = messageKey('dialog.follow-link.explains');
 export const FOLLOW_LINK_OPEN = messageKey('dialog.follow-link.open');
@@ -4597,6 +4599,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // WHERE A LINK GOES, under the pointer and as its name (ADR-0167): a page by its number, an address as it is shown.
   [LINK_ON_PAGE_TO_PAGE]: 'Go to page {page}',
   [LINK_ON_PAGE_TO_ADDRESS]: 'Open {address}',
+  // WHERE A CLICK IS THE TOOL'S (Select, the link tools, a drawing tool): the same words, and how to follow it instead.
+  [LINK_ON_PAGE_TO_PAGE_CTRL]: 'Go to page {page} · Ctrl+click to follow',
+  [LINK_ON_PAGE_TO_ADDRESS_CTRL]: 'Open {address} · Ctrl+click to follow',
   // A WEB LINK ASKS FIRST, and names where it goes: invariant 24's *until the user asks, for that item*.
   [FOLLOW_LINK_TITLE]: 'Open this link?',
   [FOLLOW_LINK_EXPLAINS]: 'This link leaves the document. It goes to:',
