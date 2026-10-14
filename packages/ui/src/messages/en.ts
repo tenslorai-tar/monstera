@@ -6288,7 +6288,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [CAMERA_CAPTURE_FAILED]: 'The camera could not be started. Another app may be using it.',
   // A WINDOWS N OR KN EDITION: the camera needs Media Foundation, which those editions add with the Media Feature Pack.
   [CAMERA_CAPTURE_NO_MEDIA_PACK]:
-    'This edition of Windows needs the Media Feature Pack for the camera. Add it in Windows Settings, Apps, Optional features, then try again.',
+    'This edition of Windows needs the Media Feature Pack for the camera. Search Windows Settings for Optional features, add the Media Feature Pack, restart the computer, then try again.',
   [CAMERA_CAPTURE_FULL]: 'That is as many pictures as one PDF can take. Make the PDF, then start another.',
   [OPEN_FROM_URL_TITLE]: 'Open a PDF from a web address',
   [OPEN_FROM_URL_LABEL]: 'Address',
