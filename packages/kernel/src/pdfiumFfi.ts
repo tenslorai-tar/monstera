@@ -1377,6 +1377,36 @@ interface WalkedRun {
 }
 
 /**
+ * Puts back the spaces a text page dropped: PDFium's reads a space that follows a drawn space as nothing — measured
+ * 2026-10-14 on PDFium 155, one Helvetica object `(a  b)` reads `a b`, and `(make help  # See)` in Courier reads
+ * `make help # See` — so two spaces a person typed came back as one, and the next edit of the line wrote one (the
+ * owner's A6). The dropped space leaves its advance behind: the character after it starts that much further on.
+ *
+ * Position alone does not say a space was dropped. A space's loose box is its glyph's advance without word spacing
+ * (measured: `(a b)` under `3 Tw` leaves a gap of 3.00 after a 2.78 space, where `(a  b)` at `0 Tw` leaves 2.78). But
+ * word and character spacing apply to every space of an object alike, so an object's SMALLEST gap after a space is its
+ * spacing, and a gap that exceeds it by a whole number of that space's widths — within a twentieth of one — is that
+ * many spaces dropped. A justified line gains nothing, and an object with one space only, which has nothing to compare
+ * with, is left as the text page read it rather than given a space nobody can show was there.
+ *
+ * Proven against PDFium's own readings in `pdfiumCommand.proof.mjs` (`spaceReadingCases`).
+ */
+function restoreDroppedSpaces(
+  afterSpace: readonly { readonly run: { text: string }; readonly at: number; readonly gap: number; readonly width: number }[],
+): void {
+  const least = new Map<{ text: string }, number>();
+  for (const { run, gap } of afterSpace) least.set(run, Math.min(least.get(run) ?? Number.POSITIVE_INFINITY, gap));
+  // FROM THE END OF EACH RUN, so an insertion does not move the places still to come.
+  for (const { run, at, gap, width } of [...afterSpace].sort((left, right) => right.at - left.at)) {
+    if (width <= 0) continue;
+    const beyond = (gap - (least.get(run) ?? gap)) / width;
+    const dropped = Math.round(beyond);
+    if (dropped < 1 || Math.abs(beyond - dropped) > 0.05) continue;
+    run.text = `${run.text.slice(0, at)}${' '.repeat(dropped)}${run.text.slice(at)}`;
+  }
+}
+
+/**
  * The walk {@link textRuns} answers from, on a page already loaded — shared with
  * {@link editTextBlocks}, which must read a line's text exactly as the person
  * was shown it before it diffs what they typed against it. Two walks would be
@@ -1437,6 +1467,10 @@ function walkRuns(
     const glyphs = new Map<number, { char: string; left: number }[]>();
     let unaddressable = 0;
     let unaddressableInk = 0;
+    /** Each run's last drawn character, where it was a space: where its loose box ends and how wide it is. */
+    const lastSpace = new Map<WalkedRun, { readonly right: number; readonly width: number } | undefined>();
+    /** Every drawn character that followed a drawn space in its run: where in the run's text, and the gap between. */
+    const afterSpace: { readonly run: WalkedRun; readonly at: number; readonly gap: number; readonly width: number }[] = [];
     /** The run the last DRAWN character joined, for a generated space to follow. */
     let previous: WalkedRun | undefined;
     /** Generated characters seen since the last drawn one. */
@@ -1511,6 +1545,11 @@ function walkRuns(
       }
       if (hasLoose) {
         ends.set(index, Math.max(ends.get(index) ?? Number.NEGATIVE_INFINITY, loose['right'] ?? Number.NEGATIVE_INFINITY));
+        const space = lastSpace.get(held);
+        if (actual === undefined && space !== undefined && character !== ' ') {
+          afterSpace.push({ run: held, at: held.text.length - 1, gap: (loose['left'] ?? 0) - space.right, width: space.width });
+        }
+        lastSpace.set(held, character === ' ' ? { right: loose['right'] ?? 0, width: (loose['right'] ?? 0) - (loose['left'] ?? 0) } : undefined);
       }
       // WHERE EACH DRAWN CHARACTER SITS, for the export's reading order of right-to-left text: PDFium's own order of
       // such text differs by producer, and the places do not.
@@ -1528,6 +1567,7 @@ function walkRuns(
       }
       previous = held;
     }
+    restoreDroppedSpaces(afterSpace);
 
     // A MARKED OBJECT THE TEXT PAGE GAVE NO CHARACTER is still the text its mark says: a tab written as a lone space has
     // no character in PDFium's text page at all, which generates a space in its place (measured 2026-10-11 on an edit's

@@ -280,7 +280,7 @@ const failures = [];
 // from its Decision 2: a tab read back at its stop, its control, and a second edit that keeps one tab. 235 from the
 // second edit's measure, which read a line written as several objects at its first object's width. 246 from L2: an
 // underlined word read back underlined, its rule moved with it by a second edit, and the control that turns it off.
-const roster = createRoster(failures, { cases: 254 });
+const roster = createRoster(failures, { cases: 258 });
 
 /**
  * @param {string} name
@@ -580,6 +580,7 @@ async function main() {
   await formatPieceCases();
   await fontChangeCases();
   await gapSpacedCases();
+  await spaceReadingCases();
 
   process.stdout.write(
     failures.length > 0
@@ -692,6 +693,59 @@ async function fontChangeCases() {
   } finally {
     bindEditFaces(null);
   }
+}
+
+/**
+ * Two spaces read as two (the owner's A6, 2026-10-14): PDFium's text page reads a space after a drawn space as nothing,
+ * so `make help  # See` came back as `make help # See`, and the next edit of the line wrote one space. The walk puts
+ * back a space whose advance is left behind, judged against the object's own smallest gap after a space, so word
+ * spacing applied to every space alike adds none.
+ *
+ * Each page is one object, drawn by raw operators so its spacing is exactly what the case says. THE CONTROLS: a line
+ * justified by `3 Tw`, whose gaps after its spaces are wider than a space and alike, gains no space; and an object
+ * whose only space is doubled, which has no other space to compare with, is left as read — the rule invents nothing it
+ * cannot show. Run 2026-10-14 without the restore, the first two cases read one space.
+ */
+async function spaceReadingCases() {
+  /** One object on a page, in `font`, shown by `show` under `spacing`. @param {string} font @param {string} spacing @param {string} show */
+  const page = async (font, spacing, show) => {
+    const document = await PDFDocument.create();
+    const sheet = document.addPage([400, 300]);
+    const embedded = await document.embedFont(font);
+    sheet.node.setFontDictionary(PDFName.of('F1'), embedded.ref);
+    const content = ['BT', '/F1 10 Tf', spacing, '20 200 Td', show, 'ET'].join('\n');
+    sheet.node.set(PDFName.of('Contents'), document.context.register(document.context.flateStream(new TextEncoder().encode(content))));
+    return document.save();
+  };
+  /** @param {Uint8Array} bytes */
+  const runsOf = async (bytes) => {
+    const session = await pdfiumWriter.open(bytes);
+    try {
+      return (await textRuns(session, 0)).runs.map((run) => run.text);
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  };
+  const code = await runsOf(await page(StandardFonts.Courier, '0 Tw', '(make help  # See the list) Tj'));
+  record('two spaces in a line of code read as two', JSON.stringify(code) === JSON.stringify(['make help  # See the list']), JSON.stringify(code));
+  const prose = await runsOf(await page(StandardFonts.Helvetica, '0 Tw', '(The end.  Then three   more words) Tj'));
+  record(
+    'two and three spaces between words read as two and three',
+    JSON.stringify(prose) === JSON.stringify(['The end.  Then three   more words']),
+    JSON.stringify(prose),
+  );
+  const justified = await runsOf(await page(StandardFonts.Helvetica, '3 Tw', '(A line set wide by word spacing) Tj'));
+  record(
+    'CONTROL: a line justified by word spacing gains no space, though every gap after its spaces is wider than a space',
+    JSON.stringify(justified) === JSON.stringify(['A line set wide by word spacing']),
+    JSON.stringify(justified),
+  );
+  const alone = await runsOf(await page(StandardFonts.Helvetica, '0 Tw', '(a  b) Tj'));
+  record(
+    'CONTROL: an object whose only space is doubled has nothing to compare it with, and is left as read rather than guessed',
+    JSON.stringify(alone) === JSON.stringify(['a b']),
+    JSON.stringify(alone),
+  );
 }
 
 /**
