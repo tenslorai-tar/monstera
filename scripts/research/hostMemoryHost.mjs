@@ -215,7 +215,7 @@ async function main() {
         : budget.HOST_MEMORY_SAMPLING;
     const { handlers } = composition.createShellDependencies({
       ...harnessModule.harnessSurfaces('the host-memory harness'),
-      appInfo: { version: '0.0.0', installChannel: 'development', userName: 'A. Tester', regionalLocale: 'en-GB' },
+      appInfo: { version: '0.0.0', installChannel: 'development', userName: 'A. Tester' },
       pickDocument: () => Promise.resolve(next),
       enginePlatform: platform,
       hostMemorySampling,

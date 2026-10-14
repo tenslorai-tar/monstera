@@ -46,7 +46,7 @@ function recorder(): IpcHandleTarget & {
   };
 }
 
-const appInfo: AppInfo = { version: '9.9.9', installChannel: 'web', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true, regionalLocale: 'en-GB' };
+const appInfo: AppInfo = { version: '9.9.9', installChannel: 'web', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true };
 
 /**
  * The command bus is not exercised by anything in this file.
@@ -66,7 +66,7 @@ const unusedCommands = {} as unknown as DocumentCommands;
  */
 const trustAll: IpcSenderCheck = () => true;
 
-function handlers() {
+function handlers(regionalLocale?: () => string) {
   return createContractHandlers({
     // Same reasoning as the parts below: these cases are about which channels register.
     assistant: createAssistant({
@@ -76,6 +76,7 @@ function handlers() {
       openInBrowser: () => Promise.resolve(),
     }),
     appInfo,
+    regionalLocale,
     // Same reasoning as `unusedCommands` above: these cases are about which
     // channels get registered and by what route, not about what any handler
     // does. A picker that throws says so — if a case in this file ever reaches
@@ -236,7 +237,30 @@ describe('main-process contract registration', () => {
     expect(listener).toBeDefined();
     const envelope = await listener?.({}, {});
 
-    expect(envelope).toEqual({ ok: true, value: { version: '9.9.9', installChannel: 'web', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true, regionalLocale: 'en-GB' } });
+    // NO READER, a harness's position: the region is empty and the renderer's own default stands.
+    expect(envelope).toEqual({
+      ok: true,
+      value: { version: '9.9.9', installChannel: 'web', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true, regionalLocale: '' },
+    });
+  });
+
+  it('reads the computer’s region WHEN app.info IS ASKED, never when the handlers are built (the owner’s F10)', async () => {
+    // `app.getSystemLocale()` before Electron's `ready` aborts the process, and the handlers are built before it: a
+    // reader that throws until asked is the shape of that, so building with it must not call it.
+    let ready = false;
+    const read = () => {
+      if (!ready) throw new Error('read before ready');
+      return 'en-GB';
+    };
+    const ipc = recorder();
+    registerContractHandlers(ipc, handlers(read), () => undefined, trustAll);
+    ready = true;
+    const envelope = (await ipc.seen.get('app.info')?.({}, {})) as { value: { regionalLocale: string } };
+    expect(envelope.value.regionalLocale).toBe('en-GB');
+    // A POSIX NAME, as Linux answers, crosses as its tag.
+    const posix = recorder();
+    registerContractHandlers(posix, handlers(() => 'en_US@posix'), () => undefined, trustAll);
+    expect(((await posix.seen.get('app.info')?.({}, {})) as { value: { regionalLocale: string } }).value.regionalLocale).toBe('en-US');
   });
 
   // THE ASSERTION IS ON THE DIAGNOSTIC, and the first draft of this case was

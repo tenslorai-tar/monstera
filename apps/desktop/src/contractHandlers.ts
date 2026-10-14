@@ -217,8 +217,6 @@ export interface AppInfo {
   readonly cloudProviders: readonly CloudProviderId[];
   /** Whether Media Foundation is on this computer — false on a Windows N edition without the Media Feature Pack. */
   readonly mediaFoundation: boolean;
-  /** The computer's regional format, `app.getSystemLocale()`: how the person writes a date (the owner's F10). */
-  readonly regionalLocale: string;
 }
 
 /** What the build itself fixes; the composition root adds what it works out (`composition.ts`). */
@@ -268,6 +266,11 @@ export function createContractHandlers(deps: {
   /** The assistant, which holds the keys and pushes its answers (ADR-0081, ADR-0082). */
   readonly assistant: Assistant;
   readonly appInfo: AppInfo;
+  /**
+   * The computer's regional format as a language tag (`app.getSystemLocale()`), read when `app.info` is asked (the
+   * owner's F10). Absent in a harness, which answers empty, and the renderer's own default stands.
+   */
+  readonly regionalLocale?: (() => string) | undefined;
   readonly documents: DocumentService;
   readonly capabilities: CapabilityRegistry;
   readonly openedDocument: OpenedDocument;
@@ -446,7 +449,18 @@ export function createContractHandlers(deps: {
     'document.openSeveral': openSeveralHandler(deps),
     // `Promise.resolve`, not `async`: nothing here awaits, and the contract's
     // handler type is asynchronous because the real document channels are.
-    'app.info': () => Promise.resolve(ok({ ...deps.appInfo, cloudProviders: [...deps.appInfo.cloudProviders] })),
+    'app.info': () =>
+      Promise.resolve(
+        ok({
+          ...deps.appInfo,
+          cloudProviders: [...deps.appInfo.cloudProviders],
+          // READ WHEN ASKED, which is after `ready` (the owner's F10): Electron's `app.getSystemLocale()` before it aborts
+          // the process on a Chromium CHECK, and the dependencies are built before it. Cut to the wire's bound.
+          // A POSIX NAME is cut to its language tag: Linux answered `en-US@posix` (measured 2026-10-14), which `Intl`
+          // refuses; Windows answers a tag already.
+          regionalLocale: (deps.regionalLocale?.() ?? '').split('@')[0]?.replace(/_/gu, '-').slice(0, 64) ?? '',
+        }),
+      ),
     // AN ARRAY COPY, because the answer crosses a boundary that serialises it and
     // the source is a `readonly` the composition root may hold on to.
     'app.ocrLanguages': async () => ok({ languages: [...(await deps.ocrLanguages())] }),

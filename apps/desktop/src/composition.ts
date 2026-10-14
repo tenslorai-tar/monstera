@@ -496,6 +496,11 @@ export interface ShellComposition {
    */
   readonly mediaFoundation: boolean;
   /**
+   * The computer's regional format, read when `app.info` is asked (the owner's F10): `entry.ts` passes
+   * `app.getSystemLocale`, which may not run before `ready`. A harness passes none and answers empty.
+   */
+  readonly regionalLocale?: (() => string) | undefined;
+  /**
    * Where undo checkpoints are kept, one directory per document
    * ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md)). `main`'s own storage, granted to no
    * container, resolved in `entry.ts` beside the session root and swept there before anything opens. Required,
@@ -917,6 +922,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     cloud: cloudComposition,
     fontList,
     mediaFoundation,
+    regionalLocale,
     sendEvent,
     cannotStart: shellCannotStart,
     recent,
@@ -1978,6 +1984,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         cloudProviders: CLOUD_PROVIDER_IDS.filter((provider) => (cloudComposition?.clients[provider] ?? null) !== null),
         mediaFoundation,
       } satisfies AppInfo,
+      regionalLocale,
       capabilities,
       commands,
       documents,

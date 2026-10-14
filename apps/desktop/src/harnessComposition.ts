@@ -42,7 +42,7 @@ import { createEphemeralSettings } from './settingsFile.js';
  * ```ts
  * createShellDependencies({
  *   ...harnessSurfaces('the canvas proof'),
- *   appInfo: { version: app.getVersion(), installChannel: 'development', userName: 'Harness', regionalLocale: app.getSystemLocale() },
+ *   appInfo: { version: app.getVersion(), installChannel: 'development', userName: 'Harness' },
  *   pickDocument: () => Promise.resolve(fixture),
  * });
  * ```

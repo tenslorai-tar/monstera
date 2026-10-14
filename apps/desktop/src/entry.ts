@@ -285,10 +285,12 @@ startShell(() => {
       // between launches. The web flavour ADR-0018 keeps has no build; when it gets one it bakes its own.
       installChannel: app.isPackaged ? 'store' : 'development',
       userName: windowsUserName(),
-      // THE REGIONAL FORMAT, not the application's language: Windows' own user locale, which is how this person writes a
-      // date. Cut to the wire's bound, since the operating system decides it.
-      regionalLocale: app.getSystemLocale().slice(0, 64),
     },
+    // THE REGIONAL FORMAT, not the application's language: Windows' own user locale, which is how this person writes a
+    // date (the owner's F10). A READER, called when `app.info` is asked: these dependencies are built before `ready`,
+    // and `app.getSystemLocale()` before it aborts the process (measured 2026-10-14: CI's shell proof timed out on both
+    // legs, and this container's run exited 133, SIGTRAP, a Chromium CHECK).
+    regionalLocale: () => app.getSystemLocale(),
     mediaFoundation: hasMediaFoundation(process.platform, process.env['SystemRoot'], existsSync),
     // Built here, for the same reason `AppInfo` is: this is the only file that
     // may hold both Electron and the graph. `composition.ts` takes the picker

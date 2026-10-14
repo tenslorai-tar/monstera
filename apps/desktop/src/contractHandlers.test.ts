@@ -77,7 +77,7 @@ const INERT_ASSISTANT = createAssistant({
 });
 import { createEphemeralSettings } from './settingsFile.js';
 
-const appInfo: AppInfo = { version: '0.0.0', installChannel: 'development', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true, regionalLocale: 'en-GB' };
+const appInfo: AppInfo = { version: '0.0.0', installChannel: 'development', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true };
 
 /** The name every conversion here runs under (ADR-0234). */
 const WORK = 'work-under-test';
