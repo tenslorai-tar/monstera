@@ -7013,6 +7013,16 @@ optgroup {
   cursor: nesw-resize;
 }
 
+/* THE ROTATE HANDLE (E6): a round one above the top side, the handle family's colours, so it reads as a different act. */
+.m-object-rotate {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid var(--accent-on-paper, var(--accent));
+  border-radius: 50%;
+  background: var(--page);
+  cursor: grab;
+}
+
 /* THE SIDES (E6): each moves one edge, so each says which way. */
 .m-object-handle--n,
 .m-object-handle--s {

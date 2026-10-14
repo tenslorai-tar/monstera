@@ -4,6 +4,7 @@ import type { CaptureResult } from './commandLog.js';
 import type { Invert, MupdfSession } from './engineSeam.js';
 import type { PDFObject } from './mupdfRaw.js';
 import { withDocument } from './mupdfWriter.js';
+import { placementMatrix } from './objectPlacementMatrix.js';
 import { pageContentStreams } from './pageContent.js';
 import { type DrawnObject, type Matrix, type XObjectKind, drawnObjects, joinedContent, multiply, showOperators } from './textOperators.js';
 
@@ -105,15 +106,14 @@ function written(value: number): string {
  * The page-space change, `placeObject`'s: a scale about the listed box's bottom-left corner, then the move. Expressed in
  * the space the object is drawn in (`CTM × T × CTM⁻¹`), so `M cm` before its instructions moves it on the page by `T`.
  */
-export function placementIn(ctm: Matrix, command: Pick<CommandOfKind<'placeDrawnObject'>, 'box' | 'moveBy' | 'scaleBy'>): Matrix | null {
+export function placementIn(ctm: Matrix, command: Pick<CommandOfKind<'placeDrawnObject'>, 'box' | 'moveBy' | 'scaleBy' | 'rotateBy'>): Matrix | null {
   const undo = inverse(ctm);
   return undo === null ? null : multiply(multiply(ctm, pageMatrix(command)), undo);
 }
 
-/** The placement in PAGE space: scaled about the listed box's lower-left corner, then moved. */
-function pageMatrix(command: Pick<CommandOfKind<'placeDrawnObject'>, 'box' | 'moveBy' | 'scaleBy'>): Matrix {
-  const { x: sx, y: sy } = command.scaleBy;
-  return [sx, 0, 0, sy, command.box.left * (1 - sx) + command.moveBy.x, command.box.bottom * (1 - sy) + command.moveBy.y];
+/** The placement in PAGE space: the one matrix both engines apply (ADR-0243), about the listed box. */
+function pageMatrix(command: Pick<CommandOfKind<'placeDrawnObject'>, 'box' | 'moveBy' | 'scaleBy' | 'rotateBy'>): Matrix {
+  return placementMatrix(command);
 }
 
 /**

@@ -107,6 +107,7 @@ export async function applyPlacePageObject(
     await placeObject(session, command.page, command.index, {
       moveBy: command.moveBy,
       scaleBy: command.scaleBy,
+      rotateBy: command.rotateBy,
     });
     try {
       return imageAlone(await pdfiumWriter.serialise(session));
@@ -171,7 +172,12 @@ export async function applyPlacePageObjects(
   return onImage(image, async (session) => {
     let text = false;
     for (const index of command.indices) text ||= (await objectKind(session, command.page, index)) === 'text';
-    await placeObjectGroup(session, command.page, command.indices, { box: command.box, moveBy: command.moveBy, scaleBy: command.scaleBy });
+    await placeObjectGroup(session, command.page, command.indices, {
+      box: command.box,
+      moveBy: command.moveBy,
+      scaleBy: command.scaleBy,
+      rotateBy: command.rotateBy,
+    });
     try {
       return imageAlone(await pdfiumWriter.serialise(session));
     } catch (error) {

@@ -31,6 +31,8 @@ import {
   type ObjectPick,
   type PageObjects,
   placeCommand,
+  turnCommand,
+  turnable,
   shownBy,
 } from './objectEditing.js';
 
@@ -126,7 +128,24 @@ type Drag =
       /** Where the handle was pressed, so a press that did not travel resizes nothing. */
       readonly from: readonly [number, number];
       readonly to: readonly [number, number];
+    }
+  | {
+      /** A TURN by the rotate handle, about the centre of what shows (ADR-0243). */
+      readonly kind: 'rotate';
+      readonly pointer: number;
+      readonly centre: readonly [number, number];
+      readonly from: readonly [number, number];
+      readonly to: readonly [number, number];
     };
+
+/** How far above its box the rotate handle stands, in pixels: clear of the top side's own handle. */
+const ROTATE_REACH = 24;
+
+/** The angle `to` makes about `centre` past the one `from` makes, in degrees, between −180 and 180. */
+function turnBetween(centre: readonly [number, number], from: readonly [number, number], to: readonly [number, number]): number {
+  const degrees = ((Math.atan2(to[1] - centre[1], to[0] - centre[0]) - Math.atan2(from[1] - centre[1], from[0] - centre[0])) * 180) / Math.PI;
+  return ((((degrees + 180) % 360) + 360) % 360) - 180;
+}
 
 export interface ObjectEditLayerProps {
   /** Zero-based, as a command names it. */
@@ -230,6 +249,17 @@ export function ObjectEditLayer({
     setDrag(undefined);
     // A PRESS THAT DID NOT TRAVEL IS NOT A DRAG: clicking the selection must not send a zero-length placement.
     if (Math.hypot(to[0] - drag.from[0], to[1] - drag.from[1]) < MINIMUM_DRAG) return;
+    if (drag.kind === 'rotate') {
+      // THE TURN IN PDF SPACE, the three points through the one converter: counter-clockwise there is positive, whatever
+      // way the page is shown turned or flipped on screen.
+      const pdf = (point: readonly [number, number]): readonly [number, number] => {
+        const at = toPdf(viewportPoint(point[0], point[1]), transform);
+        return [at.x, at.y];
+      };
+      const turned = turnCommand({ page, version: objects.version, object: picked }, Math.round(turnBetween(pdf(drag.centre), pdf(drag.from), pdf(to)) * 10) / 10);
+      if (turned !== undefined) onCommand(turned);
+      return;
+    }
     let target: AnnotationRect;
     if (drag.kind === 'move') {
       // THE DELTA IN PDF SPACE, from two points through the one converter (`selectTool`'s reason).
@@ -254,8 +284,22 @@ export function ObjectEditLayer({
       const dy = drag.to[1] - drag.from[1];
       return { x0: box.x0 + dx, y0: box.y0 + dy, x1: box.x1 + dx, y1: box.y1 + dy };
     }
+    // A TURN keeps the box and turns how it is drawn, below.
+    if (drag.kind === 'rotate') return box;
     return resized(drag.start, drag.handle, drag.to, LEAST_SIDE);
   };
+
+  /** Where the rotate handle stands and what it turns about, for an object its commands can turn; `undefined` else. */
+  const rotator = ((): { readonly object: EditableObject; readonly centre: readonly [number, number]; readonly at: readonly [number, number] } | undefined => {
+    if (picked === undefined || !shownBy(filter, picked) || !turnable(picked)) return undefined;
+    const box = drawnAt(picked);
+    const centre: readonly [number, number] = [(box.x0 + box.x1) / 2, (box.y0 + box.y1) / 2];
+    return { object: picked, centre, at: [centre[0], box.y0 - ROTATE_REACH] };
+  })();
+
+  /** How far a turn in flight has turned the picked object on screen, in CSS degrees (clockwise), or 0. */
+  const turningBy = drag?.kind === 'rotate' ? turnBetween(drag.centre, drag.from, drag.to) : 0;
+  const turned = (object: EditableObject): React.CSSProperties => (turningBy === 0 || object !== picked ? {} : { transform: `rotate(${String(turningBy)}deg)` });
 
   /** The CSS an outline is drawn with, grown about its centre to the smallest target a press can find. */
   const outlineStyle = (box: Pixels): React.CSSProperties => {
@@ -292,7 +336,7 @@ export function ObjectEditLayer({
     >
       {/* THE OBJECT ITSELF, MOVING (E5): under the outlines, so its handles stay on top, and out of reach of a press. */}
       {drag === undefined || picture === undefined || picked === undefined ? null : (
-        <PicturePreview box={drawnAt(picked)} picture={picture} />
+        <PicturePreview box={drawnAt(picked)} picture={picture} turn={turned(picked)} />
       )}
       {shown.map((object, position) => {
         const selected = object === picked;
@@ -318,7 +362,7 @@ export function ObjectEditLayer({
               const at = pointOf(event);
               begin({ kind: 'move', pointer: event.pointerId, from: at, to: at }, object);
             }}
-            style={outlineStyle(box)}
+            style={{ ...outlineStyle(box), ...turned(object) }}
             type="button"
           />
         );
@@ -343,6 +387,21 @@ export function ObjectEditLayer({
               />
             );
           })}
+      {/* THE ROTATE HANDLE (E6), above the top side's middle, for what its commands can turn: page content. */}
+      {rotator === undefined ? null : (
+        <span
+          aria-hidden="true"
+          className="m-object-rotate"
+          data-object-rotate=""
+          onPointerDown={(event) => {
+            if (event.button !== 0) return;
+            event.stopPropagation();
+            layer.current?.setPointerCapture(event.pointerId);
+            begin({ kind: 'rotate', pointer: event.pointerId, centre: rotator.centre, from: rotator.at, to: rotator.at }, rotator.object);
+          }}
+          style={{ left: rotator.at[0] - CORNER_REACH / 2, top: rotator.at[1] - CORNER_REACH / 2, width: CORNER_REACH, height: CORNER_REACH }}
+        />
+      )}
       {objects === undefined ? null : shown.length === 0 || objects.truncated ? (
         <div className="m-page-mode__notes">
           {shown.length === 0 ? <p>{_(NONE[filter])}</p> : null}
@@ -357,7 +416,16 @@ export function ObjectEditLayer({
  * A copy of the object's pixels at the box a drag would put it in. The copy is drawn into this canvas at its own size
  * and the canvas is stretched by its box, so a resize shows the object growing as the result will.
  */
-function PicturePreview({ box, picture }: { readonly box: Pixels; readonly picture: HTMLCanvasElement }): ReactElement {
+function PicturePreview({
+  box,
+  picture,
+  turn,
+}: {
+  readonly box: Pixels;
+  readonly picture: HTMLCanvasElement;
+  /** A turn in flight, as the outline draws it, so the object turns with its outline. */
+  readonly turn: React.CSSProperties;
+}): ReactElement {
   return (
     <canvas
       aria-hidden="true"
@@ -367,7 +435,7 @@ function PicturePreview({ box, picture }: { readonly box: Pixels; readonly pictu
       ref={(element) => {
         element?.getContext('2d')?.drawImage(picture, 0, 0);
       }}
-      style={{ left: box.x0, top: box.y0, width: box.x1 - box.x0, height: box.y1 - box.y0 }}
+      style={{ left: box.x0, top: box.y0, width: box.x1 - box.x0, height: box.y1 - box.y0, ...turn }}
       width={picture.width}
     />
   );

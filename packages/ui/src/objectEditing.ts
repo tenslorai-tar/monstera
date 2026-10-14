@@ -157,16 +157,55 @@ export function placeCommand(pick: ObjectPick, target: AnnotationRect): Dispatch
   // the move is the shown corner's travel, less what scaling about the engine's corner already carried it:
   // p' = s·p + drawn·(1 − s) + move puts the shown corner at the target's exactly. Nothing narrowed: drawn is the box.
   const drawn = object.drawn;
-  const placement = {
-    page: pick.page,
-    index: object.index,
+  return placementOf(pick, {
     moveBy: {
       x: bounded(target.x0 - from.x0 + (from.x0 - drawn.x0) * (1 - scaleBy.x)),
       y: bounded(target.y0 - from.y0 + (from.y0 - drawn.y0) * (1 - scaleBy.y)),
     },
     scaleBy,
-    version: pick.version,
-  };
+  });
+}
+
+/** Whether the picked object can be turned: page content, whose commands carry a turn (ADR-0243). A stamp's cannot. */
+export function turnable(object: EditableObject): boolean {
+  return object.source === 'content';
+}
+
+/**
+ * The command that turns the picked object by `degrees`, counter-clockwise as PDF measures them, about the centre of
+ * what SHOWS of it; `undefined` for no turn, or for an object that cannot be turned.
+ *
+ * Both engines turn about the centre of the box THEY hold (ADR-0243), which for a clipped picture is not the centre of
+ * its window. A turn R about c that should have been about v leaves every point R(c − v) − (c − v) away, so the command
+ * moves it back by exactly that: (R − I)(c − v). Nothing clipped: c is v, and there is no move.
+ */
+export function turnCommand(pick: ObjectPick, degrees: number): DispatchableCommand | undefined {
+  if (degrees === 0 || !turnable(pick.object)) return undefined;
+  const { box, drawn } = pick.object;
+  const dx = (drawn.x0 + drawn.x1) / 2 - (box.x0 + box.x1) / 2;
+  const dy = (drawn.y0 + drawn.y1) / 2 - (box.y0 + box.y1) / 2;
+  const radians = (degrees * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  return placementOf(pick, {
+    moveBy: { x: bounded(dx * cos - dy * sin - dx), y: bounded(dx * sin + dy * cos - dy) },
+    scaleBy: { x: 1, y: 1 },
+    rotateBy: Math.max(-360, Math.min(360, degrees)),
+  });
+}
+
+/** A placement of the picked page content, sent as the command of the writer that holds it. */
+function placementOf(
+  pick: ObjectPick,
+  intent: {
+    readonly moveBy: { readonly x: number; readonly y: number };
+    readonly scaleBy: { readonly x: number; readonly y: number };
+    readonly rotateBy?: number;
+  },
+): DispatchableCommand {
+  const { object } = pick;
+  const drawn = object.drawn;
+  const placement = { page: pick.page, index: object.index, ...intent, version: pick.version };
   // A PICTURE, A FORM OR A SHAPE IS MOVED WHERE IT IS DRAWN (ADR-0240, the owner's E1): PDFium's route writes the page's
   // text again, and a font it cannot write back refused the move. Text, and what PDFium alone names, keep its route.
   if (object.kind === 'image' || object.kind === 'form' || object.kind === 'path') {

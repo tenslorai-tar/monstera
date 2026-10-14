@@ -6049,6 +6049,12 @@ export const placePageObjectSchema = z.object({
       y: z.number().min(MIN_OBJECT_SCALE).max(MAX_OBJECT_SCALE),
     })
     .strict(),
+  /**
+   * Degrees to turn it by, counter-clockwise as PDF measures them, about the centre of the box the scale left
+   * ([ADR-0243](../../../docs/DECISIONS/0243-an-objects-placement-may-turn-it.md)). Absent is none, which is every
+   * placement written before the rotate handle; `blockPlaceSchema`'s `rotate` has the same bound.
+   */
+  rotateBy: z.number().min(-360).max(360).optional(),
   /** The version that answer carried. Refused if the document has moved. */
   version: docVersionSchema,
 }).strict();
@@ -6081,6 +6087,7 @@ export const placeDrawnObjectSchema = z
       .strict(),
     moveBy: placePageObjectSchema.shape.moveBy,
     scaleBy: placePageObjectSchema.shape.scaleBy,
+    rotateBy: placePageObjectSchema.shape.rotateBy,
     version: docVersionSchema,
   })
   .strict();
@@ -6102,6 +6109,7 @@ export const placePageObjectsSchema = z
     box: placeDrawnObjectSchema.shape.box,
     moveBy: placePageObjectSchema.shape.moveBy,
     scaleBy: placePageObjectSchema.shape.scaleBy,
+    rotateBy: placePageObjectSchema.shape.rotateBy,
     version: docVersionSchema,
   })
   .strict();

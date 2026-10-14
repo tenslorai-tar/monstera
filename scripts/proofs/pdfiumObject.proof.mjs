@@ -103,7 +103,7 @@ async function twoRunsAndARectangle() {
  * @type {string[]}
  */
 const failures = [];
-const roster = createRoster(failures, { cases: 25 });
+const roster = createRoster(failures, { cases: 26 });
 
 /**
  * @param {string} name
@@ -391,6 +391,19 @@ async function main() {
     'the contract names exactly the four commands measured to keep it, and not the removal',
     [...KEEPS_THE_OBJECT_WALK].sort().join(',') === 'placeDrawnObject,placePageObject,placePageObjects,recolorPageObjects',
     [...KEEPS_THE_OBJECT_WALK].join(', '),
+  );
+
+  // ── A TURN (ADR-0243) ───────────────────────────────────────────────────────
+  const turn = command('placePageObject', { page: 0, index: box.index, moveBy: { x: 0, y: 0 }, scaleBy: { x: 1, y: 1 }, rotateBy: 90, version: 1 });
+  const turnedBox = (await objectsOf(await localPdfiumExecution.apply({ session: original, command: turn, sources: [], reads: undefined })))[box.index] ?? box;
+  record(
+    'a quarter turn reads back about the rectangle’s own centre, its 120 by 40 now 40 by 120',
+    Math.abs((turnedBox.left + turnedBox.right) / 2 - (box.left + box.right) / 2) < 0.01 &&
+      Math.abs((turnedBox.bottom + turnedBox.top) / 2 - (box.bottom + box.top) / 2) < 0.01 &&
+      Math.abs(turnedBox.right - turnedBox.left - (box.top - box.bottom)) < 0.01 &&
+      Math.abs(turnedBox.top - turnedBox.bottom - (box.right - box.left)) < 0.01,
+    `${box.left.toFixed(1)},${box.bottom.toFixed(1)} .. ${box.right.toFixed(1)},${box.top.toFixed(1)} -> ` +
+      `${turnedBox.left.toFixed(1)},${turnedBox.bottom.toFixed(1)} .. ${turnedBox.right.toFixed(1)},${turnedBox.top.toFixed(1)}`,
   );
 
   // ── A BLOCK, PLACED AS ONE (ADR-0242) ───────────────────────────────────────

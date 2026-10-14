@@ -49,6 +49,7 @@ import {
 import { type Alignment, blockShape, paragraphSpacing } from './paragraphShape.js';
 import { type ProgramFace, faceOf, programFace } from './fontFace.js';
 import { BOX } from './boxFont.js';
+import { type PlacementIntent, placementMatrix } from './objectPlacementMatrix.js';
 import { faceProgramApart } from './faceProgramApart.js';
 import { type PathGlyph, type PathStep, pathFontFor } from './pathFont.js';
 import type { DrawnGlyph } from './runFont.js';
@@ -4553,6 +4554,8 @@ export interface ObjectPlacement {
   readonly moveBy: { readonly x: number; readonly y: number };
   /** Factors to multiply width and height by. One is legal: a pure move. */
   readonly scaleBy: { readonly x: number; readonly y: number };
+  /** Degrees counter-clockwise about the scaled box's centre; absent is none (ADR-0243). */
+  readonly rotateBy?: number | undefined;
 }
 
 /** The object at `index`, whatever its kind, with the range checked. */
@@ -4952,17 +4955,8 @@ export function placeObject(
     onPage(session, page, (handle) => {
       const bindings = api();
       const object = objectAt(bindings, handle, page, index);
-      const box = boundsOf(bindings, object);
-      const { x: scaleX, y: scaleY } = placement.scaleBy;
-      bindings.transform(
-        object,
-        scaleX,
-        0,
-        0,
-        scaleY,
-        box.left * (1 - scaleX) + placement.moveBy.x,
-        box.bottom * (1 - scaleY) + placement.moveBy.y,
-      );
+      // THE ONE PLACEMENT MATRIX (ADR-0243), about the object's own box.
+      bindings.transform(object, ...placementMatrix({ ...placement, box: boundsOf(bindings, object) }));
       generate(session, page, handle);
     });
   });
@@ -4981,17 +4975,16 @@ export function placeObjectGroup(
   session: PdfiumSession,
   page: number,
   indices: readonly number[],
-  placement: ObjectPlacement & { readonly box: { readonly left: number; readonly bottom: number } },
+  placement: ObjectPlacement & { readonly box: PlacementIntent['box'] },
 ): Promise<void> {
   return promised(() => {
     onPage(session, page, (handle) => {
       const bindings = api();
       // EVERY OBJECT FOUND FIRST, so an index that names nothing leaves the page as it was rather than half placed.
       const objects = indices.map((index) => objectAt(bindings, handle, page, index));
-      const { x: scaleX, y: scaleY } = placement.scaleBy;
-      const e = placement.box.left * (1 - scaleX) + placement.moveBy.x;
-      const f = placement.box.bottom * (1 - scaleY) + placement.moveBy.y;
-      for (const object of objects) bindings.transform(object, scaleX, 0, 0, scaleY, e, f);
+      // THE ONE PLACEMENT MATRIX (ADR-0243), about the GROUP's box.
+      const matrix = placementMatrix(placement);
+      for (const object of objects) bindings.transform(object, ...matrix);
       generate(session, page, handle);
     });
   });

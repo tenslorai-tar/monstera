@@ -70,6 +70,34 @@ test('a drag in Edit object shows the object itself moving, with the page’s ow
   await expect(preview).toHaveCount(0);
 });
 
+// THE ROTATE HANDLE AND THE SIDES (the owner's E6), in Chromium: eight square handles and a round one above the top,
+// and a drag of the round one a quarter turn clockwise sends a turn of −90, as PDF measures it.
+test('Edit object turns a picture by its rotate handle, and resizes by eight handles', async ({ page }) => {
+  const sent: unknown[] = [];
+  await openApp(page, { pageObjects: [{ index: 0, kind: 'image', left: 200, bottom: 300, right: 300, top: 400, fill: null }] }, (channel, params) => {
+    if (channel === 'document.execute') sent.push(params);
+  });
+  await openDocument(page);
+  await openSection(page, 'Edit');
+  await page.getByRole('toolbar', { name: 'Tools', exact: true }).getByRole('button', { name: 'Edit object', exact: true }).click();
+  const layer = page.getByRole('group', { name: 'Objects on page 1' });
+  await layer.locator('[data-object="content:0"]').click();
+  await expect(layer.locator('[data-object-handle]')).toHaveCount(8);
+  const rotate = layer.locator('[data-object-rotate]');
+  const photo = await layer.locator('[data-object="content:0"]').boundingBox();
+  const handle = await rotate.boundingBox();
+  if (photo === null || handle === null) throw new Error('the photo or its rotate handle is not on screen');
+  const centre = { x: photo.x + photo.width / 2, y: photo.y + photo.height / 2 };
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(centre.x + 80, centre.y, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(() => sent.length).toBe(1);
+  const command = (sent[0] as { command: { kind: string; rotateBy?: number } }).command;
+  expect(command.kind).toBe('placeDrawnObject');
+  expect(command.rotateBy).toBeCloseTo(-90, 0);
+});
+
 const RUN = { size: 12, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false } as const;
 
 // A WORD WRITTEN ONE LETTER PER OBJECT (the owner's E4: a press on *overview* picked its final *w*). The page's block
@@ -105,9 +133,10 @@ test('Edit object picks a word written a letter at a time as one, and moves it a
   await expect(word).toHaveAttribute('aria-pressed', 'true');
   const box = await word.boundingBox();
   if (box === null) throw new Error('the word is not on screen');
-  await page.mouse.move(box.x + box.width - 3, box.y + box.height / 2);
+  // THE WORD'S MIDDLE, clear of the eight handles on its edges.
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
-  await page.mouse.move(box.x + box.width + 27, box.y + box.height / 2, { steps: 5 });
+  await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2, { steps: 5 });
   await page.mouse.up();
   await expect.poll(() => sent.length).toBe(1);
   expect((sent[0] as { command: unknown }).command).toMatchObject({ kind: 'placePageObjects', indices: [0, 1, 2, 3], scaleBy: { x: 1, y: 1 } });

@@ -39,12 +39,13 @@ const CASES = [
   'PDFium’s listing answers a photo placed larger than its window by the window it shows through (E3); CONTROL: the unclipped photo has none',
   'the clipped photo moved where it is drawn carries its window: what shows reads back exactly the points further on',
   'CONTROL: a window that also holds a shape stays where it is, so the photo in it moves and the shape does not',
+  'the photo TURNED a quarter where it is drawn (ADR-0243) reads back about its own centre with its sides swapped',
 ];
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 9 });
-if (CASES.length !== 9) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 9`);
+const roster = createRoster(failures, { cases: 10 });
+if (CASES.length !== 10) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 10`);
 
 /** @param {string} name @param {boolean} held @param {string} detail */
 function check(name, held, detail) {
@@ -227,6 +228,22 @@ async function run(pdfium, kernel) {
       shifted(sharedPhoto, 10, 0) === JSON.stringify([sharedMoved.left, sharedMoved.bottom, sharedMoved.right, sharedMoved.top].map(round)) &&
       shifted(triangle, 0, 0) === JSON.stringify([triangleAfter.left, triangleAfter.bottom, triangleAfter.right, triangleAfter.top].map(round)),
     `the shared window's photo read back at ${JSON.stringify(box(sharedMoved ?? {}))}, its triangle at ${JSON.stringify(box(triangleAfter ?? {}))} from ${JSON.stringify(box(triangle ?? {}))}`,
+  );
+
+  // A QUARTER TURN of the 120 by 90 photo: PDFium reads it 90 by 120, centred where it was, and the text as it was.
+  const turnedRead = await read(await placed(bytes, { ...base, index: photo.index, object: 'image', ordinal: 0, box: box(photo), rotateBy: 90 }));
+  const turned = turnedRead.objects.find((/** @type {any} */ object) => object.kind === 'image');
+  const centreOf = (/** @type {any} */ object) => [round((object.left + object.right) / 2), round((object.bottom + object.top) / 2)];
+  check(
+    CASES[9] ?? '',
+    turned !== undefined &&
+      JSON.stringify(centreOf(turned)) === JSON.stringify(centreOf(photo)) &&
+      Math.abs(turned.right - turned.left - (photo.top - photo.bottom)) < 0.5 &&
+      Math.abs(turned.top - turned.bottom - (photo.right - photo.left)) < 0.5 &&
+      // CONTROL IN THE ASSERTION: the photo is wider than tall, so swapped sides are a turn and not a no-op.
+      Math.abs(photo.right - photo.left - (photo.top - photo.bottom)) > 5 &&
+      JSON.stringify(turnedRead.texts) === JSON.stringify(before.texts),
+    `the photo read back at ${JSON.stringify(box(turned ?? {}))} from ${JSON.stringify(box(photo))}`,
   );
 }
 

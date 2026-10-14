@@ -218,6 +218,28 @@ describe('ObjectEditLayer', () => {
     ]);
   });
 
+  it('a ROTATE HANDLE turns page content about its centre, clockwise on screen being clockwise on the page (E6)', () => {
+    const { sent, layer } = mounted({ pick: pick(PHOTO) });
+    const rotate = layer.querySelector('[data-object-rotate]');
+    if (!(rotate instanceof HTMLElement)) throw new Error('no rotate handle');
+    // THE PHOTO'S CENTRE is (60, 60) on screen and the handle stands above it. Dragged round to its right, a quarter
+    // turn clockwise, which PDF measures as −90.
+    fireEvent.pointerDown(rotate, { button: 0, clientX: 60, clientY: -4, pointerId: 4 });
+    fireEvent.pointerMove(layer, { clientX: 124, clientY: 60, pointerId: 4 });
+    // THE OUTLINE TURNS WITH THE POINTER while the button is down.
+    expect(screen.getByRole('button', { name: 'Image, 2 of 3' }).style.transform).toBe('rotate(90deg)');
+    fireEvent.pointerUp(layer, { clientX: 124, clientY: 60, pointerId: 4 });
+    expect(sent).toStrictEqual([
+      { kind: 'placeDrawnObject', page: 3, index: 7, object: 'image', ordinal: 0, box: PHOTO_BOX, moveBy: { x: 0, y: 0 }, scaleBy: { x: 1, y: 1 }, rotateBy: -90, version: V5 },
+    ]);
+  });
+
+  it('CONTROL: a placed picture, which its annotation command cannot turn, has no rotate handle', () => {
+    const { layer } = mounted({ pick: pick(PLACED) });
+    expect(layer.querySelector('[data-object-handle="se"]')).not.toBeNull();
+    expect(layer.querySelector('[data-object-rotate]')).toBeNull();
+  });
+
   it('a PLACED PICTURE is moved by the annotation command, by its own walk’s index', () => {
     const { sent, layer } = mounted({ pick: pick(PLACED) });
     const outline = layer.querySelector('[data-object="stamp:0"]');

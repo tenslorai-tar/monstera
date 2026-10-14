@@ -10,6 +10,7 @@ import {
   recolourCommand,
   removeCommand,
   shownBy,
+  turnCommand,
 } from './objectEditing.js';
 
 /** One object nothing clips: what shows is the engine's own box, and it stands for itself alone. */
@@ -166,6 +167,25 @@ describe('the command a drag or a handle builds', () => {
   it('removes and recolours EVERY object of a block, so no letter is left behind', () => {
     expect(removeCommand(pick(WORD))).toMatchObject({ kind: 'deletePageObjects', indices: [5, 6, 8] });
     expect(recolourCommand(pick(WORD), { red: 255, green: 0, blue: 0, alpha: 255 })).toMatchObject({ kind: 'recolorPageObjects', indices: [5, 6, 8] });
+  });
+
+  it('TURNS a clipped picture about the centre of what shows, though the engine turns about its own box’s (ADR-0243)', () => {
+    const command = turnCommand(pick(CLIPPED), 90);
+    if (command?.kind !== 'placeDrawnObject') throw new Error('expected a drawn object’s placement');
+    expect(command.rotateBy).toBe(90);
+    // AS THE ENGINE APPLIES IT: turned about its box's centre (210, 395), then moved. The window's centre (300, 375) is
+    // where it was, to a millionth of a point.
+    const radians = Math.PI / 2;
+    const [cx, cy] = [(command.box.left + command.box.right) / 2, (command.box.bottom + command.box.top) / 2];
+    const turnAt = (x: number, y: number): readonly [number, number] => [
+      Math.round(((x - cx) * Math.cos(radians) - (y - cy) * Math.sin(radians) + cx + command.moveBy.x) * 1e6) / 1e6,
+      Math.round(((x - cx) * Math.sin(radians) + (y - cy) * Math.cos(radians) + cy + command.moveBy.y) * 1e6) / 1e6,
+    ];
+    expect(turnAt(300, 375)).toStrictEqual([300, 375]);
+    // CONTROL: nothing clipped turns about its own centre with no move, and a stamp is not turned at all.
+    expect(turnCommand(pick(PHOTO), 90)).toMatchObject({ moveBy: { x: 0, y: 0 }, rotateBy: 90 });
+    expect(turnCommand(pick(PLACED), 90)).toBeUndefined();
+    expect(turnCommand(pick(PHOTO), 0)).toBeUndefined();
   });
 
   it('picks a clipped picture where it shows, never in the part of its placement the window hides', () => {
