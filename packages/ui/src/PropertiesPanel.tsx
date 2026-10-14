@@ -39,6 +39,7 @@ import {
   PROPERTIES_OBJECT_HEADING,
   PROPERTIES_OBJECT_KIND,
   PROPERTIES_OBJECT_NO_FILL,
+  PROPERTIES_OBJECT_NONE_HINT,
   PROPERTIES_AS_DEFAULT,
   PROPERTIES_AUTHOR,
   PROPERTIES_BLEND,
@@ -148,6 +149,8 @@ export interface PropertiesPanelProps {
         readonly onTurn: (degrees: number) => void;
       }
     | undefined;
+  /** Whether Edit object is the mode on the page, read from the tool slot the status line reads too (E8). */
+  readonly objectMode?: boolean | undefined;
   /** The computer's and Monstera's fonts, which a text box's and a typewriter's picker offers (K2); `undefined` while read. */
   readonly fonts?: FontList;
 }
@@ -197,6 +200,7 @@ export function PropertiesPanel({
   context,
   measuring = false,
   object,
+  objectMode,
   fonts,
 }: PropertiesPanelProps): ReactElement {
   const { i18n } = useLingui();
@@ -261,6 +265,19 @@ export function PropertiesPanel({
             ))}
           </div>
         )}
+      </section>
+    );
+  }
+
+  // EDIT OBJECT ON WITH NOTHING PICKED (the owner's E8): the panel says what the mode on the page is for, as the status
+  // line does, rather than the next annotation's defaults, which nothing a press in this mode would draw.
+  if (selection === undefined && objectMode === true) {
+    return (
+      <section aria-label={i18n._(STYLE_PANEL_LABEL)} className="m-properties" data-properties-object-mode="">
+        <header className="m-properties__head">
+          <h2 className="m-properties__title">{i18n._(PROPERTIES_OBJECT_HEADING)}</h2>
+          <p className="m-properties__meta">{i18n._(PROPERTIES_OBJECT_NONE_HINT)}</p>
+        </header>
       </section>
     );
   }

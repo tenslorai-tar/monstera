@@ -164,6 +164,24 @@ test('switching Edit object to Edit images drops a selected shape, and Propertie
   await expect(page.getByRole('group', { name: 'Objects on page 1' }).locator('[aria-pressed="true"]')).toHaveCount(0);
 });
 
+// THE PANEL AND THE STATUS LINE AGREE (the owner's E8): both say Edit object while it is on, and both leave it together.
+test('Properties and the status line both say Edit object while it is on, and both leave it together', async ({ page }) => {
+  await openApp(page, { pageObjects: [{ index: 0, kind: 'image', left: 200, bottom: 300, right: 300, top: 400, fill: null }] });
+  await openDocument(page);
+  await openSection(page, 'Edit');
+  const face = page.getByRole('toolbar', { name: 'Tools', exact: true }).getByRole('button', { name: 'Edit object', exact: true });
+  const properties = page.locator('.m-properties').first();
+  const status = page.getByRole('status', { name: 'Document status' });
+  await face.click();
+  await expect(status).toContainText('Click an object to pick it');
+  await expect(properties.getByRole('heading', { name: 'Object' })).toBeVisible();
+  await expect(properties.getByRole('heading', { name: 'New annotations' })).toHaveCount(0);
+  // LEFT BY THE FACE: both go back together.
+  await face.click();
+  await expect(status).not.toContainText('Click an object to pick it');
+  await expect(properties.getByRole('heading', { name: 'New annotations' })).toBeVisible();
+});
+
 const RUN = { size: 12, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false } as const;
 
 // A WORD WRITTEN ONE LETTER PER OBJECT (the owner's E4: a press on *overview* picked its final *w*). The page's block

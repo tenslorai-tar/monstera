@@ -4913,6 +4913,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
               ) : (
                 <PropertiesPanel
                   measuring={toolId !== undefined && MEASURE_TOOL_IDS.has(toolId)}
+                  objectMode={toolId === EDIT_OBJECTS_TOOL_ID}
                   context={context}
                   onComment={commentSelection}
                   wordsOf={wordsOf}

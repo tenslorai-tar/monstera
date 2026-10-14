@@ -1731,6 +1731,7 @@ export const EDIT_OBJECTS_SHAPES_TITLE = messageKey('command.edit.objects-shapes
 export const PROPERTIES_OBJECT_HEADING = messageKey('surface.properties.object');
 export const PROPERTIES_OBJECT_KIND = messageKey('surface.properties.object-kind');
 export const PROPERTIES_OBJECT_NO_FILL = messageKey('surface.properties.object-no-fill');
+export const PROPERTIES_OBJECT_NONE_HINT = messageKey('surface.properties.object-none');
 export const PROPERTIES_OBJECT_LEFT = messageKey('surface.properties.object-left');
 export const PROPERTIES_OBJECT_BOTTOM = messageKey('surface.properties.object-bottom');
 export const PROPERTIES_OBJECT_WIDTH = messageKey('surface.properties.object-width');
@@ -4602,6 +4603,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // no colour Monstera can read, which is also what tells a person that trying again will not help.
   [PROPERTIES_OBJECT_NO_FILL]: 'Monstera cannot read a colour for this object, so it cannot change it.',
   // IN POINTS FROM THE PAGE'S LOWER-LEFT CORNER, as PDF measures a page, and said in the label so no number is a guess.
+  [PROPERTIES_OBJECT_NONE_HINT]: 'Click an object on the page to see where it is and change it.',
   [PROPERTIES_OBJECT_LEFT]: 'Left (pt)',
   [PROPERTIES_OBJECT_BOTTOM]: 'Bottom (pt)',
   [PROPERTIES_OBJECT_WIDTH]: 'Width (pt)',

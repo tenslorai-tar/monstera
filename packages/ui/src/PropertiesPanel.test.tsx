@@ -708,6 +708,37 @@ describe('PropertiesPanel with an object selected on the page (ADR-0153 Decision
   });
 });
 
+describe('PropertiesPanel while Edit object is on with nothing picked (the owner’s E8)', () => {
+  function drawn(objectMode: boolean): void {
+    render(
+      <Wrapped>
+        <PropertiesPanel
+          context={CONTEXT}
+          objectMode={objectMode}
+          onAuthor={() => undefined}
+          onComment={() => undefined}
+          onRestyle={() => undefined}
+          registry={new CommandRegistry([])}
+          selection={undefined}
+          settings={new SettingsStore(new SettingsRegistry(ALL_SETTINGS))}
+          wordsOf={() => Promise.reject(new Error('nothing is selected'))}
+        />
+      </Wrapped>,
+    );
+  }
+
+  it('says what the mode is for, as the status line does, and offers no annotation defaults', () => {
+    drawn(true);
+    expect(screen.getByRole('heading', { name: 'Object' })).toBeDefined();
+    expect(screen.getByText('Click an object on the page to see where it is and change it.')).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'Yellow' })).toBeNull();
+    cleanup();
+    // CONTROL: with the mode off, the same panel is the next annotation's, so the text above is the mode's.
+    drawn(false);
+    expect(screen.getByRole('heading', { name: 'New annotations' })).toBeDefined();
+  });
+});
+
 describe('PropertiesPanel for an insertion mark (the owner’s O5)', () => {
   /** A caret 20 wide by 14 tall, as MuPDF draws one by default. */
   const CARET = { ...HIGHLIGHT, index: 2, kind: 'caret' as const, rect: { x0: 90, y0: 93, x1: 110, y1: 107 } };
