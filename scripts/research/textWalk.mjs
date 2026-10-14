@@ -117,18 +117,35 @@ async function chooseFont(family) {
   // THE EDITOR IS BUSY WHILE THE FONT IS WRITTEN (about 8 s on this machine: aria-busy=true, contenteditable=false, read by a
   // probe on 2026-10-13), and a click away or an Escape sent then is taken by nothing; when the write ends the editor is
   // still open and the walk has spent its way out. So the walk waits for the end, as a hand would see it.
-  await page.waitForTimeout(1000);
-  await page.waitForFunction(
-    () => {
+  //
+  // W2, WHAT THE BUSY SPAN IS (2026-10-14): nothing read in the code starts a write on a font choice, and every write that
+  // succeeds closes the editor, so an editor that stays open after one is one whose write was REFUSED (`problem`), after
+  // which a blur is ignored by design. So the editor is sampled every half second until it is not busy, and what it said
+  // is recorded: busy or not, and the refusal sentence if one is on screen. The step's own result carries the samples.
+  /** @type {{ ms: number, busy: boolean, problem: string | null }[]} */
+  const samples = [];
+  const started = Date.now();
+  for (;;) {
+    const state = await page.evaluate(() => {
       // THE PAGE'S OWN DOCUMENT, by name: this file's `document` is the path of the walk's first PDF.
-      const dom = /** @type {{ querySelector: (selector: string) => { getAttribute: (name: string) => string | null } | null }} */ (Reflect.get(globalThis, 'document'));
+      const dom = /** @type {{ querySelector: (selector: string) => { getAttribute: (name: string) => string | null, textContent: string | null } | null }} */ (
+        Reflect.get(globalThis, 'document')
+      );
       const open = dom.querySelector('[data-text-editor]');
-      return open === null || open.getAttribute('aria-busy') !== 'true';
-    },
-    undefined,
-    { timeout: 60_000 },
-  );
+      const problem = dom.querySelector('.m-text-editor-problem');
+      return { open: open !== null, busy: open?.getAttribute('aria-busy') === 'true', problem: problem?.textContent ?? null };
+    });
+    samples.push({ ms: Date.now() - started, busy: state.busy, problem: state.problem });
+    if (!state.open || (!state.busy && Date.now() - started >= 1000)) break;
+    if (Date.now() - started > 60_000) throw new Error(`the editor was still busy 60 s after the font choice: ${JSON.stringify(samples)}`);
+    await page.waitForTimeout(500);
+  }
+  fontChoiceSamples.push({ family, samples });
 }
+
+/** Every font choice's samples, in the order made, for the steps that report them (W2). */
+/** @type {{ family: string, samples: { ms: number, busy: boolean, problem: string | null }[] }[]} */
+const fontChoiceSamples = [];
 
 await step('1. Edit text: a click between two letters, typing, Backspace twice, Shift+Ctrl+Left, Ctrl+B lights Bold', async () => {
   await open(document);
@@ -510,7 +527,7 @@ await step('15. N10: no Format group in the ribbon while a block is open; Ctrl+B
   const clickedAt = Date.now();
   await clickPage(20, 20);
   await expect(editor()).toHaveCount(0, { timeout: 120_000 });
-  return { editorStayedOpen: stillOpen, writeTookMs: Date.now() - clickedAt };
+  return { editorStayedOpen: stillOpen, writeTookMs: Date.now() - clickedAt, afterFontChoice: fontChoiceSamples.at(-1) };
 });
 
 await step('16. E4 and N13: the text box from step 13 made bold and justified in the one Text section, and dashed in Box', async () => {
@@ -863,8 +880,10 @@ await step('20. W2: Add text with a font chosen in the Properties panel still en
   // while an edit's write was in flight left a LATER Add text box open for good, with no font chosen.
   const control = await addThenEscape('Added with no font chosen', undefined);
   const withFont = control.ended ? await addThenEscape('Added with a font, line one', 'Times New Roman') : undefined;
-  expect({ control: control.ended, withFont: withFont?.ended }).toStrictEqual({ control: true, withFont: true });
-  return { control, withFont };
+  // THE SAMPLES COME FIRST in what the step reports, so a failure below still carries them (W2's evidence).
+  const afterFontChoice = fontChoiceSamples.at(-1);
+  expect({ control: control.ended, withFont: withFont?.ended }, JSON.stringify({ afterFontChoice })).toStrictEqual({ control: true, withFont: true });
+  return { control, withFont, afterFontChoice };
 });
 
 await finish();
