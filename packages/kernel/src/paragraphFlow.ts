@@ -405,8 +405,11 @@ function chunksOf(text: string, owner: readonly number[], styles: readonly numbe
     const coreEnd = to - spaces;
     const marks = styles.slice(start, end);
     const core = partsOf(paragraph.slice(from, coreEnd), effective.slice(from, coreEnd), marks.slice(from, coreEnd));
-    const trail =
-      spaces === 0 ? undefined : partsOf(paragraph.slice(coreEnd, to), effective.slice(coreEnd, to), marks.slice(coreEnd, to))[0];
+    // THE WHOLE WHITE SPACE, in the style of its first run: a space in one run and a tab typed after it in another were
+    // two parts, and only the first was kept, so the tab was dropped from the words.
+    const trailParts = spaces === 0 ? [] : partsOf(paragraph.slice(coreEnd, to), effective.slice(coreEnd, to), marks.slice(coreEnd, to));
+    const firstTrail = trailParts[0];
+    const trail = firstTrail === undefined ? undefined : { ...firstTrail, text: trailParts.map((part) => part.text).join('') };
     chunks.push({ start: start + from, core, trail });
   }
   return chunks;
@@ -524,16 +527,33 @@ export function layOutParagraph(
   const lines: FlowLineOut[] = [];
   let at = from.chunk;
   let number = from.line;
+  // A TAB IN THE WHITE SPACE A LINE ENDS IN, and what follows it, which starts the next line rather than being dropped
+  // with the spaces (the owner's W9: Home goes to the start of a VISUAL line, after the space the line above ends in,
+  // and a tab typed there was the trail of that line's last word).
+  let carried: { readonly part: Part; readonly start: number } | undefined;
   while (at < chunks.length) {
     const limit = number === 0 ? limits.first : limits.rest;
     const parts: Part[] = [];
     let width = 0;
     let trail: Part | undefined;
     let trailWidth = 0;
-    const start = chunks[at]?.start ?? paragraph.start;
+    const start = carried?.start ?? chunks[at]?.start ?? paragraph.start;
+    if (carried !== undefined) {
+      parts.push(carried.part);
+      width += measure(carried.part.run, carried.part.mark, carried.part.text);
+      carried = undefined;
+    }
     for (; at < chunks.length; at += 1) {
       const chunk = chunks[at];
       if (chunk === undefined) break;
+      // WHITE SPACE BEFORE A PARAGRAPH'S FIRST WORD is the one chunk with no word: a break opportunity follows white
+      // space, so anywhere else it is the trail of the word before it. A person typed it (Home then Tab, the owner's W9),
+      // so it is set as the line's start; the next word then joins it as any word joins the one before.
+      if (parts.length === 0 && chunk.core.length === 0 && chunk.trail !== undefined) {
+        parts.push(chunk.trail);
+        width += measure(chunk.trail.run, chunk.trail.mark, chunk.trail.text);
+        continue;
+      }
       const word = widthOf(chunk.core, measure);
       if (parts.length === 0) {
         if (word > limit + WITHIN) {
@@ -547,6 +567,12 @@ export function layOutParagraph(
           break;
         }
       } else if (width + trailWidth + word > limit + WITHIN) {
+        const tab = trail?.text.indexOf('\t') ?? -1;
+        const ended = chunks[at - 1];
+        if (trail !== undefined && tab >= 0 && ended !== undefined) {
+          const coreLength = ended.core.reduce((total, part) => total + part.text.length, 0);
+          carried = { part: { ...trail, text: trail.text.slice(tab) }, start: ended.start + coreLength + tab };
+        }
         break;
       } else if (trail !== undefined) {
         parts.push(trail);
@@ -560,7 +586,8 @@ export function layOutParagraph(
     lines.push({ start, pieces: piecesOf(parts, measure), width });
     number += 1;
     const next = chunks[at];
-    if (next !== undefined && from.stopAt?.(next.start) === true) return { lines, stoppedAt: next.start };
+    // A CARRIED TAB STARTS THE NEXT LINE, which no old line did, so the layout does not stop before setting it.
+    if (carried === undefined && next !== undefined && from.stopAt?.(next.start) === true) return { lines, stoppedAt: next.start };
   }
   return { lines, stoppedAt: undefined };
 }

@@ -1,6 +1,6 @@
 // @ts-check
 import { readFile } from 'node:fs/promises';
-import { PDFDict, PDFDocument, PDFName } from '@cantoo/pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream, decodePDFRawStream } from '@cantoo/pdf-lib';
 
 /**
  * What a walk reads back from a file the application saved, by readers that are not the writer: the ONE place each such
@@ -26,6 +26,25 @@ export async function savedFonts(path) {
     }
   }
   return [...names].sort();
+}
+
+/**
+ * A saved page's content, its streams decoded and joined, read by pdf-lib: what a mark written into the content (a tab's
+ * `/ActualText`, a decoration's tag) is counted in.
+ *
+ * @param {string} path
+ * @param {number} [pageIndex] zero-based
+ * @returns {Promise<string>}
+ */
+export async function savedContent(path, pageIndex = 0) {
+  const loaded = await PDFDocument.load(await readFile(path), { updateMetadata: false, ignoreEncryption: true });
+  const contents = loaded.getPages()[pageIndex]?.node.Contents();
+  const streams = contents instanceof PDFArray ? contents.asArray().map((each) => loaded.context.lookup(each)) : [contents];
+  let text = '';
+  for (const stream of streams) {
+    if (stream instanceof PDFRawStream) text += new TextDecoder('latin1').decode(decodePDFRawStream(stream).decode());
+  }
+  return text;
 }
 
 /**

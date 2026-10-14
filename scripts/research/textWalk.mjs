@@ -25,10 +25,10 @@ import { copyFile, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { expect as defaultExpect } from '@playwright/test';
-import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream, PDFString, StandardFonts, decodePDFRawStream } from '@cantoo/pdf-lib';
+import { PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream, PDFString, StandardFonts } from '@cantoo/pdf-lib';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { root, startWalk } from './liveWalk.mjs';
-import { savedFonts, savedWords } from './savedPdf.mjs';
+import { savedContent, savedFonts, savedWords } from './savedPdf.mjs';
 
 // THE PRODUCER'S PAGE THE N14 STEP BUILDS, fresh or refused, beside the shell's own edges `startWalk` checks.
 refuseStaleBuild(root, [['packages/kernel/src/producerSubsetFixture.ts', 'packages/kernel/dist/producerSubsetFixture.js', 'tsc']], 1);
@@ -362,30 +362,46 @@ await step('10. ADR-0228: strikethrough, a highlight, character spacing, Ctrl+J 
   return { sizeShown };
 });
 
-await step('11. K8: Tab in Edit text types a tab, the words after it move to the next stop, and the focus stays in the words', async () => {
+/**
+ * A copy of the open document saved under `name` in the walk's output, once it is on disk.
+ *
+ * @param {string} name
+ */
+async function savedCopy(name) {
+  const path = join(output, name);
+  await saveTo(path);
+  await command('Save a copy');
+  await expect.poll(() => existsSync(path), { timeout: 60_000 }).toBe(true);
+  return path;
+}
+
+/** How many tabs a page's content marks (ADR-0228: one gap, `/ActualText` U+0009). @param {string} content */
+const tabMarks = (content) => (content.match(/\/ActualText <FEFF0009>/gu) ?? []).length;
+
+await step('11. K8/W9: Tab in Edit text types a tab, it is in the SAVED file, and the write is timed alone', async () => {
+  // W9: THE TAB IS LOOKED FOR ANYWHERE IN THE WORDS. Home goes to the start of the VISUAL line under the click, which in
+  // a wrapped paragraph is just after the space the line above ends in: the case `layOutParagraph` dropped (2026-10-14).
+  // THE MARKS BEFORE, from a copy saved before the tab is typed, so the count after is this tab's and no other's.
+  const before = await savedCopy('k8-before.pdf');
+  const marksBefore = tabMarks(await savedContent(before));
   await page.locator('[data-text-block]').nth(2).click();
   await expect(editor()).toBeFocused();
-  // W9: THE TAB IS LOOKED FOR ANYWHERE IN THE WORDS. This step pressed Home, which goes to the start of the VISUAL line
-  // under the click, and then asked whether the block's whole text STARTS with a tab, which holds only when the click
-  // landed on its first line: `tabInTheWords: false` on 2026-10-12 was that question, not the editor.
   await page.keyboard.press('Home');
   await page.keyboard.press('Tab');
   await expect(editor()).toBeFocused();
   const typed = await editor().evaluate((element) => element.textContent?.includes('\t') ?? false);
+  // THE WRITE, TIMED ALONE: from the click away to the editor closing, which is the write answering. The 7.6 to 8.7 s run 3
+  // reported for an edit with a tab was a span that held this step's own 8 s sleep; this figure holds the write and nothing else.
+  const clicked = performance.now();
   await clickPage(10, 10);
   await expect(editor()).toHaveCount(0);
-  // READ BACK FROM THE WRITTEN DOCUMENT: the same block opened again is read from the bytes the write produced, by the
-  // reader every edit reads through, so a tab that was not written cannot come back. Step 14 saves these bytes. The
-  // editor closing above is the write answering. BUT THE PAGE'S WORDS ARE READ AGAIN AFTER IT, and a block opened before that
-  // read lands shows the old words: 2026-10-13 `readBack: false` here while step 14's saved file held the tab. 8 s is the
-  // longest write this file's own comments measured (step 12).
-  await page.waitForTimeout(8000);
-  await page.locator('[data-text-block]').nth(2).click();
-  await expect(editor()).toBeFocused();
-  const readBack = await editor().evaluate((element) => element.textContent?.includes('\t') ?? false);
-  await page.keyboard.press('Escape');
-  expect({ typed, readBack }).toStrictEqual({ typed: true, readBack: true });
-  return { tabInTheWords: typed, tabReadBack: readBack };
+  const writeMs = Math.round(performance.now() - clicked);
+  // READ BACK FROM THE SAVED FILE by pdf-lib, not by reopening the block: the tab is written as one gap marked as U+0009
+  // (ADR-0228), and the editor's own reader is the one that turns the mark back into a tab, so it could not see one missing.
+  const after = await savedCopy('k8-after.pdf');
+  const marksAfter = tabMarks(await savedContent(after));
+  expect({ typed, written: marksAfter - marksBefore }).toStrictEqual({ typed: true, written: 1 });
+  return { tabInTheWords: typed, tabMarksBefore: marksBefore, tabMarksAfter: marksAfter, writeMs };
 });
 
 await step('12. B2.8: In this document lists the fonts of every page, not only the open block’s', async () => {
@@ -659,14 +675,7 @@ await step('W1: Add text at 85%, 89% and 95% down the first (turned) page, each 
  * its content streams decoded by pdf-lib, and each `/MonsteraDecoration` named in them counted. @param {string} path
  */
 async function savedMarkedRules(path) {
-  const loaded = await PDFDocument.load(await readFile(path), { updateMetadata: false, ignoreEncryption: true });
-  const contents = loaded.getPages()[0]?.node.Contents();
-  const streams = contents instanceof PDFArray ? contents.asArray().map((each) => loaded.context.lookup(each)) : [contents];
-  let text = '';
-  for (const stream of streams) {
-    if (stream instanceof PDFRawStream) text += new TextDecoder('latin1').decode(decodePDFRawStream(stream).decode());
-  }
-  return (text.match(/MonsteraDecoration/gu) ?? []).length;
+  return ((await savedContent(path)).match(/MonsteraDecoration/gu) ?? []).length;
 }
 
 const forL2 = await distinctCopy('for-l2.pdf', sample);

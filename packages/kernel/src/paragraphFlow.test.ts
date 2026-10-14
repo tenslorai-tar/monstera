@@ -230,6 +230,27 @@ describe('layOutParagraph', () => {
     expect(laid('aaa bbb ccc ddd eee fff')).toStrictEqual(['aaa bbb ccc', 'ddd eee fff']);
   });
 
+  // THE OWNER'S W9: Home then Tab puts the tab at the START of a paragraph, where it is a chunk with no word and the tab
+  // as its trailing white space. The next word was placed as the line's first and the trail never was, so the tab was
+  // written nowhere. White space a person typed before a paragraph's first word is kept; the control is the case above,
+  // where the space a line ENDS in is still dropped.
+  it('keeps a tab, or spaces, typed before a paragraph’s first word', () => {
+    expect(laid('\taaa bbb', 72)).toStrictEqual(['\taaa bbb']);
+    expect(laid('  aaa', 72)).toStrictEqual(['  aaa']);
+    // AND IT IS MEASURED: this file's measure is six points a character, so the tab takes the room "ddd" would need.
+    expect(laid('\taaa bbb ccc ddd')).toStrictEqual(['\taaa bbb ccc', 'ddd']);
+    expect(laid('aaa bbb ccc ddd')).toStrictEqual(['aaa bbb ccc', 'ddd']);
+    expect(laid('\taaa bbb ccc ddd', 66)).toStrictEqual(['\taaa bbb', 'ccc ddd']);
+  });
+
+  // THE OTHER HALF OF W9: Home goes to the start of a VISUAL line, after the space the line above ends in, so a tab typed
+  // there is in the white space after that line's last word, which a line ending there drops.
+  it('starts the next line with a tab in the white space a line ends in, and still drops the spaces', () => {
+    expect(laid('aaaa bbbbbb \tcc')).toStrictEqual(['aaaa bbbbbb', '\tcc']);
+    // CONTROL: the same break with two spaces where the tab was starts the next line with its word.
+    expect(laid('aaaa bbbbbb  cc')).toStrictEqual(['aaaa bbbbbb', 'cc']);
+  });
+
   it('fits a word that reaches the limit exactly, and breaks one a character over', () => {
     expect(laid('aaaaaaaaaaaa')).toStrictEqual(['aaaaaaaaaaaa']);
     expect(laid('aaaaaa bbbbbb', 72)).toStrictEqual(['aaaaaa bbbbb'.slice(0, 6), 'bbbbbb']);

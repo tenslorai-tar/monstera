@@ -104,6 +104,34 @@ describe('applyEditTextOperators', () => {
     });
   });
 
+  // THE OWNER'S W9, read back from the SAVED FILE by a second reader, MuPDF, not this build's PDFium walker, which puts the
+  // tab back from its mark and so could not see it missing. Home then Tab puts it before the heading's first word, where
+  // `layOutParagraph` dropped it. MuPDF, like PDF.js, does not read `/ActualText` (measured 2026-10-14: it reads the gap as
+  // a space), so what a second reader can see is the gap and the mark, and the case asserts both.
+  it('W9: a TAB typed BEFORE the first word is written as its marked gap, and MuPDF reads the gap first, after a reopen', async () => {
+    const saved = async (text: string): Promise<{ readonly content: string; readonly words: string }> =>
+      withChromium(async (session, content) => {
+        const runs = headingRuns(content);
+        await applyEditTextOperators(session, command(runs.runs[0]?.index ?? 0, text), runs);
+        const reopened = await mupdfWriter.open(await mupdfWriter.serialise(session));
+        try {
+          return await withDocument(reopened, (document) => ({
+            content: new TextDecoder('latin1').decode(joinedContent(pageContentStreams(document.findPage(0)))),
+            words: document.loadPage(0).toStructuredText().asText(),
+          }));
+        } finally {
+          await mupdfWriter.close(reopened);
+        }
+      });
+    const leading = await saved('\tMonstera fixture reading.');
+    expect(leading.content.split('/ActualText <FEFF0009>')).toHaveLength(2);
+    expect(leading.words.slice(0, leading.words.indexOf('Monstera'))).toMatch(/^\s+$/u);
+    // CONTROL: the same heading without the tab writes no mark and reads no white space before its first word.
+    const plain = await saved('Monstera fixture reading.');
+    expect(plain.content).not.toContain('/ActualText <FEFF0009>');
+    expect(plain.words.indexOf('Monstera')).toBe(0);
+  });
+
   it('refuses a word no font of the page carries, naming its characters, and leaves the page as it came', async () => {
     await withChromium(async (session, content) => {
       const runs = headingRuns(content);
