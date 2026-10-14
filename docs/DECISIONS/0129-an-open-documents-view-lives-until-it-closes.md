@@ -78,3 +78,24 @@ stands — the wrapper is the same component on both sides — and now it is one
 the right-clicked page when the right-click happens; a layer behind takes `NO_MENU`, which is Decision 3's *the
 layout and nothing else*. `DocumentLayer` is memoised and takes the element on show only when it is the layer on
 show, so a switch renders the two layers it moves. Proof: `tabSwitchRenders.pw.ts`.
+
+## Correction, 2026-10-14 — a layer behind keeps its parser and its layout, and gives back its pages
+
+The owner's run 4 item 13c, on the measurement this ADR's *Cost* section was waiting for: 759 MB with seven documents
+open in the dev build, against 325 MB for PDF-XChange on the same files, whose cache frees what is not in use. The
+owner's order: *"A tab not on screen keeps only what it needs to come back quickly. Its page canvases and full-size
+page images are released, and redrawn when the tab is shown again."*
+
+This takes the fourth rejected alternative, **keep the scroller but drop its canvases while hidden**, which was
+rejected because *the bitmaps are most of what a switch would otherwise redraw*. That reason weighed the switch and not
+the memory; the owner has weighed both and chosen. What the rest of this ADR bought stays: no re-parse (the parser,
+worker and range transport are kept), no slots at their minimum size (each slot keeps its measured size), no fit
+resolved after the first measurement (the scroll offset and the fit are kept). What a switch now pays is the draw of
+the pages in the margin of the layer arriving, from a parse already made.
+
+So Decision 1's *"unmount the canvases this exists to keep"* no longer states the purpose: the layer exists to keep
+the parse and the layout. A layer behind mounts no page's canvas, which releases each canvas's backing store and the
+decoded images `pageResidency.ts` held for it, by the paths a page leaving the margin already takes. Thumbnails were
+already not mounted behind (Decision 3: its panels mount nothing).
+
+Measured before and after on the owner's seven documents: owed to the Windows memory walk (M2 and M4).

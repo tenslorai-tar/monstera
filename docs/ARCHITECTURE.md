@@ -1351,12 +1351,15 @@ snapshotted, restored, or re-parsed.
 
 **So is the view** (amended 2026-10-01,
 [ADR-0129](DECISIONS/0129-an-open-documents-view-lives-until-it-closes.md)).
-Each open document's page area — its parser, its drawn pages and thumbnails,
-its scroll offset — is mounted from open to close. The one on show is in flow;
-the others lie over the same box, laid out and hidden, and share every prop
-that decides layout so that bringing one forward changes which is shown and
+Each open document's page area — its parser, its slots at their measured
+sizes, its scroll offset — is mounted from open to close. The one on show is in
+flow; the others lie over the same box, laid out and hidden, and share every
+prop that decides layout so that bringing one forward changes which is shown and
 re-fits nothing. A background view acts on nothing and reports nothing into
-the shell's state.
+the shell's state, and **draws nothing**: it mounts no page canvas and no
+thumbnail, so its pixels and decoded images are given back, and the pages in its
+margin are drawn again from the kept parse when it comes forward (corrected
+2026-10-14, ADR-0129, run 4 item 13c).
 
 This makes an entire race class unrepresentable *by shape*: an async result
 landing in the wrong document's state, and the next save writing one document's
@@ -3080,6 +3083,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-10-14 | **A background view draws nothing** (§6). The owner's run 4 item 13c: seven documents held 759 MB in the dev build against 325 MB in PDF-XChange. A layer behind keeps its parser, its slots' measured sizes and its scroll offset, and mounts no page canvas, so its pixels and decoded images are given back; coming forward redraws the pages in its margin from the kept parse. Takes ADR-0129's fourth rejected alternative, whose reason weighed the switch and not the memory | §6's *"its drawn pages and thumbnails … is mounted from open to close"* | [0129](DECISIONS/0129-an-open-documents-view-lives-until-it-closes.md), correction 2026-10-14 |
 | 2026-10-14 | **A run whose program is not an sfnt is drawn in a font built from its drawn glyphs** (§3's in-place editing row). The owner's A1: a serif page with bold lead-ins turned plain sans while edited. Where an embedded program offers no font for the editor — Type 1, bare CFF, a TrueType one whose glyphs do not read as the page's — the PDFium host writes an OpenType font with CFF outlines from `FPDFFont_GetGlyphPath` and `FPDFFont_GetGlyphWidth`, the page's characters only and nothing of the program. Measured: a CFF-built and a Type 1-built font load in Chromium 151 and set at PDFium's widths. **Rejected:** wrapping a bare CFF program as it is, converting Type 1 charstrings in the host | ADR-0175 Decision 1's *only from an embedded sfnt*, and its rejected *building a font from PDFium's glyph paths* | [0238](DECISIONS/0238-a-run-whose-program-is-not-an-sfnt-is-drawn-in-a-font-built-from-its-drawn-glyphs.md) |
 | 2026-10-13 | **About carries no line about updates** (ADR-0236's correction). The owner's Part 7 C: remove every reference to updates in About, the line drawn on a run that asked monsterapdf.com included. Where a person learns that a check contacts the site is the *Check for new versions* setting, registered when the check goes live (ADR-0110) | `BUILD-PROMPT.md` E4's *"Update checks are the only phone-home in the app, and the About panel says so"*, its second half | [0236](DECISIONS/0236-about-says-what-monstera-is-not-how-it-is-updated.md) |
 | 2026-10-13 | **About says what Monstera is, not how it is updated.** The owner's O1: the install channel's updates sentence goes, and two short lines say what Monstera is. The line that says a run asked monsterapdf.com stays, drawn only on a run that did (ADR-0110), which is E4's other About clause. | `BUILD-PROMPT.md` E4's *show "Updates are managed by Microsoft Store" in About* | [0236](DECISIONS/0236-about-says-what-monstera-is-not-how-it-is-updated.md) |
