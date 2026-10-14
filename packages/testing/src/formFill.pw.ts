@@ -71,6 +71,8 @@ const FORM = [
   { kind: 'radio', name: 'Membership', rect: { x0: 260, y0: 546, x1: 276, y1: 562 }, on: false },
   { kind: 'dropdown', name: 'Region', rect: { x0: 180, y0: 506, x1: 320, y1: 526 }, values: ['North'], options: ['North', 'South', 'West'] },
   { kind: 'text', name: 'Reference', rect: { x0: 180, y0: 466, x1: 320, y1: 486 }, values: ['R-1'], readOnly: true },
+  { kind: 'listbox', name: 'Language', rect: { x0: 180, y0: 380, x1: 320, y1: 440 }, values: ['German'], options: ['English', 'German', 'French'] },
+  { kind: 'listbox', name: 'Interests', rect: { x0: 340, y0: 380, x1: 480, y1: 440 }, values: [], options: ['Music', 'Travel', 'Cooking'], multiSelect: true },
 ] as const;
 
 async function formPdf(): Promise<Uint8Array> {
@@ -85,8 +87,8 @@ async function formPdf(): Promise<Uint8Array> {
     width: rect.x1 - rect.x0,
     height: rect.y1 - rect.y0,
   });
-  const [name, subscribe, first, second, region, reference] = FORM;
-  for (const each of [name, subscribe, first, region, reference]) {
+  const [name, subscribe, first, second, region, reference, language, interests] = FORM;
+  for (const each of [name, subscribe, first, region, reference, language]) {
     page.drawText(`${each.name}:`, { x: 72, y: each.rect.y0 + 5, size: 11, font });
   }
   const text = fields.createTextField(name.name);
@@ -105,6 +107,14 @@ async function formPdf(): Promise<Uint8Array> {
   locked.setText(reference.values[0]);
   locked.addToPage(page, { ...at(reference.rect), font });
   locked.enableReadOnly();
+  const spoken = fields.createOptionList(language.name);
+  spoken.addOptions([...language.options]);
+  spoken.select(language.values[0]);
+  spoken.addToPage(page, { ...at(language.rect), font });
+  const liked = fields.createOptionList(interests.name);
+  liked.addOptions([...interests.options]);
+  liked.enableMultiselect();
+  liked.addToPage(page, { ...at(interests.rect), font });
   return document.save();
 }
 
@@ -119,6 +129,7 @@ const LISTED: readonly ShimFormField[] = FORM.map((each, index) =>
     on: 'on' in each ? each.on : null,
     options: 'options' in each ? [...each.options] : [],
     readOnly: 'readOnly' in each,
+    multiSelect: 'multiSelect' in each,
   }),
 );
 
@@ -130,7 +141,12 @@ async function centreOf(page: Page, rect: { x0: number; y0: number; x1: number; 
   return { x: slot.x + ((rect.x0 + rect.x1) / 2) * scale, y: slot.y + (792 - (rect.y0 + rect.y1) / 2) * scale };
 }
 
-async function openForm(page: Page, look: (typeof LOOKS)[number], sent: { channel: string; params: unknown }[]): Promise<void> {
+async function openForm(
+  page: Page,
+  look: (typeof LOOKS)[number],
+  sent: { channel: string; params: unknown }[],
+  lists: readonly (readonly ShimFormField[])[] = [LISTED],
+): Promise<void> {
   const bytes = await formPdf();
   await page.setViewportSize({ width: 1280, height: 860 });
   await bridgeUnder(
@@ -139,7 +155,7 @@ async function openForm(page: Page, look: (typeof LOOKS)[number], sent: { channe
     {
       opens: [{ kind: 'opened' as const, docId: ID, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Form.pdf' }],
       documentBytes: new Map([[ID, bytes]]),
-      formFields: [LISTED],
+      formFields: lists,
     },
     (channel, params) => {
       sent.push({ channel, params });
@@ -194,7 +210,9 @@ for (const look of LOOKS) {
     await page.mouse.click(tick.x, tick.y);
     const guest = await centreOf(page, FORM[3].rect);
     await page.mouse.click(guest.x, guest.y);
-    await page.locator('[data-form-layer="0"] select[aria-label="Region"]').selectOption('South');
+    // THE DROPDOWN BY THE PRESSES A PERSON MAKES (F5): its face, then the row, never a script choosing for them.
+    await page.getByRole('button', { name: 'Region', exact: true }).click();
+    await page.getByRole('listbox', { name: 'Region' }).getByRole('option', { name: 'South', exact: true }).click();
     // EACH AT THE VERSION THE ONE BEFORE MADE: a fill moves the version, and the next press names its field from the
     // list read again at the new one, never from the list it replaced.
     await expect.poll(() => fills(sent)).toStrictEqual([
@@ -202,6 +220,53 @@ for (const look of LOOKS) {
       { kind: 'fillFormField', page: 0, index: 3, version: 2, value: { set: 'button', on: true } },
       { kind: 'fillFormField', page: 0, index: 4, version: 3, value: { set: 'choice', option: 'South' } },
     ]);
+  });
+
+  test(`a list box row pressed is the row chosen, Ctrl adds one in a list that takes several (F2), ${look.name}`, async ({ page }) => {
+    const sent: { channel: string; params: unknown }[] = [];
+    // MUSIC IS HELD, so the Ctrl press below adds to what the document holds: the shim applies no fill, so a value the
+    // case builds on is one the list opens with.
+    await openForm(page, look, sent, [LISTED.map((each) => (each.index === 7 ? { ...each, values: ['Music'] } : each))]);
+    // BY WHERE A PERSON PRESSES: French's row is the third of three in a field 60 points tall, so a fifth up from its foot.
+    const language = FORM[6];
+    const slot = await page.locator('.m-page-slot').first().boundingBox();
+    if (slot === null) throw new Error('the first page has no box');
+    const scale = slot.width / 612;
+    const row = page.getByRole('listbox', { name: 'Language' }).getByRole('option', { name: 'French', exact: true });
+    const box = await row.boundingBox();
+    if (box === null) throw new Error('French has no row');
+    // THE ROW IS INSIDE THE FIELD, under its own text: the list is drawn at the field, not somewhere of its own.
+    expect(box.x).toBeGreaterThanOrEqual(slot.x + language.rect.x0 * scale - 1);
+    expect(box.y).toBeGreaterThanOrEqual(slot.y + (792 - language.rect.y1) * scale - 1);
+    expect(box.y + box.height).toBeLessThanOrEqual(slot.y + (792 - language.rect.y0) * scale + 1);
+    // CONTROL: French was not chosen before the press, so the fill below is the press's.
+    await expect(row).toHaveAttribute('aria-selected', 'false');
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await page
+      .getByRole('listbox', { name: 'Interests' })
+      .getByRole('option', { name: 'Cooking', exact: true })
+      .click({ modifiers: ['Control'] });
+    await expect.poll(() => fills(sent)).toStrictEqual([
+      { kind: 'fillFormField', page: 0, index: 6, version: 1, value: { set: 'choice', option: 'French' } },
+      { kind: 'fillFormField', page: 0, index: 7, version: 2, value: { set: 'choices', options: ['Music', 'Cooking'] } },
+    ]);
+  });
+
+  test(`an open dropdown's list moves with the page when it scrolls (F4), ${look.name}`, async ({ page }) => {
+    const sent: { channel: string; params: unknown }[] = [];
+    await openForm(page, look, sent);
+    const face = page.getByRole('button', { name: 'Region', exact: true });
+    await face.click();
+    const list = page.getByRole('listbox', { name: 'Region' });
+    const before = { face: await face.boundingBox(), list: await list.boundingBox() };
+    await page.mouse.move(640, 600);
+    await page.mouse.wheel(0, 120);
+    await expect.poll(async () => (await face.boundingBox())?.y).not.toBe(before.face?.y);
+    const after = { face: await face.boundingBox(), list: await list.boundingBox() };
+    if (before.face === null || before.list === null || after.face === null || after.list === null) throw new Error('a box is missing');
+    // UNDER ITS FIELD BEFORE AND AFTER: the page moved (the poll above, the control) and the list moved with it.
+    expect(Math.abs(before.list.y - (before.face.y + before.face.height))).toBeLessThan(1.5);
+    expect(Math.abs(after.list.y - (after.face.y + after.face.height))).toBeLessThan(1.5);
   });
 
   test(`the Forms panel leaves a value holding line breaks as it was, ${look.name}`, async ({ page }) => {

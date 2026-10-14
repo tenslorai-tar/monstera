@@ -1,4 +1,4 @@
-import { PDFArray, PDFDict, PDFDocument, PDFName, PDFString, StandardFonts } from '@cantoo/pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFName, PDFString, StandardFonts, rgb } from '@cantoo/pdf-lib';
 import * as mupdf from './mupdfRaw.js';
 import { describe, expect, it } from 'vitest';
 
@@ -487,6 +487,31 @@ describe('readFormFields', () => {
     expect(await listed(await document.save())).toStrictEqual([
       { kind: 'listbox', name: 'applicant.language', values: ['Italian'], on: null },
       { kind: 'listbox', name: 'applicant.second', values: ['French'], on: null },
+    ]);
+  });
+
+  it('CARRIES HOW A CHOICE FIELD IS DRAWN — its size, text colour, background and first row (the owner’s F1)', async () => {
+    // The page drew a list box in the application's theme over the document's own drawing of it, so it showed twice.
+    const document = await PDFDocument.create();
+    const page = document.addPage([400, 600]);
+    const fields = document.getForm();
+    const list = fields.createOptionList('applicant.language');
+    list.addOptions(['English', 'French', 'Italian']);
+    list.addToPage(page, { x: 20, y: 340, width: 100, height: 60, backgroundColor: rgb(0, 0, 1) });
+    list.acroField.dict.set(PDFName.of('DA'), PDFString.of('/Helv 9 Tf 1 0 0 rg'));
+    list.acroField.dict.set(PDFName.of('TI'), document.context.obj(1));
+    const plain = fields.createDropdown('applicant.title');
+    plain.addOptions(['Dr', 'Ms']);
+    plain.addToPage(page, { x: 20, y: 200, width: 100, height: 20 });
+    plain.acroField.dict.set(PDFName.of('DA'), PDFString.of('/Helv 0 Tf 0 g'));
+    plain.acroField.getWidgets()[0]?.getOrCreateAppearanceCharacteristics().dict.delete(PDFName.of('BG'));
+    // CONTROL: a text field is no choice, and carries no look.
+    fields.createTextField('applicant.name').addToPage(page, { x: 20, y: 100, width: 100, height: 20 });
+    const answer = await onSession(await document.save(), (session) => readFormFields(session));
+    expect(answer.fields.map((field) => field.look)).toStrictEqual([
+      { size: 9, text: [1, 0, 0], fill: [0, 0, 1], top: 1 },
+      { size: 0, text: [0, 0, 0], fill: null, top: 0 },
+      undefined,
     ]);
   });
 

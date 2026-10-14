@@ -147,8 +147,13 @@ test('a push button says, when pressed, that what it is set to do is not run her
 
 test('a list that takes several values is filled with every option chosen, in one fill', async ({ page }) => {
   const sent: Sent = [];
-  await open(page, sent);
-  await page.locator('[data-form-layer="0"] select[aria-label="Topics"]').selectOption(['Art', 'Music']);
+  // ART IS HELD, so a Ctrl press on Music adds it: the fill carries both, by the presses a person makes.
+  await open(
+    page,
+    sent,
+    LISTED.map((each) => (each.name === 'Topics' ? { ...each, values: ['Art'] } : each)),
+  );
+  await page.getByRole('listbox', { name: 'Topics' }).getByRole('option', { name: 'Music', exact: true }).click({ modifiers: ['Control'] });
   await expect.poll(() => fills(sent)).toStrictEqual([
     { kind: 'fillFormField', page: 0, index: 4, version: 1, value: { set: 'choices', options: ['Art', 'Music'] } },
   ]);

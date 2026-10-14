@@ -41,6 +41,8 @@ export type FillOffer =
       readonly choices: readonly string[];
       /** A dropdown that also takes typing: what is typed is its value, offered or not. */
       readonly editable: boolean;
+      /** A list box rather than a dropdown: its rows are shown at the field and a press chooses one (the owner's F2). */
+      readonly list: boolean;
       readonly required: boolean;
     }
   | {
@@ -111,6 +113,7 @@ export function fieldFill(field: ListedField): FillOffer {
       held,
       choices: ['', ...field.options, ...(offered ? [] : [held])],
       editable: field.kind === 'dropdown' && field.editable,
+      list: field.kind === 'listbox',
       required: field.required,
     };
   }

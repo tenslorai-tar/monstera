@@ -1,10 +1,11 @@
-import type { AnnotationRect, CommandOfKind, FieldFill, FieldFormat, FieldRange, FormFieldKind } from '@monstera/contract';
+import type { AnnotationRect, CommandOfKind, FieldFill, FieldFormat, FieldLook, FieldRange, FormFieldKind } from '@monstera/contract';
 import { MAX_FIELD_VALUE } from '@monstera/contract/host';
 import type { PDFDocument, PDFObject, PDFPage, PDFWidget } from './mupdfRaw.js';
 
 import { BoundedList } from './boundedList.js';
 import { type CalculatedValue, calculatedValues, recalculate, restoreCalculated, writeShown } from './fieldCalculation.js';
 import { kindOf } from './fieldKind.js';
+import { choiceLookOf } from './fieldLook.js';
 import { redrawFamily, remaskBeforeBake } from './fieldWidgets.js';
 import { MAX_FIELD_ANCESTRY, buttonActionOf, fieldDictionaryOf, fieldRulesOf, qualifiedNameOf } from './fieldRules.js';
 import type { CaptureResult } from './commandLog.js';
@@ -281,6 +282,8 @@ export interface ListedField {
   readonly option?: string;
   /** A push button whose action is Reset form ({@link resetsForm}); present only on one. */
   readonly action?: 'reset';
+  /** How a dropdown or a list box is drawn ({@link choiceLookOf}); present only on one (the owner's F1). */
+  readonly look?: FieldLook;
 }
 
 /**
@@ -459,6 +462,7 @@ export function readFormFields(
           ...listedRules(widget),
           ...optionOf(kind, widget),
           ...(kind === 'button' && resetsForm(widget) ? { action: 'reset' as const } : {}),
+          ...(kind === 'dropdown' || kind === 'listbox' ? { look: choiceLookOf(document, widget.getObject()) } : {}),
         });
       }
     }

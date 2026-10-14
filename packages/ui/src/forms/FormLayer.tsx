@@ -1,11 +1,12 @@
 import { useLingui } from '@lingui/react';
-import type { FieldFill } from '@monstera/contract';
+import type { FieldFill, FieldLook } from '@monstera/contract';
 import { type CSSProperties, type ReactElement, useEffect, useId, useRef, useState } from 'react';
 
 import { type OverlayPage, pdfRectOnScreen } from '../annotations/annotationSpace.js';
 import { FORM_BUTTON_NO_SCRIPTS, FORM_FIELD_FILL_IN, FORM_FIELD_PRESS } from '../messages/en.js';
 import { Problem } from '../primitives/Problem.js';
-import { ChoiceOptions, FieldTextBox } from './FieldControls.js';
+import { FieldTextBox } from './FieldControls.js';
+import { PageChoiceList, PageDropdown } from './PageChoice.js';
 import { type FieldProblem, leftFieldProblem, storedText } from './fieldCheck.js';
 import { fieldPressArea } from './fieldHoles.js';
 import { type FillOffer, type ListedField, fieldFill } from './fieldFill.js';
@@ -174,6 +175,12 @@ export function FormLayer({
   );
   // NOTHING OVER A PAGE WITH NOTHING TO FILL, `TextLayer`'s rule: an empty layer is something that can go wrong quietly.
   if (placed.length === 0 && outlined.length === 0) return null;
+  // HOW TALL THE PAGE IS ON SCREEN, so a dropdown near its foot opens upwards rather than past the paper.
+  const [x0, y0, x1, y1] = geometry.crop;
+  const pageHeight = (geometry.rotation % 180 === 0 ? y1 - y0 : x1 - x0) * geometry.zoom;
+  // A CHOICE'S TYPE SIZE on screen: the field's own at the zoom, or for *automatic* the size a list is drawn at.
+  const listPx = (choiceLook: FieldLook | undefined): number =>
+    (choiceLook !== undefined && choiceLook.size > 0 ? choiceLook.size : LINES_POINTS) * geometry.zoom;
 
   return (
     <div className="m-form-layer" data-form-layer={String(page)} ref={root}>
@@ -281,29 +288,30 @@ export function FormLayer({
           ];
         }
 
-        if (offer.kind === 'choices') {
+        // A LIST BOX IS ITS ROWS AT THE FIELD (the owner's F1, F2), in the document's size and colours, whether it takes
+        // one value or several: a press chooses the row pressed.
+        if (offer.kind === 'choices' || (offer.kind === 'choice' && offer.list)) {
+          const several = offer.kind === 'choices';
           return [
-            <select
-              {...marks}
-              id={id}
+            <PageChoiceList
               key={field.index}
-              aria-label={field.name}
-              className={`${look} m-page-field--choice`}
-              multiple
-              onChange={(event) => {
+              box={at}
+              className={look}
+              fontPx={listPx(field.look)}
+              held={several ? offer.held : offer.held === '' ? [] : [offer.held]}
+              id={id}
+              look={field.look}
+              marks={marks}
+              multiple={several}
+              name={field.name}
+              onChoose={(chosen) => {
                 // EVERY OPTION NOW CHOSEN, in one fill: a list that takes several is filled with what it holds.
-                fill({ set: 'choices', options: [...event.currentTarget.selectedOptions].map((option) => option.value) });
+                fill(several ? { set: 'choices', options: [...chosen] } : { set: 'choice', option: chosen[0] ?? '' });
               }}
               onPointerDown={pressed}
-              style={at}
-              value={[...offer.held]}
-            >
-              {offer.options.map((option, place) => (
-                <option key={place} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>,
+              // THE EMPTY CHOICE IS NOT A ROW of a list: a list shows the document's options, as the document draws it.
+              options={several ? offer.options : offer.choices.slice(1)}
+            />,
             beside,
           ];
         }
@@ -362,21 +370,23 @@ export function FormLayer({
 
         if (offer.kind === 'choice') {
           return [
-            <select
-              {...marks}
-              id={id}
+            <PageDropdown
               key={field.index}
-              aria-label={field.name}
-              className={`${look} m-page-field--choice`}
-              onChange={(event) => {
-                fill({ set: 'choice', option: event.currentTarget.value });
+              at={box}
+              choices={offer.choices}
+              className={look}
+              fontPx={Math.min(listPx(field.look), box.height * LINE_FILL)}
+              held={offer.held}
+              id={id}
+              look={field.look}
+              marks={marks}
+              name={field.name}
+              onChoose={(choice) => {
+                fill({ set: 'choice', option: choice });
               }}
               onPointerDown={pressed}
-              style={at}
-              value={offer.held}
-            >
-              <ChoiceOptions offer={offer} />
-            </select>,
+              room={pageHeight}
+            />,
             beside,
           ];
         }

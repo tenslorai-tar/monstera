@@ -47,6 +47,7 @@ import {
   annotationDataFormatSchema,
   annotationImportReportSchema,
   fieldFormatSchema,
+  fieldLookSchema,
   fieldRangeSchema,
   formFieldKindSchema,
   importFormDataSchema,
@@ -645,6 +646,8 @@ const engineFormFieldSchema = z
     option: z.string().max(ENGINE_FORM_FIELD_TEXT_MAX).exactOptional(),
     /** A button whose action is Reset form (the owner's F7), present only on one, for `range`'s reason. */
     action: z.literal('reset').exactOptional(),
+    /** How a dropdown or a list box is drawn (the owner's F1), present only on one, for `range`'s reason. */
+    look: fieldLookSchema.exactOptional(),
   })
   .strict();
 

@@ -1,10 +1,11 @@
 import { MAX_FIELD_OPTION, MAX_READ_FIELDS, choiceOf } from '@monstera/contract/host';
-import type { AnnotationColour, FieldChoice, FormFieldHandle, FormFieldRead } from '@monstera/contract';
+import type { FieldChoice, FormFieldHandle, FormFieldRead } from '@monstera/contract';
 import type { PDFDocument, PDFObject, PDFWidget } from './mupdfRaw.js';
 
 import type { MupdfSession } from './engineSeam.js';
 import { faceOfFont, parseDefaultAppearance, textColourOf } from './fieldActions.js';
 import { FIELD_FAMILY_MARKER, familyOfMarker } from './fieldFamily.js';
+import { colourOf, defaultAppearanceOf } from './fieldLook.js';
 import { borderStyleOf, borderWidthOf, buttonActionOf, checkStyleOf, fieldRulesOf, nearest, qualifiedNameOf } from './fieldRules.js';
 import { kindOf, onStateKeyOf } from './formFields.js';
 import { withDocument } from './mupdfWriter.js';
@@ -30,23 +31,6 @@ const MAX_DEFAULT = 4096;
 /** A string entry, or `null` where it is absent or not a string. */
 function textOf(object: PDFObject): string | null {
   return object.isString() ? object.asString() : null;
-}
-
-/** A colour array as red, green and blue: a grey, a red-green-blue or a cyan-magenta-yellow-black, or `null` for none. */
-function colourOf(array: PDFObject): AnnotationColour | null {
-  if (!array.isArray()) return null;
-  const parts: number[] = [];
-  for (let at = 0; at < array.length; at += 1) {
-    const part = array.get(at);
-    parts.push(part.isNumber() ? Math.min(1, Math.max(0, part.asNumber())) : 0);
-  }
-  if (parts.length === 1) return [parts[0] ?? 0, parts[0] ?? 0, parts[0] ?? 0];
-  if (parts.length === 3) return [parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0];
-  if (parts.length === 4) {
-    const k = parts[3] ?? 0;
-    return [(1 - (parts[0] ?? 0)) * (1 - k), (1 - (parts[1] ?? 0)) * (1 - k), (1 - (parts[2] ?? 0)) * (1 - k)];
-  }
-  return null;
 }
 
 /**
@@ -103,7 +87,7 @@ function readOne(document: PDFDocument, widget: PDFWidget, page: number, index: 
   const object = widget.getObject();
   const kind = kindOf(widget);
   const name = widget.getName();
-  const da = textOf(nearest(object, 'DA')) ?? textOf(acroForm(document, 'DA')) ?? undefined;
+  const da = defaultAppearanceOf(document, object);
   const font = parseDefaultAppearance(da);
   const baseFont = font === undefined ? undefined : acroForm(document, 'DR', 'Font', font.resource, 'BaseFont');
   const rules = fieldRulesOf(widget);

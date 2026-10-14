@@ -75,6 +75,9 @@
  * paper, which is white in every theme. The tint is the light blue PDF-XChange washes a fillable field with, a fill that
  * carries no meaning by contrast (the field's own edge and appearance do); the red outlines a required field and owes
  * 3:1 on the paper as a graphic (ADR-0226).
+ *
+ * `--field-chosen` is the row a list box on the page has chosen, one value in every theme for the same reason: the blue
+ * Acrobat and MuPDF draw a chosen option on (`0.6 0.75 0.85 rg`), under the field's own text (the owner's F1).
  */
 
 /* ─── roles ─────────────────────────────────────────────────────────────────
@@ -110,7 +113,8 @@
  * @role accent-grad-bottom fill
  * @role redact-mark graphic @on page
  * @role signature-ink graphic @on page
- * @role field-ink text @on page
+ * @role field-chosen surface
+ * @role field-ink text @on page field-chosen
  * @role field-required graphic @on page
  * @role field-tint fill
  * @role text text @on ground bg bg2 surface surface2 canvas float list active dialog-head-wash bubble-wash
@@ -177,6 +181,7 @@
   --field-ink: #000000;
   --field-required: #c5221f;
   --field-tint: #dfe8ff;
+  --field-chosen: #99c1da;
   --text: #eef1ef;
   /* v5 was #a8b3ad / #8e9a94 / #4ad083 / 0.36 alpha: each moved the least (toward white, 1% steps) that clears its
      floor on every colour its surfaces present over the lit ground. --faint lands on --muted's value: over this ground
@@ -296,6 +301,7 @@
   --field-ink: #000000;
   --field-required: #c5221f;
   --field-tint: #dfe8ff;
+  --field-chosen: #99c1da;
   --text: #131816;
   /* v5 was #4c5752 / #55615b / #15803d / 0.42 alpha, each moved the least (toward black) that clears its floor. */
   --muted: #4a5550;
@@ -396,6 +402,7 @@
   --field-ink: #000000;
   --field-required: #c5221f;
   --field-tint: #dfe8ff;
+  --field-chosen: #99c1da;
   --text: #ffffff;
   --muted: #e6e6e6;
   --faint: #bfbfbf;

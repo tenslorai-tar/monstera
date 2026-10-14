@@ -11,6 +11,7 @@ import {
   type DeclaredOf,
   type FileAccess,
   type FieldFormat,
+  type FieldLook,
   type FormFieldKind,
   type FormFieldRead,
   type ImportSkipped,
@@ -273,6 +274,8 @@ export interface ShimFormField {
   readonly editable?: boolean;
   readonly calculated?: boolean;
   readonly format?: FieldFormat | null;
+  /** How a dropdown or a list box is drawn (the owner's F1); absent is the channel's absent. */
+  readonly look?: FieldLook;
 }
 
 /**

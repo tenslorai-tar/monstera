@@ -54,14 +54,17 @@ describe('fieldFill', () => {
       held: 'Ms',
       choices: ['', 'Dr', 'Ms'],
       editable: false,
+      list: false,
       required: false,
     });
-    // CONTROL: a value outside the options is shown rather than read as empty.
+    // CONTROL: a value outside the options is shown rather than read as empty. A LIST BOX SAYS SO (the owner's F2): a
+    // list that takes one value is rows at the field, never a dropdown.
     expect(fieldFill(field({ kind: 'listbox', options: ['Dr'], values: ['Prof'] }))).toStrictEqual({
       kind: 'choice',
       held: 'Prof',
       choices: ['', 'Dr', 'Prof'],
       editable: false,
+      list: true,
       required: false,
     });
     // A DROPDOWN THAT TAKES TYPING says so; a list never does, whatever its flag.

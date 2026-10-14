@@ -143,13 +143,77 @@ describe('FormLayer', () => {
     ]);
   });
 
-  it('a CHOICE is its options at the field, the empty one first, and choosing fills it', () => {
+  it('a DROPDOWN opens its rows under the field in the page, the empty one first, and choosing one fills it and closes (F4, F5, F6)', () => {
     const { container, fills } = draw([field({ index: 0, kind: 'dropdown', options: ['Dr', 'Ms'], values: ['Dr'] })]);
-    const list = at(container, 0) as HTMLSelectElement | null;
-    expect([...(list?.options ?? [])].map((option) => option.value)).toStrictEqual(['', 'Dr', 'Ms']);
-    expect(list?.value).toBe('Dr');
-    fireEvent.change(must(list), { target: { value: 'Ms' } });
+    const face = must(at(container, 0));
+    expect(face.tagName).toBe('BUTTON');
+    expect(face.getAttribute('aria-expanded')).toBe('false');
+    // CLOSED, NOTHING IS DRAWN OVER THE FIELD but the press: the document's own drawing shows (F11).
+    expect(container.querySelector('[role="listbox"]')).toBeNull();
+    press(face);
+    const rows = [...container.querySelectorAll<HTMLElement>('[role="listbox"] [role="option"]')];
+    // ONE LIST, THE SAME EVERY TIME: the empty choice's sentence first, then the options, the held one chosen.
+    expect(rows.map((row) => row.textContent)).toStrictEqual(['(none)', 'Dr', 'Ms']);
+    expect(rows.map((row) => row.getAttribute('aria-selected'))).toStrictEqual(['false', 'true', 'false']);
+    // IN THE PAGE LAYER, under the field: x 10, y 700..720 at zoom 2 is left 20, the foot at 184.
+    const open = must(container.querySelector<HTMLElement>('[role="listbox"]'));
+    expect(container.querySelector('.m-form-layer')?.contains(open)).toBe(true);
+    expect([open.style.left, open.style.top, open.style.width]).toStrictEqual(['20px', '184px', '200px']);
+    press(rows[2] ?? null);
     expect(fills).toStrictEqual([{ page: 2, index: 0, value: { set: 'choice', option: 'Ms' } }]);
+    expect(container.querySelector('[role="listbox"]')).toBeNull();
+  });
+
+  it('a dropdown closed with Escape, or by choosing what it holds, sends nothing — CONTROL: the case above sends', () => {
+    const { container, fills } = draw([field({ index: 0, kind: 'dropdown', options: ['Dr', 'Ms'], values: ['Dr'] })]);
+    press(at(container, 0));
+    fireEvent.keyDown(must(container.querySelector('[role="listbox"]')), { key: 'Escape' });
+    expect(container.querySelector('[role="listbox"]')).toBeNull();
+    press(at(container, 0));
+    press(container.querySelectorAll<HTMLElement>('[role="option"]')[1] ?? null);
+    expect(fills).toStrictEqual([]);
+  });
+
+  it('a LIST BOX THAT TAKES ONE is its rows at the field, never a dropdown, and a press chooses the row pressed (F2)', () => {
+    const { container, fills } = draw([field({ index: 0, kind: 'listbox', options: ['English', 'German', 'French'], values: ['German'] })]);
+    const list = must(at(container, 0));
+    expect(list.getAttribute('role')).toBe('listbox');
+    expect(list.getAttribute('aria-multiselectable')).toBe('false');
+    const rows = [...list.querySelectorAll<HTMLElement>('[role="option"]')];
+    // NO EMPTY ROW: a list shows the document's options, as the document draws it.
+    expect(rows.map((row) => row.textContent)).toStrictEqual(['English', 'German', 'French']);
+    press(rows[2] ?? null);
+    expect(rows.map((row) => row.getAttribute('aria-selected'))).toStrictEqual(['false', 'false', 'true']);
+    // THE ROW PRESSED, NOT ITS NEIGHBOUR: French is the third.
+    expect(fills).toStrictEqual([{ page: 2, index: 0, value: { set: 'choice', option: 'French' } }]);
+  });
+
+  it('a list that takes SEVERAL: a press one row, Ctrl one more, Shift a run, each sent in the document’s order (F2)', () => {
+    const { container, fills } = draw([
+      field({ index: 0, kind: 'listbox', multiSelect: true, options: ['Music', 'Travel', 'Cooking', 'Sport'], values: [] }),
+    ]);
+    const rows = [...must(at(container, 0)).querySelectorAll<HTMLElement>('[role="option"]')];
+    fireEvent.click(must(rows[2] ?? null));
+    fireEvent.click(must(rows[0] ?? null), { ctrlKey: true });
+    fireEvent.click(must(rows[1] ?? null), { shiftKey: true });
+    expect(fills).toStrictEqual([
+      { page: 2, index: 0, value: { set: 'choices', options: ['Cooking'] } },
+      { page: 2, index: 0, value: { set: 'choices', options: ['Music', 'Cooking'] } },
+      // A RUN FROM THE LAST ROW PRESSED WITHOUT SHIFT, Music, to Travel.
+      { page: 2, index: 0, value: { set: 'choices', options: ['Music', 'Travel'] } },
+    ]);
+  });
+
+  it('a list is drawn in the FIELD’S OWN size and colours at the zoom, never the theme’s (F1) — CONTROL: no look, the paper and black', () => {
+    const { container } = draw([
+      field({ index: 0, kind: 'listbox', options: ['a'], look: { size: 9, text: [1, 0, 0], fill: [0, 0, 1], top: 0 } }),
+      field({ index: 1, kind: 'listbox', options: ['a'] }),
+    ]);
+    const own = must(at(container, 0));
+    expect([own.style.fontSize, own.style.color, own.style.backgroundColor]).toStrictEqual(['18px', 'rgb(255 0 0)', 'rgb(0 0 255)']);
+    const plain = must(at(container, 1));
+    // AUTOMATIC IS 12 POINTS AT THE ZOOM, and no inline background, so the stylesheet's paper (or tint) shows.
+    expect([plain.style.fontSize, plain.style.color, plain.style.backgroundColor]).toStrictEqual(['24px', 'rgb(0 0 0)', '']);
   });
 
   it('a TEXT FIELD press opens its editor over the field holding its value, and leaving it fills it', () => {

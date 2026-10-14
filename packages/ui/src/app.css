@@ -6134,9 +6134,49 @@ optgroup {
   font-family: 'Courier New', Courier, monospace;
 }
 
-.m-page-field--choice {
-  appearance: none;
-  color: transparent;
+/*
+ * A CHOICE ON THE PAGE (the owner's F1): a list box's rows at the field, or a dropdown's opened under it, drawn as the
+ * document draws the field and over its drawing, so the field shows once. The text colour, the type size and a
+ * background the field names are the document's, set inline; the paper is the background where it names none, the
+ * tint where fields are tinted. Opaque, so the tint is a fill here rather than the multiplied wash over a field's own
+ * appearance.
+ */
+.m-page-choice {
+  position: absolute;
+  box-sizing: border-box;
+  overflow: hidden auto;
+  background-color: var(--page);
+  font-family: Helvetica, Arial, sans-serif;
+  cursor: pointer;
+  mix-blend-mode: normal;
+  pointer-events: auto;
+}
+
+.m-page-choice.m-page-field--tint {
+  background-color: var(--field-tint);
+}
+
+.m-page-choice-row {
+  box-sizing: border-box;
+  padding-inline: var(--space-2);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.m-page-choice-row[aria-selected='true'] {
+  background-color: var(--field-chosen);
+}
+
+/* A DROPDOWN'S OPEN LIST, in the page under its field so it moves with the page (F4), above the fields around it. */
+.m-page-choice--open {
+  z-index: 2;
+  outline: 1px solid var(--field-ink);
+  box-shadow: var(--shadow);
+}
+
+.m-page-choice:focus-visible {
+  outline: 2px solid var(--accent-on-paper, var(--accent));
+  outline-offset: 2px;
 }
 
 .m-page-field:hover {

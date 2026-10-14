@@ -69,6 +69,7 @@ import {
   annotationDataFormatSchema,
   annotationImportReportSchema,
   fieldFormatSchema,
+  fieldLookSchema,
   fieldRangeSchema,
   formFieldKindSchema,
   formFieldHandleSchema,
@@ -5452,6 +5453,11 @@ export const channels = {
              * document's content and is never run (invariant 24).
              */
             action: z.literal('reset').exactOptional(),
+            /**
+             * How a dropdown or a list box is drawn (the owner's F1), present only on one: the page's choice control
+             * covers the document's own drawing of the field in its size and colours, never the application's theme.
+             */
+            look: fieldLookSchema.exactOptional(),
           }),
         )
         .max(FORM_FIELDS_PART)

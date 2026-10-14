@@ -2575,6 +2575,30 @@ export const fieldRangeSchema = z
 /** See {@link fieldRangeSchema}. */
 export type FieldRange = z.infer<typeof fieldRangeSchema>;
 
+/** The largest type size a field's look carries, the Properties pane's own bound. */
+export const MAX_FIELD_LOOK_SIZE = 1000;
+
+/** The furthest first-shown row a list box's look carries: past any list a person scrolls. */
+export const MAX_FIELD_LOOK_TOP = 65_535;
+
+/**
+ * How a dropdown or a list box is drawn (the owner's F1): the type size in points (0 for the format's *automatic*), the
+ * text colour, the background or `null` where the paper shows, and the first row a list shows. The page draws its choice
+ * control in these rather than in the application's theme, so it covers the document's own drawing of the field exactly
+ * once.
+ */
+export const fieldLookSchema = z
+  .object({
+    size: z.number().min(0).max(MAX_FIELD_LOOK_SIZE),
+    text: annotationColourSchema,
+    fill: annotationColourSchema.nullable(),
+    top: z.number().int().nonnegative().max(MAX_FIELD_LOOK_TOP),
+  })
+  .strict();
+
+/** See {@link fieldLookSchema}. */
+export type FieldLook = z.infer<typeof fieldLookSchema>;
+
 /**
  * The field kinds whose value Monstera's own appearance draws in a real font (ADR-0229 Decision 4): a text field and a
  * dropdown. Every other kind is offered the standard faces alone, and the writer refuses a family on it, so the picker and
