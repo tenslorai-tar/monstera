@@ -15,14 +15,21 @@ const NO_WEB: { answer: string; searched: boolean; sources: { title: string; hos
  */
 
 describe('the event registry', () => {
-  it('declares the assistant’s two events, the window’s close request, the launch’s waiting opens and a document notice, and nothing else', () => {
+  it('declares the assistant’s two events, the window’s close request, the launch’s waiting opens, a document notice and a part that could not start, and nothing else', () => {
     expect(EVENT_IDS).toStrictEqual([
       'ai.delta',
       'ai.done',
       'window.close-requested',
       'document.opens-waiting',
       'document.notice',
+      'app.component-cannot-start',
     ]);
+  });
+
+  it('names only the component that could not start, and refuses a detail or a component it does not know', () => {
+    expect(EVENTS['app.component-cannot-start'].safeParse({ component: 'mupdf-shim' }).success).toBe(true);
+    expect(EVENTS['app.component-cannot-start'].safeParse({ component: 'mupdf-shim', detail: 'C:\\x' }).success).toBe(false);
+    expect(EVENTS['app.component-cannot-start'].safeParse({ component: 'something' }).success).toBe(false);
   });
 
   it('carries only the kind of a document notice, and refuses a name, a path or a kind it does not declare (ADR-0220)', () => {

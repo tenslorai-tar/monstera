@@ -455,6 +455,7 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
   ],
   'dialog.history-trimmed': [{ state: 'opened', props: { dropped: 25 } }],
   'dialog.permission-password-replaced': [{ state: 'opened', props: {} }],
+  'dialog.component-cannot-start': [{ state: 'opened', props: {} }],
   'dialog.delete-fields': [{ state: 'opened', props: { count: 3 } }],
   'dialog.delete-pages': [
     { state: 'opened', props: { pageCount: 12, pages: [2] } },

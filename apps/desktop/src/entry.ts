@@ -1,7 +1,7 @@
 import { open, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { IncidentLog, isFollowable } from '@monstera/contract';
+import { type EventId, type EventPayload, IncidentLog, isFollowable } from '@monstera/contract';
 import { sweepCheckpointDirectories } from '@monstera/kernel';
 import { BrowserWindow, app, clipboard, crashReporter, nativeImage, safeStorage, shell } from 'electron';
 
@@ -78,6 +78,7 @@ import { startShell } from './main.js';
 import { nodeEditWatchSurface } from './nodeEditWatch.js';
 import { isPdfPath } from './openExternalEditor.js';
 import { windowsUserName } from './userName.js';
+import { createCannotStartNotice } from './componentNotice.js';
 
 /**
  * The OS credential store, as the secrets and the saved conversations both take it. `safeStorage`
@@ -200,9 +201,20 @@ startShell(() => {
       else log.write('package-data', line.detail);
     },
   });
+  // THE ASSISTANT'S EVENTS (ADR-0082): `webContents` is Electron's, so the push arrives
+  // from here like every other runtime surface. It goes to the focused window, or the
+  // first one — the window the ask came from — and to nothing at all when there is none,
+  // which is a closing application rather than a state to report.
+  const sendEvent = <K extends EventId>(event: K, payload: EventPayload<K>): void => {
+    const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    window?.webContents.send(event, payload);
+  };
+  // THE ONE COULD-NOT-START TELLER, for the converters' platforms below and the hosts in the composition alike.
+  const cannotStart = createCannotStartNotice(sendEvent);
+
   // X2T'S PLATFORM, `null` on Ghostscript's roads: no Win32 platform, no `x2t` handed down by the
   // launcher, or no container SID (ADR-0120).
-  const officePlatform = enginePlatform === null ? null : createOfficePlatform(enginePlatform);
+  const officePlatform = enginePlatform === null ? null : createOfficePlatform(enginePlatform, cannotStart);
 
   // THE SHARE SHEET (ADR-0080): the window's handle is Electron's, and so is the
   // temporary directory the shared file is written under — one folder per share, in a
@@ -494,10 +506,10 @@ startShell(() => {
     composePlatform: enginePlatform === null ? null : createComposeHostPlatform(enginePlatform),
     // THE LAYOUT-TEXT CONVERTER'S PLATFORM, `null` on the PDFium roads: no Win32
     // platform, no `pdftotext` handed down by the launcher, or no container SID (ADR-0071).
-    layoutTextPlatform: enginePlatform === null ? null : createLayoutTextPlatform(enginePlatform),
+    layoutTextPlatform: enginePlatform === null ? null : createLayoutTextPlatform(enginePlatform, cannotStart),
     // GHOSTSCRIPT'S PLATFORM, `null` on the same roads: no Win32 platform, no `gswin64c`
     // handed down by the launcher, or no container SID (ADR-0075).
-    pdfaPlatform: enginePlatform === null ? null : createPdfaPlatform(enginePlatform),
+    pdfaPlatform: enginePlatform === null ? null : createPdfaPlatform(enginePlatform, cannotStart),
     // OFFICE IMPORT: x2t's platform, its picker, and the read bounded by the contract's figure before
     // any byte is in memory — `readCsv`'s shape against its own bound (ADR-0120).
     officeImport:
@@ -555,10 +567,8 @@ startShell(() => {
     // from here like every other runtime surface. It goes to the focused window, or the
     // first one — the window the ask came from — and to nothing at all when there is none,
     // which is a closing application rather than a state to report.
-    sendEvent: (event, payload) => {
-      const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
-      window?.webContents.send(event, payload);
-    },
+    sendEvent,
+    cannotStart,
     share,
     crashReports,
     // THE DOCUMENTS THIS LAUNCH WAS GIVEN — a file association, *Open with*, a PDF dropped on the icon — held for the

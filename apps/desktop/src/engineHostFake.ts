@@ -102,6 +102,8 @@ export interface HostHarness {
   readonly samplerKills: () => void;
   /** The memory sampler reports that it could not watch the host. */
   readonly samplerFails: (detail: string) => void;
+  /** The memory sampler reads that the host process has ended, with its exit code. */
+  readonly samplerExits: (code: number) => void;
 }
 
 /**
@@ -405,6 +407,9 @@ export function hostHarness(
     },
     samplerFails: (detail) => {
       for (const sink of sampler.sinks) sink({ kind: 'failed', detail });
+    },
+    samplerExits: (code) => {
+      for (const sink of sampler.sinks) sink({ kind: 'exited', code });
     },
   };
 }

@@ -1159,6 +1159,8 @@ export type OfficeImportOutcome =
   | FileTooLarge
   | { readonly kind: 'unreadable' }
   | { readonly kind: 'conversion-failed' }
+  /** x2t could not start on this computer — the converter's, not the file's; the person was told by the pushed notice. */
+  | { readonly kind: 'component-cannot-start' }
   | { readonly kind: 'destination-contested'; readonly openElsewhere: number }
   | { readonly kind: 'write-failed' };
 
@@ -6416,7 +6418,9 @@ export class DocumentCommands {
       converted = await office.convert(format, read.bytes);
     } catch (error) {
       // ONLY THE CONVERTER'S REFUSAL IS AN ANSWER — `openFromUrl`'s rule. The reason is in the shell log.
-      if (error instanceof OfficeConversionFailedError) return { kind: 'conversion-failed' };
+      if (error instanceof OfficeConversionFailedError) {
+        return error.failure.stage === 'cannot-start' ? { kind: 'component-cannot-start' } : { kind: 'conversion-failed' };
+      }
       throw error;
     }
 

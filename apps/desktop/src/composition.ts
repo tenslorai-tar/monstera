@@ -35,6 +35,7 @@ import {
   type PageSet,
   type FontFamilyEntry,
   type ListedFontFamilies,
+  type NativeComponentId,
   createClient,
   defaultModel,
   readsUnpacked,
@@ -242,7 +243,9 @@ type DuplicateReport = (
 import {
   type EngineHostConnection,
   type EngineHostConnectionSurfaces,
+  EngineCannotStartError,
   createEngineHostConnection,
+  refusedAtConnect,
 } from './engineHostConnection.js';
 import {
   type EngineOpenFromPath,
@@ -276,7 +279,7 @@ import { type SettingsSurface, createEphemeralSettings, createJsonFile } from '.
 import { type ShellFailureSink, engineHostEndingEvent } from './shellFailure.js';
 import type { ShellLog } from './shellLog.js';
 import type { CrashReports } from './crashReports.js';
-import type { ConverterPlatform } from './converterSession.js';
+import { type ConverterPlatform, converterStarts } from './converterSession.js';
 import type { AttachmentReaders } from './askAttachments.js';
 import { createLayoutTextSource } from './layoutText.js';
 import { type WorkbookComposer, createOfficeSource } from './officeConversion.js';
@@ -285,6 +288,7 @@ import { createAssistant } from './assistant.js';
 import type { PrintDestination } from './printing.js';
 import type { ShareDestination } from './sharing.js';
 import { provisionedModelDirectory, provisionedOcrLanguages } from './ocrModels.js';
+import { createCannotStartNotice } from './componentNotice.js';
 import { componentStatuses } from './componentStatus.js';
 import { type ByteVerdict, rasterWithinLimit } from './rasterWithinLimit.js';
 import { readSpellingDictionary } from './spellingDictionaries.js';
@@ -666,6 +670,8 @@ export interface ShellComposition {
    * the pickers' reason: a `webContents` is Electron's.
    */
   readonly sendEvent?: <K extends EventId>(event: K, payload: EventPayload<K>) => void;
+  /** The process's one could-not-start teller (`componentNotice.ts`); built from `sendEvent` where absent. */
+  readonly cannotStart?: (component: NativeComponentId) => void;
   /** The recent-files list. Required for `settings`' reason. */
   readonly recent: RecentFiles;
   /**
@@ -877,6 +883,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     writeClipboardText,
     cloud: cloudComposition,
     sendEvent,
+    cannotStart: shellCannotStart,
     recent,
     recentRoots = [],
     recentPictureFiles,
@@ -970,7 +977,10 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     },
   };
   // AND HOW EACH HOST'S MEMORY IS WATCHED, beside it: the two are what end a host that has gone wrong without dying.
-  const hostPolicy: HostPolicy = { deadline: callDeadline, memorySampling: hostMemorySampling };
+  // THE PROCESS'S ONE TELLER where the shell built it (it also gave it to the converters' platforms), so a host and a
+  // converter refused in one run are told once.
+  const cannotStart = shellCannotStart ?? createCannotStartNotice(sendEvent);
+  const hostPolicy: HostPolicy = { deadline: callDeadline, memorySampling: hostMemorySampling, cannotStart };
 
   // BUILT BEFORE THE BUS, because the bus routes `mupdf` to a writer this
   // returns. The order is the dependency: a writer that talks to the engine
@@ -2035,7 +2045,30 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       ocrLanguages: provisionedOcrLanguages,
       // THE ONE FONT LIST, from the compose host that already reads the catalogue for the composers (the owner's D2).
       fontFamilies: composeHost === null ? null : composeHost.fontFamilies,
-      components: (verify) => componentStatuses({ verify }),
+      // VERIFY STARTS WHAT IT VERIFIED (Part 0.1): each engine host built and each converter run, the way the application
+      // runs them, so a DLL missing from the computer is seen here rather than at a person's first document.
+      components: (verify) =>
+        componentStatuses({
+          verify,
+          starts: (id) => {
+            const converter = { poppler: layoutTextPlatform, ghostscript: pdfaPlatform, onlyoffice: officeImport?.platform ?? null };
+            switch (id) {
+              case 'mupdf-shim':
+                return engineHost.starts();
+              case 'pdfium':
+                return pdfiumHost === null ? Promise.resolve('not-checked') : pdfiumHost.starts();
+              case 'poppler':
+              case 'ghostscript':
+              case 'onlyoffice': {
+                const platform = converter[id];
+                return platform === null ? Promise.resolve('not-checked') : converterStarts(platform);
+              }
+              case 'ocr-models':
+              case 'fonts':
+                return Promise.resolve('not-checked');
+            }
+          },
+        }),
       titleBarOverlay: (overlay) => {
         if (shellWindow === null) return false;
         shellWindow.setTitleBarOverlay(overlay);
@@ -2121,9 +2154,28 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
 }
 
 /** What ends a host that has gone wrong without dying: each call's deadline, and the memory sampler's settings. */
+/** What starting a component found: it started, it could not, or there is nothing to start here. */
+type StartReading = 'started' | 'cannot-start' | 'not-checked';
+
+/**
+ * Whether a host starts: its connection built, which loads its engine — the path a document's first use takes, so
+ * the reading is the one a person would meet. Any refusal is *could not start*, and its reason goes to the log.
+ */
+async function hostStarts(ensure: () => Promise<unknown>, failures: ShellFailureSink): Promise<StartReading> {
+  try {
+    await ensure();
+    return 'started';
+  } catch (error) {
+    failures({ event: 'engine-host-gone', detail: `Help › Components started a host and it did not start: ${String(error)}` });
+    return 'cannot-start';
+  }
+}
+
 interface HostPolicy {
   readonly deadline: HostCallDeadline;
   readonly memorySampling: HostMemorySampling;
+  /** Tells the person, once per component, that a part of Monstera could not start on this computer (Part 0.1). */
+  readonly cannotStart: (component: NativeComponentId) => void;
 }
 
 /**
@@ -2187,6 +2239,8 @@ function engineSessionOpener(
   readonly layers: HostLayersReader;
   /** Every font the document names, from whichever host is live (B2.8). */
   readonly fonts: HostFontsReader;
+  /** Whether the MuPDF host starts on this computer — its engine loaded, as a document's first use loads it. */
+  readonly starts: () => Promise<StartReading>;
   /** The document's signatures, verified in the contained host. */
   readonly signatures: (session: MupdfSession) => Promise<readonly ReadSignature[]>;
   /** How many signatures, and whether the next save keeps them — the writer's own decision, in the host. */
@@ -2902,11 +2956,7 @@ function engineSessionOpener(
         });
       },
     });
-    if (!live.ok) {
-      throw new Error(
-        `the engine host was refused at ${live.error.stage}: ${live.error.detail}`,
-      );
-    }
+    if (!live.ok) throw refusedAtConnect('engine host', 'mupdf-shim', live.error, policy.cannotStart);
 
     // ADR-0023 §5's STARTUP CHECK, before this host is handed a document, and
     // the reason it is here rather than inside the connection factory: the
@@ -3191,6 +3241,7 @@ function engineSessionOpener(
       closedMeanwhile: (error) => error instanceof DocumentNotOpenError,
       hostEnded: (error) => error instanceof HostConnectionLost,
       documentUnreadable: (error) => error instanceof EngineOpenFailed,
+      cannotStart: (error) => error instanceof EngineCannotStartError,
       documentLocked: (error) =>
         error instanceof EngineDocumentLocked ? error.reason : undefined,
       create,
@@ -3322,6 +3373,7 @@ function engineSessionOpener(
 
   return {
     openedDocument,
+    starts: () => (platform === null ? Promise.resolve('not-checked') : hostStarts(ensure, failures)),
     writers,
     geometry: readGeometry,
     pageText: readPageTextThroughHost,
@@ -3452,6 +3504,8 @@ function pdfiumHostBinding(
   readonly runFonts: PdfiumRunFonts;
   readonly pageRuns: PdfiumPageRuns;
   readonly pageContent: PdfiumPageContent;
+  /** Whether the PDFium host starts on this computer — `pdfium.dll` loaded, as a first edit loads it. */
+  readonly starts: () => Promise<StartReading>;
   readonly close: () => Promise<void>;
 } {
   /** What one built host holds. Cleared together, or not at all. */
@@ -3535,9 +3589,7 @@ function pdfiumHostBinding(
         });
       },
     });
-    if (!live.ok) {
-      throw new Error(`the PDFium host was refused at ${live.error.stage}: ${live.error.detail}`);
-    }
+    if (!live.ok) throw refusedAtConnect('PDFium host', 'pdfium', live.error, policy.cannotStart);
 
     const client = createClient(pdfiumChannels, live.value.client.invoke);
 
@@ -3638,6 +3690,7 @@ function pdfiumHostBinding(
       // THE IDENTITY WRITTEN OUT, for the same reason: a checkpoint of bytes already in hand starts no host.
       serialiseInto: serialiseIntoFile((session: ImageSession) => Promise.resolve(session.bytes)),
     },
+    starts: () => hostStarts(ensure, failures),
     textRuns: async (image, page, unpack) => (await ensure()).textRuns(image, page, unpack),
     pageObjects: async (image, page) => (await ensure()).pageObjects(image, page),
     renderPage: async (image, page, width, height, withoutText) =>
@@ -3786,9 +3839,7 @@ function composeHostBinding(
         });
       },
     });
-    if (!live.ok) {
-      throw new Error(`the compose host was refused at ${live.error.stage}: ${live.error.detail}`);
-    }
+    if (!live.ok) throw refusedAtConnect('compose host', 'mupdf-shim', live.error, policy.cannotStart);
 
     const client = createClient(composeChannels, live.value.client.invoke);
 

@@ -80,6 +80,9 @@ function platform(convert: (program: ContainedProgram) => ExitReading): {
       containerName: 'monstera-text-converter',
       executable: 'C:\\tools\\pdftotext.exe' as ConverterExecutablePath,
       bounds: { processMemoryLimitBytes: 64 * 1024 * 1024, timeoutMs: 1_000 },
+      component: 'poppler',
+      cannotStart: () => undefined,
+      startProbe: ['-v'],
       surfaceFor: (config): ConverterSurface => {
         programs.push(config.program);
         return {

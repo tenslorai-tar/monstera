@@ -2621,6 +2621,9 @@ function officeConverter(): { readonly platform: ConverterPlatform; readonly rea
       containerName: 'monstera-office-converter',
       executable: 'C:\\tools\\x2t.exe' as ConverterExecutablePath,
       bounds: { processMemoryLimitBytes: 64 * 1024 * 1024, timeoutMs: 5_000 },
+      component: 'onlyoffice',
+      cannotStart: () => undefined,
+      startProbe: [],
       surfaceFor: (config) => ({
         createSuspended: () => ok({ pid: 11, process: FAKE_CREATED.process, thread: FAKE_CREATED.thread }),
         createJob: () => FAKE_JOB,

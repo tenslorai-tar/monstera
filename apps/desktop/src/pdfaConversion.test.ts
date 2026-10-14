@@ -93,6 +93,9 @@ function platform(
       containerName: 'monstera-pdfa-converter',
       executable: 'C:\\tools\\gswin64c.exe' as ConverterExecutablePath,
       bounds: { processMemoryLimitBytes: 64 * 1024 * 1024, timeoutMs: 1_000 },
+      component: 'ghostscript',
+      cannotStart: () => undefined,
+      startProbe: ['-v'],
       surfaceFor: (config) => ({
         createSuspended: () => ok({ pid: 9, process: aProcess, thread: aThread }),
         createJob: () => aJob,

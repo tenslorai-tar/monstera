@@ -396,7 +396,10 @@ export const LAYOUT_TEXT_CONTAINER = 'monstera-text-converter';
  * rather than resolving its own — one place decides where session areas live and
  * who owns them — and its own container, so its DACLs name nothing a host holds.
  */
-export function createLayoutTextPlatform(base: EngineHostPlatform): ConverterPlatform | null {
+export function createLayoutTextPlatform(
+  base: EngineHostPlatform,
+  cannotStart: ConverterPlatform['cannotStart'],
+): ConverterPlatform | null {
   const executable = providedConverterExecutable('poppler');
   if (executable === null) return null;
   const container = hostContainerSid(LAYOUT_TEXT_CONTAINER);
@@ -411,6 +414,9 @@ export function createLayoutTextPlatform(base: EngineHostPlatform): ConverterPla
     executable,
     surfaceFor: (config) => createWin32HostSurface(config),
     bounds: LAYOUT_TEXT_BOUNDS,
+    component: 'poppler',
+    cannotStart,
+    startProbe: ['-v'],
   };
 }
 
@@ -421,7 +427,10 @@ export const PDFA_CONTAINER = 'monstera-pdfa-converter';
  * Ghostscript's platform: {@link createLayoutTextPlatform}'s shape with its own container,
  * executable and bounds (ADR-0075). `null` where no executable was handed down.
  */
-export function createPdfaPlatform(base: EngineHostPlatform): ConverterPlatform | null {
+export function createPdfaPlatform(
+  base: EngineHostPlatform,
+  cannotStart: ConverterPlatform['cannotStart'],
+): ConverterPlatform | null {
   const executable = providedConverterExecutable('ghostscript');
   if (executable === null) return null;
   const container = hostContainerSid(PDFA_CONTAINER);
@@ -436,6 +445,9 @@ export function createPdfaPlatform(base: EngineHostPlatform): ConverterPlatform 
     executable,
     surfaceFor: (config) => createWin32HostSurface(config),
     bounds: PDFA_BOUNDS,
+    component: 'ghostscript',
+    cannotStart,
+    startProbe: ['-v'],
   };
 }
 
@@ -446,7 +458,10 @@ export const OFFICE_CONTAINER = 'monstera-office-converter';
  * ONLYOFFICE `x2t`'s platform: {@link createPdfaPlatform}'s shape with its own container,
  * executable and bounds (ADR-0120). `null` where no executable was handed down.
  */
-export function createOfficePlatform(base: EngineHostPlatform): ConverterPlatform | null {
+export function createOfficePlatform(
+  base: EngineHostPlatform,
+  cannotStart: ConverterPlatform['cannotStart'],
+): ConverterPlatform | null {
   const executable = providedConverterExecutable('onlyoffice');
   if (executable === null) return null;
   const container = hostContainerSid(OFFICE_CONTAINER);
@@ -461,6 +476,10 @@ export function createOfficePlatform(base: EngineHostPlatform): ConverterPlatfor
     executable,
     surfaceFor: (config) => createWin32HostSurface(config),
     bounds: OFFICE_BOUNDS,
+    component: 'onlyoffice',
+    cannotStart,
+    // NO ARGUMENTS: x2t prints its usage and exits (it takes its paths only from an instructions file, ADR-0120).
+    startProbe: [],
   };
 }
 

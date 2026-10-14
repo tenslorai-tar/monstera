@@ -148,7 +148,9 @@ async function main() {
     if (platform === null) throw new Error('createEngineHostPlatform returned null, so no contained host can exist here.');
     const composePlatform = platformModule.createComposeHostPlatform(platform);
     if (composePlatform === null) throw new Error('createComposeHostPlatform returned null.');
-    const officePlatform = platformModule.createOfficePlatform(platform);
+    const officePlatform = platformModule.createOfficePlatform(platform, (component) => {
+      process.stderr.write(`${component} could not start on this computer\n`);
+    });
     if (officePlatform === null) throw new Error('createOfficePlatform returned null: MONSTERA_ONLYOFFICE_EXECUTABLE did not reach this process.');
 
     // THE CONTROL: x2t alone, as the build before decision C converted every workbook. It loses rows one of two ways —

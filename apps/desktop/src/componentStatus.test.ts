@@ -41,9 +41,54 @@ function pdfium(statuses: readonly ComponentStatus[]): ComponentStatus | undefin
   return statuses.find((status) => status.id === 'pdfium');
 }
 
+/** Every component starts — the machine every case above Part 0.1 assumed. */
+const started = (): Promise<'started'> => Promise.resolve('started');
+
+describe('componentStatuses — Verify STARTS what it verified (Part 0.1)', () => {
+  it('reports COULD NOT START for a component whose files all match and whose start Windows refused', async () => {
+    const asked: string[] = [];
+    const statuses = await componentStatuses({
+      verify: true,
+      source: packaged(),
+      starts: (id) => {
+        asked.push(id);
+        return Promise.resolve(id === 'pdfium' ? 'cannot-start' : 'not-checked');
+      },
+    });
+    // THE CASE THE FILE CHECK CANNOT SEE: every pinned byte is right, and a DLL the component imports is not on the PC.
+    expect(pdfium(statuses)).toMatchObject({ state: 'cannot-start', missing: 0, altered: 0, extra: 0 });
+    expect(asked).toStrictEqual(['pdfium']);
+  });
+
+  it('CONTROL: the same component that starts is VERIFIED, and nothing is started without Verify', async () => {
+    const asked: string[] = [];
+    const starts = (id: string): Promise<'started'> => {
+      asked.push(id);
+      return Promise.resolve('started');
+    };
+    expect(pdfium(await componentStatuses({ verify: true, source: packaged(), starts }))).toMatchObject({ state: 'verified' });
+    expect(pdfium(await componentStatuses({ verify: false, source: packaged(), starts }))).toMatchObject({ state: 'present' });
+    expect(asked).toStrictEqual(['pdfium']);
+  });
+
+  it('never starts a component whose files CHANGED — that would run bytes nobody pinned', async () => {
+    const asked: string[] = [];
+    const statuses = await componentStatuses({
+      verify: true,
+      source: packaged('somebody else’s pdfium'),
+      starts: (id) => {
+        asked.push(id);
+        return Promise.resolve('started');
+      },
+    });
+    expect(pdfium(statuses)).toMatchObject({ state: 'changed' });
+    expect(asked).toStrictEqual([]);
+  });
+});
+
 describe('componentStatuses', () => {
   it('reports a packaged component VERIFIED when every file hashes to the manifest', async () => {
-    const statuses = await componentStatuses({ verify: true, source: packaged() });
+    const statuses = await componentStatuses({ verify: true, starts: started, source: packaged() });
     expect(pdfium(statuses)).toStrictEqual({
       id: 'pdfium', name: 'PDFium', version: '155.0', state: 'verified', missing: 0, altered: 0, extra: 0,
     });
@@ -51,26 +96,26 @@ describe('componentStatuses', () => {
 
   // CONTROL for the case above: the same file with other bytes — a verify that only looked for the file would pass it.
   it('reports CHANGED, counting the altered file, when its bytes differ', async () => {
-    const statuses = await componentStatuses({ verify: true, source: packaged('somebody else’s pdfium') });
+    const statuses = await componentStatuses({ verify: true, starts: started, source: packaged('somebody else’s pdfium') });
     expect(pdfium(statuses)).toMatchObject({ state: 'changed', altered: 1, missing: 0, extra: 0 });
   });
 
   it('reports CHANGED for a file nobody pinned beside a packaged component — a DLL Windows would load', async () => {
     const source = packaged();
     writeFileSync(join(root, 'pdfium', 'version.dll'), 'planted');
-    expect(pdfium(await componentStatuses({ verify: true, source }))).toMatchObject({ state: 'changed', extra: 1 });
+    expect(pdfium(await componentStatuses({ verify: true, starts: started, source }))).toMatchObject({ state: 'changed', extra: 1 });
   });
 
   it('opens with PRESENT, not verified — nothing is hashed until Verify is asked', async () => {
     // The altered bytes would be CHANGED under verify; present is what a cheap look can honestly say.
-    const statuses = await componentStatuses({ verify: false, source: packaged('somebody else’s pdfium') });
+    const statuses = await componentStatuses({ verify: false, starts: started, source: packaged('somebody else’s pdfium') });
     expect(pdfium(statuses)).toMatchObject({ state: 'present', altered: 0 });
   });
 
   it('reports a missing file as CHANGED even without verify, and a component with no entry as ABSENT', async () => {
     const source = packaged();
     rmSync(join(root, 'pdfium', 'pdfium.dll'));
-    const statuses = await componentStatuses({ verify: false, source });
+    const statuses = await componentStatuses({ verify: false, starts: started, source });
     expect(pdfium(statuses)).toMatchObject({ state: 'changed', missing: 1 });
     expect(statuses.find((status) => status.id === 'ghostscript')).toMatchObject({ state: 'absent' });
     expect(statuses).toHaveLength(7);
@@ -91,15 +136,15 @@ describe('componentStatuses', () => {
     );
     const fonts = (statuses: readonly ComponentStatus[]): ComponentStatus | undefined =>
       statuses.find((status) => status.id === 'fonts');
-    expect(fonts(await componentStatuses({ verify: true, source }))).toMatchObject({ state: 'verified', extra: 0 });
+    expect(fonts(await componentStatuses({ verify: true, starts: started, source }))).toMatchObject({ state: 'verified', extra: 0 });
     writeFileSync(join(root, 'fonts', 'Planted.ttf'), 'not pinned');
-    expect(fonts(await componentStatuses({ verify: true, source }))).toMatchObject({ state: 'changed', extra: 1 });
+    expect(fonts(await componentStatuses({ verify: true, starts: started, source }))).toMatchObject({ state: 'changed', extra: 1 });
   });
 
   it('refuses a manifest that does not parse, rather than showing a damaged package as merely absent', async () => {
     const source = packaged();
     writeFileSync(join(root, 'manifest.json'), '{ not json');
-    await expect(componentStatuses({ verify: false, source })).rejects.toThrow();
+    await expect(componentStatuses({ verify: false, starts: started, source })).rejects.toThrow();
   });
 
   it('reads each component from its packaged folder, and the launcher’s variable in development', () => {

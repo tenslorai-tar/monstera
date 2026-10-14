@@ -13,14 +13,15 @@ Monstera uses a few tools of its own to read, convert and recognise documents. T
 
 1. In the **Help** menu, choose **Components**. Or in the rail, choose **Tools**, then **Components** in the **Application** group.
 2. Read each component's **Version** and **State**.
-3. To check every file, choose **Verify files**. Monstera compares each file with the list it was built with.
+3. To check every file, choose **Verify files**. Monstera compares each file with the list it was built with, then starts each part to check that it runs on this computer.
 
 ![The Components window](screenshot:components-1)
 
 ## Good to know
 
-- Every component is installed with Monstera. Nothing is downloaded, and nothing needs to be added later.
-- **Installed** means every file is there. **Verified** means every file was checked and matches.
+- Every component is installed with Monstera, including the Microsoft Visual C++ runtime the parts that need it use. Nothing is downloaded, and nothing needs to be added later.
+- **Installed** means every file is there. **Verified** means every file was checked, matches, and the part started.
+- **Could not start** means the files are as they should be, but Windows would not run the part on this computer. Repair or reinstall Monstera from **Windows Settings**, **Apps**, **Installed apps**.
 - **Changed** means a file is missing, has different contents, or an unexpected file sits beside one. Repair or reinstall Monstera from **Windows Settings**, **Apps**, **Installed apps**.
 - **Not in this build** means this copy of Monstera was made without that component. The features that need it are not offered.
 

@@ -85,7 +85,15 @@ if (handle === null || koffi.address(handle) === 0n) {
   let peak = 0;
   let killedAt: number | null = null;
   let failure: string | null = null;
+  let exited: number | null = null;
   while (Atomics.load(flags, SAMPLER_FLAG.STOP) === 0) {
+    // ASKED FIRST, every sample: a process that has ended still answers the memory read through an open handle, so
+    // the read alone never says the host is gone.
+    const status = [STILL_ACTIVE];
+    if (win32.exitCode(handle, status) === true && status[0] !== STILL_ACTIVE) {
+      exited = status[0] ?? 0;
+      break;
+    }
     const counters: Record<string, unknown> = {};
     if (win32.memoryInfo(handle, counters, size) !== true) {
       // A READ THAT FAILS IS ASKED WHY, and only a host that has ended stops the sampling quietly — its ending reaches
@@ -115,7 +123,9 @@ if (handle === null || koffi.address(handle) === 0n) {
   say(
     failure !== null
       ? { kind: 'failed', detail: failure }
-      : killedAt === null
+      : exited !== null
+        ? { kind: 'exited', code: exited }
+        : killedAt === null
         ? { kind: 'stopped', peakBytes: peak }
         : { kind: 'killed', privateBytes: killedAt },
   );

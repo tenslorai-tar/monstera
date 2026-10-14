@@ -1176,6 +1176,8 @@ describe('the SERVICE releases the entry, because nothing else is told a documen
 describe('onDocumentOpened', () => {
   /** What the composition root's `HostConnectionLost` is to this module: a class the `hostEnded` predicate names. */
   class ConnectionEnded extends Error {}
+  /** What `EngineCannotStartError` is to this module: a class the `cannotStart` predicate names. */
+  class CannotStart extends Error {}
 
   /** Fails `attempts` times, then succeeds. Records every call. */
   function openSurfaces(
@@ -1199,6 +1201,7 @@ describe('onDocumentOpened', () => {
       closedMeanwhile: (error) => error instanceof DocumentNotOpenError,
       hostEnded: (error) => error instanceof HostConnectionLost || error instanceof ConnectionEnded,
       documentUnreadable: (error) => error instanceof EngineOpenFailed,
+      cannotStart: (error) => error instanceof CannotStart,
       documentLocked: (error) =>
         error instanceof EngineDocumentLocked ? error.reason : undefined,
       create: (docId) => {
@@ -1335,6 +1338,20 @@ describe('onDocumentOpened', () => {
     expect(s.created).toHaveLength(1);
     expect(engine.poisoned(docId)).toBe(2);
     expect(engine.sessioned).toBe(0);
+  });
+
+  it('spends ONE attempt on an engine that could not start on this computer — a second host meets the same loader', async () => {
+    const engine = new EngineSessions();
+    const { service, docId } = await oneOpenDocument(engine);
+    const s = openSurfaces(service, Number.POSITIVE_INFINITY, {}, () => new CannotStart('mupdf-shim could not start'));
+
+    await onDocumentOpened(engine, docId, s);
+
+    // The control is the transient case above it: the same endless rejection with a plain error builds TWO hosts. Here
+    // the predicate decides, so delete its branch and this reads 2 — twenty seconds of waiting for the same answer.
+    expect(s.created).toHaveLength(1);
+    expect(engine.poisoned(docId)).toBe(2);
+    expect(s.reported[0]?.detail).toContain('Not retried');
   });
 
   it('blames the document rather than the host, so nothing reads as an unwell engine', async () => {

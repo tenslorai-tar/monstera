@@ -203,7 +203,7 @@ if (!user.ok) throw new Error(`the user's SID could not be read: ${String(user.e
 /** The base `createOfficePlatform` reads: exactly the three fields its body takes. */
 const base = { sessionRoot, directories: directorySurface.createWin32DirectorySurface(), user: user.value };
 process.env['MONSTERA_ONLYOFFICE_EXECUTABLE'] = x2tPath(ROOT);
-const platform = platforms.createOfficePlatform(base);
+const platform = platforms.createOfficePlatform(base, (/** @type {string} */ component) => process.stderr.write(`${component} could not start on this computer\n`));
 if (platform === null) throw new Error('createOfficePlatform answered null with the executable handed down');
 
 /**

@@ -20,7 +20,11 @@ export interface ComponentStatus {
   readonly id: NativeComponentId;
   readonly name: string;
   readonly version: string;
-  readonly state: 'present' | 'verified' | 'absent' | 'changed';
+  /**
+   * `cannot-start` — every file is as pinned, and Verify started the component and Windows would not load it: a file
+   * check cannot see a DLL the component imports that is absent from the computer, which is the Part 0.1 class.
+   */
+  readonly state: 'present' | 'verified' | 'absent' | 'changed' | 'cannot-start';
   readonly missing: number;
   readonly altered: number;
   readonly extra: number;
@@ -92,6 +96,12 @@ async function exists(path: string): Promise<boolean> {
 export async function componentStatuses(options: {
   readonly verify: boolean;
   readonly source?: NativeSource;
+  /**
+   * Starts a component the way the application does — a host built, a converter run — and says whether Windows loaded
+   * it. Asked by Verify only, of a component whose files all matched; `not-checked` where nothing starts (the models,
+   * the fonts). REQUIRED, so a Verify that only hashes cannot be composed by leaving it out.
+   */
+  readonly starts: (id: NativeComponentId) => Promise<'started' | 'cannot-start' | 'not-checked'>;
 }): Promise<readonly ComponentStatus[]> {
   const from = options.source ?? nativeSource();
   const manifest = await readManifest(nativeManifestPath(from));
@@ -116,11 +126,14 @@ export async function componentStatuses(options: {
         ? (await filesUnder(folder)).filter((path) => !pinned.has(path)).length
         : 0;
     const changed = missing + altered + extra > 0;
+    // STARTED ONLY WHERE THE FILES MATCHED: a changed component already has its answer, and starting it would run bytes
+    // nobody pinned.
+    const starts = options.verify && !changed ? await options.starts(id) : 'not-checked';
     statuses.push({
       id,
       name: entry.name,
       version: entry.version,
-      state: changed ? 'changed' : options.verify ? 'verified' : 'present',
+      state: changed ? 'changed' : starts === 'cannot-start' ? 'cannot-start' : options.verify ? 'verified' : 'present',
       missing,
       altered,
       extra,

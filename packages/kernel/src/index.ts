@@ -502,6 +502,7 @@ export {
   probeContainment,
   probePath,
 } from './host/containment.js';
+export { ENGINE_UNLOADABLE_EXIT, LOADER_FAILURES, couldNotStart } from './engineStart.js';
 export {
   type HostRuntime,
   type HostRuntimeOptions,

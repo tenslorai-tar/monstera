@@ -310,6 +310,12 @@ export interface DocumentOpenSurfaces {
    * second attempt, and locked spends no attempt at all and waits for a person.
    */
   readonly documentLocked: (error: unknown) => LockedReason | undefined;
+  /**
+   * Whether a lane entry failed because the engine could not START on this computer (`EngineCannotStartError`) —
+   * injected for `documentUnreadable`'s reason. Deterministic like unreadable, so it spends no second host build; and
+   * not the document's fault, which the person was already told when the host was refused.
+   */
+  readonly cannotStart: (error: unknown) => boolean;
   /** Creates one document's sessions. Runs **inside** that document's lane. */
   readonly create: (docId: DocId) => Promise<DocumentSessions>;
 }
@@ -430,6 +436,18 @@ export async function onDocumentOpened(
               `poisoned without a second attempt: ${String(error)}. The host is healthy and is ` +
               `not rebuilt; commands against this document answer document-poisoned, and ` +
               `close-and-reopen is what clears it.`,
+          });
+          return;
+        }
+
+        // THE COMPUTER, NOT THE DOCUMENT: a host whose engine could not load meets the same loader on a second build,
+        // so the attempt is not spent. Poisoned so commands refuse rather than build host after host; the person was
+        // told what happened, and what to do, when the host was refused.
+        if (surfaces.cannotStart(error)) {
+          sessions.poison(docId);
+          surfaces.failures({
+            event: 'engine-host-gone',
+            detail: `no engine session for document ${docId.slice(0, 8)}…: ${String(error)}. Not retried: a second host meets the same loader.`,
           });
           return;
         }

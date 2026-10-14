@@ -265,6 +265,9 @@ export const RATE_US_CLICK = messageKey('dialog.rate-us.click');
 export const RATE_US_OPEN = messageKey('dialog.rate-us.open');
 export const RATE_US_LATER = messageKey('dialog.rate-us.later');
 export const REVEAL_LOG_TITLE = messageKey('command.reveal-log.title');
+export const COMPONENT_CANNOT_START_TITLE = messageKey('dialog.component-cannot-start.title');
+export const COMPONENT_CANNOT_START_WHAT = messageKey('dialog.component-cannot-start.what');
+export const COMPONENT_CANNOT_START_DO = messageKey('dialog.component-cannot-start.do');
 export const PERMISSION_PASSWORD_REPLACED_TITLE = messageKey('dialog.permission-password-replaced.title');
 export const PERMISSION_PASSWORD_REPLACED_DONE = messageKey('dialog.permission-password-replaced.done');
 export const PERMISSION_PASSWORD_REPLACED_WHAT = messageKey('dialog.permission-password-replaced.what');
@@ -916,6 +919,7 @@ export const COMPONENTS_VERIFIED = messageKey('dialog.components.verified');
 export const COMPONENTS_ABSENT = messageKey('dialog.components.absent');
 export const COMPONENTS_CHANGED = messageKey('dialog.components.changed');
 export const COMPONENTS_CHANGED_DETAIL = messageKey('dialog.components.changed-detail');
+export const COMPONENTS_CANNOT_START = messageKey('dialog.components.cannot-start');
 export const COMPONENTS_VERIFY = messageKey('dialog.components.verify');
 export const COMPONENTS_VERIFIED_NOTE = messageKey('dialog.components.verified-note');
 export const COMPONENTS_REPAIR = messageKey('dialog.components.repair');
@@ -3613,10 +3617,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [COMPONENTS_ABSENT]: 'Not in this build',
   [COMPONENTS_CHANGED]: 'Changed',
   [COMPONENTS_CHANGED_DETAIL]: '{missing} missing, {altered} altered, {extra} unexpected',
+  [COMPONENTS_CANNOT_START]: 'Could not start',
   [COMPONENTS_VERIFY]: 'Verify files',
-  [COMPONENTS_VERIFIED_NOTE]: 'Every file was checked against the list this build of Monstera was made with.',
+  [COMPONENTS_VERIFIED_NOTE]:
+    'Every file was checked against the list this build of Monstera was made with, and each part was started.',
   [COMPONENTS_REPAIR]:
-    'If a component has changed, repair or reinstall Monstera from Windows Settings, Apps, Installed apps.',
+    'If a component has changed or could not start, repair or reinstall Monstera from Windows Settings, Apps, Installed apps.',
   [ABOUT_SOURCE]: 'Source code',
   [ABOUT_LICENCES]: 'Third-party licences',
   // "Rotate page" and not "Rotate": the command rotates the page on screen, and
@@ -6906,6 +6912,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // contents.
   // SAID ONCE per document, after a change to a protected document that Monstera did not know the permissions password of
   // (ADR-0220). The change was made, and that is the first sentence.
+  // ABOUT THE COMPUTER, NEVER THE FILE: the first thing a person needs to know is that their document is not the problem,
+  // because every message this replaced ("could not be opened", "may be damaged") blamed it.
+  [COMPONENT_CANNOT_START_TITLE]: 'A part of Monstera could not start',
+  [COMPONENT_CANNOT_START_WHAT]:
+    'A part of Monstera could not start on this computer, so what you asked for could not be done. Your document is not the problem, and nothing in it was changed.',
+  [COMPONENT_CANNOT_START_DO]:
+    'Restart Monstera and try again. If it happens again, repair or reinstall Monstera from the Microsoft Store. Help › Components shows which part is affected.',
   [PERMISSION_PASSWORD_REPLACED_TITLE]: 'The permissions password was replaced',
   [PERMISSION_PASSWORD_REPLACED_DONE]: 'Your change was made and your document is intact.',
   [PERMISSION_PASSWORD_REPLACED_WHAT]:

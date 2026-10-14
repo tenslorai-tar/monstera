@@ -283,8 +283,9 @@ if (!user.ok) throw new Error(`the user's SID could not be read: ${String(user.e
 const base = { sessionRoot, directories: directorySurface.createWin32DirectorySurface(), user: user.value };
 process.env['MONSTERA_GHOSTSCRIPT_EXECUTABLE'] = gswin64cPath(ROOT);
 process.env['MONSTERA_ONLYOFFICE_EXECUTABLE'] = x2tPath(ROOT);
-const pdfaPlatform = platforms.createPdfaPlatform(base);
-const officePlatform = platforms.createOfficePlatform(base);
+const cannotStart = (/** @type {string} */ component) => process.stderr.write(`${component} could not start on this computer\n`);
+const pdfaPlatform = platforms.createPdfaPlatform(base, cannotStart);
+const officePlatform = platforms.createOfficePlatform(base, cannotStart);
 if (pdfaPlatform === null || officePlatform === null) throw new Error('a converter platform answered null with its executable handed down');
 
 /**

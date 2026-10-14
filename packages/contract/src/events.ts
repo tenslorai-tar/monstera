@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { NATIVE_COMPONENT_IDS } from './nativeComponentIds.js';
+
 /**
  * What `main` may PUSH to the renderer
  * ([ADR-0082](../../../docs/DECISIONS/0082-main-may-push-on-declared-event-channels.md)).
@@ -128,6 +130,14 @@ export const EVENTS = {
    * being worked on, so the payload names none; it carries the kind and nothing a document held.
    */
   'document.notice': z.object({ notice: z.enum(['permission-password-replaced']) }).strict(),
+
+  /**
+   * A part of Monstera could not start on this computer: its program or library was refused by Windows' loader
+   * (`couldNotStart` in the kernel's `engineStart.ts`). About the computer, never the document, so it is pushed
+   * rather than carried by the answer of whichever command happened to need the part first — an open, an import, a
+   * conversion — each of which would otherwise say the FILE was the problem. Names the component and nothing else.
+   */
+  'app.component-cannot-start': z.object({ component: z.enum(NATIVE_COMPONENT_IDS) }).strict(),
 } as const;
 
 export type EventMap = typeof EVENTS;

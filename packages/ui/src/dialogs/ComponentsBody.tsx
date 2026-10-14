@@ -5,6 +5,7 @@ import type { ReactElement } from 'react';
 
 import {
   COMPONENTS_ABSENT,
+  COMPONENTS_CANNOT_START,
   COMPONENTS_CHANGED,
   COMPONENTS_CHANGED_DETAIL,
   COMPONENTS_INTRO,
@@ -30,6 +31,7 @@ const STATE_NAMES: Readonly<Record<Component['state'], MessageKey>> = {
   verified: COMPONENTS_VERIFIED,
   absent: COMPONENTS_ABSENT,
   changed: COMPONENTS_CHANGED,
+  'cannot-start': COMPONENTS_CANNOT_START,
 };
 
 /**
@@ -51,7 +53,7 @@ export default function ComponentsBody({
   readonly verified: boolean;
 } & DialogAnswering<ComponentsAnswer>): ReactElement {
   const { _ } = useLingui();
-  const changed = components.some((component) => component.state === 'changed');
+  const changed = components.some((component) => component.state === 'changed' || component.state === 'cannot-start');
 
   return (
     <div className="m-components">

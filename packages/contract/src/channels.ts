@@ -28,6 +28,7 @@ import { SHOWN_SCHEME_MAX } from './followedLinks.js';
 import { pageSetSchema } from './pageSet.js';
 import { channel, type Channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } from './channel.js';
 import { AI_ANSWER_REFUSALS, MAX_WEB_SOURCES, answerIdSchema, subscriptionIdSchema } from './events.js';
+import { NATIVE_COMPONENT_IDS } from './nativeComponentIds.js';
 import { TRANSLATION_LANGUAGE_IDS } from './translationLanguages.js';
 import { POWERPOINT_FALLBACK_LISTED_MAX, POWERPOINT_MODES } from './powerpointModes.js';
 import { WORD_MODES } from './wordModes.js';
@@ -1565,6 +1566,11 @@ const officeImportOutcomeSchema = z.discriminatedUnion('kind', [
   importUnreadableSchema,
   /** The converter produced no PDF from the file. Nothing was written. */
   z.object({ kind: z.literal('conversion-failed') }),
+  /**
+   * The converter could not start on this computer (Part 0.1) — never the file's fault, and said once by the pushed
+   * `app.component-cannot-start`, so the answer carries nothing to tell. Nothing was written.
+   */
+  z.object({ kind: z.literal('component-cannot-start') }),
   importContestedSchema,
   importWriteFailedSchema,
 ]);
@@ -1624,20 +1630,7 @@ const imageImportOutcomeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('images-too-large'), limitBytes: z.number().int().positive() }),
 ]);
 
-/**
- * The native components a build runs, by the id the manifest, the shell's resolver and the Components dialog share
- * ([ADR-0122](../../../docs/DECISIONS/0122-native-components-one-resolver-a-pinned-manifest-status-and-verify.md)).
- */
-export const NATIVE_COMPONENT_IDS = [
-  'pdfium',
-  'poppler',
-  'ghostscript',
-  'onlyoffice',
-  'mupdf-shim',
-  'ocr-models',
-  'fonts',
-] as const;
-export type NativeComponentId = (typeof NATIVE_COMPONENT_IDS)[number];
+export { NATIVE_COMPONENT_IDS, type NativeComponentId } from './nativeComponentIds.js';
 
 export const channels = {
   'app.info': channel(
@@ -1691,7 +1684,8 @@ export const channels = {
               /** From the manifest; bounded as every crossing string is. */
               name: z.string().min(1).max(80),
               version: z.string().min(1).max(64),
-              state: z.enum(['present', 'verified', 'absent', 'changed']),
+              /** `cannot-start`: every file matched, and Verify started it and Windows would not load it (Part 0.1). */
+              state: z.enum(['present', 'verified', 'absent', 'changed', 'cannot-start']),
               missing: z.number().int().nonnegative(),
               altered: z.number().int().nonnegative(),
               extra: z.number().int().nonnegative(),

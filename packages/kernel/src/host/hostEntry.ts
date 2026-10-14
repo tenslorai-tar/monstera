@@ -42,6 +42,7 @@ import { engineChannels } from './engineChannels.js';
 import { createEngineHandlers } from './engineHandlers.js';
 import { sessionFileAnswers } from './fileAnswers.js';
 import { createHostSessions } from './hostSessions.js';
+import { bindEngineOrExit } from './bindEngine.js';
 import { startEngineHost } from './hostBody.js';
 import { hostFilesystem, hostPipeStream } from './hostNodeSurfaces.js';
 
@@ -123,7 +124,9 @@ function libraryPathFrom(argv: readonly string[]): string {
 
 // BOUND BEFORE ANY HANDLER RUNS, for `pdfiumHostEntry.ts`' reason: a first bind inside a handler would put a load
 // failure inside a document's first answer rather than in this host's start.
-openMupdfShim(libraryPathFrom(process.argv));
+bindEngineOrExit(() => {
+  openMupdfShim(libraryPathFrom(process.argv));
+});
 
 // THE BUNDLED FONTS' FOLDER THIRD and THE INSTALLED FONTS' FOURTH, each empty where there is none (ADR-0177 Decision
 // 1), `pdfiumHostEntry.ts`' arguments: a word a Type 3 page's own fonts cannot draw is set in a face the resolver

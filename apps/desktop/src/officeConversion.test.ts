@@ -98,13 +98,22 @@ function platform(
 ): {
   readonly platform: ConverterPlatform;
   readonly seen: Seen[];
+  /** Each component the platform was told could not start, in order. */
+  readonly told: string[];
 } {
   root = mkdtempSync(join(tmpdir(), 'monstera-office-'));
   const seen: Seen[] = [];
+  const told: string[] = [];
   let limit = 0;
   return {
     seen,
+    told,
     platform: {
+      component: 'onlyoffice',
+      cannotStart: (component) => {
+        told.push(component);
+      },
+      startProbe: [],
       sessionRoot: join(root, 'sessions'),
       directories,
       user: { sid: 'S-1-5-21-1' } as unknown as UserSid,
@@ -509,6 +518,28 @@ describe('createOfficeSource — a workbook in parts', () => {
     // SAID, though nothing was lost: the failed whole conversion is in the log with x2t's reason.
     expect(reported).toStrictEqual(['converter-failed']);
     expect(host.held.size).toBe(0);
+  });
+
+  it('a loader refusal (0xC0000135) is NOT a size failure: no part is halved, it is its own stage, and it is told once', async () => {
+    // THE CONTROL IS THE SAME WORKBOOK WITH x2t EXITING 80 — the memory limit's exit — which the import halves and
+    // retries. Before Part 0.1 a missing VC++ runtime took that road and ended in "may be damaged".
+    const run = async (code: number) => {
+      const built = platform({ writes: false, exit: { kind: 'exited', code } });
+      const host = workbookHost([sheet('Data', 50_000)], { rowsPerPage: 100 });
+      let stage: string | undefined;
+      await createOfficeSource(built.platform, () => undefined, host.composer)('xlsx', new TextEncoder().encode('PK workbook')).catch(
+        (error: unknown) => {
+          if (error instanceof OfficeConversionFailedError) stage = error.failure.stage;
+        },
+      );
+      return { conversions: built.seen.length, stage, told: built.told };
+    };
+
+    const loader = await run(0xc0000135);
+    const sized = await run(80);
+    expect(loader).toStrictEqual({ conversions: 1, stage: 'cannot-start', told: ['onlyoffice'] });
+    expect(sized.conversions).toBeGreaterThan(1);
+    expect(sized.told).toStrictEqual([]);
   });
 
   it(`NAMES a sheet x2t always fails on once it has spent ${String(MAX_FAILED_PARTS_PER_SHEET)} conversions, and keeps the rest`, async () => {

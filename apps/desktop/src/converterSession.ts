@@ -3,6 +3,8 @@ import { createReadStream, existsSync, mkdirSync } from 'node:fs';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
+import type { NativeComponentId } from '@monstera/contract';
+
 import type { ContainedProgram, ConverterExecutablePath } from './containedProgram.js';
 import {
   type ConverterBounds,
@@ -51,6 +53,35 @@ export interface ConverterPlatform {
     readonly diagnosticPath: string;
   }) => ConverterSurface;
   readonly bounds: ConverterBounds;
+  /** Which component the executable is — what the person is told could not start, where it could not. */
+  readonly component: NativeComponentId;
+  /** Tells the person, once per component, that it could not start on this computer (`app.component-cannot-start`). */
+  readonly cannotStart: (component: NativeComponentId) => void;
+  /**
+   * A command line that runs the program and ends without a document — what Help › Components starts it with to learn
+   * whether Windows loads it. Windows resolves a program's imports before its first line, so any arguments it ends on
+   * answer the question; the ones chosen print a version or a usage line and exit.
+   */
+  readonly startProbe: readonly string[];
+}
+
+/**
+ * Whether the converter starts on this computer: run once with {@link ConverterPlatform.startProbe}, contained like a
+ * conversion. A loader refusal is `cannot-start`; any exit Windows' loader did not cause means the program ran, whatever
+ * it said about having nothing to convert.
+ */
+export async function converterStarts(platform: ConverterPlatform): Promise<'started' | 'cannot-start'> {
+  const diagnostic = mintName();
+  if (!diagnostic.ok) return 'cannot-start';
+  mkdirSync(platform.sessionRoot, { recursive: true });
+  const surface = platform.surfaceFor({
+    program: { runs: 'converter', executablePath: platform.executable, commandArguments: [...platform.startProbe] },
+    workingDirectory: dirname(platform.executable),
+    containerName: platform.containerName,
+    diagnosticPath: hostDiagnosticPath(platform.sessionRoot, diagnostic.value),
+  });
+  const ran = await runContainedConverter(surface, platform.bounds);
+  return ran.ok || ran.error.stage === 'exit-code' ? 'started' : 'cannot-start';
 }
 
 /** Why a conversion produced nothing: the seam's own failures, the session area's, or an exit with no file. */
@@ -76,6 +107,8 @@ export function describeConversionFailure(failure: ConversionFailure): string {
       return `the converter's exit could not be read: ${failure.detail}`;
     case 'exit-code':
       return `the converter exited ${String(failure.code)}${failure.said === null ? '' : `: ${failure.said}`}`;
+    case 'cannot-start':
+      return `the converter could not start on this computer: Windows' loader ended it with 0x${(failure.code >>> 0).toString(16)}${failure.said === null ? '' : `: ${failure.said}`}`;
     case 'no-output':
       return `the converter exited 0 and wrote nothing${failure.said === null ? '' : `: ${failure.said}`}`;
   }
@@ -199,6 +232,9 @@ export async function convertDocument(
       diagnosticPath: hostDiagnosticPath(platform.sessionRoot, diagnostic.value),
     });
     const ran = await runContainedConverter(surface, platform.bounds);
+    // ABOUT THE COMPUTER, so said here — once, whichever conversion met it first — rather than by each caller's answer,
+    // every one of which would otherwise read it as the file's failure.
+    if (!ran.ok && ran.error.stage === 'cannot-start') platform.cannotStart(platform.component);
     if (!ran.ok) throw failed(ran.error);
     // EXITED 0 IS NOT WROTE ONE. Without this the missing file surfaced as a read error part way into the caller's
     // write, where it names a path in the session area rather than the converter.

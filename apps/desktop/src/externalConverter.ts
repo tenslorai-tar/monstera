@@ -1,3 +1,4 @@
+import { couldNotStart } from '@monstera/kernel';
 import { type Result, err, ok } from '@monstera/shared';
 
 import {
@@ -42,7 +43,13 @@ export type ConverterFailure =
   | { readonly stage: 'start'; readonly failure: HostCreationFailure }
   | { readonly stage: 'timed-out'; readonly afterMs: number }
   | { readonly stage: 'exit-unreadable'; readonly detail: string }
-  | { readonly stage: 'exit-code'; readonly code: number; readonly said: string | null };
+  | { readonly stage: 'exit-code'; readonly code: number; readonly said: string | null }
+  /**
+   * Windows' loader ended the converter before its first line (`couldNotStart`): a DLL it imports is missing or too old.
+   * Its own stage because every caller reads `exit-code` as the conversion failing — Office import as a part too large,
+   * then as a damaged file — and this is neither.
+   */
+  | { readonly stage: 'cannot-start'; readonly code: number; readonly said: string | null };
 
 /**
  * A conversion that exited 0, with what the converter printed — or null where it
@@ -104,7 +111,7 @@ export async function runContainedConverter(
         // converter can exit 0 having changed what it was given, and say so only here.
         return exit.code === 0
           ? ok({ said: surface.diagnostics() })
-          : err({ stage: 'exit-code', code: exit.code, said: surface.diagnostics() });
+          : err({ stage: couldNotStart(exit.code) ? 'cannot-start' : 'exit-code', code: exit.code, said: surface.diagnostics() });
     }
   } finally {
     surface.close(process);

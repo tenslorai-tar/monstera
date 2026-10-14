@@ -2,7 +2,12 @@ import { ENGINE_HOST_FRAME_MAX_BYTES, encodeFrame } from '@monstera/contract';
 import { asDocId, type DocId } from '@monstera/shared';
 import { describe, expect, it, vi } from 'vitest';
 
-import { HOST_CONNECT_TIMEOUT_MS, createEngineHostConnection } from './engineHostConnection.js';
+import {
+  EngineCannotStartError,
+  HOST_CONNECT_TIMEOUT_MS,
+  createEngineHostConnection,
+  refusedAtConnect,
+} from './engineHostConnection.js';
 import {
   FAKE_CONTAINER,
   FAKE_PIPE_NAME,
@@ -399,6 +404,61 @@ describe('createEngineHostConnection', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('refuses AT ONCE, with the exit code, when the host process ends before it connects (Part 0.1)', async () => {
+    // A host whose engine Windows will not load ends at its first line, and the reader sits on a pipe nobody will open,
+    // so before the sampler said so this waited out the whole bound — twice, with the retry — for a process long gone.
+    vi.useFakeTimers();
+    try {
+      const h = harness({ connect: true });
+      const pending = connect(h);
+      h.samplerExits(90);
+      // ONE MILLISECOND, against the bound's ten thousand: the refusal is the exit's, not the timer's.
+      await vi.advanceTimersByTimeAsync(1);
+      let settled: Awaited<typeof pending> | undefined;
+      void pending.then((value) => {
+        settled = value;
+      });
+      await vi.advanceTimersByTimeAsync(1);
+
+      expect(settled?.ok).toBe(false);
+      expect(settled !== undefined && !settled.ok && settled.error).toMatchObject({ stage: 'connect', exitCode: 90 });
+      expect(h.calls).toContain('host.terminate');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('CONTROL: a host that ends AFTER it connected is the pipe’s to report, and the sampler adds nothing', async () => {
+    const h = harness();
+    const connection = await connect(h);
+    expect(connection.ok).toBe(true);
+    h.samplerExits(1);
+    expect(h.endings).toEqual([]);
+  });
+
+  it('reads a refusal whose host could not load its engine as COULD NOT START, told once per call', () => {
+    const told: string[] = [];
+    const error = refusedAtConnect('engine host', 'mupdf-shim', { stage: 'connect', detail: 'x', exitCode: 90 }, (component) =>
+      told.push(component),
+    );
+    expect(error).toBeInstanceOf(EngineCannotStartError);
+    expect(told).toStrictEqual(['mupdf-shim']);
+  });
+
+  it('CONTROL: a refusal with any other exit, or none, is the plain refusal and tells nobody', () => {
+    const told: string[] = [];
+    const tell = (component: string): void => {
+      told.push(component);
+    };
+    expect(refusedAtConnect('engine host', 'mupdf-shim', { stage: 'connect', detail: 'x', exitCode: 1 }, tell)).not.toBeInstanceOf(
+      EngineCannotStartError,
+    );
+    expect(refusedAtConnect('engine host', 'mupdf-shim', { stage: 'connect', detail: 'x' }, tell)).not.toBeInstanceOf(
+      EngineCannotStartError,
+    );
+    expect(told).toStrictEqual([]);
   });
 
   it("carries the HOST'S OWN words into the refusal when it wrote any", async () => {

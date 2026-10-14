@@ -233,6 +233,7 @@ import { compareDocumentsCommand } from './commands/compareDocuments.js';
 import { translatePageCommand } from './commands/translatePage.js';
 import { COMMAND_PROBLEM_DIALOG_ID } from './dialogs/commandProblem.js';
 import { OPEN_PROBLEM_DIALOG_ID } from './dialogs/openProblem.js';
+import { COMPONENT_CANNOT_START_DIALOG_ID } from './dialogs/componentCannotStart.js';
 import { PERMISSION_PASSWORD_REPLACED_DIALOG_ID } from './dialogs/permissionPasswordReplaced.js';
 import { sayWhenUnwritable } from './commands/readOnlyFile.js';
 import { convertScanCommand } from './commands/convertScan.js';
@@ -3331,6 +3332,14 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     () =>
       subscribe('document.notice', () => {
         void ask(PERMISSION_PASSWORD_REPLACED_DIALOG_ID, {});
+      }),
+    [ask, subscribe],
+  );
+  // A PART OF MONSTERA THAT COULD NOT START (Part 0.1): pushed by main, once per part per run, so each arrival is shown.
+  useEffect(
+    () =>
+      subscribe('app.component-cannot-start', () => {
+        void ask(COMPONENT_CANNOT_START_DIALOG_ID, {});
       }),
     [ask, subscribe],
   );

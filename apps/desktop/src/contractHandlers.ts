@@ -3528,6 +3528,8 @@ function newFromOfficeHandler(
         return ok({ kind: 'unreadable' });
       case 'conversion-failed':
         return ok({ kind: 'conversion-failed' });
+      case 'component-cannot-start':
+        return ok({ kind: 'component-cannot-start' });
       case 'destination-contested':
         return ok({ kind: 'destination-contested', openElsewhere: converted.openElsewhere });
       case 'write-failed':

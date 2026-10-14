@@ -115,6 +115,9 @@ export function markdownImportProblem(
     // lacks have their own dialog, which the Office command opens (decision C). So did
     // `opened-with-boxes`, whose boxed characters the text imports name (ADR-0172), and `opened-with-skips`, which
     // opened with every other part and whose parts left out the import names.
+    // A PART OF MONSTERA THAT COULD NOT START was told by its own notice (`app.component-cannot-start`), which says the
+    // file is not the problem; a second dialog here would say the opposite.
+    case 'component-cannot-start':
     case 'opened-incomplete':
     case 'opened-with-boxes':
     case 'opened-with-skips':

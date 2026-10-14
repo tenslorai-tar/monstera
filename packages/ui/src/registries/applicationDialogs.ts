@@ -38,6 +38,7 @@ import { GENERATE_TOC_DIALOG } from '../dialogs/generateToc.js';
 import { HEADER_FOOTER_DIALOG } from '../dialogs/headerFooter.js';
 import { HELP_DIALOG } from '../dialogs/help.js';
 import { HISTORY_TRIMMED_DIALOG } from '../dialogs/historyTrimmed.js';
+import { COMPONENT_CANNOT_START_DIALOG } from '../dialogs/componentCannotStart.js';
 import { PERMISSION_PASSWORD_REPLACED_DIALOG } from '../dialogs/permissionPasswordReplaced.js';
 import { IMPORT_ANNOTATIONS_PROBLEM_DIALOG } from '../dialogs/importAnnotationsProblem.js';
 import { IMPORT_ANNOTATIONS_RESULT_DIALOG } from '../dialogs/importAnnotationsResult.js';
@@ -135,6 +136,7 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   COMMAND_PROBLEM_DIALOG,
   HISTORY_TRIMMED_DIALOG,
   PERMISSION_PASSWORD_REPLACED_DIALOG,
+  COMPONENT_CANNOT_START_DIALOG,
   DELETE_PAGES_DIALOG,
   DELETE_FIELDS_DIALOG,
   STAMP_DIALOG,

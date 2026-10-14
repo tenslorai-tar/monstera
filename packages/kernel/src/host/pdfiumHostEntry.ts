@@ -23,6 +23,7 @@ import { sessionFileAnswers } from './fileAnswers.js';
 import { createHostSessions } from './hostSessions.js';
 import { startEngineHost } from './hostBody.js';
 import { hostFilesystem, hostPipeStream } from './hostNodeSurfaces.js';
+import { bindEngineOrExit } from './bindEngine.js';
 import { pdfiumChannels } from './pdfiumChannels.js';
 import { boundedToAnswer, createPdfiumHandlers } from './pdfiumHandlers.js';
 
@@ -95,7 +96,9 @@ const { pipeName, libraryPath } = argumentsFrom(process.argv);
 // process rather than a handle, so binding it here — once, at startup — is what
 // the C API actually offers. A first call inside a handler would make the first
 // document pay for it and would put the failure inside a channel's answer.
-openPdfium(libraryPath);
+bindEngineOrExit(() => {
+  openPdfium(libraryPath);
+});
 
 // THE BUNDLED FONTS' FOLDER, the factory's THIRD argument, empty where it had none (ADR-0173 Decision 4): a word an
 // edit's own font cannot carry is set in a face the resolver chooses from it. Read on first use, as the compose host's.

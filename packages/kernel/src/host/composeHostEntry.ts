@@ -19,6 +19,7 @@ import { probeContainment } from './containment.js';
 import type { HostArea } from './engineHandlers.js';
 import { sessionFileAnswers } from './fileAnswers.js';
 import { startEngineHost } from './hostBody.js';
+import { bindEngineOrExit } from './bindEngine.js';
 import { hostFilesystem, hostPipeStream } from './hostNodeSurfaces.js';
 import { createHostSessions } from './hostSessions.js';
 
@@ -77,7 +78,11 @@ const shimPath = process.argv[3] === undefined || process.argv[3].length === 0 ?
 
 // BOUND AT STARTUP, for `pdfiumHostEntry.ts`' reason: a first bind inside a handler would put a
 // load failure inside a person's Optimize answer rather than in this host's start.
-if (shimPath !== null) openMupdfShim(shimPath);
+if (shimPath !== null) {
+  bindEngineOrExit(() => {
+    openMupdfShim(shimPath);
+  });
+}
 
 /**
  * The bundled fonts' folder (ADR-0172), the factory's THIRD argument, empty where it had none — `shimPath`'s rule.

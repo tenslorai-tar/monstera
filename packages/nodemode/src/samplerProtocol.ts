@@ -34,4 +34,10 @@ export type SamplerMessage =
   /** Sampling ended without a kill — main stopped it, or the host had ended — with the highest commit seen. */
   | { readonly kind: 'stopped'; readonly peakBytes: number }
   /** The sampler cannot see a host that is still running: it could not open it, or a read was refused. */
-  | { readonly kind: 'failed'; readonly detail: string };
+  | { readonly kind: 'failed'; readonly detail: string }
+  /**
+   * The host ended on its own, with Windows' exit code for it. The pipe reports a host that ends after it connected;
+   * nothing else reports one that ends BEFORE, which left main waiting out the connect bound for a process that had
+   * already gone.
+   */
+  | { readonly kind: 'exited'; readonly code: number };

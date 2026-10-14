@@ -4,8 +4,10 @@ import {
   type HostClient,
   type HostEnding,
   type HostTermination,
+  couldNotStart,
   createHostClient,
 } from '@monstera/kernel';
+import type { NativeComponentId } from '@monstera/contract';
 import { type DocId, type Result, err, ok } from '@monstera/shared';
 
 import {
@@ -174,6 +176,39 @@ export interface EngineHostConnectionFailure {
    */
   readonly stage: 'pipe' | 'reader' | 'host' | 'connect';
   readonly detail: string;
+  /** Where the host process ended before it connected, its exit code — {@link ENGINE_UNLOADABLE_EXIT} when its engine could not load. */
+  readonly exitCode?: number;
+}
+
+/**
+ * A host that ended before it connected because its engine could not load on this computer (`couldNotStart`). Not a
+ * crash and not the document: a second attempt builds the same host and meets the same loader.
+ */
+export class EngineCannotStartError extends Error {
+  readonly component: NativeComponentId;
+
+  constructor(component: NativeComponentId, detail: string) {
+    super(`${component} could not start on this computer: ${detail}`);
+    this.name = 'EngineCannotStartError';
+    this.component = component;
+  }
+}
+
+/**
+ * The error a host refused at connect is thrown as — the ONE reading of a refusal, for all three hosts (B3a). A
+ * could-not-start refusal is told to the person through `told`, which says it once per component.
+ */
+export function refusedAtConnect(
+  host: string,
+  component: NativeComponentId,
+  failure: EngineHostConnectionFailure,
+  told: (component: NativeComponentId) => void,
+): Error {
+  if (failure.exitCode !== undefined && couldNotStart(failure.exitCode)) {
+    told(component);
+    return new EngineCannotStartError(component, failure.detail);
+  }
+  return new Error(`the ${host} was refused at ${failure.stage}: ${failure.detail}`);
 }
 
 /**
@@ -360,7 +395,9 @@ export async function createEngineHostConnection(
      * terminated, because a termination this side asks for otherwise reads as a deliberate close.
      */
     raised: HostTermination | null;
-  } = { client: null, host: null, started: false, end: null, whenEnded: null, sampler: null, raised: null };
+    /** The exit code of a host that ended before it connected, as the sampler read it. */
+    exitCode: number | null;
+  } = { client: null, host: null, started: false, end: null, whenEnded: null, sampler: null, raised: null, exitCode: null };
 
   /**
    * Which termination the ending really is.
@@ -493,6 +530,13 @@ export async function createEngineHostConnection(
   state.sampler = sampler;
   sampler.onMessage((message) => {
     if (message.kind === 'failed') raise({ code: 'sampler-failed', detail: message.detail });
+    // A HOST THAT ENDED BEFORE IT CONNECTED is told here or nowhere: the reader is blocked on a pipe nobody will open,
+    // so without this the connect bound runs out for a process that is already gone. After it connected, the pipe
+    // reports the ending and this adds nothing.
+    if (message.kind === 'exited' && !state.started) {
+      state.exitCode = message.code;
+      raise({ code: 'connection-lost', detail: `the host process ended before it connected, exit code 0x${message.code.toString(16)}` });
+    }
   });
 
   // THE PEER, BEFORE THE CLIENT. Everything above built something; this waits
@@ -516,7 +560,7 @@ export async function createEngineHostConnection(
     // document at two crashes.
     const detail = said === null ? peer.detail : `${peer.detail}. The host said: ${said}`;
     transport.terminate({ code: 'shutdown', detail: `the host never connected: ${detail}` });
-    return err({ stage: 'connect', detail });
+    return err(state.exitCode === null ? { stage: 'connect', detail } : { stage: 'connect', detail, exitCode: state.exitCode });
   }
 
   state.started = true;
