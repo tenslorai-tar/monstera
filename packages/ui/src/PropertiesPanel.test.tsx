@@ -608,7 +608,7 @@ describe('PropertiesPanel with an object selected on the page (ADR-0153 Decision
   const RULE: ObjectPick = {
     page: 2,
     version: asDocVersion(4),
-    object: { source: 'content', index: 1, ordinal: 0, kind: 'path', box: { x0: 0, y0: 0, x1: 10, y1: 1 }, fill: { red: 0, green: 0, blue: 0, alpha: 128 } },
+    object: { source: 'content', index: 1, ordinal: 0, kind: 'path', box: { x0: 0, y0: 0, x1: 10, y1: 1 }, drawn: { x0: 0, y0: 0, x1: 10, y1: 1 }, fill: { red: 0, green: 0, blue: 0, alpha: 128 } },
   };
 
   function shown(pick: ObjectPick): string[] {

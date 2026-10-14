@@ -2307,8 +2307,44 @@ describe('delete pages — the mutation-dialog gate', () => {
       ordinal: 0,
       kind: 'picture',
       box: { x0: 10, y0: 20, x1: 110, y1: 90 },
+      // NOTHING CLIPS A STAMP: what shows is its rectangle, and that is also the box its writer knows it by.
+      drawn: { x0: 10, y0: 20, x1: 110, y1: 90 },
       fill: null,
     });
+  });
+
+  it('EDIT OBJECT’s read outlines a clipped picture by what SHOWS and keeps the engine’s box to name it by (E3)', async () => {
+    const read = await readPageObjects(
+      createClient(channels, (id) =>
+        Promise.resolve(
+          id === 'document.annotations'
+            ? ok({ version: asDocVersion(4), annotations: [], next: null, truncated: false })
+            : ok({
+                version: asDocVersion(4),
+                objects: [
+                  { index: 3, kind: 'image' as const, left: 20, bottom: 300, right: 400, top: 490, shown: { left: 200, bottom: 300, right: 400, top: 450 }, fill: null },
+                  // CONTROL: nothing narrows this one, so what shows is the engine's box.
+                  { index: 4, kind: 'image' as const, left: 0, bottom: 0, right: 50, top: 60, fill: null },
+                ],
+                next: null,
+                truncated: false,
+              }),
+        ),
+      ),
+      DOC,
+      3,
+    );
+    if (!read.ok) throw new Error('the read was refused');
+    expect(read.objects.objects.map((object) => [object.box, object.drawn])).toStrictEqual([
+      [
+        { x0: 200, y0: 300, x1: 400, y1: 450 },
+        { x0: 20, y0: 300, x1: 400, y1: 490 },
+      ],
+      [
+        { x0: 0, y0: 0, x1: 50, y1: 60 },
+        { x0: 0, y0: 0, x1: 50, y1: 60 },
+      ],
+    ]);
   });
 
   it('EDIT OBJECT’s read REFUSES two walks at different versions, and a refused walk, rather than outlining either', async () => {

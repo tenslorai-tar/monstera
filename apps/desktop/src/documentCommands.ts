@@ -2130,6 +2130,8 @@ export interface DocumentPageObject {
   readonly bottom: number;
   readonly right: number;
   readonly top: number;
+  /** The part of the box its clip lets through, absent where nothing narrows it (E3). */
+  readonly shown?: { readonly left: number; readonly bottom: number; readonly right: number; readonly top: number };
   readonly fill: {
     readonly red: number;
     readonly green: number;

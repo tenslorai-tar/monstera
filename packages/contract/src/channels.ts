@@ -5798,6 +5798,11 @@ export const channels = {
             bottom: z.number(),
             right: z.number(),
             top: z.number(),
+            /**
+             * The part of the box its clip lets through, absent where nothing narrows it. A picture placed larger than its
+             * window is drawn, picked and moved by what shows, never by the box it would have unclipped.
+             */
+            shown: z.object({ left: z.number(), bottom: z.number(), right: z.number(), top: z.number() }).optional(),
             fill: z
               .object({
                 red: z.number().int().min(0).max(255),

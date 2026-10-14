@@ -315,6 +315,23 @@ export interface DrawnObject {
   readonly clips: boolean;
   /** A path's points, in page space: the corners of its segments and their control points. */
   readonly points: readonly (readonly [number, number])[];
+  /** The clip windows it is drawn through, outermost first (E3): what a placement may carry with it. */
+  readonly windows: readonly ClipWindow[];
+}
+
+/**
+ * A CLIP a page sets (`W` or `W*`, then `n` or a paint), from the first segment of its path to the `Q` that ends it, or
+ * to the end of the content where nothing does. A picture placed larger than the window it shows through is drawn under
+ * one, and moving the picture without its window would slide the picture under a window that stays (the owner's E3).
+ */
+export interface ClipWindow {
+  /** Where its path begins and where the `Q` that ends it begins, as byte offsets into the joined content. */
+  readonly start: number;
+  readonly end: number;
+  /** The CTM its path is built under, which is the CTM at `start`. */
+  readonly ctm: Matrix;
+  /** Its path's points in page space, control points included. */
+  readonly points: readonly (readonly [number, number])[];
 }
 
 /** Every object PDFium makes of what a page DRAWS, in order, by kind (ADR-0240 Decision 2). */
@@ -387,8 +404,11 @@ function scan(
   const counts = { path: 0, image: 0, form: 0, shading: 0 };
   /** The path being built: where its first segment began, its points in page space, and whether it clips. */
   let path: { start: number; points: (readonly [number, number])[]; clips: boolean } | null = null;
+  /** The clips in force, outermost first, each with the `q` depth it was set at; `end` is filled when a `Q` ends it. */
+  let windows: { start: number; end: number; depth: number; ctm: Matrix; points: readonly (readonly [number, number])[] }[] = [];
   const draw = (kind: DrawnObject['kind'], start: number, end: number, ctmNow: Matrix, clips = false, points: DrawnObject['points'] = []): void => {
-    drawn.push({ kind, ordinal: counts[kind], start, end, ctm: ctmNow, clips, points });
+    // THE RECORDS THEMSELVES, not copies: a window's end is known only at the `Q` that ends it, after what it holds.
+    drawn.push({ kind, ordinal: counts[kind], start, end, ctm: ctmNow, clips, points, windows: [...windows] });
     counts[kind] += 1;
   };
   /** Where each text object ends, by where it begins: the offset just past its `ET`. */
@@ -430,6 +450,9 @@ function scan(
         saved.push({ state, ctm, settings });
         break;
       case 'Q': {
+        // A CLIP ENDS WITH THE GRAPHICS STATE IT WAS SET IN (§8.5.4): every window set at this depth or deeper.
+        for (const window of windows) if (window.depth >= saved.length) window.end = token.start;
+        windows = windows.filter((window) => window.depth < saved.length);
         const restored = saved.pop();
         if (restored !== undefined) {
           state = restored.state;
@@ -508,6 +531,8 @@ function scan(
       if (path !== null) path.clips = true;
     } else if (PAINTS.has(op) || op === 'n') {
       if (path !== null && op !== 'n') draw('path', path.start, token.end, ctm, path.clips, path.points);
+      // THE CLIP TAKES HOLD AFTER THE PAINT (§8.5.4), so the path that sets it is not drawn through it.
+      if (path?.clips === true) windows.push({ start: path.start, end: content.length, depth: saved.length, ctm, points: path.points });
       path = null;
     } else if (op === 'Do') {
       const name = operands[0];

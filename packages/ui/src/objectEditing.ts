@@ -50,8 +50,16 @@ export interface EditableObject {
    */
   readonly ordinal: number;
   readonly kind: ObjectKind;
-  /** Its box in PDF space. */
+  /**
+   * What SHOWS of it, in PDF space: the box its clip lets through (E3). Every outline, handle and hit test takes this, so
+   * a picture placed larger than its window is picked where it is seen.
+   */
   readonly box: AnnotationRect;
+  /**
+   * The engine's own box for it, as if unclipped: what a command names the object by and scales it about. Equal to
+   * `box` where nothing narrows it. Required, so no reader can take the shown box for the engine's by leaving it out.
+   */
+  readonly drawn: AnnotationRect;
   /** Its fill, for page content; `null` for a picture and where PDFium would not say. */
   readonly fill: ObjectFill | null;
 }
@@ -135,14 +143,22 @@ export function placeCommand(pick: ObjectPick, target: AnnotationRect): Dispatch
   }
   const width = from.x1 - from.x0;
   const height = from.y1 - from.y0;
+  const scaleBy = {
+    x: width > 0 ? scaled((target.x1 - target.x0) / width) : 1,
+    y: height > 0 ? scaled((target.y1 - target.y0) / height) : 1,
+  };
+  // THE TARGET IS FOR WHAT SHOWS, and both engines scale about the corner of the box they hold, the unclipped one. So
+  // the move is the shown corner's travel, less what scaling about the engine's corner already carried it:
+  // p' = s·p + drawn·(1 − s) + move puts the shown corner at the target's exactly. Nothing narrowed: drawn is the box.
+  const drawn = object.drawn;
   const placement = {
     page: pick.page,
     index: object.index,
-    moveBy: { x: bounded(target.x0 - from.x0), y: bounded(target.y0 - from.y0) },
-    scaleBy: {
-      x: width > 0 ? scaled((target.x1 - target.x0) / width) : 1,
-      y: height > 0 ? scaled((target.y1 - target.y0) / height) : 1,
+    moveBy: {
+      x: bounded(target.x0 - from.x0 + (from.x0 - drawn.x0) * (1 - scaleBy.x)),
+      y: bounded(target.y0 - from.y0 + (from.y0 - drawn.y0) * (1 - scaleBy.y)),
     },
+    scaleBy,
     version: pick.version,
   };
   // A PICTURE, A FORM OR A SHAPE IS MOVED WHERE IT IS DRAWN (ADR-0240, the owner's E1): PDFium's route writes the page's
@@ -153,7 +169,8 @@ export function placeCommand(pick: ObjectPick, target: AnnotationRect): Dispatch
       ...placement,
       object: object.kind,
       ordinal: object.ordinal,
-      box: { left: from.x0, bottom: from.y0, right: from.x1, top: from.y1 },
+      // THE ENGINE'S OWN BOX, which is how the kernel knows the object it finds in the content is the one listed.
+      box: { left: drawn.x0, bottom: drawn.y0, right: drawn.x1, top: drawn.y1 },
     };
   }
   return { kind: 'placePageObject', ...placement };

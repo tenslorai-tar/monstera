@@ -36,12 +36,15 @@ const CASES = [
   'the logo resized to twice its size is read by PDFium twice as wide and tall, its bottom-left corner where it was',
   'CONTROL: the same photo placed with no move is read where it was, so the move above is the command’s',
   'a TEXT object moved on that page keeps PDFium’s route and is refused as moved text, which the person is told in words',
+  'PDFium’s listing answers a photo placed larger than its window by the window it shows through (E3); CONTROL: the unclipped photo has none',
+  'the clipped photo moved where it is drawn carries its window: what shows reads back exactly the points further on',
+  'CONTROL: a window that also holds a shape stays where it is, so the photo in it moves and the shape does not',
 ];
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 6 });
-if (CASES.length !== 6) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 6`);
+const roster = createRoster(failures, { cases: 9 });
+if (CASES.length !== 9) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 9`);
 
 /** @param {string} name @param {boolean} held @param {string} detail */
 function check(name, held, detail) {
@@ -65,7 +68,13 @@ async function magazine() {
   });
   page.node.setXObject(PDFName.of('MonPhoto'), document.context.register(photo));
   const original = Buffer.concat((await pageStreams(bytes, 0)).map((stream) => Buffer.concat([Buffer.from(stream), Buffer.from('\n')])));
-  const drawn = Buffer.from('q 120 0 0 90 300 400 cm /MonPhoto Do Q\nq 1 0 0 rg 300 300 m 350 350 l 400 300 l h f Q');
+  // THEN A MAGAZINE'S PHOTO (E3): placed 160 by 120 at (320, 280) and shown through an 80 by 50 window at (360, 300); and
+  // a window holding a photo AND a blue triangle, which no placement may carry, since it would move the triangle too.
+  const drawn = Buffer.from(
+    'q 120 0 0 90 300 400 cm /MonPhoto Do Q\nq 1 0 0 rg 300 300 m 350 350 l 400 300 l h f Q\n' +
+      'q 360 300 80 50 re W n q 160 0 0 120 320 280 cm /MonPhoto Do Q Q\n' +
+      'q 50 50 200 100 re W n q 100 0 0 80 60 60 cm /MonPhoto Do Q 0 0 1 rg 150 60 m 200 100 l 240 60 l h f Q',
+  );
   page.node.set(PDFName.of('Contents'), document.context.register(document.context.flateStream(Buffer.concat([original, drawn]))));
   return document.save({ useObjectStreams: false });
 }
@@ -171,6 +180,53 @@ async function run(pdfium, kernel) {
     CASES[5] ?? '',
     textRefusal?.name === 'EditRefusedError' && textRefusal.step === 'moved-text',
     `the text move answered ${String(textRefusal?.name)} at step ${String(textRefusal?.step)}`,
+  );
+
+  // THE CLIPPED PHOTO, by the window's place in its 160 by 120 placement: a quarter in from the left, half as wide, and
+  // 50 of its 120 tall, 20 from one edge — which edge depends on whether the print's open matrix turns y over.
+  const images = before.objects.filter((/** @type {any} */ object) => object.kind === 'image');
+  const clipped = images[1];
+  const fraction = (/** @type {number} */ part, /** @type {number} */ whole) => Math.round((part / whole) * 1000) / 1000;
+  const shownOf = (/** @type {any} */ object) => object?.shown ?? null;
+  const windowRead = shownOf(clipped);
+  const width = clipped.right - clipped.left;
+  const height = clipped.top - clipped.bottom;
+  check(
+    CASES[6] ?? '',
+    windowRead !== null &&
+      shownOf(photo) === null &&
+      fraction(windowRead.left - clipped.left, width) === 0.25 &&
+      fraction(windowRead.right - windowRead.left, width) === 0.5 &&
+      fraction(windowRead.top - windowRead.bottom, height) === fraction(50, 120) &&
+      [fraction(20, 120), fraction(50, 120)].includes(fraction(windowRead.bottom - clipped.bottom, height)),
+    `the clipped photo listed at ${JSON.stringify(box(clipped))} showing ${JSON.stringify(windowRead)}; the unclipped one showing ${JSON.stringify(shownOf(photo))}`,
+  );
+
+  // MOVED BY THE ENGINE'S OWN BOX, as the renderer names it, and read back by PDFium: the window went with the photo.
+  const carried = await read(await placed(bytes, { ...base, index: clipped.index, object: 'image', ordinal: 1, box: box(clipped), moveBy: { x: 20, y: -10 } }));
+  const carriedPhoto = carried.objects.filter((/** @type {any} */ object) => object.kind === 'image')[1];
+  const carriedWindow = shownOf(carriedPhoto);
+  check(
+    CASES[7] ?? '',
+    windowRead !== null &&
+      carriedWindow !== null &&
+      shifted(windowRead, 20, -10) === JSON.stringify([carriedWindow.left, carriedWindow.bottom, carriedWindow.right, carriedWindow.top].map(round)) &&
+      shifted(clipped, 20, -10) === JSON.stringify([carriedPhoto.left, carriedPhoto.bottom, carriedPhoto.right, carriedPhoto.top].map(round)) &&
+      JSON.stringify(carried.texts) === JSON.stringify(before.texts),
+    `the window read back at ${JSON.stringify(carriedWindow)} from ${JSON.stringify(windowRead)}, the photo at ${JSON.stringify(box(carriedPhoto ?? {}))}`,
+  );
+
+  const sharedPhoto = images[2];
+  const triangle = before.objects.filter((/** @type {any} */ object) => object.kind === 'path')[1];
+  const sharedAfter = await read(await placed(bytes, { ...base, index: sharedPhoto.index, object: 'image', ordinal: 2, box: box(sharedPhoto), moveBy: { x: 10, y: 0 } }));
+  const sharedMoved = sharedAfter.objects.filter((/** @type {any} */ object) => object.kind === 'image')[2];
+  const triangleAfter = sharedAfter.objects.filter((/** @type {any} */ object) => object.kind === 'path')[1];
+  check(
+    CASES[8] ?? '',
+    triangle !== undefined &&
+      shifted(sharedPhoto, 10, 0) === JSON.stringify([sharedMoved.left, sharedMoved.bottom, sharedMoved.right, sharedMoved.top].map(round)) &&
+      shifted(triangle, 0, 0) === JSON.stringify([triangleAfter.left, triangleAfter.bottom, triangleAfter.right, triangleAfter.top].map(round)),
+    `the shared window's photo read back at ${JSON.stringify(box(sharedMoved ?? {}))}, its triangle at ${JSON.stringify(box(triangleAfter ?? {}))} from ${JSON.stringify(box(triangle ?? {}))}`,
   );
 }
 

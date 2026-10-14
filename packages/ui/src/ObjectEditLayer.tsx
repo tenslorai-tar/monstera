@@ -188,12 +188,29 @@ export function ObjectEditLayer({
   const layer = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<Drag | undefined>();
 
-  const shown = objects?.objects.filter((object) => shownBy(filter, object)) ?? [];
+  // WHAT SHOWS ON THIS PAGE (E3): the page's crop is the last window anything is drawn through, so an object placed past
+  // the edge is outlined, picked and resized by the part inside it. One view of the objects, taken by every use below,
+  // so an outline and the command its handles build cannot disagree about the box.
+  const [cropLeft, cropBottom, cropRight, cropTop] = geometry.crop;
+  const onPage = (object: EditableObject): EditableObject => {
+    const box = {
+      x0: Math.max(object.box.x0, Math.min(cropLeft, cropRight)),
+      y0: Math.max(object.box.y0, Math.min(cropBottom, cropTop)),
+      x1: Math.min(object.box.x1, Math.max(cropLeft, cropRight)),
+      y1: Math.min(object.box.y1, Math.max(cropBottom, cropTop)),
+    };
+    // NOTHING INSIDE, or nothing cut: the object as read, so one wholly off the page keeps a box a person can find.
+    if (box.x0 > box.x1 || box.y0 > box.y1) return object;
+    const same = box.x0 === object.box.x0 && box.y0 === object.box.y0 && box.x1 === object.box.x1 && box.y1 === object.box.y1;
+    return same ? object : { ...object, box };
+  };
+  const pageObjects = objects?.objects.map(onPage) ?? [];
+  const shown = pageObjects.filter((object) => shownBy(filter, object));
   // THE PICK AS THIS PAGE'S READ HAS IT: the box comes from the read, so a moved object is outlined where it now is.
   const picked =
     pick === undefined || objects === undefined
       ? undefined
-      : objects.objects.find((object) => object.source === pick.object.source && object.index === pick.object.index);
+      : pageObjects.find((object) => object.source === pick.object.source && object.index === pick.object.index);
 
   /** The point an event names, in the layer's own pixels. */
   const pointOf = (event: React.PointerEvent): readonly [number, number] => {

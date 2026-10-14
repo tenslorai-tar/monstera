@@ -32,12 +32,12 @@ const GEOMETRY = {
 
 const V5 = asDocVersion(5);
 /** Lower-left (60, 350) and upper-right (100, 390) in PDF space, so its top-left lands at (20, 20) on screen. */
-const PHOTO: EditableObject = { source: 'content', index: 7, ordinal: 0, kind: 'image', box: { x0: 60, y0: 350, x1: 100, y1: 390 }, fill: null };
+const PHOTO: EditableObject = { source: 'content', index: 7, ordinal: 0, kind: 'image', box: { x0: 60, y0: 350, x1: 100, y1: 390 }, drawn: { x0: 60, y0: 350, x1: 100, y1: 390 }, fill: null };
 /** The photo's box as the command carries it. */
 const PHOTO_BOX = { left: 60, bottom: 350, right: 100, top: 390 };
-const WORDS: EditableObject = { source: 'content', index: 2, ordinal: 0, kind: 'text', box: { x0: 60, y0: 200, x1: 200, y1: 220 }, fill: { red: 0, green: 0, blue: 0, alpha: 255 } };
+const WORDS: EditableObject = { source: 'content', index: 2, ordinal: 0, kind: 'text', box: { x0: 60, y0: 200, x1: 200, y1: 220 }, drawn: { x0: 60, y0: 200, x1: 200, y1: 220 }, fill: { red: 0, green: 0, blue: 0, alpha: 255 } };
 /** A picture placed with Comment › Image: a stamp, index 0 of the annotation walk. */
-const PLACED: EditableObject = { source: 'stamp', index: 0, ordinal: 0, kind: 'picture', box: { x0: 150, y0: 300, x1: 230, y1: 360 }, fill: null };
+const PLACED: EditableObject = { source: 'stamp', index: 0, ordinal: 0, kind: 'picture', box: { x0: 150, y0: 300, x1: 230, y1: 360 }, drawn: { x0: 150, y0: 300, x1: 230, y1: 360 }, fill: null };
 const OBJECTS: PageObjects = { version: V5, objects: [WORDS, PHOTO, PLACED], truncated: false };
 
 afterEach(cleanup);
@@ -78,6 +78,40 @@ describe('ObjectEditLayer', () => {
     const photo = screen.getByRole('button', { name: 'Image, 2 of 3' });
     // (60 − 50) × 2 across and (400 − 390) × 2 down; 40 points wide is 80 pixels at zoom 2.
     expect([photo.style.left, photo.style.top, photo.style.width, photo.style.height]).toStrictEqual(['20px', '20px', '80px', '80px']);
+  });
+
+  it('outlines what SHOWS: a picture clipped to a window, or bleeding past the page edge, is outlined inside both (E3)', () => {
+    // PLACED FROM x 0, 50 points left of the crop's edge, and clipped to a window from y 300 to 340 of its 280 to 360.
+    const BLEED: EditableObject = {
+      source: 'content',
+      index: 9,
+      ordinal: 1,
+      kind: 'image',
+      box: { x0: 0, y0: 300, x1: 120, y1: 340 },
+      drawn: { x0: 0, y0: 280, x1: 120, y1: 360 },
+      fill: null,
+    };
+    const { sent, layer } = mounted({ objects: { version: V5, objects: [BLEED], truncated: false }, pick: pick(BLEED) });
+    const outline = screen.getByRole('button', { name: 'Image, 1 of 1' });
+    // (50 − 50) × 2 across, not the −100 px an unclipped box would put it at; (400 − 340) × 2 down; 70 × 2 wide.
+    expect([outline.style.left, outline.style.top, outline.style.width, outline.style.height]).toStrictEqual(['0px', '120px', '140px', '80px']);
+    // A MOVE names the picture by the engine's own box, so the kernel finds the one the listing put there.
+    fireEvent.pointerDown(outline, { button: 0, clientX: 30, clientY: 150, pointerId: 1 });
+    fireEvent.pointerMove(layer, { clientX: 50, clientY: 150, pointerId: 1 });
+    fireEvent.pointerUp(layer, { clientX: 50, clientY: 150, pointerId: 1 });
+    expect(sent).toStrictEqual([
+      {
+        kind: 'placeDrawnObject',
+        page: 3,
+        index: 9,
+        object: 'image',
+        ordinal: 1,
+        box: { left: 0, bottom: 280, right: 120, top: 360 },
+        moveBy: { x: 10, y: 0 },
+        scaleBy: { x: 1, y: 1 },
+        version: V5,
+      },
+    ]);
   });
 
   it('outlines only what the filter names: Images is the page’s pictures AND the one a person placed', () => {

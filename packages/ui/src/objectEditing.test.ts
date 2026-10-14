@@ -12,11 +12,13 @@ import {
   shownBy,
 } from './objectEditing.js';
 
-const TEXT: EditableObject = { source: 'content', index: 0, ordinal: 0, kind: 'text', box: { x0: 40, y0: 730, x1: 300, y1: 750 }, fill: { red: 0, green: 0, blue: 0, alpha: 255 } };
-const RULE: EditableObject = { source: 'content', index: 1, ordinal: 0, kind: 'path', box: { x0: 40, y0: 700, x1: 560, y1: 700 }, fill: { red: 0, green: 0, blue: 0, alpha: 255 } };
-const PHOTO: EditableObject = { source: 'content', index: 2, ordinal: 0, kind: 'image', box: { x0: 40, y0: 400, x1: 280, y1: 580 }, fill: null };
+/** An object nothing clips: what shows is the engine's own box. */
+const unclipped = (object: Omit<EditableObject, 'drawn'>): EditableObject => ({ ...object, drawn: object.box });
+const TEXT = unclipped({ source: 'content', index: 0, ordinal: 0, kind: 'text', box: { x0: 40, y0: 730, x1: 300, y1: 750 }, fill: { red: 0, green: 0, blue: 0, alpha: 255 } });
+const RULE = unclipped({ source: 'content', index: 1, ordinal: 0, kind: 'path', box: { x0: 40, y0: 700, x1: 560, y1: 700 }, fill: { red: 0, green: 0, blue: 0, alpha: 255 } });
+const PHOTO = unclipped({ source: 'content', index: 2, ordinal: 0, kind: 'image', box: { x0: 40, y0: 400, x1: 280, y1: 580 }, fill: null });
 /** A picture placed with Comment › Image, over the photo's corner: the same point names both. */
-const PLACED: EditableObject = { source: 'stamp', index: 0, ordinal: 0, kind: 'picture', box: { x0: 200, y0: 500, x1: 400, y1: 650 }, fill: null };
+const PLACED = unclipped({ source: 'stamp', index: 0, ordinal: 0, kind: 'picture', box: { x0: 200, y0: 500, x1: 400, y1: 650 }, fill: null });
 const PAGE = [TEXT, RULE, PHOTO, PLACED];
 
 const V3 = asDocVersion(3);
@@ -97,6 +99,47 @@ describe('the command a drag or a handle builds', () => {
       placements: [{ index: 0, rect: { x0: 220, y0: 480, x1: 420, y1: 630 } }],
       version: V3,
     });
+  });
+
+  // A MAGAZINE'S PHOTO (E3): placed 180 pt wider and 40 pt taller than the window it is clipped to. The engine's box is
+  // the placement; what shows, and what a person drags, is the window.
+  const CLIPPED: EditableObject = {
+    source: 'content',
+    index: 4,
+    ordinal: 1,
+    kind: 'image',
+    box: { x0: 200, y0: 300, x1: 400, y1: 450 },
+    drawn: { x0: 20, y0: 300, x1: 400, y1: 490 },
+    fill: null,
+  };
+  /** Where a command puts a point, as both engines apply it: scaled about the engine's corner, then moved. */
+  const placed = (command: ReturnType<typeof placeCommand>, x: number, y: number): readonly [number, number] => {
+    if (command?.kind !== 'placeDrawnObject') throw new Error('expected a drawn object’s placement');
+    const anchor = command.box;
+    return [
+      x * command.scaleBy.x + anchor.left * (1 - command.scaleBy.x) + command.moveBy.x,
+      y * command.scaleBy.y + anchor.bottom * (1 - command.scaleBy.y) + command.moveBy.y,
+    ];
+  };
+
+  it('puts what SHOWS of a clipped picture on the target, and names it by the engine’s own box (E3)', () => {
+    const target = { x0: 230, y0: 280, x1: 330, y1: 355 };
+    const command = placeCommand(pick(CLIPPED), target);
+    expect(command).toMatchObject({ kind: 'placeDrawnObject', index: 4, ordinal: 1, box: { left: 20, bottom: 300, right: 400, top: 490 } });
+    const [x0, y0] = placed(command, CLIPPED.box.x0, CLIPPED.box.y0);
+    const [x1, y1] = placed(command, CLIPPED.box.x1, CLIPPED.box.y1);
+    expect([x0, y0, x1, y1].map((value) => Math.round(value * 1e6) / 1e6)).toStrictEqual([230, 280, 330, 355]);
+    // CONTROL: the same resize computed as if the shown box were the engine's, applied as the engine applies it — about
+    // ITS corner — leaves the window's left edge at 140, not 230. So the assertion above separates the two.
+    const naive = placeCommand(pick({ ...CLIPPED, drawn: CLIPPED.box }), target);
+    if (naive?.kind !== 'placeDrawnObject') throw new Error('expected a drawn object’s placement');
+    expect(placed({ ...naive, box: { left: 20, bottom: 300, right: 400, top: 490 } }, CLIPPED.box.x0, CLIPPED.box.y0)[0]).toBeCloseTo(140, 6);
+  });
+
+  it('picks a clipped picture where it shows, never in the part of its placement the window hides', () => {
+    // INSIDE THE PLACEMENT, LEFT OF THE WINDOW: on the real page that is paper, or whatever is drawn there.
+    expect(objectAt([CLIPPED], 'all', { x: 100, y: 400 })).toBeUndefined();
+    expect(objectAt([CLIPPED], 'all', { x: 300, y: 400 })).toBe(CLIPPED);
   });
 
   it('sends NOTHING for a box that did not change, so a click on the selection bumps no version', () => {

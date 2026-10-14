@@ -106,14 +106,43 @@ function written(value: number): string {
  * the space the object is drawn in (`CTM × T × CTM⁻¹`), so `M cm` before its instructions moves it on the page by `T`.
  */
 export function placementIn(ctm: Matrix, command: Pick<CommandOfKind<'placeDrawnObject'>, 'box' | 'moveBy' | 'scaleBy'>): Matrix | null {
-  const { x: sx, y: sy } = command.scaleBy;
-  const page: Matrix = [sx, 0, 0, sy, command.box.left * (1 - sx) + command.moveBy.x, command.box.bottom * (1 - sy) + command.moveBy.y];
   const undo = inverse(ctm);
-  return undo === null ? null : multiply(multiply(ctm, page), undo);
+  return undo === null ? null : multiply(multiply(ctm, pageMatrix(command)), undo);
 }
 
-/** The content with one object's instructions wrapped in `q M cm … Q`. */
-export function wrappedContent(content: Uint8Array, found: DrawnObject, matrix: Matrix): Uint8Array {
+/** The placement in PAGE space: scaled about the listed box's lower-left corner, then moved. */
+function pageMatrix(command: Pick<CommandOfKind<'placeDrawnObject'>, 'box' | 'moveBy' | 'scaleBy'>): Matrix {
+  const { x: sx, y: sy } = command.scaleBy;
+  return [sx, 0, 0, sy, command.box.left * (1 - sx) + command.moveBy.x, command.box.bottom * (1 - sy) + command.moveBy.y];
+}
+
+/**
+ * What a placement wraps (E3): the object's own instructions, or, where it is drawn through a clip window that holds
+ * NOTHING ELSE, the window with it — the outermost such window, so a picture and the window it shows through move as one.
+ *
+ * A window that also holds another object or any text stays where it is: wrapping it would move what else it holds. The
+ * span from a window's path to the `Q` that ends it is balanced in `q` and `Q` by construction, since the clip was set at
+ * that depth and the `Q` is the one that leaves it.
+ */
+export function placedSpan(
+  content: Uint8Array,
+  drawn: readonly DrawnObject[],
+  found: DrawnObject,
+): { readonly start: number; readonly end: number; readonly ctm: Matrix; readonly window: number | undefined } {
+  const shows = showOperators(content);
+  const window = found.windows.findIndex(
+    (candidate) =>
+      drawn.every((other) => other === found || other.start < candidate.start || other.start >= candidate.end) &&
+      shows.every((show) => show.start < candidate.start || show.start >= candidate.end),
+  );
+  const chosen = found.windows[window];
+  return chosen === undefined
+    ? { start: found.start, end: found.end, ctm: found.ctm, window: undefined }
+    : { start: chosen.start, end: chosen.end, ctm: chosen.ctm, window };
+}
+
+/** The content with one span of instructions wrapped in `q M cm … Q`. */
+export function wrappedContent(content: Uint8Array, found: { readonly start: number; readonly end: number }, matrix: Matrix): Uint8Array {
   const before = new TextEncoder().encode(`q ${matrix.map(written).join(' ')} cm\n`);
   const after = new TextEncoder().encode('\nQ');
   const out = new Uint8Array(content.length + before.length + after.length);
@@ -140,19 +169,35 @@ export async function applyPlaceDrawnObject(session: MupdfSession, command: Comm
     }
     // A PATH THAT SETS THE CLIP is not wrapped: `Q` would end the clip early for everything drawn after it (Decision 3).
     if (found.clips) throw new DrawnObjectRefusedError('clips', `${command.object} ${String(command.ordinal)} also sets the clip`);
-    const matrix = placementIn(found.ctm, command);
-    if (matrix === null) throw new DrawnObjectRefusedError('not-found', `${command.object} ${String(command.ordinal)} is drawn under a matrix with no inverse`);
-    const edited = wrappedContent(content, found, matrix);
+    const span = placedSpan(content, drawn, found);
+    const matrix = placementIn(span.ctm, command);
+    const own = placementIn(found.ctm, command);
+    if (matrix === null || own === null) {
+      throw new DrawnObjectRefusedError('not-found', `${command.object} ${String(command.ordinal)} is drawn under a matrix with no inverse`);
+    }
+    const edited = wrappedContent(content, span, matrix);
 
-    // READ BACK BEFORE IT IS KEPT: the same objects of every kind and the same text, and this one under the new matrix.
+    // READ BACK BEFORE IT IS KEPT: the same objects of every kind and the same text, this one under the new matrix, and
+    // the windows it was carried with placed as it was — wherever the wrap went, the object lands under ctm·P.
     const after = drawnObjects(edited, kinds);
     const moved = after.filter((object) => object.kind === command.object)[command.ordinal];
-    const expected = multiply(matrix, found.ctm);
+    const expected = multiply(own, found.ctm);
+    const page = pageMatrix(command);
+    const near = (a: readonly (readonly [number, number])[], b: readonly (readonly [number, number])[]): boolean =>
+      a.length === b.length && a.every(([x, y], at) => Math.abs(x - (b[at]?.[0] ?? Number.NaN)) < READ_BACK_TOLERANCE && Math.abs(y - (b[at]?.[1] ?? Number.NaN)) < READ_BACK_TOLERANCE);
+    const windowsPlaced =
+      moved?.windows.length === found.windows.length &&
+      found.windows.every((window, at) => {
+        const carried = span.window !== undefined && at >= span.window;
+        const points = carried ? window.points.map(([x, y]) => [x * page[0] + y * page[2] + page[4], x * page[1] + y * page[3] + page[5]] as const) : window.points;
+        return near(moved.windows[at]?.points ?? [], points);
+      });
     const same =
       after.length === drawn.length &&
       after.every((object, at) => object.kind === drawn[at]?.kind) &&
       moved !== undefined &&
       moved.ctm.every((value, at) => Math.abs(value - (expected[at] ?? 0)) < READ_BACK_TOLERANCE) &&
+      windowsPlaced &&
       showOperators(edited).length === showOperators(content).length;
     if (!same) throw new Error(`placing ${command.object} ${String(command.ordinal)} did not read back as one object moved`);
     const stream = document.addStream(edited, document.newDictionary());

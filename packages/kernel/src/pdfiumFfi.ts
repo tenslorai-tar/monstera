@@ -4521,6 +4521,12 @@ export interface PageObject {
   readonly right: number;
   readonly top: number;
   /**
+   * The part of that box its CLIP lets through, where a clip narrows it; absent where the box is what is shown.
+   * `FPDFPageObj_GetBounds` answers the object as if unclipped, and a magazine's photo is placed larger than its window
+   * and clipped to it, so a box drawn from the bounds alone stood up to 180 px off the picture (the owner's E3).
+   */
+  readonly shown?: { readonly left: number; readonly bottom: number; readonly right: number; readonly top: number };
+  /**
    * Its fill colour, or `null` where the engine would not answer.
    *
    * A `null` rather than an opaque black, which is the same distinction
@@ -4703,6 +4709,50 @@ function boundsOf(
 }
 
 /**
+ * The part of `box` an object's clip lets through, or `undefined` where no clip narrows it (E3).
+ *
+ * The clip is every path in `FPDFPageObj_GetClipPath`, intersected, in the same page space as the bounds — the space
+ * `narrowedByClip` already reads them in. A path's extent is the box of its points, control points included, so a curved
+ * window is answered by the box around it: never smaller than what shows. A clip that leaves NOTHING of the object is
+ * answered as no narrowing, so an object is never listed with a box nobody can point at.
+ */
+function shownOf(
+  bindings: Bound,
+  object: unknown,
+  box: { left: number; bottom: number; right: number; top: number },
+): { left: number; bottom: number; right: number; top: number } | undefined {
+  const clip: unknown = bindings.clipPath(object);
+  if (clip === null) return undefined;
+  const shown = { ...box };
+  const paths = numberFrom(bindings.clipPathCount(clip), 'FPDFClipPath_CountPaths');
+  for (let path = 0; path < paths; path += 1) {
+    const count = numberFrom(bindings.clipSegmentCount(clip, path), 'FPDFClipPath_CountPathSegments');
+    const xs: number[] = [];
+    const ys: number[] = [];
+    for (let at = 0; at < count; at += 1) {
+      const x = [0];
+      const y = [0];
+      if (numberFrom(bindings.segmentPoint(bindings.clipSegment(clip, path, at), x, y), 'FPDFPathSegment_GetPoint') !== 1) continue;
+      xs.push(x[0] ?? 0);
+      ys.push(y[0] ?? 0);
+    }
+    // A PATH WITH NO POINT READ narrows nothing this walk can state, so it is not taken as narrowing to nothing.
+    if (xs.length === 0) continue;
+    shown.left = Math.max(shown.left, Math.min(...xs));
+    shown.right = Math.min(shown.right, Math.max(...xs));
+    shown.bottom = Math.max(shown.bottom, Math.min(...ys));
+    shown.top = Math.min(shown.top, Math.max(...ys));
+  }
+  if (shown.left >= shown.right || shown.bottom >= shown.top) return undefined;
+  const narrowed =
+    shown.left - box.left > CLIP_TOLERANCE ||
+    box.right - shown.right > CLIP_TOLERANCE ||
+    shown.bottom - box.bottom > CLIP_TOLERANCE ||
+    box.top - shown.top > CLIP_TOLERANCE;
+  return narrowed ? shown : undefined;
+}
+
+/**
  * Moves, scales and rotates a block's objects as ONE thing (ADR-0180, corrected 2026-10-06): scaled about `anchor` (its
  * top left), then turned about the centre of what that left, then moved. The three are composed into one matrix and
  * applied to each object once, so the block never stands half placed between steps.
@@ -4808,10 +4858,12 @@ export function pageObjects(session: PdfiumSession, page: number): Promise<reado
           bindings.getFillColour(object, red, green, blue, alpha),
           'FPDFPageObj_GetFillColor',
         );
+        const shown = shownOf(bindings, object, box);
         found.push({
           index,
           kind,
           ...box,
+          ...(shown === undefined ? {} : { shown }),
           fill:
             gotFill === 1
               ? {

@@ -4687,19 +4687,15 @@ export async function readPageObjects(
   const objects: EditableObject[] = content.value.items.map((object) => {
     const ordinal = seen.get(object.kind) ?? 0;
     seen.set(object.kind, ordinal + 1);
-    return {
-      source: 'content',
-      index: object.index,
-      ordinal,
-      kind: object.kind,
-      box: { x0: object.left, y0: object.bottom, x1: object.right, y1: object.top },
-      fill: object.fill,
-    };
+    const drawn = { x0: object.left, y0: object.bottom, x1: object.right, y1: object.top };
+    // WHAT SHOWS where a clip narrows it (E3), the engine's own box where nothing does.
+    const shown = object.shown === undefined ? drawn : { x0: object.shown.left, y0: object.shown.bottom, x1: object.shown.right, y1: object.shown.top };
+    return { source: 'content', index: object.index, ordinal, kind: object.kind, box: shown, drawn, fill: object.fill };
   });
   for (const mark of marks.value.items) {
     // A PICTURE A PERSON PLACED, on this page and drawn in a region: what the content walk cannot see.
     if (mark.page !== page || mark.pictured !== true || mark.rect === null) continue;
-    objects.push({ source: 'stamp', index: mark.index, ordinal: 0, kind: 'picture', box: mark.rect, fill: null });
+    objects.push({ source: 'stamp', index: mark.index, ordinal: 0, kind: 'picture', box: mark.rect, drawn: mark.rect, fill: null });
   }
   return { ok: true, objects: { version: content.value.version, objects, truncated: content.value.last.truncated || marks.value.last.truncated } };
 }
