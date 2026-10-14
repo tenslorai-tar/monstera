@@ -14,14 +14,27 @@
  * Properties (A2, A3, E1, C6); the Fields list (A4); Detect on a flattened copy, page and all pages, with the count
  * (A5, F4); Flatten of the selected fields (A6, G1); a tab order given by clicking (H1); the three exports read back in
  * with no warning (A7); a text field set in a real font and read back as drawn in it (A8.4, ADR-0229); and save and
- * reopen. The last step walks the third round's forms fix: a radio group's name typed for another radio is refused in
- * words rather than joining the group (BBBBBBBB-10).
+ * reopen. A later step walks the third round's forms fix: a radio group's name typed for another radio is refused in
+ * words rather than joining the group (BBBBBBBB-10). The last steps (run 4) choose in every kind of choice field, scroll
+ * with a dropdown open, pick a date, offer a signature field's signing and press Reset, and read each value back from the
+ * saved file (F2 to F10).
  */
 import { existsSync } from 'node:fs';
-import { copyFile, readFile } from 'node:fs/promises';
+import { copyFile, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect } from '@playwright/test';
-import { PDFCheckBox, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream, PDFString, PDFTextField, decodePDFRawStream } from '@cantoo/pdf-lib';
+import {
+  PDFCheckBox,
+  PDFDict,
+  PDFDocument,
+  PDFHexString,
+  PDFName,
+  PDFRawStream,
+  PDFString,
+  PDFTextField,
+  StandardFonts,
+  decodePDFRawStream,
+} from '@cantoo/pdf-lib';
 import { root, startWalk } from './liveWalk.mjs';
 
 const source = process.argv[2] ?? join(root, '_review/test-files/form-test.pdf');
@@ -386,6 +399,156 @@ await step('L1: a password field filled with a PIN and flattened is masked in th
   const hex = Buffer.from(PIN, 'latin1').toString('hex');
   expect(streams.includes(`(${PIN})`) || streams.toLowerCase().includes(`<${hex}>`)).toBe(false);
   return { field: name, maskInSavedFile: streams.includes('(****)'), digitsInSavedFile: streams.includes(PIN) };
+});
+
+/**
+ * THE CHOICES FORM (run 4, Part 3): every kind of choice, a date, a signature field and a Reset button, built here so the
+ * walk knows each field's name and options rather than guessing at the owner's form. The walk of 2026-10-12 passed 18 of
+ * 18 and missed every list box and dropdown defect, because no step chose in one and read the choice back.
+ */
+async function choicesForm() {
+  const document = await PDFDocument.create();
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const sheet = document.addPage([612, 792]);
+  const fields = document.getForm();
+  /** @param {string} label @param {number} y */
+  const label = (label, y) => sheet.drawText(label, { x: 60, y, size: 11, font });
+  label('City', 705);
+  const city = fields.createDropdown('City');
+  city.addOptions(['Leeds', 'London', 'York']);
+  city.addToPage(sheet, { x: 180, y: 700, width: 160, height: 20, font });
+  label('Language', 625);
+  const language = fields.createOptionList('Language');
+  language.addOptions(['English', 'German', 'French']);
+  language.addToPage(sheet, { x: 180, y: 580, width: 160, height: 60, font });
+  label('Interests', 525);
+  const interests = fields.createOptionList('Interests');
+  interests.addOptions(['Music', 'Travel', 'Cooking']);
+  interests.enableMultiselect();
+  interests.addToPage(sheet, { x: 180, y: 480, width: 160, height: 60, font });
+  label('Due', 425);
+  const due = fields.createTextField('Due');
+  due.addToPage(sheet, { x: 180, y: 420, width: 160, height: 20, font });
+  due.acroField.dict.set(
+    PDFName.of('AA'),
+    document.context.obj({ F: { S: 'JavaScript', JS: PDFString.of('AFDate_FormatEx("dd/mm/yyyy");') } }),
+  );
+  label('Signature', 345);
+  const signature = document.context.obj({
+    Type: 'Annot',
+    Subtype: 'Widget',
+    FT: 'Sig',
+    T: PDFString.of('Signature1'),
+    Rect: [180, 320, 360, 360],
+    F: 4,
+    P: sheet.ref,
+  });
+  const signatureRef = document.context.register(signature);
+  sheet.node.addAnnot(signatureRef);
+  document.getForm().acroForm.addField(signatureRef);
+  const reset = fields.createButton('Clear');
+  reset.addToPage('Reset', sheet, { x: 180, y: 260, width: 80, height: 24, font });
+  reset.acroField.getWidgets()[0]?.dict.set(PDFName.of('A'), document.context.obj({ S: 'ResetForm' }));
+  return document.save();
+}
+
+/** The choice fields and the date of a saved file, read by pdf-lib. @param {string} path */
+async function savedChoices(path) {
+  const read = (await PDFDocument.load(await readFile(path), { updateMetadata: false })).getForm();
+  return {
+    city: read.getDropdown('City').getSelected(),
+    language: read.getOptionList('Language').getSelected(),
+    interests: read.getOptionList('Interests').getSelected(),
+    due: read.getTextField('Due').getText() ?? '',
+  };
+}
+
+const choicesPath = join(output, 'form-choices.pdf');
+await writeFile(choicesPath, await choicesForm());
+const choices = await copyOf(choicesPath);
+
+await step('F5, F6: a dropdown opens ONE list under its field with the empty choice first, and a row pressed fills it', async () => {
+  await open(choices);
+  await section('Forms');
+  await page.getByRole('button', { name: 'City', exact: true }).click();
+  const list = page.getByRole('listbox', { name: 'City' });
+  await expect(list).toBeVisible();
+  const rows = await list.getByRole('option').allTextContents();
+  expect(rows).toStrictEqual(['(none)', 'Leeds', 'London', 'York']);
+  await list.getByRole('option', { name: 'York', exact: true }).click();
+  await expect(list).toHaveCount(0);
+  return { rows };
+});
+
+await step('F4: an open dropdown moves with the page when it scrolls, staying under its field', async () => {
+  const face = page.getByRole('button', { name: 'City', exact: true });
+  await face.click();
+  const list = page.getByRole('listbox', { name: 'City' });
+  const before = await list.boundingBox();
+  await page.mouse.wheel(0, 120);
+  await page.waitForTimeout(500);
+  const [after, field] = [await list.boundingBox(), await face.boundingBox()];
+  if (before === null || after === null || field === null) throw new Error('a box is missing');
+  expect(Math.abs(after.y - (field.y + field.height))).toBeLessThan(2);
+  await page.keyboard.press('Escape');
+  return { movedBy: before.y - after.y };
+});
+
+await step('F2: a press on a list box row chooses THAT row, and Ctrl adds one in a list that takes several', async () => {
+  await page.getByRole('listbox', { name: 'Language' }).getByRole('option', { name: 'French', exact: true }).click();
+  const interests = page.getByRole('listbox', { name: 'Interests' });
+  await interests.getByRole('option', { name: 'Music', exact: true }).click();
+  // A FILL IS A WRITE (3 to 5 s here); the Ctrl press adds to what the document then holds.
+  await expect(interests.getByRole('option', { name: 'Music', exact: true })).toHaveAttribute('aria-selected', 'true', { timeout: 30_000 });
+  await page.waitForTimeout(6000);
+  await interests.getByRole('option', { name: 'Cooking', exact: true }).click({ modifiers: ['Control'] });
+  await page.waitForTimeout(6000);
+});
+
+await step('F10: a date field shows its pattern, and a day pressed on its calendar fills it in that pattern', async () => {
+  await page.getByRole('button', { name: 'Fill in Due', exact: true }).click();
+  const box = page.locator('[data-form-layer] input[aria-label="Due"]');
+  await expect(box).toHaveAttribute('placeholder', 'dd/mm/yyyy');
+  await page.getByRole('button', { name: 'Choose a date', exact: true }).click();
+  const calendar = page.getByRole('dialog', { name: 'Calendar' });
+  await calendar.locator('td button').filter({ hasText: /^15$/u }).click();
+  await page.waitForTimeout(6000);
+});
+
+const choicesSaved = join(output, 'form-choices-saved.pdf');
+await step('the dropdown, both list boxes and the date READ BACK from the saved file by a second reader', async () => {
+  await saveTo(choicesSaved);
+  await command('Save a copy');
+  await expect.poll(() => existsSync(choicesSaved), { timeout: 20_000 }).toBe(true);
+  const read = await savedChoices(choicesSaved);
+  expect(read.city).toStrictEqual(['York']);
+  expect(read.language).toStrictEqual(['French']);
+  expect(read.interests).toStrictEqual(['Music', 'Cooking']);
+  expect(read.due).toMatch(/^15\/\d{2}\/\d{4}$/u);
+  return read;
+});
+
+await step('F8: an empty signature field pressed offers both ways to sign, each opening its own dialog', async () => {
+  await page.getByRole('button', { name: 'Sign Signature1', exact: true }).click();
+  await page.getByRole('button', { name: 'Sign with a typed, drawn or picture signature', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Signature' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Sign Signature1', exact: true }).click();
+  await page.getByRole('button', { name: 'Sign with a certificate', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Sign document' })).toBeVisible();
+  await page.keyboard.press('Escape');
+});
+
+const resetSaved = join(output, 'form-choices-reset.pdf');
+await step('F7: the form’s Reset button empties every field as one step, READ BACK from the saved file', async () => {
+  await page.getByRole('button', { name: 'Press Clear', exact: true }).click();
+  await page.waitForTimeout(6000);
+  await saveTo(resetSaved);
+  await command('Save a copy');
+  await expect.poll(() => existsSync(resetSaved), { timeout: 20_000 }).toBe(true);
+  const read = await savedChoices(resetSaved);
+  expect(read).toStrictEqual({ city: [], language: [], interests: [], due: '' });
+  return read;
 });
 
 await finish();
