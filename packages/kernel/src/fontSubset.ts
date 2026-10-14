@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 
+import { sfntTableEntry } from './sfntTables.js';
+
 /**
  * A subset of a font, made by HarfBuzz's subsetter inside an engine host
  * ([ADR-0172](../../../docs/DECISIONS/0172-one-font-resolver-open-fonts-bundled-by-fingerprint-subsets-made-in-the-host.md)
@@ -410,37 +412,30 @@ export const KEPT_NAME_IDS: ReadonlySet<number> = new Set([0, 13, 14]);
  * face of a plain file. Empty where the face has no `name` table; a table that runs past the file is refused.
  */
 export function nameRecordsOf(font: Uint8Array, faceIndex: number, ids: ReadonlySet<number>): NameRecord[] {
-  const view = new DataView(font.buffer, font.byteOffset, font.byteLength);
-  const collection = font.length >= 12 && String.fromCharCode(font[0] ?? 0, font[1] ?? 0, font[2] ?? 0, font[3] ?? 0) === 'ttcf';
-  const start = collection ? view.getUint32(12 + 4 * faceIndex) : 0;
-  const count = view.getUint16(start + 4);
-  for (let index = 0; index < count; index += 1) {
-    const at = start + 12 + 16 * index;
-    if (String.fromCharCode(font[at] ?? 0, font[at + 1] ?? 0, font[at + 2] ?? 0, font[at + 3] ?? 0) !== 'name') continue;
-    const offset = view.getUint32(at + 8);
-    const length = view.getUint32(at + 12);
-    if (offset + length > font.length) throw new Error("the font's name table runs past its end");
-    const records = view.getUint16(offset + 2);
-    const strings = offset + view.getUint16(offset + 4);
-    const found: NameRecord[] = [];
-    for (let record = 0; record < records; record += 1) {
-      const entry = offset + 6 + 12 * record;
-      const id = view.getUint16(entry + 6);
-      if (!ids.has(id)) continue;
-      const from = strings + view.getUint16(entry + 10);
-      const size = view.getUint16(entry + 8);
-      if (from + size > offset + length) throw new Error(`the font's name ${String(id)} runs past its table`);
-      found.push({
-        platform: view.getUint16(entry),
-        encoding: view.getUint16(entry + 2),
-        language: view.getUint16(entry + 4),
-        id,
-        data: font.slice(from, from + size),
-      });
-    }
-    return found;
+  // THE ONE DIRECTORY READER (`sfntTables.ts`); a table that runs past the file is a damaged font and refused.
+  const table = sfntTableEntry(font, faceIndex, 'name');
+  if (table === 'past-end') throw new Error("the font's name table runs past its end");
+  if (table === undefined) return [];
+  const view = new DataView(table.buffer, table.byteOffset, table.byteLength);
+  const records = view.getUint16(2);
+  const strings = view.getUint16(4);
+  const found: NameRecord[] = [];
+  for (let record = 0; record < records; record += 1) {
+    const entry = 6 + 12 * record;
+    const id = view.getUint16(entry + 6);
+    if (!ids.has(id)) continue;
+    const from = strings + view.getUint16(entry + 10);
+    const size = view.getUint16(entry + 8);
+    if (from + size > table.length) throw new Error(`the font's name ${String(id)} runs past its table`);
+    found.push({
+      platform: view.getUint16(entry),
+      encoding: view.getUint16(entry + 2),
+      language: view.getUint16(entry + 4),
+      id,
+      data: table.slice(from, from + size),
+    });
   }
-  return [];
+  return found;
 }
 
 /**

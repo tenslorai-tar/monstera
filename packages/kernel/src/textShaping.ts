@@ -1,5 +1,7 @@
 import { Blob as HarfBuzzBlob, Buffer, Direction, Face, Font, MetricsTag, Variation, shape } from 'harfbuzzjs';
 
+import { sfntTable } from './sfntTables.js';
+
 /**
  * Text shaped into glyphs by HarfBuzz, for every writer that sets text in a font it embeds
  * ([ADR-0172](../../../docs/DECISIONS/0172-one-font-resolver-open-fonts-bundled-by-fingerprint-subsets-made-in-the-host.md)).
@@ -62,22 +64,31 @@ export class ShapingFace {
    * six cells each) grew the process by 462 MB, and that memory never shrinks once grown.
    */
   readonly #buffer = new Buffer();
+  /** The font's own bytes, which its tables are read from (`sfntTables.ts`), never through HarfBuzz's `referenceTable`. */
+  readonly #bytes: Uint8Array;
+  readonly #faceIndex: number;
+
+  /**
+   * The first face of `bytes` at its default instance, or `null` where they hold none HarfBuzz can read — the one case
+   * the constructor throws for, asked first, so a caller for which an unreadable program is an answer needs no `catch`.
+   * ONE FACE IS MADE: the face asked is the face kept, where a face made to ask and then a second to keep copied the
+   * program into HarfBuzz's memory twice.
+   */
+  static readable(bytes: Uint8Array): ShapingFace | null {
+    const face = new Face(new HarfBuzzBlob(bytes), 0);
+    return face.upem === 0 ? null : new ShapingFace(bytes, 0, {}, face);
+  }
 
   /**
    * @param bytes the font file, a collection or a single face
    * @param faceIndex which face of a collection
    * @param axes where each variation axis is pinned; an axis not named stays at its default
+   * @param read the face already made from these bytes, by {@link readable}; made here where absent
    */
-  /**
-   * The first face of `bytes` at its default instance, or `null` where they hold none HarfBuzz can read — the one case
-   * the constructor throws for, asked first, so a caller for which an unreadable program is an answer needs no `catch`.
-   */
-  static readable(bytes: Uint8Array): ShapingFace | null {
-    return new Face(new HarfBuzzBlob(bytes), 0).upem === 0 ? null : new ShapingFace(bytes, 0, {});
-  }
-
-  constructor(bytes: Uint8Array, faceIndex: number, axes: Readonly<Record<string, number>>) {
-    this.#face = new Face(new HarfBuzzBlob(bytes), faceIndex);
+  constructor(bytes: Uint8Array, faceIndex: number, axes: Readonly<Record<string, number>>, read?: Face) {
+    this.#bytes = bytes;
+    this.#faceIndex = faceIndex;
+    this.#face = read ?? new Face(new HarfBuzzBlob(bytes), faceIndex);
     if (this.#face.upem === 0) throw new Error('the bytes hold no font face HarfBuzz can read');
     this.unitsPerEm = this.#face.upem;
     this.#font = new Font(this.#face);
@@ -170,7 +181,7 @@ export class ShapingFace {
 
   /** How many glyphs the face holds: `maxp`'s `numGlyphs`, 0 where it has no `maxp`. */
   glyphCount(): number {
-    const maxp = this.#face.referenceTable('maxp');
+    const maxp = sfntTable(this.#bytes, this.#faceIndex, 'maxp');
     return maxp === undefined || maxp.length < 6 ? 0 : ((maxp[4] ?? 0) << 8) | (maxp[5] ?? 0);
   }
 
@@ -184,8 +195,8 @@ export class ShapingFace {
   /** What a PDF font descriptor states, read from the face's own tables. */
   metrics(): FaceMetrics {
     const extents = this.#font.hExtents();
-    const head = this.#face.referenceTable('head');
-    const post = this.#face.referenceTable('post');
+    const head = sfntTable(this.#bytes, this.#faceIndex, 'head');
+    const post = sfntTable(this.#bytes, this.#faceIndex, 'post');
     const signed = (table: Uint8Array | undefined, at: number): number => {
       if (table === undefined || table.length < at + 2) return 0;
       const value = ((table[at] ?? 0) << 8) | (table[at + 1] ?? 0);

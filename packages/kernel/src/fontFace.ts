@@ -1,3 +1,5 @@
+import { sfntTable } from './sfntTables.js';
+
 /**
  * Whether a run's face is bold and italic, decided from the most authoritative witness the page offers.
  *
@@ -67,10 +69,8 @@ export function faceOf(facts: FontFacts): { readonly bold: boolean; readonly ita
   };
 }
 
-/** The `sfnt` versions a TrueType or OpenType program begins with: 1.0, Apple's `true`, and CFF-flavoured `OTTO`. */
-const SFNT_VERSIONS = new Set([0x00010000, 0x74727565, 0x4f54544f]);
-/** `OS/2`, as the table directory spells the tag. */
-const OS2_TAG = 0x4f532f32;
+/** `ttcf`, a collection's header, which an embedded program never is. */
+const COLLECTION_TAG = 0x74746366;
 /** `fsSelection`'s bits: 0 italic, 9 oblique. */
 const SELECTION_ITALIC = 1;
 const SELECTION_OBLIQUE = 512;
@@ -85,22 +85,14 @@ const SELECTION_OBLIQUE = 512;
  * @param bytes the font program, as `FPDFFont_GetFontData` answers it for an embedded font
  */
 export function programFace(bytes: Uint8Array): ProgramFace | undefined {
-  if (bytes.length < 12) return undefined;
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  if (!SFNT_VERSIONS.has(view.getUint32(0))) return undefined;
-  const tables = view.getUint16(4);
-  for (let at = 0; at < tables; at += 1) {
-    const record = 12 + at * 16;
-    if (record + 16 > bytes.length) return undefined;
-    if (view.getUint32(record) !== OS2_TAG) continue;
-    const offset = view.getUint32(record + 8);
-    const length = view.getUint32(record + 12);
-    if (length < 64 || offset + 64 > bytes.length) return undefined;
-    const selection = view.getUint16(offset + 62);
-    return {
-      weightClass: view.getUint16(offset + 4),
-      italic: (selection & (SELECTION_ITALIC | SELECTION_OBLIQUE)) !== 0,
-    };
-  }
-  return undefined;
+  // A COLLECTION IS NOT AN EMBEDDED PROGRAM: only a plain face's directory is read, as before the one reader took it.
+  if (bytes.length < 12 || new DataView(bytes.buffer, bytes.byteOffset, 4).getUint32(0) === COLLECTION_TAG) return undefined;
+  const os2 = sfntTable(bytes, 0, 'OS/2');
+  if (os2 === undefined || os2.length < 64) return undefined;
+  const view = new DataView(os2.buffer, os2.byteOffset, os2.byteLength);
+  const selection = view.getUint16(62);
+  return {
+    weightClass: view.getUint16(4),
+    italic: (selection & (SELECTION_ITALIC | SELECTION_OBLIQUE)) !== 0,
+  };
 }

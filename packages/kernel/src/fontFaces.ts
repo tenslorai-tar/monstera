@@ -1,5 +1,7 @@
 import { Blob as HarfBuzzBlob, Face } from 'harfbuzzjs';
 
+import { sfntTable } from './sfntTables.js';
+
 /**
  * What a font file says about itself, read by HarfBuzz inside an engine host
  * ([ADR-0172](../../../docs/DECISIONS/0172-one-font-resolver-open-fonts-bundled-by-fingerprint-subsets-made-in-the-host.md)
@@ -79,10 +81,11 @@ function u16(table: Uint8Array, at: number): number | null {
  */
 export function readFace(bytes: Uint8Array, index = 0): FaceReading {
   const face = new Face(new HarfBuzzBlob(bytes), index);
-  if (face.upem === 0 || face.referenceTable('maxp') === undefined) {
+  // THE TABLES FROM THE BYTES (`sfntTables.ts`): HarfBuzz's `referenceTable` pins the whole face in its memory per call.
+  if (face.upem === 0 || sfntTable(bytes, index, 'maxp') === undefined) {
     throw new Error('the bytes hold no font face HarfBuzz can read');
   }
-  const os2 = face.referenceTable('OS/2');
+  const os2 = sfntTable(bytes, index, 'OS/2');
   const fsType = os2 === undefined ? null : u16(os2, 8);
   const selection = os2 === undefined ? 0 : (u16(os2, 62) ?? 0);
   const named = (preferred: number, fallback: number): string => {
