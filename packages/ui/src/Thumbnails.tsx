@@ -368,6 +368,10 @@ export function Thumbnails({
             view={view}
             page={page}
             width={width}
+            // THE PIXELS FOLLOW THE MARGIN and the draw follows the answer, two props for `PageList`'s reason: a new
+            // version empties the rotation answers until the model is asked again, and a release keyed to the draw gave
+            // back every card on screen for those frames of an edit.
+            held={visible.has(page)}
             draw={visible.has(page) && rotations.has(page)}
             rotation={rotations.get(page)}
             onDrawn={onDrawn}
@@ -439,6 +443,7 @@ function ThumbCanvas({
   view,
   page,
   width,
+  held,
   draw,
   rotation,
   onDrawn,
@@ -446,6 +451,9 @@ function ThumbCanvas({
   readonly view: DocumentView | undefined;
   readonly page: number;
   readonly width: number;
+  /** Whether the card is in the margin, which is what keeps its pixels; out of it they are given back. */
+  readonly held: boolean;
+  /** Whether it may draw now: held, and its rotation answered for this version. */
   readonly draw: boolean;
   /** The view model's rotation, or `undefined` where it did not answer for this version. */
   readonly rotation: number | undefined;
@@ -467,11 +475,11 @@ function ThumbCanvas({
   const [released, setReleased] = useState(false);
   useEffect(() => {
     const element = canvas.current;
-    if (draw || element === null || element.width === 0) return;
+    if (held || element === null || element.width === 0) return;
     element.width = 0;
     element.height = 0;
     setReleased(true);
-  }, [draw]);
+  }, [held]);
   // AND ON UNMOUNT, as a page's canvas is (`PageList`): sized to nothing, the store is released now, not when collected.
   useLayoutEffect(() => {
     const element = canvas.current;
