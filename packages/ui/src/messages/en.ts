@@ -6460,7 +6460,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // THE ROW'S OWN MORE, by its name for a screen reader: it begins with the word on its face (WCAG 2.5.3) and names
   // the groups it holds, which is what tells it from the last group's More beside it.
   [RIBBON_MORE_GROUPS]: 'More: {groups}',
-  [RIBBON_MENU_CHOICES]: '{menu} choices',
+  [RIBBON_MENU_CHOICES]: 'Choices for {menu}',
   [SECTION_HOME]: 'Home',
   [SECTION_COMMENT]: 'Comment',
   [SECTION_EDIT]: 'Edit',

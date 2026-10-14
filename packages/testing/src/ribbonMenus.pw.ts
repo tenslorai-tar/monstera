@@ -59,7 +59,7 @@ test('Edit › Edit object: a menu with checkable members gives EVERY item a mar
   await openApp(page);
   await openDocument(page);
   await openSection(page, 'Edit');
-  const menu = await openMenu(page, page.getByRole('button', { name: 'Edit object choices' }));
+  const menu = await openMenu(page, page.getByRole('button', { name: 'Choices for Edit object' }));
 
   const items = await itemsOf(menu);
   expect(items).toHaveLength(4);
@@ -85,7 +85,7 @@ test('Edit › Edit object: the face enters Edit all objects, and after a choice
   await openSection(page, 'Edit');
   const tools = page.getByRole('toolbar', { name: 'Tools', exact: true });
   const face = tools.getByRole('button', { name: 'Edit object', exact: true });
-  const choices = tools.getByRole('button', { name: 'Edit object choices' });
+  const choices = tools.getByRole('button', { name: 'Choices for Edit object' });
   const marked = async (title: string): Promise<string | null> => {
     const menu = await openMenu(page, choices);
     const checked = await menu.getByRole('menuitemcheckbox', { name: title }).getAttribute('aria-checked');

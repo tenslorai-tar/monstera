@@ -83,7 +83,7 @@ describe('a ribbon menu whose face runs its last choice (ADR-0241)', () => {
     expect(images.run).not.toHaveBeenCalled();
 
     // THE CHEVRON opens the menu, and choosing from it runs the member and makes it the face's.
-    fireEvent.click(screen.getByRole('button', { name: 'Edit object choices' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Choices for Edit object' }));
     fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Edit images' }));
     expect(images.run).toHaveBeenCalledTimes(1);
 
@@ -106,7 +106,7 @@ describe('a ribbon menu whose face runs its last choice (ADR-0241)', () => {
     const pdf = member('d.pdf', 'test.face.pdf', 10, PLAIN, undefined);
     const csv = member('d.csv', 'test.face.csv', 20, PLAIN, undefined);
     draw([pdf, csv]);
-    expect(screen.queryByRole('button', { name: 'Export choices' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Choices for Export' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /Export/u }));
     expect(pdf.run).not.toHaveBeenCalled();
     expect(csv.run).not.toHaveBeenCalled();

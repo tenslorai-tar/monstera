@@ -49,3 +49,9 @@ caption, the words drawn on it, and the member's title is its DESCRIPTION and it
 on a face that reads *Edit object* fails WCAG 2.5.3 (the visible label is not in the name), so a person using speech
 input could not press it by what they see. A screen reader still hears what a press will do, as the description. The
 chevron is named *Edit object choices*, so the two parts are told apart.
+
+## Correction, 2026-10-14, later
+
+The chevron's name as shipped is *Choices for Edit object*. *Edit object choices* put the menu's caption, a placeholder,
+before a plural noun, which the catalogue's plural rule refuses (`en.test.ts`): a caption is not a count, but the rule
+cannot tell the two apart, and a wording that needs no exception is the better repair than an exception.

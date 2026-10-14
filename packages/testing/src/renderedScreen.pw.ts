@@ -5311,7 +5311,7 @@ for (const look of LOOKS) {
     await page.getByRole('button', { name: 'Open PDF…' }).click();
     await expect(page.locator('canvas.m-page').first()).toBeVisible({ timeout: 20_000 });
 
-    await page.getByRole('button', { name: 'Edit object choices' }).click();
+    await page.getByRole('button', { name: 'Choices for Edit object' }).click();
     await page.getByRole('menuitemcheckbox', { name: 'Edit images' }).click();
     const layer = page.getByRole('group', { name: 'Objects on page 1' });
     // ONLY THE IMAGE under Images: the text and the rule are not outlined.
