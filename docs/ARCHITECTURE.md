@@ -1545,7 +1545,7 @@ A feature is finished when it is **registered**, not when it is wired.
 | **Annotation types** | geometry adapter, renderer, kernel writer mapping | overlay, panel, persistence |
 | **Tools** | controller (begin/update/commit/cancel) | toolbar, overlay dispatch |
 | **AI providers** | id, models, validateKey, chat, vision? | onboarding, settings, assistant |
-| **Update providers** | detect, check, apply/redirect | About panel, update flow |
+| **Update providers** | detect, check, apply/redirect | title bar indicator, update flow |
 | **Import/Export formats** | id, extensions, direction, handler command | dialogs, file associations |
 | **Cloud providers** | id, auth, list, fetch | cloud storage panel |
 | **Tips** (amended 2026-10-04, [ADR-0159](DECISIONS/0159-a-tip-is-registered-names-its-commands-and-is-shown-in-the-status-bar.md)) | id, words (i18n key), the commands it names by id | the status bar's tip; and a tip for each command's key and each command's ribbon place, derived from the command registry, so no tip can name what is not registered |

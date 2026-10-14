@@ -106,3 +106,11 @@ It never says *update now* as though the application could: ADR-0018 forbids it 
 Everything runs against injected transports or a local server; nothing contacted monsterapdf.com, and nothing has
 run in a packaged Store build. The header set was measured with Node 24.12.0's `fetch` under the test runner, not
 inside Electron's main process, whose Node may add a different user agent.
+
+## Correction, 2026-10-14 — About carries no line about updates
+
+The **About** bullet above is superseded by [ADR-0236](0236-about-says-what-monstera-is-not-how-it-is-updated.md) and
+its correction of 2026-10-13 (`d724fc76`): About says what Monstera is, and no line on any run names monsterapdf.com
+or an update. The check, its setting and the title bar's indicator are unchanged. Found by the stage audit of
+`6c31e8e5..f3ac3390` (GGGGGGGG-6): the change that removed the line touched neither this record nor ARCHITECTURE's
+registry table, which still named About as a reader of the update status.
