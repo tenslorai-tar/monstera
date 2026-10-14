@@ -333,6 +333,36 @@ describe('readFormFields', () => {
     ]);
   });
 
+  it('NAMES EACH RADIO OPTION BY ITS OWN VALUE: its /Opt entry by place, else its own on-state (the owner’s F9)', async () => {
+    const document = await PDFDocument.create();
+    const page = document.addPage([400, 600]);
+    const fields = document.getForm();
+    const sex = fields.createRadioGroup('applicant.sex');
+    sex.addOptionToPage('Male', page, { x: 20, y: 500, width: 16, height: 16 });
+    sex.addOptionToPage('Female', page, { x: 60, y: 500, width: 16, height: 16 });
+    // A GROUP WHOSE WIDGETS ARE NAMED BY NUMBER and labelled by `/Opt`, as Acrobat writes one.
+    const plan = fields.createRadioGroup('applicant.plan');
+    plan.addOptionToPage('0', page, { x: 20, y: 400, width: 16, height: 16 });
+    plan.addOptionToPage('1', page, { x: 60, y: 400, width: 16, height: 16 });
+    plan.addOptionToPage('2', page, { x: 100, y: 400, width: 16, height: 16 });
+    const labels = PDFArray.withContext(document.context);
+    for (const label of ['Basic', 'Standard', 'Premium']) labels.push(PDFString.of(label));
+    plan.acroField.dict.set(PDFName.of('Opt'), labels);
+    const answer = await onSession(await document.save(), (session) => readFormFields(session));
+    expect(answer.fields.map(({ name, option }) => [name, option])).toStrictEqual([
+      ['applicant.sex', 'Male'],
+      ['applicant.sex', 'Female'],
+      ['applicant.plan', 'Basic'],
+      ['applicant.plan', 'Standard'],
+      ['applicant.plan', 'Premium'],
+    ]);
+    // THE DEFECT'S OWN READING, the control: every widget answers the group's options alike, so a label taken from them
+    // by position names every option the first one.
+    expect(new Set(answer.fields.filter((field) => field.name === 'applicant.plan').map((field) => field.options[0]))).toStrictEqual(
+      new Set(['Basic']),
+    );
+  });
+
   it('READS A LIST WHOSE CHOICE IS ONLY BY PLACE (/I with no /V), and /V wins where both are there (the owner’s F3)', async () => {
     // A list box recording its choice in `/I` alone was read as holding nothing, while other viewers drew the row
     // chosen: the page showed "Italian" highlighted and the Fields list showed nothing.

@@ -257,7 +257,8 @@ export function FormLayer({
               id={id}
               key={field.index}
               aria-checked={offer.on}
-              aria-label={field.name}
+              // A RADIO SAYS WHICH OPTION IT IS, as the Fields list does: every widget of a group shares the name (F9).
+              aria-label={field.option === undefined ? field.name : `${field.name}: ${field.option}`}
               className={look}
               onClick={() => {
                 // A RADIO'S CHOSEN OPTION CLEARS on a press, the panel's rule: a PDF group deselects when its lit

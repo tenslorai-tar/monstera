@@ -5439,6 +5439,13 @@ export const channels = {
             format: fieldFormatSchema.nullable(),
             /** The number range it accepts (ADR-0230), checked where it is filled; absent where the field has none. */
             range: fieldRangeSchema.exactOptional(),
+            /**
+             * A RADIO OPTION'S OWN value: the group's `/Opt` entry at this widget's place among its kids, else the
+             * widget's own name for *on*; present only on a radio widget, as `range` is only where there is one. Every
+             * widget of a group answers the group's name and its `options`, so this is the one thing that tells one
+             * option from another (the owner's F9: "Male, Male" for Male and Female).
+             */
+            option: z.string().max(MAX_FORM_FIELD_TEXT).exactOptional(),
           }),
         )
         .max(FORM_FIELDS_PART)

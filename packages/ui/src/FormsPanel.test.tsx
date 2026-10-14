@@ -167,10 +167,13 @@ describe('FormsPanel — the tree', () => {
   });
 
   it('a radio group is ONE row with its options under it, and two groups are two rows', async () => {
+    // THE SHAPE A DOCUMENT GIVES: every widget of a group carries the WHOLE group's options, and its own in `option`.
+    // Each widget's options were once its own alone here, which no document has, and every option showed the first
+    // one's name in the app (the owner's F9) while this case passed.
     await panel([
-      field({ name: 'post', kind: 'radio', on: true, index: 1, options: ['First'] }),
-      field({ name: 'post', kind: 'radio', on: false, index: 2, options: ['Second'] }),
-      field({ name: 'shift', kind: 'radio', on: false, index: 3, options: ['Night'] }),
+      field({ name: 'post', kind: 'radio', on: true, index: 1, options: ['First', 'Second'], option: 'First' }),
+      field({ name: 'post', kind: 'radio', on: false, index: 2, options: ['First', 'Second'], option: 'Second' }),
+      field({ name: 'shift', kind: 'radio', on: false, index: 3, options: ['Night'], option: 'Night' }),
     ]);
     expect(screen.getAllByRole('button', { name: /— Option, page 1/u })).toHaveLength(2);
     expect(screen.getAllByRole('radio').map((option) => option.getAttribute('aria-checked'))).toStrictEqual(['true', 'false', 'false']);
@@ -242,8 +245,8 @@ describe('FormsPanel — filling in place', () => {
 
   it('CHOOSES a radio option that is off, and CLEARS the chosen one, each with its own handle', async () => {
     const { fills } = await panel([
-      field({ name: 'post', kind: 'radio', on: true, index: 1, options: ['First'] }),
-      field({ name: 'post', kind: 'radio', on: false, index: 2, options: ['Second'] }),
+      field({ name: 'post', kind: 'radio', on: true, index: 1, options: ['First', 'Second'], option: 'First' }),
+      field({ name: 'post', kind: 'radio', on: false, index: 2, options: ['First', 'Second'], option: 'Second' }),
     ]);
     fireEvent.click(screen.getByRole('radio', { name: 'post: Second' }));
     fireEvent.click(screen.getByRole('radio', { name: 'post: First' }));
@@ -301,9 +304,9 @@ describe('FormsPanel — filling in place', () => {
 
   it('draws a radio group’s options as radios of ONE group, and a second group as another', async () => {
     await panel([
-      field({ name: 'post', kind: 'radio', on: true, index: 1, options: ['First'] }),
-      field({ name: 'post', kind: 'radio', on: false, index: 2, options: ['Second'] }),
-      field({ name: 'size', kind: 'radio', on: false, index: 3, options: ['Large'] }),
+      field({ name: 'post', kind: 'radio', on: true, index: 1, options: ['First', 'Second'], option: 'First' }),
+      field({ name: 'post', kind: 'radio', on: false, index: 2, options: ['First', 'Second'], option: 'Second' }),
+      field({ name: 'size', kind: 'radio', on: false, index: 3, options: ['Large'], option: 'Large' }),
     ]);
     const groupOf = (name: string): string | null => screen.getByRole('radio', { name }).getAttribute('data-group');
     expect(groupOf('post: First')).not.toBeNull();

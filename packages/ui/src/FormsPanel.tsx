@@ -288,9 +288,12 @@ function NameButton({
   );
 }
 
-/** What a radio option stands for: its own value, the one thing that tells one option from another. */
+/**
+ * What a radio option stands for: its own value, the one thing that tells one option from another. Never the group's
+ * first option, which every widget of the group answers alike (the owner's F9, "Male, Male").
+ */
 function optionName(option: ListedField): string {
-  return option.options[0] ?? option.name;
+  return option.option ?? option.name;
 }
 
 /**

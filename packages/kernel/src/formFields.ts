@@ -277,6 +277,34 @@ export interface ListedField {
   readonly format: FieldFormat | null;
   /** The number range it accepts, checked where it is filled (ADR-0230); absent where it has none. */
   readonly range?: FieldRange;
+  /** A radio option's own value ({@link radioOptionOf}); present only on a radio widget that names one. */
+  readonly option?: string;
+}
+
+/**
+ * A radio widget's own option: the group's `/Opt` entry at this widget's place among its kids (ISO 32000-1, 12.7.4.2.4),
+ * else the widget's own name for *on*. Every widget of a group answers the group's name and the group's options, which
+ * is why the Fields list showed every option as the first one (the owner's F9).
+ */
+function optionOf(kind: FormFieldKind, widget: PDFWidget): { readonly option?: string } {
+  const option = kind === 'radio' ? radioOptionOf(widget.getObject()) : null;
+  return option === null ? {} : { option: option.slice(0, MAX_FIELD_TEXT) };
+}
+
+export function radioOptionOf(object: PDFObject): string | null {
+  const own = onStateKeyOf(object) ?? null;
+  const parent = object.get('Parent');
+  if (!parent.isDictionary() || !object.isIndirect()) return own;
+  const listed = parent.get('Opt');
+  const kids = parent.get('Kids');
+  if (!listed.isArray() || !kids.isArray()) return own;
+  for (let at = 0; at < kids.length; at += 1) {
+    const kid = kids.get(at);
+    if (!kid.isIndirect() || kid.asIndirect() !== object.asIndirect()) continue;
+    const entry = listed.get(at);
+    return entry.isString() ? entry.asString() : entry.isName() ? entry.asName() : own;
+  }
+  return own;
 }
 
 // WHAT KIND OF FIELD A WIDGET IS lives in `fieldKind.ts`, which the field appearance's finishing step reads too.
@@ -427,6 +455,7 @@ export function readFormFields(
           rect: transform === null ? null : readRect(widget, transform),
           ...(listed.cut ? { cut: true as const } : {}),
           ...listedRules(widget),
+          ...optionOf(kind, widget),
         });
       }
     }

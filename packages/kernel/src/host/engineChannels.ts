@@ -640,6 +640,8 @@ const engineFormFieldSchema = z
     format: fieldFormatSchema.nullable(),
     /** Present only on a field that has one (ADR-0230), as `cut` is, so the smallest row and the bound it derives stay put. */
     range: fieldRangeSchema.exactOptional(),
+    /** A radio option's own value (the owner's F9), present only on a radio widget, for `range`'s reason. */
+    option: z.string().max(ENGINE_FORM_FIELD_TEXT_MAX).exactOptional(),
   })
   .strict();
 
