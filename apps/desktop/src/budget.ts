@@ -72,6 +72,13 @@ export const ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES = 3_221_225_472;
  * MiB, all of it before the join (the join added nothing). So the peak still grew with the file between 12 and 24 MiB, and
  * 24 MiB left about 390 MiB under the job limit; past that a CSV may end the host, which answers as the host's failure.
  * Measuring it in the installed app on Windows is owed.
+ *
+ * **The `external` level was HarfBuzz, and it is gone** (same script, 2026-10-14, Linux, plain Node with its default heap
+ * limit, so no cap helped). A shaping buffer per call was freed only by a finalizer, which never ran inside a
+ * synchronous part (`textShaping.ts`); one buffer per face now. 12 MiB peaked at 1,283 MiB and 24 MiB at 1,414, with
+ * `external` at 105 to 173 MiB across every part, against 2,190 and 2,680 before. Resident memory still steps up by about
+ * 11 MiB a part past the twelfth, which this script's own list of finished parts accounts for (about 0.8 MiB each held
+ * for the join) only in part; the installed app on Windows is still where this is owed.
  */
 export const COMPOSE_HOST_HEAP_LIMIT_MIB = 2048;
 

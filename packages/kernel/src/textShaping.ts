@@ -55,6 +55,13 @@ export class ShapingFace {
   readonly #face: Face;
   readonly #font: Font;
   readonly #advances = new Map<number, number>();
+  /**
+   * ONE BUFFER FOR EVERY SHAPE, reset each time. harfbuzzjs 1.6.2 frees a buffer only through a `FinalizationRegistry`,
+   * and a finalizer runs only when the thread yields; a composition is synchronous, so a buffer per call stayed in
+   * HarfBuzz's WebAssembly memory until the whole part was set — measured 2026-10-14, a 1 MiB CSV part (13,819 rows,
+   * six cells each) grew the process by 462 MB, and that memory never shrinks once grown.
+   */
+  readonly #buffer = new Buffer();
 
   /**
    * @param bytes the font file, a collection or a single face
@@ -86,7 +93,8 @@ export class ShapingFace {
    */
   shape(text: string, rtl: boolean): ShapedGlyph[] {
     if (text === '') return [];
-    const buffer = new Buffer();
+    const buffer = this.#buffer;
+    buffer.reset();
     buffer.addText(text);
     buffer.guessSegmentProperties();
     // THE DIRECTION IS A CONSTANT, never a string: `setDirection('rtl')` is accepted and shapes nothing (measured

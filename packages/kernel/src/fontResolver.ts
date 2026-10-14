@@ -174,7 +174,45 @@ function styleDistance(face: CandidateFace, weight: number, italic: boolean): nu
  * siblings first, then the request's family installed, its stand-in bundled, its class bundled, then any installed and
  * any bundled face, each group nearest in style first.
  */
-export function candidatesFor(request: FontRequest, catalogue: readonly CandidateFace[]): CandidateFace[] {
+export function candidatesFor(request: FontRequest, catalogue: readonly CandidateFace[]): readonly CandidateFace[] {
+  const fromCatalogue = catalogueOrder(request, catalogue);
+  if (request.own.length === 0) return fromCatalogue;
+  const ordered: CandidateFace[] = [];
+  const seen = new Set<string>();
+  for (const face of [...request.own, ...fromCatalogue]) {
+    if (face.embedding === 'never' || seen.has(face.id)) continue;
+    seen.add(face.id);
+    ordered.push(face);
+  }
+  return ordered;
+}
+
+/**
+ * THE CATALOGUE'S ORDER IS WORKED OUT ONCE per catalogue and per family, weight and slope, never per call. A catalogue
+ * is read once per host and never changes, and the order depends on nothing else; `resolveRuns` runs once per cell of a
+ * CSV, so filtering and sorting every face each time made a part's cost the cells times the installed faces — measured
+ * 2026-10-14, 83,000 calls took 484 ms over 20 faces and 46,565 ms over 920, which is what took a 1 MiB part past the
+ * host call's 120 s deadline on a machine with hundreds of fonts installed. Keyed by the catalogue array itself, so a
+ * catalogue that is dropped takes its orders with it.
+ */
+const ORDERS = new WeakMap<readonly CandidateFace[], Map<string, readonly CandidateFace[]>>();
+
+function catalogueOrder(request: FontRequest, catalogue: readonly CandidateFace[]): readonly CandidateFace[] {
+  let orders = ORDERS.get(catalogue);
+  if (orders === undefined) {
+    orders = new Map();
+    ORDERS.set(catalogue, orders);
+  }
+  const key = `${request.family ?? ''}\u0000${String(request.bold)}\u0000${String(request.italic)}`;
+  let order = orders.get(key);
+  if (order === undefined) {
+    order = workOutOrder(request, catalogue);
+    orders.set(key, order);
+  }
+  return order;
+}
+
+function workOutOrder(request: FontRequest, catalogue: readonly CandidateFace[]): readonly CandidateFace[] {
   const weight = request.bold ? 700 : 400;
   const usable = catalogue.filter((face) => face.embedding !== 'never');
   const asked = request.family === null ? null : normaliseFamily(request.family);
@@ -183,7 +221,6 @@ export function candidatesFor(request: FontRequest, catalogue: readonly Candidat
   const near = (faces: readonly CandidateFace[]): CandidateFace[] =>
     [...faces].sort((left, right) => styleDistance(left, weight, request.italic) - styleDistance(right, weight, request.italic));
   const groups: CandidateFace[][] = [
-    [...request.own],
     near(usable.filter((face) => face.origin === 'installed' && asked !== null && normaliseFamily(face.family) === asked)),
     near(usable.filter((face) => face.origin === 'bundled' && standIn !== undefined && face.family === standIn)),
     near(usable.filter((face) => face.origin === 'bundled' && face.family === classFamily)),

@@ -88,19 +88,33 @@ async function endsOf(path) {
 
 // A REGISTER FILE PAST ONE COMPOSITION'S BOUND (`MAX_CSV_BYTES`, 1 MiB): about three parts, built here so the walk needs
 // no file of the owner's. Its first and last records are named so the saved PDF can be read back for both ends.
-const registerRows = 160_000;
-const register = join(output, 'register.csv');
-await writeFile(
-  register,
-  `Record,Name,Amount\n${Array.from({ length: registerRows }, (_unused, at) => `R${String(at + 1)},Item ${String(at % 97)},${String((at * 7) % 1000)}`).join('\n')}\n`,
-);
+/**
+ * A register file of `rows` records, written to the walk's output.
+ *
+ * @param {string} name
+ * @param {number} rows
+ */
+async function registerFile(name, rows) {
+  const path = join(output, name);
+  await writeFile(
+    path,
+    `Record,Name,Amount\n${Array.from({ length: rows }, (_unused, at) => `R${String(at + 1)},Item ${String(at % 97)},${String((at * 7) % 1000)}`).join('\n')}\n`,
+  );
+  return path;
+}
 
-await step('O10: a CSV past one composition’s bound is imported whole, with the work on screen, and both ends are in the PDF', async () => {
+/**
+ * The register at `register` imported through New PDF table from CSV and read back for both ends.
+ *
+ * @param {string} register
+ * @param {number} registerRows
+ */
+async function importRegister(register, registerRows) {
   const { app } = walk;
   await app.evaluate(({ dialog }, picked) => {
     dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [picked] });
   }, register);
-  const saved = join(output, 'register.pdf');
+  const saved = register.replace(/\.csv$/u, '.pdf');
   await saveTo(saved);
   await command('New PDF table from CSV…');
   // THE FONT QUESTION FIRST (L4), answered with its default, as commentsWalk's Markdown steps answer it: the picker is
@@ -122,7 +136,19 @@ await step('O10: a CSV past one composition’s bound is imported whole, with th
   expect(ends.first).toContain('R1 ');
   expect(ends.last).toContain(`R${String(registerRows)}`);
   return { pages: ends.pages, csvBytes: (await readFile(register)).byteLength };
-});
+}
+
+// ABOUT THREE MEBIBYTES, the size the Windows session saw fail on 2026-10-14 with no answer to engine/compose-csv in
+// 120 s, and the OWNER'S TWELVE: each part's cost no longer grows with the fonts installed (`fontResolver.ts`), so a
+// part answers in about the same time on a machine with hundreds of faces as with the bundled twenty.
+const smallRegister = await registerFile('register.csv', 160_000);
+await step('O10: a CSV past one composition’s bound is imported whole, with the work on screen, and both ends are in the PDF', () =>
+  importRegister(smallRegister, 160_000),
+);
+const largeRegister = await registerFile('register-12mib.csv', 640_000);
+await step('O10: a 12 MiB CSV, the size that timed out, is imported whole and both ends are in the PDF', () =>
+  importRegister(largeRegister, 640_000),
+);
 
 /**
  * The owner's N7 document: two pages and one Note on page 1 with its pop-up, as the app's writer leaves them — the Note

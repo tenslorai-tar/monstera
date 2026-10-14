@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { type CandidateFace, type FontRequest, familyClass, normaliseFamily, resolveRuns } from './fontResolver.js';
+import { type CandidateFace, type FontRequest, candidatesFor, familyClass, normaliseFamily, resolveRuns } from './fontResolver.js';
 
 /**
  * The resolver's order and its unit, on synthetic catalogues (ADR-0172 Decision 1). Each face carries exactly the
@@ -210,5 +210,41 @@ describe('resolveRuns: the grapheme is the unit when a word is split (RRRRRRR-12
       [`e${ACUTE}`, 'plain', `e${ACUTE}`],
       ['q', 'plain', ''],
     ]);
+  });
+});
+
+/**
+ * The catalogue's order is worked out once per catalogue and request, not once per call: a CSV part resolves once per
+ * cell, and re-sorting hundreds of installed faces per cell took a 1 MiB part past the host's 120 s deadline.
+ */
+describe('candidatesFor: worked out once per catalogue', () => {
+  const installed = (count: number): CandidateFace[] =>
+    Array.from({ length: count }, (_, at) => face(`installed-${String(at)}`, 'installed', `Family ${String(at % 7)}`, LATIN, { weight: 400 + (at % 4) * 100, italic: at % 5 === 0 }));
+
+  it('answers a repeated request on the same catalogue with the order it already worked out', () => {
+    const catalogue = [...installed(300), ...CATALOGUE];
+    const asked = request({ own: [] });
+    expect(candidatesFor(asked, catalogue)).toBe(candidatesFor({ ...asked, own: [] }, catalogue));
+  });
+
+  // CONTROL: a different catalogue, or a different weight or slope, is a different order, so the cache key is not coarser
+  // than what the order depends on.
+  it('works the order out again for another catalogue and for another weight or slope', () => {
+    const catalogue = [...installed(30), ...CATALOGUE];
+    const plain = candidatesFor(request({ own: [] }), catalogue);
+    expect(candidatesFor(request({ own: [] }), [...catalogue])).not.toBe(plain);
+    const bold = candidatesFor(request({ own: [], bold: true }), catalogue);
+    const italic = candidatesFor(request({ own: [], italic: true }), catalogue);
+    expect(bold.find((candidate) => candidate.origin === 'installed')?.weight).toBe(700);
+    expect(plain.find((candidate) => candidate.origin === 'installed')?.weight).toBe(400);
+    expect(italic.find((candidate) => candidate.origin === 'installed')?.italic).toBe(true);
+    expect(plain.find((candidate) => candidate.origin === 'installed')?.italic).toBe(false);
+  });
+
+  it('puts the text’s own font first on every call, the cached order after it without repeats', () => {
+    const catalogue = [...CATALOGUE];
+    candidatesFor(request({ own: [] }), catalogue);
+    expect(candidatesFor(request({ own: [OWN, ARIMO] }), catalogue).map((candidate) => candidate.id)).toStrictEqual(['own', 'arimo', 'tinos', 'naskh']);
+    expect(candidatesFor(request({ own: [] }), catalogue).map((candidate) => candidate.id)).toStrictEqual(['arimo', 'tinos', 'naskh']);
   });
 });
