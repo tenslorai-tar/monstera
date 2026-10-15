@@ -605,6 +605,13 @@ const FEWEST_WORDS_FOR_SPAN = 4;
  * compressed toward the top-left, which put *Insert as text on the page* in a narrow column at the box's corner. The
  * documentation's word for these coordinates is *approximate* and prompting did not move it.
  *
+ * NOT A RESIZED FRAME, ruled out by arithmetic 2026-10-15 (cloud run 4, D5): 1096 × 893 is 40 × 32 patches of 28, 1,280
+ * visual tokens, inside Haiku 4.5's standard tier ({@link CLAUDE_STANDARD_RESOLUTION}, 1568 and 1568), so the service read
+ * it unresized; and the three answers share no frame — 395 and 408 of 1096 in pixels are 0.36 and 0.37, 591 in thousandths
+ * is 0.59. The compression is the model's own, outside this repository, which is why this is a correction of its answer
+ * and not a fix of ours. Why it compresses is unmeasured: that needs live reads of rasters whose words sit at known boxes,
+ * which only a session with a key can make.
+ *
  * What stays true of an approximate frame is the ORDER and the proportions, so where the words of a read span less than
  * {@link TRUSTED_SPAN} of an axis (and there are enough of them to judge), that axis is stretched so they span the raster
  * less a margin. A person drags a box AROUND the writing, so the writing fills it. Each axis is judged alone, and a read that
