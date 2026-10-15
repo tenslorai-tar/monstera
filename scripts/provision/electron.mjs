@@ -51,7 +51,7 @@ import { fileURLToPath } from 'node:url';
 import { extract } from '../lib/extract.mjs';
 import { grantPath } from '../lib/containerGrant.mjs';
 import { loadTypeScript } from '../lib/loadTypeScript.mjs';
-import { PLAIN_NODE_EXTENSIONS, SCAN_DATA_EXTENSIONS } from '../lib/plainNodeScope.mjs';
+import { PLAIN_NODE_EXTENSIONS, SCAN_DATA_EXTENSIONS, SCAN_DECLARATION_SUFFIX } from '../lib/plainNodeScope.mjs';
 import {
   downloadVerified,
   fileExists,
@@ -335,6 +335,8 @@ export async function scriptsLoadingAtRuntime(specifier, root = REPO_ROOT) {
         continue;
       }
       const extension = entry.name.slice(entry.name.lastIndexOf('.') + 1);
+      // A DECLARATION never runs, so it loads nothing; a plain `.ts` is still refused below.
+      if (entry.name.endsWith(SCAN_DECLARATION_SUFFIX)) continue;
       if (PLAIN_NODE_EXTENSIONS.includes(extension)) files.push(full);
       else if (!SCAN_DATA_EXTENSIONS.includes(extension)) {
         // REFUSE an unrecognised extension rather than skip it. Skipping is how

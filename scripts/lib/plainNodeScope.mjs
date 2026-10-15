@@ -51,6 +51,17 @@ export const PLAIN_NODE_EXTENSIONS = ['mjs', 'js', 'cjs'];
 export const SCAN_DATA_EXTENSIONS = ['json', 'asc', 'txt', 'md'];
 
 /**
+ * The ending of a TypeScript DECLARATION under `scripts/`: types the scripts' type check reads, which nothing executes.
+ *
+ * A compound ending rather than an extension, because the extension of `resedit.d.ts` is `ts`, and `ts` must stay
+ * refused: a `.ts` script under `scripts/` would be code no runtime scan read. A declaration cannot run — Node will not
+ * load one, and `tsconfig.scripts.json`'s `paths` hands it to the type checker alone — so it cannot load Electron or
+ * anything else, and the runtime scan skips it by this name. It arrived with `scripts/types/resedit.d.ts` (ADR-0123's
+ * 2026-10-15 correction), refused by this scan until it was classified, which is the design working.
+ */
+export const SCAN_DECLARATION_SUFFIX = '.d.ts';
+
+/**
  * One glob per extension, never a brace list.
  *
  * MEASURED, and it is a trap this module shipped with: ESLint's matcher does

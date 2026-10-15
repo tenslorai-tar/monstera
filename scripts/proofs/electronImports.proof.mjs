@@ -52,7 +52,7 @@ import { ESLint } from 'eslint';
 import { ELECTRON_SPECIFIERS } from '../../eslint.config.js';
 import { fileExists, verifyFileDigest } from '../lib/fetchVerified.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
-import { PLAIN_NODE_EXTENSIONS } from '../lib/plainNodeScope.mjs';
+import { PLAIN_NODE_EXTENSIONS, SCAN_DECLARATION_SUFFIX } from '../lib/plainNodeScope.mjs';
 import { formatProbeLeftovers, sweepProbeLeftovers } from '../lib/probeLeftovers.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { BUILDS, scriptsLoadingAtRuntime, unpinnedRuntimeExists } from '../provision/electron.mjs';
@@ -91,7 +91,7 @@ const PROBE_JS = join(REPO_ROOT, 'scripts', '__import_probe__.js');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 18 });
+const roster = createRoster(failures, { cases: 19 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -912,6 +912,27 @@ try {
         `to glob .mjs alone — invisible to the walk AND to ESLint, each reporting the ` +
         `reassuring answer with no way to say it had not looked. Recognised extensions are ` +
         `${PLAIN_NODE_EXTENSIONS.join(', ')}.`,
+    );
+    await rm(join(shapes, 'mystery.mts'));
+
+    // A DECLARATION IS NOT CODE, and the name is what says so: `resedit.d.ts` passes, and the same text named `.ts`
+    // is still refused, so the skip cannot have widened into every `.ts`.
+    await writeFile(join(shapes, 'library.d.ts'), 'export declare const f: number;\n', 'utf8');
+    const withDeclaration = await scriptsLoadingAtRuntime('target', fixture);
+    await writeFile(join(shapes, 'script.ts'), 'export const f = 1;\n', 'utf8');
+    check(
+      'a .d.ts declaration is skipped, and a plain .ts beside it is still REFUSED',
+      withDeclaration.matched.length === afterComputed.matched.length &&
+        (await (async () => {
+          try {
+            await scriptsLoadingAtRuntime('target', fixture);
+            return false;
+          } catch (error) {
+            return error instanceof Error && error.message.includes('script.ts') && error.message.includes('does not classify');
+          }
+        })()),
+      `a declaration under scripts/ must not stop the scan, since it cannot run, and the skip must be by the ` +
+        `${SCAN_DECLARATION_SUFFIX} ending alone: a .ts script is code no runtime scan would read.`,
     );
   } finally {
     await rm(fixture, { recursive: true, force: true });
