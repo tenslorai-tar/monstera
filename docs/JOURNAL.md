@@ -900,6 +900,54 @@ Two commits: the stage audit above (7bbf0599, the journal and the watermark alon
 two commits with this record between. No proof, test or instrument is in the range. A second regenerate run on the same
 code rewrote none of the images (276 passed, no baseline newer than that run's start).
 
+*Added 2026-10-16: the checklist answers below were missing when this entry was committed (182aad20), and Guards'
+document checker refused the branch at 67d03111 for it.*
+
+### 1. Root cause or workaround?
+
+Nothing in this range: no fix, only a record and images.
+
+### 2. Verified against the easy shape only?
+
+Nothing in this range.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Yes: 181 dialog images became comparisons where there were none. That is coverage arriving, and nothing that was
+compared before stopped being compared.
+
+### 3. Would CI have caught it?
+
+CI's Visual baselines job compares every image; 67d03111 is its first read of them.
+
+### 4. Are the proofs non-vacuous?
+
+Nothing in this range: no proof.
+
+### 4a. Resolution test before measuring?
+
+Nothing in this range.
+
+### 4b. A search with a positive control?
+
+Nothing in this range.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+The gallery's anchor case holds the written dialog list to the registry (a0fade08); not changed here.
+
+### 5. Executed, or asserted?
+
+Executed: both regenerate runs on Windows. Asserted: that CI's Windows image renders as this machine's does.
+
+### 6. Architecture before the feature?
+
+No architecture change.
+
+### 7. Do the documents still match the code?
+
+Nothing in this range changes a document but this journal and the watermark.
+
 ---
 
 ## 2026-10-15 — Stage audit of `1bdd02f9..f53a6374` — findings KKKKKKKK-1 to KKKKKKKK-9
@@ -964,6 +1012,70 @@ The probe is a measure-folder script, not committed. Linux's figure was 15,313.
 on mixed causes: the 30 s test timeout inside the ArrowDown loop, *never settled; last read undefined*, *still open
 after 2 ArrowDown*, and *Organize at its top*. CI's Windows leg passed it on 2e0f17fd. Separately, `App.test.tsx`'s
 security-notice case failed once under the full suite and passed alone; no timeout was raised for either.
+
+*Added 2026-10-16: the checklist answers below were missing when this entry was committed (7bbf0599), and Guards'
+document checker refused the branch at 67d03111 for it. The findings above are unchanged.*
+
+### 1. Root cause or workaround?
+
+Root causes, each with its mechanism in its commit: the PDF/A fixture's yields (71e2db4d, measured both ways), the
+palette's substring match (36755ef6), a section chosen before a document was open and the fixture's superscript
+(ce382dac), two lists by one name (31f799fd), a line the owner removed (f53a6374). The cloud's repairs in range each
+state theirs: the Windows rename refusal, X4's words, P1's same-run reprovision, the stale edge counts. No workaround in
+range; formFieldScale's load-dependent timeout was tested against the same yield mechanism, the control did not support
+it, and the edit was reverted rather than kept.
+
+### 2. Verified against the easy shape only?
+
+The walk fixes were rerun on Windows against the real app, not on the shim. The palette fix was checked against every
+title the walks pass, not only *Watermark…*; that check is what found *Save a copy*. MuPDF's save depth was read in
+the engine host's own runtime, not only in plain Node.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Yes, stated: hostFileAnswers' replace race is required on POSIX and asserted impossible on Windows (2e0f17fd), so the
+race itself is proven on Linux only. The pdfium proofs' lowered counts are held to their lists by a new Guards check
+(47d79ed2).
+
+### 3. Would CI have caught it?
+
+-1 no: the unit tests never cross the host's schema, and only a live run holds both ends; the walks are that run. -2
+and -3 no, Windows-only and not in CI. -4 no, walks are not in CI. The PDF/A timeout: CI's Windows leg passed it; this
+machine is slower. The range's push is 67d03111, read once.
+
+### 4. Are the proofs non-vacuous?
+
+71e2db4d's control is the run before it, which timed out at 5,019 and 5,389 ms; with the change it takes 822 ms. Each
+walk fix's control is the earlier run of the same step, which failed, against the rerun, which passed.
+
+### 4a. Resolution test before measuring?
+
+The depth probe's driver requires a 10-link chain to save before it searches, and reads both a success and a failure
+exit; the timing probe separated 129 ms from 4,060 ms on the same fixture.
+
+### 4b. A search with a positive control?
+
+The title check refuses to answer unless it parses at least 100 catalogue messages and finds *Watermark…* among them.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+No check in range derives a count from its own set; 47d79ed2 holds the edge counts to the exported lists, the
+direction 4c asks for when the danger is a list growing.
+
+### 5. Executed, or asserted?
+
+Executed: every walk, the probes and the four IIIIIIII-7 proofs, on Windows. Asserted: -1's reach into O5, O7, O8 and
+textWalk 5, 13 and 16 (inferred from the screens and the host log, not separated case by case), and -7 either way.
+
+### 6. Architecture before the feature?
+
+No architecture change in range.
+
+### 7. Do the documents still match the code?
+
+The previous entry's *Needs Windows* list is answered here and in the session's report: IIIIIIII-7 and IIIIIIII-8 read,
+GGGGGGGG-12's KnownDLLs half read, FFFFFFFF-9 read (every chat history case 2 to 131 ms under the full suite), and
+FFFFFFFF-12 and DDDDDDDD-6 still open.
 
 ---
 
