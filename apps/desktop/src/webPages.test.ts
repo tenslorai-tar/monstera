@@ -35,7 +35,7 @@ describe('openWebPage', () => {
 
     // THE WHOLE ADDRESS, and it is asserted here rather than read from the module: a case comparing
     // the constant with itself would pass whatever the constant said, including an empty string.
-    expect(opened).toStrictEqual(['https://monsterapdf.com/donate']);
+    expect(opened).toStrictEqual(['https://monsterapdf.com/donate.html']);
   });
 
   it('opens the Store listing at the product id Partner Center assigned', async () => {
@@ -76,7 +76,7 @@ describe('openWebPage', () => {
         >),
         'azure-di-create': 'https://example.com/',
         'azure-di-keys': 'https://example.com/',
-        donate: 'https://monsterapdf.com/donate',
+        donate: 'https://monsterapdf.com/donate.html',
         'store-listing': '',
         source: 'https://github.com/tenslorai-tar/monstera',
         licences: 'https://github.com/tenslorai-tar/monstera/blob/main/NOTICE',

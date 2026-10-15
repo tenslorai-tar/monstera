@@ -21,13 +21,10 @@ import type { ChannelParams, StorePage } from '@monstera/contract';
 export type WebPage = ChannelParams<'app.openWebPage'>['page'];
 
 /**
- * The donation page.
- *
- * **Derived, and the derivation is here so one string is the only thing to correct**: `package.json`'s
- * `homepage` is `https://monsterapdf.com`, which `BUILD-PROMPT.md`:42 names as this project's site, and
- * this is the conventional path on it. Nothing else in the repository records a donation address.
+ * The donation page, as the owner gave it on 2026-10-15 (H2): the site's own file, `donate.html`.
+ * Nothing else in the repository records a donation address, so this string is the only thing to correct.
  */
-const DONATE = 'https://monsterapdf.com/donate';
+const DONATE = 'https://monsterapdf.com/donate.html';
 
 /**
  * The application's Microsoft Store product id, assigned when it was reserved in Partner Center and given
