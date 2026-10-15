@@ -195,6 +195,7 @@ import {
 } from './budget.js';
 import { type AppInfo, type BakedAppInfo, type PickDocument, type PickDocuments, createContractHandlers } from './contractHandlers.js';
 import type { KnownRoot } from './displayLocation.js';
+import { networkOcrFrame } from './networkOcrFrame.js';
 import { NO_RECENT_PICTURES, type PictureFiles, type RecentPictures, createRecentPictures } from './recentPictures.js';
 import { NO_REQUEST_LOG, createRequestLog, observedHandlers } from './requestLog.js';
 import { createHeldPicture } from './heldPicture.js';
@@ -1410,20 +1411,12 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       if (isNetworkRequest(request)) {
         // A REGION, or THE PAGE ITSELF where the person chose to send these pages (ADR-0202): the page's displayed size
         // sizes the raster, and an absent rect is the page's own box in the host, so the frame comes back as a region's does.
-        let rect: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number } | undefined;
-        let widthPoints: number;
-        let heightPoints: number;
-        if ('wholePage' in request) {
+        // ONE DECISION, NAMED (`networkOcrFrame`, CCCCCCCC-3): the frame, and whether the writing was drawn around.
+        const { rect, widthPoints, heightPoints, drawn } = await networkOcrFrame(request, async () => {
           const size = (await engineHost.geometry(session, [request.page])).sizes[0];
           if (size === undefined) throw new Error(`the engine reported no size for page ${String(request.page + 1)}`);
-          widthPoints = size.width;
-          heightPoints = size.height;
-        } else {
-          const [x0, y0, x1, y1] = request.region;
-          rect = { x0, y0, x1, y1 };
-          widthPoints = Math.abs(x1 - x0);
-          heightPoints = Math.abs(y1 - y0);
-        }
+          return size;
+        });
         const prepared = await networkRecognisers(settings, secrets)[request.engine].prepare(widthPoints, heightPoints);
         // BYTES ARE KNOWN ONLY AFTER RASTERISING, so a raster over the service's byte
         // limit is taken again smaller — `rasterWithinLimit.ts` says why and when not.
@@ -1439,7 +1432,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
           rotation: raster.rotation,
           origin: raster.origin,
           scale,
-          drawn: rect !== undefined,
+          drawn,
         });
       }
 
