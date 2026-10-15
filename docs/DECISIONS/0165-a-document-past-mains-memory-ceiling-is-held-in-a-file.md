@@ -86,3 +86,25 @@ The file is removed when the send ends, sent or refused, and the staged image is
 **Still not reached, and still named:** *Send to DocuSign*, whose envelope carries the document as base64 inside one
 JSON body (up to its 512 MiB bound), and signing (ADR-0148). Streaming DocuSign changes the framing of a request whose
 only proof is a live run on the owner's demo account, so it waits for a run that can prove the new one.
+
+## Correction, 2026-10-15 — *Send to DocuSign* streams too, and its framing does not change
+
+The owner's addendum 4 to cloud run 4, item 1. The premise above, that streaming DocuSign *changes the framing*, held
+only for one way of streaming it. A body written as a stream with no known length goes out chunked, which is a request
+the live run never sent. A **file-backed `Blob`** goes out with its `content-length`, as the whole string did, and its
+bytes are read as they are sent. Both were run against a loopback server (`stagedUpload.test.ts`): the Blob arrives
+with `content-length` and no `transfer-encoding`, and the stream, its control, arrives chunked.
+
+So the send is the cloud upload's shape with one step added. The document is STAGED in the lane (no flush into
+`main`), moved into a private file under the cloud working folder by `sentFromStaged`, and read twelve MiB at a time
+(`ENVELOPE_READ_BYTES`, a multiple of three, so every part's base64 ends on a whole group). The parts are written
+between the two halves of the envelope's JSON (`envelopeJson`, the one spelling of the envelope) into a second private
+file, which `fetch` sends as a Blob. Both files are removed when the send ends. A sign-in refused before anything is
+moved discards the staged image, as a cloud upload does.
+
+**The request is the proven one, byte for byte.** `docusign.test.ts` holds the streamed body to `JSON.stringify` of the
+whole definition, the body the live run sent, for every length from 0 to 20 bytes across reads of 3, 6 and 21, with a
+subject that carries the split's own text. What is not claimed: a live send of a document past `main`'s ceiling.
+
+**Still not reached:** signing (ADR-0148), and the signed copy read back from DocuSign, which arrives whole within its
+512 MiB bound before it is written.
