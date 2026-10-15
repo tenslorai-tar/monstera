@@ -100,3 +100,10 @@ the pipe. Measured while building it: with `main` handing the host the whole com
 reached the fake host carrying both fields. What keeps them from crossing is the request type — `PlaceholderRequest`
 declares `bytes` and `passphrase` as `never`, so handing a host the command is a compile error — and the composition
 case that asserts the request a host receives carries neither. The schema stays, as the host's own refusal.
+
+## Note, 2026-10-15 — the prepared bytes no longer stay in `main`
+
+*What stays in `main`* named the prepared bytes, for the length of one signature, and left the digest question open.
+[ADR-0248](0248-a-signature-is-made-over-a-digest-read-from-the-prepared-file.md) answers it: the prepared file is copied
+into `main`'s own storage rather than taken into memory, Decision 4's checks read the hole alone, and the signature is
+made over a digest read a part at a time. Decisions 1 to 6 above are otherwise unchanged.
