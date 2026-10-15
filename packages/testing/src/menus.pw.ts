@@ -532,6 +532,54 @@ for (const size of [
   });
 }
 
+// E3: RESTING THE POINTER ON THE DOWN ARROW SCROLLS THE MENU while it rests; with movement reduced it scrolls nothing
+// until the arrow is pressed. The reduced run is the control: the same rest over the same menu, which a scroll caused by
+// anything but the rest (a hover's highlight scrolling an item into view, a press) would move as well.
+for (const reduced of [false, true]) {
+  test(`resting on a long menu's down arrow ${reduced ? 'with REDUCED MOTION scrolls nothing until it is pressed' : 'scrolls the menu while the pointer rests'}`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: reduced ? 'reduce' : 'no-preference' });
+    await openDocument(page);
+    await page.setViewportSize({ width: 760, height: 560 });
+    const triggers = page.locator('.m-menu-bar__menus .m-menu-bar__trigger');
+    const popup = page.locator('.m-menu-bar__popup:not(.m-menu-bar__submenu)');
+    // THE FIRST MENU ON THE ROW THAT SCROLLS at this size: the walk above finds at least one, More's folded ones aside.
+    let found = false;
+    for (const name of await triggers.allTextContents()) {
+      if (name === 'More') continue;
+      await page.getByRole('menubar').getByRole('menuitem', { name, exact: true }).click();
+      await expect(popup).toBeVisible();
+      if (await popup.evaluate((menu) => menu.scrollHeight > menu.clientHeight + 1)) {
+        found = true;
+        break;
+      }
+      await page.keyboard.press('Escape');
+      await expect(popup).toBeHidden();
+    }
+    expect(found, 'a menu on the row that scrolls at 760 × 560').toBe(true);
+    await expect.poll(() => arrowsOf(popup)).toStrictEqual({ up: false, down: true });
+    const box = await popup.locator('[data-menu-arrow="down"]').boundingBox();
+    if (box === null) throw new Error('the down arrow has no box');
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    const scrolled = (): Promise<number> => popup.evaluate((menu) => menu.scrollTop);
+    if (reduced) {
+      // A REST LONG ENOUGH for the full-motion run to have moved many items, and nothing moved.
+      await page.waitForTimeout(600);
+      expect(await scrolled()).toBe(0);
+      await page.mouse.down();
+      await page.mouse.up();
+      await expect.poll(scrolled).toBeGreaterThan(0);
+    } else {
+      // MOVING WHILE IT RESTS: past zero, then further, with no press in between.
+      await expect.poll(scrolled).toBeGreaterThan(0);
+      const once = await scrolled();
+      await expect.poll(scrolled).toBeGreaterThan(once);
+    }
+    await expect(popup).toBeVisible();
+  });
+}
+
 /** Which of a menu's two scroll arrows are shown (the owner's E3). */
 async function arrowsOf(popup: Locator): Promise<{ up: boolean; down: boolean }> {
   return popup.evaluate((menu) => {

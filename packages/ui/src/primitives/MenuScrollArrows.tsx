@@ -1,5 +1,6 @@
 import { type ReactElement, type ReactNode, useCallback, useLayoutEffect, useRef, useState } from 'react';
 
+import { motionReduced } from '../settings/appearance.js';
 import { Icon } from './Icon.js';
 
 /**
@@ -18,8 +19,13 @@ import { Icon } from './Icon.js';
  * Not a control a keyboard reaches, and hidden from assistive technology: a person on the keyboard moves through the
  * items, and focus scrolls the item it lands on into view, clear of the arrows (`scroll-padding-block`). Not a layout
  * change: each arrow takes no room in the column (`.m-menu-arrow`), so a menu that does not scroll is laid out exactly
- * as it was and shows neither. Not motion: an arrow appears and goes without a transition, and the scroll it drives is
- * the menu's own, instant.
+ * as it was and shows neither. An arrow appears and goes without a transition, and a press's scroll is instant.
+ *
+ * ## Resting is motion, and reduced motion stops it
+ *
+ * A pointer resting on an arrow scrolls the menu every frame, which is movement a person did not press for. So when
+ * movement is reduced (`motionReduced`: the setting or Windows), resting scrolls nothing and a press still pages, which
+ * is the one way to reach the rest of the menu that moves only when asked.
  */
 export function MenuScrollArrows({ children }: { readonly children: ReactNode }): ReactElement {
   const top = useRef<HTMLSpanElement>(null);
@@ -53,8 +59,9 @@ export function MenuScrollArrows({ children }: { readonly children: ReactNode })
     if (menu === null) return;
     menu.scrollBy({ top: direction * Math.max(1, menu.clientHeight * 0.8), behavior: 'instant' });
   };
-  /** Scrolls a little every frame while the pointer rests on an arrow. */
+  /** Scrolls a little every frame while the pointer rests on an arrow, unless movement is reduced. */
   const rest = (direction: -1 | 1): void => {
+    if (motionReduced(document.documentElement)) return;
     const step = (): void => {
       menuOf()?.scrollBy({ top: direction * REST_STEP, behavior: 'instant' });
       resting.current = requestAnimationFrame(step);
