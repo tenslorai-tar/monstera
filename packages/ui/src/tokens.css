@@ -504,6 +504,10 @@
   --font-chrome-11: 11px;
   --font-chrome-12: 12px;
   --font-chrome-13: 13px;
+  /* A PANEL SECTION'S HEADING (the owner's C3 and E2): one step above the 12 px of the field labels and list items
+     under it, and heavier, so it reads as a heading; the one style every panel's section titles take. */
+  --panel-heading-size: var(--font-chrome-13);
+  --panel-heading-weight: 700;
   /* Content sizes. */
   --font-content-14: 14px;
   --font-content-16: 16px;

@@ -1807,10 +1807,19 @@ optgroup {
 }
 
 .m-properties__section-title {
-  color: var(--text);
-  font-size: var(--font-chrome-12);
-  font-weight: 600;
   cursor: pointer;
+}
+
+/* EVERY PANEL'S SECTION HEADING, one rule over the one token pair (the owner's C3 and E2): the Properties panel's
+   sections (Text, Box, a field's own), its comment details, and the left panel's group headings (the Fields list's
+   pages). Each element keeps its own margins in its own rule; the size, weight and colour are only here. */
+.m-text-section__title,
+.m-properties__section-title,
+.m-properties__subtitle,
+.m-forms-page__title {
+  color: var(--text);
+  font-size: var(--panel-heading-size);
+  font-weight: var(--panel-heading-weight);
 }
 
 /* EACH BUTTON TAKES AN EQUAL SHARE, v5-02's two halves, and a command whose full title is long
@@ -1938,9 +1947,6 @@ optgroup {
 
 .m-forms-page__title {
   margin: 0 0 var(--space-4);
-  color: var(--muted);
-  font-size: var(--font-chrome-11);
-  font-weight: 600;
 }
 
 /*
@@ -6783,9 +6789,6 @@ optgroup {
 
 .m-text-section__title {
   margin: 0;
-  color: var(--muted);
-  font-size: var(--font-chrome-12);
-  font-weight: 600;
 }
 
 .m-text-section__font {

@@ -172,6 +172,34 @@ test.describe('Add text', () => {
     expect(marks.map((mark) => mark.set?.spacing)).toStrictEqual([0.05]);
   });
 
+  // C3: A SECTION TITLE READS AS A HEADING: larger and heavier than the labels under it, and every title alike (one token
+  // pair, `--panel-heading-size` and `--panel-heading-weight`).
+  test('C3: the Properties panel’s section titles are larger and heavier than its field labels, all alike', async ({ page }) => {
+    await openForAdding(page, []);
+    const surface = page.locator('[data-text-add-surface]').first();
+    const box = await surface.boundingBox();
+    if (box === null) throw new Error('the add surface has no box');
+    await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.5);
+    const panel = page.locator('[data-text-properties]');
+    await expect(panel.locator('.m-text-section__title').first()).toBeVisible();
+    const read = await panel.evaluate((root) => {
+      const styleOf = (element: Element): { size: number; weight: number } => {
+        const style = getComputedStyle(element);
+        return { size: Number.parseFloat(style.fontSize), weight: Number(style.fontWeight) };
+      };
+      return {
+        titles: [...root.querySelectorAll('.m-text-section__title')].map(styleOf),
+        labels: [...root.querySelectorAll('.m-text-section__label')].map(styleOf),
+      };
+    });
+    // A SEARCH on both sides, so each must find something.
+    expect(read.titles.length).toBeGreaterThan(1);
+    expect(read.labels.length).toBeGreaterThan(0);
+    expect(new Set(read.titles.map((each) => `${String(each.size)}/${String(each.weight)}`)).size).toBe(1);
+    const title = read.titles[0] ?? { size: 0, weight: 0 };
+    expect(read.labels.filter((label) => !(title.size > label.size && title.weight > label.weight))).toStrictEqual([]);
+  });
+
   test('Escape keeps the words too, and a box left empty sends nothing', async ({ page }) => {
     const sent: { channel: string; params: unknown }[] = [];
     await openForAdding(page, sent);
