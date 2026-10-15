@@ -20,9 +20,11 @@
  * saved file (F2 to F10).
  */
 import { existsSync } from 'node:fs';
-import { copyFile, readFile, writeFile } from 'node:fs/promises';
+import { copyFile, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect } from '@playwright/test';
+import forge from 'node-forge';
 import {
   PDFCheckBox,
   PDFDict,
@@ -36,12 +38,13 @@ import {
   decodePDFRawStream,
 } from '@cantoo/pdf-lib';
 import { root, startWalk } from './liveWalk.mjs';
+import { savedSignature } from './savedPdf.mjs';
 
 const source = process.argv[2] ?? join(root, '_review/test-files/form-test.pdf');
 if (!existsSync(source)) throw new Error(`No form at ${source}. Pass the path to form-test.pdf.`);
 
 const walk = await startWalk('forms');
-const { page, output, copyOf, open, saveTo, command, section, pressOn, step, finish } = walk;
+const { page, output, copyOf, open, pickFiles, saveTo, command, section, pressOn, step, finish } = walk;
 const form = await copyOf(source);
 
 /**
@@ -548,6 +551,66 @@ await step('F7: the form’s Reset button empties every field as one step, READ 
   await expect.poll(() => existsSync(resetSaved), { timeout: 20_000 }).toBe(true);
   const read = await savedChoices(resetSaved);
   expect(read).toStrictEqual({ city: [], language: [], interests: [], due: '' });
+  return read;
+});
+
+/**
+ * A throwaway signing certificate, minted for this run in the system's temporary folder and never anywhere the
+ * repository could take it in: a self-signed RSA key and certificate in a PKCS #12 file under `passphrase`.
+ * @param {string} folder @param {string} name @param {string} passphrase
+ */
+async function mintCertificate(folder, name, passphrase) {
+  const keys = forge.pki.rsa.generateKeyPair(2048);
+  const cert = forge.pki.createCertificate();
+  cert.publicKey = keys.publicKey;
+  cert.serialNumber = '01';
+  cert.validity.notBefore = new Date(Date.now() - 86_400_000);
+  cert.validity.notAfter = new Date(Date.now() + 86_400_000);
+  cert.setSubject([{ name: 'commonName', value: name }]);
+  cert.setIssuer([{ name: 'commonName', value: name }]);
+  cert.sign(keys.privateKey, forge.md.sha256.create());
+  const der = forge.asn1.toDer(forge.pkcs12.toPkcs12Asn1(keys.privateKey, [cert], passphrase, { algorithm: '3des' })).getBytes();
+  const path = join(folder, 'walk-signer.p12');
+  await writeFile(path, Uint8Array.from(der, (character) => character.charCodeAt(0)));
+  return path;
+}
+
+const signedProtected = join(output, 'protected-signed.pdf');
+await step('17: a password-protected document, opened with its password and signed with a certificate, READ BACK signed and still protected', async () => {
+  // MINTED AT RUN TIME, in the system's temporary folder: the certificate and the protected file are made here, used, and
+  // left there; neither is in the repository or in the walk's output.
+  const folder = await mkdtemp(join(tmpdir(), 'monstera-walk-sign-'));
+  const certificate = await mintCertificate(folder, 'Monstera Walk Signer', 'walk-pass');
+  const plain = await PDFDocument.create();
+  const font = await plain.embedFont(StandardFonts.Helvetica);
+  plain.addPage([400, 600]).drawText('A protected document to sign', { font, size: 18, x: 20, y: 540 });
+  plain.encrypt({ userPassword: 'open-me', ownerPassword: 'own-me', permissions: { printing: 'highResolution' } });
+  const protectedFile = join(folder, 'protected.pdf');
+  await writeFile(protectedFile, await plain.save());
+
+  // OPENED AS A PERSON OPENS IT: Open, then the password the app asks for.
+  await pickFiles([protectedFile]);
+  await page.keyboard.press('Control+O');
+  const asks = page.getByRole('dialog', { name: 'This document is protected' });
+  await expect(asks).toBeVisible({ timeout: 30_000 });
+  await asks.getByLabel('Password', { exact: true }).fill('open-me');
+  await asks.getByRole('button', { name: 'Open document', exact: true }).click();
+  await page.locator('canvas.m-page:visible').first().waitFor({ state: 'visible', timeout: 30_000 });
+
+  // SIGNED AS A PERSON SIGNS: Protect › Sign with Certificate, the certificate's password, then the certificate picked.
+  await command('Sign with Certificate');
+  const dialog = page.getByRole('dialog', { name: 'Sign document' });
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel('Certificate password (leave empty if it has none)', { exact: true }).fill('walk-pass');
+  await pickFiles([certificate]);
+  await dialog.getByRole('button', { name: 'Choose certificate and sign', exact: true }).click();
+  await expect(dialog).toHaveCount(0, { timeout: 30_000 });
+
+  await saveTo(signedProtected);
+  await command('Save a copy');
+  await expect.poll(() => existsSync(signedProtected), { timeout: 30_000 }).toBe(true);
+  const read = await savedSignature(signedProtected);
+  expect(read).toStrictEqual({ protectedStill: true, signatures: 1, coversFile: true, signer: 'Monstera Walk Signer' });
   return read;
 });
 
