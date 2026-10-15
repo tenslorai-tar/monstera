@@ -5,6 +5,7 @@ import type { ReactElement } from 'react';
 
 import { CHOICE_MENU_NAME } from '../messages/en.js';
 import { Icon } from './Icon.js';
+import { MenuScrollArrows } from './MenuScrollArrows.js';
 import type { SegmentedOption } from './SegmentedControl.js';
 
 /**
@@ -56,6 +57,7 @@ export function ChoiceMenu<Value extends string>({ label, options, value, onChan
       <Menu.Portal>
         <Menu.Positioner align="start" side="top" sideOffset={4}>
           <Menu.Popup className="m-context-menu m-choice-menu__popup">
+            <MenuScrollArrows>
             <Menu.RadioGroup
               value={value}
               onValueChange={(next: unknown) => {
@@ -86,6 +88,7 @@ export function ChoiceMenu<Value extends string>({ label, options, value, onChan
                 </Menu.RadioItem>
               ))}
             </Menu.RadioGroup>
+            </MenuScrollArrows>
           </Menu.Popup>
         </Menu.Positioner>
       </Menu.Portal>

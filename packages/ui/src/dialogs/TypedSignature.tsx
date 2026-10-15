@@ -16,6 +16,7 @@ import {
   SIGNATURE_STYLE_CHOSEN,
 } from '../messages/en.js';
 import { Icon } from '../primitives/Icon.js';
+import { MenuScrollArrows } from '../primitives/MenuScrollArrows.js';
 import { Input } from '../primitives/Input.js';
 import { type LoadedFace, type SetName, loadFaces, outlinePath, setName, signatureFaceName } from '../signatureFaces.js';
 
@@ -144,6 +145,7 @@ function SignatureFaceMenu({
       <Menu.Portal>
         <Menu.Positioner align="start" side="bottom" sideOffset={4}>
           <Menu.Popup className="m-context-menu m-signature-faces">
+            <MenuScrollArrows>
             <Menu.RadioGroup
               value={value}
               onValueChange={(next: unknown) => {
@@ -181,6 +183,7 @@ function SignatureFaceMenu({
                 </Menu.RadioItem>
               ))}
             </Menu.RadioGroup>
+            </MenuScrollArrows>
           </Menu.Popup>
         </Menu.Positioner>
       </Menu.Portal>

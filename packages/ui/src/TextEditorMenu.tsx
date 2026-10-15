@@ -16,6 +16,7 @@ import {
   TEXT_MENU_NO_SUGGESTIONS,
   TEXT_MENU_SPLIT,
 } from './messages/en.js';
+import { MenuScrollArrows } from './primitives/MenuScrollArrows.js';
 import type { Lookup } from './spelling/personalWords.js';
 import { paragraphAt, replaceRange, wordAt } from './textFormatting.js';
 
@@ -187,6 +188,7 @@ export function TextEditorMenu({
                   event.preventDefault();
                 }}
               >
+                <MenuScrollArrows>
                 {shown.look === undefined || shown.word === undefined || shown.range === undefined ? null : (
                   <>
                     {shown.look.suggestions.length === 0 ? (
@@ -288,6 +290,7 @@ export function TextEditorMenu({
                     </ContextMenu.Item>
                   ),
                 )}
+                </MenuScrollArrows>
               </ContextMenu.Popup>
             </ContextMenu.Positioner>
           </ContextMenu.Portal>

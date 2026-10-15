@@ -158,9 +158,10 @@ describe('ContextMenuArea', () => {
     });
 
     const popup = (await screen.findAllByRole('menuitem'))[0]?.parentElement;
-    const order = [...(popup?.children ?? [])].map((child) =>
-      child.getAttribute('role') === 'separator' ? '|' : (child.getAttribute('data-command') ?? '?'),
-    );
+    // THE MENU'S ENTRIES, not its two scroll arrows (`MenuScrollArrows`), which are decoration at its edges.
+    const order = [...(popup?.children ?? [])]
+      .filter((child) => !child.hasAttribute('data-menu-arrow'))
+      .map((child) => (child.getAttribute('role') === 'separator' ? '|' : (child.getAttribute('data-command') ?? '?')));
     expect(order).toStrictEqual(['t.close', '|', 't.rotate', 't.delete']);
   });
 

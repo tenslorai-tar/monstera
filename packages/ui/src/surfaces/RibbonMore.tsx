@@ -5,6 +5,7 @@ import type { ReactElement } from 'react';
 
 import { RIBBON_MENU_CHOICES, RIBBON_MORE } from '../messages/en.js';
 import { Icon } from '../primitives/Icon.js';
+import { MenuScrollArrows } from '../primitives/MenuScrollArrows.js';
 import type { IconName } from '../primitives/icons.js';
 import { ToolButton } from '../primitives/ToolButton.js';
 import type { CommandContext } from '../registries/commands.js';
@@ -80,6 +81,7 @@ export function RibbonMore({
         {/* A MARK COLUMN ONLY WHERE A MEMBER CAN BE ON, so a menu of plain commands opens on its glyphs rather than
             on an empty column, and a menu with a checkable member keeps every title at one edge. */}
         <Menu.Popup className={marks ? 'm-context-menu m-ribbon-menu m-ribbon-menu--marks' : 'm-context-menu m-ribbon-menu'}>
+          <MenuScrollArrows>
           {entries.map((entry) => {
             const checked = entry.command.checked?.(context);
             const choose = (): void => {
@@ -138,6 +140,7 @@ export function RibbonMore({
               </Menu.CheckboxItem>
             );
           })}
+          </MenuScrollArrows>
         </Menu.Popup>
       </Menu.Positioner>
     </Menu.Portal>

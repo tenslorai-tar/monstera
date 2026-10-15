@@ -458,6 +458,10 @@ for (const size of [
         long.push(name);
         // IT SCROLLS WITH A SCROLLBAR the platform draws, not a clipped box: `auto` draws one exactly when it overflows.
         if (read.overflow !== 'auto') report[`${name} overflow`] = read.overflow;
+      } else {
+        // E3: A MENU THAT DOES NOT SCROLL SHOWS NEITHER ARROW.
+        const arrows = await arrowsOf(popup);
+        if (arrows.up || arrows.down) report[`${name} arrows`] = arrows;
       }
       await close();
     }
@@ -470,6 +474,8 @@ for (const size of [
     for (const name of long) {
       const popup = await open(name);
       await expect(popup).toBeVisible();
+      // E3: AT THE TOP, the down arrow says there is more and the up arrow is not there.
+      await expect.poll(() => arrowsOf(popup), { message: `${name} at its top` }).toStrictEqual({ up: false, down: true });
       // ARROWDOWN TO THE LAST ITEM the keyboard can reach — a disabled item is passed over — and no further.
       const items = popup.locator('[role="menuitem"], [role="menuitemcheckbox"]');
       const last = popup.locator('[role="menuitem"]:not([data-disabled]), [role="menuitemcheckbox"]:not([data-disabled])').last();
@@ -500,7 +506,36 @@ for (const size of [
       }), () => true, `the ${name} menu after ArrowDown`);
       expect(seen.scrolled, `${name} scrolled`).toBeGreaterThan(0);
       expect(seen.inside, `${name}: the last item is inside the menu's visible box`).toBe(true);
+      // E3: AT THE FOOT, the down arrow is gone and the up arrow says there is more above. Scrolled there rather than
+      // taken there by the keys: a disabled item after the last one the keys reach (Protect has some) keeps the foot
+      // below, and the down arrow rightly says so.
+      await popup.evaluate((menu) => {
+        menu.scrollTop = menu.scrollHeight;
+      });
+      await expect.poll(() => arrowsOf(popup), { message: `${name} at its foot` }).toStrictEqual({ up: true, down: false });
       await close();
     }
+
+    // E3: A PRESS ON THE DOWN ARROW SCROLLS THE MENU, and leaves it open.
+    const first = long[0];
+    if (first === undefined) throw new Error('no long menu');
+    const popup = await open(first);
+    await expect.poll(() => arrowsOf(popup)).toStrictEqual({ up: false, down: true });
+    const box = await popup.locator('[data-menu-arrow="down"]').boundingBox();
+    if (box === null) throw new Error('the down arrow has no box');
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    // THE POINTER LEFT AT ONCE, so the rest-scroll stops and the read is the press's.
+    await page.mouse.move(2, 2);
+    await expect.poll(() => popup.evaluate((menu) => menu.scrollTop)).toBeGreaterThan(0);
+    await expect(popup).toBeVisible();
+    await close();
+  });
+}
+
+/** Which of a menu's two scroll arrows are shown (the owner's E3). */
+async function arrowsOf(popup: Locator): Promise<{ up: boolean; down: boolean }> {
+  return popup.evaluate((menu) => {
+    const shown = (which: string): boolean => menu.querySelector(`:scope > [data-menu-arrow="${which}"]`)?.getAttribute('data-shown') === 'true';
+    return { up: shown('up'), down: shown('down') };
   });
 }

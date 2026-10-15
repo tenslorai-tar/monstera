@@ -29,6 +29,7 @@ import {
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
 import { Icon } from '../primitives/Icon.js';
+import { MenuScrollArrows } from '../primitives/MenuScrollArrows.js';
 import type { IconName } from '../primitives/icons.js';
 import type { CommandContext, CommandRegistry, UiCommand } from '../registries/commands.js';
 import type { MenuBarSubmenu } from '../registries/placement.js';
@@ -421,9 +422,11 @@ export function MenuBar({
         <Menu.Portal>
           <Menu.Positioner side="right" align="start" sideOffset={4} alignOffset={-5}>
             <Menu.Popup className="m-context-menu m-menu-bar__popup m-menu-bar__submenu" data-submenu-popup={entry.id}>
-              {values}
-              {values === undefined ? null : <Menu.Separator className="m-context-menu-separator" />}
-              {entry.items.map((member) => item(member, held))}
+              <MenuScrollArrows>
+                {values}
+                {values === undefined ? null : <Menu.Separator className="m-context-menu-separator" />}
+                {entry.items.map((member) => item(member, held))}
+              </MenuScrollArrows>
             </Menu.Popup>
           </Menu.Positioner>
         </Menu.Portal>
@@ -539,7 +542,7 @@ export function MenuBar({
               <Menu.Portal>
                 <Menu.Positioner side="bottom" align="start" sideOffset={2}>
                   <Menu.Popup className="m-context-menu m-menu-bar__popup" finalFocus={() => focusOnClose(menu.id)}>
-                    {groupsOf(menu)}
+                    <MenuScrollArrows>{groupsOf(menu)}</MenuScrollArrows>
                   </Menu.Popup>
                 </Menu.Positioner>
               </Menu.Portal>
@@ -581,7 +584,7 @@ export function MenuBar({
                               className="m-context-menu m-menu-bar__popup m-menu-bar__submenu"
                               data-folded-popup={menu.id}
                             >
-                              {groupsOf(menu)}
+                              <MenuScrollArrows>{groupsOf(menu)}</MenuScrollArrows>
                             </Menu.Popup>
                           </Menu.Positioner>
                         </Menu.Portal>

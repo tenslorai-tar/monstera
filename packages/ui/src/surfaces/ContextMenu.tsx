@@ -3,6 +3,7 @@ import { useLingui } from '@lingui/react';
 import { useRef, useState, type ReactElement, type ReactNode } from 'react';
 
 import { Icon } from '../primitives/Icon.js';
+import { MenuScrollArrows } from '../primitives/MenuScrollArrows.js';
 import type { CommandContext, CommandRegistry } from '../registries/commands.js';
 import type { MenuContext } from '../registries/placement.js';
 import { pageSlotAt } from '../useVisiblePages.js';
@@ -192,6 +193,7 @@ function MenuPopup({ menu }: { readonly menu: AreaMenu }): ReactElement {
             event.preventDefault();
           }}
         >
+          <MenuScrollArrows>
           {menu.groups.flatMap(({ menu: group, entries }, index) => [
             ...(index === 0 ? [] : [<ContextMenu.Separator key={`separator-${group}`} className="m-context-menu-separator" />]),
             ...entries.map((entry) => (
@@ -223,6 +225,7 @@ function MenuPopup({ menu }: { readonly menu: AreaMenu }): ReactElement {
               </ContextMenu.Item>
             )),
           ])}
+          </MenuScrollArrows>
         </ContextMenu.Popup>
       </ContextMenu.Positioner>
     </ContextMenu.Portal>

@@ -18,6 +18,7 @@ import {
 } from '../messages/en.js';
 import type { MessageKey } from '@monstera/shared';
 import { Icon } from '../primitives/Icon.js';
+import { MenuScrollArrows } from '../primitives/MenuScrollArrows.js';
 import type { IconName } from '../primitives/icons.js';
 import { ToolButton } from '../primitives/ToolButton.js';
 import type { CommandContext, CommandRegistry } from '../registries/commands.js';
@@ -412,6 +413,7 @@ export function Ribbon({ registry, context, settings, showing, values }: RibbonP
                   <Menu.Positioner side="right" align="end" sideOffset={4}>
                     {/* THE MENU ROW'S COLUMNS — a mark, a glyph and the name — so the two folds read alike. */}
                     <Menu.Popup className="m-context-menu m-menu-bar__popup">
+                      <MenuScrollArrows>
                       {SECTION_IDS.map((id, place) =>
                         railFold.has(place) ? (
                           <Menu.Item
@@ -452,6 +454,7 @@ export function Ribbon({ registry, context, settings, showing, values }: RibbonP
                           </Menu.Item>
                         ) : null,
                       )}
+                      </MenuScrollArrows>
                     </Menu.Popup>
                   </Menu.Positioner>
                 </Menu.Portal>

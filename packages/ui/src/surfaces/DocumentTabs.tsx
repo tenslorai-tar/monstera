@@ -5,6 +5,7 @@ import { type ReactElement, useLayoutEffect, useRef, useState } from 'react';
 
 import { TAB_ALL_DOCUMENTS, TAB_CLOSE, TAB_OPEN_ANOTHER, TAB_STRIP_LABEL, TAB_UNSAVED } from '../messages/en.js';
 import { Icon } from '../primitives/Icon.js';
+import { MenuScrollArrows } from '../primitives/MenuScrollArrows.js';
 import { MenuArea, type MenuAt } from './ContextMenu.js';
 import { type StripMeasure, tabCapacity, tabsShown } from './tabFit.js';
 
@@ -259,6 +260,7 @@ export function DocumentTabs({
           <Menu.Portal>
             <Menu.Positioner align="end" side="bottom" sideOffset={4}>
               <Menu.Popup className="m-context-menu m-choice-menu__popup m-tab-all__popup">
+                <MenuScrollArrows>
                 <Menu.RadioGroup
                   value={activeId ?? ''}
                   onValueChange={(next: unknown) => {
@@ -294,6 +296,7 @@ export function DocumentTabs({
                     </Menu.RadioItem>
                   ))}
                 </Menu.RadioGroup>
+                </MenuScrollArrows>
               </Menu.Popup>
             </Menu.Positioner>
           </Menu.Portal>

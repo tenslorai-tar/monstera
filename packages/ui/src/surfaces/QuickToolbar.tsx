@@ -14,6 +14,7 @@ import {
 
 import { DOCUMENT_TOOLS_LABEL, FLOAT_BAR_GRIP_HELP, FLOAT_BAR_GRIP_LABEL, FLOAT_BAR_MORE } from '../messages/en.js';
 import { Icon } from '../primitives/Icon.js';
+import { MenuScrollArrows } from '../primitives/MenuScrollArrows.js';
 import { ICONS } from '../primitives/icons.js';
 import { IconButton } from '../primitives/IconButton.js';
 import type { CommandContext, CommandRegistry } from '../registries/commands.js';
@@ -325,6 +326,7 @@ export function QuickToolbar({ registry, context, settings }: QuickToolbarProps)
           <Menu.Portal>
             <Menu.Positioner side={docked === 'end' && free === null ? 'left' : 'right'} align="end" sideOffset={8}>
               <Menu.Popup className="m-context-menu m-menu-bar__popup">
+                <MenuScrollArrows>
                 {tools.map((entry, place) => {
                   if (!folded.has(place)) return null;
                   const checked = entry.command.checked?.(context);
@@ -366,6 +368,7 @@ export function QuickToolbar({ registry, context, settings }: QuickToolbarProps)
                     </Menu.CheckboxItem>
                   );
                 })}
+                </MenuScrollArrows>
               </Menu.Popup>
             </Menu.Positioner>
           </Menu.Portal>
