@@ -669,11 +669,21 @@ try {
         REPO_ROOT,
         builtImportsOf(readFileSync(join(REPO_ROOT, 'scripts/proofs/pdfiumCommand.proof.mjs'), 'utf8')),
       ).map(({ artefact }) => artefact);
+      // AND EVERY ENTRY THE LISTS GAVE UP (JJJJJJJJ-4): the three edit and composition threads, from the font work proof's
+      // own edges, which name each one's declaration and none of their entries.
+      const fromWorkEdges = startedByPath(
+        REPO_ROOT,
+        (ARTEFACT_EDGES['proof:fontworkapart'] ?? []).map(([, artefact]) => artefact),
+      ).map(({ artefact }) => artefact);
+      const owed = ['faceProgramWorker', 'runFontWorker', 'composeWorker'].map((name) => `packages/kernel/dist/${name}.js`);
       check(
         'CONTROL: the guard’s walk finds the thread entries two modules below a proof’s imports',
-        reached.includes('packages/kernel/dist/fontCatalogueWorker.js') && reached.includes('packages/kernel/dist/apartEntry.js'),
-        `the walk from pdfiumCommand's imports started: ${reached.join(', ') || '(none)'}. It reaches the catalogue ` +
-          'through fontCatalogueApart.js and the start through apart.js; a blind walk dates no thread entry at all.',
+        reached.includes('packages/kernel/dist/fontCatalogueWorker.js') &&
+          reached.includes('packages/kernel/dist/apartEntry.js') &&
+          owed.every((entry) => fromWorkEdges.includes(entry)),
+        `the walk from pdfiumCommand's imports started: ${reached.join(', ') || '(none)'}; from the font work ` +
+          `edges: ${fromWorkEdges.join(', ') || '(none)'}. It reaches each entry through the module that declares its ` +
+          'work; a blind walk dates no thread entry at all.',
       );
 
       const root = mkdtempSync(join(tmpdir(), 'monstera-freshness-'));
