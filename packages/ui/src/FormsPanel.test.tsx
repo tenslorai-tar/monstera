@@ -362,6 +362,25 @@ describe('FormsPanel — selecting', () => {
     expect(screen.getByRole('button', { name: 'first — Text, page 1' }).getAttribute('aria-pressed')).toBe('false');
     expect(screen.getByRole('button', { name: 'second — Text, page 1' }).getAttribute('aria-pressed')).toBe('true');
   });
+
+  // E2: EACH FIELD IN ITS OWN CARD, the selected one's card drawn chosen, and a radio group's options in its ONE card.
+  it('E2: each row is its own card, the selected card is marked, and a radio group and its options share one card', async () => {
+    await panel(
+      [
+        field({ name: 'first', index: 0 }),
+        field({ name: 'second', index: 1 }),
+        field({ name: 'plan', index: 2, kind: 'radio', on: false, options: ['basic', 'premium'], option: 'basic' }),
+        field({ name: 'plan', index: 3, kind: 'radio', on: false, options: ['basic', 'premium'], option: 'premium' }),
+      ],
+      { selected: ['0:1'] },
+    );
+    const cards = [...document.querySelectorAll('.m-forms-list > .m-list-card')];
+    expect(cards).toHaveLength(3);
+    expect(cards.map((card) => card.getAttribute('data-list-card-selected'))).toStrictEqual([null, 'true', null]);
+    // THE GROUP'S OPTIONS ARE INSIDE ITS CARD, not cards of their own.
+    expect(cards[2]?.querySelectorAll('.m-forms-option')).toHaveLength(2);
+    expect(document.querySelectorAll('.m-forms-option.m-list-card')).toHaveLength(0);
+  });
 });
 
 describe('FormsPanel — the states', () => {

@@ -36,6 +36,7 @@ import {
 import { pdfjsPageOf } from './pageNumbering.js';
 import { IconButton } from './primitives/IconButton.js';
 import { ICONS } from './primitives/icons.js';
+import { ListCard } from './primitives/ListCard.js';
 import { readWholeList } from './readWholeList.js';
 
 /**
@@ -168,7 +169,8 @@ export function AnnotationsPanel({
               // A position is the right React key here for `LinksPanel`'s
               // reason: the list is replaced whole when the version moves and
               // nothing in it is reordered in place.
-              <li className="m-annotations-row" key={at}>
+              // ITS OWN CARD (the owner's E2). This list selects nothing, so no card is ever drawn chosen.
+              <ListCard className="m-annotations-row" key={at} selected={false}>
                 <button
                   className="m-annotations-item"
                   onClick={() => {
@@ -253,7 +255,7 @@ export function AnnotationsPanel({
                     });
                   }}
                 />
-              </li>
+              </ListCard>
             ))}
           </ul>
           {state.truncated ? (

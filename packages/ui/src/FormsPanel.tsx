@@ -32,6 +32,7 @@ import {
 } from './messages/en.js';
 import { Icon } from './primitives/Icon.js';
 import type { IconName } from './primitives/icons.js';
+import { ListCard } from './primitives/ListCard.js';
 import { pdfjsPageOf } from './pageNumbering.js';
 import { readWholeList } from './readWholeList.js';
 
@@ -199,7 +200,12 @@ export function FormsPanel({
           <ul className="m-forms-list">
             {rows.map((row) =>
               row.kind === 'group' ? (
-                <li className="m-forms-row m-forms-row--group" key={`group:${row.name}`}>
+                // A RADIO GROUP AND ITS OPTIONS SHARE ONE CARD (the owner's E2).
+                <ListCard
+                  className="m-forms-row m-forms-row--group"
+                  key={`group:${row.name}`}
+                  selected={row.options.some((option) => selected.has(fieldKey(option.page, option.index)))}
+                >
                   <NameButton
                     chosen={row.options.some((option) => selected.has(fieldKey(option.page, option.index)))}
                     field={row.options[0] ?? row.first}
@@ -227,12 +233,13 @@ export function FormsPanel({
                       </li>
                     ))}
                   </ul>
-                </li>
+                </ListCard>
               ) : (
-                <li
+                <ListCard
                   className="m-forms-row"
                   data-form-row-selected={selected.has(fieldKey(row.field.page, row.field.index)) ? 'true' : undefined}
                   key={row.field.index}
+                  selected={selected.has(fieldKey(row.field.page, row.field.index))}
                 >
                   <NameButton
                     chosen={selected.has(fieldKey(row.field.page, row.field.index))}
@@ -241,7 +248,7 @@ export function FormsPanel({
                     onProperties={onProperties}
                   />
                   <FieldValue field={row.field} group={`${panelId}:${row.field.name}`} onFill={fill(row.field)} />
-                </li>
+                </ListCard>
               ),
             )}
           </ul>

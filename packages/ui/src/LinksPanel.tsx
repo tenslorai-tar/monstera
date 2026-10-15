@@ -27,6 +27,7 @@ import {
 import { CustomColour } from './ColourChoice.js';
 import type { FollowedLink } from './LinkLayer.js';
 import { pdfjsPageOf } from './pageNumbering.js';
+import { ListCard } from './primitives/ListCard.js';
 import { readWholeList } from './readWholeList.js';
 import type { PageLinkOnPage } from './usePageLinks.js';
 
@@ -142,7 +143,7 @@ export function LinksPanel({
             // when the page changes, and nothing in it is reordered or removed
             // in place. A key invented from the URI would collide on a page
             // that links to the same place twice, which is common.
-            <li key={at}>
+            <ListCard key={at} selected={false}>
               <button
                 type="button"
                 className={link.kind === 'internal' ? 'm-links-item' : 'm-links-item m-links-external'}
@@ -187,7 +188,7 @@ export function LinksPanel({
                   }}
                 />
               </span>
-            </li>
+            </ListCard>
           ))}
         </ul>
       )}

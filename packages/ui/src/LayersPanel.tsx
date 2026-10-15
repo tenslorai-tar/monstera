@@ -4,6 +4,7 @@ import type { DocId, DocVersion } from '@monstera/shared';
 import { type ReactElement, useEffect, useState } from 'react';
 
 import { LAYERS_EMPTY, LAYERS_LABEL, LAYERS_TRUNCATED, LAYERS_UNAVAILABLE } from './messages/en.js';
+import { ListCard } from './primitives/ListCard.js';
 import { readWholeList } from './readWholeList.js';
 
 /**
@@ -100,7 +101,7 @@ export function LayersPanel({
             // list here where the key is not a positional fallback: a layer's
             // index is its identity in the document, so a re-read that reorders
             // nothing still matches rows to layers.
-            <li key={layer.index}>
+            <ListCard key={layer.index} selected={false}>
               <label className="m-layer">
                 <input
                   type="checkbox"
@@ -111,7 +112,7 @@ export function LayersPanel({
                 />
                 <span className="m-layer-name">{layer.name}</span>
               </label>
-            </li>
+            </ListCard>
           ))}
         </ul>
       )}
