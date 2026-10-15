@@ -25,12 +25,35 @@
  * - **The tolerance**, stated below with where it came from.
  */
 
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { defineConfig } from '@playwright/test';
 
 import accessibility from './playwright.config.mjs';
 
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const VITE = JSON.stringify(join(REPO_ROOT, 'node_modules', 'vite', 'bin', 'vite.js'));
+const GALLERY_CONFIG = JSON.stringify(join(REPO_ROOT, 'scripts', 'build', 'gallery.vite.config.mjs'));
+/** The dialog gallery's port, beside the application's: `dialogGallery.visual.ts` reads every other dialog there. */
+const GALLERY_PORT = 4175;
+process.env['MONSTERA_GALLERY_ORIGIN'] = `http://localhost:${String(GALLERY_PORT)}`;
+
 export default defineConfig({
   ...accessibility,
+  // THE APPLICATION'S SERVER, and the dialog gallery's (the owner's D4): BUILT HERE and then served, because
+  // `npm run build` builds the renderer and not the gallery, and a gallery left from another commit would be compared
+  // under this one's name.
+  webServer: [
+    ...(Array.isArray(accessibility.webServer) ? accessibility.webServer : accessibility.webServer === undefined ? [] : [accessibility.webServer]),
+    {
+      command: `node ${VITE} build --config ${GALLERY_CONFIG} && node ${VITE} preview --config ${GALLERY_CONFIG} --port ${String(GALLERY_PORT)} --strictPort`,
+      url: `http://localhost:${String(GALLERY_PORT)}/gallery.html`,
+      cwd: REPO_ROOT,
+      reuseExistingServer: false,
+      timeout: 300_000,
+    },
+  ],
   testMatch: '**/*.visual.ts',
   snapshotPathTemplate: '{testDir}/../baselines/{arg}-{platform}{ext}',
   expect: {
