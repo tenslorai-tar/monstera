@@ -12,7 +12,7 @@ A watermark is text drawn across the page, such as DRAFT, usually faint and at a
 
 1. In the rail, choose **Organize**, then **Watermark…** in the **Marks** group.
 2. Type the **Text**.
-3. Set **Opacity (%)**, **Angle (degrees)** and **Size (points)**, or leave them empty for the defaults. Choose a **Font**: Helvetica, Times or Courier, which every PDF reader has, or any font on this computer. A font from this computer is saved inside the PDF, only the letters you used, so the watermark looks the same wherever the file is opened.
+3. Set **Opacity (%)**, **Angle (degrees)** and **Size (points)**, or leave them empty for the defaults. Choose a **Font**: Helvetica, Times or Courier, which every PDF reader has, or any font on this computer.
 4. Choose a **Colour**. **Standard colour** is grey.
 5. Choose **This page** or **All pages**, then **Add watermark**.
 
@@ -28,6 +28,7 @@ Both still work after the file is saved and opened again, and each is one step f
 
 ## Good to know
 
+- A font from this computer is saved inside the PDF, only the letters you used, so the watermark looks the same wherever the file is opened.
 - A watermark another program added is changed or removed too when it was saved as a separate mark. One written into the page itself is left, and Monstera says so.
 - A mark added by an earlier version of Monstera cannot be changed or removed, because it cannot be told apart safely from the page. Monstera says so and leaves it.
 - Undo with **Ctrl+Z**.

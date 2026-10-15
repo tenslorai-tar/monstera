@@ -13,14 +13,17 @@ The assistant answers questions about your document using an AI provider you cho
 1. Add a key for a provider first. See "Get and add keys for AI and online reading services".
 2. In the rail, choose **Review**, then **Open the assistant** in the **AI** group, or press **Ctrl+Shift+A**. The **Assistant** tab opens in the right-hand panel.
 3. Choose the **Provider** and **Model**, in the two boxes under the message box. Whatever the provider box shows is where your next message goes.
-4. In the **Choose** row above the message box, open **Context** and choose what to send: this page, the whole document, the comments, a picture of this page, or **None**, and the text you selected or a comment when there is one. With two or more documents open, **All Open Docs** sends every one of them. The open menu marks what is chosen. Nothing is sent until you press **Send**. **Sources** chooses **Document only** or **Document + web**.
-5. Type your question in the box that says **Ask about this page…**. Press **Enter** to send (**Shift+Enter** starts a new line). To ask about a file you have not opened, choose **Attach files**, the paperclip, and pick up to eight files of any kind; each shows above the box, with an **x** to take it off.
-6. Choose **Go to page …** in an answer to jump to the page it cites. A page the answer names in any usual way, such as "[p. 3]", "[Page 3]", "(pp. 3–4)" or "on page 3", is a link; an answer about the document that names none of its pages says **No page cited — check this against the document.**
+4. In the **Choose** row above the message box, open **Context** and choose what to send: this page, the whole document, the comments, a picture of this page, your selection, or **None**. With two or more documents open, **All Open Docs** sends every one.
+5. Open **Sources** and choose **Document only** or **Document + web**. Nothing is sent until you press **Send**.
+6. Type your question in the box that says **Ask about this page…** and press **Enter** to send (**Shift+Enter** starts a new line).
+7. To ask about a file you have not opened, choose **Attach files**, the paperclip, and pick up to eight files of any kind. Each shows above the box, with an **x** to take it off.
+8. Choose **Go to page …** in an answer to jump to the page it cites. An answer that names none of the document's pages says **No page cited — check this against the document.**
 
 ![The Assistant tab with Provider, Model, Context and an answer citing a page](screenshot:ai-assistant-1)
 
 ## Good to know
 
+- A page an answer names in any usual way, such as "[p. 3]", "[Page 3]", "(pp. 3–4)" or "on page 3", is a link.
 - Under an answer you can **Regenerate this answer**, **Edit your question and ask again**, **Copy this answer**, or **Add this answer to the page as a note**. **Stop** ends an answer early; **New chat**, the **+** at the top right, starts over.
 - Conversations are not kept after the document closes unless you turn on **Save chat history** (**Settings**, **AI** page). Saved chats are encrypted on this computer; clear them with **Clear chat history** on the **Privacy** page.
 - Choose **History** at the top of the Assistant to see every saved chat, newest first, with the name of the file it was about. **Open** shows the chat to read, even if the file has moved or been deleted; it does not open the file. **Delete** removes one chat, after asking.

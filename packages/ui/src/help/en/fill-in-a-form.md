@@ -12,7 +12,7 @@ Fill a form where it is on the page, or from the **Forms** tab, which lists ever
 
 1. On the page, click a field. A text field opens for typing over itself: type, then press **Enter** or click elsewhere, or press **Esc** to leave it as it was. In a field with several lines, **Enter** starts a new line, and clicking elsewhere finishes.
 2. Click a tick box to tick or untick it, and click an option to choose it; clicking the chosen option clears it. Click a dropdown or a list to choose from it.
-3. Or, in the document panel, choose the **Forms** tab. (Or in the rail choose **Forms**, then **Fields list** in the **Fields** group; in a narrower window it is under the group's **More**.) Each row shows the field's name, its kind and its page. Choose **Go to page …** to see it on the page.
+3. Or, in the document panel, choose the **Forms** tab, or in the rail choose **Forms**, then **Fields list** in the **Fields** group. Each row shows the field's name, its kind and its page. Choose **Go to page …** to see it on the page.
 4. Fill it in there: type in a text field and press **Enter** or move away; tick a **Tick box** or **Option**; pick from a **Dropdown** or **List**.
 5. Save the document to keep what you entered.
 

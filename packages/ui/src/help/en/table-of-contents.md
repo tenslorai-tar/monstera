@@ -11,8 +11,9 @@ Monstera can turn a document's bookmarks into a table of contents at the start o
 ## Steps
 
 1. In the rail, choose **Organize**, then **Contents** in the **Marks** group (its full name is **Table of contents**).
-2. The window lists the entries the page will use, each with its title, its page and its level. Rename an entry, move it up or down, move it in or out a level, or delete it. To add one, type its title and page under **Add entry** and choose **Add entry**.
-3. Choose **Insert**. The new page or pages appear at the front of the document. Choose **Cancel** to change nothing.
+2. The window lists the entries the page will use, each with its title, its page and its level. Rename an entry, move it up or down, move it in or out a level, or delete it.
+3. To add an entry, type its title and page under **Add entry** and choose **Add entry**.
+4. Choose **Insert**. The new page or pages appear at the front of the document. Choose **Cancel** to change nothing.
 
 ![A table of contents page added at the front, and the Marks group's Contents button](screenshot:table-of-contents-1)
 

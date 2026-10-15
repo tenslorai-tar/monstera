@@ -31,6 +31,22 @@ function boldWords(article: (typeof HELP_ARTICLES)[number]): string[] {
 }
 
 /**
+ * The most words a numbered step may hold, its continuation lines included and its nested bullets not (they list
+ * choices). Chosen, not derived: the D6 sweep of 2026-10-15 found eleven steps over 45 (the longest 131, `barcodes.md`)
+ * and left the longest at 46 (`ai-keys-and-pricing.md`, `start-screen.md`), counted by this function on that day.
+ */
+const STEP_WORDS = 50;
+
+/** The word count of each numbered step in an article. */
+function numberedSteps(article: (typeof HELP_ARTICLES)[number]): number[] {
+  return article.blocks.flatMap((block) =>
+    block.kind === 'numbered'
+      ? block.items.map((item) => item.inline.map((part) => part.text).join('').split(/\s+/u).filter((word) => word !== '').length)
+      : [],
+  );
+}
+
+/**
  * Every form a catalogue message can take on screen: each branch of a `plural` or `select`, with `#` and every
  * `{placeholder}` written as the ellipsis an article uses for "whatever it says here" — *Add … to dictionary*.
  */
@@ -170,6 +186,29 @@ describe('the Help centre’s articles', () => {
     const invented = parseArticle('control.md', '---\nid: c\ntitle: C\nsummary: s\n---\nChoose **Frobnicate everything**.\n');
     expect(boldWords(invented).filter((term) => !SHOWN.has(normal(term)))).toStrictEqual(['Frobnicate everything']);
     expect(SHOWN.has(normal('Save'))).toBe(true);
+  });
+
+  it('every numbered step is short: one action, with the detail under Good to know (the owner’s D6)', () => {
+    const long = HELP_ARTICLES.flatMap((article) =>
+      numberedSteps(article)
+        .filter((words) => words > STEP_WORDS)
+        .map((words) => `${article.id}: a step of ${String(words)} words`),
+    );
+    expect(long, `\n${long.join('\n')}\n`).toStrictEqual([]);
+  });
+
+  it('CONTROL: a step past the bound is seen, its continuation line counted with it, and one at the bound is not', () => {
+    const step = (words: number, continued = 0): number[] =>
+      numberedSteps(
+        parseArticle(
+          'c.md',
+          `---\nid: c\ntitle: C\nsummary: s\n---\n1. ${'word '.repeat(words).trim()}\n${continued > 0 ? `   ${'more '.repeat(continued).trim()}\n` : ''}`,
+        ),
+      );
+    expect(step(STEP_WORDS)).toStrictEqual([STEP_WORDS]);
+    expect(step(STEP_WORDS + 1)).toStrictEqual([STEP_WORDS + 1]);
+    // merge-documents' step 3 ran on as an indented paragraph, 93 words, which a first-line count would read as 34.
+    expect(step(STEP_WORDS, 10)).toStrictEqual([STEP_WORDS + 10]);
   });
 
   it('a message is compared in every form it can take on screen', () => {

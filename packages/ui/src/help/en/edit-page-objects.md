@@ -10,16 +10,17 @@ Everything drawn on a page (text, shapes, pictures) is a separate object. **Edit
 
 ## Steps
 
-1. In the rail, choose **Edit**, then **Edit object** in the **Text** group. It starts with **Edit all objects**, or with what you chose last. To choose what to work on, use the arrow beside it: **Edit all objects**, **Edit text objects**, **Edit images** or **Edit shapes**. The objects of that kind are outlined on the page, and the menu marks the one that is on.
-2. Click an object to select it. Its outline turns solid, with a handle at each corner and on each side, and a round handle above it. A line of text is picked as one block, not letter by letter.
-3. Then:
+1. In the rail, choose **Edit**, then **Edit object** in the **Text** group. It starts with **Edit all objects**, or with what you chose last, and outlines the objects on the page.
+2. To work on one kind only, use the arrow beside it: **Edit all objects**, **Edit text objects**, **Edit images** or **Edit shapes**. The menu marks the one that is on.
+3. Click an object to select it. Its outline turns solid, with a handle at each corner and on each side, and a round handle above it. A line of text is picked as one block, not letter by letter.
+4. Then:
    - drag it to move it; the object itself moves with the pointer;
    - drag a corner handle to resize it, the opposite corner staying where it is, or a side handle to make it only wider or only taller;
    - drag the round handle to turn it;
    - in the **Properties** tab, on the right, type its **Left (pt)**, **Bottom (pt)**, **Width (pt)**, **Height (pt)** or **Rotation (°)**, or change its colour;
    - choose **Bring forward** or **Send backward**, in the **Properties** tab or by right-clicking it, to put it in front of or behind what overlaps it;
    - or press **Delete**, or right-click it and choose **Delete**.
-4. Press **Esc** to clear the selection, and **Esc** again, or **Edit object** again, to finish.
+5. Press **Esc** to clear the selection, and **Esc** again, or **Edit object** again, to finish.
 
 ![A page with its objects outlined and a picture selected](screenshot:edit-page-objects-1)
 

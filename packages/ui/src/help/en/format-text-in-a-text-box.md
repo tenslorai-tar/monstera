@@ -12,16 +12,20 @@ A text box and typed text can be set in a font, a size and a colour, in bold, it
 
 1. Choose the **Select** tool and click the box.
 2. Open the **Properties** tab. A **Text** section appears.
-3. Under **Text**, choose a **Font** and type a **Size in points** beside it, then press **Enter**. Press **Bold**, **Italic**, **Underline** or **Strikethrough**, pick a **Text colour**, and press **Align left**, **Align centre**, **Align right** or **Justify**. Type a **Line spacing** or a **Character spacing in points** and press **Enter**. Character spacing goes up to about an eighth of the size either way, as for text on the page, and a larger number is held to that.
-4. Under **Box**, below **Text**, set the border's colour, opacity and width, choose a **Border style** (**Solid** or **Dashed**), type a **Padding** and press **Enter**, and tick **Fill the box** to pick a **Fill colour**. Typed text has no border, so it is offered no border style.
-5. To make the box bigger or smaller, drag any of the eight small squares on its edge: a corner changes both sides, a side changes only that side.
-4. To make the box bigger or smaller, drag any of the eight small squares on its edge: a corner changes both sides, a side changes only that side.
+3. Under **Text**, choose a **Font** and type a **Size in points** beside it, then press **Enter**.
+4. Press **Bold**, **Italic**, **Underline** or **Strikethrough**, pick a **Text colour**, and press **Align left**, **Align centre**, **Align right** or **Justify**.
+5. Type a **Line spacing** or a **Character spacing in points** and press **Enter**.
+6. Under **Box**, below **Text**, set the border's colour, opacity and width, and choose a **Border style** (**Solid** or **Dashed**).
+7. Type a **Padding** and press **Enter**, and tick **Fill the box** to pick a **Fill colour**.
+8. To make the box bigger or smaller, drag any of the eight small squares on its edge: a corner changes both sides, a side changes only that side.
 
 ![A text box selected, with the Text section in Properties](screenshot:format-text-in-a-text-box-1)
 
 ## Good to know
 
 - The change applies to all the words in the box.
+- Character spacing goes up to about an eighth of the size either way, as for text on the page, and a larger number is held to that.
+- Typed text has no border, so it is offered no border style.
 - **Use as default for new annotations** is ticked at first. What you choose in this section is then how the next text box starts: its font and size, and also bold, italic, underline, strikethrough, alignment, line spacing, padding, fill and character spacing.
 - **Helvetica**, **Times** and **Courier** are the fonts every PDF reader has, so the words look the same wherever the file is opened.
 - Monstera draws the styled box itself, in the fonts every PDF reader has, so it looks the same wherever the file is opened. The plain words are kept too, so search and other tools still find them.

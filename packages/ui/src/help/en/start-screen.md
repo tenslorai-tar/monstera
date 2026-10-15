@@ -11,7 +11,7 @@ When no document is open, Monstera shows the start screen. From here you can ope
 ## Steps
 
 1. To open a file, choose **Open PDF…** or drop a PDF anywhere in the window.
-2. To start a particular task, choose one of the six cards: **Annotate & mark up**, **Fill & create forms**, **OCR scanned pages**, **Split & merge**, **Encrypt & sign** or **Export anywhere**. Each card asks you for a PDF, opens it, and then shows the matching section of the rail (for example **Split & merge** shows **Organize**).
+2. To start a task, choose one of the six cards: **Annotate & mark up**, **Fill & create forms**, **OCR scanned pages**, **Split & merge**, **Encrypt & sign** or **Export anywhere**. Each card asks for a PDF, opens it, and shows the matching section of the rail.
 3. To reopen something you had before, choose it under **Recent**.
 4. At the foot of the screen you will find **Settings**, **About** and **Help centre**.
 

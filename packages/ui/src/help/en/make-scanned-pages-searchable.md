@@ -24,7 +24,8 @@ A scanned page is only a picture, so its words cannot be searched or selected. T
 - A page that is a picture shows **This page is a picture, so there is no text to select or search.**
 - If you stop it early, the pages already done keep their text.
 - Each page can be undone with **Ctrl+Z**.
-- The window opens with the languages set in **Settings**, **OCR** page, **Recognition languages**. Choosing others in the window changes that run only.- If the window says no recognition models are installed, text recognition is not available in this copy of Monstera.
+- The window opens with the languages set in **Settings**, **OCR** page, **Recognition languages**. Choosing others in the window changes that run only.
+- If the window says no recognition models are installed, text recognition is not available in this copy of Monstera.
 - Handwriting is not read this way. See "Read handwriting with Azure or Claude".
 
 <!--

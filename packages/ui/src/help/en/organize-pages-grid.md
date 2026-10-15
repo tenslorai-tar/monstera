@@ -16,7 +16,7 @@ When you choose **Organize** in the rail, the pages area shows every page of the
 4. Drag a card to move that page.
 5. Press **Enter** or double-click a card to open that page for reading in **Home**.
 6. Above the cards, choose **Thumbnail** to see many pages at once, or **Full page** to read one page to a row at the grid's full width, scrolling down as in **Home**.
-7. The page number in the status bar is the page you clicked, or in **Full page** the page you are looking at. Its buttons move through the cards, and a single selected card moves with them, so a page command acts on the page the status bar names.
+7. The page number in the status bar is the page you clicked, or in **Full page** the page you are looking at. Its buttons move through the cards, so a page command acts on the page the status bar names.
 
 ![The Organize section showing page cards, two of them selected, with the page count and hint line above](screenshot:organize-pages-grid-1)
 

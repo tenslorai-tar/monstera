@@ -11,7 +11,7 @@ In Side by Side, **Compare** reads both documents and lists every difference, ma
 ## Steps
 
 1. Open Side by Side with the two documents (**Review** › **Compare…**). See "Compare two documents side by side".
-2. Choose **Compare**. While it works, the bar shows how far it has got; choose **Cancel** to stop.
+2. Choose **Compare**. While it works, the bar shows how far it has got; choose **Stop** to stop.
 3. The **Differences** list opens with a short note on what is compared, then shows each change with the pages it is on, left and right.
 4. Choose a change to take both halves to it. Its marks are drawn stronger than the others. For a page only one document has, the other half goes to the place the page would be.
 
@@ -20,7 +20,8 @@ In Side by Side, **Compare** reads both documents and lists every difference, ma
 ## What is compared
 
 - **Text changed**: the words that differ, each word marked on its own where each document has it, so a word kept between two changes stays unmarked.
-- **Moved**: text that is the same but sits somewhere else on the page, and pages whose size changed.
+- **Moved**: text that is the same but sits somewhere else on the page.
+- **Page size changed**: a page that is bigger or smaller in one document.
 - **Annotation added**, **Annotation removed** and **Annotation changed**: comments and marks, including a changed note or colour.
 - **Picture changed**: images and drawings that differ, where no text change explains them.
 - **Page added** and **Page removed**: pages only one document has. The pages after them are still matched to their counterparts, so one added page does not make every later page look different.
