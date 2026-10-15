@@ -167,6 +167,8 @@ const DIALOGS: readonly { command: string; title: string; file: string; ready: s
   { command: 'Headers and footers…', title: 'Headers and footers', file: 'header-footer', ready: 'Add' },
   { command: 'Bates numbering…', title: 'Bates numbering', file: 'bates', ready: 'Number pages' },
   { command: 'Insert blank pages…', title: 'Insert blank pages', file: 'insert-blank-pages', ready: 'Insert' },
+  // CLOUD RUN 4's NEW WINDOW (C4): what Remove says on a document with no watermark, the shim's own answer.
+  { command: 'Remove watermark', title: 'Marks', file: 'page-marks-notice', ready: 'Close' },
 ];
 
 /**
