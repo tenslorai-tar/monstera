@@ -2,6 +2,7 @@ import type { OcrLanguage } from '@monstera/contract';
 import type { PdfPoint, Rotation } from '@monstera/shared';
 import { onOrigin, pageTransform, serviceOrigin, toPdf, viewportPoint } from '@monstera/shared';
 
+import { credentialedFetch } from './credentialedFetch.js';
 import type { RecognisedLine, RecognisedPage, RecognisedWord } from './ocrRecognise.js';
 import { type PlacedTables, placedTables } from './recognisedTables.js';
 
@@ -301,7 +302,7 @@ async function startAnalysis(
 ): Promise<{ readonly location: string; readonly retryAfter: string | null }> {
   let response: Response;
   try {
-    response = await fetchImpl(url, {
+    response = await credentialedFetch(fetchImpl, url, {
       method: 'POST',
       headers: {
         // THE KEY IN A HEADER, never in the URL: a query string reaches logs,
@@ -374,7 +375,7 @@ async function pollUntilDone(
 
     let response: Response;
     try {
-      response = await fetchImpl(location, {
+      response = await credentialedFetch(fetchImpl, location, {
         headers: { 'Ocp-Apim-Subscription-Key': credentials.key },
       });
     } catch (cause) {
@@ -438,7 +439,7 @@ async function deleteResult(
 ): Promise<string | null> {
   let response: Response;
   try {
-    response = await fetchImpl(location, {
+    response = await credentialedFetch(fetchImpl, location, {
       method: 'DELETE',
       headers: { 'Ocp-Apim-Subscription-Key': credentials.key },
     });

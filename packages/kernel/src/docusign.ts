@@ -2,6 +2,7 @@ import type { DocusignEnvironment } from '@monstera/contract';
 import { hostWithin } from '@monstera/shared';
 
 import type { PdfSource } from './cloudStorage.js';
+import { credentialedFetch } from './credentialedFetch.js';
 import { readWithin } from './verifiedDownload.js';
 
 /**
@@ -176,7 +177,7 @@ async function call(
 ): Promise<Uint8Array> {
   let response: Response;
   try {
-    response = await fetchImpl(url, { ...init, redirect: 'error' });
+    response = await credentialedFetch(fetchImpl, url, { ...init, redirect: 'error' });
   } catch (cause) {
     throw new DocusignRefused('unreachable', 'DocuSign could not be reached', { cause });
   }

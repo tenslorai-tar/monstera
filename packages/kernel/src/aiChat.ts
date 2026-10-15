@@ -2,6 +2,7 @@ import { AI_PROVIDERS, type AiProviderId, MAX_WEB_SOURCES, webSearchOf } from '@
 import { serviceOrigin } from '@monstera/shared';
 
 import { anthropicErrorMessage, isAnthropicOutOfCredit } from './anthropicCredit.js';
+import { credentialedFetch } from './credentialedFetch.js';
 
 /**
  * Asking a provider, and reading the answer as it arrives
@@ -663,7 +664,8 @@ export async function streamChat(request: ChatRequest): Promise<ChatAnswer> {
 
   let response: Response;
   try {
-    response = await fetchImpl(prepared.url, {
+    // NEVER FOLLOWED ELSEWHERE: the key and the conversation go to the declared address only (`credentialedFetch`).
+    response = await credentialedFetch(fetchImpl, prepared.url, {
       method: 'POST',
       headers: prepared.headers,
       body: prepared.body,

@@ -4,6 +4,7 @@ import { pageTransform, toPdf, viewportPoint } from '@monstera/shared';
 import { z } from 'zod';
 
 import { anthropicErrorMessage, isAnthropicOutOfCredit } from './anthropicCredit.js';
+import { credentialedFetch } from './credentialedFetch.js';
 import type { RecognisedLine, RecognisedPage, RecognisedWord } from './ocrRecognise.js';
 import { type PlacedTables, placedTables } from './recognisedTables.js';
 
@@ -509,7 +510,8 @@ async function askClaudeAboutImage(
   const fetchImpl = request.fetchImpl ?? fetch;
   let response: Response;
   try {
-    response = await fetchImpl(MESSAGES_URL, {
+    // NEVER FOLLOWED ELSEWHERE: the key and the page go to the declared address only (`credentialedFetch`).
+    response = await credentialedFetch(fetchImpl, MESSAGES_URL, {
       method: 'POST',
       headers: {
         'x-api-key': credentials.key,

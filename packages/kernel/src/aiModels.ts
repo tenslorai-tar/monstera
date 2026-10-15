@@ -1,6 +1,8 @@
 import { AI_PROVIDERS, type AiModel, type AiProviderId } from '@monstera/contract';
 import { serviceOrigin } from '@monstera/shared';
 
+import { credentialedFetch } from './credentialedFetch.js';
+
 /**
  * What models a provider offers, asked of the provider
  * ([ADR-0081](../../../docs/DECISIONS/0081-an-ai-provider-is-a-declared-adapter-and-its-models-are-fetched.md)).
@@ -228,7 +230,8 @@ export async function listModels({
   const signal = AbortSignal.timeout(timeoutMs);
   let response: Response;
   try {
-    response = await fetchImpl(asked.url, { method: 'GET', headers: asked.headers, signal });
+    // NEVER FOLLOWED ELSEWHERE: the key goes to the declared address only (`credentialedFetch`).
+    response = await credentialedFetch(fetchImpl, asked.url, { method: 'GET', headers: asked.headers, signal });
   } catch {
     return { provider, models: fallback, source: 'fallback', problem: 'unreachable' };
   }

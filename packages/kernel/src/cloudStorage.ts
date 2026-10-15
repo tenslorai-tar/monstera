@@ -10,6 +10,7 @@ import {
 } from '@monstera/contract';
 import { hostWithin } from '@monstera/shared';
 
+import { type CredentialedInit, credentialedFetch } from './credentialedFetch.js';
 import { pdfBody } from './guardedFetch.js';
 import { readWithin } from './verifiedDownload.js';
 
@@ -233,10 +234,12 @@ export function cloudAuthorizationUrl(
 }
 
 /** A call whose reaching-nothing and whose authorisation, conflict and size refusals are named. */
-async function call(fetchImpl: typeof fetch, url: string, init: RequestInit): Promise<Response> {
+async function call(fetchImpl: typeof fetch, url: string, init: CredentialedInit): Promise<Response> {
   let response: Response;
   try {
-    response = await fetchImpl(url, init);
+    // THE SHARED TRANSPORT, so every cloud request takes the rule: a redirect is refused, or seen where a caller asks
+    // for `'manual'` and decides the hop itself (`credentialedFetch`).
+    response = await credentialedFetch(fetchImpl, url, init);
   } catch (cause) {
     throw new CloudStorageRefused('unreachable', `${new URL(url).host} could not be reached`, { cause });
   }
@@ -262,7 +265,7 @@ async function call(fetchImpl: typeof fetch, url: string, init: RequestInit): Pr
 async function callJson(
   fetchImpl: typeof fetch,
   url: string,
-  init: RequestInit,
+  init: CredentialedInit,
 ): Promise<Readonly<Record<string, unknown>>> {
   return jsonOf(await call(fetchImpl, url, init), url);
 }
@@ -588,7 +591,7 @@ async function uploadInSession(
   } catch (failure) {
     // THE CANCEL'S OWN ANSWER IS NOT THE NEWS: the person is told why the upload failed, and a cancel that could not be
     // made leaves a session the provider expires on its own (Graph: `expirationDateTime`).
-    await fetchImpl(sessionUrl, { method: 'DELETE', headers: auth }).catch(() => undefined);
+    await credentialedFetch(fetchImpl, sessionUrl, { method: 'DELETE', headers: auth }).catch(() => undefined);
     throw failure;
   }
 }
@@ -597,7 +600,7 @@ async function uploadInSession(
 async function openSession(
   provider: CloudProviderId,
   url: string,
-  init: RequestInit,
+  init: CredentialedInit,
   fetchImpl: typeof fetch,
 ): Promise<string> {
   const spec = CLOUD_PROVIDERS[provider];
