@@ -25,7 +25,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { APART_START, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
@@ -85,7 +85,8 @@ const asker = fixture('asker.mjs', [
 
 /** What the synchronous asker said about `entry`, or that it was still waiting at the bound. */
 function ask(/** @type {string} */ entry) {
-  const run = spawnSync(process.execPath, [new URL(asker).pathname, entry], { encoding: 'utf8', timeout: ASKER_BOUND_MS });
+  // `fileURLToPath`, never a URL's `pathname`: on Windows that is `/C:/…` with percent escapes, which no loader opens.
+  const run = spawnSync(process.execPath, [fileURLToPath(asker), entry], { encoding: 'utf8', timeout: ASKER_BOUND_MS });
   if (run.error !== undefined && /** @type {NodeJS.ErrnoException} */ (run.error).code === 'ETIMEDOUT') return 'still waiting';
   return `${run.stdout}${run.stderr === '' ? '' : ` | stderr: ${run.stderr}`}`;
 }
