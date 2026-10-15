@@ -184,7 +184,7 @@ await step('5. a text box from the Comment tab: drawn, typed, Arial 11, a blue b
 const saved = join(output, 'walked.pdf');
 await step('6. saved, closed and reopened: the words are there, editable, findable, in the fonts the pages name', async () => {
   await saveTo(saved);
-  await command('Save a copy');
+  await command('Save a copy…');
   await expect.poll(() => existsSync(saved), { timeout: 30_000 }).toBe(true);
   const words = await savedWords(saved);
   const fonts = await savedFonts(saved);
@@ -235,7 +235,7 @@ await step('8. CJK (the owner’s check): Chinese and Japanese typed with Add te
   await expect(editor()).toHaveCount(0);
   const cjkSaved = join(output, 'cjk.pdf');
   await saveTo(cjkSaved);
-  await command('Save a copy');
+  await command('Save a copy…');
   await expect.poll(() => existsSync(cjkSaved), { timeout: 30_000 }).toBe(true);
   const words = (await savedWords(cjkSaved)).join(' ');
   // A CHARACTER NO FONT HAS is kept as text and drawn as a box (ADR-0174), so the text alone cannot say there was no gap;
@@ -398,7 +398,7 @@ await step('13. B5.8 and K2: a text box typed with Ctrl+B mid-sentence, in Calib
 const formattedSaved = join(output, 'formatted.pdf');
 await step('14. saved: the paragraph’s words, the tab, the text box’s bold run and its embedded Calibri are in the file', async () => {
   await saveTo(formattedSaved);
-  await command('Save a copy');
+  await command('Save a copy…');
   await expect.poll(() => existsSync(formattedSaved), { timeout: 30_000 }).toBe(true);
   const boxes = await savedTextBoxes(formattedSaved);
   const walked = boxes.find((each) => each.rc.includes('bold'));
@@ -532,7 +532,7 @@ await step('18. D1: Insert from Markdown at the end, its prose set in Times New 
 const stampedSaved = join(output, 'stamped.pdf');
 await step('19. saved: step 15’s bold Times New Roman, the dashed border, the Courier New watermark and the inserted pages are in the file', async () => {
   await saveTo(stampedSaved);
-  await command('Save a copy');
+  await command('Save a copy…');
   await expect.poll(() => existsSync(stampedSaved), { timeout: 30_000 }).toBe(true);
   const words = await savedWords(stampedSaved);
   const pageFonts = await savedFonts(stampedSaved);
@@ -627,7 +627,7 @@ await step('W1: Add text at 85%, 89% and 95% down the first (turned) page, each 
   }
   const saved = join(output, 'w1-saved.pdf');
   await saveTo(saved);
-  await command('Save a copy');
+  await command('Save a copy…');
   await expect.poll(() => existsSync(saved), { timeout: 20_000 }).toBe(true);
   // READ BACK by PDF.js, and from the FIRST PAGE, where they were pressed. Every press landed on the page (above), so a
   // line missing here is the APP losing words, and the message names which and where the rest of the file put them.
@@ -673,7 +673,7 @@ await step('L2: an underlined word keeps its one underline when its block is edi
   await clickPage(10, 10);
   await expect(editor()).toHaveCount(0);
   await saveTo(l2Saved);
-  await command('Save a copy');
+  await command('Save a copy…');
   await expect.poll(() => existsSync(l2Saved), { timeout: 30_000 }).toBe(true);
   const rules = await savedMarkedRules(l2Saved);
   expect({ drawnUnderlined, rules }).toStrictEqual({ drawnUnderlined: true, rules: 1 });
@@ -710,7 +710,7 @@ await step('L6: a page with more runs than one answer carries SAYS SO in Edit te
   await clickPage(10, 10);
   await expect(editor()).toHaveCount(0);
   await saveTo(l6Saved);
-  await command('Save a copy');
+  await command('Save a copy…');
   await expect.poll(() => existsSync(l6Saved), { timeout: 60_000 }).toBe(true);
   // READ BACK by PDF.js: the edited heading is in the file.
   const words = await savedWords(l6Saved);
@@ -755,7 +755,7 @@ await step('N14: a word processor’s subsets keep their own font, bold and supe
   await expect(editor()).toHaveCount(0);
   const saved = join(output, 'producer-subsets-saved.pdf');
   await saveTo(saved);
-  await command('Save a copy');
+  await command('Save a copy…');
   await expect.poll(() => existsSync(saved), { timeout: 30_000 }).toBe(true);
   // READ BACK: the words, the producer's subsets still named, and the marker still raised above the line by PDF.js.
   const words = (await savedWords(saved))[0] ?? '';

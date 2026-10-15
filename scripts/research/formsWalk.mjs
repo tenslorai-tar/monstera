@@ -252,7 +252,7 @@ await step('a tab order given by clicking numbers the fields and is set in one c
 const saved = join(output, 'form-test-saved.pdf');
 await step('save as, and the saved file holds the typed value, read by a second reader', async () => {
   await saveTo(saved);
-  await command('Save a copy');
+  await command('Save a copy…');
   await expect.poll(() => existsSync(saved), { timeout: 20_000 }).toBe(true);
   const read = await savedValues(saved);
   expect(Object.values(read.values).some((value) => value.includes('Ada Lovelace'))).toBe(true);
@@ -406,7 +406,7 @@ await step('L1: a password field filled with a PIN and flattened is masked in th
   await writesLanded(page, flattening);
   const file = join(output, 'form-password-flattened.pdf');
   await saveTo(file);
-  await command('Save a copy');
+  await command('Save a copy…');
   await expect.poll(() => existsSync(file), { timeout: 20_000 }).toBe(true);
   const streams = await savedStreamsText(file);
   // THE DIGITS IN NO STREAM, as a literal string or as hex: the field's own words are the only place a PIN could be.
@@ -538,7 +538,7 @@ await step('F10: a date field shows its pattern, and a day pressed on its calend
 const choicesSaved = join(output, 'form-choices-saved.pdf');
 await step('the dropdown, both list boxes and the date READ BACK from the saved file by a second reader', async () => {
   await saveTo(choicesSaved);
-  await command('Save a copy');
+  await command('Save a copy…');
   await expect.poll(() => existsSync(choicesSaved), { timeout: 20_000 }).toBe(true);
   const read = await savedChoices(choicesSaved);
   expect(read.city).toStrictEqual(['York']);
@@ -566,7 +566,7 @@ await step('F7: the form’s Reset button empties every field as one step, READ 
   // THE RESET LANDED before the file is saved (a 6 s sleep stood for this).
   await writesLanded(page, resetting);
   await saveTo(resetSaved);
-  await command('Save a copy');
+  await command('Save a copy…');
   await expect.poll(() => existsSync(resetSaved), { timeout: 20_000 }).toBe(true);
   const read = await savedChoices(resetSaved);
   expect(read).toStrictEqual({ city: [], language: [], interests: [], due: '' });
@@ -626,7 +626,7 @@ await step('17: a password-protected document, opened with its password and sign
   await expect(dialog).toHaveCount(0, { timeout: 30_000 });
 
   await saveTo(signedProtected);
-  await command('Save a copy');
+  await command('Save a copy…');
   await expect.poll(() => existsSync(signedProtected), { timeout: 30_000 }).toBe(true);
   const read = await savedSignature(signedProtected);
   expect(read).toStrictEqual({ protectedStill: true, signatures: 1, coversFile: true, signer: 'Monstera Walk Signer' });

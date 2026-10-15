@@ -158,7 +158,7 @@ const documentTab = (name) => page.locator('[data-tab-select]').filter({ hasText
 async function saveCopy(name) {
   const saved = join(output, name);
   await saveTo(saved);
-  await command('Save a copy');
+  await command('Save a copy…');
   await expect.poll(() => existsSync(saved), { timeout: 20_000 }).toBe(true);
   return saved;
 }

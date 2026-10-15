@@ -221,11 +221,19 @@ export async function startWalk(walk) {
     }, path);
   };
 
-  /** Runs a command by its title through the palette, as a person may. @param {string} title */
+  /**
+   * Runs a command by its EXACT title through the palette, as a person may. The palette filters by substring and keeps
+   * registry order without ranking (`CommandPalette.tsx`), and a string `hasText` is a case-insensitive substring too, so
+   * the first option containing "Watermark…" was "Edit watermark…" and the walk opened the wrong command. The option's
+   * own title is matched whole instead. @param {string} title
+   */
   const command = async (title) => {
     await page.keyboard.press('Control+K');
     await page.locator('.m-palette-query').fill(title);
-    await page.getByRole('option').filter({ hasText: title }).first().click();
+    await page
+      .getByRole('option')
+      .filter({ has: page.locator('.m-palette-title').getByText(title, { exact: true }) })
+      .click();
   };
 
   /** Chooses a section in the rail. @param {string} name */

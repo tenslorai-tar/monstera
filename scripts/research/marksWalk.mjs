@@ -40,7 +40,7 @@ await writeFile(original, await made.save());
 /** Saves the open document as a copy at `path` and waits until it is on disk. @param {string} path */
 async function saveCopy(path) {
   await saveTo(path);
-  await command('Save a copy');
+  await command('Save a copy…');
   await expect.poll(() => existsSync(path), { timeout: 30_000 }).toBe(true);
 }
 

@@ -92,7 +92,7 @@ export function textSteps(walk) {
   async function savedCopy(name) {
     const path = join(output, name);
     await saveTo(path);
-    await command('Save a copy');
+    await command('Save a copy…');
     await expect.poll(() => existsSync(path), { timeout: 60_000 }).toBe(true);
     return path;
   }
