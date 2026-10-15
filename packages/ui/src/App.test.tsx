@@ -3036,6 +3036,10 @@ describe('App', () => {
       { pattern: new RegExp(String.raw`choose ${B}, then ${B} in the ${B} group`, 'gu'), order: [1, 3, 2] },
       { pattern: new RegExp(String.raw`choose ${B}\. In the ${B} group, choose \*\*More\*\*, then ${B}`, 'gu'), order: [1, 2, 3] },
       { pattern: new RegExp(String.raw`choose \*\*More\*\* in the ${B} group, then ${B}`, 'gu'), order: [0, 1, 2] },
+      // THE FOURTH WAY (the owner's D6, 2026-10-15): "In the **Rotate** group, choose **Rotate 90°**", a step after the
+      // section was chosen in an earlier one, so it is read against every section. It was the common form and no
+      // pattern read it; *More* is the second form's and is left to it.
+      { pattern: new RegExp(String.raw`[Ii]n the ${B} group, choose (?!\*\*More\*\*)${B}`, 'gu'), order: [0, 1, 2] },
     ] as const;
     const claims = HELP_ARTICLES.flatMap((article) =>
       sentences.flatMap(({ pattern, order }) =>

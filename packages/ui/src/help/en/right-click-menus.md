@@ -23,7 +23,7 @@ Right-click anything on screen to see only the tools that apply to it.
 - From the keyboard, press **Shift+F10** or the Menu key.
 - On the Organize grid, right-clicking a page that is not ticked acts on that page alone.
 - Some items appear only when they can be used, for example **Paste annotations** after you have copied some.
-- A menu opened near the bottom of the window moves up so every item shows. A menu longer than the window shows an arrow at each end it continues past; scroll, or rest the pointer on an arrow, to see the rest.
+- A menu opened near the bottom of the window moves up so every item shows. A menu longer than the window shows an arrow at each end it continues past; scroll, or rest the pointer on an arrow, to see the rest. With reduced motion on, an arrow does not scroll by itself: press it.
 
 <!--
 Screenshots to capture:
