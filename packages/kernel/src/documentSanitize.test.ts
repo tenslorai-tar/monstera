@@ -1,4 +1,4 @@
-import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
+import { PDFDict, PDFDocument, PDFName, PDFString, StandardFonts } from '@cantoo/pdf-lib';
 import * as mupdf from './mupdfRaw.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 
@@ -134,6 +134,113 @@ async function linkSurvives(session: MupdfSession): Promise<boolean> {
     document.destroy();
   }
 }
+
+/**
+ * A document whose outline is `count` bookmarks in one `/Next` chain, with a JavaScript action on the LAST alone,
+ * written by pdf-lib rather than by the engine the sanitise runs in.
+ */
+async function longOutline(count: number): Promise<ByteImage> {
+  const document = await PDFDocument.load(plain);
+  const { context } = document;
+  const outlines = context.nextRef();
+  const items = Array.from({ length: count }, () => context.nextRef());
+  items.forEach((ref, at) => {
+    const item = context.obj({ Title: PDFString.of(`Bookmark ${String(at + 1)}`), Parent: outlines });
+    const next = items[at + 1];
+    if (next !== undefined) item.set(PDFName.of('Next'), next);
+    if (at === count - 1) item.set(PDFName.of('A'), context.obj({ S: 'JavaScript', JS: PDFString.of('app.alert(1)') }));
+    context.assign(ref, item);
+  });
+  const first = items[0];
+  const last = items.at(-1);
+  if (first === undefined || last === undefined) throw new Error('an outline needs a bookmark');
+  context.assign(outlines, context.obj({ Type: 'Outlines', First: first, Last: last, Count: count }));
+  document.catalog.set(PDFName.of('Outlines'), outlines);
+  return document.save({ useObjectStreams: false });
+}
+
+/**
+ * The saved outline read by pdf-lib, NOT by `activeContentIn`, which walks the way the removal does and so would share
+ * any place it stops: how many bookmarks the `/Next` chain holds, and how many carry a JavaScript action.
+ */
+async function outlineReadIndependently(bytes: ByteImage): Promise<{ readonly items: number; readonly javascript: number }> {
+  const document = await PDFDocument.load(bytes, { ignoreEncryption: true });
+  const outlines = document.catalog.lookupMaybe(PDFName.of('Outlines'), PDFDict);
+  let item = outlines?.lookupMaybe(PDFName.of('First'), PDFDict);
+  let items = 0;
+  let javascript = 0;
+  while (item !== undefined) {
+    items += 1;
+    const action = item.lookupMaybe(PDFName.of('A'), PDFDict);
+    if (action?.lookupMaybe(PDFName.of('S'), PDFName) === PDFName.of('JavaScript') || action?.has(PDFName.of('JS')) === true) {
+      javascript += 1;
+    }
+    item = item.lookupMaybe(PDFName.of('Next'), PDFDict);
+  }
+  return { items, javascript };
+}
+
+describe('a sanitise walks the WHOLE document (addendum 5, X2)', () => {
+  /** Sanitises `bytes` for JavaScript and answers the saved file. */
+  async function sanitised(bytes: ByteImage): Promise<ByteImage> {
+    const session = await mupdfWriter.open(bytes);
+    try {
+      await applySanitizeDocument(session, { kind: 'sanitizeDocument', parts: ['javascript'] });
+      return await mupdfWriter.serialise(session);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }
+
+  it('an /OpenAction chain of 20,001 page jumps with JavaScript LAST keeps every jump and loses the script', async () => {
+    // THE CHAIN SHAPE: the action walks recursed down `/Next` and stopped at 10,000 seen; they are iterative now.
+    const count = 20_001;
+    const document = await PDFDocument.load(plain);
+    const { context } = document;
+    const page = document.getPage(0).ref;
+    const refs = Array.from({ length: count }, () => context.nextRef());
+    refs.forEach((ref, at) => {
+      const action =
+        at === count - 1
+          ? context.obj({ S: 'JavaScript', JS: PDFString.of('app.alert(1)') })
+          : context.obj({ S: 'GoTo', D: [page, 'Fit'] });
+      const next = refs[at + 1];
+      if (next !== undefined) action.set(PDFName.of('Next'), next);
+      context.assign(ref, action);
+    });
+    const head = refs[0];
+    if (head === undefined) throw new Error('a chain needs an action');
+    document.catalog.set(PDFName.of('OpenAction'), head);
+
+    /** The chain from `/OpenAction`, read by pdf-lib: how many jumps, and how many scripts. */
+    const chain = async (bytes: ByteImage): Promise<{ jumps: number; scripts: number }> => {
+      const read = await PDFDocument.load(bytes);
+      let action = read.catalog.lookupMaybe(PDFName.of('OpenAction'), PDFDict);
+      let jumps = 0;
+      let scripts = 0;
+      while (action !== undefined) {
+        const type = action.lookupMaybe(PDFName.of('S'), PDFName);
+        if (type === PDFName.of('GoTo')) jumps += 1;
+        if (type === PDFName.of('JavaScript')) scripts += 1;
+        action = action.lookupMaybe(PDFName.of('Next'), PDFDict);
+      }
+      return { jumps, scripts };
+    };
+    const before = await document.save({ useObjectStreams: false });
+    expect(await chain(before)).toStrictEqual({ jumps: count - 1, scripts: 1 });
+    expect(await chain(await sanitised(before))).toStrictEqual({ jumps: count - 1, scripts: 0 });
+  }, 120_000);
+
+  // ONE PAST, AND ONE SHORT OF, the count the walks used to stop at.
+  for (const count of [10_001, 9_999]) {
+    it(`${count === 10_001 ? '' : 'CONTROL: '}${String(count)} bookmarks, JavaScript on the last: none survives, every bookmark does`, async () => {
+      const before = await longOutline(count);
+      // THE FIXTURE CARRIES IT, read by the same independent reader.
+      expect(await outlineReadIndependently(before)).toStrictEqual({ items: count, javascript: 1 });
+      expect(await outlineReadIndependently(await sanitised(before))).toStrictEqual({ items: count, javascript: 0 });
+    }, 120_000);
+  }
+});
 
 describe('sanitizeDocument', () => {
   it('CONTROL: the fixture carries all of it before anything runs', async () => {

@@ -80,8 +80,25 @@ const RUNS = new Set(['/JavaScript', '/Launch', '/Rendition', '/RichMediaExecute
 const REACHES = new Set(['/SubmitForm', '/ImportData']);
 const OPENS_ATTACHMENT = new Set(['/GoToE']);
 
-/** A walk of a `/Next` chain, an outline or a field tree stops at this many objects: a malformed file may nest without end. */
-const MAX_WALK = 10_000;
+/**
+ * WALKS HAVE NO COUNT LIMIT, and that is the decision (addendum 5's X2). A walk that stopped at a count left the rest
+ * of the document as it was and reported success, and the check walked the same partial way, so it was blind exactly
+ * where the removal stopped: 10,001 bookmarks with JavaScript on the last left it in place and read clean. Every walk
+ * here is iterative and ends through `seen`: a parsed file holds finitely many indirect objects and each is visited once,
+ * and a direct object is a finite tree. What is left is {@link STEP_GUARD}, for a loop that argument says cannot happen.
+ */
+
+/**
+ * Steps one place's chain may take before the walk stops, by THROWING: the argument above says a chain ends, and if it
+ * is ever wrong the sanitise fails in words rather than succeeding over a document it did not finish.
+ */
+const STEP_GUARD = 10_000_000;
+
+function guardStep(steps: number): void {
+  if (steps > STEP_GUARD) {
+    throw new Error(`an action chain in this document did not end after ${String(STEP_GUARD)} steps, so it was not sanitised`);
+  }
+}
 
 /** Whether a walk has been here: an indirect object's number, recorded on the first visit. A direct object has none. */
 function seenBefore(object: mupdf.PDFObject, seen: Set<number>): boolean {
@@ -106,7 +123,7 @@ function fieldObjects(document: mupdf.PDFDocument): mupdf.PDFObject[] {
   const seen = new Set<number>();
   const pending: mupdf.PDFObject[] = [];
   acroForm.get('Fields').forEach((value) => pending.push(value));
-  while (pending.length > 0 && found.length < MAX_WALK) {
+  while (pending.length > 0) {
     const field = pending.pop();
     if (field === undefined || !dictionary(field) || seenBefore(field, seen)) continue;
     found.push(field);
@@ -122,7 +139,7 @@ function outlineItems(document: mupdf.PDFDocument): mupdf.PDFObject[] {
   const found: mupdf.PDFObject[] = [];
   const seen = new Set<number>();
   const pending: mupdf.PDFObject[] = [outlines.get('First')];
-  while (pending.length > 0 && found.length < MAX_WALK) {
+  while (pending.length > 0) {
     const item = pending.pop();
     if (item === undefined || !dictionary(item) || seenBefore(item, seen)) continue;
     found.push(item);
@@ -204,6 +221,10 @@ function sequence(document: mupdf.PDFDocument, list: readonly mupdf.PDFObject[])
  * `/GoTo` leaves the `/GoTo`, because a person's link is content. And **a kept action's followers are walked too**,
  * which is the gap CR-DOC-13 found: a `/GoTo` a person clicks whose `/Next` runs JavaScript kept the script, because
  * only the head was read. `seen` stops a chain that loops back on itself, and a removed action met a second time goes.
+ *
+ * **Iterative, depth first in the recursion's order**, so a chain of any length is walked whole: a `/Next` array is
+ * walked from its last entry to its first, because removing an entry moves the ones after it, and an array left empty
+ * loses its `/Next` once everything under it is done.
  */
 function clearChain(
   document: mupdf.PDFDocument,
@@ -212,49 +233,71 @@ function clearChain(
   kinds: ReadonlySet<string>,
   seen: Set<number>,
 ): void {
-  for (let steps = 0; steps < MAX_WALK; steps += 1) {
-    const action = holder.get(key);
-    if (!dictionary(action)) return;
-    const repeat = seenBefore(action, seen);
-    if (isOneOf(action, kinds)) {
-      // A follower this chain already ran is the loop back to it, and taking it as the next head would close the
-      // loop on itself rather than end it.
-      const ahead = followers(action).filter((next) => !(next.isIndirect() && seen.has(next.asIndirect())));
-      const rest = repeat ? null : sequence(document, ahead);
-      if (rest === null) {
-        holder.delete(key);
-        return;
-      }
-      holder.put(key, rest);
+  type Step =
+    | { readonly visit: true; readonly holder: mupdf.PDFObject; readonly key: string | number }
+    | { readonly visit: false; readonly action: mupdf.PDFObject; readonly next: mupdf.PDFObject };
+  const pending: Step[] = [{ visit: true, holder, key }];
+  let steps = 0;
+  while (pending.length > 0) {
+    const step = pending.pop();
+    if (step === undefined) break;
+    if (!step.visit) {
+      if (step.next.length === 0) step.action.delete('Next');
       continue;
     }
-    if (repeat || seen.size > MAX_WALK) return;
-    const next = action.get('Next');
-    if (next.isArray()) {
-      for (let at = next.length - 1; at >= 0; at -= 1) clearChain(document, next, at, kinds, seen);
-      if (next.length === 0) action.delete('Next');
-    } else {
-      clearChain(document, action, 'Next', kinds, seen);
+    for (;;) {
+      guardStep((steps += 1));
+      const action = step.holder.get(step.key);
+      if (!dictionary(action)) break;
+      const repeat = seenBefore(action, seen);
+      if (isOneOf(action, kinds)) {
+        // A follower this chain already ran is the loop back to it, and taking it as the next head would close the
+        // loop on itself rather than end it.
+        const ahead = followers(action).filter((next) => !(next.isIndirect() && seen.has(next.asIndirect())));
+        const rest = repeat ? null : sequence(document, ahead);
+        if (rest === null) {
+          step.holder.delete(step.key);
+          break;
+        }
+        step.holder.put(step.key, rest);
+        continue;
+      }
+      if (repeat) break;
+      const next = action.get('Next');
+      if (next.isArray()) {
+        pending.push({ visit: false, action, next });
+        for (let at = 0; at < next.length; at += 1) pending.push({ visit: true, holder: next, key: at });
+      } else {
+        pending.push({ visit: true, holder: action, key: 'Next' });
+      }
+      break;
     }
-    return;
   }
 }
 
-/** How many actions of `kinds` the chain under `key` holds, walked as {@link clearChain} walks it. */
+/** How many actions of `kinds` the chain under `key` holds, walked as {@link clearChain} walks it, and as far. */
 function countInChain(
   holder: mupdf.PDFObject,
   key: string | number,
   kinds: ReadonlySet<string>,
   seen: Set<number>,
 ): number {
-  const action = holder.get(key);
-  if (!dictionary(action) || seenBefore(action, seen) || seen.size > MAX_WALK) return 0;
-  let count = isOneOf(action, kinds) ? 1 : 0;
-  const next = action.get('Next');
-  if (next.isArray()) {
-    for (let at = 0; at < next.length; at += 1) count += countInChain(next, at, kinds, seen);
-  } else {
-    count += countInChain(action, 'Next', kinds, seen);
+  let count = 0;
+  const pending: (readonly [mupdf.PDFObject, string | number])[] = [[holder, key]];
+  let steps = 0;
+  while (pending.length > 0) {
+    guardStep((steps += 1));
+    const place = pending.pop();
+    if (place === undefined) break;
+    const action = place[0].get(place[1]);
+    if (!dictionary(action) || seenBefore(action, seen)) continue;
+    if (isOneOf(action, kinds)) count += 1;
+    const next = action.get('Next');
+    if (next.isArray()) {
+      for (let at = next.length - 1; at >= 0; at -= 1) pending.push([next, at]);
+    } else {
+      pending.push([action, 'Next']);
+    }
   }
   return count;
 }
