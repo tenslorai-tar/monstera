@@ -404,9 +404,9 @@ is wrong** — fix the boundary, not the test.
   per object** — measured at 13.7× over forty replacements, which is exactly the
   document-wide replace-all row.
 
-  **AND IN A STORE INSTALL IT STARTS AND IS NOT CONTAINED — measured
+  **AND IN A STORE INSTALL IT STARTED AND WAS NOT CONTAINED — measured
   2026-09-30 in the owner's install of 0.1.1.0, the opposite of what this
-  paragraph said from 2026-09-09.** P1 (*MSIX grants `ALL APPLICATION
+  paragraph said from 2026-09-09; route D closed it the same day, below.** P1 (*MSIX grants `ALL APPLICATION
   PACKAGES`*) is still retired: an elevated read found that principal in no
   install root, and a host created by a process with no package identity is
   refused the runtime, `hostEntry.js` and the shim. But `main` in an install
@@ -425,9 +425,18 @@ is wrong** — fix the boundary, not the test.
   *this host's SID comes from a moniker we mint and carries no capability* was
   true of every run anybody had made, because no run had a package identity.
   Development is blind to this by construction. **A containment mechanism is
-  shipped only when it is measured where it ships**; which route gives the host
-  the install root without the package's data is ADR-0023 Decision 16's, open,
-  and it is the owner's.
+  shipped only when it is measured where it ships**.
+
+  **Route D is the answer, decided by the owner 2026-09-30 and built**
+  (ADR-0023 Decision 17, `apps/desktop/src/packageDataLock.ts`): the host stays
+  the package's child container, so it keeps the install root, and `main` puts a
+  protected DACL on the app's data that grants the user, SYSTEM and
+  Administrators and not the package. Measured in the installed package's
+  identity: the host is refused the locked data and still opens
+  `Monstera.exe`, `hostEntry.js` and the shim, and the startup check opens
+  documents again. This line read *"Decision 16's, open"* until 2026-10-15,
+  two weeks after the decision, which is item 7's hole once more: no commit that
+  built route D opened this file.
 
   **The rule that got us there is worth more than the decision:** *only
   kernel-enforced mechanisms contain native code.* Node's permission model is
