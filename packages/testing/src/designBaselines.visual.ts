@@ -5,6 +5,7 @@ import { PDFDocument } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
+import { runCommand } from './helpScreensHarness.js';
 import { LOOKS, type Look, bridgeUnder } from './pageBridge.js';
 import { settled } from './settled.js';
 
@@ -133,13 +134,6 @@ async function documentDrawn(page: Page): Promise<void> {
       }),
     )
     .toBe(1);
-}
-
-/** Runs a command through the palette by its EXACT title — a prefix can match a longer command listed first. */
-async function runCommand(page: Page, title: string): Promise<void> {
-  await page.keyboard.press('Control+K');
-  await page.locator('.m-palette-query').fill(title);
-  await page.getByRole('option', { name: title, exact: true }).click();
 }
 
 /**

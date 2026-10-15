@@ -113,11 +113,20 @@ export async function openSection(page: Page, name: string): Promise<void> {
   await page.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name, exact: true }).click();
 }
 
-/** Runs a command by its title through the command palette (Ctrl+K), as a person may. */
+/**
+ * Runs a command by its EXACT title through the command palette (Ctrl+K), as a person may.
+ *
+ * Matched on the option's title alone, and it must be the only one. An option's accessible name is its title AND its
+ * shortcut, so an exact name misses every command with a key; a name that is not exact is a case-insensitive
+ * substring, so *Watermark…* also names *Edit watermark…*, which the palette lists first — and the Watermark window
+ * case opened the Marks notice instead (CI on 5fcffa99, reproduced on Chromium 151 here).
+ */
 export async function runCommand(page: Page, title: string): Promise<void> {
   await page.keyboard.press('Control+K');
   await page.keyboard.type(title);
-  await page.getByRole('option', { name: title }).first().click();
+  const choice = page.getByRole('option').filter({ has: page.locator('.m-palette-title').getByText(title, { exact: true }) });
+  await expect(choice).toHaveCount(1);
+  await choice.click();
 }
 
 /**
