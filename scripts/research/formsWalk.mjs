@@ -510,9 +510,13 @@ await step('F4: an open dropdown moves with the page when it scrolls, staying un
 });
 
 await step('F2: a press on a list box row chooses THAT row, and Ctrl adds one in a list that takes several', async () => {
+  // THE PAGE'S OWN LIST: the Fields list, open from an earlier step, shows each list box's value in a list of the same
+  // name, so a listbox found by name alone was two (2026-10-15 screenshot: "Language" in the panel and on the page).
+  /** @param {string} name */
+  const pageList = (name) => page.getByRole('listbox', { name }).filter({ has: page.locator('.m-page-choice-row') });
   const choosing = await writesDone(page);
-  await page.getByRole('listbox', { name: 'Language' }).getByRole('option', { name: 'French', exact: true }).click();
-  const interests = page.getByRole('listbox', { name: 'Interests' });
+  await pageList('Language').getByRole('option', { name: 'French', exact: true }).click();
+  const interests = pageList('Interests');
   await interests.getByRole('option', { name: 'Music', exact: true }).click();
   // A FILL IS A WRITE (3 to 5 s here); the Ctrl press adds to what the document then holds. Two fills landed, where a 6 s
   // sleep stood.
