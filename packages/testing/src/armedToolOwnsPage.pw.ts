@@ -11,8 +11,9 @@ import { bridge } from './pageBridge.js';
  *
  * Organize's canvas is a grid of page cards, and a card is DRAGGABLE: dragging one reorders the pages. A drawing tool
  * armed from another section and then Organize chosen left that grid under the tool, so the drag a person made to draw
- * a box lifted the whole page instead — and drew nothing, because the grid has no layer a tool draws on. The canvas is
- * now the pages themselves while any tool is armed, and the grid returns when it is put down.
+ * a box lifted the whole page instead — and drew nothing, because the grid has no layer a tool draws on. A tool armed
+ * in Organize now takes the reader to Home, so the pages are the canvas and the rail says so (the owner's 14a,
+ * ADR-0104: the section alone decides the centre); choosing Organize again puts the tool down and brings the grid back.
  *
  * The control is the first assertion: with nothing armed the same section shows the grid, so the case below it is the
  * armed tool's doing and not a section that never had one.
@@ -41,15 +42,15 @@ test('an armed tool takes the canvas from Organize’s page grid, and putting it
   await page.keyboard.type('Rectangle');
   await page.getByRole('option', { name: 'Rectangle' }).first().click();
 
-  // THE PAGES ARE THE CANVAS NOW, the section still Organize, and the grid that would lift a page is gone.
+  // THE PAGES ARE THE CANVAS NOW, the grid that would lift a page is gone, and the rail names the view on show: Home.
+  const rail = (name: string) => page.getByRole('navigation').getByRole('button', { name, exact: true }).first();
   await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible();
   await expect(page.locator('.m-thumbnails--grid')).toHaveCount(0);
-  await expect(page.getByRole('navigation').getByRole('button', { name: 'Organize', exact: true }).first()).toHaveAttribute(
-    'aria-current',
-    'true',
-  );
+  await expect(rail('Home')).toHaveAttribute('aria-current', 'true');
+  await expect(rail('Organize')).not.toHaveAttribute('aria-current', 'true');
 
-  // PUT DOWN, the grid returns.
-  await page.keyboard.press('Escape');
+  // ORGANIZE CHOSEN AGAIN puts the tool down and the grid returns.
+  await rail('Organize').click();
   await expect(page.locator('.m-thumbnails--grid')).toBeVisible();
+  await expect(rail('Organize')).toHaveAttribute('aria-current', 'true');
 });

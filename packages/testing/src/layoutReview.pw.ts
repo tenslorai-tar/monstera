@@ -108,8 +108,13 @@ test('the FORMS TAB shows each field’s whole name', async ({ page }) => {
     buttons.filter((button) => button.scrollWidth > button.clientWidth + 1).map((button) => button.textContent),
   );
   expect(cut).toStrictEqual([]);
-  // AND THE BOX IS WIDE ENOUGH TO READ, which `scrollWidth` alone does not say of a name allowed to wrap.
-  expect((await boxOf(panel.locator('.m-forms-jump').first())).width).toBeGreaterThan(150);
+  // AND THE BOX IS WIDE ENOUGH TO READ, which `scrollWidth` alone does not say of a name allowed to wrap: the name's
+  // column is twice the value's (`.m-forms-row`'s 2fr to 1fr), where the even split it replaced left a name 117 px wide.
+  // Asserted as the ratio and not as pixels, because the pixels move with the panel's own padding — E2's cards took
+  // 14 px of it and a floor of 150 went red at 146.5 with the split unchanged (CI on 5fcffa99).
+  const row = panel.locator('.m-forms-row').first();
+  const [name, value] = await Promise.all([boxOf(row.locator('.m-forms-jump')), boxOf(row.locator('> :nth-child(2)'))]);
+  expect(name.width).toBeGreaterThan(value.width * 1.9);
 });
 
 test('the SETTINGS row keeps its description readable beside a wide control (Print quality)', async ({ page }) => {
@@ -241,19 +246,13 @@ for (const size of [
 test('the FLOAT BAR covers no ORGANIZE card at 1280 × 800', async ({ page }) => {
   await openApp(page);
   await openDocument(page);
+  // THE CONTROL: over the pages the float bar is there, so its absence below is Organize's and not a bar never drawn.
+  await expect(page.getByRole('toolbar', { name: 'Float bar' })).toBeVisible();
   await openSection(page, 'Organize');
-  // THE GRID LAID OUT AND STILL: it is sized through a ResizeObserver, and the bar docks against it.
   await expect(page.locator('.m-page-grid [data-thumb-page="0"] canvas[data-drawn="true"]')).toBeAttached();
-  const [bar, first] = await settled(
-    page,
-    async () => [
-      await boxOf(page.getByRole('toolbar', { name: 'Float bar' })),
-      await boxOf(page.locator('.m-page-grid').getByRole('button', { name: 'Page 1', exact: true })),
-    ] as const,
-    () => true,
-    'the Float bar beside the Organize grid',
-  );
-  expect(first.x).toBeGreaterThanOrEqual(bar.x + bar.width);
+  // NONE AT ALL over the grid (the owner's 14a): none of its controls acts on a card, so a bar docked beside the cards
+  // still offered tools whose press left Organize — the grid mounts none.
+  await expect(page.getByRole('toolbar', { name: 'Float bar' })).toHaveCount(0);
 });
 
 test('a DIALOG’S OPTION GROUP has no bare frame, and each option is a line of its own (Print)', async ({ page }) => {
