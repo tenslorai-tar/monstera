@@ -1859,7 +1859,7 @@ optgroup {
    is the controls' inside it, which draw their own rings. */
 .m-list-card {
   padding: var(--space-4) var(--space-6);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border); /* decorative: the card groups an item; the controls inside it draw their own edges and focus rings */
   border-radius: var(--radius-8);
   background: var(--surface);
 }
