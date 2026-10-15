@@ -108,6 +108,10 @@ playwright/.cache/
 # committed — above all the 200 MB document the performance assertion needs.
 packages/testing/fixtures/generated/
 
+# A walk's evidence and the samples it reads on the walk machine (`liveWalk.mjs`, `commentsWalk.mjs`): screenshots,
+# which are binaries, and documents that are the owner's, never a fixture. Anchored: a root-level folder.
+/_review/
+
 # ─── Logs and runtime state ──────────────────────────────────────────────────
 logs/
 *.log
