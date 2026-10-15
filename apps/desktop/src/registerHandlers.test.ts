@@ -284,8 +284,14 @@ describe('main-process contract registration', () => {
   // red.
   //
   // A fixture whose expected output the bug also produces separates nothing.
-  // What distinguishes them is what the parse SAW, so the case reads the
-  // withheld diagnostic and requires it to name the string that was sent.
+  //
+  // The second draft read the withheld diagnostic and required it to name the
+  // string that was sent. That held while the diagnostic was zod's message, and
+  // stopped separating anything when X4 (50682806) put the issues in our words:
+  // a string and `undefined` both read `invalid_type at depth 0`, deliberately,
+  // since the words carry no value the peer chose. So the case now asserts the
+  // one outcome only the correct path produces: `app.info` takes `{}`, which
+  // only args[0] supplies, and a dropped argument is refused.
   it('hands the boundary what the renderer sent, from args[0]', async () => {
     const seen: Incident[] = [];
     const ipc = recorder();
@@ -299,14 +305,15 @@ describe('main-process contract registration', () => {
     );
 
     const listener = ipc.seen.get('app.info');
-    const envelope = (await listener?.({}, 'not an object')) as { ok: boolean };
+    const accepted = (await listener?.({}, {})) as { ok: boolean };
+    expect(accepted.ok).toBe(true);
+    expect(seen).toHaveLength(0);
 
-    expect(envelope.ok).toBe(false);
-    expect(seen).toHaveLength(1);
-    // `string` appears only if the string reached the schema. A dropped argument
-    // produces a complaint about `undefined` instead.
-    expect(seen[0]?.diagnostic.message).toContain('string');
-    expect(seen[0]?.diagnostic.message).not.toContain('undefined');
+    // CONTROL: the same listener handed a value the schema refuses is refused and recorded, so the acceptance above is
+    // the parse passing and not a listener that never parses.
+    const refused = (await listener?.({}, 'not an object')) as { ok: boolean };
+    expect(refused.ok).toBe(false);
+    expect(seen.map((incident) => incident.diagnostic.message)).toStrictEqual(['Invalid params for "app.info": invalid_type at depth 0']);
   });
 
   it('records a malformed call as an incident instead of rejecting', async () => {

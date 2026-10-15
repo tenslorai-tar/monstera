@@ -287,7 +287,11 @@ describe('DocumentRangeTransport', () => {
   it('a range main REFUSES, with any code, tells the owner with the code, and is not a version move', async () => {
     const bytes = countingBytes(600);
     for (const code of ['document-not-open', 'internal'] as const) {
-      const refusing = createClient(channels, () => Promise.resolve(err({ code })));
+      // `internal` CARRIES AN INCIDENT on the wire, as main sends it; without one the envelope is malformed, and that
+      // case passed only because zod's old message happened to contain the word (exposed by X4, 50682806).
+      const refusing = createClient(channels, () =>
+        Promise.resolve(err(code === 'internal' ? { code, incident: 'ab01' } : { code })),
+      );
       const onRangeFailed = vi.fn();
       const onVersionMoved = vi.fn();
       const transport = new DocumentRangeTransport({
