@@ -486,7 +486,8 @@ is wrong** — fix the boundary, not the test.
   config value — so adding a signed download later is a config change, not an
   amendment. **Do not delete it as dead code** (ADR-0018). **The update-provider
   registry is `UPDATE_PROVIDERS`, built 2026-09-26 with the Store check, which
-  is DORMANT** until the owner says the manifest is hosted (ADR-0110); this line
+  is DORMANT** at launch by the owner's decision of 2026-10-14, which relies on
+  the Store for updates (ADR-0110's note of 2026-10-15); this line
   read *"registered"* until the stage audit of 1e1bfad..e24eca0e, a digest ahead
   of the code, and *"not built yet"* until ADR-0110. Windows updates Store
   apps; the app never installs its own package and never overrides a user who

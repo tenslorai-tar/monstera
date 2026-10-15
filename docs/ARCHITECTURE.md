@@ -1974,7 +1974,8 @@ reconciled.
   **All three are built and DORMANT** (2026-09-26,
   [ADR-0110](DECISIONS/0110-the-update-check-is-built-dormant-and-reads-numbers-only.md)):
   the manifest's address is the contract's `UPDATE_MANIFEST`, `{ state: 'dormant' }`
-  until the owner says monsterapdf.com serves the file, and while it is dormant the
+  and it stays so at launch by the owner's decision of 2026-10-14, which relies on the
+  Store for updates (ADR-0110's note of 2026-10-15); while it is dormant the
   check calls nothing and the settings entry is not registered — a switch for a check
   that cannot run would be display-only. Going live is that one value.
 

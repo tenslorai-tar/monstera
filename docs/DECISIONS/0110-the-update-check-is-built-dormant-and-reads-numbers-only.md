@@ -114,3 +114,10 @@ its correction of 2026-10-13 (`d724fc76`): About says what Monstera is, and no l
 or an update. The check, its setting and the title bar's indicator are unchanged. Found by the stage audit of
 `6c31e8e5..f3ac3390` (GGGGGGGG-6): the change that removed the line touched neither this record nor ARCHITECTURE's
 registry table, which still named About as a reader of the update status.
+
+## Note, 2026-10-15 — the check stays dormant at launch, by decision
+
+The owner decided on 2026-10-14 (H3) that the check ships dormant and stays so: Monstera relies on the Microsoft
+Store for its updates, and *Help › Check for updates* ([ADR-0107](0107-the-menu-bar-is-a-projection.md)) keeps
+opening the Store's *Downloads and updates* page, the owner's answer of 2026-09-26. Dormant is therefore not a state waiting on the
+manifest's address; it is the shipped behaviour until the owner reverses this note. No code changed with it.
