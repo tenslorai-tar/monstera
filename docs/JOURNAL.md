@@ -892,6 +892,80 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-15 — Stage audit of `60d60df5..b7b24091` — findings IIIIIIII-1 to IIIIIIII-11
+
+Cloud run 4, Part 3's last items, Part 4 (E1 to E9), Part 5 (13c's repairs, M1, 14a, H1, W1, item 17, C1, C3, E2, E3, G1,
+G3, C4) and two board repairs: 60 commits, 197 files. Called by the commit gate (B1, the next item, took the range to
+208 files). The 57 modified proofs were read hunk by hunk by one read-only reader (`git log -p 60d60df5..b7b24091 --
+<file>`). It found no removed or loosened assertion, deleted case, lowered count or raised timeout; every changed
+expectation carries its reason in the commit or beside it, and every new negative assertion has a positive control
+beside it. Its two notes are -10 and -11, the first checked here. Everything else is from the author's own record of the session. Board: aa22a3e6 read (CI red on
+both "Typecheck, lint, and proofs" legs and Visual baselines, Guards green; -1); b7b24091 read in progress, not counted.
+
+**IIIIIIII-1** (medium, closed `b7b24091`): CI's border-token scan failed both legs at `app.css:1862`. E2's card
+(852efb0d) is bounded with the decorative `--border` and the line gave no reason. It is a group, not a control, so the
+token was right and the reason is now on the line. The scan stopped the job, so every step after it went unrun on
+aa22a3e6; what else those steps would have said is unknown until a later sha runs them. Item 3 the other way: the
+local pre-push set this run used (typecheck, whole-tree lint, 38 source tests) runs none of CI's whole-tree scans. After
+the repair, ten of the twelve `scripts/lib` scans CI's workflow names were run here and passed (`borderTokens`,
+`definedTokens`, `dialogProblems`, `domEnvironment`, `electronBinaryCallers`, `layoutOwnership`,
+`nodeModulesPlacement`, `secondWiringPlace`, `stackOwnership`, `tokenContrast`); `emittedSideEffects` and `lintcheck`
+were not.
+
+**IIIIIIII-2** (low, closed `7572f559`): 6c3b37fd gave the browser shim a `document.pageMarks` answer and left
+`browserShim.test.ts`'s independent roster of channels without it. The roster is the literal a new channel must touch
+separately, and it did its job: it failed, and was found by running the tests the NEXT item's files reach (`vitest
+related`), not by the pre-push set, which does not hold that file.
+
+**IIIIIIII-3** (medium, open): the build-freshness edge lists are hand-kept, and three commits in this range repair
+them (`bc4a46a7` two workers, `1121a81e` the MuPDF writer `proof:drawnobjects` loads, `d8782000` the placement matrix
+two object proofs read back). Each repair was right and each list was missing a module the proof reaches. Item 4c's
+direction rule: a hand list fails loudly on growth only where a proof happens to run stale; `affectedProofs.mjs`
+already builds the import graph these lists restate. Deriving the edges from it (B3a) is owed, not done here.
+
+**IIIIIIII-4** (medium, open): ADR-0240 routes a moved picture, form or shape to MuPDF's content-stream edit instead of
+PDFium's regeneration, the same kind of routing exception ADR-0176 recorded in ARCHITECTURE's amendment log (§3's
+in-place editing row, 2026-10-06). ADR-0240 has no row there, nor do 0242 to 0244, which extend it. Whether each changes
+a sentence of the law was not settled in this audit; ADR-0245 (the contract proof's program) and ADR-0246 (registered
+into the existing channel and command seams) were read and judged not to. Owed: the rows, or a written reason there is
+none, in their own commit.
+
+**IIIIIIII-5** (low, recorded): a vacuous assertion written and caught inside the commit that wrote it.
+`stampEditing.test.tsx` asserted the Edit window has no scope by querying `radio` named *All pages*; the scope control
+is a segmented control of buttons, so the query could find nothing in either state. Found by asking what the adding
+window's same query returns; the control case now asserts the button exists there.
+
+**IIIIIIII-6** (low, recorded): a hand-computed expectation was wrong and the instrument right. B1's overlay case
+expected `2.4 in` for an end moved to PDF x 170; 110 points is 1.53 inches, `1.5 in`. Recorded because the case was
+then corrected to the derivation, not to the output, and the derivation is in the case.
+
+**IIIIIIII-7** (medium, open): three proofs this range reaches cannot run in this container. `proof:rendererpolicy`,
+`proof:canvaspixels` and `proof:rendergeometry` start Electron, which refuses to run as root without `--no-sandbox`
+(`electron_main_delegate.cc:225`), and `proof:scantable` needs tessdata this machine has not provisioned. CI runs all
+four; their result on this range is the board's, not this machine's.
+
+**IIIIIIII-8** (medium, open): the C4 walk (`marksWalk.mjs`) and the forms walk's step 17 were written here and never
+run: both drive the packaged app on Windows. `savedMarks` passed a resolution test (one mark against none) and
+`savedSignature` one earlier; the walks themselves are the Windows session's.
+
+**IIIIIIII-9** (low, recorded): PDF/A-4 (C2) is not offered because the pinned Ghostscript 10.08.0 cannot write it:
+its documentation lists PDF/A 1 to 3 at conformance b, and `gdevpdfp.c:699` rejects a level above 3 with a rangecheck.
+Newer release pages answered 403 through this container's proxy, so whether a later Ghostscript can is unread.
+
+**IIIIIIII-10** (low, recorded): H1 (de2930a1) moved the contract proof from one `tsc -p` per case to one program, and
+a narrower thing is checked. Before, a semantic error in a file a case imports failed that case's whole run; now each
+case reads `getPreEmitDiagnostics` for its own file, options and global diagnostics throw, and a diagnostic in an
+imported non-case file is counted by nothing. Read at `contract.proof.mjs:4204`. The imports are the built contract
+declarations, which `npm run build` compiles first, so the gap is narrow; it was not stated in the commit, which is item
+2a's point. Also stated by the reader and checked: all cases now share one program, so a `declare module` in one would
+reach the others; no case at b7b24091 carries one.
+
+**IIIIIIII-11** (low, open): `organizeSections.pw.ts` (4573e3b2) ends its loop with a comment, *the tool is put down
+when Organize is chosen again*, and no assertion after it. The next iteration's grid visibility covers part of it; that
+the tool slot is empty is checked by nothing.
+
+---
+
 ## 2026-10-14 — Stage audit of `ae4f62f5..60d60df5` — findings HHHHHHHH-1 to HHHHHHHH-12
 
 Cloud run 4, Parts 0 to 2, addendum 1's Part A, addendum 2's E1, and the first Part 3 commit: 52 commits, 198 files.
