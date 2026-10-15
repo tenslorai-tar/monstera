@@ -161,21 +161,28 @@ try {
       }
     };
 
+    // A TREE NOT AS PINNED IS REMOVED AND PROVISIONED AGAIN IN THE SAME RUN (P1, 07be167e): never used, and never left
+    // for a second run. So each answer is `downloaded`, the planted or altered file is gone or pinned again, and the
+    // tree that results is accepted as exact on the next call. Until P1 each of these threw and asked for another run.
     const planted = copyRoot('planted', true);
     const plantedAnswer = await answer(planted);
+    const plantedAfter = await answer(planted);
     check(
-      'a font nobody pinned beside the set is refused, and the tree removed',
-      plantedAnswer !== 'accepted' && plantedAnswer.includes('Planted-Regular.ttf') && !existsSync(fontsDirectory(planted)),
-      `provisionFonts answered ${plantedAnswer}`,
+      'a font nobody pinned beside the set is removed with its tree, and the pinned set provisioned again in the same run',
+      plantedAnswer === 'downloaded' && !existsSync(join(fontsDirectory(planted), 'Planted-Regular.ttf')) && plantedAfter === 'accepted',
+      `provisionFonts answered ${plantedAnswer}, then ${plantedAfter}`,
     );
 
     const altered = copyRoot('altered', false);
     writeFileSync(join(fontsDirectory(altered), 'Tinos-Regular.ttf'), 'not the pinned bytes');
     const alteredAnswer = await answer(altered);
+    const alteredAfter = await answer(altered);
     check(
-      'a pinned file with other bytes is refused',
-      alteredAnswer !== 'accepted' && alteredAnswer.includes('Tinos-Regular.ttf'),
-      `provisionFonts answered ${alteredAnswer}`,
+      'a pinned file with other bytes is never used: its tree is provisioned again, and the file is the pinned one',
+      alteredAnswer === 'downloaded' &&
+        readFileSync(join(fontsDirectory(altered), 'Tinos-Regular.ttf'), 'utf8') !== 'not the pinned bytes' &&
+        alteredAfter === 'accepted',
+      `provisionFonts answered ${alteredAnswer}, then ${alteredAfter}`,
     );
 
     const exact = copyRoot('exact', false);

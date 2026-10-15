@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * Proves PDFium is pinned per platform, that packaging takes the shipped platform's library whatever machine runs it,
- * and that a library present on disk but not as pinned is refused rather than used.
+ * and that a library present on disk but not as pinned is never used: it is removed and provisioned again in the same run.
  *
  * ## Why the packaging case needs this machine to be Linux to separate anything
  *
@@ -22,7 +22,7 @@
  * Usage: node scripts/provision/pdfium.proof.mjs [--require-pdfium]
  */
 
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,7 +30,15 @@ import { fileURLToPath } from 'node:url';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { componentSources } from '../release/packageMsix.mjs';
-import { PDFIUM_BIN, PDFIUM_PLATFORMS, SHIPPED_PLATFORM, pdfiumLibrary, pdfiumPlatform, provisionPdfium } from './pdfium.mjs';
+import {
+  PDFIUM_BIN,
+  PDFIUM_PLATFORMS,
+  SHIPPED_PLATFORM,
+  pdfiumLibrary,
+  pdfiumLicenceRoot,
+  pdfiumPlatform,
+  provisionPdfium,
+} from './pdfium.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const requirePdfium = process.argv.includes('--require-pdfium');
@@ -96,17 +104,24 @@ try {
   const plantedLibrary = pdfiumLibrary(planted);
   mkdirSync(dirname(plantedLibrary), { recursive: true });
   writeFileSync(plantedLibrary, 'not the pinned library');
+  // THE COMMITTED LICENCE TEXTS, as a checkout holds them: a provision compares the archive's against them, and a
+  // scratch root without them fails there, after the plant is removed, which is how this case passed for the wrong
+  // reason once the plant began to be replaced rather than refused.
+  cpSync(pdfiumLicenceRoot(REPO_ROOT), pdfiumLicenceRoot(planted), { recursive: true });
+  // NEVER USED, AND PROVISIONED AGAIN IN THE SAME RUN (P1, 07be167e): the tree is removed and the pinned library is
+  // fetched, so the answer is `downloaded` and the file at that place is no longer the plant. Until P1 this threw and
+  // asked for another run; that is what this case's name said until the fonts proof went red on it (5b6ae09b's board).
   let plantedAnswer = '';
   try {
-    await provisionPdfium({ root: planted });
-    plantedAnswer = 'accepted';
+    plantedAnswer = (await provisionPdfium({ root: planted })).provisioned ? 'downloaded' : 'accepted';
   } catch (error) {
     plantedAnswer = formatError(error);
   }
+  const plantedNow = existsSync(plantedLibrary) ? readFileSync(plantedLibrary).subarray(0, 64).toString('latin1') : '(absent)';
   check(
-    'a library present on disk but not as pinned is refused, and the tree removed',
-    plantedAnswer !== 'accepted' && !existsSync(plantedLibrary),
-    `provisionPdfium answered ${plantedAnswer}; the planted file ${existsSync(plantedLibrary) ? 'is still there' : 'was removed'}`,
+    'a library present on disk but not as pinned is never used: its tree is provisioned again in the same run',
+    plantedAnswer === 'downloaded' && !plantedNow.startsWith('not the pinned library'),
+    `provisionPdfium answered ${plantedAnswer}; the file there begins ${JSON.stringify(plantedNow.slice(0, 24))}`,
   );
 
   const genuine = pdfiumLibrary(REPO_ROOT);
