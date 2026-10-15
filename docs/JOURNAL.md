@@ -892,6 +892,54 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-15 — Addendum 4 C: each listed finding closed, or kept open with its reason
+
+Every finding addendum 4 listed, by outcome. A reason below is why it can stay open after launch: none of them can
+change a person's document or what they are told about it.
+
+**Closed by a fix, with a proof and a control in the commit:** GGGGGGGG-5 and HHHHHHHH-6 (`f0cd9cac`); GGGGGGGG-7 and
+JJJJJJJJ-5 (`88092e7c`), JJJJJJJJ-4 (`87957173`); HHHHHHHH-4 (`5d55f908`); EEEEEEEE-2 (`c25bc86d`), -4 (`15f91b22`),
+-7 (`327e4338`), -11 (`1bdd02f9`); FFFFFFFF-7 (`3520625f`, pinned as a decision); DDDDDDDD-5, whose change landed
+inside `3db1c9f2` because it was staged when the commit gate stopped it (the mechanism: `as const satisfies
+CommandOfKind<'setPageBackground'>` at both declarations; mutation: a required field added to the schema gives TS1360
+at both; 11 cases pass); IIIIIIII-11 (`0123519d`); IIIIIIII-4 (`4bf1e787`, whose row also names ADR-0242 to 0244 as
+extending ADR-0240, so no row of their own is owed).
+
+**Closed before this run, checked here:** HHHHHHHH-7 (`bc4a46a7`); DDDDDDDD-1 (`b7fa46cf`); DDDDDDDD-2 (`562f3d06`:
+condition waits, and the defect walked round is W2, walked by textWalk's step 20); CCCCCCCC-5 (`d6742b7d`); EEEEEEEE-1
+(`da28343d`); BBBBBBBB-2 (`f3bf29ae`), -3 (`e7c9714d`, `875f247a`), -4 to -8 and -10, and AAAAAAAA-1 to -6, each in
+the commit that names it.
+
+**Not a defect:** DDDDDDDD-11. A file-answered request without `answerInto` stops the host with `malformed-request`
+(`runtime.ts`' route check, since `82683656`; `runtime.test.ts` holds it); `composeHostBody.test.ts`' stub stream
+ignores `close`, so the stop read as silence there.
+
+**Open, with the reason it can wait:**
+- IIIIIIII-3 (medium): the static freshness edges are still hand kept. The class that bit three times, a thread entry
+  started by path, is now walked (`88092e7c`); a stale static edge is local only, because CI's jobs that run a proof
+  reading a build run `npm ci` and `npm run build` first, and the guard asks tsc before refusing.
+- FFFFFFFF-11 and EEEEEEEE-9: freshness reads times and the build reads content; local only, for the same reason.
+- FFFFFFFF-13: L8's four proofs are not named in the bundle line; the walk now dates every thread entry, and naming
+  the four needs the owner's list.
+- EEEEEEEE-5: the Excel case's in-flight duty sits in the handler, asserted in `contractHandlers.test.ts`.
+- EEEEEEEE-6: a conversion named outside `CONVERTS_BY_NAME` escapes the name check; the required `work` field is the
+  part that holds, as the finding says.
+- EEEEEEEE-8: `insertImagePage` is unreachable; removing it amends ADR-0044, the owner's call.
+- EEEEEEEE-10: the page-image export shows no per-page progress; the export itself completes, so this is a missing
+  indicator, not a wrong result.
+- DDDDDDDD-4: `sentOnce` and reads of absence straight after a gesture can pass early; they weaken tests, not the app.
+- DDDDDDDD-10: the image, form data, Office and library picture bounds are chosen, not measured; each names the file's
+  size when it refuses.
+- JJJJJJJJ-2, -3 and -6: recorded in the stage audit below.
+
+**Needs Windows:** FFFFFFFF-9 (CCCCCCCC-4's cause: time the chat history file calls on a Windows runner under the
+full suite, `54a7f40d` prints each call past 1 s); FFFFFFFF-12 (park the pointer off a tall dialog, then the local
+agent regenerates `designBaselines`); DDDDDDDD-6 (walk Add text ended by a click away, textWalk); DDDDDDDD-9 (read the
+compose host's peak for a 12 and 24 MiB CSV in the installed app); IIIIIIII-7, IIIIIIII-8 and GGGGGGGG-12, as listed
+in the run's report.
+
+---
+
 ## 2026-10-15 — Stage audit of `b7b24091..1bdd02f9` — findings JJJJJJJJ-1 to JJJJJJJJ-8
 
 Cloud run 4's addenda 4 and 5 and the board repairs before them: 53 commits, 201 files with the next one. Called by the
