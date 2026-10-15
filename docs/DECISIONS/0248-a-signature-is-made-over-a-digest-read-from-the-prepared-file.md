@@ -61,3 +61,12 @@ ASN.1. Decision 2 is what keeps it one opinion rather than two. A forge or `@sig
 - **Moving the prepared file instead of copying it.** Decision 3's reason.
 - **Keeping the whole-file read for small documents.** Two paths for one signature is the second opinion this project
   closes; the bounded path costs a small document nothing it can measure.
+
+## Note, 2026-10-15 — node-forge signs here and verifies nothing
+
+node-forge 1.4.0 carries GHSA-86w9-cpqp-85rv, a flaw in its RSA PKCS#1 v1.5 signature VERIFICATION, with no fixed
+release (addendum 5's P3). This build uses forge to parse PKCS#12, certificates and DER, and to SIGN; it verifies a
+signature with Node's `crypto.verify` (`signedDataCheck.ts`). Forge's verification doors are its RSA public key's
+`publicKey.verify`, its chain check `verifyCertificateChain`, and the CA store `createCaStore` that check takes. No
+shipped file names any of them, and `docs/security/engine-advisories.json`'s `forge-rsa-verify` verdict fails the build
+the day one does.

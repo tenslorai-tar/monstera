@@ -4012,13 +4012,16 @@ export const TIMESTAMP_AUTHORITIES = {
    * requests, which one person signing one document does not approach.
    */
   sectigo: { url: 'http://timestamp.sectigo.com' },
-  // FREETSA IS NOT OFFERED, and the reason is a live run, 2026-09-13
+  // FREETSA IS NOT OFFERED, and the reason was a live run, 2026-09-13
   // (`npm run probe:tsa`): its token is signed with ECDSA over an EC key
-  // (`1.2.840.10045.4.3.4`, `1.2.840.10045.2.1`), and this build's verifier,
-  // node-forge, verifies RSA only. An authority whose tokens cannot be verified is
-  // an authority whose timestamps would be refused every time — *implemented
-  // correctly or not offered*. It returns when ECDSA verification does, which is
-  // a change to §3's verifier line and therefore a B4 amendment first.
+  // (`1.2.840.10045.4.3.4`, `1.2.840.10045.2.1`), and the verifier then was
+  // node-forge, which verifies RSA only — *implemented correctly or not offered*.
+  // CORRECTED 2026-10-15: that reason no longer holds. Signatures are verified by
+  // Node's `crypto.verify` since GGGGGG-2 (`signedDataCheck.ts`), which reads ECDSA,
+  // and node-forge verifies nothing in this build (`engine-advisories.json`'s
+  // `forge-rsa-verify`). FreeTSA stays out until a live run shows its token accepted
+  // through the shipped path; offering it is a change to the authority list, so a
+  // B4 amendment first, and the owner's to ask for.
 } as const satisfies Readonly<Record<string, { readonly url: string }>>;
 
 /** An authority's id, as the signing payload names it. */

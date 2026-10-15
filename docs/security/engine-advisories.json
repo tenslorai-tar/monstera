@@ -90,9 +90,46 @@
     "DEBIAN-CVE-2026-7233": "NOT-AFFECTED — CORRECTED from an earlier AFFECTED verdict that read the CVE text instead of upstream history. The CVE says \"up to 1.28.0\", which is the report-time upper bound, not a statement that 1.28.0 ships the bug. The fixing commits — Artifex bug 709364 (missing bounds checks in CFF subsetting) and 709365 — landed 2026-05-13, before 1.28.0 shipped 2026-06-26, and are present in .tools/mupdf/1.28.0: subset-cff.c:299 (data_offset > len) and :315 (data_offset + v > len). Verified by executing the trigger against the built engine: scripts/security/cffOobProof.mjs shows a clean throw with the checks and a crash without them. Additionally NOT REACHABLE: font subsetting is opt-in via pdf_subset_fonts, which no code path we ship calls, and pdf_save_document does not reach it. Addition 2026-09-14: the npm build the kernel loads exposes the same subsetting as PDFDocument.subsetFonts(), a name that never contains pdf_subset_fonts; it is watched separately under reachability.subsetFonts (ADR-0017's correction). Addition 2026-09-30: the kernel no longer loads the npm build (ADR-0124); the object model it runs has no subsetting method and the shim withholds the export, so the door is shut rather than unused."
   },
   "watch": {
+    "GHSA-86w9-cpqp-85rv": "UNRESOLVED (no fixed release, 2026-10-15) — node-forge 1.4.0, RSA PKCS#1 v1.5 signature verification; @signpdf/signer-p12 is flagged only through it. Shipped, and NOT REACHABLE: forge parses and signs here, and verification is Node's crypto.verify. Watched under reachability.forge-rsa-verify, which fails the build the day shipped code names one of forge's verification doors.",
     "ARTIFEX-BUG-709567": "UNRESOLVED (no CVE, no release) — \"potential memory overwrite in CFF2 subsetting\", fixed upstream in commit a3caa67262bd on 2026-08-07. In NO released version: it postdates 1.28.2 (2026-08-03) and exists only on master. A memory OVERWRITE, so more serious than the over-read of CVE-2026-7233. NOT REACHABLE here: CFF2 subsetting requires font subsetting, which no shipped code path performs. Take at the first release that contains it, per ADR-0011; until then the register is the record that it is known and waiting. Addition 2026-09-14: the npm build the kernel loads exposes the same subsetting as PDFDocument.subsetFonts(), a name that never contains pdf_subset_fonts; it is watched separately under reachability.subsetFonts (ADR-0017's correction). Addition 2026-09-30: the kernel no longer loads the npm build (ADR-0124); the object model it runs has no subsetting method and the shim withholds the export, so the door is shut rather than unused."
   },
   "reachability": {
+    "forge-rsa-verify": {
+      "guards": [
+        "GHSA-86w9-cpqp-85rv"
+      ],
+      "why": "node-forge 1.4.0, shipped (the PKCS#12 parse, certificate and DER parsing, and the PKCS#7 build that signs, ADR-0248), carries GHSA-86w9-cpqp-85rv: a flaw in its RSA PKCS#1 v1.5 signature VERIFICATION, and no fixed release exists (npm audit, 2026-10-15; @signpdf/signer-p12 is flagged only through it). NOT REACHABLE: this build verifies a signature with Node's crypto.verify (signedDataCheck.ts), and forge verifies nothing here. Read 2026-10-15 by git grep over packages/*/src, apps/*/src and native: no shipped file names verifyCertificateChain, createCaStore or publicKey.verify, which are forge's RSA verification doors (a certificate's own verify method reaches the same RSA check through its issuer's public key). A bare 'verify' is not watched, because shipped code rightly names crypto.verify. The day shipped code names one of the symbols below, this verdict expires and the build fails naming the advisory. Take the first forge release that fixes it, per ADR-0011.",
+      "shippedPaths": [
+        "native/**",
+        "packages/*/src/**",
+        "apps/*/src/**"
+      ],
+      "symbols": [
+        "verifyCertificateChain",
+        "createCaStore",
+        "publicKey.verify"
+      ],
+      "witness": {
+        "verifyCertificateChain": {
+          "in": [
+            "docs/DECISIONS/**"
+          ],
+          "why": "ADR-0248's note of 2026-10-15 names forge's verification doors. Independent text, disjoint from the shipped paths and not the register, the same reasoning as subsetFonts' witness."
+        },
+        "createCaStore": {
+          "in": [
+            "docs/DECISIONS/**"
+          ],
+          "why": "ADR-0248's note of 2026-10-15, as for verifyCertificateChain."
+        },
+        "publicKey.verify": {
+          "in": [
+            "docs/DECISIONS/**"
+          ],
+          "why": "ADR-0248's note of 2026-10-15, as for verifyCertificateChain."
+        }
+      }
+    },
     "ocr": {
       "guards": [
         "DEBIAN-CVE-2026-73066",

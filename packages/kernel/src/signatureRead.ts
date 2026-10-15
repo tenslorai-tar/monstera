@@ -21,10 +21,11 @@ import type { SignedData, SignerCheck } from './signedDataCheck.js';
  * Measured 2026-09-12: `PDFWidget` exposes no signature member at all, and
  * `PDFDocument` exposes only `validateChangeHistory`. The native library has
  * `pdf_check_signature`; the JS binding does not bind it. So §3's matrix line —
- * *node-forge (verify)* — is the answer for a reason sharper than the founding
+ * *node-forge (verify)* — was the answer for a reason sharper than the founding
  * record could have known, and ADR-0054 Decision 4 already says the useful half
  * of it: **verifying a signature this build did not write needs no `@signpdf`
- * at all.**
+ * at all.** The verifying itself moved to Node's `crypto.verify` with GGGGGG-2
+ * (`signedDataCheck.ts`); node-forge reads the DER and verifies nothing.
  *
  * ## It runs in the CONTAINED HOST, and that is invariant 25 rather than habit
  *
