@@ -266,3 +266,13 @@ The Electron organisation's tool, read from the registry on 2026-10-02, with one
 **Not in `NOTICE`, by the owner's decision of 2026-10-02**: `generateNotice.mjs` lists what ships, and a
 build-time tool listed there would be as wrong as a shipped one left out. This table is where the project's
 build tools are recorded, so this is where rcedit is.
+
+## Addition — 2026-10-15 — resedit replaces rcedit
+
+| Package | Version | Licence | Scope |
+|---|---|---|---|
+| resedit | 3.1.0 | MIT | devDependency, pinned exact; the packager's icon step ([ADR-0123](0123-the-msix-is-assembled-here-and-packed-by-the-sdks-makeappx.md)'s 2026-10-15 correction) |
+
+Read from the registry on 2026-10-15: published 2026-08-25, not deprecated, one dependency (`pe-library` 2.0.1, MIT,
+not deprecated). rcedit 5.0.2 is removed: npm marks every release *"Package no longer supported"*, with no reason or
+successor. Not in `NOTICE` for the reason above: nothing of it ships.

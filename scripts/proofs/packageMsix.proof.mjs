@@ -325,7 +325,7 @@ try {
       why:
         process.platform === 'win32'
           ? `The Electron runtime is missing:\n    ${ELECTRON_BINARY}\n  Run \`npm run provision:electron\`.`
-          : 'This is not Windows: the icon cases need a Windows executable and rcedit, which runs one.',
+          : "This is not Windows: the icon cases brand the provisioned electron.exe, and the start cases run it.",
       flag: '--require-runtime',
     });
     if (partial.stream === 'stderr') process.stderr.write(`${roster.format('MSIX packager case')}${partial.text}`);

@@ -35,7 +35,11 @@
     // .mjs cannot express — there is no type-only import syntax in plain JS.
     "verbatimModuleSyntax": false,
 
-    "types": ["node"]
+    "types": ["node"],
+
+    // `resedit`'s own declarations reference the DOM library, which would retype `fetch` for every script; the
+    // packager's calls are typed by the narrow declaration this names instead (its header has the measurement).
+    "paths": { "resedit": ["./scripts/types/resedit.d.ts"] }
   },
 
   // `electronImports.proof.mjs` plants `__import_probe__.mjs` under `scripts/`,
@@ -49,5 +53,5 @@
   // resolve reported both — correctly. See scripts/lib/probeLeftovers.mjs; the
   // startup sweep is the whole fix, and both attempts to add an exclude beside
   // it broke something else.
-  "include": ["scripts/**/*.mjs", "eslint.config.js", "vitest.config.mjs"]
+  "include": ["scripts/**/*.mjs", "scripts/types/*.d.ts", "eslint.config.js", "vitest.config.mjs"]
 }

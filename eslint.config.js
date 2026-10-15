@@ -558,7 +558,9 @@ export default tseslint.config(
     // `node`, where importing `electron` resolves to `index.js`, whose
     // `module.exports` IS `getElectronPath()` — so the import downloads an
     // unpinned binary through `install.js`. Spawn the provisioned path instead.
-    files: [...PLAIN_NODE_GLOBS, 'eslint.config.js', 'vitest.config.mjs'],
+    // AND THE DECLARATIONS THOSE SCRIPTS ARE TYPED BY (`scripts/types/`), which `tsconfig.scripts.json` checks with them
+    // and no project service maps, exactly as it does the scripts.
+    files: [...PLAIN_NODE_GLOBS, 'scripts/types/*.d.ts', 'eslint.config.js', 'vitest.config.mjs'],
     extends: [tseslint.configs.disableTypeChecked],
     languageOptions: {
       globals: { ...globals.node },

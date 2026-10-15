@@ -5,8 +5,8 @@
  *
  * ## What goes in, and from where
  *
- * - the provisioned Electron runtime, `electron.exe` renamed `Monstera.exe` and given the brand's icon — by rcedit,
- *   and read back from the file's resources before anything else is staged, because rcedit exiting 0 is not the
+ * - the provisioned Electron runtime, `electron.exe` renamed `Monstera.exe` and given the brand's icon — by resedit,
+ *   and read back from the file's resources before anything else is staged, because the call returning is not the
  *   executable carrying the icon;
  * - `resources/app/`: the desktop package's `dist/`, and a `node_modules/` holding the workspace packages' `dist/`
  *   and npm's own production tree for them — npm answers which third-party packages ship, never a list kept here;
@@ -55,13 +55,13 @@ import { builtinModules } from 'node:module';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { rcedit } from 'rcedit';
+import { Data, NtExecutable, NtExecutableResource, Resource } from 'resedit';
 
 import { STORE_ASSETS, writeStoreAssets } from '../brand/storeAssets.mjs';
 import { SHELL_LAUNCH, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { isMain } from '../lib/isMain.mjs';
 import { loadTypeScript } from '../lib/loadTypeScript.mjs';
-import { carriesIcon } from '../lib/peIcons.mjs';
+import { applicationIcon, carriesIcon } from '../lib/peIcons.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { shimPath } from '../lib/shimBinary.mjs';
 import { electronRoot } from '../provision/electron.mjs';
@@ -97,16 +97,30 @@ export const BRAND_ICON = join(REPO_ROOT, 'assets', 'brand', 'logo.ico');
 /**
  * Gives an executable an icon, and refuses unless the file then carries it.
  *
- * rcedit replaces the first icon group the file enumerates, which is the one Windows shows for it; reading that group
- * back is what separates *the icon was set* from *the tool returned*.
+ * The group replaced is the one `peIcons.mjs` reads as the one Windows shows, the first the file enumerates: asked of
+ * that module by its id rather than chosen here, so *which group is the application's icon* has one answer (B3a).
+ * resedit rewrites the resource section in JavaScript, so the step runs on any machine and starts no program; reading
+ * the group back is what separates *the icon was set* from *the call returned*.
+ *
+ * A signature on the runtime is dropped (`ignoreCert`): changing a resource invalidates it anyway, and the package is
+ * signed as a whole.
  *
  * @param {string} executable
  * @param {string} ico
  */
 export async function brandExecutable(executable, ico) {
-  await rcedit(executable, { icon: ico });
+  const before = readFileSync(executable);
+  const shown = applicationIcon(before);
+  const image = NtExecutable.from(before, { ignoreCert: true });
+  const resources = NtExecutableResource.from(image);
+  const group = Resource.IconGroupEntry.fromEntries(resources.entries).find((entry) => entry.id === shown.id);
+  if (group === undefined) throw new Error(`${executable}'s icon group ${String(shown.id)} is not one resedit lists`);
+  const icons = Data.IconFile.from(readFileSync(ico)).icons.map((icon) => icon.data);
+  Resource.IconGroupEntry.replaceIconsForResource(resources.entries, group.id, group.lang, icons);
+  resources.outputResource(image);
+  writeFileSync(executable, Buffer.from(image.generate()));
   if (!carriesIcon(readFileSync(executable), readFileSync(ico))) {
-    throw new Error(`${executable} does not carry ${ico} after rcedit set it; its first icon group is another icon.`);
+    throw new Error(`${executable} does not carry ${ico} after its icon was set; its first icon group is another icon.`);
   }
 }
 

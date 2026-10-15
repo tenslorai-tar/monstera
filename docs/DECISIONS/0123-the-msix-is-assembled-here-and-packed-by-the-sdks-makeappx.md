@@ -118,3 +118,18 @@ files, and a file list says which files exist, not that the program runs.
 *Not decided here*'s **The 150 MB target** bullet left what to remove, if anything, to the owner. The owner answered on
 2026-10-01: nothing — the size is accepted and growth is fine. [ADR-0136](0136-the-package-has-no-size-target.md)
 withdraws the target, and the packager now prints the package's size with no comparison and no verdict.
+
+## Correction, 2026-10-15 — the icon is set by resedit, not rcedit
+
+The 2026-10-02 correction's tool is gone. npm marks every `rcedit` release *"Package no longer supported. Contact
+Support…"* (read from the registry 2026-10-15), with no reason and no successor, so the owner asked for a maintained one
+(cloud run 4, D1). `brandExecutable` now rewrites the resource section with `resedit` 3.1.0 (MIT, published 2026-08-25,
+one dependency, `pe-library` 2.0.1, MIT), pinned exact as a development dependency. It is JavaScript and starts no
+program, where rcedit ran a bundled Windows executable.
+
+**What did not change:** the group replaced is still the one `scripts/lib/peIcons.mjs` reads as the one Windows shows,
+now asked of that module by its id rather than left to the tool, and the step is still read back and refused unless the
+file carries the `.ico`'s images byte for byte. Checked 2026-10-15 on a PE file given a first icon one byte different
+from the brand's: before the step it is not reported as carrying the brand, after it it is. `proof:packagemsix`'s icon
+cases still run on Windows against the provisioned `electron.exe`, which is the reading that counts and is the Windows
+session's.
