@@ -176,6 +176,9 @@ function start(stream: HostByteStream) {
     fonts: () => {
       throw new Error('no case here reads the fonts');
     },
+    pageMarks: () => {
+      throw new Error('no case here reads the stamps');
+    },
     annotations: () => {
       throw new Error('no case here lists annotations');
     },

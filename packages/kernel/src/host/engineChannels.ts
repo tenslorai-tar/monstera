@@ -95,6 +95,7 @@ import {
   headerFooterPagesSchema,
   batesNumberPagesSchema,
   removePageMarksSchema,
+  pageMarksSchema,
   setPageBackgroundSchema,
   insertImagePageSchema,
   createFormFieldSchema,
@@ -3044,6 +3045,14 @@ export const engineChannels = {
    * Every font the document names (the owner's B2.8): whole-document for `engine/layers`' reason, a property of the
    * document's resources read when a picker opens over it, and bounded by the picker's own list bound.
    */
+  /** Where each kind of page stamp is (ADR-0246 Decision 2), in the shape the renderer's `document.pageMarks` answers. */
+  'engine/pageMarks': fileAnswered(
+    'Reads where each kind of page stamp is, from a session this host holds.',
+    z.object({ session: sessionSchema }).strict(),
+    pageMarksSchema,
+    ['no-such-session'],
+  ),
+
   'engine/fonts': fileAnswered(
     'Reads every font the document names from a session this host holds.',
     z.object({ session: sessionSchema }).strict(),

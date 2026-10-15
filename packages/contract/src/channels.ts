@@ -58,6 +58,7 @@ import {
   annotationRectSchema,
   LISTED_POINTS_MAX,
   annotationColourSchema,
+  pageMarksSchema,
   linkOutlineSchema,
   annotationAuthorSchema,
   annotationBlendSchema,
@@ -5067,6 +5068,18 @@ export const channels = {
    * of the forms they draw and of the form fields, each once, as the document states them. A READ for the layers' reason,
    * and bounded by the picker's own list bound, saying when it stopped there.
    */
+  /**
+   * Where each kind of page stamp is (ADR-0246 Decision 2): what Edit fills its window with and which pages it redraws, and
+   * what Remove can and cannot take off. A READ, `document.fonts`' path through the engine host; editing and removing
+   * are commands.
+   */
+  'document.pageMarks': channel(
+    'Where each kind of page stamp is, and the settings Monstera recorded on its own.',
+    z.object({ docId: docIdSchema }),
+    z.object({ version: docVersionSchema, marks: pageMarksSchema }),
+    ['document-not-open', 'document-busy', 'document-poisoned', 'engine-unavailable'],
+  ),
+
   'document.fonts': channel(
     'Every font the document names, for the font picker.',
     z.object({ docId: docIdSchema }),

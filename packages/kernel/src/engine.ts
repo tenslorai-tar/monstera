@@ -32,6 +32,7 @@ export {
   captureRemovePageMarks,
   invertRemovePageMarks,
   readPageMarks,
+  readPageMarksOf,
   type PageMarks,
 } from './pageMarks.js';
 export { readPageFills } from './pageFills.js';

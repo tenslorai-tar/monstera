@@ -658,6 +658,9 @@ export {
   removePageMarksSchema,
   pageMarkKindSchema,
   type PageMarkKind,
+  pageMarksSchema,
+  type PageMarksRead,
+  MAX_STAMP_SETTINGS,
   // WHICH COMMAND REWRITES A PAGE'S TEXT (ADR-0176): the host answers it and the renderer sends by it.
   type TextRewrite,
   textRewriteSchema,

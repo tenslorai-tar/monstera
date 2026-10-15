@@ -2952,6 +2952,32 @@ describe('document.fonts', () => {
   });
 });
 
+describe('document.pageMarks (ADR-0246)', () => {
+  const OPENED = { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' } as const;
+  const marks = {
+    watermark: { pages: [[0, 4]] as [number, number][], settings: '{"text":"DRAFT"}', others: 1, inline: 0 },
+    headerFooter: { pages: null, settings: null, others: 0, inline: 0 },
+    bates: { pages: null, settings: null, others: 0, inline: 2 },
+    older: 3,
+  };
+
+  it('answers where each kind of stamp is, in a shape the contract accepts', async () => {
+    const commands = { pageMarks: () => Promise.resolve({ version: asDocVersion(5), marks }) } as unknown as DocumentCommands;
+    const { handlers } = harness(OPENED, () => Promise.resolve(null), undefined, { commands });
+    const answer = await handlers['document.pageMarks']({ docId: A_DOC });
+    if (!answer.ok) throw new Error(`refused: ${answer.error.code}`);
+    expect(answer.value).toStrictEqual({ version: asDocVersion(5), marks });
+    expect(channels['document.pageMarks'].result.safeParse(answer.value).success).toBe(true);
+  });
+
+  it('a document with no engine session answers engine-unavailable', async () => {
+    const commands = { pageMarks: () => Promise.reject(new MissingSessionError(A_DOC, 'mupdf')) } as unknown as DocumentCommands;
+    const { handlers } = harness(OPENED, () => Promise.resolve(null), undefined, { commands });
+    const answer = await handlers['document.pageMarks']({ docId: A_DOC });
+    expect(answer.ok ? null : answer.error.code).toBe('engine-unavailable');
+  });
+});
+
 describe('a CAD export’s layers answer in parts the contract accepts', () => {
   const OPENED = { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' } as const;
   const layers = Array.from({ length: 2500 }, (_, index) => ({ index, name: `Level ${String(index)}`, visible: true }));

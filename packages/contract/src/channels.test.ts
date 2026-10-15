@@ -332,6 +332,19 @@ const handlers: ContractHandlers = {
         truncated: false,
       }),
     ),
+  // A WATERMARK ON TWO PAGES WITH ITS SETTINGS, and the other kinds absent, so a boundary that dropped one is seen.
+  'document.pageMarks': () =>
+    Promise.resolve(
+      ok({
+        version: asDocVersion(1),
+        marks: {
+          watermark: { pages: [[0, 1]], settings: '{"text":"DRAFT"}', others: 0, inline: 0 },
+          headerFooter: { pages: null, settings: null, others: 0, inline: 0 },
+          bates: { pages: null, settings: null, others: 0, inline: 1 },
+          older: 0,
+        },
+      }),
+    ),
   // ONE VISIBLE AND ONE HIDDEN, because a fixture where everything is visible
   // cannot tell a boundary that carried the flag from one that dropped it.
   'document.layers': () =>

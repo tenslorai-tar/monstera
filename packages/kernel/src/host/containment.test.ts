@@ -560,6 +560,9 @@ describe('the engine host answers a containment probe', () => {
     fonts: () => {
       throw new Error('a containment probe must not read the fonts');
     },
+    pageMarks: () => {
+      throw new Error('a containment probe must not read the stamps');
+    },
     annotations: () => {
       throw new Error('a containment probe must not list annotations');
     },

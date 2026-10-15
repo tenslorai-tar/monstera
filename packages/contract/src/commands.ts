@@ -582,6 +582,43 @@ export const pageMarkKindSchema = z.enum(['watermark', 'headerFooter', 'bates'])
 export type PageMarkKind = z.infer<typeof pageMarkKindSchema>;
 
 /**
+ * The longest settings record a read carries. A watermark's is under 400 characters and a header and footer's six slots
+ * at their bound under 1,500; a record longer than this was not written by these commands, and the reader answers none.
+ */
+export const MAX_STAMP_SETTINGS = 4_096;
+
+/** One kind's stamps across a document, as `document.pageMarks` answers them (ADR-0246 Decision 2). */
+const marksOfKindSchema = z
+  .object({
+    /** The pages carrying a stamp of this kind that can be edited or removed, or `null` for none. */
+    pages: pageSetSchema.nullable(),
+    /** The settings Monstera recorded on them, as JSON, or `null` where it wrote none. */
+    settings: z.string().max(MAX_STAMP_SETTINGS).nullable(),
+    /** How many of those pages carry another tool's stamp of this kind. */
+    others: z.number().int().nonnegative(),
+    /** How many pages carry another tool's stamp of this kind inside their own content, which is left. */
+    inline: z.number().int().nonnegative(),
+  })
+  .strict();
+
+/**
+ * Where each kind of stamp is (ADR-0246 Decision 2): ONE SHAPE for the engine host's answer and the renderer's, so the two
+ * boundaries cannot disagree about it.
+ */
+export const pageMarksSchema = z
+  .object({
+    watermark: marksOfKindSchema,
+    headerFooter: marksOfKindSchema,
+    bates: marksOfKindSchema,
+    /** Pages carrying a stamp an older Monstera wrote without a record, whose kind cannot be told (Decision 6). */
+    older: z.number().int().nonnegative(),
+  })
+  .strict();
+
+/** See {@link pageMarksSchema}. */
+export type PageMarksRead = z.infer<typeof pageMarksSchema>;
+
+/**
  * Remove every stamp of one kind from every page (ADR-0246 Decision 4).
  *
  * Self-contained, as the stamps are: it names a kind and no page, no object and no version, because what it removes is

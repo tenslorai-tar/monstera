@@ -522,6 +522,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'document.destinations': 'needs an engine session',
   'document.layers': 'needs an engine session',
   'document.fonts': 'needs an engine session',
+  'document.pageMarks': 'needs an engine session',
   'document.annotations': 'needs an engine session',
   'document.formFields': 'needs an engine session',
   // BOUNDED AT 256 CANDIDATES AND 128 CHARACTERS, and per PAGE rather than per

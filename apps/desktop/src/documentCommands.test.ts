@@ -118,6 +118,8 @@ import {
   localMupdfExecution,
   openCopy,
   readDocumentFonts,
+  readPageMarksOf,
+  applyWatermarkPages,
 } from '@monstera/kernel/engine';
 import { type DocId, type DocVersion, asDocId, asDocVersion, asFileHandle } from '@monstera/shared';
 
@@ -160,6 +162,7 @@ import {
   type PickDirectory,
   type DocumentLayersReader,
   type DocumentFontsReader,
+  type DocumentPageMarksReader,
   type DocumentPageLinksReader,
   type DocumentWordBoxesReader,
   type CopySource,
@@ -435,6 +438,7 @@ const noLayers: DocumentLayersReader = () =>
   Promise.reject(new Error('this case does not read the layers'));
 
 const noFonts: DocumentFontsReader = () => Promise.reject(new Error('this case does not read the fonts'));
+const noPageMarks: DocumentPageMarksReader = () => Promise.reject(new Error('this case does not read the stamps'));
 
 /**
  * A restore that refuses, for every case whose log holds no terminal entry.
@@ -828,6 +832,12 @@ const localFonts: DocumentFontsReader = (id, sessions) => {
   return readDocumentFonts(held);
 };
 
+const localPageMarks: DocumentPageMarksReader = (id, sessions) => {
+  const held = sessions.mupdf;
+  if (held === undefined) throw new MissingSessionError(id, 'mupdf');
+  return readPageMarksOf(held);
+};
+
 /** Every page of the three-page fixture, in order. */
 const ALL_PAGES = [0, 1, 2];
 
@@ -904,6 +914,7 @@ const INERT = {
   ocr: noOcr,
   layers: noLayers,
   fonts: noFonts,
+  pageMarks: noPageMarks,
   signatures: () => Promise.reject(new Error('this case does not read signatures')),
   // EVERY SAVE ASKS, since item 6 — the answer also says whether the save is a removal's — so the inert answer is the
   // ordinary one: an unsigned document, and not a removal.
@@ -1006,6 +1017,7 @@ const LOCAL_READS = {
   destinations: localDestinations,
   layers: localLayers,
   fonts: localFonts,
+  pageMarks: localPageMarks,
   annotations: localAnnotations,
   annotationCopy: localAnnotationCopy,
   annotationWords: localAnnotationWords,
@@ -1242,6 +1254,39 @@ describe('a link’s whole address, through the lane (ADR-0167)', () => {
     expect(await commands.linkAddress(linked, 1, 5, version)).toStrictEqual({ kind: 'no-such-link' });
     // CONTROL: the page without the link has none at that place.
     expect(await commands.linkAddress(linked, 0, 0, version)).toStrictEqual({ kind: 'no-such-link' });
+  });
+});
+
+// ADR-0246: THE STAMPS' READ through this composition point, the lane and the injected reader, against a session the
+// stamp writer drew on. Executing the stamp here would take a checkpoint, which needs the save path this file stubs
+// (the link case's reason); the command half is `pageMarks.test.ts`'.
+describe('document.pageMarks reads the stamps a session holds, through the lane', () => {
+  beforeAll(openDocument);
+
+  it('a watermark is read back on every page with its settings, stamped with the lane version', async () => {
+    const stamped = await mupdfWriter.open(await pdfBytes());
+    const held = new EngineSessions();
+    held.hold(docId, { mupdf: stamped });
+    const commands = new DocumentCommands({ ...LOCAL_READS, documents: service, bus: bus(), engine: held });
+    // CONTROL FIRST: the fixture carries no stamp.
+    expect((await commands.pageMarks(docId)).marks.watermark.pages).toBeNull();
+
+    await applyWatermarkPages(stamped, {
+      kind: 'watermarkPages',
+      pages: 'all',
+      text: 'DRAFT',
+      opacity: 0.3,
+      rotationDegrees: 45,
+      fontSize: 40,
+      family: 'Helvetica',
+      colour: [0.2, 0.3, 0.9],
+    });
+    const read = await commands.pageMarks(docId);
+    expect(read.version).toBeGreaterThan(0);
+    expect(read.marks.watermark.pages).toStrictEqual([[0, 2]]);
+    expect(JSON.parse(read.marks.watermark.settings ?? 'null')).toMatchObject({ text: 'DRAFT', colour: [0.2, 0.3, 0.9] });
+    expect(read.marks.headerFooter.pages).toBeNull();
+    await mupdfWriter.close(stamped);
   });
 });
 

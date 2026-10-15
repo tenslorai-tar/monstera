@@ -1,6 +1,7 @@
-import type { PageMarkKind } from '@monstera/contract';
+import type { PageMarkKind, PageMarksRead } from '@monstera/contract';
+import { MAX_STAMP_SETTINGS, pageSetOf } from '@monstera/contract/host';
 
-import type { Apply, Capture, Invert } from './engineSeam.js';
+import type { Apply, Capture, Invert, MupdfSession } from './engineSeam.js';
 import type { PDFDocument, PDFObject } from './mupdfRaw.js';
 import { withDocument } from './mupdfWriter.js';
 import { STAMP_KIND_NAMES, STAMP_RECORD_KEY, type StampKind } from './pageStampDraw.js';
@@ -155,6 +156,23 @@ export function readPageMarks(document: PDFDocument): PageMarks {
     if (olderHere) older += 1;
   }
   return { ...found, older };
+}
+
+/**
+ * {@link readPageMarks} on a session, in the shape `document.pageMarks` answers (ADR-0246 Decision 2): each kind's pages
+ * as a page set, and a settings record longer than any these commands write answered as none rather than refused.
+ */
+export function readPageMarksOf(session: MupdfSession): Promise<PageMarksRead> {
+  return withDocument(session, (document) => {
+    const marks = readPageMarks(document);
+    const wire = (kind: MarksOfKind): PageMarksRead['watermark'] => ({
+      pages: kind.pages.length === 0 ? null : pageSetOf(kind.pages),
+      settings: kind.settings !== null && kind.settings.length <= MAX_STAMP_SETTINGS ? kind.settings : null,
+      others: kind.others,
+      inline: kind.inline,
+    });
+    return { watermark: wire(marks.watermark), headerFooter: wire(marks.headerFooter), bates: wire(marks.bates), older: marks.older };
+  });
 }
 
 /**

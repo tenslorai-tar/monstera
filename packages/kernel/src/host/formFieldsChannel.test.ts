@@ -188,6 +188,9 @@ async function joined(formFields: HostFormFieldsReader): Promise<{
       fonts: () => {
         throw new Error('a field read must not read the fonts');
       },
+      pageMarks: () => {
+        throw new Error('a field read must not read the stamps');
+      },
       annotations: () => {
         throw new Error('a field read must not list annotations');
       },

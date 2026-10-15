@@ -11,6 +11,7 @@ import {
   type DeclaredOf,
   type FileAccess,
   type FieldFormat,
+  type PageMarksRead,
   type FieldLook,
   type FormFieldKind,
   type FormFieldRead,
@@ -953,6 +954,9 @@ export interface BrowserShimOptions {
   /** The fonts `document.fonts` names: none unless a case gives some, which is what a document with no text answers. */
   readonly documentFonts?: readonly { readonly name: string; readonly partial: boolean }[];
 
+  /** Where `document.pageMarks` says the stamps are (ADR-0246): none unless a case gives some. */
+  readonly pageMarks?: PageMarksRead;
+
   /**
    * What `document.recent` answers.
    *
@@ -1022,6 +1026,10 @@ function shimPart<T, K extends string>(
  * layout — is a rule for generating word forms, and a three-word vocabulary
  * has none to generate.
  */
+/** A document with no page stamps, as `document.pageMarks` answers it (ADR-0246). */
+const NO_KIND_MARKS = { pages: null, settings: null, others: 0, inline: 0 } as const;
+const NO_PAGE_MARKS: PageMarksRead = { watermark: NO_KIND_MARKS, headerFooter: NO_KIND_MARKS, bates: NO_KIND_MARKS, older: 0 };
+
 const SHIM_AFFIX = 'SET UTF-8\n';
 
 /**
@@ -1369,6 +1377,13 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       return Promise.resolve(
         ok({ version: asDocVersion(current), fonts: options.documentFonts ?? [], truncated: false }),
       );
+    },
+
+    // THE STAMPS A CASE SETS UP (ADR-0246), none where it sets none.
+    'document.pageMarks': ({ docId }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' as const }));
+      return Promise.resolve(ok({ version: asDocVersion(current), marks: options.pageMarks ?? NO_PAGE_MARKS }));
     },
 
     'document.sign': ({ docId }) => {

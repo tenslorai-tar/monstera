@@ -91,6 +91,7 @@ import {
   type HostPageImage,
   type HostFormFieldsReader,
   type HostFontsReader,
+  type HostPageMarksReader,
   type HostLayersReader,
   type HostPageFillsReader,
   type HostScanTablesReader,
@@ -162,6 +163,7 @@ import {
   remoteMupdfFlatFields,
   remoteMupdfFormFields,
   remoteMupdfFonts,
+  remoteMupdfPageMarks,
   remoteMupdfLayers,
   remoteMupdfSignatures,
   remoteMupdfSignaturesKept,
@@ -1452,6 +1454,12 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
       return engineHost.fonts(session);
     },
+    // WHERE THE PAGE STAMPS ARE (ADR-0246), a read like the fonts.
+    pageMarks: (docId, sessions) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return engineHost.pageMarks(session);
+    },
     // THE SIGNATURES, a read like the ones above, and the ONLY one that takes
     // a session rather than a `DocId` — because the host serialises its own
     // session for the bytes a `/ByteRange` indexes into, so this side never
@@ -2320,6 +2328,8 @@ function engineSessionOpener(
   readonly layers: HostLayersReader;
   /** Every font the document names, from whichever host is live (B2.8). */
   readonly fonts: HostFontsReader;
+  /** Where each kind of page stamp is, from whichever host is live (ADR-0246). */
+  readonly pageMarks: HostPageMarksReader;
   /** Whether the MuPDF host starts on this computer — its engine loaded, as a document's first use loads it. */
   readonly starts: () => Promise<StartReading>;
   /** The document's signatures, verified in the contained host. */
@@ -2694,6 +2704,19 @@ function engineSessionOpener(
       );
     }
     return fonts(session);
+  };
+
+  /** The stamp reader's half of the same registration (ADR-0246). See {@link pageText}. */
+  let pageMarks: HostPageMarksReader | null = null;
+
+  const readPageMarksThroughHost: HostPageMarksReader = (session) => {
+    if (pageMarks === null) {
+      throw new Error(
+        'A stamp read reached the engine with no host stamp reader registered. A session was resolved for this ' +
+          'document, so one was issued by a host — the supervisor and the host connection have diverged.',
+      );
+    }
+    return pageMarks(session);
   };
 
   /** The signature reader's half of the same registration. See {@link pageText}. */
@@ -3082,6 +3105,7 @@ function engineSessionOpener(
     ocr = remoteMupdfOcr(client, remote);
     layers = remoteMupdfLayers(client, remote);
     fonts = remoteMupdfFonts(client, remote);
+    pageMarks = remoteMupdfPageMarks(client, remote);
     signatures = remoteMupdfSignatures(client, remote);
     signaturesKept = remoteMupdfSignaturesKept(client, remote);
     annotations = remoteMupdfAnnotations(client, remote);
@@ -3468,6 +3492,7 @@ function engineSessionOpener(
     ocr: recogniseThroughHost,
     layers: readLayersThroughHost,
     fonts: readFontsThroughHost,
+    pageMarks: readPageMarksThroughHost,
     signatures: readSignaturesThroughHost,
     signaturesKept: readSignaturesKeptThroughHost,
     annotations: readAnnotationsThroughHost,

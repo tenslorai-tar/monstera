@@ -182,6 +182,9 @@ async function joined(): Promise<{
       fonts: () => {
         throw new Error('unused');
       },
+      pageMarks: () => {
+        throw new Error('unused');
+      },
       annotations: readAnnotations,
       formFields: () => {
         throw new Error('unused');

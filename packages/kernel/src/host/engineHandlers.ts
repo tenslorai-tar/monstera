@@ -8,6 +8,7 @@ import type {
   Handlers,
   PageAdjustment,
   PageAdjustmentOutcome,
+  PageMarksRead,
   PageSet,
 } from '@monstera/contract';
 import { cappedBoxes } from '@monstera/contract/host';
@@ -173,6 +174,9 @@ export type HostLayersReader = (session: MupdfSession) => Promise<ListedLayers>;
 
 /** Reads every font the document names. Injected for the readers above's reason. */
 export type HostFontsReader = (session: MupdfSession) => Promise<ListedDocumentFonts>;
+
+/** Reads where each kind of page stamp is (ADR-0246). Injected for the readers above's reason. */
+export type HostPageMarksReader = (session: MupdfSession) => Promise<PageMarksRead>;
 
 /**
  * Reading and verifying a document's signatures.
@@ -541,6 +545,8 @@ export interface EngineHandlerParts {
   readonly layers: HostLayersReader;
   /** Every font the document names (B2.8). `engine/fonts`. */
   readonly fonts: HostFontsReader;
+  /** Where each kind of page stamp is (ADR-0246). `engine/pageMarks`. */
+  readonly pageMarks: HostPageMarksReader;
   readonly annotations: HostAnnotationsReader;
   /** How this process reads named marks for the clipboard. `engine/annotation-records`. */
   readonly annotationRecords: HostAnnotationRecordsReader;
@@ -626,6 +632,7 @@ export function createEngineHandlers({
   destinations,
   layers,
   fonts,
+  pageMarks,
   annotations,
   annotationRecords,
   annotationWords,
@@ -1101,6 +1108,12 @@ export function createEngineHandlers({
       if (held === undefined) return gone;
       const listed = await fonts(held.session);
       return { ok: true, value: { fonts: [...listed.fonts], truncated: listed.truncated } };
+    },
+
+    'engine/pageMarks': async ({ session }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      return { ok: true, value: await pageMarks(held.session) };
     },
 
     'engine/signatures': async ({ session }) => {

@@ -168,6 +168,9 @@ async function joined(ocr: HostOcrReader): Promise<{
       fonts: () => {
         throw new Error('a recognition must not read the fonts');
       },
+      pageMarks: () => {
+        throw new Error('a recognition must not read the stamps');
+      },
       annotations: () => {
         throw new Error('a recognition must not list annotations');
       },

@@ -282,6 +282,9 @@ function joined(
       fonts: () => {
         throw new Error('the lifecycle half must not read the fonts');
       },
+      pageMarks: () => {
+        throw new Error('the lifecycle half must not read the stamps');
+      },
       annotations: () => {
         throw new Error('the lifecycle half must not list annotations');
       },
@@ -720,6 +723,9 @@ describe('remoteMupdfLifecycle', () => {
         },
         fonts: () => {
           throw new Error('the byte-size case must not read the fonts');
+        },
+        pageMarks: () => {
+          throw new Error('the byte-size case must not read the stamps');
         },
         annotations: () => {
           throw new Error('the byte-size case must not list annotations');

@@ -97,6 +97,7 @@ function build(protectedWriting: Protection, protectedImage?: ProtectedImage) {
       destinations: refuse('read the outline'),
       layers: refuse('read the layers'),
       fonts: refuse('read the fonts'),
+      pageMarks: refuse('read the stamps'),
       annotations: refuse('list annotations'),
       formFields: refuse('read the fields'),
       fieldProperties: refuse('read a field’s properties'),
