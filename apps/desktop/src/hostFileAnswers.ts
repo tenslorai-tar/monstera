@@ -1,26 +1,30 @@
 import { randomBytes } from 'node:crypto';
-import { readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { ChannelMap } from '@monstera/contract';
-import type { ClientFileAnswers, SessionArea } from '@monstera/kernel';
+import { type ClientFileAnswers, type SessionArea, readAnnounced } from '@monstera/kernel';
 
 /**
  * How main takes an engine host's file-routed answers
  * ([ADR-0125](../../../docs/DECISIONS/0125-an-answer-that-grows-with-the-document-crosses-in-a-file.md)).
  *
- * `routed` is the channel map's own declaration — never a guess by size. `take` stats the named file before reading
- * it and refuses one that is not exactly the size the host announced: the announced size is already bounded by the
- * frame schema's ceiling, so a file that disagrees with it is a host writing other than it said, and reading it would
- * let the host choose how much of main's memory it spends. The file is removed whether or not it was taken, because a
+ * `routed` is the channel map's own declaration — never a guess by size. `take` reads the named file by
+ * `readAnnounced`, the one reader of a host's output (B3a): one open, the size read from THAT handle and held to the
+ * announced count, a read of exactly that many bytes, and a probe for one more. The announced size is already bounded
+ * by the frame schema's ceiling, so a file that disagrees with it is a host writing other than it said. Reading by path
+ * after a `stat` let the host grow or replace the file between the two and choose how much of `main`'s memory the read
+ * spent (addendum 5's X1, a sibling of CR-SEC-08). The file is removed whether or not it was taken, because a
  * document's text left in a directory the host may read is a copy nobody holds.
  *
  * @param channels the host's channel map, whose `answer` field declares each route
  * @param areaFor the granted directories of the session a call's params name, or `undefined` for one not held
+ * @param files the reader's file calls, so a case can stage the race; the application passes none
  */
 export function fileAnswersFor(
   channels: ChannelMap,
   areaFor: (params: unknown) => SessionArea | undefined,
+  files?: Parameters<typeof readAnnounced>[2],
 ): ClientFileAnswers {
   return {
     routed: (channel) => channels[channel]?.answer === 'file',
@@ -29,19 +33,8 @@ export function fileAnswersFor(
     take: async (params, name, bytes) => {
       const area = areaFor(params);
       if (area === undefined) throw new Error('an answer arrived for a session this host is not holding');
-      const path = join(area.outputDirectory, name);
-      try {
-        const size = (await stat(path)).size;
-        if (size !== bytes) {
-          throw new Error(`the answer file holds ${String(size)} bytes where the host announced ${String(bytes)}`);
-        }
-        const read = await readFile(path);
-        // A VIEW OF THE READ'S OWN BUFFER, never a copy: `readFile` answers an exactly-sized allocation it owns
-        // (ADR-0121's addendum).
-        return new Uint8Array(read.buffer, read.byteOffset, read.byteLength);
-      } finally {
-        await rm(path, { force: true });
-      }
+      // AN EXACTLY-SIZED ALLOCATION OF ITS OWN, so no copy is made of it (ADR-0121's addendum); removed on every path.
+      return readAnnounced(join(area.outputDirectory, name), bytes, files);
     },
     requested: (channel) => channels[channel]?.request === 'file',
     // THE SNAPSHOT DIRECTORY, which the host may only read (ADR-0125's addendum): prior state going back to be

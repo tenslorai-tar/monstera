@@ -1,4 +1,5 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { open, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -60,7 +61,58 @@ describe('taking a file-routed answer (ADR-0125)', () => {
    */
   it('refuses a file of another size than announced, before reading it, and removes it', async () => {
     const { answers, outputDirectory } = areaWith('n1', new Uint8Array(64));
-    await expect(answers.take({ session: 's1' }, 'n1', 10)).rejects.toThrow(/holds 64 bytes where the host announced 10/u);
+    await expect(answers.take({ session: 's1' }, 'n1', 10)).rejects.toThrow(/reported writing 10 bytes and the file holds 64/u);
+    expect(existsSync(join(outputDirectory, 'n1'))).toBe(false);
+  });
+
+  /**
+   * THE RACE, STAGED (addendum 5's X1): the host changes the file AFTER `main` has opened it, which is the window a
+   * `stat` then a `readFile` by path left open. The files the reader is handed do the change at that moment, so the
+   * case is deterministic rather than a timing.
+   */
+  function racing(change: (path: string) => void): { readonly files: { open: typeof open; rm: typeof rm }; readonly reads: number[] } {
+    const reads: number[] = [];
+    const opening = (async (path: string, flags: string) => {
+      const handle = await open(path, flags);
+      change(path);
+      const read = handle.read.bind(handle) as (buffer: Uint8Array, offset: number, length: number, position: number) => ReturnType<typeof handle.read>;
+      return Object.assign(handle, {
+        read: (buffer: Uint8Array, offset: number, length: number, position: number) => {
+          reads.push(length);
+          return read(buffer, offset, length, position);
+        },
+      });
+    }) as unknown as typeof open;
+    return { files: { open: opening, rm }, reads };
+  }
+
+  it('a file GROWN after it was opened is refused, and never more than one byte past the count is asked for', async () => {
+    const bytes = new TextEncoder().encode('{"ok":true,"value":{}}');
+    const { outputDirectory } = areaWith('n1', bytes);
+    const { files, reads } = racing((path) => {
+      appendFileSync(path, new Uint8Array(1_048_576));
+    });
+    const answers = fileAnswersFor(channels, () => ({ outputDirectory, snapshotDirectory: outputDirectory }), files);
+    await expect(answers.take({ session: 's1' }, 'n1', bytes.byteLength)).rejects.toThrow(/reported writing/u);
+    expect(Math.max(...reads)).toBeLessThanOrEqual(bytes.byteLength);
+    expect(reads.reduce((sum, length) => sum + length, 0)).toBeLessThanOrEqual(bytes.byteLength + 1);
+    expect(existsSync(join(outputDirectory, 'n1'))).toBe(false);
+  });
+
+  it('a file REPLACED after it was opened is not what is read: the answer is the bytes the opened file held', async () => {
+    const bytes = new TextEncoder().encode('{"ok":true,"value":{}}');
+    const { outputDirectory } = areaWith('n1', bytes);
+    let seenAtPath = 0;
+    const { files } = racing((path) => {
+      const larger = `${path}.larger`;
+      writeFileSync(larger, new Uint8Array(4 * 1_048_576));
+      renameSync(larger, path);
+      // CONTROL: the path now names the larger file, so a reader that went back to the path would read it.
+      seenAtPath = readFileSync(path).byteLength;
+    });
+    const answers = fileAnswersFor(channels, () => ({ outputDirectory, snapshotDirectory: outputDirectory }), files);
+    await expect(answers.take({ session: 's1' }, 'n1', bytes.byteLength)).resolves.toStrictEqual(bytes);
+    expect(seenAtPath).toBe(4 * 1_048_576);
     expect(existsSync(join(outputDirectory, 'n1'))).toBe(false);
   });
 
