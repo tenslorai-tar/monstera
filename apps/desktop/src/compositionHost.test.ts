@@ -19,6 +19,7 @@ import { type EngineHostPlatform, createShellDependencies } from './composition.
 import type { ConverterExecutablePath } from './containedProgram.js';
 import type { BakedAppInfo as AppInfo } from './contractHandlers.js';
 import type { ConverterPlatform } from './converterSession.js';
+import type { ImageRead } from './documentCommands.js';
 import {
   FAKE_CONTAINER,
   FAKE_CREATED,
@@ -2658,6 +2659,42 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
     expect([...readFileSync(destination)]).toStrictEqual(COMPOSED_BYTES);
     // The suggested name is the FIRST PAGE's file, which is the first in name order.
     expect(suggested).toStrictEqual(['page 2.pdf']);
+  }, 120_000);
+
+  it('a compose host that FAILS is never told to the person as their picture: unreadable is the file’s answer alone (EEEEEEEE-2)', async () => {
+    // THE ROUTE SINCE O3 is a composition and then a merge, and 75a1603e's deleted case held this for the old one: a
+    // failure that is the engine's must not read as *this picture could not be read*. Here the host answers a failure
+    // for the composition itself, with every file read whole.
+    const failing = (log: ComposePeerLog): FakePeer => (channel, params) =>
+      channel === 'engine/compose-images' ? { ok: false, error: { code: 'internal', incident: 'host-incident-1' } } : log.peer(channel, params);
+    const run = async (readImage: (path: string) => Promise<ImageRead>) => {
+      const mupdf = platformAnswering(serialisingEngine());
+      const third = platformAnswering(failing(composePeer()));
+      const { handlers } = createShellDependencies({
+        ...harnessSurfaces('the composition-host test'),
+        appInfo,
+        pickImages: () => Promise.resolve([join(scratch, 'one.png')]),
+        sizeImage: () => Promise.resolve(16),
+        readImage,
+        pickDestination: () => Promise.resolve(join(scratch, 'never.pdf')),
+        enginePlatform: mupdf.platform,
+        composePlatform: third.platform,
+      });
+      return handlers['document.newFromImages']({ work: WORK });
+    };
+
+    // A THROW, which the boundary turns into `internal` with an incident (Monstera's failure in the window), never an
+    // answer: no `unreadable`, no refusal naming the file.
+    const failed = run((path) => Promise.resolve({ kind: 'read', bytes: new TextEncoder().encode(path) }));
+    await expect(failed).rejects.toThrow('the compose host could not compose the images: internal');
+    expect(existsSync(join(scratch, 'never.pdf'))).toBe(false);
+
+    // CONTROL: a picture that could not be read when its turn came IS the person's file, and is answered as unreadable,
+    // so the answer above is the host's failure and not a route that can never say unreadable.
+    const changed = await run(() => Promise.resolve({ kind: 'unreadable' }));
+    expect(changed.ok, JSON.stringify(changed)).toBe(true);
+    if (!changed.ok) throw new Error('unreachable');
+    expect(changed.value).toStrictEqual({ kind: 'unreadable' });
   }, 120_000);
 
   it('carries an image the host LEFT OUT through the whole root, named by its FILE, never its place or its path', async () => {
