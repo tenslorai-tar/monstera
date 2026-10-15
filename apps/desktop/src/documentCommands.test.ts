@@ -7167,12 +7167,16 @@ describe('DocumentCommands.convertOfficeFile (ADR-0120)', () => {
 
   it('REFUSES a name that is not one of the import formats, and reads nothing', async () => {
     // AN .rtf, which x2t reads and this import does not offer: `.doc` stood here until the binary formats were added (N6).
-    const { commands, recorded } = officeCommands({ picked: 'C:\\Reports\\old.rtf', destination: 'unused' });
+    // A DESTINATION IN THIS CASE'S FOLDER, never a relative name: a refusal that regressed into a write would land in
+    // the working directory, which is the repository root (EEEEEEEE-11), and be asserted by nothing.
+    const destination = join(directory, 'never-written.pdf');
+    const { commands, recorded } = officeCommands({ picked: 'C:\\Reports\\old.rtf', destination });
 
     expect(await commands.convertOfficeFile(WORK)).toStrictEqual({ kind: 'unreadable' });
     // THE DECISION IS THE READ NOT MADE: the extension names x2t's input, so a file of another kind never reaches it.
     expect(recorded.calls).toStrictEqual(['pick']);
     expect(recorded.converted).toStrictEqual([]);
+    expect(existsSync(destination)).toBe(false);
   });
 
   it('answers the contract’s bound AND the file’s size, each as itself, and converts nothing', async () => {
@@ -7191,10 +7195,12 @@ describe('DocumentCommands.convertOfficeFile (ADR-0120)', () => {
   });
 
   it('answers a converter refusal WITHOUT asking for a destination', async () => {
-    const { commands, recorded } = officeCommands({ picked: 'C:\\broken.xlsx', convert: 'refuses', destination: 'unused' });
+    const destination = join(directory, 'never-written.pdf');
+    const { commands, recorded } = officeCommands({ picked: 'C:\\broken.xlsx', convert: 'refuses', destination });
 
     expect(await commands.convertOfficeFile(WORK)).toStrictEqual({ kind: 'conversion-failed' });
     expect(recorded.asked).toStrictEqual([]);
+    expect(existsSync(destination)).toBe(false);
   });
 
   it('DISCARDS the converted PDF unread when the person cancels the save dialog', async () => {
