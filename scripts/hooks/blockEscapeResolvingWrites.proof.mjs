@@ -156,9 +156,11 @@ const failures = [];
  * PowerShell as well. Adding a rule is a two-line diff — the rule, and this
  * number — and removing one is a red check rather than a smaller total nobody
  * compares. That cost is the mechanism, not a nuisance: this is the guard
- * `CLAUDE.md` calls *the* mechanism for a rule broken ten times.
+ * `CLAUDE.md` calls *the* mechanism for a rule broken ten times. 377 since
+ * FFFFFFFF-7's pin (2026-10-15, measured by running this file): three cases,
+ * five records, since each refusal also records that it says why.
  */
-const DECLARED_CASES = 372;
+const DECLARED_CASES = 377;
 
 const roster = createRoster(failures, { cases: DECLARED_CASES });
 
@@ -487,6 +489,24 @@ mustBlock(
 mustAllow(
   'CONTROL: the same recorder call whose argument names no interpreter',
   'npm run probe:hook -- escape@PreToolUse fired --exercise "denied an inline evaluation"',
+);
+// THE THIRD PINNED REFUSAL (FFFFFFFF-7): a quoted heredoc's BODY is scanned like the command line, so a commit message
+// that quotes ANSI-C syntax on the same line as a `>` denies, though `git commit -F -` takes the bytes as data. The
+// cure that reads first, *skip a quoted heredoc's body*, opens a hole the interpreter-heredoc rule cannot close: that
+// rule reads the opening line, and `cat <<'EOF' | bash` hands the same body to a shell through a pipe, where it runs.
+// Telling those apart is attributing a body to its final consumer across a pipeline, which is shell parsing (B3a, the
+// compound section's argument). Met twice in commit messages; it costs a reworded line.
+mustBlock(
+  'PINNED FALSE POSITIVE: a commit message quoting ANSI-C syntax beside a redirect',
+  "git commit -F - <<'EOF'\nThe old form was $'a\\nb' > out.txt, which resolved the escape.\nEOF",
+);
+mustAllow(
+  'CONTROL: the same commit message with the redirect reworded',
+  "git commit -F - <<'EOF'\nThe old form was $'a\\nb' written to out.txt, which resolved the escape.\nEOF",
+);
+mustBlock(
+  'WHY THE BODY STAYS SCANNED: the same body piped to a shell runs, and writes the file',
+  "cat <<'EOF' | bash\necho $'a\\nb' > out.txt\nEOF",
 );
 // THE CONTROLS THAT KEEP THE SCAN INSIDE ONE COMMAND. Without the separator
 // exclusion these deny, and a guard that blocks an ordinary `sed -e` in a
