@@ -278,6 +278,7 @@ describe('browser shim', () => {
       'document.pageAdjustment',
       'document.pageBarcodes',
       'document.pageLinks',
+      'document.pageMarks',
       'document.pageObjects',
       'document.pageStructure',
       'document.pageTables',
