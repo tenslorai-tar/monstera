@@ -70,6 +70,18 @@ export const RENDERER_POLICY_RUNTIME = [
   ['packages/ui/src', 'apps/desktop/dist/renderer/index.html', 'bundler'],
 ];
 
+/**
+ * What the rendered suites serve (`scripts/test/playwright.config.mjs`, HHHHHHHH-4): the renderer bundle, from the UI's
+ * source tree and the two packages it bundles. Against `index.html`, for `RENDERER_POLICY_RUNTIME`'s reason.
+ *
+ * @type {BuildEdge[]}
+ */
+export const RENDERED_SUITE = [
+  ['packages/ui/src', 'apps/desktop/dist/renderer/index.html', 'bundler'],
+  ['packages/contract/src', 'apps/desktop/dist/renderer/index.html', 'bundler'],
+  ['packages/shared/src', 'apps/desktop/dist/renderer/index.html', 'bundler'],
+];
+
 /** @type {BuildEdge[]} */
 export const CANVAS_PIXELS_RUNTIME = [
   ['apps/desktop/src/preload.ts', 'apps/desktop/dist/preload.cjs', 'bundler'],

@@ -50,6 +50,7 @@ import { fileURLToPath } from 'node:url';
 
 import { defineConfig, devices } from '@playwright/test';
 
+import { RENDERED_SUITE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { BROWSERS_PATH } from '../provision/playwright.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -68,6 +69,13 @@ const PORT = 4173;
 // succeeded and every rendered run then failed to find the browser it had just
 // installed (measured 2026-10-01). One path, from the module that installs it.
 process.env['PLAYWRIGHT_BROWSERS_PATH'] = BROWSERS_PATH;
+
+// THE BUNDLE THE SUITE SERVES IS THE ONE THESE SOURCES MAKE, or nothing runs (HHHHHHHH-4). The suite serves
+// `apps/desktop/dist/renderer`, and nothing compared it with its sources: a build that stopped at its typecheck left
+// the last bundle in place, and a rendered case then passed against code from before the change (`backgroundTab.pw.ts`,
+// and again in this session's 13d run). `buildFreshness.mjs` refuses that for the proofs that import `dist`; this is the
+// same guard for a whole test runner, and every config that imports this one (the visual suite) inherits it.
+refuseStaleBuild(REPO_ROOT, RENDERED_SUITE, 3);
 
 export default defineConfig({
   testDir: join(REPO_ROOT, 'packages', 'testing', 'src'),
