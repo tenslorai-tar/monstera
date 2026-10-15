@@ -1,6 +1,7 @@
 import { AnnotationMode, type PDFDocumentProxy } from 'pdfjs-dist';
 
 import { withDrawSlot } from './drawSlots.js';
+import { holdPixels } from './pixelLedger.js';
 import { holdPage, residentPage } from './pageResidency.js';
 
 /**
@@ -264,8 +265,8 @@ function present(
   pageNumber: number,
 ): void {
   if (signal.aborted) throw new RenderCancelledError(pageNumber);
-  canvas.width = drawing.width;
-  canvas.height = drawing.height;
+  // SIZED BY THE LEDGER, the one count of page pixels held (ADR-0247).
+  holdPixels(canvas, drawing.width, drawing.height);
   context.drawImage(drawing, 0, 0);
 }
 

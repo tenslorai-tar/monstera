@@ -54,6 +54,7 @@ import { OpeningState, PageList } from './PageList.js';
 import { FIRST_PAGE, pdfjsPageOf } from './pageNumbering.js';
 import { Icon } from './primitives/Icon.js';
 import { IconButton } from './primitives/IconButton.js';
+import { givePixelsBack } from './pixelLedger.js';
 import { renderPage } from './renderPage.js';
 import { ViewProblem } from './surfaces/ViewProblem.js';
 import type { RulerUnit } from './rulerGeometry.js';
@@ -127,8 +128,7 @@ export const drawForComparison: DrawComparePage = async (view, page, signal) => 
     }
     return { raster: { width, height, pixelsPerPoint: COMPARE_PIXELS_PER_POINT, luminance }, crop: drawn.crop, rotation: drawn.rotation };
   } finally {
-    canvas.width = 0;
-    canvas.height = 0;
+    givePixelsBack(canvas);
   }
 };
 

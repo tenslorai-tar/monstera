@@ -1681,6 +1681,11 @@ export const channels = {
        * names none, and the renderer's default stands.
        */
       regionalLocale: z.string().max(64),
+      /**
+       * The computer's physical memory in bytes (`os.totalmem()`), for the *Memory for pages* setting's Automatic, a
+       * quarter of it (ADR-0247). `0` where it is not read, a harness, and then Automatic sets no limit.
+       */
+      physicalMemory: z.number().int().nonnegative(),
     }),
   ),
 

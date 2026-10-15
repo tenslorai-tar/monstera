@@ -50,7 +50,7 @@ function ignore(_incident: Incident): void {
  * `typecheck` and `test` were green and right to be.
  */
 const handlers: ContractHandlers = {
-  'app.info': () => Promise.resolve(ok({ version: '0.0.0', installChannel: 'development', userName: 'A. Tester', cloudProviders: [], mediaFoundation: true, regionalLocale: 'en-GB' })),
+  'app.info': () => Promise.resolve(ok({ version: '0.0.0', installChannel: 'development', userName: 'A. Tester', cloudProviders: [], mediaFoundation: true, regionalLocale: 'en-GB', physicalMemory: 0 })),
   // ONE LANGUAGE RATHER THAN NONE OR ALL. An empty list is what a machine with
   // nothing provisioned answers and is also what a handler dropping the field
   // would produce; fourteen is what a fixture that stopped being a subset looks

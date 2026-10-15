@@ -502,6 +502,8 @@ export interface ShellComposition {
    * `app.getSystemLocale`, which may not run before `ready`. A harness passes none and answers empty.
    */
   readonly regionalLocale?: (() => string) | undefined;
+  /** The computer's physical memory in bytes, read when `app.info` is asked (ADR-0247). A harness passes none: 0. */
+  readonly physicalMemory?: (() => number) | undefined;
   /**
    * Where undo checkpoints are kept, one directory per document
    * ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md)). `main`'s own storage, granted to no
@@ -925,6 +927,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     fontList,
     mediaFoundation,
     regionalLocale,
+    physicalMemory,
     sendEvent,
     cannotStart: shellCannotStart,
     recent,
@@ -1993,6 +1996,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         mediaFoundation,
       } satisfies AppInfo,
       regionalLocale,
+      physicalMemory,
       capabilities,
       commands,
       documents,

@@ -600,6 +600,13 @@ export const RENDER_QUALITY_DESCRIPTION = messageKey('setting.rendering-quality.
 export const RENDER_QUALITY_EXACT = messageKey('setting.rendering-quality.exact');
 export const RENDER_QUALITY_ONE_AND_A_HALF = messageKey('setting.rendering-quality.one-and-a-half');
 export const RENDER_QUALITY_DOUBLE = messageKey('setting.rendering-quality.double');
+export const PAGE_MEMORY_TITLE = messageKey('setting.rendering-page-memory.title');
+export const PAGE_MEMORY_DESCRIPTION = messageKey('setting.rendering-page-memory.description');
+export const PAGE_MEMORY_AUTOMATIC = messageKey('setting.rendering-page-memory.automatic');
+export const PAGE_MEMORY_512 = messageKey('setting.rendering-page-memory.512');
+export const PAGE_MEMORY_1024 = messageKey('setting.rendering-page-memory.1024');
+export const PAGE_MEMORY_2048 = messageKey('setting.rendering-page-memory.2048');
+export const PAGE_MEMORY_4096 = messageKey('setting.rendering-page-memory.4096');
 export const TILE_THRESHOLD_TITLE = messageKey('setting.rendering-tile-threshold.title');
 export const TILE_THRESHOLD_DESCRIPTION = messageKey('setting.rendering-tile-threshold.description');
 export const PRINT_APPLY = messageKey('dialog.print.apply');
@@ -6096,6 +6103,14 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RENDER_QUALITY_EXACT]: 'Exact',
   [RENDER_QUALITY_ONE_AND_A_HALF]: '1.5×',
   [RENDER_QUALITY_DOUBLE]: '2×',
+  [PAGE_MEMORY_TITLE]: 'Memory for pages',
+  [PAGE_MEMORY_DESCRIPTION]:
+    'How much memory drawn pages may use. The pages on screen are always drawn; the next page is drawn ahead of you only within this. Automatic is a quarter of this computer’s memory.',
+  [PAGE_MEMORY_AUTOMATIC]: 'Automatic',
+  [PAGE_MEMORY_512]: '512 MB',
+  [PAGE_MEMORY_1024]: '1 GB',
+  [PAGE_MEMORY_2048]: '2 GB',
+  [PAGE_MEMORY_4096]: '4 GB',
   [TILE_THRESHOLD_TITLE]: 'Draw pages in pieces above',
   [TILE_THRESHOLD_DESCRIPTION]:
     'Zoomed in past this, a page is drawn only where you are looking, which keeps memory low on large pages. Lower uses less memory.',

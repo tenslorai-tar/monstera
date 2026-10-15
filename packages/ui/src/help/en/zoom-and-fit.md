@@ -24,6 +24,7 @@ Zoom changes how large the pages look on screen. It never changes the document.
 - Pages are redrawn sharply a moment after you stop zooming.
 - Zoomed far in, a page is drawn only where you are looking, in pieces, so a very large page does not fill the memory. **Draw pages in pieces above** in **Settings**, on the **Rendering** page, sets the zoom where that starts.
 - **Page sharpness** on the same page draws more pixels than the screen has and shrinks them to fit, which smooths fine line drawings. **Exact** keeps text crispest and uses least memory.
+- Monstera draws the pages on screen and the next page ahead of you. **Memory for pages** on the same page limits how much memory drawn pages may use; with less, the next page is drawn when you reach it. **Automatic** is a quarter of this computer's memory.
 
 <!--
 Screenshots to capture:

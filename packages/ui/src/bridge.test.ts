@@ -44,7 +44,7 @@ describe('the renderer contract client', () => {
   });
 
   it('sends the channel id and the params to the bridge, unchanged', async () => {
-    const bridge = transport({ ok: true, value: { version: '1.2.3', installChannel: 'store', userName: 'A. Tester', cloudProviders: [], mediaFoundation: true, regionalLocale: 'en-GB' } });
+    const bridge = transport({ ok: true, value: { version: '1.2.3', installChannel: 'store', userName: 'A. Tester', cloudProviders: [], mediaFoundation: true, regionalLocale: 'en-GB', physicalMemory: 0 } });
     const client = createRendererClient(bridge);
 
     const result = await client['app.info']({});

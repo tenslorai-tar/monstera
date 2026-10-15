@@ -1,7 +1,8 @@
-import { type ReactElement, useEffect, useRef, useState } from 'react';
+import { type ReactElement, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import type { DocumentView } from './documentView.js';
 import { pdfjsPageOf } from './pageNumbering.js';
+import { givePixelsBack } from './pixelLedger.js';
 import { renderRegion } from './renderPage.js';
 
 /**
@@ -70,6 +71,13 @@ export function Loupe({
   readonly at: { readonly x: number; readonly y: number };
 }): ReactElement {
   const canvas = useRef<HTMLCanvasElement | null>(null);
+  // ITS PIXELS GO WITH IT, a page canvas's rule (ADR-0247): sized to nothing on unmount, and no longer counted.
+  useLayoutEffect(() => {
+    const element = canvas.current;
+    return (): void => {
+      if (element !== null) givePixelsBack(element);
+    };
+  }, []);
   // THE SQUARE LAST DRAWN, in the magnified bitmap's CSS pixels — where it sits is what the transform below needs.
   const [drawn, setDrawn] = useState<{ readonly x: number; readonly y: number } | undefined>(undefined);
   // THE CELL THE POINTER IS IN, in the magnified page's CSS pixels: the draw is keyed on it, never on `at` itself.

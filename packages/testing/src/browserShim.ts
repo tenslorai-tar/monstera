@@ -318,6 +318,8 @@ export interface BrowserShimOptions {
   readonly mediaFoundation?: boolean;
   /** The computer's regional format the shim reports. Defaults to `en-GB`. */
   readonly regionalLocale?: string;
+  /** What `app.info` answers as physical memory, for a case about the Memory for pages limit. Absent is 8 GB. */
+  readonly physicalMemory?: number;
   /**
    * Which OCR models this shim's machine has. Defaults to `['eng']`.
    *
@@ -1199,6 +1201,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
           mediaFoundation: options.mediaFoundation ?? true,
           // A FIXED REGION, for the name's reason: a British computer, whose date order differs from the language's.
           regionalLocale: options.regionalLocale ?? 'en-GB',
+          // A FIXED 8 GB, so Automatic's limit does not depend on the machine a case runs on.
+          physicalMemory: options.physicalMemory ?? 8 * 1024 ** 3,
         }),
       ),
 

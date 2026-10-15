@@ -48,3 +48,29 @@ nothing could limit them, so the run file's "one budget" had no place to live.
 
 The quarter as a default, and what the page ahead saves against the margin it replaces, are figures for the Windows
 memory walk (item 13f), not this container.
+
+## Correction, 2026-10-15 — the margin never reached past the screen
+
+*Where it stood* says the page on show mounted a canvas for every page within one viewport of the screen. Measured the
+same day, on the build before this decision: at 1280 × 800 with pages 260 pixels tall, the two pages crossing the scroll
+box held canvases and the page starting 28 pixels below it held none. The reading list's observer has the window as its
+root, and a slot inside the scroller is clipped by the scroller before a margin applies, which `useVisiblePages`
+already said of itself. So before this decision the list drew the pages on screen alone, and a page scrolled to arrived
+blank. Decision 1 therefore ADDS the page ahead rather than taking a margin away; the first rejected alternative
+rejected something that was not there. The ledger, the limit and the rest stand. `PageList.tsx`'s header, which carried
+the same claim, now says so, and its `MARGIN` is `0px`, which is what it was doing.
+
+## Correction, 2026-10-15 — the page ahead is the next page, not the next in the scroll's direction
+
+Decision 1 chose the page before the first on screen when the last scroll went up. Building it, the direction had to be
+state the list renders on, and a scroll must not render the list (`PageList.test.tsx`, row 303's case, which counted
+two renders a turn). So the page ahead is the page after the last on screen, in reading order, always. Scrolling up, a
+page arrives drawn on arrival, as every page did before this decision.
+
+## Proofs, 2026-10-15
+
+`pixelLedger.test.ts` (the count, the limit, Automatic as a quarter of physical memory, and a page ahead asked about
+itself counted once) and `pagesInUse.pw.ts` (on screen plus one ahead and none beyond; a limit below the screen still
+draws the screen and refuses the page ahead; thumbnails and search made on first use). The list subscribes to the
+decision about the page ahead, never to the count: a count snapshot rendered every list in every tab for each canvas
+sized anywhere, and `tabSwitchRenders.pw.ts` went red that way, which makes it this subscription's control.

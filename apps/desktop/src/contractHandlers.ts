@@ -271,6 +271,8 @@ export function createContractHandlers(deps: {
    * owner's F10). Absent in a harness, which answers empty, and the renderer's own default stands.
    */
   readonly regionalLocale?: (() => string) | undefined;
+  /** The computer's physical memory in bytes (`os.totalmem()`), for ADR-0247's Automatic limit. Absent answers 0. */
+  readonly physicalMemory?: (() => number) | undefined;
   readonly documents: DocumentService;
   readonly capabilities: CapabilityRegistry;
   readonly openedDocument: OpenedDocument;
@@ -459,6 +461,7 @@ export function createContractHandlers(deps: {
           // A POSIX NAME is cut to its language tag: Linux answered `en-US@posix` (measured 2026-10-14), which `Intl`
           // refuses; Windows answers a tag already.
           regionalLocale: (deps.regionalLocale?.() ?? '').split('@')[0]?.replace(/_/gu, '-').slice(0, 64) ?? '',
+          physicalMemory: Math.max(0, Math.floor(deps.physicalMemory?.() ?? 0)),
         }),
       ),
     // AN ARRAY COPY, because the answer crosses a boundary that serialises it and

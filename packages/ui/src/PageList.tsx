@@ -10,6 +10,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react';
 
 import { AnnotationLayer } from './AnnotationLayer.js';
@@ -76,6 +77,7 @@ import {
   renderPage,
   renderRegion,
 } from './renderPage.js';
+import { givePixelsBack, mayHoldAhead, subscribePixels } from './pixelLedger.js';
 import { type Tile, tilesCovering } from './tiles.js';
 import type { SearchHighlight } from './searchHighlight.js';
 import { Loupe } from './Loupe.js';
@@ -121,17 +123,19 @@ import { type Box, type ZoomDirection, type ZoomMode, resolveZoom } from './zoom
  * document. §9.17's renderer budget is *provisional and two-term* precisely
  * because of this cache, and its absolute term is a bitmap-cache cap. What ships
  * here is the discipline that term will measure: a canvas is dropped when its
- * slot leaves the margin, so what is resident tracks the window rather than the
+ * page is no longer in use, so what is resident tracks the window rather than the
  * history.
  *
- * ## The margin is one viewport, and it is a trade rather than a tuning
+ * ## The pages in use: on screen, and one page ahead (ADR-0247)
  *
  * Rendering exactly what is visible means a page arrives blank and fills in
- * after the scroll stops. One viewport of margin either side renders the page
- * about to be reached before it is reached. Larger margins buy smoother
- * scrolling with more resident bitmaps, which is the axis E1 tier-1's cache cap
- * will decide against a measurement; this is the smallest value that hides the
- * common case.
+ * after the scroll stops, so the page after the last one on screen is drawn
+ * too, within the memory limit. NOT A MARGIN: this
+ * read *"one viewport of margin either side"*, and `MARGIN` never reached past
+ * the scroll box, because the observer's root is the window and a slot inside
+ * the scroller is clipped by it before a margin applies (`useVisiblePages`'
+ * own note; measured 2026-10-15, the page below the screen held no canvas). So
+ * the reading list drew the pages on screen alone until ADR-0247.
  */
 export interface PageListProps {
   readonly client: ContractClient;
@@ -435,8 +439,12 @@ export interface PageListProps {
  */
 const RERENDER_AFTER_MS = 150;
 
-/** How much either side of the viewport counts as *about to be seen*. */
-const MARGIN = '100%';
+/**
+ * NONE: the visible set is the pages on screen, which is what the pixels, the text, the marks and the rotations are
+ * read for, and the page ahead is added to it by name (ADR-0247). This was `'100%'`, which did nothing: with the window
+ * as the observer's root, a slot inside the scroller is clipped by it before a margin applies (see the header).
+ */
+const MARGIN = '0px';
 
 /** How long after one page turn by the wheel, in single page, the next may come (see `onWheel`). */
 const TURN_AFTER_MS = 400;
@@ -537,12 +545,26 @@ export function PageList({
   // question of a different container, and a second implementation here would
   // be two opinions about what *near the viewport* means (B3a).
   const { visible, slotRef, slotFor } = useVisiblePages(MARGIN, startAt);
+  // THE PAGES ON SCREEN are the visible set itself: no margin (`MARGIN`, ADR-0247's correction).
+  const onScreen = visible;
+  // THE PAGE AHEAD (ADR-0247 as corrected): the page after the last one on screen, in reading order. Not by the scroll's
+  // direction, which would render the list whenever it turned, and a scroll must not render it (row 303).
+  const aheadPage = useMemo((): number | undefined => {
+    if (onScreen.size === 0) return undefined;
+    const next = Math.max(...onScreen) + 1;
+    return next < pageCount ? next : undefined;
+  }, [onScreen, pageCount]);
+  // THE PAGES WHOSE ROTATION IS READ: those near the screen, and the page ahead, which cannot draw without its own.
+  const nearAndAhead = useMemo(
+    (): ReadonlySet<number> => (aheadPage === undefined || visible.has(aheadPage) ? visible : new Set([...visible, aheadPage])),
+    [aheadPage, visible],
+  );
   // THE SHARED READ, which the strip and the loupe take too. Presence means
   // answered for THIS version; see `usePageRotations` for the three states.
   //
   // DECLARED FIRST AMONG THE READS, so its effect asks first: every read of the document waits in main's one lane for
   // it, and this is the one the first page cannot draw without. The text and the marks below wait for the first frame.
-  const rotations = usePageRotations(client, docId, version, visible);
+  const rotations = usePageRotations(client, docId, version, nearAndAhead);
   /**
    * WHETHER THE FIRST FRAME HAS BEEN SHOWN: the mount's starting page drawn at the zoom it is shown at, and scrolled to
    * (the owner's rule, *never show an unfinished screen*; the review of 0.1.8.0 saw seconds of empty slots, a flash of
@@ -1176,6 +1198,20 @@ export function PageList({
     globalThis.document.getSelection()?.removeAllRanges();
   }, [drawing, fromSelection]);
 
+  // THE PAGES IN USE (ADR-0247): those on screen, and the page after them, drawn only within the memory limit
+  // (`pixelLedger.ts`). Every other page keeps its slot and holds no pixels.
+  const aheadSize = aheadPage === undefined ? undefined : (sizes.get(aheadPage) ?? lastKnownBefore(sizes, aheadPage) ?? startEstimate);
+  // ITS BYTES WHEN DRAWN at the scale pages are drawn at now: the measured box, rescaled from the scale it was measured
+  // at, four bytes a pixel.
+  const aheadBytes =
+    aheadSize === undefined ? 0 : ((aheadSize.width * aheadSize.height) / aheadSize.drawnAt ** 2) * (devicePixels() * renderZoom * quality) ** 2 * 4;
+  const aheadHeld = aheadPage !== undefined && painted.has(aheadPage);
+  // SUBSCRIBED TO THE DECISION, NOT TO THE COUNT: a page drawn or given back anywhere, or a new limit, takes it again,
+  // and this list renders only when the answer changes. A snapshot of the count would render every list in every tab,
+  // and every slot in each, for each canvas sized anywhere (`tabSwitchRenders.pw.ts`).
+  const aheadAllowed = useSyncExternalStore(subscribePixels, () => mayHoldAhead(aheadBytes, aheadHeld));
+  const inUse = (page: number): boolean => onScreen.has(page) || (page === aheadPage && aheadAllowed);
+
   return (
     <div
       // THE PANE: the scroller, and beside it what must NOT scroll with the pages. The rulers take their own grid tracks
@@ -1308,7 +1344,7 @@ export function PageList({
           // they part company on every command: a new version empties the rotation answers until the model
           // is asked again, and when one prop did both, the canvases on screen unmounted for those frames
           // and came back empty. Now the canvas keeps the previous drawing until a draw can start.
-          mounted={drawsPages && visible.has(page)}
+          mounted={drawsPages && inUse(page)}
           // `has`, not a truthy `get`: a page answered with `undefined` is
           // answered, and a page answered with `0` is upright. Both draw.
           //
@@ -1317,7 +1353,7 @@ export function PageList({
           //
           // AND NOT BEHIND, the same `drawsPages` the canvas takes: the slot draws when this turns true, so a draw
           // left true while the tab was behind never ran again for the canvas that came back, which stayed blank.
-          draw={drawsPages && visible.has(page) && rotations.has(page) && (resolved !== undefined || startBoxRefused)}
+          draw={drawsPages && inUse(page) && rotations.has(page) && (resolved !== undefined || startBoxRefused)}
           rotation={rotations.get(page)}
           size={sizes.get(page) ?? lastKnownBefore(sizes, page) ?? startEstimate}
           zoom={shown}
@@ -1853,8 +1889,7 @@ function PageSlot({
       // NO LONGER HOLDING THE DRAWING, whichever canvas this was: the next one starts blank.
       onPainted(page, false);
       if (element === null) return;
-      element.width = 0;
-      element.height = 0;
+      givePixelsBack(element);
     };
   }, [mounted, onPainted, page, tiled]);
 
@@ -2318,6 +2353,13 @@ function PageTile({
   const canvas = useRef<HTMLCanvasElement>(null);
   const [drawn, setDrawn] = useState<{ readonly x: number; readonly y: number; readonly width: number; readonly height: number; readonly scale: number }>();
   const { x, y, width, height } = tile;
+  // A TILE'S PIXELS GO WITH IT, as a page's do (ADR-0247): it had no release, and kept its store until collected.
+  useLayoutEffect(() => {
+    const element = canvas.current;
+    return (): void => {
+      if (element !== null) givePixelsBack(element);
+    };
+  }, []);
 
   useEffect(() => {
     const target = canvas.current;

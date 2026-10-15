@@ -1,6 +1,13 @@
 import { z } from 'zod';
 
 import {
+  PAGE_MEMORY_1024,
+  PAGE_MEMORY_2048,
+  PAGE_MEMORY_4096,
+  PAGE_MEMORY_512,
+  PAGE_MEMORY_AUTOMATIC,
+  PAGE_MEMORY_DESCRIPTION,
+  PAGE_MEMORY_TITLE,
   PRINT_DPI,
   PRINT_DPI_150,
   PRINT_DPI_300,
@@ -60,6 +67,53 @@ export const TILE_THRESHOLD_SETTING: SettingDefinition<
   // THE STARTING ZOOM'S OWN WORDS for the same three percentages, so one figure is never spelt twice.
   optionTitles: { 'above-150': STARTING_ZOOM_150, 'above-200': STARTING_ZOOM_200, 'above-300': STARTING_ZOOM_300 },
 };
+
+/**
+ * How much memory drawn pages may use (ADR-0247, the owner's 13d): the one limit `pixelLedger.ts` holds every page,
+ * tile and thumbnail canvas to. Automatic, the default, is a quarter of the computer's physical memory, the owner's
+ * figure. Members are words, as the registry requires.
+ */
+export const PAGE_MEMORY_SETTING: SettingDefinition<
+  z.ZodEnum<{ automatic: 'automatic'; 'mb-512': 'mb-512'; 'gb-1': 'gb-1'; 'gb-2': 'gb-2'; 'gb-4': 'gb-4' }>
+> = {
+  id: 'rendering.page-memory',
+  title: PAGE_MEMORY_TITLE,
+  description: PAGE_MEMORY_DESCRIPTION,
+  schema: z.enum(['automatic', 'mb-512', 'gb-1', 'gb-2', 'gb-4']),
+  fallback: 'automatic',
+  category: 'rendering',
+  optionTitles: {
+    automatic: PAGE_MEMORY_AUTOMATIC,
+    'mb-512': PAGE_MEMORY_512,
+    'gb-1': PAGE_MEMORY_1024,
+    'gb-2': PAGE_MEMORY_2048,
+    'gb-4': PAGE_MEMORY_4096,
+  },
+};
+
+/** Automatic's share of physical memory: a quarter, the owner's figure (addendum 4, item 7). */
+export const AUTOMATIC_PAGE_MEMORY_SHARE = 0.25;
+
+/**
+ * The limit a choice names, in bytes; Automatic needs the computer's physical memory, which `app.info` carries.
+ * `undefined` physical memory (not yet answered) is no limit yet: the pages on screen are drawn whatever the limit, and
+ * only the page ahead waits on it.
+ */
+export function pageMemoryLimit(choice: z.infer<(typeof PAGE_MEMORY_SETTING)['schema']>, physicalMemory: number | undefined): number {
+  const MB = 1024 * 1024;
+  switch (choice) {
+    case 'automatic':
+      return physicalMemory === undefined ? Number.POSITIVE_INFINITY : physicalMemory * AUTOMATIC_PAGE_MEMORY_SHARE;
+    case 'mb-512':
+      return 512 * MB;
+    case 'gb-1':
+      return 1024 * MB;
+    case 'gb-2':
+      return 2048 * MB;
+    case 'gb-4':
+      return 4096 * MB;
+  }
+}
 
 /**
  * How many pixels a page is drawn with per pixel of the screen — Part F's *"render quality multiplier"*

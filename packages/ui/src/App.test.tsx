@@ -192,6 +192,7 @@ const STORE_BUILD_INFO = {
   cloudProviders: ['onedrive', 'google-drive'],
   mediaFoundation: true,
   regionalLocale: 'en-GB',
+  physicalMemory: 0,
 } as const;
 
 const OTHER_ANSWERS: Partial<Record<string, unknown>> = {
@@ -333,7 +334,7 @@ function answeringClient(answers: Readonly<Record<string, unknown>>): {
 const SETTINGS_OPEN_ANSWERS = {
   'settings.loadSecrets': { stored: [], available: true },
   // The Updates page's installed version (item 6): the dialog asks `app.info` as it opens.
-  'app.info': { version: '0.0.0', installChannel: 'development', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true, regionalLocale: 'en-GB' },
+  'app.info': { version: '0.0.0', installChannel: 'development', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true, regionalLocale: 'en-GB', physicalMemory: 0 },
   'ai.models.held': Object.fromEntries(AI_PROVIDER_IDS.map((provider) => [provider, { source: 'fallback', models: [] }])),
   // THE FONTS THE ANNOTATION FONT'S ROW OFFERS (K2): the dialog asks `app.fontFamilies` as it opens.
   'app.fontFamilies': { listed: true, families: [], more: 0 },
@@ -434,6 +435,13 @@ it('choosing Organize ends the previous tool, including when Organize is already
 });
 
 /** Opens a document and settles the effects, leaving the toolbar rendered. */
+/** The first page's slot, for a case about one page where the page ahead of it (ADR-0247) shows the same. */
+function firstPageSlot(): HTMLElement {
+  const slot = document.querySelector<HTMLElement>('.m-page-slot[data-page="0"]');
+  if (slot === null) throw new Error('no first page slot');
+  return slot;
+}
+
 async function withDocumentOpen(): Promise<void> {
   await act(async () => {
     screen.getByRole('button', { name: 'Open PDF…' }).click();
@@ -976,7 +984,7 @@ describe('App', () => {
   });
 
   it('while a dialog is open the page’s shortcuts do nothing — the key is the dialog’s (ADR-0111)', async () => {
-    const { client, calls } = recordingClient({ version: '1.2.3', installChannel: 'development', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true, regionalLocale: 'en-GB' });
+    const { client, calls } = recordingClient({ version: '1.2.3', installChannel: 'development', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true, regionalLocale: 'en-GB', physicalMemory: 0 });
     render(<App client={client} settings={freshSettings()} />);
     await act(async () => {
       screen.getByRole('button', { name: 'About' }).click();
@@ -1108,7 +1116,7 @@ describe('App', () => {
     // application's real version and channel, so it is wrong the moment anything
     // about it breaks — rather than a dialog that renders correctly whatever the
     // application is doing.
-    const { client } = recordingClient({ version: '1.2.3', installChannel: 'development', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true, regionalLocale: 'en-GB' });
+    const { client } = recordingClient({ version: '1.2.3', installChannel: 'development', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true, regionalLocale: 'en-GB', physicalMemory: 0 });
     render(<App client={client} settings={freshSettings()} />);
 
     await act(async () => {
@@ -1140,7 +1148,7 @@ describe('App', () => {
       const sent: Sent[] = [];
       const client = createClient(channels, (id, params) => {
         sent.push({ id, params });
-        if (id === 'app.info') return Promise.resolve(ok({ version: '1.2.3', installChannel: 'store', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true, regionalLocale: 'en-GB' }));
+        if (id === 'app.info') return Promise.resolve(ok({ version: '1.2.3', installChannel: 'store', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true, regionalLocale: 'en-GB', physicalMemory: 0 }));
         if (id === 'app.openWebPage') return Promise.resolve(ok({ opened: true }));
         return Promise.resolve(ok(OTHER_ANSWERS[id] ?? { kind: 'cancelled' }));
       });
@@ -1173,7 +1181,7 @@ describe('App', () => {
       const client = createClient(channels, (id, params) => {
         sent.push({ id, params });
         if (id === 'app.updateStatus') return Promise.resolve(ok({ status }));
-        if (id === 'app.info') return Promise.resolve(ok({ version: '1.3.0', installChannel: 'store', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true, regionalLocale: 'en-GB' }));
+        if (id === 'app.info') return Promise.resolve(ok({ version: '1.3.0', installChannel: 'store', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true, regionalLocale: 'en-GB', physicalMemory: 0 }));
         if (id === 'app.openStore') return Promise.resolve(ok({ opened: true }));
         if (id === 'app.acknowledgeSecurityUpdate') return Promise.resolve(ok({ acknowledged: true }));
         return Promise.resolve(ok(OTHER_ANSWERS[id] ?? { kind: 'cancelled' }));
@@ -1249,7 +1257,7 @@ describe('App', () => {
     // without this the case above passes for a host that mounts every registered
     // dialog and shows one. A mounted-but-closed dialog keeps its body's state
     // across opens, which is the defect Decision 7's laziness exists for.
-    const { client } = recordingClient({ version: '1.2.3', installChannel: 'development', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true, regionalLocale: 'en-GB' });
+    const { client } = recordingClient({ version: '1.2.3', installChannel: 'development', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true, regionalLocale: 'en-GB', physicalMemory: 0 });
     render(<App client={client} settings={freshSettings()} />);
 
     await act(async () => {
@@ -1459,7 +1467,8 @@ describe('App', () => {
       // `[0]` above without this would pin the constant and not the property.
       const asked = sent.filter((call) => call.id === 'document.viewModel');
       expect(asked).not.toHaveLength(0);
-      expect(asked[0]?.params).toStrictEqual({ docId: DOC, pages: [0] });
+      // THE PAGE ON SCREEN FIRST, then the page ahead (ADR-0247): the command names the first.
+      expect(asked[0]?.params).toStrictEqual({ docId: DOC, pages: [0, 1] });
     });
 
     describe('RECOGNISE SCANNED PAGES WHEN EXPORTING, through the composition that wires it (ADR-0118)', () => {
@@ -1890,8 +1899,9 @@ describe('App', () => {
       // A document that has just opened is scrolled to the top, so the current
       // page is the first one. What this pins is that the bar sends the page the
       // reader is on, not that the reader is on page 0.
+      // THE PAGE ON SCREEN FIRST, then the page ahead of it (ADR-0247).
       const asked = sent.filter((call) => call.id === 'document.viewModel');
-      expect(asked[0]?.params).toStrictEqual({ docId: DOC, pages: [FIRST_PAGE.kernel] });
+      expect(asked[0]?.params).toStrictEqual({ docId: DOC, pages: [FIRST_PAGE.kernel, FIRST_PAGE.kernel + 1] });
 
       // The matched line reaches the screen, so this is not a dispatch into a
       // void that happens to be well formed.
@@ -2740,8 +2750,9 @@ describe('App', () => {
         await Promise.resolve();
       });
       expect(vi.mocked(reportProblem)).toHaveBeenCalledTimes(1);
-      // THE PAGE SAYS IT, in its own words, where the engine-unavailable sentence ends the mode instead.
-      expect(await screen.findByText(/text could not be read/u)).toBeDefined();
+      // THE PAGE SAYS IT, in its own words, where the engine-unavailable sentence ends the mode instead. The first page's
+      // own slot: the page ahead (ADR-0247) is read for Edit text too, and says the same.
+      expect(await within(firstPageSlot()).findByText(/text could not be read/u)).toBeDefined();
       // STILL ON, asserted by the next press: a mode that was left is turned on again and asks again, and one still on is
       // turned OFF by it and reads nothing.
       const before = blockReads.length;
@@ -2792,7 +2803,7 @@ describe('App', () => {
       // CONTROL: nothing asked for the languages until the button was pressed.
       expect(asked).not.toContain('app.ocrLanguages');
       await act(async () => {
-        fireEvent.click(await screen.findByRole('button', { name: /recognise its words/u }));
+        fireEvent.click(await within(firstPageSlot()).findByRole('button', { name: /recognise its words/u }));
         await Promise.resolve();
       });
       expect(asked).toContain('app.ocrLanguages');
@@ -4307,7 +4318,7 @@ describe('the first-run AI setup (E5 onboarding)', () => {
   async function started(stored: readonly string[], hydrate: Readonly<Record<string, unknown>> | null): Promise<SettingsStore> {
     const client = createClient(channels, (id) => {
       if (id === 'settings.loadSecrets') return Promise.resolve(ok({ stored, available: true }));
-      if (id === 'app.info') return Promise.resolve(ok({ version: '0.0.0', installChannel: 'development', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true, regionalLocale: 'en-GB' }));
+      if (id === 'app.info') return Promise.resolve(ok({ version: '0.0.0', installChannel: 'development', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true, regionalLocale: 'en-GB', physicalMemory: 0 }));
       const answer = OTHER_ANSWERS[id];
       if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
       return Promise.resolve(ok(answer));

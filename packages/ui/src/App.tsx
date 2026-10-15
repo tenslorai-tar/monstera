@@ -373,11 +373,14 @@ import {
 } from './settings/appearance.js';
 import { ACCENT_SETTING, applyAccent } from './settings/accent.js';
 import {
+  PAGE_MEMORY_SETTING,
   RENDER_QUALITY_FACTOR,
   RENDER_QUALITY_SETTING,
   TILE_THRESHOLD_SETTING,
   TILE_THRESHOLD_ZOOM,
+  pageMemoryLimit,
 } from './settings/rendering.js';
+import { setPixelLimit } from './pixelLedger.js';
 import {
   DARK_PAGE_SETTING,
   FIELD_HIGHLIGHT_SETTING,
@@ -2725,6 +2728,14 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   // §10.3'S CHROME MODE, read here because the surface is marked with it.
   const layoutMode = useSetting(settings, LAYOUT_MODE_SETTING);
 
+  // THE LIMIT ON PAGE PIXELS (ADR-0247), from the Memory for pages setting and, for Automatic, the computer's physical
+  // memory, which `app.info` answers below. Set on the ledger as it changes; until memory is known Automatic sets none.
+  const [physicalMemory, setPhysicalMemory] = useState<number | undefined>(undefined);
+  const pageMemory = useSetting(settings, PAGE_MEMORY_SETTING);
+  useEffect(() => {
+    setPixelLimit(pageMemoryLimit(pageMemory, physicalMemory));
+  }, [pageMemory, physicalMemory]);
+
   // THE RUNNING BUILD'S VERSION, for the start screen's footer (§10.3). Asked once per client.
   const [appVersion, setAppVersion] = useState<string | undefined>(undefined);
   useEffect(() => {
@@ -2739,6 +2750,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         setCloudProviders(answer.value.cloudProviders);
         setMediaFoundation(answer.value.mediaFoundation);
         if (answer.value.regionalLocale !== '') setRegionalLocale(answer.value.regionalLocale);
+        if (answer.value.physicalMemory > 0) setPhysicalMemory(answer.value.physicalMemory);
       },
       () => {
         // SWALLOWED ON PURPOSE: a version that cannot be read leaves the footer without its version line, which

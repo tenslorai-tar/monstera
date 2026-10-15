@@ -66,8 +66,9 @@ const unusedCommands = {} as unknown as DocumentCommands;
  */
 const trustAll: IpcSenderCheck = () => true;
 
-function handlers(regionalLocale?: () => string) {
+function handlers(regionalLocale?: () => string, physicalMemory?: () => number) {
   return createContractHandlers({
+    physicalMemory,
     // Same reasoning as the parts below: these cases are about which channels register.
     assistant: createAssistant({
       secret: () => undefined,
@@ -240,7 +241,7 @@ describe('main-process contract registration', () => {
     // NO READER, a harness's position: the region is empty and the renderer's own default stands.
     expect(envelope).toEqual({
       ok: true,
-      value: { version: '9.9.9', installChannel: 'web', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true, regionalLocale: '' },
+      value: { version: '9.9.9', installChannel: 'web', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true, regionalLocale: '', physicalMemory: 0 },
     });
   });
 
@@ -261,6 +262,17 @@ describe('main-process contract registration', () => {
     const posix = recorder();
     registerContractHandlers(posix, handlers(() => 'en_US@posix'), () => undefined, trustAll);
     expect(((await posix.seen.get('app.info')?.({}, {})) as { value: { regionalLocale: string } }).value.regionalLocale).toBe('en-US');
+  });
+
+  it('app.info carries the computer’s physical memory for the Memory for pages limit, and 0 where none is read (ADR-0247)', async () => {
+    const ipc = recorder();
+    registerContractHandlers(ipc, handlers(undefined, () => 8 * 1024 ** 3), () => undefined, trustAll);
+    const answer = (await ipc.seen.get('app.info')?.({}, {})) as { value: { physicalMemory: number } };
+    expect(answer.value.physicalMemory).toBe(8 * 1024 ** 3);
+    // CONTROL: a harness that reads none answers 0, which the renderer takes as no limit yet.
+    const none = recorder();
+    registerContractHandlers(none, handlers(), () => undefined, trustAll);
+    expect(((await none.seen.get('app.info')?.({}, {})) as { value: { physicalMemory: number } }).value.physicalMemory).toBe(0);
   });
 
   // THE ASSERTION IS ON THE DIAGNOSTIC, and the first draft of this case was

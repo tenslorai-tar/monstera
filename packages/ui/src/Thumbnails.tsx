@@ -6,6 +6,7 @@ import { type ReactElement, useCallback, useEffect, useLayoutEffect, useRef, use
 import type { DocumentView } from './documentView.js';
 import { THUMBNAILS_LABEL, THUMBNAIL_PAGE } from './messages/en.js';
 import { pdfjsPageOf } from './pageNumbering.js';
+import { givePixelsBack } from './pixelLedger.js';
 import { RenderCancelledError, renderPage } from './renderPage.js';
 import { THUMBNAIL_SIZES, type ThumbnailSize } from './settings/appearance.js';
 import { type MenuAt, inPageMenu } from './surfaces/ContextMenu.js';
@@ -476,8 +477,7 @@ function ThumbCanvas({
   useEffect(() => {
     const element = canvas.current;
     if (held || element === null || element.width === 0) return;
-    element.width = 0;
-    element.height = 0;
+    givePixelsBack(element);
     setReleased(true);
   }, [held]);
   // AND ON UNMOUNT, as a page's canvas is (`PageList`): sized to nothing, the store is released now, not when collected.
@@ -485,8 +485,7 @@ function ThumbCanvas({
     const element = canvas.current;
     return (): void => {
       if (element === null) return;
-      element.width = 0;
-      element.height = 0;
+      givePixelsBack(element);
     };
   }, []);
   // THE LATEST REPORT, read when a draw lands rather than a dependency of the draw: a parent's new callback is not a

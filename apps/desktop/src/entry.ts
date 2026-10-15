@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { open, readFile, stat } from 'node:fs/promises';
+import { totalmem } from 'node:os';
 import { join } from 'node:path';
 
 import { type EventId, type EventPayload, IncidentLog, isFollowable } from '@monstera/contract';
@@ -291,6 +292,8 @@ startShell(() => {
     // and `app.getSystemLocale()` before it aborts the process (measured 2026-10-14: CI's shell proof timed out on both
     // legs, and this container's run exited 133, SIGTRAP, a Chromium CHECK).
     regionalLocale: () => app.getSystemLocale(),
+    // THE COMPUTER'S PHYSICAL MEMORY, for the Memory for pages setting's Automatic (ADR-0247).
+    physicalMemory: () => totalmem(),
     mediaFoundation: hasMediaFoundation(process.platform, process.env['SystemRoot'], existsSync),
     // Built here, for the same reason `AppInfo` is: this is the only file that
     // may hold both Electron and the graph. `composition.ts` takes the picker

@@ -433,15 +433,18 @@ describe('PageList', () => {
     );
     await settle();
 
-    // The first page is seeded visible, so exactly one page is asked for before
-    // anything scrolls. A list that rasterised its whole document would ask for
-    // five, which is the defect lazy rendering exists to prevent.
+    // The first page is seeded visible, so that page and the ONE PAGE AHEAD of it (ADR-0247) are asked for before
+    // anything scrolls. A list that rasterised its whole document would ask for five, which is the defect lazy
+    // rendering exists to prevent.
     //
     // PDF.js NUMBERS FROM 1, so the first page is `1`. Asserting the converted
     // number is what catches an off-by-one that a count alone would miss — and
     // this build has shipped that off-by-one once.
-    expect(rasterised).toStrictEqual([[1, 1]]);
-    expect(container.querySelectorAll('canvas.m-page')).toHaveLength(1);
+    expect(rasterised).toStrictEqual([
+      [1, 1],
+      [2, 1],
+    ]);
+    expect(container.querySelectorAll('canvas.m-page')).toHaveLength(2);
   });
 
   it('PAGE SHARPNESS multiplies the DRAWING scale and never the shown size (E1’s explicit renderQuality)', async () => {
@@ -476,8 +479,11 @@ describe('PageList', () => {
     );
     await settle();
 
-    // TWICE THE PIXELS, at zoom 1 on a density of 1 — the factor and nothing else.
-    expect(rasterised).toStrictEqual([[1, 2]]);
+    // TWICE THE PIXELS, at zoom 1 on a density of 1 — the factor and nothing else, on the page and the page ahead.
+    expect(rasterised).toStrictEqual([
+      [1, 2],
+      [2, 2],
+    ]);
     // THE SAME SIZE ON SCREEN: the mock's page is 100 CSS pixels wide at zoom 1, whatever it was drawn at. A slot that
     // took the bitmap's width would show the page twice as large.
     const canvas = container.querySelector<HTMLCanvasElement>('canvas.m-page');
@@ -912,12 +918,16 @@ describe('PageList', () => {
     );
     await settle();
 
+    /** The pages holding a canvas, by the slot each sits in. */
+    const holding = (): string[] =>
+      [...container.querySelectorAll('canvas.m-page')].map((canvas) => canvas.closest<HTMLElement>('[data-page]')?.dataset['page'] ?? '?');
     await act(async () => {
       report([{ page: 3, visible: true }]);
       await Promise.resolve();
     });
     await settle();
-    expect(container.querySelectorAll('canvas.m-page')).toHaveLength(2);
+    // THE PAGES ON SCREEN, 0 and 3, and the page after the last of them (ADR-0247).
+    expect(holding()).toStrictEqual(['0', '3', '4']);
 
     // THE RELEASE IS THE MEMORY STORY, and it is what separates this from a
     // viewer that holds every page the reader has passed. The canvas is
@@ -928,7 +938,7 @@ describe('PageList', () => {
       await Promise.resolve();
     });
     await settle();
-    expect(container.querySelectorAll('canvas.m-page')).toHaveLength(1);
+    expect(holding()).toStrictEqual(['0', '1']);
   });
 
   it('asks the view model for the pages it is ABOUT TO DRAW, never all of them', async () => {
@@ -961,9 +971,9 @@ describe('PageList', () => {
 
     // L11: one rotation per page scales with the document, so a read of the
     // whole vector is a document-sized payload on the path a renderer takes
-    // after every command. The first read names the seeded page and nothing
-    // else.
-    expect(asked).toStrictEqual([{ docId: DOC, pages: [0] }]);
+    // after every command. The first read names the seeded page and the page ahead of it (ADR-0247), which cannot be
+    // drawn without its rotation, and nothing else.
+    expect(asked).toStrictEqual([{ docId: DOC, pages: [0, 1] }]);
 
     await act(async () => {
       report([{ page: 2, visible: true }]);
@@ -974,9 +984,10 @@ describe('PageList', () => {
     // AND THE SECOND READ NAMES ONLY THE NEW PAGE. A component that re-read
     // every visible page on each change would grow its payload with the scroll
     // position, which is L11's defect arriving gradually.
+    // Page 2 on screen makes page 3 the page ahead; page 1 is no longer wanted and is not asked again.
     expect(asked).toStrictEqual([
-      { docId: DOC, pages: [0] },
-      { docId: DOC, pages: [2] },
+      { docId: DOC, pages: [0, 1] },
+      { docId: DOC, pages: [2, 3] },
     ]);
   });
 
@@ -1031,9 +1042,10 @@ describe('PageList', () => {
     rerender(<PageList {...props} view={viewDrawing()} version={answering} />);
     await settle();
 
+    // THE PAGE ON SCREEN AND THE PAGE AHEAD, asked again at the new version (ADR-0247).
     expect(asked).toStrictEqual([
-      { docId: DOC, pages: [0] },
-      { docId: DOC, pages: [0] },
+      { docId: DOC, pages: [0, 1] },
+      { docId: DOC, pages: [0, 1] },
     ]);
     expect(drawnAt.at(-1)).toBe(90);
   });
@@ -1316,7 +1328,8 @@ describe('PageList', () => {
         />,
       );
       await settle();
-      expect(rasterised).toHaveLength(1);
+      // THE PAGE AND THE PAGE AHEAD (ADR-0247), once each.
+      expect(rasterised).toHaveLength(2);
 
       const before = shownWidth(container);
 
@@ -1354,7 +1367,7 @@ describe('PageList', () => {
       // 200px at zoom 2 — from the bitmap that already existed.
       expect(before).toBe('100px');
       expect(after).toBe('200px');
-      expect(rasterised).toHaveLength(1);
+      expect(rasterised).toHaveLength(2);
     });
 
     it('re-rasterises once the zoom has settled, at devicePixelRatio x zoom', async () => {
@@ -1415,18 +1428,18 @@ describe('PageList', () => {
           />,
         );
 
-        // BEFORE THE INTERVAL: still the stretched bitmap.
+        // BEFORE THE INTERVAL: still the stretched bitmaps, the page's and the page ahead's (ADR-0247).
         await act(async () => {
           await vi.advanceTimersByTimeAsync(140);
         });
-        expect(rasterised).toHaveLength(1);
+        expect(rasterised).toHaveLength(2);
 
-        // AFTER IT: drawn again. The two assertions either side of 150 ms are
+        // AFTER IT: both drawn again. The two assertions either side of 150 ms are
         // what make this a debounce rather than "it eventually redraws".
         await act(async () => {
           await vi.advanceTimersByTimeAsync(20);
         });
-        expect(rasterised).toHaveLength(2);
+        expect(rasterised).toHaveLength(4);
       } finally {
         vi.useRealTimers();
       }
