@@ -892,6 +892,71 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-15 — Stage audit of `1bdd02f9..f53a6374` — findings KKKKKKKK-1 to KKKKKKKK-9
+
+Cloud run 4's last board repairs and Windows session 3's first five commits: 17 commits, 26 files. Called by the commit
+gate: the session's 288 Windows baselines would take the range to 314 files. The 16 modified tests and proofs were read
+as diffs (`git diff 1bdd02f9..HEAD -- <file>`). None deletes a case or raises a timeout. Each changed assertion states
+the premise that moved: the Windows rename refusal (2e0f17fd), X4's own-word diagnostics (0407f66e), P1's same-run
+reprovision (8ad35872), and three edge counts lowered to their lists with a check that holds every such count on Guards
+(47d79ed2). Board: 2e0f17fd read once, Guards green, CI's two proof legs green, Visual baselines red as expected. Every
+finding below was measured on the owner's Windows machine on this date, in the walk or command named.
+
+**KKKKKKKK-1** (high, open): the engine host's own result schema for `engine/annotations` (`engineAnnotationSchema`,
+`packages/kernel/src/host/engineChannels.ts`, strict) has no `object` and no `measured`. B1 (b5e99d27) added both to the
+kernel's annotation walk and to the renderer contract. So a host whose walk sets `object`, which every indirect
+annotation does, refuses the whole list as `internal`. Read in the walks' host logs: *Handler for "engine/annotations"
+returned a value that does not match its declared result ... Unrecognized keys: "object", "measured"*, 37 times in one
+commentsWalk run and from textWalk's first document on. The unit tests run the writer in the same process and never
+cross the host's schema: the gap between the pair's two ends. It accounts for at least textWalk L6's *Reference i1*
+dialog (that incident is this refusal) and plausibly for commentsWalk O5, O7 and O8 and textWalk 5, 13 and 16, whose
+marks are not listed or selected afterwards. Not fixed here: Windows session 3 changes no app code outside its
+unit-test item.
+
+**KKKKKKKK-2** (medium, open): pdf-lib's `save` waits a `setTimeout(0)` after every `objectsPerTick` objects (default
+50), and on Windows each wait cost about 28 ms here: 7,178 objects took 3,963 to 4,194 ms with the default and 129 to
+138 ms with `Infinity` (three runs, a throwaway probe beside `pdfaPreparation.test.ts`). The compose host's own saves
+take the default: `csvCompose.ts`, `markdownCompose.ts`, `imageCompose.ts` and `workbookParts.ts`. How much of the
+large CSV imports' time this is was not measured. The unit-test instance is closed in 71e2db4d.
+
+**KKKKKKKK-3** (medium, open): Office conversion never starts on this machine. `shell.log`: *the converter could not
+start on this computer: Windows' loader ended it with 0xc0000135*, which is a DLL the loader could not find, for the
+`.doc`, `.xls` and `.ppt` samples alike. The window showed nothing for the walk's 300 s per file. Which DLL x2t lacks
+was not read.
+
+**KKKKKKKK-4** (medium, closed in 36755ef6 and the three commits after it): four walk-script defects. The palette
+helper clicked the first option whose text contained the title, so *Watermark…* ran *Edit watermark…* (marks C4.1 to
+C4.3, textWalk 17, commentsWalk N5). The text regression walk chose a section before a document was open, and expected
+words without the fixture's superscript. Forms F2 found two lists by one name with the Fields list open. comments O1
+expected the line the owner's C1 removed. On the rerun each of those steps passes except marks C4.1 to C4.3, which now
+stop at the saved file's Bates mark (-7).
+
+**KKKKKKKK-5** (low, open): `liveWalk.mjs`' command helper is the fourth spelling of the palette rule. The others are
+`runCommand` (`helpScreensHarness.ts`, which `designBaselines` imports), `installedCheck.mjs`' and
+`firstCorrectionsLive.mjs`' own. The plain-Node walks cannot import the TypeScript one; the rule is the same, an exact
+`.m-palette-title`, unique. `firstCorrectionsLive.mjs` and several `.pw.ts` files still match by substring.
+
+**KKKKKKKK-6** (low, open): the build-freshness refusal names the wrong project. After a test file in `packages/kernel`
+changed, every walk refused with *packages/shared/dist/index.js is OLDER than packages/shared/src*. `tsc -b --dry`
+says shared is up to date and kernel is not. The refusal was right; its explanation sent the reader to a package that
+needed nothing. Shared's `dist` keeps an old time because an unchanged emit is not rewritten.
+
+**KKKKKKKK-7** (low, open, undecided): marks C4.1 now reaches its read-back, and the saved copy holds the watermark and
+the footer on all three pages and no Bates mark, while the screen shows *EX-0001*. Whether the copy was written before
+the Bates write landed, or the Bates is drawn without its mark, was not separated.
+
+**KKKKKKKK-8** (low, recorded): MuPDF's save of an outline `/Next` chain, opened and saved with `garbage` as
+`mupdfWriter` saves, in the pinned `electron.exe` under `ELECTRON_RUN_AS_NODE=1` (the engine host's runtime, main
+thread): saved at 10,882 links, and the process ended at 10,883 with 0xC0000005. Plain Node gave the same boundary.
+The probe is a measure-folder script, not committed. Linux's figure was 15,313.
+
+**KKKKKKKK-9** (low, recorded): `menus.pw.ts:403` failed 20 of 20 here (10 repeats at each window size, with traces),
+on mixed causes: the 30 s test timeout inside the ArrowDown loop, *never settled; last read undefined*, *still open
+after 2 ArrowDown*, and *Organize at its top*. CI's Windows leg passed it on 2e0f17fd. Separately, `App.test.tsx`'s
+security-notice case failed once under the full suite and passed alone; no timeout was raised for either.
+
+---
+
 ## 2026-10-15 — MuPDF's save overflows the native stack on a deep reference chain (found before the push)
 
 The whole source suite, run before this run's push, reported one unhandled *Worker exited unexpectedly* with every case
