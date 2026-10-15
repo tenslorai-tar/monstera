@@ -8791,6 +8791,14 @@ body {
   scrollbar-width: none;
 }
 
+/* A RIGHT-CLICK MENU IS WHOLE (the owner's M1): it opens at the pointer, so neither half the window nor the room below
+   the pointer is its limit — a 14-item menu scrolled at 1280 × 800 with its last item cut. Its limit is the window, and
+   the context menu's positioner already shifts it along its align axis to fit (Base UI 1.7's default), so it moves up
+   when opened low and only a menu taller than the window scrolls (`areaMenus.pw.ts` reads both). */
+.m-context-menu.m-area-menu {
+  max-block-size: calc(100dvh - 2 * var(--space-8));
+}
+
 /* MORE BELOW, MORE ABOVE: a fade at the edge the menu continues past, held to that edge by `sticky` and shown by the
    menu's own scroll position (`scroll(nearest)`). A menu with nothing to scroll has no active timeline, so the animation
    does not apply and both stay at their base, unseen. Not a mask on the popup: a mask clips its shadow on every side. */
