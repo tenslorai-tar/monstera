@@ -559,6 +559,22 @@ async function underPoint(x, y) {
   );
 }
 
+/**
+ * Whether a press at a point of the window lands on Add text's surface: the topmost element there, or one it sits in,
+ * is the surface. @param {number} x @param {number} y
+ */
+async function onAddSurface(x, y) {
+  return page.evaluate(
+    ([px, py]) => {
+      const dom = /** @type {{ elementFromPoint: (x: number, y: number) => { closest: (selector: string) => unknown } | null }} */ (
+        Reflect.get(globalThis, 'document')
+      );
+      return dom.elementFromPoint(px ?? 0, py ?? 0)?.closest('[data-text-add-surface]') != null;
+    },
+    [x, y],
+  );
+}
+
 const forW1 = await distinctCopy('for-w1.pdf', sample);
 await step('W1: Add text at 85%, 89% and 95% down the first (turned) page, each pressed ON SCREEN, is in the saved file', async () => {
   // THE EDIT TAB FIRST: step 19 leaves the Organize tab up, and a document opened then shows its page grid with no page
@@ -591,20 +607,28 @@ await step('W1: Add text at 85%, 89% and 95% down the first (turned) page, each 
     const x = box.x + box.width * 0.15;
     const under = await underPoint(x, target);
     const words = `W1 at ${String(Math.round(down * 100))} percent`;
+    // THE TWO EXPLANATIONS TOLD APART BEFORE THE PRESS: run 3 could not say whether the walk's lost words were pressed
+    // onto something that is not the page (the harness) or written and lost (the app). A press that will not land on the
+    // add surface fails HERE, naming what it would have landed on.
+    facts[`${String(Math.round(down * 100))}%`] = { pressedAtWindowY: Math.round(target), under };
+    expect(await onAddSurface(x, target), `the ${String(Math.round(down * 100))}% press would land on "${under}", not the page`).toBe(true);
     await page.mouse.click(x, target);
     await expect(editor()).toBeFocused();
     await page.keyboard.type(words);
     await page.keyboard.press('Escape');
     await expect(editor()).toHaveCount(0);
-    facts[`${String(Math.round(down * 100))}%`] = { pressedAtWindowY: Math.round(target), under };
   }
   const saved = join(output, 'w1-saved.pdf');
   await saveTo(saved);
   await command('Save a copy');
   await expect.poll(() => existsSync(saved), { timeout: 20_000 }).toBe(true);
-  // READ BACK by PDF.js, and from the FIRST PAGE, where they were pressed.
-  const first = (await savedWords(saved))[0] ?? '';
-  for (const down of [85, 89, 95]) expect(first.includes(`W1 at ${String(down)} percent`)).toBe(true);
+  // READ BACK by PDF.js, and from the FIRST PAGE, where they were pressed. Every press landed on the page (above), so a
+  // line missing here is the APP losing words, and the message names which and where the rest of the file put them.
+  const pages = await savedWords(saved);
+  const first = pages[0] ?? '';
+  const missing = [85, 89, 95].filter((down) => !first.includes(`W1 at ${String(down)} percent`));
+  const elsewhere = missing.map((down) => pages.findIndex((words) => words.includes(`W1 at ${String(down)} percent`)));
+  expect({ missing, onPageIndex: elsewhere, facts }).toStrictEqual({ missing: [], onPageIndex: [], facts });
   return { ...facts, firstPageHoldsAll: true };
 });
 
