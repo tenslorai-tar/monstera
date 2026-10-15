@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { wrapHandlers } from '@monstera/contract';
+import { type CommandOfKind, wrapHandlers } from '@monstera/contract';
 
 import { localMupdfExecution } from '../commandSpecs.js';
 import type { ProtectedWriting } from '../documentProtection.js';
@@ -25,7 +25,8 @@ const RESULT = new Uint8Array([3, 3, 3]);
 const SEALED = new Uint8Array([4, 4, 4]);
 
 // THE PAGE BACKGROUND, a pdf-lib command: the watermark this case used is the MuPDF writer's since ADR-0235.
-const COMMAND = { kind: 'setPageBackground', pages: 'all', red: 1, green: 1, blue: 0.9 } as const;
+// CHECKED AGAINST THE CONTRACT, so the next required field is a compile error here rather than a red suite (DDDDDDDD-5).
+const COMMAND = { kind: 'setPageBackground', pages: 'all', red: 1, green: 1, blue: 0.9 } as const satisfies CommandOfKind<'setPageBackground'>;
 
 function refuse(what: string): () => never {
   return () => {

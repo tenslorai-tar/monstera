@@ -1,4 +1,4 @@
-import type { ClientApi } from '@monstera/contract';
+import type { ClientApi, CommandOfKind } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
 
 import type { EngineChannels } from './engineChannels.js';
@@ -13,7 +13,8 @@ import { createRemoteSessions, remotePdfLibHost, type SessionAssets } from './re
  */
 
 // A PDF-LIB COMMAND: the page background, since the watermark moved to the MuPDF writer (ADR-0235).
-const COMMAND = { kind: 'setPageBackground', pages: 'all', red: 1, green: 1, blue: 0.9 } as const;
+// CHECKED AGAINST THE CONTRACT, so the next required field is a compile error here rather than a red suite (DDDDDDDD-5).
+const COMMAND = { kind: 'setPageBackground', pages: 'all', red: 1, green: 1, blue: 0.9 } as const satisfies CommandOfKind<'setPageBackground'>;
 
 const ASSETS: SessionAssets = {
   name: () => 'asset',

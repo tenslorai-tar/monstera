@@ -892,6 +892,107 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-15 — Stage audit of `b7b24091..1bdd02f9` — findings JJJJJJJJ-1 to JJJJJJJJ-8
+
+Cloud run 4's addenda 4 and 5 and the board repairs before them: 53 commits, 201 files with the next one. Called by the
+commit gate (DDDDDDDD-5 took the range past one batch). The 54 modified tests and proofs were read commit by commit by
+one read-only reader (`git log -p b7b24091..1bdd02f9 -- <file>`); it found no deleted case, no lowered roster or CASES
+count, no raised vitest timeout, no added retry and no exact assertion widened. Its three gaps are -2, -3 and -4, each
+checked here. Board: 74b5e536 read once (CI's two "Typecheck, lint, and proofs" legs green, Guards green, Visual
+baselines red as expected on a branch that changes screens). Nothing after 74b5e536 is pushed yet.
+
+**JJJJJJJJ-1** (medium, closed `d825967a`): X4 (50682806) made `wrapHandler` record a refused params object in its own
+words and dropped the ZodError cause; `engineAsset.test.ts`' CONTROL parsed that cause and threw. Red from 50682806 to
+d825967a, found by `vitest related` during another item. X4 had run the contract's tests and `proof:contract`, not the
+kernel tests that read a contract diagnostic. Never pushed, so no board saw it; CI's kernel suite would have.
+
+**JJJJJJJJ-2** (low, open): d825967a's message says the new line *still says the call was refused for one unrecognised
+key inside the command*. It says one unrecognised key at depth 1; it does not name `command` or `bytes`, which the new
+words withhold on purpose. The case's comment that `sources` is written, so the bytes are the one field that can refuse,
+is what carries the rest. A claim stronger than its line, item 7's newest form.
+
+**JJJJJJJJ-3** (low, open): two controls hold a negative with a fixed wait, `measureEdit.pw.ts` (b95a1b7f, 500 ms, the
+label is not redrawn) and `menus.pw.ts` (36c39651, 600 ms, reduced motion does not scroll). Each sits beside a positive
+branch that polls, but on a slow runner the thing ruled out may not have started inside the wait. Neither commit gives
+the figure's source.
+
+**JJJJJJJJ-4** (low, open, the reader's): 88092e7c's walk control names `fontCatalogueWorker.js` and `apartEntry.js`;
+three entries it took off the lists (`faceProgramWorker`, `runFontWorker`, `composeWorker`) are dated by the walk and
+named by no control.
+
+**JJJJJJJJ-5** (low, closed `88092e7c`): walking every registered proof found 13 whose imports reach a thread entry
+through the PDFium adapter with no edge naming it; GGGGGGGG-7 was one instance of 16. The guard now walks to them.
+
+**JJJJJJJJ-6** (low, open): D6's contradictions were found by reading. The bold-word check passes a word the catalogue
+holds for another control (*Close* for *Close split view*), so a renamed control of that kind is not caught.
+
+**JJJJJJJJ-7** (low, recorded): `layoutReview.pw.ts`' Forms tab case (806f4612) went from a 150 px floor to a 1.9 ratio
+of the two columns, so a narrow panel keeping the split passes; `armedToolOwnsPage.pw.ts` dropped *Escape puts the tool
+down and the grid returns*, checked: since 14a a drawing tool takes the reader to Home, so that is no longer the
+contract, and `organizeSections.pw.ts` asserts the two allowed states after Escape.
+
+**JJJJJJJJ-8** (low, recorded): six reflexes denied by the escape guard since the last count (`node -e` at a command's
+start, a heredoc into `/dev/null`, `sed -i` inside a loop, `node --eval`, an `awk` pipeline into a file, and `node -p`
+beside an empty Python heredoc); nothing was written. Counted from this session as each happened.
+
+### 1. Root cause or workaround?
+
+Root causes, each with its mechanism in its commit: the thread start (f0cd9cac), the freshness walk (88092e7c), X1 to
+X3's readers and fetch, P1's same-run replacement, the refused host (b12e1fec). CCCCCCCC-4 is not a fix: the case now
+times its own calls, and the cause is owed on Windows. No workaround in range.
+
+### 2. Verified against the easy shape only?
+
+X2 at 10,001 bookmarks against 9,999 and a 20,001-long action chain; X3 on a 307 for each credentialed caller, Azure's
+poll included after its POST body could not separate; item 18 on a file larger than one read. The DocuSign send of a
+document past main's ceiling is not run live.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Yes, twice and stated: thread entries are now dated by a derived walk instead of hand rows (88092e7c, -4 is its gap),
+and the help steps' length is now a case rather than a sweep.
+
+### 3. Would CI have caught it?
+
+-1 yes, the kernel suite. 74b5e536's board is read above. The rest of the range is unpushed and is read once at the
+push that closes this run.
+
+### 4. Are the proofs non-vacuous?
+
+Each fix here was mutated and went red: apartStart (built files put back to the old start), the freshness walk (walked
+pairs dropped), articles' step bound (the old barcodes step), X1 to X4 and P1 as their commits list. -3 and -4 are the
+gaps the reader found.
+
+### 4a. Resolution test before measuring?
+
+The apart start's bound: each asker answers in about 0.14 s here, measured, against a 30 s bound that a hang reaches.
+
+### 4b. A search with a positive control?
+
+`startedByPath` must find the catalogue worker and the start two modules down on every run; -4 says three more could be
+named.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+The walk derives the thread entries, and the danger runs toward a smaller set; its control is an independent claim
+(named files), which is what 4c asks. IIIIIIII-3, the static edges, stays hand kept.
+
+### 5. Executed, or asserted?
+
+Executed: every proof and test named in the commits, here on Linux. Asserted: anything only Windows runs, listed in the
+run's report.
+
+### 6. Architecture before the feature?
+
+ADR-0247 and ADR-0248 each in their own commit before their code; ADR-0165's correction before item 18.
+
+### 7. Do the documents still match the code?
+
+Twenty help articles corrected (D6); the four worker headers and `apart.ts` now say where a thread starts. -2 is a
+commit message that says more than its line.
+
+---
+
 ## 2026-10-15 — Stage audit of `60d60df5..b7b24091` — findings IIIIIIII-1 to IIIIIIII-11
 
 Cloud run 4, Part 3's last items, Part 4 (E1 to E9), Part 5 (13c's repairs, M1, 14a, H1, W1, item 17, C1, C3, E2, E3, G1,
