@@ -1,7 +1,7 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
-import { samplePdf } from './helpScreensHarness.js';
+import { SELECT_TOOL, armTool, samplePdf } from './helpScreensHarness.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
 
 /**
@@ -178,7 +178,7 @@ test('a link is SELECTED with the Select tool, MOVED by a drag, and sent elsewhe
     sent
       .filter((call) => call.channel === 'document.execute')
       .map((call) => (call.params as { readonly command: unknown }).command);
-  await page.getByRole('button', { name: 'Select', exact: true }).first().click();
+  await armTool(page, 'Select', SELECT_TOOL);
   const slot = await page.locator('.m-page-slot').first().boundingBox();
   if (slot === null) throw new Error('the first page has no box');
   const scale = slot.width / 612;

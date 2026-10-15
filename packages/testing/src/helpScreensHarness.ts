@@ -114,6 +114,24 @@ export async function openSection(page: Page, name: string): Promise<void> {
 }
 
 /**
+ * Arms a tool by its button and waits until a page's overlay draws with it, so a press after this lands on the tool.
+ *
+ * The overlay that turns a press into a pick or a stroke is mounted only once its page has been MEASURED
+ * (`PageList.tsx`: `drawing === undefined || size === undefined … ? null`), and a canvas is attached before its page is
+ * measured. So a case that waited for the canvas and then pressed could land on a page with no overlay, select nothing,
+ * and wait out its budget for a selection (`annotationPreview.pw.ts` in high contrast, a local Windows run, item 8a,
+ * "element not attached within 5 s"). The overlay names the tool it draws with (`data-tool`), which is the condition the
+ * press depends on.
+ */
+export async function armTool(page: Page, button: string, toolId: string): Promise<void> {
+  await page.getByRole('button', { name: button, exact: true }).first().click();
+  await expect(page.locator(`[data-annotation-overlay][data-tool="${toolId}"]`).first()).toBeAttached();
+}
+
+/** The select tool's id, as its overlay names it (`SELECT_TOOL_ID`). */
+export const SELECT_TOOL = 'annotate.select';
+
+/**
  * Runs a command by its EXACT title through the command palette (Ctrl+K), as a person may.
  *
  * Matched on the option's title alone, and it must be the only one. An option's accessible name is its title AND its

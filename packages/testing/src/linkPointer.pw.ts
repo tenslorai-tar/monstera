@@ -1,7 +1,7 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
-import { samplePdf } from './helpScreensHarness.js';
+import { SELECT_TOOL, armTool, samplePdf } from './helpScreensHarness.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
 
 /**
@@ -81,7 +81,7 @@ test('the Hand tool: a plain click on a link follows it', async ({ page }) => {
 test('Select in Comment: the hover says Ctrl+click follows, a click selects, and Ctrl+click goes to the page', async ({ page }) => {
   const sent: Sent = [];
   const at = await openWithLinks(page, 'comment', sent);
-  await page.getByRole('button', { name: 'Select', exact: true }).first().click();
+  await armTool(page, 'Select', SELECT_TOOL);
   expect(await hoverAt(page, at.x(200), at.y(83))).toStrictEqual({ tip: 'Go to page 2 · Ctrl+click to follow', cursor: 'pointer' });
   await page.mouse.click(at.x(200), at.y(83));
   await expect(page.locator('[data-selection-kind="link"] [data-selection-handle]')).toHaveCount(8);
@@ -96,7 +96,7 @@ test('Select in Comment: the hover says Ctrl+click follows, a click selects, and
 test('a tool left on from Comment, back in Home: the links still answer the pointer', async ({ page }) => {
   const sent: Sent = [];
   const at = await openWithLinks(page, 'comment', sent);
-  await page.getByRole('button', { name: 'Select', exact: true }).first().click();
+  await armTool(page, 'Select', SELECT_TOOL);
   await page.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Home' }).click();
   expect((await hoverAt(page, at.x(280), at.y(128))).cursor).toBe('pointer');
 });
@@ -104,7 +104,7 @@ test('a tool left on from Comment, back in Home: the links still answer the poin
 test('a web link asks first, with Ctrl+click under Select, and Cancel opens nothing', async ({ page }) => {
   const sent: Sent = [];
   const at = await openWithLinks(page, 'comment', sent);
-  await page.getByRole('button', { name: 'Select', exact: true }).first().click();
+  await armTool(page, 'Select', SELECT_TOOL);
   expect((await hoverAt(page, at.x(280), at.y(128))).tip).toBe('Open https://example.org/annual-report · Ctrl+click to follow');
   await page.keyboard.down('Control');
   await page.mouse.click(at.x(280), at.y(128));
@@ -120,7 +120,7 @@ test('a web link asks first, with Ctrl+click under Select, and Cancel opens noth
 test('Follow link in Properties asks first for a web link, and Open link opens it', async ({ page }) => {
   const sent: Sent = [];
   const at = await openWithLinks(page, 'comment', sent);
-  await page.getByRole('button', { name: 'Select', exact: true }).first().click();
+  await armTool(page, 'Select', SELECT_TOOL);
   await page.mouse.click(at.x(280), at.y(128));
   await page.getByRole('tab', { name: 'Properties' }).click();
   await page.getByRole('button', { name: 'Follow link' }).click();

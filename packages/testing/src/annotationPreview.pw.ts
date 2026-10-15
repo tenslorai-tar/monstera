@@ -1,7 +1,7 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { expect, test } from '@playwright/test';
 
-import { samplePdf } from './helpScreensHarness.js';
+import { SELECT_TOOL, armTool, samplePdf } from './helpScreensHarness.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
 
 /**
@@ -32,7 +32,7 @@ for (const look of LOOKS) {
     await page.goto('/');
     await page.getByRole('button', { name: /^Open PDF/u }).first().click();
     await expect(page.locator('canvas.m-page').first()).toBeAttached();
-    await page.getByRole('button', { name: 'Select', exact: true }).first().click();
+    await armTool(page, 'Select', SELECT_TOOL);
     const slot = await page.locator('.m-page-slot').first().boundingBox();
     if (slot === null) throw new Error('the first page has no box');
     const scale = slot.width / 612;

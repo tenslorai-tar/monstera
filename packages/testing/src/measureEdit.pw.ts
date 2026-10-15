@@ -2,7 +2,7 @@ import { PDFDocument, PDFName } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
-import { samplePdf } from './helpScreensHarness.js';
+import { SELECT_TOOL, armTool, samplePdf } from './helpScreensHarness.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
 
 /**
@@ -52,7 +52,7 @@ test('a selected distance has a handle on each END; dragging one sends that end 
   const onScreen = (point: { x: number; y: number }) => ({ x: slot.x + point.x * slot.scale, y: slot.y + (792 - point.y) * slot.scale });
   const [left, right] = ENDS.map(onScreen);
   if (left === undefined || right === undefined) throw new Error('no ends');
-  await page.getByRole('button', { name: 'Select', exact: true }).first().click();
+  await armTool(page, 'Select', SELECT_TOOL);
   await page.mouse.click((left.x + right.x) / 2, (left.y + right.y) / 2);
 
   // THE HANDLES ARE ON THE ENDS, where the browser drew them, and the box has no corners.
@@ -173,7 +173,7 @@ for (const named of [true, false]) {
     if (slot === null) throw new Error('the first page has no box');
     const scale = slot.width / 612;
     const right = { x: slot.x + 320 * scale, y: slot.y + (792 - 515) * scale };
-    await page.getByRole('button', { name: 'Select', exact: true }).first().click();
+    await armTool(page, 'Select', SELECT_TOOL);
     await page.mouse.click(slot.x + 260 * scale, right.y);
     await expect(page.locator('[data-selection-handle="point-1"]')).toBeVisible();
     await page.mouse.move(right.x, right.y);
