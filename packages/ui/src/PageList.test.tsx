@@ -93,14 +93,16 @@ vi.mock('./renderPage.js', async (importOriginal) => ({
     _document: unknown,
     pdfjsPage: number,
     _canvas: unknown,
-    scale: number,
+    scale: number | { readonly fitWidth: number },
     rotation: number | undefined,
   ) => {
-    rasterised.push([pdfjsPage, scale]);
+    // A FITTED DRAW names a width rather than a scale, and the real one fits from the page's own width.
+    const factor = typeof scale === 'number' ? scale : scale.fitWidth / 100;
+    rasterised.push([pdfjsPage, factor]);
     drawnAt.push(rotation);
     return Promise.resolve({
-      width: 100 * scale,
-      height: 200 * scale,
+      width: 100 * factor,
+      height: 200 * factor,
       // THE CROP AND THE ROTATION, which this mock did not return until
       // 2026-09-08 — `RasterisedPage` declares both and `vi.mock`'s factory is
       // untyped, so a stub narrower than the interface compiled. Nothing read
@@ -120,7 +122,7 @@ vi.mock('./renderPage.js', async (importOriginal) => ({
     Promise.resolve({ width: 100 * scale, height: 200 * scale, crop: [0, 0, 100, 200] as const, rotation: 0 }),
   // A TILE'S DRAW, which happy-dom cannot perform; nothing here asserts a tile's pixels.
   renderRegion: () => Promise.resolve(),
-}));
+}) satisfies Partial<typeof import('./renderPage.js')>);
 
 /**
  * How many times a list's BODY has run. `PageList` calls `useVisiblePages` once per render, so counting the calls

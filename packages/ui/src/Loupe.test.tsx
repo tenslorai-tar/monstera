@@ -30,7 +30,7 @@ vi.mock('./renderPage.js', async (importOriginal) => ({
     regions.push(region);
     return Promise.resolve();
   },
-}));
+}) satisfies Partial<typeof import('./renderPage.js')>);
 
 beforeEach(() => {
   rasterised.length = 0;

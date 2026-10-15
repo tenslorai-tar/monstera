@@ -74,15 +74,15 @@ vi.mock('./renderPage.js', async (importOriginal) => ({
     _document: unknown,
     _page: number,
     canvas: unknown,
-    _scale: number,
+    _scale: number | { readonly fitWidth: number },
     rotation?: number,
   ) => {
     const spine =
       canvas instanceof HTMLElement && canvas.classList.contains('m-page');
     if (spine) drawn.push(rotation);
-    return Promise.resolve({ width: 1, height: 1 });
+    return Promise.resolve({ width: 1, height: 1, crop: [0, 0, 1, 1] as const, rotation: 0 });
   },
-}));
+}) satisfies Partial<typeof import('./renderPage.js')>);
 
 function Messages({ children }: { children: ReactNode }): ReactElement {
   return <I18nProvider i18n={i18n}>{children}</I18nProvider>;

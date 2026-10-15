@@ -50,16 +50,16 @@ vi.mock('./renderPage.js', async (importOriginal) => ({
     signals.push(signal);
     // A 600 × 800 page, fitted the way the real one fits it: from its own width.
     const factor = typeof scale === 'number' ? scale : scale.fitWidth / 600;
-    const size = { width: 600 * factor, height: 800 * factor };
+    const size = { width: 600 * factor, height: 800 * factor, crop: [0, 0, 600, 800] as const, rotation: 0 };
     if (!holdDraws) return Promise.resolve(size);
     // A DRAW STILL UNDER WAY, finished by the case, which is the moment a redraw at a new width is in.
-    return new Promise((resolve) => {
+    return new Promise<typeof size>((resolve) => {
       held.push(() => {
         resolve(size);
       });
     });
   },
-}));
+}) satisfies Partial<typeof import('./renderPage.js')>);
 
 const DOC = asDocId('00000000-0000-4000-8000-0000000000ee');
 const VERSION = asDocVersion(1);
