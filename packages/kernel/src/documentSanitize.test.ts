@@ -180,13 +180,36 @@ async function outlineReadIndependently(bytes: ByteImage): Promise<{ readonly it
   return { items, javascript };
 }
 
+/**
+ * How many dictionaries a `/Next` chain holds from `head`, and how many of them (or of their `/A`) are JavaScript, read
+ * in the open session by a plain loop: not by `activeContentIn`, which walks the way the removal does, and not from a
+ * SAVED file. MuPDF's own save recurses down a chain like this one, `garbage` marking each link, and overflows the
+ * native stack: measured 2026-10-15 in this cloud session's Linux container (8 MB stack), saved at 15,313 links and
+ * segfaulted at 15,469, with no sanitise at all (`chainProbe.mjs`, the scratch probe, open and save only). Windows
+ * gives a thread far less stack, so the depth there is lower and not yet measured.
+ */
+function chainInSession(head: mupdf.PDFObject, via: 'A' | null): { readonly links: number; readonly javascript: number } {
+  let links = 0;
+  let javascript = 0;
+  for (let link = head; link.isDictionary(); link = link.get('Next')) {
+    links += 1;
+    const action = via === null ? link : link.get('A');
+    if (action.isDictionary() && (String(action.get('S')) === '/JavaScript' || !action.get('JS').isNull())) javascript += 1;
+  }
+  return { links, javascript };
+}
+
 describe('a sanitise walks the WHOLE document (addendum 5, X2)', () => {
-  /** Sanitises `bytes` for JavaScript and answers the saved file. */
-  async function sanitised(bytes: ByteImage): Promise<ByteImage> {
+  /** Sanitises `bytes` for JavaScript, then reads the chain `at` names in the same session, before any save. */
+  async function sanitisedChain(
+    bytes: ByteImage,
+    at: (root: mupdf.PDFObject) => mupdf.PDFObject,
+    via: 'A' | null,
+  ): Promise<{ readonly links: number; readonly javascript: number }> {
     const session = await mupdfWriter.open(bytes);
     try {
       await applySanitizeDocument(session, { kind: 'sanitizeDocument', parts: ['javascript'] });
-      return await mupdfWriter.serialise(session);
+      return await withDocument(session, (document) => chainInSession(at(document.getTrailer().get('Root')), via));
     } finally {
       await mupdfWriter.close(session);
     }
@@ -227,8 +250,10 @@ describe('a sanitise walks the WHOLE document (addendum 5, X2)', () => {
       return { jumps, scripts };
     };
     const before = await document.save({ useObjectStreams: false });
+    // THE FIXTURE CARRIES IT, read by pdf-lib from the file.
     expect(await chain(before)).toStrictEqual({ jumps: count - 1, scripts: 1 });
-    expect(await chain(await sanitised(before))).toStrictEqual({ jumps: count - 1, scripts: 0 });
+    // AND THE SANITISE REMOVED IT, read in the session: every jump kept, and the script, the chain's last link, gone.
+    expect(await sanitisedChain(before, (root) => root.get('OpenAction'), null)).toStrictEqual({ links: count - 1, javascript: 0 });
   }, 120_000);
 
   // ONE PAST, AND ONE SHORT OF, the count the walks used to stop at.
@@ -237,7 +262,7 @@ describe('a sanitise walks the WHOLE document (addendum 5, X2)', () => {
       const before = await longOutline(count);
       // THE FIXTURE CARRIES IT, read by the same independent reader.
       expect(await outlineReadIndependently(before)).toStrictEqual({ items: count, javascript: 1 });
-      expect(await outlineReadIndependently(await sanitised(before))).toStrictEqual({ items: count, javascript: 0 });
+      expect(await sanitisedChain(before, (root) => root.get('Outlines').get('First'), 'A')).toStrictEqual({ links: count, javascript: 0 });
     }, 120_000);
   }
 });

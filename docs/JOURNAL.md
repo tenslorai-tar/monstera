@@ -892,6 +892,24 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-15 — MuPDF's save overflows the native stack on a deep reference chain (found before the push)
+
+The whole source suite, run before this run's push, reported one unhandled *Worker exited unexpectedly* with every case
+green. Bisected to `documentSanitize.test.ts`, then to X2's 20,001-link `/OpenAction` chain: exit 139, a segfault.
+A scratch probe that opens the same file and saves it with MuPDF, with no sanitise, saved at 15,313 links and
+segfaulted at 15,469 (this cloud session's Linux container, 8 MB stack, measured today); the sanitise itself finishes
+at 20,001. So the cause is MuPDF's `garbage` save marking a chain recursively, outside this repository, and X2's case
+had never passed here: it asserted on a saved file MuPDF could not save. It now reads the sanitised chain in the open
+session (`chainInSession`), which is what X2 claims; a 10,000-step cap put back in the walk turns it red.
+
+What it means for the product, open: a document whose objects chain deeper than MuPDF's save can recurse ends the
+engine host on any save. The host is contained, so the shell records the host as gone and the save fails in words;
+nothing is written. Windows gives a thread far less stack than 8 MB, so the depth there is lower. **Needs Windows:**
+run the probe's shape (a `/Next` chain of n links, open and save) in the engine host on Windows and record the depth.
+Whether to bound it (refuse a chain past a measured depth before saving) is the owner's decision; it is not taken here.
+
+---
+
 ## 2026-10-15 — Addendum 4 C: each listed finding closed, or kept open with its reason
 
 Every finding addendum 4 listed, by outcome. A reason below is why it can stay open after launch: none of them can
