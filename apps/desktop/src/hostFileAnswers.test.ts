@@ -103,16 +103,29 @@ describe('taking a file-routed answer (ADR-0125)', () => {
     const bytes = new TextEncoder().encode('{"ok":true,"value":{}}');
     const { outputDirectory } = areaWith('n1', bytes);
     let seenAtPath = 0;
+    let replaced = false;
     const { files } = racing((path) => {
       const larger = `${path}.larger`;
       writeFileSync(larger, new Uint8Array(4 * 1_048_576));
-      renameSync(larger, path);
-      // CONTROL: the path now names the larger file, so a reader that went back to the path would read it.
+      // WINDOWS REFUSES THIS RACE: a rename onto a file another handle holds open fails (EPERM, read from CI's
+      // Windows unit tests on c683edac, 2026-10-15), so there the host cannot swap the file under main at all.
+      // POSIX allows it, and that is the race this case exists for, so it is required to happen there.
+      try {
+        renameSync(larger, path);
+        replaced = true;
+      } catch (error) {
+        if (process.platform !== 'win32') throw error;
+        rmSync(larger, { force: true });
+      }
+      // CONTROL: what the path names now, so a reader that went back to the path would read that.
       seenAtPath = readFileSync(path).byteLength;
     });
     const answers = fileAnswersFor(channels, () => ({ outputDirectory, snapshotDirectory: outputDirectory }), files);
     await expect(answers.take({ session: 's1' }, 'n1', bytes.byteLength)).resolves.toStrictEqual(bytes);
-    expect(seenAtPath).toBe(4 * 1_048_576);
+    // WHERE THE RACE HAPPENED, the path named the larger file while the answer was the opened one's bytes.
+    expect({ replaced, seenAtPath }).toStrictEqual(
+      process.platform === 'win32' ? { replaced: false, seenAtPath: bytes.byteLength } : { replaced: true, seenAtPath: 4 * 1_048_576 },
+    );
     expect(existsSync(join(outputDirectory, 'n1'))).toBe(false);
   });
 
