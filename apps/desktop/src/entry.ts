@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { open, readFile, stat } from 'node:fs/promises';
 import { totalmem } from 'node:os';
 import { join } from 'node:path';
@@ -277,9 +277,14 @@ startShell(() => {
   // goes and nothing open can meet the sweep.
   const checkpointDirectory = join(app.getPath('sessionData'), 'checkpoints');
   sweepCheckpointDirectories(checkpointDirectory);
+  // A SIGNATURE'S WORKING FILES (ADR-0248), beside the checkpoints and swept the same way and for the same reason: each
+  // is a whole copy of a document, and one a crash left is no one's.
+  const takenDirectory = join(app.getPath('sessionData'), 'taken');
+  rmSync(takenDirectory, { recursive: true, force: true });
 
   return createShellDependencies({
     checkpointDirectory,
+    takenDirectory,
     appInfo: {
       version: app.getVersion(),
       // PACKAGED IS THE STORE PACKAGE (ADR-0123 Decision 7): fixed for a package, so still baked rather than detected

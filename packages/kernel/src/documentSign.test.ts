@@ -16,7 +16,7 @@ import forge from 'node-forge';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { applySignDocument } from './signpdfWriter.js';
-import { bytesToSign, fillSignature, NO_TIMESTAMPS, signPrepared } from './documentSign.js';
+import { bytesToSign, fillSignature, NO_TIMESTAMPS, preparedInMemory, signImage, signPrepared } from './documentSign.js';
 import { preparePlaced, withSignaturePlaceholder } from './signaturePlaceholder.js';
 import { type PlaceholderRequest, placeholderRequestOf } from './signatureHole.js';
 import { engineChannels } from './host/engineChannels.js';
@@ -212,7 +212,7 @@ describe("main's half over the host's (ADR-0148)", () => {
     const theirs = await new SignPdf().sign(Buffer.from(placed), signer);
 
     const toSign = bytesToSign(prepared);
-    const ours = fillSignature(prepared, RAW);
+    const ours = await fillSignature(prepared, RAW);
     expect(Buffer.from(ours).equals(theirs)).toBe(true);
     expect(asked).toHaveLength(1);
     expect(toSign.equals(asked[0] ?? Buffer.alloc(0))).toBe(true);
@@ -262,6 +262,48 @@ describe("main's half over the host's (ADR-0148)", () => {
     const length = untouched.bytes.byteLength;
     const signed = await signPrepared(untouched, { ...command, bytes: certificate }, NO_TIMESTAMPS);
     expect(signed.byteLength).toBe(length);
+  }, 60_000);
+
+  it('signs IN PLACE, reading the hole and the two ranges outside it and never the file whole (ADR-0248)', async () => {
+    const prepared = await tampered(() => undefined);
+    const [, holeStart, holeEnd] = prepared.byteRange;
+    const length = prepared.bytes.byteLength;
+    const reads: [number, number][] = [];
+    const writes: [number, number][] = [];
+    const inMemory = preparedInMemory(prepared);
+    await signImage(
+      {
+        ...inMemory,
+        read: (offset, end) => {
+          reads.push([offset, end]);
+          return inMemory.read(offset, end);
+        },
+        write: (offset, bytes) => {
+          writes.push([offset, bytes.byteLength]);
+          return inMemory.write(offset, bytes);
+        },
+      },
+      { ...command, bytes: certificate },
+      NO_TIMESTAMPS,
+    );
+    // THE HOLE FIRST (the check), then the digest's two ranges; nothing spans the hole, nothing is the whole file.
+    expect(reads).toStrictEqual([
+      [holeStart, holeEnd],
+      [0, holeStart],
+      [holeEnd, length],
+    ]);
+    // ONE WRITE, inside the hole, just after its `<`.
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.[0]).toBe(holeStart + 1);
+    expect((writes[0]?.[0] ?? 0) + (writes[0]?.[1] ?? 0)).toBeLessThan(holeEnd);
+    // AND WHAT IT WROTE IS A SIGNATURE A READER ACCEPTS, over the whole file.
+    const session = await mupdfWriter.open(prepared.bytes);
+    try {
+      const read = await readSignatures(session, prepared.bytes);
+      expect(read.map((signature) => [signature.coversDocument, signature.coversWholeFile])).toStrictEqual([[true, true]]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
   }, 60_000);
 
   it('a request type that holds a credential does not compile', () => {

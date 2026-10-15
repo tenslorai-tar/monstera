@@ -3,7 +3,7 @@ import { type RegisteredWriter, localMupdfExecution } from './commandSpecs.js';
 import type { MupdfSession } from './engineSeam.js';
 import { protectedImageOf, protectedWritingOf } from './documentProtection.js';
 import { mupdfWriter } from './mupdfWriter.js';
-import { NO_TIMESTAMPS, type RequestTimestamp, signpdfExecutionWith } from './documentSign.js';
+import { NO_TIMESTAMPS, preparedInMemory, type RequestTimestamp, signpdfExecutionWith } from './documentSign.js';
 import { applyPdfLibWithFaces } from './pdfLibFieldFaces.js';
 import { hostedPdfLibExecution } from './pdfLibWriter.js';
 import { stagedBytes } from './savePipeline.js';
@@ -75,9 +75,11 @@ export function localSignpdfWriterWith(requestTimestamp: RequestTimestamp): Regi
     // A PROTECTED DOCUMENT is signed under its own key, as the host does (ADR-0227).
     ...signpdfExecutionWith(async (session, request) => {
       const protection = await protectedImageOf(session);
-      return protection === undefined
-        ? prepareSignature(await mupdfWriter.serialise(session), request)
-        : prepareSignature(protection.image, request, { password: protection.password });
+      return preparedInMemory(
+        protection === undefined
+          ? await prepareSignature(await mupdfWriter.serialise(session), request)
+          : await prepareSignature(protection.image, request, { password: protection.password }),
+      );
     }, requestTimestamp),
   };
 }

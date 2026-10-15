@@ -36,7 +36,7 @@ import { accessFor, mupdfWriter } from '../mupdfWriter.js';
 import { placeStaged } from '../savePipeline.js';
 import { readSignatures } from '../signatureRead.js';
 import { composeWordDocument } from '../wordPictures.js';
-import { readAnnounced } from './announcedOutput.js';
+import { copyAnnounced, readAnnounced } from './announcedOutput.js';
 import { type EngineChannels, engineChannels } from './engineChannels.js';
 import { type HostSession, createEngineHandlers } from './engineHandlers.js';
 import { hostFilesystem } from './hostNodeSurfaces.js';
@@ -169,6 +169,12 @@ function realAreas(): FakeAreas {
     // is read, and DELETED ON THE WAY OUT — every serialise is another whole copy of the user's document, and a
     // save-heavy session would otherwise leave one per save in a directory the contained host may read.
     takeOutput: (area, name, announced) => readAnnounced(join(area.outputDirectory, name), announced),
+    // THE APPLICATION'S OWN COPY, into storage of this fixture's that no area names, as `main`'s own storage is.
+    takeOutputFile: async (area, name, announced) => {
+      const owned = await mkdtemp(join(tmpdir(), 'monstera-lifecycle-taken-'));
+      mintedRoots.push(owned);
+      return copyAnnounced(join(area.outputDirectory, name), announced, join(owned, 'working'));
+    },
     moveOutput: async (area, name, destination) => {
       await rename(join(area.outputDirectory, name), destination);
       return (await stat(destination)).size;
@@ -1099,7 +1105,7 @@ describe("a signature's placeholder, prepared in the host and taken by main (ADR
     outline: { ops: outlineOpCodes('MLLLZ'), points: [0, 100, 1000, 100, 1000, 400, 0, 400], frame: [0, 0, 1000, 500] },
   };
 
-  it("prepares the placeholder beside the session, and main TAKES the file out of the host's area", async () => {
+  it("prepares the placeholder beside the session, and main COPIES the file out of the host's area (ADR-0248)", async () => {
     const areas = realAreas();
     const { open, signer, lifecycle } = joined(areas);
     const session = await open(flat);
@@ -1109,11 +1115,12 @@ describe("a signature's placeholder, prepared in the host and taken by main (ADR
     const prepared = await signer(session, { kind: 'signDocument', appearance: { page: 0, rect: RECT, mark: typed } });
     const [start, holeStart, holeEnd, rest] = prepared.byteRange;
     expect(start).toBe(0);
-    expect(holeEnd + rest).toBe(prepared.bytes.byteLength);
-    expect(Buffer.from(prepared.bytes.subarray(holeStart, holeEnd)).toString('latin1')).toBe(`<${'0'.repeat(8192 * 2)}>`);
-    // NOTHING LEFT WHERE THE HOST CAN WRITE: the prepared file was taken, not copied, so a host writing to that name
-    // afterwards writes to nothing main signs.
+    expect(holeEnd + rest).toBe(prepared.byteLength);
+    expect(Buffer.from(await prepared.read(holeStart, holeEnd)).toString('latin1')).toBe(`<${'0'.repeat(8192 * 2)}>`);
+    // NOTHING LEFT WHERE THE HOST CAN WRITE: the prepared file was copied out and the host's removed, so a host writing
+    // to that name afterwards writes to nothing main signs.
     expect(await readdir(area.outputDirectory)).toStrictEqual([]);
+    await prepared.staged().discard();
     await lifecycle.close(session);
   });
 

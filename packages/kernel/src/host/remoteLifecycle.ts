@@ -4,6 +4,7 @@ import type { ByteImage, LockedReason, MupdfSession } from '../engineSeam.js';
 import type { PageImageRequest } from '../pageImages.js';
 import type { RegionRequest, RegionSnapshot } from '../pageSnapshot.js';
 import { type StagedImage, placeStaged } from '../savePipeline.js';
+import type { WorkingFile } from './announcedOutput.js';
 import type { EngineChannels } from './engineChannels.js';
 import type { RemoteSessions, SessionArea } from './remoteEngine.js';
 
@@ -240,6 +241,12 @@ export interface SessionAreaSurface {
    * Callers take it through {@link takeAnnounced}.
    */
   readonly takeOutput: (area: SessionArea, name: string, announced: number) => Promise<ByteImage>;
+  /**
+   * Copies what the host wrote into `main`'s own storage, held to `announced` as `takeOutput` is, removes the host's
+   * file, and answers the copy to be worked on in place a range at a time (`copyAnnounced`, ADR-0248): for output
+   * `main` must change but should not hold whole, which is a signature's prepared file.
+   */
+  readonly takeOutputFile: (area: SessionArea, name: string, announced: number) => Promise<WorkingFile>;
   /**
    * Moves what the host wrote to `destination`, which `main` chose, and answers its size — never reading it
    * ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md)): a checkpoint is the host's serialise,

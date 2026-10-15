@@ -128,6 +128,7 @@ import {
   withRises,
   hostedPdfLibExecution,
   nodeFileSurface,
+  copyAnnounced,
   readAnnounced,
   readFileIdentity,
   signpdfExecutionWith,
@@ -511,6 +512,13 @@ export interface ShellComposition {
    * for `DocumentServiceOptions.checkpointDirectory`'s reason.
    */
   readonly checkpointDirectory: string;
+  /**
+   * Where `main` copies a host's output it works on in place, a signature's prepared document
+   * ([ADR-0248](../../../docs/DECISIONS/0248-a-signature-is-made-over-a-digest-read-from-the-prepared-file.md)):
+   * `main`'s own storage, granted to no container, resolved in `entry.ts` beside the session root and swept there.
+   * Absent, a harness's system temporary folder, as backups fall back to it.
+   */
+  readonly takenDirectory?: string;
   /** Which document to open. Electron's open dialog, in the shipped build. */
   readonly pickDocument: PickDocument;
   /** Which documents to open, several at once. The same dialog with a multiple selection, in the shipped build. */
@@ -937,6 +945,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     engagementFile,
     backupLedgerFile = createEphemeralSettings(),
     backupDirectory = join(tmpdir(), 'monstera-backups-unconfigured'),
+    takenDirectory = join(tmpdir(), 'monstera-taken-unconfigured'),
     openStore,
     openLink,
     updateRecordFile,
@@ -1062,6 +1071,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         sendEvent?.('document.notice', { notice: 'permission-password-replaced' });
       },
     },
+    takenDirectory,
   );
 
   // THE SECOND HOST, and it is built beside the first rather than inside it.
@@ -2313,6 +2323,8 @@ function engineSessionOpener(
   replay: HostDeathSurfaces['replay'],
   /** What a hosted command tells the person, which the caller who can reach the window and the lanes says (ADR-0220). */
   notices: HostNotices,
+  /** Where `main` copies a file it works on in place, a signature's prepared document (ADR-0248). */
+  takenDirectory: string,
 ): {
   readonly openedDocument: (docId: DocId) => Promise<void>;
   readonly writers: WriterRegistry;
@@ -3103,7 +3115,7 @@ function engineSessionOpener(
     // talking to two different hosts — which is the state a second
     // `createClient` here would make representable.
     const client = createClient(engineChannels, live.value.client.invoke);
-    writer = remoteMupdfWriter(client, remote, sessionAreas(platform), sessionAssets(), notices);
+    writer = remoteMupdfWriter(client, remote, sessionAreas(platform, takenDirectory), sessionAssets(), notices);
     geometry = remoteMupdfGeometry(client, remote);
     pageText = remoteMupdfPageText(client, remote);
     pageLinks = remoteMupdfPageLinks(client, remote);
@@ -4507,7 +4519,7 @@ function composeHostBinding(
  * diff, which is what the brand is for: it makes forging one a sentence a
  * reviewer reads rather than an accident.
  */
-function sessionAreas(platform: EngineHostPlatform): SessionAreaSurface {
+function sessionAreas(platform: EngineHostPlatform, takenDirectory?: string): SessionAreaSurface {
   return {
     // LOWER-CASE HEX, which is what `outputNameSchema` accepts. Main mints the
     // name and sends it, so the host never names a file main reads back — a
@@ -4518,6 +4530,13 @@ function sessionAreas(platform: EngineHostPlatform): SessionAreaSurface {
     // comparing afterwards let a hostile host choose what main allocates. Its answer is an exactly-sized allocation of
     // its own, so no second image is made (ADR-0121's addendum).
     takeOutput: (area, name, announced) => readAnnounced(join(area.outputDirectory, name), announced),
+    // A COPY INTO `main`'S OWN STORAGE (ADR-0248), granted to no container and swept at start (`entry.ts`), held to the
+    // host's count as the read is. Only the MuPDF host's surface has somewhere to put one: it alone prepares a signature.
+    takeOutputFile: async (area, name, announced) => {
+      if (takenDirectory === undefined) throw new Error('this host prepares no signature, so nothing is taken as a file');
+      await mkdir(takenDirectory, { recursive: true });
+      return copyAnnounced(join(area.outputDirectory, name), announced, join(takenDirectory, randomBytes(16).toString('hex')));
+    },
     // A MOVE, so the bytes never pass through `main` (ADR-0121). A checkpoint or a refreshed image lands beside the
     // session root under `sessionData`, one volume, so it is a rename. A SAVE's temporary file sits beside the
     // person's document, which may be on any drive: there `rename` answers `EXDEV`, and a move across volumes is a

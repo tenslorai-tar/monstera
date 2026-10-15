@@ -85,6 +85,8 @@ function stubTransfer(): PdfiumTransfer & {
     },
     // THROWS: PDFium's session holds its bytes in `main`, so its checkpoint is written there and nothing moves (ADR-0121).
     moveOutput: () => Promise.reject(new Error('a PDFium checkpoint is written in main, never moved from a host')),
+    // THROWS: only a signature is worked on in a file `main` took, and PDFium signs nothing (ADR-0248).
+    takeOutputFile: () => Promise.reject(new Error('PDFium prepares no signature, so nothing is taken as a file')),
     removeOutput: () => Promise.reject(new Error('PDFium stages nothing in a host, so nothing is discarded there')),
     remove: () => Promise.resolve(),
   };

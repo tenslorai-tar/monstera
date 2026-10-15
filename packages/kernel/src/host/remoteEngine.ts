@@ -35,7 +35,7 @@ import {
 } from './engineChannels.js';
 import { hostRefusalFor } from './hostRefusals.js';
 import type { BoundedPageText } from './pageTextBound.js';
-import { EngineSerialiseMismatch, type SessionAreaSurface, takeAnnounced } from './remoteLifecycle.js';
+import { EngineSerialiseMismatch, type SessionAreaSurface } from './remoteLifecycle.js';
 import type {
   HostDestinationsReader,
   HostAnnotationsReader,
@@ -908,15 +908,18 @@ export function remotePdfLibHost(
  * A signature's placeholder, prepared by the MuPDF host that holds `session`, and taken into `main` to be signed
  * ([ADR-0148](../../../../docs/DECISIONS/0148-signings-parse-runs-in-the-mupdf-host-and-main-keeps-only-the-key.md)).
  *
- * **TAKEN, never moved.** `main` signs these bytes, so they leave the host's area by the one taker before anything is
- * done with them: a regular file of exactly the announced size, removed whatever happens. A host that writes to the
- * name afterwards writes to nothing `main` reads. The request carries no credential, and the picture crosses as an
- * asset by {@link remotePdfLibHost}'s rule. A refusal a person can act on comes back as the class it was thrown as.
+ * **COPIED into `main`'s own storage, never moved and never read whole** (ADR-0248). `main` signs this file, so it
+ * leaves the host's area by the file taker before anything is done with it: a regular file of exactly the announced
+ * size, copied from the handle that was checked into storage granted to no container, and the host's file removed
+ * whatever happens. A host that writes to the name, or through a handle it kept, afterwards writes to nothing `main`
+ * signs. `main` then reads the hole and the digest's ranges a part at a time and writes the signature in place. The
+ * request carries no credential, and the picture crosses as an asset by {@link remotePdfLibHost}'s rule. A refusal a
+ * person can act on comes back as the class it was thrown as.
  */
 export function remoteSignatureHost(
   client: ClientApi<EngineChannels>,
   sessions: RemoteSessions,
-  areas: Pick<SessionAreaSurface, 'mintName' | 'takeOutput' | 'removeOutput'>,
+  areas: Pick<SessionAreaSurface, 'mintName' | 'takeOutputFile' | 'removeOutput'>,
   assets: SessionAssets,
 ): SignatureHost {
   return async (session, request) => {
@@ -944,7 +947,7 @@ export function remoteSignatureHost(
     } finally {
       if (asset !== undefined) await assets.remove(area.snapshotDirectory, asset);
     }
-    return { bytes: await takeAnnounced(areas, area, into, answer.bytes), byteRange: answer.byteRange };
+    return { ...(await areas.takeOutputFile(area, into, answer.bytes)), byteRange: answer.byteRange };
   };
 }
 

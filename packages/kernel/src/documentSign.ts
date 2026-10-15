@@ -1,10 +1,13 @@
+import { createHash } from 'node:crypto';
+
 import type { Command, CommandOfKind, TimestampAuthority } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
 import type { CommandExecution } from './commandRouting.js';
 import type { MupdfSession } from './engineSeam.js';
-import { stagedBytes } from './savePipeline.js';
+import { type StagedImage, stagedBytes } from './savePipeline.js';
 import {
+  type ByteRange,
   type PlaceholderRequest,
   type PreparedSignature,
   placeholderRequestOf,
@@ -30,7 +33,7 @@ import { SignatureCredentialRefusedError, SignatureTooLargeError, TimestampUnrea
  */
 
 /**
- * The PKCS#7 `P12Signer` produced, with an accepted timestamp token added to its
+ * The PKCS#7 `signedDataOverDigest` produced (`P12Signer`'s bytes, ADR-0248), with an accepted timestamp token added to its
  * one SignerInfo as the unsigned attribute `id-aa-timeStampToken` (RFC 3161
  * Appendix A).
  *
@@ -62,7 +65,7 @@ async function timestamped(
   if (signerInfo === undefined || fields === undefined) {
     throw new Error('the signer produced a PKCS#7 without exactly one SignerInfo');
   }
-  // A DEFECT, not a refusal: `P12Signer` writes no unsigned attributes, so one
+  // A DEFECT, not a refusal: the signer writes no unsigned attributes, so one
   // already present means the signer changed underneath this code.
   // `[1]` IS TAG NUMBER 1 IN THE CONTEXT CLASS. `@types/node-forge` types every
   // node's tag as `asn1.Type`, whose members name the UNIVERSAL types, so the
@@ -126,37 +129,93 @@ const ZERO = 0x30;
  * A host that wrote a `/ByteRange` into the file other than the one it announced gains nothing: `main` signs the bytes
  * the announced ranges describe, and every reader then reports the signature invalid over the file's own ranges.
  */
-function checkPrepared(prepared: PreparedSignature, reserved: number): void {
-  const { bytes, byteRange } = prepared;
+async function checkPrepared(image: SignableImage, reserved: number): Promise<void> {
+  const { byteLength, byteRange } = image;
   const [start, holeStart, holeEnd, rest] = byteRange;
   const refuse = (why: string): never => {
     throw new Error(`the engine host prepared a signature whose ranges ${JSON.stringify(byteRange)} ${why}`);
   };
   if (!byteRange.every((value) => Number.isSafeInteger(value) && value >= 0)) refuse('are not whole numbers');
   if (start !== 0) refuse('do not start at the first byte');
-  if (holeEnd + rest !== bytes.byteLength) refuse(`do not end at the file's last byte, ${String(bytes.byteLength)}`);
+  if (holeEnd + rest !== byteLength) refuse(`do not end at the file's last byte, ${String(byteLength)}`);
   if (holeEnd - holeStart !== reserved * 2 + 2) {
     refuse(`hold a hole of ${String(holeEnd - holeStart)} bytes where the placeholder reserved ${String(reserved * 2 + 2)}`);
   }
-  if (bytes[holeStart] !== OPEN || bytes[holeEnd - 1] !== CLOSE) refuse('do not bracket a hex string');
-  for (let at = holeStart + 1; at < holeEnd - 1; at += 1) {
-    if (bytes[at] !== ZERO) refuse(`hold a hole that is not empty at byte ${String(at)}`);
+  // THE HOLE ALONE IS READ, so the check costs the hole's length and never the document's.
+  const hole = await image.read(holeStart, holeEnd);
+  if (hole[0] !== OPEN || hole[hole.byteLength - 1] !== CLOSE) refuse('do not bracket a hex string');
+  for (let at = 1; at < hole.byteLength - 1; at += 1) {
+    if (hole[at] !== ZERO) refuse(`hold a hole that is not empty at byte ${String(holeStart + at)}`);
   }
 }
 
 /**
- * The bytes a signature covers: everything but the hole, in file order.
- *
- * `SignPdf.sign`'s own cut, so a signature made here is a signature of the bytes `@signpdf` would have handed its signer
- * for the same file — the fill's proof requires the two to agree.
+ * A prepared document as `main` signs it, in place and a range at a time: its length, its four numbers, and reads and
+ * writes by offset ([ADR-0248](../../../docs/DECISIONS/0248-a-signature-is-made-over-a-digest-read-from-the-prepared-file.md)).
+ * A file `main` owns, from a host; bytes in hand, from a local session.
  */
-export function bytesToSign(prepared: PreparedSignature): Buffer {
-  const [, holeStart, holeEnd] = prepared.byteRange;
-  return Buffer.concat([prepared.bytes.subarray(0, holeStart), prepared.bytes.subarray(holeEnd)]);
+export interface SignableImage {
+  readonly byteLength: number;
+  readonly byteRange: ByteRange;
+  readonly read: (offset: number, end: number) => Promise<Uint8Array>;
+  readonly write: (offset: number, bytes: Uint8Array) => Promise<void>;
+}
+
+/** What a {@link SignatureHost} answers: a {@link SignableImage} that is given up as the signed document's staged image. */
+export interface PreparedImage extends SignableImage {
+  /** The document as it now stands, staged for the bus; once signed, the signed document. Ends reads and writes. */
+  readonly staged: () => StagedImage;
+}
+
+/** A prepared document held as bytes, signed in place: a local session's, and every case's. */
+export function preparedInMemory(prepared: PreparedSignature): PreparedImage {
+  const { bytes, byteRange } = prepared;
+  return {
+    byteLength: bytes.byteLength,
+    byteRange,
+    read: (offset, end) => Promise.resolve(bytes.subarray(offset, end)),
+    write: (offset, written) => {
+      bytes.set(written, offset);
+      return Promise.resolve();
+    },
+    staged: () => stagedBytes(bytes),
+  };
 }
 
 /**
- * Writes a signature into the prepared hole, in place, and answers the signed document.
+ * The ranges a signature covers: everything but the hole, in file order. `SignPdf.sign`'s own cut, spelt once: the
+ * digest reads these ranges, and {@link bytesToSign} joins them for the fill's proof.
+ */
+function rangesOutsideHole(image: Pick<SignableImage, 'byteLength' | 'byteRange'>): readonly (readonly [number, number])[] {
+  const [, holeStart, holeEnd] = image.byteRange;
+  return [
+    [0, holeStart],
+    [holeEnd, image.byteLength],
+  ];
+}
+
+/**
+ * The bytes a signature covers, joined: the proof's form, which holds them whole. Signing never does; it reads them into
+ * a digest a part at a time ({@link digestOutsideHole}).
+ */
+export function bytesToSign(prepared: PreparedSignature): Buffer {
+  return Buffer.concat(rangesOutsideHole({ byteLength: prepared.bytes.byteLength, byteRange: prepared.byteRange }).map(([from, to]) => prepared.bytes.subarray(from, to)));
+}
+
+/** How many bytes the digest reads at a time: `main` holds one read, whatever the document's size. */
+const DIGEST_READ_BYTES = 16 * 1_048_576;
+
+/** The SHA-256 of the bytes outside the hole, read {@link DIGEST_READ_BYTES} at a time. */
+async function digestOutsideHole(image: SignableImage): Promise<Uint8Array> {
+  const hash = createHash('sha256');
+  for (const [from, to] of rangesOutsideHole(image)) {
+    for (let at = from; at < to; at += DIGEST_READ_BYTES) hash.update(await image.read(at, Math.min(at + DIGEST_READ_BYTES, to)));
+  }
+  return hash.digest();
+}
+
+/**
+ * Writes a signature into the prepared hole, in place.
  *
  * **The fill, spelt once.** It is `SignPdf.sign`'s last step: the signature hexed, padded with zeros to the hole's
  * length, between the brackets. The hole is already all zeros and of that length, so writing the hex from just after
@@ -165,43 +224,59 @@ export function bytesToSign(prepared: PreparedSignature): Buffer {
  *
  * @throws {@link SignatureTooLargeError} when the signature does not fit the reserved space
  */
-export function fillSignature(prepared: PreparedSignature, signature: Uint8Array): Uint8Array {
-  const [, holeStart, holeEnd] = prepared.byteRange;
+async function fillHole(image: SignableImage, signature: Uint8Array): Promise<void> {
+  const [, holeStart, holeEnd] = image.byteRange;
   const reserved = (holeEnd - holeStart - 2) / 2;
   if (signature.byteLength > reserved) throw new SignatureTooLargeError(signature.byteLength, reserved);
-  const hex = Buffer.from(Buffer.from(signature).toString('hex'), 'latin1');
-  prepared.bytes.set(hex, holeStart + 1);
+  await image.write(holeStart + 1, Buffer.from(Buffer.from(signature).toString('hex'), 'latin1'));
+}
+
+/** {@link fillHole} over bytes in hand, answering them: the fill's proof's form. */
+export async function fillSignature(prepared: PreparedSignature, signature: Uint8Array): Promise<Uint8Array> {
+  await fillHole(preparedInMemory(prepared), signature);
   return prepared.bytes;
 }
 
 /**
- * Signs a prepared document: checks its ranges, signs the bytes outside the hole, adds a timestamp when one is asked
- * for, and fills the hole.
+ * Signs a prepared document in place: checks its ranges against its hole, digests the bytes outside the hole a read at
+ * a time, signs the digest, adds a timestamp when one is asked for, and fills the hole
+ * ([ADR-0248](../../../docs/DECISIONS/0248-a-signature-is-made-over-a-digest-read-from-the-prepared-file.md)).
  *
- * **Each failure is named where it happens.** The credential's refusal is only what `P12Signer` itself throws; a
- * signature too large for its hole is `fillSignature`'s; a host whose ranges do not describe its file is a defect and
- * propagates as one. Wrapping all of it in the credential's name would tell a person a wrong password for a document
- * problem.
+ * **Each failure is named where it happens.** The credential's refusal is only what opening the credential and signing
+ * with it throw; a signature too large for its hole is the fill's; a host whose ranges do not describe its file is a
+ * defect and propagates as one. Wrapping all of it in the credential's name would tell a person a wrong password for a
+ * document problem.
  *
- * `@signpdf/signer-p12` loads here, dynamically, so main pays for node-forge only when somebody signs something — the
- * same reason `nspell` is behind one.
+ * `signedDigest.ts` loads here, dynamically, so main pays for node-forge only when somebody signs something — the same
+ * reason `nspell` is behind one.
  */
+export async function signImage(
+  image: SignableImage,
+  command: CommandOfKind<'signDocument'>,
+  requestTimestamp: RequestTimestamp,
+): Promise<void> {
+  await checkPrepared(image, reservedSignatureBytes(command));
+  const digest = await digestOutsideHole(image);
+  const { openCredential, signedDataOverDigest } = await import('./signedDigest.js');
+  let raw: Buffer;
+  try {
+    // THE PASSPHRASE REACHES ONE CALL. Nothing here records it, and the error carries none of it.
+    raw = signedDataOverDigest(openCredential(command.bytes, command.passphrase), digest, new Date());
+  } catch (cause) {
+    throw new SignatureCredentialRefusedError({ cause });
+  }
+  const withToken = command.timestamp === undefined ? raw : await timestamped(raw, command.timestamp, requestTimestamp);
+  await fillHole(image, withToken);
+}
+
+/** {@link signImage} over bytes in hand, answering them signed: a local session's form, and every case's. */
 export async function signPrepared(
   prepared: PreparedSignature,
   command: CommandOfKind<'signDocument'>,
   requestTimestamp: RequestTimestamp,
 ): Promise<Uint8Array> {
-  checkPrepared(prepared, reservedSignatureBytes(command));
-  const { P12Signer } = await import('@signpdf/signer-p12');
-  let raw: Buffer;
-  try {
-    // THE PASSPHRASE REACHES ONE CALL. Nothing here records it, and the error carries none of it.
-    raw = await new P12Signer(command.bytes, { passphrase: command.passphrase }).sign(bytesToSign(prepared));
-  } catch (cause) {
-    throw new SignatureCredentialRefusedError({ cause });
-  }
-  const withToken = command.timestamp === undefined ? raw : await timestamped(raw, command.timestamp, requestTimestamp);
-  return fillSignature(prepared, withToken);
+  await signImage(preparedInMemory(prepared), command, requestTimestamp);
+  return prepared.bytes;
 }
 
 /**
@@ -228,7 +303,7 @@ export const NO_TIMESTAMPS: RequestTimestamp = () =>
  * Prepares a signature beside `session`, in the process that holds it, and answers the prepared bytes and their
  * ranges: the MuPDF host's `engine/prepareSignature` in `main`, a local session's serialise in a test.
  */
-export type SignatureHost = (session: MupdfSession, request: PlaceholderRequest) => Promise<PreparedSignature>;
+export type SignatureHost = (session: MupdfSession, request: PlaceholderRequest) => Promise<PreparedImage>;
 
 /**
  * Reports that a signature's prior state is not recorded.
@@ -269,7 +344,14 @@ export function signpdfExecutionWith(host: SignatureHost, requestTimestamp: Requ
       if (routed.kind !== 'signDocument') throw new Error(`"${routed.kind}" is not routed to the signpdf writer.`);
       const signing = routed;
       const prepared = await host(session, placeholderRequestOf(signing));
-      return stagedBytes(await signPrepared(prepared, signing, requestTimestamp));
+      try {
+        await signImage(prepared, signing, requestTimestamp);
+      } catch (refused) {
+        // NOTHING SIGNED IS KEPT: a file `main` took for this signature is removed with the refusal.
+        await prepared.staged().discard();
+        throw refused;
+      }
+      return prepared.staged();
     },
     capture: () => captureSignDocument(),
     invert: (_session, kind) =>
