@@ -70,7 +70,7 @@ import { fileURLToPath } from 'node:url';
 
 import { extract } from '../lib/extract.mjs';
 import { downloadVerified, fileExists, toolPath } from '../lib/fetchVerified.mjs';
-import { treeProblems, verifyPinnedTree } from '../lib/pinnedTree.mjs';
+import { presentAsPinned, treeProblems, verifyPinnedTree } from '../lib/pinnedTree.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { committedLicenceName, sameAsCommitted } from './condaForge.mjs';
 import { isMain } from '../lib/isMain.mjs';
@@ -259,14 +259,17 @@ export function pdfiumEnvironment(root) {
 export async function provisionPdfium({ root, force = false, platform = process.platform }) {
   const pinned = pdfiumPlatform(platform);
   const library = pdfiumLibrary(root, platform);
-  if (!force && (await fileExists(library))) {
-    // PRESENT IS NOT PINNED: the tree is checked against the file pins on every run, cache hit or not
-    // (`pinnedTree.mjs`), and a tree that is not exactly the pinned one is removed and the run fails.
-    await verifyPinnedTree({
+  // PRESENT IS NOT PINNED: the tree is checked against the file pins on every run, cache hit or not
+  // (`pinnedTree.mjs`), and a tree that is not exactly the pinned one is removed and provisioned again in this run.
+  if (
+    !force &&
+    (await fileExists(library)) &&
+    (await presentAsPinned({
       directory: join(pdfiumRoot(root), pinned.folder),
       pins: pinned.pins,
       context: `PDFium ${PDFIUM_VERSION} (${pinned.asset})`,
-    });
+    }))
+  ) {
     return { provisioned: false, library };
   }
 

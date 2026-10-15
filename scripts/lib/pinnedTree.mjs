@@ -89,6 +89,31 @@ export async function verifyPinnedTree({ directory, pins, context }) {
 }
 
 /**
+ * Whether a folder FOUND ON DISK holds exactly its pinned files: `true` when it does, so the run may stop there; `false`
+ * after removing it when it does not, saying so on stderr, so the SAME run provisions it again from the verified archive
+ * (addendum 5's P1).
+ *
+ * The removal is `verifyPinnedTree`'s and for its reason: a corrupted tree and a poisoned one are indistinguishable, so
+ * neither is repaired in place. What changed is that the run goes on. It used to stop with *run the provisioning again*,
+ * which made a tree that was merely out of date, as every tree is after its pins change, fail the first run after an
+ * upgrade on every machine; the second run did exactly what this one now does, from the same verified archive. Nothing
+ * is laundered: the problems are printed, and the tree that replaces it is held to the pins again before it is placed.
+ *
+ * A tree a run has just EXTRACTED is held by `verifyPinnedTree`, which still throws: there a mismatch is the archive or
+ * the pins, and no second run would change it.
+ *
+ * @param {{ directory: string, pins: Readonly<Record<string, string>>, context: string, report?: (line: string) => void }} options
+ * @returns {Promise<boolean>}
+ */
+export async function presentAsPinned({ directory, pins, context, report = (line) => process.stderr.write(line) }) {
+  const problems = await treeProblems(directory, pins);
+  if (problems.length === 0) return true;
+  await rm(directory, { recursive: true, force: true });
+  report(`${context} is not the tree its script pins, so it was removed unread and is provisioned again now:\n  ${problems.join('\n  ')}\n`);
+  return false;
+}
+
+/**
  * The pins a folder would need — for writing a script's table from a tree this run extracted from a verified archive,
  * never from one found on disk.
  *

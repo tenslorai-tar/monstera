@@ -47,7 +47,7 @@ import { fileURLToPath } from 'node:url';
 import { extract } from '../lib/extract.mjs';
 import { downloadVerified, fileExists, toolPath } from '../lib/fetchVerified.mjs';
 import { verifyDetached } from '../lib/openpgpVerify.mjs';
-import { treeProblems, verifyPinnedTree } from '../lib/pinnedTree.mjs';
+import { presentAsPinned, treeProblems, verifyPinnedTree } from '../lib/pinnedTree.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { VC14_RUNTIME, VC14_RUNTIME_BIN, committedLicenceName, installCondaPackage, sameAsCommitted } from './condaForge.mjs';
 import { POPPLER_KEY_FINGERPRINT, popplerKeyPath } from './keys/popplerKey.mjs';
@@ -150,9 +150,13 @@ export function popplerLicenceRoot(root) {
  */
 export async function provisionPoppler({ root, force = false }) {
   const executable = pdftotextPath(root);
-  if (!force && (await fileExists(executable))) {
-    // PRESENT IS NOT PINNED (`pinnedTree.mjs`): every file beside the program is checked, and no other may be there.
-    await verifyPinnedTree({ directory: join(popplerRoot(root), 'bin'), pins: POPPLER_BIN, context: `Poppler ${POPPLER_VERSION}` });
+  // PRESENT IS NOT PINNED (`pinnedTree.mjs`): every file beside the program is checked, and no other may be there. One
+  // that is not as pinned is removed and provisioned again in this run (`presentAsPinned`).
+  if (
+    !force &&
+    (await fileExists(executable)) &&
+    (await presentAsPinned({ directory: join(popplerRoot(root), 'bin'), pins: POPPLER_BIN, context: `Poppler ${POPPLER_VERSION}` }))
+  ) {
     return { provisioned: false, executable };
   }
 

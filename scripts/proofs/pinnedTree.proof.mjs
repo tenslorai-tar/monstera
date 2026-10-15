@@ -20,12 +20,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { createRoster } from '../lib/passRoster.mjs';
-import { pinsOf, treeProblems, verifyPinnedTree } from '../lib/pinnedTree.mjs';
+import { pinsOf, presentAsPinned, treeProblems, verifyPinnedTree } from '../lib/pinnedTree.mjs';
 import { formatError } from '../lib/reportError.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 6 });
+const roster = createRoster(failures, { cases: 8 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -119,6 +119,58 @@ try {
     'an empty pin table is an error, not a pass',
     empty.includes('at least one pinned file'),
     `message "${empty}". A table that lost its rows would otherwise verify an empty folder.`,
+  );
+
+  // ---- 7. A TREE FOUND ON DISK that is not as pinned is removed, said, and answered false; an exact one is true ----
+  /** @type {string[]} */
+  const said = [];
+  const stale = tree('stale');
+  writeFileSync(join(stale, 'tool.exe'), 'the program, last version');
+  const staleAnswer = await presentAsPinned({ directory: stale, pins, context: 'the stale tree', report: (line) => said.push(line) });
+  const exactAnswer = await presentAsPinned({ directory: tree('present'), pins, context: 'the present tree', report: (line) => said.push(line) });
+  check(
+    'a stale tree on disk is removed and reported, and the caller told to provision; an exact one passes',
+    !staleAnswer && !existsSync(stale) && said.length === 1 && said[0]?.includes('different tool.exe') === true && exactAnswer,
+    `stale answered ${String(staleAnswer)}, still present ${String(existsSync(stale))}, said ${JSON.stringify(said)}, ` +
+      `exact answered ${String(exactAnswer)}.`,
+  );
+
+  // ---- 8. AN OLD TREE COMES UP TO DATE IN ONE RUN (addendum 5's P1), in the provisioners' own shape ----
+  /**
+   * One provisioning run as every script now spells it: a tree present and as pinned stops there; otherwise the tree is
+   * written again from the source (the verified archive's stand-in) and held to the pins before it counts.
+   *
+   * @param {string} directory
+   * @param {'new' | 'old'} shape
+   */
+  const provision = async (directory, shape) => {
+    if (existsSync(join(directory, 'tool.exe'))) {
+      if (shape === 'new' && (await presentAsPinned({ directory, pins, context: 'the case tree', report: () => undefined }))) return 'present';
+      // THE OLD SHAPE, the control: the present tree is refused and the run stops.
+      if (shape === 'old') await verifyPinnedTree({ directory, pins, context: 'the case tree' });
+    }
+    mkdirSync(join(directory, 'sub'), { recursive: true });
+    writeFileSync(join(directory, 'tool.exe'), 'the program');
+    writeFileSync(join(directory, 'sub', 'library.dll'), 'the library');
+    await verifyPinnedTree({ directory, pins, context: 'the provisioned tree' });
+    return 'provisioned';
+  };
+  const upgraded = tree('upgraded');
+  writeFileSync(join(upgraded, 'sub', 'library.dll'), 'the library, last version');
+  const firstRun = await provision(upgraded, 'new');
+  const after = await treeProblems(upgraded, pins);
+  const control = tree('control');
+  writeFileSync(join(control, 'sub', 'library.dll'), 'the library, last version');
+  let oldRun = '';
+  try {
+    oldRun = await provision(control, 'old');
+  } catch (error) {
+    oldRun = error instanceof Error ? error.message : String(error);
+  }
+  check(
+    'an out-of-date tree is replaced and pinned in the SAME run; the old shape stopped and asked for another',
+    firstRun === 'provisioned' && after.length === 0 && oldRun.includes('Run the provisioning again'),
+    `first run answered ${firstRun} with problems ${JSON.stringify(after)}; the old shape answered "${oldRun}".`,
   );
 
   if (failures.length > 0) {

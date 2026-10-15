@@ -34,7 +34,7 @@ import { fileURLToPath } from 'node:url';
 
 import { downloadVerified, fileExists, toolPath, verifyFileDigest } from '../lib/fetchVerified.mjs';
 import { isMain } from '../lib/isMain.mjs';
-import { treeProblems, verifyPinnedTree } from '../lib/pinnedTree.mjs';
+import { presentAsPinned, treeProblems, verifyPinnedTree } from '../lib/pinnedTree.mjs';
 import { formatError } from '../lib/reportError.mjs';
 
 /** The `google/fonts` commit every face is read from, by `git ls-remote https://github.com/google/fonts HEAD`, 2026-10-05. */
@@ -139,8 +139,12 @@ async function verifyLicences(root) {
 export async function provisionFonts({ root, force = false }) {
   await verifyLicences(root);
   const directory = fontsDirectory(root);
-  if (!force && (await fileExists(join(directory, BUNDLED_FONTS[0]?.file ?? '')))) {
-    await verifyPinnedTree({ directory, pins: BUNDLED_FONT_PINS, context: `the bundled fonts at google/fonts ${FONTS_COMMIT.slice(0, 12)}` });
+  // A FOLDER NOT AS PINNED is removed and provisioned again in this run (`presentAsPinned`).
+  if (
+    !force &&
+    (await fileExists(join(directory, BUNDLED_FONTS[0]?.file ?? ''))) &&
+    (await presentAsPinned({ directory, pins: BUNDLED_FONT_PINS, context: `the bundled fonts at google/fonts ${FONTS_COMMIT.slice(0, 12)}` }))
+  ) {
     return { provisioned: false, directory };
   }
   // Staged and published by rename, `pdfium.mjs`' shape and its reason: two processes provisioning at once must never

@@ -34,7 +34,7 @@ import { fileURLToPath } from 'node:url';
 
 import { extract } from '../lib/extract.mjs';
 import { downloadVerified, fileExists, toolPath } from '../lib/fetchVerified.mjs';
-import { treeProblems, verifyPinnedTree } from '../lib/pinnedTree.mjs';
+import { presentAsPinned, treeProblems, verifyPinnedTree } from '../lib/pinnedTree.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { VC14_RUNTIME, VC14_RUNTIME_BIN, installCondaPackage, sameAsCommitted } from './condaForge.mjs';
 import { isMain } from '../lib/isMain.mjs';
@@ -126,13 +126,17 @@ export function ijsBanner(header) {
  */
 export async function provisionGhostscript({ root, force = false }) {
   const executable = gswin64cPath(root);
-  if (!force && (await fileExists(executable))) {
-    // PRESENT IS NOT PINNED (`pinnedTree.mjs`): every file beside the program is checked, and no other may be there.
-    await verifyPinnedTree({
+  // PRESENT IS NOT PINNED (`pinnedTree.mjs`): every file beside the program is checked, and no other may be there. One
+  // that is not as pinned is removed and provisioned again in this run (`presentAsPinned`).
+  if (
+    !force &&
+    (await fileExists(executable)) &&
+    (await presentAsPinned({
       directory: join(ghostscriptRoot(root), 'bin'),
       pins: GHOSTSCRIPT_BIN,
       context: `Ghostscript ${GHOSTSCRIPT_VERSION}`,
-    });
+    }))
+  ) {
     return { provisioned: false, executable };
   }
 

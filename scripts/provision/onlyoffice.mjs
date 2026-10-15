@@ -51,7 +51,7 @@ import { fileURLToPath } from 'node:url';
 
 import { extract } from '../lib/extract.mjs';
 import { downloadVerified, fileExists, toolPath, verifyFileDigest } from '../lib/fetchVerified.mjs';
-import { filesUnder, pinsOf, treeProblems, verifyPinnedTree } from '../lib/pinnedTree.mjs';
+import { filesUnder, pinsOf, presentAsPinned, treeProblems, verifyPinnedTree } from '../lib/pinnedTree.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { normaliseLayout } from '../release/generateNotice.mjs';
 import { sameAsCommitted } from './condaForge.mjs';
@@ -508,9 +508,13 @@ async function generateFontCache(staging, tree) {
  */
 export async function provisionOnlyOffice({ root, force = false }) {
   const executable = x2tPath(root);
-  if (!force && (await fileExists(executable))) {
-    // PRESENT IS NOT PINNED (`pinnedTree.mjs`): every file of the tree is checked, and no other may be there.
-    await verifyPinnedTree({ directory: onlyofficeRoot(root), pins: onlyofficePins(), context: `ONLYOFFICE ${ONLYOFFICE_VERSION}` });
+  // PRESENT IS NOT PINNED (`pinnedTree.mjs`): every file of the tree is checked, and no other may be there. One that is
+  // not as pinned, an old tree after an upgrade among them, is removed and provisioned again in this run.
+  if (
+    !force &&
+    (await fileExists(executable)) &&
+    (await presentAsPinned({ directory: onlyofficeRoot(root), pins: onlyofficePins(), context: `ONLYOFFICE ${ONLYOFFICE_VERSION}` }))
+  ) {
     return { provisioned: false, executable };
   }
 

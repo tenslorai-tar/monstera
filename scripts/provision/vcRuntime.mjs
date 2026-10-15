@@ -29,7 +29,7 @@ import { fileURLToPath } from 'node:url';
 
 import { fileExists, toolPath } from '../lib/fetchVerified.mjs';
 import { isMain } from '../lib/isMain.mjs';
-import { treeProblems, verifyPinnedTree } from '../lib/pinnedTree.mjs';
+import { presentAsPinned, treeProblems, verifyPinnedTree } from '../lib/pinnedTree.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { VC14_RUNTIME, VC14_RUNTIME_BIN, installCondaPackage } from './condaForge.mjs';
 
@@ -60,9 +60,13 @@ export function vcRuntimeLicenceRoot(root) {
 export async function provisionVcRuntime({ root, force = false }) {
   const directory = vcRuntimeDirectory(root);
   const context = `the Visual C++ runtime ${VC14_RUNTIME.version}`;
-  if (!force && (await fileExists(join(directory, 'vcruntime140.dll')))) {
-    // PRESENT IS NOT PINNED (`pinnedTree.mjs`): every file is checked, and no other may be there.
-    await verifyPinnedTree({ directory, pins: VC14_RUNTIME_BIN, context });
+  // PRESENT IS NOT PINNED (`pinnedTree.mjs`): every file is checked, and no other may be there. One that is not as
+  // pinned is removed and provisioned again in this run (`presentAsPinned`).
+  if (
+    !force &&
+    (await fileExists(join(directory, 'vcruntime140.dll'))) &&
+    (await presentAsPinned({ directory, pins: VC14_RUNTIME_BIN, context }))
+  ) {
     return { provisioned: false, directory };
   }
   const staging = `${directory}.staging-${String(process.pid)}`;
