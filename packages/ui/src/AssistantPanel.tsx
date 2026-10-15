@@ -50,6 +50,7 @@ import {
   ANTHROPIC_OUT_OF_CREDIT,
   ASSISTANT_ABOUT_LABEL,
   ASSISTANT_ASK,
+  ASSISTANT_NOTICE,
   ASSISTANT_ASSISTANT,
   ASSISTANT_CHIP_COMMENT,
   ASSISTANT_CHIP_COMMENTS,
@@ -1435,6 +1436,11 @@ export function AssistantPanel({
           </select>
         </label>
       </div>
+      {/* THE NOTICE UNDER THE MODEL ROW (the owner's G1): static text the pane carries, never a live region, so it is
+          read with the pane and not announced again with every reply; no tab stop. */}
+      <p className="m-assistant__notice" data-assistant-notice="">
+        {i18n._(ASSISTANT_NOTICE)}
+      </p>
       {/* HOW THE BOX SENDS, for a screen reader through the box's description and drawn for nobody: the owner's
           review of 0.1.6.0 took every explanatory line out of the pane, and Enter sending is the platform's way. */}
       <span className="m-visually-hidden" id={hintId}>

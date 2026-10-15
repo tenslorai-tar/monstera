@@ -3808,6 +3808,14 @@ optgroup {
   gap: var(--space-8);
 }
 
+/* THE NOTICE UNDER THE MODEL ROW (the owner's G1): caption-size and muted, the pair the theme guarantees readable on the
+   panel's ground, so it is seen without competing with the conversation. */
+.m-assistant__notice {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+}
+
 .m-assistant__picker {
   display: flex;
   min-inline-size: 0;

@@ -96,6 +96,28 @@ for (const look of LOOKS) {
   });
 }
 
+// G1: THE NOTICE UNDER THE MODEL ROW, in the owner's words, in every look: below the row, read at the text floor, not a
+// live region and not a tab stop.
+for (const look of LOOKS) {
+  test(`${look.name}: G1, "AI can make mistakes. Double check replies." sits below the model row, readable, never announced or focused`, async ({ page }) => {
+    await openPane(page, {}, { width: 1280, height: 800 }, look);
+    const notice = page.locator('.m-assistant [data-assistant-notice]');
+    await expect(notice).toBeVisible();
+    await expect(notice).toHaveText('AI can make mistakes. Double check replies.');
+    const placed = await notice.evaluate((element) => {
+      const models = document.querySelector('.m-assistant [data-assistant-models]')?.getBoundingClientRect();
+      const own = element.getBoundingClientRect();
+      return {
+        below: models !== undefined && own.top >= models.bottom - 0.5,
+        live: element.closest('[aria-live], [role="status"], [role="alert"], [role="log"]') !== null,
+        focusable: element.tabIndex >= 0 || element.querySelector('[tabindex], a, button, input, select, textarea') !== null,
+      };
+    });
+    expect(placed).toStrictEqual({ below: true, live: false, focusable: false });
+    await readsAtTextFloor(page, notice, look);
+  });
+}
+
 test('an OPEN choice menu is headed by its name, then its values with the chosen one marked', async ({ page }) => {
   // STILL, so the boxes are where they settle rather than where the popup's entrance has them.
   await page.emulateMedia({ reducedMotion: 'reduce' });

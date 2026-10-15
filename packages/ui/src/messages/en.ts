@@ -2285,6 +2285,7 @@ export const HISTORY_LOADING = messageKey('assistant.history.loading');
 export const ASSISTANT_ASSISTANT = messageKey('assistant.assistant');
 export const ASSISTANT_EMPTY = messageKey('assistant.empty');
 export const ASSISTANT_ASK = messageKey('assistant.ask-hint');
+export const ASSISTANT_NOTICE = messageKey('assistant.notice');
 export const ASSISTANT_NO_KEY = messageKey('assistant.no-key');
 /** An ask about the comments of a document that has none, refused by main before any provider is reached (F-V1). */
 export const ASSISTANT_NO_COMMENTS = messageKey('assistant.no-comments');
@@ -5236,6 +5237,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_ASSISTANT]: 'Assistant',
   [ASSISTANT_EMPTY]: 'No provider key is stored yet. Add one in Settings › AI and the assistant can start answering.',
   [ASSISTANT_ASK]: 'Enter sends. Shift+Enter starts a new line.',
+  // THE OWNER'S WORDING, exactly (addendum 3, G1).
+  [ASSISTANT_NOTICE]: 'AI can make mistakes. Double check replies.',
   [ASSISTANT_NO_KEY]: 'This provider has no key stored. Add it in Settings › AI; the key stays on this machine.',
   [ASSISTANT_NO_COMMENTS]: 'This document has no comments to ask about, so nothing was sent.',
   [ASSISTANT_SEARCHES_THE_WEB]:

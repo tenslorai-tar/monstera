@@ -27,6 +27,7 @@ The assistant answers questions about your document using an AI provider you cho
 - With **Document + web**, your question, and possibly text from the document, goes to a search engine through the provider you chose, and searches may cost extra. Every new chat starts with **Document only**.
 - With **All Open Docs**, the documents open when you press **Send** go, the one you are in first, and they share one limit equally. The line under your question says how much of each could go, what went from each, and any document that could not be read and why. Each answer cites a document and a page, for example "Doc 2 p. 3"; choose it to go to that page, while that document is still open. At most 16 documents go; the line names any past that.
 - **Attached files** are read on this computer before anything is sent: a PDF's text, a Word, Excel or PowerPoint file's text, a text file, and a JPEG or PNG picture, which goes as a picture to a model that can read one. The line under your question says what went from each file and names any file that could not be read, and why; the question still goes. An answer cites a file as, for example, "File 2 p. 3". Text from your documents and files shares one limit equally.
+- AI can make mistakes. Double check replies. The assistant says so under its model choice.
 - The provider bills you directly for what you send. If a model cannot read pictures, sending a picture is not offered.
 - If the key is not accepted or the provider cannot be reached, the assistant says so. What you typed is kept.
 
