@@ -35,7 +35,7 @@ import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNumber, PDFRa
 import { expect as defaultExpect } from '@playwright/test';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { visibleSheetCount } from '../lib/xlsSheets.mjs';
-import { WALK_WINDOW, root, startWalk } from './liveWalk.mjs';
+import { WALK_WINDOW, root, startWalk, writesDone, writesLanded } from './liveWalk.mjs';
 import { savedFonts, savedWords } from './savedPdf.mjs';
 
 const expect = defaultExpect.configure({ timeout: 20_000 });
@@ -179,9 +179,16 @@ await step('O11: the page fills the window — main’s content size and the pag
 await step('W11: the first-run AI offer is on the start screen below Open, and no dialog arrives over Open', async () => {
   const offer = page.getByRole('region', { name: /Monstera has an AI assistant/u });
   await offer.waitFor({ state: 'visible', timeout: 10_000 });
-  // THE MEASURED WINDOW (2026-10-12: the dialog was absent at 0 s and present by 1 s), waited out twice over, so a
-  // dialog still opened on main's answers would be on screen when absence is read.
-  await page.waitForTimeout(2000);
+  // THE OFFER IS DRAWN FROM THE SAME TWO ANSWERS from main that opened the dialog over Open (`AiSetupOffer.tsx`), so with
+  // the offer on screen the decision is made; absence is read on the frame after the one that drew it. A 2 s sleep stood
+  // for this (GGGGGGGG-3).
+  await page.evaluate(() => new Promise((resolve) => {
+    // THE PAGE'S OWN, read off its global: this file is checked as Node code, which has no frames.
+    const frame = /** @type {(callback: () => void) => number} */ (Reflect.get(globalThis, 'requestAnimationFrame'));
+    frame(() => frame(() => {
+      resolve(undefined);
+    }));
+  }));
   expect(await page.getByRole('dialog').count()).toBe(0);
   const [openButton, drawn] = await Promise.all([
     page.getByRole('button', { name: /^Open PDF/u }).first().boundingBox(),
@@ -664,9 +671,11 @@ await step('O9: a dismissed Markdown picker shows NO notice — nothing was chos
   await pickFiles([]);
   await command('New PDF from Markdown…');
   // THE FONT QUESTION FIRST (L4), answered with its default; the picker after it is the one dismissed.
+  const converting = await writesDone(page, 'works');
   await page.getByRole('dialog', { name: 'New PDF' }).getByRole('button', { name: 'Choose file…' }).click();
-  // LONGER THAN THE NOTICE'S FIRST LOOK (200 ms) several times over, so a notice that ignored the picker would be up.
-  await page.waitForTimeout(1500);
+  // THE WORK HAS ANSWERED (`inFlight.ts`' works): main has said the picker was dismissed, so a notice that ignored it would
+  // have had its whole life by now. A 1.5 s sleep stood for this (GGGGGGGG-3).
+  await writesLanded(page, converting, 1, 'works');
   expect(await page.locator('[data-task-notice]').count()).toBe(0);
 });
 

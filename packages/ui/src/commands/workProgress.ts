@@ -1,6 +1,7 @@
 import type { ContractClient } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 
+import { countedAs } from '../inFlight.js';
 import type { TrackTask, TrackedTask } from '../runningTask.js';
 
 /**
@@ -47,7 +48,8 @@ export async function withWorkProgress<T>(
   };
   ask();
   try {
-    return await run(work);
+    // COUNTED AS A WORK (`inFlight.ts`), so a walk can tell the work has ended before it reads whether a notice showed.
+    return await countedAs('works', () => run(work));
   } finally {
     answered = true;
     globalThis.clearTimeout(timer);

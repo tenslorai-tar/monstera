@@ -36,6 +36,71 @@ export const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 export const WALK_WINDOW = { width: 1400, height: 900 };
 
 /**
+ * How many writes (or, with `kind`, works) the window has finished: `data-writes-done` on the root, which the renderer
+ * keeps (`packages/ui/src/inFlight.ts`, which says what each kind counts). Note it before an action, and hand it to
+ * {@link writesLanded}.
+ *
+ * @param {import('playwright').Page} page
+ * @param {'writes' | 'works'} [kind]
+ */
+export async function writesDone(page, kind = 'writes') {
+  return Number((await page.locator('html').getAttribute(`data-${kind}-done`)) ?? '0');
+}
+
+/**
+ * Waits until every write since `before` has landed: more writes finished than were noted, and none in flight. The
+ * condition a fixed sleep stood for (the stage audit's GGGGGGGG-3). The finished count only grows, so a reading taken
+ * before the write began cannot pass for one after it; an action that wrote nothing is a walk's own error and fails
+ * here, naming the count, rather than passing on a wait that saw nothing.
+ *
+ * @param {import('playwright').Page} page
+ * @param {number} before the count {@link writesDone} answered before the action
+ * @param {number} [writes] how many the action makes, 1 unless said
+ * @param {'writes' | 'works'} [kind]
+ */
+export async function writesLanded(page, before, writes = 1, kind = 'writes') {
+  const deadline = Date.now() + 60_000;
+  for (;;) {
+    const root = page.locator('html');
+    const done = Number((await root.getAttribute(`data-${kind}-done`)) ?? '0');
+    const inFlight = (await root.getAttribute(`data-${kind}`)) ?? '0';
+    if (done >= before + writes && inFlight === '0') return;
+    if (Date.now() > deadline) {
+      throw new Error(`${kind} not landed after 60 s: ${String(done - before)} of ${String(writes)} finished, ${inFlight} in flight`);
+    }
+    // A POLL, NOT A SLEEP: the condition is read again every 100 ms until it holds or the deadline names what is missing.
+    await page.waitForTimeout(100);
+  }
+}
+
+/**
+ * Waits until no write is in flight, for a step that may or may not have written and must not start while an earlier
+ * step's write is still landing. Where the step knows it wrote, {@link writesLanded} is the stronger wait.
+ *
+ * @param {import('playwright').Page} page
+ */
+export async function writesIdle(page) {
+  await writesLanded(page, await writesDone(page), 0);
+}
+
+/**
+ * Waits until a box stops moving: two reads 100 ms apart that agree. For a scroll or a wheel, whose end has no event.
+ *
+ * @param {() => Promise<{ x: number; y: number; width: number; height: number } | null>} read
+ * @param {import('playwright').Page} page
+ */
+export async function boxSettled(page, read) {
+  let last = await read();
+  for (let tries = 0; tries < 50; tries += 1) {
+    await page.waitForTimeout(100);
+    const now = await read();
+    if (JSON.stringify(now) === JSON.stringify(last)) return now;
+    last = now;
+  }
+  throw new Error('the box did not settle in 5 s');
+}
+
+/**
  * @typedef {object} StepRecord
  * @property {string} name
  * @property {'passed' | 'failed'} outcome

@@ -37,7 +37,7 @@ import {
   StandardFonts,
   decodePDFRawStream,
 } from '@cantoo/pdf-lib';
-import { root, startWalk } from './liveWalk.mjs';
+import { boxSettled, root, startWalk, writesDone, writesIdle, writesLanded } from './liveWalk.mjs';
 import { savedSignature } from './savedPdf.mjs';
 
 const source = process.argv[2] ?? join(root, '_review/test-files/form-test.pdf');
@@ -123,7 +123,8 @@ await step('a press NEAR THE EDGE of another field opens it too, and Tab and Shi
   await expect(page.locator('.m-page-field-editor')).toBeVisible();
   await page.keyboard.press('Shift+Tab');
   await page.keyboard.press('Escape');
-  await page.waitForTimeout(6000);
+  // THE FILLS LANDED before the next step adds a field (GGGGGGGG-3: a 6 s sleep stood for this).
+  await writesIdle(page);
 });
 
 /** The tick box pressed three times, by its field name (its accessible name), and how it ended on screen. */
@@ -169,8 +170,10 @@ await step('the new field moves with a drag, snaps to another field’s edge wit
   await page.mouse.up();
   // W6: AN ARROW STRAIGHT AFTER THE MOVE, and three more as a held key sends them, with no wait: the command lane sends
   // each where the one before left the field (measured 2026-10-12 before the lane: the first arrow raised "out of date").
+  const before = await writesDone(page);
   for (let press = 0; press < 4; press += 1) await page.keyboard.press('ArrowRight');
-  await page.waitForTimeout(3000);
+  // ALL FOUR NUDGES LANDED, which is when an out-of-date refusal would have been said (a 3 s sleep stood for this).
+  await writesLanded(page, before, 4);
   const outOfDate = await page.getByText(/was out of date/u).count();
   expect(outOfDate).toBe(0);
   return { guidesWhileHeld: guides, outOfDateDialogs: outOfDate };
@@ -180,6 +183,7 @@ await step('O6: the custom border colour dragged through many colours, with no o
   const group = page.getByRole('group', { name: 'Border colour' });
   const custom = group.getByLabel('Custom colour');
   // A DRAG IN THE PICKER, as Chromium reports one: an input event per step, then a change when it closes.
+  const before = await writesDone(page);
   await custom.evaluate((input) => {
     const element = /** @type {{ value: string, dispatchEvent: (event: Event) => boolean }} */ (/** @type {unknown} */ (input));
     for (const hex of ['#200000', '#400000', '#600000', '#800000', '#a00000', '#c00010']) {
@@ -188,7 +192,8 @@ await step('O6: the custom border colour dragged through many colours, with no o
     }
     element.dispatchEvent(new Event('change', { bubbles: true }));
   });
-  await page.waitForTimeout(3000);
+  // THE COLOUR'S WRITES LANDED, all of them sent inside that one call (a 3 s sleep stood for this).
+  await writesLanded(page, before);
   const outOfDate = await page.getByText(/was out of date/u).count();
   expect(outOfDate).toBe(0);
   return { outOfDateDialogs: outOfDate, shown: await custom.inputValue() };
@@ -371,28 +376,34 @@ await step('L1: a password field filled with a PIN and flattened is masked in th
   const paper = await page.locator('canvas.m-page:visible').first().boundingBox();
   if (paper === null) throw new Error('the page is not on screen');
   await page.getByRole('button', { name: /^Text field/u }).first().click();
+  const placing = await writesDone(page);
   await page.mouse.click(paper.x + paper.width - 80, paper.y + 60);
   await expect(page.getByLabel('Name', { exact: true })).toHaveValue(/^Text\d+$/u);
   // A PLACE IS A WRITE (3 to 5 s on this machine, textWalk's reading of 2026-10-12): a property set while it lands is
-  // answered by the panel's next draw (2026-10-13: the checkbox clicked 'did not change its state').
-  await page.waitForTimeout(6000);
+  // answered by the panel's next draw (2026-10-13: the checkbox clicked 'did not change its state'). A 6 s sleep stood
+  // for this.
+  await writesLanded(page, placing);
   const name = await page.getByLabel('Name', { exact: true }).inputValue();
   // CLICKED, THEN WAITED FOR: the box is the field's own property, drawn from the document after its write lands (3 to 5 s
   // here), and `check()` asks for the new state at once and reported 'did not change its state' (2026-10-13).
   const hide = page.getByLabel('Hide what is typed (password)');
+  const hiding = await writesDone(page);
   await hide.click();
   await expect(hide).toBeChecked({ timeout: 30_000 });
-  await page.waitForTimeout(1500);
+  await writesLanded(page, hiding);
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
   // A FIELD'S MARK IS ITS INDEX; its name is in the control's accessible label.
   await pressOn(page.locator(`[data-form-field][aria-label*="${name}"]`).first());
   await page.keyboard.type(PIN);
+  const filling = await writesDone(page);
   await page.keyboard.press('Enter');
-  await page.waitForTimeout(1500);
+  await writesLanded(page, filling);
   await page.getByRole('button', { name: 'Flatten' }).first().click();
+  const flattening = await writesDone(page);
   await page.getByRole('dialog', { name: 'Flatten the form' }).getByRole('button', { name: 'Flatten form' }).click();
-  await page.waitForTimeout(1500);
+  // EACH WRITE LANDED before the next action reads its result (1.5 s sleeps stood for these three).
+  await writesLanded(page, flattening);
   const file = join(output, 'form-password-flattened.pdf');
   await saveTo(file);
   await command('Save a copy');
@@ -489,7 +500,8 @@ await step('F4: an open dropdown moves with the page when it scrolls, staying un
   const list = page.getByRole('listbox', { name: 'City' });
   const before = await list.boundingBox();
   await page.mouse.wheel(0, 120);
-  await page.waitForTimeout(500);
+  // THE SCROLL HAS ENDED: the field's box stops moving (a 500 ms sleep stood for this).
+  await boxSettled(page, () => face.boundingBox());
   const [after, field] = [await list.boundingBox(), await face.boundingBox()];
   if (before === null || after === null || field === null) throw new Error('a box is missing');
   expect(Math.abs(after.y - (field.y + field.height))).toBeLessThan(2);
@@ -498,14 +510,17 @@ await step('F4: an open dropdown moves with the page when it scrolls, staying un
 });
 
 await step('F2: a press on a list box row chooses THAT row, and Ctrl adds one in a list that takes several', async () => {
+  const choosing = await writesDone(page);
   await page.getByRole('listbox', { name: 'Language' }).getByRole('option', { name: 'French', exact: true }).click();
   const interests = page.getByRole('listbox', { name: 'Interests' });
   await interests.getByRole('option', { name: 'Music', exact: true }).click();
-  // A FILL IS A WRITE (3 to 5 s here); the Ctrl press adds to what the document then holds.
+  // A FILL IS A WRITE (3 to 5 s here); the Ctrl press adds to what the document then holds. Two fills landed, where a 6 s
+  // sleep stood.
   await expect(interests.getByRole('option', { name: 'Music', exact: true })).toHaveAttribute('aria-selected', 'true', { timeout: 30_000 });
-  await page.waitForTimeout(6000);
+  await writesLanded(page, choosing, 2);
+  const adding = await writesDone(page);
   await interests.getByRole('option', { name: 'Cooking', exact: true }).click({ modifiers: ['Control'] });
-  await page.waitForTimeout(6000);
+  await writesLanded(page, adding);
 });
 
 await step('F10: a date field shows its pattern, and a day pressed on its calendar fills it in that pattern', async () => {
@@ -514,8 +529,10 @@ await step('F10: a date field shows its pattern, and a day pressed on its calend
   await expect(box).toHaveAttribute('placeholder', 'dd/mm/yyyy');
   await page.getByRole('button', { name: 'Choose a date', exact: true }).click();
   const calendar = page.getByRole('dialog', { name: 'Calendar' });
+  const dating = await writesDone(page);
   await calendar.locator('td button').filter({ hasText: /^15$/u }).click();
-  await page.waitForTimeout(6000);
+  // THE DATE'S FILL LANDED before the file is saved (a 6 s sleep stood for this).
+  await writesLanded(page, dating);
 });
 
 const choicesSaved = join(output, 'form-choices-saved.pdf');
@@ -544,8 +561,10 @@ await step('F8: an empty signature field pressed offers both ways to sign, each 
 
 const resetSaved = join(output, 'form-choices-reset.pdf');
 await step('F7: the form’s Reset button empties every field as one step, READ BACK from the saved file', async () => {
+  const resetting = await writesDone(page);
   await page.getByRole('button', { name: 'Press Clear', exact: true }).click();
-  await page.waitForTimeout(6000);
+  // THE RESET LANDED before the file is saved (a 6 s sleep stood for this).
+  await writesLanded(page, resetting);
   await saveTo(resetSaved);
   await command('Save a copy');
   await expect.poll(() => existsSync(resetSaved), { timeout: 20_000 }).toBe(true);

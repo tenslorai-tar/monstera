@@ -353,6 +353,7 @@ import type { ShowToast } from '../toasts.js';
 import { countPendingRedactions } from './redactionMarks.js';
 import { readWholeList } from '../readWholeList.js';
 import { confirmDone, confirmWritten } from './confirmWritten.js';
+import { countedAs } from '../inFlight.js';
 import type { ZoomDirection, ZoomMode } from '../zoom.js';
 
 /**
@@ -822,13 +823,15 @@ export async function applyDocumentCommand(
   } = {},
 ): Promise<boolean> {
   const lane = laneOf(deps.client, docId);
-  const run = lane.tail.then(() => sendInLane(lane, deps, docId, command, options));
+  // COUNTED AS A WRITE (`inFlight.ts`), the condition a walk waits on instead of a sleep.
+  const run = countedAs('writes', () => lane.tail.then(() => sendInLane(lane, deps, docId, command, options)));
   lane.tail = run.then(
     () => undefined,
     () => undefined,
   );
   return run;
 }
+
 
 async function sendInLane(
   lane: Lane,
@@ -2647,8 +2650,9 @@ export function undoCommand(deps: DocumentCommandDeps): UiCommand {
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined) return;
-      const answer = await deps.client['document.undo']({ docId: context.docId });
+      const docId = context.docId;
+      if (docId === undefined) return;
+      const answer = await countedAs('writes', () => deps.client['document.undo']({ docId }));
       if (!answer.ok) {
         reportProblem(deps, answer.error);
         return;
@@ -2685,8 +2689,9 @@ export function redoCommand(deps: DocumentCommandDeps): UiCommand {
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined) return;
-      const answer = await deps.client['document.redo']({ docId: context.docId });
+      const docId = context.docId;
+      if (docId === undefined) return;
+      const answer = await countedAs('writes', () => deps.client['document.redo']({ docId }));
       if (!answer.ok) {
         reportProblem(deps, answer.error);
         return;

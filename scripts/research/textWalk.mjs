@@ -27,7 +27,7 @@ import { join } from 'node:path';
 import { expect as defaultExpect } from '@playwright/test';
 import { PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream, PDFString, StandardFonts } from '@cantoo/pdf-lib';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
-import { root, startWalk } from './liveWalk.mjs';
+import { boxSettled, root, startWalk, writesDone, writesIdle, writesLanded } from './liveWalk.mjs';
 import { savedContent, savedFonts, savedWords } from './savedPdf.mjs';
 import { tabMarks, textSteps } from './textWalkSteps.mjs';
 
@@ -117,15 +117,19 @@ await step('2. the word in Calibri 14 and blue from the Properties panel, then t
 });
 
 await step('3. a click away writes it; one Ctrl+Z undoes steps 1 and 2 together, and Ctrl+Y redoes them', async () => {
+  const writing = await writesDone(page);
   await clickPage(20, 20);
   await expect(editor()).toHaveCount(0);
   // EACH IS A COMMAND THAT REWRITES THE DOCUMENT (a write takes 3 to 5 s here, measured 2026-10-12), so the second key
-  // waits for the first, as a hand does; sent together they left a later Add text editor open for good.
-  await page.waitForTimeout(6000);
+  // waits for the first to LAND, as a hand does; sent together they left a later Add text editor open for good. Three
+  // 6 s sleeps stood for these three waits (GGGGGGGG-3).
+  await writesLanded(page, writing);
+  const undoing = await writesDone(page);
   await page.keyboard.press('Control+Z');
-  await page.waitForTimeout(6000);
+  await writesLanded(page, undoing);
+  const redoing = await writesDone(page);
   await page.keyboard.press('Control+Y');
-  await page.waitForTimeout(6000);
+  await writesLanded(page, redoing);
 });
 
 await step('4. Add text: two lines typed on a blank area, ended with Escape, and the words kept', async () => {
@@ -249,7 +253,8 @@ if (existsSync(handwritten)) {
     // it was a paragraph and nothing else, and this step went round it through Tools > OCR pages.
     await page.locator('[data-page-note] button').first().click();
     await expect(page.getByRole('dialog')).toBeVisible();
-    await page.waitForTimeout(2000);
+    // THE BUTTON TAKES A PRESS once the dialog has read what it needs (a 2 s sleep stood for this).
+    await expect(page.getByRole('dialog').getByRole('button', { name: 'Recognise', exact: true })).toBeEnabled({ timeout: 30_000 });
     await page.getByRole('dialog').getByRole('button', { name: 'Recognise', exact: true }).click();
     await page.getByRole('dialog').waitFor({ state: 'hidden', timeout: 120_000 }).catch(() => undefined);
     await section('Edit');
@@ -345,8 +350,9 @@ await step('11. K8/W9: Tab in Edit text types a tab, it is in the SAVED file, an
 await step('12. B2.8: In this document lists the fonts of every page, not only the open block’s', async () => {
   // A BLOCK ON SCREEN: the first block is above the document area here (the page is scrolled and 180 degrees round), and a
   // click on it opens nothing; any block shows the document's fonts, so the third, which step 11 also opens, is used.
-  // THE PREVIOUS STEP'S WRITE MAY STILL BE RUNNING (3 to 8 s, measured 2026-10-12), and the controls of a block wait on it.
-  await page.waitForTimeout(8000);
+  // THE PREVIOUS STEP'S WRITE MAY STILL BE RUNNING (3 to 8 s, measured 2026-10-12), and the controls of a block wait on it:
+  // waited for until none is in flight (an 8 s sleep stood for this).
+  await writesIdle(page);
   // THE TOOL ARMED AGAIN: the Escape that ends step 11's reopened block can also leave Edit text (2026-10-13 screenshot of
   // this step: no block layer drawn), and this step must not depend on how step 11 ended.
   await ensureEditText();
@@ -459,7 +465,8 @@ await step('16. E4 and N13: the text box from step 13 made bold and justified in
   if (now !== null && Math.abs(now.y - textBoxCanvasTop) > 1) {
     await page.mouse.move(700, 500);
     await page.mouse.wheel(0, now.y - textBoxCanvasTop);
-    await page.waitForTimeout(800);
+    // THE SCROLL HAS ENDED: the page's box stops moving (an 800 ms sleep stood for this).
+    await boxSettled(page, () => page.locator('canvas.m-page:visible').first().boundingBox());
   }
   await pressDrawn(200, 240);
   const properties = page.getByRole('complementary', { name: 'Properties' });
@@ -599,8 +606,8 @@ await step('W1: Add text at 85%, 89% and 95% down the first (turned) page, each 
     if (target > bottom) {
       await page.mouse.move(box.x + box.width / 2, 500);
       await page.mouse.wheel(0, target - 500);
-      await page.waitForTimeout(800);
-      box = await surface.boundingBox();
+      // THE SCROLL HAS ENDED: the surface's box stops moving (an 800 ms sleep stood for this).
+      box = await boxSettled(page, () => surface.boundingBox());
       if (box === null) throw new Error('no add surface');
       target = box.y + box.height * down;
     }
