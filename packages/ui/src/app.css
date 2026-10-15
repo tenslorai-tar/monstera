@@ -1847,7 +1847,8 @@ optgroup {
 .m-layers-list,
 .m-annotations-list,
 .m-links-list,
-.m-forms-list {
+.m-forms-list,
+.m-find-matches {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
@@ -1867,9 +1868,12 @@ optgroup {
   border-color: var(--border-control);
 }
 
+/* CHOSEN: the accent's edge, and a second line inside it as an OUTLINE, which `forced-colors` keeps where it discards
+   the colour and a shadow — so a chosen card still differs from the rest in a system high-contrast theme. */
 .m-list-card[data-list-card-selected='true'] {
   border-color: var(--accent-on-paper, var(--accent));
-  box-shadow: inset 0 0 0 1px var(--accent-on-paper, var(--accent));
+  outline: 1px solid var(--accent-on-paper, var(--accent));
+  outline-offset: -2px;
 }
 
 .m-destination,
@@ -5992,18 +5996,9 @@ optgroup {
   font-variant-numeric: tabular-nums;
 }
 
-.m-find-match {
-  padding: var(--space-2) var(--space-4);
-}
-
-/*
- * NOT COLOUR ALONE. A background shift is what a reader sees at a glance, and
- * the border is what survives `forced-colors`, where the ground is the system's
- * and this rule's background is discarded.
- */
+/* THE CURRENT MATCH: the chosen card's edge (`ListCard`), and a background shift a reader sees at a glance. */
 .m-find-match.is-active {
   background: var(--surface2);
-  border-inline-start: 2px solid var(--accent);
 }
 
 /*

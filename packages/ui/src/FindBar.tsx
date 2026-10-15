@@ -32,6 +32,7 @@ import {
   FIND_WHOLE_WORD,
 } from './messages/en.js';
 import { pdfjsPageOf } from './pageNumbering.js';
+import { ListCard } from './primitives/ListCard.js';
 import { type DocumentCommandDeps, applyDocumentCommand } from './commands/documentCommands.js';
 
 /**
@@ -707,21 +708,23 @@ export function FindBar({
               </button>
             </div>
           )}
-          <ul>
+          <ul className="m-find-matches">
             {state.matches.map((match, index) => (
-              <li
+              // EACH MATCH ITS OWN CARD (the owner's E2), the current one drawn chosen.
+              <ListCard
                 key={`${String(index)}:${String(match.page)}:${String(match.offset)}`}
                 // `aria-current` rather than a class alone: which match a reader
                 // is on is information, and a screen reader that only gets the
                 // list gets a count with no position in it.
                 aria-current={index === state.active ? 'true' : undefined}
                 className={index === state.active ? 'm-find-match is-active' : 'm-find-match'}
+                selected={index === state.active}
               >
                 {/* THE PAGE AS A READER COUNTS IT. The walk carries the
                     kernel's zero-based index and `pdfjsPageOf` is the one
                     place the two numbering schemes meet. */}
                 {_(FIND_MATCH_ON_PAGE, { page: pdfjsPageOf(match.page), text: match.text })}
-              </li>
+              </ListCard>
             ))}
           </ul>
         </div>

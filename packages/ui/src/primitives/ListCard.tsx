@@ -24,6 +24,8 @@ export function ListCard({
   readonly className?: string | undefined;
   /** Whether the item is chosen in its list. */
   readonly selected: boolean;
+  /** A list whose chosen item is a POSITION a reader is at (the find bar's current match) says so to a screen reader. */
+  readonly 'aria-current'?: 'true' | undefined;
   readonly children: ReactNode;
 } & Readonly<Record<`data-${string}`, string | undefined>>): ReactElement {
   return (

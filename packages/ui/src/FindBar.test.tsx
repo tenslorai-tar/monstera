@@ -155,6 +155,25 @@ describe('FindBar match navigation', () => {
     expect(container.querySelector('.m-find-position')?.textContent).toBe('Match 1 of 2');
   });
 
+  // E2: EACH MATCH ITS OWN CARD, the current one drawn chosen and announced as current; Next moves both.
+  it('E2: each match is a card, and the current one is the chosen card, which Next moves', async () => {
+    const { container } = await afterWalking();
+    const marks = (): (string | null)[][] =>
+      [...container.querySelectorAll('.m-find-matches > .m-list-card')].map((card) => [
+        card.getAttribute('data-list-card-selected'),
+        card.getAttribute('aria-current'),
+      ]);
+    expect(marks()).toStrictEqual([
+      ['true', 'true'],
+      [null, null],
+    ]);
+    await press(container, 'data-find-next');
+    expect(marks()).toStrictEqual([
+      [null, null],
+      ['true', 'true'],
+    ]);
+  });
+
   it('REPORTS what to paint, and moves it with the active match', async () => {
     // The find bar's half of the highlight. What the layers do with this is
     // `TextLayer.test.tsx`'s; what this pins is that the description carries
