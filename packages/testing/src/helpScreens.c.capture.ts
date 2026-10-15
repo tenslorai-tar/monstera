@@ -1,4 +1,6 @@
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { displayLocationSchema } from '@monstera/contract';
 import { asDocId, asDocVersion, asFileHandle } from '@monstera/shared';
@@ -14,7 +16,10 @@ import {
   shoot,
 } from './helpScreensHarness.js';
 
-const SCRATCH = 'C:/Users/emiso/AppData/Local/Temp/claude/C--Users-emiso-Desktop-Claude-Monstera/f0f77468-166f-4838-bf05-b9d2eb4f8194/scratchpad/c-explore';
+/** Where an exploring run leaves its snapshots: a folder in this machine's temporary directory, never a person's own path. */
+const EXPLORED = join(tmpdir(), 'monstera-help-explore');
+mkdirSync(EXPLORED, { recursive: true });
+const SCRATCH = join(EXPLORED, 'c-explore');
 
 const EXPLORE = (process.env['EXPLORE'] ?? '').split('|').filter((title) => title !== '');
 
