@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { openAsBlob } from 'node:fs';
 import { mkdir, open, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -57,6 +58,34 @@ export async function sentFromStaged<T>(
     } finally {
       await handle.close();
     }
+  } finally {
+    await rm(path, { force: true });
+  }
+}
+
+/**
+ * A request body written a part at a time into a private file beside the staged document, and handed to `use` as a
+ * file-backed `Blob` (`openAsBlob`): what *Send to DocuSign* posts, whose body is the document as base64 inside one
+ * JSON value (ADR-0165's correction of 2026-10-15).
+ *
+ * A `Blob` because `fetch` sends one with its `content-length` and reads it as it goes, so the request is framed as the
+ * whole-string body was and `main` never holds it whole. The file is removed when `use` ends, whatever happens.
+ */
+export async function sentFromBodyFile<T>(
+  parts: AsyncIterable<string>,
+  directory: string,
+  use: (body: Blob) => Promise<T>,
+): Promise<T> {
+  const path = join(directory, '.uploads', `${randomUUID()}.json`);
+  await mkdir(join(directory, '.uploads'), { recursive: true });
+  try {
+    const handle = await open(path, 'wx');
+    try {
+      for await (const part of parts) await handle.write(part, null, 'utf8');
+    } finally {
+      await handle.close();
+    }
+    return await use(await openAsBlob(path, { type: 'application/json' }));
   } finally {
     await rm(path, { force: true });
   }

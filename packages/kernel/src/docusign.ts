@@ -1,6 +1,7 @@
 import type { DocusignEnvironment } from '@monstera/contract';
 import { hostWithin } from '@monstera/shared';
 
+import type { PdfSource } from './cloudStorage.js';
 import { readWithin } from './verifiedDownload.js';
 
 /**
@@ -393,34 +394,32 @@ export interface DocusignSigner {
   readonly email: string;
 }
 
+/** What an envelope says besides the document: its subject, the document's name, and who signs. */
+export interface EnvelopeTerms {
+  readonly emailSubject: string;
+  readonly documentName: string;
+  readonly signers: readonly DocusignSigner[];
+}
+
 /**
- * Sends one PDF to its signers, in order, as an envelope with status `sent`.
+ * The envelope's JSON on either side of the document's base64: `before`, then the base64, then `after`, is exactly
+ * `JSON.stringify` of the definition with the document in it. The one spelling of the envelope (B3a).
  *
- * @returns the envelope's id.
+ * ## Split, so the document never has to be one string
+ *
+ * The body is the document as base64 inside one JSON value, so a whole-string body holds the document 4/3 times over
+ * in `main` (ADR-0165's named remainder). Split here, the base64 is written a part at a time between the two halves,
+ * and the request is still the bytes the live run proved: what changed is where they are read from.
+ *
+ * The split is on the key with its empty value, `"documentBase64":""`. No other place in the text can carry that
+ * sequence: inside a string value every `"` is written `\"`. A text that holds it other than once is refused.
  */
-export async function sendEnvelope(
-  request: {
-    readonly account: DocusignAccount;
-    readonly accessToken: string;
-    readonly emailSubject: string;
-    readonly documentName: string;
-    readonly pdf: Uint8Array;
-    readonly signers: readonly DocusignSigner[];
-  },
-  fetchImpl: typeof fetch = fetch,
-): Promise<string> {
+export function envelopeJson(terms: EnvelopeTerms): { readonly before: string; readonly after: string } {
   const definition = {
-    emailSubject: request.emailSubject,
-    documents: [
-      {
-        documentBase64: Buffer.from(request.pdf).toString('base64'),
-        name: request.documentName,
-        fileExtension: 'pdf',
-        documentId: '1',
-      },
-    ],
+    emailSubject: terms.emailSubject,
+    documents: [{ documentBase64: '', name: terms.documentName, fileExtension: 'pdf', documentId: '1' }],
     recipients: {
-      signers: request.signers.map((signer, index) => ({
+      signers: terms.signers.map((signer, index) => ({
         email: signer.email,
         name: signer.name,
         recipientId: String(index + 1),
@@ -429,6 +428,57 @@ export async function sendEnvelope(
     },
     status: 'sent',
   };
+  const parts = JSON.stringify(definition).split(DOCUMENT_SLOT);
+  const [head, tail] = parts;
+  if (parts.length !== 2 || head === undefined || tail === undefined) {
+    throw new Error(`the envelope's text carries its document slot ${String(parts.length - 1)} times, not once`);
+  }
+  return { before: `${head}"documentBase64":"`, after: `"${tail}` };
+}
+
+const DOCUMENT_SLOT = '"documentBase64":""';
+
+/**
+ * How many of the document's bytes are read and encoded at a time. **A multiple of three**, so every part's base64
+ * ends on a whole group and only the last part can carry `=` padding: the parts joined are the document's base64.
+ * Twelve MiB, so `main` holds one read and its sixteen MiB of text, whatever the document's size.
+ */
+export const ENVELOPE_READ_BYTES = 3 * 4 * 1_048_576;
+
+/**
+ * The envelope's body, a part at a time: `before`, the document's base64 read from `pdf` in reads of
+ * {@link ENVELOPE_READ_BYTES} at most, and `after`. Joined, the parts are `JSON.stringify` of the definition.
+ */
+export async function* envelopeBody(
+  terms: EnvelopeTerms,
+  pdf: PdfSource,
+  readBytes: number = ENVELOPE_READ_BYTES,
+): AsyncGenerator<string> {
+  // A PART THAT IS NOT WHOLE GROUPS pads in the middle of the base64, and DocuSign would read a different document.
+  if (readBytes <= 0 || readBytes % 3 !== 0) throw new Error(`a read of ${String(readBytes)} bytes is not a multiple of three`);
+  const { before, after } = envelopeJson(terms);
+  yield before;
+  for (let offset = 0; offset < pdf.byteLength; offset += readBytes) {
+    yield Buffer.from(await pdf.read(offset, Math.min(offset + readBytes, pdf.byteLength))).toString('base64');
+  }
+  yield after;
+}
+
+/**
+ * Sends one PDF to its signers, in order, as an envelope with status `sent`.
+ *
+ * @param request.body the whole JSON body, as {@link envelopeBody} writes it. A `Blob`, so `fetch` sends it with its
+ *   `content-length` and reads it as it goes: a file-backed one (`openAsBlob`) is never in memory whole.
+ * @returns the envelope's id.
+ */
+export async function sendEnvelope(
+  request: {
+    readonly account: DocusignAccount;
+    readonly accessToken: string;
+    readonly body: Blob;
+  },
+  fetchImpl: typeof fetch = fetch,
+): Promise<string> {
   const answer = await callJson(
     fetchImpl,
     `${request.account.basePath}/v2.1/accounts/${encodeURIComponent(request.account.accountId)}/envelopes`,
@@ -438,7 +488,7 @@ export async function sendEnvelope(
         authorization: `Bearer ${request.accessToken}`,
         'content-type': 'application/json',
       },
-      body: JSON.stringify(definition),
+      body: request.body,
     },
   );
   const envelopeId = answer['envelopeId'];

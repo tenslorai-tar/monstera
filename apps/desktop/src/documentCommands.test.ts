@@ -5198,14 +5198,18 @@ describe('suggestedTextName — the name a text export is offered under', () => 
   });
 });
 
-describe('DocuSign — main flushes, the session sends, and a refusal is named', () => {
+describe('DocuSign — main stages, the session sends, and a refusal is named', () => {
   beforeAll(openDocument);
 
   /** The flushed image a send must carry, distinct from any fixture's own bytes. */
   const FLUSHED = Uint8Array.of(0x25, 0x50, 0x44, 0x46, 0x2d, 0x31);
 
-  /** A save source whose flush answers {@link FLUSHED} and refuses everything else. */
-  const flushing: SaveSource = { ...noSaving, flush: () => Promise.resolve(FLUSHED) };
+  /**
+   * A save source whose STAGE answers {@link STAGED} and which refuses everything else, the flush included: a send that
+   * brought the image into `main` would be refused here (ADR-0165's correction of 2026-10-15).
+   */
+  const STAGED: StagedImage = stagedBytes(FLUSHED);
+  const staging: SaveSource = { ...noSaving, stage: () => Promise.resolve(STAGED) };
 
   /** A copy source that records whether its picker was opened, and cancels. */
   function recordingCopy(): { readonly source: CopySource; readonly picked: string[] } {
@@ -5234,14 +5238,14 @@ describe('DocuSign — main flushes, the session sends, and a refusal is named',
     };
   }
 
-  it('send hands the session the FLUSHED image, the document’s name and the dialog’s words', async () => {
+  it('send hands the session the STAGED image, never a flush, with the document’s name and the dialog’s words', async () => {
     const received: unknown[] = [];
     const commands = new DocumentCommands({
       ...INERT,
       documents: service,
       bus: bus(),
       engine: engine(),
-      save: flushing,
+      save: staging,
       docusign: session({
         send: (request) => {
           received.push(request);
@@ -5257,7 +5261,7 @@ describe('DocuSign — main flushes, the session sends, and a refusal is named',
     expect(received).toStrictEqual([
       {
         docId,
-        pdf: FLUSHED,
+        pdf: STAGED,
         documentName: service.nameOf(docId),
         emailSubject: 'Please sign',
         signers,
@@ -5273,7 +5277,7 @@ describe('DocuSign — main flushes, the session sends, and a refusal is named',
       documents: service,
       bus: bus(),
       engine: engine(),
-      save: flushing,
+      save: staging,
       docusign: session({ send: () => Promise.reject(new DocusignOutcomeRefused('sign-in-denied')) }),
     });
     const unnamed = new DocumentCommands({
@@ -5281,7 +5285,7 @@ describe('DocuSign — main flushes, the session sends, and a refusal is named',
       documents: service,
       bus: bus(),
       engine: engine(),
-      save: flushing,
+      save: staging,
       docusign: session({ send: () => Promise.reject(new Error('a defect, not a refusal')) }),
     });
     const request = { emailSubject: 'Please sign', signers: [{ name: 'A', email: 'a@example.com' }] };

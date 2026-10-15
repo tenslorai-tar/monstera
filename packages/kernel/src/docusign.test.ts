@@ -4,11 +4,15 @@ import {
   authorizationUrl,
   completedDocument,
   DocusignRefused,
+  ENVELOPE_READ_BYTES,
+  envelopeBody,
+  type EnvelopeTerms,
   exchangeCode,
   pkcePair,
   sendEnvelope,
   sendingAccount,
 } from './docusign.js';
+import type { PdfSource } from './cloudStorage.js';
 
 /**
  * DocuSign's protocol, driven with no network and no key.
@@ -229,29 +233,120 @@ describe('sendingAccount', () => {
   });
 });
 
+/**
+ * THE BODY THE LIVE RUN PROVED, spelt as it was sent before the envelope was streamed (ADR-0165's correction of
+ * 2026-10-15): `JSON.stringify` of the whole definition, the document's base64 in one string. Kept here as the oracle,
+ * so a streamed body is held to the bytes DocuSign accepted rather than to this module agreeing with itself.
+ */
+function provenBody(terms: EnvelopeTerms, pdf: Uint8Array): string {
+  return JSON.stringify({
+    emailSubject: terms.emailSubject,
+    documents: [{ documentBase64: Buffer.from(pdf).toString('base64'), name: terms.documentName, fileExtension: 'pdf', documentId: '1' }],
+    recipients: {
+      signers: terms.signers.map((signer, index) => ({
+        email: signer.email,
+        name: signer.name,
+        recipientId: String(index + 1),
+        routingOrder: String(index + 1),
+      })),
+    },
+    status: 'sent',
+  });
+}
+
+/** A source over `bytes` that records every range asked of it. */
+function recordedSource(bytes: Uint8Array): { readonly source: PdfSource; readonly reads: [number, number][] } {
+  const reads: [number, number][] = [];
+  return {
+    reads,
+    source: {
+      byteLength: bytes.byteLength,
+      read: (offset, end) => {
+        reads.push([offset, end]);
+        return Promise.resolve(bytes.slice(offset, end));
+      },
+    },
+  };
+}
+
+async function joined(parts: AsyncIterable<string>): Promise<string> {
+  let text = '';
+  for await (const part of parts) text += part;
+  return text;
+}
+
+const TERMS: EnvelopeTerms = {
+  // A SUBJECT CARRYING THE SLOT'S OWN TEXT, quotes and all: inside a string value it is escaped, so the split finds the
+  // document's slot and not this.
+  emailSubject: 'Please sign "documentBase64":"" — ünïcode',
+  documentName: 'Contract "final".pdf',
+  signers: [
+    { name: 'Grace Hopper', email: 'grace@example.com' },
+    { name: 'Ada Lovelace', email: 'ada@example.com' },
+  ],
+};
+
+describe('envelopeBody', () => {
+  it('joins to the body the live run proved, byte for byte, for every length across several reads', async () => {
+    for (let length = 0; length <= 20; length += 1) {
+      const pdf = Uint8Array.from({ length }, (_, at) => (at * 37 + 11) % 256);
+      for (const readBytes of [3, 6, 21]) {
+        expect(await joined(envelopeBody(TERMS, recordedSource(pdf).source, readBytes))).toBe(provenBody(TERMS, pdf));
+      }
+    }
+  });
+
+  it('reads the document in order, a read at a time, never more than one read’s bytes', async () => {
+    const pdf = Uint8Array.from({ length: 20 }, (_, at) => at);
+    const { source, reads } = recordedSource(pdf);
+    await joined(envelopeBody(TERMS, source, 6));
+    expect(reads).toStrictEqual([
+      [0, 6],
+      [6, 12],
+      [12, 18],
+      [18, 20],
+    ]);
+  });
+
+  it('refuses a read that is not a multiple of three, since its base64 would pad mid-document', async () => {
+    const pdf = Uint8Array.from({ length: 8 }, (_, at) => at);
+    await expect(joined(envelopeBody(TERMS, recordedSource(pdf).source, 4))).rejects.toThrow('not a multiple of three');
+    // CONTROL, the reason the refusal exists: four-byte parts encoded and joined are NOT the document's base64.
+    const fours = Buffer.from(pdf.subarray(0, 4)).toString('base64') + Buffer.from(pdf.subarray(4)).toString('base64');
+    expect(fours).not.toBe(Buffer.from(pdf).toString('base64'));
+  });
+
+  it('the production read is a multiple of three', () => {
+    expect(ENVELOPE_READ_BYTES % 3).toBe(0);
+  });
+});
+
 describe('sendEnvelope', () => {
   it('posts one PDF to its signers in order, with status sent, to the account’s envelopes', async () => {
     const { fetchImpl, asked } = recording(() => json({ envelopeId: 'env-1', status: 'sent' }));
     const pdf = Uint8Array.of(0x25, 0x50, 0x44, 0x46);
+    const terms: EnvelopeTerms = { ...TERMS, emailSubject: 'Please sign', documentName: 'Contract.pdf' };
+    const parts: string[] = [];
+    for await (const part of envelopeBody(terms, recordedSource(pdf).source)) parts.push(part);
 
     const envelopeId = await sendEnvelope(
       {
         account: { accountId: 'acct', basePath: 'https://na3.docusign.net/restapi' },
         accessToken: 'access',
-        emailSubject: 'Please sign',
-        documentName: 'Contract.pdf',
-        pdf,
-        signers: [
-          { name: 'Grace Hopper', email: 'grace@example.com' },
-          { name: 'Ada Lovelace', email: 'ada@example.com' },
-        ],
+        body: new Blob(parts),
       },
       fetchImpl,
     );
 
     expect(envelopeId).toBe('env-1');
     expect(asked[0]?.url).toBe('https://na3.docusign.net/restapi/v2.1/accounts/acct/envelopes');
-    const body = JSON.parse(asked[0]?.init?.body as string) as {
+    // THE BODY SENT IS THE PROVEN ONE, and goes as a Blob, which `fetch` sends with its length rather than chunked.
+    const sent = asked[0]?.init?.body;
+    expect(sent).toBeInstanceOf(Blob);
+    const text = await (sent as Blob).text();
+    expect(text).toBe(provenBody(terms, pdf));
+    expect(new Headers(asked[0]?.init?.headers).get('content-type')).toBe('application/json');
+    const body = JSON.parse(text) as {
       documents: { documentBase64: string; fileExtension: string; documentId: string }[];
       recipients: { signers: { email: string; recipientId: string; routingOrder: string }[] };
       status: string;

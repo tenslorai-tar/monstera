@@ -19,11 +19,14 @@ import {
   pkcePair,
   refreshTokens,
   sendEnvelope,
+  envelopeBody,
+  type StagedImage,
 } from '@monstera/kernel';
 
 import { type OpenInBrowser, SignInRefused, signInThroughLoopback } from './docusignSignIn.js';
 import type { SecretStoreSurface } from './secretStore.js';
 import type { SettingsSurface } from './settingsFile.js';
+import { sentFromBodyFile, sentFromStaged } from './stagedUpload.js';
 
 /**
  * DocuSign, as `main` holds it: one sign-in, kept, refreshed and used
@@ -169,10 +172,13 @@ function keptSession(raw: string | undefined, environment: DocusignEnvironment):
 
 /** What `main` asks of DocuSign. */
 export interface DocusignSession {
-  /** Sends a document's bytes to its signers, and remembers the envelope for `docId`. */
+  /**
+   * Sends a staged document to its signers, and remembers the envelope for `docId`. The staged image is consumed:
+   * moved and sent from a file, or discarded on a refusal before that (ADR-0165's correction of 2026-10-15).
+   */
   send(request: {
     readonly docId: string;
-    readonly pdf: Uint8Array;
+    readonly pdf: StagedImage;
     readonly documentName: string;
     readonly emailSubject: string;
     readonly signers: readonly DocusignSigner[];
@@ -199,6 +205,8 @@ export function createDocusignSession(deps: {
   readonly settings: SettingsSurface;
   readonly secrets: SecretStoreSurface;
   readonly openInBrowser: OpenInBrowser;
+  /** Where a document is sent from: its staged copy and the envelope's body are written under `.uploads` and removed. */
+  readonly workingDirectory: string;
   readonly fetchImpl?: typeof fetch;
   readonly now?: () => number;
   readonly signInTimeoutMs?: number;
@@ -275,17 +283,20 @@ export function createDocusignSession(deps: {
   return {
     send: (request) =>
       named(async () => {
-        const session = await usable();
-        const envelopeId = await sendEnvelope(
-          {
-            account: session.account,
-            accessToken: session.accessToken,
-            emailSubject: request.emailSubject,
-            documentName: request.documentName,
-            pdf: request.pdf,
-            signers: request.signers,
-          },
-          fetchImpl,
+        // SIGNED IN BEFORE ANYTHING IS MOVED OR WRITTEN, and the staged image discarded if that is refused, so a refusal
+        // leaves no copy of the document anywhere: `cloudSession`'s order.
+        let session: KeptSession;
+        try {
+          session = await usable();
+        } catch (refused) {
+          await request.pdf.discard();
+          throw refused;
+        }
+        const terms = { emailSubject: request.emailSubject, documentName: request.documentName, signers: request.signers };
+        const envelopeId = await sentFromStaged(request.pdf, deps.workingDirectory, (source) =>
+          sentFromBodyFile(envelopeBody(terms, source), deps.workingDirectory, (body) =>
+            sendEnvelope({ account: session.account, accessToken: session.accessToken, body }, fetchImpl),
+          ),
         );
         sent.set(request.docId, envelopeId);
         return envelopeId;

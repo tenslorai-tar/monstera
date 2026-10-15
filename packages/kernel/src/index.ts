@@ -776,4 +776,7 @@ export {
   type PkcePair,
   refreshTokens,
   sendEnvelope,
+  ENVELOPE_READ_BYTES,
+  envelopeBody,
+  type EnvelopeTerms,
 } from './docusign.js';

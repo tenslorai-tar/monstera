@@ -4515,11 +4515,12 @@ export class DocumentCommands {
    * Sends this document to DocuSign for signature, signing in first if needed
    * ([ADR-0059](../../../docs/DECISIONS/0059-a-sign-in-redirect-returns-on-loopback-for-one-request.md)).
    *
-   * ## The bytes are the SAVE'S flush, taken inside the lane
+   * ## The bytes are the SAVE'S, STAGED inside the lane
    *
-   * So what DocuSign receives is exactly what a save would write now — the same flush
+   * So what DocuSign receives is exactly what a save would write now — the same image
    * `saveCopy` hands its destination (B3a) — and a document edited mid-send cannot
-   * be half of each.
+   * be half of each. Staged and never flushed into `main`: the session sends it from a
+   * file a read at a time (ADR-0165's correction of 2026-10-15).
    *
    * ## The send is OUTSIDE the lane, deliberately
    *
@@ -4539,7 +4540,7 @@ export class DocumentCommands {
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
-      return await this.#save.flush(docId, sessions);
+      return await this.#save.stage(docId, sessions);
     });
 
     try {

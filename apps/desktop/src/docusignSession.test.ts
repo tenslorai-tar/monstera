@@ -3,7 +3,12 @@ import {
   DOCUSIGN_INTEGRATION_KEY_SETTING_ID,
   SECRET_SETTING_IDS,
 } from '@monstera/contract';
-import { describe, expect, it } from 'vitest';
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { stagedBytes, type StagedImage } from '@monstera/kernel';
+import { afterAll, describe, expect, it } from 'vitest';
 
 import { createDocusignSession, DocusignOutcomeRefused, SESSION_SECRET_ID } from './docusignSession.js';
 import type { SecretStoreSurface } from './secretStore.js';
@@ -50,6 +55,8 @@ interface DocusignFake {
   readonly fetchImpl: typeof fetch;
   readonly grants: string[];
   readonly envelopesSent: number[];
+  /** Every `Blob` body received, as text. */
+  readonly bodies: string[];
   status: string;
   envelopeAnswer: number;
   tokenAnswer: number;
@@ -64,8 +71,12 @@ function docusignFake(): DocusignFake {
     status: 'sent',
     envelopeAnswer: 200,
     tokenAnswer: 200,
-    fetchImpl: (input: string | URL | Request, init?: RequestInit): Promise<Response> =>
-      Promise.resolve(answer(input, init)),
+    bodies: [],
+    fetchImpl: async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      // READ WHILE THE REQUEST IS IN FLIGHT, as `fetch` reads it: a file-backed body is removed once the send ends.
+      if (init?.body instanceof Blob) fake.bodies.push(await init.body.text());
+      return answer(input, init);
+    },
   };
 
   /** The response for one request, decided by its path. */
@@ -115,9 +126,18 @@ function browser(outcome: 'accept' | 'decline' = 'accept'): {
   };
 }
 
+/** Where every session here sends from; each send must leave its `.uploads` empty. */
+const WORKING = mkdtempSync(join(tmpdir(), 'docusign-session-'));
+afterAll(() => {
+  rmSync(WORKING, { recursive: true, force: true });
+});
+
+const PDF = Uint8Array.of(0x25, 0x50, 0x44, 0x46, 0x2d);
+
 const SEND = {
   docId: 'doc-1',
-  pdf: Uint8Array.of(0x25, 0x50, 0x44, 0x46),
+  // PLACED BY WRITING, so the one fixture serves every send a case makes.
+  pdf: stagedBytes(PDF),
   documentName: 'Contract.pdf',
   emailSubject: 'Please sign',
   signers: [{ name: 'Grace Hopper', email: 'grace@example.com' }],
@@ -145,6 +165,7 @@ describe('createDocusignSession', () => {
     const fake = docusignFake();
     const shown = browser();
     const session = createDocusignSession({
+      workingDirectory: WORKING,
       settings: settingsWith({}),
       secrets: memorySecrets(),
       openInBrowser: shown.openInBrowser,
@@ -161,6 +182,7 @@ describe('createDocusignSession', () => {
     // store with no cipher still answers `read`, and this is the refusal it owes.
     secrets.held.set(DOCUSIGN_INTEGRATION_KEY_SETTING_ID, 'client-id');
     const session = createDocusignSession({
+      workingDirectory: WORKING,
       settings: settingsWith({}),
       secrets,
       openInBrowser: browser().openInBrowser,
@@ -174,6 +196,7 @@ describe('createDocusignSession', () => {
     const shown = browser();
     const secrets = keyed();
     const session = createDocusignSession({
+      workingDirectory: WORKING,
       settings: settingsWith({ [DOCUSIGN_ENVIRONMENT_SETTING_ID]: 'demo' }),
       secrets,
       openInBrowser: shown.openInBrowser,
@@ -195,6 +218,7 @@ describe('createDocusignSession', () => {
     const fake = docusignFake();
     const shown = browser();
     const session = createDocusignSession({
+      workingDirectory: WORKING,
       settings: settingsWith({}),
       secrets: keyed(),
       openInBrowser: shown.openInBrowser,
@@ -215,6 +239,7 @@ describe('createDocusignSession', () => {
     const secrets = keyed();
     let clock = 1_000;
     const session = createDocusignSession({
+      workingDirectory: WORKING,
       settings: settingsWith({}),
       secrets,
       openInBrowser: shown.openInBrowser,
@@ -239,6 +264,7 @@ describe('createDocusignSession', () => {
     const shown = browser();
     let clock = 1_000;
     const session = createDocusignSession({
+      workingDirectory: WORKING,
       settings: settingsWith({}),
       secrets: keyed(),
       openInBrowser: shown.openInBrowser,
@@ -271,6 +297,7 @@ describe('createDocusignSession', () => {
       }),
     );
     const session = createDocusignSession({
+      workingDirectory: WORKING,
       settings: settingsWith({ [DOCUSIGN_ENVIRONMENT_SETTING_ID]: 'demo' }),
       secrets,
       openInBrowser: shown.openInBrowser,
@@ -284,6 +311,7 @@ describe('createDocusignSession', () => {
   it('retrieve answers nothing sent, then not completed with DocuSign’s status, then the signed bytes', async () => {
     const fake = docusignFake();
     const session = createDocusignSession({
+      workingDirectory: WORKING,
       settings: settingsWith({}),
       secrets: keyed(),
       openInBrowser: browser().openInBrowser,
@@ -303,6 +331,7 @@ describe('createDocusignSession', () => {
     const rejecting = docusignFake();
     rejecting.envelopeAnswer = 503;
     const rejected = createDocusignSession({
+      workingDirectory: WORKING,
       settings: settingsWith({}),
       secrets: keyed(),
       openInBrowser: browser().openInBrowser,
@@ -311,6 +340,7 @@ describe('createDocusignSession', () => {
     expect(await kindOf(rejected.send(SEND))).toBe('rejected');
 
     const declined = createDocusignSession({
+      workingDirectory: WORKING,
       settings: settingsWith({}),
       secrets: keyed(),
       openInBrowser: browser('decline').openInBrowser,
@@ -331,11 +361,76 @@ describe('createDocusignSession', () => {
       },
     };
     const session = createDocusignSession({
+      workingDirectory: WORKING,
       settings: settingsWith({}),
       secrets: failing,
       openInBrowser: browser().openInBrowser,
       fetchImpl: docusignFake().fetchImpl,
     });
     await expect(session.send(SEND)).rejects.toThrow('the disk in the case is full');
+  });
+
+  /** A staged document that counts its placements and discards. */
+  function counted(bytes: Uint8Array): { readonly staged: StagedImage; readonly placed: string[]; readonly discarded: number[] } {
+    const inner = stagedBytes(bytes);
+    const placed: string[] = [];
+    const discarded: number[] = [];
+    return {
+      placed,
+      discarded,
+      staged: {
+        byteLength: inner.byteLength,
+        place: async (destination) => {
+          placed.push(destination);
+          await inner.place(destination);
+        },
+        discard: () => {
+          discarded.push(1);
+          return Promise.resolve();
+        },
+      },
+    };
+  }
+
+  it('SENDS FROM FILES under the working folder: the staged copy and the body, each removed once sent (ADR-0165)', async () => {
+    const fake = docusignFake();
+    const { staged, placed, discarded } = counted(PDF);
+    const session = createDocusignSession({
+      workingDirectory: WORKING,
+      settings: settingsWith({}),
+      secrets: keyed(),
+      openInBrowser: browser().openInBrowser,
+      fetchImpl: fake.fetchImpl,
+    });
+
+    expect(await session.send({ ...SEND, pdf: staged })).toBe('env-1');
+
+    // ONE BODY, as a Blob, carrying the staged document: the bytes, not a copy made in `main`.
+    expect(fake.bodies).toHaveLength(1);
+    const body = JSON.parse(fake.bodies[0] ?? '') as { documents: { documentBase64: string }[]; status: string };
+    expect(Buffer.from(body.documents[0]?.documentBase64 ?? '', 'base64')).toStrictEqual(Buffer.from(PDF));
+    expect(body.status).toBe('sent');
+    // MOVED INTO THE WORKING FOLDER ONCE, discarded once, and nothing left there afterwards.
+    expect(placed).toHaveLength(1);
+    expect(placed[0]?.startsWith(join(WORKING, '.uploads'))).toBe(true);
+    expect(discarded).toStrictEqual([1]);
+    expect(readdirSync(join(WORKING, '.uploads'))).toStrictEqual([]);
+  });
+
+  it('CONTROL: a send refused before signing in discards the staged copy and writes nothing', async () => {
+    const fake = docusignFake();
+    const { staged, placed, discarded } = counted(PDF);
+    const session = createDocusignSession({
+      workingDirectory: WORKING,
+      settings: settingsWith({}),
+      secrets: memorySecrets(),
+      openInBrowser: browser().openInBrowser,
+      fetchImpl: fake.fetchImpl,
+    });
+
+    expect(await kindOf(session.send({ ...SEND, pdf: staged }))).toBe('no-integration-key');
+    expect(placed).toStrictEqual([]);
+    expect(discarded).toStrictEqual([1]);
+    expect(fake.bodies).toStrictEqual([]);
   });
 });

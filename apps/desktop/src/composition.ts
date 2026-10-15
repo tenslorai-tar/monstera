@@ -1794,7 +1794,14 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     certificate: { pick: pickCertificate, read: readCertificate },
     // THE SAME STORE the settings channels write the integration key into, so a
     // key saved in Settings is the key this session signs in with.
-    docusign: createDocusignSession({ settings, secrets: secretStore, openInBrowser }),
+    docusign: createDocusignSession({
+      settings,
+      secrets: secretStore,
+      openInBrowser,
+      // SENT FROM WHERE THE CLOUD UPLOADS ARE SENT FROM (`.uploads` under the working folder), each file removed when its
+      // send ends; a harness with no cloud folder sends from the system's temporary one, as backups fall back to it.
+      workingDirectory: cloudComposition?.workingDirectory ?? join(tmpdir(), 'monstera-docusign-unconfigured'),
+    }),
     // THE EXTRACT, composed like every reader above it: resolve the session,
     // then hand it to whichever host is live. What differs is that it produces
     // a SECOND document's bytes rather than answering a question about this
