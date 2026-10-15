@@ -13,7 +13,7 @@ Flatten turns the form into an ordinary page. Whatever is typed or ticked stays 
 1. Fill in the form.
 2. To flatten only some fields, select them first: choose **Edit fields** and click them, or pick them in the **Fields list**.
 3. In the rail, choose **Forms**, then **Flatten** in the **Manage** group (its full name is **Flatten form**).
-4. Monstera says what flattening does. With fields selected, choose **The whole form** or **Only the selected fields**. Choose **Flatten form** to go ahead, or close the window to keep the form. A message at the bottom of the window says when it is done.
+4. Monstera says what flattening does. With fields selected, choose **The whole form** or the option for the selected fields, which names how many there are (for example **Only the 3 selected fields**). Choose **Flatten form** to go ahead, or close the window to keep the form. A message at the bottom of the window says when it is done.
 
 ![The Manage group with Flatten](screenshot:flatten-a-form-1)
 
