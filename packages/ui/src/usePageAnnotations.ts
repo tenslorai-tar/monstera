@@ -16,6 +16,8 @@ export interface PageAnnotation {
     readonly x1: number;
     readonly y1: number;
   } | null;
+  /** Its object number, which PDF.js names it by: how a reshape's drag draws the page without it (B1). */
+  readonly object?: number;
 }
 
 /**
@@ -80,7 +82,12 @@ export function usePageAnnotations(
         const grouped = new Map<number, PageAnnotation[]>();
         for (const annotation of answer.value.items) {
           const onPage = grouped.get(annotation.page) ?? [];
-          onPage.push({ index: annotation.index, kind: annotation.kind, rect: annotation.rect });
+          onPage.push({
+            index: annotation.index,
+            kind: annotation.kind,
+            rect: annotation.rect,
+            ...(annotation.object === undefined ? {} : { object: annotation.object }),
+          });
           grouped.set(annotation.page, onPage);
         }
         setAnswered({ key, map: grouped });

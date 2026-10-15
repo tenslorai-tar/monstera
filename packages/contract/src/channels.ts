@@ -5199,6 +5199,12 @@ export const channels = {
               .strict()
               .exactOptional(),
             /**
+             * The annotation dictionary's object number, absent where it is a direct object. Not a handle (that is
+             * `index` with the version): it names the mark to the renderer's PDF.js, which builds its own annotation
+             * ids from it, so a reshape's drag can draw the page without the mark it is reshaping (the owner's B1).
+             */
+            object: z.number().int().positive().exactOptional(),
+            /**
              * What it is drawn in — `/C`, `/CA` and `/BS`'s width.
              *
              * Carried so a styles panel can show what an annotation IS rather

@@ -3431,6 +3431,21 @@ describe('applyAddAnnotation writes a measurement', () => {
       expect(square).not.toHaveProperty('measured');
     });
 
+    it('the walk names each mark’s OBJECT NUMBER, the one PDF.js builds its id from, and none for a direct one (B1)', async () => {
+      // THE CROSSING A DRAG'S REDRAW DEPENDS ON: the renderer leaves out the mark PDF.js calls "<number>R", so the number
+      // listed must be the one the file holds in /Annots, read here by a second reader.
+      const drawn = await drawnOn(await fixture(), command({ annotation: DISTANCE }));
+      const loaded = await PDFDocument.load(drawn, { updateMetadata: false });
+      const annots = loaded.getPages()[0]?.node.lookup(PDFName.of('Annots'));
+      if (!(annots instanceof PDFArray)) throw new Error('no /Annots');
+      const reference = annots.asArray()[0];
+      if (!(reference instanceof PDFRef)) throw new Error('the mark is not held as an object');
+      expect((await listedFirst(drawn)).object).toBe(reference.objectNumber);
+      // CONTROL: the same mark written straight into /Annots, with no object of its own, names none.
+      annots.set(0, loaded.context.lookup(reference, PDFDict));
+      expect(await listedFirst(await loaded.save())).not.toHaveProperty('object');
+    });
+
     it('an AREA’s corner moved by points reads the new area, and a PERIMETER’s the new length', async () => {
       const area = await drawnOn(await fixture(), command({ annotation: AREA }));
       // THE TOP-RIGHT CORNER pulled fifty points further right: the square becomes a trapezoid of 12,500 pt².

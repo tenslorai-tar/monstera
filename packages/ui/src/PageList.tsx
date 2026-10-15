@@ -70,6 +70,7 @@ import type { PageLayout } from './settings/viewing.js';
 import {
   RenderCancelledError,
   type SecondRasteriser,
+  drawWithout,
   pageBoxAtOne,
   pageGeometry,
   renderPage,
@@ -1705,6 +1706,29 @@ function PageSlot({
   // THE VIEW THE PIXELS ON SCREEN CAME FROM, set when a draw has presented: the drawing overlay holds a
   // released shape until this moves past the view it was released over (`AnnotationOverlay.drawnWith`).
   const [drawnWith, setDrawnWith] = useState<DocumentView | undefined>(undefined);
+  // THE MARK A RESHAPE IS DRAGGING ON THIS PAGE, which the page is drawn without while its live reading stands (the
+  // owner's B1): otherwise its stored appearance shows the old reading beside the live one. Read from the reading the
+  // overlay reports, which names the mark by its place in the walk; PDF.js names it by object, which the listing carries.
+  const [reshaping, setReshaping] = useState<number | undefined>(undefined);
+  const forwardReading = drawing?.onReading;
+  const onReading = useCallback(
+    (at: number, reading: LiveReading | undefined): void => {
+      setReshaping(reading?.index);
+      forwardReading?.(at, reading);
+    },
+    [forwardReading],
+  );
+  const leftOut = reshaping === undefined ? undefined : annotations?.find((annotation) => annotation.index === reshaping)?.object;
+  // PUT BACK when the reading ends, before any draw that follows: a layout effect's cleanup runs ahead of every passive
+  // effect, the tiles' included.
+  useLayoutEffect(() => {
+    if (view === undefined || leftOut === undefined) return undefined;
+    const document = view.document;
+    drawWithout(document, leftOut);
+    return (): void => {
+      drawWithout(document, undefined);
+    };
+  }, [leftOut, view]);
 
   /**
    * What the page occupies on screen, in CSS pixels, at the CURRENT zoom.
@@ -1770,6 +1794,7 @@ function PageSlot({
         rotation,
         superseded.signal,
         secondRasteriser,
+        leftOut,
       );
       if (superseded.signal.aborted) return;
       onMeasured(page, {
@@ -1810,7 +1835,7 @@ function PageSlot({
     return (): void => {
       superseded.abort();
     };
-  }, [draw, onFailed, onMeasured, onPainted, page, quality, renderZoom, rotation, secondRasteriser, tiled, view]);
+  }, [draw, leftOut, onFailed, onMeasured, onPainted, page, quality, renderZoom, rotation, secondRasteriser, tiled, view]);
 
   // HELD DECODED WHILE MOUNTED (`pageResidency.ts`), so a zoom's redraw of a page in the margin does not decode its
   // images again; released when it leaves the margin, and PDF.js then closes them unless the strip is drawing it.
@@ -1895,6 +1920,7 @@ function PageSlot({
             slot={own}
             view={view}
             zoom={zoom}
+            leftOut={leftOut}
           />
         )
       ) : mounted ? (
@@ -2073,7 +2099,7 @@ function PageSlot({
           }}
           label={i18n._(ANNOTATION_SURFACE_LABEL, { page: pdfjsPageOf(page) })}
           onCommand={drawing.onCommand}
-          onReading={drawing.onReading}
+          onReading={onReading}
           drawnWith={drawnWith}
           page={page}
           tool={drawing.tool}
@@ -2175,10 +2201,13 @@ function PageTiles({
   pageSize,
   scroller,
   slot,
+  leftOut,
 }: {
   readonly view: DocumentView;
   /** The slot's: whether a tile may rasterise now. A tile on screen keeps its last drawing until it may. */
   readonly draw: boolean;
+  /** The mark a reshape is dragging, which the tiles are drawn without (`renderRegion`'s `leftOut`, the owner's B1). */
+  readonly leftOut: number | undefined;
   readonly page: number;
   readonly rotation: number | undefined;
   readonly scale: number;
@@ -2229,7 +2258,17 @@ function PageTiles({
   return (
     <div className="m-page-tiles" data-page-tiles={String(page)}>
       {tiles.map((tile) => (
-        <PageTile key={tile.key} draw={draw} page={page} rotation={rotation} scale={scale} tile={tile} view={view} zoom={zoom} />
+        <PageTile
+          key={tile.key}
+          draw={draw}
+          leftOut={leftOut}
+          page={page}
+          rotation={rotation}
+          scale={scale}
+          tile={tile}
+          view={view}
+          zoom={zoom}
+        />
       ))}
     </div>
   );
@@ -2265,6 +2304,7 @@ function PageTile({
   tile,
   scale,
   zoom,
+  leftOut,
 }: {
   readonly view: DocumentView;
   readonly draw: boolean;
@@ -2273,6 +2313,7 @@ function PageTile({
   readonly tile: Tile;
   readonly scale: number;
   readonly zoom: number;
+  readonly leftOut: number | undefined;
 }): ReactElement {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [drawn, setDrawn] = useState<{ readonly x: number; readonly y: number; readonly width: number; readonly height: number; readonly scale: number }>();
@@ -2285,7 +2326,7 @@ function PageTile({
     // A NEW DRAW OWNS THE MARKER: a failure belongs to the draw that threw, and the slot's, above, says why.
     delete target.dataset['failed'];
     const region = { x, y, width, height };
-    void renderRegion(view.document, pdfjsPageOf(page), target, scale, rotation, region, superseded.signal)
+    void renderRegion(view.document, pdfjsPageOf(page), target, scale, rotation, region, superseded.signal, leftOut)
       .then(() => {
         if (!superseded.signal.aborted) setDrawn({ ...region, scale });
       })
@@ -2297,7 +2338,7 @@ function PageTile({
     return (): void => {
       superseded.abort();
     };
-  }, [draw, height, page, rotation, scale, view, width, x, y]);
+  }, [draw, height, leftOut, page, rotation, scale, view, width, x, y]);
 
   const per = drawn === undefined ? 0 : zoom / drawn.scale;
   return (

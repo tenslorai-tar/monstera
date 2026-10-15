@@ -1,3 +1,4 @@
+import { PDFDocument, PDFName } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
@@ -102,3 +103,91 @@ test('a distance being drawn says what it measures beside the pointer, before it
   await expect(caption).not.toHaveText(first ?? '');
   await page.mouse.up();
 });
+
+/**
+ * A page holding one distance whose stored appearance is a solid black label box, so the label's pixels can be read off
+ * the page canvas: the object the drag is meant to leave out. Answers the bytes and the annotation's object number.
+ */
+async function distanceWithLabel(): Promise<{ bytes: Uint8Array; object: number }> {
+  const pdf = await PDFDocument.create();
+  const page = pdf.addPage([612, 792]);
+  const label = pdf.context.register(
+    pdf.context.stream('0 0 0 rg 0 0 120 30 re f', { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 120, 30] }),
+  );
+  const annotation = pdf.context.register(
+    pdf.context.obj({ Type: 'Annot', Subtype: 'Line', Rect: [200, 500, 320, 530], L: [200, 515, 320, 515], IT: 'LineDimension', AP: { N: label } }),
+  );
+  page.node.set(PDFName.of('Annots'), pdf.context.obj([annotation]));
+  return { bytes: await pdf.save(), object: annotation.objectNumber };
+}
+
+/** Whether the page canvas is dark at a point in PDF space, read from its own pixels. */
+async function inkAt(page: Page, point: { x: number; y: number }): Promise<boolean> {
+  return page.locator('canvas.m-page').first().evaluate((canvas: HTMLCanvasElement, at) => {
+    const box = canvas.getBoundingClientRect();
+    const ratio = canvas.width / box.width;
+    const scale = box.width / 612;
+    const pixel = canvas
+      .getContext('2d', { willReadFrequently: true })
+      ?.getImageData(Math.round(at.x * scale * ratio), Math.round((792 - at.y) * scale * ratio), 1, 1).data;
+    return pixel !== undefined && (pixel[0] ?? 255) < 80;
+  }, point);
+}
+
+for (const named of [true, false]) {
+  test(`while a distance's end is dragged the page is drawn ${named ? 'WITHOUT its stored label' : 'with it when the listing names no object (CONTROL)'}`, async ({
+    page,
+  }) => {
+    // THE OWNER'S B1 LEFTOVER: the stored appearance carried the old reading beside the live caption until release.
+    const { bytes, object } = await distanceWithLabel();
+    const ends = [
+      { x: 200, y: 515 },
+      { x: 320, y: 515 },
+    ];
+    await page.setViewportSize({ width: 1280, height: 860 });
+    await bridgeUnder(page, LOOKS[0], {
+      opens: [{ kind: 'opened' as const, docId: ID, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Label.pdf' }],
+      documentBytes: new Map([[ID, bytes]]),
+      annotations: [
+        {
+          page: 0,
+          index: 0,
+          kind: 'measure-distance',
+          rect: { x0: 200, y0: 500, x1: 320, y1: 530 },
+          contents: '1.7 in',
+          points: ends,
+          measured: { kind: 'measure-distance', scale: { perPoint: 1 / 72, unit: 'in' } },
+          ...(named ? { object } : {}),
+        },
+      ],
+      settings: { 'appearance.ribbon-section': 'comment' },
+    });
+    await page.goto('/');
+    await page.getByRole('button', { name: /^Open PDF/u }).first().click();
+    await expect(page.locator('.m-page-pane[data-first-frame="shown"]').first()).toBeAttached();
+    const label = { x: 260, y: 525 };
+    // THE POSITIVE CONTROL: the label is drawn before anything is pressed, so its absence below is the drag's doing.
+    await expect.poll(() => inkAt(page, label)).toBe(true);
+
+    const slot = await page.locator('.m-page-slot').first().boundingBox();
+    if (slot === null) throw new Error('the first page has no box');
+    const scale = slot.width / 612;
+    const right = { x: slot.x + 320 * scale, y: slot.y + (792 - 515) * scale };
+    await page.getByRole('button', { name: 'Select', exact: true }).first().click();
+    await page.mouse.click(slot.x + 260 * scale, right.y);
+    await expect(page.locator('[data-selection-handle="point-1"]')).toBeVisible();
+    await page.mouse.move(right.x, right.y);
+    await page.mouse.down();
+    await page.mouse.move(right.x + 60, right.y + 30, { steps: 6 });
+    await expect(page.locator('[data-annotation-caption]')).toBeVisible();
+    if (named) {
+      await expect.poll(() => inkAt(page, label)).toBe(false);
+    } else {
+      // THE CONTROL HOLDS ITS GROUND for a moment a redraw would have taken, rather than passing on the first read.
+      await page.waitForTimeout(500);
+      expect(await inkAt(page, label)).toBe(true);
+    }
+    await page.keyboard.press('Escape');
+    await page.mouse.up();
+  });
+}

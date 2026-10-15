@@ -42,6 +42,8 @@ import {
   shownSchemeOf,
   wrapHandlers,
   type BoxedInEditEntry,
+  type MeasuredKind,
+  type MeasureScale,
   type PageAdjustmentOutcome,
 } from '@monstera/contract';
 import {
@@ -702,6 +704,13 @@ export interface BrowserShimOptions {
     readonly typed?: AnnotationWordsStyle;
     /** A line's ends or a polygon's corners, for a case about moving one (the owner's O8). Absent is a box-shaped mark. */
     readonly points?: { readonly x: number; readonly y: number }[];
+    /** What a measurement measures and at which scale, for a case about its live reading (the owner's B1). */
+    readonly measured?: { readonly kind: MeasuredKind; readonly scale: MeasureScale };
+    /**
+     * Its object number in the document the case serves, for a case about drawing the page without it while it is
+     * dragged (B1). The case must name the object the served bytes actually hold, or PDF.js leaves nothing out.
+     */
+    readonly object?: number;
   }[];
 
   /**

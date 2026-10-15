@@ -2261,6 +2261,12 @@ export interface ListedAnnotation {
   /** What a measurement measures and at which scale ({@link measuredOf}); absent on every other mark. */
   readonly measured?: { readonly kind: MeasuredKind; readonly scale: MeasureScale };
   /**
+   * The annotation dictionary's object number, absent where it is a direct object. NOT a handle: it names the mark
+   * to the renderer's PDF.js, whose annotation ids are built from it, so a drag can draw the page without the mark it
+   * is reshaping (the owner's B1). Valid against this answer's version only, like the index.
+   */
+  readonly object?: number;
+  /**
    * Which mark on this page this one ANSWERS, by its index in this same walk,
    * or `null` — PDF 32000-1 §12.5.6.2's `/IRT` with `/RT /R`.
    *
@@ -2492,9 +2498,12 @@ export function readAnnotations(
         const contents = annotation.getContents();
         const points = transform === null ? undefined : readPoints(annotation, transform);
         const measured = measuredOf(annotation);
+        const own = annotation.getObject();
         found.add({
           page,
           index: index++,
+          // ITS OBJECT NUMBER, which PDF.js names it by (B1's drag draws the page without it).
+          ...(own.isIndirect() ? { object: own.asIndirect() } : {}),
           rect: transform === null ? null : readRect(annotation, transform),
           // A LINE'S ENDS AND A POLYGON'S CORNERS, so the select tool moves each one rather than scaling a box (O8).
           ...(points === undefined ? {} : { points }),

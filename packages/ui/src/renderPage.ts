@@ -1,4 +1,4 @@
-import type { PDFDocumentProxy } from 'pdfjs-dist';
+import { AnnotationMode, type PDFDocumentProxy } from 'pdfjs-dist';
 
 import { withDrawSlot } from './drawSlots.js';
 import { holdPage, residentPage } from './pageResidency.js';
@@ -151,7 +151,11 @@ export async function renderPage(
   rotation: number | undefined,
   signal: AbortSignal,
   raster?: SecondRasteriser,
+  leftOut?: number,
 ): Promise<RasterisedPage> {
+  // THE MARK A DRAG IS RESHAPING, left out of this draw and of every draw of this document until it is put back
+  // (`drawWithout`); a draw that names none leaves another page's choice alone.
+  if (leftOut !== undefined) drawWithout(document, leftOut);
   // HELD FOR THE DRAW, and released after it whatever happened (`pageResidency.ts`): the page's decoded images are
   // cleaned once nothing else holds it, so a page drawn once does not keep them for the life of the document.
   const release = holdPage(document, pageNumber);
@@ -199,7 +203,8 @@ async function drawPage(
   // nothing. See {@link SecondRasteriser}: the fallback is what keeps a machine
   // with no `pdfium.dll` drawing pages. Either way the drawing is finished
   // before the canvas on screen is touched — see {@link present}.
-  const drawn = raster === undefined ? null : await raster(pageNumber, size.width, size.height);
+  // NOT WHILE A MARK IS LEFT OUT (`drawWithout`): the second engine draws the file as it is and cannot omit one.
+  const drawn = raster === undefined || hiddenIn.has(document) ? null : await raster(pageNumber, size.width, size.height);
   if (superseded()) {
     drawn?.close();
     throw new RenderCancelledError(pageNumber);
@@ -207,7 +212,7 @@ async function drawPage(
   if (drawn === null) {
     const scratch = scratchFor(canvas, size);
     try {
-      await drawWithPdfjs(page, scratch, contextOf(scratch), viewport, undefined, signal, pageNumber);
+      await drawWithPdfjs(page, scratch, contextOf(scratch), viewport, undefined, signal, pageNumber, hiddenIn.has(document));
       present(canvas, shown, scratch, signal, pageNumber);
     } finally {
       release(scratch);
@@ -331,8 +336,17 @@ async function drawWithPdfjs(
   transform: [number, number, number, number, number, number] | undefined,
   signal: AbortSignal,
   pageNumber: number,
+  leavingOut: boolean,
 ): Promise<void> {
-  const task = page.render({ canvas, canvasContext: context, viewport, ...(transform === undefined ? {} : { transform }) });
+  // STORAGE MODE ONLY WHILE A MARK IS LEFT OUT: it is the mode in which the worker reads `noView`, and every other draw
+  // keeps the plain mode it always had.
+  const task = page.render({
+    canvas,
+    canvasContext: context,
+    viewport,
+    ...(transform === undefined ? {} : { transform }),
+    ...(leavingOut ? { annotationMode: AnnotationMode.ENABLE_STORAGE } : {}),
+  });
   const cancel = (): void => {
     task.cancel();
   };
@@ -380,6 +394,42 @@ export async function pageBoxAtOne(
 }
 
 /**
+ * The mark each document draws its pages without, by PDF.js' own annotation id: the one a reshape is dragging (the
+ * owner's B1), whose stored appearance would otherwise show its old reading beside the live one. One per document,
+ * because one drag runs at a time.
+ */
+const hiddenIn = new WeakMap<PDFDocumentProxy, string>();
+
+/**
+ * PDF.js' id for the annotation held as object `object`: `Ref.toString()`, which is `"<num>R"` at generation 0. The
+ * listing carries the number alone (MuPDF's binding exposes no generation), so a mark stored at a later generation is
+ * not matched and stays drawn: the state before B1's leftover was fixed, never a different mark hidden.
+ */
+export function pdfjsAnnotationId(object: number): string {
+  return `${String(object)}R`;
+}
+
+/**
+ * Draws `document`'s pages without the mark held as `object` from the next draw on, or with every mark again when it
+ * is `undefined`. The mechanism is PDF.js' own: an annotation-storage entry saying `noView`, which its worker reads in
+ * `mustBeViewed` when a page is drawn in `ENABLE_STORAGE` mode. The caller redraws; this only says what the next draw
+ * leaves out. Answers whether anything changed, so a caller redraws only then.
+ */
+export function drawWithout(document: PDFDocumentProxy, object: number | undefined): boolean {
+  const next = object === undefined ? undefined : pdfjsAnnotationId(object);
+  const held = hiddenIn.get(document);
+  if (held === next) return false;
+  if (held !== undefined) document.annotationStorage.remove(held);
+  if (next === undefined) {
+    hiddenIn.delete(document);
+  } else {
+    document.annotationStorage.setValue(next, { noView: true });
+    hiddenIn.set(document, next);
+  }
+  return true;
+}
+
+/**
  * Draws one REGION of page `pageNumber` at `scale` into `canvas`, sized to the region — a tile (`tiles.ts`) or the
  * loupe's window. The region is in the page's device pixels at `scale`, origin top-left, as the canvas counts.
  *
@@ -395,7 +445,10 @@ export async function renderRegion(
   rotation: number | undefined,
   region: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
   signal: AbortSignal,
+  leftOut?: number,
 ): Promise<void> {
+  // THE MARK A DRAG IS RESHAPING, `renderPage`'s rule.
+  if (leftOut !== undefined) drawWithout(document, leftOut);
   // HELD FOR THE DRAW, `renderPage`'s reason: a tile decodes the page's images as a whole page does.
   const release = holdPage(document, pageNumber);
   try {
@@ -429,7 +482,16 @@ async function drawRegion(
   const shown = contextOf(canvas);
   const scratch = scratchFor(canvas, region);
   try {
-    await drawWithPdfjs(page, scratch, contextOf(scratch), viewport, [1, 0, 0, 1, -region.x, -region.y], signal, pageNumber);
+    await drawWithPdfjs(
+      page,
+      scratch,
+      contextOf(scratch),
+      viewport,
+      [1, 0, 0, 1, -region.x, -region.y],
+      signal,
+      pageNumber,
+      hiddenIn.has(document),
+    );
     present(canvas, shown, scratch, signal, pageNumber);
   } finally {
     release(scratch);
