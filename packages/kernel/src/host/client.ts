@@ -5,6 +5,7 @@ import {
   FrameDecoder,
   encodeFrame,
   hostResponseSchema,
+  issuesInOurWords,
   liftCredentials,
   restoreCredentials,
   type LiftedCredential,
@@ -220,17 +221,9 @@ export interface HostClient {
   readonly last: () => DocId | undefined;
 }
 
-/**
- * Why a response did not match the wire, in words this build chose: each issue's zod code and its path's length.
- *
- * NEVER zod's own message (CR-SEC-13). A strict object's refusal names the keys it did not recognise, and a record's
- * path names the peer's keys, so either one carries text the host chose — up to a frame of it — into the termination
- * `main` writes to its diagnostics.
- */
-function issuesOf(error: { readonly issues: readonly { readonly code: string; readonly path: readonly PropertyKey[] }[] }): string {
-  const named = error.issues.slice(0, 8).map((issue) => `${issue.code} at depth ${String(issue.path.length)}`);
-  const more = error.issues.length > named.length ? `, and ${String(error.issues.length - named.length)} more` : '';
-  return `the response did not match the host wire: ${named.join(', ')}${more}`;
+/** Why a response did not match the wire, in the contract's words and never zod's (`issuesInOurWords`, CR-SEC-13). */
+function issuesOf(error: Parameters<typeof issuesInOurWords>[0]): string {
+  return `the response did not match the host wire: ${issuesInOurWords(error)}`;
 }
 
 export function createHostClient({

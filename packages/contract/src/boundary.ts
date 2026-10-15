@@ -64,12 +64,9 @@ export function wrapHandler<TMap extends ChannelMap, K extends keyof TMap & stri
     const parsedParams = definition.params.safeParse(rawParams);
     if (!parsedParams.success) {
       // A schema error names fields and values, which is a disclosure question
-      // as much as the fs errors are — so it is recorded, not forwarded.
-      return internal(
-        new Error(`Invalid params for "${id}": ${parsedParams.error.message}`, {
-          cause: parsedParams.error,
-        }),
-      );
+      // as much as the fs errors are — so it is recorded, not forwarded, and
+      // recorded in our words: the peer chose the keys zod's message would name.
+      return internal(new Error(`Invalid params for "${id}": ${issuesInOurWords(parsedParams.error)}`));
     }
 
     // Typed as what a HANDLER may report — a declared code, no incident, no
@@ -207,6 +204,19 @@ export function createClient<TMap extends ChannelMap>(
 }
 
 /**
+ * Why a value from a PEER did not match its schema, in words this build chose: each issue's zod code and its path's
+ * depth. The one spelling, for every boundary that parses what another process sent (CR-SEC-13, QQQQQQQ-12).
+ *
+ * NEVER zod's own message: a strict object's refusal names the keys it did not recognise, and a record's path names the
+ * peer's keys, so either carries text the peer chose into `main`'s diagnostics, up to a frame of it.
+ */
+export function issuesInOurWords(error: { readonly issues: readonly { readonly code: string; readonly path: readonly PropertyKey[] }[] }): string {
+  const named = error.issues.slice(0, 8).map((issue) => `${issue.code} at depth ${String(issue.path.length)}`);
+  const more = error.issues.length > named.length ? `, and ${String(error.issues.length - named.length)} more` : '';
+  return `${named.join(', ')}${more}`;
+}
+
+/**
  * Validates one answer against its channel's envelope — `createClient`'s check, for the one caller that
  * reaches main by another route: the page's `openDropped`, whose answer arrives through the bridge's third
  * member rather than through `invoke` (ADR-0099).
@@ -224,7 +234,8 @@ export function acceptAnswer<TMap extends ChannelMap, K extends keyof TMap & str
   if (definition === undefined) throw new Error(`No channel declared for "${id}"`);
   const parsed = envelopeSchema(definition.result).safeParse(raw);
   if (!parsed.success) {
-    throw new Error(`Malformed response envelope for "${id}": ${parsed.error.message}`, { cause: parsed.error });
+    // THE ISSUES IN OUR WORDS, and no `cause`: the ZodError carries the peer's keys in its message too.
+    throw new Error(`Malformed response envelope for "${id}": ${issuesInOurWords(parsed.error)}`);
   }
   return parsed.data as Result<ResultOf<TMap, K>, Failure<FailureOf<TMap, K>>>;
 }

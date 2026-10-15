@@ -106,6 +106,23 @@ describe('wrapHandler', () => {
     expect(seen[0]?.diagnostic.message).toContain('Invalid params for "fixture.add"');
   });
 
+  it('records a peer’s refused KEY NAMES in no diagnostic, here or on a malformed answer (CR-SEC-13, QQQQQQQ-12)', async () => {
+    const PEER_KEY = 'peerChoseThisKeyName';
+    const strict = { 'strict.call': channel('A strict object.', z.strictObject({ a: z.number() }), z.strictObject({ b: z.number() })) } as const;
+    const { sink, seen } = recorder();
+    const result = await wrapHandler(strict, 'strict.call', () => Promise.resolve(ok({ b: 1 })), new IncidentLog(sink))({ a: 1, [PEER_KEY]: 1 });
+    expect(result.ok).toBe(false);
+    expect(seen[0]?.diagnostic.message).toContain('unrecognized_keys at depth 0');
+    expect(seen[0]?.diagnostic.message).not.toContain(PEER_KEY);
+    // AND AN ANSWER: the client's envelope parse refuses a result carrying the peer's key without naming it.
+    const client = createClient(strict, () => Promise.resolve({ ok: true, value: { b: 1, [PEER_KEY]: 1 } }));
+    const thrown = await client['strict.call']({ a: 1 }).catch((error: unknown) => error);
+    expect(String(thrown)).toContain('Malformed response envelope');
+    expect(String(thrown)).not.toContain(PEER_KEY);
+    // CONTROL: zod's own message for the same refusal names the key, which is what was being forwarded.
+    expect(z.strictObject({ a: z.number() }).safeParse({ a: 1, [PEER_KEY]: 1 }).error?.message).toContain(PEER_KEY);
+  });
+
   it('rejects params of the right type but the wrong shape', async () => {
     // `left` is declared an integer. Accepting 2.5 here would let a fractional
     // page index reach a writer of record.
