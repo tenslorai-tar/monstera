@@ -1150,7 +1150,7 @@ describe('App', () => {
         await Promise.resolve();
       });
       // The body has arrived (its chunk is lazy) before its buttons are looked for.
-      expect(await screen.findByText(/Your documents stay on your computer/u)).toBeDefined();
+      expect(await screen.findByText(/Monstera is a PDF editor for Windows/u)).toBeDefined();
       await act(async () => {
         (await screen.findByRole('button', { name: control })).click();
         await Promise.resolve();

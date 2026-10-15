@@ -904,7 +904,6 @@ export const ABOUT_CHANNEL_STORE = messageKey('dialog.about.channel-store');
 export const ABOUT_CHANNEL_WEB = messageKey('dialog.about.channel-web');
 export const ABOUT_CHANNEL_DEVELOPMENT = messageKey('dialog.about.channel-development');
 export const ABOUT_WHAT = messageKey('dialog.about.what');
-export const ABOUT_LOCAL = messageKey('dialog.about.local');
 export const ABOUT_LICENCE = messageKey('dialog.about.licence');
 export const ABOUT_COPYRIGHT = messageKey('dialog.about.copyright');
 export const ABOUT_SOURCE = messageKey('dialog.about.source');
@@ -3638,10 +3637,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ABOUT_CHANNEL_STORE]: 'Microsoft Store',
   [ABOUT_CHANNEL_WEB]: 'Download from monsterapdf.com',
   [ABOUT_CHANNEL_DEVELOPMENT]: 'Development build',
-  // ADR-0236: "unless you send one" is load-bearing — the assistant, cloud storage and DocuSign each send a document
-  // when the person asks, so the unconditional sentence would be false of this build.
   [ABOUT_WHAT]: 'Monstera is a PDF editor for Windows.',
-  [ABOUT_LOCAL]: 'Your documents stay on your computer unless you send one.',
   [ABOUT_LICENCE]:
     'Monstera is free software under the GNU Affero General Public License, version 3 or later. You can read and build its source code.',
   [ABOUT_COPYRIGHT]: '© Tenslor Inc.',

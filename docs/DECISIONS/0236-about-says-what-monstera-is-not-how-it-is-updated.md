@@ -55,3 +55,11 @@ So, superseding Decision 2 and the first rejected alternative:
    about how the build is updated.
 
 Decided by the owner. The architecture's amendment log carries a row for this correction.
+
+## Correction, 2026-10-15: About keeps one of the two lines
+
+The owner's cloud run 4 addendum, C1: *"Delete 'Your documents stay on your computer unless you send one.' Keep
+'Monstera is a PDF editor for Windows.' and everything else."* Decision 3's second line is gone from the About window
+and from the catalogue. The reason Decision 3 gave for its wording still holds of any such sentence; the owner chose to
+carry none. The help centre's *About Monstera* article keeps the sentence under *Good to know*, where it describes the
+application rather than the window.

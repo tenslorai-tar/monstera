@@ -219,10 +219,12 @@ describe('the footers the owner chose for three dialogs (2026-10-02)', () => {
       </InDialog>,
     );
     const lines = [...document.querySelectorAll('.m-about__line')].map((line) => line.textContent);
+    // ONE LINE about what Monstera is (the owner's C1, ADR-0236's correction of 2026-10-15), then the licence.
     expect(lines.slice(0, 2)).toStrictEqual([
       'Monstera is a PDF editor for Windows.',
-      'Your documents stay on your computer unless you send one.',
+      'Monstera is free software under the GNU Affero General Public License, version 3 or later. You can read and build its source code.',
     ]);
+    expect(lines.filter((line) => line.includes('stay on your computer'))).toStrictEqual([]);
     expect(lines.filter((line) => /update|monsterapdf/iu.test(line))).toStrictEqual([]);
   });
 

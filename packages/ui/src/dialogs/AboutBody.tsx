@@ -11,7 +11,6 @@ import {
   ABOUT_COPYRIGHT,
   ABOUT_LICENCE,
   ABOUT_LICENCES,
-  ABOUT_LOCAL,
   ABOUT_SOURCE,
   ABOUT_VERSION_LABEL,
   ABOUT_WHAT,
@@ -67,7 +66,6 @@ export default function AboutBody({
         <dd>{_(CHANNEL_NAMES[installChannel])}</dd>
       </dl>
       <p className="m-about__line">{_(ABOUT_WHAT)}</p>
-      <p className="m-about__line">{_(ABOUT_LOCAL)}</p>
       <p className="m-about__line">{_(ABOUT_LICENCE)}</p>
       <p className="m-about__line">{_(ABOUT_COPYRIGHT)}</p>
       <DialogFooter dismissal="close">
