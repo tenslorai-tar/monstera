@@ -383,10 +383,9 @@ describe('a command whose bytes cannot cross the wire', () => {
     // REFUSED FOR THE BYTES AND NOTHING ELSE, read from the incident the wire answers with: every refusal of a call
     // reads `internal` to the caller, so `ok: false` alone would pass for a call refused for a field it lacked.
     expect(incidents).toHaveLength(1);
-    const issues = JSON.parse((incidents[0]?.diagnostic as { cause: { message: string } }).cause.message) as unknown;
-    expect(issues).toStrictEqual([
-      { code: 'unrecognized_keys', keys: ['bytes'], path: ['command'], message: 'Unrecognized key: "bytes"' },
-    ]);
+    // IN OUR WORDS (`issuesInOurWords`): the one issue, a key the strict `command` object did not recognise, one level
+    // down. Not zod's message, which would name the key, and here the peer chose it.
+    expect((incidents[0]?.diagnostic as Error).message).toBe('Invalid params for "engine/apply": unrecognized_keys at depth 1');
     // AND NOTHING HAPPENED TO THE DOCUMENT, which is the half a refusal alone
     // does not give: an implementation that applied the command and then
     // reported a failure would satisfy the line above.
