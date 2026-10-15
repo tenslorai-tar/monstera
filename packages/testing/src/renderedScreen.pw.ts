@@ -4057,7 +4057,10 @@ test('the ORGANIZE GRID’s summary wraps between whole tips, and no wrapped lin
   await bridge(page, {
     opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'lease.pdf' }],
     documentBytes: new Map([[docId, bytes]]),
-    settings: { 'appearance.ribbon-section': 'organize' },
+    // A WIDE LEFT PANEL makes the grid narrow enough to wrap its summary. At the default width it did, until 14a took
+    // the float bar out from beside the grid (4573e3b2): the summary then had the bar's width too and fit one line on
+    // both CI legs, so the precondition below failed and the case proved nothing either way.
+    settings: { 'appearance.ribbon-section': 'organize', 'appearance.document-panel-width': 520 },
   });
   await page.goto('/');
   await page.getByRole('button', { name: 'Open PDF…' }).click();
