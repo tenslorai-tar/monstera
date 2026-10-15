@@ -898,6 +898,30 @@ describe('Edit text on the page (ADR-0096)', () => {
       expect(inserts[0]?.insert.marks).toStrictEqual([{ from: 6, to: 11, set: { bold: false } }]);
     });
 
+    it('and over words that are not bold, the same chord puts bold ON (EEEEEEEE-4)', async () => {
+      // A PAGE WITH NO WORDS, so the box opens in regular Arial (the control above it): the opposite of the case before,
+      // so a chord that always sent `false`, or always the opposite of `base`, could not pass both.
+      const { view, inserts } = mountAdding({ ...BLOCKS, blocks: [] });
+      fireEvent.click(find(view.container, '[data-text-add-surface]'), { clientX: 100, clientY: 200, detail: 1 });
+      const editor = editorIn(view.container);
+      typeInto(editor, 'plain heavy');
+      const text = editor.querySelector('div')?.firstChild;
+      if (!(text instanceof Text)) throw new Error('no text typed');
+      const range = document.createRange();
+      range.setStart(text, 6);
+      range.setEnd(text, 11);
+      document.getSelection()?.removeAllRanges();
+      document.getSelection()?.addRange(range);
+      fireEvent(document, new Event('selectionchange'));
+      fireEvent.keyDown(editor, { key: 'b', ctrlKey: true });
+      await act(async () => {
+        fireEvent.keyDown(editor, { key: 'Escape' });
+        await Promise.resolve();
+      });
+      expect(inserts[0]?.insert.base?.bold).toBe(false);
+      expect(inserts[0]?.insert.marks).toStrictEqual([{ from: 6, to: 11, set: { bold: true } }]);
+    });
+
     it('CONTROL: a block clicked while adding is still edited, since the surface is under the outlines', () => {
       const { view } = mountAdding();
       fireEvent.click(find(view.container, '[data-text-block="1"]'));
