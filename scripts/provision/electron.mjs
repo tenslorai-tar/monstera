@@ -18,6 +18,16 @@
  *    runs arbitrary code.** Letting it run to obtain the binary would run that
  *    code on a developer machine holding git credentials instead of in a
  *    disposable runner. "Local" is the worse place for it, not the safer one.
+ *
+ *    **`package.json`'s `allowScripts` says the same to npm itself** (addendum
+ *    5's P2, 2026-10-15). npm 11.17 prints the dependencies whose install scripts
+ *    no `allowScripts` entry covers, on any install that would run them, and its
+ *    documentation says a later release will block them. esbuild, koffi and
+ *    unrs-resolver are DENIED there, which is this policy and not a change to it:
+ *    none runs under `--ignore-scripts`, and none needs to, because each takes its
+ *    binary from an optional platform package the lockfile pins (`@esbuild/*`,
+ *    `@koromix/koffi-*`, `@unrs/resolver-binding-*`). koffi's script only checks
+ *    a prebuilt loads, or builds one from source.
  * 2. **`install.js` reads `electron_use_remote_checksums`** — an environment
  *    variable that repoints verification at a remote source. Trusting the
  *    installer's own check means trusting a pin an env var can replace, which is

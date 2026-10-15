@@ -14,6 +14,11 @@
   "engines": {
     "node": ">=22.19.0"
   },
+  "allowScripts": {
+    "esbuild": false,
+    "koffi": false,
+    "unrs-resolver": false
+  },
   "workspaces": [
     "packages/*",
     "apps/*"
