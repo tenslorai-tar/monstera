@@ -191,7 +191,8 @@ describe('the Help centre’s articles', () => {
     const article = HELP_ARTICLES.find((each) => each.id === 'autosave');
     if (article === undefined) throw new Error('no autosave article');
     const named = new Set(boldWords(article));
-    const offered = AUTOSAVE_SETTING.schema.options.map((option) => EN[AUTOSAVE_OPTION_TITLES[option]]);
+    // A TITLE THE CATALOGUE LACKS is reported by its option, never matched as empty.
+    const offered = AUTOSAVE_SETTING.schema.options.map((option) => EN[AUTOSAVE_OPTION_TITLES[option]] ?? `(no title for ${option})`);
     // A SEARCH, so it must find the choices it checks.
     expect(offered).toHaveLength(6);
     expect(offered.filter((title) => !named.has(title))).toStrictEqual([]);
