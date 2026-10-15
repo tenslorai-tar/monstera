@@ -1,3 +1,4 @@
+import { PDFA_LEVELS } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
 
 import { AUTOSAVE_OPTION_TITLES, EN } from '../messages/en.js';
@@ -111,7 +112,23 @@ function afterMore(article: (typeof HELP_ARTICLES)[number]): string[] {
 const KEY =
   /^(?:(?:(?:ctrl|alt|shift|win)\+)*(?:[a-z0-9]|f\d{1,2}|ctrl|alt|shift|esc|escape|enter|tab|delete|backspace|home|end|page ?up|page ?down|space|plus|arrow ?(?:left|right|up|down)|[=+\-/])|(?:(?:ctrl|alt|shift|win)\+)+(?:click|left|right|up|down))$/iu;
 
+/** The PDF/A parts a text names, `PDF/A-2b` as 2. */
+function pdfaPartsNamed(text: string): number[] {
+  return [...text.matchAll(/PDF\/A-(\d+)/gu)].map((match) => Number(match[1]));
+}
+
 describe('the Help centre’s articles', () => {
+  it('name only the PDF/A levels a person may choose, in every article and every catalogue string', () => {
+    // PDF/A-4 IS DEFERRED by the owner (2026-10-15, C2): no help, menu or message may offer what the Export window
+    // does not. The levels are the contract's own list, so a level added there is allowed here with no second edit.
+    const allowed = new Set<number>(PDFA_LEVELS);
+    const named = [...HELP_ARTICLES.map((article) => JSON.stringify(article)), ...Object.values(EN)].flatMap(pdfaPartsNamed);
+    // THE CONTROLS: the matcher sees a level the articles do name, and it reads PDF/A-4 as a level this list refuses.
+    expect(named).toContain(2);
+    expect(pdfaPartsNamed('Save as PDF/A-4f').every((part) => allowed.has(part))).toBe(false);
+    expect(named.filter((part) => !allowed.has(part))).toStrictEqual([]);
+  });
+
   it('load: well over a hundred, each with an id, a title and a summary', () => {
     // A FLOOR, so a glob that matched nothing fails here rather than showing an empty Help centre.
     expect(HELP_ARTICLES.length).toBeGreaterThan(100);
