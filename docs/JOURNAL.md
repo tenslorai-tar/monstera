@@ -892,6 +892,16 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-15 — Stage audit of `f53a6374..91761ab6` — no findings
+
+Two commits: the stage audit above (7bbf0599, the journal and the watermark alone) and the first half of Windows session
+3's baselines (91761ab6, 181 new PNGs under `packages/testing/baselines/` and nothing else, read with
+`git show --stat`). Called by the commit gate, because the baselines are 288 files and one batch is 200, so they go in
+two commits with this record between. No proof, test or instrument is in the range. A second regenerate run on the same
+code rewrote none of the images (276 passed, no baseline newer than that run's start).
+
+---
+
 ## 2026-10-15 — Stage audit of `1bdd02f9..f53a6374` — findings KKKKKKKK-1 to KKKKKKKK-9
 
 Cloud run 4's last board repairs and Windows session 3's first five commits: 17 commits, 26 files. Called by the commit
