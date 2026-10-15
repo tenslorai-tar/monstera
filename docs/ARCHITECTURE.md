@@ -2449,9 +2449,9 @@ say**.
     route is what everything else is built on. The hosts are processes this
     application creates (§2).
 
-    **Amended 2026-09-30 — IN A STORE INSTALL THE HOST STARTS AND IS NOT
+    **Amended 2026-09-30 — IN A STORE INSTALL THE HOST STARTED AND WAS NOT
     CONTAINED, which is the opposite failure of the one written here on
-    2026-09-09** ([ADR-0023](DECISIONS/0023-how-the-contained-engine-host-is-built.md)'s
+    2026-09-09, until route D (Decision 17, below)** ([ADR-0023](DECISIONS/0023-how-the-contained-engine-host-is-built.md)'s
     corrections of 2026-09-09 and 2026-09-30, and Decision 16). An AppContainer's
     access check grants on the token's own package SID, `ALL APPLICATION
     PACKAGES`, or a capability the token holds, and MSIX grants its install root
@@ -2473,8 +2473,12 @@ say**.
     containment mechanism is shipped only when it is measured where it ships**:
     the 2026-09-09 form of this paragraph was reasoned from development
     readings and was wrong in the direction that matters. Which route gives the
-    host the install root without the package's data is Decision 16's, open.
-    Development is blind to it by construction: a checkout has no package
+    host the install root without the package's data was Decision 16's question,
+    and Decision 17 answered it on 2026-09-30 — route D, built in
+    `apps/desktop/src/packageDataLock.ts`: the host stays the package's child
+    container and `main` takes the package's permission off the app's data with
+    a protected DACL, measured in the installed package's identity (this
+    sentence read *"open"* until 2026-10-15). Development is blind to it by construction: a checkout has no package
     identity, so its hosts are never child containers.
 
     **The trigger in `docs/security/engine-advisories.json` is therefore aimed at
