@@ -29,7 +29,7 @@ import { createRoster } from '../lib/passRoster.mjs';
 import { fontsDirectory } from '../provision/fonts.mjs';
 
 const ROOT = repoRoot();
-refuseStaleBuild(ROOT, FONT_WORK_APART, 14);
+refuseStaleBuild(ROOT, FONT_WORK_APART, 15);
 
 setFlagsFromString('--expose-gc');
 /** @type {() => void} */

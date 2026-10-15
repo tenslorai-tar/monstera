@@ -6,9 +6,9 @@ import { COMPOSITION, type ComposeOutcome } from './composeApart.js';
  *
  * ## This file is a worker ENTRY POINT
  *
- * Loaded by path through `new Worker(…)`, never imported. It ends when the composition has been posted, and every
- * HarfBuzz instance, subset and pdf-lib buffer the composition made ends with it. The composers are imported inside
- * the work, so a failure to load one is answered (`serveApart`).
+ * Loaded by `apartEntry.ts` in the thread it starts, never imported by the host. It ends when the composition has been
+ * posted, and every HarfBuzz instance, subset and pdf-lib buffer the composition made ends with it. A failure to load
+ * this file or anything it imports is answered there.
  */
 
 await serveApart(COMPOSITION, async (request): Promise<ComposeOutcome> => {

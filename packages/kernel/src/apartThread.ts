@@ -8,27 +8,22 @@ import type { ApartAnswer, ApartWork, ApartWorkerData } from './apart.js';
  * The thread's side of {@link runApartSync} and {@link runApart}: an entry calls `serveApart` once, with the same
  * {@link ApartWork} its asker passes and the function that does it.
  *
- * ## It answers on every path, because a synchronous asker is blocked until it does
+ * ## It posts the answer; `apartEntry.ts` raises the signal
  *
- * The asker waits in `Atomics.wait` and cannot run an `error` or `exit` listener while it waits. So the signal is
- * raised in this thread's own `exit`, which runs after an answer, after a thrown work, and after a module the work
- * imports failed to load; the work's modules are imported inside `run`, after that listener exists, so a failure to
- * load one is answered too.
+ * The asker's signal is set up by the module every thread starts at, before this one or the entry is loaded, so a
+ * failure to load either is answered there. Here the answer is posted and slot 1 marks it posted, which tells that
+ * module's `exit` not to post a second one.
  *
+ * @param _work the declaration the asker passed, which binds `I` and `O` here to the asker's; its label travels in the
+ *   thread's start data
  * @param run given the asker's input; its result must be structured-cloneable
  */
-export async function serveApart<I, O>(work: ApartWork<I, O>, run: (input: I) => O | Promise<O>): Promise<void> {
+export async function serveApart<I, O>(_work: ApartWork<I, O>, run: (input: I) => O | Promise<O>): Promise<void> {
   const { input, signal, port } = workerData as ApartWorkerData & { readonly port: MessagePort };
-  let answered = false;
   const answer = (message: ApartAnswer<O>): void => {
     port.postMessage(message);
-    answered = true;
+    Atomics.store(signal, 1, 1);
   };
-  process.on('exit', () => {
-    if (!answered) answer({ kind: 'failed', error: { name: 'Error', message: `${work.label}'s thread ended without an answer` } });
-    Atomics.store(signal, 0, 1);
-    Atomics.notify(signal, 0);
-  });
   try {
     // THE ASKER'S INPUT, typed by the declaration both sides take: `runApartSync` and `runApart` accept only an `I`.
     answer({ kind: 'done', output: await run(input as I) });

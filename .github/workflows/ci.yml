@@ -448,6 +448,13 @@ jobs:
       - name: Prove an edit's face program and a composition leave nothing behind
         run: node scripts/ci/annotate.mjs scripts/proofs/fontWorkApart.proof.mjs
 
+      # GGGGGGGG-5 and HHHHHHHH-6. A synchronous asker waits in Atomics.wait and runs no listener, so a thread whose
+      # entry failed to load before it set up the signal left its asker waiting for ever. Every thread now starts at
+      # apartEntry.ts, which sets the signal up first. Each asker runs in a bounded child, so a regression is a named
+      # failure rather than a hung job; a loadable entry answering is the control.
+      - name: Prove a thread that ends answers its asker on every path
+        run: node scripts/ci/annotate.mjs scripts/proofs/apartStart.proof.mjs
+
       # ADR-0091's 2026-10-14 correction. 0.1.15.0 read the cloud client values from the packager's environment at RUN
       # time, so cloud storage worked on one PC. Packaging now writes them into the package; this reads the written
       # file back through the shell's own reader with an EMPTY environment, and refuses a Store package without one.

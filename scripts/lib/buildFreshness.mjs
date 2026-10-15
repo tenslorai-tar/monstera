@@ -176,6 +176,7 @@ export const PDFIUM_COMMAND = [
   // see one, and a stale one would answer last build's face program or run font (HHHHHHHH-7).
   ['packages/kernel/src/faceProgramWorker.ts', 'packages/kernel/dist/faceProgramWorker.js', 'tsc'],
   ['packages/kernel/src/runFontWorker.ts', 'packages/kernel/dist/runFontWorker.js', 'tsc'],
+  ['packages/kernel/src/apartEntry.ts', 'packages/kernel/dist/apartEntry.js', 'tsc'],
   ['packages/shared/src', 'packages/shared/dist/index.js', 'tsc'],
   // RIGHT-TO-LEFT TEXT AND A SCAN'S PAPER (ADR-0181): the order a line is drawn in and read back in, the cut of a line into
   // objects, the Arabic joining forms the proof reads directly, and the paper a scan's cover is coloured from.
@@ -362,6 +363,20 @@ export const FONT_CATALOGUE_APART = [
   ['packages/kernel/src/fontCatalogue.ts', 'packages/kernel/dist/fontCatalogue.js', 'tsc'],
   ['packages/kernel/src/apart.ts', 'packages/kernel/dist/apart.js', 'tsc'],
   ['packages/kernel/src/apartThread.ts', 'packages/kernel/dist/apartThread.js', 'tsc'],
+  ['packages/kernel/src/apartEntry.ts', 'packages/kernel/dist/apartEntry.js', 'tsc'],
+];
+
+/**
+ * How every thread that ends is started and answered (`apart.ts`, `apartEntry.ts`, `apartThread.ts`), which
+ * `apartStart.proof.mjs` runs from a child: `apartEntry.js` is loaded by path and nothing imports it.
+ *
+ * @type {readonly BuildEdge[]}
+ */
+export const APART_START = [
+  ['packages/kernel/src/apart.ts', 'packages/kernel/dist/apart.js', 'tsc'],
+  ['packages/kernel/src/apartThread.ts', 'packages/kernel/dist/apartThread.js', 'tsc'],
+  ['packages/kernel/src/apartEntry.ts', 'packages/kernel/dist/apartEntry.js', 'tsc'],
+  ['packages/shared/src', 'packages/shared/dist/index.js', 'tsc'],
 ];
 
 /**
@@ -373,6 +388,7 @@ export const FONT_CATALOGUE_APART = [
 export const FONT_WORK_APART = [
   ['packages/kernel/src/apart.ts', 'packages/kernel/dist/apart.js', 'tsc'],
   ['packages/kernel/src/apartThread.ts', 'packages/kernel/dist/apartThread.js', 'tsc'],
+  ['packages/kernel/src/apartEntry.ts', 'packages/kernel/dist/apartEntry.js', 'tsc'],
   ['packages/kernel/src/faceProgram.ts', 'packages/kernel/dist/faceProgram.js', 'tsc'],
   ['packages/kernel/src/faceProgramApart.ts', 'packages/kernel/dist/faceProgramApart.js', 'tsc'],
   ['packages/kernel/src/faceProgramWorker.ts', 'packages/kernel/dist/faceProgramWorker.js', 'tsc'],

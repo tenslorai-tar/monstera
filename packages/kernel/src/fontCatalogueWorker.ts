@@ -6,9 +6,9 @@ import { FONT_CATALOGUE } from './fontCatalogueApart.js';
  *
  * ## This file is a worker ENTRY POINT
  *
- * Loaded by path through `new Worker(…)`, never imported. It runs in the host's own process, in Node mode, and ends
- * when the catalogue has been posted: the HarfBuzz instance it loads, and every byte that instance's memory grew to,
- * end with it. The catalogue's module is imported inside the work, so a failure to load it is answered (`serveApart`).
+ * Loaded by `apartEntry.ts` in the thread it starts, never imported by the host. It runs in the host's own process, in
+ * Node mode, and ends when the catalogue has been posted: the HarfBuzz instance it loads, and every byte that
+ * instance's memory grew to, end with it. A failure to load this file or anything it imports is answered there.
  */
 
 await serveApart(FONT_CATALOGUE, async (folders) => {

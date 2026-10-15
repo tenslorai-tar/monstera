@@ -34,7 +34,7 @@ import { createRoster } from '../lib/passRoster.mjs';
 import { fontsDirectory } from '../provision/fonts.mjs';
 
 const ROOT = repoRoot();
-refuseStaleBuild(ROOT, FONT_CATALOGUE_APART, 5);
+refuseStaleBuild(ROOT, FONT_CATALOGUE_APART, 6);
 
 // A COLLECTION ON DEMAND, without asking whoever runs this for a flag.
 setFlagsFromString('--expose-gc');

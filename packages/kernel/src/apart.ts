@@ -26,8 +26,9 @@ import type { StructuredError } from '@monstera/shared';
  *
  * ## The thread's side is `apartThread.ts`
  *
- * It answers on every path, because a synchronous asker is blocked until it does: the signal is raised in the thread's
- * own `exit`, after an answer, a throw, or a module that failed to load.
+ * It answers on every path, because a synchronous asker is blocked until it does. Every thread starts at
+ * `apartEntry.ts`, which sets up the signal on the thread's own `exit` and only then loads the work's entry, so an
+ * answer, a throw, and a module that failed to load, the entry's own static imports included, each raise it.
  */
 
 /** A work done apart: its entry beside the module that declares it, what it is in a failure's message, and its types. */
@@ -41,9 +42,15 @@ export interface ApartWork<I, O> {
 /** What a thread is started with. */
 export interface ApartWorkerData {
   readonly input: unknown;
-  /** Raised to 1 by the thread when its answer is on the port. */
+  /** Slot 0 is raised to 1 by the thread as it ends, with its answer on the port; slot 1 is 1 once that answer is posted. */
   readonly signal: Int32Array;
+  /** The work's entry, as a URL's text, which `apartEntry.ts` loads once the signal is set up. */
+  readonly entry: string;
+  readonly label: string;
 }
+
+/** Where every thread starts, beside this module in `dist`. */
+const START = new URL('./apartEntry.js', import.meta.url);
 
 /** The thread's one message. */
 export type ApartAnswer<O> = { readonly kind: 'done'; readonly output: O } | { readonly kind: 'failed'; readonly error: StructuredError };
@@ -54,15 +61,16 @@ function start(
   input: unknown,
   transfer: readonly Transferable[],
 ): { worker: Worker; port: MessagePort; signal: Int32Array } {
-  // A MISSING ENTRY IS REFUSED HERE: the thread would fail to load it before its `exit` listener existed, and nothing
-  // would raise the signal a synchronous asker waits on.
-  if (!existsSync(work.entry)) throw new Error(`${work.label}'s thread entry is not beside its asker: ${fileURLToPath(work.entry)}`);
+  // A MISSING START IS REFUSED HERE: the thread would fail to load it before its `exit` listener existed, and nothing
+  // would raise the signal a synchronous asker waits on. A missing ENTRY is answered by the start like any other load
+  // failure; it is refused here too, because a path is the clearer thing to say.
+  for (const file of [START, work.entry]) {
+    if (!existsSync(file)) throw new Error(`${work.label}'s thread entry is not beside its asker: ${fileURLToPath(file)}`);
+  }
   const { port1, port2 } = new MessageChannel();
-  const signal = new Int32Array(new SharedArrayBuffer(4));
-  const worker = new Worker(work.entry, {
-    workerData: { input, signal, port: port2 },
-    transferList: [port2, ...transfer],
-  });
+  const signal = new Int32Array(new SharedArrayBuffer(8));
+  const data: ApartWorkerData & { readonly port: MessagePort } = { input, signal, entry: work.entry.href, label: work.label, port: port2 };
+  const worker = new Worker(START, { workerData: data, transferList: [port2, ...transfer] });
   return { worker, port: port1, signal };
 }
 
