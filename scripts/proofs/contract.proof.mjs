@@ -20,6 +20,8 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import ts from 'typescript';
+
 import { CONTRACT_TYPES, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -50,7 +52,6 @@ const PROBE_TSCONFIG = {
     types: [],
     lib: ['ES2023'],
   },
-  include: ['probe.ts'],
 };
 
 /**
@@ -2888,11 +2889,17 @@ export const spec: CommandSpec<'rotatePages'> = {
     // page sets joined the command types (2026-09-30) — no kind added, so the
     // order also moves with the types a command is built from.
     //
-    // Anchoring on the printed order is deliberate — an order-insensitive
-    // pattern would also match a union this command's type never had — and the
-    // cost is stated rather than discovered: this line is edited by every
-    // commit that adds a command kind, and the edit is loud.
-    because: /Type '45' is not assignable to type '2 \| 3 \| 1'/u,
+    // The order is the order the member types were CREATED in the program,
+    // which is why it moved with the types around the command. Since ADR-0245
+    // every case shares one program, so it moves with the other CASES too —
+    // measured: `2 | 3 | 1` alone, `1 | 2 | 3` among the sixty-three.
+    //
+    // So the anchor is the SET, spelt as its six orders. That is exactly as
+    // narrow as one order — every order of {1, 2, 3} is the same union — and
+    // narrower than a character class, which would also match `1 | 1 | 2`, a
+    // union this command's type never had (the reason the order was once
+    // pinned instead).
+    because: /Type '45' is not assignable to type '(?:1 \| 2 \| 3|1 \| 3 \| 2|2 \| 1 \| 3|2 \| 3 \| 1|3 \| 1 \| 2|3 \| 2 \| 1)'/u,
     // Atomic and scalar: the quoted types are `45` and the literal union, so
     // there is no second property name in reach.
     notBecause: null,
@@ -4099,32 +4106,67 @@ export const partial: Command = { kind: 'rotatePages', pages: [0] };
 ];
 
 /**
- * @param {string} source
- * @returns {{ ok: boolean, output: string }}
+ * Every case's verdict, from ONE TypeScript program holding one file per case (ADR-0245).
+ *
+ * ## One program, each case its own module
+ *
+ * A compiler process per case paid TypeScript's start and the contract's declarations sixty-three times — 270 to 337 s
+ * on the owner's two-core machine. One program reads the declarations once. Each case stays its own compilation unit
+ * because each file is a MODULE: a module's names are its own, so no case can see another's. Under this repository's
+ * `NodeNext` and `"type": "module"` the compiler treats every `.ts` file as one, imports or not; the check below reads
+ * that same decision (`isExternalModule`) and refuses a file the compiler would put in the shared global scope, so a
+ * configuration that changed it fails the run rather than letting cases see each other — measured by forcing
+ * `moduleDetection: 'legacy'` with a case of one `const`: refused.
+ *
+ * ## The same text tsc prints
+ *
+ * Each file's diagnostics are `getPreEmitDiagnostics(program, file)`, which is what `tsc` reports for that file, and
+ * they are formatted by `formatDiagnostics`, the routine `tsc --pretty false` prints through — so `diagnose` and the
+ * reason matcher read the text they always read. A diagnostic that belongs to no file (the options, the libraries)
+ * would be every case's at once; there must be none, and any is a failure of the whole run, never quietly shared.
+ *
+ * @param {readonly { source: string }[]} cases
+ * @returns {{ ok: boolean, output: string }[]} one per case, in order
  */
-function typecheck(source) {
-  writeFileSync(join(PROBE_DIR, 'probe.ts'), source);
-  const result = spawnSync(
-    process.execPath,
-    // `--pretty false` changes nothing today: piped output is byte-identical
-    // with and without it, because tsc already turns pretty off when stdout is
-    // not a TTY. Measured, not assumed. What the flag removes is an UNSTATED
-    // DEPENDENCY ON BEING PIPED — an invocation attached to a TTY would turn
-    // pretty on, insert colour codes and a source echo, and change the format
-    // under the reason matcher below. A claim with an expiry, made explicit
-    // rather than left to hold by accident.
-    [TSC_BIN, '-p', join(PROBE_DIR, 'tsconfig.json'), '--pretty', 'false'],
-    {
-      cwd: REPO_ROOT,
-      encoding: 'utf8',
-      maxBuffer: 32 * 1024 * 1024,
-    },
+function typecheckAll(cases) {
+  const files = cases.map((testCase, index) => {
+    const path = join(PROBE_DIR, `case-${String(index).padStart(3, '0')}.ts`);
+    writeFileSync(path, testCase.source);
+    return path;
+  });
+  const parsed = ts.parseJsonConfigFileContent(
+    { extends: PROBE_TSCONFIG.extends, compilerOptions: PROBE_TSCONFIG.compilerOptions, files },
+    ts.sys,
+    PROBE_DIR,
   );
+  if (parsed.errors.length > 0) throw new Error(`The probe tsconfig does not parse:\n${format(parsed.errors)}`);
+  const program = ts.createProgram({ rootNames: parsed.fileNames, options: parsed.options });
+  const shared = [...program.getOptionsDiagnostics(), ...program.getGlobalDiagnostics()];
+  if (shared.length > 0) throw new Error(`The probe program has diagnostics that belong to no case:\n${format(shared)}`);
+  return files.map((path) => {
+    const file = program.getSourceFile(path);
+    if (file === undefined) throw new Error(`The probe program did not read ${path}`);
+    if (!ts.isExternalModule(file)) {
+      throw new Error(`${path} is not a module, so it would share its names with every other case. Give it an import.`);
+    }
+    const diagnostics = ts.getPreEmitDiagnostics(program, file);
+    return { ok: !diagnostics.some((each) => each.category === ts.DiagnosticCategory.Error), output: format(diagnostics) };
+  });
+}
 
-  if (result.error !== undefined) {
-    throw new Error('Could not run tsc for the contract probe', { cause: result.error });
-  }
-  return { ok: result.status === 0, output: `${result.stdout ?? ''}${result.stderr ?? ''}` };
+/**
+ * `tsc --pretty false`'s text for some diagnostics: a path relative to the repository, the position, the code and the
+ * message chain, one line per link.
+ *
+ * @param {readonly import('typescript').Diagnostic[]} diagnostics
+ * @returns {string}
+ */
+function format(diagnostics) {
+  return ts.formatDiagnostics(diagnostics, {
+    getCanonicalFileName: (name) => name,
+    getCurrentDirectory: () => REPO_ROOT,
+    getNewLine: () => '\n',
+  });
 }
 
 /**
@@ -4427,7 +4469,6 @@ function main() {
 
   rmSync(PROBE_DIR, { recursive: true, force: true });
   mkdirSync(PROBE_DIR, { recursive: true });
-  writeFileSync(join(PROBE_DIR, 'tsconfig.json'), `${JSON.stringify(PROBE_TSCONFIG, null, 2)}\n`);
 
   /** @type {string[]} */
   const failures = [];
@@ -4435,19 +4476,21 @@ function main() {
   /**
    * Every case compiled once. The resolution test and the verdicts read the
    * same strings, so the matcher is validated against exactly what it will
-   * certify — and the whole file costs one compiler run per case rather than
-   * one per case plus one per resolution check.
+   * certify — and the whole file costs one program (`typecheckAll`) rather
+   * than one per case plus one per resolution check.
    *
    * @type {{ testCase: Case, ok: boolean, output: string, heads: string[], reason: string }[]}
    */
   const results = [];
 
   try {
-    for (const testCase of CASES) {
-      const { ok, output } = typecheck(testCase.source);
-      const { heads, reason } = diagnose(output);
-      results.push({ testCase, ok, output, heads, reason });
-    }
+    const verdicts = typecheckAll(CASES);
+    CASES.forEach((testCase, index) => {
+      const verdict = verdicts[index];
+      if (verdict === undefined) throw new Error(`No verdict for ${testCase.name}`);
+      const { heads, reason } = diagnose(verdict.output);
+      results.push({ testCase, ok: verdict.ok, output: verdict.output, heads, reason });
+    });
 
     // Reject cases that actually rejected: the only ones with a reason to
     // validate. A case that wrongly compiled is reported below on its own.
