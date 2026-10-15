@@ -72,6 +72,8 @@ const CASES = [
   'CONTROL: and the scan found the callers it is known to be able to find',
   'every script that IMPORTS a build takes the guard, or is named as owing none',
   'CONTROL: and that scan sees the importers, and its allowlist has no dead entry',
+  'every call site that names an edge list declares that list’s length',
+  'CONTROL: a call site whose count is one off its list is named',
   'every built module a registered proof imports by path is covered by one of its edges',
   'CONTROL: the guard’s walk finds the thread entries two modules below a proof’s imports',
   'a stale thread entry that no edge names is refused, because the guard walks to it; fresh, it passes',
@@ -607,6 +609,49 @@ try {
         `stopped matching the forms in use and an empty result reads as a clean tree. ` +
         `${String(dead.length)} allowlist entry(ies) name a script that imports no build: ` +
         `${dead.length > 0 ? dead.join(', ') : '(none)'}.`,
+    );
+  }
+
+  // EVERY CALL SITE'S COUNT IS ITS LIST'S LENGTH, checked here rather than when that caller runs. A list spread into
+  // other lists changes their length too, and a caller is checked only when somebody runs it: 88092e7c shortened
+  // PDFIUM_COMMAND and three callers (pdfiumObject, pdfiumReadBack, installedFaceEdit) refused only on CI's later jobs,
+  // one of them on the Windows shim job alone. This reads the call sites as text and the lists from the module, so it
+  // needs no build and runs on Guards. Its reach: a call naming a list constant and a literal count; an inline array
+  // is counted by its own caller and not here.
+  {
+    const lists = /** @type {Record<string, unknown>} */ (await import('../lib/buildFreshness.mjs'));
+    const CALL = /refuseStaleBuild\(\s*\w+,\s*([A-Z][A-Z0-9_]*),\s*(\d+)\s*\)/gu;
+    /** @param {string} text @returns {string[]} */
+    const wrongCounts = (text) =>
+      [...text.matchAll(CALL)].flatMap((match) => {
+        const list = lists[match[1] ?? ''];
+        const declared = Number(match[2]);
+        if (!Array.isArray(list)) return [`${match[1] ?? ''} is not a list buildFreshness.mjs exports`];
+        return list.length === declared ? [] : [`${match[1] ?? ''} has ${String(list.length)}, declared ${String(declared)}`];
+      });
+    /** @type {string[]} */
+    const wrong = [];
+    let read = 0;
+    for (const entry of readdirSync(join(REPO_ROOT, 'scripts'), { recursive: true, withFileTypes: true })) {
+      if (!entry.isFile() || !/\.m?js$/u.test(entry.name)) continue;
+      const path = join(entry.parentPath, entry.name);
+      const text = readFileSync(path, 'utf8');
+      read += [...text.matchAll(CALL)].length;
+      for (const problem of wrongCounts(text)) wrong.push(`${relative(REPO_ROOT, path)}: ${problem}`);
+    }
+    check(
+      'every call site that names an edge list declares that list’s length',
+      wrong.length === 0 && read >= 40,
+      `${String(read)} call site(s) read; ${wrong.join('; ') || 'none wrong'}. A list's length changes when any list it ` +
+        'spreads changes, so lower or raise the literal with it.',
+    );
+    // A SEARCH AND A COMPARISON: the scan must see the call sites (44 read on 2026-10-15) and must name a planted
+    // mismatch. The planted calls are joined at run time, so this file's own text holds no call the scan would read.
+    const planted = (/** @type {number} */ count) => ['refuseStaleBuild(root, ', `FONT_WORK_APART, ${String(count)});`].join('');
+    check(
+      'CONTROL: a call site whose count is one off its list is named',
+      wrongCounts(planted(12)).length === 1 && wrongCounts(planted(11)).length === 0,
+      'the comparison could not tell 11 from 12 for an 11-edge list',
     );
   }
 
