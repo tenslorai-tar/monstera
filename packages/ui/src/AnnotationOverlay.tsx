@@ -1,11 +1,11 @@
 import type { DispatchableCommand } from '@monstera/contract';
 import type { ViewportPoint } from '@monstera/shared';
 import type React from 'react';
-import { type ReactElement, useCallback, useRef, useState } from 'react';
+import { type ReactElement, useCallback, useEffect, useRef, useState } from 'react';
 
 import type { OverlayPage } from './annotations/annotationSpace.js';
 import { overlayTransform, pointerOn } from './annotations/annotationSpace.js';
-import type { Gesture, PreviewCaption, ToolPreview, UiTool } from './registries/tools.js';
+import type { Gesture, LiveReading, PreviewCaption, ToolPreview, UiTool } from './registries/tools.js';
 
 /**
  * The annotation overlay — §6's *dispatcher, never a monolithic switch stack*.
@@ -80,6 +80,12 @@ export interface AnnotationOverlayProps {
   readonly drawnWith: unknown;
   /** The accessible name for the drawing surface, resolved by the caller. */
   readonly label: string;
+  /**
+   * Told the reading a reshape of a measurement shows on THIS page, or `undefined` once it shows none (the owner's B1),
+   * so the Properties tab's Comment shows the number the label does. Named by page, so one page's overlay with no
+   * reading never clears another's.
+   */
+  readonly onReading?: ((page: number, reading: LiveReading | undefined) => void) | undefined;
 }
 
 export function AnnotationOverlay({
@@ -89,6 +95,7 @@ export function AnnotationOverlay({
   onCommand,
   drawnWith,
   label,
+  onReading,
 }: AnnotationOverlayProps): ReactElement {
   const surface = useRef<SVGSVGElement>(null);
   /**
@@ -321,6 +328,21 @@ export function AnnotationOverlay({
   // in its pixels and this stops rendering it in the same render that carries the new drawing.
   const held = committed !== undefined && committed.since === drawnWith ? committed.preview : undefined;
 
+  // THE READING A RESHAPE SHOWS, reported for the Comment to show too (the owner's B1): from the drag, then from the
+  // held shape until the page is drawn with the command's result, by which time the Comment has the file's own words.
+  // Reported as its three values, so a render that rebuilt an equal preview reports nothing new.
+  const shown = preview ?? held;
+  const readingOf = shown?.shape === 'boxes' ? shown.caption : undefined;
+  const readingIndex = readingOf?.of;
+  const readingText = readingOf?.text;
+  useEffect(() => {
+    if (onReading === undefined) return undefined;
+    onReading(page, readingIndex === undefined || readingText === undefined ? undefined : { page, index: readingIndex, text: readingText });
+    return () => {
+      onReading(page, undefined);
+    };
+  }, [onReading, page, readingIndex, readingText]);
+
   return (
     <svg
       aria-label={label}
@@ -482,6 +504,7 @@ function Preview({ preview }: { readonly preview: ToolPreview }): ReactElement {
               <polyline className="m-annotation-preview m-annotation-stroke" data-annotation-preview-path="" key={`path-${String(at)}`} points={points} />
             );
           })}
+          <Caption caption={preview.caption} />
         </g>
       );
     default: {

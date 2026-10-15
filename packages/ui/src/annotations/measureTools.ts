@@ -7,7 +7,7 @@ import { HINT_MEASURE_DISTANCE } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import type { AnnotationStyle } from './annotationStyle.js';
-import { CAPTION_OFFSET, vertexTool } from './vertexTools.js';
+import { captionBeside, vertexTool } from './vertexTools.js';
 
 /**
  * The three measurement tools — distance, area and perimeter.
@@ -90,11 +90,7 @@ function distanceTool(deps: MeasureDeps): UiTool {
     const caption =
       transform === undefined
         ? undefined
-        : {
-            text: measureLabel('measure-distance', [toPdf(from, transform), toPdf(to, transform)], deps.scale),
-            x: to.x + CAPTION_OFFSET,
-            y: to.y - CAPTION_OFFSET,
-          };
+        : captionBeside(to.x, to.y, measureLabel('measure-distance', [toPdf(from, transform), toPdf(to, transform)], deps.scale));
     return { shape: 'line', x1: from.x, y1: from.y, x2: to.x, y2: to.y, ...(caption === undefined ? {} : { caption }) };
   };
 

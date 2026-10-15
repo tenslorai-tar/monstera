@@ -750,20 +750,30 @@ const MEASURED_BY_INTENT: ReadonlyMap<string, MeasuredKind> = new Map(
  * change neither.
  */
 function remeasure(annotation: PDFAnnotation): void {
+  const measured = measuredOf(annotation);
+  if (measured === undefined) return;
+  const points = annotation.hasLine() ? annotation.getLine() : annotation.hasVertices() ? annotation.getVertices() : [];
+  if (points.length < 2) return;
+  annotation.setContents(measureLabel(measured.kind, points.map(([x, y]) => ({ x, y })), measured.scale));
+}
+
+/**
+ * What a mark measures and at which scale: its `/IT` and the first number format of its own `/Measure`, or `undefined`
+ * for a mark that is not a measurement or whose `/Measure` this build cannot read. THE ONE READING of the two: the
+ * listing hands it to the renderer, so a drag shows what {@link remeasure} will write on release (the owner's B1).
+ */
+function measuredOf(annotation: PDFAnnotation): { readonly kind: MeasuredKind; readonly scale: MeasureScale } | undefined {
   const object = annotation.getObject();
   const intent = object.get('IT');
   const kind = intent.isName() ? MEASURED_BY_INTENT.get(intent.asName()) : undefined;
-  if (kind === undefined) return;
+  if (kind === undefined) return undefined;
   const axis = object.get('Measure').get('X');
   const format = axis.isArray() && axis.length > 0 ? axis.get(0) : undefined;
-  if (format?.isDictionary() !== true) return;
+  if (format?.isDictionary() !== true) return undefined;
   const perPoint = format.get('C');
   const unit = measureUnitSchema.safeParse(format.get('U').isString() ? format.get('U').asString() : undefined);
-  if (!perPoint.isNumber() || !(perPoint.asNumber() > 0) || !unit.success) return;
-  const scale: MeasureScale = { perPoint: perPoint.asNumber(), unit: unit.data };
-  const points = annotation.hasLine() ? annotation.getLine() : annotation.hasVertices() ? annotation.getVertices() : [];
-  if (points.length < 2) return;
-  annotation.setContents(measureLabel(kind, points.map(([x, y]) => ({ x, y })), scale));
+  if (!perPoint.isNumber() || !(perPoint.asNumber() > 0) || !unit.success) return undefined;
+  return { kind, scale: { perPoint: perPoint.asNumber(), unit: unit.data } };
 }
 
 /**
@@ -2248,6 +2258,8 @@ export interface ListedAnnotation {
    * stay put.
    */
   readonly points?: AnnotationPoint[];
+  /** What a measurement measures and at which scale ({@link measuredOf}); absent on every other mark. */
+  readonly measured?: { readonly kind: MeasuredKind; readonly scale: MeasureScale };
   /**
    * Which mark on this page this one ANSWERS, by its index in this same walk,
    * or `null` — PDF 32000-1 §12.5.6.2's `/IRT` with `/RT /R`.
@@ -2479,12 +2491,15 @@ export function readAnnotations(
         if (!found.room()) return listedOf(found);
         const contents = annotation.getContents();
         const points = transform === null ? undefined : readPoints(annotation, transform);
+        const measured = measuredOf(annotation);
         found.add({
           page,
           index: index++,
           rect: transform === null ? null : readRect(annotation, transform),
           // A LINE'S ENDS AND A POLYGON'S CORNERS, so the select tool moves each one rather than scaling a box (O8).
           ...(points === undefined ? {} : { points }),
+          // WHAT IT MEASURES AND AT WHICH SCALE, so a drag shows the reading the release writes (B1).
+          ...(measured === undefined ? {} : { measured }),
           inReplyTo: replyTargetOf(annotation, positionOf),
           // `?? 'other'` IS THE WHOLE POINT of the closed union: a subtype this
           // build cannot name is listed rather than dropped, because a panel

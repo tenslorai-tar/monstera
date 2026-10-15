@@ -15,8 +15,8 @@ const rectangleTool = buildRectangle(PLAIN_STYLE);
 const polygonTool = buildPolygon(PLAIN_STYLE);
 const polylineTool = buildPolyline(PLAIN_STYLE);
 import { polygonTool as buildPolygon, polylineTool as buildPolyline } from './annotations/vertexTools.js';
-import type { UiTool } from './registries/tools.js';
-import { pointerPath } from './registries/tools.js';
+import type { LiveReading, UiTool } from './registries/tools.js';
+import { pointerPath, readingAfter } from './registries/tools.js';
 
 /**
  * The overlay, driven by pointer events — the wired-tools pair's **UI half**.
@@ -58,6 +58,7 @@ const FIRST_DRAWING = { drawing: 'first' };
 function mounted(
   tool: UiTool = rectangleTool,
   moves = true,
+  onReading?: (page: number, reading: LiveReading | undefined) => void,
 ): {
   readonly surface: Element;
   readonly sent: DispatchableCommand[];
@@ -73,6 +74,7 @@ function mounted(
         sent.push(command);
         return Promise.resolve(moves);
       }}
+      onReading={onReading}
       page={3}
       tool={tool}
     />
@@ -335,6 +337,67 @@ describe('AnnotationOverlay', () => {
       '80',
       '80',
     ]);
+  });
+
+  it('a MEASUREMENT’s end dragged draws its live reading and REPORTS it, held until the page is drawn from the result (B1)', async () => {
+    // A distance on screen (20,100) to (200,98), an inch per 72 points; its right end dragged to (240,98).
+    const scale = { perPoint: 1 / 72, unit: 'in' } as const;
+    const select = selectTool({
+      write: () => Promise.reject(new Error('this case types nothing')),
+      wordsOf: () => Promise.reject(new Error('this case reads no words')),
+      ask: () => Promise.reject(new Error('this case opens no dialog')),
+      annotations: () => Promise.resolve(undefined),
+      links: () => Promise.resolve(undefined),
+      onSelectLink: () => undefined,
+      selectedLink: () => undefined,
+      onSelect: () => undefined,
+      selected: () => ({
+        page: 3,
+        version: asDocVersion(7),
+        items: [
+          {
+            index: 1,
+            rect: { x0: 55, y0: 340, x1: 155, y1: 360 },
+            style: { colour: [1, 0, 0], opacity: 1, borderWidth: 2 },
+            kind: 'measure-distance',
+            contents: '1.3 in',
+            author: '',
+            created: null,
+            blend: 'normal',
+            points: [{ x: 60, y: 350 }, { x: 150, y: 351 }],
+            measured: { kind: 'measure-distance', scale },
+          },
+        ],
+      }),
+    });
+    const reported: [number, LiveReading | undefined][] = [];
+    const { surface, sent, redraw } = mounted(select, true, (page, reading) => {
+      reported.push([page, reading]);
+    });
+    pointer(surface, 'pointerdown', 200, 98);
+    pointer(surface, 'pointermove', 240, 98);
+    const caption = surface.querySelector('[data-annotation-caption]');
+    // THE END MOVES TO PDF x 170: 110 points long, 1.53 inches, where the stored words say 1.3 (90 points).
+    expect(caption?.textContent).toBe('1.5 in');
+    expect(reported.at(-1)).toStrictEqual([3, { page: 3, index: 1, text: '1.5 in' }]);
+
+    pointer(surface, 'pointerup', 240, 98);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(sent).toMatchObject([{ kind: 'reshapeAnnotation', index: 1 }]);
+    // HELD AFTER THE RELEASE, so the Comment does not fall back to the old words before the file's new ones arrive.
+    expect(reported.at(-1)).toStrictEqual([3, { page: 3, index: 1, text: '1.5 in' }]);
+    redraw({ drawing: 'second' });
+    expect(reported.at(-1)).toStrictEqual([3, undefined]);
+  });
+
+  it('readingAfter: a reading replaces the one held, and NONE clears only a reading of its own page', () => {
+    const held = { page: 3, index: 1, text: '2.4 in' };
+    expect(readingAfter(undefined, 3, held)).toBe(held);
+    expect(readingAfter(held, 3, undefined)).toBeUndefined();
+    // CONTROL: another page's overlay reporting none, as one mounting during the drag does, leaves the drag's reading.
+    expect(readingAfter(held, 5, undefined)).toBe(held);
   });
 
   it('CONTROL: the same drawing re-rendered does not drop it, so the drop is the redraw and not any render', async () => {

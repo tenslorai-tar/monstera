@@ -1,15 +1,16 @@
-import type { AnnotationPoint, AnnotationRect, DispatchableCommand } from '@monstera/contract';
+import { type AnnotationPoint, type AnnotationRect, type DispatchableCommand, measureLabel } from '@monstera/contract';
 import type { DocVersion, PageTransform, ViewportPoint } from '@monstera/shared';
 import { pdfPoint, toPdf, toViewport, viewportPoint } from '@monstera/shared';
 
 import { HINT_SELECT } from '../messages/en.js';
-import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
+import type { Gesture, PreviewCaption, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import type { PageLinkOnPage } from '../usePageLinks.js';
 import { engineBoxInPdf } from './annotationSpace.js';
 import type { AnnotationSnapshot, ErasableAnnotation } from './eraserTool.js';
 import { markAt } from './eraserTool.js';
 import { type ReopenDeps, reopenWords } from './textTools.js';
+import { captionBeside } from './vertexTools.js';
 
 
 /**
@@ -100,6 +101,8 @@ export interface SelectedAnnotation {
   readonly typed?: ErasableAnnotation['typed'];
   /** A line's ends or a polygon's corners, carried from the walk: each is a handle that moves it alone (the owner's O8). */
   readonly points?: ErasableAnnotation['points'];
+  /** What a measurement measures and at which scale, carried from the walk: a drag of its point reads live (B1). */
+  readonly measured?: ErasableAnnotation['measured'];
 }
 
 /**
@@ -141,6 +144,7 @@ function selectedFrom(entry: ErasableAnnotation): SelectedAnnotation | undefined
     blend: entry.blend,
     ...(entry.typed === undefined ? {} : { typed: entry.typed }),
     ...(entry.points === undefined ? {} : { points: entry.points }),
+    ...(entry.measured === undefined ? {} : { measured: entry.measured }),
   };
 }
 
@@ -247,6 +251,8 @@ interface Grabbable {
     readonly kind: string;
     /** A line's ends or a polygon's corners: where present, its handles are these, and its box's corners are not. */
     readonly points?: readonly AnnotationPoint[] | undefined;
+    /** What a measurement measures and at which scale: a drag of one of its points shows the reading (B1). */
+    readonly measured?: ErasableAnnotation['measured'] | undefined;
   }[];
 }
 
@@ -599,9 +605,15 @@ const CLOSED_KINDS: ReadonlySet<string> = new Set(['polygon', 'measure-area']);
  * placed by its box, and for a line or a polygon its OUTLINE where it goes — a moved point, or every point moved with the
  * box — since a tinted box over a line read as the line gaining a fill (the owner's O8).
  */
-function previewOf(selection: Grabbable, moved: Placement, transform: PageTransform): ToolPreview {
+function previewOf(
+  selection: Grabbable,
+  moved: Placement,
+  transform: PageTransform,
+  pointer: { readonly x: number; readonly y: number },
+): ToolPreview {
   const boxes: { x: number; y: number; width: number; height: number }[] = [];
   const paths: { points: (readonly [number, number])[]; closed: boolean }[] = [];
+  let caption: PreviewCaption | undefined;
   for (const placement of moved.placements) {
     const item = selection.items.find((candidate) => candidate.index === placement.index);
     const closed = item !== undefined && CLOSED_KINDS.has(item.kind);
@@ -611,6 +623,13 @@ function previewOf(selection: Grabbable, moved: Placement, transform: PageTransf
     };
     if ('points' in placement) {
       paths.push({ points: placement.points.map(shown), closed });
+      // A MEASUREMENT'S POINT MOVED READS WHAT THE RELEASE WILL WRITE (the owner's B1): the contract's `measureLabel` over
+      // the points the command carries, at the mark's own scale, which is `remeasure`'s arithmetic on the same numbers.
+      // A move of the whole mark changes no reading, so only this branch has one.
+      if (item?.measured !== undefined) {
+        const text = measureLabel(item.measured.kind, placement.points, item.measured.scale);
+        caption = { ...captionBeside(pointer.x, pointer.y, text), of: item.index };
+      }
       continue;
     }
     if (item?.points !== undefined) {
@@ -623,7 +642,12 @@ function previewOf(selection: Grabbable, moved: Placement, transform: PageTransf
     const box = boxOf(placement.rect, transform);
     if (box !== null) boxes.push({ x: box.x0, y: box.y0, width: box.x1 - box.x0, height: box.y1 - box.y0 });
   }
-  return { shape: 'boxes', boxes, ...(paths.length === 0 ? {} : { paths }) };
+  return {
+    shape: 'boxes',
+    boxes,
+    ...(paths.length === 0 ? {} : { paths }),
+    ...(caption === undefined ? {} : { caption }),
+  };
 }
 
 /**
@@ -738,10 +762,12 @@ export function selectTool(deps: SelectDeps): UiTool {
       // matched neither the mark nor where it went — and then was held there after the release.
       const annotations = deps.selected();
       const onAnnotations = placementFor(annotations, gesture, marquee, page, transform);
-      if (annotations !== undefined && onAnnotations !== undefined) return previewOf(annotations, onAnnotations, transform);
+      if (annotations !== undefined && onAnnotations !== undefined) {
+        return previewOf(annotations, onAnnotations, transform, endOf(gesture));
+      }
       const link = grabbableLinkOn(page, transform);
       const onLink = placementFor(link, gesture, marquee, page, transform);
-      if (link !== undefined && onLink !== undefined) return previewOf(link, onLink, transform);
+      if (link !== undefined && onLink !== undefined) return previewOf(link, onLink, transform, endOf(gesture));
       return {
         shape: 'rect',
         x: marquee.x0,

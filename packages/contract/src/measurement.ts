@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 import type { AnnotationPoint, MeasureScale } from './commands.js';
 
 /**
@@ -11,8 +13,11 @@ import type { AnnotationPoint, MeasureScale } from './commands.js';
  * 1 — since a length and an area are unchanged by turning and moving the page.
  */
 
-/** The three measurement kinds. */
-export type MeasuredKind = 'measure-distance' | 'measure-area' | 'measure-perimeter';
+/** The three measurement kinds, as a schema so the listing that carries one names them from here. */
+export const measuredKindSchema = z.enum(['measure-distance', 'measure-area', 'measure-perimeter']);
+
+/** See {@link measuredKindSchema}. */
+export type MeasuredKind = z.infer<typeof measuredKindSchema>;
 
 /**
  * How many decimal places a measurement's label carries.

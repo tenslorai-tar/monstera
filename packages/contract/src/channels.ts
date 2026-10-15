@@ -25,6 +25,7 @@ import {
 } from './cloudProviders.js';
 import type { PreloadChannelId } from './bridge.js';
 import { SHOWN_SCHEME_MAX } from './followedLinks.js';
+import { measuredKindSchema } from './measurement.js';
 import { pageSetSchema } from './pageSet.js';
 import { channel, type Channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } from './channel.js';
 import { AI_ANSWER_REFUSALS, MAX_WEB_SOURCES, answerIdSchema, subscriptionIdSchema } from './events.js';
@@ -57,6 +58,7 @@ import {
   annotationPointSchema,
   annotationRectSchema,
   LISTED_POINTS_MAX,
+  measureScaleSchema,
   annotationColourSchema,
   pageMarksSchema,
   linkOutlineSchema,
@@ -5185,6 +5187,17 @@ export const channels = {
              * `LISTED_POINTS_MAX` (the owner's O8): the select tool's handles move each point rather than scaling a box.
              */
             points: z.array(annotationPointSchema).min(2).max(LISTED_POINTS_MAX).exactOptional(),
+            /**
+             * What a MEASUREMENT measures and at which scale: its `/IT` and its own `/Measure`, read by the kernel's one
+             * reading of them, the one that rewrites `/Contents` after a reshape (the owner's B1). So a drag shows the
+             * reading the release will write, worked out by the contract's `measureLabel` from the points under the
+             * pointer, and the label and the Comment take that one number. Absent on every other mark, and on a
+             * measurement whose `/Measure` this build cannot read, which keeps the words it has.
+             */
+            measured: z
+              .object({ kind: measuredKindSchema, scale: measureScaleSchema })
+              .strict()
+              .exactOptional(),
             /**
              * What it is drawn in — `/C`, `/CA` and `/BS`'s width.
              *

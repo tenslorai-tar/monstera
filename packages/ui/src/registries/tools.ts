@@ -350,6 +350,29 @@ export interface PreviewCaption {
   readonly text: string;
   readonly x: number;
   readonly y: number;
+  /**
+   * The mark on this page the reading is OF, by its index in the walk, when a drag is reshaping one (the owner's B1).
+   * The overlay reports it, and the Properties tab's Comment shows that reading while it lasts: the label and the
+   * Comment take one number. Absent while a new mark is drawn, which has no Comment yet.
+   */
+  readonly of?: number | undefined;
+}
+
+/** A reshape's live reading as the overlay reports it: the page, the mark and the words its label shows (B1). */
+export interface LiveReading {
+  readonly page: number;
+  readonly index: number;
+  readonly text: string;
+}
+
+/**
+ * The reading held after `page`'s overlay reports `reading`: a reading replaces what is held, and NONE clears only a
+ * reading of that same page. Every page has its own overlay, and one mounting or settling elsewhere during a drag reports
+ * none for itself; letting that clear the drag's reading would put the old number back in the Comment mid-drag.
+ */
+export function readingAfter(held: LiveReading | undefined, page: number, reading: LiveReading | undefined): LiveReading | undefined {
+  if (reading !== undefined) return reading;
+  return held?.page === page ? undefined : held;
 }
 
 export type ToolPreview =
@@ -390,6 +413,8 @@ export type ToolPreview =
        * as a tinted box read as the line gaining a fill. `closed` joins the last point back to the first.
        */
       readonly paths?: readonly { readonly points: readonly (readonly [number, number])[]; readonly closed: boolean }[];
+      /** What a measurement whose point is being dragged will read on release, beside the pointer (B1). */
+      readonly caption?: PreviewCaption | undefined;
     };
 
 /** One registered tool. */

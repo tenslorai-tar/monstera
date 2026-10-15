@@ -61,7 +61,7 @@ import { useSelectedTextPages } from './useSelectedTextPages.js';
 import { ANNOTATION_SURFACE_LABEL, PAGE_IMAGE_ONLY, PAGE_LIST_LABEL, PAGE_OPENING, TEXT_EDIT_RECOGNISE } from './messages/en.js';
 import { Icon } from './primitives/Icon.js';
 import { useOnColor } from './primitives/useOnColor.js';
-import type { UiTool } from './registries/tools.js';
+import type { LiveReading, UiTool } from './registries/tools.js';
 import type { DocumentView } from './documentView.js';
 import { FIRST_PAGE, pdfjsPageOf } from './pageNumbering.js';
 import { holdPage } from './pageResidency.js';
@@ -325,6 +325,8 @@ export interface PageListProps {
         readonly selection?: AnnotationSelection | undefined;
         /** The link the select tool picked, drawn over its own page with the same handles (the owner's O6(c)). */
         readonly link?: LinkSelection | undefined;
+        /** Told a measurement reshape's live reading, page by page (`AnnotationOverlay.onReading`, the owner's B1). */
+        readonly onReading?: ((page: number, reading: LiveReading | undefined) => void) | undefined;
       }
     | undefined;
   /**
@@ -2071,6 +2073,7 @@ function PageSlot({
           }}
           label={i18n._(ANNOTATION_SURFACE_LABEL, { page: pdfjsPageOf(page) })}
           onCommand={drawing.onCommand}
+          onReading={drawing.onReading}
           drawnWith={drawnWith}
           page={page}
           tool={drawing.tool}

@@ -14,6 +14,7 @@ import { DELETE_SELECTION_TITLE, EN, REPLY_SELECTION_TITLE } from './messages/en
 import type { ObjectPick } from './objectEditing.js';
 import { PropertiesPanel, type StyleChange, caretRectAt, caretSizeOf } from './PropertiesPanel.js';
 import { CommandRegistry, type CommandContext, type UiCommand } from './registries/commands.js';
+import type { LiveReading } from './registries/tools.js';
 import { SettingsRegistry } from './registries/settings.js';
 import { ALL_SETTINGS } from './settings/all.js';
 import {
@@ -104,6 +105,7 @@ function mounted(
   measuring = false,
   // REFUSED BY NAME where a case reads nothing: an uncut comment's field must start from the walk's own text.
   words: WordsToEdit = { kind: 'problem', problem: { code: 'document-not-open' } },
+  reading?: LiveReading,
 ): Mounted {
   const store = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
   const restyled: StyleChange[] = [];
@@ -137,12 +139,34 @@ function mounted(
         selection={selection}
         settings={store}
         measuring={measuring}
+        reading={reading}
         fonts={FONTS}
       />
     </Wrapped>,
   );
   return { store, restyled, commented, authors, ran, read };
 }
+
+describe('the Comment while a measurement is reshaped (the owner’s B1)', () => {
+  const DISTANCE: AnnotationSelection = { ...ONE, items: [{ ...SQUARE, kind: 'measure-distance', contents: '7.5 in' }] };
+  const WORDS: WordsToEdit = { kind: 'problem', problem: { code: 'document-not-open' } };
+
+  it('shows the drag’s reading of THIS mark, the number the label shows, and a blur sends nothing', () => {
+    const { commented } = mounted(DISTANCE, [], false, WORDS, { page: 3, index: SQUARE.index, text: '6.8 in' });
+    const field = screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Comment' });
+    expect(field.value).toBe('6.8 in');
+    fireEvent.blur(field);
+    expect(commented).toStrictEqual([]);
+  });
+
+  it('CONTROL: a reading of ANOTHER mark, or of the same index on another page, leaves the mark’s own words', () => {
+    mounted(DISTANCE, [], false, WORDS, { page: 3, index: SQUARE.index + 1, text: '6.8 in' });
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Comment' }).value).toBe('7.5 in');
+    cleanup();
+    mounted(DISTANCE, [], false, WORDS, { page: 4, index: SQUARE.index, text: '6.8 in' });
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Comment' }).value).toBe('7.5 in');
+  });
+});
 
 describe('PropertiesPanel while a measurement is drawn (the owner’s item 14a)', () => {
   it('shows the unit, inches as the rulers are, and the drawing’s scale — and neither for any other tool', () => {

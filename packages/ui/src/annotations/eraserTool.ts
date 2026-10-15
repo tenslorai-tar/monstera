@@ -4,6 +4,8 @@ import type {
   AnnotationPoint,
   AnnotationWordsStyle,
   DispatchableCommand,
+  MeasureScale,
+  MeasuredKind,
 } from '@monstera/contract';
 import type { DocVersion, PageTransform } from '@monstera/shared';
 import { pdfPoint, toViewport } from '@monstera/shared';
@@ -125,6 +127,8 @@ export interface ErasableAnnotation {
    * O8): the select tool draws a handle on each and moves it alone.
    */
   readonly points?: readonly AnnotationPoint[];
+  /** What a measurement measures and at which scale, where the walk carries it (the owner's B1): a drag's live reading. */
+  readonly measured?: { readonly kind: MeasuredKind; readonly scale: MeasureScale };
 }
 
 /** What the walk answered, and the version it answered at. */

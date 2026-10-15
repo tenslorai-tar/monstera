@@ -9,7 +9,7 @@ import type { PageTransform, ViewportPoint } from '@monstera/shared';
 import { toPdf, viewportPoint } from '@monstera/shared';
 
 import { HINT_CLOSED_CORNERS, HINT_OPEN_CORNERS } from '../messages/en.js';
-import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
+import type { Gesture, PreviewCaption, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, lastPress, pointerPath } from '../registries/tools.js';
 import type { AnnotationStyle } from './annotationStyle.js';
 
@@ -85,6 +85,15 @@ const SEPARATE_VERTICES = 3;
 
 /** How far from the pointer a measurement's live reading is drawn, in CSS pixels: clear of the cursor, above and right. */
 export const CAPTION_OFFSET = 10;
+
+/**
+ * Where a live reading is drawn for a pointer at `x`, `y`: {@link CAPTION_OFFSET} above and to the right. THE ONE PLACEMENT
+ * of a reading, taken by the drawing tools and by a drag of a measurement's point alike (the owner's B1), so a label put
+ * clear of the pointer in one is clear of it in the other.
+ */
+export function captionBeside(x: number, y: number, text: string): PreviewCaption {
+  return { text, x: x + CAPTION_OFFSET, y: y - CAPTION_OFFSET };
+}
 
 /**
  * The vertices a gesture has actually placed, in the overlay's own pixels.
@@ -211,11 +220,7 @@ export function vertexTool(
       const caption =
         reading === undefined || end === undefined || points.length < 2
           ? undefined
-          : {
-              text: reading(points.map(([x, y]) => toPdf(viewportPoint(x, y), transform))),
-              x: end[0] + CAPTION_OFFSET,
-              y: end[1] - CAPTION_OFFSET,
-            };
+          : captionBeside(end[0], end[1], reading(points.map(([x, y]) => toPdf(viewportPoint(x, y), transform))));
       return { shape: 'path', points, ...(caption === undefined ? {} : { caption }) };
     },
   };

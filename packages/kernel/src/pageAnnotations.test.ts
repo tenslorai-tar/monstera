@@ -25,6 +25,7 @@ import {
   type BuiltInStamp,
   type CommandOfKind,
   MAX_ANNOTATION_TEXT,
+  measureLabel,
 } from '@monstera/contract';
 import { asDocVersion } from '@monstera/shared';
 import { ColorSpace, Matrix, PDFDocument as PDFDocumentRaw, Pixmap } from './mupdfRaw.js';
@@ -3411,6 +3412,23 @@ describe('applyAddAnnotation writes a measurement', () => {
       const byBox = await placed(drawn, { index: 0, rect: { ...listed.rect, y0: listed.rect.y0 - 30, x1: listed.rect.x1 + 30 } });
       const [, y0 = 0, , y1 = 0] = (await savedNumbers(byBox, 'L')) ?? [];
       expect(Math.abs(y1 - y0)).toBeGreaterThan(10);
+    });
+
+    it('the walk carries each measurement’s KIND AND SCALE, and the contract’s reading of them is what a reshape writes (B1)', async () => {
+      // THE CROSSING THE LIVE READING DEPENDS ON: the renderer works out a drag's reading from the listed kind and scale
+      // and the points it will send; the file says what `remeasure` wrote from the same points. One number, both ends.
+      const area = await drawnOn(await fixture(), command({ annotation: AREA }));
+      const listed = await listedFirst(area);
+      if (listed.measured === undefined) throw new Error('the walk carried no measurement');
+      const points = [{ x: 10, y: 20 }, { x: 110, y: 20 }, { x: 160, y: 120 }, { x: 10, y: 120 }];
+      const grown = await placed(area, { index: 0, points });
+      expect(await savedLabel(grown)).toBe(measureLabel(listed.measured.kind, points, listed.measured.scale));
+      expect(listed.measured).toStrictEqual({ kind: 'measure-area', scale: { perPoint: 0.5, unit: 'mm' } });
+      const distance = await listedFirst(await drawnOn(await fixture(), command({ annotation: DISTANCE })));
+      expect(distance.measured?.kind).toBe('measure-distance');
+      // CONTROL: a mark that measures nothing carries none, so a drag of its point shows no reading.
+      const square = await listedFirst(await drawnOn(await fixture(), command()));
+      expect(square).not.toHaveProperty('measured');
     });
 
     it('an AREA’s corner moved by points reads the new area, and a PERIMETER’s the new length', async () => {

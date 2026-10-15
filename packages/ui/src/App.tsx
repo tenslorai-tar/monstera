@@ -354,7 +354,7 @@ import {
 } from './commands/annotationCommands.js';
 import { CommandRegistry, type CommandContext, type UiCommand } from './registries/commands.js';
 import { SHORTCUTS_SETTING } from './settings/keyboard.js';
-import { ToolRegistry } from './registries/tools.js';
+import { type LiveReading, ToolRegistry, readingAfter } from './registries/tools.js';
 import { APPLICATION_DIALOGS } from './registries/applicationDialogs.js';
 import { DialogRegistry } from './registries/dialogs.js';
 import { PageSourcesContext, type PageSources } from './dialogs/pageSources.js';
@@ -4284,6 +4284,12 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   // THE CONTEXT A COMMAND THE PANEL STARTS RUNS WITH, as it is when the person presses the button: kept in a ref by an effect
   // once `context` below exists, since a closure over it here would be a value from a render ago.
   const commandContextRef = useRef<CommandContext | undefined>(undefined);
+  // A MEASUREMENT RESHAPE'S LIVE READING (the owner's B1), written by the page overlays and read by the Comment. A page
+  // that reports none clears only its own, so an overlay mounting elsewhere during a drag leaves the reading standing.
+  const [liveReading, setLiveReading] = useState<LiveReading | undefined>(undefined);
+  const onReading = useCallback((page: number, reading: LiveReading | undefined): void => {
+    setLiveReading((held) => readingAfter(held, page, reading));
+  }, []);
   const drawing = useMemo(() => {
     const tool = tools.get(toolId);
     if (tool === undefined || open === undefined) return undefined;
@@ -4335,8 +4341,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       },
       selection,
       link: linkSelection,
+      onReading,
     };
-  }, [applied, ask, client, expectNewFields, keptTool, linkSelection, open, presence, registry, selection, send, setToolId, settings, signatures, stamp, style, toast, toolId, tools]);
+  }, [applied, ask, client, expectNewFields, keptTool, linkSelection, onReading, open, presence, registry, selection, send, setToolId, settings, signatures, stamp, style, toast, toolId, tools]);
 
   /**
    * A link pressed on a page or in the Links panel, followed by the one route (ADR-0167): a page link jumps, a web link
@@ -4986,6 +4993,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
               ) : (
                 <PropertiesPanel
                   measuring={toolId !== undefined && MEASURE_TOOL_IDS.has(toolId)}
+                  reading={liveReading}
                   objectMode={toolId === EDIT_OBJECTS_TOOL_ID}
                   context={context}
                   onComment={commentSelection}

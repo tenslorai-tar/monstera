@@ -83,6 +83,7 @@ import { pdfjsPageOf } from './pageNumbering.js';
 import { Button } from './primitives/Button.js';
 import { SegmentedControl, type SegmentedOption } from './primitives/SegmentedControl.js';
 import type { CommandContext, CommandRegistry } from './registries/commands.js';
+import type { LiveReading } from './registries/tools.js';
 import {
   ANNOTATION_COLOUR_SETTING,
   ANNOTATION_FONT_SETTING,
@@ -134,6 +135,11 @@ export interface PropertiesPanelProps {
    * (the owner's item 14a). Only then: they mean nothing to any other tool.
    */
   readonly measuring?: boolean | undefined;
+  /**
+   * What a measurement being reshaped reads under the pointer (the owner's B1), or `undefined` for none: while it names
+   * the selected mark, the Comment shows it, so the label and the Comment never hold two numbers.
+   */
+  readonly reading?: LiveReading | undefined;
   /**
    * The object Edit object has selected on the page, and how its fill is changed (ADR-0153 Decision 5), or `undefined`
    * when none is. The tool slot holds Edit object or the select tool, never both, so this and {@link selection} are
@@ -188,6 +194,11 @@ export interface PropertiesPanelProps {
  * of the three is written to the authoring settings: the author's default is its own setting, and the
  * blend differs by kind.
  */
+/** The words the Comment shows for `item`: a reshape's live reading while it names this mark, else the mark's own. */
+function shownComment(page: number, item: SelectedAnnotation, reading: LiveReading | undefined): string {
+  return reading?.page === page && reading.index === item.index ? reading.text : item.contents;
+}
+
 export function PropertiesPanel({
   settings,
   selection,
@@ -199,6 +210,7 @@ export function PropertiesPanel({
   registry,
   context,
   measuring = false,
+  reading,
   object,
   objectMode,
   fonts,
@@ -540,9 +552,11 @@ export function PropertiesPanel({
         <CommentRow
           // A NEW FIELD PER MARK AND PER TEXT, so a draft never outlives the mark it was typed for,
           // and the text a carried selection brings back replaces the draft that produced it.
-          key={`${String(selection.page)}:${String(only.index)}:${only.contents}`}
+          key={`${String(selection.page)}:${String(only.index)}:${shownComment(selection.page, only, reading)}`}
           selection={selection}
-          item={only}
+          // WHILE A RESHAPE READS THIS MARK, ITS READING (B1): the field starts on it, so its draft is its start and a
+          // blur sends nothing, and the release's own words replace it when the page is drawn from them.
+          item={{ ...only, contents: shownComment(selection.page, only, reading) }}
           wordsOf={wordsOf}
           onCommit={(text) => {
             onComment(selection, text);

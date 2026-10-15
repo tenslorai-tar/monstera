@@ -1,4 +1,4 @@
-import type { AnnotationRect, AnnotationWordsStyle, DispatchableCommand } from '@monstera/contract';
+import { type AnnotationRect, type AnnotationWordsStyle, type DispatchableCommand, measureLabel } from '@monstera/contract';
 import { asDocVersion, viewportPoint } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -609,6 +609,44 @@ describe('a line’s ENDS and a polygon’s CORNERS are its handles (the owner�
     expect(tool.controller.preview(moving, 3, overlayTransform(PAGE))).toMatchObject({ boxes: [], paths: [{ points: [[40, 100], [220, 98]] }] });
     // THE POINTER says a press on an end moves it.
     expect(tool.controller.pointer(viewportPoint(20, 100), 3, overlayTransform(PAGE))).toBe('move');
+  });
+
+  it('a MEASUREMENT’s end being dragged reads, live, what the release writes, beside the pointer and naming the mark (B1)', async () => {
+    // AN INCH PER 72 POINTS, the scale the walk carries from the mark's own `/Measure`.
+    const scale = { perPoint: 1 / 72, unit: 'in' } as const;
+    const measuredSelection: AnnotationSelection = {
+      page: 3,
+      version: VERSION,
+      items: [{ ...DISTANCE_ITEM, measured: { kind: 'measure-distance', scale } }],
+    };
+    const tool = selectTool({ ...NO_REOPEN, ...NO_LINKS, annotations: () => Promise.resolve(undefined), onSelect: () => undefined, selected: () => measuredSelection });
+    const moving = tool.controller.update(tool.controller.begin(viewportPoint(200, 98)), viewportPoint(240, 98));
+    const preview = tool.controller.preview(moving, 3, overlayTransform(PAGE));
+    if (preview?.shape !== 'boxes') throw new Error('expected the drag preview');
+    // THE COMMAND THE RELEASE SENDS, and the reading of exactly its points: the one number the file will say.
+    const command = await selecting([], measuredSelection).drag([200, 98], [240, 98]);
+    if (command?.kind !== 'reshapeAnnotation') throw new Error('expected a reshape');
+    expect(preview.caption).toStrictEqual({ text: measureLabel('measure-distance', command.points, scale), x: 250, y: 88, of: 1 });
+    // NOT THE STORED READING: the end moved 20 points, so the old length's words would be another number.
+    expect(preview.caption?.text).not.toBe(measureLabel('measure-distance', DISTANCE_ITEM.points, scale));
+    // CLEAR OF THE POINTER: right of it and above it, never on it.
+    expect(preview.caption !== undefined && preview.caption.x > 240 && preview.caption.y < 98).toBe(true);
+  });
+
+  it('CONTROL: a MOVE of the whole measurement, and a drag of a line that measures nothing, carry no reading', () => {
+    const scale = { perPoint: 1 / 72, unit: 'in' } as const;
+    const measuredSelection: AnnotationSelection = {
+      page: 3,
+      version: VERSION,
+      items: [{ ...DISTANCE_ITEM, measured: { kind: 'measure-distance', scale } }],
+    };
+    const tool = selectTool({ ...NO_REOPEN, ...NO_LINKS, annotations: () => Promise.resolve(undefined), onSelect: () => undefined, selected: () => measuredSelection });
+    const moving = tool.controller.update(tool.controller.begin(viewportPoint(100, 99)), viewportPoint(120, 99));
+    expect(tool.controller.preview(moving, 3, overlayTransform(PAGE))).not.toHaveProperty('caption');
+    // THE SAME END DRAG ON THE UNMEASURED SELECTION above: its preview equals the outline alone (the previous case's).
+    const plain = selectTool({ ...NO_REOPEN, ...NO_LINKS, annotations: () => Promise.resolve(undefined), onSelect: () => undefined, selected: () => SELECTED });
+    const dragged = plain.controller.update(plain.controller.begin(viewportPoint(200, 98)), viewportPoint(240, 98));
+    expect(plain.controller.preview(dragged, 3, overlayTransform(PAGE))).not.toHaveProperty('caption');
   });
 });
 

@@ -30,7 +30,14 @@ export {
   parseFieldTime,
   storedNumber,
 } from './fieldFormatting.js';
-export { MEASURE_PLACES, type MeasuredKind, measureLabel, pathLength, shoelaceArea } from './measurement.js';
+export {
+  MEASURE_PLACES,
+  type MeasuredKind,
+  measureLabel,
+  measuredKindSchema,
+  pathLength,
+  shoelaceArea,
+} from './measurement.js';
 export {
   LIFTED_CREDENTIALS_MAX,
   PROTECTION_TERMS_MAX,
