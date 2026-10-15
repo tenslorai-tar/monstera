@@ -32,7 +32,7 @@ import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 
 const ROOT = repoRoot();
-refuseStaleBuild(ROOT, APART_START, 4);
+refuseStaleBuild(ROOT, APART_START, 3);
 
 /**
  * The child's whole allowance. A child that answers does so in well under a second (measured 2026-10-15 in this cloud

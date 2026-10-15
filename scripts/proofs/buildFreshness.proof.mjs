@@ -44,7 +44,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { ARTEFACT_EDGES, newestMtime, refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { ARTEFACT_EDGES, newestMtime, refuseStaleBuild, startedByPath } from '../lib/buildFreshness.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
 
@@ -73,6 +73,8 @@ const CASES = [
   'every script that IMPORTS a build takes the guard, or is named as owing none',
   'CONTROL: and that scan sees the importers, and its allowlist has no dead entry',
   'every built module a registered proof imports by path is covered by one of its edges',
+  'CONTROL: the guard’s walk finds the thread entries two modules below a proof’s imports',
+  'a stale thread entry that no edge names is refused, because the guard walks to it; fresh, it passes',
   'CONTROL: and that check sees the imports, and names one an edge list lacks',
 ];
 
@@ -654,6 +656,53 @@ try {
         `of it passes the guard: ${gaps.join('; ')}. Add the edge to the proof's list in buildFreshness.mjs and ` +
         `raise the count at its refuseStaleBuild call.`,
     );
+
+    // AND WHAT THOSE MODULES START BY PATH (GGGGGGGG-7, HHHHHHHH-7). A thread's entry is named by
+    // `new URL('./x.js', import.meta.url)` and imported by nothing, so no list kept beside imports names it; three
+    // commits added one by hand after a proof ran a stale worker, and walking every registered proof found 13 more that
+    // reach one. The guard now walks for them itself (`startedByPath`). Two cases: the walk finds, on this tree, the
+    // entries two modules below what `pdfiumCommand.proof.mjs` imports (a search must find what is known to be there,
+    // item 4b); and the guard refuses a stale entry that no edge names, in a fixture, with the same entry fresh as the
+    // control, so the refusal is the walk's and not something else's.
+    {
+      const reached = startedByPath(
+        REPO_ROOT,
+        builtImportsOf(readFileSync(join(REPO_ROOT, 'scripts/proofs/pdfiumCommand.proof.mjs'), 'utf8')),
+      ).map(({ artefact }) => artefact);
+      check(
+        'CONTROL: the guard’s walk finds the thread entries two modules below a proof’s imports',
+        reached.includes('packages/kernel/dist/fontCatalogueWorker.js') && reached.includes('packages/kernel/dist/apartEntry.js'),
+        `the walk from pdfiumCommand's imports started: ${reached.join(', ') || '(none)'}. It reaches the catalogue ` +
+          'through fontCatalogueApart.js and the start through apart.js; a blind walk dates no thread entry at all.',
+      );
+
+      const root = mkdtempSync(join(tmpdir(), 'monstera-freshness-'));
+      roots.push(root);
+      mkdirSync(join(root, 'packages', 'k', 'src'), { recursive: true });
+      mkdirSync(join(root, 'packages', 'k', 'dist'), { recursive: true });
+      writeAt(join(root, 'packages', 'k', 'src', 'a.ts'), "export const at = new URL('./w.js', import.meta.url);\n", OLD);
+      writeAt(join(root, 'packages', 'k', 'src', 'w.ts'), 'export {};\n', NEW);
+      writeAt(join(root, 'packages', 'k', 'dist', 'a.js'), '', NEW);
+      writeAt(join(root, 'packages', 'k', 'dist', 'w.js'), '', OLD);
+      /** @type {import('../lib/buildFreshness.mjs').BuildEdge[]} */
+      const onlyTheStarter = [['packages/k/src/a.ts', 'packages/k/dist/a.js', 'tsc']];
+      const outcome = () => {
+        try {
+          refuseStaleBuild(root, onlyTheStarter, 1, { compilerSaysCurrent: () => false });
+          return 'passed';
+        } catch (error) {
+          return error instanceof Error ? error.message : String(error);
+        }
+      };
+      const stale = outcome();
+      utimesSync(join(root, 'packages', 'k', 'dist', 'w.js'), NEW, NEW);
+      const fresh = outcome();
+      check(
+        'a stale thread entry that no edge names is refused, because the guard walks to it; fresh, it passes',
+        stale.startsWith('packages/k/dist/w.js is OLDER than packages/k/src/w.ts') && fresh === 'passed',
+        `stale: ${stale.split('\n')[0] ?? ''}; fresh: ${fresh.split('\n')[0] ?? ''}`,
+      );
+    }
 
     // A SEARCH, so it must find what is known to be there, and the comparison must be able to say no (items 4b, 4).
     // `pdfiumCommand.proof.mjs` imports `pdfiumFfi.js` by path; the same imports against its list less that edge must

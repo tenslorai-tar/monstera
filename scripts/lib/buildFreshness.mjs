@@ -19,8 +19,8 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { join, posix } from 'node:path';
 
 /**
  * One source-to-artefact edge, and WHO produces the artefact.
@@ -172,11 +172,7 @@ export const PDFIUM_COMMAND = [
   ['packages/kernel/src/fontCatalogue.ts', 'packages/kernel/dist/fontCatalogue.js', 'tsc'],
   // The catalogue is read as the host reads it, in its thread (the owner's Part 7 A).
   ['packages/kernel/src/fontCatalogueApart.ts', 'packages/kernel/dist/fontCatalogueApart.js', 'tsc'],
-  // AND THE TWO THREADS AN EDIT STARTS BY PATH (ADR-0239): nothing imports a worker, so an imports-covered check cannot
-  // see one, and a stale one would answer last build's face program or run font (HHHHHHHH-7).
-  ['packages/kernel/src/faceProgramWorker.ts', 'packages/kernel/dist/faceProgramWorker.js', 'tsc'],
-  ['packages/kernel/src/runFontWorker.ts', 'packages/kernel/dist/runFontWorker.js', 'tsc'],
-  ['packages/kernel/src/apartEntry.ts', 'packages/kernel/dist/apartEntry.js', 'tsc'],
+  // The threads an edit starts by path (ADR-0239) are not listed: the guard walks to them (`startedByPath`).
   ['packages/shared/src', 'packages/shared/dist/index.js', 'tsc'],
   // RIGHT-TO-LEFT TEXT AND A SCAN'S PAPER (ADR-0181): the order a line is drawn in and read back in, the cut of a line into
   // objects, the Arabic joining forms the proof reads directly, and the paper a scan's cover is coloured from.
@@ -352,30 +348,27 @@ export const DRAWN_OBJECT_PLACE = [
 ];
 
 /**
- * What `fontCatalogueApart.proof.mjs` reads: the reader a host calls, the thread it starts, and the in-thread read both
- * the thread and the control run.
+ * What `fontCatalogueApart.proof.mjs` reads: the reader a host calls and the in-thread read both the thread and the
+ * control run. The thread's entry and where it starts are walked to (`startedByPath`), not listed.
  *
  * @type {BuildEdge[]}
  */
 export const FONT_CATALOGUE_APART = [
   ['packages/kernel/src/fontCatalogueApart.ts', 'packages/kernel/dist/fontCatalogueApart.js', 'tsc'],
-  ['packages/kernel/src/fontCatalogueWorker.ts', 'packages/kernel/dist/fontCatalogueWorker.js', 'tsc'],
   ['packages/kernel/src/fontCatalogue.ts', 'packages/kernel/dist/fontCatalogue.js', 'tsc'],
   ['packages/kernel/src/apart.ts', 'packages/kernel/dist/apart.js', 'tsc'],
   ['packages/kernel/src/apartThread.ts', 'packages/kernel/dist/apartThread.js', 'tsc'],
-  ['packages/kernel/src/apartEntry.ts', 'packages/kernel/dist/apartEntry.js', 'tsc'],
 ];
 
 /**
- * How every thread that ends is started and answered (`apart.ts`, `apartEntry.ts`, `apartThread.ts`), which
- * `apartStart.proof.mjs` runs from a child: `apartEntry.js` is loaded by path and nothing imports it.
+ * How every thread that ends is started and answered, which `apartStart.proof.mjs` runs from a child. `apartEntry.js`
+ * is started by path from `apart.js`, so the guard walks to it.
  *
  * @type {readonly BuildEdge[]}
  */
 export const APART_START = [
   ['packages/kernel/src/apart.ts', 'packages/kernel/dist/apart.js', 'tsc'],
   ['packages/kernel/src/apartThread.ts', 'packages/kernel/dist/apartThread.js', 'tsc'],
-  ['packages/kernel/src/apartEntry.ts', 'packages/kernel/dist/apartEntry.js', 'tsc'],
   ['packages/shared/src', 'packages/shared/dist/index.js', 'tsc'],
 ];
 
@@ -388,17 +381,13 @@ export const APART_START = [
 export const FONT_WORK_APART = [
   ['packages/kernel/src/apart.ts', 'packages/kernel/dist/apart.js', 'tsc'],
   ['packages/kernel/src/apartThread.ts', 'packages/kernel/dist/apartThread.js', 'tsc'],
-  ['packages/kernel/src/apartEntry.ts', 'packages/kernel/dist/apartEntry.js', 'tsc'],
   ['packages/kernel/src/faceProgram.ts', 'packages/kernel/dist/faceProgram.js', 'tsc'],
   ['packages/kernel/src/faceProgramApart.ts', 'packages/kernel/dist/faceProgramApart.js', 'tsc'],
-  ['packages/kernel/src/faceProgramWorker.ts', 'packages/kernel/dist/faceProgramWorker.js', 'tsc'],
   ['packages/kernel/src/composeApart.ts', 'packages/kernel/dist/composeApart.js', 'tsc'],
-  ['packages/kernel/src/composeWorker.ts', 'packages/kernel/dist/composeWorker.js', 'tsc'],
   ['packages/kernel/src/markdownCompose.ts', 'packages/kernel/dist/markdownCompose.js', 'tsc'],
   ['packages/kernel/src/fontCatalogue.ts', 'packages/kernel/dist/fontCatalogue.js', 'tsc'],
   ['packages/kernel/src/runFont.ts', 'packages/kernel/dist/runFont.js', 'tsc'],
   ['packages/kernel/src/runFontApart.ts', 'packages/kernel/dist/runFontApart.js', 'tsc'],
-  ['packages/kernel/src/runFontWorker.ts', 'packages/kernel/dist/runFontWorker.js', 'tsc'],
   ['packages/kernel/src/composeOutcome.ts', 'packages/kernel/dist/composeOutcome.js', 'tsc'],
   ['packages/kernel/src/textShaping.ts', 'packages/kernel/dist/textShaping.js', 'tsc'],
 ];
@@ -697,6 +686,7 @@ export const ARTEFACT_EDGES = {
   'proof:fontcatalogueapart': FONT_CATALOGUE_APART,
   // ADR-0239: an edit's face program and a composition made apart. Registered with its entry.
   'proof:fontworkapart': FONT_WORK_APART,
+  'proof:apartstart': APART_START,
   // ADR-0240: a drawn object placed in its content stream, against PDFium's own route. Registered with its entry.
   'proof:drawnobjects': DRAWN_OBJECT_PLACE,
   'proof:shimpassword': SHIM_PASSWORD,
@@ -980,7 +970,15 @@ export function refuseStaleBuild(repoRoot, pairs, expected, options = {}) {
         `removing one, say why in the commit.`,
     );
   }
-  for (const [source, artefact, producer] of pairs) {
+  // AND EVERY MODULE THOSE START BY PATH, found rather than listed (GGGGGGGG-7, HHHHHHHH-7): see `startedByPath`.
+  const named = new Set(pairs.map(([, artefact]) => artefact));
+  const started = startedByPath(
+    repoRoot,
+    pairs.filter(([, , producer]) => producer === 'tsc').map(([, artefact]) => artefact),
+  )
+    .filter(({ artefact }) => !named.has(artefact))
+    .map(({ source, artefact }) => /** @type {BuildEdge} */ ([source, artefact, 'tsc']));
+  for (const [source, artefact, producer] of [...pairs, ...started]) {
     const sourcePath = join(repoRoot, source);
     const artefactPath = join(repoRoot, artefact);
     if (!existsSync(artefactPath)) {
@@ -1033,6 +1031,60 @@ export function refuseStaleBuild(repoRoot, pairs, expected, options = {}) {
         }`,
     );
   }
+}
+
+/** A relative import or re-export in a source, by its `.js` specifier as this repository writes them. */
+const RELATIVE_IMPORT = /(?:\bfrom\s*|\bimport\s*\(\s*)['"](\.{1,2}\/[\w./-]+)\.js['"]/gu;
+
+/** A module started by path: a thread's entry, which nothing imports. */
+const STARTED_BY_PATH = /new URL\(\s*['"](\.{1,2}\/[\w./-]+)\.js['"]\s*,\s*import\.meta\.url\s*\)/gu;
+
+/**
+ * Every module that the built modules `artefacts` reach and START BY PATH, each as the pair that dates it: a thread's
+ * entry is named by `new URL('./x.js', import.meta.url)` and imported by nothing, so no edge list derived from imports
+ * names it, and three commits added one to a list by hand after a proof ran a stale worker (GGGGGGGG-7, HHHHHHHH-7).
+ *
+ * ## The walk reads SOURCES
+ *
+ * `packages/name/dist/x.js` is read as `packages/name/src/x.ts` (or `.tsx`), and its relative imports are followed
+ * there. Guards builds nothing, and a walk of a missing tree finds nothing, which is the answer hoped for (item 4b);
+ * a source is what the built file was compiled from, so it names the same modules. A built path with no source beside
+ * it (a bundle, a directory edge's `index.js` whose source is not a file) is not walked.
+ *
+ * Static imports reached on the way are NOT returned: an edge list that misses one of those is IIIIIIII-3, the whole
+ * derivation, which this does not take on. What is returned is only what an import graph cannot see.
+ *
+ * @param {string} repoRoot
+ * @param {readonly string[]} artefacts repo-relative built modules, `packages/name/dist/…js`
+ * @returns {{ source: string, artefact: string }[]}
+ */
+export function startedByPath(repoRoot, artefacts) {
+  /** @param {string} built */
+  const sourceOf = (built) => {
+    if (!/^(?:packages|apps)\/[\w-]+\/dist\/.+\.js$/u.test(built)) return undefined;
+    const stem = built.replace(/\/dist\//u, '/src/').replace(/\.js$/u, '');
+    return ['.ts', '.tsx'].map((extension) => `${stem}${extension}`).find((path) => existsSync(join(repoRoot, path)));
+  };
+  /** @type {Set<string>} */
+  const read = new Set();
+  /** @type {Map<string, string>} */
+  const started = new Map();
+  const queue = [...artefacts];
+  for (let built = queue.pop(); built !== undefined; built = queue.pop()) {
+    const source = sourceOf(built);
+    if (source === undefined || read.has(source)) continue;
+    read.add(source);
+    const text = readFileSync(join(repoRoot, source), 'utf8');
+    const at = (/** @type {string} */ specifier) => posix.join(posix.dirname(built), `${specifier}.js`);
+    for (const match of text.matchAll(RELATIVE_IMPORT)) queue.push(at(match[1] ?? ''));
+    for (const match of text.matchAll(STARTED_BY_PATH)) {
+      const entry = at(match[1] ?? '');
+      const entrySource = sourceOf(entry);
+      if (entrySource !== undefined) started.set(entry, entrySource);
+      queue.push(entry);
+    }
+  }
+  return [...started].map(([artefact, source]) => ({ source, artefact }));
 }
 
 /**
