@@ -4021,7 +4021,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RECOGNISE_ON_EXPORT_DESCRIPTION]:
     'Text, Word and PDF/A exports read scanned pages first. The text is also added to the open document; Ctrl+Z undoes it.',
   [EDITING_AZURE_ENDPOINT_DESCRIPTION]: 'Optional. Your own Azure resource address, for tables and difficult scans.',
-  [EDITING_AZURE_KEY_DESCRIPTION]: 'Stored in the Windows credential vault. Never exported or logged.',
+  [EDITING_AZURE_KEY_DESCRIPTION]: 'Kept on this computer, encrypted for your Windows account. Never exported or logged.',
   [SECOND_RENDERER_DESCRIPTION]: 'Draws pages with PDFium instead of PDF.js. Slower; useful when a page looks wrong.',
   [EDITING_AZURE_ENDPOINT_TITLE]: 'Azure Document Intelligence endpoint',
   [EDITING_AZURE_KEY_TITLE]: 'Azure Document Intelligence key',
@@ -5572,7 +5572,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [AI_SAVE_HISTORY_DESCRIPTION]:
     'Off by default. Conversations are discarded when the document closes; saved ones are encrypted on this computer.',
   [AI_AZURE_OPENAI_ENDPOINT_DESCRIPTION]: 'Your own Azure OpenAI resource address. Needed only for that provider.',
-  [INTEGRATIONS_DOCUSIGN_KEY_DESCRIPTION]: 'Write-only. Stored in the Windows credential vault.',
+  [INTEGRATIONS_DOCUSIGN_KEY_DESCRIPTION]: 'Write-only. Kept on this computer, encrypted for your Windows account.',
   [INTEGRATIONS_DOCUSIGN_ENVIRONMENT_DESCRIPTION]: 'Which DocuSign account the signing requests go to.',
   [ACCENT_PRESET_THEME]: 'The theme’s own',
   [ACCENT_PRESET_GREEN]: 'Green',
@@ -5644,7 +5644,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SETTINGS_EDITING_NOTE]: 'What a new comment, highlight or shape looks like before you change it.',
   [SETTINGS_OCR_NOTE]: 'Reading text in scanned pages. Recognition runs on this computer.',
   [SETTINGS_AI_NOTE]:
-    'Providers and keys. A key is kept in the Windows credential vault, and is never exported or written to the log.',
+    'Providers and keys. A key is kept on this computer, encrypted for your Windows account, and is never exported or written to the log.',
   [SETTINGS_INTEGRATIONS_NOTE]: 'Other services Monstera can send a document to, and the keys they need.',
   [SETTINGS_PRIVACY_NOTE]: 'What Monstera keeps on this computer, and how to clear it.',
   [SETTINGS_ADVANCED_NOTE]: 'Things most people never need to change.',

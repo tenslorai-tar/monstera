@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { EN } from '../messages/en.js';
+import { AUTOSAVE_OPTION_TITLES, EN } from '../messages/en.js';
+import { AUTOSAVE_SETTING } from '../settings/saving.js';
 import { type Inline, parseArticle } from './article.js';
 import { HELP_ARTICLES, helpFor, searchHelp } from './articles.js';
 
@@ -182,5 +183,25 @@ describe('the Help centre’s articles', () => {
     expect(withTool.related.length).toBeGreaterThan(0);
     // CONTROL: no tool, no article — only the section's list.
     expect(helpFor({ tool: undefined, context: 'organize' }).article).toBeUndefined();
+  });
+
+  // G3: THE AUTOSAVE ARTICLE NAMES EVERY CHOICE THE SETTING OFFERS, read from the setting itself, so a choice added
+  // there reddens the article that leaves it out (it named three of six for a range).
+  it('G3: the autosave article names every choice Save automatically offers', () => {
+    const article = HELP_ARTICLES.find((each) => each.id === 'autosave');
+    if (article === undefined) throw new Error('no autosave article');
+    const named = new Set(boldWords(article));
+    const offered = AUTOSAVE_SETTING.schema.options.map((option) => EN[AUTOSAVE_OPTION_TITLES[option]]);
+    // A SEARCH, so it must find the choices it checks.
+    expect(offered).toHaveLength(6);
+    expect(offered.filter((title) => !named.has(title))).toStrictEqual([]);
+  });
+
+  // G3: NO TEXT SAYS A KEY IS IN THE WINDOWS CREDENTIAL VAULT: keys are encrypted by Electron's safeStorage into a file
+  // (`apps/desktop/src/secretStore.ts`). A negative search, so its control is that the corrected wording is found.
+  it('G3: no message or article puts a key in the Windows credential vault, and the wording that replaced it is there', () => {
+    const texts = [...Object.values(EN), ...HELP_ARTICLES.map((each) => JSON.stringify(each.blocks))];
+    expect(texts.filter((text) => /credential vault/iu.test(text))).toStrictEqual([]);
+    expect(texts.filter((text) => text.includes('encrypted for your Windows account')).length).toBeGreaterThanOrEqual(3);
   });
 });

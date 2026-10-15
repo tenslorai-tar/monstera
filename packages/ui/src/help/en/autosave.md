@@ -1,7 +1,7 @@
 ---
 id: autosave
 title: Save automatically
-summary: Turn on autosave to save documents with unsaved changes every 1, 5 or 10 minutes.
+summary: Turn on autosave to save documents with unsaved changes every 1, 2, 5, 10 or 30 minutes.
 keywords: [autosave, auto save, automatic save, timer, interval, save every minute]
 commands: [app.settings]
 contexts: [dialog.settings]
@@ -12,7 +12,7 @@ If you want Monstera to save for you, turn on autosave. It is off unless you tur
 
 1. Open **Settings** (in the rail, choose **Settings**).
 2. Choose the **Saving** page.
-3. In **Save automatically**, choose **Every minute**, **Every 5 minutes** or **Every 10 minutes**. Choose **Off** to stop.
+3. In **Save automatically**, choose **Every minute**, **Every 2 minutes**, **Every 5 minutes**, **Every 10 minutes** or **Every 30 minutes**. Choose **Off** to stop.
 
 ![The Saving page of Settings with the Save automatically choices](screenshot:autosave-1)
 

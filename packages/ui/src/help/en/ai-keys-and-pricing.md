@@ -70,7 +70,7 @@ The assistant can use any of these providers. Each needs its own key, pasted on 
 
 - You pay the provider directly. Monstera does not charge for, resell or estimate the cost of any provider. Check the provider's own pricing page before you use a service, and set spending limits in your provider account if it offers them.
 - Key fields are write-only. After you save a key, Settings shows only that a key is stored. To change it, type a new one over it; to delete it, choose the red **Remove the stored key** button beside **Check** and confirm with **Remove it**.
-- Keys are kept in the Windows credential vault. They are never included in **Export settings…** and never written to the diagnostics log. If this computer has no secure place for a key, Monstera says so and does not save it.
+- Keys are kept on this computer, encrypted for your Windows account (Windows' own data protection, through the app's secure storage). They are never included in **Export settings…** and never written to the diagnostics log. If this computer has no secure place for a key, Monstera says so and does not save it.
 - Nothing from your document is sent until you ask: the assistant sends only when you press **Send**, and the reading and translating windows say what will be sent before you confirm.
 - The **Azure OCR** and **Claude OCR** buttons in the **OCR** group of **Tools** appear only once the matching key (and, for Azure, the endpoint) is stored.
 - If you see "Your Anthropic account is out of credit — add credit at console.anthropic.com", add credit in the Claude Console (console.anthropic.com now opens platform.claude.com).
