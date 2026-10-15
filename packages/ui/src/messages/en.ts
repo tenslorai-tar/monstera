@@ -335,6 +335,24 @@ export const BATES_NUMBER_SLOT_RIGHT = messageKey('dialog.bates-number.slot-righ
 export const BATES_NUMBER_APPLY = messageKey('dialog.bates-number.apply');
 export const BATES_NUMBER_NOT_A_NUMBER = messageKey('dialog.bates-number.not-a-number');
 export const BATES_NUMBER_COMMAND_TITLE = messageKey('command.bates-number.title');
+export const STAMP_COLOUR = messageKey('dialog.stamp.colour');
+export const STAMP_COLOUR_STANDARD = messageKey('dialog.stamp.colour-standard');
+export const STAMP_COLOUR_CUSTOM = messageKey('dialog.stamp.colour-custom');
+export const STAMP_EDIT_APPLY = messageKey('dialog.stamp.edit-apply');
+export const STAMP_EDIT_PAGES = messageKey('dialog.stamp.edit-pages');
+export const EDIT_WATERMARK_COMMAND_TITLE = messageKey('command.edit-watermark.title');
+export const REMOVE_WATERMARK_COMMAND_TITLE = messageKey('command.remove-watermark.title');
+export const EDIT_HEADER_FOOTER_COMMAND_TITLE = messageKey('command.edit-header-footer.title');
+export const REMOVE_HEADER_FOOTER_COMMAND_TITLE = messageKey('command.remove-header-footer.title');
+export const EDIT_BATES_COMMAND_TITLE = messageKey('command.edit-bates.title');
+export const REMOVE_BATES_COMMAND_TITLE = messageKey('command.remove-bates.title');
+export const RIBBON_EDIT_MARKS = messageKey('surface.ribbon.edit-marks');
+export const PAGE_MARKS_NOTICE_TITLE = messageKey('dialog.page-marks-notice.title');
+export const PAGE_MARKS_NONE_WATERMARK = messageKey('dialog.page-marks-notice.none-watermark');
+export const PAGE_MARKS_NONE_HEADER_FOOTER = messageKey('dialog.page-marks-notice.none-header-footer');
+export const PAGE_MARKS_NONE_BATES = messageKey('dialog.page-marks-notice.none-bates');
+export const PAGE_MARKS_OLDER = messageKey('dialog.page-marks-notice.older');
+export const PAGE_MARKS_INLINE = messageKey('dialog.page-marks-notice.inline');
 export const SAVE_COPY_TITLE = messageKey('command.save-copy.title');
 export const EXPORT_FORM_DATA_JSON_TITLE = messageKey('command.export-form-data.json');
 export const EXPORT_FORM_DATA_XFDF_TITLE = messageKey('command.export-form-data.xfdf');
@@ -7093,6 +7111,26 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [BATES_NUMBER_NOT_A_NUMBER]:
     'Start is a whole number and digits is between 1 and 12.',
   [BATES_NUMBER_COMMAND_TITLE]: 'Bates numbering…',
+  [STAMP_COLOUR]: 'Colour',
+  [STAMP_COLOUR_STANDARD]: 'Standard colour',
+  [STAMP_COLOUR_CUSTOM]: 'Other colour',
+  [STAMP_EDIT_APPLY]: 'Apply changes',
+  [STAMP_EDIT_PAGES]: 'The change is made on every page that carries one.',
+  [EDIT_WATERMARK_COMMAND_TITLE]: 'Edit watermark…',
+  [REMOVE_WATERMARK_COMMAND_TITLE]: 'Remove watermark',
+  [EDIT_HEADER_FOOTER_COMMAND_TITLE]: 'Edit headers and footers…',
+  [REMOVE_HEADER_FOOTER_COMMAND_TITLE]: 'Remove headers and footers',
+  [EDIT_BATES_COMMAND_TITLE]: 'Edit Bates numbers…',
+  [REMOVE_BATES_COMMAND_TITLE]: 'Remove Bates numbers',
+  [RIBBON_EDIT_MARKS]: 'Edit marks',
+  [PAGE_MARKS_NOTICE_TITLE]: 'Marks',
+  [PAGE_MARKS_NONE_WATERMARK]: 'This document has no watermark that Monstera can change or remove.',
+  [PAGE_MARKS_NONE_HEADER_FOOTER]: 'This document has no headers or footers that Monstera can change or remove.',
+  [PAGE_MARKS_NONE_BATES]: 'This document has no Bates numbers that Monstera can change or remove.',
+  [PAGE_MARKS_OLDER]:
+    '{count, plural, one {One page carries} other {# pages carry}} a mark added by an earlier version of Monstera. Monstera cannot tell safely whether it is a watermark, a header or a Bates number, so it was left as it is.',
+  [PAGE_MARKS_INLINE]:
+    '{count, plural, one {One page carries} other {# pages carry}} a mark of this kind written by another program into the content of the page itself. It was left as it is, because removing it could remove part of the page.',
   // NAMED FOR WHAT IT DOES, the owner's item 13g: the window deletes the extra copies, so it is not a search.
   [DUPLICATE_PAGES_TITLE]: 'Delete duplicate pages',
   // WHAT WAS COMPARED, in the user's terms rather than the format's. "Content

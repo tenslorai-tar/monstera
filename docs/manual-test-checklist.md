@@ -4,7 +4,7 @@
      equal to it. Regenerate with `npx vitest run packages/ui/src/App.test.tsx -t "manual test checklist" -u`.
      Do not edit by hand. -->
 
-Every command the application registers — 268 — and the checks only the installed window can answer.
+Every command the application registers — 274 — and the checks only the installed window can answer.
 For each command: use it on a real document, see the correct effect, then save, close and reopen and see it kept
 (the wired-tools rule, CLAUDE.md). A command that needs a selection, a second document or a key says so when it
 is not available.
@@ -52,6 +52,12 @@ is not available.
 - [ ] **Watermark…** — Marks · `document.watermark-pages` · Shows: on screen · Help: *Add a watermark*
 - [ ] **Add page background…** — Marks · `document.page-background` · Shows: on screen · Help: *Add a page background*
 - [ ] **Table of contents** — Marks · `document.generate-toc` · Shows: on screen · Help: *Add a table of contents*
+- [ ] **Edit watermark…** — Marks · `document.edit-watermark` · Shows: on screen · Help: *Add a watermark*
+- [ ] **Remove watermark** — Marks · `document.remove-watermark` · Shows: on screen · Help: *Add a watermark*
+- [ ] **Edit headers and footers…** — Marks · `document.edit-header-footer` · Shows: on screen · Help: *Add headers and footers*
+- [ ] **Remove headers and footers** — Marks · `document.remove-header-footer` · Shows: on screen · Help: *Add headers and footers*
+- [ ] **Edit Bates numbers…** — Marks · `document.edit-bates` · Shows: on screen · Help: *Add Bates numbers*
+- [ ] **Remove Bates numbers** — Marks · `document.remove-bates` · Shows: on screen · Help: *Add Bates numbers*
 - [ ] **Delete pages…** — Pages · `document.delete-pages` · Shows: on screen · Help: *Delete pages*
 - [ ] **Insert from PDF…** — Pages · `document.insert-from-pdf` · Shows: on screen · Help: *Insert pages from another PDF*
 - [ ] **Insert blank pages…** — Pages · `document.insert-blank-page` · Shows: on screen · Help: *Insert blank pages*

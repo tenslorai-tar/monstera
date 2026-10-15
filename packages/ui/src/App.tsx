@@ -1,5 +1,6 @@
 import {
   AI_PROVIDER_KEY_SETTING_IDS,
+  pageMarkKindSchema,
   type AnnotationRect,
   type AnnotationStamp,
   ANTHROPIC_KEY_SETTING_ID,
@@ -63,6 +64,8 @@ import {
   watermarkPagesCommand,
   headerFooterCommand,
   batesNumberCommand,
+  editPageMarksCommand,
+  removePageMarksCommand,
   saveCopyCommand,
   exportFormDataFdfCommand,
   exportFormDataJsonCommand,
@@ -3846,6 +3849,11 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         watermarkPagesCommand({ client, onApplied: applied, ask, stamp, signatures }),
         headerFooterCommand({ client, onApplied: applied, ask, stamp, signatures }),
         batesNumberCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        // EDIT AND REMOVE OF EACH KIND OF STAMP (ADR-0246), Organize › Marks' *Edit marks* menu.
+        ...pageMarkKindSchema.options.flatMap((kind) => [
+          editPageMarksCommand(kind)({ client, onApplied: applied, ask, stamp, signatures }),
+          removePageMarksCommand(kind)({ client, onApplied: applied, ask, stamp, signatures }),
+        ]),
         pageTransitionCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         pageBackgroundCommand({ client, onApplied: applied, ask, stamp, signatures }),
         resizePagesCommand({ client, onApplied: applied, ask, stamp, signatures }),

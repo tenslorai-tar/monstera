@@ -1,9 +1,12 @@
 import { useLingui } from '@lingui/react';
+import type { AnnotationColour } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 import type { ReactElement } from 'react';
 import { useRef, useState } from 'react';
 
 import {
+  STAMP_EDIT_APPLY,
+  STAMP_EDIT_PAGES,
   WATERMARK_PAGES_APPLY,
   WATERMARK_PAGES_NO_TEXT,
   WATERMARK_PAGES_OPACITY,
@@ -22,8 +25,10 @@ import { Problem } from '../primitives/Problem.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import { PageScopeChoice } from './PageScopeChoice.js';
 import type { ReadFontList } from '../FontPicker.js';
+import { StampColourRow } from './StampColourRow.js';
+import { WATERMARK_STANDARD_HEX } from './stampColours.js';
 import { DEFAULT_STAMP_FAMILY, StampFontRow } from './StampFontRow.js';
-import type { WatermarkPagesAnswer } from './watermarkPagesResult.js';
+import type { WatermarkPagesAnswer, WatermarkSettings } from './watermarkPagesResult.js';
 
 /**
  * The appearance a watermark has unless the person changes it.
@@ -82,15 +87,19 @@ const DEFAULTS: Appearance = {
 export default function WatermarkPagesBody({
   pages,
   fonts,
+  editing,
   resolve,
 }: {
   readonly pages: readonly number[];
   readonly fonts?: ReadFontList | undefined;
+  /** The recorded settings of the watermark being edited (ADR-0246 Decision 3); absent, this adds one. */
+  readonly editing?: WatermarkSettings | undefined;
 } & DialogAnswering<WatermarkPagesAnswer>): ReactElement {
   const { _ } = useLingui();
-  const [text, setText] = useState('');
-  const [appearance, setAppearance] = useState<Appearance>(DEFAULTS);
-  const [family, setFamily] = useState(DEFAULT_STAMP_FAMILY);
+  const [text, setText] = useState(editing?.text ?? '');
+  const [appearance, setAppearance] = useState<Appearance>(editing === undefined ? DEFAULTS : appearanceOf(editing));
+  const [family, setFamily] = useState(editing?.family ?? DEFAULT_STAMP_FAMILY);
+  const [colour, setColour] = useState<AnnotationColour | undefined>(editing?.colour);
   const [everyPage, setEveryPage] = useState(true);
 
   const trimmed = text.trim();
@@ -165,15 +174,21 @@ export default function WatermarkPagesBody({
           />
         </DialogRow>
       </div>
+      <StampColourRow value={colour} onPick={setColour} standardHex={WATERMARK_STANDARD_HEX} />
       <Problem
         about={{ within: wrongField }}
         focusField={invalid === undefined && problem !== undefined}
         message={problem === undefined ? undefined : _(problem)}
       />
-      <PageScopeChoice className="m-watermark-pages__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
+      {/* EDIT NAMES NO SCOPE: it redraws on every page the watermark is on, which the command took from the read. */}
+      {editing === undefined ? (
+        <PageScopeChoice className="m-watermark-pages__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
+      ) : (
+        <p>{_(STAMP_EDIT_PAGES)}</p>
+      )}
       <DialogFooter>
         <Button
-          label={WATERMARK_PAGES_APPLY}
+          label={editing === undefined ? WATERMARK_PAGES_APPLY : STAMP_EDIT_APPLY}
           variant="primary"
           disabled={invalid !== undefined}
           onClick={() => {
@@ -182,7 +197,13 @@ export default function WatermarkPagesBody({
             // refuses an opacity above 1 and empty text, and a mismatch would be
             // a thrown `DialogResultRejected` over the user's document.
             if (parsed === null || trimmed.length === 0) return;
-            resolve({ pages: everyPage ? 'all' : [...pages], text: trimmed, family, ...parsed });
+            resolve({
+              pages: everyPage ? 'all' : [...pages],
+              text: trimmed,
+              family,
+              ...parsed,
+              ...(colour === undefined ? {} : { colour }),
+            });
           }}
         />
       </DialogFooter>
@@ -204,8 +225,22 @@ function fractionOfPercent(percent: number): number {
   return percent / 100;
 }
 
+/** {@link fractionOfPercent} the other way, for a recorded watermark's opacity, to two places as a person types it. */
+function percentOfFraction(fraction: number): number {
+  return Math.round(fraction * 10_000) / 100;
+}
+
+/** The fields as a recorded watermark fills them for Edit. */
+function appearanceOf(settings: WatermarkSettings): Appearance {
+  return {
+    opacity: String(percentOfFraction(settings.opacity)),
+    rotationDegrees: String(settings.rotationDegrees),
+    fontSize: String(settings.fontSize),
+  };
+}
+
 /** The parsed appearance, or `null` if a field is text that is not a number. */
-function readAppearance(appearance: Appearance): Omit<WatermarkPagesAnswer, 'pages' | 'text' | 'family'> | null {
+function readAppearance(appearance: Appearance): Omit<WatermarkPagesAnswer, 'pages' | 'text' | 'family' | 'colour'> | null {
   const opacity = readNumber(appearance.opacity, DEFAULT_OPACITY);
   const rotation = readNumber(appearance.rotationDegrees, DEFAULT_ROTATION, { signed: true });
   const size = readNumber(appearance.fontSize, DEFAULT_SIZE);

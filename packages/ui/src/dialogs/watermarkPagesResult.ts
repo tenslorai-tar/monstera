@@ -1,4 +1,4 @@
-import { annotationFamilySchema } from '@monstera/contract';
+import { annotationColourSchema, annotationFamilySchema } from '@monstera/contract';
 import { z } from 'zod';
 
 /**
@@ -22,16 +22,27 @@ import { z } from 'zod';
  * the boundary refuses, which is a thrown `DialogResultRejected` in front of
  * the user rather than a bad command — loud, and at the moment of the mistake.
  */
-export const WATERMARK_PAGES_RESULT = z
-  .object({
-    pages: z.union([z.literal('all'), z.array(z.number().int().nonnegative()).min(1)]),
-    text: z.string().min(1).max(200),
-    opacity: z.number().min(0).max(1),
-    rotationDegrees: z.number().min(-360).max(360),
-    family: annotationFamilySchema,
-    fontSize: z.number().positive().max(1000),
-  })
-  .strict();
+/**
+ * A watermark's settings without its pages: what the dialog collects, and what the engine RECORDS on the stamp
+ * (ADR-0246 Decision 1), so Edit fills the window from the same shape. Not strict, so a record a later version wrote
+ * with a field this one does not know still fills what it does know.
+ */
+export const WATERMARK_SETTINGS = z.object({
+  text: z.string().min(1).max(200),
+  opacity: z.number().min(0).max(1),
+  rotationDegrees: z.number().min(-360).max(360),
+  family: annotationFamilySchema,
+  fontSize: z.number().positive().max(1000),
+  /** Left out, the grey every watermark was before ADR-0246. */
+  colour: annotationColourSchema.optional(),
+});
+
+/** See {@link WATERMARK_SETTINGS}. */
+export type WatermarkSettings = z.infer<typeof WATERMARK_SETTINGS>;
+
+export const WATERMARK_PAGES_RESULT = WATERMARK_SETTINGS.extend({
+  pages: z.union([z.literal('all'), z.array(z.number().int().nonnegative()).min(1)]),
+}).strict();
 
 /** The watermark's text, appearance and scope, as the dialog produced them. */
 export type WatermarkPagesAnswer = z.infer<typeof WATERMARK_PAGES_RESULT>;

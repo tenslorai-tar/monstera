@@ -3,7 +3,7 @@ id: bates-numbering
 title: Add Bates numbers
 summary: Stamp consecutive identifying numbers, with an optional prefix and suffix, on pages.
 keywords: [bates, bates numbering, exhibit numbers, legal numbering, stamp numbers, page numbering, discovery]
-commands: [document.bates-number]
+commands: [document.bates-number, document.edit-bates, document.remove-bates]
 contexts: [dialog.bates-number, organize]
 ---
 Bates numbers are consecutive identifying numbers, such as ABC000431, stamped on each page, often used for legal documents.
@@ -17,8 +17,17 @@ Bates numbers are consecutive identifying numbers, such as ABC000431, stamped on
 
 ![The Bates numbering window with prefix, start, digits and the preview](screenshot:bates-numbering-1)
 
+## Change or remove Bates numbers
+
+1. In **Organize**, open **Edit marks** in the **Marks** group.
+2. Choose **Edit Bates numbers…** to open the same window with their settings filled in. Change what you want, then choose **Apply changes**. The pages that had numbers are numbered again from **Start at**.
+3. Or choose **Remove Bates numbers** to take them off every page. Everything else on the page stays as it was.
+
+Both still work after the file is saved and opened again, and each is one step for **Undo**.
+
 ## Good to know
 
+- Bates numbers added by an earlier version of Monstera cannot be changed or removed. Monstera says so and leaves them.
 - **Start at** lets a second document carry on from where the first finished.
 - **Digits** is the minimum width; numbers are padded with zeros and never cut short.
 - Undo with **Ctrl+Z**.

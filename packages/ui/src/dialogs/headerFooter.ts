@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import { HEADER_FOOTER_TITLE } from '../messages/en.js';
 import { declareDialog } from '../registries/dialogs.js';
-import { HEADER_FOOTER_RESULT } from './headerFooterResult.js';
+import { HEADER_FOOTER_RESULT, HEADER_FOOTER_SETTINGS } from './headerFooterResult.js';
 import { TARGET_PAGES } from './pageScope.js';
 
 /** The id `headerFooterCommand` opens to collect the six slots. */
@@ -26,6 +26,8 @@ export const HEADER_FOOTER_DIALOG = declareDialog({
       pages: TARGET_PAGES,
       /** The fonts `app.fontFamilies` answered when the dialog opened; absent where the read failed (ADR-0235). */
       fonts: listedFontFamiliesSchema.optional(),
+      /** The recorded settings of the headers and footers being edited; absent, the window adds them (`watermarkPages.ts`). */
+      editing: HEADER_FOOTER_SETTINGS.optional(),
     })
     .strict(),
   result: HEADER_FOOTER_RESULT,

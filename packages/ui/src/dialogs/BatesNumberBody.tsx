@@ -18,6 +18,8 @@ import {
   BATES_NUMBER_SLOT_RIGHT,
   BATES_NUMBER_START,
   BATES_NUMBER_SUFFIX,
+  STAMP_EDIT_APPLY,
+  STAMP_EDIT_PAGES,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
@@ -25,7 +27,7 @@ import { Input } from '../primitives/Input.js';
 import { Problem } from '../primitives/Problem.js';
 import { SegmentedControl } from '../primitives/SegmentedControl.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
-import type { BatesNumberAnswer } from './batesNumberResult.js';
+import type { BatesNumberAnswer, BatesNumberSettings } from './batesNumberResult.js';
 import { PageScopeChoice } from './PageScopeChoice.js';
 import type { ReadFontList } from '../FontPicker.js';
 import { DEFAULT_STAMP_FAMILY, StampFontRow } from './StampFontRow.js';
@@ -77,19 +79,22 @@ const DEFAULT_MARGIN = '36';
 export default function BatesNumberBody({
   pages,
   fonts,
+  editing,
   resolve,
 }: {
   readonly pages: readonly number[];
   readonly fonts?: ReadFontList | undefined;
+  /** The recorded settings of the Bates numbers being edited (ADR-0246 Decision 3); absent, this adds them. */
+  readonly editing?: BatesNumberSettings | undefined;
 } & DialogAnswering<BatesNumberAnswer>): ReactElement {
   const { _ } = useLingui();
-  const [prefix, setPrefix] = useState('');
-  const [suffix, setSuffix] = useState('');
-  const [start, setStart] = useState(DEFAULT_START);
-  const [digits, setDigits] = useState(DEFAULT_DIGITS);
-  const [edge, setEdge] = useState<(typeof EDGES)[number]['key']>('footer');
-  const [slot, setSlot] = useState<(typeof SLOTS)[number]['key']>('right');
-  const [family, setFamily] = useState(DEFAULT_STAMP_FAMILY);
+  const [prefix, setPrefix] = useState(editing?.prefix ?? '');
+  const [suffix, setSuffix] = useState(editing?.suffix ?? '');
+  const [start, setStart] = useState(editing === undefined ? DEFAULT_START : String(editing.start));
+  const [digits, setDigits] = useState(editing === undefined ? DEFAULT_DIGITS : String(editing.digits));
+  const [edge, setEdge] = useState<(typeof EDGES)[number]['key']>(editing?.edge ?? 'footer');
+  const [slot, setSlot] = useState<(typeof SLOTS)[number]['key']>(editing?.slot ?? 'right');
+  const [family, setFamily] = useState(editing?.family ?? DEFAULT_STAMP_FAMILY);
   const [everyPage, setEveryPage] = useState(true);
   const numbersRef = useRef<HTMLDivElement>(null);
 
@@ -172,11 +177,16 @@ export default function BatesNumberBody({
         />
       </DialogRow>
       <StampFontRow fonts={fonts} value={family} onPick={setFamily} />
-      <PageScopeChoice className="m-bates-number__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
+      {/* EDIT NAMES NO SCOPE, `WatermarkPagesBody`'s reason. */}
+      {editing === undefined ? (
+        <PageScopeChoice className="m-bates-number__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
+      ) : (
+        <p>{_(STAMP_EDIT_PAGES)}</p>
+      )}
       <Problem message={ready ? undefined : _(BATES_NUMBER_NOT_A_NUMBER)} about={{ within: numbersRef }} />
       <DialogFooter>
         <Button
-          label={BATES_NUMBER_APPLY}
+          label={editing === undefined ? BATES_NUMBER_APPLY : STAMP_EDIT_APPLY}
           variant="primary"
           disabled={!ready}
           onClick={() => {
@@ -192,8 +202,9 @@ export default function BatesNumberBody({
               edge,
               slot,
               family,
-              fontSize: Number(DEFAULT_SIZE),
-              marginPoints: Number(DEFAULT_MARGIN),
+              // THE RECORDED SIZE AND MARGIN KEPT ON EDIT: the window offers neither, so an edit must not move them.
+              fontSize: editing?.fontSize ?? Number(DEFAULT_SIZE),
+              marginPoints: editing?.marginPoints ?? Number(DEFAULT_MARGIN),
             });
           }}
         />

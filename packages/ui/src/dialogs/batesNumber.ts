@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import { BATES_NUMBER_TITLE } from '../messages/en.js';
 import { declareDialog } from '../registries/dialogs.js';
-import { BATES_NUMBER_RESULT } from './batesNumberResult.js';
+import { BATES_NUMBER_RESULT, BATES_NUMBER_SETTINGS } from './batesNumberResult.js';
 import { TARGET_PAGES } from './pageScope.js';
 
 /** The id `batesNumberCommand` opens to collect the identifier and its placement. */
@@ -24,6 +24,8 @@ export const BATES_NUMBER_DIALOG = declareDialog({
       pages: TARGET_PAGES,
       /** The fonts `app.fontFamilies` answered when the dialog opened; absent where the read failed (ADR-0235). */
       fonts: listedFontFamiliesSchema.optional(),
+      /** The recorded settings of the Bates numbers being edited; absent, the window adds them (`watermarkPages.ts`). */
+      editing: BATES_NUMBER_SETTINGS.optional(),
     })
     .strict(),
   result: BATES_NUMBER_RESULT,

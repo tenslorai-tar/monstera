@@ -628,6 +628,13 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'opened', props: { pages: [0] } },
     { state: 'filled', props: { pages: [0] }, steps: [type('Text', 'CONFIDENTIAL')] },
     { state: 'refused', props: { pages: [0] }, steps: [type('Text', 'DRAFT'), type('Opacity (%)', '150')] },
+    {
+      state: 'editing',
+      props: {
+        pages: [0],
+        editing: { text: 'CONFIDENTIAL', opacity: 0.25, rotationDegrees: 45, fontSize: 64, family: 'Helvetica', colour: [0.7529, 0, 0] },
+      },
+    },
   ],
   'dialog.header-footer': [
     { state: 'opened', props: { pages: [0] } },
@@ -636,11 +643,45 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
       props: { pages: [0] },
       steps: [type('Left', 'Quarterly report'), type('Centre', 'Confidential'), type('Right', 'Page {n} of {N}')],
     },
+    {
+      state: 'editing',
+      props: {
+        pages: [0],
+        editing: {
+          header: { left: 'Quarterly report', centre: '', right: '' },
+          footer: { left: '', centre: 'Page {n} of {N}', right: '' },
+          family: 'Helvetica',
+          fontSize: 10,
+          marginPoints: 36,
+        },
+      },
+    },
   ],
   'dialog.bates-number': [
     { state: 'opened', props: { pages: [0] } },
     { state: 'filled', props: { pages: [0] }, steps: [type('Prefix', 'CASE-'), type('Start at', '1001'), type('Digits', '6')] },
     { state: 'refused', props: { pages: [0] }, steps: [type('Digits', '20')] },
+    {
+      state: 'editing',
+      props: {
+        pages: [0],
+        editing: {
+          prefix: 'CASE-',
+          suffix: '',
+          start: 1001,
+          digits: 6,
+          edge: 'footer',
+          slot: 'right',
+          family: 'Helvetica',
+          fontSize: 9,
+          marginPoints: 36,
+        },
+      },
+    },
+  ],
+  'dialog.page-marks-notice': [
+    { state: 'none', props: { kind: 'watermark', none: true, older: 2, inline: 0 } },
+    { state: 'left', props: { kind: 'headerFooter', none: false, older: 0, inline: 3 } },
   ],
   'dialog.page-transition': [
     { state: 'opened', props: { pages: [0] } },

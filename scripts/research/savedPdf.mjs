@@ -1,6 +1,15 @@
 // @ts-check
 import { readFile } from 'node:fs/promises';
-import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream, decodePDFRawStream } from '@cantoo/pdf-lib';
+import {
+  PDFArray,
+  PDFDict,
+  PDFDocument,
+  PDFHexString,
+  PDFName,
+  PDFRawStream,
+  PDFString,
+  decodePDFRawStream,
+} from '@cantoo/pdf-lib';
 import forge from 'node-forge';
 
 /**
@@ -46,6 +55,41 @@ export async function savedContent(path, pageIndex = 0) {
     if (stream instanceof PDFRawStream) text += new TextDecoder('latin1').decode(decodePDFRawStream(stream).decode());
   }
   return text;
+}
+
+/**
+ * The page stamps of a saved file (ADR-0246), read by pdf-lib rather than by the engine that wrote them: for each page,
+ * the record of every content stream that carries Monstera's `/MonsteraMark`, with its kind and its settings parsed, and
+ * the decoded text of every stream that carries none, joined, which is the page's own content and its bracket.
+ *
+ * Throws on a page with no content stream: an empty reading here is a broken lookup, not a page with no stamps.
+ *
+ * @param {string} path
+ * @returns {Promise<{ marks: { kind: string, settings: unknown }[], own: string }[]>}
+ */
+export async function savedMarks(path) {
+  const loaded = await PDFDocument.load(await readFile(path), { updateMetadata: false, ignoreEncryption: true });
+  return loaded.getPages().map((each, at) => {
+    const contents = each.node.Contents();
+    const streams = contents instanceof PDFArray ? contents.asArray().map((ref) => loaded.context.lookup(ref)) : [contents];
+    const raw = streams.filter((stream) => stream instanceof PDFRawStream);
+    if (raw.length === 0) throw new Error(`page ${String(at + 1)} of ${path} has no content stream pdf-lib can read`);
+    /** @type {{ kind: string, settings: unknown }[]} */
+    const marks = [];
+    let own = '';
+    for (const stream of raw) {
+      const record = stream.dict.lookupMaybe(PDFName.of('MonsteraMark'), PDFDict);
+      if (record === undefined) {
+        own += new TextDecoder('latin1').decode(decodePDFRawStream(stream).decode());
+        continue;
+      }
+      const kind = record.lookupMaybe(PDFName.of('Kind'), PDFName)?.decodeText() ?? '';
+      const settings = record.lookup(PDFName.of('Settings'));
+      const text = settings instanceof PDFString || settings instanceof PDFHexString ? settings.decodeText() : null;
+      marks.push({ kind, settings: text === null ? null : JSON.parse(text) });
+    }
+    return { marks, own };
+  });
 }
 
 /**

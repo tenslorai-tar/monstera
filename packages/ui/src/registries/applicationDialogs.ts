@@ -62,6 +62,7 @@ import { OCR_OUTCOME_DIALOG } from '../dialogs/ocrOutcome.js';
 import { OPEN_FROM_URL_DIALOG } from '../dialogs/openFromUrl.js';
 import { OPTIMIZE_DIALOG } from '../dialogs/optimize.js';
 import { PAGE_BARCODES_DIALOG } from '../dialogs/pageBarcodes.js';
+import { PAGE_MARKS_NOTICE_DIALOG } from '../dialogs/pageMarksNotice.js';
 import { PAGE_TRANSITION_DIALOG } from '../dialogs/pageTransition.js';
 import { PDFA_LEVEL_DIALOG } from '../dialogs/pdfaLevel.js';
 import { PDFA_REMOVALS_DIALOG } from '../dialogs/pdfaRemovals.js';
@@ -163,6 +164,7 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   PAGE_BACKGROUND_DIALOG,
   HEADER_FOOTER_DIALOG,
   BATES_NUMBER_DIALOG,
+  PAGE_MARKS_NOTICE_DIALOG,
   PAGE_TRANSITION_DIALOG,
   RESIZE_PAGES_DIALOG,
   FLAT_FIELDS_DIALOG,

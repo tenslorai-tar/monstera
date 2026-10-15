@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { WATERMARK_PAGES_TITLE } from '../messages/en.js';
 import { declareDialog } from '../registries/dialogs.js';
 import { TARGET_PAGES } from './pageScope.js';
-import { WATERMARK_PAGES_RESULT } from './watermarkPagesResult.js';
+import { WATERMARK_PAGES_RESULT, WATERMARK_SETTINGS } from './watermarkPagesResult.js';
 
 /** The id `watermarkPagesCommand` opens to collect the text and its appearance. */
 export const WATERMARK_PAGES_DIALOG_ID = 'dialog.watermark-pages';
@@ -21,13 +21,11 @@ export const WATERMARK_PAGES_DIALOG_ID = 'dialog.watermark-pages';
  * resolves the choice and answers with the scope the command carries, so
  * nothing downstream re-derives it.
  *
- * ## No colour control, and that is the command's decision showing through
+ * ## Edit opens the same window (ADR-0246 Decision 3)
  *
- * `watermarkPagesSchema` carries no colour: a watermark is drawn in one grey at
- * an opacity, and making it configurable is a field on the command before it is
- * a control here. It arrives with Stage 3's style controls, which is where
- * every colour-bearing surface answers the question once rather than each
- * dialog answering it separately.
+ * With `editing`, the settings the engine recorded on the stamp fill the fields, and the window offers no scope: Edit
+ * redraws on every page the stamp is on, which the command took from the read, so a scope here would be a second answer
+ * to a question already answered.
  */
 export const WATERMARK_PAGES_DIALOG = declareDialog({
   id: WATERMARK_PAGES_DIALOG_ID,
@@ -38,6 +36,8 @@ export const WATERMARK_PAGES_DIALOG = declareDialog({
       pages: TARGET_PAGES,
       /** The fonts `app.fontFamilies` answered when the dialog opened; absent where the read failed (ADR-0235). */
       fonts: listedFontFamiliesSchema.optional(),
+      /** The recorded settings of the watermark being edited; absent, the window adds one. */
+      editing: WATERMARK_SETTINGS.optional(),
     })
     .strict(),
   result: WATERMARK_PAGES_RESULT,

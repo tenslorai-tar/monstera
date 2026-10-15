@@ -412,14 +412,6 @@ const replacesStampsSchema = z.literal(true).optional();
  *
  * ## What is deliberately absent
  *
- * **Colour**, and it is a decision rather than an omission. A watermark is
- * drawn at an opacity, in the one grey the kernel picks, so nothing about this
- * command can express a colour the document does not already have a meaning
- * for. Making it configurable is a second field here and a control in the
- * dialog, and it arrives with the style controls Stage 3 builds — where every
- * other colour-bearing surface will already have had to answer the same
- * question once.
- *
  * **A position.** The watermark is centred on each page's own visible box, so
  * a mixed-size document watermarks correctly with no per-page geometry
  * crossing. An offset here would be a renderer-supplied position, which

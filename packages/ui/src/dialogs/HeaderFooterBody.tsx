@@ -1,5 +1,5 @@
 import { useLingui } from '@lingui/react';
-import { STAMP_TOKENS } from '@monstera/contract';
+import { type AnnotationColour, STAMP_TOKENS } from '@monstera/contract';
 import type { ReactElement } from 'react';
 import { useRef, useState } from 'react';
 
@@ -15,6 +15,8 @@ import {
   HEADER_FOOTER_RIGHT,
   HEADER_FOOTER_SIZE,
   HEADER_FOOTER_TOKENS,
+  STAMP_EDIT_APPLY,
+  STAMP_EDIT_PAGES,
 } from '../messages/en.js';
 import { attemptProblem, useAttempt } from '../primitives/attempt.js';
 import { Button } from '../primitives/Button.js';
@@ -22,9 +24,11 @@ import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
 import { Problem } from '../primitives/Problem.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
-import type { HeaderFooterAnswer } from './headerFooterResult.js';
+import type { HeaderFooterAnswer, HeaderFooterSettings } from './headerFooterResult.js';
 import { PageScopeChoice } from './PageScopeChoice.js';
 import type { ReadFontList } from '../FontPicker.js';
+import { StampColourRow } from './StampColourRow.js';
+import { HEADER_FOOTER_STANDARD_HEX } from './stampColours.js';
 import { DEFAULT_STAMP_FAMILY, StampFontRow } from './StampFontRow.js';
 
 /** The two edges, in the order a page has them. */
@@ -89,16 +93,22 @@ const DEFAULT_MARGIN = '36';
 export default function HeaderFooterBody({
   pages,
   fonts,
+  editing,
   resolve,
 }: {
   readonly pages: readonly number[];
   readonly fonts?: ReadFontList | undefined;
+  /** The recorded settings of the headers and footers being edited (ADR-0246 Decision 3); absent, this adds them. */
+  readonly editing?: HeaderFooterSettings | undefined;
 } & DialogAnswering<HeaderFooterAnswer>): ReactElement {
   const { _ } = useLingui();
-  const [slots, setSlots] = useState<Slots>(EMPTY_SLOTS);
-  const [family, setFamily] = useState(DEFAULT_STAMP_FAMILY);
-  const [fontSize, setFontSize] = useState(DEFAULT_SIZE);
-  const [margin, setMargin] = useState(DEFAULT_MARGIN);
+  const [slots, setSlots] = useState<Slots>(
+    editing === undefined ? EMPTY_SLOTS : { header: editing.header, footer: editing.footer },
+  );
+  const [family, setFamily] = useState(editing?.family ?? DEFAULT_STAMP_FAMILY);
+  const [fontSize, setFontSize] = useState(editing === undefined ? DEFAULT_SIZE : String(editing.fontSize));
+  const [margin, setMargin] = useState(editing === undefined ? DEFAULT_MARGIN : String(editing.marginPoints));
+  const [colour, setColour] = useState<AnnotationColour | undefined>(editing?.colour);
   const [everyPage, setEveryPage] = useState(true);
 
   const size = readNumber(fontSize, DEFAULT_SIZE);
@@ -166,7 +176,13 @@ export default function HeaderFooterBody({
           />
         </DialogRow>
       </div>
-      <PageScopeChoice className="m-header-footer__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
+      <StampColourRow value={colour} onPick={setColour} standardHex={HEADER_FOOTER_STANDARD_HEX} />
+      {/* EDIT NAMES NO SCOPE, `WatermarkPagesBody`'s reason. */}
+      {editing === undefined ? (
+        <PageScopeChoice className="m-header-footer__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
+      ) : (
+        <p>{_(STAMP_EDIT_PAGES)}</p>
+      )}
       <Problem
         message={problem === undefined ? undefined : _(problem)}
         about={{ within: numbersOk ? headerRef : sizeOk ? marginRef : sizeRef }}
@@ -174,7 +190,7 @@ export default function HeaderFooterBody({
       />
       <DialogFooter>
         <Button
-          label={HEADER_FOOTER_APPLY}
+          label={editing === undefined ? HEADER_FOOTER_APPLY : STAMP_EDIT_APPLY}
           variant="primary"
           disabled={!numbersOk}
           onClick={() => {
@@ -193,6 +209,7 @@ export default function HeaderFooterBody({
               family,
               fontSize: size,
               marginPoints: inset,
+              ...(colour === undefined ? {} : { colour }),
             });
           }}
         />

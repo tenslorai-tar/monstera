@@ -12,6 +12,8 @@ import {
   type FormFieldHandle,
   type OptimizeSetting,
   type PageInsert,
+  type PageMarkKind,
+  type PageMarksRead,
   type PageSet,
   type SaveWriteCause,
   type RenderableCommand,
@@ -37,7 +39,7 @@ import type { z } from 'zod';
 
 import { isFormatted } from '../textFormatting.js';
 import { BATES_NUMBER_DIALOG_ID } from '../dialogs/batesNumber.js';
-import type { BatesNumberAnswer } from '../dialogs/batesNumberResult.js';
+import { BATES_NUMBER_RESULT, BATES_NUMBER_SETTINGS, type BatesNumberAnswer } from '../dialogs/batesNumberResult.js';
 import { COMMAND_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG_ID } from '../dialogs/commandProblem.js';
 import { fileTooLargeProblem } from '../dialogs/fileTooLarge.js';
 import type { CommandProblem } from '../dialogs/problemMessages.js';
@@ -70,7 +72,8 @@ import type { DeletePagesAnswer } from '../dialogs/deletePagesResult.js';
 import { DUPLICATE_PAGES_DIALOG_ID } from '../dialogs/duplicatePages.js';
 import { GENERATE_TOC_DIALOG_ID, GENERATE_TOC_RESULT } from '../dialogs/generateToc.js';
 import { HEADER_FOOTER_DIALOG_ID } from '../dialogs/headerFooter.js';
-import type { HeaderFooterAnswer } from '../dialogs/headerFooterResult.js';
+import { HEADER_FOOTER_RESULT, HEADER_FOOTER_SETTINGS, type HeaderFooterAnswer } from '../dialogs/headerFooterResult.js';
+import { PAGE_MARKS_NOTICE_DIALOG_ID } from '../dialogs/pageMarksNotice.js';
 import type { DuplicatePagesAnswer } from '../dialogs/duplicatePagesResult.js';
 import type { Spot } from '../accessibility/view.js';
 import { FLAT_FIELDS_DIALOG_ID } from '../dialogs/flatFields.js';
@@ -141,7 +144,11 @@ import { SIGNED_EDIT_DIALOG_ID, SIGNED_EDIT_RESULT } from '../dialogs/signedEdit
 import type { OpenedDocument } from './importMarkdown.js';
 import type { PendingRedactionOccasion } from '../dialogs/pendingRedactions.js';
 import { WATERMARK_PAGES_DIALOG_ID } from '../dialogs/watermarkPages.js';
-import type { WatermarkPagesAnswer } from '../dialogs/watermarkPagesResult.js';
+import {
+  WATERMARK_PAGES_RESULT,
+  WATERMARK_SETTINGS,
+  type WatermarkPagesAnswer,
+} from '../dialogs/watermarkPagesResult.js';
 import {
   FIND_TITLE,
   FIT_PAGE_TITLE,
@@ -163,6 +170,13 @@ import {
   RIBBON_SHARE,
   GROUP_COMBINE,
   GROUP_MARKS,
+  EDIT_BATES_COMMAND_TITLE,
+  EDIT_HEADER_FOOTER_COMMAND_TITLE,
+  EDIT_WATERMARK_COMMAND_TITLE,
+  REMOVE_BATES_COMMAND_TITLE,
+  REMOVE_HEADER_FOOTER_COMMAND_TITLE,
+  REMOVE_WATERMARK_COMMAND_TITLE,
+  RIBBON_EDIT_MARKS,
   GROUP_PAGES,
   GROUP_ROTATE,
   GROUP_TEXT,
@@ -1846,6 +1860,7 @@ export function headerFooterCommand(deps: DocumentCommandDeps): UiCommand {
         family: answer.family,
         fontSize: answer.fontSize,
         marginPoints: answer.marginPoints,
+        ...(answer.colour === undefined ? {} : { colour: answer.colour }),
       });
     },
   };
@@ -2360,9 +2375,193 @@ export function watermarkPagesCommand(deps: DocumentCommandDeps): UiCommand {
         rotationDegrees: answer.rotationDegrees,
         family: answer.family,
         fontSize: answer.fontSize,
+        ...(answer.colour === undefined ? {} : { colour: answer.colour }),
       });
     },
   };
+}
+
+/**
+ * How Edit and Remove of one kind of page stamp are told apart from the other two (ADR-0246): the window Edit reopens,
+ * the shape its recorded settings are read with, the command Edit sends, and the six commands' ids, names and places.
+ *
+ * A TABLE, so the three kinds are one rule with three rows: Edit reads, fills the window and replaces in one command;
+ * Remove reads and removes in one command; both say in words what they left. A kind written as its own pair of functions
+ * would be the place a fourth step lands in two of the three.
+ */
+interface MarkKindRow<TSettings> {
+  readonly dialog: string;
+  readonly settings: z.ZodType<TSettings>;
+  /** The dialog's answer, as Edit's command: the add command with the read's pages and `replace` (Decision 3). */
+  readonly edit: (answer: unknown, pages: PageSet) => DispatchableCommand | undefined;
+  readonly editId: string;
+  readonly editTitle: MessageKey;
+  readonly removeId: string;
+  readonly removeTitle: MessageKey;
+  readonly icon: IconName;
+  /** Where Edit sits in Organize › Marks' *Edit marks* menu; Remove sits after it. */
+  readonly order: number;
+}
+
+const MARK_KINDS: Readonly<Record<PageMarkKind, MarkKindRow<unknown>>> = {
+  watermark: {
+    dialog: WATERMARK_PAGES_DIALOG_ID,
+    settings: WATERMARK_SETTINGS,
+    edit: (answer, pages) => {
+      const read = WATERMARK_PAGES_RESULT.safeParse(answer);
+      if (!read.success) return undefined;
+      const { pages: _scope, ...settings } = read.data;
+      return { kind: 'watermarkPages', ...settings, pages, replace: true };
+    },
+    editId: 'document.edit-watermark',
+    editTitle: EDIT_WATERMARK_COMMAND_TITLE,
+    removeId: 'document.remove-watermark',
+    removeTitle: REMOVE_WATERMARK_COMMAND_TITLE,
+    icon: 'Droplet',
+    order: 10,
+  },
+  headerFooter: {
+    dialog: HEADER_FOOTER_DIALOG_ID,
+    settings: HEADER_FOOTER_SETTINGS,
+    edit: (answer, pages) => {
+      const read = HEADER_FOOTER_RESULT.safeParse(answer);
+      if (!read.success) return undefined;
+      const { pages: _scope, ...settings } = read.data;
+      return { kind: 'headerFooterPages', ...settings, pages, replace: true };
+    },
+    editId: 'document.edit-header-footer',
+    editTitle: EDIT_HEADER_FOOTER_COMMAND_TITLE,
+    removeId: 'document.remove-header-footer',
+    removeTitle: REMOVE_HEADER_FOOTER_COMMAND_TITLE,
+    icon: 'PanelTop',
+    order: 20,
+  },
+  bates: {
+    dialog: BATES_NUMBER_DIALOG_ID,
+    settings: BATES_NUMBER_SETTINGS,
+    edit: (answer, pages) => {
+      const read = BATES_NUMBER_RESULT.safeParse(answer);
+      if (!read.success) return undefined;
+      const { pages: _scope, ...settings } = read.data;
+      return { kind: 'batesNumberPages', ...settings, pages, replace: true };
+    },
+    editId: 'document.edit-bates',
+    editTitle: EDIT_BATES_COMMAND_TITLE,
+    removeId: 'document.remove-bates',
+    removeTitle: REMOVE_BATES_COMMAND_TITLE,
+    icon: 'Hash',
+    order: 30,
+  },
+};
+
+/**
+ * Where each kind of page stamp is, or `undefined` once a refusal has been said: `document.pageMarks` (ADR-0246
+ * Decision 2).
+ */
+async function readPageMarks(deps: DocumentCommandDeps, docId: DocId): Promise<PageMarksRead | undefined> {
+  const answer = await deps.client['document.pageMarks']({ docId });
+  if (!answer.ok) {
+    reportProblem(deps, answer.error);
+    return undefined;
+  }
+  return answer.value.marks;
+}
+
+/**
+ * The settings Monstera recorded on a kind's stamps, read with the window's own shape, or `undefined` where none were
+ * recorded or the record is not one this version can read: the window then opens on its defaults, and the redraw still
+ * replaces every stamp of the kind. A record is the document's content, so one that does not parse is an answer, not
+ * a fault.
+ */
+function recordedSettingsOf<TSettings>(row: MarkKindRow<TSettings>, recorded: string | null): TSettings | undefined {
+  if (recorded === null) return undefined;
+  let value: unknown;
+  try {
+    value = JSON.parse(recorded);
+  } catch (error) {
+    if (error instanceof SyntaxError) return undefined;
+    throw error;
+  }
+  const read = row.settings.safeParse(value);
+  return read.success ? read.data : undefined;
+}
+
+/**
+ * Says what a kind's Edit or Remove did not reach (ADR-0246 Decisions 5 and 6): none of the kind at all, another
+ * program's mark inside a page's own content, or an older Monstera's stamp. Silent when there is nothing to say.
+ */
+function tellLeftMarks(deps: DocumentCommandDeps, kind: PageMarkKind, marks: PageMarksRead): void {
+  const none = marks[kind].pages === null;
+  const { inline } = marks[kind];
+  if (!none && inline === 0 && marks.older === 0) return;
+  void deps.ask(PAGE_MARKS_NOTICE_DIALOG_ID, { kind, none, older: marks.older, inline });
+}
+
+/**
+ * Organize › Marks › *Edit marks* › Edit watermark…, and its siblings for headers and footers and Bates numbers
+ * (ADR-0246 Decision 3): the add window reopened on the settings the stamp recorded, and its answer sent as the add
+ * command with `replace`, on every page the stamp is on, so the change is one undo step.
+ */
+export function editPageMarksCommand(kind: PageMarkKind): (deps: DocumentCommandDeps) => UiCommand {
+  const row = MARK_KINDS[kind];
+  return (deps) => ({
+    id: row.editId,
+    feedback: VISIBLE,
+    icon: row.icon,
+    title: row.editTitle,
+    placements: [
+      { surface: 'ribbon', section: 'organize', group: GROUP_MARKS, order: 60 + row.order, menu: RIBBON_EDIT_MARKS },
+    ],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      const pages = targetPages(context);
+      if (context.docId === undefined || pages.length === 0) return;
+      const docId = context.docId;
+      const marks = await readPageMarks(deps, docId);
+      if (marks === undefined) return;
+      const found = marks[kind].pages;
+      if (found === null) {
+        tellLeftMarks(deps, kind, marks);
+        return;
+      }
+      const editing = recordedSettingsOf(row, marks[kind].settings);
+      const fonts = await fontListOf(deps.client);
+      const answer = await deps.ask(row.dialog, { pages: [...pages], fonts, ...(editing === undefined ? {} : { editing }) });
+      if (answer === undefined) return;
+      const command = row.edit(answer, found);
+      if (command === undefined) return;
+      if (await applyDocumentCommand(deps, docId, command)) tellLeftMarks(deps, kind, marks);
+    },
+  });
+}
+
+/**
+ * Organize › Marks › *Edit marks* › Remove watermark, and its siblings (ADR-0246 Decision 4): every stamp of the kind
+ * that can be removed, off every page, in one command and so one undo step. Nothing is asked first: Undo takes it back.
+ */
+export function removePageMarksCommand(kind: PageMarkKind): (deps: DocumentCommandDeps) => UiCommand {
+  const row = MARK_KINDS[kind];
+  return (deps) => ({
+    id: row.removeId,
+    feedback: VISIBLE,
+    icon: 'Eraser',
+    title: row.removeTitle,
+    placements: [
+      { surface: 'ribbon', section: 'organize', group: GROUP_MARKS, order: 61 + row.order, menu: RIBBON_EDIT_MARKS },
+    ],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined) return;
+      const docId = context.docId;
+      const marks = await readPageMarks(deps, docId);
+      if (marks === undefined) return;
+      if (marks[kind].pages === null) {
+        tellLeftMarks(deps, kind, marks);
+        return;
+      }
+      if (await applyDocumentCommand(deps, docId, { kind: 'removePageMarks', marks: kind })) tellLeftMarks(deps, kind, marks);
+    },
+  });
 }
 
 /**
