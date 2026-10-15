@@ -94,7 +94,8 @@ for (const fullPage of [false, true]) {
           return agrees ? 'agrees' : `${title}: ${JSON.stringify(state)}`;
         })
         .toBe('agrees');
-      // AND THE TOOL IS PUT DOWN when Organize is chosen again, so the next control starts from the grid.
+      // THE NEXT CONTROL STARTS FROM THE GRID: the loop's head chooses Organize and waits for it. Whether an armed tool is
+      // put down by that choice is asserted nowhere here (audit IIIIIIII-11).
     }
   });
 }
