@@ -125,7 +125,7 @@ const { page, output, open, section, step, finish } = walk;
 const { editor, panel, ensureEditText, clickPage, chooseFont, savedCopy } = textSteps(walk);
 
 // LITERAL SPECIFIERS, so `proof:electronimports` can read what this loads.
-const { buildProducerSubsetPdf } = await import('../../packages/kernel/dist/producerSubsetFixture.js');
+const { buildProducerSubsetPdf, PRODUCER_MARK } = await import('../../packages/kernel/dist/producerSubsetFixture.js');
 const { fontsDirectory } = await import('../provision/fonts.mjs');
 const fonts = fontsDirectory(root);
 const serif = join(output, 'serif-subsets.pdf');
@@ -205,7 +205,8 @@ async function paragraphBaselines(path) {
 }
 
 await step('1. a serif page with a bold lead-in keeps its look while the block is open, and after an edit', async () => {
-  await section('Edit');
+  // OPENED FIRST: the start screen has no Sections rail, so a section chosen before a document is open waits 30 s for a
+  // control that is not there (2026-10-15 screenshot of this step: the start screen, "Nothing opened yet").
   await open(compactSerif);
   await section('Edit');
   await openBlock(SERIF.lead);
@@ -235,8 +236,10 @@ await step('2. delete only, on a word processor’s subsets: Backspace takes let
   for (let at = 0; at < 4; at += 1) await page.keyboard.press('Backspace');
   expect(await problems()).toStrictEqual([]);
   await commit();
+  // THE SUPERSCRIPT IS IN THE SENTENCE: the fixture's line is "...every sample", the raised PRODUCER_MARK, then " tested.",
+  // so four Backspaces leave the mark before "tes" and a reader reports it there, with the gap its rise puts around it.
   const words = ((await savedWords(await savedCopy('02-deleted.pdf')))[0] ?? '').trim();
-  expect(words.endsWith('sample tes'), words).toBe(true);
+  expect(words.replaceAll(/\s+/gu, ' ').endsWith(`sample ${PRODUCER_MARK} tes`), words).toBe(true);
   return { words };
 });
 
@@ -246,7 +249,7 @@ await step('3. typing letters the font has: no refusal, the words saved', async 
   expect(await problems()).toStrictEqual([]);
   await commit();
   const words = (await savedWords(await savedCopy('03-typed.pdf')))[0] ?? '';
-  expect(words).toContain('sample tes test');
+  expect(words.replaceAll(/\s+/gu, ' ')).toContain(`sample ${PRODUCER_MARK} tes test`);
   return { words };
 });
 
