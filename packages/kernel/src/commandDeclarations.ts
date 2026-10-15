@@ -675,6 +675,24 @@ const declarations = {
     asset: 'none',
     purpose: 'ordinary',
   },
+  removePageMarks: {
+    kind: 'removePageMarks',
+    display: 'image',
+    // THE STAMPS' WRITER (ADR-0246): it removes what that writer appended.
+    writer: 'mupdf',
+    // A CHECKPOINT, for the stamps' reason: the prior state is the content arrays of every page a stamp was on.
+    invertible: false,
+    undo: 'checkpoint',
+    // Removing the same kind from the same document leaves the same arrays: nothing is minted or read from a clock.
+    reproducible: true,
+    replay: 'reapply-intent',
+    // Self-contained, as the stamps are: it names a kind, found wherever the stamps carry it.
+    sources: 'none',
+    targets: 'none',
+    reads: 'none',
+    asset: 'none',
+    purpose: 'ordinary',
+  },
   setPageTransition: {
     kind: 'setPageTransition',
     // NOTHING DRAWN: `/Trans` is read by a presentation viewer, and no surface here draws it.

@@ -32,16 +32,49 @@ import type { SetPiece } from './textBoxStyle.js';
 /** One drawing operator, or one that names a resource only {@link PageStamps.finish} gives a name. */
 type Op = string | { readonly face: string; readonly size: string } | { readonly opacity: number };
 
+/**
+ * What a stamp's stream is, in Monstera's record of it (ADR-0246 Decision 1): the kind a person edits and removes as one,
+ * and the settings that drew it, as JSON, for Edit to fill its window with.
+ */
+export interface StampRecord {
+  readonly kind: StampKind;
+  readonly settings: string;
+}
+
+/** The three kinds of stamp, as the record and `removePageMarks` name them. */
+export type StampKind = 'watermark' | 'headerFooter' | 'bates';
+
+/**
+ * The marked-content artifact subtype a drawn item carries (ADR-0246 Decision 1): PDF's `/Pagination` artifacts, with
+ * PDF 2.0's `/Bates`. A header or footer item takes the edge it sits on.
+ */
+export type ArtifactSubtype = 'Watermark' | 'Header' | 'Footer' | 'Bates';
+
+/** The record's key in a stamp stream's dictionary. */
+export const STAMP_RECORD_KEY = 'MonsteraMark';
+
+/** The PDF name each kind is recorded under. */
+export const STAMP_KIND_NAMES: Readonly<Record<StampKind, string>> = { watermark: 'Watermark', headerFooter: 'HeaderFooter', bates: 'Bates' };
+
+/** A colour as the content stream's `rg` takes it, each part 0 to 1. */
+export interface StampColour {
+  readonly r: number;
+  readonly g: number;
+  readonly b: number;
+}
+
 export class PageStamps {
   readonly #document: PDFDocument;
   readonly #family: string;
+  readonly #record: StampRecord;
   readonly #setters: ReturnType<typeof settersFor>;
   /** Each page's drawing, as operators and the two resources it names, which only `finish` can name. */
   readonly #pages = new Map<number, { readonly ops: Op[]; readonly faces: Set<string>; readonly opacities: Set<number> }>();
 
-  constructor(document: PDFDocument, family: string) {
+  constructor(document: PDFDocument, family: string, record: StampRecord) {
     this.#document = document;
     this.#family = family;
+    this.#record = record;
     this.#setters = settersFor(document);
   }
 
@@ -77,13 +110,21 @@ export class PageStamps {
 
   /**
    * Draws set words on page `index`, starting at `x` from the displayed page's left with the baseline `fromTop` from its
-   * top, turned `turn` degrees counter-clockwise as the reader sees it, in `grey` at `opacity`.
+   * top, turned `turn` degrees counter-clockwise as the reader sees it, in `colour` at `opacity`, marked as the
+   * `artifact` it is (ADR-0246).
    */
   draw(
     index: number,
     set: { readonly pieces: readonly SetPiece[] },
     size: number,
-    place: { readonly x: number; readonly fromTop: number; readonly turn: number; readonly grey: number; readonly opacity: number },
+    place: {
+      readonly x: number;
+      readonly fromTop: number;
+      readonly turn: number;
+      readonly colour: StampColour;
+      readonly opacity: number;
+      readonly artifact: ArtifactSubtype;
+    },
   ): void {
     if (set.pieces.every((piece) => piece.text.trim() === '')) return;
     const frame = this.frame(index);
@@ -94,13 +135,15 @@ export class PageStamps {
     const drawn = this.#pages.get(index) ?? { ops: [], faces: new Set<string>(), opacities: new Set<number>() };
     this.#pages.set(index, drawn);
 
-    drawn.ops.push('q');
+    // MARKED AS WHAT IT IS (ADR-0246 Decision 1): the PDF world's own convention, so another reader knows it is not the
+    // page's content and Monstera can find it again.
+    drawn.ops.push(`/Artifact <</Type /Pagination /Subtype /${place.artifact}>> BDC`, 'q');
     if (place.opacity < 1) {
       drawn.opacities.add(place.opacity);
       drawn.ops.push({ opacity: place.opacity });
     }
     drawn.ops.push(
-      `${scale(place.grey)} g`,
+      `${scale(place.colour.r)} ${scale(place.colour.g)} ${scale(place.colour.b)} rg`,
       'BT',
       `${scale(Math.cos(radians))} ${scale(Math.sin(radians))} ${scale(-Math.sin(radians))} ${scale(Math.cos(radians))} ${coordinate(at.x)} ${coordinate(at.y)} Tm`,
     );
@@ -109,7 +152,7 @@ export class PageStamps {
       drawn.faces.add(piece.face);
       drawn.ops.push({ face: piece.face, size: coordinate(size) }, piece.show);
     }
-    drawn.ops.push('ET', 'Q');
+    drawn.ops.push('ET', 'Q', 'EMC');
   }
 
   /**
@@ -169,7 +212,13 @@ export class PageStamps {
         .join('\n');
       // THE PAGE'S OWN CONTENT BRACKETED, so nothing it left set reaches the stamp; an empty page has nothing to bracket.
       wrapContents(document, object, 'q\n');
-      const stamp = document.addStream(new TextEncoder().encode(`\n${content}\n`), document.newDictionary());
+      // MONSTERA'S RECORD ON THE STREAM (ADR-0246 Decision 1): the kind and the settings that drew it, where the drawing is.
+      const dictionary = document.newDictionary();
+      const record = document.newDictionary();
+      record.put('Kind', document.newName(STAMP_KIND_NAMES[this.#record.kind]));
+      record.put('Settings', document.newString(this.#record.settings));
+      dictionary.put(STAMP_RECORD_KEY, record);
+      const stamp = document.addStream(new TextEncoder().encode(`\n${content}\n`), dictionary);
       const existing = object.get('Contents');
       const list = document.newArray();
       if (existing.isArray()) for (let at = 0; at < existing.length; at += 1) list.push(existing.get(at));

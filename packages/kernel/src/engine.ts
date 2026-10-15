@@ -26,6 +26,14 @@ export {
   invertHeaderFooterPages,
   resolveStampTokens,
 } from './pageStamp.js';
+// THEIR MARKS, found and removed (ADR-0246), beside them for the same reason.
+export {
+  applyRemovePageMarks,
+  captureRemovePageMarks,
+  invertRemovePageMarks,
+  readPageMarks,
+  type PageMarks,
+} from './pageMarks.js';
 export { readPageFills } from './pageFills.js';
 export { readPageRewrite } from './pageRewrite.js';
 export { readPageWordBoxes } from './wordBoxes.js';

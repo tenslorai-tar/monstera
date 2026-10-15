@@ -134,6 +134,7 @@ import {
   invertBatesNumberPages,
   invertHeaderFooterPages,
 } from './pageStamp.js';
+import { applyRemovePageMarks, captureRemovePageMarks, invertRemovePageMarks } from './pageMarks.js';
 import { applyWatermarkPages, captureWatermarkPages, invertWatermarkPages } from './pageWatermark.js';
 import { applyEnhancePages, captureEnhancePages, invertEnhancePages } from './pageEnhance.js';
 import { applyStraightenScans, captureStraightenScans, invertStraightenScans } from './pageScan.js';
@@ -270,6 +271,13 @@ export const mupdfSpecs = {
     apply: applyBatesNumberPages,
     capture: captureBatesNumberPages,
     invert: invertBatesNumberPages,
+  },
+  // THEIR REMOVAL (ADR-0246), a checkpoint for the same reason.
+  removePageMarks: {
+    ...declaredCommands.removePageMarks,
+    apply: applyRemovePageMarks,
+    capture: captureRemovePageMarks,
+    invert: invertRemovePageMarks,
   },
   // THE FIRST COMMAND THAT REWRITES AN IMAGE rather than a page attribute or a
   // content stream. Its writer is MuPDF for the same reason `deskewPages`' is: the

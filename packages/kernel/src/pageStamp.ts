@@ -3,6 +3,7 @@ import { STAMP_TOKENS } from '@monstera/contract/host';
 
 import type { Apply, Capture, Invert } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
+import { recordedSettings, removeMarks } from './pageMarks.js';
 import { pageInDocument, pagesOf } from './pageScope.js';
 import { PageStamps } from './pageStampDraw.js';
 
@@ -146,7 +147,10 @@ export const applyHeaderFooterPages: Apply<'mupdf', 'headerFooterPages'> = (sess
     // a command naming one page this document does not have changes nothing.
     for (const page of targets) pageInDocument(page, total);
 
-    const stamps = new PageStamps(document, command.family);
+    const stamps = new PageStamps(document, command.family, { kind: 'headerFooter', settings: recordedSettings(command) });
+    // EDIT (ADR-0246 Decision 3), in the same command so one undo restores what it replaced.
+    if (command.replace === true) removeMarks(document, 'headerFooter');
+    const [r, g, b] = command.colour ?? [STAMP_BLACK, STAMP_BLACK, STAMP_BLACK];
     for (const index of targets) {
       // THE PAGE AS THE READER SEES IT: its displayed size, and the way from a point on it to user space (CR-COR-01).
       const { width, height } = stamps.frame(index).viewport;
@@ -162,7 +166,14 @@ export const applyHeaderFooterPages: Apply<'mupdf', 'headerFooterPages'> = (sess
           // defect a single-page fixture cannot see.
           const set = stamps.set(resolveStampTokens(template, index + 1, total), command.fontSize);
           const x = horizontalOrigin(slot, set.width, { width, margin: command.marginPoints });
-          stamps.draw(index, set, command.fontSize, { x, fromTop, turn: 0, grey: STAMP_BLACK, opacity: 1 });
+          stamps.draw(index, set, command.fontSize, {
+            x,
+            fromTop,
+            turn: 0,
+            colour: { r, g, b },
+            opacity: 1,
+            artifact: edge === 'header' ? 'Header' : 'Footer',
+          });
         }
       }
     }
@@ -275,7 +286,9 @@ export const applyBatesNumberPages: Apply<'mupdf', 'batesNumberPages'> = (sessio
     const targets = pagesOf(command.pages, total);
     for (const page of targets) pageInDocument(page, total);
 
-    const stamps = new PageStamps(document, command.family);
+    const stamps = new PageStamps(document, command.family, { kind: 'bates', settings: recordedSettings(command) });
+    // EDIT (ADR-0246 Decision 3), in the same command so one undo restores what it replaced.
+    if (command.replace === true) removeMarks(document, 'bates');
     for (const [position, index] of targets.entries()) {
       const { width, height } = stamps.frame(index).viewport;
 
@@ -284,7 +297,14 @@ export const applyBatesNumberPages: Apply<'mupdf', 'batesNumberPages'> = (sessio
       const set = stamps.set(batesIdentifier(command, command.start + position), command.fontSize);
       const x = horizontalOrigin(command.slot, set.width, { width, margin: command.marginPoints });
       const fromTop = verticalOrigin(command.edge, { height, margin: command.marginPoints });
-      stamps.draw(index, set, command.fontSize, { x, fromTop, turn: 0, grey: STAMP_BLACK, opacity: 1 });
+      stamps.draw(index, set, command.fontSize, {
+        x,
+        fromTop,
+        turn: 0,
+        colour: { r: STAMP_BLACK, g: STAMP_BLACK, b: STAMP_BLACK },
+        opacity: 1,
+        artifact: 'Bates',
+      });
     }
     stamps.finish();
   });

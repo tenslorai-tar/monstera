@@ -94,6 +94,7 @@ import {
   watermarkPagesSchema,
   headerFooterPagesSchema,
   batesNumberPagesSchema,
+  removePageMarksSchema,
   setPageBackgroundSchema,
   insertImagePageSchema,
   createFormFieldSchema,
@@ -1193,6 +1194,8 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   watermarkPagesSchema,
   headerFooterPagesSchema,
   batesNumberPagesSchema,
+  // ITS REMOVAL, the same writer's (ADR-0246).
+  removePageMarksSchema,
   enhancePagesSchema,
   straightenScansSchema,
   mergeDocumentSchema,

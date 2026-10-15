@@ -1,5 +1,6 @@
 import type { Apply, Capture, Invert } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
+import { recordedSettings, removeMarks } from './pageMarks.js';
 import { pageInDocument, pagesOf } from './pageScope.js';
 import { PageStamps } from './pageStampDraw.js';
 
@@ -11,7 +12,8 @@ import { PageStamps } from './pageStampDraw.js';
  */
 
 /**
- * The colour every watermark is drawn in, and there is deliberately only one.
+ * The colour a watermark is drawn in where the command names none: the one colour every watermark had before ADR-0246
+ * gave it a choice.
  *
  * A mid grey reads against white paper and against a dark scan, and it is not a
  * design token: tokens govern **components**, and this is content written into
@@ -84,7 +86,10 @@ export const applyWatermarkPages: Apply<'mupdf', 'watermarkPages'> = (session, c
     const targets = pagesOf(command.pages, total);
     for (const page of targets) pageInDocument(page, total);
 
-    const stamps = new PageStamps(document, command.family);
+    const stamps = new PageStamps(document, command.family, { kind: 'watermark', settings: recordedSettings(command) });
+    // EDIT (ADR-0246 Decision 3): the watermarks already there go in the same command, so one undo restores them.
+    if (command.replace === true) removeMarks(document, 'watermark');
+    const [r, g, b] = command.colour ?? [WATERMARK_GREY, WATERMARK_GREY, WATERMARK_GREY];
     const set = stamps.set(command.text, command.fontSize);
     const radians = (command.rotationDegrees * Math.PI) / 180;
     const halfWidth = set.width / 2;
@@ -101,8 +106,9 @@ export const applyWatermarkPages: Apply<'mupdf', 'watermarkPages'> = (session, c
         x: width / 2 - offsetX,
         fromTop: height / 2 + offsetY,
         turn: command.rotationDegrees,
-        grey: WATERMARK_GREY,
+        colour: { r, g, b },
         opacity: command.opacity,
+        artifact: 'Watermark',
       });
     }
     stamps.finish();

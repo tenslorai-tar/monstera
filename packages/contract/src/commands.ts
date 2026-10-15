@@ -363,6 +363,35 @@ export const annotationFamilySchema = z.string().min(1).max(MAX_FONT_FAMILY_NAME
 export const STAMP_FAMILY_DEFAULT = 'Helvetica';
 
 /**
+ * A colour an annotation is drawn in, as the three components `/C` holds.
+ *
+ * A tuple rather than a hex string, because that is what the format stores and
+ * what MuPDF's `setColor` takes — a string here would be parsed at both ends,
+ * which is two opinions about a notation neither of them owns. Components run
+ * 0 to 1, as PDF's DeviceRGB does, not 0 to 255.
+ *
+ * A document value rather than chrome, so it is exempt from the design-token
+ * rule by that rule's own words (`docs/ARCHITECTURE.md` §10.2 names *a
+ * user-chosen annotation color* as genuinely dynamic). Declared ahead of the page
+ * stamps, which take it for their colour too (ADR-0246 Decision 7).
+ */
+export const annotationColourSchema = z.tuple([
+  z.number().min(0).max(1),
+  z.number().min(0).max(1),
+  z.number().min(0).max(1),
+]);
+
+/** An annotation's colour. See {@link annotationColourSchema}. */
+export type AnnotationColour = z.infer<typeof annotationColourSchema>;
+
+/**
+ * Whether a stamp command REPLACES the stamps of its kind already on the pages (ADR-0246 Decision 3): Edit. Before it
+ * draws, every removable stamp of its kind is taken off every page, in the same command, so one undo restores both.
+ * Left out, a stamp is added beside any already there, as before.
+ */
+const replacesStampsSchema = z.literal(true).optional();
+
+/**
  * Draw a text watermark across pages.
  *
  * **The first command routed to a byte-image writer**
@@ -416,6 +445,9 @@ export const watermarkPagesSchema = z.object({
   fontSize: z.number().positive().max(1000),
   /** The family the text is set in, any the font picker lists (ADR-0235). */
   family: annotationFamilySchema,
+  /** The colour it is drawn in; left out, the mid grey every watermark was before ADR-0246. */
+  colour: annotationColourSchema.optional(),
+  replace: replacesStampsSchema,
 }).strict();
 
 /**
@@ -489,6 +521,9 @@ export const headerFooterPagesSchema = z.object({
    * turned ninety degrees. Bounded so a margin cannot push the text off a page.
    */
   marginPoints: z.number().nonnegative().max(500),
+  /** The colour it is drawn in; left out, black, as before ADR-0246. */
+  colour: annotationColourSchema.optional(),
+  replace: replacesStampsSchema,
 }).strict();
 
 /**
@@ -537,6 +572,25 @@ export const batesNumberPagesSchema = z.object({
   family: annotationFamilySchema,
   /** How far in from the page's edge, in points. */
   marginPoints: z.number().nonnegative().max(500),
+  replace: replacesStampsSchema,
+}).strict();
+
+/** The three kinds of page stamp a person edits and removes as one (ADR-0246). */
+export const pageMarkKindSchema = z.enum(['watermark', 'headerFooter', 'bates']);
+
+/** See {@link pageMarkKindSchema}. */
+export type PageMarkKind = z.infer<typeof pageMarkKindSchema>;
+
+/**
+ * Remove every stamp of one kind from every page (ADR-0246 Decision 4).
+ *
+ * Self-contained, as the stamps are: it names a kind and no page, no object and no version, because what it removes is
+ * found by the record and the artifact convention each stamp carries, wherever the stamp is. Only a whole appended
+ * stream is removed (Decision 5); a stamp an older Monstera wrote without a record is left (Decision 6).
+ */
+export const removePageMarksSchema = z.object({
+  kind: z.literal('removePageMarks'),
+  marks: pageMarkKindSchema,
 }).strict();
 
 /**
@@ -1464,27 +1518,6 @@ export const ocrPageSchema = z.object({
  * this one is rejected before a command exists — and the difference between the
  * two is stated here so the weaker one is not read as the same guarantee.
  */
-
-/**
- * A colour an annotation is drawn in, as the three components `/C` holds.
- *
- * A tuple rather than a hex string, because that is what the format stores and
- * what MuPDF's `setColor` takes — a string here would be parsed at both ends,
- * which is two opinions about a notation neither of them owns. Components run
- * 0 to 1, as PDF's DeviceRGB does, not 0 to 255.
- *
- * A document value rather than chrome, so it is exempt from the design-token
- * rule by that rule's own words (`docs/ARCHITECTURE.md` §10.2 names *a
- * user-chosen annotation color* as genuinely dynamic).
- */
-export const annotationColourSchema = z.tuple([
-  z.number().min(0).max(1),
-  z.number().min(0).max(1),
-  z.number().min(0).max(1),
-]);
-
-/** An annotation's colour. See {@link annotationColourSchema}. */
-export type AnnotationColour = z.infer<typeof annotationColourSchema>;
 
 /** The line pitch a text box may be set to, and the margin it may keep (ADR-0211): defined in `@monstera/shared`, named here too. */
 export { DEFAULT_TEXT_LINE_HEIGHT, MAX_TEXT_LINE_HEIGHT, MAX_TEXT_PADDING, MIN_TEXT_LINE_HEIGHT };
@@ -6829,6 +6862,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   watermarkPagesSchema,
   headerFooterPagesSchema,
   batesNumberPagesSchema,
+  removePageMarksSchema,
   setPageTransitionSchema,
   setPageBackgroundSchema,
   resizePagesSchema,
@@ -6919,6 +6953,7 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   watermarkPagesSchema,
   headerFooterPagesSchema,
   batesNumberPagesSchema,
+  removePageMarksSchema,
   setPageTransitionSchema,
   setPageBackgroundSchema,
   resizePagesSchema,

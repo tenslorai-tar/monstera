@@ -241,6 +241,8 @@ export interface CommandPrior {
   readonly headerFooterPages: never;
   /** **`never`**, for {@link watermarkPages}' reason — this draws onto pages too. */
   readonly batesNumberPages: never;
+  /** **`never`**: it takes the stamps off, and their prior state is the pages' content arrays (ADR-0246). */
+  readonly removePageMarks: never;
   /**
    * **`never`**, and this one changes the content stream at its *front* rather
    * than its end — which makes no difference to the argument: the prior state
