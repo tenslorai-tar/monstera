@@ -7,6 +7,7 @@ import {
   describePreloadError,
   describeRenderProcessGone,
   describeUnresponsive,
+  shellEndedHost,
 } from './shellFailure.js';
 
 /**
@@ -99,6 +100,8 @@ describe('shell failure messages', () => {
       ['engine-host-gone', describeEngineHostGone({ code: 'connection-lost', detail: 'x' }).event],
       // A HOST WE CLOSED is filed apart from one that died (the owner's Part 7 A): a check that no host died reads one.
       ['engine-host-closed', describeEngineHostGone({ code: 'shutdown', detail: 'x' }).event],
+      // A HOST WE REFUSED (GGGGGGGG-4) is neither: it was filed as closed, which read as nothing wrong.
+      ['engine-host-refused', describeEngineHostGone({ code: 'refused', detail: 'x' }).event],
     ];
 
     for (const [expected, actual] of cases) expect(actual).toBe(expected);
@@ -112,7 +115,7 @@ describe('shell failure messages', () => {
     // it did: `describeEngineHostGone` had no row, and its label was pinned
     // only by `contract.proof.mjs`'s IIII-1 cases, in another file by another
     // mechanism. A literal is what a shrinker has to touch separately.
-    expect(cases).toHaveLength(6);
+    expect(cases).toHaveLength(7);
   });
 
   it('every ShellFailureEvent has a message writer, or is deliberately built inline', () => {
@@ -131,12 +134,23 @@ describe('shell failure messages', () => {
       'unresponsive',
       'engine-host-gone',
       'engine-host-closed',
+      'engine-host-refused',
     ];
 
-    // Seven lifecycle events: a type cannot be counted at run time, so this is
+    // Eight lifecycle events: a type cannot be counted at run time, so this is
     // the anchor, and adding another without deciding which list it belongs in
     // reddens here rather than passing in silence.
-    expect([...written, ...inlineOnly]).toHaveLength(7);
-    expect(new Set([...written, ...inlineOnly]).size).toBe(7);
+    expect([...written, ...inlineOnly]).toHaveLength(8);
+    expect(new Set([...written, ...inlineOnly]).size).toBe(8);
+  });
+
+  it('the shell ended a host it closed or refused, and not one that died (GGGGGGGG-4)', () => {
+    expect(shellEndedHost({ code: 'shutdown', detail: 'x' })).toBe(true);
+    expect(shellEndedHost({ code: 'refused', detail: 'not contained' })).toBe(true);
+    // CONTROL: a death is not the shell's ending, so it is rebuilt for and counted.
+    expect(shellEndedHost({ code: 'connection-lost', detail: 'x' })).toBe(false);
+    // AND THE REFUSAL SAYS SO, rather than the close's "nothing here is a fault".
+    expect(describeEngineHostGone({ code: 'refused', detail: 'x' }).detail).toContain('We refused this host');
+    expect(describeEngineHostGone({ code: 'refused', detail: 'x' }).detail).not.toContain('nothing here is a fault');
   });
 });

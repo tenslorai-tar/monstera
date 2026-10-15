@@ -109,6 +109,12 @@ export type ShellFailureEvent =
    */
   | 'engine-host-closed'
   /**
+   * An engine host this shell started and then REFUSED and closed: not contained, or its area could not be made (the
+   * stage audit's GGGGGGGG-4). Its own event, because it is neither of the two above: the shell ended it on purpose, and
+   * the purpose was a fault. Filed as `engine-host-closed` from f865a0ea to here, which read as nothing wrong.
+   */
+  | 'engine-host-refused'
+  /**
    * Available memory fell below the shell's line (run 4 item 13e): which hosts were stopped and which were kept because
    * they were working. Its own event, so a person's report shows the application answered a low reading.
    */
@@ -266,23 +272,39 @@ export function describeChildProcessGone(details: {
  * unchecked spelling test.** `proof:contract` holds the pair that proves it —
  * the wrong code is refused, and the right one still compiles.
  */
-/** Which event a host's ending is filed under: closed on purpose, or gone. The one decision, for every engine host. */
-export function engineHostEndingEvent(termination: HostTermination): 'engine-host-gone' | 'engine-host-closed' {
-  return termination.code === 'shutdown' ? 'engine-host-closed' : 'engine-host-gone';
+/**
+ * Which event a host's ending is filed under: closed on purpose, refused, or gone. The one decision, for every engine
+ * host.
+ */
+export function engineHostEndingEvent(termination: HostTermination): 'engine-host-gone' | 'engine-host-closed' | 'engine-host-refused' {
+  if (termination.code === 'shutdown') return 'engine-host-closed';
+  if (termination.code === 'refused') return 'engine-host-refused';
+  return 'engine-host-gone';
+}
+
+/**
+ * Whether the SHELL ended this host, closed or refused: then nothing is rebuilt for it and it counts against no
+ * document (`engineSessions.ts`). A refusal is filed apart from a close, and is not a rebuild either: the host that
+ * would be built is refused for the same reason, so rebuilding for it would loop.
+ */
+export function shellEndedHost(termination: HostTermination): boolean {
+  return engineHostEndingEvent(termination) !== 'engine-host-gone';
 }
 
 export function describeEngineHostGone(termination: HostTermination): ShellFailure {
-  const deliberate = engineHostEndingEvent(termination) === 'engine-host-closed';
+  const event = engineHostEndingEvent(termination);
   return {
-    event: engineHostEndingEvent(termination),
+    event,
     detail:
       `code=${termination.code} ${termination.detail}. ` +
-      (deliberate
+      (event === 'engine-host-closed'
         ? 'We closed this connection, so nothing here is a fault.'
-        : 'The host was supposed to be there. Sessions it held are gone, and the ending counts ' +
-          'against the one document whose call the host was running, if any (ADR-0023 Decision ' +
-          '9a, corrected 2026-10-03); a document whose own calls end the host twice is refused ' +
-          'engine work rather than rebuilt for.'),
+        : event === 'engine-host-refused'
+          ? 'We refused this host and closed it, and the error that follows says what was wrong.'
+          : 'The host was supposed to be there. Sessions it held are gone, and the ending counts ' +
+            'against the one document whose call the host was running, if any (ADR-0023 Decision ' +
+            '9a, corrected 2026-10-03); a document whose own calls end the host twice is refused ' +
+            'engine work rather than rebuilt for.'),
   };
 }
 

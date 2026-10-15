@@ -646,8 +646,8 @@ else {
   const lines = readFileSync(logPath, 'utf8').slice(logBefore).split('\n').filter((line) => line.trim() !== '');
   // A HOST FAILURE, not the shell ending its hosts on purpose: those are filed as `engine-host-closed` since the hosts
   // stop with the last document (the owner's Part 7 A), so the event alone separates them, where this used to read
-  // each host's wording for "shutdown".
-  const failures = lines.filter((line) => /engine-host-gone|not contained/u.test(line));
+  // each host's wording for "shutdown". A host the shell REFUSED is a failure under its own event (GGGGGGGG-4).
+  const failures = lines.filter((line) => /engine-host-gone|engine-host-refused|not contained/u.test(line));
   const locked = build === 'dev' || lines.some((line) => line.includes('package-data'));
   const worked = steps.length > 0 && steps.every((s) => s.ok);
   record(

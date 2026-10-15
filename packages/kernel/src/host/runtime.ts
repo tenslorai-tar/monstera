@@ -174,6 +174,12 @@ export interface HostTermination {
      */
     | 'connection-lost'
     /**
+     * MAIN: the shell refused a host it started and closed it: not contained, or its area could not be made, or it
+     * refused its area (the stage audit's GGGGGGGG-4). Neither a death nor a deliberate close: the shell ended it on
+     * purpose BECAUSE something was wrong, and a reader looking for either of those must not find this among them.
+     */
+    | 'refused'
+    /**
      * NEITHER END: we ended it deliberately.
      *
      * Closing the connection is an ordinary lifecycle event, so an outstanding

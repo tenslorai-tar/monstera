@@ -3080,11 +3080,11 @@ function engineSessionOpener(
       platform,
     );
     if (verdict.kind !== 'contained') {
-      live.value.close();
-      throw new Error(
-        `the engine host was created and is not contained (${verdict.kind}): ` +
-          ('detail' in verdict ? verdict.detail : 'no detail'),
-      );
+      const refusal =
+        `the engine host was created and is not contained (${verdict.kind}): ` + ('detail' in verdict ? verdict.detail : 'no detail');
+      // REFUSED, not closed (GGGGGGGG-4): the ending is filed as the refusal it is.
+      live.value.refuse(refusal);
+      throw new Error(refusal);
     }
 
     // BOUND AFTER THE VERDICT, which is the whole of the ordering. A writer
@@ -3714,11 +3714,10 @@ function pdfiumHostBinding(
       platform,
     );
     if (verdict.kind !== 'contained') {
-      live.value.close();
-      throw new Error(
-        `the PDFium host was created and is not contained (${verdict.kind}): ` +
-          ('detail' in verdict ? verdict.detail : 'no detail'),
-      );
+      const refusal =
+        `the PDFium host was created and is not contained (${verdict.kind}): ` + ('detail' in verdict ? verdict.detail : 'no detail');
+      live.value.refuse(refusal);
+      throw new Error(refusal);
     }
 
     const minted = sessionDirectoryName(randomBytes(16).toString('hex'));
@@ -3731,8 +3730,9 @@ function pdfiumHostBinding(
       platform.container,
     );
     if (!made.ok) {
-      live.value.close();
-      throw new Error(`the PDFium area was not created: ${made.error.stage}: ${made.error.detail}`);
+      const refusal = `the PDFium area was not created: ${made.error.stage}: ${made.error.detail}`;
+      live.value.refuse(refusal);
+      throw new Error(refusal);
     }
 
     const opened = await client['engine/open']({
@@ -3746,8 +3746,9 @@ function pdfiumHostBinding(
       // transport-level refusal and for the day that list is not empty. The
       // directories go either way, which is the half that would leak.
       removeSessionDirectories(platform.directories, paths);
-      live.value.close();
-      throw new Error(`the PDFium host refused its area: ${opened.error.code}`);
+      const refusal = `the PDFium host refused its area: ${opened.error.code}`;
+      live.value.refuse(refusal);
+      throw new Error(refusal);
     }
 
     const held = (): PdfiumArea => ({
@@ -3986,11 +3987,10 @@ function composeHostBinding(
       platform,
     );
     if (verdict.kind !== 'contained') {
-      live.value.close();
-      throw new Error(
-        `the compose host was created and is not contained (${verdict.kind}): ` +
-          ('detail' in verdict ? verdict.detail : 'no detail'),
-      );
+      const refusal =
+        `the compose host was created and is not contained (${verdict.kind}): ` + ('detail' in verdict ? verdict.detail : 'no detail');
+      live.value.refuse(refusal);
+      throw new Error(refusal);
     }
 
     const minted = sessionDirectoryName(randomBytes(16).toString('hex'));
@@ -4003,8 +4003,9 @@ function composeHostBinding(
       platform.container,
     );
     if (!made.ok) {
-      live.value.close();
-      throw new Error(`the compose area was not created: ${made.error.stage}: ${made.error.detail}`);
+      const refusal = `the compose area was not created: ${made.error.stage}: ${made.error.detail}`;
+      live.value.refuse(refusal);
+      throw new Error(refusal);
     }
 
     const opened = await client['engine/open']({
@@ -4013,8 +4014,9 @@ function composeHostBinding(
     });
     if (!opened.ok) {
       removeSessionDirectories(platform.directories, paths);
-      live.value.close();
-      throw new Error(`the compose host refused its area: ${opened.error.code}`);
+      const refusal = `the compose host refused its area: ${opened.error.code}`;
+      live.value.refuse(refusal);
+      throw new Error(refusal);
     }
     answerArea.handle = opened.value.session;
     answerArea.area = { snapshotDirectory: paths.snapshot, outputDirectory: paths.output };

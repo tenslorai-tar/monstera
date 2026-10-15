@@ -299,6 +299,19 @@ describe('createEngineHostConnection', () => {
     expect(h.endings.map((reason) => reason.code)).toEqual(['shutdown']);
   });
 
+  it('maps a REFUSAL to REFUSED with its reason, where the same connection closed reads SHUTDOWN (GGGGGGGG-4)', async () => {
+    const h = harness();
+    const connection = await connect(h);
+    expect(connection.ok).toBe(true);
+    if (!connection.ok) return;
+
+    connection.value.refuse('the engine host is not contained');
+    // ONCE: a close after the refusal does not relabel it, since the connection has already ended.
+    connection.value.close();
+
+    expect(h.endings).toEqual([{ code: 'refused', detail: 'the engine host is not contained' }]);
+  });
+
   it('KEEPS a violation the client raised rather than relabelling it as a shutdown', async () => {
     const h = harness();
     const connection = await connect(h);

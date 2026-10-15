@@ -571,6 +571,10 @@ describe('whom a host’s ending counts against (ADR-0023, corrected 2026-10-03)
   it('a deliberate close counts against nobody, even with a call on the wire', () => {
     expect(endingCountsAgainst(at('shutdown', first, first))).toBeUndefined();
   });
+
+  it('a host the shell REFUSED counts against nobody either: it failed the check, not a call (GGGGGGGG-4)', () => {
+    expect(endingCountsAgainst(at('refused', first, first))).toBeUndefined();
+  });
 });
 
 describe('openEngineSession writes the canonical image out and opens it', () => {
@@ -775,6 +779,17 @@ describe('a host death is reported, and every document is put back through its o
     expect(surface.reported[0]?.detail).toContain('nothing here is a fault');
     // FILED AS CLOSED, not gone, so a reader of the log need not tell the two apart by wording.
     expect(surface.reported[0]?.event).toBe('engine-host-closed');
+    expect(surface.rebuilds).toStrictEqual([]);
+  });
+
+  it('a REFUSED host is filed as refused and rebuilds NOTHING, since its rebuild would be refused too (GGGGGGGG-4)', async () => {
+    const engine = new EngineSessions();
+    const { service } = await twoOpenDocuments(engine);
+    const surface = surfaces(service);
+
+    await onEngineHostEnded(engine, { termination: { code: 'refused', detail: 'not contained' }, during: undefined, last: undefined }, surface);
+
+    expect(surface.reported[0]?.event).toBe('engine-host-refused');
     expect(surface.rebuilds).toStrictEqual([]);
   });
 

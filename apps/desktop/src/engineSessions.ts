@@ -26,7 +26,7 @@ import type {
 import type { DocId, HeldPassword } from '@monstera/shared';
 
 import { DocumentPasswords, type EngineOpening, type ProtectionTerms } from './documentPasswords.js';
-import { describeEngineHostGone, type ShellFailureSink } from './shellFailure.js';
+import { describeEngineHostGone, shellEndedHost, type ShellFailureSink } from './shellFailure.js';
 
 // `import type`, and the header above says why in 38.1 MB. This one is the
 // SECOND occurrence and it landed in the file that documents the first: written
@@ -556,9 +556,10 @@ export async function onEngineHostEnded(
   sessions.recordEnding(affected, looping === undefined ? against : undefined);
   if (looping !== undefined && against !== undefined) sessions.strike(against, looping);
 
-  // A deliberate close is not a rebuild. Nothing is coming back, and entering
-  // lanes to await a host nobody is building would hang every document.
-  if (termination.code === 'shutdown') return;
+  // An ending the shell chose, a close or a refusal, is not a rebuild. Nothing is
+  // coming back, and entering lanes to await a host nobody is building would hang
+  // every document.
+  if (shellEndedHost(termination)) return;
 
   const rebuilt = surfaces.rebuild();
 
@@ -615,7 +616,8 @@ export async function onEngineHostEnded(
  * WHOM A HOST'S ENDING COUNTS AGAINST: one document, or none (ADR-0023's correction and addendum of 2026-10-03). The
  * one place this is decided; the client reports what was on the wire and this reads it.
  *
- * - **A deliberate close counts against nobody**, whatever was on the wire: nothing failed.
+ * - **An ending the shell chose counts against nobody**, whatever was on the wire: a close, where nothing failed, and a
+ *   refusal, where the host failed the shell's check rather than a document's call.
  * - **Otherwise, the document whose call the host was running.** A crash and a deadline happen during a call, and the
  *   host client sends one at a time, so that call is the cause.
  * - **With none running, a memory kill counts against the document whose call the host ran last.** The sampler kills
@@ -624,7 +626,7 @@ export async function onEngineHostEnded(
  * - **Any other ending between calls counts against nobody**: the host was ended from outside a call.
  */
 export function endingCountsAgainst({ termination, during, last }: HostEnding): DocId | undefined {
-  if (termination.code === 'shutdown') return undefined;
+  if (shellEndedHost(termination)) return undefined;
   if (during !== undefined) return during;
   return termination.code === 'memory-budget' ? last : undefined;
 }

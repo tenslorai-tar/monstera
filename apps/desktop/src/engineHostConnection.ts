@@ -328,6 +328,11 @@ export interface EngineHostConnection {
    * the distinction those two codes exist to carry.
    */
   readonly close: () => void;
+  /**
+   * Ends the connection BECAUSE the shell refused this host (not contained, no area): `onEnded` fires with `refused` and
+   * `detail`, which is filed as a refusal rather than as a close the shell chose (GGGGGGGG-4). Idempotent, as `close`.
+   */
+  readonly refuse: (detail: string) => void;
   /** Whether the connection has ended, for whatever reason. */
   readonly ended: () => boolean;
 }
@@ -571,6 +576,14 @@ export async function createEngineHostConnection(
     close: () => {
       if (state.end !== null) return;
       transport.terminate({ code: 'shutdown', detail: 'the shell closed this connection' });
+    },
+    refuse: (detail) => {
+      if (state.end !== null) return;
+      // RAISED BEFORE THE ENDING, because the transport says only that we ended it: `reasonFor` reads this first, so the
+      // ending is named a refusal and not the `shutdown` every other ending of ours is.
+      const refusal: HostTermination = { code: 'refused', detail };
+      state.raised ??= refusal;
+      transport.terminate(refusal);
     },
     ended: () => state.end !== null,
   });
