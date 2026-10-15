@@ -24,6 +24,9 @@ const TURNS: readonly SavedTurn[] = [
 const AT = new Date('2026-10-07T09:30:00.000Z');
 const NAME = 'lease.pdf';
 
+/** Past this, a body made of six small file calls reports where its time went (a fifth of vitest's 5 s). */
+const SLOW_BODY_MS = 1000;
+
 let directory = '';
 afterEach(() => {
   if (directory !== '') rmSync(directory, { recursive: true, force: true });
@@ -46,12 +49,36 @@ describe('chat history (ADR-0093)', () => {
   });
 
   it('an EMPTY list removes the conversation, and another file is untouched', () => {
-    const history = createChatHistory(fresh(), REVERSING);
-    history.save('k1', TURNS, NAME, AT);
-    history.save('k2', TURNS, NAME, AT);
-    history.save('k1', [], NAME, AT);
-    expect(history.load('k1')).toStrictEqual([]);
-    expect(history.load('k2')).toStrictEqual(TURNS);
+    // TIMED, CALL BY CALL (CCCCCCCC-4, FFFFFFFF-9): this synchronous body twice ran past vitest's 5 s on the Windows
+    // runner, which vitest measures as wall clock around the body, and the rename retry bounds only 0.6 s of it. So
+    // the next slow run names the call that held it, in the log beside the failure, instead of a raised timeout.
+    const spent: string[] = [];
+    let total = 0;
+    const timed = <T,>(label: string, call: () => T): T => {
+      const start = performance.now();
+      try {
+        return call();
+      } finally {
+        const took = performance.now() - start;
+        total += took;
+        spent.push(`${label} ${took.toFixed(0)} ms`);
+      }
+    };
+    const history = timed('create', () => createChatHistory(fresh(), REVERSING));
+    timed('save k1', () => {
+      history.save('k1', TURNS, NAME, AT);
+    });
+    timed('save k2 (replaces the file)', () => {
+      history.save('k2', TURNS, NAME, AT);
+    });
+    timed('save k1 empty', () => {
+      history.save('k1', [], NAME, AT);
+    });
+    const first = timed('load k1', () => history.load('k1'));
+    const second = timed('load k2', () => history.load('k2'));
+    if (total > SLOW_BODY_MS) console.warn(`chatHistory.test.ts: the body took ${total.toFixed(0)} ms: ${spent.join(', ')}`);
+    expect(first).toStrictEqual([]);
+    expect(second).toStrictEqual(TURNS);
   });
 
   it('keeps two hundred by default, the contract’s own number', () => {
