@@ -853,7 +853,11 @@ await step('O1: About says what Monstera is, and no line mentions updates', asyn
   // WAITED FOR: `allTextContents` answers at once with what is drawn, which was nothing (2026-10-13: an empty list).
   await expect(dialog.locator('.m-about__line').first()).toBeVisible();
   const lines = await dialog.locator('.m-about__line').allTextContents();
-  expect(lines.slice(0, 2)).toStrictEqual(['Monstera is a PDF editor for Windows.', 'Your documents stay on your computer unless you send one.']);
+  // THE OWNER'S C1 (ee052048): what Monstera is in ONE line, then the licence; the sentence about documents staying on
+  // the computer was removed from the window, and must not come back.
+  expect(lines[0]).toBe('Monstera is a PDF editor for Windows.');
+  expect(lines[1]).toMatch(/^Monstera is free software under the GNU Affero General Public License/u);
+  expect(lines.filter((line) => /stay on your computer/iu.test(line))).toStrictEqual([]);
   // ADR-0236's correction: no line about updates on any run, whether or not this one asked monsterapdf.com.
   expect(lines.filter((line) => /update|monsterapdf/iu.test(line))).toStrictEqual([]);
   // THE DIALOG'S OWN TEXT BUTTON: its corner icon is named Close too, so the bare name matched two controls.
