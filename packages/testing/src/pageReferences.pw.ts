@@ -37,7 +37,11 @@ const AFTER = [
   { title: 'Section 3.1', page: 1, depth: 1 },
 ];
 
-async function openWithOutline(page: Page, sent: { channel: string; params: unknown }[]): Promise<void> {
+async function openWithOutline(
+  page: Page,
+  sent: { channel: string; params: unknown }[],
+  destinations: readonly { title: string; page: number | null; depth: number }[] = BEFORE,
+): Promise<void> {
   await page.setViewportSize({ width: 1280, height: 800 });
   const bytes = await blockedPages([612, 792], 3);
   await bridge(
@@ -45,7 +49,7 @@ async function openWithOutline(page: Page, sent: { channel: string; params: unkn
     {
       opens: [{ kind: 'opened', docId: DOC, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'outline.pdf' }],
       documentBytes: new Map([[DOC, bytes]]),
-      destinations: BEFORE,
+      destinations: [...destinations],
       destinationsFrom: { 2: AFTER },
       settings: { 'appearance.ribbon-section': 'organize' },
     },
@@ -100,4 +104,38 @@ test('after a page delete the Outline panel shows what main answers for the new 
   // NOTHING GOING NOWHERE: the entry that named page 2 is gone, the heading reads as a heading, and its child names
   // the page it is now.
   await expect.poll(rows).toStrictEqual(['Chapter one → page 1', 'heading: Part three', 'Section 3.1 → page 2']);
+});
+
+test('an outline name of 256 unbroken characters shows three lines at most, inside the panel, at the weight of an entry', async ({
+  page,
+}) => {
+  // THE RULE THAT CLAMPS IT is shared with layer names and link addresses, and a heading rule written into the middle of
+  // its selector list took the three names out of it (CI on 5fcffa99 read nothing of it; found reading the diff).
+  const unbroken = 'R'.repeat(256);
+  await openWithOutline(page, [], [
+    { title: 'Chapter one', page: 0, depth: 0 },
+    { title: unbroken, page: 1, depth: 0 },
+  ]);
+  await page.getByRole('tab', { name: 'Bookmarks' }).click();
+  const outline = page.getByRole('navigation', { name: 'Outline' });
+  const short = outline.locator('.m-destination-title').filter({ hasText: 'Chapter one' });
+  const long = outline.locator('.m-destination-title').filter({ hasText: unbroken });
+  await expect(long).toBeVisible();
+  const read = (at: typeof long) =>
+    at.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const panel = element.closest('[role="tabpanel"]')?.getBoundingClientRect();
+      const box = element.getBoundingClientRect();
+      return { height: box.height, right: box.right, panelRight: panel?.right ?? 0, weight: style.fontWeight };
+    });
+  const one = await read(short);
+  const it = await read(long);
+  // THE CONTROL: a one-line name is the line height this measures by, and it is not a heading's weight.
+  expect(one.height).toBeGreaterThan(0);
+  expect(it.weight).toBe(one.weight);
+  expect(it.weight).not.toBe('700');
+  // THREE LINES AT MOST (the clamp), where unclamped the name runs to a dozen in a panel this wide.
+  expect(it.height).toBeLessThanOrEqual(one.height * 3 + 1);
+  expect(it.height).toBeGreaterThan(one.height * 2);
+  expect(it.right).toBeLessThanOrEqual(it.panelRight);
 });

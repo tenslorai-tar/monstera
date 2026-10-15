@@ -2916,22 +2916,26 @@ optgroup {
 .m-layer-name,
 .m-destination-title,
 .m-destination-heading,
+.m-links-address {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
+/* AN ADDRESS BREAKS AT A `/` OR A `.` (`breakableAddress`), and mid-word only where one part is wider than the panel. */
+.m-links-address {
+  overflow-wrap: break-word;
+}
+
 /* A SECTION OF A PANEL, NAMED (the owner's E1, and E2 and C3 after it): larger and heavier than the items under it. */
 .m-panel-heading {
   margin: var(--space-8) 0 var(--space-4);
   color: var(--text);
   font-size: var(--font-chrome-13);
   font-weight: 700;
-}
-
-.m-links-address {
-  min-inline-size: 0;
-  /* AT A `/` OR A `.` (`breakableAddress`), and mid-word only where one part is wider than the panel. */
-  overflow-wrap: break-word;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  overflow: hidden;
 }
 
 /* A SIGNATURE'S STRINGS are the document's too, shortened to 256 characters by the reader, and one unbroken name ran
