@@ -54,9 +54,50 @@ test('rechoosing Organize puts down a kept tool, while a tool started inside it 
   await runCommand(page, 'Rectangle');
   await expect(page.getByLabel('Draw on page 1')).toBeVisible();
   await expect(page.getByRole('region', { name: 'Pages to organize' })).toHaveCount(0);
+  // AND THE RAIL SAYS WHERE THE READER IS NOW (the owner's 14a): Home, where the tool draws, not Organize over pages.
+  await expect(page.locator('.m-ribbon__tab[aria-current="true"]')).toHaveAttribute('data-ribbon-section', 'home');
   await page.locator('[data-ribbon-section="organize"]').first().click();
   await expect(page.getByRole('region', { name: 'Pages to organize' })).toBeVisible();
 });
+
+/** Whether the rail and the centre agree: Organize on the rail exactly when its grid is on show. */
+async function railAndView(page: Page): Promise<{ readonly rail: string | null; readonly grid: boolean; readonly pages: boolean }> {
+  return {
+    rail: await page.locator('.m-ribbon__tab[aria-current="true"]').getAttribute('data-ribbon-section'),
+    grid: (await page.getByRole('region', { name: 'Pages to organize' }).count()) > 0,
+    pages: await page.locator('.m-page-list').first().isVisible(),
+  };
+}
+
+for (const fullPage of [false, true]) {
+  test(`14a: in Organize › ${fullPage ? 'Full page' : 'Thumbnail'} no float bar lies over the cards, and every float-bar control leaves the rail and the view agreeing`, async ({ page }) => {
+    await open(page, fullPage);
+    // THE FLOAT BAR'S CONTROLS, read where it is shown: a search, so it must find some.
+    const titles = await page.locator('.m-quick-toolbar button[aria-label]:not(.m-quick-toolbar__grip)').evaluateAll((buttons) =>
+      buttons.map((button) => button.getAttribute('aria-label') ?? '').filter((title) => title !== ''),
+    );
+    expect(titles.length).toBeGreaterThan(3);
+    for (const title of titles) {
+      await page.locator('[data-ribbon-section="organize"]').first().click();
+      await expect(page.getByRole('region', { name: 'Pages to organize' })).toBeVisible();
+      // NOT OVER THE CARDS: no float bar while the grid is on show.
+      await expect(page.locator('.m-quick-toolbar')).toHaveCount(0);
+      await runCommand(page, title);
+      await page.keyboard.press('Escape');
+      // ONE OF TWO STATES, never a third: Organize with its grid, or Home with the pages — a tool that draws takes the
+      // reader to Home, a control that does not leaves Organize as it was. Polled, because a document opened straight
+      // into Organize mounts its page list only when Home is first shown.
+      await expect
+        .poll(async () => {
+          const state = await railAndView(page);
+          const agrees = (state.rail === 'organize' && state.grid && !state.pages) || (state.rail === 'home' && !state.grid && state.pages);
+          return agrees ? 'agrees' : `${title}: ${JSON.stringify(state)}`;
+        })
+        .toBe('agrees');
+      // AND THE TOOL IS PUT DOWN when Organize is chosen again, so the next control starts from the grid.
+    }
+  });
+}
 
 test('the first Thumbnail choice from Full page has no empty or undrawn frame', async ({ page }) => {
   await open(page, true);

@@ -2145,7 +2145,23 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * The registry resolves it to the tool here, once, and the scroller is handed
    * the tool itself so nothing below this point knows a registry exists.
    */
-  const [toolId, setToolId] = useState<string | undefined>(undefined);
+  const [toolId, setToolSlot] = useState<string | undefined>(undefined);
+  /**
+   * Arms a tool, or puts it down. EVERY WRITER COMES THROUGH HERE, because arming one decides the centre view as well.
+   *
+   * The section is the one value the centre follows (ADR-0104): Organize shows its grid, every other section the pages.
+   * A tool draws on the pages, so a tool armed IN ORGANIZE takes the reader to Home in the same write — the rail and
+   * the view change together, where they used to part (the owner's 14a: the grid gave way to the pages under an armed
+   * tool while the rail still said Organize, and only the rail brought the grid back). The other half is the section
+   * watcher below: choosing Organize puts the tool down.
+   */
+  const setToolId = useCallback(
+    (id: string | undefined): void => {
+      setToolSlot(id);
+      if (id !== undefined && settings.get(RIBBON_SECTION_SETTING.id) === 'organize') settings.set(RIBBON_SECTION_SETTING.id, 'home');
+    },
+    [settings],
+  );
   const readTool = useCallback(() => toolId, [toolId]);
   /**
    * The tool a double click kept on past its one thing drawn (`UiCommand.hold`). It is the tool's id and not a flag, so
@@ -2153,14 +2169,20 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    */
   const [keptTool, setKeptTool] = useState<string | undefined>(undefined);
   /** Chooses a tool by one press: not kept, whatever an earlier double click on the same button did. */
-  const chooseTool = useCallback((id: string | undefined): void => {
-    setKeptTool(undefined);
-    setToolId(id);
-  }, []);
-  const holdTool = useCallback((id: string): void => {
-    setToolId(id);
-    setKeptTool(id);
-  }, []);
+  const chooseTool = useCallback(
+    (id: string | undefined): void => {
+      setKeptTool(undefined);
+      setToolId(id);
+    },
+    [setToolId],
+  );
+  const holdTool = useCallback(
+    (id: string): void => {
+      setToolId(id);
+      setKeptTool(id);
+    },
+    [setToolId],
+  );
   // CHOOSING ORGANIZE returns to its grid, putting down an earlier tool (including a kept one). Watch the setting's
   // writes rather than only its rendered value: rechoosing the active section must also end a drawing started inside
   // Organize. A tool chosen AFTER that section choice still gets the reader in which to draw. All section projections
@@ -2172,7 +2194,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       const next = settings.get(RIBBON_SECTION_SETTING.id);
       if (next === 'organize') chooseTool(undefined);
       else if (previous === 'forms' && next !== 'forms') {
-        setToolId((current) => current !== undefined && isFormFieldTool(current) ? undefined : current);
+        setToolSlot((current) => current !== undefined && isFormFieldTool(current) ? undefined : current);
         setKeptTool((current) => current !== undefined && isFormFieldTool(current) ? undefined : current);
       }
       previous = next;
@@ -2191,7 +2213,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     }
     setObjectFilter(filter);
     setToolId(EDIT_OBJECTS_TOOL_ID);
-  }, []);
+  }, [setToolId]);
   /** The object Edit object has selected, with the document it is in: a version alone is a number every tab has. */
   const [objectPicked, setObjectPicked] = useState<{ readonly docId: DocId; readonly pick: ObjectPick } | undefined>();
   // THE CONTROL THE HELP CENTRE'S *SHOW ME* ASKED THE RIBBON TO RING (ADR-0112), stamped so asking twice rings twice.
@@ -2505,7 +2527,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const orderByClicking = useCallback((docId: DocId, version: DocVersion): void => {
     setToolId(undefined);
     setTabOrdering({ docId, version, picked: [] });
-  }, []);
+  }, [setToolId]);
   const tabOrderLive = tabOrdering !== undefined && tabOrdering.docId === activeId && tabOrdering.version === openVersion;
   const tabOrderEditing = useMemo<PageListProps['editing']>(() => {
     if (!tabOrderLive) return undefined;
@@ -2641,7 +2663,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       setToolId(SELECT_TOOL_ID);
       setPicked(all);
     },
-    [listAnnotations],
+    [listAnnotations, setToolId],
   );
   /**
    * The text field that has the focus, or had it when the menu bar took it — what the Edit menu's verbs act on first
@@ -3125,7 +3147,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       setSignatureLook(look);
       setToolId(SIGNATURE_TOOL_ID);
     })();
-  }, [ask, client]);
+  }, [ask, client, setToolId]);
   /**
    * Where the click puts it. A tool armed without a look — chosen from the palette, or pressed again after a placement
    * — asks first, so a click never places nothing. Once it lands, the select tool holds the new mark, so a drag moves
@@ -3148,7 +3170,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         if (placed !== undefined) setPicked(placed);
       })();
     },
-    [activeId, applied, ask, client, listAnnotations, signatureLook, stamp, toast],
+    [activeId, applied, ask, client, listAnnotations, setToolId, signatureLook, stamp, toast],
   );
 
   /**
@@ -4103,6 +4125,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       // THE KEYS A PERSON CHOSE, so a change in the shortcuts dialog rebuilds the registry and the new key works at once.
       chosenShortcuts,
       chooseTool,
+      setToolId,
       // THE PROVIDERS THIS BUILD REACHES, so `app.info`'s answer rebuilds the registry and the cloud commands appear.
       readCloudProviders,
       readMediaFoundation,
@@ -4305,7 +4328,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       selection,
       link: linkSelection,
     };
-  }, [applied, ask, client, expectNewFields, keptTool, linkSelection, open, presence, registry, selection, send, settings, signatures, stamp, style, toast, toolId, tools]);
+  }, [applied, ask, client, expectNewFields, keptTool, linkSelection, open, presence, registry, selection, send, setToolId, settings, signatures, stamp, style, toast, toolId, tools]);
 
   /**
    * A link pressed on a page or in the Links panel, followed by the one route (ADR-0167): a page link jumps, a web link
@@ -4428,7 +4451,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         setToolId(undefined);
       },
     };
-  }, [applied, ask, client, inEditText, open, settings, signatures, stamp, windowEdit]);
+  }, [applied, ask, client, inEditText, open, setToolId, settings, signatures, stamp, windowEdit]);
   // THE ADD FLAVOUR BESIDE THE MODE, not inside it: choosing Add text from Edit text, or leaving it, must not hand every
   // page a new reader and read them all again, which is what a value inside the memo above would do.
   const editing = useMemo<PageListProps['editing']>(
@@ -4459,7 +4482,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       }
       return undefined;
     };
-  }, [applied, ask, client, shownDocId, signatures, stamp, toolId]);
+  }, [applied, ask, client, setToolId, shownDocId, signatures, stamp, toolId]);
 
   /** Edit object's mode on the document on show, or `undefined` when it is off — the slot's second value. */
   const objectEditing = useMemo<PageListProps['editing']>(() => {
@@ -4481,7 +4504,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         setToolId(undefined);
       },
     };
-  }, [objectFilter, objectSelection, open, readObjects, sendObject]);
+  }, [objectFilter, objectSelection, open, readObjects, sendObject, setToolId]);
 
   /** The one mode the page lists draw: the tool slot holds at most one of the three, so at most one is defined. */
   const pageEditing = tabOrderEditing ?? editing ?? objectEditing ?? fieldEditing;
@@ -4541,7 +4564,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     }
     setToolId(undefined);
     return true;
-  }, [designedFields.length, objectSelection, selection, toolId]);
+  }, [designedFields.length, objectSelection, selection, setToolId, toolId]);
   // THE RECOGNISE BUTTON'S TARGET (ADR-0181 Decision 9): the one `document.ocr` command, run for the page the button is on
   // and not for the grid's ticked pages, so what it walks is the page that said it has no text.
   useEffect(() => {
@@ -4824,11 +4847,10 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onJump={navigator.jumpTo}
           onMove={movePage}
           onSwap={swapPages}
-          // A TOOL THAT IS ARMED OWNS THE PAGE, in every section: Organize's grid drags a card to reorder it, and under an
-          // armed tool that drag took the drag meant to draw (a barcode's box drew nothing and lifted the page — the
-          // owner's recording of 2026-10-07). So while any tool is armed the canvas is the pages themselves, where the
-          // tools draw, and the grid returns when it is put down. The section, and the selection it counts, are unchanged.
-          organize={toolId === undefined ? organize : undefined}
+          // THE SECTION ALONE DECIDES: a tool armed in Organize takes the reader to Home (`setToolId`), so an armed tool
+          // never meets the grid — whose drag took the drag meant to draw a barcode (the owner's recording of
+          // 2026-10-07) — and the rail never names a view that is not on show (the owner's 14a).
+          organize={organize}
           loupe={loupe}
           drawsPages={!longHidden}
           onShowable={undefined}
@@ -6046,7 +6068,10 @@ function PageCanvas({
       settings={settings}
       presence={presence}
       measuresRow={measuresRow}
-      contextPanel={contextPanel} quickToolbar={quickToolbar}
+      contextPanel={contextPanel}
+      // NO FLOAT BAR OVER ORGANIZE'S GRID (the owner's 14a): it lay over the first column of cards, and none of its
+      // tools acts on a card — each draws on, moves or zooms the pages, and arming one takes the reader to Home.
+      quickToolbar={organize === undefined ? quickToolbar : null}
       panel={
       <DocumentPanel
         tool={tool}
