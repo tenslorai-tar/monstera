@@ -12,7 +12,7 @@ Right-click anything on screen to see only the tools that apply to it.
 
 1. Right-click a **page** for: **Rotate page**, **Insert blank pages…**, **Extract pages…**, **Delete page** and **Paste annotations**.
 2. Right-click an **annotation** for: **Edit comment…**, **Reply…**, **Draft a reply with AI**, **Copy**, **Properties** and **Delete selection**.
-   With **Edit object** on, right-click an **object** for **Properties** and **Delete selection**.
+   With **Edit object** on, right-click an **object** for **Bring forward**, **Send backward**, **Properties** and **Delete selection**.
 3. Right-click **selected text** for: **Copy**, **Highlight**, **Underline**, **Strikethrough**, **Add comment**, **Mark for redaction**, **Search for this**, and the AI items **Ask AI**, **Explain**, **Summarise** and **Translate**.
 4. Right-click a **tab** for: **Close tab**, **Close other tabs** and **Open side by side**.
 
@@ -23,6 +23,7 @@ Right-click anything on screen to see only the tools that apply to it.
 - From the keyboard, press **Shift+F10** or the Menu key.
 - On the Organize grid, right-clicking a page that is not ticked acts on that page alone.
 - Some items appear only when they can be used, for example **Paste annotations** after you have copied some.
+- A menu opened near the bottom of the window moves up so every item shows. A menu longer than the window shows an arrow at each end it continues past; scroll, or rest the pointer on an arrow, to see the rest.
 
 <!--
 Screenshots to capture:

@@ -279,8 +279,8 @@ is not available.
 
 ## Properties tab
 
-- [ ] **Bring forward** · `edit.object-forward` · Shows: on screen
-- [ ] **Send backward** · `edit.object-backward` · Shows: on screen
+- [ ] **Bring forward** · `edit.object-forward` · Shows: on screen · Help: *Move, resize, recolour or remove things on a page*
+- [ ] **Send backward** · `edit.object-backward` · Shows: on screen · Help: *Move, resize, recolour or remove things on a page*
 - [ ] **Copy to other pages…** · `forms.copy-to-pages` · Shows: on screen · Help: *Change a form field*
 - [ ] **Align left edges** · `forms.arrange.align-left` · Shows: on screen · Help: *Change a form field*
 - [ ] **Align right edges** · `forms.arrange.align-right` · Shows: on screen
