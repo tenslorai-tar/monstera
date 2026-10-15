@@ -964,6 +964,63 @@ reach the others; no case at b7b24091 carries one.
 when Organize is chosen again*, and no assertion after it. The next iteration's grid visibility covers part of it; that
 the tool slot is empty is checked by nothing.
 
+*Appended the same day, after Guards refused 8b55517b: the entry above listed findings and answered none of the
+checklist's items by heading. The answers follow; nothing above is changed. Since written: -4 closed by 4bf1e787 (the
+amendment-log row), -11 closed by 0123519d (the comment now says what is and is not asserted).*
+
+### 1. Root cause or workaround?
+
+Root causes, each named in its commit: the card's border reason (-1), the shim roster (-2), the dangling `replace` and
+`none` guards in C4, B1's missing scale in the walk. One stated workaround in range: `fittedToRaster` stays, its cause now
+ruled out as ours by arithmetic (D5, 37466888, after this range).
+
+### 2. Verified against the easy shape only?
+
+C4's kernel cases take the hard shapes: a protected document, another tool's whole-stream and inline artifacts, an older
+Monstera's unrecorded stamp, and page text that looks like a watermark. -7: four proofs ran only on CI's machines.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Yes, once: H1's one program (-10), stated here because its commit did not.
+
+### 3. Would CI have caught it?
+
+It did for -1, on both legs; the local pre-push set does not run CI's whole-tree scans. -2 is not in that set either and
+was found by `vitest related`.
+
+### 4. Are the proofs non-vacuous?
+
+Every C4 and B1 proof was mutated and went red (listed in their commits). -5 was a vacuous query caught by asking what the
+control's query returns. The reader found no new negative assertion without a positive control.
+
+### 4a. Resolution test before measuring?
+
+`savedMarks` (one mark against none) and `savedSignature` before use; `drawnObjectCorrespondence.mjs` carries its control
+on every run.
+
+### 4b. A search with a positive control?
+
+The three freshness-edge repairs (-3) are a hand list with no control on what it omits; open.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+-3 again: the edge lists restate an import graph `affectedProofs.mjs` already derives.
+
+### 5. Executed, or asserted?
+
+Asserted: both walks (-8), the rest-to-scroll hover of E3, and every Windows-only proof (-7). Executed: the kernel and UI
+proofs named in each commit.
+
+### 6. Architecture before the feature?
+
+Yes for ADR-0241 to ADR-0246 and ADR-0129's correction, each in its own commit ahead of its code. The amendment-log row for
+ADR-0240 was missing (-4).
+
+### 7. Do the documents still match the code?
+
+-4, and D3's Decision 16 line in CLAUDE.md and ARCHITECTURE.md, corrected after this range (09af718c, 8b55517b). The
+watermark help article's *the colour cannot be chosen yet* was removed with C4.
+
 ---
 
 ## 2026-10-14 — Stage audit of `ae4f62f5..60d60df5` — findings HHHHHHHH-1 to HHHHHHHH-12
