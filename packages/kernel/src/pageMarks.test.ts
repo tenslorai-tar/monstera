@@ -264,3 +264,30 @@ describe('a stamp is marked, found, edited and removed (ADR-0246)', () => {
     expect(wholeArtifactKind('/Artifact <</Type /Pagination /Subtype /Watermark>> BDC (EMC BDC) Tj EMC')).toBe('watermark');
   });
 });
+
+describe('the page’s own content is bracketed for its stamps ONCE (marks walk C4.3)', () => {
+  /** The `q` streams on a page that hold nothing else: the brackets, each one level of nesting. */
+  const openings = async (bytes: Uint8Array, page: number): Promise<number> =>
+    (await streamsByPdfLib(bytes, page)).filter((text) => text.trim() === 'q').length;
+
+  it('three kinds added, the watermark edited and every kind removed: one bracket throughout, the page’s own content as after the add', async () => {
+    const added = await run(await run(await run(await twoPages(), WATERMARK), HEADER_FOOTER), BATES);
+    expect(await openings(added, 0)).toBe(1);
+    const edited = await run(added, { ...WATERMARK, text: 'FINAL', replace: true });
+    expect(await openings(edited, 0)).toBe(1);
+    let removed = edited;
+    for (const marks of ['watermark', 'headerFooter', 'bates'] as const) removed = await run(removed, { kind: 'removePageMarks', marks });
+    expect(await openings(removed, 0)).toBe(1);
+    // THE PAGE'S OWN CONTENT, which is what the walk compared: every stream that is not a stamp, joined.
+    const own = async (bytes: Uint8Array): Promise<string> =>
+      (await streamsByPdfLib(bytes, 0)).filter((text) => !text.includes('/Artifact')).join('\n');
+    expect(await own(removed)).toBe(await own(added));
+  });
+
+  it('CONTROL: content another tool appended after the bracket is bracketed again, so a stamp never inherits its state', async () => {
+    const stamped = await run(await twoPages(), WATERMARK);
+    const appended = await withStream(stamped, '1 0 0 RG 5 w');
+    const again = await run(appended, HEADER_FOOTER);
+    expect(await openings(again, 0)).toBe(2);
+  });
+});

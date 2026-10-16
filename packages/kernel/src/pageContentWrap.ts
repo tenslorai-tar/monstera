@@ -111,12 +111,19 @@ export function wrapContents(
   document: PDFDocument,
   object: PDFObject,
   opening: string,
+  /** A key put on both bracket streams' dictionaries, `/Open` and `/Close`, so a later caller can recognise its own. */
+  marked?: string,
 ): boolean {
   const existing = object.get('Contents');
   if (existing.isNull()) return false;
 
-  const opened = document.addStream(streamBytes(opening), document.newDictionary());
-  const closed = document.addStream(streamBytes(WRAP_CLOSE), document.newDictionary());
+  const dictionary = (side: 'Open' | 'Close'): PDFObject => {
+    const made = document.newDictionary();
+    if (marked !== undefined) made.put(marked, document.newName(side));
+    return made;
+  };
+  const opened = document.addStream(streamBytes(opening), dictionary('Open'));
+  const closed = document.addStream(streamBytes(WRAP_CLOSE), dictionary('Close'));
   const contents = document.newArray();
   contents.push(opened);
   if (existing.isArray()) {

@@ -53,6 +53,42 @@ export type ArtifactSubtype = 'Watermark' | 'Header' | 'Footer' | 'Bates';
 /** The record's key in a stamp stream's dictionary. */
 export const STAMP_RECORD_KEY = 'MonsteraMark';
 
+/**
+ * The key on the two streams that bracket a page's own content for its stamps, `/Open` and `/Close`.
+ *
+ * The bracket is written ONCE. Every stamp bracketed the whole `/Contents` again until 2026-10-16, earlier stamps
+ * included, and a removal leaves brackets where they are (ADR-0246 Decisions 4 and 5), so each add or edit nested the
+ * page one `q` deeper for good: the marks walk's C4.3 read one more `q` and `Q` in the page's own content after an edit
+ * and a removal than after the first add, and a page stamped often enough would pass the nesting depth readers allow.
+ */
+export const STAMP_BRACKET_KEY = 'MonsteraStampBracket';
+
+/** The value `key` holds in a stream's dictionary, as a name, or `undefined`. */
+function bracketSide(stream: PDFObject): string | undefined {
+  if (!stream.isStream()) return undefined;
+  const side = stream.get(STAMP_BRACKET_KEY);
+  return side.isName() ? side.asName() : undefined;
+}
+
+/**
+ * Whether `contents` is already this build's bracket around the page's own content with nothing after it but stamps:
+ * first an `/Open`, then a `/Close`, and every stream after the last `/Close` a stamp of this build's. Anything else —
+ * another tool's content appended after the bracket, or no bracket — is bracketed again, because the stamp must not
+ * inherit a state that content left set.
+ */
+export function bracketedForStamps(contents: PDFObject): boolean {
+  if (!contents.isArray() || contents.length < 2) return false;
+  if (bracketSide(contents.get(0)) !== 'Open') return false;
+  let close = -1;
+  for (let at = 0; at < contents.length; at += 1) if (bracketSide(contents.get(at)) === 'Close') close = at;
+  if (close < 1) return false;
+  for (let at = close + 1; at < contents.length; at += 1) {
+    const stream = contents.get(at);
+    if (!stream.isStream() || !stream.get(STAMP_RECORD_KEY).isDictionary()) return false;
+  }
+  return true;
+}
+
 /** The PDF name each kind is recorded under. */
 export const STAMP_KIND_NAMES: Readonly<Record<StampKind, string>> = { watermark: 'Watermark', headerFooter: 'HeaderFooter', bates: 'Bates' };
 
@@ -211,7 +247,8 @@ export class PageStamps {
         })
         .join('\n');
       // THE PAGE'S OWN CONTENT BRACKETED, so nothing it left set reaches the stamp; an empty page has nothing to bracket.
-      wrapContents(document, object, 'q\n');
+      // ONCE: a page this build already bracketed, with only stamps after the bracket, is not bracketed again.
+      if (!bracketedForStamps(object.get('Contents'))) wrapContents(document, object, 'q\n', STAMP_BRACKET_KEY);
       // MONSTERA'S RECORD ON THE STREAM (ADR-0246 Decision 1): the kind and the settings that drew it, where the drawing is.
       const dictionary = document.newDictionary();
       const record = document.newDictionary();
