@@ -92,7 +92,14 @@ describe('inWriteOrder', () => {
       DOC,
       { kind: 'rotatePages', pages: [0], quarterTurns: 1 },
     );
-    const settled = await Promise.race([applied.then(() => 'answered'), new Promise((done) => setTimeout(() => done('waiting'), 2000))]);
+    const settled = await Promise.race([
+      applied.then(() => 'answered'),
+      new Promise((done) => {
+        setTimeout(() => {
+          done('waiting');
+        }, 2000);
+      }),
+    ]);
     expect(settled).toBe('answered');
     expect(reached).toStrictEqual(['document.execute', 'document.editCopy']);
   });
