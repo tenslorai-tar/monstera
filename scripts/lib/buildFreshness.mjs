@@ -20,7 +20,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, posix } from 'node:path';
+import { join, posix, relative, sep } from 'node:path';
 
 /**
  * One source-to-artefact edge, and WHO produces the artefact.
@@ -954,15 +954,15 @@ function newestFileMtime(path) {
  * @param {readonly BuildEdge[]} pairs `[source, artefact, producer]`,
  *   both repo-relative. A directory source is walked; a file source is read.
  * @param {number} expected how many pairs this call site declares.
- * @param {{ compilerSaysCurrent?: (repoRoot: string) => boolean }} [options]
- *   `compilerSaysCurrent` is injected so the escape hatch can be exercised in
- *   both directions. A fixture tree is not a TypeScript solution, so the real
- *   one answers *no* there for a reason that has nothing to do with the case —
- *   which would leave the hatch untested rather than tested.
+ * @param {{ compilerOwes?: (repoRoot: string) => readonly string[] | null }} [options]
+ *   `compilerOwes` — the projects tsc would build, by directory, or `null` where it could not answer — is injected so
+ *   the escape hatch can be exercised in both directions. A fixture tree is not a TypeScript solution, so the real one
+ *   answers *no* there for a reason that has nothing to do with the case — which would leave the hatch untested
+ *   rather than tested.
  * @returns {void}
  */
 export function refuseStaleBuild(repoRoot, pairs, expected, options = {}) {
-  const askCompiler = options.compilerSaysCurrent ?? typescriptSaysCurrent;
+  const askCompiler = options.compilerOwes ?? typescriptOwes;
   if (pairs.length !== expected) {
     throw new Error(
       `refuseStaleBuild received ${String(pairs.length)} pair(s) where the call site declares ` +
@@ -1008,7 +1008,9 @@ export function refuseStaleBuild(repoRoot, pairs, expected, options = {}) {
     // from the extension: esbuild and Vite rewrite their outputs on every run,
     // so for a bundled pair the timestamps are the whole truth and tsc's answer
     // is about a different build.
-    if (producer === 'tsc' && askCompiler(repoRoot)) continue;
+    // ASKED ABOUT THIS PAIR'S OWN PROJECT: another project being owed says nothing about this artefact.
+    const owed = producer === 'tsc' ? askCompiler(repoRoot) : null;
+    if (owed !== null && !owed.includes(projectOf(artefact))) continue;
 
     throw new Error(
       // "This proof" until 2026-09-08, when the launcher became a caller and
@@ -1024,8 +1026,10 @@ export function refuseStaleBuild(repoRoot, pairs, expected, options = {}) {
         `is.\n` +
         `${
           producer === 'tsc'
-            ? 'tsc was asked directly and says a build IS owed, so this is real staleness ' +
-              'rather than a timestamp that moved on its own.'
+            ? owed === null
+              ? 'tsc was asked directly and could not answer, so the timestamps decide.'
+              : `tsc was asked directly and says a build IS owed for ${owed.map((project) => project || '(the root)').join(', ')}, ` +
+                'so this is real staleness rather than a timestamp that moved on its own.'
             : 'A bundled artefact is rewritten on every build, so its timestamp is the whole ' +
               'truth and there is nothing else to consult.'
         }`,
@@ -1088,23 +1092,24 @@ export function startedByPath(repoRoot, artefacts) {
 }
 
 /**
- * Whether `tsc --build` would rebuild anything, memoised per process.
+ * The projects `tsc --build` would rebuild, by their directory relative to the root (`''` for the root's own), memoised
+ * per process; `null` where the question was not answered.
  *
- * `--dry` reports one line per project and never writes. Current means **every**
- * project says so: a single line that does not is a project that would be
- * built, and treating a partially-stale solution as fresh is the reassuring
- * answer this whole module exists to refuse.
+ * `--dry` reports one line per project, naming its `tsconfig.json`, and never writes. A project is owed unless its line
+ * says it is up to date. It was one answer for the whole tree until 2026-10-16, so a stale `packages/testing` refused
+ * every walk with a message naming `packages/kernel`, whose output was current and whose mtime merely trailed its
+ * sources because an unchanged emit is not rewritten (KKKKKKKK-6, and again in this session). A pair now asks about
+ * its own project, and a refusal names the projects tsc named.
  *
- * A failure to run it is NOT fresh. `npx` missing, a config error, a non-zero
- * exit — every one of them means the question was not answered, and the caller
- * falls back to the timestamp comparison it already made, which is the
- * conservative direction.
+ * A failure to run it is NOT fresh. `npx` missing, a config error, a non-zero exit, a line naming no project — every one
+ * of them means the question was not answered, and the caller falls back to the timestamp comparison it already made,
+ * which is the conservative direction.
  *
  * @param {string} repoRoot
- * @returns {boolean}
+ * @returns {readonly string[] | null}
  */
-function typescriptSaysCurrent(repoRoot) {
-  if (tscCurrent !== null) return tscCurrent;
+function typescriptOwes(repoRoot) {
+  if (tscOwes !== undefined) return tscOwes;
   // THE PINNED COMPILER BY PATH, not `npx tsc` through a shell. Two reasons and
   // both are this repository's own rules: PATH deciding which binary answers a
   // question is invariant 23's objection to a filename selecting native code,
@@ -1112,8 +1117,8 @@ function typescriptSaysCurrent(repoRoot) {
   // escaping (DEP0190), printed on every run of three proofs.
   const compiler = join(repoRoot, 'node_modules', 'typescript', 'bin', 'tsc');
   if (!existsSync(compiler)) {
-    tscCurrent = false;
-    return tscCurrent;
+    tscOwes = null;
+    return tscOwes;
   }
   const run = spawnSync(process.execPath, [compiler, '--build', '--dry'], {
     cwd: repoRoot,
@@ -1124,10 +1129,28 @@ function typescriptSaysCurrent(repoRoot) {
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
-  tscCurrent =
-    run.status === 0 && lines.length > 0 && lines.every((line) => line.includes('is up to date'));
-  return tscCurrent;
+  const named = lines.map((line) => ({ line, project: /'([^']+)[\\/]tsconfig\.json'/u.exec(line)?.[1] }));
+  if (run.status !== 0 || named.length === 0 || named.some(({ project }) => project === undefined)) {
+    tscOwes = null;
+    return tscOwes;
+  }
+  tscOwes = named
+    .filter(({ line }) => !line.includes('is up to date'))
+    .map(({ project }) => relative(repoRoot, project ?? '').split(sep).join('/'));
+  return tscOwes;
 }
 
-/** @type {boolean | null} */
-let tscCurrent = null;
+/** @type {readonly string[] | null | undefined} */
+let tscOwes;
+
+/**
+ * The project a built artefact belongs to: its path up to its `dist` folder, `packages/kernel` for
+ * `packages/kernel/dist/index.js` and `''` for a root-level `dist/`. The directory a project's `tsconfig.json` sits in,
+ * which is how `tsc --build --dry` names it.
+ *
+ * @param {string} artefact repo-relative, forward slashes
+ */
+export function projectOf(artefact) {
+  const at = artefact.split('/').indexOf('dist');
+  return at <= 0 ? '' : artefact.split('/').slice(0, at).join('/');
+}

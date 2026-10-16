@@ -68,6 +68,8 @@ const CASES = [
   'a TSC pair whose source is newer is ACCEPTED when the compiler says it is current',
   'CONTROL: and REFUSED when the compiler says a build is owed',
   'CONTROL: a BUNDLER pair with the same shape is refused without asking anybody',
+  'a TSC pair is ACCEPTED when the compiler owes a build of ANOTHER project only (KKKKKKKK-6)',
+  'and a refusal NAMES the projects the compiler said are owed',
   'every proof that CALLS the guard has an ARTEFACT_EDGES entry, so the sweep can order it',
   'CONTROL: and the scan found the callers it is known to be able to find',
   'every script that IMPORTS a build takes the guard, or is named as owing none',
@@ -373,7 +375,7 @@ try {
     writeAt(join(root, 'dist', 'a.js'), 'built\n', OLD);
 
     const current = refusal(root, [['src/a.ts', 'dist/a.js', 'tsc']], 1, {
-      compilerSaysCurrent: () => true,
+      compilerOwes: () => [],
     });
     check(
       'a TSC pair whose source is newer is ACCEPTED when the compiler says it is current',
@@ -383,8 +385,9 @@ try {
         `made \`--force\` a documented step.`,
     );
 
+    // THE PAIR'S OWN PROJECT: `dist/a.js` at the root is the root's, which tsc names by the empty directory.
     const owed = refusal(root, [['src/a.ts', 'dist/a.js', 'tsc']], 1, {
-      compilerSaysCurrent: () => false,
+      compilerOwes: () => [''],
     });
     check(
       'CONTROL: and REFUSED when the compiler says a build is owed',
@@ -395,7 +398,7 @@ try {
     );
 
     const bundled = refusal(root, [['src/a.ts', 'dist/a.js', 'bundler']], 1, {
-      compilerSaysCurrent: () => true,
+      compilerOwes: () => [],
     });
     check(
       'CONTROL: a BUNDLER pair with the same shape is refused without asking anybody',
@@ -404,6 +407,29 @@ try {
         `their outputs on every build, so for a bundled artefact the timestamps are the whole ` +
         `truth and tsc's answer is about a different build. A hatch that applied to both would ` +
         `let a stale preload through on a tree whose TypeScript happened to be current.`,
+    );
+
+    // KKKKKKKK-6, the shape it took: `packages/kernel`'s dist trails its sources by mtime because an unchanged emit is
+    // not rewritten, tsc says kernel is current, and another project is owed. The kernel pair must pass, and when its
+    // own project IS owed the refusal must name it rather than only the pair it was looking at.
+    mkdirSync(join(root, 'packages', 'kernel', 'src'), { recursive: true });
+    mkdirSync(join(root, 'packages', 'kernel', 'dist'), { recursive: true });
+    writeAt(join(root, 'packages', 'kernel', 'src', 'index.ts'), 'source\n', NEW);
+    writeAt(join(root, 'packages', 'kernel', 'dist', 'index.js'), 'built\n', OLD);
+    /** @type {import('../lib/buildFreshness.mjs').BuildEdge[]} */
+    const kernelPair = [['packages/kernel/src', 'packages/kernel/dist/index.js', 'tsc']];
+    const elsewhere = refusal(root, kernelPair, 1, { compilerOwes: () => ['packages/testing'] });
+    check(
+      'a TSC pair is ACCEPTED when the compiler owes a build of ANOTHER project only (KKKKKKKK-6)',
+      !elsewhere.refused,
+      `refused with: ${elsewhere.message.split('\n')[0] ?? ''}\n      tsc owed packages/testing alone, and the ` +
+        `refusal sent the reader to packages/kernel, whose output was current.`,
+    );
+    const ownOwed = refusal(root, kernelPair, 1, { compilerOwes: () => ['packages/kernel', 'packages/testing'] });
+    check(
+      'and a refusal NAMES the projects the compiler said are owed',
+      ownOwed.refused && ownOwed.message.includes('owed for packages/kernel, packages/testing'),
+      `${ownOwed.refused ? ownOwed.message : '(accepted)'}`,
     );
   }
 
@@ -743,7 +769,7 @@ try {
       const onlyTheStarter = [['packages/k/src/a.ts', 'packages/k/dist/a.js', 'tsc']];
       const outcome = () => {
         try {
-          refuseStaleBuild(root, onlyTheStarter, 1, { compilerSaysCurrent: () => false });
+          refuseStaleBuild(root, onlyTheStarter, 1, { compilerOwes: () => ['packages/k'] });
           return 'passed';
         } catch (error) {
           return error instanceof Error ? error.message : String(error);
