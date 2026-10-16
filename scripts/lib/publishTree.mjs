@@ -11,15 +11,22 @@
  * could not read its own DLLs after `provision:onlyoffice` re-extracted it). Granting at the publish makes a
  * provisioned tree and a reachable tree the same event (ADR-0027: the thing that installs an artefact owns its state).
  *
- * WHICH trees and with which rights is `containerGrants.mjs`' `grantSet`, never the caller's: that module imports every
- * provisioner for its paths, so it is loaded here when the grant is taken rather than at import, which would be a
- * cycle.
+ * WHICH trees and with which rights is `containerGrants.mjs`' `grantSet`, never the caller's. That module imports every
+ * provisioner for its paths, and every provisioner imports this one, so the three form a cycle — and it is imported
+ * STATICALLY because only a static cycle is safe here. ESM evaluates a static cycle whole before any importer's body
+ * runs, and none of the three calls an imported binding at its top level. A DYNAMIC import of it from here deadlocked
+ * instead: a provisioner run as the program is suspended on its own top-level `await provision…()`, and importing
+ * `containerGrants.mjs` from inside that call imports the provisioner again, which waits for the evaluation that is
+ * waiting on it. Nothing else holds the event loop, so Node exits 13, *unsettled top-level await* — measured 2026-10-16,
+ * `node scripts/provision/pdfium.mjs --force` here and CI's native-shim job at 159c82a3.
  *
  * Windows only, and not fatal, for `electron.mjs`' stated reason: a machine where `icacls` cannot write still ends
  * with a provisioned tree. It is never silent: a grant the read-back does not show is printed with its repair.
  */
 
 import { rename } from 'node:fs/promises';
+
+import { regrantPublished } from '../provision/containerGrants.mjs';
 
 /**
  * @param {{ from: string, to: string, root: string }} tree `to` must not exist; `root` is the checkout
@@ -40,7 +47,6 @@ export async function publishTree({ from, to, root }) {
  */
 export async function grantPublished({ to, root }) {
   if (process.platform !== 'win32') return [];
-  const { regrantPublished } = await import('../provision/containerGrants.mjs');
   const outcomes = regrantPublished(to, root);
   for (const outcome of outcomes) {
     process.stderr.write(

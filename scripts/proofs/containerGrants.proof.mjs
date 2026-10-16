@@ -50,7 +50,7 @@ import { publishTree } from '../lib/publishTree.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 23 });
+const roster = createRoster(failures, { cases: 24 });
 
 /** The program a contained host runs, which the grant set must cover. */
 const HOST_ENTRY = join(repoRoot(), 'packages', 'kernel', 'dist', 'host', 'hostEntry.js');
@@ -407,6 +407,20 @@ try {
     `provisioners read from containerGrants.mjs' imports: ${JSON.stringify(provisioners)}; publishing ` +
       `without the grant: ${JSON.stringify(ungrantedPublishers)}. A re-provisioned tree then names no ` +
       `package principal, and the program in it dies before its first line.`,
+  );
+
+  // THE PUBLISH TAKES THE GRANT SET BY A STATIC IMPORT. Provisioner → publishTree → containerGrants → provisioner is a
+  // cycle; ESM finishes a static one before any body runs, while a DYNAMIC import from inside a provisioner's own
+  // top-level `await` waits for that provisioner's evaluation, which waits on it: Node exits 13. Measured 2026-10-16,
+  // `node scripts/provision/pdfium.mjs --force` exited 13 with the dynamic import and 0, granted, with the static one;
+  // CI's native-shim job, which provisions PDFium on a cold runner, is the run that holds both ends.
+  const publishSource = readFileSync(join(repoRoot(), 'scripts', 'lib', 'publishTree.mjs'), 'utf8');
+  const takesStatically = /^import \{[^}]*\bregrantPublished\b[^}]*\} from '\.\.\/provision\/containerGrants\.mjs';$/mu.test(publishSource);
+  const importsLater = /\bimport\(/u.test(publishSource);
+  check(
+    'publishTree takes the grant set by a static import, never a dynamic one a provisioner run as the program deadlocks on',
+    takesStatically && !importsLater,
+    `static import of containerGrants.mjs: ${String(takesStatically)}; a dynamic import(): ${String(importsLater)}.`,
   );
 
   // THE HELPER, round-tripped on a throwaway ROOT, so the grant set it reads names throwaway paths.
