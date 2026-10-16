@@ -12,6 +12,9 @@ import {
 } from '@cantoo/pdf-lib';
 import forge from 'node-forge';
 
+import { NATIVE_ENGINE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { repoRoot } from '../lib/gitScope.mjs';
+
 /**
  * What a walk reads back from a file the application saved, by readers that are not the writer: the ONE place each such
  * reading is spelt, so two walks cannot hold two opinions about where a page's fonts are or what its words say.
@@ -126,6 +129,9 @@ export async function savedWords(path) {
 export async function savedTextKeepingSpaces(path, pageIndex = 0) {
   const { bindNativeEngine } = await import('../lib/nativeEngine.mjs');
   if (bindNativeEngine() === null) throw new Error('the MuPDF shim is not built here, so a whitespace-keeping read cannot be taken');
+  // THE OBJECT MODEL READ FROM THE BUILD, so the build is this tree's before it is read (`nativeEngine.mjs` binds the
+  // same edges; this module imports the build itself, so it takes the guard itself).
+  refuseStaleBuild(repoRoot(), NATIVE_ENGINE, 1);
   const mupdf = await import('../../packages/kernel/dist/mupdfRaw.js');
   const document = mupdf.PDFDocument.openDocument(new Uint8Array(await readFile(path)), 'application/pdf');
   try {
