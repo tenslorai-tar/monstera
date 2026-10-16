@@ -212,6 +212,8 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // is the enum's own size rather than a number somebody picked.
   'app.ocrLanguages': 'answers which of fourteen declared models are installed',
   'app.fontFamilies': "answers the fonts on this computer and the bundled set, which no document contributes to; MAX_FONT_FAMILIES bounds it",
+  'app.bundledFace':
+    'answers one of the fonts this application ships, named from a closed set, which no document contributes to; MAX_BUNDLED_FACE_BYTES bounds it (ADR-0250)',
   'app.components': 'answers one row per native component — the schema caps the list at the six declared ids',
   'settings.load': "carries the user's settings, which no document contributes to",
   'settings.save': 'answers a boolean',

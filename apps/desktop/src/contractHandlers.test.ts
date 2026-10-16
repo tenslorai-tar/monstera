@@ -2836,6 +2836,8 @@ describe('a dense page’s blocks and objects answer in parts the contract accep
     lines: [{ runs: [{ index: at, text: `cell ${String(at)}`, style: cell }], box, soft: false, baseline: 12 }],
     style: cell,
     shape: { align: 'left', firstIndent: 0 },
+    // WHAT EACH PUSHES (ADR-0249), as main's `textBlocks` answers it: required on the wire.
+    push: { below: [], room: 0 },
   }));
   const objects = Array.from({ length: 8400 }, (_, at) => ({
     index: at,

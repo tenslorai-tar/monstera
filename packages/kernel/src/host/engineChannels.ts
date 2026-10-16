@@ -252,12 +252,13 @@ export const ENGINE_PAGE_TEXT_MAX_BYTES = 8 * 1024 * 1024;
  * rounded down to a hundred (ADR-0130 Decision 3). It was 4,096 and the answer was refused whole past it, so the page's
  * every link was unreadable (JOURNAL, *No document-size refusals*, table A row 7); the renderer reads them in parts.
  */
-export const ENGINE_PAGE_LINKS_MAX = 98_600;
+export const ENGINE_PAGE_LINKS_MAX = 68_700;
 /**
  * The fewest bytes one link serialises to on this wire. Measured by `engineChannels.test.ts`: 67 until ADR-0212 gave every
- * link a required `outline` (the shortest value, `none`, adds 17), which moved {@link ENGINE_PAGE_LINKS_MAX} from 123,300.
+ * link a required `outline` (the shortest value, `none`, adds 17), which moved {@link ENGINE_PAGE_LINKS_MAX} from 123,300;
+ * 84 until ADR-0249 gave every link its `rect` in PDF user space (37 more), which moved it from 98,600.
  */
-export const SMALLEST_LINK_BYTES = 84;
+export const SMALLEST_LINK_BYTES = 121;
 
 /**
  * How many filled shapes one page's `engine/page-fills` answer may carry. The host is hostile by

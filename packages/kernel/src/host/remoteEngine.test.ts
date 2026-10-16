@@ -1319,7 +1319,7 @@ describe('an operator edit over engine/apply-file answers its boxes (ADR-0177 De
 
   it('names a character no face carries, with its page, after crossing the pipe', async () => {
     const unassigned = String.fromCodePoint(0x378);
-    expect(await edit(`Monstera fixture ${unassigned}.`)).toStrictEqual({ boxed: [{ character: unassigned, page: 0 }], more: 0 });
+    expect(await edit(`Monstera fixture ${unassigned}.`)).toStrictEqual({ boxed: [{ character: unassigned, page: 0 }], more: 0, moved: [] });
   });
 
   it('names the first sixty-four boxes and counts the rest, by the one cap', async () => {
@@ -1332,6 +1332,6 @@ describe('an operator edit over engine/apply-file answers its boxes (ADR-0177 De
   });
 
   it('answers no box for a word set in faces alone, so the list above is the edit’s and not a constant', async () => {
-    expect(await edit('Monstera fixture zap.')).toStrictEqual({ boxed: [], more: 0 });
+    expect(await edit('Monstera fixture zap.')).toStrictEqual({ boxed: [], more: 0, moved: [] });
   });
 });
