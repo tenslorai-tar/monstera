@@ -126,6 +126,7 @@ function surface(
     // file asserts on `calls` as a whole sequence — so a factory that started
     // reading them would be caught by the assertions already here rather than
     // by a new one.
+    processorTime: () => null,
     diagnostics: (): string | null => null,
     discardDiagnostics: (): void => undefined,
   };

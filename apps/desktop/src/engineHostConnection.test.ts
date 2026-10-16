@@ -512,6 +512,78 @@ describe('createEngineHostConnection', () => {
     expect(!connection.ok && connection.error.detail).not.toContain('The host said');
   });
 
+  it('says when the bound was CHECKED, so a refusal from a main too busy to check on time names that', async () => {
+    vi.useFakeTimers();
+    try {
+      const h = harness({ connect: true });
+      const pending = connect(h);
+      // MAIN'S CLOCK MOVES ON fifteen seconds while nothing runs, as it does when the event loop is held, and then the
+      // timer gets its turn.
+      vi.setSystemTime(Date.now() + 15_000);
+      await vi.advanceTimersByTimeAsync(HOST_CONNECT_TIMEOUT_MS + 1);
+      const connection = await pending;
+
+      expect(!connection.ok && connection.error.detail).toMatch(/checked 25\d{3} ms after the wait began/u);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('CONTROL: a bound checked on time says so', async () => {
+    vi.useFakeTimers();
+    try {
+      const h = harness({ connect: true });
+      const pending = connect(h);
+      await vi.advanceTimersByTimeAsync(HOST_CONNECT_TIMEOUT_MS + 1);
+      const connection = await pending;
+
+      expect(!connection.ok && connection.error.detail).toContain(`checked ${String(HOST_CONNECT_TIMEOUT_MS)} ms after the wait began`);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('says how much PROCESSOR TIME a host that ran out the bound had used, read while its handle is open', async () => {
+    vi.useFakeTimers();
+    try {
+      const h = harness({ connect: true, ran: { userMs: 812.4, kernelMs: 96.6 } });
+      const pending = connect(h);
+      await vi.advanceTimersByTimeAsync(HOST_CONNECT_TIMEOUT_MS + 1);
+      const connection = await pending;
+
+      // THE TWO FIGURES, which are what separates a host that was computing from one that was waiting.
+      expect(!connection.ok && connection.error.detail).toContain('812 ms of processor time in its own code and 97 ms in the system');
+      // READ WHILE THE PROCESS HANDLE IS OPEN, every time it is read: a closed handle's value may name another object.
+      const close = h.calls.indexOf('host.close:process');
+      expect(close).toBeGreaterThan(-1);
+      expect(h.calls.filter((call, at) => call === 'host.processorTime' && at > close)).toStrictEqual([]);
+      expect(h.calls).toContain('host.processorTime');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('says it too for a host whose ending freed its handle first, from the reading taken as it was freed', async () => {
+    const h = harness({ connect: true, ran: { userMs: 40, kernelMs: 12 } });
+    const pending = connect(h);
+    h.post({ kind: 'ended', detail: 'the reader stopped' });
+    const connection = await pending;
+
+    expect(!connection.ok && connection.error.detail).toContain('40 ms of processor time in its own code and 12 ms in the system');
+    const close = h.calls.indexOf('host.close:process');
+    expect(h.calls.filter((call, at) => call === 'host.processorTime' && at > close)).toStrictEqual([]);
+  });
+
+  it('CONTROL: says nothing of processor time where it could not be read', async () => {
+    const h = harness({ connect: true });
+    const pending = connect(h);
+    h.post({ kind: 'ended', detail: 'the reader stopped' });
+    const connection = await pending;
+
+    expect(h.calls).toContain('host.processorTime');
+    expect(!connection.ok && connection.error.detail).not.toContain('processor time');
+  });
+
   /**
    * ASSERTED AS A CALL, not as an absent file. The surface owns the path — a
    * `string` path on anything the kernel or the renderer can name is a compile

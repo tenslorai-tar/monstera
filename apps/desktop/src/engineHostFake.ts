@@ -25,7 +25,7 @@ import type { PipeHandle, SecurityDescriptor } from './enginePipeFactory.js';
 import type { ContainerSid, UserSid } from './hostDacl.js';
 import type { EngineHostConnectionSurfaces } from './engineHostConnection.js';
 import type { ReaderWorkerHandle } from './engineReaderChannel.js';
-import type { CreatedProcess, JobHandle, ProcessHandle, ThreadHandle } from './engineHostFactory.js';
+import type { CreatedProcess, JobHandle, ProcessHandle, ProcessorTime, ThreadHandle } from './engineHostFactory.js';
 import type { PendingWrite } from './hostWriteQueue.js';
 import type { StopEvent } from './win32PipeSurface.js';
 
@@ -151,6 +151,8 @@ export function hostHarness(
      * comes back.
      */
     said?: string;
+    /** The processor time the host had used, or absent where it cannot be read. */
+    ran?: ProcessorTime;
     /** The memory sampler's thread cannot be started. */
     sampler?: boolean;
   } = {},
@@ -378,6 +380,10 @@ export function hostHarness(
         },
         terminate: () => calls.push('host.terminate'),
         close: (handle) => calls.push(`host.close:${handle.__handle}`),
+        processorTime: () => {
+          calls.push('host.processorTime');
+          return failures.ran ?? null;
+        },
         diagnostics: () => {
           calls.push('host.diagnostics');
           return failures.said ?? null;

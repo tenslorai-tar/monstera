@@ -151,7 +151,7 @@
  *        node scripts/perf/roleMupdfHost.mjs --no-document
  */
 
-import { copyFileSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { copyFileSync, existsSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -192,6 +192,11 @@ const NO_DOCUMENT = process.argv.includes('--no-document');
 const HOST_MODE = process.argv.includes('--host') || NO_DOCUMENT;
 // OPEN AND NOTHING ELSE, in the real host: see the workload below.
 const OPEN_ONLY = process.argv.includes('--open-only');
+/**
+ * The host entry started, in `packages/kernel/dist/host/`: `hostEntry.js` unless `--entry <file>` names another, as a
+ * probe of the same host built another way (one bundled file against the module graph) does.
+ */
+const ENTRY = process.argv.includes('--entry') ? (process.argv[process.argv.indexOf('--entry') + 1] ?? 'hostEntry.js') : 'hostEntry.js';
 
 /**
  * The document path, or a refusal naming which cell asked for it.
@@ -461,7 +466,7 @@ async function measureHost() {
             // The engine's library second, as `hostEntry.ts` reads it (ADR-0124): the path the freshness check
             // above vouched for, so the host measured is the shim this checkout built.
             commandArguments: [
-              join(ROOT, 'packages', 'kernel', 'dist', 'host', 'hostEntry.js'),
+              join(ROOT, 'packages', 'kernel', 'dist', 'host', ENTRY),
               pipeName,
               requireCurrentShim({ root: ROOT }),
             ],
@@ -535,6 +540,9 @@ async function measureHost() {
       // run rather than measured once: a bound justified by a number nobody
       // re-reads is the shape B6 exists for.
       connectMs: Number(connectedAt - startedAt) / 1e6,
+      // WHERE THE START WENT, in the host's own words (`bindEngineOrExit`): the module graph, then the engine, each in
+      // milliseconds since the host process began. Read before the connection is torn down, which discards the file.
+      hostSaid: existsSync(hostLogPath) ? readFileSync(hostLogPath, 'utf8').trim() : null,
     };
 
     if (NO_DOCUMENT) {

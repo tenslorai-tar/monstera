@@ -72,6 +72,7 @@ import type {
   JobHandle,
   JobMembership,
   ProcessHandle,
+  ProcessorTime,
   ThreadHandle,
 } from './engineHostFactory.js';
 import { readDiagnosticHead } from './diagnosticHead.js';
@@ -386,6 +387,7 @@ interface Bindings {
     ) => void;
   };
   readonly getExitCodeProcess: (target: ProcessHandle, code: unknown[]) => unknown;
+  readonly getProcessTimes: (target: ProcessHandle, created: unknown[], exited: unknown[], kernel: unknown[], user: unknown[]) => unknown;
   readonly closeHandle: (handle: unknown) => boolean;
   readonly lastError: () => number;
   readonly createAppContainerProfile: (
@@ -527,6 +529,11 @@ function bind(): Bindings {
     terminateProcess: kernel.func('bool TerminateProcess(void *proc, uint32 code)'),
     waitForSingleObject: kernel.func('uint32 WaitForSingleObject(void *handle, uint32 ms)'),
     getExitCodeProcess: kernel.func('bool GetExitCodeProcess(void *proc, _Out_ uint32 *code)'),
+    // EACH FILETIME AS ONE uint64 of 100 ns units: the struct is two uint32 halves, low first, which is a little-endian
+    // uint64's own layout, and the call only writes through the four pointers.
+    getProcessTimes: kernel.func(
+      'bool GetProcessTimes(void *proc, _Out_ uint64 *created, _Out_ uint64 *exited, _Out_ uint64 *kernel, _Out_ uint64 *user)',
+    ),
     closeHandle: kernel.func('bool CloseHandle(void *handle)'),
     lastError: kernel.func('uint32 GetLastError()'),
     createAppContainerProfile: userenv.func(
@@ -1057,6 +1064,18 @@ export function createWin32HostSurface(config: Win32HostSurfaceConfig): Converte
 
     close: (handle: ProcessHandle | ThreadHandle | JobHandle): void => {
       bindings.closeHandle(handle);
+    },
+
+    processorTime: (target: ProcessHandle): ProcessorTime | null => {
+      const created = [0];
+      const exited = [0];
+      const kernelTime = [0];
+      const userTime = [0];
+      // Exactly `true`, not truthy. See the note on {@link Bindings}.
+      if (bindings.getProcessTimes(target, created, exited, kernelTime, userTime) !== true) return null;
+      const [kernel100ns, user100ns] = [kernelTime[0], userTime[0]];
+      if (typeof kernel100ns !== 'number' || typeof user100ns !== 'number') return null;
+      return { kernelMs: kernel100ns / 10_000, userMs: user100ns / 10_000 };
     },
 
     // NOT FFI CALLS, and the boundary is not being crossed loosely — the same

@@ -22,7 +22,7 @@ import {
   type ReaderHostSurface,
   createEngineReaderChannel,
 } from './engineReaderChannel.js';
-import { type HostCreationSurface, createContainedHost } from './engineHostFactory.js';
+import { type HostCreationSurface, type ProcessorTime, createContainedHost } from './engineHostFactory.js';
 import { type OverlappedWriteSurface, createHostWriteQueue } from './hostWriteQueue.js';
 import { type TransportEnd, createHostTransport } from './hostTransport.js';
 import type { HostMemorySampling } from './budget.js';
@@ -231,6 +231,19 @@ export function refusedAtConnect(
  * it is the line past which *the host is not coming*. `hostFixedCost.mjs`
  * independently chose the same figure for the same event before this existed.
  *
+ * **Read again 2026-10-16, inside the running application, and the margin is
+ * smaller there.** `scripts/research/hostStartWalk.mjs`, 27 starts on this
+ * machine (idle, both processors held busy, and 0.7 GB of memory free): the
+ * MuPDF host's own line put its runtime ready at 60–560 ms, its modules
+ * evaluated at 0.9–2.9 s and its engine bound 20–80 ms later, while `main`'s
+ * event loop was never held longer than 165 ms. Its module graph is 571 files;
+ * outside the application (`roleMupdfHost.mjs --host`) the same host connects
+ * in about 1.1 s. So the slowest in-application start is about a third of the
+ * bound, not a seventh. Twice on 2026-10-16 a host missed it in a walk, in two
+ * attempts each, and no condition tried here reproduced it; the refusal now
+ * says how far the host got, what processor time it used, and when the bound
+ * was checked, so the next one names its own cause.
+ *
  * The figure is reported by an instrument rather than recorded once here,
  * because a bound justified by a number nobody re-reads is exactly what B6 is
  * about: on the day a host takes four seconds, the run that shows it is one
@@ -269,12 +282,16 @@ function connected(
   waiting: { end: HostTermination | null; whenEnded: (() => void) | null },
 ): Promise<PeerOutcome> {
   return new Promise((settle) => {
+    // WHEN THE WAIT BEGAN, so the refusal says when the bound was actually checked. A timer runs on this process's
+    // event loop: if `main` itself was busy, it fires late, and it is handled before a connection the reader reported
+    // meanwhile, so a host that arrived in time reads as one that did not. A check long after the bound names that.
+    const began = Date.now();
     const timer = setTimeout(() => {
       settle({
         connected: false,
         detail:
-          `no connection within ${String(HOST_CONNECT_TIMEOUT_MS)}ms. The process was created, ` +
-          `so this is a host that started and did not reach its pipe`,
+          `no connection within ${String(HOST_CONNECT_TIMEOUT_MS)}ms (checked ${String(Date.now() - began)} ms after the ` +
+          `wait began). The process was created, so this is a host that started and did not reach its pipe`,
       });
     }, HOST_CONNECT_TIMEOUT_MS);
     // UNREF'D, so a waiting connection cannot be the reason a process stays
@@ -402,7 +419,9 @@ export async function createEngineHostConnection(
     raised: HostTermination | null;
     /** The exit code of a host that ended before it connected, as the sampler read it. */
     exitCode: number | null;
-  } = { client: null, host: null, started: false, end: null, whenEnded: null, sampler: null, raised: null, exitCode: null };
+    /** The processor time the host had used when its handles were freed: what {@link ranSoFar} answers after that. */
+    ran: ProcessorTime | null;
+  } = { client: null, host: null, started: false, end: null, whenEnded: null, sampler: null, raised: null, exitCode: null, ran: null };
 
   /**
    * Which termination the ending really is.
@@ -498,9 +517,19 @@ export async function createEngineHostConnection(
     return err({ stage: 'host', detail: `${host.error.stage}: ${host.error.detail}` });
   }
 
+  /**
+   * The processor time the host has used, read off its process handle while that is open and kept from the moment it
+   * is freed: an ending can free the handles before the connect branch below asks, and a closed handle's value may
+   * already name another object.
+   */
+  const ranSoFar = (): ProcessorTime | null => (state.end === null ? surface.processorTime(host.value.process) : state.ran);
+
   state.host = {
     pid: host.value.pid,
     free: () => {
+      // WHAT IT RAN, before the kill stops the clock and the close takes the handle away: for a host that never
+      // connected, whose refusal says it. One that connected is past the only question it answers.
+      if (!state.started) state.ran = surface.processorTime(host.value.process);
       // THE SAMPLER FIRST: it holds its own handle to this process, and stopping it before the kill means it never
       // reads a process that is being torn down.
       state.sampler?.stop();
@@ -558,12 +587,20 @@ export async function createEngineHostConnection(
     // Appended rather than substituted: `peer.detail` separates "the reader
     // ended" from "the bound expired", which the host's output cannot say.
     const said = surface.diagnostics();
+    // AND HOW MUCH OF THAT TIME IT RAN: a host that used most of the bound in processor time was computing, and one
+    // that used little of it was waiting.
+    const used = ranSoFar();
+    const ran =
+      used === null
+        ? ''
+        : `. It had used ${String(Math.round(used.userMs))} ms of processor time in its own code and ` +
+          `${String(Math.round(used.kernelMs))} ms in the system`;
     // `started` is still false, so this reports itself once — here, as a
     // creation failure with a stage — and not a second time through `onEnded`
     // as a death. That distinction is the whole finding: a host that never
     // connects is not a host that crashed, and `engineSessions` poisons a
     // document at two crashes.
-    const detail = said === null ? peer.detail : `${peer.detail}. The host said: ${said}`;
+    const detail = `${peer.detail}${ran}${said === null ? '' : `. The host said: ${said}`}`;
     transport.terminate({ code: 'shutdown', detail: `the host never connected: ${detail}` });
     return err(state.exitCode === null ? { stage: 'connect', detail } : { stage: 'connect', detail, exitCode: state.exitCode });
   }

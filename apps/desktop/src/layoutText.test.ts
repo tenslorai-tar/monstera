@@ -105,6 +105,7 @@ function platform(convert: (program: ContainedProgram) => ExitReading): {
           resume: () => 1,
           terminate: () => undefined,
           close: () => undefined,
+          processorTime: () => null,
           diagnostics: () => 'Syntax Error: the converter said so',
           discardDiagnostics: () => undefined,
           waitForExit: () => {

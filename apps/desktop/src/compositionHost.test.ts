@@ -2883,6 +2883,7 @@ function officeConverter(): { readonly platform: ConverterPlatform; readonly rea
         resume: () => 1,
         terminate: () => undefined,
         close: () => undefined,
+        processorTime: () => null,
         diagnostics: () => null,
         discardDiagnostics: () => undefined,
         waitForExit: () => {

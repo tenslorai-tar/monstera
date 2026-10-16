@@ -116,6 +116,12 @@ export interface CreatedProcess {
   readonly thread: ThreadHandle;
 }
 
+/** A process's processor time so far, in milliseconds: in the kernel on its behalf, and in its own code. */
+export interface ProcessorTime {
+  readonly kernelMs: number;
+  readonly userMs: number;
+}
+
 /** Whether the process is in the job, or whether the question could be asked. */
 export type JobMembership = 'in-job' | 'not-in-job' | 'could-not-read';
 
@@ -160,6 +166,14 @@ export interface HostCreationSurface {
   readonly terminate: (process: ProcessHandle) => void;
   /** `CloseHandle`. */
   readonly close: (handle: ProcessHandle | ThreadHandle | JobHandle) => void;
+  /**
+   * `GetProcessTimes`: how much processor time the process has used, or `null` where the call failed.
+   *
+   * What separates a host that was COMPUTING when it ran out of time from one that was WAITING (on a disk, a scanner, a
+   * page of memory, or a processor another process held): a start that took ten seconds of wall time and used a
+   * second of processor time spent nine of them waiting.
+   */
+  readonly processorTime: (process: ProcessHandle) => ProcessorTime | null;
   /**
    * What the host wrote to its inherited stdout and stderr, or `null`.
    *

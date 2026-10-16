@@ -57,6 +57,7 @@ function recording(exit: ExitReading, said: string | null = null): {
     close: (handle) => {
       calls.push(`close:${handle.__handle}`);
     },
+    processorTime: () => null,
     diagnostics: () => said,
     discardDiagnostics: () => {
       calls.push('discardDiagnostics');

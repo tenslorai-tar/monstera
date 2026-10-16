@@ -141,6 +141,7 @@ function platform(
         resume: () => 1,
         terminate: () => undefined,
         close: () => undefined,
+        processorTime: () => null,
         diagnostics: () => null,
         discardDiagnostics: () => undefined,
         waitForExit: () => {
