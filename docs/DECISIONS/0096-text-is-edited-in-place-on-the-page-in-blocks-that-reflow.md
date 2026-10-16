@@ -159,3 +159,12 @@ the in-place editor sends one. Decision 2's consumer gains exactly one more — 
 the blocks it was read from. The first stated limit reads accordingly. The last consequence above said
 *"block by block"*, and the decision taken is one command for the page, for the checkpoint and undo reasons
 ADR-0097 gives.
+
+## Amended 2026-10-16 by ADR-0249 — the text below a block that grows moves down
+
+[ADR-0249](0249-a-paragraph-that-grows-pushes-the-text-below-it-down.md), the owner's decision of 2026-10-16. The
+second stated limit above, *"a block that grows pushes its own lines down and nothing else"*, no longer holds for the
+in-place editor: the text below a block in its column moves down by what the block grew, in the same command, and where
+there is no room nothing moves and the person is told before the write. Decision 3 gains one consumer: the renderer
+draws the push from `main`'s `below` and `room`, and puts the blocks `main` named into the edit; the writer measures the
+growth. A translated page is unchanged.
