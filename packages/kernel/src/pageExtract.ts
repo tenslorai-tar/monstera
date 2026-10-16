@@ -8,6 +8,7 @@ import { bufferBytes, newDocument, withDocument } from './mupdfWriter.js';
 import { graftingWithoutPageTree } from './pageGraft.js';
 import { releasePagesOutsideTree } from './pageReferences.js';
 import { pagesOf } from './pageScope.js';
+import { savedBuffer } from './saveDepth.js';
 
 /**
  * Building a NEW document out of some of another one's pages — the operation
@@ -141,7 +142,7 @@ export function extractPages(session: MupdfSession, set: PageSet): Promise<ByteI
     // THE CALLER'S BYTES, never MuPDF's buffer, whose native memory this function
     // is about to drop: `mupdfWriter.ts`' `bufferBytes` says where the one copy is
     // made and which case asserts it.
-    return bufferBytes(out.saveToBuffer('garbage'));
+    return bufferBytes(savedBuffer(out, 'garbage'));
   });
 }
 

@@ -4,7 +4,7 @@ title: Save your changes
 summary: Save writes your changes back to the file you opened.
 keywords: [save, ctrl+s, store, write, keep changes, unsaved, dot, backup, restore, previous version, earlier version, bak]
 commands: [document.save, document.restore-version]
-contexts: [home, dialog.save-problem, dialog.kept-backups, dialog.restore-version]
+contexts: [home, dialog.save-problem, dialog.save-too-deep, dialog.kept-backups, dialog.restore-version]
 ---
 Your changes stay in Monstera until you save. Saving writes them into the file you opened.
 
@@ -20,6 +20,7 @@ Your changes stay in Monstera until you save. Saving writes them into the file y
 - Shortcut: **Ctrl+S**.
 - A dot on a document's tab, and a dot (●) in the window title, mean it has unsaved changes. The status bar shows **Unsaved changes**.
 - If the file cannot be saved (for example it is open in another program, it was replaced on disk, or it is gone), Monstera tells you why. Your changes stay open and nothing is lost. Try **Save a copy…** to write them somewhere else.
+- A very few PDFs are built so deeply nested that Monstera cannot save them, most often because their bookmarks form one extremely long chain. Monstera checks before writing anything and says **This file can’t be saved**; your file and your changes stay as they were. When the bookmarks are the cause, choose **Save a copy without bookmarks** to keep everything else.
 - To keep the original file unchanged, use "Save a copy" instead.
 - Each save keeps the version it replaces in Monstera's own folder, and writes nothing beside your file. To go back to an earlier version, choose **File**, then **Restore a previous version…**, pick the one saved at the date and time you want and choose **Restore as a copy…**. It is saved as a copy where you choose and opens as its own tab, and your document is not changed. To keep more earlier versions (up to 10), open **Settings**, choose **Saving** and pick a number under **Backup copies to keep**. To delete them all, open **Settings**, choose **Privacy** and choose **Clear backups**.
 - Older Monstera builds kept backups beside the file, named like `report.pdf.bak`. Monstera moves the ones it made into its own folder when you open the file. Any file named like a backup that Monstera did not make is left exactly where it is.

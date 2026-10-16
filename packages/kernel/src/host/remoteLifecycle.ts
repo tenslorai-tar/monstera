@@ -3,6 +3,7 @@ import type { AnnotationDataFormat, ClientApi, FormDataFormat, PageSet, WordMode
 import type { ByteImage, LockedReason, MupdfSession } from '../engineSeam.js';
 import type { PageImageRequest } from '../pageImages.js';
 import type { RegionRequest, RegionSnapshot } from '../pageSnapshot.js';
+import { StructureTooDeep } from '../saveDepth.js';
 import { type StagedImage, placeStaged } from '../savePipeline.js';
 import type { WorkingFile } from './announcedOutput.js';
 import type { EngineChannels } from './engineChannels.js';
@@ -96,6 +97,19 @@ export class EngineSerialiseFailed extends Error {
   constructor(detail: string) {
     super(`The engine host could not serialise the session: ${detail}.`);
   }
+}
+
+/** Whether a staged copy keeps the document's outline or leaves it out (*Save a copy without bookmarks*). */
+export type StagedOutline = 'kept' | 'left-out';
+
+/**
+ * The host's refusal of a serialise as `main` throws it: the document's depth as the same {@link StructureTooDeep} a
+ * local writer throws (`saveDepth.ts`), so a save answers it one way whichever side of the pipe measured; anything else
+ * as {@link EngineSerialiseFailed}.
+ */
+function serialiseRefusal(code: string): Error {
+  if (code === 'outline-too-deep' || code === 'structure-too-deep') return new StructureTooDeep(code === 'outline-too-deep');
+  return new EngineSerialiseFailed(code);
 }
 
 /**
@@ -290,7 +304,7 @@ export interface RemoteMupdfLifecycle {
    * The session's current bytes, serialised by the host and LEFT in its output directory until placed or discarded
    * (ADR-0121's addendum) — what a save flushes, so an engine failure is heard before the disk is touched.
    */
-  readonly stage: (session: MupdfSession) => Promise<StagedImage>;
+  readonly stage: (session: MupdfSession, outline: StagedOutline) => Promise<StagedImage>;
   /**
    * The document as a Word file, composed by the host and LEFT in its output directory until placed or discarded —
    * {@link stage}'s shape, so `main` moves the package and never reads it (ADR-0072's amendment of 2026-10-01).
@@ -364,14 +378,15 @@ export function remoteMupdfLifecycle(
    * moves them and checks the count against what moved; discarding removes them if they were never placed — a whole
    * copy of the document where the contained host may read it, otherwise.
    */
-  const stage = async (session: MupdfSession): Promise<StagedImage> => {
+  const stage = async (session: MupdfSession, outline: StagedOutline): Promise<StagedImage> => {
     const area = sessions.areaFor(session);
     const into = areas.mintName();
     const answer = await client['engine/serialise']({
       session: sessions.handleFor(session),
       into,
+      ...(outline === 'left-out' ? { outline } : {}),
     });
-    if (!answer.ok) throw new EngineSerialiseFailed(answer.error.code);
+    if (!answer.ok) throw serialiseRefusal(answer.error.code);
     const byteLength = answer.value.bytes;
     return {
       byteLength,
@@ -391,12 +406,12 @@ export function remoteMupdfLifecycle(
         session: sessions.handleFor(session),
         into,
       });
-      if (!answer.ok) throw new EngineSerialiseFailed(answer.error.code);
+      if (!answer.ok) throw serialiseRefusal(answer.error.code);
       return takeAnnounced(areas, area, into, answer.value.bytes);
     },
 
     // `serialise`'s dance with a MOVE where it reads, and the same count check against what moved.
-    stage: (session) => stage(session),
+    stage: (session, outline) => stage(session, outline),
 
     // `stage`'s dance with a different producer: the host composes the package into its output directory.
     word: async (session, mode, pages) => {
@@ -414,7 +429,7 @@ export function remoteMupdfLifecycle(
         discard: () => areas.removeOutput(area, into),
       };
     },
-    serialiseInto: async (session, destination) => placeStaged(await stage(session), destination),
+    serialiseInto: async (session, destination) => placeStaged(await stage(session, 'kept'), destination),
 
     extract: async (session, pages) => {
       const area = sessions.areaFor(session);

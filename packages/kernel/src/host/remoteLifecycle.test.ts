@@ -998,7 +998,7 @@ describe('remoteMupdfLifecycle', () => {
     const session = await open(flat);
     const output = areas.made[0]?.outputDirectory ?? '';
 
-    const staged = await lifecycle.stage(session);
+    const staged = await lifecycle.stage(session, 'kept');
     // CONTROL: staged means ON DISK, so a discard that did nothing could not pass the next assertion by default.
     expect(await readdir(output)).toHaveLength(1);
     expect(staged.byteLength).toBeGreaterThan(0);

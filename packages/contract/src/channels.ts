@@ -475,6 +475,13 @@ export const SETTINGS_SECRET_CHANNELS = ['settings.loadSecrets', 'settings.saveS
  */
 export const WRITTEN = { written: fileHandleSchema } as const;
 
+/**
+ * NOTHING WAS WRITTEN: the document nests deeper than the engine's save can hold, so the save was not attempted (the
+ * owner's decision of 2026-10-16; the kernel's `saveDepth.ts` measures it). `bookmarks` where the deep chain is the
+ * outline, which a copy can leave out. A save and a copy answer it alike.
+ */
+export const tooDeepToSaveSchema = z.object({ kind: z.literal('too-deep'), bookmarks: z.boolean() });
+
 /** The browser's own edit commands `window.edit` runs, named as `webContents` names its methods. */
 export const WINDOW_EDIT_ACTIONS = ['cut', 'copy', 'paste', 'selectAll'] as const;
 export type WindowEditAction = (typeof WINDOW_EDIT_ACTIONS)[number];
@@ -2633,6 +2640,7 @@ export const channels = {
       }),
       /** The filesystem refused, and why, so the person is told the remedy that fits (cloud-4 7b). */
       z.object({ kind: z.literal('write-failed'), cause: z.enum(SAVE_WRITE_CAUSES) }),
+      tooDeepToSaveSchema,
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
@@ -3362,12 +3370,17 @@ export const channels = {
 
   'document.saveCopy': channel(
     'Writes a copy of an open document to a destination the user picks.',
-    z.object({ docId: docIdSchema }),
+    z.object({
+      docId: docIdSchema,
+      /** The copy without the document's bookmarks: what is offered where the bookmarks made it too deep to save. */
+      withoutBookmarks: z.literal(true).exactOptional(),
+    }),
     z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
       z.object({ kind: z.literal('write-failed') }),
+      tooDeepToSaveSchema,
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
@@ -3415,6 +3428,8 @@ export const channels = {
       openAbsentSchema,
       openAtCapacitySchema,
       openReadRefusedSchema,
+      // THE COPY IS A SAVE OF THE DOCUMENT, so it is refused for its depth as a save is.
+      tooDeepToSaveSchema,
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned', 'stale-target'],
   ),
@@ -3437,6 +3452,8 @@ export const channels = {
       openAbsentSchema,
       openAtCapacitySchema,
       openReadRefusedSchema,
+      // THE COPY IS A SAVE OF THE DOCUMENT, so it is refused for its depth as a save is.
+      tooDeepToSaveSchema,
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),

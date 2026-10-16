@@ -135,6 +135,7 @@ import type { ResizePagesAnswer } from '../dialogs/resizePagesResult.js';
 import { HELD_COPIES_DIALOG_ID, HELD_COPIES_RESULT } from '../dialogs/heldCopies.js';
 import { KEPT_BACKUPS_DIALOG_ID } from '../dialogs/keptBackups.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
+import { SAVE_TOO_DEEP_DIALOG_ID, SAVE_TOO_DEEP_RESULT } from '../dialogs/saveTooDeep.js';
 import { SIGNATURE_BREAK_DIALOG_ID, SIGNATURE_BREAK_RESULT } from '../dialogs/signatureBreak.js';
 import { FLATTEN_FORM_DIALOG_ID, FLATTEN_FORM_RESULT } from '../dialogs/flattenForm.js';
 import { TAB_ORDER_DIALOG_ID, TAB_ORDER_RESULT } from '../dialogs/tabOrder.js';
@@ -352,7 +353,7 @@ import type { SettingsStore } from '../settingsStore.js';
 import type { ShowToast } from '../toasts.js';
 import { countPendingRedactions } from './redactionMarks.js';
 import { readWholeList } from '../readWholeList.js';
-import { confirmDone, confirmWritten } from './confirmWritten.js';
+import { confirmDone, confirmWritten, type ConfirmWrittenDeps } from './confirmWritten.js';
 import { countedAs } from '../inFlight.js';
 import type { ZoomDirection, ZoomMode } from '../zoom.js';
 
@@ -965,6 +966,11 @@ async function editOnCopy(deps: DocumentCommandDeps, docId: DocId, command: Rend
       return false;
     case 'write-failed':
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'write-failed' });
+      return false;
+    case 'too-deep':
+      // SAID WITHOUT THE OFFER: a copy without bookmarks would not carry the edit this route exists to make, and this
+      // bag confirms no file. *Save a copy* makes the offer, from the same dialog.
+      void deps.ask(SAVE_TOO_DEEP_DIALOG_ID, { bookmarks: false });
       return false;
     case 'absent':
       reportProblem(deps, { code: 'copy-absent' });
@@ -2969,6 +2975,11 @@ export async function saveDocument(
   // NOT REACHABLE from a save that said `breakSignatures: true`, and narrowed rather than cast: an answer this
   // function did not expect saves nothing and reports nothing it cannot name.
   if (answer.value.kind === 'breaks-signatures') return false;
+  // TOO DEEP TO SAVE is said to a person only; an autosave tries again at the next one and says nothing.
+  if (answer.value.kind === 'too-deep') {
+    if (attendance === 'attended') await sayTooDeep(deps, docId, answer.value.bookmarks);
+    return false;
+  }
   // FLATTENED HERE, where both fields exist, rather than in the dialog. The
   // channel answers two shapes describing one thing; the dialog's schema
   // takes one enum, so its body switches once and a sixth outcome is a
@@ -2977,6 +2988,45 @@ export async function saveDocument(
     outcome: answer.value.kind === 'write-failed' ? SAVE_WRITE_OUTCOME[answer.value.cause] : answer.value.reason,
   });
   return false;
+}
+
+/**
+ * Says a document nests too deep to save and, where its bookmarks are the cause, offers a copy without them — THE ONE
+ * WAY every write of a document says it (B3a): Save, Save a copy, and the copies a signed edit and a read-only file are
+ * worked on.
+ *
+ * Nothing was written when this is asked: main measures the depth before MuPDF's save walks it, because that walk past
+ * the thread's stack ends the engine host (`saveDepth.ts`). The document stays open and keeps its bookmarks; only the
+ * copy leaves them out.
+ */
+export async function sayTooDeep(
+  deps: Pick<DocumentCommandDeps, 'ask'> & ConfirmWrittenDeps,
+  docId: DocId,
+  bookmarks: boolean,
+): Promise<void> {
+  const chosen = SAVE_TOO_DEEP_RESULT.safeParse(await deps.ask(SAVE_TOO_DEEP_DIALOG_ID, { bookmarks }));
+  if (!chosen.success) return;
+  const answer = await deps.client['document.saveCopy']({ docId, withoutBookmarks: true });
+  if (!answer.ok) {
+    reportProblem(deps, answer.error);
+    return;
+  }
+  switch (answer.value.kind) {
+    case 'copied':
+      confirmWritten(deps, TOAST_COPY_SAVED, answer.value.written);
+      return;
+    case 'cancelled':
+      return;
+    case 'too-deep':
+      void deps.ask(SAVE_TOO_DEEP_DIALOG_ID, { bookmarks: false, still: true });
+      return;
+    case 'write-failed':
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'write-failed' });
+      return;
+    case 'refused':
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'contested' });
+      return;
+  }
 }
 
 /**
@@ -4433,6 +4483,10 @@ export function saveCopyCommand(deps: DocumentCommandDeps & WritesAFile & Settle
         return;
       }
       if (answer.value.kind === 'cancelled') return;
+      if (answer.value.kind === 'too-deep') {
+        await sayTooDeep(deps, context.docId, answer.value.bookmarks);
+        return;
+      }
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
         outcome: answer.value.kind === 'write-failed' ? 'write-failed' : 'contested',
       });

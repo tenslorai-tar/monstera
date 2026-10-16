@@ -6,8 +6,10 @@ import type {
   EngineWriter,
   MupdfSession,
   SavePurpose,
+  SerialiseOptions,
 } from './engineSeam.js';
 import { DocumentLocked } from './engineSeam.js';
+import { savedBuffer, savedWithoutOutline } from './saveDepth.js';
 import { signatureValues } from './signatureFields.js';
 import { DOCUMENT_ACCESS_VALUES } from '@monstera/contract/host';
 
@@ -466,7 +468,7 @@ export function unprotectedImage(image: ByteImage, password: string | undefined)
     try {
       if (!(document instanceof mupdf.PDFDocument)) throw new Error('Opened document is not a PDF, so no PDF writer may act on it.');
       if (document.authenticatePassword(password ?? '') === 0) throw new DocumentLocked(password === undefined ? 'needs-password' : 'wrong-password');
-      return bufferBytes(document.saveToBuffer('garbage,encrypt=none'));
+      return bufferBytes(savedBuffer(document, 'garbage,encrypt=none'));
     } finally {
       document.destroy();
     }
@@ -531,7 +533,7 @@ export async function appendedUnderKey(
         // RAW, with its own `/Filter`: the bytes are what the revision wrote, and MuPDF encrypts them on the way out.
         if (from.isStream()) into.writeRawStream(from.readRawStream());
       }
-      return bufferBytes(target.saveToBuffer('incremental,pretty'));
+      return bufferBytes(savedBuffer(target, 'incremental,pretty'));
     } finally {
       source.destroy();
       target.destroy();
@@ -766,12 +768,13 @@ export const mupdfWriter: EngineWriter<MupdfSession> = {
    * left; an appended save, a signed document's, is the one write that does not
    * collect, because collecting would rewrite what a signature covers.
    */
-  serialise(session: MupdfSession): Promise<ByteImage> {
+  serialise(session: MupdfSession, options?: SerialiseOptions): Promise<ByteImage> {
     // INSIDE `promised`, as the lookup always was: a session from elsewhere is refused as a REJECTION, never a
     // synchronous throw from a method that answers a promise (the writer's CONTROL cases).
     return promised(() => {
       const { document, terms } = saveTermsOf(session);
-      return bufferBytes(document.saveToBuffer(terms));
+      // MEASURED BEFORE A COLLECTING SAVE, and refused in words where it would pass the engine's stack (`saveDepth.ts`).
+      return bufferBytes(options?.outline === 'left-out' ? savedWithoutOutline(document, terms) : savedBuffer(document, terms));
     });
   },
 

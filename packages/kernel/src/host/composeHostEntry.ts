@@ -10,6 +10,7 @@ import { readCatalogueApart } from '../fontCatalogueApart.js';
 import { composeImages } from '../imageCompose.js';
 import { Document, MupdfOpenRefused, PDFDocument, keepInlineImages, openMupdfShim, rewriteImages } from '../mupdfRaw.js';
 import { prepareForPdfa } from '../pdfaPreparation.js';
+import { savedBuffer } from '../saveDepth.js';
 import { signatureFromScan } from '../signatureScan.js';
 import { cryptoBytes } from '../token.js';
 import { composeChannels } from './composeChannels.js';
@@ -171,7 +172,7 @@ const preparePdfaIn: PdfaPreparer | null =
         try {
           if (!(document instanceof PDFDocument) || document.authenticatePassword(password ?? '') === 0) return { kind: 'unreadable' };
           const preparation = prepareForPdfa(document);
-          const saved = document.saveToBuffer('garbage,encrypt=none');
+          const saved = savedBuffer(document, 'garbage,encrypt=none');
           try {
             const output = join(area.outputDirectory, into);
             await writeFile(output, saved.asUint8Array());

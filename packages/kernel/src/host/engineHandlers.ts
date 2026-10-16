@@ -805,14 +805,19 @@ export function createEngineHandlers({
       };
     },
 
-    'engine/serialise': async ({ session, into }) => {
+    'engine/serialise': async ({ session, into, outline }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
       try {
-        const bytes = await writer.serialise(held.session);
+        const bytes = await writer.serialise(held.session, outline === undefined ? undefined : { outline });
         const written = await files.writeOutput(held.outputDirectory, into, bytes);
         return { ok: true, value: { bytes: written } };
       } catch (error) {
+        // A SAVE REFUSED FOR ITS DEPTH, before it was attempted (`saveDepth.ts`): said as the document's shape, with
+        // whether the outline is the cause. By NAME, `exportFormData`'s reason: the error may come from another realm.
+        if (error instanceof Error && error.name === 'StructureTooDeep') {
+          return failed((error as { readonly throughOutline?: boolean }).throughOutline === true ? 'outline-too-deep' : 'structure-too-deep', error);
+        }
         return failed('serialise-failed', error);
       }
     },

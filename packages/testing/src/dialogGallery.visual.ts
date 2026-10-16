@@ -116,6 +116,7 @@ const FROM_THE_GALLERY = [
   'dialog.restore-version',
   'dialog.sanitize-document',
   'dialog.save-problem',
+  'dialog.save-too-deep',
   'dialog.scan-outcome',
   'dialog.security-update',
   'dialog.service-refused',

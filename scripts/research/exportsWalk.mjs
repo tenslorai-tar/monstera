@@ -15,6 +15,8 @@
  *   Cancel on screen, and the saved PDF read back by PDF.js for its first and last records.
  * - N7: a two-page sheet with one Note saved as PDF/A-2b: the level asked first, the pop-up named by page in our words,
  *   no console window while Ghostscript runs, and the saved file read back by pdf-lib for the Note and its declarations.
+ * - S1: a document whose 9,000 bookmarks nest past what a save holds, said before anything is written, and the copy
+ *   without bookmarks read back by pdf-lib (the owner's decision of 2026-10-16).
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -233,6 +235,68 @@ await step('N7: a noted sheet saved as PDF/A-2b names the pop-up by page, shows 
   expect(text).toMatch(/pdfaid:part(=['"]|>)2/u);
   expect(text).toContain('/OutputIntents');
   return { marks, consoleReadings: windows.looked };
+});
+
+/**
+ * A one-page document whose bookmarks are one `/Next` chain of `links` entries: MuPDF's collecting save recurses
+ * `links + 5` frames deep on it (`saveDepth.ts`), so 9,000 links is past the 8,000 the kernel holds a save to and below
+ * the 10,888 that ended the engine host — refused by the measurement, never by the crash.
+ * @param {number} links
+ */
+function bookmarkChain(links) {
+  /** @type {string[]} */
+  const objects = [];
+  objects[1] = '<< /Type /Catalog /Pages 2 0 R /Outlines 4 0 R >>';
+  objects[2] = '<< /Type /Pages /Kids [3 0 R] /Count 1 >>';
+  objects[3] = '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>';
+  objects[4] = `<< /Type /Outlines /First 5 0 R /Last ${String(links + 4)} 0 R /Count ${String(links)} >>`;
+  for (let i = 0; i < links; i += 1) {
+    const id = i + 5;
+    const next = i + 1 < links ? ` /Next ${String(id + 1)} 0 R` : '';
+    const prev = i > 0 ? ` /Prev ${String(id - 1)} 0 R` : '';
+    objects[id] = `<< /Title (Item ${String(i + 1)}) /Parent 4 0 R${prev}${next} /Dest [3 0 R /Fit] >>`;
+  }
+  const parts = ['%PDF-1.7\n'];
+  let offset = parts[0].length;
+  /** @type {number[]} */
+  const offsets = [];
+  for (let id = 1; id < objects.length; id += 1) {
+    const text = `${String(id)} 0 obj\n${objects[id]}\nendobj\n`;
+    offsets[id] = offset;
+    parts.push(text);
+    offset += Buffer.byteLength(text, 'latin1');
+  }
+  parts.push(`xref\n0 ${String(objects.length)}\n`, '0000000000 65535 f \n');
+  for (let id = 1; id < objects.length; id += 1) parts.push(`${String(offsets[id]).padStart(10, '0')} 00000 n \n`);
+  parts.push(`trailer\n<< /Size ${String(objects.length)} /Root 1 0 R >>\nstartxref\n${String(offset)}\n%%EOF\n`);
+  return Buffer.from(parts.join(''), 'latin1');
+}
+
+await step('S1: a document whose bookmarks nest too deep to save is said BEFORE writing, and a copy without them is written', async () => {
+  const deep = join(output, 'deep-bookmarks.pdf');
+  await writeFile(deep, bookmarkChain(9_000));
+  await open(deep);
+  const refusedCopy = join(output, 'deep-bookmarks-copy.pdf');
+  await saveTo(refusedCopy);
+  await command('Save a copy…');
+  const said = page.getByRole('dialog', { name: 'This file can’t be saved' });
+  await expect(said).toBeVisible({ timeout: 60_000 });
+  await expect(said).toContainText('Its bookmarks are the cause');
+  // NOTHING WRITTEN where the picker pointed: the save was refused before MuPDF walked the document.
+  expect(existsSync(refusedCopy)).toBe(false);
+  const without = join(output, 'deep-bookmarks-without.pdf');
+  await saveTo(without);
+  await said.getByRole('button', { name: 'Save a copy without bookmarks' }).click();
+  await expect.poll(() => existsSync(without), { timeout: 60_000 }).toBe(true);
+  // READ BACK by pdf-lib: the page is there and the outline is not.
+  const copy = await PDFDocument.load(await readFile(without), { updateMetadata: false });
+  expect(copy.getPageCount()).toBe(1);
+  expect(copy.catalog.get(PDFName.of('Outlines'))).toBeUndefined();
+  // AND THE ENGINE HOST LIVED: the open document still answers a command after the refusal and the copy.
+  await command('Save a copy…');
+  await expect(said).toBeVisible({ timeout: 60_000 });
+  await page.keyboard.press('Escape');
+  return { refusedBeforeWriting: true, copyPages: copy.getPageCount() };
 });
 
 await finish();

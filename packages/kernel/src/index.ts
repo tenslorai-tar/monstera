@@ -164,9 +164,12 @@ export {
   EngineSerialiseMismatch,
   type RemoteMupdfLifecycle,
   type SessionAreaSurface,
+  type StagedOutline,
   remoteMupdfLifecycle,
   takeAnnounced,
 } from './host/remoteLifecycle.js';
+// A SAVE REFUSED FOR ITS DEPTH, before it was attempted, whichever side of the pipe measured it (the owner's item 20).
+export { SAVE_DEPTH_MAX, StructureTooDeep } from './saveDepth.js';
 // THE ONE READ OF A HOST'S OUTPUT, held to its announced count before anything is read (CR-SEC-08): main's session
 // areas are this, and the kernel's adapters take it through `takeAnnounced`.
 export { copyAnnounced, readAnnounced, type WorkingFile } from './host/announcedOutput.js';
@@ -470,6 +473,8 @@ export {
   type SaveFileNames,
   copyNames,
   type CopyOutcome,
+  type DocumentCopyOutcome,
+  type TooDeepToSave,
   type SaveOutcome,
   type WriteTargetCheck,
   type SplitOutcome,

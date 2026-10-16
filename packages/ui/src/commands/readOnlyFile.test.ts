@@ -49,7 +49,28 @@ function seen(chosen: unknown): {
   };
 }
 
+/** No case here writes a file it confirms; a toast would be a copy without bookmarks, which only the case below asks. */
+const NO_TOAST = (): void => {
+  throw new Error('this case confirms no write');
+};
+
 describe('sayWhenUnwritable', () => {
+  it('A COPY TOO DEEP TO SAVE is said by the save-too-deep dialog, with its bookmarks named as the cause', async () => {
+    const { client, sent } = recording({
+      'document.fileAccess': ok({ access: 'read-only' }),
+      'document.workOnCopy': ok({ kind: 'too-deep', bookmarks: true }),
+    });
+    const { calls, ask, onOpened } = seen({ kind: 'save-copy' });
+
+    await sayWhenUnwritable({ client, ask, onOpened, toast: NO_TOAST }, DOC);
+
+    expect(sent.map((one) => one.id)).toStrictEqual(['document.fileAccess', 'document.workOnCopy']);
+    expect(calls).toStrictEqual([
+      { name: 'ask', value: { id: 'dialog.read-only-file', props: { access: 'read-only' } } },
+      { name: 'ask', value: { id: 'dialog.save-too-deep', props: { bookmarks: true } } },
+    ]);
+  });
+
   it('A READ-ONLY FILE IS SAID as it opens, and Save a copy writes the copy and opens it to work on', async () => {
     const { client, sent } = recording({
       'document.fileAccess': ok({ access: 'read-only' }),
@@ -57,7 +78,7 @@ describe('sayWhenUnwritable', () => {
     });
     const { calls, ask, onOpened } = seen({ kind: 'save-copy' });
 
-    await sayWhenUnwritable({ client, ask, onOpened }, DOC);
+    await sayWhenUnwritable({ client, ask, onOpened, toast: NO_TOAST }, DOC);
 
     expect(sent).toStrictEqual([
       { id: 'document.fileAccess', params: { docId: DOC } },
@@ -73,7 +94,7 @@ describe('sayWhenUnwritable', () => {
     const { client } = recording({ 'document.fileAccess': ok({ access: 'held' }) });
     const { calls, ask, onOpened } = seen(undefined);
 
-    await sayWhenUnwritable({ client, ask, onOpened }, DOC);
+    await sayWhenUnwritable({ client, ask, onOpened, toast: NO_TOAST }, DOC);
 
     expect(calls).toStrictEqual([{ name: 'ask', value: { id: 'dialog.read-only-file', props: { access: 'held' } } }]);
   });
@@ -83,7 +104,7 @@ describe('sayWhenUnwritable', () => {
       const { client, sent } = recording({ 'document.fileAccess': ok({ access }) });
       const { calls, ask, onOpened } = seen({ kind: 'save-copy' });
 
-      await sayWhenUnwritable({ client, ask, onOpened }, DOC);
+      await sayWhenUnwritable({ client, ask, onOpened, toast: NO_TOAST }, DOC);
 
       expect(sent).toStrictEqual([{ id: 'document.fileAccess', params: { docId: DOC } }]);
       expect(calls).toStrictEqual([]);
@@ -94,7 +115,7 @@ describe('sayWhenUnwritable', () => {
     const { client, sent } = recording({ 'document.fileAccess': ok({ access: 'read-only' }) });
     const { ask, onOpened } = seen(undefined);
 
-    await sayWhenUnwritable({ client, ask, onOpened }, DOC);
+    await sayWhenUnwritable({ client, ask, onOpened, toast: NO_TOAST }, DOC);
 
     expect(sent.map((one) => one.id)).toStrictEqual(['document.fileAccess']);
   });
@@ -103,7 +124,7 @@ describe('sayWhenUnwritable', () => {
     const { client } = recording({ 'document.fileAccess': err({ code: 'document-not-open' }) });
     const { calls, ask, onOpened } = seen({ kind: 'save-copy' });
 
-    await sayWhenUnwritable({ client, ask, onOpened }, DOC);
+    await sayWhenUnwritable({ client, ask, onOpened, toast: NO_TOAST }, DOC);
 
     expect(calls).toStrictEqual([]);
   });
@@ -120,7 +141,7 @@ describe('sayWhenUnwritable', () => {
       const { client } = recording({ 'document.fileAccess': ok({ access: 'read-only' }), 'document.workOnCopy': ok(answer) });
       const { calls, ask, onOpened } = seen({ kind: 'save-copy' });
 
-      await sayWhenUnwritable({ client, ask, onOpened }, DOC);
+      await sayWhenUnwritable({ client, ask, onOpened, toast: NO_TOAST }, DOC);
 
       expect(calls.slice(1)).toStrictEqual(asked.map((value) => ({ name: 'ask', value })));
     }

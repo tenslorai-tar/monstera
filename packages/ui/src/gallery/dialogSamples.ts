@@ -480,6 +480,11 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'with-selection', props: { selected: 3 } },
   ],
   'dialog.signed-edit': [{ state: 'opened', props: {} }],
+  'dialog.save-too-deep': [
+    { state: 'bookmarks', props: { bookmarks: true } },
+    { state: 'structure', props: { bookmarks: false } },
+    { state: 'still', props: { bookmarks: true, still: true } },
+  ],
   'dialog.sign-again': [
     { state: 'one', props: { count: 1, unreadable: false } },
     { state: 'several', props: { count: 3, unreadable: false } },

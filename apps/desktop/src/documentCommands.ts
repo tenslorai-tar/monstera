@@ -119,6 +119,7 @@ import {
   type PageRuns,
   type SaveDependencies,
   type CopyOutcome,
+  type DocumentCopyOutcome,
   type CopyTargetVerdict,
   type SaveOutcome,
   type SearchOptions,
@@ -144,6 +145,8 @@ import {
   saveDocument,
   placeStaged,
   type StagedImage,
+  type StagedOutline,
+  StructureTooDeep,
   stagedBytes,
   type SplitOutcome,
   type MupdfSession,
@@ -1289,7 +1292,7 @@ export interface SaveSource {
 }
 
 /** {@link DocumentFlush}, staged. Composed in the same place, for the same reason. */
-export type DocumentStage = (docId: DocId, sessions: DocumentSessions) => Promise<StagedImage>;
+export type DocumentStage = (docId: DocId, sessions: DocumentSessions, outline: StagedOutline) => Promise<StagedImage>;
 
 /**
  * The document as a Word package, composed where its pictures are drawn and staged there for `main` to move — never
@@ -4251,7 +4254,7 @@ export class DocumentCommands {
       // encrypted form, which a byte-image writer cannot open without it.
       opensWith: () => this.#engine.opensWith(docId),
       // THE REFRESH'S ROUTE (ADR-0121 Decision 2): the session's bytes placed in the file the service names.
-      currentInto: async (destination) => placeStaged(await this.#save.stage(docId, live()), destination),
+      currentInto: async (destination) => placeStaged(await this.#save.stage(docId, live(), 'kept'), destination),
       adopt: (write) => this.#restore(docId, write),
       // THE LIST, not the flag: a table of contents is built from the entries there are, and the walk's bound is one
       // no real outline reaches (ADR-0130 Decision 3).
@@ -4351,7 +4354,7 @@ export class DocumentCommands {
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
-      return await this.#save.stage(docId, sessions);
+      return await this.#save.stage(docId, sessions, 'kept');
     });
     return value;
   }
@@ -4361,8 +4364,8 @@ export class DocumentCommands {
     return this.#documents.nameOf(docId);
   }
 
-  async saveCopy(docId: DocId): Promise<CopyOutcome | undefined> {
-    return (await this.#writeCopy(docId, () => undefined))?.outcome;
+  async saveCopy(docId: DocId, outline: StagedOutline = 'kept'): Promise<DocumentCopyOutcome | undefined> {
+    return (await this.#writeCopy(docId, () => undefined, outline))?.outcome;
   }
 
   /**
@@ -4379,7 +4382,7 @@ export class DocumentCommands {
    * A copy of the document to WORK ON, written where the person chooses (cloud-4 7b): {@link saveCopy}'s picker and
    * write exactly, and the path the copy went to, which the handler opens.
    */
-  async copyToWorkOn(docId: DocId): Promise<{ readonly outcome: CopyOutcome; readonly destination: string } | undefined> {
+  async copyToWorkOn(docId: DocId): Promise<{ readonly outcome: DocumentCopyOutcome; readonly destination: string } | undefined> {
     return this.#writeCopy(docId, () => undefined);
   }
 
@@ -4458,7 +4461,7 @@ export class DocumentCommands {
   async copyForEditing(
     docId: DocId,
     command: Command,
-  ): Promise<{ readonly outcome: CopyOutcome; readonly destination: string } | undefined> {
+  ): Promise<{ readonly outcome: DocumentCopyOutcome; readonly destination: string } | undefined> {
     return this.#writeCopy(docId, (version) => {
       const named = targetVersionOf(command);
       if (named !== undefined && named !== version) throw new StaleTargetError(command.kind, named, version);
@@ -4469,7 +4472,9 @@ export class DocumentCommands {
   async #writeCopy(
     docId: DocId,
     inLane: (version: DocVersion) => void,
-  ): Promise<{ readonly outcome: CopyOutcome; readonly destination: string } | undefined> {
+    /** `left-out` writes the copy without the document's bookmarks (*Save a copy without bookmarks*, item 20). */
+    outline: StagedOutline = 'kept',
+  ): Promise<{ readonly outcome: DocumentCopyOutcome; readonly destination: string } | undefined> {
     // THE NAME IS READ BEFORE THE LANE and the document may close while the
     // dialog is up — which is fine, because a filename is all that was taken
     // and the guards inside the lane below refuse a closed document anyway. A
@@ -4487,7 +4492,10 @@ export class DocumentCommands {
     // must not stamp. The lane is entered so the flush is serialised against
     // every other operation on this document, and so the version `inLane`
     // checks is the version the copy is written at.
-    const { value } = await this.#documents.run(docId, async (context) => {
+    //
+    // A DOCUMENT TOO DEEP TO SAVE is answered, never thrown on (`saveDepth.ts`, item 20): nothing was written, and the
+    // person is told why and, where the bookmarks are the cause, offered a copy without them.
+    const { value } = await this.#documents.run(docId, async (context): Promise<DocumentCopyOutcome> => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -4499,13 +4507,18 @@ export class DocumentCommands {
       // THE SAME FLUSH A SAVE USES, so a copy and a save cannot disagree about
       // what this document currently is (B3a). `writeDocumentCopy` is handed no
       // `DocumentContext`, so it cannot stamp the document clean.
-      return await writeDocumentCopy(
-        this.#save.deps,
-        this.#copy.checkTarget,
-        () => this.#save.stage(docId, sessions),
-        destination,
-        backupsFor(context),
-      );
+      try {
+        return await writeDocumentCopy(
+          this.#save.deps,
+          this.#copy.checkTarget,
+          () => this.#save.stage(docId, sessions, outline),
+          destination,
+          backupsFor(context),
+        );
+      } catch (error) {
+        if (error instanceof StructureTooDeep) return { kind: 'too-deep', bookmarks: error.throughOutline };
+        throw error;
+      }
     });
 
     return { outcome: value, destination };
@@ -4540,7 +4553,7 @@ export class DocumentCommands {
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
-      return await this.#save.stage(docId, sessions);
+      return await this.#save.stage(docId, sessions, 'kept');
     });
 
     try {
@@ -6954,7 +6967,7 @@ export class DocumentCommands {
       const saved = await saveDocument(
         this.#save.deps,
         context,
-        () => this.#save.stage(docId, sessions),
+        () => this.#save.stage(docId, sessions, 'kept'),
         backupsFor(context),
       );
       // WHY IT WAS NOT WRITTEN, asked of the file now, inside the lane, so the person is told the remedy that fits.
@@ -6985,7 +6998,7 @@ export class DocumentCommands {
       }
       // THE IMAGE OF THE VERSION JUST SAVED, before this entry ends and the next command can run. From the sessions
       // as they are now: a removal's save has just renewed them from the file it wrote.
-      if (take) taken.push(await this.#save.stage(docId, this.#engine.sessions(docId) ?? sessions));
+      if (take) taken.push(await this.#save.stage(docId, this.#engine.sessions(docId) ?? sessions, 'kept'));
       return outcome;
     });
 

@@ -166,6 +166,11 @@ export const SIGNED_EDIT_TITLE = messageKey('dialog.signed-edit.title');
 export const SIGNED_EDIT_EXPLAINS = messageKey('dialog.signed-edit.explains');
 export const SIGNED_EDIT_COPY = messageKey('dialog.signed-edit.copy');
 export const SIGNED_EDIT_THIS = messageKey('dialog.signed-edit.this');
+export const SAVE_TOO_DEEP_TITLE = messageKey('dialog.save-too-deep.title');
+export const SAVE_TOO_DEEP_EXPLAINS = messageKey('dialog.save-too-deep.explains');
+export const SAVE_TOO_DEEP_BOOKMARKS = messageKey('dialog.save-too-deep.bookmarks');
+export const SAVE_TOO_DEEP_COPY = messageKey('dialog.save-too-deep.copy');
+export const SAVE_TOO_DEEP_STILL = messageKey('dialog.save-too-deep.still');
 export const KEPT_BACKUPS_TITLE = messageKey('dialog.kept-backups.title');
 export const KEPT_BACKUPS_EXPLAINS = messageKey('dialog.kept-backups.explains');
 export const HELD_COPIES_TITLE = messageKey('dialog.held-copies.title');
@@ -3570,6 +3575,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'This document is digitally signed. This change rewrites the whole file, so its signatures will no longer verify. Work on a copy to keep the signed document exactly as it is: the copy is saved where you choose and opens with this change made.',
   [SIGNED_EDIT_COPY]: 'Work on a copy',
   [SIGNED_EDIT_THIS]: 'Change this document',
+  [SAVE_TOO_DEEP_TITLE]: 'This file can’t be saved',
+  [SAVE_TOO_DEEP_EXPLAINS]:
+    'This PDF is built in a way that is too deeply nested for Monstera to save. Nothing was written, and your file and your changes are as they were.',
+  [SAVE_TOO_DEEP_BOOKMARKS]:
+    'Its bookmarks are the cause: they form one very long chain. Monstera can save a copy of the document without its bookmarks. This document keeps them.',
+  [SAVE_TOO_DEEP_COPY]: 'Save a copy without bookmarks',
+  [SAVE_TOO_DEEP_STILL]: 'Even without its bookmarks, this file is too deeply nested to save. Nothing was written.',
   [KEPT_BACKUPS_TITLE]: 'Some older copies were kept',
   [KEPT_BACKUPS_EXPLAINS]:
     'Monstera permanently deleted the older copies it made, because they held what you removed. {count, plural, one {This file beside the document is named like a backup, but Monstera did not make it, so it was kept. It may still hold what you removed. Delete it yourself if you do not need it:} other {These files beside the document are named like backups, but Monstera did not make them, so they were kept. They may still hold what you removed. Delete them yourself if you do not need them:}}',

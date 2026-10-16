@@ -3446,7 +3446,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       opened(document);
       // AND ITS FILE IS ASKED ABOUT as it appears (cloud-4 7b): one that cannot be saved over is said before any edit,
       // with a copy to work on — which opens through here, so the copy is asked about too.
-      void sayWhenUnwritable({ client, ask, onOpened: shown }, document.docId);
+      void sayWhenUnwritable({ client, ask, onOpened: shown, toast }, document.docId);
       // AND THE OLD `.BAK` FILES BESIDE IT that Monstera made are moved into its own folder, with no question and no
       // notice (ADR-0198, corrected 2026-10-09).
       void adoptOldBackups({ client }, document.docId);
@@ -3464,7 +3464,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         activate(docId);
       },
     };
-  }, [activate, ask, client, opened]);
+  }, [activate, ask, client, opened, toast]);
   // THE DIALOG, once per problem placed over a document.
   useEffect(() => {
     if (placedProblem === undefined || placedProblem.onStart) return;

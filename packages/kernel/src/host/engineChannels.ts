@@ -2126,7 +2126,14 @@ export function liveSessionChannels() {
   return {
     'engine/serialise': channel(
       'Writes the session’s current bytes into the output directory, under a name main chose.',
-      z.object({ session: sessionSchema, into: outputNameSchema }).strict(),
+      z
+        .object({
+          session: sessionSchema,
+          into: outputNameSchema,
+          /** `left-out`: write the bytes without the document's outline, for *Save a copy without bookmarks*. */
+          outline: z.literal('left-out').exactOptional(),
+        })
+        .strict(),
       // A COUNT, NOT A NAME. Main already knows where it asked for the bytes;
       // what it cannot know without being told is how many arrived, and
       // comparing that against the file it reads separates "the host wrote
@@ -2138,7 +2145,10 @@ export function liveSessionChannels() {
       // writes its result IS this channel's job, so the engine that does not
       // hold a parse does not owe it separately.
       z.object({ bytes: z.number().int().nonnegative() }).strict(),
-      ['no-such-session', 'serialise-failed'],
+      // TWO REFUSALS OF THE DOCUMENT'S SHAPE, never the host's failure (`saveDepth.ts`): the save would nest deeper than
+      // the engine's stack holds, and was not attempted. `outline-too-deep` where the outline is the deep chain, so main
+      // can offer a copy without it; `structure-too-deep` for any other.
+      ['no-such-session', 'serialise-failed', 'structure-too-deep', 'outline-too-deep'],
     ),
   };
 }
@@ -3364,6 +3374,10 @@ export type EngineFailureCode =
   | 'no-such-session'
   | 'open-failed'
   | 'serialise-failed'
+  // THE DOCUMENT'S SHAPE, for `serialise-failed`'s reason: a save that would nest past the engine's stack, refused
+  // before it was attempted (`saveDepth.ts`), with whether the outline is the deep chain.
+  | 'structure-too-deep'
+  | 'outline-too-deep'
   // THE DOCUMENT'S FAULT, joining the two above for their reason. An extract
   // whose page list the document cannot satisfy, or a graft the engine refuses,
   // is a statement about that document — and it must not reach the supervisor

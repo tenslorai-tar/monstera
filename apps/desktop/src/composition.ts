@@ -180,6 +180,7 @@ import {
   remoteMupdfWriter,
   serialiseIntoFile,
   type StagedImage,
+  type StagedOutline,
   siblingNames,
   type CloudClient,
   writeStreamedDocument,
@@ -1209,12 +1210,12 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
   // THE SAME FLUSH, STAGED: the bytes stay where the host wrote them until they are placed, so a save, a copy and a
   // refreshed image never hold them in `main` (ADR-0121 Decision 2 and its addendum). `currentBytes`' check, the
   // same writer's session.
-  const stagedBytesOf = (docId: DocId, sessions: DocumentSessions): Promise<StagedImage> => {
+  const stagedBytesOf = (docId: DocId, sessions: DocumentSessions, outline: StagedOutline): Promise<StagedImage> => {
     const session = sessions.mupdf;
     if (engineHost.writers.mupdf === undefined || session === undefined) {
       throw new MissingSessionError(docId, 'mupdf');
     }
-    return engineHost.stage(session);
+    return engineHost.stage(session, outline);
   };
 
   // The real supervisor rather than two inline arrows: a stubbed lookup and a
@@ -2387,7 +2388,7 @@ function engineSessionOpener(
    * The session's bytes, left in the host's output directory until placed or discarded — a save's flush, so they
    * never pass through `main` (ADR-0121's addendum). On this surface for {@link extract}'s reason.
    */
-  readonly stage: (session: MupdfSession) => Promise<StagedImage>;
+  readonly stage: (session: MupdfSession, outline: StagedOutline) => Promise<StagedImage>;
   /** The document as a Word package, composed by the host and left staged for `main` to move (ADR-0072). */
   readonly word: (session: MupdfSession, mode: WordMode, pages: PageSet) => Promise<StagedImage>;
   /** Rasterises a region of a page. On this surface for {@link extract}'s reason. */
@@ -3525,7 +3526,7 @@ function engineSessionOpener(
     duplicates: readDuplicatesThroughHost,
     extract: extractThroughHost,
     // THE SAVE'S FLUSH, staged in the host's output directory and moved into place (ADR-0121's addendum).
-    stage: (session) => liveWriter().stage(session),
+    stage: (session, outline) => liveWriter().stage(session, outline),
     // THE WORD EXPORT, `stage`'s route: composed in the host, moved into place (ADR-0072's amendment of 2026-10-01).
     word: (session, mode, pages) => liveWriter().word(session, mode, pages),
     snapshot: snapshotThroughHost,

@@ -10,6 +10,7 @@ import type {
   WriteTargetVerdict,
 } from './documentService.js';
 import type { ByteImage } from './engineSeam.js';
+import { StructureTooDeep } from './saveDepth.js';
 
 /**
  * `ARCHITECTURE.md` §4's save pipeline, and the thing invariant 18 is about.
@@ -151,7 +152,27 @@ export type SaveOutcome =
       readonly verdict: Exclude<WriteTargetVerdict, { kind: 'sole-writer' }>;
     }
   /** The filesystem refused. The original is intact and the document still dirty. */
-  | { readonly kind: 'write-failed'; readonly failure: AtomicWriteFailure };
+  | { readonly kind: 'write-failed'; readonly failure: AtomicWriteFailure }
+  | TooDeepToSave;
+
+/**
+ * NOTHING WAS ATTEMPTED: the document nests deeper than the engine's save holds (`saveDepth.ts`, the owner's item 20).
+ * `bookmarks` where the deep chain is the outline, so a copy without it can be written instead.
+ */
+export interface TooDeepToSave {
+  readonly kind: 'too-deep';
+  readonly bookmarks: boolean;
+}
+
+/** The flush, with a refusal for the document's depth answered as {@link TooDeepToSave} rather than thrown. */
+async function flushed(flush: DocumentFlush): Promise<StagedImage | TooDeepToSave> {
+  try {
+    return await flush();
+  } catch (error) {
+    if (error instanceof StructureTooDeep) return { kind: 'too-deep', bookmarks: error.throughOutline };
+    throw error;
+  }
+}
 
 /**
  * The document's current bytes, produced and waiting to be put somewhere — never in `main`'s memory when the session
@@ -255,7 +276,8 @@ export async function saveDocument(
     return { kind: 'refused', verdict };
   }
 
-  const staged = await flush();
+  const staged = await flushed(flush);
+  if ('kind' in staged) return staged;
   const bytes = staged.byteLength;
   const written = await atomicWriteStaged(deps, context.path, staged, backups);
   if (!written.ok) {
@@ -291,6 +313,12 @@ export type CopyOutcome =
   | { readonly kind: 'refused'; readonly others: readonly DocId[] }
   /** The filesystem refused. Nothing at the destination was replaced. */
   | { readonly kind: 'write-failed'; readonly failure: AtomicWriteFailure };
+
+/**
+ * A copy of the open document's own bytes, as *Save a copy* answers it: {@link CopyOutcome}, or refused for its depth
+ * before anything was written. {@link writeDocumentCopy} throws that refusal, and the one caller that names it maps it.
+ */
+export type DocumentCopyOutcome = CopyOutcome | TooDeepToSave;
 
 /**
  * What a split produced.

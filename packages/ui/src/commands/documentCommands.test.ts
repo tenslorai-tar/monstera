@@ -713,6 +713,50 @@ describe('save', () => {
     expect(wrote).toStrictEqual([{ docId: CONTEXT.docId, version: asDocVersion(2) }]);
   });
 
+  describe('a document TOO DEEP TO SAVE (the owner decision of 2026-10-16)', () => {
+    /** Main answers `too-deep` to the save and `copied` to a copy without bookmarks. */
+    const deepClient = (copy: unknown): { client: ContractClient; sent: { id: string; params: unknown }[] } => {
+      const sent: { id: string; params: unknown }[] = [];
+      const client = createClient(channels, (id, params) => {
+        sent.push({ id, params });
+        return Promise.resolve(ok(id === 'document.save' ? { kind: 'too-deep', bookmarks: true } : copy));
+      });
+      return { client, sent };
+    };
+
+    it('SAYS SO, and the offered copy is sent WITHOUT BOOKMARKS and confirmed', async () => {
+      const shown: { id: string; props: unknown }[] = [];
+      const { client, sent } = deepClient({ kind: 'copied', bytes: 10, written: WRITTEN });
+      const { toast, onSaved, said, wrote } = saving();
+      const ask = (id: string, props: unknown): Promise<unknown> => {
+        shown.push({ id, props });
+        return Promise.resolve(id === 'dialog.save-too-deep' ? 'copy-without-bookmarks' : undefined);
+      };
+      expect(await saveDocument({ client, ask, toast, onSaved, warnSignatureBreak: () => true }, DOC, 'attended')).toBe(false);
+      expect(shown).toStrictEqual([{ id: 'dialog.save-too-deep', props: { bookmarks: true } }]);
+      expect(sent).toStrictEqual([
+        { id: 'document.save', params: { docId: DOC, breakSignatures: false } },
+        { id: 'document.saveCopy', params: { docId: DOC, withoutBookmarks: true } },
+      ]);
+      expect(said.map((one) => one.message)).toStrictEqual([TOAST_COPY_SAVED]);
+      // NOT SAVED: the document's own file was not written, so its dot stays.
+      expect(wrote).toStrictEqual([]);
+    });
+
+    it('CONTROL: AN AUTOSAVE says nothing and writes no copy', async () => {
+      const shown: unknown[] = [];
+      const { client, sent } = deepClient({ kind: 'cancelled' });
+      const { toast, onSaved } = saving();
+      const ask = (id: string): Promise<unknown> => {
+        shown.push(id);
+        return Promise.resolve('copy-without-bookmarks');
+      };
+      expect(await saveDocument({ client, ask, toast, onSaved, warnSignatureBreak: () => true }, DOC, 'unattended')).toBe(false);
+      expect(shown).toStrictEqual([]);
+      expect(sent.map((one) => one.id)).toStrictEqual(['document.save']);
+    });
+  });
+
   describe('a save that would BREAK SIGNATURES (saving.warn-signature-break)', () => {
     /** Main answers `breaks-signatures` to a save that has not agreed, and `saved` to one that has. */
     const signedClient = (): { client: ContractClient; sent: unknown[] } => {

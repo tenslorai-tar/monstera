@@ -1053,6 +1053,7 @@ function saveHandler(commands: DocumentCommands): ContractHandlers['document.sav
         return ok({ kind: 'breaks-signatures', signatures: outcome.signatures } as const);
       }
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed', cause: outcome.cause } as const);
+      if (outcome.kind === 'too-deep') return ok({ kind: 'too-deep', bookmarks: outcome.bookmarks } as const);
       return ok({ kind: 'refused', reason: refusalReason(outcome.verdict) } as const);
     } catch (thrown) {
       // MATCHED ON THE CLASS, exactly as undo and execute do. Everything else
@@ -2463,15 +2464,17 @@ function exportExcelHandler(commands: DocumentCommands, mint: MintWritten): Cont
 function saveCopyHandler(commands: DocumentCommands, mint: MintWritten): ContractHandlers['document.saveCopy'] {
   return async ({
     docId,
+    withoutBookmarks,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.saveCopy']>>> => {
     try {
-      const outcome = await commands.saveCopy(docId);
+      const outcome = await commands.saveCopy(docId, withoutBookmarks === true ? 'left-out' : 'kept');
       // UNDEFINED IS THE USER DISMISSING THE DIALOG, and it is an outcome. The
       // kernel returns no value at all for it rather than a fourth member,
       // because nothing ran — see `DocumentCommands.saveCopy`.
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
+      if (outcome.kind === 'too-deep') return ok({ kind: 'too-deep', bookmarks: outcome.bookmarks } as const);
       return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
@@ -2515,6 +2518,7 @@ function workOnCopyHandler(
     }
     if (copied === undefined) return ok({ kind: 'cancelled' } as const);
     if (copied.outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
+    if (copied.outcome.kind === 'too-deep') return ok({ kind: 'too-deep', bookmarks: copied.outcome.bookmarks } as const);
     if (copied.outcome.kind === 'refused') {
       return ok({ kind: 'destination-contested', openElsewhere: copied.outcome.others.length } as const);
     }
@@ -2602,6 +2606,7 @@ function editCopyHandler(
     }
     if (copied === undefined) return ok({ kind: 'cancelled' } as const);
     if (copied.outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
+    if (copied.outcome.kind === 'too-deep') return ok({ kind: 'too-deep', bookmarks: copied.outcome.bookmarks } as const);
     if (copied.outcome.kind === 'refused') {
       return ok({ kind: 'destination-contested', openElsewhere: copied.outcome.others.length } as const);
     }

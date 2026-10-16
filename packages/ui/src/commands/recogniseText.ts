@@ -35,6 +35,7 @@ import {
   applyDocumentCommand,
   hasDocument,
   reportProblem,
+  sayTooDeep,
 } from './documentCommands.js';
 
 /**
@@ -561,6 +562,10 @@ export function exportSearchableCommand(
         // cancelled picker writes none, so it says nothing about one.
         if (copied.value.kind === 'copied') confirmWritten(deps, TOAST_SEARCHABLE_SAVED, copied.value.written);
         void deps.ask(OCR_OUTCOME_DIALOG_ID, walked);
+        return;
+      }
+      if (copied.value.kind === 'too-deep') {
+        await sayTooDeep(deps, docId, copied.value.bookmarks);
         return;
       }
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {

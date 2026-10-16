@@ -4,7 +4,8 @@ import type { DocId } from '@monstera/shared';
 import { OPEN_PROBLEM_DIALOG_ID } from '../dialogs/openProblem.js';
 import { READ_ONLY_FILE_DIALOG_ID, READ_ONLY_FILE_RESULT } from '../dialogs/readOnlyFile.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
-import { reportProblem } from './documentCommands.js';
+import { reportProblem, sayTooDeep } from './documentCommands.js';
+import type { ShowToast } from '../toasts.js';
 import type { OpenedDocument } from './importMarkdown.js';
 
 /**
@@ -30,6 +31,8 @@ export async function sayWhenUnwritable(
     readonly ask: (id: string, props: unknown) => Promise<unknown>;
     /** The copy, opened as a tab — the same callback every open takes. */
     readonly onOpened: (opened: OpenedDocument) => void;
+    /** Where a copy without bookmarks, written when the document is too deep to save, is confirmed. */
+    readonly toast: ShowToast;
   },
   docId: DocId,
 ): Promise<void> {
@@ -66,6 +69,9 @@ export async function sayWhenUnwritable(
       return;
     case 'write-failed':
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'write-failed' });
+      return;
+    case 'too-deep':
+      await sayTooDeep(deps, docId, outcome.bookmarks);
       return;
     // WRITTEN AND NOT OPENED, said as any open says it: the copy is where the person put it.
     case 'absent':

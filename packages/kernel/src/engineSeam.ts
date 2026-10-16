@@ -386,6 +386,12 @@ export class DocumentLocked extends Error {
   }
 }
 
+/** What one serialise leaves out of the bytes it answers; the session is untouched either way. */
+export interface SerialiseOptions {
+  /** `left-out`: the bytes carry no `/Outlines` — a copy written without bookmarks (`saveDepth.ts`). */
+  readonly outline?: 'left-out';
+}
+
 export interface EngineWriter<TSession> {
   /**
    * Parses `image` into a session. The image is not retained by the engine.
@@ -413,8 +419,11 @@ export interface EngineWriter<TSession> {
    * it and no caller can forget to. A parameter here would have to be supplied
    * correctly by the checkpoint mint, the save flush, save-a-copy, extract and
    * export, which is five chances to get one rule wrong (B5 over a rule).
+   *
+   * `options` is a different thing from a purpose: it is what ONE copy leaves out, asked by the one caller writing that
+   * copy (*Save a copy without bookmarks*, `saveDepth.ts`), and every other caller passes nothing and gets the document.
    */
-  serialise(session: TSession): Promise<ByteImage>;
+  serialise(session: TSession, options?: SerialiseOptions): Promise<ByteImage>;
   /** Releases native resources. Safe to call once per session. */
   close(session: TSession): Promise<void>;
 }
