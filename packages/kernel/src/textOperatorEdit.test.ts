@@ -264,6 +264,7 @@ describe('applyEditTextOperators', () => {
         expect(await applyEditTextOperators(session, command(runs.runs[0]?.index ?? 0, 'Monstera fixture zap.'), runs)).toStrictEqual({
           boxed: [],
           more: 0,
+          moved: [],
         });
         expect(await pageWords(session)).toContain('Monsterafixturezap.');
         const { fonts, content } = await after(session);
@@ -291,7 +292,7 @@ describe('applyEditTextOperators', () => {
           ...command(index, words),
           ...blockEditOf([{ lines: [[index]], soft: [false], text: words }], [{ left: 100, baseline: 400, measure: 200, size: 14, text: 'A new box' }]),
         };
-        expect(await applyEditTextOperators(session, added, runs)).toStrictEqual({ boxed: [], more: 0 });
+        expect(await applyEditTextOperators(session, added, runs)).toStrictEqual({ boxed: [], more: 0, moved: [] });
         expect(await pageWords(session)).toContain('Anewbox');
         const { fonts, content: written } = await after(session);
         expect(fonts.filter((name) => name.startsWith('MonsteraF'))).toHaveLength(1);
@@ -309,7 +310,7 @@ describe('applyEditTextOperators', () => {
         const unassigned = String.fromCodePoint(0x378);
         const drawn = await applyEditTextOperators(session, command(runs.runs[0]?.index ?? 0, `Monstera fixture ${unassigned}.`), runs);
         // THE PERSON IS TOLD (ADR-0177 Decision 7): the character and its page, answered by the apply.
-        expect(drawn).toStrictEqual({ boxed: [{ character: unassigned, page: 0 }], more: 0 });
+        expect(drawn).toStrictEqual({ boxed: [{ character: unassigned, page: 0 }], more: 0, moved: [] });
         // THE REAL CHARACTER in MuPDF's reading: the box font's ToUnicode maps its code to U+0378, not to the box.
         expect(await pageWords(session)).toContain(`Monsterafixture${unassigned}.`);
         expect(await pageWords(session)).not.toContain(String.fromCodePoint(0x25a1));
