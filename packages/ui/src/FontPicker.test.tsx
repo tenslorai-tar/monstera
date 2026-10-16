@@ -190,4 +190,17 @@ describe('FontPicker', () => {
     expect(view.queryByRole('listbox')).toBeNull();
     expect(outer).not.toHaveBeenCalled();
   });
+
+  it('Escape gives the focus back to the field, so leaving the panel afterwards is seen (text-regression 7b)', () => {
+    const view = mount(() => undefined);
+    const field = view.getByRole('button', { name: 'Font: As on the page' });
+    fireEvent.click(field);
+    const search = view.getByRole('combobox', { name: 'Search fonts' });
+    search.focus();
+    expect(document.activeElement).toBe(search);
+    fireEvent.keyDown(search, { key: 'Escape' });
+    // CONTROL in the same case: the box that held the focus is gone, so a focus left in it would now be the body's.
+    expect(view.queryByRole('combobox', { name: 'Search fonts' })).toBeNull();
+    expect(document.activeElement).toBe(field);
+  });
 });

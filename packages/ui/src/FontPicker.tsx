@@ -171,12 +171,16 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
   const listId = useId();
   const optionId = (at: number): string => `${listId}-${String(at)}`;
   const search = useRef<HTMLInputElement>(null);
+  const face = useRef<HTMLButtonElement>(null);
   const groups = useMemo(() => fontGroups(list, inDocument, recentlyChosen(), builtIn, query), [list, inDocument, builtIn, query]);
   /** The computer's list as read, or `undefined` while it is read and where the consumer offers none. */
   const read = readList(list);
   const flat = groups.flatMap((group) => group.choices);
   const choose = (choice: FontChoice): void => {
     rememberFamily(choice.family);
+    // THE FOCUS BACK TO THE FIELD before the list is unmounted, for Escape's reason below; a consumer that wants it
+    // elsewhere (the text editor's panel puts it back in the words) moves it on from here.
+    face.current?.focus();
     setOpen(false);
     setQuery('');
     onPick(choice.family);
@@ -189,6 +193,7 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
         aria-expanded={open}
         aria-label={`${_(label)}: ${value ?? _(unset)}`}
         className="m-font-picker__face"
+        ref={face}
         onClick={() => {
           setOpen((now) => !now);
           setActive(0);
@@ -227,6 +232,10 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
                 // THE LIST CLOSES and the key goes no further: Escape in the editor would finish the words.
                 event.preventDefault();
                 event.stopPropagation();
+                // AND THE FOCUS GOES BACK TO THE FIELD IT CAME FROM, before the search box it is in is unmounted. Left
+                // in the box, it fell to the page's body with no focus event any surface sees, so the panel never learnt
+                // it was left and a press on the page did not end the text editor (text-regression 7b, 2026-10-16).
+                face.current?.focus();
                 setOpen(false);
                 setQuery('');
               }
