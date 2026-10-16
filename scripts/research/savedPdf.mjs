@@ -112,6 +112,30 @@ export async function savedWords(path) {
 }
 
 /**
+ * A saved page's words with EVERY whitespace character as written, read by MuPDF's structured text with
+ * `preserve-whitespace` (a reader that is not the PDFium writer that saves an edited block).
+ *
+ * {@link savedWords} cannot answer a question about spaces: PDF.js's text content turns each whitespace character into a
+ * gap and emits one space for it (`keepWhiteSpace` is false for page text and not in its API, read in pdfjs-dist's
+ * worker 2026-10-16), so a file holding "two  spaces" reads "two spaces" there whatever the writer did.
+ *
+ * @param {string} path
+ * @param {number} [pageIndex] zero-based
+ * @returns {Promise<string>}
+ */
+export async function savedTextKeepingSpaces(path, pageIndex = 0) {
+  const { bindNativeEngine } = await import('../lib/nativeEngine.mjs');
+  if (bindNativeEngine() === null) throw new Error('the MuPDF shim is not built here, so a whitespace-keeping read cannot be taken');
+  const mupdf = await import('../../packages/kernel/dist/mupdfRaw.js');
+  const document = mupdf.PDFDocument.openDocument(new Uint8Array(await readFile(path)), 'application/pdf');
+  try {
+    return document.loadPage(pageIndex).toStructuredText('preserve-whitespace').asText();
+  } finally {
+    document.destroy();
+  }
+}
+
+/**
  * What a signed file says about its LAST signature, read from its bytes by a reader that is not the signer: whether the
  * file is still protected, how many signatures it carries, whether the last `/ByteRange` covers the whole file around
  * one hole, and the common name of the first certificate in that hole's PKCS #7. `/Contents` is written in clear on a

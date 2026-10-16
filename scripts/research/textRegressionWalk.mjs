@@ -33,7 +33,7 @@ import { expect as defaultExpect } from '@playwright/test';
 
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { root, startWalk } from './liveWalk.mjs';
-import { savedContent, savedFonts, savedWords } from './savedPdf.mjs';
+import { savedContent, savedFonts, savedTextKeepingSpaces, savedWords } from './savedPdf.mjs';
 import { tabMarks, textSteps } from './textWalkSteps.mjs';
 
 // THE PRODUCER'S PAGE, fresh or refused, beside the shell's own edges `startWalk` checks.
@@ -276,7 +276,9 @@ await step('5. two spaces typed stay two spaces, on screen and in the saved file
   await page.keyboard.type(' two  spaces');
   expect(await editor().innerText()).toContain('two  spaces');
   await commit();
-  const words = (await savedWords(await savedCopy('05-spaces.pdf')))[0] ?? '';
+  // READ KEEPING EVERY SPACE: PDF.js's page text emits one space for any run of them, so `savedWords` reads "two spaces"
+  // from a file holding two whatever was written (measured 2026-10-16 on this step's own saved file).
+  const words = await savedTextKeepingSpaces(await savedCopy('05-spaces.pdf'));
   expect(words).toMatch(/two {2}spaces/u);
   // ON REOPENING, still two.
   await openBlock('Every walk step');
