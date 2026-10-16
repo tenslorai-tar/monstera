@@ -1,5 +1,9 @@
 # ADR-0175 — The typing box draws a run in its own font, rebuilt in the host
 
+> **Amended 2026-10-16 by [ADR-0250](0250-the-font-picker-draws-each-family-in-itself.md):** a fourth byte crossing,
+> `fonts.bundledFace`, carries a bundled family's upright face to the font picker, its family a closed enum the schema
+> enforces. The CSP stays as this ADR measured it.
+
 - **Status:** Accepted
 - **Date:** 2026-10-06
 - **Amends:** `docs/ARCHITECTURE.md` §3's in-place editing row (what the editor is drawn in), and the rule stated on
