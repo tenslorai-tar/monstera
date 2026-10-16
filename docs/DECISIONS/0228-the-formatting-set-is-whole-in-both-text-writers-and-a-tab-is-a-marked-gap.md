@@ -162,3 +162,30 @@ What replaces it, for the page-text writer (PDFium's):
 The operator writer (a page read as `operators`) is not covered by this correction: its rectangles are content-stream
 operators that its structural read-back and its byte edit do not yet name, and it is recorded as owed.
 
+## Correction, 2026-10-16 — a run of two or more spaces is a marked gap too (the owner's decision a)
+
+The text regression walk's step 5 typed two spaces into a paragraph, saved, and reopened the words with one. The saved
+file held both; the reading lost one. PDFium's text page reads a run of drawn spaces as one, within an object and across
+adjacent ones. The walk puts a dropped space back (`restoreDroppedSpaces`, 2026-10-14) only by comparing the gap against
+the gaps after the object's OTHER spaces, so where the object holds no single space to compare with, nothing can be
+compared and the run stays one short. Measured with
+`proof:textspaces`'s fixture on 2026-10-16: `Amount  due   now`, written without a mark, reads back `Amount due  now`.
+
+What replaces it, in both writers, as a tab is written (Decision 2):
+
+1. **Each run of two or more spaces is drawn as its own object**, in the words' style, and marked
+   `/Span <</ActualText (...)>>` with exactly those spaces. On its own object for Decision 2's measured reason: a mark
+   on an object is all of that object's text in MuPDF, so a mark carrying a word's spaces cannot sit on the word.
+2. **The reading is unchanged**: the walk already takes a marked object's `/ActualText` as its text (the 2026-10-11
+   correction above), and MuPDF honours it, so the editor's reading and the page's text layer, which a copy takes, both
+   read the spaces typed, each an ordinary U+0020.
+3. **A single space is not marked**, so a page is changed only where a run is.
+
+The owner's words were *"the exact words for runs that contain more than one space"*. The mark carries the spaces
+alone, not the run's words, for two reasons, both measured: a mark on the words' object replaces their text in MuPDF
+(Decision 2's table), and PDFium's `FPDFPageObjMark_SetStringParam` takes a C string, so a word outside ASCII reaches
+the file as UTF-8 bytes and is read back in PDFDocEncoding; spaces are ASCII and pass unchanged.
+
+`proof:textspaces` writes the edit through the PDFium writer and reads it back by both readers; its control is the same
+words drawn unmarked. The operator writer's case is in `operatorEdit.test.ts`, with single spaces as its control.
+
