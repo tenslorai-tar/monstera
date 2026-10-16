@@ -1,4 +1,4 @@
-import { PDFDocument } from '@cantoo/pdf-lib';
+import { PDFDocument, ParseSpeeds } from '@cantoo/pdf-lib';
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 
 import { wholeFile } from './pdfLibSession.js';
@@ -303,7 +303,7 @@ export function workbookPart(
 /** A PDF's page count, or `null` where it cannot be read. */
 export async function pdfPageCount(pdf: Uint8Array): Promise<number | null> {
   try {
-    return (await PDFDocument.load(pdf, { updateMetadata: false })).getPageCount();
+    return (await PDFDocument.load(pdf, { updateMetadata: false, parseSpeed: ParseSpeeds.Fastest })).getPageCount();
   } catch {
     // UNREADABLE IS AN ANSWER the caller names, not a fault: the bytes are a converter's output.
     return null;
@@ -326,7 +326,7 @@ export async function joinPdfs(
     item += 1;
     let source: PDFDocument;
     try {
-      source = await PDFDocument.load(bytes, { updateMetadata: false });
+      source = await PDFDocument.load(bytes, { updateMetadata: false, parseSpeed: ParseSpeeds.Fastest });
     } catch {
       return { unreadable: item };
     }

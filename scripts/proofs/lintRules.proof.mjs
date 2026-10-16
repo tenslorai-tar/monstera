@@ -62,7 +62,7 @@ import {
   PLANTED_Y_FLIP_INNOCENT,
   PLANTED_Y_FLIP_OFFENDER,
 } from '../lib/noBareYFlip.mjs';
-import { PLANTED_PINNED_LOAD, PLANTED_UNPINNED_LOAD } from '../lib/noUnpinnedPdfLoad.mjs';
+import { PLANTED_PINNED_LOAD, PLANTED_UNPINNED_COUNT, PLANTED_UNPINNED_LOAD } from '../lib/noUnpinnedPdfLoad.mjs';
 import { PLANTED_AUTHENTICATES, PLANTED_NEEDS_PASSWORD } from '../lib/noNeedsPassword.mjs';
 import {
   CLASS_COMPONENT_OWNER,
@@ -645,15 +645,20 @@ async function main() {
         .flatMap((result) => result.messages)
         .filter((message) => message.ruleId === PINNED);
 
+      const loadReasons = loadFound
+        .filter((message) => message.severity === 2)
+        .map((message) => `${String(message.line)}:${message.messageId ?? '?'}`);
       check(
-        'all three unpinned spellings are reported, at error severity',
-        loadFound.filter((message) => message.severity === 2).length === 3,
-        `findings on the planted module: ${
-          loadFound.map((m) => `${m.ruleId}(${String(m.severity)})`).join(', ') || 'none'
-        }\n      THREE, because not-pinning has three shapes: no options at all — how both real ` +
-          `defects were written — a SPREAD, which hides the default behind a variable, and ` +
-          `\`true\` written out, which reads as deliberate. A fixture with only the first ` +
-          `leaves the two that are harder to see unproven.`,
+        `all ${String(PLANTED_UNPINNED_COUNT)} unpinned loads are reported at error severity, each for the pin it misses`,
+        JSON.stringify(loadReasons) ===
+          JSON.stringify(['4:unpinned', '5:unpinned', '6:unpinned', '7:yielding', '8:yielding']),
+        `findings on the planted module: ${loadReasons.join(', ') || 'none'}\n      ` +
+          `THREE SHAPES OF NOT PINNING THE METADATA: no options at all — how both real defects were ` +
+          `written — a SPREAD, which hides the default behind a variable, and \`true\` written out, ` +
+          `which reads as deliberate. And TWO OF NOT PINNING THE PARSE SPEED with the metadata ` +
+          `pinned: left out, which is how all five real sites were written on 2026-10-16, and ` +
+          `\`ParseSpeeds.Slow\` written out. The line names which pin, so a rule that reported every ` +
+          `call for the first reason would not pass.`,
       );
 
       const loadInnocent = join(shippedDirectory, 'pinned.ts');

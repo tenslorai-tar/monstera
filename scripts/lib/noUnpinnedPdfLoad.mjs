@@ -1,6 +1,7 @@
 // @ts-check
 /**
- * `PDFDocument.load` must pin `updateMetadata: false`, or go through the owner.
+ * `PDFDocument.load` must pin `updateMetadata: false` and `parseSpeed: ParseSpeeds.Fastest`, or go through the owner.
+ * The second pin is {@link pinsParseSpeed}'s, with its measurement; the first is this header's.
  *
  * ## The defect this exists for, measured 2026-09-07
  *
@@ -33,7 +34,8 @@
  * ## What it reports, and the two things it deliberately does not
  *
  * A call to `PDFDocument.load` — or any `.load` on an identifier named
- * `PDFDocument` — whose second argument does not set `updateMetadata: false`.
+ * `PDFDocument` — whose second argument does not set `updateMetadata: false`,
+ * and then one that does not set `parseSpeed: ParseSpeeds.Fastest`.
  * The property must be written literally: a spread or a variable is reported,
  * because *this call is pinned* has to be decidable here, and a rule that
  * accepted `...options` would pass the one shape that hides the default.
@@ -84,6 +86,42 @@ function pinsMetadata(node) {
 }
 
 /**
+ * Whether an argument node pins `parseSpeed: ParseSpeeds.Fastest`, literally.
+ *
+ * ## The second default, measured 2026-10-16
+ *
+ * pdf-lib's `load` defaults `parseSpeed` to `ParseSpeeds.Slow`, 100: its parser hands the event loop back through a
+ * zero-delay timer every 100 objects (`PDFParser.js`, `waitForTick`), so a load waits one timer tick per hundred objects
+ * on top of the parse. Its writer's `objectsPerTick` is the same mechanism, closed for saves by `pdfLibSession.ts`
+ * (KKKKKKKK-2); the parser was left, which is the half-fix this rule now names. Measured on this machine against the
+ * 2,000-field form of `formFieldScale.test.ts`, two runs each: a field edit 597 and 603 ms with the default and 398 and
+ * 405 ms pinned, a field creation 734 and 875 ms against 554 and 565 ms. The share grows with load, because a busy
+ * machine stretches every tick.
+ *
+ * One spelling, for {@link pinsMetadata}'s reason: `ParseSpeeds.Fastest` is pdf-lib's own name for no yields, so the
+ * pin is readable from the call and a reader need not know that the enum's value is `Infinity`.
+ *
+ * @param {import('estree').Node | undefined} node
+ * @returns {boolean}
+ */
+function pinsParseSpeed(node) {
+  if (node === undefined || node.type !== 'ObjectExpression') return false;
+  return node.properties.some(
+    (property) =>
+      property.type === 'Property' &&
+      !property.computed &&
+      property.key.type === 'Identifier' &&
+      property.key.name === 'parseSpeed' &&
+      property.value.type === 'MemberExpression' &&
+      !property.value.computed &&
+      property.value.object.type === 'Identifier' &&
+      property.value.object.name === 'ParseSpeeds' &&
+      property.value.property.type === 'Identifier' &&
+      property.value.property.name === 'Fastest',
+  );
+}
+
+/**
  * A module that MUST be reported, so the rule's proof drives the real config.
  *
  * *No violations* is what a rule matching nothing reports and also what this
@@ -98,15 +136,20 @@ function pinsMetadata(node) {
  * leaves the two that are harder to see unproven.
  */
 export const PLANTED_UNPINNED_LOAD = [
-  "import { PDFDocument } from '@cantoo/pdf-lib';",
+  "import { PDFDocument, ParseSpeeds } from '@cantoo/pdf-lib';",
   '',
   'export async function open(bytes: Uint8Array, options: { updateMetadata: boolean }) {',
   '  const bare = await PDFDocument.load(bytes);',
-  '  const spread = await PDFDocument.load(bytes, { ...options });',
-  '  const wrong = await PDFDocument.load(bytes, { updateMetadata: true });',
-  '  return [bare, spread, wrong];',
+  '  const spread = await PDFDocument.load(bytes, { ...options, parseSpeed: ParseSpeeds.Fastest });',
+  '  const wrong = await PDFDocument.load(bytes, { updateMetadata: true, parseSpeed: ParseSpeeds.Fastest });',
+  '  const yielding = await PDFDocument.load(bytes, { updateMetadata: false });',
+  '  const slow = await PDFDocument.load(bytes, { updateMetadata: false, parseSpeed: ParseSpeeds.Slow });',
+  '  return [bare, spread, wrong, yielding, slow];',
   '}',
 ].join('\n');
+
+/** How many calls {@link PLANTED_UNPINNED_LOAD} holds, each reported once. */
+export const PLANTED_UNPINNED_COUNT = 5;
 
 /**
  * A module that must NOT be reported.
@@ -118,13 +161,13 @@ export const PLANTED_UNPINNED_LOAD = [
  * `PDFDocument` at all.
  */
 export const PLANTED_PINNED_LOAD = [
-  "import { PDFDocument } from '@cantoo/pdf-lib';",
+  "import { PDFDocument, ParseSpeeds } from '@cantoo/pdf-lib';",
   '',
   'declare const registry: { load: (bytes: Uint8Array) => Promise<unknown> };',
   '',
   'export async function open(bytes: Uint8Array) {',
-  '  const pinned = await PDFDocument.load(bytes, { updateMetadata: false });',
-  '  const among = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });',
+  '  const pinned = await PDFDocument.load(bytes, { updateMetadata: false, parseSpeed: ParseSpeeds.Fastest });',
+  '  const among = await PDFDocument.load(bytes, { ignoreEncryption: true, parseSpeed: ParseSpeeds.Fastest, updateMetadata: false });',
   '  const other = await registry.load(bytes);',
   '  return [pinned, among, other];',
   '}',
@@ -147,6 +190,10 @@ export const noUnpinnedPdfLoad = {
         'writes different bytes on every run — measured 2026-09-07, /ModDate moving 172400Z to ' +
         `172401Z across two applies. Use \`openForWriting\` from ${LOAD_OWNER}, which is the pin. ` +
         'A byte-equality case will NOT catch this: two saves normally land inside one clock tick.',
+      yielding:
+        'PDFDocument.load without `parseSpeed: ParseSpeeds.Fastest`. pdf-lib defaults it to Slow and waits one timer ' +
+        'tick every 100 objects it parses — measured 2026-10-16, a 2,000-field edit at 600 ms against 400 ms pinned, ' +
+        `and the share grows under load. Use \`openForWriting\` from ${LOAD_OWNER}, or pin it here.`,
     },
   },
 
@@ -157,8 +204,8 @@ export const noUnpinnedPdfLoad = {
         if (callee.type !== 'MemberExpression' || callee.computed) return;
         if (callee.property.type !== 'Identifier' || callee.property.name !== 'load') return;
         if (callee.object.type !== 'Identifier' || callee.object.name !== 'PDFDocument') return;
-        if (pinsMetadata(node.arguments[1])) return;
-        context.report({ node, messageId: 'unpinned' });
+        if (!pinsMetadata(node.arguments[1])) context.report({ node, messageId: 'unpinned' });
+        else if (!pinsParseSpeed(node.arguments[1])) context.report({ node, messageId: 'yielding' });
       },
     };
   },

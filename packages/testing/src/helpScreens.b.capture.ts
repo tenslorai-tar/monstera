@@ -1,4 +1,4 @@
-import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
+import { PDFDocument, ParseSpeeds, StandardFonts } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Locator, type Page, expect, test } from '@playwright/test';
 
@@ -318,7 +318,7 @@ test('import-page-as-layer-1', async ({ page }) => {
 
 test('open-a-protected-pdf-1', async ({ page }) => {
   // A REAL AES-256 FILE, encrypted by pdf-lib: PDF.js meets the encryption and the application asks for the password.
-  const document = await PDFDocument.load(await samplePdf(), { updateMetadata: false });
+  const document = await PDFDocument.load(await samplePdf(), { updateMetadata: false, parseSpeed: ParseSpeeds.Fastest });
   document.encrypt({ userPassword: 'sample-only', ownerPassword: 'sample-owner', algorithm: 'AES-256' });
   const locked = await document.save();
   const docId = asDocId('00000000-0000-4000-8000-0000000000b3');

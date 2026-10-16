@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
+import { PDFDocument, ParseSpeeds, StandardFonts, rgb } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Locator, type Page, expect, test } from '@playwright/test';
 
@@ -288,7 +288,7 @@ const LOGO = { left: 468, bottom: 684, right: 540, top: 756 } as const;
 
 /** The sample report with the Monstera logo, a real image object, at the top right of page 1. */
 async function logoPdf(): Promise<Uint8Array> {
-  const document = await PDFDocument.load(await samplePdf(), { updateMetadata: false });
+  const document = await PDFDocument.load(await samplePdf(), { updateMetadata: false, parseSpeed: ParseSpeeds.Fastest });
   const logo = await document.embedPng(readFileSync(join(REPO_ROOT, 'assets', 'brand', 'logo-256.png')));
   document.getPage(0).drawImage(logo, {
     x: LOGO.left,

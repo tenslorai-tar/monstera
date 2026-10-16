@@ -1,4 +1,4 @@
-import { PDFDocument } from '@cantoo/pdf-lib';
+import { PDFDocument, ParseSpeeds } from '@cantoo/pdf-lib';
 
 import type { ByteImage } from './engineSeam.js';
 
@@ -41,13 +41,18 @@ import type { ByteImage } from './engineSeam.js';
  * 192–239 s where the append costs a fraction of the load, and ADR-0008's
  * conditions 2, 3 and 5 were executed before it was allowed. `commit()` refuses a
  * document not loaded this way, so the two helpers are one route.
+ *
+ * ## Parsed without a timer wait every 100 objects
+ *
+ * `parseSpeed` defaults to `ParseSpeeds.Slow`, a zero-delay timer per hundred objects parsed — the reading half of
+ * {@link WITHOUT_YIELDS}' mechanism. Pinned for the measurement `monstera/no-unpinned-pdf-load` carries.
  */
 export function openForWriting(image: ByteImage): Promise<PDFDocument> {
   // NO EXEMPTION AND NO DISABLE. This call pins the flag, so it passes the rule
   // on its own merits — unlike `geometry.ts` under `no-bare-y-flip`, where the
   // legal spelling is textually identical to the banned one and a file
   // exemption is the only thing that separates them.
-  return PDFDocument.load(image, { updateMetadata: false, forIncrementalUpdate: true });
+  return PDFDocument.load(image, { updateMetadata: false, forIncrementalUpdate: true, parseSpeed: ParseSpeeds.Fastest });
 }
 
 
