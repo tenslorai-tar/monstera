@@ -163,6 +163,12 @@ for (const look of LOOKS) {
 
   for (const id of FROM_THE_GALLERY) {
     test(`${look.name}: ${id} matches its baseline`, async ({ page }) => {
+      // NO CAMERA, on every machine: the camera dialog asks the browser for one, and the answer was the machine's — "could
+      // not be started, another app may be using it" here, an asynchronous refusal on CI that raced the screenshot in dark
+      // and hc (2026-10-16, 3d9405f9's board). With no media devices the dialog says so on its first paint, by its own rule.
+      await page.addInitScript(() => {
+        Object.defineProperty(navigator, 'mediaDevices', { value: undefined, configurable: true });
+      });
       await page.setViewportSize({ width: 1280, height: 800 });
       const state = (await indexOf(page, look)).states[id]?.[0];
       expect(state, `${id} has a sample state`).toBeDefined();

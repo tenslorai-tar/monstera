@@ -88,6 +88,12 @@ export default defineConfig({
   use: {
     baseURL: `http://localhost:${String(PORT)}`,
     ...devices['Desktop Chrome'],
+    // THE CLOCK AND THE LANGUAGE ARE THE TEST'S, never the machine's: a screen that shows a date formats it in the
+    // browser's zone and locale, so restore-version's sample times read in Central European summer time on the machine
+    // that made the baselines and in UTC on CI, and every line differed (2026-10-16, 3d9405f9's board). The visual suite
+    // inherits these.
+    timezoneId: 'UTC',
+    locale: 'en-US',
   },
   webServer: {
     command: `node ${JSON.stringify(join(REPO_ROOT, 'node_modules', 'vite', 'bin', 'vite.js'))} preview --config ${JSON.stringify(join(REPO_ROOT, 'scripts', 'build', 'renderer.vite.config.mjs'))} --port ${String(PORT)} --strictPort`,
