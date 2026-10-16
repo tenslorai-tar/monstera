@@ -963,7 +963,15 @@ export function textObjectText(
       const textPage: unknown = bindings.loadTextPage(handle);
       if (textPage === null) throw refusedAt('page', 'PDFium could not load the page for text reading');
       try {
-        return objectTextOn(bindings, object, textPage);
+        const bytes = numberFrom(bindings.textObjectText(object, textPage, null, 0), 'FPDFTextObj_GetText');
+        // TWO BYTES IS THE TERMINATOR ALONE, which is what an object carrying no text answers. Returning '' for it is
+        // right; allocating a zero-length buffer and calling again is not, and PDFium's own refusal for that case is not
+        // documented.
+        if (bytes <= 2) return '';
+        const buffer = new Uint16Array(bytes / 2);
+        const written = numberFrom(bindings.textObjectText(object, textPage, buffer, bytes), 'FPDFTextObj_GetText');
+        // `written` is bytes and includes the terminator, so the character count is one short of half of it.
+        return fromUtf16Units(buffer.subarray(0, Math.max(0, written / 2 - 1)));
       } finally {
         bindings.closeTextPage(textPage);
       }
@@ -975,7 +983,7 @@ export function textObjectText(
  * What each of `objects` DRAWS on a text page — its characters, with the ones the text page
  * GENERATED left out. The read-back of an edit, in one pass over the page's characters.
  *
- * ## Why not {@link objectTextOn}
+ * ## Why not `FPDFTextObj_GetText` per object ({@link textObjectText})
  *
  * `FPDFTextObj_GetText` answers an object's characters as the text page assigns them, and the
  * text page attributes a space it generates between two runs to the run before it. So a line an
@@ -1049,24 +1057,6 @@ function misreadWrites(
   return said
     .map((text, at) => ({ written: asTextPageReads(text), read: drawn[at] ?? '' }))
     .filter(({ written, read }) => written !== read && !drewTheGlyphs(written, read));
-}
-
-/** One object's own string, read through a text page the caller holds. */
-function objectTextOn(bindings: Bound, object: unknown, textPage: unknown): string {
-  const bytes = numberFrom(bindings.textObjectText(object, textPage, null, 0), 'FPDFTextObj_GetText');
-  // TWO BYTES IS THE TERMINATOR ALONE, which is what an object carrying no text
-  // answers. Returning '' for it is right; allocating a zero-length buffer and
-  // calling again is not, and PDFium's own refusal for that case is not
-  // documented.
-  if (bytes <= 2) return '';
-  const buffer = new Uint16Array(bytes / 2);
-  const written = numberFrom(
-    bindings.textObjectText(object, textPage, buffer, bytes),
-    'FPDFTextObj_GetText',
-  );
-  // `written` is bytes and includes the terminator, so the character count is
-  // one short of half of it.
-  return fromUtf16Units(buffer.subarray(0, Math.max(0, written / 2 - 1)));
 }
 
 /** How many UTF-16 units one `String.fromCharCode` call is handed: far under the limit, and few calls per page. */
@@ -6106,15 +6096,35 @@ function textObjectsIn(bindings: Bound, handle: unknown): unknown[] {
   return found;
 }
 
-/** What each of a page's text objects says and is set in, read through one text page. */
+/**
+ * What each of a page's text objects draws and is set in, read through one text page IN ONE PASS over its characters.
+ *
+ * ## {@link drawnTextOn}, not `FPDFTextObj_GetText` per object
+ *
+ * That call is {@link textObjectText}'s alone, for the one object a caller names, which opens the page itself, so a loop
+ * over it pays a page per object where it can be seen.
+ *
+ * `FPDFTextObj_GetText` finds an object's characters by searching the whole text page for them, so one call costs the
+ * page and a call per object costs the page squared. Measured 2026-10-16 on the text walk's L6 page (one heading over
+ * thousands of one-letter objects), the kernel's heading edit in the host's runtime took 824, 1,505 and 5,227 ms at
+ * 2,451, 4,901 and 9,801 objects, and 3,780 of the 5,227 were 39,204 `FPDFTextObj_GetText` calls, four per object: this
+ * function, before and after the save. At 39,201 objects the walk's edit ran past its 129,587 ms deadline.
+ * `drawnTextOn` walks the page's characters once and gives each to the object it came from.
+ *
+ * It reads what an object DRAWS, leaving out the spaces the text page generates between runs, and both sides of
+ * {@link readBack}'s comparison are read here, so they are read alike. Those generated spaces depend on the neighbours,
+ * which an edit moves, so leaving them out is also what keeps a correct edit from reading as a loss, `drawnTextOn`'s own
+ * reason.
+ */
 function heldTextsOn(bindings: Bound, handle: unknown): { readonly objects: unknown[]; readonly texts: HeldText[] } {
   const objects = textObjectsIn(bindings, handle);
   const textPage: unknown = bindings.loadTextPage(handle);
   if (textPage === null) throw refusedAt('page', 'PDFium could not load the page to record its text');
   try {
-    const texts = objects.map((object) => {
+    const drawn = drawnTextOn(bindings, textPage, objects);
+    const texts = objects.map((object, at) => {
       const font: unknown = bindings.textFont(object);
-      return { text: objectTextOn(bindings, object, textPage), font: font === null ? '' : baseNameOf(bindings, font) };
+      return { text: drawn[at] ?? '', font: font === null ? '' : baseNameOf(bindings, font) };
     });
     return { objects, texts };
   } finally {

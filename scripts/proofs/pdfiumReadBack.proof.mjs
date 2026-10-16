@@ -72,7 +72,15 @@ const failures = [];
 // AN INDEPENDENT CLAIM about this file (audit item 4c): two readable premises, nine commands refused on a Type 3 page
 // and saved on a Helvetica one (the ninth an emptied replacement, which removes its object), three undos refused, and
 // the hand-built page's own edit refused at the read-back.
-const roster = createRoster(failures, { cases: 24 });
+const roster = createRoster(failures, { cases: 25 });
+
+/**
+ * How much an edit of 9,800 objects may cost against one of 1,225, eight times fewer. Read on this project's Windows
+ * machine, 2026-10-16, best of three edits each: 6.9×, 7.1× and 7.2× with the page read once, and 21.0× and 23.1× with
+ * the previous build's read per object. Twelve is about the geometric middle, so either side has room before it reads
+ * as the other.
+ */
+const GROWTH_BOUND = 12;
 
 /** @param {string} name @param {boolean} ok @param {string} detail */
 function record(name, ok, detail) {
@@ -225,6 +233,40 @@ async function withAForm(id) {
   return drawn.save();
 }
 
+/**
+ * The text walk's L6 page: a heading over `count` one-letter objects. What the read-back reads grows with the objects,
+ * which is the axis its cost is measured on. @param {number} count
+ */
+async function densePage(count) {
+  const made = await PDFDocument.create({ updateMetadata: false });
+  const font = await made.embedFont(StandardFonts.Helvetica);
+  const sheet = made.addPage([612, 792]);
+  sheet.drawText('Dense page heading', { x: 72, y: 740, size: 14, font });
+  for (let at = 0; at < count; at += 1) sheet.drawText('x', { x: 72 + (at % 400) * 1.2, y: 60 + at * 0.016, size: 0.5, font });
+  return new Uint8Array(await made.save());
+}
+
+/** The fastest of three edits of the dense page's heading, in milliseconds. @param {number} count */
+async function headingEditMs(count) {
+  const bytes = await densePage(count);
+  const heading = blockOf(await runsOf(bytes), 'Dense page heading');
+  if (heading === undefined) throw new Error(`the ${String(count)}-object page offered no heading block`);
+  const command = {
+    kind: 'editTextBlock',
+    page: 0,
+    ...blockEditOf([{ lines: heading.lines.map((/** @type {any} */ l) => l.runs.map((/** @type {Run} */ r) => r.index)), soft: heading.lines.map(() => false), text: 'Edited Dense page heading' }]),
+    fit: 'reflow',
+    version: 1,
+  };
+  let fastest = Number.POSITIVE_INFINITY;
+  for (let trial = 0; trial < 3; trial += 1) {
+    const started = performance.now();
+    await applied(bytes, command)();
+    fastest = Math.min(fastest, performance.now() - started);
+  }
+  return fastest;
+}
+
 async function main() {
   process.stdout.write('# Nothing is lost when PDFium rewrites a page\n\n');
   process.stdout.write(`  PDFium ${PDFIUM_VERSION}\n  ${library}\n\n`);
@@ -321,6 +363,18 @@ async function main() {
     'editing a Type 3 line itself is refused at the read-back, not as a font that cannot carry the words',
     'step' in ownEdit && ownEdit.step === 'read-back',
     said(ownEdit),
+  );
+
+  // THE READ-BACK COSTS THE PAGE ONCE, not once per object. Eight times the objects must cost about eight times the time;
+  // reading each object's text with its own `FPDFTextObj_GetText` searched the whole page per object, and grew with the
+  // square.
+  const sparse = await headingEditMs(1_225);
+  const dense = await headingEditMs(9_800);
+  const growth = dense / sparse;
+  record(
+    'eight times the objects cost about eight times the edit, not sixty-four: the read-back reads the page once',
+    growth < GROWTH_BOUND,
+    `1,225 objects ${sparse.toFixed(0)} ms, 9,800 objects ${dense.toFixed(0)} ms, ${growth.toFixed(1)}×, bound ${String(GROWTH_BOUND)}×`,
   );
 
   process.stdout.write(
