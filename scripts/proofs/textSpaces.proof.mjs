@@ -89,7 +89,7 @@ async function page(words) {
 async function run(pdfium, kernel) {
   const apply = withNoPassword(kernel.localPdfiumExecution).apply;
 
-  /** PDFium's reading of page 0 as the editor reads it: its blocks. @param {Uint8Array} bytes */
+  /** PDFium's reading of page 0 as the editor reads it: its blocks. @param {Uint8Array} bytes @returns {Promise<any[]>} */
   const readBlocks = async (bytes) => {
     const session = await pdfium.pdfiumWriter.open(bytes);
     try {
@@ -137,7 +137,7 @@ async function run(pdfium, kernel) {
     return apply({ session: bytes, command, sources: [], reads: undefined });
   };
 
-  /** MuPDF's page-text read of page 0, the one the text layer is built from, as one string per line. @param {Uint8Array} bytes */
+  /** MuPDF's page-text read of page 0, the one the text layer is built from, as one string per line. @param {Uint8Array} bytes @returns {string[]} */
   const copied = (bytes) => {
     const document = kernel.mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
     const stext = document.loadPage(0).toStructuredText(kernel.stextOptionsFor('substrate'));
