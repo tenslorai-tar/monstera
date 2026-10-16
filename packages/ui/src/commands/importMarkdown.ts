@@ -3,6 +3,7 @@ import type { DocId, DocVersion } from '@monstera/shared';
 
 import { BOXED_CHARACTERS_DIALOG_ID } from '../dialogs/boxedCharacters.js';
 import { CAMERA_CAPTURE_DIALOG_ID, CAMERA_CAPTURE_RESULT } from '../dialogs/cameraCapture.js';
+import { COMPONENT_CANNOT_START_DIALOG_ID } from '../dialogs/componentCannotStart.js';
 import { fileTooLargeProblem } from '../dialogs/fileTooLarge.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { IMPORT_SKIPPED_DIALOG_ID } from '../dialogs/importSkipped.js';
@@ -115,8 +116,8 @@ export function markdownImportProblem(
     // lacks have their own dialog, which the Office command opens (decision C). So did
     // `opened-with-boxes`, whose boxed characters the text imports name (ADR-0172), and `opened-with-skips`, which
     // opened with every other part and whose parts left out the import names.
-    // A PART OF MONSTERA THAT COULD NOT START was told by its own notice (`app.component-cannot-start`), which says the
-    // file is not the problem; a second dialog here would say the opposite.
+    // A PART OF MONSTERA THAT COULD NOT START has its own dialog, which says the file is not the problem; this one would
+    // say the opposite. `newFromOfficeCommand` asks it before reaching here.
     case 'component-cannot-start':
     case 'opened-incomplete':
     case 'opened-with-boxes':
@@ -307,6 +308,13 @@ export function newFromOfficeCommand(deps: {
       }
       if (result.kind === 'already-open') {
         deps.onAlreadyOpen(result.docId);
+        return;
+      }
+      // THE CONVERTER COULD NOT START, said for EVERY request: main's pushed notice is once per component per run, so a
+      // second request answered nothing at all. Where the notice is also asked, the two are the same informational
+      // dialog with the same props, and closing one closes both (`informs`), so the first request still shows one.
+      if (result.kind === 'component-cannot-start') {
+        void deps.ask(COMPONENT_CANNOT_START_DIALOG_ID, {});
         return;
       }
       const problem = markdownImportProblem(result);

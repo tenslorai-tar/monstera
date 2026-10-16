@@ -28,12 +28,13 @@
  *   node scripts/provision/fonts.mjs [--force] [--check]
  */
 
-import { mkdir, rename, rm } from 'node:fs/promises';
+import { mkdir, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { downloadVerified, fileExists, toolPath, verifyFileDigest } from '../lib/fetchVerified.mjs';
 import { isMain } from '../lib/isMain.mjs';
+import { publishTree } from '../lib/publishTree.mjs';
 import { presentAsPinned, treeProblems, verifyPinnedTree } from '../lib/pinnedTree.mjs';
 import { formatError } from '../lib/reportError.mjs';
 
@@ -165,7 +166,7 @@ export async function provisionFonts({ root, force = false }) {
     await verifyPinnedTree({ directory: staging, pins: BUNDLED_FONT_PINS, context: 'the bundled fonts just fetched' });
     await rm(directory, { recursive: true, force: true });
     await mkdir(dirname(directory), { recursive: true });
-    await rename(staging, directory);
+    await publishTree({ from: staging, to: directory, root });
     return { provisioned: true, directory };
   } finally {
     await rm(staging, { recursive: true, force: true });

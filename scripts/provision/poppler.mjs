@@ -40,7 +40,7 @@
  */
 
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, rename, rm } from 'node:fs/promises';
+import { mkdir, readFile, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -52,6 +52,7 @@ import { formatError } from '../lib/reportError.mjs';
 import { VC14_RUNTIME, VC14_RUNTIME_BIN, committedLicenceName, installCondaPackage, sameAsCommitted } from './condaForge.mjs';
 import { POPPLER_KEY_FINGERPRINT, popplerKeyPath } from './keys/popplerKey.mjs';
 import { isMain } from '../lib/isMain.mjs';
+import { publishTree } from '../lib/publishTree.mjs';
 
 /** The conda-forge build ADR-0071 names; the newest Poppler on the channel, read 2026-09-16. */
 export const POPPLER_VERSION = '26.09.0';
@@ -223,7 +224,7 @@ export async function provisionPoppler({ root, force = false }) {
     await verifyPinnedTree({ directory: bin, pins: POPPLER_BIN, context: `the extracted Poppler ${POPPLER_VERSION}` });
     await rm(versionDirectory, { recursive: true, force: true });
     await mkdir(dirname(versionDirectory), { recursive: true });
-    await rename(staging, versionDirectory);
+    await publishTree({ from: staging, to: versionDirectory, root });
     return { provisioned: true, executable };
   } finally {
     await rm(staging, { recursive: true, force: true });

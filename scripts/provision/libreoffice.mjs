@@ -35,7 +35,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, rename, rm } from 'node:fs/promises';
+import { mkdir, readFile, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -50,6 +50,7 @@ import { verifyDetached } from '../lib/openpgpVerify.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { LIBREOFFICE_KEY_FINGERPRINT, libreOfficeKeyPath } from './keys/libreOfficeKey.mjs';
 import { isMain } from '../lib/isMain.mjs';
+import { publishTree } from '../lib/publishTree.mjs';
 
 /** `26.8.0`, the newest in `download.documentfoundation.org/libreoffice/stable/`, read 2026-09-13. */
 export const LIBREOFFICE_VERSION = '26.8.0';
@@ -166,7 +167,7 @@ export async function provisionLibreOffice({ root, force = false }) {
 
     await rm(versionDirectory, { recursive: true, force: true });
     await mkdir(dirname(versionDirectory), { recursive: true });
-    await rename(target, versionDirectory);
+    await publishTree({ from: target, to: versionDirectory, root });
     return { provisioned: true, soffice };
   } finally {
     await rm(staging, { recursive: true, force: true });

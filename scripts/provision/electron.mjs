@@ -59,7 +59,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { extract } from '../lib/extract.mjs';
-import { grantPath } from '../lib/containerGrant.mjs';
+import { grantPublished } from '../lib/publishTree.mjs';
 import { loadTypeScript } from '../lib/loadTypeScript.mjs';
 import { PLAIN_NODE_EXTENSIONS, SCAN_DATA_EXTENSIONS, SCAN_DECLARATION_SUFFIX } from '../lib/plainNodeScope.mjs';
 import {
@@ -639,16 +639,10 @@ export async function provisionElectron({ root = REPO_ROOT, key = platformKey() 
   // per-package ACE), and a machine where `icacls` cannot write must still end with a provisioned
   // runtime rather than an exception. What it must not do is stay silent, so the failure is
   // printed with the command that repairs it.
-  if (process.platform === 'win32') {
-    const { granted, detail } = grantPath({ path: electronRoot(root), rights: 'RX' });
-    process.stdout.write(
-      granted
-        ? `  ok  the contained host may execute this runtime (ALL APPLICATION PACKAGES: RX)\n`
-        : `  !!  this runtime is NOT readable by a contained host: ${detail}\n` +
-          `      Every document will be poisoned with an ICU error in the shell log.\n` +
-          `      Run \`npm run provision:grants\`.\n`,
-    );
-  }
+  //
+  // THROUGH `grantPublished`, the step every provisioner now takes: this file found the class first and repaired it
+  // here alone, and the seven trees beside it lost their grant the same way (an ONLYOFFICE re-extraction, 2026-10-16).
+  await grantPublished({ to: electronRoot(root), root });
 
   return binary;
 }

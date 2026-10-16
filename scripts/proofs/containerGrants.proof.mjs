@@ -22,7 +22,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -46,10 +46,11 @@ import {
   readAcl,
 } from '../provision/containerGrants.mjs';
 import { grantPath } from '../lib/containerGrant.mjs';
+import { publishTree } from '../lib/publishTree.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 21 });
+const roster = createRoster(failures, { cases: 23 });
 
 /** The program a contained host runs, which the grant set must cover. */
 const HOST_ENTRY = join(repoRoot(), 'packages', 'kernel', 'dist', 'host', 'hostEntry.js');
@@ -380,14 +381,70 @@ try {
       `that read that as success would report a runtime the host cannot execute.`,
     windows,
   );
+  // ------------------------------------------------------------------
+  // EVERY PROVISIONER, not the Electron one alone. The repair above stayed in `electron.mjs`, and
+  // the seven trees beside it lost their grant the same way: `provision:onlyoffice` re-extracted
+  // ONLYOFFICE on 2026-10-16 and every conversion then died in Windows' loader with 0xC0000135,
+  // shown to nobody. A publish is a rename, and a renamed folder keeps the staging folder's DACL.
+  //
+  // The set of provisioners is DERIVED from `containerGrants.mjs`' own imports, which are exactly
+  // the modules whose trees the grant set names, so a provisioner added to the set owes the call
+  // the day it is added (4c: the failure to fear is a tree published ungranted).
+  // ------------------------------------------------------------------
+  const grantsSource = readFileSync(join(repoRoot(), 'scripts', 'provision', 'containerGrants.mjs'), 'utf8');
+  const provisioners = [...grantsSource.matchAll(/^import \{[^}]*\} from '\.\/([a-zA-Z]+)\.mjs';$/gmu)].map(
+    (match) => match[1] ?? '',
+  );
+  const ungrantedPublishers = provisioners.filter(
+    (name) =>
+      !/\b(?:publishTree|grantPublished)\(/u.test(
+        readFileSync(join(repoRoot(), 'scripts', 'provision', `${name}.mjs`), 'utf8'),
+      ),
+  );
   check(
-    'the ELECTRON PROVISIONER calls it, so a republished tree is granted again',
-    /grantPath\(\{\s*path:\s*electronRoot\(root\)/u.test(
-      readFileSync(join(repoRoot(), 'scripts', 'provision', 'electron.mjs'), 'utf8'),
-    ),
-    `scripts/provision/electron.mjs does not grant the tree it publishes. Every run of ` +
-      `provision:electron re-extracts, and an extracted tree names no package principal — so the ` +
-      `engine host dies at startup with an ICU error and every document is poisoned.`,
+    'every provisioner whose tree a contained process reads publishes through publishTree or grantPublished',
+    provisioners.includes('onlyoffice') && provisioners.includes('electron') && ungrantedPublishers.length === 0,
+    `provisioners read from containerGrants.mjs' imports: ${JSON.stringify(provisioners)}; publishing ` +
+      `without the grant: ${JSON.stringify(ungrantedPublishers)}. A re-provisioned tree then names no ` +
+      `package principal, and the program in it dies before its first line.`,
+  );
+
+  // THE HELPER, round-tripped on a throwaway ROOT, so the grant set it reads names throwaway paths.
+  let publishedGrant = false;
+  let renamedGrant = true;
+  if (windows) {
+    const scratch = mkdtempSync(join(tmpdir(), 'monstera-publish-'));
+    try {
+      const stage = (/** @type {string} */ name) => {
+        const staging = join(scratch, `${name}.staging`);
+        mkdirSync(staging, { recursive: true });
+        writeFileSync(join(staging, 'program.dll'), 'stand-in\n', 'utf8');
+        return staging;
+      };
+      const viaHelper = onlyofficeRoot(scratch);
+      mkdirSync(dirname(viaHelper), { recursive: true });
+      await publishTree({ from: stage('helper'), to: viaHelper, root: scratch });
+      publishedGrant = namesApplicationPackages(readAcl(join(viaHelper, 'program.dll')) ?? '');
+      // THE CONTROL: the publish every provisioner made before, a bare rename into a tree the set names.
+      const viaRename = ghostscriptRoot(scratch);
+      mkdirSync(dirname(viaRename), { recursive: true });
+      renameSync(stage('bare'), viaRename);
+      renamedGrant = namesApplicationPackages(readAcl(join(viaRename, 'program.dll')) ?? '');
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  }
+  check(
+    'a tree published through publishTree is readable by a contained process, down to the file inside it',
+    publishedGrant,
+    `the published file's ACL does not name ${ALL_APPLICATION_PACKAGES}.`,
+    windows,
+  );
+  check(
+    'CONTROL: the same tree published by a bare rename is NOT, which is the defect the helper closes',
+    !renamedGrant,
+    `a bare rename produced a file naming ${ALL_APPLICATION_PACKAGES}, so the case above separates nothing.`,
+    windows,
   );
 
   if (failures.length > 0) {

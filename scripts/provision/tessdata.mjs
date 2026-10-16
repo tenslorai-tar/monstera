@@ -61,6 +61,7 @@ import { fileURLToPath } from 'node:url';
 
 import { downloadVerified, fileExists, toolPath, verifyFileDigest } from '../lib/fetchVerified.mjs';
 import { isMain } from '../lib/isMain.mjs';
+import { grantPublished } from '../lib/publishTree.mjs';
 
 /** Where the CDN serves the pinned build from. */
 const BASE = 'https://tessdata.projectnaptha.com/4.0.0_fast';
@@ -220,6 +221,8 @@ async function main() {
     });
     fetched += 1;
   }
+  // A MODEL WRITTEN HERE is read inside the container, and a folder this run created inherits nothing it can read.
+  if (fetched > 0) await grantPublished({ to: directory, root: REPO_ROOT });
 
   // EVERY RUN, because it reads one local file: NOTICE renders these models' terms, and a
   // committed copy that is not the pinned bytes is a notice claiming something nobody read.

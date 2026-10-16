@@ -56,6 +56,7 @@ import { formatError } from '../lib/reportError.mjs';
 import { normaliseLayout } from '../release/generateNotice.mjs';
 import { sameAsCommitted } from './condaForge.mjs';
 import { isMain } from '../lib/isMain.mjs';
+import { publishTree } from '../lib/publishTree.mjs';
 
 export const ONLYOFFICE_VERSION = '9.4.0';
 
@@ -529,7 +530,7 @@ export async function provisionOnlyOffice({ root, force = false }) {
     await verifyPinnedTree({ directory: tree, pins: onlyofficePins(), context: `the extracted ONLYOFFICE ${ONLYOFFICE_VERSION}` });
     await rm(versionDirectory, { recursive: true, force: true });
     await mkdir(dirname(versionDirectory), { recursive: true });
-    await rename(tree, versionDirectory);
+    await publishTree({ from: tree, to: versionDirectory, root });
     return { provisioned: true, executable };
   } finally {
     await rm(staging, { recursive: true, force: true });

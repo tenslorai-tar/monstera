@@ -651,6 +651,26 @@ describe('newFromOfficeCommand (ADR-0120)', () => {
     ]);
   });
 
+  it('TELLS the person the converter could not start EVERY time they ask, not only the first time in a run', async () => {
+    // Main's pushed notice is once per component per run, so a second and third request answered nothing at all
+    // (the comments walk's N6, 2026-10-15: the .xls and .ppt after the .doc). The command's own answer says it each time;
+    // the notice's identical dialog, where it is also asked, closes with this one (`informs`).
+    const { client } = recording({ 'document.newFromOffice': ok({ kind: 'component-cannot-start' }) });
+    const { calls, record, ask } = callbacks();
+    const command = newFromOfficeCommand({ track: UNTRACKED,
+      client,
+      ask,
+      onOpened: record('opened'),
+      onAlreadyOpen: record('already-open'),
+    });
+
+    await command.run(CONTEXT);
+    await command.run(CONTEXT);
+
+    const told = { name: 'ask', value: { id: 'dialog.component-cannot-start', props: {} } };
+    expect(calls).toStrictEqual([told, told]);
+  });
+
   it('CONTROL: a dismissal asks nothing', async () => {
     const { client } = recording({ 'document.newFromOffice': ok({ kind: 'cancelled' }) });
     const { calls, record, ask } = callbacks();

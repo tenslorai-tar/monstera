@@ -76,7 +76,7 @@
  */
 
 import { existsSync, readdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join, relative } from 'node:path';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { shimPath } from '../lib/shimBinary.mjs';
@@ -91,6 +91,7 @@ import { tessdataDirectory } from './tessdata.mjs';
 import {
   ALL_APPLICATION_PACKAGES,
   grantOne,
+  grantPath,
   namesApplicationPackages,
   readAcl,
   revokeOne,
@@ -371,6 +372,29 @@ export function inspect({ root = repoRoot() } = {}) {
  */
 export function lostGrants(states) {
   return states.filter((state) => state.present === false);
+}
+
+/**
+ * Grants every entry of {@link grantSet} that lies in `published` — a tree a provisioner has just put in place — and
+ * answers what each ACL says afterwards. An empty list means no contained process reaches anything in that tree.
+ *
+ * A provisioner publishes by renaming a staging folder, and a renamed folder keeps the DACL it had: the staging
+ * folder's, inherited from `.tools`, which names no application package. So every re-provision took the grant away,
+ * and the next conversion died in Windows' loader with 0xC0000135 because x2t could not read its own DLLs (measured
+ * 2026-10-16, after `provision:onlyoffice` re-extracted ONLYOFFICE 9.4.0). `electron.mjs` had found this for itself
+ * and re-granted its own tree; the other seven did not. `publishTree` is the one publish step, and it calls this.
+ *
+ * @param {string} published the tree just put in place
+ * @param {string} [root]
+ * @returns {Array<{ path: string, granted: boolean, detail: string }>}
+ */
+export function regrantPublished(published, root = repoRoot()) {
+  return grantSet(root)
+    .filter((entry) => {
+      const inside = relative(published, entry.path);
+      return inside === '' || (!inside.startsWith('..') && !isAbsolute(inside));
+    })
+    .map((entry) => ({ path: entry.path, ...grantPath({ path: entry.path, rights: entry.rights }) }));
 }
 
 /**

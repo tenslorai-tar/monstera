@@ -28,7 +28,7 @@
  */
 
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -38,6 +38,7 @@ import { presentAsPinned, treeProblems, verifyPinnedTree } from '../lib/pinnedTr
 import { formatError } from '../lib/reportError.mjs';
 import { VC14_RUNTIME, VC14_RUNTIME_BIN, installCondaPackage, sameAsCommitted } from './condaForge.mjs';
 import { isMain } from '../lib/isMain.mjs';
+import { publishTree } from '../lib/publishTree.mjs';
 
 /** The conda-forge build ADR-0075 names; the newest Ghostscript on the channel, read 2026-09-17. */
 export const GHOSTSCRIPT_VERSION = '10.08.0';
@@ -178,7 +179,7 @@ export async function provisionGhostscript({ root, force = false }) {
     await verifyPinnedTree({ directory: bin, pins: GHOSTSCRIPT_BIN, context: `the extracted Ghostscript ${GHOSTSCRIPT_VERSION}` });
     await rm(versionDirectory, { recursive: true, force: true });
     await mkdir(dirname(versionDirectory), { recursive: true });
-    await rename(staging, versionDirectory);
+    await publishTree({ from: staging, to: versionDirectory, root });
     return { provisioned: true, executable };
   } finally {
     await rm(staging, { recursive: true, force: true });
