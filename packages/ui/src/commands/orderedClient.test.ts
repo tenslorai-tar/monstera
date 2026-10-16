@@ -78,6 +78,25 @@ describe('inWriteOrder', () => {
     await command;
   });
 
+  it('a signed document’s Work on a copy, sent from inside the lane, is answered rather than waiting for itself', async () => {
+    const reached: string[] = [];
+    const client = createClient(channels, (id) => {
+      reached.push(id);
+      // THE SIGNED DOCUMENT: main answers the command without touching it, and the copy route is taken.
+      if (id === 'document.execute') return Promise.resolve(err({ code: 'breaks-signatures' }));
+      return Promise.resolve(ok({ kind: 'cancelled' }));
+    });
+    const ordered = inWriteOrder(client);
+    const applied = applyDocumentCommand(
+      { ...deps(ordered), ask: () => Promise.resolve('copy') },
+      DOC,
+      { kind: 'rotatePages', pages: [0], quarterTurns: 1 },
+    );
+    const settled = await Promise.race([applied.then(() => 'answered'), new Promise((done) => setTimeout(() => done('waiting'), 2000))]);
+    expect(settled).toBe('answered');
+    expect(reached).toStrictEqual(['document.execute', 'document.editCopy']);
+  });
+
   it('every channel whose name says it saves, exports, prints, emails or optimises a document is ordered', () => {
     const named = Object.keys(channels).filter((id) => /^document\.(?:save(?!Barcode)|export|print|email|optimize)/u.test(id));
     expect(named.length).toBeGreaterThan(10);

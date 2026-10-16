@@ -18,7 +18,8 @@ import { afterSentCommands } from './documentCommands.js';
 export const READS_THE_DOCUMENT_OUT = [
   'document.save',
   'document.saveCopy',
-  'document.editCopy',
+  // NOT `document.editCopy`: it is sent from INSIDE the lane, by the command it carries (a signed document's *Work on a
+  // copy*, `sendInLane`), so it follows that command by construction, and waiting for the lane would wait for itself.
   'document.workOnCopy',
   'document.extract',
   'document.split',
