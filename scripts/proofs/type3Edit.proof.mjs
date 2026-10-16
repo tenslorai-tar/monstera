@@ -67,12 +67,13 @@ const CASES = [
   'a SPLIT leaves the first half where it was and moves the second half down by the distance asked',
   'a box of text ADDED to the page is read by PDFium at the left and baseline it was given, in a bundled face',
   'CONTROL: before the edit the page holds no such text, and the box added carries a font the page did not have',
+  'the heading reflowed onto a second line PUSHES the lines below it (ADR-0249): written whole, the second heading read as far lower as the heading grew, and both answered as moved',
 ];
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 21 });
-if (CASES.length !== 21) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 21`);
+const roster = createRoster(failures, { cases: 22 });
+if (CASES.length !== 22) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 22`);
 
 /** @param {string} name @param {boolean} held @param {string} detail */
 function check(name, held, detail) {
@@ -428,7 +429,8 @@ async function run(pdfium, kernel) {
     CASES[5] ?? '',
     faced.outcome.ok &&
       faced.saved !== null &&
-      JSON.stringify(faced.outcome.drawn) === JSON.stringify({ boxed: [{ character: UNASSIGNED, page: 0 }], more: 0 }),
+      // AND NOTHING MOVED (ADR-0249): no block of this edit is pushed.
+      JSON.stringify(faced.outcome.drawn) === JSON.stringify({ boxed: [{ character: UNASSIGNED, page: 0 }], more: 0, moved: [] }),
     `the edit needing a face answered ${faced.outcome.ok ? JSON.stringify(faced.outcome.drawn) : String(faced.outcome.error)}.`,
   );
   const facedRead = faced.saved === null ? null : await readRuns(faced.saved);
@@ -471,6 +473,32 @@ async function run(pdfium, kernel) {
         return refused.outcome.ok;
       })()),
     'the page held no such words before, the box carried a font of its own, and with no face bound it was refused.',
+  );
+
+  // THE PUSH IN THIS WRITER (ADR-0249 Decision 3): the reflow CASES[8] reads as wrapping onto the heading below, sent with
+  // the lines below as pushed blocks. Each pushed block's words are its runs' own, as the read gave them, so the writer
+  // keeps every row and moves it. The room is wide: whether there is room is `main`'s, measured at the read.
+  const bodyRuns = reading.runs.filter((/** @type {any} */ each) => squeezed(each.text) === squeezed(BODY));
+  /** @param {any[]} runs */
+  const asRead = (runs) => ({
+    lines: [runs.map((each) => each.index)],
+    soft: [false],
+    text: runs.map((each) => each.text).join(''),
+    push: { by: 0, room: 500 },
+  });
+  const pushedEdit = await applied([{ ...headingBlock, text: LONGER }, asRead(second), asRead(bodyRuns)]);
+  const pushedRead = pushedEdit.saved === null ? null : await readRuns(pushedEdit.saved);
+  const secondPushed = pushedRead?.runs.filter((/** @type {any} */ each) => squeezed(each.text).startsWith(squeezed('A second'))) ?? [];
+  const lowered = secondPushed.length === 0 ? Number.NaN : secondBefore.top - boxOf(secondPushed).top;
+  const movedBlocks = pushedEdit.outcome.ok ? pushedEdit.outcome.drawn.moved : [];
+  check(
+    CASES[21] ?? '',
+    pushedEdit.outcome.ok &&
+      squeezed((pushedRead?.runs ?? []).map((/** @type {any} */ each) => each.text).join('')).includes(squeezed(LONGER)) &&
+      lowered > 1 &&
+      movedBlocks.length === 2 &&
+      movedBlocks.every((/** @type {any} */ each) => near(each.down, lowered)),
+    `${pushedEdit.outcome.ok ? 'written' : String(pushedEdit.outcome.error)}; the second heading ${String(lowered)} points lower; moved ${JSON.stringify(movedBlocks)}.`,
   );
 }
 

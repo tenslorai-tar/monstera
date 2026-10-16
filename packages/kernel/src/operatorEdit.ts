@@ -1,6 +1,7 @@
 import type { BlockMarkSet, BlockPlace, EditedBlock, PageInsert } from '@monstera/contract/host';
 import { type Result, TAB_STOP, err, nextTabStop, ok } from '@monstera/shared';
 
+import type { MovedBlock } from './engineSeam.js';
 import type { PageFont } from './pageFonts.js';
 import { type BlockPlan, type FlowLine, type Measure, NO_MARK, type Row, largestFit, planBlock } from './paragraphFlow.js';
 import { type DecorationKind, decorationBand } from './markDecorations.js';
@@ -112,6 +113,8 @@ export interface OperatorEdit {
   readonly drawn: readonly string[];
   /** Each block's first and last baseline after the edit, and its last before it, in user space. */
   readonly baselines: readonly { readonly first: number; readonly last: number; readonly lastBefore: number }[];
+  /** The pushed blocks that moved down (ADR-0249): where each stood and how far it went. */
+  readonly moved: readonly MovedBlock[];
 }
 
 /** Below this, two numbers in user space or a matrix's off-diagonal are the same: float noise, not a different layout. */
@@ -542,6 +545,10 @@ function write(
   const drawn: string[] = [];
   const baselinesOut: { first: number; last: number; lastBefore: number }[] = [];
   const uncarried = new Set<string>();
+  /** What each block grew, by its place in the edit: its old last baseline less its new one (ADR-0249 Decision 1). */
+  const grew = new Map<number, number>();
+  /** The pushed blocks that moved, where they stood and how far down they went: the PDFium writer's own answer. */
+  const moved: MovedBlock[] = [];
 
   /** What an added box is among the blocks: the seed's run, and the box's own base style. */
   const boxes = inserts.map((insert, k) => ({
@@ -562,7 +569,7 @@ function write(
     ...boxes,
   ];
 
-  for (const { block, insert } of jobs) {
+  for (const [jobAt, { block, insert }] of jobs.entries()) {
     /** This block's emptied operators: where its inserted object goes is the first of their `BT`s. */
     const own = new Set<number>();
     const lines = block.lines.map((line) =>
@@ -596,9 +603,26 @@ function write(
     }
     const inkRight = Math.max(...lines.flat().map((run) => run.right));
     const baselines = lines.map((line) => line[0]?.origin.y ?? 0);
+    // A PUSHED BLOCK IS MOVED BY WHAT ITS PUSHER GREW, or not at all where that passes its room (ADR-0249 Decision 3), by
+    // the placement below: the PDFium writer's rule, so the two writers move the text below a growing block alike.
+    const { push } = block;
+    const growth = push === undefined ? 0 : (grew.get(push.by) ?? 0);
+    const pushMove = push !== undefined && growth > 0 && growth <= push.room ? growth : 0;
+    if (pushMove > 0) {
+      moved.push({
+        block: jobAt,
+        box: {
+          x0: Math.min(...lines.flat().map((run) => run.run.left)),
+          y0: Math.min(...lines.flat().map((run) => run.run.bottom)),
+          x1: Math.max(...lines.flat().map((run) => run.run.right)),
+          y1: Math.max(...lines.flat().map((run) => run.run.top)),
+        },
+        down: pushMove,
+      });
+    }
     // WHAT THE PERSON DID TO THE BLOCK AS A WHOLE (ADR-0188): placed, so every line of it is set again under one `cm`, or
     // given a measure, so every paragraph of it is. Either way no line of it is left where it was.
-    const blockPlace = block.place;
+    const blockPlace = push === undefined ? block.place : pushMove > 0 ? { move: { x: 0, y: -pushMove } } : undefined;
     const measured = blockPlace?.width !== undefined;
     const replaceAll = movesBlock(blockPlace) || measured;
     const sourceOf = (run: (typeof firstLine)[number]): ShowOperator => {
@@ -994,6 +1018,11 @@ function write(
     }
     const plan = planAt(shrink);
     const targets = rowTargets(plan.rows, shrink);
+    // A PUSHED BLOCK IS NEVER WRITTEN (ADR-0249 Decision 3): every row one of its own lines, as it was, or the edit is
+    // refused — words nobody typed into a block nobody opened.
+    if (push !== undefined && !(plan.rows.length === lines.length && plan.rows.every((row, at) => row.kind === 'old' && row.line === at))) {
+      throw new Refused({ reason: 'numbering', detail: 'a block moved by another’s growth would have had its words set again' });
+    }
 
     /** The old lines the plan keeps exactly as they are: their operators are not touched. */
     const kept = new Set<number>();
@@ -1115,6 +1144,8 @@ function write(
     for (const at of own) emptied.add(at);
     written.push(laid.join('\n'));
     baselinesOut.push({ first: baselines[0] ?? 0, last: previous, lastBefore: baselines.at(-1) ?? 0 });
+    // WHAT THE BLOCK GREW, for the blocks it pushes; a placed block and a pushed one push nothing (the PDFium writer's rule).
+    if (block.place === undefined && push === undefined) grew.set(jobAt, (baselines.at(-1) ?? 0) - previous);
 
     const segments = visual.flatMap((line) => line.segments.map((segment) => ({ ...segment, baseline: line.baseline })));
     // WHAT THE CODES SHOW, which the structural read-back reads them as: a tab's segment means a tab and draws its gap
@@ -1310,7 +1341,7 @@ function write(
     out.set(piece, at);
     at += piece.length;
   }
-  return { content: out, emptied: [...emptied].sort((x, y) => x - y), changes, written, drawn, baselines: baselinesOut };
+  return { content: out, emptied: [...emptied].sort((x, y) => x - y), changes, written, drawn, baselines: baselinesOut, moved };
 }
 
 /**

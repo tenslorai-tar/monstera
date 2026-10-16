@@ -50,6 +50,8 @@
  * 238.0**, so equality splits the very case the grouping exists for.
  */
 
+import { MAX_PUSHED_BLOCKS } from '@monstera/contract/host';
+
 import { blockShape } from './paragraphShape.js';
 
 /** How a text object's matrix sets it (`orientationOf`, `pdfiumFfi.ts`): `upright` is the only one an editor is placed along. */
@@ -462,6 +464,66 @@ export function groupIntoBlocks<S>(runs: readonly BlockableRun<S>[]): readonly E
         shape: { align, firstIndent },
       },
     ];
+  });
+}
+
+/** What a block pushes when it grows: the blocks below it in its column, and how far they may go. */
+export interface PushedColumn {
+  /** The blocks it pushes, by their place in the page's blocks, in that order. Empty for a footer and a block with nothing below. */
+  readonly below: readonly number[];
+  /** How far down, in points, the lowest of {@link below} may go before it reaches the footer or the bottom margin. */
+  readonly room: number;
+}
+
+/**
+ * What each block of a page pushes when it grows
+ * ([ADR-0249](../../../docs/DECISIONS/0249-a-paragraph-that-grows-pushes-the-text-below-it-down.md) Decision 2): the one
+ * answer to *which text is below a block, in its column*, decided here beside the grouping, which is the one place `main`
+ * decides anything about a page's text (ADR-0096 Decision 2).
+ *
+ * ## The column is ADR-0096's own relation, closed
+ *
+ * A block is below another when the two overlap horizontally and its top is lower — `groupIntoBlocks`' two comparisons.
+ * The set is CLOSED under that relation: a block below one that is pushed is pushed too, so text moved down never lands on
+ * text that stayed. The owner's wording, *overlaps the edited block's extent*, is its first step.
+ *
+ * ## The margins are the page's own, and no number is in them
+ *
+ * The bottom margin mirrors the top one: as far up from the page box's bottom as the page's highest text sits down from
+ * its top. A block lying wholly inside it is the footer, which never moves; the room ends at the footer's top, or at the
+ * margin where there is no footer (the owner's locked decision 3).
+ *
+ * @param page the page box the boxes are measured in
+ */
+export function pushesOf(boxes: readonly BlockBox[], page: BlockBox): readonly PushedColumn[] {
+  if (boxes.length === 0) return [];
+  const highest = Math.max(...boxes.map((box) => box.y1));
+  const margin = page.y0 + Math.max(0, page.y1 - highest);
+  const footer = boxes.map((box) => box.y1 <= margin);
+  const footerTops = boxes.filter((_, at) => footer[at] === true).map((box) => box.y1);
+  const limit = footerTops.length === 0 ? margin : Math.max(...footerTops);
+  const sideBySide = (a: BlockBox, b: BlockBox): boolean => a.x0 < b.x1 && b.x0 < a.x1;
+  return boxes.map((box, at): PushedColumn => {
+    if (footer[at] === true) return { below: [], room: 0 };
+    const pushed = new Set<number>();
+    const reached: BlockBox[] = [box];
+    for (let next = 0; next < reached.length; next += 1) {
+      const above = reached[next];
+      if (above === undefined) break;
+      for (const [other, candidate] of boxes.entries()) {
+        if (other === at || pushed.has(other) || footer[other] === true) continue;
+        if (sideBySide(candidate, above) && candidate.y1 < above.y1) {
+          pushed.add(other);
+          reached.push(candidate);
+        }
+      }
+    }
+    const below = [...pushed].sort((a, b) => a - b);
+    const lowest = Math.min(...below.map((other) => boxes[other]?.y0 ?? Number.POSITIVE_INFINITY));
+    // MORE BLOCKS BELOW THAN ONE EDIT MAY CARRY have no room: the editor then says so rather than send an edit the
+    // contract refuses (`MAX_PUSHED_BLOCKS`).
+    const carried = below.length <= MAX_PUSHED_BLOCKS;
+    return { below, room: below.length === 0 || !carried ? 0 : Math.max(0, lowest - limit) };
   });
 }
 

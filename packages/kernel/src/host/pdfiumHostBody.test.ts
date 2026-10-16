@@ -254,6 +254,9 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9]), dra
         // being what an absent number reads as through a schema that defaults
         // nothing.
         unaddressable: 7,
+        // A BOX NOTHING ELSE PRODUCES, for `unaddressable`'s reason: a handler that dropped it answers `undefined`, which
+        // the schema refuses, and one that answered `null` would not read as these numbers.
+        box: { x0: 3, y0: 5, x1: 611, y1: 787 },
       });
     },
     // ADR-0210: one page's own content. The blob is a value nothing else here produces, and the answer carries a frame,
@@ -615,7 +618,9 @@ describe('the PDFium host body', () => {
     stream = stubStream();
     const files = emptyFiles();
     const drawn = Array.from({ length: 70 }, (_, at) => ({ character: String.fromCodePoint(0x4e00 + at), page: 0 }));
-    const { session } = await openArea(files, { boxed: drawn, more: 0 });
+    // AND A MOVED BLOCK (ADR-0249), which crosses whole: a handler that dropped it answers `[]`.
+    const moved = [{ block: 1, box: { x0: 72, y0: 560, x1: 540, y1: 590 }, down: 14.5 }];
+    const { session } = await openArea(files, { boxed: drawn, more: 0, moved });
     files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([4, 5]));
     stream.feed(
       request('a1', 'engine/apply', {
@@ -628,10 +633,13 @@ describe('the PDFium host body', () => {
       }, undefined, files),
     );
     await stream.whenSent(2);
-    const answer = answerIn(stream.sent[1]) as { body: { ok: boolean; value: { boxed: unknown[]; more: number } } };
+    const answer = answerIn(stream.sent[1]) as {
+      body: { ok: boolean; value: { boxed: unknown[]; more: number; moved: unknown[] } };
+    };
     expect(answer.body.ok, JSON.stringify(answer)).toBe(true);
     expect(answer.body.value.boxed).toStrictEqual(drawn.slice(0, 64));
     expect(answer.body.value.more).toBe(6);
+    expect(answer.body.value.moved).toStrictEqual(moved);
   });
 
   it('applies from the named file and writes the result into the granted directory', async () => {
@@ -814,6 +822,8 @@ describe('the PDFium host body', () => {
         // this page no command can name — text inside a Form XObject, which
         // the object walk reports as one `form` and does not descend into.
         unaddressable: 7,
+        // THE PAGE BOX CROSSES (ADR-0249 Decision 2): main measures a page's margins against it.
+        box: { x0: 3, y0: 5, x1: 611, y1: 787 },
       },
     });
     // THE PAGE REACHED THE READER. Without this the case passes on a handler

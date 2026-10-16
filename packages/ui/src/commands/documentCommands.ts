@@ -4668,6 +4668,9 @@ export type TextBlock = ChannelResult<'document.textBlocks'>['blocks'][number];
  */
 export type BlocksRead = Pick<ChannelResult<'document.textBlocks'>, 'version' | 'rewrite' | 'unpacked'>;
 
+/** {@link BlocksRead} with the page's blocks, among which a block's `push.below` names the text below it (ADR-0249). */
+export type PageBlocksRead = BlocksRead & { readonly blocks: readonly TextBlock[] };
+
 /** The command each writer the page names is rewritten by, with the same block wire (ADR-0176 Decision 1). */
 const BLOCK_EDIT_KIND = { objects: 'editTextBlock', operators: 'editTextOperators' } as const satisfies Record<
   BlocksRead['rewrite'],
@@ -4764,14 +4767,24 @@ export async function commitTextBlock(
   page: number,
   block: TextBlock,
   text: string,
-  read: BlocksRead,
+  /** The read that named the block, with the page's blocks, among which `block.push.below` names the text below it. */
+  read: PageBlocksRead,
   /** What spans of the words are, and how paragraphs are set, where the person chose (ADR-0180). */
   formatting: BlockFormatting = {},
 ): Promise<BlockCommit> {
-  // THE BLOCK'S WORDS AS IT SHOWS THEM, by the one join the kernel diffs against (ADR-0179): soft wraps are spaces.
-  const before = paragraphsOfLines(block.lines.map((line) => ({ text: lineText(line.runs), soft: line.soft })));
+  const before = wordsOfBlock(block);
   // UNCHANGED ONLY WHEN THE WORDS AND THEIR FORMATTING both are: a bold word is an edit with the same words (ADR-0180).
   if (text === before && !isFormatted(formatting)) return 'unchanged';
+  // THE TEXT BELOW IT, IN ITS COLUMN, rides in the same edit to be moved down by what this block grows (ADR-0249 Decision
+  // 3): the blocks `main` named, with their words as read, so the writer moves them and writes none of them. Where `main`
+  // measured no room nothing could move, so none is sent; and a block the person placed pushes nothing.
+  const below =
+    formatting.place !== undefined || block.push.room <= 0
+      ? []
+      : block.push.below.flatMap((at) => {
+          const under = read.blocks[at];
+          return under === undefined ? [] : [under];
+        });
   return sendBlockEdit(deps, docId, page, read, [
     {
       lines: block.lines.map((line) => line.runs.map((run) => run.index)),
@@ -4779,7 +4792,18 @@ export async function commitTextBlock(
       text,
       ...formatting,
     },
+    ...below.map((under) => ({
+      lines: under.lines.map((line) => line.runs.map((run) => run.index)),
+      soft: under.lines.map((line) => line.soft),
+      text: wordsOfBlock(under),
+      push: { by: 0, room: block.push.room },
+    })),
   ]);
+}
+
+/** A block's words as it shows them, by the one join the kernel diffs against (ADR-0179): soft wraps are spaces. */
+function wordsOfBlock(block: TextBlock): string {
+  return paragraphsOfLines(block.lines.map((line) => ({ text: lineText(line.runs), soft: line.soft })));
 }
 
 /**

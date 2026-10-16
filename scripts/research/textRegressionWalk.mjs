@@ -213,11 +213,20 @@ async function savedItems(path) {
   return items;
 }
 
-/** The distinct baselines the paragraph's words sit on in a saved file. @param {string} path */
+/**
+ * The distinct baselines the paragraph's words sit on in a saved file. NOT the small print's or the label's, which share
+ * a word with it ("the"): read apart by their own words first, so a line below the paragraph is never counted as one of it.
+ * @param {string} path
+ */
 async function paragraphBaselines(path) {
   const words = new Set(EVERYDAY.lines.join(' ').split(' '));
-  const items = await savedItems(path);
+  const items = (await savedItems(path)).filter((item) => !item.str.startsWith(EVERYDAY.below.slice(0, 11)) && !item.str.startsWith(EVERYDAY.label));
   return [...new Set(items.filter((item) => item.str.split(/\s+/u).some((word) => words.has(word))).map((item) => item.y))].sort((a, b) => b - a);
+}
+
+/** The small print's baseline in a saved file, or `undefined` where no item begins with its words. @param {string} path */
+async function smallPrintBaseline(path) {
+  return (await savedItems(path)).find((item) => item.str.startsWith(EVERYDAY.below.slice(0, 11)))?.y;
 }
 
 await step('1. a serif page with a bold lead-in keeps its look while the block is open, and after an edit', async () => {
@@ -276,22 +285,36 @@ await step('4. Enter breaks a line where it is pressed, and the break is saved',
   await page.keyboard.press('Control+Home');
   for (let at = 0; at < 3; at += 1) await page.keyboard.press('Control+ArrowRight');
   await page.keyboard.press('Enter');
+  // THE TEXT BELOW, SHOWN MOVED BEFORE THE WRITE (ADR-0249 Decision 5): the break makes the paragraph a line longer in the
+  // editor, and the two blocks under it in its column, the small print and the form's label, are drawn that much lower
+  // while it is open, with nothing said, as the page has room.
+  const shownPush = async () => ({
+    pushed: await page.locator('[data-text-pushed]').count(),
+    crowded: await page.locator('[data-text-edit-crowded]').count(),
+    height: await editor().evaluate((root) => Number(Reflect.get(root, 'offsetHeight') ?? -1)),
+  });
+  await expect.poll(async () => JSON.stringify(await shownPush()), { timeout: 10_000 }).toContain('"pushed":2');
+  expect((await shownPush()).crowded).toBe(0);
+  // WHERE THE SMALL PRINT WAS: the page as built, which this tab opened unchanged (a copy saved now would end the editor).
+  const smallBefore = await smallPrintBaseline(everyday);
   await commit();
-  const items = await savedItems(await savedCopy('04-enter.pdf'));
+  const saved = await savedCopy('04-enter.pdf');
+  const items = await savedItems(saved);
   const first = items.find((item) => item.str.includes('Every walk'));
   const second = items.find((item) => item.str.includes('reads its'));
   expect(first, JSON.stringify(items)).toBeDefined();
   expect(second, JSON.stringify(items)).toBeDefined();
   // ON TWO LINES: the second line's baseline below the first's.
   expect(second?.y ?? 0).toBeLessThan((first?.y ?? 0) - 1);
-  return { first, second };
+  // AND WRITTEN AS SHOWN (ADR-0249): the small print one line, 14.4 points, lower in the saved file.
+  const smallAfter = await smallPrintBaseline(saved);
+  expect(Math.abs((smallBefore ?? 0) - (smallAfter ?? 0) - 14.4), JSON.stringify({ smallBefore, smallAfter })).toBeLessThanOrEqual(0.2);
+  return { first, second, smallBefore, smallAfter };
 });
 
 await step('5. two spaces typed stay two spaces, on screen and in the saved file', async () => {
-  // A FRESH COPY OF THE PAGE, not the one step 4 broke a line in: that paragraph grew a line downward over the small print
-  // 4 pt below it, as an edit does by ADR-0096, and the block then reopens as three lines with its fourth read apart, so
-  // the words typed at its end wrapped onto the row the fourth line holds (2026-10-16 runs). That is step 4's
-  // consequence, not this step's subject, which is two spaces surviving a save and a reopen.
+  // A FRESH COPY OF THE PAGE, not the one step 4 broke a line in: this step's subject is two spaces surviving a save and
+  // a reopen, on the page as built.
   const fresh = join(output, 'everyday-spaces.pdf');
   await writeFile(fresh, await readFile(everyday));
   await open(fresh);
@@ -308,10 +331,9 @@ await step('5. two spaces typed stay two spaces, on screen and in the saved file
   // edit is not ended with a press away — that would write the older words over the edit — but with the editor's words
   // left as they are and a second reopen after the writes are idle, so the record says whether the read lagged or was wrong.
   const offered = await page.locator('[data-text-block]').evaluateAll((blocks) => blocks.map((each) => each.getAttribute('aria-label') ?? ''));
-  // THE BLOCK THAT HOLDS THE TYPED WORDS, wherever the reader put them. Measured 2026-10-16: they wrap onto a line that
-  // lands on the small print 4 pt below (the paragraph grows downward, ADR-0096), and the reader then reads that line as
-  // the start of the small print's block ("two spaces Small print right below…"), with no edit lost (the file kept
-  // them, and ending the paragraph's editor wrote nothing).
+  // THE BLOCK THAT HOLDS THE TYPED WORDS, by its outline's label where the label shows them. Until ADR-0249 they wrapped
+  // onto a line over the small print and were read as the start of its block; the small print now moves down, so they
+  // are the paragraph's, whose label is cut before them.
   const holding = offered.find((label) => label.includes('two spaces'))?.match(/^Edit “(.{1,20})/u)?.[1];
   await openBlock(holding ?? 'Every walk step');
   const shown = await editor().innerText();
@@ -347,7 +369,9 @@ await step('6. Tab is one tab, marked in the saved content', async () => {
 });
 
 await step(`7. choosing ${INSTALLED} for the paragraph shows it, keeps its lines, and a press away writes it`, async () => {
-  const before = await paragraphBaselines(await savedCopy('07-before.pdf'));
+  const beforeFile = await savedCopy('07-before.pdf');
+  const before = await paragraphBaselines(beforeFile);
+  const smallBefore = await smallPrintBaseline(beforeFile);
   await openBlock('Every walk step');
   await page.keyboard.press('Control+A');
   const samples = await chooseFont(INSTALLED);
@@ -359,10 +383,17 @@ await step(`7. choosing ${INSTALLED} for the paragraph shows it, keeps its lines
   await commit();
   const saved = await savedCopy('07-font.pdf');
   expect((await savedFonts(saved)).some((name) => name.includes(INSTALLED))).toBe(true);
-  // ITS LINES KEPT (A4): as many baselines as before.
+  // ITS LINES KEPT (A4): no line it had is lost. A wider face may wrap it onto one more, which until ADR-0249 drew that
+  // line over the small print, so this asked for the same count; the text below now moves down instead, asserted next.
   const after = await paragraphBaselines(saved);
-  expect(after.length).toBe(before.length);
-  return { before, after, samples };
+  expect(after.length, JSON.stringify({ before, after })).toBeGreaterThanOrEqual(before.length);
+  // NOTHING COVERED (ADR-0249): the small print stands as far below the paragraph's last line as it did, within a point.
+  const smallAfter = await smallPrintBaseline(saved);
+  const gapBefore = (before.at(-1) ?? 0) - (smallBefore ?? 0);
+  const gapAfter = (after.at(-1) ?? 0) - (smallAfter ?? 0);
+  expect(smallBefore !== undefined && smallAfter !== undefined, 'the small print was read before and after').toBe(true);
+  expect(gapAfter, JSON.stringify({ before, after, smallBefore, smallAfter })).toBeGreaterThanOrEqual(gapBefore - 1);
+  return { before, after, smallBefore, smallAfter, samples };
 });
 
 await step('7b. every family the font picker lists is drawn in itself, not in the browser’s default (A3)', async () => {
@@ -410,32 +441,47 @@ await step(`8. ${INSTALLED} chosen with nothing typed: not refused, and the word
 });
 
 await step('9. the same line edited twice across a save and reopen: the second edit is a delete, and is not refused', async () => {
-  const first = await savedCopy('09-first.pdf');
-  await open(first);
+  // THE SERIF PAGE AS STEP 3 SAVED IT: words this app wrote are now part of the page the editor opens. Its own saved copy,
+  // by name: a copy of the tab on show here was the everyday page steps 4 to 8 left on show, which has no "Results." line.
+  await open(join(output, '03-typed.pdf'));
   await section('Edit');
-  // THE SERIF PAGE AS STEP 3 SAVED IT: words this app wrote are now part of the page the editor opens.
   await openBlock('Results.');
   await page.keyboard.press('Backspace');
   expect(await problems()).toStrictEqual([]);
   await commit();
+  // THE RAISED MARK STAYS IN THE SENTENCE, as steps 2 and 3 read it: "...sample", the mark, "tes tes".
   const words = ((await savedWords(await savedCopy('09-second.pdf')))[0] ?? '').trim();
-  expect(words.endsWith('sample tes tes'), words).toBe(true);
+  expect(words.replaceAll(/\s+/gu, ' ').endsWith(`sample ${PRODUCER_MARK} tes tes`), words).toBe(true);
   return { words };
 });
 
 await step('10. a block with a line just below: the open editor keeps the page’s line spacing and does not cover it', async () => {
-  await open(everyday);
+  // A FRESH COPY OF THE PAGE, as step 5's: `everyday.pdf` is still open in the tab steps 4 to 8 edited, so opening it again
+  // shows that tab, whose paragraph a wider face and an added line have made taller. This step is about the page as built.
+  const fresh = join(output, 'everyday-fresh.pdf');
+  await writeFile(fresh, await readFile(everyday));
+  await open(fresh);
   await section('Edit');
   await ensureEditText();
   const below = await block(EVERYDAY.below.slice(0, 15)).boundingBox();
   const outline = await openBlock('Every walk step');
   const shown = await editor().boundingBox();
-  if (below === null || shown === null) throw new Error('no box for the editor or the line below');
+  // THE LINE SPACING THE EDITOR DRAWS AT, and the page's at the scale it is drawn: the paragraph's baselines are 14.4
+  // points apart on a 792-point page.
+  const lineHeight = await editor().evaluate((root) => Number.parseFloat(root.ownerDocument.defaultView?.getComputedStyle(root).lineHeight ?? ''));
+  const paper = await page.locator('canvas.m-page:visible').first().boundingBox();
+  if (below === null || shown === null || paper === null) throw new Error('no box for the editor, the line below or the page');
+  const pitch = (14.4 * paper.height) / 792;
   await commit();
-  // THE EDITOR WHERE THE BLOCK IS, no taller (A5), and above the line below it.
+  // ABOVE THE LINE BELOW IT (A5): the editor ends no lower than the small print begins.
   expect(shown.y + shown.height, JSON.stringify({ shown, below })).toBeLessThanOrEqual(below.y + 1);
-  expect(shown.height).toBeLessThanOrEqual(outline.height + 2);
-  return { outline, shown, below };
+  // AT THE PAGE'S LINE SPACING (A5), three lines of it. Read as the spacing itself: this compared the editor's height with
+  // the outline's until 2026-10-16, and the outline is the words' ink, a descender short of three line boxes (39.1 against
+  // 43.2 at 100 %), so it could not pass for an editor at the right spacing; it had never run, every run stopping at the
+  // line above it until the small print stopped being covered (ADR-0249).
+  expect(Math.abs(lineHeight - pitch), JSON.stringify({ lineHeight, pitch })).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(shown.height - 3 * pitch), JSON.stringify({ shown, pitch })).toBeLessThanOrEqual(1);
+  return { outline, shown, below, lineHeight, pitch };
 });
 
 await step('11. a one-line form label stays one line, at the label’s place, while it is edited', async () => {

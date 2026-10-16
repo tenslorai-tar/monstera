@@ -3609,10 +3609,10 @@ export const execution: CommandExecution<'pdfium'> = {
   // THE IMAGE ARRIVES AS THE REQUEST'S session FIELD SINCE ADR-0069: the
   // execution takes one named request, and this writer's session HOLDS the
   // bytes, beside the key that opens them since ADR-0171's addendum. AND IT ANSWERS
-  // WHAT IT DREW AS BOXES BESIDE THE IMAGE since ADR-0174, none here.
-  apply: ({ session }) => Promise.resolve({ image: new Uint8Array(session.bytes), boxed: [], more: 0 }),
+  // WHAT IT DREW AS BOXES BESIDE THE IMAGE since ADR-0174, and the blocks it moved since ADR-0249, none here.
+  apply: ({ session }) => Promise.resolve({ image: new Uint8Array(session.bytes), boxed: [], more: 0, moved: [] }),
   capture: (_image, _command) => Promise.resolve({ captured: false, reason: 'none' }),
-  invert: (image, _kind, _inverse) => Promise.resolve({ image: new Uint8Array(image.bytes), boxed: [], more: 0 }),
+  invert: (image, _kind, _inverse) => Promise.resolve({ image: new Uint8Array(image.bytes), boxed: [], more: 0, moved: [] }),
 };
 `,
   },

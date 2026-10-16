@@ -125,6 +125,7 @@ import {
   groupIntoBlocks,
   isEditedInPlace,
   settingOf,
+  pushesOf,
   withRises,
   hostedPdfLibExecution,
   nodeFileSurface,
@@ -1620,10 +1621,9 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         mirrored: counts.get('mirrored') ?? 0,
       };
       const rotated = angled.turned + angled.vertical + angled.slanted + angled.mirrored;
-      return {
-        // EACH RUN'S RISE FROM ITS LINE (the owner's N14): grouped with the page's baseline, then sent as the offset from
-        // the line's (`withRises`), which is what the writer keeps and what the editor draws a superscript at.
-        blocks: withRises(
+      // EACH RUN'S RISE FROM ITS LINE (the owner's N14): grouped with the page's baseline, then sent as the offset from
+      // the line's (`withRises`), which is what the writer keeps and what the editor draws a superscript at.
+      const grouped = withRises(
           groupIntoBlocks(
             upright.map((run) => ({
               ...run,
@@ -1648,7 +1648,13 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
           ),
           ({ baseline: _baseline, ...style }, rise) => (rise === 0 ? style : { ...style, rise }),
           ({ baseline: _baseline, ...style }) => style,
-        ),
+        );
+      // WHAT EACH BLOCK PUSHES WHEN IT GROWS (ADR-0249 Decision 2), decided here beside the grouping and nowhere else: the
+      // column below it and the room to the footer or the bottom margin, measured against the page box the runs were read
+      // in. A page PDFium gives no box pushes nothing, and the editor then says nothing moves.
+      const pushes = found.box === null ? [] : pushesOf(grouped.map((block) => block.box), found.box);
+      return {
+        blocks: grouped.map((block, at) => ({ ...block, push: pushes[at] ?? { below: [], room: 0 } })),
         truncated: found.truncated,
         rotated,
         angled,

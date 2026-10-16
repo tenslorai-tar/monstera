@@ -6503,6 +6503,25 @@ optgroup {
   border: 2px solid var(--accent-on-paper, var(--accent));
 }
 
+/* THE TEXT BELOW A GROWING BLOCK, drawn moved (ADR-0249): its old place covered in the page's paper and the page's own
+   pixels of it drawn lower. A drawing of the page, never pressed, under every outline and editor. */
+.m-text-push-cover,
+.m-text-push-copy {
+  position: absolute;
+  pointer-events: none;
+  transform-origin: top left;
+}
+
+/* THE LINES A PARAGRAPH RUNS INTO where there is no room to move them: outlined over the editor, never pressed. */
+.m-text-overlap {
+  position: absolute;
+  z-index: 2;
+  border: 2px solid var(--danger-bottom);
+  border-radius: var(--radius-4);
+  pointer-events: none;
+  transform-origin: top left;
+}
+
 /* ITS SENTENCE, sat on the block's top edge where the words begin, and set as the editor's problem is. */
 .m-text-block__past {
   position: absolute;

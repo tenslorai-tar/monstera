@@ -22,7 +22,12 @@ const unlocked = (bytes) => ({ bytes, opensWith: undefined });
  * @param {any} execution `localPdfiumExecution` from the kernel's build
  * @returns {{
  *   apply: (request: any) => Promise<Uint8Array>,
- *   applyDrawing: (request: any) => Promise<{ image: Uint8Array, boxed: readonly { character: string, page: number }[], more: number }>,
+ *   applyDrawing: (request: any) => Promise<{
+ *     image: Uint8Array,
+ *     boxed: readonly { character: string, page: number }[],
+ *     more: number,
+ *     moved: readonly { block: number, box: { x0: number, y0: number, x1: number, y1: number }, down: number }[],
+ *   }>,
  *   capture: (bytes: Uint8Array, command: any) => Promise<any>,
  *   invert: (bytes: Uint8Array, kind: any, prior: any) => Promise<Uint8Array>,
  * }}

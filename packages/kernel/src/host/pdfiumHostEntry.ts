@@ -144,7 +144,7 @@ const handlers = createPdfiumHandlers({
       const { kept, truncated } = boundedToAnswer(found.runs);
       // `unaddressable` FORWARDED UNCLIPPED: it counts characters the walk could not place, which the run bound has
       // nothing to do with.
-      return { runs: kept, truncated, unaddressable: found.unaddressable };
+      return { runs: kept, truncated, unaddressable: found.unaddressable, box: found.box };
     }),
   // THE BITMAP'S OWN BYTES, unconverted. `renderPageBitmap` answers BGRA
   // because that is what PDFium produces and what main's encoder takes; a

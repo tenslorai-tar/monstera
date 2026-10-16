@@ -12,7 +12,9 @@ import {
   MAX_CALCULATED_NAME,
   MAX_CALCULATED_PRIORS,
   MAX_CALCULATED_TEXT,
+  MAX_EDIT_RUNS,
   MAX_MERGE_DOCUMENTS,
+  MAX_PUSHED_BLOCKS,
   addAnnotationSchema,
   textRewriteSchema,
   pageSetSchema,
@@ -120,6 +122,25 @@ import type { PlaceholderRequest } from '../signatureHole.js';
 import { PAGE_TEXT_READS } from '../textStructure.js';
 import { PROBE_CODE_MAX_CHARS, PROBE_CODE_PATTERN } from './containment.js';
 import { pageRunsSchema } from './pageRunsWire.js';
+
+/**
+ * The blocks a text edit moved down (ADR-0249 Decision 4), as a host answers them beside its boxes: each its place in the
+ * edit, where its objects stood and how far down it went — `engineSeam.ts`' `MovedBlock`. At most one per pushed block,
+ * `MAX_PUSHED_BLOCKS`. Kernel-only: `main` moves the markup on them and the renderer is told nothing of it.
+ */
+export const movedBlocksShape = {
+  moved: z
+    .array(
+      z
+        .object({
+          block: z.number().int().nonnegative().max(MAX_EDIT_RUNS),
+          box: z.object({ x0: z.number(), y0: z.number(), x1: z.number(), y1: z.number() }).strict(),
+          down: z.number().positive(),
+        })
+        .strict(),
+    )
+    .max(MAX_PUSHED_BLOCKS),
+};
 
 /**
  * The engine host's channels (ADR-0023 Decision 11).
@@ -624,6 +645,8 @@ const engineLinkSchema = z.discriminatedUnion('kind', [
       kind: z.literal('internal'),
       page: z.number().int().nonnegative(),
       bounds: linkBoundsSchema,
+      // IN PDF USER SPACE, `editLink`'s frame (ADR-0249 Decision 4): `pageLinks.ts`' `LinkRect`.
+      rect: linkBoundsSchema,
       ...engineLinkLook,
     })
     .strict(),
@@ -632,6 +655,7 @@ const engineLinkSchema = z.discriminatedUnion('kind', [
       kind: z.literal('external'),
       uri: z.string().max(ENGINE_LINK_URI_MAX),
       bounds: linkBoundsSchema,
+      rect: linkBoundsSchema,
       ...engineLinkLook,
     })
     .strict(),
@@ -1770,7 +1794,7 @@ export const byteImageWire = {
   read: { from: outputNameSchema, password: documentPasswordSchema.nullable() },
   write: { into: outputNameSchema },
   // AND WHAT IT DREW AS BOXES (ADR-0174): only the apply knows, so its answer carries them, capped and counted.
-  wrote: z.object({ bytes: z.number().int().nonnegative(), ...drawnBoxesShape }).strict(),
+  wrote: z.object({ bytes: z.number().int().nonnegative(), ...drawnBoxesShape, ...movedBlocksShape }).strict(),
   transferFailures: ['asset-missing', 'engine-refused'],
 } as const satisfies WireShape<
   z.ZodRawShape,
@@ -2232,8 +2256,9 @@ export const engineChannels = {
         reads: pageRunsSchema,
       })
       .strict(),
-    // WHAT IT DREW AS BOXES (ADR-0177 Decision 7), capped and counted as the PDFium host's answer carries them.
-    z.object({ ...drawnBoxesShape }).strict(),
+    // WHAT IT DREW AS BOXES (ADR-0177 Decision 7), capped and counted as the PDFium host's answer carries them; AND THE
+    // BLOCKS IT MOVED DOWN (ADR-0249), as the PDFium host's answer carries them.
+    z.object({ ...drawnBoxesShape, ...movedBlocksShape }).strict(),
     ['no-such-session', 'text-not-writable', 'edit-refused'],
   ),
 

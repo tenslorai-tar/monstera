@@ -590,6 +590,14 @@ const basePdfiumChannels = {
          * character bound this wire already uses for a page's words.
          */
         unaddressable: z.number().int().nonnegative().max(PDFIUM_PRIOR_TEXT_MAX),
+        /**
+         * The page box the runs are measured in, or `null` where PDFium answers none: what `main` measures the page's
+         * margins against for a block's push (ADR-0249 Decision 2), in the runs' own frame.
+         */
+        box: z
+          .object({ x0: z.number(), y0: z.number(), x1: z.number(), y1: z.number() })
+          .strict()
+          .nullable(),
       })
       .strict(),
     // THE BYTE-IMAGE WIRE'S CODES, spelt out because this channel is not one of

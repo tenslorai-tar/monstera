@@ -305,7 +305,18 @@ function geometryBoxOf(annotation: PDFAnnotation): [number, number, number, numb
  * where the format has one.
  */
 export function readRect(annotation: PDFAnnotation, transform: PageTransform): AnnotationRect {
-  const [x0, y0, x1, y1] = displayedBoxOf(annotation);
+  return pdfRectOf(displayedBoxOf(annotation), transform);
+}
+
+/**
+ * A box in the page's DISPLAYED space — MuPDF's, as `getRect`, `getBounds` and a link's `getBounds` answer it — in PDF
+ * user space: {@link placedRect}'s inverse, and the ONE way a displayed box is read back (B3a), for an annotation and a
+ * link alike.
+ */
+export function pdfRectOf(
+  [x0, y0, x1, y1]: readonly [number, number, number, number],
+  transform: PageTransform,
+): AnnotationRect {
   const a = toPdf(viewportPoint(x0, y0), transform);
   const b = toPdf(viewportPoint(x1, y1), transform);
   return {

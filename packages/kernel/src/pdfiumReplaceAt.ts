@@ -112,6 +112,6 @@ export async function applyReplaceTextAt(
     if (picked.after === picked.before) throw new NothingToReplaceError();
     const boxed = await replaceTextObjects(session, command.page, [{ index: picked.index, text: picked.after }], 'held');
     // AND WHAT IT DREW AS BOXES (ADR-0174): the word is written in pieces as the editor writes it (ADR-0173 Decision 9).
-    return { image: await pdfiumWriter.serialise(session), boxed, more: 0 };
+    return { image: await pdfiumWriter.serialise(session), boxed, more: 0, moved: [] };
   });
 }

@@ -269,8 +269,14 @@ export function remotePdfiumExecution(
       async (from, area, session, password) => {
         const into = transfer.mintName();
         const answer = await send(from, into, session, password);
-        // THE BOXES BESIDE THE IMAGE, as the host answered them (ADR-0174): named, and the rest counted.
-        return { image: await takeAnnounced(transfer, area, into, answer.bytes), boxed: answer.boxed, more: answer.more };
+        // THE BOXES BESIDE THE IMAGE, as the host answered them (ADR-0174): named, and the rest counted. AND THE BLOCKS
+        // IT MOVED (ADR-0249), whose markup `main` moves.
+        return {
+          image: await takeAnnounced(transfer, area, into, answer.bytes),
+          boxed: answer.boxed,
+          more: answer.more,
+          moved: answer.moved,
+        };
       },
       regenerates,
     );
@@ -438,6 +444,8 @@ export function remotePdfiumTextRuns(
   readonly runs: readonly TextRun[];
   readonly truncated: boolean;
   readonly unaddressable: number;
+  /** The page box the runs are measured in, or `null` (ADR-0249 Decision 2). */
+  readonly box: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number } | null;
 }> {
   return async (image, page, unpack) => {
     const { session, area } = held();

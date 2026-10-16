@@ -73,6 +73,9 @@ const OTHER = { size: 9, colour: { r: 64, g: 64, b: 64 }, serif: false, mono: fa
 /** A left-aligned block with no first-line indent, which is what a block no case is about reads as. */
 const LEFT = { align: 'left', firstIndent: 0 } as const;
 
+/** A block that pushes nothing when it grows (ADR-0249): what a block no case about the push reads as. */
+const NO_PUSH = { below: [], room: 0 } as const;
+
 /** Two blocks: a paragraph of two lines, and a heading far above it. */
 const BLOCKS: PageBlocks = {
   version: asDocVersion(7),
@@ -84,6 +87,7 @@ const BLOCKS: PageBlocks = {
       ],
       style: STYLE,
       shape: LEFT,
+      push: NO_PUSH,
     },
     {
       box: { x0: 72, y0: 600, x1: 400, y1: 650 },
@@ -106,6 +110,7 @@ const BLOCKS: PageBlocks = {
       ],
       style: STYLE,
       shape: LEFT,
+      push: NO_PUSH,
     },
   ],
   truncated: false,
@@ -703,12 +708,14 @@ describe('Edit text on the page (ADR-0096)', () => {
           lines: [line(1, 'First paragraph.', false, 728), line(2, 'Second paragraph.', false, 714), line(3, 'Third.', false, 700)],
           style: REGULAR,
           shape: { align: 'left', firstIndent: 0 },
+          push: NO_PUSH,
         },
         {
           box: { x0: 72, y0: 650, x1: 300, y1: 664 },
           lines: [line(4, 'The block below.', false, 664)],
           style: REGULAR,
           shape: { align: 'left', firstIndent: 0 },
+          push: NO_PUSH,
         },
       ],
     };
@@ -1063,6 +1070,7 @@ describe('Edit text on the page (ADR-0096)', () => {
           })),
           style: STYLE,
           shape: LEFT,
+          push: NO_PUSH,
         },
       ],
     };
@@ -1107,6 +1115,7 @@ describe('Edit text on the page (ADR-0096)', () => {
     lines: [{ runs: [{ index: 60, text: 'Footnote', style: STYLE }], box: { x0: 80, y0, x1: 200, y1: y0 + 10 }, soft: false, baseline: y0 + 2 }],
     style: STYLE,
     shape: LEFT,
+    push: NO_PUSH,
   });
   const COVERS = 'The words you wrote now run over something else on this page';
   /** Writes the paragraph so its read comes back grown to 540, with `others` beside it on the page. */
@@ -1605,5 +1614,74 @@ describe('Edit text draws each run in its own font where the host rebuilt one (A
       ['9', false, ''],
       ['11', false, ''],
     ]);
+  });
+});
+
+describe('the text below a growing block, shown before the write (ADR-0249 Decision 5)', () => {
+  /** The editor's observed size, and the one observer happy-dom lacks: the case says when the words grow. */
+  let resize: (() => void) | undefined;
+  class StandInObserver {
+    constructor(callback: () => void) {
+      resize = callback;
+    }
+    observe(): void {
+      resize?.();
+    }
+    disconnect(): void {
+      resize = undefined;
+    }
+  }
+  const [heading, paragraph] = BLOCKS.blocks;
+  if (heading === undefined || paragraph === undefined) throw new Error('the fixture lost its blocks');
+  /** The paragraph pushing the heading's copy placed under it, with `room` points of room. */
+  const pushingPage = (room: number): PageBlocks => ({
+    ...BLOCKS,
+    blocks: [
+      { ...paragraph, push: { below: [1], room } },
+      { ...heading, box: { x0: 72, y0: 560, x1: 300, y1: 590 }, push: NO_PUSH },
+    ],
+  });
+  /**
+   * Opens the paragraph, then grows its words to `height` pixels. It opens at its own two lines at their 14-point pitch,
+   * 28 pixels at zoom 1, which is what the growth is measured from.
+   */
+  const grownTo = (room: number, height: number, pictureOf?: () => HTMLCanvasElement) => {
+    vi.stubGlobal('ResizeObserver', StandInObserver);
+    const { view } = mount({ blocks: pushingPage(room), ...(pictureOf === undefined ? {} : { pictureOf }) });
+    fireEvent.click(find(view.container, '[data-text-block="0"]'));
+    const editor = editorIn(view.container);
+    Object.defineProperty(editor, 'offsetHeight', { configurable: true, value: 28 });
+    act(() => resize?.());
+    typeInto(editor, 'Helps with care and support at every stage, and a good deal more besides.');
+    Object.defineProperty(editor, 'offsetHeight', { configurable: true, value: height });
+    act(() => resize?.());
+    vi.unstubAllGlobals();
+    return view;
+  };
+
+  it('WHERE THERE IS NO ROOM, the editor says so in the owner’s words and the line it runs into is outlined', () => {
+    const view = grownTo(10, 58);
+    expect(find(view.container, '[data-text-edit-crowded]').textContent).toBe(
+      "This paragraph now runs into the text below it, and there's no room on the page to move that text down. Shorten the paragraph, or press Undo after you finish.",
+    );
+    expect(view.container.querySelector('[data-text-overlap="1"]')).not.toBeNull();
+    expect(view.container.querySelector('[data-text-pushed="1"]')).toBeNull();
+  });
+
+  it('WITHIN THE ROOM, the text below is drawn moved down by the growth, and nothing is said', () => {
+    // A STAND-IN FOR THE PAGE'S PIXELS: happy-dom draws no canvas, and the copy is drawn only where a context exists.
+    const picture = { width: 4, height: 2 } as HTMLCanvasElement;
+    const view = grownTo(100, 58, () => picture);
+    const moved = find(view.container, '[data-text-pushed="1"]');
+    // THIRTY PIXELS AT ZOOM 1 is thirty points: the copy's top is the heading's (792 − 590 = 202) and thirty more.
+    expect(moved.style.top).toBe('232px');
+    expect(view.container.querySelector('[data-text-pushed-cover="1"]')).not.toBeNull();
+    expect(view.container.querySelector('[data-text-edit-crowded]')).toBeNull();
+  });
+
+  it('CONTROL: words that did not grow move nothing and say nothing', () => {
+    const view = grownTo(10, 28, () => ({ width: 4, height: 2 }) as HTMLCanvasElement);
+    expect(view.container.querySelector('[data-text-pushed="1"]')).toBeNull();
+    expect(view.container.querySelector('[data-text-edit-crowded]')).toBeNull();
   });
 });

@@ -5,7 +5,7 @@ import { HeldPassword } from '@monstera/shared';
 import type { CommandExecution } from '../commandRouting.js';
 import type { ImageSession } from '../engineSeam.js';
 import type { PageRuns } from '../operatorEdit.js';
-import type { PageContentRead, TextRun } from '../pdfiumFfi.js';
+import type { PageContentRead, PageText, TextRun } from '../pdfiumFfi.js';
 import {
   EditRefusedError,
   NothingToReplaceError,
@@ -91,6 +91,8 @@ export type HostTextRunsReader = (
   readonly truncated: boolean;
   /** Characters whose object the page's walk does not contain. `PageText`. */
   readonly unaddressable: number;
+  /** The page box the runs are measured in, or `null`. `PageText`. */
+  readonly box: PageText['box'];
 }>;
 
 /**
@@ -383,7 +385,8 @@ export function createPdfiumHandlers({
       }
       const written = await files.writeOutput(held.outputDirectory, into, applied.image);
       // WHAT IT DREW AS BOXES TRAVELS WITH THE COUNT (ADR-0174), through the one cap.
-      return { ok: true, value: { bytes: written, ...cappedBoxes(applied) } };
+      // AND THE BLOCKS IT MOVED (ADR-0249), whole: one per pushed block, which the command already bounds.
+      return { ok: true, value: { bytes: written, ...cappedBoxes(applied), moved: [...applied.moved] } };
     },
 
     'engine/invert': async ({ session, inverse, from, password, into }) => {
@@ -411,7 +414,7 @@ export function createPdfiumHandlers({
         return refusedBy(error);
       }
       const written = await files.writeOutput(held.outputDirectory, into, inverted.image);
-      return { ok: true, value: { bytes: written, ...cappedBoxes(inverted) } };
+      return { ok: true, value: { bytes: written, ...cappedBoxes(inverted), moved: [...inverted.moved] } };
     },
 
     'engine/text-runs': async ({ session, from, password, page, unpack }) => {
@@ -432,7 +435,10 @@ export function createPdfiumHandlers({
         // over-long array as a malformed answer, which is a violation rather than
         // an outcome — and a cut it makes is SAID, never a silent drop.
         const { kept, truncated } = boundedToAnswer(found.runs);
-        return { ok: true, value: { runs: kept, truncated: found.truncated || truncated, unaddressable: found.unaddressable } };
+        return {
+          ok: true,
+          value: { runs: kept, truncated: found.truncated || truncated, unaddressable: found.unaddressable, box: found.box },
+        };
       } catch {
         // THE DOCUMENT'S FAULT rather than the host's — a page this document
         // does not have, or one PDFium cannot load. It must not reach the

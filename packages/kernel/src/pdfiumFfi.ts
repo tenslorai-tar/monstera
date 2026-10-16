@@ -2,6 +2,7 @@ import {
   type BlockMark,
   type BlockMarkSet,
   type BlockPlace,
+  type BlockPush,
   MAX_BLOCK_FONTS,
   MAX_RUN_FONT_BYTES,
   type PageInsert,
@@ -34,7 +35,7 @@ import {
 import { carries as faceDraws, familyClass, resolveRuns } from './fontResolver.js';
 import { type EditPiece, editPieces } from './editPieces.js';
 import { inDrawingOrder, visualUnits } from './visualPieces.js';
-import type { BoxedInEdit, ByteImage, EngineWriter, ImageSession, PdfiumSession } from './engineSeam.js';
+import type { BoxedInEdit, ByteImage, EngineWriter, ImageSession, MovedBlock, PdfiumSession } from './engineSeam.js';
 import type { CatalogueFace, FaceSource } from './fontCatalogue.js';
 import type { PageRuns } from './operatorEdit.js';
 import { FIT_STEPS, type FlowLine, MIN_FIT, type Measure, NO_MARK, planBlock } from './paragraphFlow.js';
@@ -1217,6 +1218,27 @@ export interface PageText {
    * reader that sentence.
    */
   readonly unaddressable: number;
+  /**
+   * The page box the runs are measured in — PDFium's `FPDF_GetPageBoundingBox`, the crop box within the media box — or
+   * `null` where PDFium answers none. What `main` measures a page's margins against (ADR-0249 Decision 2), in the frame
+   * of the runs beside it, and the box the writer takes a one-line block's column from (ADR-0097 4a).
+   */
+  readonly box: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number } | null;
+}
+
+/** {@link PageText.box}: the one reading of a page's box, the writer's and the read's. */
+function pageBoxOf(bindings: Bound, handle: unknown): PageText['box'] {
+  const box: Record<string, number> = {};
+  if (numberFrom(bindings.pageBox(handle, box), 'FPDF_GetPageBoundingBox') !== 1) return null;
+  // NORMALISED: a box whose corners a document wrote the other way round is the same box (PDF 32000-1, 7.9.5).
+  const edges = (a: string, b: string): [number, number] => {
+    const first = numberFrom(box[a], `FS_RECTF.${a}`);
+    const second = numberFrom(box[b], `FS_RECTF.${b}`);
+    return [Math.min(first, second), Math.max(first, second)];
+  };
+  const [x0, x1] = edges('left', 'right');
+  const [y0, y1] = edges('bottom', 'top');
+  return { x0, y0, x1, y1 };
 }
 
 /**
@@ -1269,7 +1291,7 @@ export function textRuns(session: PdfiumSession, page: number): Promise<PageText
       // THE MEMBERS STAY HERE: the wire names a run by its first and last object, and the edit recomputes the rest. So
       // do the glyphs as drawn: they are what a line's order is found from, and the line is read here, once.
       const runs = readWalk(bindings, handle, walked).map(({ members: _members, drawn: _drawn, ...run }) => run);
-      return { runs, unaddressable: walked.unaddressable };
+      return { runs, unaddressable: walked.unaddressable, box: pageBoxOf(bindings, handle) };
     }),
   );
 }
@@ -1318,6 +1340,7 @@ export function objectRuns(session: PdfiumSession, page: number): Promise<PageTe
           style: withDecorations(styleOf(bindings, bindings.getObject(handle, index), programs), run, decorations),
         })),
         unaddressable: walked.unaddressable,
+        box: pageBoxOf(bindings, handle),
       };
     }),
   );
@@ -2244,6 +2267,8 @@ export interface BlockEdit {
   readonly paragraphs?: readonly Omit<ParagraphProps, 'block'>[];
   /** How the block is placed once laid out: moved, scaled, rotated, or set at a new measure (ADR-0180, corrected). */
   readonly place?: Omit<BlockPlace, 'block'>;
+  /** In the edit to be moved down by block `by`'s growth, within `room`, and never written (ADR-0249 Decision 3). */
+  readonly push?: Omit<BlockPush, 'block'>;
   /**
    * `reflow`: a person typing — the block grows downward (ADR-0096). `shrink`: a translation — the
    * block is scaled uniformly to end above its original last line, never below {@link MIN_FIT}
@@ -2400,13 +2425,14 @@ export async function editTextBlocks(
   edits: readonly BlockEdit[],
   /** Boxes of new text the page is given, laid out by the same pass (ADR-0180, corrected 2026-10-06). */
   inserts: readonly PageInsert[] = [],
-): Promise<readonly BoxedInEdit[]> {
+): Promise<{ readonly boxed: readonly BoxedInEdit[]; readonly pushed: readonly MovedBlock[] }> {
   const scales = await fitScales(session, page, edits, inserts);
-  // THE CHARACTERS IT DREW AS BOXES (ADR-0174): the write pass's, never a trial's, which draws on a page thrown away.
-  const { boxed } = await promised(() =>
+  // THE CHARACTERS IT DREW AS BOXES (ADR-0174): the write pass's, never a trial's, which draws on a page thrown away. AND
+  // THE PUSHED BLOCKS THAT MOVED (ADR-0249), where they were and how far: what the markup on them is moved by.
+  const { boxed, pushed } = await promised(() =>
     onPage(session, page, (handle) => layOutBlocks(session, handle, page, edits, inserts, scales, 'write')),
   );
-  return boxed;
+  return { boxed, pushed };
 }
 
 /**
@@ -3299,7 +3325,7 @@ function layOutBlocks(
   inserts: readonly PageInsert[],
   scales: readonly number[],
   mode: 'write' | 'trial',
-): { readonly fits: readonly boolean[]; readonly boxed: readonly BoxedInEdit[] } {
+): { readonly fits: readonly boolean[]; readonly boxed: readonly BoxedInEdit[]; readonly pushed: readonly MovedBlock[] } {
       const bindings = api();
       const document = documentFor(session);
       const pen = pieceWriter(
@@ -3344,11 +3370,10 @@ function layOutBlocks(
       const walked = walkRuns(bindings, handle);
       /** Per block: did its layout end above its original last line? */
       const fits = edits.map(() => true);
-      // THE PAGE'S BOX, for a one-line block's column (ADR-0097 4a).
-      const box: Record<string, number> = {};
-      const hasBox = numberFrom(bindings.pageBox(handle, box), 'FPDF_GetPageBoundingBox') === 1;
-      const pageLeft = hasBox ? (box['left'] ?? 0) : 0;
-      const pageRight = hasBox ? (box['right'] ?? 0) : Number.NEGATIVE_INFINITY;
+      // THE PAGE'S BOX, for a one-line block's column (ADR-0097 4a): the read's own reading of it (`pageBoxOf`).
+      const pageBox = pageBoxOf(bindings, handle);
+      const pageLeft = pageBox?.x0 ?? 0;
+      const pageRight = pageBox?.x1 ?? Number.NEGATIVE_INFINITY;
 
       // EVERY BLOCK RESOLVED IN FULL FIRST, against the untouched page, so a bad
       // index refuses before anything is written — and so a later block's
@@ -3365,6 +3390,7 @@ function layOutBlocks(
         marks: edit.marks ?? [],
         paragraphs: edit.paragraphs ?? [],
         place: edit.place,
+        push: edit.push,
         fit: edit.fit,
         lines: edit.lines.map((line) =>
           line.map((named): HeldRun => {
@@ -3449,6 +3475,10 @@ function layOutBlocks(
         }
         return null;
       };
+      /** What each block grew, its old last baseline less its new one: what the blocks it pushes move by (ADR-0249). */
+      const grew = blocks.map(() => 0);
+      /** Each pushed block that moved: where it was, before anything moved, and how far down it went (ADR-0249). */
+      const pushed: MovedBlock[] = [];
 
         for (const [blockAt, block] of blocks.entries()) {
           const { lines } = block;
@@ -3457,6 +3487,14 @@ function layOutBlocks(
           if (firstLine === undefined || firstRun === undefined) {
             throw new Error(`A block edit on page ${String(page)} named no line.`);
           }
+          // A PUSHED BLOCK IS MOVED BY WHAT ITS PUSHER GREW, or not at all where that passes its room (ADR-0249 Decision 3):
+          // through ADR-0180's move, the path that moves a block as one thing with its decorations. The pusher came first
+          // (the contract's `blockEditAgrees`), so its growth is known here.
+          const { push } = block;
+          const growth = push === undefined ? 0 : (grew[push.by] ?? 0);
+          const pushMove = push !== undefined && growth > 0 && growth <= push.room ? growth : 0;
+          const place = push === undefined ? block.place : pushMove > 0 ? { move: { x: 0, y: -pushMove } } : undefined;
+          const writtenBefore = written.length;
           // ROTATED OR SKEWED TEXT IS REFUSED rather than wrapped along an axis
           // it is not set on. The read offers no such block; this is the write
           // keeping the same rule for a caller that did not ask.
@@ -3503,13 +3541,22 @@ function layOutBlocks(
           const ownRight = Math.max(...edges.map((edge) => edge.right));
           // A MEASURE THE PERSON GAVE (a resized box, an added one) is the measure, from the block's own left edge.
           const blockRight =
-            block.place?.width !== undefined
-              ? blockLeft + block.place.width
+            place?.width !== undefined
+              ? blockLeft + place.width
               : lines.length === 1
                 ? Math.max(ownRight, pageRight - (blockLeft - pageLeft))
                 : ownRight;
           // WHERE THE BLOCK ENDED, before anything moves: a fitted block must end above it.
           const lastBaselineBefore = matrixOn(bindings, (lines[lines.length - 1]?.[0] ?? firstRun).object).f;
+          // A PUSHED BLOCK THAT MOVES, said with where it stood: its objects' own bounds, ascent to descent, which is the box
+          // the markup on its words sits in (ADR-0249 Decision 4).
+          if (pushMove > 0) {
+            pushed.push({
+              block: blockAt,
+              box: { x0: blockLeft, y0: Math.min(...edges.map((edge) => edge.bottom)), x1: ownRight, y1: blockTop },
+              down: pushMove,
+            });
+          }
 
           // SCALED UNIFORMLY about the block's top-left (ADR-0097 4b) — size, and position — so a
           // fitted block shrinks into the corner it started from and every later measure is of
@@ -3598,7 +3645,7 @@ function layOutBlocks(
           // A NEW MEASURE SETS EVERY PARAGRAPH AGAIN, words or not: the lines the old measure broke are not the lines the
           // new one does.
           const everyParagraph =
-            block.place?.width === undefined ? [] : Array.from({ length: block.text.split('\n').length }, (_, paragraph) => paragraph);
+            place?.width === undefined ? [] : Array.from({ length: block.text.split('\n').length }, (_, paragraph) => paragraph);
           const forced = new Set([...changedSettings, ...everyParagraph]);
           const runsById = new Map(lines.flat().map((run) => [run.index, run]));
           const lineOfRun = new Map(lines.flatMap((line, at) => line.map((run): [HeldRun, number] => [run, at])));
@@ -3884,6 +3931,11 @@ function layOutBlocks(
           // EVERY OLD LINE THE PLAN DID NOT KEEP goes at the end: a line set afresh stands in for it, or the person
           // removed it — a joined run's every object.
           for (const [at, line] of lines.entries()) if (!kept.has(at)) removed.push(...objectsOf(line));
+          // A PUSHED BLOCK IS NEVER WRITTEN (ADR-0249 Decision 3): every line kept and no word set, or the edit is refused.
+          // Its words are the read's, so a diff that names a run of it is words nobody typed into a block nobody opened.
+          if (push !== undefined && (written.length !== writtenBefore || kept.size !== lines.length)) {
+            throw refusedAt('object', `A block on page ${String(page)} moved by another's growth would have had its words set again`);
+          }
 
           // THE LAYOUT, top to bottom: the first line stays where it is, and
           // each line after it sits its own gap below the one above.
@@ -3899,6 +3951,9 @@ function layOutBlocks(
               }
             }
           }
+          // WHAT THE BLOCK GREW, for the blocks it pushes: a baseline, as a fit measures (a descender is not a line). A block
+          // the person placed, and one pushed, push nothing — a placement is where they put it, not a paragraph growing.
+          if (place === undefined && push === undefined) grew[blockAt] = lastBaselineBefore - baseline;
           // THE DRAWINGS MARKS ASK, now that the baselines are where they end, each a filled rectangle as long as the words
           // are wide: a line a little below the baseline and one through the words at STRIKE_RISE, each inserted after the
           // last object it marks so the page reads in the order it is seen; and a colour behind the words, from below their
@@ -3954,10 +4009,10 @@ function layOutBlocks(
           }
           // THE BLOCK PLACED, now that it ends as it will: every object it is made of, its kept lines, the lines set
           // afresh and the rules under them, so it moves as the one thing it is. A trial lays out for a fit and places nothing.
-          if (mode === 'write' && block.place !== undefined) {
+          if (mode === 'write' && place !== undefined) {
             const mine = [...visual.flatMap((line) => line.objects.map(({ object }) => object)), ...rules];
             if (mine.length > 0) {
-              if (placeObjects(bindings, mine, block.place, { x: blockLeft, y: blockTop })) placed = true;
+              if (placeObjects(bindings, mine, place, { x: blockLeft, y: blockTop })) placed = true;
             }
           }
           // A FITTED BLOCK FITS when its last line sits no lower than its old last line did. A
@@ -4006,7 +4061,7 @@ function layOutBlocks(
 
         // A TRIAL ENDS HERE: nothing removed, nothing read back, nothing generated — the page is
         // closed and its changes go with it.
-        if (mode === 'trial') return { fits, boxed: [] };
+        if (mode === 'trial') return { fits, boxed: [], pushed };
 
         if (written.length === 0 && removed.length === 0 && !placed && inserts.length === 0) {
           throw new Error(
@@ -4056,7 +4111,7 @@ function layOutBlocks(
           written.map((write) => write.object),
         );
         // THE BOXES STILL ON THE PAGE (ADR-0174).
-        return { fits, boxed: pen.boxed() };
+        return { fits, boxed: pen.boxed(), pushed };
       } finally {
         pen.close();
       }
@@ -5885,17 +5940,9 @@ export async function pageContent(session: PdfiumSession, page: number): Promise
         unaddressable: walked.unaddressableInk,
       };
 
-      const box: Record<string, number> = {};
-      if (numberFrom(bindings.pageBox(handle, box), 'FPDF_GetPageBoundingBox') !== 1) {
-        throw refusedAt('page', `PDFium gave page ${String(page)} no bounding box`);
-      }
-      const edges = (a: string, b: string): [number, number] => {
-        const first = numberFrom(box[a], `FS_RECTF.${a}`);
-        const second = numberFrom(box[b], `FS_RECTF.${b}`);
-        return [Math.min(first, second), Math.max(first, second)];
-      };
-      const [x0, x1] = edges('left', 'right');
-      const [y0, y1] = edges('bottom', 'top');
+      const pageBox = pageBoxOf(bindings, handle);
+      if (pageBox === null) throw refusedAt('page', `PDFium gave page ${String(page)} no bounding box`);
+      const { x0, y0, x1, y1 } = pageBox;
       const turns = ((numberFrom(bindings.pageRotation(handle), 'FPDFPage_GetRotation') % 4) + 4) % 4;
       const rotation = ([0, 90, 180, 270] as const)[turns] ?? 0;
 

@@ -1982,7 +1982,11 @@ describe('delete pages — the mutation-dialog gate', () => {
     ],
     style: PLAIN,
     shape: { align: 'left', firstIndent: 0 },
+    push: { below: [], room: 0 },
   };
+  /** The read BLOCK came from, at version 7, by `rewrite`'s writer: the page holds BLOCK alone. */
+  const readOf = (rewrite: 'objects' | 'operators', unpacked = false) =>
+    ({ version: asDocVersion(7), rewrite, blocks: [BLOCK], ...(unpacked ? { unpacked: true as const } : {}) }) as const;
 
   it('A BLOCK EDIT SENDS the block’s own indices, the words typed, and the version the BLOCKS were read at', async () => {
     // THE UI HALF OF THE WIRED PAIR for `editTextBlock`. Its kernel half is
@@ -2002,7 +2006,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       3,
       BLOCK,
       'The quick brown dog jumps over',
-      { version: asDocVersion(7), rewrite: 'objects' },
+      readOf('objects'),
     );
     expect(outcome).toBe('written');
     expect(sent).toStrictEqual([
@@ -2031,6 +2035,38 @@ describe('delete pages — the mutation-dialog gate', () => {
     expect(applied).toHaveLength(1);
   });
 
+  it('THE TEXT BELOW A BLOCK rides in its edit as pushed blocks, words as read, never written (ADR-0249)', async () => {
+    // THE UI HALF OF THE WIRED PAIR for the push. Its kernel half is `proof:textpush`, which writes this shape through the
+    // real PDFium writer and reads the moved small print back with MuPDF. The block below is the read's own; a commit that
+    // forgot `push.below` sends the edited block alone, which is the control below.
+    const below: TextBlock = {
+      box: { x0: 72, y0: 640, x1: 300, y1: 651 },
+      lines: [{ runs: [{ index: 12, text: 'Small print', style: PLAIN }], box: { x0: 72, y0: 640, x1: 150, y1: 651 }, soft: false, baseline: 642 }],
+      style: PLAIN,
+      shape: { align: 'left', firstIndent: 0 },
+      push: { below: [], room: 0 },
+    };
+    const pushing: TextBlock = { ...BLOCK, push: { below: [1], room: 300 } };
+    const sent: unknown[] = [];
+    const client = createClient(channels, (_id, params) => {
+      sent.push((params as { command: unknown }).command);
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
+    });
+    const deps = { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures };
+    const read = { version: asDocVersion(7), rewrite: 'objects' as const, blocks: [pushing, below] };
+    await commitTextBlock(deps, DOC, 3, pushing, 'The quick brown dog jumps over and over again', read);
+    expect(sent[0]).toMatchObject({
+      runs: [4, 9, 2, 12],
+      blockStarts: [0, 2],
+      text: 'The quick brown dog jumps over and over againSmall print',
+      pushes: [{ block: 1, by: 0, room: 300 }],
+    });
+    // CONTROL: WITH NO ROOM nothing could move, so the block is sent alone and the writer is handed nothing to push.
+    await commitTextBlock(deps, DOC, 3, { ...pushing, push: { below: [1], room: 0 } }, 'The quick brown dog jumps', read);
+    expect(sent[1]).toMatchObject({ runs: [4, 9, 2], blockStarts: [0] });
+    expect(Object.hasOwn(sent[1] as object, 'pushes')).toBe(false);
+  });
+
   it('A BLOCK FROM AN UNPACKED READ is sent with unpack, so the writer unpacks the page first (ADR-0232)', async () => {
     // THE UI HALF OF THE WIRED PAIR for B1.26. Its kernel half is `proof:pdfiumcommand`'s unpack cases, which edit packed
     // text through the real library with this flag and refuse the same indices without it. The case above is its control:
@@ -2041,10 +2077,10 @@ describe('delete pages — the mutation-dialog gate', () => {
       return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
     });
     const deps = { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures };
-    await commitTextBlock(deps, DOC, 3, BLOCK, 'The quick brown dog jumps over', { version: asDocVersion(7), rewrite: 'objects', unpacked: true });
+    await commitTextBlock(deps, DOC, 3, BLOCK, 'The quick brown dog jumps over', readOf('objects', true));
     expect(sent[0]).toMatchObject({ kind: 'editTextBlock', unpack: true, version: 7 });
     // AN `operators` PAGE IS NEVER READ UNPACKED; were a read to say so, its command still carries no `unpack`, which it has no field for.
-    await commitTextBlock(deps, DOC, 3, BLOCK, 'The quick brown dog jumps over', { version: asDocVersion(7), rewrite: 'operators', unpacked: true });
+    await commitTextBlock(deps, DOC, 3, BLOCK, 'The quick brown dog jumps over', readOf('operators', true));
     expect(Object.hasOwn(sent[1] as object, 'unpack')).toBe(false);
   });
 
@@ -2063,7 +2099,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       3,
       BLOCK,
       'The quick brown dog jumps over',
-      { version: asDocVersion(7), rewrite: 'operators' },
+      readOf('operators'),
     );
     expect(outcome).toBe('written');
     expect(sent).toStrictEqual([
@@ -2103,7 +2139,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       3,
       BLOCK,
       'The quick brown fox jumps over',
-      { version: asDocVersion(7), rewrite: 'objects' },
+      readOf('objects'),
     );
     expect(outcome).toBe('unchanged');
     expect(sent).toStrictEqual([]);
@@ -2115,7 +2151,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       3,
       BLOCK,
       'The quick brown fox\njumps over',
-      { version: asDocVersion(7), rewrite: 'objects' },
+      readOf('objects'),
     );
     expect(split).toBe('written');
   });
@@ -2134,7 +2170,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       3,
       BLOCK,
       'The quick brown fox jumps over',
-      { version: asDocVersion(7), rewrite: 'objects' },
+      readOf('objects'),
       { place: { move: { x: 12, y: -4 }, width: 180 } },
     );
     expect(outcome).toBe('written');
@@ -2163,7 +2199,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       3,
       BLOCK,
       'The quick brown 中',
-      { version: asDocVersion(7), rewrite: 'objects' },
+      readOf('objects'),
     );
     // WHOLE, characters and all, for the editor to name them.
     expect(outcome).toStrictEqual({ refused: { code: 'text-not-writable', detail: { characters: '中' } } });
@@ -2207,7 +2243,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       3,
       BLOCK,
       'The quick brown dog',
-      { version: asDocVersion(7), rewrite: 'objects' },
+      readOf('objects'),
     );
     expect(outcome).toStrictEqual({ refused: { code: 'edit-refused', detail: { step: 'generate', engineError: 6 } } });
     expect(asked).toStrictEqual([]);
@@ -2256,7 +2292,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       3,
       BLOCK,
       'The quick brown dog',
-      { version: asDocVersion(7), rewrite: 'objects' },
+      readOf('objects'),
     );
     expect(outcome).toStrictEqual({ refused: { code: 'stale-target' } });
     expect(asked).toStrictEqual([]);
@@ -2281,7 +2317,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       3,
       BLOCK,
       'The quick brown dog',
-      { version: asDocVersion(7), rewrite: 'objects' },
+      readOf('objects'),
     );
     // NOT `refused`, which closes the editor over what was typed; and nothing is reported, since the person chose it.
     expect(outcome).toBe('held');
@@ -7340,6 +7376,7 @@ describe('readRunFonts', () => {
       ],
       style: STYLE,
       shape: { align: 'left', firstIndent: 0 },
+      push: { below: [], room: 0 },
     };
   }
 

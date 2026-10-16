@@ -1644,6 +1644,7 @@ export const TEXT_EDIT_NONE = messageKey('surface.text-edit.none');
 export const TEXT_EDIT_UNREADABLE = messageKey('surface.text-edit.unreadable');
 export const TEXT_EDIT_TRUNCATED = messageKey('surface.text-edit.truncated');
 export const TEXT_EDIT_COVERS = messageKey('surface.text-edit.covers');
+export const TEXT_EDIT_NO_ROOM = messageKey('surface.text-edit.no-room');
 export const TEXT_EDIT_UNADDRESSABLE = messageKey('surface.text-edit.unaddressable');
 export const TEXT_EDIT_PROMOTE = messageKey('surface.text-edit.promote');
 export const TEXT_EDIT_RECOGNISE = messageKey('surface.text-edit.recognise');
@@ -4499,6 +4500,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TEXT_EDIT_UNREADABLE]: 'This page’s text could not be read, so it cannot be edited here. Other pages can.',
   [TEXT_EDIT_TRUNCATED]: 'This page has more text than can be outlined at once; some of it is not outlined.',
   [TEXT_EDIT_COVERS]: 'The words you wrote now run over something else on this page. Press Ctrl+Z to put them back as they were.',
+  // THE OWNER'S WORDS, locked 2026-10-16 (ADR-0249 Decision 5).
+  [TEXT_EDIT_NO_ROOM]:
+    "This paragraph now runs into the text below it, and there's no room on the page to move that text down. Shorten the paragraph, or press Undo after you finish.",
   // NAMES THE CAUSE IN A READER'S WORDS, and does not apologise. *Pasted in as
   // a block* is how a Form XObject got there to somebody who did not make the
   // PDF, and the button beside it is what makes the text editable.

@@ -1,3 +1,4 @@
+import { MAX_PUSHED_BLOCKS } from '@monstera/contract/host';
 import { paragraphsOfLines } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -6,6 +7,7 @@ import {
   type GroupableRun,
   groupIntoBlocks,
   groupIntoLines,
+  pushesOf,
   settingOf,
   softEnds,
   withRises,
@@ -474,5 +476,68 @@ describe('withRises', () => {
     expect(two[0]?.lines.map((line) => line.baseline)).toStrictEqual([700, 686]);
     const raised = withRises(groupIntoBlocks([at(0, '1', 72, 78, 703.96), at(1, ' Note', 78, 120, 700)]), () => 0, () => 0);
     expect(raised[0]?.lines[0]?.baseline).toBe(703.96);
+  });
+});
+
+describe('pushesOf (ADR-0249 Decision 2)', () => {
+  /** A Letter page, and a block by its left, bottom, right and top. */
+  const PAGE = { x0: 0, y0: 0, x1: 612, y1: 792 };
+  const box = (x0: number, y0: number, x1: number, y1: number) => ({ x0, y0, x1, y1 });
+  // THE PAGE'S TOP MARGIN IS 72 (its highest text's top is 720), so its bottom margin ends at 72 and a block wholly under
+  // that is the footer.
+  const heading = box(72, 690, 540, 720);
+  const paragraph = box(72, 600, 540, 680);
+  const smallPrint = box(72, 560, 540, 590);
+  const footer = box(280, 40, 330, 52);
+
+  it('pushes the text below a block in its column, and the room runs to the footer’s top', () => {
+    const pushes = pushesOf([heading, paragraph, smallPrint, footer], PAGE);
+    expect(pushes[1]).toStrictEqual({ below: [2], room: 560 - 52 });
+    expect(pushes[0]).toStrictEqual({ below: [1, 2], room: 560 - 52 });
+  });
+
+  it('CONTROL: a block in the second column does not move, and neither does the footer', () => {
+    const left = box(72, 600, 290, 680);
+    const right = box(320, 500, 540, 590);
+    const underLeft = box(72, 500, 290, 590);
+    const pushes = pushesOf([heading, left, right, underLeft, footer], PAGE);
+    // THE RIGHT COLUMN IS NOT BELOW THE LEFT: they do not overlap horizontally. The footer is in no block's push.
+    expect(pushes[1]?.below).toStrictEqual([3]);
+    expect(pushes.flatMap((push) => push.below)).not.toContain(4);
+    expect(pushes[4]).toStrictEqual({ below: [], room: 0 });
+  });
+
+  it('closes the column: text below a pushed block is pushed too, so moved text never lands on text that stayed', () => {
+    // THE CAPTION overlaps the small print and not the narrow paragraph; pushed with the small print, it is pushed too.
+    const narrow = box(72, 600, 200, 680);
+    const wide = box(72, 560, 540, 590);
+    const caption = box(400, 500, 540, 540);
+    const pushes = pushesOf([heading, narrow, wide, caption, footer], PAGE);
+    expect(pushes[1]?.below).toStrictEqual([2, 3]);
+    expect(pushes[1]?.room).toBe(500 - 52);
+  });
+
+  it('with no footer, the room runs to the mirrored bottom margin', () => {
+    const pushes = pushesOf([heading, paragraph, smallPrint], PAGE);
+    expect(pushes[1]?.room).toBe(560 - 72);
+  });
+
+  it('a page with no room left has room 0, and a block with nothing below pushes nothing', () => {
+    const lowest = box(72, 60, 540, 100);
+    const pushes = pushesOf([heading, paragraph, lowest], PAGE);
+    // THE LOWEST TEXT ALREADY REACHES THE MARGIN (72) from above it, so there is no room: 60 is under 72.
+    expect(pushes[1]).toStrictEqual({ below: [2], room: 0 });
+    expect(pushes[2]).toStrictEqual({ below: [], room: 0 });
+  });
+
+  it('a column with more blocks below than one edit may carry has no room, so the editor warns rather than send it', () => {
+    // ONE A POINT HIGH, stacked under the paragraph: MAX_PUSHED_BLOCKS of them is carried, one more is not.
+    const stack = (count: number) => Array.from({ length: count }, (_, at) => box(72, 590 - at - 0.5, 540, 590 - at));
+    const carried = pushesOf([heading, paragraph, ...stack(MAX_PUSHED_BLOCKS)], PAGE)[1];
+    const over = pushesOf([heading, paragraph, ...stack(MAX_PUSHED_BLOCKS + 1)], PAGE)[1];
+    expect(carried?.below).toHaveLength(MAX_PUSHED_BLOCKS);
+    expect(carried?.room).toBeGreaterThan(0);
+    expect(over?.below).toHaveLength(MAX_PUSHED_BLOCKS + 1);
+    expect(over?.room).toBe(0);
   });
 });

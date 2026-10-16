@@ -20,6 +20,7 @@ function block(top: number, lines: { runs: [number, string, typeof REGULAR][]; s
     })),
     style: REGULAR,
     shape: { align: 'left', firstIndent: 0 },
+    push: { below: [], room: 0 },
   };
 }
 

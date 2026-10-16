@@ -5536,6 +5536,20 @@ export const channels = {
                   firstIndent: z.number(),
                 })
                 .strict(),
+              /**
+               * What the block pushes when it grows
+               * ([ADR-0249](../../../docs/DECISIONS/0249-a-paragraph-that-grows-pushes-the-text-below-it-down.md) Decision 2),
+               * `main`'s one answer (`pushesOf`): `below`, the blocks in its column under it, by their place among THIS
+               * PAGE'S blocks across every part; `room`, how far down in points they may go before the footer or the bottom
+               * margin. The editor draws the push from these and puts those blocks into the edit; the writer measures the
+               * growth. REQUIRED, `historyDropped`'s reason: an editor that never read it would cover the text below again.
+               */
+              push: z
+                .object({
+                  below: z.array(z.number().int().nonnegative()).max(MAX_EDIT_RUNS).readonly(),
+                  room: z.number().nonnegative().max(2 * MAX_PAGE_COORDINATE),
+                })
+                .strict(),
             })
             .strict(),
         )

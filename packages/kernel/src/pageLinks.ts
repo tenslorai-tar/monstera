@@ -1,4 +1,4 @@
-import type { CommandOfKind, LinkOutline, LinkTarget } from '@monstera/contract';
+import type { AnnotationRect, CommandOfKind, LinkOutline, LinkTarget } from '@monstera/contract';
 import { LINK_OUTLINES, LINK_OUTLINE_DEFAULT_COLOUR } from '@monstera/contract/host';
 import type { PageTransform } from '@monstera/shared';
 import type * as mupdf from './mupdfRaw.js';
@@ -9,7 +9,7 @@ import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { ENGINE_LINK_ADDRESS_MAX, ENGINE_LINK_URI_MAX, ENGINE_PAGE_LINKS_MAX } from './host/engineChannels.js';
 import { withDocument } from './mupdfWriter.js';
 import { shownName } from './shownName.js';
-import { frameOf, placedRect, touchesPage } from './pageAnnotations.js';
+import { frameOf, pdfRectOf, placedRect, touchesPage } from './pageAnnotations.js';
 import { pageInDocument } from './pageScope.js';
 
 /**
@@ -47,6 +47,15 @@ interface LinkLook {
   readonly colour?: [number, number, number] | undefined;
 }
 
+/**
+ * Where a link is in PDF USER SPACE — `addLink` and `editLink`'s frame, and an annotation's listed `rect`'s — beside
+ * `bounds` in MuPDF's displayed one: what `main` finds a link on moved text by and moves it with (ADR-0249 Decision 4),
+ * read back by the one inverse of the conversion `editLink` writes through (`pdfRectOf`).
+ */
+interface LinkRect {
+  readonly rect: AnnotationRect;
+}
+
 /** One link on a page. */
 export type PageLink =
   | ({
@@ -54,13 +63,15 @@ export type PageLink =
       /** Zero-based, as everything that crosses the contract is. */
       readonly page: number;
       readonly bounds: LinkBounds;
-    } & LinkLook)
+    } & LinkLook &
+      LinkRect)
   | ({
       readonly kind: 'external';
       /** The URI exactly as the document carries it. Nothing here follows it. */
       readonly uri: string;
       readonly bounds: LinkBounds;
-    } & LinkLook);
+    } & LinkLook &
+      LinkRect);
 
 /**
  * A link's rectangle, in MuPDF's own coordinate space.
@@ -594,6 +605,8 @@ function linksOn(document: mupdf.PDFDocument, page: number, bound: number): List
   const loaded = document.loadPage(page);
   const links = loaded.getLinks();
   const dictionaries = linkDictionaries(loaded, links.length);
+  // THE FRAME `editLink` WRITES THROUGH, so a listed `rect` is the rectangle that command would put back (`linkRect`).
+  const frame = frameOf(loaded);
   try {
     // STOPPED AT THE HOST ANSWER'S BOUND AND SAID, as the outline's walk is (ADR-0130 Decision 3).
     const listed = new BoundedList<PageLink>(bound);
@@ -601,6 +614,9 @@ function linksOn(document: mupdf.PDFDocument, page: number, bound: number): List
       if (!listed.room()) break;
       const [x0, y0, x1, y1] = link.getBounds();
       const bounds: LinkBounds = { x0, y0, x1, y1 };
+      // A PAGE THAT DISPLAYS NO REGION has no user-space frame either; its links keep their displayed box as both, and
+      // `editLink` refuses that page in any case (`linkTransform`).
+      const rect = frame === null ? { x0, y0, x1, y1 } : pdfRectOf([x0, y0, x1, y1], frame);
       // HOW IT IS OUTLINED, read from the link's own dictionary by its position (`linkDictionaries` says why that names it).
       // A page whose dictionaries could not be matched to its links answers `other` for each rather than a guess.
       const dictionary = dictionaries[at];
@@ -617,8 +633,8 @@ function linksOn(document: mupdf.PDFDocument, page: number, bound: number): List
       // page.
       listed.add(
         link.isExternal()
-          ? { kind: 'external', uri: shownName(link.getURI(), ENGINE_LINK_URI_MAX), bounds, ...look }
-          : { kind: 'internal', page: document.resolveLink(link), bounds, ...look },
+          ? { kind: 'external', uri: shownName(link.getURI(), ENGINE_LINK_URI_MAX), bounds, rect, ...look }
+          : { kind: 'internal', page: document.resolveLink(link), bounds, rect, ...look },
       );
     }
     const { items, truncated } = listed.answer();

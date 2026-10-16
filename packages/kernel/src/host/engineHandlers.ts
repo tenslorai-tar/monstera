@@ -1447,6 +1447,10 @@ export function createEngineHandlers({
       if (drawn.boxed.length > 0 || drawn.more > 0) {
         throw new Error(`"${whole.kind}" drew characters as boxes on engine/apply, whose answer cannot carry them.`);
       }
+      // NOR DOES ONE MOVE A BLOCK (ADR-0249): only a text edit does, and every text edit is `engine/apply-file`'s.
+      if (drawn.moved.length > 0) {
+        throw new Error(`"${whole.kind}" moved blocks on engine/apply, whose answer cannot carry them.`);
+      }
       return { ok: true, value: {} };
     },
 
@@ -1475,7 +1479,8 @@ export function createEngineHandlers({
         throw error;
       }
       // THE ONE CAP (`cappedBoxes`), which the PDFium host's answer takes too: two would cut a list two ways.
-      return { ok: true, value: cappedBoxes(drawn) };
+      // AND THE BLOCKS IT MOVED (ADR-0249), whole: one per pushed block, which the command already bounds.
+      return { ok: true, value: { ...cappedBoxes(drawn), moved: [...drawn.moved] } };
     },
 
     'engine/capture': async ({ session, command, asset }) => {

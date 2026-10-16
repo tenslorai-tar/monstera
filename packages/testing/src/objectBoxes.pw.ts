@@ -226,6 +226,7 @@ test('Edit object picks a word written a letter at a time as one, and moves it a
           lines: [{ runs: [0, 1, 2, 3].map((index) => ({ index, text: 'OVER'[index] ?? '', style: RUN })), box: { x0: 100, y0: 600, x1: 139, y1: 612 }, soft: false, baseline: 602 }],
           style: RUN,
           shape: { align: 'left', firstIndent: 0 },
+          push: { below: [], room: 0 },
         },
       ],
     },

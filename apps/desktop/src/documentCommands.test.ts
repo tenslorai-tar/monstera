@@ -6033,6 +6033,94 @@ describe('placeSignature — a plain signature, resolved as a certificate signat
     expect(await commands.redo(id)).toBeDefined();
     expect(await pages()).toBe(2);
   });
+
+  /**
+   * An edit whose writer answers the blocks it pushed down, through a bus that records what it is asked and answers as the
+   * writer would, and the page's marks and links as main reads them. `moved` is what the edit answers.
+   */
+  async function pushingEdit(moved: readonly { block: number; box: { x0: number; y0: number; x1: number; y1: number }; down: number }[]) {
+    const made = await PDFDocument.create();
+    made.addPage([612, 792]);
+    const bytes = await made.save();
+    const path = join(directory, `push-${String(moved.length)}.pdf`);
+    writeFileSync(path, bytes);
+    const registry = new CapabilityRegistry();
+    const own = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING, checkpointDirectory: CHECKPOINTS });
+    const opened = await own.open(registry.mint(path));
+    if (opened.kind !== 'opened') throw new Error(`Fixture did not open: ${opened.kind}`);
+    const held = new EngineSessions();
+    held.hold(opened.docId, { mupdf: await mupdfWriter.open(bytes) });
+    const asked: { readonly command: Command; readonly joinsStep: unknown }[] = [];
+    const bus = {
+      execute: (_sessions: unknown, _context: unknown, command: Command, _inputs: unknown, joinsStep: unknown) => {
+        asked.push({ command, joinsStep });
+        return Promise.resolve({
+          entry: {},
+          trimmed: { droppedEntries: 0 },
+          drawn: { boxed: [], more: 0, moved: command.kind === 'editTextBlock' ? moved : [] },
+          version: 0,
+        });
+      },
+    } as unknown as CommandBus;
+    // ON THE MOVED TEXT: a highlight (index 0) and a sticky note (2). OFF IT: a square on it, which is no mark of words (1);
+    // a highlight on another page (3); a highlight beside the text (4).
+    const mark = (page: number, index: number, kind: string, rect: { x0: number; y0: number; x1: number; y1: number }) => ({ page, index, kind, rect });
+    const annotations = [
+      mark(0, 0, 'highlight', { x0: 80, y0: 640, x1: 200, y1: 652 }),
+      mark(0, 1, 'square', { x0: 80, y0: 640, x1: 200, y1: 652 }),
+      mark(0, 2, 'sticky-note', { x0: 250, y0: 642, x1: 270, y1: 650 }),
+      mark(1, 0, 'highlight', { x0: 80, y0: 640, x1: 200, y1: 652 }),
+      mark(0, 3, 'highlight', { x0: 400, y0: 640, x1: 500, y1: 652 }),
+    ];
+    const link = (rect: { x0: number; y0: number; x1: number; y1: number }) => ({ kind: 'external', uri: 'https://example.org/', bounds: rect, rect, outline: 'none' });
+    const commands = new DocumentCommands({
+      ...INERT,
+      documents: own,
+      bus,
+      engine: held,
+      annotations: () => Promise.resolve({ annotations: annotations as never, truncated: false }),
+      // A LINK ON THE MOVED TEXT (0) and one above it (1).
+      pageLinks: () => Promise.resolve({ links: [link({ x0: 90, y0: 641, x1: 150, y1: 651 }), link({ x0: 90, y0: 700, x1: 150, y1: 710 })] as never, truncated: false }),
+    });
+    const edit: Command = {
+      kind: 'editTextBlock',
+      page: 0,
+      runs: [1],
+      lineStarts: [0],
+      blockStarts: [0],
+      text: 'Words',
+      textStarts: [0],
+      softLines: [],
+      fit: 'reflow',
+      version: asDocVersion(0),
+    };
+    await commands.execute(opened.docId, edit);
+    return asked;
+  }
+
+  it('THE MARKS AND LINKS ON TEXT AN EDIT PUSHED DOWN move with it, each joining the edit’s undo step (ADR-0249 Decision 4)', async () => {
+    const asked = await pushingEdit([{ block: 1, box: { x0: 72, y0: 636, x1: 300, y1: 656 }, down: 14 }]);
+    expect(asked.map(({ command }) => command.kind)).toStrictEqual(['editTextBlock', 'placeAnnotation', 'editLink']);
+    // THE MARKS OF WORDS ON THE MOVED BLOCK, fourteen points down; the square, the other page's and the one beside stay.
+    expect(asked[1]?.command).toMatchObject({
+      kind: 'placeAnnotation',
+      page: 0,
+      placements: [
+        { index: 0, rect: { x0: 80, y0: 626, x1: 200, y1: 638 } },
+        { index: 2, rect: { x0: 250, y0: 628, x1: 270, y1: 636 } },
+      ],
+    });
+    expect(asked[2]?.command).toMatchObject({ kind: 'editLink', page: 0, index: 0, rect: { x0: 90, y0: 627, x1: 150, y1: 637 } });
+    // EACH JOINS THE STEP, at the version the command before it produced; the edit itself joins nothing.
+    expect(asked[0]?.joinsStep).toBeUndefined();
+    expect(asked[1]?.joinsStep).toBeDefined();
+    expect(asked[2]?.joinsStep).toBeDefined();
+  });
+
+  it('CONTROL: an edit that moved nothing sends nothing after it', async () => {
+    const asked = await pushingEdit([]);
+    expect(asked.map(({ command }) => command.kind)).toStrictEqual(['editTextBlock']);
+  });
 });
 
 describe('composeMarkdownFile: what an import answers before anything is written', () => {

@@ -18,7 +18,14 @@ import { type ReactElement, useCallback, useEffect, useId, useLayoutEffect, useR
 
 import type { OverlayPage } from './annotations/annotationSpace.js';
 import { overlayTransform } from './annotations/annotationSpace.js';
-import { type BlockCommit, type BlocksRead, NO_RUN_FONTS, type RunFonts, type TextBlock } from './commands/documentCommands.js';
+import {
+  type BlockCommit,
+  type BlocksRead,
+  NO_RUN_FONTS,
+  type PageBlocksRead,
+  type RunFonts,
+  type TextBlock,
+} from './commands/documentCommands.js';
 import { problemMessage, problemParticulars } from './dialogs/problemMessages.js';
 import {
   TEXT_EDIT_BLOCK_LABEL,
@@ -36,6 +43,7 @@ import {
   TEXT_EDIT_VERTICAL,
   TEXT_EDIT_TRUNCATED,
   TEXT_EDIT_COVERS,
+  TEXT_EDIT_NO_ROOM,
   TEXT_EDIT_UNADDRESSABLE,
   TEXT_EDIT_UNREADABLE,
   TEXT_ADD_SURFACE,
@@ -123,7 +131,8 @@ export interface TextEditLayerProps {
   /** Writes blocks joined or split in one command (ADR-0180 Decision 7), at the version the blocks were read at. */
   readonly onRestructure?: (edits: EditedBlock[], read: BlocksRead) => Promise<BlockCommit>;
   /** Writes one block's new words, at the version the blocks were read at and by the writer that read named. */
-  readonly onCommit: (block: TextBlock, text: string, read: BlocksRead, formatting?: BlockFormatting) => Promise<BlockCommit>;
+  /** The read carries the page's blocks, so the text below the block can be moved with it (ADR-0249). */
+  readonly onCommit: (block: TextBlock, text: string, read: PageBlocksRead, formatting?: BlockFormatting) => Promise<BlockCommit>;
   /** The fonts the open block's runs are drawn in, rebuilt by the host, from the read that named it (ADR-0175, ADR-0232). */
   readonly runFonts: (block: TextBlock, read: BlocksRead) => Promise<RunFonts>;
   /** The page's pictures and drawings, for the note that a written block now runs over one (B1.6); absent reads none. */
@@ -141,6 +150,12 @@ export interface TextEditLayerProps {
    * CSS pixels, or `undefined` where it cannot be read.
    */
   readonly paperAt: (x: number, y: number) => string | undefined;
+  /**
+   * The drawn page's pixels in a box of the WINDOW's CSS pixels, or `undefined` where none are drawn (Edit object's
+   * `pictureOf`): what the text below a growing block is drawn moved from (ADR-0249 Decision 5). Absent, nothing is drawn
+   * moved, and the write still moves it.
+   */
+  readonly pictureOf?: ((box: { x0: number; y0: number; x1: number; y1: number }) => HTMLCanvasElement | undefined) | undefined;
 }
 
 /** A box in the overlay's CSS pixels, and the turn the page is drawn at. */
@@ -416,8 +431,19 @@ export function TextEditLayer({
   pictureNoted = false,
   onLeave,
   paperAt,
+  pictureOf,
 }: TextEditLayerProps): ReactElement {
   const { _ } = useLingui();
+  const layer = useRef<HTMLDivElement>(null);
+  /** How many pixels the open editor's words have grown, for the block it is over at the read it was opened at. */
+  const [growth, setGrowth] = useState<{ readonly at: number; readonly version: DocVersion; readonly pixels: number } | undefined>();
+  /**
+   * The text below the open block as drawn when it began to grow (ADR-0249 Decision 5): copied once from the page's own
+   * pixels, so what is drawn moved is the page's text and never a second rendering of it.
+   */
+  const [lifted, setLifted] = useState<
+    { readonly at: number; readonly version: DocVersion; readonly pictures: readonly (HTMLCanvasElement | undefined)[] } | undefined
+  >();
   /** The open block: its position in the answer, and the version that answer was read at. */
   const [opened, setOpened] = useState<
     { readonly at: number; readonly version: DocVersion; readonly click: Click | undefined } | undefined
@@ -508,6 +534,45 @@ export function TextEditLayer({
   /** Whether any editor is open on this page, a block's or a new box's: what a click on another block must write first. */
   const editing = open !== undefined || freshOpen !== undefined;
 
+  // THE PUSH THE OPEN EDITOR SHOWS (ADR-0249 Decision 5): the blocks `main` named below it, drawn moved down by what its
+  // words have grown while that fits the room `main` measured, and highlighted, with the editor's sentence, once it does
+  // not. A drawing of the page under the editor: the writer measures the growth it writes, and decides nothing here.
+  const openBlock = open === undefined ? undefined : blocks?.blocks[open];
+  const grownPixels = growth !== undefined && growth.at === open && growth.version === blocks?.version ? growth.pixels : 0;
+  const below = (openBlock?.push.below ?? []).flatMap((at) => {
+    const under = blocks?.blocks[at];
+    return under === undefined ? [] : [{ at, block: under }];
+  });
+  const down = grownPixels / geometry.zoom;
+  const crowded = openBlock !== undefined && below.length > 0 && grownPixels > 0 && down > openBlock.push.room;
+  const pushing = below.length > 0 && grownPixels > 0 && !crowded;
+  /** What the open editor reports as it grows: kept, and the text below copied once from the page when it first does. */
+  const grew = (at: number, pixels: number): void => {
+    if (blocks === undefined) return;
+    setGrowth({ at, version: blocks.version, pixels });
+    if (pixels <= 0 || pictureOf === undefined || (lifted?.at === at && lifted.version === blocks.version)) return;
+    // ON AN UPRIGHT PAGE ONLY: a turned page's boxes are drawn turned, and a copy of one would be the wrong way up.
+    if (geometry.rotation !== 0) return;
+    const corner = layer.current?.getBoundingClientRect();
+    if (corner === undefined) return;
+    const pushed = (blocks.blocks[at]?.push.below ?? []).map((index) => blocks.blocks[index]);
+    setLifted({
+      at,
+      version: blocks.version,
+      pictures: pushed.map((under) => {
+        if (under === undefined) return undefined;
+        const from = place(under.box, geometry);
+        return pictureOf({
+          x0: corner.left + from.left,
+          y0: corner.top + from.top,
+          x1: corner.left + from.left + from.width,
+          y1: corner.top + from.top + from.height,
+        });
+      }),
+    });
+  };
+  const shownLifted = pushing && open !== undefined && lifted?.at === open && lifted.version === blocks?.version ? lifted : undefined;
+
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent): void => {
       if (event.key === 'Escape' && open === undefined) {
@@ -569,8 +634,40 @@ export function TextEditLayer({
       className="m-text-edit-layer"
       data-text-edit-layer={String(page)}
       onKeyDown={onKeyDown}
+      ref={layer}
       role="group"
     >
+      {/* THE TEXT BELOW, MOVED (ADR-0249 Decision 5): its place covered in the page's own paper, and the page's own pixels
+          of it drawn as far down as the words above have grown. Under every outline and the editor, and never pressed. */}
+      {shownLifted === undefined
+        ? null
+        : below.flatMap(({ at, block }, index) => {
+            const picture = shownLifted.pictures[index];
+            if (picture === undefined) return [];
+            const from = place(block.box, geometry);
+            const to = place({ ...block.box, y0: block.box.y0 - down, y1: block.box.y1 - down }, geometry);
+            return [
+              <div
+                aria-hidden="true"
+                className="m-text-push-cover"
+                data-text-pushed-cover={String(at)}
+                key={`cover-${String(at)}`}
+                style={{ ...boxStyle(from), ...paperAround(from, paperAt) }}
+              />,
+              <canvas
+                aria-hidden="true"
+                className="m-text-push-copy"
+                data-text-pushed={String(at)}
+                height={picture.height}
+                key={`pushed-${String(at)}`}
+                ref={(element) => {
+                  element?.getContext('2d')?.drawImage(picture, 0, 0);
+                }}
+                style={boxStyle(to)}
+                width={picture.width}
+              />,
+            ];
+          })}
       {blocks?.blocks.map((block, at) => {
         const placed = place(block.box, geometry);
         if (at === open) {
@@ -628,6 +725,10 @@ export function TextEditLayer({
               past={pastItsPage(block.box, geometry.crop)}
               placed={placed}
               runFonts={() => runFonts(block, blocks)}
+              onGrow={(pixels) => {
+                grew(at, pixels);
+              }}
+              crowded={crowded}
             />
           );
         }
@@ -677,6 +778,21 @@ export function TextEditLayer({
           </p>,
         ];
       })}
+      {/* THE LINES THE PARAGRAPH NOW RUNS INTO, where there is no room to move them (ADR-0249 Decision 5): each block below
+          whose top the grown words reach, outlined over the editor so the person sees what they would cover. */}
+      {crowded && openBlock !== undefined
+        ? below
+            .filter(({ block }) => block.box.y1 > openBlock.box.y0 - down)
+            .map(({ at, block }) => (
+              <div
+                aria-hidden="true"
+                className="m-text-overlap"
+                data-text-overlap={String(at)}
+                key={`overlap-${String(at)}`}
+                style={boxStyle(place(block.box, geometry))}
+              />
+            ))
+        : null}
       {adding && blocks !== undefined && freshOpen === undefined ? (
         // ADD TEXT: the empty page is a surface under the outlines, so a press on a block still edits that block and a
         // press anywhere else is where the new words go. A key's activation reports no point and puts it at the margin.
@@ -802,6 +918,8 @@ function freshBox(css: { readonly x: number; readonly y: number }, geometry: Ove
       lines: [{ runs: [{ index: 0, text: '', style }], box, soft: false, baseline }],
       style,
       shape: { align: 'left', firstIndent: 0 },
+      // A NEW BOX PUSHES NOTHING: it is added text, not a paragraph growing over the page's own (ADR-0249).
+      push: { below: [], room: 0 },
     },
     left,
     baseline,
@@ -838,7 +956,7 @@ export interface TextEditing {
     page: number,
     block: TextBlock,
     text: string,
-    read: BlocksRead,
+    read: PageBlocksRead,
     formatting?: BlockFormatting,
   ) => Promise<BlockCommit>;
   /** The fonts one block's runs are drawn in, as the host rebuilt them, from the read that named the block (ADR-0175, ADR-0232). */
@@ -881,6 +999,7 @@ export function TextEditPage({
   geometry,
   editing,
   paperAt,
+  pictureOf,
   pictureNoted,
 }: {
   readonly page: number;
@@ -893,6 +1012,8 @@ export function TextEditPage({
    * there, a whole page or a tile (E1). `undefined` where nothing is drawn yet.
    */
   readonly paperAt: (x: number, y: number) => string | undefined;
+  /** The layer's `pictureOf`: the drawn page's pixels in a box of the window, for the text below drawn moved. */
+  readonly pictureOf?: ((box: { x0: number; y0: number; x1: number; y1: number }) => HTMLCanvasElement | undefined) | undefined;
 }): ReactElement {
   const [answer, setAnswer] = useState<{ readonly version: DocVersion; readonly blocks: PageBlocks | undefined }>();
   const { read, version } = editing;
@@ -934,6 +1055,7 @@ export function TextEditPage({
       }}
       page={page}
       paperAt={paperAt}
+      pictureOf={pictureOf}
       pictureNoted={pictureNoted}
     />
   );
@@ -976,6 +1098,13 @@ interface BlockEditorProps {
   readonly stuckRef: React.RefObject<boolean>;
   /** The names of the fonts the page's text is drawn in (`fontsOfPage`), registered for the font picker. */
   readonly pageFonts: readonly string[];
+  /**
+   * Told how many pixels taller the words are than when the person began typing, so the layer draws the text below
+   * moved by that much (ADR-0249 Decision 5). Never below zero: a shorter paragraph pulls nothing above where it began.
+   */
+  readonly onGrow?: ((pixels: number) => void) | undefined;
+  /** Whether the growth passes the room below, so the editor says the paragraph runs into the text below it. */
+  readonly crowded?: boolean | undefined;
 }
 
 /** The distinct names of the fonts a page's blocks are drawn in, in reading order: the picker's *In this document*. */
@@ -1001,6 +1130,63 @@ function familyOf(editor: string, place: number): string {
  * closes. A face the browser refuses to load — its own sanitiser declining the bytes — leaves its runs in their kind of
  * face and marks them `data-run-font="refused"`, so the outcome is on the element rather than nowhere.
  */
+/**
+ * Tells `onGrow` how many pixels taller the editor's words are than the block they opened as (ADR-0249 Decision 5), and
+ * zero when the block is placed, when it is no taller, and when the editor closes.
+ *
+ * ## The height it grows FROM is the block's own: its lines at its line spacing
+ *
+ * The editor draws each line at the block's pitch (`pitchOf`), so a block of three lines is three pitches tall however
+ * its words are set — typed into, given a wider face from the picker, or drawn in the page's fonts once they load. The
+ * growth is the editor's laid-out height (`offsetHeight`, so a placement's transform over it is not growth) less that.
+ * A block with no pitch to read (one line) takes the height before the first keystroke as its base instead.
+ */
+function useGrowth(
+  area: React.RefObject<HTMLDivElement | null>,
+  onGrow: ((pixels: number) => void) | undefined,
+  placed: boolean,
+  /** The block's height as it opened, in pixels: its lines at its pitch, or `undefined` where it has no pitch. */
+  opened: number | undefined,
+): void {
+  const report = useRef(onGrow);
+  const isPlaced = useRef(placed);
+  useEffect(() => {
+    report.current = onGrow;
+  }, [onGrow]);
+  // ON THE CHANGE ALONE, so the zero is said once when the block is placed and not on every render after.
+  useEffect(() => {
+    isPlaced.current = placed;
+    if (placed) report.current?.(0);
+  }, [placed]);
+  useEffect(() => {
+    const element = area.current;
+    // NO OBSERVER, NO PUSH SHOWN: the write still pushes, measured by the writer.
+    if (element === null || typeof ResizeObserver === 'undefined') return undefined;
+    let base = opened;
+    let typed = opened !== undefined;
+    const onInput = (): void => {
+      typed = true;
+    };
+    element.addEventListener('input', onInput);
+    const observer = new ResizeObserver(() => {
+      const height = element.offsetHeight;
+      if (!typed || base === undefined) {
+        base = height;
+        return;
+      }
+      // A ROUNDED PIXEL IS NO LINE: the laid-out height of a line box at a fractional pitch is a whole pixel either side.
+      const grown = height - base;
+      report.current?.(isPlaced.current || grown < 1 ? 0 : grown);
+    });
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+      element.removeEventListener('input', onInput);
+      report.current?.(0);
+    };
+  }, [area, opened]);
+}
+
 function useRunFonts(
   area: React.RefObject<HTMLDivElement | null>,
   read: () => Promise<RunFonts>,
@@ -1130,6 +1316,8 @@ function BlockEditor({
   finishingRef,
   stuckRef,
   pageFonts,
+  onGrow,
+  crowded = false,
 }: BlockEditorProps): ReactElement {
   const { _ } = useLingui();
   const original = wordsOf(block);
@@ -1254,6 +1442,14 @@ function BlockEditor({
   const [notice, setNotice] = useState<MessageKey | undefined>(undefined);
   /** Where the block is being put (ADR-0180, corrected): shown over the editor and sent with its words when it writes. */
   const [placement, setPlacement] = useState<Placement>(NOT_PLACED);
+  // A BLOCK THE PERSON PLACED PUSHES NOTHING, as its write sends nothing to push (`commitTextBlock`).
+  const openedPitch = pitchOf(block);
+  useGrowth(
+    area,
+    onGrow,
+    placeOf(placement, block.box) !== undefined,
+    openedPitch === undefined ? undefined : block.lines.length * openedPitch * geometry.zoom,
+  );
   /**
    * Sends ONE write for this editor and takes its outcome: the words' write and a join's or a split's alike, so what is
    * done while it is in flight, and what a refusal does, have one answer (B3a).
@@ -1591,6 +1787,12 @@ function BlockEditor({
         // WHAT A MENU ITEM COULD NOT DO, said beside the words (the dictionary's refusal of a word), until they are typed in.
         <div className="m-text-editor-problem" role="status">
           <p>{_(notice)}</p>
+        </div>
+      ) : crowded ? (
+        // THE PARAGRAPH RUNS INTO THE TEXT BELOW and there is no room to move it (ADR-0249 Decision 5): said BEFORE the
+        // write, in the owner's words, with the lines it runs into highlighted by the layer. The write still happens.
+        <div className="m-text-editor-problem" data-text-edit-crowded="" role="status">
+          <p>{_(TEXT_EDIT_NO_ROOM)}</p>
         </div>
       ) : past ? (
         // THE WORDS ARE ALL WRITTEN and some are past the page's edge: said as a status and not a refusal, since

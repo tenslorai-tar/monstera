@@ -155,6 +155,7 @@
     "proof:editfidelity": "node scripts/proofs/editFidelity.proof.mjs",
     "proof:inlineimages": "node scripts/proofs/inlineImages.proof.mjs",
     "proof:type3edit": "node scripts/proofs/type3Edit.proof.mjs",
+    "proof:textpush": "node scripts/proofs/textPush.proof.mjs",
     "proof:fontcatalogueapart": "node scripts/proofs/fontCatalogueApart.proof.mjs",
     "proof:fontworkapart": "node scripts/proofs/fontWorkApart.proof.mjs",
     "proof:apartstart": "node scripts/proofs/apartStart.proof.mjs",

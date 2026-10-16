@@ -2104,6 +2104,7 @@ function PageSlot({
       ) : (
         <TextEditPage
           paperAt={paperAt}
+          pictureOf={pictureOf}
           editing={editing}
           geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
           page={page}
