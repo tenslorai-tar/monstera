@@ -132,14 +132,20 @@ await step('a press NEAR THE EDGE of another field opens it too, and Tab and Shi
 let pressedTick;
 
 await step('a tick box ticks at a press near its corner, and a radio chooses one of its group', async () => {
-  const tick = page.getByRole('checkbox').first();
+  // THE PAGE ON SHOW'S CONTROLS, and on screen before they are pressed. Taken from the whole window, the first checkbox
+  // was whichever had mounted first — a background layer's or a panel's — and `pressOn` refused it as not on screen at
+  // once (2026-10-16, runs e and z; the page's own tick boxes visible in both screenshots).
+  const onShow = page.locator('[data-document-layer="active"] .m-page-list');
+  const tick = onShow.getByRole('checkbox').first();
+  await expect(tick).toBeVisible({ timeout: 30_000 });
   const before = await tick.getAttribute('aria-checked');
   // THREE PRESSES IN A ROW, NO WAIT (the owner's O6a): each tick is a write of 3 to 5 s here, and the second press used
   // to be answered 'out of date'. An odd number of presses ends ticked the other way.
   await pressOn(tick, 2);
   await pressOn(tick, 2);
   await pressOn(tick, 2);
-  const radio = page.getByRole('radio').nth(1);
+  const radio = onShow.getByRole('radio').nth(1);
+  await expect(radio).toBeVisible({ timeout: 30_000 });
   await pressOn(radio);
   await expect(tick).not.toHaveAttribute('aria-checked', before ?? '', { timeout: 30_000 });
   await expect(radio).toHaveAttribute('aria-checked', 'true', { timeout: 30_000 });
