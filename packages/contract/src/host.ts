@@ -43,6 +43,7 @@ export * from './frame.js';
 export * from './hostProtocol.js';
 export * from './incident.js';
 export * from './liftedCredentials.js';
+export * from './listedAnnotation.js';
 export * from './measurement.js';
 export * from './pageSet.js';
 export * from './schemas.js';

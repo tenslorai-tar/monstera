@@ -2,6 +2,7 @@ import {
   type CommandKind,
   type CommandOfKind,
   accessibilitySpotsSchema,
+  listedAnnotationSchema,
   displayBoxSchema,
   documentFontSchema,
   MAX_FONT_FAMILIES,
@@ -31,15 +32,11 @@ import {
   applyRedactionsSchema,
   markMatchesForRedactionSchema,
   sanitizeDocumentSchema,
-  MAX_ANNOTATION_BORDER,
   addLinkSchema,
   setLinkOutlineSchema,
   editLinkSchema,
   linkOutlineSchema,
-  annotationKindNameSchema,
-  annotationPointSchema,
   annotationRectSchema,
-  LISTED_POINTS_MAX,
   MAX_BLANK_PAGES,
   PAGE_ADJUSTMENTS,
   PAGE_ADJUSTMENT_OUTCOMES,
@@ -77,9 +74,6 @@ import {
   editAnnotationTextSchema,
   setAnnotationAuthorSchema,
   annotationAuthorSchema,
-  annotationBlendSchema,
-  annotationInstantSchema,
-  annotationWordsStyleSchema,
   replyToAnnotationSchema,
   removeAnnotationSchema,
   replacePageSchema,
@@ -439,23 +433,18 @@ export const ENGINE_DUPLICATE_PAGES_MAX = 4096;
 
 /**
  * How many annotations one answer may list — a bound against a HOSTILE host, derived, and one no real document
- * reaches ([ADR-0130](../../../../docs/DECISIONS/0130-a-documents-size-never-refuses-an-action.md) Decision 3) — and
- * how much of a note.
+ * reaches ([ADR-0130](../../../../docs/DECISIONS/0130-a-documents-size-never-refuses-an-action.md) Decision 3).
  *
  * It was 4,096, a guess about real documents, and a heavily reviewed document carries thousands of comments. What
  * stays is the most annotations an answer within `ENGINE_ANSWER_FILE_MAX_BYTES` (8 MiB, ADR-0125) could carry at the
  * smallest one serialises to, {@link SMALLEST_ANNOTATION_BYTES}, and a comma: the division, rounded down to a hundred.
  * The renderer receives the list in parts (`document.annotations`), so this is never what a panel shows. A literal
- * for `ENGINE_TEXT_OBJECTS_MAX`' reason, held to the division by `engineChannels.test.ts`.
- *
- * The note is much smaller, because it is text a hostile document controls and
- * a panel shows one line of it. It is a SLICE rather than a refusal: a note
- * longer than this is still a note, and refusing the annotation would hide it.
+ * for `ENGINE_TEXT_OBJECTS_MAX`' reason, held to the division by `engineChannels.test.ts`. How much of a note one
+ * entry carries is the contract's `MAX_ANNOTATION_CONTENTS`, inside the row both crossings take.
  */
 export const ENGINE_ANNOTATIONS_MAX = 44_100;
 /** The fewest bytes one annotation serialises to on this wire. Measured by `engineChannels.test.ts`. */
 export const SMALLEST_ANNOTATION_BYTES = 189;
-export const ENGINE_ANNOTATION_CONTENTS_MAX = 512;
 
 /**
  * How many form fields one answer may list, and how much of a value, name or option.
@@ -504,86 +493,12 @@ export const ENGINE_BARCODES_MAX = 64;
 export const ENGINE_BARCODE_TEXT_MAX = 7089;
 
 /**
- * One annotation, as it crosses from the host.
- *
- * **`kind` is a closed union, not the document's `/Subtype`.** A subtype is a
- * `/Name` a hostile document chooses, and a renderer that received one would
- * have to label a string nobody anticipated — which B9 forbids, since there is
- * no message key for it. The members are what this build writes; everything
- * else is `other`, which is honest and which a panel has a key for.
+ * One annotation, as it crosses from the host: the contract's `listedAnnotationSchema`, the same row `main` hands
+ * the renderer, so a key the reader lists is admitted at both crossings or refused at both (B3a). This was a copy
+ * of that row until 2026-10-16, and the copy lacked two keys the renderer's had gained, so the host refused its
+ * own answer for every document with marks (KKKKKKKK-1). `annotationsChannel.test.ts` crosses the real wire.
  */
-const engineAnnotationSchema = z
-  .object({
-    page: z.number().int().nonnegative(),
-    /**
-     * Its position in the reader's walk on that page, not in `/Annots`.
-     * See `pageAnnotations.ts` and ADR-0041 — it crosses because a handle is
-     * useless if the host answers with a list nothing can point into.
-     */
-    index: z.number().int().nonnegative(),
-    /**
-     * Where it is, in PDF user space, or `null` for a page that displays no
-     * region. The eraser hit-tests against it, so it crosses for the handle's
-     * reason: a surface cannot point at an annotation it cannot locate.
-     */
-    rect: annotationRectSchema.nullable(),
-    /** A line's ends or a polygon's corners, up to `LISTED_POINTS_MAX`, on those alone (the owner's O8). */
-    points: z.array(annotationPointSchema).min(2).max(LISTED_POINTS_MAX).exactOptional(),
-    /**
-     * What it is drawn in. `borderWidth` is null where the subtype has no
-     * `/BS` — six of the thirteen, measured — and it crosses so a styles panel
-     * can show what is there rather than only what it would apply.
-     */
-    style: z
-      .object({
-        colour: z.array(z.number().min(0).max(1)).max(4).readonly(),
-        opacity: z.number().min(0).max(1),
-        borderWidth: z.number().min(0).max(MAX_ANNOTATION_BORDER).nullable(),
-      })
-      .strict(),
-    // THE CONTRACT'S ENUM, and this was the FIFTH place the same list of names
-    // was written down — the draft union that defines them, the renderer
-    // channel, the kernel's derived alias, the panel's interface, and here.
-    // Adding the sticky note reddened three of them and would have reddened
-    // none had any been spelt slightly differently. `commands.ts` holds it now.
-    kind: annotationKindNameSchema,
-    contents: z.string().max(ENGINE_ANNOTATION_CONTENTS_MAX),
-    /**
-     * Whether this build wrote it — the `srcRef` mark, read from the
-     * annotation's own dictionary (ADR-0043). It crosses for the handle's
-     * reason: the surface is what tells a person whose annotation they are
-     * about to change, and it cannot derive this from anything it holds.
-     */
-    authored: z.boolean(),
-    /**
-     * The walk index of the mark this one answers, or `null` — PDF's `/IRT`
-     * with `/RT /R`, resolved against this same walk by the reader.
-     *
-     * It crosses for the handle's reason, one relationship along: the surface
-     * draws the thread, and nothing it holds could derive which mark a reply
-     * answers. **Nullable rather than optional**, as `rect` is and for the same
-     * stated reason — JSON carries no `undefined`, so an optional property
-     * would make the wire spelling differ from the reader's.
-     */
-    inReplyTo: z.number().int().nonnegative().nullable(),
-    /** `/T`, bounded by the contract's own author bound (ADR-0103). */
-    author: annotationAuthorSchema,
-    /** `/CreationDate` as a UTC instant, or `null` — nullable for `inReplyTo`'s wire reason. */
-    created: annotationInstantSchema.nullable(),
-    /** The blend the appearance is drawn in. */
-    blend: annotationBlendSchema,
-    /**
-     * Present and true on a stamp that draws a picture. EXACTLY optional rather than nullable: the reader spreads it in
-     * only when true, so absent is the one spelling of *no*, on the wire and in the reader's type alike, and a key
-     * present with no value is refused rather than read as a third answer.
-     */
-    pictured: z.literal(true).exactOptional(),
-    /** Present and true where `contents` is a slice of longer words, exactly optional for `pictured`'s reason. */
-    cut: z.literal(true).exactOptional(),
-    /** How a text mark's words are drawn, exactly optional for `pictured`'s reason (the renderer channel's member). */
-    typed: annotationWordsStyleSchema.exactOptional(),
-  })
-  .strict();
+const engineAnnotationSchema = listedAnnotationSchema;
 
 /**
  * One AcroForm field's widget, as it crosses from the host.

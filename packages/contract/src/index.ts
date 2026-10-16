@@ -205,8 +205,6 @@ export {
   preloadChannels,
   // THE PART SIZES of the lists that cross in parts (ADR-0130): main cuts a part at them.
   ANNOTATIONS_PART,
-  // How much of one mark's comment the walk lists; past it the entry says `cut`.
-  MAX_ANNOTATION_CONTENTS,
   DESTINATIONS_PART,
   FORM_FIELDS_PART,
   LAYERS_PART,
@@ -215,6 +213,8 @@ export {
   PAGE_OBJECTS_PART,
   TEXT_BLOCKS_PART,
 } from './channels.js';
+// ONE annotation as it crosses, and how much of its note: the engine host's answer and the renderer's part take this row.
+export { MAX_ANNOTATION_CONTENTS, listedAnnotationSchema } from './listedAnnotation.js';
 export { CONVERSION_CHANNELS, type ConversionChannel } from './conversionChannels.js';
 export { acceptAnswer, createClient, issuesInOurWords, wrapHandler, wrapHandlers } from './boundary.js';
 export { FOLLOWED_SCHEMES, SHOWN_SCHEME_MAX, isFollowable, schemeOf, shownSchemeOf } from './followedLinks.js';
