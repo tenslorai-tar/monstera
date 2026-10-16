@@ -10,7 +10,7 @@ import { expect } from '@playwright/test';
 import { PDFDocument } from '@cantoo/pdf-lib';
 import { developmentEnvironment } from '../lib/launchEnvironment.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
-import { SHELL_LAUNCH, refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { PALETTE_DRIVER, SHELL_LAUNCH, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 
 /** @typedef {import('../../packages/kernel/dist/annotationInterchange.js').InterchangeAnnotation} Comment */
 /** @param {Comment} record @param {boolean} quantize */
@@ -67,11 +67,11 @@ async function drive() {
   }, five);
   const page = await app.firstWindow();
   /** @param {string} name */
-  const command = async (name) => {
-    await page.keyboard.press('Control+K');
-    await page.locator('.m-palette-query').fill(name);
-    await page.getByRole('option').filter({ hasText: name }).first().click();
-  };
+  // THE PALETTE'S ONE DRIVER (`packages/testing/src/palette.ts`), by exact title, from its build once that is this tree's.
+  refuseStaleBuild(root, PALETTE_DRIVER, 1);
+  // A LITERAL SPECIFIER, so `proof:electronimports` can read what this loads.
+  const { runCommand } = await import('../../packages/testing/dist/palette.js');
+  const command = (/** @type {string} */ name) => runCommand(page, name);
   await page.waitForLoadState('domcontentloaded');
   await page.screenshot({ path: join(output, `${run}-00-start.png`) });
   process.stdout.write(`${(await page.locator('body').innerText()).slice(0, 12000)}\n`);

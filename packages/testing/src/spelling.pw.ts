@@ -4,6 +4,7 @@ import { PDFDocument } from '@cantoo/pdf-lib';
 import { type Page, expect, test } from '@playwright/test';
 
 import { LOOKS, type Look, bridgeUnder } from './pageBridge.js';
+import { runCommand } from './palette.js';
 
 /**
  * The Spelling tab (ADR-0156) on a rendered page, against the shim: the review opens beside the page, the word is
@@ -70,9 +71,7 @@ async function opened(page: Page, look: Look, size: { width: number; height: num
 }
 
 async function spellCheck(page: Page): Promise<void> {
-  await page.keyboard.press('Control+K');
-  await page.locator('.m-palette-query').fill('Spell check');
-  await page.getByRole('option', { name: /^Spell check\b/u }).first().click();
+  await runCommand(page, 'Spell check');
   await expect(page.locator('.m-spelling__word')).toHaveText('documnet');
 }
 

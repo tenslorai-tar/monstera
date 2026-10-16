@@ -4,6 +4,7 @@ import { type Page, expect, test } from '@playwright/test';
 
 import type { ShimFormField } from './browserShim.js';
 import { bridgeUnder, LOOKS } from './pageBridge.js';
+import { runCommand } from './palette.js';
 
 /**
  * A form's own rules where a person fills it (ADR-0226 Decision 4), on pinned Chromium with real presses and typing: a
@@ -227,9 +228,7 @@ test('fields are washed and a required one outlined in red, until Highlight fiel
   await expect(name).toHaveClass(/m-page-field--required/u);
   // CONTROL: a field that is not required has no red outline.
   await expect(price).not.toHaveClass(/m-page-field--required/u);
-  await page.keyboard.press('Control+K');
-  await page.locator('.m-palette-query').fill('Highlight fields');
-  await page.getByRole('option').filter({ hasText: 'Highlight fields' }).first().click();
+  await runCommand(page, 'Highlight fields');
   await expect(price).not.toHaveClass(/m-page-field--tint/u);
   await expect(name).not.toHaveClass(/m-page-field--required/u);
 });

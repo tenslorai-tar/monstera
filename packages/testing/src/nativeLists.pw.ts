@@ -3,6 +3,7 @@ import { type Page, expect, test } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
+import { runCommand } from './palette.js';
 
 /**
  * Every native select's list is readable, in every theme.
@@ -84,9 +85,7 @@ for (const look of LOOKS) {
     expect(unreadable(beside)).toStrictEqual([]);
 
     // AND THE SETTINGS DIALOG'S, which sat on a translucent field token.
-    await page.keyboard.press('Control+K');
-    await page.locator('.m-palette-query').fill('Settings');
-    await page.getByRole('option', { name: /^Settings\b/u }).first().click();
+    await runCommand(page, 'Settings');
     // EVERY PAGE OF IT, since each page mounts only its own rows.
     const pages = page.getByRole('navigation', { name: 'Settings pages' }).getByRole('button');
     await expect(pages.first()).toBeVisible();

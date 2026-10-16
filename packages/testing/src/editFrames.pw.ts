@@ -4,6 +4,7 @@ import { expect, test } from '@playwright/test';
 import { blockedPages } from './blockedPages.js';
 import { installInspector, stopWatching, unfinishedNow, watchFrames } from './frameInspector.js';
 import { bridge } from './pageBridge.js';
+import { runCommand } from './palette.js';
 
 /**
  * An edit never shows an unfinished screen, read frame by frame in a real browser.
@@ -58,9 +59,7 @@ test('an EDIT shows the previous pages or the new ones, never a blank or half-dr
 
   // A COMMAND, through the palette as a person runs one: the shim moves the version per command
   // (`browserShim.test.ts`), so the view reopens underneath the pages on screen.
-  await page.keyboard.press('Control+K');
-  await page.locator('.m-palette-query').fill('Rotate page');
-  await page.locator('.m-palette-item').filter({ hasText: /^Rotate page$/u }).first().click();
+  await runCommand(page, 'Rotate page');
 
   // THE EDIT REOPENED THE VIEW: a range was read at the version the command moved to. Without
   // this the case passes for a command that never ran, which leaves every frame finished.

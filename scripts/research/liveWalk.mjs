@@ -28,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 import { _electron } from 'playwright';
 import { developmentEnvironment } from '../lib/launchEnvironment.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
-import { SHELL_LAUNCH, refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { PALETTE_DRIVER, SHELL_LAUNCH, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -123,6 +123,10 @@ export async function startWalk(walk) {
     );
   }
   refuseStaleBuild(root, SHELL_LAUNCH, 7);
+  // THE PALETTE'S ONE DRIVER (`packages/testing/src/palette.ts`, B3a), read from its build once that build is this tree's.
+  refuseStaleBuild(root, PALETTE_DRIVER, 1);
+  // A LITERAL SPECIFIER, so `proof:electronimports` can read what this loads.
+  const { runCommand } = await import('../../packages/testing/dist/palette.js');
   const stamp = new Date().toISOString().replaceAll(':', '-').slice(0, 19);
   const output = join(root, '_review', 'walks', walk, stamp);
   await mkdir(output, { recursive: true });
@@ -227,14 +231,7 @@ export async function startWalk(walk) {
    * the first option containing "Watermark…" was "Edit watermark…" and the walk opened the wrong command. The option's
    * own title is matched whole instead. @param {string} title
    */
-  const command = async (title) => {
-    await page.keyboard.press('Control+K');
-    await page.locator('.m-palette-query').fill(title);
-    await page
-      .getByRole('option')
-      .filter({ has: page.locator('.m-palette-title').getByText(title, { exact: true }) })
-      .click();
-  };
+  const command = (title) => runCommand(page, title);
 
   /** Chooses a section in the rail. @param {string} name */
   const section = async (name) => {

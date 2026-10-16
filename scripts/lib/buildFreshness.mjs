@@ -82,6 +82,10 @@ export const RENDERED_SUITE = [
   ['packages/shared/src', 'apps/desktop/dist/renderer/index.html', 'bundler'],
 ];
 
+/** The palette's one driver (`packages/testing/src/palette.ts`), which the walks import from its build. */
+/** @type {BuildEdge[]} */
+export const PALETTE_DRIVER = [['packages/testing/src/palette.ts', 'packages/testing/dist/palette.js', 'tsc']];
+
 /** @type {BuildEdge[]} */
 export const CANVAS_PIXELS_RUNTIME = [
   ['apps/desktop/src/preload.ts', 'apps/desktop/dist/preload.cjs', 'bundler'],

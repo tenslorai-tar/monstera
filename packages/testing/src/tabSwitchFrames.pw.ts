@@ -4,6 +4,7 @@ import { type Page, expect, test } from '@playwright/test';
 import { blockedPages } from './blockedPages.js';
 import { installInspector, stopWatching, unfinishedNow, watchFrames } from './frameInspector.js';
 import { bridge } from './pageBridge.js';
+import { runCommand } from './palette.js';
 
 /**
  * A tab switch shows the finished document from its first frame, read frame by frame in a real browser.
@@ -64,9 +65,7 @@ test('a TAB SWITCH shows the finished document from its first frame, at its own 
   await expect.poll(() => unfinishedNow(page), { timeout: 20_000 }).toStrictEqual([]);
   // THE TWO ZOOMS DIFFER, or the readout case below could not tell one document's zoom from the other's. Both
   // open at the starting zoom, so the second is zoomed in, through the palette as a person would.
-  await page.keyboard.press('Control+K');
-  await page.locator('.m-palette-query').fill('Zoom in');
-  await page.getByRole('option', { name: /^Zoom in\b/u }).first().click();
+  await runCommand(page, 'Zoom in');
   await expect.poll(() => page.locator('.m-status-zoom').textContent(), { timeout: 10_000 }).not.toBe(portraitZoom);
   await expect.poll(() => unfinishedNow(page), { timeout: 20_000 }).toStrictEqual([]);
 

@@ -3,6 +3,7 @@ import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
 import { bridge } from './pageBridge.js';
+import { runCommand } from './palette.js';
 
 /**
  * A reader's place survives a command, in a real browser.
@@ -47,9 +48,7 @@ test('a COMMAND leaves the reader on the page they were on', async ({ page }) =>
   await expect.poll(() => statusPage(page)).toBe('Page 3 of 3');
 
   // A COMMAND, through the palette: the shim moves the version, so the view reopens.
-  await page.keyboard.press('Control+K');
-  await page.locator('.m-palette-query').fill('Rotate page');
-  await page.locator('.m-palette-item').filter({ hasText: /^Rotate page$/u }).first().click();
+  await runCommand(page, 'Rotate page');
 
   // THE REOPENED VIEW HAS DRAWN, which is what the scroller's reveal waits for.
   await expect(page.locator('canvas.m-page').first()).toBeVisible({ timeout: 20_000 });

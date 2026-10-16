@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
 import { bridge } from './pageBridge.js';
+import { runCommand } from './palette.js';
 
 /**
  * A page area main cannot serve says why and offers Try again (the owner's Part 7 B, 0.1.14.0).
@@ -52,9 +53,7 @@ test('SEVEN TABS, AN EDIT, THEN EVERY TAB: each one draws its page, and none is 
   }
 
   // THE EDIT, on the last document opened: a command that moves its version, as the owner's text edit did.
-  await page.keyboard.press('Control+K');
-  await page.locator('.m-palette-query').fill('Rotate page');
-  await page.getByRole('option', { name: /^Rotate page\b/u }).first().click();
+  await runCommand(page, 'Rotate page');
   // THE EDIT REACHED MAIN, against the document on screen: without it every tab below is drawn from a version nothing
   // moved, and the case would pass for a build that never edits.
   await expect.poll(() => executed.length, { timeout: 10_000 }).toBe(1);

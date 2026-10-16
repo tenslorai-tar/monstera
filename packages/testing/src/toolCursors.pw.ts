@@ -3,6 +3,7 @@ import { type Page, expect, test } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
 import { bridge } from './pageBridge.js';
+import { runCommand } from './palette.js';
 import { pageShown } from './settled.js';
 
 /**
@@ -41,9 +42,7 @@ async function openWithText(page: Page, sent: Sent[]): Promise<void> {
 }
 
 async function chooseTool(page: Page, title: string): Promise<void> {
-  await page.keyboard.press('Control+K');
-  await page.locator('.m-palette-query').fill(title);
-  await page.getByRole('option', { name: new RegExp(`^${title}\\b`, 'u') }).first().click();
+  await runCommand(page, title);
 }
 
 /** The cursor the page shows at the middle of the first page, read from whatever element is under that point. */

@@ -76,6 +76,7 @@ import { join, relative } from 'node:path';
 
 import { chromium } from '@playwright/test';
 
+import { PALETTE_DRIVER, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { pdftotextPath } from '../provision/poppler.mjs';
 import { DISPLAY_NAME } from '../release/packageMsix.mjs';
@@ -719,19 +720,14 @@ async function savedAfter(path, after, limitMs = 60_000) {
 }
 
 /**
- * Runs a command by its EXACT title through the palette. A prefix would not do: *Recognise text* is a prefix of
- * *Recognise text in a box*, which the palette lists first, and the first version of this ran the wrong command.
+ * Runs a command by its EXACT title through the palette, by the one driver every test and walk takes
+ * (`packages/testing/src/palette.ts`), read from its build once that build is this tree's.
  *
  * @param {any} page @param {string} title
  */
 async function runCommand(page, title) {
-  await page.keyboard.press('Control+K');
-  await page.locator('.m-palette-query').fill(title);
-  const choice = page.getByRole('option', { name: title, exact: true });
-  if ((await choice.count()) !== 1) {
-    const listed = await page.getByRole('option').allTextContents();
-    await page.keyboard.press('Escape');
-    throw new Error(`the palette holds no single option named "${title}"; it lists ${JSON.stringify(listed.slice(0, 6))}`);
-  }
-  await choice.click();
+  refuseStaleBuild(repoRoot(), PALETTE_DRIVER, 1);
+  // A LITERAL SPECIFIER, so `proof:electronimports` can read what this loads.
+  const { runCommand: drive } = await import('../../packages/testing/dist/palette.js');
+  await drive(page, title);
 }

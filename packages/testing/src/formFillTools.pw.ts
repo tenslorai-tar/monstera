@@ -4,6 +4,7 @@ import { type Page, expect, test } from '@playwright/test';
 
 import type { ShimFormField } from './browserShim.js';
 import { bridgeUnder, LOOKS } from './pageBridge.js';
+import { runCommand } from './palette.js';
 
 /**
  * Filling a form under the tools a person leaves on (ADR-0226), with real pointer events at real places.
@@ -86,9 +87,7 @@ async function pointIn(page: Page, rect: typeof NAME, fx = 0.5, fy = 0.5): Promi
 }
 
 async function choose(page: Page, title: string): Promise<void> {
-  await page.keyboard.press('Control+K');
-  await page.locator('.m-palette-query').fill(title);
-  await page.getByRole('option').filter({ hasText: title }).first().click();
+  await runCommand(page, title);
 }
 
 /** A real press: down, a small move, up, as a hand makes it. */

@@ -6,6 +6,7 @@ import { type Locator, type Page, expect, test } from '@playwright/test';
 import type { BrowserShimOptions } from './browserShim.js';
 import { againstPaper } from './contrast.js';
 import { LOOKS, type Look, bridgeUnder } from './pageBridge.js';
+import { runCommand } from './palette.js';
 
 /**
  * Words typed where they go (ADR-0154), in a real browser: the tools' cases see which request a gesture makes, and the
@@ -64,9 +65,7 @@ async function opened(page: Page, look: Look, count: 1 | 2, executed: Executed[]
 }
 
 async function chooseTool(page: Page, title: string): Promise<void> {
-  await page.keyboard.press('Control+K');
-  await page.locator('.m-palette-query').fill(title);
-  await page.getByRole('option', { name: new RegExp(`^${title}\\b`, 'u') }).first().click();
+  await runCommand(page, title);
 }
 
 /** The drawing surface over the first page of the document on show. */

@@ -139,13 +139,7 @@ export const SELECT_TOOL = 'annotate.select';
  * substring, so *Watermark…* also names *Edit watermark…*, which the palette lists first — and the Watermark window
  * case opened the Marks notice instead (CI on 5fcffa99, reproduced on Chromium 151 here).
  */
-export async function runCommand(page: Page, title: string): Promise<void> {
-  await page.keyboard.press('Control+K');
-  await page.keyboard.type(title);
-  const choice = page.getByRole('option').filter({ has: page.locator('.m-palette-title').getByText(title, { exact: true }) });
-  await expect(choice).toHaveCount(1);
-  await choice.click();
-}
+export { runCommand } from './palette.js';
 
 /**
  * Takes screenshot `id`, framed on `target` with `pad` pixels around it — or the whole window.

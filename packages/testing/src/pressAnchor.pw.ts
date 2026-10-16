@@ -3,6 +3,7 @@ import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Locator, type Page, expect, test } from '@playwright/test';
 
 import { bridge } from './pageBridge.js';
+import { runCommand } from './palette.js';
 import { pageShown } from './settled.js';
 
 /**
@@ -155,9 +156,7 @@ test('a HIGHLIGHT dragged from a split press marks its line (F-C8)', async ({ pa
   const lines = await openParagraph(page, (channel, params) => {
     if (channel === 'document.execute') sent.push(params);
   });
-  await page.keyboard.press('Control+K');
-  await page.locator('.m-palette-query').fill('Highlight');
-  await page.getByRole('option', { name: /^Highlight\b/u }).first().click();
+  await runCommand(page, 'Highlight text');
   const dragStarts = await countDragStarts(page);
   const { index, press } = await firstSplit(lines);
   const line = LINES[index];
