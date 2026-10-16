@@ -1,5 +1,7 @@
 import { PDFDocument, StandardFonts, degrees, rgb } from '@cantoo/pdf-lib';
 
+import { wholeFile } from './pdfLibSession.js';
+
 /**
  * A three page, sixty three field form that has every kind of field the forms tools meet, built here so no binary is
  * committed (B10). It mirrors the owner's own `form-test.pdf` field for field: a registration page, an order page with
@@ -156,5 +158,5 @@ export async function buildFormTestPdf(): Promise<Uint8Array> {
   label(third, 'Date signed', 50, 256);
   text(third, 'date_signed', 200, 250, 120);
 
-  return document.save();
+  return wholeFile(document);
 }

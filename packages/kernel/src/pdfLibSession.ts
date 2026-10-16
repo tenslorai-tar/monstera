@@ -64,5 +64,24 @@ export function openForWriting(image: ByteImage): Promise<PDFDocument> {
  * @param options `useObjectStreams: false` where a reader of the result needs a classic cross-reference table
  */
 export function appendRevision(document: PDFDocument, options: { readonly useObjectStreams?: boolean } = {}): Promise<Uint8Array> {
-  return document.commit(options.useObjectStreams === undefined ? {} : { useObjectStreams: options.useObjectStreams });
+  return document.commit({ ...(options.useObjectStreams === undefined ? {} : { useObjectStreams: options.useObjectStreams }), ...WITHOUT_YIELDS });
+}
+
+/**
+ * pdf-lib writes WITHOUT handing the event loop back every 50 objects (`objectsPerTick`, its default 50).
+ *
+ * Each hand-back is a `setTimeout(0)`, and on Windows a timer is not due before the clock's next tick: measured on the
+ * Windows build machine (KKKKKKKK-2, 2026-10-15), 7,178 objects saved in 3,963–4,194 ms with the default and in
+ * 129–138 ms without it, about 28 ms a wait. Everything that writes with pdf-lib here runs in a host process or a test,
+ * where no screen waits on the loop between two objects, so the waits are pure cost; a large CSV import paid it on every
+ * part it composed. Spread into every pdf-lib serialisation, which `pdfLibSession.test.ts` holds to this module.
+ */
+const WITHOUT_YIELDS = { objectsPerTick: Number.POSITIVE_INFINITY } as const;
+
+/**
+ * The one way a pdf-lib document is written WHOLE — a new document a host composed, or a test's fixture — without
+ * the timer yields ({@link WITHOUT_YIELDS}). A command's result is {@link appendRevision}'s instead.
+ */
+export function wholeFile(document: PDFDocument, options: { readonly useObjectStreams?: boolean } = {}): Promise<Uint8Array> {
+  return document.save({ ...(options.useObjectStreams === undefined ? {} : { useObjectStreams: options.useObjectStreams }), ...WITHOUT_YIELDS });
 }

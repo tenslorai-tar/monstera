@@ -11,6 +11,7 @@ import {
 } from './composeOutcome.js';
 import { type TableRow, drawTable } from './composeTable.js';
 import { readCsv } from './csvRead.js';
+import { wholeFile } from './pdfLibSession.js';
 import type { FaceSource } from './fontCatalogue.js';
 
 /**
@@ -96,7 +97,7 @@ export async function composeCsv(
 
   fonts.finish();
   return {
-    pdf: await document.save(),
+    pdf: await wholeFile(document),
     boxed: boxedPositions(text, fonts.boxed, blocks),
     // EACH RECORD LEFT OUT, by its line, so the import names it after it opens (Codex's importer audit).
     skipped: skipped.map((skip) => ({ reason: skip.what, line: skip.line, item: null })),

@@ -6,6 +6,7 @@ import { MAX_IMPORT_PNG_PIXELS } from '@monstera/contract/host';
 import { ComposeRefused } from './composeOutcome.js';
 import { ImageDecodeRefused, type PixelSize, PngPixelsRefused, checkPngPixels } from './imageDimensions.js';
 import { type EmbeddableImageType, addImagePage } from './pageImage.js';
+import { wholeFile } from './pdfLibSession.js';
 
 /**
  * Picked images, made into a new PDF with one page each
@@ -125,5 +126,5 @@ export async function composeImages(images: readonly ImportImage[]): Promise<Com
   if (document.getPageCount() === 0 && first !== undefined) {
     throw new ComposeRefused(first.reason, null, `image ${String(first.item)} could not be made a page, and no other was picked`, first.item);
   }
-  return { pdf: await document.save(), skipped: inOrder };
+  return { pdf: await wholeFile(document), skipped: inOrder };
 }

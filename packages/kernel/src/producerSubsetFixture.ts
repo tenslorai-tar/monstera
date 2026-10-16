@@ -1,6 +1,7 @@
 import { PDFDocument, PDFHexString, PDFName, type PDFRef } from '@cantoo/pdf-lib';
 
 import { subsetFont, withTables } from './fontSubset.js';
+import { wholeFile } from './pdfLibSession.js';
 import { ShapingFace } from './textShaping.js';
 
 /**
@@ -174,7 +175,7 @@ export async function buildProducerSubsetPdf(
     ...['BT', `/F2 ${String(size)} Tf`, '0 Ts', at(x3), `<${body.show(PRODUCER_END)}> Tj`, 'ET'],
   ].join('\n');
   page.node.set(PDFName.of('Contents'), document.context.register(document.context.flateStream(new TextEncoder().encode(content))));
-  return document.save({ useObjectStreams: false });
+  return wholeFile(document, { useObjectStreams: false });
 }
 
 /** How far a word gap moves the pen on a {@link buildGapSpacedPdf} page, in thousandths of the size: a quarter em. */
@@ -206,5 +207,5 @@ export async function buildGapSpacedPdf(program: Uint8Array, lines: readonly str
     ])
     .join('\n');
   page.node.set(PDFName.of('Contents'), document.context.register(document.context.flateStream(new TextEncoder().encode(content))));
-  return document.save({ useObjectStreams: false });
+  return wholeFile(document, { useObjectStreams: false });
 }

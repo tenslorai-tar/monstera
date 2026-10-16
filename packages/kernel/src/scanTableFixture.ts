@@ -2,6 +2,7 @@ import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
 
 import * as mupdf from './mupdfRaw.js';
 import type { RecognisedLine, RecognisedPage } from './ocrRecognise.js';
+import { wholeFile } from './pdfLibSession.js';
 
 /**
  * A printed scan of a clean ruled table, built here so no binary is committed (B10): the owner's O2 `scanned-table.pdf`
@@ -73,7 +74,7 @@ export async function buildRuledTablePdf(): Promise<Uint8Array> {
       at += widths[column] ?? 0;
     });
   });
-  return document.save();
+  return wholeFile(document);
 }
 
 /** The ruled table as a scan: the picture of {@link buildRuledTablePdf}'s page, and nothing else on the page. */
@@ -88,5 +89,5 @@ export async function buildScannedTablePdf(): Promise<Uint8Array> {
   const page = scanned.addPage([612, 792]);
   const image = await scanned.embedPng(png);
   page.drawImage(image, { x: 0, y: 0, width: 612, height: 792 });
-  return scanned.save();
+  return wholeFile(scanned);
 }

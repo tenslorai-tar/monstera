@@ -1,9 +1,11 @@
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
-import { describe, expect, it } from 'vitest';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, expect, it, vi } from 'vitest';
 
 import * as mupdf from './mupdfRaw.js';
 import { applySetPageBackground } from './pageBackground.js';
-import { appendRevision, openForWriting } from './pdfLibSession.js';
+import { appendRevision, openForWriting, wholeFile } from './pdfLibSession.js';
 
 /**
  * A pdf-lib command writes its result as an APPENDED revision (ADR-0127): the input, byte for byte, then one update.
@@ -62,5 +64,40 @@ describe('a pdf-lib command appends its revision (ADR-0127)', () => {
   it('appendRevision refuses a document loaded whole, and takes one opened for writing — CONTROL in the second line', async () => {
     await expect(appendRevision(await loadedWhole(await document(1)))).rejects.toThrow(/forIncrementalUpdate/u);
     await expect(appendRevision(await openForWriting(await document(1)))).resolves.toBeInstanceOf(Uint8Array);
+  });
+});
+
+describe('pdf-lib writes without handing the loop back every 50 objects (KKKKKKKK-2)', () => {
+  /** How many zero-delay timers `write` starts: pdf-lib's hand-back is one per 50 objects. */
+  async function timersDuring(write: () => Promise<Uint8Array>): Promise<number> {
+    const spy = vi.spyOn(globalThis, 'setTimeout');
+    try {
+      await write();
+      return spy.mock.calls.filter(([, delay]) => (delay ?? 0) === 0).length;
+    } finally {
+      spy.mockRestore();
+    }
+  }
+
+  it('wholeFile and appendRevision start no timer; CONTROL: pdf-lib’s own save starts one per 50 objects', async () => {
+    const bytes = await document(120);
+    const pages = await PDFDocument.load(bytes);
+    const revised = await openForWriting(bytes);
+    // A REVISION OF MORE THAN 50 OBJECTS, or the default would start no timer either and the zero would prove nothing.
+    for (let at = 0; at < 120; at += 1) revised.addPage([612, 792]);
+    expect(await timersDuring(() => wholeFile(pages))).toBe(0);
+    expect(await timersDuring(() => appendRevision(revised))).toBe(0);
+    // THE CONTROL: the same document through the default, so a zero above is the option and not a document too small.
+    expect(await timersDuring(() => pages.save())).toBeGreaterThan(3);
+  });
+
+  it('every pdf-lib write in the kernel goes through this module, so none can take the default', () => {
+    const source = join(import.meta.dirname);
+    const writers = readdirSync(source)
+      .filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts') && name !== 'pdfLibSession.ts')
+      .filter((name) => /\.(?:save|commit)\(/u.test(readFileSync(join(source, name), 'utf8')));
+    // POSITIVE CONTROL: the pattern finds the calls in the module that owns them.
+    expect(/\.(?:save|commit)\(/u.test(readFileSync(join(source, 'pdfLibSession.ts'), 'utf8'))).toBe(true);
+    expect(writers).toStrictEqual([]);
   });
 });

@@ -1,6 +1,8 @@
 import { PDFDocument } from '@cantoo/pdf-lib';
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 
+import { wholeFile } from './pdfLibSession.js';
+
 /**
  * A workbook cut into parts that ONLYOFFICE's `x2t` converts whole, and the parts' PDFs joined — so an Office import
  * never loses a sheet or a row in silence (the owner's decision C, 2026-09-30).
@@ -332,5 +334,5 @@ export async function joinPdfs(
     for (const page of copied) joined.addPage(page);
     pages.push(copied.length);
   }
-  return { pdf: await joined.save(), pages };
+  return { pdf: await wholeFile(joined), pages };
 }

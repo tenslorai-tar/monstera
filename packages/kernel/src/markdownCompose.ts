@@ -12,6 +12,7 @@ import {
 } from './composeOutcome.js';
 import { type TableRow, drawTable } from './composeTable.js';
 import type { FaceSource } from './fontCatalogue.js';
+import { wholeFile } from './pdfLibSession.js';
 
 /**
  * A Markdown source, set as a new PDF
@@ -125,7 +126,7 @@ export async function composeMarkdown(
   }
   fonts.finish();
   // NOTHING LEFT OUT: Markdown has no grammar a source can break, so every line is composed.
-  return { pdf: await document.save(), boxed: boxedPositions(text, fonts.boxed, walker.blocks), skipped: [] };
+  return { pdf: await wholeFile(document), boxed: boxedPositions(text, fonts.boxed, walker.blocks), skipped: [] };
 }
 
 /** The inline style a run inherits from the tags open around it. */
