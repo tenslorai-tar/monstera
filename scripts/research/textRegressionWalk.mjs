@@ -165,7 +165,13 @@ async function commit() {
 
 /**
  * Each run of the open editor: its words, whether it is drawn in a face the editor loaded from the page (`data-run-font`
- * naming one, and the browser's own `fonts.check` answering that the family is loaded), and its computed family and weight.
+ * naming one, and the browser's own `fonts.check` answering that the family is loaded), and the computed family and
+ * weight its WORDS are drawn in.
+ *
+ * READ FROM EACH TEXT NODE'S OWN ELEMENT, never from the run span alone: a family chosen in Properties is applied by
+ * `formatRange` as a formatting span INSIDE the run, so the run span's computed family stays the run's own while its
+ * words are drawn in the choice (2026-10-16: step 7 reported Times New Roman for every run while the open editor had
+ * re-wrapped narrower in Georgia). A run whose words are drawn in two families reports both, joined by " + ".
  */
 async function runsDrawn() {
   return editor()
@@ -173,14 +179,24 @@ async function runsDrawn() {
     .evaluateAll((spans) =>
       spans.map((span) => {
         const view = span.ownerDocument.defaultView;
-        const computed = view?.getComputedStyle(span);
-        const family = (computed?.fontFamily ?? '').split(',')[0]?.trim().replaceAll('"', '') ?? '';
+        /** @param {typeof span} element */
+        const firstFamily = (element) => (view?.getComputedStyle(element).fontFamily ?? '').split(',')[0]?.trim().replaceAll('"', '') ?? '';
+        const walker = span.ownerDocument.createTreeWalker(span, 4);
+        const families = new Set();
+        let weight = '';
+        for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+          const parent = node.parentElement;
+          if (parent === null || (node.textContent ?? '') === '') continue;
+          families.add(firstFamily(parent));
+          weight ||= view?.getComputedStyle(parent).fontWeight ?? '';
+        }
+        const family = families.size === 0 ? firstFamily(span) : [...families].join(' + ');
         return {
           text: span.textContent ?? '',
           runFont: span.getAttribute('data-run-font'),
           family,
-          loaded: family !== '' && span.ownerDocument.fonts.check(`12px "${family}"`),
-          weight: computed?.fontWeight ?? '',
+          loaded: family !== '' && !family.includes(' + ') && span.ownerDocument.fonts.check(`12px "${family}"`),
+          weight: weight || (view?.getComputedStyle(span).fontWeight ?? ''),
         };
       }),
     );
@@ -272,6 +288,14 @@ await step('4. Enter breaks a line where it is pressed, and the break is saved',
 });
 
 await step('5. two spaces typed stay two spaces, on screen and in the saved file', async () => {
+  // A FRESH COPY OF THE PAGE, not the one step 4 broke a line in: that paragraph grew a line downward over the small print
+  // 4 pt below it, as an edit does by ADR-0096, and the block then reopens as three lines with its fourth read apart, so
+  // the words typed at its end wrapped onto the row the fourth line holds (2026-10-16 runs). That is step 4's
+  // consequence, not this step's subject, which is two spaces surviving a save and a reopen.
+  const fresh = join(output, 'everyday-spaces.pdf');
+  await writeFile(fresh, await readFile(everyday));
+  await open(fresh);
+  await section('Edit');
   await openBlock('Every walk step');
   await page.keyboard.type(' two  spaces');
   expect(await editor().innerText()).toContain('two  spaces');
@@ -397,8 +421,34 @@ await step('11. a one-line form label stays one line, at the label’s place, wh
   const label = await openBlock(EVERYDAY.label);
   const shown = await editor().boundingBox();
   if (shown === null) throw new Error('no box for the editor');
-  // AT THE LABEL'S PLACE (A7: measured 4 to 5 px low).
-  expect(Math.abs(shown.y - label.y), JSON.stringify({ shown, label })).toBeLessThanOrEqual(1.5);
+  // AT THE LABEL'S PLACE (A7: measured 4 to 5 px low), BASELINE AGAINST BASELINE. The editor's box is a line box, whose
+  // top is the font's whole ascent above the baseline, and the label's outline is its words' own box, about a capital's
+  // height above it; their tops differ by about (0.905 - 0.716) of the size for Arial however well the words sit, which
+  // is the 1.83 px this read until 2026-10-16. So the editor's baseline is read from its first character (its box's top
+  // plus the face's own ascent, measured by the canvas in the same font) and the label's from the page: its baseline is
+  // y 560 on a 792-point page, drawn at the canvas's scale.
+  const paper = await page.locator('canvas.m-page:visible').first().boundingBox();
+  if (paper === null) throw new Error('the page is not on screen');
+  const labelBaseline = paper.y + ((792 - 560) * paper.height) / 792;
+  const editorBaseline = await editor().evaluate((root) => {
+    const walker = root.ownerDocument.createTreeWalker(root, 4);
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+      const text = node.textContent ?? '';
+      if (text.trim() === '' || node.parentElement === null) continue;
+      const at = text.search(/\S/u);
+      const range = root.ownerDocument.createRange();
+      range.setStart(node, at);
+      range.setEnd(node, at + 1);
+      const box = range.getBoundingClientRect();
+      const pen = root.ownerDocument.createElement('canvas').getContext('2d');
+      if (pen === null) return null;
+      pen.font = root.ownerDocument.defaultView?.getComputedStyle(node.parentElement).font ?? '';
+      return box.top + pen.measureText(text.charAt(at)).fontBoundingBoxAscent;
+    }
+    return null;
+  });
+  if (editorBaseline === null) throw new Error('the editor holds no character to read a baseline from');
+  expect(Math.abs(editorBaseline - labelBaseline), JSON.stringify({ editorBaseline, labelBaseline, shown, label })).toBeLessThanOrEqual(1.5);
   await page.keyboard.type(' (full)');
   const grown = await editor().boundingBox();
   if (grown === null) throw new Error('no box for the editor');
