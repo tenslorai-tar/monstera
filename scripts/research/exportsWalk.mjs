@@ -256,8 +256,9 @@ function bookmarkChain(links) {
     const prev = i > 0 ? ` /Prev ${String(id - 1)} 0 R` : '';
     objects[id] = `<< /Title (Item ${String(i + 1)}) /Parent 4 0 R${prev}${next} /Dest [3 0 R /Fit] >>`;
   }
-  const parts = ['%PDF-1.7\n'];
-  let offset = parts[0].length;
+  const header = '%PDF-1.7\n';
+  const parts = [header];
+  let offset = header.length;
   /** @type {number[]} */
   const offsets = [];
   for (let id = 1; id < objects.length; id += 1) {
