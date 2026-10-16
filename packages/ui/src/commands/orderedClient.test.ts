@@ -46,7 +46,7 @@ describe('inWriteOrder', () => {
   it('sends a save copy only once the command already sent for that document is answered', async () => {
     const { client, reached, release } = held();
     const ordered = inWriteOrder(client);
-    const command = applyDocumentCommand(deps(ordered), DOC, { kind: 'rotatePages', pages: [0], degrees: 90 });
+    const command = applyDocumentCommand(deps(ordered), DOC, { kind: 'rotatePages', pages: [0], quarterTurns: 1 });
     const copy = ordered['document.saveCopy']({ docId: DOC });
     await Promise.resolve();
     await Promise.resolve();
@@ -60,7 +60,7 @@ describe('inWriteOrder', () => {
   it('another document’s copy does not wait for this one’s command', async () => {
     const { client, reached, release } = held();
     const ordered = inWriteOrder(client);
-    const command = applyDocumentCommand(deps(ordered), DOC, { kind: 'rotatePages', pages: [0], degrees: 90 });
+    const command = applyDocumentCommand(deps(ordered), DOC, { kind: 'rotatePages', pages: [0], quarterTurns: 1 });
     await ordered['document.saveCopy']({ docId: OTHER });
     expect(reached).toStrictEqual(['document.execute d1', 'document.saveCopy d2']);
     release();
@@ -69,7 +69,7 @@ describe('inWriteOrder', () => {
 
   it('CONTROL: through the client it was given, the copy overtakes the command, which is the copy C4.1 saved', async () => {
     const { client, reached, release } = held();
-    const command = applyDocumentCommand(deps(client), DOC, { kind: 'rotatePages', pages: [0], degrees: 90 });
+    const command = applyDocumentCommand(deps(client), DOC, { kind: 'rotatePages', pages: [0], quarterTurns: 1 });
     await client['document.saveCopy']({ docId: DOC });
     // SENT BEFORE THE COMMAND WAS ANSWERED — here before it was even sent, since the lane starts it a turn later.
     expect(reached).toContain('document.saveCopy d1');
