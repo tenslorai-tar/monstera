@@ -4984,6 +4984,13 @@ optgroup {
   flex-basis: 100%;
 }
 
+/* RESTORE A PREVIOUS VERSION: each kept version is a dialog row, so the list carries no bullet or indent of its own. */
+.m-restore-version__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 .m-merge-list {
   display: flex;
   flex: 1 1 auto;

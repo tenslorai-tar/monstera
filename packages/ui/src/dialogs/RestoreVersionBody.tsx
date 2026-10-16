@@ -24,16 +24,22 @@ export default function RestoreVersionBody({
       <p>{_(RESTORE_VERSION_INTRO)}</p>
       <ul className="m-restore-version__list">
         {versions.map((version) => (
-          <li className="m-restore-version__row" data-version={version.id} key={version.id}>
-            <span className="m-restore-version__what">
-              {_(RESTORE_VERSION_ROW, { when: when.format(new Date(version.savedAt)), size: byteSize(i18n, version.bytes) })}
+          // THE DIALOG PATTERN'S ROW (`primitives.css`): the version at the left, its button at the row's end with the
+          // pattern's gap, so a long date and size never runs into the button the way a bare list item did.
+          <li className="m-dialog-row m-restore-version__row" data-version={version.id} key={version.id}>
+            <span className="m-dialog-row__text">
+              <span className="m-dialog-row__label m-restore-version__what">
+                {_(RESTORE_VERSION_ROW, { when: when.format(new Date(version.savedAt)), size: byteSize(i18n, version.bytes) })}
+              </span>
             </span>
-            <Button
-              label={RESTORE_VERSION_RESTORE}
-              onClick={() => {
-                resolve({ id: version.id });
-              }}
-            />
+            <div className="m-dialog-row__control">
+              <Button
+                label={RESTORE_VERSION_RESTORE}
+                onClick={() => {
+                  resolve({ id: version.id });
+                }}
+              />
+            </div>
           </li>
         ))}
       </ul>
