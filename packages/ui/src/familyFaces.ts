@@ -17,8 +17,20 @@ import { STAND_INS, normaliseFamily, withoutSubsetTag } from '@monstera/shared';
 
 /** The families this window has already been asked to draw, by lower-case name: each is registered once. */
 const handled = new Set<string>();
-/** The list the faces were given from: what a family chosen in the editor is previewed against (`previewFamilyOf`). */
+/** The list as read: what a family chosen in the editor is previewed against (`previewFamilyOf`). */
 let listed: readonly FontFamilyEntry[] = [];
+/** The client the list was read through, which a bundled family's bytes are asked of. */
+let listedClient: ContractClient | undefined;
+
+/**
+ * Notes the list as read and the client it came through. NO DOCUMENT IS TOUCHED HERE: the read is also taken by commands
+ * that hand the list to a dialog, which run where no window exists (their cases do), and giving faces is the drawing's
+ * business, done by {@link drawFamilies} where a list is drawn.
+ */
+export function noteFamilies(families: readonly FontFamilyEntry[], client: ContractClient): void {
+  listed = families;
+  listedClient = client;
+}
 /** The families given a face here, by lower-case name: drawable in themselves, whether or not the browser knew them. */
 const registered = new Set<string>();
 /** {@link drawnByBrowser}'s answers, by name: a canvas measurement is cheap once and not on every render of a list. */
@@ -71,12 +83,12 @@ function drawable(family: string): boolean {
 
 /**
  * Registers a face for every family in `families` the browser cannot draw by name, at most once a window: the installed
- * ones from `local()`, the bundled ones from their bytes, read from main as they are needed. A face the browser refuses,
- * or bytes main could not read, leave that family in the interface font, which is what the picker shows for any family
- * with no face.
+ * ones from `local()`, the bundled ones from their bytes, asked of main through the client the list was read through
+ * ({@link noteFamilies}). Called by the picker as it draws a list. A face the browser refuses, or bytes main could not
+ * read, leave that family in the interface font, which is what the picker shows for any family with no face.
  */
-export function drawFamilies(families: readonly FontFamilyEntry[], client: ContractClient): void {
-  listed = families;
+export function drawFamilies(families: readonly FontFamilyEntry[]): void {
+  const client = listedClient;
   for (const family of families) {
     const key = family.name.toLowerCase();
     if (handled.has(key)) continue;
@@ -92,14 +104,14 @@ export function drawFamilies(families: readonly FontFamilyEntry[], client: Contr
       continue;
     }
     const bundled = BUNDLED_FAMILIES.find((name) => name.toLowerCase() === key);
-    if (family.origin === 'bundled' && bundled !== undefined) void addBundled(bundled, client);
+    if (family.origin === 'bundled' && bundled !== undefined && client !== undefined) void addBundled(bundled, client);
   }
   gave();
 }
 
 async function addBundled(family: BundledFamily, client: ContractClient): Promise<void> {
   const answer = await client['app.bundledFace']({ family }).catch(() => undefined);
-  if (answer === undefined || !answer.ok) return;
+  if (!answer?.ok) return;
   await give(new FontFace(family, answer.value.bytes));
 }
 

@@ -2,7 +2,7 @@ import type { ContractClient } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
 import { useEffect, useState } from 'react';
 
-import { drawFamilies } from './familyFaces.js';
+import { noteFamilies } from './familyFaces.js';
 import type { DocumentFont, FontList, ReadFontList } from './FontPicker.js';
 
 /**
@@ -21,8 +21,8 @@ export function fontListOf(client: ContractClient): Promise<ReadFontList> {
   if (held !== undefined) return held;
   const reading = client['app.fontFamilies']({}).then(
     (answer) => {
-      // EACH FAMILY DRAWN IN ITSELF, given a face once the list is known (ADR-0250): the picker and the editor take it.
-      if (answer.ok) drawFamilies(answer.value.families, client);
+      // NOTED FOR THE FACES (ADR-0250), which the picker gives as it draws the list; the read itself draws nothing.
+      if (answer.ok) noteFamilies(answer.value.families, client);
       return answer.ok ? answer.value : { listed: false, families: [], more: 0 };
     },
     () => ({ listed: false, families: [], more: 0 }),

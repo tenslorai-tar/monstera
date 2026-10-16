@@ -1,9 +1,9 @@
 import { useLingui } from '@lingui/react';
 import type { FontFamilyEntry } from '@monstera/contract';
 import { type MessageKey, SUBSET_TAG } from '@monstera/shared';
-import { type ReactElement, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { type ReactElement, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
-import { facesGiven, previewFamilyOf, subscribeFaces } from './familyFaces.js';
+import { drawFamilies, facesGiven, previewFamilyOf, subscribeFaces } from './familyFaces.js';
 import {
   FONT_GROUP_BUILT_IN,
   FONT_GROUP_BUNDLED,
@@ -179,7 +179,11 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
   const groups = useMemo(() => fontGroups(list, inDocument, recentlyChosen(), builtIn, query), [list, inDocument, builtIn, query]);
   /** The computer's list as read, or `undefined` while it is read and where the consumer offers none. */
   const read = readList(list);
-  // DRAWN AGAIN WHEN A FACE ARRIVES (ADR-0250): a bundled family's bytes come after the list does.
+  // EACH LISTED FAMILY GIVEN ITS FACE as the list is drawn (ADR-0250), once a window (`drawFamilies`), and drawn again
+  // when a face arrives: a bundled family's bytes come after the list does.
+  useEffect(() => {
+    if (read !== undefined) drawFamilies(read.families);
+  }, [read]);
   useSyncExternalStore(subscribeFaces, facesGiven);
   /** The face a shown name is drawn in, or `undefined` for the interface font (ADR-0250 Decision 3). */
   const previewOf = (name: string): string | undefined => previewFamilyOf(name, read?.families ?? []);
