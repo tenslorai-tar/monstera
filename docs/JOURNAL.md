@@ -892,6 +892,101 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-16 — Stage audit of `91761ab6..dd4cd436` — findings LLLLLLLL-1 to LLLLLLLL-4
+
+Twenty commits of the local fix session (`_review/local/LOCAL-FIX-SESSION.md`), called by the commit gate: item 20's
+commit would have taken the range to 202 files. `npm run audit:scope` read 20 commits and 178 files; 5 proofs added, 17
+modified, none removed; 6 source files added and 41 changed. Every modified proof's removed lines were read
+(`git diff 91761ab6..HEAD` on each, filtered to `-` lines). Eleven `.pw.ts` files each lose three lines that drove the
+palette by hand and gain two calling `runCommand` (item 18). `buildFreshness.proof.mjs` replaces `compilerSaysCurrent`
+with `compilerOwes`, a wider answer: it names the projects, and a case asserts that the refusal names them (item 19).
+`containerGrants.proof.mjs` drops its Electron-only grant case for one that covers every provisioner and requires
+`electron` and `onlyoffice` among them as its positive control (LLLLLLLL-3). Nothing loosened.
+
+### LLLLLLLL-1 — the write-order lane deadlocked a command sent from inside it (fixed in range)
+
+`inWriteOrder` (3c05d055) made the read-out channels wait for the renderer's command lane, so an export reads the
+document after the edits before it. `document.editCopy` is sent FROM inside the lane, by the signed-edit route, and so
+waited for itself. Found by a walk, removed from the set in ff2c34b9 with a case. The set `READS_THE_DOCUMENT_OUT` is
+hand-kept. The danger runs toward a channel sent from inside the lane being added to it, which the editCopy case
+alone does not cover. Recorded, not closed: a channel's caller is not a property the type can see.
+
+### LLLLLLLL-2 — four walk instruments were wrong before they measured (fixed in range, no proof runs them)
+
+The text walk's Tab counter read `/ActualText` undecoded (10f83f6a). The regression walk compared a label's line box,
+not its baseline (46bdb2c9). The comments walk's O8 read the area's value without an interval (dd4cd436). The memory
+walk's M3d counted words against the edited copy instead of the original (dd4cd436). Each reported a failure the app
+did not have, and each is item 4a's failure: an instrument not resolution-tested before it settled anything. Only the
+first has a unit case (`textWalkSteps.test.mjs`). The walks run on the owner's machine and no CI job runs them, so
+the other three rest on the screenshots their runs left.
+
+### LLLLLLLL-3 — the container-grant repair stayed in one provisioner (fixed in range)
+
+Office conversion failed silently because LibreOffice's tree had lost its AppContainer grant. Every provisioner
+re-extracts its tree, and only `electron.mjs` re-granted. `publishTree`/`grantPublished` (b09452aa) are now the way
+every provisioner publishes, and the proof walks the provisioners rather than naming one. `proof:dllclosure` could not
+have seen it: it reads DLL imports, never an ACL.
+
+### LLLLLLLL-4 — tests that pass alone and fail under the full suite's load (open, item 17)
+
+Measured 2026-10-16 in a `vitest related` run that reached 347 files: `officeConversion.test.ts`'s two workbook cases
+missed their 60 s and 120 s deadlines, and passed alone (28 of 28, 101.65 s of test time). `App.test.tsx`'s security
+notice failed the same way. Item 17 owns them; no deadline is raised.
+
+### 1. Root cause or workaround?
+
+Each fix names its mechanism in its commit. 9056ca4d is a build fixed after one was read as green from a grep over
+coloured output, which this machine's memory already records; the exit code is now what is read.
+
+### 2. Verified against the easy shape only?
+
+The answer fit (804af195) is tested at the boundary item, not only far below it. The tab-mark decoding takes both
+`PDFString` and `PDFHexString`.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Yes, wider: the build-freshness refusal now asks tsc per project, and the grant proof covers every provisioner.
+
+### 3. Would CI have caught it?
+
+The unit proofs run on both legs. The walks do not run on CI at all (LLLLLLLL-2), and LLLLLLLL-3's grant lives on
+this machine's disk, where no CI image provisions a contained host.
+
+### 4. Are the proofs non-vacuous?
+
+The `pdfLibSession` timer case counts yields on a document past 50 objects, so a write with no yields is red. The
+palette scan must find the driver in `palette.ts` itself and read more than 50 sources before its empty answer counts.
+
+### 4a. Resolution test before measuring?
+
+No, four times: LLLLLLLL-2.
+
+### 4b. A search with a positive control?
+
+The palette scan requires the driver it scans for in `palette.ts`; the provisioner scan requires two provisioners by
+name.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+The provisioner scan derives its set from `scripts/provision/` and anchors it with two names. A provisioner deleted
+whole leaves no gap to report, and that is acceptable: a deleted provisioner publishes nothing.
+
+### 5. Executed, or asserted?
+
+Executed: every walk named in the commits, on Windows, with screenshots. Asserted: that the walk fixes hold on the
+next full run, which the session's finish runs.
+
+### 6. Architecture before the feature?
+
+No architecture change in this range.
+
+### 7. Do the documents still match the code?
+
+No document in this range states the palette rule, the grant rule or the answer ceiling's fitting. The session's
+report carries the walk results.
+
+---
+
 ## 2026-10-15 — Stage audit of `f53a6374..91761ab6` — no findings
 
 Two commits: the stage audit above (7bbf0599, the journal and the watermark alone) and the first half of Windows session
