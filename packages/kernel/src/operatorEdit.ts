@@ -259,8 +259,17 @@ interface Segment {
    * ADR-0188): its glyphs, its kerning and its font are the page's, not a re-setting of its words.
    */
   readonly verbatim?: string;
-  /** A tab's gap: a space marked as the tab it stands for, never joined to the words beside it (ADR-0228 Decision 2). */
-  readonly tab?: true;
+  /**
+   * What a marked gap IS, written as its `/ActualText` and never joined to the words beside it: a tab's one space marked
+   * as the tab (ADR-0228 Decision 2), or a run of two or more spaces marked as exactly those spaces, which a text page
+   * would read as one (the correction of 2026-10-16).
+   */
+  readonly actual?: string;
+}
+
+/** The `/ActualText` string a marked gap writes: `text` in UTF-16 with its byte-order mark, as a hex string. */
+function actualTextString(text: string): string {
+  return `<FEFF${Array.from({ length: text.length }, (_, at) => text.charCodeAt(at).toString(16).toUpperCase().padStart(4, '0')).join('')}>`;
 }
 
 
@@ -823,7 +832,11 @@ function write(
               spacing,
             };
       let cursor = x;
-      for (const token of tokens(words)) {
+      const typed = tokens(words);
+      for (const [index, token] of typed.entries()) {
+        // A SPACE IN A RUN OF TWO OR MORE goes into a segment of the run's spaces alone, marked as exactly them (ADR-0228's
+        // correction of 2026-10-16): joined to the words, a text page reads the run as one space.
+        const inRun = token === ' ' && (typed[index - 1] === ' ' || typed[index + 1] === ' ');
         // A TAB IS A MARKED GAP (ADR-0228 Decision 2): a space shown as a segment of its own, which the emission wraps in
         // `/Span <</ActualText (tab)>>`, and the next words at the next stop from the block's left edge. A font with no
         // space draws nothing there, and the gap is still the stop's.
@@ -832,7 +845,7 @@ function write(
           const piece = gap?.length === 1 ? gap[0] : undefined;
           if (piece !== undefined) {
             faces?.drawn([piece]);
-            line.segments.push({ source, font: piece.font, codes: [...piece.codes], text: '\t', x: cursor, style, tab: true });
+            line.segments.push({ source, font: piece.font, codes: [...piece.codes], text: '\t', x: cursor, style, actual: '\t' });
           }
           cursor = nextTabStop(cursor, blockLeft);
           continue;
@@ -849,18 +862,24 @@ function write(
           const text = texts[k] ?? '';
           const last = line.segments.at(-1);
           // ONE SEGMENT for words that follow on in one font and state: a glyph's advance places the next exactly there.
+          // A RUN'S SPACE JOINS ONLY ITS RUN, and words join only words.
+          const joins = inRun ? last?.actual !== undefined && last.actual !== '\t' : last?.actual === undefined;
           if (
+            joins &&
             last?.verbatim === undefined &&
-            last?.tab !== true &&
             last?.source === source &&
             last.font === piece.font &&
             last.style === style &&
             Math.abs(last.x + segmentWidth(last) - at) <= SAME
           ) {
             last.codes.push(...piece.codes);
-            line.segments[line.segments.length - 1] = { ...last, text: last.text + text };
+            line.segments[line.segments.length - 1] = {
+              ...last,
+              text: last.text + text,
+              ...(inRun ? { actual: `${last.actual ?? ''}${text}` } : {}),
+            };
           } else {
-            line.segments.push({ source, font: piece.font, codes: [...piece.codes], text, x: at, style });
+            line.segments.push({ source, font: piece.font, codes: [...piece.codes], text, x: at, style, ...(inRun ? { actual: text } : {}) });
           }
           // `Tc` MOVES THE PEN AFTER EVERY CODE SHOWN, so the spacing is the codes' count's.
           at += (widths[k] ?? 0) + spacing * piece.codes.length;
@@ -1150,7 +1169,7 @@ function write(
     const segments = visual.flatMap((line) => line.segments.map((segment) => ({ ...segment, baseline: line.baseline })));
     // WHAT THE CODES SHOW, which the structural read-back reads them as: a tab's segment means a tab and draws its gap
     // (W9; read as the tab it stood for, every tab edit on this writer was refused as not reading as what it drew).
-    drawn.push(segments.map((segment) => (segment.tab === true ? TAB_GAP : segment.text)).join(''));
+    drawn.push(segments.map((segment) => (segment.actual === '\t' ? TAB_GAP : segment.text)).join(''));
     if (segments.length === 0) continue;
     const toBt = ctm === undefined ? null : inverse(ctm);
     if (toBt === null || ctm === undefined) throw new Refused({ reason: 'transformed' });
@@ -1239,8 +1258,9 @@ function write(
       const raised = segment.baseline + (style?.rise ?? 0);
       const [e, f] = apply(toBt, segment.x, raised);
       const shown = `${[a, b, c, d, e, f].map(num).join(' ')} Tm ${segment.verbatim ?? `${hexOf(segment.font, segment.codes)} Tj`}`;
-      // A TAB'S GAP SAYS IT IS A TAB: marked content around its one space, its text the tab in UTF-16 (ADR-0228 Decision 2).
-      parts.push(segment.tab === true ? `/Span <</ActualText <FEFF0009>>> BDC ${shown} EMC` : shown);
+      // A MARKED GAP SAYS WHAT IT IS: marked content around its spaces, its text the tab or the spaces in UTF-16 (ADR-0228
+      // Decision 2 and its correction of 2026-10-16).
+      parts.push(segment.actual === undefined ? shown : `/Span <</ActualText ${actualTextString(segment.actual)}>> BDC ${shown} EMC`);
       // A RECTANGLE AS WIDE AS THE SEGMENT from `bottom` to `top` above the baseline, in the space the words are written in.
       const drawn = (bottom: number, top: number, colour: readonly number[]): string => {
         const [x0, y0] = apply(toBt, segment.x, raised + bottom);

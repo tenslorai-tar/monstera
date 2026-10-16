@@ -549,6 +549,25 @@ describe('editOperators on paragraphs (ADR-0179)', () => {
     expect(inserted(spaced.value)[0]).not.toContain('ActualText');
   });
 
+  it('sets a RUN OF TWO OR MORE SPACES as a segment of its own, marked as exactly those spaces (ADR-0228, 2026-10-16)', () => {
+    const content = bytes('BT /F1 10 Tf 1 0 0 1 72 100 Tm (aaa bbb ccc ddd eee) Tj ET');
+    const page: PageRuns = { textObjects: [0], runs: [inked(0, 'aaa bbb ccc ddd eee', 72, 167)] };
+    const result = editOperators(content, fonts, page, [{ lines: [[0]], soft: [false], text: 'aaa  bbb   ccc' }]);
+    if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+    const [object = ''] = inserted(result.value);
+    // THE TWO SPACES where `aaa` ends (72 + 15), and the three where `bbb` ends (87 + 10 + 15), each its own segment.
+    expect(object).toContain('/Span <</ActualText <FEFF00200020>>> BDC 1 0 0 1 87 100 Tm <2020> Tj EMC');
+    expect(object).toContain('/Span <</ActualText <FEFF002000200020>>> BDC 1 0 0 1 112 100 Tm <202020> Tj EMC');
+    // THE WORDS stand alone, where the spaces' advances end, never joined to a marked run.
+    expect(object).toContain('1 0 0 1 97 100 Tm <626262> Tj');
+    expect(object).toContain('1 0 0 1 127 100 Tm <636363> Tj');
+    // CONTROL: single spaces stay in the words' segment, and nothing is marked.
+    const single = editOperators(content, fonts, page, [{ lines: [[0]], soft: [false], text: 'aaa bbb ccc' }]);
+    if (!single.ok) throw new Error(`refused: ${JSON.stringify(single.error)}`);
+    expect(inserted(single.value)[0]).not.toContain('ActualText');
+    expect(inserted(single.value)[0]).toContain('<6161612062626220636363> Tj');
+  });
+
   it('puts SPACE AFTER a paragraph above the next one’s first line, and nothing above a line within it (ADR-0228)', () => {
     const content = bytes(['BT /F1 10 Tf 1 0 0 1 72 100 Tm (aaa) Tj ET', 'BT /F1 10 Tf 1 0 0 1 72 88 Tm (bbb) Tj ET'].join('\n'));
     const page: PageRuns = { textObjects: [0, 1], runs: [inked(0, 'aaa', 72, 87), inked(1, 'bbb', 72, 87)] };

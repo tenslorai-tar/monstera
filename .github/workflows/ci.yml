@@ -435,6 +435,15 @@ jobs:
           node scripts/ci/annotate.mjs scripts/proofs/textPush.proof.mjs
           ${{ runner.os == 'Windows' && '--require-engines' || '' }}
 
+      # ADR-0228's correction of 2026-10-16. Two and three spaces typed read
+      # back as two and three, by the editor's reader and by MuPDF's page-text
+      # read a copy takes; the control is the same words drawn unmarked, which
+      # PDFium reads with one space.
+      - name: Prove two spaces typed stay two
+        run: >
+          node scripts/ci/annotate.mjs scripts/proofs/textSpaces.proof.mjs
+          ${{ runner.os == 'Windows' && '--require-engines' || '' }}
+
       # ADR-0240, the owner's E1. A photo and a logo on a page of Type 3 text, moved and resized where they are drawn,
       # read back by PDFium with every text object as it was. The control is E1 itself: the same photo moved through
       # PDFium's own route is refused at read-back. Both engines are needed, as for Type 3 edits.

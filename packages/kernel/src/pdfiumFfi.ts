@@ -3817,18 +3817,14 @@ function layOutBlocks(
               const laid = writePieces(gap, ' ', undefined, forced);
               const rise = matrixOn(bindings, source.object).f - (baselines[lineOfRun.get(source) ?? 0] ?? 0);
               for (const object of laid) {
-                const mark: unknown = bindings.addMark(object, 'Span');
-                if (mark === null) throw refusedAt('object', 'FPDFPageObj_AddMark refused the mark of a tab');
-                if (numberFrom(bindings.markSetString(document, object, mark, ACTUAL_TEXT, '\t'), 'FPDFPageObjMark_SetStringParam') !== 1) {
-                  throw refusedAt('object', 'FPDFPageObjMark_SetStringParam refused the text of a tab');
-                }
+                markActualText(bindings, document, object, '\t', 'a tab');
                 objects.push({ object, rise });
               }
               after = laid.at(-1) ?? gap;
               left = nextTabStop(left, blockLeft);
             };
-            /** One stretch of words with no tab in it, in its run's style and its mark's. */
-            const writeStretch = ({ piece, text: stretchText, rtl: forced, width: stretchWidth }: (typeof units)[number]): void => {
+            /** One stretch of words with no tab in it, in its run's style and its mark's; answers the objects it laid. */
+            const writeStretch = ({ piece, text: stretchText, rtl: forced, width: stretchWidth }: (typeof units)[number]): unknown[] => {
               const source = runsById.get(piece.run) ?? firstRun;
               const made = makeTextLike(bindings, document, source.object, left);
               // WHAT THE WORDS FOLLOW in the page's order, which a colour behind them is inserted after.
@@ -3900,13 +3896,31 @@ function layOutBlocks(
                 widened !== 0
                   ? left + drawnWidth
                   : ((stretches === undefined ? undefined : pen.endOf(laid)) ?? left + drawnWidth);
+              return laid;
             };
             for (const unit of units) {
               const parts = unit.text.split('\t');
               for (const [at, part] of parts.entries()) {
                 if (at > 0) writeTab(unit);
-                if (part === '') continue;
-                writeStretch(parts.length === 1 ? unit : { ...unit, text: part, width: measure(unit.piece.run, unit.piece.mark, part) });
+                // TWO OR MORE SPACES ARE THEIR OWN OBJECT, marked with exactly the spaces they are (ADR-0228's correction
+                // of 2026-10-16): a text page reads a run of drawn spaces as one, within an object and across adjacent
+                // ones, so only a mark that says what the object IS keeps them. On their own object for the tab's reason,
+                // since a mark on an object is all of its text.
+                for (const stretch of part.split(SPACES_A_READER_JOINS)) {
+                  if (stretch === '') continue;
+                  const laid = writeStretch(
+                    stretch === unit.text ? unit : { ...unit, text: stretch, width: measure(unit.piece.run, unit.piece.mark, stretch) },
+                  );
+                  if (stretch.trim() === '' && stretch.length > 1) {
+                    // ONE OBJECT, as white space is always set in the run's own font: a mark on each of several would say
+                    // the spaces once per object.
+                    const [only, ...more] = laid;
+                    if (only === undefined || more.length > 0) {
+                      throw refusedAt('object', `A run of ${String(stretch.length)} spaces was set as ${String(laid.length)} objects`);
+                    }
+                    markActualText(bindings, document, only, stretch, 'a run of spaces');
+                  }
+                }
               }
             }
             anchor = after;
@@ -4358,6 +4372,27 @@ function markString(
  */
 /** The marked-content parameter that says what its content's text is (PDF 32000-1, 14.9.4). */
 const ACTUAL_TEXT = 'ActualText';
+
+/**
+ * Two or more spaces in a row, kept by `split` as a piece of their own. PDFium's text page reads such a run as one space,
+ * within an object and across adjacent ones (measured 2026-10-16 on `textRegressionWalk` step 5's saved file), so the
+ * writer draws it as an object marked with exactly its spaces ({@link markActualText}).
+ */
+const SPACES_A_READER_JOINS = /( {2,})/u;
+
+/**
+ * Marks `object` `/Span <</ActualText (text)>>`, saying what the object's text IS whatever its glyphs read as (PDF
+ * 32000-1, 14.9.4), so that {@link actualTextOf} and MuPDF read it back. Only ever on an object of its own: MuPDF takes the
+ * mark as ALL of the object's text (ADR-0228, measured). `text` is white space alone, which `const char *` carries as the
+ * PDF string it is; a word would reach PDFium as UTF-8 and be read back in PDFDocEncoding.
+ */
+function markActualText(bindings: Bound, document: unknown, object: unknown, text: string, what: string): void {
+  const mark: unknown = bindings.addMark(object, 'Span');
+  if (mark === null) throw refusedAt('object', `FPDFPageObj_AddMark refused the mark of ${what}`);
+  if (numberFrom(bindings.markSetString(document, object, mark, ACTUAL_TEXT, text), 'FPDFPageObjMark_SetStringParam') !== 1) {
+    throw refusedAt('object', `FPDFPageObjMark_SetStringParam refused the text of ${what}`);
+  }
+}
 
 /** What a text object's marks say its text IS, where one carries an `/ActualText`; `undefined` where none does. */
 function actualTextOf(bindings: Bound, object: unknown): string | undefined {

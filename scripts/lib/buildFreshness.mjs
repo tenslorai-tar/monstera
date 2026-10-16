@@ -350,6 +350,19 @@ export const TEXT_PUSH = [
 ];
 
 /**
+ * What `textSpaces.proof.mjs` runs (ADR-0228's correction of 2026-10-16): the PDFium writer and reading, the grouping,
+ * the contract's encoder, the shared paragraph join, and MuPDF's page-text read as the second reader.
+ *
+ * @type {BuildEdge[]}
+ */
+export const TEXT_SPACES = [
+  ['packages/kernel/src', 'packages/kernel/dist/index.js', 'tsc'],
+  ['packages/contract/src/commands.ts', 'packages/contract/dist/commands.js', 'tsc'],
+  ['packages/shared/src', 'packages/shared/dist/index.js', 'tsc'],
+  ...NATIVE_ENGINE,
+];
+
+/**
  * What `drawnObjectPlace.proof.mjs` runs (ADR-0240): PDFium's reading and route, and MuPDF's placement in the content
  * stream with the numbering beneath it, on the native engine.
  *
@@ -702,6 +715,8 @@ export const ARTEFACT_EDGES = {
   'proof:type3edit': TYPE3_EDIT,
   // A growing paragraph pushing the text below it, written by PDFium and read back by MuPDF (ADR-0249).
   'proof:textpush': TEXT_PUSH,
+  // ADR-0228's correction: two spaces written by PDFium, read back by the editor and by MuPDF.
+  'proof:textspaces': TEXT_SPACES,
   // A HOST'S FONT CATALOGUE, read in a thread that ends, against the in-thread read that keeps HarfBuzz's memory.
   'proof:fontcatalogueapart': FONT_CATALOGUE_APART,
   // ADR-0239: an edit's face program and a composition made apart. Registered with its entry.
