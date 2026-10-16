@@ -1259,8 +1259,8 @@ function pdfiumPeer(drawn: readonly { character: string; page: number }[] = []):
     const { into } = params as { into: string };
     const bytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31]);
     writeFileSync(join(area.output, into), bytes);
-    // AND THE BOXES IT DREW, which a case hands it (ADR-0174), none by default.
-    return { ok: true, value: { bytes: bytes.length, boxed: [...drawn], more: 0 } };
+    // AND THE BOXES IT DREW, which a case hands it (ADR-0174), none by default; and no block moved (ADR-0249).
+    return { ok: true, value: { bytes: bytes.length, boxed: [...drawn], more: 0, moved: [] } };
   };
 
   return {
