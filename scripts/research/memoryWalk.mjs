@@ -27,6 +27,7 @@ import { expect as defaultExpect } from '@playwright/test';
 
 import { byRole, processTreeMemory } from '../lib/processMemory.mjs';
 import { root, startWalk } from './liveWalk.mjs';
+import { savedTextKeepingSpaces } from './savedPdf.mjs';
 import { textSteps } from './textWalkSteps.mjs';
 
 // AN EDIT IS WRITTEN BEFORE ITS EDITOR CLOSES: textWalk measured 3 to 4.5 s on 2026-10-12 and this run's first
@@ -214,6 +215,19 @@ await step('M3c. an idle PDFium host stops with documents open (item 13b), and w
   return { idleHosts: idle.hosts, idleRolesMB: idle.rolesMB, coldEditMs: coldMs, warmEditMs: warmMs, restartCostMs: coldMs - warmMs };
 });
 
+await step('M3d. every word M3b and M3c typed is in the saved file, once and in order: no edit lost across the host’s idle stop', async () => {
+  // THE QUESTION SESSION 3 LEFT OPEN (item 9): its M3c screenshot showed the edited line's words drawn over each other
+  // and the numbers 16, 18 and 19 not visible. A picture of a page turned 180 degrees cannot say whether an edit was
+  // lost; the saved file can, read by MuPDF keeping every space, with each run of whitespace one space.
+  const { savedCopy } = textSteps({ page, output, saveTo, command });
+  const words = (await savedTextKeepingSpaces(await savedCopy('m3d-long-session.pdf'))).replaceAll(/\s+/gu, ' ');
+  const typed = [...Array.from({ length: LONG_EDITS }, (_, at) => String(at + 1)), 'cold', 'warm'].join(' ');
+  expect(words, typed).toContain(typed);
+  // ONCE: an edit applied twice would hold the sequence and more.
+  expect(words.split(typed).length - 1).toBe(1);
+  return { typed };
+});
+
 await step('M4. every tab after the edit (Part 7 B): each draws its page, none is left opening, none failed', async () => {
   const tabs = page.locator('[data-tab-select]');
   const count = await tabs.count();
@@ -245,7 +259,18 @@ await step('M5. every document closed, then 60 s (Part 7 A): no engine host is l
     const unsaved = page.getByRole('dialog', { name: 'Unsaved changes' });
     // WAITED FOR, not asked once: the dialog of the edited document arrives after the command returns (22:02 run: asked
     // at once it was not yet there, and the close then waited 30 s behind it).
-    const asked = await unsaved.waitFor({ state: 'visible', timeout: 4000 }).then(() => true, () => false);
+    // WHICHEVER COMES FIRST, the dialog or the tab going, for up to 30 s: a 4 s wait stood for this, and on 2026-10-16
+    // the dialog came after it, so it was left open, the close never finished, and every later count was one short.
+    const tabs = page.locator('[data-tab-select]');
+    const deadline = Date.now() + 30_000;
+    let asked = false;
+    while (Date.now() < deadline && (await tabs.count()) >= left) {
+      if (await unsaved.isVisible()) {
+        asked = true;
+        break;
+      }
+      await page.waitForTimeout(100);
+    }
     if (asked) await unsaved.getByRole('button', { name: 'Don’t save' }).click();
     await expect(page.locator('[data-tab-select]')).toHaveCount(left - 1, { timeout: 30_000 });
   }

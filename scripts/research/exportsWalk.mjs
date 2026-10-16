@@ -53,7 +53,7 @@ await writeFile(scan, await buildScannedTablePdf());
 
 await step('O2: a printed scan of a ruled table exported to Excel, read on this computer, and every word is in the workbook', async () => {
   await open(scan);
-  await command('Export tables to Excel');
+  await command('Export tables to Excel…');
   const dialog = page.getByRole('dialog', { name: 'Export tables to Excel' });
   await expect(dialog).toBeVisible();
   await dialog.getByLabel('Printed scan, read on this computer').check();
