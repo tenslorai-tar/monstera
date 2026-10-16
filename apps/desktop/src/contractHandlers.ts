@@ -79,6 +79,7 @@ import { basename, isAbsolute, win32 } from 'node:path';
 
 import { type DocId, type DocVersion, type FileHandle, err, lineText, ok, paragraphsOfLines } from '@monstera/shared';
 
+import { readBundledFace } from './bundledFaces.js';
 import { executeCommandHandler } from './commandHandlers.js';
 import { editRefusalOf, rewriteRefusalOf } from './editRefusals.js';
 import {
@@ -384,6 +385,11 @@ export function createContractHandlers(deps: {
    * handler fixtures that ask nothing of fonts; the composition root always passes it.
    */
   readonly fontFamilies?: (() => Promise<ListedFontFamilies>) | null;
+  /**
+   * The bundled fonts' folder, which `app.bundledFace` reads a face from by `main`'s own table (ADR-0250); `null` where
+   * the build has none. Optional only for the handler fixtures that ask nothing of fonts.
+   */
+  readonly bundledFonts?: string | null;
   /** The native components and their states (ADR-0122). `componentStatuses`, where the source is the resolver's. */
   readonly components: (verify: boolean) => Promise<readonly ComponentStatus[]>;
   /**
@@ -472,6 +478,8 @@ export function createContractHandlers(deps: {
       deps.fontFamilies === null || deps.fontFamilies === undefined
         ? ok({ listed: false, families: [], more: 0 })
         : await deps.fontFamilies().then(({ families, more }) => ok({ listed: true, families: [...families], more })),
+    // ONE BUNDLED FACE, by the contract's closed enum and `main`'s own table (ADR-0250 Decision 2).
+    'app.bundledFace': async ({ family }) => ok({ bytes: await readBundledFace(deps.bundledFonts ?? null, family) }),
     // AN ARRAY COPY, for `app.ocrLanguages`' reason (ADR-0122).
     'app.components': async ({ verify }) => ok({ components: [...(await deps.components(verify))] }),
     'document.open': openDocumentHandler(deps),

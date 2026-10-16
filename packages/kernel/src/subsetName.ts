@@ -1,12 +1,7 @@
 /**
- * A font name without its subset tag: `ABCDEF+Arimo-Regular` is a subset of `Arimo-Regular`.
- *
- * ISO 32000-2 §9.9.2: a subset's name begins with six upper-case letters and a plus sign, and the tag says only which
- * subset it is. So two fonts that differ by their tag alone are subsets of one font, and the name with the tag dropped
- * is the font's: the one rule for that, which the resolver, the Word export and an edit's sibling fonts take
- * ([ADR-0173](../../../docs/DECISIONS/0173-an-edits-word-its-font-cannot-carry-is-its-own-piece-in-the-resolvers-face.md)
- * Decision 4). Pure, and in a module of its own, so a caller that reads names imports no subsetter.
+ * A font name without its subset tag: `ABCDEF+Arimo-Regular` is a subset of `Arimo-Regular` — the rule is
+ * `@monstera/shared`'s (`fontNames.ts`), so the font picker strips a tag by the same one
+ * ([ADR-0250](../../../docs/DECISIONS/0250-the-font-picker-draws-each-family-in-itself.md)). Re-exported here for the
+ * kernel's callers, which import it from this module.
  */
-export function withoutSubsetTag(name: string): string {
-  return name.replace(/^[A-Z]{6}\+/u, '');
-}
+export { withoutSubsetTag } from '@monstera/shared';

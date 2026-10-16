@@ -4985,11 +4985,45 @@ export const MAX_CALCULATED_NAME = 512;
 export const MAX_CALCULATED_TEXT = 64;
 
 /**
- * The families one answer of the compose host's list carries: a page, because the whole list at its worst is 3.4 MB of
- * JSON against the host's 256 KiB frame (`hostRoutes.test.ts`). An entry at its worst is two 128-character names, each
- * escaped six bytes a character, about 1.6 KB, so a page of 128 is about 210 KB.
+ * The families one answer of the compose host's list carries: a page, because the whole list at its worst is several MB
+ * of JSON against the host's 256 KiB frame (`hostRoutes.test.ts`). An entry at its worst is four 128-character names —
+ * the family, what it looks like, and since ADR-0250 two `local()` names — each escaped six bytes a character, about
+ * 3.2 KB: a page of 128 read 408,279 bytes at its worst (2026-10-16, that test), so a page is 64, about 204 KB.
  */
-export const FONT_FAMILIES_PAGE = 128;
+export const FONT_FAMILIES_PAGE = 64;
+
+/**
+ * The families bundled with Monstera, by the names their faces state, which the renderer may ask the bytes of to draw
+ * them in the font picker and the editor (ADR-0250 Decision 2): a CLOSED set, so a request for anything else cannot be
+ * expressed — the schema refuses it before a handler runs. `main` answers each from a table keyed by this list, never a
+ * path made from the name; a member with no pinned file there is a compile error in that table.
+ */
+export const BUNDLED_FAMILIES = [
+  'Arimo',
+  'Tinos',
+  'Cousine',
+  'Carlito',
+  'Caladea',
+  'Noto Sans Arabic',
+  'Noto Naskh Arabic',
+  'Noto Sans Symbols 2',
+] as const;
+export const bundledFamilySchema = z.enum(BUNDLED_FAMILIES);
+export type BundledFamily = z.infer<typeof bundledFamilySchema>;
+
+/**
+ * The most bytes one bundled face's answer carries: the largest upright file the provisioner pins is NotoSansSymbols2
+ * at 1,233,128 bytes (`scripts/provision/fonts.mjs`, read 2026-10-16), and this is 1.25 MiB. A test holds every pinned
+ * upright file under it, so a larger pin is a red test rather than a refused answer.
+ */
+export const MAX_BUNDLED_FACE_BYTES = 1_310_720;
+
+/**
+ * A face's name as a renderer's `local()` may carry it (ADR-0250): the letters, digits and punctuation PostScript names
+ * use, so the name cannot close the CSS string it is written in. The ONE statement of it: the host lists a family's
+ * `local` only where its name passes this, so the list is never refused for a name the schema would not take.
+ */
+export const LOCAL_FONT_NAME = /^[A-Za-z0-9 ._+-]+$/u;
 
 /** One font family a picker lists: its name, where it is, what its licence allows, and its bold and italic. */
 export const fontFamilySchema = z
@@ -5001,6 +5035,12 @@ export const fontFamilySchema = z
     italic: z.boolean(),
     /** For a bundled family drawn to another's measure, that family: the picker says *Carlito (looks like Calibri)*. */
     looksLike: z.string().min(1).max(MAX_FONT_FAMILY_NAME).optional(),
+    /**
+     * For an installed family, the names its face nearest an upright regular may be found by, which the renderer draws it
+     * by through `local()`, each in turn (ADR-0250 Decision 1): its PostScript name and, for a variable face, the family
+     * Windows draws it as. Each in {@link LOCAL_FONT_NAME}, so none can close the CSS string it is placed in.
+     */
+    locals: z.array(z.string().min(1).max(MAX_FONT_FAMILY_NAME).regex(LOCAL_FONT_NAME)).min(1).max(2).optional(),
   })
   .strict();
 

@@ -7,6 +7,8 @@ import {
 } from '@monstera/contract';
 import { tokensOf } from '@monstera/shared';
 
+import { previewFamilyOf } from './familyFaces.js';
+
 /**
  * The in-place editor's formatting, kept in the DOM it is drawn in
  * ([ADR-0180](../../../docs/DECISIONS/0180-formatting-is-marks-over-a-blocks-words-and-a-block-is-moved-resized-and-added-by-its-own-commands.md)).
@@ -197,7 +199,9 @@ function paint(span: HTMLElement, root: HTMLElement, zoom: number): void {
     highlight === undefined || highlight === null ? '' : `rgb(${String(highlight.r)}, ${String(highlight.g)}, ${String(highlight.b)})`;
   // THE WIRE'S FRACTION OF THE SIZE IS CSS'S `em`, so what is drawn while typing is what the writer sets.
   span.style.letterSpacing = fmt.spacing === undefined ? '' : `${String(fmt.spacing)}em`;
-  span.style.fontFamily = fmt.family ?? '';
+  // THE FACE THE PICKER SHOWED IT IN (ADR-0250): a family drawn by a face given to it, a standard font's name in its
+  // stand-in; quoted, since a family's name may hold a digit (*Noto Sans Symbols 2*), which an unquoted name may not.
+  span.style.fontFamily = fmt.family === undefined ? '' : `"${(previewFamilyOf(fmt.family) ?? fmt.family).replaceAll('"', '')}"`;
   const size = fmt.size ?? (fmt.rise === undefined ? undefined : base.size);
   if (size === undefined) {
     delete span.dataset['size'];

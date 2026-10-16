@@ -30,6 +30,11 @@ export interface FontFolder {
 export interface CatalogueFace extends CandidateFace {
   readonly path: string;
   readonly faceIndex: number;
+  /**
+   * The names a renderer's `local()` may find the face by (ADR-0250), in the order to try them: its PostScript name, and
+   * for a variable face the family Windows draws its default instance as. Empty where it states neither.
+   */
+  readonly localNames: readonly string[];
 }
 
 export interface Catalogue {
@@ -82,6 +87,7 @@ export function readCatalogue(folders: readonly FontFolder[]): Catalogue {
             weights: weight === undefined ? null : { min: weight.min, max: weight.max },
             path,
             faceIndex: index,
+            localNames: [face.postscript, face.instanceFamily].filter((name) => name !== ''),
           });
         }
       } catch (error) {

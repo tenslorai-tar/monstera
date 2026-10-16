@@ -32,6 +32,26 @@ describe('fontFamiliesOf, the one list a font picker shows', () => {
     expect(fontFamiliesOf(names.slice(0, MAX_FONT_FAMILIES).map((family) => face({ family }))).more).toBe(0);
   });
 
+  it('names an installed family for `local()` by its face nearest an upright regular (ADR-0250 Decision 1)', () => {
+    const [family] = familiesOf([
+      face({ family: 'Sitka', weight: 700, localNames: ['SitkaText-Bold'] }),
+      face({ family: 'Sitka', italic: true, localNames: ['SitkaTextItalic', 'Sitka Text Italic'] }),
+      face({ family: 'Sitka', localNames: ['SitkaText', 'Sitka Text'] }),
+    ]);
+    expect(family?.locals).toStrictEqual(['SitkaText', 'Sitka Text']);
+  });
+
+  it('offers no name the wire would refuse, and none for a bundled family, which crosses as bytes', () => {
+    // A NAME THAT COULD CLOSE THE CSS STRING is left out; the other name of the same face is kept.
+    const [quoted] = familiesOf([face({ family: 'Odd', localNames: ['Odd") , url(x', 'Odd Regular'] })]);
+    expect(quoted?.locals).toStrictEqual(['Odd Regular']);
+    // CONTROL: a family whose every name is refused is listed with none, never with a name the list's schema refuses.
+    const [none] = familiesOf([face({ family: 'Odd', localNames: ['"'] })]);
+    expect(none !== undefined && !('locals' in none)).toBe(true);
+    const [bundled] = familiesOf([face({ family: 'Tinos', origin: 'bundled', localNames: ['Tinos-Regular'] })]);
+    expect(bundled !== undefined && !('locals' in bundled)).toBe(true);
+  });
+
   it('makes one family of a family’s faces, with its bold and italic, sorted as a person reads', () => {
     expect(
       familiesOf([

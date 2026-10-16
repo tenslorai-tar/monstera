@@ -405,10 +405,21 @@ await step('7b. every family the font picker lists is drawn in itself, not in th
   // for them, so it draws them by a name the system does not have (read 2026-10-14, `app.css` declares Marcellus alone).
   await openBlock('Every walk step');
   await panel().getByRole('button', { name: /^Font:/u }).click();
-  const names = await page.locator('[data-font-picker] [role="option"] span').allInnerTexts();
+  // EVERY OPTION AS THE PAGE DRAWS IT (ADR-0250): its name, the family its span is drawn in (a stand-in for a standard
+  // font's name, *Times-Roman* in Tinos), whether it is marked as not previewed, and the group it sits in. Read once no
+  // face is still loading: the bundled faces arrive after the list, and step 7's picker asked for the list already.
+  await page.waitForFunction(() => Reflect.get(globalThis, 'document').fonts.status === 'loaded', undefined, { timeout: 30_000 });
+  const options = await page.locator('[data-font-picker] [role="option"] span').evaluateAll((spans) =>
+    spans.map((span) => ({
+      name: span.textContent ?? '',
+      family: (span.ownerDocument.defaultView?.getComputedStyle(span).fontFamily ?? '').split(',')[0]?.trim().replaceAll('"', '') ?? '',
+      none: span.hasAttribute('data-font-preview'),
+      group: span.closest('[role="group"]')?.querySelector('[role="presentation"]')?.textContent ?? '',
+    })),
+  );
   await page.keyboard.press('Escape');
   await commit();
-  const unresolved = await page.evaluate((families) => {
+  const unresolved = await page.evaluate((drawn) => {
     const canvas = Reflect.get(globalThis, 'document').createElement('canvas');
     const context = canvas.getContext('2d');
     /** @param {string} font */
@@ -416,17 +427,25 @@ await step('7b. every family the font picker lists is drawn in itself, not in th
       context.font = font;
       return context.measureText('Findings 0123 WMiq').width;
     };
-    return families.filter((family) => {
-      const serif = width(`40px "${family}", serif`);
-      const mono = width(`40px "${family}", monospace`);
-      return serif === width('40px serif') && mono === width('40px monospace');
-    });
-  }, names);
+    return drawn
+      .filter((option) => !option.none)
+      .filter((option) => {
+        const serif = width(`40px "${option.family}", serif`);
+        const mono = width(`40px "${option.family}", monospace`);
+        return serif === width('40px serif') && mono === width('40px monospace');
+      })
+      .map((option) => option.name);
+  }, options);
+  const names = options.map((option) => option.name);
+  // NOT PREVIEWED ONLY UNDER *In this document* (the owner's locked decision 6): a family from this computer or bundled
+  // with Monstera is always drawn in itself.
+  const notPreviewed = options.filter((option) => option.none);
   expect(names.length, 'the picker listed no family, so the instrument saw nothing').toBeGreaterThan(0);
   expect(names, 'Arial is the positive control and the picker lists it').toContain('Arial');
   expect(unresolved, 'Arial is the positive control and resolves').not.toContain('Arial');
   expect(unresolved, `families drawn in the browser's default: ${unresolved.join(', ')}`).toStrictEqual([]);
-  return { listed: names.length, unresolved };
+  expect(notPreviewed.filter((option) => option.group !== 'In this document'), JSON.stringify(notPreviewed)).toStrictEqual([]);
+  return { listed: names.length, unresolved, notPreviewed: notPreviewed.map((option) => option.name) };
 });
 
 await step(`8. ${INSTALLED} chosen with nothing typed: not refused, and the words unchanged`, async () => {

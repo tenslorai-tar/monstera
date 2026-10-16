@@ -61,6 +61,8 @@ const handlers: ContractHandlers = {
     Promise.resolve(
       ok({ listed: true, families: [{ name: 'Arial', origin: 'installed' as const, embedding: 'subset' as const, bold: true, italic: true }], more: 0 }),
     ),
+  // THREE BYTES THAT ARE NO FONT: the wire carries bytes and says nothing of them; the renderer's `FontFace` is their reader.
+  'app.bundledFace': () => Promise.resolve(ok({ bytes: new Uint8Array([0, 1, 0]) })),
   'document.open': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   // `unlocked` WITH THE OWNER BIT, rather than the user bit or the variant with
   // no number in it. `2` is what a handler that hard-coded the commonest answer

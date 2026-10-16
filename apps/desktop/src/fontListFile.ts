@@ -55,9 +55,18 @@ export function fontFoldersFingerprint(folders: readonly (string | null)[], list
   return hash.digest('hex');
 }
 
-/** The file as written: the fingerprint it was read under, and the host's answer. */
+/**
+ * Which READING of the fonts a kept list is: raised whenever what the host answers for a family gains something a list
+ * kept before cannot hold. A file written under another is read again, since the folders' fingerprint says only that the
+ * fonts are the same, and not that the list was read the way this build reads it. 2 since ADR-0250, whose `local` an
+ * earlier list never carries, so its installed families would never be drawn in themselves until a font changed.
+ */
+export const FONT_LIST_READING = 2;
+
+/** The file as written: the reading it is, the fingerprint it was read under, and the host's answer. */
 const keptSchema = z
   .object({
+    reading: z.literal(FONT_LIST_READING),
     fingerprint: z.string().length(64),
     families: z.array(fontFamilySchema).max(MAX_FONT_FAMILIES),
     more: z.number().int().min(0),
@@ -82,6 +91,6 @@ export async function keptFontFamilies(
   const kept = keptSchema.safeParse(file.read());
   if (kept.success && kept.data.fingerprint === now) return { families: kept.data.families, more: kept.data.more };
   const read = await fromHost();
-  file.write({ fingerprint: now, families: read.families, more: read.more });
+  file.write({ reading: FONT_LIST_READING, fingerprint: now, families: read.families, more: read.more });
   return read;
 }

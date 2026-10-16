@@ -79,6 +79,23 @@ describe('keptFontFamilies', () => {
     expect(asked).toBe(1);
   });
 
+  it('asks the host again for a list kept by an EARLIER READING, whatever its fingerprint (ADR-0250)', async () => {
+    // A LIST KEPT BEFORE `local` EXISTED: valid in every field it has and the same fonts, so a check of the fingerprint
+    // alone would trust it, and every installed family would go on being drawn in the browser's default face.
+    const file = createEphemeralSettings();
+    file.write({ fingerprint: 'a'.repeat(64), ...LIST });
+    let asked = 0;
+    const fromHost = (): Promise<typeof LIST> => {
+      asked += 1;
+      return Promise.resolve(LIST);
+    };
+    await keptFontFamilies(file, () => 'a'.repeat(64), fromHost);
+    expect(asked).toBe(1);
+    // CONTROL: the list this reading kept is answered from the file.
+    await keptFontFamilies(file, () => 'a'.repeat(64), fromHost);
+    expect(asked).toBe(1);
+  });
+
   it('keeps nothing when the host read fails', async () => {
     const file = createEphemeralSettings();
     await expect(keptFontFamilies(file, () => 'a'.repeat(64), () => Promise.reject(new Error('the host failed')))).rejects.toThrow('the host failed');

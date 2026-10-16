@@ -20,6 +20,7 @@ function face(id: string, family: string, characters: string): CatalogueFace {
     weights: null,
     path: `${id}.ttf`,
     faceIndex: 0,
+    localNames: [`${family.replaceAll(' ', '')}-Regular`],
   };
 }
 

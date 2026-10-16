@@ -197,6 +197,7 @@ import {
 } from './budget.js';
 import { type AppInfo, type BakedAppInfo, type PickDocument, type PickDocuments, createContractHandlers } from './contractHandlers.js';
 import type { KnownRoot } from './displayLocation.js';
+import { nativeComponentPath } from './nativeComponents.js';
 import { networkOcrFrame } from './networkOcrFrame.js';
 import { NO_RECENT_PICTURES, type PictureFiles, type RecentPictures, createRecentPictures } from './recentPictures.js';
 import { NO_REQUEST_LOG, createRequestLog, observedHandlers } from './requestLog.js';
@@ -2152,6 +2153,9 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
           : fontList === undefined
             ? composeHost.fontFamilies
             : heldRead(() => keptFontFamilies(fontList.file, fontList.fingerprint, composeHost.fontFamilies)),
+      // THE BUNDLED FONTS' FOLDER, the one the hosts are handed (`nativeComponentPath`), which `app.bundledFace` reads one
+      // pinned face from by its own table (ADR-0250).
+      bundledFonts: nativeComponentPath('fonts'),
       // VERIFY STARTS WHAT IT VERIFIED (Part 0.1): each engine host built and each converter run, the way the application
       // runs them, so a DLL missing from the computer is seen here rather than at a person's first document.
       components: (verify) =>

@@ -72,6 +72,8 @@ import {
   formFieldReadSchema,
   documentFontSchema,
   listedFontFamiliesSchema,
+  bundledFamilySchema,
+  MAX_BUNDLED_FACE_BYTES,
   MAX_FONT_FAMILIES,
   MAX_FONT_FAMILY_NAME,
   MAX_PAGE_COORDINATE,
@@ -1772,6 +1774,31 @@ export const channels = {
     'Lists the font families installed on this computer and bundled with Monstera.',
     z.object({}),
     listedFontFamiliesSchema,
+  ),
+
+  /**
+   * One bundled family's upright face, as bytes, for the renderer to draw that family in
+   * ([ADR-0250](../../../docs/DECISIONS/0250-the-font-picker-draws-each-family-in-itself.md) Decision 2): the fourth
+   * sanctioned byte crossing beside ADR-0175's.
+   *
+   * ## The family is a CLOSED enum, and that is the whole of the channel's safety
+   *
+   * `family` is {@link bundledFamilySchema}: a request naming anything else is refused by this schema before a handler
+   * runs, so the renderer cannot express one. `main` answers from a table keyed by the enum, never a path made from the
+   * name. The answer is a font program Monstera ships, which the renderer loads as a `FontFace` from bytes; §9.27's
+   * `font-src 'self'` does not govern that (ADR-0175's measurement).
+   */
+  'app.bundledFace': channel(
+    'Answers one bundled font family’s upright face, as bytes.',
+    z.object({ family: bundledFamilySchema }).strict(),
+    z.object({
+      bytes: z.instanceof(Uint8Array).refine((bytes) => bytes.length > 0 && bytes.length <= MAX_BUNDLED_FACE_BYTES, {
+        message: `a bundled face empty or larger than ${String(MAX_BUNDLED_FACE_BYTES)} bytes`,
+      }),
+    }),
+    // NO DECLARED REFUSAL: every member names a file the installer ships, so a missing one is an install that is broken,
+    // reported as `internal` with its reference, and the picker draws that family in the interface font meanwhile.
+    [],
   ),
 
   /**

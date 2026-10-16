@@ -1,8 +1,9 @@
 import { useLingui } from '@lingui/react';
 import type { FontFamilyEntry } from '@monstera/contract';
-import type { MessageKey } from '@monstera/shared';
-import { type ReactElement, useId, useMemo, useRef, useState } from 'react';
+import { type MessageKey, SUBSET_TAG } from '@monstera/shared';
+import { type ReactElement, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
+import { facesGiven, previewFamilyOf, subscribeFaces } from './familyFaces.js';
 import {
   FONT_GROUP_BUILT_IN,
   FONT_GROUP_BUNDLED,
@@ -94,8 +95,11 @@ export interface FontGroup {
   readonly choices: readonly FontChoice[];
 }
 
-/** A tag of six capitals and a plus, which a subset's name begins with (PDF 32000-1, 9.6.4). The one copy (B3a). */
-export const SUBSET_TAG = /^[A-Z]{6}\+/u;
+/**
+ * A tag of six capitals and a plus, which a subset's name begins with (PDF 32000-1, 9.6.4): `@monstera/shared`'s, the
+ * rule the kernel's resolver strips by too (B3a; this file held its own copy until ADR-0250 moved the rule there).
+ */
+export { SUBSET_TAG };
 
 /** The groups a picker shows for `query`, each without an empty one, in the owner's order. Pure, for its tests. */
 export function fontGroups(
@@ -175,6 +179,14 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
   const groups = useMemo(() => fontGroups(list, inDocument, recentlyChosen(), builtIn, query), [list, inDocument, builtIn, query]);
   /** The computer's list as read, or `undefined` while it is read and where the consumer offers none. */
   const read = readList(list);
+  // DRAWN AGAIN WHEN A FACE ARRIVES (ADR-0250): a bundled family's bytes come after the list does.
+  useSyncExternalStore(subscribeFaces, facesGiven);
+  /** The face a shown name is drawn in, or `undefined` for the interface font (ADR-0250 Decision 3). */
+  const previewOf = (name: string): string | undefined => previewFamilyOf(name, read?.families ?? []);
+  const shownIn = (name: string): React.CSSProperties | undefined => {
+    const preview = previewOf(name);
+    return preview === undefined ? undefined : { fontFamily: `"${preview}"` };
+  };
   const flat = groups.flatMap((group) => group.choices);
   const choose = (choice: FontChoice): void => {
     rememberFamily(choice.family);
@@ -200,7 +212,7 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
           // THE SEARCH TAKES THE KEYS once the list is open, so a person types a name at once.
           requestAnimationFrame(() => search.current?.focus());
         }}
-        style={value === undefined ? undefined : { fontFamily: `"${value}"` }}
+        style={value === undefined ? undefined : shownIn(value)}
         type="button"
       >
         <span className="m-font-picker__name">{value ?? _(unset)}</span>
@@ -278,8 +290,13 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
                         }}
                         role="option"
                       >
-                        {/* EACH NAME IN ITS OWN TYPEFACE, where this computer can draw it. */}
-                        <span style={{ fontFamily: `"${choice.family}"` }}>{choice.family}</span>
+                        {/* EACH NAME IN ITS OWN TYPEFACE, or the face the writer would set it in; where neither can be
+                            drawn, in the interface font and said so to a reader of the page (the owner's locked decision 6). */}
+                        {previewOf(choice.family) === undefined ? (
+                          <span data-font-preview="none">{choice.family}</span>
+                        ) : (
+                          <span style={shownIn(choice.family)}>{choice.family}</span>
+                        )}
                       </div>
                     );
                   })}

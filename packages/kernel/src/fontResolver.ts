@@ -24,7 +24,7 @@
  */
 
 import type { FontEmbedding } from './fontFaces.js';
-import { withoutSubsetTag } from './subsetName.js';
+import { LOOKS_LIKE, STAND_INS, normaliseFamily } from '@monstera/shared';
 
 /** Where a face came from, in the order the resolver tries them. */
 export type FaceOrigin = 'own' | 'sibling' | 'installed' | 'bundled';
@@ -70,60 +70,12 @@ export interface ResolvedRun {
 /** The family classes a bundled face stands in for. */
 export type FamilyClass = 'sans' | 'serif' | 'mono';
 
-/**
- * Which bundled family stands in for which, by normalised family name: the metric-compatible pairs (Arimo for Arial
- * and Helvetica, Tinos for Times New Roman, Cousine for Courier New, Carlito for Calibri, Caladea for Cambria) and the
- * bundled faces' own names.
- */
-export const STAND_INS: Readonly<Record<string, string>> = {
-  arial: 'Arimo',
-  helvetica: 'Arimo',
-  helveticaneue: 'Arimo',
-  liberationsans: 'Arimo',
-  arimo: 'Arimo',
-  timesnewroman: 'Tinos',
-  times: 'Tinos',
-  timesroman: 'Tinos',
-  liberationserif: 'Tinos',
-  tinos: 'Tinos',
-  couriernew: 'Cousine',
-  courier: 'Cousine',
-  liberationmono: 'Cousine',
-  cousine: 'Cousine',
-  calibri: 'Carlito',
-  carlito: 'Carlito',
-  cambria: 'Caladea',
-  caladea: 'Caladea',
-};
-
-/**
- * The family each bundled one is drawn to the measure of, as a person knows it: what a picker says beside a bundled
- * name, *Carlito (looks like Calibri)*. Beside {@link STAND_INS} because it is the same fact read the other way, and a
- * test holds each pair to that table, so the two cannot come to disagree.
- */
-export const LOOKS_LIKE: Readonly<Record<string, string>> = {
-  Arimo: 'Arial',
-  Tinos: 'Times New Roman',
-  Cousine: 'Courier New',
-  Carlito: 'Calibri',
-  Caladea: 'Cambria',
-};
+// THE NAME RULES AND THE STAND-IN TABLE are `@monstera/shared`'s, so the font picker previews a family by the very table
+// this resolver writes with (ADR-0250 Decision 3); exported on from here for the kernel's own callers.
+export { LOOKS_LIKE, STAND_INS, normaliseFamily };
 
 /** The bundled family for each class. */
 export const CLASS_FAMILIES: Readonly<Record<FamilyClass, string>> = { sans: 'Arimo', serif: 'Tinos', mono: 'Cousine' };
-
-/**
- * A family name as the stand-in table keys it: no subset tag, no PostScript style suffix, lower case, letters only.
- * `ABCDEF+TimesNewRomanPS-BoldItalicMT` is `timesnewroman`.
- */
-export function normaliseFamily(name: string): string {
-  return withoutSubsetTag(name)
-    .replace(/[-,](?:Bold|Italic|Oblique|Regular|Roman|Book|Medium|Light|Semibold|Black)\w*$/iu, '')
-    .replace(/(?:PS)?MT$/u, '')
-    .replace(/PS$/u, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]/gu, '');
-}
 
 /** The class a family name reads as, for a family with no stand-in. */
 export function familyClass(family: string | null): FamilyClass {
