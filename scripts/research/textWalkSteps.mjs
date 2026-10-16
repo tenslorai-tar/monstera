@@ -8,6 +8,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { PDFHexString, PDFString } from '@cantoo/pdf-lib';
 import { expect as defaultExpect } from '@playwright/test';
 
 // AN EDIT IS WRITTEN BEFORE ITS EDITOR CLOSES (3 to 4.5 s on the 13 KB sample, 2026-10-12), so a step waits 30 s.
@@ -100,5 +101,26 @@ export function textSteps(walk) {
   return { editor, panel, ensureEditText, clickPage, chooseFont, savedCopy };
 }
 
-/** How many tabs a page's content marks (ADR-0228: one gap, `/ActualText` U+0009). @param {string} content */
-export const tabMarks = (content) => (content.match(/\/ActualText <FEFF0009>/gu) ?? []).length;
+/**
+ * How many tabs a page's content marks (ADR-0228: one gap, `/ActualText` U+0009), whichever writer wrote it.
+ *
+ * BY THE MARK'S DECODED VALUE, never by one spelling. The MuPDF writer spells it `<FEFF0009>` and PDFium's mark API
+ * writes `(\t)`, a literal string holding byte 9 (measured 2026-10-16 in the text-regression walk's saved file), and the
+ * format says both are the same text. Counting the first spelling alone reported "not saved" for every tab the PDFium
+ * writer saved. A mark whose value cannot be read throws: an unread mark counted as no tab is the reassuring answer.
+ *
+ * @param {string} content a page's decoded content, latin1
+ */
+export const tabMarks = (content) => {
+  const marks = [...content.matchAll(/\/ActualText\s*/gu)];
+  let tabs = 0;
+  for (const mark of marks) {
+    const rest = content.slice((mark.index ?? 0) + mark[0].length);
+    const literal = /^\(((?:\\[\s\S]|[^\\()])*)\)/u.exec(rest);
+    const hex = /^<([0-9A-Fa-f\s]*)>/u.exec(rest);
+    const value = literal !== null ? PDFString.of(literal[1] ?? '').decodeText() : hex !== null ? PDFHexString.of((hex[1] ?? '').replaceAll(/\s/gu, '')).decodeText() : null;
+    if (value === null) throw new Error(`an /ActualText whose value this counter cannot read: ${JSON.stringify(rest.slice(0, 40))}`);
+    if (value === '\t') tabs += 1;
+  }
+  return tabs;
+};
