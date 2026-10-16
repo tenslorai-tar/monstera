@@ -514,9 +514,16 @@ await step('O8: an AREA’s corner dragged with Select changes the saved area, a
     )
     .toBeGreaterThan(shoelace(drawn.points) * 1.2);
   if (grown === undefined) throw new Error('no area in the saved file');
-  // THE READING STANDS TO THE SAVED CORNERS' AREA as it did before the drag, to the reading's own precision.
-  const perArea = valueOf(drawn.reading) / shoelace(drawn.points);
-  expect(valueOf(grown.reading), `drawn ${JSON.stringify(drawn)}, after the drag ${JSON.stringify(grown)}`).toBeCloseTo(perArea * shoelace(grown.points), 1);
+  // THE READING STANDS TO THE SAVED CORNERS' AREA as it did before the drag, to the reading's own precision — carried as
+  // an interval. The scale is inferred from the first reading, which is ROUNDED (7,500 pt² reads "1.4 in²" for 1.447),
+  // and a point estimate multiplies that rounding by the growth: it expected 2.24 where 2.3 (12,000 pt², 2.315) is right
+  // (2026-10-16). Half a unit of the shown decimal either side of each reading; one left at the old value still fails.
+  const half = (/** @type {string} */ reading) => 0.5 * 10 ** -(/\.(\d+)/u.exec(reading)?.[1]?.length ?? 0);
+  const growth = shoelace(grown.points) / shoelace(drawn.points);
+  const lowest = (valueOf(drawn.reading) - half(drawn.reading)) * growth - half(grown.reading);
+  const highest = (valueOf(drawn.reading) + half(drawn.reading)) * growth + half(grown.reading);
+  const shown = valueOf(grown.reading);
+  expect(shown >= lowest && shown <= highest, `drawn ${JSON.stringify(drawn)}, after the drag ${JSON.stringify(grown)}, expected ${String(lowest)} to ${String(highest)}`).toBe(true);
   expect(grown.filled).toBe(false);
   return { before: drawn.reading, after: grown.reading, corners: grown.points };
 });

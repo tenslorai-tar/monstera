@@ -32,7 +32,7 @@ import { PDFDocument, PDFName, PDFString, StandardFonts } from '@cantoo/pdf-lib'
 import { expect as defaultExpect } from '@playwright/test';
 
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
-import { root, startWalk } from './liveWalk.mjs';
+import { root, startWalk, writesDone, writesIdle } from './liveWalk.mjs';
 import { savedContent, savedFonts, savedTextKeepingSpaces, savedWords } from './savedPdf.mjs';
 import { tabMarks, textSteps } from './textWalkSteps.mjs';
 
@@ -304,11 +304,32 @@ await step('5. two spaces typed stay two spaces, on screen and in the saved file
   // from a file holding two whatever was written (measured 2026-10-16 on this step's own saved file).
   const words = await savedTextKeepingSpaces(await savedCopy('05-spaces.pdf'));
   expect(words).toMatch(/two {2}spaces/u);
-  // ON REOPENING, still two.
-  await openBlock('Every walk step');
+  // ON REOPENING, still two. WHAT THE PAGE OFFERS TO EDIT is recorded first, and a reopen that shows the words without the
+  // edit is not ended with a press away — that would write the older words over the edit — but with the editor's words
+  // left as they are and a second reopen after the writes are idle, so the record says whether the read lagged or was wrong.
+  const offered = await page.locator('[data-text-block]').evaluateAll((blocks) => blocks.map((each) => each.getAttribute('aria-label') ?? ''));
+  // THE BLOCK THAT HOLDS THE TYPED WORDS, wherever the reader put them. Measured 2026-10-16: they wrap onto a line that
+  // lands on the small print 4 pt below (the paragraph grows downward, ADR-0096), and the reader then reads that line as
+  // the start of the small print's block ("two spaces Small print right below…"), with no edit lost (the file kept
+  // them, and ending the paragraph's editor wrote nothing).
+  const holding = offered.find((label) => label.includes('two spaces'))?.match(/^Edit “(.{1,20})/u)?.[1];
+  await openBlock(holding ?? 'Every walk step');
   const shown = await editor().innerText();
+  if (!shown.includes('two  spaces')) {
+    // ENDED AS THE HARNESS ENDS A FAILED STEP, then measured: whether ending it wrote the older words over the edit, and
+    // what a reopen shows once every write is idle.
+    const writing = await writesDone(page);
+    await page.keyboard.press('Escape');
+    await expect(editor()).toHaveCount(0);
+    await writesIdle(page);
+    const wroteOnEnd = (await writesDone(page)) - writing;
+    const kept = (await savedTextKeepingSpaces(await savedCopy('05-after-reopen.pdf'))).includes('two  spaces');
+    await page.waitForTimeout(2000);
+    await openBlock(holding ?? 'Every walk step');
+    const later = await editor().innerText();
+    throw new Error(`the reopened editor did not hold the edit: ${JSON.stringify({ offered, shown, wroteOnEnd, kept, later })}`);
+  }
   await commit();
-  expect(shown).toContain('two  spaces');
   return { words };
 });
 

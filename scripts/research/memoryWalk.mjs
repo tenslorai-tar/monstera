@@ -119,7 +119,7 @@ await step('M3. ONE Edit text action: a paragraph clicked, a word typed, a click
   const before = /** @type {ReturnType<typeof reading> | null} */ (sevenOpen);
   if (before === null) throw new Error('M2 took no reading');
   const allowed = before.totalMB + (read.rolesMB['host pdfium'] ?? 0);
-  expect(read.totalMB - compose, `after the edit ${String(read.totalMB)} MB (compose ${String(compose)}), allowed ${String(allowed)}`).toBeLessThanOrEqual(allowed);
+  expect(read.totalMB - compose, `after the edit ${String(read.totalMB)} MB (compose ${String(compose)}), allowed ${String(allowed)}; by process ${JSON.stringify(read.rolesMB)}`).toBeLessThanOrEqual(allowed);
   return { ...read, composeHostAfterEdit: compose > 0, allowedAfterEditMB: allowed };
 });
 
@@ -221,11 +221,20 @@ await step('M3d. every word M3b and M3c typed is in the saved file, once and in 
   // lost; the saved file can, read by MuPDF keeping every space, with each run of whitespace one space.
   const { savedCopy } = textSteps({ page, output, saveTo, command });
   const words = (await savedTextKeepingSpaces(await savedCopy('m3d-long-session.pdf'))).replaceAll(/\s+/gu, ' ');
-  const typed = [...Array.from({ length: LONG_EDITS }, (_, at) => String(at + 1)), 'cold', 'warm'].join(' ');
-  expect(words, typed).toContain(typed);
-  // ONCE: an edit applied twice would hold the sequence and more.
-  expect(words.split(typed).length - 1).toBe(1);
-  return { typed };
+  // EACH WORD PRESENT, not the sequence: the paragraph grows downward over the text below it as it is edited (ADR-0096),
+  // so a reader in position order meets some typed words inside other lines — "18dolore", "3labore" (2026-10-16).
+  // Present is the question; the order on the page is the overlap's, which is recorded for the owner separately.
+  // COUNTED AGAINST THE ORIGINAL, one more each: a lone "1" is also in "Page 1 of 5", so presence could not see it lost.
+  const original = (await savedTextKeepingSpaces(sample)).replaceAll(/\s+/gu, ' ');
+  const typed = [...Array.from({ length: LONG_EDITS }, (_, at) => String(at + 1)), 'cold', 'warm'];
+  // A NUMBER BOUNDED BY DIGITS ONLY and a word by letters only: overlapping lines glue them to their neighbours ("18dolore").
+  const count = (/** @type {string} */ text, /** @type {string} */ word) => {
+    const edge = /^\d+$/u.test(word) ? '\\d' : 'a-z';
+    return (text.match(new RegExp(`(?<![${edge}])${word}(?![${edge}])`, 'giu')) ?? []).length;
+  };
+  const wrong = typed.filter((word) => count(words, word) !== count(original, word) + 1);
+  expect(wrong, words.slice(0, 600)).toStrictEqual([]);
+  return { typed: typed.length };
 });
 
 await step('M4. every tab after the edit (Part 7 B): each draws its page, none is left opening, none failed', async () => {
@@ -284,7 +293,8 @@ await step('M5. every document closed, then 60 s (Part 7 A): no engine host is l
   if (before === null) throw new Error('M1 took no reading');
   // THE OWNER'S TARGET FOR A CLOSE (run 4 item 13f): every document closed, within about 10% of the start screen.
   const allowedMB = Math.round(before.totalMB * 1.1);
-  expect(after.totalMB, `closed ${String(after.totalMB)} MB against ${String(before.totalMB)} at the start`).toBeLessThanOrEqual(allowedMB);
+  // THE FIGURES IN THE MESSAGE, by process: a failed step records no facts, and the closed reading is one the report owes.
+  expect(after.totalMB, `closed ${String(after.totalMB)} MB against ${String(before.totalMB)} at the start; by process ${JSON.stringify(after.rolesMB)}`).toBeLessThanOrEqual(allowedMB);
   return {
     ...after,
     keptFontFamilies: kept.families.length,
