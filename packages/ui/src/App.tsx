@@ -130,6 +130,7 @@ import {
   zoomCommand,
   actualSizeCommand,
 } from './commands/documentCommands.js';
+import { inWriteOrder } from './commands/orderedClient.js';
 import { textFormatCommands } from './commands/textFormatCommands.js';
 import { editorIsOpen, onEditorChange } from './textEditorControl.js';
 import { proceeds, settlePendingRedactions } from './commands/pendingRedactions.js';
@@ -634,7 +635,10 @@ const MODE_HINTS: ReadonlyMap<string, MessageKey> = new Map([
   [EDIT_FIELDS_TOOL_ID, HINT_EDIT_FIELDS],
 ]);
 
-export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onRegistries }: AppProps): ReactElement {
+export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener, onRegistries }: AppProps): ReactElement {
+  // THE WINDOW'S ONE CLIENT, through which every command and every read that writes a document out is sent, so a save
+  // follows the commands already sent for its document (`orderedClient.ts`). Never `given` past this line.
+  const client = useMemo(() => inWriteOrder(given), [given]);
   /**
    * Every open document, in the order they were opened.
    *

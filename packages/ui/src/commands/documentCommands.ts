@@ -726,6 +726,14 @@ function laneOf(client: ContractClient, docId: DocId): Lane {
   return lane;
 }
 
+/**
+ * Settles once every command this window has already sent for `docId` through `client` has been answered, applied or
+ * refused: what a read of the document that writes it out waits for (`orderedClient.ts`). Never rejects.
+ */
+export function afterSentCommands(client: ContractClient, docId: DocId): Promise<void> {
+  return laneOf(client, docId).tail;
+}
+
 /** `version` followed through every move of `lane` that kept `walk`: the version a target named at `version` is current at. */
 function followed(lane: Lane, version: DocVersion, walk: CommandWalk): DocVersion {
   let at = version;
