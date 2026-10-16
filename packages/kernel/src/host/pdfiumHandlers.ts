@@ -13,6 +13,7 @@ import {
   TextNotInPlaceError,
   TextNotWritableError,
 } from '../textEditRefusals.js';
+import { itemsThatFit } from './answerFit.js';
 import type { ContainmentProbePaths, ContainmentReport } from './containment.js';
 import type { HostArea, HostFilesystem, HostSessions } from './engineHandlers.js';
 import {
@@ -97,9 +98,15 @@ export type HostTextRunsReader = (
  * is applied to a page's runs or objects (the owner's L6). The walk is what knows there was more, so the flag is computed
  * from the whole walk here rather than by a handler from the array it is handed, which would answer *you asked for that
  * many* every time. The editor says so on screen where it is set.
+ *
+ * BY BYTES AS WELL AS BY COUNT ({@link itemsThatFit}): the count is the ceiling over the smallest run, so a page of real
+ * runs reached the 8 MiB ceiling first and was refused as `answer-too-large` (textWalk L6, 2026-10-16).
  */
-export function boundedToAnswer<Item>(walked: readonly Item[]): { readonly kept: Item[]; readonly truncated: boolean } {
-  return { kept: walked.slice(0, ENGINE_TEXT_OBJECTS_MAX), truncated: walked.length > ENGINE_TEXT_OBJECTS_MAX };
+export function boundedToAnswer<Item>(
+  walked: readonly Item[],
+  maxAnswerBytes?: number,
+): { readonly kept: Item[]; readonly truncated: boolean } {
+  return itemsThatFit(walked, ENGINE_TEXT_OBJECTS_MAX, maxAnswerBytes);
 }
 
 /**

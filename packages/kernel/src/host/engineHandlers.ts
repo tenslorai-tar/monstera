@@ -72,6 +72,7 @@ import {
   taggedPrior,
 } from './engineChannels.js';
 import { pdfLibRefusalCodeOf, placeholderRefusalCodeOf, protectionRefusalCodeOf } from './hostRefusals.js';
+import { fittedList } from './answerFit.js';
 import { boundPageText } from './pageTextBound.js';
 import { type CopyEngine, openCopy } from '../openCopy.js';
 
@@ -1039,7 +1040,10 @@ export function createEngineHandlers({
       // the adapter already parsed either works or is a defect, including a
       // page index outside it.
       const listed = await pageLinks(held.session, page);
-      return { ok: true, value: { links: [...listed.links], truncated: listed.truncated } };
+      // FITTED TO ONE ANSWER (`answerFit.ts`), as every list on this wire is: a count bound is the ceiling over the
+      // smallest item, and real items reach the ceiling first.
+      const { kept, truncated } = fittedList({ items: listed.links, truncated: listed.truncated });
+      return { ok: true, value: { links: kept, truncated } };
     },
 
     'engine/link-address': async ({ session, page, index }) => {
@@ -1086,28 +1090,32 @@ export function createEngineHandlers({
       // NO try/catch, for the link read's reason.
       const read = await wordBoxes(held.session, page);
       const lines = read.lines.map((line) => ({ text: line.text, box: { ...line.box }, boxes: [...line.boxes] }));
-      return { ok: true, value: { lines, truncated: read.truncated } };
+      const fitted = fittedList({ items: lines, truncated: read.truncated });
+      return { ok: true, value: { lines: fitted.kept, truncated: fitted.truncated } };
     },
 
     'engine/destinations': async ({ session }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
       const listed = await destinations(held.session);
-      return { ok: true, value: { destinations: [...listed.destinations], truncated: listed.truncated } };
+      const { kept, truncated } = fittedList({ items: listed.destinations, truncated: listed.truncated });
+      return { ok: true, value: { destinations: kept, truncated } };
     },
 
     'engine/layers': async ({ session }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
       const listed = await layers(held.session);
-      return { ok: true, value: { layers: [...listed.layers], truncated: listed.truncated } };
+      const { kept, truncated } = fittedList({ items: listed.layers, truncated: listed.truncated });
+      return { ok: true, value: { layers: kept, truncated } };
     },
 
     'engine/fonts': async ({ session }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
       const listed = await fonts(held.session);
-      return { ok: true, value: { fonts: [...listed.fonts], truncated: listed.truncated } };
+      const { kept, truncated } = fittedList({ items: listed.fonts, truncated: listed.truncated });
+      return { ok: true, value: { fonts: kept, truncated } };
     },
 
     'engine/pageMarks': async ({ session }) => {
@@ -1157,10 +1165,8 @@ export function createEngineHandlers({
       // truncation from the array's length, which would answer *you asked for
       // that many* every time (`engine/duplicate-pages`' note).
       const listed = await annotations(held.session);
-      return {
-        ok: true,
-        value: { annotations: [...listed.annotations], truncated: listed.truncated },
-      };
+      const { kept, truncated } = fittedList({ items: listed.annotations, truncated: listed.truncated });
+      return { ok: true, value: { annotations: kept, truncated } };
     },
 
     'engine/annotation-records': async ({ session, page, indices }) => {
@@ -1198,7 +1204,8 @@ export function createEngineHandlers({
       // stops rather than building the whole list and slicing it, and it is
       // what knows there was more. Both halves are forwarded.
       const listed = await formFields(held.session);
-      return { ok: true, value: { fields: [...listed.fields], truncated: listed.truncated } };
+      const { kept, truncated } = fittedList({ items: listed.fields, truncated: listed.truncated });
+      return { ok: true, value: { fields: kept, truncated } };
     },
 
     'engine/flat-fields': async ({ session, page }) => {

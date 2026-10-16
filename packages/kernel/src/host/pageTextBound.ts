@@ -1,6 +1,8 @@
 // THE HOST'S ENTRY, never the root: the root builds the renderer's channel map at load, which no host serves.
 import { ENGINE_ANSWER_FILE_MAX_BYTES } from '@monstera/contract/host';
 
+import { ANSWER_ENVELOPE_ROOM } from './answerFit.js';
+
 /**
  * One page's structured-text JSON cut to what one answer carries, and whether it was cut.
  *
@@ -27,8 +29,8 @@ export interface BoundedPageText {
   readonly truncated: boolean;
 }
 
-/** Room for the rest of the answer around the page's JSON: the envelope, its field names and the flag. */
-const ENVELOPE_ROOM = 1024;
+/** Room for the rest of the answer around the page's JSON: the lists' room (`answerFit.ts`), one definition. */
+const ENVELOPE_ROOM = ANSWER_ENVELOPE_ROOM;
 
 /** How many bytes `json` takes once written as a string inside another JSON document. */
 function writtenBytes(json: string): number {
