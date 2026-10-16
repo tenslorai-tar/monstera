@@ -2,7 +2,7 @@ import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
-import { installInspector, stopWatching, unfinishedNow, watchFrames } from './frameInspector.js';
+import { framesTold, installInspector, stopWatching, unfinishedNow, watchFrames } from './frameInspector.js';
 import { bridge } from './pageBridge.js';
 import { runCommand } from './palette.js';
 
@@ -76,14 +76,17 @@ test('a TAB SWITCH shows the finished document from its first frame, at its own 
   await expect.poll(() => unfinishedNow(page), { timeout: 20_000 }).toStrictEqual([]);
   await page.waitForTimeout(500);
   const log = await stopWatching(page);
+  // THE WHOLE LOG IN EVERY ASSERTION'S MESSAGE (the owner's decision 9a): this case has failed only on Ubuntu CI, with
+  // one unfinished frame, so its own error is where the frame's time and the readouts around it are read.
+  const told = framesTold(log);
 
-  expect(log.frames).toBeGreaterThan(10);
-  expect({ unfinished: log.unfinished.length, first: log.unfinished.slice(0, 12) }).toStrictEqual({ unfinished: 0, first: [] });
+  expect(log.frames, told).toBeGreaterThan(10);
+  expect({ unfinished: log.unfinished.length, first: log.unfinished.slice(0, 12) }, told).toStrictEqual({ unfinished: 0, first: [] });
   // EVERY FRAME AFTER THE CLICK reads the portrait document's own zoom. The first frames recorded may precede
   // the click's render, so they may read the landscape figure; what must never appear is a third value, or the
   // landscape figure after the portrait one has shown.
   const firstPortrait = log.zooms.indexOf(portraitZoom ?? '');
-  expect(firstPortrait).toBeGreaterThanOrEqual(0);
-  expect(log.zooms.slice(firstPortrait).filter((zoom) => zoom !== portraitZoom)).toStrictEqual([]);
-  expect(new Set(log.zooms.slice(0, firstPortrait)).size).toBeLessThanOrEqual(1);
+  expect(firstPortrait, told).toBeGreaterThanOrEqual(0);
+  expect(log.zooms.slice(firstPortrait).filter((zoom) => zoom !== portraitZoom), told).toStrictEqual([]);
+  expect(new Set(log.zooms.slice(0, firstPortrait)).size, told).toBeLessThanOrEqual(1);
 });

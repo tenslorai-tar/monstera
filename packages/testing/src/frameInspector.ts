@@ -21,9 +21,28 @@ import type { Page } from '@playwright/test';
  */
 export interface FrameLog {
   readonly frames: number;
+  /** Each unfinished frame's number, its time since the watch began, and why it was unfinished. */
   readonly unfinished: readonly string[];
   /** Each frame's zoom readout, in order, when a selector was given. */
   readonly zooms: readonly string[];
+  /** Each frame's time since the watch began, in whole milliseconds, in order. */
+  readonly at: readonly number[];
+}
+
+/**
+ * The whole log as a failing assertion's message (the owner's decision 9a): a frame-reading case that fails on a
+ * machine nobody can watch names, in its own error, which frames were unfinished, when, why, and what the readout said
+ * around them. Bounded, so a log of every frame of a slow runner stays a message.
+ */
+export function framesTold(log: FrameLog): string {
+  const unfinished = log.unfinished.slice(0, 40);
+  return [
+    `${String(log.frames)} frames watched, ${String(log.unfinished.length)} unfinished`,
+    ...unfinished,
+    ...(log.unfinished.length > unfinished.length ? [`… and ${String(log.unfinished.length - unfinished.length)} more`] : []),
+    `frame times (ms): ${log.at.slice(0, 120).join(' ')}${log.at.length > 120 ? ' …' : ''}`,
+    `zoom readouts: ${log.zooms.slice(0, 120).join(' | ')}${log.zooms.length > 120 ? ' …' : ''}`,
+  ].join('\n');
 }
 
 interface Inspector {
@@ -116,12 +135,15 @@ export async function installInspector(page: Page, scope: string, zoom?: string)
 export async function watchFrames(page: Page): Promise<void> {
   await page.evaluate(() => {
     const { __inspector: inspector } = window as unknown as { __inspector: Inspector };
-    const state = { frames: 0, unfinished: [] as string[], zooms: [] as string[], running: true };
+    const began = performance.now();
+    const state = { frames: 0, unfinished: [] as string[], zooms: [] as string[], at: [] as number[], running: true };
     (window as unknown as { __frames: typeof state }).__frames = state;
     const inspect = (): void => {
       if (!state.running) return;
       state.frames += 1;
-      for (const reason of inspector.unfinished()) state.unfinished.push(`frame ${String(state.frames)}: ${reason}`);
+      const at = Math.round(performance.now() - began);
+      state.at.push(at);
+      for (const reason of inspector.unfinished()) state.unfinished.push(`frame ${String(state.frames)} at ${String(at)} ms: ${reason}`);
       const zoom = inspector.zoom();
       if (zoom !== undefined) state.zooms.push(zoom);
       requestAnimationFrame(inspect);
@@ -132,10 +154,11 @@ export async function watchFrames(page: Page): Promise<void> {
 
 export async function stopWatching(page: Page): Promise<FrameLog> {
   return page.evaluate(() => {
-    const state = (window as unknown as { __frames: { frames: number; unfinished: string[]; zooms: string[]; running: boolean } })
-      .__frames;
+    const state = (
+      window as unknown as { __frames: { frames: number; unfinished: string[]; zooms: string[]; at: number[]; running: boolean } }
+    ).__frames;
     state.running = false;
-    return { frames: state.frames, unfinished: state.unfinished, zooms: state.zooms };
+    return { frames: state.frames, unfinished: state.unfinished, zooms: state.zooms, at: state.at };
   });
 }
 

@@ -2,7 +2,7 @@ import { asDocId, asDocVersion } from '@monstera/shared';
 import { expect, test } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
-import { installInspector, stopWatching, unfinishedNow, watchFrames } from './frameInspector.js';
+import { framesTold, installInspector, stopWatching, unfinishedNow, watchFrames } from './frameInspector.js';
 import { bridge } from './pageBridge.js';
 import { runCommand } from './palette.js';
 
@@ -69,7 +69,9 @@ test('an EDIT shows the previous pages or the new ones, never a blank or half-dr
   await page.waitForTimeout(500);
 
   const log = await stopWatching(page);
+  // THE WHOLE LOG IN EACH MESSAGE (the owner's decision 9a), so a failure names its frames' times and readouts.
+  const told = framesTold(log);
   // THE LOOP RAN across the edit: a handful of frames is a watcher that stopped, not a clean edit.
-  expect(log.frames).toBeGreaterThan(10);
-  expect({ unfinished: log.unfinished.length, first: log.unfinished.slice(0, 12) }).toStrictEqual({ unfinished: 0, first: [] });
+  expect(log.frames, told).toBeGreaterThan(10);
+  expect({ unfinished: log.unfinished.length, first: log.unfinished.slice(0, 12) }, told).toStrictEqual({ unfinished: 0, first: [] });
 });
