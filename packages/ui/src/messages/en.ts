@@ -6404,7 +6404,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // or by the person, and this app cannot grant itself one.
   [CAMERA_CAPTURE_DENIED]:
     'This app is not allowed to use the camera. Allow it in Windows camera privacy settings, then try again.',
-  [CAMERA_CAPTURE_ABSENT]: 'No camera was found.',
+  [CAMERA_CAPTURE_ABSENT]: 'No camera was found on this computer.',
   [CAMERA_CAPTURE_FAILED]: 'The camera could not be started. Another app may be using it.',
   // A WINDOWS N OR KN EDITION: the camera needs Media Foundation, which those editions add with the Media Feature Pack.
   [CAMERA_CAPTURE_NO_MEDIA_PACK]:

@@ -80,8 +80,11 @@ describe('CameraCaptureBody', () => {
   it('says there is no camera where the platform has none, and CANNOT take a picture', () => {
     Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: undefined });
     opened();
-    expect(screen.getByText('No camera was found.')).toBeTruthy();
+    const reason = screen.getByText('No camera was found on this computer.');
     expect(TAKE()).toHaveProperty('disabled', true);
+    // THE REASON IS UNDER THE GREYED BUTTON (the owner, 16 October): read straight after the control it explains, so
+    // it FOLLOWS the button in the document. Above the row, where it sat before, this is PRECEDING and the case fails.
+    expect(TAKE().compareDocumentPosition(reason) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it('on a Windows N edition without Media Foundation says the Media Feature Pack is needed, and never asks the camera (Part 0.3)', async () => {
@@ -111,7 +114,7 @@ describe('CameraCaptureBody', () => {
   it('names a REFUSED camera and a MISSING one apart, by the error the platform raises', async () => {
     for (const [name, sentence] of [
       ['NotAllowedError', 'This app is not allowed to use the camera.'],
-      ['NotFoundError', 'No camera was found.'],
+      ['NotFoundError', 'No camera was found on this computer.'],
       ['NotReadableError', 'The camera could not be started. Another app may be using it.'],
     ] as const) {
       camera(() => Promise.reject(new DOMException('refused for the case', name)));

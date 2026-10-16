@@ -152,9 +152,11 @@ export default function CameraCaptureBody({
   const sentence = STATE_SENTENCES[state];
   const total = frames.reduce((sum, frame) => sum + frame.byteLength, 0);
 
-  // IN THE DIALOG PATTERN (the owner, 2 October): the preview, what the camera is doing, then one row — how many
-  // pictures are taken, and *Take picture* at the row's end — and *Make PDF* in the footer beside Cancel. The preview
-  // and the row scroll together where a small window cannot hold both, so the footer never leaves the window.
+  // IN THE DIALOG PATTERN (the owner, 2 October): the preview, then one row — how many pictures are taken, and *Take
+  // picture* at the row's end — and *Make PDF* in the footer beside Cancel. What the camera is doing sits UNDER that
+  // row (the owner, 16 October): where *Take picture* is greyed out, the reason is read straight after the control it
+  // explains. The preview and the row scroll together where a small window cannot hold both, so the footer never leaves
+  // the window.
   return (
     <>
       <DialogScroll>
@@ -168,9 +170,6 @@ export default function CameraCaptureBody({
           playsInline
           ref={video}
         />
-        <p className="m-camera-capture__status" role="status">
-          {sentence === null ? '' : _(sentence)}
-        </p>
         <div className="m-dialog-row">
           <span className="m-dialog-row__text">
             <span className="m-dialog-row__label m-camera-capture__count">{_(CAMERA_CAPTURE_COUNT, { count: frames.length })}</span>
@@ -194,6 +193,9 @@ export default function CameraCaptureBody({
             />
           </div>
         </div>
+        <p className="m-camera-capture__status" role="status">
+          {sentence === null ? '' : _(sentence)}
+        </p>
         <Problem message={full ? _(CAMERA_CAPTURE_FULL) : undefined} />
       </DialogScroll>
       <DialogFooter>
