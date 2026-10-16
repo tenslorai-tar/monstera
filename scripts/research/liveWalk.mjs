@@ -25,6 +25,7 @@
 import { copyFile, mkdir, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { expect } from '@playwright/test';
 import { _electron } from 'playwright';
 import { developmentEnvironment } from '../lib/launchEnvironment.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
@@ -204,6 +205,13 @@ export async function startWalk(walk) {
     const button = page.getByRole('button', { name: /^Open PDF/u }).first();
     if ((await button.count()) > 0 && (await button.isVisible())) await button.click();
     else await page.keyboard.press('Control+O');
+    // THE DOCUMENT JUST PICKED IS THE ONE ON SHOW, named in the status bar, before anything else is waited for. A visible
+    // page canvas alone does not say whose it is: with a document already on show its canvas is visible before the new
+    // tab takes over, so the wait returned at once and the next command ran against the PREVIOUS document. Its dialog then
+    // belonged to the tab being left and was hidden as the new one came forward (comments N3's crop steps, runs d and e
+    // of 2026-10-16: no dialog, nothing logged, about ten tabs open).
+    // THE FIRST of the bar's name spans: it renders the name twice, both with the same title.
+    await expect(page.locator('.m-status-name').first()).toHaveAttribute('title', basename(path), { timeout: 30_000 });
     // THE VISIBLE ONE: a second open document leaves the first tab's canvases mounted and hidden, and `.first()` is theirs.
     await page.locator('canvas.m-page:visible').first().waitFor({ state: 'visible', timeout: 30_000 });
   };
