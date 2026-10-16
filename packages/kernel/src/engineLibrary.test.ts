@@ -1,3 +1,7 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import type { LibraryHandle } from 'koffi';
 import { describe, expect, it } from 'vitest';
 
@@ -47,6 +51,33 @@ describe('loadEngineLibrary', () => {
     expect(thrown).toBeInstanceOf(EngineLibraryUnloadable);
     expect((thrown as EngineLibraryUnloadable).win32Error).toBe(126);
     expect(calls).toEqual([`flags ${SHIM} 0x1100`]);
+  });
+
+  it('on the machine’s own surface, the error a refusal names is the loader’s, read after koffi’s call (GGGGGGGG-12)', () => {
+    // `GetLastError` is read through koffi in a second call after `LoadLibraryExW` returned NULL, so anything that ran a
+    // Win32 call in between would replace it — read as 0, or as whatever that call set. Measured 2026-10-16: 18 of 18
+    // refusals named their own error under Node and under the Electron binary in Node mode (126 missing, 193 not an
+    // image). This holds it: a file that is not an image must be refused as 193, which an overwritten error cannot be.
+    const folder = mkdtempSync(join(tmpdir(), 'engine-library-'));
+    const notImage = join(folder, 'notimage.dll');
+    writeFileSync(notImage, 'this is not a portable executable');
+    try {
+      let thrown: unknown;
+      try {
+        loadEngineLibrary(notImage);
+      } catch (error) {
+        thrown = error;
+      }
+      // OFF WINDOWS the library loader is the system's and names no Win32 error; refused all the same.
+      if (process.platform !== 'win32') {
+        expect(thrown).toBeInstanceOf(Error);
+        return;
+      }
+      expect(thrown).toBeInstanceOf(EngineLibraryUnloadable);
+      expect((thrown as EngineLibraryUnloadable).win32Error).toBe(193);
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
   });
 
   it('CONTROL: off Windows there is no search order to set, and the library is loaded as it is', () => {
