@@ -39,6 +39,10 @@ describe('BoxedCharactersBody', () => {
     ]);
     // NOTHING PAST THE NAMED ONES, so no count is shown.
     expect(screen.queryByText(/more place/u)).toBeNull();
+    // THE IMPORT'S OWN SENTENCE, and not the edit's: the positive partner the edit case's control points at
+    // (SSSSSSS-22), which no case asserted.
+    expect(screen.getByText(/^The PDF is open\./u)).toBeTruthy();
+    expect(screen.queryByText(/^Your change is made\./u)).toBeNull();
   });
 
   it('COUNTS the places past the named ones, outside the list that scrolls', () => {

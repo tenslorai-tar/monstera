@@ -46,11 +46,14 @@ describe('sealCopy', () => {
     expect(calls).toStrictEqual(['open', 'protect:aes-256', 'writeOver', 'close']);
   });
 
-  it('leaves a copy that is encrypted already, needing a key or owner-only', async () => {
+  it('leaves a copy that is encrypted already, needing a key or owner-only — and closes the owner-only one it opened', async () => {
+    // EXACT CALLS (SSSSSSS-22): an owner-only copy OPENS, with no password, so its session is closed; a copy needing a key
+    // never opened one. `not.toContain('writeOver')` held for a seal that left the owner-only session open too.
+    const expected = { locked: ['open'], 2: ['open', 'close'] } as const;
     for (const access of ['locked', 2] as const) {
       const { engine, calls } = recording(access);
       await expect(sealCopy(protect('aes-256'), engine)).resolves.toBeUndefined();
-      expect(calls).not.toContain('writeOver');
+      expect(calls).toStrictEqual(expected[access]);
     }
   });
 

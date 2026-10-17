@@ -6265,7 +6265,10 @@ describe('composeMarkdownFile: what an import answers before anything is written
   });
 
   it('CARRIES THE HOST’S REFUSAL AND ITS LINE, and asks for no destination', async () => {
-    const markdown = markdownFrom('notes.md', TEXT);
+    // A CSV, whose composer refuses a malformed record by its line: the refusal this case carries is one its route can
+    // make. It drove the Markdown route with `malformed-csv` until 2026-10-17 (SSSSSSS-22), a reason Markdown, which has
+    // no grammar a source can break, never gives.
+    const csv = markdownFrom('table.csv', TEXT);
     const pages: unknown[] = [];
     const families: string[] = [];
     const commands = new DocumentCommands({
@@ -6273,7 +6276,7 @@ describe('composeMarkdownFile: what an import answers before anything is written
       documents: service,
       bus: bus(),
       engine: engine(),
-      imports: { markdown: markdown.source, csv: noImportFile },
+      imports: { markdown: noImportFile, csv: csv.source },
       // `noCopying` rejects its picker, so a refusal that went on to ask for a
       // destination fails here rather than answering.
       compose: (_format, _source, page, family) => {
@@ -6283,7 +6286,7 @@ describe('composeMarkdownFile: what an import answers before anything is written
       },
     });
 
-    expect(await commands.composeImportFile('markdown', CHOSEN)).toStrictEqual({
+    expect(await commands.composeImportFile('csv', CHOSEN)).toStrictEqual({
       kind: 'composition-refused',
       reason: 'malformed-csv',
       line: 7,

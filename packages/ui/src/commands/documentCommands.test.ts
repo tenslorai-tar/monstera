@@ -431,25 +431,42 @@ describe('rotate page', () => {
 
   /**
    * ADR-0174's renderer half: the characters a command drew as boxes are told, by page, through the one dialog. The
-   * kernel half is `proof:pdfiumcommand`'s boxed cases. CONTROL: the declared-failure case below answers no box and
-   * opens nothing, so the dialog here is the list's doing.
+   * kernel half is `proof:pdfiumcommand`'s boxed cases. CONTROL, in the case itself: the same answer with no box opens
+   * nothing, so the dialog is the list's doing. (The comment here named a "declared-failure case below" until 2026-10-17;
+   * none answers no box and opens nothing, SSSSSSS-22.)
    */
   it('tells the person which characters the command drew as boxes, and on which page', async () => {
-    const { shown, onApplied, ask } = recorder();
-    const client = clientAnswering('document.execute', {
+    const answer = (boxed: { character: string; page: number }[]) => ({
       version: asDocVersion(2),
       byteLength: 2048,
       historyDropped: 0,
-      boxed: [{ character: '中', page: 3 }],
-      more: 2,
-      unsealedCopies: [], unsealedUndoCopies: 0,
+      boxed,
+      more: boxed.length === 0 ? 0 : 2,
+      unsealedCopies: [],
+      unsealedUndoCopies: 0,
+      skippedPages: [],
     });
-
-    await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
-
-    expect(shown).toStrictEqual([
+    const drew = recorder();
+    await rotatePageCommand({
+      client: clientAnswering('document.execute', answer([{ character: '中', page: 3 }])),
+      onApplied: drew.onApplied,
+      ask: drew.ask,
+      stamp,
+      signatures,
+    }).run(CONTEXT);
+    expect(drew.shown).toStrictEqual([
       { id: 'dialog.boxed-characters', props: { from: 'edit', boxed: [{ character: '中', page: 3 }], more: 2 } },
     ]);
+
+    const none = recorder();
+    await rotatePageCommand({
+      client: clientAnswering('document.execute', answer([])),
+      onApplied: none.onApplied,
+      ask: none.ask,
+      stamp,
+      signatures,
+    }).run(CONTEXT);
+    expect(none.shown).toStrictEqual([]);
   });
 
   /**
@@ -7405,6 +7422,31 @@ describe('an edit main answers breaks-signatures for (ADR-0149)', () => {
     ]);
     expect(opened).toStrictEqual([{ docId: COPY, version: 2, byteLength: 2048, name: 'signed copy.pdf' }]);
     expect(asked).toStrictEqual(['dialog.signed-edit']);
+  });
+
+  it('a copy whose edit drew BOXES says so over it, as the direct route does (SSSSSSS-22: no case reached this)', async () => {
+    const boxed = [{ character: '中', page: 0 }];
+    const { client } = signedMain({
+      kind: 'edited',
+      docId: COPY,
+      version: 2,
+      byteLength: 2048,
+      name: 'signed copy.pdf',
+      historyDropped: 0,
+      boxed,
+      more: 2,
+    });
+    const asked: { id: string; props: unknown }[] = [];
+    const ask = (id: string, props: unknown): Promise<unknown> => {
+      asked.push({ id, props });
+      return Promise.resolve(id === 'dialog.signed-edit' ? 'copy' : undefined);
+    };
+    await applyDocumentCommand({ client, ask, stamp, signatures: opening().signatures, onApplied: () => undefined }, DOC, SANITIZE);
+    // CONTROL: the case above, whose copy drew none, asks only the signed-edit question.
+    expect(asked).toStrictEqual([
+      { id: 'dialog.signed-edit', props: expect.anything() as unknown },
+      { id: 'dialog.boxed-characters', props: { from: 'edit', boxed, more: 2 } },
+    ]);
   });
 
   it('a copy whose edit was refused is still OPENED, and the refusal is said over it', async () => {
