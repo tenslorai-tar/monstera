@@ -4,7 +4,7 @@ import { type Page, expect, test } from '@playwright/test';
 import { blockedPages } from './blockedPages.js';
 import { bridge } from './pageBridge.js';
 import { runCommand } from './palette.js';
-import { pageShown } from './settled.js';
+import { commandsSettled, pageShown } from './settled.js';
 
 /**
  * Each tool's pointer, and the highlighter's gesture, in a real browser (the owner's review of 0.1.6.0,
@@ -178,8 +178,9 @@ test('a POLYGON closed on its FIRST corner by a real double-click starts no seco
   // two corners and Enter are a drawing still going on, and nothing more is sent.
   for (const corner of [at(0.3, 0.5), at(0.6, 0.5)]) await page.mouse.click(...corner);
   await page.keyboard.press('Enter');
-  await page.waitForTimeout(300);
-  expect(drawn(sent)).toHaveLength(1);
+  // READ ONCE SETTLED (NNNNNNN-8): a fixed 300 ms with no source for the figure became a read after the app has no write
+  // in flight and the count holds across two frames — the shared rule for a gesture's commands (`commandsSettled`).
+  expect(await commandsSettled(page, () => drawn(sent).length, 'the shapes the gestures drew')).toBe(1);
 });
 
 test('a POLYGON is finished by a real double-click, and its corners are the ones placed (F-C5)', async ({ page }) => {
