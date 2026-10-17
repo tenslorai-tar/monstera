@@ -1237,6 +1237,52 @@ describe('the canonical image', () => {
     expect(readdirSync(storage)).toStrictEqual([]);
   });
 
+  it('a byte-image command’s answer for a document held in a file STAYS in a file, by the open’s rule (QQQQQQQ-11)', async () => {
+    const registry = new CapabilityRegistry();
+    const size = statSync(original()).size;
+    const service = newService(registry, { documentBytesCeiling: size - 1, checkpointDirectory: join(root, 'replaced-in-a-file') });
+    const docId = mustOpen(await service.open(registry.mint(original())));
+    expect(service.residentDocumentBytes()).toBe(0);
+
+    // THE ANSWER A PDFium OR pdf-lib COMMAND GIVES: the whole new document, as bytes, past the ceiling as the original was.
+    const answer = new Uint8Array(readFileSync(original()));
+    const { value: length, version } = await service.run(docId, (context) =>
+      context.replaceCanonicalImage(COMMAND_WRITER_FOR_TEST, answer),
+    );
+
+    expect(length).toBe(size);
+    expect(service.residentDocumentBytes()).toBe(0);
+    // AND THE FILE IS THE ANSWER: a range at the new version reads the answer's bytes.
+    const range = service.readRange(RANGE_READER_FOR_TEST, docId, version, 0, size);
+    if (range.kind !== 'bytes') throw new Error(`expected bytes, got ${range.kind}`);
+    expect(Buffer.from(range.bytes).equals(Buffer.from(answer))).toBe(true);
+    await service.close(docId);
+  });
+
+  it('CONTROL: the same answer for a document that FITS under the ceiling is held in memory, with no trip through a file', async () => {
+    const registry = new CapabilityRegistry();
+    const size = statSync(original()).size;
+    let reads = 0;
+    const service = newService(registry, {
+      documentBytesCeiling: size,
+      checkpointDirectory: join(root, 'replaced-in-memory'),
+      readBytes: (path) => {
+        reads += 1;
+        return Promise.resolve(new Uint8Array(readFileSync(path)));
+      },
+    });
+    const docId = mustOpen(await service.open(registry.mint(original())));
+    expect(service.residentDocumentBytes()).toBe(size);
+    const readsAtOpen = reads;
+    const answer = new Uint8Array(readFileSync(original()));
+    await service.run(docId, (context) => context.replaceCanonicalImage(COMMAND_WRITER_FOR_TEST, answer));
+    expect(service.residentDocumentBytes()).toBe(size);
+    // THE IMAGE BEING REPLACED IS NOT COUNTED beside its replacement: counted, the two together pass the ceiling, and the
+    // answer is written to a file and read back into memory — the same residency, reached by a disk round trip.
+    expect(reads).toBe(readsAtOpen);
+    await service.close(docId);
+  });
+
   it('copies a document past the ceiling WITHOUT reading it into memory', async () => {
     const registry = new CapabilityRegistry();
     let reads = 0;

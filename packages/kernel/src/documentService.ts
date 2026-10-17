@@ -555,23 +555,25 @@ export interface DocumentContext {
    * A live-session command's effect is in the engine's session and reaching it
    * would cost a full serialise per command — ADR-0032 measured 2.00× against a
    * 1.5× ceiling and rejected it. A byte-image `apply` **returns** the new
-   * document, so the bytes are already here and this is a reference
-   * assignment. §2 carries both halves of that.
+   * document, so the bytes are already here. §2 carries both halves of that.
    *
-   * ## The ceiling is enforced afterwards, not here, and that is deliberate
+   * ## Held where the open's rule says, and never refused
    *
-   * The command has run and the live session has already been rebuilt from
-   * these bytes by the time this is called, so refusing would leave the
-   * document's engine and `main` disagreeing — the two-states failure this
-   * whole path exists to avoid. {@link enforceRetention} runs immediately after
-   * and sheds checkpoints until the document is back inside the ceiling, which
-   * is what that mechanism is for: the new image is accounted for, and what
-   * gives way is history rather than correctness.
+   * An image that fits under the documents' ceiling beside the others is a
+   * reference assignment; one that does not is written to the document's file
+   * and served from it, as a document past the ceiling is at open (ADR-0165).
+   * Until 2026-10-17 every such image was made resident here, so a byte-image
+   * command made a document held in a file resident in `main` (QQQQQQQ-11).
+   * Never refused: the command has run and the live session has already been
+   * rebuilt from these bytes, so refusing would leave the document's engine and
+   * `main` disagreeing — the two-states failure this whole path exists to
+   * avoid. {@link enforceRetention} runs immediately after and sheds
+   * checkpoints, as before.
    *
    * @param writer Proof the caller is the command bus.
    * @returns The new canonical image's length.
    */
-  replaceCanonicalImage(writer: CommandWriter, image: ByteImage): number;
+  replaceCanonicalImage(writer: CommandWriter, image: ByteImage): Promise<number>;
 
   /**
    * Makes the file `fill` writes this document's canonical image, without the old image and the new one ever being
@@ -1693,8 +1695,10 @@ export class DocumentService {
    * resident, and otherwise in a file. The one rule, at open and at every replacement
    * ([ADR-0165](../../../docs/DECISIONS/0165-a-document-past-mains-memory-ceiling-is-held-in-a-file.md)).
    */
-  #heldInMemory(byteLength: number): boolean {
-    return this.residentDocumentBytes() + byteLength <= this.#documentBytesCeiling;
+  #heldInMemory(byteLength: number, replacing?: DocumentRecord): boolean {
+    // THE IMAGE BEING REPLACED is not counted beside its replacement: it goes as the new one comes.
+    const leaving = replacing?.image.kind === 'memory' ? replacing.image.bytes.byteLength : 0;
+    return this.residentDocumentBytes() - leaving + byteLength <= this.#documentBytesCeiling;
   }
 
   /**
@@ -2278,8 +2282,21 @@ export class DocumentService {
             await this.#writeBytes(destination, image);
             return image.byteLength;
           },
-          replaceCanonicalImage: (_writer, image) => {
+          replaceCanonicalImage: async (_writer, image) => {
             requireSoleOwnership(image, record.path);
+            // BY THE RULE OPEN TAKES (ADR-0165), at this replacement as at every other: an image that fits under the
+            // ceiling is held in memory, and one that does not is written to the document's file and served from it,
+            // so a byte-image command's answer does not make a document held in a file resident in `main` (QQQQQQQ-11).
+            if (!this.#heldInMemory(image.byteLength, record)) {
+              return this.#replaceFromFile(
+                record,
+                async (destination) => {
+                  await this.#writeBytes(destination, image);
+                  return image.byteLength;
+                },
+                imageMoved,
+              );
+            }
             this.#setImage(record, { kind: 'memory', bytes: image, writes: 0, retired: false });
             imageMoved();
             return image.byteLength;

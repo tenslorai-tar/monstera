@@ -795,7 +795,7 @@ export class CommandBus {
       // boxes (ADR-0174), and installing the answer as bytes is the silent failure this method exists to refuse.
       const { image } = applied as AppliedImage;
       await bytes.adopt((destination) => context.writeImage(COMMAND_WRITER, image, destination));
-      context.replaceCanonicalImage(COMMAND_WRITER, image);
+      await context.replaceCanonicalImage(COMMAND_WRITER, image);
       return (destination) => context.writeImage(COMMAND_WRITER, image, destination);
     }
     const staged = applied as StagedImage;

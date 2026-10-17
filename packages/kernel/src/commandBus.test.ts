@@ -203,12 +203,12 @@ function contextStub(acceptsImages = false): DocumentContext & {
       images.push(image);
       return Promise.resolve(image.byteLength);
     },
-    replaceCanonicalImage(_writer: CommandWriter, image: ByteImage): number {
+    replaceCanonicalImage(_writer: CommandWriter, image: ByteImage): Promise<number> {
       if (!acceptsImages) {
         throw new Error('this case runs a live-session command, so nothing may replace the image');
       }
       images.push(image);
-      return image.byteLength;
+      return Promise.resolve(image.byteLength);
     },
     // A REAL FILE, read back, for `storeCheckpoint`'s reason: what the bus has to get right is which bytes fill it.
     async replaceCanonicalImageFrom(_writer: CommandWriter, fill: (destination: string) => Promise<number>) {
