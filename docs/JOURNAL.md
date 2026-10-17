@@ -892,6 +892,117 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-17 — Stage audit of `39a81ead..97dc4f35` — findings NNNNNNNN-1 to NNNNNNNN-7
+
+Fix session 2 again (addendum 2 and the owner's decisions of 2026-10-17), called by the commit gate: ADR-0254's build
+would have taken the range to 206 files. `npm run audit:scope` read 43 commits and 190 files at `334ffe3e`; 9 proofs
+added, 68 modified, none removed; 16 source files added, 82 changed. The 68 modified proofs were read commit by commit
+(`git log -p`, three readers in parallel, every suspect re-read here before it was accepted): their removed lines are
+fixtures gaining a field the wire now carries (`unsealedUndoCopies`, `holdsHandle`, `rect`), sixteen kernel tests
+moving to `bundledFontsFolder()`, and the `insertImagePage` cases leaving with the command (ebb5b8ab), each with its
+equivalent kept on the signature placeholder. Three checks were found narrower than their names (-3, -4, -5) and
+closed in range; nothing else loosened.
+
+### NNNNNNNN-1 — `pageLinks.test` was red from b70823fe, through an audit that called the class fixed (fixed in range)
+
+b70823fe added `rect` to a listed link; MMMMMMMM-1 recorded the fakes that build such answers by hand as repaired. The
+reader's own test compares a link with `toStrictEqual` and `toContainEqual` and was not among the files run, so two
+cases stayed red until `vitest related` over ADR-0254's files reached it (cd0abe3c). The add-link case now asserts the
+rect read back equals the rect `addLink` was given while its bounds are the y-down frame, so a reader that answered
+one frame twice fails it. MMMMMMMM-1's own mechanism — *run `vitest related` over the changed sources at the commit* —
+was the remedy, and it was named there and not taken.
+
+### NNNNNNNN-2 — 9bee0940 bolded half a message as though it were a control (fixed in range)
+
+`articles.test` holds that a bold phrase is a word Monstera shows, whole. The card's message is two sentences, so
+**A comment can't be empty** is no word the app shows (334ffe3e describes it in prose). The help tests were not run at
+that commit.
+
+### NNNNNNNN-3 — the fonts folder's one-reader scan could not see `host/` (fixed in range)
+
+9efddf39's case *is the one reader* listed `packages/kernel/src` without `recursive`; `host/remoteEngine.test.ts` still
+read `MONSTERA_FONTS_DIRECTORY` with the `''` fallback the helper exists to end. Its positive control, the helper,
+sits in the folder the scan did read — a control that proves the instrument sees, and not that it sees the whole
+subject. 4dd55023 walks every folder and adds a second control inside `host/`; the widened scan named the reader
+before the host test moved.
+
+### NNNNNNNN-4 — a case kept its name after its fixture stopped reaching it; a tag counter saw two shapes (fixed in range)
+
+c3105a2a's correct plan sent the gap-spaced case's ` hi` to a line of its own, so *the line reads back with every
+space* no longer read the space before an added word. Measured: with the pen at the ink, that case stayed green. A
+second case adds the word to a line with room and fails on that mutant (e1ed1f74). In the same file 4e7e0f68 counted
+marked sequences by a pattern for two property shapes, so the control *an untagged page stays untagged* could not
+count an invented tag of a third; it now counts every `BDC` less the measure's own. Item 2's easy shape, arriving
+through a fix: the fix was right and the fixture quietly moved off the property.
+
+### NNNNNNNN-5 — the parking browser control could not fail (fixed in range)
+
+3977efc1 asserted no layer parked after the minute; `toHaveCount(0)` holds on its first poll and parking takes up to
+15 s to show, so *not yet* read as *never*, and a shell that parked edited documents passed. 97dc4f35 puts a clean
+document behind too and waits for exactly one parked layer; with `toPark`'s version check off it fails, 2 against 1.
+Item 4's decision rule: assert the pass that must happen, not the tidy state an absent pass also leaves.
+
+### NNNNNNNN-6 — an App split-view case failed once under the 176-file related run (open)
+
+*A press in the SECOND pane sends the page there* failed in that run and passed alone and in its own file (157 of
+157). Its message was lost to a filter on the output, so no cause is claimed. Open until the board's run is read.
+
+### NNNNNNNN-7 — reflexes the escape guard denied in this range
+
+A `sed -i` on `/dev/null` pasted into a read and a `node -e ""` before one: two, counted as each happened. Nothing was
+written by either.
+
+### 1. Root cause or workaround?
+
+Root causes, each with its mechanism in its commit: the cold-start pipe order (ADR-0251), the held handle
+(MMMMMMM-4), the reserved device name, the emptied comment, the restyled row's plan (`piecesWidth`, `advanceEnd`), the
+kept measure (ADR-0097's correction), the out-of-memory notice reading only proven causes (ADR-0253). No bound raised:
+the security notice's flake was settled by `act`, not a longer wait.
+
+### 2. Verified against the easy shape only?
+
+NNNNNNNN-4 is this item exactly. The restyle widths were measured on the plain, upright and turned pages
+(`cascade.mjs` READBACK, zero differences), which is the hard shape the memory walk's M3d found.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+The marked-sequence count is wider (every `BDC`). The pdf-lib picture refusal is asserted on the placeholder alone,
+the one channel still decoding a picture. Fonts: a missing folder now fails sixteen tests by name where it reached a
+reader as `''`.
+
+### 3. Would CI have caught it?
+
+No commit in this range has run on GitHub; it is pushed at the end of the session and read once. Computed instead:
+the range reaches 48 proofs by `scripts/lib/affectedProofs.mjs`, and all 48 are workflow steps (the lookup's control,
+`pdfiumCommand.proof.mjs`, is found). NNNNNNNN-1 and -2 are unit cases on both legs, so CI would have caught them;
+-3, -4 and -5 were green everywhere, which is why they are findings.
+
+### 4. Are the proofs non-vacuous?
+
+Mutated this range: `#pagesShowingNothing` answering `[]`, the ink pen, the space rule, the lone-space mark, `toPark`'s
+version check, the widened scan against the unmoved reader. Each bit where this entry says it does, and two did not
+bite the case they were aimed at (NNNNNNNN-4), which located the mechanism that holds it.
+
+### 4a. Resolution test before measuring?
+
+The memory probes added in range (`tabMemoryProbe`, `switchBackProbe`, `idleMemoryProbe`) report readings with their
+command; their resolution is not re-established in this audit, so their figures are readings, not decisions, until it
+is.
+
+### 5. Executed, or asserted?
+
+Executed: every case and mutation named here. Asserted: NNNNNNNN-6's cause, deliberately not stated.
+
+### 6. Did architecture change before the feature?
+
+ADR-0251, ADR-0252, ADR-0253, ADR-0097's correction and ADR-0254 each landed in their own commit before their build.
+
+### 7. Do the documents still match the code?
+
+ADR-0254 names a channel the build did not add; its correction (appended, with the index row and §5's log) lands with
+the build after this record. The four stamping articles say a page that shows nothing is left. `docs/FEATURES.md`
+rows for this session's items are owed at the session's close.
+
 ## 2026-10-17 — Stage audit of `dd4cd436..39a81ead` — findings MMMMMMMM-1 to MMMMMMMM-12
 
 Thirty-six commits of fix session 2 (`_review/local/LOCAL-FIX-SESSION-2.md` and its addendum), called by the commit
