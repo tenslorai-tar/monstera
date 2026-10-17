@@ -85,3 +85,21 @@ about what a code means (B3a), and it would differ from the first exactly on the
   that needed it.
 - `cidFont.ts` has two writers of its dictionaries and one source of their contents, and the composers' output is
   unchanged byte for byte (its proof says so).
+
+## Correction, 2026-10-17 — the reading SSSSSSS-1 was owed is withdrawn, and both folders are handed (finding VVVVVVV-1)
+
+The *Evidence* above ends on two claims that stopped being true and this ADR never said so, where ADR-0176 got its
+correction:
+
+1. **SSSSSSS-1 was not the host misreading what it set.** `12e2adef` found the mechanism on the third Windows run: the
+   live harnesses started their hosts without the development launcher's `MONSTERA_FONTS_DIRECTORY`, so the hosts were
+   given no fonts folder at all. Given the folder, the reading is the one the writer set. The hypothesis written into
+   two commits' case text before that (`7e927345`, `9cfa3eeb`) was never measured.
+2. **The MuPDF host is handed both folders** (`77f588ef`): the bundled fonts third and the installed fonts fourth on its
+   command line, bound by their folders without loading the catalogue until a word needs a face, as `pdfiumHostEntry.ts`
+   takes them. So *whether the MuPDF host is handed the installed folder follows that finding's answer* is answered: it
+   is.
+3. **The MuPDF host's own live case, owed with the build, is the text regression walk's Type 3 step** from 2026-10-17:
+   the committed Chromium print (`packages/testing/fixtures/text-edit/chromium-type3.pdf`) opened in the running
+   application, its Type 3 heading given letters its subset lacks, written by the contained MuPDF host and read back from
+   the saved file. Its result is in that walk's report, not asserted here.

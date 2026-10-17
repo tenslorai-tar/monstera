@@ -129,3 +129,13 @@ Two premises are checked rather than taken:
   undone by its checkpoint, ADR-0096).
 - `document.textBlocks` is wider by `soft` and `shape`, REQUIRED, `historyDropped`'s reason.
 - Justified text loses its justification on the lines a reflow rewrites. Stated above, in the help article, and not hidden.
+
+## Correction, 2026-10-17 — the proof bullet names a function the build removed (finding VVVVVVV-13)
+
+The first proof bullet says `softEnds` *now calls* `paragraphText`. `4ef4f776`, which carried this ADR's wire, deleted
+`paragraphText`: `softEnds` in `textLines.ts` is the rule itself, and the one join between two lines of a paragraph is
+`joinAfterLine` in `packages/shared/src/lineEdit.ts`, taken by the editor and the kernel both. The join changed in the
+same build from `trimEnd() + ' '` to keeping every trailing space a line already ends in — one space where the line ends
+without white space, none where it ends in some, a line break at a hard end. That rule is pinned by
+`lineEdit.test.ts`' first case, *one space at a soft end, none where the line already ends in white space, and a line
+break at a hard one*, whose control is the hard end that keeps the space a person typed.

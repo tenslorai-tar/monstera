@@ -224,9 +224,15 @@ export function drawnOrder(text: string): string {
  *
  * A PDF stores the drawn order and no paragraph direction, so a line read from a page has to be given one again, and
  * the first strong letter of what is read is the wrong place to ask: a right-to-left line that begins with a Latin word
- * reads, in drawing order, as left to right. The majority is the same set of letters in either order, so it is the same
- * answer for the line as typed and for the line as drawn, which is what makes writing what was read change nothing
- * ({@link logicalOf}). A line mostly of Hebrew with an English word in it is right to left whichever word comes first.
+ * reads, in drawing order, as left to right. The majority is the same set of letters in either order, so where one
+ * direction has more letters it is the same answer for the line as typed and for the line as drawn, which is what makes
+ * writing what was read change nothing ({@link logicalOf}). A line mostly of Hebrew with an English word in it is right
+ * to left whichever word comes first.
+ *
+ * **A TIE IS NOT ORDER-FREE.** Where the two counts are level the answer falls back to the first strong letter, and the
+ * first strong letter of the line as typed and of the line as drawn can differ (ADR-0185 Decision 7 measured it). So a
+ * line with as many right-to-left letters as left-to-right ones may be given one direction when typed and the other
+ * when read back.
  */
 export function lineDirection(text: string): TextDirection {
   let right = 0;

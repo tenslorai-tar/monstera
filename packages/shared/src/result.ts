@@ -149,11 +149,11 @@ export const INTERNAL_FAILURE = 'internal';
 export type InternalFailure = typeof INTERNAL_FAILURE;
 
 /**
- * A failure on the wire, in **one of two shapes** (ADR-0009, 2026-08-19).
+ * A failure on the wire, in **one of three shapes** (ADR-0009, 2026-08-19; the third ADR-0169's).
  *
- * A declared code travels alone. `internal` travels with the id of the log entry
- * its diagnostic was withheld into. So an `incident` accompanies **exactly** the
- * failures that hid something, and that is a property of the type rather than a
+ * A plain declared code travels alone; a code that declares a detail travels with that detail and nothing else
+ * ({@link FailureDetails}); `internal` travels with the id of the log entry its diagnostic was withheld into. So an
+ * `incident` accompanies **exactly** the failures that hid something, and that is a property of the type rather than a
  * convention someone follows.
  *
  * ## Why the id is not on both halves

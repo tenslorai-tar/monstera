@@ -148,9 +148,10 @@ export type FailureDetailSchemasCoverTheirTypes = Covers<
  * What a failure looks like on the wire (ADR-0009 §9, and its 2026-08-19
  * decision).
  *
- * **Two shapes, both `.strict()`, and neither one is optional-field shaped.** A
- * declared code travels alone; `internal` travels with the id of the log entry
- * its diagnostic was withheld into. `.strict()` is the load-bearing part on both:
+ * **Three shapes, all `.strict()`, and none optional-field shaped.** A plain
+ * declared code travels alone; a code with a declared detail travels with it
+ * (the third shape, below); `internal` travels with the id of the log entry
+ * its diagnostic was withheld into. `.strict()` is the load-bearing part on all:
  * a `message`, a `stack` or a `cause` arriving on a failure is rejected here
  * rather than passed through, and this schema is what the renderer validates
  * against — the last place a diagnostic could cross from a main build that
@@ -161,7 +162,7 @@ export type FailureDetailSchemasCoverTheirTypes = Covers<
  * member order.** A union tries its members in turn, so `{ code: 'internal' }`
  * with no id would fall through the first member and parse cleanly as the second
  * — an unreportable failure arriving as a well-formed one. Excluding the code
- * there is what makes the two shapes disjoint rather than merely ordered.
+ * there is what makes the shapes disjoint rather than merely ordered.
  *
  * `structuredErrorSchema` above is unchanged and still describes the diagnostic
  * that stays main-side. Two schemas for two objects: one crosses and one does
