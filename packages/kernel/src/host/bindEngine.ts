@@ -27,3 +27,17 @@ export function bindEngineOrExit(bind: () => void): void {
   }
   process.stderr.write(`, engine bound at ${String(Math.round(performance.now()))} ms.\n`);
 }
+
+/**
+ * Notes a later moment of the start on the same diagnostic file, one line each, in milliseconds since the process began
+ * (ADR-0251): `pipe opened`, when the connect call returned, and `handlers loaded`, when the module that serves the
+ * channels was evaluated. A host that misses the bound says which of these it reached.
+ *
+ * `pipe opened` IS THE CALL'S RETURN, not the socket's `connect` event: on Windows libuv opens a named pipe inside the
+ * call, so `main` sees the connection then, while the event waits for this process's event loop — which the handlers'
+ * load holds. Measured 2026-10-17 with a client that held its loop for 1,500 ms after connecting: the server saw the
+ * connection 0 ms after the call and the client's event ran 1,503 ms after it (control, no hold: 6 ms).
+ */
+export function noteStart(moment: 'pipe opened' | 'handlers loaded'): void {
+  process.stderr.write(`${moment} at ${String(Math.round(performance.now()))} ms.\n`);
+}

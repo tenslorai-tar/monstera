@@ -27,13 +27,36 @@ import type { HostByteStream } from './hostBody.js';
  * of Electron's.
  */
 
-/** The host's end of the pipe, as {@link HostByteStream}. */
+/**
+ * The host's end of the pipe, as {@link HostByteStream}, connecting at once.
+ *
+ * **Connected before the handlers exist** ([ADR-0251](../../../../docs/DECISIONS/0251-a-host-reaches-its-pipe-before-it-loads-its-handlers.md)):
+ * a launcher calls this, then loads the module that composes its handlers and hands it this stream. Two things arrive
+ * in between and neither is lost. Bytes wait in the socket, which stays paused until `onData` registers the first
+ * listener. And the ending is watched from here, not from `onEnd`, so a pipe that closes while the handlers load is
+ * reported the moment the body registers for it.
+ */
 export function hostPipeStream(pipeName: string): HostByteStream {
   const socket = connect({ path: pipeName });
   // NAGLE OFF. Frames here are small and request/response — a delayed ACK
   // waiting for a second frame that only arrives after this one is answered is
   // latency added to every call, and it would look like a slow engine.
   socket.setNoDelay(true);
+  // BOTH, and once. A pipe that closes cleanly emits `close` with no `error`; one that breaks emits `error` then `close`.
+  // Listening to only the first would hang this process on the ordinary ending, and to only the second would lose the
+  // reason on the broken one. WATCHED FROM THE START, with the reason kept until a sink is registered.
+  const ending: { reason: string; closed: boolean; sink: ((detail: string) => void) | null } = {
+    reason: 'the pipe closed',
+    closed: false,
+    sink: null,
+  };
+  socket.on('error', (error: NodeJS.ErrnoException) => {
+    ending.reason = `the pipe failed: ${error.code ?? error.message}`;
+  });
+  socket.once('close', () => {
+    ending.closed = true;
+    ending.sink?.(ending.reason);
+  });
 
   return {
     write: (bytes) => {
@@ -45,17 +68,8 @@ export function hostPipeStream(pipeName: string): HostByteStream {
       });
     },
     onEnd: (sink) => {
-      // BOTH, and once. A pipe that closes cleanly emits `close` with no
-      // `error`; one that breaks emits `error` then `close`. Listening to only
-      // the first would hang this process on the ordinary ending, and to only
-      // the second would lose the reason on the broken one.
-      let reason = 'the pipe closed';
-      socket.on('error', (error: NodeJS.ErrnoException) => {
-        reason = `the pipe failed: ${error.code ?? error.message}`;
-      });
-      socket.once('close', () => {
-        sink(reason);
-      });
+      ending.sink = sink;
+      if (ending.closed) sink(ending.reason);
     },
     close: () => {
       socket.destroy();

@@ -236,13 +236,23 @@ export function refusedAtConnect(
  * machine (idle, both processors held busy, and 0.7 GB of memory free): the
  * MuPDF host's own line put its runtime ready at 60–560 ms, its modules
  * evaluated at 0.9–2.9 s and its engine bound 20–80 ms later, while `main`'s
- * event loop was never held longer than 165 ms. Its module graph is 571 files;
- * outside the application (`roleMupdfHost.mjs --host`) the same host connects
- * in about 1.1 s. So the slowest in-application start is about a third of the
- * bound, not a seventh. Twice on 2026-10-16 a host missed it in a walk, in two
- * attempts each, and no condition tried here reproduced it; the refusal now
- * says how far the host got, what processor time it used, and when the bound
- * was checked, so the next one names its own cause.
+ * event loop was never held longer than 165 ms. Outside the application
+ * (`roleMupdfHost.mjs --host`) the same host connects in about 1.1 s. So the
+ * slowest in-application start was about a third of the bound, not a seventh.
+ * Twice on 2026-10-16 a host missed it in a walk, in two attempts each, and no
+ * condition tried here reproduced it.
+ *
+ * **What the bound waited on was the module load, and it no longer does**
+ * ([ADR-0251](../../../docs/DECISIONS/0251-a-host-reaches-its-pipe-before-it-loads-its-handlers.md)).
+ * The MuPDF host evaluated 293 files before its entry's first statement (a load
+ * counter, 2026-10-17), and that phase is file calls and compilation a cold or
+ * busy disk multiplies. Each host now binds its engine, opens its pipe, and then
+ * loads its handlers; libuv opens a Windows named pipe inside the connect call,
+ * so this side sees the peer before the load begins. Read in the application
+ * the same day (`hostStartWalk.mjs`, six runs, twelve host starts, each host's
+ * own lines): the pipe opened at 90–438 ms after the process began, and the
+ * handlers loaded at 0.57–2.29 s. The refusal still says how far the host got,
+ * what processor time it used, and when the bound was checked.
  *
  * The figure is reported by an instrument rather than recorded once here,
  * because a bound justified by a number nobody re-reads is exactly what B6 is
