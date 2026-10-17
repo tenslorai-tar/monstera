@@ -124,6 +124,31 @@ describe('editOperators on the Chromium print', () => {
     });
   });
 
+  it('passes over a font of another WEIGHT or another FACE, each sorted first and carrying the letter (SSSSSSS-16)', async () => {
+    await chromium((content, fonts) => {
+      // EVERY FIXTURE FONT WAS WEIGHT 400 NAMED `Face`, and the print's two agree, so either clause of the sibling rule
+      // could be `true` and nothing failed. Two decoys that sort before the real sibling `F5` and draw every letter: one
+      // of the run's face at 700, one of another face stating no weight.
+      const own = fonts.get('F4');
+      if (own?.face === null || own === undefined) throw new Error('the print names no face for its heading font');
+      const letters = 'Monstera fixture really.';
+      const with_ = (extra: readonly PageFont[]) => new Map([...fonts, ...extra.map((each) => [each.resource, each] as const)]);
+      const firstSet = (all: ReadonlyMap<string, PageFont>) => {
+        const page = runsOf(content, all);
+        const result = editOperators(content, all, page, [{ lines: [[page.runs[0]?.index ?? -1]], soft: [false], text: letters }]);
+        if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+        return inserted(result.value)[0] ?? '';
+      };
+      const heavier = { ...font('A0', letters, 0.5, own.face), weight: 700 };
+      const otherFace = { ...font('A1', letters, 0.5, 'Another'), weight: null };
+      expect(firstSet(with_([heavier, otherFace]))).toContain('/F5 28 Tf');
+      // CONTROLS: the same decoys made acceptable — the run's weight, the run's face — are chosen, as they sort first. So
+      // the sibling above is the clauses' doing and not the order's.
+      expect(firstSet(with_([{ ...heavier, weight: 400 }]))).toContain('/A0 28 Tf');
+      expect(firstSet(with_([{ ...otherFace, face: own.face }]))).toContain('/A1 28 Tf');
+    });
+  });
+
   it('sets a word the page cannot carry in the fonts the caller adds, keeping the letters the page does carry in its own (ADR-0177)', async () => {
     await chromium((content, fonts) => {
       const page = runsOf(content, fonts);
