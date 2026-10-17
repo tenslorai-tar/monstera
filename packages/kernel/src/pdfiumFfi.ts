@@ -425,6 +425,13 @@ function characterAt(bindings: Bound, textPage: unknown, at: number): string {
 const REFERENCE_LETTERS = ['x', 'n', 'o', 'e', 'a', 'H', '0', '.'] as const;
 
 /**
+ * How near a held line's right edge must come to a block's measure to be the line the measure was read from, in points:
+ * the line's edge is read from its characters' boxes on the text page and the measure from its objects' bounds, two
+ * readings of one ink that need not agree to the hundredth.
+ */
+const AT_THE_MEASURE = 1;
+
+/**
  * What a text page reports for an object that draws `text` — the only form a read-back can be
  * compared in.
  *
@@ -1914,8 +1921,10 @@ interface PieceWriter {
   readonly writePieces: (object: unknown, text: string, restyle?: Restyle, forced?: boolean) => unknown[];
   /** Whether `object`'s font sets `space`, asked between two letters of `around` it carries: the writer's and the plan's one answer. */
   readonly setsSpace: (object: unknown, space: string, around: string) => boolean;
-  /** Where the pen stands after objects {@link writePieces} answered: the last one's ink, and the advance of any white space it ends with. */
+  /** Where the pen stands after objects {@link writePieces} answered: its origin plus the last one's advance. */
   readonly penEnd: (objects: readonly unknown[]) => number;
+  /** What an object {@link writePieces} answered was set to say, or `undefined` for one it did not write. */
+  readonly textOf: (object: unknown) => string | undefined;
   /** Where the pen stands after the last of these objects, where it was set in a face this edit loaded. */
   readonly endOf: (objects: readonly unknown[]) => number | undefined;
   /** Widens an object's words where they stand, per character and per space; how much further on the next words start. */
@@ -2727,6 +2736,7 @@ function pieceWriter(
         insertAfter,
         write,
         writePieces,
+        textOf: (object: unknown) => setBy.get(object)?.text,
         setsSpace,
         penEnd,
         endOf,
@@ -3162,19 +3172,26 @@ function layOutBlocks(
           // letter's left bearing and its last one's right bearing wider. So the widest line, set again word for word,
           // did not fit the measure it made, and lost its last word to the next line: measured 2026-10-17 on a producer's
           // subset whose gaps are offsets (`gapSpacedCases`), 189.68 planned for a measure of 189.49, and " hi" added
-          // after "department." took "department." down with it. The floor is each held line as the plan measures it.
+          // after "department." took "department." down with it. The floor is each held line AT THE MEASURE — whose ink
+          // reaches the block's right edge, so the one the measure was read from — as the plan measures it. Never a line
+          // short of it: its plan width says nothing about the measure, and a block that grew over the one below and read
+          // back with that block's run on one of its lines measured that line 650 pt wide, which became the measure
+          // (measured 2026-10-17, `cascade.mjs` on the memory walk's page, edit 10).
           // Only where the block keeps its measure (no width given, several lines, not scaled) and words are set as
           // pieces: the standard twin a process with no catalogue writes may not carry a held line's words, and measuring
           // them would refuse an edit that never touched them.
           if (place?.width === undefined && lines.length > 1 && scale === 1 && pen.inPieces) {
-            const widths = lines.map((line, at) => ({
-              opens: at === 0 || !soft[at - 1],
-              // THE WHITE SPACE A LINE ENDS IN is not counted, as the plan counts none after a line's last word.
-              width: line.reduce(
-                (sum, run, place) => sum + measure(run.index, NO_MARK, place === line.length - 1 ? run.text.trimEnd() : run.text),
-                0,
-              ),
-            }));
+            const widths = lines
+              .map((line, at) => ({ line, opens: at === 0 || !soft[at - 1] }))
+              .filter(({ line }) => Math.max(...line.map((run) => run.span.right)) >= blockRight - AT_THE_MEASURE)
+              .map(({ line, opens }) => ({
+                opens,
+                // THE WHITE SPACE A LINE ENDS IN is not counted, as the plan counts none after a line's last word.
+                width: line.reduce(
+                  (sum, run, place) => sum + measure(run.index, NO_MARK, place === line.length - 1 ? run.text.trimEnd() : run.text),
+                  0,
+                ),
+              }));
             held = {
               first: Math.max(0, ...widths.filter((line) => line.opens).map((line) => line.width)),
               rest: Math.max(0, ...widths.filter((line) => !line.opens).map((line) => line.width)),
@@ -3390,14 +3407,22 @@ function layOutBlocks(
                   const laid = writeStretch(
                     stretch === unit.text ? unit : { ...unit, text: stretch, width: measure(unit.piece.run, unit.piece.mark, stretch) },
                   );
-                  if (stretch.trim() === '' && stretch.length > 1) {
+                  if (stretch.trim() === '' && stretch.length > 1 && laid.length !== 1) {
                     // ONE OBJECT, as white space is always set in the run's own font: a mark on each of several would say
                     // the spaces once per object.
-                    const [only, ...more] = laid;
-                    if (only === undefined || more.length > 0) {
-                      throw refusedAt('object', `A run of ${String(stretch.length)} spaces was set as ${String(laid.length)} objects`);
-                    }
-                    markActualText(bindings, document, only, stretch, 'a run of spaces');
+                    throw refusedAt('object', `A run of ${String(stretch.length)} spaces was set as ${String(laid.length)} objects`);
+                  }
+                  // EVERY OBJECT OF WHITE SPACE ALONE is marked with exactly the spaces it is, one space as much as a run
+                  // of them: a text page reads an object of one space as nothing (`asTextPageReads`), and the space a
+                  // reader then shows is one it GENERATES from the gap, which PDFium does on an upright page and not on
+                  // one turned 180 degrees. Measured 2026-10-17 on the memory walk's page (`/Rotate 180`): a whole block
+                  // restyled set each old run's trailing space as an object of its own, and it read back "et1",
+                  // "aliquipex", "doloreeu" — every word at an old line's end joined to the next (M3d). Such an object
+                  // comes from a restyled run's last space, a space a font with no space glyph has set in another face,
+                  // and a mark's lone space.
+                  for (const object of laid) {
+                    const said = pen.textOf(object) ?? '';
+                    if (said !== '' && said.trim() === '') markActualText(bindings, document, object, said, 'white space alone');
                   }
                 }
               }

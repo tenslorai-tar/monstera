@@ -280,7 +280,7 @@ const failures = [];
 // from its Decision 2: a tab read back at its stop, its control, and a second edit that keeps one tab. 235 from the
 // second edit's measure, which read a line written as several objects at its first object's width. 246 from L2: an
 // underlined word read back underlined, its rule moved with it by a second edit, and the control that turns it off.
-const roster = createRoster(failures, { cases: 263 });
+const roster = createRoster(failures, { cases: 265 });
 
 /**
  * @param {string} name
@@ -719,6 +719,9 @@ async function restyledRowCases() {
   const helvetica = await document.embedFont(StandardFonts.Helvetica);
   for (const [at, line] of LINES.entries()) page.drawText(line, { x: 78, y: 664 - at * 12, size: 10, font: helvetica });
   const pdf = await document.save();
+  // THE SAME PAGE TURNED 180 DEGREES, as the memory walk's is: its content is the same, only the page's /Rotate.
+  page.setRotation(degrees(180));
+  const turnedPdf = await document.save();
   bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }], readCatalogueApart));
   try {
     const session = await pdfiumWriter.open(pdf);
@@ -737,11 +740,12 @@ async function restyledRowCases() {
      * run's right and the next one's left.
      *
      * @param {boolean} restyled
+     * @param {Uint8Array} [onto] the page edited, the upright one unless given
      */
-    const edited = async (restyled) => {
+    const edited = async (restyled, onto = pdf) => {
       const marks = restyled ? [{ from: 0, to: text.length, set: { family: 'Carlito' } }] : [];
       const out = await localPdfiumExecution.apply({
-        session: pdf,
+        session: onto,
         command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
           kind: 'editTextBlock',
           page: 0,
@@ -761,11 +765,20 @@ async function restyledRowCases() {
             ? []
             : runs.filter((run) => Math.abs(run.style.baseline - typed.style.baseline) < 0.5).sort((a, b) => a.left - b.left);
         const gaps = row.slice(1).map((run, at) => run.left - (row[at]?.right ?? run.left));
+        const blocks = groupIntoBlocks(runs.map((run) => ({ ...run, setting: settingOf(run.style) })));
         return {
-          blocks: groupIntoBlocks(runs.map((run) => ({ ...run, setting: settingOf(run.style) }))).length,
+          blocks: blocks.length,
           runs: row.length,
           widest: gaps.length === 0 ? 0 : Math.max(...gaps),
           typed: typed !== undefined,
+          // THE WORDS AS THE EDITOR READS THEM, the blocks' lines joined as it joins them, each run of white space one
+          // space: what the next edit sends back. PDFium's whole-page text is not that reading, and on the turned page
+          // it gave every space back while the block's runs read "et1" and "aliquipex" (measured 2026-10-17).
+          words: blocks
+            .map((block) => paragraphsOfLines(block.lines.map((line) => ({ text: lineText(line.runs), soft: line.soft }))))
+            .join(' ')
+            .replace(/\s+/gu, ' ')
+            .trim(),
         };
       } finally {
         await pdfiumWriter.close(reopened);
@@ -784,6 +797,22 @@ async function restyledRowCases() {
       'a font chosen for a whole block with a word typed into it: the word stands a space from the words before it, and the block reads as one',
       restyled.typed && restyled.blocks === 1 && restyled.widest <= SPACE,
       JSON.stringify(restyled),
+    );
+    // ON A PAGE TURNED 180 DEGREES every word keeps its space. The restyled block sets each old line's last space as an
+    // object of its own, which a text page reads as nothing; upright PDFium makes a space up from the gap, turned it does
+    // not, and before such an object was marked with the space it is the page read "et1 dolore", "aliquipex" (M3d,
+    // 2026-10-17). The upright reading above, through the same reading, is the control: the words are the same.
+    const sent = text.replace(/\s+/gu, ' ');
+    const turned = await edited(true, turnedPdf);
+    record(
+      'CONTROL: the restyled block upright reads back every word with its space, in order, through the same reading',
+      restyled.words === sent,
+      JSON.stringify(restyled.words),
+    );
+    record(
+      'the same edit on a page turned 180 degrees reads back every word with its space: no word is joined to the next',
+      turned.words === sent,
+      JSON.stringify(turned.words),
     );
   } finally {
     bindEditFaces(null);
