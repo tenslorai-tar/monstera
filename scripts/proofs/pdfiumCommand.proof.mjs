@@ -282,7 +282,7 @@ const failures = [];
 // from its Decision 2: a tab read back at its stop, its control, and a second edit that keeps one tab. 235 from the
 // second edit's measure, which read a line written as several objects at its first object's width. 246 from L2: an
 // underlined word read back underlined, its rule moved with it by a second edit, and the control that turns it off.
-const roster = createRoster(failures, { cases: 271 });
+const roster = createRoster(failures, { cases: 272 });
 
 /**
  * @param {string} name
@@ -1130,6 +1130,15 @@ async function gapSpacedCases() {
       'a word added to a line whose font has no space glyph is written, and the line reads back with every space',
       added.refused === '' && added.text === `${LINES[0] ?? ''}\r\nhi\r\n${LINES[1] ?? ''}`,
       JSON.stringify({ text: added.text, refused: added.refused }),
+    );
+    // AND ON A LINE WITH ROOM, which is what the case above stopped exercising when its word moved to a line of its own
+    // (the audit of 39a81ead..cd0abe3c): the second line is shorter than the block's measure, so " hi" stays on it, and
+    // the space before it — set beside a word the subset cannot carry — must read back as a space.
+    const roomy = await edited(pdf, 'areas.', (text) => text.replace('areas.', 'areas. hi'));
+    record(
+      'a word added to a line with room, in a face the subset lacks, stays on that line and reads back after its space',
+      roomy.refused === '' && roomy.text === `${LINES[0] ?? ''}\r\n${LINES[1] ?? ''} hi`,
+      JSON.stringify({ text: roomy.text, refused: roomy.refused }),
     );
     const deleted = await edited(added.bytes, 'hi', (text) => text.replace('hi', ''));
     record(
@@ -4003,8 +4012,12 @@ async function markCases() {
     ).toString('latin1');
     return {
       // THE DOCUMENT'S SEQUENCES, not the edit's measure: every line set afresh carries `/MonsteraMeasure` (ADR-0097's
-      // correction of 2026-10-17), a private sequence no structure names, so it is no tag copied or invented.
-      sequences: [...content.matchAll(/\/(\w+)\s*(?:<<[^>]*>>|\/\w+)?\s*BDC\b/gu)].filter((each) => each[1] !== 'MonsteraMeasure').length,
+      // correction of 2026-10-17), a private sequence no structure names, so it is no tag copied or invented. EVERY `BDC`
+      // less the measure's own, whose shape the writer sets: a pattern for the sequences to keep saw only two property
+      // shapes, so an invented tag of a third was not counted (the audit of 39a81ead..cd0abe3c).
+      sequences:
+        (content.match(/\bBDC\b/gu) ?? []).length -
+        (content.match(/\/MonsteraMeasure\s*<<\s*\/Width\s+[-\d.]+\s*>>\s*BDC\b/gu) ?? []).length,
       numbers: [...content.matchAll(/\/MCID\s+(\d+)/gu)].map((each) => Number(each[1])),
       texts: (content.match(/\bBT\b/gu) ?? []).length,
     };
