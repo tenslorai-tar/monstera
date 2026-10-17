@@ -1383,6 +1383,17 @@ its store's page and zoom and comes forward when its viewport is drawn. This is
 the one route by which a document already open is parsed again, and it is
 taken only for a document that has nothing to lose.
 
+**A window with no document gives its renderer back** (amended 2026-10-17,
+[ADR-0252](DECISIONS/0252-a-closed-and-idle-window-gives-its-renderer-back.md)):
+the last close sends Chromium's memory-pressure signal, and after a minute with
+no document, no dialog, no work in flight and no input the renderer asks
+`app.releaseMemory`, which `main` answers by reloading the window only with no
+document open and one opened since it last loaded. **And a renderer that ends is
+reloaded and given its documents back** (amended 2026-10-17,
+[ADR-0253](DECISIONS/0253-a-failure-is-called-out-of-memory-only-when-that-is-proven.md)):
+`document.held` answers what `main` holds, and a failure is called *out of
+memory* to the person only where `main` has the evidence.
+
 **The view on show holds pixels for the pages in use, under one limit**
 (amended 2026-10-15,
 [ADR-0247](DECISIONS/0247-page-pixels-are-held-for-pages-in-use-under-one-memory-limit.md)).
@@ -3131,6 +3142,8 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-10-17 | **A failure is called *out of memory* only when that is proven** (§5, §6). The owner's decision of 2026-10-17. A host killed at its memory budget reached the person as `internal`; a renderer that ended out of memory left a dead window; low memory was a log line. Now: `out-of-memory`, a declared failure on the three channels that change a document, with the computer's figures and other programs named only when memory was short; a renderer that ends is reloaded and given back its documents (`document.held`), told why (`app.rendererEnded`); `app.memory-low` is one calm notice per spell | §6's renderer had no recovery from its own end | [0253](DECISIONS/0253-a-failure-is-called-out-of-memory-only-when-that-is-proven.md) |
+| 2026-10-17 | **A window with no document gives its renderer back** (§5, §6). The owner's addendum 2 item 3, measured: 518 MB with every document closed against 357 at the start; the pressure signal gave back 29, a reload 156. The last close sends the signal; a minute idle with nothing open, the renderer asks `app.releaseMemory` and `main` reloads it | Nothing withdrawn | [0252](DECISIONS/0252-a-closed-and-idle-window-gives-its-renderer-back.md) |
 | 2026-10-17 | **The open text editor's context menu is its own, not a projection** (§7), recorded late. Decided on 2026-10-06 in ADR-0180's correction of Decision 8 inside feature commit `7ec632f7`, whose diff did not touch this file, against B4's order (finding VVVVVVV-21). The menu's first section is the replacements for the word under the pointer, which are not commands; its Edit verbs are the Edit menu's through `window.edit` | §7's *context menus … are all derived from placements*, for this one menu | [0180](DECISIONS/0180-formatting-is-marks-over-a-blocks-words-and-a-block-is-moved-resized-and-added-by-its-own-commands.md), correction 2026-10-06 |
 | 2026-10-17 | **A view behind for a minute is parked** (§6). The owner's addendum 2 item 4, measured first: after a minute behind, a background tab still held 8–25 MB, all in the renderer, and closing an engine session gave the host back 0 MB in twelve closes. A layer behind for 60 s whose document has had no command applied and has none in flight mounts nothing; its store and engine session stay; shown again it is rebuilt hidden and comes forward drawn. Rejected: a parked layout without a parse (a second model of the pages), dropping the engine session (measured nothing to gain), parking on leaving (a rebuild on every switch) | §6's *"nothing is … re-parsed"* gains its one exception, for a document with nothing to lose | [0129](DECISIONS/0129-an-open-documents-view-lives-until-it-closes.md), correction 2026-10-17 |
 | 2026-10-17 | **A host reaches its pipe before it loads its handlers** (§3). The owner's addendum 2, item 2: two first documents were poisoned on 2026-10-16 when the MuPDF host missed the ten-second connect bound twice. The host reached its pipe only after evaluating its whole module graph, 293 files whose load is file calls and compilation that a cold or busy disk multiplies, so the bound measured a load rather than a start. Each entry now binds its engine, connects, then loads its handlers; a request sent meanwhile waits in the socket. The bound is unchanged. | Nothing. ADR-0023's bound is kept and now covers what it was said to cover | [0251](DECISIONS/0251-a-host-reaches-its-pipe-before-it-loads-its-handlers.md) |
