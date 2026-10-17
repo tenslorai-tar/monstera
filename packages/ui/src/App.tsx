@@ -382,6 +382,7 @@ import {
   pageMemoryLimit,
 } from './settings/rendering.js';
 import { setPixelLimit } from './pixelLedger.js';
+import { placesAhead } from './placesAhead.js';
 import {
   DARK_PAGE_SETTING,
   FIELD_HIGHLIGHT_SETTING,
@@ -1384,14 +1385,15 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
    * The selection is carried across it, since a change to a field's dictionary moves no widget.
    */
   const sendFieldCommand = useCallback(
-    (build: (version: DocVersion) => DispatchableCommand): void => {
-      if (activeId === undefined || openVersion === undefined) return;
+    /** Settles when the command has landed or been refused (`placesAhead` waits on it). */
+    (build: (version: DocVersion) => DispatchableCommand): Promise<void> => {
+      if (activeId === undefined || openVersion === undefined) return Promise.resolve();
       // THE VERSION IT WAS SENT AT is what the selection is carried from: the command lane may have followed this renderer's
       // own previous edit, so a nudge composed before that edit landed is sent, and carried, at the version it left.
       let sentAt = openVersion;
       const command = build(sentAt);
       const docId = activeId;
-      void applyDocumentCommand(
+      return applyDocumentCommand(
         {
           client,
           onApplied: (answer) => {
@@ -1413,20 +1415,41 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
             sentAt = version;
           },
         },
-      );
+      ).then(() => undefined);
     },
     [activeId, applied, ask, client, openVersion, signatures, stamp],
   );
   const sendFieldEdits = useCallback(
-    (edits: CommandOfKind<'editFormFields'>['edits']): void => {
-      sendFieldCommand((version) => ({ kind: 'editFormFields', edits, version }));
-    },
+    (edits: CommandOfKind<'editFormFields'>['edits']): Promise<void> => sendFieldCommand((version) => ({ kind: 'editFormFields', edits, version })),
     [sendFieldCommand],
+  );
+  /** Where each field was last sent while its moves are being written (`placesAhead`), by document and field. */
+  const fieldPlaces = useMemo(() => placesAhead<PlacedField['rect']>(), []);
+  /**
+   * THE ONE WAY A FIELD IS MOVED, by a nudge, a drag or an arrangement alike: its new place is sent and recorded as the
+   * place ahead until the send settles, so the next move starts from it rather than from a read that has not caught up.
+   */
+  const placeFields = useCallback(
+    (moved: readonly PlacedField[]): void => {
+      if (moved.length === 0) return;
+      const settled = sendFieldEdits(moved.map((each) => ({ field: each.field, set: { rect: each.rect } })));
+      if (activeId === undefined) return;
+      for (const each of moved) fieldPlaces.sent(`${activeId}:${fieldKey(each.field.page, each.field.index)}`, each.rect, settled);
+    },
+    [activeId, fieldPlaces, sendFieldEdits],
+  );
+  /** A placed field at the place it was last sent to, where a send of it is unsettled; as read otherwise. */
+  const aheadOfRead = useCallback(
+    <Placed extends PlacedField>(placed: Placed): Placed => {
+      const ahead = activeId === undefined ? undefined : fieldPlaces.ahead(`${activeId}:${fieldKey(placed.field.page, placed.field.index)}`);
+      return ahead === undefined ? placed : { ...placed, rect: ahead };
+    },
+    [activeId, fieldPlaces],
   );
   /** Copies the one selected field onto the pages named (ADR-0193): one command, and the selection stays on the field. */
   const copyFieldToPages = useCallback(
     (field: FormFieldHandle, pages: readonly number[]): void => {
-      sendFieldCommand((version) => ({ kind: 'duplicateFormField', field, to: { kind: 'pages', pages: pageSetOf(pages) }, version }));
+      void sendFieldCommand((version) => ({ kind: 'duplicateFormField', field, to: { kind: 'pages', pages: pageSetOf(pages) }, version }));
     },
     [sendFieldCommand],
   );
@@ -1443,7 +1466,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       if (first === undefined) return;
       const { options, calculation, ...shared } = set;
       const lists = options !== undefined || calculation !== undefined;
-      sendFieldEdits(lists ? ([{ field: first, set }] as const) : selectedHandles.map((field) => ({ field, set: shared })));
+      void sendFieldEdits(lists ? ([{ field: first, set }] as const) : selectedHandles.map((field) => ({ field, set: shared })));
     },
     [selectedHandles, sendFieldEdits],
   );
@@ -1455,12 +1478,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       return rect === null || rect === undefined ? [] : [{ field, rect }];
     });
   }, [formFieldList.fields, selectedHandles]);
-  const arrangeSelectedFields = useCallback(
-    (moved: readonly PlacedField[]): void => {
-      sendFieldEdits(moved.map((each) => ({ field: each.field, set: { rect: each.rect } })));
-    },
-    [sendFieldEdits],
-  );
+  const arrangeSelectedFields = placeFields;
   // ESCAPE AND A PRESS ON EMPTY PAGE DESELECT, only while something is selected: a press on a field's own control is the
   // selection's and a press on the page's paper is not.
   /** Whether *Edit fields* is on, for the window listener below, which is registered once (written in an effect). */
@@ -2292,7 +2310,34 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         : undefined,
     [open?.version, picked, toolId],
   );
-  const readSelection = useCallback(() => selection, [selection]);
+  /** Where each selected mark was last sent while a move of it is being written (`placesAhead`), by document, page and mark. */
+  const marksAhead = useMemo(() => placesAhead<NonNullable<typeof selection>['items'][number]['rect']>(), []);
+  // EACH MARK WHERE IT WAS LAST SENT while a move of it is being written: what a nudge starts from, as for fields.
+  const readSelection = useCallback(
+    () =>
+      selection === undefined || activeId === undefined
+        ? selection
+        : {
+            ...selection,
+            items: selection.items.map((item) => {
+              const ahead = marksAhead.ahead(`${activeId}:${String(selection.page)}:${String(item.index)}`);
+              return ahead === undefined ? item : { ...item, rect: ahead };
+            }),
+          },
+    [activeId, marksAhead, selection],
+  );
+  /** A selection command's dispatch, a mark's move recorded as its place ahead until the send settles. */
+  const placeMarks = useCallback(
+    (command: DispatchableCommand): void => {
+      if (activeId === undefined) return;
+      const settled = send(activeId, command);
+      if (command.kind !== 'placeAnnotation') return;
+      for (const placement of command.placements) {
+        marksAhead.sent(`${activeId}:${String(command.page)}:${String(placement.index)}`, placement.rect, settled);
+      }
+    },
+    [activeId, marksAhead, send],
+  );
   /** The picked link while it names this version and the select tool is on: `selection`'s rule, for its reasons. */
   const linkSelection = useMemo(
     () =>
@@ -2410,8 +2455,9 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
    * menu reads a focused text field, so a selection the list made is never deleted by a Delete pressed on the page.
    */
   const readDesignedFields = useCallback(
-    () => (inFieldDesign || document.activeElement?.closest('.m-forms-panel') != null ? selectedPlaced : NO_PLACED),
-    [inFieldDesign, selectedPlaced],
+    // EACH WHERE IT WAS LAST SENT while a move of it is being written (`placesAhead`): what a nudge starts from.
+    () => (inFieldDesign || document.activeElement?.closest('.m-forms-panel') != null ? selectedPlaced.map(aheadOfRead) : NO_PLACED),
+    [aheadOfRead, inFieldDesign, selectedPlaced],
   );
   /** A field's properties, in the Properties tab, shown even where the panel is a sheet. */
   const showFieldProperties = useCallback((): void => {
@@ -2504,11 +2550,9 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
           })),
         );
       },
-      onPlace: (moved: readonly PlacedField[]): void => {
-        sendFieldEdits(moved.map((each) => ({ field: each.field, set: { rect: each.rect } })));
-      },
+      onPlace: placeFields,
     }),
-    [ask, readDesignedFields, sendFieldCommandsInTurn, sendFieldEdits],
+    [ask, placeFields, readDesignedFields, sendFieldCommandsInTurn],
   );
   const fieldDesign = useMemo(
     () =>
@@ -2610,14 +2654,15 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         setFieldSelection(undefined);
       },
       onPlace: (page, placements) => {
-        const edits = placements.flatMap((placement) => {
-          const field = handleOf(page, placement.index);
-          return field === undefined ? [] : [{ field, set: { rect: placement.rect } }];
-        });
-        if (edits.length > 0) sendFieldEdits(edits);
+        placeFields(
+          placements.flatMap((placement) => {
+            const field = handleOf(page, placement.index);
+            return field === undefined ? [] : [{ field, rect: placement.rect }];
+          }),
+        );
       },
     };
-  }, [fieldsInOrder, inFieldDesign, openVersion, selectField, sendFieldEdits]);
+  }, [fieldsInOrder, inFieldDesign, openVersion, placeFields, selectField]);
 
   /** Fills the selected object with `colour`, from the Properties tab. */
   const recolourObject = useCallback(
@@ -3277,8 +3322,8 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
 
   /** What the selection commands need, composed once so nine entries share it. */
   const selectionDeps = useMemo(
-    () => ({ selection: readSelection, onDelete: removeSelection, onPlace: dispatch }),
-    [dispatch, readSelection, removeSelection],
+    () => ({ selection: readSelection, onDelete: removeSelection, onPlace: placeMarks }),
+    [placeMarks, readSelection, removeSelection],
   );
 
   // THE TEXT TOOL IS CONSTRUCTED WITH `ask`, which is what makes it different
@@ -4032,7 +4077,8 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         exportAnnotationsJsonCommand({ client, onApplied: applied, ask, stamp, signatures, toast, track }),
         detectFlatFieldsCommand({ client, onApplied: applied, ask, stamp, signatures, markPlaces }),
         // ALIGN AND SAME SIZE for the selected form fields (ADR-0193), at the Properties tab's foot.
-        ...fieldArrangeCommands({ placed: () => placedFields, apply: arrangeSelectedFields }),
+        // EACH FIELD WHERE IT WAS LAST SENT while a move of it is being written (`placesAhead`).
+        ...fieldArrangeCommands({ placed: () => placedFields.map(aheadOfRead), apply: arrangeSelectedFields }),
         copyFieldToPagesCommand({ single: () => singleField, ask, apply: copyFieldToPages }),
         flattenFormCommand({ client, onApplied: applied, ask, stamp, signatures, toast, selectedFields: () => selectedHandles }),
         tabOrderCommand({ client, onApplied: applied, ask, stamp, signatures, toast, orderByClicking }),
@@ -4251,6 +4297,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       stamp,
       // THE SELECTED FORM FIELDS AND WHERE THEY ARE (ADR-0193), which align and same size read.
       placedFields,
+      aheadOfRead,
       selectedHandles,
       arrangeSelectedFields,
       singleField,
