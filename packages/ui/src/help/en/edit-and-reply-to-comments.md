@@ -21,7 +21,7 @@ You can also select a mark and use **Reply** at the foot of the **Properties** t
 
 ## Good to know
 
-- A comment cannot be emptied; to remove it, delete the mark instead. If you empty the box, it says **A comment can't be empty** and stays open: type the words, or press **Esc** to keep the ones it had. A reply left empty, or a comment left as it was, changes nothing.
+- A comment cannot be emptied; to remove it, delete the mark instead. If you empty the box, it says that a comment can’t be empty and stays open: type the words, or press **Esc** to keep the ones it had. A reply left empty, or a comment left as it was, changes nothing.
 - If the text is too long for one comment, the box says so under it and stays open until it is shorter.
 - Replies are saved the standard way, so other PDF readers show them as replies.
 - To have the AI assistant suggest a reply, right-click the comment and choose **Draft a reply with AI**.
