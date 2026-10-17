@@ -146,6 +146,35 @@ async function editorInk(page: Page, clip: { x: number; y: number; width: number
   }
 }
 
+test.describe('the caret is where the person clicked, in a real browser (VVVVVVV-11)', () => {
+  // THE BROWSER'S OWN `caretPositionFromPoint`, which the unit case stubs with one fixed node whatever the point: two
+  // clicks on the same block, at its first letter and at its first line's end, and a letter typed after each. A caret
+  // the layer left at one fixed place would put both letters in the same place, so the pair separates it.
+  /** Opens the first block by a click at `where` in its outline, types Z, and answers the editor's text. */
+  const typedAt = async (page: Page, where: (box: { x: number; y: number; width: number; height: number }) => { x: number; y: number }) => {
+    await open(page);
+    const box = await page.locator('[data-text-edit-layer="0"] [data-text-block="0"]').boundingBox();
+    if (box === null) throw new Error('no outline');
+    const at = where(box);
+    await page.mouse.click(at.x, at.y);
+    const editor = page.locator('[data-text-editor]');
+    await expect(editor).toBeFocused();
+    await page.keyboard.type('Z');
+    return (await editor.innerText()).replace(/\s+/gu, ' ').trim();
+  };
+
+  test('a click at the block’s first letter puts the caret before it', async ({ page }) => {
+    const text = await typedAt(page, (box) => ({ x: box.x + 1, y: box.y + box.height * 0.25 }));
+    expect(text).toMatch(/^ZEvery line here/u);
+  });
+
+  test('a click at the end of its first line puts the caret after that line’s last letter', async ({ page }) => {
+    const text = await typedAt(page, (box) => ({ x: box.x + box.width - 1, y: box.y + box.height * 0.25 }));
+    expect(text).toContain('on purpose.Z');
+    expect(text).not.toMatch(/^Z/u);
+  });
+});
+
 test.describe('the open editor stands where the page’s words are (A5, A7)', () => {
   test('a two-line block: its words on the page’s, no taller than the block, and the line below uncovered', async ({ page }) => {
     await open(page);
