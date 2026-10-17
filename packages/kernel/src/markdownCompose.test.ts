@@ -255,5 +255,17 @@ describe('composeMarkdown: every character is drawn (ADR-0172)', () => {
     expect(texts.join('')).toBe(paragraph);
     // A line that began with a vowel sign or tone mark would be one cut from the consonant it belongs to.
     for (const text of texts) expect(text).not.toMatch(/^\p{M}/u);
+    // AND EVERY BREAK IS BETWEEN WORDS, by the dictionary's own word boundaries (SSSSSSS-17): a breaker that cut inside a
+    // word at a letter carrying no mark passed the line above. The boundaries are a few of the paragraph's places, not
+    // most of them, so membership is a test and not a formality.
+    const words = new Set(
+      Array.from(new Intl.Segmenter('th', { granularity: 'word' }).segment(paragraph), (segment) => segment.index),
+    );
+    expect(words.size).toBeLessThan(paragraph.length / 2);
+    let at = 0;
+    for (const text of texts.slice(0, -1)) {
+      at += text.length;
+      expect(words.has(at), `a break at ${String(at)} inside a word`).toBe(true);
+    }
   });
 });
