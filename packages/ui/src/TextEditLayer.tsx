@@ -780,7 +780,7 @@ export function TextEditLayer({
       })}
       {/* THE LINES THE PARAGRAPH NOW RUNS INTO, where there is no room to move them (ADR-0249 Decision 5): each block below
           whose top the grown words reach, outlined over the editor so the person sees what they would cover. */}
-      {crowded && openBlock !== undefined
+      {crowded
         ? below
             .filter(({ block }) => block.box.y1 > openBlock.box.y0 - down)
             .map(({ at, block }) => (

@@ -518,7 +518,11 @@ describe('a write landing while the pane is in use (the forms walk’s A8.4)', (
       </Wrapped>
     );
     const view = render(pane(4));
-    return { moveTo: (version: number) => view.rerender(pane(version)) };
+    return {
+      moveTo: (version: number): void => {
+        view.rerender(pane(version));
+      },
+    };
   }
 
   it('an open font picker stays open while the next read is taken and after it arrives', async () => {
@@ -533,7 +537,7 @@ describe('a write landing while the pane is in use (the forms walk’s A8.4)', (
     expect(screen.queryByRole('combobox', { name: 'Search fonts' })).not.toBeNull();
     landed({ ...TEXT, tooltip: 'Written by the forms walk' });
     await waitFor(() => {
-      expect((screen.getByLabelText('Tooltip') as HTMLInputElement).value).toBe('Written by the forms walk');
+      expect(screen.getByLabelText('Tooltip')).toHaveProperty('value', 'Written by the forms walk');
     });
     // AND STILL OPEN once the read that changed another property has arrived.
     expect(screen.queryByRole('combobox', { name: 'Search fonts' })).not.toBeNull();
@@ -542,17 +546,16 @@ describe('a write landing while the pane is in use (the forms walk’s A8.4)', (
   it('a read that changed another property leaves a draft being typed here; one that changed this property replaces it', async () => {
     const reads: FormFieldRead[] = [TEXT, { ...TEXT, tooltip: 'From the write' }, { ...TEXT, tooltip: 'From the write', fontSize: 14 }];
     const pane = moving((version) => Promise.resolve(reads[version - 4] ?? TEXT));
-    const size = (await screen.findByLabelText('Size (0 is automatic)')) as HTMLInputElement;
-    fireEvent.change(size, { target: { value: '11' } });
+    fireEvent.change(await screen.findByLabelText('Size (0 is automatic)'), { target: { value: '11' } });
     pane.moveTo(5);
     await waitFor(() => {
-      expect((screen.getByLabelText('Tooltip') as HTMLInputElement).value).toBe('From the write');
+      expect(screen.getByLabelText('Tooltip')).toHaveProperty('value', 'From the write');
     });
-    expect((screen.getByLabelText('Size (0 is automatic)') as HTMLInputElement).value).toBe('11');
+    expect(screen.getByLabelText('Size (0 is automatic)')).toHaveProperty('value', '11');
     // CONTROL: a read that changed the size itself puts the document's value back over the draft.
     pane.moveTo(6);
     await waitFor(() => {
-      expect((screen.getByLabelText('Size (0 is automatic)') as HTMLInputElement).value).toBe('14');
+      expect(screen.getByLabelText('Size (0 is automatic)')).toHaveProperty('value', '14');
     });
   });
 });
