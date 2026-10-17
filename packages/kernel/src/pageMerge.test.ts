@@ -335,6 +335,16 @@ describe('mergeDocument', () => {
     try {
       await applyMergeDocument(target, mergeWhole(1, 2), [source, source]);
       expect(await widthsOf(await mupdfWriter.serialise(target))).toEqual([100, 200, 210, 200, 210]);
+      // THE MAP IS SHARED (NNNNNNN-8): the second pass reuses what the first grafted, so a page taken twice draws from ONE
+      // content object — which a map per pass, copying the objects again, does not give, while giving the widths above.
+      // `/Contents` as pdf-lib writes it: a direct array holding the stream's reference, so the reference is its element.
+      const contents = await withDocument(target, (document) =>
+        [1, 2, 3, 4].map((page) => document.findPage(page).get('Contents').get(0).asIndirect()),
+      );
+      expect(contents[2]).toBe(contents[0]);
+      expect(contents[3]).toBe(contents[1]);
+      // CONTROL: the source's two pages are two objects, so the equalities above are the map's and not every page's.
+      expect(contents[1]).not.toBe(contents[0]);
     } finally {
       await mupdfWriter.close(target);
       await mupdfWriter.close(source);
