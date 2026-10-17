@@ -84,6 +84,8 @@ import {
   rgb,
   setFillingRgbColor,
   setFontAndSize,
+  setLineWidth,
+  setStrokingRgbColor,
   setTextMatrix,
   setTextRenderingMode,
   showText,
@@ -280,7 +282,7 @@ const failures = [];
 // from its Decision 2: a tab read back at its stop, its control, and a second edit that keeps one tab. 235 from the
 // second edit's measure, which read a line written as several objects at its first object's width. 246 from L2: an
 // underlined word read back underlined, its rule moved with it by a second edit, and the control that turns it off.
-const roster = createRoster(failures, { cases: 267 });
+const roster = createRoster(failures, { cases: 269 });
 
 /**
  * @param {string} name
@@ -3474,14 +3476,16 @@ async function blockEditCases() {
  * font (the words named in `bold` in Helvetica-Bold), the first line starting `indent` points in. `lines` instead sets
  * each given line on its own, centred on `centre` when that is given.
  *
- * @param {{ text?: string; lines?: string[]; bold?: string[]; limit?: number; indent?: number; centre?: number; invisible?: boolean }} options
+ * @param {{ text?: string; lines?: string[]; bold?: string[]; limit?: number; indent?: number; centre?: number; invisible?: boolean; outlined?: boolean }} options
  */
-async function aTypeset({ text = '', lines, bold = [], limit = 200, indent = 0, centre, invisible = false }) {
+async function aTypeset({ text = '', lines, bold = [], limit = 200, indent = 0, centre, invisible = false, outlined = false }) {
   const document = await PDFDocument.create();
   const page = document.addPage([400, 400]);
   // RENDER MODE 3, an OCR'd scan's invisible words: set before the text, so each `q BT ... ET Q` the drawing writes
   // inherits it (`Tr` is graphics state).
   if (invisible) page.pushOperators(setTextRenderingMode(3));
+  // RENDER MODE 1, the words OUTLINED in red and not filled, set the same way: the stroke a stroking mode paints with.
+  if (outlined) page.pushOperators(setTextRenderingMode(1), setStrokingRgbColor(1, 0, 0), setLineWidth(1.5));
   const regular = await document.embedFont(StandardFonts.Helvetica);
   const strong = await document.embedFont(StandardFonts.HelveticaBold);
   const size = 11;
@@ -5272,6 +5276,47 @@ async function paragraphCases() {
     'CONTROL: the same edit to visible text paints it, so the invisible case above is the render mode and not an empty render',
     (await darkPixels(shown)) > 100 && (await darkPixels(original)) > 100,
     `${String(await darkPixels(shown))} dark pixel(s) after, ${String(await darkPixels(original))} before`,
+  );
+  // OUTLINED TEXT STAYS OUTLINED IN ITS OWN STROKE (render mode 1, VVVVVVV-8): the mode, the stroke's colour and its width
+  // are copied to a line set again, and each copy's answer is checked as the mode's is. Counted by colour: red pixels are
+  // the stroke as drawn; a dark pixel is black ink, which this page paints only where a line lost its stroke colour.
+  /** @param {Uint8Array} bytes */
+  const inks = async (bytes) => {
+    const session = await pdfiumWriter.open(bytes);
+    try {
+      const bitmap = await renderPageBitmap(session, 0, 400, 400);
+      let red = 0;
+      let dark = 0;
+      for (let at = 0; at < bitmap.bgra.length; at += 4) {
+        const [b = 255, g = 255, r = 255] = [bitmap.bgra[at], bitmap.bgra[at + 1], bitmap.bgra[at + 2]];
+        if (r > 160 && g < 110 && b < 110) red += 1;
+        else if (r < 100 && g < 100 && b < 100) dark += 1;
+      }
+      return { red, dark };
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  };
+  const outlined = await aTypeset({ text: PARAGRAPH, outlined: true });
+  const outlinedBlock = (await blocksOf(outlined)).blocks[0];
+  const outlinedWords = paragraphsOfLines((outlinedBlock?.lines ?? []).map((line) => ({ text: lineText(line.runs), soft: line.soft })));
+  const widenedOutline = await edit(
+    outlinedWords.replace('brown fox', 'brown unmistakably fox'),
+    outlined,
+    outlinedBlock?.lines.map((line) => line.runs.map((run) => run.index)) ?? [],
+    outlinedBlock?.lines.map((line) => line.soft) ?? [],
+  );
+  const outlinedBefore = await inks(outlined);
+  const outlinedAfter = await inks(widenedOutline);
+  record(
+    'text OUTLINED in red (render mode 1) is still outlined in red after an edit that wraps it: no line is inked black (VVVVVVV-8)',
+    (await textOf(widenedOutline)).includes('unmistakably') && outlinedAfter.red > 100 && outlinedAfter.dark === 0,
+    `after ${JSON.stringify(outlinedAfter)}, before ${JSON.stringify(outlinedBefore)}`,
+  );
+  record(
+    'CONTROL: the outlined fixture itself is red and inks nothing black, so the case above reads the stroke the edit kept',
+    outlinedBefore.red > 100 && outlinedBefore.dark === 0,
+    JSON.stringify(outlinedBefore),
   );
   record(
     'CONTROL: the invisible fixture itself draws nothing, so the edit did not hide anything that was showing',

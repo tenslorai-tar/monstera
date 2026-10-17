@@ -4086,11 +4086,17 @@ function dressLike(bindings: Bound, object: unknown, source: unknown, left: numb
     const g = [0];
     const b = [0];
     const a = [0];
+    // EACH COPY'S ANSWER CHECKED, as the mode's is (VVVVVVV-8): a stroke not taken is a stroking line drawn in PDFium's
+    // default, black at width 1, over or beside the line it stands for.
     if (numberFrom(bindings.getStrokeColour(source, r, g, b, a), 'FPDFPageObj_GetStrokeColor') === 1) {
-      bindings.setStrokeColour(object, r[0] ?? 0, g[0] ?? 0, b[0] ?? 0, a[0] ?? 255);
+      if (numberFrom(bindings.setStrokeColour(object, r[0] ?? 0, g[0] ?? 0, b[0] ?? 0, a[0] ?? 255), 'FPDFPageObj_SetStrokeColor') !== 1) {
+        throw refusedAt('object', 'FPDFPageObj_SetStrokeColor refused the stroke of the line a new one stands in for');
+      }
     }
     if (numberFrom(bindings.getStrokeWidth(source, width), 'FPDFPageObj_GetStrokeWidth') === 1) {
-      bindings.setStrokeWidth(object, width[0] ?? 1);
+      if (numberFrom(bindings.setStrokeWidth(object, width[0] ?? 1), 'FPDFPageObj_SetStrokeWidth') !== 1) {
+        throw refusedAt('object', 'FPDFPageObj_SetStrokeWidth refused the stroke width of the line a new one stands in for');
+      }
     }
   }
 }
