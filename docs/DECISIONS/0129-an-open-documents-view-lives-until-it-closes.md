@@ -123,3 +123,49 @@ of *Opening* on every switch of a document already open.
 What it costs: a switch now lands one draw of the viewport after the click instead of on it, with the old document on
 show meanwhile; closing a tab still brings its neighbour straight forward, because the closed layer has nothing left to
 hold, so its first frames draw in.
+
+## Correction, 2026-10-17 — a layer behind for a minute gives back its parse too (the owner's addendum 2, item 4)
+
+The owner's order: background tabs free their memory, as PDF-XChange's do; measure first, then, where a background tab
+still holds a significant amount, a tab behind for about a minute drops its parsed document, renderer and engine session,
+and rebuilds it when shown at the same page, zoom and selection. A tab with unsaved changes, undo history or a pending
+write never drops its state. The switch back is a gate: fully drawn within 1 s, median.
+
+**Measured, 2026-10-17, this laptop** (`scripts/research/tabMemoryProbe.mjs`: seven copies of one file open, the first
+shown for 60 s, then each background tab closed in turn with 20 s to settle; private memory by process):
+
+| file | 7 open, working | 7 open, 60 s on one | 1 open | a background tab's close gave back |
+|---|---|---|---|---|
+| the 13 KB sample | 879 MB | 659 MB | 612 MB | renderer 4–15 MB, GPU 0–24, engine host 0 |
+| the corpus's largest, 2.7 MB | 1,340 MB | 754 MB | 658 MB | renderer 8–25 MB, GPU 0–25, engine host 0 |
+
+So after the 2026-10-14 correction a background tab still holds 8–25 MB, all of it in the renderer: its parser and
+worker, its range transport, its layout and its DOM. **Its engine session holds nothing that can be given back**: in all
+twelve closes the MuPDF host's private memory did not fall (176 MB before and after on the large file), because the
+host's allocator keeps what a closed session freed for the next one.
+
+**Decision.**
+
+1. **A layer behind for `PARK_AFTER_MS` (60 s) is PARKED: it mounts nothing.** Its parser, worker, range transport,
+   layout and DOM go with it. Its document store stays — the page, the zoom, the selection and the panels are §6's and
+   were never the layer's — and so does its engine session, which gives nothing back.
+2. **Never a document with something to lose.** A layer parks only while its document's version is still the one it
+   opened at — no command has applied, so there is no unsaved change and no undo history — and no command of it is in
+   flight. Anything else keeps it mounted, behind, as before. The rule is conservative on purpose: a save mints a
+   version too, so a saved document keeps its layer, which costs memory and never a person's work.
+3. **Shown again, a parked layer ARRIVES as any layer does, and waits for its pages.** It mounts hidden at its store's
+   page and zoom, opens its view, draws its viewport, and comes forward when that is drawn; the layer on show stays on
+   show meanwhile. Its *Opening* state is not a reason to come forward early, as it is for a document opening for the
+   first time, because this one had a finished page a minute ago and the person is owed that page, not a loading state.
+4. **The switch back is measured against the owner's gate**, from the tab's click to its viewport drawn at its place,
+   on a small, a medium and the largest corpus document; over 1 s median for any of them goes to the owner with the
+   options before this ships.
+
+**Rejected.**
+
+- **Keep the layout and drop only the parse.** `PageList` takes its slot sizes from the parsed document, so a parked
+  layout would need a second model of the document's pages beside PDF.js's; the store already keeps what a rebuild
+  needs to land where the person was.
+- **Drop the engine session too**, as the order says. Measured above, it gives nothing back and its reopen would be
+  paid on the way back; it is not done, and that is this correction's one departure from the order's words.
+- **Park on leaving.** A rebuild on every switch is the 2026-10-01 defect this ADR was written to remove.

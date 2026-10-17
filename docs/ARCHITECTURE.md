@@ -1370,6 +1370,14 @@ thumbnail, so its pixels and decoded images are given back, and the pages in its
 margin are drawn again from the kept parse when it comes forward (corrected
 2026-10-14, ADR-0129, run 4 item 13c).
 
+**A view behind for a minute is parked** (corrected 2026-10-17, ADR-0129,
+addendum 2 item 4): where no command has applied to its document and none is in
+flight, it mounts nothing, so its parser, worker and layout are given back too;
+its store and its engine session are kept. Shown again, it is rebuilt hidden at
+its store's page and zoom and comes forward when its viewport is drawn. This is
+the one route by which a document already open is parsed again, and it is
+taken only for a document that has nothing to lose.
+
 **The view on show holds pixels for the pages in use, under one limit**
 (amended 2026-10-15,
 [ADR-0247](DECISIONS/0247-page-pixels-are-held-for-pages-in-use-under-one-memory-limit.md)).
@@ -3110,6 +3118,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-10-17 | **A view behind for a minute is parked** (§6). The owner's addendum 2 item 4, measured first: after a minute behind, a background tab still held 8–25 MB, all in the renderer, and closing an engine session gave the host back 0 MB in twelve closes. A layer behind for 60 s whose document has had no command applied and has none in flight mounts nothing; its store and engine session stay; shown again it is rebuilt hidden and comes forward drawn. Rejected: a parked layout without a parse (a second model of the pages), dropping the engine session (measured nothing to gain), parking on leaving (a rebuild on every switch) | §6's *"nothing is … re-parsed"* gains its one exception, for a document with nothing to lose | [0129](DECISIONS/0129-an-open-documents-view-lives-until-it-closes.md), correction 2026-10-17 |
 | 2026-10-17 | **A host reaches its pipe before it loads its handlers** (§3). The owner's addendum 2, item 2: two first documents were poisoned on 2026-10-16 when the MuPDF host missed the ten-second connect bound twice. The host reached its pipe only after evaluating its whole module graph, 293 files whose load is file calls and compilation that a cold or busy disk multiplies, so the bound measured a load rather than a start. Each entry now binds its engine, connects, then loads its handlers; a request sent meanwhile waits in the socket. The bound is unchanged. | Nothing. ADR-0023's bound is kept and now covers what it was said to cover | [0251](DECISIONS/0251-a-host-reaches-its-pipe-before-it-loads-its-handlers.md) |
 | 2026-10-16 | **The font picker draws each family in itself** (§3's in-place editing row). The owner's item 2 and locked decisions 6 and 8: an installed family by `local()` under its face's full name, read by the host that lists it; a bundled family as bytes on `fonts.bundledFace`, a fourth byte crossing beside ADR-0175's, whose request is a closed enum the schema enforces and which `main` answers from a table keyed by it; a name neither can draw in the interface font, marked as not previewed. §9.27 unchanged. **Rejected:** copying the bundled fonts into the renderer's bundle, no preview for bundled fonts, a channel taking a file name or a free family, a `url()` font rule | ADR-0175's *three* sanctioned byte crossings | [0250](DECISIONS/0250-the-font-picker-draws-each-family-in-itself.md) |
 | 2026-10-16 | **A paragraph that grows pushes the text below it down** (§3's in-place editing row). The owner's decision of 2026-10-16 and their five answers the same day: the text below a block in its column moves down by what the block grew, in the same command and undo step; the margins and the room are the page's own (the bottom margin mirrors the top, a block wholly inside it is the footer); where the push would pass the room nothing moves, the edit is written as typed, and the open editor says so first with the overlap highlighted; markup on moved text is moved by MuPDF in the same step (ADR-0200). **Rejected:** keeping the overlap, warning only, finding the column in the writer, a renderer-worked move, PDFium writing annotation geometry, the renderer moving the markup, a fixed footer band | ADR-0096's stated limit *"a block that grows pushes its own lines down and nothing else"*, and its Decision 3 for one consumer | [0249](DECISIONS/0249-a-paragraph-that-grows-pushes-the-text-below-it-down.md) |
