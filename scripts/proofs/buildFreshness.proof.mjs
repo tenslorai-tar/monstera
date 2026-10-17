@@ -75,6 +75,7 @@ const CASES = [
   'every script that IMPORTS a build takes the guard, or is named as owing none',
   'CONTROL: and that scan sees the importers, and its allowlist has no dead entry',
   'every call site that names an edge list declares that list’s length',
+  'CONTROL: an inline list whose count is one off its spreads and pairs is named',
   'CONTROL: a call site whose count is one off its list is named',
   'every built module a registered proof imports by path is covered by one of its edges',
   'CONTROL: the guard’s walk finds the thread entries two modules below a proof’s imports',
@@ -656,21 +657,88 @@ try {
         if (!Array.isArray(list)) return [`${match[1] ?? ''} is not a list buildFreshness.mjs exports`];
         return list.length === declared ? [] : [`${match[1] ?? ''} has ${String(list.length)}, declared ${String(declared)}`];
       });
+    // AND A CALL WITH AN INLINE ARRAY, whose length is its spread lists' lengths and its own pairs: the reach this case
+    // stated it did not have, through which installedFaceEdit's count went stale again when PDFIUM_COMMAND grew on
+    // 2026-10-17 — the miss this case was written for, arriving through its stated limit.
+    /** `text` split at commas outside brackets, parentheses and braces. @param {string} text @returns {string[]} */
+    const topLevel = (text) => {
+      /** @type {string[]} */
+      const parts = [];
+      let depth = 0;
+      let start = 0;
+      for (let at = 0; at < text.length; at += 1) {
+        const character = text[at];
+        if (character === '(' || character === '[' || character === '{') depth += 1;
+        else if (character === ')' || character === ']' || character === '}') depth -= 1;
+        else if (character === ',' && depth === 0) {
+          parts.push(text.slice(start, at).trim());
+          start = at + 1;
+        }
+      }
+      parts.push(text.slice(start).trim());
+      return parts.filter((part) => part.length > 0);
+    };
+    /** Each call whose second argument is an inline array, as that array's text and the count declared. @param {string} text */
+    const inlineCalls = (text) => {
+      /** @type {{ array: string, declared: number }[]} */
+      const calls = [];
+      const OPEN = 'refuseStaleBuild(';
+      for (let at = text.indexOf(OPEN); at >= 0; at = text.indexOf(OPEN, at + 1)) {
+        let depth = 0;
+        let end = at + OPEN.length;
+        for (; end < text.length; end += 1) {
+          const character = text[end];
+          if (character === '(' || character === '[' || character === '{') depth += 1;
+          else if (character === ')' || character === ']' || character === '}') {
+            if (depth === 0) break;
+            depth -= 1;
+          }
+        }
+        const [, pairs, declared] = topLevel(text.slice(at + OPEN.length, end));
+        if (pairs?.startsWith('[') === true && /^\d+$/u.test(declared ?? '')) calls.push({ array: pairs.slice(1, -1), declared: Number(declared) });
+      }
+      return calls;
+    };
+    /** @param {string} text @returns {string[]} */
+    const wrongInline = (text) =>
+      inlineCalls(text).flatMap(({ array, declared }) => {
+        let length = 0;
+        // LINE COMMENTS OUT FIRST: a comment between two pairs is no element, and no edge's path holds `//`.
+        for (const element of topLevel(array.replace(/\/\/[^\n]*/gu, ''))) {
+          if (element.startsWith('[')) length += 1;
+          else if (element.startsWith('...')) {
+            const list = lists[element.slice(3).trim()];
+            if (!Array.isArray(list)) return [`${element} is not a list buildFreshness.mjs exports`];
+            length += list.length;
+          } else return [`an inline edge list holds ${element}, which this case cannot count`];
+        }
+        return length === declared ? [] : [`an inline list of ${String(length)} declared ${String(declared)}`];
+      });
     /** @type {string[]} */
     const wrong = [];
     let read = 0;
+    let inline = 0;
     for (const entry of readdirSync(join(REPO_ROOT, 'scripts'), { recursive: true, withFileTypes: true })) {
       if (!entry.isFile() || !/\.m?js$/u.test(entry.name)) continue;
       const path = join(entry.parentPath, entry.name);
       const text = readFileSync(path, 'utf8');
       read += [...text.matchAll(CALL)].length;
-      for (const problem of wrongCounts(text)) wrong.push(`${relative(REPO_ROOT, path)}: ${problem}`);
+      inline += inlineCalls(text).length;
+      for (const problem of [...wrongCounts(text), ...wrongInline(text)]) wrong.push(`${relative(REPO_ROOT, path)}: ${problem}`);
     }
     check(
       'every call site that names an edge list declares that list’s length',
-      wrong.length === 0 && read >= 40,
-      `${String(read)} call site(s) read; ${wrong.join('; ') || 'none wrong'}. A list's length changes when any list it ` +
-        'spreads changes, so lower or raise the literal with it.',
+      wrong.length === 0 && read >= 40 && inline >= 5,
+      `${String(read)} named and ${String(inline)} inline call site(s) read; ${wrong.join('; ') || 'none wrong'}. A list's ` +
+        'length changes when any list it spreads changes, so lower or raise the literal with it.',
+    );
+    // THE INLINE FORM'S OWN CONTROL: a planted call spreading an 11-edge list beside one pair is 12, and 13 is named.
+    const plantedInline = (/** @type {number} */ count) =>
+      ['refuseStaleBuild(root, [', "...FONT_WORK_APART, ['a.ts', 'a.js', 'tsc'],", `], ${String(count)});`].join('');
+    check(
+      'CONTROL: an inline list whose count is one off its spreads and pairs is named',
+      wrongInline(plantedInline(13)).length === 1 && wrongInline(plantedInline(12)).length === 0,
+      `13: ${JSON.stringify(wrongInline(plantedInline(13)))}; 12: ${JSON.stringify(wrongInline(plantedInline(12)))}`,
     );
     // A SEARCH AND A COMPARISON: the scan must see the call sites (44 read on 2026-10-15) and must name a planted
     // mismatch. The planted calls are joined at run time, so this file's own text holds no call the scan would read.

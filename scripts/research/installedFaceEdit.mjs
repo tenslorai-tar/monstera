@@ -58,7 +58,7 @@ refuseStaleBuild(
     ['packages/kernel/src/mupdfWriter.ts', 'packages/kernel/dist/mupdfWriter.js', 'tsc'],
     ...NATIVE_ENGINE,
   ],
-  29,
+  30,
 );
 
 // LITERAL SPECIFIERS, so `proof:electronimports` can read what this loads: none of it may reach Electron.
@@ -205,7 +205,13 @@ process.stdout.write(`  ${IDEOGRAPH} alone: ${await twoEdits(everything, IDEOGRA
 process.stdout.write(`  U+0378 alone: ${await twoEdits(everything, UNASSIGNED)}\n`);
 process.stdout.write(`  the bundled set alone, both: ${await twoEdits(bundledSource, `${IDEOGRAPH} ${UNASSIGNED}`)}\n`);
 process.stdout.write(`  through MuPDF between the edits, both: ${await twoEdits(everything, `${IDEOGRAPH} ${UNASSIGNED}`, true)}\n`);
-process.stdout.write(`  through MuPDF between the edits, Latin only (control): ${await twoEdits(everything, 'again', true)}\n`);
+// THE ROUND TRIP'S CONTROL, ASSERTED (SSSSSSS-22): it was printed, so a MuPDF pass that broke every second edit read the
+// same as one that broke only the ideograph. Where the checkout has no native shim it says it could not measure.
+const latinOnly = await twoEdits(everything, 'again', true);
+process.stdout.write(`  through MuPDF between the edits, Latin only (control): ${latinOnly}\n`);
+if (!latinOnly.startsWith('not measured') && !latinOnly.startsWith('saved')) {
+  throw new Error(`The MuPDF round trip's control failed (${latinOnly}), so the line above says nothing about the ideograph.`);
+}
 original = oneLine;
 for (const face of carrying.slice(0, TRIED)) {
   // THE BUNDLED SET AND THIS ONE FACE, read the way the host's catalogue reads them.
