@@ -3,7 +3,7 @@ import { I18nProvider } from '@lingui/react';
 import { type ContractClient, channels, createClient } from '@monstera/contract';
 import { asDocId, asDocVersion, ok } from '@monstera/shared';
 import { act, fireEvent, render } from '@testing-library/react';
-import type { ReactElement, ReactNode } from 'react';
+import { type ReactElement, type ReactNode, useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Thumbnails } from './Thumbnails.js';
@@ -107,6 +107,14 @@ async function settle(): Promise<void> {
 /** Every `scrollIntoView` a card was asked for, as `page@block`: happy-dom has no layout to scroll. */
 const scrolledTo: string[] = [];
 
+/** Logs into `scrolledTo` from a PASSIVE effect, for the case that tells a layout-effect scroll from a passive one. */
+function PassiveProbe(): null {
+  useEffect(() => {
+    scrolledTo.push('passive');
+  }, []);
+  return null;
+}
+
 beforeEach(() => {
   scrolledTo.length = 0;
   HTMLElement.prototype.scrollIntoView = function scrollIntoView(this: HTMLElement, options?: boolean | ScrollIntoViewOptions) {
@@ -146,7 +154,7 @@ describe('Thumbnails as the Organize grid (ADR-0104)', () => {
   /** A grid whose selection is held here, as the document store holds it, so a gesture's result is visible. */
   function grid(
     selected: readonly number[] = [],
-    options: { readonly goTo?: number; readonly onePage?: boolean; readonly current?: number } = {},
+    options: { readonly goTo?: number; readonly onePage?: boolean; readonly current?: number; readonly probe?: boolean } = {},
   ) {
     const wentTo = vi.fn();
     const viewing: number[] = [];
@@ -160,6 +168,7 @@ describe('Thumbnails as the Organize grid (ADR-0104)', () => {
     };
     const { container, rerender } = render(
       <Wrapped>
+        {options.probe === true ? <PassiveProbe /> : null}
         <Thumbnails
           {...reads()}
           view={view()}
@@ -201,8 +210,12 @@ describe('Thumbnails as the Organize grid (ADR-0104)', () => {
     });
 
     it('OPENS on the current page: its card is scrolled into view before the grid paints', () => {
-      grid([], { current: 2 });
-      expect(scrolledTo).toStrictEqual(['2@nearest']);
+      // BEFORE PAINT, which is a LAYOUT effect's place (NNNNNNN-8): `render` flushes layout and passive effects alike, so
+      // the scroll alone could be either. A probe placed BEFORE the grid logs from a PASSIVE effect into the same list;
+      // React runs every layout effect before any passive one, so a scroll from a layout effect comes first, and one from
+      // a passive effect would come after the probe's.
+      grid([], { current: 2, probe: true });
+      expect(scrolledTo).toStrictEqual(['2@nearest', 'passive']);
     });
 
     it('in Full page it opens with the current card’s top at the top of the view, so no strip of the page before shows', () => {
