@@ -3756,7 +3756,11 @@ async function openPath(
   const handle = deps.capabilities.mint(path);
   const outcome = await deps.documents.open(handle);
 
-  if (HOLDS_NO_DOCUMENT[outcome.kind]) deps.capabilities.revoke(handle);
+  // NEVER A HANDLE AN OPEN DOCUMENT STILL HOLDS (MMMMMMM-4, the owner's decision): minting is one handle per path, so a
+  // second open of an open document's path was handed that document's own, and when the file there had been deleted or
+  // replaced its `absent`, `busy` or `denied` withdrew it — *Show in folder* and the recent list then failed for the
+  // document still on screen.
+  if (HOLDS_NO_DOCUMENT[outcome.kind] && !deps.documents.holdsHandle(handle)) deps.capabilities.revoke(handle);
 
   // A WORKING COPY IS ITS CLOUD FILE HOWEVER IT IS OPENED (CR-DOC-02). Linked here, the one way to open a document,
   // rather than in the two cloud channels alone: a copy reopened from Recent, the last session or the picker opened as

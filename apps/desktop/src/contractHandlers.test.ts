@@ -104,14 +104,18 @@ function serviceAnswering(outcome: OpenOutcome | readonly OpenOutcome[]): {
 } {
   const opened: FileHandle[] = [];
   const closed: DocId[] = [];
+  /** The handles an open answered `opened` for: what the service holds, as the real one holds its records'. */
+  const held = new Set<FileHandle>();
   const documents = {
     // A LIST ANSWERS THE OPENS IN THE ORDER THEY ARE MADE, for the cases about several files at once: the second file
     // can be the one that is absent, which a single fixed answer cannot say.
     open: (handle: FileHandle) => {
       opened.push(handle);
-      if ('kind' in outcome) return Promise.resolve(outcome);
-      return Promise.resolve(outcome[opened.length - 1] ?? { kind: 'absent' as const });
+      const answer = 'kind' in outcome ? outcome : (outcome[opened.length - 1] ?? { kind: 'absent' as const });
+      if (answer.kind === 'opened') held.add(handle);
+      return Promise.resolve(answer);
     },
+    holdsHandle: (handle: FileHandle) => held.has(handle),
     close: (docId: DocId) => {
       closed.push(docId);
       return Promise.resolve();
@@ -993,6 +997,23 @@ describe('document.open', () => {
 
       expect(capabilities.has(handleOpened(opened))).toBe(true);
       expect(capabilities.resolve(handleOpened(opened))).toBe('C:/docs/open.pdf');
+    });
+
+    it('does NOT revoke it when an OPEN document holds it and its file is gone, busy or refused (MMMMMMM-4)', async () => {
+      // THE OPEN DOCUMENT'S PATH OPENED AGAIN after its file was deleted or replaced: `mint` hands back the document's own
+      // handle, and the failed open withdrew it — so *Show in folder* and the recent list failed for the document on
+      // screen. The owner's decision: never revoke a handle an open document still holds.
+      for (const kind of ['absent', 'busy', 'denied'] as const) {
+        const { capabilities, handlers, opened } = harness(
+          [{ kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' }, { kind }],
+          () => Promise.resolve('C:/docs/a.pdf'),
+        );
+        await handlers['document.open']({});
+        await handlers['document.open']({});
+        expect(opened).toHaveLength(2);
+        expect(opened[1]).toBe(opened[0]);
+        expect(capabilities.resolve(handleOpened(opened))).toBe('C:/docs/a.pdf');
+      }
     });
 
     it('keeps it when the document opened, because the service took it', async () => {

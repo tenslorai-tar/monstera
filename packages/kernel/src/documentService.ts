@@ -2569,6 +2569,16 @@ export class DocumentService {
   }
 
   /**
+   * Whether an open document holds `handle`: what an open that failed asks before it withdraws the handle it was
+   * given, since minting is one handle per path and a second open of an open document's path is handed that document's
+   * own (MMMMMMM-4).
+   */
+  holdsHandle(handle: FileHandle): boolean {
+    for (const record of this.#records.values()) if (record.handle === handle) return true;
+    return false;
+  }
+
+  /**
    * Every document this holds, in insertion order.
    *
    * ## Why this is a list and not a count, and why it is safe where

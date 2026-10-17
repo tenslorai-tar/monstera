@@ -1283,6 +1283,18 @@ describe('the canonical image', () => {
     await service.close(docId);
   });
 
+  it('holds the handle of a document it has open, and not once it is closed (MMMMMMM-4)', async () => {
+    const registry = new CapabilityRegistry();
+    const service = newService(registry);
+    const handle = registry.mint(original());
+    // CONTROL: before the open, nothing holds it, so a check that answered yes for any handle fails here.
+    expect(service.holdsHandle(handle)).toBe(false);
+    const docId = mustOpen(await service.open(handle));
+    expect(service.holdsHandle(handle)).toBe(true);
+    await service.close(docId);
+    expect(service.holdsHandle(handle)).toBe(false);
+  });
+
   it('copies a document past the ceiling WITHOUT reading it into memory', async () => {
     const registry = new CapabilityRegistry();
     let reads = 0;
