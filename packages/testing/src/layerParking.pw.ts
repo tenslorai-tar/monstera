@@ -32,7 +32,13 @@ async function showsShape(page: Page, portrait: boolean): Promise<boolean> {
 }
 
 /** Opens the two documents, portrait first, so the landscape one is on show and the portrait one behind. */
-async function openBoth(page: Page): Promise<void> {
+/** A third document, tall like the first, which only the control opens. */
+const THIRD = asDocId('00000000-0000-4000-8000-0000000000b3');
+
+async function openBoth(
+  page: Page,
+  options: { third?: boolean; observe?: (channel: string, params: unknown) => void } = {},
+): Promise<void> {
   await page.setViewportSize({ width: 1280, height: 800 });
   const tall = await blockedPages([612, 792], 3);
   const wide = await blockedPages([792, 612], 3);
@@ -40,15 +46,19 @@ async function openBoth(page: Page): Promise<void> {
     opens: [
       { kind: 'opened', docId: PORTRAIT, version: asDocVersion(1), byteLength: tall.byteLength, name: 'portrait.pdf' },
       { kind: 'opened', docId: LANDSCAPE, version: asDocVersion(1), byteLength: wide.byteLength, name: 'landscape.pdf' },
+      ...(options.third === true
+        ? [{ kind: 'opened' as const, docId: THIRD, version: asDocVersion(1), byteLength: tall.byteLength, name: 'third.pdf' }]
+        : []),
     ],
     documentBytes: new Map([
       [PORTRAIT, tall],
       [LANDSCAPE, wide],
+      [THIRD, tall],
     ]),
     // MAIN'S TIME FOR A RANGE, so a rebuild takes frames: with ranges answered at once the parse lands inside one frame,
     // and a layer that came forward on its *Opening* state would show it for none (measured: that mutant passed).
     delays: { 'document.readRange': 150 },
-  });
+  }, options.observe);
   await page.clock.install();
   await installInspector(page, 'body', '.m-status-zoom');
   await page.goto('/');
@@ -132,13 +142,30 @@ test('a layer behind for a minute is parked, and comes back finished from its fi
 });
 
 test('CONTROL: a document a command has applied to is never parked, however long it is behind', async ({ page }) => {
-  await openBoth(page);
-  // A COMMAND ON THE PORTRAIT DOCUMENT, so its version moves: it has an undo history now.
+  const executed: unknown[] = [];
+  await openBoth(page, {
+    third: true,
+    observe: (channel, params) => {
+      if (channel === 'document.execute') executed.push((params as { docId?: unknown }).docId);
+    },
+  });
+  // A COMMAND ON THE PORTRAIT DOCUMENT, so its version moves: it has an undo history now. SENT, then settled: `data-writes`
+  // at 0 alone also holds before the command has started.
   await runCommand(page, 'Rotate page');
+  await expect.poll(() => executed, { timeout: 10_000 }).toStrictEqual([PORTRAIT]);
   await expect(page.locator('html')).toHaveAttribute('data-writes', '0', { timeout: 10_000 });
+  // BEHIND IT, A CLEAN DOCUMENT TOO: the landscape one, then the third on show.
   await page.getByRole('button', { name: 'Open another document' }).click();
   await expect.poll(() => showsShape(page, false), { timeout: 20_000 }).toBe(true);
+  await page.getByRole('button', { name: 'Open another document' }).click();
+  await expect.poll(() => showsShape(page, true), { timeout: 20_000 }).toBe(true);
   await page.clock.fastForward(70_000);
+  // A PARKING PASS THAT MUST HAPPEN: the clean landscape layer is parked. Without it, *none parked* reads the same as
+  // *not parked yet*, and a shell that parked the edited document too would pass (the audit of 39a81ead..cd0abe3c).
+  await expect(parkedLayers(page)).toHaveCount(1, { timeout: 15_000 });
+  // AND ONLY THAT ONE, after another pass's worth of time: the edited portrait layer is kept.
   await page.clock.fastForward(10_000);
-  await expect(parkedLayers(page)).toHaveCount(0);
+  await page.waitForTimeout(1_000);
+  await expect(parkedLayers(page)).toHaveCount(1);
+  await expect(page.locator('[data-document-layer="background"]')).toHaveCount(1);
 });
