@@ -58,6 +58,7 @@
     "proof:hookprobe": "node scripts/proofs/hookProbe.proof.mjs",
     "proof:docscope": "node scripts/proofs/documentScope.proof.mjs",
     "proof:docrulescope": "node scripts/proofs/documentRuleScope.proof.mjs",
+    "proof:indextypecheck": "node scripts/proofs/indexTypecheck.proof.mjs",
     "proof:rowlength": "node scripts/proofs/rowLengthRatchet.proof.mjs",
     "proof:sessionsweep": "node scripts/proofs/sessionSweep.proof.mjs",
     "proof:hostsessionroot": "node scripts/proofs/hostSessionRoot.proof.mjs",

@@ -206,6 +206,11 @@ jobs:
       - name: Prove the React lint rules are registered and fire
         run: node scripts/ci/annotate.mjs scripts/proofs/lintRules.proof.mjs
 
+      # The pre-commit gate's typecheck of the INDEX apart from the working tree (JJJJJJJ-5). After the build, which
+      # leaves the build state the scratch copy is warmed from; through a copy of the index, never the runner's own.
+      - name: Prove the index is typechecked apart from the working tree
+        run: node scripts/ci/annotate.mjs scripts/proofs/indexTypecheck.proof.mjs
+
       # NOTICE's DEPENDENCY half, on the case-sensitive filesystem (finding C3).
       # The shim job runs this too and is the only place the NATIVE half can be
       # verified, because it is the only one with the MuPDF source — so this

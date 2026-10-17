@@ -24,7 +24,7 @@ import {
   scan as scanTypeOnlyExports,
 } from '../lib/typeOnlyExports.mjs';
 import { report as reportStagedSyntax, scan as scanStagedSyntax } from '../lib/stagedSyntax.mjs';
-import { changedPaths, readStagedBlob } from '../lib/gitScope.mjs';
+import { changedPaths, readStagedBlob, repoRoot } from '../lib/gitScope.mjs';
 import { runTestAnchors } from '../lib/testCaseCounts.mjs';
 import { formatDisarmament, hookDisarmament } from '../lib/hookIntegrity.mjs';
 import {
@@ -96,6 +96,40 @@ async function runStackOwnership() {
       `written on 2026-08-21, which is why this is a check and not a rule.\n\n`,
   );
   return 1;
+}
+
+/**
+ * Typechecks the index in a scratch folder and removes it, whatever the answer.
+ *
+ * @param {typeof import('../lib/indexTypecheck.mjs')} scope
+ * @param {string} root
+ * @returns {Promise<number>} 0 when the index typechecks, 1 otherwise.
+ */
+async function typecheckTheIndex(scope, root) {
+  const { npmCliPath } = await import('./lockfileIntegrity.mjs');
+  const scratch = scope.checkoutIndex(root);
+  try {
+    // THE CHECK'S PREMISE, before its answer: a scratch folder whose packages are the checkout's would typecheck the
+    // working tree and pass for the reason this exists to rule out.
+    if (!scope.scratchReadsItsOwnPackages(scratch)) {
+      process.stderr.write(
+        `\nCommit blocked — the index could not be typechecked apart from the working tree: the scratch folder's\n` +
+          `workspace packages resolve outside it, so its answer would be the working tree's.\n\n`,
+      );
+      return 1;
+    }
+    const result = scope.typecheckIn(scratch, npmCliPath());
+    if (result.ok) return 0;
+    process.stderr.write(
+      `\n${result.output}\n` +
+        `Commit blocked — what this commit stages does not typecheck on its own (read above, with the paths\n` +
+        `under a scratch copy of the index). The working tree may compile: it holds unstaged work this commit\n` +
+        `does not carry. Stage what the commit needs, or leave out what needs the rest.\n\n`,
+    );
+    return 1;
+  } finally {
+    scope.removeScratch(scratch, root);
+  }
 }
 
 async function main() {
@@ -334,6 +368,24 @@ async function main() {
     if (!lockfile.ok) {
       process.stderr.write(explain(lockfile.output));
       return 1;
+    }
+  }
+
+  // THE INDEX'S TYPECHECK, apart from the working tree, when other compiler-read work sits unstaged beside this commit
+  // (JJJJJJJ-5, the owner's decision of 2026-10-17): an index that never compiled was committed because the tree did,
+  // and a sound one refused because the tree did not. See scripts/lib/indexTypecheck.mjs.
+  {
+    const { TYPECHECKED_PATHSPECS } = await import('./prePush.mjs');
+    const scope = await import('../lib/indexTypecheck.mjs');
+    const root = repoRoot();
+    const decision = scope.decideIndexTypecheck(
+      scope.stagedCompilerReads(TYPECHECKED_PATHSPECS, root),
+      scope.unstagedCompilerReads(TYPECHECKED_PATHSPECS, root),
+    );
+    if (decision.check) {
+      process.stdout.write(`  Typechecking the index apart from the working tree — ${decision.why}\n`);
+      const code = await typecheckTheIndex(scope, root);
+      if (code !== 0) return code;
     }
   }
 
