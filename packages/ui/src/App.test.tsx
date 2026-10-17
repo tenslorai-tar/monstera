@@ -1226,7 +1226,14 @@ describe('App', () => {
     it('an unacknowledged security release opens the notice at start, and I understand acknowledges it', async () => {
       const { client, sent } = updating({ kind: 'security', version: '1.4.0', acknowledged: false });
       render(<App client={client} settings={freshSettings()} />);
-      expect(await screen.findByRole('dialog', { name: 'Important security update' })).toBeDefined();
+      // THE START'S ANSWERS SETTLED INSIDE `act`, then the dialog asked for at once: the notice opens after the update
+      // status is answered and the whole App drawn again, twice, which measured 789–932 ms alone on 2026-10-17 (the
+      // owner's machine, three runs) — inside Testing Library's 1000 ms wait, so a full suite's load ran it past and the
+      // case failed at random. `act` waits for the work rather than a clock; a notice that never opens still fails here.
+      await act(async () => {
+        await new Promise((settle) => setTimeout(settle, 0));
+      });
+      expect(screen.getByRole('dialog', { name: 'Important security update' })).toBeDefined();
       expect(await screen.findByText(/Monstera 1\.4\.0 fixes a security problem/u)).toBeDefined();
       await act(async () => {
         (await screen.findByRole('button', { name: 'I understand' })).click();
