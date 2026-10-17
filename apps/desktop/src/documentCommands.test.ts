@@ -3801,9 +3801,11 @@ describe('exportPageImages — one image per page, in a folder, all or nothing',
   function exportingInto(
     folder: string | null,
     checkTarget: CopySource['checkTarget'] = (target) => sizedService.checkCopyTarget(target),
+    reads: Partial<typeof LOCAL_READS> = {},
   ): DocumentCommands {
     return new DocumentCommands({
       ...LOCAL_READS,
+      ...reads,
       documents: sizedService,
       bus: bus(),
       engine: sizedEngine(),
@@ -3847,6 +3849,22 @@ describe('exportPageImages — one image per page, in a folder, all or nothing',
     // THE PAGE NOT ASKED FOR IS NOT WRITTEN, which is what separates this from
     // an export that ignored the list and wrote every page.
     expect(existsSync(join(folder, 'sized 2.jpg'))).toBe(false);
+  });
+
+  it('counts the pages it has drawn while it works, one at a time, of all it was asked for (EEEEEEEE-10)', async () => {
+    const folder = mkdtempSync(join(directory, 'images-'));
+    const seen: unknown[] = [];
+    let commands: DocumentCommands | undefined;
+    // EACH DRAW READS THE PROGRESS FIRST, as the renderer's poll would at that moment.
+    commands = exportingInto(folder, undefined, {
+      pageImage: (id, sessions, request) => {
+        seen.push(commands?.workProgress(WORK));
+        return localPageImage(id, sessions, request);
+      },
+    });
+    await commands.exportPageImages(sizedDoc, { pages: [0, 1, 2], format: 'png', dpi: 72, quality: 90 }, WORK);
+    // CONTROL: before the first page none is drawn, so the count is the export's own and not a constant.
+    expect(seen).toStrictEqual([0, 1, 2].map((done) => ({ kind: 'running', done, total: 3, stoppable: false })));
   });
 
   it('puts EACH page in the file named for it', async () => {

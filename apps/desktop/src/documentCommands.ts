@@ -6202,7 +6202,7 @@ export class DocumentCommands {
 
     const directory = await this.#directory();
     if (directory === null) return undefined;
-    this.#work.begin(work, 'runs-to-the-end');
+    const handle = this.#work.begin(work, 'runs-to-the-end');
 
     const { value } = await this.#documents.run(docId, async () => {
       const failures = this.#engine.poisoned(docId);
@@ -6214,23 +6214,31 @@ export class DocumentCommands {
       // LISTED AGAINST THIS VERSION, `split`'s rule: a page past the document is refused before any file is named.
       const { pageCount } = await this.#geometry(docId, sessions, []);
       const pages = pagesOf(request.pages, pageCount);
+      // HOW FAR IT HAS GOT, a page at a time (EEEEEEEE-10): the notice showed the work running and no count, however
+      // many pages it drew.
+      let drawn = 0;
+      const total = pages.length;
+      handle.step(0, total);
 
       return await writeDocumentSplit(
         this.#save.deps,
         this.#copy.checkTarget,
-        (pages) => {
+        async (pages) => {
           const [page] = pages;
           // NOT REACHABLE: every part below is built with exactly one page, and
           // the type cannot say so. A file named after no page is refused rather
           // than written.
           if (page === undefined) throw new RangeError('a page image part named no page');
-          return this.#pageImage(docId, sessions, {
+          const image = await this.#pageImage(docId, sessions, {
             page,
             format: request.format,
             // A PDF point is 1/72 inch, and the host's bounds are in points.
             scale: request.dpi / 72,
             quality: request.quality,
           });
+          drawn += 1;
+          handle.step(drawn, total);
+          return image;
         },
         pages.map((page) => ({
           destination: join(directory, pageImageName(suggest, page, request.format)),
