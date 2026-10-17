@@ -216,10 +216,13 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
           // THE SEARCH TAKES THE KEYS once the list is open, so a person types a name at once.
           requestAnimationFrame(() => search.current?.focus());
         }}
-        style={value === undefined ? undefined : shownIn(value)}
         type="button"
       >
-        <span className="m-font-picker__name">{value ?? _(unset)}</span>
+        {/* THE NAME IN ITS OWN FACE, the field in the interface's (ADR-0250): on the name alone, whose line height is
+            fixed, so the field keeps one height whatever family it shows. */}
+        <span className="m-font-picker__name" style={value === undefined ? undefined : shownIn(value)}>
+          {value ?? _(unset)}
+        </span>
         <Icon name="ChevronDown" size="dense" />
       </button>
       {open ? (

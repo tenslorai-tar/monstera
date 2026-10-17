@@ -6927,6 +6927,11 @@ optgroup {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* ONE HEIGHT FOR EVERY FAMILY: the name is drawn in the family it names (ADR-0250), and a face's own `normal` line
+     height moved the field, and every row under it, by up to 2 px (the watermark dialog's baseline, 2026-10-17). Fixed,
+     the field measured 19.95 px and its row 40.95 px with the name in Arimo and in the interface font alike (the
+     Watermark dialog in the app, 2026-10-17); 1 px from where it stood before families were previewed. */
+  line-height: 1.33;
 }
 
 .m-font-picker__search {
