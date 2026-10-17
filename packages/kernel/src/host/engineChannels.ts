@@ -2536,9 +2536,20 @@ export const engineChannels = {
           )
           .max(ENGINE_GEOMETRY_MAX_PAGES)
           .readonly(),
-        // WHETHER EACH PAGE DISPLAYS NOTHING by the writers' own `displayedBox`, aligned with `rotations`: what `main`
-        // reads before a command that stamps pages, to name the ones it leaves (ADR-0254).
-        showsNothing: z.array(z.boolean()).max(ENGINE_GEOMETRY_MAX_PAGES).readonly(),
+        // EACH PAGE'S DISPLAYED BOX in user space by the writers' own `displayedBox`, or null where it displays nothing,
+        // aligned with `rotations`: the pages a stamp leaves (ADR-0254) and a tiled read's transform (ADR-0255). Finite and
+        // ordered at the boundary, so a hostile host's box cannot become a transform with no extent.
+        boxes: z
+          .array(
+            z
+              .object({ x0: z.number(), y0: z.number(), x1: z.number(), y1: z.number() })
+              .strict()
+              .refine((box) => box.x0 < box.x1 && box.y0 < box.y1, { message: 'a displayed box is ordered and has extent' })
+              .readonly()
+              .nullable(),
+          )
+          .max(ENGINE_GEOMETRY_MAX_PAGES)
+          .readonly(),
       })
       .strict(),
     ['no-such-session'],

@@ -68,7 +68,10 @@ import {
   claudeRasterScale,
   listModels,
   recogniseThroughClaude,
+  readBandTablesThroughClaude,
   readTablesThroughClaude,
+  type BandTable,
+  type ClaudeImageLimits,
   readTablesThroughAzure,
   type PlacedTables,
   type RecognisedPage,
@@ -187,7 +190,7 @@ import {
   writeStreamedDocument,
   fetchGuardedPdf,
 } from '@monstera/kernel';
-import { type DocId, HeldPassword } from '@monstera/shared';
+import { type DocId, HeldPassword, normaliseRotation } from '@monstera/shared';
 
 import {
   ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES,
@@ -195,6 +198,7 @@ import {
   type HostMemorySampling,
   MAIN_DOCUMENT_BYTES_CEILING,
 } from './budget.js';
+import { type TiledPage, readTablesInBands, recogniseInTiles } from './claudeTiledRead.js';
 import { type AppInfo, type BakedAppInfo, type PickDocument, type PickDocuments, createContractHandlers } from './contractHandlers.js';
 import type { KnownRoot } from './displayLocation.js';
 import { nativeComponentPath } from './nativeComponents.js';
@@ -1446,6 +1450,15 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
           return size;
         });
         const prepared = await networkRecognisers(settings, secrets)[request.engine].prepare(widthPoints, heightPoints);
+        // TOO LARGE FOR ONE REQUEST: in tiles, each rasterised by the snapshot route below and read, then joined
+        // (ADR-0255, `claudeTiledRead.ts`). The page's box and turn are the geometry read's, the frame the tiles are cut in.
+        if (prepared.kind === 'tiles') {
+          return recogniseInTiles(await tiledPageOf(engineHost.geometry, session, request.page), rect, {
+            ...prepared,
+            floor: MIN_SNAPSHOT_SCALE,
+            snapshot: (tile, at) => engineHost.snapshot(session, { page: request.page, rect: tile, scale: at }),
+          });
+        }
         // BYTES ARE KNOWN ONLY AFTER RASTERISING, so a raster over the service's byte
         // limit is taken again smaller — `rasterWithinLimit.ts` says why and when not.
         const { raster, scale } = await rasterWithinLimit(
@@ -1925,6 +1938,15 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       const size = sizes[0];
       if (size === undefined) throw new Error(`the engine reported no size for page ${String(page + 1)}`);
       const prepared = await networkRecognisers(settings, secrets)[engine].prepare(size.width, size.height);
+      // TOO LARGE FOR ONE REQUEST: in full-width bands, joined (ADR-0255 Decision 3).
+      if (prepared.kind === 'tiles') {
+        return readTablesInBands(await tiledPageOf(engineHost.geometry, session, page), {
+          ...prepared,
+          floor: MIN_SNAPSHOT_SCALE,
+          snapshot: (band, at) => engineHost.snapshot(session, { page, rect: band, scale: at }),
+          bounds: TABLE_BOUNDS,
+        });
+      }
       const { raster } = await rasterWithinLimit(prepared.scale, MIN_SNAPSHOT_SCALE, prepared.accepts, async (at) => ({
         png: await engineHost.pageImage(session, { page, format: 'png', scale: at, quality: 100 }),
       }));
@@ -4640,24 +4662,56 @@ type RegionRaster = Omit<AzureRequest, 'fetchImpl'> & { readonly drawn: boolean 
  * check already read closed over — read once, never twice.
  */
 interface NetworkRecogniser {
-  readonly prepare: (
-    widthPoints: number,
-    heightPoints: number,
-  ) => Promise<{
-    readonly scale: number;
-    /**
-     * Whether the service takes a PNG of this many bytes, and if not how much smaller
-     * to rasterise. REQUIRED, so an engine added to the declared set arrives owing its
-     * service's byte limit rather than inheriting nobody's.
-     */
-    readonly accepts: (pngBytes: number) => ByteVerdict;
-    readonly recognise: (raster: RegionRaster) => Promise<RecognisedPage>;
-    /**
-     * The same service asked for a whole page's TABLES (ADR-0086), with the credentials the
-     * check above already read. REQUIRED, for {@link accepts}' reason.
-     */
-    readonly readTables: (png: Uint8Array) => Promise<PlacedTables>;
-  }>;
+  readonly prepare: (widthPoints: number, heightPoints: number) => Promise<WholeRead | TiledRead>;
+}
+
+/**
+ * A region too large for the service in one request, read in tiles (ADR-0255): Claude's answer where no scale at or
+ * above the floor fits its model. Azure never answers it.
+ */
+interface TiledRead {
+  readonly kind: 'tiles';
+  readonly limits: ClaudeImageLimits;
+  readonly scale: number;
+  readonly accepts: (pngBytes: number) => ByteVerdict;
+  readonly recognise: (raster: RegionRaster) => Promise<RecognisedPage>;
+  /** One band of a page's tables, with each row's place (ADR-0255 Decision 3). */
+  readonly readBand: (raster: Omit<RegionRaster, 'drawn'>) => Promise<readonly BandTable[]>;
+}
+
+/** A region read in one request, as every read was before ADR-0255. */
+interface WholeRead {
+  readonly kind: 'whole';
+  readonly scale: number;
+  /**
+   * Whether the service takes a PNG of this many bytes, and if not how much smaller
+   * to rasterise. REQUIRED, so an engine added to the declared set arrives owing its
+   * service's byte limit rather than inheriting nobody's.
+   */
+  readonly accepts: (pngBytes: number) => ByteVerdict;
+  readonly recognise: (raster: RegionRaster) => Promise<RecognisedPage>;
+  /**
+   * The same service asked for a whole page's TABLES (ADR-0086), with the credentials the
+   * check above already read. REQUIRED, for {@link accepts}' reason.
+   */
+  readonly readTables: (png: Uint8Array) => Promise<PlacedTables>;
+}
+
+/**
+ * A page's displayed box and turn, the frame a tiled read is cut in (ADR-0255), from the geometry read. A page that
+ * displays nothing has no region to read, and is refused as the snapshot of it would be.
+ */
+async function tiledPageOf(
+  geometry: PageGeometryReader,
+  session: Parameters<PageGeometryReader>[0],
+  page: number,
+): Promise<TiledPage> {
+  const { rotations, boxes } = await geometry(session, [page]);
+  const box = boxes[0];
+  if (box === undefined || box === null) {
+    throw new RangeError(`page ${String(page + 1)} displays no region, so there is nothing to read`);
+  }
+  return { box, rotation: normaliseRotation(rotations[0] ?? 0) };
 }
 
 /** The table bounds every service's answer is held to — the review grid's and the channel's. */
@@ -4707,6 +4761,7 @@ function networkRecognisers(
         // `service-refused` does. Its sentence is the one this used to throw.
         if (credentials === null) return Promise.reject(new NetworkKeyMissing('azure'));
         return Promise.resolve({
+          kind: 'whole' as const,
           scale: AZURE_RASTER_SCALE,
           accepts: azureAcceptsBytes,
           recognise: (raster) => recogniseThroughAzure(credentials, raster),
@@ -4732,14 +4787,20 @@ function networkRecognisers(
           MIN_SNAPSHOT_SCALE,
           claudeImageLimits(model),
         );
+        // NO SCALE AT OR ABOVE THE FLOOR FITS: read in tiles at the ceiling (ADR-0255), never below the floor, since
+        // recognition reads characters and a coarser raster cannot hold them (IIIIIII-8).
         if (scale === null) {
-          throw new ClaudeRecognitionRefused(
-            'too-large',
-            `a ${widthPoints.toFixed(0)}×${heightPoints.toFixed(0)} pt region is too large for ` +
-              `${model} to read without resizing, even at the smallest snapshot scale`,
-          );
+          return {
+            kind: 'tiles',
+            limits: claudeImageLimits(model),
+            scale: AZURE_RASTER_SCALE,
+            accepts: claudeAcceptsBytes,
+            recognise: (raster) => recogniseThroughClaude({ key, model }, raster),
+            readBand: (raster) => readBandTablesThroughClaude({ key, model }, raster),
+          };
         }
         return {
+          kind: 'whole',
           scale,
           accepts: claudeAcceptsBytes,
           recognise: (raster) => recogniseThroughClaude({ key, model }, raster),

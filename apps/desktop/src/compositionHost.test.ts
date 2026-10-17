@@ -196,7 +196,7 @@ const ENGINE: FakePeer = (channel, params) => {
           pageCount: 1,
           rotations: pages.map(() => 0),
           sizes: pages.map(() => ({ width: 612, height: 792 })),
-          showsNothing: pages.map(() => false),
+          boxes: pages.map(() => ({ x0: 0, y0: 0, x1: 612, y1: 792 })),
         },
       };
     }

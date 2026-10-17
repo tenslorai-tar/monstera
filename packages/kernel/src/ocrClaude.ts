@@ -4,6 +4,7 @@ import { pageTransform, toPdf, viewportPoint } from '@monstera/shared';
 import { z } from 'zod';
 
 import { anthropicErrorMessage, isAnthropicOutOfCredit } from './anthropicCredit.js';
+import type { BandTable } from './claudeTiles.js';
 import { credentialedFetch } from './credentialedFetch.js';
 import type { RecognisedLine, RecognisedPage, RecognisedWord } from './ocrRecognise.js';
 import { type PlacedTables, placedTables } from './recognisedTables.js';
@@ -373,7 +374,8 @@ const TABLE_INSTRUCTION =
   'Find every table in this image of a page. For each table give its number of rows and ' +
   'columns, and each cell once: its zero-based row and column where the cell starts, how many ' +
   'rows and columns it spans (1 when it does not span), and its exact text. A merged cell is one ' +
-  'cell with spans, never repeated. If the page holds no table, return an empty list of tables.';
+  'cell with spans, never repeated. For each row give its zero-based index and its top and bottom ' +
+  'in the image, in pixels from the top. If the page holds no table, return an empty list of tables.';
 
 /**
  * A table's shape, as `output_config.format` constrains it — **Azure's Layout shape on purpose**
@@ -405,8 +407,23 @@ const TABLE_SCHEMA = {
               additionalProperties: false,
             },
           },
+          // WHERE EACH ROW IS, in the image's pixels (ADR-0255 Decision 3): a band's read keeps the rows its core holds and
+          // continues a table across the band by them. A whole-page read carries them and does not need them.
+          rows: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                rowIndex: { type: 'integer' },
+                top: { type: 'number' },
+                bottom: { type: 'number' },
+              },
+              required: ['rowIndex', 'top', 'bottom'],
+              additionalProperties: false,
+            },
+          },
         },
-        required: ['rowCount', 'columnCount', 'cells'],
+        required: ['rowCount', 'columnCount', 'cells', 'rows'],
         additionalProperties: false,
       },
     },
@@ -430,6 +447,7 @@ const tableAnswerSchema = z.object({
           content: z.string(),
         }),
       ),
+      rows: z.array(z.object({ rowIndex: z.number(), top: z.number(), bottom: z.number() })),
     }),
   ),
 });
@@ -468,6 +486,47 @@ export async function readTablesThroughClaude(
     bounds.maxCells,
     bounds.maxText,
   );
+}
+
+/**
+ * One BAND of a page too large to read whole (ADR-0255 Decision 3): its tables' cells, unplaced, and each row's top and
+ * bottom in the displayed frame at one point per unit — the raster's pixels plus its origin, over its scale, which is
+ * how the snapshot that drew it maps the page ({@link ClaudeRequest.origin}). `joinBandTables` places them once every band
+ * is read. A row outside the raster is a coordinate the answer got wrong, and refuses it, as a word outside it does.
+ */
+export async function readBandTablesThroughClaude(
+  credentials: ClaudeCredentials,
+  request: Pick<ClaudeRequest, 'png' | 'origin' | 'scale' | 'fetchImpl'>,
+): Promise<readonly BandTable[]> {
+  const parsed = await askClaudeAboutImage(credentials, request, TABLE_INSTRUCTION, TABLE_SCHEMA, 'the page');
+  const answer = tableAnswerSchema.safeParse(parsed);
+  if (!answer.success) {
+    throw new ClaudeRecognitionRefused('unreadable-answer', 'Claude’s tables are not the shape they were asked for');
+  }
+  const { height } = pngSize(request.png);
+  return answer.data.tables.map((table) => ({
+    cells: table.cells.map((cell) => ({
+      row: cell.rowIndex,
+      column: cell.columnIndex,
+      rowSpan: cell.rowSpan,
+      columnSpan: cell.columnSpan,
+      text: cell.content,
+    })),
+    rows: new Map(
+      table.rows.map((row) => {
+        if (!(row.top >= 0 && row.top < row.bottom && row.bottom <= height)) {
+          throw new ClaudeRecognitionRefused(
+            'unreadable-answer',
+            `Claude placed a table row outside the ${String(height)}-pixel-high band it was reading`,
+          );
+        }
+        return [
+          row.rowIndex,
+          { top: (row.top + request.origin[1]) / request.scale, bottom: (row.bottom + request.origin[1]) / request.scale },
+        ] as const;
+      }),
+    ),
+  }));
 }
 
 /**

@@ -244,12 +244,24 @@ export {
   claudeRasterScale,
   fitsClaudeImage,
   pngSize,
+  readBandTablesThroughClaude,
   readTablesThroughClaude,
   recogniseThroughClaude,
 } from './ocrClaude.js';
+// A REGION TOO LARGE FOR CLAUDE, read in tiles and joined (ADR-0255): pure geometry and joins, no engine.
+export {
+  type BandTable,
+  type Tile,
+  joinBandTables,
+  joinRecognised,
+  squareTiles,
+  tableBands,
+  toDisplayed,
+  toUserSpace,
+} from './claudeTiles.js';
 // A SERVICE'S TABLE (ADR-0086): the type main passes to the sheet writer, and the refusal a grid
 // that contradicts itself raises.
-export { type PlacedTables, type RecognisedTable, RecognisedTableRefused } from './recognisedTables.js';
+export { type PlacedTables, type RecognisedTable, RecognisedTableRefused, placedTables } from './recognisedTables.js';
 export {
   type ChatAnswer,
   type ChatImage,

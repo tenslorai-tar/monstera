@@ -32,6 +32,8 @@ const ALL = [0, 1, 2];
 /** Every fixture page is 612×792 points; a quarter turn displays it 792×612. */
 const UPRIGHT = { width: 612, height: 792 };
 const TURNED = { width: 792, height: 612 };
+/** Every fixture page's displayed box in user space: its media box, no crop box. */
+const LETTER = { x0: 0, y0: 0, x1: 612, y1: 792 };
 
 let flat: ByteImage;
 
@@ -68,7 +70,7 @@ describe('readPageGeometry', () => {
         pageCount: 3,
         rotations: [0, 0, 0],
         sizes: [UPRIGHT, UPRIGHT, UPRIGHT],
-        showsNothing: [false, false, false],
+        boxes: [LETTER, LETTER, LETTER],
       });
       // THE ANCHOR, and it is not implied by the line above. The consumer reads
       // `rotations` positionally against what it asked for, so a shorter array
@@ -92,7 +94,8 @@ describe('readPageGeometry', () => {
         // THE DISPLAYED SIZE, which is the frame structured text's boxes are in:
         // a media-box size here would put a layout export's lines off the page.
         sizes: [TURNED, TURNED, TURNED],
-        showsNothing: [false, false, false],
+        // THE BOX IS USER SPACE, unturned: a quarter turn changes how it is shown, not where it is.
+        boxes: [LETTER, LETTER, LETTER],
       });
     } finally {
       await mupdfWriter.close(session);
@@ -127,7 +130,7 @@ describe('readPageGeometry', () => {
         pageCount: 3,
         rotations: [0, 0, 90],
         sizes: [UPRIGHT, UPRIGHT, TURNED],
-        showsNothing: [false, false, false],
+        boxes: [LETTER, LETTER, LETTER],
       });
     } finally {
       await mupdfWriter.close(session);
@@ -145,7 +148,7 @@ describe('readPageGeometry', () => {
         pageCount: 3,
         rotations: [90, 0],
         sizes: [TURNED, UPRIGHT],
-        showsNothing: [false, false],
+        boxes: [LETTER, LETTER],
       });
     } finally {
       await mupdfWriter.close(session);
@@ -183,24 +186,35 @@ describe('readPageGeometry', () => {
         pageCount: 3,
         rotations: [180, 90, 90],
         sizes: [UPRIGHT, TURNED, TURNED],
-        showsNothing: [false, false, false],
+        boxes: [LETTER, LETTER, LETTER],
       });
     } finally {
       await mupdfWriter.close(session);
     }
   });
 
-  it('says which named pages DISPLAY NOTHING, by the writers’ own rule, in the order asked (ADR-0254)', async () => {
+  it('a page’s box is what it DISPLAYS: an inset crop box, not the media box around it (ADR-0255’s transform)', async () => {
+    const document = await PDFDocument.create();
+    document.addPage([612, 792]).setCropBox(50, 60, 250, 340);
+    const session = await mupdfWriter.open(await document.save());
+    try {
+      expect((await readPageGeometry(session, [0])).boxes).toStrictEqual([{ x0: 50, y0: 60, x1: 300, y1: 400 }]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('answers each named page’s displayed box, and none for a page that DISPLAYS NOTHING, in the order asked (ADR-0254)', async () => {
     // PAGE 1's crop box lies wholly outside its media box, so `displayedBox` answers nothing for it and a stamp leaves
-    // it. Asked out of order, so an answer read top to bottom puts the true on the wrong page. CONTROL: pages 0 and 2,
-    // the same size with no crop box, answer false — a reading that said true everywhere fails here.
+    // it. Asked out of order, so an answer read top to bottom puts the null on the wrong page. CONTROL: pages 0 and 2,
+    // the same size with no crop box, answer their media box — a reading that answered null everywhere fails here.
     const document = await PDFDocument.create();
     document.addPage([612, 792]);
     document.addPage([612, 792]).setCropBox(1000, 1000, 10, 10);
     document.addPage([612, 792]);
     const session = await mupdfWriter.open(await document.save());
     try {
-      expect((await readPageGeometry(session, [1, 0, 2])).showsNothing).toStrictEqual([true, false, false]);
+      expect((await readPageGeometry(session, [1, 0, 2])).boxes).toStrictEqual([null, LETTER, LETTER]);
     } finally {
       await mupdfWriter.close(session);
     }

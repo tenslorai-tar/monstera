@@ -45,3 +45,9 @@ existing `engine/page-geometry` read, which already walks the same pages on the 
 `ENGINE_GEOMETRY_MAX_PAGES`; `pageGeometry.ts` answers it from `displayedBox`, the rule the four writers take, so
 Decision 2's one-rule property holds unchanged. A second channel would have been a second walk of the page tree with
 its own bound and its own schema for the same pages. Everything else in the decision is built as written.
+
+## Correction, 2026-10-17, later — the field is each page's box, not a flag
+
+ADR-0255's tiled read needs each page's displayed box in user space to build its transform. Rather than a second field
+beside `showsNothing`, which a host could answer in disagreement with it, the geometry read answers `boxes`: each page's
+`displayedBox`, or null where it displays nothing. A stamp leaves the pages whose box is null. The rule is unchanged.

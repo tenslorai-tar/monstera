@@ -1,3 +1,5 @@
+import type { Box } from '@monstera/shared';
+
 import type { MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
 import { displayedBox } from './pageBoxes.js';
@@ -100,11 +102,12 @@ export interface PageGeometry {
    */
   readonly sizes: readonly PageSize[];
   /**
-   * Whether each named page displays nothing by `pageBoxes.ts`' `displayedBox` — the rule the writers that place on a
-   * page take — in the same order: what `main` reads before a command that stamps pages, to name the ones it leaves
-   * (ADR-0254). Not `sizes`, which are MuPDF's own bounds and a second rule.
+   * Each named page's displayed box in PDF user space by `pageBoxes.ts`' `displayedBox` — the rule the writers that
+   * place on a page take — or null where the page displays nothing, in the same order. `main` reads which pages a stamp
+   * leaves from the nulls (ADR-0254), and a tiled read builds the page's transform from the box (ADR-0255). Not
+   * `sizes`, which are MuPDF's own bounds and a second rule. One field, so *shows nothing* and *its box* cannot disagree.
    */
-  readonly showsNothing: readonly boolean[];
+  readonly boxes: readonly (Box | null)[];
 }
 
 /** A displayed page size, in points. */
@@ -155,15 +158,15 @@ export function readPageGeometry(
 
     const rotations: number[] = [];
     const sizes: PageSize[] = [];
-    const showsNothing: boolean[] = [];
+    const boxes: (Box | null)[] = [];
     for (const index of pages) {
       const page = document.loadPage(index);
       const inherited = page.getObject().getInheritable('Rotate');
       rotations.push(inherited.isNumber() ? snapRotation(inherited.asNumber()) : 0);
       const [x0, y0, x1, y1] = page.getBounds();
       sizes.push({ width: x1 - x0, height: y1 - y0 });
-      showsNothing.push(displayedBox(page.getObject()) === null);
+      boxes.push(displayedBox(page.getObject()));
     }
-    return { pageCount, rotations, sizes, showsNothing };
+    return { pageCount, rotations, sizes, boxes };
   });
 }

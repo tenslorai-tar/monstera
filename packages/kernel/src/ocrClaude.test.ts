@@ -12,6 +12,7 @@ import {
   fitsClaudeImage,
   fittedToRaster,
   pngSize,
+  readBandTablesThroughClaude,
   readTablesThroughClaude,
   recogniseThroughClaude,
 } from './ocrClaude.js';
@@ -520,6 +521,10 @@ describe('readTablesThroughClaude (ADR-0086)', () => {
           { rowIndex: 1, columnIndex: 0, rowSpan: 1, columnSpan: 1, content: 'Q1' },
           { rowIndex: 1, columnIndex: 1, rowSpan: 1, columnSpan: 1, content: '120' },
         ],
+        rows: [
+          { rowIndex: 0, top: 100, bottom: 140 },
+          { rowIndex: 1, top: 140, bottom: 180 },
+        ],
       },
     ],
   };
@@ -573,6 +578,7 @@ describe('readTablesThroughClaude (ADR-0086)', () => {
             { rowIndex: 0, columnIndex: 0, rowSpan: 1, columnSpan: 2, content: 'merged' },
             { rowIndex: 0, columnIndex: 1, rowSpan: 1, columnSpan: 1, content: 'also here' },
           ],
+          rows: [{ rowIndex: 0, top: 10, bottom: 40 }],
         },
       ],
     };
@@ -596,6 +602,7 @@ describe('readTablesThroughClaude (ADR-0086)', () => {
               row.split(' ').map((content, column) => ({ rowIndex: at + 1, columnIndex: column, rowSpan: 1, columnSpan: 1, content })),
             ),
           ],
+          rows: Array.from({ length: 7 }, (_, rowIndex) => ({ rowIndex, top: 20 + rowIndex * 30, bottom: 50 + rowIndex * 30 })),
         },
       ],
     };
@@ -612,5 +619,22 @@ describe('readTablesThroughClaude (ADR-0086)', () => {
       tables: [],
       leftOut: 0,
     });
+  });
+
+  it('a BAND answers each row’s place as displayed: its pixels plus the raster’s origin, over the scale (ADR-0255)', async () => {
+    const { fetchImpl } = service(() => answer(MERGED));
+    const [table] = await readBandTablesThroughClaude(CREDENTIALS, { png: pngHeader(400, 600), origin: [0, 1000], scale: 2, fetchImpl });
+    // (100 + 1000) / 2 and (140 + 1000) / 2: a band whose raster starts 1000 device pixels down a page drawn at 2.
+    expect(table?.rows.get(0)).toStrictEqual({ top: 550, bottom: 570 });
+    expect(table?.rows.get(1)).toStrictEqual({ top: 570, bottom: 590 });
+    expect(table?.cells).toHaveLength(3);
+  });
+
+  it('a band’s row outside its raster refuses the answer, as a word outside it does', async () => {
+    const outside = { tables: [{ ...MERGED.tables[0], rows: [{ rowIndex: 0, top: 580, bottom: 640 }] }] };
+    const { fetchImpl } = service(() => answer(outside));
+    await expect(
+      readBandTablesThroughClaude(CREDENTIALS, { png: pngHeader(400, 600), origin: [0, 0], scale: 1, fetchImpl }),
+    ).rejects.toThrow(/outside the 600-pixel-high band/u);
   });
 });

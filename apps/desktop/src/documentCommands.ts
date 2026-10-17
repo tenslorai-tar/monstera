@@ -4016,7 +4016,7 @@ export class DocumentCommands {
 
   /**
    * The pages a header and footer, Bates numbers, a watermark or a background will leave as they are because they
-   * display nothing (ADR-0254), by the geometry read's `showsNothing` — `displayedBox`, the rule those writers take. Empty
+   * display nothing (ADR-0254): a null in the geometry read's `boxes` — `displayedBox`, the rule those writers take. Empty
    * for every other command. Read a window at a time, the read's own bound; a page outside the document is left for
    * the command to refuse, as it did.
    */
@@ -4027,8 +4027,8 @@ export class DocumentCommands {
     const skippedPages: number[] = [];
     for (let at = 0; at < targets.length; at += ENGINE_GEOMETRY_MAX_PAGES) {
       const window = targets.slice(at, at + ENGINE_GEOMETRY_MAX_PAGES);
-      const { showsNothing } = await this.#geometry(docId, sessions, window);
-      for (const [place, page] of window.entries()) if (showsNothing[place] === true) skippedPages.push(page);
+      const { boxes } = await this.#geometry(docId, sessions, window);
+      for (const [place, page] of window.entries()) if (boxes[place] === null) skippedPages.push(page);
     }
     return skippedPages;
   }

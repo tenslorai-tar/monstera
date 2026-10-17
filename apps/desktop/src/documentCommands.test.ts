@@ -1261,7 +1261,7 @@ describe('a link’s whole address, through the lane (ADR-0167)', () => {
   });
 });
 
-// ADR-0254: A STAMP NAMES THE PAGES IT LEFT, read in the lane by the geometry read's `showsNothing` before the bus, and
+// ADR-0254: A STAMP NAMES THE PAGES IT LEFT, read in the lane by the geometry read's `boxes` before the bus, and
 // answered by `execute` — the composition point between the kernel's skip (`pdfLibFrame.test.ts`) and the renderer's
 // dialog (`packages/ui`' documentCommands.test.ts), which neither of those halves crosses.
 describe('a stamp names the pages it left because they display nothing (ADR-0254)', () => {
