@@ -100,9 +100,7 @@ export async function applyEditTextOperators(
     const reading = squeezed(page.toStructuredText('clip=no').asText());
     const missing = edit.written.filter((words) => !reading.includes(squeezed(words)));
     if (missing.length > 0) {
-      leaf.put('Contents', before);
-      document.deleteObject(stream);
-      for (const name of names) fontDictionary?.delete(name);
+      putBack(document, leaf, { before, stream, fontDictionary, names });
       throw new EditRefusedError('read-back', 0, `MuPDF's reading of the page does not hold ${String(missing.length)} edited block(s)`);
     }
     // EVERY CHARACTER DRAWN AS THE BOX, uncapped: the host names the first ones and counts the rest at the pipe
@@ -111,6 +109,27 @@ export async function applyEditTextOperators(
     // AND THE BLOCKS IT MOVED DOWN (ADR-0249), whose markup `main` moves with them.
     return { boxed, more: 0, moved: edit.moved };
   });
+}
+
+/**
+ * The page as it was before a write MuPDF's reading refused: its old `/Contents`, the new stream deleted, and the fonts
+ * the edit named removed from the page's `/Font`. A function of its own so the undoing can be proven by a case
+ * (SSSSSSS-15): the branch that calls it is reached only when this module's structural check passes and MuPDF's
+ * reading disagrees, and no input that does so is known.
+ */
+export function putBack(
+  document: { deleteObject(object: unknown): void },
+  leaf: { put(key: string, value: unknown): void },
+  wrote: {
+    readonly before: unknown;
+    readonly stream: unknown;
+    readonly fontDictionary: { delete(name: string): void } | null;
+    readonly names: readonly string[];
+  },
+): void {
+  leaf.put('Contents', wrote.before);
+  document.deleteObject(wrote.stream);
+  for (const name of wrote.names) wrote.fontDictionary?.delete(name);
 }
 
 /**

@@ -14,7 +14,7 @@ import type { PageRuns } from './operatorEdit.js';
 import { pageContentStreams } from './pageContent.js';
 import { pageFonts } from './pageFonts.js';
 import { EditRefusedError, TextNotWritableError } from './textEditRefusals.js';
-import { applyEditTextOperators } from './textOperatorEdit.js';
+import { applyEditTextOperators, putBack } from './textOperatorEdit.js';
 import { joinedContent, showOperators, textObjectCount } from './textOperators.js';
 
 /** The Chromium print committed as Part B's starting material (`scripts/research/chromiumType3Fixture.mjs`). */
@@ -240,6 +240,31 @@ describe('applyEditTextOperators', () => {
       // CONTROL: MuPDF's default reading, clipped to the page, does NOT hold all of it, so this case reaches the part
       // past the edge, which the read-back refused before it read with `clip=no`.
       expect(await pageWords(session)).not.toContain(whole);
+    });
+  });
+
+  it('puts the page back as it was when a write is refused after it was made: content, stream and fonts (SSSSSSS-15)', async () => {
+    await withChromium(async (session, content) => {
+      const restored = await withDocument(session, (document) => {
+        const leaf = document.findPage(0);
+        const fontDictionary = leaf.get('Resources').get('Font');
+        const before = leaf.get('Contents');
+        // THE WRITE, as the apply makes it: a new stream for `/Contents`, and a font named in the page's `/Font`.
+        const stream = document.addStream('BT /MonsteraX 12 Tf (written) Tj ET', document.newDictionary());
+        fontDictionary.put('MonsteraX', document.newDictionary());
+        leaf.put('Contents', stream);
+        // CONTROL: the write is on the page, so what follows is the undoing's doing.
+        const written = new TextDecoder('latin1').decode(joinedContent(pageContentStreams(leaf)));
+        putBack(document, leaf, { before, stream, fontDictionary, names: ['MonsteraX'] });
+        return {
+          written,
+          content: joinedContent(pageContentStreams(leaf)),
+          font: fontDictionary.get('MonsteraX').isNull(),
+        };
+      });
+      expect(restored.written).toContain('(written) Tj');
+      expect(restored.content).toStrictEqual(content);
+      expect(restored.font).toBe(true);
     });
   });
 
