@@ -108,3 +108,18 @@ subject that carries the split's own text. What is not claimed: a live send of a
 
 **Still not reached:** signing (ADR-0148), and the signed copy read back from DocuSign, which arrives whole within its
 512 MiB bound before it is written.
+
+## Correction, 2026-10-17: a byte-image command's answer takes the rule too (QQQQQQQ-11)
+
+The lists above did not name the PDFium and pdf-lib commands, and the rule did not reach them. A byte-image writer's
+`apply` answers the whole new document as bytes, and `replaceCanonicalImage` installed them in memory unasked, so one
+edit made a document held in a file resident in `main` past the ceiling. `documentService.ts`' comment on
+`#heldInMemory` said it was the rule at every replacement; this replacement did not ask it.
+
+It does now: an answer that fits under the ceiling beside the other documents, not counting the image it replaces, is
+held in memory as before, with no disk round trip; one that does not is written to the document's file and served
+from it (`#replaceFromFile`, the hosted path's). `documentService.test.ts` holds both, each with a mutant that fails
+it.
+
+**Still not reached:** the answer itself still arrives in `main` whole, once, before it is placed. The full remedy is
+the hosted result ADR-0121 Decision 3 gives MuPDF's commands, a file the host writes, which these writers do not have.
