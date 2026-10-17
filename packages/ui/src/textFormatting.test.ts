@@ -79,6 +79,35 @@ describe('readEditor', () => {
     expect(readEditor(root).formatting.marks).toEqual([{ from: 0, to: 6, set: { bold: true } }]);
   });
 
+  it('sends no mark for bold put on and taken off again over words that are not bold (VVVVVVV-16)', () => {
+    // THE GESTURE AS THE TOOLBAR MAKES IT: on, then off, which leaves `{"bold":false}` on the span rather than no span.
+    const root = editorOf('words');
+    formatRange(root, rangeOver(firstText(root), 0, 5), { bold: true });
+    const inner = root.querySelector('[data-fmt]')?.firstChild;
+    if (!(inner instanceof Text)) throw new Error('no span text');
+    formatRange(root, rangeOver(inner, 0, 5), { bold: false });
+    expect(root.querySelector('[data-fmt]')?.getAttribute('data-fmt')).toBe('{"bold":false}');
+    expect(readEditor(root).formatting).toEqual({});
+    expect(isFormatted(readEditor(root).formatting)).toBe(false);
+  });
+
+  it('CONTROL: bold taken off words whose run IS bold is a mark, because it changes them', () => {
+    const root = document.createElement('div');
+    const run = document.createElement('span');
+    run.className = 'm-text-editor__run';
+    run.dataset['size'] = '12';
+    run.style.fontWeight = '700';
+    run.textContent = 'words';
+    const row = document.createElement('div');
+    row.append(run);
+    root.append(row);
+    document.body.append(root);
+    const text = run.firstChild;
+    if (!(text instanceof Text)) throw new Error('no run text');
+    formatRange(root, rangeOver(text, 0, 5), { bold: false });
+    expect(readEditor(root).formatting.marks).toEqual([{ from: 0, to: 5, set: { bold: false } }]);
+  });
+
   it('keeps two different formattings as two marks', () => {
     const root = editorOf('abcdef');
     formatRange(root, rangeOver(firstText(root), 0, 3), { bold: true });

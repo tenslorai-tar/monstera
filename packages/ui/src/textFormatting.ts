@@ -339,6 +339,29 @@ function paragraphsOf(root: HTMLElement): { text: string; paragraphs: Paragraph[
   return { text, paragraphs };
 }
 
+/**
+ * The person's formatting at a node, less what the run already is: a mark names what the words ARE (ADR-0180 Decision
+ * 1), so `bold: false` over words that are not bold says nothing. Left in, bold put on and taken off again sent a mark
+ * over unchanged words, the editor committed it, and the kernel refused the edit as changing nothing — a person refused
+ * for a gesture that changed nothing (VVVVVVV-16). Only the looks the run's own style answers are compared; a colour,
+ * a family, spacing or a rise the run does not say is kept.
+ */
+function beyondRun(node: Node, root: HTMLElement): Fmt {
+  const base = runBase(node, root);
+  const set: Fmt = { ...effectiveFmt(node, root) };
+  if (set.bold === base.bold) delete set.bold;
+  if (set.italic === base.italic) delete set.italic;
+  if (set.underline === base.underline) delete set.underline;
+  if (set.strike === base.strike) delete set.strike;
+  if (set.size !== undefined && set.size === base.size) delete set.size;
+  // A HIGHLIGHT TAKEN OFF (`null`) from words that have none, or one set to the colour they have.
+  if (set.highlight === null && base.highlight === undefined) delete set.highlight;
+  else if (set.highlight != null && base.highlight !== undefined && JSON.stringify(set.highlight) === JSON.stringify(base.highlight)) {
+    delete set.highlight;
+  }
+  return set;
+}
+
 /** What the editor says: the words, the marks over them, and how the paragraphs the person set are set. */
 export function readEditor(root: HTMLElement): { text: string; formatting: BlockFormatting } {
   const { text, paragraphs } = paragraphsOf(root);
@@ -346,7 +369,7 @@ export function readEditor(root: HTMLElement): { text: string; formatting: Block
   for (const paragraph of paragraphs) {
     let at = paragraph.start;
     for (const node of paragraph.nodes) {
-      const set = effectiveFmt(node, root);
+      const set = beyondRun(node, root);
       const length = node.data.length;
       if (Object.keys(set).length > 0 && length > 0) {
         const last = marks.at(-1);
