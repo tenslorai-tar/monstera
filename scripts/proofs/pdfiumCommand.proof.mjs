@@ -114,7 +114,7 @@ if (!existsSync(library)) {
 
 // The proof imports the BUILT modules, so a stale build would prove yesterday's
 // routing and say nothing about the diff under review.
-refuseStaleBuild(root, PDFIUM_COMMAND, 26);
+refuseStaleBuild(root, PDFIUM_COMMAND, 27);
 
 // EVERY EDIT BUILT THROUGH THE CONTRACT'S ONE ENCODER, as the application builds it (ADR-0142).
 const { blockEditOf, replacementFieldsOf } = await import('../../packages/contract/dist/commands.js');
@@ -263,26 +263,10 @@ async function passwordCases() {
  * @type {string[]}
  */
 const failures = [];
-// 69 until 2026-10-04, when `replaceAtCases` added five (ADR-0156), and 75 from the stage audit of
-// cb62b976..33715f7c, which gave blank paper's refusal its control, and 77 from ADR-0169, which names the characters,
-// and 80 from its Decision 6's empty replacement: a word deleted, an object removed, and the checkpoint either takes,
-// and 82 from the same decision's *no version*: one occurrence for itself, and a word the page reads but no object
-// holds (the identity replace-all case became the nothing-matched one), and 84 from the line rule's two, and 87 from
-// ADR-0171's addendum: an edit of a document opened with either password, and its control with none, and 95 from
-// ADR-0173's pieces: a word saved in a bundled face, its object, its wrap, the word the twin refused, an unreadable
-// catalogue either way, and a control either side, and 97 from its correction: a character past the BMP and its premise,
-// and 100 from the box: its premise, its reading, and its answer (ADR-0174), and 117 from ADR-0176's pageRuns: the
-// Chromium print's members against the kernel's own numbering, and the ruled page's object indices as the control, and
-// 126 from ADR-0179's paragraphs: the fixture's soft ends and its words, a letter that moves one line, a bold word that
-// wraps bold, a centred line and an indented first line kept, and a control beside each, and 129 from the render mode an
-// edit keeps: invisible text stays invisible, with a visible control and the fixture's own, and 143 from ADR-0180's
-// marks: bold, colour, size, underline, superscript and a restated mark, then alignment, line spacing and an indent, each
-// with the control that separates the mark from the fixture. 231 from ADR-0228's formatting set: a strike and its
-// control against the underline, a highlight, spacing and its control, justify and its control, and space after. 234
-// from its Decision 2: a tab read back at its stop, its control, and a second edit that keeps one tab. 235 from the
-// second edit's measure, which read a line written as several objects at its first object's width. 246 from L2: an
-// underlined word read back underlined, its rule moved with it by a second edit, and the control that turns it off.
-const roster = createRoster(failures, { cases: 272 });
+// THE COUNT IS MOVED ONLY WITH THE CASES IT COUNTS, and the commit that moves it names the cases it adds or removes. A
+// running ledger of the count was kept here until 2026-10-17 and had stopped at 246 against 274 (VVVVVVV-23): a second
+// copy of the history git already holds, which nothing compared with the count.
+const roster = createRoster(failures, { cases: 275 });
 
 /**
  * @param {string} name
@@ -3755,6 +3739,77 @@ async function placeCases() {
     `centre ${JSON.stringify(flat.centre)} became ${JSON.stringify(turned.centre)}`,
   );
 
+  // TURNED AND SCALED, THE PREVIEW AND THE WRITER NAMED IN ONE CASE (VVVVVVV-24): the editor shows a placement through
+  // `placeTransform` (packages/ui) and the writer applies it through `placeObjects` (pdfiumFfi), two spellings of
+  // *scale about the top left, turn about what that left, then move*. The preview's own CSS is evaluated here — no formula
+  // of this proof's — and the block's centre it shows must be where the writer's read-back puts it.
+  {
+    const { placeTransform } = await import('../../packages/ui/dist/textPlacement.js');
+    const PLACE = { scale: 1.5, rotate: 30, move: { x: 12, y: -20 } };
+    // THE EDITOR'S FRAME IS THE BLOCK'S BOX, its ink, which is what it shows the placement over.
+    const box = upper.box;
+    const css = placeTransform({ ...PLACE, width: undefined }, { width: box.x1 - box.x0, height: box.y1 - box.y0 }, 1);
+    /** The point (x, y) of the element's own frame, y down, after the CSS transform list, applied right to left. */
+    const throughCss = (/** @type {number} */ x, /** @type {number} */ y) => {
+      let point = { x, y };
+      for (const [, name, args] of [...css.matchAll(/(translate|rotate|scale)\(([^)]*)\)/gu)].reverse()) {
+        const values = (args ?? '').split(',').map((value) => Number.parseFloat(value));
+        if (name === 'translate') point = { x: point.x + (values[0] ?? 0), y: point.y + (values[1] ?? 0) };
+        if (name === 'scale') point = { x: point.x * (values[0] ?? 1), y: point.y * (values[0] ?? 1) };
+        if (name === 'rotate') {
+          const radians = ((values[0] ?? 0) * Math.PI) / 180;
+          point = { x: point.x * Math.cos(radians) - point.y * Math.sin(radians), y: point.x * Math.sin(radians) + point.y * Math.cos(radians) };
+        }
+      }
+      return point;
+    };
+    // EACH OBJECT'S OWN BOX CARRIED THROUGH THE PREVIEW'S TRANSFORM, its four corners back in page points (the frame's
+    // origin is the box's top left, y down), and the union of what that makes — against the union of the written
+    // objects' boxes. Not one centre for all: the union of two lines of different widths, turned, is not centred on its
+    // turned centre, which a first version of this case compared and read as a 6.65 pt disagreement that was its own.
+    /** The page's upper text objects' boxes. @param {Uint8Array} bytes */
+    const boxesOf = async (bytes) => {
+      const session = await pdfiumWriter.open(bytes);
+      try {
+        return (await pageObjects(session, 0)).filter((object) => object.kind === 'text' && object.top > 250);
+      } finally {
+        await pdfiumWriter.close(session);
+      }
+    };
+    /** The union of a list of boxes. @param {{ left: number; right: number; bottom: number; top: number }[]} list */
+    const unionOf = (list) => ({
+      left: Math.min(...list.map((each) => each.left)),
+      right: Math.max(...list.map((each) => each.right)),
+      bottom: Math.min(...list.map((each) => each.bottom)),
+      top: Math.max(...list.map((each) => each.top)),
+    });
+    const shownBoxes = (await boxesOf(original)).map((object) => {
+      const corners = [
+        [object.left, object.top],
+        [object.right, object.top],
+        [object.right, object.bottom],
+        [object.left, object.bottom],
+      ].map(([x, y]) => {
+        const at = throughCss((x ?? 0) - box.x0, box.y1 - (y ?? 0));
+        return { x: box.x0 + at.x, y: box.y1 - at.y };
+      });
+      return {
+        left: Math.min(...corners.map((point) => point.x)),
+        right: Math.max(...corners.map((point) => point.x)),
+        bottom: Math.min(...corners.map((point) => point.y)),
+        top: Math.max(...corners.map((point) => point.y)),
+      };
+    });
+    const preview = unionOf(shownBoxes);
+    const written = unionOf(await boxesOf(await send([entry(upper, PLACE)])));
+    const apart = Math.max(...['left', 'right', 'bottom', 'top'].map((edge) => Math.abs(written[/** @type {'left'} */ (edge)] - preview[/** @type {'left'} */ (edge)])));
+    record(
+      'turned and scaled, the block’s objects stand where the preview shows them: the writer and placeTransform agree',
+      apart < 1,
+      `written ${JSON.stringify(written)}, preview ${JSON.stringify(preview)}, furthest edge ${apart.toFixed(2)} pt (css ${css})`,
+    );
+  }
+
   // A PLACEMENT THAT PLACES NOTHING is no edit.
   const nothing = await send([entry(upper, { scale: 1, move: { x: 0, y: 0 } })]).then(
     () => 'wrote',
@@ -3772,13 +3827,28 @@ async function placeCases() {
       wordsOf(narrowRuns) === 'Upper block first line Upper block second line',
     `${String(narrowRuns.length)} runs, width ${(Math.max(...narrowRuns.map((run) => run.right)) - Math.min(...narrowRuns.map((run) => run.left))).toFixed(1)}, words ${JSON.stringify(wordsOf(narrowRuns))}`,
   );
-  const wide = await send([entry(upper, { width: 300 })]).then(
-    () => 'wrote',
+  // THE SAME LINES, held to their words and places (VVVVVVV-23): a write passed as `wrote` whatever it wrote, so the
+  // control accepted nearly every outcome. Refused as changing nothing, or written with every upper line where it stood.
+  /** The upper block's runs as `text@left,bottom`, rounded to a tenth of a point. @param {Uint8Array} bytes */
+  const linesOf = async (bytes) =>
+    (await blocksOf(bytes)).runs
+      .filter((run) => run.top > 250)
+      .map((run) => `${run.text.trim()}@${run.left.toFixed(1)},${run.bottom.toFixed(1)}`)
+      .sort();
+  // A WIDTH A LITTLE PAST THE BLOCK'S OWN, which the editor sends (it drops one within half a point of the box): 300 was
+  // far wider than this block, so its lines rightly reflowed. Measured 2026-10-17, the box's width +0 and +1 wrap the
+  // second line's last word, +2 and +5 keep the lines: a width is taken as the plan's pen-to-pen measure while the box is
+  // the ink. Recorded as its own finding rather than hidden by this control's input.
+  const wide = await send([entry(upper, { width: upper.box.x1 - upper.box.x0 + 5 })]).then(
+    async (bytes) => {
+      const same = JSON.stringify(await linesOf(bytes)) === JSON.stringify(await linesOf(original));
+      return same ? 'wrote the same lines' : `wrote other lines: ${JSON.stringify(await linesOf(bytes))}`;
+    },
     (error) => (error instanceof Error ? error.message : String(error)),
   );
   record(
-    'CONTROL: a width as wide as the block already was lays out the same lines and writes nothing new',
-    wide.includes('changed nothing') || wide === 'wrote',
+    'CONTROL: a width a little past the block’s own lays out the same lines and writes nothing new',
+    wide.includes('changed nothing') || wide === 'wrote the same lines',
     wide,
   );
 
@@ -4859,6 +4929,47 @@ async function formatCases() {
     `bold before ${String((await runOf(original, 'quick'))?.style.bold)}`,
   );
 
+  // UN-BOLD (VVVVVVV-15): the only path that turns bold off sends `bold: false`, and no case sent it — the fixture had no
+  // bold word. Here `quick` is set in Helvetica-Bold; a `bold: false` mark sets it regular. CONTROL: an edit of another
+  // word with no mark keeps it bold, so the regular word is the mark's and not every re-set line's.
+  {
+    const heavy = await aTypeset({ text: PARAGRAPH, bold: ['quick'] });
+    const [heavyBlock] = (await blocksOf(heavy)).blocks;
+    const heavyWords = heavyBlock === undefined ? '' : paragraphsOfLines(heavyBlock.lines.map((line) => ({ text: lineText(line.runs), soft: line.soft })));
+    /** @param {{ from: number; to: number; set: object }[]} marks @param {string} text */
+    const edit = (marks, text) =>
+      heavyBlock === undefined
+        ? Promise.resolve(heavy)
+        : localPdfiumExecution.apply({
+            session: heavy,
+            command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+              kind: 'editTextBlock',
+              page: 0,
+              ...blockEditOf([
+                {
+                  lines: heavyBlock.lines.map((line) => line.runs.map((run) => run.index)),
+                  soft: heavyBlock.lines.map((line) => line.soft),
+                  text,
+                  marks,
+                },
+              ]),
+              fit: 'reflow',
+              version: 1,
+            }),
+            sources: [],
+            reads: undefined,
+          });
+    const from = heavyWords.indexOf('quick');
+    const before = await runOf(heavy, 'quick');
+    const unbolded = await runOf(await edit([{ from, to: from + 'quick'.length, set: { bold: false } }], heavyWords), 'quick');
+    const kept = await runOf(await edit([], heavyWords.replace('today', 'tonight')), 'quick');
+    record(
+      'a bold: false mark sets a bold word regular, where an edit of another word with no mark keeps it bold',
+      before?.style.bold === true && unbolded?.style.bold === false && kept?.style.bold === true,
+      `before ${String(before?.style.bold)}, with the mark ${String(unbolded?.style.bold)}, with none ${String(kept?.style.bold)}`,
+    );
+  }
+
   // COLOUR.
   const coloured = await format({ marks: [{ ...at('fox'), set: { colour: { r: 200, g: 20, b: 20 } } }] });
   const fox = await runOf(coloured, 'fox');
@@ -5289,6 +5400,24 @@ async function paragraphCases() {
       Math.abs(lastAfter.left - lastBefore.left) < 0.01 && Math.abs(lastAfter.bottom - lastBefore.bottom) < 0.01,
     `last line ${JSON.stringify(lastAfter && { left: lastAfter.left, bottom: lastAfter.bottom })} against ${JSON.stringify(lastBefore && { left: lastBefore.left, bottom: lastBefore.bottom })}`,
   );
+  // AND THE LINES BELOW ARE THE SAME OBJECTS — the comment's claim, which a place alone does not show (VVVVVVV-10). Not
+  // their bytes: PDFium writes the page's whole content again on any edit, measured 2026-10-17 (0 of 5 text objects kept
+  // byte for byte). An object's INDEX is what it keeps: an object set again is a new one, added at the end of the page's
+  // list. This does NOT tell the paragraph model from the line-by-line writer it replaced, which also left untouched lines
+  // alone; the case that does is the next one, where a line that grows wraps its last words onto the line below.
+  {
+    const below = before.runs.filter((run) => !block.lines[0]?.runs.some((first) => first.index === run.index));
+    const afterByIndex = new Map(afterFirst.map((run) => [run.index, run]));
+    const same = below.filter((run) => {
+      const now = afterByIndex.get(run.index);
+      return now !== undefined && now.text === run.text && Math.abs(now.left - run.left) < 0.01 && Math.abs(now.bottom - run.bottom) < 0.01;
+    });
+    record(
+      'and every run below the first line is the same object it was: its index, its words and its place',
+      below.length > 0 && same.length === below.length,
+      `${String(same.length)} of ${String(below.length)} runs below the first line kept their object`,
+    );
+  }
 
   // A LONG WORD TYPED IN FRONT OF THE BOLD ONE makes it wrap, and it WRAPS BOLD: every word keeps its own style.
   const widened = await edit(words.replace('brown fox', 'brown unmistakably fox'));

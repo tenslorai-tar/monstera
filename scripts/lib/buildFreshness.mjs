@@ -185,6 +185,8 @@ export const PDFIUM_COMMAND = [
   ['packages/kernel/src/visualPieces.ts', 'packages/kernel/dist/visualPieces.js', 'tsc'],
   ['packages/kernel/src/arabicForms.ts', 'packages/kernel/dist/arabicForms.js', 'tsc'],
   ['packages/kernel/src/paperColour.ts', 'packages/kernel/dist/paperColour.js', 'tsc'],
+  // THE PREVIEW'S PLACEMENT, which the turned-and-scaled case holds the writer against (VVVVVVV-24).
+  ['packages/ui/src/textPlacement.ts', 'packages/ui/dist/textPlacement.js', 'tsc'],
 ];
 
 /**
