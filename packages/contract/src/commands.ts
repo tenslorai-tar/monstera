@@ -6461,7 +6461,10 @@ export const blockMarkSchema = z
     block: z.number().int().min(0).max(MAX_EDIT_RUNS),
     from: z.number().int().min(0).max(MAX_EDIT_TEXT),
     to: z.number().int().min(1).max(MAX_EDIT_TEXT),
-    set: blockMarkSetSchema,
+    // AT LEAST ONE PROPERTY (VVVVVVV-26): a mark that names nothing says nothing about its words, and the renderer never
+    // sends one (`readEditor` keeps a mark only where the words carry formatting). An insert's `base` may be empty, and
+    // that is the base's schema, not this one.
+    set: blockMarkSetSchema.refine((set) => Object.keys(set).length > 0, 'a mark names at least one property of its words'),
   })
   .strict();
 

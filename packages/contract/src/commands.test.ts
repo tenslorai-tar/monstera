@@ -194,13 +194,20 @@ describe('the block edit payload (ADR-0142)', () => {
 
     it('REFUSES overlapping marks, an empty one, one past the words, one for a block that is not there, and ones out of order', () => {
       const marks = (list: readonly object[]) => ({ ...withMarks, marks: list });
-      expect(editTextBlockSchema.safeParse(marks([{ block: 0, from: 0, to: 6, set: {} }, { block: 0, from: 4, to: 8, set: {} }])).success).toBe(false);
-      expect(editTextBlockSchema.safeParse(marks([{ block: 0, from: 3, to: 3, set: {} }])).success).toBe(false);
-      expect(editTextBlockSchema.safeParse(marks([{ block: 0, from: 0, to: 999, set: {} }])).success).toBe(false);
-      expect(editTextBlockSchema.safeParse(marks([{ block: 5, from: 0, to: 1, set: {} }])).success).toBe(false);
-      expect(editTextBlockSchema.safeParse(marks([{ block: 1, from: 0, to: 2, set: {} }, { block: 0, from: 0, to: 2, set: {} }])).success).toBe(false);
+      expect(editTextBlockSchema.safeParse(marks([{ block: 0, from: 0, to: 6, set: { bold: true } }, { block: 0, from: 4, to: 8, set: { bold: true } }])).success).toBe(false);
+      expect(editTextBlockSchema.safeParse(marks([{ block: 0, from: 3, to: 3, set: { bold: true } }])).success).toBe(false);
+      expect(editTextBlockSchema.safeParse(marks([{ block: 0, from: 0, to: 999, set: { bold: true } }])).success).toBe(false);
+      expect(editTextBlockSchema.safeParse(marks([{ block: 5, from: 0, to: 1, set: { bold: true } }])).success).toBe(false);
+      expect(editTextBlockSchema.safeParse(marks([{ block: 1, from: 0, to: 2, set: { bold: true } }, { block: 0, from: 0, to: 2, set: { bold: true } }])).success).toBe(false);
       // CONTROL: marks that touch end to end are accepted, so the overlap refusal is the overlap's.
-      expect(editTextBlockSchema.safeParse(marks([{ block: 0, from: 0, to: 5, set: {} }, { block: 0, from: 5, to: 8, set: {} }])).success).toBe(true);
+      expect(editTextBlockSchema.safeParse(marks([{ block: 0, from: 0, to: 5, set: { bold: true } }, { block: 0, from: 5, to: 8, set: { bold: true } }])).success).toBe(true);
+    });
+
+    it('REFUSES a mark that names no property of its words (VVVVVVV-26)', () => {
+      const marks = (list: readonly object[]) => ({ ...withMarks, marks: list });
+      expect(editTextBlockSchema.safeParse(marks([{ block: 0, from: 0, to: 2, set: {} }])).success).toBe(false);
+      // CONTROL: the same words with one property named are accepted, so the refusal is the empty set's.
+      expect(editTextBlockSchema.safeParse(marks([{ block: 0, from: 0, to: 2, set: { italic: false } }])).success).toBe(true);
     });
 
     it('REFUSES a style the contract does not name, a size no page holds, and a paragraph the words do not have', () => {
