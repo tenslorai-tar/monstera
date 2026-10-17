@@ -72,6 +72,30 @@ describe('joinRuns', () => {
   });
 });
 
+describe('joinRuns’ two direction rules (ADR-0185; VVVVVVV-31: only the native proof reached them)', () => {
+  it('objects that run OPPOSITE WAYS are two runs however they abut, and a digit between them joins either way', () => {
+    // "abc" then Hebrew "אב" drawn one glyph per object, abutting on one line in one style.
+    const latin = word(0, 'abc', 72);
+    const hebrew = [glyph(3, 'ב', 87), glyph(4, 'א', 92)];
+    const split = joinRuns([...latin, ...hebrew]);
+    expect(split.map((run) => [run.index, run.last])).toStrictEqual([
+      [0, 2],
+      [3, 4],
+    ]);
+    // CONTROL: a digit has no direction, so it joins the Latin before it — the split above is the direction rule's.
+    expect(joinRuns([...latin, glyph(3, '7', 87)]).map((run) => [run.index, run.last])).toStrictEqual([[0, 3]]);
+  });
+
+  it('a joined RIGHT-TO-LEFT run’s text is its drawn glyphs read logically, not their order on the page', () => {
+    // DRAWN left to right as the page shows them: ב then א — which reads, logically, א then ב.
+    const [run] = joinRuns([glyph(0, 'ב', 72), glyph(1, 'א', 77)]);
+    expect(run?.drawn).toBe('בא');
+    expect(run?.text).toBe('אב');
+    // CONTROL: a Latin run's text is its drawn order, untouched.
+    expect(joinRuns(word(0, 'ab', 72))[0]?.text).toBe('ab');
+  });
+});
+
 describe('membersOf', () => {
   it('expands a named run into exactly its objects, and refuses a name the read never answered', () => {
     const joined = joinRuns([...word(3, 'four', 72), glyph(7, 'X', 200)]);
