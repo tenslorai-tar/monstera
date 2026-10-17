@@ -3493,6 +3493,10 @@ function layOutBlocks(
           const { push } = block;
           const growth = push === undefined ? 0 : (grew[push.by] ?? 0);
           const pushMove = push !== undefined && growth > 0 && growth <= push.room ? growth : 0;
+          // A PUSHED BLOCK THAT DOES NOT MOVE IS LEFT ALONE, before any of the work below: nothing of it is written either
+          // way, and planning it to prove so cost a heading's edit the whole body under it (the text walk's L6, 2026-10-17:
+          // one block of 39,200 runs below a heading, and the editor took 28 s to close on an edit that grew nothing).
+          if (push !== undefined && pushMove === 0) continue;
           const place = push === undefined ? block.place : pushMove > 0 ? { move: { x: 0, y: -pushMove } } : undefined;
           const writtenBefore = written.length;
           // ROTATED OR SKEWED TEXT IS REFUSED rather than wrapped along an axis

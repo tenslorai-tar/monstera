@@ -64,12 +64,13 @@ const CASES = [
   'CONTROL: the page number in the footer is read where it was',
   'on a page with no room under the small print, nothing moves, and the paragraph is still written',
   'a pushed block whose words are not the page’s is refused, so a pushed block is never written',
+  'a pushed block that does not move is left alone, unread: an edit that grows nothing is written with its words wrong',
 ];
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 8 });
-if (CASES.length !== 8) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 8`);
+const roster = createRoster(failures, { cases: 9 });
+if (CASES.length !== 9) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 9`);
 
 /** @param {number} at @param {boolean} held @param {string} detail */
 function check(at, held, detail) {
@@ -140,12 +141,13 @@ async function run(pdfium, kernel) {
   });
 
   /**
-   * The paragraph grown by {@link ADDED}, with the blocks below it pushed when `push` is set; `wrong` gives the pushed
-   * blocks words that are not the page's.
+   * The paragraph grown by {@link ADDED}, or its words changed by `change`, with the blocks below it pushed when `push`
+   * is set; `wrong` gives the pushed blocks words that are not the page's.
    *
-   * @param {Uint8Array} bytes @param {{ readonly push: boolean, readonly wrong?: boolean }} how
+   * @param {Uint8Array} bytes
+   * @param {{ readonly push: boolean, readonly wrong?: boolean, readonly change?: (words: string) => string }} how
    */
-  const grow = async (bytes, { push, wrong = false }) => {
+  const grow = async (bytes, { push, wrong = false, change = (/** @type {string} */ words) => `${words}${ADDED}` }) => {
     const { blocks, pushes } = await readBlocks(bytes);
     const at = blockAt(blocks, 'This paragraph');
     const paragraph = blocks[at];
@@ -156,7 +158,7 @@ async function run(pdfium, kernel) {
       kind: 'editTextBlock',
       page: 0,
       ...kernel.blockEditOf([
-        edited(paragraph, `${wordsOf(paragraph)}${ADDED}`),
+        edited(paragraph, change(wordsOf(paragraph))),
         ...below.map((/** @type {any} */ under) => ({
           ...edited(under, wrong ? `${wordsOf(under)} changed` : wordsOf(under)),
           push: { by: 0, room: column.room },
@@ -264,6 +266,21 @@ async function run(pdfium, kernel) {
 
   const wrong = await grow(original, { push: true, wrong: true });
   check(7, wrong.applied === null, wrong.applied === null ? `refused: ${String(wrong.error)}` : 'it was SAVED');
+
+  // A WORD MADE SHORTER grows nothing, so no pushed block moves; and the writer then never plans one, so even a pushed
+  // block whose words are wrong is not read. Case 7 is the control: the same wrong words on a block that moves are
+  // planned, and refused.
+  const still = await grow(original, { push: true, wrong: true, change: (words) => words.replace('paragraphs do', 'they do') });
+  const stillLines = still.applied === null ? [] : mupdfLines(still.applied.image);
+  check(
+    8,
+    still.applied !== null &&
+      still.applied.moved.length === 0 &&
+      same(baselineOf(stillLines, 'Small print'), baselineOf(before, 'Small print')) &&
+      stillLines.some((line) => line.text.includes('as they do here.')) &&
+      !stillLines.some((line) => line.text.includes('changed')),
+    still.applied === null ? `the edit threw ${String(still.error)}` : `moved ${JSON.stringify(still.applied.moved)}`,
+  );
 }
 
 const library = pdfiumLibrary(ROOT);

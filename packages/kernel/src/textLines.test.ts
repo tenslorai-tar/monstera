@@ -8,6 +8,7 @@ import {
   groupIntoBlocks,
   groupIntoLines,
   pushesOf,
+  pushesOfPage,
   settingOf,
   softEnds,
   withRises,
@@ -476,6 +477,30 @@ describe('withRises', () => {
     expect(two[0]?.lines.map((line) => line.baseline)).toStrictEqual([700, 686]);
     const raised = withRises(groupIntoBlocks([at(0, '1', 72, 78, 703.96), at(1, ' Note', 78, 120, 700)]), () => 0, () => 0);
     expect(raised[0]?.lines[0]?.baseline).toBe(703.96);
+  });
+});
+
+describe('pushesOfPage: nothing is pushed where the read cannot answer it', () => {
+  const PAGE = { x0: 0, y0: 0, x1: 612, y1: 792 };
+  const heading = { x0: 72, y0: 690, x1: 540, y1: 720 };
+  const body = { x0: 72, y0: 100, x1: 540, y1: 680 };
+
+  it('a page read in part pushes nothing, for any block', () => {
+    expect(pushesOfPage([heading, body], { box: PAGE, truncated: true })).toStrictEqual([
+      { below: [], room: 0 },
+      { below: [], room: 0 },
+    ]);
+  });
+
+  it('nor does a page with no box', () => {
+    expect(pushesOfPage([heading, body], { box: null, truncated: false })).toStrictEqual([
+      { below: [], room: 0 },
+      { below: [], room: 0 },
+    ]);
+  });
+
+  it('CONTROL: the same page read whole pushes the body below the heading', () => {
+    expect(pushesOfPage([heading, body], { box: PAGE, truncated: false })[0]?.below).toStrictEqual([1]);
   });
 });
 

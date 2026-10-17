@@ -125,7 +125,7 @@ import {
   groupIntoBlocks,
   isEditedInPlace,
   settingOf,
-  pushesOf,
+  pushesOfPage,
   withRises,
   hostedPdfLibExecution,
   nodeFileSurface,
@@ -1652,8 +1652,11 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         );
       // WHAT EACH BLOCK PUSHES WHEN IT GROWS (ADR-0249 Decision 2), decided here beside the grouping and nowhere else: the
       // column below it and the room to the footer or the bottom margin, measured against the page box the runs were read
-      // in. A page PDFium gives no box pushes nothing, and the editor then says nothing moves.
-      const pushes = found.box === null ? [] : pushesOf(grouped.map((block) => block.box), found.box);
+      // in, and nothing on a page with no box or one read in part (`pushesOfPage`).
+      const pushes = pushesOfPage(
+        grouped.map((block) => block.box),
+        found,
+      );
       return {
         blocks: grouped.map((block, at) => ({ ...block, push: pushes[at] ?? { below: [], room: 0 } })),
         truncated: found.truncated,

@@ -507,9 +507,8 @@ export function pushesOf(boxes: readonly BlockBox[], page: BlockBox): readonly P
     if (footer[at] === true) return { below: [], room: 0 };
     const pushed = new Set<number>();
     const reached: BlockBox[] = [box];
-    for (let next = 0; next < reached.length; next += 1) {
-      const above = reached[next];
-      if (above === undefined) break;
+    // A WORKLIST: the array's own iterator reaches each block appended while it walks, which is what closes the set.
+    for (const above of reached) {
       for (const [other, candidate] of boxes.entries()) {
         if (other === at || pushed.has(other) || footer[other] === true) continue;
         if (sideBySide(candidate, above) && candidate.y1 < above.y1) {
@@ -525,6 +524,23 @@ export function pushesOf(boxes: readonly BlockBox[], page: BlockBox): readonly P
     const carried = below.length <= MAX_PUSHED_BLOCKS;
     return { below, room: below.length === 0 || !carried ? 0 : Math.max(0, lowest - limit) };
   });
+}
+
+/** What a block pushes where it pushes nothing. */
+const PUSHES_NOTHING: PushedColumn = { below: [], room: 0 };
+
+/**
+ * What each block of a page's READ pushes: {@link pushesOf} over the page box the runs were read in, and nothing where
+ * the read cannot answer it. A page with no box has no margins to measure the room against. A page the engine's walk
+ * stopped part-way through (`truncated`) has blocks below a block that are only the runs it read, and moving those would
+ * leave the rest where they stood, so the text would part (the text walk's L6, 2026-10-17: a heading over 39,200 runs).
+ */
+export function pushesOfPage(
+  boxes: readonly BlockBox[],
+  read: { readonly box: BlockBox | null; readonly truncated: boolean },
+): readonly PushedColumn[] {
+  if (read.box === null || read.truncated) return boxes.map(() => PUSHES_NOTHING);
+  return pushesOf(boxes, read.box);
 }
 
 /**

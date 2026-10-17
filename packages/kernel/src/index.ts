@@ -344,6 +344,7 @@ export {
   groupIntoLines,
   isEditedInPlace,
   pushesOf,
+  pushesOfPage,
   settingOf,
   softEnds,
   withRises,

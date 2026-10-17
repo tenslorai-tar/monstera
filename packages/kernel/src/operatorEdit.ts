@@ -617,6 +617,9 @@ function write(
     const { push } = block;
     const growth = push === undefined ? 0 : (grew.get(push.by) ?? 0);
     const pushMove = push !== undefined && growth > 0 && growth <= push.room ? growth : 0;
+    // A PUSHED BLOCK THAT DOES NOT MOVE IS LEFT ALONE, the PDFium writer's rule and its reason: nothing of it is written
+    // either way, and setting it to prove so is the whole cost of the text below a heading.
+    if (push !== undefined && pushMove === 0) continue;
     if (pushMove > 0) {
       moved.push({
         block: jobAt,
