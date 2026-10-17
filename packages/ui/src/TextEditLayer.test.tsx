@@ -416,7 +416,7 @@ describe('Edit text on the page (ADR-0096)', () => {
     expect(said).toContain('Nothing was changed');
     // ONE AT A TIME, so an accent beside a letter reads as two characters.
     expect(said).toContain('中 é');
-    expect(said).toContain('press Esc to put the text back');
+    expect(said).toContain('Change the words, or press Esc to put the text back');
     // AND A SECOND ESCAPE PUTS THE TEXT BACK rather than sending it again.
     await act(async () => {
       fireEvent.keyDown(find(view.container, '[data-text-editor]'), { key: 'Escape' });
@@ -442,6 +442,10 @@ describe('Edit text on the page (ADR-0096)', () => {
     const said = view.container.querySelector('[role="alert"]')?.textContent ?? '';
     expect(said).toContain('This page uses a font Monstera can’t rewrite yet, so nothing was changed.');
     expect(said).toContain('read-back 0');
+    // NO CHANGE OF WORDS PASSES IT, so the editor offers only the way back (RRRRRRR-16); the font's refusal above, which
+    // other words can pass, is the control that still says *Change the words*.
+    expect(said).toContain('Press Esc to put the text back.');
+    expect(said).not.toContain('Change the words');
   });
 
   describe('a write that rejects frees the editor (CR-COR-13)', () => {

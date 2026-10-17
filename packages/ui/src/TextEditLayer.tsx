@@ -26,7 +26,7 @@ import {
   type RunFonts,
   type TextBlock,
 } from './commands/documentCommands.js';
-import { problemMessage, problemParticulars } from './dialogs/problemMessages.js';
+import { type CommandProblem, problemMessage, problemParticulars } from './dialogs/problemMessages.js';
 import {
   TEXT_EDIT_BLOCK_LABEL,
   TEXT_EDIT_EDITOR_LABEL,
@@ -36,6 +36,7 @@ import {
   TEXT_EDIT_PAST_PAGE,
   TEXT_EDIT_PROMOTE,
   TEXT_EDIT_RECOGNISE,
+  TEXT_EDIT_REFUSED_ESC_HINT,
   TEXT_EDIT_REFUSED_HINT,
   TEXT_EDIT_MIRRORED,
   TEXT_EDIT_SLANTED,
@@ -1835,7 +1836,17 @@ function EditorProblem({ problem }: { readonly problem: Exclude<BlockCommit, 'wr
           <dd>{particulars.value}</dd>
         </dl>
       )}
-      <p>{_(TEXT_EDIT_REFUSED_HINT)}</p>
+      <p>{_(wordsCanPass(problem.refused) ? TEXT_EDIT_REFUSED_HINT : TEXT_EDIT_REFUSED_ESC_HINT)}</p>
     </div>
   );
+}
+
+/**
+ * Whether a different choice of words can pass a refusal: only characters the page's font cannot show, which other words
+ * avoid. Every other refusal the editor keeps the words through — a Type 3 page, a stale target, a poisoned document, a
+ * step the engine refused, a machine out of memory — refuses whatever the words are, and *Change the words* sent the
+ * person to try what cannot work (RRRRRRR-16).
+ */
+function wordsCanPass(refused: CommandProblem): boolean {
+  return refused.code === 'text-not-writable';
 }

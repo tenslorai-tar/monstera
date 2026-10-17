@@ -345,6 +345,29 @@ function noticeFor(failure: Failure<FailureOf<Channels, 'document.execute'>>): M
   return problemMessage('detail' in failure ? failure : { code: failure.code });
 }
 
+/**
+ * Sends one command and answers whether the document moved, with the sentence a refusal is said with and its code,
+ * saying nothing: the caller decides when it is said.
+ */
+async function sendHeld(
+  deps: SpellingDeps,
+  store: DocumentStore,
+  command: DispatchableCommand,
+): Promise<{ readonly moved: boolean; readonly notice: MessageKey | undefined; readonly code: string | undefined }> {
+  let notice: MessageKey | undefined;
+  let code: string | undefined;
+  const moved = await applyDocumentCommand(deps.commands, store.getState().docId, command, {
+    keep: (failure) => {
+      const said = noticeFor(failure);
+      if (said === false) return false;
+      notice = said;
+      code = failure.code;
+      return true;
+    },
+  });
+  return { moved, notice, code };
+}
+
 /** Sends one command, saying a refusal in the panel. `true` when the document moved. */
 async function send(
   deps: SpellingDeps,
@@ -352,19 +375,8 @@ async function send(
   run: number,
   command: DispatchableCommand,
 ): Promise<boolean> {
-  let notice: MessageKey | undefined;
-  const moved = await applyDocumentCommand(deps.commands, store.getState().docId, command, {
-    keep: (failure) => {
-      const said = noticeFor(failure);
-      if (said === false) return false;
-      notice = said;
-      return true;
-    },
-  });
-  if (notice !== undefined) {
-    const said = notice;
-    write(store, run, (held) => ({ ...held, notice: said }));
-  }
+  const { moved, notice } = await sendHeld(deps, store, command);
+  if (notice !== undefined) write(store, run, (held) => ({ ...held, notice }));
   return moved;
 }
 
@@ -555,15 +567,19 @@ export async function replaceAll(deps: SpellingDeps, store: DocumentStore, repla
   const pages = new Set(same.filter(isText).map((each) => each.place.page));
   let changed = 0;
 
-  // THE PAGE TEXT FIRST, in one command and one undo, as the find bar's Replace all is.
+  // THE PAGE TEXT FIRST, in one command and one undo, as the find bar's Replace all is. ITS REFUSAL IS HELD, not said:
+  // `nothing-to-replace` says nothing was changed, which is false once a comment or a field below is (RRRRRRR-16), so
+  // it is said only where the whole Replace all changed nothing; any other refusal is said as it was.
+  let pageNotice: { readonly notice: MessageKey; readonly code: string | undefined } | undefined;
   if (pages.size > 0) {
-    await send(deps, store, run, {
+    const page = await sendHeld(deps, store, {
       kind: 'replaceAllText',
       find: word,
       replace: replacement,
       caseSensitive: true,
       wholeWord: true,
     });
+    if (page.notice !== undefined) pageNotice = { notice: page.notice, code: page.code };
   }
 
   // THEN EACH COMMENT AND FIELD, one edit each: an edit names its handle at one version, and every edit moves it.
@@ -595,7 +611,12 @@ export async function replaceAll(deps: SpellingDeps, store: DocumentStore, repla
   const after =
     reviewing(store, run)?.occurrences.filter((each) => isText(each) && each.word === word && pages.has(each.place.page))
       .length ?? before;
-  write(store, run, (now) => ({ ...now, replaced: now.replaced + changed + Math.max(0, before - after) }));
+  const pageChanged = Math.max(0, before - after);
+  write(store, run, (now) => ({ ...now, replaced: now.replaced + changed + pageChanged }));
+  if (pageNotice !== undefined && (pageNotice.code !== 'nothing-to-replace' || changed + pageChanged === 0)) {
+    const said = pageNotice.notice;
+    write(store, run, (now) => ({ ...now, notice: said }));
+  }
   if (notice !== undefined) settle(store, run, notice);
 }
 

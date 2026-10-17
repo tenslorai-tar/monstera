@@ -1656,8 +1656,10 @@ export const TEXT_EDIT_MIRRORED = messageKey('surface.text-edit.mirrored');
 export const TEXT_EDIT_NOT_WRITABLE = messageKey('surface.text-edit.not-writable');
 /** The label beside the characters a font cannot show (ADR-0169), in the editor and the problem dialog. */
 export const TEXT_EDIT_CHARACTERS_LABEL = messageKey('surface.text-edit.characters');
-/** What the editor says under any refusal it keeps the words through (ADR-0169 Decision 5). */
+/** What the editor says under a refusal a change of words can pass: characters its font cannot show (ADR-0169 Decision 5). */
 export const TEXT_EDIT_REFUSED_HINT = messageKey('surface.text-edit.refused-hint');
+/** What the editor says under any other refusal it keeps the words through, which no change of words passes (RRRRRRR-16). */
+export const TEXT_EDIT_REFUSED_ESC_HINT = messageKey('surface.text-edit.refused-esc-hint');
 export const TEXT_NOT_IN_PLACE = messageKey('surface.text-edit.not-in-place');
 /** A replacement that matched nothing a text object holds, or changed nothing (ADR-0169 Decision 6). */
 export const NOTHING_TO_REPLACE = messageKey('surface.text-edit.nothing-to-replace');
@@ -4532,6 +4534,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TEXT_EDIT_NOT_WRITABLE]: 'Nothing was changed: the font on this page can’t show some of the characters you typed.',
   [TEXT_EDIT_CHARACTERS_LABEL]: 'Can’t show',
   [TEXT_EDIT_REFUSED_HINT]: 'Change the words, or press Esc to put the text back.',
+  [TEXT_EDIT_REFUSED_ESC_HINT]: 'Press Esc to put the text back.',
   // NOTHING CHANGED, then the way that works: this word is drawn in a way that cannot be changed on its own here, and
   // Edit text changes the line it is in.
   [TEXT_NOT_IN_PLACE]:

@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { COMMAND_PROBLEM_DIALOG_ID } from '../dialogs/commandProblem.js';
 import { type DocumentStore, createDocumentStore } from '../documentStores.js';
 import {
+  NOTHING_TO_REPLACE,
   PROBLEM_COMMENT_TOO_LONG,
   SPELLING_CHANGED,
   SPELLING_DICTIONARY_FULL,
@@ -240,13 +241,16 @@ function harness(script: Script): {
           return Promise.resolve(moved());
         }
         if (command['kind'] === 'replaceAllText') {
+          let changed = false;
           for (const [page, lines] of script.pages.entries()) {
             for (const [line, text] of lines.entries()) {
               if (script.split.has(`${String(page)}:${String(line)}`)) continue;
               lines[line] = replacedWords(text, String(command['find']), String(command['replace']));
+              changed ||= lines[line] !== text;
             }
           }
-          return Promise.resolve(moved());
+          // A REPLACEMENT THAT CHANGES NOTHING IS REFUSED, as the kernel refuses it (ADR-0169 Decision 6).
+          return Promise.resolve(changed ? moved() : err({ code: 'nothing-to-replace' }));
         }
         if (command['kind'] === 'editAnnotationText' || command['kind'] === 'fillFormField') {
           if (command['version'] !== version()) return Promise.resolve(err({ code: 'stale-target' }));
@@ -580,6 +584,27 @@ describe('replacing every occurrence', () => {
     const review = reviewOf(store);
     expect(review.replaced).toBe(1);
     expect(review.current?.place).toStrictEqual({ kind: 'text', page: 0, line: 1, offset: 0 });
+  });
+
+  it('does not say NOTHING WAS CHANGED when the page text matched nothing but a comment was changed (RRRRRRR-16)', async () => {
+    const { deps, store, sent } = harness(
+      script({ pages: [['teh one']], split: new Set(['0:0']), comments: [{ page: 0, index: 0, contents: 'teh note' }] }),
+    );
+    await startReview(deps, store, 1);
+    await replaceAll(deps, store, 'the');
+    expect(sent).toMatchObject([{ kind: 'replaceAllText' }, { kind: 'editAnnotationText' }]);
+    const review = reviewOf(store);
+    expect(review.replaced).toBe(1);
+    expect(review.notice).not.toBe(NOTHING_TO_REPLACE);
+  });
+
+  it('CONTROL: where nothing at all was changed, it says so', async () => {
+    const { deps, store } = harness(script({ pages: [['teh one']], split: new Set(['0:0']) }));
+    await startReview(deps, store, 1);
+    await replaceAll(deps, store, 'the');
+    const review = reviewOf(store);
+    expect(review.replaced).toBe(0);
+    expect(review.notice).toBe(NOTHING_TO_REPLACE);
   });
 });
 
