@@ -36,7 +36,7 @@ import {
   stagedWatermark,
   unansweredAuditItems,
 } from '../lib/auditWatermark.mjs';
-import { filesInCommit, git, readStagedBlob, repoRoot } from '../lib/gitScope.mjs';
+import { filesInCommit, git, readStagedBlob, readStagedBlobs, repoRoot } from '../lib/gitScope.mjs';
 import { probeCoverage, probeState } from '../lib/hookProbe.mjs';
 import { probeState as pickerProbeState } from '../lib/pickerProbe.mjs';
 import { isMain } from '../lib/isMain.mjs';
@@ -327,6 +327,12 @@ const CORRECTION_HEADING = /^>?\s*#{2,4}\s+Correction\b[^\n]*\d{4}-\d{2}-\d{2}/m
  */
 const CORRECTION_CONTROL = 'docs/DECISIONS/0023-how-the-contained-engine-host-is-built.md';
 
+/** The index every ADR must have a row in. */
+const ADR_INDEX = 'docs/DECISIONS/README.md';
+
+/** What an ADR's path looks like, for both callers of {@link adrIndexFailures}. */
+const ADR_PATH = /^docs\/DECISIONS\/\d{4}-.*\.md$/u;
+
 registerRule({
   name: 'every ADR is indexed, and no index row contradicts its file',
   // Enumerates every ADR to decide whether the index is complete: a new ADR
@@ -334,10 +340,52 @@ registerRule({
   scope: 'whole-corpus',
   documents: [],
   run(failures) {
-  const index = read('docs/DECISIONS/README.md');
-  const adrFiles = trackedFiles()
-    .filter((path) => /^docs\/DECISIONS\/\d{4}-.*\.md$/.test(path))
-    .sort();
+    failures.push(...adrIndexFailures(trackedFiles().filter((path) => ADR_PATH.test(path))));
+  },
+});
+
+/**
+ * The ADRs a commit's staged paths put in question, and what is wrong with them
+ * against the index as staged — the pre-commit half of the rule above.
+ *
+ * The rule is whole-corpus and so runs on Guards, after the push: an ADR
+ * corrected without its index row went public there four ranges running
+ * (OOOOOOO-2, PPPPPPP-10, MMMMMMM-2). Its verdict about ONE ADR is decided by two
+ * blobs, that ADR and the index, so a commit that stages either can be judged
+ * here. Staging an ADR judges that ADR; staging the index judges every ADR in the
+ * commit, because an edited row can contradict any file. A commit that stages
+ * neither judges nothing, and says so with a count rather than silence.
+ *
+ * @param {readonly string[]} stagedPaths
+ * @param {{ cwd?: string }} [options]
+ * @returns {{ judged: number, failures: string[] }}
+ */
+export function stagedAdrIndexFailures(stagedPaths, options = {}) {
+  const adrs = stagedPaths.includes(ADR_INDEX)
+    ? filesInCommit(options).filter((path) => ADR_PATH.test(path))
+    : stagedPaths.filter((path) => ADR_PATH.test(path));
+  return {
+    judged: adrs.length,
+    failures: adrs.length === 0 ? [] : adrIndexFailures(adrs, options),
+  };
+}
+
+/**
+ * Whether each ADR named has an index row, and whether that row says the ADR was
+ * corrected exactly when the ADR carries a dated correction. One judgement for
+ * both callers — `check:docs` over every ADR and the pre-commit gate over the
+ * staged ones (B3a) — read from the index in one git process.
+ *
+ * @param {readonly string[]} adrFiles
+ * @param {{ cwd?: string }} [options]
+ * @returns {string[]}
+ */
+export function adrIndexFailures(adrFiles, options = {}) {
+  /** @type {string[]} */
+  const failures = [];
+  const blobs = readStagedBlobs([ADR_INDEX, CORRECTION_CONTROL, ...adrFiles], options);
+  /** @param {string} path */
+  const text = (path) => blobs.get(path)?.toString('utf8');
 
   // THE POSITIVE CONTROL, BEFORE ANY VERDICT. Every way of breaking the
   // correction scan — a wrong pattern, an empty file list, a heading form
@@ -345,13 +393,14 @@ registerRule({
   // is the answer this rule is hoping for. It was also the WRONG answer for
   // weeks (XXXX-2). So the pattern has to find something known to be there
   // before its silence about anything else is worth reading.
-  if (!adrFiles.includes(CORRECTION_CONTROL)) {
+  const control = text(CORRECTION_CONTROL);
+  if (control === undefined) {
     failures.push(
-      `the correction control ${CORRECTION_CONTROL} is not in the enumerated ADR set, so this ` +
+      `the correction control ${CORRECTION_CONTROL} is not in the index, so this ` +
         `rule cannot establish that it can see anything. Point the control at another ADR that ` +
         `carries a dated correction rather than deleting it.`,
     );
-  } else if (!CORRECTION_HEADING.test(read(CORRECTION_CONTROL))) {
+  } else if (!CORRECTION_HEADING.test(control)) {
     failures.push(
       `the correction scan did not find a dated correction in ${CORRECTION_CONTROL}, which is ` +
         `known to carry several. Every clean result from this rule is therefore worthless: a ` +
@@ -360,7 +409,13 @@ registerRule({
     );
   }
 
-  for (const path of adrFiles) {
+  const index = text(ADR_INDEX);
+  if (index === undefined) {
+    failures.push(`${ADR_INDEX} is not in the index, so no ADR can be found in it.`);
+    return failures;
+  }
+
+  for (const path of [...adrFiles].sort()) {
     const id = /(\d{4})/.exec(path)?.[1] ?? '';
     const fileName = path.slice('docs/DECISIONS/'.length);
 
@@ -378,7 +433,14 @@ registerRule({
 
     // A correction is a dated block the ADR carries. Its status must not read as
     // though nothing happened.
-    const body = read(path);
+    const body = text(path);
+    if (body === undefined) {
+      failures.push(
+        `${path} was named for judging but has no blob in the index. The enumeration and the ` +
+          `content read disagree, which is the scope mismatch \`read\` exists to prevent.`,
+      );
+      continue;
+    }
     const corrected = CORRECTION_HEADING.test(body);
     const rowMentionsCorrection = /correct/i.test(row);
 
@@ -397,8 +459,8 @@ registerRule({
       );
     }
   }
-  },
-});
+  return failures;
+}
 
 // ---------------------------------------------------------------------------
 // 3. Every scripts/ path named in a tracked text document actually resolves.

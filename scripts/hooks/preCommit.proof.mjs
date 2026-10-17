@@ -310,6 +310,78 @@ check('CONTROL: a backtick in ordinary code, outside any emitted region, still c
 });
 
 // ---------------------------------------------------------------------------
+// OOOOOOO-2 / PPPPPPP-10, the owner's decision of 2026-10-17: an ADR and its index row are judged at the commit, against
+// the index, by the whole-corpus rule's own judgement. The control ADR is copied, so the rule's positive control finds
+// a dated correction where the real one does.
+// ---------------------------------------------------------------------------
+const CONTROL_ADR = 'docs/DECISIONS/0023-how-the-contained-engine-host-is-built.md';
+const PROOF_ADR = 'docs/DECISIONS/9001-a-proof-adr.md';
+
+/** @param {string} status the proof ADR's index cell */
+const adrIndex = (status) =>
+  [
+    '# Decisions',
+    '',
+    '| ADR | Title | Status |',
+    '|---|---|---|',
+    `| [9001](9001-a-proof-adr.md) | A proof ADR | ${status} |`,
+    '| [0023](0023-how-the-contained-engine-host-is-built.md) | The host | Accepted; corrected |',
+    '',
+  ].join('\n');
+
+const CORRECTED_ADR = '# ADR-9001\n\nAccepted.\n\n## Correction, 2026-10-17 — a proof\n\nWhat changed.\n';
+
+/** A repository whose base commit holds the index (row: Accepted) and the control ADR. */
+function adrRepo() {
+  const root = makeRepo();
+  mkdirSync(join(root, 'docs', 'DECISIONS'), { recursive: true });
+  copyFileSync(join(REAL_ROOT, CONTROL_ADR), join(root, CONTROL_ADR));
+  writeFileSync(join(root, 'docs', 'DECISIONS', 'README.md'), adrIndex('Accepted'));
+  writeFileSync(join(root, PROOF_ADR), '# ADR-9001\n\nAccepted.\n');
+  git(root, ['add', 'docs']);
+  git(root, ['commit', '--quiet', '--no-verify', '-m', 'decisions']);
+  return root;
+}
+
+check('an ADR staged with a correction its index row does not mention blocks the commit', () => {
+  const root = adrRepo();
+  try {
+    stage(root, PROOF_ADR, CORRECTED_ADR);
+    const { ok, output } = runHook(root);
+    if (ok) return `expected the gate to block an ADR corrected without its row, it passed:\n${output}`;
+    if (!/1 staged ADR\(s\) judged/u.test(output)) return `the ADR was not judged as the one staged:\n${output}`;
+    return /ADR-9001 carries a dated Correction block/u.test(output) ? null : `blocked, but not naming ADR-9001:\n${output}`;
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+check('CONTROL: the row read is the INDEX, so a working-tree row that mentions it does not unblock', () => {
+  const root = adrRepo();
+  try {
+    stage(root, PROOF_ADR, CORRECTED_ADR);
+    writeFileSync(join(root, 'docs', 'DECISIONS', 'README.md'), adrIndex('Accepted; corrected 2026-10-17'));
+    const { ok, output } = runHook(root);
+    return ok ? `the gate read the working tree's row and passed:\n${output}` : null;
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+check('CONTROL: the ADR staged WITH its row commits, and staging the index judges every ADR', () => {
+  const root = adrRepo();
+  try {
+    stage(root, PROOF_ADR, CORRECTED_ADR);
+    stage(root, 'docs/DECISIONS/README.md', adrIndex('Accepted; corrected 2026-10-17'));
+    const { ok, output } = runHook(root);
+    if (!ok) return `expected an ADR staged with its row to commit, it blocked:\n${output}`;
+    return /2 staged ADR\(s\) judged/u.test(output) ? null : `the index was staged and not every ADR judged:\n${output}`;
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // UUU-2: the syntax parse. `stagedSyntax.proof.mjs` proves the SCAN; these
 // prove the HOOK calls it, which is the other half of the wired-tools pair — a
 // correct scan nothing invokes is the display-only sin with a green check on it.

@@ -27,7 +27,11 @@ import { report as reportStagedSyntax, scan as scanStagedSyntax } from '../lib/s
 import { changedPaths, readStagedBlob } from '../lib/gitScope.mjs';
 import { runTestAnchors } from '../lib/testCaseCounts.mjs';
 import { formatDisarmament, hookDisarmament } from '../lib/hookIntegrity.mjs';
-import { explainDocumentFailures, runDocumentRules } from './documentConsistency.mjs';
+import {
+  explainDocumentFailures,
+  runDocumentRules,
+  stagedAdrIndexFailures,
+} from './documentConsistency.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import {
   divergenceNotice,
@@ -287,6 +291,16 @@ async function main() {
     );
     if (documents.failures.length > 0) {
       process.stderr.write(explainDocumentFailures(documents.failures));
+      return 1;
+    }
+
+    // AN ADR AND ITS INDEX ROW, judged here against the index rather than on Guards after the push: corrected without
+    // its row, an ADR went public four ranges running (OOOOOOO-2, PPPPPPP-10; the owner's decision of 2026-10-17). The
+    // judgement is the whole-corpus rule's own, called on the ADRs this commit puts in question.
+    const adrs = stagedAdrIndexFailures(staged);
+    process.stdout.write(`  ${String(adrs.judged)} staged ADR(s) judged against the index's rows\n`);
+    if (adrs.failures.length > 0) {
+      process.stderr.write(explainDocumentFailures(adrs.failures));
       return 1;
     }
   }
