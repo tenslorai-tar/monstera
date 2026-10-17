@@ -129,6 +129,14 @@ export const FAILURE_DETAIL_SCHEMAS = {
   'field-edit-refused': z.object({ reason: z.enum(FIELD_EDIT_REASONS) }).strict(),
   // A command kind is a camelCase identifier; the bound is a frame's worth of caution, not a derived figure.
   'command-looped': z.object({ command: z.string().min(1).max(COMMAND_KIND_MAX_CHARS) }).strict(),
+  // A COMPUTER'S MEMORY, in bytes: bounded by what a 64-bit address space can name, which no reading reaches.
+  'out-of-memory': z
+    .object({
+      totalBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+      availableBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+      othersUsingMost: z.boolean(),
+    })
+    .strict(),
 } as const satisfies { readonly [C in keyof FailureDetails]: z.ZodType<FailureDetails[C]> };
 
 /** Compiles only when `Listed` is assignable to `Whole`: `engineChannels.ts`' `Covers`, for one check here. */

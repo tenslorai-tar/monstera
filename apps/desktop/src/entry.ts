@@ -85,6 +85,7 @@ import { nodeEditWatchSurface } from './nodeEditWatch.js';
 import { isPdfPath } from './openExternalEditor.js';
 import { windowsUserName } from './userName.js';
 import { createCannotStartNotice } from './componentNotice.js';
+import type { RendererWindow } from './memoryRelease.js';
 
 /**
  * The OS credential store, as the secrets and the saved conversations both take it. `safeStorage`
@@ -225,6 +226,25 @@ startShell(() => {
   };
   // THE ONE COULD-NOT-START TELLER, for the converters' platforms below and the hosts in the composition alike.
   const cannotStart = createCannotStartNotice(sendEvent);
+  // THE WINDOW'S MEMORY GIVEN BACK (ADR-0252), `sendEvent`'s reason: a `webContents` is Electron's. The application has
+  // one window; the first is it, and none is a closing application.
+  const rendererWindow: RendererWindow = {
+    // CHROMIUM'S OWN SIGNAL through the DevTools protocol, the one route Electron offers to it: attached for the one
+    // command and detached, so nothing stays attached to the person's window.
+    pressure: async () => {
+      const contents = BrowserWindow.getAllWindows()[0]?.webContents;
+      if (contents === undefined) return;
+      contents.debugger.attach('1.3');
+      try {
+        await contents.debugger.sendCommand('Memory.simulatePressureNotification', { level: 'critical' });
+      } finally {
+        contents.debugger.detach();
+      }
+    },
+    reload: () => {
+      BrowserWindow.getAllWindows()[0]?.webContents.reload();
+    },
+  };
 
   // X2T'S PLATFORM, `null` on Ghostscript's roads: no Win32 platform, no `x2t` handed down by the
   // launcher, or no container SID (ADR-0120).
@@ -611,6 +631,7 @@ startShell(() => {
     // first one — the window the ask came from — and to nothing at all when there is none,
     // which is a closing application rather than a state to report.
     sendEvent,
+    rendererWindow,
     cannotStart,
     share,
     crashReports,

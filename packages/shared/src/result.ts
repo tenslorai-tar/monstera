@@ -125,6 +125,12 @@ export interface FailureDetails {
   readonly 'field-edit-refused': { readonly reason: FieldEditReason };
   /** The kind of the command the engine stopped three times on, and which main will not send again (ADR-0221). */
   readonly 'command-looped': { readonly command: string };
+  /**
+   * The computer's memory when an engine host was killed at its memory budget (ADR-0253): its total and what was available
+   * then, in bytes, read by `main` at that moment. The person is told the total, and that other programs were using most
+   * of it only where the available figure was under the low line.
+   */
+  readonly 'out-of-memory': { readonly totalBytes: number; readonly availableBytes: number; readonly othersUsingMost: boolean };
 }
 
 /** The codes of `C` that carry no detail, as one member — or nothing, when every code of `C` carries one. */

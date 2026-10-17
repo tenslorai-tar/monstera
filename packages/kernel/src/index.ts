@@ -432,6 +432,8 @@ export {
   DocumentNotOpenError,
   type EngineSupervisor,
   DocumentService,
+  type HeldDocument,
+  documentNameOf,
   type DocumentTeardown,
   type IdentityReader,
   type OpenOutcome,

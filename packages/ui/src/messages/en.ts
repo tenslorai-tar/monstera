@@ -3456,6 +3456,11 @@ export const CLOUD_PROBLEM_NOTHING_PICKED = messageKey('cloud.problem.nothing-pi
 export const CLOUD_PROBLEM_FORBIDDEN = messageKey('cloud.problem.forbidden');
 export const CLOUD_PROBLEM_READ_ONLY = messageKey('cloud.problem.read-only');
 export const CLOUD_VIEW_ONLY_TITLE = messageKey('dialog.cloud-view-only.title');
+export const OUT_OF_MEMORY_TITLE = messageKey('dialog.out-of-memory.title');
+export const OUT_OF_MEMORY_OTHERS = messageKey('dialog.out-of-memory.others');
+export const OUT_OF_MEMORY_OWN = messageKey('dialog.out-of-memory.own');
+export const OUT_OF_MEMORY_TRY_AGAIN = messageKey('dialog.out-of-memory.try-again');
+export const MEMORY_LOW_NOTICE = messageKey('toast.memory-low');
 export const CLOUD_VIEW_ONLY_OPENED = messageKey('dialog.cloud-view-only.opened');
 export const CLOUD_VIEW_ONLY_READ_ONLY = messageKey('dialog.cloud-view-only.read-only');
 export const CLOUD_VIEW_ONLY_FORBIDDEN = messageKey('dialog.cloud-view-only.forbidden');
@@ -5372,6 +5377,17 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'The provider refused this for your account. The file may be shared with you as view-only. Signing in again will not change that.',
   [CLOUD_PROBLEMS['read-only']]: 'This file is shared with you as view-only, so it cannot be changed in cloud storage.',
   [CLOUD_VIEW_ONLY_TITLE]: 'Shared with you as view-only',
+  // THE OWNER'S WORDS (ADR-0253), with the computer's own figure. The first is said only where main read the computer as
+  // short when the failure happened; the second, the same sentence without the clause about other programs, otherwise.
+  [OUT_OF_MEMORY_TITLE]: 'Out of memory',
+  [OUT_OF_MEMORY_OTHERS]:
+    'Monstera ran out of memory. This computer has {gigabytes, number} GB of memory, and other programs were using most ' +
+    'of it. Your document is unchanged. Close some programs or tabs, then try again.',
+  [OUT_OF_MEMORY_OWN]:
+    'Monstera ran out of memory. This computer has {gigabytes, number} GB of memory. Your document is unchanged. Close ' +
+    'some programs or tabs, then try again.',
+  [OUT_OF_MEMORY_TRY_AGAIN]: 'Try again',
+  [MEMORY_LOW_NOTICE]: 'This computer is low on memory. Closing other programs will keep Monstera running smoothly.',
   [CLOUD_VIEW_ONLY_OPENED]:
     'This file is shared with you as view-only in {provider}, so Save back to cloud cannot change it. You can still edit it here, and save a copy to your own {provider}. The original stays as it is.',
   [CLOUD_VIEW_ONLY_READ_ONLY]:

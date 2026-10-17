@@ -340,7 +340,8 @@ export function addToDictionary(deps: SpellingDeps, store: DocumentStore): void 
  */
 function noticeFor(failure: Failure<FailureOf<Channels, 'document.execute'>>): MessageKey | undefined | false {
   if (failure.code === 'internal') return false;
-  if (failure.code === 'breaks-signatures') return undefined;
+  // A QUESTION THE DISPATCHER ASKED, or memory that ran out, told in its own window (ADR-0253): no sentence here.
+  if (failure.code === 'breaks-signatures' || failure.code === 'out-of-memory') return undefined;
   return problemMessage('detail' in failure ? failure : { code: failure.code });
 }
 

@@ -211,6 +211,9 @@ const OTHER_ANSWERS: Partial<Record<string, unknown>> = {
   // here reaches it; without an answer of the channel's own shape the envelope fails validation
   // and each case carries an unhandled rejection.
   'window.closeListening': { acknowledged: true },
+  // EVERY WINDOW ASKS AS IT LOADS why the last one ended and what main holds (ADR-0253): nothing, a fresh window.
+  'app.rendererEnded': { kind: 'none' },
+  'document.held': { documents: [] },
   // EVERY OPEN ASKS whether the file can be saved over (cloud-4 7b); a file a person just opened usually can.
   'document.fileAccess': { access: 'writable' },
   // AND THE OLD `.bak` FILES BESIDE IT ARE MOVED SILENTLY (ADR-0198): none moved, which is every case's position.
@@ -281,6 +284,9 @@ function commandCalls(calls: readonly string[]): readonly string[] {
   // (ADR-0110). What the indicator and the notice send is the update cases' subject below.
   // `document.openWaiting` joins them the same way: the shell asks main once what the launch named on its command line.
   // What those opens do is the command-line cases' subject below.
+  // `app.rendererEnded` and `document.held` join them the same way (ADR-0253): a window asks once as it loads whether
+  // its renderer ended and which documents main still holds. What it does with the answer is the reloaded-window cases'
+  // subject below.
   return calls.filter(
     (id) =>
       id !== 'document.recent' &&
@@ -290,7 +296,9 @@ function commandCalls(calls: readonly string[]): readonly string[] {
       id !== 'app.reviewPrompt' &&
       id !== 'crashReport.pending' &&
       id !== 'app.updateStatus' &&
-      id !== 'document.openWaiting',
+      id !== 'document.openWaiting' &&
+      id !== 'app.rendererEnded' &&
+      id !== 'document.held',
   );
 }
 
@@ -345,6 +353,8 @@ const OPEN_DOCUMENT_ANSWERS = {
   // `OTHER_ANSWERS`' reason: the shell announces its close subscription on every mount, and these
   // fixtures throw on a channel they have no answer for.
   'window.closeListening': { acknowledged: true },
+  'app.rendererEnded': { kind: 'none' as const },
+  'document.held': { documents: [] },
   'document.fileAccess': { access: 'writable' as const },
   'document.adoptOldBackups': { kind: 'adopted' as const, moved: 0 },
   'document.openWaiting': { opened: [] },
@@ -4845,5 +4855,58 @@ describe('the proof locale — every word on screen came through the catalogue (
     document.body.append(stray);
     expect(unmarked()).toContain('Plain English');
     stray.remove();
+  });
+});
+
+/**
+ * ADR-0253: a window reloaded after its renderer ended asks why, and takes back the documents main holds. CONTROL: a
+ * renderer that ended for any other reason is *Something went wrong* with main's reference, and its documents come back
+ * at once.
+ */
+describe('a window reloaded after its renderer ended', () => {
+  const HELD = {
+    documents: [{ docId: DOC, version: asDocVersion(3), byteLength: 1024, name: 'annual.pdf', savedVersion: asDocVersion(2) }],
+  };
+
+  it('out of memory: the memory window with the computer’s figure, and the document’s tab back, unsaved, after it', async () => {
+    const { client } = answeringClient({
+      ...OPEN_DOCUMENT_ANSWERS,
+      'app.rendererEnded': { kind: 'out-of-memory' as const, totalBytes: 8 * 1024 ** 3, availableBytes: 300 * 1024 ** 2, othersUsingMost: true },
+      'document.held': HELD,
+    });
+    render(<App client={client} settings={freshSettings()} />);
+    const window = await screen.findByRole('dialog', { name: 'Out of memory' });
+    expect(within(window).getByText(/This computer has 8 GB of memory, and other programs were using most of it\./u)).toBeTruthy();
+    // NOT YET: the documents come back when the person carries on.
+    expect(document.querySelector(`[data-tab-select="${DOC}"]`)).toBeNull();
+    await act(async () => {
+      fireEvent.click(within(window).getByRole('button', { name: 'Try again' }));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const tab = document.querySelector(`[data-tab-select="${DOC}"]`);
+    expect(tab?.textContent).toContain('annual.pdf');
+    // UNSAVED, from main's two numbers: version 3 against the 2 its file holds.
+    expect(document.querySelector(`[data-tab="${DOC}"]`)?.textContent).toMatch(/●|unsaved/iu);
+  });
+
+  it('CONTROL: any other ending is Something went wrong with its reference, and the document comes back at once', async () => {
+    const answers: Record<string, unknown> = { ...OPEN_DOCUMENT_ANSWERS, 'document.held': HELD };
+    const client = createClient(channels, (id) => {
+      if (id === 'app.rendererEnded') return Promise.resolve(err({ code: 'internal', incident: 'i9' }));
+      const answer = answers[id];
+      if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
+      return Promise.resolve(ok(answer));
+    });
+    render(<App client={client} settings={freshSettings()} />);
+    const problem = await screen.findByRole('dialog', { name: 'That could not be done' });
+    expect(within(problem).getByText('i9')).toBeTruthy();
+    expect(screen.queryByRole('dialog', { name: 'Out of memory' })).toBeNull();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(document.querySelector(`[data-tab-select="${DOC}"]`)?.textContent).toContain('annual.pdf');
   });
 });

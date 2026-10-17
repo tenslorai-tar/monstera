@@ -82,6 +82,7 @@ import type { DialogReports } from '../registries/dialogs.js';
 import { type EditableObject, OBJECT_FILTERS, type ObjectFilter, type PageObjects } from '../objectEditing.js';
 import { BOXED_CHARACTERS_DIALOG_ID } from '../dialogs/boxedCharacters.js';
 import { UNSEALED_COPIES_DIALOG_ID } from '../dialogs/unsealedCopies.js';
+import { OUT_OF_MEMORY_DIALOG, OUT_OF_MEMORY_DIALOG_ID, OUT_OF_MEMORY_RESULT } from '../dialogs/outOfMemory.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { IMPORT_FORM_DATA_PROBLEM_DIALOG_ID } from '../dialogs/importFormDataProblem.js';
 import { IMPORT_FORM_DATA_RESULT_DIALOG_ID } from '../dialogs/importFormDataResult.js';
@@ -650,6 +651,17 @@ export interface WritesItsOwnFile extends WritesAFile {
  * @param failure exactly what the client answered — narrowed by the boundary, so
  *   an `incident` exists precisely when the code is `internal`.
  */
+/**
+ * The memory window for a failure proven to be memory running out (ADR-0253): `true` where the person asked to try
+ * again, `false` for a dismissal. Its own window, never *Something went wrong*, which stays for every other failure.
+ */
+export async function triedAgainAfterMemory(
+  deps: Pick<DocumentCommandDeps, 'ask'>,
+  detail: z.infer<typeof OUT_OF_MEMORY_DIALOG.props>,
+): Promise<boolean> {
+  return OUT_OF_MEMORY_RESULT.safeParse(await deps.ask(OUT_OF_MEMORY_DIALOG_ID, detail)).success;
+}
+
 export function reportProblem(
   deps: Pick<DocumentCommandDeps, 'ask'>,
   failure: z.infer<typeof COMMAND_PROBLEM_DIALOG.props>,
@@ -860,6 +872,7 @@ async function sendInLane(
   if (sentAt !== undefined) options.sentAt?.(sentAt);
   const joins = options.joinsStep === undefined ? {} : { joinsStep: options.joinsStep };
   let answer = await deps.client['document.execute']({ docId, command: sent, ...joins });
+  let agreed = false;
 
   // A SIGNED DOCUMENT IS ASKED ABOUT BEFORE IT CHANGES (ADR-0149): main answered without touching it. *Change this
   // document* sends the same command again, stamp and all, agreed; *Work on a copy* sends it to a copy; Cancel, or a
@@ -869,11 +882,22 @@ async function sendInLane(
       ? SIGNED_EDIT_RESULT.safeParse(await deps.ask(SIGNED_EDIT_DIALOG_ID, {}))
       : ({ success: true, data: 'this' } as const);
     if (asked.success && asked.data === 'this') {
+      agreed = true;
       answer = await deps.client['document.execute']({ docId, command: sent, breakSignatures: true, ...joins });
     } else {
       if (!asked.success || !(await editOnCopy(deps, docId, sent))) options.keep?.(answer.error);
       return false;
     }
+  }
+
+  // MEMORY RAN OUT, PROVEN (ADR-0253): the memory window says so with the computer's figure, and *Try again* sends the
+  // same command again, as agreed as it was; a dismissal leaves the document as it was. The window is the report.
+  while (!answer.ok && answer.error.code === 'out-of-memory') {
+    if (!(await triedAgainAfterMemory(deps, answer.error.detail))) {
+      options.keep?.(answer.error);
+      return false;
+    }
+    answer = await deps.client['document.execute']({ docId, command: sent, ...(agreed ? { breakSignatures: true } : {}), ...joins });
   }
 
   // A DECLARED FAILURE IS AN OUTCOME AND CHANGES NOTHING — see
@@ -884,6 +908,8 @@ async function sendInLane(
     // and not a refusal a person could act on.
     const failure = answer.error;
     if (failure.code === 'breaks-signatures') throw new Error('main asked again about an edit sent agreed');
+    // NEVER HERE: the loop above answers every `out-of-memory` with its own window. Named so the type says so.
+    if (failure.code === 'out-of-memory') return false;
     // REBUILT ONLY TO DROP THAT CODE FROM THE TYPE, and a failure that carries something passes whole so it reaches the
     // dialog: `internal` its incident, a code with a declared detail its detail (ADR-0169). Asked of the failure rather
     // than by naming the codes, so a code that gains a detail needs no edit here.
@@ -2676,9 +2702,14 @@ export function undoCommand(deps: DocumentCommandDeps): UiCommand {
     run: async (context): Promise<void> => {
       const docId = context.docId;
       if (docId === undefined) return;
-      const answer = await countedAs('writes', () => deps.client['document.undo']({ docId }));
+      let answer = await countedAs('writes', () => deps.client['document.undo']({ docId }));
+      // MEMORY RAN OUT, PROVEN (ADR-0253): the memory window, and *Try again* asks for the same undo again.
+      while (!answer.ok && answer.error.code === 'out-of-memory') {
+        if (!(await triedAgainAfterMemory(deps, answer.error.detail))) return;
+        answer = await countedAs('writes', () => deps.client['document.undo']({ docId }));
+      }
       if (!answer.ok) {
-        reportProblem(deps, answer.error);
+        if (answer.error.code !== 'out-of-memory') reportProblem(deps, answer.error);
         return;
       }
       if (answer.value.kind !== 'undone') return;
@@ -2715,9 +2746,14 @@ export function redoCommand(deps: DocumentCommandDeps): UiCommand {
     run: async (context): Promise<void> => {
       const docId = context.docId;
       if (docId === undefined) return;
-      const answer = await countedAs('writes', () => deps.client['document.redo']({ docId }));
+      let answer = await countedAs('writes', () => deps.client['document.redo']({ docId }));
+      // MEMORY RAN OUT, PROVEN (ADR-0253): the memory window, and *Try again* asks for the same redo again.
+      while (!answer.ok && answer.error.code === 'out-of-memory') {
+        if (!(await triedAgainAfterMemory(deps, answer.error.detail))) return;
+        answer = await countedAs('writes', () => deps.client['document.redo']({ docId }));
+      }
       if (!answer.ok) {
-        reportProblem(deps, answer.error);
+        if (answer.error.code !== 'out-of-memory') reportProblem(deps, answer.error);
         return;
       }
       if (answer.value.kind !== 'redone') return;
@@ -4850,8 +4886,9 @@ async function sendBlockEdit(
     {
       keep: (error) => {
         // A FAILURE THAT CARRIES SOMETHING passes whole, so the editor can name the characters or show the reference.
+        // HELD, too, for memory that ran out (ADR-0253): the person was told in its own window and chose not to try again.
         kept.outcome =
-          error.code === 'breaks-signatures'
+          error.code === 'breaks-signatures' || error.code === 'out-of-memory'
             ? 'held'
             : { refused: 'detail' in error || error.code === 'internal' ? error : { code: error.code } };
         return true;

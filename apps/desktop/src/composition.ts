@@ -208,6 +208,8 @@ import { saveNamesFor } from './backupCopies.js';
 import { fileAnswersFor } from './hostFileAnswers.js';
 import { createBackupProvenance } from './backupLedger.js';
 import { NO_REVIEW_PROMPT, createEngagement, reviewPrompt } from './engagement.js';
+import { type RendererWindow, createMemoryRelease } from './memoryRelease.js';
+import { createRendererEnding } from './rendererEnding.js';
 import { createUpdateCheck, manifestTransport, UPDATE_PROVIDERS } from './updateCheck.js';
 import { createLaunchDocuments } from './launchDocuments.js';
 import {
@@ -712,6 +714,11 @@ export interface ShellComposition {
    * the pickers' reason: a `webContents` is Electron's.
    */
   readonly sendEvent?: <K extends EventId>(event: K, payload: EventPayload<K>) => void;
+  /**
+   * The window, for giving its renderer's memory back (ADR-0252): Chromium's pressure signal and a reload. `undefined`
+   * where there is no window, which sends nothing and reloads nothing. `entry.ts` supplies it, `sendEvent`'s reason.
+   */
+  readonly rendererWindow?: RendererWindow;
   /** The process's one could-not-start teller (`componentNotice.ts`); built from `sendEvent` where absent. */
   readonly cannotStart?: (component: NativeComponentId) => void;
   /** The recent-files list. Required for `settings`' reason. */
@@ -941,6 +948,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     regionalLocale,
     physicalMemory,
     sendEvent,
+    rendererWindow,
     cannotStart: shellCannotStart,
     recent,
     recentRoots = [],
@@ -1006,6 +1014,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // the service before this document's lane drained: a count read at removal would stop a host its own queued work
       // still needed. The next document builds a new host, as the first one did.
       await stopIdleHosts();
+      // AND TELLS THE RENDERER MEMORY IS SHORT (ADR-0252), read by the same count for the same reason.
+      if (documents.size === 0) memoryRelease.lastClosed();
     },
     // INVARIANT 22'S CAPABILITY, wired so it exists rather than so it is
     // called. §2 leaves the moment open and requires only that the operation be
@@ -1051,6 +1061,19 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
   // a different one on the returned `failures` would put half the lifecycle in
   // the log and half on a handle nobody is reading.
   const failures = log?.failures ?? reportShellFailure;
+  /** The window's memory given back with no document open (ADR-0252): the signal at the last close, the reload when idle. */
+  const memoryRelease = createMemoryRelease(
+    documents,
+    rendererWindow ?? null,
+    (detail) => {
+      failures({ event: 'memory-release', detail });
+    },
+    (run) => {
+      setImmediate(run);
+    },
+  );
+  /** Why the window's last renderer ended, for the one that replaces it (ADR-0253). */
+  const rendererEnding = createRendererEnding(memoryPressure);
   /** The documents the person has been told, once, that their permissions password was replaced (ADR-0220). */
   const toldPermissionPasswordReplaced = new Set<DocId>();
 
@@ -1142,6 +1165,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
   const stopWatchingMemory = watchMemoryPressure(
     memoryPressure,
     async () => {
+      // THE PERSON IS TOLD, once per low spell (ADR-0253): the watch calls this once per spell, so the notice is too.
+      sendEvent?.('app.memory-low', {});
       const [pdfium, compose] = await Promise.all([pdfiumHost?.retireIfIdle() ?? false, composeHost?.retireIfIdle() ?? false]);
       failures({
         event: 'memory-low',
@@ -2061,6 +2086,10 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       recentPictures,
       // THE KERNEL'S ONE RULE for *is there a file here*, the open's own, so the list and the open agree (ADR-0143).
       fileIdentity: readFileIdentity,
+      // AN IDLE WINDOW WITH NO DOCUMENT GIVES ITS MEMORY BACK (ADR-0252), decided against `main`'s own documents.
+      memoryRelease,
+      // WHY THE LAST RENDERER ENDED, told once to the one that replaced it (ADR-0253).
+      rendererEnding,
       // THE STORE RATING PROMPT (E3). The Store build opens the Store application's own review page; every other
       // build opens the web listing, through the one HTTPS-only route pages already take. No record, no prompt.
       reviewPrompt:
@@ -2223,6 +2252,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     attachWindow: (window) => {
       shellWindow = window;
     },
+    rendererEnded: rendererEnding.ended,
 
     /**
      * DOCUMENTS FIRST, THEN THE HOST, and the order is the whole of it.

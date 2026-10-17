@@ -1596,6 +1596,8 @@ describe('the composition root, with BOTH engine hosts', () => {
     const written = vi.spyOn(process.stderr, 'write');
     const logged = (): string[] =>
       written.mock.calls.map(([line]) => String(line)).filter((line) => line.startsWith('MONSTERA_SHELL_FAILURE memory-low'));
+    // WHAT THE PERSON IS TOLD (ADR-0253): every event main pushes, so a notice per reading and none at all both show.
+    const pushed: string[] = [];
     const { handlers } = createShellDependencies({
       ...harnessSurfaces('the composition-host test'),
       appInfo,
@@ -1603,6 +1605,9 @@ describe('the composition root, with BOTH engine hosts', () => {
       enginePlatform: mupdf.platform,
       pdfiumPlatform: second.platform,
       memoryPressure: { intervalMs: 20, belowFraction: 0.1, read: () => ({ available, total: 100 }) },
+      sendEvent: (event) => {
+        pushed.push(event);
+      },
     });
     const opened = await handlers['document.open']({});
     if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
@@ -1614,9 +1619,10 @@ describe('the composition root, with BOTH engine hosts', () => {
       });
     const first = await edit(opened.value.version);
     if (!first.ok) throw new Error(JSON.stringify(first));
-    // CONTROL: readings above the line stop nothing.
+    // CONTROL: readings above the line stop nothing, and tell the person nothing.
     await new Promise((resolve) => setTimeout(resolve, 200));
     expect(spy(second.harness.calls, 'host.terminate')).toBe(0);
+    expect(pushed.filter((event) => event === 'app.memory-low')).toStrictEqual([]);
 
     available = 5;
     await vi.waitFor(() => {
@@ -1628,6 +1634,9 @@ describe('the composition root, with BOTH engine hosts', () => {
         'MONSTERA_SHELL_FAILURE memory-low: available memory fell below 10%: PDFium host stopped, compose host kept\n',
       ]);
     });
+    // ONE NOTICE FOR THE SPELL, though the readings stayed low for several intervals since.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(pushed.filter((event) => event === 'app.memory-low')).toStrictEqual(['app.memory-low']);
     // THE DOCUMENT IS AS IT WAS: the next edit lands on the version the first one made.
     const next = await edit(first.value.version);
     expect(next.ok, JSON.stringify(next)).toBe(true);

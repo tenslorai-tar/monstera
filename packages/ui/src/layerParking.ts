@@ -16,8 +16,11 @@ export const PARK_AFTER_MS = 60_000;
 export interface ParkingTab {
   readonly docId: DocId;
   readonly version: DocVersion;
-  /** The version it opened at; a document whose version has moved has history, and never parks. */
-  readonly openedVersion: DocVersion;
+  /**
+   * The version it opened at; a document whose version has moved has history, and never parks. `undefined` where this
+   * window did not watch it open — a document held across a reload — whose history is unknown here, so it never parks.
+   */
+  readonly openedVersion: DocVersion | undefined;
 }
 
 /** What the rule reads besides the tabs. */

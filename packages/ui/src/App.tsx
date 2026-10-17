@@ -196,6 +196,7 @@ import type { SearchHighlight } from './searchHighlight.js';
 import { type RunningTask, trackerOver } from './runningTask.js';
 import { offerSecurityNotice } from './updateStatus.js';
 import { type BusyNote, busyOver } from './busyNote.js';
+import { keepStartScroll, shouldAskRelease, takeStartScroll } from './idleRelease.js';
 import { inFlightNow } from './inFlight.js';
 import { toPark } from './layerParking.js';
 import { checkSpellingCommand } from './commands/checkSpelling.js';
@@ -238,6 +239,7 @@ import { AI_SETUP_AT_START_SETTING } from './settings/ai.js';
 import { compareDocumentsCommand } from './commands/compareDocuments.js';
 import { translatePageCommand } from './commands/translatePage.js';
 import { COMMAND_PROBLEM_DIALOG_ID } from './dialogs/commandProblem.js';
+import { OUT_OF_MEMORY_DIALOG_ID } from './dialogs/outOfMemory.js';
 import { OPEN_PROBLEM_DIALOG_ID } from './dialogs/openProblem.js';
 import { COMPONENT_CANNOT_START_DIALOG_ID } from './dialogs/componentCannotStart.js';
 import { PERMISSION_PASSWORD_REPLACED_DIALOG_ID } from './dialogs/permissionPasswordReplaced.js';
@@ -289,6 +291,7 @@ import {
   FORM_FIELD_REQUIRED_EMPTY,
   FORM_FIELD_REQUIRED_LEFT,
   LINK_ADDED,
+  MEMORY_LOW_NOTICE,
   SPLIT_SECOND_LABEL,
   TOAST_DISMISS,
   TOAST_TAB_ORDER_GIVEN,
@@ -550,7 +553,7 @@ interface OpenDocument {
    * The version it opened at, kept: a layer behind parks only while its document is still at it, since a moved version
    * means a command applied and so an undo history and perhaps an unsaved change (ADR-0129, `layerParking.ts`).
    */
-  readonly openedVersion: DocVersion;
+  readonly openedVersion: DocVersion | undefined;
   /**
    * When a save last landed IN THIS WINDOW, or `undefined` before the first.
    *
@@ -627,6 +630,24 @@ const NONE_PARKED: ReadonlySet<DocId> = new Set();
  * between 60 and 65 s behind, and nothing about parking needs it sooner.
  */
 const PARKING_CHECK_MS = 5_000;
+
+/** How often an idle window with no document checks `idleRelease.ts`' minute (ADR-0252): a check, not the minute. */
+const RELEASE_CHECK_MS = 5_000;
+
+/** How long the start area waits for its content to hold the offset a release kept, before it stops trying. */
+const START_SCROLL_WAIT_MS = 5_000;
+
+/**
+ * The window's `sessionStorage`, or `undefined` where reaching it throws (a private window, blocked site data): the kept
+ * offset is a convenience, and a start screen without it opens at its top, as on any other start.
+ */
+function sessionStorageOrNone(): Storage | undefined {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return undefined;
+  }
+}
 
 /** No pages ticked — one stable empty list, so a context memo does not rebuild for a new `[]` each render. */
 const NO_PAGES: readonly number[] = [];
@@ -917,6 +938,75 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
   // way it captures the client — composition, not a global.
   const dialogs = useMemo(() => new DialogRegistry(APPLICATION_DIALOGS), []);
   const { open: openDialog, ask, close, resolve: resolveDialog, report: reportDialog } = useDialogHost(dialogs);
+
+  /**
+   * AN IDLE WINDOW WITH NO DOCUMENT GIVES ITS MEMORY BACK (ADR-0252): after a quiet minute with no document, no dialog,
+   * nothing in flight and no input, this asks `main`, which reloads the window if a document was opened since it last
+   * loaded. The minute starts again on any input and whenever a condition stops holding; the window asks once until it
+   * holds a document again. Before asking, the start area's offset is kept for the page that loads next.
+   */
+  const startArea = useRef<HTMLDivElement | null>(null);
+  /**
+   * The start area, as it mounts: held for the offset kept before a release, and given back the offset the last page
+   * kept, if any. PUT BACK AS ITS CONTENT ARRIVES, since the recent list is `main`'s answer and a scroller shorter than
+   * the offset clamps it: each change below it tries again, until the offset holds or `START_SCROLL_WAIT_MS` passes.
+   */
+  const placeStartArea = useCallback((element: HTMLDivElement | null): void => {
+    startArea.current = element;
+    if (element === null) return;
+    const kept = takeStartScroll(sessionStorageOrNone());
+    if (kept === undefined) return;
+    const place = (): boolean => {
+      element.scrollTop = kept;
+      return Math.abs(element.scrollTop - kept) < 1;
+    };
+    if (place()) return;
+    const watch = new MutationObserver(() => {
+      if (place()) watch.disconnect();
+    });
+    watch.observe(element, { childList: true, subtree: true });
+    setTimeout(() => {
+      watch.disconnect();
+    }, START_SCROLL_WAIT_MS);
+  }, []);
+  // SET ON MOUNT by the effect below, which runs then: a render reads no clock.
+  const quietSince = useRef(0);
+  const releaseAsked = useRef(false);
+  const dialogShown = openDialog !== undefined;
+  useEffect(() => {
+    quietSince.current = Date.now();
+    if (tabs.length > 0) releaseAsked.current = false;
+  }, [dialogShown, tabs.length]);
+  useEffect(() => {
+    const heard = (): void => {
+      quietSince.current = Date.now();
+    };
+    const kinds = ['pointerdown', 'pointermove', 'keydown', 'wheel'] as const;
+    for (const kind of kinds) window.addEventListener(kind, heard, { passive: true, capture: true });
+    return (): void => {
+      for (const kind of kinds) window.removeEventListener(kind, heard, { capture: true });
+    };
+  }, []);
+  useEffect(() => {
+    if (tabs.length > 0) return;
+    const timer = setInterval(() => {
+      const ask = shouldAskRelease({
+        documents: tabs.length,
+        dialogOpen: dialogShown,
+        inFlight: inFlightNow(),
+        quietSince: quietSince.current,
+        asked: releaseAsked.current,
+        now: Date.now(),
+      });
+      if (!ask) return;
+      releaseAsked.current = true;
+      keepStartScroll(sessionStorageOrNone(), startArea.current?.scrollTop ?? 0);
+      void client['app.releaseMemory']({});
+    }, RELEASE_CHECK_MS);
+    return (): void => {
+      clearInterval(timer);
+    };
+  }, [client, dialogShown, tabs.length]);
   // ONE PER WINDOW, as the side panels are the window's (ADR-0146): whether each is on screen, and the one writer of
   // both open settings. Every control that shows or shuts a panel takes it.
   const presence = useMemo(() => new PanelPresence(settings), [settings]);
@@ -1048,7 +1138,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
     // the saved state here. A command has nothing to say about it: opening a document is the one
     // moment its content and its file are the same by construction, so the seed is a fact about
     // the event and not a field anyone could get wrong at a call site.
-    (document: OpenedDocument): void => {
+    (document: OpenedDocument, held?: { readonly savedVersion: DocVersion }): void => {
       // THE STORE IS MINTED HERE, beside the tab, because the two have the same
       // lifetime and `stores.open` refuses a second one for a document that
       // already has it. Guarded by the same `get`-misses read the render uses,
@@ -1061,13 +1151,60 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         current.some((tab) => tab.docId === document.docId)
           ? current
           : // THE FILE HOLDS THIS VERSION, and `savedAt` stays undefined: this window has not
-            // watched a save, so the bar reads "Saved" with no time rather than claiming one.
-            [...current, { ...document, savedVersion: document.version, openedVersion: document.version, savedAt: undefined }],
+            // watched a save, so the bar reads "Saved" with no time rather than claiming one. A document `main` HELD
+            // across a reload of this window says the version its file holds instead (`document.held`, ADR-0253), and
+            // its history before the reload is not this window's to know, so it is never parked (`layerParking.ts`).
+            [
+              ...current,
+              {
+                ...document,
+                savedVersion: held?.savedVersion ?? document.version,
+                openedVersion: held === undefined ? document.version : undefined,
+                savedAt: undefined,
+              },
+            ],
       );
       activate(document.docId);
     },
     [activate, startingZoom, stores],
   );
+
+  /**
+   * A WINDOW THAT HAS JUST LOADED asks why the last one ended and takes back what `main` holds (ADR-0253). Once, on mount:
+   * a renderer that ended out of memory is said to have, with the computer's figure, and its documents come back when
+   * the person carries on; any other ending is *Something went wrong* with the reference `main` recorded, and the
+   * documents come back at once. A window that loaded for any other reason hears `none`, and `main` holds no document
+   * for it unless one was open across a reload, which comes back the same way.
+   */
+  const tookBack = useRef(false);
+  // THE CALLBACKS AS THEY ARE WHEN THE ANSWERS ARRIVE, not as they were when asked: the work below outlives renders.
+  const takeBackWith = useRef({ ask, opened });
+  useEffect(() => {
+    takeBackWith.current = { ask, opened };
+  }, [ask, opened]);
+  useEffect(() => {
+    // ONCE, as the window loads, and NOT CANCELLED by a later render: it is the window's work, and a cancelled take-back
+    // would never run again under this guard, leaving the documents main holds with no tab.
+    if (tookBack.current) return;
+    tookBack.current = true;
+    void (async (): Promise<void> => {
+      const ended = await client['app.rendererEnded']({});
+      if (!ended.ok) void takeBackWith.current.ask(COMMAND_PROBLEM_DIALOG_ID, ended.error);
+      else if (ended.value.kind === 'out-of-memory') {
+        await takeBackWith.current.ask(OUT_OF_MEMORY_DIALOG_ID, {
+          totalBytes: ended.value.totalBytes,
+          availableBytes: ended.value.availableBytes,
+          othersUsingMost: ended.value.othersUsingMost,
+        });
+      }
+      const held = await client['document.held']({});
+      if (!held.ok) return;
+      for (const document of held.value.documents) {
+        const { savedVersion, ...openedDocument } = document;
+        takeBackWith.current.opened(openedDocument, { savedVersion });
+      }
+    })();
+  }, [client]);
 
   // AN EDIT THAT WOULD BREAK A SIGNATURE (ADR-0149): whether to ask, by the save's switch, and how the copy it can be
   // made on opens. One object, stable while the store and the opener are, so every command bag takes the same one.
@@ -3588,6 +3725,15 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       }),
     [ask, subscribe],
   );
+  // THE COMPUTER IS LOW ON MEMORY (ADR-0253): one calm notice, pushed by main once per low spell. The `problem` kind is
+  // the toast's untimed one, in the text's own colour with no red, so it stays until read.
+  useEffect(
+    () =>
+      subscribe('app.memory-low', () => {
+        toast('problem', MEMORY_LOW_NOTICE);
+      }),
+    [subscribe, toast],
+  );
   // A PART OF MONSTERA THAT COULD NOT START (Part 0.1): pushed by main, once per part per run, so each arrival is shown.
   useEffect(
     () =>
@@ -4884,7 +5030,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       {open === undefined ? (
         // ONE GRID AREA for the start screen and its recent list, spanning the rail's
         // column: no rail is drawn with no document (`Ribbon` renders nothing).
-        <div className="m-start-area">
+        <div className="m-start-area" ref={placeStartArea}>
           <StartScreen
             registry={registry}
             context={context}

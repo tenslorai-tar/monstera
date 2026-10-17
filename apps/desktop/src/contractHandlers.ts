@@ -109,6 +109,9 @@ import type { HeldPicture } from './heldPicture.js';
 import type { PersonalLibrary } from './personalLibrary.js';
 import { type SignaturePictureSource, pickSignaturePicture } from './signaturePicture.js';
 import type { ReviewPrompt } from './engagement.js';
+import type { MemoryRelease } from './memoryRelease.js';
+import { outOfMemoryOf } from './outOfMemory.js';
+import type { RendererEnding } from './rendererEnding.js';
 import type { ComponentStatus } from './componentStatus.js';
 import type { RecentFiles } from './recentFiles.js';
 import type { SecretStoreSurface } from './secretStore.js';
@@ -317,6 +320,10 @@ export function createContractHandlers(deps: {
   };
   /** The Store rating prompt (E3). REQUIRED, for `recentRoots`' reason. */
   readonly reviewPrompt: ReviewPrompt;
+  /** Whether an idle window with no document may be reloaded to give its memory back (ADR-0252). REQUIRED, as above. */
+  readonly memoryRelease: Pick<MemoryRelease, 'release'>;
+  /** Why the window's last renderer ended, told once to the one that replaced it (ADR-0253). REQUIRED, as above. */
+  readonly rendererEnding: Pick<RendererEnding, 'take'>;
   readonly settings: SettingsSurface;
   /**
    * Where a `secret` setting lives, which is not the settings file.
@@ -506,6 +513,11 @@ export function createContractHandlers(deps: {
     // THE LIST'S OWN *Clear list*: the store empties itself and tells the pictures which paths left.
     'document.clearRecent': () => Promise.resolve(ok({ cleared: deps.recent.clear() })),
     // THE STORE RATING PROMPT (E3): main's record decides, and an answer is recorded there alone.
+    'app.releaseMemory': () => Promise.resolve(ok({ kind: deps.memoryRelease.release() })),
+    // A DEFECT THROWS (`RendererEnded`), so the boundary records it in the one incident log and answers `internal` with
+    // the reference that names it; memory, proven, is answered with the figures (ADR-0253).
+    'app.rendererEnded': () => Promise.resolve(ok(deps.rendererEnding.take())),
+    'document.held': async () => ok({ documents: [...(await deps.documents.held())] }),
     'app.reviewPrompt': () => Promise.resolve(ok({ due: deps.reviewPrompt.due() })),
     'app.review': async ({ action }) => ok({ opened: await deps.reviewPrompt.answer(action) }),
     'document.openRecent': openRecentHandler(deps),
@@ -3476,6 +3488,9 @@ function undoHandler(commands: DocumentCommands): ContractHandlers['document.und
       // same way, and the person reads the same sentence.
       const refusal = rewriteRefusalOf(thrown);
       if (refusal !== undefined) return err(refusal);
+      // A MEMORY KILL, `document.execute`'s one rule (ADR-0253).
+      const memory = outOfMemoryOf(thrown);
+      if (memory !== undefined) return err(memory);
       throw thrown;
     }
   };
@@ -3503,6 +3518,8 @@ function redoHandler(commands: DocumentCommands): ContractHandlers['document.red
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
       const refusal = rewriteRefusalOf(thrown);
       if (refusal !== undefined) return err(refusal);
+      const memory = outOfMemoryOf(thrown);
+      if (memory !== undefined) return err(memory);
       throw thrown;
     }
   };

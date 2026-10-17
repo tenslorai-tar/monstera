@@ -103,6 +103,9 @@ const handlers: ContractHandlers = {
   // separates them is the unusual one.
   'document.recentPreview': () => Promise.resolve(ok({ kind: 'picture' as const, jpeg: Uint8Array.of(0xff, 0xd8) })),
   'document.clearRecent': () => Promise.resolve(ok({ cleared: 2 })),
+  'app.releaseMemory': () => Promise.resolve(ok({ kind: 'nothing-to-release' as const })),
+  'app.rendererEnded': () => Promise.resolve(ok({ kind: 'none' as const })),
+  'document.held': () => Promise.resolve(ok({ documents: [] })),
   'app.reviewPrompt': () => Promise.resolve(ok({ due: true })),
   'app.review': () => Promise.resolve(ok({ opened: true })),
   'document.recent': () =>

@@ -7,6 +7,7 @@ import { CLOSE_UNSAVED_DIALOG } from '../dialogs/closeUnsaved.js';
 import { CLOUD_OUTCOME_DIALOG } from '../dialogs/cloudOutcome.js';
 import { CLOUD_DIALOG } from '../dialogs/cloudStorage.js';
 import { CLOUD_VIEW_ONLY_DIALOG } from '../dialogs/cloudViewOnly.js';
+import { OUT_OF_MEMORY_DIALOG } from '../dialogs/outOfMemory.js';
 import { COMMAND_PROBLEM_DIALOG } from '../dialogs/commandProblem.js';
 import { COMPONENTS_DIALOG } from '../dialogs/components.js';
 import { CROP_PAGES_DIALOG } from '../dialogs/cropPages.js';
@@ -124,6 +125,7 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   CLOUD_DIALOG,
   CLOUD_OUTCOME_DIALOG,
   CLOUD_VIEW_ONLY_DIALOG,
+  OUT_OF_MEMORY_DIALOG,
   KEYBOARD_SHORTCUTS_DIALOG,
   HELP_DIALOG,
   WORD_COUNT_DIALOG,

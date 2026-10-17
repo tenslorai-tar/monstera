@@ -40,6 +40,11 @@ describe('which layers behind park', () => {
     expect(toPark([clean(A), edited, clean(C)], state())).toStrictEqual([C]);
   });
 
+  it('CONTROL: a document held across a reload, whose history this window did not watch, never parks', () => {
+    const held: ParkingTab = { docId: B, version: asDocVersion(1), openedVersion: undefined };
+    expect(toPark([clean(A), held, clean(C)], state())).toStrictEqual([C]);
+  });
+
   it('CONTROL: nothing parks while a write or work is in flight', () => {
     expect(toPark([clean(A), clean(B)], state({ inFlight: 1 }))).toStrictEqual([]);
   });

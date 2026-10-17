@@ -32,7 +32,12 @@ const REPORTED = ['document.execute', 'document.undo', 'document.redo', 'documen
  * and resends (ADR-0149), and its type stops it handing them to `reportProblem`. Named here so the exclusion is a list
  * a reader can see, and checked below so it cannot outlive its code or quietly become a sentence.
  */
-const ASKED: ReadonlySet<string> = new Set(['breaks-signatures']);
+const ASKED: ReadonlySet<string> = new Set([
+  'breaks-signatures',
+  // MEMORY RAN OUT, PROVEN (ADR-0253): its own window with the computer's figure and *Try again*, never "that could not
+  // be done", which would tell a person their document refused them.
+  'out-of-memory',
+]);
 
 /**
  * A detail for each code that carries one (ADR-0169), as the failure arrives with it. Keyed by `FailureDetails`, so a
@@ -43,6 +48,7 @@ const SAMPLE_DETAIL: { readonly [C in keyof FailureDetails]: FailureDetails[C] }
   'edit-refused': { step: 'read-back', engineError: 0 },
   'field-edit-refused': { reason: 'encrypted' },
   'command-looped': { command: 'watermarkPages' },
+  'out-of-memory': { totalBytes: 8 * 1024 ** 3, availableBytes: 400 * 1024 ** 2, othersUsingMost: true },
 };
 
 /** A declared failure as it would arrive: the code, and its detail where it declares one. */

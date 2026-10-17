@@ -21,6 +21,8 @@ import { createRecentFiles } from './recentFiles.js';
 import { NO_RECENT_PICTURES } from './recentPictures.js';
 import { unusedLibrarySurface } from './personalLibrary.js';
 import { NO_REVIEW_PROMPT } from './engagement.js';
+import { NO_MEMORY_RELEASE } from './memoryRelease.js';
+import { NO_RENDERER_ENDING } from './rendererEnding.js';
 import { createEphemeralSecrets } from './secretStore.js';
 import { createEphemeralSettings } from './settingsFile.js';
 
@@ -163,6 +165,8 @@ function handlers(): ReturnType<typeof createContractHandlers> {
     recentRoots: [],
     recentPictures: NO_RECENT_PICTURES, fileIdentity: readFileIdentity, library: unusedLibrarySurface(),
     reviewPrompt: NO_REVIEW_PROMPT,
+    memoryRelease: NO_MEMORY_RELEASE,
+    rendererEnding: NO_RENDERER_ENDING,
     settings: createEphemeralSettings(),
     secrets: createEphemeralSecrets(),
     chatHistory: noChatHistory(),
@@ -309,6 +313,9 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'library.remove': 'answers a boolean',
   // THE RATING PROMPT (E3): booleans and a three-way choice, about the application and never a document.
   'app.reviewPrompt': 'takes nothing and answers a boolean',
+  'app.releaseMemory': 'takes nothing and answers one of three words',
+  'app.rendererEnded': 'takes nothing and answers a word, or three numbers about the computer',
+  'document.held': 'answers one short entry per open document, bounded at a thousand, never a document’s bytes',
   'app.review': 'takes one of three answers and answers a boolean',
   // THE PRELOAD'S CHANNEL (ADR-0099): a path bounded by Win32's own limit in, `document.open`'s outcomes out.
   'document.openDropped': 'takes one bounded path and answers what document.open answers',

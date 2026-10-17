@@ -11,6 +11,8 @@ import { NO_RECENT_PICTURES } from './recentPictures.js';
 import { NO_ATTACHMENTS } from './askAttachments.js';
 import { unusedLibrarySurface } from './personalLibrary.js';
 import { NO_REVIEW_PROMPT } from './engagement.js';
+import { NO_MEMORY_RELEASE } from './memoryRelease.js';
+import { NO_RENDERER_ENDING } from './rendererEnding.js';
 import {
   type IpcHandleTarget,
   type IpcSenderCheck,
@@ -136,6 +138,8 @@ function handlers(regionalLocale?: () => string, physicalMemory?: () => number) 
     },
     library: unusedLibrarySurface(),
     reviewPrompt: NO_REVIEW_PROMPT,
+    memoryRelease: NO_MEMORY_RELEASE,
+    rendererEnding: NO_RENDERER_ENDING,
     settings: {
       read: () => {
         throw new Error('registration cases must not reach the settings surface');

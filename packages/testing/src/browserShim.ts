@@ -2756,6 +2756,11 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     },
     // THE RATING PROMPT (E3): never due unless a fixture says so, so no screen that is about something else
     // carries the banner; and nothing opens, since the shim has no Store.
+    // NOTHING TO RELEASE: the shim's page is not a window main can reload (ADR-0252).
+    'app.releaseMemory': () => Promise.resolve(ok({ kind: 'nothing-to-release' as const })),
+    // NO ENDING AND NOTHING HELD: the shim's page has no renderer that ended and no main holding documents for it.
+    'app.rendererEnded': () => Promise.resolve(ok({ kind: 'none' as const })),
+    'document.held': () => Promise.resolve(ok({ documents: [] })),
     'app.reviewPrompt': () => Promise.resolve(ok({ due: options.reviewDue ?? false })),
     'app.review': () => Promise.resolve(ok({ opened: false })),
     // NO PICKER IN A BROWSER: the export is cancelled, which is what main answers with no path.

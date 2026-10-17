@@ -93,6 +93,11 @@ export interface ShellDependencies {
    */
   readonly attachWindow: (window: ShellWindow) => void;
   /**
+   * The window's renderer ended for `reason` (ADR-0253): kept for the renderer that replaces it, which asks once why.
+   * `true` where the window is to be reloaded — every ending but the window's own clean exit.
+   */
+  readonly rendererEnded: (details: { readonly reason: string; readonly exitCode: number }) => boolean;
+  /**
    * The platform asked the window to close: `true` lets it through, `false` means hold it —
    * the renderer has been asked about unsaved work and answers on `window.close`
    * (`windowClose.ts`).
@@ -182,6 +187,11 @@ export function startShell(build: () => ShellDependencies, memory: WindowMemory 
       edit: (action) => {
         window.webContents[action]();
       },
+    });
+    // A RENDERER THAT ENDS IS RELOADED (ADR-0253): the documents are safe in this process, and the window is what failed.
+    // The reloaded page asks why (`app.rendererEnded`) and asks for the documents (`document.held`).
+    window.webContents.on('render-process-gone', (_event, details) => {
+      if (deps.rendererEnded(details)) window.webContents.reload();
     });
     // EVERY PLATFORM ROUTE TO CLOSING passes one of these two. `app.quit()` closes each window
     // and abandons the quit when a `close` is prevented, so a quit is a `close` here; Windows'

@@ -605,6 +605,64 @@ describe('rotate page', () => {
   });
 });
 
+/**
+ * ADR-0253's renderer half: a command main answered `out-of-memory` opens the memory window with the computer's figure,
+ * and *Try again* sends the same command again. CONTROL: an `internal` failure still opens *Something went wrong*.
+ */
+describe('memory that ran out, proven', () => {
+  const MEMORY = { totalBytes: 8 * 1024 ** 3, availableBytes: 300 * 1024 ** 2, othersUsingMost: true };
+
+  /** A client answering `out-of-memory` to the first `count` executes and applying the next, counting every send. */
+  function outOfMemoryThen(count: number): { readonly client: ContractClient; readonly sends: () => number } {
+    let sends = 0;
+    const client = createClient(channels, (asked) => {
+      if (asked !== 'document.execute') throw new Error(`this fixture answers document.execute, not ${asked}`);
+      sends += 1;
+      return Promise.resolve(
+        sends <= count
+          ? err({ code: 'out-of-memory', detail: MEMORY })
+          : ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }),
+      );
+    });
+    return { client, sends: () => sends };
+  }
+
+  it('opens the memory window with the figures, and Try again sends the command again, which applies', async () => {
+    const { applied, shown, onApplied } = recorder();
+    const { client, sends } = outOfMemoryThen(1);
+    const ask = (id: string, props: unknown): Promise<unknown> => {
+      shown.push({ id, props });
+      return Promise.resolve(id === 'dialog.out-of-memory' ? { kind: 'try-again' } : undefined);
+    };
+
+    await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
+
+    expect(shown).toStrictEqual([{ id: 'dialog.out-of-memory', props: MEMORY }]);
+    expect(sends()).toBe(2);
+    expect(applied).toHaveLength(1);
+  });
+
+  it('a dismissed memory window sends nothing more and opens no other window', async () => {
+    const { applied, shown, onApplied, ask } = recorder();
+    const { client, sends } = outOfMemoryThen(5);
+
+    await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
+
+    expect(shown).toStrictEqual([{ id: 'dialog.out-of-memory', props: MEMORY }]);
+    expect(sends()).toBe(1);
+    expect(applied).toStrictEqual([]);
+  });
+
+  it('CONTROL: an internal failure opens Something went wrong with its reference, not the memory window', async () => {
+    const { shown, onApplied, ask } = recorder();
+    const client = createClient(channels, () => Promise.resolve(err({ code: 'internal', incident: 'i7' })));
+
+    await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
+
+    expect(shown).toStrictEqual([{ id: 'dialog.command-problem', props: { code: 'internal', incident: 'i7' } }]);
+  });
+});
+
 describe('redo', () => {
   it('hands back both scalars when the log stepped forward', async () => {
     const { applied, onApplied, ask } = recorder();

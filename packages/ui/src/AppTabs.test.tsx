@@ -150,6 +150,9 @@ function client(): { readonly client: ContractClient; readonly sent: Sent[] } {
     if (id === 'log.reveal') return Promise.resolve(ok({ revealed: false }));
     // The shell announces its close subscription on every mount (`windowClose.ts`).
     if (id === 'window.closeListening') return Promise.resolve(ok({ acknowledged: true }));
+    // EVERY WINDOW ASKS AS IT LOADS (ADR-0253): a fresh window, nothing ended and nothing held.
+    if (id === 'app.rendererEnded') return Promise.resolve(ok({ kind: 'none' as const }));
+    if (id === 'document.held') return Promise.resolve(ok({ documents: [] }));
     // EVERY OPEN ASKS whether the file can be saved over (cloud-4 7b).
     if (id === 'document.fileAccess') return Promise.resolve(ok({ access: 'writable' as const }));
     // AND NO OLD `.bak` FILES TO MOVE (ADR-0198).

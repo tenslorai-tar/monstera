@@ -128,6 +128,11 @@ function client(options: {
         return Promise.resolve(ok({ closing: true }));
       case 'window.closeListening':
         return Promise.resolve(ok({ acknowledged: true }));
+      // EVERY WINDOW ASKS AS IT LOADS (ADR-0253): a fresh window, nothing ended and nothing held.
+      case 'app.rendererEnded':
+        return Promise.resolve(ok({ kind: 'none' as const }));
+      case 'document.held':
+        return Promise.resolve(ok({ documents: [] }));
       // EVERY OPEN ASKS whether the file can be saved over (cloud-4 7b).
       case 'document.fileAccess':
         return Promise.resolve(ok({ access: 'writable' as const }));

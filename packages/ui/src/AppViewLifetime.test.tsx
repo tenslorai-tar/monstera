@@ -131,6 +131,9 @@ function answeringClient(model?: Readonly<Record<string, unknown>>): ContractCli
     },
     // The shell announces its close subscription on every mount (`windowClose.ts`).
     'window.closeListening': { acknowledged: true },
+    // EVERY WINDOW ASKS AS IT LOADS (ADR-0253): a fresh window, nothing ended and nothing held.
+    'app.rendererEnded': { kind: 'none' },
+    'document.held': { documents: [] },
     // EVERY OPEN ASKS whether the file can be saved over (cloud-4 7b).
     'document.fileAccess': { access: 'writable' },
     // AND NO OLD `.bak` FILES TO MOVE (ADR-0198).

@@ -144,6 +144,8 @@ import { type HeldPicture, NO_HELD_PICTURE, createHeldPicture } from './heldPict
 import type { ScanSignature, SignaturePictureSource } from './signaturePicture.js';
 import { createPersonalLibrary, memoryPictureFiles, unusedLibrarySurface } from './personalLibrary.js';
 import { NO_REVIEW_PROMPT } from './engagement.js';
+import { NO_MEMORY_RELEASE } from './memoryRelease.js';
+import { NO_RENDERER_ENDING } from './rendererEnding.js';
 import { type BackupProvenance, createBackupProvenance } from './backupLedger.js';
 import { createEphemeralSettings } from './settingsFile.js';
 import {
@@ -1512,6 +1514,8 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           recentRoots: [],
           recentPictures: NO_RECENT_PICTURES, fileIdentity: readFileIdentity, library: unusedLibrarySurface(),
           reviewPrompt: NO_REVIEW_PROMPT,
+        memoryRelease: NO_MEMORY_RELEASE,
+        rendererEnding: NO_RENDERER_ENDING,
           settings: { read: () => ({}), write: () => undefined },
           secrets: { available: () => false, read: () => ({}), write: () => undefined },
           chatHistory: noChatHistory(),
@@ -2831,6 +2835,8 @@ describe('search is E2s first consumer, through the composition point', () => {
         recentRoots: [],
         recentPictures: NO_RECENT_PICTURES, fileIdentity: readFileIdentity, library: unusedLibrarySurface(),
         reviewPrompt: NO_REVIEW_PROMPT,
+        memoryRelease: NO_MEMORY_RELEASE,
+        rendererEnding: NO_RENDERER_ENDING,
         settings: { read: () => ({}), write: () => undefined },
         secrets: { available: () => false, read: () => ({}), write: () => undefined },
         chatHistory: noChatHistory(),

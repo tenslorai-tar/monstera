@@ -54,6 +54,8 @@ import { NO_RECENT_PICTURES, createRecentPictures } from './recentPictures.js';
 import { createHeldPicture } from './heldPicture.js';
 import { unusedLibrarySurface } from './personalLibrary.js';
 import { NO_REVIEW_PROMPT, createEngagement, reviewPrompt } from './engagement.js';
+import { NO_MEMORY_RELEASE } from './memoryRelease.js';
+import { NO_RENDERER_ENDING } from './rendererEnding.js';
 import { type DocumentCommands, type ImageRead, MissingSessionError } from './documentCommands.js';
 import type { ScannedSignaturePicture } from './signaturePicture.js';
 import { type LaunchDocuments, createLaunchDocuments } from './launchDocuments.js';
@@ -232,6 +234,8 @@ function harness(
     fileIdentity: overrides.fileIdentity ?? readFileIdentity,
     library: overrides.library ?? unusedLibrarySurface(),
     reviewPrompt: prompt,
+    memoryRelease: NO_MEMORY_RELEASE,
+      rendererEnding: NO_RENDERER_ENDING,
     // RETURNED, so cases about persistence read the same object the handlers
     // wrote rather than a second copy. `settings.save` answering `stored: true`
     // is a claim about a surface having accepted the values, and a test that
@@ -1084,6 +1088,8 @@ describe('document.open', () => {
           recentRoots: [],
           recentPictures: NO_RECENT_PICTURES, fileIdentity: readFileIdentity, library: unusedLibrarySurface(),
           reviewPrompt: NO_REVIEW_PROMPT,
+      memoryRelease: NO_MEMORY_RELEASE,
+      rendererEnding: NO_RENDERER_ENDING,
           settings: createEphemeralSettings(),
           secrets: createEphemeralSecrets(),
           chatHistory: NO_HISTORY,
@@ -1991,6 +1997,8 @@ describe('log.reveal', () => {
       recentRoots: [],
       recentPictures: NO_RECENT_PICTURES, fileIdentity: readFileIdentity, library: unusedLibrarySurface(),
       reviewPrompt: NO_REVIEW_PROMPT,
+      memoryRelease: NO_MEMORY_RELEASE,
+      rendererEnding: NO_RENDERER_ENDING,
 settings: createEphemeralSettings(),
       secrets: createEphemeralSecrets(),
       chatHistory: NO_HISTORY,
@@ -2050,6 +2058,8 @@ describe('ai.checkKey', () => {
       recentRoots: [],
       recentPictures: NO_RECENT_PICTURES, fileIdentity: readFileIdentity, library: unusedLibrarySurface(),
       reviewPrompt: NO_REVIEW_PROMPT,
+      memoryRelease: NO_MEMORY_RELEASE,
+      rendererEnding: NO_RENDERER_ENDING,
 settings: createEphemeralSettings(),
       secrets,
       chatHistory: NO_HISTORY,
@@ -2208,6 +2218,8 @@ describe('ai.translatePage (ADR-0097)', () => {
       recentRoots: [],
       recentPictures: NO_RECENT_PICTURES, fileIdentity: readFileIdentity, library: unusedLibrarySurface(),
       reviewPrompt: NO_REVIEW_PROMPT,
+      memoryRelease: NO_MEMORY_RELEASE,
+      rendererEnding: NO_RENDERER_ENDING,
 settings: createEphemeralSettings(),
       secrets,
       chatHistory: NO_HISTORY,
@@ -2438,6 +2450,8 @@ describe('ai.history (ADR-0093)', () => {
       recentRoots: [],
       recentPictures: NO_RECENT_PICTURES, fileIdentity: readFileIdentity, library: unusedLibrarySurface(),
       reviewPrompt: NO_REVIEW_PROMPT,
+      memoryRelease: NO_MEMORY_RELEASE,
+      rendererEnding: NO_RENDERER_ENDING,
 settings,
       secrets: createEphemeralSecrets(),
       chatHistory: history,
@@ -2673,6 +2687,8 @@ describe('cloud.saveBack', () => {
       recentRoots: [],
       recentPictures: NO_RECENT_PICTURES, fileIdentity: readFileIdentity, library: unusedLibrarySurface(),
       reviewPrompt: NO_REVIEW_PROMPT,
+      memoryRelease: NO_MEMORY_RELEASE,
+      rendererEnding: NO_RENDERER_ENDING,
 settings: createEphemeralSettings(),
       secrets: createEphemeralSecrets(),
       chatHistory: NO_HISTORY,

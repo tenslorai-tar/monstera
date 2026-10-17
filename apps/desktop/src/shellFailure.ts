@@ -138,6 +138,8 @@ export type ShellFailureEvent =
    * told apart.
    */
   | 'copy-unsealed'
+  /** The window's memory could not be given back as ADR-0252 says: the pressure signal was not sent, and why. */
+  | 'memory-release'
   /**
    * Rows of a workbook an Office import could not convert (decision C): which sheet and which rows. The person's dialog
    * names them when the PDF opens; this line holds them whatever the open answered, since the file on disk lacks them.

@@ -10,6 +10,7 @@ import {
   serviceReasonOf,
 } from './documentCommands.js';
 import { editRefusalOf } from './editRefusals.js';
+import { outOfMemoryOf } from './outOfMemory.js';
 
 /**
  * The first IPC handler, and the first code in this repository that answers
@@ -101,6 +102,10 @@ export function executeCommandHandler(
       // built. The service's own sentence stays main-side; the code says which kind it was.
       const service = serviceReasonOf(thrown);
       if (service !== undefined) return err({ code: SERVICE_PROBLEM_OF[service] });
+      // AN ENGINE HOST KILLED AT ITS MEMORY BUDGET during this command (ADR-0253): proven by main's own sampler, with the
+      // computer's figures. Every other host ending falls through to `internal`, as it did.
+      const memory = outOfMemoryOf(thrown);
+      if (memory !== undefined) return err(memory);
       throw thrown;
     }
   };

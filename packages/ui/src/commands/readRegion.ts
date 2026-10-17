@@ -136,8 +136,11 @@ export async function readRegionInPanel(
     keep: (error) => {
       // `internal` KEEPS ITS INCIDENT, and a code with a declared detail its detail: `reportProblem`'s own rule, so the
       // panel says what the generic dialog would have.
-      // `breaks-signatures` is the signed-document question, which the dispatcher asked itself: it has no sentence here.
-      if (error.code !== 'breaks-signatures') failure.problem = 'detail' in error || error.code === 'internal' ? error : { code: error.code };
+      // `breaks-signatures` is the signed-document question, which the dispatcher asked itself: it has no sentence here;
+      // nor has `out-of-memory`, told in its own window, which the dispatcher opened (ADR-0253).
+      if (error.code !== 'breaks-signatures' && error.code !== 'out-of-memory') {
+        failure.problem = 'detail' in error || error.code === 'internal' ? error : { code: error.code };
+      }
       return true;
     },
   });

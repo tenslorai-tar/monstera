@@ -262,7 +262,7 @@ await step('M4. every tab after the edit (Part 7 B): each draws its page, none i
   return { tabs: seen };
 });
 
-await step('M5. every document closed, then 60 s (Part 7 A): no engine host is left, and every figure against M1', async () => {
+await step('M5. every document closed, then idle past a minute (Part 7 A, ADR-0252): the window reloaded, no engine host is left, and every figure against M1', async () => {
   for (let left = await page.locator('[data-tab-select]').count(); left > 0; left -= 1) {
     await command('Close tab');
     const unsaved = page.getByRole('dialog', { name: 'Unsaved changes' });
@@ -283,7 +283,16 @@ await step('M5. every document closed, then 60 s (Part 7 A): no engine host is l
     if (asked) await unsaved.getByRole('button', { name: 'Don’t save' }).click();
     await expect(page.locator('[data-tab-select]')).toHaveCount(left - 1, { timeout: 30_000 });
   }
-  await page.waitForTimeout(60_000);
+  // IDLE PAST THE MINUTE, with no input from here (ADR-0252): the window asks to give its memory back, `main` reloads
+  // it, and the reading is taken after the reloaded start screen has settled. Counted, so a figure inside the 10% that
+  // came without a reload is not taken for one.
+  let loads = 0;
+  page.on('load', () => {
+    loads += 1;
+  });
+  await page.waitForTimeout(100_000);
+  expect(loads, 'the idle window was not reloaded to give its memory back').toBe(1);
+  await expect(page.locator('.m-start-area')).toBeVisible({ timeout: 30_000 });
   const after = reading();
   expect(after.hosts).toStrictEqual([]);
   // THE FONT LIST WAS KEPT (ADR-0237), read back from the profile: the next session's edit answers its picker from it.

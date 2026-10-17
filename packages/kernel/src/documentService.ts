@@ -1355,8 +1355,28 @@ export interface DocumentServiceOptions {
   readonly probeAccess?: FileAccessProbe;
 }
 
+/**
+ * What the renderer calls a document: its file's name, never its path (invariant L2). The ONE rule, taken by the open's
+ * answer and by {@link DocumentService.held}, so a window that loads again names each document as it was named.
+ */
+export function documentNameOf(path: string): string {
+  return basename(path);
+}
+
+/** One open document as a window that has just loaded needs it ({@link DocumentService.held}). */
+export interface HeldDocument {
+  readonly docId: DocId;
+  readonly version: DocVersion;
+  readonly byteLength: number;
+  readonly name: string;
+  /** The version its file holds: equal to `version` where nothing is unsaved. */
+  readonly savedVersion: DocVersion;
+}
+
 export class DocumentService {
   readonly #records = new Map<DocId, DocumentRecord>();
+  /** {@link openedSoFar}'s count. */
+  #openedSoFar = 0;
   readonly #capabilities: CapabilityRegistry;
   readonly #randomBytes: TokenBytesSource;
   readonly #teardown: DocumentTeardown;
@@ -1779,6 +1799,7 @@ export class DocumentService {
     // L10 exists to prevent. A random token makes that a lookup miss.
     const docId = asDocId(mintToken('DocId', this.#randomBytes));
     const version = asDocVersion(FIRST_VERSION);
+    this.#openedSoFar += 1;
     this.#records.set(docId, {
       docId,
       handle,
@@ -1801,10 +1822,37 @@ export class DocumentService {
       checkpointFiles: new Set(),
       fileSerial: 0,
     });
-    // `basename`, and the ONE call site. Everything downstream of here holds a
+    // `documentNameOf`, the ONE rule. Everything downstream of here holds a
     // name and no path, which is invariant L2 arriving as a value rather than
     // as a rule someone downstream has to remember.
-    return { kind: 'opened', docId, version, byteLength: lengthOf(image), name: basename(path) };
+    return { kind: 'opened', docId, version, byteLength: lengthOf(image), name: documentNameOf(path) };
+  }
+
+  /**
+   * Every open document as a window that has just loaded needs it to show it again
+   * ([ADR-0253](../../../docs/DECISIONS/0253-a-failure-is-called-out-of-memory-only-when-that-is-proven.md)): its id,
+   * version, length and name, and the version its file holds. Each read in its own lane, so a version and the
+   * length beside it are one moment's; a document closed meanwhile is left out. In the order the documents opened.
+   */
+  async held(): Promise<readonly HeldDocument[]> {
+    const held: HeldDocument[] = [];
+    for (const docId of this.openDocIds()) {
+      try {
+        // THE VERSION `run` READS AFTER THE WORK, in the lane, so it is the one the length beside it belongs to.
+        const { value, version } = await this.run(docId, (context) => {
+          // THE VERSION THE FILE HOLDS, read in the same lane entry, so it and `version` are one moment's: the renderer
+          // compares the two, as it does for a document it opened (`OpenDocument.savedVersion`), and invents neither.
+          const savedVersion = this.#records.get(docId)?.savedVersion;
+          if (savedVersion === undefined) throw new DocumentNotOpenError(docId, 'read what a reloaded window holds');
+          return Promise.resolve({ byteLength: context.byteLength, name: documentNameOf(context.path), savedVersion });
+        });
+        held.push({ docId, version, ...value });
+      } catch (thrown) {
+        if (thrown instanceof DocumentNotOpenError) continue;
+        throw thrown;
+      }
+    }
+    return held;
   }
 
   /**
@@ -2478,7 +2526,7 @@ export class DocumentService {
    */
   nameOf(docId: DocId): string | undefined {
     const record = this.#records.get(docId);
-    return record === undefined ? undefined : basename(record.path);
+    return record === undefined ? undefined : documentNameOf(record.path);
   }
 
   /**
@@ -2550,6 +2598,15 @@ export class DocumentService {
   /** Number of open documents. */
   get size(): number {
     return this.#records.size;
+  }
+
+  /**
+   * How many documents have opened in this service's life, counted up and never down: what tells a window that has held
+   * a document since it last loaded from one that has not (ADR-0252). A count rather than a flag, so a reader compares it
+   * with the number it read before and no second writer has to reset anything.
+   */
+  get openedSoFar(): number {
+    return this.#openedSoFar;
   }
 
   /**

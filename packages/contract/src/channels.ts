@@ -2371,6 +2371,60 @@ export const channels = {
    * `document-not-open` is declared because a tab can outlive its document by a moment — a
    * second close of the same tab — and that is an answer (nothing to lose), not a defect.
    */
+  /**
+   * Every document `main` holds open, for a window that has just loaded to show them again
+   * ([ADR-0253](../../../docs/DECISIONS/0253-a-failure-is-called-out-of-memory-only-when-that-is-proven.md)): after its
+   * renderer ended and was reloaded, the documents are safe in `main` and the window is what has to come back. Each
+   * one's id, version, length and name, as an open answers them, and the version its file holds, which the renderer
+   * compares with `version` as it does for any document it opened — two numbers `main` minted, read in the document's
+   * lane. Never a path (invariant L2).
+   *
+   * BOUNDED by what a person opens rather than measured: a thousand entries of about four hundred bytes is well inside
+   * a frame, and a window does not hold a thousand tabs.
+   */
+  'document.held': channel(
+    'Every document main holds open, for a window that has just loaded.',
+    z.object({}).strict(),
+    z.object({
+      documents: z
+        .array(
+          z
+            .object({
+              docId: docIdSchema,
+              version: docVersionSchema,
+              byteLength: z.number().int().nonnegative(),
+              name: z.string().min(1).max(MAX_DOCUMENT_NAME_LENGTH),
+              savedVersion: docVersionSchema,
+            })
+            .strict(),
+        )
+        .max(1_000),
+    }),
+  ),
+
+  /**
+   * Why this window's last renderer ended, asked once by the renderer that replaced it (ADR-0253), and forgotten once
+   * answered. `none` for a window that loaded for any other reason. `out-of-memory` where Chromium said the renderer ran
+   * out of memory, with the computer's figures as `main` read them then. Any OTHER ending is a defect: it is answered as
+   * `internal`, so the boundary records it in the one incident log and the person sees *Something went wrong* with a
+   * reference that names that line.
+   */
+  'app.rendererEnded': channel(
+    'Why the window’s last renderer ended, asked once by the one that replaced it.',
+    z.object({}).strict(),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('none') }).strict(),
+      z
+        .object({
+          kind: z.literal('out-of-memory'),
+          totalBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+          availableBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+          othersUsingMost: z.boolean(),
+        })
+        .strict(),
+    ]),
+  ),
+
   'document.unsaved': channel(
     'Answers whether an open document has changes its file does not.',
     z.object({ docId: docIdSchema }),
@@ -2499,6 +2553,9 @@ export const channels = {
       // `protection-not-reproducible` IS A PROTECTED DOCUMENT WHOSE USER PASSWORD IS NOT KNOWN (ADR-0220): it was opened
       // with its owner password alone, so a change cannot be written protected as it was. Nothing was changed.
       'protection-not-reproducible',
+      // `out-of-memory` IS AN ENGINE HOST KILLED AT ITS MEMORY BUDGET during this command (ADR-0253), with the computer's
+      // figures: proven by `main`'s own sampler, never inferred. Any other host ending stays `internal`.
+      'out-of-memory',
       ...SERVICE_PROBLEMS,
     ],
   ),
@@ -2557,7 +2614,8 @@ export const channels = {
     ]),
     // `edit-refused` AND `text-not-writable` because an undo of a PDFium edit runs the same rewrite, read back the
     // same way (ADR-0169), so it is refused the same way and says the same sentence.
-    ['document-not-open', 'document-busy', 'document-poisoned', 'edit-refused', 'text-not-writable'],
+    // `out-of-memory`, `document.execute`'s reason: an undo or redo runs in the engine host too (ADR-0253).
+    ['document-not-open', 'document-busy', 'document-poisoned', 'edit-refused', 'text-not-writable', 'out-of-memory'],
   ),
   /**
    * Steps one entry forward over what undo stepped back — {@link 'document.undo'}'s other half.
@@ -2589,7 +2647,8 @@ export const channels = {
       }),
       z.object({ kind: z.literal('nothing-to-redo') }),
     ]),
-    ['document-not-open', 'document-busy', 'document-poisoned', 'edit-refused', 'text-not-writable'],
+    // `out-of-memory`, `document.execute`'s reason: an undo or redo runs in the engine host too (ADR-0253).
+    ['document-not-open', 'document-busy', 'document-poisoned', 'edit-refused', 'text-not-writable', 'out-of-memory'],
   ),
   /**
    * Save, and every part of its shape is invariant 18 or ADR-0009 §9.
@@ -6835,6 +6894,20 @@ export const channels = {
    * fifth is the last — because the page shows it on this answer and nothing else. `false` for a build that
    * is not due, a person who reviewed, or one who turned the Settings toggle off.
    */
+  /**
+   * The window has held no document and seen no work and no input for a minute: give its renderer's memory back by
+   * reloading it ([ADR-0252](../../../docs/DECISIONS/0252-a-closed-and-idle-window-gives-its-renderer-back.md)).
+   *
+   * **Asked by the renderer, decided by `main`**, which holds the fact that matters: whether a document is open. `main`
+   * reloads only with none open and one opened since the window last loaded, so a window just reloaded, or one that never
+   * held a document, answers `nothing-to-release` and a renderer that asked again would change nothing.
+   */
+  'app.releaseMemory': channel(
+    'Reloads an idle window with no document open, to give its renderer’s memory back.',
+    z.object({}).strict(),
+    z.object({ kind: z.enum(['released', 'documents-open', 'nothing-to-release']) }),
+  ),
+
   'app.reviewPrompt': channel(
     'Whether to ask for a Store rating now; a yes counts as the prompt shown.',
     z.object({}).strict(),
