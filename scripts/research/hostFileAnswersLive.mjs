@@ -92,8 +92,10 @@ const CASES = [
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 21 });
+// THE COUNT IS WRITTEN ONCE (VVVVVVV-36): the literal below is the independent claim a case leaving must touch (item 4c),
+// and the roster counts the names, so the two cannot be moved out of step.
 if (CASES.length !== 21) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 21`);
+const roster = createRoster(failures, { cases: CASES.length });
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {

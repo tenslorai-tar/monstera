@@ -4589,7 +4589,10 @@ async function directionCases() {
     // Latin word typed first stands to the RIGHT of the Arabic after it; in a line that runs mostly left to right it is
     // at the left. The same two objects either way, so the order is the line's direction and no constant.
     const rightward = written.get('مرحبا بالعالم Hello world');
-    const leftward = await typeMarked('Hello world مرحبا', 'Hello').then(lineOf, () => undefined);
+    // THE MIRROR, so the pair separates the line's direction from a constant *Latin on the left* (VVVVVVV-32): in a line
+    // that runs left to right, a Latin word typed AFTER the Arabic stands to its RIGHT. The control it replaces asserted
+    // Latin on the left in both lines, which that constant also gives.
+    const leftward = await typeMarked('Hello مرحبا world', 'world').then(lineOf, () => undefined);
     const rightRuns = rightward === undefined ? undefined : (await lineOf(rightward)).runs;
     const helloRight = rightRuns?.find((run) => run.text.includes('Hello'));
     const arabicRight = rightRuns?.find((run) => /[؀-ۿ]/u.test(run.text));
@@ -4598,11 +4601,11 @@ async function directionCases() {
       helloRight !== undefined && arabicRight !== undefined && helloRight.right <= arabicRight.left + 1,
       JSON.stringify(rightRuns?.map((run) => [run.text, Math.round(run.left), Math.round(run.right)])),
     );
-    const helloLeft = leftward?.runs.find((run) => run.text.includes('Hello'));
+    const worldAfter = leftward?.runs.find((run) => run.text.includes('world'));
     const arabicLeft = leftward?.runs.find((run) => /[؀-ۿ]/u.test(run.text));
     record(
-      'CONTROL: in a line that runs left to right, the same coloured word stands to the LEFT of the Arabic',
-      helloLeft !== undefined && arabicLeft !== undefined && helloLeft.right <= arabicLeft.left + 1,
+      'CONTROL: in a line that runs left to right, a Latin word typed after the Arabic stands to its RIGHT',
+      worldAfter !== undefined && arabicLeft !== undefined && worldAfter.left >= arabicLeft.right - 1,
       JSON.stringify(leftward?.runs.map((run) => [run.text, Math.round(run.left), Math.round(run.right)])),
     );
 

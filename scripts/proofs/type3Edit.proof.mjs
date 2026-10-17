@@ -54,7 +54,7 @@ const CASES = [
   'with the bundled fonts bound by folder, MuPDF sets the letters the print lacks in a face and answers the one box',
   'PDFium, reading those saved bytes, finds every new letter and the boxed code point as itself',
   'with fit shrink, a heading made half as long again again is set smaller on its OWN baseline, and PDFium reads it back whole',
-  'CONTROL: the same words with fit reflow are not written on that row: they wrap onto the heading below it and are refused, or leave only a part of them there',
+  'CONTROL: the same words with fit reflow are written wrapped, so the row keeps only the words that fit',
   'a heading MOVED is read by PDFium from the saved bytes exactly the points further on, with the lines beside it where they were',
   'CONTROL: the same heading written with no placement is read where it was, so the move above is the placement’s',
   'a heading SCALED to half is read half as wide, with its top left where it was',
@@ -72,8 +72,10 @@ const CASES = [
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 22 });
+// THE COUNT IS WRITTEN ONCE (VVVVVVV-36): the literal below is the independent claim a case leaving must touch (item 4c),
+// and the roster counts the names, so the two cannot be moved out of step.
 if (CASES.length !== 22) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 22`);
+const roster = createRoster(failures, { cases: CASES.length });
 
 /** @param {string} name @param {boolean} held @param {string} detail */
 function check(name, held, detail) {
@@ -223,9 +225,10 @@ async function run(pdfium, kernel) {
   const reflowedRow = await rowAfter(reflowed.saved);
   check(
     CASES[8] ?? '',
-    // EITHER WAY IT DOES NOT STAY ON THE ROW: written wrapped, or refused by MuPDF's own reading because the second line
-    // lands on the heading below it, which has no room. The same words are written on the row only with shrink.
-    !reflowed.outcome.ok || (reflowedRow !== null && !reflowedRow.includes(squeezed(LONGER))),
+    // WRITTEN, WRAPPED: the row keeps the words that fit and the rest go to the next line. It accepted ANY refusal until
+    // 2026-10-17 (VVVVVVV-32), a branch dead since the heading below is pushed (ADR-0249): measured, the reflow is
+    // written and its row reads only its first words. The same words are written on the row only with shrink.
+    reflowed.outcome.ok && reflowedRow !== null && reflowedRow.length > 0 && !reflowedRow.includes(squeezed(LONGER)),
     `with reflow the row read ${JSON.stringify(reflowedRow)} (${reflowed.outcome.ok ? 'written' : String(reflowed.outcome.error)}).`,
   );
 
