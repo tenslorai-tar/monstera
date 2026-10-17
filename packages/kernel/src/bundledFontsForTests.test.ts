@@ -34,11 +34,16 @@ describe('bundledFontsFolder', () => {
   it('is the one reader: no other kernel test reads the variable itself', () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const spelling = `process.env['${VARIABLE}']`;
-    const readers = readdirSync(here)
+    // EVERY FOLDER UNDER src, `host/` included: a scan of the top folder alone passed while a host test still read the
+    // variable with the empty fallback this helper exists to end (the audit of 39a81ead..cd0abe3c).
+    const all = readdirSync(here, { recursive: true, encoding: 'utf8' }).map((name) => name.replaceAll('\\', '/'));
+    const readers = all
       .filter((name) => name.endsWith('.ts'))
       .filter((name) => readFileSync(join(here, name), 'utf8').includes(spelling));
-    // POSITIVE CONTROL: the helper itself reads it, so a search that sees nothing is a broken search, not a clean tree.
+    // POSITIVE CONTROLS: the helper itself reads it, so a search that sees nothing is a broken search, not a clean tree;
+    // and the walk reaches a file inside `host/`, so a scan that stopped at the top folder fails here too.
     expect(readers).toContain('bundledFontsForTests.ts');
+    expect(all).toContain('host/remoteEngine.test.ts');
     expect(readers).toStrictEqual(['bundledFontsForTests.ts']);
   });
 });

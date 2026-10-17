@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type CommandOfKind, createClient, ENGINE_ANSWER_FILE_MAX_BYTES, type Incident, wrapHandlers } from '@monstera/contract';
 import { blockEditOf } from '@monstera/contract/host';
 
+import { bundledFontsFolder } from '../bundledFontsForTests.js';
 import { bindEditFaces } from '../editFaces.js';
 import { faceSourceOf, readCatalogue } from '../fontCatalogue.js';
 import type { PageRuns } from '../operatorEdit.js';
@@ -1289,7 +1290,7 @@ function headingRuns(content: Uint8Array): PageRuns {
 
 describe('an operator edit over engine/apply-file answers its boxes (ADR-0177 Decision 7)', () => {
   beforeAll(() => {
-    bindEditFaces(() => faceSourceOf([{ path: process.env['MONSTERA_FONTS_DIRECTORY'] ?? '', origin: 'bundled' }], readCatalogue));
+    bindEditFaces(() => faceSourceOf([{ path: bundledFontsFolder(), origin: 'bundled' }], readCatalogue));
   });
   afterAll(() => {
     bindEditFaces(null);
