@@ -306,6 +306,25 @@ describe('applyEditTextOperators', () => {
       });
     });
 
+    it('refuses for the PAGE where its reading is wrong, though the words also need a face: the page’s refusal wins (VVVVVVV-5)', async () => {
+      // TWO PASSES WHEN FONTS ARE BOUND: one with no faces decides whether to load them (HarfBuzz, on first need), then
+      // the edit itself. A wrong reading is the page's refusal and words the print lacks are the person's; whichever pass
+      // meets which first, what reaches the person must be the page's, and the page must be left as it came. THE CONTROL
+      // is the same words with the right reading, which the case above writes in a bundled face.
+      await withChromium(async (session, content) => {
+        const runs = headingRuns(content);
+        const wrong = { ...runs, textObjects: [...runs.textObjects, 60] };
+        const refusal = await applyEditTextOperators(session, command(runs.runs[0]?.index ?? 0, 'Monstera fixture zap.'), wrong).then(
+          () => null,
+          (error: unknown) => error,
+        );
+        expect(refusal).toBeInstanceOf(EditRefusedError);
+        expect((refusal as EditRefusedError).step).toBe('read-back');
+        const after = await withDocument(session, (document) => joinedContent(pageContentStreams(document.findPage(0))));
+        expect(after).toStrictEqual(content);
+      });
+    });
+
     it('draws a character no face carries as a box that still reads as the character', async () => {
       await withChromium(async (session) => {
         const runs = headingRuns(await withDocument(session, (document) => joinedContent(pageContentStreams(document.findPage(0)))));
