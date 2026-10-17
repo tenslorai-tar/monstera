@@ -99,6 +99,19 @@ describe('splitEdits', () => {
     expect(halves?.[0].place).toBeUndefined();
   });
 
+  it('moves the text below it in its column down by the same line, so the second half does not stand over it (VVVVVVV-25)', () => {
+    const roomy: TextBlock = { ...TWO, push: { below: [0], room: 100 } };
+    const edits = splitEdits(roomy, 1, [LOWER]);
+    expect(edits).toHaveLength(3);
+    // ITS OWN WORDS, unchanged, so the writer moves it and writes none of it.
+    expect(edits?.[2]).toStrictEqual({ lines: [[3, 4, 5]], soft: [false], text: 'A bold close.', place: { move: { x: 0, y: -14 } } });
+  });
+
+  it('CONTROL: where the room below is less than the line, the text below stays, as a push past its room does', () => {
+    const tight: TextBlock = { ...TWO, push: { below: [0], room: 10 } };
+    expect(splitEdits(tight, 1, [LOWER])).toHaveLength(2);
+  });
+
   it('is nothing where there is no paragraph to split before', () => {
     expect(splitEdits(TWO, 0)).toBeUndefined();
     expect(splitEdits(TWO, 2)).toBeUndefined();

@@ -280,7 +280,7 @@ const failures = [];
 // from its Decision 2: a tab read back at its stop, its control, and a second edit that keeps one tab. 235 from the
 // second edit's measure, which read a line written as several objects at its first object's width. 246 from L2: an
 // underlined word read back underlined, its rule moved with it by a second edit, and the control that turns it off.
-const roster = createRoster(failures, { cases: 265 });
+const roster = createRoster(failures, { cases: 267 });
 
 /**
  * @param {string} name
@@ -3831,6 +3831,50 @@ async function joinSplitCases() {
     'CONTROL: the same two halves moved by a point read as one block again, which is what a full line of movement is for',
     (await blocksOf(barely)).blocks.length === 1,
     `${String((await blocksOf(barely)).blocks.length)} block(s)`,
+  );
+
+  // A SPLIT WITH TEXT BELOW IT (VVVVVVV-25): the second half moves down a line, so the text below in its column moves by
+  // the same line, as an entry of its own words placed down — what `splitEdits` sends. A placed block pushes nothing
+  // (ADR-0249), so the move is the edit's to say. THE CONTROL is the same split with the text below left where it was:
+  // the second half then stands against it and the read takes the two for one block.
+  const stacked = await PDFDocument.create();
+  const stackedFont = await stacked.embedFont(StandardFonts.Helvetica);
+  const stackedPage = stacked.addPage([400, 400]);
+  stackedPage.drawText('First paragraph line', { x: 72, y: 300, size: 11, font: stackedFont });
+  stackedPage.drawText('Second paragraph line', { x: 72, y: 286, size: 11, font: stackedFont });
+  stackedPage.drawText('Text below the paragraph', { x: 72, y: 262, size: 11, font: stackedFont });
+  const stackedBytes = await stacked.save();
+  const stackedRead = await blocksOf(stackedBytes);
+  const paragraph = stackedRead.blocks.find((block) => block.lines.length === 2);
+  const belowIt = stackedRead.blocks.find((block) => wordsOf(block).startsWith('Text below'));
+  const [top, bottom] = paragraph?.lines ?? [];
+  if (paragraph === undefined || belowIt === undefined || top === undefined || bottom === undefined) {
+    record('the split-over-text fixture reads as a two-line paragraph and a block below', false, `${String(stackedRead.blocks.length)} block(s)`);
+    return;
+  }
+  const line = top.box.y1 - bottom.box.y1;
+  const down = { place: { move: { x: 0, y: -line } } };
+  /** The baseline of the line reading `words` in `bytes`. @param {Uint8Array} bytes @param {string} words */
+  const baselineIn = async (bytes, words) => (await blocksOf(bytes)).runs.find((run) => run.text.startsWith(words))?.style.baseline;
+  const moved = await send([half(top), half(bottom, down), entry(belowIt, wordsOf(belowIt), down)], stackedBytes);
+  const movedRead = await blocksOf(moved);
+  const belowBefore = await baselineIn(stackedBytes, 'Text below');
+  const belowAfter = await baselineIn(moved, 'Text below');
+  record(
+    'a split with text below it moves that text down by the same line: three blocks, each with its own words',
+    stackedRead.blocks.length === 2 &&
+      movedRead.blocks.length === 3 &&
+      belowBefore !== undefined &&
+      belowAfter !== undefined &&
+      Math.abs(belowBefore - belowAfter - line) < 0.01 &&
+      movedRead.blocks.map((block) => wordsOf(block)).join('|') === 'First paragraph line|Second paragraph line|Text below the paragraph',
+    `${String(movedRead.blocks.length)} block(s); the text below ${String(belowBefore)} → ${String(belowAfter)}, a line is ${String(line)}`,
+  );
+  const left = await send([half(top), half(bottom, down)], stackedBytes);
+  record(
+    'CONTROL: the same split with the text below left where it was reads the second half and that text as one block',
+    (await blocksOf(left)).blocks.length === 2,
+    `${String((await blocksOf(left)).blocks.length)} block(s)`,
   );
 }
 

@@ -684,6 +684,10 @@ export function TextEditLayer({
                   : {
                       above: blocks.blocks[neighbourOf(blocks.blocks, at, 'above') ?? -1],
                       below: blocks.blocks[neighbourOf(blocks.blocks, at, 'below') ?? -1],
+                      under: block.push.below.flatMap((index) => {
+                        const below = blocks.blocks[index];
+                        return below === undefined ? [] : [below];
+                      }),
                       apply: (edits) => onRestructure(edits, blocks),
                     }
               }
@@ -1089,6 +1093,8 @@ interface BlockEditorProps {
     | {
         readonly above: TextBlock | undefined;
         readonly below: TextBlock | undefined;
+        /** The text below the block in its column, as the read's `push.below` named it, which a split moves down. */
+        readonly under: readonly TextBlock[];
         readonly apply: (edits: EditedBlock[]) => Promise<BlockCommit>;
       }
     | undefined;
@@ -1509,8 +1515,8 @@ function BlockEditor({
     const untouched =
       text === wordsOfBlock(block) && !isFormatted(readEditor(element).formatting) && placeOf(placement, block.box) === undefined;
     if (!untouched) return {};
-    const { above, below, apply } = restructure;
-    const split = caret === undefined ? undefined : splitEdits(block, caret);
+    const { above, below, under, apply } = restructure;
+    const split = caret === undefined ? undefined : splitEdits(block, caret, under);
     return {
       ...(above === undefined ? {} : { joinAbove: () => void settle(() => apply(joinEdits(above, block))) }),
       ...(below === undefined ? {} : { joinBelow: () => void settle(() => apply(joinEdits(block, below))) }),
