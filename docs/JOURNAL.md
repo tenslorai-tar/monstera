@@ -892,6 +892,43 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-17 — Stage audit of `97dc4f35..ecef2b30` — findings OOOOOOOO-1 to OOOOOOOO-3
+
+Five commits (the previous audit's record, ADR-0254's build, the owner's decisions 1 and 8, ADR-0255), called by the
+commit gate: decision 5's 195 regenerated images would have taken the range past 200 files. `npm run audit:scope`: 45
+files; 1 proof added, 11 modified, none removed; 3 source files added, 22 changed. Every removed line in the modified
+proofs is a fixture or a strict expectation stated again with the field the wire now carries (`skippedPages`, the
+geometry read's page boxes) or a fake peer's signature taking its params; no matcher widened, no case left.
+
+### OOOOOOOO-1 — a new read in `main` hung a fake peer that answers nothing (fixed in range)
+
+ADR-0254 made `main` read page geometry before a command that places on pages. `compositionHost.test.ts`' fake peer
+answers an unknown channel with no reply at all, so the hosted page-background case waited until vitest's 5 s bound and
+failed as a timeout, which reads as slowness. e50eb3b0 answers the read as a working engine does. The fake's own
+comment already records that nothing in the boundary client bounds a call; the class is any new pre-command read meeting
+a fake written before it, and the related-test run is what reaches those fakes.
+
+### OOOOOOOO-2 — the index typecheck's first real run (decision 8)
+
+Measured in its proof and on this audit's own blocked commit: 25 s to write and link the scratch folder and 64 s to
+typecheck it warm, against 313 s cold. Its soundness rests on the times it keeps: a mutant that kept the checkout's time
+on a differing file too passed a staged type error (proof:indextypecheck's TS2322 case), so the case that pins it is
+load-bearing. The contract proof the gate runs on a contract source still reads the working tree; stated in e0c6071a.
+
+### OOOOOOOO-3 — reflexes in this range
+
+None from the escape guard. One `sleep` before a read was refused by the harness, which offers a waiter instead.
+
+### 1 to 7
+
+1: root causes, each stated in its commit; no bound raised. 2: the stamps were proven on a page that displays nothing
+beside one that does, and decision 8 on a turned page's transform is not reached (it typechecks; nothing is placed). 3:
+nothing in the range has run on GitHub; it is pushed at the session's end. 4: mutations this range: `#pagesShowingNothing`
+answering `[]`, the hook ignoring the ADR judgement, the scratch folder keeping a differing file's time, and typechecking
+the working tree instead of the scratch copy; each turned its case red. 4a: the index typecheck's resolution test is one
+staged blob differing from the tree. 5: executed throughout. 6: ADR-0254 and ADR-0255 each in their own commit before
+their build. 7: ADR-0254's correction is appended; ADR-0255's build follows this record.
+
 ## 2026-10-17 — Stage audit of `39a81ead..97dc4f35` — findings NNNNNNNN-1 to NNNNNNNN-7
 
 Fix session 2 again (addendum 2 and the owner's decisions of 2026-10-17), called by the commit gate: ADR-0254's build
