@@ -21,6 +21,7 @@ import {
   drawnOrder,
   drawnRightToLeft,
   drewTheGlyphs,
+  hasRightToLeftLetter,
   isBidirectional,
   logicalOf,
   readBackOf,
@@ -436,7 +437,7 @@ const REFERENCE_LETTERS = ['x', 'n', 'o', 'e', 'a', 'H', '0', '.'] as const;
  * AN OBJECT OF ONE SPACE reads as nothing, and an object of two or more reads as ONE space —
  * measured 2026-10-14 on PDFium 155's Linux build, one Helvetica object alone on a page:
  * `" "` → no text, `"  "` and `"   "` → `" "`. This read *"an object of spaces alone reads as
- * nothing"* until then, and the width probe of a space (`piecesAdvance` writes the character
+ * nothing"* until then, and the plan's width probe of a space (which then wrote the character
  * twice) was refused by its own read-back: every font change over a selection holding a space
  * was refused naming no character (the owner's A2, 2026-10-14).
  */
@@ -2482,11 +2483,58 @@ function pieceWriter(
         }
         return 0;
       };
-      /** Where the pen stands after `objects`, in page units: the last one's ink and its trailing white space's advance. */
+      /**
+       * How far `text` carries the pen in `object`'s font, size and scale, or `null` where no reference letter can be
+       * set beside it: the text with a letter after it, less the letter alone, so the letter's ink cancels and what is
+       * left is the text's ADVANCE — its last letter's side bearing and any white space included, which its ink is not.
+       */
+      const advanceWidth = (object: unknown, text: string): number | null => {
+        const font: unknown = bindings.textFont(object);
+        if (font === null) return null;
+        for (const anchor of REFERENCE_LETTERS) {
+          const probe = makeTextLike(bindings, document, object, 0, font);
+          try {
+            if (!setOn(probe, anchor)) continue;
+            const alone = boundsOf(bindings, probe).right;
+            if (!setOn(probe, `${text}${anchor}`)) continue;
+            return boundsOf(bindings, probe).right - alone;
+          } finally {
+            bindings.destroyObject(probe);
+          }
+        }
+        return null;
+      };
+      /**
+       * Where the pen stands after one object that says `text`, in page units: THE ONE RULE for the writer placing the
+       * next piece and for the plan measuring a line (B3a). It is the object's origin plus the text's ADVANCE
+       * ({@link advanceWidth}), which is what the plan measures a piece-set text by (`piecesWidth`).
+       *
+       * Never the object's ink, and the two rules this replaced both read it. An object's bounds are its ink, which ends
+       * short of its advance by its last letter's right side bearing and, for white space, may or may not span the space
+       * — so a restyled line, set a word and a space at a time, stood each piece where the one before's INK ended while
+       * the plan had measured its advance. Measured 2026-10-17 on a Helvetica paragraph restyled to Carlito
+       * (`flipRepro.mjs`, the memory walk's M3b): first each space counted twice where the font draws a space glyph (5.6
+       * pt for a 2.78 pt space), and with that corrected each word short by its bearing, about 11 pt over a line; either
+       * way the pieces stood away from where the plan put them, the re-read split the line, and a block edited again
+       * wrapped at its re-read width and narrowed with every edit. Where the font draws no space glyph the advance is
+       * still the one the space takes (the owner's A2a, 2026-10-14).
+       *
+       * A RIGHT-TO-LEFT object keeps its ink plus its trailing white space: its letters are set in drawing order, and a
+       * row of them goes on from where the pen stands (`pen.endOf`) for the same reason. So does an object no reference
+       * letter can be set beside, such as a box font's single glyph.
+       */
+      const advanceEnd = (object: unknown, text: string): number => {
+        const width = hasRightToLeftLetter(text) ? null : advanceWidth(object, text);
+        if (width !== null) return matrixOn(bindings, object).e + width;
+        return text.trim() === ''
+          ? matrixOn(bindings, object).e + trailingAdvance(object, text)
+          : boundsOf(bindings, object).right + trailingAdvance(object, text);
+      };
+      /** Where the pen stands after `objects`, in page units: {@link advanceEnd} of the last, or their span where it is further. */
       const penEnd = (objects: readonly unknown[]): number => {
         const last = objects.at(-1);
         if (last === undefined) return 0;
-        return Math.max(spanOf(bindings, objects).right, boundsOf(bindings, last).right + trailingAdvance(last, setBy.get(last)?.text ?? ''));
+        return Math.max(spanOf(bindings, objects).right, advanceEnd(last, setBy.get(last)?.text ?? ''));
       };
       const spaceAnswers = new Map<string, boolean>();
       /**
@@ -2634,7 +2682,7 @@ function pieceWriter(
           setBy.set(made, { text: unit.text, rtl: unit.rtl });
           if (unit.box) boxObjects.set(made, unit.text);
           objects.push(made);
-          left = boundsOf(bindings, made).right + trailingAdvance(made, unit.text);
+          left = advanceEnd(made, unit.text);
         }
         // THE RUN'S OWN OBJECT GOES where its first piece is in another face, and with it what it was recorded as.
         if (objects[0] !== object) {
@@ -3014,8 +3062,13 @@ function layOutBlocks(
             const centre = own?.align === undefined && shape.align === 'center' ? shape.centre : (leftEdge + blockRight) / 2;
             return { align, leftEdge, first, centre };
           };
+          /** The widest line the block already holds, opening a paragraph and not, as the plan measures it (below). */
+          let held = { first: 0, rest: 0 };
           const limits = (place: number): { first: number; rest: number } => {
             const set = setFor(place);
+            const own = settings.get(place);
+            // A LINE THE BLOCK ALREADY HOLDS FITS ITS MEASURE, where the person set no indent of their own.
+            const floor = own?.leftIndent === undefined && own?.firstIndent === undefined ? held : { first: 0, rest: 0 };
             if (set.align === 'center') {
               const across = Math.max(1, 2 * Math.min(blockRight - set.centre, set.centre - set.leftEdge));
               return { first: across, rest: across };
@@ -3025,8 +3078,8 @@ function layOutBlocks(
               return { first: across, rest: across };
             }
             return {
-              first: Math.max(1, blockRight - scaledX(set.leftEdge + set.first)),
-              rest: Math.max(1, blockRight - scaledX(set.leftEdge)),
+              first: Math.max(1, blockRight - scaledX(set.leftEdge + set.first), floor.first),
+              rest: Math.max(1, blockRight - scaledX(set.leftEdge), floor.rest),
             };
           };
           /** The paragraphs whose settings the person changed from how the block was found: set again, words or not. */
@@ -3104,6 +3157,29 @@ function layOutBlocks(
             const { restyle, factor, spacing } = markStyle(run, mark);
             return { restyle, factor, spacing };
           });
+          // THE MEASURE OF A BLOCK OF SEVERAL LINES IS ITS INK — the right edge of its widest line, less its left edge —
+          // and the plan measures a line from where its pen starts to where it stands after the last word: its first
+          // letter's left bearing and its last one's right bearing wider. So the widest line, set again word for word,
+          // did not fit the measure it made, and lost its last word to the next line: measured 2026-10-17 on a producer's
+          // subset whose gaps are offsets (`gapSpacedCases`), 189.68 planned for a measure of 189.49, and " hi" added
+          // after "department." took "department." down with it. The floor is each held line as the plan measures it.
+          // Only where the block keeps its measure (no width given, several lines, not scaled) and words are set as
+          // pieces: the standard twin a process with no catalogue writes may not carry a held line's words, and measuring
+          // them would refuse an edit that never touched them.
+          if (place?.width === undefined && lines.length > 1 && scale === 1 && pen.inPieces) {
+            const widths = lines.map((line, at) => ({
+              opens: at === 0 || !soft[at - 1],
+              // THE WHITE SPACE A LINE ENDS IN is not counted, as the plan counts none after a line's last word.
+              width: line.reduce(
+                (sum, run, place) => sum + measure(run.index, NO_MARK, place === line.length - 1 ? run.text.trimEnd() : run.text),
+                0,
+              ),
+            }));
+            held = {
+              first: Math.max(0, ...widths.filter((line) => line.opens).map((line) => line.width)),
+              rest: Math.max(0, ...widths.filter((line) => !line.opens).map((line) => line.width)),
+            };
+          }
           const plan = planBlock(flow, block.text.replace(/\r\n?/gu, '\n'), measure, limits, {
             marks: block.marks.map(({ from, to }) => ({ from, to })),
             changes,
@@ -3543,9 +3619,9 @@ function layOutBlocks(
  * reference character the font carries: the right edge of `character` then `reference`, less that of `reference`
  * alone. That is exact for any character, a space included, whose own ink box is empty.
  *
- * Where the run's font cannot carry a character: in a process with a catalogue, the character is written as pieces on
- * the page for an instant, twice, and measured by the same difference (the face and box fonts the write will use); in
- * one without, the whole text is measured in the standard twin the write will use, and a character it refuses is the
+ * Where the run's font cannot carry a character, or a mark asks for another face: in a process with a catalogue, the
+ * whole text is written as pieces on the page for an instant and measured by where the pen then stands (the face and
+ * box fonts the write will use, and the same choice of which face each space is in); in one without, the whole text is measured in the standard twin the write will use, and a character it refuses is the
  * refusal the write would give.
  */
 function blockMeasure(
@@ -3606,15 +3682,30 @@ function blockMeasure(
     advances.set(key, answer);
     return answer;
   };
-  /** One character set as pieces on the page and taken off again: its width is the second write less the first. */
-  const piecesAdvance = (run: HeldRun, character: string, restyle?: Restyle): number => {
-    const key = `pieces${JSON.stringify(restyle ?? null)}|${String(run.index)}|${character}`;
+  /**
+   * `text` set as pieces on the page, from an origin of 0, and taken off again: where the pen then stands is its width.
+   *
+   * THE WHOLE TEXT IN ONE WRITE, never a character at a time, because which face a character is set in is the writer's
+   * decision about its NEIGHBOURS (`editPieces` point 5): a space before a word in another face goes into that word's
+   * piece, and a space alone stays in the run's font. Summed a character at a time, every space was measured alone, in
+   * the run's font — measured 2026-10-17 on a Helvetica paragraph restyled to Carlito, 2.78 pt a space in the plan for
+   * 2.26 drawn, about 9 pt over a line — and the writer, which places each piece of a row at the plan's width, stood the
+   * next piece that far past the words, where a re-read took it for a block of its own (the memory walk's M3b). Measured
+   * whole, the width IS the write's, so the two cannot disagree.
+   *
+   * WHITE SPACE ALONE is measured BETWEEN TWO LETTERS of the run, the second write less the letters alone, because the
+   * plan asks for the space between two words and a line never sets one alone. Written alone it takes no neighbour's
+   * face: measured 2026-10-17 on a producer's subset with no space glyph (`gapSpacedCases`), a lone space was set in
+   * the run's own font, where it is the missing glyph, 11 pt at 11, and the plan wrapped a word the line had held.
+   */
+  const piecesWidth = (run: HeldRun, text: string, restyle?: Restyle): number => {
+    const key = `pieces${JSON.stringify(restyle ?? null)}|${String(run.index)}|${text}`;
     const known = advances.get(key);
     if (known !== undefined && known !== null) return known;
-    const rightOf = (text: string): number => {
+    const penAfter = (said: string): number => {
       const object = makeTextLike(bindings, document, run.object, 0);
       pen.insertAfter(object, run.object);
-      const objects = pen.writePieces(object, text, restyle);
+      const objects = pen.writePieces(object, said, restyle);
       // WHERE THE PEN STANDS, which is where the writer puts the next piece: ink alone ends before a trailing space.
       const right = pen.penEnd(objects);
       for (const each of [object, ...objects]) {
@@ -3624,14 +3715,15 @@ function blockMeasure(
       }
       return right;
     };
-    const width = rightOf(character + character) - rightOf(character);
+    const letter = [...Array.from(run.text), ...REFERENCE_LETTERS].find((character) => character.trim() !== '') ?? 'x';
+    const width = text.trim() === '' ? penAfter(`${letter}${text}${letter}`) - penAfter(`${letter}${letter}`) : penAfter(text);
     advances.set(key, width);
     return width;
   };
-  /** The width of `text` in a face a mark asked for: every character through the resolver's face, or the standard twin. */
+  /** The width of `text` in a face a mark asked for: as the writer sets it in the resolver's face, or the standard twin. */
   const restyledWidth = (run: HeldRun, restyle: Restyle, text: string): number => {
+    if (pen.inPieces) return piecesWidth(run, text, restyle);
     const each = Array.from(arabicForms(text));
-    if (pen.inPieces) return each.reduce((sum, character) => sum + piecesAdvance(run, character, restyle), 0);
     const twin = pen.standardFontRestyled(run.object, restyle);
     const widths = each.map((character) => advanceOf('twin', run, character, twin, ['x'], JSON.stringify(restyle)));
     if (widths.some((width) => width === null)) throw new TextNotWritableError(pen.uncarriedIn(run.object, text));
@@ -3650,9 +3742,8 @@ function blockMeasure(
       character.trim() === '' && pen.inPieces && !pen.setsSpace(run.object, character, run.text) ? null : advanceOf('own', run, character),
     );
     if (own.every((width) => width !== null)) return own.reduce((sum, width) => sum + width, 0);
-    if (pen.inPieces) {
-      return each.reduce((sum, character, at) => sum + (own[at] ?? piecesAdvance(run, character)), 0);
-    }
+    // A TEXT THE RUN'S FONT CANNOT SET WHOLE is pieces, and is measured as the writer sets them ({@link piecesWidth}).
+    if (pen.inPieces) return piecesWidth(run, text);
     const twin = pen.standardFontLike(run.object);
     const widths = each.map((character) => advanceOf('twin', run, character, twin, ['x']));
     if (widths.some((width) => width === null)) throw new TextNotWritableError(pen.uncarriedIn(run.object, text));

@@ -280,7 +280,7 @@ const failures = [];
 // from its Decision 2: a tab read back at its stop, its control, and a second edit that keeps one tab. 235 from the
 // second edit's measure, which read a line written as several objects at its first object's width. 246 from L2: an
 // underlined word read back underlined, its rule moved with it by a second edit, and the control that turns it off.
-const roster = createRoster(failures, { cases: 261 });
+const roster = createRoster(failures, { cases: 263 });
 
 /**
  * @param {string} name
@@ -579,6 +579,7 @@ async function main() {
   await runFontCases();
   await formatPieceCases();
   await fontChangeCases();
+  await restyledRowCases();
   await gapSpacedCases();
   await spaceReadingCases();
   await faceReadingCases();
@@ -690,6 +691,99 @@ async function fontChangeCases() {
       'a font chosen for a whole block keeps every space between its words when the page is read',
       whole.refused === '' && whole.text === expected,
       JSON.stringify(whole),
+    );
+  } finally {
+    bindEditFaces(null);
+  }
+}
+
+/**
+ * A ROW OF A RESTYLED BLOCK STANDS WHERE THE PLAN PUT IT (2026-10-17). A font chosen for a whole block, with a word typed
+ * into its first line: the typed word is a piece of its own, which the writer places at the plan's width of the words
+ * before it. The plan measured a piece-set text a character at a time, so every space was measured alone, in the run's
+ * font (Helvetica, 2.78 pt at 10), while the writer sets a space before a word in that word's face (Carlito, 2.26): about
+ * 9 pt over a line of this length, and the typed word stood that far past the words, where the re-read took it for a
+ * block of its own (the memory walk's M3b).
+ *
+ * THE CONTROL is the same edit with no font chosen, through the same reading: the typed word is a piece there too, so a
+ * reading that cannot see a gap is not what makes the restyled case pass.
+ */
+async function restyledRowCases() {
+  const fonts = fontsDirectory(root);
+  const LINES = [
+    'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et',
+    'dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip',
+  ];
+  const document = await PDFDocument.create();
+  const page = document.addPage([612, 792]);
+  const helvetica = await document.embedFont(StandardFonts.Helvetica);
+  for (const [at, line] of LINES.entries()) page.drawText(line, { x: 78, y: 664 - at * 12, size: 10, font: helvetica });
+  const pdf = await document.save();
+  bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }], readCatalogueApart));
+  try {
+    const session = await pdfiumWriter.open(pdf);
+    /** @type {{ lines: number[][], soft: boolean[] }} */
+    let block;
+    try {
+      const lines = groupIntoBlocks((await textRuns(session, 0)).runs.map((run) => ({ ...run, setting: settingOf(run.style) })))[0]?.lines ?? [];
+      block = { lines: lines.map((line) => line.runs.map((run) => run.index)), soft: lines.map((line) => line.soft) };
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+    // THE TYPED WORD at the end of the first line, as the memory walk types it.
+    const text = `${LINES[0]} 1\n${LINES[1]}`;
+    /**
+     * The edit, then the page read back: how many blocks, and on the typed word's baseline the widest gap between one
+     * run's right and the next one's left.
+     *
+     * @param {boolean} restyled
+     */
+    const edited = async (restyled) => {
+      const marks = restyled ? [{ from: 0, to: text.length, set: { family: 'Carlito' } }] : [];
+      const out = await localPdfiumExecution.apply({
+        session: pdf,
+        command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+          kind: 'editTextBlock',
+          page: 0,
+          ...blockEditOf([{ ...block, text, marks }]),
+          fit: 'reflow',
+          version: 1,
+        }),
+        sources: [],
+        reads: undefined,
+      });
+      const reopened = await pdfiumWriter.open(out);
+      try {
+        const runs = (await textRuns(reopened, 0)).runs;
+        const typed = runs.find((run) => /\b1$/u.test(run.text.trimEnd()));
+        const row =
+          typed === undefined
+            ? []
+            : runs.filter((run) => Math.abs(run.style.baseline - typed.style.baseline) < 0.5).sort((a, b) => a.left - b.left);
+        const gaps = row.slice(1).map((run, at) => run.left - (row[at]?.right ?? run.left));
+        return {
+          blocks: groupIntoBlocks(runs.map((run) => ({ ...run, setting: settingOf(run.style) }))).length,
+          runs: row.length,
+          widest: gaps.length === 0 ? 0 : Math.max(...gaps),
+          typed: typed !== undefined,
+        };
+      } finally {
+        await pdfiumWriter.close(reopened);
+      }
+    };
+    // ONE SPACE AT 10 PT in either face, with room for the space's own ink: a gap past it is a piece standing apart.
+    const SPACE = 3.5;
+    const plain = await edited(false);
+    const restyled = await edited(true);
+    record(
+      'CONTROL: the typed word with no font chosen is read on its line, no more than a space from the words, in one block',
+      plain.typed && plain.blocks === 1 && plain.widest <= SPACE,
+      JSON.stringify(plain),
+    );
+    record(
+      'a font chosen for a whole block with a word typed into it: the word stands a space from the words before it, and the block reads as one',
+      restyled.typed && restyled.blocks === 1 && restyled.widest <= SPACE,
+      JSON.stringify(restyled),
     );
   } finally {
     bindEditFaces(null);
@@ -847,12 +941,18 @@ async function gapSpacedCases() {
   const pdf = await buildGapSpacedPdf(readFileSync(resolve(fonts, 'Carlito-Regular.ttf')), LINES);
   bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }], readCatalogueApart));
   try {
-    /** @param {Uint8Array} bytes */
-    const blockOf = async (bytes) => {
+    /**
+     * The first block whose words hold `holding`.
+     *
+     * @param {Uint8Array} bytes
+     * @param {string} holding
+     */
+    const blockOf = async (bytes, holding) => {
       const session = await pdfiumWriter.open(bytes);
       try {
         const runs = (await textRuns(session, 0)).runs;
-        const lines = groupIntoBlocks(runs.map((run) => ({ ...run, setting: settingOf(run.style) })))[0]?.lines ?? [];
+        const blocks = groupIntoBlocks(runs.map((run) => ({ ...run, setting: settingOf(run.style) })));
+        const lines = blocks.find((block) => block.lines.some((line) => lineText(line.runs).includes(holding)))?.lines ?? [];
         return {
           lines: lines.map((line) => line.runs.map((run) => run.index)),
           soft: lines.map(() => false),
@@ -871,9 +971,9 @@ async function gapSpacedCases() {
         await pdfiumWriter.close(session);
       }
     };
-    /** @param {Uint8Array} bytes @param {(text: string) => string} change */
-    const edited = async (bytes, change) => {
-      const block = await blockOf(bytes);
+    /** @param {Uint8Array} bytes @param {string} holding @param {(text: string) => string} change */
+    const edited = async (bytes, holding, change) => {
+      const block = await blockOf(bytes, holding);
       try {
         const out = await localPdfiumExecution.apply({
           session: bytes,
@@ -898,13 +998,18 @@ async function gapSpacedCases() {
       drawn === LINES.join('\r\n'),
       JSON.stringify(drawn),
     );
-    const added = await edited(pdf, (text) => text.replace('department.', 'department. hi'));
+    const added = await edited(pdf, 'department.', (text) => text.replace('department.', 'department. hi'));
+    // THE LINE IS FULL, so the added word goes to a line of its own and the line keeps every word it had. This expected
+    // "department. hi" on the first line until 2026-10-17: the plan measured a lone space in the run's own font and the
+    // writer placed each word at its ink, so the line was drawn 7.5 pt past the block's right edge (`piecesWidth`).
+    // "hi" is set in the catalogue's face, as the subset has neither letter, so its line reads as a block of its own,
+    // which the delete below edits.
     record(
       'a word added to a line whose font has no space glyph is written, and the line reads back with every space',
-      added.refused === '' && added.text === `${LINES[0] ?? ''} hi\r\n${LINES[1] ?? ''}`,
+      added.refused === '' && added.text === `${LINES[0] ?? ''}\r\nhi\r\n${LINES[1] ?? ''}`,
       JSON.stringify({ text: added.text, refused: added.refused }),
     );
-    const deleted = await edited(added.bytes, (text) => text.replace(' hi', ''));
+    const deleted = await edited(added.bytes, 'hi', (text) => text.replace('hi', ''));
     record(
       'deleting that word after the first edit is written, not refused: deleting is never refused',
       added.refused === '' && deleted.refused === '' && deleted.text === LINES.join('\r\n'),
