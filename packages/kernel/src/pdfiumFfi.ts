@@ -581,6 +581,11 @@ export interface TextRun {
   /** The top of its characters, in PDF user space. */
   readonly top: number;
   readonly style: RunStyle;
+  /**
+   * The width of the measure an edit set this run's lines to, from its block's left edge, where one was recorded
+   * (`/MonsteraMeasure`, ADR-0097's correction of 2026-10-17): the paragraph keeps it whatever font its words are in.
+   */
+  readonly measure?: number;
 }
 
 /**
@@ -697,7 +702,12 @@ export function textRuns(session: PdfiumSession, page: number): Promise<PageText
       const walked = walkRuns(bindings, handle);
       // THE MEMBERS STAY HERE: the wire names a run by its first and last object, and the edit recomputes the rest. So
       // do the glyphs as drawn: they are what a line's order is found from, and the line is read here, once.
-      const runs = readWalk(bindings, handle, walked).map(({ members: _members, drawn: _drawn, ...run }) => run);
+      // AND THE MEASURE ITS LINES WERE SET TO, where an edit recorded one (ADR-0097's correction of 2026-10-17): the
+      // widest of its objects', so a joined run carries it whichever of its objects was written last.
+      const runs = readWalk(bindings, handle, walked).map(({ members, drawn: _drawn, ...run }) => {
+        const measure = Math.max(0, ...members.map((index) => recordedMeasureOf(bindings, bindings.getObject(handle, index)) ?? 0));
+        return measure > 0 ? { ...run, measure } : run;
+      });
       return { runs, unaddressable: walked.unaddressable, box: pageBoxOf(bindings, handle) };
     }),
   );
@@ -3000,13 +3010,21 @@ function layOutBlocks(
           // never narrower than the block itself. A block of several lines keeps the measure its
           // paragraph was set to.
           const ownRight = Math.max(...edges.map((edge) => edge.right));
+          // THE MEASURE AN EARLIER EDIT SET THESE LINES TO, where one is recorded (ADR-0097's correction of 2026-10-17,
+          // the owner's decision): a paragraph keeps the width it had on the page whatever font its words are now in,
+          // and its ink, which a narrower face draws shorter, is never what narrows it.
+          const recorded = Math.max(
+            0,
+            ...lines.flat().flatMap((run) => [run.object, ...run.extras]).map((object) => recordedMeasureOf(bindings, object) ?? 0),
+          );
+          const keptRight = Math.max(ownRight, recorded > 0 ? blockLeft + recorded : ownRight);
           // A MEASURE THE PERSON GAVE (a resized box, an added one) is the measure, from the block's own left edge.
           const blockRight =
             place?.width !== undefined
               ? blockLeft + place.width
               : lines.length === 1
-                ? Math.max(ownRight, pageRight - (blockLeft - pageLeft))
-                : ownRight;
+                ? Math.max(keptRight, pageRight - (blockLeft - pageLeft))
+                : keptRight;
           // WHERE THE BLOCK ENDED, before anything moves: a fitted block must end above it.
           const lastBaselineBefore = matrixOn(bindings, (lines[lines.length - 1]?.[0] ?? firstRun).object).f;
           // A PUSHED BLOCK THAT MOVES, said with where it stood: its objects' own bounds, ascent to descent, which is the box
@@ -3466,6 +3484,13 @@ function layOutBlocks(
               } else {
                 const matrix = matrixOn(bindings, object);
                 setMatrixOn(bindings, object, { ...matrix, f: baseline + rise });
+                // A LINE SET AFRESH CARRIES THE MEASURE IT WAS SET TO (ADR-0097's correction of 2026-10-17), for the next
+                // read and the next edit, which would otherwise take the narrower ink of a narrower face for it. NOT ON AN
+                // OBJECT THAT SAYS AN /ActualText (a run of spaces, a tab): PDFium's text page takes such an object's text
+                // from its marks, and a second mark beside the /ActualText one changed what it read — measured 2026-10-17,
+                // `proof:textspaces`' run of three spaces refused by the write's own read-back. The line's other objects
+                // carry the measure, and the read takes the widest of a run's.
+                if (actualTextOf(bindings, object) === undefined) recordMeasure(bindings, document, object, blockRight - blockLeft);
               }
             }
           }
@@ -3913,6 +3938,38 @@ function markActualText(bindings: Bound, document: unknown, object: unknown, tex
   }
 }
 
+/**
+ * The marked-content tag a line carries the measure it was set to under, and the key of its width (ADR-0097's correction
+ * of 2026-10-17): the width from the block's left edge, so a block moved sideways keeps it.
+ */
+const MEASURE_TAG = 'MonsteraMeasure';
+const MEASURE_KEY = 'Width';
+
+/** The measure width a line object records, or `undefined` where it records none. */
+function recordedMeasureOf(bindings: Bound, object: unknown): number | undefined {
+  const count = numberFrom(bindings.countMarks(object), 'FPDFPageObj_CountMarks');
+  for (let at = 0; at < count; at += 1) {
+    const mark: unknown = bindings.getMark(object, at);
+    if (mark === null) continue;
+    const name = markString((buffer, length, needed) => bindings.markName(mark, buffer, length, needed), 'FPDFPageObjMark_GetName');
+    if (name !== MEASURE_TAG) continue;
+    const value = [0];
+    if (numberFrom(bindings.markParamFloat(mark, MEASURE_KEY, value), 'FPDFPageObjMark_GetParamFloatValue') !== 1) continue;
+    const width = value[0] ?? 0;
+    if (Number.isFinite(width) && width > 0) return width;
+  }
+  return undefined;
+}
+
+/** Records on a line object the measure width it was set to. */
+function recordMeasure(bindings: Bound, document: unknown, object: unknown, width: number): void {
+  const mark: unknown = bindings.addMark(object, MEASURE_TAG);
+  if (mark === null) throw refusedAt('object', 'FPDFPageObj_AddMark refused the measure of a line this edit set');
+  if (numberFrom(bindings.markSetFloat(document, object, mark, MEASURE_KEY, width), 'FPDFPageObjMark_SetFloatParam') !== 1) {
+    throw refusedAt('object', 'FPDFPageObjMark_SetFloatParam refused the measure of a line this edit set');
+  }
+}
+
 /** What a text object's marks say its text IS, where one carries an `/ActualText`; `undefined` where none does. */
 function actualTextOf(bindings: Bound, object: unknown): string | undefined {
   const count = numberFrom(bindings.countMarks(object), 'FPDFPageObj_CountMarks');
@@ -4001,7 +4058,8 @@ function copyMarks(bindings: Bound, document: unknown, from: unknown, to: unknow
     const mark: unknown = bindings.getMark(from, at);
     if (mark === null) continue;
     const name = markString((buffer, length, needed) => bindings.markName(mark, buffer, length, needed), 'FPDFPageObjMark_GetName');
-    if (name === null || name === '') continue;
+    // THE MEASURE IS WRITTEN FRESH with the one a line is set to, never copied: a copied width would outlive a resize.
+    if (name === null || name === '' || name === MEASURE_TAG) continue;
     const made: unknown = bindings.addMark(to, name);
     if (made === null) throw refusedAt('object', `FPDFPageObj_AddMark refused the mark ${name} of a line this edit made`);
     const params = numberFrom(bindings.markParamCount(mark), 'FPDFPageObjMark_CountParams');

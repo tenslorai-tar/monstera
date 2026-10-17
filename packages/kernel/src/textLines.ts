@@ -226,6 +226,11 @@ export interface BlockableRun<S> extends GroupableRun {
   readonly style: S;
   /** The run's font, size and fill as one comparable key — {@link settingOf}'s, and read here only for equality. */
   readonly setting: string;
+  /**
+   * The width of the measure an edit set the run's lines to, from its block's left edge, where one is recorded
+   * (ADR-0097's correction of 2026-10-17): its block is at least that wide.
+   */
+  readonly measure?: number | undefined;
 }
 
 /**
@@ -437,16 +442,24 @@ export function groupIntoBlocks<S>(runs: readonly BlockableRun<S>[]): readonly E
     // by that same reading. Its first run was a list entry's bold lead word.
     const setBy = first === undefined ? undefined : longestRun(first);
     if (first === undefined || setBy === undefined) return [];
+    const x0 = Math.min(...block.map((piece) => piece.left));
+    const inkRight = Math.max(...block.map((piece) => piece.right));
+    // AT LEAST AS WIDE AS THE MEASURE ITS LINES WERE SET TO (ADR-0097's correction of 2026-10-17): the paragraph keeps
+    // the width it had on the page, so the editor wraps at it whatever font the words are now drawn in.
+    const measure = Math.max(0, ...block.flatMap((piece) => piece.runs.map((run) => run.measure ?? 0)));
     const box = {
-      x0: Math.min(...block.map((piece) => piece.left)),
+      x0,
       y0: Math.min(...block.map((piece) => piece.bottom)),
-      x1: Math.max(...block.map((piece) => piece.right)),
+      x1: Math.max(inkRight, measure > 0 ? x0 + measure : inkRight),
       y1: Math.max(...block.map((piece) => piece.top)),
     };
     const texts = block.map((piece) => piece.runs.map((run) => run.text).join(''));
+    // SOFT ENDS ARE JUDGED AGAINST THE INK, as before the measure was kept: a line the plan broke early on purpose (a tab
+    // is counted a whole stop wide, ADR-0228 Decision 2) has room left before the measure, and judged against the measure
+    // its wrap read as a paragraph's end (measured 2026-10-17, `proof:pdfiumcommand`'s second edit of a tabbed line).
     const soft = softEnds(
       block.map((piece, at) => ({ text: texts[at] ?? '', box: { x0: piece.left, x1: piece.right } })),
-      box.x1,
+      inkRight,
     );
     const { align, firstIndent } = blockShape(
       block.map((piece, at) => ({ x0: piece.left, x1: piece.right, characters: (texts[at] ?? '').length })),

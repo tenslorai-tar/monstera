@@ -282,7 +282,7 @@ const failures = [];
 // from its Decision 2: a tab read back at its stop, its control, and a second edit that keeps one tab. 235 from the
 // second edit's measure, which read a line written as several objects at its first object's width. 246 from L2: an
 // underlined word read back underlined, its rule moved with it by a second edit, and the control that turns it off.
-const roster = createRoster(failures, { cases: 269 });
+const roster = createRoster(failures, { cases: 271 });
 
 /**
  * @param {string} name
@@ -582,6 +582,7 @@ async function main() {
   await formatPieceCases();
   await fontChangeCases();
   await restyledRowCases();
+  await keptMeasureCases();
   await gapSpacedCases();
   await spaceReadingCases();
   await faceReadingCases();
@@ -694,6 +695,96 @@ async function fontChangeCases() {
       whole.refused === '' && whole.text === expected,
       JSON.stringify(whole),
     );
+  } finally {
+    bindEditFaces(null);
+  }
+}
+
+/**
+ * A PARAGRAPH KEEPS THE MEASURE IT HAD ON THE PAGE, whatever font is chosen (ADR-0097's correction of 2026-10-17, the
+ * owner's decision). Twenty edits as the memory walk's M3b makes them: the whole block set in Carlito, Tinos and Arimo in
+ * turn, a number typed after the first line's last word each time. Each line set afresh records the measure it was set to
+ * (`/MonsteraMeasure`), the read carries it onto the run, and the block keeps its width. Before, the measure was read from
+ * the widest line's ink at each edit, which a narrower face draws shorter: 442 to 301 pt over twenty edits.
+ *
+ * THE CONTROL is the same twenty edits with no font chosen, read the same way. Before the correction they lost 2.4 pt at
+ * the first edit (452.2 to 449.8, the plan's pen-to-pen width against the ink) and then held, where the restyled edits
+ * lost 102.6 pt (to 349.6): measured 2026-10-17 with the record skipped. So the control holds plain edits within 3 pt,
+ * which separates the font change's narrowing from the reading of a width, and the case above holds the measure to 1.
+ */
+async function keptMeasureCases() {
+  const fonts = fontsDirectory(root);
+  const LINES = [
+    'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et',
+    'dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip',
+    'ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore',
+    'eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia',
+    'deserunt mollit anim id est laborum.',
+  ];
+  const document = await PDFDocument.create();
+  const page = document.addPage([612, 792]);
+  const helvetica = await document.embedFont(StandardFonts.Helvetica);
+  for (const [at, line] of LINES.entries()) page.drawText(line, { x: 78, y: 664 - at * 12, size: 10, font: helvetica });
+  const pdf = await document.save();
+  const FAMILIES = ['Carlito', 'Tinos', 'Arimo'];
+  /** @param {Uint8Array} bytes */
+  const paragraphOf = async (bytes) => {
+    const session = await pdfiumWriter.open(bytes);
+    try {
+      const runs = (await textRuns(session, 0)).runs;
+      return groupIntoBlocks(runs.map((run) => ({ ...run, setting: settingOf(run.style) }))).find((block) =>
+        lineText(block.lines[0]?.runs ?? []).startsWith('Lorem'),
+      );
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  };
+  /** Twenty edits, restyled or not; the paragraph's width before and after each. @param {boolean} restyled */
+  const twenty = async (restyled) => {
+    let bytes = pdf;
+    const widths = [];
+    for (let edit = 1; edit <= 20; edit += 1) {
+      const block = await paragraphOf(bytes);
+      if (block === undefined) return { widths, lost: `edit ${String(edit)}: no paragraph` };
+      widths.push(block.box.x1 - block.box.x0);
+      const words = paragraphsOfLines(block.lines.map((line) => ({ text: lineText(line.runs), soft: line.soft })));
+      const at = lineText(block.lines[0]?.runs ?? []).trimEnd().length;
+      const text = `${words.slice(0, at)} ${String(edit)}${words.slice(at)}`;
+      const marks = restyled ? [{ from: 0, to: text.length, set: { family: FAMILIES[(edit - 1) % 3] ?? 'Carlito' } }] : [];
+      bytes = await localPdfiumExecution.apply({
+        session: bytes,
+        command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+          kind: 'editTextBlock',
+          page: 0,
+          ...blockEditOf([
+            { lines: block.lines.map((line) => line.runs.map((run) => run.index)), soft: block.lines.map((line) => line.soft), text, marks },
+          ]),
+          fit: 'reflow',
+          version: 1,
+        }),
+        sources: [],
+        reads: undefined,
+      });
+    }
+    const last = await paragraphOf(bytes);
+    if (last !== undefined) widths.push(last.box.x1 - last.box.x0);
+    return { widths, lost: last === undefined ? 'no paragraph after the last edit' : '' };
+  };
+  bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }], readCatalogueApart));
+  try {
+    const restyled = await twenty(true);
+    const plain = await twenty(false);
+    /** @param {{ widths: number[], lost: string }} run @param {number} within */
+    const kept = (run, within) =>
+      run.lost === '' && run.widths.length === 21 && run.widths.every((width) => Math.abs(width - (run.widths[0] ?? 0)) < within);
+    /** @param {{ widths: number[], lost: string }} run */
+    const said = (run) => `${run.lost} widths ${JSON.stringify(run.widths.map((width) => Math.round(width * 10) / 10))}`;
+    record(
+      'a paragraph restyled in three faces over twenty edits keeps the width it had on the page (ADR-0097, the owner’s decision)',
+      kept(restyled, 1),
+      said(restyled),
+    );
+    record('CONTROL: the same twenty edits with no font chosen keep the width within 3 pt, read the same way', kept(plain, 3), said(plain));
   } finally {
     bindEditFaces(null);
   }
@@ -3911,7 +4002,9 @@ async function markCases() {
       (await pageStreams(bytes, 0)).reduce((all, part) => Uint8Array.from([...all, ...part, 10]), new Uint8Array()),
     ).toString('latin1');
     return {
-      sequences: (content.match(/\bBDC\b/gu) ?? []).length,
+      // THE DOCUMENT'S SEQUENCES, not the edit's measure: every line set afresh carries `/MonsteraMeasure` (ADR-0097's
+      // correction of 2026-10-17), a private sequence no structure names, so it is no tag copied or invented.
+      sequences: [...content.matchAll(/\/(\w+)\s*(?:<<[^>]*>>|\/\w+)?\s*BDC\b/gu)].filter((each) => each[1] !== 'MonsteraMeasure').length,
       numbers: [...content.matchAll(/\/MCID\s+(\d+)/gu)].map((each) => Number(each[1])),
       texts: (content.match(/\bBT\b/gu) ?? []).length,
     };

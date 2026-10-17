@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   MAX_BLOCK_FONTS,
   MAX_FONT_RUNS,
+  MAX_PAGE_COORDINATE,
   MAX_RUN_FONT_BYTES,
   channel,
   fileAnswered,
@@ -564,6 +565,11 @@ const basePdfiumChannels = {
                       .exactOptional(),
                   })
                   .strict(),
+                /**
+                 * The width of the measure an edit set the run's lines to, where one is recorded on its objects
+                 * (`/MonsteraMeasure`, ADR-0097's correction of 2026-10-17); absent where none is.
+                 */
+                measure: z.number().positive().max(2 * MAX_PAGE_COORDINATE).exactOptional(),
               })
               .strict()
               // A RUN ENDS AT OR AFTER ITS START: a host answering otherwise names objects that are no run.

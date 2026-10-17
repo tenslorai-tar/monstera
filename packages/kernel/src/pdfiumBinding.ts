@@ -75,6 +75,8 @@ export interface Bound {
   readonly markParamString: Native;
   readonly addMark: Native;
   readonly markSetInt: Native;
+  readonly markParamFloat: Native;
+  readonly markSetFloat: Native;
   readonly markSetString: Native;
   readonly getStrokeColour: Native;
   readonly setStrokeColour: Native;
@@ -400,6 +402,14 @@ export function openPdfium(libraryPath: string): void {
     markSetInt: native(
       library.func(
         'int FPDFPageObjMark_SetIntParam(void *document, void *object, void *mark, const char *key, int value)',
+      ),
+    ),
+    markParamFloat: native(
+      library.func('int FPDFPageObjMark_GetParamFloatValue(void *mark, const char *key, _Out_ float *value)'),
+    ),
+    markSetFloat: native(
+      library.func(
+        'int FPDFPageObjMark_SetFloatParam(void *document, void *object, void *mark, const char *key, float value)',
       ),
     ),
     markSetString: native(
