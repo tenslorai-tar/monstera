@@ -2592,9 +2592,46 @@ function engineSessionOpener(
    * says so rather than answering with an empty geometry, which a renderer
    * would draw as a document with no pages.
    */
-  let geometry: PageGeometryReader | null = null;
+  /**
+   * EVERY READER THE LIVE HOST ANSWERS, built at once from its one client and dropped at once: `bound` is all of them or
+   * none. They were twenty-seven holders, each set when a host connected, and two of them cleared when it ended or
+   * closed — so the link, fill, word-box and every other reader stayed bound to a client that had settled every call,
+   * and answered a later read with the transport's rejection rather than the divergence each wrapper names
+   * (SSSSSSS-20). One value cannot be half cleared, and a reader added to `readersOf` is dropped with the rest.
+   */
+  const readersOf = (...[client, remote]: Parameters<typeof remoteMupdfGeometry>) => ({
+    geometry: remoteMupdfGeometry(client, remote),
+    pageText: remoteMupdfPageText(client, remote),
+    pageLinks: remoteMupdfPageLinks(client, remote),
+    pageFills: remoteMupdfPageFills(client, remote),
+    scanTables: remoteMupdfScanTables(client, remote),
+    pageAdjustment: remoteMupdfPageAdjustment(client, remote),
+    pageRewrite: remoteMupdfPageRewrite(client, remote),
+    wordBoxes: remoteMupdfWordBoxes(client, remote),
+    destinations: remoteMupdfDestinations(client, remote),
+    ocr: remoteMupdfOcr(client, remote),
+    layers: remoteMupdfLayers(client, remote),
+    fonts: remoteMupdfFonts(client, remote),
+    pageMarks: remoteMupdfPageMarks(client, remote),
+    signatures: remoteMupdfSignatures(client, remote),
+    signaturesKept: remoteMupdfSignaturesKept(client, remote),
+    annotations: remoteMupdfAnnotations(client, remote),
+    annotationCopy: remoteMupdfAnnotationRecords(client, remote),
+    annotationWords: remoteMupdfAnnotationWords(client, remote),
+    linkAddress: remoteMupdfLinkAddress(client, remote),
+    formFields: remoteMupdfFormFields(client, remote),
+    flatFields: remoteMupdfFlatFields(client, remote),
+    fieldProperties: remoteMupdfFieldProperties(client, remote),
+    formImportPlan: remoteMupdfFormImportPlan(client, remote, sessionAssets()),
+    annotationImportPlan: remoteMupdfAnnotationImportPlan(client, remote, sessionAssets()),
+    barcodes: remoteMupdfBarcodes(client, remote),
+    accessibility: remoteMupdfAccessibility(client, remote),
+    duplicates: remoteMupdfDuplicateReport(client, remote),
+  });
+  let bound: ReturnType<typeof readersOf> | null = null;
 
   const readGeometry: PageGeometryReader = (session, pages) => {
+    const geometry = bound?.geometry ?? null;
     if (geometry === null) {
       throw new Error(
         'A view-model read reached the engine with no host geometry reader registered. A ' +
@@ -2614,9 +2651,8 @@ function engineSessionOpener(
    * answering with an empty page. **An empty page is what search reads as *your
    * word is not in this document*,** which is the worst answer available here.
    */
-  let pageText: RemotePageTextReader | null = null;
-
   const readPageTextThroughHost: RemotePageTextReader = (session, page, read) => {
+    const pageText = bound?.pageText ?? null;
     if (pageText === null) {
       throw new Error(
         'A text read reached the engine with no host text reader registered. A session was ' +
@@ -2628,9 +2664,8 @@ function engineSessionOpener(
   };
 
   /** The link read's half of the same registration. See {@link pageText}. */
-  let pageLinks: HostPageLinksReader | null = null;
-
   const readPageLinksThroughHost: HostPageLinksReader = (session, page) => {
+    const pageLinks = bound?.pageLinks ?? null;
     if (pageLinks === null) {
       throw new Error(
         'A link read reached the engine with no host link reader registered. A session was ' +
@@ -2642,9 +2677,8 @@ function engineSessionOpener(
   };
 
   /** The fill read's half of the same registration. See {@link pageText}. */
-  let pageFills: HostPageFillsReader | null = null;
-
   const readPageFillsThroughHost: HostPageFillsReader = (session, page) => {
+    const pageFills = bound?.pageFills ?? null;
     if (pageFills === null) {
       throw new Error(
         'A fill read reached the engine with no host fill reader registered. A session was ' +
@@ -2656,9 +2690,8 @@ function engineSessionOpener(
   };
 
   /** The scanned-table read's half of the same registration (ADR-0233). See {@link pageText}. */
-  let scanTables: HostScanTablesReader | null = null;
-
   const readScanTablesThroughHost: HostScanTablesReader = (session, page) => {
+    const scanTables = bound?.scanTables ?? null;
     if (scanTables === null) {
       throw new Error(
         'A scanned-table read reached the engine with no host reader registered. A session was ' +
@@ -2670,9 +2703,8 @@ function engineSessionOpener(
   };
 
   /** The page-tool read's half of the same registration (N3). See {@link pageText}. */
-  let pageAdjustment: HostPageAdjustmentReader | null = null;
-
   const readPageAdjustmentThroughHost: HostPageAdjustmentReader = (session, page, adjustment) => {
+    const pageAdjustment = bound?.pageAdjustment ?? null;
     if (pageAdjustment === null) {
       throw new Error(
         'A page-tool read reached the engine with no host reader registered. A session was ' +
@@ -2684,9 +2716,8 @@ function engineSessionOpener(
   };
 
   /** Which writer rewrites a page's text (ADR-0176 Decision 1), the same registration's. See {@link pageText}. */
-  let pageRewrite: HostPageRewriteReader | null = null;
-
   const readPageRewriteThroughHost: HostPageRewriteReader = (session, page) => {
+    const pageRewrite = bound?.pageRewrite ?? null;
     if (pageRewrite === null) {
       throw new Error(
         'A page-rewrite read reached the engine with no host reader registered. A session was ' +
@@ -2698,9 +2729,8 @@ function engineSessionOpener(
   };
 
   /** The word-box read's half of the same registration. See {@link pageText}. */
-  let wordBoxes: HostWordBoxesReader | null = null;
-
   const readWordBoxesThroughHost: HostWordBoxesReader = (session, page) => {
+    const wordBoxes = bound?.wordBoxes ?? null;
     if (wordBoxes === null) {
       throw new Error(
         'A word-box read reached the engine with no host word-box reader registered. A session was ' +
@@ -2712,9 +2742,8 @@ function engineSessionOpener(
   };
 
   /** The outline's half of the same registration. See {@link pageText}. */
-  let destinations: HostDestinationsReader | null = null;
-
   const readDestinationsThroughHost: HostDestinationsReader = (session) => {
+    const destinations = bound?.destinations ?? null;
     if (destinations === null) {
       throw new Error(
         'An outline read reached the engine with no host outline reader registered. A session ' +
@@ -2726,9 +2755,8 @@ function engineSessionOpener(
   };
 
   /** Recognition's half of the same registration. See {@link pageText}. */
-  let ocr: HostOcrReader | null = null;
-
   const recogniseThroughHost: HostOcrReader = (session, request) => {
+    const ocr = bound?.ocr ?? null;
     if (ocr === null) {
       throw new Error(
         'A recognition reached the engine with no host OCR reader registered. A session was ' +
@@ -2740,9 +2768,8 @@ function engineSessionOpener(
   };
 
   /** The layers' half of the same registration. See {@link pageText}. */
-  let layers: HostLayersReader | null = null;
-
   const readLayersThroughHost: HostLayersReader = (session) => {
+    const layers = bound?.layers ?? null;
     if (layers === null) {
       throw new Error(
         'A layer read reached the engine with no host layer reader registered. A session was ' +
@@ -2754,9 +2781,8 @@ function engineSessionOpener(
   };
 
   /** The font reader's half of the same registration. See {@link pageText}. */
-  let fonts: HostFontsReader | null = null;
-
   const readFontsThroughHost: HostFontsReader = (session) => {
+    const fonts = bound?.fonts ?? null;
     if (fonts === null) {
       throw new Error(
         'A font read reached the engine with no host font reader registered. A session was resolved for this ' +
@@ -2767,9 +2793,8 @@ function engineSessionOpener(
   };
 
   /** The stamp reader's half of the same registration (ADR-0246). See {@link pageText}. */
-  let pageMarks: HostPageMarksReader | null = null;
-
   const readPageMarksThroughHost: HostPageMarksReader = (session) => {
+    const pageMarks = bound?.pageMarks ?? null;
     if (pageMarks === null) {
       throw new Error(
         'A stamp read reached the engine with no host stamp reader registered. A session was resolved for this ' +
@@ -2780,11 +2805,10 @@ function engineSessionOpener(
   };
 
   /** The signature reader's half of the same registration. See {@link pageText}. */
-  let signatures: ((session: MupdfSession) => Promise<readonly ReadSignature[]>) | null = null;
-
   const readSignaturesThroughHost = (
     session: MupdfSession,
   ): Promise<readonly ReadSignature[]> => {
+    const signatures = bound?.signatures ?? null;
     if (signatures === null) {
       throw new Error(
         'A signature read reached the engine with no host signature reader registered. A ' +
@@ -2796,12 +2820,10 @@ function engineSessionOpener(
   };
 
   /** The save's question about signatures, the same registration. See {@link pageText}. */
-  let signaturesKept: ((session: MupdfSession) => Promise<NextSave>) | null =
-    null;
-
   const readSignaturesKeptThroughHost = (
     session: MupdfSession,
   ): Promise<NextSave> => {
+    const signaturesKept = bound?.signaturesKept ?? null;
     if (signaturesKept === null) {
       throw new Error(
         'A save asked about signatures with no host reader registered. A session was resolved for this document, so ' +
@@ -2812,9 +2834,8 @@ function engineSessionOpener(
   };
 
   /** The annotation list's half of the same registration. See {@link pageText}. */
-  let annotations: HostAnnotationsReader | null = null;
-
   const readAnnotationsThroughHost: HostAnnotationsReader = (session) => {
+    const annotations = bound?.annotations ?? null;
     if (annotations === null) {
       throw new Error(
         'An annotation read reached the engine with no host reader registered. A session was ' +
@@ -2826,9 +2847,8 @@ function engineSessionOpener(
   };
 
   /** The clipboard copy's half of the same registration. See {@link pageText}. */
-  let annotationCopy: HostAnnotationRecordsReader | null = null;
-
   const copyAnnotationsThroughHost: HostAnnotationRecordsReader = (session, page, indices) => {
+    const annotationCopy = bound?.annotationCopy ?? null;
     if (annotationCopy === null) {
       throw new Error(
         'A clipboard copy reached the engine with no host reader registered. A session was ' +
@@ -2840,9 +2860,8 @@ function engineSessionOpener(
   };
 
   /** One mark's whole words' half of the same registration. See {@link pageText}. */
-  let annotationWords: HostAnnotationWordsReader | null = null;
-
   const readAnnotationWordsThroughHost: HostAnnotationWordsReader = (session, page, index) => {
+    const annotationWords = bound?.annotationWords ?? null;
     if (annotationWords === null) {
       throw new Error(
         'An annotation words read reached the engine with no host reader registered. A session was ' +
@@ -2854,9 +2873,8 @@ function engineSessionOpener(
   };
 
   /** One link's whole address' half of the same registration (ADR-0167). See {@link pageText}. */
-  let linkAddress: HostLinkAddressReader | null = null;
-
   const readLinkAddressThroughHost: HostLinkAddressReader = (session, page, index) => {
+    const linkAddress = bound?.linkAddress ?? null;
     if (linkAddress === null) {
       throw new Error(
         'A link address read reached the engine with no host reader registered. A session was ' +
@@ -2868,9 +2886,8 @@ function engineSessionOpener(
   };
 
   /** The form field list's half of the same registration. See {@link pageText}. */
-  let formFields: HostFormFieldsReader | null = null;
-
   const readFormFieldsThroughHost: HostFormFieldsReader = (session) => {
+    const formFields = bound?.formFields ?? null;
     if (formFields === null) {
       throw new Error(
         'A form field read reached the engine with no host reader registered. A session was ' +
@@ -2882,9 +2899,8 @@ function engineSessionOpener(
   };
 
   /** The candidate proposal's half of the same registration. See {@link pageText}. */
-  let flatFields: HostFlatFieldsReader | null = null;
-
   const readFlatFieldsThroughHost: HostFlatFieldsReader = (session, page) => {
+    const flatFields = bound?.flatFields ?? null;
     if (flatFields === null) {
       throw new Error(
         'A flat field read reached the engine with no host reader registered. A session was ' +
@@ -2896,9 +2912,8 @@ function engineSessionOpener(
   };
 
   /** The properties read's half of the same registration. See {@link pageText}. */
-  let fieldProperties: HostFieldPropertiesReader | null = null;
-
   const readFieldPropertiesThroughHost: HostFieldPropertiesReader = (session, handles) => {
+    const fieldProperties = bound?.fieldProperties ?? null;
     if (fieldProperties === null) {
       throw new Error(
         'A field properties read reached the engine with no host reader registered. A session was ' +
@@ -2910,14 +2925,14 @@ function engineSessionOpener(
   };
 
   /** The import plan's half of the same registration. See {@link pageText}. */
-  let formImportPlan: RemoteFormImportPlanner | null = null;
-  let annotationImportPlan: RemoteAnnotationImportPlanner | null = null;
   const planAnnotationImportThroughHost: RemoteAnnotationImportPlanner = (session, bytes, format) => {
+    const annotationImportPlan = bound?.annotationImportPlan ?? null;
     if (annotationImportPlan === null) return Promise.reject(new Error('No annotation import planner is connected.'));
     return annotationImportPlan(session, bytes, format);
   };
 
   const planFormImportThroughHost: RemoteFormImportPlanner = (session, bytes, format) => {
+    const formImportPlan = bound?.formImportPlan ?? null;
     if (formImportPlan === null) {
       throw new Error(
         'An import plan reached the engine with no host reader registered. A session was ' +
@@ -2929,9 +2944,8 @@ function engineSessionOpener(
   };
 
   /** The accessibility check's half of the same registration. See {@link pageText}. */
-  let accessibility: ((session: MupdfSession) => Promise<AccessibilityReportOnWire>) | null = null;
-
   const checkAccessibilityThroughHost = (session: MupdfSession): Promise<AccessibilityReportOnWire> => {
+    const accessibility = bound?.accessibility ?? null;
     if (accessibility === null) {
       throw new Error(
         'An accessibility check reached the engine with no host reader registered. A session was ' +
@@ -2943,9 +2957,8 @@ function engineSessionOpener(
   };
 
   /** The barcode read's half of the same registration. See {@link pageText}. */
-  let barcodes: BarcodeReport | null = null;
-
   const readBarcodesThroughHost: BarcodeReport = (session, page) => {
+    const barcodes = bound?.barcodes ?? null;
     if (barcodes === null) {
       throw new Error(
         'A barcode read reached the engine with no host reader registered. A session was ' +
@@ -2957,9 +2970,8 @@ function engineSessionOpener(
   };
 
   /** The duplicate report's half of the same registration. See {@link pageText}. */
-  let duplicates: DuplicateReport | null = null;
-
   const readDuplicatesThroughHost: DuplicateReport = (session) => {
+    const duplicates = bound?.duplicates ?? null;
     if (duplicates === null) {
       throw new Error(
         'A duplicate-page read reached the engine with no host reader registered. A session was ' +
@@ -3087,14 +3099,11 @@ function engineSessionOpener(
         // terminated — which is a worse shape than the diagnostic `live()`
         // raises, because it names the transport rather than the divergence.
         writer = null;
-        // AND THE GEOMETRY READER, for the same reason and by the same
-        // divergence: one left bound to a dead host answers a view-model read
-        // from a client that has already settled every call. The text reader is
-        // cleared beside it and never separately — two readers on one host that
-        // are cleared at different moments is the divergence they exist to
-        // refuse, one layer down.
-        geometry = null;
-        pageText = null;
+        // AND EVERY READER, for the same reason and by the same divergence: one
+        // left bound to a dead host answers a read from a client that has
+        // already settled every call. They are one value (`readersOf`), so none
+        // can be left behind — two of twenty-seven were, until SSSSSSS-20.
+        bound = null;
         void onEngineHostEnded(sessions, ending, {
           documents,
           failures,
@@ -3153,33 +3162,7 @@ function engineSessionOpener(
     // `createClient` here would make representable.
     const client = createClient(engineChannels, live.value.client.invoke);
     writer = remoteMupdfWriter(client, remote, sessionAreas(platform, takenDirectory), sessionAssets(), notices);
-    geometry = remoteMupdfGeometry(client, remote);
-    pageText = remoteMupdfPageText(client, remote);
-    pageLinks = remoteMupdfPageLinks(client, remote);
-    pageFills = remoteMupdfPageFills(client, remote);
-    scanTables = remoteMupdfScanTables(client, remote);
-    pageAdjustment = remoteMupdfPageAdjustment(client, remote);
-    pageRewrite = remoteMupdfPageRewrite(client, remote);
-    wordBoxes = remoteMupdfWordBoxes(client, remote);
-    destinations = remoteMupdfDestinations(client, remote);
-    ocr = remoteMupdfOcr(client, remote);
-    layers = remoteMupdfLayers(client, remote);
-    fonts = remoteMupdfFonts(client, remote);
-    pageMarks = remoteMupdfPageMarks(client, remote);
-    signatures = remoteMupdfSignatures(client, remote);
-    signaturesKept = remoteMupdfSignaturesKept(client, remote);
-    annotations = remoteMupdfAnnotations(client, remote);
-    annotationCopy = remoteMupdfAnnotationRecords(client, remote);
-    annotationWords = remoteMupdfAnnotationWords(client, remote);
-    linkAddress = remoteMupdfLinkAddress(client, remote);
-    formFields = remoteMupdfFormFields(client, remote);
-    flatFields = remoteMupdfFlatFields(client, remote);
-    fieldProperties = remoteMupdfFieldProperties(client, remote);
-    formImportPlan = remoteMupdfFormImportPlan(client, remote, sessionAssets());
-    annotationImportPlan = remoteMupdfAnnotationImportPlan(client, remote, sessionAssets());
-    barcodes = remoteMupdfBarcodes(client, remote);
-    accessibility = remoteMupdfAccessibility(client, remote);
-    duplicates = remoteMupdfDuplicateReport(client, remote);
+    bound = readersOf(client, remote);
     return live.value;
   };
 
@@ -3529,8 +3512,7 @@ function engineSessionOpener(
     const live = host;
     host = null;
     writer = null;
-    geometry = null;
-    pageText = null;
+    bound = null;
     if (live === null) return;
     const connection = await live.catch(() => null);
     connection?.close();
