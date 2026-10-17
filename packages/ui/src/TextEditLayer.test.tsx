@@ -991,7 +991,7 @@ describe('Edit text on the page (ADR-0096)', () => {
     });
 
     it('a REFUSED write keeps the open block and its words, and the block clicked does not open over them', async () => {
-      const { view, settle } = mountDeferred();
+      const { view, settle, commits } = mountDeferred();
       fireEvent.click(find(view.container, '[data-text-block="0"]'));
       typeInto(editorIn(view.container), 'WORK HISTORY');
       await act(async () => {
@@ -1006,8 +1006,14 @@ describe('Edit text on the page (ADR-0096)', () => {
       expect(view.container.querySelector('[data-text-editor]')?.textContent).toBe('WORK HISTORY');
       expect(view.container.querySelector('[role="alert"]')).not.toBeNull();
       // AND A FURTHER CLICK on that other block changes nothing either: the words are kept until the person decides.
-      fireEvent.click(find(view.container, '[data-text-block="1"]'));
+      await act(async () => {
+        fireEvent.click(find(view.container, '[data-text-block="1"]'));
+        await Promise.resolve();
+      });
       expect(view.container.querySelector('[data-text-editor]')?.textContent).toBe('WORK HISTORY');
+      // THE DECISION, not the state (VVVVVVV-19): the refused words are NOT sent again. The editor showing them is also
+      // what a missing guard leaves, since a second refusal keeps them too; the count is what only the guard keeps.
+      expect(commits).toStrictEqual(['WORK HISTORY']);
     });
   });
 
