@@ -1005,9 +1005,10 @@ export function refuseStaleBuild(repoRoot, pairs, expected, options = {}) {
         `removing one, say why in the commit.`,
     );
   }
-  // AND EVERY MODULE THOSE START BY PATH, found rather than listed (GGGGGGGG-7, HHHHHHHH-7): see `startedByPath`.
+  // AND EVERY MODULE THOSE REACH, imported or started by path, found rather than listed (IIIIIIII-3; GGGGGGGG-7 and
+  // HHHHHHHH-7 for the threads): see `reachedFrom`.
   const named = new Set(pairs.map(([, artefact]) => artefact));
-  const started = startedByPath(
+  const started = reachedFrom(
     repoRoot,
     pairs.filter(([, , producer]) => producer === 'tsc').map(([, artefact]) => artefact),
   )
@@ -1090,29 +1091,59 @@ const STARTED_BY_PATH = /new URL\(\s*['"](\.{1,2}\/[\w./-]+)\.js['"]\s*,\s*impor
  * a source is what the built file was compiled from, so it names the same modules. A built path with no source beside
  * it (a bundle, a directory edge's `index.js` whose source is not a file) is not walked.
  *
- * Static imports reached on the way are NOT returned: an edge list that misses one of those is IIIIIIII-3, the whole
- * derivation, which this does not take on. What is returned is only what an import graph cannot see.
+ * {@link reachedFrom} answers every module the same walk reaches; this answers the thread entries alone, which is what
+ * the proof's control about threads asks.
  *
  * @param {string} repoRoot
  * @param {readonly string[]} artefacts repo-relative built modules, `packages/name/dist/…js`
  * @returns {{ source: string, artefact: string }[]}
  */
 export function startedByPath(repoRoot, artefacts) {
+  return walkBuilt(repoRoot, artefacts).started;
+}
+
+/**
+ * Every built module that the built modules `artefacts` reach — by a relative import, a re-export, a dynamic import, or
+ * a thread started by path — each as the pair that dates it (IIIIIIII-3).
+ *
+ * The hand-kept lists named the modules a proof reaches and missed some: three commits in one range each repaired one
+ * after a proof ran stale (`bc4a46a7`, `1121a81e`, `d8782000`). Item 4c's direction rule decides where the count comes
+ * from: a list missing a module is the SHRINK the derivation has to catch, and a walk from the listed modules sees the
+ * module the list forgot. The lists stay as the walk's roots and the proofs' declared counts; what they reach is
+ * derived. A proof's own direct imports are held to its list by `buildFreshness.proof.mjs`' import check.
+ *
+ * @param {string} repoRoot
+ * @param {readonly string[]} artefacts
+ * @returns {{ source: string, artefact: string }[]}
+ */
+export function reachedFrom(repoRoot, artefacts) {
+  const { reached } = walkBuilt(repoRoot, artefacts);
+  return reached;
+}
+
+/**
+ * The one walk over built modules, read as their sources.
+ *
+ * @param {string} repoRoot
+ * @param {readonly string[]} artefacts
+ * @returns {{ reached: { source: string, artefact: string }[], started: { source: string, artefact: string }[] }}
+ */
+function walkBuilt(repoRoot, artefacts) {
   /** @param {string} built */
   const sourceOf = (built) => {
     if (!/^(?:packages|apps)\/[\w-]+\/dist\/.+\.js$/u.test(built)) return undefined;
     const stem = built.replace(/\/dist\//u, '/src/').replace(/\.js$/u, '');
     return ['.ts', '.tsx'].map((extension) => `${stem}${extension}`).find((path) => existsSync(join(repoRoot, path)));
   };
-  /** @type {Set<string>} */
-  const read = new Set();
+  /** @type {Map<string, string>} built module to its source, every one the walk read */
+  const read = new Map();
   /** @type {Map<string, string>} */
   const started = new Map();
   const queue = [...artefacts];
   for (let built = queue.pop(); built !== undefined; built = queue.pop()) {
     const source = sourceOf(built);
-    if (source === undefined || read.has(source)) continue;
-    read.add(source);
+    if (source === undefined || read.has(built)) continue;
+    read.set(built, source);
     const text = readFileSync(join(repoRoot, source), 'utf8');
     const at = (/** @type {string} */ specifier) => posix.join(posix.dirname(built), `${specifier}.js`);
     for (const match of text.matchAll(RELATIVE_IMPORT)) queue.push(at(match[1] ?? ''));
@@ -1123,7 +1154,10 @@ export function startedByPath(repoRoot, artefacts) {
       queue.push(entry);
     }
   }
-  return [...started].map(([artefact, source]) => ({ source, artefact }));
+  return {
+    reached: [...read].map(([artefact, source]) => ({ source, artefact })),
+    started: [...started].map(([artefact, source]) => ({ source, artefact })),
+  };
 }
 
 /**

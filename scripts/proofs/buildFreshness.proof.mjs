@@ -79,6 +79,7 @@ const CASES = [
   'every built module a registered proof imports by path is covered by one of its edges',
   'CONTROL: the guard’s walk finds the thread entries two modules below a proof’s imports',
   'a stale thread entry that no edge names is refused, because the guard walks to it; fresh, it passes',
+  'a stale module two imports below a listed one is refused, because the guard walks to it; fresh, it passes',
   'CONTROL: and that check sees the imports, and names one an edge list lacks',
 ];
 
@@ -782,6 +783,34 @@ try {
         'a stale thread entry that no edge names is refused, because the guard walks to it; fresh, it passes',
         stale.startsWith('packages/k/dist/w.js is OLDER than packages/k/src/w.ts') && fresh === 'passed',
         `stale: ${stale.split('\n')[0] ?? ''}; fresh: ${fresh.split('\n')[0] ?? ''}`,
+      );
+
+      // AND A MODULE IT IMPORTS, two deep, that no list names (IIIIIIII-3): the shape three commits repaired by hand.
+      // `a` imports `b`, `b` imports `c`; the list names `a` alone, `c`'s build is stale. CONTROL: `c` fresh passes.
+      mkdirSync(join(root, 'packages', 'm', 'src'), { recursive: true });
+      mkdirSync(join(root, 'packages', 'm', 'dist'), { recursive: true });
+      writeAt(join(root, 'packages', 'm', 'src', 'a.ts'), "export { b } from './b.js';\n", OLD);
+      writeAt(join(root, 'packages', 'm', 'src', 'b.ts'), "import { c } from './c.js';\nexport const b = c;\n", OLD);
+      writeAt(join(root, 'packages', 'm', 'src', 'c.ts'), 'export const c = 1;\n', NEW);
+      for (const name of ['a', 'b']) writeAt(join(root, 'packages', 'm', 'dist', `${name}.js`), '', NEW);
+      writeAt(join(root, 'packages', 'm', 'dist', 'c.js'), '', OLD);
+      /** @type {import('../lib/buildFreshness.mjs').BuildEdge[]} */
+      const onlyTheRoot = [['packages/m/src/a.ts', 'packages/m/dist/a.js', 'tsc']];
+      const imported = () => {
+        try {
+          refuseStaleBuild(root, onlyTheRoot, 1, { compilerOwes: () => ['packages/m'] });
+          return 'passed';
+        } catch (error) {
+          return error instanceof Error ? error.message : String(error);
+        }
+      };
+      const staleImport = imported();
+      utimesSync(join(root, 'packages', 'm', 'dist', 'c.js'), NEW, NEW);
+      const freshImport = imported();
+      check(
+        'a stale module two imports below a listed one is refused, because the guard walks to it; fresh, it passes',
+        staleImport.startsWith('packages/m/dist/c.js is OLDER than packages/m/src/c.ts') && freshImport === 'passed',
+        `stale: ${staleImport.split('\n')[0] ?? ''}; fresh: ${freshImport.split('\n')[0] ?? ''}`,
       );
     }
 

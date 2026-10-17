@@ -18,8 +18,13 @@ import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { freemem } from 'node:os';
 import { join } from 'node:path';
 
+import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { root, startWalk } from './liveWalk.mjs';
 import { textSteps } from './textWalkSteps.mjs';
+
+// THE FIXTURE'S OWN BUILD, as `textWalk.mjs` takes it: the page this walk opens is made by a built module, and a stale
+// one measures yesterday's page under today's name.
+refuseStaleBuild(root, [['packages/kernel/src/producerSubsetFixture.ts', 'packages/kernel/dist/producerSubsetFixture.js', 'tsc']], 1);
 
 const RUNS = Number(process.argv[2] ?? '5');
 
