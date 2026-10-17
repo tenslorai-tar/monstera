@@ -871,6 +871,10 @@ export const WORKBOOK_INCOMPLETE_SAID = messageKey('dialog.workbook-incomplete.s
 export const WORKBOOK_INCOMPLETE_BLOCK = messageKey('dialog.workbook-incomplete.block');
 export const WORKBOOK_INCOMPLETE_MORE = messageKey('dialog.workbook-incomplete.more');
 export const BOXED_CHARACTERS_TITLE = messageKey('dialog.boxed-characters.title');
+/** The pages a stamp left because they display nothing (ADR-0254). */
+export const PAGES_LEFT_TITLE = messageKey('dialog.pages-left.title');
+export const PAGES_LEFT_SAID = messageKey('dialog.pages-left.said');
+export const PAGES_LEFT_MORE = messageKey('dialog.pages-left.more');
 export const BOXED_CHARACTERS_SAID = messageKey('dialog.boxed-characters.said');
 export const BOXED_CHARACTERS_AT = messageKey('dialog.boxed-characters.at');
 export const BOXED_CHARACTERS_AT_LINE = messageKey('dialog.boxed-characters.at-line');
@@ -6498,6 +6502,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [BOXED_CHARACTERS_AT]: '“{character}” ({code}), line {line, number}, column {column, number}',
   [BOXED_CHARACTERS_AT_LINE]: '“{character}” ({code}), in the block that starts on line {line, number}',
   [BOXED_CHARACTERS_MORE]: '{count, plural, one {And # more place.} other {And # more places.}}',
+  [PAGES_LEFT_TITLE]: 'Some pages were left as they were',
+  [PAGES_LEFT_SAID]:
+    'Every other page was done. These pages show nothing, so nothing was added to them: {pages}.',
+  [PAGES_LEFT_MORE]: '{count, plural, one {And # more page.} other {And # more pages.}}',
   [BOXED_CHARACTERS_SAID_EDIT]:
     'Your change is made. No font here can draw the characters below, so each one is shown as a box on the page. ' +
     'The text is kept: copying or searching it finds the characters as you typed them.',

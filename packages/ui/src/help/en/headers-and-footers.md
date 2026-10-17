@@ -30,6 +30,7 @@ Both still work after the file is saved and opened again, and each is one step f
 
 - `{N}` is the number of pages in the whole document.
 - Headers and footers added by an earlier version of Monstera cannot be changed or removed. Monstera says so and leaves them.
+- A page that shows nothing, because its visible area lies outside the page, is left as it is. Every other page gets the header and footer, and Monstera names the pages it left.
 - Undo with **Ctrl+Z**.
 
 <!--

@@ -364,6 +364,11 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'refused', props: { outcome: 'unreachable' } },
   ],
   'dialog.cloud-view-only': [{ state: 'opened', props: { provider: 'onedrive', moment: 'opened' } }],
+  // PAGES A STAMP LEFT (ADR-0254): two named, and a long document's list counted past the fifty it names.
+  'dialog.pages-left': [
+    { state: 'opened', props: { pages: [2, 6] } },
+    { state: 'many', props: { pages: Array.from({ length: 60 }, (_, at) => at * 2) } },
+  ],
   // PROVEN OUT OF MEMORY (ADR-0253): an 8 GB computer with other programs using most of it, and one where they were not,
   // whose sentence names the total alone.
   'dialog.out-of-memory': [

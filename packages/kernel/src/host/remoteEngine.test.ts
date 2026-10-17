@@ -1083,6 +1083,7 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
             pageCount: 3,
             rotations: pages.map((page) => (page === 0 ? 45 : 90)),
             sizes: pages.map(() => ({ width: 612, height: 792 })),
+            showsNothing: pages.map(() => false),
           }),
         pageText: () => {
           throw new Error('the rotation-refusal case must not read page text');
@@ -1201,6 +1202,7 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         pageCount: 3,
         rotations: [90],
         sizes: [{ width: 612, height: 792 }],
+        showsNothing: [false],
       });
       expect(incidents).toHaveLength(1);
     } finally {

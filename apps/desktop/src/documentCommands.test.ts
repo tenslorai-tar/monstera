@@ -1261,6 +1261,50 @@ describe('a link’s whole address, through the lane (ADR-0167)', () => {
   });
 });
 
+// ADR-0254: A STAMP NAMES THE PAGES IT LEFT, read in the lane by the geometry read's `showsNothing` before the bus, and
+// answered by `execute` — the composition point between the kernel's skip (`pdfLibFrame.test.ts`) and the renderer's
+// dialog (`packages/ui`' documentCommands.test.ts), which neither of those halves crosses.
+describe('a stamp names the pages it left because they display nothing (ADR-0254)', () => {
+  it('answers skippedPages from the lane’s read, and an ordinary command answers none', async () => {
+    const pdf = await PDFDocument.create();
+    pdf.addPage([612, 792]);
+    pdf.addPage([400, 500]).setCropBox(1000, 1000, 10, 10);
+    pdf.addPage([612, 792]);
+    const bytes = await pdf.save();
+    const path = join(directory, 'shows-nothing.pdf');
+    writeFileSync(path, bytes);
+    const registry = new CapabilityRegistry();
+    const stampedService = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING, checkpointDirectory: CHECKPOINTS });
+    const outcome = await stampedService.open(registry.mint(path));
+    if (outcome.kind !== 'opened') throw new Error('the fixture did not open');
+    const stampedSession = await mupdfWriter.open(bytes);
+    const held = new EngineSessions();
+    held.hold(outcome.docId, { mupdf: stampedSession });
+    const commands = new DocumentCommands({
+      ...LOCAL_READS,
+      documents: stampedService,
+      // A REAL FLUSH, since a stamp takes a checkpoint before it draws.
+      save: { ...noSaving, flush: sessionFlush, stage: stagingFrom(sessionFlush) },
+      bus: bus(),
+      engine: held,
+    });
+    const applied = await commands.execute(outcome.docId, {
+      kind: 'headerFooterPages',
+      pages: 'all',
+      header: { left: '', centre: 'Annual report', right: '' },
+      footer: { left: '', centre: '', right: '' },
+      family: 'Helvetica',
+      fontSize: 10,
+      marginPoints: 36,
+    });
+    expect(applied.skippedPages).toStrictEqual([1]);
+    // CONTROL: a command that places nothing on pages answers none, from the same lane on the same document.
+    const rotated = await commands.execute(outcome.docId, { kind: 'rotatePages', pages: [0], quarterTurns: 1 });
+    expect(rotated.skippedPages).toStrictEqual([]);
+    await mupdfWriter.close(stampedSession);
+  });
+});
+
 // ADR-0246: THE STAMPS' READ through this composition point, the lane and the injected reader, against a session the
 // stamp writer drew on. Executing the stamp here would take a checkpoint, which needs the save path this file stubs
 // (the link case's reason); the command half is `pageMarks.test.ts`'.

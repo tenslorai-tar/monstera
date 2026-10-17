@@ -31,6 +31,7 @@ Both still work after the file is saved and opened again, and each is one step f
 - A font from this computer is saved inside the PDF, only the letters you used, so the watermark looks the same wherever the file is opened.
 - A watermark another program added is changed or removed too when it was saved as a separate mark. One written into the page itself is left, and Monstera says so.
 - A mark added by an earlier version of Monstera cannot be changed or removed, because it cannot be told apart safely from the page. Monstera says so and leaves it.
+- A page that shows nothing, because its visible area lies outside the page, is left as it is. Every other page gets the watermark, and Monstera names the pages it left.
 - Undo with **Ctrl+Z**.
 
 <!--

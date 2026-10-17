@@ -183,8 +183,23 @@ const SESSION = { ok: true, value: { session: 'ab0f', access: 1 } };
  * empty body their channels declare, because a live-session writer mutates in
  * place and returns nothing (§8).
  */
-const ENGINE: FakePeer = (channel) => {
+const ENGINE: FakePeer = (channel, params) => {
   switch (channel) {
+    // A COMMAND THAT PLACES ON PAGES READS THIS FIRST since ADR-0254, to name the pages it leaves, and the default
+    // below sends no reply — so such a command through this peer waited for ever. Answered as a one-page document
+    // whose named pages are Letter, unturned, and display something.
+    case 'engine/page-geometry': {
+      const { pages } = params as { pages: readonly number[] };
+      return {
+        ok: true,
+        value: {
+          pageCount: 1,
+          rotations: pages.map(() => 0),
+          sizes: pages.map(() => ({ width: 612, height: 792 })),
+          showsNothing: pages.map(() => false),
+        },
+      };
+    }
     case 'engine/probe-containment':
       return CONTAINED;
     case 'engine/open':

@@ -2536,6 +2536,9 @@ export const engineChannels = {
           )
           .max(ENGINE_GEOMETRY_MAX_PAGES)
           .readonly(),
+        // WHETHER EACH PAGE DISPLAYS NOTHING by the writers' own `displayedBox`, aligned with `rotations`: what `main`
+        // reads before a command that stamps pages, to name the ones it leaves (ADR-0254).
+        showsNothing: z.array(z.boolean()).max(ENGINE_GEOMETRY_MAX_PAGES).readonly(),
       })
       .strict(),
     ['no-such-session'],

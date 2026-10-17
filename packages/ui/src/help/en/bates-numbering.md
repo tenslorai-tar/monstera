@@ -30,6 +30,7 @@ Both still work after the file is saved and opened again, and each is one step f
 - Bates numbers added by an earlier version of Monstera cannot be changed or removed. Monstera says so and leaves them.
 - **Start at** lets a second document carry on from where the first finished.
 - **Digits** is the minimum width; numbers are padded with zeros and never cut short.
+- A page that shows nothing, because its visible area lies outside the page, is left without a number, and Monstera names it. It still counts, so the next page has the number it would have had.
 - Undo with **Ctrl+Z**.
 
 <!--

@@ -26,24 +26,9 @@ import { type BoxValue, displayedBox } from './pageBoxes.js';
 export type PageFrame = PageTransform;
 
 /**
- * The frame a page displays in, or a named refusal for a page that displays nothing — the refusal every writer here
- * gives (`pageCrop.ts`, `pageAnnotations.ts`), since there is no frame to place anything in.
- */
-export function pageFrame(page: PDFPage, index: number): PageFrame {
-  const frame = frameOfPage(page);
-  if (frame === null) {
-    throw new RangeError(
-      `page ${String(index)} displays no region — it has no /MediaBox of four numbers, or its /CropBox and /MediaBox ` +
-        'do not overlap — so there is no frame to place anything in',
-    );
-  }
-  return frame;
-}
-
-/**
- * {@link pageFrame}, answering `null` for a page that displays nothing. For a caller that only READS a page's shape —
- * a table of contents sized like its neighbour — where a neighbour with no frame is a reason to use a default, not to
- * refuse the person's command.
+ * The frame a page displays in, or `null` for a page that displays nothing. A writer that places on pages leaves such a
+ * page as it is and refuses only where none it names displays anything (`pageBoxes.ts`' `refuseWhereNothingShows`,
+ * ADR-0254); a caller that only READS a page's shape — a table of contents sized like its neighbour — uses a default.
  */
 export function frameOfPage(page: PDFPage): PageFrame | null {
   const box = displayedBox({ getInheritable: (key) => boxValue(page, key) });

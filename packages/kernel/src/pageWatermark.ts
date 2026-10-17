@@ -1,5 +1,6 @@
 import type { Apply, Capture, Invert } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
+import { refuseWhereNothingShows } from './pageBoxes.js';
 import { recordedSettings, removeMarks } from './pageMarks.js';
 import { pageInDocument, pagesOf } from './pageScope.js';
 import { PageStamps } from './pageStampDraw.js';
@@ -99,9 +100,16 @@ export const applyWatermarkPages: Apply<'mupdf', 'watermarkPages'> = (session, c
     const offsetX = halfWidth * Math.cos(radians) - halfHeight * Math.sin(radians);
     const offsetY = halfWidth * Math.sin(radians) + halfHeight * Math.cos(radians);
 
+    // A PAGE THAT DISPLAYS NOTHING IS LEFT AS IT IS (ADR-0254): the others are stamped, and `main` names it.
+    refuseWhereNothingShows(
+      targets.filter((index) => stamps.frame(index) === undefined),
+      targets,
+    );
     for (const index of targets) {
       // THE PAGE AS THE READER SEES IT (CR-COR-01): the centre and the slant are the displayed page's.
-      const { width, height } = stamps.frame(index).viewport;
+      const frame = stamps.frame(index);
+      if (frame === undefined) continue;
+      const { width, height } = frame.viewport;
       stamps.draw(index, set, command.fontSize, {
         x: width / 2 - offsetX,
         fromTop: height / 2 + offsetY,

@@ -37,3 +37,11 @@ a person refused because of their document, against the owner's principle.
 - **The renderer working out the pages from the view model.** The view model's sizes are MuPDF's own page bounds, a
   second rule about what a page displays; the renderer would name pages by a rule the writers do not take.
 - **Refusing, as before.** The owner's principle.
+
+## Correction, 2026-10-17 — the read is a field of the geometry read, not a channel of its own
+
+Decision 2 named a new engine read, `engine/pages-showing-nothing`. What was built is a field, `showsNothing`, on the
+existing `engine/page-geometry` read, which already walks the same pages on the same MuPDF session in windows of
+`ENGINE_GEOMETRY_MAX_PAGES`; `pageGeometry.ts` answers it from `displayedBox`, the rule the four writers take, so
+Decision 2's one-rule property holds unchanged. A second channel would have been a second walk of the page tree with
+its own bound and its own schema for the same pages. Everything else in the decision is built as written.

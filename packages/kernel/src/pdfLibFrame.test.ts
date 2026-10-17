@@ -302,6 +302,65 @@ describe('the pdf-lib drawing commands on a turned page whose box does not start
     }
   });
 
+  it('a page that DISPLAYS NOTHING beside one that does is LEFT AS IT IS, and the other is stamped (ADR-0254)', async () => {
+    // PAGE 0 SHOWS LETTER, PAGE 1 SHOWS NOTHING (its crop box lies outside its media box). Before ADR-0254 page 1 refused
+    // the whole command, so page 0 was not stamped either.
+    const document = await PDFDocument.create();
+    document.addPage([612, 792]);
+    document.addPage([400, 500]).setCropBox(1000, 1000, 10, 10);
+    const two = await document.save();
+    /** Each page's words as MuPDF reads them, and whether pdf-lib finds any content stream on it. */
+    const read = async (bytes: Uint8Array): Promise<{ readonly words: readonly string[]; readonly drawn: readonly boolean[] }> => {
+      const session = await mupdfWriter.open(bytes);
+      try {
+        const words = await withDocument(session, (opened) =>
+          [0, 1].map((page) => opened.loadPage(page).toStructuredText().asText().trim()),
+        );
+        const loaded = await PDFDocument.load(bytes);
+        return { words, drawn: [0, 1].map((page) => loaded.getPage(page).node.Contents() !== undefined) };
+      } finally {
+        await mupdfWriter.close(session);
+      }
+    };
+    const stamped = await read(await applyHeaderFooterPages(two, STAMP));
+    expect(stamped.words[0]).toContain('Annual report');
+    expect(stamped.drawn[1]).toBe(false);
+    const numbered = await read(
+      await applyBatesNumberPages(two, {
+        kind: 'batesNumberPages',
+        pages: 'all',
+        prefix: 'ABC-',
+        suffix: '',
+        start: 1,
+        digits: 4,
+        edge: 'footer',
+        slot: 'right',
+        family: 'Helvetica',
+        fontSize: 10,
+        marginPoints: MARGIN,
+      }),
+    );
+    expect(numbered.words[0]).toContain('ABC-0001');
+    expect(numbered.drawn[1]).toBe(false);
+    const marked = await read(
+      await applyWatermarkPages(two, {
+        kind: 'watermarkPages',
+        pages: 'all',
+        text: 'DRAFT',
+        opacity: 0.3,
+        rotationDegrees: 0,
+        family: 'Helvetica',
+        fontSize: 36,
+      }),
+    );
+    expect(marked.words[0]).toContain('DRAFT');
+    expect(marked.drawn[1]).toBe(false);
+    const filled = await read(await applySetPageBackground(two, { kind: 'setPageBackground', pages: 'all', red: 1, green: 0, blue: 0 }));
+    expect(filled.drawn).toStrictEqual([true, false]);
+    // CONTROL: the fixture's page 1 has no content stream to begin with, so "none after" is the command leaving it.
+    expect((await read(two)).drawn).toStrictEqual([false, false]);
+  });
+
   it('a page that DISPLAYS NOTHING refuses a stamp in words, and gives a table of contents the default size', async () => {
     await expect(applyHeaderFooterPages(await pageShowingNothing(), STAMP)).rejects.toThrow(/page 0 displays no region/u);
     const built = await applyGenerateToc(

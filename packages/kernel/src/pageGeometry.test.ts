@@ -64,7 +64,12 @@ describe('readPageGeometry', () => {
     const session = await mupdfWriter.open(flat);
     try {
       const geometry = await readPageGeometry(session, ALL);
-      expect(geometry).toStrictEqual({ pageCount: 3, rotations: [0, 0, 0], sizes: [UPRIGHT, UPRIGHT, UPRIGHT] });
+      expect(geometry).toStrictEqual({
+        pageCount: 3,
+        rotations: [0, 0, 0],
+        sizes: [UPRIGHT, UPRIGHT, UPRIGHT],
+        showsNothing: [false, false, false],
+      });
       // THE ANCHOR, and it is not implied by the line above. The consumer reads
       // `rotations` positionally against what it asked for, so a shorter array
       // is a page silently drawn the wrong way up rather than an error.
@@ -87,6 +92,7 @@ describe('readPageGeometry', () => {
         // THE DISPLAYED SIZE, which is the frame structured text's boxes are in:
         // a media-box size here would put a layout export's lines off the page.
         sizes: [TURNED, TURNED, TURNED],
+        showsNothing: [false, false, false],
       });
     } finally {
       await mupdfWriter.close(session);
@@ -121,6 +127,7 @@ describe('readPageGeometry', () => {
         pageCount: 3,
         rotations: [0, 0, 90],
         sizes: [UPRIGHT, UPRIGHT, TURNED],
+        showsNothing: [false, false, false],
       });
     } finally {
       await mupdfWriter.close(session);
@@ -138,6 +145,7 @@ describe('readPageGeometry', () => {
         pageCount: 3,
         rotations: [90, 0],
         sizes: [TURNED, UPRIGHT],
+        showsNothing: [false, false],
       });
     } finally {
       await mupdfWriter.close(session);
@@ -175,7 +183,24 @@ describe('readPageGeometry', () => {
         pageCount: 3,
         rotations: [180, 90, 90],
         sizes: [UPRIGHT, TURNED, TURNED],
+        showsNothing: [false, false, false],
       });
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('says which named pages DISPLAY NOTHING, by the writers’ own rule, in the order asked (ADR-0254)', async () => {
+    // PAGE 1's crop box lies wholly outside its media box, so `displayedBox` answers nothing for it and a stamp leaves
+    // it. Asked out of order, so an answer read top to bottom puts the true on the wrong page. CONTROL: pages 0 and 2,
+    // the same size with no crop box, answer false — a reading that said true everywhere fails here.
+    const document = await PDFDocument.create();
+    document.addPage([612, 792]);
+    document.addPage([612, 792]).setCropBox(1000, 1000, 10, 10);
+    document.addPage([612, 792]);
+    const session = await mupdfWriter.open(await document.save());
+    try {
+      expect((await readPageGeometry(session, [1, 0, 2])).showsNothing).toStrictEqual([true, false, false]);
     } finally {
       await mupdfWriter.close(session);
     }

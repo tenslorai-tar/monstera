@@ -104,6 +104,7 @@ import { PAGE_BACKGROUND_DIALOG } from '../dialogs/pageBackground.js';
 import { WORD_COUNT_DIALOG } from '../dialogs/wordCount.js';
 import { WORKBOOK_INCOMPLETE_DIALOG } from '../dialogs/workbookIncomplete.js';
 import { BOXED_CHARACTERS_DIALOG } from '../dialogs/boxedCharacters.js';
+import { PAGES_LEFT_DIALOG } from '../dialogs/pagesLeft.js';
 import { UNSEALED_COPIES_DIALOG } from '../dialogs/unsealedCopies.js';
 import type { RegisteredDialog } from './dialogs.js';
 
@@ -181,6 +182,7 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   MARKDOWN_IMPORT_PROBLEM_DIALOG,
   WORKBOOK_INCOMPLETE_DIALOG,
   BOXED_CHARACTERS_DIALOG,
+  PAGES_LEFT_DIALOG,
   UNSEALED_COPIES_DIALOG,
   OPEN_FROM_URL_DIALOG,
   URL_OPEN_PROBLEM_DIALOG,

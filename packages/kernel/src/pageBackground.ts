@@ -5,7 +5,8 @@ import type { CaptureResult } from './commandLog.js';
 import { COORDINATE_DECIMALS, contentNumber } from './contentNumbers.js';
 import type { Apply, Invert } from './engineSeam.js';
 import { pageInDocument, pagesOf } from './pageScope.js';
-import { pageFrame } from './pdfLibFrame.js';
+import { refuseWhereNothingShows } from './pageBoxes.js';
+import { frameOfPage } from './pdfLibFrame.js';
 import { appendRevision, openForWriting } from './pdfLibSession.js';
 
 /**
@@ -84,6 +85,14 @@ export const applySetPageBackground: Apply<'pdf-lib', 'setPageBackground'> = asy
 
   const context = document.context;
 
+  // A PAGE THAT DISPLAYS NOTHING IS LEFT AS IT IS (ADR-0254): the others are filled, and `main` names it.
+  refuseWhereNothingShows(
+    targets.filter((index) => {
+      const page = pages[index];
+      return page === undefined || frameOfPage(page) === null;
+    }),
+    targets,
+  );
   for (const index of targets) {
     const page = pages[index];
     // NOT REACHABLE — validated above against this same array.
@@ -91,7 +100,9 @@ export const applySetPageBackground: Apply<'pdf-lib', 'setPageBackground'> = asy
 
     // THE REGION THE PAGE DISPLAYS, at its own origin (CR-COR-01). A box from `[-9 -9 621 801]` filled from 0,0 left a
     // 9-point band unfilled on two edges. A fill covers the whole region at any turn, so only the box is read.
-    const { crop } = pageFrame(page, index);
+    const frame = frameOfPage(page);
+    if (frame === null) continue;
+    const { crop } = frame;
     // `q … Q` BRACKETS THE FILL. See the module note: without the restore, the
     // background's colour is still current when the page's own stream starts.
     const operators =

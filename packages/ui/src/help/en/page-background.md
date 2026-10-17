@@ -21,6 +21,7 @@ Add page background puts a soft colour behind everything on a page, like tinted 
 
 - The background goes behind the text and pictures, so nothing is covered.
 - Pale colours keep dark text easy to read.
+- A page that shows nothing, because its visible area lies outside the page, is left as it is. Every other page gets the background, and Monstera names the pages it left.
 - Undo with **Ctrl+Z**.
 
 <!--

@@ -3,6 +3,7 @@ import { STAMP_TOKENS } from '@monstera/contract/host';
 
 import type { Apply, Capture, Invert } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
+import { refuseWhereNothingShows } from './pageBoxes.js';
 import { recordedSettings, removeMarks } from './pageMarks.js';
 import { pageInDocument, pagesOf } from './pageScope.js';
 import { PageStamps } from './pageStampDraw.js';
@@ -151,9 +152,14 @@ export const applyHeaderFooterPages: Apply<'mupdf', 'headerFooterPages'> = (sess
     // EDIT (ADR-0246 Decision 3), in the same command so one undo restores what it replaced.
     if (command.replace === true) removeMarks(document, 'headerFooter');
     const [r, g, b] = command.colour ?? [STAMP_BLACK, STAMP_BLACK, STAMP_BLACK];
+    // A PAGE THAT DISPLAYS NOTHING IS LEFT AS IT IS (ADR-0254): the others are stamped, and `main` names it.
+    const skipped = targets.filter((index) => stamps.frame(index) === undefined);
+    refuseWhereNothingShows(skipped, targets);
     for (const index of targets) {
       // THE PAGE AS THE READER SEES IT: its displayed size, and the way from a point on it to user space (CR-COR-01).
-      const { width, height } = stamps.frame(index).viewport;
+      const frame = stamps.frame(index);
+      if (frame === undefined) continue;
+      const { width, height } = frame.viewport;
 
       for (const edge of EDGES) {
         const fromTop = verticalOrigin(edge, { height, margin: command.marginPoints });
@@ -289,8 +295,16 @@ export const applyBatesNumberPages: Apply<'mupdf', 'batesNumberPages'> = (sessio
     const stamps = new PageStamps(document, command.family, { kind: 'bates', settings: recordedSettings(command) });
     // EDIT (ADR-0246 Decision 3), in the same command so one undo restores what it replaced.
     if (command.replace === true) removeMarks(document, 'bates');
+    // A PAGE THAT DISPLAYS NOTHING IS LEFT AS IT IS (ADR-0254), and KEEPS ITS NUMBER: the sequence is the scope's
+    // positions, so the next page's number is the one it would have had, and a number missing names the page left.
+    refuseWhereNothingShows(
+      targets.filter((index) => stamps.frame(index) === undefined),
+      targets,
+    );
     for (const [position, index] of targets.entries()) {
-      const { width, height } = stamps.frame(index).viewport;
+      const frame = stamps.frame(index);
+      if (frame === undefined) continue;
+      const { width, height } = frame.viewport;
 
       // POSITION IN THE SCOPE, not `index`. The two agree for a whole-document
       // scope starting at page 0, which is every fixture somebody writes first.

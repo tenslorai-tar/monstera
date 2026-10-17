@@ -1535,6 +1535,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
           // NONE BY DEFAULT and a set a test controls (ADR-0178): the shim seals no copies, so a protect names none.
           unsealedCopies: [...(options.unsealed?.get(docId) ?? [])],
           unsealedUndoCopies: 0,
+          // NONE: the shim's pages all display something (ADR-0254).
+          skippedPages: [],
         }),
       );
     },

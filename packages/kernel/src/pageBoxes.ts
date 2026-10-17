@@ -117,6 +117,26 @@ function ordered(box: readonly number[]): Box {
  * happens to declare. Own-state is the inverse's business (ADR-0009 §3) and is
  * read with `get` at the one place that needs it.
  */
+/**
+ * The refusal for a page that displays nothing, where a command has no other page to place on: the one sentence every
+ * writer that places on a page gives (`pdfLibFrame.ts`, `pageStampDraw.ts`), so they cannot say it two ways.
+ */
+export function displaysNothing(index: number): RangeError {
+  return new RangeError(
+    `page ${String(index)} displays no region — it has no /MediaBox of four numbers, or its /CropBox and /MediaBox ` +
+      'do not overlap — so there is no frame to place anything in',
+  );
+}
+
+/**
+ * Refuses a command that stamps pages where EVERY page it names displays nothing (ADR-0254): with none to place on,
+ * there is nothing to do. Where any page displays something the command stamps it and leaves the rest.
+ */
+export function refuseWhereNothingShows(skipped: readonly number[], targets: readonly number[]): void {
+  const [first] = skipped;
+  if (first !== undefined && skipped.length === targets.length) throw displaysNothing(first);
+}
+
 export function displayedBox(object: BoxSource): Box | null {
   const media = boxOf(object.getInheritable('MediaBox'));
   if (media === null) return null;

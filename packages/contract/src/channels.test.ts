@@ -140,7 +140,8 @@ const handlers: ContractHandlers = {
   'document.execute': () =>
     // A BOX, NOT NONE (ADR-0174): an empty list is also what a boundary that dropped the field would hand back.
     Promise.resolve(
-      ok({ version: asDocVersion(1), byteLength: 4096, historyDropped: 0, boxed: [{ character: '中', page: 0 }], more: 2, unsealedCopies: [], unsealedUndoCopies: 0 }),
+      // AND A PAGE LEFT (ADR-0254), not none, for the same reason.
+      ok({ version: asDocVersion(1), byteLength: 4096, historyDropped: 0, boxed: [{ character: '中', page: 0 }], more: 2, unsealedCopies: [], unsealedUndoCopies: 0, skippedPages: [2] }),
     ),
   'document.save': () => Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(1), cleared: null, held: [] })),
   'document.deleteHeldCopies': () => Promise.resolve(ok({ held: [] })),
@@ -558,7 +559,7 @@ describe('the shipping contract, exercised through its own map', () => {
         command: { kind: 'rotatePages', pages: [0], quarterTurns: 1 },
       }),
     ).resolves.toStrictEqual(
-      ok({ version: 1, byteLength: 4096, historyDropped: 0, boxed: [{ character: '中', page: 0 }], more: 2, unsealedCopies: [], unsealedUndoCopies: 0 }),
+      ok({ version: 1, byteLength: 4096, historyDropped: 0, boxed: [{ character: '中', page: 0 }], more: 2, unsealedCopies: [], unsealedUndoCopies: 0, skippedPages: [2] }),
     );
   });
 

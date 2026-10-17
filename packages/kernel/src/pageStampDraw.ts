@@ -2,7 +2,7 @@ import { type PageTransform, pageTransform, snapRotation, toPdf, viewportPoint }
 
 import { COORDINATE_DECIMALS, SCALE_DECIMALS, contentNumber } from './contentNumbers.js';
 import type { PDFDocument, PDFObject } from './mupdfRaw.js';
-import { displayedBox } from './pageBoxes.js';
+import { displayedBox, displaysNothing } from './pageBoxes.js';
 import { wrapContents } from './pageContentWrap.js';
 import { freeName, resourceDictionaryOf } from './pageResources.js';
 import { faceFont, settersFor } from './textBoxAppearance.js';
@@ -115,18 +115,14 @@ export class PageStamps {
   }
 
   /**
-   * The displayed page `index` and the way from a point on it to user space. A page that displays nothing has no frame to
-   * place anything in, which is refused as `pdfLibFrame.ts`' `pageFrame` refused it.
+   * The displayed page `index` and the way from a point on it to user space, or `undefined` for a page that displays
+   * nothing, which has no frame to place anything in: the command leaves it as it is (ADR-0254) and refuses only where
+   * no page it names displays anything (`refuseWhereNothingShows`).
    */
-  frame(index: number): PageTransform {
+  frame(index: number): PageTransform | undefined {
     const object = this.#document.findPage(index);
     const box = displayedBox(object);
-    if (box === null) {
-      throw new RangeError(
-        `page ${String(index)} displays no region — it has no /MediaBox of four numbers, or its /CropBox and /MediaBox ` +
-          'do not overlap — so there is no frame to place anything in',
-      );
-    }
+    if (box === null) return undefined;
     const rotate = object.getInheritable('Rotate');
     return pageTransform(box, snapRotation(rotate.isNumber() ? rotate.asNumber() : 0), 1);
   }
@@ -164,6 +160,8 @@ export class PageStamps {
   ): void {
     if (set.pieces.every((piece) => piece.text.trim() === '')) return;
     const frame = this.frame(index);
+    // A PAGE THAT DISPLAYS NOTHING IS NEVER DRAWN ON: the commands skip it before they ask (ADR-0254).
+    if (frame === undefined) throw displaysNothing(index);
     const at = toPdf(viewportPoint(place.x, place.fromTop), frame);
     const radians = ((frame.rotation + place.turn) * Math.PI) / 180;
     const scale = (value: number): string => contentNumber(value, SCALE_DECIMALS);

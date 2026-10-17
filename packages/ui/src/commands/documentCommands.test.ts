@@ -400,7 +400,33 @@ describe('rotate page', () => {
     // visible in any state: the version alone rebinds the renderer's transport
     // to the previous image's length, which is a RangeError past the end of the
     // new document or a parse of a truncated one.
-    expect(applied).toStrictEqual([{ version: 2, byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }]);
+    // AND `skippedPages` EMPTY though main's answer here names none: the contract reads an answer without it as none.
+    expect(applied).toStrictEqual([
+      { version: 2, byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0, skippedPages: [] },
+    ]);
+  });
+
+  /**
+   * ADR-0254's renderer half: the pages a stamp left because they display nothing are named, through the one dialog.
+   * The kernel half is `pdfLibFrame.test.ts`' mixed-page case; `main`'s is `documentCommands.test.ts`'. CONTROL: the
+   * case above answers none and opens nothing.
+   */
+  it('names the pages a stamp left because they display nothing, through the one dialog (ADR-0254)', async () => {
+    const { shown, onApplied, ask } = recorder();
+    const client = clientAnswering('document.execute', {
+      version: asDocVersion(2),
+      byteLength: 2048,
+      historyDropped: 0,
+      boxed: [],
+      more: 0,
+      unsealedCopies: [],
+      unsealedUndoCopies: 0,
+      skippedPages: [2, 6],
+    });
+
+    await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
+
+    expect(shown).toStrictEqual([{ id: 'dialog.pages-left', props: { pages: [2, 6] } }]);
   });
 
   /**
@@ -537,7 +563,9 @@ describe('rotate page', () => {
     // AND THE VIEW STILL MOVED. The command succeeded; a version reported to
     // nobody would leave the renderer showing the page as it was while a dialog
     // explains what the rotation cost.
-    expect(applied).toStrictEqual([{ version: 2, byteLength: 2048, historyDropped: 3, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }]);
+    expect(applied).toStrictEqual([
+      { version: 2, byteLength: 2048, historyDropped: 3, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0, skippedPages: [] },
+    ]);
   });
 
   it('a declared failure changes nothing, so the view is not rebuilt', async () => {
@@ -5301,7 +5329,7 @@ describe('generate table of contents', () => {
     expect(sent.map((call) => call.id)).toStrictEqual(['document.destinations', 'document.destinations', 'document.execute']);
     expect(sent[2]?.params).toStrictEqual({ docId: DOC, command: { kind: 'generateToc', at: 0, entries: left } });
     expect(record.applied).toStrictEqual([
-      { version: 2, byteLength: 8192, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 },
+      { version: 2, byteLength: 8192, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0, skippedPages: [] },
     ]);
   });
 
@@ -7279,7 +7307,16 @@ describe('every file write confirms, and its Show in folder reveals the file the
 describe('an edit main answers breaks-signatures for (ADR-0149)', () => {
   const SANITIZE: DispatchableCommand = { kind: 'sanitizeDocument', parts: ['javascript'] };
   const COPY = asDocId('doc-copy');
-  const APPLIED = { version: asDocVersion(5), byteLength: 4096, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 };
+  const APPLIED = {
+    version: asDocVersion(5),
+    byteLength: 4096,
+    historyDropped: 0,
+    boxed: [],
+    more: 0,
+    unsealedCopies: [],
+    unsealedUndoCopies: 0,
+    skippedPages: [],
+  };
 
   /** Main as ADR-0149 has it: `breaks-signatures` until the edit is sent agreed, and `editCopy` answering `copy`. */
   function signedMain(copy: unknown = { kind: 'cancelled' }): {

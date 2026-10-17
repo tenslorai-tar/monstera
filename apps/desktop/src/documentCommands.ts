@@ -182,6 +182,7 @@ import {
   type PlacedTables,
   RecognisedTableRefused,
   type PageWordBoxes,
+  ENGINE_GEOMETRY_MAX_PAGES,
   pagesOf,
   breaksSignatures,
   StaleTargetError,
@@ -1453,6 +1454,16 @@ export type DocumentFlush = (
  * `CommandBus` the way undo does, and being handed the reader is the honest
  * answer rather than picking an engine here.
  */
+/** The commands that place on every page they name, and leave one that displays nothing (ADR-0254). */
+const PLACES_ON_PAGES = new Set<Command['kind']>(['headerFooterPages', 'batesNumberPages', 'watermarkPages', 'setPageBackground']);
+
+/** Whether `command` is one of {@link PLACES_ON_PAGES}, narrowed to the four, whose `pages` say which pages it names. */
+function placesOnPages(
+  command: Command,
+): command is CommandOfKind<'headerFooterPages' | 'batesNumberPages' | 'watermarkPages' | 'setPageBackground'> {
+  return PLACES_ON_PAGES.has(command.kind);
+}
+
 export type DocumentGeometry = (
   docId: DocId,
   sessions: DocumentSessions,
@@ -2456,6 +2467,8 @@ export interface Applied {
   readonly unsealedCopies: readonly string[];
   /** How many undo copies a protect could not encrypt; zero for every other command (ADR-0178's 2026-10-17 correction). */
   readonly unsealedUndoCopies: number;
+  /** The pages a command that places on pages left as they were because they display nothing (ADR-0254); else empty. */
+  readonly skippedPages: readonly number[];
 }
 
 /**
@@ -3918,6 +3931,8 @@ export class DocumentCommands {
     // THE COPIES A PROTECT COULD NOT SEAL, held across the lane like `protectedAt`: a protect that applied names them
     // rather than failing (ADR-0178). Empty for every other command, and for a protect that sealed every copy.
     const unsealed: { copies: UnsealedCopies } = { copies: NONE_UNSEALED };
+    // THE PAGES LEFT AS THEY WERE (ADR-0254), held across the lane like `unsealed`: empty for every other command.
+    const skipped: { pages: readonly number[] } = { pages: [] };
     const { version, value: byteLength } = await this.#documents.run(docId, async (context) => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
@@ -3944,6 +3959,9 @@ export class DocumentCommands {
         }
       }
 
+      // THE PAGES A COMMAND THAT PLACES ON PAGES WILL LEAVE, because they display nothing (ADR-0254): read in this lane,
+      // before the bus, by the writers' own rule, so the pages named are the pages the command leaves.
+      skipped.pages = await this.#pagesShowingNothing(docId, sessions, command);
       // A COMMAND THAT HAS ENDED THE ENGINE THREE TIMES IS NOT SENT AGAIN (ADR-0221), and the refusal is decided here,
       // before the host, so the fourth attempt costs nothing. Read inside the lane for the poison check's reason.
       const { trimmed, entry, drawn } = await ledgered(this.#engine, docId, command.kind, () =>
@@ -3986,6 +4004,7 @@ export class DocumentCommands {
         ...cappedBoxes(drawn),
         unsealedCopies: unsealed.copies.copies,
         unsealedUndoCopies: unsealed.copies.undoCopies,
+        skippedPages: skipped.pages,
       };
     });
 
@@ -3993,6 +4012,25 @@ export class DocumentCommands {
     // still opens with no password (ADR-0171 Decision 8, `firstPagePicture`'s rule).
     if (protectedAt.path !== undefined) void this.#recentPicture.retake(docId, protectedAt.path);
     return { version, ...byteLength };
+  }
+
+  /**
+   * The pages a header and footer, Bates numbers, a watermark or a background will leave as they are because they
+   * display nothing (ADR-0254), by the geometry read's `showsNothing` — `displayedBox`, the rule those writers take. Empty
+   * for every other command. Read a window at a time, the read's own bound; a page outside the document is left for
+   * the command to refuse, as it did.
+   */
+  async #pagesShowingNothing(docId: DocId, sessions: DocumentSessions, command: Command): Promise<readonly number[]> {
+    if (!placesOnPages(command)) return [];
+    const { pageCount } = await this.#geometry(docId, sessions, []);
+    const targets = pagesOf(command.pages, pageCount).filter((page) => page < pageCount);
+    const skippedPages: number[] = [];
+    for (let at = 0; at < targets.length; at += ENGINE_GEOMETRY_MAX_PAGES) {
+      const window = targets.slice(at, at + ENGINE_GEOMETRY_MAX_PAGES);
+      const { showsNothing } = await this.#geometry(docId, sessions, window);
+      for (const [place, page] of window.entries()) if (showsNothing[place] === true) skippedPages.push(page);
+    }
+    return skippedPages;
   }
 
   /**
@@ -4139,7 +4177,7 @@ export class DocumentCommands {
     // NO UNSEALED COPIES: an undo seals nothing, so it leaves nothing unsealed (ADR-0178). A field omitted here would make
     // the renderer's obligation optional on one path, `historyDropped`'s reason.
     return stepped.yes
-      ? { version, byteLength, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }
+      ? { version, byteLength, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0, skippedPages: [] }
       : undefined;
   }
 
@@ -4226,6 +4264,8 @@ export class DocumentCommands {
           more: 0,
           unsealedCopies: unsealed.copies.copies,
           unsealedUndoCopies: unsealed.copies.undoCopies,
+          // TOLD AT THE EDIT, as boxes are: a redone stamp leaves the pages it left the first time.
+          skippedPages: [],
         }
       : undefined;
   }

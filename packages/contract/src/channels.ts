@@ -26,7 +26,7 @@ import {
 import type { PreloadChannelId } from './bridge.js';
 import { SHOWN_SCHEME_MAX } from './followedLinks.js';
 import { listedAnnotationSchema } from './listedAnnotation.js';
-import { pageSetSchema } from './pageSet.js';
+import { MAX_PAGE_INDEX, pageSetSchema } from './pageSet.js';
 import { channel, type Channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } from './channel.js';
 import { AI_ANSWER_REFUSALS, MAX_WEB_SOURCES, answerIdSchema, subscriptionIdSchema } from './events.js';
 import { NATIVE_COMPONENT_IDS } from './nativeComponentIds.js';
@@ -2501,6 +2501,13 @@ export const channels = {
       unsealedCopies: heldCopiesSchema.readonly(),
       /** How many undo copies a protect could not encrypt: required, and zero for every other command (ADR-0178). */
       unsealedUndoCopies: z.number().int().nonnegative(),
+      /**
+       * The zero-based pages a header and footer, Bates numbers, a watermark or a background left as they were because
+       * they display nothing ([ADR-0254](../../../docs/DECISIONS/0254-a-command-that-places-on-pages-skips-a-page-that-shows-nothing-and-names-it.md)),
+       * which the renderer names. REQUIRED where it is read and where it is made: `main`'s answer type carries it, and
+       * an answer without it reads as none, so a renderer is always handed the list to name.
+       */
+      skippedPages: z.array(z.number().int().nonnegative().max(MAX_PAGE_INDEX)).max(MAX_PAGE_INDEX + 1).readonly().default([]),
     }),
     // `stale-target` IS ON THIS CHANNEL ALONE, because a command is the only
     // thing that names existing state (ADR-0041 Decision 2). A read answers with
