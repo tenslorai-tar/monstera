@@ -4699,10 +4699,13 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         if (!refusal.reported) {
           refusal.reported = true;
           reportProblem(deps, answer.error);
-          // A MACHINE THAT HAS NO EDITING ENGINE refuses every page, so the mode ends with its one sentence; ANY OTHER
-          // REFUSAL is one page's, and the mode stays on for the pages that read: the refused page says so itself
-          // (`TextEditLayer`'s note), where leaving would take every other page's editing away with it.
-          if (answer.error.code === 'engine-unavailable') setToolId(undefined);
+          // EVERY REFUSAL `document.textBlocks` DECLARES is the document's — no engine, a poisoned document, one no
+          // longer open — and every page would give it, so the mode ends with its one sentence. Only an UNDECLARED
+          // failure can be one page's, and for it the mode stays on for the pages that read: the refused page says so
+          // itself (`TextEditLayer`'s note), where leaving would take every other page's editing away with it. Keyed
+          // on `engine-unavailable` alone, a poisoned document kept the mode on with every page saying other pages
+          // could be edited (VVVVVVV-20).
+          if (answer.error.code !== 'internal') setToolId(undefined);
         }
         return undefined;
       },

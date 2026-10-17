@@ -2746,13 +2746,49 @@ describe('App', () => {
       expect(blockReads.length).toBeGreaterThan(before);
     });
 
-    it('EDIT TEXT: a page whose read is refused for any OTHER reason says so on that page and the mode STAYS on', async () => {
+    it('EDIT TEXT: a POISONED document ends the mode, since every page of it refuses (VVVVVVV-20)', async () => {
       vi.mocked(reportProblem).mockClear();
       const blockReads: string[] = [];
       const client = createClient(channels, (id) => {
         if (id === 'document.textBlocks') {
           blockReads.push(id);
           return Promise.resolve(err({ code: 'document-poisoned' as const }));
+        }
+        const answers: Readonly<Record<string, unknown>> = OPEN_DOCUMENT_ANSWERS;
+        const answer = answers[id];
+        if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
+        return Promise.resolve(ok(answer));
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+      await pressCommand('Edit text', 'Edit');
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(vi.mocked(reportProblem)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(reportProblem).mock.calls[0]?.[1]).toStrictEqual({ code: 'document-poisoned' });
+      // LEFT, asserted by the next press, which turns a left mode on again and so asks again; a mode still on would be
+      // turned OFF by it and ask nothing — the outcome the case below asserts for a page's own failure.
+      const before = blockReads.length;
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+        await Promise.resolve();
+      });
+      await pressCommand('Edit text', 'Edit');
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(blockReads.length).toBeGreaterThan(before);
+    });
+
+    it('EDIT TEXT: a page whose read FAILS for a reason of its own says so on that page and the mode STAYS on', async () => {
+      vi.mocked(reportProblem).mockClear();
+      const blockReads: string[] = [];
+      const client = createClient(channels, (id) => {
+        if (id === 'document.textBlocks') {
+          blockReads.push(id);
+          // UNDECLARED: every refusal the channel declares is the document's, so only this can be one page's.
+          return Promise.resolve(err({ code: 'internal' as const, incident: 'incident-page' }));
         }
         const answers: Readonly<Record<string, unknown>> = OPEN_DOCUMENT_ANSWERS;
         const answer = answers[id];
