@@ -154,6 +154,37 @@ await step('4. Add text: two lines typed on a blank area, ended with Escape, and
   await expect(page.getByText('Added by the walk', { exact: false })).not.toHaveCount(0);
 });
 
+await step('4b. Add text ended with a CLICK AWAY on the page, and the words are in the saved file (DDDDDDDD-6)', async () => {
+  // THE OTHER WAY OUT, which step 4 stopped walking when it took Escape: a person presses somewhere else on the page.
+  if ((await page.getByRole('button', { name: 'Add text', exact: true }).first().getAttribute('aria-pressed')) !== 'true') {
+    await command('Add text');
+  }
+  const surface = page.locator('[data-text-add-surface]').first();
+  const box = await surface.boundingBox();
+  if (box === null) throw new Error('no add surface');
+  await page.mouse.click(box.x + box.width * 0.15, box.y + box.height * 0.7);
+  await expect(editor()).toBeFocused();
+  await page.keyboard.type('Ended by a click away');
+  // THE CLICK AWAY, near the page's top and away from the words, as the walk pressed it before 1efcda50; the write it
+  // ends with is waited for by its count, not by a sleep.
+  const before = await writesDone(page);
+  await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.05);
+  await writesLanded(page, before);
+  // A PRESS ON THE PAGE WITH ADD TEXT ON may open an empty editor where it landed; one with nothing typed writes nothing.
+  if ((await editor().count()) > 0) {
+    await page.keyboard.press('Escape');
+    await expect(editor()).toHaveCount(0);
+  }
+  const saved = join(output, '04b-click-away.pdf');
+  await saveTo(saved);
+  await command('Save a copy…');
+  await expect.poll(() => existsSync(saved), { timeout: 20_000 }).toBe(true);
+  // READ BACK by PDF.js from the saved file, not from the screen.
+  const words = (await savedWords(saved)).join(' ');
+  expect(words, words.slice(0, 400)).toContain('Ended by a click away');
+  return { kept: true };
+});
+
 await step('5. a text box from the Comment tab: drawn, typed, Arial 11, a blue border and a light fill; Text and Box shown', async () => {
   await section('Comment');
   await command('Text box');
