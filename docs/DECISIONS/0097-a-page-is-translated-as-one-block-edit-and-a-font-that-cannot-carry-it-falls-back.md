@@ -190,3 +190,29 @@ write"*, and the rejected alternative *"embedding a system font"*. A word the ru
 the first face of one resolver that carries it (a sibling in the document, an installed font the licence allows, a
 bundled open face), embedded as a uniquely named subset, and a character no face carries is a visible box mapped to
 the character. The page as one block edit, the fit, the soft-wrap join and the read-back stand.
+
+## Correction, 2026-10-17: a paragraph keeps the measure it had on the page (the owner's decision)
+
+**What 4a said, and what it did.** *"A block of several lines keeps its own right edge: that is the measure its
+paragraph was set to."* The edge was read afresh at every edit, from the ink of the block's widest line, and a line set
+again ends at or before the edge it was set to, so the edge could only come in. A font change to a narrower face made
+every line shorter, the next read took the shorter edge, and each later edit wrapped narrower. Measured 2026-10-17 with
+`cascade.mjs` (the memory walk's M3b: twenty edits, the block restyled in turn to Carlito, Tinos and Arimo, a number
+typed each time): one paragraph went from 442 to 301 pt; the same twenty edits without the font change kept 445.
+
+**The owner's decision, 2026-10-17:** a paragraph keeps the measure it had on the page — its original box width —
+whatever font is chosen; a font change re-wraps the words inside that width and never narrows it.
+
+**How the measure survives an edit.** The page itself must carry it, since an edit's bytes are saved, closed and read
+again by another process, and the ink no longer says it once a narrower face has been set. So the writer records it on
+every line object it sets: a marked-content property, `/MonsteraMeasure << /Width w >>`, the measure's width from the
+block's left edge (a width, not an edge, so a block moved sideways keeps it). The read takes the widest recorded width of
+a run's objects onto the run (`measure`, on `engine/text-runs`), the grouping makes a block's box at least that wide,
+and the writer's measure for a block of several lines is the larger of its ink edge and its recorded width. A block
+never edited has no record, and its measure is its ink edge, as before: the box it had on the page. A width the person
+gives, resizing the box, is recorded the same way and is the measure from then on. A source's marks copied onto a new
+line skip this one; it is written fresh with the measure the line was set to.
+
+**Rejected:** the measure held in `main` — lost at the next open, and never seen by another reader; the page's column —
+wrong for a paragraph set narrower than the column it stands in; re-measuring the old words in their old fonts — the
+fonts are gone from the line once a face has replaced them.
