@@ -93,7 +93,11 @@ describe('the formatting commands', () => {
     // THE STRIKE IS A TOGGLE: pressed again over struck words it takes the line off.
     expect(command('text.format.strike').checked?.(EDITING)).toBe(true);
     void command('text.format.strike').run({} as never);
-    expect(readEditor(root).formatting.marks?.[0]?.set).toStrictEqual({ strike: false });
+    // THE WORDS ARE NOT STRUCK, and were not before, so no mark is sent (VVVVVVV-16): the button reads them unstruck.
+    // This read `{ strike: false }` until 2026-10-17, a mark over unchanged words that the kernel refused as changing
+    // nothing.
+    expect(readEditor(root).formatting.marks).toBeUndefined();
+    expect(command('text.format.strike').checked?.(EDITING)).toBe(false);
     unregister();
   });
 });
