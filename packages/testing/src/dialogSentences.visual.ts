@@ -64,6 +64,7 @@ test('every paragraph in every dialog state takes its spacing from the column, w
   );
   expect(token, 'the token resolves to a length').toBeGreaterThan(0);
   const offending: string[] = [];
+  const unopened: string[] = [];
   let paragraphs = 0;
   let pairs = 0;
   let states = 0;
@@ -74,6 +75,9 @@ test('every paragraph in every dialog state takes its spacing from the column, w
       try {
         await expect(dialog).toBeVisible({ timeout: 5_000 });
       } catch {
+        // NAMED, never skipped in silence: a sweep that opened fewer states than the gallery lists reads exactly like
+        // one whose states all passed.
+        unopened.push(`${id} / ${state}`);
         continue;
       }
       await page.waitForTimeout(150);
@@ -97,8 +101,9 @@ test('every paragraph in every dialog state takes its spacing from the column, w
   console.log(
     `swept ${String(states)} states, ${String(paragraphs)} paragraphs, ${String(pairs)} pairs, ${String(offending.length)} off the token`,
   );
-  // AND IT SAW PARAGRAPHS AND PAIRS: a selector that matched none would pass every state.
+  // AND IT SAW PARAGRAPHS AND PAIRS: a selector that matched none would pass every state. AND EVERY STATE OPENED.
   expect(paragraphs).toBeGreaterThan(100);
   expect(pairs).toBeGreaterThan(10);
+  expect(unopened, unopened.join('\n')).toStrictEqual([]);
   expect(offending, offending.join('\n')).toStrictEqual([]);
 });
