@@ -106,6 +106,12 @@ test('a layer behind for a minute is parked, and comes back finished from its fi
   await expect(parkedLayers(page)).toHaveCount(0);
   await page.clock.fastForward(40_000);
   await expect(parkedLayers(page)).toHaveCount(1, { timeout: 15_000 });
+  // THE LAYER ON SHOW STILL FILLS THE PAGE AREA: a parked layer takes no box. In flow it took half the area and pushed the
+  // page down (the memory walk's screenshot, 2026-10-17), which every frame check above passed.
+  const area = await page.locator('.m-body-area').boundingBox();
+  const shown = await page.locator('[data-document-layer="active"]').boundingBox();
+  expect(shown?.y).toBeCloseTo(area?.y ?? Number.NaN, 0);
+  expect(shown?.height).toBeCloseTo(area?.height ?? Number.NaN, 0);
 
   await watchFrames(page);
   await watchOpening(page);

@@ -448,6 +448,12 @@ optgroup {
   visibility: hidden;
 }
 
+/* A PARKED LAYER HOLDS NOTHING (ADR-0129's correction of 2026-10-17): no offset, no pages and no fit to keep, so it takes
+   no box. In flow it was a second `flex: 1` beside the layer on show and pushed it down by its share. */
+.m-document-layer[data-document-layer='parked'] {
+  display: none;
+}
+
 /* THE START SCREEN SPANS THE RAIL'S COLUMN, because there is no rail over it:
    `Ribbon` renders nothing when no section holds a command. */
 /* A COLUMN, so the footer's `margin-block-start: auto` can pin it to the foot while the screen is short. */
