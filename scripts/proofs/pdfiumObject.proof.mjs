@@ -103,7 +103,7 @@ async function twoRunsAndARectangle() {
  * @type {string[]}
  */
 const failures = [];
-const roster = createRoster(failures, { cases: 29 });
+const roster = createRoster(failures, { cases: 31 });
 
 /**
  * @param {string} name
@@ -385,6 +385,33 @@ async function main() {
     'CONTROL: a removal does NOT keep it, so the comparison above can tell a kept walk from a changed one',
     walkOf(removedObjects) !== walkOf(before),
     `before ${walkOf(before)}; after the removal ${walkOf(removedObjects)}`,
+  );
+  // AND EACH OBJECT AT ITS INDEX IS THE ONE THAT WAS THERE (NNNNNNN-8): index and kind alone cannot tell two runs of text
+  // swapped in the page's order, and the removal above is a control a count would pass. So every object a command did
+  // not move keeps its box at its index — the placed rectangle aside, nothing moves for a placement, and nothing for a
+  // recolour.
+  /** @param {readonly { index: number, kind: string, left: number, bottom: number }[]} after @param {number} moved */
+  const stayed = (after, moved) =>
+    after.length === before.length &&
+    after.every((object, at) => {
+      const was = before[at];
+      if (was === undefined || was.kind !== object.kind) return false;
+      return at === moved || (Math.abs(was.left - object.left) < 0.01 && Math.abs(was.bottom - object.bottom) < 0.01);
+    });
+  record(
+    'and every object a placement or a recolour did not move keeps its box at its index',
+    stayed(placedObjects, box.index) && stayed(recolouredObjects, -1),
+    `placed ${String(stayed(placedObjects, box.index))}, recoloured ${String(stayed(recolouredObjects, -1))}`,
+  );
+  const texts = before.filter((object) => object.kind === 'text').map((object) => object.index);
+  const [one, two] = texts;
+  const swapped = before.map((object) =>
+    object.index === one ? { ...(before[two ?? -1] ?? object), index: object.index } : object.index === two ? { ...(before[one ?? -1] ?? object), index: object.index } : object,
+  );
+  record(
+    'CONTROL: two runs of text swapped in place read as the same walk by index and kind, and as a changed one by box',
+    texts.length >= 2 && walkOf(swapped) === walkOf(before) && !stayed(swapped, -1),
+    `${String(texts.length)} text objects; index and kind ${walkOf(swapped) === walkOf(before) ? 'agree' : 'differ'}; boxes ${stayed(swapped, -1) ? 'agree' : 'differ'}`,
   );
   record(
     // THE THIRD, `placeDrawnObject`, is measured to keep the walk by `proof:drawnobjects` against PDFium (ADR-0240): its
