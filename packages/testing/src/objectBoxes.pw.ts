@@ -253,3 +253,31 @@ test('Edit object picks a word written a letter at a time as one, and moves it a
   await expect.poll(() => sent.length).toBe(1);
   expect((sent[0] as { command: unknown }).command).toMatchObject({ kind: 'placePageObjects', indices: [0, 1, 2, 3], scaleBy: { x: 1, y: 1 } });
 });
+
+// A PICTURE A PERSON PLACED (the owner's item 14g, NNNNNNN-9): a stamp whose appearance draws a picture is not page
+// content, so the content walk never lists it; Edit object finds it in the annotation walk by `pictured`, outlines it
+// where it is drawn and selects it like any picture.
+test('Edit object picks up a picture placed with Comment › Image, and not a stamp that draws no picture', async ({ page }) => {
+  await openApp(page, {
+    // AN ENGINE WHOSE WALK FINDS NO CONTENT, so every outline is the annotation walk's; the shim's default is no engine.
+    pageObjects: [],
+    annotations: [
+      { page: 0, index: 0, kind: 'stamp', rect: { x0: 200, y0: 300, x1: 360, y1: 400 }, pictured: true },
+      // CONTROL: the same kind on the same page with no picture, which the walk's filter is there to leave out.
+      { page: 0, index: 1, kind: 'stamp', rect: { x0: 80, y0: 100, x1: 180, y1: 160 } },
+    ],
+  });
+  await openDocument(page);
+  await openSection(page, 'Edit');
+  await page.getByRole('toolbar', { name: 'Tools', exact: true }).getByRole('button', { name: 'Edit object', exact: true }).click();
+  const layer = page.getByRole('group', { name: 'Objects on page 1' });
+  const picture = layer.locator('[data-object="stamp:0"]');
+  await expect(picture).toBeVisible();
+  await expect(layer.locator('[data-object="stamp:1"]')).toHaveCount(0);
+  // WHERE IT IS DRAWN: the stamp's own 160 by 100 box, so its outline has that shape.
+  const box = await picture.boundingBox();
+  if (box === null) throw new Error('the picture is not on screen');
+  expect(box.width / box.height).toBeCloseTo(160 / 100, 1);
+  await picture.click();
+  await expect(layer.locator('[data-object-handle]')).toHaveCount(8);
+});
