@@ -14,7 +14,7 @@
  * | command | same bytes | `/ModDate` |
  * |---|---|---|
  * | `generateToc` (unpinned) | **no** | `172400Z` → `172401Z` |
- * | `insertImagePage` (unpinned) | **no** | `172401Z` → `172402Z` |
+ * | `insertImagePage` (unpinned; the command was removed 2026-10-17) | **no** | `172401Z` → `172402Z` |
  * | `watermarkPages` (pinned) | yes | unchanged |
  *
  * ## Why a rule and not a review note

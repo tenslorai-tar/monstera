@@ -34,7 +34,7 @@ describe('breaksSignatures (ADR-0149)', () => {
   });
 
   it('CONTROL: an ordinary MuPDF edit, a pdf-lib command and a signature keep a signature', () => {
-    for (const kind of ['rotatePages', 'addAnnotation', 'watermarkPages', 'insertImagePage', 'signDocument'] as const) {
+    for (const kind of ['rotatePages', 'addAnnotation', 'watermarkPages', 'generateToc', 'signDocument'] as const) {
       expect(breaksSignatures(kind), kind).toBe(false);
     }
   });

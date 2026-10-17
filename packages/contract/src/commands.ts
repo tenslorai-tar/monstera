@@ -853,66 +853,17 @@ export const straightenScansSchema = z.object({
 export const MAX_IMAGE_BYTES = 64 * 1024 * 1024;
 
 /**
- * Insert an image as a new page.
+ * The image encodings a picture is embedded from by `@cantoo/pdf-lib`: which decoder to use.
  *
- * ## THE BYTES ARE HERE AND THE RENDERER NEVER SENDS THEM
- *
- * This file's own header states its subject as *"every mutation **the renderer
- * can ask for**"* and its rule as *"commands are **intent**, not payload …
- * any design where the bytes crossing scale with document size per operation is
- * wrong"*. Both survive, and the second is the one worth reading precisely: an
- * image's bytes scale with the **image**, not with the document, so a 40 MB
- * photograph costs the same whether the file has two pages or twenty thousand.
- * The image *is* the intent here, exactly as the text is `watermarkPages`'.
- *
- * What would be wrong is the renderer holding them. It does not:
- * `document.insertImage` takes `{ docId, at }` and nothing else, a picker runs
- * in **main** as `destinationPicker.ts`' sibling, main reads the file, and main
- * mints this command straight into the bus. **Nothing multi-megabyte crosses
- * IPC in either direction.**
- *
- * ## And `document.execute` cannot carry it, by construction
- *
- * The schema has to be in `commandSchema` — `CommandKind` is derived from that
- * union, so a kind outside it has no declaration, no spec, no log entry and no
- * undo. But `document.execute`'s params take {@link renderableCommandSchema},
- * which is this union with this member removed. So the one channel a renderer
- * could put a command on refuses this one at the boundary, and the capability
- * is unrepresentable rather than merely unused (B5).
- *
- * That split has a worked precedent in `engineChannels.ts`' `mupdfCommandSchema`
- * — the same union narrowed to what may cross to the engine host — and the same
- * reasoning as this file's *"inverses are deliberately absent … they stay
- * kernel-only"*: a schema is placed by **who may hold it**
- * ([ADR-0023](../../../docs/DECISIONS/0023-the-engine-host-is-contained.md)
- * Decision 11).
+ * A declared value rather than sniffed, because pdf-lib offers `embedJpg` and `embedPng` as two different calls and
+ * the choice is the caller's. Whoever reads the file reads it from the name the person picked — and the decoder
+ * refusing is what validates it, not this value, for `documentPicker.ts`' reason about filters being a hint. The
+ * compose host's image import and a placed signature's picture take it.
  */
-export const insertImagePageSchema = z.object({
-  kind: z.literal('insertImagePage'),
-  /** Zero-based index the new page occupies afterwards, as `insertBlankPage`. */
-  at: z.number().int().nonnegative(),
-  /**
-   * The image itself.
-   *
-   * `instanceof` rather than a base64 string, because this never crosses a
-   * boundary that would need encoding and a string would cost a third more
-   * memory to express the same bytes.
-   */
-  bytes: z.custom<Uint8Array>(
-    (value) => value instanceof Uint8Array && value.byteLength <= MAX_IMAGE_BYTES,
-    { message: 'not an image this build will make a page from, or larger than the bound' },
-  ),
-  /**
-   * Which decoder to use.
-   *
-   * A declared value rather than sniffed here, because `@cantoo/pdf-lib` offers
-   * `embedJpg` and `embedPng` as two different calls and the choice is the
-   * caller's. Main reads it from the file it opened, where the extension the
-   * user picked is known — and the decoder refusing is what validates it, not
-   * this field, for `documentPicker.ts`' reason about filters being a hint.
-   */
-  mediaType: z.enum(['image/jpeg', 'image/png']),
-}).strict();
+export const embeddableImageTypeSchema = z.enum(['image/jpeg', 'image/png']);
+
+/** One of {@link embeddableImageTypeSchema}'s encodings. */
+export type EmbeddableImageType = z.infer<typeof embeddableImageTypeSchema>;
 
 /**
  * Build a table of contents page from the document's own outline.
@@ -3116,9 +3067,11 @@ export const reshapeAnnotationSchema = z
  *
  * ## The bytes are here, and they leave before the wire
  *
- * `insertImagePage`'s argument for carrying an image applies unchanged — the
- * image *is* the intent, it scales with the image and not with the document,
- * and the renderer never holds it. What is new is that this command is routed
+ * The image *is* the intent, as the text is `watermarkPages'`: its bytes scale
+ * with the image and not with the document, so a 40 MB photograph costs the same
+ * on a two-page file as on a twenty-thousand-page one, and the renderer never
+ * holds it — main reads the file it picked and mints this command straight into
+ * the bus. The command is routed
  * to **MuPDF**, which is behind a pipe that carries JSON, and a `Uint8Array`
  * does not survive `JSON.stringify`
  * ([ADR-0044](../../../docs/DECISIONS/0044-an-image-reaches-the-engine-the-way-the-document-does.md)).
@@ -3140,13 +3093,14 @@ export const placeImageSchema = z.object({
   /**
    * The image itself.
    *
-   * `instanceof` for `insertImagePage`'s reason, and bounded by the same
-   * constant: a file picker is a place a user can hand this application a 4 GB
-   * video by mistake.
+   * `instanceof` rather than a base64 string, because the command never crosses a
+   * boundary that would need encoding and a string would cost a third more memory
+   * for the same bytes; and bounded by `MAX_IMAGE_BYTES`, because a file picker is
+   * a place a user can hand this application a 4 GB video by mistake.
    *
-   * **No `mediaType` beside it**, which is the one field `insertImagePage` has
-   * that this does not. That one routes to `@cantoo/pdf-lib`, which offers
-   * `embedJpg` and `embedPng` as two calls, so somebody must choose. This
+   * **No `mediaType` beside it**, as a picture embedded by `@cantoo/pdf-lib` has
+   * ({@link embeddableImageTypeSchema}): pdf-lib offers `embedJpg` and `embedPng`
+   * as two calls, so somebody must choose. This
    * routes to MuPDF, whose `Image` takes bytes and decides — and it decides by
    * reading them, where a caller would be reading a file extension. A field
    * carrying the answer anyway would be a second opinion about a question the
@@ -4372,7 +4326,7 @@ export type ChosenSignatureMark = z.infer<typeof chosenSignatureMarkSchema>;
  * How a visible signature looks, as the COMMAND carries it.
  *
  * {@link requestedSignatureMarkSchema} with the picture attached by main, and
- * its media type from the extension — `insertImagePageSchema`'s pair and
+ * its media type from the extension — {@link embeddableImageTypeSchema} and
  * `placeImageSchema`'s bound, for their reasons.
  */
 const signatureMarkSchema = z.discriminatedUnion('kind', [
@@ -4385,7 +4339,7 @@ const signatureMarkSchema = z.discriminatedUnion('kind', [
         (value) => value instanceof Uint8Array && value.byteLength <= MAX_IMAGE_BYTES,
         { message: `not an image of at most ${String(MAX_IMAGE_BYTES)} bytes` },
       ),
-      mediaType: z.enum(['image/jpeg', 'image/png']),
+      mediaType: embeddableImageTypeSchema,
     })
     .strict(),
 ]);
@@ -4463,7 +4417,7 @@ export const placeSignaturePictureSchema = z
       (value) => value instanceof Uint8Array && value.byteLength <= MAX_IMAGE_BYTES,
       { message: `not an image of at most ${String(MAX_IMAGE_BYTES)} bytes` },
     ),
-    mediaType: z.enum(['image/jpeg', 'image/png']),
+    mediaType: embeddableImageTypeSchema,
     stamp: annotationStampSchema,
   })
   .strict();
@@ -7005,7 +6959,6 @@ export const commandSchema = z.discriminatedUnion('kind', [
   enhancePagesSchema,
   straightenScansSchema,
   ocrPageSchema,
-  insertImagePageSchema,
   generateTocSchema,
   mergeDocumentSchema,
   replacePageSchema,
@@ -7056,11 +7009,11 @@ export const commandSchema = z.discriminatedUnion('kind', [
 /**
  * The commands a **renderer** may put on `document.execute`.
  *
- * `commandSchema` with the two image-carrying kinds removed —
- * `insertImagePage` and `placeImage` — and that is the only difference. Every
- * other kind is intent a renderer can express in a few numbers; those two carry
- * an image, which main reads from a file the user picked and mints directly
- * into the bus.
+ * `commandSchema` with the kinds main mints itself removed — the ones named in
+ * `WithheldFromRenderer` below — and that is the only difference. Every other
+ * kind is intent a renderer can express in a few numbers; those carry a picked
+ * file's bytes or a key, which main reads from a file the user picked and mints
+ * directly into the bus.
  *
  * ## Written out, for `mupdfCommandSchema`'s reason
  *
@@ -7332,7 +7285,8 @@ export function withStamp(command: DispatchableCommand, stamp: AnnotationStamp):
  * a new command quietly becoming unreachable from the renderer, which reads at
  * every call site as a control that does nothing.
  */
-// `importFormData` JOINS THE TWO IMAGE KINDS, and for their reason exactly: it
+// `placeImage` carries a picked picture's bytes, which main reads and mints into the bus.
+// `importFormData` JOINS IT, and for its reason exactly: it
 // carries a picked file's bytes, main is what picks and reads it, and a
 // renderer able to send one would be a renderer holding a multi-megabyte
 // payload. Withheld rather than merely unused — `renderableCommandSchema` has
@@ -7346,7 +7300,6 @@ export function withStamp(command: DispatchableCommand, stamp: AnnotationStamp):
 // the typed or drawn one is minted beside it by main from `document.placeSignature`, which resolves a kept look and
 // keeps a new one — so a placed signature has one route rather than a second the renderer could take round it.
 type WithheldFromRenderer =
-  | 'insertImagePage'
   | 'placeImage'
   | 'placeSignatureMark'
   | 'placeSignaturePicture'

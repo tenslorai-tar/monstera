@@ -313,8 +313,8 @@ export const captureGenerateToc = (): Promise<CaptureResult<never>> =>
  *
  * `CommandPrior['generateToc']` is `never`, so no value of the parameter type
  * can be constructed and nothing can call this. Returning the image unchanged
- * is the only honest body — see `invertInsertImagePage`, which says why a throw
- * would claim a failure state that cannot occur.
+ * is the only honest body: it says *this did nothing*, where a throw would claim
+ * a failure state that cannot occur.
  */
 export const invertGenerateToc: Invert<'pdf-lib', 'generateToc'> = (
   image: ByteImage,

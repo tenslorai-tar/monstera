@@ -662,9 +662,8 @@ export type SavePurpose = 'ordinary' | 'removal';
  * happens to hold a `Uint8Array` is {@link CommandSources}' argument one axis
  * along: a command that carries bytes is not the same statement as a command
  * whose bytes must leave the wire, and reading one off the other is the partial
- * reimplementation B3a is about. `insertImagePage` is the proof of that
- * distinction — it carries an image and declares `'none'`, because a byte-image
- * writer runs in main and its wire is a function call.
+ * reimplementation B3a is about: a command whose bytes reach a writer by a function
+ * call needs no asset, and the same bytes sent over a JSON wire do.
  *
  * ## Conditional on the command, so the illegal state cannot be written
  *

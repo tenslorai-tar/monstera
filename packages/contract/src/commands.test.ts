@@ -6,7 +6,9 @@ import {
   MAX_EDIT_TEXT,
   blockEditOf,
   blocksOfEdit,
+  commandSchema,
   editTextBlockSchema,
+  embeddableImageTypeSchema,
   editTextOperatorsSchema,
   ocrPageSchema,
   replaceTextObjectSchema,
@@ -412,5 +414,20 @@ describe('which page is read again unpacked (ADR-0232)', () => {
     expect(editTextBlockSchema.safeParse({ kind: 'editTextBlock', ...wire, unpack: false }).success).toBe(false);
     expect(editTextOperatorsSchema.safeParse({ kind: 'editTextOperators', ...wire, unpack: true }).success).toBe(false);
     expect(editTextOperatorsSchema.safeParse({ kind: 'editTextOperators', ...wire }).success).toBe(true);
+  });
+});
+
+describe('insertImagePage is removed (ADR-0044’s correction of 2026-10-17)', () => {
+  /** A one-byte stand-in for a picture: the kind is what is refused, before any field. */
+  const picture = Uint8Array.of(0x89);
+
+  it('the command union refuses the kind, in its last shape', () => {
+    expect(commandSchema.safeParse({ kind: 'insertImagePage', at: 0, bytes: picture, mediaType: 'image/png' }).success).toBe(false);
+  });
+
+  it('CONTROL: the union takes a page-adding kind beside it, and a picture with its media type where one is still carried', () => {
+    expect(commandSchema.safeParse({ kind: 'insertBlankPage', at: 0, count: 1 }).success).toBe(true);
+    expect(embeddableImageTypeSchema.safeParse('image/png').success).toBe(true);
+    expect(embeddableImageTypeSchema.safeParse('image/gif').success).toBe(false);
   });
 });

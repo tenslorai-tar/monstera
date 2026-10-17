@@ -292,27 +292,6 @@ const OCR_SPEC = `  ocrPage: {
     reads: 'ocr',
   },`;
 
-/**
- * Filler, kept separate for {@link MOVE_SPEC}'s reason.
- *
- * **The only spec here whose command the renderer cannot send.** Its schema is
- * in `commandSchema` because `CommandKind` derives from that union, and it is
- * absent from `renderableCommandSchema` because it carries an image main reads
- * from a picked file.
- */
-const INSERT_IMAGE_SPEC = `  insertImagePage: {
-    kind: 'insertImagePage',
-    writer: 'pdf-lib',
-    apply: applyInsertImagePage,
-    capture: captureInsertImagePage,
-    invert: invertInsertImagePage,
-    invertible: false,
-    undo: 'checkpoint',
-    reproducible: true,
-    replay: 'reapply-intent',
-    sources: 'none',
-    reads: 'none',
-  },`;
 
 /**
  * The first spec declaring `reads: 'outline'`, kept separate for
@@ -1428,9 +1407,6 @@ const SPEC_IMPORTS = `import {
 // nothing routed to pdf-lib may be there -- so this line failing to resolve
 // would mean somebody had moved them into it.
 import {
-  applyInsertImagePage,
-  captureInsertImagePage,
-  invertInsertImagePage,
   applySetPageBackground,
   captureSetPageBackground,
   invertSetPageBackground,
@@ -2368,7 +2344,6 @@ ${RESIZE_SPEC}
 ${DESKEW_SPEC}
 ${ENHANCE_SPEC}
 ${OCR_SPEC}
-${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
 ${MERGE_SPEC}
 ${REPLACE_SPEC}
@@ -2440,7 +2415,7 @@ ${EDIT_OPERATORS_SPEC}
     // `fillFormField`, `placeImage` and
     // `styleAnnotation` on 2026-09-07; `addLink`,
     // `placeAnnotation` and `removeAnnotation` on 2026-09-06; `addAnnotation`,
-    // `replacePage`, `mergeDocument`, `generateToc`, `insertImagePage`,
+    // `replacePage`, `mergeDocument`, `generateToc`, `insertImagePage` (removed 2026-10-17),
     // `resizePages`, `setPageBackground` and
     // `setPageTransition` on 2026-09-05; `batesNumberPages`, `headerFooterPages`,
     // `watermarkPages`, `cropPages`, `insertBlankPage`, `swapPages`,
@@ -2505,7 +2480,6 @@ ${RESIZE_SPEC}
 ${DESKEW_SPEC}
 ${ENHANCE_SPEC}
 ${OCR_SPEC}
-${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
 ${MERGE_SPEC}
 ${REPLACE_SPEC}
@@ -2652,7 +2626,6 @@ ${RESIZE_SPEC}
 ${DESKEW_SPEC}
 ${ENHANCE_SPEC}
 ${OCR_SPEC}
-${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
 ${MERGE_SPEC}
 ${REPLACE_SPEC}
@@ -2723,7 +2696,6 @@ ${RESIZE_SPEC}
 ${DESKEW_SPEC}
 ${ENHANCE_SPEC}
 ${OCR_SPEC}
-${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
 ${MERGE_SPEC}
 ${REPLACE_SPEC}
@@ -2803,7 +2775,6 @@ ${RESIZE_SPEC}
 ${DESKEW_SPEC}
 ${ENHANCE_SPEC}
 ${OCR_SPEC}
-${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
 ${MERGE_SPEC}
 ${REPLACE_SPEC}
@@ -2879,7 +2850,6 @@ ${RESIZE_SPEC}
 ${DESKEW_SPEC}
 ${ENHANCE_SPEC}
 ${OCR_SPEC}
-${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
 ${MERGE_SPEC}
 ${REPLACE_SPEC}
@@ -4156,8 +4126,9 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // 63 since `placePageObjects` (2026-10-14, ADR-0242): three spelt, 59 counted, one.
     // 64 since `arrangePageObject` (2026-10-14, ADR-0244): three spelt, 60 counted, one.
     // 65 since `removePageMarks` (2026-10-15, ADR-0246): three spelt, 61 counted, one.
+    // 64 since `insertImagePage` was removed (2026-10-17, ADR-0044's correction): three spelt, 60 counted, one.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 61 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 60 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

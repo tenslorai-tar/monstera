@@ -95,7 +95,6 @@ import {
   applyCreateFormField,
   applyGenerateToc,
   applyOcrPage,
-  applyInsertImagePage,
   applySetPageBackground,
   declaredCommands,
 } from '@monstera/kernel';
@@ -115,7 +114,7 @@ import { buildDenseFixture, buildLargeFixture } from './largeFixture.mjs';
  * | `headerFooterPages` | 225.19s | 255.82s |
  * | `batesNumberPages` | **309.88s** | **320.19s** |
  * | `setPageBackground` | 276.23s | 264.53s |
- * | `insertImagePage` | 263.51s | 247.00s |
+ * | `insertImagePage` (removed 2026-10-17) | 263.51s | 247.00s |
  * | `generateToc` | 260.42s | 231.34s |
  *
  * The worst reading is 320.19s and the largest run-to-run difference within one
@@ -129,22 +128,6 @@ import { buildDenseFixture, buildLargeFixture } from './largeFixture.mjs';
  * for twice on a timing, in both directions.
  */
 const REGRESSION_LIMIT_SECONDS = 480;
-
-/**
- * A one-pixel PNG, built numerically.
- *
- * Numeric bytes rather than a base64 string, for the standing rule's one safe
- * exception: nothing in this path resolves an escape. It is the smallest input
- * `insertImagePage` accepts, so what its row measures is the DOCUMENT's cost
- * rather than the image's.
- */
-const PIXEL_PNG = Uint8Array.from([
-  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
-  0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
-  0x89, 0x00, 0x00, 0x00, 0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
-  0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae,
-  0x42, 0x60, 0x82,
-]);
 
 /**
  * The outline `generateToc` is handed, since it declares `reads: 'outline'`.
@@ -178,16 +161,6 @@ const COMMANDS = [
         red: 0.9,
         green: 0.95,
         blue: 1,
-      }),
-  },
-  {
-    kind: 'insertImagePage',
-    run: (image) =>
-      applyInsertImagePage(image, {
-        kind: 'insertImagePage',
-        at: 0,
-        bytes: PIXEL_PNG,
-        mediaType: 'image/png',
       }),
   },
   {

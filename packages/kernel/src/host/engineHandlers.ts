@@ -67,7 +67,6 @@ import {
   type EngineChannels,
   type MupdfWireCommand,
   joinAsset,
-  joinPdfLibAsset,
   joinPlaceholderAsset,
   taggedPrior,
 } from './engineChannels.js';
@@ -842,25 +841,9 @@ export function createEngineHandlers({
       }
     },
 
-    'engine/applyPdfLib': async ({ session, command, asset, reads, into }) => {
+    'engine/applyPdfLib': async ({ session, command, reads, into }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
-      // THE ASSET, by `engine/apply`'s door: a name inside this session's own snapshot directory.
-      let bytes: Uint8Array | undefined;
-      if (asset !== undefined) {
-        try {
-          bytes = await files.readSnapshot(held.snapshotDirectory, asset);
-        } catch (error) {
-          return failed('asset-missing', error);
-        }
-      }
-      const whole = joinPdfLibAsset(command, bytes);
-      if (whole === undefined) {
-        return failed(
-          'asset-missing',
-          new Error(`"${command.kind}" and the asset sent with it disagree about whether it carries one`),
-        );
-      }
       // A PROTECTED DOCUMENT IS READ PLAIN, IN MEMORY, AND ITS RESULT IS WRITTEN PROTECTED AGAIN BEFORE IT LEAVES THIS
       // PROCESS (ADR-0220). pdf-lib refuses an encrypted file and, given its password, writes a revision that is not
       // encrypted into one that is — measured 2026-10-08: the result opened with no password and its streams inflated
@@ -882,7 +865,7 @@ export function createEngineHandlers({
         return failed('serialise-failed', error);
       }
       try {
-        const result = await applyPdfLib(image, whole, reads);
+        const result = await applyPdfLib(image, command, reads);
         const written = await files.writeOutput(
           held.outputDirectory,
           into,
@@ -893,8 +876,8 @@ export function createEngineHandlers({
           value: { bytes: written, ...(protection?.permissionPasswordReplaced === true ? { permissionPasswordReplaced: true as const } : {}) },
         };
       } catch (error) {
-        // A PICTURE PAST THE PIXEL BOUND keeps its name across the pipe, so Insert image says so rather than calling
-        // a valid picture unreadable; anything else is the document's failure.
+        // A PICTURE PAST THE PIXEL BOUND keeps its name across the pipe, so the person is told so rather than that a
+        // valid picture is unreadable; anything else is the document's failure.
         return failed(pdfLibRefusalCodeOf(error) ?? 'apply-failed', error);
       }
     },
@@ -902,7 +885,7 @@ export function createEngineHandlers({
     'engine/prepareSignature': async ({ session, request, asset, into }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
-      // THE PICTURE, by `engine/applyPdfLib`'s door: a name inside this session's own snapshot directory.
+      // THE PICTURE, by `engine/apply`'s door: a name inside this session's own snapshot directory.
       let picture: Uint8Array | undefined;
       if (asset !== undefined) {
         try {

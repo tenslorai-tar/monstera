@@ -34,7 +34,6 @@ import * as wasm from 'mupdf';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { deflateSync } from 'node:zlib';
 
 import { PDF_LIB_PROTECTED, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
@@ -52,49 +51,14 @@ const SAME = 'one-for-both-0220';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 36 });
+// 35 since 2026-10-17: the insertImagePage case left with the command (ADR-0044's correction).
+const roster = createRoster(failures, { cases: 35 });
 
 /** @param {string} name @param {boolean} held @param {string} detail */
 function check(name, held, detail) {
   const mark = roster.mark();
   if (!held) failures.push(`${name}\n      ${detail}`);
   roster.record(mark, name);
-}
-
-/** What a PNG of one colour holds, built here so the fixture owns every byte. @param {number} width @param {number} height */
-function png(width, height) {
-  const crc = (/** @type {Uint8Array} */ bytes) => {
-    let value = ~0;
-    for (const byte of bytes) {
-      value ^= byte;
-      for (let bit = 0; bit < 8; bit += 1) value = (value >>> 1) ^ (0xedb88320 & -(value & 1));
-    }
-    return ~value >>> 0;
-  };
-  /** @param {string} type @param {Uint8Array} body */
-  const chunk = (type, body) => {
-    const name = Buffer.from(type, 'latin1');
-    const out = Buffer.alloc(12 + body.length);
-    out.writeUInt32BE(body.length, 0);
-    name.copy(out, 4);
-    Buffer.from(body).copy(out, 8);
-    out.writeUInt32BE(crc(Buffer.concat([name, Buffer.from(body)])), 8 + body.length);
-    return out;
-  };
-  const header = Buffer.alloc(13);
-  header.writeUInt32BE(width, 0);
-  header.writeUInt32BE(height, 4);
-  header.set([8, 2, 0, 0, 0], 8);
-  const row = Buffer.concat([Buffer.from([0]), Buffer.alloc(width * 3, 0x90)]);
-  const raw = Buffer.concat(Array.from({ length: height }, () => row));
-  return new Uint8Array(
-    Buffer.concat([
-      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-      chunk('IHDR', header),
-      chunk('IDAT', deflateSync(raw)),
-      chunk('IEND', new Uint8Array()),
-    ]),
-  );
 }
 
 /** A two page document with a line of words on each. */
@@ -317,9 +281,6 @@ async function main(/** @type {any} */ kernel) {
         read(background).access === 0 && after.access !== 0 && after.text.includes('Original words') && after.permissions === before.permissions,
         JSON.stringify({ ...after, text: after.text.slice(0, 40) }),
       );
-      const image = await runCommand(kernel, session, { kind: 'insertImagePage', at: 1, bytes: png(8, 6), mediaType: 'image/png' }, undefined);
-      const inserted = read(image, USER);
-      check('insertImagePage: a page is added to the protected document, which stays protected', inserted.pages === 3 && inserted.encrypted && read(image).access === 0, JSON.stringify(inserted.pages));
       const field = await runCommand(
         kernel,
         session,

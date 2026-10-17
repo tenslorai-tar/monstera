@@ -32,10 +32,12 @@ export function pictureRefusalCodeOf(error: unknown): PictureRefusal | undefined
   return error instanceof ImageDecodeRefused ? 'picture-unreadable' : undefined;
 }
 
-/** `engine/applyPdfLib`'s code for `error`: a picture's, or a change to a form field's (ADR-0193). */
-export function pdfLibRefusalCodeOf(error: unknown): PictureRefusal | FieldEditRefusalCode | undefined {
-  if (error instanceof FieldEditRefusedError) return `field-edit-${error.reason}`;
-  return pictureRefusalCodeOf(error);
+/**
+ * `engine/applyPdfLib`'s code for `error`: a change to a form field's (ADR-0193). No pdf-lib command decodes a picture
+ * since `insertImagePage` was removed (ADR-0044's correction of 2026-10-17), so a picture's refusal is not one of its.
+ */
+export function pdfLibRefusalCodeOf(error: unknown): FieldEditRefusalCode | undefined {
+  return error instanceof FieldEditRefusedError ? `field-edit-${error.reason}` : undefined;
 }
 
 /** The code for a protected document whose protection cannot be written again (ADR-0220), or `undefined`. */

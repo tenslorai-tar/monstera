@@ -70,7 +70,7 @@ type SignatureMark = SignatureAppearance['mark'];
 /**
  * A picture, embedded so the drawing can name it — and its size, which is what the drawing scales by.
  *
- * `applyInsertImagePage`'s two calls and its rule that the media type chooses
+ * `addImagePage`'s two calls (`pageImage.ts`) and its rule that the media type chooses
  * the decoder. The decoder refusing is what validates the bytes, and it is
  * named here because main would otherwise report it as a wrong passphrase.
  */

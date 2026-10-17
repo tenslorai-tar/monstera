@@ -417,7 +417,7 @@ export function newDocument(): mupdf.PDFDocument {
  * in this package — and it is the second caller that reason anticipated.
  *
  * **The format is SNIFFED here rather than declared by the caller**, which is
- * the opposite of `insertImagePage`, and the difference is which library does
+ * the opposite of `addImagePage` (`pageImage.ts`), and the difference is which library does
  * the work: `@cantoo/pdf-lib` offers `embedJpg` and `embedPng` as two calls, so
  * something must choose; MuPDF's `Image` takes bytes and decides. A media type
  * carried alongside would be a second opinion about a question this constructor

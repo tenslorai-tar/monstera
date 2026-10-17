@@ -688,19 +688,13 @@ export {
   captureSetPageBackground,
   invertSetPageBackground,
 } from './pageBackground.js';
-// ON THE BARREL and not the `/engine` subpath, for `watermarkPages`' reason:
-// this routes to a byte-image writer that runs in main, and nothing routed to
-// pdf-lib may sit behind the subpath that binds the native library (ADR-0039).
-export {
-  applyInsertImagePage,
-  captureInsertImagePage,
-  invertInsertImagePage,
-} from './pageImage.js';
 // THE PIXEL RULE AND THE DECODER'S REFUSAL ON THE BARREL, so `main` can answer Insert
 // image's refusals by their class. `imageDimensions.ts` imports only the contract.
 export { ImageDecodeRefused, PngPixelsRefused, checkPngPixels } from './imageDimensions.js';
-// ON THE BARREL for `insertImagePage`'s reason two lines up, and the import
-// check it names holds: `pageToc.ts` imports `@cantoo/pdf-lib` and the contract,
+// ON THE BARREL and not the `/engine` subpath, for `watermarkPages`' reason:
+// this routes to pdf-lib, and nothing routed to pdf-lib may sit behind the subpath
+// that binds the native library (ADR-0039). The import check that names holds:
+// `pageToc.ts` imports `@cantoo/pdf-lib` and the contract,
 // and nothing on that path reaches MuPDF or PDFium.
 export {
   applyGenerateToc,

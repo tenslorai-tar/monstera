@@ -29,7 +29,6 @@ import {
   type MupdfWireCommand,
   isFileRouted,
   splitAsset,
-  splitPdfLibAsset,
   splitPlaceholderAsset,
   taggedPrior,
 } from './engineChannels.js';
@@ -849,8 +848,8 @@ export interface HostNotices {
  * the session's output directory ([ADR-0121](../../../../docs/DECISIONS/0121-main-never-holds-two-images.md)
  * Decision 3). The bus places it where `adopt` rebuilds the session from it; `main` never reads it.
  *
- * `insertImagePage`'s picture crosses as an asset, by {@link remoteMupdfExecution}'s `withAsset` rule — written to
- * the session's snapshot directory for the length of the call and removed whatever it did.
+ * No pdf-lib kind carries bytes, so nothing crosses as an asset here (`_noPdfLibKindCarriesBytes` in
+ * `engineChannels.ts` fails to compile the day one does).
  *
  * @param areas the output directory's surface, for placing and discarding what the host wrote
  */
@@ -858,41 +857,29 @@ export function remotePdfLibHost(
   client: ClientApi<EngineChannels>,
   sessions: RemoteSessions,
   areas: Pick<SessionAreaSurface, 'mintName' | 'moveOutput' | 'removeOutput'>,
-  assets: SessionAssets,
   notices: HostNotices,
 ): PdfLibHost {
   return async (session, command, reads) => {
     const area = sessions.areaFor(session);
     const into = areas.mintName();
-    const split = splitPdfLibAsset(command);
-    const asset = split.asset === undefined ? undefined : assets.name();
-    if (asset !== undefined && split.asset !== undefined) {
-      await assets.write(area.snapshotDirectory, asset, split.asset);
-    }
     // A PAGE'S RUNS ARE A MuPDF WRITER'S PRE-READ (ADR-0176), and this channel carries pdf-lib's two. No pdf-lib kind
     // can declare it: `_noPdfLibKindReadsRuns` below fails to compile the day one does, so this cast is that
     // assertion's conclusion, which the checker cannot carry from a kind's declaration to the value the bus resolved.
     const carried = reads as Exclude<PreReadValue, PageRuns> | undefined;
-    let byteLength: number;
-    try {
-      const result = await client['engine/applyPdfLib']({
-        session: sessions.handleFor(session),
-        command: split.command,
-        asset,
-        reads: carried,
-        into,
-      });
-      // A REFUSAL A PERSON CAN ACT ON comes back as the class it was thrown as (`hostRefusals.ts`).
-      const refusal = result.ok ? undefined : hostRefusalFor(result.error.code);
-      if (refusal !== undefined) throw refusal;
-      const answer = answered('engine/applyPdfLib', result);
-      byteLength = answer.bytes;
-      // TOLD AFTER THE ANSWER IS KNOWN TO BE ONE: the file is written, so the owner (permissions) password was replaced
-      // whether or not the person goes on to keep the change (ADR-0220).
-      if (answer.permissionPasswordReplaced === true) notices.permissionPasswordReplaced();
-    } finally {
-      if (asset !== undefined) await assets.remove(area.snapshotDirectory, asset);
-    }
+    const result = await client['engine/applyPdfLib']({
+      session: sessions.handleFor(session),
+      command,
+      reads: carried,
+      into,
+    });
+    // A REFUSAL A PERSON CAN ACT ON comes back as the class it was thrown as (`hostRefusals.ts`).
+    const refusal = result.ok ? undefined : hostRefusalFor(result.error.code);
+    if (refusal !== undefined) throw refusal;
+    const answer = answered('engine/applyPdfLib', result);
+    const byteLength = answer.bytes;
+    // TOLD AFTER THE ANSWER IS KNOWN TO BE ONE: the file is written, so the owner (permissions) password was replaced
+    // whether or not the person goes on to keep the change (ADR-0220).
+    if (answer.permissionPasswordReplaced === true) notices.permissionPasswordReplaced();
     return {
       byteLength,
       place: async (destination) => {

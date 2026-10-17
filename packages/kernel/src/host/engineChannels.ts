@@ -93,7 +93,6 @@ import {
   removePageMarksSchema,
   pageMarksSchema,
   setPageBackgroundSchema,
-  insertImagePageSchema,
   createFormFieldSchema,
   duplicateFormFieldSchema,
   editFormFieldsSchema,
@@ -110,6 +109,7 @@ import {
   signDocumentSchema,
   signaturePlacementSchema,
   drawnBoxesShape,
+  embeddableImageTypeSchema,
 } from '@monstera/contract/host';
 import { z } from 'zod';
 
@@ -1351,12 +1351,10 @@ export type MupdfChannelExcludesEveryOtherKind = Excludes<ChannelKind, KindsRout
  * ([ADR-0121](../../../../docs/DECISIONS/0121-main-never-holds-two-images.md) Decision 3). A list, for
  * {@link mupdfCommandSchema}'s reason, checked against the routing table in both directions below.
  *
- * `insertImagePage` travels WITHOUT its image, for `placeImage`'s reason one host over: this wire is JSON, so the
- * bytes cross as an asset in the session's snapshot directory.
+ * No pdf-lib kind carries bytes, so this is the commands as they are (`_noPdfLibKindCarriesBytes` below).
  */
 const pdfLibCommandSchema = z.discriminatedUnion('kind', [
   setPageBackgroundSchema,
-  insertImagePageSchema.omit({ bytes: true }),
   createFormFieldSchema,
   editFormFieldsSchema,
   duplicateFormFieldSchema,
@@ -1365,7 +1363,7 @@ const pdfLibCommandSchema = z.discriminatedUnion('kind', [
   generateTocSchema,
 ]);
 
-/** A pdf-lib command, once its asset has been taken out. */
+/** A pdf-lib command as `engine/applyPdfLib` carries it. */
 export type PdfLibWireCommand = z.infer<typeof pdfLibCommandSchema>;
 
 type PdfLibChannelKind = PdfLibWireCommand['kind'];
@@ -1373,33 +1371,13 @@ export type PdfLibChannelCoversEveryRoutedKind = Covers<PdfLibChannelKind, Kinds
 export type PdfLibChannelExcludesEveryOtherKind = Excludes<PdfLibChannelKind, KindsRoutedTo<'pdf-lib'>>;
 
 /**
- * {@link splitAsset} for a pdf-lib command. The same rule — the declaration's `asset` axis decides — over the other
- * writer's kinds, so the two cannot disagree about which commands carry bytes.
+ * NO pdf-lib KIND CARRIES BYTES, and this fails to compile the day one declares `asset: 'bytes'`: `engine/applyPdfLib`
+ * then has no asset to carry them in, and this host route needs one again (`splitAsset`'s rule, as the MuPDF route
+ * takes it). The last such kind was `insertImagePage`, removed 2026-10-17 (ADR-0044's correction); a channel field
+ * kept for bytes nothing sends would be a door left open on a wire that a hostile host can read.
  */
-export function splitPdfLibAsset(command: CommandOfKind<KindsRoutedTo<'pdf-lib'>>): {
-  readonly command: PdfLibWireCommand;
-  readonly asset: Uint8Array | undefined;
-} {
-  if (declaredCommands[command.kind].asset === 'none') return { command, asset: undefined };
-  if (!('bytes' in command)) {
-    throw new Error(
-      `"${command.kind}" declares an asset and carries no bytes to send. The declaration and the ` +
-        `payload have diverged, which CommandAsset exists to make impossible.`,
-    );
-  }
-  const { bytes, ...rest } = command;
-  return { command: rest, asset: bytes };
-}
-
-/** {@link joinAsset} for a pdf-lib command: whole again, or `undefined` where the command and asset disagree. */
-export function joinPdfLibAsset(
-  command: PdfLibWireCommand,
-  asset: Uint8Array | undefined,
-): CommandOfKind<KindsRoutedTo<'pdf-lib'>> | undefined {
-  if (!pdfLibCarriesAsset(command)) return asset === undefined ? command : undefined;
-  if (asset === undefined) return undefined;
-  return { ...command, bytes: asset };
-}
+const _noPdfLibKindCarriesBytes: Extract<AssetBearingKind, KindsRoutedTo<'pdf-lib'>> extends never ? true : never = true;
+void _noPdfLibKindCarriesBytes;
 
 /**
  * The signing command as `engine/prepareSignature` carries it to the MuPDF host
@@ -1407,7 +1385,7 @@ export function joinPdfLibAsset(
  *
  * **No certificate and no passphrase, by the schema**: `signDocumentSchema` with both omitted, so a host cannot be
  * handed a key whatever main's code does. The picture of a visible signature travels without its bytes, for
- * `insertImagePage`'s reason: this wire is JSON, so they cross as an asset in the session's snapshot directory.
+ * `placeImage`'s reason: this wire is JSON, so they cross as an asset in the session's snapshot directory.
  */
 const placeholderRequestSchema = signDocumentSchema
   .omit({ bytes: true, passphrase: true, appearance: true })
@@ -1416,7 +1394,7 @@ const placeholderRequestSchema = signDocumentSchema
       .extend({
         mark: z.discriminatedUnion('kind', [
           ...drawableSignatureSchema.options,
-          z.object({ kind: z.literal('image'), mediaType: z.enum(['image/jpeg', 'image/png']) }).strict(),
+          z.object({ kind: z.literal('image'), mediaType: embeddableImageTypeSchema }).strict(),
         ]),
       })
       .strict()
@@ -1427,7 +1405,7 @@ const placeholderRequestSchema = signDocumentSchema
 /** A placeholder request once its picture has been taken out. */
 export type PlaceholderWireRequest = z.infer<typeof placeholderRequestSchema>;
 
-/** {@link splitPdfLibAsset} for a signature's picture: the request without its bytes, and the bytes. */
+/** {@link splitAsset} for a signature's picture: the request without its bytes, and the bytes. */
 export function splitPlaceholderAsset(request: PlaceholderRequest): {
   readonly request: PlaceholderWireRequest;
   readonly asset: Uint8Array | undefined;
@@ -1440,7 +1418,7 @@ export function splitPlaceholderAsset(request: PlaceholderRequest): {
   return { request: { ...rest, appearance: { ...where, mark: picture } }, asset: bytes };
 }
 
-/** {@link joinPdfLibAsset} for a signature's picture: whole again, or `undefined` where the request and asset disagree. */
+/** {@link joinAsset} for a signature's picture: whole again, or `undefined` where the request and asset disagree. */
 export function joinPlaceholderAsset(
   request: PlaceholderWireRequest,
   asset: Uint8Array | undefined,
@@ -1497,13 +1475,6 @@ export const PROTECTION_REFUSALS = ['protection-not-reproducible'] as const;
  * document is signed under its own key (ADR-0227), not refused.
  */
 export const PLACEHOLDER_REFUSALS = ['signature-picture-unreadable', ...PICTURE_REFUSALS] as const;
-
-/** {@link carriesAsset} over a pdf-lib wire command: both halves from `declaredCommands`, as there. */
-function pdfLibCarriesAsset(
-  command: PdfLibWireCommand,
-): command is Extract<PdfLibWireCommand, { kind: AssetBearingKind }> {
-  return declaredCommands[command.kind].asset !== 'none';
-}
 
 /**
  * How long a handed path may be.
@@ -2273,8 +2244,8 @@ export const engineChannels = {
    * route a document's session is ever rebuilt by. `main` holds neither the input nor the result, and parses nothing.
    *
    * `reads` is the pre-read the bus resolved — the outline a table of contents lists, or the recognition an OCR text
-   * layer draws — because the bus decides what a command is handed, wherever it runs. `asset` is `insertImagePage`'s
-   * picture, by `engine/apply`'s door.
+   * layer draws — because the bus decides what a command is handed, wherever it runs. No `asset`: no pdf-lib kind
+   * carries bytes (`_noPdfLibKindCarriesBytes`).
    */
   // FILE-REQUESTED (ADR-0138): `createFormField` and the pre-read — a recognised page, an outline — can each outgrow a
   // frame at its schema's worst.
@@ -2284,7 +2255,6 @@ export const engineChannels = {
       .object({
         session: sessionSchema,
         command: pdfLibCommandSchema,
-        asset: outputNameSchema.optional(),
         reads: z
           .union([z.array(engineDestinationSchema).max(ENGINE_DESTINATIONS_MAX).readonly(), recognisedPageSchema])
           .optional(),
@@ -2301,10 +2271,8 @@ export const engineChannels = {
       .strict(),
     [
       'no-such-session',
-      'asset-missing',
       'apply-failed',
       'serialise-failed',
-      ...PICTURE_REFUSALS,
       ...FIELD_EDIT_REFUSALS,
       ...PROTECTION_REFUSALS,
     ],

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { EngineChannels } from './engineChannels.js';
 import { ProtectionNotReproducible } from '../protectionRefusal.js';
-import { createRemoteSessions, remotePdfLibHost, type SessionAssets } from './remoteEngine.js';
+import { createRemoteSessions, remotePdfLibHost } from './remoteEngine.js';
 
 /**
  * What a hosted pdf-lib command tells the person beyond its result (ADR-0220): the host's answer carries
@@ -16,12 +16,6 @@ import { createRemoteSessions, remotePdfLibHost, type SessionAssets } from './re
 // CHECKED AGAINST THE CONTRACT, so the next required field is a compile error here rather than a red suite (DDDDDDDD-5).
 const COMMAND = { kind: 'setPageBackground', pages: 'all', red: 1, green: 1, blue: 0.9 } as const satisfies CommandOfKind<'setPageBackground'>;
 
-const ASSETS: SessionAssets = {
-  name: () => 'asset',
-  write: () => Promise.resolve(),
-  remove: () => Promise.resolve(),
-};
-
 function hostAnswering(answer: unknown) {
   const sessions = createRemoteSessions();
   const session = sessions.adopt('h1', { snapshotDirectory: 'snapshots', outputDirectory: 'output' });
@@ -33,7 +27,6 @@ function hostAnswering(answer: unknown) {
     client,
     sessions,
     { mintName: () => 'ab12', moveOutput: () => Promise.resolve(3), removeOutput: () => Promise.resolve() },
-    ASSETS,
     {
       permissionPasswordReplaced: () => {
         told.push('permission-password-replaced');

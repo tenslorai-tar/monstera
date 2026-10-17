@@ -17,11 +17,6 @@ import {
   invertSetPageBackground,
 } from './pageBackground.js';
 import {
-  applyInsertImagePage,
-  captureInsertImagePage,
-  invertInsertImagePage,
-} from './pageImage.js';
-import {
   applyCreateFormField,
   captureCreateFormField,
   invertCreateFormField,
@@ -109,12 +104,6 @@ export const pdfLibSpecs = {
     apply: applySetPageBackground,
     capture: captureSetPageBackground,
     invert: invertSetPageBackground,
-  },
-  insertImagePage: {
-    ...declaredCommands.insertImagePage,
-    apply: applyInsertImagePage,
-    capture: captureInsertImagePage,
-    invert: invertInsertImagePage,
   },
   createFormField: {
     ...declaredCommands.createFormField,

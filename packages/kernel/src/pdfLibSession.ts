@@ -17,7 +17,7 @@ import type { ByteImage } from './engineSeam.js';
  * | command | same bytes | `/ModDate` |
  * |---|---|---|
  * | `generateToc` (unpinned) | **no** | `172400Z` → `172401Z` |
- * | `insertImagePage` (unpinned) | **no** | `172401Z` → `172402Z` |
+ * | `insertImagePage` (unpinned; the command was removed 2026-10-17) | **no** | `172401Z` → `172402Z` |
  * | `watermarkPages` (pinned) | yes | `172402Z` → `172402Z` |
  *
  * ## Why a function rather than a rule, and a rule as well

@@ -20,7 +20,7 @@ import {
   fontFamilySchema,
   fileAnswered,
   fileRequested,
-  insertImagePageSchema,
+  embeddableImageTypeSchema,
 } from '@monstera/contract/host';
 
 import {
@@ -425,7 +425,7 @@ export const composeChannels = {
   'engine/image-size': channel(
     'Answers the pixel size a picture in the area states in its header.',
     z
-      .object({ session: sessionSchema, from: outputNameSchema, mediaType: insertImagePageSchema.shape.mediaType })
+      .object({ session: sessionSchema, from: outputNameSchema, mediaType: embeddableImageTypeSchema })
       .strict(),
     z.discriminatedUnion('kind', [
       z
@@ -505,8 +505,8 @@ export const composeChannels = {
    * page limit (`addImagePage`). The result is the shared one, and a
    * refusal carries the one-based position of the image it is about.
    *
-   * The media type is the contract's `insertImagePage` enum, taken rather than spelt
-   * again, so the two routes to a page from an image name one set of decoders.
+   * The media type is the contract's `embeddableImageTypeSchema`, taken rather than
+   * spelt again, so every route that embeds a picture names one set of decoders.
    */
   'engine/compose-images': channel(
     'Makes each listed image from the area a page of a new PDF, written into the area.',
@@ -515,7 +515,7 @@ export const composeChannels = {
         session: sessionSchema,
         images: z
           .array(
-            z.object({ from: outputNameSchema, mediaType: insertImagePageSchema.shape.mediaType }).strict(),
+            z.object({ from: outputNameSchema, mediaType: embeddableImageTypeSchema }).strict(),
           )
           .min(1)
           .max(MAX_IMPORT_IMAGES),

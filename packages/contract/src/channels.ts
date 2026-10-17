@@ -2380,10 +2380,10 @@ export const channels = {
 
   'document.execute': channel(
     'Applies one command to an open document, returning the version it produced.',
-    // THE RENDERABLE SUBSET, not the whole union. `insertImagePage` carries an
-    // image main reads from a picked file, so the one channel a renderer could
-    // put a command on refuses it at the boundary — the capability is
-    // unrepresentable rather than merely unused. See `commands.ts`.
+    // THE RENDERABLE SUBSET, not the whole union. `placeImage` and the kinds beside
+    // it carry a picked file's bytes or a key that main reads and mints, so the one
+    // channel a renderer could put a command on refuses them at the boundary — the
+    // capability is unrepresentable rather than merely unused. See `commands.ts`.
     z.object({
       docId: docIdSchema,
       command: renderableCommandSchema,
@@ -6611,9 +6611,9 @@ export const channels = {
         kind: z.literal('dictionary'),
         language: spellingLanguageSchema,
         /**
-         * `instanceof` with a bound rather than a base64 string, for
-         * `insertImagePage`'s reason: a string would cost a third more memory
-         * to express the same bytes, and nothing on this path needs encoding.
+         * `instanceof` with a bound rather than a base64 string: a string would
+         * cost a third more memory to express the same bytes, and nothing on this
+         * path needs encoding.
          */
         affix: z.custom<Uint8Array>(
           (value) => value instanceof Uint8Array && value.byteLength <= MAX_AFFIX_BYTES,

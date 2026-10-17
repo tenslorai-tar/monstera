@@ -170,7 +170,7 @@ function replacedPages(command: CommandOfKind<'replacePage'>, total: number): re
  *
  * ## The insertion point is clamped, never refused
  *
- * `insertImagePage`'s rule and its reason: `at` is in the destination frame, so
+ * `insertBlankPage`'s rule and its reason: `at` is in the destination frame, so
  * the one value past the end a caller can name is *after the last page*, which
  * is a real request. Refusing it would make *merge onto the end* an error on a
  * document whose length the renderer knows only from a version it may already
@@ -316,7 +316,7 @@ export const applyReplacePage: Apply<'mupdf', 'replacePage', 'one'> = (
 /**
  * Reports that prior state cannot be recorded, always.
  *
- * `insertImagePage`'s shape and its reason, with one addition worth stating:
+ * `generateToc`'s shape and its reason, with one addition worth stating:
  * the checkpoint the bus takes instead is of the **target**, and the source
  * needs no entry because a merge does not modify it (ADR-0040).
  *
@@ -339,8 +339,8 @@ export const captureMergeDocument = (): Promise<CaptureResult<never>> =>
  *
  * `CommandPrior['mergeDocument']` is `never`, so no value of the parameter type
  * can be constructed and nothing can call this. It throws rather than returning
- * quietly, which is the opposite of `invertInsertImagePage`'s choice next door
- * and deliberate: that one is a byte-image writer whose only honest no-op is
+ * quietly, which is the opposite of a byte-image writer's unreachable inverse
+ * and deliberate: that one's only honest no-op is
  * returning the image it was given, and this one mutates in place and returns
  * nothing — so *did nothing* and *silently failed to undo a merge* would be the
  * same observation. Undo restores the checkpoint the bus took.

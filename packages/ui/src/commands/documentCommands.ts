@@ -797,9 +797,9 @@ export async function applyDocumentCommand(
   deps: DocumentCommandDeps,
   docId: DocId,
   // THE RENDERABLE SUBSET AND NOT `Command`, which is the narrower of the two and
-  // the one this side may hold: `insertImagePage` carries an image main reads
-  // from a picked file, and it is absent from this union so a UI command cannot
-  // be written that sends one. The type is the mechanism — no runtime check
+  // the one this side may hold: `placeImage` and the kinds beside it carry a
+  // picked file's bytes or a key that main reads, and they are absent from this
+  // union so a UI command cannot be written that sends one. The type is the mechanism — no runtime check
   // here refuses it, because none can be reached.
   //
   // AND UNSTAMPED (ADR-0103): a surface says what to make, and the stamp is

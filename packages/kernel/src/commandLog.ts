@@ -281,30 +281,18 @@ export interface CommandPrior {
   readonly deskewPages: readonly PriorPageDeskew[];
   /**
    * **`never`**, and this one earns it from the other direction than its
-   * neighbours.
+   * neighbours that draw.
    *
-   * Every other `never` here is a command that DRAWS, whose prior state is the
-   * page's whole content stream. This one adds a page, and its prior state is
-   * *the document without that page* — which is `deletePages`' entry read
-   * backwards: undoing an insert is a delete, and a delete's prior state is the
-   * page and everything it reaches.
+   * A command that DRAWS has the page's whole content stream as its prior state.
+   * This one adds pages, and its prior state is *the document without them* —
+   * which is `deletePages`' entry read backwards: undoing an insert is a delete,
+   * and a delete's prior state is the pages and everything they reach. A table
+   * of contents may take one page or six, which changes nothing about that.
    *
    * Written out rather than pointed at a neighbour, because this table is where
    * each command says what its inverse is made of, and a comment saying *see
    * above* is how a later command acquires a prior state by inheritance instead
    * of by decision.
-   */
-  readonly insertImagePage: never;
-  /**
-   * **`never`**, for {@link insertImagePage}' reason on a variable number of
-   * pages.
-   *
-   * The count is what makes it worth its own entry rather than a pointer: a
-   * table of contents may take one page or six, so *the document without the
-   * pages this command added* is not a fixed shape the way an insert's is. That
-   * changes nothing about the conclusion — a delete's prior state is the pages
-   * and everything they reach either way — and it is written out because this
-   * table is where each command says what its inverse is made of.
    */
   readonly generateToc: never;
   /**
@@ -342,7 +330,7 @@ export interface CommandPrior {
    * document — which changes nothing, and saying why is the point.
    *
    * The prior state is *the target without the source's pages*, which is
-   * `deletePages`' entry read backwards exactly as `insertImagePage`'s is. The
+   * `deletePages`' entry read backwards exactly as `generateToc`'s is. The
    * source document is **not** part of it: a merge does not modify the source,
    * so there is nothing about it to restore and no second log entry anywhere.
    * ADR-0040's *what this does not do* says the same, and it is repeated here
@@ -357,7 +345,7 @@ export interface CommandPrior {
    * Every other `never` here is a command that draws, one that adds pages, or
    * one that removes them. This does two of those: the prior state is the
    * replaced page's object graph — `deletePages`' argument — **and** the
-   * absence of the pages that arrived, which is `insertImagePage`'s. Either
+   * absence of the pages that arrived, which is `generateToc`'s. Either
    * alone would be enough; naming both is what stops a later reader concluding
    * that half of it could be recorded.
    */

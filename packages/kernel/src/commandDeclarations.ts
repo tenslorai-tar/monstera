@@ -197,9 +197,9 @@ export type ReadRouting<K extends CommandKind> =
  * [ADR-0044](../../../docs/DECISIONS/0044-an-image-reaches-the-engine-the-way-the-document-does.md),
  * and {@link SourceRouting}'s argument a third axis along: declared rather than
  * inferred from a payload that happens to hold a `Uint8Array`, because those are
- * different statements and `insertImagePage` is the pair that proves it — an
- * image in the payload, `asset: 'none'`, because a byte-image writer's wire is
- * a function call.
+ * different statements: bytes in a payload need no asset where the writer is
+ * reached by a function call, and need one only where it is reached over a wire
+ * that cannot carry them.
  *
  * Generic where the other three are not, and that is {@link CommandAsset}'s
  * doing: a kind with no `bytes` field has no member of that union but `'none'`,
@@ -978,40 +978,6 @@ const declarations = {
     asset: 'none',
     purpose: 'ordinary',
   },
-  insertImagePage: {
-    kind: 'insertImagePage',
-    display: 'image',
-    // §3's matrix at ARCHITECTURE.md:381 names *image-to-PDF* on the
-    // content-composition row. pdf-lib embeds JPEG and PNG directly; MuPDF
-    // would need a decoder and an encoder this build does not have.
-    writer: 'pdf-lib',
-    // `deletePages`' argument arriving from the opposite side: an insert's
-    // inverse is a delete, and a delete's prior state is the page and
-    // everything it reaches. `CommandPrior` types it `never`.
-    invertible: false,
-    undo: 'checkpoint',
-    // The image and the index are both in the command, so re-running it against
-    // the same document writes the same bytes. Nothing is read from a clock and
-    // nothing is minted.
-    reproducible: true,
-    replay: 'reapply-intent',
-    // Names no second DOCUMENT. It carries an image, which is not one — the
-    // axis counts open documents whose sessions the apply is handed, and this
-    // one's picture arrives in its own payload.
-    sources: 'none',
-    // Self-contained: it carries the whole of its intent, so there is no
-    // earlier answer it could be stale against and nothing for the bus to
-    // compare a version with.
-    targets: 'none',
-    // Needs nothing read through another engine; its `apply` takes what the
-    // command carries and nothing else.
-    reads: 'none',
-    // 'none' WHILE pdf-lib RAN IN `main`, where the picture was already in the payload's process. It runs in the
-    // MuPDF host since ADR-0121 Decision 3, and a JSON wire cannot carry the bytes — so they cross as an asset,
-    // `placeImage`'s route (ADR-0044).
-    asset: 'bytes',
-    purpose: 'ordinary',
-  },
   generateToc: {
     kind: 'generateToc',
     display: 'image',
@@ -1022,7 +988,7 @@ const declarations = {
     // moving one command off that row for convenience is how a matrix stops
     // being evidence.
     writer: 'pdf-lib',
-    // `insertImagePage`'s argument: this adds pages, and the prior state of a
+    // This adds pages, and the prior state of a
     // document that gained pages is the document without them — which is
     // `deletePages`' entry read backwards. `CommandPrior` types it `never`.
     invertible: false,

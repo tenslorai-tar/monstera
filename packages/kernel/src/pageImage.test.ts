@@ -1,12 +1,12 @@
 import { crc32, deflateSync } from 'node:zlib';
 
-import { PDFDict, PDFDocument, PDFName } from '@cantoo/pdf-lib';
+import { PDFDocument, PDFName } from '@cantoo/pdf-lib';
 import { describe, expect, it } from 'vitest';
 
-import { type CommandOfKind, MAX_PAGE_COORDINATE } from '@monstera/contract';
+import { type EmbeddableImageType, MAX_PAGE_COORDINATE } from '@monstera/contract';
 
-import { PngPixelsRefused } from './imageDimensions.js';
-import { applyInsertImagePage, captureInsertImagePage } from './pageImage.js';
+import { ImageDecodeRefused, PngPixelsRefused } from './imageDimensions.js';
+import { addImagePage } from './pageImage.js';
 
 /**
  * A page made from an image, read back through a **different parser** than the
@@ -112,13 +112,15 @@ async function threePages(): Promise<Uint8Array> {
 const IMAGE_WIDTH = 64;
 const IMAGE_HEIGHT = 40;
 
-function command(at: number): CommandOfKind<'insertImagePage'> {
-  return {
-    kind: 'insertImagePage',
-    at,
-    bytes: pngOf(IMAGE_WIDTH, IMAGE_HEIGHT),
-    mediaType: 'image/png',
-  };
+/** `addImagePage` on the three-page fixture at `at`, saved: what a composition makes of one picture. */
+async function insert(
+  at: number,
+  bytes: Uint8Array = pngOf(IMAGE_WIDTH, IMAGE_HEIGHT),
+  mediaType: EmbeddableImageType = 'image/png',
+): Promise<Uint8Array> {
+  const document = await PDFDocument.load(await threePages(), { updateMetadata: false });
+  await addImagePage(document, bytes, mediaType, at);
+  return document.save();
 }
 
 /** Every page's size, as pdf-lib reads them back. */
@@ -140,13 +142,13 @@ async function hasImage(bytes: Uint8Array, page: number): Promise<boolean> {
   return (dictionary as { entries: () => unknown[] }).entries().length > 0;
 }
 
-describe('insertImagePage', () => {
-  it('INSERTS AT THE INDEX THE COMMAND NAMED, rather than appending', async () => {
+describe('addImagePage', () => {
+  it('INSERTS AT THE INDEX IT IS GIVEN, rather than appending', async () => {
     // THE CASE THE MODULE EXISTS FOR, and the one an `addPage` implementation
     // fails. Appending produces a document with the same page count and the
     // same new page, and every size assertion below still passes — only WHERE
     // it landed separates them, so the index chosen is a middle one.
-    const after = await applyInsertImagePage(await threePages(), command(1));
+    const after = await insert(1);
     const sizes = await sizesOf(after);
 
     expect(sizes).toHaveLength(PAGE_COUNT + 1);
@@ -160,19 +162,19 @@ describe('insertImagePage', () => {
     // The separating case for *inserted a blank page and called it done*: a
     // blank page of the image's dimensions satisfies every size assertion
     // above, and only the XObject says a picture is on it.
-    const after = await applyInsertImagePage(await threePages(), command(0));
+    const after = await insert(0);
 
     expect(await hasImage(after, 0)).toBe(true);
-    // CONTROL: a page this command did not touch carries none, so the check
+    // CONTROL: a page this did not touch carries none, so the check
     // above is not one that answers `true` for any page.
     expect(await hasImage(after, 1)).toBe(false);
   });
 
   it('takes the IMAGE’s size and not the document’s', async () => {
     // A page sized to its neighbours would letterbox or crop the scan, and both
-    // are decisions this command has no basis for. The fixture's page and image
+    // are decisions this has no basis for. The fixture's page and image
     // differ on both axes so neither can pass by coincidence.
-    const after = await applyInsertImagePage(await threePages(), command(3));
+    const after = await insert(3);
     const sizes = await sizesOf(after);
 
     expect(sizes[3]).toStrictEqual({ width: IMAGE_WIDTH, height: IMAGE_HEIGHT });
@@ -183,12 +185,7 @@ describe('insertImagePage', () => {
     // point. So a PNG 14,401 pixels wide made a non-conforming page until 2026-09-13.
     // One row of pixels keeps the fixture small; the height scales by the same factor.
     const wide = MAX_PAGE_COORDINATE + 1;
-    const after = await applyInsertImagePage(await threePages(), {
-      kind: 'insertImagePage',
-      at: 0,
-      bytes: pngOf(wide, 2),
-      mediaType: 'image/png',
-    });
+    const after = await insert(0, pngOf(wide, 2));
     const [page] = await sizesOf(after);
 
     expect(page?.width).toBe(MAX_PAGE_COORDINATE);
@@ -197,10 +194,8 @@ describe('insertImagePage', () => {
 
   it('CLAMPS an index past the end rather than refusing it', async () => {
     // `at` is *where the new page goes*, and the one value past the end a
-    // renderer can name is the position after the last page — a real request.
-    // Refusing it would make *insert at the end* an error on a document whose
-    // length the renderer knows only from a version it may already have lost.
-    const after = await applyInsertImagePage(await threePages(), command(99));
+    // caller can name is the position after the last page — a real request.
+    const after = await insert(99);
     const sizes = await sizesOf(after);
 
     expect(sizes).toHaveLength(PAGE_COUNT + 1);
@@ -209,50 +204,12 @@ describe('insertImagePage', () => {
 
   it('REFUSES bytes that are not the image they claim to be', async () => {
     // The decoder is the validation, which is why the picker's extension filter
-    // is only a hint. A `.png` a user renamed reaches here and pdf-lib throws;
-    // `documentCommands.ts` turns that into the `unreadable` outcome.
+    // is only a hint. A `.png` a user renamed reaches here and pdf-lib throws,
+    // named as the picture's refusal.
     const notAnImage = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
 
-    await expect(
-      applyInsertImagePage(await threePages(), {
-        kind: 'insertImagePage',
-        at: 0,
-        bytes: notAnImage,
-        mediaType: 'image/png',
-      }),
-    ).rejects.toThrow();
-  });
-
-  it('CAPTURE REFUSES, always, and says why', async () => {
-    // ADR-0009's 2026-08-19 decision: not invertible is an outcome the bus
-    // answers with a checkpoint, not a throw. The reason is asserted because it
-    // travels into the log entry, and a checkpoint whose reason is empty is one
-    // nobody can audit.
-    const captured = await captureInsertInvertible();
-
-    expect(captured.captured).toBe(false);
-    if (captured.captured) throw new Error('an insert reported recordable prior state');
-    expect(captured.reason).toContain('no recordable prior state');
-  });
-
-  it('preserves the document’s own /ModDate rather than stamping the clock', async () => {
-    // `insertImagePage` declares `reproducible: true` and loaded without
-    // `updateMetadata: false` until 2026-09-07, so pdf-lib rewrote `/ModDate`
-    // and `/Producer` on every save and the command was mis-declared. Measured
-    // before the fix, two applies 1.1s apart: `D:20260907172401Z` to
-    // `D:20260907172402Z`, against `watermarkPages` holding its value across
-    // the same gap.
-    //
-    // A BYTE-EQUALITY CASE CANNOT HOLD THIS, which is why one is not written
-    // here: two saves normally land inside one clock tick, so it would be green
-    // against the defect almost every run — and the one place that shape was
-    // used, `pageToc.test.ts`, is where the whole thing surfaced as a flake.
-    // Reading the value is independent of the clock, because the fixture's date
-    // is pinned to 2001 and no stamp can produce it.
-    const built = await applyInsertImagePage(await threePages(), command(0));
-    const document = await PDFDocument.load(built, { updateMetadata: false });
-    const info = document.context.lookup(document.context.trailerInfo.Info, PDFDict);
-    expect(String(info.get(PDFName.of('ModDate')))).toBe('(D:20010102030405Z)');
+    // AS A JPEG, whose header the decoder reads: a PNG this short is refused by the pixel check first, below.
+    await expect(insert(0, notAnImage, 'image/jpeg')).rejects.toBeInstanceOf(ImageDecodeRefused);
   });
 });
 
@@ -272,29 +229,14 @@ describe('THE PIXEL BOUND, held before the decoder runs in main', () => {
     // THE DECISION IS THE ASSERTION. With no image data, `embedPng` would refuse these
     // bytes too — as a decode error. Only the pixel check answers `PngPixelsRefused`
     // with this reason, so a build without it fails here.
-    const refusal = applyInsertImagePage(await threePages(), {
-      kind: 'insertImagePage',
-      at: 0,
-      bytes: headerOnly(12_000, 12_000),
-      mediaType: 'image/png',
-    });
+    const refusal = insert(0, headerOnly(12_000, 12_000));
     await expect(refusal).rejects.toBeInstanceOf(PngPixelsRefused);
     await expect(refusal).rejects.toMatchObject({ reason: 'too-many-pixels' });
   });
 
   it('CONTROL: a small header with no data is refused by the DECODER, not the pixel check', async () => {
-    const refusal = applyInsertImagePage(await threePages(), {
-      kind: 'insertImagePage',
-      at: 0,
-      bytes: headerOnly(IMAGE_WIDTH, IMAGE_HEIGHT),
-      mediaType: 'image/png',
-    });
+    const refusal = insert(0, headerOnly(IMAGE_WIDTH, IMAGE_HEIGHT));
     await expect(refusal).rejects.toThrow();
     await expect(refusal).rejects.not.toBeInstanceOf(PngPixelsRefused);
   });
 });
-
-/** Named so the assertion above reads as what it is rather than as a call. */
-function captureInsertInvertible(): ReturnType<typeof captureInsertImagePage> {
-  return captureInsertImagePage();
-}

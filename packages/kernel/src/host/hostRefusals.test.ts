@@ -5,7 +5,7 @@ import { FIELD_EDIT_REASONS } from '@monstera/shared';
 import { FieldEditRefusedError } from '../fieldEditRefusal.js';
 import { ImageDecodeRefused, PngPixelsRefused } from '../imageDimensions.js';
 import { FIELD_EDIT_REFUSALS, PICTURE_REFUSALS } from './engineChannels.js';
-import { hostRefusalFor, pdfLibRefusalCodeOf } from './hostRefusals.js';
+import { hostRefusalFor, pdfLibRefusalCodeOf, placeholderRefusalCodeOf } from './hostRefusals.js';
 
 /**
  * A change to a form field that was refused keeps its reason across the engine host's boundary.
@@ -33,18 +33,23 @@ describe('a change to a form field keeps its reason across the host', () => {
     expect(hostRefusalFor('apply-failed')).toBeUndefined();
   });
 
-  it('a picture past the pixel bound is still named on the same channel', () => {
-    expect(pdfLibRefusalCodeOf(new PngPixelsRefused('too-many-pixels', null))).toBe('picture-too-many-pixels');
+  it('a picture is not a pdf-lib command’s refusal: none decodes one since insertImagePage was removed', () => {
+    expect(pdfLibRefusalCodeOf(new PngPixelsRefused('too-many-pixels', null))).toBeUndefined();
+    expect(pdfLibRefusalCodeOf(new ImageDecodeRefused('x'))).toBeUndefined();
   });
 
-  it('a picture the decoder refuses, or a PNG with no header, crosses as unreadable and comes back as the decoder’s refusal', () => {
+  it('a signature’s picture past the pixel bound is named on its channel', () => {
+    expect(placeholderRefusalCodeOf(new PngPixelsRefused('too-many-pixels', null))).toBe('picture-too-many-pixels');
+  });
+
+  it('a signature’s picture the decoder refuses, or a PNG with no header, crosses as unreadable and comes back as the decoder’s refusal', () => {
     for (const refused of [new ImageDecodeRefused('x'), new PngPixelsRefused('no-header', null)]) {
-      const code = pdfLibRefusalCodeOf(refused);
+      const code = placeholderRefusalCodeOf(refused);
       expect(code).toBe('picture-unreadable');
       expect(PICTURE_REFUSALS as readonly string[]).toContain(code);
       expect(hostRefusalFor(code ?? '')).toBeInstanceOf(ImageDecodeRefused);
     }
     // CONTROL: a TypeError from after the decode is not the picture's, and keeps no code (it crosses as `apply-failed`).
-    expect(pdfLibRefusalCodeOf(new TypeError('cannot read properties of undefined'))).toBeUndefined();
+    expect(placeholderRefusalCodeOf(new TypeError('cannot read properties of undefined'))).toBeUndefined();
   });
 });

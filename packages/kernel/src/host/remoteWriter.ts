@@ -135,9 +135,9 @@ export function remoteMupdfWriter(
     exportFormData,
     exportAnnotationData,
     pageImage,
-    // pdf-lib JOINS for `extract`'s reason: a job needing the same client, sessions, granted areas and assets, and
-    // the one place all four are in hand (ADR-0121 Decision 3).
-    pdfLib: remotePdfLibHost(client, sessions, areas, assets, notices),
+    // pdf-lib JOINS for `extract`'s reason: a job needing the same client, sessions and granted areas, and the one
+    // place all three are in hand (ADR-0121 Decision 3).
+    pdfLib: remotePdfLibHost(client, sessions, areas, notices),
     // AND THE SIGNATURE'S PLACEHOLDER, for pdf-lib's reason (ADR-0148).
     prepareSignature: remoteSignatureHost(client, sessions, areas, assets),
     ...remoteMupdfExecution(client, sessions, assets),

@@ -50,7 +50,7 @@ import {
   remoteMupdfAnnotationImportPlan,
   type SessionAssets,
 } from './remoteEngine.js';
-import { ImageDecodeRefused, PngPixelsRefused } from '../imageDimensions.js';
+import { PngPixelsRefused } from '../imageDimensions.js';
 import type { PlaceholderRequest } from '../signatureHole.js';
 import { SignatureAppearanceRefusedError } from '../signingRefusals.js';
 import {
@@ -388,7 +388,7 @@ function joined(
     // THE SIGNER'S HOST HALF, through the same client and areas, with assets written where the host reads them.
     signer: remoteSignatureHost(client, sessions, areas, fileAssets(areas)),
     // AND pdf-lib's, for the same reason: a hosted command's refusal crosses this same pipe.
-    pdfLib: remotePdfLibHost(client, sessions, areas, fileAssets(areas), {
+    pdfLib: remotePdfLibHost(client, sessions, areas, {
       permissionPasswordReplaced: () => {
         noticesTold.push('permission-password-replaced');
       },
@@ -1164,39 +1164,6 @@ describe("a signature's placeholder, prepared in the host and taken by main (ADR
   });
 });
 
-describe('a hosted pdf-lib command’s refusal, across the pipe (ADR-0121 Decision 3)', () => {
-  afterEach(async () => {
-    while (mintedRoots.length > 0) {
-      const root = mintedRoots.pop();
-      if (root !== undefined) await rm(root, { recursive: true, force: true });
-    }
-  });
-
-  it('a page image past the PIXEL bound arrives in main as that refusal, not as the host failing', async () => {
-    // `documentCommands.insertImage` answers *too many pixels* only for this class; anything else it answers as an
-    // unreadable picture, which blames a valid one. The rule runs in the host since pdf-lib moved there.
-    const areas = realAreas();
-    const { open, pdfLib, lifecycle } = joined(areas);
-    const session = await open(flat);
-    const header = new Uint8Array(29);
-    header.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
-    new DataView(header.buffer).setUint32(16, 12_000);
-    new DataView(header.buffer).setUint32(20, 12_000);
-    const refused = pdfLib(session, { kind: 'insertImagePage', at: 0, bytes: header, mediaType: 'image/png' }, undefined);
-    await expect(refused).rejects.toBeInstanceOf(PngPixelsRefused);
-    await expect(refused).rejects.toMatchObject({ reason: 'too-many-pixels' });
-    // AND BYTES THAT ARE NO PICTURE arrive as the decoder's refusal, across the real pipe (BBBBBBBB-7): they crossed as
-    // `apply-failed`, every defect's code, so main could only call every failure the picture's.
-    const unreadable = pdfLib(
-      session,
-      { kind: 'insertImagePage', at: 0, bytes: Uint8Array.of(1, 2, 3), mediaType: 'image/jpeg' },
-      undefined,
-    );
-    await expect(unreadable).rejects.toBeInstanceOf(ImageDecodeRefused);
-    await expect(unreadable).rejects.not.toBeInstanceOf(EngineCallFailed);
-    await lifecycle.close(session);
-  });
-});
 
 /**
  * `engine/open` with every key and the document's standing

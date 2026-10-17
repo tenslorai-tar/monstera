@@ -7,8 +7,9 @@
  * *"Annotations (all types), appearance streams"* to MuPDF, and MuPDF is behind
  * a pipe whose frame limit is 256 KiB against `MAX_IMAGE_BYTES` at 64 MiB.
  *
- * A third route exists and has a shipped precedent: `insertImagePage` declares
- * `writer: 'pdf-lib'` and carries the 64 MiB bound today, because a byte-image
+ * A third route exists and had a shipped precedent when this was written (2026-09-07; the command was removed
+ * 2026-10-17): `insertImagePage` declared
+ * `writer: 'pdf-lib'` and carried the 64 MiB bound, because a byte-image
  * writer runs in main and its input never crosses the pipe
  * ([ADR-0039](../../docs/DECISIONS/0039-a-byte-image-writer-round-trips-the-live-session.md)).
  * Routing THIS write the same way is an amendment to one matrix row, not a new
