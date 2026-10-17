@@ -86,6 +86,22 @@ export async function popupPlaced(page: Page, popup: Locator, what: string): Pro
  * and the second frame is the one that shows its effect. Polled with the expectation's own timeout: nothing here sets
  * a longer one, because a state that never settles is the finding.
  */
+/**
+ * How many commands a gesture sent, read once the application has SETTLED: no write in flight (`data-writes` at 0) and
+ * the count the same across two frames (DDDDDDDD-4). A read straight after a gesture passes the first moment the count
+ * matches — so a gesture that sends a second command close behind the first passes `once`, and one that sends a command
+ * it should not passes `none` — because the read can come before the send.
+ */
+export async function commandsSettled(page: Page, count: () => number, what: string): Promise<number> {
+  const reading = await settled(
+    page,
+    async () => ({ count: count(), writes: await page.locator('html').getAttribute('data-writes') }),
+    (now) => now.writes === '0' || now.writes === null,
+    what,
+  );
+  return reading.count;
+}
+
 export async function settled<T>(page: Page, read: () => Promise<T>, ready: (value: T) => boolean, what: string): Promise<T> {
   let last: T | undefined;
   const settling = expect

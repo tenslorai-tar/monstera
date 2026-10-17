@@ -3,6 +3,7 @@ import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
 import { LOOKS, bridgeUnder } from './pageBridge.js';
+import { commandsSettled } from './settled.js';
 
 /**
  * Formatting words in place on pinned Chromium (the owner's K11 and C1 to C5): no bar floats over the page; the
@@ -133,7 +134,8 @@ test.describe('Formatting in the Properties panel (K11)', () => {
     await size.fill('18');
     await size.press('Enter');
     await expect(page.locator('[data-text-editor]')).toBeFocused();
-    expect(sent.filter((one) => one.channel === 'document.execute')).toHaveLength(0);
+    // NONE, read once settled (DDDDDDDD-4): straight after the gesture the read could come before a send.
+    expect(await commandsSettled(page, () => sent.filter((one) => one.channel === 'document.execute').length, 'the edits sent')).toBe(0);
 
     // AWAY, on the page beside the block.
     await page.locator('canvas[data-page-canvas="0"]').click({ position: { x: 40, y: 600 } });
@@ -222,7 +224,8 @@ test.describe('Formatting in the Properties panel (K11)', () => {
     const after = panel.getByRole('spinbutton', { name: 'Space after the paragraph in points' });
     await after.fill('6');
     await after.press('Enter');
-    expect(sent.filter((one) => one.channel === 'document.execute')).toHaveLength(0);
+    // NONE, read once settled (DDDDDDDD-4): straight after the gesture the read could come before a send.
+    expect(await commandsSettled(page, () => sent.filter((one) => one.channel === 'document.execute').length, 'the edits sent')).toBe(0);
 
     await page.locator('canvas[data-page-canvas="0"]').click({ position: { x: 40, y: 600 } });
     await expect.poll(() => marksSent(sent)).toStrictEqual([
@@ -312,6 +315,7 @@ test.describe('Formatting in the Properties panel (K11)', () => {
     await openBlock(page, sent);
     await page.locator('[data-text-properties]').getByRole('button', { name: 'Bold' }).click();
     await expect(page.locator('[data-text-editor]')).toBeFocused();
-    expect(sent.filter((one) => one.channel === 'document.execute')).toHaveLength(0);
+    // NONE, read once settled (DDDDDDDD-4): straight after the gesture the read could come before a send.
+    expect(await commandsSettled(page, () => sent.filter((one) => one.channel === 'document.execute').length, 'the edits sent')).toBe(0);
   });
 });

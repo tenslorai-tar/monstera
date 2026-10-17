@@ -5,6 +5,7 @@ import { type Locator, type Page, expect, test } from '@playwright/test';
 import type { ShimFormField } from './browserShim.js';
 import { openSection, runCommand } from './helpScreensHarness.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
+import { commandsSettled } from './settled.js';
 
 /**
  * *Edit fields* (ADR-0226 Decision 7) with real pointer events at real places on pinned Chromium: a press selects, a drag
@@ -86,8 +87,11 @@ async function zoomOf(page: Page): Promise<number> {
  * the test process hears AFTER `mouse.up()` resolves, so a read straight after a gesture races the bridge: measured on
  * the windows runner, a drag's one command was not there yet (CI run 38207412421) while Linux had it in time.
  */
-async function sentOnce(sent: Sent, count: number): Promise<unknown[]> {
+async function sentOnce(page: Page, sent: Sent, count: number): Promise<unknown[]> {
   await expect.poll(() => commands(sent).length).toBe(count);
+  // AND STILL THAT MANY once nothing is in flight (DDDDDDDD-4): the poll above passes the first moment the count
+  // matches, so a gesture sending a second command close behind the first passed it.
+  expect(await commandsSettled(page, () => commands(sent).length, 'the commands a gesture sent')).toBe(count);
   return commands(sent);
 }
 
@@ -110,7 +114,8 @@ test.describe('Edit fields', () => {
     await page.mouse.click(at.x + at.width / 2, at.y + at.height / 2);
     await expect(name).toHaveAttribute('aria-pressed', 'true');
     await expect(page.locator('[data-field-box="1"]')).toHaveAttribute('aria-pressed', 'false');
-    expect(commands(sent)).toStrictEqual([]);
+    // NONE, read once settled (DDDDDDDD-4): read straight after the click it passed before any send could arrive.
+    expect(await commandsSettled(page, () => commands(sent).length, 'the commands a click sent')).toBe(0);
   });
 
   test('a drag from the CENTRE moves the field, as one editFormFields with the rect moved by the travel in points', async ({ page }) => {
@@ -119,7 +124,7 @@ test.describe('Edit fields', () => {
     const zoom = await zoomOf(page);
     const at = await boxOf(page.locator('[data-field-box="0"]'));
     await drag(page, { x: at.x + at.width / 2, y: at.y + at.height / 2 }, { x: 40, y: 20 });
-    const sentNow = await sentOnce(sent, 1);
+    const sentNow = await sentOnce(page, sent, 1);
     const edit = sentNow[0] as { kind: string; edits: { field: { index: number }; set: { rect: typeof NAME } }[] };
     expect(edit.kind).toBe('editFormFields');
     expect(edit.edits.map((each) => each.field.index)).toStrictEqual([0]);
@@ -142,7 +147,7 @@ test.describe('Edit fields', () => {
     await expect(page.locator('[data-field-guide="x"]').first()).toBeVisible();
     await page.mouse.up();
     await expect(page.locator('[data-field-guide]')).toHaveCount(0);
-    const edit = (await sentOnce(sent, 1))[0] as { edits: { set: { rect: typeof EMAIL } }[] };
+    const edit = (await sentOnce(page, sent, 1))[0] as { edits: { set: { rect: typeof EMAIL } }[] };
     // ON THE COLUMN, exactly: the three pixels were taken back.
     expect(edit.edits[0]?.set.rect.x0).toBeCloseTo(EMAIL.x0, 3);
   });
@@ -153,7 +158,7 @@ test.describe('Edit fields', () => {
     const zoom = await zoomOf(page);
     const at = await boxOf(page.locator('[data-field-box="1"]'));
     await drag(page, { x: at.x + at.width / 2, y: at.y + at.height / 2 }, { x: 15, y: 40 });
-    const edit = (await sentOnce(sent, 1))[0] as { edits: { set: { rect: typeof EMAIL } }[] };
+    const edit = (await sentOnce(page, sent, 1))[0] as { edits: { set: { rect: typeof EMAIL } }[] };
     expect(edit.edits[0]?.set.rect.x0).toBeCloseTo(EMAIL.x0 + 15 / zoom, 1);
   });
 
@@ -165,7 +170,7 @@ test.describe('Edit fields', () => {
     await page.mouse.click(at.x + 2, at.y + at.height - 2);
     await drag(page, { x: at.x + 2, y: at.y + at.height - 2 }, { x: 0, y: -30 });
     // ONE COMMAND IN ALL, and it is the move: a press that had sent one would put an unmoved rect first, or make two.
-    const edit = (await sentOnce(sent, 1))[0] as { edits: { field: { index: number }; set: { rect: typeof EMAIL } }[] };
+    const edit = (await sentOnce(page, sent, 1))[0] as { edits: { field: { index: number }; set: { rect: typeof EMAIL } }[] };
     expect(edit.edits[0]?.field.index).toBe(1);
     expect(edit.edits[0]?.set.rect.y0).toBeGreaterThan(EMAIL.y0);
   });
@@ -180,7 +185,7 @@ test.describe('Edit fields', () => {
     await expect(page.locator('[data-field-handle]')).toHaveCount(8);
     const handle = await boxOf(page.locator('[data-field-handle="se"]'));
     await drag(page, { x: handle.x + handle.width / 2, y: handle.y + handle.height / 2 }, { x: 30, y: 16 });
-    const edit = (await sentOnce(sent, 1))[0] as { kind: string; edits: { set: { rect: typeof NAME } }[] };
+    const edit = (await sentOnce(page, sent, 1))[0] as { kind: string; edits: { set: { rect: typeof NAME } }[] };
     expect(edit.kind).toBe('editFormFields');
     const rect = edit.edits[0]?.set.rect;
     // THE TOP LEFT CORNER STAYS; the right edge and the bottom follow the pointer.
@@ -201,7 +206,8 @@ test.describe('Edit fields', () => {
     await expect(page.locator('[data-field-box="1"]')).toHaveAttribute('aria-pressed', 'true');
     await page.mouse.click(name.x - 20, name.y - 30);
     await expect(page.locator('[aria-pressed="true"][data-field-box]')).toHaveCount(0);
-    expect(commands(sent)).toStrictEqual([]);
+    // NONE, read once settled (DDDDDDDD-4).
+    expect(await commandsSettled(page, () => commands(sent).length, 'the commands a selection sent')).toBe(0);
   });
 
   test('Ctrl+D copies the selected field beside itself, on its own page', async ({ page }) => {
