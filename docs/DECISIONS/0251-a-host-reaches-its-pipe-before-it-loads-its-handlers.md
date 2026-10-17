@@ -82,3 +82,21 @@ opening.
   short of the disk itself, and the first request still waits visibly, as any slow answer does.
 - `hostEntry.ts`, `pdfiumHostEntry.ts` and `composeHostEntry.ts` each split into a launcher and a body; the body keeps
   its name's content and the launcher is the file `main` starts, so `main` and the packaging are unchanged.
+
+## Correction, 2026-10-17 — what was built differs from the proofs above in two places
+
+1. **The order is held by the launchers' static imports, not recorded through surfaces.** An entry is top-level module
+   code over `process.argv`, so there is no surface to record through without changing what is tested. What decides the
+   order is what the entry imports statically, since an ES module's static graph is evaluated before its first
+   statement: `hostLaunch.test.ts` reads each entry's static imports, requires them to be the binding, the pipe and the
+   arguments only, and requires the serving module's dynamic import to come after the connect. Its control is the
+   entries' shape before this ADR, which it refuses.
+2. **The host's note is `pipe opened`, at the connect call's return, not `connected` at the socket's event.** Measured
+   the same day: on Windows libuv opens a named pipe inside the connect call, so the server sees the connection 0 ms
+   after it, while the client's `connect` event waits for its event loop — 1,503 ms when the loop was held for 1,500 ms
+   (control, no hold: 6 ms). A `connected` line written from the event was printed after `handlers loaded` in every
+   MuPDF start of the first in-application run, which reads as the opposite of what happened.
+
+Also built: PDFium's binding moved to `pdfiumBinding.ts`, since binding it from `pdfiumFfi.ts` loaded 167 of the PDFium
+host's 184 files before the connect. In the application afterwards (`hostStartWalk.mjs`, six runs, twelve host starts):
+the pipe opened 90–438 ms after each host began, and the handlers loaded at 0.57–2.29 s.
