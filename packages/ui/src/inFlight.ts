@@ -34,6 +34,11 @@ export async function countedAs<T>(kind: InFlightKind, work: () => Promise<T>): 
   }
 }
 
+/** How many writes and works are in flight now, together: what a layer behind waits on before it parks (ADR-0129). */
+export function inFlightNow(): number {
+  return counts.writes.inFlight + counts.works.inFlight;
+}
+
 function mark(kind: InFlightKind): void {
   // NO DOCUMENT in a case run under Node, where the counts are kept and nothing is marked.
   if (typeof document === 'undefined') return;

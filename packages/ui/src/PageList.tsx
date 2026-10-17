@@ -426,7 +426,20 @@ export interface PageListProps {
    * a layer behind gave its pixels back (ADR-0129, corrected 2026-10-14), so the one on show stays until this says the
    * one arriving is drawn. `undefined` where nothing waits on it.
    */
-  readonly onViewDrawn?: (() => void) | undefined;
+  readonly onViewDrawn?: ViewDrawn | undefined;
+}
+
+/**
+ * A layer coming forward, told when it may be shown, and whether the first frame's loading state counts.
+ *
+ * `openingIsShowable` is true where the list is a document opening, whose loading state is a finished screen; false
+ * where it is a parked layer rebuilt on its way forward, which had a finished page a minute ago and waits for its pages
+ * (ADR-0129's correction of 2026-10-17). Beside the callback rather than a prop of its own, so only a caller that
+ * waits says which it is.
+ */
+export interface ViewDrawn {
+  readonly told: () => void;
+  readonly openingIsShowable: boolean;
 }
 
 /**
@@ -1039,14 +1052,15 @@ export function PageList({
   }, []);
   useEffect(() => {
     if (onViewDrawn === undefined || !drawsPages) return;
-    // THE LOADING STATE IS A FINISHED SCREEN, so a layer that has not framed may come forward at once.
+    // THE LOADING STATE IS A FINISHED SCREEN, so a layer that has not framed may come forward at once — unless it is a
+    // parked layer rebuilt on its way forward, which waits for its first frame and then its pages.
     if (!firstFrame) {
-      onViewDrawn();
+      if (onViewDrawn.openingIsShowable) onViewDrawn.told();
       return;
     }
     const required = pagesInView(scroller.current, visible, slotFor, NO_PAGES_SHOWN);
     if (required?.every((page) => painted.has(page) || failedPages.has(page)) !== true) return;
-    onViewDrawn();
+    onViewDrawn.told();
   }, [drawsPages, failedPages, firstFrame, onViewDrawn, painted, slotFor, visible]);
   useEffect(() => {
     // MOUNTED, which is the parser open: the list exists only once PDF.js has the document.

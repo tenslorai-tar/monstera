@@ -196,6 +196,8 @@ import type { SearchHighlight } from './searchHighlight.js';
 import { type RunningTask, trackerOver } from './runningTask.js';
 import { offerSecurityNotice } from './updateStatus.js';
 import { type BusyNote, busyOver } from './busyNote.js';
+import { inFlightNow } from './inFlight.js';
+import { toPark } from './layerParking.js';
 import { checkSpellingCommand } from './commands/checkSpelling.js';
 import { recognisePagesForExport } from './commands/recognisePages.js';
 import {
@@ -445,7 +447,7 @@ import { isDirty, savedState, savedTick, windowTitle } from './savedState.js';
 import { autosaveEvery, createAutosave } from './autosave.js';
 import { AUTOSAVE_SETTING, CONFIRM_REDACTION_SETTING, WARN_SIGNATURE_BREAK_SETTING } from './settings/saving.js';
 import { FIRST_PAGE, kernelPageOf } from './pageNumbering.js';
-import { OpeningState, PageList, type PageListProps } from './PageList.js';
+import { OpeningState, PageList, type PageListProps, type ViewDrawn } from './PageList.js';
 import type { TextEditing } from './TextEditLayer.js';
 import { keepWord, lookUp } from './spelling/personalWords.js';
 import { type Side, SideBySide, type SidePreferences, drawForComparison } from './SideBySide.js';
@@ -545,6 +547,11 @@ interface OpenDocument {
    */
   readonly savedVersion: DocVersion;
   /**
+   * The version it opened at, kept: a layer behind parks only while its document is still at it, since a moved version
+   * means a command applied and so an undo history and perhaps an unsaved change (ADR-0129, `layerParking.ts`).
+   */
+  readonly openedVersion: DocVersion;
+  /**
    * When a save last landed IN THIS WINDOW, or `undefined` before the first.
    *
    * **A renderer fact, not a document one.** It is not *when the file was written* — the file
@@ -612,6 +619,15 @@ const NO_EVENTS: EventSubscriber = () => () => undefined;
  */
 const NO_DOCUMENT_SUBSCRIBE = (): (() => void) => (): void => undefined;
 
+/** No layer parked: the starting set, one instance so an unchanged set is not a new state. */
+const NONE_PARKED: ReadonlySet<DocId> = new Set();
+
+/**
+ * How often the layers behind are checked against `layerParking.ts`' minute. A check, not the minute: a layer parks
+ * between 60 and 65 s behind, and nothing about parking needs it sooner.
+ */
+const PARKING_CHECK_MS = 5_000;
+
 /** No pages ticked — one stable empty list, so a context memo does not rebuild for a new `[]` each render. */
 const NO_PAGES: readonly number[] = [];
 
@@ -660,6 +676,12 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
   const [activeId, setActiveId] = useState<DocId | undefined>(undefined);
   /** The document asked for and not yet on show, whose layer is drawing behind the one that is (`arrived`). */
   const [arriving, setArriving] = useState<DocId | undefined>(undefined);
+  /** The layers behind that mount nothing (ADR-0129's correction of 2026-10-17); see the parking effects below. */
+  const [parked, setParked] = useState<ReadonlySet<DocId>>(NONE_PARKED);
+  /** A layer on show is not parked: taken out by the two events that put a layer on show, `activate` and `arrived`. */
+  const unpark = useCallback((docId: DocId): void => {
+    setParked((current) => (current.has(docId) ? new Set([...current].filter((each) => each !== docId)) : current));
+  }, []);
   /**
    * Side by Side's two documents, or `undefined` while it is closed (ADR-0131).
    *
@@ -934,11 +956,12 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       if (activeId === undefined || activeId === docId) {
         setArriving(undefined);
         setActiveId(docId);
+        unpark(docId);
         return;
       }
       setArriving(docId);
     },
-    [activeId],
+    [activeId, unpark],
   );
   /**
    * The layer coming forward is drawn: it is now the one on show.
@@ -958,8 +981,9 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       if (arriving !== docId) return;
       setArriving(undefined);
       setActiveId(docId);
+      unpark(docId);
     },
-    [arriving],
+    [arriving, unpark],
   );
   /**
    * *File › Start screen* (ADR-0107): no document in front, every tab kept — `activate`'s one other route, named beside
@@ -969,6 +993,40 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
     setArriving(undefined);
     setActiveId(undefined);
   }, []);
+
+  /**
+   * The layers behind that are PARKED: they mount nothing, so their parse, worker and layout are given back (ADR-0129's
+   * correction of 2026-10-17, the owner's addendum 2 item 4). Which ones is `layerParking.ts`' rule; when each went
+   * behind is kept here, by the document on show changing. A parked layer stops being parked when it is on show, and
+   * comes forward the way any layer does: hidden until its viewport is drawn (`DocumentLayer`).
+   */
+  const behindSince = useRef(new Map<DocId, number>());
+  useEffect(() => {
+    const since = behindSince.current;
+    const now = Date.now();
+    for (const tab of tabs) {
+      if (tab.docId === activeId) since.delete(tab.docId);
+      else if (!since.has(tab.docId)) since.set(tab.docId, now);
+    }
+    for (const docId of [...since.keys()]) if (!tabs.some((tab) => tab.docId === docId)) since.delete(docId);
+  }, [activeId, tabs]);
+  useEffect(() => {
+    if (tabs.length < 2) return;
+    const timer = setInterval(() => {
+      const more = toPark(tabs, {
+        shown: activeId,
+        arriving,
+        behindSince: behindSince.current,
+        parked,
+        inFlight: inFlightNow(),
+        now: Date.now(),
+      });
+      if (more.length > 0) setParked((current) => new Set([...current, ...more]));
+    }, PARKING_CHECK_MS);
+    return (): void => {
+      clearInterval(timer);
+    };
+  }, [activeId, arriving, parked, tabs]);
 
   // THE ZOOM A NEW DOCUMENT OPENS AT (Settings › Viewing › *Starting zoom*), read by the opener below.
   const startingZoom = useSetting(settings, STARTING_ZOOM_SETTING);
@@ -1004,7 +1062,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
           ? current
           : // THE FILE HOLDS THIS VERSION, and `savedAt` stays undefined: this window has not
             // watched a save, so the bar reads "Saved" with no time rather than claiming one.
-            [...current, { ...document, savedVersion: document.version, savedAt: undefined }],
+            [...current, { ...document, savedVersion: document.version, openedVersion: document.version, savedAt: undefined }],
       );
       activate(document.docId);
     },
@@ -1791,7 +1849,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       setTabs((current) => current.filter((tab) => !released.has(tab.docId)));
       // A DOCUMENT CLOSED ON ITS WAY FORWARD is no longer arriving; the one on show stays.
       setArriving((current) => (current !== undefined && released.has(current) ? undefined : current));
-      setActiveId((current) => {
+      const neighbour = (current: DocId | undefined): DocId | undefined => {
         if (current === undefined || !released.has(current)) return current;
         const at = order.findIndex((tab) => tab.docId === current);
         const left = order
@@ -1800,7 +1858,13 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
           .find((tab) => !released.has(tab.docId));
         // `undefined` for the LAST tab: there is no document to arrive at.
         return (left ?? order.find((tab) => !released.has(tab.docId)))?.docId;
-      });
+      };
+      setActiveId(neighbour);
+      // THE NEIGHBOUR COMES ON SHOW, so it is not parked (ADR-0129's correction of 2026-10-17): read from the same order.
+      // Should this render's `activeId` be behind the updater's, the one unparked is kept mounted, which costs memory
+      // and never a frame.
+      const shownNext = neighbour(activeId);
+      if (shownNext !== undefined) unpark(shownNext);
 
       for (const docId of docIds) {
         stores.close(docId);
@@ -1808,7 +1872,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         if (!answer.ok) void ask(COMMAND_PROBLEM_DIALOG_ID, answer.error);
       }
     },
-    [ask, client, stores, tabs],
+    [activeId, ask, client, stores, tabs, unpark],
   );
 
   /**
@@ -4904,6 +4968,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
           store={stores.get(tab.docId)}
           background={tab.docId === open.docId ? undefined : background}
           onArrived={tab.docId === arriving ? arrived : undefined}
+          parked={parked.has(tab.docId)}
         >
         {/* THE ELEMENT ONLY FOR THE LAYER ON SHOW: a layer behind draws its own, and handed this one too it would
             take a new prop on every render here and could never skip one. */}
@@ -4932,6 +4997,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
           loupe={loupe}
           drawsPages={!longHidden}
           onShowable={undefined}
+          showsOpening
           rulers={rulers}
           showGrid={showGrid}
           onFollowLink={onFollowLink}
@@ -5461,6 +5527,7 @@ const DocumentLayer = memo(function DocumentLayer({
   store,
   background,
   onArrived,
+  parked,
   children,
 }: {
   readonly tab: OpenDocument;
@@ -5473,11 +5540,21 @@ const DocumentLayer = memo(function DocumentLayer({
    * its first frame.
    */
   readonly onArrived: ((docId: DocId) => void) | undefined;
+  /**
+   * Whether this layer is PARKED (ADR-0129's correction of 2026-10-17): behind, it mounts nothing; coming forward, it is
+   * rebuilt hidden and waits for its viewport to be drawn, never for its *Opening* state alone.
+   */
+  readonly parked: boolean;
   /** The `PageCanvas` element `App` builds for the document on show, and only for it. */
   readonly children?: ReactElement | undefined;
 }): ReactElement {
   const state = useSyncExternalStore(store?.subscribe ?? NO_DOCUMENT_SUBSCRIBE, () => store?.getState());
   const behind = background !== undefined;
+  // PARKED AND STAYING BEHIND: nothing mounted, so the parser, its worker and the layout are released. The box stays so
+  // the layer comes forward in the same place in the tree.
+  if (behind && parked && onArrived === undefined) {
+    return <div className="m-document-layer" data-document-layer="parked" aria-hidden inert />;
+  }
   return (
     <div
       className="m-document-layer"
@@ -5511,6 +5588,8 @@ const DocumentLayer = memo(function DocumentLayer({
             // back — until the layer is arriving, when it draws out of sight and reports it.
             drawsPages={onArrived !== undefined}
             onShowable={onArrived}
+            // A PARKED LAYER WAITS FOR ITS PAGES: its *Opening* state is not a finished screen for a document that had one.
+            showsOpening={!parked}
             current={state?.page ?? FIRST_PAGE.kernel}
             onJump={IGNORE}
             onMove={IGNORE}
@@ -5585,6 +5664,7 @@ function PageCanvas({
   loupe,
   drawsPages,
   onShowable,
+  showsOpening,
   current,
   onJump,
   onMove,
@@ -5653,6 +5733,12 @@ function PageCanvas({
    * `undefined` for every other. Required, for `drawsPages`' reason.
    */
   readonly onShowable: ((docId: DocId) => void) | undefined;
+  /**
+   * Whether the *Opening* state counts as showable to a layer coming forward. True for a document opening, whose loading
+   * state is a finished screen of its own; false for a parked layer rebuilt on its way forward, which waits for its pages
+   * (ADR-0129's correction of 2026-10-17). Required, for `drawsPages`' reason.
+   */
+  readonly showsOpening: boolean;
   /** The page the reader is on, so the thumbnail strip can mark it. */
   readonly current: number;
   /** Takes the reader to a page, recording the jump — click-to-jump's other half. */
@@ -5949,17 +6035,21 @@ function PageCanvas({
   // still opening, or the Organize grid — and otherwise when its first pane's viewport is drawn again.
   const docId = open.docId;
   const viewDrawn = useMemo(
-    () =>
+    (): ViewDrawn | undefined =>
       onShowable === undefined
         ? undefined
-        : (): void => {
-            onShowable(docId);
+        : {
+            told: (): void => {
+              onShowable(docId);
+            },
+            // THE SAME RULE IN THE LIST, whose own first frame is a loading state too (`PageList`'s `onViewDrawn`).
+            openingIsShowable: showsOpening,
           },
-    [docId, onShowable],
+    [docId, onShowable, showsOpening],
   );
-  const drawsNoPages = failed || ready === undefined || organize !== undefined;
+  const drawsNoPages = failed || (ready === undefined && showsOpening) || organize !== undefined;
   useEffect(() => {
-    if (drawsNoPages) viewDrawn?.();
+    if (drawsNoPages) viewDrawn?.told();
   }, [drawsNoPages, viewDrawn]);
 
   if (failed) {
