@@ -249,7 +249,28 @@ export async function startWalk(walk) {
   /** Presses at a locator's middle, or `inset` pixels in from its left edge. @param {import('playwright').Locator} target @param {number} [inset] */
   const pressOn = async (target, inset) => {
     const box = await target.boundingBox();
-    if (box === null) throw new Error('the control is not on screen');
+    if (box === null) {
+      // WHY IT HAS NO BOX, read at that moment: whether the element is still in the document, how it is drawn, and the
+      // nearest ancestor that hides it, so a refusal here names its cause rather than only its symptom.
+      const why = await target
+        .evaluate((element) => {
+          // THE ELEMENT'S OWN WINDOW: this file is typed for Node, where no global `getComputedStyle` exists.
+          const view = element.ownerDocument.defaultView;
+          if (view === null) return 'the element belongs to no window';
+          const style = view.getComputedStyle(element);
+          let hider = null;
+          for (let at = element.parentElement; at !== null && hider === null; at = at.parentElement) {
+            const own = view.getComputedStyle(at);
+            if (own.display === 'none' || own.visibility === 'hidden' || own.contentVisibility === 'hidden') {
+              hider = `${at.tagName.toLowerCase()}.${[...at.classList].join('.')} [${[...at.attributes].map((each) => `${each.name}=${each.value.slice(0, 40)}`).join(' ')}] display=${own.display} visibility=${own.visibility}`;
+            }
+          }
+          const rect = element.getBoundingClientRect();
+          return { connected: element.isConnected, display: style.display, visibility: style.visibility, width: rect.width, height: rect.height, hider };
+        }, undefined, { timeout: 2000 })
+        .catch((error) => `unreadable: ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`);
+      throw new Error(`the control is not on screen: ${JSON.stringify(why)}`);
+    }
     await page.mouse.click(inset === undefined ? box.x + box.width / 2 : box.x + inset, box.y + box.height / 2);
   };
 

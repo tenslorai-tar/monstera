@@ -131,6 +131,24 @@ await step('a press NEAR THE EDGE of another field opens it too, and Tab and Shi
 /** @type {{ name: string, on: boolean } | undefined} */
 let pressedTick;
 
+/**
+ * The field the walk placed, dragged and nudged: its name, its box on screen after the nudges and where it was placed,
+ * and the page's canvas then, so the save step can require the saved rectangle to be where the screen showed it.
+ * @typedef {{ x: number, y: number, width: number, height: number }} Box
+ * @type {{ name: string, box: Box, paper: Box, placed: Box } | undefined}
+ */
+let moved;
+
+/** A named field's first widget's rectangle in a saved file, and its page's size, read by pdf-lib. @param {string} path @param {string} name */
+async function savedRect(path, name) {
+  const document = await PDFDocument.load(await readFile(path), { updateMetadata: false });
+  const widget = document.getForm().getField(name).acroField.getWidgets()[0];
+  if (widget === undefined) throw new Error(`the saved field ${name} has no widget`);
+  const { x, y, width, height } = widget.getRectangle();
+  const { width: pageWidth, height: pageHeight } = document.getPage(0).getSize();
+  return { x0: x, y0: y, x1: x + width, y1: y + height, pageWidth, pageHeight };
+}
+
 await step('a tick box ticks at a press near its corner, and a radio chooses one of its group', async () => {
   // THE PAGE ON SHOW'S CONTROLS, and on screen before they are pressed. Taken from the whole window, the first checkbox
   // was whichever had mounted first — a background layer's or a panel's — and `pressOn` refused it as not on screen at
@@ -174,6 +192,9 @@ await step('the new field moves with a drag, snaps to another field’s edge wit
   await page.mouse.move(at.x + at.width / 2 - 40, at.y + at.height / 2 + 120, { steps: 8 });
   const guides = await page.locator('[data-field-guide]').count();
   await page.mouse.up();
+  // WHERE THE DRAG LEFT IT, once its write has landed and the box is still.
+  await writesIdle(page);
+  const released = await boxSettled(page, () => boxes.first().boundingBox());
   // W6: AN ARROW STRAIGHT AFTER THE MOVE, and three more as a held key sends them, with no wait: the command lane sends
   // each where the one before left the field (measured 2026-10-12 before the lane: the first arrow raised "out of date").
   const before = await writesDone(page);
@@ -182,7 +203,13 @@ await step('the new field moves with a drag, snaps to another field’s edge wit
   await writesLanded(page, before, 4);
   const outOfDate = await page.getByText(/was out of date/u).count();
   expect(outOfDate).toBe(0);
-  return { guidesWhileHeld: guides, outOfDateDialogs: outOfDate };
+  const nudged = await boxSettled(page, () => boxes.first().boundingBox());
+  const paper = await page.locator('canvas.m-page').first().boundingBox();
+  if (released === null || nudged === null || paper === null) throw new Error('the field or the page is not on screen');
+  // THE NUDGES MOVED IT right of where the drag left it, on screen; the save step reads where it was saved.
+  expect(nudged.x - released.x, JSON.stringify({ released, nudged })).toBeGreaterThan(1);
+  moved = { name: await page.getByLabel('Name', { exact: true }).inputValue(), box: nudged, paper, placed: at };
+  return { guidesWhileHeld: guides, outOfDateDialogs: outOfDate, released, nudged };
 });
 
 await step('O6: the custom border colour dragged through many colours, with no out-of-date dialog, and the last one kept', async () => {
@@ -270,7 +297,23 @@ await step('save as, and the saved file holds the typed value, read by a second 
   const borders = await savedBorderColours(saved);
   const kept = borders.some(([r = 0, g = 0, b = 0]) => Math.abs(r - 0xc0 / 255) < 0.01 && g < 0.01 && Math.abs(b - 0x10 / 255) < 0.01);
   expect(kept).toBe(true);
-  return { fields: read.count, fieldsInARealFont: await savedFieldFamilies(saved), draggedColourKept: kept };
+  // THE DRAG AND THE NUDGES READ BACK (item 4): the moved field is saved where the screen showed it after the nudges,
+  // its box turned into the page's points through the canvas it is drawn on, within a point and a half (the box's own
+  // border); and nowhere near where it was placed, so a save of the placed field cannot pass.
+  if (moved === undefined) throw new Error('the drag step recorded no field');
+  const rect = await savedRect(saved, moved.name);
+  const { box, paper, placed } = moved;
+  const toPoints = (/** @type {Box} */ shown) => ({
+    x0: ((shown.x - paper.x) / paper.width) * rect.pageWidth,
+    y1: rect.pageHeight - ((shown.y - paper.y) / paper.height) * rect.pageHeight,
+  });
+  const shown = toPoints(box);
+  const was = toPoints(placed);
+  const where = JSON.stringify({ saved: rect, shown, placed: was });
+  expect(Math.abs(rect.x0 - shown.x0), where).toBeLessThanOrEqual(1.5);
+  expect(Math.abs(rect.y1 - shown.y1), where).toBeLessThanOrEqual(1.5);
+  expect(was.y1 - rect.y1, where).toBeGreaterThan(20);
+  return { fields: read.count, fieldsInARealFont: await savedFieldFamilies(saved), draggedColourKept: kept, movedField: { saved: rect, shown, placed: was } };
 });
 
 for (const [format, extension] of /** @type {const} */ ([['JSON', 'json'], ['XFDF', 'xfdf'], ['FDF', 'fdf']])) {
