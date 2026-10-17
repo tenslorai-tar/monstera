@@ -201,6 +201,8 @@ describe('readPageLinks', () => {
         kind: 'internal',
         page: 2,
         bounds: { x0: 10, y0: 160, x1: 90, y1: 180 },
+        // THE SAME RECTANGLE IN PDF USER SPACE, y up, which `editLink` writes through (ADR-0249).
+        rect: { x0: 10, y0: 20, x1: 90, y1: 40 },
         // NO `/Border` AND NO `/BS`, which the format draws one point wide (§12.5.2) — so it reads `thin`, with no colour of
         // its own.
         outline: 'thin',
@@ -309,6 +311,9 @@ describe('readPageLinks', () => {
         // MuPDF's own frame, y down from the page's top: a `/Rect` whose PDF
         // y runs 20–70 on a 200-high page comes back as 130–180.
         bounds: { x0: 10, y0: 130, x1: 110, y1: 180 },
+        // AND THE RECTANGLE `addLink` WAS GIVEN, back as written: the reader's PDF-space half is the inverse of the frame
+        // the writer placed it through (ADR-0249).
+        rect: { x0: 10, y0: 20, x1: 110, y1: 70 },
         // WITH NO BORDER ASKED, MuPDF's own `/BS /W 0`: a zero-width outline, which is why `addLink` writes one on request.
         outline: 'none',
       });
