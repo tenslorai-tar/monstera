@@ -14,6 +14,7 @@ import {
   HINT_TYPEWRITER,
   WRITE_CALLOUT_LABEL,
   WRITE_TEXT_BOX_LABEL,
+  WRITE_COMMENT_EMPTY,
   WRITE_TOO_LONG,
   WRITE_TYPEWRITER_LABEL,
 } from '../messages/en.js';
@@ -336,14 +337,21 @@ export async function writeMarkWords(
   write: Write,
   words: { readonly page: number; readonly beside: AnnotationRect; readonly label: MessageKey; readonly initial: string },
 ): Promise<string | undefined> {
-  return askAnnotationWords(write, {
-    page: words.page,
-    box: words.beside,
-    shape: 'block',
-    initial: words.initial,
-    label: words.label,
-    grows: false,
-  });
+  return askAnnotationWords(
+    write,
+    {
+      page: words.page,
+      box: words.beside,
+      shape: 'block',
+      initial: words.initial,
+      label: words.label,
+      grows: false,
+    },
+    // AN EDIT OF WORDS A MARK HAS may not empty them (OOOOOOO-8, the owner's decision): said on the card, and the card
+    // stays until the person types words or presses Esc, which keeps the ones it had. A reply starts empty and, left
+    // empty, answers nothing, as a new mark's words do.
+    words.initial.trim() === '' ? annotationTextCheck : (text) => (text.trim() === '' ? WRITE_COMMENT_EMPTY : annotationTextCheck(text)),
+  );
 }
 
 /** What a tool that reopens words on the page needs: the walk, the page writer, the whole words, and the means to say no. */
@@ -438,8 +446,12 @@ export async function reopenWords(
 }
 
 /** The ask both share: the rule the words meet, and the trim and limit of the result schema the dialogs answered with. */
-async function askAnnotationWords(write: Write, request: Omit<WriteRequest, 'check'>): Promise<string | undefined> {
-  const text = await write({ ...request, check: annotationTextCheck });
+async function askAnnotationWords(
+  write: Write,
+  request: Omit<WriteRequest, 'check'>,
+  check: (text: string) => MessageKey | undefined = annotationTextCheck,
+): Promise<string | undefined> {
+  const text = await write({ ...request, check });
   if (text === undefined) return undefined;
   const answered = ANNOTATION_TEXT_RESULT.safeParse({ text });
   return answered.success ? answered.data.text : undefined;

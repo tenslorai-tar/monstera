@@ -2,13 +2,13 @@ import { type AnnotationWordsStyle, type DispatchableCommand, MAX_ANNOTATION_TEX
 import { asDocVersion, viewportPoint } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
-import { WRITE_TEXT_BOX_LABEL, WRITE_TOO_LONG, WRITE_TYPEWRITER_LABEL } from '../messages/en.js';
+import { WRITE_COMMENT_EMPTY, WRITE_TEXT_BOX_LABEL, WRITE_TOO_LONG, WRITE_TYPEWRITER_LABEL } from '../messages/en.js';
 import type { WriteRequest } from '../pageWriting.js';
 import { overlayTransform } from './annotationSpace.js';
 import { type AnnotationStyle, PLAIN_STYLE } from './annotationStyle.js';
 import type { ErasableAnnotation } from './eraserTool.js';
 import type { WordsMark, WordsToEdit } from './markWords.js';
-import { TEXT_BOX_TOOL_ID, annotationTextCheck, textBoxTool, typewriterTool } from './textTools.js';
+import { TEXT_BOX_TOOL_ID, annotationTextCheck, textBoxTool, typewriterTool, writeMarkWords } from './textTools.js';
 
 /**
  * The text box's controller, driven without a DOM.
@@ -421,5 +421,33 @@ describe('reopening words on the page', () => {
     const { asked, reopen } = reopening(textBoxTool, [MARK], 'typed');
     expect(await reopen([300, 300])).toBeUndefined();
     expect(asked).toStrictEqual([]);
+  });
+});
+
+describe('writeMarkWords (OOOOOOO-8, the owner’s decision)', () => {
+  /** The request a card is asked with, and the words it answers. */
+  const asking = async (initial: string): Promise<WriteRequest | undefined> => {
+    let asked: WriteRequest | undefined;
+    await writeMarkWords(
+      (request) => {
+        asked = request;
+        return Promise.resolve(undefined);
+      },
+      { page: 0, beside: { x0: 0, y0: 0, x1: 10, y1: 10 }, label: WRITE_TEXT_BOX_LABEL, initial },
+    );
+    return asked;
+  };
+
+  it('an EDIT of a mark’s words refuses them emptied, with the card’s message', async () => {
+    const edit = await asking('what the mark said');
+    expect(edit?.check?.('  ')).toBe(WRITE_COMMENT_EMPTY);
+    // AND KEEPS THE BOUND every annotation's words meet.
+    expect(edit?.check?.('a'.repeat(MAX_ANNOTATION_TEXT + 1))).toBe(WRITE_TOO_LONG);
+    expect(edit?.check?.('revised')).toBeUndefined();
+  });
+
+  it('CONTROL: a REPLY, which starts empty, may be left empty: it answers nothing, as a new mark’s words do', async () => {
+    const reply = await asking('');
+    expect(reply?.check?.('  ')).toBeUndefined();
   });
 });

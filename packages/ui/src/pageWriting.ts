@@ -185,6 +185,9 @@ export type Settled = { readonly stays: true } | { readonly stays: false; readon
  */
 export function settle(request: WriteRequest, words: string, end: WriteEnd): Settled {
   if (request.shape === 'line' && end === 'escape') return { stays: false, answer: undefined };
+  // ESCAPE FROM NOTHING TYPED answers nothing, whatever the rule: no words are lost by leaving, and an edit that refuses
+  // empty words (OOOOOOO-8) would otherwise keep the person on its card with no way back to the words it had.
+  if (end === 'escape' && words.trim() === '') return { stays: false, answer: undefined };
   if (request.check?.(words) !== undefined) {
     const stays = end !== 'replaced' && (request.shape === 'block' || end === 'enter');
     return stays ? { stays: true } : { stays: false, answer: undefined };

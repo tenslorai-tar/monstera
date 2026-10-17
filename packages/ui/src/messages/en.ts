@@ -1795,6 +1795,8 @@ export const WRITE_TYPEWRITER_LABEL = messageKey('surface.write.typewriter');
 export const WRITE_CALLOUT_LABEL = messageKey('surface.write.callout');
 export const WRITE_NOTE_LABEL = messageKey('surface.write.note');
 export const WRITE_TOO_LONG = messageKey('surface.write.too-long');
+/** A comment emptied on its card: said there, and the words it had are kept (OOOOOOO-8, the owner's decision). */
+export const WRITE_COMMENT_EMPTY = messageKey('surface.write.comment-empty');
 export const WRITE_TOO_MANY_STYLES = messageKey('surface.write.too-many-styles');
 export const FORMS_FLATTEN = messageKey('surface.forms.flatten');
 export const FORMS_FLATTEN_CONFIRM = messageKey('surface.forms.flatten-confirm');
@@ -4688,6 +4690,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [WRITE_CALLOUT_LABEL]: 'Callout',
   [WRITE_NOTE_LABEL]: 'Comment',
   [WRITE_TOO_LONG]: 'That is too long for one annotation. Shorten it, or use several.',
+  [WRITE_COMMENT_EMPTY]: 'A comment can’t be empty. Type its words, or press Esc to keep the ones it had.',
   [WRITE_TOO_MANY_STYLES]:
     'This box has too many differently styled stretches of words. Make some of them the same, or use another box.',
   // SAYS WHAT IT REMOVES, not just "Delete" — the annotation panel's argument

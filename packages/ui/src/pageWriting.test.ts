@@ -44,6 +44,17 @@ describe('settle', () => {
     }
   });
 
+  it('an EDIT emptied, whose rule refuses empty words, stays open with its message, and Escape keeps the words it had (OOOOOOO-8)', () => {
+    const edit: WriteRequest = { ...BLOCK, initial: 'what the mark said', check: (text) => (text.trim() === '' ? REFUSED : undefined) };
+    expect(EVERY_END.map((end) => settle(edit, '  \n ', end))).toStrictEqual([
+      // ESCAPE answers nothing, so the mark keeps what it said: nothing typed, nothing lost by leaving.
+      { stays: false, answer: undefined },
+      { stays: true },
+      { stays: true },
+      { stays: false, answer: undefined },
+    ]);
+  });
+
   it('a block its rule REFUSES stays open at every end a person chose, and only a replacement takes it', () => {
     // PRESERVE, NEVER DROP: finishing could only throw the words away, so Escape and a click outside keep the box
     // open with its message. A second request is the one ending that cannot wait for the person.
