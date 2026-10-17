@@ -2353,6 +2353,9 @@ describe('search is E2s first consumer, through the composition point', () => {
   let searchSession: MupdfSession;
   let other: DocId;
   let otherSession: MupdfSession;
+  /** A document with one comment, the positive partner of the no-comments refusal (NNNNNNN-8). */
+  let commented: DocId;
+  let commentedSession: MupdfSession;
   let searchService: DocumentService;
 
   beforeAll(async () => {
@@ -2383,12 +2386,27 @@ describe('search is E2s first consumer, through the composition point', () => {
     const otherBytes = await pdf(OTHER_LINES);
     other = await opened('other.pdf', otherBytes);
     otherSession = await mupdfWriter.open(otherBytes);
+    // ONE STICKY NOTE on a page of text: a comment the comments ask reads.
+    const noted = await PDFDocument.load(await pdf(OTHER_LINES));
+    const note = noted.context.register(
+      noted.context.obj({
+        Type: 'Annot',
+        Subtype: 'Text',
+        Rect: [72, 600, 92, 620],
+        Contents: PDFString.of('Check the totals on page one'),
+      }),
+    );
+    noted.getPage(0).node.set(PDFName.of('Annots'), noted.context.obj([note]));
+    const notedBytes = await noted.save({ useObjectStreams: false });
+    commented = await opened('commented.pdf', notedBytes);
+    commentedSession = await mupdfWriter.open(notedBytes);
   });
 
   function searchCommands(askPicture: AskPictureReader = LOCAL_READS.askPicture): DocumentCommands {
     const held = new EngineSessions();
     held.hold(searchable, { mupdf: searchSession });
     held.hold(other, { mupdf: otherSession });
+    held.hold(commented, { mupdf: commentedSession });
     return new DocumentCommands({
       ...LOCAL_READS,
       askPicture,
@@ -2584,6 +2602,24 @@ describe('search is E2s first consumer, through the composition point', () => {
       await new Promise((settle) => setTimeout(settle, 0));
       expect(answer.ok ? null : answer.error.code).toBe('no-comments');
       expect(bodies).toStrictEqual([]);
+    });
+
+    it('CONTROL: SUMMARISE COMMENTS on a document WITH a comment goes, carrying it — so the refusal above is the count’s', async () => {
+      // THE SAME SCOPE, a different count (NNNNNNN-8): the text-scope control below changed the scope, so refusing every
+      // comments ask passed both. This one only a refusal keyed on there being no comment can pass with the case above.
+      const { bodies, handlers } = askHandlers();
+      const answer = await handlers['ai.ask']({
+        subscription: 'ask-c2',
+        provider: 'anthropic',
+        model: 'claude-opus-5',
+        messages: [{ role: 'user', text: 'Summarise the comments.' }],
+        about: { scope: 'comments', docId: commented },
+        web: false,
+      });
+      await new Promise((settle) => setTimeout(settle, 0));
+      expect(answer.ok, JSON.stringify(answer)).toBe(true);
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0]).toContain('Check the totals on page one');
     });
 
     it('CONTROL: the same document asked about its TEXT still goes, so the refusal is the comments’ and not the document’s', async () => {
