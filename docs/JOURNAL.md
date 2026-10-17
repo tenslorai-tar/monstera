@@ -892,6 +892,27 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-17 — Stage audit of `ecef2b30..7516794d` — finding PPPPPPPP-1
+
+Three commits: the previous audit's record, decision 5 (one token for a dialog's sentences, with 195 images) and the
+fix below, called by the commit gate before ADR-0255's build. One proof added (`dialogSentences.visual.ts`), one
+modified (`dialogGallery.visual.ts`, two dialogs added to its list and its count comment, no assertion touched); four
+style and component sources changed. The images were regenerated twice and the second pass rewrote none, so they are
+the build's, not a run's.
+
+### PPPPPPPP-1 — the sentence sweep skipped a state it could not open, in silence (fixed in range)
+
+11835b92's sweep went on past a dialog not visible within 5 s, so fewer states swept read as all states passing.
+7516794d names each unopened state and requires none; run, 285 states opened and none unnamed.
+
+### 1 to 7
+
+1: decision 5's mechanism is in its commit (a flex column's gap and a paragraph's margin do not collapse). 2: every
+state of every registered dialog, not the first state the baselines photograph. 3: not yet on GitHub; the visual job
+will compare the 195 images on Windows. 4: the sweep's control is the run before the change (208 paragraphs with a
+margin). 4a: the sweep reads computed margins and drawn distances, both separating 0 from 12 px. 5: executed. 6: a token
+is a seam this project already has; no ADR was owed. 7: none of the documents states a dialog's paragraph spacing.
+
 ## 2026-10-17 — Stage audit of `97dc4f35..ecef2b30` — findings OOOOOOOO-1 to OOOOOOOO-3
 
 Five commits (the previous audit's record, ADR-0254's build, the owner's decisions 1 and 8, ADR-0255), called by the
