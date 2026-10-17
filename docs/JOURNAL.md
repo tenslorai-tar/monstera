@@ -892,6 +892,147 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-17 — Stage audit of `dd4cd436..39a81ead` — findings MMMMMMMM-1 to MMMMMMMM-12
+
+Thirty-six commits of fix session 2 (`_review/local/LOCAL-FIX-SESSION-2.md` and its addendum), called by the commit
+gate: the removal of `insertImagePage` would have taken the range past 200 files. `npm run audit:scope` read 36
+commits and 185 files; 7 proofs added, 51 modified, none removed; 12 source files added and 75 changed. The modified
+proofs were written or edited in this session, each with the commit that says why; their removed lines are fixtures
+gaining a field the wire now requires (`moved`, `box`, `push`, `rect`), a case's input moved to the function that
+survived it, and one bound re-derived DOWN (`ENGINE_PAGE_LINKS_MAX`, 98,600 to 68,700, as the smallest link grew by
+its `rect`). Nothing loosened.
+
+### MMMMMMMM-1 — item 1's commit was red in fourteen cases and one lint rule (fixed in range)
+
+b70823fe (ADR-0249, the push) added `moved` to every in-place writer's answer, `box` to `engine/text-runs`, `push` to a
+page's blocks and `rect` to a listed link, and was committed after running the tests of the files it CHANGED. The
+fakes that build those answers by hand live in other files: textOperatorEdit, compositionHost, remotePdfium,
+coreChannels, remoteEngine, pdfiumChannels, answerFit, engineChannels and contractHandlers failed (d378c945,
+0acc6479, 070e143a), and `pushesOf` failed lint (1180d959). Found by running every test file that builds such an
+answer, not by CI. The mechanism: *the changed files' tests* read as the test files beside the changed sources,
+where a wire change reaches every file that constructs that wire. `vitest related` over the changed sources is the
+command that reaches them; this session used it for the sweep and not at the commit.
+
+### MMMMMMMM-2 — item 2's font list read touched the document (fixed in range)
+
+6ca471cb gave each family its face inside `fontListOf`, the read commands use to hand the list to a dialog, so the
+watermark, Markdown and settings command cases (Node, no DOM) failed with *document is not defined*. 8fbda466 splits
+the read (`noteFamilies`, pure) from the drawing (`drawFamilies`, the picker's effect). Its preview face also set the
+closed field's height and moved every dialog row under it by 2 px (8ab01e9c fixes the height; 15 baselines).
+
+### MMMMMMMM-3 — a push planned over a part-read page, and paid for when nothing moved (fixed in range)
+
+The text walk's L6 timed out: a heading's edit on a page of 39,200 runs carried the block below as pushed, both
+writers planned it in full to prove nothing of it was written, and the page's read was truncated, so the block was
+only the runs read. 1180d959: a pushed block that does not move is never planned, and `pushesOfPage` pushes nothing
+for a truncated read or a page with no box; proof:textpush case 8 with case 7 as its control.
+
+### MMMMMMMM-4 — the cold-start host failure is not reproduced, and now names its own cause (open)
+
+Twice on 2026-10-16 the MuPDF host for a walk's first document missed `HOST_CONNECT_TIMEOUT_MS` in two attempts.
+`hostStartWalk.mjs` started the app 27 times (idle, both processors busy, 0.7 GB free, main's event loop watched)
+with no failure: modules evaluated at 0.9 to 2.9 s, main's loop never held past 165 ms. 64568b86 makes the refusal
+carry the host's own start line, its processor time and when the bound was checked. Open until a failure is read
+through them; the deadline is unchanged.
+
+### MMMMMMMM-5 — the visual gate cannot see a row's hover background (open)
+
+FFFFFFFF-12's fix (481c3cb6) parked the pointer off the PDF/A dialog, and `--update-snapshots=changed` rewrote none
+of the three images: the 1b row's light-grey hover is inside the comparison's tolerance. The images were written
+fresh. A hover appearing or vanishing on a dialog row passes this gate.
+
+### MMMMMMMM-6 — memory after closing everything is Chromium's retention, put to the owner (open, the owner's)
+
+5ed92ee0's instruments: main's heap is flat at 42 MB and main falls below its start when told memory is short; the
+renderer holds 49.0 MB of Blink heap with 2.3 MB live and a 16 MB GPU transfer buffer. Under decision 10a the
+question went to the owner with the numbers.
+
+### MMMMMMMM-7 — the forms walk's tick step reports *not on screen* with no cause (open)
+
+5 of the last 11 forms walks. 21de054c makes `pressOn` say why a control has no box; the run after it passed.
+
+### MMMMMMMM-8 — A8.4's second shape, Calibri not listed within 20 s, is not explained (open)
+
+The first shape, a picker closed by a landing write, is fixed (56239ede). The second is watched in the gate.
+
+### MMMMMMMM-9 — the editor wraps a block 1ch wider than the writer does (open)
+
+Found in item 1's step 7: the open editor's measure is `calc(100% + 1ch)`, so its live preview of a wrap can differ
+from what is written. Recorded; step 7 reads the saved file instead.
+
+### MMMMMMMM-10 — arrow presses sent before a move landed were lost (fixed in range)
+
+Found by the forms walk's new saved-position check: four ArrowRight presses moved a field 1 px. ff44ac49:
+`placesAhead`, the place last sent while a send is unsettled, for fields and marks alike.
+
+### MMMMMMMM-11 — 426706b4 was committed with the scripts half of the typecheck red (fixed in range)
+
+Run as `npx tsc --build`, the partial spelling CLAUDE.md names; a4bb03d1 types the proof. The pre-push hook would
+have refused the push; the commit itself was not checked by the whole command.
+
+### MMMMMMMM-12 — reflexes the escape guard denied in this range
+
+A `sed -i` on `/dev/null`, a `node -e ""` inside a chain, and a second `node -e ""` before a read: three, counted
+from this session as each happened. Nothing was written by any of them.
+
+### 1. Root cause or workaround?
+
+Root causes, each stated in its commit: the double space (ADR-0228's correction), the lost nudges, the field pane's
+remount, the font list's side effect, the field height, the push's cost and its truncated read, the pointer park.
+No workaround in range: the cold-start question was answered with diagnostics rather than a longer bound.
+
+### 2. Verified against the easy shape only?
+
+The double space was first proven on a line holding a single space as well, which the walk's restore already handles;
+the fixture was changed to the shape that fails (`Amount  due   now`), and the run without the fix fails on it. The
+push's L6 shape (a truncated page under a heading) was not in item 1's proofs and is now.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+The link bound is tighter (68,700). The pdf-lib picture refusal cases moved to the signature placeholder, the one
+channel that still decodes a picture.
+
+### 3. Would CI have caught it?
+
+MMMMMMMM-1 and -2, yes, on the push; they were found first by running the reaching tests here. MMMMMMMM-3, -7, -8
+and -10 only by the walks, which CI does not run. MMMMMMMM-5 not at all.
+
+### 4. Are the proofs non-vacuous?
+
+proof:textspaces: four cases fail with the writer's change stashed. proof:textpush case 8 fails without the skip. The
+field pane's two cases fail on the old pane. `framesTold` was shown reaching the error by a mutated assertion.
+
+### 4a. Resolution test before measuring?
+
+`GetProcessTimes` was read on a 1.5 s spin (1,375 ms). `heapSnapshotDiff` checks its stride against the node count.
+`hostStartWalk`'s first run measured the wrong step (no Edit text) and was discarded; `mainMemoryWalk`'s first
+thread count read the launcher, was named wrong in the next run's notes and corrected in the instrument.
+
+### 4b. A search with a positive control?
+
+`openFindings.mjs` must read its fixture's one open finding before it reads the journal.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+`_noPdfLibKindCarriesBytes` is an assertion over the declarations, not a count; `proof:contract`'s union-size anchor is
+a literal, and it noticed the union shrink.
+
+### 5. Executed, or asserted?
+
+Executed: every walk named in the commits, the proofs, the instruments. Asserted: that the cold-start failure's
+cause is outside what was tried; nothing more is claimed about it.
+
+### 6. Architecture before the feature?
+
+ADR-0249, ADR-0250, ADR-0228's and ADR-0044's corrections each came first in their own commit.
+
+### 7. Do the documents still match the code?
+
+The FEATURES links row states the new bound; the session's closing sweep of FEATURES, ARCHITECTURE and CLAUDE.md
+follows the remaining items.
+
+---
+
 ## 2026-10-16 — Stage audit of `91761ab6..dd4cd436` — findings LLLLLLLL-1 to LLLLLLLL-4
 
 Twenty commits of the local fix session (`_review/local/LOCAL-FIX-SESSION.md`), called by the commit gate: item 20's
