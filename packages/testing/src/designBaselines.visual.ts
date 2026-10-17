@@ -166,13 +166,18 @@ const DIALOGS: readonly { command: string; title: string; file: string; ready: s
 ];
 
 /**
- * Parks the pointer over the page area, whose raster is hidden from the capture.
+ * Parks the pointer where nothing it rests on has a hover: over the page area, whose raster is hidden from the capture,
+ * or, while a dialog is open, on the backdrop just left of it.
  *
  * A pointer left on the control it clicked holds that control's hover state and,
- * after a delay, its tooltip — a capture that depends on how long a run took.
+ * after a delay, its tooltip — a capture that depends on how long a run took. And a
+ * fixed point is not enough: a tall dialog covers the page area's middle, so the PDF/A
+ * level capture held its 1b row's hover (finding FFFFFFFF-12).
  */
 async function parkPointer(page: Page): Promise<void> {
-  await page.mouse.move(640, 420);
+  const dialog = page.getByRole('dialog').last();
+  const box = (await dialog.count()) > 0 ? await dialog.boundingBox() : null;
+  await page.mouse.move(box === null ? 640 : Math.max(4, box.x - 24), box === null ? 420 : box.y + box.height / 2);
 }
 
 for (const look of LOOKS) {
