@@ -31,15 +31,25 @@ describe('every conversion channel is named work', () => {
     expect(unregisteredConversions({ 'document.newFromThing': optionalWork }, ['document.newFromThing'])).toHaveLength(1);
   });
 
-  it('CONTROL: a conversion added under a converting name and NOT LISTED is reported, even with its work name', () => {
-    // WITH the name, so only the missing listing can be what is reported.
-    expect(unregisteredConversions({ 'document.exportNewFormat': withWork }, [])).toStrictEqual([
+  it('CONTROL: a conversion added under a converting name, NOT LISTED and without the work name, is reported by its name', () => {
+    // WITHOUT the field, so the field rule cannot see it and only the name net can be what reports it.
+    expect(unregisteredConversions({ 'document.exportNewFormat': withoutWork }, [])).toStrictEqual([
       'document.exportNewFormat is named like a conversion and is not in CONVERSION_CHANNELS',
     ]);
   });
 
   it('CONTROL: a listed id that is no channel is reported, so a renamed channel cannot leave the list passing over nothing', () => {
     expect(unregisteredConversions({}, ['document.exportGone'])).toHaveLength(1);
+  });
+
+  it('a channel that REQUIRES the work name is a conversion whatever it is called, so one named otherwise and not listed is reported (EEEEEEEE-6)', () => {
+    expect(unregisteredConversions({ 'document.renderPoster': withWork }, [])).toStrictEqual([
+      "document.renderPoster takes the work's name and is not in CONVERSION_CHANNELS",
+    ]);
+  });
+
+  it('CONTROL: the work channels themselves take the name and are not conversions', () => {
+    expect(unregisteredConversions({ 'work.progress': { params: z.object({ work: z.string() }) } }, [])).toStrictEqual([]);
   });
 
   it('a channel NOT named like a conversion and not listed passes — the check is about conversions, not every channel', () => {

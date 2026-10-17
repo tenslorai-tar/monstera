@@ -56,8 +56,16 @@ export function unregisteredConversions(
       problems.push(`${id} is a conversion whose params do not require the work's name`);
     }
   }
-  for (const id of Object.keys(channels)) {
-    if (CONVERTS_BY_NAME.test(id) && !listed.includes(id)) {
+  for (const [id, channel] of Object.entries(channels)) {
+    if (listed.includes(id)) continue;
+    // BY WHAT IT TAKES (EEEEEEEE-6): a channel that requires the work's name is a conversion, whatever it is called, so
+    // one named otherwise is found here. The `work.` channels take it because they are ABOUT the work, not one of it.
+    const work = channel.params.shape?.['work'];
+    if (!id.startsWith('work.') && work !== undefined && !work.safeParse(undefined).success) {
+      problems.push(`${id} takes the work's name and is not in CONVERSION_CHANNELS`);
+    } else if (CONVERTS_BY_NAME.test(id)) {
+      // AND BY ITS NAME, for the conversion that forgot the field as well as the listing: the one shape the field rule
+      // cannot see, and the reason this net stays.
       problems.push(`${id} is named like a conversion and is not in CONVERSION_CHANNELS`);
     }
   }
