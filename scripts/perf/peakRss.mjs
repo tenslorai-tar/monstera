@@ -57,6 +57,37 @@ const MARKER = '__MONSTERA_PEAK__';
 export const NOT_APPLICABLE_EXIT = 2;
 
 /**
+ * A role script invoked wrongly — a missing document, a flag it does not know — exits with this code, which is NOT
+ * {@link NOT_APPLICABLE_EXIT}: a usage error is a broken invocation and must redden the gate. Every role script exited 2
+ * for both until 2026-10-17 (VVVVVVV-4), so a role the gate called with the wrong arguments read as "this runner cannot
+ * measure it" and passed. 64 is the conventional usage code (`EX_USAGE`).
+ */
+export const USAGE_EXIT = 64;
+
+/**
+ * Says why the role cannot run on this runner at all, and exits the sanctioned not-applicable code: the ONE way a role
+ * script says so, beside {@link exitUsage}, so the two cannot be spelt as one number again.
+ *
+ * @param {string} reason
+ * @returns {never}
+ */
+export function exitNotApplicable(reason) {
+  process.stderr.write(reason.endsWith('\n') ? reason : `${reason}\n`);
+  process.exit(NOT_APPLICABLE_EXIT);
+}
+
+/**
+ * Says how the role script is invoked, and exits {@link USAGE_EXIT}.
+ *
+ * @param {string} usage
+ * @returns {never}
+ */
+export function exitUsage(usage) {
+  process.stderr.write(usage.endsWith('\n') ? usage : `${usage}\n`);
+  process.exit(USAGE_EXIT);
+}
+
+/**
  * Thrown by {@link measurePeak} when, and only when, the measured script exits
  * with {@link NOT_APPLICABLE_EXIT}. A caller distinguishes it from a plain
  * `Error` to keep "this platform cannot measure this role" apart from "this

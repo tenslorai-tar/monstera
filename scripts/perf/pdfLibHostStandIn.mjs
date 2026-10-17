@@ -14,6 +14,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { exitUsage } from './peakRss.mjs';
 
 // ITS OWN FRESHNESS CHECK, before the import: the parent role guards the modules IT measures (`ROLE_MAIN_SERVICE`),
 // which do not include pdf-lib's writer, so a stale `pdfLibWriter.js` would run here under this build's name.
@@ -24,8 +25,7 @@ const { applyPdfLibImage } = await import('../../packages/kernel/dist/pdfLibWrit
 
 const [input, output, commandJson] = process.argv.slice(2);
 if (input === undefined || output === undefined || commandJson === undefined) {
-  process.stderr.write('Usage: pdfLibHostStandIn.mjs <image-in> <result-out> <command-json>\n');
-  process.exit(2);
+  exitUsage('Usage: pdfLibHostStandIn.mjs <image-in> <result-out> <command-json>');
 }
 const image = new Uint8Array(await readFile(input));
 const result = await applyPdfLibImage(image, JSON.parse(commandJson), undefined);

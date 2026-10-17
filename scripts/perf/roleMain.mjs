@@ -22,13 +22,10 @@ import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import { reportPeak } from './peakRss.mjs';
+import { exitUsage, reportPeak } from './peakRss.mjs';
 
 const documentPath = process.argv[2];
-if (documentPath === undefined) {
-  process.stderr.write('Usage: roleMain.mjs <document-path>\n');
-  process.exit(2);
-}
+if (documentPath === undefined) exitUsage('Usage: roleMain.mjs <document-path>');
 
 const size = statSync(documentPath).size;
 

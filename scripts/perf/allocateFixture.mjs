@@ -7,13 +7,10 @@
  * Usage: node scripts/perf/allocateFixture.mjs <megabytes> [--block]
  */
 
-import { reportPeak } from './peakRss.mjs';
+import { exitUsage, reportPeak } from './peakRss.mjs';
 
 const megabytes = Number(process.argv[2]);
-if (!Number.isFinite(megabytes) || megabytes <= 0) {
-  process.stderr.write('Usage: allocateFixture.mjs <megabytes> [--block]\n');
-  process.exit(2);
-}
+if (!Number.isFinite(megabytes) || megabytes <= 0) exitUsage('Usage: allocateFixture.mjs <megabytes> [--block]');
 
 // Touched page by page. An untouched Buffer.alloc is not necessarily resident,
 // so an instrument validated against one would be validated against nothing.

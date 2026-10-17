@@ -166,7 +166,7 @@ import { requireCurrentShim } from '../lib/shimBinary.mjs';
 // file's first run, which is what it is for.
 import { electronBinaryPath } from '../provision/electron.mjs';
 import { mintHostSessionRoot } from './hostSessionRoot.mjs';
-import { peakRssBytes, peakWorkingSetOf, reportPeak, reportPeakOf } from './peakRss.mjs';
+import { exitNotApplicable, exitUsage, peakRssBytes, peakWorkingSetOf, reportPeak, reportPeakOf } from './peakRss.mjs';
 
 const ROOT = repoRoot();
 
@@ -176,11 +176,7 @@ const looksLikeAPath = documentArgument !== undefined && !documentArgument.start
 // no fixture. The generated corpus is not tracked, so a runner has none unless
 // something builds it — and this cell needs none by definition.
 if (!looksLikeAPath && !process.argv.includes('--no-document')) {
-  process.stderr.write(
-    'Usage: roleMupdfHost.mjs <document-path> [--host]\n' +
-      '       roleMupdfHost.mjs --no-document\n',
-  );
-  process.exit(2);
+  exitUsage('Usage: roleMupdfHost.mjs <document-path> [--host]\n       roleMupdfHost.mjs --no-document');
 }
 // NULL RATHER THAN NARROWED, now that one cell legitimately has no document.
 // The two cells that need a path read it through `requireDocument()`, which
@@ -204,10 +200,7 @@ const ENTRY = process.argv.includes('--entry') ? (process.argv[process.argv.inde
  * @returns {string}
  */
 function requireDocument() {
-  if (documentPath === null) {
-    process.stderr.write('roleMupdfHost: this cell needs a document path.\n');
-    process.exit(2);
-  }
+  if (documentPath === null) exitUsage('roleMupdfHost: this cell needs a document path.');
   return documentPath;
 }
 
@@ -365,12 +358,11 @@ const OUTPUT_NAME = 'ad-1';
  */
 async function measureHost() {
   if (process.platform !== 'win32') {
-    process.stderr.write(
+    exitNotApplicable(
       `roleMupdfHost --host: the engine host is a Win32 AppContainer process (ADR-0022), so ` +
         `this cell has no meaning on ${process.platform}. The model cell runs anywhere the ` +
-        `shim does.\n`,
+        `shim does.`,
     );
-    process.exit(2);
   }
 
   // THROUGH THE OWNER (B3a). This was one of three private copies of the same

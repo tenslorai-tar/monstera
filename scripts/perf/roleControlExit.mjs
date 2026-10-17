@@ -14,9 +14,16 @@
  * sides with one fixture, never a pair that could drift apart. It prints its
  * reason first, as every role script does, so `measurePeak`'s error carries it.
  *
+ * - `--usage` refuses the way a role invoked wrongly does, through the one
+ *   `exitUsage` every role script takes (VVVVVVV-4): a broken invocation, which
+ *   must redden the gate like any broken role.
+ *
  * The fixture path the gate always passes first is ignored; this role reads
- * only its own `--exit` argument.
+ * only its own `--exit` or `--usage` argument.
  */
+import { exitUsage } from './peakRss.mjs';
+
+if (process.argv.includes('--usage')) exitUsage('Usage: roleControlExit.mjs <ignored> [--exit <code> | --usage] (R29 control)');
 const flag = process.argv.indexOf('--exit');
 const code = flag === -1 ? 1 : Number(process.argv[flag + 1]);
 process.stderr.write(

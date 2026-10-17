@@ -45,7 +45,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { ROLE_MAIN_SERVICE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
-import { reportPeak } from './peakRss.mjs';
+import { exitUsage, reportPeak } from './peakRss.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -91,10 +91,7 @@ const { CapabilityRegistry } = await import('../../packages/kernel/dist/capabili
 const { DocumentService } = await import('../../packages/kernel/dist/documentService.js');
 
 const documentPath = process.argv[2];
-if (documentPath === undefined) {
-  process.stderr.write('Usage: roleMainService.mjs <document-path>\n');
-  process.exit(2);
-}
+if (documentPath === undefined) exitUsage('Usage: roleMainService.mjs <document-path>');
 
 const size = statSync(documentPath).size;
 

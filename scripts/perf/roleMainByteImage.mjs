@@ -34,7 +34,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { ROLE_MAIN_SERVICE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
-import { peakRssBytes, reportPeak } from './peakRss.mjs';
+import { exitUsage, peakRssBytes, reportPeak } from './peakRss.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 refuseStaleBuild(REPO_ROOT, ROLE_MAIN_SERVICE, 2);
@@ -49,10 +49,7 @@ const STAND_IN = join(REPO_ROOT, 'scripts', 'perf', 'pdfLibHostStandIn.mjs');
 const { SUPERVISOR_CAPABILITY_FOR_INSTRUMENTS } = await import('../../apps/desktop/dist/engineSessions.js');
 
 const documentPath = process.argv[2];
-if (documentPath === undefined) {
-  process.stderr.write('Usage: roleMainByteImage.mjs <document-path>\n');
-  process.exit(2);
-}
+if (documentPath === undefined) exitUsage('Usage: roleMainByteImage.mjs <document-path>');
 const size = statSync(documentPath).size;
 
 // THE BASELINE: the process with its modules loaded and no document, read as the peak so far.

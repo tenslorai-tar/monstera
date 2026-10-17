@@ -334,6 +334,25 @@ export function runAllShapes(root = ROOT) {
   ];
 }
 
+/**
+ * Whether the gate is RED for these runs: a budget breached, or a role that failed to measure where it should run (R29).
+ * The one decision the gate's exit is made from, named so `proof:perfbudget` can assert it — the exit that reddens the
+ * gate was asserted by nothing, so deleting it left every case green (VVVVVVV-4).
+ *
+ * @param {readonly { readonly shape: string, readonly results: readonly { readonly withinMultiplier: boolean, readonly withinAbsolute: boolean, readonly withinBaseline: boolean }[], readonly failures: readonly unknown[] }[]} runs
+ */
+export function gateVerdict(runs) {
+  const breaches = runs.flatMap(({ shape, results }) =>
+    results
+      .filter((result) => !result.withinMultiplier || !result.withinAbsolute || !result.withinBaseline)
+      .map((result) => ({ shape, result })),
+  );
+  // A ROLE THAT FAILED TO MEASURE REDDENS THE GATE (R29), so "could not be
+  // measured" can never again read as "not applicable" on a runner that can.
+  const failedToMeasure = runs.flatMap(({ shape, failures }) => failures.map((entry) => ({ shape, entry })));
+  return { breaches, failedToMeasure, red: breaches.length > 0 || failedToMeasure.length > 0 };
+}
+
 if (isMain(import.meta.url)) {
   const runs = runAllShapes();
 
@@ -380,14 +399,7 @@ if (isMain(import.meta.url)) {
     }
   }
 
-  const breaches = runs.flatMap(({ shape, results }) =>
-    results
-      .filter((result) => !result.withinMultiplier || !result.withinAbsolute || !result.withinBaseline)
-      .map((result) => ({ shape, result })),
-  );
-  // A ROLE THAT FAILED TO MEASURE REDDENS THE GATE (R29), so "could not be
-  // measured" can never again read as "not applicable" on a runner that can.
-  const failedToMeasure = runs.flatMap(({ shape, failures }) => failures.map((entry) => ({ shape, entry })));
+  const { breaches, failedToMeasure, red } = gateVerdict(runs);
   if (failedToMeasure.length > 0) {
     process.stderr.write(
       `${String(failedToMeasure.length)} role(s) failed to measure where they should run. A role that cannot ` +
@@ -405,5 +417,5 @@ if (isMain(import.meta.url)) {
         `explicitly, since its limit is a containment limit whose breach means kill-and-restart.\n`,
     );
   }
-  if (breaches.length > 0 || failedToMeasure.length > 0) process.exit(1);
+  if (red) process.exit(1);
 }

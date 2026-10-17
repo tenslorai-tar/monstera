@@ -27,7 +27,7 @@ import { repoRoot } from '../lib/gitScope.mjs';
 import { NO_MULTIPLE, SOURCE_FILE, memoryBudgets } from '../lib/memoryBudgets.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
-import { documentCostBytes, runAllShapes, runBudgetGate } from '../perf/budgetGate.mjs';
+import { documentCostBytes, gateVerdict, runAllShapes, runBudgetGate } from '../perf/budgetGate.mjs';
 import { formatBytes } from '../perf/peakRss.mjs';
 
 const ROOT = repoRoot();
@@ -64,8 +64,10 @@ const failures = [];
 // 34 SINCE THE SCAN SHAPE (2026-09-27): the per-shape pass above is one case a shape, and there are three. 35 since
 // 2026-10-02: a declared budget with no measured role still gets a line (the shrink case beside the construction's).
 // 37 SINCE R29 (2026-10-06): the two control cases that a role which fails to measure where it should run reddens the
-// gate (and the sanctioned exit 2 does not), one case each side of the classifier.
-const DECLARED_CASES = 37;
+// gate (and the sanctioned exit 2 does not), one case each side of the classifier. 40 since VVVVVVV-4 (2026-10-17): a
+// role invoked wrongly reddens the gate too, and the verdict the gate's exit is made from, red for the broken role and
+// not for the sanctioned one.
+const DECLARED_CASES = 40;
 
 const roster = createRoster(failures, { cases: DECLARED_CASES });
 
@@ -429,6 +431,31 @@ const thrown = guarded(() => {
     `failures: ${JSON.stringify(notApplicableRole.failures)}\n      unasserted: ${JSON.stringify(notApplicableRole.unasserted)}. ` +
       `Exit 2 is the one signal that means "this runner cannot measure this role"; without this control the failures ` +
       `case would pass for a classifier that reddened on every exit, including the legitimate refusal.`,
+  );
+  // A ROLE INVOKED WRONGLY (VVVVVVV-4) exits through the one `exitUsage` every role script takes, which is not the
+  // sanctioned code: every role script exited 2 for a usage error until 2026-10-17, so a role the gate called with the
+  // wrong arguments read as "this runner cannot measure it" and passed.
+  const misusedRole = runBudgetGate({
+    documentPath: baseline.fixture.path,
+    roles: [{ role: 'control-usage', budget: 'mupdf-host', script: controlScript, args: ['--usage'] }],
+  });
+  check(
+    'a role invoked wrongly lands in failures, not unasserted: a usage error is not "this runner cannot" (VVVVVVV-4)',
+    misusedRole.failures.some((entry) => entry.role === 'control-usage') &&
+      !misusedRole.unasserted.some((entry) => entry.role === 'control-usage'),
+    `failures: ${JSON.stringify(misusedRole.failures)}\n      unasserted: ${JSON.stringify(misusedRole.unasserted)}`,
+  );
+  // THE EXIT THAT REDDENS THE GATE is made from `gateVerdict`, and nothing asserted it: deleting it left every case above
+  // green. Red for the broken role; the sanctioned refusal, the control, is not.
+  check(
+    'the gate’s verdict is RED for a role that failed to measure where it should run (VVVVVVV-4)',
+    gateVerdict([{ shape: 'control', ...brokenRole }]).red,
+    JSON.stringify(gateVerdict([{ shape: 'control', ...brokenRole }])),
+  );
+  check(
+    'CONTROL: the gate’s verdict is NOT red for a role that exited the sanctioned not-applicable code',
+    !gateVerdict([{ shape: 'control', ...notApplicableRole }]).red,
+    JSON.stringify(gateVerdict([{ shape: 'control', ...notApplicableRole }])),
   );
 
   // -------------------------------------------------------------------------
