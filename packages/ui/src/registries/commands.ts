@@ -317,6 +317,11 @@ const DRAWS_A_GLYPH: ReadonlySet<SurfaceId> = new Set<SurfaceId>([
   // NOT `properties`: v5-02 draws the Properties tab's foot as two text buttons, Reply and Delete.
 ]);
 
+/** Whether a command exists in a context: its `when`, and every command without one. The one rule `available` and `availableById` take. */
+function exists(command: UiCommand, context: CommandContext): boolean {
+  return command.when?.(context) ?? true;
+}
+
 export class CommandRegistry {
   readonly #byId = new Map<string, UiCommand>();
 
@@ -539,7 +544,17 @@ export class CommandRegistry {
    * rather than *disabled* everywhere at once instead of per surface.
    */
   available(context: CommandContext): readonly UiCommand[] {
-    return this.all().filter((command) => command.when?.(context) ?? true);
+    return this.all().filter((command) => exists(command, context));
+  }
+
+  /**
+   * One command by id where it exists in this context, by {@link available}'s own rule, or `undefined`: for a control
+   * that runs a command by name outside a projection. `get` then `run` skipped the `when`, so the Recognise offer ran
+   * `document.ocr` where a projection would not have shown it (VVVVVVV-30).
+   */
+  availableById(id: string, context: CommandContext): UiCommand | undefined {
+    const command = this.get(id);
+    return command !== undefined && exists(command, context) ? command : undefined;
   }
 
   /** How many commands are registered. For diagnostics and for cases that assert a count. */

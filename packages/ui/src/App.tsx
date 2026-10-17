@@ -4860,8 +4860,10 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
   // and not for the grid's ticked pages, so what it walks is the page that said it has no text.
   useEffect(() => {
     recognisePage.current = (page: number): void => {
-      const command = registry.get('document.ocr');
-      if (command !== undefined) void command.run({ ...context, page, selectedPages: NO_PAGES });
+      // WHERE IT EXISTS IN THIS CONTEXT, as a projection shows it (VVVVVVV-30).
+      const asked = { ...context, page, selectedPages: NO_PAGES };
+      const command = registry.availableById('document.ocr', asked);
+      if (command !== undefined) void command.run(asked);
     };
   }, [context, registry]);
   useShortcuts(registry, context, openDialog !== undefined, stopTool);

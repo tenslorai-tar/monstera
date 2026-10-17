@@ -199,6 +199,17 @@ describe('CommandRegistry', () => {
 
     expect(seen).toStrictEqual([other]);
   });
+
+  it('gives a command by id only where it exists in the context, by `available`’s rule (VVVVVVV-30)', () => {
+    const registry = new CommandRegistry([command('edit.always'), command('edit.sometimes', { when: (ctx) => ctx.hasSelection })]);
+    // ABSENT where its `when` says so, though `get` has it: the control that ran it by name skipped exactly this.
+    expect(registry.get('edit.sometimes')).toBeDefined();
+    expect(registry.availableById('edit.sometimes', context)).toBeUndefined();
+    // CONTROL: present where its `when` holds, and a command with no `when` is present everywhere.
+    expect(registry.availableById('edit.sometimes', { ...context, hasSelection: true })?.id).toBe('edit.sometimes');
+    expect(registry.availableById('edit.always', context)?.id).toBe('edit.always');
+    expect(registry.availableById('edit.unregistered', context)).toBeUndefined();
+  });
 });
 
 describe('targetPages — the one reading of which pages a command means (ADR-0104)', () => {

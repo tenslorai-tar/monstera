@@ -4256,6 +4256,9 @@ function coversRoundBoxes(bindings: Bound, handle: unknown, boxes: readonly Boun
   const origin = deviceOf(0, 0);
   const alongX = deviceOf(pageWidth, 0);
   const alongY = deviceOf(0, pageHeight);
+  // A PLAIN WHITE COVER, here and below, only where the mapping cannot be inverted (VVVVVVV-30): `FPDF_PageToDevice` fails
+  // only for a page handle that is not one, and the determinant is zero or not finite only for a page of no width or no
+  // height — a page that shows nothing, so the cover patches nothing a person can see.
   if (origin === undefined || alongX === undefined || alongY === undefined) {
     return boxes.map((box) => [{ box, colour: { r: 255, g: 255, b: 255 } }]);
   }
