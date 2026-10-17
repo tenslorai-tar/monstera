@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { bundledFontsFolder } from './bundledFontsForTests.js';
+
 import { bindEditFaces, bindEditFolders, editFaces, editFacesBound, editTypesetting, loadEditFaces } from './editFaces.js';
 import { type CatalogueReading, readCatalogue } from './fontCatalogue.js';
 
 /** The provisioned bundled set, which the vitest setup names, as the PDFium proofs read it. */
-const BUNDLED = process.env['MONSTERA_FONTS_DIRECTORY'] ?? '';
+const BUNDLED = bundledFontsFolder();
 
 /** `readCatalogue`, counting its calls: a host binds `readCatalogueApart`, and the binding must read with what it was given. */
 function counting(): { readonly reading: CatalogueReading; readonly calls: () => number } {

@@ -3,6 +3,8 @@ import { join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
+import { bundledFontsFolder } from './bundledFontsForTests.js';
+
 /**
  * ONE HARFBUZZ BUFFER PER FACE. harfbuzzjs 1.6.2 frees a buffer only through a `FinalizationRegistry`, which never runs
  * while a composition holds the thread, so a buffer per shape grew HarfBuzz's memory for a whole CSV part (`textShaping.ts`).
@@ -24,7 +26,7 @@ const { ShapingFace } = await import('./textShaping.js');
 
 /** A bundled face; ABSENT IS A FAILURE, never a skip, `fontSubset.test.ts`' rule. */
 function bundled(file: string): Uint8Array {
-  const folder = process.env['MONSTERA_FONTS_DIRECTORY'] ?? '';
+  const folder = bundledFontsFolder();
   const path = join(folder, file);
   if (folder === '' || !existsSync(path)) throw new Error(`${file} is not provisioned at ${path}. Run: npm run provision:fonts`);
   return new Uint8Array(readFileSync(path));

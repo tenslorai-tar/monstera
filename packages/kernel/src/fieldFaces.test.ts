@@ -3,6 +3,8 @@ import type { CommandOfKind, FormFieldHandle, FormFieldProperties } from '@monst
 import { asDocVersion } from '@monstera/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { bundledFontsFolder } from './bundledFontsForTests.js';
+
 import { bindEditFaces, bindEditFolders, loadEditFaces } from './editFaces.js';
 import { readCatalogue } from './fontCatalogue.js';
 import { FieldEditRefusedError } from './fieldEditRefusal.js';
@@ -80,7 +82,7 @@ const isCarlito = (font: string): boolean => /^([A-Z]{6}\+)?Carlito/u.test(font)
 
 describe('a form field in a real family (A8.4), with the bundled fonts bound', () => {
   beforeAll(async () => {
-    bindEditFolders(process.env['MONSTERA_FONTS_DIRECTORY'] ?? '', null, readCatalogue);
+    bindEditFolders(bundledFontsFolder(), null, readCatalogue);
     await loadEditFaces();
   });
   afterAll(() => {

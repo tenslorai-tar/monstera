@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it, vi } from 'vitest';
 
+import { bundledFontsFolder } from './bundledFontsForTests.js';
+
 /**
  * The one `sfnt` table reader (`sfntTables.ts`), and the leak it closes: harfbuzzjs 1.6.2's `Face.referenceTable` pins
  * a whole copy of the font in HarfBuzz's memory per call, and `ShapingFace.readable` made two faces where one is kept.
@@ -35,7 +37,7 @@ const { readFace } = await import('./fontFaces.js');
 
 /** A bundled face; ABSENT IS A FAILURE, never a skip, `fontSubset.test.ts`' rule. */
 function bundled(file: string): Uint8Array {
-  const folder = process.env['MONSTERA_FONTS_DIRECTORY'] ?? '';
+  const folder = bundledFontsFolder();
   const path = join(folder, file);
   if (folder === '' || !existsSync(path)) throw new Error(`${file} is not provisioned at ${path}. Run: npm run provision:fonts`);
   return new Uint8Array(readFileSync(path));

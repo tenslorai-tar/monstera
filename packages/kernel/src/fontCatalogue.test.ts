@@ -4,6 +4,8 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { bundledFontsFolder } from './bundledFontsForTests.js';
+
 import { faceCount, fontFoldersOf, readCatalogue } from './fontCatalogue.js';
 import { readFace } from './fontFaces.js';
 import { subsetFont } from './fontSubset.js';
@@ -13,7 +15,7 @@ import { subsetFont } from './fontSubset.js';
  * passes and from folders built here. ABSENT IS A FAILURE, never a skip.
  */
 function bundledFolder(): string {
-  const folder = process.env['MONSTERA_FONTS_DIRECTORY'] ?? '';
+  const folder = bundledFontsFolder();
   if (folder === '' || !existsSync(join(folder, 'Tinos-Regular.ttf'))) {
     throw new Error(`the bundled fonts are not provisioned at ${folder}. Run: npm run provision:fonts`);
   }

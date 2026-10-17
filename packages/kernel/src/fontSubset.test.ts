@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { Blob as HarfBuzzBlob, Face, Font } from 'harfbuzzjs';
 import { describe, expect, it } from 'vitest';
 
+import { bundledFontsFolder } from './bundledFontsForTests.js';
+
 import { embeddingOf, readFace } from './fontFaces.js';
 import {
   KEPT_NAME_IDS,
@@ -22,7 +24,7 @@ import {
  * a skip, because a font test that passed without its font would be a could-not-look reading as a pass.
  */
 function bundled(file: string): Uint8Array {
-  const folder = process.env['MONSTERA_FONTS_DIRECTORY'] ?? '';
+  const folder = bundledFontsFolder();
   const path = join(folder, file);
   if (folder === '' || !existsSync(path)) throw new Error(`${file} is not provisioned at ${path}. Run: npm run provision:fonts`);
   return new Uint8Array(readFileSync(path));

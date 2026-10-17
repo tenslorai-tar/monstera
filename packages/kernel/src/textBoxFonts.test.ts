@@ -3,6 +3,8 @@ import type { AnnotationDraft, AnnotationWordsStyle, CommandOfKind, TextBoxLook 
 import { asDocVersion } from '@monstera/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { bundledFontsFolder } from './bundledFontsForTests.js';
+
 import { bindEditFaces, bindEditFolders, loadEditFaces } from './editFaces.js';
 import { readCatalogue } from './fontCatalogue.js';
 import * as mupdf from './mupdfRaw.js';
@@ -90,7 +92,7 @@ async function added(draft: Extract<AnnotationDraft, { type: 'text-box' }>): Pro
 
 describe('a text box in a real font (K2), with the bundled fonts bound', () => {
   beforeAll(async () => {
-    bindEditFolders(process.env['MONSTERA_FONTS_DIRECTORY'] ?? '', null, readCatalogue);
+    bindEditFolders(bundledFontsFolder(), null, readCatalogue);
     await loadEditFaces();
   });
   afterAll(() => {

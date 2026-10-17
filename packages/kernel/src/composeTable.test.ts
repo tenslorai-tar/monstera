@@ -1,6 +1,8 @@
 import { PDFDocument } from '@cantoo/pdf-lib';
 import { describe, expect, it } from 'vitest';
 
+import { bundledFontsFolder } from './bundledFontsForTests.js';
+
 import { COMPOSED_FAMILY_DEFAULT } from '@monstera/contract';
 
 import { BODY_SIZE } from './composeLayout.js';
@@ -11,7 +13,7 @@ import { composeMarkdown as composeMarkdownWith } from './markdownCompose.js';
 import { contentOf, readLines } from './shownText.js';
 
 /** The bundled faces, `markdownCompose.test.ts`' reading and its rule: absent is a failure. */
-const FACES = faceSourceOf([{ path: process.env['MONSTERA_FONTS_DIRECTORY'] ?? '', origin: 'bundled' }], readCatalogue);
+const FACES = faceSourceOf([{ path: bundledFontsFolder(), origin: 'bundled' }], readCatalogue);
 
 async function composeCsv(source: Uint8Array, page: { width: number; height: number }): Promise<Uint8Array> {
   return (await composeCsvWith(source, page, FACES, COMPOSED_FAMILY_DEFAULT)).pdf;

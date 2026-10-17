@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { Blob as HarfBuzzBlob, Face } from 'harfbuzzjs';
 import { describe, expect, it } from 'vitest';
 
+import { bundledFontsFolder } from './bundledFontsForTests.js';
+
 import { subsetFont, tableTags, withTables } from './fontSubset.js';
 import { type DrawnGlyph, isSfnt, runFontFor } from './runFont.js';
 import { ShapingFace } from './textShaping.js';
@@ -13,7 +15,7 @@ import { ShapingFace } from './textShaping.js';
  * ABSENT IS A FAILURE, never a skip, `fontSubset.test.ts`' rule.
  */
 function bundled(file: string): Uint8Array {
-  const folder = process.env['MONSTERA_FONTS_DIRECTORY'] ?? '';
+  const folder = bundledFontsFolder();
   const path = join(folder, file);
   if (folder === '' || !existsSync(path)) throw new Error(`${file} is not provisioned at ${path}. Run: npm run provision:fonts`);
   return new Uint8Array(readFileSync(path));

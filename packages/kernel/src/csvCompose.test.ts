@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { bundledFontsFolder } from './bundledFontsForTests.js';
+
 import { COMPOSED_FAMILY_DEFAULT } from '@monstera/contract';
 
 import { ComposeRefused, type ComposedSource } from './composeOutcome.js';
@@ -11,7 +13,7 @@ import { readLines } from './shownText.js';
 const LETTER = { width: 612, height: 792 } as const;
 
 /** The bundled faces, `markdownCompose.test.ts`' reading and its rule: absent is a failure. */
-const FACES = faceSourceOf([{ path: process.env['MONSTERA_FONTS_DIRECTORY'] ?? '', origin: 'bundled' }], readCatalogue);
+const FACES = faceSourceOf([{ path: bundledFontsFolder(), origin: 'bundled' }], readCatalogue);
 
 function bytesOf(text: string): Uint8Array {
   return new TextEncoder().encode(text);

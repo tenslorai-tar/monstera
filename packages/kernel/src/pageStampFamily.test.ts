@@ -1,6 +1,8 @@
 import { PDFArray, PDFDict, PDFDocument, PDFName } from '@cantoo/pdf-lib';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { bundledFontsFolder } from './bundledFontsForTests.js';
+
 import type { CommandOfKind } from '@monstera/contract';
 
 import { bindEditFaces, bindEditFolders, loadEditFaces } from './editFaces.js';
@@ -101,7 +103,7 @@ const WRITERS: readonly { readonly name: string; readonly run: (image: Uint8Arra
 ];
 
 /** The provisioned bundled set, which the vitest setup names, as the PDFium proofs read it. */
-const BUNDLED = process.env['MONSTERA_FONTS_DIRECTORY'] ?? '';
+const BUNDLED = bundledFontsFolder();
 
 describe('a page stamp is set in the family it names (ADR-0235)', () => {
   beforeEach(async () => {
