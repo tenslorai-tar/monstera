@@ -364,6 +364,12 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'refused', props: { outcome: 'unreachable' } },
   ],
   'dialog.cloud-view-only': [{ state: 'opened', props: { provider: 'onedrive', moment: 'opened' } }],
+  // PROVEN OUT OF MEMORY (ADR-0253): an 8 GB computer with other programs using most of it, and one where they were not,
+  // whose sentence names the total alone.
+  'dialog.out-of-memory': [
+    { state: 'opened', props: { totalBytes: 8 * 1024 ** 3, availableBytes: 400 * 1024 ** 2, othersUsingMost: true } },
+    { state: 'own', props: { totalBytes: 8 * 1024 ** 3, availableBytes: 3 * 1024 ** 3, othersUsingMost: false } },
+  ],
   'dialog.keyboard-shortcuts': [
     { state: 'opened', props: { rows: SHORTCUTS, dropped: [] } },
     // Change on the first row waits for a key in place of the row's keys.
