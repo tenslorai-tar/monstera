@@ -46,6 +46,13 @@ describe('arabicForms', () => {
     expect(points(arabicForms('لب'))).toBe('fedf fe90');
   });
 
+  it('leaves a lam and an alef with a mark between them as two joined letters, so they read back as typed (VVVVVVV-34)', () => {
+    // lam, fatha, alef: ligated, the fatha would be drawn after the ligature and read there, after the alef
+    const typed = String.fromCodePoint(0x644, 0x64e, 0x627);
+    expect(points(arabicForms(typed))).toBe('fedf 64e fe8e');
+    expect(lettersOfForms(arabicForms(typed))).toBe(typed);
+  });
+
   it('reads a ligature back as the two letters, lam then alef', () => {
     expect(lettersOfForms(arabicForms('الله'))).toBe('الله');
     expect(lettersOfForms(arabicForms('لا'))).toBe('لا');

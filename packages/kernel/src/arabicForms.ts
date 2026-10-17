@@ -127,6 +127,11 @@ export function arabicForms(text: string): string {
     // letters joined: the shaper's own choice (HarfBuzz answers the pair as one drawing of the width of the ligature, and
     // the face's cmap holds it as one code point). The lam takes the joining of the letter before it, so the ligature is
     // the isolated one or the final one by that.
+    //
+    // ONLY A LAM AND AN ALEF THAT ARE NEIGHBOURS, never across a mark, though the joining above skips marks: a mark
+    // between them would have to be drawn after the ligature, and a text page reads it there. Measured 2026-10-17 through
+    // the PDFium writer and the editor's read (VVVVVVV-34): lam, fatha, alef ligated read back lam, alef, fatha, written
+    // without a refusal — the person's words changed by being drawn. Drawn as two joined letters they read back as typed.
     const ligature = point(at) === LAM ? LAM_ALEF.get(point(at + 1)) : undefined;
     if (ligature !== undefined) {
       out += String.fromCodePoint(fromBefore ? ligature.final : ligature.isolated);
