@@ -3854,14 +3854,15 @@ describe('exportPageImages — one image per page, in a folder, all or nothing',
   it('counts the pages it has drawn while it works, one at a time, of all it was asked for (EEEEEEEE-10)', async () => {
     const folder = mkdtempSync(join(directory, 'images-'));
     const seen: unknown[] = [];
-    let commands: DocumentCommands | undefined;
+    const held: { commands?: DocumentCommands } = {};
     // EACH DRAW READS THE PROGRESS FIRST, as the renderer's poll would at that moment.
-    commands = exportingInto(folder, undefined, {
+    const commands = exportingInto(folder, undefined, {
       pageImage: (id, sessions, request) => {
-        seen.push(commands?.workProgress(WORK));
+        seen.push(held.commands?.workProgress(WORK));
         return localPageImage(id, sessions, request);
       },
     });
+    held.commands = commands;
     await commands.exportPageImages(sizedDoc, { pages: [0, 1, 2], format: 'png', dpi: 72, quality: 90 }, WORK);
     // CONTROL: before the first page none is drawn, so the count is the export's own and not a constant.
     expect(seen).toStrictEqual([0, 1, 2].map((done) => ({ kind: 'running', done, total: 3, stoppable: false })));
