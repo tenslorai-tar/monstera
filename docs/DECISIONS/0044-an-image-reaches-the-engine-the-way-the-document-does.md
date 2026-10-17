@@ -376,3 +376,25 @@ stays wrong; renaming it is the only thing that could correct it.
 What triggered it: form-data **import**. An FDF is PDF syntax, so decoding one
 needs MuPDF, invariant 20 keeps MuPDF out of `main`, and a picked file's bytes
 therefore take the one route bytes have — this one.
+
+## Correction, 2026-10-17 — `insertImagePage` is removed (the owner's decision on EEEEEEEE-8)
+
+This ADR measured and argued around `insertImagePage`, the command that put one
+picture on a new page through pdf-lib, with its bytes on the command. Since the
+owner's O3 (2026-10-13), *Insert pictures as pages* composes the picked files in
+the contained compose host, as *New PDF from images* does, and inserts the
+composed pages with one `mergeDocument` through `mergeComposed`, the route
+*Insert from Markdown* takes. Nothing has reached `insertImagePage` since: no
+channel builds it, and `document.execute` could never carry it
+(`renderableCommandSchema` leaves it out). The stage audit recorded that as
+EEEEEEEE-8, and the owner decided on 2026-10-16 that it is removed rather than
+kept unreachable.
+
+What goes: the command's schema, its member of the command union, its
+declaration and routing, its pdf-lib writer path and its inverse, and the
+cases that exercised them. What stays, because other commands still take it:
+the asset axis `'none' | 'bytes'` and its two transport modules (place image,
+stamps and form-data import carry bytes this way), and every measurement above,
+which is what that axis was decided on. The table of costs above keeps its
+`insertImagePage` row as the record of what was measured on 2026-09-07; it
+describes no command this build has.
