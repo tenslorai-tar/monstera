@@ -564,7 +564,9 @@ for (const reduced of [false, true]) {
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     const scrolled = (): Promise<number> => popup.evaluate((menu) => menu.scrollTop);
     if (reduced) {
-      // A REST LONG ENOUGH for the full-motion run to have moved many items, and nothing moved.
+      // A REST LONG ENOUGH for the full-motion run to have moved many items, and nothing moved. THE FIGURE'S SOURCE
+      // (JJJJJJJJ-3): the full-motion run below scrolls 21 to 28 ms after the pointer rests, three runs on pinned Chromium,
+      // this machine, 2026-10-18; 600 ms is twenty times the slowest.
       await page.waitForTimeout(600);
       expect(await scrolled()).toBe(0);
       await page.mouse.down();

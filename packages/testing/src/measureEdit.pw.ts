@@ -183,7 +183,9 @@ for (const named of [true, false]) {
     if (named) {
       await expect.poll(() => inkAt(page, label)).toBe(false);
     } else {
-      // THE CONTROL HOLDS ITS GROUND for a moment a redraw would have taken, rather than passing on the first read.
+      // THE CONTROL HOLDS ITS GROUND for a moment a redraw would have taken, rather than passing on the first read. THE
+      // FIGURE'S SOURCE (JJJJJJJJ-3): the case above hides the label 34 to 79 ms after the caption shows, three runs on
+      // pinned Chromium, this machine, 2026-10-18; 500 ms is six times the slowest.
       await page.waitForTimeout(500);
       expect(await inkAt(page, label)).toBe(true);
     }
