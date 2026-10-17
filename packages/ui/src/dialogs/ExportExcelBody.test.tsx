@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { activateCatalogue } from '../i18n.js';
 import { InDialog } from './inDialog.js';
-import { EN } from '../messages/en.js';
+import { EN, EXPORT_EXCEL_SERVICES_NO_KEY } from '../messages/en.js';
 import ExportExcelBody from './ExportExcelBody.js';
 import type { ExportExcelProps } from './exportExcel.js';
 
@@ -15,6 +15,13 @@ import type { ExportExcelProps } from './exportExcel.js';
  * `commands/documentCommands.test.ts`'; this half is that TYPING in a cell and
  * CHOOSING a layout or a page are what put them in the answer.
  */
+
+/** The catalogue's no-key sentence, whole. */
+function noKeySentence(): string {
+  const sentence = EN[EXPORT_EXCEL_SERVICES_NO_KEY];
+  if (sentence === undefined) throw new Error('the catalogue has no no-key sentence');
+  return sentence;
+}
 
 function Wrapped({ children }: { children: ReactNode }): ReactElement {
   activateCatalogue('en', EN);
@@ -152,12 +159,14 @@ describe('ExportExcelBody', () => {
     shown();
     expect(screen.queryByRole('radio', { name: 'Claude' })).toBeNull();
     expect(screen.queryByRole('group', { name: 'What is in this document?' })).toBeNull();
-    expect(screen.getByText(/key in Settings/u)).toBeTruthy();
+    // THE WHOLE SENTENCE, from the catalogue: a fragment of it matched a wider set of strings each time it was edited
+    // (YYYYYYY-2), and the null case below took the same fragment.
+    expect(screen.getByText(noKeySentence())).toBeTruthy();
   });
 
   it('CONTROL: with a service offered, the no-key sentence is not shown', () => {
     shown({ engines: ['automatic', 'claude'] });
-    expect(screen.queryByText(/key in Settings/u)).toBeNull();
+    expect(screen.queryByText(noKeySentence())).toBeNull();
   });
 
   it('a PRINTED SCAN read on this computer sends nothing, says what it leaves in the document, hides the grid, and answers no edits', () => {
