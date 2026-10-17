@@ -469,4 +469,17 @@ describe('cloud storage in main (ADR-0091)', () => {
     expect(safeFileName(`a${String.fromCharCode(7)}b:c?.PDF`)).toBe('a_b_c_.PDF');
     expect(safeFileName('report')).toBe('report.pdf');
   });
+
+  it('a Windows device name is PREFIXED, whatever its case and extension (KKKKKKK-5, the owner’s decision)', () => {
+    expect(safeFileName('CON.pdf')).toBe('_CON.pdf');
+    expect(safeFileName('nul')).toBe('_nul.pdf');
+    expect(safeFileName('Com1.final.pdf')).toBe('_Com1.final.pdf');
+    expect(safeFileName('LPT9 .pdf')).toBe('_LPT9 .pdf');
+    expect(safeFileName('CONIN$.pdf')).toBe('_CONIN$.pdf');
+    // CONTROL: a name that only BEGINS with one, or holds one later, is the person's own and is left as it is.
+    expect(safeFileName('CONTRACT.pdf')).toBe('CONTRACT.pdf');
+    expect(safeFileName('console log.pdf')).toBe('console log.pdf');
+    expect(safeFileName('report.CON.pdf')).toBe('report.CON.pdf');
+    expect(safeFileName('COM10.pdf')).toBe('COM10.pdf');
+  });
 });

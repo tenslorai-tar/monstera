@@ -164,6 +164,13 @@ function kept(raw: string | undefined): CloudTokens | null {
   return { accessToken, refreshToken, expiresAt };
 }
 
+/**
+ * Windows' reserved device names, which a file's stem may not be (the part before its first dot, trailing dots and
+ * spaces aside). Windows 11 writes `CON.pdf` as an ordinary file (measured, KKKKKKK-5); the package's minimum,
+ * 10.0.17763, documents it as the device, which is unmeasured here — so the name is never left to depend on the build.
+ */
+const RESERVED_DEVICE_STEM = /^(?:CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|COM[0-9¹²³]|LPT[0-9¹²³])$/iu;
+
 /** A provider's file name, made safe for this file system: the name is the person's. */
 export function safeFileName(name: string): string {
   // BY CODE UNIT: every character refused here is one code unit, and a pair from outside the Basic
@@ -173,6 +180,9 @@ export function safeFileName(name: string): string {
     const character = name.charAt(at);
     safe += name.charCodeAt(at) < 32 || REFUSED_IN_NAMES.includes(character) ? '_' : character;
   }
+  // A DEVICE NAME IS PREFIXED, the owner's decision of 2026-10-17 (KKKKKKK-5): `CON.pdf` becomes `_CON.pdf`.
+  const stem = safe.split('.')[0]?.replace(/[ .]+$/u, '') ?? '';
+  if (RESERVED_DEVICE_STEM.test(stem)) safe = `_${safe}`;
   return safe.toLowerCase().endsWith('.pdf') ? safe : `${safe}.pdf`;
 }
 
