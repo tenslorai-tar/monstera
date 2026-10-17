@@ -90,7 +90,7 @@ export const COMMAND_PROBLEM_DIALOG = declareDialog({
     // A CHANGE TO A FORM FIELD THAT COULD NOT BE MADE (ADR-0193): the sentence is the reason's.
     z.object({ code: z.literal('field-edit-refused'), detail: FAILURE_DETAIL_SCHEMAS['field-edit-refused'] }).strict(),
     // A COPY MADE FOR AN EDIT OF A SIGNED DOCUMENT (ADR-0149) that was written and could not be opened: gone before
-    // the open, no room beside the documents already open, or its read refused — another program holding it, or no
+    // the open, no free disk space to hold it in (ADR-0165), or its read refused — another program holding it, or no
     // permission. The file is where the person put it, without the edit.
     z.object({ code: z.literal('copy-absent') }).strict(),
     z.object({ code: z.literal('copy-at-capacity') }).strict(),

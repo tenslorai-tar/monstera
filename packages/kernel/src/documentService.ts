@@ -939,7 +939,9 @@ export type OpenOutcome =
    * ([ADR-0165](../../../docs/DECISIONS/0165-a-document-past-mains-memory-ceiling-is-held-in-a-file.md)). Until then a
    * document past {@link DocumentServiceOptions.documentBytesCeiling} was refused for its size alone.
    *
-   * **An outcome, not a defect**: closing another document frees its file, which the words a person reads say.
+   * **An outcome, not a defect**: freeing disk space is what makes room, which the words a person reads say. Closing
+   * another document frees its file only where that document was held in one, and frees nothing where it was held in
+   * memory, so the words do not send the person to close one (QQQQQQQ-13).
    */
   | {
       readonly kind: 'at-capacity';

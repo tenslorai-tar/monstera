@@ -10,7 +10,7 @@ When something cannot be done, Monstera tells you in plain words and says what h
 
 ## Steps
 
-1. Read the message. It says whether anything changed and what you can do next, for example "Try again in a moment" or "Close another document first".
+1. Read the message. It says whether anything changed and what you can do next, for example "Try again in a moment" or "Free some space on this computer, then try again".
 2. If a view shows **This document could not be displayed.**, choose **Try again**. Your file is unchanged and you return to the same page.
 3. If part of the window stops working, choose **Try again** to redraw it. Your open documents are unchanged.
 4. If you need to report a problem, open the diagnostics log: in the rail choose **Tools**, then **Diagnostics** in the **Application** group (or **Reveal diagnostics log** in the **Help** menu). The folder with the log files opens in File Explorer.

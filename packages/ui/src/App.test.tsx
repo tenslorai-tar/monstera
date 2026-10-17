@@ -3308,8 +3308,9 @@ describe('App', () => {
 
     it('says something DIFFERENT when there is no room, because the answer is different', async () => {
       // Two outcomes, two next actions: one is *find the file*, the other is
-      // *close a document*. One message for both would be a sentence that helps
-      // with neither.
+      // *free disk space* — the only time `at-capacity` is answered is a full disk
+      // (ADR-0165), which closing a document held in memory would not help
+      // (QQQQQQQ-13). One message for both would help with neither.
       render(
         <App
           client={openAnswering({ kind: 'at-capacity', wouldHold: 4096, ceiling: 2048 })}
@@ -3319,7 +3320,7 @@ describe('App', () => {
       await pick();
 
       expect(
-        screen.getByText('There is not enough room to open that document. Close another one first.'),
+        screen.getByText('There isn’t enough free disk space to open that document. Free some space on this computer, then try again.'),
       ).toBeDefined();
     });
 

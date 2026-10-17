@@ -26,7 +26,7 @@ To open by dragging:
 - Opening a document never runs anything inside it: no scripts, no automatic actions, no downloads, and no attached files are saved until you ask.
 - If one of several files cannot be opened, Monstera names it and still opens the others.
 - If a file has been moved, renamed or deleted, Monstera says it could not be opened. If you open a file that is already open, Monstera switches to its tab.
-- If there is not enough room to open another document, close one first.
+- If there isn't enough free disk space to open a very large document, Monstera says so. Free some space on this computer, then open it again.
 - Something dragged from a browser or another program that is not a file on this computer cannot be opened; drop a PDF from File Explorer instead.
 - A password-protected PDF asks for its password: see "Open a password-protected PDF".
 

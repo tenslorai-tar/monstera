@@ -4203,7 +4203,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // service could not read has almost always moved, and naming that is what
   // makes the message actionable rather than a report.
   [START_ABSENT]: 'That file could not be opened. It may have been moved, renamed or deleted.',
-  [START_AT_CAPACITY]: 'There is not enough room to open that document. Close another one first.',
+  // THE DISK IS FULL, which is the only time `at-capacity` is answered (ADR-0165): a document too large for memory is
+  // held in a file, and the file could not be made. Closing a document held in memory frees no disk, so the sentence
+  // names the space, not a document (QQQQQQQ-13).
+  [START_AT_CAPACITY]: 'There isn’t enough free disk space to open that document. Free some space on this computer, then try again.',
   // A DROPPED ITEM WITH NO FILE BEHIND IT: something dragged out of a browser or another program that is
   // not a file on this computer. Says what to do instead.
   [START_NO_PATH]: 'That is not a file on this computer, so it cannot be opened. Drop a PDF from File Explorer instead.',
@@ -5997,7 +6000,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EXTERNAL_EDIT_PROBLEM_ABSENT]:
     'The edited file is no longer where it was saved, so nothing was put back. Your document has not changed.',
   [EXTERNAL_EDIT_PROBLEM_AT_CAPACITY]:
-    'The edited file is too large to open alongside the documents already open, so nothing was put back. Close a document and try again. Your document has not changed.',
+    'There isn’t enough free disk space to open the edited file, so nothing was put back. Free some space on this computer and try again. Your document has not changed.',
   [EXTERNAL_EDIT_PROBLEM_BUSY]:
     'The other app still holds the edited file and lets nobody else read it, so nothing was put back. Close it there and try again. Your document has not changed.',
   [EXTERNAL_EDIT_PROBLEM_DENIED]:
@@ -6463,8 +6466,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [URL_OPEN_WRITE_FAILED]: 'The PDF could not be saved there. Nothing was opened.',
   [URL_OPEN_ABSENT]: 'The PDF was saved, but the file was gone before it could be opened.',
   [URL_OPEN_AT_CAPACITY]:
-    'The PDF was saved, but there is not enough room to open it beside the documents already ' +
-    'open. Close one, then open the PDF from where you saved it.',
+    'The PDF was saved, but there isn’t enough free disk space to open it. ' +
+    'Free some space on this computer, then open the PDF from where you saved it.',
   // NOT "THAT MARKDOWN FILE": three imports open this dialog, and a title naming one
   // format told a person who picked a CSV or a folder of scans the wrong thing.
   [MARKDOWN_IMPORT_PROBLEM_TITLE]: 'The import did not finish',
@@ -6513,8 +6516,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [MARKDOWN_IMPORT_ABSENT]:
     'The PDF was saved, but the file was gone before it could be opened.',
   [MARKDOWN_IMPORT_AT_CAPACITY]:
-    'The PDF was saved, but there is not enough room to open it beside the documents already ' +
-    'open. Close one, then open the PDF from where you saved it.',
+    'The PDF was saved, but there isn’t enough free disk space to open it. ' +
+    'Free some space on this computer, then open the PDF from where you saved it.',
   [MARKDOWN_IMPORT_IMAGE_UNREADABLE]:
     '{file} could not be read as a JPEG or PNG picture. Nothing was imported.',
   [MARKDOWN_IMPORT_IMAGE_UNREADABLE_NO_FILE]:
@@ -7290,7 +7293,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PROBLEM_COPY_ABSENT]:
     'The copy was saved, but the file was gone before it could be opened, so the change was not made. The signed document has not changed.',
   [PROBLEM_COPY_AT_CAPACITY]:
-    'The copy was saved, but there is not enough room to open it beside the documents already open, so the change was not made. Close a document, then open the copy from where you saved it. The signed document has not changed.',
+    'The copy was saved, but there isn’t enough free disk space to open it, so the change was not made. Free some space on this computer, then open the copy from where you saved it. The signed document has not changed.',
   [PROBLEM_COPY_BUSY]:
     'The copy was saved, but another program is holding it and does not let others read it, so the change was not made. Close it there, then open the copy from where you saved it. The signed document has not changed.',
   [PROBLEM_COPY_DENIED]:
