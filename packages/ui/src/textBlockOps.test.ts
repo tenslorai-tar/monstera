@@ -95,8 +95,8 @@ describe('splitEdits', () => {
 
   it('moves the second half down by a line, the movement that keeps the grouping from joining them again', () => {
     const halves = splitEdits(TWO, 1);
-    expect(halves?.[1].place).toStrictEqual({ move: { x: 0, y: -14 } });
-    expect(halves?.[0].place).toBeUndefined();
+    expect(halves?.[1]?.place).toStrictEqual({ move: { x: 0, y: -14 } });
+    expect(halves?.[0]?.place).toBeUndefined();
   });
 
   it('moves the text below it in its column down by the same line, so the second half does not stand over it (VVVVVVV-25)', () => {
