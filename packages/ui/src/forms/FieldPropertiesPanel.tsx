@@ -273,7 +273,10 @@ export function FieldPropertiesPanel({
   }, [first, key, read, version]);
 
   const foot = propertiesModel(registry, context);
-  const props = answer?.version === version && answer.key === key ? answer.props : undefined;
+  // THE FIELD'S LAST READ WHILE THE NEXT ONE IS TAKEN: a write moves the version, and a panel that emptied until the new
+  // read arrived unmounted every control, so a picker opened in that moment closed under the person's pointer (the
+  // forms walk's A8.4, 2026-10-16). Another field's read is never shown for this one.
+  const props = answer?.key === key ? answer.props : undefined;
   const single = selected.length === 1;
 
   return (
@@ -290,10 +293,11 @@ export function FieldPropertiesPanel({
       {props === undefined ? null : props === null ? (
         <p className="m-properties__meta">{i18n._(FIELD_PROPS_UNREADABLE)}</p>
       ) : (
-        // A NEW SET OF CONTROLS PER FIELD AND PER READ, so a draft never outlives the field it was typed for and a value
-        // that arrives after a change replaces the draft that produced it.
+        // A NEW SET OF CONTROLS PER FIELD, so a draft never outlives the field it was typed for; a value that a later read
+        // changes replaces that one row's draft (`useDraft`). Per read it was every control: a write of the tooltip
+        // remounted the font picker too, and a picker opened as the write landed closed (the forms walk's A8.4).
         <Controls
-          key={`${key}:${JSON.stringify(props)}`}
+          key={key}
           documentFonts={documentFonts}
           fonts={fonts}
           known={known}
@@ -689,6 +693,32 @@ const ALIGNMENT_LABELS: Readonly<Record<(typeof FIELD_ALIGNMENTS)[number], Messa
 };
 
 /** A text box that sends when focus leaves it changed, and says why a value is refused instead of sending it. */
+/**
+ * A row's draft of `value`, which a new read of a DIFFERENT value replaces (React's form for state that follows a prop,
+ * as OptionsRow takes it): a later read that changed this property puts the document's value back, and one that changed
+ * another property leaves what is being typed here alone.
+ */
+function useDraft<T>(value: T): readonly [T, (next: T) => void] {
+  const [draft, setDraft] = useState(value);
+  const [read, setRead] = useState(value);
+  if (!Object.is(read, value)) {
+    setRead(value);
+    setDraft(value);
+  }
+  return [draft, setDraft];
+}
+
+/** Whether two lists of choices say the same, choice by choice: value and label in order. */
+function sameChoices(a: readonly FieldChoice[], b: readonly FieldChoice[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((choice, at) => {
+      const other = b[at];
+      return other !== undefined && choiceValueOf(choice) === choiceValueOf(other) && choiceLabelOf(choice) === choiceLabelOf(other);
+    })
+  );
+}
+
 function TextRow({
   label,
   value,
@@ -704,7 +734,7 @@ function TextRow({
 }): ReactElement {
   const { i18n } = useLingui();
   const id = useId();
-  const [draft, setDraft] = useState(value);
+  const [draft, setDraft] = useDraft(value);
   const problem = check?.(draft);
   return (
     <div className="m-properties__row">
@@ -811,8 +841,8 @@ function RangeRow({
   const { i18n } = useLingui();
   const leastId = useId();
   const mostId = useId();
-  const [least, setLeast] = useState(range?.min === null || range === null ? '' : String(range.min));
-  const [most, setMost] = useState(range?.max === null || range === null ? '' : String(range.max));
+  const [least, setLeast] = useDraft(range?.min === null || range === null ? '' : String(range.min));
+  const [most, setMost] = useDraft(range?.max === null || range === null ? '' : String(range.max));
   const commit = (): void => {
     const end = (text: string): number | null | undefined => {
       if (text.trim() === '') return null;
@@ -884,7 +914,7 @@ function NumberRow({
 }): ReactElement {
   const { i18n } = useLingui();
   const id = useId();
-  const [draft, setDraft] = useState(String(value));
+  const [draft, setDraft] = useDraft(String(value));
   return (
     <div className="m-properties__row m-properties__row--inline">
       <label className="m-properties__label" htmlFor={id}>
@@ -1011,7 +1041,9 @@ function OptionsRow({
   // change compared with the read alone would send nothing when a person put back what was read after other changes.
   const [held, setHeld] = useState(options);
   const [read, setRead] = useState(options);
-  if (read !== options) {
+  // BY THE CHOICES, not the array: every read of the field is a new array, and a read that another property's write
+  // brought would otherwise put back rows being typed.
+  if (!sameChoices(read, options)) {
     // A NEW READ of the field, taken while rendering (React's form for state that follows a prop).
     setRead(options);
     setHeld(options);
@@ -1284,10 +1316,10 @@ function CalculationRows({
 }): ReactElement {
   const { i18n } = useLingui();
   const id = useId();
-  const [draft, setDraft] = useState(calculation?.fields.join('\n') ?? '');
+  const [draft, setDraft] = useDraft(calculation?.fields.join('\n') ?? '');
   // THE OPERATION CHOSEN, kept here until there are names to send it with: a calculation reads at least one field, so an
   // operation picked first is shown as picked and sent when the names are given, and never dropped.
-  const [operation, setOperation] = useState<FieldCalculation['operation'] | 'none'>(calculation?.operation ?? 'none');
+  const [operation, setOperation] = useDraft<FieldCalculation['operation'] | 'none'>(calculation?.operation ?? 'none');
   const names = draft
     .split('\n')
     .map((line) => line.trim())
