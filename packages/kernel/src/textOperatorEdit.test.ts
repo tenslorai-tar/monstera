@@ -243,6 +243,22 @@ describe('applyEditTextOperators', () => {
     });
   });
 
+  it('keeps ONE word wider than the block, broken at its edge, rather than refusing the edit (Q7’s sideways shape)', async () => {
+    await withChromium(async (session, content) => {
+      const runs = headingRuns(content);
+      // THE SHAPE THE CASE ABOVE STOPPED REACHING (VVVVVVV-14): no space anywhere to wrap at, in the print's own letters.
+      const word = 'reading'.repeat(60);
+      await applyEditTextOperators(session, command(runs.runs[0]?.index ?? 0, `Monstera ${word}.`), runs);
+      const unclipped = await withDocument(session, (document) =>
+        document.loadPage(0).toStructuredText('clip=no').asText(),
+      );
+      // EVERY LETTER WRITTEN, in order, whatever lines it was broken onto (ADR-0179).
+      expect(unclipped.replace(/\s/gu, '')).toContain(`Monstera${word}.`);
+      // AND BROKEN: the word is on more than one line, so it did not run past the block sideways.
+      expect(unclipped.split('\n').filter((line) => line.includes('reading')).length).toBeGreaterThan(1);
+    });
+  });
+
   describe('with the bundled fonts bound (ADR-0177)', () => {
     // BOUND AS THE MuPDF HOST BINDS THEM, by their folders, so the apply's own load of the catalogue is what runs.
     beforeEach(() => {
