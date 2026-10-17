@@ -195,6 +195,15 @@ badly rather than only main exiting cleanly. **The host body lives in
 `packages/kernel`**, where naming Electron is already a red build, for the reason
 in §9.26.
 
+**A HOST REACHES ITS PIPE BEFORE IT LOADS ITS HANDLERS**
+([ADR-0251](DECISIONS/0251-a-host-reaches-its-pipe-before-it-loads-its-handlers.md),
+2026-10-17). Each entry binds its engine, connects, and only then imports the
+module that composes its channels and handlers, so `main`'s ten-second connect
+bound covers the runtime's start, the bind and the connect, and never the load of
+the module graph (293 files for the MuPDF host, measured 2026-10-17). The bind
+stays before the connect, so a library Windows will not load is still *could not
+start* and never a death.
+
 **ONE HOST BODY, PARAMETERISED BY ENGINE — never a second copy of it**
 (amended 2026-09-08, ahead of `pdfiumHost`). The diagram above has shown two
 contained hosts since Stage 0 and the body serving them is one implementation:
@@ -3101,6 +3110,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-10-17 | **A host reaches its pipe before it loads its handlers** (§3). The owner's addendum 2, item 2: two first documents were poisoned on 2026-10-16 when the MuPDF host missed the ten-second connect bound twice. The host reached its pipe only after evaluating its whole module graph, 293 files whose load is file calls and compilation that a cold or busy disk multiplies, so the bound measured a load rather than a start. Each entry now binds its engine, connects, then loads its handlers; a request sent meanwhile waits in the socket. The bound is unchanged. | Nothing. ADR-0023's bound is kept and now covers what it was said to cover | [0251](DECISIONS/0251-a-host-reaches-its-pipe-before-it-loads-its-handlers.md) |
 | 2026-10-16 | **The font picker draws each family in itself** (§3's in-place editing row). The owner's item 2 and locked decisions 6 and 8: an installed family by `local()` under its face's full name, read by the host that lists it; a bundled family as bytes on `fonts.bundledFace`, a fourth byte crossing beside ADR-0175's, whose request is a closed enum the schema enforces and which `main` answers from a table keyed by it; a name neither can draw in the interface font, marked as not previewed. §9.27 unchanged. **Rejected:** copying the bundled fonts into the renderer's bundle, no preview for bundled fonts, a channel taking a file name or a free family, a `url()` font rule | ADR-0175's *three* sanctioned byte crossings | [0250](DECISIONS/0250-the-font-picker-draws-each-family-in-itself.md) |
 | 2026-10-16 | **A paragraph that grows pushes the text below it down** (§3's in-place editing row). The owner's decision of 2026-10-16 and their five answers the same day: the text below a block in its column moves down by what the block grew, in the same command and undo step; the margins and the room are the page's own (the bottom margin mirrors the top, a block wholly inside it is the footer); where the push would pass the room nothing moves, the edit is written as typed, and the open editor says so first with the overlap highlighted; markup on moved text is moved by MuPDF in the same step (ADR-0200). **Rejected:** keeping the overlap, warning only, finding the column in the writer, a renderer-worked move, PDFium writing annotation geometry, the renderer moving the markup, a fixed footer band | ADR-0096's stated limit *"a block that grows pushes its own lines down and nothing else"*, and its Decision 3 for one consumer | [0249](DECISIONS/0249-a-paragraph-that-grows-pushes-the-text-below-it-down.md) |
 | 2026-10-15 | **A signature is made over a digest read from the prepared file** (§ the signing row). The owner's item 18: `main` no longer holds the prepared document whole to sign it. The host's file is copied into `main`'s own storage (`copyAnnounced`), checked and hashed a range at a time, signed as a digest by a PKCS#7 builder held byte-identical to `P12Signer`, and filled in place. Amends ADR-0148 and ADR-0054's signer. [ADR-0248](DECISIONS/0248-a-signature-is-made-over-a-digest-read-from-the-prepared-file.md). |
