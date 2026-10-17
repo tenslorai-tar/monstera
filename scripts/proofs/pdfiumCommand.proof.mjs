@@ -266,7 +266,7 @@ const failures = [];
 // THE COUNT IS MOVED ONLY WITH THE CASES IT COUNTS, and the commit that moves it names the cases it adds or removes. A
 // running ledger of the count was kept here until 2026-10-17 and had stopped at 246 against 274 (VVVVVVV-23): a second
 // copy of the history git already holds, which nothing compared with the count.
-const roster = createRoster(failures, { cases: 275 });
+const roster = createRoster(failures, { cases: 277 });
 
 /**
  * @param {string} name
@@ -1904,6 +1904,7 @@ async function runFontCases() {
     await pdfiumWriter.close(session);
   }
   await producerRunFontCases(fonts);
+  await rewrittenCodesCases(fonts);
 }
 
 /**
@@ -2015,6 +2016,49 @@ async function producerRunFontCases(fonts) {
   } finally {
     await pdfiumWriter.close(session);
   }
+}
+
+/**
+ * A SUBSET THAT KEEPS ITS `cmap` WHILE THE PAGE DRAWS OTHER GLYPHS (SSSSSSS-14): `runFont.ts`' decision, the `cmap`'s
+ * glyph against what PDFium draws, reached against the real library. Carlito subset for "minimum", `i` and `m` drawn
+ * with each other's glyphs and named as themselves, the program's `cmap` untouched: the rebuilt font must draw `i`
+ * with the wide glyph the page shows, not the narrow one its `cmap` names. CONTROL: the same page unswapped draws `i`
+ * at its own advance. Advances are compared as a fraction of the em, so the rebuilt font's units need not be Carlito's.
+ *
+ * @param {string} fonts the bundled fonts' directory
+ */
+async function rewrittenCodesCases(fonts) {
+  const { buildRewrittenCodesPdf } = await import('../../packages/kernel/dist/producerSubsetFixture.js');
+  const program = new Uint8Array(readFileSync(resolve(fonts, 'Carlito-Regular.ttf')));
+  const carlito = new ShapingFace(program, 0, {});
+  /** Carlito's advance for `character`, in ems. @param {string} character */
+  const own = (character) => carlito.nominalAdvance(carlito.glyphFor(character.codePointAt(0) ?? 0) ?? 0) / carlito.unitsPerEm;
+  /** The rebuilt font's advance for `i`, in ems, for a page swapped or not. @param {[string, string] | null} swap */
+  const rebuiltI = async (swap) => {
+    const session = await pdfiumWriter.open(await buildRewrittenCodesPdf(program, 'minimum', swap));
+    try {
+      const [run] = (await objectRuns(session, 0)).runs;
+      if (run === undefined) return null;
+      const font = (await runFonts(session, 0, [run.index])).fonts[0];
+      if (font === undefined) return null;
+      const face = new ShapingFace(font, 0, {});
+      return face.nominalAdvance(face.glyphFor('i'.codePointAt(0) ?? 0) ?? 0) / face.unitsPerEm;
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  };
+  const swapped = await rebuiltI(['i', 'm']);
+  const plain = await rebuiltI(null);
+  record(
+    'a subset whose cmap disagrees with what the page draws is rebuilt to draw what the page draws',
+    swapped !== null && Math.abs(swapped - own('m')) < 0.002,
+    `rebuilt i ${String(swapped)} em; Carlito i ${own('i').toFixed(4)}, m ${own('m').toFixed(4)}`,
+  );
+  record(
+    'CONTROL: the same page with its codes as the cmap names them draws i at its own advance',
+    plain !== null && Math.abs(plain - own('i')) < 0.002,
+    `rebuilt i ${String(plain)} em; Carlito i ${own('i').toFixed(4)}`,
+  );
 }
 
 /** The glyph `font` maps `character` to, read by the one HarfBuzz reader. @param {Uint8Array} font @param {string} character */
