@@ -3555,6 +3555,9 @@ function engineSessionOpener(
         const snapshotPath = snapshotsOf.get(docId);
         if (snapshotPath !== undefined) await canonicalImageWrite(documents, docId)(snapshotPath);
       },
+      sealFailed: (path, cause) => {
+        failures({ event: 'copy-unsealed', detail: `${path}: ${cause instanceof Error ? cause.message : String(cause)}` });
+      },
     },
     rebuildSessions: create,
     restoreSessions: buildSessions,

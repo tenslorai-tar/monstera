@@ -260,7 +260,7 @@ function sourcesClient(): { readonly client: ContractClient; readonly executed: 
       return Promise.resolve(ok({ version: asDocVersion(1), pageCount, rotations: [0] }));
     }
     executed.push(params);
-    return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
+    return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
   });
   return { client, executed };
 }
@@ -391,7 +391,7 @@ describe('rotate page', () => {
       historyDropped: 0,
       boxed: [],
       more: 0,
-      unsealedCopies: [],
+      unsealedCopies: [], unsealedUndoCopies: 0,
     });
 
     await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
@@ -400,7 +400,7 @@ describe('rotate page', () => {
     // visible in any state: the version alone rebinds the renderer's transport
     // to the previous image's length, which is a RangeError past the end of the
     // new document or a parse of a truncated one.
-    expect(applied).toStrictEqual([{ version: 2, byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }]);
+    expect(applied).toStrictEqual([{ version: 2, byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }]);
   });
 
   /**
@@ -416,7 +416,7 @@ describe('rotate page', () => {
       historyDropped: 0,
       boxed: [{ character: '中', page: 3 }],
       more: 2,
-      unsealedCopies: [],
+      unsealedCopies: [], unsealedUndoCopies: 0,
     });
 
     await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
@@ -440,13 +440,61 @@ describe('rotate page', () => {
       boxed: [],
       more: 0,
       unsealedCopies: ['report.pdf.bak', 'report.pdf.previous'],
+      unsealedUndoCopies: 3,
     });
 
     await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
 
     expect(shown).toStrictEqual([
-      { id: 'dialog.unsealed-copies', props: { copies: ['report.pdf.bak', 'report.pdf.previous'] } },
+      { id: 'dialog.unsealed-copies', props: { copies: ['report.pdf.bak', 'report.pdf.previous'], undoCopies: 3 } },
     ]);
+  });
+
+  it('undo copies alone open the window too, by count: no backup is named and the person is still told', async () => {
+    const { shown, onApplied, ask } = recorder();
+    const client = clientAnswering('document.execute', {
+      version: asDocVersion(2),
+      byteLength: 2048,
+      historyDropped: 0,
+      boxed: [],
+      more: 0,
+      unsealedCopies: [],
+      unsealedUndoCopies: 2,
+    });
+
+    await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
+
+    expect(shown).toStrictEqual([{ id: 'dialog.unsealed-copies', props: { copies: [], undoCopies: 2 } }]);
+  });
+
+  it('a REDONE protect that could not seal a copy opens the window, as an applied one does (VVVVVVV-6)', async () => {
+    const { shown, onApplied, ask } = recorder();
+    const client = clientAnswering('document.redo', {
+      kind: 'redone',
+      version: asDocVersion(4),
+      byteLength: 2048,
+      unsealedCopies: ['report.pdf.bak'],
+      unsealedUndoCopies: 0,
+    });
+
+    await redoCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
+
+    expect(shown).toStrictEqual([{ id: 'dialog.unsealed-copies', props: { copies: ['report.pdf.bak'], undoCopies: 0 } }]);
+  });
+
+  it('CONTROL: a redo that left nothing unsealed opens no window', async () => {
+    const { shown, onApplied, ask } = recorder();
+    const client = clientAnswering('document.redo', {
+      kind: 'redone',
+      version: asDocVersion(4),
+      byteLength: 2048,
+      unsealedCopies: [],
+      unsealedUndoCopies: 0,
+    });
+
+    await redoCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
+
+    expect(shown).toStrictEqual([]);
   });
 
   it('CONTROL: a command that sealed every copy opens no unsealed-copies window', async () => {
@@ -457,7 +505,7 @@ describe('rotate page', () => {
       historyDropped: 0,
       boxed: [],
       more: 0,
-      unsealedCopies: [],
+      unsealedCopies: [], unsealedUndoCopies: 0,
     });
 
     await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
@@ -478,7 +526,7 @@ describe('rotate page', () => {
       historyDropped: 3,
       boxed: [],
       more: 0,
-      unsealedCopies: [],
+      unsealedCopies: [], unsealedUndoCopies: 0,
     });
 
     await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
@@ -489,7 +537,7 @@ describe('rotate page', () => {
     // AND THE VIEW STILL MOVED. The command succeeded; a version reported to
     // nobody would leave the renderer showing the page as it was while a dialog
     // explains what the rotation cost.
-    expect(applied).toStrictEqual([{ version: 2, byteLength: 2048, historyDropped: 3, boxed: [], more: 0, unsealedCopies: [] }]);
+    expect(applied).toStrictEqual([{ version: 2, byteLength: 2048, historyDropped: 3, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }]);
   });
 
   it('a declared failure changes nothing, so the view is not rebuilt', async () => {
@@ -536,7 +584,7 @@ describe('rotate page', () => {
       historyDropped: 0,
       boxed: [],
       more: 0,
-      unsealedCopies: [],
+      unsealedCopies: [], unsealedUndoCopies: 0,
     });
 
     await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
@@ -560,7 +608,13 @@ describe('rotate page', () => {
 describe('redo', () => {
   it('hands back both scalars when the log stepped forward', async () => {
     const { applied, onApplied, ask } = recorder();
-    const client = clientAnswering('document.redo', { kind: 'redone', version: asDocVersion(4), byteLength: 777 });
+    const client = clientAnswering('document.redo', {
+      kind: 'redone',
+      version: asDocVersion(4),
+      byteLength: 777,
+      unsealedCopies: [],
+      unsealedUndoCopies: 0,
+    });
 
     await redoCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
 
@@ -593,7 +647,7 @@ describe('move page up / down — Organize › Arrange', () => {
     const sent: { id: string; params: unknown }[] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
-      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
+      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
     });
     return { client, sent };
   }
@@ -1081,7 +1135,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       const answer = answers[id];
       if (answer !== undefined) return Promise.resolve(ok(answer));
       return Promise.resolve(
-        ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }),
+        ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }),
       );
     });
     return { client, sent };
@@ -1651,7 +1705,7 @@ describe('delete pages — the mutation-dialog gate', () => {
           );
         }
         return Promise.resolve(
-          ok({ version: asDocVersion(2), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }),
+          ok({ version: asDocVersion(2), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }),
         );
       });
       return { client, sent };
@@ -1861,7 +1915,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const sent: { id: string; params: unknown }[] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
-      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
     });
     const deps = { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures };
     const outcome = await commitBlocks(
@@ -1895,7 +1949,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const sent: { id: string; params: unknown }[] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
-      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
     });
     const deps = { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures };
     const insert = { left: 72, baseline: 600, measure: 200, size: 12, text: 'A note' };
@@ -1997,7 +2051,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const sent: { id: string; params: unknown }[] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
-      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
     });
     const applied: Applied[] = [];
     const outcome = await commitTextBlock(
@@ -2050,7 +2104,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const sent: unknown[] = [];
     const client = createClient(channels, (_id, params) => {
       sent.push((params as { command: unknown }).command);
-      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
     });
     const deps = { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures };
     const read = { version: asDocVersion(7), rewrite: 'objects' as const, blocks: [pushing, below] };
@@ -2074,7 +2128,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const sent: unknown[] = [];
     const client = createClient(channels, (_id, params) => {
       sent.push((params as { command: unknown }).command);
-      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
     });
     const deps = { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures };
     await commitTextBlock(deps, DOC, 3, BLOCK, 'The quick brown dog jumps over', readOf('objects', true));
@@ -2091,7 +2145,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const sent: { id: string; params: unknown }[] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
-      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
     });
     const outcome = await commitTextBlock(
       { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures },
@@ -2131,7 +2185,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const sent: string[] = [];
     const client = createClient(channels, (id) => {
       sent.push(id);
-      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
     });
     const outcome = await commitTextBlock(
       { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures },
@@ -2162,7 +2216,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const sent: { id: string; params: unknown }[] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
-      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
     });
     const outcome = await commitTextBlock(
       { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures },
@@ -2213,7 +2267,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const sent: unknown[] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
-      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
     });
     await promoteTextOnPage({ client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures }, DOC, 3);
     expect(sent).toStrictEqual([
@@ -5015,7 +5069,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         ok(
           id === 'document.duplicatePages'
             ? { version: asDocVersion(1), groups: [{ pages: [0, 4] }], truncated: false }
-            : { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
+            : { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 },
         ),
       );
     });
@@ -5132,7 +5186,7 @@ describe('generate table of contents', () => {
         return Promise.resolve(ok({ version: asDocVersion(1), destinations, next: null, truncated: false }));
       }
       return Promise.resolve(
-        ok({ version: asDocVersion(2), byteLength: 8192, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }),
+        ok({ version: asDocVersion(2), byteLength: 8192, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }),
       );
     });
     return { client, sent };
@@ -5189,7 +5243,7 @@ describe('generate table of contents', () => {
     expect(sent.map((call) => call.id)).toStrictEqual(['document.destinations', 'document.destinations', 'document.execute']);
     expect(sent[2]?.params).toStrictEqual({ docId: DOC, command: { kind: 'generateToc', at: 0, entries: left } });
     expect(record.applied).toStrictEqual([
-      { version: 2, byteLength: 8192, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
+      { version: 2, byteLength: 8192, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 },
     ]);
   });
 
@@ -5313,7 +5367,7 @@ describe('protectDocumentCommand', () => {
     const sent: { id: string; params: unknown }[] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
-      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
+      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
     });
     return { client, sent };
   }
@@ -5445,7 +5499,7 @@ describe('protectDocumentCommand', () => {
             }),
           );
         }
-        return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
+        return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
       });
       return { client, sent };
     }
@@ -6716,7 +6770,7 @@ describe('applyDocumentCommand stamps a creation command at the moment it is sen
       // THE COMMANDS SENT, and nothing a command READS first: a stamp dialog reads the font list before it opens.
       if (id === 'app.fontFamilies') return Promise.resolve(ok(FONTS));
       sent.push((params as { command: unknown }).command);
-      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
+      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
     });
     return { client, sent };
   }
@@ -7167,7 +7221,7 @@ describe('every file write confirms, and its Show in folder reveals the file the
 describe('an edit main answers breaks-signatures for (ADR-0149)', () => {
   const SANITIZE: DispatchableCommand = { kind: 'sanitizeDocument', parts: ['javascript'] };
   const COPY = asDocId('doc-copy');
-  const APPLIED = { version: asDocVersion(5), byteLength: 4096, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] };
+  const APPLIED = { version: asDocVersion(5), byteLength: 4096, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 };
 
   /** Main as ADR-0149 has it: `breaks-signatures` until the edit is sent agreed, and `editCopy` answering `copy`. */
   function signedMain(copy: unknown = { kind: 'cancelled' }): {

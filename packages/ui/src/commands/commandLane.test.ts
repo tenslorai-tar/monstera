@@ -41,7 +41,7 @@ function fakeMain(): Main {
     }
     calls.push({ kind: command.kind, named, applied: true });
     version = asDocVersion(Number(version) + 1);
-    return ok({ version, byteLength: 1024, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] });
+    return ok({ version, byteLength: 1024, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 });
   });
   return {
     client,

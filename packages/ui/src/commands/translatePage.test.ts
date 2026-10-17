@@ -65,7 +65,7 @@ async function run(options: {
   const answers: Readonly<Record<string, unknown>> = {
     'ai.models': { source: 'fetched', models: [{ id: 'first-model', label: 'First', capabilities: { vision: null, streaming: null } }] },
     'ai.translatePage': { kind: 'translated', version: 4, edit: blockEditOf(BLOCKS), rewrite: 'objects' },
-    'document.execute': { version: asDocVersion(5), byteLength: 900, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
+    'document.execute': { version: asDocVersion(5), byteLength: 900, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 },
     ...options.answers,
   };
   const calls = new Map<string, number>();
@@ -200,9 +200,9 @@ describe('translatePageCommand', () => {
         dialog: { ...TWO_PAGES, what: { scope: 'pages', pages: [0, 1, 2] } },
         sequences: {
           'document.execute': [
-            { version: asDocVersion(5), byteLength: 900, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
-            { version: asDocVersion(6), byteLength: 900, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
-            { version: asDocVersion(7), byteLength: 900, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
+            { version: asDocVersion(5), byteLength: 900, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 },
+            { version: asDocVersion(6), byteLength: 900, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 },
+            { version: asDocVersion(7), byteLength: 900, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 },
           ],
         },
       });

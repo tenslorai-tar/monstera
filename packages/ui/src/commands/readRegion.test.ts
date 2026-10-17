@@ -16,7 +16,7 @@ import { type RegionReadCommand, isRegionRead, readRegionInPanel } from './readR
 const DOC = asDocId('00000000-0000-4000-8000-0000000000c7');
 const REGION = { x0: 50, y0: 100, x1: 250, y1: 160 };
 const COMMAND: RegionReadCommand = { kind: 'ocrPage', page: 1, languages: ['eng'], engine: 'claude', region: REGION };
-const APPLIED = { version: asDocVersion(5), byteLength: 4096, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] };
+const APPLIED = { version: asDocVersion(5), byteLength: 4096, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 };
 /** A Letter page at zoom 1, turned 0, with the crop box at the origin: display y runs down from 792, PDF y up from 0. */
 const PAGE: OverlayPage = { crop: [0, 0, 612, 792], rotation: 0, zoom: 1 };
 /**

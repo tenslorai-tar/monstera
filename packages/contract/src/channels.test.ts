@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { createClient, wrapHandlers } from './boundary.js';
 import {
   LAYERS_PART,
+  MAX_BACKUP_COPIES,
   MAX_RANGE_BYTES,
   channelIds,
   channels,
@@ -136,7 +137,7 @@ const handlers: ContractHandlers = {
   'document.execute': () =>
     // A BOX, NOT NONE (ADR-0174): an empty list is also what a boundary that dropped the field would hand back.
     Promise.resolve(
-      ok({ version: asDocVersion(1), byteLength: 4096, historyDropped: 0, boxed: [{ character: '中', page: 0 }], more: 2, unsealedCopies: [] }),
+      ok({ version: asDocVersion(1), byteLength: 4096, historyDropped: 0, boxed: [{ character: '中', page: 0 }], more: 2, unsealedCopies: [], unsealedUndoCopies: 0 }),
     ),
   'document.save': () => Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(1), cleared: null, held: [] })),
   'document.deleteHeldCopies': () => Promise.resolve(ok({ held: [] })),
@@ -554,7 +555,7 @@ describe('the shipping contract, exercised through its own map', () => {
         command: { kind: 'rotatePages', pages: [0], quarterTurns: 1 },
       }),
     ).resolves.toStrictEqual(
-      ok({ version: 1, byteLength: 4096, historyDropped: 0, boxed: [{ character: '中', page: 0 }], more: 2, unsealedCopies: [] }),
+      ok({ version: 1, byteLength: 4096, historyDropped: 0, boxed: [{ character: '中', page: 0 }], more: 2, unsealedCopies: [], unsealedUndoCopies: 0 }),
     );
   });
 
@@ -936,6 +937,29 @@ describe('a block’s run fonts are bounded bytes, and every run names one the a
     expect(answer.safeParse(tooMany).success).toBe(false);
     expect(answer.safeParse({ version, fonts: [new Uint8Array(4)], runs: [0, 1] }).success).toBe(false);
     expect(answer.safeParse({ version, fonts: ['AAEAAA'], runs: [0] }).success).toBe(false);
+  });
+});
+
+describe('the copies a protect could not seal: backups by name, undo copies by count (ADR-0178, VVVVVVV-7)', () => {
+  const executed = channels['document.execute'].result;
+  const redone = channels['document.redo'].result;
+  const version = asDocVersion(3);
+  const names = (count: number) => Array.from({ length: count }, (_, at) => `report.pdf.bak${String(at)}`);
+  const applied = (copies: string[], undo: number) =>
+    ({ version, byteLength: 4096, historyDropped: 0, boxed: [], more: 0, unsealedCopies: copies, unsealedUndoCopies: undo });
+
+  it('eleven undo copies are a count and parse, on both answers a protect can come back in', () => {
+    expect(executed.safeParse(applied([], 11)).success).toBe(true);
+    expect(redone.safeParse({ kind: 'redone', version, byteLength: 4096, unsealedCopies: [], unsealedUndoCopies: 11 }).success).toBe(true);
+  });
+
+  it('CONTROL: the same eleven as names are refused, which is how the one list failed its own schema', () => {
+    expect(executed.safeParse(applied(names(MAX_BACKUP_COPIES + 1), 0)).success).toBe(false);
+    expect(executed.safeParse(applied(names(MAX_BACKUP_COPIES), 0)).success).toBe(true);
+  });
+
+  it('CONTROL: a redo answer without the two fields is refused, so a handler that drops them is a red build', () => {
+    expect(redone.safeParse({ kind: 'redone', version, byteLength: 4096 }).success).toBe(false);
   });
 });
 

@@ -1441,7 +1441,7 @@ describe('App', () => {
     it('the ROTATE control names the SAME page the renderer asked the model about', async () => {
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
-        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 },
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
@@ -1484,7 +1484,7 @@ describe('App', () => {
         ...OPEN_DOCUMENT_ANSWERS,
         'document.pageTextLayer': { version: asDocVersion(1), lines: [], truncated: false, kind: 'image-only' as const },
         'app.ocrLanguages': { languages: ['eng', 'deu'] },
-        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 },
         'document.exportText': { kind: 'copied' as const, bytes: 10, written: asFileHandle('Handle-text-export') },
       };
 
@@ -1575,7 +1575,7 @@ describe('App', () => {
       // defect with two extra controls on it.
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
-        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 },
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
@@ -1603,7 +1603,7 @@ describe('App', () => {
       // registered. This is the case that needs all three to be true.
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
-        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 },
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
@@ -1638,7 +1638,7 @@ describe('App', () => {
       // because the document is untouched either way.
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
-        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 },
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
@@ -1666,7 +1666,7 @@ describe('App', () => {
           groups: [{ pages: [0, 3] }],
           truncated: false,
         },
-        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 },
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
@@ -1703,7 +1703,7 @@ describe('App', () => {
       // and the case that says an empty field means zero rather than blocking.
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
-        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 },
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
@@ -1744,7 +1744,7 @@ describe('App', () => {
       // scroll rather than a bug.
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
-        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 },
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
@@ -1776,7 +1776,7 @@ describe('App', () => {
       // a control wired to its neighbour dispatches just as correctly.
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
-        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 },
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
@@ -1809,7 +1809,7 @@ describe('App', () => {
       // separate.
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
-        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 },
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
@@ -2314,7 +2314,7 @@ describe('App', () => {
       // requests cannot carry this claim.
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
-        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 },
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
@@ -2361,7 +2361,13 @@ describe('App', () => {
       // from nothing until 2026-09-24; the count of two is what says both routes are live.
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
-        'document.redo': { kind: 'redone' as const, version: asDocVersion(3), byteLength: 900 },
+        'document.redo': {
+          kind: 'redone' as const,
+          version: asDocVersion(3),
+          byteLength: 900,
+          unsealedCopies: [],
+          unsealedUndoCopies: 0,
+        },
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
@@ -2401,7 +2407,7 @@ describe('App', () => {
     it('FORMS › MANAGE › FLATTEN asks, then sends flattenFormFields and says it did (F-F1)', async () => {
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
-        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 },
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
@@ -2447,7 +2453,7 @@ describe('App', () => {
       const client = createClient(channels, (id) => {
         if (id === 'document.execute') {
           version += 1;
-          return Promise.resolve(ok({ version: asDocVersion(version), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
+          return Promise.resolve(ok({ version: asDocVersion(version), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
         }
         if (id === 'document.save') return Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(version), cleared: null, held: [] }));
         if (id === 'cloud.saveBack') {
@@ -2507,7 +2513,7 @@ describe('App', () => {
           sent.push({ id, params });
           if (id === 'document.execute') {
             version += 1;
-            return Promise.resolve(ok({ version: asDocVersion(version), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
+            return Promise.resolve(ok({ version: asDocVersion(version), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
           }
           if (id === 'document.save') return Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(version), cleared: null, held: [] }));
           const answer = (OPEN_DOCUMENT_ANSWERS as Readonly<Record<string, unknown>>)[id] ?? OTHER_ANSWERS[id];
@@ -3090,7 +3096,7 @@ describe('App', () => {
         next: null,
         truncated: false,
       },
-      'document.execute': { version: asDocVersion(2), byteLength: 1024, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
+      'document.execute': { version: asDocVersion(2), byteLength: 1024, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 },
     });
     render(<App client={client} settings={freshSettings()} />);
     await withDocumentOpen();
@@ -4620,7 +4626,7 @@ describe('Settings › Saving › Confirm before redacting (Part F)', () => {
       if (confirmOff) settings.set('saving.confirm-redaction', false);
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
-        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 },
         // ONE MARK, so Apply has something to burn in: with none it says so and offers nothing (F-P1).
         'document.annotations': {
           version: asDocVersion(1),

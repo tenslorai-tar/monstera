@@ -133,6 +133,12 @@ export type ShellFailureEvent =
    */
   | 'inline-images-left'
   /**
+   * A copy a protect could not encrypt (ADR-0178's 2026-10-17 correction): which copy and the error its seal threw. The
+   * person's window counts or names the copy; this line is where a dead host and another program holding the copy are
+   * told apart.
+   */
+  | 'copy-unsealed'
+  /**
    * Rows of a workbook an Office import could not convert (decision C): which sheet and which rows. The person's dialog
    * names them when the PDF opens; this line holds them whatever the open answered, since the file on disk lacks them.
    */

@@ -410,7 +410,18 @@ export interface ProtectedCopies {
   readonly seal: (docId: DocId, path: string, command: CommandOfKind<'setDocumentProtection'>) => Promise<number | undefined>;
   /** Rewrites the live session's snapshot from the canonical image, which a protect has just made encrypted. */
   readonly refreshSnapshot: (docId: DocId) => Promise<void>;
+  /** Records why the copy at `path` could not be sealed, before it is answered as unsealed (ADR-0178, VVVVVVV-12). */
+  readonly sealFailed: (path: string, cause: unknown) => void;
 }
+
+/** What a protect's seal pass could not encrypt: the backups beside the file by name, and how many undo copies. */
+interface UnsealedCopies {
+  readonly copies: readonly string[];
+  readonly undoCopies: number;
+}
+
+/** A pass that left nothing unsealed: every command but a protect, and an undo. */
+const NONE_UNSEALED: UnsealedCopies = { copies: [], undoCopies: 0 };
 
 /** The terms the holder follows, for a protect; `undefined` for every other command. */
 function protectionTermsOf(command: Command): ProtectionTerms | undefined {
@@ -2443,6 +2454,8 @@ export interface Applied {
    * that sealed every copy. A protect that applied is not failed by a copy another program holds; the person is told.
    */
   readonly unsealedCopies: readonly string[];
+  /** How many undo copies a protect could not encrypt; zero for every other command (ADR-0178's 2026-10-17 correction). */
+  readonly unsealedUndoCopies: number;
 }
 
 /**
@@ -3904,7 +3917,7 @@ export class DocumentCommands {
     const protectedAt: { path: string | undefined } = { path: undefined };
     // THE COPIES A PROTECT COULD NOT SEAL, held across the lane like `protectedAt`: a protect that applied names them
     // rather than failing (ADR-0178). Empty for every other command, and for a protect that sealed every copy.
-    const unsealed: { copies: readonly string[] } = { copies: [] };
+    const unsealed: { copies: UnsealedCopies } = { copies: NONE_UNSEALED };
     const { version, value: byteLength } = await this.#documents.run(docId, async (context) => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
@@ -3971,7 +3984,8 @@ export class DocumentCommands {
         byteLength: context.byteLength,
         historyDropped: trimmed.droppedEntries + followed,
         ...cappedBoxes(drawn),
-        unsealedCopies: unsealed.copies,
+        unsealedCopies: unsealed.copies.copies,
+        unsealedUndoCopies: unsealed.copies.undoCopies,
       };
     });
 
@@ -4122,9 +4136,11 @@ export class DocumentCommands {
     // and this is the same statement at the boundary. A field omitted here
     // would make the renderer's obligation optional on one path.
     // NO BOXES, the bus's `TOLD_AT_THE_EDIT` at the boundary (ADR-0174 Decision 3).
-    // NO UNSEALED COPIES: undo and redo seal nothing — a protect's seal pass is its own and runs at apply, not here
-    // (ADR-0178). A field omitted here would make the renderer's obligation optional on one path, `historyDropped`'s reason.
-    return stepped.yes ? { version, byteLength, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] } : undefined;
+    // NO UNSEALED COPIES: an undo seals nothing, so it leaves nothing unsealed (ADR-0178). A field omitted here would make
+    // the renderer's obligation optional on one path, `historyDropped`'s reason.
+    return stepped.yes
+      ? { version, byteLength, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }
+      : undefined;
   }
 
   /**
@@ -4165,6 +4181,8 @@ export class DocumentCommands {
   async redo(docId: DocId): Promise<Applied | undefined> {
     const stepped = { yes: false };
     const protectedAt: { path: string | undefined } = { path: undefined };
+    // WHAT A REDONE PROTECT COULD NOT SEAL, held across the lane as `execute` holds it (ADR-0178's 2026-10-17 correction).
+    const unsealed: { copies: UnsealedCopies } = { copies: NONE_UNSEALED };
 
     const { version, value: byteLength } = await this.#documents.run(docId, async (context) => {
       const failures = this.#engine.poisoned(docId);
@@ -4188,7 +4206,7 @@ export class DocumentCommands {
       // A REDONE PROTECT SEALS AGAIN, for a copy written while it was undone.
       const redone = protect === undefined ? undefined : this.#bus.protectOf(protect);
       if (redone !== undefined) {
-        await this.#sealPlaintextCopies(docId, context, redone);
+        unsealed.copies = await this.#sealPlaintextCopies(docId, context, redone);
         protectedAt.path = context.path;
       }
       return context.byteLength;
@@ -4197,9 +4215,19 @@ export class DocumentCommands {
     // `execute`'s retake, for a redone protect.
     if (protectedAt.path !== undefined) void this.#recentPicture.retake(docId, protectedAt.path);
     // NO BOXES, the bus's `TOLD_AT_THE_EDIT` at the boundary (ADR-0174 Decision 3).
-    // NO UNSEALED COPIES: undo and redo seal nothing — a protect's seal pass is its own and runs at apply, not here
-    // (ADR-0178). A field omitted here would make the renderer's obligation optional on one path, `historyDropped`'s reason.
-    return stepped.yes ? { version, byteLength, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] } : undefined;
+    // THE COPIES A REDONE PROTECT COULD NOT SEAL, as `execute` answers them: the seal pass above is the protect's own,
+    // and a copy it could not write is the person's to be told of whichever command ran it (VVVVVVV-6).
+    return stepped.yes
+      ? {
+          version,
+          byteLength,
+          historyDropped: 0,
+          boxed: [],
+          more: 0,
+          unsealedCopies: unsealed.copies.copies,
+          unsealedUndoCopies: unsealed.copies.undoCopies,
+        }
+      : undefined;
   }
 
   /**
@@ -7116,25 +7144,28 @@ export class DocumentCommands {
    * rewritten from the new canonical image main holds, with no external file to be held — so its failure is a host
    * fault that still throws.
    *
-   * @returns the basenames of the copies this could not seal, empty when every copy was sealed or left encrypted.
+   * @returns the basenames of the backups this could not seal and how many undo copies, each empty or zero when every
+   *   copy was sealed or left encrypted. Apart because the backups are bounded by their count and named to the person,
+   *   and the undo copies are neither (ADR-0178's 2026-10-17 correction).
    */
   async #sealPlaintextCopies(
     docId: DocId,
     context: DocumentContext,
     command: CommandOfKind<'setDocumentProtection'>,
-  ): Promise<readonly string[]> {
+  ): Promise<UnsealedCopies> {
     await this.#copies.refreshSnapshot(docId);
     // A SEAL THAT THROWS IS `'unsealed'`, never a thrown command: the copy another program holds is named, not fatal.
+    // ITS CAUSE IS LOGGED FIRST, so a dead host and a held copy, which answer the same here, differ in the log.
     const trySeal = async (path: string): Promise<number | undefined | 'unsealed'> => {
       try {
         return await this.#copies.seal(docId, path, command);
-      } catch {
+      } catch (thrown) {
+        this.#copies.sealFailed(path, thrown);
         return 'unsealed';
       }
     };
     const unsealed: string[] = [];
     const { unsealed: checkpoints } = await this.#bus.resealCopies(context, trySeal);
-    for (const path of checkpoints) unsealed.push(basename(path));
     for (const path of copyNames(this.#save.deps.names(context.path))) {
       await this.#save.provenance.rewriteIfMade(path, async (made) => {
         const sealed = await trySeal(made);
@@ -7144,7 +7175,7 @@ export class DocumentCommands {
         return typeof sealed === 'number';
       });
     }
-    return unsealed;
+    return { copies: unsealed, undoCopies: checkpoints.length };
   }
 
   /** The owed copies among this document's backup names, tried again; the names still held. */

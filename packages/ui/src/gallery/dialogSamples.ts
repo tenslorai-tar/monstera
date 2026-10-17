@@ -893,13 +893,17 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
       },
     },
   ],
-  // THE OLDER COPIES A PROTECT COULD NOT ENCRYPT, by name (ADR-0178).
+  // THE OLDER COPIES A PROTECT COULD NOT ENCRYPT, backups by name and undo copies by count (ADR-0178).
   'dialog.unsealed-copies': [
-    { state: 'opened', props: { copies: ['quarterly report.pdf.bak'] } },
+    { state: 'opened', props: { copies: ['quarterly report.pdf.bak'], undoCopies: 0 } },
     {
       state: 'several',
-      props: { copies: ['quarterly report.pdf.bak', 'quarterly report.pdf.previous', 'quarterly report (1).pdf.bak'] },
+      props: {
+        copies: ['quarterly report.pdf.bak', 'quarterly report.pdf.previous', 'quarterly report (1).pdf.bak'],
+        undoCopies: 0,
+      },
     },
+    { state: 'undo-copies', props: { copies: ['quarterly report.pdf.bak'], undoCopies: 4 } },
   ],
   'dialog.open-from-url': [
     ...textForm('Address', 'https://example.com/reports/quarterly-report.pdf'),

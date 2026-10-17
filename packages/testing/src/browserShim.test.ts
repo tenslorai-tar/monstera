@@ -203,6 +203,7 @@ describe('browser shim', () => {
       'ai.translatePage',
       'ai.translateText',
       'app.acknowledgeSecurityUpdate',
+      'app.bundledFace',
       'app.clearBackups',
       'app.components',
       'app.fontFamilies',
@@ -405,7 +406,7 @@ describe('browser shim', () => {
       // to avoid.
       expect(executed).toStrictEqual({
         ok: true,
-        value: { version: 4, byteLength: 1024, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
+        value: { version: 4, byteLength: 1024, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 },
       });
     });
 

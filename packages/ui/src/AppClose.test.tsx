@@ -113,7 +113,7 @@ function client(options: {
           marked.delete(docId);
           unsaved.add(docId);
         }
-        return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 1024, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
+        return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 1024, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
       case 'document.save':
         return Promise.resolve(
           ok(

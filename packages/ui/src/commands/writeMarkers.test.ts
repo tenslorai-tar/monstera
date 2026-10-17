@@ -28,7 +28,7 @@ describe('the write markers', () => {
     const client = createClient(channels, () =>
       new Promise((resolve) => {
         answer = () => {
-          resolve(ok({ version: asDocVersion(2), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
+          resolve(ok({ version: asDocVersion(2), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
         };
       }),
     );

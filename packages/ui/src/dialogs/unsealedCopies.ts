@@ -19,7 +19,12 @@ export const UNSEALED_COPIES_DIALOG_ID = 'dialog.unsealed-copies';
  * Its own window rather than a reason of the save-problem one, whose title says a save did not write: this protect
  * DID apply, and the caveat is about copies beside the document, not the document itself.
  */
-export const unsealedCopiesSchema = z.object({ copies: z.array(z.string()).min(1) }).strict();
+// THE BACKUPS BY NAME AND THE UNDO COPIES BY COUNT (ADR-0178's 2026-10-17 correction): an undo copy's name tells a
+// person nothing and there can be any number of them. One of the two is never empty, or there is nothing to tell.
+export const unsealedCopiesSchema = z
+  .object({ copies: z.array(z.string()), undoCopies: z.number().int().nonnegative() })
+  .strict()
+  .refine((props) => props.copies.length > 0 || props.undoCopies > 0, 'a window about no copy');
 
 export type UnsealedCopies = z.infer<typeof unsealedCopiesSchema>;
 

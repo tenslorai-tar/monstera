@@ -3489,7 +3489,13 @@ function redoHandler(commands: DocumentCommands): ContractHandlers['document.red
       return ok(
         applied === undefined
           ? ({ kind: 'nothing-to-redo' } as const)
-          : ({ kind: 'redone', version: applied.version, byteLength: applied.byteLength } as const),
+          : ({
+              kind: 'redone',
+              version: applied.version,
+              byteLength: applied.byteLength,
+              unsealedCopies: applied.unsealedCopies,
+              unsealedUndoCopies: applied.unsealedUndoCopies,
+            } as const),
       );
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });

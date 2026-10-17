@@ -917,10 +917,20 @@ async function sendInLane(
   // THE COPIES A PROTECT COULD NOT ENCRYPT (ADR-0178), named here for the same reason — every command's answer passes
   // through — and empty for all but a protect that left one unsealed. The protect's own *Protection set* toast is
   // true and stands; this is its caveat, so the person learns the older copies may still hold the document as it was.
-  if (answer.value.unsealedCopies.length > 0) {
-    void deps.ask(UNSEALED_COPIES_DIALOG_ID, { copies: [...answer.value.unsealedCopies] });
-  }
+  tellUnsealed(deps, answer.value);
   return true;
+}
+
+/**
+ * The copies a protect could not encrypt, told once (ADR-0178): by an applied command's answer and by a redo's, since
+ * a redone protect runs the seal pass again. Nothing when there is none, which is every answer but a protect's.
+ */
+function tellUnsealed(
+  deps: Pick<DocumentCommandDeps, 'ask'>,
+  answer: { readonly unsealedCopies: readonly string[]; readonly unsealedUndoCopies: number },
+): void {
+  if (answer.unsealedCopies.length === 0 && answer.unsealedUndoCopies === 0) return;
+  void deps.ask(UNSEALED_COPIES_DIALOG_ID, { copies: [...answer.unsealedCopies], undoCopies: answer.unsealedUndoCopies });
 }
 
 /**
@@ -2712,6 +2722,7 @@ export function redoCommand(deps: DocumentCommandDeps): UiCommand {
       }
       if (answer.value.kind !== 'redone') return;
       deps.onApplied({ version: answer.value.version, byteLength: answer.value.byteLength });
+      tellUnsealed(deps, answer.value);
     },
   };
 }

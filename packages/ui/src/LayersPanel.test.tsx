@@ -57,7 +57,7 @@ function clientAnswering(
   const client = createClient(channels, (id, params) => {
     if (id === 'document.execute') {
       executed.push(params);
-      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 1024, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
+      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 1024, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
     }
     if (id !== 'document.layers') throw new Error(`unexpected channel ${id}`);
     asked.push(params);

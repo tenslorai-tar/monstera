@@ -2440,8 +2440,13 @@ export const channels = {
        * **REQUIRED and empty for every command but a protect that left a copy unsealed**, `historyDropped`'s reason:
        * a plaintext copy of a protected document is the person's to be told of (invariant 18's *never silent*), and
        * an optional field is one a renderer satisfies by not reading it. Every other command answers `[]`.
+       *
+       * THE BACKUPS BESIDE THE FILE ONLY, so the backup count bounds it (ADR-0178's 2026-10-17 correction): the undo
+       * copies have no count bound and a name that tells a person nothing, so they are counted below instead.
        */
       unsealedCopies: heldCopiesSchema.readonly(),
+      /** How many undo copies a protect could not encrypt: required, and zero for every other command (ADR-0178). */
+      unsealedUndoCopies: z.number().int().nonnegative(),
     }),
     // `stale-target` IS ON THIS CHANNEL ALONE, because a command is the only
     // thing that names existing state (ADR-0041 Decision 2). A read answers with
@@ -2576,6 +2581,11 @@ export const channels = {
         kind: z.literal('redone'),
         version: docVersionSchema,
         byteLength: z.number().int().nonnegative(),
+        // WHAT A REDONE PROTECT COULD NOT ENCRYPT, `document.execute`'s two fields and their reason: a redo of a protect
+        // runs the seal pass again, and a copy it could not write is the person's to be told of (ADR-0178's 2026-10-17
+        // correction). Required, and empty or zero for every other redo.
+        unsealedCopies: heldCopiesSchema.readonly(),
+        unsealedUndoCopies: z.number().int().nonnegative(),
       }),
       z.object({ kind: z.literal('nothing-to-redo') }),
     ]),

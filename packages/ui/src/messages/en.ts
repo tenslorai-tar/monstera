@@ -879,6 +879,7 @@ export const BOXED_CHARACTERS_SAID_EDIT = messageKey('dialog.boxed-characters.sa
 export const BOXED_CHARACTERS_ON_PAGE = messageKey('dialog.boxed-characters.on-page');
 export const UNSEALED_COPIES_TITLE = messageKey('dialog.unsealed-copies.title');
 export const UNSEALED_COPIES_SAID = messageKey('dialog.unsealed-copies.said');
+export const UNSEALED_UNDO_COPIES = messageKey('dialog.unsealed-copies.undo');
 export const MARKDOWN_IMPORT_ABSENT = messageKey('dialog.markdown-import-problem.absent');
 export const MARKDOWN_IMPORT_AT_CAPACITY = messageKey('dialog.markdown-import-problem.at-capacity');
 export const MARKDOWN_IMPORT_IMAGE_UNREADABLE = messageKey(
@@ -6481,6 +6482,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'The password and permissions are set. These older copies could not be encrypted, perhaps because another ' +
     'program has one open, so they may still hold the document as it was. Close any program using them and protect ' +
     'the document again to finish.',
+  [UNSEALED_UNDO_COPIES]:
+    '{count, plural, one {# copy Monstera keeps for Undo} other {# copies Monstera keeps for Undo}}',
   [MARKDOWN_IMPORT_CONVERSION_FAILED]:
     'That file could not be turned into a PDF. It may be damaged, or not the kind of file its name says. ' +
     'Nothing was imported.',

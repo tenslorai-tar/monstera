@@ -46,7 +46,7 @@ function clientOver(answers: Readonly<Record<number, PageAdjustmentOutcome | 'bu
     if (id === 'document.execute') {
       dispatched.push((params as { command: Command }).command);
       return Promise.resolve(
-        ok({ version: asDocVersion(2), byteLength: 1024, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }),
+        ok({ version: asDocVersion(2), byteLength: 1024, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }),
       );
     }
     throw new Error(`unexpected channel ${id}`);

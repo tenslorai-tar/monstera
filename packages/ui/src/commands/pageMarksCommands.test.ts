@@ -64,7 +64,7 @@ function recording(marks: PageMarksRead): { readonly client: ContractClient; rea
     sent.push({ id, params });
     if (id === 'document.pageMarks') return Promise.resolve(ok({ version: asDocVersion(1), marks }));
     if (id === 'app.fontFamilies') return Promise.resolve(ok(FONTS));
-    return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
+    return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
   });
   return { client, sent };
 }

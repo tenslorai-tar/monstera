@@ -1534,6 +1534,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
           more: 0,
           // NONE BY DEFAULT and a set a test controls (ADR-0178): the shim seals no copies, so a protect names none.
           unsealedCopies: [...(options.unsealed?.get(docId) ?? [])],
+          unsealedUndoCopies: 0,
         }),
       );
     },
@@ -1580,7 +1581,14 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       const next = current + 1;
       versions.set(docId, next);
       return Promise.resolve(
-        ok({ kind: 'redone' as const, version: asDocVersion(next), byteLength: byteLengthOf(docId) }),
+        // NO UNSEALED COPIES: the shim seals none, as its `document.execute` says.
+        ok({
+          kind: 'redone' as const,
+          version: asDocVersion(next),
+          byteLength: byteLengthOf(docId),
+          unsealedCopies: [],
+          unsealedUndoCopies: 0,
+        }),
       );
     },
     /**

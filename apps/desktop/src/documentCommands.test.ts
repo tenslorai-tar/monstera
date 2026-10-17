@@ -986,6 +986,7 @@ const INERT = {
   copies: {
     seal: () => Promise.reject(new Error('INERT: this case seals no copy')),
     refreshSnapshot: () => Promise.reject(new Error('INERT: this case seals no snapshot')),
+    sealFailed: () => undefined,
   },
   // REFUSES BY NAME, like every inert surface: a case that reached a page sent to another
   // application without meaning to fails at the call rather than opening or watching anything.
@@ -1077,6 +1078,7 @@ const LOCAL_READS = {
       }),
     // NO HOST, so no host snapshot: a case that writes snapshots supplies its own.
     refreshSnapshot: () => Promise.resolve(),
+    sealFailed: () => undefined,
   },
 } as const satisfies Omit<DocumentCommandsParts, keyof Varying>;
 
@@ -7521,6 +7523,8 @@ describe('a protect in this session: the holder follows it', () => {
     readonly restores: () => number;
     readonly held: EngineSessions;
     readonly retakes: readonly string[];
+    /** Each copy whose seal threw, with the error, as `sealFailed` was told of it. */
+    readonly sealFailures: readonly { readonly path: string; readonly cause: unknown }[];
   }> {
     const root = mkdtempSync(join(tmpdir(), 'monstera-protect-follows-'));
     const plain = await PDFDocument.create();
@@ -7560,12 +7564,20 @@ describe('a protect in this session: the holder follows it', () => {
     const refreshFromImage = async (id: DocId): Promise<void> => {
       if (snapshot !== undefined) await canonicalImageWrite(own, id)(snapshot);
     };
+    const sealFailures: { path: string; cause: unknown }[] = [];
+    const sealFailed = (failedPath: string, cause: unknown): void => {
+      sealFailures.push({ path: failedPath, cause });
+    };
     const copies: ProtectedCopies =
       sealing === 'skip'
-        ? { seal: () => Promise.resolve(undefined), refreshSnapshot: () => Promise.resolve() }
+        ? { seal: () => Promise.resolve(undefined), refreshSnapshot: () => Promise.resolve(), sealFailed }
         : sealing === 'throws'
-          ? { seal: () => Promise.reject(new Error('INERT: another program holds this copy')), refreshSnapshot: refreshFromImage }
-          : { seal: LOCAL_READS.copies.seal, refreshSnapshot: refreshFromImage };
+          ? {
+              seal: () => Promise.reject(new Error('INERT: another program holds this copy')),
+              refreshSnapshot: refreshFromImage,
+              sealFailed,
+            }
+          : { seal: LOCAL_READS.copies.seal, refreshSnapshot: refreshFromImage, sealFailed };
     const commands = new DocumentCommands({
       ...LOCAL_READS,
       copies,
@@ -7611,7 +7623,7 @@ describe('a protect in this session: the holder follows it', () => {
         stage: stagingFrom(flushHeld),
       },
     });
-    return { commands, docId, root, path, restores: () => restores, held, retakes };
+    return { commands, docId, root, path, restores: () => restores, held, retakes, sealFailures };
   }
 
   it('the undo of a terminal command after a protect reopens its checkpoint with the protect’s key', async () => {
@@ -7754,14 +7766,46 @@ describe('a protect in this session: the holder follows it', () => {
     // The glue between the kernel half (`resealCopies` collects the `'unsealed'` paths) and the UI half (the window
     // names them): the host maps a thrown seal to that outcome WITHOUT failing the protect. Before ADR-0178 this
     // threw out of the lane and the applied protect was reported as a failure.
-    const { commands, docId, root } = await opened((held) => held, 'throws');
+    const { commands, docId, root, sealFailures } = await opened((held) => held, 'throws');
     try {
       const applied = await protectAfterCopies(commands, docId);
       // APPLIED, not thrown: a version came back, so the protect is recorded and the document saves encrypted.
       expect(applied.version).toBeGreaterThan(0);
-      // AND THE COPIES IT COULD NOT ENCRYPT ARE NAMED — the backup among them — so the person is told, not misled.
+      // AND THE COPIES IT COULD NOT ENCRYPT ARE TOLD — the backup by name, the undo copies by count, apart (ADR-0178's
+      // 2026-10-17 correction) — so the person is told, not misled.
       expect(applied.unsealedCopies).toContain('plain.pdf.bak');
-      expect(applied.unsealedCopies.length).toBeGreaterThanOrEqual(2);
+      expect(applied.unsealedCopies.every((name) => name.startsWith('plain.pdf'))).toBe(true);
+      expect(applied.unsealedUndoCopies).toBeGreaterThanOrEqual(1);
+      // EVERY ONE WITH ITS CAUSE, logged before it was answered as unsealed (VVVVVVV-12): one record per copy told.
+      expect(sealFailures).toHaveLength(applied.unsealedCopies.length + applied.unsealedUndoCopies);
+      expect(sealFailures.every(({ cause }) => cause instanceof Error && cause.message.includes('another program'))).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('a REDONE protect whose copy seal fails tells the copies too, where it answered none before (VVVVVVV-6)', async () => {
+    const { commands, docId, root } = await opened((held) => held, 'throws');
+    try {
+      await protectAfterCopies(commands, docId);
+      expect(await commands.undo(docId)).toBeDefined();
+      const redone = await commands.redo(docId);
+      // THE SEAL PASS RAN AGAIN AND COULD NOT WRITE: the answer says so rather than `[]` under a comment saying redo
+      // seals nothing.
+      expect(redone?.unsealedCopies).toContain('plain.pdf.bak');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('CONTROL: a redone protect that seals every copy tells none', async () => {
+    const { commands, docId, root } = await opened((held) => held, 'seal');
+    try {
+      await protectAfterCopies(commands, docId);
+      expect(await commands.undo(docId)).toBeDefined();
+      const redone = await commands.redo(docId);
+      expect(redone?.unsealedCopies).toStrictEqual([]);
+      expect(redone?.unsealedUndoCopies).toBe(0);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -7775,6 +7819,7 @@ describe('a protect in this session: the holder follows it', () => {
       // EMPTY: every copy sealed, so nothing is named. A host that named every non-rewritten copy — a left one too —
       // would fail here, which is why `resealCopies` keeps `'unsealed'` distinct from `undefined`.
       expect(applied.unsealedCopies).toStrictEqual([]);
+      expect(applied.unsealedUndoCopies).toBe(0);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
