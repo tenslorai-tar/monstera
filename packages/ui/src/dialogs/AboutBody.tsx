@@ -65,9 +65,13 @@ export default function AboutBody({
         <dt>{_(ABOUT_CHANNEL_LABEL)}</dt>
         <dd>{_(CHANNEL_NAMES[installChannel])}</dd>
       </dl>
-      <p className="m-about__line">{_(ABOUT_WHAT)}</p>
-      <p className="m-about__line">{_(ABOUT_LICENCE)}</p>
-      <p className="m-about__line">{_(ABOUT_COPYRIGHT)}</p>
+      {/* THE PROSE IS ONE BLOCK of the column, its sentences a dialog's sentence apart (`--dialog-sentence-gap`); the
+          column's own 16 is between the logo, the facts and this block. */}
+      <div className="m-about__prose">
+        <p className="m-about__line">{_(ABOUT_WHAT)}</p>
+        <p className="m-about__line">{_(ABOUT_LICENCE)}</p>
+        <p className="m-about__line">{_(ABOUT_COPYRIGHT)}</p>
+      </div>
       <DialogFooter dismissal="close">
         <Button
           label={ABOUT_SOURCE}

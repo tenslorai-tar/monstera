@@ -1084,7 +1084,7 @@
 .m-dialog__body {
   display: flex;
   flex-direction: column;
-  gap: var(--space-8);
+  gap: var(--dialog-sentence-gap);
   /* The part that yields when the popup meets its bound: `min-block-size: 0` because a flex item's default minimum
      is its content, which would grow the popup past `max-block-size` instead of scrolling here. */
   flex: 1 1 auto;
@@ -1100,7 +1100,14 @@
 :where(.m-dialog__body > :only-child) {
   display: flex;
   flex-direction: column;
-  gap: var(--space-8);
+  gap: var(--dialog-sentence-gap);
+}
+
+/* A SENTENCE TAKES ITS SPACE FROM THE COLUMN (`--dialog-sentence-gap`), never from the browser's paragraph margin: in a
+   flex column a margin does not collapse into the gap, so a sentence sat 12 px from the top and 32 from the next. At no
+   specificity beyond the element's, so a dialog that spaces its own paragraphs still does. */
+:where(.m-dialog__body) p {
+  margin-block: 0;
 }
 
 :where(.m-dialog__body > :only-child > .m-button) {

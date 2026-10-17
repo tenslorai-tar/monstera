@@ -45,7 +45,7 @@ const THROUGH_THE_APPLICATION = [
   'dialog.wordCount',
 ] as const;
 
-/** Every other registered dialog, photographed here. Read from the gallery's samples, 2026-10-15: 89 ids, 107 in all. */
+/** Every other registered dialog, photographed here. Read from the gallery's samples, 2026-10-17: 92 ids, 110 in all. */
 const FROM_THE_GALLERY = [
   'dialog.apply-redactions',
   'dialog.boxed-characters',
@@ -97,9 +97,11 @@ const FROM_THE_GALLERY = [
   'dialog.open-from-url',
   'dialog.open-problem',
   'dialog.optimize',
+  'dialog.out-of-memory',
   'dialog.page-background',
   'dialog.page-barcodes',
   'dialog.page-transition',
+  'dialog.pages-left',
   'dialog.pdfa-removals',
   'dialog.pending-redactions',
   'dialog.permission-password-replaced',

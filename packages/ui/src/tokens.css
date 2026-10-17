@@ -489,6 +489,10 @@
   --space-20: 20px;
   --space-24: 24px;
   --space-32: 32px;
+  /* THE SPACE BETWEEN A DIALOG'S SENTENCES, and between the blocks of its column: one token (the owner's decision of
+     2026-10-17 on MMMMMMM-5). A paragraph in a dialog carries no margin of its own; before, about eighty dialogs spaced
+     a sentence by the browser's 12 px paragraph margin inside an 8 px column, and two problem dialogs by the column. */
+  --dialog-sentence-gap: var(--space-8);
 
   /* THE TYPEFACES (v5 §4). The UI face is Windows' own — Segoe UI Variable where the system has it — so the chrome
      draws in the platform's face and loads nothing. The brand face is Marcellus, the free OFL cut, bundled
