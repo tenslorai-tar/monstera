@@ -98,3 +98,25 @@ throw produced, and the false *failed*, are both gone.
   at the moment, named to the person, and removed by protecting again once it is free. That residual is what CR-DOC-10
   already accepts for a copy a save could not delete, and this brings the protect into line with it rather than
   inventing a stricter posture the delete path never had.
+
+## Correction, 2026-10-17 — undo copies are counted, a redo answers its seal, and a seal's failure is logged
+
+Three findings of the 2026-10-08 audit (VVVVVVV-6, -7 and -12 on the forms branch), read against the code on 2026-10-17:
+
+1. **A redone protect discarded what its seal pass could not write.** `redo` ran the seal and answered
+   `unsealedCopies: []` under a comment saying redo seals nothing, so a copy that could not be sealed after a redo was
+   the silent linger this ADR rejects. **A redo now answers the seal pass's result**, as `execute` does. Undo seals
+   nothing, and its empty answer is right.
+2. **The one list held two kinds of copy under one bound.** `unsealedCopies` was capped at `MAX_BACKUP_COPIES` while it
+   also carried every checkpoint of the undo history, which has no count bound, so eleven held copies made the answer
+   fail its own schema and reported the applied protect as failed again. A checkpoint's name is also a token that tells
+   a person nothing. **The answer now carries the two apart**: `unsealedCopies`, the backups beside the file by name,
+   bounded by the backup count as before; and `unsealedUndoCopies`, the number of undo copies not sealed, required and
+   zero when none. The window names the backups and says how many undo copies are left, with the same remedy.
+3. **A seal that threw left no trace of why.** `trySeal` maps a throw to `unsealed` at this boundary, which stays; it now
+   logs the copy and the thrown error first, so a dead host and another program holding the copy can be told apart in
+   the log.
+
+Proofs: a redo whose seal throws names the copy (control: a redo whose seal succeeds names none); eleven unsealed undo
+copies answer a count of eleven and parse (control: the same answer with eleven names in `unsealedCopies` is refused by
+the schema); a thrown seal writes one log line naming its cause.
