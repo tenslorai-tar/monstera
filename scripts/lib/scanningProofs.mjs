@@ -97,6 +97,9 @@ export const SCANNING_PROOFS = Object.freeze([
   'proof:affectedproofs',
   'proof:pathdispatch',
   'proof:boundaries',
+  // WALKS every script under `scripts/` for an import of a built module, importing none of them (SSSSSSS-21: two
+  // research scripts it reads changed in 7bb1d3ad and only Guards found it).
+  'proof:buildfreshness',
 ]);
 
 /**
@@ -111,7 +114,7 @@ export const SCANNING_PROOFS = Object.freeze([
  * from the very collection it is meant to anchor, and a number computed from a
  * collection cannot disagree with it.
  */
-export const SCANNING_PROOF_COUNT = 10;
+export const SCANNING_PROOF_COUNT = 11;
 
 /**
  * ENUMERATING a directory — the signal, and the first two were wrong.

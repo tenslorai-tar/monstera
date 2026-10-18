@@ -39,7 +39,10 @@
  * was compiled from, and any other existing file as a leaf (L8). A proof that
  * shells out to a script it never imports is invisible here, which is a stated
  * limit rather than a silent one — the report prints it whenever it names
- * anything.
+ * anything. So is a proof that READS files it never imports, a scan of the
+ * tree: those are named by hand in `scanningProofs.mjs`' roster, which this
+ * report prints, and a scanning proof missing from that roster is invisible to
+ * both (SSSSSSS-21: `proof:buildfreshness` was, until 2026-10-18).
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
