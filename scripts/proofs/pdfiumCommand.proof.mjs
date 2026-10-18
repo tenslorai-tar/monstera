@@ -71,6 +71,7 @@ import {
   PDFDict,
   PDFDocument,
   PDFName,
+  PDFNumber,
   PDFOperator,
   PDFOperatorNames,
   StandardFonts,
@@ -266,7 +267,7 @@ const failures = [];
 // THE COUNT IS MOVED ONLY WITH THE CASES IT COUNTS, and the commit that moves it names the cases it adds or removes. A
 // running ledger of the count was kept here until 2026-10-17 and had stopped at 246 against 274 (VVVVVVV-23): a second
 // copy of the history git already holds, which nothing compared with the count.
-const roster = createRoster(failures, { cases: 290 });
+const roster = createRoster(failures, { cases: 293 });
 
 /**
  * @param {string} name
@@ -567,6 +568,7 @@ async function main() {
   await fontChangeCases();
   await restyledRowCases();
   await doubleSpaceRestyleCases();
+  await keptSpacingCases();
   await keptMeasureCases();
   await gapSpacedCases();
   await spaceReadingCases();
@@ -904,6 +906,113 @@ async function restyledRowCases() {
  * set a letter in that font, and the measurement refused the edit, naming its own probe "x  x" as what the font could not
  * show; the person saw an empty "Can't show". The run is measured by its font's advances now (`fontAdvance`).
  */
+/**
+ * A line set with character and word spacing KEEPS IT when an edit sets it again (the owner's decision of 2026-10-18 on
+ * VVVVVVV-8, (c)): PDFium cannot read an object's Tc or Tw, so the writer measures them from the characters' places and
+ * widens the line it writes by them. READ BY A SECOND READER, pdf.js: the line's extent less the natural width of its text
+ * in Helvetica is the spacing drawn. The same reading of the untouched line is the instrument's positive control — it must
+ * see the spacing the fixture sets — and CONTROL: an identical line set with no spacing reads none, before and after.
+ */
+async function keptSpacingCases() {
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const LINE = 'Spaced words on a line';
+  const CHARACTER = 1.5;
+  const WORD = 4;
+  /** One Helvetica line at 12 points, set with `tc` and `tw`, and the Helvetica font to measure its text with. */
+  const spaced = async (/** @type {number} */ tc, /** @type {number} */ tw) => {
+    const document = await PDFDocument.create();
+    const page = document.addPage([612, 792]);
+    const font = await document.embedFont(StandardFonts.Helvetica);
+    const name = page.node.newFontDictionary('F1', font.ref);
+    page.pushOperators(
+      beginText(),
+      setFontAndSize(name, 12),
+      PDFOperator.of(PDFOperatorNames.SetCharacterSpacing, [PDFNumber.of(tc)]),
+      PDFOperator.of(PDFOperatorNames.SetWordSpacing, [PDFNumber.of(tw)]),
+      setTextMatrix(1, 0, 0, 1, 72, 700),
+      showText(font.encodeText(LINE)),
+      endText(),
+    );
+    return { bytes: await document.save(), font };
+  };
+  /**
+   * The line as pdf.js reads it: whether its letters are `expected`'s, and its extent less the natural Helvetica width of
+   * `expected`. BY LETTERS, ignoring white space: pdf.js splits a widely spaced line into an item per character with
+   * spaces of its own between them, which the extent is not changed by.
+   */
+  const added = async (
+    /** @type {Uint8Array} */ bytes,
+    /** @type {{ widthOfTextAtSize: (text: string, size: number) => number }} */ font,
+    /** @type {string} */ expected,
+  ) => {
+    const task = pdfjs.getDocument({ data: new Uint8Array(bytes), verbosity: 0 });
+    try {
+      const content = await (await (await task.promise).getPage(1)).getTextContent();
+      /** @type {{ str: string; x: number; width: number }[]} */
+      const items = content.items
+        .filter((/** @type {any} */ item) => typeof item.str === 'string' && item.str !== '')
+        .map((/** @type {any} */ item) => ({ str: item.str, x: item.transform[4], width: item.width }))
+        .sort((/** @type {{ x: number }} */ a, /** @type {{ x: number }} */ b) => a.x - b.x);
+      const letters = (/** @type {string} */ text) => text.replaceAll(/\s/gu, '');
+      const text = items.map((item) => item.str).join('');
+      const first = items[0];
+      const last = items.at(-1);
+      const extent = first === undefined || last === undefined ? 0 : last.x + last.width - first.x;
+      return { text, same: letters(text) === letters(expected), extra: extent - font.widthOfTextAtSize(expected, 12) };
+    } finally {
+      await task.destroy();
+    }
+  };
+  /** What spacing `tc` and `tw` add to `text`, as a reader draws it: after every character, and more after each space. */
+  const expected = (/** @type {string} */ text, /** @type {number} */ tc, /** @type {number} */ tw) =>
+    tc * Array.from(text).length + tw * Array.from(text).filter((character) => character === ' ').length;
+  /** The line with " more" typed at its end, written by the PDFium writer. */
+  const typed = async (/** @type {Uint8Array} */ bytes) => {
+    const session = await pdfiumWriter.open(bytes);
+    let lines;
+    try {
+      lines = groupIntoBlocks((await textRuns(session, 0)).runs.map((run) => ({ ...run, setting: settingOf(run.style) })))[0]?.lines ?? [];
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+    const words = paragraphsOfLines(lines.map((line) => ({ text: lineText(line.runs), soft: line.soft })));
+    return localPdfiumExecution.apply({
+      session: bytes,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf([{ lines: lines.map((line) => line.runs.map((run) => run.index)), soft: lines.map((line) => line.soft), text: `${words} more`, marks: [] }]),
+        fit: 'reflow',
+        version: 1,
+      }),
+      sources: [],
+      reads: undefined,
+    });
+  };
+
+  const MORE = `${LINE} more`;
+  const withSpacing = await spaced(CHARACTER, WORD);
+  const before = await added(withSpacing.bytes, withSpacing.font, LINE);
+  const after = await added(await typed(withSpacing.bytes), withSpacing.font, MORE);
+  record(
+    'the second reader sees the spacing the fixture sets, before any edit (the instrument’s positive control)',
+    before.same && Math.abs(before.extra - expected(LINE, CHARACTER, WORD)) < 1.5,
+    `${JSON.stringify(before.text)}: ${before.extra.toFixed(2)} pt added against ${expected(LINE, CHARACTER, WORD).toFixed(2)}`,
+  );
+  record(
+    'a line set with character and word spacing keeps both when an edit sets it again, read by pdf.js',
+    after.same && Math.abs(after.extra - expected(MORE, CHARACTER, WORD)) < 1.5,
+    `${JSON.stringify(after.text)}: ${after.extra.toFixed(2)} pt added against ${expected(MORE, CHARACTER, WORD).toFixed(2)}`,
+  );
+  const plain = await spaced(0, 0);
+  const plainAfter = await added(await typed(plain.bytes), plain.font, MORE);
+  record(
+    'CONTROL: the same line set with no spacing reads none after the same edit',
+    plainAfter.same && Math.abs(plainAfter.extra) < 1.5,
+    `${JSON.stringify(plainAfter.text)}: ${plainAfter.extra.toFixed(2)} pt added`,
+  );
+}
+
 async function doubleSpaceRestyleCases() {
   const fonts = fontsDirectory(root);
   const document = await PDFDocument.create();

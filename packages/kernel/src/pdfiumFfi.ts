@@ -432,6 +432,36 @@ const REFERENCE_LETTERS = ['x', 'n', 'o', 'e', 'a', 'H', '0', '.'] as const;
 const AT_THE_MEASURE = 1;
 
 /**
+ * The least spacing a measured run is said to have, in page units: a hundredth of a point, below which a run's measured
+ * spacing is read as none. Two readings of one glyph's place agree to about 1e-4 (float32 boxes), so a run set with no
+ * spacing measures well under it, and no reader shows a hundredth of a point.
+ */
+const SPACING_RESOLUTION = 0.01;
+
+/**
+ * What character and word spacing add to `text`'s width, in page units: `perCharacter` after every character and
+ * `perSpace` more after every space — what `spread` adds to the words it widens, the one sum the plan and the writer
+ * both take. Nothing in a joined right-to-left script (`spaceable`).
+ */
+function spacingAdded(text: string, perCharacter: number, perSpace: number): number {
+  if (!spaceable(text)) return 0;
+  return spacedBy(text, perCharacter) + perSpace * Array.from(text).filter((character) => character === ' ').length;
+}
+
+/** A measured spacing, or 0 where it is below {@link SPACING_RESOLUTION}. */
+function settledSpacing(value: number): number {
+  return Math.abs(value) < SPACING_RESOLUTION ? 0 : value;
+}
+
+/** The middle value, the mean of the middle two for an even count; 0 for none. */
+function median(values: readonly number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? (sorted[middle] ?? 0) : ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
+}
+
+/**
  * What a text page reports for an object that draws `text` — the only form a read-back can be
  * compared in.
  *
@@ -861,7 +891,7 @@ function walkRuns(
    */
   readonly unaddressableInk: number;
   /** Each drawn character of each object, in the order PDFium answered it, with where it starts across the page. */
-  readonly glyphs: ReadonlyMap<number, readonly { readonly char: string; readonly left: number }[]>;
+  readonly glyphs: ReadonlyMap<number, readonly { readonly char: string; readonly left: number; readonly origin?: number }[]>;
   /** Each object's text as PDFium answered it, by object index: the deck's input (`raws` in the walk). */
   readonly raws: ReadonlyMap<number, string>;
   /**
@@ -905,7 +935,7 @@ function walkRuns(
       return said !== undefined && said !== '' && said.trim() === '' && numberFrom(bindings.objectType(bindings.getObject(handle, at)), 'FPDFPageObj_GetType') === TEXT_OBJECT;
     };
     const ends = new Map<number, number>();
-    const glyphs = new Map<number, { char: string; left: number }[]>();
+    const glyphs = new Map<number, { char: string; left: number; origin?: number }[]>();
     let unaddressable = 0;
     let unaddressableInk = 0;
     /** Each run's last drawn character, where it was a space: where its loose box ends and how wide it is. */
@@ -1011,7 +1041,11 @@ function walkRuns(
       // WHERE EACH DRAWN CHARACTER SITS, for the export's reading order of right-to-left text: PDFium's own order of
       // such text differs by producer, and the places do not.
       const placed = glyphs.get(index) ?? [];
-      placed.push({ char: character, left: inked ? x0 : (loose['left'] ?? x0) });
+      // AND WHERE THE PEN DREW IT FROM, which spacing moves and ink does not say (`keptSpacing`).
+      const originX = [0];
+      const originY = [0];
+      const hasOrigin = numberFrom(bindings.charOrigin(textPage, at, originX, originY), 'FPDFText_GetCharOrigin') === 1;
+      placed.push({ char: character, left: inked ? x0 : (loose['left'] ?? x0), ...(hasOrigin ? { origin: originX[0] ?? 0 } : {}) });
       glyphs.set(index, placed);
       // THE UNION, so a run's extent covers every character in it. A run sized
       // from its first character alone would lose an ascender and stop
@@ -1985,6 +2019,11 @@ interface PieceWriter {
   readonly endOf: (objects: readonly unknown[]) => number | undefined;
   /** Widens an object's words where they stand, per character and per space; how much further on the next words start. */
   readonly spread: (object: unknown, perCharacter: number, perSpace: number) => number;
+  /**
+   * Where each character of a text set in an object's own font starts naturally, in page units — its loose box's left,
+   * or its `origin` — or `undefined`.
+   */
+  readonly naturalLefts: (object: unknown, text: string, rtl: boolean | undefined, reading?: 'left' | 'origin') => number[] | undefined;
   /** The standard font a restyled word is set in where no catalogue is bound. */
   readonly standardFontRestyled: (object: unknown, restyle: Restyle) => unknown;
   /** A new text object appended to the page for an added box, in the standard face its family names. */
@@ -2128,18 +2167,21 @@ function pieceWriter(
        * ZERO, NOT A GUESS, where the text page reads a different number of characters than the object was set to say (a
        * ligature, a surrogate pair split): the places would be applied to the wrong characters.
        */
-      const spread = (object: unknown, perCharacter: number, perSpace: number): number => {
-        const said = setBy.get(object);
-        if (said === undefined || (perCharacter === 0 && perSpace === 0)) return 0;
-        const characters = Array.from(said.text);
+      /**
+       * Where each character of `text` set in `object`'s own font and matrix starts NATURALLY — at its font's advances,
+       * with no spacing — as a copy alone on the scratch page reads it: each character's loose box's left, in page units
+       * from an origin of the copy's own. `undefined` where the copy cannot be set or a character's box cannot be read.
+       * The one reading of natural places, which {@link spread} widens from and a held run's own spacing is measured
+       * against (`keptSpacing`).
+       */
+      const naturalLefts = (object: unknown, text: string, rtl: boolean | undefined, reading: 'left' | 'origin' = 'left'): number[] | undefined => {
         const font: unknown = bindings.textFont(object);
-        if (font === null) return 0;
+        if (font === null) return undefined;
         const probe = makeTextLike(bindings, document, object, 0, font);
-        if (!setOn(probe, said.text, said.rtl)) {
+        if (!setOn(probe, text, rtl)) {
           bindings.destroyObject(probe);
-          return 0;
+          return undefined;
         }
-        const matrix = matrixOn(bindings, object);
         setMatrixOn(bindings, probe, { ...matrixOn(bindings, probe), e: 72, f: 396 });
         const sheet = scratchPage();
         if (numberFrom(bindings.insertObject(sheet, probe), 'FPDFPage_InsertObject') !== 1) {
@@ -2153,8 +2195,15 @@ function pieceWriter(
             const count = numberFrom(bindings.countChars(textPage), 'FPDFText_CountChars');
             for (let at = 0; at < count; at += 1) {
               if (numberFrom(bindings.charGenerated(textPage, at), 'FPDFText_IsGenerated') === 1) continue;
+              if (reading === 'origin') {
+                const x = [0];
+                const y = [0];
+                if (numberFrom(bindings.charOrigin(textPage, at, x, y), 'FPDFText_GetCharOrigin') !== 1) return undefined;
+                lefts.push(x[0] ?? 0);
+                continue;
+              }
               const loose: Record<string, number> = {};
-              if (numberFrom(bindings.looseCharBox(textPage, at, loose), 'FPDFText_GetLooseCharBox') !== 1) return 0;
+              if (numberFrom(bindings.looseCharBox(textPage, at, loose), 'FPDFText_GetLooseCharBox') !== 1) return undefined;
               lefts.push(loose['left'] ?? 0);
             }
           } finally {
@@ -2163,7 +2212,15 @@ function pieceWriter(
         } finally {
           if (numberFrom(bindings.removeObject(sheet, probe), 'FPDFPage_RemoveObject') === 1) bindings.destroyObject(probe);
         }
-        if (lefts.length !== characters.length || Math.abs(matrix.a) < 1e-6) return 0;
+        return lefts;
+      };
+      const spread = (object: unknown, perCharacter: number, perSpace: number): number => {
+        const said = setBy.get(object);
+        if (said === undefined || (perCharacter === 0 && perSpace === 0)) return 0;
+        const characters = Array.from(said.text);
+        const lefts = naturalLefts(object, said.text, said.rtl);
+        const matrix = matrixOn(bindings, object);
+        if (lefts?.length !== characters.length || Math.abs(matrix.a) < 1e-6) return 0;
         const origin = lefts[0] ?? 0;
         const places: number[] = [];
         let added = 0;
@@ -2797,6 +2854,7 @@ function pieceWriter(
         penEnd,
         endOf,
         spread,
+        naturalLefts,
         trimPieces,
         record,
         standardFontLike,
@@ -3083,6 +3141,39 @@ function layOutBlocks(
             });
           }
 
+          /**
+           * THE SPACING EACH HELD RUN WAS SET WITH, kept when its words are set again (the owner's decision of 2026-10-18 on
+           * VVVVVVV-8, (c)): PDFium's API cannot read an object's `Tc` or `Tw`, so they are MEASURED — each drawn character's
+           * origin on the page against where the same text set in the object's own font starts naturally (`naturalLefts`).
+           * What the gaps add after a letter is the character spacing; what they add after a space, less that, the word
+           * spacing. Medians, so a kerned pair does not stand for the run. None where the run is several joined objects,
+           * reads in a right-to-left script, or its places cannot be read one to one. In a justified line the plan's width
+           * includes it, so the justification adds only what is left to the measure and the line still ends at its edge.
+           *
+           * ORIGINS ON BOTH SIDES, where the pen drew each character from: an ink box's left moves with each glyph's shape,
+           * and against a loose box's left it read a run set with no spacing as ±0.5 pt per gap. AND HERE, before the block is
+           * scaled or anything written: a copy of an object a fit has scaled is set at another size than the places drawn on
+           * the page, and read 1.1 to 2.1 pt on lines set with none (both measured 2026-10-18).
+           */
+          const measuredSpacings = new Map<number, { readonly character: number; readonly word: number }>();
+          for (const run of lines.flat()) {
+            const drawn = walked.glyphs.get(run.index) ?? [];
+            const origins = drawn.map((glyph) => glyph.origin);
+            const text = drawn.map((glyph) => glyph.char).join('');
+            const readable = run.extras.length === 0 && drawn.length >= 2 && spaceable(text) && origins.every((origin) => origin !== undefined);
+            const natural = readable ? pen.naturalLefts(run.object, text, false, 'origin') : undefined;
+            if (natural?.length !== drawn.length) continue;
+            const afterLetter: number[] = [];
+            const afterSpace: number[] = [];
+            for (let at = 1; at < drawn.length; at += 1) {
+              const extra = (origins[at] ?? 0) - (origins[at - 1] ?? 0) - ((natural[at] ?? 0) - (natural[at - 1] ?? 0));
+              (drawn[at - 1]?.char === ' ' ? afterSpace : afterLetter).push(extra);
+            }
+            const character = settledSpacing(median(afterLetter));
+            const word = afterSpace.length === 0 ? 0 : settledSpacing(median(afterSpace) - character);
+            measuredSpacings.set(run.index, { character, word });
+          }
+
           // SCALED UNIFORMLY about the block's top-left (ADR-0097 4b) — size, and position — so a
           // fitted block shrinks into the corner it started from and every later measure is of
           // the scaled objects. The right edge is NOT scaled: smaller words fill the same measure.
@@ -3178,6 +3269,11 @@ function layOutBlocks(
             place?.width === undefined ? [] : Array.from({ length: block.text.split('\n').length }, (_, paragraph) => paragraph);
           const forced = new Set([...changedSettings, ...everyParagraph]);
           const runsById = new Map(lines.flat().map((run) => [run.index, run]));
+          /** A held run's spacing as it was set (`measuredSpacings`, above), at the size the block is set at now. */
+          const keptSpacing = (run: HeldRun): { readonly character: number; readonly word: number } => {
+            const measured = measuredSpacings.get(run.index) ?? { character: 0, word: 0 };
+            return scale === 1 ? measured : { character: measured.character * scale, word: measured.word * scale };
+          };
           const lineOfRun = new Map(lines.flatMap((line, at) => line.map((run): [HeldRun, number] => [run, at])));
           // WHERE A LINE SET AFRESH STARTS, as an object's own origin: the line that keeps the paragraph's left edge, read
           // off its first object, since the shape's edge is where ink begins and an origin is where the glyph is drawn from.
@@ -3204,8 +3300,10 @@ function layOutBlocks(
                   };
             const size = set.size ?? style.size;
             const factor = (size / Math.max(style.size, 0.01)) * (set.rise === undefined ? 1 : RISE_SCALE);
-            // CHARACTER SPACING IN PAGE UNITS, at the size the words are drawn: the wire's fraction of that size.
-            const spacing = (set.spacing ?? 0) * size * (set.rise === undefined ? 1 : RISE_SCALE);
+            // CHARACTER SPACING IN PAGE UNITS, at the size the words are drawn: the wire's fraction of that size, or, where the
+            // mark sets none, the run's own as it was set (`keptSpacing`), scaled with the words.
+            const spacing =
+              set.spacing === undefined ? keptSpacing(run).character * factor : set.spacing * size * (set.rise === undefined ? 1 : RISE_SCALE);
             return { set, style, restyle, size, factor, spacing };
           };
           const changes = (run: number, mark: number): boolean => {
@@ -3227,10 +3325,19 @@ function layOutBlocks(
               set.rise !== undefined
             );
           };
-          const measure = blockMeasure(bindings, document, pen, runsById, firstRun, lines.flat(), (run, mark) => {
-            const { restyle, factor, spacing } = markStyle(run, mark);
-            return { restyle, factor, spacing };
-          });
+          const measure = blockMeasure(
+            bindings,
+            document,
+            pen,
+            runsById,
+            firstRun,
+            lines.flat(),
+            (run, mark) => {
+              const { restyle, factor, spacing } = markStyle(run, mark);
+              return { restyle, factor, spacing };
+            },
+            keptSpacing,
+          );
           // THE MEASURE OF A BLOCK OF SEVERAL LINES IS ITS INK — the right edge of its widest line, less its left edge —
           // and the plan measures a line from where its pen starts to where it stands after the last word: its first
           // letter's left bearing and its last one's right bearing wider. So the widest line, set again word for word,
@@ -3419,8 +3526,13 @@ function layOutBlocks(
               // CHARACTER SPACING AND A JUSTIFIED LINE'S SPACES, each object widened where it stands and the ones after it
               // in the piece moved on by what the ones before it gained. Nothing for words in a joined right-to-left script
               // (`spacedBy`), whose letters a gap would part.
-              const perCharacter = marked === undefined || !stretchable(stretchText) ? 0 : marked.spacing;
-              const perSpaceHere = stretchable(stretchText) ? perSpace : 0;
+              // THE RUN'S OWN SPACING KEPT (`keptSpacing`): its character spacing where no mark sets one, and its word
+              // spacing on top of a justified line's, both as the plan measured them (`spacingAdded`).
+              const own = keptSpacing(source);
+              const characterSpacing = marked === undefined ? own.character : marked.spacing;
+              const wordSpacing = own.word * (marked?.factor ?? 1);
+              const perCharacter = stretchable(stretchText) ? characterSpacing : 0;
+              const perSpaceHere = stretchable(stretchText) ? perSpace + wordSpacing : 0;
               let widened = 0;
               if (perCharacter !== 0 || perSpaceHere !== 0) {
                 for (const object of laid) {
@@ -3429,7 +3541,7 @@ function layOutBlocks(
                 }
               }
               // HOW WIDE THE WORDS ARE DRAWN: their own advances, and what was added where it could be.
-              const drawnWidth = stretchWidth - (marked === undefined ? 0 : spacedBy(stretchText, marked.spacing)) + widened;
+              const drawnWidth = stretchWidth - spacingAdded(stretchText, characterSpacing, wordSpacing) + widened;
               // THE DRAWINGS THE WORDS CARRY (the owner's L2) with the mark over them: an underline the words already had is
               // drawn again where they now are, and a mark that turns it off is obeyed.
               const carried = baseDecorations.get(piece.run) ?? {};
@@ -3735,6 +3847,8 @@ function blockMeasure(
     run: HeldRun,
     mark: number,
   ) => { readonly restyle: Restyle | undefined; readonly factor: number; readonly spacing: number },
+  /** The spacing a run was set with (`keptSpacing`), which its words keep where no mark sets theirs. */
+  kept: (run: HeldRun) => { readonly character: number; readonly word: number } = () => ({ character: 0, word: 0 }),
 ): Measure {
   const inkRight = (source: unknown, text: string, font?: unknown): number | undefined => {
     const probe = makeTextLike(bindings, document, source, 0, font);
@@ -3864,12 +3978,15 @@ function blockMeasure(
     const run = runs.get(id) ?? fallback;
     // A MARKED PIECE: the face it asks (where it asks one), scaled by its size and its rise. The size is applied to the
     // objects after they are written, so the width is the unscaled one times the factor.
+    // THE RUN'S OWN SPACING, kept (`keptSpacing`): its character spacing where no mark sets one, and its word spacing
+    // after every space, as the writer adds them (`spacingAdded`).
+    const own = kept(run);
     if (mark !== NO_MARK) {
       const { restyle, factor, spacing } = styleFor(run, mark);
       const width = factor * (restyle === undefined ? plainWidth(run, text) : restyledWidth(run, restyle, text));
-      return width + spacedBy(text, spacing);
+      return width + spacingAdded(text, spacing, own.word * factor);
     }
-    return plainWidth(run, text);
+    return plainWidth(run, text) + spacingAdded(text, own.character, own.word);
   };
   return measure;
 }

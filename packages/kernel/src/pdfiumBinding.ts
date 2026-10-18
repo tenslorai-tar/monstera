@@ -57,6 +57,7 @@ export interface Bound {
   readonly charGenerated: Native;
   readonly charBox: Native;
   readonly looseCharBox: Native;
+  readonly charOrigin: Native;
   readonly objectBounds: Native;
   readonly getMatrix: Native;
   readonly setMatrix: Native;
@@ -323,6 +324,8 @@ export function openPdfium(libraryPath: string): void {
     // ONE CHARACTER'S ADVANCE, as a box from its origin across its width in the font, whatever its ink: where the next
     // character starts. `replaceLineRule.ts` measures a run's end by it, since ink ends differently letter by letter.
     looseCharBox: native(library.func('int FPDFText_GetLooseCharBox(void *textPage, int index, _Out_ FS_RECTF *rect)')),
+    // ONE CHARACTER'S ORIGIN, where the pen drew it from, in page space: what character and word spacing move.
+    charOrigin: native(library.func('int FPDFText_GetCharOrigin(void *textPage, int index, _Out_ double *x, _Out_ double *y)')),
     // ONE OBJECT'S BOX, in PAGE space and after its matrix — measured, and it is
     // what a surface draws a handle on. Note the parameter ORDER differs from
     // `charBox` above: left, bottom, right, top here against left, right,
