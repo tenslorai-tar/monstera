@@ -148,11 +148,13 @@ for (const look of LOOKS) {
                     footerBox === undefined ? null : footerBox.bottom <= shown.bottom + 1 && footerBox.top >= shown.top - 1,
                   sideways,
                   tallerThanWindow: box.height > window.innerHeight,
-                  // A REFUSAL ON SCREEN, by either role a body speaks it through: an alert, or a status line with words
-                  // in it. Alerts alone missed Watermark's *"A watermark needs some text"*, which is a status line.
-                  alert:
-                    element.querySelector('[role="alert"]') !== null ||
-                    [...element.querySelectorAll('[role="status"]')].some((status) => status.textContent.trim() !== ''),
+                  // A REFUSAL ON SCREEN, as `Problem` draws it: an alert with words in it (LLLLLLL-4). Status lines were
+                  // counted too while Watermark's *"A watermark needs some text"* was one; since the owner's order of
+                  // 2026-10-08 every refusal in a dialog is `Problem` (`role="alert"`, and `check:dialogproblems` refuses
+                  // one written by hand), so a status line is information — page ranges, file counts, *Signed in.* —
+                  // and counting it flagged seventeen correct states per look. An EMPTY alert is the reserved space a
+                  // `Problem` keeps for a sentence not shown, which is no refusal either.
+                  alert: [...element.querySelectorAll('[role="alert"]')].some((alert) => alert.textContent.trim() !== ''),
                 };
               });
           const long = problem !== null ? { seen: 0, short: [] } : await dialog.evaluate(readLongFields);
