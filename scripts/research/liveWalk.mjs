@@ -183,6 +183,16 @@ export async function startWalk(walk) {
     return read();
   };
   await sizeWindow(WALK_WINDOW);
+  // EVERY WALK KEEPS MAIN'S DETAILED REQUEST LOG (ADR-0119): each request by name, outcome and time, in the walk's own
+  // `app-data/logs/shell.log`. A step that times out then says which request was slow, where its screenshot alone showed
+  // only that nothing had happened yet (the gate walks of 2026-10-18: an edit's write read as hung at 30 s).
+  const detailed = await page.evaluate(() =>
+    /** @type {{ invoke: (channel: string, params: unknown) => Promise<{ ok?: boolean }> }} */ (Reflect.get(globalThis, 'monstera')).invoke('settings.save', {
+      values: { 'advanced.log-detail': 'detailed' },
+    }),
+  );
+  // A REFUSED SAVE would leave the log ordinary while the walk reads it as detailed.
+  if (detailed.ok !== true) throw new Error(`the walk could not turn on the detailed request log: ${JSON.stringify(detailed)}`);
 
   /** @type {StepRecord[]} */
   const steps = [];
