@@ -86,8 +86,12 @@ export default function MarkdownImportProblemBody(props: MarkdownImportProblem):
       case 'too-many-images':
         return _(MARKDOWN_IMPORT_TOO_MANY_IMAGES, { limit: props.limit });
       case 'images-too-large':
+        // THE SET ROUNDS UP AND THE LIMIT DOWN, so a set one byte past the limit never reads as equal to it. THE GROUPS
+        // ARE A LOWER BOUND, said as "at least": pictures cannot be cut, so sizes that pack badly can need one more.
         return _(MARKDOWN_IMPORT_IMAGES_TOO_LARGE, {
-          megabytes: Math.floor(props.limitBytes / (1024 * 1024)),
+          setMegabytes: Math.ceil(props.setBytes / (1024 * 1024)),
+          limitMegabytes: Math.floor(props.limitBytes / (1024 * 1024)),
+          groups: Math.ceil(props.setBytes / props.limitBytes),
         });
     }
   }

@@ -1227,7 +1227,7 @@ export type ComposeImages =
 export type ImageImportOutcome =
   | ComposeImportOutcome
   | { readonly kind: 'too-many-images'; readonly limit: number }
-  | { readonly kind: 'images-too-large'; readonly limitBytes: number };
+  | { readonly kind: 'images-too-large'; readonly setBytes: number; readonly limitBytes: number };
 
 /**
  * The order picked images become pages in: by file name, with digits compared as
@@ -6505,10 +6505,12 @@ export class DocumentCommands {
       // A PAGE'S PICTURE under its own bound (`MAX_PAGE_IMAGE_BYTES`, the owner's DDDDDDDD-10): an A3 page at 600 dpi whole.
       if (size > MAX_PAGE_IMAGE_BYTES) return { kind: 'too-large', limitBytes: MAX_PAGE_IMAGE_BYTES, fileBytes: size };
       totalBytes += size;
-      if (totalBytes > MAX_IMPORT_IMAGE_BYTES) {
-        return { kind: 'images-too-large', limitBytes: MAX_IMPORT_IMAGE_BYTES };
-      }
       items.push({ mediaType, read: () => this.#imageFiles.read(path) });
+    }
+    // THE SET'S ONE TOTAL, held against EVERY picture's size before any is read, so the refusal names the whole set
+    // rather than the running sum at the picture that happened to cross it.
+    if (totalBytes > MAX_IMPORT_IMAGE_BYTES) {
+      return { kind: 'images-too-large', setBytes: totalBytes, limitBytes: MAX_IMPORT_IMAGE_BYTES };
     }
 
     const composed = await compose(items);

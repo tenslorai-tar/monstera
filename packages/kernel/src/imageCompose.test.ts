@@ -115,9 +115,11 @@ describe('composeImages', () => {
     expect(reads).toStrictEqual([2, 1]);
   });
 
-  it('leaves out the image that takes a SET past the total bound, and keeps a smaller one after it', async () => {
-    // EIGHTY MEGAPIXELS EACH, every one under the per-image bound: only the running
-    // total can leave out the third. The fourth is small and still fits.
+  it('A SET HAS NO PIXEL TOTAL: three PNGs past the 200 megapixels a set once took each reach the decoder', async () => {
+    // EIGHTY MEGAPIXELS EACH, every one under the per-image bound, 240 in all. The set's one total is bytes, held by
+    // main before anything is read (the owner's question 8, 2026-10-18), so the composer leaves none out for the set.
+    // THE HEADERS DECODE TO NOTHING, so each is left out by the DECODER: the reason is what separates the two rules —
+    // the 200-megapixel total this replaces named the third `too-many-pixels` before a decoder ran.
     const { images } = recorded([
       { mediaType: 'image/png', bytes: pngHeaderOf(10_000, 8_000) },
       { mediaType: 'image/png', bytes: pngHeaderOf(10_000, 8_000) },
@@ -125,14 +127,11 @@ describe('composeImages', () => {
       { mediaType: 'image/jpeg', bytes: jpegOf(20, 20) },
     ]);
 
-    // THE HEADERS DECODE TO NOTHING, so 1 and 2 are left out by the decoder: the case is about which reason 3 gets.
-    // And it pins that a decode which FAILED STAYS COUNTED: the bound is decoding time and their decoder ran, so 3 is
-    // still past it (refunding 1 and 2 would make it a page).
     const composed = await composeImages(images);
     expect(composed.skipped).toStrictEqual([
       { reason: 'image-unreadable', line: null, item: 1 },
       { reason: 'image-unreadable', line: null, item: 2 },
-      { reason: 'too-many-pixels', line: null, item: 3 },
+      { reason: 'image-unreadable', line: null, item: 3 },
     ]);
     expect(await sizesOf(composed.pdf)).toStrictEqual([{ width: 20, height: 20 }]);
   });

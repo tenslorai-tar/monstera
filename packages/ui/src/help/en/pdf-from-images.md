@@ -20,7 +20,8 @@ Pick several pictures and Monstera makes a PDF with one picture on each page.
 
 - Pages are in file-name order, with numbers compared as numbers, so "scan 2" comes before "scan 10".
 - Each page is the size of its picture; very large pictures are scaled down.
-- Up to 500 pictures at once. Very large pictures, or too many together, are refused with a message naming the file.
+- Up to 500 pictures at once. A picture larger than 256 MB is refused with a message naming the file.
+- Up to 1024 MB of pictures together. A larger set is refused before anything is imported, and the message gives the set's size, the limit, and how many groups to split the pictures into, each made into its own PDF.
 
 <!--
 Screenshots to capture:

@@ -741,8 +741,8 @@ describe('newFromImagesCommand', () => {
       ],
       [{ kind: 'too-many-images', limit: 500 }, { reason: 'too-many-images', limit: 500 }],
       [
-        { kind: 'images-too-large', limitBytes: 268_435_456 },
-        { reason: 'images-too-large', limitBytes: 268_435_456 },
+        { kind: 'images-too-large', setBytes: 1_400_000_000, limitBytes: 1_073_741_824 },
+        { reason: 'images-too-large', setBytes: 1_400_000_000, limitBytes: 1_073_741_824 },
       ],
     ] as const;
 

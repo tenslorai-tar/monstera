@@ -5071,17 +5071,20 @@ export const MAX_WORKBOOK_PARTS = 1024;
 export const MAX_IMPORT_IMAGE_PIXELS = 100_000_000;
 
 /**
- * The most PNG pixels one import may have in total: 200 megapixels, about 22 s of
- * decoding — inside the Markdown import's measured worst of 27.6 s.
+ * THE ONE SET TOTAL of a picture import, the owner's decision of 2026-10-18 (question 8, (b)), in place of the two there
+ * were (256 MiB of bytes and 200 megapixels of PNG): 1 GiB of pictures, refused at once, before any work starts.
+ *
+ * DERIVED FROM THE COMPOSE HOST'S BUDGET, MEASURED 2026-10-18 on this project's Windows laptop by
+ * `_review/imageSetMemory.mjs`, the composer the host runs, over JPEGs of 256 MiB: a set's peak private memory rose about
+ * twice its bytes — 520 MB for 256 MiB, 1,033 for 512, 1,548 for 768, 2,062 for 1 GiB, 2,140 MB in all — because the
+ * composer holds every embedded picture and the finished PDF together. The host is ended at its budget less 512 MiB,
+ * about 2.5 GB (ADR-0023, corrected 2026-10-03), so 1 GiB is the largest set that stays inside it with room.
+ *
+ * MEASURED FOR JPEGS, which are embedded without decoding; a PNG is decoded and embedded again, so its share follows its
+ * pixels, each picture bounded apart by {@link MAX_IMPORT_IMAGE_PIXELS}. Each file is also bounded by
+ * {@link MAX_PAGE_IMAGE_BYTES} before it is read. The camera's frames, which cross to `main` as bytes, take the same total.
  */
-export const MAX_IMPORT_PNG_PIXELS = 200_000_000;
-
-/**
- * The most bytes one import may read across every image: 256 MiB, which the three-JPEG
- * reading puts at about half a gibibyte in the host. Each file is also bounded by
- * {@link MAX_PAGE_IMAGE_BYTES} before it is read, so one picture at that bound is a whole set.
- */
-export const MAX_IMPORT_IMAGE_BYTES = 256 * 1024 * 1024;
+export const MAX_IMPORT_IMAGE_BYTES = 1024 * 1024 * 1024;
 
 /**
  * Which encodings an IMPORT can read.

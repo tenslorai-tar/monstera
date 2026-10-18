@@ -1,10 +1,9 @@
 import { PDFDocument } from '@cantoo/pdf-lib';
 
 import type { ComposeSkip } from '@monstera/contract';
-import { MAX_IMPORT_PNG_PIXELS } from '@monstera/contract/host';
 
 import { ComposeRefused } from './composeOutcome.js';
-import { ImageDecodeRefused, type PixelSize, PngPixelsRefused, checkPngPixels } from './imageDimensions.js';
+import { ImageDecodeRefused, PngPixelsRefused, checkPngPixels } from './imageDimensions.js';
 import { type EmbeddableImageType, addImagePage } from './pageImage.js';
 import { wholeFile } from './pdfLibSession.js';
 
@@ -22,7 +21,7 @@ import { wholeFile } from './pdfLibSession.js';
  *
  * `embedPng` decodes every pixel, and its cost follows pixels rather than bytes — the
  * table on `MAX_IMPORT_IMAGE_PIXELS` is the measurement. So every PNG's header is read
- * first, and an image that breaks either pixel bound is left out before any decoder
+ * first, and an image past its own pixel bound is left out before any decoder
  * runs: found after twenty seconds of decoding the images before it, it would be the
  * same answer, paid for. A JPEG is not decoded by `embedJpg`, which reads its header
  * and carries the bytes, so main's byte bound is the one that bounds it.
@@ -72,32 +71,20 @@ export async function composeImages(images: readonly ImportImage[]): Promise<Com
     left.add(item);
   };
 
-  // THE FIRST PASS: every PNG's size, from its header, and both bounds held.
-  let pngPixels = 0;
+  // THE FIRST PASS: every PNG's size, from its header, and its own bound held. THE SET HAS NO PIXEL TOTAL: its one total
+  // is bytes, `MAX_IMPORT_IMAGE_BYTES`, refused by the caller before anything is read.
   for (const [index, image] of images.entries()) {
     if (image.mediaType !== 'image/png') continue;
     const item = index + 1;
     // A READ THAT FAILS IS NOT CAUGHT HERE, in either pass: the bytes not arriving is
     // the transport's fault, not the picture's, and the handler answers it as one.
-    let size: PixelSize;
     try {
       // THE PER-IMAGE RULE IS `checkPngPixels`', the one Insert image calls too.
-      size = checkPngPixels(await image.read());
+      checkPngPixels(await image.read());
     } catch (error) {
       if (!(error instanceof PngPixelsRefused)) throw error;
       leaveOut(item, error.reason === 'no-header' ? 'image-unreadable' : 'too-many-pixels');
-      continue;
     }
-    // THE SET'S TOTAL is this import's own bound, and no other route has a set: the image that would cross it is left
-    // out and does not count towards it. AN IMAGE COUNTED HERE STAYS COUNTED if its decode then fails in the second
-    // pass, because the bound is DECODING TIME (`MAX_IMPORT_PNG_PIXELS`: about 22 s) and that image's decoder ran: a
-    // refusal can come at its last row as well as its first, so a refund would let the set's decode cost pass the bound
-    // by as much as the refunded pictures took.
-    if (pngPixels + size.width * size.height > MAX_IMPORT_PNG_PIXELS) {
-      leaveOut(item, 'too-many-pixels');
-      continue;
-    }
-    pngPixels += size.width * size.height;
   }
 
   // PINNED, for `markdownCompose.ts`' reason: a composition that differed on every

@@ -97,7 +97,7 @@ export function markdownImportProblem(
     case 'too-many-images':
       return { reason: 'too-many-images', limit: answer.limit };
     case 'images-too-large':
-      return { reason: 'images-too-large', limitBytes: answer.limitBytes };
+      return { reason: 'images-too-large', setBytes: answer.setBytes, limitBytes: answer.limitBytes };
     case 'destination-contested':
       return { reason: 'destination-contested', openElsewhere: answer.openElsewhere };
     case 'write-failed':

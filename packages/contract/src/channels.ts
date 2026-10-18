@@ -1630,8 +1630,12 @@ const imageImportOutcomeSchema = z.discriminatedUnion('kind', [
   ...composedImportOutcomeSchema.options,
   /** More files were picked than one import takes. Nothing was read. */
   z.object({ kind: z.literal('too-many-images'), limit: z.number().int().positive() }),
-  /** The picked files together are past the import's byte bound. Nothing was read. */
-  z.object({ kind: z.literal('images-too-large'), limitBytes: z.number().int().positive() }),
+  /** The picked files together are past the import's set total. Nothing was read; both figures are named. */
+  z.object({
+    kind: z.literal('images-too-large'),
+    setBytes: z.number().int().positive(),
+    limitBytes: z.number().int().positive(),
+  }),
 ]);
 
 export { NATIVE_COMPONENT_IDS, type NativeComponentId } from './nativeComponentIds.js';
@@ -3611,8 +3615,12 @@ export const channels = {
       }),
       /** More files were picked than one import takes. Nothing was read. */
       z.object({ kind: z.literal('too-many-images'), limit: z.number().int().positive() }),
-      /** The picked files together are past the import's byte bound. Nothing was read. */
-      z.object({ kind: z.literal('images-too-large'), limitBytes: z.number().int().positive() }),
+      /** The picked files together are past the import's set total. Nothing was read; both figures are named. */
+      z.object({
+        kind: z.literal('images-too-large'),
+        setBytes: z.number().int().positive(),
+        limitBytes: z.number().int().positive(),
+      }),
       importContestedSchema,
       importWriteFailedSchema,
       /** The composed file was written and could not be opened. */

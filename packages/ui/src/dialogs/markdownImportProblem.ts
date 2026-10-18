@@ -59,7 +59,11 @@ const markdownImportProblemSchema = z.discriminatedUnion('reason', [
     file: z.string().min(1).max(MAX_DOCUMENT_NAME_LENGTH).nullable(),
   }),
   z.object({ reason: z.literal('too-many-images'), limit: z.number().int().positive() }),
-  z.object({ reason: z.literal('images-too-large'), limitBytes: z.number().int().positive() }),
+  z.object({
+    reason: z.literal('images-too-large'),
+    setBytes: z.number().int().positive(),
+    limitBytes: z.number().int().positive(),
+  }),
 ]);
 
 /**

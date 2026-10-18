@@ -1056,6 +1056,15 @@ question 1, the same class: tag parameters PDFium cannot write). **DDDDDDDD-10**
 Correction, 2026-10-18, to DDDDDDDD-10 above: the owner answered (a). A picture made into a page is now bounded by its
 own `MAX_PAGE_IMAGE_BYTES`, 256 MiB, and `MAX_IMAGE_BYTES` stays 64 MiB for a placed picture and a signature, whose
 bytes cross to the window; the commit that does it says why the two are apart.
+Correction, 2026-10-18 (later), to DDDDDDDD-10 above: a SET of pictures. The owner's questions 7 and 8 replace the two
+set totals (256 MiB of bytes, 200 megapixels of PNG) with ONE, 1 GiB, derived from the compose host's budget: measured
+by `_review/imageSetMemory.mjs`, a set's peak rose about twice its bytes (+520, +1,033, +1,548, +2,062 MB for one to four
+JPEGs of 256 MiB), and the host is ended at about 2.5 GB. A set past it is refused before any picture is read, naming
+the set's size, the limit, and at least how many groups to split it into, each its own PDF. Merge PDFs is not suggested:
+no merge of that size has been measured. **The streaming join is closed**, dated 2026-10-18: composing a set past
+~1 GiB without holding it whole needs a PDF writer that streams pages to the file, about two days of work in launch
+week, and a join of already-composed batches does not do it (`_review/imageJoinMemory.mjs`: four in two batches peaked
+at 3.7 GB, because the join holds the whole joined document). Reopen only if the owner's review of 0.1.16.0 raises it.
 
 **Recorded this session, with what is unfixed.**
 **QQQQQQQQ-1** (low, recorded, unfixed): a block's set width equal to its box, or one point wider, wraps its widest

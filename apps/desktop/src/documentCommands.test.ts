@@ -6541,15 +6541,14 @@ describe('DocumentCommands.composeImageFiles', () => {
       fileBytes: MAX_PAGE_IMAGE_BYTES + 1,
     });
 
-    // EVERY FILE UNDER ITS OWN BOUND, and the set over its: only the running total refuses.
-    // FIVE FILES, not four: the set's bound is four times a file's, so four files over it
-    // are each over their own bound too, and the per-file refusal answers first — the
-    // assertion on the line after this caught exactly that when it said four.
-    const perFile = Math.floor(MAX_IMPORT_IMAGE_BYTES / 5) + 1;
-    const set = imagesFrom(['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg', 'e.jpg'], () => perFile);
-    expect(perFile).toBeLessThanOrEqual(MAX_PAGE_IMAGE_BYTES);
+    // EVERY FILE AT ITS OWN BOUND, and the set past its one total: the set is refused, NAMING THE WHOLE SET. Six files
+    // where the total is crossed at the fifth, so a refusal that named the running sum where it crossed says five.
+    const perFile = MAX_PAGE_IMAGE_BYTES;
+    const set = imagesFrom(['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg', 'e.jpg', 'f.jpg'], () => perFile);
+    expect(5 * perFile).toBeGreaterThan(MAX_IMPORT_IMAGE_BYTES);
     expect(await commandsWith(set.source, composer).composeImageFiles(WORK)).toStrictEqual({
       kind: 'images-too-large',
+      setBytes: 6 * perFile,
       limitBytes: MAX_IMPORT_IMAGE_BYTES,
     });
 
@@ -6561,6 +6560,52 @@ describe('DocumentCommands.composeImageFiles', () => {
     const reads = [...many.calls, ...gif.calls, ...oneLarge.calls, ...set.calls, ...unstated.calls];
     expect(reads.filter((call) => call.startsWith('read:'))).toStrictEqual([]);
     expect(composed).toBe(0);
+  });
+
+  describe('THE SET\'S ONE TOTAL, 1 GiB of pictures (the owner\'s question 8, 2026-10-18)', () => {
+    /** The composer's view of an import: the files it was handed, after every bound main holds. */
+    function reaching(names: readonly string[], sizeOf: (path: string) => number) {
+      const images = imagesFrom(names, sizeOf);
+      const sent: string[] = [];
+      const commands = commandsWith(images.source, (items) => {
+        for (const item of items) sent.push(item.mediaType);
+        return Promise.resolve({ kind: 'refused', reason: 'image-unreadable', line: null, item: 1 });
+      });
+      return { commands, images, sent };
+    }
+
+    it('a set AT the total reaches the composer whole, every picture at its own bound', async () => {
+      // THE TOTAL IS A WHOLE NUMBER OF PAGE BOUNDS, so a set of pictures each at its own bound can sit exactly on it.
+      expect(MAX_IMPORT_IMAGE_BYTES % MAX_PAGE_IMAGE_BYTES).toBe(0);
+      const count = MAX_IMPORT_IMAGE_BYTES / MAX_PAGE_IMAGE_BYTES;
+      const names = Array.from({ length: count }, (_, at) => `${String(at)}.jpg`);
+      const { commands, sent } = reaching(names, () => MAX_PAGE_IMAGE_BYTES);
+      expect((await commands.composeImageFiles(WORK)).kind).toBe('composition-refused');
+      expect(sent).toStrictEqual(names.map(() => 'image/jpeg'));
+    });
+
+    it('a set ONE BYTE past the total is refused before any read, naming both figures', async () => {
+      const count = MAX_IMPORT_IMAGE_BYTES / MAX_PAGE_IMAGE_BYTES;
+      const names = [...Array.from({ length: count }, (_, at) => `${String(at)}.jpg`), 'z.png'];
+      const { commands, images, sent } = reaching(names, (path) => (path === 'z.png' ? 1 : MAX_PAGE_IMAGE_BYTES));
+      expect(await commands.composeImageFiles(WORK)).toStrictEqual({
+        kind: 'images-too-large',
+        setBytes: MAX_IMPORT_IMAGE_BYTES + 1,
+        limitBytes: MAX_IMPORT_IMAGE_BYTES,
+      });
+      expect(images.calls.filter((call) => call.startsWith('read:'))).toStrictEqual([]);
+      expect(sent).toStrictEqual([]);
+    });
+
+    it('CONTROL: a set past the 256 MiB total this replaces now reaches the composer', async () => {
+      // FIVE PICTURES just past a fifth of 256 MiB each: the old total refused this set up front.
+      const perFile = Math.floor((256 * 1024 * 1024) / 5) + 1;
+      const names = ['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg', 'e.jpg'];
+      const { commands, sent } = reaching(names, () => perFile);
+      expect(5 * perFile).toBeGreaterThan(256 * 1024 * 1024);
+      expect((await commands.composeImageFiles(WORK)).kind).toBe('composition-refused');
+      expect(sent).toHaveLength(5);
+    });
   });
 
   it('a picture AT the page bound, past the 64 MiB a placed picture may be, is read and composed (DDDDDDDD-10)', async () => {

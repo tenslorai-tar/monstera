@@ -1153,7 +1153,9 @@ function insertImageHandler(
     try {
       const composed = await deps.commands.insertImages(docId, work);
       if (composed.kind === 'too-many-images') return ok({ kind: 'too-many-images', limit: composed.limit });
-      if (composed.kind === 'images-too-large') return ok({ kind: 'images-too-large', limitBytes: composed.limitBytes });
+      if (composed.kind === 'images-too-large') {
+        return ok({ kind: 'images-too-large', setBytes: composed.setBytes, limitBytes: composed.limitBytes });
+      }
       if (composed.kind !== 'written') return ok(composeRefusal(composed));
       const merged = await mergeComposed(deps, docId, at, composed.destination);
       if (merged.kind !== 'merged') return ok(merged);
@@ -1287,7 +1289,7 @@ function newFromImagesHandler(
         return ok({ kind: 'too-many-images', limit: composed.limit });
       }
       if (composed.kind === 'images-too-large') {
-        return ok({ kind: 'images-too-large', limitBytes: composed.limitBytes });
+        return ok({ kind: 'images-too-large', setBytes: composed.setBytes, limitBytes: composed.limitBytes });
       }
       if (composed.kind !== 'written') return ok(composeRefusal(composed));
       const opened = (await openPath(deps, composed.destination)).outcome;

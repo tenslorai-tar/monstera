@@ -40,4 +40,33 @@ describe('each refusal by size, as a person reads it', () => {
   it('CONTROL: five bodies, so a sixth that is added without a case here is visible in this list', () => {
     expect(Object.keys(BODIES)).toHaveLength(5);
   });
+
+  describe('a SET of pictures past the one total (the owner’s question 8)', () => {
+    const LIMIT = 1024 * 1024 * 1024;
+    const textOf = (setBytes: number): string | null =>
+      render(
+        <I18nProvider i18n={i18n}>
+          <MarkdownImportProblemBody reason="images-too-large" setBytes={setBytes} limitBytes={LIMIT} />
+        </I18nProvider>,
+      ).container.textContent;
+
+    it('names the set’s size, the limit, and how many groups to split it into', () => {
+      // 2.5 GiB: three groups, which neither figure nor a fixed "two" reads as.
+      const text = textOf(LIMIT * 2.5);
+      expect(text).toContain('2560 MB');
+      expect(text).toContain('1024 MB');
+      expect(text).toContain('at least 3 groups');
+    });
+
+    it('CONTROL: ONE BYTE PAST is two figures that differ and two groups, never one', () => {
+      // The set rounds up and the limit down; a group count that rounded down would say 1, which is the set refused.
+      const text = textOf(LIMIT + 1);
+      expect(text).toContain('1025 MB');
+      expect(text).toContain('at least 2 groups');
+    });
+
+    it('does not suggest joining the groups afterwards, which no measurement at this size supports', () => {
+      expect(textOf(LIMIT * 2.5)).not.toMatch(/merge/i);
+    });
+  });
 });
