@@ -139,3 +139,23 @@ same build from `trimEnd() + ' '` to keeping every trailing space a line already
 without white space, none where it ends in some, a line break at a hard end. That rule is pinned by
 `lineEdit.test.ts`' first case, *one space at a soft end, none where the line already ends in white space, and a line
 break at a hard one*, whose control is the hard end that keeps the space a person typed.
+
+## Correction, 2026-10-18 — Decision 8 says what is kept and what is converted (the owner's answer to VVVVVVV-8, (c))
+
+Decision 8 said each of spacing, colour space and render mode is kept *or is a refusal that names it*. The owner's rule
+is that a person is never refused because of their document, and PDFium 155's API cannot read an object's character
+spacing, word spacing or fill colour space. The owner answered (c) on 2026-10-18, and Decision 8 now reads:
+
+- **Character and word spacing are KEPT.** The writer measures them — each drawn character's origin
+  (`FPDFText_GetCharOrigin`) against where the same text set in the object's own font starts naturally — and sets the
+  words again with them (`keptSpacing`, `pdfiumFfi.ts`). Measured exact on a fixture set at 1.5 and 4 points, and none on
+  every fixture set with none. Not kept, and stated: a run drawn as several joined objects, a run in a right-to-left
+  script, and a run whose characters cannot be read one to one; their words are set at the font's own spacing.
+- **The fill's colour space is CONVERTED, never refused.** PDFium sets a fill in RGB only, so a line set again in CMYK or
+  a spot colour is drawn in the RGB the page showed it as: the same on screen, and printed from RGB.
+- **The render mode is kept**, as before (`FPDFTextObj_SetTextRenderMode`).
+
+The help article on editing text says this in one plain line. Proof: `pdfiumCommand.proof`'s `keptSpacingCases`, read by
+a second reader, pdf.js: a line set with character and word spacing keeps both when an edit sets it again; the same
+reading of the untouched line is the instrument's positive control; CONTROL: the same line with no spacing reads none.
+With the measurement disabled the case reads 0.1 of 60.5 points and fails.

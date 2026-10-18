@@ -176,3 +176,20 @@ expands after, so the pair reads back as typed. What stays a limit is the mark's
 describes (the box plus 1.5 pt, one median colour) with one grown through the ink that touches the box and filled with the
 paper's colour at each place, a plane fitted to the ring. The stated limit (ink outside the recogniser's box, and a gradient
 behind a word, show) is removed; what stays is shading that is not linear across a word.
+
+## Correction, 2026-10-18 — what Decision 8 keeps, converts and drops, said exactly (the owner's answer to VVVVVVV-28)
+
+Decision 8 read *"a mark whose parameter is of a kind the calls cannot copy is named in the read-back's refusal rather
+than dropped"*, and the correction of 2026-10-06 chose dropping over refusing for one kind. The owner answered the class
+on 2026-10-18 (VVVVVVV-8 and -28 together, (c)): a person is never refused because of their document, and the record
+says exactly what happens. PDFium's mark calls write a number, a string or a blob as a parameter, and nothing else. So
+when a line is set again:
+
+- **Kept:** the mark's name, and every number and string parameter, an `MCID` among them.
+- **Converted:** a NAME parameter is written as a STRING of the same characters, since no call writes a name.
+- **Dropped:** an ARRAY or a DICTIONARY parameter (a bounding box among them), since no call writes either.
+- **Repeated:** a continuation line takes the marks of the line it continues, so one `MCID` may stand on more than one
+  object of a page.
+
+None is a refusal. The help article on editing text says so in one plain line, beside the spacing and colour line of
+ADR-0179's correction of the same day.
