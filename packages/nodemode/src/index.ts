@@ -42,4 +42,10 @@ export type {
   ReaderMessage,
   ReaderWorkerData,
 } from './readerProtocol.js';
-export { SAMPLER_FLAG, type SamplerMessage, type SamplerWorkerData } from './samplerProtocol.js';
+export {
+  SAMPLER_FLAG,
+  type SamplerMessage,
+  type SamplerReport,
+  type SamplerWatch,
+  type SamplerWorkerData,
+} from './samplerProtocol.js';

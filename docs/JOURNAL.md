@@ -892,6 +892,25 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-18 — What an engine host costs `main`: one sampling thread for every host (the owner's question 6)
+
+The memory walk's M3 failed by 8 to 53 MB from run to run. Measured: `main` rises about 70 MB at the first edit, no
+module is loaded (88 before and after) and its JavaScript heap does not grow; each engine host had two worker threads
+in `main`, its pipe reader and its memory sampler, and one idle worker thread costs `main` 12.3 MB (four started in
+`main`: 123 → 172 MB, `fix-session-2/gate/workerCost-2.log`). The first edit starts two hosts beyond the first.
+
+The owner's answer, locked the same day:
+
+- **(a)** M3 counts each host's threads in `main` as that host's cost, measured and named in the step's facts, not
+  exempted.
+- **(b)** ONE memory-sampling thread for every host (ADR-0023's correction of 2026-10-18), built with its proof against
+  real processes and its control.
+- **(c) closed:** reading every host's pipe from one thread too. About 12 MB more per host, for a change to how a
+  contained host's pipe is read, days before launch. Reopened only if a measurement shows `main`'s memory hurting
+  people.
+
+---
+
 ## 2026-10-18 — Fix session 2: every open finding closed, settled or found not a defect (addendum B8)
 
 The 173 findings whose latest record said *open* (`scripts/research/openFindings.mjs`, which reads each finding's

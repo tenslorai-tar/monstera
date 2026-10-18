@@ -1,11 +1,12 @@
-import { parentPort, workerData } from 'node:worker_threads';
+import { parentPort, receiveMessageOnPort, workerData } from 'node:worker_threads';
 
 import koffi from 'koffi';
 
-import { SAMPLER_FLAG, type SamplerMessage, type SamplerWorkerData } from './samplerProtocol.js';
+import { SAMPLER_FLAG, type SamplerMessage, type SamplerReport, type SamplerWatch, type SamplerWorkerData } from './samplerProtocol.js';
 
 /**
- * An engine host's memory sampler — ADR-0023 §3's PRIMARY, built 2026-10-03 (CR-SEC-09).
+ * The engine hosts' memory sampler — ADR-0023 §3's PRIMARY, built 2026-10-03 (CR-SEC-09), ONE thread for every host
+ * since 2026-10-18 (a worker thread costs `main` 12.3 MB, measured; each host had one).
  *
  * ## On its own thread, because the thread that would otherwise run it is busy exactly when memory moves
  *
@@ -72,61 +73,85 @@ const ACCESS = 0x1000 | 0x0001;
 const KILLED_EXIT_CODE = 0xc0000017;
 
 const data = workerData as SamplerWorkerData;
-const flags = new Int32Array(data.flags);
-const say = (message: SamplerMessage): void => {
-  parentPort?.postMessage(message);
-};
+const wake = new Int32Array(data.wake);
+const SIZE = koffi.sizeof(COUNTERS);
 
-const handle = win32.openProcess(ACCESS, false, data.pid);
-if (handle === null || koffi.address(handle) === 0n) {
-  say({ kind: 'failed', detail: `OpenProcess refused process ${String(data.pid)} (GetLastError ${String(win32.lastError())})` });
-} else {
-  const size = koffi.sizeof(COUNTERS);
-  let peak = 0;
-  let killedAt: number | null = null;
-  let failure: string | null = null;
-  let exited: number | null = null;
-  while (Atomics.load(flags, SAMPLER_FLAG.STOP) === 0) {
-    // ASKED FIRST, every sample: a process that has ended still answers the memory read through an open handle, so
-    // the read alone never says the host is gone.
-    const status = [STILL_ACTIVE];
-    if (win32.exitCode(handle, status) === true && status[0] !== STILL_ACTIVE) {
-      exited = status[0] ?? 0;
-      break;
-    }
-    const counters: Record<string, unknown> = {};
-    if (win32.memoryInfo(handle, counters, size) !== true) {
-      // A READ THAT FAILS IS ASKED WHY, and only a host that has ended stops the sampling quietly — its ending reaches
-      // main through the pipe. A read refused while the host still runs is a sampler that can no longer see, which
-      // is the state the finding was about, so it is reported as a failure and main ends the host. A failed read was
-      // once taken to mean "the host has gone" without asking, which made a sampler that could not see
-      // indistinguishable from one whose host had ended — both ended in silence.
-      const error = win32.lastError();
-      const exit = [0];
-      if (win32.exitCode(handle, exit) === true && exit[0] === STILL_ACTIVE) {
-        failure = `K32GetProcessMemoryInfo refused a running host (GetLastError ${String(error)})`;
-      }
-      break;
-    }
-    const privateBytes = Number(counters['PrivateUsage']);
-    peak = Math.max(peak, privateBytes);
-    if (privateBytes >= data.killAtBytes) {
-      // THE FLAG FIRST, then the kill: see the header.
-      Atomics.store(flags, SAMPLER_FLAG.KILLED, 1);
-      win32.terminate(handle, KILLED_EXIT_CODE);
-      killedAt = privateBytes;
-      break;
-    }
-    Atomics.wait(flags, SAMPLER_FLAG.STOP, 0, data.intervalMs);
+/** One host being watched: its watch, its open handle, its flags and the highest commit seen. */
+interface Watched {
+  readonly watch: SamplerWatch;
+  readonly handle: unknown;
+  readonly flags: Int32Array;
+  peak: number;
+}
+
+const watched = new Map<number, Watched>();
+
+/** Ends one host's watch with its one message: the handle closed, the host taken off the table. */
+function end(host: Watched, message: SamplerMessage): void {
+  win32.closeHandle(host.handle);
+  watched.delete(host.watch.id);
+  const report: SamplerReport = { id: host.watch.id, message };
+  parentPort?.postMessage(report);
+}
+
+/** Opens a host to watch, or reports at once that it cannot be watched. */
+function add(watch: SamplerWatch): void {
+  const handle = win32.openProcess(ACCESS, false, watch.pid);
+  if (handle === null || koffi.address(handle) === 0n) {
+    const report: SamplerReport = {
+      id: watch.id,
+      message: { kind: 'failed', detail: `OpenProcess refused process ${String(watch.pid)} (GetLastError ${String(win32.lastError())})` },
+    };
+    parentPort?.postMessage(report);
+    return;
   }
-  win32.closeHandle(handle);
-  say(
-    failure !== null
-      ? { kind: 'failed', detail: failure }
-      : exited !== null
-        ? { kind: 'exited', code: exited }
-        : killedAt === null
-        ? { kind: 'stopped', peakBytes: peak }
-        : { kind: 'killed', privateBytes: killedAt },
-  );
+  watched.set(watch.id, { watch, handle, flags: new Int32Array(watch.flags), peak: 0 });
+}
+
+/** One sample of one host: its watch ended with its message, or `undefined` to go on watching. */
+function sample(host: Watched): SamplerMessage | undefined {
+  if (Atomics.load(host.flags, SAMPLER_FLAG.STOP) !== 0) return { kind: 'stopped', peakBytes: host.peak };
+  // ASKED FIRST, every sample: a process that has ended still answers the memory read through an open handle, so the
+  // read alone never says the host is gone.
+  const status = [STILL_ACTIVE];
+  if (win32.exitCode(host.handle, status) === true && status[0] !== STILL_ACTIVE) return { kind: 'exited', code: status[0] ?? 0 };
+  const counters: Record<string, unknown> = {};
+  if (win32.memoryInfo(host.handle, counters, SIZE) !== true) {
+    // A READ THAT FAILS IS ASKED WHY, and only a host that has ended stops the sampling quietly — its ending reaches main
+    // through the pipe. A read refused while the host still runs is a sampler that can no longer see, which is the state
+    // the finding was about, so it is reported as a failure and main ends the host. A failed read was once taken to mean
+    // "the host has gone" without asking, which made a sampler that could not see indistinguishable from one whose host
+    // had ended — both ended in silence.
+    const error = win32.lastError();
+    const exit = [0];
+    return win32.exitCode(host.handle, exit) === true && exit[0] === STILL_ACTIVE
+      ? { kind: 'failed', detail: `K32GetProcessMemoryInfo refused a running host (GetLastError ${String(error)})` }
+      : { kind: 'stopped', peakBytes: host.peak };
+  }
+  const privateBytes = Number(counters['PrivateUsage']);
+  host.peak = Math.max(host.peak, privateBytes);
+  if (privateBytes >= host.watch.killAtBytes) {
+    // THE FLAG FIRST, then the kill: see the header.
+    Atomics.store(host.flags, SAMPLER_FLAG.KILLED, 1);
+    win32.terminate(host.handle, KILLED_EXIT_CODE);
+    return { kind: 'killed', privateBytes };
+  }
+  return undefined;
+}
+
+// ROUND AFTER ROUND, every host each round (ADR-0023's correction of 2026-10-18): the watches main has sent are taken
+// first, then each host is sampled, then the thread waits the shortest interval any host asks for, woken at once by a
+// host added or stopped. It never ends of its own accord: `main` ends it when its last host's watch has ended, and
+// starts another with the next host, so no message is lost between a thread deciding to end and a watch arriving.
+for (;;) {
+  for (let received = receiveMessageOnPort(data.port); received !== undefined; received = receiveMessageOnPort(data.port)) {
+    add(received.message as SamplerWatch);
+  }
+  for (const host of [...watched.values()]) {
+    const ended = sample(host);
+    if (ended !== undefined) end(host, ended);
+  }
+  const interval = Math.min(...[...watched.values()].map((host) => host.watch.intervalMs));
+  Atomics.wait(wake, 0, 0, Number.isFinite(interval) ? interval : undefined);
+  Atomics.store(wake, 0, 0);
 }
