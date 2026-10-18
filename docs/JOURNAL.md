@@ -1035,6 +1035,14 @@ has not been seen again; that file ran in full several times in fix session 2 on
 legs since, and nothing about the one occurrence is established — said so rather than given a cause. Found only now:
 its record breaks between the id and its state, and the open-findings counter matched a single space there, so it read
 the record as none (the counter is corrected in the same commit).
+Correction, 2026-10-18 (later), to ZZZZZZ-4 above: it was SEEN AGAIN the same day, once — `EPERM` renaming
+`layer-target-3.pdf.outside` over the target in *"CONTROL: a file replaced from OUTSIDE between two saves is still
+refused"*, the rename made just after the app's own save had renamed its temporary file over the same target, during
+`vitest related` over four kernel and desktop sources (35 test files in parallel). The owner's ruling: try to reproduce
+it under that load. Three tries, the same command over the same sources: 971 of 971 passed each time, no `EPERM`; alone,
+the case passed three times of three. Not reproduced, so no mechanism is claimed: a handle still open on the target at
+the rename (the app's or a scanner's) fits the one occurrence and is not measured. Closed with that reason; **reopen if
+seen again**, and then read which process holds the target at the moment of the rename before changing anything.
 
 **Settled by putting them to the owner.** Each is a decision the code cannot make, asked in REPORT with the options and
 a recommendation. **VVVVVVV-8** (medium, settled as the owner's, question 1: what a reflowed line does with spacing
