@@ -4899,7 +4899,10 @@ for (const look of LOOKS) {
     const said = page.locator('.m-text-editor-problem');
     await expect(said).toContainText('This page uses a font Monstera can’t rewrite yet, so nothing was changed.');
     await expect(said).toContainText('read-back 0');
-    await expect(said).toContainText('press Esc to put the text back');
+    // ONLY ESC IS OFFERED where no words can pass (RRRRRRR-16, 83fb33fc): a font this build cannot rewrite refuses any
+    // typing, so "Change the words" would send a person after an edit that cannot succeed.
+    await expect(said).toContainText('Press Esc to put the text back.');
+    await expect(said).not.toContainText('Change the words');
     // THE WORDS STAY, as typed.
     expect(await editor.evaluate((element) => (element as HTMLElement).innerText)).toBe('A paragraph of words typed here');
 
