@@ -2661,7 +2661,7 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
       appInfo,
       pickImages: () => Promise.resolve([tenth, second]),
       sizeImage: () => Promise.resolve(16),
-      readImage: (path) =>
+      readPageImage: (path) =>
         Promise.resolve({ kind: 'read' as const, bytes: new TextEncoder().encode(path) }),
       pickDestination: (name) => {
         suggested.push(name);
@@ -2699,7 +2699,7 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
         appInfo,
         pickImages: () => Promise.resolve([join(scratch, 'one.png')]),
         sizeImage: () => Promise.resolve(16),
-        readImage,
+        readPageImage: readImage,
         pickDestination: () => Promise.resolve(join(scratch, 'never.pdf')),
         enginePlatform: mupdf.platform,
         composePlatform: third.platform,
@@ -2735,7 +2735,7 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
       appInfo,
       pickImages: () => Promise.resolve([tenth, second]),
       sizeImage: () => Promise.resolve(16),
-      readImage: (path) => Promise.resolve({ kind: 'read' as const, bytes: new TextEncoder().encode(path) }),
+      readPageImage: (path) => Promise.resolve({ kind: 'read' as const, bytes: new TextEncoder().encode(path) }),
       pickDestination: () => Promise.resolve(join(scratch, 'skipped.pdf')),
       enginePlatform: mupdf.platform,
       composePlatform: third.platform,
@@ -2765,7 +2765,7 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
       pickDocument: () => Promise.resolve(aDocument('insert-images-target.pdf')),
       pickImages: () => Promise.resolve([tenth, second]),
       sizeImage: () => Promise.resolve(16),
-      readImage: (path) => Promise.resolve({ kind: 'read' as const, bytes: new TextEncoder().encode(path) }),
+      readPageImage: (path) => Promise.resolve({ kind: 'read' as const, bytes: new TextEncoder().encode(path) }),
       pickDestination: () => Promise.resolve(join(scratch, 'inserted-images.pdf')),
       enginePlatform: mupdf.platform,
       composePlatform: third.platform,
