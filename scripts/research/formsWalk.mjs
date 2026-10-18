@@ -157,6 +157,19 @@ await step('a tick box ticks at a press near its corner, and a radio chooses one
   const tick = onShow.getByRole('checkbox').first();
   await expect(tick).toBeVisible({ timeout: 30_000 });
   const before = await tick.getAttribute('aria-checked');
+  // THE SAME NODE AFTER A WRITE (2026-10-18): tagged before one press, and asked for the tag once the press has been
+  // written and the list read again, which is when the box shows the other state. Before `usePageFormFields` held the
+  // last list, every write took the page's controls off it until the re-read, and they came back as new nodes: this
+  // answered a new node in four runs of four, focus gone, and a later press met no control ("not on screen").
+  await tick.evaluate((element) => {
+    element.setAttribute('data-walk-tag', 'before-press');
+  });
+  await pressOn(tick, 2);
+  await expect(tick).not.toHaveAttribute('aria-checked', before ?? '', { timeout: 30_000 });
+  const sameNode = await tick.evaluate((element) => element.getAttribute('data-walk-tag') === 'before-press');
+  if (!sameNode) throw new Error('the tick box is a new node after one write: the page took its controls off it');
+  await pressOn(tick, 2);
+  await expect(tick).toHaveAttribute('aria-checked', before ?? '', { timeout: 30_000 });
   // THREE PRESSES IN A ROW, NO WAIT (the owner's O6a): each tick is a write of 3 to 5 s here, and the second press used
   // to be answered 'out of date'. An odd number of presses ends ticked the other way.
   await pressOn(tick, 2);

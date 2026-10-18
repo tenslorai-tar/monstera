@@ -5,8 +5,14 @@ import { useMemo } from 'react';
 import type { ListedField } from './fieldFill.js';
 import { useFormFieldList } from './useFormFieldList.js';
 
+/** The fields on each visible page, and the version they were read at, which a fill from them names. */
+export interface PageFormFields {
+  readonly byPage: ReadonlyMap<number, readonly ListedField[]>;
+  readonly version: DocVersion | undefined;
+}
+
 /**
- * The form fields on each visible page, at the document's version (ADR-0168 Decision 1).
+ * The form fields on each visible page (ADR-0168 Decision 1).
  *
  * ## The whole form, once per version
  *
@@ -15,26 +21,31 @@ import { useFormFieldList } from './useFormFieldList.js';
  * hands each visible page the fields that sit on it. A scroll reads nothing. The panel reads the same list for itself;
  * two readers of one list are two readers, and neither holds an opinion about it.
  *
- * A field is named by its place in its page's widget walk at a version, so a field from another version's list would
- * fill the wrong one: the list is no fields at all for a version it was not read at.
+ * ## The last list, with ITS version, until the next one lands
+ *
+ * A field is named by its place in its page's widget walk at a version. The page keeps drawing the last list read while
+ * a write's re-read is in flight (`useFormFieldList`' `held`), so its controls are not taken off the page and put back
+ * as new nodes after every write; and the version answered here is that list's, which a fill from it must name.
  */
 export function usePageFormFields(
   client: ContractClient | undefined,
   docId: DocId | undefined,
   version: DocVersion | undefined,
   visible: ReadonlySet<number>,
-): ReadonlyMap<number, readonly ListedField[]> {
-  const { fields } = useFormFieldList(client, docId, version);
+): PageFormFields {
+  const { held } = useFormFieldList(client, docId, version);
+  const fields = held?.fields;
   const wanted = [...visible].sort((a, b) => a - b).join(',');
-  return useMemo(() => {
-    const byPage = new Map<number, ListedField[]>();
+  const byPage = useMemo(() => {
+    const onPages = new Map<number, ListedField[]>();
     const pages = new Set(wanted === '' ? [] : wanted.split(',').map(Number));
-    for (const field of fields) {
+    for (const field of fields ?? []) {
       if (!pages.has(field.page)) continue;
-      const onPage = byPage.get(field.page);
-      if (onPage === undefined) byPage.set(field.page, [field]);
+      const onPage = onPages.get(field.page);
+      if (onPage === undefined) onPages.set(field.page, [field]);
       else onPage.push(field);
     }
-    return byPage;
+    return onPages;
   }, [fields, wanted]);
+  return { byPage, version: held?.version };
 }

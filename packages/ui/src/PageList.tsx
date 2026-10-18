@@ -649,15 +649,17 @@ export function PageList({
     version,
     firstFrame ? visible : NOTHING_VISIBLE,
   );
-  // AT THE VERSION ON SHOW, which is the version the fields were read at: the hook answers no fields for any other.
+  // AT THE VERSION THE FIELDS WERE READ AT, never the version on show: while a write's re-read is in flight the page
+  // still draws the last list, and its indices name widgets at that list's version, which the lane then judges.
+  const fieldsVersion = pageFields.version;
   const fillOnPage = useMemo(
     () =>
-      onFillField === undefined
+      onFillField === undefined || fieldsVersion === undefined
         ? undefined
         : (fill: PageFill): void => {
-            onFillField({ ...fill, version });
+            onFillField({ ...fill, version: fieldsVersion });
           },
-    [onFillField, version],
+    [onFillField, fieldsVersion],
   );
   // EVERY PAGE'S MARKS, one read per version: the channel is whole-document, so there is nothing
   // to narrow to the visible set, and the layer is mounted only on slots that are measured.
@@ -1416,10 +1418,10 @@ export function PageList({
           linksOutlined={linksOutlined}
           fieldsHighlighted={fieldsHighlighted}
           onFollowLink={onFollowLink}
-          // NONE RATHER THAN ABSENT while the list is read again: a fill moves the version and the list is read afresh,
-          // and a layer unmounted for that moment loses what it holds, the box being typed in, the sentence beside a
-          // field and where Tab sent the focus (ADR-0226). Mounted with none, it draws nothing until the list arrives.
-          fields={sizes.has(page) && fillOnPage !== undefined ? (pageFields.get(page) ?? NO_FIELDS) : undefined}
+          // THE LAST LIST READ while the next is read: a fill moves the version and the list is read afresh, and a layer
+          // unmounted for that moment loses what it holds, the box being typed in, the sentence beside a field and where
+          // Tab sent the focus (ADR-0226) — and so do its controls when it is handed none (`usePageFormFields`).
+          fields={sizes.has(page) && fillOnPage !== undefined ? (pageFields.byPage.get(page) ?? NO_FIELDS) : undefined}
           onFillField={fillOnPage}
           selectedFields={fieldSelection === undefined ? undefined : selectedOnPage(fieldSelection.selected, page)}
           revealField={fieldSelection?.reveal?.page === page ? fieldSelection.reveal : undefined}
