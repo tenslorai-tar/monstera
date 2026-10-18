@@ -1008,6 +1008,8 @@ names one unrecognised key at depth 1 and no field, by design, and the case's co
 **JJJJJJJJ-6** (low, settled: the bold-word check cannot tell from text alone which control a word common to two names;
 a rename of that kind is caught by the rendered case that presses the control, not by this check).
 **FFFFFFFF-13** (low, settled: no record names the owner's four; the fix found and cased seven, and the owner is asked, question 4).
+Correction, 2026-10-18, to the line above: the owner answered question 4 — the reviewer wrote the L8 note, and the seven
+proofs 9034ea9a covers include the four. Closed with that reason; nothing is owed.
 **VVVVVVV-34** (low, not a defect `5125f1a8`, pinned).
 **ZZZZZZ-4** (low, settled as not reproduced): the one `EPERM` on a rename in `apps/desktop/src/documentCommands.test.ts`
 has not been seen again; that file ran in full several times in fix session 2 on this Windows machine and on both CI
