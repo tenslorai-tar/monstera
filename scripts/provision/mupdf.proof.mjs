@@ -65,7 +65,7 @@ async function main() {
   // Each label is recorded by the case that earns it. The fixed block this
   // replaces printed `ok` for the ntdll case on a machine where that case had
   // swallowed its own error and read nothing — see scripts/lib/passRoster.mjs.
-  const roster = createRoster(failures, { cases: 5 });
+  const roster = createRoster(failures, { cases: 6 });
 
   let mark = roster.mark();
   // Case 1 — the real DLL verifies.
@@ -188,8 +188,13 @@ async function main() {
               `verdict it gives about our own binary is worthless.`,
           );
         }
-      } catch {
-        // Absent on a non-Windows runner; the shim cases above already skipped.
+      } catch (error) {
+        // ABSENT on a non-Windows runner, and only that (EEEEEEE-3): a reader that cannot parse a system library is the
+        // finding this case exists for, and a bare catch turned it into "not applicable".
+        if (/** @type {{ code?: unknown }} */ (error).code !== 'ENOENT') {
+          referenceRead = true;
+          failures.push(`the PE reader could not read ${reference}: ${String(error)}`);
+        }
       }
     }
     roster.record(
@@ -223,6 +228,32 @@ async function main() {
       await rm(scratch, { recursive: true, force: true });
     }
     roster.record(mark, 'clearing the DllCharacteristics bits is detected');
+
+    mark = roster.mark();
+    // A DIRECTORY IN NO SECTION IS A MISPARSE, NOT A MISSING MITIGATION (EEEEEEE-3): the Load Config directory pointed
+    // past every section must be refused naming the RVA. The reader's own lookup answered "no stack cookie" here, which
+    // reads as /GS not reaching the binary.
+    const lost = await mkdtemp(join(tmpdir(), 'monstera-pe-'));
+    try {
+      const misplaced = join(lost, 'misplaced.dll');
+      const image = await readFile(dll);
+      const peOffset = image.readUInt32LE(0x3c);
+      // PE32+: data directory 10 (Load Config) at optional header + 0x70 + 10 * 8.
+      image.writeUInt32LE(0x7ff00000, peOffset + 24 + 0x70 + 10 * 8);
+      await writeFile(misplaced, image);
+      let answer = '';
+      try {
+        answer = `read: stackCookie ${String(readPeHardening(misplaced).stackCookie)}`;
+      } catch (error) {
+        answer = String(error);
+      }
+      if (!answer.includes('lies in no section') || !answer.includes('7ff00000')) {
+        failures.push(`a Load Config directory in no section was answered "${answer}", not refused as a misparse`);
+      }
+    } finally {
+      await rm(lost, { recursive: true, force: true });
+    }
+    roster.record(mark, 'a directory addressed into no section is refused as a misparse, naming the address');
   } catch (error) {
     failures.push(`could not read the shim's PE header: ${String(error)}`);
   }

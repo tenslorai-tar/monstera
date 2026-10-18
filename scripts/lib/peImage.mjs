@@ -8,9 +8,9 @@
  * The walk from `e_lfanew` to a data directory and from an RVA to a file offset is one rule from the PE format
  * specification, and every reader here needs it before it can ask its own question. It lived inside
  * `peExports.mjs`; a second reader — the icon resources — would otherwise have re-derived it, and a partial copy is
- * the dangerous shape because it agrees with the first one on every file anybody tried (B3a).
- * `peHardening.mjs` still carries its own walk, whose lookup answers *absent* where this one throws; the two have
- * not been joined, because that would change what the hardening proof reports about a directory in no section.
+ * the dangerous shape because it agrees with the first one on every file anybody tried (B3a). `peHardening.mjs` kept
+ * a walk of its own until 2026-10-18, whose lookup answered *absent* where this one throws, so a misparse there read
+ * as a mitigation missing from the build (EEEEEEE-3); it takes this one now.
  *
  * ## The format, in the order this reads it
  *
