@@ -71,3 +71,43 @@ start after the minute.
 - A person who leaves Monstera on its start screen for a minute after closing their documents gets the start-up memory
   back without doing anything; the window reloads once, out of sight of anyone using it.
 - `main` holds one more fact about the window: whether a document has been opened since it last loaded.
+
+## Correction, 2026-10-18 — the release gives the window a NEW renderer process; a reload in the same one does not
+
+**Decision 3's reload kept the memory after a long session.** The measurement above was a short one, seven documents
+opened and closed. The memory walk's M5 after a long one — seven documents, twenty-two edits in three fonts, every tab
+visited — read **481 MB against 355 at the start** after the idle reload, renderer 177 and GPU 106, and never passed.
+`_review/afterReloadProbe.mjs`, this laptop, 2026-10-18, private memory by role, each the lowest total of five samples
+two seconds apart:
+
+| after a long session, every document closed | total | main | renderer | GPU |
+|---|---|---|---|---|
+| the idle reload, ADR-0252 as written (`afterReload-4.log`) | 469 MB | 179 | 162 | 103 |
+| then the pressure signal again, 30 s later | 461 MB | 179 | 152 | 103 |
+| then a NEW renderer process for the same window, 30 s later | **353 MB** | 156 | 76 | 95 |
+
+So the memory is held by the renderer PROCESS across a reload in it — a purge after the reload gives back 10 MB — and
+only a new process gives it back. The process id said which: a reload kept it (13108 before and after,
+`afterReload-5.log`).
+
+**Decision 3 now reads: `main` gives the window a new renderer process, never a reload in the old one.** It loads an
+empty `data:` page — a browser-initiated `data:` navigation commits in a process of its own — clears the window's
+navigation history, waits for the old renderer process to exit, and loads the application's page again, which then
+starts in a new process. Measured: process 3400 before, 3164 after, the closed figure **361 MB** (`afterReload-6.log`).
+
+**The history is cleared because the back/forward cache held the old page, and with it the old process.** Without it,
+the `data:` page did run in its own process (12800), and loading the application's page again went back to the old one
+(13108), still alive: 420 MB.
+
+**Rejected:**
+
+- **Ending the renderer** (`forcefullyCrashRenderer`, then a reload). It reached 353 MB, and it is a crash: ADR-0253
+  reloads a renderer that ends and hands it its documents back, and its crash handling would take the release for a
+  failure. A release that looks like a fault to the application's own fault handling is the wrong mechanism.
+- **A second pressure signal after the reload.** Measured above: 10 MB.
+- **A new window**, rejected above for its frame and position; a new process in the same window keeps both.
+
+**What is unchanged:** the moments (the signal at the last close, the release after a minute idle), the renderer's
+conditions, and `main`'s decision — only what *release* does. The memory walk's M5 now also asserts the window's
+renderer process id changed, because a figure inside 10% can come from a quiet session without a new process, and a
+reload in the same process is what this correction withdraws.

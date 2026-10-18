@@ -1387,8 +1387,10 @@ taken only for a document that has nothing to lose.
 [ADR-0252](DECISIONS/0252-a-closed-and-idle-window-gives-its-renderer-back.md)):
 the last close sends Chromium's memory-pressure signal, and after a minute with
 no document, no dialog, no work in flight and no input the renderer asks
-`app.releaseMemory`, which `main` answers by reloading the window only with no
-document open and one opened since it last loaded. **And a renderer that ends is
+`app.releaseMemory`, which `main` answers, only with no document open and one
+opened since it last loaded, by giving the window a NEW renderer process —
+never a reload in the old one, which keeps what the old page held (corrected
+2026-10-18). **And a renderer that ends is
 reloaded and given its documents back** (amended 2026-10-17,
 [ADR-0253](DECISIONS/0253-a-failure-is-called-out-of-memory-only-when-that-is-proven.md)):
 `document.held` answers what `main` holds, and a failure is called *out of
@@ -3142,6 +3144,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-10-18 | **The release gives the window a new renderer process** (§5, §6). The memory walk's M5 after a long session: 481 MB closed against 355 at the start, with ADR-0252's reload. Measured: a reload in the same renderer process kept it (469 MB, a second pressure signal 461), a new process for the same window gave it back (353). `main` now loads an empty `data:` page, clears the window's history (the back/forward cache held the old page and its process), waits for the old process to exit and loads the page again: 361 MB, a new process id | ADR-0252 Decision 3's reload | [0252](DECISIONS/0252-a-closed-and-idle-window-gives-its-renderer-back.md), correction of 2026-10-18 |
 | 2026-10-17 | **A failure is called *out of memory* only when that is proven** (§5, §6). The owner's decision of 2026-10-17. A host killed at its memory budget reached the person as `internal`; a renderer that ended out of memory left a dead window; low memory was a log line. Now: `out-of-memory`, a declared failure on the three channels that change a document, with the computer's figures and other programs named only when memory was short; a renderer that ends is reloaded and given back its documents (`document.held`), told why (`app.rendererEnded`); `app.memory-low` is one calm notice per spell | §6's renderer had no recovery from its own end | [0253](DECISIONS/0253-a-failure-is-called-out-of-memory-only-when-that-is-proven.md) |
 | 2026-10-17 | **A window with no document gives its renderer back** (§5, §6). The owner's addendum 2 item 3, measured: 518 MB with every document closed against 357 at the start; the pressure signal gave back 29, a reload 156. The last close sends the signal; a minute idle with nothing open, the renderer asks `app.releaseMemory` and `main` reloads it | Nothing withdrawn | [0252](DECISIONS/0252-a-closed-and-idle-window-gives-its-renderer-back.md) |
 | 2026-10-17 | **The open text editor's context menu is its own, not a projection** (§7), recorded late. Decided on 2026-10-06 in ADR-0180's correction of Decision 8 inside feature commit `7ec632f7`, whose diff did not touch this file, against B4's order (finding VVVVVVV-21). The menu's first section is the replacements for the word under the pointer, which are not commands; its Edit verbs are the Edit menu's through `window.edit` | §7's *context menus … are all derived from placements*, for this one menu | [0180](DECISIONS/0180-formatting-is-marks-over-a-blocks-words-and-a-block-is-moved-resized-and-added-by-its-own-commands.md), correction 2026-10-06 |
