@@ -30,7 +30,7 @@ function identity(): FileIdentity {
   return {
     canonicalPath: 'C:\\docs\\a.pdf' as CanonicalPath,
     dev: 1,
-    ino: 100,
+    ino: '100',
     size: 2048,
     modifiedMs: 1_700_000_000_000,
     changedMs: 1_700_000_000_000,

@@ -850,7 +850,7 @@ export interface BackupStore {
   /** The data folder's `backups` directory. */
   readonly root: string;
   /** The file's identity now, for the hint a moved file is found by; `undefined` reads nothing. */
-  readonly identity?: ((path: string) => Promise<{ readonly dev: number | null; readonly ino: number | null } | null>) | undefined;
+  readonly identity?: ((path: string) => Promise<{ readonly dev: number | null; readonly ino: string | null } | null>) | undefined;
 }
 
 /** One kept version, as the application names it: an opaque id, when it was saved over, and how big it is. */

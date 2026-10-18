@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -43,7 +43,7 @@ function identity(
   const { canonicalPath, ...rest } = overrides;
   return {
     dev: 1,
-    ino: 100,
+    ino: '100',
     size: 2048,
     modifiedMs: 1_700_000_000_000,
     changedMs: 1_700_000_000_000,
@@ -66,8 +66,8 @@ describe('isSameDocument — the merge rule', () => {
   });
 
   it('row 3: different paths and different indexes are different documents', () => {
-    const a = identity({ canonicalPath: 'C:\\docs\\a.pdf', ino: 100 });
-    const b = identity({ canonicalPath: 'C:\\docs\\b.pdf', ino: 200 });
+    const a = identity({ canonicalPath: 'C:\\docs\\a.pdf', ino: '100' });
+    const b = identity({ canonicalPath: 'C:\\docs\\b.pdf', ino: '200' });
     expect(isSameDocument(a, b)).toBe(false);
   });
 
@@ -75,9 +75,19 @@ describe('isSameDocument — the merge rule', () => {
   // THE CONTROL SET. Each of these passes trivially under a widened rule.
   // ---------------------------------------------------------------------------
 
+  it('TWO COPIES MADE ONE AFTER ANOTHER, their indexes a step apart past 2^53, stay apart', () => {
+    // MEASURED 2026-10-18: the memory walk's fourth copy (index …443) and its first (…444) on this laptop's disk. As
+    // numbers the two are ONE value, which is what made opening the fourth show the first already open; this asserts the
+    // fixture reaches that rounding, so the case cannot pass on indexes a number would have kept apart anyway.
+    expect(Number(9851624186332443n)).toBe(Number(9851624186332444n));
+    const first = identity({ canonicalPath: 'C:\\walk\\memory-1.pdf', ino: '9851624186332444' });
+    const fourth = identity({ canonicalPath: 'C:\\walk\\memory-4.pdf', ino: '9851624186332443' });
+    expect(isSameDocument(first, fourth)).toBe(false);
+  });
+
   it('TWO COPIES: identical size and last-write time, different files, stay apart', () => {
-    const original = identity({ canonicalPath: 'C:\\docs\\annual.pdf', ino: 100 });
-    const backup = identity({ canonicalPath: 'C:\\backup\\annual.pdf', ino: 200 });
+    const original = identity({ canonicalPath: 'C:\\docs\\annual.pdf', ino: '100' });
+    const backup = identity({ canonicalPath: 'C:\\backup\\annual.pdf', ino: '200' });
 
     // Same name, same size, same mtime — everything a corroboration-only merge
     // would look at. Different file.
@@ -154,8 +164,8 @@ describe('row 1 compares exactly — and neither fold is acceptable', () => {
     // This is why `toUpperCase()` was the wrong repair for the locale bug. A
     // false MERGE is the worse direction: the second open returns already-open,
     // one file becomes unopenable, and a write can land on the other.
-    const sharp = identity({ canonicalPath: 'C:\\docs\\straße.pdf', dev: 1, ino: 100 });
-    const doubled = identity({ canonicalPath: 'C:\\docs\\STRASSE.pdf', dev: 1, ino: 200 });
+    const sharp = identity({ canonicalPath: 'C:\\docs\\straße.pdf', dev: 1, ino: '100' });
+    const doubled = identity({ canonicalPath: 'C:\\docs\\STRASSE.pdf', dev: 1, ino: '200' });
     expect(isSameDocument(sharp, doubled)).toBe(false);
   });
 });
@@ -203,6 +213,13 @@ describe('readFileIdentity — against a real filesystem', () => {
     if (found === null) throw new Error(`fixture missing: ${path}`);
     return found;
   }
+
+  it('reads a real file’s index EXACT, as the filesystem answers it in 64 bits', async () => {
+    const found = await mustRead(original());
+    const exact = statSync(original(), { bigint: true }).ino;
+    // WHERE THE FILESYSTEM HAS AN INDEX: the exact one, not a number that may have rounded it.
+    expect(found.ino).toBe(exact === 0n ? null : exact.toString());
+  });
 
   // Both cases below are about a FILESYSTEM property, and both used to assert
   // the Windows answer unconditionally — which is how they went red on an

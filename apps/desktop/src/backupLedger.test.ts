@@ -38,7 +38,7 @@ const NO_WAIT = (): Promise<void> => Promise.resolve();
 
 describe('a copy Monstera made and could NOT delete (CR-DOC-10)', () => {
   it('is HELD, not thrown: the save it belongs to succeeded, and the copy is owed a deletion', async () => {
-    const files = new Map([['a.pdf.bak', { dev: 1, ino: 10, size: 100, modifiedMs: 5 }]]);
+    const files = new Map([['a.pdf.bak', { dev: 1, ino: '10', size: 100, modifiedMs: 5 }]]);
     const disk = volume(files);
     let attempts = 0;
     const provenance = createBackupProvenance(createEphemeralSettings(), {
@@ -57,7 +57,7 @@ describe('a copy Monstera made and could NOT delete (CR-DOC-10)', () => {
   });
 
   it('is retried, and deleted once the other program lets go; the debt survives a restart', async () => {
-    const files = new Map([['a.pdf.bak', { dev: 1, ino: 10, size: 100, modifiedMs: 5 }]]);
+    const files = new Map([['a.pdf.bak', { dev: 1, ino: '10', size: 100, modifiedMs: 5 }]]);
     const disk = volume(files);
     let held = true;
     const store = createEphemeralSettings();
@@ -81,7 +81,7 @@ describe('a copy Monstera made and could NOT delete (CR-DOC-10)', () => {
   });
 
   it('CONTROL: a retry never deletes a file CHANGED since it was owed — the debt is dropped and the file kept', async () => {
-    const files = new Map([['a.pdf.bak', { dev: 1, ino: 10, size: 100, modifiedMs: 5 }]]);
+    const files = new Map([['a.pdf.bak', { dev: 1, ino: '10', size: 100, modifiedMs: 5 }]]);
     const disk = volume(files);
     let held = true;
     const provenance = createBackupProvenance(createEphemeralSettings(), {
@@ -91,7 +91,7 @@ describe('a copy Monstera made and could NOT delete (CR-DOC-10)', () => {
     });
     await provenance.made('a.pdf.bak');
     expect(await provenance.deleteIfMade('a.pdf.bak')).toBe('held');
-    files.set('a.pdf.bak', { dev: 1, ino: 10, size: 120, modifiedMs: 9 });
+    files.set('a.pdf.bak', { dev: 1, ino: '10', size: 120, modifiedMs: 9 });
     held = false;
     expect(await provenance.retryOwed(['a.pdf.bak'])).toStrictEqual([]);
     expect(disk.removed).toStrictEqual([]);
@@ -99,7 +99,7 @@ describe('a copy Monstera made and could NOT delete (CR-DOC-10)', () => {
   });
 
   it('a failure waiting cannot fix (a read-only volume) is held at once, without climbing the ladder', async () => {
-    const files = new Map([['a.pdf.bak', { dev: 1, ino: 10, size: 100, modifiedMs: 5 }]]);
+    const files = new Map([['a.pdf.bak', { dev: 1, ino: '10', size: 100, modifiedMs: 5 }]]);
     let attempts = 0;
     const provenance = createBackupProvenance(createEphemeralSettings(), {
       ...volume(files),
@@ -119,8 +119,8 @@ describe('which backups Monstera made (ADR-0139)', () => {
   it('deletes a backup it recorded, unchanged; CONTROL: one it never recorded is not-made and stays', async () => {
     const disk = volume(
       new Map([
-        ['a.pdf.bak', { dev: 1, ino: 10, size: 100, modifiedMs: 5 }],
-        ['b.pdf.bak', { dev: 1, ino: 11, size: 100, modifiedMs: 5 }],
+        ['a.pdf.bak', { dev: 1, ino: '10', size: 100, modifiedMs: 5 }],
+        ['b.pdf.bak', { dev: 1, ino: '11', size: 100, modifiedMs: 5 }],
       ]),
     );
     const provenance = createBackupProvenance(createEphemeralSettings(), disk);
@@ -132,11 +132,11 @@ describe('which backups Monstera made (ADR-0139)', () => {
   });
 
   it('a file CHANGED since (another size or time) is not the file it made', async () => {
-    const files = new Map([['a.pdf.bak', { dev: 1, ino: 10, size: 100, modifiedMs: 5 }]]);
+    const files = new Map([['a.pdf.bak', { dev: 1, ino: '10', size: 100, modifiedMs: 5 }]]);
     const disk = volume(files);
     const provenance = createBackupProvenance(createEphemeralSettings(), disk);
     await provenance.made('a.pdf.bak');
-    files.set('a.pdf.bak', { dev: 1, ino: 10, size: 100, modifiedMs: 6 });
+    files.set('a.pdf.bak', { dev: 1, ino: '10', size: 100, modifiedMs: 6 });
     expect(await provenance.deleteIfMade('a.pdf.bak')).toBe('not-made');
     expect(disk.removed).toStrictEqual([]);
   });
@@ -151,8 +151,8 @@ describe('which backups Monstera made (ADR-0139)', () => {
   });
 
   it('the record SURVIVES a restart, and past the bound the OLDEST entry goes first', async () => {
-    const files = new Map<string, { dev: number; ino: number; size: number; modifiedMs: number }>();
-    for (let at = 0; at <= MAX_LEDGER_ENTRIES; at += 1) files.set(`f${String(at)}.bak`, { dev: 1, ino: at, size: 1, modifiedMs: 1 });
+    const files = new Map<string, { dev: number; ino: string; size: number; modifiedMs: number }>();
+    for (let at = 0; at <= MAX_LEDGER_ENTRIES; at += 1) files.set(`f${String(at)}.bak`, { dev: 1, ino: String(at), size: 1, modifiedMs: 1 });
     const disk = volume(files);
     const file = createEphemeralSettings();
     const first = createBackupProvenance(file, disk);
@@ -169,8 +169,8 @@ describe('which backups Monstera made (ADR-0139)', () => {
 describe('the proof asked without touching the file (ADR-0198 Decision 5)', () => {
   it('is true for a backup Monstera made and unchanged since — CONTROL: false for another file with the name, a changed one and a missing one, and nothing is deleted', async () => {
     const files = new Map([
-      ['mine.pdf.bak', { dev: 1, ino: 10, size: 100, modifiedMs: 5 }],
-      ['theirs.pdf.bak', { dev: 1, ino: 11, size: 100, modifiedMs: 5 }],
+      ['mine.pdf.bak', { dev: 1, ino: '10', size: 100, modifiedMs: 5 }],
+      ['theirs.pdf.bak', { dev: 1, ino: '11', size: 100, modifiedMs: 5 }],
     ]);
     const disk = volume(files);
     const provenance = createBackupProvenance(createEphemeralSettings(), disk);
@@ -180,7 +180,7 @@ describe('the proof asked without touching the file (ADR-0198 Decision 5)', () =
     expect(await provenance.wasMade('theirs.pdf.bak')).toBe(false);
     expect(await provenance.wasMade('gone.pdf.bak')).toBe(false);
     // EDITED SINCE: another size and time, so it is no longer the file Monstera left.
-    files.set('mine.pdf.bak', { dev: 1, ino: 10, size: 101, modifiedMs: 6 });
+    files.set('mine.pdf.bak', { dev: 1, ino: '10', size: 101, modifiedMs: 6 });
     expect(await provenance.wasMade('mine.pdf.bak')).toBe(false);
     // THE QUESTION DELETED NOTHING: both files are still on the volume.
     expect([...files.keys()].sort()).toStrictEqual(['mine.pdf.bak', 'theirs.pdf.bak']);
@@ -189,13 +189,13 @@ describe('the proof asked without touching the file (ADR-0198 Decision 5)', () =
 
 describe('a backup a protect rewrites in place (ADR-0171 Decision 8)', () => {
   it('is rewritten only when Monstera made it, and the NEW file is then Monstera’s, so a removal’s save still finds it', async () => {
-    const files = new Map([['a.pdf.bak', { dev: 1, ino: 10, size: 100, modifiedMs: 5 }]]);
+    const files = new Map([['a.pdf.bak', { dev: 1, ino: '10', size: 100, modifiedMs: 5 }]]);
     const disk = volume(files);
     const provenance = createBackupProvenance(createEphemeralSettings(), disk);
     await provenance.made('a.pdf.bak');
     const answer = await provenance.rewriteIfMade('a.pdf.bak', () => {
       // A RENAME OVER THE FILE, as the sealing does: another index, size and time.
-      files.set('a.pdf.bak', { dev: 1, ino: 20, size: 140, modifiedMs: 9 });
+      files.set('a.pdf.bak', { dev: 1, ino: '20', size: 140, modifiedMs: 9 });
       return Promise.resolve(true);
     });
     expect(answer).toBe('rewritten');
@@ -204,8 +204,8 @@ describe('a backup a protect rewrites in place (ADR-0171 Decision 8)', () => {
 
   it('CONTROL: one Monstera did not make is not rewritten, and one left as it was keeps its record', async () => {
     const files = new Map([
-      ['mine.pdf.bak', { dev: 1, ino: 10, size: 100, modifiedMs: 5 }],
-      ['theirs.pdf.bak', { dev: 1, ino: 11, size: 100, modifiedMs: 5 }],
+      ['mine.pdf.bak', { dev: 1, ino: '10', size: 100, modifiedMs: 5 }],
+      ['theirs.pdf.bak', { dev: 1, ino: '11', size: 100, modifiedMs: 5 }],
     ]);
     const provenance = createBackupProvenance(createEphemeralSettings(), volume(files));
     await provenance.made('mine.pdf.bak');

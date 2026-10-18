@@ -143,11 +143,24 @@ describe('backups in the data folder', () => {
     const { root, target } = scene();
     const names = dataFolderNames(root, 1, (path) => siblingNames(path, 0).temp);
     await save(target, 'version 2', names(target));
-    await writeBackupNote(root, target, { dev: 7, ino: 4242 });
-    expect(await findByIdentityHint(root, 7, 4242)).toBe(target);
-    expect(await findByIdentityHint(root, 7, 1)).toBeUndefined();
+    await writeBackupNote(root, target, { dev: 7, ino: '4242' });
+    expect(await findByIdentityHint(root, 7, '4242')).toBe(target);
+    expect(await findByIdentityHint(root, 7, '1')).toBeUndefined();
     // A volume that reports no index gives no hint at all, which is never read as a match.
     expect(await findByIdentityHint(root, null, null)).toBeUndefined();
+  });
+
+  it('a note written before 2026-10-18 holds its index as a NUMBER: a hint where that number is exact, none past 2^53', async () => {
+    const { root, target } = scene();
+    const names = dataFolderNames(root, 1, (path) => siblingNames(path, 0).temp);
+    await save(target, 'version 2', names(target));
+    // AN OLD NOTE, as an earlier build wrote it.
+    await writeBackupNote(root, target, { dev: 7, ino: 4242 as unknown as string });
+    expect(await findByIdentityHint(root, 7, '4242')).toBe(target);
+    // PAST 2^53 a number is a rounding several files share (…443 and …445 both read …444): it names no file, so even the
+    // index its digits spell exactly is not offered another file's backups.
+    await writeBackupNote(root, target, { dev: 7, ino: 9851624186332444 as unknown as string });
+    expect(await findByIdentityHint(root, 7, '9851624186332444')).toBeUndefined();
   });
 
   it('CLEAR removes every folder and says how many backups went', async () => {

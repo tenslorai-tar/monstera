@@ -108,7 +108,18 @@ export async function storedBackupPath(root: string, target: string, id: string)
 export interface BackupNote {
   readonly path: string;
   readonly dev: number | null;
-  readonly ino: number | null;
+  /** The file index EXACT, in decimal (`FileIdentity.ino`). A note written before 2026-10-18 holds it as a number. */
+  readonly ino: string | null;
+}
+
+/**
+ * Whether a note's index is `ino`. A note written before 2026-10-18 holds a NUMBER, exact only up to 2^53: past it the
+ * number is a rounding several files share, so such a note names no file and is no hint (it could only offer another
+ * file's backups).
+ */
+function sameIndex(noted: unknown, ino: string): boolean {
+  if (typeof noted === 'string') return noted === ino;
+  return typeof noted === 'number' && Number.isSafeInteger(noted) && String(noted) === ino;
 }
 
 /** Writes the note, best effort: a note that cannot be written loses a hint and never a backup. */
@@ -125,7 +136,7 @@ export async function writeBackupNote(root: string, target: string, note: Omit<B
  * folder's note matches or the identity is empty. A hint is offered to the person and never trusted: two files on two
  * volumes can share an index.
  */
-export async function findByIdentityHint(root: string, dev: number | null, ino: number | null): Promise<string | undefined> {
+export async function findByIdentityHint(root: string, dev: number | null, ino: string | null): Promise<string | undefined> {
   if (dev === null || ino === null) return undefined;
   let folders: string[];
   try {
@@ -135,8 +146,8 @@ export async function findByIdentityHint(root: string, dev: number | null, ino: 
   }
   for (const folder of folders) {
     try {
-      const note = JSON.parse(await readFile(join(root, folder, NOTE), 'utf8')) as Partial<BackupNote>;
-      if (note.dev === dev && note.ino === ino && typeof note.path === 'string') return note.path;
+      const note = JSON.parse(await readFile(join(root, folder, NOTE), 'utf8')) as { dev?: unknown; ino?: unknown; path?: unknown };
+      if (note.dev === dev && sameIndex(note.ino, ino) && typeof note.path === 'string') return note.path;
     } catch {
       // A folder with no readable note is not a candidate.
     }

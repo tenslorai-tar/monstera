@@ -172,7 +172,7 @@ function identity(overrides: Partial<FileIdentity> = {}): FileIdentity {
     // what makes row 1's `===` sound.
     canonicalPath: 'C:\\docs\\a.pdf' as CanonicalPath,
     dev: 1,
-    ino: 100,
+    ino: '100',
     size: 2048,
     modifiedMs: 1_700_000_000_000,
     changedMs: 1_700_000_000_000,

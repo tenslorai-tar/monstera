@@ -143,8 +143,14 @@ export interface FileIdentity {
   readonly canonicalPath: CanonicalPath;
   /** `dev`, or null when the filesystem supplies no usable index. */
   readonly dev: number | null;
-  /** `ino`, or null when the filesystem supplies no usable index. */
-  readonly ino: number | null;
+  /**
+   * `ino`, EXACT, in decimal, or null when the filesystem supplies no usable index.
+   *
+   * A STRING, because an NTFS file index is 64 bits and a JavaScript number holds 53 exactly: read as one, files made one
+   * after another rounded to the same index (…443 and …445 both read …444, measured 2026-10-18 on this laptop's disk), so
+   * opening one showed another already open — the memory walk opened its fourth copy and was shown its first.
+   */
+  readonly ino: string | null;
   /** Corroboration only. Never evidence of sameness on its own. */
   readonly size: number;
   /** Corroboration only. Never evidence of sameness on its own. */
@@ -175,19 +181,21 @@ export interface FileIdentity {
  */
 export async function readFileIdentity(path: string): Promise<FileIdentity | null> {
   try {
-    const [canonicalPath, stats] = await Promise.all([realpathNative(path), stat(path)]);
+    // THE INDEX READ EXACT (`bigint`) beside the ordinary read, whose sizes and times stay the numbers they were: they
+    // are kept on disk by the backup ledger, and a figure read another way would not match one kept before.
+    const [canonicalPath, stats, exact] = await Promise.all([realpathNative(path), stat(path), stat(path, { bigint: true })]);
 
     // A zero index is what "this filesystem has no index" looks like. Treated
     // as absent evidence rather than as the value zero, so it can never
     // collide with another zero and merge two unrelated files.
-    const hasIndex = stats.dev !== 0 && stats.ino !== 0;
+    const hasIndex = stats.dev !== 0 && exact.ino !== 0n;
 
     return {
       // The only place a CanonicalPath is minted. Keeping this cast unexported
       // is what makes `===` sound in `isSameDocument`.
       canonicalPath: canonicalPath as CanonicalPath,
       dev: hasIndex ? stats.dev : null,
-      ino: hasIndex ? stats.ino : null,
+      ino: hasIndex ? exact.ino.toString() : null,
       size: stats.size,
       modifiedMs: stats.mtimeMs,
       // Same treatment as the index: a zero or non-finite change time is a
