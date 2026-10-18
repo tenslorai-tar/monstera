@@ -892,6 +892,144 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-18 — Fix session 2: every open finding closed, settled or found not a defect (addendum B8)
+
+The 173 findings whose latest record said *open* (`scripts/research/openFindings.mjs`, which reads each finding's
+newest bold record) each get a closing record here: **fixed** with its commit, **settled** with the reading or the
+decision that settles it, or **not a defect** with why. Appended; the records above are unchanged. Four are settled by
+being put to the owner and say so; three findings this session made are recorded below them and say what is unfixed.
+
+**Fixed in fix session 1 (addendum B8's list).**
+**KKKKKKKK-1** (high, fixed `52812c37`). **KKKKKKKK-2** (medium, fixed `00d331e0`). **KKKKKKKK-3** (medium, fixed
+`b09452aa`). **KKKKKKKK-5** (low, fixed `1c89273f`). **KKKKKKKK-6** (low, fixed `ab1af716`, `444ae116`).
+**KKKKKKKK-7** (low, fixed `3c05d055`, `ff2c34b9`).
+
+**Fixed earlier, by the commit the trace of 2026-10-17 resolved.**
+**JJJJJJJJ-4** (low, fixed `87957173`). **IIIIIIII-4** (medium, fixed `4bf1e787`). **IIIIIIII-11** (low, fixed
+`0123519d`). **HHHHHHHH-4** (medium, fixed `5d55f908`). **HHHHHHHH-6** (low, fixed `f0cd9cac`). **GGGGGGGG-2** (medium,
+fixed `4d0b6e9e`). **GGGGGGGG-3** (medium, fixed `562f3d06`). **GGGGGGGG-4** (medium, fixed `b12e1fec`).
+**GGGGGGGG-5** (low, fixed `f0cd9cac`). **GGGGGGGG-7** (low, fixed `88092e7c`, `47d79ed2`). **FFFFFFFF-7** (low, fixed `3520625f`).
+**FFFFFFFF-12** (low, fixed `481c3cb6`). **EEEEEEEE-2** (medium, fixed `c25bc86d`). **EEEEEEEE-4** (low, fixed
+`15f91b22`). **EEEEEEEE-7** (medium, fixed `327e4338`). **EEEEEEEE-11** (low, fixed `1bdd02f9`). **DDDDDDDD-5** (low,
+fixed `3db1c9f2`). **DDDDDDDD-6** (low, fixed `39a81ead`). **CCCCCCCC-3** (low, fixed `e327d6da`). **TTTTTTT-1** (low,
+fixed `db0901be`). **SSSSSSS-1** (medium, fixed `12e2adef`, `77f588ef`). **SSSSSSS-18** (low, fixed `73d947c8`).
+**RRRRRRR-3** (medium, fixed `336f1c0b`). **RRRRRRR-5** (medium, fixed `6fcb9cea`). **RRRRRRR-6** (medium-low, fixed
+`b7d31f67`). **QQQQQQQ-12** (medium, fixed `50682806`). **NNNNNNN-2** (medium, fixed `d81a6a5b`). **IIIIIII-7** (low,
+fixed `b9be9f5d`). **FFFFFFF-2** (low, fixed `91761ab6`). **CCCCCCC-7** (fixed `f871b250`). **AAAAAAA-6** (low, fixed
+`35b020dd`). **AAAAAAA-3** (low, fixed `a58f0c83`). **AAAAAAA-1** (medium, fixed `f500ea36`). **AAAAAAA-5** (low, fixed
+`7687813e`). **GGGGGGG-3** (medium, fixed `67d94a51`). **GGGGGGG-5** (low, fixed `780b1108`). **DDDDDDD-8** (low, fixed
+`0d69cc89`). **DDDDDDD-6** (low, fixed `035bbb87`). **DDDDDDD-9** (low, fixed `46504691`). **DDDDDDD-7** (low, fixed
+`df785c2f`). **DDDDDDD-4** (low, fixed `76163856`, `5efc09ed`). **DDDDDDD-10** (medium, fixed `7dfa3421`).
+**BBBBBBB-5** (low, fixed `2e0b356a`). **BBBBBBB-1** (medium, fixed `f4cb4385`). **YYYYYY-9** (low, fixed `cf99b0a9`).
+
+**Closed before in prose, now with a record.** The *Addendum 4 C* entry of 2026-10-15 closed these in a list, which the
+counter cannot read: **HHHHHHHH-7** (low, closed, Addendum 4 C). **EEEEEEEE-1** (medium, closed, Addendum 4 C).
+**DDDDDDDD-1** (medium, closed, Addendum 4 C). **DDDDDDDD-2** (medium, closed, Addendum 4 C). **CCCCCCCC-5** (low,
+closed, Addendum 4 C). **BBBBBBBB-2** (medium, closed `f3bf29ae`). **BBBBBBBB-3** (medium, closed `e7c9714d`,
+`875f247a`). **BBBBBBBB-4** (low, closed, Addendum 4 C). **BBBBBBBB-5** (low, closed, Addendum 4 C). **BBBBBBBB-6** (low,
+closed, Addendum 4 C). **BBBBBBBB-7** (low, closed, Addendum 4 C). **BBBBBBBB-8** (low, closed, Addendum 4 C).
+**BBBBBBBB-10** (low, closed, Addendum 4 C). **AAAAAAAA-1** (medium, closed, Addendum 4 C). **AAAAAAAA-2** (medium,
+closed, Addendum 4 C). **AAAAAAAA-3** (low, closed, Addendum 4 C). **AAAAAAAA-4** (low, closed, Addendum 4 C).
+**AAAAAAAA-5** (low, closed, Addendum 4 C). **AAAAAAAA-6** (medium, closed, Addendum 4 C). **JJJJJJJ-6** (low, closed
+`20bf7ee2`). **DDDDDDD-1** (high, closed, its record of the cloud run's merge).
+
+**Settled by a reading.** **IIIIIIII-7** (medium, settled: all four proofs passed on Windows in session 3).
+**IIIIIIII-8** (medium, settled: the C4 and forms walks ran on Windows). **GGGGGGGG-12** (low, settled `0ef5380d`: 18 of 18
+refusals named their own error). **FFFFFFFF-9** (low, settled: session 3 timed the calls at 2 to 131 ms each).
+**CCCCCCCC-4** (low, settled with FFFFFFFF-9's timing). **DDDDDDDD-9** (medium, settled: session 3 read the CSV peaks on
+Windows, inside the job limit; a host that does end at its limit says out of memory only when proven, ADR-0253).
+**KKKKKKK-4** (low, settled `ee1d8bde`). **EEEEEEE-1** (medium, settled: installedCheck on 0.1.9.0).
+
+**Not a defect.** **DDDDDDDD-11** (low, not a defect, its Addendum 4 C reading). **WWWWWWW-3** (low, not a defect: the
+runner, not the code). **VVVVVVV-2** (low, not a defect: its own record states limits). **EEEEEEE-2** (low, not a
+defect, its own record). **GGGGGGG-6** (low, not a defect: an observation). **YYYYYYY-3** (info, not a defect: read
+2026-10-18, the `tableEngines` stub stands at `documentCommands.test.ts:199`; 94ccfbdf and 541cc1d9 added deps beside it
+and removed none, so nothing was loosened).
+
+**Fixed in fix session 2, 2026-10-17 and -18.**
+**ZZZZZZZ-3** (low, fixed `154446e5`: undo restores the known opening key). **YYYYYYY-2** (low, fixed `eaf5f2fa`).
+**VVVVVVV-9** (medium, fixed `9c1e4742`). **VVVVVVV-10** (low-medium, fixed `a807595e`). **VVVVVVV-11** (low, fixed
+`5dbd41d0`). **VVVVVVV-12** (low, fixed `b16a3a49`, `724f9238`). **VVVVVVV-13** (low, fixed `9c1e4742`).
+**VVVVVVV-14** (low, fixed `5ad3ed50`). **VVVVVVV-15** (medium, fixed `a807595e`). **VVVVVVV-16** (medium, fixed `b4c3f551`).
+**VVVVVVV-17** (medium, fixed `61bb0792`: seven formatting features, each with a PDFium case, all red when sent another
+property). **VVVVVVV-18** (medium, fixed `04f065e8`: the join proof sends `joinEdits`; the family half is put to the
+owner, question 3). **VVVVVVV-19** (medium, fixed `3a1176eb`). **VVVVVVV-20** (medium, fixed `9c39ce06`).
+**VVVVVVV-21** (medium, fixed `9c1e4742`). **VVVVVVV-22** (low-medium, fixed `9c1e4742`). **VVVVVVV-23** (low, fixed
+`a807595e`). **VVVVVVV-24** (low, fixed `a807595e`). **VVVVVVV-25** (low, fixed `541a6736`, `8e22f1f6`).
+**VVVVVVV-26** (low, fixed `23fe30cd`). **VVVVVVV-27** (medium, fixed `9c1e4742`). **VVVVVVV-29** (low-medium, fixed `9c1e4742`).
+**VVVVVVV-30** (low, fixed `8c2df4ca`). **VVVVVVV-31** (low, fixed `c4cf82ee`). **VVVVVVV-32** (low, fixed `60e3867f`).
+**VVVVVVV-33** (low, fixed `9c1e4742`). **VVVVVVV-36** (low, fixed `60e3867f`). **SSSSSSS-14** (medium, fixed
+`6c8b9354`). **SSSSSSS-15** (medium, fixed `fcc6a201`: `putBack` exported and cased; that the write-then-read-back
+failure is reachable from an input is not shown, and none is known). **SSSSSSS-16** (medium, fixed `ba6fa229`).
+**SSSSSSS-17** (low, fixed `d295c9a1`). **SSSSSSS-19** (low, fixed `9c1e4742`). **SSSSSSS-20** (low, fixed `b22ebc21`).
+**SSSSSSS-21** (low, fixed `971f1c4c`). **SSSSSSS-22** (low, fixed `d859dc52`). **RRRRRRR-7** (medium-low, fixed
+`63106ddb`, `ea283651`, `724f9238`). **RRRRRRR-13** (low, fixed `86a29c32`: a could-not-look is refused as a pass, and
+the two proofs end PARTLY MEASURED; fonts are capped at their pinned size). **RRRRRRR-15** (low, fixed `9c1e4742`).
+**RRRRRRR-16** (low, fixed `15c8e8b0`, `83fb33fc`, and `38ad75e3`, where its rendered case still expected the old hint
+and was red in all three looks). **RRRRRRR-17** (low, fixed `2b5dc705` for Help, and in this commit for the backup
+row's copy-aside). **QQQQQQQ-11** (medium, fixed `4dc45fce`, `77af9244`; the answer still reaches main once, ADR-0165's
+correction). **QQQQQQQ-13** (medium, fixed `5ee171d1`). **OOOOOOO-9** (low, fixed `953bfe51`: the contrast instrument
+measures only a painted mark, and the caret and stroke are measured). **NNNNNNN-8** (low, fixed `2c84227f`, `cc4822ce`,
+`1c9972bd`, `df15b1c1`, `3e6cbe8c`; its last part not a defect, measured: the client checks each answer against the
+channel it was asked on, so merge's command sent on `document.save` failed all ten source cases as they stand).
+**NNNNNNN-9** (low, fixed `573ec618`). **MMMMMMM-3** (medium, fixed `81a8f46e`, with LLLLLLL-3). **LLLLLLL-3** (medium,
+fixed `81a8f46e`: the affected-proofs report names the rendered sets from `RENDERED_SUITE`). **LLLLLLL-4** (low, fixed
+`8d6babcf`: 18 states flagged per look before, 2 after, the two that are a refusal). **EEEEEEE-3** (low, fixed
+`f3c848a5`). **FFFFFFFF-6** (low, fixed `73d012ca`). **IIIIIIII-3** (medium, fixed `1f98cbd7`). **FFFFFFFF-11** (low,
+fixed `ab1af716`, measured 2026-10-17). **EEEEEEEE-9** (low, fixed `ab1af716`, the same reading). **EEEEEEEE-5** (low,
+fixed: the handler's in-flight duty asserted in `contractHandlers.test.ts`). **EEEEEEEE-6** (low, fixed `7ad46e3b`).
+**EEEEEEEE-8** (low, fixed `ebb5b8ab`). **EEEEEEEE-10** (low, fixed `1fa4149a`, `c5841f08`). **DDDDDDDD-4** (low, fixed
+`630bd900`). **JJJJJJJJ-3** (low, fixed `cf0646b8`). **UUUUUUU-3** (low, fixed `eea2b8a3`: each zoom step waits for its
+own drawing; reproduced 3 of 4 under software drawing first, 6 of 6 after). **FFFFFFF-1** (medium, fixed `5ceff659`: the
+attachments walk on Windows, all five readers read, the binary refused). **GGGGGGG-4** (medium, fixed `5ceff659`, the
+same walk).
+
+**The owner's decisions, built.** **PPPPPPP-10** (medium, fixed `66febbd0`). **OOOOOOO-2** (medium, fixed `66febbd0`).
+**MMMMMMM-2** (medium, fixed `66febbd0`). **PPPPPPP-12** (medium, fixed `328e027a`, `e50eb3b0`). **OOOOOOO-8** (low, fixed
+`9bee0940`). **MMMMMMM-4** (medium, fixed `dfbde54f`). **MMMMMMM-5** (low, fixed `11835b92`). **IIIIIII-8** (medium, fixed
+`ecef2b30`, `d5c93764`). **KKKKKKK-5** (low, fixed `c3a8eacc`). **JJJJJJJ-5** (medium, fixed `e0c6071a`).
+
+**Settled by a reading in fix session 2.** **UUUUUUU-2** (medium, settled: not UUUUUUU-3's race, a white page at the
+right size; not reproduced in 22 and 66 local runs; since `72ca95fd` the case prints every page canvas when it fails, so
+the next red names its own state). **BBBBBBB-2** (low, settled with UUUUUUU-2, the same step and the same
+diagnostics). **HHHHHHH-5** (medium, settled `0fa5a5fb`: the Compare walk in the running app on Windows read both panes on
+903 frames over 15 s and the right one never moved, its control seeing the walk's own scroll; the left file stands in
+for the owner's `text-page.pdf`, which is not in the test files). **VVVVVVV-35** (low, settled: the PDFium proofs ran on
+Windows on 2026-10-18 against the same assertions the Linux readings set — `type3edit` 22 of 22, `scannedpages` 10 of 10
+on the corpus with `--require-corpus`, `pdfiumcommand` 285, `pdfiumobject` 31, `pdfiumreadback` 25). **MMMMMMM-6** (low,
+settled: Compare's text-against-picture rule is held by `sideBySideCompare.test.ts`, and no rendered case asserts a
+change's kind, so none rests on the shim's invented boxes). **II-2** (settled, fixed by `c4207e60`, which never wrote
+its record: a preload separates the three flags, `sandbox: true` alone refusing `node:fs`). **ZZZZZZ-2** (low, settled:
+Join-Path's output and the cast path both reach a COM method as `System.String` in Windows PowerShell 5.1 and pwsh 7, so
+what Word reacts to is not the type that crosses and the cause lies in Word, outside this repository).
+**BBBBBBB-3** (low, settled `8a8a00d5`: the respelling asks the same fact without the read, and the scan's header now records that
+disposition). **JJJJJJJJ-2** (low, settled: a commit message is history; its claim is narrowed here — d825967a's line
+names one unrecognised key at depth 1 and no field, by design, and the case's comment carries which field). 
+**JJJJJJJJ-6** (low, settled: the bold-word check cannot tell from text alone which control a word common to two names;
+a rename of that kind is caught by the rendered case that presses the control, not by this check).
+**FFFFFFFF-13** (low, settled: no record names the owner's four; the fix found and cased seven, and the owner is asked, question 4).
+**VVVVVVV-34** (low, not a defect `5125f1a8`, pinned).
+**ZZZZZZ-4** (low, settled as not reproduced): the one `EPERM` on a rename in `apps/desktop/src/documentCommands.test.ts`
+has not been seen again; that file ran in full several times in fix session 2 on this Windows machine and on both CI
+legs since, and nothing about the one occurrence is established — said so rather than given a cause. Found only now:
+its record breaks between the id and its state, and the open-findings counter matched a single space there, so it read
+the record as none (the counter is corrected in the same commit).
+
+**Settled by putting them to the owner.** Each is a decision the code cannot make, asked in REPORT with the options and
+a recommendation. **VVVVVVV-8** (medium, settled as the owner's, question 1: what a reflowed line does with spacing
+and colour space PDFium cannot keep; the stroke half fixed `c8fe8010`). **VVVVVVV-28** (medium, settled as the owner's,
+question 1, the same class: tag parameters PDFium cannot write). **DDDDDDDD-10** (low, settled as the owner's, question
+5: the image limit, with the A4 and A3 600 dpi arithmetic; the other three bounds do not refuse real inputs).
+
+**Recorded this session, with what is unfixed.**
+**QQQQQQQQ-1** (low, recorded, unfixed): a block's set width equal to its box, or one point wider, wraps its widest
+line's last word, and two points keep it (measured in `a807595e`'s cases); the editor sends a width only past 0.5 pt,
+so a one-point drag rewraps the block.
+**QQQQQQQQ-2** (low, recorded): a join of two blocks of different sizes writes one flow, and the reading, which groups
+by each line's setting (ADR-0049), reads the 13-point lines back as a block of their own (measured in `04f065e8`'s case).
+**QQQQQQQQ-3** (low, recorded, unfixed): NNNNNNNN-6's class — the App split-view, ExportExcel *typed back* and
+textOperatorEdit *glyph* cases each timed out once in a multi-file run and pass alone; no mechanism is established.
+
 ## 2026-10-17 — Stage audit of `ecef2b30..7516794d` — finding PPPPPPPP-1
 
 Three commits: the previous audit's record, decision 5 (one token for a dialog's sentences, with 195 images) and the
