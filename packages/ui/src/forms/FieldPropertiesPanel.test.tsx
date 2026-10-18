@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import type { FontList } from '../FontPicker.js';
 import { activateCatalogue, i18n } from '../i18n.js';
+import { panelControlsOutsideCards } from '../propertyCards.js';
 import { EN } from '../messages/en.js';
 import { CommandRegistry, type CommandContext } from '../registries/commands.js';
 import { FieldPropertiesPanel, choicesOfRows } from './FieldPropertiesPanel.js';
@@ -26,6 +27,8 @@ function Wrapped({ children }: { children: ReactNode }): ReactElement {
 }
 
 afterEach(() => {
+  // EVERY VIEW A CASE RENDERED, every property group in a card (Addendum 3, `propertyCards.ts`).
+  expect(panelControlsOutsideCards(document)).toStrictEqual([]);
   cleanup();
 });
 

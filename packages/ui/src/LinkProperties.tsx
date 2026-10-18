@@ -89,29 +89,34 @@ export function LinkProperties({
           apply();
         }}
       >
-        <SegmentedControl<Goes>
-          label={LINK_PROPERTIES_GOES_TO}
-          options={[
-            { value: 'page', label: LINK_PROPERTIES_TO_PAGE },
-            { value: 'address', label: LINK_PROPERTIES_TO_ADDRESS },
-          ]}
-          value={goes}
-          onChange={(chosen) => {
-            setGoes(chosen);
-            setTried(false);
-          }}
-        />
-        {goes === 'page' ? (
-          <Input invalid={tried && problem !== undefined} label={LINK_PAGE_LABEL} value={page} onValueChange={setPage} />
-        ) : (
-          <Input invalid={tried && problem !== undefined} label={LINK_ADDRESS_LABEL} runsLong value={address} onValueChange={setAddress} />
-        )}
-        {tried && problem !== undefined ? (
-          <p className="m-properties__meta" role="alert">
-            {i18n._(problem, { last: pageCount })}
-          </p>
-        ) : null}
-        <Button disabled={unchanged} label={LINK_PROPERTIES_APPLY} type="submit" variant="primary" />
+        {/* EACH GROUP IN ITS CARD (Addendum 3): where the link goes, and the target with what it says and Apply. */}
+        <div className="m-card">
+          <SegmentedControl<Goes>
+            label={LINK_PROPERTIES_GOES_TO}
+            options={[
+              { value: 'page', label: LINK_PROPERTIES_TO_PAGE },
+              { value: 'address', label: LINK_PROPERTIES_TO_ADDRESS },
+            ]}
+            value={goes}
+            onChange={(chosen) => {
+              setGoes(chosen);
+              setTried(false);
+            }}
+          />
+        </div>
+        <div className="m-card m-properties__section">
+          {goes === 'page' ? (
+            <Input invalid={tried && problem !== undefined} label={LINK_PAGE_LABEL} value={page} onValueChange={setPage} />
+          ) : (
+            <Input invalid={tried && problem !== undefined} label={LINK_ADDRESS_LABEL} runsLong value={address} onValueChange={setAddress} />
+          )}
+          {tried && problem !== undefined ? (
+            <p className="m-properties__meta" role="alert">
+              {i18n._(problem, { last: pageCount })}
+            </p>
+          ) : null}
+          <Button disabled={unchanged} label={LINK_PROPERTIES_APPLY} type="submit" variant="primary" />
+        </div>
       </form>
       <div aria-label={i18n._(PROPERTIES_ACTIONS)} className="m-properties__foot" role="group">
         <Button

@@ -1860,14 +1860,33 @@ optgroup {
   gap: var(--space-4);
 }
 
-/* ONE ITEM'S BOX: the panel's border and radius, the surface a step above the panel's background, a stronger edge
-   under the pointer, and the accent's edge when chosen, which carries the weight too so it is not colour alone. Focus
-   is the controls' inside it, which draw their own rings. */
-.m-list-card {
+/* ONE CARD, and the only card style (the owner's E2, and Addendum 3 of 2026-10-18): a left-panel list's item, and each
+   property group of the Properties tab in every view it shows — its rows, its tick boxes, the text section's rows and
+   the groups a view wraps in `m-card` — each in its own closed box with the panel's border and radius, on the surface a
+   step above the panel's background. Focus is the controls' inside it, which draw their own rings; the tab order is
+   the controls' own, since a card is a box and never a stop. */
+.m-card,
+.m-list-card,
+.m-properties__row,
+.m-properties__check,
+.m-text-section__row,
+.m-text-section__font,
+.m-text-section__buttons,
+.m-text-section__numbers {
   padding: var(--space-4) var(--space-6);
   border: 1px solid var(--border); /* decorative: the card groups an item; the controls inside it draw their own edges and focus rings */
   border-radius: var(--radius-8);
   background: var(--surface);
+}
+
+/* A GROUP INSIDE A GROUP (a field's range: its two numbers in one row) is part of the card around it, never a second
+   box inside it. */
+.m-card .m-properties__row,
+.m-properties__row .m-properties__row,
+.m-properties__row .m-properties__check {
+  padding: 0;
+  border: 0;
+  background: none;
 }
 
 .m-list-card:hover {

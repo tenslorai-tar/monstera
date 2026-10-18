@@ -2,13 +2,20 @@
 import { I18nProvider } from '@lingui/react';
 import type { CommandOfKind } from '@monstera/contract';
 import { asDocVersion } from '@monstera/shared';
-import { fireEvent, render } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { LinkSelection } from './annotations/selectTool.js';
 import { LinkProperties } from './LinkProperties.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
+import { panelControlsOutsideCards } from './propertyCards.js';
+
+afterEach(() => {
+  // EVERY VIEW A CASE RENDERED, every property group in a card (Addendum 3, `propertyCards.ts`).
+  expect(panelControlsOutsideCards(document)).toStrictEqual([]);
+  cleanup();
+});
 
 /**
  * The Properties tab for a selected link (the owner's O6(c)): it shows where the link goes, and a change is ONE

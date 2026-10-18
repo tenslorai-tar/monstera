@@ -4,7 +4,7 @@ import type { BlockFormatting, EditedBlock, PageInsert } from '@monstera/contrac
 import { asDocVersion, type MessageKey } from '@monstera/shared';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   type BlockCommit,
@@ -17,6 +17,12 @@ import { activateCatalogue, i18n } from './i18n.js';
 import { EN, SPELLING_DICTIONARY_FULL } from './messages/en.js';
 import { type PageBlocks, TextEditLayer, fontsOfPage, nearbyStyle } from './TextEditLayer.js';
 import { TextFormatPanel } from './TextFormatPanel.js';
+import { panelControlsOutsideCards } from './propertyCards.js';
+
+afterEach(() => {
+  // THE EDIT TEXT VIEW OF THE PROPERTIES TAB, wherever a case rendered it: every property group in a card (Addendum 3).
+  expect(panelControlsOutsideCards(document)).toStrictEqual([]);
+});
 
 /**
  * The in-place editor's surface (ADR-0096), cased on what a person does: sees
