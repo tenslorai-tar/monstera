@@ -5020,6 +5020,12 @@ for (const look of LOOKS) {
     const editor = page.locator('[data-text-editor]');
     await expect(editor).toBeFocused();
     expect(await againstPaper(page.locator('.m-text-editor-frame'), 'outline-color')).toBeGreaterThanOrEqual(3);
+    // THE CARET, which nothing measured (OOOOOOO-9): the editor draws it in the paper-solved accent.
+    expect(await againstPaper(editor, 'caret-color')).toBeGreaterThanOrEqual(3);
+    // CONTROLS on the instrument: the page's canvas paints no outline and the body's caret is the default, so each has
+    // no mark to measure. Read as the ink they would fall back to, both cleared 3:1 on a white page.
+    await expect(againstPaper(canvas, 'outline-color')).rejects.toThrow(/paints no outline-color/u);
+    await expect(againstPaper(page.locator('body'), 'caret-color')).rejects.toThrow(/paints no caret-color/u);
     expect(await editor.evaluate((element) => (element as HTMLElement).innerText)).toBe(
       'A paragraph of words set on the page\nand a second line.',
     );

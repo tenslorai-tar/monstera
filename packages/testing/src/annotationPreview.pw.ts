@@ -1,6 +1,7 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { expect, test } from '@playwright/test';
 
+import { againstPaper } from './contrast.js';
 import { SELECT_TOOL, armTool, samplePdf } from './helpScreensHarness.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
 
@@ -60,7 +61,11 @@ for (const look of LOOKS) {
       element.removeAttribute('style');
       return { now, before };
     });
+    // THE STROKE IS ON THE PAPER (OOOOOOO-9): its outline clears 3:1 against `--page` in every look, read while the
+    // shape is still being moved.
+    const stroke = await againstPaper(preview, 'stroke');
     await page.mouse.up();
+    expect(stroke, 'the preview’s outline clears 3:1 against the paper').toBeGreaterThanOrEqual(3);
 
     expect(washes.now, 'the preview covers the paper by at most a tint').toBeLessThanOrEqual(MOST_WASH);
     expect(washes.now, 'and it is drawn at all').toBeGreaterThan(0);
