@@ -1267,6 +1267,27 @@ function pathFontOf(bindings: Bound, font: unknown, drawn: ReadonlyMap<number, D
 }
 
 /**
+ * How far `text` carries the pen in `object`'s own font, size and scale, in page units, read from the FONT'S ADVANCES
+ * (`FPDFFont_GetGlyphWidth` at the object's size, times the matrix's horizontal scale) with nothing written: `null` where
+ * the font answers no width for a character. For white space in a font that holds no letter — a subset an edit made for
+ * spaces alone — which no probe set between two letters can measure, because no letter can be set in it.
+ */
+function fontAdvance(bindings: Bound, object: unknown, text: string): number | null {
+  const font: unknown = bindings.textFont(object);
+  if (font === null) return null;
+  const size = [0];
+  numberFrom(bindings.textFontSize(object, size), 'FPDFTextObj_GetFontSize');
+  const matrix = matrixOn(bindings, object);
+  let total = 0;
+  for (const character of text) {
+    const width = [0];
+    if (numberFrom(bindings.glyphWidth(font, character.codePointAt(0) ?? 0, size[0] ?? 0, width), 'FPDFFont_GetGlyphWidth') !== 1) return null;
+    total += width[0] ?? 0;
+  }
+  return total * Math.hypot(matrix.a, matrix.b);
+}
+
+/**
  * What PDFium draws for `point` in `font`, in thousandths of an em: its width, and the box of its path's points, `null`
  * for a glyph with no path (a space). `null` where PDFium answers no width, which no check can stand in for.
  */
@@ -3766,7 +3787,16 @@ function blockMeasure(
       return right;
     };
     const letter = [...Array.from(run.text), ...REFERENCE_LETTERS].find((character) => character.trim() !== '') ?? 'x';
-    const width = text.trim() === '' ? penAfter(`${letter}${text}${letter}`) - penAfter(`${letter}${letter}`) : penAfter(text);
+    // A RUN OF WHITE SPACE ALONE is measured by its font's advances (`fontAdvance`): it has no letter to stand between,
+    // and the writer keeps white space in the run's own font whatever the restyle. Probed between two letters instead, it
+    // set the reference letter in that font — a subset an earlier edit made for the spaces alone (ADR-0228's marked run),
+    // which holds no letter — and the measurement refused the edit, naming its own probe as text the font cannot show
+    // (the regression walk's step 7, 2026-10-18: a paragraph holding a double space set again in Georgia, Tinos or Arial).
+    const lettered = Array.from(run.text).some((character) => character.trim() !== '');
+    const width =
+      text.trim() === ''
+        ? ((lettered ? null : fontAdvance(bindings, run.object, text)) ?? penAfter(`${letter}${text}${letter}`) - penAfter(`${letter}${letter}`))
+        : penAfter(text);
     advances.set(key, width);
     return width;
   };

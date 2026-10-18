@@ -266,7 +266,7 @@ const failures = [];
 // THE COUNT IS MOVED ONLY WITH THE CASES IT COUNTS, and the commit that moves it names the cases it adds or removes. A
 // running ledger of the count was kept here until 2026-10-17 and had stopped at 246 against 274 (VVVVVVV-23): a second
 // copy of the history git already holds, which nothing compared with the count.
-const roster = createRoster(failures, { cases: 285 });
+const roster = createRoster(failures, { cases: 286 });
 
 /**
  * @param {string} name
@@ -566,6 +566,7 @@ async function main() {
   await formatPieceCases();
   await fontChangeCases();
   await restyledRowCases();
+  await doubleSpaceRestyleCases();
   await keptMeasureCases();
   await gapSpacedCases();
   await spaceReadingCases();
@@ -890,6 +891,70 @@ async function restyledRowCases() {
       'the same edit on a page turned 180 degrees reads back every word with its space: no word is joined to the next',
       turned.words === sent,
       JSON.stringify(turned.words),
+    );
+  } finally {
+    bindEditFaces(null);
+  }
+}
+
+/**
+ * A PARAGRAPH HOLDING A DOUBLE SPACE AN EDIT WROTE, set again in another face (the regression walk's step 7,
+ * 2026-10-18). The first edit leaves the two spaces as an object of their own, in a subset made for them alone
+ * (ADR-0228's marked run), which holds no letter. Measuring that run for the restyle by setting it between two letters
+ * set a letter in that font, and the measurement refused the edit, naming its own probe "x  x" as what the font could not
+ * show; the person saw an empty "Can't show". The run is measured by its font's advances now (`fontAdvance`).
+ */
+async function doubleSpaceRestyleCases() {
+  const fonts = fontsDirectory(root);
+  const document = await PDFDocument.create();
+  const page = document.addPage([612, 792]);
+  const roman = await document.embedFont(StandardFonts.TimesRoman);
+  const LINES = ['Every walk step reads its own words back', 'from the saved file, by a reader that did'];
+  for (const [at, line] of LINES.entries()) page.drawText(line, { x: 72, y: 690 - at * 14.4, size: 12, font: roman });
+  const pdf = await document.save();
+  bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }], readCatalogueApart));
+  try {
+    /** @param {Uint8Array} bytes */
+    const paragraph = async (bytes) => {
+      const session = await pdfiumWriter.open(bytes);
+      try {
+        const lines = groupIntoBlocks((await textRuns(session, 0)).runs.map((run) => ({ ...run, setting: settingOf(run.style) })))[0]?.lines ?? [];
+        return {
+          lines: lines.map((line) => line.runs.map((run) => run.index)),
+          soft: lines.map((line) => line.soft),
+          words: paragraphsOfLines(lines.map((line) => ({ text: lineText(line.runs), soft: line.soft }))),
+        };
+      } finally {
+        await pdfiumWriter.close(session);
+      }
+    };
+    /** @param {Uint8Array} session @param {string} text @param {{ from: number; to: number; set: { family: string } }[]} marks */
+    const edit = async (session, text, marks) => {
+      const { lines, soft } = await paragraph(session);
+      return localPdfiumExecution.apply({
+        session,
+        command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+          kind: 'editTextBlock',
+          page: 0,
+          ...blockEditOf([{ lines, soft, text, marks }]),
+          fit: 'reflow',
+          version: 1,
+        }),
+        sources: [],
+        reads: undefined,
+      });
+    };
+    const before = await paragraph(pdf);
+    const spaced = await edit(pdf, `${before.words} two  spaces`, []);
+    const typed = (await paragraph(spaced)).words;
+    const restyled = await edit(spaced, typed, [{ from: 0, to: typed.length, set: { family: 'Tinos' } }]).then(
+      async (bytes) => ({ words: (await paragraph(bytes)).words }),
+      (error) => ({ refused: error instanceof Error ? `${error.name}: ${error.message}` : String(error) }),
+    );
+    record(
+      'a paragraph holding a double space an edit wrote is set again in another face, with every word kept',
+      typed.includes('two  spaces') && 'words' in restyled && restyled.words.replace(/\s+/gu, ' ') === typed.replace(/\s+/gu, ' '),
+      `typed ${JSON.stringify(typed.slice(-20))}; restyled ${JSON.stringify(restyled)}`,
     );
   } finally {
     bindEditFaces(null);
