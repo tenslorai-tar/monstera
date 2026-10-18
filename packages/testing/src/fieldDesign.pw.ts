@@ -286,6 +286,26 @@ test.describe('Edit fields', () => {
     expect(commands(sent)[1]).toMatchObject({ kind: 'deleteFormFields', page: 0, indices: [0] });
   });
 
+  test('a selected field STAYS selected when another field is filled, so Delete still removes it (2026-10-18)', async ({ page }) => {
+    // A FILL MOVES THE VERSION and keeps every field's key. Carried by the field edits' path alone, the selection was left
+    // at the version before the fill, named nothing after it, and Delete sent nothing: the forms walk met it as arrows
+    // that sent nothing after a late tick landed.
+    const sent: Sent = [];
+    await open(page, sent);
+    await runCommand(page, 'Fields list');
+    const list = page.locator('.m-forms-panel');
+    await list.getByRole('button', { name: /^Full name — /u }).click();
+    await list.getByRole('button', { name: 'Email', exact: true }).click();
+    await list.getByRole('textbox', { name: 'Email' }).fill('ada@example.org');
+    await list.getByRole('textbox', { name: 'Email' }).press('Enter');
+    await expect.poll(() => commands(sent).length).toBe(1);
+    expect(commands(sent)[0]).toMatchObject({ kind: 'fillFormField', page: 0, index: 1 });
+    await list.getByRole('button', { name: /^Full name — /u }).focus();
+    await page.keyboard.press('Delete');
+    await expect.poll(() => commands(sent).length).toBe(2);
+    expect(commands(sent)[1]).toMatchObject({ kind: 'deleteFormFields', page: 0, indices: [0] });
+  });
+
   test('CONTROL: with a field selected from the list but the focus on the page, Delete removes nothing', async ({ page }) => {
     const sent: Sent = [];
     await open(page, sent);

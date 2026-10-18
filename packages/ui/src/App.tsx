@@ -22,6 +22,7 @@ import {
   type UpdateStatus,
   type WindowEditAction,
   type CloudProviderId,
+  walkKeptBy,
 } from '@monstera/contract';
 import type { DocId, DocVersion, FileHandle, MessageKey } from '@monstera/shared';
 import { useLingui } from '@lingui/react';
@@ -1584,15 +1585,24 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
    * one field and ride in the single-edit shape (`editFormFieldsSchema`); everything else is the shared shape.
    * The selection is carried across it, since a change to a field's dictionary moves no widget.
    */
-  const sendFieldCommand = useCallback(
-    /** Settles when the command has landed or been refused (`placesAhead` waits on it). */
-    (build: (version: DocVersion) => DispatchableCommand): Promise<void> => {
-      if (activeId === undefined || openVersion === undefined) return Promise.resolve();
+  /**
+   * THE ONE WAY a command that keeps every field's key is sent: it carries the field selection across the version it
+   * produces, as `applyCarrying` carries the marks' (ADR-0102). The keys survive the commands that keep the field walk
+   * (`walkKeptBy`, the contract's `KEEPS_THE_FIELD_WALK`: a change to a field's dictionary, a fill, a form reset, none of
+   * which moves a widget) and a copy, which appends to its page's walk, so every key there still names the same field.
+   * Carried by one path only, a fill landing after a field was selected — the forms walk's fourth step's last tick,
+   * measured 2026-10-18 — moved the version under the selection, and the selection was never live again: the arrows that
+   * followed sent nothing and the Properties tab showed the form.
+   *
+   * Any other command goes through unchanged.
+   */
+  const applyCarryingFields = useCallback(
+    (docId: DocId, command: DispatchableCommand & { readonly version: DocVersion }): Promise<boolean> => {
+      const keepsKeys = walkKeptBy(command) === 'field' || command.kind === 'duplicateFormField';
+      if (!keepsKeys) return applyDocumentCommand({ client, onApplied: applied, ask, stamp, signatures }, docId, command);
       // THE VERSION IT WAS SENT AT is what the selection is carried from: the command lane may have followed this renderer's
       // own previous edit, so a nudge composed before that edit landed is sent, and carried, at the version it left.
-      let sentAt = openVersion;
-      const command = build(sentAt);
-      const docId = activeId;
+      let sentAt = command.version;
       return applyDocumentCommand(
         {
           client,
@@ -1608,16 +1618,24 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
           stamp,
           signatures,
         },
-        activeId,
+        docId,
         command,
         {
           sentAt: (version) => {
             sentAt = version;
           },
         },
-      ).then(() => undefined);
+      );
     },
-    [activeId, applied, ask, client, openVersion, signatures, stamp],
+    [applied, ask, client, signatures, stamp],
+  );
+  const sendFieldCommand = useCallback(
+    /** Settles when the command has landed or been refused (`placesAhead` waits on it). */
+    (build: (version: DocVersion) => DispatchableCommand & { readonly version: DocVersion }): Promise<void> => {
+      if (activeId === undefined || openVersion === undefined) return Promise.resolve();
+      return applyCarryingFields(activeId, build(openVersion)).then(() => undefined);
+    },
+    [activeId, applyCarryingFields, openVersion],
   );
   const sendFieldEdits = useCallback(
     (edits: CommandOfKind<'editFormFields'>['edits']): Promise<void> => sendFieldCommand((version) => ({ kind: 'editFormFields', edits, version })),
@@ -1735,8 +1753,8 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         })();
         return;
       }
-      void applyDocumentCommand(
-        { client, onApplied: applied, ask, stamp, signatures },
+      // CARRYING THE FIELD SELECTION, which a fill and a reset keep (`applyCarryingFields`).
+      void applyCarryingFields(
         activeId,
         // A RESET FORM BUTTON PRESSED (the owner's F7) is its own command, naming the button: its action says which fields.
         'reset' in handle
@@ -1744,7 +1762,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
           : { kind: 'fillFormField', page: handle.page, index: handle.index, value: handle.value, version: handle.version },
       );
     },
-    [activeId, applied, ask, client, signatures, stamp, toast],
+    [activeId, applied, applyCarryingFields, ask, client, stamp, toast],
   );
 
   /**
