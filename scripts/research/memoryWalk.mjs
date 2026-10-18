@@ -52,20 +52,45 @@ const copies = await Promise.all(
 const MB = 1024 * 1024;
 
 /** Every process's private memory now, by role and in total, in whole MB, and which hosts are running. */
-function reading() {
+function sampleNow() {
   const processes = processTreeMemory(mainPid);
   const roles = Object.fromEntries(Object.entries(byRole(processes)).map(([role, bytes]) => [role, Math.round(bytes / MB)]));
   const total = Math.round(processes.reduce((sum, each) => sum + each.privateBytes, 0) / MB);
   return { processes: processes.length, totalMB: total, rolesMB: roles, hosts: processes.filter((each) => each.role.startsWith('host ')).map((each) => each.role) };
 }
 
-/** @type {ReturnType<typeof reading> | null} */
+/** Samples in one reading, and the time between them. */
+const SAMPLES = 5;
+const SAMPLE_GAP_MS = 2000;
+
+/**
+ * A SETTLED reading: {@link SAMPLES} samples {@link SAMPLE_GAP_MS} apart, answered by the one whose total is lowest — a
+ * moment the processes were all in — with every host any sample saw, and how far the totals spread. ONE sample was the
+ * observable until 2026-10-18 and it could not decide what M3 asks: `main` alone read 229 MB and then 192 MB five seconds
+ * later with nothing done between, its JavaScript heap growing and given back (`process.memoryUsage().heapTotal` 82 then
+ * 45 MB, `_review/fontListMemoryProbe.mjs`), while M3's margin that run was 8 MB. A cost an action keeps is in every
+ * sample, so the lowest still holds it; a heap the next collection gives back is in some. Every step reads this way, so
+ * the figures compared are measured alike. The hosts are their union, so "no host left" is asked of every sample.
+ */
+async function reading() {
+  /** @type {ReturnType<typeof sampleNow>[]} */
+  const samples = [];
+  for (let at = 0; at < SAMPLES; at += 1) {
+    if (at > 0) await page.waitForTimeout(SAMPLE_GAP_MS);
+    samples.push(sampleNow());
+  }
+  const totals = samples.map((each) => each.totalMB);
+  const lowest = samples.reduce((low, each) => (each.totalMB < low.totalMB ? each : low));
+  return { ...lowest, hosts: [...new Set(samples.flatMap((each) => each.hosts))], spreadMB: Math.max(...totals) - Math.min(...totals) };
+}
+
+/** @type {Awaited<ReturnType<typeof reading>> | null} */
 let atStart = null;
-/** @type {ReturnType<typeof reading> | null} */
+/** @type {Awaited<ReturnType<typeof reading>> | null} */
 let sevenOpen = null;
-await step('M1. the start screen: every process at rest, before any document', () => {
-  atStart = reading();
-  return Promise.resolve(atStart);
+await step('M1. the start screen: every process at rest, before any document', async () => {
+  atStart = await reading();
+  return atStart;
 });
 
 await step('M2. seven documents open, each scrolled to its end and back with its thumbnails shown', async () => {
@@ -83,7 +108,7 @@ await step('M2. seven documents open, each scrolled to its end and back with its
     await page.waitForTimeout(1500);
   }
   await page.waitForTimeout(10_000);
-  sevenOpen = reading();
+  sevenOpen = await reading();
   return sevenOpen;
 });
 
@@ -104,7 +129,7 @@ await step('M3. ONE Edit text action: a paragraph clicked, a word typed, a click
   await expect(page.locator('[data-text-editor]')).toHaveCount(0);
   // A WRITE TAKES 3 TO 5 S (textWalk's reading of 2026-10-12), then the hosts it started settle.
   await page.waitForTimeout(15_000);
-  const read = reading();
+  const read = await reading();
   // THE POSITIVE CONTROL FOR M5's EMPTY LIST: an edit runs in the MuPDF and PDFium hosts, so the reader must SEE both here.
   // A reader that stopped recognising hosts — an unreadable command line, an executable path that no longer matches —
   // would report M5's "no host is left" in the same voice as a clean close.
@@ -116,7 +141,7 @@ await step('M3. ONE Edit text action: a paragraph clicked, a word typed, a click
     .reduce((sum, [, mb]) => sum + mb, 0);
   // THE OWNER'S TARGET FOR AN EDIT (run 4 item 13f): no more than the figure before it plus the PDFium host's own cost.
   // The compose host is set aside for the first-list reason above, and named in the facts.
-  const before = /** @type {ReturnType<typeof reading> | null} */ (sevenOpen);
+  const before = /** @type {Awaited<ReturnType<typeof reading>> | null} */ (sevenOpen);
   if (before === null) throw new Error('M2 took no reading');
   const allowed = before.totalMB + (read.rolesMB['host pdfium'] ?? 0);
   expect(read.totalMB - compose, `after the edit ${String(read.totalMB)} MB (compose ${String(compose)}), allowed ${String(allowed)}; by process ${JSON.stringify(read.rolesMB)}`).toBeLessThanOrEqual(allowed);
@@ -133,14 +158,21 @@ const READ_EVERY = 5;
  * 2026-10-14). Twenty over ten edits refuses anything at or above 2 MB an edit.
  */
 const LAST_TEN_MB = 20;
+/**
+ * The word the long session's edit `edit` types: its number between two x's. End lands at the same place every edit —
+ * the end of a line that ends in a space — so each word goes in before the last and the numbers touched ("…1413121…",
+ * 2026-10-18), where a number counted only between non-digits could see none of them. Delimited, each is found whole.
+ * @param {number} edit
+ */
+const typedAt = (edit) => `x${String(edit)}x`;
 
 await step('M3b. a long session (Part 2 item 13): twenty edits, three fonts applied in turn, memory read every five', async () => {
-  const { editor, ensureEditText, clickPage, chooseFont } = textSteps({ page, output, saveTo, command });
+  const { editor, ensureEditText, pressAway, chooseFont } = textSteps({ page, output, saveTo, command });
   // BUNDLED FAMILIES, so the three are there on every machine and each is a face the edit really sets (ADR-0172).
   const families = ['Carlito', 'Tinos', 'Arimo'];
   await ensureEditText();
   /** @type {{ edit: number; rolesMB: Record<string, number>; totalMB: number }[]} */
-  const readings = [{ edit: 0, ...reading() }];
+  const readings = [{ edit: 0, ...(await reading()) }];
   /** @type {{ edit: number; family: string; problem: string | null }[]} */
   const refused = [];
   for (let edit = 1; edit <= LONG_EDITS; edit += 1) {
@@ -158,14 +190,17 @@ await step('M3b. a long session (Part 2 item 13): twenty edits, three fonts appl
     if ((await editor().count()) > 0) {
       await editor().focus();
       await page.keyboard.press('End');
-      await page.keyboard.type(` ${String(edit)}`);
-      await clickPage(20, 20);
+      await page.keyboard.type(` ${typedAt(edit)}`);
+      // SETTLED (`pressAway`): a write that needs a face's catalogue takes seconds, and the next edit's click must not
+      // land while this one's editor is still open (the gate walks of 2026-10-18).
+      const said = await pressAway();
+      if (said.length > 0) refused.push({ edit, family, problem: said.join(' ') });
     }
     await expect(editor()).toHaveCount(0);
     if (edit % READ_EVERY === 0) {
       // THE WRITE AND ITS READS SETTLE before the reading, as M3 waits.
       await page.waitForTimeout(5000);
-      readings.push({ edit, ...reading() });
+      readings.push({ edit, ...(await reading()) });
     }
   }
   // EVERY FONT CHOICE LANDED: a session whose edits were refused measured nothing about edits.
@@ -186,7 +221,7 @@ await step('M3b. a long session (Part 2 item 13): twenty edits, three fonts appl
 });
 
 await step('M3c. an idle PDFium host stops with documents open (item 13b), and what its restart costs the next edit', async () => {
-  const { editor, ensureEditText, clickPage } = textSteps({ page, output, saveTo, command });
+  const { editor, ensureEditText, pressAway } = textSteps({ page, output, saveTo, command });
   /** One edit, timed from the press on the block to its editor closing on the written words. */
   const timedEdit = async (/** @type {string} */ word) => {
     await ensureEditText();
@@ -198,19 +233,19 @@ await step('M3c. an idle PDFium host stops with documents open (item 13b), and w
     await expect(editor()).toBeFocused();
     await page.keyboard.press('End');
     await page.keyboard.type(` ${word}`);
-    await clickPage(20, 20);
+    expect(await pressAway(), `the editor said something at the press away after "${word}"`).toStrictEqual([]);
     await expect(editor()).toHaveCount(0);
     return Date.now() - started;
   };
   // THE SHELL'S IDLE TIME and ten seconds over it (`HOST_IDLE_MS`, 60 s), after M3b's last edit.
   await page.waitForTimeout(70_000);
-  const idle = reading();
+  const idle = await reading();
   // STOPPED WITH SEVEN DOCUMENTS OPEN, while the MuPDF host, which holds their sessions, stays.
   expect(idle.hosts).toContain('host mupdf');
   expect(idle.hosts).not.toContain('host pdfium');
   const coldMs = await timedEdit('cold');
   const warmMs = await timedEdit('warm');
-  const after = reading();
+  const after = await reading();
   expect(after.hosts).toContain('host pdfium');
   return { idleHosts: idle.hosts, idleRolesMB: idle.rolesMB, coldEditMs: coldMs, warmEditMs: warmMs, restartCostMs: coldMs - warmMs };
 });
@@ -226,12 +261,11 @@ await step('M3d. every word M3b and M3c typed is in the saved file, once and in 
   // Present is the question; the order on the page is the overlap's, which is recorded for the owner separately.
   // COUNTED AGAINST THE ORIGINAL, one more each: a lone "1" is also in "Page 1 of 5", so presence could not see it lost.
   const original = (await savedTextKeepingSpaces(sample)).replaceAll(/\s+/gu, ' ');
-  const typed = [...Array.from({ length: LONG_EDITS }, (_, at) => String(at + 1)), 'cold', 'warm'];
-  // A NUMBER BOUNDED BY DIGITS ONLY and a word by letters only: overlapping lines glue them to their neighbours ("18dolore").
-  const count = (/** @type {string} */ text, /** @type {string} */ word) => {
-    const edge = /^\d+$/u.test(word) ? '\\d' : 'a-z';
-    return (text.match(new RegExp(`(?<![${edge}])${word}(?![${edge}])`, 'giu')) ?? []).length;
-  };
+  const typed = [...Array.from({ length: LONG_EDITS }, (_, at) => typedAt(at + 1)), 'cold', 'warm'];
+  // A DELIMITED NUMBER WHOLE (`typedAt`: "x1x" is in no other), and a word bounded by letters only: overlapping lines
+  // glue them to their neighbours ("18dolore").
+  const count = (/** @type {string} */ text, /** @type {string} */ word) =>
+    /^x\d+x$/u.test(word) ? text.split(word).length - 1 : (text.match(new RegExp(`(?<![a-z])${word}(?![a-z])`, 'giu')) ?? []).length;
   const wrong = typed.filter((word) => count(words, word) !== count(original, word) + 1);
   expect(wrong, words.slice(0, 600)).toStrictEqual([]);
   return { typed: typed.length };
@@ -293,12 +327,12 @@ await step('M5. every document closed, then idle past a minute (Part 7 A, ADR-02
   await page.waitForTimeout(100_000);
   expect(loads, 'the idle window was not reloaded to give its memory back').toBe(1);
   await expect(page.locator('.m-start-area')).toBeVisible({ timeout: 30_000 });
-  const after = reading();
+  const after = await reading();
   expect(after.hosts).toStrictEqual([]);
   // THE FONT LIST WAS KEPT (ADR-0237), read back from the profile: the next session's edit answers its picker from it.
   const kept = JSON.parse(await readFile(join(output, 'app-data', 'font-families.json'), 'utf8'));
   expect(kept.families.length).toBeGreaterThan(0);
-  const before = /** @type {ReturnType<typeof reading> | null} */ (atStart);
+  const before = /** @type {Awaited<ReturnType<typeof reading>> | null} */ (atStart);
   if (before === null) throw new Error('M1 took no reading');
   // THE OWNER'S TARGET FOR A CLOSE (run 4 item 13f): every document closed, within about 10% of the start screen.
   const allowedMB = Math.round(before.totalMB * 1.1);

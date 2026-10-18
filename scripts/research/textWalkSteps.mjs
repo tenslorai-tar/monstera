@@ -53,6 +53,52 @@ export function textSteps(walk) {
     await page.mouse.click(box.x + box.width - x, Math.max(box.y, 230) + y);
   }
 
+  /** Every refusal or warning the open editor shows, worded. */
+  const problems = () => page.locator('.m-text-editor-problem').allInnerTexts();
+
+  /**
+   * A press away, ENDED: {@link clickPage}, then settled — no write in flight, and the editor closed or saying why it
+   * stayed — and what it says answered, `[]` for an editor that closed. THE ONE RULE for every walk (B3a). A fixed wait
+   * for the editor to go read a slow write as a failure and a refusal as a timeout: the first edit that needs a face
+   * took 7.4 s on 2026-10-18 (the PDFium host reading the installed fonts while the compose host read them too), and a
+   * refusal arrives with the write's answer, after any check made straight after the press.
+   * @param {number} [x]
+   * @param {number} [y]
+   */
+  async function pressAway(x = 20, y = 20) {
+    const outlines = page.locator('[data-text-block]');
+    const before = await outlines.count();
+    /** An outline of the version the press began at: the read after a write draws new ones in their place. */
+    const old = before > 0 ? await outlines.first().elementHandle() : null;
+    const written = () => page.locator('html').getAttribute('data-writes-done').then((count) => Number(count ?? '0'));
+    const writesBefore = await written();
+    await clickPage(x, y);
+    await expect
+      .poll(
+        async () =>
+          ((await page.locator('html').getAttribute('data-writes')) ?? '0') === '0' &&
+          ((await editor().count()) === 0 || (await problems()).length > 0),
+        // 120 S, the longest write a walk has measured: one that embeds a font stayed up past 30 s on 2026-10-13 on this
+        // machine's i5-3230M (`textWalk.mjs`' step 18). Settling sooner returns sooner; this is the bound on a hang.
+        { timeout: 120_000, intervals: [100] },
+      )
+      .toBe(true);
+    // AND THE READ AFTER THE WRITE: a write that ran past its page REOPENS its editor in that read, saying so (the
+    // owner's Q7), after the editor had closed. Answered before it, the press said nothing where the page said "This
+    // text no longer fits on the page" (memory walk M3b, 2026-10-18), and the walk's next press on another block was
+    // not taken. The read replaces the outlines of the version the press began at; a press that wrote nothing has no read.
+    if ((await written()) > writesBefore && old !== null) {
+      await expect
+        .poll(async () => !(await old.evaluate((element) => element.isConnected)) && ((await outlines.count()) >= before || (await problems()).length > 0), {
+          timeout: 120_000,
+          intervals: [100],
+        })
+        .toBe(true);
+    }
+    await old?.dispose();
+    return problems();
+  }
+
   /**
    * Chooses `family` in the panel's picker by searching for it, then samples the editor every half second until it is not
    * busy, recording busy and any refusal sentence on screen (W2: an editor left open after a busy span is one whose
@@ -64,7 +110,13 @@ export function textSteps(walk) {
     await panel().getByRole('button', { name: /^Font:/u }).click();
     const search = panel().getByRole('combobox', { name: 'Search fonts' });
     await search.fill(family);
+    // THE FAMILY LISTED BEFORE IT IS CHOSEN, as a person sees it before pressing Enter: while the computer's list is
+    // still read (8.2 s for the first in a new profile, 2026-10-18) Enter chooses nothing and the picker stays open
+    // with the keys in its search box. The walk then typed and pressed End outside the editor; End in the page list
+    // scrolls to the last page, and the next press on page 1's paragraph landed off screen (memory walk M3b).
+    await expect(panel().locator(`[data-font-choice="${family}"]`).first()).toBeVisible({ timeout: 60_000 });
     await search.press('Enter');
+    await expect(search).toHaveCount(0);
     /** @type {EditorSample[]} */
     const samples = [];
     const started = Date.now();
@@ -83,6 +135,8 @@ export function textSteps(walk) {
       if (Date.now() - started > 60_000) throw new Error(`the editor was still busy 60 s after the font choice: ${JSON.stringify(samples)}`);
       await page.waitForTimeout(500);
     }
+    // THE KEYS BACK IN THE WORDS (the panel's own rule, `FontPicker`'s `choose`): what a walk types next goes to the editor.
+    if ((await editor().count()) > 0) await expect(editor()).toBeFocused();
     return samples;
   }
 
@@ -98,7 +152,7 @@ export function textSteps(walk) {
     return path;
   }
 
-  return { editor, panel, ensureEditText, clickPage, chooseFont, savedCopy };
+  return { editor, panel, ensureEditText, clickPage, pressAway, problems, chooseFont, savedCopy };
 }
 
 /**

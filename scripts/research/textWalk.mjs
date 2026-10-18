@@ -75,7 +75,7 @@ async function pressDrawn(dx, dy) {
 }
 
 const steps = textSteps(walk);
-const { editor, panel, ensureEditText, clickPage, savedCopy } = steps;
+const { editor, panel, ensureEditText, pressAway, savedCopy } = steps;
 /** What the editor said while each font choice landed, newest last (W2). */
 /** @type {{ family: string, samples: import('./textWalkSteps.mjs').EditorSample[] }[]} */
 const fontChoiceSamples = [];
@@ -118,7 +118,7 @@ await step('2. the word in Calibri 14 and blue from the Properties panel, then t
 
 await step('3. a click away writes it; one Ctrl+Z undoes steps 1 and 2 together, and Ctrl+Y redoes them', async () => {
   const writing = await writesDone(page);
-  await clickPage(20, 20);
+  expect(await pressAway(20, 20), 'the editor said something at the press away').toStrictEqual([]);
   await expect(editor()).toHaveCount(0);
   // EACH IS A COMMAND THAT REWRITES THE DOCUMENT (a write takes 3 to 5 s here, measured 2026-10-12), so the second key
   // waits for the first to LAND, as a hand does; sent together they left a later Add text editor open for good. Three
@@ -294,8 +294,8 @@ if (existsSync(handwritten)) {
     await pressOn(page.locator('[data-text-block]').first());
     await page.keyboard.press('End');
     await page.keyboard.type(' (walked)');
-    await clickPage(10, 10);
-    return { blocks: await page.locator('[data-text-block]').count() };
+    const said = await pressAway(10, 10);
+    return { blocks: await page.locator('[data-text-block]').count(), said };
   });
 }
 
@@ -347,7 +347,7 @@ await step('10. ADR-0228: strikethrough, a highlight, character spacing, Ctrl+J 
   const after = panel().getByRole('spinbutton', { name: /Space after/u });
   await after.fill('6');
   await after.press('Enter');
-  await clickPage(10, 10);
+  expect(await pressAway(10, 10), 'the editor said something at the press away').toStrictEqual([]);
   await expect(editor()).toHaveCount(0);
   return { sizeShown };
 });
@@ -367,7 +367,7 @@ await step('11. K8/W9: Tab in Edit text types a tab, it is in the SAVED file, an
   // THE WRITE, TIMED ALONE: from the click away to the editor closing, which is the write answering. The 7.6 to 8.7 s run 3
   // reported for an edit with a tab was a span that held this step's own 8 s sleep; this figure holds the write and nothing else.
   const clicked = performance.now();
-  await clickPage(10, 10);
+  expect(await pressAway(10, 10), 'the editor said something at the press away').toStrictEqual([]);
   await expect(editor()).toHaveCount(0);
   const writeMs = Math.round(performance.now() - clicked);
   // READ BACK FROM THE SAVED FILE by pdf-lib, not by reopening the block: the tab is written as one gap marked as U+0009
@@ -483,8 +483,8 @@ await step('15. N10: no Format group in the ribbon while a block is open; Ctrl+B
   // THE WRITE EMBEDS A FONT, which is longer than the 3 to 5 s of a plain edit: the editor was still up after 30 s on
   // 2026-10-13 (i5-3230M), so the wait is 120 s and its length is recorded.
   const clickedAt = Date.now();
-  await clickPage(20, 20);
-  await expect(editor()).toHaveCount(0, { timeout: 120_000 });
+  expect(await pressAway(20, 20), 'the editor said something at the press away').toStrictEqual([]);
+  await expect(editor()).toHaveCount(0);
   return { editorStayedOpen: stillOpen, writeTookMs: Date.now() - clickedAt, afterFontChoice: fontChoiceSamples.at(-1) };
 });
 
@@ -690,7 +690,7 @@ await step('L2: an underlined word keeps its one underline when its block is edi
   await page.keyboard.press('Control+Home');
   await page.keyboard.press('Control+Shift+ArrowRight');
   await page.keyboard.press('Control+U');
-  await clickPage(10, 10);
+  expect(await pressAway(10, 10), 'the editor said something at the press away').toStrictEqual([]);
   await expect(editor()).toHaveCount(0);
   // OPENED AGAIN: the word is read back underlined, so the editor draws it so (and a second Ctrl+U would take it off).
   await page.locator('[data-text-block]').nth(1).click();
@@ -701,7 +701,7 @@ await step('L2: an underlined word keeps its one underline when its block is edi
   // WORDS BEFORE IT, so it moves: its rule must move with it and the old one go.
   await page.keyboard.press('Control+Home');
   await page.keyboard.type('Moved along by the walk ');
-  await clickPage(10, 10);
+  expect(await pressAway(10, 10), 'the editor said something at the press away').toStrictEqual([]);
   await expect(editor()).toHaveCount(0);
   await saveTo(l2Saved);
   await command('Save a copy…');
@@ -738,7 +738,7 @@ await step('L6: a page with more runs than one answer carries SAYS SO in Edit te
   await expect(editor()).toBeFocused();
   await page.keyboard.press('Control+Home');
   await page.keyboard.type('Edited ');
-  await clickPage(10, 10);
+  expect(await pressAway(10, 10), 'the editor said something at the press away').toStrictEqual([]);
   await expect(editor()).toHaveCount(0);
   await saveTo(l6Saved);
   await command('Save a copy…');
@@ -782,7 +782,7 @@ await step('N14: a word processor’s subsets keep their own font, bold and supe
   expect(drawn[0]?.weight).toBe('700');
   await page.keyboard.press('End');
   await page.keyboard.type(' Walked.');
-  await clickPage(20, 20);
+  expect(await pressAway(20, 20), 'the editor said something at the press away').toStrictEqual([]);
   await expect(editor()).toHaveCount(0);
   const saved = join(output, 'producer-subsets-saved.pdf');
   await saveTo(saved);

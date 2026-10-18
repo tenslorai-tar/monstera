@@ -122,7 +122,7 @@ async function everydayPage() {
 
 const walk = await startWalk('text-regression');
 const { page, output, open, section, step, finish } = walk;
-const { editor, panel, ensureEditText, clickPage, chooseFont, savedCopy } = textSteps(walk);
+const { editor, panel, ensureEditText, pressAway, problems, chooseFont, savedCopy } = textSteps(walk);
 
 // LITERAL SPECIFIERS, so `proof:electronimports` can read what this loads.
 const { buildProducerSubsetPdf, PRODUCER_MARK } = await import('../../packages/kernel/dist/producerSubsetFixture.js');
@@ -152,13 +152,10 @@ async function openBlock(start) {
   return box;
 }
 
-/** Every refusal or warning the open editor shows, worded: none is the expectation of every step here. */
-const problems = () => page.locator('.m-text-editor-problem').allInnerTexts();
-
 /** Ends the editor with a press away, and requires that it ended with nothing refused. */
 async function commit() {
-  await clickPage(20, 20);
-  const said = await problems();
+  // SETTLED FIRST, then what the editor says (`pressAway`, the walks' one rule).
+  const said = await pressAway();
   expect(said, 'the editor refused or warned at the press away').toStrictEqual([]);
   await expect(editor()).toHaveCount(0);
 }
