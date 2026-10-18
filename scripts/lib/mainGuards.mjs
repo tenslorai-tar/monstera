@@ -53,6 +53,19 @@
  * Out of reach, stated: a read spelt without the index — `process.argv.at(1)`,
  * or a destructured `const [, entry] = process.argv`. None exists today.
  *
+ * ## A false positive that stays, and its disposition (BBBBBBB-3)
+ *
+ * The scan reads text, so a program a proof WRITES to disk is read as this
+ * module's own code: `playwright.proof.mjs`' child printed whether it had an
+ * entry script with `process.argv[1] !== undefined` and would have been
+ * reported. The child is not deciding whether it is main, so the answer is to
+ * ask the same fact without the read — `process.argv.length > 1`, measured
+ * equal both ways on 2026-10-01 (2 for a script, 1 with none) — rather than an
+ * allowance here. Telling emitted source from this module's own needs the
+ * `String.raw` marker the emitted-template scan keys on, and a child this short
+ * is not worth a second reader of that marker; an emitted program that must
+ * read the entry path is the day to build it.
+ *
  * Usage: node scripts/lib/mainGuards.mjs [--root <dir>]
  */
 
