@@ -556,4 +556,23 @@ await step('12. Undo takes the label’s edit back and Redo puts it again, on th
   return { undone: undone.slice(0, 80), redone: redone.slice(0, 80) };
 });
 
+await step('13. a Type 3 heading given letters its subset lacks is written by the MuPDF host, and the saved file reads them (ADR-0177)', async () => {
+  // THE COMMITTED CHROMIUM PRINT (`chromiumType3Fixture.mjs`): its heading is a Type 3 subset without z or p, so the
+  // MuPDF host sets those letters in the resolver's face (ADR-0177 Decision 3's live case, owed with the build).
+  const print = join(output, 'chromium-type3.pdf');
+  await writeFile(print, await readFile(join(root, 'packages', 'testing', 'fixtures', 'text-edit', 'chromium-type3.pdf')));
+  await open(print);
+  await section('Edit');
+  await ensureEditText();
+  await openBlock('Monstera fixture heading');
+  await page.keyboard.press('End');
+  await page.keyboard.type(' zap');
+  // WHAT THE EDITOR SAID IS RECORDED, not asserted empty: a word set in another face may be said. The saved file decides.
+  const said = await pressAway();
+  await expect(editor()).toHaveCount(0);
+  const words = (await savedTextKeepingSpaces(await savedCopy('13-type3.pdf'))).replaceAll(/\s+/gu, ' ');
+  expect(words, words.slice(0, 200)).toContain('heading. zap');
+  return { said, words: words.slice(0, 120) };
+});
+
 await finish();
