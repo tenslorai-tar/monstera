@@ -85,6 +85,8 @@ import { nodeEditWatchSurface } from './nodeEditWatch.js';
 import { isPdfPath } from './openExternalEditor.js';
 import { windowsUserName } from './userName.js';
 import { createCannotStartNotice } from './componentNotice.js';
+import { RENDERER_EXIT_MS } from './memoryRelease.js';
+import { RENDERER_HTML } from './window.js';
 import type { RendererWindow } from './memoryRelease.js';
 
 /**
@@ -241,8 +243,22 @@ startShell(() => {
         contents.debugger.detach();
       }
     },
-    reload: () => {
-      BrowserWindow.getAllWindows()[0]?.webContents.reload();
+    // A NEW RENDERER PROCESS, never a reload in the old one (ADR-0252's correction of 2026-10-18): an empty `data:` page
+    // commits in a process of its own; the history cleared evicts the departed page from the back/forward cache, which
+    // otherwise kept it and its process alive and took the page straight back to it; the old process is waited out; and
+    // the page loads again in a new one. Measured: 469 MB after a reload, 361 MB this way, a new process id.
+    renew: async () => {
+      const contents = BrowserWindow.getAllWindows()[0]?.webContents;
+      if (contents === undefined) return;
+      const old = contents.getOSProcessId();
+      await contents.loadURL('data:text/html,');
+      contents.navigationHistory.clear();
+      // BOUNDED by the time a renderer takes to exit, and never a condition the load waits on: a process slower to go is
+      // one the page may land back in, which the memory walk's M5 sees as the same process id.
+      for (let waited = 0; waited < RENDERER_EXIT_MS && app.getAppMetrics().some((metric) => metric.pid === old); waited += 100) {
+        await new Promise((done) => setTimeout(done, 100));
+      }
+      await contents.loadFile(RENDERER_HTML);
     },
   };
 

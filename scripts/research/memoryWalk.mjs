@@ -296,7 +296,7 @@ await step('M4. every tab after the edit (Part 7 B): each draws its page, none i
   return { tabs: seen };
 });
 
-await step('M5. every document closed, then idle past a minute (Part 7 A, ADR-0252): the window reloaded, no engine host is left, and every figure against M1', async () => {
+await step('M5. every document closed, then idle past a minute (Part 7 A, ADR-0252): the window given a new renderer process, no engine host is left, and every figure against M1', async () => {
   for (let left = await page.locator('[data-tab-select]').count(); left > 0; left -= 1) {
     await command('Close tab');
     const unsaved = page.getByRole('dialog', { name: 'Unsaved changes' });
@@ -320,12 +320,20 @@ await step('M5. every document closed, then idle past a minute (Part 7 A, ADR-02
   // IDLE PAST THE MINUTE, with no input from here (ADR-0252): the window asks to give its memory back, `main` reloads
   // it, and the reading is taken after the reloaded start screen has settled. Counted, so a figure inside the 10% that
   // came without a reload is not taken for one.
+  // THE APPLICATION'S PAGE loading again, and the empty `data:` page the renewal passes through is not counted.
   let loads = 0;
   page.on('load', () => {
-    loads += 1;
+    if (page.url().startsWith('file:')) loads += 1;
   });
+  /** The window's renderer process, as `main` names it. */
+  const rendererPid = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.webContents.getOSProcessId());
+  const closedIn = await rendererPid();
   await page.waitForTimeout(100_000);
-  expect(loads, 'the idle window was not reloaded to give its memory back').toBe(1);
+  expect(loads, 'the idle window was not given its page again to give its memory back').toBe(1);
+  // A NEW PROCESS, ADR-0252's correction of 2026-10-18: a reload in the old one kept what the old page held, and a figure
+  // inside the 10% after a quiet session can come without one.
+  const renewedIn = await rendererPid();
+  expect(renewedIn, 'the window was given its page again in the same renderer process').not.toBe(closedIn);
   await expect(page.locator('.m-start-area')).toBeVisible({ timeout: 30_000 });
   const after = await reading();
   expect(after.hosts).toStrictEqual([]);
