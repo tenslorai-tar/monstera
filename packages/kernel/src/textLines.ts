@@ -515,22 +515,41 @@ export function pushesOf(boxes: readonly BlockBox[], page: BlockBox): readonly P
   const footer = boxes.map((box) => box.y1 <= margin);
   const footerTops = boxes.filter((_, at) => footer[at] === true).map((box) => box.y1);
   const limit = footerTops.length === 0 ? margin : Math.max(...footerTops);
-  const sideBySide = (a: BlockBox, b: BlockBox): boolean => a.x0 < b.x1 && b.x0 < a.x1;
+  // ONE SWEEP DOWN THE PAGE PER BLOCK, never a worklist over every pair. The relation only ever reaches a STRICTLY lower
+  // top, so visiting the blocks from the highest top down decides every block a candidate could be reached from before
+  // the candidate itself. And what is reached is ONE INTERVAL: each block reached overlaps one reached before it, so their
+  // extents chain from this block's into one, and a candidate overlaps a reached block exactly when it overlaps that
+  // interval. The worklist this replaces was cubic in the blocks, and ran in `main` on every page read for editing: a
+  // stacked column of 515 took about 2 s a call (`textLines.test.ts`' MAX_PUSHED_BLOCKS case, 2026-10-18). This is
+  // quadratic, and the same sets (proven against that worklist in the same file).
+  const downward = [...boxes.keys()]
+    .filter((at) => footer[at] !== true)
+    .sort((a, b) => (boxes[b]?.y1 ?? 0) - (boxes[a]?.y1 ?? 0));
   return boxes.map((box, at): PushedColumn => {
     if (footer[at] === true) return { below: [], room: 0 };
-    const pushed = new Set<number>();
-    const reached: BlockBox[] = [box];
-    // A WORKLIST: the array's own iterator reaches each block appended while it walks, which is what closes the set.
-    for (const above of reached) {
-      for (const [other, candidate] of boxes.entries()) {
-        if (other === at || pushed.has(other) || footer[other] === true) continue;
-        if (sideBySide(candidate, above) && candidate.y1 < above.y1) {
-          pushed.add(other);
-          reached.push(candidate);
+    let left = box.x0;
+    let right = box.x1;
+    const pushed: number[] = [];
+    let row = downward.findIndex((other) => (boxes[other]?.y1 ?? 0) < box.y1);
+    if (row === -1) row = downward.length;
+    // A ROW OF EQUAL TOPS IS DECIDED AGAINST WHAT IS ABOVE IT ONLY, then widens the interval: none of it reaches another.
+    while (row < downward.length) {
+      const top = boxes[downward[row] ?? 0]?.y1;
+      let rowLeft = left;
+      let rowRight = right;
+      for (; row < downward.length && boxes[downward[row] ?? 0]?.y1 === top; row += 1) {
+        const other = downward[row] ?? 0;
+        const candidate = boxes[other];
+        if (candidate !== undefined && candidate.x0 < right && left < candidate.x1) {
+          pushed.push(other);
+          rowLeft = Math.min(rowLeft, candidate.x0);
+          rowRight = Math.max(rowRight, candidate.x1);
         }
       }
+      left = rowLeft;
+      right = rowRight;
     }
-    const below = [...pushed].sort((a, b) => a - b);
+    const below = pushed.sort((a, b) => a - b);
     const lowest = Math.min(...below.map((other) => boxes[other]?.y0 ?? Number.POSITIVE_INFINITY));
     // MORE BLOCKS BELOW THAN ONE EDIT MAY CARRY have no room: the editor then says so rather than send an edit the
     // contract refuses (`MAX_PUSHED_BLOCKS`).

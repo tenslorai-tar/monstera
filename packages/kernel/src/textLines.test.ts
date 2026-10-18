@@ -3,6 +3,7 @@ import { paragraphsOfLines } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import {
+  type BlockBox,
   type BlockableRun,
   type GroupableRun,
   groupIntoBlocks,
@@ -553,6 +554,78 @@ describe('pushesOf (ADR-0249 Decision 2)', () => {
     // THE LOWEST TEXT ALREADY REACHES THE MARGIN (72) from above it, so there is no room: 60 is under 72.
     expect(pushes[1]).toStrictEqual({ below: [2], room: 0 });
     expect(pushes[2]).toStrictEqual({ below: [], room: 0 });
+  });
+
+  describe('the one sweep answers the worklist it replaced, on every page shape', () => {
+    type Box = BlockBox;
+    /** THE WORKLIST `pushesOf` ran until 2026-10-18, verbatim but for its name: the closure by definition, cubic. */
+    function worklistBelow(boxes: readonly Box[], page: Box): number[][] {
+      const highest = Math.max(...boxes.map((b) => b.y1));
+      const margin = page.y0 + Math.max(0, page.y1 - highest);
+      const footer = boxes.map((b) => b.y1 <= margin);
+      const sideBySide = (a: Box, b: Box): boolean => a.x0 < b.x1 && b.x0 < a.x1;
+      return boxes.map((b, at) => {
+        if (footer[at] === true) return [];
+        const pushed = new Set<number>();
+        const reached: Box[] = [b];
+        for (const above of reached) {
+          for (const [other, candidate] of boxes.entries()) {
+            if (other === at || pushed.has(other) || footer[other] === true) continue;
+            if (sideBySide(candidate, above) && candidate.y1 < above.y1) {
+              pushed.add(other);
+              reached.push(candidate);
+            }
+          }
+        }
+        return [...pushed].sort((x, y) => x - y);
+      });
+    }
+    /** A seeded generator, so a failing page is the same page on the next run. */
+    function generator(seed: number): () => number {
+      let state = seed;
+      return () => {
+        state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0;
+        return state / 2 ** 32;
+      };
+    }
+    /**
+     * Pages built to reach the sweep's edges: tops on a coarse grid, so rows of EQUAL tops are common; edges on a grid,
+     * so extents that only TOUCH are common; some blocks zero wide; some inside the bottom margin, the footer.
+     */
+    function pageOf(random: () => number, count: number): Box[] {
+      return Array.from({ length: count }, () => {
+        const x0 = Math.floor(random() * 12) * 50;
+        const wide = random() < 0.1 ? 0 : (1 + Math.floor(random() * 4)) * 50;
+        const y1 = 20 + Math.floor(random() * 30) * 25;
+        return box(x0, y1 - 10, x0 + wide, y1);
+      });
+    }
+
+    it('on 400 seeded pages of up to 60 blocks, every block pushes the same blocks', () => {
+      const random = generator(20_261_018);
+      let compared = 0;
+      let pushing = 0;
+      for (let page = 0; page < 400; page += 1) {
+        const boxes = pageOf(random, 1 + Math.floor(random() * 60));
+        const expected = worklistBelow(boxes, PAGE);
+        expect(pushesOf(boxes, PAGE).map((column) => [...column.below]), `page ${String(page)}`).toStrictEqual(expected);
+        compared += boxes.length;
+        pushing += expected.filter((below) => below.length > 1).length;
+      }
+      // THE PAGES REACH WHAT THEY ARE FOR: thousands of blocks, and many pushing more than one block, so the closure, not
+      // only the first step, is what was compared.
+      expect(compared).toBeGreaterThan(10_000);
+      expect(pushing).toBeGreaterThan(2_000);
+    });
+
+    it('CONTROL: a row of equal tops does not reach along itself, which a sweep widening per block would', () => {
+      // THE ONE PLACE the sweep could disagree with the worklist where a page shape decides it: a block widening the
+      // interval for the next block of its OWN top. A is under the top block; B, at A's top, overlaps A only; C, lower,
+      // overlaps B only. The worklist reaches neither B (not lower than A) nor so C.
+      const boxes = [box(0, 700, 100, 720), box(50, 480, 150, 500), box(140, 480, 250, 500), box(200, 280, 250, 300)];
+      expect(worklistBelow(boxes, PAGE)[0]).toStrictEqual([1]);
+      expect(pushesOf(boxes, PAGE).map((column) => [...column.below])).toStrictEqual(worklistBelow(boxes, PAGE));
+    });
   });
 
   it('a column with more blocks below than one edit may carry has no room, so the editor warns rather than send it', () => {
