@@ -3825,3 +3825,35 @@ bound.
   document is counted instead.
 - **Stated limit:** a host that keeps ending between calls, killed from outside, is rebuilt each time, and nothing bounds
   that, because no document caused it.
+
+## Correction, 2026-10-18 — ONE sampling thread in `main` for every host, not one each (the owner's decision)
+
+**What a thread costs.** Each host had two worker threads in `main`, its pipe reader (the addition of 2026-08-25) and
+its memory sampler (the correction of 2026-10-03), and every worker thread is a whole V8 isolate. Measured, 2026-10-18,
+this laptop: four idle worker threads started in `main` took its private memory from 123 to 172 MB, **12.3 MB each**
+(`_review/workerCostProbe.mjs`, `fix-session-2/gate/workerCost-2.log`). The memory walk's M3 starts two hosts beyond
+the first, four threads, about 49 MB of `main`'s 70 MB rise at the first edit.
+
+**The sampler becomes one thread for every host.** It holds a table of the hosts it watches, each with its process id,
+its kill figure and its own two flags, and on each round samples every one: the same read, the same kill at the budget
+less 512 MiB with the KILLED flag set first, the same one message per host as its watch ends — killed, stopped, exited
+or failed. A host is added and removed by a message on a port the thread reads between rounds, and a stop still wakes
+it at once. One host's failure ends that host's watch only. The thread starts with the first host and ends when its
+table is empty, so a closed and idle application holds none.
+
+**What is unchanged:** the 100 ms interval, the kill and its order, the job's limit as the backstop, and the
+per-host interface the connection takes (`start`, `killed`, `onMessage`, `stop`), so no caller changes.
+
+**What it costs:** a round reads every host's commit in turn, a `K32GetProcessMemoryInfo` and a
+`GetExitCodeProcess` each, so a host's sample is late by the others' reads; at three hosts that is microseconds
+against a 100 ms interval and the 533 ms longest gap measured above.
+
+**Rejected:**
+- *Reading every host's pipe from one thread too* (about 12 MB more per host). Closed by the owner, 2026-10-18: a
+  change to how a contained host's pipe is read, days before launch; reopened only if a measurement shows `main`'s
+  memory hurting people.
+- *Sampling on `main`'s event loop.* Rejected above for its starving, and unchanged.
+
+**Proof:** `memorySamplerSurface.test.ts` runs the real worker against real child processes: two hosts watched by one
+thread; the one that grows past its kill figure is ended and reported killed with its flag set, the other is not;
+CONTROL: a host over its budget alone is ended and named exactly as before. The memory walk's M3 is measured again.
