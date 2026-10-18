@@ -29,6 +29,7 @@ import { fileURLToPath } from 'node:url';
 
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
+import { partialOutcome } from '../lib/unverifiable.mjs';
 import { componentSources } from '../release/packageMsix.mjs';
 import {
   PDFIUM_BIN,
@@ -46,6 +47,8 @@ const requirePdfium = process.argv.includes('--require-pdfium');
 /** @type {string[]} */
 const failures = [];
 const roster = createRoster(failures, { cases: 7 });
+/** The cases that could not run here, by name, for the partial outcome. @type {string[]} */
+const missed = [];
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -142,14 +145,12 @@ try {
       copiedAnswer === 'accepted',
       `provisionPdfium answered ${copiedAnswer}`,
     );
-  } else if (requirePdfium) {
-    check('CONTROL: the genuine library is provisioned here', false, `${genuine} is absent and --require-pdfium was given`);
   } else {
-    check(
-      'CONTROL UNVERIFIABLE: PDFium is not provisioned here, so the genuine library could not be offered',
-      true,
-      '',
-    );
+    // COULD NOT LOOK, recorded as such (RRRRRRR-13): not applicable here, and the run ends PARTLY MEASURED through
+    // `unverifiable.mjs`, a failure under --require-pdfium. This was a passing case labelled UNVERIFIABLE.
+    const name = 'CONTROL: the genuine library at the same place is accepted without a download';
+    roster.record(roster.mark(), name, false);
+    missed.push(name);
   }
 } catch (error) {
   failures.push(`the proof itself failed: ${formatError(error)}`);
@@ -163,3 +164,14 @@ process.stdout.write(
     : roster.format('PDFium provisioning case'),
 );
 process.exitCode = failures.length > 0 ? 1 : 0;
+if (failures.length === 0 && missed.length > 0) {
+  const outcome = partialOutcome({
+    required: requirePdfium,
+    ran: roster.passed.length,
+    missed,
+    why: 'PDFium is not provisioned on this machine (node scripts/provision/pdfium.mjs provisions it).',
+    flag: '--require-pdfium',
+  });
+  (outcome.stream === 'stderr' ? process.stderr : process.stdout).write(outcome.text);
+  process.exitCode = outcome.code;
+}

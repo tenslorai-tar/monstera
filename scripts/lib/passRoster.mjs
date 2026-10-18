@@ -179,6 +179,16 @@ export function createRoster(failures, declared) {
     mark: () => failures.length,
 
     record(mark, label, ran = true) {
+      // A COULD-NOT-LOOK IS NEVER A PASS (RRRRRRR-13): two provisioning proofs recorded the cases they could not run as
+      // passing ones labelled UNVERIFIABLE, and a harness reads an `ok` line and the exit code. The words a person uses
+      // for that state are the route's name; `ran = false` is the route. A label that CLAIMS the state starts with it; a
+      // case ABOUT the state ("… is reported UNVERIFIABLE rather than as a pass") names it mid-sentence and is a pass.
+      if (ran && /^(?:CONTROL\s+)?(?:UNVERIFIABLE|PARTLY MEASURED)\b/u.test(label)) {
+        throw new Error(
+          `"${label}" is recorded as a passing case, and its label says it could not look. Record it with ran = false, ` +
+            `and end the run with unverifiable.mjs' partialOutcome, so the harness reads it as partly measured.`,
+        );
+      }
       if (failures.length !== mark) return;
       (ran ? passed : skipped).push(label);
     },

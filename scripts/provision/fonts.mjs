@@ -7,7 +7,8 @@
  *
  * Every face is read from `google/fonts` at one commit, through `raw.githubusercontent.com` with the commit in the
  * path, so the URL names an immutable tree. Each file is pinned by SHA-256 and by size, read 2026-10-05 from the bytes
- * that commit served; `downloadVerified` refuses a host, a size or a digest that differs. The folder is checked as a
+ * that commit served; `downloadVerified` refuses another host, a body longer than the pinned size (the cap it is
+ * handed) and a digest that differs. The folder is checked as a
  * WHOLE tree (`pinnedTree.mjs`): a font that is in it is a font the resolver embeds, so a file the table does not name
  * is removed and the run fails, the same rule that keeps an extra DLL out of PDFium's folder. Nothing here is
  * committed: the set is 9,965,868 bytes and the commit hook refuses files over 5 MB for the same reason.
@@ -42,9 +43,6 @@ import { formatError } from '../lib/reportError.mjs';
 export const FONTS_COMMIT = '7085eb89a950e85db5b166b7a58d414544b4140c';
 
 const ALLOWED_HOSTS = ['raw.githubusercontent.com'];
-
-/** The largest face below is Noto Sans Symbols 2 at 1,233,128 bytes; two megabytes stops a replaced URL early. */
-const MAX_FONT_BYTES = 2 * 1024 * 1024;
 
 /**
  * @typedef {object} BundledFont
@@ -159,7 +157,9 @@ export async function provisionFonts({ root, force = false }) {
         url: urlOf(font),
         allowedHosts: ALLOWED_HOSTS,
         sha256: font.sha256,
-        maxBytes: MAX_FONT_BYTES,
+        // THE PINNED SIZE IS THE CAP (RRRRRRR-13): a body longer than the file read on 2026-10-05 is refused while it
+        // streams, and one of the same length or shorter by the digest. A shared two-megabyte cap left the size unchecked.
+        maxBytes: font.bytes,
         destination: join(staging, font.file),
       });
     }

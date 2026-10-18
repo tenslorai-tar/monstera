@@ -42,14 +42,14 @@ import { formatError } from './reportError.mjs';
 /** @type {string[]} */
 const failures = [];
 
-// EIGHT, and the number is the control on the split that produced this file:
-// the two halves declare 10 and 8, and 18 is what the single file ran.
+// TEN: the split that produced this file left eight (its halves declared 10 and 8, and 18 is what the single file
+// ran), and RRRRRRR-13 added the two could-not-look cases.
 //
 // This proof reports itself through the module it tests, which is circular only
 // in appearance. A `format` that stopped refusing a mismatched count would leave
 // this roster silent — and would fail cases 6 and 7 below, which drive that
 // refusal directly. A broken roster cannot reach the line that prints one.
-const roster = createRoster(failures, { cases: 8 });
+const roster = createRoster(failures, { cases: 10 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -187,6 +187,33 @@ function main() {
     `an optional count is one every future caller omits, and the omission looks exactly like ` +
       `every other roster. Requiring it is what stops the check being opt-in.`,
   );
+
+  // A COULD-NOT-LOOK IS NEVER A PASS (RRRRRRR-13): a label carrying either token, recorded as ran, is refused; the same
+  // label recorded with ran = false is listed as not applicable. Before the refusal, fonts.proof and pdfium.proof
+  // recorded exactly such labels as passes.
+  for (const token of ['UNVERIFIABLE', 'PARTLY MEASURED']) {
+    const label = `${token} (genuine): not provisioned here`;
+    const passing = createRoster([], { cases: 1 });
+    const refused = (() => {
+      try {
+        passing.record(passing.mark(), label);
+        return false;
+      } catch {
+        return true;
+      }
+    })();
+    const skipping = createRoster([], { cases: 1 });
+    skipping.record(skipping.mark(), label, false);
+    // CONTROL: a case ABOUT the state names it mid-sentence and passes as ever.
+    const about = createRoster([], { cases: 1 });
+    about.record(about.mark(), `a probe that could not look is reported ${token} rather than as a pass`);
+    check(
+      `a case whose label claims ${token} is refused as a pass and recorded with ran = false; one about the state passes`,
+      refused && skipping.passed.length === 0 && skipping.skipped.length === 1 && about.passed.length === 1,
+      `refused ${String(refused)}; with ran = false: passed ${JSON.stringify(skipping.passed)}, skipped ` +
+        `${JSON.stringify(skipping.skipped)}; the case about it passed ${String(about.passed.length)}`,
+    );
+  }
 
   process.stdout.write(
     failures.length > 0

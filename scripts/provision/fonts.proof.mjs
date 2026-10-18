@@ -28,6 +28,7 @@ import { fileURLToPath } from 'node:url';
 
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
+import { partialOutcome } from '../lib/unverifiable.mjs';
 import { nativeManifest } from '../release/nativeManifest.mjs';
 import {
   BUNDLED_FONTS,
@@ -45,6 +46,8 @@ const requireFonts = process.argv.includes('--require-fonts');
 /** @type {string[]} */
 const failures = [];
 const roster = createRoster(failures, { cases: 11 });
+/** The cases that could not run here, by name, for the partial outcome. @type {string[]} */
+const missed = [];
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -192,13 +195,14 @@ try {
       'the copied genuine tree was not accepted',
     );
     check('CONTROL: the planted case ran on a tree that held every genuine file', existsSync(genuine), genuine);
-  } else if (requireFonts) {
-    for (const label of ['planted', 'altered', 'exact', 'genuine']) {
-      check(`the bundled fonts are provisioned here (${label})`, false, `${genuine} is absent and --require-fonts was given`);
-    }
   } else {
+    // COULD NOT LOOK, recorded as such (RRRRRRR-13): each case not applicable here, and the run ends PARTLY MEASURED
+    // through `unverifiable.mjs`, which makes it a failure under --require-fonts. These were passing cases labelled
+    // UNVERIFIABLE, which a harness read as a complete pass.
     for (const label of ['planted', 'altered', 'exact', 'genuine']) {
-      check(`UNVERIFIABLE (${label}): the bundled fonts are not provisioned here`, true, '');
+      const name = `the ${label} copy case, which needs the bundled fonts provisioned`;
+      roster.record(roster.mark(), name, false);
+      missed.push(name);
     }
   }
 } catch (error) {
@@ -213,3 +217,14 @@ process.stdout.write(
     : roster.format('bundled-font case'),
 );
 process.exitCode = failures.length > 0 ? 1 : 0;
+if (failures.length === 0 && missed.length > 0) {
+  const outcome = partialOutcome({
+    required: requireFonts,
+    ran: roster.passed.length,
+    missed,
+    why: 'The bundled fonts are not provisioned on this machine (node scripts/provision/fonts.mjs provisions them).',
+    flag: '--require-fonts',
+  });
+  (outcome.stream === 'stderr' ? process.stderr : process.stdout).write(outcome.text);
+  process.exitCode = outcome.code;
+}
