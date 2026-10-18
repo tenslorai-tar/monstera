@@ -134,14 +134,19 @@ await step('3. a click away writes it; one Ctrl+Z undoes steps 1 and 2 together,
 
 await step('4. Add text: two lines typed on a blank area, ended with Escape, and the words kept', async () => {
   await command('Add text');
-  const surface = page.locator('[data-text-add-surface]').first();
+  // PAGE 2, WHICH STANDS UPRIGHT AND IS MOSTLY BLANK: by this step page 1's visible part is nearly all words, and its one
+  // blank band, the page's top margin, is too shallow for two lines with room (measured 2026-10-18). The turned page's
+  // own Add text is step 4b's, read back from the saved file.
+  const surface = page.locator('[data-document-layer="active"] .m-page-slot').nth(1).locator('[data-text-add-surface]');
+  await surface.scrollIntoViewIfNeeded();
   const box = await surface.boundingBox();
   if (box === null) throw new Error('no add surface');
   // N11: THE I-BEAM over the empty page, where a press puts the words.
   await expect(surface).toHaveCSS('cursor', 'text');
-  // 78% DOWN THE PAGE: at 85% or lower on this 180-degree page the typed words were dropped when the editor ended
-  // (measured 2026-10-12: kept at 78%, lost at 85% and 89%), reported as an app finding.
-  await page.mouse.click(box.x + box.width * 0.15, box.y + box.height * 0.78);
+  // A PLACE WITH NO WORDS, measured (`blankPoint`): a fixed 78% landed on a paragraph once step 3's redo had settled,
+  // and the words typed there joined it (2026-10-18).
+  const at = await blankPoint(box, false);
+  await page.mouse.click(at.x, at.y);
   await expect(editor()).toBeFocused();
   await page.keyboard.type('Added by the walk, line one');
   await page.keyboard.press('Enter');
@@ -152,6 +157,7 @@ await step('4. Add text: two lines typed on a blank area, ended with Escape, and
   await page.keyboard.press('Escape');
   await expect(editor()).toHaveCount(0);
   await expect(page.getByText('Added by the walk', { exact: false })).not.toHaveCount(0);
+  return { pressedAt: at.fraction };
 });
 
 await step('4b. Add text ended with a CLICK AWAY on the page, and the words are in the saved file (DDDDDDDD-6)', async () => {
@@ -159,7 +165,11 @@ await step('4b. Add text ended with a CLICK AWAY on the page, and the words are 
   if ((await page.getByRole('button', { name: 'Add text', exact: true }).first().getAttribute('aria-pressed')) !== 'true') {
     await command('Add text');
   }
-  const surface = page.locator('[data-text-add-surface]').first();
+  // PAGE 1 BACK AT THE TOP OF THE VIEW, as the walk had it before step 4 pressed on page 2.
+  const surface = page.locator('[data-document-layer="active"] .m-page-slot').first().locator('[data-text-add-surface]');
+  await surface.evaluate((element) => {
+    element.scrollIntoView({ block: 'start' });
+  });
   const box = await surface.boundingBox();
   if (box === null) throw new Error('no add surface');
   await page.mouse.click(box.x + box.width * 0.15, box.y + box.height * 0.7);
@@ -815,12 +825,49 @@ await step('N14: a word processor’s subsets keep their own font, bold and supe
  * the words are sent until the write answers, every way out returning early meanwhile), where the focus is, and whether the
  * picker's list is still open. Three causes, three different readings.
  */
+/**
+ * A point on the add surface from which an added box has ROOM: the box's words run from the press towards the page's
+ * own right edge and its lines towards the page's own foot, so on a page turned 180 degrees they run left and UP on
+ * screen. The region a box of two lines takes — from the press to the page's edge across, and three lines' height in the
+ * direction its lines go — must clear every visible block outline by 16 px. Heights are tried nearest 78% first, which
+ * is where the walk pressed before it measured.
+ *
+ * A FIXED POINT IS A CLAIM ABOUT THE PAGE'S TEXT that every earlier step can falsify (2026-10-18): after step 3's redo
+ * settled, 78% was the end of a paragraph and the typed words joined it; and a press near the edge the words run
+ * towards gave a box eight letters wide, its second line laid over the paragraph its lines ran into. Throws where the
+ * visible page has no such place.
+ * @param {{ x: number, y: number, width: number, height: number }} box
+ * @param {boolean} turned whether the page is turned 180 degrees
+ */
+async function blankPoint(box, turned) {
+  const outlines = await page.locator('[data-text-block]').evaluateAll((elements) =>
+    elements.map((element) => {
+      const rect = element.getBoundingClientRect();
+      return { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right };
+    }),
+  );
+  // FROM THE EDGE THE WORDS START AT: 15% in from it, so the box has 85% of the page to run across.
+  const x = turned ? box.x + box.width * 0.85 : box.x + box.width * 0.15;
+  const across = turned ? { left: box.x, right: x } : { left: x, right: box.x + box.width };
+  const LINES = 60;
+  for (const fraction of [0.78, 0.7, 0.85, 0.62, 0.89, 0.55, 0.93, 0.5, 0.4]) {
+    const y = Math.min(box.y + box.height * fraction, 800);
+    const band = turned ? { top: y - LINES, bottom: y + 16 } : { top: y - 16, bottom: y + LINES };
+    const clear = outlines.every(
+      (outline) =>
+        band.bottom < outline.top - 16 || band.top > outline.bottom + 16 || across.right < outline.left - 16 || across.left > outline.right + 16,
+    );
+    if (clear) return { x, y, fraction };
+  }
+  throw new Error(`no place on the visible page clears the ${String(outlines.length)} text blocks drawn on it`);
+}
+
 async function editorState() {
   // THE PAGE'S OWN DOCUMENT, by `globalThis` as `underPoint` reads it: this module's `document` is the sample's path, and
   // the scripts are checked without the DOM's types.
   return page.evaluate(() => {
-    /** @typedef {{ tagName: string, getAttribute: (name: string) => string | null }} Node */
-    const dom = /** @type {{ querySelector: (selector: string) => Node | null, activeElement: Node | null }} */ (
+    /** @typedef {{ tagName: string, textContent: string | null, getAttribute: (name: string) => string | null }} Node */
+    const dom = /** @type {{ querySelector: (selector: string) => Node | null, querySelectorAll: (selector: string) => Iterable<Node>, activeElement: Node | null }} */ (
       Reflect.get(globalThis, 'document')
     );
     const words = dom.querySelector('[data-text-editor]');
@@ -830,6 +877,13 @@ async function editorState() {
       busy: words?.getAttribute('aria-busy') ?? null,
       focus: focused === null ? null : `${focused.tagName.toLowerCase()}${focused.getAttribute('aria-label') === null ? '' : `[${focused.getAttribute('aria-label')}]`}`,
       listOpen: dom.querySelector('[data-text-properties] [role="listbox"]') !== null,
+      // WHAT THE EDITOR HOLDS AND SAYS, so a box that would not end is read with its words.
+      words: (words?.textContent ?? '').slice(0, 120),
+      said: [...dom.querySelectorAll('.m-text-editor-problem')].map((problem) => (problem.textContent ?? '').slice(0, 160)),
+      // THE CHARACTERS A "Can’t show" NAMES, as code points: a space or a mark reads as nothing on screen.
+      named: [...dom.querySelectorAll('.m-text-editor-problem')].map((problem) =>
+        Array.from((problem.textContent ?? '').split('Can’t show')[1] ?? '').map((character) => character.codePointAt(0)?.toString(16)),
+      ),
     };
   });
 }
@@ -844,7 +898,9 @@ async function addThenEscape(words, family) {
   const surface = page.locator('[data-text-add-surface]').first();
   const box = await surface.boundingBox();
   if (box === null) throw new Error('no add surface');
-  await page.mouse.click(box.x + box.width * 0.15, Math.min(box.y + box.height * 0.78, 800));
+  // THE WALK'S LAST DOCUMENT, which stands upright.
+  const at = await blankPoint(box, false);
+  await page.mouse.click(at.x, at.y);
   await expect(editor()).toBeFocused();
   await page.keyboard.type(words);
   if (family !== undefined) await chooseFont(family);
@@ -865,7 +921,11 @@ await step('20. W2: Add text with a font chosen in the Properties panel still en
   const withFont = control.ended ? await addThenEscape('Added with a font, line one', 'Times New Roman') : undefined;
   // THE SAMPLES COME FIRST in what the step reports, so a failure below still carries them (W2's evidence).
   const afterFontChoice = fontChoiceSamples.at(-1);
-  expect({ control: control.ended, withFont: withFont?.ended }, JSON.stringify({ afterFontChoice })).toStrictEqual({ control: true, withFont: true });
+  // AND BOTH BOXES' READINGS, before and after the Escape, in the message: thrown, the step returns nothing.
+  expect({ control: control.ended, withFont: withFont?.ended }, JSON.stringify({ afterFontChoice, control, withFont })).toStrictEqual({
+    control: true,
+    withFont: true,
+  });
   return { control, withFont, afterFontChoice };
 });
 
