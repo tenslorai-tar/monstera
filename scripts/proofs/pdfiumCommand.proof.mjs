@@ -266,7 +266,7 @@ const failures = [];
 // THE COUNT IS MOVED ONLY WITH THE CASES IT COUNTS, and the commit that moves it names the cases it adds or removes. A
 // running ledger of the count was kept here until 2026-10-17 and had stopped at 246 against 274 (VVVVVVV-23): a second
 // copy of the history git already holds, which nothing compared with the count.
-const roster = createRoster(failures, { cases: 286 });
+const roster = createRoster(failures, { cases: 288 });
 
 /**
  * @param {string} name
@@ -955,6 +955,43 @@ async function doubleSpaceRestyleCases() {
       'a paragraph holding a double space an edit wrote is set again in another face, with every word kept',
       typed.includes('two  spaces') && 'words' in restyled && restyled.words.replace(/\s+/gu, ' ') === typed.replace(/\s+/gu, ' '),
       `typed ${JSON.stringify(typed.slice(-20))}; restyled ${JSON.stringify(restyled)}`,
+    );
+
+    // UPSIDE DOWN, the memory walk's page: `/Rotate 180`, its words upright on it. PDFium's text page reads
+    // such a paragraph's characters out of the order they are typed, and generated a space between "learning" and a
+    // character two objects back at the very point the marked two spaces begin; the reader gave it to "learning", the
+    // two spaces read back as three, and each round trip added one (M3b, 2026-10-18). THE CONTROL is the same paragraph
+    // upright, whose two spaces read back as two with or without the rule.
+    /** @param {boolean} flipped */
+    const roundTrip = async (flipped) => {
+      const made = await PDFDocument.create();
+      const sheet = made.addPage([612, 792]);
+      const times = await made.embedFont(StandardFonts.TimesRoman);
+      const PARAGRAPH = [
+        'Excepteur sint occaecat cupidatat non proident, sunt in',
+        'culpa qui officia deserunt mollit anim id est laborum.',
+        'Duis aute irure dolor in reprehenderit in voluptate velit',
+        'esse cillum dolore eu fugiat nulla pariatur. Sunt in culpa',
+        'instituiton of learning',
+      ];
+      if (flipped) sheet.setRotation(degrees(180));
+      for (const [at, line] of PARAGRAPH.entries()) sheet.drawText(line, { x: 72, y: 690 - at * 14.4, size: 12, font: times });
+      const typed = await edit(await made.save(), `${(await paragraph(await made.save())).words}  walked`, []);
+      const words = (await paragraph(typed)).words;
+      const set = await edit(typed, words, [{ from: 0, to: words.length, set: { family: 'Carlito' } }]);
+      return { typed: /learning(\s*)walked/u.exec(words)?.[1]?.length, set: /learning(\s*)walked/u.exec((await paragraph(set)).words)?.[1]?.length };
+    };
+    const upside = await roundTrip(true);
+    const upright = await roundTrip(false);
+    record(
+      'two spaces typed into an upside-down paragraph read back as two once the paragraph is set in another face',
+      upside.typed === 2 && upside.set === 2,
+      `upside down: typed ${String(upside.typed)}, set ${String(upside.set)}`,
+    );
+    record(
+      'CONTROL: the same paragraph upright reads back its two spaces as two',
+      upright.typed === 2 && upright.set === 2,
+      `upright: typed ${String(upright.typed)}, set ${String(upright.set)}`,
     );
   } finally {
     bindEditFaces(null);

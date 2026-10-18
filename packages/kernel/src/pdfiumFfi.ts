@@ -684,7 +684,9 @@ function pageBoxOf(bindings: Bound, handle: unknown): PageText['box'] {
  * it in place would be shown words that are not on the page.
  *
  * So a generated SPACE is attributed to the run of the drawn character before
- * it, when the next drawn character follows on the same line. Generated line
+ * it, when the next drawn character follows on the same line — except beside
+ * a MARKED GAP, a tab or a run of spaces this editor wrote as exactly those
+ * spaces, which is itself the gap the text page saw. Generated line
  * breaks — PDFium's `\r\n` between lines — are dropped, because a line break is
  * the grouping's to decide, and a space before one is dropped with it. When a
  * run carrying such a space is rewritten, the space is written as a character,
@@ -896,6 +898,12 @@ function walkRuns(
     const runs = new Map<number, WalkedRun>();
     /** The runs whose last character is a space the text page GENERATED, not one an object draws. */
     const generatedTail = new Set<WalkedRun>();
+    /** Whether the object at `at` is a MARKED GAP: a text object whose `/ActualText` is white space alone. */
+    const markedGapAt = (at: number): boolean => {
+      if (at < 0 || at >= objects) return false;
+      const said = actualOf(at);
+      return said !== undefined && said !== '' && said.trim() === '' && numberFrom(bindings.objectType(bindings.getObject(handle, at)), 'FPDFPageObj_GetType') === TEXT_OBJECT;
+    };
     const ends = new Map<number, number>();
     const glyphs = new Map<number, { char: string; left: number }[]>();
     let unaddressable = 0;
@@ -906,6 +914,8 @@ function walkRuns(
     const afterSpace: { readonly run: WalkedRun; readonly at: number; readonly gap: number; readonly width: number }[] = [];
     /** The run the last DRAWN character joined, for a generated space to follow. */
     let previous: WalkedRun | undefined;
+    /** The object `previous` belongs to. */
+    let previousAt = -1;
     /** Generated characters seen since the last drawn one. */
     let pending = '';
 
@@ -927,14 +937,28 @@ function walkRuns(
         pending = '';
         continue;
       }
-      // THE PENDING SPACE, resolved now that the next drawn character is known:
-      // kept only when no generated line break came between them, and not after a tab, which IS the gap it stands for.
-      if (previous !== undefined && pending.includes(' ') && !/[\r\n]/u.test(pending) && !previous.text.endsWith('\t')) {
+      const actual = actualOf(index);
+      // THE PENDING SPACE, resolved now that the next drawn character is known: kept only when no generated line break
+      // came between them, and not beside a MARKED GAP — a tab, or a run of spaces written as exactly those spaces
+      // (ADR-0228) — which IS the gap the text page saw: the previous run's own object, the object drawn next after it,
+      // or the next character's. BY THE DRAWING ORDER, the extra objects' rule below, and never by where the text page
+      // put the space: on the memory walk's upside-down paragraph PDFium read "learning", then a character two objects
+      // back, and generated the space between them at the very point the marked two spaces begin (412.67999 against
+      // 412.67996, one float32 step, 2026-10-18). Kept, a run of two spaces set in a new face read back as three, each
+      // round trip added one, and the sixth pushed the next word off the page (memory walk M3b, 2026-10-18).
+      if (
+        previous !== undefined &&
+        pending.includes(' ') &&
+        !/[\r\n]/u.test(pending) &&
+        !previous.text.endsWith('\t') &&
+        !markedGapAt(previousAt) &&
+        !markedGapAt(previousAt + 1) &&
+        !markedGapAt(index)
+      ) {
         previous.text += ' ';
         generatedTail.add(previous);
       }
       pending = '';
-      const actual = actualOf(index);
 
       const left = [0];
       const right = [0];
@@ -999,6 +1023,7 @@ function walkRuns(
         held.top = Math.max(held.top, high);
       }
       previous = held;
+      previousAt = index;
     }
     restoreDroppedSpaces(afterSpace);
 
