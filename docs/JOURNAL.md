@@ -1002,6 +1002,10 @@ fixed: the handler's in-flight duty asserted in `contractHandlers.test.ts`). **E
 own drawing; reproduced 3 of 4 under software drawing first, 6 of 6 after). **FFFFFFF-1** (medium, fixed `5ceff659`: the
 attachments walk on Windows, all five readers read, the binary refused). **GGGGGGG-4** (medium, fixed `5ceff659`, the
 same walk).
+Correction, 2026-10-18, to VVVVVVV-18 above: the family half is built (`4203a148`, the owner's answer to question 3,
+(a)). A join carries the lower block's font family as a mark where its page font resolves to a listed family
+(`familyFaces.listedFamiliesFor`, the one rule the picker takes too); where it does not, the words take the upper's and
+a toast says so. Moved here from the text-editing row of `docs/FEATURES.md`, which keeps a pointer.
 
 **The owner's decisions, built.** **PPPPPPP-10** (medium, fixed `66febbd0`). **OOOOOOO-2** (medium, fixed `66febbd0`).
 **MMMMMMM-2** (medium, fixed `66febbd0`). **PPPPPPP-12** (medium, fixed `328e027a`, `e50eb3b0`). **OOOOOOO-8** (low, fixed
