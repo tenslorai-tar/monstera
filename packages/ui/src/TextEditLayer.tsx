@@ -130,7 +130,12 @@ export interface TextEditLayerProps {
   /** The spelling checker's answers for the editor's right-click menu. */
   readonly spell?: EditorSpelling;
   /** Writes blocks joined or split in one command (ADR-0180 Decision 7), at the version the blocks were read at. */
-  readonly onRestructure?: (edits: EditedBlock[], read: BlocksRead) => Promise<BlockCommit>;
+  readonly onRestructure?: (edits: EditedBlock[], read: BlocksRead, kept?: boolean) => Promise<BlockCommit>;
+  /**
+   * The family each page font name stands for, for a join to carry the lower block's (the owner's decision of 2026-10-18
+   * on VVVVVVV-18). Absent, a join carries no family, as before.
+   */
+  readonly familiesOf?: () => Promise<(font: string) => string | undefined>;
   /** Writes one block's new words, at the version the blocks were read at and by the writer that read named. */
   /** The read carries the page's blocks, so the text below the block can be moved with it (ADR-0249). */
   readonly onCommit: (block: TextBlock, text: string, read: PageBlocksRead, formatting?: BlockFormatting) => Promise<BlockCommit>;
@@ -194,6 +199,9 @@ function place(box: TextBlock['box'], geometry: OverlayPage): Placed {
  * under anything a reader sees and over the rounding of a glyph's box set flush against the edge.
  */
 const PAGE_EDGE_TOLERANCE = 0.25;
+
+/** No family known for any font: a join carries none, which is what a layer given no `familiesOf` does. */
+const NO_FAMILIES = (): Promise<(font: string) => string | undefined> => Promise.resolve(() => undefined);
 
 /**
  * Whether a block's words run past the page's visible box, so some of them are written and cannot be seen (the
@@ -424,6 +432,7 @@ export function TextEditLayer({
   native,
   spell,
   onRestructure,
+  familiesOf = NO_FAMILIES,
   onCommit,
   runFonts,
   objects,
@@ -689,7 +698,8 @@ export function TextEditLayer({
                         const below = blocks.blocks[index];
                         return below === undefined ? [] : [below];
                       }),
-                      apply: (edits) => onRestructure(edits, blocks),
+                      apply: (edits, kept) => onRestructure(edits, blocks, kept),
+                      families: familiesOf,
                     }
               }
               spell={spell}
@@ -980,8 +990,10 @@ export interface TextEditing {
   readonly native: (action: WindowEditAction) => void;
   /** The spelling checker's answers for the editor's right-click menu. */
   readonly spell: EditorSpelling;
-  /** Writes blocks joined or split, in one command. */
-  readonly onRestructure: (page: number, edits: EditedBlock[], read: BlocksRead) => Promise<BlockCommit>;
+  /** Writes blocks joined or split, in one command; `kept` where a join set words in the upper block's family. */
+  readonly onRestructure: (page: number, edits: EditedBlock[], read: BlocksRead, kept?: boolean) => Promise<BlockCommit>;
+  /** The family each page font name stands for (`listedFamiliesFor`), for a join to carry the lower block's. */
+  readonly familiesOf?: () => Promise<(font: string) => string | undefined>;
   /**
    * The boxes of a page's pictures and drawings (everything but text, which the blocks are), at the version they were
    * read, for the note that a written block now runs over one (B1.6); `undefined` where the read was refused.
@@ -1048,7 +1060,8 @@ export function TextEditPage({
       onAdded={editing.onAdded}
       native={editing.native}
       spell={editing.spell}
-      onRestructure={(edits, read) => editing.onRestructure(page, edits, read)}
+      onRestructure={(edits, read, kept) => editing.onRestructure(page, edits, read, kept)}
+      {...(editing.familiesOf === undefined ? {} : { familiesOf: editing.familiesOf })}
       onInsert={(insert, read) => editing.onInsert(page, insert, read)}
       runFonts={(block, read) => editing.runFonts(page, block, read)}
       objects={pageObjects}
@@ -1096,7 +1109,10 @@ interface BlockEditorProps {
         readonly below: TextBlock | undefined;
         /** The text below the block in its column, as the read's `push.below` named it, which a split moves down. */
         readonly under: readonly TextBlock[];
-        readonly apply: (edits: EditedBlock[]) => Promise<BlockCommit>;
+        /** Writes the edits; `kept` where a join set some words in the upper block's family, which the person is told. */
+        readonly apply: (edits: EditedBlock[], kept?: boolean) => Promise<BlockCommit>;
+        /** The family each page font name stands for, from the session's font list (`listedFamiliesFor`). */
+        readonly families: () => Promise<(font: string) => string | undefined>;
       }
     | undefined;
   /** Where this editor puts the function that writes it, so a click on another block can ask for the write. */
@@ -1516,11 +1532,16 @@ function BlockEditor({
     const untouched =
       text === wordsOfBlock(block) && !isFormatted(readEditor(element).formatting) && placeOf(placement, block.box) === undefined;
     if (!untouched) return {};
-    const { above, below, under, apply } = restructure;
+    const { above, below, under, apply, families } = restructure;
     const split = caret === undefined ? undefined : splitEdits(block, caret, under);
+    // THE LOWER BLOCK'S FAMILY CARRIED where it resolves (`joinEdits`), and the person told where it could not be.
+    const join = async (upper: TextBlock, lower: TextBlock): Promise<BlockCommit> => {
+      const { edits, kept } = joinEdits(upper, lower, await families());
+      return apply(edits, kept);
+    };
     return {
-      ...(above === undefined ? {} : { joinAbove: () => void settle(() => apply(joinEdits(above, block))) }),
-      ...(below === undefined ? {} : { joinBelow: () => void settle(() => apply(joinEdits(block, below))) }),
+      ...(above === undefined ? {} : { joinAbove: () => void settle(() => join(above, block)) }),
+      ...(below === undefined ? {} : { joinBelow: () => void settle(() => join(block, below)) }),
       ...(split === undefined ? {} : { split: () => void settle(() => apply(split)) }),
     };
   };

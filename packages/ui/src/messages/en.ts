@@ -352,6 +352,7 @@ export const REMOVE_HEADER_FOOTER_COMMAND_TITLE = messageKey('command.remove-hea
 export const EDIT_BATES_COMMAND_TITLE = messageKey('command.edit-bates.title');
 export const REMOVE_BATES_COMMAND_TITLE = messageKey('command.remove-bates.title');
 export const RIBBON_EDIT_MARKS = messageKey('surface.ribbon.edit-marks');
+export const TEXT_JOIN_FAMILY_KEPT = messageKey('surface.text-edit.join-family-kept');
 export const FORM_SCRIPTS_NOTICE_TITLE =messageKey('dialog.form-scripts-notice.title');
 export const FORM_SCRIPTS_NOTICE_BODY = messageKey('dialog.form-scripts-notice.body');
 export const FORM_SCRIPTS_NOTICE_MORE = messageKey('dialog.form-scripts-notice.more');
@@ -7195,6 +7196,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EDIT_BATES_COMMAND_TITLE]: 'Edit Bates numbers…',
   [REMOVE_BATES_COMMAND_TITLE]: 'Remove Bates numbers',
   [RIBBON_EDIT_MARKS]: 'Edit marks',
+  [TEXT_JOIN_FAMILY_KEPT]:
+    'Joined. Some of the words are now in the upper paragraph’s font, because Monstera can’t set text in the font they had.',
   [FORM_SCRIPTS_NOTICE_TITLE]: 'This form has scripts',
   [FORM_SCRIPTS_NOTICE_BODY]:
     'This form has calculations or checks written as scripts. To keep your computer safe, Monstera never runs scripts from documents, so these fields won’t update by themselves: {fields}.',

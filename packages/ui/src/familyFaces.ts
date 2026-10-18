@@ -143,17 +143,29 @@ export function previewFamilyOf(
   /** Whether a family is drawn in itself here; the browser's and this window's answer, which a case states instead. */
   drawnHere: (family: string) => boolean = drawable,
 ): string | undefined {
-  const plain = withoutSubsetTag(name);
-  const key = normaliseFamily(name);
-  const standIn = STAND_INS[key];
   const candidates = [
-    families.find((family) => family.name.toLowerCase() === plain.toLowerCase())?.name,
-    families.find((family) => normaliseFamily(family.name) === key)?.name,
-    standIn === undefined ? undefined : families.find((family) => family.name === standIn)?.name,
+    ...listedFamiliesFor(name, families),
     // A NAME THE BROWSER DRAWS ITSELF, where no list was read for this consumer (the standard faces a stamp offers).
-    families.length === 0 ? plain : undefined,
+    families.length === 0 ? withoutSubsetTag(name) : undefined,
   ];
   // THE FIRST THAT IS DRAWN IN ITSELF HERE: a listed family with no face given and no system name falls through, so a
   // preview is never a name drawn in the browser's default.
   return candidates.find((candidate): candidate is string => candidate !== undefined && drawnHere(candidate));
+}
+
+/**
+ * THE LISTED FAMILIES a font name the page states may stand for, best first: the family of that name, one listed under
+ * the same normalised name (*TimesNewRomanPSMT* is *Times New Roman*), and the bundled stand-in the resolver would write
+ * it in (*Times-Roman* is Tinos). ONE RULE, which the picker's preview and a join's carried family both take (B3a): a
+ * family not in the list is one the resolver does not know, so a mark naming it could not be written.
+ */
+export function listedFamiliesFor(name: string, families: readonly FontFamilyEntry[]): string[] {
+  const plain = withoutSubsetTag(name);
+  const key = normaliseFamily(name);
+  const standIn = STAND_INS[key];
+  return [
+    families.find((family) => family.name.toLowerCase() === plain.toLowerCase())?.name,
+    families.find((family) => normaliseFamily(family.name) === key)?.name,
+    standIn === undefined ? undefined : families.find((family) => family.name === standIn)?.name,
+  ].filter((family): family is string => family !== undefined);
 }

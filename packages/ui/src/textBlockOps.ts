@@ -1,5 +1,5 @@
 import type { BlockMark, EditedBlock } from '@monstera/contract';
-import { joinAfterLine, lineText, paragraphsOfLines } from '@monstera/shared';
+import { joinAfterLine, lineText, normaliseFamily, paragraphsOfLines } from '@monstera/shared';
 
 import type { TextBlock } from './textBlock.js';
 
@@ -9,14 +9,14 @@ import type { TextBlock } from './textBlock.js';
  * is derived on every read (ADR-0049), so a joined pair is one block exactly while its lines sit as one block's do, and
  * a split pair is two exactly while a gap stands between them: each operation writes the movement that makes it true.
  *
- * ## Words survive, and four of their looks
+ * ## Words survive, and their looks
  *
  * A word appended to a block takes the style of the run before it (ADR-0179), so a join that only appended the lower
  * block's words would set them in the upper block's last style. The lower block's runs are carried as marks — weight,
- * slant, size and colour — so they keep those (read back by `pdfiumCommand.proof`'s styled join, VVVVVVV-18). Their
- * FAMILY is not carried: a run names the font the page states, a mark names a family the resolver knows, and nothing
- * here turns one into the other, so a lower block in another family takes the upper's — put to the owner. A split
- * names each half's own old lines, so neither half changes at all but where it stands.
+ * slant, size and colour — so they keep those (read back by `pdfiumCommand.proof`'s styled join, VVVVVVV-18), and their
+ * FAMILY where the font the page states resolves to a family the resolver knows (`listedFamiliesFor`, the owner's
+ * decision of 2026-10-18); where it does not, the words take the upper block's, and the join says so. A split names
+ * each half's own old lines, so neither half changes at all but where it stands.
  */
 
 /** A block's words, as the editor shows them: the one join the kernel diffs against. */
@@ -47,11 +47,25 @@ export function runSpans(block: TextBlock): RunSpan[] {
   return spans;
 }
 
-/** A block's runs as marks over its words, shifted by `shift` where its words follow others'; adjacent equal looks are one. */
-export function styleMarks(block: TextBlock, shift: number): Omit<BlockMark, 'block'>[] {
+/**
+ * A block's runs as marks over its words, shifted by `shift` where its words follow others'; adjacent equal looks are one.
+ * `familyOf` answers the family a run's page font name stands for, where one is known; a run with none carries no family.
+ */
+export function styleMarks(
+  block: TextBlock,
+  shift: number,
+  familyOf: (font: string) => string | undefined = () => undefined,
+): Omit<BlockMark, 'block'>[] {
   const marks: Omit<BlockMark, 'block'>[] = [];
   for (const { from, to, style } of runSpans(block)) {
-    const set = { bold: style.bold, italic: style.italic, size: style.size, colour: { r: style.colour.r, g: style.colour.g, b: style.colour.b } };
+    const family = style.font === undefined ? undefined : familyOf(style.font);
+    const set = {
+      bold: style.bold,
+      italic: style.italic,
+      size: style.size,
+      colour: { r: style.colour.r, g: style.colour.g, b: style.colour.b },
+      ...(family === undefined ? {} : { family }),
+    };
     const last = marks.at(-1);
     if (last?.to === shift + from && JSON.stringify(last.set) === JSON.stringify(set)) {
       marks[marks.length - 1] = { ...last, to: shift + to };
@@ -70,14 +84,33 @@ function linesOf(block: TextBlock): Pick<EditedBlock, 'lines' | 'soft'> {
  * marks, and the lower block removed (its words emptied, which is what removes a block). They are two entries of one
  * command, so one undo step; the upper block's lines are laid out again from its first line, so the words that were the
  * lower block's stand at the pitch of the block they joined, which is what makes them read as one.
+ *
+ * THE LOWER BLOCK'S FAMILY TOO, where its run's page font name resolves to a family the resolver knows (`familyOf`, the
+ * owner's decision of 2026-10-18 on VVVVVVV-18): a mark names a family, and a family not listed is one no mark can write.
+ * Where a run's font does not resolve and is not the upper block's own, its words take the upper's family, and `kept`
+ * says so, for the person to be told.
  */
-export function joinEdits(upper: TextBlock, lower: TextBlock): [EditedBlock, EditedBlock] {
+export function joinEdits(
+  upper: TextBlock,
+  lower: TextBlock,
+  familyOf: (font: string) => string | undefined,
+): { readonly edits: [EditedBlock, EditedBlock]; readonly kept: boolean } {
   const head = wordsOfBlock(upper);
   const shift = head.length + 1;
-  return [
-    { ...linesOf(upper), text: `${head} ${wordsOfBlock(lower)}`, marks: styleMarks(lower, shift) },
-    { ...linesOf(lower), text: '' },
-  ];
+  const upperFonts = new Set(upper.lines.flatMap((line) => line.runs.map((run) => normaliseFamily(run.style.font ?? ''))));
+  let kept = false;
+  const marks = styleMarks(lower, shift, (font) => {
+    const family = familyOf(font);
+    if (family === undefined && !upperFonts.has(normaliseFamily(font))) kept = true;
+    return family;
+  });
+  return {
+    edits: [
+      { ...linesOf(upper), text: `${head} ${wordsOfBlock(lower)}`, marks },
+      { ...linesOf(lower), text: '' },
+    ],
+    kept,
+  };
 }
 
 /**

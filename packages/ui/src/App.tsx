@@ -292,6 +292,7 @@ import {
   FORM_FIELD_REQUIRED_LEFT,
   LINK_ADDED,
   MEMORY_LOW_NOTICE,
+  TEXT_JOIN_FAMILY_KEPT,
   SPLIT_SECOND_LABEL,
   TOAST_DISMISS,
   TOAST_TAB_ORDER_GIVEN,
@@ -434,7 +435,8 @@ import { AssistantPanel } from './AssistantPanel.js';
 import type { DropOpener, EventSubscriber } from './bridge.js';
 import { PropertiesPanel, type StyleChange, caretRectAt } from './PropertiesPanel.js';
 import { TextFormatPanel } from './TextFormatPanel.js';
-import { useDocumentFonts, useFontList } from './fontList.js';
+import { fontListOf, useDocumentFonts, useFontList } from './fontList.js';
+import { listedFamiliesFor } from './familyFaces.js';
 import { readOnePageLinks } from './usePageLinks.js';
 import { LinkProperties } from './LinkProperties.js';
 import { GRID_DIVISION_COUNTS, type GridLook, type RulerUnit } from './rulerGeometry.js';
@@ -4729,7 +4731,17 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         look: (word) => lookUp({ client, settings }, word),
         keep: (word) => keepWord(settings, word),
       },
-      onRestructure: (page, edits, read) => commitBlocks(deps, docId, page, edits, read),
+      onRestructure: async (page, edits, read, kept) => {
+        const outcome = await commitBlocks(deps, docId, page, edits, read);
+        // SAID ONCE THE JOIN IS WRITTEN, never for one refused (the owner's decision of 2026-10-18 on VVVVVVV-18).
+        if (kept === true && outcome === 'written') toast('done', TEXT_JOIN_FAMILY_KEPT);
+        return outcome;
+      },
+      // THE SESSION'S ONE FONT LIST (`fontListOf`), read if no picker has read it yet, and the one rule over it.
+      familiesOf: async () => {
+        const read = await fontListOf(client);
+        return (font) => listedFamiliesFor(font, read.families)[0];
+      },
       onInsert: (page, insert, read) => commitPageInsert(deps, docId, page, insert, read),
       // ONE BOX, then back to editing what is on the page.
       onAdded: () => {
@@ -4745,7 +4757,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         setToolId(undefined);
       },
     };
-  }, [applied, ask, client, inEditText, open, setToolId, settings, signatures, stamp, windowEdit]);
+  }, [applied, ask, client, inEditText, open, setToolId, settings, signatures, stamp, toast, windowEdit]);
   // THE ADD FLAVOUR BESIDE THE MODE, not inside it: choosing Add text from Edit text, or leaving it, must not hand every
   // page a new reader and read them all again, which is what a value inside the memo above would do.
   const editing = useMemo<PageListProps['editing']>(

@@ -266,7 +266,7 @@ const failures = [];
 // THE COUNT IS MOVED ONLY WITH THE CASES IT COUNTS, and the commit that moves it names the cases it adds or removes. A
 // running ledger of the count was kept here until 2026-10-17 and had stopped at 246 against 274 (VVVVVVV-23): a second
 // copy of the history git already holds, which nothing compared with the count.
-const roster = createRoster(failures, { cases: 288 });
+const roster = createRoster(failures, { cases: 290 });
 
 /**
  * @param {string} name
@@ -4148,7 +4148,7 @@ async function joinSplitCases() {
     if (high === undefined || low === undefined) {
       record('the styled join fixture reads as two blocks', false, `${String(apartRead.blocks.length)} block(s)`);
     } else {
-      const looked = await send(/** @type {object[]} */ (joinEdits(/** @type {never} */ (high), /** @type {never} */ (low))), apart);
+      const looked = await send(/** @type {object[]} */ (joinEdits(/** @type {never} */ (high), /** @type {never} */ (low), () => undefined).edits), apart);
       const bare = await send([entry(high, `${wordsOf(high)} ${wordsOf(low)}`), entry(low, '')], apart);
       // BY ONE WORD: a joined line is cut into runs where the looks change, so a phrase need not sit in one run.
       const lowerRun = async (/** @type {Uint8Array} */ bytes) =>
@@ -4174,6 +4174,44 @@ async function joinSplitCases() {
         `joined with marks ${JSON.stringify(look(kept))} at ${String(kept?.bottom)} against ${String(lowerBefore)} before, ` +
           `upper ${JSON.stringify(look(upperKept))}; with none ${JSON.stringify(look(plain))}`,
       );
+    }
+  }
+
+  // THE LOWER BLOCK'S FAMILY (the owner's decision of 2026-10-18 on VVVVVVV-18): a Times block joined under a Helvetica
+  // one, as the editor sends it, with the page font resolved to the bundled Tinos as the session's list would. CONTROL:
+  // the same join where nothing resolves sets the joined words in the upper block's Helvetica, so the family read back is
+  // the carried mark's doing.
+  {
+    const { joinEdits } = await import('../../packages/ui/dist/textBlockOps.js');
+    bindEditFaces(() => faceSourceOf([{ path: fontsDirectory(root), origin: 'bundled' }], readCatalogueApart));
+    try {
+      const made = await PDFDocument.create();
+      const sheet = made.addPage([612, 792]);
+      sheet.drawText('Upper family words', { x: 72, y: 700, size: 12, font: await made.embedFont(StandardFonts.Helvetica) });
+      sheet.drawText('Lower family words', { x: 72, y: 680, size: 12, font: await made.embedFont(StandardFonts.TimesRoman) });
+      const pair = await made.save();
+      const pairRead = await blocksOf(pair);
+      const high = pairRead.blocks.find((block) => block.lines[0]?.runs[0]?.text.startsWith('Upper'));
+      const low = pairRead.blocks.find((block) => block.lines[0]?.runs[0]?.text.startsWith('Lower'));
+      if (high === undefined || low === undefined) {
+        record('the family join fixture reads as two blocks', false, `${String(pairRead.blocks.length)} block(s)`);
+      } else {
+        /** @param {(font: string) => string | undefined} familyOf */
+        const fontOfLower = async (familyOf) => {
+          const bytes = await send(/** @type {object[]} */ (joinEdits(/** @type {never} */ (high), /** @type {never} */ (low), familyOf).edits), pair);
+          return (await blocksOf(bytes)).runs.find((run) => /\bLower\b/u.test(run.text))?.style.font ?? '';
+        };
+        const carried = await fontOfLower((font) => (/Times/u.test(font) ? 'Tinos' : undefined));
+        const unresolved = await fontOfLower(() => undefined);
+        record('a join sets the lower block’s words in their own family where its page font resolves', /Tinos/iu.test(carried), `resolved: ${carried}`);
+        record(
+          'CONTROL: where it does not resolve, the same join sets them in the upper block’s family',
+          /Helvetica|Arimo|Arial/iu.test(unresolved) && !/Tinos|Times/iu.test(unresolved),
+          `unresolved: ${unresolved}`,
+        );
+      }
+    } finally {
+      bindEditFaces(null);
     }
   }
 

@@ -9,7 +9,7 @@ const BOLD = { ...REGULAR, bold: true, colour: { r: 200, g: 0, b: 0 } };
 const box = (x0: number, y0: number, x1: number, y1: number) => ({ x0, y0, x1, y1 });
 
 /** A block of the given lines, each a list of [index, text, style] runs, at the given top. */
-function block(top: number, lines: { runs: [number, string, typeof REGULAR][]; soft: boolean }[]): TextBlock {
+function block(top: number, lines: { runs: [number, string, TextBlock['lines'][number]['runs'][number]['style']][]; soft: boolean }[]): TextBlock {
   return {
     box: box(72, top - 14 * lines.length, 300, top),
     lines: lines.map((line, at) => ({
@@ -59,9 +59,12 @@ describe('styleMarks', () => {
   });
 });
 
+/** No family known for any font. */
+const NONE = (): undefined => undefined;
+
 describe('joinEdits', () => {
   it('is one paragraph of both blocks’ words, the lower block’s looks kept, and the lower block emptied', () => {
-    const [upper, lower] = joinEdits(UPPER, LOWER);
+    const [upper, lower] = joinEdits(UPPER, LOWER, NONE).edits;
     expect(upper.text).toBe('Words that run on and end here. A bold close.');
     expect(upper.lines).toStrictEqual([[1], [2]]);
     // THE LOWER BLOCK'S BOLD WORD is bold at ITS offset in the joined words, which is where a mark for it must be.
@@ -72,9 +75,32 @@ describe('joinEdits', () => {
   });
 
   it('names every run of both blocks once, so the wire accepts it', () => {
-    const [upper, lower] = joinEdits(UPPER, LOWER);
+    const [upper, lower] = joinEdits(UPPER, LOWER, NONE).edits;
     const named = [...upper.lines.flat(), ...lower.lines.flat()];
     expect(new Set(named).size).toBe(named.length);
+  });
+
+  // THE OWNER'S DECISION OF 2026-10-18 (VVVVVVV-18): the lower block's family carried where its page font resolves.
+  const HELVETICA = { ...REGULAR, font: 'ABCDEF+Helvetica' };
+  const TIMES = { ...REGULAR, serif: true, font: 'GHIJKL+Times-Roman' };
+  const sansUpper = block(700, [{ runs: [[1, 'Upper words.', HELVETICA]], soft: false }]);
+  const serifLower = block(660, [{ runs: [[2, 'Lower words.', TIMES]], soft: false }]);
+
+  it('carries the lower block’s family where its font resolves, and keeps nothing', () => {
+    const familyOf = (font: string): string | undefined => (font === 'GHIJKL+Times-Roman' ? 'Tinos' : undefined);
+    const { edits, kept } = joinEdits(sansUpper, serifLower, familyOf);
+    const carried = edits[0].marks?.find((mark) => edits[0].text.slice(mark.from, mark.to) === 'Lower words.');
+    expect(carried?.set.family).toBe('Tinos');
+    expect(kept).toBe(false);
+  });
+
+  it('CONTROL: where it does not resolve, no family is carried and the join says the upper’s was kept', () => {
+    const { edits, kept } = joinEdits(sansUpper, serifLower, NONE);
+    expect(edits[0].marks?.some((mark) => mark.set.family !== undefined)).toBe(false);
+    expect(kept).toBe(true);
+    // AND NOTHING TO SAY where the lower block is already in the upper's font, resolved or not.
+    const sansLower = block(660, [{ runs: [[2, 'Lower words.', { ...HELVETICA, font: 'MNOPQR+Helvetica' }]], soft: false }]);
+    expect(joinEdits(sansUpper, sansLower, NONE).kept).toBe(false);
   });
 });
 
