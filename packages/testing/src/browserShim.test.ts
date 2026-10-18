@@ -409,7 +409,16 @@ describe('browser shim', () => {
       // to avoid.
       expect(executed).toStrictEqual({
         ok: true,
-        value: { version: 4, byteLength: 1024, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 },
+        value: {
+          version: 4,
+          byteLength: 1024,
+          historyDropped: 0,
+          boxed: [],
+          more: 0,
+          unsealedCopies: [],
+          unsealedUndoCopies: 0,
+          skippedPages: [],
+        },
       });
     });
 
