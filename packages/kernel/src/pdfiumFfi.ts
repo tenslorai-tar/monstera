@@ -2042,6 +2042,12 @@ interface PieceWriter {
   readonly record: (object: unknown, text: string) => void;
   readonly standardFontLike: (object: unknown) => unknown;
   readonly uncarriedIn: (source: unknown, text: string) => string;
+  /**
+   * A letter this edit's face subsets hold: the first of `preferred` that they do, else the first they hold at all, and
+   * `undefined` where they hold no letter. Every face is cut to the edit's own texts and nothing else (`faceFont`), so a
+   * probe that writes a character in a face must take one of these.
+   */
+  readonly heldLetter: (preferred: readonly string[]) => string | undefined;
   readonly keepsItsObject: (object: unknown, text: string) => boolean;
   /** The characters drawn as boxes that are still on the page, in the order they were drawn (ADR-0174). */
   readonly boxed: () => BoxedInEdit[];
@@ -2862,6 +2868,10 @@ function pieceWriter(
         seed,
         styleOfObject,
         uncarriedIn,
+        heldLetter: (preferred: readonly string[]) => {
+          const held = (character: string): boolean => character.trim() !== '' && characters.includes(character.codePointAt(0) ?? -1);
+          return preferred.find(held) ?? characters.map((point) => String.fromCodePoint(point)).find(held);
+        },
         keepsItsObject,
         boxed: () => {
           // A box a wrap trimmed off one line was drawn again on the next, and is told once, where it is.
@@ -3925,7 +3935,13 @@ function blockMeasure(
       }
       return right;
     };
-    const letter = [...Array.from(run.text), ...REFERENCE_LETTERS].find((character) => character.trim() !== '') ?? 'x';
+    // THE LETTER A SPACE IS MEASURED BETWEEN. In a restyle it is written in a face this edit cut to its own texts, so it is
+    // one those texts hold: the run's old first letter, or a reference letter, is in no subset unless typed, and the
+    // probe refused the edit naming its own letters — an added box's run is its seed, whose text is SEED_TEXT, so every
+    // family chosen for an added box was refused as "Can't show . ." (the text walk's step 20, measured 2026-10-18).
+    const candidates = [...Array.from(run.text), ...REFERENCE_LETTERS];
+    const letter =
+      (restyle === undefined ? candidates.find((character) => character.trim() !== '') : pen.heldLetter(candidates)) ?? 'x';
     // A RUN OF WHITE SPACE ALONE is measured by its font's advances (`fontAdvance`): it has no letter to stand between,
     // and the writer keeps white space in the run's own font whatever the restyle. Probed between two letters instead, it
     // set the reference letter in that font — a subset an earlier edit made for the spaces alone (ADR-0228's marked run),

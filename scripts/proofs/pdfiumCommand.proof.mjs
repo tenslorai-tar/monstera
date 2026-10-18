@@ -267,7 +267,7 @@ const failures = [];
 // THE COUNT IS MOVED ONLY WITH THE CASES IT COUNTS, and the commit that moves it names the cases it adds or removes. A
 // running ledger of the count was kept here until 2026-10-17 and had stopped at 246 against 274 (VVVVVVV-23): a second
 // copy of the history git already holds, which nothing compared with the count.
-const roster = createRoster(failures, { cases: 293 });
+const roster = createRoster(failures, { cases: 296 });
 
 /**
  * @param {string} name
@@ -550,6 +550,7 @@ async function main() {
   await paragraphCases();
   await formatCases();
   await placeCases();
+  await chosenFamilyCases();
   await joinSplitCases();
   await directionCases();
   await markCases();
@@ -4180,6 +4181,77 @@ async function placeCases() {
       !/Times/u.test(note?.style.font ?? 'Times') && note?.style.bold === false && note.style.colour.r < 60,
     `${JSON.stringify(near?.style)} against ${JSON.stringify(note?.style)}`,
   );
+}
+
+/**
+ * A FAMILY CHOSEN FOR WORDS WHOSE RUN HOLDS NONE OF THE LETTERS A SPACE IS MEASURED BETWEEN (2026-10-18). A space in a
+ * restyled run is measured by writing it between two letters in the chosen face, and every face is cut to the edit's own
+ * texts. The letter was the run's old first letter or a reference letter, which no subset holds unless it was typed, so
+ * the measurement refused the edit naming its own probe. An added box's run is its seed, whose text is "." — so every
+ * family chosen for an added box was refused as "Can't show . ." (the text walk's step 20).
+ *
+ * The words below hold none of the reference letters (x n o e a H 0 .) and not the old first letter (U), so only a
+ * letter taken from what the subsets hold can measure their space. THE CONTROL: the same words with no family chosen,
+ * which no face measures, are written either way.
+ */
+async function chosenFamilyCases() {
+  const fonts = fontsDirectory(root);
+  const original = await twoBlocks();
+  const upper = (await blocksOf(original)).blocks.find((block) => block.lines[0]?.runs[0]?.text.startsWith('Upper'));
+  if (upper === undefined) {
+    record('the chosen-family fixture reads its upper block', false, 'no block starts with Upper');
+    return;
+  }
+  const lines = upper.lines.map((line) => line.runs.map((run) => run.index));
+  const soft = upper.lines.map((line) => line.soft);
+  const WORDS = 'big fig';
+  /** @param {object[]} blocks @param {object[]} inserts */
+  const send = (blocks, inserts) =>
+    localPdfiumExecution.apply({
+      session: original,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf(/** @type {never} */ (blocks), /** @type {never} */ (inserts)),
+        fit: 'reflow',
+        version: 1,
+      }),
+      sources: [],
+      reads: undefined,
+    });
+  /** @param {() => Promise<Uint8Array>} work @param {string} words */
+  const outcome = async (work, words) => {
+    try {
+      const run = (await blocksOf(await work())).runs.find((each) => each.text.includes(words));
+      return { font: run?.style.font ?? null, refused: '' };
+    } catch (error) {
+      return { font: null, refused: error instanceof Error ? `${error.name} ${JSON.stringify(Reflect.get(error, 'characters') ?? '')}` : String(error) };
+    }
+  };
+  const tinos = [{ from: 0, to: WORDS.length, set: { family: 'Tinos' } }];
+  bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }], readCatalogueApart));
+  try {
+    const added = await outcome(() => send([], [{ left: 100, baseline: 120, measure: 200, size: 12, text: WORDS, marks: tinos }]), WORDS);
+    const restyled = await outcome(() => send([{ lines, soft, text: WORDS, marks: tinos }], []), WORDS);
+    const plain = await outcome(() => send([{ lines, soft, text: WORDS }], []), WORDS);
+    record(
+      'an added box with a family chosen for its words is written in that family, not refused for the seed it starts from',
+      added.refused === '' && /Tinos/u.test(added.font ?? ''),
+      JSON.stringify(added),
+    );
+    record(
+      'a paragraph set in a chosen family with words holding none of the letters a space was measured between is written',
+      restyled.refused === '' && /Tinos/u.test(restyled.font ?? ''),
+      JSON.stringify(restyled),
+    );
+    record(
+      'CONTROL: the same words with no family chosen are written in the run’s own font',
+      plain.refused === '' && /Helvetica/u.test(plain.font ?? ''),
+      JSON.stringify(plain),
+    );
+  } finally {
+    bindEditFaces(null);
+  }
 }
 
 /**
