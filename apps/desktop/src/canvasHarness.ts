@@ -911,12 +911,27 @@ async function readZoomed(
   name: string,
   beforeWidth: number,
 ): Promise<ZoomedReadback> {
+  // EACH STEP DRAWN BEFORE THE NEXT (UUUUUUU-3). The redraw is debounced (`RERENDER_AFTER_MS`, 150 ms, `PageList.tsx`),
+  // and `waitForCanvas` returns at the first width other than the one it is told to reject. With the three clicks sent
+  // back to back, a runner slow enough to pass the debounce between two of them drew an intermediate zoom, and the wait
+  // read it: measured 2026-10-18 under software drawing with the clicks 150 ms apart, 3 runs of 4 read 744 x 1053, the
+  // second step's 1.25x, against the 1190 x 1684 the proof expects. Waiting for each step's own drawing leaves no
+  // earlier step pending, so the last width read is the last step's whatever the runner's speed. Not one script of
+  // three clicks: the zoom command steps from the zoom on show, which does not move between synchronous clicks, and
+  // that read 744 x 1053 on every run — one step taken for three clicks.
   let clicks = 0;
+  let width = beforeWidth;
+  /** The last step's reading; none where no click landed, which the proof's click count reports. */
+  let settled: Awaited<ReturnType<typeof waitForCanvas>> | undefined;
   for (let step = 0; step < ZOOM_CLICKS; step += 1) {
-    if (await clickControl(contents, name, 'zoom control')) clicks += 1;
+    if (!(await clickControl(contents, name, 'zoom control'))) break;
+    clicks += 1;
+    settled = await waitForCanvas(contents, width);
+    if (settled.settledBy !== 'drawn') break;
+    width = settled.width;
   }
-
-  const settled = await waitForCanvas(contents, beforeWidth);
+  // NO CLICK LANDED: the canvas as it is now, read once, so the report carries a real reading and the count says why.
+  settled ??= await waitForCanvas(contents, beforeWidth);
   const ratio = await evaluate(
     contents,
     'window.devicePixelRatio',
