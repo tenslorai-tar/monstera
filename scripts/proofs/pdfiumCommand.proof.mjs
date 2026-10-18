@@ -266,7 +266,7 @@ const failures = [];
 // THE COUNT IS MOVED ONLY WITH THE CASES IT COUNTS, and the commit that moves it names the cases it adds or removes. A
 // running ledger of the count was kept here until 2026-10-17 and had stopped at 246 against 274 (VVVVVVV-23): a second
 // copy of the history git already holds, which nothing compared with the count.
-const roster = createRoster(failures, { cases: 277 });
+const roster = createRoster(failures, { cases: 284 });
 
 /**
  * @param {string} name
@@ -5207,13 +5207,29 @@ async function formatCases() {
   );
 
   // SUPERSCRIPT: smaller, and higher than the words beside it.
+  // THE RISE IS THE RUN'S BASELINE AGAINST ITS LINE'S (`risesOf`, what the writer sets and the editor draws by), not its
+  // box against a neighbour's: `dog` can wrap to the next line, 13 points lower, where any rise or none reads as "above"
+  // it, and a smaller glyph's box bottom moves up by its smaller descender whatever its baseline does (measured
+  // 2026-10-18: lazy's box 297.19 against dog's 283.70 on the next line, and a subscript's box only 0.5 below its old one).
+  /** @param {Uint8Array} bytes @param {string} word */
+  const riseOf = async (bytes, word) => {
+    // THE WORD'S OWN RUN where a mark made it one, else the run holding it: `runOf`'s rule.
+    const lines = (await blocksOf(bytes)).blocks.flatMap((each) => each.lines);
+    for (const holds of [(/** @type {{ text: string }} */ run) => run.text.trim() === word, (/** @type {{ text: string }} */ run) => run.text.includes(word)]) {
+      for (const line of lines) {
+        const at = line.runs.findIndex(holds);
+        if (at >= 0) return risesOf(line.runs, (run) => run.style.baseline)[at];
+      }
+    }
+    return undefined;
+  };
   const raised = await format({ marks: [{ ...at('lazy'), set: { rise: 'superscript' } }] });
   const lazy = await runOf(raised, 'lazy');
-  const dogs = await runOf(raised, 'dog');
+  const lazyRise = await riseOf(raised, 'lazy');
   record(
-    'a superscript mark sets its words smaller and above the baseline of the words beside them',
-    lazy !== undefined && dogs !== undefined && lazy.style.size < 0.8 * 11 && lazy.top > dogs.top - 0.5 * 11 && lazy.bottom > dogs.bottom + 1,
-    `lazy ${JSON.stringify(lazy && { size: lazy.style.size, bottom: lazy.bottom })}, dog bottom ${String(dogs?.bottom)}`,
+    'a superscript mark sets its words smaller and raises their baseline above their line’s',
+    lazy !== undefined && lazy.style.size < 0.8 * 11 && lazyRise !== undefined && lazyRise > 1 && lazyRise < 0.5 * 11,
+    `lazy ${JSON.stringify(lazy && { size: lazy.style.size })}, rise ${String(lazyRise)}`,
   );
 
   // A MARK THAT RESTATES THE RUN IS NO EDIT: the same bold, sent again, writes nothing (the page's own words are already bold).
@@ -5382,6 +5398,120 @@ async function formatCases() {
     Math.abs(drop - 18) < 1.5,
     `the second paragraph ${drop.toFixed(2)} lower`,
   );
+
+  // VVVVVVV-17: the seven formatting features the wire accepts and the editor sends that no PDFium case exercised. Each
+  // reads reopened bytes and names what only the property's own write produces, beside the neighbour it must not move.
+
+  // ITALIC: the words are in an italic face, their neighbours are not.
+  const slanted = await format({ marks: [{ ...at('quick'), set: { italic: true } }] });
+  const slantedQuick = await runOf(slanted, 'quick');
+  const slantedBrown = await runOf(slanted, 'brown');
+  const uprightBefore = (await runOf(original, 'quick'))?.style.italic;
+  record(
+    'an italic mark sets its words in an italic face and leaves the words beside them upright',
+    slantedQuick?.style.italic === true && slantedBrown?.style.italic === false && uprightBefore === false,
+    `quick ${String(slantedQuick?.style.italic)}, brown ${String(slantedBrown?.style.italic)}, before ${String(uprightBefore)}`,
+  );
+
+  // SUBSCRIPT: smaller, and BELOW the baseline it had, on the same line — the superscript case read the other way.
+  const lowered = await format({ marks: [{ ...at('lazy'), set: { rise: 'subscript' } }] });
+  const lowLazy = await runOf(lowered, 'lazy');
+  const lowRise = await riseOf(lowered, 'lazy');
+  const plainRise = await riseOf(original, 'lazy');
+  record(
+    'a subscript mark sets its words smaller and drops their baseline below their line’s, where it sat on it before',
+    lowLazy !== undefined && lowLazy.style.size < 0.8 * 11 && lowRise !== undefined && lowRise < -0.5 && lowRise > -0.5 * 11 &&
+      plainRise !== undefined && Math.abs(plainRise) < 0.01,
+    `lazy ${JSON.stringify(lowLazy && { size: lowLazy.style.size })}, rise ${String(lowRise)}, before ${String(plainRise)}`,
+  );
+
+  // FAMILY: the marked words are set in the named family, the words beside them stay in the page's.
+  const familied = await format({ marks: [{ ...at('fox'), set: { family: 'Times New Roman' } }] });
+  const timesFox = await runOf(familied, 'fox');
+  const pageBrown = await runOf(familied, 'brown');
+  const foxBefore = (await runOf(original, 'fox'))?.style.font;
+  record(
+    'a family mark sets its words in that family and leaves the words beside them in the page’s',
+    /Times/u.test(timesFox?.style.font ?? '') && !/Times/u.test(pageBrown?.style.font ?? 'Times') && !/Times/u.test(foxBefore ?? 'Times'),
+    `fox ${String(timesFox?.style.font)}, brown ${String(pageBrown?.style.font)}, fox before ${String(foxBefore)}`,
+  );
+
+  // FIRST-LINE INDENT: the paragraph's first line starts in by the indent, and its other lines start where they did.
+  const firstIndented = await format({ paragraphs: [{ paragraph: 0, firstIndent: 24 }] });
+  const firstLefts = (await blocksOf(firstIndented)).blocks[0]?.lines.map((line) => line.box.x0) ?? [];
+  record(
+    'a first-line indent of 24 points moves the first line in by 24 and leaves the others at the paragraph’s edge',
+    firstLefts.length >= 2 &&
+      Math.abs((firstLefts[0] ?? 0) - (lefts[0] ?? 0) - 24) < 2 &&
+      firstLefts.slice(1).every((left) => Math.abs(left - (lefts[0] ?? 0)) < 2),
+    `lefts ${JSON.stringify(firstLefts.map((left) => Math.round(left * 10) / 10))} against ${String(lefts[0])}`,
+  );
+
+  // SPACE BEFORE: the second paragraph sits that much lower than the same words without it.
+  const spacedBefore = await format({ text: twoParagraphs, paragraphs: [{ paragraph: 1, spaceBefore: 18 }] });
+  const dropBefore = (await secondAt(plainTwo)) - (await secondAt(spacedBefore));
+  record(
+    'a space-before setting of 18 points puts its paragraph 18 points lower than the same words without it',
+    Math.abs(dropBefore - 18) < 1.5,
+    `the second paragraph ${dropBefore.toFixed(2)} lower`,
+  );
+
+  // RIGHT: every line ends at the paragraph's right edge, and the lefts are ragged — the flush-left control above inverted.
+  const righted = await format({ paragraphs: [{ paragraph: 0, align: 'right' }] });
+  const rightLines = (await blocksOf(righted)).blocks[0]?.lines ?? [];
+  const rightEnds = rightLines.map((line) => line.box.x1);
+  const rightStarts = rightLines.map((line) => line.box.x0);
+  record(
+    'a right setting ends every line of the paragraph at the edge its longest line had, with ragged starts',
+    rightEnds.length >= 3 &&
+      rightEnds.every((right) => Math.abs(right - edge) < 2) &&
+      Math.max(...rightStarts) - Math.min(...rightStarts) > 5,
+    `rights ${JSON.stringify(rightEnds.map((right) => Math.round(right * 10) / 10))}, lefts ${JSON.stringify(rightStarts.map((left) => Math.round(left * 10) / 10))} against ${edge.toFixed(1)}`,
+  );
+
+  // A MARK CROSSING RUNS: one colour over `fox jumps over`, where `jumps` is its own bold run between two regular ones.
+  // Every word under the mark takes the colour, and each keeps the weight its own run had: the mark names what the words
+  // ARE for one property, and the others are each run's.
+  {
+    const mixed = await aTypeset({ text: PARAGRAPH, bold: ['jumps'] });
+    const [mixedBlock] = (await blocksOf(mixed)).blocks;
+    const mixedWords =
+      mixedBlock === undefined ? '' : paragraphsOfLines(mixedBlock.lines.map((line) => ({ text: lineText(line.runs), soft: line.soft })));
+    const from = mixedWords.indexOf('fox');
+    const to = mixedWords.indexOf('over') + 'over'.length;
+    const across =
+      mixedBlock === undefined
+        ? mixed
+        : await localPdfiumExecution.apply({
+            session: mixed,
+            command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+              kind: 'editTextBlock',
+              page: 0,
+              ...blockEditOf([
+                {
+                  lines: mixedBlock.lines.map((line) => line.runs.map((run) => run.index)),
+                  soft: mixedBlock.lines.map((line) => line.soft),
+                  text: mixedWords,
+                  marks: [{ from, to, set: { colour: { r: 200, g: 20, b: 20 } } }],
+                },
+              ]),
+              fit: 'reflow',
+              version: 1,
+            }),
+            sources: [],
+            reads: undefined,
+          });
+    const red = (/** @type {{ style: { colour: { r: number; g: number } } } | undefined} */ run) =>
+      run !== undefined && run.style.colour.r > 150 && run.style.colour.g < 60;
+    const [fox, jumps, over, brownNext] = await Promise.all(['fox', 'jumps', 'over', 'brown'].map((word) => runOf(across, word)));
+    record(
+      'a mark across a bold run and the regular runs beside it colours every word it covers, and each keeps its own weight',
+      (await runOf(mixed, 'jumps'))?.style.bold === true &&
+        red(fox) && red(jumps) && red(over) && !red(brownNext) &&
+        jumps?.style.bold === true && fox?.style.bold === false && over?.style.bold === false,
+      `${JSON.stringify([fox, jumps, over, brownNext].map((run) => run && { text: run.text, bold: run.style.bold, colour: run.style.colour }))}`,
+    );
+  }
 }
 
 /**
