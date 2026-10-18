@@ -17,6 +17,7 @@ import {
   readLinkAddress,
   readPageLinks,
 } from './pageLinks.js';
+import { wholeFile } from './pdfLibSession.js';
 
 /** Applies one `addLink` to a link-free three-page document and serialises. */
 async function written(command: CommandOfKind<'addLink'>): Promise<Uint8Array> {
@@ -237,7 +238,9 @@ describe('readPageLinks', () => {
     );
     page.node.set(PDFName.of('Annots'), annots);
 
-    const session = await mupdfWriter.open(await document.save({ useObjectStreams: false }));
+    // `wholeFile`, never pdf-lib's own save: its default waits a timer tick every 50 objects, 2,390 ms of this fixture on
+    // Windows against 60 ms without (`_review/linkFixtureCost.mjs`, 2026-10-18), and past vitest's 5 s under load.
+    const session = await mupdfWriter.open(await wholeFile(document, { useObjectStreams: false }));
     try {
       const { links, truncated } = await readPageLinks(session, 0);
       expect(links).toHaveLength(4200);

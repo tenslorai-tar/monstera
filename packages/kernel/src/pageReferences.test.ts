@@ -9,6 +9,7 @@ import {
   PDFRawStream,
   PDFRef,
   PDFString,
+  ParseSpeeds,
   decodePDFRawStream,
 } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
@@ -21,6 +22,7 @@ import { extractPages } from './pageExtract.js';
 import { readPageLinks } from './pageLinks.js';
 import { applyMergeDocument, applyReplacePage } from './pageMerge.js';
 import { applyDeletePages } from './pageOrder.js';
+import { wholeFile } from './pdfLibSession.js';
 import { removeFieldsOnPages } from './formFields.js';
 
 /**
@@ -142,7 +144,9 @@ async function fixture(build: (b: Builder) => void): Promise<Uint8Array> {
     },
   };
   build(builder);
-  return await doc.save({ useObjectStreams: false });
+  // `wholeFile`, never pdf-lib's own save: its default waits a timer tick every 50 objects, about 1.8 s of this file's
+  // 3,000-entry outline on Windows, which put that case past vitest's 5 s whenever anything ran beside it.
+  return await wholeFile(doc, { useObjectStreams: false });
 }
 
 /** The saved file after `work`, read back. */
@@ -150,7 +154,9 @@ async function after(bytes: Uint8Array, work: (session: Awaited<ReturnType<typeo
   const session = await mupdfWriter.open(bytes);
   try {
     await work(session);
-    return await PDFDocument.load(await mupdfWriter.serialise(session), { updateMetadata: false });
+    // PINNED as `monstera/no-unpinned-pdf-load` pins the product's loads: the default parse waits a timer tick every
+    // 100 objects, 524 ms of the 3,000-entry outline's read-back on Windows (2026-10-18).
+    return await PDFDocument.load(await mupdfWriter.serialise(session), { updateMetadata: false, parseSpeed: ParseSpeeds.Fastest });
   } finally {
     await mupdfWriter.close(session);
   }

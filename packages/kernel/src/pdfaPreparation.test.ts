@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import * as mupdf from './mupdfRaw.js';
 import { prepareForPdfa } from './pdfaPreparation.js';
+import { wholeFile } from './pdfLibSession.js';
 
 /**
  * The PDF/A preparation, written by pdf-lib and read back by pdf-lib — a reader that is not the writer.
@@ -47,11 +48,10 @@ async function documentWith(pages: readonly (readonly Mark[])[]): Promise<Uint8A
     }
     page.node.set(PDFName.of('Annots'), document.context.obj(refs));
   }
-  // ONE WRITE, NO YIELDS: pdf-lib's save waits a setTimeout(0) after every objectsPerTick objects (default 50), and on
-  // Windows each wait costs a timer tick. Measured 2026-10-15 on the owner's machine, the bound case's 7,178 objects:
-  // 4,060 ms with the default and 129 ms with Infinity, which put the case past its 5 s timeout. The yield is the
-  // fixture's cost, not the preparation's (459-579 ms in the same runs).
-  return document.save({ useObjectStreams: false, objectsPerTick: Infinity });
+  // `wholeFile`, the one write without pdf-lib's timer yields. Measured 2026-10-15 on the owner's machine, the bound
+  // case's 7,178 objects: 4,060 ms with the default and 129 ms without, which put the case past its 5 s timeout. The
+  // yield is the fixture's cost, not the preparation's (459-579 ms in the same runs).
+  return wholeFile(document, { useObjectStreams: false });
 }
 
 /** Prepares `bytes` as the compose host does, answering the preparation and the written copy. */
