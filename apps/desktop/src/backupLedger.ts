@@ -197,5 +197,5 @@ export function createBackupProvenance(
  */
 function keyOf(identity: FileIdentity | null): string | null {
   if (identity?.dev == null || identity.ino === null) return null;
-  return `${String(identity.dev)}:${String(identity.ino)}:${String(identity.size)}:${String(identity.modifiedMs)}`;
+  return `${String(identity.dev)}:${identity.ino}:${String(identity.size)}:${String(identity.modifiedMs)}`;
 }
