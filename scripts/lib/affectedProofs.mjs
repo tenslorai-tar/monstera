@@ -48,7 +48,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 
-import { builtSourcesFor } from './buildFreshness.mjs';
+import { RENDERED_SUITE, builtSourcesFor } from './buildFreshness.mjs';
 import { filesInCommit, repoRoot } from './gitScope.mjs';
 import { proofScripts } from './proofCoverage.mjs';
 import { SCANNING_PROOFS, rosterMiscount } from './scanningProofs.mjs';
@@ -450,7 +450,18 @@ export function importGraph(root = repoRoot()) {
  * @property {readonly { name: string, paths: string[] }[]} proofs the proofs that read a changed file
  * @property {number} examined how many proof scripts were considered
  * @property {readonly string[]} changed the paths this was asked about
+ * @property {readonly string[]} rendered the rendered sets ({@link RENDERED_SETS}) whose bundle a changed path is in
  */
+
+/**
+ * THE RENDERED SETS, which no `proof:*` walk reaches (LLLLLLL-3, MMMMMMM-3): Playwright runs them against the renderer
+ * bundle, so `vitest related` does not reach them and neither does an import walk from a proof. Both read the bundle
+ * `RENDERED_SUITE` names — the visual config extends the accessibility one — so a change under any of its sources
+ * reaches every rendered case: a2ef0bc0 folded the menu row and went out without `menus.pw.ts`, and 515b410e changed
+ * the signature styles without `layoutReview.pw.ts`, both red on CI. Named from the edges the configs' own freshness
+ * guard takes, so the two cannot disagree about what the bundle is made of.
+ */
+export const RENDERED_SETS = Object.freeze(['test:a11y', 'test:visual']);
 
 /**
  * The proofs that transitively read any of `changed`.
@@ -532,6 +543,9 @@ export function affectedProofs(changed, options = {}) {
     ),
     examined: proofs.length,
     changed: [...targets],
+    rendered: RENDERED_SUITE.some(([source]) => [...targets].some((path) => path === source || path.startsWith(`${source}/`)))
+      ? [...RENDERED_SETS]
+      : [],
   };
 }
 
@@ -619,17 +633,29 @@ export function affectedProofsReport(affected, ran) {
         `changed to stop making.`,
     );
   }
-  if (affected.changed.length === 0 || affected.proofs.length === 0) return null;
+  if (affected.changed.length === 0 || (affected.proofs.length === 0 && affected.rendered.length === 0)) return null;
 
   const executed = new Set(ran);
   const covered = affected.proofs.filter((proof) => executed.has(proof.name));
   const missed = affected.proofs.filter((proof) => !executed.has(proof.name));
+  // THE RENDERED SETS this change reaches and this run did not, named by command: a sentence that could have been
+  // printed before the change is a disclaimer, and these lines name the sets only when a changed path is in the bundle.
+  const renderedMissed = affected.rendered.filter((name) => !executed.has(name));
+  const renderedLine =
+    renderedMissed.length === 0
+      ? ''
+      : `\n  !!  this tree changed a source the renderer bundle is built from, so every rendered case reads it, ` +
+        `and THIS RUN DID NOT RUN THEM:\n` +
+        renderedMissed.map((name) => `        npm run ${name}\n`).join('');
 
   if (missed.length === 0) {
     return (
-      `\n  ok  this run reached every proof that reads a file this tree changed ` +
-      `(${String(covered.length)} of ${String(affected.examined)} examined):\n` +
-      covered.map((proof) => `        ${proof.name}\n`).join('') +
+      (affected.proofs.length === 0
+        ? ''
+        : `\n  ok  this run reached every proof that reads a file this tree changed ` +
+          `(${String(covered.length)} of ${String(affected.examined)} examined):\n` +
+          covered.map((proof) => `        ${proof.name}\n`).join('')) +
+      renderedLine +
       reachLimit(executed)
     );
   }
@@ -646,6 +672,7 @@ export function affectedProofsReport(affected, ran) {
           .map((proof) => proof.name)
           .join(', ')}\n`) +
     `      A green check set is not a green board.\n` +
+    renderedLine +
     reachLimit(executed)
   );
 }

@@ -38,7 +38,7 @@ const ROOT = repoRoot();
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 33 });
+const roster = createRoster(failures, { cases: 34 });
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -244,6 +244,19 @@ function check(name, condition, detail) {
     ).includes('npm run proof:guards'),
     'three proof names is an instruction; a caveat is not. The reader must be able to act on it ' +
       'without deciding anything.',
+  );
+
+  // THE RENDERED SETS (LLLLLLL-3, MMMMMMM-3): a renderer source names both, by command, and a run that ran one is told
+  // only of the other. CONTROL: the unreached script names neither, so the line is the change's and not furniture.
+  const renderer = affectedProofs(['packages/ui/src/App.tsx'], { root: ROOT });
+  const rendererReport = affectedProofsReport(renderer, ['test:a11y']) ?? '';
+  check(
+    'a renderer source reaches the rendered sets by name, and a run that ran one is told only of the other',
+    JSON.stringify(renderer.rendered) === JSON.stringify(['test:a11y', 'test:visual']) &&
+      rendererReport.includes('npm run test:visual') && !rendererReport.includes('npm run test:a11y') &&
+      none.rendered.length === 0,
+    `reached ${JSON.stringify(renderer.rendered)}; the report ${JSON.stringify(rendererReport.slice(0, 200))}; the ` +
+      `unreached script reached ${JSON.stringify(none.rendered)}`,
   );
 }
 
