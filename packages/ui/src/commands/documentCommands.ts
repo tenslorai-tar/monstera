@@ -358,6 +358,7 @@ import { readWholeList } from '../readWholeList.js';
 import { confirmDone, confirmWritten, type ConfirmWrittenDeps } from './confirmWritten.js';
 import { countedAs } from '../inFlight.js';
 import type { ZoomDirection, ZoomMode } from '../zoom.js';
+import type { TextBlock } from '../textBlock.js';
 
 /**
  * The three commands that act on the open document.
@@ -4712,8 +4713,8 @@ export async function promoteTextOnPage(deps: DocumentCommandDeps, docId: DocId,
   return applyDocumentCommand(deps, docId, { kind: 'promoteFormObjects', page });
 }
 
-/** One block as `document.textBlocks` answers it. */
-export type TextBlock = ChannelResult<'document.textBlocks'>['blocks'][number];
+/** One block as `document.textBlocks` answers it: `textBlock.ts`' one definition. */
+export type { TextBlock } from '../textBlock.js';
 
 /**
  * What a block's edit is sent BY, from the read its blocks came from: the version they were read at, and the writer the

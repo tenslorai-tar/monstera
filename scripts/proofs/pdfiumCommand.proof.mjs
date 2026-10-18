@@ -114,7 +114,7 @@ if (!existsSync(library)) {
 
 // The proof imports the BUILT modules, so a stale build would prove yesterday's
 // routing and say nothing about the diff under review.
-refuseStaleBuild(root, PDFIUM_COMMAND, 27);
+refuseStaleBuild(root, PDFIUM_COMMAND, 28);
 
 // EVERY EDIT BUILT THROUGH THE CONTRACT'S ONE ENCODER, as the application builds it (ADR-0142).
 const { blockEditOf, replacementFieldsOf } = await import('../../packages/contract/dist/commands.js');
@@ -266,7 +266,7 @@ const failures = [];
 // THE COUNT IS MOVED ONLY WITH THE CASES IT COUNTS, and the commit that moves it names the cases it adds or removes. A
 // running ledger of the count was kept here until 2026-10-17 and had stopped at 246 against 274 (VVVVVVV-23): a second
 // copy of the history git already holds, which nothing compared with the count.
-const roster = createRoster(failures, { cases: 284 });
+const roster = createRoster(failures, { cases: 285 });
 
 /**
  * @param {string} name
@@ -3675,6 +3675,24 @@ async function twoBlocks() {
 }
 
 /**
+ * {@link twoBlocks} with the LOWER block in a look of its own — Helvetica-Bold at 13 points, in red — so a join has
+ * something to keep: where the two share one style, a join that drops the lower's looks reads back the same (VVVVVVV-18).
+ */
+async function twoBlocksApart() {
+  const document = await PDFDocument.create();
+  const page = document.addPage([400, 400]);
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const heavy = await document.embedFont(StandardFonts.HelveticaBold);
+  for (const [at, row] of ['Upper block first line', 'Upper block second line'].entries()) {
+    page.drawText(row, { x: 72, y: 340 - at * 14, size: 11, font });
+  }
+  for (const [at, row] of ['Lower block first line', 'Lower block second line'].entries()) {
+    page.drawText(row, { x: 72, y: 200 - at * 16, size: 13, font: heavy, color: rgb(0.8, 0.1, 0.1) });
+  }
+  return document.save();
+}
+
+/**
  * PLACEMENT AND ADDED BOXES on the block wire (ADR-0180, corrected 2026-10-06): a block moved, scaled, rotated and set at
  * a new measure as one thing, and a box of new text laid out by the same writer. Each case reads the reopened bytes, and
  * carries the control the bug would also pass: the block that was not named stays where it was.
@@ -4014,6 +4032,48 @@ async function joinSplitCases() {
     unemptied !== undefined && (await blocksOf(unemptied)).runs.filter((run) => run.text.includes('Lower block first')).length >= 2,
     unemptied === undefined ? 'refused' : 'one copy',
   );
+
+  // THE JOIN THE EDITOR SENDS (VVVVVVV-18): `joinEdits` from packages/ui, the lower block's runs carried as marks, on a
+  // fixture whose lower block is bold, 13 points and red. The join above sends no marks on blocks of one style, which
+  // a join that dropped the looks would also pass. CONTROL: the same words joined with no marks take the upper block's
+  // look, so the kept look is the marks' doing.
+  {
+    const { joinEdits } = await import('../../packages/ui/dist/textBlockOps.js');
+    const apart = await twoBlocksApart();
+    const apartRead = await blocksOf(apart);
+    const high = apartRead.blocks.find((block) => block.lines[0]?.runs[0]?.text.startsWith('Upper'));
+    const low = apartRead.blocks.find((block) => block.lines[0]?.runs[0]?.text.startsWith('Lower'));
+    if (high === undefined || low === undefined) {
+      record('the styled join fixture reads as two blocks', false, `${String(apartRead.blocks.length)} block(s)`);
+    } else {
+      const looked = await send(/** @type {object[]} */ (joinEdits(/** @type {never} */ (high), /** @type {never} */ (low))), apart);
+      const bare = await send([entry(high, `${wordsOf(high)} ${wordsOf(low)}`), entry(low, '')], apart);
+      // BY ONE WORD: a joined line is cut into runs where the looks change, so a phrase need not sit in one run.
+      const lowerRun = async (/** @type {Uint8Array} */ bytes) =>
+        (await blocksOf(bytes)).runs.find((run) => /\bLower\b/u.test(run.text));
+      const upperRun = async (/** @type {Uint8Array} */ bytes) =>
+        (await blocksOf(bytes)).runs.find((run) => /\bUpper\b/u.test(run.text));
+      const kept = await lowerRun(looked);
+      const plain = await lowerRun(bare);
+      const upperKept = await upperRun(looked);
+      const look = (/** @type {{ style: { bold: boolean; size: number; colour: { r: number; g: number } } } | undefined} */ run) =>
+        run && { bold: run.style.bold, size: Math.round(run.style.size * 10) / 10, red: run.style.colour.r > 150 && run.style.colour.g < 60 };
+      // INTO THE FLOW, not one block by the reading: the grouping is derived from each line's setting (ADR-0049), so lines
+      // set at 13 points read back as a block of their own (measured 2026-10-18: "Upper block first line" / "Upper
+      // block second" and "line Lower block" / "first line Lower" / "block second line"). What the join writes is the
+      // words continuing the upper block's lines, so the lower's first word stands above where the lower block was.
+      const lowerBefore = (await lowerRun(apart))?.bottom ?? Number.POSITIVE_INFINITY;
+      record(
+        'a join as the editor sends it keeps the lower block’s weight, size and colour, and the upper’s words keep theirs',
+        (kept?.bottom ?? 0) > lowerBefore + 50 &&
+          kept?.style.bold === true && Math.abs((kept?.style.size ?? 0) - 13) < 0.2 && look(kept)?.red === true &&
+          upperKept?.style.bold === false && Math.abs((upperKept?.style.size ?? 0) - 11) < 0.2 && look(upperKept)?.red === false &&
+          plain?.style.bold === false && look(plain)?.red === false,
+        `joined with marks ${JSON.stringify(look(kept))} at ${String(kept?.bottom)} against ${String(lowerBefore)} before, ` +
+          `upper ${JSON.stringify(look(upperKept))}; with none ${JSON.stringify(look(plain))}`,
+      );
+    }
+  }
 
   // SPLIT: one block of two paragraphs made two.
   const two = await aTypeset({ lines: ['First paragraph line', 'Second paragraph line'] });

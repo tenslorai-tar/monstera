@@ -187,6 +187,8 @@ export const PDFIUM_COMMAND = [
   ['packages/kernel/src/paperColour.ts', 'packages/kernel/dist/paperColour.js', 'tsc'],
   // THE PREVIEW'S PLACEMENT, which the turned-and-scaled case holds the writer against (VVVVVVV-24).
   ['packages/ui/src/textPlacement.ts', 'packages/ui/dist/textPlacement.js', 'tsc'],
+  // THE JOIN THE EDITOR SENDS, which the styled-join case sends as it is (VVVVVVV-18).
+  ['packages/ui/src/textBlockOps.ts', 'packages/ui/dist/textBlockOps.js', 'tsc'],
 ];
 
 /**

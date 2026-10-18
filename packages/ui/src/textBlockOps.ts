@@ -1,7 +1,7 @@
 import type { BlockMark, EditedBlock } from '@monstera/contract';
 import { joinAfterLine, lineText, paragraphsOfLines } from '@monstera/shared';
 
-import type { TextBlock } from './commands/documentCommands.js';
+import type { TextBlock } from './textBlock.js';
 
 /**
  * Join and split ([ADR-0180](../../../docs/DECISIONS/0180-formatting-is-marks-over-a-blocks-words-and-a-block-is-moved-resized-and-added-by-its-own-commands.md)
@@ -9,12 +9,14 @@ import type { TextBlock } from './commands/documentCommands.js';
  * is derived on every read (ADR-0049), so a joined pair is one block exactly while its lines sit as one block's do, and
  * a split pair is two exactly while a gap stands between them: each operation writes the movement that makes it true.
  *
- * ## Words and their looks both survive
+ * ## Words survive, and four of their looks
  *
  * A word appended to a block takes the style of the run before it (ADR-0179), so a join that only appended the lower
- * block's words would set them in the upper block's last style. The lower block's runs are carried as marks (weight,
- * slant, size, colour), so they keep the look they had; and a split names each half's own old lines, so neither half
- * changes at all but where it stands.
+ * block's words would set them in the upper block's last style. The lower block's runs are carried as marks — weight,
+ * slant, size and colour — so they keep those (read back by `pdfiumCommand.proof`'s styled join, VVVVVVV-18). Their
+ * FAMILY is not carried: a run names the font the page states, a mark names a family the resolver knows, and nothing
+ * here turns one into the other, so a lower block in another family takes the upper's — put to the owner. A split
+ * names each half's own old lines, so neither half changes at all but where it stands.
  */
 
 /** A block's words, as the editor shows them: the one join the kernel diffs against. */
