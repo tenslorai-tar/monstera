@@ -59,6 +59,14 @@ function sampleNow() {
   return { processes: processes.length, totalMB: total, rolesMB: roles, hosts: processes.filter((each) => each.role.startsWith('host ')).map((each) => each.role) };
 }
 
+/**
+ * What one idle worker thread costs `main`, in MB: 12.3, measured 2026-10-18 on this laptop by starting four in main
+ * (123 → 172 MB, `_review/workerCostProbe.mjs`, `fix-session-2/gate/workerCost-2.log`).
+ */
+const WORKER_THREAD_MB = 12.3;
+/** The worker threads in `main` each engine host brings of its own: its pipe reader (the sampler is shared). */
+const READER_THREADS_PER_HOST = 1;
+
 /** Samples in one reading, and the time between them. */
 const SAMPLES = 5;
 const SAMPLE_GAP_MS = 2000;
@@ -143,9 +151,17 @@ await step('M3. ONE Edit text action: a paragraph clicked, a word typed, a click
   // The compose host is set aside for the first-list reason above, and named in the facts.
   const before = /** @type {Awaited<ReturnType<typeof reading>> | null} */ (sevenOpen);
   if (before === null) throw new Error('M2 took no reading');
-  const allowed = before.totalMB + (read.rolesMB['host pdfium'] ?? 0);
-  expect(read.totalMB - compose, `after the edit ${String(read.totalMB)} MB (compose ${String(compose)}), allowed ${String(allowed)}; by process ${JSON.stringify(read.rolesMB)}`).toBeLessThanOrEqual(allowed);
-  return { ...read, composeHostAfterEdit: compose > 0, allowedAfterEditMB: allowed };
+  // A HOST'S COST INCLUDES ITS THREADS IN `main` (the owner's decision of 2026-10-18, question 6 (a)): measured and named,
+  // not exempted. Each host started since M2 brings its pipe reader, one worker thread in main; the one sampling thread
+  // every host shares (ADR-0023's correction of 2026-10-18) already ran at M2 for the MuPDF host.
+  const startedHosts = read.hosts.filter((host) => !before.hosts.includes(host));
+  const hostThreadsMB = Math.round(startedHosts.length * READER_THREADS_PER_HOST * WORKER_THREAD_MB);
+  const allowed = before.totalMB + (read.rolesMB['host pdfium'] ?? 0) + hostThreadsMB;
+  expect(
+    read.totalMB - compose,
+    `after the edit ${String(read.totalMB)} MB (compose ${String(compose)}), allowed ${String(allowed)} (of which ${String(hostThreadsMB)} for ${startedHosts.join(', ')}'s threads in main); by process ${JSON.stringify(read.rolesMB)}`,
+  ).toBeLessThanOrEqual(allowed);
+  return { ...read, composeHostAfterEdit: compose > 0, allowedAfterEditMB: allowed, startedHosts, hostThreadsMB };
 });
 
 /** Edits in the long session, and how often it reads memory. */
