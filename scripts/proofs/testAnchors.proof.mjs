@@ -31,7 +31,7 @@ import { countCases, findShrunkCases, formatShrunkCases } from '../lib/testCaseC
 /** @type {string[]} */
 const failures = [];
 
-const roster = createRoster(failures, { cases: 8 });
+const roster = createRoster(failures, { cases: 9 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -70,6 +70,25 @@ try {
       countCases("describe('x', () => {});\nsubmit(1);\nawait();\nconst omit = () => {};"),
     )} in a source with no cases. \`submit(\` and \`omit\` both end in "it", and a pattern ` +
       `without the word-boundary guard reports every call in the repository.`,
+  );
+
+  // FFFFFFFF-6: prose is not a case. A comment ending "it (E4)." and a case NAMED "names it (A7.5)" are one case, and
+  // removing the comment is no shrink — under the unanchored pattern this counted 3 and reported the removal.
+  const PROSE = [
+    '// the check belongs to it (E4).',
+    ' * and a doc line where test (a word) sits',
+    "it('names it (A7.5)', () => {});",
+  ].join('\n');
+  const proseRemoved = findShrunkCases({
+    paths: ['prose.test.ts'],
+    head: () => PROSE,
+    staged: () => PROSE.split('\n').slice(1).join('\n'),
+  });
+  check(
+    'CONTROL: prose and a case’s name are not cases, and removing a comment is no shrink (FFFFFFFF-6)',
+    countCases(PROSE) === 1 && proseRemoved.shrunk.length === 0 && proseRemoved.compared === 1,
+    `counted ${String(countCases(PROSE))} in a source declaring 1; removing its comment reported ` +
+      `${JSON.stringify(proseRemoved.shrunk)}. A pattern that matches anywhere in the text counts "it (" in prose.`,
   );
 
   // ------------------------------------------------------------------

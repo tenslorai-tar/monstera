@@ -53,6 +53,11 @@
  *   and for the same reason.
  * - anything at all in CI, where the working tree equals `HEAD` by
  *   construction. This is a pre-commit instrument, like `guard:staged`.
+ * - a case written after other code on its own line. Both sides of the
+ *   comparison take one pattern, so this matters only where such a case is
+ *   removed, and none exists (measured 2026-10-18 over 854 test and proof files
+ *   at 3e6cbe8c: every line the unanchored pattern matched and this one does not
+ *   is a comment, a case's name, a `describe` title or a string).
  *
  * ## It REPORTS and does not block, and that is a decision rather than a default
  *
@@ -82,8 +87,15 @@ import { git, repoRoot } from './gitScope.mjs';
  * `describe` is deliberately NOT counted: deleting a `describe` deletes the
  * `it`s inside it, which this already sees, and counting both would report one
  * removal as two.
+ *
+ * **THE FIRST THING ON ITS LINE, with the parenthesis right after the name**
+ * (FFFFFFFF-6). Matched anywhere, the pattern counted prose: a removed comment
+ * ending *"belongs to it (E4)."* was reported as a removed case, and every case
+ * NAME holding "it (" counted twice — 8,610 matches against 8,402 calls over the
+ * tree at 3e6cbe8c. A comment line starts with `//` or `*`, and a name sits
+ * inside a string after the call, so neither starts a line with the call.
  */
-const CASE_CALL = /(?<![\w$.])(?:it|test)(?:\.(?:each|skip|only|fails|todo|concurrent|sequential))*\s*[(`]/gu;
+const CASE_CALL = /^[ \t]*(?:it|test)(?:\.(?:each|skip|only|fails|todo|concurrent|sequential))*[(`]/gmu;
 
 /**
  * How many case-declaring calls a source carries.
