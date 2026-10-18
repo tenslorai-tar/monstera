@@ -853,6 +853,20 @@ export const straightenScansSchema = z.object({
 export const MAX_IMAGE_BYTES = 64 * 1024 * 1024;
 
 /**
+ * The largest picture this build makes a PAGE from (Images → PDF, Insert images): 256 MiB, the owner's decision of
+ * 2026-10-18 (DDDDDDDD-10). Its own bound, because {@link MAX_IMAGE_BYTES} also bounds a placed picture and a signature,
+ * whose bytes cross to the window, where this one's go to the compose host as a file.
+ *
+ * COMPUTED, NOT MEASURED, 2026-10-18 from the page sizes: an A4 page scanned at 600 dpi is 4,960 x 7,016 pixels,
+ * 104,394,240 bytes of RGB before compression; an A3 one is 7,016 x 9,921 pixels, 208,817,208 bytes. A photographic PNG
+ * of it typically compresses to about half, so 64 MiB refused an A3 600 dpi PNG and sat at an A4 one; this holds the A3
+ * one whole. `main` reads the picked file whole once, so the cost is a transient copy of up to this size against
+ * `main`'s 1.5 GB budget (ARCHITECTURE §9.17), 17% of it, and a 4 GB video picked by mistake is still refused by size
+ * before a byte is read. Its pixels are bounded apart, in the host, by {@link MAX_IMPORT_IMAGE_PIXELS}.
+ */
+export const MAX_PAGE_IMAGE_BYTES = 256 * 1024 * 1024;
+
+/**
  * The image encodings a picture is embedded from by `@cantoo/pdf-lib`: which decoder to use.
  *
  * A declared value rather than sniffed, because pdf-lib offers `embedJpg` and `embedPng` as two different calls and
@@ -5054,7 +5068,7 @@ export const MAX_IMPORT_PNG_PIXELS = 200_000_000;
 /**
  * The most bytes one import may read across every image: 256 MiB, which the three-JPEG
  * reading puts at about half a gibibyte in the host. Each file is also bounded by
- * {@link MAX_IMAGE_BYTES} before it is read.
+ * {@link MAX_PAGE_IMAGE_BYTES} before it is read, so one picture at that bound is a whole set.
  */
 export const MAX_IMPORT_IMAGE_BYTES = 256 * 1024 * 1024;
 

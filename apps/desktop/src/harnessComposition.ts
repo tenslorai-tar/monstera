@@ -172,6 +172,9 @@ export function harnessSurfaces(
     readImage: () => {
       throw new Error(`${harness} inserts no image, so nothing may read one`);
     },
+    readPageImage: () => {
+      throw new Error(`${harness} makes no PDF from images, so nothing may read one`);
+    },
     pickCertificate: () => {
       throw new Error(`${harness} signs nothing, so nothing may pick a certificate`);
     },

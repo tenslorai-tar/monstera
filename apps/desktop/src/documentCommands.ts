@@ -13,6 +13,7 @@ import {
   type FormDataImportFormat,
   MAX_FORM_DATA_BYTES,
   MAX_IMAGE_BYTES,
+  MAX_PAGE_IMAGE_BYTES,
   MAX_LIBRARY_PICTURE_BYTES,
   MAX_MARKDOWN_BYTES,
   MAX_CSV_BYTES,
@@ -6501,7 +6502,8 @@ export class DocumentCommands {
       }
       const size = await this.#imageFiles.size(path);
       if (size === null) return { kind: 'unreadable' };
-      if (size > MAX_IMAGE_BYTES) return { kind: 'too-large', limitBytes: MAX_IMAGE_BYTES, fileBytes: size };
+      // A PAGE'S PICTURE under its own bound (`MAX_PAGE_IMAGE_BYTES`, the owner's DDDDDDDD-10): an A3 page at 600 dpi whole.
+      if (size > MAX_PAGE_IMAGE_BYTES) return { kind: 'too-large', limitBytes: MAX_PAGE_IMAGE_BYTES, fileBytes: size };
       totalBytes += size;
       if (totalBytes > MAX_IMPORT_IMAGE_BYTES) {
         return { kind: 'images-too-large', limitBytes: MAX_IMPORT_IMAGE_BYTES };

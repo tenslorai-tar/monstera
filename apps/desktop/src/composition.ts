@@ -600,6 +600,11 @@ export interface ShellComposition {
    */
   readonly readImage: ImageSource['read'];
   /**
+   * A picture picked to make a PAGE from, `readImage`'s shape under its own bound (`MAX_PAGE_IMAGE_BYTES`): its bytes go
+   * to the compose host as a file, where `readImage`'s cross to the window.
+   */
+  readonly readPageImage: ImageSource['read'];
+  /**
    * Which Markdown file is imported. Electron's open dialog, narrowed — `pickImage`'s
    * shape, added through this object for that field's reason (ADR-0060).
    */
@@ -926,6 +931,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     pickSignaturePicture,
     pickDirectory,
     readImage,
+    readPageImage,
     pickMarkdown,
     readMarkdown,
     pickCsv,
@@ -1835,9 +1841,9 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
             join: composeHost.workbooks.join,
             split: composeHost.csvSplit,
           },
-    // IMAGES TO A NEW PDF: the read is `image`'s own bounded read, and the composition
+    // IMAGES TO A NEW PDF: the read is a page picture's own bounded read, and the composition
     // is the same compose host's, `null` where it cannot exist.
-    imageFiles: { pick: pickImages, size: sizeImage, read: readImage },
+    imageFiles: { pick: pickImages, size: sizeImage, read: readPageImage },
     composeImages: composeHost === null ? null : composeHost.composeImages,
     // A URL A PERSON GAVE goes through the kernel's SSRF guard and nowhere else
     // (ADR-0061), bounded by the ceiling a document must fit to be opened at all.

@@ -1022,6 +1022,9 @@ a recommendation. **VVVVVVV-8** (medium, settled as the owner's, question 1: wha
 and colour space PDFium cannot keep; the stroke half fixed `c8fe8010`). **VVVVVVV-28** (medium, settled as the owner's,
 question 1, the same class: tag parameters PDFium cannot write). **DDDDDDDD-10** (low, settled as the owner's, question
 5: the image limit, with the A4 and A3 600 dpi arithmetic; the other three bounds do not refuse real inputs).
+Correction, 2026-10-18, to DDDDDDDD-10 above: the owner answered (a). A picture made into a page is now bounded by its
+own `MAX_PAGE_IMAGE_BYTES`, 256 MiB, and `MAX_IMAGE_BYTES` stays 64 MiB for a placed picture and a signature, whose
+bytes cross to the window; the commit that does it says why the two are apart.
 
 **Recorded this session, with what is unfixed.**
 **QQQQQQQQ-1** (low, recorded, unfixed): a block's set width equal to its box, or one point wider, wraps its widest

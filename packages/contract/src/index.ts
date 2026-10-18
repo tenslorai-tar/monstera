@@ -404,6 +404,7 @@ export {
   STAMP_TOKENS,
   insertBlankPageSchema,
   MAX_IMAGE_BYTES,
+  MAX_PAGE_IMAGE_BYTES,
   type RenderableCommand,
   embeddableImageTypeSchema,
   type EmbeddableImageType,

@@ -34,6 +34,7 @@ import {
   MAX_CSV_BYTES,
   MAX_OFFICE_IMPORT_BYTES,
   MAX_IMAGE_BYTES,
+  MAX_PAGE_IMAGE_BYTES,
   MAX_LIBRARY_PICTURE_BYTES,
   MAX_IMPORT_IMAGES,
   MAX_IMPORT_IMAGE_BYTES,
@@ -6533,11 +6534,11 @@ describe('DocumentCommands.composeImageFiles', () => {
       file: 'b.gif',
     });
 
-    const oneLarge = imagesFrom(['a.png', 'b.png'], (path) => (path === 'b.png' ? MAX_IMAGE_BYTES + 1 : 1));
+    const oneLarge = imagesFrom(['a.png', 'b.png'], (path) => (path === 'b.png' ? MAX_PAGE_IMAGE_BYTES + 1 : 1));
     expect(await commandsWith(oneLarge.source, composer).composeImageFiles(WORK)).toStrictEqual({
       kind: 'too-large',
-      limitBytes: MAX_IMAGE_BYTES,
-      fileBytes: MAX_IMAGE_BYTES + 1,
+      limitBytes: MAX_PAGE_IMAGE_BYTES,
+      fileBytes: MAX_PAGE_IMAGE_BYTES + 1,
     });
 
     // EVERY FILE UNDER ITS OWN BOUND, and the set over its: only the running total refuses.
@@ -6546,7 +6547,7 @@ describe('DocumentCommands.composeImageFiles', () => {
     // assertion on the line after this caught exactly that when it said four.
     const perFile = Math.floor(MAX_IMPORT_IMAGE_BYTES / 5) + 1;
     const set = imagesFrom(['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg', 'e.jpg'], () => perFile);
-    expect(perFile).toBeLessThanOrEqual(MAX_IMAGE_BYTES);
+    expect(perFile).toBeLessThanOrEqual(MAX_PAGE_IMAGE_BYTES);
     expect(await commandsWith(set.source, composer).composeImageFiles(WORK)).toStrictEqual({
       kind: 'images-too-large',
       limitBytes: MAX_IMPORT_IMAGE_BYTES,
@@ -6560,6 +6561,25 @@ describe('DocumentCommands.composeImageFiles', () => {
     const reads = [...many.calls, ...gif.calls, ...oneLarge.calls, ...set.calls, ...unstated.calls];
     expect(reads.filter((call) => call.startsWith('read:'))).toStrictEqual([]);
     expect(composed).toBe(0);
+  });
+
+  it('a picture AT the page bound, past the 64 MiB a placed picture may be, is read and composed (DDDDDDDD-10)', async () => {
+    // AN A3 PAGE AT 600 DPI as a PNG sits between the two bounds, so a per-file check still on MAX_IMAGE_BYTES refuses
+    // this file as too-large and never reaches the composer: the composer's call is what separates the two.
+    expect(MAX_PAGE_IMAGE_BYTES).toBeGreaterThan(MAX_IMAGE_BYTES);
+    const images = imagesFrom(['a3.png'], () => MAX_PAGE_IMAGE_BYTES);
+    const sent: string[] = [];
+    const commands = commandsWith(images.source, (items) => {
+      for (const item of items) sent.push(item.mediaType);
+      return Promise.resolve({ kind: 'refused', reason: 'too-many-pixels', line: null, item: 1 });
+    });
+    expect(await commands.composeImageFiles(WORK)).toStrictEqual({
+      kind: 'composition-refused',
+      reason: 'too-many-pixels',
+      line: null,
+      file: 'a3.png',
+    });
+    expect(sent).toStrictEqual(['image/png']);
   });
 
   it('CONTROL: a dismissed picker, or an empty pick, sizes nothing and composes nothing', async () => {

@@ -17,6 +17,7 @@ import {
   streamPickedFile,
   readFormDataFile,
   readImageFile,
+  readPageImageFile,
   readMarkdownFile,
   readOfficeFile,
 } from './pickedFileReads.js';
@@ -431,6 +432,7 @@ startShell(() => {
     // its own bound there. This is where Node's filesystem enters, for the same reason the pickers are where Electron
     // does: `composition.ts` imports neither.
     readImage: (path: string) => readImageFile(path),
+    readPageImage: (path: string) => readPageImageFile(path),
     // NO BOUND, and that is the decision `composition.ts` records: a file
     // picked through a dialog filtered to `.p12` is a few kilobytes or it is
     // not a certificate, and the signer's own parse is what says so. A number

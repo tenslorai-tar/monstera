@@ -10,6 +10,7 @@ import {
   MAX_IMAGE_BYTES,
   MAX_MARKDOWN_BYTES,
   MAX_OFFICE_IMPORT_BYTES,
+  MAX_PAGE_IMAGE_BYTES,
 } from '@monstera/contract';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -21,6 +22,7 @@ import {
   readFormDataFile,
   readImageFile,
   readMarkdownFile,
+  readPageImageFile,
   readOfficeFile,
 } from './pickedFileReads.js';
 
@@ -32,6 +34,7 @@ import {
  */
 const READS = [
   ['image', readImageFile, MAX_IMAGE_BYTES],
+  ['page image', readPageImageFile, MAX_PAGE_IMAGE_BYTES],
   ['form data', readFormDataFile, MAX_FORM_DATA_BYTES],
   ['annotation data', readAnnotationDataFile, MAX_ANNOTATION_DATA_BYTES],
   ['Markdown', readMarkdownFile, MAX_MARKDOWN_BYTES],

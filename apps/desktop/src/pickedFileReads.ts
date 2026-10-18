@@ -8,6 +8,7 @@ import {
   MAX_IMAGE_BYTES,
   MAX_MARKDOWN_BYTES,
   MAX_OFFICE_IMPORT_BYTES,
+  MAX_PAGE_IMAGE_BYTES,
 } from '@monstera/contract';
 
 /**
@@ -56,6 +57,11 @@ async function readWithin(path: string, bound: number, calls: FileReadCalls): Pr
 /** An image picked to insert, place or sign with. */
 export function readImageFile(path: string, calls: FileReadCalls = NODE_CALLS): Promise<BoundedRead> {
   return readWithin(path, MAX_IMAGE_BYTES, calls);
+}
+
+/** A picture picked to make a PAGE from (Images → PDF, Insert images), under its own bound (`MAX_PAGE_IMAGE_BYTES`). */
+export function readPageImageFile(path: string, calls: FileReadCalls = NODE_CALLS): Promise<BoundedRead> {
+  return readWithin(path, MAX_PAGE_IMAGE_BYTES, calls);
 }
 
 /** A form-data file picked to import. */
