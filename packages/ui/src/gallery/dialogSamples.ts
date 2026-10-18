@@ -695,6 +695,10 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
       },
     },
   ],
+  'dialog.form-scripts-notice': [
+    { state: 'few', props: { names: ['Total', 'Tax'], more: 0 } },
+    { state: 'many', props: { names: ['Total', 'Tax', 'Discount', 'Shipping', 'Grand total', 'Date', 'Signature date', 'Age'], more: 4 } },
+  ],
   'dialog.page-marks-notice': [
     { state: 'none', props: { kind: 'watermark', none: true, older: 2, inline: 0 } },
     { state: 'left', props: { kind: 'headerFooter', none: false, older: 0, inline: 3 } },

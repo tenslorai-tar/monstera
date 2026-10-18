@@ -1,4 +1,4 @@
-import type { AnnotationRect, CommandOfKind, FieldFill, FieldFormat, FieldLook, FieldRange, FormFieldKind } from '@monstera/contract';
+import type { AnnotationRect, CommandOfKind, FieldFill, FieldFormat, FieldLook, FieldRange, FieldScript, FormFieldKind } from '@monstera/contract';
 import { MAX_FIELD_VALUE } from '@monstera/contract/host';
 import type { PDFDocument, PDFObject, PDFPage, PDFWidget } from './mupdfRaw.js';
 
@@ -286,6 +286,8 @@ export interface ListedField {
   readonly look?: FieldLook;
   /** A signature field that holds a signature; present only on one (the owner's F8). */
   readonly signed?: true;
+  /** The scripts it carries that are never run (`scriptsNotRunOf`); present only where there is one. */
+  readonly scripts?: readonly FieldScript[];
 }
 
 /**
@@ -392,9 +394,10 @@ export function onStateKeyOf(object: PDFObject): string | undefined {
 /** The members of a listed field that say how it is filled, from the one reader of a field's rules. */
 function listedRules(
   widget: PDFWidget,
-): Pick<ListedField, 'required' | 'maxLength' | 'comb' | 'masked' | 'multiSelect' | 'editable' | 'calculated' | 'format' | 'range'> {
+): Pick<ListedField, 'required' | 'maxLength' | 'comb' | 'masked' | 'multiSelect' | 'editable' | 'calculated' | 'format' | 'range' | 'scripts'> {
   const rules = fieldRulesOf(widget);
   return {
+    ...(rules.scripts.length === 0 ? {} : { scripts: rules.scripts }),
     required: rules.required,
     maxLength: rules.maxLength,
     comb: rules.comb,

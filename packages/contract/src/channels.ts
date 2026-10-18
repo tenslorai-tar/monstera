@@ -68,6 +68,8 @@ import {
   fieldLookSchema,
   fieldRangeSchema,
   formFieldKindSchema,
+  FIELD_SCRIPTS,
+  fieldScriptSchema,
   formFieldHandleSchema,
   formFieldReadSchema,
   documentFontSchema,
@@ -5424,6 +5426,12 @@ export const channels = {
              * for signing where it is; a signed one never is, so a signature is never written over another.
              */
             signed: z.literal(true).exactOptional(),
+            /**
+             * The scripts it carries that are never run ({@link FIELD_SCRIPTS}), each once; present only where there
+             * is one, so the window can say which fields will not update by themselves (the owner's decision of
+             * 2026-10-18).
+             */
+            scripts: z.array(fieldScriptSchema).min(1).max(FIELD_SCRIPTS.length).readonly().exactOptional(),
           }),
         )
         .max(FORM_FIELDS_PART)

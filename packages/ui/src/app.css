@@ -6355,6 +6355,28 @@ optgroup {
  * A SELECTED FIELD, outlined where it is on the page whether or not it can be filled (the Fields list names it, and
  * a field a person selected must be the one the page shows). It takes no press: the control under it does.
  */
+/*
+ * A FIELD WHOSE SCRIPT IS NEVER RUN (the owner's decision of 2026-10-18): a small mark at the field's top right corner on
+ * the page, and after its name in the Fields list. On the page it stands on the document's paper, whatever the theme, so
+ * it carries its own surface, ink and border rather than taking the paper's; its words are its tooltip.
+ */
+.m-field-script-mark {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+}
+
+.m-field-script-mark--page {
+  position: absolute;
+  z-index: 1;
+  transform: translate(-50%, -50%);
+  padding: 1px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-4);
+  background: var(--surface);
+  color: var(--text);
+}
+
 .m-page-field-selected {
   position: absolute;
   box-sizing: border-box;

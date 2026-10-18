@@ -26,6 +26,7 @@ import {
   FORMS_SIGN_ON_PAGE,
   FORMS_PAGE,
   FORMS_ROW,
+  FORM_FIELD_SCRIPT_MARK,
   FORMS_SEARCH,
   FORMS_TRUNCATED,
   FORMS_UNAVAILABLE,
@@ -281,6 +282,9 @@ function NameButton({
     <button
       aria-label={i18n._(FORMS_ROW, { name: field.name, kind: i18n._(KIND_LABELS[field.kind]), page: pdfjsPageOf(field.page) })}
       aria-pressed={chosen}
+      // THE REASON SAID WITH THE ROW (the owner's decision of 2026-10-18): the row's name is its label, so the mark's
+      // words reach a screen reader as the row's description and a pointer as the mark's tooltip.
+      {...(field.scripts === undefined ? {} : { 'aria-description': i18n._(FORM_FIELD_SCRIPT_MARK) })}
       className="m-forms-jump"
       onClick={(event) => {
         onChoose(field, modeOf(event));
@@ -292,6 +296,11 @@ function NameButton({
       <Icon name={KIND_ICONS[field.kind]} size="dense" />
       {/* THE DOCUMENT'S OWN WORD for this field, rendered rather than translated. */}
       <span className="m-forms-jump__name">{field.name}</span>
+      {field.scripts === undefined ? null : (
+        <span className="m-field-script-mark" data-field-script-mark="" title={i18n._(FORM_FIELD_SCRIPT_MARK)}>
+          <Icon name="Braces" size="dense" />
+        </span>
+      )}
     </button>
   );
 }

@@ -220,6 +220,25 @@ export function parseFormat(script: string): FieldFormat | undefined {
   return undefined;
 }
 
+/** Each keystroke call by the format call it partners, as {@link formatScripts} writes the pair. */
+const KEYSTROKE_PARTNER = [
+  ['AFNumber_Keystroke(', 'AFNumber_Format('],
+  ['AFPercent_Keystroke(', 'AFPercent_Format('],
+  ['AFDate_KeystrokeEx(', 'AFDate_FormatEx('],
+  ['AFTime_Keystroke(', 'AFTime_Format('],
+] as const;
+
+/**
+ * The format a `/K` script filters keystrokes for, or `undefined` for a script that is not exactly one of the four
+ * keystroke partners this module writes: read through {@link parseFormat}, by the partner's name, so the grammar of the
+ * arguments is the format's own and has no second spelling here (B3a).
+ */
+export function parseKeystroke(script: string): FieldFormat | undefined {
+  const text = script.trim();
+  const pair = KEYSTROKE_PARTNER.find(([keystroke]) => text.startsWith(keystroke));
+  return pair === undefined ? undefined : parseFormat(`${pair[1]}${text.slice(pair[0].length)}`);
+}
+
 /**
  * Each border style by its `/BS /S` name, and each check style by the ZapfDingbats character Acrobat writes in `/MK /CA`
  * (ADR-0230): ONE table, which the writer writes from and the reader reads back through.

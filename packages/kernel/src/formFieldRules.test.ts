@@ -61,6 +61,25 @@ async function form(): Promise<Uint8Array> {
   custom.addToPage(page, at(240));
   custom.acroField.dict.set(PDFName.of('AA'), document.context.obj({ C: action('event.value = 42;') }));
   custom.acroField.dict.set(PDFName.of('Q'), PDFNumber.of(0));
+  // A KEYSTROKE FILTER THAT IS NOT A STANDARD PARTNER, beside a standard format: only the keystroke is not run.
+  const filtered = fields.createTextField('filtered');
+  filtered.addToPage(page, at(210));
+  filtered.acroField.dict.set(PDFName.of('AA'), document.context.obj({ F: action(scripts.format), K: action('if (event.change > 5) event.rc = false;') }));
+  // A BUTTON WHOSE PRESS RUNS A SCRIPT, chained behind a reset, and one that only resets: the reset is no script.
+  const press = fields.createButton('press');
+  press.addToPage('Go', page, at(180));
+  const reset = document.context.obj({ S: PDFName.of('ResetForm') });
+  reset.set(PDFName.of('Next'), action('app.alert("hi");'));
+  press.acroField.getWidgets()[0]?.dict.set(PDFName.of('A'), reset);
+  // A CALCULATION ON THE FIELD and a focus script on its WIDGET'S own /AA: read nearest-first from the widget, the
+  // widget's /AA hid the field's, and the field read as not calculated.
+  const both = fields.createTextField('both');
+  both.addToPage(page, at(120));
+  both.acroField.dict.set(PDFName.of('AA'), document.context.obj({ C: action('event.value = 7;') }));
+  both.acroField.getWidgets()[0]?.dict.set(PDFName.of('AA'), document.context.obj({ Fo: action('app.beep(0);') }));
+  const clear = fields.createButton('clear');
+  clear.addToPage('Clear', page, at(150));
+  clear.acroField.getWidgets()[0]?.dict.set(PDFName.of('A'), document.context.obj({ S: PDFName.of('ResetForm') }));
   return document.save();
 }
 
@@ -93,5 +112,29 @@ describe('the field list carries what filling needs', () => {
     expect(byName.get('custom')?.calculated).toBe(true);
     expect(byName.get('custom')?.format).toBeNull();
     expect(byName.get('price')?.calculated).toBe(false);
+  });
+
+  it('names the scripts a field carries that are never run, and no standard call (the owner’s decision of 2026-10-18)', async () => {
+    const byName = await listed();
+    const scripts = Object.fromEntries([...byName].map(([name, field]) => [name, field.scripts ?? []]));
+    expect(scripts).toStrictEqual({
+      required: [],
+      limited: [],
+      comb: [],
+      secret: [],
+      several: [],
+      typed: [],
+      // CONTROLS: a standard format with its keystroke partner, and AFSimple_Calculate, are data that works.
+      price: [],
+      total: [],
+      custom: ['calculation'],
+      filtered: ['keystroke'],
+      // A SCRIPT CHAINED BEHIND A RESET is still run by a reader that runs scripts; a reset alone is not one.
+      press: ['action'],
+      both: ['calculation', 'action'],
+      clear: [],
+    });
+    // THE FIELD'S VALUE SCRIPTS read from the field, whatever its widget's own /AA holds.
+    expect(byName.get('both')?.calculated).toBe(true);
   });
 });

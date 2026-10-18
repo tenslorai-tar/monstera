@@ -2648,6 +2648,17 @@ export const formFieldKindSchema = z.enum([
 export type FormFieldKind = z.infer<typeof formFieldKindSchema>;
 
 /**
+ * The scripts a field carries that Monstera does NOT run (invariant 24, the owner's decision of 2026-10-18): a
+ * calculation, a validation, a format or a keystroke filter that is not one of the standard calls this build reads as
+ * data (`AFSimple_Calculate`, `AFNumber`, `AFPercent`, `AFDate`, `AFTime`), and a JavaScript action on any of the
+ * field's triggers, a button's press among them. A standard call is not here: it works.
+ */
+export const FIELD_SCRIPTS = ['calculation', 'validation', 'format', 'keystroke', 'action'] as const;
+export const fieldScriptSchema = z.enum(FIELD_SCRIPTS);
+/** See {@link FIELD_SCRIPTS}. */
+export type FieldScript = z.infer<typeof fieldScriptSchema>;
+
+/**
  * Which encoding a form-data export or import is in.
  *
  * **Declared once and read by four boundaries** — the renderer's ask, the host

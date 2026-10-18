@@ -322,6 +322,7 @@ import { type FieldToCopy, copyFieldToPagesCommand, fieldArrangeCommands } from 
 import { objectArrangeCommands } from './commands/objectArrangeCommands.js';
 import { EDIT_FIELDS_TOOL_ID, editFieldsCommand, fieldDesignCommands } from './commands/fieldDesignCommands.js';
 import { useFormFieldList } from './forms/useFormFieldList.js';
+import { useFormScriptsNotice } from './forms/useFormScriptsNotice.js';
 import type { AnnotationStyle } from './annotations/annotationStyle.js';
 import { styleFrom } from './annotations/annotationStyle.js';
 import { isRegionRead, readRegionInPanel } from './commands/readRegion.js';
@@ -1495,6 +1496,8 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
    */
   const formFieldList = useFormFieldList(client, activeId, openVersion);
   const fieldsInOrder = formFieldList.fields;
+  // THE FIELDS WHOSE SCRIPTS ARE NEVER RUN, said once per document (the owner's decision of 2026-10-18).
+  useFormScriptsNotice(activeId, formFieldList.fields, ask);
   /**
    * A SAVE THE PERSON PRESSED, and the form's required fields still empty (A1.7): the document is saved as it is, never
    * refused, the first empty field takes the focus with its sentence beside it, outlined and announced, the person is

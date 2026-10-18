@@ -6,6 +6,7 @@ import { type OverlayPage, pdfRectOnScreen } from '../annotations/annotationSpac
 import {
   FORM_BUTTON_NO_SCRIPTS,
   FORM_FIELD_FILL_IN,
+  FORM_FIELD_SCRIPT_MARK,
   FORM_FIELD_PRESS,
   FORM_FIELD_SIGN,
   FORM_SIGN_CERTIFICATE,
@@ -13,6 +14,7 @@ import {
   FORM_SIGN_OFFER,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { Icon } from '../primitives/Icon.js';
 import { Problem } from '../primitives/Problem.js';
 import { FieldTextBox } from './FieldControls.js';
 import { PageChoiceList, PageDropdown } from './PageChoice.js';
@@ -200,8 +202,13 @@ export function FormLayer({
   const outlined = fields.flatMap((field) =>
     field.rect !== null && selected.has(field.index) ? [{ field, box: pdfRectOnScreen(field.rect, geometry) }] : [],
   );
+  // THE FIELDS WHOSE SCRIPTS ARE NEVER RUN (the owner's decision of 2026-10-18), marked at their top right corner, every
+  // one with a place on this page: a read-only total a script would have worked out is the field it matters most on.
+  const scripted = fields.flatMap((field) =>
+    field.rect !== null && field.scripts !== undefined ? [{ field, box: pdfRectOnScreen(field.rect, geometry) }] : [],
+  );
   // NOTHING OVER A PAGE WITH NOTHING TO FILL, `TextLayer`'s rule: an empty layer is something that can go wrong quietly.
-  if (placed.length === 0 && outlined.length === 0) return null;
+  if (placed.length === 0 && outlined.length === 0 && scripted.length === 0) return null;
   // HOW TALL THE PAGE IS ON SCREEN, so a dropdown near its foot opens upwards rather than past the paper.
   const [x0, y0, x1, y1] = geometry.crop;
   const pageHeight = (geometry.rotation % 180 === 0 ? y1 - y0 : x1 - x0) * geometry.zoom;
@@ -225,6 +232,20 @@ export function FormLayer({
           }}
         />
       ))}
+      {scripted.map(({ field, box }) => (
+        // A POINTER READS THE TOOLTIP; a screen reader reads the same words as the field control's description
+        // (`marks` below), so the mark itself is not announced twice.
+        <span
+          aria-hidden="true"
+          className="m-field-script-mark m-field-script-mark--page"
+          data-field-script-mark={String(field.index)}
+          key={`script-${String(field.index)}`}
+          style={{ left: `${String(box.left + box.width)}px`, top: `${String(box.top)}px` }}
+          title={i18n._(FORM_FIELD_SCRIPT_MARK)}
+        >
+          <Icon name="Braces" size="dense" />
+        </span>
+      ))}
       {placed.map(({ field, offer, box, clip }) => {
         const at: CSSProperties = {
           left: `${String(box.left)}px`,
@@ -237,7 +258,10 @@ export function FormLayer({
           onFill({ page, index: field.index, value });
         };
         // THE PLACE IN THE WALK IS THE KEY AND THE IDENTITY, the fill's own handle; and the mark a case finds it by.
-        const marks = { 'data-form-field': String(field.index) };
+        const marks = {
+          'data-form-field': String(field.index),
+          ...(field.scripts === undefined ? {} : { 'aria-description': i18n._(FORM_FIELD_SCRIPT_MARK) }),
+        };
 
         // THE TINT AND THE RED OUTLINE (`forms.highlight`): where a person can write, and where they must.
         const required = 'required' in offer && offer.required;

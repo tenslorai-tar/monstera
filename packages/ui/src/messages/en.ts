@@ -352,6 +352,11 @@ export const REMOVE_HEADER_FOOTER_COMMAND_TITLE = messageKey('command.remove-hea
 export const EDIT_BATES_COMMAND_TITLE = messageKey('command.edit-bates.title');
 export const REMOVE_BATES_COMMAND_TITLE = messageKey('command.remove-bates.title');
 export const RIBBON_EDIT_MARKS = messageKey('surface.ribbon.edit-marks');
+export const FORM_SCRIPTS_NOTICE_TITLE =messageKey('dialog.form-scripts-notice.title');
+export const FORM_SCRIPTS_NOTICE_BODY = messageKey('dialog.form-scripts-notice.body');
+export const FORM_SCRIPTS_NOTICE_MORE = messageKey('dialog.form-scripts-notice.more');
+export const FORM_SCRIPTS_NOTICE_STANDARD = messageKey('dialog.form-scripts-notice.standard');
+export const FORM_FIELD_SCRIPT_MARK = messageKey('form.field-script-mark');
 export const PAGE_MARKS_NOTICE_TITLE = messageKey('dialog.page-marks-notice.title');
 export const PAGE_MARKS_NONE_WATERMARK = messageKey('dialog.page-marks-notice.none-watermark');
 export const PAGE_MARKS_NONE_HEADER_FOOTER = messageKey('dialog.page-marks-notice.none-header-footer');
@@ -7190,6 +7195,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EDIT_BATES_COMMAND_TITLE]: 'Edit Bates numbers…',
   [REMOVE_BATES_COMMAND_TITLE]: 'Remove Bates numbers',
   [RIBBON_EDIT_MARKS]: 'Edit marks',
+  [FORM_SCRIPTS_NOTICE_TITLE]: 'This form has scripts',
+  [FORM_SCRIPTS_NOTICE_BODY]:
+    'This form has calculations or checks written as scripts. To keep your computer safe, Monstera never runs scripts from documents, so these fields won’t update by themselves: {fields}.',
+  [FORM_SCRIPTS_NOTICE_MORE]: '{fields}, and {count} more',
+  [FORM_SCRIPTS_NOTICE_STANDARD]: 'Standard sums and formats still work.',
+  [FORM_FIELD_SCRIPT_MARK]:
+    'This field has a script. To keep your computer safe, Monstera never runs scripts from documents, so this field won’t update by itself.',
   [PAGE_MARKS_NOTICE_TITLE]: 'Marks',
   [PAGE_MARKS_NONE_WATERMARK]: 'This document has no watermark that Monstera can change or remove.',
   [PAGE_MARKS_NONE_HEADER_FOOTER]: 'This document has no headers or footers that Monstera can change or remove.',

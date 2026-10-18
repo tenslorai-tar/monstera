@@ -22,6 +22,7 @@ Fill a form where it is on the page, or from the **Forms** tab, which lists ever
 
 - A field the document marks as read-only says **The document marks this field read-only.** in the Forms tab, and clicking it on the page does nothing. Signature fields and buttons cannot be filled here.
 - A list field that holds several choices at once is shown but cannot be changed here.
+- Monstera never runs scripts from documents, to keep your computer safe, so a field worked out by a script won't update by itself: it is marked with a small **{ }** sign, and Monstera tells you which fields when you open the form. Standard sums and formats still work.
 - Every field is listed, however large the form.
 - A form with no fields at all? Try "Find fields on a flat form", or type on it with the Typewriter.
 - Undo with **Ctrl+Z**.

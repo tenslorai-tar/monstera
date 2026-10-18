@@ -1,6 +1,6 @@
-import type { FIELD_BORDER_STYLES, FIELD_CHECK_STYLES, FieldCalculation, FieldFormat, FieldRange } from '@monstera/contract';
+import type { FIELD_BORDER_STYLES, FIELD_CHECK_STYLES, FieldCalculation, FieldFormat, FieldRange, FieldScript } from '@monstera/contract';
 
-import { borderStyleOfName, checkStyleOfCharacter, parseCalculation, parseFormat, parseRange } from './fieldActions.js';
+import { borderStyleOfName, checkStyleOfCharacter, parseCalculation, parseFormat, parseKeystroke, parseRange } from './fieldActions.js';
 
 type FieldBorderStyle = (typeof FIELD_BORDER_STYLES)[number];
 type FieldCheckStyle = (typeof FIELD_CHECK_STYLES)[number];
@@ -134,6 +134,66 @@ export interface FieldRules {
   /** The number range this application can read (ADR-0230), or `null`; a script it did not write is `customValidation`. */
   readonly validation: FieldRange | null;
   readonly customValidation: boolean;
+  /** Every script the field carries that is not run: {@link scriptsNotRunOf}. Empty for a field with none. */
+  readonly scripts: readonly FieldScript[];
+}
+
+/**
+ * The triggers of a field's `/AA` besides its value's four (ISO 32000-1 Table 194 for a widget: enter, exit, down, up,
+ * focus, blur, and the page's open, close, visible and invisible): a JavaScript action on any of them is a script a
+ * reader runs on that event.
+ */
+const EVENT_TRIGGERS = ['E', 'X', 'D', 'U', 'Fo', 'Bl', 'PO', 'PC', 'PV', 'PI'] as const;
+
+/** Whether an action dictionary — or any action chained after it by `/Next` — is a JavaScript action. */
+function runsScript(action: PDFObject): boolean {
+  let at = action;
+  for (let hop = 0; hop < MAX_FIELD_ANCESTRY; hop += 1) {
+    if (!at.isDictionary()) return false;
+    const kind = at.get('S');
+    if (kind.isName() && kind.asName() === 'JavaScript') return true;
+    const next = at.get('Next');
+    // A `/Next` ARRAY is each in turn; one chain followed to its end is enough to answer.
+    if (next.isArray()) {
+      for (let item = 0; item < next.length; item += 1) if (runsScript(next.get(item))) return true;
+      return false;
+    }
+    at = next;
+  }
+  return false;
+}
+
+/**
+ * THE SCRIPTS A FIELD CARRIES THAT MONSTERA DOES NOT RUN (invariant 24; the owner's decision of 2026-10-18), the one
+ * answer the field list and the Properties read take. A value script — calculation, validation, format, keystroke — is
+ * listed where it is present and is not one of the standard calls `fieldActions.ts` reads as data; a standard one works,
+ * so it is not listed. An action is listed where the widget's `/A`, or any of its `/AA` event triggers, runs JavaScript.
+ */
+export function scriptsNotRunOf(
+  object: PDFObject,
+  rules: Pick<FieldRules, 'customCalculation' | 'customValidation' | 'customFormat'>,
+  keystroke: string | null | undefined,
+): FieldScript[] {
+  const scripts: FieldScript[] = [];
+  if (rules.customCalculation) scripts.push('calculation');
+  if (rules.customValidation) scripts.push('validation');
+  if (rules.customFormat) scripts.push('format');
+  if (keystroke !== undefined && (keystroke === null || parseKeystroke(keystroke) === undefined)) scripts.push('keystroke');
+  // THE WIDGET'S OWN `/AA` AND ITS FIELD'S: an event trigger may sit on either, and a merged field and widget is one.
+  const triggers = [object.get('AA'), valueActionsOf(object)].flatMap((aa) =>
+    aa.isDictionary() ? EVENT_TRIGGERS.map((trigger) => aa.get(trigger)) : [],
+  );
+  if (runsScript(object.get('A')) || triggers.some(runsScript)) scripts.push('action');
+  return scripts;
+}
+
+/**
+ * The `/AA` that holds a field's VALUE scripts — format, keystroke, validation, calculation — which ISO 32000-1 Table 196
+ * puts in the FIELD's dictionary, inherited from there up. Not the widget's own: a widget's `/AA` holds its events
+ * (Table 194), and read nearest-first from the widget, one with an event script of its own hid its field's calculation.
+ */
+function valueActionsOf(object: PDFObject): PDFObject {
+  return nearest(fieldDictionaryOf(object), 'AA');
 }
 
 /** The rules of the field one widget belongs to. A flag is read by the kinds it is defined for, never for the rest. */
@@ -143,14 +203,20 @@ export function fieldRulesOf(widget: PDFWidget): FieldRules {
   const bits = flags.isNumber() ? flags.asNumber() : 0;
   const text = widget.isText();
   const choice = widget.isChoice();
-  const aa = nearest(object, 'AA');
+  const aa = valueActionsOf(object);
   const formatScript = aa.isNull() ? undefined : scriptOf(aa.get('F'));
   const calculationScript = aa.isNull() ? undefined : scriptOf(aa.get('C'));
   const format = typeof formatScript === 'string' ? (parseFormat(formatScript) ?? null) : null;
   const calculation = typeof calculationScript === 'string' ? (parseCalculation(calculationScript) ?? null) : null;
   const validationScript = aa.isNull() ? undefined : scriptOf(aa.get('V'));
   const validation = typeof validationScript === 'string' ? (parseRange(validationScript) ?? null) : null;
+  const keystrokeScript = aa.isNull() ? undefined : scriptOf(aa.get('K'));
   const limit = text ? widget.getMaxLen() : 0;
+  const custom = {
+    customFormat: formatScript !== undefined && format === null,
+    customCalculation: calculationScript !== undefined && calculation === null,
+    customValidation: validationScript !== undefined && validation === null,
+  };
   return {
     required: (bits & FLAG.required) !== 0,
     maxLength: limit > 0 ? limit : null,
@@ -160,11 +226,12 @@ export function fieldRulesOf(widget: PDFWidget): FieldRules {
     editable: choice && widget.isComboBox() && (bits & FLAG.edit) !== 0,
     spellCheck: (text || (choice && widget.isComboBox())) && (bits & FLAG.doNotSpellCheck) === 0,
     format,
-    customFormat: formatScript !== undefined && format === null,
+    customFormat: custom.customFormat,
     calculation,
-    customCalculation: calculationScript !== undefined && calculation === null,
+    customCalculation: custom.customCalculation,
     validation,
-    customValidation: validationScript !== undefined && validation === null,
+    customValidation: custom.customValidation,
+    scripts: scriptsNotRunOf(object, custom, keystrokeScript),
   };
 }
 
