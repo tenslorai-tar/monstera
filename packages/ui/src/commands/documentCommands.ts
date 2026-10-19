@@ -5025,6 +5025,8 @@ export async function readPageObjects(
   client: DocumentCommandDeps['client'],
   docId: DocId,
   page: number,
+  /** Whether text is outlined, and so grouped into Edit text's blocks (`showsText`); true unless a filter says not. */
+  withText = true,
 ): Promise<
   | { readonly ok: true; readonly objects: PageObjects }
   /** `refused` is the read's own failure, or `undefined` where the document only moved between the two reads. */
@@ -5040,11 +5042,15 @@ export async function readPageObjects(
       (from) => client['document.annotations']({ docId, from }),
       (part) => part.annotations,
     ),
-    // THE BLOCKS EDIT TEXT OPENS (ADR-0242), so a press on one letter picks its block, read where Edit text reads them.
-    readWholeList(
-      (from) => client['document.textBlocks']({ docId, page, from }),
-      (part) => part.blocks,
-    ),
+    // THE BLOCKS EDIT TEXT OPENS (ADR-0242), so a press on one letter picks its block, read where Edit text reads them —
+    // and only where text is outlined: under Edit images or Edit shapes the read is not made, and the text stays single
+    // objects nobody sees (R11: on a 44 MB brochure each such read was 0.6 to 1.3 s of whole-document hand-off).
+    withText
+      ? readWholeList(
+          (from) => client['document.textBlocks']({ docId, page, from }),
+          (part) => part.blocks,
+        )
+      : Promise.resolve({ ok: false as const, error: undefined }),
   ]);
   if (!content.ok) return { ok: false, refused: content.error };
   if (!marks.ok) return { ok: false, refused: marks.error };

@@ -6,14 +6,17 @@ import {
   type ObjectPick,
   arrangeCommand,
   carryPick,
+  createReadQueue,
   isBackdrop,
   pickingOrder,
   objectAt,
   placeCommand,
   recolourCommand,
+  nextRead,
   relocatePick,
   removeCommand,
   shownBy,
+  showsText,
   turnCommand,
 } from './objectEditing.js';
 
@@ -213,6 +216,39 @@ describe('the command a drag or a handle builds', () => {
     expect(found?.relocate).toBeUndefined();
     // CONTROL: two blocks with those words leave no selection, rather than the wrong one.
     expect(relocatePick(carried, { version: V4, objects: [moved, { ...moved, index: 50, members: [50] }], truncated: false, walked: 51 }, 1)).toBeUndefined();
+  });
+
+  it('the page ON SHOW is read first, then the nearest; and only a filter that outlines text reads the text blocks (R11)', () => {
+    // PAGES 0 TO 5 laid out and asking at once, page 4 on show.
+    expect(nextRead([0, 1, 2, 3, 4, 5], 4)).toBe(4);
+    expect(nextRead([0, 1, 2, 3, 5], 4)).toBe(3);
+    // CONTROL: in the order they asked, page 0 would have gone first.
+    expect([0, 1, 2, 3, 4, 5][0]).not.toBe(nextRead([0, 1, 2, 3, 4, 5], 4));
+    expect(nextRead([], 4)).toBeUndefined();
+    expect(showsText('all')).toBe(true);
+    expect(showsText('text')).toBe(true);
+    expect(showsText('images')).toBe(false);
+    expect(showsText('shapes')).toBe(false);
+  });
+
+  it('the read QUEUE runs one read at a time, and the page on show first though it asked last (R11)', async () => {
+    const order: number[] = [];
+    let inFlight = 0;
+    let most = 0;
+    const queued = createReadQueue(() => 4);
+    const read = (page: number) =>
+      queued(page, async () => {
+        inFlight += 1;
+        most = Math.max(most, inFlight);
+        order.push(page);
+        await Promise.resolve();
+        inFlight -= 1;
+        return page;
+      });
+    // AS THE PAGE LIST ASKS: top to bottom, in one render.
+    expect(await Promise.all([0, 1, 2, 3, 4, 5].map(read))).toStrictEqual([0, 1, 2, 3, 4, 5]);
+    expect(order).toStrictEqual([4, 3, 5, 2, 1, 0]);
+    expect(most).toBe(1);
   });
 
   it('removes and recolours EVERY object of a block, so no letter is left behind', () => {

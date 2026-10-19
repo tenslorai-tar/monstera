@@ -2654,6 +2654,27 @@ describe('delete pages — the mutation-dialog gate', () => {
     expect(alone.objects.objects.map((object) => object.members)).toStrictEqual([[2], [3], [4], [9], [11]]);
   });
 
+  it('EDIT OBJECT under a filter that shows no text MAKES NO text-block read at all (R11)', async () => {
+    const asked: string[] = [];
+    const client = createClient(channels, (id) => {
+      asked.push(id);
+      return Promise.resolve(
+        id === 'document.annotations'
+          ? ok({ version: asDocVersion(4), annotations: [], next: null, truncated: false })
+          : id === 'document.textBlocks'
+            ? err({ code: 'engine-unavailable' as const })
+            : ok({ version: asDocVersion(4), objects: [{ index: 3, kind: 'image' as const, left: 0, bottom: 0, right: 50, top: 50, fill: null }], next: null, truncated: false }),
+      );
+    });
+    const read = await readPageObjects(client, DOC, 3, false);
+    expect(read.ok).toBe(true);
+    expect(asked.filter((id) => id === 'document.textBlocks')).toStrictEqual([]);
+    // CONTROL: the default read, which outlines text, asks for the blocks.
+    asked.length = 0;
+    await readPageObjects(client, DOC, 3);
+    expect(asked.filter((id) => id === 'document.textBlocks')).toHaveLength(1);
+  });
+
   it('EDIT OBJECT’s read REFUSES two walks at different versions, and a refused walk, rather than outlining either', async () => {
     // THE BLOCK READ IS REFUSED THROUGHOUT, which leaves text as single objects and never decides the read (ADR-0242).
     const answering = (objects: unknown, annotations: unknown) =>

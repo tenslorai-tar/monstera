@@ -342,9 +342,11 @@ import {
   carryPick,
   placeCommand,
   recolourCommand,
+  createReadQueue,
   relocatePick,
   removeCommand,
   shownBy,
+  showsText,
   turnCommand,
 } from './objectEditing.js';
 import type { ObjectFill, PageObjects } from './objectEditing.js';
@@ -4852,13 +4854,24 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
    * different versions are not a refusal: the document moved between them, and the next version reads again.
    */
   const shownDocId = open?.docId;
+  // THE PAGE ON SHOW, which Edit object's reads take first (R11): a ref, so the queue reads it when it picks the next read
+  // rather than when the reader was made.
+  const onShowRef = useRef(currentPage);
+  useEffect(() => {
+    onShowRef.current = currentPage;
+  }, [currentPage]);
   const readObjects = useMemo(() => {
     if (toolId !== EDIT_OBJECTS_TOOL_ID || shownDocId === undefined) return undefined;
     const docId = shownDocId;
     const refusal = { reported: false };
     const deps = { client, onApplied: applied, ask, stamp, signatures };
+    const withText = showsText(objectFilter);
+    // ONE READ AT A TIME, THE PAGE ON SHOW FIRST (the owner's review of 0.1.16.0, R11; `createReadQueue`).
+    // MADE ON THE FIRST READ, not in this render: the page on show is a ref, read when the queue chooses.
+    const queue: { made?: ReturnType<typeof createReadQueue> } = {};
     return async (page: number): Promise<PageObjects | undefined> => {
-      const answer = await readPageObjects(client, docId, page);
+      queue.made ??= createReadQueue(() => onShowRef.current);
+      const answer = await queue.made(page, () => readPageObjects(client, docId, page, withText));
       if (answer.ok) {
         // A TEXT BLOCK JUST PLACED is found again by its words in this read (ADR-0240's correction of 2026-10-19).
         setObjectPicked((current) => {
@@ -4875,7 +4888,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       }
       return undefined;
     };
-  }, [applied, ask, client, setToolId, shownDocId, signatures, stamp, toolId]);
+  }, [applied, ask, client, objectFilter, setToolId, shownDocId, signatures, stamp, toolId]);
 
   /** Edit object's mode on the document on show, or `undefined` when it is off — the slot's second value. */
   const objectEditing = useMemo<PageListProps['editing']>(() => {

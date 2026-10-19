@@ -145,6 +145,64 @@ export function shownBy(filter: ObjectFilter, object: EditableObject): boolean {
   return SHOWN[filter].has(object.kind);
 }
 
+/**
+ * Whether a filter outlines text, and so needs the page's text blocks read to group it (ADR-0242). Edit images and Edit
+ * shapes do not: their read leaves the blocks out, which on a large document is a second whole-document read saved per
+ * page (the owner's review of 0.1.16.0, R11; measured in `objectClickWalk.mjs`).
+ */
+export function showsText(filter: ObjectFilter): boolean {
+  return SHOWN[filter].has('text');
+}
+
+/**
+ * The page a queue of object reads runs next: the page on show, else the one nearest it, so the page a person is
+ * looking at is outlined first rather than after the pages mounted around it (R11).
+ */
+export function nextRead(waiting: readonly number[], onShow: number): number | undefined {
+  return [...waiting].sort((a, b) => Math.abs(a - onShow) - Math.abs(b - onShow) || a - b)[0];
+}
+
+/**
+ * A queue that runs one page's object read at a time, the page on show first ({@link nextRead}): every page laid out asks
+ * at once, and the document's reads run one after another in its lane anyway, so holding them here costs nothing and
+ * lets the page a person is looking at go first (R11: 10 to 11 s to outline the page on show on a 44 MB brochure).
+ *
+ * @param onShow the page on show when a read is chosen, read then and not when the queue was made
+ */
+export function createReadQueue(onShow: () => number): <T>(page: number, read: () => Promise<T>) => Promise<T> {
+  const waiting: { readonly page: number; readonly start: () => void }[] = [];
+  let running = false;
+  const runNext = (): void => {
+    if (running) return;
+    const page = nextRead(
+      waiting.map((each) => each.page),
+      onShow(),
+    );
+    const at = waiting.findIndex((each) => each.page === page);
+    const [next] = at < 0 ? [] : waiting.splice(at, 1);
+    if (next === undefined) return;
+    running = true;
+    next.start();
+  };
+  return <T>(page: number, read: () => Promise<T>): Promise<T> =>
+    new Promise<T>((resolve, reject) => {
+      waiting.push({
+        page,
+        start: () => {
+          read()
+            .then(resolve, reject)
+            .finally(() => {
+              running = false;
+              runNext();
+            });
+        },
+      });
+      // CHOSEN AFTER THIS TICK, so every page laid out in the same render has asked before one is chosen: started at once,
+      // the first page to ask — the top of the list — would go first whatever is on show.
+      queueMicrotask(runNext);
+    });
+}
+
 /** How much of the page an object must cover to be its BACKDROP (E9): nine tenths of the page's area. */
 const BACKDROP_SHARE = 0.9;
 
