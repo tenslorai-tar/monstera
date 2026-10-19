@@ -3838,11 +3838,13 @@ optgroup {
 }
 
 /* THE NOTICE UNDER THE MODEL ROW (the owner's G1): caption-size and muted, the pair the theme guarantees readable on the
-   panel's ground, so it is seen without competing with the conversation. */
+   panel's ground, so it is seen without competing with the conversation. Centred under the composer (the owner's review
+   of 0.1.16.0, R4): it speaks of the whole pane, not of the provider picker its left edge sat under. */
 .m-assistant__notice {
   margin: 0;
   color: var(--muted);
   font-size: var(--font-chrome-11);
+  text-align: center;
 }
 
 .m-assistant__picker {

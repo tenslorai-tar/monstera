@@ -107,13 +107,19 @@ for (const look of LOOKS) {
     const placed = await notice.evaluate((element) => {
       const models = document.querySelector('.m-assistant [data-assistant-models]')?.getBoundingClientRect();
       const own = element.getBoundingClientRect();
+      // THE WORDS' OWN EXTENT, not the paragraph's box, which is the row's width whatever the alignment: centred under
+      // the composer (the owner's review of 0.1.16.0, R4), so the words' middle is the model row's middle.
+      const words = document.createRange();
+      words.selectNodeContents(element);
+      const drawn = words.getBoundingClientRect();
       return {
         below: models !== undefined && own.top >= models.bottom - 0.5,
+        centred: models !== undefined && Math.abs((drawn.left + drawn.right) / 2 - (models.left + models.right) / 2) <= 1,
         live: element.closest('[aria-live], [role="status"], [role="alert"], [role="log"]') !== null,
         focusable: element.tabIndex >= 0 || element.querySelector('[tabindex], a, button, input, select, textarea') !== null,
       };
     });
-    expect(placed).toStrictEqual({ below: true, live: false, focusable: false });
+    expect(placed).toStrictEqual({ below: true, centred: true, live: false, focusable: false });
     await readsAtTextFloor(page, notice, look);
   });
 }
