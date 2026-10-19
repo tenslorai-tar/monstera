@@ -3796,15 +3796,24 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       }),
     [ask, subscribe],
   );
-  // THE COMPUTER IS LOW ON MEMORY (ADR-0253): one calm notice, pushed by main once per low spell. The `problem` kind is
-  // the toast's untimed one, in the text's own colour with no red, so it stays until read.
+  // THE COMPUTER IS LOW ON MEMORY (ADR-0253 and its correction of 2026-10-19): one calm notice, pushed by main ONCE PER
+  // RUN, and shown at the next moment no dialog and no text editor is open, never over either (the owner's review of
+  // 0.1.16.0, R15). The `problem` kind is the toast's untimed one, in the text's own colour with no red, so it stays
+  // until read.
+  const [memoryLowWaiting, setMemoryLowWaiting] = useState(false);
   useEffect(
     () =>
       subscribe('app.memory-low', () => {
-        toast('problem', MEMORY_LOW_NOTICE);
+        setMemoryLowWaiting(true);
       }),
-    [subscribe, toast],
+    [subscribe],
   );
+  const memoryLowShown = useRef(false);
+  useEffect(() => {
+    if (!memoryLowWaiting || memoryLowShown.current || dialogShown || textEditorOpen) return;
+    memoryLowShown.current = true;
+    toast('problem', MEMORY_LOW_NOTICE);
+  }, [dialogShown, memoryLowWaiting, textEditorOpen, toast]);
   // A PART OF MONSTERA THAT COULD NOT START (Part 0.1): pushed by main, once per part per run, so each arrival is shown.
   useEffect(
     () =>

@@ -61,6 +61,9 @@ import { pictureName } from './recentPictures.js';
  */
 const appInfo: AppInfo = { version: '0.0.0', installChannel: 'development', userName: 'A. Tester' };
 
+/** A mebibyte, so a low-memory reading reads as one a computer gives. */
+const MIB = 1_048_576;
+
 /** The name every conversion here runs under (ADR-0234). */
 const WORK = 'work-under-test';
 
@@ -1619,7 +1622,7 @@ describe('the composition root, with BOTH engine hosts', () => {
       pickDocument: () => Promise.resolve(aDocument('low.pdf')),
       enginePlatform: mupdf.platform,
       pdfiumPlatform: second.platform,
-      memoryPressure: { intervalMs: 20, belowFraction: 0.1, read: () => ({ available, total: 100 }) },
+      memoryPressure: { intervalMs: 20, belowFraction: 0.1, read: () => ({ available: available * MIB, total: 100 * MIB }) },
       sendEvent: (event) => {
         pushed.push(event);
       },
@@ -1646,7 +1649,8 @@ describe('the composition root, with BOTH engine hosts', () => {
     expect(spy(mupdf.harness.calls, 'host.terminate')).toBe(0);
     await vi.waitFor(() => {
       expect(logged()).toStrictEqual([
-        'MONSTERA_SHELL_FAILURE memory-low: available memory fell below 10%: PDFium host stopped, compose host kept\n',
+        // THE FIGURE THE LINE WAS CROSSED AT (R15), so a person's report says how low it was.
+        'MONSTERA_SHELL_FAILURE memory-low: available memory fell below 10% (5 of 100 MiB available): PDFium host stopped, compose host kept\n',
       ]);
     });
     // ONE NOTICE FOR THE SPELL, though the readings stayed low for several intervals since.
@@ -1656,6 +1660,71 @@ describe('the composition root, with BOTH engine hosts', () => {
     const next = await edit(first.value.version);
     expect(next.ok, JSON.stringify(next)).toBe(true);
     written.mockRestore();
+  });
+
+  it('LOW MEMORY CROSSED AGAIN AND AGAIN, with actions and a renderer renewal between, tells the person ONCE per run (R15)', async () => {
+    const mupdf = platformAnswering(serialisingEngine());
+    const second = platformAnswering(pdfiumPeer([]).peer);
+    let available = 90;
+    const written = vi.spyOn(process.stderr, 'write');
+    const lows = (): number =>
+      written.mock.calls.filter(([line]) => String(line).startsWith('MONSTERA_SHELL_FAILURE memory-low: available memory fell')).length;
+    const pushed: string[] = [];
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickDocument: () => Promise.resolve(aDocument('low.pdf')),
+      enginePlatform: mupdf.platform,
+      pdfiumPlatform: second.platform,
+      memoryPressure: { intervalMs: 20, belowFraction: 0.1, read: () => ({ available: available * MIB, total: 100 * MIB }) },
+      sendEvent: (event) => {
+        pushed.push(event);
+      },
+    });
+    const opened = await handlers['document.open']({});
+    if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+    const { docId } = opened.value;
+    let version = opened.value.version;
+    // THE OWNER'S 8 GB COMPUTER FORCED: the reading falls under the line and climbs back over it ten times, an edit
+    // between each, and the renderer's memory released (the renewal's own call, ADR-0252) halfway through.
+    for (let crossing = 1; crossing <= 10; crossing += 1) {
+      available = 5;
+      await vi.waitFor(() => {
+        expect(lows()).toBe(crossing);
+      });
+      const edited = await handlers['document.execute']({
+        docId,
+        command: { kind: 'replaceTextObject', page: 0, ...replacementFieldsOf([{ index: 2, text: `hi ${String(crossing)}` }]), version },
+      });
+      if (!edited.ok) throw new Error(JSON.stringify(edited));
+      version = edited.value.version;
+      if (crossing === 5) await handlers['app.releaseMemory']({});
+      available = 90;
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    }
+    // TEN SPELLS, each answered by giving memory back and logged with its figure; and ONE notice for the whole run.
+    expect(lows()).toBe(10);
+    expect(pushed.filter((event) => event === 'app.memory-low')).toStrictEqual(['app.memory-low']);
+    written.mockRestore();
+  });
+
+  it('CONTROL: a FRESH run that is low is told again — once per run, not once for ever (R15)', async () => {
+    for (let run = 0; run < 2; run += 1) {
+      const pushed: string[] = [];
+      createShellDependencies({
+        ...harnessSurfaces('the composition-host test'),
+        appInfo,
+        pickDocument: () => Promise.resolve(aDocument('low.pdf')),
+        enginePlatform: platformAnswering(serialisingEngine()).platform,
+        memoryPressure: { intervalMs: 20, belowFraction: 0.1, read: () => ({ available: 5 * MIB, total: 100 * MIB }) },
+        sendEvent: (event) => {
+          pushed.push(event);
+        },
+      });
+      await vi.waitFor(() => {
+        expect(pushed.filter((event) => event === 'app.memory-low'), `run ${String(run)}`).toStrictEqual(['app.memory-low']);
+      });
+    }
   });
 
   it('LOW MEMORY while the PDFium host is working leaves it running, and says it was kept (item 13e)', async () => {
@@ -1681,7 +1750,7 @@ describe('the composition root, with BOTH engine hosts', () => {
       pickDocument: () => Promise.resolve(aDocument('busy.pdf')),
       enginePlatform: mupdf.platform,
       pdfiumPlatform: second.platform,
-      memoryPressure: { intervalMs: 20, belowFraction: 0.1, read: () => ({ available, total: 100 }) },
+      memoryPressure: { intervalMs: 20, belowFraction: 0.1, read: () => ({ available: available * MIB, total: 100 * MIB }) },
     });
     const opened = await handlers['document.open']({});
     if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
@@ -1702,7 +1771,7 @@ describe('the composition root, with BOTH engine hosts', () => {
     available = 5;
     await vi.waitFor(() => {
       expect(logged()).toStrictEqual([
-        'MONSTERA_SHELL_FAILURE memory-low: available memory fell below 10%: PDFium host kept, compose host kept\n',
+        'MONSTERA_SHELL_FAILURE memory-low: available memory fell below 10% (5 of 100 MiB available): PDFium host kept, compose host kept\n',
       ]);
     });
     expect(spy(second.harness.calls, 'host.terminate')).toBe(0);

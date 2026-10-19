@@ -39,14 +39,30 @@ export const MEMORY_PRESSURE: MemoryPressurePolicy = {
   read: () => ({ available: freemem(), total: totalmem() }),
 };
 
-/** Starts the readings, and answers how to stop them. The timer is unref'd. */
-export function watchMemoryPressure(policy: MemoryPressurePolicy, onLow: () => Promise<void>, failed: (error: unknown) => void): () => void {
+/** A reading that crossed the line, as it was taken: what `onLow` logs, so a report says how low "low" was. */
+export interface LowReading {
+  readonly available: number;
+  readonly total: number;
+}
+
+/**
+ * Starts the readings, and answers how to stop them. The timer is unref'd.
+ *
+ * `onLow` is called once per LOW SPELL — each time a reading falls below the line after one at or above it — and that is
+ * the right grain for giving memory back, and the wrong one for telling a person: a computer sitting at the line crosses
+ * it again and again (see `composition.ts`, which tells once per run).
+ */
+export function watchMemoryPressure(
+  policy: MemoryPressurePolicy,
+  onLow: (reading: LowReading) => Promise<void>,
+  failed: (error: unknown) => void,
+): () => void {
   let low = false;
   const timer = setInterval(() => {
     const reading = policy.read();
     if (reading === null || reading.total <= 0) return;
     const now = reading.available < reading.total * policy.belowFraction;
-    if (now && !low) onLow().catch(failed);
+    if (now && !low) onLow({ available: reading.available, total: reading.total }).catch(failed);
     low = now;
   }, policy.intervalMs);
   timer.unref();

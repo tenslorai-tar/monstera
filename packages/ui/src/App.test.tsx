@@ -4678,6 +4678,60 @@ describe('the command line’s documents (a file association, Open with)', () =>
   });
 });
 
+describe('the low-memory notice (ADR-0253, corrected 2026-10-19; the owner R15)', () => {
+  const NOTICE = 'This computer is low on memory. Closing other programs will keep Monstera running smoothly.';
+  /** The app with a pushable event source, as the command line's case drives one. */
+  function withEvents(): { readonly push: (id: string) => void } {
+    const handlers = new Map<string, () => void>();
+    const subscribe: EventSubscriber = (id, handler) => {
+      handlers.set(id, handler as () => void);
+      return () => {
+        handlers.delete(id);
+      };
+    };
+    const client = createClient(channels, (id) => {
+      if (id === 'app.info') return Promise.resolve(ok({ version: '1.2.3', installChannel: 'store', userName: 'A. Tester', cloudProviders: ['onedrive', 'google-drive'], mediaFoundation: true, regionalLocale: 'en-GB', physicalMemory: 0 }));
+      return Promise.resolve(ok(OTHER_ANSWERS[id] ?? { kind: 'cancelled' }));
+    });
+    render(<App client={client} settings={freshSettings()} subscribe={subscribe} />);
+    return { push: (id) => handlers.get(id)?.() };
+  }
+
+  it('WAITS while a dialog is open, and is shown once it closes — never over it', async () => {
+    const { push } = withEvents();
+    await act(async () => {
+      screen.getByRole('button', { name: 'About' }).click();
+      await Promise.resolve();
+    });
+    expect(await screen.findByText(/Monstera is a PDF editor for Windows/u)).toBeDefined();
+    await act(async () => {
+      push('app.memory-low');
+      await Promise.resolve();
+    });
+    expect(screen.queryByText(NOTICE)).toBeNull();
+    await act(async () => {
+      fireEvent.keyDown(screen.getByRole('dialog', { name: 'About Monstera' }), { key: 'Escape' });
+      await new Promise((settle) => setTimeout(settle, 0));
+    });
+    expect(screen.queryByRole('dialog', { name: 'About Monstera' })).toBeNull();
+    expect(await screen.findByText(NOTICE)).toBeDefined();
+  });
+
+  it('CONTROL: with nothing open it is shown at once, and a second push in the same page adds no second notice', async () => {
+    const { push } = withEvents();
+    await act(async () => {
+      push('app.memory-low');
+      await Promise.resolve();
+    });
+    expect(await screen.findByText(NOTICE)).toBeDefined();
+    await act(async () => {
+      push('app.memory-low');
+      await Promise.resolve();
+    });
+    expect(screen.getAllByText(NOTICE)).toHaveLength(1);
+  });
+});
+
 describe('Settings › Viewing › Starting zoom (Part F)', () => {
   it('a document opens at the chosen zoom — and CONTROL: at 100% when nothing was chosen', async () => {
     for (const [chosen, shown] of [

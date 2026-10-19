@@ -140,9 +140,10 @@ export const EVENTS = {
   'app.component-cannot-start': z.object({ component: z.enum(NATIVE_COMPONENT_IDS) }).strict(),
 
   /**
-   * The computer's available memory fell below the low line (`memoryPressure.ts`), told once per low spell
-   * ([ADR-0253](../../../docs/DECISIONS/0253-a-failure-is-called-out-of-memory-only-when-that-is-proven.md)): the next
-   * waits for the reading to recover first. About the computer, never a document, so it carries nothing.
+   * The computer's available memory fell below the low line (`memoryPressure.ts`), told once per RUN
+   * ([ADR-0253](../../../docs/DECISIONS/0253-a-failure-is-called-out-of-memory-only-when-that-is-proven.md) and its
+   * correction of 2026-10-19): `main` holds whether it has told. About the computer, never a document, so it carries
+   * nothing.
    */
   'app.memory-low': z.object({}).strict(),
 } as const;

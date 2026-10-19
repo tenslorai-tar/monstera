@@ -1172,15 +1172,25 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
    * own account, so one doing work, or with work queued, is left running; the MuPDF host holds the documents' sessions
    * and is not asked. Logged, so a person's report says the application answered a low reading.
    */
+  // THE PERSON IS TOLD ONCE PER RUN (the owner's review of 0.1.16.0, R15), held HERE, in `main`, so a renderer renewed
+  // (ADR-0252) or reloaded (ADR-0253) does not tell again. Once per low SPELL was ADR-0253's grain, and the line has
+  // no band: a reading back at or over it for one tick ends the spell, so a computer whose available memory sits at
+  // the line starts a new spell, and was told again, at every crossing — ten crossings, ten notices
+  // (`compositionHost.test.ts`, run before this change). The owner's 8 GB computer told on every action; its readings
+  // were not taken, which is why the log line now carries the figure.
+  let toldLow = false;
   const stopWatchingMemory = watchMemoryPressure(
     memoryPressure,
-    async () => {
-      // THE PERSON IS TOLD, once per low spell (ADR-0253): the watch calls this once per spell, so the notice is too.
-      sendEvent?.('app.memory-low', {});
+    async ({ available, total }) => {
+      if (!toldLow) {
+        toldLow = true;
+        sendEvent?.('app.memory-low', {});
+      }
       const [pdfium, compose] = await Promise.all([pdfiumHost?.retireIfIdle() ?? false, composeHost?.retireIfIdle() ?? false]);
+      // THE FIGURE, so a person's report says what "low" was on their computer, not only that the line was crossed.
       failures({
         event: 'memory-low',
-        detail: `available memory fell below ${String(Math.round(memoryPressure.belowFraction * 100))}%: PDFium host ${pdfium ? 'stopped' : 'kept'}, compose host ${compose ? 'stopped' : 'kept'}`,
+        detail: `available memory fell below ${String(Math.round(memoryPressure.belowFraction * 100))}% (${String(Math.round(available / 1_048_576))} of ${String(Math.round(total / 1_048_576))} MiB available): PDFium host ${pdfium ? 'stopped' : 'kept'}, compose host ${compose ? 'stopped' : 'kept'}`,
       });
     },
     (error: unknown) => {
