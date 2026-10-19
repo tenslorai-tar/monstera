@@ -45,3 +45,15 @@ a word picked the topmost letter under the pointer.
 
 - `KEEPS_THE_OBJECT_WALK` and `WALK_NAMED_BY` take the new kind beside `placePageObject`.
 - The renderer's editable object carries the indices it stands for; a removal of a block names all of them.
+
+## Correction, 2026-10-19 — the block edit's placement is the route after all, by the operator writer (R11)
+
+Decision 3 kept text on PDFium's route, and the last rejected alternative said a block edit's `places` *"lays the words
+out again"*. That is true of PDFium's block writer and **not of the operator writer**: placing a block there carries each
+line's `Tj`/`TJ` operators into the placed object verbatim — their codes copied byte for byte under the same fonts
+(`replay` in `operatorEdit.ts`) — and empties the originals, so nothing of the text is written again. Measured exact on 13
+font kinds (ADR-0240's correction of 2026-10-19). PDFium's route regenerated every text object on the page and refused
+a move on a page whose fonts it cannot write back, which the owner met (R11). So Decision 3 is withdrawn: a picked block
+is placed by `editTextOperators` with its words unchanged and a placement naming the group's box, which takes ADR-0243's
+one matrix — the same placement `placePageObjects` meant. A line whose operators are quote operators (`'`, `"`) is laid
+out again in its own font, as before; nothing else is.

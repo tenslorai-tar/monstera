@@ -112,3 +112,34 @@ a window that stays.
    `P`, and every other window unchanged.
 3. **A window that holds anything else stays where it is.** Moving it would move what else it holds, which is the
    thing Decision 1 exists to prevent; the photo in it moves and shows through the window where it now falls.
+
+## Correction, 2026-10-19 — a text object is placed where it is drawn too; Decision 4 is withdrawn
+
+**What happened.** The owner's review of 0.1.16.0, R11: dragging a text object in Edit object › Edit text objects was
+refused — *"This text is set in a font Monstera can't rewrite yet … this text can't, so nothing was changed"* — on a
+brochure (the installed app's log: `placePageObjects edit-refused`, `placePageObject edit-refused`). Moving a text
+object changes its position and nothing of its glyphs, so it should need no font written at all.
+
+**The mechanism.** Decision 4 kept text on PDFium's route: PDFium sets the object's matrix and then regenerates the
+WHOLE page's content (`FPDFPage_GenerateContent`), every text object on it included, and a font PDFium cannot write back
+loses text; ADR-0169's read-back then refuses, and the move is reported in the font's name. Decision 4's reason —
+*wrapping a text object in `q cm Q` is not allowed inside `BT … ET`* — was true of a wrap, and the operator writer
+(ADR-0176, ADR-0188) has since placed a block a different way: one `cm` in front of a new object that carries the
+block's lines **as their operators were**, codes and fonts untouched, the old ones emptied. Measured 2026-10-19 (scratch
+probe, PDFium's real reading, the real MuPDF writer, the result read by PDFium from the saved bytes): a line moved
+20 / −15 points through that writer landed exactly 20 / −15 further on in all 13 font kinds the project builds fixtures
+of — Type 3; Type 1 standard, embedded and subset; CFF; TrueType embedded, subset, not embedded and symbolic; both CID
+kinds — and on a printed page of variable Type 3 fonts.
+
+**Decision 4 now reads:** a text block picked in Edit object (ADR-0242) is placed by the operator writer
+(`editTextOperators`, its words unchanged, a placement on the block) on **every** page, whatever its fonts. So is an Edit
+text edit that only places its block (moved, scaled or turned, its words and their formatting unchanged). A text object
+in no block — the block read refused — keeps PDFium's route, stated.
+
+**One placement matrix, not two (B3a).** The operator writer placed a block by its own matrix — scaled about the
+block's top left — while the commands Edit object sends mean ADR-0243's — scaled about the box's lower-left corner,
+turned about the centre of the box the scale left. A block's placement may now name the box it is about
+(`about`), with a scale on each axis; the writer then takes `objectPlacementMatrix.ts`' one matrix, so the block lands
+where PDFium's route would have put it. A placement that names no box means what it meant (Edit text's handles).
+PDFium's block writer refuses a placement that names a box, rather than ignore it: it has no such route and an ignored
+field is a placement silently not made.
