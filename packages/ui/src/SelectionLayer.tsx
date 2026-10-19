@@ -44,6 +44,11 @@ export interface SelectionLayerProps {
   readonly page: number;
   /** The page as drawn, for the transform. The overlay's own geometry. */
   readonly geometry: OverlayPage;
+  /**
+   * The mark a drag is reshaping or moving, by its index, which this layer leaves out while the drag draws its box and
+   * handles where the release puts them (R7); `undefined` for none.
+   */
+  readonly leaving?: number | undefined;
 }
 
 export function SelectionLayer({
@@ -51,6 +56,7 @@ export function SelectionLayer({
   link,
   page,
   geometry,
+  leaving,
 }: SelectionLayerProps): ReactElement | null {
   // ONE LAYER PER PAGE and one selection per document, so every slot but its own
   // renders nothing.
@@ -64,7 +70,7 @@ export function SelectionLayer({
     readonly points?: readonly { readonly x: number; readonly y: number }[];
   }[] = [
     ...(selection?.page === page
-      ? selection.items.map((item) => ({
+      ? selection.items.filter((item) => item.index !== leaving).map((item) => ({
           key: String(item.index),
           index: item.index,
           box: pdfRectOnScreen(item.rect, geometry),

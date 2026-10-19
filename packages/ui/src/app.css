@@ -7526,6 +7526,13 @@ optgroup {
  * A measurement's reading while it is drawn: the preview's colour, with a halo of the paper under it so the number reads
  * over dense text, as the label the file will carry does.
  */
+/* A RESHAPE'S READING, set where the page sets it (R7): the page's face, Helvetica's metrics, so its width is the page
+   label's and it sits on the line as the saved one will; the size is the page's, given on the element. */
+.m-annotation-caption.m-annotation-caption--placed {
+  font-family: Helvetica, Arial, 'Arimo', sans-serif;
+  font-weight: 400;
+}
+
 .m-annotation-caption {
   fill: var(--accent-on-paper, var(--accent));
   font-family: var(--font-ui);

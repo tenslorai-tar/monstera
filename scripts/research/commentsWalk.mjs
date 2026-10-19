@@ -433,7 +433,10 @@ await step('O8: its END dragged with Select moves alone, the line stays flat, an
   await page.mouse.down();
   // 72 POINTS FURTHER along: an end moved by points follows the pointer; it is not a box being stretched.
   await page.mouse.move(end.x + 72 * slot.scale, end.y, { steps: 10 });
-  await expect(page.locator('[data-annotation-preview="boxes"] rect')).toHaveCount(0);
+  // NO TINTED BOX: the preview's own rectangles are what a box drag draws. The selection's box and handles the drag
+  // carries to the new ends (R7) are drawn inside the preview too, in their own group, and are looked for instead.
+  await expect(page.locator('[data-annotation-preview="boxes"] rect:not([data-reshaped-selection] rect)')).toHaveCount(0);
+  await expect(page.locator('[data-annotation-preview="boxes"] [data-reshaped-selection] [data-reshaped-handle]')).toHaveCount(2);
   await page.mouse.up();
   const [moved] = await savedMeasurements(await saveCopy('plan-stretched.pdf'));
   if (moved === undefined) throw new Error('no measurement in the saved file');

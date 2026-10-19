@@ -1,9 +1,24 @@
-import { type AnnotationPoint, type AnnotationRect, type DispatchableCommand, measureLabel } from '@monstera/contract';
+import {
+  type AnnotationPoint,
+  type AnnotationRect,
+  type DispatchableCommand,
+  type MeasureCaption,
+  measureCaption,
+  measureLabel,
+} from '@monstera/contract';
 import type { DocVersion, PageTransform, ViewportPoint } from '@monstera/shared';
 import { pdfPoint, toPdf, toViewport, viewportPoint } from '@monstera/shared';
 
 import { HINT_SELECT } from '../messages/en.js';
-import type { Gesture, PreviewCaption, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
+import type {
+  Gesture,
+  PreviewCaption,
+  ReshapedMark,
+  ToolController,
+  ToolPointer,
+  ToolPreview,
+  UiTool,
+} from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import type { PageLinkOnPage } from '../usePageLinks.js';
 import { engineBoxInPdf } from './annotationSpace.js';
@@ -482,6 +497,34 @@ function grabbedAt(
   return inside ? { kind: 'inside' } : undefined;
 }
 
+/**
+ * The resize arrow for a line's end or a polygon's corner: along the way the point leaves the shape — from the centre
+ * of its points to it, on screen — snapped to the four arrows a box's handles use, each covering 45° around its own
+ * direction. For a line that is the line's own direction, so the arrow lies along the line it stretches. A point at
+ * the centre (a mark of one repeated point) has no direction, and takes the arrow of the nearest other point's line.
+ *
+ * @param points the mark's points, in PDF space
+ * @param at the grabbed one
+ */
+export function pointArrow(points: readonly AnnotationPoint[], at: number, transform: PageTransform): ToolPointer {
+  const shown = points.map((point) => toViewport(pdfPoint(point.x, point.y), transform));
+  const grabbed = shown[at];
+  if (grabbed === undefined) return 'move';
+  const centre = {
+    x: shown.reduce((sum, point) => sum + point.x, 0) / shown.length,
+    y: shown.reduce((sum, point) => sum + point.y, 0) / shown.length,
+  };
+  const other = shown.find((point, index) => index !== at && (point.x !== grabbed.x || point.y !== grabbed.y));
+  const from = grabbed.x !== centre.x || grabbed.y !== centre.y ? centre : other;
+  if (from === undefined) return 'move';
+  // THE SCREEN'S ANGLE, y down, folded to [0, 180): an arrow points both ways, so 30° and 210° are one cursor.
+  const degrees = (((Math.atan2(grabbed.y - from.y, grabbed.x - from.x) * 180) / Math.PI) % 180 + 180) % 180;
+  if (degrees < 22.5 || degrees >= 157.5) return 'resize-ew';
+  if (degrees < 67.5) return 'resize-nwse';
+  if (degrees < 112.5) return 'resize-ns';
+  return 'resize-nesw';
+}
+
 /** Where a drag on the selection puts each mark, at the selection's version. */
 interface Placement {
   readonly version: DocVersion;
@@ -597,6 +640,23 @@ function commandOf(page: number, moved: Placement): DispatchableCommand | undefi
   return placements.length === 0 ? undefined : { kind: 'placeAnnotation', page, placements, version: moved.version };
 }
 
+/**
+ * A reading set at `set` (PDF space) as it shows on screen: its baseline's start, the turn of its baseline as drawn —
+ * clockwise in the overlay's pixels — and its size in pixels, each read from the page's own transform, so a turned or
+ * zoomed page sets it where the page does.
+ */
+function placedCaption(set: MeasureCaption, transform: PageTransform): { x: number; y: number; placed: { angle: number; size: number } } {
+  const turn = (set.angle * Math.PI) / 180;
+  const start = toViewport(pdfPoint(set.x, set.y), transform);
+  const along = toViewport(pdfPoint(set.x + Math.cos(turn), set.y + Math.sin(turn)), transform);
+  const pixels = Math.hypot(along.x - start.x, along.y - start.y);
+  return {
+    x: start.x,
+    y: start.y,
+    placed: { angle: (Math.atan2(along.y - start.y, along.x - start.x) * 180) / Math.PI, size: set.size * pixels },
+  };
+}
+
 /** The kinds whose points close back on the first: a polygon's outline, where a polyline's and a line's stay open. */
 const CLOSED_KINDS: ReadonlySet<string> = new Set(['polygon', 'measure-area']);
 
@@ -613,6 +673,7 @@ function previewOf(
 ): ToolPreview {
   const boxes: { x: number; y: number; width: number; height: number }[] = [];
   const paths: { points: (readonly [number, number])[]; closed: boolean }[] = [];
+  const reshaped: ReshapedMark[] = [];
   let caption: PreviewCaption | undefined;
   for (const placement of moved.placements) {
     const item = selection.items.find((candidate) => candidate.index === placement.index);
@@ -621,14 +682,43 @@ function previewOf(
       const at = toViewport(pdfPoint(point.x, point.y), transform);
       return [at.x, at.y];
     };
+    /**
+     * THE SELECTION WHERE THE RELEASE PUTS THE MARK (R7): its handles at the new points, and its box around them with the
+     * margin its box had around its old points (the stroke, the line's caption, the label), so the line never runs out of
+     * the box it is drawn in.
+     */
+    const reshapedAt = (points: readonly AnnotationPoint[]): void => {
+      if (item?.points === undefined || points.length === 0) return;
+      const spanOf = (each: readonly AnnotationPoint[]) => ({
+        x0: Math.min(...each.map((point) => point.x)),
+        y0: Math.min(...each.map((point) => point.y)),
+        x1: Math.max(...each.map((point) => point.x)),
+        y1: Math.max(...each.map((point) => point.y)),
+      });
+      const before = spanOf(item.points);
+      const after = spanOf(points);
+      const rect = {
+        x0: after.x0 - (before.x0 - item.rect.x0),
+        y0: after.y0 - (before.y0 - item.rect.y0),
+        x1: after.x1 + (item.rect.x1 - before.x1),
+        y1: after.y1 + (item.rect.y1 - before.y1),
+      };
+      const box = boxOf(rect, transform);
+      if (box === null) return;
+      reshaped.push({ of: item.index, handles: points.map(shown), box: { x: box.x0, y: box.y0, width: box.x1 - box.x0, height: box.y1 - box.y0 } });
+    };
     if ('points' in placement) {
       paths.push({ points: placement.points.map(shown), closed });
+      reshapedAt(placement.points);
       // A MEASUREMENT'S POINT MOVED READS WHAT THE RELEASE WILL WRITE (the owner's B1): the contract's `measureLabel` over
       // the points the command carries, at the mark's own scale, which is `remeasure`'s arithmetic on the same numbers.
       // A move of the whole mark changes no reading, so only this branch has one.
       if (item?.measured !== undefined) {
         const text = measureLabel(item.measured.kind, placement.points, item.measured.scale);
-        caption = { ...captionBeside(pointer.x, pointer.y, text), of: item.index };
+        // WHERE THE PAGE WILL SET IT (R7): the contract's `measureCaption`, the rule MuPDF's caption and the kernel's
+        // labels follow, through this page's transform — so the reading stays on the line and does not jump on release.
+        const set = measureCaption(item.measured.kind, placement.points, text);
+        caption = set === undefined ? { ...captionBeside(pointer.x, pointer.y, text), of: item.index } : { ...placedCaption(set, transform), text, of: item.index };
       }
       continue;
     }
@@ -636,7 +726,9 @@ function previewOf(
       // MOVED WITH ITS BOX: a move keeps the box's size, so every point goes by the box's offset.
       const dx = placement.rect.x0 - item.rect.x0;
       const dy = placement.rect.y0 - item.rect.y0;
-      paths.push({ points: item.points.map((point) => shown({ x: point.x + dx, y: point.y + dy })), closed });
+      const movedPoints = item.points.map((point) => ({ x: point.x + dx, y: point.y + dy }));
+      paths.push({ points: movedPoints.map(shown), closed });
+      reshapedAt(movedPoints);
       continue;
     }
     const box = boxOf(placement.rect, transform);
@@ -647,6 +739,7 @@ function previewOf(
     boxes,
     ...(paths.length === 0 ? {} : { paths }),
     ...(caption === undefined ? {} : { caption }),
+    ...(reshaped.length === 0 ? {} : { reshaped }),
   };
 }
 
@@ -785,8 +878,9 @@ export function selectTool(deps: SelectDeps): UiTool {
       const grab = grabbedAt(selection, at, transform);
       if (grab === undefined) return undefined;
       if (grab.kind === 'corner') return grab.arrow;
-      // AN END OR A CORNER of a line or a polygon moves freely, in any direction.
-      if (grab.kind === 'point') return 'move';
+      // AN END OR A CORNER of a line or a polygon RESHAPES the mark, so it says resize, as a box's corner does — never the
+      // move a press on the body makes (the owner's R7 addition of 2026-10-20).
+      if (grab.kind === 'point') return pointArrow(grab.points, grab.at, transform);
       if (grab.kind === 'side') return grab.side === 'left' || grab.side === 'right' ? 'resize-ew' : 'resize-ns';
       return 'move';
     },

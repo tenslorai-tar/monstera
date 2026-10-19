@@ -25,6 +25,8 @@ import {
   type MeasureScale,
   type MeasuredKind,
   type TextDirection,
+  MEASURE_LABEL_SIZE,
+  measureCaption,
   measureLabel,
   measureUnitSchema,
   strokesOfPlaced,
@@ -1805,24 +1807,13 @@ const UNCAPTIONED_DIMENSIONS = new Set(['PolygonDimension', 'PolyLineDimension']
 const LABEL_FONT = 'MonsteraHelv';
 
 /**
- * The reading's size, in points: the size MuPDF sets a distance's caption in (`pdf_write_line_caption`, MuPDF 1.28.0),
- * so the three readings are one family on the page. Black for the same reason, and MuPDF's own: *"Acrobat always draws
- * captions in black"*.
+ * The reading's size, in points: the contract's, MuPDF's distance caption's, so the three readings are one family on the
+ * page. Black for the same reason, and MuPDF's own: *"Acrobat always draws captions in black"*.
  */
-const LABEL_SIZE = 12;
+const LABEL_SIZE = MEASURE_LABEL_SIZE;
 
 /** The marked content around the reading, so a redraw that did not regenerate the appearance does not set it twice. */
 const LABEL_TAG = 'MonsteraMeasure';
-
-/**
- * Helvetica's advance widths, in thousandths of the size, for the characters a reading is made of (Adobe's
- * `Helvetica.afm`). Any other character takes a digit's width, which is the widest a reading's characters run.
- */
-const HELVETICA_WIDTHS: Readonly<Record<string, number>> = {
-  ' ': 278, '.': 278, ',': 278, '-': 333, '²': 333,
-  '0': 556, '1': 556, '2': 556, '3': 556, '4': 556, '5': 556, '6': 556, '7': 556, '8': 556, '9': 556,
-  c: 500, f: 278, i: 222, m: 833, n: 556, p: 556, t: 278,
-};
 
 /**
  * Sets a measurement's reading on the shape, for the two dimensions MuPDF draws without one (the owner's item 14a).
@@ -1852,13 +1843,12 @@ function relabel(annotation: PDFAnnotation, document: PDFDocument): void {
   const opening = new TextEncoder().encode(`/${LABEL_TAG} BMC`);
   if (contains(content, opening)) return;
 
-  // BY CODE POINT, which is what one WinAnsi byte stands for: `²` is one, and nothing a reading holds is a cluster.
-  let advance = 0;
-  for (const character of reading) advance += HELVETICA_WIDTHS[character] ?? 556;
-  const width = (LABEL_SIZE / 1000) * advance;
-  const anchor = intent.asName() === 'PolygonDimension' ? centroidOf(points) : besideLongestSegment(points, width);
-  const x = anchor.x - width / 2;
-  const y = anchor.y - LABEL_SIZE / 3;
+  // WHERE THE READING IS SET, by the contract's one rule (`measureCaption`), which the drag's live reading takes too (R7).
+  const pairs: AnnotationPoint[] = [];
+  for (let at = 0; at + 1 < points.length; at += 2) pairs.push({ x: points[at] ?? 0, y: points[at + 1] ?? 0 });
+  const caption = measureCaption(intent.asName() === 'PolygonDimension' ? 'measure-area' : 'measure-perimeter', pairs, reading);
+  if (caption === undefined) return;
+  const { x, y, width } = caption;
 
   const before = new TextEncoder().encode(
     `\n/${LABEL_TAG} BMC q 0 g BT /${LABEL_FONT} ${String(LABEL_SIZE)} Tf ${x.toFixed(2)} ${y.toFixed(2)} Td (`,
@@ -1923,60 +1913,6 @@ function contains(haystack: Uint8Array, needle: Uint8Array): boolean {
     return true;
   }
   return false;
-}
-
-/** The area-weighted centroid of a closed run of points given as `[x0, y0, x1, y1, …]`, or their mean when it has none. */
-function centroidOf(flat: readonly number[]): { readonly x: number; readonly y: number } {
-  let twice = 0;
-  let cx = 0;
-  let cy = 0;
-  const count = Math.floor(flat.length / 2);
-  for (let at = 0; at < count; at += 1) {
-    const x0 = flat[at * 2] ?? 0;
-    const y0 = flat[at * 2 + 1] ?? 0;
-    const x1 = flat[((at + 1) % count) * 2] ?? 0;
-    const y1 = flat[((at + 1) % count) * 2 + 1] ?? 0;
-    const cross = x0 * y1 - x1 * y0;
-    twice += cross;
-    cx += (x0 + x1) * cross;
-    cy += (y0 + y1) * cross;
-  }
-  if (Math.abs(twice) < 1e-9) {
-    let sx = 0;
-    let sy = 0;
-    for (let at = 0; at < count; at += 1) {
-      sx += flat[at * 2] ?? 0;
-      sy += flat[at * 2 + 1] ?? 0;
-    }
-    return { x: sx / count, y: sy / count };
-  }
-  return { x: cx / (3 * twice), y: cy / (3 * twice) };
-}
-
-/**
- * Where the middle of a reading `width` wide goes beside the longest segment of an open run of points given as
- * `[x0, y0, x1, y1, …]`, as a line's caption sits over its line: at the segment's middle, moved along its normal
- * (the side above, or left of a vertical one) until the text's box clears the stroke. Moving straight up clears a level
- * segment and lands the text on a sloped one.
- */
-function besideLongestSegment(flat: readonly number[], width: number): { readonly x: number; readonly y: number } {
-  const count = Math.floor(flat.length / 2);
-  let best = { x: flat[0] ?? 0, y: flat[1] ?? 0, dx: 1, dy: 0, length: -1 };
-  for (let at = 1; at < count; at += 1) {
-    const x0 = flat[(at - 1) * 2] ?? 0;
-    const y0 = flat[(at - 1) * 2 + 1] ?? 0;
-    const x1 = flat[at * 2] ?? 0;
-    const y1 = flat[at * 2 + 1] ?? 0;
-    const length = Math.hypot(x1 - x0, y1 - y0);
-    if (length > best.length && length > 0) {
-      best = { x: (x0 + x1) / 2, y: (y0 + y1) / 2, dx: (x1 - x0) / length, dy: (y1 - y0) / length, length };
-    }
-  }
-  let normal = { x: -best.dy, y: best.dx };
-  if (normal.y < 0 || (normal.y === 0 && normal.x > 0)) normal = { x: -normal.x, y: -normal.y };
-  // THE BOX'S REACH along the normal is half its width times the normal's x and half its height times its y, plus a gap.
-  const clearance = (Math.abs(normal.x) * width) / 2 + (Math.abs(normal.y) * LABEL_SIZE) / 2 + LABEL_SIZE / 4;
-  return { x: best.x + normal.x * clearance, y: best.y + normal.y * clearance };
 }
 
 /**

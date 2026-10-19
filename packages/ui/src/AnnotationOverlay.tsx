@@ -5,6 +5,7 @@ import { type ReactElement, useCallback, useEffect, useRef, useState } from 'rea
 
 import type { OverlayPage } from './annotations/annotationSpace.js';
 import { overlayTransform, pointerOn } from './annotations/annotationSpace.js';
+import { CORNER_REACH } from './annotations/selectTool.js';
 import type { Gesture, LiveReading, PreviewCaption, ToolPreview, UiTool } from './registries/tools.js';
 
 /**
@@ -86,6 +87,11 @@ export interface AnnotationOverlayProps {
    * reading never clears another's.
    */
   readonly onReading?: ((page: number, reading: LiveReading | undefined) => void) | undefined;
+  /**
+   * Told which mark on this page a drag is reshaping or moving, by its index in the walk, and `undefined` when none is
+   * (R7): the page leaves that mark's stored drawing and its selection out while the drag draws them where they go.
+   */
+  readonly onReshaping?: ((index: number | undefined) => void) | undefined;
 }
 
 export function AnnotationOverlay({
@@ -96,6 +102,7 @@ export function AnnotationOverlay({
   drawnWith,
   label,
   onReading,
+  onReshaping,
 }: AnnotationOverlayProps): ReactElement {
   const surface = useRef<SVGSVGElement>(null);
   /**
@@ -342,6 +349,15 @@ export function AnnotationOverlay({
       onReading(page, undefined);
     };
   }, [onReading, page, readingIndex, readingText]);
+  // THE MARK BEING RESHAPED OR MOVED (R7), from the drag and then from the held shape, as the reading is.
+  const reshapingIndex = shown?.shape === 'boxes' ? shown.reshaped?.[0]?.of : undefined;
+  useEffect(() => {
+    if (onReshaping === undefined) return undefined;
+    onReshaping(reshapingIndex);
+    return () => {
+      onReshaping(undefined);
+    };
+  }, [onReshaping, reshapingIndex]);
 
   return (
     <svg
@@ -418,8 +434,21 @@ export function AnnotationOverlay({
  */
 function Caption({ caption }: { readonly caption: PreviewCaption | undefined }): ReactElement | null {
   if (caption === undefined) return null;
-  return (
+  const { placed } = caption;
+  // WHERE THE PAGE SETS IT, for a reshape (R7): turned with the line and at the page's own size, so it does not jump.
+  return placed === undefined ? (
     <text className="m-annotation-caption" data-annotation-caption="" x={caption.x} y={caption.y}>
+      {caption.text}
+    </text>
+  ) : (
+    <text
+      className="m-annotation-caption m-annotation-caption--placed"
+      data-annotation-caption=""
+      style={{ fontSize: `${String(placed.size)}px` }}
+      transform={`rotate(${String(placed.angle)} ${String(caption.x)} ${String(caption.y)})`}
+      x={caption.x}
+      y={caption.y}
+    >
       {caption.text}
     </text>
   );
@@ -504,6 +533,25 @@ function Preview({ preview }: { readonly preview: ToolPreview }): ReactElement {
               <polyline className="m-annotation-preview m-annotation-stroke" data-annotation-preview-path="" key={`path-${String(at)}`} points={points} />
             );
           })}
+          {/* THE SELECTION WHERE THE RELEASE PUTS IT (R7): the box and the handles of a line or a polygon being reshaped or
+              moved, drawn here at its new points, in the selection layer's own classes and reach — that layer leaves
+              this mark out while it moves, so the line never runs out of its own box. */}
+          {(preview.reshaped ?? []).map((mark) => (
+            <g data-reshaped-selection={String(mark.of)} key={`reshaped-${String(mark.of)}`}>
+              <rect className="m-selection-box" height={mark.box.height} width={mark.box.width} x={mark.box.x} y={mark.box.y} />
+              {mark.handles.map(([x, y], at) => (
+                <rect
+                  className="m-selection-handle"
+                  data-reshaped-handle={`point-${String(at)}`}
+                  height={CORNER_REACH}
+                  key={`point-${String(at)}`}
+                  width={CORNER_REACH}
+                  x={x - CORNER_REACH / 2}
+                  y={y - CORNER_REACH / 2}
+                />
+              ))}
+            </g>
+          ))}
           <Caption caption={preview.caption} />
         </g>
       );

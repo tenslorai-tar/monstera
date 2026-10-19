@@ -25,6 +25,7 @@ import {
   type BuiltInStamp,
   type CommandOfKind,
   MAX_ANNOTATION_TEXT,
+  measureCaption,
   measureLabel,
 } from '@monstera/contract';
 import { asDocVersion } from '@monstera/shared';
@@ -3218,6 +3219,33 @@ describe('applyAddAnnotation writes a measurement', () => {
     const content = Buffer.from(stream.getContents()).toString('latin1');
     expect(content).toContain('BT');
     expect(content).toContain('50.0 mm');
+  });
+
+  it('MuPDF sets a distance’s caption where the contract’s `measureCaption` says — inline, short and turned (R7)', async () => {
+    // THE RULE THE DRAG'S LIVE READING TAKES, held to MuPDF's appearance: a MuPDF that moved its caption would part the
+    // reading shown while dragging from the one on the page, which is the owner's R7, so this reddens instead.
+    const cases = [
+      // INLINE: long enough for the words, level and on a slant.
+      [{ x: 10, y: 20 }, { x: 210, y: 20 }],
+      [{ x: 30, y: 40 }, { x: 230, y: 160 }],
+      // ABOVE: too short for the words between its ends.
+      [{ x: 30, y: 40 }, { x: 60, y: 50 }],
+    ] as const;
+    for (const points of cases) {
+      const drawn = await drawnOn(await fixture(), command({ annotation: { ...DISTANCE, points: [...points] } }));
+      const { content } = await appearanceOf(drawn);
+      const label = measureLabel('measure-distance', [...points], SCALE);
+      const found = /(-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) cm\s+0 g\s+BT/u.exec(content);
+      if (found === null) throw new Error(`no caption matrix in ${content}`);
+      const [a, b, , , e, f] = found.slice(1).map(Number);
+      const rule = measureCaption('measure-distance', [...points], label);
+      if (rule === undefined) throw new Error('no caption by the rule');
+      const turned = (rule.angle * Math.PI) / 180;
+      expect(a, JSON.stringify(points)).toBeCloseTo(Math.cos(turned), 3);
+      expect(b, JSON.stringify(points)).toBeCloseTo(Math.sin(turned), 3);
+      expect(e, JSON.stringify(points)).toBeCloseTo(rule.x, 1);
+      expect(f, JSON.stringify(points)).toBeCloseTo(rule.y, 1);
+    }
   });
 
   /** The text of an annotation's normal appearance, read with pdf-lib, a library other than the writer. */

@@ -31,9 +31,13 @@ export {
   storedNumber,
 } from './fieldFormatting.js';
 export {
+  MEASURE_LABEL_SIZE,
   MEASURE_PLACES,
+  type MeasureCaption,
   type MeasuredKind,
+  measureCaption,
   measureLabel,
+  measureLabelWidth,
   measuredKindSchema,
   pathLength,
   shoelaceArea,

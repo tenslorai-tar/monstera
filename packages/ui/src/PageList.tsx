@@ -1770,7 +1770,11 @@ function PageSlot({
     },
     [forwardReading],
   );
-  const leftOut = reshaping === undefined ? undefined : annotations?.find((annotation) => annotation.index === reshaping)?.object;
+  // AND ANY LINE OR POLYGON A DRAG RESHAPES OR MOVES (R7): its stored drawing stayed under the preview, and its selection
+  // stayed at the old geometry while the line followed the pointer. The overlay draws both where the release puts them.
+  const [moving, setMoving] = useState<number | undefined>(undefined);
+  const leaving = reshaping ?? moving;
+  const leftOut = leaving === undefined ? undefined : annotations?.find((annotation) => annotation.index === leaving)?.object;
   // PUT BACK when the reading ends, before any draw that follows: a layout effect's cleanup runs ahead of every passive
   // effect, the tiles' included.
   useLayoutEffect(() => {
@@ -2130,6 +2134,7 @@ function PageSlot({
       {drawing === undefined || size === undefined ? null : (
         <SelectionLayer
           geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
+          leaving={moving}
           link={drawing.link}
           page={page}
           selection={drawing.selection}
@@ -2152,6 +2157,7 @@ function PageSlot({
           label={i18n._(ANNOTATION_SURFACE_LABEL, { page: pdfjsPageOf(page) })}
           onCommand={drawing.onCommand}
           onReading={onReading}
+          onReshaping={setMoving}
           drawnWith={drawnWith}
           page={page}
           tool={drawing.tool}

@@ -1,12 +1,12 @@
-import { type AnnotationRect, type AnnotationWordsStyle, type DispatchableCommand, measureLabel } from '@monstera/contract';
-import { asDocVersion, viewportPoint } from '@monstera/shared';
+import { type AnnotationRect, type AnnotationWordsStyle, type DispatchableCommand, measureCaption, measureLabel } from '@monstera/contract';
+import { asDocVersion, pdfPoint, toViewport, viewportPoint } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { overlayTransform } from './annotationSpace.js';
 import type { ErasableAnnotation } from './eraserTool.js';
 import type { PageLinkOnPage } from '../usePageLinks.js';
 import type { AnnotationSelection, LinkSelection } from './selectTool.js';
-import { SELECT_TOOL_ID, carrySelection, selectTool, selectionOfNewest, selectionOfPage } from './selectTool.js';
+import { SELECT_TOOL_ID, carrySelection, pointArrow, selectTool, selectionOfNewest, selectionOfPage } from './selectTool.js';
 
 /**
  * The select tool's controller, driven without a DOM.
@@ -603,12 +603,43 @@ describe('a line’s ENDS and a polygon’s CORNERS are its handles (the owner�
     const tool = selectTool({ ...NO_REOPEN, ...NO_LINKS, annotations: () => Promise.resolve(undefined), onSelect: () => undefined, selected: () => SELECTED });
     const started = tool.controller.begin(viewportPoint(200, 98));
     const preview = tool.controller.preview(tool.controller.update(started, viewportPoint(240, 98)), 3, overlayTransform(PAGE));
-    expect(preview).toStrictEqual({ shape: 'boxes', boxes: [], paths: [{ points: [[20, 100], [240, 98]], closed: false }] });
+    expect(preview).toMatchObject({ shape: 'boxes', boxes: [], paths: [{ points: [[20, 100], [240, 98]], closed: false }] });
+    // AND ITS SELECTION GOES WITH IT (R7): the handles at the new ends, the box around them, never left at the old line.
+    if (preview?.shape !== 'boxes') throw new Error('expected the drag preview');
+    expect(preview.reshaped?.map((mark) => ({ of: mark.of, handles: mark.handles }))).toStrictEqual([{ of: 1, handles: [[20, 100], [240, 98]] }]);
+    const box = preview.reshaped?.[0]?.box;
+    if (box === undefined) throw new Error('no box');
+    for (const [x, y] of [[20, 100], [240, 98]] as const) {
+      expect(x >= box.x && x <= box.x + box.width && y >= box.y && y <= box.y + box.height, `${String(x)},${String(y)}`).toBe(true);
+    }
     // AND A MOVE BY THE BOX previews the outline too, carried by the move.
     const moving = tool.controller.update(tool.controller.begin(viewportPoint(100, 99)), viewportPoint(120, 99));
     expect(tool.controller.preview(moving, 3, overlayTransform(PAGE))).toMatchObject({ boxes: [], paths: [{ points: [[40, 100], [220, 98]] }] });
-    // THE POINTER says a press on an end moves it.
-    expect(tool.controller.pointer(viewportPoint(20, 100), 3, overlayTransform(PAGE))).toBe('move');
+  });
+
+  it('THE POINTER SAYS WHAT A PRESS WILL DO on a selected line (the owner’s R7 addition): an end resizes, the body moves, off it is the tool’s own', () => {
+    const tool = selectTool({ ...NO_REOPEN, ...NO_LINKS, annotations: () => Promise.resolve(undefined), onSelect: () => undefined, selected: () => SELECTED });
+    const at = (x: number, y: number) => tool.controller.pointer(viewportPoint(x, y), 3, overlayTransform(PAGE));
+    // BOTH ENDS of a nearly level line: the arrow along it. Before the fix both read `move`, the body's cursor.
+    expect([at(20, 100), at(200, 98)]).toStrictEqual(['resize-ew', 'resize-ew']);
+    // THE BODY, inside the line's box and on no end: a press there moves the mark.
+    expect(at(100, 99)).toBe('move');
+    // OFF THE SHAPE: nothing to say, so the tool's own arrow shows.
+    expect(at(300, 300)).toBeUndefined();
+  });
+
+  it('an end’s or a corner’s arrow lies ALONG the way it leaves the shape, snapped to the four a box’s handles use', () => {
+    const transform = overlayTransform(PAGE);
+    // A LINE from (150, 300) to each target, in PDF space (y up): on screen y runs down, so up the page is up the screen.
+    const along = (x: number, y: number) => pointArrow([{ x: 150, y: 300 }, { x, y }], 1, transform);
+    expect(along(250, 300)).toBe('resize-ew');
+    expect(along(150, 250)).toBe('resize-ns');
+    expect(along(200, 250)).toBe('resize-nwse');
+    expect(along(100, 250)).toBe('resize-nesw');
+    // THE NEAR END TOO: an arrow points both ways, so the line's other end reads the same.
+    expect(pointArrow([{ x: 150, y: 300 }, { x: 200, y: 250 }], 0, transform)).toBe('resize-nwse');
+    // A POLYGON'S CORNER, from the centre of its points: the apex below the base's middle reads straight down.
+    expect(pointArrow([{ x: 60, y: 350 }, { x: 160, y: 350 }, { x: 110, y: 300 }], 2, transform)).toBe('resize-ns');
   });
 
   it('a MEASUREMENT’s end being dragged reads, live, what the release writes, beside the pointer and naming the mark (B1)', async () => {
@@ -626,11 +657,22 @@ describe('a line’s ENDS and a polygon’s CORNERS are its handles (the owner�
     // THE COMMAND THE RELEASE SENDS, and the reading of exactly its points: the one number the file will say.
     const command = await selecting([], measuredSelection).drag([200, 98], [240, 98]);
     if (command?.kind !== 'reshapeAnnotation') throw new Error('expected a reshape');
-    expect(preview.caption).toStrictEqual({ text: measureLabel('measure-distance', command.points, scale), x: 250, y: 88, of: 1 });
+    const text = measureLabel('measure-distance', command.points, scale);
+    expect(preview.caption).toMatchObject({ text, of: 1 });
     // NOT THE STORED READING: the end moved 20 points, so the old length's words would be another number.
     expect(preview.caption?.text).not.toBe(measureLabel('measure-distance', DISTANCE_ITEM.points, scale));
-    // CLEAR OF THE POINTER: right of it and above it, never on it.
-    expect(preview.caption !== undefined && preview.caption.x > 240 && preview.caption.y < 98).toBe(true);
+    // WHERE THE PAGE SETS IT (R7), not beside the pointer: the contract's `measureCaption` over the command's points, the
+    // rule MuPDF's caption follows, through the page's transform — so it does not jump on release.
+    const set = measureCaption('measure-distance', command.points, text);
+    if (set === undefined) throw new Error('no caption by the rule');
+    const start = toViewport(pdfPoint(set.x, set.y), overlayTransform(PAGE));
+    expect(preview.caption?.x).toBeCloseTo(start.x, 6);
+    expect(preview.caption?.y).toBeCloseTo(start.y, 6);
+    // AT THE PAGE'S SIZE ON SCREEN: 12 points at this fixture's zoom, read off the transform as a point's length.
+    const onePoint = toViewport(pdfPoint(set.x + 1, set.y), overlayTransform(PAGE));
+    expect(preview.caption?.placed?.size).toBeCloseTo(set.size * Math.hypot(onePoint.x - start.x, onePoint.y - start.y), 6);
+    // CONTROL: beside the pointer, as it was, it would be right of the pointer and above it.
+    expect(preview.caption !== undefined && preview.caption.x > 240 && preview.caption.y < 98).toBe(false);
   });
 
   it('CONTROL: a MOVE of the whole measurement, and a drag of a line that measures nothing, carry no reading', () => {

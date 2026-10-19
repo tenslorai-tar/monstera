@@ -141,6 +141,25 @@ describe('SelectionLayer', () => {
     expect(box.container.querySelectorAll('[data-selection-handle=""]')).toHaveLength(4);
   });
 
+  it('LEAVES OUT the mark a drag is reshaping, which the drag draws where it goes — and only that mark (R7)', () => {
+    const [square] = SELECTION.items;
+    if (square === undefined) throw new Error('no item');
+    const two: AnnotationSelection = {
+      ...SELECTION,
+      items: [
+        { ...square, index: 1, kind: 'measure-distance', points: [{ x: 60, y: 350 }, { x: 150, y: 351 }] },
+        { ...square, index: 2 },
+      ],
+    };
+    const { container } = render(<SelectionLayer geometry={GEOMETRY} leaving={1} page={3} selection={two} />);
+    expect([...container.querySelectorAll('[data-selection-index]')].map((group) => group.getAttribute('data-selection-index'))).toStrictEqual(['2']);
+    expect(container.querySelectorAll('[data-selection-handle^="point-"]')).toHaveLength(0);
+    // CONTROL: with no drag both are drawn, the line's ends among them.
+    const both = render(<SelectionLayer geometry={GEOMETRY} page={3} selection={two} />);
+    expect(both.container.querySelectorAll('[data-selection-index]')).toHaveLength(2);
+    expect(both.container.querySelectorAll('[data-selection-handle^="point-"]')).toHaveLength(2);
+  });
+
   it('draws a selected LINK where the link layer draws it, with all eight handles (the owner’s O6(c))', () => {
     // The engine's box at scale 1 from the crop's top-left: drawn at (200,20) to (300,60) at zoom 2, as `LinkLayer` places it.
     const link = {

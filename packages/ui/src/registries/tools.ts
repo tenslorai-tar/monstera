@@ -356,6 +356,20 @@ export interface PreviewCaption {
    * Comment take one number. Absent while a new mark is drawn, which has no Comment yet.
    */
   readonly of?: number | undefined;
+  /**
+   * Set WHERE THE PAGE SETS IT (the owner's review of 0.1.16.0, R7), for a reshape of a mark already on the page: `x`,
+   * `y` are then its baseline's start, turned by `angle` degrees clockwise on screen, at `size` pixels — the contract's
+   * `measureCaption` through the page's transform — so the reading does not jump on release. Absent beside the pointer,
+   * where a new mark is being drawn.
+   */
+  readonly placed?: { readonly angle: number; readonly size: number } | undefined;
+}
+
+/** A mark a drag is reshaping or moving, as the preview draws its selection: see the `boxes` preview's `reshaped`. */
+export interface ReshapedMark {
+  readonly of: number;
+  readonly handles: readonly (readonly [number, number])[];
+  readonly box: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
 }
 
 /** A reshape's live reading as the overlay reports it: the page, the mark and the words its label shows (B1). */
@@ -415,6 +429,13 @@ export type ToolPreview =
       readonly paths?: readonly { readonly points: readonly (readonly [number, number])[]; readonly closed: boolean }[];
       /** What a measurement whose point is being dragged will read on release, beside the pointer (B1). */
       readonly caption?: PreviewCaption | undefined;
+      /**
+       * Each line or polygon being reshaped or moved, by its index in the walk, with its handles at the points where the
+       * release puts them and its selection box around them, in the overlay's own pixels (the owner's review of
+       * 0.1.16.0, R7): the selection layer's box and handles stayed at the old geometry while the line followed the
+       * pointer, so the line ran out of its own box. The overlay draws these, and the page leaves the mark's own out.
+       */
+      readonly reshaped?: readonly ReshapedMark[] | undefined;
     };
 
 /** One registered tool. */
