@@ -75,6 +75,7 @@ const FROM_THE_GALLERY = [
   'dialog.flat-fields',
   'dialog.flatten-form',
   'dialog.follow-link',
+  'dialog.form-scripts-notice',
   'dialog.generate-toc',
   'dialog.held-copies',
   'dialog.help',
