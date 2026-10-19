@@ -105,7 +105,11 @@ export function decideIndexTypecheck(staged, unstaged) {
  * @returns {string} the folder
  */
 export function checkoutIndex(root) {
-  const scratch = mkdtempSync(join(tmpdir(), 'monstera-index-'));
+  // THE FOLDER'S ONE SPELLING, through the filesystem's own final path (`realpathSync.native`): on a Windows runner
+  // `tmpdir()` answers the 8.3 short name (`C:\Users\RUNNER~1\…`) and the compiler resolved some imports through the
+  // long one (`C:\Users\runneradmin\…`), so one module was two and a branded `DocId` from the first was not assignable
+  // to the second's (CI, 2026-10-19, windows-latest). The JavaScript `realpathSync` does not expand a short name.
+  const scratch = realpathSync.native(mkdtempSync(join(tmpdir(), 'monstera-index-')));
   // THE TRAILING SEPARATOR IS THE PREFIX'S MEANING: `--prefix` is prepended to each path as a string.
   git(['checkout-index', '--all', `--prefix=${scratch.replaceAll('\\', '/')}/`], { cwd: root });
   linkModules(root, scratch);
