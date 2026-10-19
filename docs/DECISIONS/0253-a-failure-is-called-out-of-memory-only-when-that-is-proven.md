@@ -75,3 +75,23 @@ of it reached the person:
 
 - A renderer crash no longer leaves a dead window: whatever the reason, the window comes back with its documents.
 - What Monstera needs is measured and written into the System requirements article with its date and source.
+
+## Correction, 2026-10-19 — the notice is told once per RUN; Decision 4's "once per low spell" told on every action
+
+**What happened.** The owner's test of 0.1.16.0 on a second Windows 11 computer (8 GB, other programs running) showed
+the notice on every action and again every few minutes (the owner's review of 0.1.16.0, R15).
+
+**The mechanism, measured.** Decision 4 keyed the notice to the low SPELL, and a spell ends at the first reading at or
+over the line: the line has no band and no least length. So a computer whose available memory sits at the line starts a
+new spell every time it crosses, and each spell sent `app.memory-low`. Forced in `compositionHost.test.ts`: the reading
+taken under and back over 10% ten times, an edit between each → **ten notices** before this correction, one after. The
+owner's own readings were not taken, so the failure log line now carries the available and total MiB at each crossing.
+
+**Decision 4 now reads:** low memory before any failure is ONE calm notice PER RUN of the application. `main` holds
+whether it has told (`composition.ts`), so a renderer renewed (ADR-0252) or reloaded (this ADR's Decision 3) does not
+tell again; a new run that is low is told again. The renderer shows it at the next moment no dialog is open and no text
+editor is open, never over either. The words are unchanged. **Giving memory back stays per spell**: each crossing still
+asks the idle hosts to stop, which is the grain that work wants. The reviewer's default, which the owner kept.
+
+**The proof that replaces Decision 4's:** ten crossings with actions and the renewal's memory release between them send
+one `app.memory-low` and ten log lines; CONTROL: a fresh run that is low is told again.
