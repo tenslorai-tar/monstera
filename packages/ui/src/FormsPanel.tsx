@@ -31,6 +31,7 @@ import {
   FORMS_TRUNCATED,
   FORMS_UNAVAILABLE,
 } from './messages/en.js';
+import { Button } from './primitives/Button.js';
 import { Icon } from './primitives/Icon.js';
 import type { IconName } from './primitives/icons.js';
 import { ListCard } from './primitives/ListCard.js';
@@ -257,10 +258,12 @@ export function FormsPanel({
       ))}
       {state.truncated ? <p className="m-forms-empty">{i18n._(FORMS_TRUNCATED)}</p> : null}
       {/* INSIDE THE BRANCH THAT HAS FIELDS, so it is not offered on a document with none, and OFFERED EVEN WHEN EVERY
-          FIELD IS TRUNCATED AWAY: `bake` acts on the document, not on the rows this panel managed to list. */}
-      <button className="m-forms-flatten" onClick={onFlatten} title={i18n._(FORMS_FLATTEN_CONFIRM)} type="button">
-        {i18n._(FORMS_FLATTEN)}
-      </button>
+          FIELD IS TRUNCATED AWAY: `bake` acts on the document, not on the rows this panel managed to list.
+          THE ONE BUTTON PRIMITIVE, bounded and with its focus ring (the owner's review of 0.1.16.0, R8): drawn as bare
+          muted words, it read as a caption and not as something to press. */}
+      <div className="m-forms-flatten" title={i18n._(FORMS_FLATTEN_CONFIRM)}>
+        <Button label={FORMS_FLATTEN} onClick={onFlatten} />
+      </div>
     </section>
   );
 }

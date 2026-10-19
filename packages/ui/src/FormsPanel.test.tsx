@@ -423,6 +423,15 @@ describe('FormsPanel — the states', () => {
     expect(flattens()).toBe(1);
   });
 
+  it('Flatten form is the button primitive, bounded and focus-ringed, not a line of words (the owner R8)', async () => {
+    await panel([field({ name: 'one' })]);
+    const flatten = screen.getByRole('button', { name: 'Flatten form' });
+    // THE PRIMITIVE'S OWN CLASSES, which carry its edge, hover and focus ring (`primitives.css`); the bare `<button>` it
+    // replaced carried neither, and that is what drew it as text.
+    expect([...flatten.classList]).toStrictEqual(expect.arrayContaining(['m-button', 'm-button--default']));
+    expect(flatten.closest('.m-forms-flatten')).not.toBeNull();
+  });
+
   it('CONTROL: no flatten on a form with no fields', async () => {
     await panel([]);
     expect(screen.queryByRole('button', { name: 'Flatten form' })).toBeNull();

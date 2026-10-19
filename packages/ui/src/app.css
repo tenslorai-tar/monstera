@@ -2171,39 +2171,27 @@ optgroup {
   width: 100%;
   margin: 0;
   /*
-   * `--space-2`, and it read `--space-3` from the day this was written until
-   * 2026-09-08. THE SCALE HAS NO 3: `tokens.css` declares 2, 4, 8, 16, 24, 32,
-   * so `var(--space-3)` resolved to nothing and the whole declaration was
-   * invalid at computed-value time — this control shipped with no padding at
-   * all, in either axis, because one half of the shorthand was undefined.
-   *
-   * That is the failure mode worth knowing: an undefined custom property does
-   * not fall back to the other value in the shorthand and does not warn. It
-   * discards the property. Every neighbouring control in this panel, including
-   * the delete row directly above, is `var(--space-2) var(--space-4)`, which is
-   * what this was meant to be.
+   * A TOKEN THE SCALE HAS: `tokens.css` declares 2, 4, 8, 16, 24, 32, and an
+   * undefined custom property does not fall back to the other half of a
+   * shorthand and does not warn — it discards the whole declaration, which is
+   * how this foot once shipped with no padding at all (`--space-3`). The
+   * vertical step is 8 now that the foot holds a bounded button rather than a
+   * line of words.
    */
-  padding: var(--space-2) var(--space-4);
-  background: none;
-  border: none;
+  padding: var(--space-8) var(--space-4);
   /*
-   * `--border-control` and NOT `--border`, because this line is drawn on a
-   * button. It was written as a divider between the rows and the action, which
-   * is what it reads as — and ADR-0003 types `--border` boundary-decorative
-   * with no 3:1 solve, so the moment a divider sits on the edge of something
-   * focusable it is a control boundary at decorative contrast. The scan caught
-   * it; the zoom slider track it names measured 1.16:1.
+   * `--border-control` and NOT `--border`: ADR-0003 types `--border`
+   * boundary-decorative with no 3:1 solve, and this rule sits against the
+   * button's own edge, where a decorative contrast reads as part of a control
+   * boundary (the zoom slider track it was measured beside: 1.16:1).
    */
   border-top: 1px solid var(--border-control);
-  color: var(--muted);
-  text-align: left;
-  cursor: pointer;
 }
 
-.m-forms-flatten:hover,
-.m-forms-flatten:focus-visible {
-  background: var(--surface2);
-  color: var(--text);
+/* THE BUTTON ITSELF is the primitive's, its edge, hover and focus ring included; it spans the foot so the one
+   document-wide action is not read as belonging to the last row. */
+.m-forms-flatten > .m-button {
+  inline-size: 100%;
 }
 
 .m-forms-empty {
