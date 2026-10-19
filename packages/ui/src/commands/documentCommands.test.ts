@@ -6625,7 +6625,7 @@ describe('protectDocumentCommand', () => {
         stamp,
         signatures,
         onApplied: () => undefined,
-        selectedFields: () => [],
+        selectedFields: () => ({ fields: [], version: undefined }),
         ask: (id, props) => {
           // NOTHING SENT YET when the question opens: a dialog asked after the command would be a notice, not a question.
           asked.push({ id, props, sent: sent.length });
@@ -6654,7 +6654,7 @@ describe('protectDocumentCommand', () => {
         stamp,
         signatures,
         onApplied: () => undefined,
-        selectedFields: () => SELECTED,
+        selectedFields: () => ({ fields: SELECTED, version: undefined }),
         ask: (_id, props) => {
           asked.push(props);
           return Promise.resolve({ flatten: true, scope: 'selected' });
@@ -6681,6 +6681,22 @@ describe('protectDocumentCommand', () => {
       expect(said).toStrictEqual([TOAST_FIELDS_FLATTENED]);
     });
 
+    it('the selected fields are flattened at the version their list was READ at, not the version on show (2026-10-19)', async () => {
+      // A WRITE MOVED THE DOCUMENT TO 8 and the list is still the one read at 7: the fields' places are 7's, so the
+      // command names 7 and the stale check judges it there, followed where this renderer's own write kept the walk.
+      const { client, sent } = recordingClient();
+      await flattenFormCommand({
+        client,
+        toast: () => undefined,
+        stamp,
+        signatures,
+        onApplied: () => undefined,
+        selectedFields: () => ({ fields: SELECTED, version: asDocVersion(7) }),
+        ask: () => Promise.resolve({ flatten: true, scope: 'selected' }),
+      }).run({ ...CONTEXT, version: asDocVersion(8) });
+      expect(sent).toMatchObject([{ id: 'document.execute', params: { command: { kind: 'flattenFormFields', version: asDocVersion(7) } } }]);
+    });
+
     it('CONTROL: with fields selected, choosing the whole form flattens the whole form', async () => {
       const { client, sent } = recordingClient();
       await flattenFormCommand({
@@ -6689,7 +6705,7 @@ describe('protectDocumentCommand', () => {
         stamp,
         signatures,
         onApplied: () => undefined,
-        selectedFields: () => SELECTED,
+        selectedFields: () => ({ fields: SELECTED, version: undefined }),
         ask: () => Promise.resolve({ flatten: true, scope: 'all' }),
       }).run(CONTEXT);
       expect(sent).toStrictEqual([
@@ -6709,7 +6725,7 @@ describe('protectDocumentCommand', () => {
         stamp,
         signatures,
         onApplied: () => undefined,
-        selectedFields: () => SELECTED,
+        selectedFields: () => ({ fields: SELECTED, version: undefined }),
         ask: () => Promise.resolve(undefined),
       }).run(CONTEXT);
 
@@ -6726,7 +6742,7 @@ describe('protectDocumentCommand', () => {
         stamp,
         signatures,
         onApplied: () => undefined,
-        selectedFields: () => [],
+        selectedFields: () => ({ fields: [], version: undefined }),
         ask: (id) => {
           asked.push(id);
           return Promise.resolve(id === 'dialog.flatten-form' ? { flatten: true, scope: 'all' } : undefined);
@@ -6750,7 +6766,7 @@ describe('protectDocumentCommand', () => {
         ask: () => Promise.resolve(undefined),
         markPlaces: () => undefined,
         orderByClicking: () => undefined,
-        selectedFields: () => [],
+        selectedFields: () => ({ fields: [], version: undefined }),
       };
       const tips = [detectFlatFieldsCommand(deps), flattenFormCommand(deps), tabOrderCommand(deps)].map((command) => command.tip);
       expect(tips).toStrictEqual([DETECT_FIELDS_TIP, FLATTEN_FORM_TIP, TAB_ORDER_TIP]);

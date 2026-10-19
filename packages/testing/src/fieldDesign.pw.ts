@@ -44,7 +44,7 @@ type Sent = { channel: string; params: unknown }[];
 const commands = (sent: Sent): unknown[] =>
   sent.filter((call) => call.channel === 'document.execute').map((call) => (call.params as { command: unknown }).command);
 
-async function open(page: Page, sent: Sent): Promise<void> {
+async function open(page: Page, sent: Sent, listDelay?: number): Promise<void> {
   const bytes = await formPdf();
   await page.setViewportSize({ width: 1280, height: 860 });
   await bridgeUnder(
@@ -54,6 +54,8 @@ async function open(page: Page, sent: Sent): Promise<void> {
       opens: [{ kind: 'opened' as const, docId: ID, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Form.pdf' }],
       documentBytes: new Map([[ID, bytes]]),
       formFields: [LISTED],
+      // MAIN'S TIME FOR A FIELD LIST, for a case about what a press does while the list a write moved is read again.
+      ...(listDelay === undefined ? {} : { delays: { 'document.formFields': listDelay } }),
     },
     (channel, params) => {
       sent.push({ channel, params });
@@ -65,8 +67,8 @@ async function open(page: Page, sent: Sent): Promise<void> {
   await openSection(page, 'Forms');
 }
 
-async function designing(page: Page, sent: Sent): Promise<void> {
-  await open(page, sent);
+async function designing(page: Page, sent: Sent, listDelay?: number): Promise<void> {
+  await open(page, sent, listDelay);
   await runCommand(page, 'Edit fields');
   await expect(page.locator('[data-field-box="0"]')).toBeVisible();
 }
@@ -116,6 +118,59 @@ test.describe('Edit fields', () => {
     await expect(page.locator('[data-field-box="1"]')).toHaveAttribute('aria-pressed', 'false');
     // NONE, read once settled (DDDDDDDD-4): read straight after the click it passed before any send could arrive.
     expect(await commandsSettled(page, () => commands(sent).length, 'the commands a click sent')).toBe(0);
+  });
+
+  // AN ARROW STRAIGHT AFTER A DRAG, while the field list the drag's write moved is being read again (2026-10-19). The
+  // forms walk lost such presses in four gate-launched runs of nine: the selected box kept the focus and its look, and the
+  // press sent nothing, because the selection was joined to the list at the version on show, which is empty until it has
+  // been read. The list's read is held back three seconds here, so the press lands in that gap every time, not by chance.
+  // THE CONTROL is the same arrow pressed once the list has been read again, which no gap separates from the drag.
+  for (const [name, settle] of [
+    ['while the list the drag moved is still being read again', 0],
+    ['CONTROL: once the list has been read again', 4500],
+  ] as const) {
+    test(`an arrow pressed after a drag nudges the field it moved, ${name}`, async ({ page }) => {
+      const sent: Sent = [];
+      await designing(page, sent, 3000);
+      const at = await boxOf(page.locator('[data-field-box="0"]'));
+      await drag(page, { x: at.x + at.width / 2, y: at.y + at.height / 2 }, { x: 40, y: 20 });
+      await expect.poll(() => commands(sent).length).toBe(1);
+      // THE CONTROL WAITS THE HELD READ OUT: a fixed wait is the case's own input here, the length of the gap it closes.
+      await page.waitForTimeout(settle);
+      await page.keyboard.press('ArrowRight');
+      await expect.poll(() => commands(sent).length, { timeout: 10_000 }).toBe(2);
+      expect(commands(sent)[1]).toMatchObject({ kind: 'editFormFields', edits: [{ field: { page: 0, index: 0 } }] });
+    });
+  }
+
+  // THE OTHER TWO READERS OF THE SAME JOIN, in the same held gap (2026-10-19): the Properties tab, where the forms walk's
+  // A8.4 sets a font, and Flatten's "only the selected fields". Each timed out in the walk's gate-launched runs.
+  test('the Properties tab keeps showing the selected field while the list a drag moved is read again', async ({ page }) => {
+    const sent: Sent = [];
+    await designing(page, sent, 3000);
+    const at = await boxOf(page.locator('[data-field-box="0"]'));
+    await page.mouse.click(at.x + at.width / 2, at.y + at.height / 2);
+    const properties = page.getByRole('region', { name: 'Field properties' });
+    await expect(properties).toBeVisible();
+    await drag(page, { x: at.x + at.width / 2, y: at.y + at.height / 2 }, { x: 40, y: 20 });
+    await expect.poll(() => commands(sent).length).toBe(1);
+    // AT ONCE, inside the three seconds the read is held: a tab that showed the form meanwhile is the defect.
+    await expect(properties).toBeVisible({ timeout: 500 });
+  });
+
+  test('Flatten offers and flattens only the selected field while the list a drag moved is read again', async ({ page }) => {
+    const sent: Sent = [];
+    await designing(page, sent, 3000);
+    const at = await boxOf(page.locator('[data-field-box="0"]'));
+    await page.mouse.click(at.x + at.width / 2, at.y + at.height / 2);
+    await drag(page, { x: at.x + at.width / 2, y: at.y + at.height / 2 }, { x: 40, y: 20 });
+    await expect.poll(() => commands(sent).length).toBe(1);
+    await page.getByRole('button', { name: 'Flatten' }).first().click();
+    const dialog = page.getByRole('dialog', { name: 'Flatten the form' });
+    await dialog.getByLabel(/Only the selected field/u).check({ timeout: 2000 });
+    await dialog.getByRole('button', { name: 'Flatten form' }).click();
+    await expect.poll(() => commands(sent).length).toBe(2);
+    expect(commands(sent)[1]).toMatchObject({ kind: 'flattenFormFields', fields: [{ page: 0, index: 0 }] });
   });
 
   test('a drag from the CENTRE moves the field, as one editFormFields with the rect moved by the travel in points', async ({ page }) => {

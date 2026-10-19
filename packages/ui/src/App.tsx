@@ -323,7 +323,7 @@ import { DELETE_FIELDS_DIALOG_ID, DELETE_FIELDS_RESULT } from './dialogs/deleteF
 import { type FieldToCopy, copyFieldToPagesCommand, fieldArrangeCommands } from './commands/fieldArrangeCommands.js';
 import { objectArrangeCommands } from './commands/objectArrangeCommands.js';
 import { EDIT_FIELDS_TOOL_ID, editFieldsCommand, fieldDesignCommands } from './commands/fieldDesignCommands.js';
-import { useFormFieldList } from './forms/useFormFieldList.js';
+import { type HeldFields, useFormFieldList } from './forms/useFormFieldList.js';
 import { useFormScriptsNotice } from './forms/useFormScriptsNotice.js';
 import type { AnnotationStyle } from './annotations/annotationStyle.js';
 import { styleFrom } from './annotations/annotationStyle.js';
@@ -661,6 +661,8 @@ const FIELD_MENU: readonly MenuContext[] = ['field'];
 
 /** No field selected for the field commands, one identity so a memo over it does not rebuild. */
 const NO_PLACED: readonly (PlacedField & { readonly kind: FormFieldKind })[] = [];
+/** No field list read yet for the document on show: the selection joins to nothing. */
+const NO_SELECTION_LIST: HeldFields['fields'] = [];
 
 /**
  * How far in from the page's top-right corner an answer's note is placed, in PDF points: half an
@@ -1559,15 +1561,26 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
     }),
     [fieldFocus, fieldReveal, fieldsInOrder, openVersion, reminderFocus, requiredReminder, selectedFieldKeys, toast],
   );
+  /**
+   * THE LIST THE SELECTION IS JOINED TO: the last one read for this document, with its version, until the next replaces
+   * it (`useFormFieldList`' `held`) — never the list at the version on show, which is empty from the moment a write lands
+   * until it has been read again. Joined to that, a selected field resolved to nothing in that gap while its box stayed
+   * selected: an arrow pressed there sent nothing, the Properties tab showed the form, and Flatten offered no selection
+   * (measured 2026-10-19, the forms walk's gate-launched runs, and `fieldDesign.pw.ts`' held read). Every command composed
+   * from this join names `selectionVersion`, the version its indices were read at, so the stale check judges it there:
+   * the lane follows this renderer's own key-keeping write, and anything else is refused as out of date, said.
+   */
+  const selectionFields = formFieldList.held?.fields ?? NO_SELECTION_LIST;
+  const selectionVersion = formFieldList.held?.version;
   const selectedHandles = useMemo((): readonly FormFieldHandle[] => {
-    const byKey = new Map(formFieldList.fields.map((field) => [fieldKey(field.page, field.index), field]));
+    const byKey = new Map(selectionFields.map((field) => [fieldKey(field.page, field.index), field]));
     const handles: FormFieldHandle[] = [];
     for (const key of liveKeys(fieldSelection, openVersion)) {
       const field = byKey.get(key);
       if (field !== undefined) handles.push({ page: field.page, index: field.index, name: field.name });
     }
     return handles;
-  }, [fieldSelection, formFieldList.fields, openVersion]);
+  }, [fieldSelection, selectionFields, openVersion]);
   // A FIELD'S FONT PICKER offers this computer's fonts and the document's for the kinds Monstera draws in a real family
   // (ADR-0229): read once a field is selected, as the text editor's are once it opens.
   const fieldFontList = useFontList(client, selectedHandles.length > 0);
@@ -1633,9 +1646,10 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
     /** Settles when the command has landed or been refused (`placesAhead` waits on it). */
     (build: (version: DocVersion) => DispatchableCommand & { readonly version: DocVersion }): Promise<void> => {
       if (activeId === undefined || openVersion === undefined) return Promise.resolve();
-      return applyCarryingFields(activeId, build(openVersion)).then(() => undefined);
+      // AT THE VERSION THE SELECTION'S LIST WAS READ AT (`selectionVersion`), whose indices the command names.
+      return applyCarryingFields(activeId, build(selectionVersion ?? openVersion)).then(() => undefined);
     },
-    [activeId, applyCarryingFields, openVersion],
+    [activeId, applyCarryingFields, openVersion, selectionVersion],
   );
   const sendFieldEdits = useCallback(
     (edits: CommandOfKind<'editFormFields'>['edits']): Promise<void> => sendFieldCommand((version) => ({ kind: 'editFormFields', edits, version })),
@@ -1675,9 +1689,9 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
   const singleField = useMemo((): FieldToCopy | undefined => {
     const [only, ...rest] = selectedHandles;
     if (only === undefined || rest.length > 0) return undefined;
-    const kind = formFieldList.fields.find((field) => field.page === only.page && field.index === only.index)?.kind;
+    const kind = selectionFields.find((field) => field.page === only.page && field.index === only.index)?.kind;
     return kind === undefined ? undefined : { field: only, kind };
-  }, [formFieldList.fields, selectedHandles]);
+  }, [selectionFields, selectedHandles]);
   const editSelectedFields = useCallback(
     (set: FormFieldProperties): void => {
       const first = selectedHandles[0];
@@ -1690,12 +1704,12 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
   );
   /** The selected fields and where each is, for *align* and *same size* (`forms/arrange.ts`). A field with no place is left out. */
   const placedFields = useMemo((): readonly PlacedField[] => {
-    const byKey = new Map(formFieldList.fields.map((field) => [fieldKey(field.page, field.index), field]));
+    const byKey = new Map(selectionFields.map((field) => [fieldKey(field.page, field.index), field]));
     return selectedHandles.flatMap((field) => {
       const rect = byKey.get(fieldKey(field.page, field.index))?.rect;
       return rect === null || rect === undefined ? [] : [{ field, rect }];
     });
-  }, [formFieldList.fields, selectedHandles]);
+  }, [selectionFields, selectedHandles]);
   const arrangeSelectedFields = placeFields;
   // ESCAPE AND A PRESS ON EMPTY PAGE DESELECT, only while something is selected: a press on a field's own control is the
   // selection's and a press on the page's paper is not.
@@ -1771,8 +1785,10 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
    */
   const flattenActiveForm = useCallback((): void => {
     if (activeId === undefined || openVersion === undefined) return;
-    void flattenForm({ client, onApplied: applied, ask, stamp, signatures, toast }, activeId, openVersion, selectedHandles);
-  }, [activeId, applied, ask, client, openVersion, selectedHandles, signatures, stamp, toast]);
+    // AT THE VERSION THE SELECTION'S LIST WAS READ AT, where any field is selected (`selectionVersion`).
+    const version = selectedHandles.length === 0 ? openVersion : (selectionVersion ?? openVersion);
+    void flattenForm({ client, onApplied: applied, ask, stamp, signatures, toast }, activeId, version, selectedHandles);
+  }, [activeId, applied, ask, client, openVersion, selectedHandles, selectionVersion, signatures, stamp, toast]);
 
   /**
    * Removing everything the select tool has picked.
@@ -2666,12 +2682,12 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
     fieldDesignOn.current = inFieldDesign;
   }, [inFieldDesign]);
   const selectedPlaced = useMemo((): readonly (PlacedField & { readonly kind: FormFieldKind })[] => {
-    const byKey = new Map(formFieldList.fields.map((field) => [fieldKey(field.page, field.index), field]));
+    const byKey = new Map(selectionFields.map((field) => [fieldKey(field.page, field.index), field]));
     return selectedHandles.flatMap((field) => {
       const listed = byKey.get(fieldKey(field.page, field.index));
       return listed?.rect === null || listed?.rect === undefined ? [] : [{ field, rect: listed.rect, kind: listed.kind }];
     });
-  }, [formFieldList.fields, selectedHandles]);
+  }, [selectionFields, selectedHandles]);
   const designedFields = inFieldDesign ? selectedPlaced : NO_PLACED;
   /**
    * What the field commands act on: the selection while *Edit fields* is on, AND while the Fields list has the focus
@@ -4313,7 +4329,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         // EACH FIELD WHERE IT WAS LAST SENT while a move of it is being written (`placesAhead`).
         ...fieldArrangeCommands({ placed: () => placedFields.map(aheadOfRead), apply: arrangeSelectedFields }),
         copyFieldToPagesCommand({ single: () => singleField, ask, apply: copyFieldToPages }),
-        flattenFormCommand({ client, onApplied: applied, ask, stamp, signatures, toast, selectedFields: () => selectedHandles }),
+        flattenFormCommand({ client, onApplied: applied, ask, stamp, signatures, toast, selectedFields: () => ({ fields: selectedHandles, version: selectionVersion }) }),
         tabOrderCommand({ client, onApplied: applied, ask, stamp, signatures, toast, orderByClicking }),
         // EDIT TEXT, a MODE in the tool slot (ADR-0096): it toggles as a drawing
         // tool's command does, and `editing` below is what the mode draws.
@@ -4428,6 +4444,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       // THE KEYS A PERSON CHOSE, so a change in the shortcuts dialog rebuilds the registry and the new key works at once.
       chosenShortcuts,
       chooseTool,
+      selectionVersion,
       setToolId,
       // THE PROVIDERS THIS BUILD REACHES, so `app.info`'s answer rebuilds the registry and the cloud commands appear.
       readCloudProviders,

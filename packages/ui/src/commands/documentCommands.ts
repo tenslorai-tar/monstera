@@ -4289,8 +4289,12 @@ export async function flattenForm(
 export function flattenFormCommand(
   deps: DocumentCommandDeps &
     WritesAFile & {
-      /** The fields selected in the open document, read when the command runs. */
-      readonly selectedFields: () => readonly FormFieldHandle[];
+      /**
+       * The fields selected in the open document, read when the command runs, WITH the version of the list they were
+       * joined to: their indices name widgets at that version, which the command is composed at so the stale check judges
+       * it there (`useFormFieldList`' `held`). `undefined` where no list has been read.
+       */
+      readonly selectedFields: () => { readonly fields: readonly FormFieldHandle[]; readonly version: DocVersion | undefined };
     },
 ): UiCommand {
   return {
@@ -4306,7 +4310,10 @@ export function flattenFormCommand(
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.version === undefined) return;
-      await flattenForm(deps, context.docId, context.version, deps.selectedFields());
+      const selected = deps.selectedFields();
+      // THE WHOLE FORM at the version on show; SELECTED FIELDS at the version their list was read at.
+      const version = selected.fields.length === 0 ? context.version : (selected.version ?? context.version);
+      await flattenForm(deps, context.docId, version, selected.fields);
     },
   };
 }
