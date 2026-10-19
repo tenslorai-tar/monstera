@@ -189,3 +189,15 @@ margins zero, where the logo it replaces drew 78.2% by 86.0% — so the trim has
 100% of its tile: the app-list icons at 16, 24, 32, 48 and 256 px and the Store logo, 100% by 100%; the Store's tiles keep their
 canvas at two thirds, 66.2% to 66.8% of a square tile (Small, Medium, Large) and 32.3% by 66.7% of the Wide one. The sentences above
 that give 90.6% to 93.8% describe the logo before this one. No design export beyond the one master is committed.
+
+**Noted 2026-10-20: a second master, for the PDF file-type icon only** (the owner's review of 0.1.16.0, R6, and their
+answer of 2026-10-20). The note of 2026-09-23 made the mark alone the file-type icon; the owner now supplies a taller
+document icon for `.pdf` files Monstera opens, so Explorer draws a page-shaped icon rather than the square app icon.
+`assets/brand/monstera-icon-2048.png` — 2048 × 2048 RGBA, its four corners alpha 0, the page drawn 63.7% wide and 85.9% tall
+and centred (measured 2026-10-20), one design for light and dark — is committed as brand source artwork beside
+`monstera_logo.png`, named once in `brandMaster.mjs`, and held to the same shape rule. It feeds the file-type association's
+logo and nothing else; every other output still comes from the mark. **It is used as supplied, canvas and all**: the
+owner drew the page inside the square with its own margins, which is how Windows sizes a file icon, so it is fitted
+untrimmed, where the app's icons trim. `uap:FileTypeAssociation > uap:Logo` names its generated set, and packaging refuses a
+package whose association logo has no image. The sentence of 2026-09-23 that names the mark as the file-type icon describes
+the package before this one.
