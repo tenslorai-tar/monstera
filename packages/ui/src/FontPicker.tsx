@@ -19,6 +19,7 @@ import {
   FONT_PICKER_SEARCH,
 } from './messages/en.js';
 import { Icon } from './primitives/Icon.js';
+import { usePressAway } from './primitives/usePressAway.js';
 
 /**
  * The ONE font picker (the owner's D1 to D4): every place a person chooses a font takes this, so the list and its groups
@@ -176,6 +177,18 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
   const optionId = (at: number): string => `${listId}-${String(at)}`;
   const search = useRef<HTMLInputElement>(null);
   const face = useRef<HTMLButtonElement>(null);
+  const opened = useRef<HTMLDivElement>(null);
+  // CLOSED BY A PRESS OUTSIDE IT AND BY ESCAPE WHEREVER THE FOCUS IS (R9), the one rule of an inline list.
+  //
+  // THE FOCUS BACK TO THE FIELD before the search box it may be in is unmounted. Left in the box, it fell to the page's
+  // body with no focus event any surface sees, so the text panel never learnt it was left and a press on the page did
+  // not end the editor (text-regression 7b, 2026-10-16). From the field, a press elsewhere then moves it on as any press
+  // does, and the panel hears it leave.
+  usePressAway(open, [face, opened], (how) => {
+    if (how === 'escape' || opened.current?.contains(document.activeElement) === true) face.current?.focus();
+    setOpen(false);
+    setQuery('');
+  });
   const groups = useMemo(() => fontGroups(list, inDocument, recentlyChosen(), builtIn, query), [list, inDocument, builtIn, query]);
   /** The computer's list as read, or `undefined` while it is read and where the consumer offers none. */
   const read = readList(list);
@@ -226,7 +239,7 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
         <Icon name="ChevronDown" size="dense" />
       </button>
       {open ? (
-        <div className="m-font-picker__open" data-font-picker="">
+        <div className="m-font-picker__open" data-font-picker="" ref={opened}>
           <input
             aria-activedescendant={flat.length === 0 ? undefined : optionId(Math.min(active, flat.length - 1))}
             aria-autocomplete="list"
@@ -247,17 +260,9 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
                 event.preventDefault();
                 const picked = flat[Math.min(active, flat.length - 1)];
                 if (picked !== undefined) choose(picked);
-              } else if (event.key === 'Escape') {
-                // THE LIST CLOSES and the key goes no further: Escape in the editor would finish the words.
-                event.preventDefault();
-                event.stopPropagation();
-                // AND THE FOCUS GOES BACK TO THE FIELD IT CAME FROM, before the search box it is in is unmounted. Left
-                // in the box, it fell to the page's body with no focus event any surface sees, so the panel never learnt
-                // it was left and a press on the page did not end the text editor (text-regression 7b, 2026-10-16).
-                face.current?.focus();
-                setOpen(false);
-                setQuery('');
               }
+              // ESCAPE IS `usePressAway`'s, heard on the window wherever the focus is and consumed there, so the
+              // editor this list may sit beside does not also finish its words.
             }}
             ref={search}
             role="combobox"

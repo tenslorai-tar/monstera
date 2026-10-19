@@ -203,4 +203,102 @@ describe('FontPicker', () => {
     expect(view.queryByRole('combobox', { name: 'Search fonts' })).toBeNull();
     expect(document.activeElement).toBe(field);
   });
+
+  describe('closes as every drop-down does (the owner R9)', () => {
+    /** The picker inside a panel, beside another control, with a page beside the panel. */
+    const inPanel = () =>
+      render(
+        <I18nProvider i18n={i18n}>
+          <section data-panel="">
+            <FontPicker
+              builtIn={BUILT_INTO_PDF}
+              inDocument={[]}
+              label={TEXT_FORMAT_FAMILY}
+              list={LIST}
+              onPick={() => undefined}
+              unset={TEXT_FORMAT_FAMILY_RUN}
+              value="Arial"
+            />
+            <input aria-label="Size" />
+          </section>
+          <div data-page="" />
+        </I18nProvider>,
+      );
+
+    it('a press elsewhere in the PANEL closes it', () => {
+      const view = inPanel();
+      fireEvent.click(view.getByRole('button', { name: 'Font: Arial' }));
+      expect(view.queryByRole('listbox')).not.toBeNull();
+      fireEvent.pointerDown(view.getByRole('textbox', { name: 'Size' }));
+      expect(view.queryByRole('listbox')).toBeNull();
+    });
+
+    it('a press on the PAGE closes it, and the focus it held in the search goes back to the field first', () => {
+      const view = inPanel();
+      const field = view.getByRole('button', { name: 'Font: Arial' });
+      fireEvent.click(field);
+      const search = view.getByRole('combobox', { name: 'Search fonts' });
+      search.focus();
+      const page = view.container.ownerDocument.querySelector('[data-page]');
+      if (page === null) throw new Error('no page');
+      fireEvent.pointerDown(page);
+      expect(view.queryByRole('listbox')).toBeNull();
+      // NOT LEFT ON THE BODY, so the panel around it hears the press move the focus on (text-regression 7b's reason).
+      expect(document.activeElement).toBe(field);
+    });
+
+    it('Escape closes it WHEREVER THE FOCUS IS, not only from its search box, and goes no further', () => {
+      const outer = vi.fn();
+      const view = render(
+        <I18nProvider i18n={i18n}>
+          <div onKeyDown={outer}>
+            <FontPicker
+              builtIn={BUILT_INTO_PDF}
+              inDocument={[]}
+              label={TEXT_FORMAT_FAMILY}
+              list={LIST}
+              onPick={() => undefined}
+              unset={TEXT_FORMAT_FAMILY_RUN}
+              value="Arial"
+            />
+            <input aria-label="Size" />
+          </div>
+        </I18nProvider>,
+      );
+      fireEvent.click(view.getByRole('button', { name: 'Font: Arial' }));
+      const size = view.getByRole('textbox', { name: 'Size' });
+      size.focus();
+      fireEvent.keyDown(size, { key: 'Escape' });
+      expect(view.queryByRole('listbox')).toBeNull();
+      expect(outer).not.toHaveBeenCalled();
+    });
+
+    it('CONTROL: a press INSIDE the list — on a name, on its search — keeps it open until a choice is made', () => {
+      const onPick = vi.fn();
+      const view = render(
+        <I18nProvider i18n={i18n}>
+          <FontPicker
+            builtIn={BUILT_INTO_PDF}
+            inDocument={[]}
+            label={TEXT_FORMAT_FAMILY}
+            list={LIST}
+            onPick={onPick}
+            unset={TEXT_FORMAT_FAMILY_RUN}
+            value="Arial"
+          />
+        </I18nProvider>,
+      );
+      fireEvent.click(view.getByRole('button', { name: 'Font: Arial' }));
+      const carlito = view.container.querySelector('[data-font-choice="Carlito"]');
+      if (carlito === null) throw new Error('Carlito is not offered');
+      fireEvent.pointerDown(view.getByRole('combobox', { name: 'Search fonts' }));
+      fireEvent.pointerDown(carlito);
+      fireEvent.pointerDown(view.getByRole('listbox'));
+      expect(view.queryByRole('listbox')).not.toBeNull();
+      expect(onPick).not.toHaveBeenCalled();
+      fireEvent.click(carlito);
+      expect(onPick).toHaveBeenCalledWith('Carlito');
+      expect(view.queryByRole('listbox')).toBeNull();
+    });
+  });
 });

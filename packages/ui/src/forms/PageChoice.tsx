@@ -3,6 +3,7 @@ import type { FieldLook } from '@monstera/contract';
 import { type CSSProperties, type KeyboardEvent, type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { FORMS_CHOICE_EMPTY } from '../messages/en.js';
+import { usePressAway } from '../primitives/usePressAway.js';
 
 /**
  * A choice field on the page — a list box or a dropdown's open list — drawn as the DOCUMENT draws it (the owner's F1):
@@ -298,24 +299,17 @@ export function PageDropdown({
   const list = useRef<HTMLDivElement | null>(null);
   const listId = `${id}-list`;
 
-  // A PRESS ANYWHERE ELSE CLOSES IT, before that press does its own work.
-  useEffect(() => {
-    if (!open) return undefined;
-    const elsewhere = (event: PointerEvent): void => {
-      const target = event.target instanceof Node ? event.target : null;
-      if (target !== null && (face.current?.contains(target) === true || list.current?.contains(target) === true)) return;
-      setOpen(false);
-    };
-    window.addEventListener('pointerdown', elsewhere, true);
-    return () => {
-      window.removeEventListener('pointerdown', elsewhere, true);
-    };
-  }, [open]);
-
   const close = (): void => {
     setOpen(false);
     face.current?.focus();
   };
+
+  // A PRESS ANYWHERE ELSE CLOSES IT, before that press does its own work, and Escape closes it wherever the focus is:
+  // the one rule of an inline list (`usePressAway`). A press leaves the focus where it lands; Escape puts it back.
+  usePressAway(open, [face, list], (how) => {
+    if (how === 'escape') close();
+    else setOpen(false);
+  });
   const height = Math.min(choices.length, OPEN_ROWS) * fontPx * ROW_PITCH;
   const below = at.top + at.height;
   const upwards = below + height > room && at.top - height >= 0;
@@ -363,8 +357,8 @@ export function PageDropdown({
               if (choice !== held) onChoose(choice);
             }}
             onKey={(event) => {
-              if (event.key === 'Escape' || event.key === 'Tab') {
-                if (event.key === 'Escape') event.preventDefault();
+              // TAB LEAVES AND CLOSES; Escape never arrives here, `usePressAway` takes it first.
+              if (event.key === 'Tab') {
                 close();
                 return true;
               }
