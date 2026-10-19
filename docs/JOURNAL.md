@@ -1144,18 +1144,57 @@ all send the value the list on screen implies, so it ends ticked, not toggled th
 — the browser shim's field list is fixed and never applies an edit, so a rendered case cannot assert a field's place
 after a re-read (`fieldDesign.pw.ts` asserts it in the held gap only, and says why).
 
-### 1 to 7
+### 1.
 
-1: every fix in the range names its mechanism in its commit; the one cause stated without a measurement was
-`b7297404`'s, now corrected. 2: the hard shapes walked were a turned page, an added box, a held read, a gate-launched
-run; the easy one that hid RRRRRRRR-6 was a direct launch. 2a: no assertion moved from asserted to derived. 3: CI has
-not run this range yet (one push, at its end); the board is read once. 4: each new case in this session has a mutation
-that turns it red, named in its commit. 4a: the walks' press records and launch records were resolution-tested against
-a failing and a passing run before they decided anything. 4b: the forms counts were a search over reports; its
-control is the passing runs it also lists. 4c: no roster derived from the set it governs was added. 5: executed,
-except RRRRRRRR-8 and -9, which are claims. 6: no architecture changed under a feature; ADR-0023's and ADR-0252's
-corrections preceded their builds. 7: FEATURES rows were added for the items landed (`609abe23`); §9.17 gained the four
-whole-application budgets (`a27f93d9`).
+Every fix in the range names its mechanism in its commit; the one cause stated without a measurement was `b7297404`'s,
+now corrected.
+
+### 2.
+
+The hard shapes walked were a turned page, an added box, a held read and a gate-launched run; the easy one that hid
+RRRRRRRR-6 was a direct launch.
+
+### 2a.
+
+No assertion moved from asserted to derived.
+
+### 3.
+
+CI had not run this range when this entry was written (one push, at its end); the board is read once.
+
+### 4.
+
+Each new case in this session has a mutation that turns it red, named in its commit.
+
+### 4a.
+
+The walks' press records and launch records were resolution-tested against a failing and a passing run before they
+decided anything.
+
+### 4b.
+
+The forms counts were a search over reports; its control is the passing runs it also lists.
+
+### 4c.
+
+No roster derived from the set it governs was added.
+
+### 5.
+
+Executed, except RRRRRRRR-8 and -9, which are claims.
+
+### 6.
+
+No architecture changed under a feature; ADR-0023's and ADR-0252's corrections preceded their builds.
+
+### 7.
+
+FEATURES rows were added for the items landed (`609abe23`); §9.17 gained the four whole-application budgets
+(`a27f93d9`).
+
+Correction, 2026-10-19, to this entry's form: written as one paragraph headed *1 to 7*, as the entry before it was, it
+answered 0 of the 11 items the document checker reads (Guards, 3a30bd02). The answers are unchanged; each is now under
+its own heading.
 
 ## 2026-10-17 — Stage audit of `ecef2b30..7516794d` — finding PPPPPPPP-1
 
