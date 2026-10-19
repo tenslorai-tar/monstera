@@ -1066,6 +1066,16 @@ no merge of that size has been measured. **The streaming join is closed**, dated
 week, and a join of already-composed batches does not do it (`_review/imageJoinMemory.mjs`: four in two batches peaked
 at 3.7 GB, because the join holds the whole joined document). Reopen only if the owner's review of 0.1.16.0 raises it.
 
+**Correction, 2026-10-19, to `b7297404`'s message** (*A field selection is carried across a fill and a form reset*).
+It said a fill landing after a field was selected — the forms walk's fourth step's last tick — moved the version
+under the selection and caused the walk's dropped nudges, and that the walk was 28 of 28 three times after it. Both
+were wrong. The cause was reasoned from the code and never measured, and main's request log disproves it: in the
+failing runs every fill landed before the field was even created. The three passing runs were launched directly; the
+same build launched as the gate launches it failed three of three. The change itself stands — a fill and a form reset
+keep every field's key, and the selection is now carried across them by one path, with its own case — but it fixed
+nothing the walk met. The walk's defect was the selection joined to an empty list after every write, fixed in
+`fbb5963a`.
+
 **Recorded this session, with what is unfixed.**
 **QQQQQQQQ-1** (low, recorded, unfixed): a block's set width equal to its box, or one point wider, wraps its widest
 line's last word, and two points keep it (measured in `a807595e`'s cases); the editor sends a width only past 0.5 pt,
