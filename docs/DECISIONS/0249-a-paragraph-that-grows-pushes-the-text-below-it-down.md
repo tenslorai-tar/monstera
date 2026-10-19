@@ -118,3 +118,33 @@ extent: `below` and `room` are `main`'s, and the writer measures the growth. The
 - `DocumentCommands.execute` moves the markup on moved text, joining the step.
 - `TextEditLayer` draws the push and the warning; `textRegressionWalk` steps 5, 7, 8, 9 and 10 change only where they
   asserted the old overlap.
+
+## Correction, 2026-10-19 — the "no room" warning is withdrawn; push-down stays
+
+**The owner's decision of 2026-10-19** (the owner's review of 0.1.16.0, R10): the editor's sentence *"This paragraph now
+runs into the text below it, and there's no room on the page to move that text down…"* misled, and is removed
+completely, with the highlight of the lines it named. Decision 5's second half and locked decision 5 are withdrawn.
+Everything else stands: the text below is pushed down where there is room, the editor still draws that push live, and
+where there is no room **the edit is applied as typed and nothing below moves** (the writers already did this,
+Decision 3: `pushMove` is zero past `room`). Undo is the way back. No other message replaces it.
+
+**Why it showed on table cells before anything was typed — measured.** The owner saw it on cells as they were opened.
+The editor reported *growth* the moment it opened: for a block of two or more lines, `useGrowth` measured from the
+block's own lines at its pitch and counted every height above that from the first observation, typed or not
+(`typed = opened !== undefined`). The editor sets the block's words again in the browser at the block's measure; where
+it wraps them into one line more than the page did — a face wider than the page's, at a cell's narrow measure — the
+editor is a line taller on opening. In `TextEditLayer.test.tsx`, a two-line block whose editor lays out three lines at
+open, nothing typed, with no room below: `crowded: true, overlap: true` (run 2026-10-19). A table cell is the common
+case because its measure is narrow and the next row is directly below it with no room before the footer.
+
+**The same misjudgement drove the push PREVIEW, not the writer.** With room below, the same opening drew the next row
+moved down before anything was typed. The writers measure their own layout of what they write (`grew`, from the old and
+new last baselines), and nothing is written for an editor opened and left. So the correction is in the renderer: growth
+is now measured from the editor's own height as it opened (never less than the block's lines at its pitch), and counts
+only once the person has typed. **A table's next row is still "text below" a cell** (`pushesOf` knows no tables): when
+a cell's words really grow, the row below moves down with them, as Decision 2 designs; that is unchanged.
+
+**Removed:** the message and its key (`surface.text-edit.no-room`), the overlap highlight, the help article's sentence,
+and the cases that asserted them. **Proof:** an edit grown past the room shows no message and no highlight, and the
+write is sent as typed; opening a block whose editor is a line taller, nothing typed, moves nothing and shows nothing;
+CONTROL: growth within the room still draws the text below moved down.
