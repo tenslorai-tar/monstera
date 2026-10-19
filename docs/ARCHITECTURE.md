@@ -2265,6 +2265,20 @@ say**.
     > indistinguishable from a measured one at the moment it matters.
     ([ADR-0007](DECISIONS/0007-memory-budgets-and-the-document-size-ceiling.md),
     [ADR-0012](DECISIONS/0012-memory-budgets-are-machine-read-from-the-invariant.md))
+
+    **The whole application at four points, the release's budgets (set 2026-10-19).** Each is the reading of
+    `scripts/research/memoryWalk.mjs` on 2026-10-18 (the gate's third run,
+    `_review/walks/memory/2026-10-18T20-48-16/report.json`): every process of the application summed, each the lowest
+    of five settled samples two seconds apart, on this project's Windows laptop. The budget is that reading and 10%,
+    the margin the closed point is held to against the start; a walk that reads a point past its budget is a finding
+    to explain before a release ships. These are not the per-process limits above, which the line machine-reads.
+
+    | point | read | budget | of which, read |
+    |---|---|---|---|
+    | M1, the start screen, no document | 353 MB | 388 MB | main 149, renderer 108, GPU 68 |
+    | M2, seven documents open, idle on one | 746 MB | 821 MB | main 158, renderer 297, GPU 147, MuPDF host 119 |
+    | M3, after one Edit text change | 971 MB | 1,068 MB | main 194, renderer 216, GPU 101, MuPDF host 132, PDFium host 85 |
+    | M5, every document closed, idle a minute | 363 MB | 388 MB, M1's | main 155, renderer 80 (a new process), GPU 101 |
 18. **A failed save never loses work.** The command log lives in main and
     survives a host crash, so a save failure is answered by killing the host,
     restarting, reopening from the last-saved bytes, replaying the log, and
