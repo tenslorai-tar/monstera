@@ -2,7 +2,7 @@
 import { I18nProvider } from '@lingui/react';
 import type { BlockFormatting, EditedBlock, PageInsert } from '@monstera/contract';
 import { asDocVersion, type MessageKey } from '@monstera/shared';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -563,11 +563,26 @@ describe('Edit text on the page (ADR-0096)', () => {
 
     it('the Properties panel’s Remove empties the block and writes it, which is what removes a block', async () => {
       const { view, sent } = openForPlacing();
+      const remove = within(find(view.container, '[data-text-properties]')).getByRole('button', { name: 'Remove this text' });
       await act(async () => {
-        fireEvent.click(find(view.container, '[data-text-properties] button[aria-label="Remove this text"]'));
+        fireEvent.click(remove);
         await Promise.resolve();
       });
       expect(sent.map((one) => one.text)).toStrictEqual(['']);
+    });
+
+    it('Remove is a button WITH ITS WORDS, in the danger tone, not a bin whose name only a tooltip shows (the owner R14)', () => {
+      const { view } = openForPlacing();
+      const remove = within(find(view.container, '[data-text-properties]')).getByRole('button', { name: 'Remove this text' });
+      // DRAWN, not only named: the words are the button's own text outside any visually hidden span, and it carries no
+      // tooltip standing in for them. The icon-only control it replaced passed the name check above and failed this one.
+      const drawn = [...remove.childNodes]
+        .filter((node) => !(node instanceof HTMLElement && node.classList.contains('m-visually-hidden')))
+        .map((node) => node.textContent)
+        .join('');
+      expect(drawn).toBe('Remove this text');
+      expect(remove.getAttribute('title')).toBeNull();
+      expect(remove.classList.contains('m-button--danger')).toBe(true);
     });
   });
 

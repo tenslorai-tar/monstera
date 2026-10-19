@@ -10,6 +10,7 @@ import {
   TEXT_PROPERTIES_HEADING,
   TEXT_PROPERTIES_LABEL,
 } from './messages/en.js';
+import { Button } from './primitives/Button.js';
 import { IconButton } from './primitives/IconButton.js';
 import { ICONS } from './primitives/icons.js';
 import {
@@ -178,14 +179,17 @@ export function TextFormatPanel({ fonts, documentFonts }: TextFormatPanelProps):
 
       <div aria-label={_(TEXT_PROPERTIES_BOX)} className="m-text-section" role="group">
         <h3 className="m-text-section__title">{_(TEXT_PROPERTIES_BOX)}</h3>
+        {/* THE WORDS ON THE BUTTON (the owner's review of 0.1.16.0, R14): a lone bin in an empty card said what it does
+            only to a pointer resting on it. The danger tone is the app's for removal; no question first, because the
+            removal is one Undo away, as every other edit of the words is. */}
         <div className="m-text-section__buttons">
-          <IconButton
-            icon={ICONS.Trash2}
+          <Button
+            icon="Trash2"
             label={TEXT_BLOCK_REMOVE}
             onClick={() => {
               removeOpenBlock();
             }}
-            size="control"
+            variant="danger"
           />
         </div>
       </div>
