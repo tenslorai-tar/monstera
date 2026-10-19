@@ -1148,7 +1148,10 @@ describe('App', () => {
     // on the footer behind the dialog.
     const about = screen.getByRole('dialog', { name: 'About Monstera' });
     expect(within(about).getByText('©')).toBeDefined();
-    expect(within(about).getByRole('button', { name: 'Tenslor Inc. (opens tenslor.com in your browser)' }).textContent).toBe('Tenslor Inc.');
+    // THE WORDS DRAWN, which the button primitive's `shown` puts in an aria-hidden span beside the visually hidden full
+    // name — so the button's whole text is both, and the drawn half is read on its own.
+    const link = within(about).getByRole('button', { name: 'Tenslor Inc. (opens tenslor.com in your browser)' });
+    expect(link.querySelector('[aria-hidden]')?.textContent).toBe('Tenslor Inc.');
   });
 
   it('About’s pages are OPENED BY NAME — the source, the third-party licences and the © holder’s site — and closing opens nothing', async () => {
@@ -2910,7 +2913,11 @@ describe('App', () => {
     expect(container.querySelectorAll('.m-start-primary button')).toHaveLength(1);
     // v5-01's FOOTER: Settings, About and Help centre (ADR-0112); the diagnostics log moved to the Help menu on
     // 2026-09-26, so the footer holding it again is the regression this count catches.
-    expect(container.querySelectorAll('.m-start-footer button')).toHaveLength(3);
+    // THE COMMANDS ONLY: the © line's link (R5) is a button in the footer too, but it is the copyright notice's holder,
+    // not a command, so it is counted apart and asserted by name.
+    const footer = [...container.querySelectorAll('.m-start-footer button')];
+    expect(footer.filter((button) => button.closest('.m-copyright') === null)).toHaveLength(3);
+    expect(footer.filter((button) => button.closest('.m-copyright') !== null).map((button) => button.getAttribute('aria-label') ?? button.textContent)).toHaveLength(1);
     expect(screen.getByRole('button', { name: 'Help centre' })).toBeDefined();
     // AND THE GRID: §10.3's six feature shortcuts.
     expect(container.querySelectorAll('.m-start-shortcuts button')).toHaveLength(6);
