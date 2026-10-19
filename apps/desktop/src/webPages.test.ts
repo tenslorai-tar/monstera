@@ -80,6 +80,7 @@ describe('openWebPage', () => {
         'store-listing': '',
         source: 'https://github.com/tenslorai-tar/monstera',
         licences: 'https://github.com/tenslorai-tar/monstera/blob/main/NOTICE',
+        publisher: 'https://tenslor.com',
       }),
     ).resolves.toBe(false);
 
@@ -119,8 +120,16 @@ describe('openWebPage', () => {
     await openWebPage('store-listing', open);
     await openWebPage('source', open);
     await openWebPage('licences', open);
-    expect(opened).toHaveLength(4);
+    await openWebPage('publisher', open);
+    expect(opened).toHaveLength(5);
     for (const url of opened) expect(new URL(url).protocol).toBe('https:');
+  });
+
+  it('"Tenslor Inc." in the © line opens EXACTLY https://tenslor.com, the owner’s address (R5)', async () => {
+    const { open, opened } = opener();
+    await expect(openWebPage('publisher', open)).resolves.toBe(true);
+    // THE WHOLE ADDRESS, for the donation case's reason.
+    expect(opened).toStrictEqual(['https://tenslor.com']);
   });
 });
 

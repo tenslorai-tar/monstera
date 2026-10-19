@@ -596,6 +596,16 @@ describe('the shipping contract, exercised through its own map', () => {
     expect(params.safeParse({ values: { 'appearance.theme': 'dark' } }).success).toBe(true);
   });
 
+  it('app.openWebPage takes the publisher by NAME, and CONTROL: refuses any address, tenslor.com’s included (R5)', () => {
+    const params = channels['app.openWebPage'].params;
+    expect(params.safeParse({ page: 'publisher' }).success).toBe(true);
+    // AN ADDRESS IS NOT A PLACE, the owner's own among them: a renderer that could name a URL could be made to name
+    // any, so the route opens only what `main`'s table holds (ADR-0095).
+    expect(params.safeParse({ page: 'https://tenslor.com' }).success).toBe(false);
+    expect(params.safeParse({ page: 'https://example.com/' }).success).toBe(false);
+    expect(params.safeParse({ page: 'publisher', url: 'https://example.com/' }).success).toBe(false);
+  });
+
   it('settings.saveSecret REFUSES an ordinary id, and CONTROL: accepts a declared secret', () => {
     const params = channels['settings.saveSecret'].params;
     expect(params.safeParse({ id: 'appearance.theme', value: 'dark' }).success).toBe(false);

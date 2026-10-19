@@ -80,6 +80,12 @@ const SOURCE = 'https://github.com/tenslorai-tar/monstera';
 const LICENCES = 'https://github.com/tenslorai-tar/monstera/blob/main/NOTICE';
 
 /**
+ * The copyright holder's site, which "Tenslor Inc." in the © line opens — the owner's address, given in the review of
+ * 0.1.16.0 (R5, 2026-10-19). Opened on a press only, like every page here; nothing is fetched at start (invariant 24).
+ */
+const PUBLISHER = 'https://tenslor.com';
+
+/**
  * Where each AI provider hands out an API key (ADR-0184), for the setup window's *get a key* link. Each was asked for
  * with `curl -sIL` on 2026-10-06 and answered: Anthropic's console moved to `platform.claude.com` and is the address it
  * redirected to; Google, Mistral and OpenRouter sent the request to their sign-in with this page as the destination;
@@ -118,6 +124,7 @@ const ADDRESSES: WebAddresses = {
   'store-listing': STORE_LISTING,
   source: SOURCE,
   licences: LICENCES,
+  publisher: PUBLISHER,
   ...AI_KEY_ADDRESSES,
   ...AZURE_DI_ADDRESSES,
 };

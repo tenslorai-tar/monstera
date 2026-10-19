@@ -1,8 +1,9 @@
 import { useLingui } from '@lingui/react';
 import type { ReactElement } from 'react';
 
-import { START_COPYRIGHT, START_F1_HINT, START_LICENCE, START_VERSION } from '../messages/en.js';
+import { START_F1_HINT, START_LICENCE, START_VERSION } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { CopyrightLine } from './CopyrightLine.js';
 import type { CommandContext, CommandRegistry } from '../registries/commands.js';
 import { shortcutMapOf, startScreenModel } from './projections.js';
 
@@ -44,10 +45,13 @@ export function StartFooter({
   registry,
   context,
   version,
+  onPublisher,
 }: {
   readonly registry: CommandRegistry;
   readonly context: CommandContext;
   readonly version: string | undefined;
+  /** Opens the copyright holder's site, by its place name (`CopyrightLine`). */
+  readonly onPublisher: () => void;
 }): ReactElement {
   const { _ } = useLingui();
   const { footer } = startScreenModel(registry, context);
@@ -73,7 +77,7 @@ export function StartFooter({
       </p>
       <p className="m-start-footer__build">
         {version === undefined ? null : <span>{_(START_VERSION, { version })}</span>}
-        <span>{_(START_COPYRIGHT)}</span>
+        <CopyrightLine onPublisher={onPublisher} />
         <span>{_(START_LICENCE)}</span>
       </p>
     </footer>

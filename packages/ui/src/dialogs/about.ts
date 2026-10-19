@@ -35,10 +35,11 @@ export const ABOUT_DIALOG_ID = 'dialog.about';
  * declared.
  */
 /**
- * What About answers: one of its two pages to open, or nothing. The dialog makes no call — the command
- * opens the page (ADR-0038) — so a dismissal and *Close* are the same answer.
+ * What About answers: one of its pages to open — the source, the notices, or the copyright holder's site from the ©
+ * line (R5) — or nothing. The dialog makes no call — the command opens the page (ADR-0038) — so a dismissal and
+ * *Close* are the same answer.
  */
-export const ABOUT_RESULT = z.enum(['source', 'licences']);
+export const ABOUT_RESULT = z.enum(['source', 'licences', 'publisher']);
 
 export type AboutAnswer = z.infer<typeof ABOUT_RESULT>;
 

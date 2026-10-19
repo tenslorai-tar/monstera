@@ -45,13 +45,15 @@ const help = (shortcut: string): UiCommand => ({
   run: () => undefined,
 });
 
-function drawn(commands: readonly UiCommand[], version: string | undefined): void {
+function drawn(commands: readonly UiCommand[], version: string | undefined, onPublisher: () => void = () => undefined): void {
   render(
     <Wrapped>
-      <StartFooter registry={new CommandRegistry(commands)} context={context} version={version} />
+      <StartFooter registry={new CommandRegistry(commands)} context={context} onPublisher={onPublisher} version={version} />
     </Wrapped>,
   );
 }
+
+const PUBLISHER = 'Tenslor Inc. (opens tenslor.com in your browser)';
 
 describe('StartFooter', () => {
   it('names F1 in the hint when the registry binds F1', () => {
@@ -69,7 +71,7 @@ describe('StartFooter', () => {
   it('draws the version it is given, and no version line without one', () => {
     const { unmount } = render(
       <Wrapped>
-        <StartFooter registry={new CommandRegistry([about])} context={context} version="1.2.3" />
+        <StartFooter registry={new CommandRegistry([about])} context={context} onPublisher={() => undefined} version="1.2.3" />
       </Wrapped>,
     );
     expect(screen.getByText('Monstera 1.2.3')).toBeDefined();
@@ -77,8 +79,26 @@ describe('StartFooter', () => {
     drawn([about], undefined);
     expect(screen.queryByText(/^Monstera/u)).toBeNull();
     // THE FOOTER STILL DRAWS — the missing piece is the version's alone.
-    expect(screen.getByText('© Tenslor Inc.')).toBeDefined();
+    expect(screen.getByText('©')).toBeDefined();
+    expect(screen.getByRole('button', { name: PUBLISHER })).toBeDefined();
     expect(screen.getByText('AGPL 3.0 or later')).toBeDefined();
+  });
+
+  it('"Tenslor Inc." is a keyboard-reachable link that SHOWS the name and opens the site on a press (R5)', () => {
+    const pressed: string[] = [];
+    drawn([about], '1.2.3', () => {
+      pressed.push('publisher');
+    });
+    const link = screen.getByRole('button', { name: PUBLISHER });
+    // THE WORDS DRAWN are the name alone; the accessible name begins with them and says it opens the browser.
+    expect(link.querySelector('[aria-hidden]')?.textContent).toBe('Tenslor Inc.');
+    expect(link.tabIndex).toBe(0);
+    expect(pressed).toStrictEqual([]);
+    link.click();
+    expect(pressed).toStrictEqual(['publisher']);
+    // CONTROL: the footer's other links do not open it.
+    screen.getByRole('button', { name: 'About' }).click();
+    expect(pressed).toStrictEqual(['publisher']);
   });
 
   it('projects the footer slot’s commands as LINKS, in their declared order', () => {
@@ -86,7 +106,7 @@ describe('StartFooter', () => {
     const aboutSecond: UiCommand = { ...about, placements: [{ surface: 'start-screen', slot: 'footer', order: 2 }] };
     // REGISTERED IN THE OTHER ORDER, so a footer drawing registration order reads *About, Settings* here.
     drawn([aboutSecond, settings], undefined);
-    const buttons = screen.getAllByRole('button');
+    const buttons = [...document.querySelectorAll<HTMLButtonElement>('.m-start-footer__commands button')];
     expect(buttons.map((button) => button.textContent)).toStrictEqual(['Settings', 'About']);
     // The design's words, not bordered buttons.
     for (const button of buttons) expect(button.className).toContain('m-button--quiet');

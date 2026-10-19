@@ -8,7 +8,6 @@ import {
   ABOUT_CHANNEL_LABEL,
   ABOUT_CHANNEL_STORE,
   ABOUT_CHANNEL_WEB,
-  ABOUT_COPYRIGHT,
   ABOUT_LICENCE,
   ABOUT_LICENCES,
   ABOUT_SOURCE,
@@ -18,6 +17,7 @@ import {
 import { Button } from '../primitives/Button.js';
 import { DialogFooter } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
+import { CopyrightLine } from '../surfaces/CopyrightLine.js';
 import type { AboutAnswer } from './about.js';
 
 type Channel = 'store' | 'web' | 'development';
@@ -70,7 +70,13 @@ export default function AboutBody({
       <div className="m-about__prose">
         <p className="m-about__line">{_(ABOUT_WHAT)}</p>
         <p className="m-about__line">{_(ABOUT_LICENCE)}</p>
-        <p className="m-about__line">{_(ABOUT_COPYRIGHT)}</p>
+        <p className="m-about__line">
+          <CopyrightLine
+            onPublisher={() => {
+              resolve('publisher');
+            }}
+          />
+        </p>
       </div>
       <DialogFooter dismissal="close">
         <Button

@@ -1147,13 +1147,16 @@ describe('App', () => {
     // THE COPYRIGHT HOLDER, inside the dialog: the start screen's footer says it too, so a page-wide query would pass
     // on the footer behind the dialog.
     const about = screen.getByRole('dialog', { name: 'About Monstera' });
-    expect(within(about).getByText('© Tenslor Inc.')).toBeDefined();
+    expect(within(about).getByText('©')).toBeDefined();
+    expect(within(about).getByRole('button', { name: 'Tenslor Inc. (opens tenslor.com in your browser)' }).textContent).toBe('Tenslor Inc.');
   });
 
-  it('About’s two pages are OPENED BY NAME — the source and the third-party licences — and closing opens nothing', async () => {
+  it('About’s pages are OPENED BY NAME — the source, the third-party licences and the © holder’s site — and closing opens nothing', async () => {
     for (const [control, page] of [
       ['Source code', 'source'],
       ['Third-party licences', 'licences'],
+      // R5: the start screen's footer behind the dialog has the same link, so the press is looked for in the dialog.
+      ['Tenslor Inc. (opens tenslor.com in your browser)', 'publisher'],
     ] as const) {
       const sent: Sent[] = [];
       const client = createClient(channels, (id, params) => {
@@ -1170,7 +1173,7 @@ describe('App', () => {
       // The body has arrived (its chunk is lazy) before its buttons are looked for.
       expect(await screen.findByText(/Monstera is a PDF editor for Windows/u)).toBeDefined();
       await act(async () => {
-        (await screen.findByRole('button', { name: control })).click();
+        (await within(screen.getByRole('dialog', { name: 'About Monstera' })).findByRole('button', { name: control })).click();
         await Promise.resolve();
       });
       await act(async () => {
@@ -1182,6 +1185,25 @@ describe('App', () => {
       ]);
       unmount();
     }
+  });
+
+  it('the start screen’s "Tenslor Inc." opens the © holder’s site BY NAME, and only on a press (R5)', async () => {
+    const sent: Sent[] = [];
+    const client = createClient(channels, (id, params) => {
+      sent.push({ id, params });
+      if (id === 'app.openWebPage') return Promise.resolve(ok({ opened: true }));
+      return Promise.resolve(ok(OTHER_ANSWERS[id] ?? { kind: 'cancelled' }));
+    });
+    const { unmount } = render(<App client={client} settings={freshSettings()} />);
+    const link = await screen.findByRole('button', { name: 'Tenslor Inc. (opens tenslor.com in your browser)' });
+    // NOTHING AT START (invariant 24): drawing the footer opens no page.
+    expect(sent.filter((call) => call.id === 'app.openWebPage')).toStrictEqual([]);
+    await act(async () => {
+      link.click();
+      await Promise.resolve();
+    });
+    expect(sent.filter((call) => call.id === 'app.openWebPage')).toStrictEqual([{ id: 'app.openWebPage', params: { page: 'publisher' } }]);
+    unmount();
   });
 
   describe('the update check’s renderer half (ADR-0110)', () => {

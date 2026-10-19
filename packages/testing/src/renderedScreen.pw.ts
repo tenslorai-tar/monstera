@@ -3204,7 +3204,16 @@ test('the START SCREEN draws the supplied logo, the hero lines, one primary Open
   const footer = page.locator('.m-start-footer');
   await expect(footer.getByRole('button', { name: 'Settings' })).toBeVisible();
   await expect(footer.getByRole('button', { name: 'About' })).toBeVisible();
-  await expect(footer).toContainText('© Tenslor Inc.');
+  // THE © LINE (R5): the sign, then the holder's name as a link drawn in the line, with a visible focus ring.
+  const publisher = footer.getByRole('button', { name: 'Tenslor Inc. (opens tenslor.com in your browser)' });
+  await expect(footer.locator('.m-copyright')).toContainText('©');
+  // THE WORDS DRAWN, the button's shown span; its full name, which begins with them, is read by a screen reader only.
+  await expect(publisher.locator('[aria-hidden]')).toHaveText('Tenslor Inc.');
+  await publisher.focus();
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Tab');
+  await expect(publisher).toBeFocused();
+  expect(await publisher.evaluate((element) => getComputedStyle(element).outlineStyle)).not.toBe('none');
   await expect(footer).toContainText('Monstera ');
   // v5-01'S BAR: pinned to the window's foot while the screen is short, links on the left, the build on the right.
   // A WINDOW TALLER THAN THE SCREEN'S CONTENT, and the bottom edge EXACT: at the default size the content overflows,

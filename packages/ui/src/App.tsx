@@ -5151,7 +5151,15 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
             />
           ) : null}
           {/* THE FOOTER, after the recent list because §10.3 puts it there (see `StartFooter`). */}
-          <StartFooter registry={registry} context={context} version={appVersion} />
+          <StartFooter
+            context={context}
+            // THE COPYRIGHT HOLDER'S SITE, by its place name: `main` holds the address (R5, ADR-0095).
+            onPublisher={() => {
+              void client['app.openWebPage']({ page: 'publisher' });
+            }}
+            registry={registry}
+            version={appVersion}
+          />
         </div>
       ) : (
         // THE ERROR BOUNDARY, AND ITS POSITION IS THE GUARANTEE (§10.5a).

@@ -6973,9 +6973,12 @@ export const channels = {
    */
   'app.openWebPage': channel(
     'Opens one of this project’s own pages in the person’s browser.',
-    // `source` and `licences` are About's (AGPL's source offer and the third-party notices).
+    // `source` and `licences` are About's (AGPL's source offer and the third-party notices); `publisher` is the
+    // copyright holder's site, which "Tenslor Inc." in the © line opens (the owner's review of 0.1.16.0, R5).
     // THE SETUP WINDOW'S *where do I get a key* (ADR-0184): one place per provider, still a name and never an address.
-    z.object({ page: z.enum(['donate', 'store-listing', 'source', 'licences', ...AI_KEY_PAGES, ...AZURE_DI_PAGES]) }).strict(),
+    z
+      .object({ page: z.enum(['donate', 'store-listing', 'source', 'licences', 'publisher', ...AI_KEY_PAGES, ...AZURE_DI_PAGES]) })
+      .strict(),
     z.object({ opened: z.boolean() }),
   ),
 

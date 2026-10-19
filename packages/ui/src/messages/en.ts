@@ -946,7 +946,6 @@ export const ABOUT_CHANNEL_WEB = messageKey('dialog.about.channel-web');
 export const ABOUT_CHANNEL_DEVELOPMENT = messageKey('dialog.about.channel-development');
 export const ABOUT_WHAT = messageKey('dialog.about.what');
 export const ABOUT_LICENCE = messageKey('dialog.about.licence');
-export const ABOUT_COPYRIGHT = messageKey('dialog.about.copyright');
 export const ABOUT_SOURCE = messageKey('dialog.about.source');
 export const ABOUT_LICENCES = messageKey('dialog.about.licences');
 export const COMPONENTS_TITLE = messageKey('dialog.components.title');
@@ -1364,7 +1363,9 @@ export const START_TITLE = messageKey('surface.start.title');
 export const START_PRODUCT = messageKey('surface.start.product');
 export const START_TAGLINE = messageKey('surface.start.tagline');
 export const START_VERSION = messageKey('surface.start.version');
-export const START_COPYRIGHT = messageKey('surface.start.copyright');
+export const COPYRIGHT_SIGN = messageKey('surface.copyright.sign');
+export const COPYRIGHT_PUBLISHER = messageKey('surface.copyright.publisher');
+export const COPYRIGHT_PUBLISHER_OPEN = messageKey('surface.copyright.publisher-open');
 export const START_LICENCE = messageKey('surface.start.licence');
 export const START_F1_HINT = messageKey('surface.start.shortcuts-hint');
 export const KEYBOARD_SHORTCUTS_TITLE = messageKey('dialog.keyboard-shortcuts.title');
@@ -3699,7 +3700,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ABOUT_WHAT]: 'Monstera is a PDF editor for Windows.',
   [ABOUT_LICENCE]:
     'Monstera is free software under the GNU Affero General Public License, version 3 or later. You can read and build its source code.',
-  [ABOUT_COPYRIGHT]: '© Tenslor Inc.',
   [COMPONENTS_TITLE]: 'Components',
   [COMPONENTS_COMMAND_TITLE]: 'Components',
   // ADR-0122: status only. Every component is installed with the app, and nothing is downloaded.
@@ -4158,7 +4158,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [START_PRODUCT]: 'PDF EDITOR',
   [START_TAGLINE]: 'Built For The Way You Work',
   [START_VERSION]: 'Monstera {version}',
-  [START_COPYRIGHT]: '© Tenslor Inc.',
+  // THE © LINE, the start screen's and About's (the owner's review of 0.1.16.0, R5): the sign, then the holder's name as
+  // a link to its site. The link's NAME begins with the words it shows (WCAG 2.5.3) and says it opens the browser.
+  [COPYRIGHT_SIGN]: '©',
+  [COPYRIGHT_PUBLISHER]: 'Tenslor Inc.',
+  [COPYRIGHT_PUBLISHER_OPEN]: 'Tenslor Inc. (opens tenslor.com in your browser)',
   // `package.json`'s `AGPL-3.0-or-later`. v5-01 prints *AGPL 3.0*; the *or later* is the licence's own term, and a
   // footer that dropped it would state a narrower grant than the one the project makes.
   [START_LICENCE]: 'AGPL 3.0 or later',
