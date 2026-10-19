@@ -1104,6 +1104,59 @@ by each line's setting (ADR-0049), reads the 13-point lines back as a block of t
 **QQQQQQQQ-3** (low, recorded, unfixed): NNNNNNNN-6's class — the App split-view, ExportExcel *typed back* and
 textOperatorEdit *glyph* cases each timed out once in a multi-file run and pass alone; no mechanism is established.
 
+## 2026-10-19 — Stage audit of `7516794d..a27f93d9` — findings RRRRRRRR-1 to RRRRRRRR-12
+
+Fix session 2's range, audited lean by the owner's ruling of 2026-10-19: fix only what would turn CI or Guards red, or
+is a security or data-loss risk; record the rest with a dated reason. `npm run audit:scope` (saved as
+`audit-scope-final.txt` in the session folder): 79 commits, 181 files; 7 proofs added, 58 modified, none removed;
+10 source files added, 96 changed, none removed. **Stated limitation, not a pass:** the 58 modified proofs' diffs were
+not each read in this audit. The ones this session wrote were read as they were written (each commit names its proof,
+control and mutation); the rest are the range's own commits' and were not re-read.
+
+### Fixed in range
+
+**RRRRRRRR-1** — a commit's lint listed only its own files, and a file READING the field it changed went red:
+`d689eb32` made `FileIdentity.ino` a string and `backupLedger.ts` still wrapped it in `String()` (fixed `267ca49f`, found
+by the tree-wide lint). **RRRRRRRR-2** — the previous audit's claim that every removed line in its modified proofs was
+"stated again with the field the wire now carries (`skippedPages`)" was false for `browserShim.test.ts`, red until
+`5509b7a7`: a range audit read the diffs it listed, and the stale case was in a file the range never touched.
+**RRRRRRRR-3** — `86a89c44` bolded a glyph in an article and broke the articles' own rule (fixed `aef9afd4`).
+**RRRRRRRR-4** — `pushesOf` was cubic in a page's blocks and ran in `main` on every page read for editing, about 2 s at
+515 blocks (fixed `f95ed681`, proven equal on 400 seeded pages). **RRRRRRRR-5** — every family chosen for an added text
+box was refused, naming the seed's placeholder letters (fixed `3d51e802`; predates the range). **RRRRRRRR-6** — the
+forms walk's class, three defects deep: a write took every field control off the page until the re-read (`b3252aef`);
+every reader of the field selection joined it to an empty list in the same gap, so an arrow, the Properties tab and
+Flatten's selection resolved to nothing (`fbb5963a`, proven by a held read with a control); and `fbb5963a` itself made a
+nudge in the gap start from the place before a drag and undo it, a data-loss defect a fix induced, caught by the next
+walk (`da783279`).
+
+### Recorded, with a dated reason
+
+**RRRRRRRR-7** (recorded, corrected) — two claims written more strongly than their evidence: `b7297404`'s cause (a late
+fill), disproved by main's log (`9da45309`); and the known intermittents' counts, written from memory (`cfc832a6`).
+**RRRRRRRR-8** (open, 2026-10-19) — a walk comment of 2026-10-12 said typed words were dropped when Add text was ended at
+85% or lower on the text walk's turned page. It was recorded nowhere else, and `0539d66d` moved step 4 off that page; so
+it is an unverified app claim with no case. Reopen with a walk step that presses there. **RRRRRRRR-9** (open) — the
+page read's `push.below` carries every block's column, so its size grows with the square of a page's blocks; not
+measured. **RRRRRRRR-10** (open, low) — 94 test files make 257 direct pdf-lib saves that wait a timer tick every 50
+objects (`c78e6c12` fixed the two near their timeout). **RRRRRRRR-11** (open, low) — three quick presses on a tick box
+all send the value the list on screen implies, so it ends ticked, not toggled three times. **RRRRRRRR-12** (open, low)
+— the browser shim's field list is fixed and never applies an edit, so a rendered case cannot assert a field's place
+after a re-read (`fieldDesign.pw.ts` asserts it in the held gap only, and says why).
+
+### 1 to 7
+
+1: every fix in the range names its mechanism in its commit; the one cause stated without a measurement was
+`b7297404`'s, now corrected. 2: the hard shapes walked were a turned page, an added box, a held read, a gate-launched
+run; the easy one that hid RRRRRRRR-6 was a direct launch. 2a: no assertion moved from asserted to derived. 3: CI has
+not run this range yet (one push, at its end); the board is read once. 4: each new case in this session has a mutation
+that turns it red, named in its commit. 4a: the walks' press records and launch records were resolution-tested against
+a failing and a passing run before they decided anything. 4b: the forms counts were a search over reports; its
+control is the passing runs it also lists. 4c: no roster derived from the set it governs was added. 5: executed,
+except RRRRRRRR-8 and -9, which are claims. 6: no architecture changed under a feature; ADR-0023's and ADR-0252's
+corrections preceded their builds. 7: FEATURES rows were added for the items landed (`609abe23`); §9.17 gained the four
+whole-application budgets (`a27f93d9`).
+
 ## 2026-10-17 — Stage audit of `ecef2b30..7516794d` — finding PPPPPPPP-1
 
 Three commits: the previous audit's record, decision 5 (one token for a dialog's sentences, with 195 images) and the
