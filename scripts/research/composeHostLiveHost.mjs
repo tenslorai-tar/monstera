@@ -149,7 +149,11 @@ async function observed(call) {
   try {
     return await call();
   } catch (error) {
-    return { threw: String(error?.constructor?.name ?? 'Error') };
+    // AND WHAT IT SAID: the class alone left a red CI step unable to name its cause (2026-10-19).
+    return {
+      threw: String(error?.constructor?.name ?? 'Error'),
+      message: (error instanceof Error ? error.message : String(error)).slice(0, 400),
+    };
   }
 }
 
@@ -205,7 +209,9 @@ async function main() {
       pickImages: () => Promise.resolve(IMAGES.map((image) => join(scratch, image.name))),
       sizeImage: (/** @type {string} */ path) =>
         Promise.resolve(IMAGES.find((image) => path.endsWith(image.name))?.bytes.length ?? null),
-      readImage: (/** @type {string} */ path) => {
+      // THE SURFACE A PICTURE MADE INTO A PAGE IS READ THROUGH, `readPageImage` since 97d76526 (DDDDDDDD-10's own bound);
+      // left on `readImage`, the import reached the harness's refusing stub and the live case threw.
+      readPageImage: (/** @type {string} */ path) => {
         const image = IMAGES.find((candidate) => path.endsWith(candidate.name));
         return Promise.resolve(image === undefined ? { kind: 'unreadable' } : { kind: 'read', bytes: image.bytes });
       },
