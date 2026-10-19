@@ -140,6 +140,18 @@ test.describe('Edit fields', () => {
       await page.keyboard.press('ArrowRight');
       await expect.poll(() => commands(sent).length, { timeout: 10_000 }).toBe(2);
       expect(commands(sent)[1]).toMatchObject({ kind: 'editFormFields', edits: [{ field: { page: 0, index: 0 } }] });
+      // FROM WHERE THE DRAG PUT IT, one point right: a nudge started from the list read before the drag sent the field's
+      // OLD place plus one point and undid the drag (the forms walk's gate-launched runs, 2026-10-19). IN THE GAP ONLY:
+      // this shim's field list is fixed and answers the original place at every version, so once its read has landed
+      // the list itself says the drag never happened, where main's list at that version holds the moved place.
+      if (settle !== 0) return;
+      interface Moved {
+        readonly edits: readonly { readonly set: { readonly rect: typeof NAME } }[];
+      }
+      const dragged = (commands(sent)[0] as Moved).edits[0]?.set.rect;
+      const nudged = (commands(sent)[1] as Moved).edits[0]?.set.rect;
+      expect(nudged?.x0).toBeCloseTo((dragged?.x0 ?? Number.NaN) + 1, 3);
+      expect(nudged?.y1).toBeCloseTo(dragged?.y1 ?? Number.NaN, 3);
     });
   }
 

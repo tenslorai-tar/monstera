@@ -1610,9 +1610,29 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
    * Any other command goes through unchanged.
    */
   const applyCarryingFields = useCallback(
-    (docId: DocId, command: DispatchableCommand & { readonly version: DocVersion }): Promise<boolean> => {
+    (
+      docId: DocId,
+      command: DispatchableCommand & { readonly version: DocVersion },
+      /** Told the version the command produced, where it landed. */
+      produced?: (version: DocVersion) => void,
+    ): Promise<boolean> => {
       const keepsKeys = walkKeptBy(command) === 'field' || command.kind === 'duplicateFormField';
-      if (!keepsKeys) return applyDocumentCommand({ client, onApplied: applied, ask, stamp, signatures }, docId, command);
+      if (!keepsKeys) {
+        return applyDocumentCommand(
+          {
+            client,
+            onApplied: (answer) => {
+              applied(answer);
+              produced?.(answer.version);
+            },
+            ask,
+            stamp,
+            signatures,
+          },
+          docId,
+          command,
+        );
+      }
       // THE VERSION IT WAS SENT AT is what the selection is carried from: the command lane may have followed this renderer's
       // own previous edit, so a nudge composed before that edit landed is sent, and carried, at the version it left.
       let sentAt = command.version;
@@ -1621,6 +1641,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
           client,
           onApplied: (answer) => {
             applied(answer);
+            produced?.(answer.version);
             setFieldSelection((current) =>
               current !== undefined && sameWalk(client, docId, 'field', current.version, sentAt)
                 ? carryFieldSelection({ ...current, version: sentAt }, sentAt, answer.version)
@@ -1643,16 +1664,23 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
     [applied, ask, client, signatures, stamp],
   );
   const sendFieldCommand = useCallback(
-    /** Settles when the command has landed or been refused (`placesAhead` waits on it). */
-    (build: (version: DocVersion) => DispatchableCommand & { readonly version: DocVersion }): Promise<void> => {
-      if (activeId === undefined || openVersion === undefined) return Promise.resolve();
+    /**
+     * Settles when the command has landed or been refused, with the version it produced or `undefined` (`placesAhead`
+     * waits on it, and keeps a landed place until the selection's list has been read at that version).
+     */
+    (build: (version: DocVersion) => DispatchableCommand & { readonly version: DocVersion }): Promise<DocVersion | undefined> => {
+      if (activeId === undefined || openVersion === undefined) return Promise.resolve(undefined);
+      let landed: DocVersion | undefined;
       // AT THE VERSION THE SELECTION'S LIST WAS READ AT (`selectionVersion`), whose indices the command names.
-      return applyCarryingFields(activeId, build(selectionVersion ?? openVersion)).then(() => undefined);
+      return applyCarryingFields(activeId, build(selectionVersion ?? openVersion), (version) => {
+        landed = version;
+      }).then(() => landed);
     },
     [activeId, applyCarryingFields, openVersion, selectionVersion],
   );
   const sendFieldEdits = useCallback(
-    (edits: CommandOfKind<'editFormFields'>['edits']): Promise<void> => sendFieldCommand((version) => ({ kind: 'editFormFields', edits, version })),
+    (edits: CommandOfKind<'editFormFields'>['edits']): Promise<DocVersion | undefined> =>
+      sendFieldCommand((version) => ({ kind: 'editFormFields', edits, version })),
     [sendFieldCommand],
   );
   /** Where each field was last sent while its moves are being written (`placesAhead`), by document and field. */
@@ -1673,10 +1701,12 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
   /** A placed field at the place it was last sent to, where a send of it is unsettled; as read otherwise. */
   const aheadOfRead = useCallback(
     <Placed extends PlacedField>(placed: Placed): Placed => {
-      const ahead = activeId === undefined ? undefined : fieldPlaces.ahead(`${activeId}:${fieldKey(placed.field.page, placed.field.index)}`);
+      // AGAINST THE VERSION THE SELECTION'S LIST WAS READ AT: a landed move is the place until that list has caught up.
+      const ahead =
+        activeId === undefined ? undefined : fieldPlaces.ahead(`${activeId}:${fieldKey(placed.field.page, placed.field.index)}`, selectionVersion);
       return ahead === undefined ? placed : { ...placed, rect: ahead };
     },
-    [activeId, fieldPlaces],
+    [activeId, fieldPlaces, selectionVersion],
   );
   /** Copies the one selected field onto the pages named (ADR-0193): one command, and the selection stays on the field. */
   const copyFieldToPages = useCallback(
@@ -2572,8 +2602,10 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       if (activeId === undefined) return;
       const settled = send(activeId, command);
       if (command.kind !== 'placeAnnotation') return;
+      // NO VERSION: a mark's selection is carried with its walk read (`applyCarrying`), so the first rule alone holds.
+      const unversioned = settled.then(() => undefined);
       for (const placement of command.placements) {
-        marksAhead.sent(`${activeId}:${String(command.page)}:${String(placement.index)}`, placement.rect, settled);
+        marksAhead.sent(`${activeId}:${String(command.page)}:${String(placement.index)}`, placement.rect, unversioned);
       }
     },
     [activeId, marksAhead, send],
