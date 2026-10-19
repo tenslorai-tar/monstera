@@ -4846,7 +4846,18 @@ export async function commitTextBlock(
           const under = read.blocks[at];
           return under === undefined ? [] : [under];
         });
-  return sendBlockEdit(deps, docId, page, read, [
+  // A BLOCK ONLY PLACED — moved, scaled or turned, its words, marks, paragraphs and measure unchanged — is placed by the
+  // operator writer on every page (ADR-0240's correction of 2026-10-19): it carries the lines' operators as they were,
+  // where PDFium's writer would generate the whole page again and refuse a font it cannot write back. Not on a page read
+  // unpacked, whose text the operator writer has not got (ADR-0232).
+  const onlyPlaced =
+    text === before &&
+    formatting.place !== undefined &&
+    formatting.place.width === undefined &&
+    (formatting.marks?.length ?? 0) === 0 &&
+    (formatting.paragraphs?.length ?? 0) === 0 &&
+    read.unpacked !== true;
+  return sendBlockEdit(deps, docId, page, onlyPlaced ? { ...read, rewrite: 'operators' } : read, [
     {
       lines: block.lines.map((line) => line.runs.map((run) => run.index)),
       soft: block.lines.map((line) => line.soft),
@@ -5068,7 +5079,8 @@ export async function readPageObjects(
       continue;
     }
     if (block !== undefined) placed.set(block, objects.length);
-    const style = block === undefined || !blocks.ok ? undefined : blocks.value.items[block]?.style;
+    const textBlock = block === undefined || !blocks.ok ? undefined : blocks.value.items[block];
+    const style = textBlock?.style;
     objects.push({
       source: 'content',
       index: object.index,
@@ -5083,6 +5095,17 @@ export async function readPageObjects(
       ...(style === undefined
         ? {}
         : { look: { size: style.size, bold: style.bold, italic: style.italic, family: style.mono ? 'mono' : style.serif ? 'serif' : 'sans' } }),
+      // THE BLOCK AS ITS EDIT NAMES IT, so a placement goes to the operator writer with its words as read (ADR-0240's
+      // correction of 2026-10-19), by the one join Edit text diffs against (`wordsOfBlock`).
+      ...(textBlock === undefined
+        ? {}
+        : {
+            block: {
+              lines: textBlock.lines.map((line) => line.runs.map((run) => run.index)),
+              soft: textBlock.lines.map((line) => line.soft),
+              text: wordsOfBlock(textBlock),
+            },
+          }),
     });
   }
   for (const mark of marks.value.items) {

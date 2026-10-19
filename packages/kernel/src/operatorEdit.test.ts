@@ -456,6 +456,31 @@ describe('the new object goes where the block’s kept words before the edit end
   });
 });
 
+describe('a block placed AS AN OBJECT COMMAND MEANS IT (ADR-0240, corrected 2026-10-19; R11)', () => {
+  const content = bytes('BT /F1 10 Tf 1 0 0 1 72 100 Tm (abc) Tj ET');
+  const fonts = new Map([['F1', font('F1', 'abcdefghijklmnopqrstuvwxyz')]]);
+  const page: PageRuns = { textObjects: [0], runs: [{ index: 0, members: [0], text: 'abc', left: 72, right: 87, bottom: 98, top: 110 }] };
+  const about = { box: { left: 72, bottom: 98, right: 87, top: 110 }, moveBy: { x: 5, y: -3 }, scaleBy: { x: 2, y: 1.5 } };
+
+  it('takes ADR-0243’s one matrix about the box — scaled about its LOWER-LEFT corner on each axis, then moved', () => {
+    const result = editOperators(content, fonts, page, [{ lines: [[0]], soft: [false], text: 'abc', place: { about } }]);
+    if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+    const written = latin1(result.value.content);
+    // [2 0 0 1.5, 72·(1−2)+5, 98·(1−1.5)−3]: what `placePageObjects` applied through PDFium.
+    expect(written).toContain('q\n2 0 0 1.5 -67 -52 cm\nBT');
+    // THE WORDS CARRIED AS THEY WERE, their codes copied, and the old operator emptied: nothing of the text written again.
+    expect(written).toContain('<616263> Tj');
+    expect(written).toContain('[] TJ ET');
+    expect(checkOperatorEdit(content, result.value, fonts).ok).toBe(true);
+  });
+
+  it('CONTROL: the block’s own placement (a scale about its TOP left) writes another matrix', () => {
+    const result = editOperators(content, fonts, page, [{ lines: [[0]], soft: [false], text: 'abc', place: { move: { x: 5, y: -3 }, scale: 2 } }]);
+    if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+    expect(latin1(result.value.content)).not.toContain('2 0 0 1.5 -67 -52 cm');
+  });
+});
+
 /** A run PDFium would read as drawn, with its ink where it is drawn (`runsOf` leaves the ink at the origin). */
 const inked = (index: number, text: string, left: number, right: number): PageRun => ({
   index,

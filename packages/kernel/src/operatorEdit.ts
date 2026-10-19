@@ -17,6 +17,7 @@ import {
   textObjectEnds,
 } from './textOperators.js';
 import { codesFor } from './toUnicode.js';
+import { placementMatrix as objectPlacement } from './objectPlacementMatrix.js';
 
 /**
  * A block edit written into a page's own content stream, changing only the instructions it edits
@@ -349,6 +350,10 @@ export function placementMatrix(
 
 /** Whether a placement changes anything about where a block is: a move of nothing is not one. */
 function movesBlock(place: Omit<BlockPlace, 'block'> | undefined): boolean {
+  if (place?.about !== undefined) {
+    const { moveBy, scaleBy, rotateBy } = place.about;
+    return scaleBy.x !== 1 || scaleBy.y !== 1 || (rotateBy ?? 0) !== 0 || moveBy.x !== 0 || moveBy.y !== 0;
+  }
   return (
     place !== undefined &&
     ((place.scale ?? 1) !== 1 || (place.rotate ?? 0) !== 0 || (place.move?.x ?? 0) !== 0 || (place.move?.y ?? 0) !== 0)
@@ -1216,7 +1221,11 @@ function write(
     // scaled about the block's top left, turned about the centre of what that leaves, then moved. (A turn is about a
     // centre and no other placement needs one, so the extent is worked out only for a turn.)
     let cm: Matrix | null = null;
-    if (blockPlace !== undefined && movesBlock(blockPlace)) {
+    if (blockPlace?.about !== undefined && movesBlock(blockPlace)) {
+      // AS AN OBJECT COMMAND MEANS IT (ADR-0240's correction of 2026-10-19): ADR-0243's one placement matrix about the box
+      // the command names — the matrix PDFium's route applied — so a block Edit object places lands where it always did.
+      cm = multiply(multiply(ctm, [...objectPlacement(blockPlace.about)]), toBt);
+    } else if (blockPlace !== undefined && movesBlock(blockPlace)) {
       const anchor = { x: Math.min(...lines.flat().map((run) => run.run.left)), y: Math.max(...lines.flat().map((run) => run.run.top)) };
       let centre = anchor;
       if ((blockPlace.rotate ?? 0) !== 0) {

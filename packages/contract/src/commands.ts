@@ -6550,8 +6550,27 @@ export const blockPlaceSchema = z
     rotate: z.number().min(-360).max(360).optional(),
     /** The measure the block is laid out at, in points: how a text box is resized. */
     width: z.number().min(1).max(MAX_PAGE_COORDINATE).optional(),
+    /**
+     * The placement AS AN OBJECT COMMAND MEANS IT ([ADR-0240](../../../docs/DECISIONS/0240-an-objects-placement-is-edited-where-it-is-drawn.md)'s
+     * correction of 2026-10-19): about `box`, with a scale on each axis, by ADR-0243's one placement matrix — how Edit
+     * object places a text block, so it lands where `placePageObjects` would have put it. Alone: a placement naming it
+     * names nothing else, so the block is placed one way and its words are carried as they were. The operator writer
+     * takes it; PDFium's block writer refuses it rather than ignore it.
+     */
+    about: z
+      .object({
+        box: placeDrawnObjectSchema.shape.box,
+        moveBy: placePageObjectSchema.shape.moveBy,
+        scaleBy: placePageObjectSchema.shape.scaleBy,
+        rotateBy: placePageObjectSchema.shape.rotateBy,
+      })
+      .strict()
+      .optional(),
   })
-  .strict();
+  .strict()
+  .refine((place) => place.about === undefined || (place.move === undefined && place.scale === undefined && place.rotate === undefined && place.width === undefined), {
+    message: 'a placement about a box names nothing else',
+  });
 
 export type BlockPlace = z.infer<typeof blockPlaceSchema>;
 

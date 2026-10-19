@@ -3,6 +3,7 @@ import {
   MAX_OBJECT_SCALE,
   MAX_PAGE_COORDINATE,
   MIN_OBJECT_SCALE,
+  blockEditOf,
   keepsTheAnnotationWalk,
   keepsTheObjectWalk,
 } from '@monstera/contract';
@@ -70,8 +71,20 @@ export interface EditableObject {
   readonly turn?: number;
   /** How a block's text is set, as the block read Edit text opens answers it (E6, ADR-0242); text in a block only. */
   readonly look?: ObjectTextLook;
+  /**
+   * The block as Edit text reads it — its lines of runs and its words — so a placement is sent to the operator writer as
+   * a block edit that carries the words as they were (ADR-0240's correction of 2026-10-19); text in a block only.
+   */
+  readonly block?: ObjectTextBlock;
   /** Its fill, for page content; `null` for a picture and where PDFium would not say. */
   readonly fill: ObjectFill | null;
+}
+
+/** A text block as its edit names it: each line's run indices, which lines wrap softly, and its words as read. */
+export interface ObjectTextBlock {
+  readonly lines: readonly (readonly number[])[];
+  readonly soft: readonly boolean[];
+  readonly text: string;
 }
 
 /** A block's text as Properties shows it: its size in points and its style, from the block's own base style. */
@@ -99,6 +112,24 @@ export interface ObjectPick {
   readonly object: EditableObject;
   /** How many objects PDFium's walk holds on that page: where Bring forward has no further place (ADR-0244). */
   readonly walked: number;
+  /**
+   * A text block placed by the operator writer, whose objects the placement renumbered (ADR-0240's correction of
+   * 2026-10-19): the selection is the block with these words in the next read of the page, and is no selection until
+   * that read finds it — a command built from it would name the old objects.
+   */
+  readonly relocate?: { readonly text: string };
+}
+
+/**
+ * A pick waiting to be found again ({@link ObjectPick.relocate}) resolved against `read`, the page's objects at its
+ * version: the one text block with its words, or no selection where none or several are.
+ */
+export function relocatePick(current: ObjectPick | undefined, read: PageObjects, page: number): ObjectPick | undefined {
+  if (current?.relocate === undefined || current.page !== page || current.version !== read.version) return current;
+  const { text } = current.relocate;
+  const found = read.objects.filter((object) => object.kind === 'text' && object.block?.text === text);
+  const [only, ...more] = found;
+  return only === undefined || more.length > 0 ? undefined : { page, version: read.version, object: only, walked: read.walked };
 }
 
 /** Which kinds each filter outlines (Decision 2's table). */
@@ -259,7 +290,35 @@ function placementOf(
       box: { left: drawn.x0, bottom: drawn.y0, right: drawn.x1, top: drawn.y1 },
     };
   }
-  // A BLOCK OF TEXT MOVES AS ONE (ADR-0242), scaled about the corner of the box its objects make together.
+  // A BLOCK OF TEXT IS PLACED BY THE OPERATOR WRITER (ADR-0240's and ADR-0242's corrections of 2026-10-19): its words
+  // carried as they were under one `cm`, about the box its objects make together by the one placement matrix, so no font
+  // is written again and a font PDFium cannot write back refuses nothing. One undo step, as the group was.
+  if (object.kind === 'text' && object.block !== undefined) {
+    const { block } = object;
+    return {
+      kind: 'editTextOperators',
+      page: pick.page,
+      ...blockEditOf([
+        {
+          lines: block.lines.map((line) => [...line]),
+          soft: [...block.soft],
+          text: block.text,
+          place: {
+            about: {
+              box: { left: drawn.x0, bottom: drawn.y0, right: drawn.x1, top: drawn.y1 },
+              moveBy: intent.moveBy,
+              scaleBy: intent.scaleBy,
+              ...(intent.rotateBy === undefined || intent.rotateBy === 0 ? {} : { rotateBy: intent.rotateBy }),
+            },
+          },
+        },
+      ]),
+      fit: 'reflow',
+      version: pick.version,
+    };
+  }
+  // A LONE TEXT OBJECT, in no block the read answered, keeps PDFium's route (the block read was refused), and a group
+  // without its block likewise; stated in ADR-0240's correction.
   const [first, second, ...rest] = object.members;
   if (first !== undefined && second !== undefined) {
     const { index: _index, ...group } = placement;
@@ -323,6 +382,13 @@ export function carryPick(
   sentAt?: DocVersion,
 ): ObjectPick | undefined {
   if (current === undefined) return undefined;
+  // A TEXT BLOCK THE OPERATOR WRITER PLACED (ADR-0240's correction of 2026-10-19) is renumbered by the placement, so the
+  // selection follows its words to the next read rather than its old indices (`relocatePick`).
+  if (command.kind === 'editTextOperators') {
+    const { block } = current.object;
+    if (block === undefined || command.page !== current.page || (sentAt ?? command.version) !== current.version) return undefined;
+    return { ...current, version: produced, relocate: { text: block.text } };
+  }
   // AN ARRANGEMENT OF THIS OBJECT says where it went (ADR-0244 Decision 2): the selection follows it there. One of
   // another object moved this one's index, and drops it as any change to the walk does.
   if (command.kind === 'arrangePageObject') {

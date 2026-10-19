@@ -342,6 +342,7 @@ import {
   carryPick,
   placeCommand,
   recolourCommand,
+  relocatePick,
   removeCommand,
   shownBy,
   turnCommand,
@@ -2641,6 +2642,8 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       objectPicked !== undefined &&
       objectPicked.docId === openDocId &&
       objectPicked.pick.version === openVersion &&
+      // A PICK WAITING TO BE FOUND AGAIN is no selection yet: its object's indices are the ones the placement renumbered.
+      objectPicked.pick.relocate === undefined &&
       toolId === EDIT_OBJECTS_TOOL_ID &&
       shownBy(objectFilter, objectPicked.pick.object)
         ? objectPicked.pick
@@ -4856,7 +4859,15 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
     const deps = { client, onApplied: applied, ask, stamp, signatures };
     return async (page: number): Promise<PageObjects | undefined> => {
       const answer = await readPageObjects(client, docId, page);
-      if (answer.ok) return answer.objects;
+      if (answer.ok) {
+        // A TEXT BLOCK JUST PLACED is found again by its words in this read (ADR-0240's correction of 2026-10-19).
+        setObjectPicked((current) => {
+          if (current?.docId !== docId || current.pick.relocate === undefined) return current;
+          const pick = relocatePick(current.pick, answer.objects, page);
+          return pick === undefined ? undefined : pick === current.pick ? current : { docId, pick };
+        });
+        return answer.objects;
+      }
       if (answer.refused !== undefined && !refusal.reported) {
         refusal.reported = true;
         reportProblem(deps, answer.refused);

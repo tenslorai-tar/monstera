@@ -11,6 +11,7 @@ import {
   objectAt,
   placeCommand,
   recolourCommand,
+  relocatePick,
   removeCommand,
   shownBy,
   turnCommand,
@@ -180,6 +181,38 @@ describe('the command a drag or a handle builds', () => {
     });
     // CONTROL: one object alone keeps the single command, so the list above is the block's and not every text's.
     expect(placeCommand(pick(TEXT), { x0: 50, y0: 730, x1: 310, y1: 750 })?.kind).toBe('placePageObject');
+  });
+
+  // THE SAME WORD AS EDIT TEXT READS IT: one line of runs 5 and 8 (object 6 is a member of run 5), its words as read.
+  const READ_WORD: EditableObject = { ...WORD, block: { lines: [[5, 8]], soft: [false], text: 'Word' } };
+
+  it('places a block EDIT TEXT READ through the operator writer, its words unchanged, about the group’s box (R11)', () => {
+    const command = placeCommand(pick(READ_WORD), { x0: 110, y0: 580, x1: 230, y1: 604 });
+    if (command?.kind !== 'editTextOperators') throw new Error(`expected the operator writer, got ${String(command?.kind)}`);
+    expect(command.page).toBe(1);
+    expect(command.version).toBe(V3);
+    // THE WORDS AS READ and the block's own runs: nothing is written again, only placed.
+    expect(command.text).toBe('Word');
+    expect(command.runs).toStrictEqual([5, 8]);
+    // THE PLACEMENT placePageObjects MEANT, about the same box, so the block lands where PDFium's route put it.
+    expect(command.places).toStrictEqual([
+      { block: 0, about: { box: { left: 100, bottom: 600, right: 160, top: 612 }, moveBy: { x: 10, y: -20 }, scaleBy: { x: 2, y: 2 } } },
+    ]);
+  });
+
+  it('the selection follows a placed block to the next read BY ITS WORDS, and is no selection until then (R11)', () => {
+    const command = placeCommand(pick(READ_WORD), { x0: 110, y0: 580, x1: 230, y1: 604 });
+    if (command === undefined) throw new Error('no command');
+    const V4 = asDocVersion(4);
+    const carried = carryPick(pick(READ_WORD), command, V4);
+    expect(carried?.relocate).toStrictEqual({ text: 'Word' });
+    // THE NEXT READ RENUMBERED IT: found by its words, with its new indices.
+    const moved: EditableObject = { ...READ_WORD, index: 40, members: [40, 41, 42] };
+    const found = relocatePick(carried, { version: V4, objects: [TEXT, moved], truncated: false, walked: 43 }, 1);
+    expect(found?.object.members).toStrictEqual([40, 41, 42]);
+    expect(found?.relocate).toBeUndefined();
+    // CONTROL: two blocks with those words leave no selection, rather than the wrong one.
+    expect(relocatePick(carried, { version: V4, objects: [moved, { ...moved, index: 50, members: [50] }], truncated: false, walked: 51 }, 1)).toBeUndefined();
   });
 
   it('removes and recolours EVERY object of a block, so no letter is left behind', () => {

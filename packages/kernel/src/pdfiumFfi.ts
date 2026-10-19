@@ -2965,6 +2965,11 @@ function layOutBlocks(
       // each named run holds here are the words the editor showed for it, so the edit diffs what a person typed against
       // what they were shown, and a line they left alone is not set again.
       const joined = readWalk(bindings, handle, walked);
+      // A PLACEMENT ABOUT A BOX IS THE OPERATOR WRITER'S (ADR-0240's correction of 2026-10-19): this writer places a block
+      // about its own corner and would lay it elsewhere, so it refuses one rather than ignore the box it names.
+      if (edits.some((edit) => edit.place?.about !== undefined)) {
+        throw refusedAt('object', 'a placement about a box is written by the operator writer, not this one');
+      }
       const blocks = edits.map((edit) => ({
         text: edit.text,
         soft: edit.soft,

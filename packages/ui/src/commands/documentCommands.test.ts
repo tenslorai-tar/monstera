@@ -2336,6 +2336,29 @@ describe('delete pages — the mutation-dialog gate', () => {
     });
   });
 
+  it('A BLOCK ONLY MOVED goes to the OPERATOR writer on a page PDFium writes, its words carried as they were (R11)', async () => {
+    const sent: { id: string; params: unknown }[] = [];
+    const client = createClient(channels, (id, params) => {
+      sent.push({ id, params });
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
+    });
+    const outcome = await commitTextBlock(
+      { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures },
+      DOC,
+      3,
+      BLOCK,
+      'The quick brown fox jumps over',
+      readOf('objects'),
+      { place: { move: { x: 12, y: -4 } } },
+    );
+    expect(outcome).toBe('written');
+    // NOT editTextBlock: PDFium's writer generates the whole page again and refuses a font it cannot write back.
+    expect(sent[0]?.params).toMatchObject({
+      command: { kind: 'editTextOperators', places: [{ block: 0, move: { x: 12, y: -4 } }], text: 'The quick brown fox jumps over' },
+    });
+    // CONTROL: the case above — a new MEASURE, which sets the words again — keeps the page's own writer.
+  });
+
   it('A FONT THAT CANNOT CARRY THE WORDS is the editor’s to say — no dialog opens for it', async () => {
     const asked: string[] = [];
     const client = createClient(channels, () =>
