@@ -76,3 +76,27 @@ the cards. Leaving Forms still puts down a field tool. No new setting or surface
 the view. The rendered proof covers every ordered pair of the eight sections, a kept
 tool and a tool started inside Organize, and the first Full page > Thumbnail transition
 with every visible card drawn in every frame.
+
+## Correction — the Float bar shows over the grid, and leaving the grid keeps it until the pages are drawn (2026-10-20)
+
+**This replaces the owner's 14a of 2026-10-15** (commit 4573e3b2), which mounted no Float bar while the grid was on
+show because a bar docked at the start edge lay over the first column of cards. The owner's review of 0.1.16.0 (R12)
+and their answer of 2026-10-20 reverse it: the Float bar is a projection of the command registry, so it shows in
+Organize's two views with the commands whose `when` holds there, as on every other section. What 14a guarded against
+is kept by other means:
+
+- **It is never over the first column.** A docked bar already had its lane (the grid's padding on the bar's edge);
+  a moved bar now has one too, from the side it is nearer to the bar's far edge, computed from the same stored share
+  the bar is drawn at. So the bar opens where it was last put and the cards lay out beside it.
+- **A tool armed from it still takes the reader to Home**, by the 14a commit's one decider (`setToolId`), so the rail
+  and the view still never part.
+
+**Leaving the grid shows no loading state.** The grid replaces the panes, so choosing another section mounted a new
+page list, whose first frame is *Opening the document…* over an empty page area — for a document open all along. The
+grid that was on show now stays over the arriving list, inert and hidden from assistive technology, until the list
+says its viewport is drawn: the parked layer's rule of ADR-0129's correction of 2026-10-17, through the same
+`onViewDrawn` callback, with the loading state not counted as showable.
+
+Proofs: the rendered Organize cases assert the bar on show and over no card in both views, docked and moved, with the
+Float bar setting off hiding it as the control; a frame-by-frame case asserts that leaving the grid for Edit never
+mounts the loading state and never shows an area with neither the grid nor a drawn page.
