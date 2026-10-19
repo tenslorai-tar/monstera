@@ -1676,9 +1676,12 @@ describe('the text below a growing block, shown before the write (ADR-0249 Decis
    * Opens the paragraph, then grows its words to `height` pixels. It opens at its own two lines at their 14-point pitch,
    * 28 pixels at zoom 1, which is what the growth is measured from.
    */
+  /** What the last {@link grownTo} wrote, for the case that asserts the write. */
+  let lastCommits: readonly { readonly text: string }[] = [];
   const grownTo = (room: number, height: number, pictureOf?: () => HTMLCanvasElement) => {
     vi.stubGlobal('ResizeObserver', StandInObserver);
-    const { view } = mount({ blocks: pushingPage(room), ...(pictureOf === undefined ? {} : { pictureOf }) });
+    const { view, commits } = mount({ blocks: pushingPage(room), ...(pictureOf === undefined ? {} : { pictureOf }) });
+    lastCommits = commits;
     fireEvent.click(find(view.container, '[data-text-block="0"]'));
     const editor = editorIn(view.container);
     Object.defineProperty(editor, 'offsetHeight', { configurable: true, value: 28 });
@@ -1690,13 +1693,22 @@ describe('the text below a growing block, shown before the write (ADR-0249 Decis
     return view;
   };
 
-  it('WHERE THERE IS NO ROOM, the editor says so in the owner’s words and the line it runs into is outlined', () => {
+  /** Every sentence the open editor shows under or above its words. */
+  const said = (view: ReturnType<typeof grownTo>): string[] =>
+    [...view.container.querySelectorAll('.m-text-editor-problem')].map((element) => element.textContent);
+
+  it('WHERE THERE IS NO ROOM, nothing is said and nothing outlined, the text below stays, and the words are written as typed (R10)', async () => {
     const view = grownTo(10, 58);
-    expect(find(view.container, '[data-text-edit-crowded]').textContent).toBe(
-      "This paragraph now runs into the text below it, and there's no room on the page to move that text down. Shorten the paragraph, or press Undo after you finish.",
-    );
-    expect(view.container.querySelector('[data-text-overlap="1"]')).not.toBeNull();
+    expect(said(view)).toStrictEqual([]);
+    expect(view.container.querySelector('[data-text-overlap]')).toBeNull();
     expect(view.container.querySelector('[data-text-pushed="1"]')).toBeNull();
+    // THE WRITE IS THE WORDS AS TYPED, sent like any other.
+    const editor = editorIn(view.container);
+    await act(async () => {
+      fireEvent.keyDown(editor, { key: 'Escape' });
+      await Promise.resolve();
+    });
+    expect(lastCommits.map((commit) => commit.text)).toStrictEqual(['Helps with care and support at every stage, and a good deal more besides.']);
   });
 
   it('WITHIN THE ROOM, the text below is drawn moved down by the growth, and nothing is said', () => {
@@ -1708,6 +1720,37 @@ describe('the text below a growing block, shown before the write (ADR-0249 Decis
     expect(moved.style.top).toBe('232px');
     expect(view.container.querySelector('[data-text-pushed-cover="1"]')).not.toBeNull();
     expect(view.container.querySelector('[data-text-edit-crowded]')).toBeNull();
+  });
+
+  it('OPENING a block its editor lays out a line taller, NOTHING TYPED, moves nothing and says nothing (R10)', () => {
+    vi.stubGlobal('ResizeObserver', StandInObserver);
+    // ROOM BELOW, so a misread growth would show as the next row drawn pushed down.
+    const { view } = mount({ blocks: pushingPage(100), pictureOf: () => ({ width: 4, height: 2 }) as HTMLCanvasElement });
+    fireEvent.click(find(view.container, '[data-text-block="0"]'));
+    const editor = editorIn(view.container);
+    // THREE LINES WHERE THE PAGE HAD TWO, as a face wider than the page's wraps a narrow cell's words once more: 42
+    // pixels against the block's own 28. Before the correction this read as 14 pixels of growth on opening.
+    Object.defineProperty(editor, 'offsetHeight', { configurable: true, value: 42 });
+    act(() => resize?.());
+    vi.unstubAllGlobals();
+    expect(view.container.querySelector('[data-text-pushed="1"]')).toBeNull();
+    expect(view.container.querySelector('.m-text-editor-problem')).toBeNull();
+  });
+
+  it('…and once typed into, it grows FROM the height it opened at, not the page’s', () => {
+    vi.stubGlobal('ResizeObserver', StandInObserver);
+    const picture = { width: 4, height: 2 } as HTMLCanvasElement;
+    const { view } = mount({ blocks: pushingPage(100), pictureOf: () => picture });
+    fireEvent.click(find(view.container, '[data-text-block="0"]'));
+    const editor = editorIn(view.container);
+    Object.defineProperty(editor, 'offsetHeight', { configurable: true, value: 42 });
+    act(() => resize?.());
+    typeInto(editor, 'Helps with care and support at every stage, and a good deal more besides.');
+    Object.defineProperty(editor, 'offsetHeight', { configurable: true, value: 56 });
+    act(() => resize?.());
+    vi.unstubAllGlobals();
+    // FOURTEEN PIXELS, one line, from 42 — not twenty-eight from the page's 28: the heading's copy at 202 + 14.
+    expect(find(view.container, '[data-text-pushed="1"]').style.top).toBe('216px');
   });
 
   it('CONTROL: words that did not grow move nothing and say nothing', () => {

@@ -287,11 +287,11 @@ await step('4. Enter breaks a line where it is pressed, and the break is saved',
   // while it is open, with nothing said, as the page has room.
   const shownPush = async () => ({
     pushed: await page.locator('[data-text-pushed]').count(),
-    crowded: await page.locator('[data-text-edit-crowded]').count(),
+    said: await page.locator('.m-text-editor-problem').count(),
     height: await editor().evaluate((root) => Number(Reflect.get(root, 'offsetHeight') ?? -1)),
   });
   await expect.poll(async () => JSON.stringify(await shownPush()), { timeout: 10_000 }).toContain('"pushed":2');
-  expect((await shownPush()).crowded).toBe(0);
+  expect((await shownPush()).said).toBe(0);
   // WHERE THE SMALL PRINT WAS: the page as built, which this tab opened unchanged (a copy saved now would end the editor).
   const smallBefore = await smallPrintBaseline(everyday);
   await commit();

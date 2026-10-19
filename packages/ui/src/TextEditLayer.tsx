@@ -44,7 +44,6 @@ import {
   TEXT_EDIT_VERTICAL,
   TEXT_EDIT_TRUNCATED,
   TEXT_EDIT_COVERS,
-  TEXT_EDIT_NO_ROOM,
   TEXT_EDIT_UNADDRESSABLE,
   TEXT_EDIT_UNREADABLE,
   TEXT_ADD_SURFACE,
@@ -545,8 +544,9 @@ export function TextEditLayer({
   const editing = open !== undefined || freshOpen !== undefined;
 
   // THE PUSH THE OPEN EDITOR SHOWS (ADR-0249 Decision 5): the blocks `main` named below it, drawn moved down by what its
-  // words have grown while that fits the room `main` measured, and highlighted, with the editor's sentence, once it does
-  // not. A drawing of the page under the editor: the writer measures the growth it writes, and decides nothing here.
+  // words have grown while that fits the room `main` measured. Past the room nothing is drawn moved and nothing is said
+  // (the correction of 2026-10-19: the warning misled): the write applies the words as typed and moves nothing, as the
+  // writers do. A drawing of the page under the editor: the writer measures the growth it writes, and decides nothing here.
   const openBlock = open === undefined ? undefined : blocks?.blocks[open];
   const grownPixels = growth !== undefined && growth.at === open && growth.version === blocks?.version ? growth.pixels : 0;
   const below = (openBlock?.push.below ?? []).flatMap((at) => {
@@ -554,8 +554,7 @@ export function TextEditLayer({
     return under === undefined ? [] : [{ at, block: under }];
   });
   const down = grownPixels / geometry.zoom;
-  const crowded = openBlock !== undefined && below.length > 0 && grownPixels > 0 && down > openBlock.push.room;
-  const pushing = below.length > 0 && grownPixels > 0 && !crowded;
+  const pushing = openBlock !== undefined && below.length > 0 && grownPixels > 0 && down <= openBlock.push.room;
   /** What the open editor reports as it grows: kept, and the text below copied once from the page when it first does. */
   const grew = (at: number, pixels: number): void => {
     if (blocks === undefined) return;
@@ -743,7 +742,6 @@ export function TextEditLayer({
               onGrow={(pixels) => {
                 grew(at, pixels);
               }}
-              crowded={crowded}
             />
           );
         }
@@ -793,21 +791,6 @@ export function TextEditLayer({
           </p>,
         ];
       })}
-      {/* THE LINES THE PARAGRAPH NOW RUNS INTO, where there is no room to move them (ADR-0249 Decision 5): each block below
-          whose top the grown words reach, outlined over the editor so the person sees what they would cover. */}
-      {crowded
-        ? below
-            .filter(({ block }) => block.box.y1 > openBlock.box.y0 - down)
-            .map(({ at, block }) => (
-              <div
-                aria-hidden="true"
-                className="m-text-overlap"
-                data-text-overlap={String(at)}
-                key={`overlap-${String(at)}`}
-                style={boxStyle(place(block.box, geometry))}
-              />
-            ))
-        : null}
       {adding && blocks !== undefined && freshOpen === undefined ? (
         // ADD TEXT: the empty page is a surface under the outlines, so a press on a block still edits that block and a
         // press anywhere else is where the new words go. A key's activation reports no point and puts it at the margin.
@@ -1126,8 +1109,6 @@ interface BlockEditorProps {
    * moved by that much (ADR-0249 Decision 5). Never below zero: a shorter paragraph pulls nothing above where it began.
    */
   readonly onGrow?: ((pixels: number) => void) | undefined;
-  /** Whether the growth passes the room below, so the editor says the paragraph runs into the text below it. */
-  readonly crowded?: boolean | undefined;
 }
 
 /** The distinct names of the fonts a page's blocks are drawn in, in reading order: the picker's *In this document*. */
@@ -1157,12 +1138,14 @@ function familyOf(editor: string, place: number): string {
  * Tells `onGrow` how many pixels taller the editor's words are than the block they opened as (ADR-0249 Decision 5), and
  * zero when the block is placed, when it is no taller, and when the editor closes.
  *
- * ## The height it grows FROM is the block's own: its lines at its line spacing
+ * ## The height it grows FROM is the block's own, or the editor's as it opened where that is taller
  *
- * The editor draws each line at the block's pitch (`pitchOf`), so a block of three lines is three pitches tall however
- * its words are set — typed into, given a wider face from the picker, or drawn in the page's fonts once they load. The
- * growth is the editor's laid-out height (`offsetHeight`, so a placement's transform over it is not growth) less that.
- * A block with no pitch to read (one line) takes the height before the first keystroke as its base instead.
+ * The editor draws each line at the block's pitch (`pitchOf`), so a block of three lines is three pitches tall while the
+ * editor wraps its words where the page did. It does not always: setting them again in the browser can wrap them once
+ * more before anything is typed, and that line is the editor's, not the person's growth. The
+ * growth is the editor's laid-out height (`offsetHeight`, so a placement's transform over it is not growth) less that,
+ * or less the editor's own height before the first keystroke where that is taller. A block with no pitch to read (one
+ * line) takes the height before the first keystroke alone.
  */
 function useGrowth(
   area: React.RefObject<HTMLDivElement | null>,
@@ -1185,16 +1168,21 @@ function useGrowth(
     const element = area.current;
     // NO OBSERVER, NO PUSH SHOWN: the write still pushes, measured by the writer.
     if (element === null || typeof ResizeObserver === 'undefined') return undefined;
-    let base = opened;
-    let typed = opened !== undefined;
+    // THE BASE IS THE EDITOR'S OWN HEIGHT AS IT OPENED, never less than the block's lines at its pitch, and nothing is
+    // growth until the person types (ADR-0249's correction of 2026-10-19). The editor sets the block's words again in the
+    // browser, and where it wraps them one line more than the page did — a wider face at a table cell's narrow measure —
+    // it opens a line taller: counted from the block's own height, that read as growth with nothing typed, and drew the
+    // next row pushed down (measured in `TextEditLayer.test.tsx`).
+    let base = opened ?? 0;
+    let typed = false;
     const onInput = (): void => {
       typed = true;
     };
     element.addEventListener('input', onInput);
     const observer = new ResizeObserver(() => {
       const height = element.offsetHeight;
-      if (!typed || base === undefined) {
-        base = height;
+      if (!typed) {
+        base = Math.max(base, height);
         return;
       }
       // A ROUNDED PIXEL IS NO LINE: the laid-out height of a line box at a fractional pitch is a whole pixel either side.
@@ -1340,7 +1328,6 @@ function BlockEditor({
   stuckRef,
   pageFonts,
   onGrow,
-  crowded = false,
 }: BlockEditorProps): ReactElement {
   const { _ } = useLingui();
   const original = wordsOf(block);
@@ -1815,12 +1802,6 @@ function BlockEditor({
         // WHAT A MENU ITEM COULD NOT DO, said beside the words (the dictionary's refusal of a word), until they are typed in.
         <div className="m-text-editor-problem" role="status">
           <p>{_(notice)}</p>
-        </div>
-      ) : crowded ? (
-        // THE PARAGRAPH RUNS INTO THE TEXT BELOW and there is no room to move it (ADR-0249 Decision 5): said BEFORE the
-        // write, in the owner's words, with the lines it runs into highlighted by the layer. The write still happens.
-        <div className="m-text-editor-problem" data-text-edit-crowded="" role="status">
-          <p>{_(TEXT_EDIT_NO_ROOM)}</p>
         </div>
       ) : past ? (
         // THE WORDS ARE ALL WRITTEN and some are past the page's edge: said as a status and not a refusal, since

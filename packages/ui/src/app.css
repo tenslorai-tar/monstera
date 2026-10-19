@@ -6564,16 +6564,6 @@ optgroup {
   transform-origin: top left;
 }
 
-/* THE LINES A PARAGRAPH RUNS INTO where there is no room to move them: outlined over the editor, never pressed. */
-.m-text-overlap {
-  position: absolute;
-  z-index: 2;
-  border: 2px solid var(--danger-bottom);
-  border-radius: var(--radius-4);
-  pointer-events: none;
-  transform-origin: top left;
-}
-
 /* ITS SENTENCE, sat on the block's top edge where the words begin, and set as the editor's problem is. */
 .m-text-block__past {
   position: absolute;
