@@ -13,7 +13,8 @@ import type { Page } from '@playwright/test';
  *
  * ## What unfinished means
  *
- * Inside `scope`, among the canvases actually visible: no page canvas at all, or a page or thumbnail canvas that
+ * Inside `scope`, among the canvases actually visible — some of each inside the view, not only laid out — no page
+ * canvas at all, or a page or thumbnail canvas that
  * is not a whole page — a transparent
  * pixel (cleared, not yet painted) or no dark pixel (painted white, the fixture's black block not drawn yet). So
  * a fixture for these cases draws a dark block on every page. A `zoom` selector adds the readout's text to each
@@ -84,11 +85,34 @@ export async function installInspector(page: Page, scope: string, zoom?: string)
           const root = document.querySelector(within);
           // WHAT IS ON SCREEN, not what is in the document: a kept background tab's canvases are laid out under
           // `visibility: hidden` (ADR-0129), and a case must read the same way whether or not a build keeps them.
+          //
+          // AND SOME OF IT INSIDE THE VIEW: `checkVisibility` reads CSS alone, so a canvas the list mounts below the fold
+          // and draws ahead read as on screen, and its transparent pixels, which nobody can see, as an unfinished screen
+          // (Ubuntu CI, 2026-10-19: "page 2" was the document's second page, top 1031 px, below the scroller's 747 and
+          // the window's 800). A canvas counts where some of it lies inside every ancestor that clips it and the window,
+          // which is what the page list's own rule for a layer coming forward reads (`pagesInView`).
+          const inView = (canvas: HTMLCanvasElement): boolean => {
+            const box = canvas.getBoundingClientRect();
+            let top = Math.max(box.top, 0);
+            let bottom = Math.min(box.bottom, window.innerHeight);
+            let left = Math.max(box.left, 0);
+            let right = Math.min(box.right, window.innerWidth);
+            for (let at = canvas.parentElement; at !== null; at = at.parentElement) {
+              const style = getComputedStyle(at);
+              if (style.overflowX === 'visible' && style.overflowY === 'visible') continue;
+              const clip = at.getBoundingClientRect();
+              top = Math.max(top, clip.top);
+              bottom = Math.min(bottom, clip.bottom);
+              left = Math.max(left, clip.left);
+              right = Math.min(right, clip.right);
+            }
+            return bottom > top && right > left;
+          };
           const shown = (selector: string): HTMLCanvasElement[] =>
             root === null
               ? []
-              : [...root.querySelectorAll<HTMLCanvasElement>(selector)].filter((canvas) =>
-                  canvas.checkVisibility({ visibilityProperty: true }),
+              : [...root.querySelectorAll<HTMLCanvasElement>(selector)].filter(
+                  (canvas) => canvas.checkVisibility({ visibilityProperty: true }) && inView(canvas),
                 );
           // THE LOADING STATE IS A FINISHED SCREEN: a page area saying the document is opening shows no page on purpose
           // (`PageList`'s first frame), where one showing nothing at all is the defect.
