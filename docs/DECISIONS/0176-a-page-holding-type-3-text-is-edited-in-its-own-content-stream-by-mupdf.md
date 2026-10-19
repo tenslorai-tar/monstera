@@ -172,3 +172,29 @@ lines were added below the block, and not before that object's `BT`: measured, a
 MuPDF in the wrong order and refused by the structural read-back. And the writer now places a block (one `cm` in front of
 its object, the lines it did not change carried as their operators were) and writes a box added to the page, which
 Decision 5's *changing only the instructions it edits* did not mention because neither was asked of it then.
+
+## Correction, 2026-10-19 — the block's object goes AFTER a text object that holds the line's kept words before the edit
+
+**What happened.** The owner's review of 0.1.16.0, R13: on a web-made page (every font Type 3, as Chromium prints a
+variable face), a bulleted line with a bold lead-in was refused after one word was typed — *"This page uses a font
+Monstera can't rewrite yet"* — though nothing about its fonts stopped the edit.
+
+**The mechanism, measured** on our own page printed the same way (Edge 155, a Windows variable serif, measurement
+only): Chromium draws such a line as two text objects, the bold lead-in in one and ` – ` plus the rest in the next.
+An edit in the rest keeps ` – ` and sets the rest again, and Decision 4 put the new object **before the `BT`** of the
+first edited operator — that is, before the object still holding the kept ` – `. Every word was written and the line
+looked right, but MuPDF reads in content order: *Shopping lists / sorted by the shop and the aisle. / –*. Decision 6's
+second read-back, the block's words as one stretch of MuPDF's reading, then refused a correct edit. Changing the
+lead-in instead was written, because the lead-in's object holds nothing kept before it.
+
+**The rule now, the class and not the instance.** The correction above already moved lines only added below a block
+after its last run's object, for the same reason (a join read out of order). The general form: **the new object goes
+where the block's kept words before the edit end.** Where the first edited operator's text object holds a kept
+operator of the block BEFORE it and none after it, the object goes after that text object's `ET` — still inside its
+marked content, under its graphics state. Otherwise it goes before the `BT`, as Decision 4 said. (A text object that
+holds kept words of the block both before and after the edit keeps Decision 4's place; one inserted object cannot sit
+between two operators of one `BT`.)
+
+**Not a font defect, so not the owner's font decision.** The refusal named a font because Decision 6's sentence is
+the one every refusal of this writer says. The owner's decision of 2026-10-19 that an edit is never refused for its
+font (R13) is a separate correction, written when it is built.
