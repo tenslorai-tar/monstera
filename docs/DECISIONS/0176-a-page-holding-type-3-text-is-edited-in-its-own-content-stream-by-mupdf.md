@@ -198,3 +198,20 @@ between two operators of one `BT`.)
 **Not a font defect, so not the owner's font decision.** The refusal named a font because Decision 6's sentence is
 the one every refusal of this writer says. The owner's decision of 2026-10-19 that an edit is never refused for its
 font (R13) is a separate correction, written when it is built.
+
+## Correction, 2026-10-19, later — a word no one page font carries is set across them, and is never dropped unsaid
+
+**The second mechanism on the same page, measured.** With the reading order fixed, *aisle.* → *aisles.* was still
+refused. Chromium had drawn the full stop in a Type 3 subset of its own that holds only `.`; the typed `s` lands in
+that run, so the word to set is `s.`. Decision 5 sets a word in **the first face that carries all of it** — the run's
+font, then a sibling — and none does: the full stop's subset lacks `s`, its sibling lacks `.`. The writer then got no
+pieces for the word and **wrote nothing for it**, while its check of which characters need a face asked each character
+alone, found each carried by some page font, and reported none. So the word was dropped without a sound, no face was
+loaded (the host loads them only when a trial edit asks), and only Decision 6's read-back stopped the page losing it.
+Reproduced without an engine in `operatorEdit.test.ts`.
+
+**Decision 5 now reads:** each word is set in the first face that carries all of it, as before; where no page font
+carries the whole word but the page's fonts carry every character, it is set **across them, in the longest stretches
+one font carries**, the run's own font first — which is how the page itself had set it (*aisle* in one font, *.* in
+another). Only a character no page font carries goes to the resolver's face or the box. **A word that yields no
+pieces always reports its characters**, so it is refused by name or given a face, and can never vanish.
