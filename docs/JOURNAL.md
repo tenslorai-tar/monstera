@@ -1089,6 +1089,12 @@ investigated. Each also acts on the selected fields, so `fbb5963a` may be what t
   field*, in 2 of 14 (`_review/walks/forms/2026-10-18T22-05-46`, `22-10-53`; the screenshot shows the Flatten button
   pressed, its tooltip up, and no dialog). **Reopen if seen again**: first read whether the dialog's open was asked.
 
+Correction, 2026-10-19, to the two counts above: they were written from memory, and both denominators and one run were
+wrong. Counted from each run's `report.json` (every `_review/walks/forms/` run from 2026-10-18T20-21 to 22-14, the 20
+gate-launched ones): A8.4 failed on its own in **3 of 20** — `21-25-28`, `21-51-13`, `22-10-53` — and after the drag
+step's failure in 6 more, which `fbb5963a` fixed; `19-02-17` was one of the latter. Flatten failed in **2 of 20**,
+`22-05-46` and `22-10-53`.
+
 **Recorded this session, with what is unfixed.**
 **QQQQQQQQ-1** (low, recorded, unfixed): a block's set width equal to its box, or one point wider, wraps its widest
 line's last word, and two points keep it (measured in `a807595e`'s cases); the editor sends a width only past 0.5 pt,
