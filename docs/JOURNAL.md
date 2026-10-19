@@ -1076,6 +1076,19 @@ keep every field's key, and the selection is now carried across them by one path
 nothing the walk met. The walk's defect was the selection joined to an empty list after every write, fixed in
 `fbb5963a`.
 
+**The forms gate for 0.1.16.0, accepted by the owner (2026-10-19).** The gate rule is forms 28 of 28 three times,
+launched as the gate launches it. The owner ruled the chase stopped and accepted the gate below that for 0.1.16.0. After
+`fbb5963a` and `da783279` (a landed move kept as the place a nudge starts from), ONE gate-launched run: 28 of 28
+(`_review/walks/forms/2026-10-19T02-10-40`). Two intermittent failures were seen before those fixes and were not
+investigated. Each also acts on the selected fields, so `fbb5963a` may be what they were and is not claimed to be:
+- **KNOWN INTERMITTENT: A8.4**, *the selected text field's font set to Calibri*, `locator.fill: Timeout 30000ms
+  exceeded`, in 3 of 14 gate-launched runs on 2026-10-18 (the screenshots and `app-data/logs/shell.log` of
+  `_review/walks/forms/2026-10-18T21-51-13`, `22-10-53`, and gate run 2's `19-02-17`). **Reopen if seen again**: first
+  read whether main received the field's `editFormFields`, and with which fields.
+- **KNOWN INTERMITTENT: Flatten with fields selected**, `locator.check: Timeout 30000ms exceeded` on *Only the selected
+  field*, in 2 of 14 (`_review/walks/forms/2026-10-18T22-05-46`, `22-10-53`; the screenshot shows the Flatten button
+  pressed, its tooltip up, and no dialog). **Reopen if seen again**: first read whether the dialog's open was asked.
+
 **Recorded this session, with what is unfixed.**
 **QQQQQQQQ-1** (low, recorded, unfixed): a block's set width equal to its box, or one point wider, wraps its widest
 line's last word, and two points keep it (measured in `a807595e`'s cases); the editor sends a width only past 0.5 pt,
