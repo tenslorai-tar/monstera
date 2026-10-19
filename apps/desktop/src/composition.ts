@@ -100,6 +100,7 @@ import {
   type HostScanTablesReader,
   type HostPageAdjustmentReader,
   type HostPageRewriteReader,
+  type HostTextFacesReader,
   type HostPageLinksReader,
   type RemotePageTextReader,
   type HostWordBoxesReader,
@@ -178,6 +179,8 @@ import {
   remoteMupdfScanTables,
   remoteMupdfPageAdjustment,
   remoteMupdfPageRewrite,
+  remoteMupdfTextFaces,
+  namedByDescriptor,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
   remoteMupdfWordBoxes,
@@ -1643,7 +1646,11 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // and only on a page PDFium writes, the host reads it again with its forms moved onto it in memory. An edit of these
       // blocks is sent with `unpack`, which moves them in the same command, so a page nobody edits is never changed.
       const unpacked = readsUnpacked(plain.unaddressable, rewrite);
-      const found = unpacked ? await pdfiumHost.textRuns(image, page, true) : plain;
+      const read = unpacked ? await pdfiumHost.textRuns(image, page, true) : plain;
+      // A TYPE 3 RUN NAMED BY ITS DESCRIPTOR (ADR-0256): PDFium reads such a font as no name and no weight, so on a page the
+      // operator writer edits MuPDF says each font's face, and only the runs PDFium left unnamed take it.
+      const faces = rewrite === 'operators' ? await engineHost.textFaces(mupdf, page) : null;
+      const found = faces === null ? read : { ...read, runs: read.runs.map((run) => namedByDescriptor(run, faces)) };
       // THE GROUPING IS MAIN'S, and this is the only place it happens.
       //
       // ADR-0049 permits a grouping of ours where no engine answers, and its
@@ -2416,6 +2423,8 @@ function engineSessionOpener(
   readonly pageAdjustment: HostPageAdjustmentReader;
   /** Which writer rewrites one page's text, from whichever host is live (ADR-0176 Decision 1). */
   readonly pageRewrite: HostPageRewriteReader;
+  /** One page's fonts' descriptor faces, from whichever host is live (ADR-0256). */
+  readonly textFaces: HostTextFacesReader;
   /** One page's word boxes, from whichever host is live (ADR-0137). */
   readonly wordBoxes: HostWordBoxesReader;
   /** The document's outline, from whichever host is live. */
@@ -2645,6 +2654,7 @@ function engineSessionOpener(
     scanTables: remoteMupdfScanTables(client, remote),
     pageAdjustment: remoteMupdfPageAdjustment(client, remote),
     pageRewrite: remoteMupdfPageRewrite(client, remote),
+    textFaces: remoteMupdfTextFaces(client, remote),
     wordBoxes: remoteMupdfWordBoxes(client, remote),
     destinations: remoteMupdfDestinations(client, remote),
     ocr: remoteMupdfOcr(client, remote),
@@ -2764,6 +2774,19 @@ function engineSessionOpener(
       );
     }
     return pageRewrite(session, page);
+  };
+
+  /** A page's fonts' descriptor faces (ADR-0256), the same registration's. See {@link pageText}. */
+  const readTextFacesThroughHost: HostTextFacesReader = (session, page) => {
+    const textFaces = bound?.textFaces ?? null;
+    if (textFaces === null) {
+      throw new Error(
+        'A text-faces read reached the engine with no host reader registered. A session was ' +
+          'resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return textFaces(session, page);
   };
 
   /** The word-box read's half of the same registration. See {@link pageText}. */
@@ -3567,6 +3590,7 @@ function engineSessionOpener(
     scanTables: readScanTablesThroughHost,
     pageAdjustment: readPageAdjustmentThroughHost,
     pageRewrite: readPageRewriteThroughHost,
+    textFaces: readTextFacesThroughHost,
     wordBoxes: readWordBoxesThroughHost,
     destinations: readDestinationsThroughHost,
     ocr: recogniseThroughHost,

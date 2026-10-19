@@ -105,6 +105,7 @@ function build(protectedWriting: Protection, protectedImage?: ProtectedImage) {
       formImportPlan: refuse('plan a form import'),
       annotationImportPlan: refuse('plan a comment import'),
       pageRewrite: refuse('rewrite a page'),
+      textFaces: refuse('read the fonts’ faces'),
       duplicates: refuse('look for duplicates'),
       extract: refuse('build a document'),
       applyPdfLib: (image) => {

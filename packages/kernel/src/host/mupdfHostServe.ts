@@ -33,6 +33,7 @@ import { readPageFills } from '../pageFills.js';
 import { readScanTables } from '../scanTables.js';
 import { readPageAdjustment } from '../pageAdjustment.js';
 import { readPageRewrite } from '../pageRewrite.js';
+import { readTextFaces } from '../textFaces.js';
 import { readPageWordBoxes } from '../wordBoxes.js';
 import { readLinkAddress, readPageLinks } from '../pageLinks.js';
 import { readPageTextJson } from '../pageText.js';
@@ -98,6 +99,7 @@ const engineHandlers = createEngineHandlers({
   scanTables: readScanTables,
   pageAdjustment: readPageAdjustment,
   pageRewrite: readPageRewrite,
+  textFaces: readTextFaces,
   wordBoxes: readPageWordBoxes,
   // RUNS HERE, and that is §3's matrix rather than a placement. Recognition
   // consumes a bitmap **we produced**, so the document-parse boundary invariant

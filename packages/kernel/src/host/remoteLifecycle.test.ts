@@ -273,6 +273,9 @@ function joined(
       pageRewrite: () => {
         throw new Error('no case here reads which writer a page needs');
       },
+      textFaces: () => {
+        throw new Error('no case here reads the fonts’ faces');
+      },
       wordBoxes: () => {
         throw new Error('the lifecycle half must not read word boxes');
       },
@@ -714,6 +717,9 @@ describe('remoteMupdfLifecycle', () => {
         },
         pageRewrite: () => {
           throw new Error('no case here reads which writer a page needs');
+        },
+        textFaces: () => {
+          throw new Error('no case here reads the fonts’ faces');
         },
         wordBoxes: () => {
           throw new Error('the byte-size case must not read word boxes');

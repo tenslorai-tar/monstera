@@ -542,6 +542,9 @@ describe('the engine host answers a containment probe', () => {
     pageRewrite: () => {
       throw new Error('no case here reads which writer a page needs');
     },
+    textFaces: () => {
+      throw new Error('no case here reads the fonts’ faces');
+    },
     wordBoxes: () => {
       throw new Error('a containment probe must not read word boxes');
     },

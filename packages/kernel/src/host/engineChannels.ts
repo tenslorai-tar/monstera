@@ -119,6 +119,7 @@ import { type DeclaredCommands, declaredCommands } from '../commandDeclarations.
 import type { KindsRoutedTo } from '../commandRouting.js';
 import { COPY_STANDINGS } from '../openCopy.js';
 import type { PlaceholderRequest } from '../signatureHole.js';
+import { TEXT_FACE_FONTS_MAX, TEXT_FACE_NAME_MAX, TEXT_FACE_RANGES_MAX } from '../textFaceRanges.js';
 import { PAGE_TEXT_READS } from '../textStructure.js';
 import { PROBE_CODE_MAX_CHARS, PROBE_CODE_PATTERN } from './containment.js';
 import { pageRunsSchema } from './pageRunsWire.js';
@@ -2889,6 +2890,52 @@ export const engineChannels = {
       })
       .strict(),
     z.object({ rewrite: textRewriteSchema }).strict(),
+    ['no-such-session'],
+  ),
+
+  /**
+   * Each font's face as its descriptor states it, and which of PDFium's text objects shows in which, for one page
+   * ([ADR-0256](../../../../docs/DECISIONS/0256-a-type-3-runs-face-is-read-from-its-descriptor-by-mupdf.md)): `main`
+   * asks it of a page the operator writer edits, to name the Type 3 runs PDFium reads as no font. Framed: the ranges are
+   * as many as the page's font changes, bounded, and the answer says when it stopped.
+   */
+  'engine/text-faces': channel(
+    'Reads each font’s descriptor face and the text objects in it, for one page of a session this host holds.',
+    z
+      .object({
+        session: sessionSchema,
+        /** Zero-based index, as `commands.ts` declares them. */
+        page: z.number().int().nonnegative(),
+      })
+      .strict(),
+    z
+      .object({
+        fonts: z
+          .array(
+            z
+              .object({
+                face: z.string().max(TEXT_FACE_NAME_MAX).nullable(),
+                // ANY NUMBER A DESCRIPTOR STATES (zod 4 refuses NaN and both infinities by itself): `main` reads it as a
+                // weight and decides nothing else by it.
+                weight: z.number().nullable(),
+              })
+              .strict(),
+          )
+          .max(TEXT_FACE_FONTS_MAX),
+        ranges: z
+          .array(
+            z
+              .object({
+                first: z.number().int().nonnegative(),
+                last: z.number().int().nonnegative(),
+                font: z.number().int().nonnegative().max(TEXT_FACE_FONTS_MAX - 1),
+              })
+              .strict(),
+          )
+          .max(TEXT_FACE_RANGES_MAX),
+        truncated: z.boolean(),
+      })
+      .strict(),
     ['no-such-session'],
   ),
 

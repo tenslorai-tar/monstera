@@ -50,6 +50,7 @@ import {
 import type { PageFill } from '../cellFills.js';
 import type { ScanTable } from '../scanTableShape.js';
 import type { PageRewrite } from '../pageRewrite.js';
+import type { TextFaces } from '../textFaceRanges.js';
 import type { LinkAddress, ListedPageLinks } from '../pageLinks.js';
 import type { PageWordBoxes } from '../wordBoxes.js';
 import type { PageTextRead } from '../textStructure.js';
@@ -135,6 +136,9 @@ export type HostPageAdjustmentReader = (
 
 /** Which writer rewrites one page's text (ADR-0176 Decision 1): `readPageRewrite` in the host. */
 export type HostPageRewriteReader = (session: MupdfSession, page: number) => Promise<PageRewrite>;
+
+/** One page's fonts' descriptor faces and the text objects in each (ADR-0256): `readTextFaces` in the host. */
+export type HostTextFacesReader = (session: MupdfSession, page: number) => Promise<TextFaces>;
 
 /** One page's word boxes (ADR-0137): `readPageWordBoxes` in the host, `remoteMupdfWordBoxes` across the pipe. */
 export type HostWordBoxesReader = (session: MupdfSession, page: number) => Promise<PageWordBoxes>;
@@ -537,6 +541,8 @@ export interface EngineHandlerParts {
   readonly pageAdjustment: HostPageAdjustmentReader;
   /** Which writer rewrites a page's text (ADR-0176 Decision 1). `engine/page-rewrite`. */
   readonly pageRewrite: HostPageRewriteReader;
+  /** A page's fonts' descriptor faces and the text objects in each (ADR-0256). `engine/text-faces`. */
+  readonly textFaces: HostTextFacesReader;
   /** A page's word boxes (ADR-0137). `engine/word-boxes`. */
   readonly wordBoxes: HostWordBoxesReader;
   /** How this process turns a raster into characters. `engine/ocr-page`. */
@@ -627,6 +633,7 @@ export function createEngineHandlers({
   scanTables,
   pageAdjustment,
   pageRewrite,
+  textFaces,
   wordBoxes,
   ocr,
   destinations,
@@ -1070,6 +1077,14 @@ export function createEngineHandlers({
       if (held === undefined) return gone;
       // NO try/catch, for the link read's reason.
       return { ok: true, value: { rewrite: await pageRewrite(held.session, page) } };
+    },
+
+    'engine/text-faces': async ({ session, page }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      // NO try/catch, for the link read's reason.
+      const faces = await textFaces(held.session, page);
+      return { ok: true, value: { fonts: [...faces.fonts], ranges: [...faces.ranges], truncated: faces.truncated } };
     },
 
     'engine/word-boxes': async ({ session, page }) => {

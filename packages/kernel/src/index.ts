@@ -146,6 +146,7 @@ export {
   type HostScanTablesReader,
   type HostPageAdjustmentReader,
   type HostPageRewriteReader,
+  type HostTextFacesReader,
   type HostPageLinksReader,
   type HostPageTextReader,
   type HostWordBoxesReader,
@@ -413,12 +414,15 @@ export {
   remoteMupdfScanTables,
   remoteMupdfPageAdjustment,
   remoteMupdfPageRewrite,
+  remoteMupdfTextFaces,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
   type RemotePageTextReader,
   remoteMupdfWordBoxes,
 } from './host/remoteEngine.js';
 export type { PageWordBoxes } from './wordBoxes.js';
+// PURE, and apart from `textFaces.ts`, which binds MuPDF (ADR-0256): `main` reads the answer without loading the engine.
+export { type TextFaces, namedByDescriptor } from './textFaceRanges.js';
 export { type CellFill, type PageFill, cellFillOf, withCellFills } from './cellFills.js';
 export {
   type CanonicalPath,

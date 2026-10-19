@@ -54,6 +54,7 @@ import type {
   HostPageLinksReader,
   HostPageRewriteReader,
   HostPageTextReader,
+  HostTextFacesReader,
   HostWordBoxesReader,
 } from './engineHandlers.js';
 
@@ -453,6 +454,11 @@ export function remoteMupdfPageRewrite(client: ClientApi<EngineChannels>, sessio
   return async (session, page) =>
     answered('engine/page-rewrite', await client['engine/page-rewrite']({ session: sessions.handleFor(session), page }))
       .rewrite;
+}
+
+/** One page's fonts' descriptor faces, over the boundary (ADR-0256) — {@link remoteMupdfPageRewrite}' shape. */
+export function remoteMupdfTextFaces(client: ClientApi<EngineChannels>, sessions: RemoteSessions): HostTextFacesReader {
+  return async (session, page) => answered('engine/text-faces', await client['engine/text-faces']({ session: sessions.handleFor(session), page }));
 }
 
 /** One page's word boxes, over the boundary (ADR-0137) — {@link remoteMupdfPageFills}' shape, for its reason. */

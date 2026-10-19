@@ -96,6 +96,7 @@ async function joined(
       scanTables: refuse('read scanned tables'),
       pageAdjustment: refuse('read a page adjustment'),
       pageRewrite: refuse('read which writer a page needs'),
+      textFaces: refuse('read the fonts’ faces'),
       wordBoxes: refuse('read the word boxes'),
       ocr: refuse('recognise a page'),
       destinations: refuse('read the outline'),

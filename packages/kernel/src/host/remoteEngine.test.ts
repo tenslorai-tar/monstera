@@ -26,6 +26,7 @@ import { rasterisePageImage } from '../pageImages.js';
 import { snapshotRegion } from '../pageSnapshot.js';
 import { readPageGeometry } from '../pageGeometry.js';
 import { readPageRewrite } from '../pageRewrite.js';
+import { readTextFaces } from '../textFaces.js';
 import { readDestinations } from '../destinations.js';
 import { readLayers } from '../layers.js';
 import { readDocumentFonts } from '../documentFonts.js';
@@ -66,6 +67,7 @@ import {
   remoteMupdfScanTables,
   remoteMupdfPageAdjustment,
   remoteMupdfPageRewrite,
+  remoteMupdfTextFaces,
   remoteMupdfWordBoxes,
   remoteMupdfAccessibility,
   type SessionAssets,
@@ -261,6 +263,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
   readonly scanTables: ReturnType<typeof remoteMupdfScanTables>;
   readonly pageAdjustment: ReturnType<typeof remoteMupdfPageAdjustment>;
   readonly pageRewrite: ReturnType<typeof remoteMupdfPageRewrite>;
+  readonly textFaces: ReturnType<typeof remoteMupdfTextFaces>;
   readonly wordBoxes: ReturnType<typeof remoteMupdfWordBoxes>;
   readonly accessibility: ReturnType<typeof remoteMupdfAccessibility>;
   readonly sessions: ReturnType<typeof createRemoteSessions>;
@@ -350,6 +353,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
       scanTables: readScanTables,
       pageAdjustment: readPageAdjustment,
       pageRewrite: readPageRewrite,
+      textFaces: readTextFaces,
       wordBoxes: readPageWordBoxes,
       // NOT THE REAL READER, where its neighbours above are. `recognisePage`
       // instantiates 2.8 MB of Tesseract WASM and takes about four seconds per
@@ -420,6 +424,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
     scanTables: remoteMupdfScanTables(client, sessions),
     pageAdjustment: remoteMupdfPageAdjustment(client, sessions),
     pageRewrite: remoteMupdfPageRewrite(client, sessions),
+    textFaces: remoteMupdfTextFaces(client, sessions),
     wordBoxes: remoteMupdfWordBoxes(client, sessions),
     accessibility: remoteMupdfAccessibility(client, sessions),
     sessions,
@@ -649,6 +654,25 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
     } finally {
       await mupdfWriter.close(type3.session);
       await mupdfWriter.close(plain.session);
+    }
+  });
+
+  it('the TEXT-FACES read crosses: the Chromium print’s Type 3 font is named by its descriptor, over PDFium’s objects (ADR-0256)', async () => {
+    const chromium = new Uint8Array(
+      readFileSync(fileURLToPath(new URL('../../../testing/fixtures/text-edit/chromium-type3.pdf', import.meta.url))),
+    );
+    const type3 = await joined(chromium);
+    try {
+      const crossed = await type3.textFaces(type3.token, 0);
+      // THE DESCRIPTOR'S NAME, less its subset tag, and its weight: what PDFium reads as no name at all.
+      expect(crossed.fonts).toContainEqual({ face: 'LiberationSans', weight: 400 });
+      // PDFIUM'S NUMBERING: the print's heading is objects 0 onward (`proof:pdfiumcommand`), so object 0 is named.
+      expect(crossed.ranges[0]?.first).toBe(0);
+      expect(crossed.truncated).toBe(false);
+      // THE SAME ANSWER AS IN PROCESS, so the wire carries the reader's answer whole.
+      expect(crossed).toStrictEqual(await readTextFaces(type3.session, 0));
+    } finally {
+      await mupdfWriter.close(type3.session);
     }
   });
 
@@ -930,6 +954,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         pageRewrite: () => {
           throw new Error('no case here reads which writer a page needs');
         },
+        textFaces: () => {
+          throw new Error('unused');
+        },
         wordBoxes: () => {
           throw new Error('unused');
         },
@@ -1105,6 +1132,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         },
         pageRewrite: () => {
           throw new Error('no case here reads which writer a page needs');
+        },
+        textFaces: () => {
+          throw new Error('the rotation-refusal case must not read the fonts’ faces');
         },
         wordBoxes: () => {
           throw new Error('the rotation-refusal case must not read word boxes');
