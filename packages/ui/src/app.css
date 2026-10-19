@@ -6390,7 +6390,7 @@ optgroup {
   z-index: 1;
   transform: translate(-50%, -50%);
   padding: 1px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border); /* decorative: the mark is no control (aria-hidden, takes no press or focus); its braces carry the meaning, in the text colour */
   border-radius: var(--radius-4);
   background: var(--surface);
   color: var(--text);
