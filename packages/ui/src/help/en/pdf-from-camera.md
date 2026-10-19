@@ -19,6 +19,7 @@ You can use your computer's camera to photograph documents and make them into a 
 ## Good to know
 
 - The camera is on only while this window is open.
+- With no camera, **Take picture** is greyed out and the window says "No camera was found on this computer."
 - If Monstera is not allowed to use the camera, allow it in the Windows camera privacy settings.
 - To square up a photo taken at an angle afterwards, see "Crop photographed pages to the paper".
 

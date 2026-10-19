@@ -11,7 +11,7 @@ Export tables to Excel reads the tables in your document, lets you check and cor
 ## Steps
 
 1. In the rail, choose **Home**, then **Export** in the **Export** group, and **Export tables to Excel…**.
-2. Under **What is in this document?**, choose **Typed text** if the words are already in the PDF.
+2. Under **What is in this document?**, choose **Typed text (the PDF’s own words)** if the words are already in the PDF.
 3. For pages that are pictures, choose **Printed scan, read on this computer**, or, if you have added an Azure or Claude key, **Handwritten or scanned, read by Azure** or the same read by Claude.
 4. With **Typed text**, the window shows the tables on the page you are reading. Use **Previous page** and **Next page** to look through the others, and click any cell to correct it.
 5. In **Pages**, keep **Every page**, or choose **Select pages** and type the pages whose tables you want, for example 1-3, 5. You can still look at any page while you check.

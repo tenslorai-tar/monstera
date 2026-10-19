@@ -28,7 +28,7 @@ A text box and typed text can be set in a font, a size and a colour, in bold, it
 - Typed text has no border, so it is offered no border style.
 - **Use as default for new annotations** is ticked at first. What you choose in this section is then how the next text box starts: its font and size, and also bold, italic, underline, strikethrough, alignment, line spacing, padding, fill and character spacing.
 - **Helvetica**, **Times** and **Courier** are the fonts every PDF reader has, so the words look the same wherever the file is opened.
-- Monstera draws the styled box itself, in the fonts every PDF reader has, so it looks the same wherever the file is opened. The plain words are kept too, so search and other tools still find them.
+- Monstera draws the styled box itself, in the font you choose: the fonts every PDF reader has, or one on this computer or included with Monstera, which is put into the file, so it looks the same wherever the file is opened. The plain words are kept too, so search and other tools still find them.
 - A callout, or a box in a script those fonts cannot write (Hebrew, Arabic, Chinese, Japanese), is offered only its font, size, colour and alignment, and the rest of the box is left exactly as it was.
 - This changes how the words are shown. To change the words themselves, right-click the box and choose **Edit comment…**.
 - Undo with **Ctrl+Z**. Each change is one step.

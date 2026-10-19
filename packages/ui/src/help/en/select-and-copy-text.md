@@ -18,7 +18,7 @@ You can select the words on a page and copy them into another program.
 
 ## Good to know
 
-- If a page is only a picture (for example a scan), Monstera says **This page is a picture, so there is no text to select or search.** Recognise its text first; see "Make scanned pages searchable".
+- If a page is only a picture (for example a scan), Monstera says **This page is a picture, so there is no text to select or search.** Recognise its text first; see "Make scanned pages searchable (OCR)".
 - Right-clicking selected text also lets you highlight it, comment on it, search for it, mark it for redaction, or ask the AI assistant about it.
 
 <!--

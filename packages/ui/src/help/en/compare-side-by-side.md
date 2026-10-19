@@ -11,7 +11,7 @@ Side by Side fills the window with two documents, one in each half, so you can r
 ## Steps
 
 1. In the rail, choose **Review**, then **Compare…** (**Compare documents…**). It is also in **Home**, **Display** group. Or right-click the tab of a document and choose **Open side by side**.
-2. The document you were reading is on the left. In each half, use the list at the top to choose any open document, including one with changes you have not saved yet.
+2. The file written more recently is on the right, and the other on the left. In each half, use the list at the top to choose any open document, including one with changes you have not saved yet.
 3. To bring in a file that is not open, choose **Open another PDF…** in that half. It opens in a new tab as well.
 4. Each half scrolls through its whole document on its own. Use **Zoom out** and **Zoom in** beside the percentage to zoom one half.
 5. Choose **Compare** to find the differences. See "Find the differences between two documents".

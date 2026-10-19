@@ -12,7 +12,7 @@ Rulers run along the top and left of the page area and stay there as you scroll.
 
 1. In the rail, choose **Tools**. In the **Display** group, choose **Show rulers** and/or **Show grid**.
 2. Choose them again to hide them.
-3. To change the unit, open **Settings**, **Viewing** page, **Ruler unit**, and choose **Points**, **Millimetres**, **Centimetres**, **Metres**, **Inches** or **Feet**.
+3. To change the unit, open **Settings**, **Viewing** page, **Ruler unit**, and choose **Points**, **Centimetres** or **Inches**.
 
 ![A page with rulers along the top and left and the grid shown](screenshot:rulers-and-grid-1)
 
@@ -25,5 +25,5 @@ Rulers run along the top and left of the page area and stay there as you scroll.
 
 <!--
 Screenshots to capture:
-1. rulers-and-grid-1 — A page with rulers and grid on, unit millimetres. Frame the page corner with both rulers and grid lines.
+1. rulers-and-grid-1 — A page with rulers and grid on, unit centimetres. Frame the page corner with both rulers and grid lines.
 -->

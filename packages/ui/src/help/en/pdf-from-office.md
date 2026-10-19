@@ -26,6 +26,7 @@ Monstera can turn a Word document, an Excel workbook or a PowerPoint deck into a
 - A very long sheet is converted in parts and joined, so every row arrives. If some rows still cannot be converted, the PDF opens and a message lists each sheet and the rows that are not in it, and says how many more there are when the list is long.
 - The conversion runs in a separate, locked-down process that cannot reach the internet or the rest of your files. Your file never leaves your computer.
 - If the file is damaged, or is not the kind of file its name says, nothing is saved and Monstera tells you.
+- If the converter cannot start on this computer, a window says "A part of Monstera could not start", and that your document is not the problem and nothing in it was changed.
 
 <!--
 Screenshots to capture:

@@ -27,7 +27,7 @@ For the other choices:
 - High contrast follows Windows on its own: turn on a Windows contrast theme and Monstera follows it. While it is on, the title bar's sun and moon button is off, because light and dark do not apply.
 - An accent colour too close to the theme's background to stand out is not offered.
 - **Reduce motion** is also on whenever Windows asks for reduced motion.
-- To darken the pages themselves, see "Read with dark pages".
+- To darken the pages themselves, see "Read with dim pages".
 
 <!--
 Screenshots to capture:

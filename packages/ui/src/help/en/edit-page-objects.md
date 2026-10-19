@@ -19,7 +19,7 @@ Everything drawn on a page (text, shapes, pictures) is a separate object. **Edit
    - drag the round handle to turn it;
    - in the **Properties** tab, on the right, type its **Left (pt)**, **Bottom (pt)**, **Width (pt)**, **Height (pt)** or **Rotation (°)**, or change its colour;
    - choose **Bring forward** or **Send backward**, in the **Properties** tab or by right-clicking it, to put it in front of or behind what overlaps it;
-   - or press **Delete**, or right-click it and choose **Delete**.
+   - or press **Delete**, or right-click it and choose **Delete selection**.
 5. Press **Esc** to clear the selection, and **Esc** again, or **Edit object** again, to finish.
 
 ![A page with its objects outlined and a picture selected](screenshot:edit-page-objects-1)

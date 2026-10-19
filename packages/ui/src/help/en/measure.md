@@ -10,7 +10,7 @@ The measuring tools draw a line or shape and label it with its length or area. T
 
 ## Steps
 
-1. In the rail, choose **Comment**. In the **Measure** group, choose **Measure distance**, **Measure area** or **Measure perimeter**.
+1. In the rail, choose **Comment**. In the **Measure** group, choose **Distance**, **Area** or **Perimeter**.
 2. In the **Properties** tab, choose the **Measurement unit**. For a drawing made to a scale, type it in **Drawing scale, 1 to**: 100 for a plan drawn at 1:100.
 3. For distance, drag from one end to the other. For area and perimeter, click each corner, then double-click on the last one or press **Enter** to finish. An area also closes when you click its first corner again. **Esc** finishes and keeps the measurement too.
 4. While you draw, the reading so far is shown beside the pointer. When you finish, it is written on the shape: along a distance, in the middle of an area, and beside a perimeter's longest side.

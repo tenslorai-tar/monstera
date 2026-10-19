@@ -14,7 +14,7 @@ Save a copy writes the document, with your changes, to a new file you choose. Th
 2. Choose a folder and a file name, then **Save**.
 3. A message says **Copy saved**.
 
-![The File group's More menu open, showing Save copy…](screenshot:save-a-copy-1)
+![The File menu open, showing Save a copy…](screenshot:save-a-copy-1)
 
 ## Good to know
 

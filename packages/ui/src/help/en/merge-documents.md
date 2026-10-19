@@ -16,7 +16,7 @@ Merge adds every page of one or more other documents to the one you are working 
 4. To take only some of a document's pages, type them in its **Pages to take** box, like `1-3, 5`, or choose **Choose pages…** and click the ones to take. An empty box takes every page.
 5. Under **Where**, choose **Before** or **After**, then **The first page**, **The last page** or **Page** and its number. It starts after the last page.
 6. Choose **Merge**.
-6. Save the result, or use **Save a copy…** to keep it as a new file.
+7. Save the result, or use **Save a copy…** to keep it as a new file.
 
 ![The Merge documents window with documents listed and where they go](screenshot:merge-documents-1)
 

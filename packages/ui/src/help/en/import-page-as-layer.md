@@ -11,7 +11,7 @@ Import as layer lays a page of another document over the page you are on, as a l
 ## Steps
 
 1. Go to the page to lay it on, or select it in the Organize grid.
-2. In the rail, choose **Organize**, then **Import page as layer…** in the **Pages** group. In a narrower window it is under the group's **More**.
+2. In the rail, choose **Organize**, then **As layer** in the **Pages** group. In a narrower window it is under the group's **More**.
 3. In **Layer from**, choose another open document, or choose **Choose file…** to pick a PDF. A file you pick opens as its own tab.
 4. Under **Page**, type which of its pages to use. The window says which page goes over which.
 5. Choose **Import as layer**. The **Layers** tab of the document panel opens, where you can show or hide it.

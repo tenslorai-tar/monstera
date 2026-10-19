@@ -10,7 +10,7 @@ Insert blank pages adds empty pages, each the same size as the page beside it. A
 
 ## Steps
 
-1. In the rail, choose **Organize**, then **Insert blank pages…** in the **Pages** group. In a narrower window it is under the group's **More**.
+1. In the rail, choose **Organize**, then **Blank page** in the **Pages** group. In a narrower window it is under the group's **More**.
 2. Or right-click the page and choose **Insert blank pages…**.
 3. In **How many pages**, type a number from 1 to 100.
 4. In **Where**, choose **Before** or **After**, then **The first page**, **The last page** or **Page** and its number.
