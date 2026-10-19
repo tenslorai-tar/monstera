@@ -6551,7 +6551,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'You chose more than {limit} pictures, which is the most one import takes. Nothing was imported.',
   [MARKDOWN_IMPORT_IMAGES_TOO_LARGE]:
     'The pictures you chose come to {setMegabytes} MB together, and one import takes at most ' +
-    '{limitMegabytes} MB. Nothing was imported. Split the pictures into at least {groups} groups of up to ' +
+    '{limitMegabytes} MB. Nothing was imported. Split the pictures into at least {groups, plural, one {# group} other {# groups}} of up to ' +
     '{limitMegabytes} MB each, and make each group its own PDF.',
   [GENERATE_TOC_COMMAND_TITLE]: 'Table of contents',
   [GENERATE_TOC_TITLE]: 'Table of contents',
