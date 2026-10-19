@@ -402,6 +402,60 @@ describe('an emptied operator keeps its advance only where a later one is placed
   });
 });
 
+describe('the new object goes where the block’s kept words before the edit end (ADR-0176, corrected 2026-10-19; R13)', () => {
+  // A BULLETED LINE AS CHROMIUM DRAWS ONE: the bold lead-in in its own text object, then ` x ` (a dash) and the rest in
+  // the next, each a run as PDFium joins them.
+  const content = bytes('BT /F2 10 Tf 1 0 0 1 72 100 Tm (lead ) Tj ET\nBT /F1 10 Tf 1 0 0 1 100 100 Tm (x ) Tj 10 0 Td (rest of it) Tj ET');
+  const fonts = new Map([
+    ['F1', font('F1', 'abcdefghijklmnopqrstuvwxyz')],
+    ['F2', font('F2', 'abcdefghijklmnopqrstuvwxyz')],
+  ]);
+  const page: PageRuns = {
+    textObjects: [0, 1, 2],
+    runs: [
+      { index: 0, members: [0], text: 'lead ', left: 72, right: 92, bottom: 0, top: 0 },
+      { index: 1, members: [1], text: 'x ', left: 100, right: 110, bottom: 0, top: 0 },
+      { index: 2, members: [2], text: 'rest of it', left: 110, right: 400, bottom: 0, top: 0 },
+    ],
+  };
+
+  it('an edit AFTER the dash puts the new words after the object that keeps the dash, so the line reads in order', () => {
+    const result = editOperators(content, fonts, page, [{ lines: [[0, 1, 2]], soft: [false], text: 'lead x rest of them' }]);
+    if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+    const written = latin1(result.value.content);
+    // THE DASH'S OBJECT ENDS, and then the new object begins: content order is reading order.
+    expect(written.indexOf('(x ) Tj'), written).toBeGreaterThan(-1);
+    expect(written.indexOf('q BT')).toBeGreaterThan(written.indexOf('(x ) Tj'));
+    expect(checkOperatorEdit(content, result.value, fonts).ok).toBe(true);
+  });
+
+  it('a letter typed BEFORE a full stop drawn in a font of its own is written, not dropped (R13)', () => {
+    // THE FULL STOP IN A SUBSET THAT HOLDS ONLY IT, as Chromium splits a line's punctuation into its own Type 3 font.
+    const stop: PageFont = { ...font('F3', ''), toUnicode: { text: new Map([[46, '.']]), bytes: 1 }, width: (code) => (code === 46 ? 0.25 : null), draws: (code) => code === 46 };
+    const withStop = bytes('BT /F2 10 Tf 1 0 0 1 72 100 Tm (lead ) Tj ET\nBT /F1 10 Tf 1 0 0 1 100 100 Tm (x ) Tj 10 0 Td (rest of it) Tj /F3 10 Tf 50 0 Td (.) Tj ET');
+    const stopFonts = new Map([...fonts, ['F3', stop]]);
+    const stopPage: PageRuns = {
+      textObjects: [0, 1, 2, 3],
+      runs: [...page.runs, { index: 3, members: [3], text: '.', left: 160, right: 163, bottom: 0, top: 0 }],
+    };
+    const result = editOperators(withStop, stopFonts, stopPage, [{ lines: [[0, 1, 2, 3]], soft: [false], text: 'lead x rest of its.' }]);
+    if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+    expect(result.value.drawn.join(''), latin1(result.value.content)).toContain('s.');
+    // THE FULL STOP STAYS IN ITS OWN FONT, the `s` in the sibling that carries it: the page's own setting, no face added.
+    const object = latin1(result.value.content).slice(latin1(result.value.content).indexOf('q BT'));
+    expect(object).toContain('/F3 10 Tf');
+    expect(object).toContain('/F1 10 Tf');
+    expect(checkOperatorEdit(withStop, result.value, stopFonts).ok).toBe(true);
+  });
+
+  it('CONTROL: an edit of the LEAD-IN, whose object holds nothing kept before it, still goes before its BT', () => {
+    const result = editOperators(content, fonts, page, [{ lines: [[0, 1, 2]], soft: [false], text: 'load x rest of it' }]);
+    if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+    const written = latin1(result.value.content);
+    expect(written.indexOf('q BT')).toBeLessThan(written.indexOf('BT /F2'));
+  });
+});
+
 /** A run PDFium would read as drawn, with its ink where it is drawn (`runsOf` leaves the ink at the origin). */
 const inked = (index: number, text: string, left: number, right: number): PageRun => ({
   index,

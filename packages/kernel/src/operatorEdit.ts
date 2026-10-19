@@ -35,7 +35,9 @@ import { codesFor } from './toUnicode.js';
  * An operator that is set again keeps its place and loses its glyphs: it becomes a `TJ` of spacing alone with the same
  * advance, so an operator after it that is positioned by advance rather than by a move stays where it was. The new
  * words of a block are one text object, `q BT … ET Q`, inserted immediately before the `BT` of the block's first edited
- * operator, so inside the same marked content and under the same CTM.
+ * operator — or after its `ET`, where that object holds the block's kept words before the edit and none after it, so
+ * the page reads in order (ADR-0176's correction of 2026-10-19) — so inside the same marked content and under the same
+ * CTM.
  *
  * ## Geometry is the operators' own, in user space
  *
@@ -547,6 +549,28 @@ function write(
     return null;
   };
 
+  /**
+   * `word` in the page's fonts, the longest stretch first, each stretch in the first of `own` and its siblings that
+   * carries all of it; `null` where some character is carried by none of them.
+   */
+  const acrossPageFonts = (own: PageFont, word: string): FacePiece[] | null => {
+    const characters = Array.from(word);
+    const pieces: FacePiece[] = [];
+    let at = 0;
+    while (at < characters.length) {
+      let end = characters.length;
+      let hit = carrier(own, characters.slice(at, end).join(''));
+      while (hit === null && end > at + 1) {
+        end -= 1;
+        hit = carrier(own, characters.slice(at, end).join(''));
+      }
+      if (hit === null) return null;
+      pieces.push(hit);
+      at = end;
+    }
+    return pieces;
+  };
+
   const emptied = new Set<number>();
   /** The operators a block's rewrite is placed before: their `BT`, one inserted object per block. */
   const insertions: { readonly at: number; readonly text: string }[] = [];
@@ -717,14 +741,23 @@ function write(
       const font = fontOf(source);
       // A RESTYLED WORD is not looked for in the run's own font: only white space is, which has no style to be wrong in.
       const found = restyle !== undefined && token !== ' ' ? null : carrier(font, token);
+      // A WORD NO ONE PAGE FONT CARRIES, set across them in the longest stretches each carries (ADR-0176's correction of
+      // 2026-10-19, later): a letter typed before a full stop Chromium drew in a subset holding only `.`.
+      const across = found !== null || restyle !== undefined || token === ' ' ? null : acrossPageFonts(font, token);
       const pieces: readonly FacePiece[] | null =
         found !== null
           ? [found]
           : token === ' '
             ? []
-            : (faces?.set(token, source, restyle === undefined ? (stretch) => carrier(font, stretch) : () => null, restyle) ?? null);
+            : (across ??
+              faces?.set(token, source, restyle === undefined ? (stretch) => carrier(font, stretch) : () => null, restyle) ??
+              null);
       if (pieces === null) {
+        const before = uncarried.size;
         for (const character of token) if (restyle !== undefined || carrier(font, character) === null) uncarried.add(character);
+        // NEVER DROPPED UNSAID: a word that yields no pieces names its characters, so the edit is refused by name or the
+        // caller gives it a face, and its words cannot vanish with nothing reported.
+        if (uncarried.size === before) for (const character of token) uncarried.add(character);
       }
       answers.set(key, pieces);
       return pieces;
@@ -1316,6 +1349,20 @@ function write(
     const anchors = own.size > 0 ? [...own] : [lastRun.last];
     const anchor = Math.min(...anchors.map((at) => ops[at]?.textObject ?? Number.POSITIVE_INFINITY));
     if (!Number.isFinite(anchor) || anchor < 0) throw new Refused({ reason: 'numbering', detail: 'an edited operator is outside a text object' });
+    // WHERE THE BLOCK'S KEPT WORDS BEFORE THE EDIT END (ADR-0176's correction of 2026-10-19): a text object that holds a
+    // kept operator before the first edited one, and none after it, is followed by the new object rather than preceded,
+    // so a reader that takes the page in content order reads the kept words first. Before its `BT`, a line whose ` – `
+    // stayed in that object was read as the new words and then the dash, and the read-back refused a correct edit.
+    const firstEdited = Math.min(...anchors.filter((at) => ops[at]?.textObject === anchor));
+    const inAnchor = ops.flatMap((op, at) => (op.textObject === anchor && op.object !== null ? [at] : []));
+    const keptBefore = inAnchor.some((at) => at < firstEdited && !own.has(at) && !emptied.has(at));
+    const keptAfter = inAnchor.some((at) => at > firstEdited && !own.has(at) && !emptied.has(at));
+    const ends = objectEnds.get(anchor);
+    if (own.size > 0 && keptBefore && !keptAfter && ends !== undefined) {
+      // A LINE BREAK FIRST, for the reason the lines added below give: a `q` set against the `ET` would be one token.
+      insertions.push({ at: ends, text: `\n${parts.join('\n')}` });
+      continue;
+    }
     insertions.push({ at: anchor, text: parts.join('\n') });
   }
   if (uncarried.size > 0) throw new Refused({ reason: 'needs-a-face', characters: [...uncarried] });
