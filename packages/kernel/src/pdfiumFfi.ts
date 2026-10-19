@@ -1,7 +1,7 @@
 import {
   type BlockMark,
   type BlockMarkSet,
-  type BlockPlace,
+  type BlockPlaceReading,
   type BlockPush,
   MAX_BLOCK_FONTS,
   MAX_RUN_FONT_BYTES,
@@ -1763,7 +1763,7 @@ export interface BlockEdit {
   readonly marks?: readonly Omit<BlockMark, 'block'>[];
   readonly paragraphs?: readonly Omit<ParagraphProps, 'block'>[];
   /** How the block is placed once laid out: moved, scaled, rotated, or set at a new measure (ADR-0180, corrected). */
-  readonly place?: Omit<BlockPlace, 'block'>;
+  readonly place?: Omit<BlockPlaceReading, 'block'>;
   /** In the edit to be moved down by block `by`'s growth, within `room`, and never written (ADR-0249 Decision 3). */
   readonly push?: Omit<BlockPush, 'block'>;
   /**
@@ -4657,7 +4657,7 @@ function objectTurn(bindings: Bound, object: unknown): number | undefined {
 function placeObjects(
   bindings: Bound,
   objects: readonly unknown[],
-  place: Omit<BlockPlace, 'block'>,
+  place: Omit<BlockPlaceReading, 'block'>,
   anchor: { readonly x: number; readonly y: number },
 ): boolean {
   const scale = place.scale ?? 1;

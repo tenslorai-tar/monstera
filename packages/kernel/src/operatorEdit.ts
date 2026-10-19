@@ -1,4 +1,4 @@
-import type { BlockMarkSet, BlockPlace, EditedBlock, PageInsert } from '@monstera/contract/host';
+import type { BlockMarkSet, BlockPlaceReading, EditedBlock, PageInsert } from '@monstera/contract/host';
 import { type Result, TAB_STOP, err, nextTabStop, ok } from '@monstera/shared';
 
 import type { MovedBlock } from './engineSeam.js';
@@ -332,7 +332,7 @@ export function editOperators(
 
 /** The matrix of a placement, `place`'s scale about `anchor`, then its turn about the centre that leaves, then its move. */
 export function placementMatrix(
-  place: Omit<BlockPlace, 'block'>,
+  place: Omit<BlockPlaceReading, 'block'>,
   anchor: { readonly x: number; readonly y: number },
   centre: { readonly x: number; readonly y: number },
 ): Matrix {
@@ -349,7 +349,7 @@ export function placementMatrix(
 }
 
 /** Whether a placement changes anything about where a block is: a move of nothing is not one. */
-function movesBlock(place: Omit<BlockPlace, 'block'> | undefined): boolean {
+function movesBlock(place: Omit<BlockPlaceReading, 'block'> | undefined): boolean {
   if (place?.about !== undefined) {
     const { moveBy, scaleBy, rotateBy } = place.about;
     return scaleBy.x !== 1 || scaleBy.y !== 1 || (rotateBy ?? 0) !== 0 || moveBy.x !== 0 || moveBy.y !== 0;

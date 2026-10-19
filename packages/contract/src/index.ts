@@ -431,6 +431,7 @@ export {
   type BlockMarkSet,
   type ParagraphProps,
   type BlockPlace,
+  type BlockPlaceReading,
   type BlockPush,
   type PageInsert,
   MAX_BLOCK_MARKS,

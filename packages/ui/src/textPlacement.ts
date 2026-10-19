@@ -1,4 +1,4 @@
-import type { BlockPlace } from '@monstera/contract';
+import type { BlockPlaceReading } from '@monstera/contract';
 
 /**
  * Where an open block is being put: moved, scaled, rotated, and set at a new measure
@@ -138,7 +138,7 @@ export function nudged(nudge: Nudge, start: Placement, box: BlockBox, zoom: numb
  * What the contract carries for a placement: only what was done, and `undefined` where nothing was, so a block nobody
  * placed is written exactly as it was. A measure within half a point of the block's own is not a new one.
  */
-export function placeOf(placement: Placement, box: BlockBox): Omit<BlockPlace, 'block'> | undefined {
+export function placeOf(placement: Placement, box: BlockBox): Omit<BlockPlaceReading, 'block'> | undefined {
   const moved = Math.abs(placement.move.x) > 0.01 || Math.abs(placement.move.y) > 0.01;
   const scaled = Math.abs(placement.scale - 1) > 0.001;
   const turned = Math.abs(placement.rotate) > 0.01;

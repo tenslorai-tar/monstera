@@ -255,6 +255,19 @@ describe('the block edit payload (ADR-0142)', () => {
       expect(editTextBlockSchema.safeParse(places([{ block: 0, scale: 2 }, { block: 1, width: 80 }])).success).toBe(true);
     });
 
+    it('takes Edit object’s ONE placement about a box, and refuses it beside the block command’s own fields or twice', () => {
+      const places = (list: readonly object[]) => ({ ...withPlaces, places: list });
+      const about = { box: { left: 10, bottom: 20, right: 110, top: 60 }, moveBy: { x: 5, y: -3 }, scaleBy: { x: 2, y: 1.5 } };
+      expect(editTextBlockSchema.safeParse(places([{ block: 0, about }])).success).toBe(true);
+      // THE MIX, which the union refuses where the refinement did — the size bound cannot read a refinement.
+      expect(editTextBlockSchema.safeParse(places([{ block: 0, about, move: { x: 1, y: 1 } }])).success).toBe(false);
+      expect(editTextBlockSchema.safeParse(places([{ block: 0, about, width: 80 }])).success).toBe(false);
+      // TWICE: Edit object places the one block a press picked, so its larger shape is admitted once.
+      expect(editTextBlockSchema.safeParse(places([{ block: 0, about }, { block: 1, about }])).success).toBe(false);
+      // And one of each in one command is neither shape.
+      expect(editTextBlockSchema.safeParse(places([{ block: 0, about }, { block: 1, width: 80 }])).success).toBe(false);
+    });
+
     it('takes an edit of added boxes alone, and refuses one that names nothing at all', () => {
       expect(editTextBlockSchema.safeParse({ kind: 'editTextBlock', page: 0, ...blockEditOf([], [box]), fit: 'reflow', version }).success).toBe(true);
       expect(editTextBlockSchema.safeParse({ kind: 'editTextBlock', page: 0, ...blockEditOf([]), fit: 'reflow', version }).success).toBe(false);

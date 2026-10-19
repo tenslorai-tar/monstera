@@ -6533,7 +6533,14 @@ export const MAX_BLOCK_PLACES = 64;
  * Every field is optional and at least one is named; each is an INTENT in points and degrees, for the reason
  * `placePageObject` is: a matrix on this wire would make every caller compose the anchor.
  */
-export const blockPlaceSchema = z
+/**
+ * A text block's placement, ONE OF TWO SHAPES — never both: the block command's own move, scale, turn and measure, or
+ * Edit object's placement {@link blockPlaceAboutSchema}. A union rather than one object with a refinement that refused
+ * the mix: a refinement is invisible to the schema's size bound (`schemaBound.ts`), which then measured a placement
+ * carrying both shapes' fields at once and put two routes past their ceilings (`hostRoutes.test.ts`). The union says
+ * what the refinement did, where both the type and the bound can read it (B5).
+ */
+const blockPlaceOwnSchema = z
   .object({
     block: z.number().int().min(0).max(MAX_EDIT_RUNS),
     /** Points added to every object of the block, in PDF user space. */
@@ -6550,13 +6557,19 @@ export const blockPlaceSchema = z
     rotate: z.number().min(-360).max(360).optional(),
     /** The measure the block is laid out at, in points: how a text box is resized. */
     width: z.number().min(1).max(MAX_PAGE_COORDINATE).optional(),
-    /**
-     * The placement AS AN OBJECT COMMAND MEANS IT ([ADR-0240](../../../docs/DECISIONS/0240-an-objects-placement-is-edited-where-it-is-drawn.md)'s
-     * correction of 2026-10-19): about `box`, with a scale on each axis, by ADR-0243's one placement matrix — how Edit
-     * object places a text block, so it lands where `placePageObjects` would have put it. Alone: a placement naming it
-     * names nothing else, so the block is placed one way and its words are carried as they were. The operator writer
-     * takes it; PDFium's block writer refuses it rather than ignore it.
-     */
+  })
+  .strict();
+
+/**
+ * The placement AS AN OBJECT COMMAND MEANS IT ([ADR-0240](../../../docs/DECISIONS/0240-an-objects-placement-is-edited-where-it-is-drawn.md)'s
+ * correction of 2026-10-19): about `box`, with a scale on each axis, by ADR-0243's one placement matrix — how Edit
+ * object places a text block, so it lands where `placePageObjects` would have put it. A placement naming it names
+ * nothing else, so the block is placed one way and its words are carried as they were. The operator writer takes it;
+ * PDFium's block writer refuses it rather than ignore it.
+ */
+const blockPlaceAboutSchema = z
+  .object({
+    block: z.number().int().min(0).max(MAX_EDIT_RUNS),
     about: z
       .object({
         box: placeDrawnObjectSchema.shape.box,
@@ -6564,15 +6577,21 @@ export const blockPlaceSchema = z
         scaleBy: placePageObjectSchema.shape.scaleBy,
         rotateBy: placePageObjectSchema.shape.rotateBy,
       })
-      .strict()
-      .optional(),
+      .strict(),
   })
-  .strict()
-  .refine((place) => place.about === undefined || (place.move === undefined && place.scale === undefined && place.rotate === undefined && place.width === undefined), {
-    message: 'a placement about a box names nothing else',
-  });
+  .strict();
+
+export const blockPlaceSchema = z.union([blockPlaceOwnSchema, blockPlaceAboutSchema]);
 
 export type BlockPlace = z.infer<typeof blockPlaceSchema>;
+
+/**
+ * Either placement READ as one record, the absent shape's fields `undefined` — for a reader that asks each field in
+ * turn. Both branches of {@link BlockPlace} are assignable to it as they are, so a reader takes a wire value with no
+ * cast, and the wire schema stays the union that refuses the mix.
+ */
+export type BlockPlaceReading = Partial<Omit<z.infer<typeof blockPlaceOwnSchema>, 'block'>> &
+  Partial<Omit<z.infer<typeof blockPlaceAboutSchema>, 'block'>> & { readonly block: number };
 
 /**
  * The most blocks one edit may push (invariant L11): the blocks below one block in its column, on one page. Set by the file
@@ -6632,7 +6651,7 @@ export interface BlockFormatting {
   /** By paragraph, ascending. */
   readonly paragraphs?: readonly Omit<ParagraphProps, 'block'>[];
   /** How the block is placed once its words are laid out (ADR-0180, corrected 2026-10-06). */
-  readonly place?: Omit<BlockPlace, 'block'>;
+  readonly place?: Omit<BlockPlaceReading, 'block'>;
 }
 
 /**
@@ -6687,7 +6706,12 @@ export const blockEditSchema = z
     /** How named paragraphs are set (ADR-0180 Decision 2). Optional, absence meaning as the read found them. */
     paragraphs: z.array(paragraphPropsSchema).max(MAX_BLOCK_MARKS).optional(),
     /** How named blocks are moved, scaled, rotated and set at a new measure (ADR-0180, corrected 2026-10-06). */
-    places: z.array(blockPlaceSchema).max(MAX_BLOCK_PLACES).optional(),
+    //
+    // THE BLOCK COMMAND'S OWN PLACEMENTS, up to {@link MAX_BLOCK_PLACES}, OR EDIT OBJECT'S ONE: Edit object places the
+    // one block a press picked, so its larger shape is admitted once, and the worst case is the larger of the two
+    // rather than the larger shape times the block command's count — which put `engine/apply` past the frame and
+    // `engine/apply-file` past the file ceiling (`hostRoutes.test.ts`).
+    places: z.union([z.array(blockPlaceOwnSchema).max(MAX_BLOCK_PLACES), z.array(blockPlaceAboutSchema).length(1)]).optional(),
     /** Boxes of new text, laid out by the same writer as a block's words. An edit may hold only these. */
     inserts: z.array(pageInsertSchema).max(MAX_PAGE_INSERTS).optional(),
     /** The blocks in the edit to be moved down by another's growth, never written (ADR-0249 Decision 3). */
@@ -6767,7 +6791,7 @@ export function blockEditAgrees(edit: BlockEdit): boolean {
     (place, at) =>
       place.block < blockStarts.length &&
       (at === 0 || place.block > (places[at - 1]?.block ?? -1)) &&
-      (place.move !== undefined || place.scale !== undefined || place.rotate !== undefined || place.width !== undefined),
+      ('about' in place || place.move !== undefined || place.scale !== undefined || place.rotate !== undefined || place.width !== undefined),
   );
   // A BLOCK'S WORDS, to bound its marks and its paragraphs by.
   const wordsOf = (block: number): string => text.slice(textStarts[block] ?? 0, textStarts[block + 1] ?? text.length);
