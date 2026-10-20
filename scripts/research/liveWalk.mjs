@@ -115,15 +115,22 @@ export async function boxSettled(page, read) {
  * data, and answers the helpers a walk script uses.
  *
  * @param {string} walk the walk's name, which is its output folder
+ * @param {{ appRoot?: string, executable?: string, switches?: readonly string[] }} [options] `appRoot`: the checkout
+ *   whose built app is launched — another worktree, for a walk that compares two commits; this checkout's when absent.
+ *   `executable`: a PACKAGED app's `Monstera.exe`, unpacked from its MSIX and run where it lies (no install), which
+ *   carries its own build and its own components, so no checkout's build or development environment is involved. The
+ *   walk's own helpers and output stay here. `switches`: Chromium switches put before the app's path, for a walk that
+ *   times painting and must have a window that paints while another covers it.
  */
-export async function startWalk(walk) {
+export async function startWalk(walk, options = {}) {
   if (process.platform !== 'win32') {
     throw new Error(
       `The ${walk} walk opens real documents, and the engine hosts run only on Windows (ADR-0022). Run it there: ` +
         `node scripts/research/${walk}Walk.mjs <files>.`,
     );
   }
-  refuseStaleBuild(root, SHELL_LAUNCH, 7);
+  const appRoot = options.appRoot ?? root;
+  if (options.executable === undefined) refuseStaleBuild(appRoot, SHELL_LAUNCH, 7);
   // THE PALETTE'S ONE DRIVER (`packages/testing/src/palette.ts`, B3a), read from its build once that build is this tree's.
   refuseStaleBuild(root, PALETTE_DRIVER, 1);
   // A LITERAL SPECIFIER, so `proof:electronimports` can read what this loads.
@@ -137,13 +144,22 @@ export async function startWalk(walk) {
   for (const [key, value] of Object.entries(process.env)) {
     if (value !== undefined) environment[key] = value;
   }
-  Object.assign(environment, await developmentEnvironment(root));
-  const app = await _electron.launch({
-    executablePath: electronBinaryPath(root),
-    args: [join(root, 'apps/desktop'), `--user-data-dir=${join(output, 'app-data')}`],
-    cwd: root,
-    env: environment,
-  });
+  if (options.executable === undefined) Object.assign(environment, await developmentEnvironment(appRoot));
+  const app = await _electron.launch(
+    options.executable === undefined
+      ? {
+          executablePath: electronBinaryPath(appRoot),
+          args: [...(options.switches ?? []), join(appRoot, 'apps/desktop'), `--user-data-dir=${join(output, 'app-data')}`],
+          cwd: appRoot,
+          env: environment,
+        }
+      : {
+          executablePath: options.executable,
+          args: [...(options.switches ?? []), `--user-data-dir=${join(output, 'app-data')}`],
+          cwd: dirname(options.executable),
+          env: environment,
+        },
+  );
   const page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
 
