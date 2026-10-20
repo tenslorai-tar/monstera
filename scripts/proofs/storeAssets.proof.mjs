@@ -6,9 +6,10 @@
  * ## The anchor is a literal, and why
  *
  * `STORE_ASSETS` is derived from loops over sizes and scales, so a count computed from it agrees with a loop that lost
- * a size — the shrinkage a derived count cannot see (CLAUDE.md item 4c). The case below compares it with 73, read off
+ * a size — the shrinkage a derived count cannot see (CLAUDE.md item 4c). The case below compares it with 120, read off
  * Microsoft's lists (14 target sizes × 3 forms, 5 app-list scales, 5 StoreLogo scales, 4 tiles × 5 scales, and the
- * listing's app tile icon), and names the three files the page marks as required to publish.
+ * listing's app tile icon, 73 in all; and the PDF file-type logo's 14 × 3 and 5 scales, 47, R6), and names the three
+ * files the page marks as required to publish.
  *
  * ## Every image is READ BACK
  *
@@ -30,7 +31,7 @@ import { formatError } from '../lib/reportError.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 7 });
+const roster = createRoster(failures, { cases: 8 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -57,10 +58,10 @@ try {
   const written = await writeStoreAssets(scratch);
 
   check(
-    'the set is Microsoft’s: 73 images, the three the Store requires among them',
-    written === 73 &&
-      STORE_ASSETS.length === 73 &&
-      ['AppList.targetsize-256_altform-unplated.png', 'StoreLogo.scale-100.png', 'MedTile.scale-100.png'].every((file) =>
+    'the set is Microsoft’s: 120 images — the 73 of the mark and the file-type logo’s 47 — the three the Store requires among them',
+    written === 120 &&
+      STORE_ASSETS.length === 120 &&
+      ['AppList.targetsize-256_altform-unplated.png', 'StoreLogo.scale-100.png', 'MedTile.scale-100.png', 'FileLogo.targetsize-256_altform-unplated.png'].every((file) =>
         STORE_ASSETS.some((asset) => asset.file === file),
       ),
     `wrote ${String(written)}, lists ${String(STORE_ASSETS.length)}.`,
@@ -113,6 +114,18 @@ try {
     'an icon’s mark touches its square’s top and bottom rows — no margin of the master’s canvas is kept',
     (await rowDrawn(0)) && (await rowDrawn(255)),
     `top row drawn: ${String(await rowDrawn(0))}, bottom row drawn: ${String(await rowDrawn(255))}.`,
+  );
+
+  // THE FILE-TYPE LOGO IS THE OWNER'S DOCUMENT ICON, AS SUPPLIED (R6, ADR-0002's note of 2026-10-20): its page drawn inside
+  // the square with its own margins, so at 256 px the top row is clear and the centre drawn. The mark's icon above touches
+  // its top row, so a generator that drew the logo from the mark, or trimmed the document icon, fails here.
+  const fileLogo = join(scratch, 'FileLogo.targetsize-256_altform-unplated.png');
+  const fileTop = await alphaAt(fileLogo, 128, 0);
+  const fileCentre = await alphaAt(fileLogo, 128, 128);
+  check(
+    'the PDF file-type logo is the document icon untrimmed — its top row clear and its centre drawn, unlike the mark’s icon',
+    fileTop === 0 && fileCentre > 0 && (await rowDrawn(0)),
+    `file logo alpha at the top centre ${String(fileTop)}, at the centre ${String(fileCentre)}.`,
   );
 
   if (failures.length > 0) {

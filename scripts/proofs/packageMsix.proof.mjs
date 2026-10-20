@@ -21,6 +21,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { STORE_ASSETS } from '../brand/storeAssets.mjs';
 import { loadTypeScript } from '../lib/loadTypeScript.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { applicationIcon, carriesIcon, icoImages } from '../lib/peIcons.mjs';
@@ -34,6 +35,7 @@ import {
   BRAND_ICON,
   UNSIGNED_OID,
   appxManifest,
+  associationLogoProblem,
   bareSpecifiers,
   brandExecutable,
   executableStrings,
@@ -66,7 +68,7 @@ const RUNTIME_CASES = [
 ];
 
 /** Cases decidable without one. These run on every machine. */
-const PURE_CASES = 13;
+const PURE_CASES = 14;
 
 const roster = createRoster(failures, { cases: RUNTIME_PRESENT ? PURE_CASES + RUNTIME_CASES.length : PURE_CASES });
 
@@ -249,6 +251,23 @@ try {
     "the finished stage is refused for one developer's file in a NESTED package, named; CONTROL: clean, and a package named test, report none",
     cleanStage.length === 0 && dirtyStage.length === 1 && (dirtyStage[0] ?? '').startsWith('node_modules/lib/node_modules/inner/index.js.map'),
     `clean: ${cleanStage.join(', ') || 'none'}; with the map: ${dirtyStage.join(', ') || 'none'}`,
+  );
+
+  // THE PDF FILE-TYPE LOGO (R6), read back from the manifest the packager writes and a folder of the images it names.
+  const manifestText = appxManifest({ identity: packageIdentity('test', EMPTY), version: '0.1.17.0', architecture: 'x64' });
+  const assets = join(scratch, 'Assets');
+  mkdirSync(assets, { recursive: true });
+  const fileLogos = STORE_ASSETS.filter((asset) => asset.file.startsWith('FileLogo.')).map((asset) => asset.file);
+  for (const file of fileLogos) writeFileSync(join(assets, file), '');
+  const present = associationLogoProblem(manifestText, assets);
+  rmSync(join(assets, 'FileLogo.targetsize-32.png'));
+  const oneMissing = associationLogoProblem(manifestText, assets);
+  const noLogo = associationLogoProblem(manifestText.replace(/<uap:Logo>[^<]*<\/uap:Logo>/u, ''), assets);
+  check(
+    "the manifest's PDF logo names FileLogo and all its images are there; CONTROL: one image missing is named, and an association with no logo is refused",
+    manifestText.includes('<uap:Logo>Assets\\FileLogo.png</uap:Logo>') && fileLogos.length === 47 && present === null &&
+      (oneMissing ?? '').includes('FileLogo.targetsize-32.png') && (noLogo ?? '').includes('names no logo'),
+    `present: ${String(present)}; one missing: ${String(oneMissing)}; no logo: ${String(noLogo)}`,
   );
 
   // The brand's set is the seven sizes `assets/brand/README.md` names. CONTROL: a PNG — the brand's own 256-pixel

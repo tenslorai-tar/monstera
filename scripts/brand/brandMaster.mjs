@@ -17,3 +17,12 @@ export const MASTER_FILE = 'monstera_logo.png';
 
 /** The master's path in this checkout. */
 export const MASTER = join(resolve(dirname(fileURLToPath(import.meta.url)), '..', '..'), 'assets', 'brand', MASTER_FILE);
+
+/**
+ * The PDF file-type icon's master (ADR-0002's note of 2026-10-20): the owner's taller document icon, which feeds the
+ * file-type association's logo and nothing else.
+ */
+export const DOCUMENT_ICON_FILE = 'monstera-icon-2048.png';
+
+/** The file-type master's path in this checkout. */
+export const DOCUMENT_ICON = join(resolve(dirname(fileURLToPath(import.meta.url)), '..', '..'), 'assets', 'brand', DOCUMENT_ICON_FILE);

@@ -34,7 +34,7 @@ import pngToIco from 'png-to-ico';
 import sharp from 'sharp';
 
 import { formatError } from '../lib/reportError.mjs';
-import { MASTER, MASTER_FILE } from './brandMaster.mjs';
+import { DOCUMENT_ICON, DOCUMENT_ICON_FILE, MASTER, MASTER_FILE } from './brandMaster.mjs';
 import { shapeProblem } from './brandShape.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -93,6 +93,10 @@ async function main() {
   const master = await readFile(MASTER);
   const problem = await shapeProblem(master);
   if (problem !== null) stale.push(`${MASTER_FILE} (${problem})`);
+  // THE FILE-TYPE MASTER IS HELD TO THE SAME SHAPE (ADR-0002's note of 2026-10-20); it feeds the Store set's FileLogo
+  // images, built at packaging, so it has no committed derivative here to compare.
+  const documentProblem = await shapeProblem(await readFile(DOCUMENT_ICON));
+  if (documentProblem !== null) stale.push(`${DOCUMENT_ICON_FILE} (${documentProblem})`);
 
   for (const { file, size } of OUTPUTS) {
     const generated = await square(master, size);

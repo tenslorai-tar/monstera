@@ -17,7 +17,8 @@
  *
  * ## Built, not committed
  *
- * Seventy-three images a package and a listing need and nothing else reads. They are written into the desktop package's `dist/`,
+ * A hundred and twenty images a package and a listing need and nothing else reads — the mark's seventy-three and the PDF
+ * file-type logo's forty-seven, from the owner's document icon (R6). They are written into the desktop package's `dist/`,
  * which is not committed, and remade from the master on demand — the rule `generateAssets.mjs` states for the
  * committed sizes (*"committing a generated file is acceptable where regenerating it is one command"*) applied the
  * other way: here nothing needs them on disk between packagings.
@@ -40,7 +41,7 @@ import sharp from 'sharp';
 
 import { formatError } from '../lib/reportError.mjs';
 import { isMain } from '../lib/isMain.mjs';
-import { MASTER } from './brandMaster.mjs';
+import { DOCUMENT_ICON, MASTER } from './brandMaster.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -59,9 +60,10 @@ const TILES = [
 ];
 
 /**
- * Every image, by file name: its pixel size and whether the mark fills it (an icon) or sits on it (a tile).
+ * Every image, by file name: its pixel size, whether the mark fills it (an icon) or sits on it (a tile), and which
+ * master it comes from — the mark, or the PDF file-type icon's (`document`, ADR-0002's note of 2026-10-20).
  *
- * @type {ReadonlyArray<{ readonly file: string, readonly width: number, readonly height: number, readonly fill: boolean }>}
+ * @type {ReadonlyArray<{ readonly file: string, readonly width: number, readonly height: number, readonly fill: boolean, readonly master?: 'document' }>}
  */
 export const STORE_ASSETS = [
   ...TARGET_SIZES.flatMap((size) =>
@@ -92,6 +94,25 @@ export const STORE_ASSETS = [
       fill: false,
     })),
   ),
+  // THE PDF FILE-TYPE LOGO (R6): `uap:FileTypeAssociation > uap:Logo`, which Windows sizes as it does the app-list icon
+  // — the same target sizes, each plain and in both unplated forms, and the same scales of 44 — from the owner's
+  // document icon rather than the mark.
+  ...TARGET_SIZES.flatMap((size) =>
+    ['', '_altform-unplated', '_altform-lightunplated'].map((form) => ({
+      file: `FileLogo.targetsize-${String(size)}${form}.png`,
+      width: size,
+      height: size,
+      fill: true,
+      master: /** @type {const} */ ('document'),
+    })),
+  ),
+  ...SCALES.map((scale) => ({
+    file: `FileLogo.scale-${String(scale)}.png`,
+    width: scaled(44, scale),
+    height: scaled(44, scale),
+    fill: true,
+    master: /** @type {const} */ ('document'),
+  })),
   // THE LISTING'S 1:1 APP TILE ICON, uploaded in Partner Center rather than packaged: *"strongly recommend"* for an
   // app, and preferred by the Store over the package's image (*App screenshots, images, and trailers for MSIX app*,
   // Microsoft Learn, read 2026-09-27). Poster and box art are for games there, and screenshots come from the running
@@ -110,10 +131,10 @@ function scaled(base, scale) {
 }
 
 /**
- * One image from the master.
+ * One image from its master.
  *
  * @param {Buffer} master
- * @param {{ width: number, height: number, fill: boolean }} asset
+ * @param {{ width: number, height: number, fill: boolean, master?: 'document' }} asset
  * @returns {Promise<Buffer>}
  */
 export async function storeImage(master, asset) {
@@ -121,6 +142,11 @@ export async function storeImage(master, asset) {
   const side = asset.fill
     ? Math.min(asset.width, asset.height)
     : Math.round((Math.min(asset.width, asset.height) * 2) / 3);
+  // THE DOCUMENT ICON AS SUPPLIED, canvas and all (ADR-0002's note of 2026-10-20): the owner drew the page inside the
+  // square with its own margins, which is how Windows sizes a file icon, so it is fitted untrimmed.
+  if (asset.master === 'document') {
+    return sharp(master).resize(side, side, { fit: 'contain', background: clear }).png({ compressionLevel: 9 }).toBuffer();
+  }
   // AN ICON IS THE MARK ITSELF, not the master's canvas: the master is a square holding a portrait mark inside a
   // transparent margin, and fitting the canvas kept that margin — the app-list icon filled 75% of its width and 87–88%
   // of its height, and sat visibly smaller on the taskbar than Notepad's portrait page, which runs the full height
@@ -143,9 +169,10 @@ export async function storeImage(master, asset) {
  */
 export async function writeStoreAssets(directory) {
   const master = await readFile(MASTER);
+  const document = await readFile(DOCUMENT_ICON);
   await mkdir(directory, { recursive: true });
   for (const asset of STORE_ASSETS) {
-    await writeFile(join(directory, asset.file), await storeImage(master, asset));
+    await writeFile(join(directory, asset.file), await storeImage(asset.master === 'document' ? document : master, asset));
   }
   return STORE_ASSETS.length;
 }

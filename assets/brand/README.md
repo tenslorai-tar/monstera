@@ -12,7 +12,8 @@ protects users rather than the project.
 
 | File | Size | Origin | Used by |
 |---|---|---|---|
-| `monstera_logo.png` | 2048 × 2048, RGBA | **the master — supplied by the owner** (the 4096 × 4096 logo of 2026-10-07, resampled to this size; see ADR-0002's note of that day): the mark alone, a green document with a folded corner and the leaf in a white circle, no wordmark | every file below; the Store's 73 images — the package's 72 and the listing's app tile icon (`npm run brand:store`, built into `apps/desktop/dist/store-assets/` and not committed); the file-type icon when packaging lands |
+| `monstera_logo.png` | 2048 × 2048, RGBA | **the master — supplied by the owner** (the 4096 × 4096 logo of 2026-10-07, resampled to this size; see ADR-0002's note of that day): the mark alone, a green document with a folded corner and the leaf in a white circle, no wordmark | every file below; the Store's 73 images — the package's 72 and the listing's app tile icon (`npm run brand:store`, built into `apps/desktop/dist/store-assets/` and not committed) |
+| `monstera-icon-2048.png` | 2048 × 2048, RGBA | **the file-type master — supplied by the owner 2026-10-20** (ADR-0002's note of that day): a taller document icon, the page drawn inside the square with its own margins, one design for light and dark | the PDF file-type association's logo only — the `FileLogo` images, built with the Store's and fitted untrimmed |
 | `logo-256.png` | 256 × 256 | generated | `README.md` and docs |
 | `logo-title.png` | 52 × 52 | generated | the menu bar's mark, drawn at 18 px (`--logo-menu`; the title bar's, at 26 px, until ADR-0107) |
 | `logo-hero.png` | 142 × 142 | generated | the start screen's hero at 1x, drawn at 142 px (84, then 118 after the owner's review of 0.1.6.0, then about 142 on 2 October); the About window, at 64 px |
@@ -26,6 +27,10 @@ that reads it. The start screen and About set the application's name as text, so
 longer carries it. The previous master, `logo.png` (1652 × 2050), was retired on 2026-09-19 and
 lives in the history.
 
+**And one more since 2026-10-20, for one output**: `monstera-icon-2048.png`, the owner's taller
+document icon, feeds the PDF file-type association's logo and nothing else (ADR-0002's note of that
+day). `brandMaster.mjs` names it beside the mark, and `brand:check` holds it to the same shape rule.
+
 **`monstera_new_logo.png` and `monstera_logo_no_text.png` were retired on 2026-10-04** — the mark
 with its wordmark and the mark alone, the two masters of 2026-09-19 to 2026-10-04 — replaced by the
 one above. They live in the history like their predecessors.
@@ -38,7 +43,8 @@ history like its predecessor.
 
 ## Rules
 
-- **Every output comes from the one master**, each size a line in `OUTPUTS` in
+- **Every output comes from the mark's master** — the file-type logo alone from the document
+  icon's — each size a line in `OUTPUTS` in
   `scripts/brand/generateAssets.mjs`. Adding a size is a line in that script,
   never a new binary committed by hand. `brand:check` also refuses a master
   with no alpha channel or an opaque corner (`scripts/brand/brandShape.mjs`,

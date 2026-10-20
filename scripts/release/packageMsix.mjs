@@ -172,6 +172,28 @@ export function nameExecutable(executable, version) {
   if (differs.length > 0) throw new Error(`${executable} does not say it is Monstera after its version resource was written: ${differs.join('; ')}`);
 }
 
+/**
+ * Why a staged package's PDF file-type logo is missing, or `null` when it is there (R6): the manifest's
+ * `uap:FileTypeAssociation` names a `uap:Logo`, and the staged `Assets` folder holds every image the generator makes
+ * for that name. Read from the manifest TEXT and the folder, the two things that are packed, so a logo renamed in one
+ * and not the other, or an image set left unwritten, refuses the package rather than shipping a blank icon.
+ *
+ * @param {string} manifestXml
+ * @param {string} assets the staged `Assets` folder
+ * @returns {string | null}
+ */
+export function associationLogoProblem(manifestXml, assets) {
+  const association = /<uap:FileTypeAssociation\b[\s\S]*?<\/uap:FileTypeAssociation>/u.exec(manifestXml)?.[0];
+  if (association === undefined) return 'the manifest has no file-type association';
+  const logo = /<uap:Logo>([^<]+)<\/uap:Logo>/u.exec(association)?.[1];
+  if (logo === undefined) return 'the file-type association names no logo';
+  const base = basename(logo.replaceAll('\\', '/')).replace(/\.png$/u, '');
+  const wanted = STORE_ASSETS.filter((asset) => asset.file.startsWith(`${base}.`)).map((asset) => asset.file);
+  if (wanted.length === 0) return `the association's logo ${logo} is no image the generator makes`;
+  const absent = wanted.filter((file) => !existsSync(join(assets, file)));
+  return absent.length === 0 ? null : `the association's logo ${logo} is missing ${String(absent.length)} image(s): ${absent.slice(0, 5).join(', ')}`;
+}
+
 /** The workspace packages the shell loads in Node or Electron main. `ui` and `testing` are bundled or unshipped. */
 const SHIPPED_WORKSPACES = ['@monstera/desktop', '@monstera/kernel', '@monstera/contract', '@monstera/shared', '@monstera/nodemode'];
 
@@ -264,7 +286,7 @@ export function appxManifest({ identity, version, architecture }) {
     '        <uap:Extension Category="windows.fileTypeAssociation">',
     '          <uap:FileTypeAssociation Name="pdf">',
     '            <uap:DisplayName>PDF document</uap:DisplayName>',
-    '            <uap:Logo>Assets\\AppList.png</uap:Logo>',
+    '            <uap:Logo>Assets\\FileLogo.png</uap:Logo>',
     '            <uap:SupportedFileTypes>',
     '              <uap:FileType ContentType="application/pdf">.pdf</uap:FileType>',
     '            </uap:SupportedFileTypes>',
@@ -687,7 +709,7 @@ async function main() {
   const images = join(work, 'images');
   await writeStoreAssets(join(images, 'Assets'));
   rmSync(join(images, 'Assets', 'Listing.AppTileIcon-300.png'), { force: true });
-  if (STORE_ASSETS.length !== 73) throw new Error('The Store image set changed size; read storeAssets.mjs before packing.');
+  if (STORE_ASSETS.length !== 120) throw new Error('The Store image set changed size; read storeAssets.mjs before packing.');
   const manifestXml = appxManifest({ identity, version, architecture: 'x64' });
   writeFileSync(join(images, 'AppxManifest.xml'), manifestXml);
   const priconfig = join(work, 'priconfig.xml');
@@ -695,6 +717,9 @@ async function main() {
   execFileSync(tools.makepri, ['new', '/pr', images, '/cf', priconfig, '/mn', join(images, 'AppxManifest.xml'), '/of', join(stage, 'resources.pri'), '/o'], { stdio: 'pipe' });
   cpSync(join(images, 'Assets'), join(stage, 'Assets'), { recursive: true });
   writeFileSync(join(stage, 'AppxManifest.xml'), manifestXml);
+  // THE PDF FILE-TYPE LOGO IS THERE (R6), read back from what is packed.
+  const logoProblem = associationLogoProblem(readFileSync(join(stage, 'AppxManifest.xml'), 'utf8'), join(stage, 'Assets'));
+  if (logoProblem !== null) throw new Error(`The package's PDF file-type icon is missing: ${logoProblem}.`);
 
   // THE PROGRAM STARTS, or there is no package (`startCheck.mjs`): every check above reads files, and 0.1.7.0 passed
   // all of them and did not start. The stage is compared before and after, because whatever a start wrote into it
