@@ -892,6 +892,93 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-20 — Stage audit of `a27f93d9..6abc979a` — findings SSSSSSSS-1 to SSSSSSSS-9
+
+Local fix session 3's range (the owner's review of 0.1.16.0, R1–R15), audited lean as the owner asked: fix what would
+turn CI or Guards red or is a security or data-loss risk; record the rest. `npm run audit:scope`: 53 commits, 180 files;
+2 proofs added, 47 modified, none removed. **Stated limitation, not a pass:** the modified proofs' diffs were read where
+this session wrote them (each commit names its proof, control and mutation); the range's other modified proofs were not
+re-read.
+
+### Fixed in range
+
+**SSSSSSSS-1** — `67c338ab` (R11's move fix) admitted Edit object's `about` placement beside the block command's own
+fields and refused the mix only in a `.refine`, which the schema size bound cannot read: `engine/apply` past the 256 KiB
+frame and `engine/apply-file` past the 8 MiB file ceiling (`hostRoutes.test.ts`, red from that commit). Fixed as a union,
+`places` admitting Edit object's one placement once (`ddcb361a`). Found by a related-test run, not by the commit that made
+it, whose own runs named its proofs and not this file.
+**SSSSSSSS-2** — `f2d959bc`'s message said App.test.tsx passed; only its new cases had been run, and two older cases read
+the © link's hidden name and the footer's new fourth button (`bd26b11f`). A commit message's proof list is a claim too.
+**SSSSSSSS-3** — `npm run local` had refused to start since `67095c32` (2026-10-05), a stale NOT_RUN_BY_CI entry
+(`dc685e91`). The refusal was the check working; nothing ran it for two weeks.
+**SSSSSSSS-4** — two instruments written this range owed the repository's own registrations: the R13 sweep the build-
+freshness guard (`45f1a930`), the R1 measurement the computed-import list (`2e47b1cf`). Both found by the sweep.
+**SSSSSSSS-5** — `proof:hostcontainment` failed on the building machine only: the contained cell's Node walked up from
+`%TEMP%` to a `package.json` in the user's home and was refused (EPERM is fatal where ENOENT is not). The instrument now
+carries its own package boundary (`fbbbf8b6`). CI was blind to it by construction — its runners have no such file (item 3,
+asked the other way round).
+**SSSSSSSS-6** — DEBIAN-CVE-2026-112036, published during the range: triaged AFFECTED, NOT REACHABLE (`831abcea`), then
+withheld by the owner's decision — the shim no longer exports the change-history door and its export scan refuses a DLL
+that does (`21fbac1d`; ARCHITECTURE and CLAUDE.md said three withheld exports, `c617f757`).
+**SSSSSSSS-7** — `guard:tree` took 10 m 32 s on Windows, one `git cat-file` process per tracked file; batched, 9.5 s
+(`dc174865`). Its first run on the change was red in `proof:guards` (abbreviated SHAs), which is the proof doing its job.
+**SSSSSSSS-8** — the tree-wide lint takes 15–25 minutes here, past the sweep's largest bound for a script that is not a
+build, so the sweep stopped at it on every run. The owner chose to leave lint to its own run, named on every sweep
+(`6abc979a`).
+
+### Recorded
+
+**SSSSSSSS-9** — my own process. I edited a file while the sweep was running (its run 2), and it sealed *the tree moved
+under this run*; that run counted for nothing and was repeated. A commit message (`c617f757`) stated a figure's history I
+had not measured, corrected by `53ec28e3`. And the escape guard denied six reflexes this session: a `sed -i` and two
+`node -e`, each typed in front of an unrelated command, an `echo` beside a redirect, a `sed` writing into a file, and a
+heredoc into `/dev/null`. Nothing was written by any of them. Counted as each happened.
+
+### 1. Root cause or workaround?
+
+Each fix above states its mechanism in its commit. None is a retry, a raised bound or a loosened check: capped scripts
+were given the sweep's own discovery bound on the next run, and lint's exclusion is the owner's decision, named on every
+run.
+
+### 2. Easy shape only?
+
+R7 was walked on a slant and on a triangle, with the cursor read from the page's computed style; R12 in both Organize
+views, docked and moved; R2's rule against a nested package and a package named `test`; R1 with and without the job. Not
+walked: a rotated page for R7.
+
+### 2a.
+
+No assertion moved from asserted to derived.
+
+### 3. Would CI have caught it?
+
+SSSSSSSS-1 yes (CI runs `hostRoutes.test.ts`); it was caught locally first. SSSSSSSS-5 and -7 no, by construction (a
+Linux runner, an empty home). SSSSSSSS-6 yes (Guards runs `check:advisories`). The board is read once after the push.
+
+### 4. Non-vacuous?
+
+Every new case has a mutation or a before-run that turns it red, named in its commit.
+
+### 4a. / 4b.
+
+The R13 sweep and the R1 measurement each carry a positive control that must see something before their silence counts;
+the withheld-export scan has a control that a table carrying the door is reported.
+
+### 5. Executed or asserted?
+
+Executed: every timing, count and verdict above. Asserted: the R6 Explorer view after install (the owner's install test).
+
+### 6. Architecture before the feature?
+
+ADR-0104, ADR-0002, ADR-0047 and ADR-0048 corrections each landed in their own commit ahead of the code.
+
+### 7. Documents?
+
+FEATURES rows for R7, R12, R2/R3, R6 and the logo row; the brand README; the help article for R13; ARCHITECTURE §3 and
+CLAUDE.md on the withheld exports; the journal entry below.
+
+---
+
 ## 2026-10-20 — Local fix session 3: the owner's review of 0.1.16.0, R1 to R15
 
 Branch `work/2026-10-19-review` from main `041e8c48`. The owner's questions Q1–Q6 and their answers of 2026-10-20 are in
