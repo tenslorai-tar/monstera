@@ -537,7 +537,26 @@ try {
   // file is built around.
 }
 
-const requested = ONLY === null ? derived : derived.filter((name) => name.includes(ONLY));
+/**
+ * SCRIPTS THIS SWEEP LEAVES TO A RUN OF THEIR OWN, each with that run — the owner's decision of 2026-10-20.
+ *
+ * The lint is one process per unit under one heap budget (ADR-0170), and on the building machine the whole tree takes
+ * 15 to 25 minutes, past the largest bound this sweep gives a script that is not a build (540 s). It was killed at its
+ * bound on every run, and since the sweep stops at a timeout, the 55 scripts ordered after it were never reached.
+ * Rather than a build-sized bound, the owner chose to leave it out here: it runs on its own before a push
+ * (`NODE_OPTIONS=--max-old-space-size=8192 npm run lint`) and on CI's Lint steps. `lint` and `check:lint` are the same
+ * runner under two names, so both go.
+ *
+ * NAMED ON EVERY RUN below, so leaving it out is a visible exception and never a silent smaller sweep.
+ */
+const RUN_ON_THEIR_OWN = new Map([
+  ['lint', 'runs on its own before a push, and on CI (the owner, 2026-10-20)'],
+  ['check:lint', 'the same runner as `lint`, under its own name'],
+]);
+
+const requested = (ONLY === null ? derived : derived.filter((name) => name.includes(ONLY))).filter(
+  (name) => !RUN_ON_THEIR_OWN.has(name),
+);
 
 /**
  * THE SCANNING ROSTER RUNS, IT IS NO LONGER PRINTED (finding UUUU-1).
@@ -1350,7 +1369,15 @@ if (changedForProofs !== null) {
  * run's selection. An unfiltered run prints nothing here, which is correct: it
  * excluded nothing.
  */
-const unattempted = derived.filter((name) => !selected.includes(name)).sort();
+const leftToOwnRun = derived.filter((name) => RUN_ON_THEIR_OWN.has(name));
+if (leftToOwnRun.length > 0) {
+  process.stdout.write(
+    `\n  ${String(leftToOwnRun.length)} script(s) this sweep leaves to a run of their own, so this verdict covers none of them:\n` +
+      leftToOwnRun.map((name) => `    ${name} — ${RUN_ON_THEIR_OWN.get(name) ?? ''}`).join('\n') +
+      '\n',
+  );
+}
+const unattempted = derived.filter((name) => !selected.includes(name) && !RUN_ON_THEIR_OWN.has(name)).sort();
 if (unattempted.length > 0) {
   // PROOFS FIRST, and that ordering is the whole value of the list. A
   // `check:`-filtered run obviously skipped `lint` and `build`; what is
