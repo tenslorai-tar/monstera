@@ -293,6 +293,62 @@ function blobBytes(sha) {
   return stdout instanceof Buffer ? stdout : Buffer.from(stdout);
 }
 
+/** How many bytes one batched read carries at most: under the shared `git()` helper's 64 MB output buffer. */
+const BATCH_BYTES = 48 * 1024 * 1024;
+
+/**
+ * The bytes of every blob the content checks will read, in as few `git cat-file --batch` invocations as their sizes
+ * allow — {@link blobSizes}' shape, for the contents. One `git cat-file blob` per object was a process per tracked file,
+ * and starting a process is the expensive part on Windows: measured 2026-10-20, `guard:tree` took 10 m 32 s over 3,236
+ * files (64 MB), past every bound the local sweep can give it, while Linux, where CI runs it, starts processes cheaply.
+ * Blobs the size rule already rejects, and non-blobs, are not read, as {@link violations} reads none of them.
+ *
+ * The answer is PARSED BY ITS OWN HEADERS — `<sha> blob <size>` before each object's bytes — and each header must name
+ * the object asked for in the order asked, so a misread cannot hand one file's bytes to another's check.
+ *
+ * @param {readonly string[]} shas in the order to read
+ * @param {Map<string, number>} sizes {@link blobSizes}' answer
+ * @returns {Map<string, Buffer>}
+ */
+function blobContents(shas, sizes) {
+  /** @type {Map<string, Buffer>} */
+  const contents = new Map();
+  /** @type {string[]} */
+  let batch = [];
+  let total = 0;
+  const flush = () => {
+    if (batch.length === 0) return;
+    const { stdout } = git(['cat-file', '--batch'], { input: `${batch.join('\n')}\n`, binary: true });
+    const out = stdout instanceof Buffer ? stdout : Buffer.from(stdout);
+    let at = 0;
+    for (const sha of batch) {
+      const end = out.indexOf(0x0a, at);
+      if (end === -1) throw new Error(`git cat-file --batch answered no header for ${sha}`);
+      const [named, type, size] = out.toString('utf8', at, end).split(' ');
+      const length = Number.parseInt(`${size}`, 10);
+      // THE FULL NAME OF THE OBJECT ASKED FOR: the staged scope asks by git's abbreviation (`diff --raw`), and git answers
+      // the whole SHA — or refuses an ambiguous abbreviation itself, which is no `blob` header here.
+      if (named === undefined || !named.startsWith(sha) || type !== 'blob' || !Number.isInteger(length)) {
+        throw new Error(`git cat-file --batch answered "${out.toString('utf8', at, end)}" where ${sha} was asked`);
+      }
+      contents.set(sha, out.subarray(end + 1, end + 1 + length));
+      // EACH OBJECT IS FOLLOWED BY A NEWLINE, git's own delimiter.
+      at = end + 1 + length + 1;
+    }
+    batch = [];
+    total = 0;
+  };
+  for (const sha of new Set(shas)) {
+    const size = sizes.get(sha) ?? -1;
+    if (size < 0 || size > MAX_BYTES) continue;
+    if (total + size > BATCH_BYTES) flush();
+    batch.push(sha);
+    total += size;
+  }
+  flush();
+  return contents;
+}
+
 /**
  * The first byte in `bytes` that is a C0 control character, or -1.
  *
@@ -504,9 +560,10 @@ function bannedScriptForms(blob) {
  * @param {string} sha
  * @param {number} size Size of the blob in bytes; -1 means "not a blob".
  * @param {'staged' | 'tree' | 'history'} scope Which git scope the caller is checking.
+ * @param {Map<string, Buffer> | undefined} contents The batch read ({@link blobContents}), or `undefined` to read alone.
  * @returns {string[]} Human-readable reasons this path may not be committed.
  */
-function violations(path, sha, size, scope) {
+function violations(path, sha, size, scope, contents) {
   /** @type {string[]} */
   const reasons = [];
   const extension = extname(path).toLowerCase();
@@ -525,7 +582,8 @@ function violations(path, sha, size, scope) {
     return reasons;
   }
 
-  const blob = blobBytes(sha);
+  // FROM THE BATCH where the caller read one, else on its own: a blob the batch did not carry is still read, never skipped.
+  const blob = contents?.get(sha) ?? blobBytes(sha);
   // The 8000-byte slice is git's own binary-detection heuristic and applies only
   // to the *type* questions below. The content scan reads the whole blob: see
   // the comment on the control-character check for what sharing one window cost.
@@ -670,6 +728,13 @@ export function guardFiles(scope, range) {
   }
 
   const sizes = blobSizes(blobs);
+  // EVERY BLOB'S BYTES IN BATCHES, read once here rather than by a process per file (`blobContents`) — for the staged
+  // and tree scopes, whose total is the tree's (64 MB on 2026-10-20). The history scope can name every object ever
+  // committed, which held in one map is a memory figure nobody has bounded, so it keeps the read per object.
+  const contents = scope === 'history' ? undefined : blobContents(
+    blobs.map((blob) => blob.sha),
+    sizes,
+  );
   /** @type {string[]} */
   const failures = [];
 
@@ -701,7 +766,7 @@ export function guardFiles(scope, range) {
       continue;
     }
 
-    for (const reason of violations(blob.path, blob.sha, sizes.get(blob.sha) ?? 0, scope)) {
+    for (const reason of violations(blob.path, blob.sha, sizes.get(blob.sha) ?? 0, scope, contents)) {
       failures.push(`  ${blob.path}\n      ${reason}`);
     }
   }
