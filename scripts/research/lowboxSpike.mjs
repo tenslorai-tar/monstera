@@ -2463,6 +2463,13 @@ try {
   // ---- the app ----
   const koffiPath = JSON.stringify(join(ROOT, 'node_modules', 'koffi'));
   const hostJs = join(scratch, 'host.js');
+  // THE ENTRY'S OWN PACKAGE BOUNDARY. Node finds a CommonJS entry's nearest `package.json` by walking up its folders,
+  // and an ancestor the container may not read is FATAL — EPERM is not ENOENT. With `host.js` under the temp folder the
+  // walk reached the user's home, so a `package.json` someone left there (measured 2026-10-20: one from 2025-12-29 on
+  // the building machine) crashed every contained cell before its first probe, and the cell read UNREADABLE. CI's
+  // runners have none, which is why the board never saw it. A boundary beside the entry, in the granted area, ends the
+  // walk on every machine.
+  writeFileSync(join(scratch, 'package.json'), '{ "type": "commonjs" }\n');
   copyFileSync(FIXTURE, join(scratch, 'handed.pdf'));
   // Written AFTER the grant, which is safe and deliberate: `(OI)(CI)` propagates
   // to files created later, so a file made here inherits the directory's read.
