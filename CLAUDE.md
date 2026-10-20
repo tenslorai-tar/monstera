@@ -326,12 +326,14 @@ is wrong** — fix the boundary, not the test.
   MuPDF calls turned out to be MuPDF's own `platform/wasm/lib/mupdf.ts`, over the
   flat-C `mupdf.c` beside it, so that C is generated into the shim and that object
   model runs in `mupdfRaw.ts`; no kernel module imports the WASM package, and it
-  is not in what ships. Three exports are withheld, and each was found only once a
+  is not in what ships. Four exports are withheld, and the first three were found only once a
   scan could see the new code — the generated glue is not in the commit, so a scan
   of committed files was blind to it: MuPDF's JavaScript switch (invariant 24, MuJS
   back in the DLL), its format-string writer dispatcher (invariant 23), and font
   subsetting (the advisory register's reachability watch, a memory overwrite no
-  release fixes). **A
+  release fixes). The fourth, change-history validation, was withheld on
+  2026-10-20 by the owner's decision to shut DEBIAN-CVE-2026-112036's door rather
+  than watch it; the shim build's export scan now refuses a DLL carrying any of them. **A
   generated file is shipped code; a scan whose root is the commit does not see it.**
 
   **Its size was never the import count, and the figure grew for weeks unseen.**
