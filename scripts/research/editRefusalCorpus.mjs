@@ -34,6 +34,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { TYPE3_EDIT, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 import { formatError } from '../lib/reportError.mjs';
@@ -56,6 +57,8 @@ if (!existsSync(library) || bindNativeEngine(ROOT) === null) {
   process.exit(69);
 }
 
+// THE BUILD IT READS IS THIS SOURCE'S, `type3Edit.proof.mjs`' edges: the kernel, the contract's commands and the shim.
+refuseStaleBuild(ROOT, TYPE3_EDIT, 3);
 // LITERAL SPECIFIERS, as the proofs load the built kernel.
 const pdfium = await import('../../packages/kernel/dist/pdfiumFfi.js');
 pdfium.openPdfium(library);
