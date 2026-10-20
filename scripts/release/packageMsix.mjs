@@ -72,6 +72,7 @@ import { x2tPath } from '../provision/onlyoffice.mjs';
 import { SHIPPED_PLATFORM, pdfiumLibrary } from '../provision/pdfium.mjs';
 import { pdftotextPath } from '../provision/poppler.mjs';
 import { tessdataDirectory } from '../provision/tessdata.mjs';
+import { developerFile, developerFilesIn } from './developerFiles.mjs';
 import { repairThenRefuse } from './dllClosure.mjs';
 import { nativeManifest } from './nativeManifest.mjs';
 import { cloudClientsModule, writePackagedClients } from './oauthClients.mjs';
@@ -405,11 +406,12 @@ function filesUnder(folder) {
     .map((entry) => join(entry.parentPath, entry.name));
 }
 
-/** What a shipped `dist/` leaves out: tests, maps, declarations, and the build's own Store images. */
+/**
+ * What a shipped `dist/` leaves out: a developer's file by the one rule (`developerFiles.mjs`), and the build's own
+ * Store images.
+ */
 function shippedFromDist(/** @type {string} */ source) {
-  const name = basename(source);
-  if (/\.(?:map|d\.ts|d\.mts)$/u.test(name)) return false;
-  if (/\.(?:test|spec|proof|setup)\.[cm]?js$/u.test(name)) return false;
+  if (developerFile(basename(source), { dependency: false }) !== null) return false;
   if (source.split(sep).includes('store-assets')) return false;
   return true;
 }
@@ -484,7 +486,9 @@ function productionPackages(root) {
 }
 
 /**
- * Copies a package folder without its nested `node_modules`, which npm's tree lists as packages of their own.
+ * Copies a package folder without its nested `node_modules`, which npm's tree lists as packages of their own, and
+ * without its developers' files (R2): source maps, TypeScript, tests, READMEs and the like, by `developerFiles.mjs`'
+ * one rule — the licence texts stay.
  *
  * @param {string} from
  * @param {string} to
@@ -492,7 +496,12 @@ function productionPackages(root) {
 function copyPackage(from, to) {
   cpSync(from, to, {
     recursive: true,
-    filter: (source) => relative(from, source).split(sep)[0] !== 'node_modules',
+    filter: (source) => {
+      const inside = relative(from, source);
+      if (inside.split(sep)[0] === 'node_modules') return false;
+      // A FOLDER is judged by its files: `cpSync` asks for it first, and a folder name alone says nothing about a file.
+      return inside === '' || statSync(source).isDirectory() || developerFile(inside, { dependency: true }) === null;
+    },
   });
 }
 
@@ -600,6 +609,12 @@ async function main() {
   const packages = productionPackages(REPO_ROOT);
   for (const path of packages) copyPackage(join(REPO_ROOT, 'node_modules', path), join(app, 'node_modules', path));
   step(`  ${String(packages.length)} production packages`);
+  // NO LIBRARY DEVELOPER'S FILE SHIPS (R2), by the rule both copies took: asked of the finished stage, so a copy step
+  // that forgot to ask refuses the package rather than shipping them again.
+  const leftovers = developerFilesIn(app);
+  if (leftovers.length > 0) {
+    throw new Error(`The package would carry ${String(leftovers.length)} developer's file(s) that never run:\n  ${leftovers.slice(0, 40).join('\n  ')}`);
+  }
   const missing = unresolvedImports(app, ts);
   if (missing.length > 0) {
     throw new Error(`The package would not resolve ${String(missing.length)} import(s):\n  ${missing.join('\n  ')}`);

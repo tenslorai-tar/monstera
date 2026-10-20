@@ -28,6 +28,7 @@ import { versionDiffers, versionResource } from '../lib/peVersion.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { partialOutcome } from '../lib/unverifiable.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
+import { developerFile, developerFilesIn } from '../release/developerFiles.mjs';
 import { readPortFile, startsToWindow } from '../release/startCheck.mjs';
 import {
   BRAND_ICON,
@@ -65,7 +66,7 @@ const RUNTIME_CASES = [
 ];
 
 /** Cases decidable without one. These run on every machine. */
-const PURE_CASES = 11;
+const PURE_CASES = 13;
 
 const roster = createRoster(failures, { cases: RUNTIME_PRESENT ? PURE_CASES + RUNTIME_CASES.length : PURE_CASES });
 
@@ -214,6 +215,40 @@ try {
       manifest.includes('<DisplayName>Monstera PDF Editor</DisplayName>') &&
       manifest.includes(`Publisher="CN=Tenslor Inc., ${UNSIGNED_OID}"`),
     `blind: ${String(blind)}`,
+  );
+
+  // A LIBRARY DEVELOPER'S FILES (R2): the one rule, on the names the certification kit listed, and on what must ship.
+  const developers = ['a/svgPath.ts', 'src/named-references.ts', 'index.d.ts', 'cjs/api/Embeddable.js.map', 'src/v4/classic/tests/registries.test.ts', 'README.md', 'codec/README.md', 'CHANGELOG.md', 'docs/guide.js', 'examples/run.js'];
+  const ships = ['index.js', 'cjs/index.cjs', 'esm/index.mjs', 'package.json', 'LICENSE', 'LICENSE.md', 'NOTICE', 'licence.txt', 'COPYING', 'dist/x.wasm'];
+  const misjudged = [
+    ...developers.filter((path) => developerFile(path, { dependency: true }) === null).map((path) => `${path} ships`),
+    ...ships.filter((path) => developerFile(path, { dependency: true }) !== null).map((path) => `${path} is dropped`),
+  ];
+  // A FOLDER NAME decides only inside a dependency: our own `dist/test/…` is named by our build.
+  if (developerFile('test/run.js', { dependency: false }) !== null) misjudged.push('our own test/run.js is dropped');
+  check("a library developer's files are told from what ships: maps, TypeScript, tests, READMEs out; code, package.json and licences in", misjudged.length === 0, misjudged.join('; '));
+
+  // THE STAGE CHECK, which is what holds the rule: a stage carrying one map is refused and names it; CONTROL: the same
+  // stage without it reports nothing, and a package NAMED `test` is a package, not a test folder.
+  const stagedApp = join(scratch, 'stage-app');
+  mkdirSync(join(stagedApp, 'dist'), { recursive: true });
+  writeFileSync(join(stagedApp, 'dist', 'entry.js'), '');
+  for (const [path, text] of /** @type {const} */ ([
+    ['node_modules/@scope/lib/index.js', ''],
+    ['node_modules/@scope/lib/LICENSE', 'MIT'],
+    ['node_modules/test/index.js', ''],
+    ['node_modules/lib/node_modules/inner/index.js', ''],
+  ])) {
+    mkdirSync(dirname(join(stagedApp, path)), { recursive: true });
+    writeFileSync(join(stagedApp, path), text);
+  }
+  const cleanStage = developerFilesIn(stagedApp);
+  writeFileSync(join(stagedApp, 'node_modules', 'lib', 'node_modules', 'inner', 'index.js.map'), '{}');
+  const dirtyStage = developerFilesIn(stagedApp);
+  check(
+    "the finished stage is refused for one developer's file in a NESTED package, named; CONTROL: clean, and a package named test, report none",
+    cleanStage.length === 0 && dirtyStage.length === 1 && (dirtyStage[0] ?? '').startsWith('node_modules/lib/node_modules/inner/index.js.map'),
+    `clean: ${cleanStage.join(', ') || 'none'}; with the map: ${dirtyStage.join(', ') || 'none'}`,
   );
 
   // The brand's set is the seven sizes `assets/brand/README.md` names. CONTROL: a PNG — the brand's own 256-pixel
