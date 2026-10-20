@@ -403,3 +403,16 @@ be right — cites `docs/ARCHITECTURE.md` §3 by name while §3 said twelve. A
 citation that resolves to a section saying something else passes every link check
 there is (UU-1). §3's body is edited to be currently true, because it is living
 law; this section is a decision record, so it takes a correction instead.
+
+## Correction, 2026-10-20 — the PDFium host is started when an editing mode is chosen
+
+The owner's answer of 2026-10-20 to R11 (Q6 (a)): *start the PDFium helper as soon as Edit
+text or Edit object is chosen (it still stops when idle).* The host was built at its first
+read, so the first outline or the first block of a session paid its start — about 3.3 s on the
+owner's machine, cold, measured 2026-10-19 — after the person had already pressed. Choosing
+either mode now asks `main` to start it, through the binding's existing `starts`, which builds
+the host as the first read would and answers whether it started; the read that follows finds
+it running. It is the same host, built the same way, and it still retires after its idle time
+when nothing calls it, so choosing a mode and doing nothing costs one start and gives it back.
+A mode chosen on a computer where the host cannot start says so by the route `starts` already
+has (Help › Components), never by refusing the mode.

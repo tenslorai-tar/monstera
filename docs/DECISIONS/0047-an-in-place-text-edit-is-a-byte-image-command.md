@@ -266,3 +266,28 @@ Recorded as a correction rather than an edit because what was believed is the
 record, and because the overstatement is instructive: the sentence was written
 for its rhythm, and the file that refuted it was one this range had already
 read.
+
+## Correction, 2026-10-20 — a PDFium READ is handed main's image when that image is current
+
+The owner's review of 0.1.16.0 (R11) and their answer of 2026-10-20 (Q6 (a)). *Edit object*
+on a 44 MB brochure took 7.4 s to outline its page after the first improvements, and each warm
+PDFium read cost 0.6 to 1.8 s while its in-process parts total about 0.3 s (measured 2026-10-19,
+`scripts/research/objectClickWalk.mjs`). The difference was the input: **every** PDFium read —
+text runs, page objects, run fonts, page runs — was handed `ByteImageAccess.current()`, a full
+serialise of the MuPDF session into `main`, written again into the host's snapshot area.
+
+The saving this ADR named for byte-image commands — *main's image **is** the document's current
+bytes immediately after one* — holds for reads more widely than it said, and the command log
+already says when: it records how many applied entries the canonical image holds
+([ADR-0115](0115-a-rebuilt-session-replays-what-the-image-does-not-hold.md)), and the image is
+refreshed after every byte-image command and every command declared `image`
+([ADR-0084](0084-a-command-the-view-model-cannot-express-refreshes-the-image.md)). **So a PDFium
+read is handed the canonical image whenever the log says it holds every applied entry**,
+written into the host's area straight from where `main` keeps it — a file copy for a
+file-backed image, no serialise — and the session's serialise only when the log says the image
+is behind (after a live-session command the view model expresses). One rule, asked of the log
+that owns the answer (B3a), never a guess about which commands refresh. Nothing about *the host
+holds nothing between commands* changes: the image is still handed per read.
+
+**Rejected:** keeping a PDFium document open between reads of one version. It would answer
+reads faster and is the session table this ADR refused, with its staleness in both directions.
