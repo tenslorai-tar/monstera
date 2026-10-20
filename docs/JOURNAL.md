@@ -977,6 +977,20 @@ ADR-0104, ADR-0002, ADR-0047 and ADR-0048 corrections each landed in their own c
 FEATURES rows for R7, R12, R2/R3, R6 and the logo row; the brand README; the help article for R13; ARCHITECTURE §3 and
 CLAUDE.md on the withheld exports; the journal entry below.
 
+*Added the same day, after Guards' document-scope proof read this entry: the 4a/4b line above answered two items under
+one heading and 4c under none. Their answers, each under its own:*
+
+### 4b.
+
+Every search this range added carries a control it must locate: the R13 sweep's Type 3 print, R1's free cells for both
+watchers, the withheld-export scan's table that carries the door, and the containment proof's parent cell.
+
+### 4c.
+
+No roster in this range derives its count from the set it governs: the new proof cases are counted by literals
+(`PURE_CASES`, `cases: 12`, `cases: 8`) or by a list of their names (`packageMsix.proof.mjs`' `RUNTIME_CASES`), each of
+which a case leaving must touch.
+
 ---
 
 ## 2026-10-20 — Local fix session 3: the owner's review of 0.1.16.0, R1 to R15

@@ -211,6 +211,7 @@ describe('browser shim', () => {
       'app.ocrLanguages',
       'app.openStore',
       'app.openWebPage',
+      'app.prepareEditing',
       'app.releaseMemory',
       'app.rendererEnded',
       'app.review',

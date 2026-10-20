@@ -220,6 +220,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'app.bundledFace':
     'answers one of the fonts this application ships, named from a closed set, which no document contributes to; MAX_BUNDLED_FACE_BYTES bounds it (ADR-0250)',
   'app.components': 'answers one row per native component — the schema caps the list at the six declared ids',
+  'app.prepareEditing': 'takes nothing and answers a boolean, whatever the document',
   'settings.load': "carries the user's settings, which no document contributes to",
   'settings.save': 'answers a boolean',
   'work.progress': 'one bounded work id in; idle, or two counts and whether it stops out, whatever the file the work reads',
