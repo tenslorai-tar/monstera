@@ -1728,6 +1728,54 @@ describe('writeCanonicalImage', () => {
 });
 
 /**
+ * THE IMAGE A PDFium READ IS HANDED ([ADR-0047](../../../docs/DECISIONS/0047-an-in-place-text-edit-is-a-byte-image-command.md)'s
+ * correction of 2026-10-20, R11): the canonical image while the log says it holds every applied entry, and `null` — so
+ * the read serialises the session — once an applied entry is past it.
+ */
+describe('writeCurrentImage', () => {
+  it('writes the image while it is current, and answers null once an applied entry is past it — writing nothing', async () => {
+    const capabilities = new CapabilityRegistry();
+    const bytes = new Uint8Array([1, 2, 3, 4, 5]);
+    const written: string[] = [];
+    const documents = newService(capabilities, {
+      readIdentity: () => Promise.resolve(identity()),
+      readBytes: () => Promise.resolve(bytes),
+      writeBytes: (destination) => {
+        written.push(destination);
+        return Promise.resolve();
+      },
+    });
+    const opened = await documents.open(capabilities.mint(original()));
+    if (opened.kind !== 'opened') throw new Error(`expected opened, got ${opened.kind}`);
+
+    // CURRENT: the image as opened, and nothing applied.
+    expect(await documents.writeCurrentImage(SUPERVISOR_FOR_TEST, opened.docId, 'before')).toBe(5);
+
+    // A VIEW-MODEL COMMAND recorded, which the bus does not refresh the image for: the image is now behind.
+    await documents.run(opened.docId, (context) => {
+      context.commandLog(COMMAND_WRITER_FOR_TEST).record({
+        kind: 'invertible',
+        command: { kind: 'rotatePages', pages: [0], quarterTurns: 1 },
+        inverse: [{ page: 0, prior: { present: false } }],
+        read: undefined,
+      });
+      return Promise.resolve();
+    });
+    expect(await documents.writeCurrentImage(SUPERVISOR_FOR_TEST, opened.docId, 'behind')).toBeNull();
+
+    // CURRENT AGAIN once the bus says the image holds it, as it does after replacing the image.
+    await documents.run(opened.docId, (context) => {
+      context.commandLog(COMMAND_WRITER_FOR_TEST).imageIsCurrent();
+      return Promise.resolve();
+    });
+    expect(await documents.writeCurrentImage(SUPERVISOR_FOR_TEST, opened.docId, 'after')).toBe(5);
+
+    // THE BEHIND CASE WROTE NOTHING: a read handed a stale image would ask about a document that is not the one shown.
+    expect(written).toStrictEqual(['before', 'after']);
+  });
+});
+
+/**
  * CHECKPOINTS AS FILES ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md)): stored in a
  * document's own directory, deleted when the log lets go of them, removed at close, swept at start.
  *

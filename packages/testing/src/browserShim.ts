@@ -1242,6 +1242,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     // A BROWSER HOLDS NO BUNDLED FONT FILE (ADR-0250): refused as a broken install is, so the picker draws a bundled family
     // in the interface font, which is what it does wherever a face cannot be had. No case here is about the face.
     'app.bundledFace': () => Promise.reject(new Error('the browser shim holds no bundled font file')),
+    // NO ENGINE TO START in a browser: the shim's reads answer from its own fixtures, so preparing is a decided `false`.
+    'app.prepareEditing': () => Promise.resolve(ok({ started: false })),
     // A BROWSER HOLDS NO NATIVE COMPONENT (ADR-0122), so each is present by name only, and verified when asked — the
     // dialog's states, with nothing standing for a version the shim does not have.
     'app.components': ({ verify }) =>

@@ -219,6 +219,9 @@ function handlers(regionalLocale?: () => string, physicalMemory?: () => number) 
     components: () => {
       throw new Error('registration cases must not read the native components');
     },
+    prepareEditing: () => {
+      throw new Error('registration cases must not start an engine');
+    },
   });
 }
 

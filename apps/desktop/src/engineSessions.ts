@@ -192,6 +192,15 @@ export function canonicalImageWrite(documents: DocumentService, docId: DocId): S
 }
 
 /**
+ * The same write, only while the canonical image is the document as it is now, else `null`
+ * ({@link DocumentService.writeCurrentImage}): what a PDFium read is handed (ADR-0047's correction of 2026-10-20). The
+ * capability stays here for {@link canonicalImageWrite}'s reason.
+ */
+export function currentImageWrite(documents: DocumentService, docId: DocId): (destination: string) => Promise<number | null> {
+  return (destination) => documents.writeCurrentImage(SUPERVISOR, docId, destination);
+}
+
+/**
  * The same capability, for an instrument that must drive the SHIPPED call site.
  *
  * ## Why this is exported and why it is not a widening

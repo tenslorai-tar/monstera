@@ -294,6 +294,7 @@ function harness(
     ocrLanguages: () => Promise.resolve(['eng' as const]),
     fontFamilies: overrides.fontFamilies ?? null,
     components: () => Promise.resolve([]),
+    prepareEditing: () => Promise.resolve(false),
   });
   return {
     capabilities,
@@ -1130,6 +1131,7 @@ describe('document.open', () => {
       readDictionary: () => Promise.resolve(null),
       ocrLanguages: () => Promise.resolve([]),
       components: () => Promise.resolve([]),
+    prepareEditing: () => Promise.resolve(false),
         }),
       };
     }
@@ -2039,6 +2041,7 @@ settings: createEphemeralSettings(),
       readDictionary: () => Promise.resolve(null),
       ocrLanguages: () => Promise.resolve([]),
       components: () => Promise.resolve([]),
+    prepareEditing: () => Promise.resolve(false),
     });
 
     await expect(handlers['log.reveal']({})).resolves.toEqual({
@@ -2100,6 +2103,7 @@ settings: createEphemeralSettings(),
       readDictionary: () => Promise.resolve(null),
       ocrLanguages: () => Promise.resolve([]),
       components: () => Promise.resolve([]),
+    prepareEditing: () => Promise.resolve(false),
     });
     return { handlers, secrets, asked };
   }
@@ -2260,6 +2264,7 @@ settings: createEphemeralSettings(),
       readDictionary: () => Promise.resolve(null),
       ocrLanguages: () => Promise.resolve([]),
       components: () => Promise.resolve([]),
+    prepareEditing: () => Promise.resolve(false),
     });
     return { handlers, asked };
   }
@@ -2492,6 +2497,7 @@ settings,
       readDictionary: () => Promise.resolve(null),
       ocrLanguages: () => Promise.resolve([]),
       components: () => Promise.resolve([]),
+    prepareEditing: () => Promise.resolve(false),
     });
     return { handlers, saved };
   }
@@ -2729,6 +2735,7 @@ settings: createEphemeralSettings(),
       readDictionary: () => Promise.resolve(null),
       ocrLanguages: () => Promise.resolve([]),
       components: () => Promise.resolve([]),
+    prepareEditing: () => Promise.resolve(false),
     });
     return { handlers, uploaded };
   }

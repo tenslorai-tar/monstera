@@ -6983,6 +6983,22 @@ export const channels = {
   ),
 
   /**
+   * Starts the engine Edit text and Edit object read through, as either mode is chosen
+   * ([ADR-0048](../../../docs/DECISIONS/0048-what-a-second-engine-host-owes-and-what-it-holds.md)'s correction of
+   * 2026-10-20, R11): the PDFium host was built at its first read, so the first outline or block paid its start after the
+   * person had pressed. It is the host the read builds, by the same call, and it still stops when idle.
+   *
+   * **No parameters and nothing the renderer can name**: which engine, and whether there is one, is `main`'s. `started`
+   * false is a build with no PDFium host or one that could not start — which the mode is never refused for: its reads
+   * say so, and Help › Components is where a component that cannot start is named.
+   */
+  'app.prepareEditing': channel(
+    'Starts the editing engine ahead of the first read of Edit text or Edit object.',
+    z.object({}).strict(),
+    z.object({ started: z.boolean() }),
+  ),
+
+  /**
    * Opens one of the Microsoft Store APPLICATION's own pages — *Help › Check for updates* (ADR-0107, the owner's answer
    * of 2026-09-26: the Store's *Downloads and updates* page), and the update indicator's page for this application
    * (ADR-0110).

@@ -97,8 +97,33 @@ export interface PdfiumArea {
 export interface PdfiumTransfer extends SessionAreaSurface {
   /** Puts an image where the host may read it, under a name {@link mintName} gave. */
   readonly writeSnapshot: (area: SessionArea, name: string, bytes: ByteImage) => Promise<void>;
+  /**
+   * The same leg for an image written from where it is already kept ({@link WrittenImage}): handed the file's place,
+   * so the bytes go file to file and never through this adapter.
+   */
+  readonly writeSnapshotWith: (area: SessionArea, name: string, write: (destination: string) => Promise<number>) => Promise<void>;
   /** Removes a snapshot file. Called from a `finally`, so it must not throw on absence. */
   readonly removeSnapshot: (area: SessionArea, name: string) => Promise<void>;
+}
+
+/**
+ * A document image a READ is handed by its writer rather than by its bytes
+ * ([ADR-0047](../../../../docs/DECISIONS/0047-an-in-place-text-edit-is-a-byte-image-command.md)'s correction of
+ * 2026-10-20): `main`'s canonical image, current by its command log, written into the host's area from where `main`
+ * keeps it — so a read of a current document is never a serialise of the session. With the key it opens with.
+ */
+export interface WrittenImage {
+  readonly opensWith: ImageSession['opensWith'];
+  readonly writeInto: (destination: string) => Promise<number>;
+}
+
+/** What a PDFium read is handed: the bytes in hand, or a {@link WrittenImage}. */
+export type PdfiumReadImage = ImageSession | WrittenImage;
+
+/** A read's image into the host's area, by whichever leg it came with: the one place a reader chooses between them. */
+async function placeReadImage(transfer: PdfiumTransfer, area: SessionArea, name: string, image: PdfiumReadImage): Promise<void> {
+  if ('writeInto' in image) await transfer.writeSnapshotWith(area, name, image.writeInto);
+  else await transfer.writeSnapshot(area, name, image.bytes);
 }
 
 /**
@@ -119,7 +144,7 @@ export type PdfiumInputKeeper = (
  * The key an image opens with, as a host frame carries it: the text, or `null` for none (ADR-0171's addendum). THE ONE
  * PLACE this adapter reveals a held password, so every frame below takes it from here rather than spelling the reveal.
  */
-const frameKey = (image: ImageSession): string | null => image.opensWith?.reveal() ?? null;
+const frameKey = (image: Pick<ImageSession, 'opensWith'>): string | null => image.opensWith?.reveal() ?? null;
 
 /**
  * The pages a PDFium command regenerates — its `page`, or every page for `replaceAllText`, the one document-wide
@@ -440,7 +465,7 @@ export function remotePdfiumTextRuns(
   client: ClientApi<PdfiumChannels>,
   held: () => PdfiumArea,
   transfer: PdfiumTransfer,
-): (image: ImageSession, page: number, unpack: boolean) => Promise<{
+): (image: PdfiumReadImage, page: number, unpack: boolean) => Promise<{
   readonly runs: readonly TextRun[];
   readonly truncated: boolean;
   readonly unaddressable: number;
@@ -450,7 +475,7 @@ export function remotePdfiumTextRuns(
   return async (image, page, unpack) => {
     const { session, area } = held();
     const from = transfer.mintName();
-    await transfer.writeSnapshot(area, from, image.bytes);
+    await placeReadImage(transfer, area, from, image);
     try {
       return answered(
         'engine/text-runs',
@@ -485,7 +510,7 @@ export function remotePdfiumRenderPage(
   held: () => PdfiumArea,
   transfer: PdfiumTransfer,
 ): (
-  image: ImageSession,
+  image: PdfiumReadImage,
   page: number,
   width: number,
   height: number,
@@ -495,7 +520,7 @@ export function remotePdfiumRenderPage(
     const { session, area } = held();
     const from = transfer.mintName();
     const into = transfer.mintName();
-    await transfer.writeSnapshot(area, from, image.bytes);
+    await placeReadImage(transfer, area, from, image);
     try {
       const answer = answered(
         'engine/render-page',
@@ -532,12 +557,12 @@ export function remotePdfiumRunFonts(
   client: ClientApi<PdfiumChannels>,
   held: () => PdfiumArea,
   transfer: PdfiumTransfer,
-): (image: ImageSession, page: number, indices: readonly number[], unpack: boolean) => Promise<RunFonts> {
+): (image: PdfiumReadImage, page: number, indices: readonly number[], unpack: boolean) => Promise<RunFonts> {
   return async (image, page, indices, unpack) => {
     const { session, area } = held();
     const from = transfer.mintName();
     const into = transfer.mintName();
-    await transfer.writeSnapshot(area, from, image.bytes);
+    await placeReadImage(transfer, area, from, image);
     try {
       const { sizes, runs } = answered(
         'engine/run-fonts',
@@ -584,11 +609,11 @@ export function remotePdfiumPageRuns(
   client: ClientApi<PdfiumChannels>,
   held: () => PdfiumArea,
   transfer: PdfiumTransfer,
-): (image: ImageSession, page: number) => Promise<PageRuns> {
+): (image: PdfiumReadImage, page: number) => Promise<PageRuns> {
   return async (image, page) => {
     const { session, area } = held();
     const from = transfer.mintName();
-    await transfer.writeSnapshot(area, from, image.bytes);
+    await placeReadImage(transfer, area, from, image);
     try {
       const read = answered('engine/page-runs', await client['engine/page-runs']({ session, from, password: frameKey(image), page }));
       const text = new Set(read.textObjects);
@@ -625,7 +650,7 @@ export function remotePdfiumPageObjects(
   client: ClientApi<PdfiumChannels>,
   held: () => PdfiumArea,
   transfer: PdfiumTransfer,
-): (image: ImageSession, page: number) => Promise<{
+): (image: PdfiumReadImage, page: number) => Promise<{
   readonly objects: readonly {
     readonly index: number;
     readonly kind: 'unknown' | 'text' | 'path' | 'image' | 'shading' | 'form';
@@ -645,7 +670,7 @@ export function remotePdfiumPageObjects(
   return async (image, page) => {
     const { session, area } = held();
     const from = transfer.mintName();
-    await transfer.writeSnapshot(area, from, image.bytes);
+    await placeReadImage(transfer, area, from, image);
     try {
       return answered(
         'engine/page-objects',
@@ -668,12 +693,12 @@ export function remotePdfiumPageContent(
   client: ClientApi<PdfiumChannels>,
   held: () => PdfiumArea,
   transfer: PdfiumTransfer,
-): (image: ImageSession, page: number) => Promise<PageContent> {
+): (image: PdfiumReadImage, page: number) => Promise<PageContent> {
   return async (image, page) => {
     const { session, area } = held();
     const from = transfer.mintName();
     const into = transfer.mintName();
-    await transfer.writeSnapshot(area, from, image.bytes);
+    await placeReadImage(transfer, area, from, image);
     try {
       const answer = answered(
         'engine/page-content',

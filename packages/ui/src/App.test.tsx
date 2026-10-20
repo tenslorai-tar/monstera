@@ -354,6 +354,8 @@ const OPEN_DOCUMENT_ANSWERS = {
   // fixtures throw on a channel they have no answer for.
   'window.closeListening': { acknowledged: true },
   'app.rendererEnded': { kind: 'none' as const },
+  // EDIT TEXT AND EDIT OBJECT ask main to start their engine as they are chosen (R11).
+  'app.prepareEditing': { started: true },
   'document.held': { documents: [] },
   'document.fileAccess': { access: 'writable' as const },
   'document.adoptOldBackups': { kind: 'adopted' as const, moved: 0 },
@@ -2776,6 +2778,37 @@ describe('App', () => {
         await Promise.resolve();
       });
       expect(blockReads.length).toBeGreaterThan(before);
+    });
+
+    it('EDIT TEXT AND EDIT OBJECT each ask main to start the editing engine as they are chosen, and nothing before (R11)', async () => {
+      const asked: string[] = [];
+      const client = createClient(channels, (id) => {
+        asked.push(id);
+        // THE MODES' READS refused as an installation with no editing engine refuses them: this case is about the start.
+        if (id === 'document.textBlocks' || id === 'document.pageObjects') return Promise.resolve(err({ code: 'engine-unavailable' as const }));
+        const answers: Readonly<Record<string, unknown>> = OPEN_DOCUMENT_ANSWERS;
+        const answer = answers[id];
+        if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
+        return Promise.resolve(ok(answer));
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+      // CONTROL: a document open in the reading view starts nothing.
+      expect(asked.filter((id) => id === 'app.prepareEditing')).toHaveLength(0);
+      await pressCommand('Edit text', 'Edit');
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(asked.filter((id) => id === 'app.prepareEditing')).toHaveLength(1);
+      await act(async () => {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+        await Promise.resolve();
+      });
+      await pressCommand('Edit object', 'Edit');
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(asked.filter((id) => id === 'app.prepareEditing')).toHaveLength(2);
     });
 
     it('EDIT TEXT: a POISONED document ends the mode, since every page of it refuses (VVVVVVV-20)', async () => {

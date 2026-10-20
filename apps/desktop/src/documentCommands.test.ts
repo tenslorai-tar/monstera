@@ -1580,6 +1580,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           readDictionary: () => Promise.resolve(null),
           ocrLanguages: () => Promise.resolve([]),
           components: () => Promise.resolve([]),
+        prepareEditing: () => Promise.resolve(false),
         })['document.viewModel'],
         new IncidentLog(sink),
       );
@@ -2937,6 +2938,7 @@ describe('search is E2s first consumer, through the composition point', () => {
         readDictionary: () => Promise.resolve(null),
         ocrLanguages: () => Promise.resolve([]),
         components: () => Promise.resolve([]),
+        prepareEditing: () => Promise.resolve(false),
       });
       return { bodies, handlers };
     }

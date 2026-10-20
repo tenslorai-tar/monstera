@@ -187,6 +187,7 @@ function handlers(): ReturnType<typeof createContractHandlers> {
     readDictionary: () => Promise.resolve(null),
     ocrLanguages: () => Promise.resolve([]),
     components: () => Promise.resolve([]),
+    prepareEditing: () => Promise.resolve(false),
   });
 }
 

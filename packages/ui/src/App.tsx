@@ -4854,6 +4854,14 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
    * different versions are not a refusal: the document moved between them, and the next version reads again.
    */
   const shownDocId = open?.docId;
+  // THE EDITING ENGINE STARTED AS EDIT TEXT OR EDIT OBJECT IS CHOSEN (ADR-0048's correction of 2026-10-20, R11): its first
+  // read paid the host's start after the person had pressed. Asked once each time a document is shown in either mode;
+  // what it answers changes nothing here — a host that cannot start is said by the reads and by Help › Components.
+  const editingMode = toolId === EDIT_TEXT_TOOL_ID || toolId === EDIT_OBJECTS_TOOL_ID;
+  useEffect(() => {
+    if (!editingMode || shownDocId === undefined) return;
+    void client['app.prepareEditing']({});
+  }, [client, editingMode, shownDocId]);
   // THE PAGE ON SHOW, which Edit object's reads take first (R11): a ref, so the queue reads it when it picks the next read
   // rather than when the reader was made.
   const onShowRef = useRef(currentPage);

@@ -111,6 +111,7 @@ import {
   type PdfiumArea,
   type PdfiumInputKeeper,
   type PdfiumTransfer,
+  type WrittenImage,
   type ProbeTarget,
   type RegisteredWriter,
   type RemoteMupdfWriter,
@@ -272,6 +273,7 @@ import {
   onDocumentOpened,
   onEngineHostEnded,
   canonicalImageWrite,
+  currentImageWrite,
   openEngineSessionFrom,
 } from './engineSessions.js';
 import type { EngineOpening } from './documentPasswords.js';
@@ -1257,6 +1259,20 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     bytes: await currentBytes(docId, sessions),
     opensWith: engine.opensWith(docId),
   });
+  // WHAT A PDFium READ IS HANDED (ADR-0047's correction of 2026-10-20, R11): `main`'s canonical image, written into the
+  // host's area from where `main` keeps it, whenever the command log says it holds every applied entry — and the session's
+  // serialise only when it does not. Every PDFium read below takes this, so a read of a current document is a file copy,
+  // never a whole-document save. Asked when the read writes its input, which is inside the document's lane.
+  const pdfiumReadImage = (docId: DocId, sessions: DocumentSessions): WrittenImage => ({
+    opensWith: engine.opensWith(docId),
+    writeInto: async (destination) => {
+      const written = await currentImageWrite(documents, docId)(destination);
+      if (written !== null) return written;
+      const bytes = await currentBytes(docId, sessions);
+      await writeFile(destination, bytes);
+      return bytes.byteLength;
+    },
+  });
   // THE SAME FLUSH, STAGED: the bytes stay where the host wrote them until they are placed, so a save, a copy and a
   // refreshed image never hold them in `main` (ADR-0121 Decision 2 and its addendum). `currentBytes`' check, the
   // same writer's session.
@@ -1639,7 +1655,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       if (pdfiumHost === null) throw new EngineUnavailableError('reading a page’s text');
       const mupdf = sessions.mupdf;
       if (mupdf === undefined) throw new MissingSessionError(docId, 'mupdf');
-      const image = await currentImage(docId, sessions);
+      const image = pdfiumReadImage(docId, sessions);
       const rewrite = await engineHost.pageRewrite(mupdf, page);
       const plain = await pdfiumHost.textRuns(image, page, false);
       // TEXT PACKED INSIDE A FORM IS READ UNPACKED (ADR-0232): only where the plain read found characters no object holds,
@@ -1740,7 +1756,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // route to them.
     pageObjects: async (docId, sessions, page) => {
       if (pdfiumHost === null) throw new EngineUnavailableError('reading a page’s objects');
-      return pdfiumHost.pageObjects(await currentImage(docId, sessions), page);
+      return pdfiumHost.pageObjects(pdfiumReadImage(docId, sessions), page);
     },
     // THE SECOND RASTERISER, and the ENCODE is this layer's job.
     //
@@ -1765,7 +1781,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         throw new EngineUnavailableError('rendering a page with the second engine');
       }
       const raster = await pdfiumHost.renderPage(
-        await currentImage(docId, sessions),
+        pdfiumReadImage(docId, sessions),
         page,
         width,
         height,
@@ -1782,7 +1798,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // layer only carries them. A process with no PDFium host has none, and the editor draws every run in its kind of face.
     runFonts: async (docId, sessions, page, indices, unpack) => {
       if (pdfiumHost === null) return { fonts: [], runs: indices.map(() => null) };
-      const { fonts, runs } = await pdfiumHost.runFonts(await currentImage(docId, sessions), page, indices, unpack);
+      const { fonts, runs } = await pdfiumHost.runFonts(pdfiumReadImage(docId, sessions), page, indices, unpack);
       // EACH COPIED INTO A BUFFER OF ITS OWN: they are views cut from one file read, and structured clone sends a view's
       // whole buffer to the renderer, so a font sent as a view would carry its neighbours with it (`DocumentRunFontsReader`).
       return { fonts: fonts.map((font) => new Uint8Array(font)), runs };
@@ -1792,7 +1808,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // is refused for the engine that is missing rather than written against a guess.
     pageRuns: async (docId, sessions, page) => {
       if (pdfiumHost === null) throw new EngineUnavailableError('reading which objects a page’s text is made of');
-      return pdfiumHost.pageRuns(await currentImage(docId, sessions), page);
+      return pdfiumHost.pageRuns(pdfiumReadImage(docId, sessions), page);
     },
     // THE EDITABLE POWERPOINT EXPORT'S TWO READS (ADR-0210), composed here for the reads above's reason: a byte-image engine
     // is asked about a document by being handed its bytes, and `currentImage` is the one route to them. The words a scan was
@@ -1801,11 +1817,11 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     presentation: {
       content: async (docId, sessions, page) => {
         if (pdfiumHost === null) throw new EngineUnavailableError('reading a page’s content');
-        return pdfiumHost.pageContent(await currentImage(docId, sessions), page);
+        return pdfiumHost.pageContent(pdfiumReadImage(docId, sessions), page);
       },
       render: async (docId, sessions, page, width, height, withoutText) => {
         if (pdfiumHost === null) throw new EngineUnavailableError('rendering a page without its text');
-        return pdfiumHost.renderPage(await currentImage(docId, sessions), page, width, height, withoutText);
+        return pdfiumHost.renderPage(pdfiumReadImage(docId, sessions), page, width, height, withoutText);
       },
     },
     // THE DUPLICATE REPORT, composed here for the reads above's reason: the
@@ -2233,6 +2249,9 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // THE BUNDLED FONTS' FOLDER, the one the hosts are handed (`nativeComponentPath`), which `app.bundledFace` reads one
       // pinned face from by its own table (ADR-0250).
       bundledFonts: nativeComponentPath('fonts'),
+      // THE EDITING ENGINE STARTED AS A MODE IS CHOSEN (ADR-0048's correction of 2026-10-20, R11): the host the first read
+      // would build, by the same call, counted as a call so it still stops after its idle time when nothing reads.
+      prepareEditing: async () => pdfiumHost !== null && (await pdfiumHost.starts('editing-mode')) === 'started',
       // VERIFY STARTS WHAT IT VERIFIED (Part 0.1): each engine host built and each converter run, the way the application
       // runs them, so a DLL missing from the computer is seen here rather than at a person's first document.
       components: (verify) =>
@@ -2244,7 +2263,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
               case 'mupdf-shim':
                 return engineHost.starts();
               case 'pdfium':
-                return pdfiumHost === null ? Promise.resolve('not-checked') : pdfiumHost.starts();
+                return pdfiumHost === null ? Promise.resolve('not-checked') : pdfiumHost.starts('components');
               case 'poppler':
               case 'ghostscript':
               case 'onlyoffice': {
@@ -2351,15 +2370,24 @@ type StartReading = 'started' | 'cannot-start' | 'not-checked';
  * Whether a host starts: its connection built, which loads its engine — the path a document's first use takes, so
  * the reading is the one a person would meet. Any refusal is *could not start*, and its reason goes to the log.
  */
-async function hostStarts(ensure: () => Promise<unknown>, failures: ShellFailureSink): Promise<StartReading> {
+async function hostStarts(ensure: () => Promise<unknown>, failures: ShellFailureSink, asker: StartAsker): Promise<StartReading> {
   try {
     await ensure();
     return 'started';
   } catch (error) {
-    failures({ event: 'engine-host-gone', detail: `Help › Components started a host and it did not start: ${String(error)}` });
+    failures({ event: 'engine-host-gone', detail: `${STARTED_BY[asker]} started a host and it did not start: ${String(error)}` });
     return 'cannot-start';
   }
 }
+
+/** Who asked a host to start, for the log line a start that failed leaves. */
+type StartAsker = 'components' | 'editing-mode';
+
+const STARTED_BY: Readonly<Record<StartAsker, string>> = {
+  components: 'Help › Components',
+  // ADR-0048's correction of 2026-10-20: Edit text or Edit object chosen starts the PDFium host ahead of its first read.
+  'editing-mode': 'Choosing an editing mode',
+};
 
 interface HostPolicy {
   readonly deadline: HostCallDeadline;
@@ -3581,7 +3609,7 @@ function engineSessionOpener(
 
   return {
     openedDocument,
-    starts: () => (platform === null ? Promise.resolve('not-checked') : hostStarts(ensure, failures)),
+    starts: () => (platform === null ? Promise.resolve('not-checked') : hostStarts(ensure, failures, 'components')),
     writers,
     geometry: readGeometry,
     pageText: readPageTextThroughHost,
@@ -3717,8 +3745,8 @@ function pdfiumHostBinding(
   readonly runFonts: PdfiumRunFonts;
   readonly pageRuns: PdfiumPageRuns;
   readonly pageContent: PdfiumPageContent;
-  /** Whether the PDFium host starts on this computer — `pdfium.dll` loaded, as a first edit loads it. */
-  readonly starts: () => Promise<StartReading>;
+  /** Whether the PDFium host starts on this computer — `pdfium.dll` loaded, as a first edit loads it — for whoever asked. */
+  readonly starts: (asker: StartAsker) => Promise<StartReading>;
   /** Stops the host where no call is running, and answers whether it stopped (item 13b's idle stop, 13e's low memory). */
   readonly retireIfIdle: () => Promise<boolean>;
   readonly close: () => Promise<void>;
@@ -3748,6 +3776,10 @@ function pdfiumHostBinding(
     // one the host could rewrite under main's feet between the write and the
     // call.
     writeSnapshot: (area, name, bytes) => writeFile(join(area.snapshotDirectory, name), bytes),
+    // THE SAME PLACE, for an image written from where it is already kept (`pdfiumReadImage`): file to file, through no buffer here.
+    writeSnapshotWith: async (area, name, write) => {
+      await write(join(area.snapshotDirectory, name));
+    },
     // `force` BECAUSE THIS IS CALLED FROM A `finally`, which is `sessionAssets`'
     // reason word for word: a removal that threw on an absent file would replace
     // the call's own error with a complaint about cleanup.
@@ -3954,7 +3986,7 @@ function pdfiumHostBinding(
       // THE IDENTITY WRITTEN OUT, for the same reason: a checkpoint of bytes already in hand starts no host.
       serialiseInto: serialiseIntoFile((session: ImageSession) => Promise.resolve(session.bytes)),
     },
-    starts: () => counting(() => hostStarts(ensure, failures)),
+    starts: (asker) => counting(() => hostStarts(ensure, failures, asker)),
     textRuns: (image, page, unpack) => counting(async () => (await ensure()).textRuns(image, page, unpack)),
     pageObjects: (image, page) => counting(async () => (await ensure()).pageObjects(image, page)),
     renderPage: (image, page, width, height, withoutText) =>

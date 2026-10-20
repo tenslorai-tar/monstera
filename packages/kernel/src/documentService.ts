@@ -1588,6 +1588,29 @@ export class DocumentService {
   }
 
   /**
+   * {@link writeCanonicalImage} when the canonical image is the document as it is NOW, and `null` when it is behind
+   * ([ADR-0047](../../../docs/DECISIONS/0047-an-in-place-text-edit-is-a-byte-image-command.md)'s correction of
+   * 2026-10-20): a PDFium read is handed this, and the session's serialise only on `null`.
+   *
+   * **The command log says which**, and nothing else may: it counts the applied entries the image holds
+   * ([ADR-0115](../../../docs/DECISIONS/0115-a-rebuilt-session-replays-what-the-image-does-not-hold.md)), and the bus
+   * moves that count whenever it replaces the image. A rule written here about which commands refresh the image would be
+   * a second opinion about the bus's (B3a). Asked inside the document's lane, where every read that calls this runs, so
+   * no command moves the log between the question and the write.
+   *
+   * @param supervisor Proof the caller holds the session supervisor's capability.
+   * @param docId The open document.
+   * @param destination Where the image goes. The caller granted it.
+   * @returns The number of bytes written, or `null` when the image does not hold every applied entry.
+   */
+  async writeCurrentImage(supervisor: EngineSupervisor, docId: DocId, destination: string): Promise<number | null> {
+    const record = this.#records.get(docId);
+    if (record === undefined) throw new DocumentNotOpenError(docId, 'write the current image');
+    if (record.log.imageHolds !== record.log.entries.length) return null;
+    return this.writeCanonicalImage(supervisor, docId, destination);
+  }
+
+  /**
    * Serves one byte range of a document, or reports the version moved.
    *
    * ## SYNCHRONOUS, and NOT on the lane, and both are the design

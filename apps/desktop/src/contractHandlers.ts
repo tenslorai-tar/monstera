@@ -400,6 +400,12 @@ export function createContractHandlers(deps: {
   /** The native components and their states (ADR-0122). `componentStatuses`, where the source is the resolver's. */
   readonly components: (verify: boolean) => Promise<readonly ComponentStatus[]>;
   /**
+   * Starts the engine Edit text and Edit object read through, answering whether it is running (ADR-0048's correction
+   * of 2026-10-20). REQUIRED, so an assembly that forgot it is a compile error rather than a mode whose first read pays
+   * the start again.
+   */
+  readonly prepareEditing: () => Promise<boolean>;
+  /**
    * Paints the window controls over the title bar, answering whether a window took it.
    *
    * Injected for the file's reason — `setTitleBarOverlay` is Electron's — and REQUIRED, so an assembly that
@@ -489,6 +495,7 @@ export function createContractHandlers(deps: {
     'app.bundledFace': async ({ family }) => ok({ bytes: await readBundledFace(deps.bundledFonts ?? null, family) }),
     // AN ARRAY COPY, for `app.ocrLanguages`' reason (ADR-0122).
     'app.components': async ({ verify }) => ok({ components: [...(await deps.components(verify))] }),
+    'app.prepareEditing': async () => ok({ started: await deps.prepareEditing() }),
     'document.open': openDocumentHandler(deps),
     'document.openFromUrl': finishing(openFromUrlHandler(deps)),
     'document.unlock': async ({ docId, password }) => {

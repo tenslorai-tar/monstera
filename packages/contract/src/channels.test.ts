@@ -58,6 +58,7 @@ const handlers: ContractHandlers = {
   // like. One is the shape the channel exists to carry.
   'app.ocrLanguages': () => Promise.resolve(ok({ languages: ['eng' as const] })),
   'app.components': () => Promise.resolve(ok({ components: [] })),
+  'app.prepareEditing': () => Promise.resolve(ok({ started: false })),
   'app.fontFamilies': () =>
     Promise.resolve(
       ok({ listed: true, families: [{ name: 'Arial', origin: 'installed' as const, embedding: 'subset' as const, bold: true, italic: true }], more: 0 }),

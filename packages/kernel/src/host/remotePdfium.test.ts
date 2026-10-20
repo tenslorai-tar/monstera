@@ -71,6 +71,12 @@ function stubTransfer(): PdfiumTransfer & {
       snapshots.set(name, bytes);
       return Promise.resolve();
     },
+    // THE OTHER LEG, handed a destination: the fake's destination is the snapshot's name, so a case can see which file an
+    // image written from elsewhere was put in.
+    writeSnapshotWith: async (_area, name, write) => {
+      log.push(`write-with:${name}`);
+      await write(name);
+    },
     removeSnapshot: (_area, name) => {
       log.push(`remove:${name}`);
       snapshots.delete(name);
@@ -635,5 +641,40 @@ describe('main’s PDFium writer', () => {
     await textRuns(imageOf(new Uint8Array([5])), 4, true);
     expect(sent.map((params) => (params as { unpack?: true }).unpack)).toStrictEqual([undefined, true]);
     expect(Object.hasOwn(sent[0] as object, 'unpack')).toBe(false);
+  });
+
+  it('an image WRITTEN FROM WHERE MAIN KEEPS IT is written by its own writer into the file the call names, and holds no bytes here (R11)', async () => {
+    const transfer = stubTransfer();
+    const sent: unknown[] = [];
+    const peer: Peer = {
+      asked: [],
+      answer: (channel, params) => {
+        sent.push(params);
+        return channel === 'engine/page-runs'
+          ? { ok: true, value: { runs: [], textObjects: [] } }
+          : { ok: true, value: { runs: [], truncated: false, unaddressable: 0, box: { x0: 0, y0: 0, x1: 612, y1: 792 } } };
+      },
+    };
+    const { textRuns, pageRuns } = harness(peer, transfer);
+    const wroteInto: string[] = [];
+    // WITH A KEY, so the frame is seen to carry the written image's key as it carries a byte image's.
+    const written = {
+      opensWith: new HeldPassword('sample-only-0171'),
+      writeInto: (destination: string) => {
+        wroteInto.push(destination);
+        return Promise.resolve(5);
+      },
+    };
+    await textRuns(written, 2, false);
+    expect(wroteInto).toStrictEqual(['001']);
+    expect(transfer.log).toStrictEqual(['write-with:001', 'remove:001']);
+    expect(transfer.snapshots.size).toBe(0);
+    expect(sent[0]).toMatchObject({ from: '001', password: 'sample-only-0171', page: 2 });
+    // EVERY READER takes it the same way — the one helper, not a branch per reader.
+    await pageRuns(written, 2);
+    expect(wroteInto).toStrictEqual(['001', '002']);
+    // CONTROL: bytes in hand still go through the bytes leg.
+    await textRuns(imageOf(new Uint8Array([5])), 2, false);
+    expect(transfer.log.slice(-2)).toStrictEqual(['write:003', 'remove:003']);
   });
 });
