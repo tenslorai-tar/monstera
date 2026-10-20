@@ -15,12 +15,24 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  */
 const getDocument = vi.fn();
 
+/** Every PDF.js worker made, in place of a real one: the DOM here has no `Worker`. */
+const pdfWorkers: { destroyed: boolean }[] = [];
+
 vi.mock('pdfjs-dist', async (importOriginal) => ({
   ...(await importOriginal<typeof import('pdfjs-dist')>()),
   getDocument: (...args: unknown[]) => getDocument(...args) as unknown,
+  PDFWorker: class {
+    destroyed = false;
+    constructor() {
+      pdfWorkers.push(this);
+    }
+    destroy(): void {
+      this.destroyed = true;
+    }
+  },
 }));
 
-const { openDocumentView } = await import('./documentView.js');
+const { createParserWorker, openDocumentView } = await import('./documentView.js');
 
 const DOC = asDocId('doc-view');
 const VERSION = asDocVersion(2);
@@ -32,7 +44,7 @@ function idleClient(): ContractClient {
   );
 }
 
-function open(task: { promise: Promise<unknown>; destroy: () => Promise<void> }) {
+function open(task: { promise: Promise<unknown>; destroy: () => Promise<void> }, worker = createParserWorker()) {
   getDocument.mockReturnValue(task);
   return openDocumentView({
     client: idleClient(),
@@ -41,11 +53,49 @@ function open(task: { promise: Promise<unknown>; destroy: () => Promise<void> })
     byteLength: 1024,
     onVersionMoved: vi.fn(),
     onFailed: vi.fn(),
+    worker,
   });
 }
 
 beforeEach(() => {
   getDocument.mockReset();
+  pdfWorkers.length = 0;
+});
+
+// R19: `getDocument` with no worker started one per version, 296-409 ms of every command (0.1.17.0 package, 2026-10-21).
+describe('the document’s parser worker', () => {
+  const task = (): { promise: Promise<unknown>; destroy: () => Promise<void> } => ({ promise: Promise.resolve({ numPages: 1 }), destroy: () => Promise.resolve() });
+
+  it('is handed to every version’s parse, and closing a version leaves it running', async () => {
+    const worker = createParserWorker();
+    const first = await open(task(), worker);
+    await first.close();
+    await open(task(), worker);
+
+    // ONE PDF.js WORKER for both versions, given to getDocument each time: the separator from PDF.js starting its own.
+    expect(pdfWorkers).toHaveLength(1);
+    const given = getDocument.mock.calls.map((call) => (call[0] as { worker?: unknown }).worker);
+    expect(given).toStrictEqual([pdfWorkers[0], pdfWorkers[0]]);
+    // A VERSION'S CLOSE does not end it.
+    expect(pdfWorkers[0]?.destroyed).toBe(false);
+
+    worker.destroy();
+    expect(pdfWorkers[0]?.destroyed).toBe(true);
+  });
+
+  it('CONTROL: two documents are two workers', async () => {
+    await open(task(), createParserWorker());
+    await open(task(), createParserWorker());
+    expect(pdfWorkers).toHaveLength(2);
+  });
+
+  it('refuses a worker createParserWorker did not make, rather than letting PDF.js start one', async () => {
+    getDocument.mockReturnValue(task());
+    await expect(
+      openDocumentView({ client: idleClient(), docId: DOC, version: VERSION, byteLength: 1024, onVersionMoved: vi.fn(), onFailed: vi.fn(), worker: { destroy: () => undefined } }),
+    ).rejects.toThrow(/createParserWorker/u);
+    expect(getDocument).not.toHaveBeenCalled();
+  });
 });
 
 describe('openDocumentView', () => {
@@ -110,6 +160,7 @@ describe('openDocumentView', () => {
         order.push('told');
       },
       onFailed: vi.fn(),
+      worker: createParserWorker(),
     });
 
     const built = getDocument.mock.calls[0]?.[0] as {
@@ -141,6 +192,7 @@ describe('openDocumentView', () => {
       byteLength: 1024,
       onVersionMoved: vi.fn(),
       onFailed,
+      worker: createParserWorker(),
     });
 
     const built = getDocument.mock.calls[0]?.[0] as {

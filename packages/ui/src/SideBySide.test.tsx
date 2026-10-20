@@ -25,6 +25,7 @@ const DOCUMENTS: readonly SideDocument[] = [
 vi.mock('./documentView.js', () => ({
   openDocumentView: ({ version }: { version: unknown }) =>
     Promise.resolve({ document: { numPages: 1 }, version, close: () => Promise.resolve() }),
+  createParserWorker: () => ({ destroy: () => undefined }),
 }));
 
 vi.mock('./renderPage.js', async (importOriginal) => ({

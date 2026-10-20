@@ -28,6 +28,7 @@ vi.mock('./documentView.js', () => ({
       : Promise.reject(new Error('the parse threw'));
   },
   needsPasswordToParse: () => false,
+  createParserWorker: () => ({ destroy: () => undefined }),
 }));
 
 const DOC = { docId: asDocId('doc-retry'), version: asDocVersion(3), byteLength: 1024 };

@@ -1,6 +1,6 @@
 import type { ContractClient } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
-import { GlobalWorkerOptions, PasswordException, getDocument } from 'pdfjs-dist';
+import { GlobalWorkerOptions, PDFWorker, PasswordException, getDocument } from 'pdfjs-dist';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 // `?url` rather than a bare specifier: Vite emits the worker as its own asset
 // and gives back a relative URL, which is what a `file://` document needs. A
@@ -41,13 +41,57 @@ import { DocumentRangeTransport, type OnVersionMoved } from './documentTransport
  */
 GlobalWorkerOptions.workerSrc = workerUrl;
 
+/**
+ * One PDF.js worker, kept across every version of ONE document (R19, 2026-10-21).
+ *
+ * ## Why a document keeps its worker
+ *
+ * Every command moves the version, and a moved version is a new parse (ADR-0031). `getDocument` with no `worker` starts
+ * a fresh Web Worker for each one, which loads and compiles the whole PDF.js worker script before it reads a byte —
+ * measured 296-409 ms a command on the 0.1.17.0 package, 605 ms at open (`_review` probe, 2026-10-21), of the 0.5-1.3 s
+ * from a release to the mark drawn. A worker handed to `getDocument` is not the loading task's: PDF.js records only one
+ * it created itself (`task._worker`, pdfjs-dist 6.2.108), so destroying a version's task leaves this one running for the
+ * next version.
+ *
+ * ## One per document, not one per window
+ *
+ * A worker is one thread. Shared by every tab, one document's long parse would hold up another's page; held per
+ * document, tabs still parse side by side, as they did.
+ *
+ * Opaque, made only by {@link createParserWorker}, so a caller cannot hand `openDocumentView` a worker it does not own
+ * the end of; the PDF.js object is made on first use and made again if it was destroyed.
+ */
+export interface ParserWorker {
+  /** Ends the worker. The owner calls it once no view of the document is left. */
+  readonly destroy: () => void;
+}
+
+const PDF_WORKERS = new WeakMap<ParserWorker, () => PDFWorker>();
+
+/** A {@link ParserWorker} for one document. */
+export function createParserWorker(): ParserWorker {
+  let worker: PDFWorker | undefined;
+  const handle: ParserWorker = {
+    destroy: () => {
+      worker?.destroy();
+      worker = undefined;
+    },
+  };
+  PDF_WORKERS.set(handle, () => {
+    if (worker === undefined || worker.destroyed) worker = new PDFWorker();
+    return worker;
+  });
+  return handle;
+}
+
 export interface DocumentView {
   /** The parser's handle. Presentation only. */
   readonly document: PDFDocumentProxy;
   /** The version the bytes behind it belong to. */
   readonly version: DocVersion;
   /**
-   * Tears down the parser, its worker and the transport.
+   * Tears down the parser and the transport. NOT the worker, which belongs to the document across its versions
+   * ({@link ParserWorker}) and is ended by its owner.
    *
    * **Idempotent because two things call it**, and until finding IIIII-1 only
    * one of them existed: the owner closing the document, and the view closing
@@ -77,6 +121,11 @@ export async function openDocumentView(options: {
    * bytes that will not come, so the view is unusable; the caller shows that the document cannot be displayed.
    */
   readonly onFailed: (cause: unknown) => void;
+  /**
+   * The document's worker, kept across its versions ({@link ParserWorker}). Required: an open without one would start
+   * a worker per version, which is the cost this exists to remove.
+   */
+  readonly worker: ParserWorker;
   /**
    * The password this document needs, for one that is encrypted.
    *
@@ -119,8 +168,13 @@ export async function openDocumentView(options: {
     },
   });
 
+  const worker = PDF_WORKERS.get(options.worker);
+  if (worker === undefined) throw new Error('openDocumentView was handed a worker createParserWorker did not make');
+
   const task = getDocument({
     range: transport,
+    // THE DOCUMENT'S OWN WORKER, kept across versions; the task does not own it, so `close` below leaves it running.
+    worker: worker(),
     // OMITTED rather than passed as `undefined`, because PDF.js treats the
     // presence of the key as an attempt: an unencrypted document handed
     // `password: undefined` is unaffected, and keeping the shape honest costs
@@ -173,9 +227,8 @@ export async function openDocumentView(options: {
     const document = await task.promise;
     return { document, version: options.version, close };
   } catch (cause) {
-    // The task owns a worker whether or not it produced a document, so a failed
-    // open that did not destroy it leaks one per attempt — and a leaked worker
-    // is invisible until the machine is out of them.
+    // The task holds a transport and the worker's side of this document whether or not it produced one, so a failed
+    // open that did not destroy it leaks them per attempt. The worker itself is the document's and stays.
     await close();
     throw cause;
   }

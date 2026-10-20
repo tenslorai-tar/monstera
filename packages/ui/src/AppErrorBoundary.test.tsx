@@ -63,6 +63,7 @@ const WITHOUT_THUMBNAILS: Record<string, string> = Object.fromEntries(
 vi.mock('./documentView.js', () => ({
   openDocumentView: () =>
     Promise.resolve({ document: { numPages: 2 }, close: () => Promise.resolve() }),
+  createParserWorker: () => ({ destroy: () => undefined }),
 }));
 
 vi.mock('./renderPage.js', async (importOriginal) => ({

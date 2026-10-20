@@ -108,6 +108,7 @@ vi.mock('./documentView.js', () => ({
       document: { numPages: 2 },
       close: () => Promise.resolve(),
     }),
+  createParserWorker: () => ({ destroy: () => undefined }),
 }));
 
 // MOCKED FOR THE VIEW'S REASON: happy-dom implements no 2d context, so the real

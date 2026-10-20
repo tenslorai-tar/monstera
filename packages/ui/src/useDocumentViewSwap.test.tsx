@@ -27,12 +27,22 @@ interface StubView {
 /** One open per version, each resolved by the case. */
 const pending = new Map<number, (view: StubView) => void>();
 const made: StubView[] = [];
+/** The parser workers the hook made, the one each open was handed, and every close and worker end, in order. */
+const workers: { readonly destroy: () => void }[] = [];
+const handed: unknown[] = [];
+const events: string[] = [];
 
 vi.mock('./documentView.js', () => ({
-  openDocumentView: (options: { readonly version: DocVersion }) =>
+  openDocumentView: (options: { readonly version: DocVersion; readonly worker: unknown }) =>
     new Promise<StubView>((resolve) => {
+      handed.push(options.worker);
       pending.set(Number(options.version), resolve);
     }),
+  createParserWorker: () => {
+    const worker = { destroy: () => events.push(`worker ${String(workers.indexOf(worker))} ended`) };
+    workers.push(worker);
+    return worker;
+  },
   needsPasswordToParse: () => false,
 }));
 
@@ -44,6 +54,7 @@ function viewAt(version: number): StubView {
     closed: () => closed,
     close: () => {
       closed = true;
+      events.push(`view ${String(version)} closed`);
       return Promise.resolve();
     },
   };
@@ -81,6 +92,9 @@ function mount(): ReturnType<typeof renderHook<ReturnType<typeof useDocumentView
 beforeEach(() => {
   pending.clear();
   made.length = 0;
+  workers.length = 0;
+  handed.length = 0;
+  events.length = 0;
 });
 
 describe('useDocumentView — a new version', () => {
@@ -129,6 +143,30 @@ describe('useDocumentView — a new version', () => {
 
     const third = await finishOpen(3);
     expect(hook.result.current.ready).toBe(third);
+  });
+
+  // R19: a PDF.js worker started per version cost 296-409 ms of every command (the 0.1.17.0 package, 2026-10-21).
+  it('hands every version ONE parser worker, and ends it on unmount only after the views have closed', async () => {
+    const hook = mount();
+    await finishOpen(1);
+    hook.rerender({ version: 2 });
+    await finishOpen(2);
+    hook.rerender({ version: 3 });
+    await finishOpen(3);
+
+    // ONE WORKER for three versions, and each open was handed that one: the separator from a worker per version.
+    expect(workers).toHaveLength(1);
+    expect(handed).toHaveLength(3);
+    expect(handed.every((each) => each === workers[0])).toBe(true);
+    // NOT ENDED by a version's close.
+    expect(events.filter((event) => event.startsWith('worker'))).toStrictEqual([]);
+
+    hook.unmount();
+    await waitFor(() => {
+      expect(events.at(-1)).toBe('worker 0 ended');
+    });
+    // AFTER the shown view closed, so no task is torn down against a terminated worker.
+    expect(events.indexOf('view 3 closed')).toBeLessThan(events.indexOf('worker 0 ended'));
   });
 
   it('closes the shown view on unmount', async () => {

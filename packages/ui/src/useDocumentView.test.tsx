@@ -39,6 +39,7 @@ vi.mock('./documentView.js', () => ({
       ? Promise.reject(new StubPasswordError())
       : Promise.resolve({ document: { numPages: 1 }, close: () => Promise.resolve() }),
   needsPasswordToParse: (cause: unknown) => cause instanceof StubPasswordError,
+  createParserWorker: () => ({ destroy: () => undefined }),
 }));
 
 /**

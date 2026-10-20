@@ -3,7 +3,7 @@ import type { DocId, DocVersion } from '@monstera/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { ViewKeys } from './documentKeys.js';
-import { type DocumentView, needsPasswordToParse, openDocumentView } from './documentView.js';
+import { type DocumentView, type ParserWorker, createParserWorker, needsPasswordToParse, openDocumentView } from './documentView.js';
 
 /**
  * One document's live parser, opened on mount and closed on the way out.
@@ -129,13 +129,24 @@ export function useDocumentView(
   // so that effect never runs for it. The old cleanup closed it directly; this keeps that guarantee.
   // `close` is idempotent.
   const opened = useRef(new Set<DocumentView>());
+  // THE DOCUMENT'S PARSER WORKER, kept across its versions (`ParserWorker`, R19): made on the first open, ended by the
+  // last effect below once every view this hook closed has finished closing.
+  const worker = useRef<ParserWorker | undefined>(undefined);
+  const workerOf = useCallback((): ParserWorker => (worker.current ??= createParserWorker()), []);
+  // EVERY CLOSE THIS HOOK BEGAN, so the worker is ended after them and never under a task still tearing down.
+  const closing = useRef(new Set<Promise<void>>());
+  const closeView = useCallback((view: DocumentView): void => {
+    const done = view.close();
+    closing.current.add(done);
+    void done.finally(() => closing.current.delete(done));
+  }, []);
   useEffect(() => {
     const views = opened.current;
     return (): void => {
-      for (const view of views) void view.close();
+      for (const view of views) closeView(view);
       views.clear();
     };
-  }, []);
+  }, [closeView]);
 
   // THE SHOWN VIEW'S LIFETIME, separate from the opening effect's. The cleanup runs when `shown` is
   // replaced, after the commit that renders the replacement, and on unmount.
@@ -144,9 +155,9 @@ export function useDocumentView(
     const views = opened.current;
     return (): void => {
       views.delete(shown.view);
-      void shown.view.close();
+      closeView(shown.view);
     };
-  }, [shown]);
+  }, [closeView, shown]);
 
   useEffect(() => {
     let cancelled = false;
@@ -218,6 +229,7 @@ export function useDocumentView(
           byteLength,
           onVersionMoved,
           onFailed,
+          worker: workerOf(),
           password,
         });
         // KEPT ONLY ONCE THE PARSE TOOK IT, so a key held is one that opened this document.
@@ -235,7 +247,7 @@ export function useDocumentView(
       for (const key of keys.held()) {
         if (stopped()) return undefined;
         try {
-          return await openDocumentView({ client, docId, version, byteLength, onVersionMoved, onFailed, password: key.reveal() });
+          return await openDocumentView({ client, docId, version, byteLength, onVersionMoved, onFailed, worker: workerOf(), password: key.reveal() });
         } catch (cause) {
           if (!needsPasswordToParse(cause)) throw cause;
         }
@@ -246,7 +258,7 @@ export function useDocumentView(
     const show = async (): Promise<void> => {
       try {
         try {
-          view = await openDocumentView({ client, docId, version, byteLength, onVersionMoved, onFailed });
+          view = await openDocumentView({ client, docId, version, byteLength, onVersionMoved, onFailed, worker: workerOf() });
         } catch (cause) {
           // THE ONE FAILURE THAT IS A QUESTION rather than a defect. Everything
           // else falls through to the outer catch and becomes `failed`.
@@ -259,7 +271,7 @@ export function useDocumentView(
           }
         }
         if (stopped()) {
-          await view.close();
+          closeView(view);
           return;
         }
         // HANDED ON, and this hook's job ends at a live view. The model read
@@ -285,7 +297,18 @@ export function useDocumentView(
     return (): void => {
       cancelled = true;
     };
-  }, [attempt, byteLength, client, docId, keys, onVersionMoved, requestPassword, version]);
+  }, [attempt, byteLength, client, closeView, docId, keys, onVersionMoved, requestPassword, workerOf, version]);
+
+  // THE WORKER ENDS WITH THE HOOK, after every close it began. LAST of this hook's effects, so on unmount its cleanup runs
+  // after the two above have begun closing their views (React runs a component's cleanups in declaration order).
+  useEffect(() => {
+    const pending = closing.current;
+    return (): void => {
+      const handle = worker.current;
+      worker.current = undefined;
+      void Promise.allSettled([...pending]).then(() => handle?.destroy());
+    };
+  }, []);
 
   return { ready: shown?.docId === docId ? shown.view : undefined, failed, retry };
 }

@@ -70,6 +70,7 @@ vi.mock('./documentView.js', () => ({
       close: () => Promise.resolve(),
     });
   },
+  createParserWorker: () => ({ destroy: () => undefined }),
 }));
 
 vi.mock('./renderPage.js', async (importOriginal) => ({

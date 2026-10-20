@@ -51,6 +51,7 @@ const closes: string[] = [];
 
 vi.mock('./documentView.js', () => ({
   openDocumentView: () => new Promise((resolve) => pending.push(resolve)),
+  createParserWorker: () => ({ destroy: () => undefined }),
 }));
 
 /** Every rotation `renderPage` was handed, in order. `undefined` is a value here. */
