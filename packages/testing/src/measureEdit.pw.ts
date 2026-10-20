@@ -68,7 +68,9 @@ test('a selected distance has a handle on each END; dragging one sends that end 
   await page.mouse.move(right.x + 60, right.y + 30, { steps: 6 });
   // WHILE IT MOVES: the line's outline, unfilled, and no tinted box over it.
   await expect(page.locator('[data-annotation-preview-path]')).toHaveCount(1);
-  await expect(page.locator('[data-annotation-preview="boxes"] rect')).toHaveCount(0);
+  await expect(page.locator('[data-annotation-preview="boxes"] [data-annotation-preview-box]')).toHaveCount(0);
+  // AND THE SELECTION RIDES WITH IT (R7): a handle on each end where the release puts them.
+  await expect(page.locator('[data-annotation-preview="boxes"] [data-reshaped-selection] [data-reshaped-handle]')).toHaveCount(2);
   expect(await page.locator('[data-annotation-preview-path]').evaluate((element) => getComputedStyle(element).fill)).toBe('none');
   await page.mouse.up();
 

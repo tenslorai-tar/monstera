@@ -251,7 +251,18 @@ test('Edit object picks a word written a letter at a time as one, and moves it a
   await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2, { steps: 5 });
   await page.mouse.up();
   await expect.poll(() => sent.length).toBe(1);
-  expect((sent[0] as { command: unknown }).command).toMatchObject({ kind: 'placePageObjects', indices: [0, 1, 2, 3], scaleBy: { x: 1, y: 1 } });
+  // THE BLOCK EDIT TEXT READ is placed by the operator writer (ADR-0240's correction of 2026-10-19, R11): its words as
+  // read and all four runs, moved right about the word's own box and not scaled — one command for the whole word.
+  const command = (sent[0] as { command: { kind: string; text?: string; runs?: unknown; places?: { about?: { moveBy: { x: number; y: number } } }[] } }).command;
+  expect(command).toMatchObject({
+    kind: 'editTextOperators',
+    text: 'OVER',
+    runs: [0, 1, 2, 3],
+    places: [{ block: 0, about: { box: { left: 100, bottom: 600, right: 139, top: 612 }, scaleBy: { x: 1, y: 1 } } }],
+  });
+  const moveBy = command.places?.[0]?.about?.moveBy;
+  expect(moveBy?.x).toBeGreaterThan(0);
+  expect(moveBy?.y).toBe(0);
 });
 
 // A PICTURE A PERSON PLACED (the owner's item 14g, NNNNNNN-9): a stamp whose appearance draws a picture is not page

@@ -516,6 +516,9 @@ function Preview({ preview }: { readonly preview: ToolPreview }): ReactElement {
           {preview.boxes.map((box, at) => (
             <rect
               className="m-annotation-preview"
+              // THE TINTED BOX BY NAME: the group also carries a reshaped mark's selection box and handles, so a count of
+              // its rects is not a count of these.
+              data-annotation-preview-box=""
               height={box.height}
               // POSITION IS THE IDENTITY: the boxes are one moment's list, rebuilt with every pointer move.
               key={at}

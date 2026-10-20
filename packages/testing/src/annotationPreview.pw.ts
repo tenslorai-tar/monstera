@@ -44,7 +44,7 @@ for (const look of LOOKS) {
     await page.mouse.move(x, y);
     await page.mouse.down();
     await page.mouse.move(x + 60, y + 40, { steps: 6 });
-    const preview = page.locator('[data-annotation-preview="boxes"] rect').first();
+    const preview = page.locator('[data-annotation-preview="boxes"] [data-annotation-preview-box]').first();
     await expect(preview).toBeAttached();
 
     const washes = await preview.evaluate((element) => {
