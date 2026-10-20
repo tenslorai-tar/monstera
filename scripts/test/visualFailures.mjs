@@ -9,7 +9,8 @@
  * only the assertion. Measured: main's run 39408814593 (755ec950, 2026-10-20) waited 5 s for the Watermark dialog
  * after a fast first three seconds, and the `error-context.md` Playwright wrote — the page as it was — was left on a
  * runner nobody can read, so which link of the dialog's chain stalled could not be established. A trace kept ON FAILURE
- * records each action's DOM, network and console; passing cases discard theirs.
+ * records each action's DOM, network and console; passing cases discard theirs. It is recorded on CI only
+ * ({@link visualTrace}).
  *
  * ## Two readers, one value
  *
@@ -19,8 +20,25 @@
  * proof runs on the job that installs nothing.
  */
 
-/** Where a visual case's output lands, from the repository's root: its `error-context.md` and, on failure, its trace. */
+/** Where a visual case's output lands, from the repository's root: its `error-context.md` and, on CI, its trace. */
 export const VISUAL_OUTPUT_DIR = 'test-results/visual';
 
-/** Playwright's trace mode for the visual run: recorded for every case, kept only for one that fails. */
-export const VISUAL_TRACE = 'retain-on-failure';
+/**
+ * Whether this process runs on a GitHub Actions runner: the runner's own `GITHUB_ACTIONS`, which it sets to `true` on
+ * every step. Not `CI`, which other tools set on a developer's machine too.
+ * @param {Readonly<Record<string, string | undefined>>} env
+ */
+export function onGithubActions(env) {
+  return env['GITHUB_ACTIONS'] === 'true';
+}
+
+/**
+ * Playwright's trace mode for the visual run. ON CI, recorded for every case and kept only for one that fails, which the
+ * job uploads. LOCALLY, off: recording cost the visual file 196 s → 231 s at 2 workers (measured 2026-10-20), on the
+ * owner's machine while it is blocked by the run, and a local failure is read where it happened.
+ * @param {Readonly<Record<string, string | undefined>>} env
+ * @returns {'retain-on-failure' | 'off'}
+ */
+export function visualTrace(env) {
+  return onGithubActions(env) ? 'retain-on-failure' : 'off';
+}

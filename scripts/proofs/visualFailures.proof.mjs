@@ -3,8 +3,8 @@
  * Proof that a failing visual case's page and trace reach somewhere a person can read them (rule B2; the owner's item of
  * 2026-10-20 after main's run 39408814593 failed once and kept nothing).
  *
- * Two readers of one value: the visual run's CONFIG writes to `VISUAL_OUTPUT_DIR` and keeps a trace by `VISUAL_TRACE`,
- * and the visual JOB uploads that directory on failure. The config is IMPORTED, so what is asserted is what Playwright
+ * Two readers of one value: the visual run's CONFIG writes to `VISUAL_OUTPUT_DIR` and, on CI only, keeps a trace
+ * (`visualTrace`), and the visual JOB uploads that directory on failure. The config is IMPORTED, so what is asserted is what Playwright
  * is handed, not a reading of its text; the workflow cannot be imported, so its copy is checked by `uploadProblems`.
  *
  * THE CONTROLS ARE THE WORKFLOW BROKEN EACH WAY THAT WOULD KEEP NOTHING: another path, no `failure()` condition, the
@@ -21,11 +21,11 @@ import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { COMPARE_RUN, jobSteps, uploadProblems, VISUAL_JOB } from '../lib/visualFailureUpload.mjs';
 import visualConfig from '../test/visual.config.mjs';
-import { VISUAL_OUTPUT_DIR, VISUAL_TRACE } from '../test/visualFailures.mjs';
+import { VISUAL_OUTPUT_DIR, visualTrace } from '../test/visualFailures.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 9 });
+const roster = createRoster(failures, { cases: 12 });
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -53,10 +53,58 @@ check(
   visualConfig.outputDir === join(ROOT, VISUAL_OUTPUT_DIR),
   `outputDir is ${JSON.stringify(visualConfig.outputDir)}; the job uploads ${VISUAL_OUTPUT_DIR} from the repository's root.`,
 );
+/**
+ * Sets, or with `undefined` unsets, the two variables a runner rule could read.
+ * @param {{ GITHUB_ACTIONS?: string | undefined, CI?: string | undefined }} env
+ */
+function setRunnerVariables(env) {
+  if (env.GITHUB_ACTIONS === undefined) delete process.env['GITHUB_ACTIONS'];
+  else process.env['GITHUB_ACTIONS'] = env.GITHUB_ACTIONS;
+  if (env.CI === undefined) delete process.env['CI'];
+  else process.env['CI'] = env.CI;
+}
+
+/**
+ * The config Playwright is handed, evaluated afresh under `env` (a query makes the import a module of its own), with
+ * the process's own values put back after.
+ * @param {{ GITHUB_ACTIONS?: string, CI?: string }} env
+ * @param {string} tag
+ */
+async function configUnder(env, tag) {
+  const saved = { GITHUB_ACTIONS: process.env['GITHUB_ACTIONS'], CI: process.env['CI'] };
+  setRunnerVariables(env);
+  try {
+    /** @type {{ default: { use?: { trace?: unknown } } }} */
+    const module = await import(`../test/visual.config.mjs?${tag}`);
+    return module.default;
+  } finally {
+    setRunnerVariables(saved);
+  }
+}
+
+const onRunner = await configUnder({ GITHUB_ACTIONS: 'true' }, 'runner');
 check(
-  'and keeps a failing case’s trace',
-  visualConfig.use?.trace === VISUAL_TRACE && VISUAL_TRACE === 'retain-on-failure',
-  `use.trace is ${JSON.stringify(visualConfig.use?.trace)}.`,
+  'ON CI the config keeps a failing case’s trace, which the job uploads',
+  onRunner.use?.trace === 'retain-on-failure',
+  `with GITHUB_ACTIONS=true, use.trace is ${JSON.stringify(onRunner.use?.trace)}.`,
+);
+const here = await configUnder({}, 'local');
+check(
+  'LOCALLY the config records no trace, so a local run keeps its speed',
+  here.use?.trace === 'off',
+  `with no runner variable, use.trace is ${JSON.stringify(here.use?.trace)}.`,
+);
+check(
+  'CONTROL: another tool’s CI=true, or GITHUB_ACTIONS=false, is not a runner — and the two sides above differ',
+  visualTrace({ CI: 'true' }) === 'off' && visualTrace({ GITHUB_ACTIONS: 'false' }) === 'off' && onRunner.use?.trace !== here.use?.trace,
+  `CI=true gave ${visualTrace({ CI: 'true' })}, GITHUB_ACTIONS=false gave ${visualTrace({ GITHUB_ACTIONS: 'false' })}; ` +
+    `the runner and local configs gave ${JSON.stringify(onRunner.use?.trace)} and ${JSON.stringify(here.use?.trace)}. A rule ` +
+    `keyed on any CI flag, or on the variable's presence, would turn tracing on for a developer's shell.`,
+);
+check(
+  'and the config this process loaded is the one its own environment selects',
+  visualConfig.use?.trace === visualTrace(process.env),
+  `use.trace is ${JSON.stringify(visualConfig.use?.trace)}; this environment selects ${visualTrace(process.env)}.`,
 );
 
 /** @param {string} from @param {string} to */
