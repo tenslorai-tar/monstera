@@ -1253,15 +1253,10 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     }
     return writer.serialise(session);
   };
-  // THE SAME BYTES WITH THE KEY THEY OPEN WITH, for a PDFium read (ADR-0171's addendum): a document opened with its
-  // password serialises to its own encrypted form.
-  const currentImage = async (docId: DocId, sessions: DocumentSessions): Promise<ImageSession> => ({
-    bytes: await currentBytes(docId, sessions),
-    opensWith: engine.opensWith(docId),
-  });
   // WHAT A PDFium READ IS HANDED (ADR-0047's correction of 2026-10-20, R11): `main`'s canonical image, written into the
   // host's area from where `main` keeps it, whenever the command log says it holds every applied entry — and the session's
-  // serialise only when it does not. Every PDFium read below takes this, so a read of a current document is a file copy,
+  // serialise only when it does not. With the key the document opens with (ADR-0171's addendum): a document opened with
+  // its password is kept, and serialises, in its own encrypted form. Every PDFium read below takes this, so a read of a current document is a file copy,
   // never a whole-document save. Asked when the read writes its input, which is inside the document's lane.
   const pdfiumReadImage = (docId: DocId, sessions: DocumentSessions): WrittenImage => ({
     opensWith: engine.opensWith(docId),
