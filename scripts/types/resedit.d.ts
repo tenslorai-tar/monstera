@@ -14,7 +14,8 @@
  * Each signature below is copied from 3.1.0's declarations, narrowed to what is called; a resource entry and an icon
  * image are opaque, since the packager only passes them along. A drift between this file and the library is a runtime
  * failure at packaging, and `brandExecutable` reads the icon back and refuses the package unless it is the brand's,
- * byte for byte, so a wrong call cannot ship quietly. Bumping `resedit` means re-reading these four from its own `.d.ts`.
+ * byte for byte, so a wrong call cannot ship quietly; `nameExecutable` reads the version resource back the same way
+ * (`peVersion.mjs`). Bumping `resedit` means re-reading these from its own `.d.ts`.
  */
 
 declare const resourceEntry: unique symbol;
@@ -60,5 +61,20 @@ export declare namespace Resource {
     ): void;
     id: string | number;
     lang: string | number;
+  }
+
+  /** `VersionTranslation`: a LANGID and a codepage. */
+  interface VersionTranslation {
+    lang: number;
+    codepage: number;
+  }
+
+  class VersionInfo {
+    static fromEntries(entries: readonly ResourceEntry[]): VersionInfo[];
+    getAllLanguagesForStringValues(): VersionTranslation[];
+    setStringValues(language: VersionTranslation, values: Record<string, string>, addToAvailableLanguage?: boolean): void;
+    setFileVersion(version: string, lang?: number): void;
+    setProductVersion(version: string, lang?: number): void;
+    outputToResourceEntries(entries: ResourceEntry[]): void;
   }
 }

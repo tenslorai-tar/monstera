@@ -24,6 +24,7 @@ import { fileURLToPath } from 'node:url';
 import { loadTypeScript } from '../lib/loadTypeScript.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { applicationIcon, carriesIcon, icoImages } from '../lib/peIcons.mjs';
+import { versionDiffers, versionResource } from '../lib/peVersion.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { partialOutcome } from '../lib/unverifiable.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
@@ -34,6 +35,8 @@ import {
   appxManifest,
   bareSpecifiers,
   brandExecutable,
+  executableStrings,
+  nameExecutable,
   packageIdentity,
   refuseVersion,
   unresolvedImports,
@@ -56,6 +59,9 @@ const RUNTIME_CASES = [
   'CONTROL: one whose window loads its page and never mounts is not started, and the mount is why',
   'the port file read while another process holds it without sharing is "not yet", and its port once released',
   'CONTROL: a plain read of that held file throws EBUSY, as the packaging of 0.1.10.0 met it',
+  "the packager's naming step leaves the executable saying it is Monstera, every string and both fixed versions, read back by its own parser (R3)",
+  'CONTROL: the untouched electron.exe is refused, and the reason names its FileDescription "Electron"',
+  'CONTROL: a named executable read against the NEXT version is refused, naming the fixed versions and the version strings',
 ];
 
 /** Cases decidable without one. These run on every machine. */
@@ -239,6 +245,28 @@ try {
     const lastByte = altered.readUInt32LE(lastEntry + 12) + altered.readUInt32LE(lastEntry + 8) - 1;
     altered.writeUInt8(altered.readUInt8(lastByte) ^ 1, lastByte);
     check(RUNTIME_CASES[2] ?? '', !carriesIcon(readFileSync(branded), altered), 'the last image differs in its last byte');
+
+    // THE VERSION RESOURCE (R3): the packager's own step, read back by `peVersion.mjs`, never by resedit.
+    const named = join(scratch, 'named.exe');
+    copyFileSync(ELECTRON_BINARY, named);
+    const naming = thrown(() => nameExecutable(named, '0.1.17.0'));
+    const says = naming === null ? versionResource(readFileSync(named)) : null;
+    check(
+      RUNTIME_CASES[8] ?? '',
+      naming === null && says !== null && versionDiffers(readFileSync(named), executableStrings('0.1.17.0'), '0.1.17.0').length === 0 && says.tables.size > 0,
+      `step: ${String(naming)}; tables: ${says === null ? 'none' : [...says.tables.keys()].join(',')}`,
+    );
+    const untouched = versionDiffers(readFileSync(plain), executableStrings('0.1.17.0'), '0.1.17.0');
+    check(RUNTIME_CASES[9] ?? '', untouched.some((line) => line.includes('FileDescription: "Electron"')), untouched.join('; '));
+    const next = versionDiffers(readFileSync(named), executableStrings('0.1.18.0'), '0.1.18.0');
+    check(
+      RUNTIME_CASES[10] ?? '',
+      next.some((line) => line.startsWith('fixed file version 0.1.17.0')) &&
+        next.some((line) => line.startsWith('fixed product version 0.1.17.0')) &&
+        next.some((line) => line.includes('FileVersion: "0.1.17.0"')) &&
+        !next.some((line) => line.includes('FileDescription')),
+      next.join('; '),
+    );
 
     // THREE APPLICATIONS the provisioned runtime starts by folder, differing only in how far they get.
     /** @param {string} name @param {string} main @param {string} page */

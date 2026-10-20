@@ -70,9 +70,37 @@ function entries(bytes, root, at) {
  * @returns {{ id: number | string, images: Buffer[] }[]}
  */
 export function iconGroups(bytes) {
+  const tree = resourceTree(bytes);
+  if (tree === null) return [];
+  const { namesOf, dataOf } = tree;
+  const icons = new Map(namesOf(RT_ICON).map((named) => [named.id, named]));
+  return namesOf(RT_GROUP_ICON).map((group) => {
+    const directory = dataOf(group);
+    const count = directory.readUInt16LE(4);
+    /** @type {Buffer[]} */
+    const images = [];
+    for (let index = 0; index < count; index += 1) {
+      const iconId = directory.readUInt16LE(6 + index * 14 + 12);
+      const icon = icons.get(iconId);
+      if (icon === undefined) throw new Error(`icon group ${String(group.id)} names RT_ICON ${String(iconId)}, which the file does not hold`);
+      images.push(dataOf(icon));
+    }
+    return { id: group.id, images };
+  });
+}
+
+/**
+ * The executable's resource tree, as the two questions every reader of it asks: the names under a type, and the data
+ * under a name (its first language). `null` for a file with no resource directory. The one walker of the tree here, so
+ * the icon and the version resource are read by the same rule (B3a).
+ *
+ * @param {Buffer} bytes the whole executable
+ * @returns {{ namesOf: (type: number) => ResourceEntry[], dataOf: (named: ResourceEntry) => Buffer } | null}
+ */
+export function resourceTree(bytes) {
   const layout = peLayout(bytes);
   const { rva } = layout.directory(2);
-  if (rva === 0) return [];
+  if (rva === 0) return null;
   const root = layout.fileOffset(rva);
 
   /** The first language's data under a type and name entry. @param {ResourceEntry} named */
@@ -93,21 +121,7 @@ export function iconGroups(bytes) {
     if ((entry.offset & SUBDIRECTORY) === 0) throw new Error(`resource type ${String(type)} has data where its names belong`);
     return entries(bytes, root, root + (entry.offset & ~SUBDIRECTORY));
   };
-
-  const icons = new Map(namesOf(RT_ICON).map((named) => [named.id, named]));
-  return namesOf(RT_GROUP_ICON).map((group) => {
-    const directory = dataOf(group);
-    const count = directory.readUInt16LE(4);
-    /** @type {Buffer[]} */
-    const images = [];
-    for (let index = 0; index < count; index += 1) {
-      const iconId = directory.readUInt16LE(6 + index * 14 + 12);
-      const icon = icons.get(iconId);
-      if (icon === undefined) throw new Error(`icon group ${String(group.id)} names RT_ICON ${String(iconId)}, which the file does not hold`);
-      images.push(dataOf(icon));
-    }
-    return { id: group.id, images };
-  });
+  return { namesOf, dataOf };
 }
 
 /**

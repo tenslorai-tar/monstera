@@ -5,9 +5,9 @@
  *
  * ## What goes in, and from where
  *
- * - the provisioned Electron runtime, `electron.exe` renamed `Monstera.exe` and given the brand's icon — by resedit,
- *   and read back from the file's resources before anything else is staged, because the call returning is not the
- *   executable carrying the icon;
+ * - the provisioned Electron runtime, `electron.exe` renamed `Monstera.exe` and given the brand's icon and Monstera's
+ *   version resource — by resedit, and both read back from the file's resources before anything else is staged,
+ *   because the call returning is not the executable carrying them;
  * - `resources/app/`: the desktop package's `dist/`, and a `node_modules/` holding the workspace packages' `dist/`
  *   and npm's own production tree for them — npm answers which third-party packages ship, never a list kept here;
  * - `resources/native/<component>/` and `manifest.json` (ADR-0122), each file copied from its development tree and
@@ -62,6 +62,7 @@ import { SHELL_LAUNCH, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { isMain } from '../lib/isMain.mjs';
 import { loadTypeScript } from '../lib/loadTypeScript.mjs';
 import { applicationIcon, carriesIcon } from '../lib/peIcons.mjs';
+import { versionDiffers } from '../lib/peVersion.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { shimPath } from '../lib/shimBinary.mjs';
 import { electronRoot } from '../provision/electron.mjs';
@@ -122,6 +123,52 @@ export async function brandExecutable(executable, ico) {
   if (!carriesIcon(readFileSync(executable), readFileSync(ico))) {
     throw new Error(`${executable} does not carry ${ico} after its icon was set; its first icon group is another icon.`);
   }
+}
+
+/**
+ * What `Monstera.exe` says it is, in its version resource (R3). Task Manager names a process by its executable's
+ * `FileDescription` wherever it is not shown under the package's app group, and the runtime is Electron's renamed, so
+ * without these it said *Electron* and *GitHub, Inc.* The copyright is the application's own line (the About screen's
+ * sign and publisher); Electron's licence travels in the runtime's `LICENSE` beside it, which the package keeps.
+ *
+ * @param {string} version the package's, `a.b.c.d`
+ * @returns {Readonly<Record<string, string>>}
+ */
+export function executableStrings(version) {
+  return {
+    FileDescription: DISPLAY_NAME,
+    ProductName: DISPLAY_NAME,
+    CompanyName: 'Tenslor Inc.',
+    LegalCopyright: '© Tenslor Inc.',
+    OriginalFilename: EXECUTABLE,
+    InternalName: EXECUTABLE,
+    FileVersion: version,
+    ProductVersion: version,
+  };
+}
+
+/**
+ * Writes {@link executableStrings} into every string table of an executable's version resource and the package's
+ * version into its fixed part, then refuses unless the file says exactly that — read back by `peVersion.mjs`'s own
+ * parser, never by resedit, whose reader would agree with its writer's mistakes.
+ *
+ * @param {string} executable
+ * @param {string} version `a.b.c.d`
+ */
+export function nameExecutable(executable, version) {
+  const image = NtExecutable.from(readFileSync(executable), { ignoreCert: true });
+  const resources = NtExecutableResource.from(image);
+  const [info] = Resource.VersionInfo.fromEntries(resources.entries);
+  if (info === undefined) throw new Error(`${executable} carries no version resource to name`);
+  const strings = executableStrings(version);
+  for (const language of info.getAllLanguagesForStringValues()) info.setStringValues(language, strings);
+  info.setFileVersion(version);
+  info.setProductVersion(version);
+  info.outputToResourceEntries(resources.entries);
+  resources.outputResource(image);
+  writeFileSync(executable, Buffer.from(image.generate()));
+  const differs = versionDiffers(readFileSync(executable), strings, version);
+  if (differs.length > 0) throw new Error(`${executable} does not say it is Monstera after its version resource was written: ${differs.join('; ')}`);
 }
 
 /** The workspace packages the shell loads in Node or Electron main. `ui` and `testing` are bundled or unshipped. */
@@ -520,6 +567,7 @@ async function main() {
   renameSync(join(stage, 'electron.exe'), join(stage, EXECUTABLE));
   rmSync(join(stage, 'resources', 'default_app.asar'), { force: true });
   await brandExecutable(join(stage, EXECUTABLE), BRAND_ICON);
+  nameExecutable(join(stage, EXECUTABLE), version);
 
   step('application');
   const app = join(stage, 'resources', 'app');
