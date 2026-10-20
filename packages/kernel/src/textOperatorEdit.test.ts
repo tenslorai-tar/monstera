@@ -388,7 +388,7 @@ describe('applyEditTextOperators', () => {
         () => null,
         (error: unknown) => error,
       );
-      // THE STEP THE OWNER'S SENTENCE NAMES: *This page uses a font Monstera can't rewrite yet, so nothing was changed*.
+      // THE STEP THE OWNER'S ONE PLAIN LINE NAMES (R13, Q3): the page is left as it was, and the line says why.
       expect(refusal).toBeInstanceOf(EditRefusedError);
       expect((refusal as EditRefusedError).step).toBe('read-back');
       const after = await withDocument(session, (document) => joinedContent(pageContentStreams(document.findPage(0))));

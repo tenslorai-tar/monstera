@@ -841,7 +841,7 @@ for (const look of LOOKS) {
     await page.getByRole('menu').getByRole('menuitem', { name: 'Rotate page' }).click();
 
     const dialog = page.getByRole('dialog');
-    await expect(dialog.getByText('This page uses a font Monstera can’t rewrite yet, so nothing was changed.')).toBeVisible();
+    await expect(dialog.getByText('Monstera couldn’t make this change without disturbing other text on the page, so nothing was changed.')).toBeVisible();
     await expect(dialog.getByText('read-back 0')).toBeVisible();
 
     const results = await new AxeBuilder({ page }).analyze();
@@ -4906,7 +4906,7 @@ for (const look of LOOKS) {
     await page.keyboard.press('Escape');
 
     const said = page.locator('.m-text-editor-problem');
-    await expect(said).toContainText('This page uses a font Monstera can’t rewrite yet, so nothing was changed.');
+    await expect(said).toContainText('Monstera couldn’t make this change without disturbing other text on the page, so nothing was changed.');
     await expect(said).toContainText('read-back 0');
     // ONLY ESC IS OFFERED where no words can pass (RRRRRRR-16, 83fb33fc): a font this build cannot rewrite refuses any
     // typing, so "Change the words" would send a person after an edit that cannot succeed.

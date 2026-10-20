@@ -42,15 +42,19 @@ describe('an edit PDFium refused says which part of the work refused', () => {
     for (const key of keys) expect(english(key)).toMatch(/, so nothing was changed\.$/u);
   });
 
-  it('the read-back says the owner’s sentence', () => {
+  it('the read-back says the owner’s one plain line (R13, Q3), and it blames no font', () => {
     expect(english(problemMessage(refused('read-back', 0)))).toBe(
-      'This page uses a font Monstera can’t rewrite yet, so nothing was changed.',
+      'Monstera couldn’t make this change without disturbing other text on the page, so nothing was changed.',
     );
+    // NEVER A FONT: an edit is not refused for its font (the closest face is used); only a page whose other text could
+    // not be kept is, and the line says that.
+    expect(english(problemMessage(refused('read-back', 0)))).not.toMatch(/font/u);
+    expect(english(problemMessage(refused('moved-text', 0)))).not.toMatch(/font/u);
     expect(problemMessage(refused('read-back', 0))).toBe(EDIT_REFUSED_READ_BACK);
   });
 
   it('a MOVED TEXT RUN is said in words with no reference to quote (ADR-0240) — CONTROL: the read-back shows its reference', () => {
-    expect(english(problemMessage(refused('moved-text', 0)))).toMatch(/^This text is set in a font Monstera can’t rewrite yet\./u);
+    expect(english(problemMessage(refused('moved-text', 0)))).toMatch(/^Monstera couldn’t move this text without disturbing other text on the page, /u);
     expect(problemParticulars(refused('moved-text', 0))).toBeUndefined();
     expect(problemParticulars(refused('read-back', 0))?.value).toBe('read-back 0');
   });

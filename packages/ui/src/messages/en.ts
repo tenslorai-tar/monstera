@@ -7350,9 +7350,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EDIT_REFUSED_MATRIX]: 'Monstera couldn’t put that part of the page in place, so nothing was changed.',
   [EDIT_REFUSED_GENERATE]: 'Monstera couldn’t rebuild the page with your change, so nothing was changed.',
   [EDIT_REFUSED_SAVE]: 'Monstera couldn’t save the edited page, so nothing was changed.',
-  [EDIT_REFUSED_READ_BACK]: 'This page uses a font Monstera can’t rewrite yet, so nothing was changed.',
-  [EDIT_REFUSED_MOVED_TEXT]:
-    'This text is set in a font Monstera can’t rewrite yet. Pictures and shapes on this page can be moved and resized, but this text can’t, so nothing was changed.',
+  // THE OWNER'S ONE PLAIN LINE (R13, Q3 answered 2026-10-20): never a refusal for a font — the edited words are set in
+  // the closest face — only for the rare page where neither writer can keep the rest of it, which is left as it was.
+  [EDIT_REFUSED_READ_BACK]: 'Monstera couldn’t make this change without disturbing other text on the page, so nothing was changed.',
+  [EDIT_REFUSED_MOVED_TEXT]: 'Monstera couldn’t move this text without disturbing other text on the page, so nothing was changed.',
   // EACH SAYS WHAT STOPPED IT AND THAT NOTHING WAS CHANGED, and the three a person can fix say how.
   [FIELD_EDIT_NOT_FOUND]: 'That field has moved since the list was read, so nothing was changed. Select it again and try once more.',
   [FIELD_EDIT_NAME_TAKEN]: 'Another field already has that name, or a name that starts with it, so nothing was changed. Choose a different name.',

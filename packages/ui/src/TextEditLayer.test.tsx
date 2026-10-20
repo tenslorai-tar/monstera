@@ -446,7 +446,7 @@ describe('Edit text on the page (ADR-0096)', () => {
     const kept = view.container.querySelector('[data-text-editor]');
     expect(kept?.textContent).toBe('WORK EXPERIENCE');
     const said = view.container.querySelector('[role="alert"]')?.textContent ?? '';
-    expect(said).toContain('This page uses a font Monstera can’t rewrite yet, so nothing was changed.');
+    expect(said).toContain('Monstera couldn’t make this change without disturbing other text on the page, so nothing was changed.');
     expect(said).toContain('read-back 0');
     // NO CHANGE OF WORDS PASSES IT, so the editor offers only the way back (RRRRRRR-16); the font's refusal above, which
     // other words can pass, is the control that still says *Change the words*.
