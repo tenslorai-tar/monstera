@@ -1238,7 +1238,10 @@ export function PageList({
       // stands in their place; the attribute is what the stylesheet and the rendered cases read.
       data-first-frame={firstFrame ? 'shown' : 'pending'}
     >
-      {firstFrame ? null : <OpeningState />}
+      {/* THE LOADING STATE ONLY WHERE IT IS A FINISHED SCREEN: a list arriving behind what is on show — a parked layer
+          rebuilt, or the pages coming back from Organize's grid (R12) — opens nothing, so it says nothing, not even to a
+          screen reader under the screen that stays. */}
+      {firstFrame || onViewDrawn?.openingIsShowable === false ? null : <OpeningState />}
       {loupe && lens !== undefined ? (
         <div
           className="m-loupe-at"

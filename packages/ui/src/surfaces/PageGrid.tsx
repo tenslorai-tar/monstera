@@ -1,7 +1,7 @@
 import { useLingui } from '@lingui/react';
 import type { ContractClient } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
-import { type ReactElement, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { type CSSProperties, type ReactElement, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import type { DocumentView } from '../documentView.js';
 import {
@@ -14,6 +14,7 @@ import {
 } from '../messages/en.js';
 import { SegmentedControl } from '../primitives/SegmentedControl.js';
 import { ORGANIZE_GRID_SIZE_SETTING, ORGANIZE_THUMBNAIL_WIDTH } from '../settings/appearance.js';
+import { FLOAT_BAR_POSITION_SETTING } from '../settings/layout.js';
 import type { SettingsStore } from '../settingsStore.js';
 import { Thumbnails } from '../Thumbnails.js';
 import type { MenuAt } from './ContextMenu.js';
@@ -114,6 +115,7 @@ export function PageGrid({
   onMove,
   onDelete,
   menuAt,
+  leaving = false,
 }: {
   readonly client: ContractClient;
   readonly docId: DocId;
@@ -136,9 +138,19 @@ export function PageGrid({
   readonly onMove: (from: number, to: number) => void;
   readonly onDelete: (pages: readonly number[]) => void;
   readonly menuAt: MenuAt<number>;
+  /**
+   * The grid kept on show over the page list arriving from it, until that list is drawn (R12): laid over it and inert,
+   * so nothing in it can be pressed or focused and a screen reader meets the pages, not a grid that is going.
+   */
+  readonly leaving?: boolean;
 }): ReactElement {
   const { i18n } = useLingui();
   const size = useSetting(settings, ORGANIZE_GRID_SIZE_SETTING);
+  // THE FLOAT BAR'S LANE WHERE IT WAS MOVED TO (R12): docked, the stylesheet keeps the cards clear of its edge; moved,
+  // the grid keeps them clear of the side the bar is nearer, as far in as the bar reaches, from the same share the bar
+  // is drawn at. So the first column is never under it, wherever it was last put. A reader of the setting, never a writer.
+  const floatBar = useSetting(settings, FLOAT_BAR_POSITION_SETTING);
+  const floatAt = typeof floatBar === 'string' ? undefined : floatBar.x;
   const section = useRef<HTMLElement>(null);
   // FULL PAGE'S WIDTH, measured before the browser paints and again whenever the grid's box changes, so the first
   // frame after choosing it already shows whole-width pages rather than thumbnails that then grow.
@@ -196,7 +208,16 @@ export function PageGrid({
   const layers: readonly Shown[] = pendingSize === undefined ? [shown] : [shown, { key: pendingKey, size: pendingSize }];
 
   return (
-    <section aria-label={i18n._(ORGANIZE_GRID_LABEL)} className="m-page-grid" data-page-view={shown.size} ref={section}>
+    <section
+      aria-hidden={leaving ? true : undefined}
+      aria-label={i18n._(ORGANIZE_GRID_LABEL)}
+      className={leaving ? 'm-page-grid m-page-grid--leaving' : 'm-page-grid'}
+      data-float-side={floatAt === undefined ? undefined : floatAt <= 0.5 ? 'start' : 'end'}
+      data-page-view={shown.size}
+      inert={leaving}
+      ref={section}
+      style={floatAt === undefined ? undefined : ({ '--float-x': String(floatAt) } as CSSProperties)}
+    >
       <header className="m-page-grid__head">
         {/* THE CLIP AND THE ROW ARE TWO BOXES so a wrapped line cannot start with a separator (app.css). */}
         <div className="m-page-grid__summary">

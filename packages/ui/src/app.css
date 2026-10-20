@@ -9235,6 +9235,28 @@ body {
   padding-inline-end: calc(var(--space-12) + var(--quick-toolbar));
 }
 
+/*
+ * CLEAR OF A MOVED FLOAT BAR TOO (R12, the owner's answer of 2026-10-20: the bar shows in Organize, opens where it was
+ * last put, and never over the first column). The lane runs from the side the bar is nearer to the bar's far edge, by
+ * the bar's own rule: its corner is the share of the travel, `--float-x × (area − bar)`. The grid's percentages resolve
+ * against the same page area the bar's do. The grid sets the share and the side from the same setting the bar is drawn
+ * from (`PageGrid`).
+ */
+.m-canvas-area:has(> .m-quick-toolbar--free) > .m-page-grid[data-float-side='start'] {
+  padding-inline-start: calc(var(--float-x, 0) * (100% - var(--quick-toolbar)) + var(--quick-toolbar));
+}
+
+.m-canvas-area:has(> .m-quick-toolbar--free) > .m-page-grid[data-float-side='end'] {
+  padding-inline-end: calc((1 - var(--float-x, 1)) * (100% - var(--quick-toolbar)) + var(--quick-toolbar));
+}
+
+/* THE GRID GOING (R12): kept over the page list arriving from it until that list is drawn, then gone in one frame. */
+.m-page-grid--leaving {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
 .m-page-grid__head {
   display: flex;
   flex-wrap: wrap;

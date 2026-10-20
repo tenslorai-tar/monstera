@@ -246,13 +246,18 @@ for (const size of [
 test('the FLOAT BAR covers no ORGANIZE card at 1280 × 800', async ({ page }) => {
   await openApp(page);
   await openDocument(page);
-  // THE CONTROL: over the pages the float bar is there, so its absence below is Organize's and not a bar never drawn.
   await expect(page.getByRole('toolbar', { name: 'Float bar' })).toBeVisible();
   await openSection(page, 'Organize');
   await expect(page.locator('.m-page-grid [data-thumb-page="0"] canvas[data-drawn="true"]')).toBeAttached();
-  // NONE AT ALL over the grid (the owner's 14a): none of its controls acts on a card, so a bar docked beside the cards
-  // still offered tools whose press left Organize — the grid mounts none.
-  await expect(page.getByRole('toolbar', { name: 'Float bar' })).toHaveCount(0);
+  // ON SHOW OVER THE GRID (R12, the owner's answer of 2026-10-20, replacing 14a), and beside the cards, never on one:
+  // the grid lays its cards out past the bar's lane.
+  const bar = await page.getByRole('toolbar', { name: 'Float bar' }).boundingBox();
+  if (bar === null) throw new Error('no Float bar over the grid');
+  const cards = await page.locator('.m-page-grid [data-layer="shown"] [data-thumb-page]').evaluateAll((elements) =>
+    elements.map((element) => element.getBoundingClientRect()).map((box) => ({ left: box.left, top: box.top, right: box.right, bottom: box.bottom })),
+  );
+  expect(cards.length).toBeGreaterThan(0);
+  expect(cards.filter((card) => card.left < bar.x + bar.width && bar.x < card.right && card.top < bar.y + bar.height && bar.y < card.bottom)).toStrictEqual([]);
 });
 
 test('a DIALOG’S OPTION GROUP has no bare frame, and each option is a line of its own (Print)', async ({ page }) => {

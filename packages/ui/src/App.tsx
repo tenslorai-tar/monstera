@@ -6326,6 +6326,30 @@ function PageCanvas({
     if (drawsNoPages) viewDrawn?.told();
   }, [drawsNoPages, viewDrawn]);
 
+  // THE GRID STAYS ON SHOW UNTIL THE PAGES ARE DRAWN (R12). Organize's grid takes the place of the panes, so leaving
+  // it mounts a new page list, whose first frame is its loading state: "Opening the document…" over an empty page area,
+  // for a document that was open all along. The grid that was on show is kept over the arriving list, inert, until the
+  // list says its viewport is drawn — a parked layer's rule (ADR-0129's correction of 2026-10-17), and its callback.
+  const [gridLeaving, setGridLeaving] = useState<NonNullable<typeof organize> | undefined>(undefined);
+  const [organizeWas, setOrganizeWas] = useState(organize);
+  if (organize !== organizeWas) {
+    setOrganizeWas(organize);
+    setGridLeaving(organize === undefined ? organizeWas : undefined);
+  }
+  const listDrawn = useMemo(
+    (): ViewDrawn | undefined =>
+      gridLeaving === undefined
+        ? viewDrawn
+        : {
+            told: (): void => {
+              setGridLeaving(undefined);
+              viewDrawn?.told();
+            },
+            openingIsShowable: false,
+          },
+    [gridLeaving, viewDrawn],
+  );
+
   if (failed) {
     // A CANVAS, and the element is the contract rather than the appearance.
     // `canvasHarness.ts` reads `data-failed` off `canvas.m-page` to tell a parse
@@ -6405,7 +6429,7 @@ function PageCanvas({
       onCurrentPage={split ? reportLeft : reporting === 'first' ? onCurrentPage : ignorePage}
       onPageBox={onPageBox}
       onFirstFrame={firstFrameDone}
-      onViewDrawn={viewDrawn}
+      onViewDrawn={listDrawn}
       mode={mode}
       onZoomStep={onZoomStep}
       onShownZoom={reporting === 'first' ? onShownZoom : ignoreZoom}
@@ -6499,6 +6523,30 @@ function PageCanvas({
     />
   );
 
+  /** Organize's grid; `leaving` is the grid kept over the arriving page list until it is drawn, inert (R12). */
+  const gridOf = (grid: NonNullable<typeof organize>, leaving: boolean): ReactElement => (
+    <PageGrid
+      client={client}
+      docId={open.docId}
+      version={open.version}
+      view={ready}
+      pageCount={ready.document.numPages}
+      current={current}
+      selected={grid.selected}
+      settings={settings}
+      onSelect={grid.onSelect}
+      onCurrent={grid.onCurrent}
+      onViewing={grid.onViewing}
+      goTo={leaving ? undefined : grid.goTo}
+      onWentTo={grid.onWentTo}
+      onOpen={grid.onOpen}
+      onMove={onMove}
+      onDelete={grid.onDelete}
+      menuAt={menuAt}
+      leaving={leaving}
+    />
+  );
+
   return (
     // THE SIDEBAR IS A SIBLING OF THE SPINE, inside this component, because it
     // needs the same parser: a strip that opened its own would parse the
@@ -6512,9 +6560,10 @@ function PageCanvas({
       presence={presence}
       measuresRow={measuresRow}
       contextPanel={contextPanel}
-      // NO FLOAT BAR OVER ORGANIZE'S GRID (the owner's 14a): it lay over the first column of cards, and none of its
-      // tools acts on a card — each draws on, moves or zooms the pages, and arming one takes the reader to Home.
-      quickToolbar={organize === undefined ? quickToolbar : null}
+      // THE FLOAT BAR IN ORGANIZE TOO (R12, the owner's answer of 2026-10-20, which replaces 14a): a projection of the
+      // registry, so the commands whose `when` holds are on it here as everywhere. Kept off the first column of cards by
+      // the grid's own lane, on whichever side the bar sits (`app.css`, `.m-page-grid`).
+      quickToolbar={quickToolbar}
       panel={
       <DocumentPanel
         tool={tool}
@@ -6545,27 +6594,10 @@ function PageCanvas({
       // ORGANIZE'S CANVAS IS THE GRID (ADR-0104), in place of both panes — a split of a grid is two copies of
       // one selection, and the reading view returns with the section.
       organize !== undefined ? (
-        <PageGrid
-          client={client}
-          docId={open.docId}
-          version={open.version}
-          view={ready}
-          pageCount={ready.document.numPages}
-          current={current}
-          selected={organize.selected}
-          settings={settings}
-          onSelect={organize.onSelect}
-          onCurrent={organize.onCurrent}
-          onViewing={organize.onViewing}
-          goTo={organize.goTo}
-          onWentTo={organize.onWentTo}
-          onOpen={organize.onOpen}
-          onMove={onMove}
-          onDelete={organize.onDelete}
-          menuAt={menuAt}
-        />
+        gridOf(organize, false)
       ) : (
-      split ? (
+      <>
+      {split ? (
         // SPLIT VIEW (row 65): the header and two halves around the same two page lists, over ONE parser.
         //
         // A half that opened its own view would parse the document twice, start a second worker and hold a second
@@ -6590,7 +6622,9 @@ function PageCanvas({
         />
       ) : (
         firstPane
-      )
+      )}
+      {gridLeaving === undefined ? null : gridOf(gridLeaving, true)}
+      </>
       )
       }
     />
