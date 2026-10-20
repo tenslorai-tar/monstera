@@ -892,6 +892,43 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-20 — Local fix session 3: the owner's review of 0.1.16.0, R1 to R15
+
+Branch `work/2026-10-19-review` from main `041e8c48`. The owner's questions Q1–Q6 and their answers of 2026-10-20 are in
+the session folder's `owner-questions.md`; each item's mechanism, proof and control is in its commit message.
+
+**R1 — kernel_network.dll names `powershell.exe`: reachable, and contained.** Read from the DLL: one UTF-16 string
+beside `(new-object System.Net.WebClient).DownloadFile('` — ONLYOFFICE's downloader, which falls back from URLMon to a
+PowerShell child. Measured with `scripts/research/x2tNetworkReach.mjs` (Document Builder 9.4.0): a Word document's
+linked picture is not fetched; an HTML page under a `.docx` name is, because x2t decides the format from the bytes —
+free, URLMon's request and then a `powershell.exe` child of x2t. Contained by the product's own start
+(`createContainedHost`), no request reached the server and no PowerShell existed. A first version that resumed the
+process without the job saw PowerShell start inside the AppContainer (with no network): the job's one-process limit is
+what refuses the launch, the AppContainer what refuses the fetch, both kernel-enforced. No product change; run by hand.
+
+**R11 timings** (the same 44 MB brochure, `objectClickWalk.mjs`): Edit images to outlined 5.3 s (7.4 s after the first
+fix, 10.1–11.0 s before); a PDFium read alone 0.21–0.48 s (0.6–1.8 s before). The first read still carries the host's
+cold start, 3.3 s: in that walk the mode is chosen at the moment of its first read, so the early start overlaps nothing.
+
+**R13**: `scripts/research/editRefusalCorpus.mjs` over the 11-document corpus — 16 pages with text, all 16 edited and
+kept, 0 refused at read-back; 16 hold no text. The corpus has no Type 3 page; the sweep's control is the committed print.
+
+**DEBIAN-CVE-2026-112036 (published 2026-10-19), found by the closing gate's `check:advisories`.** A double free in
+MuPDF's `free_char_list`, the signature-locking field lists; upstream fix `3984925b` (bug 709768) sets the freed pointer
+to NULL and is not in the pinned 1.28.0 tree. The defect is reached only through `pdf_find_locked_fields`, whose callers
+are `pdf_validate_changes`, `pdf_validate_signature` and MuPDF's own signer `pdf_sign_signature`. The kernel's object
+model defines `validateChangeHistory` and nothing calls it (a call would be spelt `.validateChangeHistory(`); its signer
+and signature validation are not bound. Recorded AFFECTED, NOT REACHABLE, watched under `reachability.signatureLocking`,
+and flagged to the owner for review.
+
+**Found along the way, each in its own commit:** `ddcb361a` (R11's `about` placement put `engine/apply` past the frame
+and `engine/apply-file` past the file ceiling — refused only by a refinement the size bound cannot read; now a union);
+`bd26b11f` (two R5 unit cases written wrong, behind a commit message that said App.test passed — only its new cases had
+been run); `dc685e91` (`npm run local` had refused to start since 2026-10-05, a stale `check:lint` exception after
+`67095c32`); `45f1a930` and `2e47b1cf` (the R13 and R1 instruments owed the freshness guard and the computed-import list).
+
+---
+
 ## 2026-10-18 — What an engine host costs `main`: one sampling thread for every host (the owner's question 6)
 
 The memory walk's M3 failed by 8 to 53 MB from run to run. Measured: `main` rises about 70 MB at the first edit, no
