@@ -12,13 +12,14 @@ import { join } from 'node:path';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
-import { mupdfSourcePath } from './mupdf.mjs';
+import { shimPath } from '../lib/shimBinary.mjs';
+import { mupdfSourcePath, verifyExports, withheldExported } from './mupdf.mjs';
 import { WITHHELD, generateGlue } from './mupdfGlue.mjs';
 
 const ROOT = repoRoot();
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 9 });
+const roster = createRoster(failures, { cases: 12 });
 
 /** @param {string} body */
 const fixture = (body) =>
@@ -116,6 +117,14 @@ test('a WITHHELD export leaves nothing that names what it called, and a kept one
   expect(/\bpdf_disable_js\s*\(/u.test(c), 'CONTROL: the kept export lost its callee, so the removal is not selective');
 });
 
+test('the export scan reports a withheld export a DLL carries (CONTROL), and none from a table without one (DEBIAN-CVE-2026-112036)', () => {
+  expect(Object.hasOwn(WITHHELD, 'wasm_pdf_validate_change_history'), 'the change-history door is not withheld');
+  const carrying = withheldExported(new Set(['wasm_pdf_count_versions', 'wasm_pdf_validate_change_history']));
+  expect(carrying.join() === 'wasm_pdf_validate_change_history', `a table exporting the door reported ${carrying.join() || 'nothing'}`);
+  const clean = withheldExported(new Set(['wasm_pdf_count_versions']));
+  expect(clean.length === 0, `a table without a withheld export reported ${clean.join()}`);
+});
+
 const upstreamC = join(mupdfSourcePath(ROOT), 'platform', 'wasm', 'lib', 'mupdf.c');
 const upstreamTs = join(mupdfSourcePath(ROOT), 'platform', 'wasm', 'lib', 'mupdf.ts');
 const raw = readFileSync(join(ROOT, 'packages', 'kernel', 'src', 'mupdfRaw.ts'), 'utf8');
@@ -124,6 +133,7 @@ const sha256 = (/** @type {string} */ path) => createHash('sha256').update(readF
 
 if (!provisioned) {
   for (const label of [
+    'the real mupdf.c carries the change-history door and the generated glue does not',
     'the real mupdf.c yields every export the object model calls',
     'the DLL is generated from the mupdf.c the object model was ported against',
     'the object model is ported from the provisioned mupdf.ts',
@@ -132,6 +142,12 @@ if (!provisioned) {
   }
 } else {
   const real = generateGlue(readFileSync(upstreamC, 'utf8'));
+  test('the real mupdf.c carries the change-history door and the generated glue does not', () => {
+    // CONTROL FIRST: the upstream source exports it, so its absence below is the withholding and not an upstream rename.
+    expect(/\bwasm_pdf_validate_change_history\s*\(/u.test(readFileSync(upstreamC, 'utf8')), 'upstream mupdf.c no longer names the door');
+    expect(!real.exports.some((each) => each.name === 'wasm_pdf_validate_change_history'), 'the generated glue exports it');
+    expect(!/\bpdf_validate_change_history\s*\(/u.test(real.c), 'the generated glue still calls pdf_validate_change_history');
+  });
   test('the real mupdf.c yields every export the object model calls', () => {
     const generated = new Set(real.exports.map((each) => each.name));
     const called = new Set([...raw.matchAll(/libmupdf\._(wasm_[A-Za-z0-9_]+)/gu)].map((m) => m[1] ?? ''));
@@ -146,6 +162,19 @@ if (!provisioned) {
   test('the object model is ported from the provisioned mupdf.ts', () => {
     const pinned = /Ported from upstream mupdf\.ts sha256 ([0-9a-f]{64})/u.exec(raw)?.[1];
     expect(pinned === sha256(upstreamTs), `mupdfRaw.ts pins ${String(pinned)}; the provisioned mupdf.ts is ${sha256(upstreamTs)}`);
+  });
+}
+
+// THE BUILT DLL, read through the shim build's own export scan (`verifyExports`): every declared export present and
+// no withheld one. It needs the DLL and an export reader; where either is missing it is named as not run.
+const dll = shimPath(ROOT);
+const dllLabel = 'the built shim exports every declared symbol and none of the withheld ones, read from its export table';
+const scanned = existsSync(dll) ? await verifyExports(ROOT, dll).then((read) => read, (error) => String(error)) : null;
+if (scanned === null || (typeof scanned !== 'string' && !scanned.verified)) {
+  roster.record(roster.mark(), `${dllLabel} — NOT RUN: ${scanned === null ? 'no built shim here' : 'no export reader here'}`, false);
+} else {
+  test(dllLabel, () => {
+    expect(typeof scanned !== 'string', `the scan refused the DLL: ${String(scanned)}`);
   });
 }
 

@@ -19,7 +19,7 @@ import type { SignedData, SignerCheck } from './signedDataCheck.js';
  * ## node-forge is the reader, and MuPDF's binding does not offer one
  *
  * Measured 2026-09-12: `PDFWidget` exposes no signature member at all, and
- * `PDFDocument` exposes only `validateChangeHistory`. The native library has
+ * `PDFDocument` exposes only `validateChangeHistory` (withheld since 2026-10-20, DEBIAN-CVE-2026-112036). The native library has
  * `pdf_check_signature`; the JS binding does not bind it. So §3's matrix line —
  * *node-forge (verify)* — was the answer for a reason sharper than the founding
  * record could have known, and ADR-0054 Decision 4 already says the useful half

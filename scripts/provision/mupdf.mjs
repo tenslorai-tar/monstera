@@ -45,7 +45,7 @@ import { fileURLToPath } from 'node:url';
 import { downloadVerified, fileExists, toolPath } from '../lib/fetchVerified.mjs';
 import { archiveSymlinks, extract } from '../lib/extract.mjs';
 import { LAYOUT_ENGINE_FLAGS, handlerDisableFlags } from '../lib/documentHandlers.mjs';
-import { generateGlue } from './mupdfGlue.mjs';
+import { WITHHELD, generateGlue } from './mupdfGlue.mjs';
 import { build, dumpbin } from '../lib/msvc.mjs';
 import { recordShimBuild, shimPath } from '../lib/shimBinary.mjs';
 import { formatError } from '../lib/reportError.mjs';
@@ -387,6 +387,18 @@ async function buildShim(root) {
 }
 
 /**
+ * The withheld exports (`mupdfGlue.mjs`' WITHHELD) a DLL's export table carries, by name — empty for a shim built as it
+ * should be. The owner's answer of 2026-10-20 asked for this scan: a door withheld for an unfixed advisory
+ * (DEBIAN-CVE-2026-112036 and the font-subsetting watch) must be ABSENT from what ships, read from the DLL.
+ *
+ * @param {ReadonlySet<string>} exported the DLL's export names
+ * @returns {string[]}
+ */
+export function withheldExported(exported) {
+  return Object.keys(WITHHELD).filter((name) => exported.has(name));
+}
+
+/**
  * Confirms the built DLL actually exports the surface the shim claims, rather
  * than trusting that a linker exit code means a usable library. A DLL that
  * links but exports nothing is exactly the green check this project bans.
@@ -469,7 +481,13 @@ export async function verifyExports(root, dll) {
         `${missing.join(', ')}`,
     );
   }
-  process.stderr.write(`\n    all ${declared.size} exports present in the DLL\n`);
+  // AND NONE OF THE WITHHELD ONES, read from the same table: the generator leaving an export out is a claim about the
+  // source, and this is the DLL saying so.
+  const carried = withheldExported(exported);
+  if (carried.length > 0) {
+    throw new Error(`The DLL exports ${String(carried.length)} symbol(s) mupdfGlue.mjs withholds: ${carried.join(', ')}`);
+  }
+  process.stderr.write(`\n    all ${declared.size} exports present in the DLL, and none of the ${String(Object.keys(WITHHELD).length)} withheld\n`);
   return { declared: declared.size, verified: true };
 }
 

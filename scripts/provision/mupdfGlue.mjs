@@ -98,6 +98,12 @@ export const WITHHELD = {
   // ARTIFEX-BUG-709567, a memory overwrite in CFF2 subsetting that no release fixes, and to CVE-2026-7233's code. The
   // register's NOT-REACHABLE verdicts rest on no shipped path reaching it; withholding the export keeps that true.
   wasm_pdf_subset_fonts: 'is font subsetting, the path to a memory overwrite no MuPDF release fixes (ARTIFEX-BUG-709567)',
+  // Found 2026-10-20 by `check:advisories` (DEBIAN-CVE-2026-112036), withheld by the owner's answer of that day: the
+  // binding's one door to MuPDF's signature-locking field lists, whose free_char_list double-frees in 1.28.0 (Artifex
+  // bug 709768, fixed upstream in 3984925b, after this release). The binding carries no signer and no signature
+  // validation, so this is the whole of it; nothing in Monstera calls it.
+  wasm_pdf_validate_change_history:
+    'validates a document\'s change history through MuPDF\'s signature-locking lists, where 1.28.0 double-frees (DEBIAN-CVE-2026-112036)',
 };
 
 /** The error kinds `wasm_rethrow` distinguishes, as the runtime numbers them. */

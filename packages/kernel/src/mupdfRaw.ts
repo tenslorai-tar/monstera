@@ -37,10 +37,11 @@
  *     and the two zero-copy views upstream returned — `Buffer.asUint8Array` and `Pixmap.getPixels` — are copies.
  *  3. ERRORS. In WASM a MuPDF error was a JavaScript exception thrown from inside the call. Native, the DLL ends
  *     the unwind in its own frame and reports it, and {@link openMupdfShim} throws the same `Error` upstream threw.
- *  4. WITHHELD. Three exports are not built (`scripts/provision/mupdfGlue.mjs`' WITHHELD): MuPDF's JavaScript
+ *  4. WITHHELD. Four exports are not built (`scripts/provision/mupdfGlue.mjs`' WITHHELD): MuPDF's JavaScript
  *     switch, so `enableJS()` refuses rather than linking an interpreter into the shipped shim (invariant 24); its
- *     format-string writer dispatcher, so `new DocumentWriter()` refuses (invariant 23); and font subsetting, whose
- *     method is removed so a call does not compile (an unfixed advisory, `docs/security/engine-advisories.json`).
+ *     format-string writer dispatcher, so `new DocumentWriter()` refuses (invariant 23); font subsetting, and the
+ *     change-history validation that walks the signature-locking lists, whose methods are removed so a call does not
+ *     compile (unfixed advisories, `docs/security/engine-advisories.json`).
  *
  * The Optimize functions at the end are the shim's own `mz_*` surface, unchanged.
  *
@@ -363,7 +364,6 @@ interface Libmupdf {
 	_wasm_pdf_can_be_saved_incrementally(doc: Pointer<"any_document">): number,
 	_wasm_pdf_count_versions(doc: Pointer<"any_document">): number,
 	_wasm_pdf_count_unsaved_versions(doc: Pointer<"any_document">): number,
-	_wasm_pdf_validate_change_history(doc: Pointer<"any_document">): number,
 	_wasm_pdf_enable_journal(doc: Pointer<"any_document">): void,
 	_wasm_pdf_undoredo_state_position(doc: Pointer<"any_document">): number,
 	_wasm_pdf_undoredo_state_count(doc: Pointer<"any_document">): number,
@@ -3410,9 +3410,10 @@ export class PDFDocument extends Document {
 		return libmupdf._wasm_pdf_count_unsaved_versions(this.pointer)
 	}
 
-	validateChangeHistory() {
-		return libmupdf._wasm_pdf_validate_change_history(this.pointer)
-	}
+	/* MONSTERA: WITHHELD. Upstream's change-history validation is removed, and the shim does not carry its export
+	 * (scripts/provision/mupdfGlue.mjs): it walks MuPDF's signature-locking field lists, where 1.28.0 double-frees
+	 * (DEBIAN-CVE-2026-112036, `docs/security/engine-advisories.json`). Removed rather than refused, so a call is a
+	 * compile error. */
 
 	canBeSavedIncrementally() {
 		return !!libmupdf._wasm_pdf_can_be_saved_incrementally(this.pointer)
