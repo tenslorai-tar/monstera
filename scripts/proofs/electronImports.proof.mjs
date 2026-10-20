@@ -534,6 +534,18 @@ try {
       },
     ],
     [
+      'scripts/research/x2tNetworkReach.mjs',
+      {
+        sites: 1,
+        reason:
+          'ONE helper loads six built modules through file:// URLs — the Win32 pipe, directory and host ' +
+          'surfaces, the session-directory pair, the engine-host factory and the budget — for ' +
+          'x2tContained.mjs\'s reason: R1\'s measurement, that a contained x2t neither fetches nor starts ' +
+          'PowerShell, is asked of the SHIPPED start (createContainedHost). Plain Node; it starts x2t ' +
+          'through x2tPath() and never imports the electron package.',
+      },
+    ],
+    [
       'scripts/research/officeLive.mjs',
       {
         sites: 1,
