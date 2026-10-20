@@ -202,6 +202,7 @@
     "check:proofcoverage": "node scripts/lib/proofCoverage.mjs",
     "proof:affectedproofs": "node scripts/proofs/affectedProofs.proof.mjs",
     "proof:visualregenerate": "node scripts/proofs/visualRegenerate.proof.mjs",
+    "proof:visualfailures": "node scripts/proofs/visualFailures.proof.mjs",
     "proof:npmscriptsteps": "node scripts/proofs/npmScriptSteps.proof.mjs",
     "proof:proofcoverage": "node scripts/proofs/proofCoverage.proof.mjs",
     "check:stackowner": "node scripts/lib/stackOwnership.mjs",

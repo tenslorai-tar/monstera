@@ -1087,6 +1087,12 @@ jobs:
       # ubuntu leg failed here with no public word of which case or why: the
       # founding gap annotate.mjs exists for, left open by a sentence one range
       # stale.
+      # A FAILING VISUAL CASE KEEPS ITS PAGE AND TRACE, and the visual job uploads them from where it keeps them. Here,
+      # ahead of the gate, because it loads the Playwright config (node_modules) and the visual job runs only the
+      # comparison.
+      - name: A failing visual case's page and trace are uploaded from where the run keeps them
+        run: node scripts/ci/annotate.mjs scripts/proofs/visualFailures.proof.mjs
+
       - name: Accessibility gate — axe on the rendered screen
         run: node scripts/ci/annotate.mjs --npm test:a11y
 
@@ -1201,6 +1207,16 @@ jobs:
 
       - name: Compare against the committed baselines
         run: node scripts/ci/annotate.mjs --always --npm test:visual
+
+      # A FAILING CASE'S PAGE AND TRACE, readable after the runner is gone (`scripts/test/visualFailures.mjs`): the path is
+      # that module's VISUAL_OUTPUT_DIR, which proof:visualfailures holds this copy to.
+      - name: Keep a failing case's page and trace
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: visual-failures
+          path: test-results/visual
+          retention-days: 14
 
   floor:
     name: The declared Node floor actually runs (22.19.0)

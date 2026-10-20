@@ -31,6 +31,7 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from '@playwright/test';
 
 import accessibility from './playwright.config.mjs';
+import { VISUAL_OUTPUT_DIR, VISUAL_TRACE } from './visualFailures.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const VITE = JSON.stringify(join(REPO_ROOT, 'node_modules', 'vite', 'bin', 'vite.js'));
@@ -54,6 +55,9 @@ export default defineConfig({
       timeout: 300_000,
     },
   ],
+  // A FAILING CASE KEEPS ITS TRACE, where the visual job uploads it from (`visualFailures.mjs`' reason).
+  outputDir: join(REPO_ROOT, VISUAL_OUTPUT_DIR),
+  use: { ...accessibility.use, trace: VISUAL_TRACE },
   testMatch: '**/*.visual.ts',
   snapshotPathTemplate: '{testDir}/../baselines/{arg}-{platform}{ext}',
   expect: {
