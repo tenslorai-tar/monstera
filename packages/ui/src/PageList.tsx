@@ -16,6 +16,8 @@ import { flushSync } from 'react-dom';
 
 import { AnnotationLayer } from './AnnotationLayer.js';
 import { AnnotationOverlay } from './AnnotationOverlay.js';
+import type { MarkLook } from './markLook.js';
+import { MarkLookLayer } from './MarkLookLayer.js';
 import type { OverlayPage } from './annotations/annotationSpace.js';
 import type { AnnotationSelection, LinkSelection } from './annotations/selectTool.js';
 import { SelectionLayer } from './SelectionLayer.js';
@@ -50,6 +52,10 @@ const NO_MARKS: readonly DifferenceMark[] = [];
 const NO_SPOTS: readonly Spot[] = [];
 const NO_FIELDS: readonly ListedField[] = [];
 const NO_INDICES: ReadonlySet<number> = new Set();
+/** A page list with no holder (the side-by-side view's): nothing held, and nothing to subscribe to. */
+const NO_HELD: readonly HeldLook[] = [];
+const NO_HELD_LOOKS = (): readonly HeldLook[] => NO_HELD;
+const NO_HELD_SUBSCRIBE = (): (() => void) => () => undefined;
 import { type PageAnnotation, usePageAnnotations } from './usePageAnnotations.js';
 import { usePageRotations } from './usePageRotations.js';
 import { type PageTextAnswer, usePageText } from './usePageText.js';
@@ -63,6 +69,7 @@ import { ANNOTATION_SURFACE_LABEL, PAGE_IMAGE_ONLY, PAGE_LIST_LABEL, PAGE_OPENIN
 import { Icon } from './primitives/Icon.js';
 import { useOnColor } from './primitives/useOnColor.js';
 import type { LiveReading, UiTool } from './registries/tools.js';
+import { type HeldLook, type HeldLooks, heldOnPage, released } from './heldLooks.js';
 import type { DocumentView } from './documentView.js';
 import { FIRST_PAGE, pdfjsPageOf } from './pageNumbering.js';
 import { holdPage } from './pageResidency.js';
@@ -335,6 +342,13 @@ export interface PageListProps {
       }
     | undefined;
   /**
+   * The document's holder of released marks in their final look
+   * ([ADR-0257](../../../docs/DECISIONS/0257-a-released-mark-is-held-in-its-final-look-until-the-page-draws-it.md)):
+   * every page shows its own until it is drawn from a newer version, and drops them then. Absent where nothing is
+   * drawn on the pages, the side-by-side view's.
+   */
+  readonly held?: HeldLooks | undefined;
+  /**
    * The search whose matches the text layers should paint, if one has been run.
    *
    * Passed straight through to every slot rather than resolved here: the ranges
@@ -531,6 +545,7 @@ export function PageList({
   labelValues,
   startAt,
   drawing,
+  held,
   editing,
   writing,
   panning = false,
@@ -1386,6 +1401,8 @@ export function PageList({
           // estimate for layout, which is a different tolerance from a
           // coordinate system.
           drawing={sizes.has(page) ? drawing : undefined}
+          // THE HOLDER FOR EVERY PAGE, measured or not: a held look is placed by the page's own measurement when it draws.
+          held={held}
           // GATED ON THE SLOT'S OWN MEASUREMENT for `drawing`'s reason: an outline
           // placed with a neighbour's box would sit over the wrong words.
           editing={sizes.has(page) ? editing : undefined}
@@ -1648,6 +1665,7 @@ function PageSlot({
   onFailed,
   onPainted,
   drawing,
+  held,
   editing,
   writing,
   text,
@@ -1692,6 +1710,7 @@ function PageSlot({
   /** Told when a draw has presented (`true`) and when the canvas holding it goes (`false`), with `onMeasured`'s need to be stable. */
   readonly onPainted: (page: number, holds: boolean) => void;
   readonly drawing: PageListProps['drawing'];
+  readonly held: PageListProps['held'];
   readonly editing: PageEditing | undefined;
   /** The pending request for words when it is THIS page's, otherwise `undefined`. */
   readonly writing: PageWriting | undefined;
@@ -1776,7 +1795,49 @@ function PageSlot({
   // AND ANY LINE OR POLYGON A DRAG RESHAPES OR MOVES (R7): its stored drawing stayed under the preview, and its selection
   // stayed at the old geometry while the line followed the pointer. The overlay draws both where the release puts them.
   const [moving, setMoving] = useState<number | undefined>(undefined);
-  const leaving = reshaping ?? moving;
+  // THIS PAGE'S HELD LOOKS (ADR-0257): each released over a version this page still shows. A page drawn from a newer
+  // version draws the marks itself, and the look is no longer shown in the render that carries that drawing.
+  const drawnVersion = drawnWith?.version;
+  // SUBSCRIBED HERE, AND ONLY HERE: a hold renders the page it is on, never the shell (`heldLooks.ts`).
+  const looks = useSyncExternalStore(held?.subscribe ?? NO_HELD_SUBSCRIBE, held?.getSnapshot ?? NO_HELD_LOOKS);
+  const shownLooks = useMemo(() => heldOnPage(looks, page, drawnVersion), [drawnVersion, looks, page]);
+  // AND DROPPED FROM THE HOLDER then, so the document's list holds only what some page still shows.
+  const letGo = held?.letGo;
+  useEffect(() => {
+    if (letGo === undefined || drawnVersion === undefined) return;
+    for (const entry of released(looks, page, drawnVersion)) letGo(entry);
+  }, [drawnVersion, letGo, looks, page]);
+  // A HELD LOOK THAT LEAVES A MARK OUT — a move, a reshape, an erasure — goes on leaving it out until the page draws the
+  // result, by R17's own rule below: the look names it, so nothing between the drag's end and the hold forgets it.
+  const heldLeaves = shownLooks.find((entry) => entry.look.leaves !== undefined)?.look.leaves;
+  const leaving = reshaping ?? moving ?? heldLeaves;
+  const heldLooksShown = useMemo(() => shownLooks.map((entry) => entry.look), [shownLooks]);
+  // THIS PAGE'S WAY INTO THE HOLDER, for its overlay: a look held on this page, dropped by the answer it gives back.
+  const holdLook = held?.hold;
+  const holdHere = useCallback(
+    (look: MarkLook): (() => void) => {
+      if (holdLook === undefined || letGo === undefined) return () => undefined;
+      const entry = holdLook(page, look);
+      return () => {
+        letGo(entry);
+      };
+    },
+    [holdLook, letGo, page],
+  );
+  // WHAT A MOVE'S LOOK NEEDS THAT ITS COMMAND DOES NOT CARRY: the selected marks' kinds and styles, on this page.
+  const selectedHere = drawing?.selection?.page === page ? drawing.selection.items : undefined;
+  const lookContext = useMemo(() => (selectedHere === undefined ? undefined : { selected: selectedHere }), [selectedHere]);
+  // AND A HELD RESHAPE'S READING goes on reaching the Comment until the page draws it (the owner's B1), as the drag's did.
+  const heldReading = shownLooks.find((entry) => entry.look.reading !== undefined)?.look.reading;
+  const heldIndex = heldReading?.index;
+  const heldText = heldReading?.text;
+  useEffect(() => {
+    if (forwardReading === undefined || heldIndex === undefined || heldText === undefined) return undefined;
+    forwardReading(page, { page, index: heldIndex, text: heldText });
+    return (): void => {
+      forwardReading(page, undefined);
+    };
+  }, [forwardReading, heldIndex, heldText, page]);
   // LEFT OUT OF THE VIEW THE DRAG BEGAN ON, and of no other (R17). The overlay holds the released shape until the page
   // is drawn from a newer view; that newer view has the mark where the release put it, so it is drawn WITH it, and the
   // held shape hands over to a page that already shows the mark. Left out of every view, the newer one was drawn without
@@ -1794,6 +1855,13 @@ function PageSlot({
   const setPresentedWithout = useCallback((without: number | undefined): void => {
     flushSync(() => {
       setPresentedWithoutState(without);
+    });
+  }, []);
+  // A TILED PAGE'S DRAWN VIEW, from its tiles once every one has drawn it, in the same task as their pixels: a held look
+  // is dropped in the frame the page shows its mark, never before (ADR-0257).
+  const presentView = useCallback((drawn: DocumentView): void => {
+    flushSync(() => {
+      setDrawnWith(drawn);
     });
   }, []);
   // THE MARK THE PAGE ON SCREEN NO LONGER DRAWS, by its place in the walk: the overlay draws a mark's moving shape only
@@ -1863,8 +1931,8 @@ function PageSlot({
         const measured = await pageGeometry(view.document, pdfjsPageOf(page), scale, rotation);
         if (superseded.signal.aborted) return;
         onMeasured(page, { ...measured, drawnAt: scale });
-        // MEASURED, not drawn: each tile presents itself, so this is the nearest moment this slot knows of.
-        setDrawnWith(view);
+        // MEASURED, NOT DRAWN, so the drawn view is not set here: the tiles say when every one of them has drawn it
+        // (`onPresentedView`). Set at the measure, a held look was dropped before the tiles showed the mark (ADR-0257).
         onPainted(page, true);
         return;
       }
@@ -2009,6 +2077,7 @@ function PageSlot({
             zoom={zoom}
             leftOut={leftOut}
             onPresentedWithout={setPresentedWithout}
+            onPresentedView={presentView}
           />
         )
       ) : mounted ? (
@@ -2166,6 +2235,8 @@ function PageSlot({
           selection={drawing.selection}
         />
       )}
+      {/* RELEASED MARKS IN THEIR FINAL LOOK (ADR-0257), over the page until it draws them, under the drawing surface. */}
+      {size === undefined ? null : <MarkLookLayer looks={heldLooksShown} />}
       {/* NO DRAWING SURFACE for a tool whose gesture is a text selection: the text layer under it takes the drag. */}
       {drawing === undefined || size === undefined || drawing.tool.fromSelection !== undefined ? null : (
         <AnnotationOverlay
@@ -2184,7 +2255,8 @@ function PageSlot({
           onCommand={drawing.onCommand}
           onReading={onReading}
           onReshaping={setMoving}
-          drawnWith={drawnWith}
+          onHold={holdHere}
+          lookContext={lookContext}
           drawnWithout={drawnWithout}
           canLeaveOut={canLeaveOut}
           page={page}
@@ -2289,6 +2361,7 @@ function PageTiles({
   slot,
   leftOut,
   onPresentedWithout,
+  onPresentedView,
 }: {
   readonly view: DocumentView;
   /** The slot's: whether a tile may rasterise now. A tile on screen keeps its last drawing until it may. */
@@ -2297,6 +2370,8 @@ function PageTiles({
   readonly leftOut: number | undefined;
   /** Told which mark the page on screen is drawn without, once EVERY tile shown has presented a draw without it. */
   readonly onPresentedWithout: (without: number | undefined) => void;
+  /** Told the view the page on screen is drawn from, once EVERY tile shown has presented a draw of it. */
+  readonly onPresentedView: (view: DocumentView) => void;
   readonly page: number;
   readonly rotation: number | undefined;
   readonly scale: number;
@@ -2309,20 +2384,26 @@ function PageTiles({
   const [tiles, setTiles] = useState<readonly Tile[]>([]);
   const { width, height } = pageSize;
   // WHAT EACH TILE ON SCREEN WAS LAST DRAWN WITHOUT: the page is without a mark only when every one of them is.
-  const presented = useRef(new Map<string, number | undefined>());
+  const presented = useRef(new Map<string, { readonly without: number | undefined; readonly view: DocumentView }>());
   const shownTiles = useRef(tiles);
   useLayoutEffect(() => {
     shownTiles.current = tiles;
   }, [tiles]);
   const onPresented = useCallback(
-    (key: string, without: number | undefined): void => {
-      presented.current.set(key, without);
+    (key: string, without: number | undefined, drawn: DocumentView): void => {
+      presented.current.set(key, { without, view: drawn });
       const all = shownTiles.current;
-      if (all.length > 0 && all.every((tile) => presented.current.has(tile.key) && presented.current.get(tile.key) === without)) {
-        onPresentedWithout(without);
-      }
+      const every = (same: (entry: { readonly without: number | undefined; readonly view: DocumentView }) => boolean): boolean =>
+        all.length > 0 &&
+        all.every((tile) => {
+          const entry = presented.current.get(tile.key);
+          return entry !== undefined && same(entry);
+        });
+      // THE PAGE IS DRAWN FROM A VIEW once every tile shown has drawn it (ADR-0257), and without a mark once every tile is.
+      if (every((entry) => entry.view === drawn)) onPresentedView(drawn);
+      if (every((entry) => entry.without === without)) onPresentedWithout(without);
     },
-    [onPresentedWithout],
+    [onPresentedView, onPresentedWithout],
   );
 
   useEffect(() => {
@@ -2422,7 +2503,7 @@ function PageTile({
   readonly zoom: number;
   readonly leftOut: number | undefined;
   /** Told, when a draw of this tile is on screen, which mark it was drawn without. */
-  readonly onPresented: (key: string, without: number | undefined) => void;
+  readonly onPresented: (key: string, without: number | undefined, view: DocumentView) => void;
 }): ReactElement {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [drawn, setDrawn] = useState<{ readonly x: number; readonly y: number; readonly width: number; readonly height: number; readonly scale: number }>();
@@ -2446,7 +2527,7 @@ function PageTile({
       .then(() => {
         if (superseded.signal.aborted) return;
         setDrawn({ ...region, scale });
-        onPresented(tileKey, leftOut);
+        onPresented(tileKey, leftOut, view);
       })
       .catch((error: unknown) => {
         if (error instanceof RenderCancelledError || superseded.signal.aborted) return;

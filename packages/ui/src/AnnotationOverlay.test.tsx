@@ -15,6 +15,7 @@ const rectangleTool = buildRectangle(PLAIN_STYLE);
 const polygonTool = buildPolygon(PLAIN_STYLE);
 const polylineTool = buildPolyline(PLAIN_STYLE);
 import { polygonTool as buildPolygon, polylineTool as buildPolyline } from './annotations/vertexTools.js';
+import type { LookContext, MarkLook } from './markLook.js';
 import type { LiveReading, UiTool } from './registries/tools.js';
 import { pointerPath, readingAfter } from './registries/tools.js';
 
@@ -46,58 +47,63 @@ import { pointerPath, readingAfter } from './registries/tools.js';
 
 const PAGE: OverlayPage = { crop: [50, 100, 250, 400], rotation: 0, zoom: 2 };
 
-/** The drawing under the overlay before any command lands: an identity, as `PageSlot` passes a view. */
-const FIRST_DRAWING = { drawing: 'first' };
-
 /**
- * Renders an overlay and returns the surface plus every command it sent.
+ * Renders an overlay and returns the surface, every command it sent, and every look it handed the holder and dropped.
  *
- * `moves` is what each command's dispatch answers: whether the version moved. `redraw` re-renders the
- * overlay as `PageSlot` does once the page has presented a drawing from another view.
+ * `moves` is what each command's dispatch answers: whether the version moved. The holder here records rather than
+ * draws: what a held look looks like and when the page drops it are the page's (`heldOnPage`, `MarkLookLayer`).
  */
 function mounted(
   tool: UiTool = rectangleTool,
   moves = true,
   onReading?: (page: number, reading: LiveReading | undefined) => void,
+  lookContext?: LookContext,
+  afterPaint: () => Promise<void> = () => Promise.resolve(),
 ): {
   readonly surface: Element;
   readonly sent: DispatchableCommand[];
-  readonly redraw: (drawing: unknown) => void;
+  readonly holds: MarkLook[];
+  readonly drops: MarkLook[];
 } {
   const sent: DispatchableCommand[] = [];
-  const overlay = (drawnWith: unknown): React.ReactElement => (
+  const holds: MarkLook[] = [];
+  const drops: MarkLook[] = [];
+  const { container } = render(
     <AnnotationOverlay
-      drawnWith={drawnWith}
+      afterPaint={afterPaint}
       geometry={PAGE}
       label="Draw on page 4"
+      lookContext={lookContext}
       onCommand={(command): Promise<boolean> => {
         sent.push(command);
         return Promise.resolve(moves);
       }}
+      onHold={(look) => {
+        holds.push(look);
+        return () => {
+          drops.push(look);
+        };
+      }}
       onReading={onReading}
       page={3}
       tool={tool}
-    />
+    />,
   );
-  const { container, rerender } = render(overlay(FIRST_DRAWING));
   const surface = container.querySelector('[data-annotation-overlay]');
   if (surface === null) throw new Error('the overlay did not render a surface');
-  return {
-    surface,
-    sent,
-    redraw: (drawing) => {
-      rerender(overlay(drawing));
-    },
-  };
+  return { surface, sent, holds, drops };
 }
 
-/** The preview of a gesture still being drawn, never the released shape the overlay holds. */
+/** A held look's one outline as `[shape, x, y, width, height, colour]`, its numbers rounded to the pixel. */
+function outlineOf(look: MarkLook): unknown {
+  const [only, ...more] = look.parts;
+  if (only?.part !== 'outline' || more.length > 0) return look.parts;
+  return [only.shape, ...[only.box.x, only.box.y, only.box.width, only.box.height].map(Math.round), only.stroke.colour];
+}
+
+/** The preview of a gesture still being drawn: the overlay draws nothing else. */
 function inFlightPreview(surface: Element): Element | null {
-  return (
-    [...surface.querySelectorAll('[data-annotation-preview]')].find(
-      (element) => element.closest('[data-annotation-held]') === null,
-    ) ?? null
-  );
+  return surface.querySelector('[data-annotation-preview]');
 }
 
 /**
@@ -250,8 +256,8 @@ describe('AnnotationOverlay', () => {
     expect(sent).toStrictEqual([]);
   });
 
-  it('draws a preview while the drag is in flight and nothing before it, and HOLDS it at the release in the same update', () => {
-    const { surface } = mounted();
+  it('draws a preview while the drag is in flight and nothing before it, and HOLDS the command’s FINAL LOOK at the release, in the same update', () => {
+    const { surface, holds } = mounted();
     expect(surface.querySelector('[data-annotation-preview]')).toBeNull();
 
     pointer(surface, 'pointerdown', 20, 20);
@@ -263,38 +269,44 @@ describe('AnnotationOverlay', () => {
     expect(preview?.getAttribute('width')).toBe('100');
     expect(preview?.getAttribute('height')).toBe('60');
 
-    // THE RELEASE ENDS THE DRAG AND HOLDS ITS SHAPE AT ONCE, read before anything settles (R17): this tool's command is
-    // known at the release, and a render between the two drew nothing for the mark.
+    // THE RELEASE ENDS THE DRAG AND HOLDS THE LOOK AT ONCE, read before anything settles (R17, ADR-0257): this tool's
+    // command is known at the release, and a render between the two drew nothing for the mark.
     pointer(surface, 'pointerup', 120, 80);
-    expect(surface.querySelector(':scope > [data-annotation-preview]')).toBeNull();
-    const held = surface.querySelector('[data-annotation-held] [data-annotation-preview]');
-    expect(held?.getAttribute('x')).toBe('20');
-    expect(held?.getAttribute('width')).toBe('100');
+    expect(surface.querySelector('[data-annotation-preview]')).toBeNull();
+    // THE MARK'S OWN LOOK, from its command — the box the drag drew, in the rectangle's red, not the accent placeholder.
+    expect(holds).toHaveLength(1);
+    expect(holds.map(outlineOf)).toStrictEqual([['rect', 20, 20, 100, 60, [0.85, 0.15, 0.15]]]);
   });
 
-  it('HOLDS the released shape until the page has been drawn from a newer view', async () => {
-    // The shape becomes part of the page only when the page redraws from the version the command
-    // produced. The overlay cleared it at the release, so it vanished for a reparse and a raster and
-    // then came back drawn by the page. The separator is the frame between the two: after the
-    // command landed and before the page redrew, the shape must still be on screen.
-    const { surface, redraw } = mounted();
+  it('HOLDS the look ONCE and draws none of it itself: the page shows a held look until it draws the mark', async () => {
+    const { surface, holds, drops } = mounted();
     await drag(surface, [20, 20], [120, 80]);
     await act(async () => {
       await Promise.resolve();
     });
-
-    const held = surface.querySelector('[data-annotation-held] [data-annotation-preview]');
-    expect(held?.getAttribute('width')).toBe('100');
-
-    redraw({ drawing: 'from the new version' });
-    expect(surface.querySelector('[data-annotation-held]')).toBeNull();
+    // ONCE, though the command is known at the release and again when its promise settles.
+    expect(holds).toHaveLength(1);
+    expect(drops).toStrictEqual([]);
+    expect(surface.querySelector('[data-annotation-preview]')).toBeNull();
   });
 
   it('a MOVE of the selection is drawn where the mark goes, while dragged and once let go (ADR-0166, item 14d)', async () => {
     // A selected mark at screen (20,20)–(100,100), dragged from inside it 20 px right. The in-flight shape and the
-    // shape held after the release are both the mark's box moved, (40,20)–(120,100): before ADR-0166 both were the
+    // look held after the release are both at the mark's box moved, (40,20)–(120,100): before ADR-0166 both were the
     // box from the press to the pointer, (40,40)–(60,40), which is the ghost and then the jump the owner saw.
     const rect = { x0: 60, y0: 350, x1: 100, y1: 390 };
+    const items = [
+      {
+        index: 1,
+        rect,
+        style: { colour: [1, 0, 0], opacity: 1, borderWidth: 2 },
+        kind: 'square' as const,
+        contents: '',
+        author: '',
+        created: null,
+        blend: 'normal' as const,
+      },
+    ];
     const select = selectTool({
       write: () => Promise.reject(new Error('this case types nothing')),
       wordsOf: () => Promise.reject(new Error('this case reads no words')),
@@ -304,24 +316,9 @@ describe('AnnotationOverlay', () => {
       onSelectLink: () => undefined,
       selectedLink: () => undefined,
       onSelect: () => undefined,
-      selected: () => ({
-        page: 3,
-        version: asDocVersion(7),
-        items: [
-          {
-            index: 1,
-            rect,
-            style: { colour: [1, 0, 0], opacity: 1, borderWidth: 2 },
-            kind: 'square',
-            contents: '',
-            author: '',
-            created: null,
-            blend: 'normal',
-          },
-        ],
-      }),
+      selected: () => ({ page: 3, version: asDocVersion(7), items }),
     });
-    const { surface, sent } = mounted(select);
+    const { surface, sent, holds } = mounted(select, true, undefined, { selected: items });
     const boxOf = (element: Element | null | undefined): string[] =>
       ['x', 'y', 'width', 'height'].map((name) => element?.querySelector('rect')?.getAttribute(name) ?? '');
 
@@ -336,17 +333,31 @@ describe('AnnotationOverlay', () => {
       await Promise.resolve();
     });
     expect(sent).toMatchObject([{ kind: 'placeAnnotation', placements: [{ index: 1, rect: { x0: 70, x1: 110 } }] }]);
-    expect(boxOf(surface.querySelector('[data-annotation-held] [data-annotation-preview]'))).toStrictEqual([
-      '40',
-      '20',
-      '80',
-      '80',
-    ]);
+    // HELD IN THE MARK'S OWN RED AT ITS NEW BOX, and the page told to leave the mark out until it draws the move.
+    expect(holds.map(outlineOf)).toStrictEqual([['rect', 40, 20, 80, 80, [1, 0, 0]]]);
+    expect(holds.map((look) => look.leaves)).toStrictEqual([1]);
   });
 
   it('a MEASUREMENT’s end dragged draws its live reading and REPORTS it, held until the page is drawn from the result (B1)', async () => {
     // A distance on screen (20,100) to (200,98), an inch per 72 points; its right end dragged to (240,98).
     const scale = { perPoint: 1 / 72, unit: 'in' } as const;
+    const items = [
+      {
+        index: 1,
+        rect: { x0: 55, y0: 340, x1: 155, y1: 360 },
+        style: { colour: [1, 0, 0], opacity: 1, borderWidth: 2 },
+        kind: 'measure-distance' as const,
+        contents: '1.3 in',
+        author: '',
+        created: null,
+        blend: 'normal' as const,
+        points: [
+          { x: 60, y: 350 },
+          { x: 150, y: 351 },
+        ],
+        measured: { kind: 'measure-distance' as const, scale },
+      },
+    ];
     const select = selectTool({
       write: () => Promise.reject(new Error('this case types nothing')),
       wordsOf: () => Promise.reject(new Error('this case reads no words')),
@@ -356,29 +367,17 @@ describe('AnnotationOverlay', () => {
       onSelectLink: () => undefined,
       selectedLink: () => undefined,
       onSelect: () => undefined,
-      selected: () => ({
-        page: 3,
-        version: asDocVersion(7),
-        items: [
-          {
-            index: 1,
-            rect: { x0: 55, y0: 340, x1: 155, y1: 360 },
-            style: { colour: [1, 0, 0], opacity: 1, borderWidth: 2 },
-            kind: 'measure-distance',
-            contents: '1.3 in',
-            author: '',
-            created: null,
-            blend: 'normal',
-            points: [{ x: 60, y: 350 }, { x: 150, y: 351 }],
-            measured: { kind: 'measure-distance', scale },
-          },
-        ],
-      }),
+      selected: () => ({ page: 3, version: asDocVersion(7), items }),
     });
     const reported: [number, LiveReading | undefined][] = [];
-    const { surface, sent, redraw } = mounted(select, true, (page, reading) => {
-      reported.push([page, reading]);
-    });
+    const { surface, sent, holds } = mounted(
+      select,
+      true,
+      (page, reading) => {
+        reported.push([page, reading]);
+      },
+      { selected: items },
+    );
     pointer(surface, 'pointerdown', 200, 98);
     pointer(surface, 'pointermove', 240, 98);
     const caption = surface.querySelector('[data-annotation-caption]');
@@ -391,10 +390,9 @@ describe('AnnotationOverlay', () => {
       await Promise.resolve();
     });
     expect(sent).toMatchObject([{ kind: 'reshapeAnnotation', index: 1 }]);
-    // HELD AFTER THE RELEASE, so the Comment does not fall back to the old words before the file's new ones arrive.
-    expect(reported.at(-1)).toStrictEqual([3, { page: 3, index: 1, text: '1.5 in' }]);
-    redraw({ drawing: 'second' });
-    expect(reported.at(-1)).toStrictEqual([3, undefined]);
+    // THE HELD LOOK CARRIES THE READING after the release, so the page goes on reporting it to the Comment until it draws
+    // the file's new words; and it leaves the mark out, as the drag did.
+    expect(holds).toMatchObject([{ leaves: 1, reading: { index: 1, text: '1.5 in' } }]);
   });
 
   it('readingAfter: a reading replaces the one held, and NONE clears only a reading of its own page', () => {
@@ -405,26 +403,37 @@ describe('AnnotationOverlay', () => {
     expect(readingAfter(held, 5, undefined)).toBe(held);
   });
 
-  it('CONTROL: the same drawing re-rendered does not drop it, so the drop is the redraw and not any render', async () => {
-    const { surface, redraw } = mounted();
+  it('SENDS a held look’s command only once the look has been painted, so its answer cannot keep the look off the screen', async () => {
+    let painted: () => void = () => undefined;
+    const paint = new Promise<void>((resolve) => {
+      painted = resolve;
+    });
+    const { surface, sent, holds } = mounted(rectangleTool, true, undefined, undefined, () => paint);
     await drag(surface, [20, 20], [120, 80]);
     await act(async () => {
       await Promise.resolve();
     });
-
-    redraw(FIRST_DRAWING);
-    expect(surface.querySelector('[data-annotation-held]')).not.toBeNull();
+    // HELD, AND NOT YET SENT: the frame that paints the look has not been.
+    expect(holds).toHaveLength(1);
+    expect(sent).toStrictEqual([]);
+    await act(async () => {
+      painted();
+      await paint;
+      await Promise.resolve();
+    });
+    expect(sent).toMatchObject([{ kind: 'addAnnotation' }]);
   });
 
-  it('drops the shape at once when the command did not move the version, since nothing was made', async () => {
-    const { surface } = mounted(rectangleTool, false);
+  it('drops the look at once when the command did not move the version, since nothing was made', async () => {
+    const { surface, holds, drops } = mounted(rectangleTool, false);
     await drag(surface, [20, 20], [120, 80]);
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-
-    expect(surface.querySelector('[data-annotation-held]')).toBeNull();
+    expect(drops).toStrictEqual(holds);
+    // CONTROL: one was held, so the drop is of a look and not of nothing.
+    expect(holds).toHaveLength(1);
   });
 
   it('dispatches whatever the ACTIVE tool commits, knowing nothing about rectangles', async () => {

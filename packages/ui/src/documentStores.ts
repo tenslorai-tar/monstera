@@ -11,6 +11,7 @@ import { type StoreApi, createStore } from 'zustand/vanilla';
 import type { AccessibilityView } from './accessibility/view.js';
 import type { ReplyTarget } from './assistantRequest.js';
 import { DocumentKeys } from './documentKeys.js';
+import { type HeldLooks, createHeldLooks } from './heldLooks.js';
 import type { SpellingReview } from './spelling/review.js';
 import { DEFAULT_ZOOM, type ZoomMode } from './zoom.js';
 
@@ -525,6 +526,8 @@ export interface StoreWatcher {
 
 export class DocumentStores {
   readonly #stores = new Map<DocId, DocumentStore>();
+  /** Each open document's holder of released marks (ADR-0257), made and dropped with its store. */
+  readonly #held = new Map<DocId, HeldLooks>();
   readonly #watchers = new Set<StoreWatcher>();
   /**
    * The passwords a person typed for each open document (ADR-0171 Decision 7). HERE, beside the stores rather than in
@@ -565,6 +568,7 @@ export class DocumentStores {
     }
     const store = createDocumentStore(docId, version, 0, zoom);
     this.#stores.set(docId, store);
+    this.#held.set(docId, createHeldLooks(() => store.getState().version));
     for (const watcher of this.#watchers) watcher.opened(docId, store);
     return store;
   }
@@ -572,6 +576,11 @@ export class DocumentStores {
   /** The store for an open document, or `undefined` when it is closed. */
   get(docId: DocId): DocumentStore | undefined {
     return this.#stores.get(docId);
+  }
+
+  /** The document's holder of released marks in their final look (ADR-0257), while it is open. */
+  held(docId: DocId): HeldLooks | undefined {
+    return this.#held.get(docId);
   }
 
   /**
@@ -584,6 +593,7 @@ export class DocumentStores {
     if (!this.#stores.has(docId)) return false;
     for (const watcher of this.#watchers) watcher.closed(docId);
     this.keys.forget(docId);
+    this.#held.delete(docId);
     return this.#stores.delete(docId);
   }
 

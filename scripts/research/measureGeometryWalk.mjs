@@ -83,7 +83,7 @@ async function selectionParts() {
  * rather than measuring that state.
  */
 async function settled() {
-  await expect(page.locator('[data-annotation-held], [data-reshaped-selection]')).toHaveCount(0, { timeout: 15_000 });
+  await expect(page.locator('[data-mark-looks], [data-reshaped-selection]')).toHaveCount(0, { timeout: 15_000 });
   await expect(page.locator('[data-selection-handle^="point-"]').first()).toBeAttached({ timeout: 15_000 });
 }
 

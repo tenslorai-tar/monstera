@@ -157,14 +157,15 @@ await step(`R17: an ${KIND} measurement moved whole, read at every frame`, async
     let running = true;
     const tick = () => {
       if (!running) return;
-      const caption = document.querySelector('[data-annotation-caption]');
+      // THE READING ON THE DRAG'S SHAPE, or on the held look after the release (ADR-0257).
+      const caption = document.querySelector('[data-annotation-caption], [data-mark-look="caption"] text');
       frames.push({
         t: performance.now(),
         old: share(probe.old),
         new: share(probe.new),
-        // THE MOVING SHAPE ALONE: the held shape draws its own preview path, inside `[data-annotation-held]`.
-        preview: document.querySelectorAll('[data-annotation-preview-path]').length - document.querySelectorAll('[data-annotation-held] [data-annotation-preview-path]').length,
-        held: document.querySelectorAll('[data-annotation-held]').length,
+        // THE DRAG'S MOVING SHAPE is the overlay's; THE HELD LOOK is the page's look layer (ADR-0257).
+        preview: document.querySelectorAll('[data-annotation-preview-path]').length,
+        held: document.querySelectorAll('[data-mark-looks]').length,
         caption: caption === null ? '' : String(caption.textContent ?? ''),
         readingOld: share(probe.readingOld),
         readingNew: share(probe.readingNew),

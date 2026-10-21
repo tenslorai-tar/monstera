@@ -83,9 +83,11 @@ async function sample(page: Page, at: { x: number; y: number }): Promise<void> {
           ?.getImageData(Math.round(point.x * scale * ratio), Math.round((792 - point.y) * scale * ratio), 1, 1).data;
         mark = pixel !== undefined && (pixel[0] ?? 255) < 80;
       }
-      const paths = document.querySelectorAll('[data-annotation-preview-path]').length;
-      const held = document.querySelectorAll('[data-annotation-held] [data-annotation-preview-path]').length;
-      frames.push({ t: performance.now(), mark, moving: paths - held, held, caption: document.querySelector('[data-annotation-caption]') !== null });
+      // THE DRAG'S MOVING SHAPE is the overlay's; THE HELD ONE is the page's look layer (ADR-0257), each read by its own name.
+      const moving = document.querySelectorAll('[data-annotation-preview-path]').length;
+      const held = document.querySelectorAll('[data-mark-looks] [data-mark-look="poly"]').length;
+      const caption = document.querySelector('[data-annotation-caption], [data-mark-look="caption"]') !== null;
+      frames.push({ t: performance.now(), mark, moving, held, caption });
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
@@ -145,7 +147,7 @@ test('an area moved with Select is on screen once, with its reading, at every fr
   await page.mouse.move(grab.x - 120, grab.y + 90, { steps: 20 });
   await page.mouse.up();
   // UNTIL THE HELD SHAPE HAS GONE AND THE PAGE IS DRAWN FROM THE MOVE'S VERSION.
-  await expect(page.locator('[data-annotation-held]')).toHaveCount(0);
+  await expect(page.locator('[data-mark-looks]')).toHaveCount(0);
   await page.waitForTimeout(300);
   const { frames, pressed, released } = await stop(page);
 

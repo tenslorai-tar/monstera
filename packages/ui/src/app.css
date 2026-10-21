@@ -6633,19 +6633,22 @@ optgroup {
 /* EACH KIND NAMES ITS FACES ONCE, as a property, so a run drawn in its own font can put that font first and keep its
    kind behind it (ADR-0175) without a second copy of the list. */
 .m-text-editor--sans,
-.m-inline-writer__block--sans {
+.m-inline-writer__block--sans,
+.m-mark-look__words--sans {
   --m-kind-face: Arial, Helvetica, sans-serif;
   font-family: var(--m-kind-face);
 }
 
 .m-text-editor--serif,
-.m-inline-writer__block--serif {
+.m-inline-writer__block--serif,
+.m-mark-look__words--serif {
   --m-kind-face: 'Times New Roman', Times, serif;
   font-family: var(--m-kind-face);
 }
 
 .m-text-editor--mono,
-.m-inline-writer__block--mono {
+.m-inline-writer__block--mono,
+.m-mark-look__words--mono {
   --m-kind-face: Consolas, 'Courier New', monospace;
   font-family: var(--m-kind-face);
 }
@@ -7322,6 +7325,74 @@ optgroup {
 
 .m-redact-mark__label[data-place='none'] {
   display: none;
+}
+
+/* A RELEASED MARK IN ITS FINAL LOOK (ADR-0257), over the page until the page draws it: in the overlay's own pixels, and
+   never under the pointer, since it is what the page is about to show and nothing to press. Every colour, width and size
+   is the mark's own, set on the element from its command; these rules say only how each part is drawn. */
+.m-mark-looks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.m-mark-looks__vectors {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.m-mark-look__line {
+  fill: none;
+  stroke-linejoin: round;
+}
+
+/* A HIGHLIGHT'S COLOUR MULTIPLIED OVER THE WORDS, as the page's appearance blends it. */
+.m-mark-look__fill {
+  mix-blend-mode: multiply;
+}
+
+/* MUPDF'S FACE for a reading and a stamp's word, as the placed caption's rule names it. */
+.m-mark-look__caption,
+.m-mark-look__stamp-word {
+  font-family: Helvetica, Arial, 'Arimo', sans-serif;
+}
+
+.m-mark-look__stamp {
+  fill: none;
+}
+
+.m-mark-look__stamp-word {
+  font-weight: 700;
+  text-anchor: middle;
+}
+
+.m-mark-look__words {
+  position: absolute;
+  box-sizing: border-box;
+  margin: 0;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  /* MUPDF'S LINE SPACING for a FreeText, the writer's own (`.m-inline-writer__block`). */
+  line-height: 1.2;
+}
+
+.m-mark-look__words--bordered {
+  border-style: solid;
+}
+
+.m-mark-look__box,
+.m-mark-look__picture {
+  position: absolute;
+}
+
+/* A NEW LINK, as `.m-link-layer--outlined .m-page-link` draws one where links are made: no colour of its own yet. */
+.m-mark-look__link {
+  position: absolute;
+  outline: 1px solid var(--accent-on-paper, var(--accent));
 }
 
 .m-annotation-overlay {

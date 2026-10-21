@@ -6,6 +6,8 @@ import { type ReactElement, useCallback, useEffect, useRef, useState } from 'rea
 import type { OverlayPage } from './annotations/annotationSpace.js';
 import { overlayTransform, pointerOn } from './annotations/annotationSpace.js';
 import { CORNER_REACH } from './annotations/selectTool.js';
+import { afterNextPaint } from './heldLooks.js';
+import { type LookContext, type MarkLook, lookOf } from './markLook.js';
 import type { Gesture, LiveReading, PreviewCaption, ToolPreview, UiTool } from './registries/tools.js';
 
 /**
@@ -63,22 +65,21 @@ export interface AnnotationOverlayProps {
    * second opinion B3a spends its time on, on the one question every mutation
    * asks.
    *
-   * Resolves whether the document's version moved, which is what decides how long the drawn shape
-   * stays on this overlay ({@link drawnWith}).
+   * Resolves whether the document's version moved: a command that did not move it made nothing, and its held look is
+   * dropped at once ({@link onHold}).
    */
   readonly onCommand: (command: DispatchableCommand, page: OverlayPage) => Promise<boolean>;
   /**
-   * The view the page underneath was last drawn from: an identity, compared and never read.
-   *
-   * ## Why the overlay is told this
-   *
-   * A committed shape becomes part of the page only when the page redraws from the version the
-   * command produced, which is a reparse and a raster after the release. The overlay used to clear
-   * its preview at the release, so the shape vanished for that whole interval and then reappeared
-   * drawn by the page. It now keeps the shape until the page has been drawn from a NEWER view than
-   * the one under it at the release, and drops it at once when the command did not move the version.
+   * Holds a released mark's final look until the page draws it, and answers how to drop it sooner
+   * ([ADR-0257](../../../docs/DECISIONS/0257-a-released-mark-is-held-in-its-final-look-until-the-page-draws-it.md)):
+   * the document's one holder, which every route that ends a mark uses. The overlay calls it with the COMMAND's look,
+   * in the same update that ends the gesture where the command is known at once, so no frame shows neither.
    */
-  readonly drawnWith: unknown;
+  readonly onHold: (look: MarkLook) => () => void;
+  /** What a look needs that the command does not carry: the selection a move or a reshape names. */
+  readonly lookContext?: LookContext | undefined;
+  /** Resolves once a held look has been painted; the command is sent after it. `afterNextPaint` unless a case says. */
+  readonly afterPaint?: (() => Promise<void>) | undefined;
   /** The accessible name for the drawing surface, resolved by the caller. */
   readonly label: string;
   /**
@@ -107,7 +108,9 @@ export function AnnotationOverlay({
   page,
   geometry,
   onCommand,
-  drawnWith,
+  onHold,
+  lookContext,
+  afterPaint = afterNextPaint,
   label,
   onReading,
   onReshaping,
@@ -123,13 +126,6 @@ export function AnnotationOverlay({
    * the argument.
    */
   const [gesture, setGesture] = useState<Gesture | undefined>(undefined);
-  /**
-   * A released shape whose command is in flight or landed, and the view the page was drawn from at
-   * the release. Shown while the page is still that drawing ({@link AnnotationOverlayProps.drawnWith}).
-   */
-  const [committed, setCommitted] = useState<{ readonly preview: ToolPreview; readonly since: unknown } | undefined>(
-    undefined,
-  );
 
   /**
    * Where the pointer is, in the overlay's own box.
@@ -229,15 +225,19 @@ export function AnnotationOverlay({
       // from the zoom on screen, and resolving it after an await would place
       // the annotation using a scale the drag never happened at.
       const transform = overlayTransform(geometry);
-      // THE SHAPE AS RELEASED, and the drawing under it now: held only once there is a command, and
-      // only for a tool that previews at all.
-      const shape = tool.controller.preview(finished, page, transform);
-      const released = shape === undefined ? undefined : { preview: shape, since: drawnWith };
       const answer = tool.controller.commit(finished, page, transform);
+      // THE COMMAND'S FINAL LOOK IS HELD (ADR-0257), never the drag's preview: what is held is what was sent, in the mark's
+      // own colour, width, words and picture. Held once, by whichever of the two moments below knows the command first.
+      let drop: (() => void) | undefined;
+      const hold = (command: DispatchableCommand): void => {
+        if (drop !== undefined) return;
+        const look = lookOf(command, transform, lookContext);
+        if (look !== undefined) drop = onHold(look);
+      };
       // A COMMAND ALREADY KNOWN IS HELD IN THIS UPDATE, with the gesture's end: held a microtask later, there was a render
-      // with neither the drag nor the held shape, and the page drew a moved mark back at its old place for it (R17).
-      // An answer still to come — a dialog's — holds nothing until it comes, as before.
-      if (!(answer instanceof Promise) && answer !== undefined && released !== undefined) setCommitted(released);
+      // with neither the drag nor the held look, and the page drew a moved mark back at its old place for it (R17). An
+      // answer still to come — a dialog's, a writer's — is held when it comes.
+      if (!(answer instanceof Promise) && answer !== undefined) hold(answer);
       // `Promise.resolve` OVER THE UNION. `commit` may answer now or later, and
       // this is the one line that does not care which — a synchronous answer
       // still lands a microtask later, which is why the overlay's own cases
@@ -251,16 +251,18 @@ export function AnnotationOverlay({
         // Both mean *there is nothing to send*, which is why the gate is the
         // absence of a value rather than a flag somebody checks.
         if (command === undefined) return;
-        if (released !== undefined) setCommitted(released);
+        hold(command);
+        // A HELD LOOK IS PAINTED BEFORE ITS COMMAND IS SENT (`afterNextPaint`): sent at once, the answer could come back
+        // before the first frame, and the shell's handling of it held the look off the screen for up to 150 ms.
+        if (drop !== undefined) await afterPaint();
         // WITH THE PAGE AS IT WAS DRAWN AT THE RELEASE, `transform`'s own, for a command that has to turn an engine box back
         // into the page after an await (the box read's lines): resolved later it would be the zoom the person reached.
         const moved = await onCommand(command, geometry);
-        // A REFUSED COMMAND MADE NOTHING, so nothing may stay drawn as if it had. Only this shape is
-        // dropped: a later release may already hold the slot.
-        if (!moved) setCommitted((current) => (current === released ? undefined : current));
+        // A REFUSED COMMAND MADE NOTHING, so nothing may stay drawn as if it had: this look alone is dropped.
+        if (!moved) drop?.();
       });
     },
-    [drawnWith, geometry, onCommand, page, tool],
+    [afterPaint, geometry, lookContext, onCommand, onHold, page, tool],
   );
 
   const up = useCallback(
@@ -346,14 +348,11 @@ export function AnnotationOverlay({
 
   // PLACED AS THE COMMIT WILL BE (ADR-0166): this render's page and transform, the ones a release now would read.
   const preview = gesture === undefined ? undefined : tool.controller.preview(gesture, page, overlayTransform(geometry));
-  // DERIVED, not cleared by an effect: once the page has been drawn from a newer view, the shape is
-  // in its pixels and this stops rendering it in the same render that carries the new drawing.
-  const held = committed !== undefined && committed.since === drawnWith ? committed.preview : undefined;
 
-  // THE READING A RESHAPE SHOWS, reported for the Comment to show too (the owner's B1): from the drag, then from the
-  // held shape until the page is drawn with the command's result, by which time the Comment has the file's own words.
-  // Reported as its three values, so a render that rebuilt an equal preview reports nothing new.
-  const shown = preview ?? held;
+  // THE READING A RESHAPE SHOWS, reported for the Comment to show too (the owner's B1), while the drag lasts: after the
+  // release the held look carries it (`MarkLook.reading`), and the page reports it from there. Reported as its three
+  // values, so a render that rebuilt an equal preview reports nothing new.
+  const shown = preview;
   const readingOf = shown?.shape === 'boxes' ? shown.caption : undefined;
   const readingIndex = readingOf?.of;
   const readingText = readingOf?.text;
@@ -364,7 +363,7 @@ export function AnnotationOverlay({
       onReading(page, undefined);
     };
   }, [onReading, page, readingIndex, readingText]);
-  // THE MARK BEING RESHAPED OR MOVED (R7), from the drag and then from the held shape, as the reading is.
+  // THE MARK BEING RESHAPED OR MOVED (R7) while the drag lasts; after it, the held look names it (`MarkLook.leaves`).
   const reshapingIndex = shown?.shape === 'boxes' ? shown.reshaped?.[0]?.of : undefined;
   // A DRAG'S MARK THE PAGE STILL DRAWS: its moving shape waits for the page's drawing without it (R17).
   const draggedIndex = preview?.shape === 'boxes' ? preview.reshaped?.[0]?.of : undefined;
@@ -423,11 +422,6 @@ export function AnnotationOverlay({
       role="application"
       tabIndex={0}
     >
-      {held === undefined ? null : (
-        <g data-annotation-held="true">
-          <Preview preview={held} />
-        </g>
-      )}
       {preview === undefined || stillOnPage ? null : <Preview preview={preview} />}
     </svg>
   );

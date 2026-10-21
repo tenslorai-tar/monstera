@@ -57,7 +57,7 @@ export type AnnotationRenderer = (() => ReactElement) | null;
  * before applying them reads the words between the lines. A solid box would say *this is gone*, which is the
  * burn-in's look and is exactly the confusion the owner's item N1 removes.
  */
-function RedactMark(): ReactElement {
+export function RedactMark(): ReactElement {
   const { _ } = useLingui();
   return (
     <span className="m-redact-mark">

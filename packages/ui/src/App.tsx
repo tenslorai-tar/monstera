@@ -1991,6 +1991,9 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
   );
   const currentPage = view?.page ?? FIRST_PAGE.kernel;
   const pageCount = view?.pageCount;
+  // THE ACTIVE DOCUMENT'S HOLDER of released marks in their final look (ADR-0257): handed to its pages, which alone
+  // subscribe to it, so a hold never renders the shell (`heldLooks.ts`).
+  const heldLooks = activeId === undefined ? undefined : stores.held(activeId);
   const zoomMode = view?.zoom ?? DEFAULT_ZOOM;
   // THE ORGANIZE GRID (ADR-0104): the canvas shows it while Organize is the rail's section, and the selection
   // counts only then — a page ticked there and left must not redirect a rotate given in the reading view.
@@ -5032,6 +5035,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         <PageCanvas
           client={client}
           document={open}
+          held={heldLooks}
           onVersionMoved={versionMoved}
           onFirstFrame={markFramed}
           onCurrentPage={viewed}
@@ -5699,6 +5703,7 @@ const DocumentLayer = memo(function DocumentLayer({
 function PageCanvas({
   client,
   document: open,
+  held,
   requestPassword,
   documentKeys,
   onVersionMoved,
@@ -5754,6 +5759,8 @@ function PageCanvas({
 }: {
   readonly client: ContractClient;
   readonly document: OpenDocument;
+  /** The document's holder of released marks in their final look (ADR-0257), for the pages that show them. */
+  readonly held?: PageListProps['held'];
   /** Each drawn page's visible box, for the assistant's *Add as note* — `PageList.onPageBox`. */
   readonly onPageBox: (page: number, crop: readonly [number, number, number, number]) => void;
   readonly onVersionMoved: (next: OpenedDocument) => void;
@@ -6227,6 +6234,7 @@ function PageCanvas({
       fieldSelection={fieldSelection}
       unit={unit}
       drawing={drawing}
+      held={held}
       editing={editing}
       writing={writing}
       panning={panning}
@@ -6282,6 +6290,7 @@ function PageCanvas({
       unit={unit}
       label={SPLIT_SECOND_LABEL}
       drawing={drawing}
+      held={held}
       editing={editing}
       writing={writing}
       panning={panning}

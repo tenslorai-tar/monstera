@@ -2,7 +2,6 @@ import {
   type AnnotationPoint,
   type AnnotationRect,
   type DispatchableCommand,
-  type MeasureCaption,
   measureCaption,
   measureLabel,
 } from '@monstera/contract';
@@ -25,6 +24,7 @@ import { engineBoxInPdf } from './annotationSpace.js';
 import type { AnnotationSnapshot, ErasableAnnotation } from './eraserTool.js';
 import { markAt } from './eraserTool.js';
 import { type ReopenDeps, reopenWords } from './textTools.js';
+import { placedCaption } from '../markLook.js';
 import { captionBeside } from './vertexTools.js';
 
 
@@ -638,23 +638,6 @@ function commandOf(page: number, moved: Placement): DispatchableCommand | undefi
   }
   const placements = moved.placements.flatMap((placement) => ('rect' in placement ? [placement] : []));
   return placements.length === 0 ? undefined : { kind: 'placeAnnotation', page, placements, version: moved.version };
-}
-
-/**
- * A reading set at `set` (PDF space) as it shows on screen: its baseline's start, the turn of its baseline as drawn —
- * clockwise in the overlay's pixels — and its size in pixels, each read from the page's own transform, so a turned or
- * zoomed page sets it where the page does.
- */
-function placedCaption(set: MeasureCaption, transform: PageTransform): { x: number; y: number; placed: { angle: number; size: number } } {
-  const turn = (set.angle * Math.PI) / 180;
-  const start = toViewport(pdfPoint(set.x, set.y), transform);
-  const along = toViewport(pdfPoint(set.x + Math.cos(turn), set.y + Math.sin(turn)), transform);
-  const pixels = Math.hypot(along.x - start.x, along.y - start.y);
-  return {
-    x: start.x,
-    y: start.y,
-    placed: { angle: (Math.atan2(along.y - start.y, along.x - start.x) * 180) / Math.PI, size: set.size * pixels },
-  };
 }
 
 /** The kinds whose points close back on the first: a polygon's outline, where a polyline's and a line's stay open. */

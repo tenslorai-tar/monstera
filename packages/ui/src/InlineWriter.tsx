@@ -6,6 +6,7 @@ import { type ReactElement, useEffect, useEffectEvent, useId, useLayoutEffect, u
 import type { OverlayPage } from './annotations/annotationSpace.js';
 import { hexFromColour } from './annotations/annotationStyle.js';
 import { overlayTransform } from './annotations/annotationSpace.js';
+import { TEXT_INSET } from './markLook.js';
 import { WRITE_TOO_MANY_STYLES } from './messages/en.js';
 import { type Draft, type TypedRun, type WriteEnd, type WriteRequest, runsFit, settle } from './pageWriting.js';
 import { composing } from './surfaces/shortcuts.js';
@@ -42,12 +43,6 @@ export interface InlineWriterProps {
   readonly onDone: (words: string | undefined) => void;
 }
 
-/**
- * The room between a FreeText's edge and its words, in points: MuPDF sets them 2 in from the box, measured in its
- * appearance stream (`textTools.ts`' `INSET` adds the border's half point). The editor's words start where the page's
- * will.
- */
-const TEXT_INSET = 2;
 
 /** A request's PDF box on the page as drawn: its corners ordered, and the page's own size around it. */
 interface Placed {
