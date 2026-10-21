@@ -418,6 +418,29 @@ await measure('rotate page', async () => {
   });
 });
 
+// A PAGE MOVED: the first page goes down one, so the region at the top of the view shows page 2's lines.
+await measure('move page', async () => {
+  const at = await slot();
+  return timed({ x: at.x, y: at.y, width: at.width, height: Math.min(at.height, 400) }, async () => {
+    await command('Move page down');
+  });
+});
+
+// A FIELD'S DESIGN: its border recoloured from its Properties, the press on the swatch being the input. The unscoped first
+// `Red` is the Border colour's (`formsWalk`'s note of 2026-10-13).
+await measure('field design change', async () => {
+  if ((await page.locator('[data-field-box]').count()) === 0) await command('Edit fields');
+  await page.locator('[data-field-box]').first().click();
+  const red = page.getByRole('button', { name: 'Red' }).first();
+  await red.waitFor({ timeout: 15_000 });
+  const at = await slot();
+  return timed(clipOf(at, 62, 792 - 184, 260, 44), () => red.click());
+});
+if (wanted('field design change')) {
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+}
+
 await measure('edit text', async (run) => {
   await section('Edit');
   // ARMED BY ITS CONTROL, not the palette: the command toggles, so a second run turned the tool off (trial, 2026-10-20).
