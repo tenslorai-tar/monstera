@@ -264,6 +264,8 @@ export interface ShimFormField {
   readonly rect: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number } | null;
   /** The channel's mark for a value listed as a slice of a longer one. */
   readonly cut?: true;
+  /** A radio widget's own choice, which the Fields list names the option by; absent names it by the field. */
+  readonly option?: string;
   /**
    * What filling it must respect (ADR-0226 Decision 4). OPTIONAL HERE, and the one member that is: a case that is not
    * about these rules names none, and the shim answers {@link PLAIN_RULES} for each it leaves out. A case about them

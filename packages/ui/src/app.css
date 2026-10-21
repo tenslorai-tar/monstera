@@ -2181,9 +2181,11 @@ optgroup {
  * is the shape a person presses expecting it to affect the line they were
  * looking at.
  */
+/* NO WIDTH: a block fills the panel's content box by itself. `width: 100%` was right while this class sat on a
+   `<button>`, which Chromium sizes border-box; on this `<div>` it is content-box, so the 100% and the side padding
+   made the foot 8 px wider than the panel, which then scrolled sideways (R16). */
 .m-forms-flatten {
   display: block;
-  width: 100%;
   margin: 0;
   /*
    * A TOKEN THE SCALE HAS: `tokens.css` declares 2, 4, 8, 16, 24, 32, and an

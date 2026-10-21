@@ -5,6 +5,7 @@ import { PDFDocument } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
+import { EVERY_FIELD_KIND, EVERY_FIELD_KIND_ROWS, formPdf } from './formFieldsFixture.js';
 import { runCommand } from './helpScreensHarness.js';
 import { LOOKS, type Look, bridgeUnder } from './pageBridge.js';
 import { settled } from './settled.js';
@@ -437,5 +438,35 @@ for (const look of LOOKS) {
         stylePath: RASTER_HIDDEN,
       });
     }
+  });
+}
+
+// THE FIELDS LIST WITH A FORM OPEN (the owner's R16): no baseline showed it, so 0.1.17.0's foot, 8 px wider than the
+// panel, was in no picture. The rows are `panelOverflow.pw.ts`' own, a field of every kind, at the panel's default width.
+const FORM = asDocId('00000000-0000-4000-8000-0000000000f1');
+
+for (const look of LOOKS) {
+  test(`${look.name}: the Fields list with a form open matches its baseline`, async ({ page }) => {
+    // TALL ENOUGH FOR THE WHOLE LIST AND ITS FLATTEN FOOT, the row 0.1.17.0 broke, with nothing scrolled.
+    await page.setViewportSize({ width: 1280, height: 1300 });
+    const bytes = await formPdf();
+    await bridgeUnder(page, look, {
+      opens: [{ kind: 'opened', docId: FORM, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Form.pdf' }],
+      documentBytes: new Map([[FORM, bytes]]),
+      formFields: [EVERY_FIELD_KIND],
+      // OFF: `openedOn`'s reason above.
+      settings: { 'appearance.status-tips': false, 'appearance.document-panel': 'forms' },
+    });
+    await page.goto('/');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', look.name);
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    // THE PAGE ALONE: `documentDrawn` also waits for a thumbnail, which the Fields tab does not draw.
+    await expect(page.locator('canvas.m-page:visible').first()).toBeVisible();
+    const list = page.locator('.m-forms-panel').first();
+    await expect(list.locator('.m-forms-jump')).toHaveCount(EVERY_FIELD_KIND_ROWS);
+    // THE FOOT IS IN THE PICTURE: the list ends above the panel's bottom, so nothing of it is scrolled out of view.
+    expect(await list.evaluate((element) => element.scrollHeight <= element.clientHeight)).toBe(true);
+    await parkPointer(page);
+    await expect(page.locator('.m-document-panel').first()).toHaveScreenshot(`${look.name}-fields-list.png`);
   });
 }
