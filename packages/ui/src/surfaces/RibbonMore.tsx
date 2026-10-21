@@ -3,11 +3,10 @@ import { useLingui } from '@lingui/react';
 import type { MessageKey } from '@monstera/shared';
 import type { ReactElement } from 'react';
 
-import { RIBBON_MENU_CHOICES, RIBBON_MORE } from '../messages/en.js';
+import { RIBBON_MORE } from '../messages/en.js';
 import { Icon } from '../primitives/Icon.js';
 import { MenuScrollArrows } from '../primitives/MenuScrollArrows.js';
 import type { IconName } from '../primitives/icons.js';
-import { ToolButton } from '../primitives/ToolButton.js';
 import type { CommandContext } from '../registries/commands.js';
 import type { OrderedEntry } from './projections.js';
 
@@ -49,11 +48,6 @@ export function RibbonMore({
     readonly label: MessageKey;
     readonly icon: IconName;
     readonly measuredAs: string;
-    /**
-     * A menu whose FACE RUNS a member (ADR-0241): the member chosen last from it, by id, and where a choice is told.
-     * The ribbon holds the value, so the menu draws it and never keeps a second copy.
-     */
-    readonly runs?: { readonly chosen: string | undefined; readonly onPicked: (id: string) => void } | undefined;
   };
   /**
    * How many tools the WIDTH folded into a group's *More* — since ADR-0098's correction of 2 October, every tool
@@ -75,7 +69,7 @@ export function RibbonMore({
   const holds = entries.map((entry) => entry.command.id).join(' ');
 
   /** The menu's items: ONE definition for a menu, a face's chevron and a group's *More*. */
-  const popup = (onPicked: ((id: string) => void) | undefined): ReactElement => (
+  const popup = (): ReactElement => (
     <Menu.Portal>
       <Menu.Positioner align="start" side="bottom">
         {/* A MARK COLUMN ONLY WHERE A MEMBER CAN BE ON, so a menu of plain commands opens on its glyphs rather than
@@ -87,7 +81,6 @@ export function RibbonMore({
             const choose = (): void => {
               // Not awaited, for `QuickToolbar`'s reason: nothing here reads the result.
               void entry.command.run(context);
-              onPicked?.(entry.command.id);
               onChosen();
             };
             const face = (
@@ -107,8 +100,8 @@ export function RibbonMore({
                 )}
               </>
             );
-            // A COMMAND THAT SETS A STATE is a checkable item with its mark, the menu bar's rule — so Edit object's
-            // menu says which of its filters is on (ADR-0153), and a screen reader hears it.
+            // A COMMAND THAT SETS A STATE is a checkable item with its mark, the menu bar's rule — so a menu says which
+            // of its states is on, and a screen reader hears it.
             return checked === undefined ? (
               <Menu.Item
                 key={entry.command.id}
@@ -146,42 +139,6 @@ export function RibbonMore({
     </Menu.Portal>
   );
 
-  // WHAT THE FACE RUNS (ADR-0241): the member chosen last, the first until one is, and the first again should the
-  // chosen one since be hidden by its `when`.
-  const runs = named?.runs === undefined ? undefined : (entries.find((entry) => entry.command.id === named.runs?.chosen) ?? entries[0]);
-  if (named?.runs !== undefined && runs !== undefined) {
-    return (
-      // ONE UNIT TO THE FOLD: it finds a button by `data-command`, so the box holding both parts is what it measures.
-      <span className="m-ribbon__split" data-command={named.measuredAs}>
-        <ToolButton
-          // THE MENU'S CAPTION AS THE NAME, so the words on the face are the words a screen reader hears (WCAG 2.5.3);
-          // the member a press runs is its description and its tooltip.
-          label={named.label}
-          description={runs.command.title}
-          icon={runs.command.icon ?? named.icon}
-          pressed={runs.command.checked?.(context)}
-          keepsFocus={runs.command.keepsFocus}
-          onClick={() => {
-            // Not awaited, for `QuickToolbar`'s reason: nothing here reads the result.
-            void runs.command.run(context);
-            onChosen();
-          }}
-        />
-        <Menu.Root>
-          <Menu.Trigger
-            className="m-tool-button m-ribbon__chevron"
-            data-holds={holds}
-            aria-label={i18n._(RIBBON_MENU_CHOICES, { menu: i18n._(named.label) })}
-            nativeButton
-          >
-            <Icon name="ChevronDown" size="chrome" />
-          </Menu.Trigger>
-          {popup(named.runs.onPicked)}
-        </Menu.Root>
-      </span>
-    );
-  }
-
   return (
     <Menu.Root>
       <Menu.Trigger
@@ -194,7 +151,7 @@ export function RibbonMore({
       >
         <MoreFace icon={named?.icon ?? 'Ellipsis'} label={i18n._(named?.label ?? RIBBON_MORE)} />
       </Menu.Trigger>
-      {popup(undefined)}
+      {popup()}
     </Menu.Root>
   );
 }

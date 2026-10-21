@@ -1757,48 +1757,6 @@ export const PAGE_OPENING = messageKey('surface.page.opening');
 export const FIND_REPLACE_WITH = messageKey('surface.find.replace-with');
 export const FIND_REPLACE_ALL = messageKey('surface.find.replace-all');
 export const FIND_REPLACED = messageKey('surface.find.replaced');
-/** Edit object's mode on the page (ADR-0153): the layer, each outline, and what a page with nothing to outline says. */
-export const OBJECT_EDIT_LAYER_LABEL = messageKey('surface.object-edit.layer');
-export const OBJECT_EDIT_OUTLINE = messageKey('surface.object-edit.outline');
-export const OBJECT_EDIT_NONE_ALL = messageKey('surface.object-edit.none-all');
-export const OBJECT_EDIT_NONE_TEXT = messageKey('surface.object-edit.none-text');
-export const OBJECT_EDIT_NONE_IMAGES = messageKey('surface.object-edit.none-images');
-export const OBJECT_EDIT_NONE_SHAPES = messageKey('surface.object-edit.none-shapes');
-export const OBJECT_EDIT_TRUNCATED = messageKey('surface.object-edit.truncated');
-/** The ribbon menu's four filters (ADR-0153 Decision 2), by the titles the menu and the palette both draw. */
-export const EDIT_OBJECTS_ALL_TITLE = messageKey('command.edit.objects-all');
-export const EDIT_OBJECTS_TEXT_TITLE = messageKey('command.edit.objects-text');
-export const EDIT_OBJECTS_IMAGES_TITLE = messageKey('command.edit.objects-images');
-export const EDIT_OBJECTS_SHAPES_TITLE = messageKey('command.edit.objects-shapes');
-/** The Properties tab while an object is selected. */
-export const PROPERTIES_OBJECT_HEADING = messageKey('surface.properties.object');
-export const PROPERTIES_OBJECT_KIND = messageKey('surface.properties.object-kind');
-export const PROPERTIES_OBJECT_NO_FILL = messageKey('surface.properties.object-no-fill');
-export const PROPERTIES_OBJECT_NONE_HINT = messageKey('surface.properties.object-none');
-export const PROPERTIES_OBJECT_LEFT = messageKey('surface.properties.object-left');
-export const PROPERTIES_OBJECT_BOTTOM = messageKey('surface.properties.object-bottom');
-export const PROPERTIES_OBJECT_WIDTH = messageKey('surface.properties.object-width');
-export const PROPERTIES_OBJECT_HEIGHT = messageKey('surface.properties.object-height');
-export const PROPERTIES_OBJECT_ROTATION = messageKey('surface.properties.object-rotation');
-export const PROPERTIES_OBJECT_TEXT_SIZE = messageKey('surface.properties.object-text-size');
-export const PROPERTIES_OBJECT_TEXT_STYLE = messageKey('surface.properties.object-text-style');
-export const PROPERTIES_OBJECT_TEXT_FAMILY = messageKey('surface.properties.object-text-family');
-export const TEXT_STYLE_REGULAR = messageKey('surface.properties.text-style-regular');
-export const TEXT_STYLE_BOLD = messageKey('surface.properties.text-style-bold');
-export const TEXT_STYLE_ITALIC = messageKey('surface.properties.text-style-italic');
-export const TEXT_STYLE_BOLD_ITALIC = messageKey('surface.properties.text-style-bold-italic');
-export const TEXT_FAMILY_SERIF = messageKey('surface.properties.text-family-serif');
-export const TEXT_FAMILY_SANS = messageKey('surface.properties.text-family-sans');
-export const TEXT_FAMILY_MONO = messageKey('surface.properties.text-family-mono');
-// UNDER THE MODE'S DOMAIN: the words a person sees for each kind of thing on a page, on its outline and in the
-// Properties tab. A key's FIRST segment may not carry a hyphen (`KEY_SHAPE`), so not an `object-kind.` of their own.
-export const OBJECT_KIND_UNKNOWN = messageKey('surface.object-edit.kind-unknown');
-export const OBJECT_KIND_TEXT = messageKey('surface.object-edit.kind-text');
-export const OBJECT_KIND_PATH = messageKey('surface.object-edit.kind-path');
-export const OBJECT_KIND_IMAGE = messageKey('surface.object-edit.kind-image');
-export const OBJECT_KIND_SHADING = messageKey('surface.object-edit.kind-shading');
-export const OBJECT_KIND_FORM = messageKey('surface.object-edit.kind-form');
-export const OBJECT_KIND_PICTURE = messageKey('surface.object-edit.kind-picture');
 // WORDS TYPED ON THE PAGE (ADR-0154): each box's accessible name says what is being typed, and its refusal.
 export const WRITE_TEXT_BOX_LABEL = messageKey('surface.write.text-box');
 export const WRITE_TYPEWRITER_LABEL = messageKey('surface.write.typewriter');
@@ -2014,7 +1972,6 @@ export const HINT_SIGNATURE = messageKey('tool.hint.signature');
 export const HINT_FORM_FIELD = messageKey('tool.hint.form-field');
 export const HINT_HAND = messageKey('tool.hint.hand');
 export const HINT_EDIT_TEXT = messageKey('tool.hint.edit-text');
-export const HINT_EDIT_OBJECTS = messageKey('tool.hint.edit-objects');
 export const SNAPSHOT_TOOL_TITLE = messageKey('command.view.snapshot');
 export const PLACE_IMAGE_TOOL_TITLE = messageKey('command.annotate.image');
 export const OCR_REGION_TOOL_TITLE = messageKey('command.tools.ocr-region');
@@ -2038,8 +1995,6 @@ export const LINK_PAGE_EMPTY = messageKey('surface.write.link-page.empty');
 export const LINK_PAGE_TOO_LONG = messageKey('surface.write.link-page.too-long');
 export const LINK_PAGE_NOT_A_NUMBER = messageKey('surface.write.link-page.not-a-number');
 export const DELETE_SELECTION_TITLE = messageKey('command.annotate.delete-selection');
-export const OBJECT_FORWARD_TITLE = messageKey('command.edit.object-forward.title');
-export const OBJECT_BACKWARD_TITLE = messageKey('command.edit.object-backward.title');
 export const SELECTION_PROPERTIES_TITLE = messageKey('command.annotate.properties');
 export const NUDGE_LEFT_TITLE = messageKey('command.annotate.nudge-left');
 export const NUDGE_RIGHT_TITLE = messageKey('command.annotate.nudge-right');
@@ -2858,7 +2813,6 @@ export const RAIL_MORE = messageKey('surface.ribbon.rail-more');
 export const RIBBON_TOOLS_LABEL = messageKey('surface.ribbon.tools');
 export const RIBBON_MORE = messageKey('surface.ribbon.more');
 export const RIBBON_MORE_GROUPS = messageKey('surface.ribbon.more-groups');
-export const RIBBON_MENU_CHOICES = messageKey('surface.ribbon.menu-choices');
 export const SECTION_HOME = messageKey('surface.ribbon.section.home');
 export const SECTION_COMMENT = messageKey('surface.ribbon.section.comment');
 export const SECTION_EDIT = messageKey('surface.ribbon.section.edit');
@@ -3282,7 +3236,6 @@ export const RIBBON_OCR_REGION = messageKey('ribbon.ocr-region');
 export const RIBBON_CLOUD_REGION = messageKey('ribbon.cloud-region');
 export const RIBBON_CLAUDE_REGION = messageKey('ribbon.claude-region');
 export const RIBBON_EDIT_TEXT = messageKey('ribbon.edit-text');
-export const RIBBON_EDIT_OBJECT = messageKey('ribbon.edit-object');
 export const RIBBON_ROTATE_90 = messageKey('ribbon.rotate-90');
 export const RIBBON_ROTATE_180 = messageKey('ribbon.rotate-180');
 export const RIBBON_ROTATE_270 = messageKey('ribbon.rotate-270');
@@ -4646,53 +4599,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // and a message may not claim more than the reading behind it.
   [PAGE_IMAGE_ONLY]: 'This page is a picture, so there is no text to select or search.',
   [PAGE_OPENING]: 'Opening the document…',
-  [OBJECT_EDIT_LAYER_LABEL]: 'Objects on page {page}',
-  // WHAT IT IS AND WHICH OF HOW MANY, so a person moving through the outlines with Tab hears where they are.
-  [OBJECT_EDIT_OUTLINE]: '{kind}, {position} of {count}',
-  [OBJECT_EDIT_NONE_ALL]: 'This page has nothing drawn on it.',
-  [OBJECT_EDIT_NONE_TEXT]: 'This page has no text objects.',
-  [OBJECT_EDIT_NONE_IMAGES]: 'This page has no images.',
-  [OBJECT_EDIT_NONE_SHAPES]: 'This page has no shapes.',
-  [OBJECT_EDIT_TRUNCATED]: 'There was more on this page than Monstera can outline, so it may have other objects.',
-  // READ IN TWO PLACES, so each says the verb: under *Edit object* in the ribbon's menu, and alone in the palette.
-  [EDIT_OBJECTS_ALL_TITLE]: 'Edit all objects',
-  [EDIT_OBJECTS_TEXT_TITLE]: 'Edit text objects',
-  [EDIT_OBJECTS_IMAGES_TITLE]: 'Edit images',
-  [EDIT_OBJECTS_SHAPES_TITLE]: 'Edit shapes',
-  [PROPERTIES_OBJECT_HEADING]: 'Object',
-  [PROPERTIES_OBJECT_KIND]: 'Kind',
-  // SAYS WHOSE LIMITATION IT IS. *Cannot* would read as Monstera refusing; the honest version is that this object has
-  // no colour Monstera can read, which is also what tells a person that trying again will not help.
-  [PROPERTIES_OBJECT_NO_FILL]: 'Monstera cannot read a colour for this object, so it cannot change it.',
-  // IN POINTS FROM THE PAGE'S LOWER-LEFT CORNER, as PDF measures a page, and said in the label so no number is a guess.
-  [PROPERTIES_OBJECT_NONE_HINT]: 'Click an object on the page to see where it is and change it.',
-  [PROPERTIES_OBJECT_LEFT]: 'Left (pt)',
-  [PROPERTIES_OBJECT_BOTTOM]: 'Bottom (pt)',
-  [PROPERTIES_OBJECT_WIDTH]: 'Width (pt)',
-  [PROPERTIES_OBJECT_HEIGHT]: 'Height (pt)',
-  [PROPERTIES_OBJECT_ROTATION]: 'Rotation (°)',
-  [PROPERTIES_OBJECT_TEXT_SIZE]: 'Text size (pt)',
-  [PROPERTIES_OBJECT_TEXT_STYLE]: 'Style',
-  [PROPERTIES_OBJECT_TEXT_FAMILY]: 'Font',
-  [TEXT_STYLE_REGULAR]: 'Regular',
-  [TEXT_STYLE_BOLD]: 'Bold',
-  [TEXT_STYLE_ITALIC]: 'Italic',
-  [TEXT_STYLE_BOLD_ITALIC]: 'Bold italic',
-  [TEXT_FAMILY_SERIF]: 'Serif',
-  [TEXT_FAMILY_SANS]: 'Sans serif',
-  [TEXT_FAMILY_MONO]: 'Monospaced',
-  // THE KINDS, as words a person recognises rather than PDF's vocabulary. A
-  // reader does not know what a *path* is and does know what a shape is; the
-  // one that stays technical is `form`, because it is a PDF form XObject rather
-  // than a fillable form and calling it either would be worse than saying
-  // *group*. A picture a person placed is an *Image* to them, as one in the page is.
-  [OBJECT_KIND_UNKNOWN]: 'Something else',
-  [OBJECT_KIND_TEXT]: 'Text',
-  [OBJECT_KIND_PATH]: 'Shape',
-  [OBJECT_KIND_IMAGE]: 'Image',
-  [OBJECT_KIND_SHADING]: 'Gradient',
-  [OBJECT_KIND_FORM]: 'Group',
-  [OBJECT_KIND_PICTURE]: 'Image',
   [WRITE_TEXT_BOX_LABEL]: 'Text box',
   // *TYPE ONTO THE PAGE* rather than *Text*, because the difference from the text box is exactly that there is no box
   // — the field's name is where a person using a screen reader learns which of the two they picked.
@@ -5017,7 +4923,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [HINT_FORM_FIELD]: 'Click where the field goes, or drag out a box for it. Rename it in Properties.',
   [HINT_HAND]: 'Drag to slide the page around.',
   [HINT_EDIT_TEXT]: 'Click a block of words and start changing them.',
-  [HINT_EDIT_OBJECTS]: 'Click an object to pick it, then drag it where you like.',
   [HINT_EDIT_FIELDS]: 'Click a field to select it, drag it to move it, or drag a handle to resize it.',
   [EDIT_FIELDS_TITLE]: 'Edit fields',
   [EDIT_FIELDS_TIP]:
@@ -5112,10 +5017,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [LINK_PAGE_EMPTY]: 'Type the page this link should go to.',
   [LINK_PAGE_TOO_LONG]: 'That is not a page number.',
   [LINK_PAGE_NOT_A_NUMBER]: 'Type a page number, counting from 1.',
-  // EITHER SELECTION'S: the selected marks, or the object Edit object has selected (ADR-0153 Decision 5).
   [DELETE_SELECTION_TITLE]: 'Delete selection',
-  [OBJECT_FORWARD_TITLE]: 'Bring forward',
-  [OBJECT_BACKWARD_TITLE]: 'Send backward',
   [SELECTION_PROPERTIES_TITLE]: 'Properties',
   // ONE NAME FOR BOTH STEPS. The coarse nudge is the same command with Shift
   // held, and a second entry reading *Move selection left further* would be
@@ -6588,7 +6490,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // THE ROW'S OWN MORE, by its name for a screen reader: it begins with the word on its face (WCAG 2.5.3) and names
   // the groups it holds, which is what tells it from the last group's More beside it.
   [RIBBON_MORE_GROUPS]: 'More: {groups}',
-  [RIBBON_MENU_CHOICES]: 'Choices for {menu}',
   [SECTION_HOME]: 'Home',
   [SECTION_COMMENT]: 'Comment',
   [SECTION_EDIT]: 'Edit',
@@ -7011,7 +6912,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RIBBON_CLOUD_REGION]: 'Azure OCR',
   [RIBBON_CLAUDE_REGION]: 'Claude OCR',
   [RIBBON_EDIT_TEXT]: 'Edit text',
-  [RIBBON_EDIT_OBJECT]: 'Edit object',
   [RIBBON_ROTATE_90]: 'Rotate 90°',
   [RIBBON_ROTATE_180]: 'Rotate 180°',
   [RIBBON_ROTATE_270]: 'Rotate 270°',

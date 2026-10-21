@@ -19,14 +19,13 @@ import type { OverlayPage } from './annotations/annotationSpace.js';
 import type { AnnotationSelection, LinkSelection } from './annotations/selectTool.js';
 import { SelectionLayer } from './SelectionLayer.js';
 import { type TextEditing, TextEditPage } from './TextEditLayer.js';
-import { type ObjectEditing, ObjectEditPage } from './ObjectEditLayer.js';
 import { type FieldEditing, FieldDesignLayer } from './forms/FieldDesignLayer.js';
 import { type TabOrderEditing, TabOrderLayer } from './forms/TabOrderLayer.js';
 import { InlineWriter } from './InlineWriter.js';
 import type { Draft, WriteRequest } from './pageWriting.js';
 
 /** What a press on the page edits, when a mode rather than a drawing tool holds the tool slot. */
-export type PageEditing = TextEditing | ObjectEditing | FieldEditing | TabOrderEditing;
+export type PageEditing = TextEditing | FieldEditing | TabOrderEditing;
 
 /** The one pending request for words on a page, its draft, and where its answer goes (ADR-0154). */
 export interface PageWriting {
@@ -291,7 +290,7 @@ export interface PageListProps {
    * is worse than none.
    */
   /**
-   * Edit text's mode (ADR-0096) or Edit object's (ADR-0153), or `undefined` when neither is on.
+   * The editing mode on the page — Edit text's (ADR-0096), Edit fields' or Tab order's — or `undefined` when none is on.
    *
    * A sibling of {@link drawing} rather than a member of it, because the two
    * never hold at once — they share one slot in the application, the tool id —
@@ -1917,7 +1916,7 @@ function PageSlot({
   }, [mounted, onPainted, page, tiled]);
 
   // THE PAGE'S FORM FIELDS (ADR-0168), over the text, the links and the marks so a press on a field fills it. Not while
-  // Edit text or Edit object holds the page: there a press is the mode's. WHERE in the stack depends on the tool
+  // an editing mode holds the page: there a press is the mode's. WHERE in the stack depends on the tool
   // (ADR-0226 Decision 1): under a drawing tool's surface, which keeps every press; above the surface of a tool that
   // picks, with the comments taken out of each field so a press on a comment is still the tool's.
   const fieldsOver = drawing?.tool.fillsFields === true;
@@ -2087,8 +2086,8 @@ function PageSlot({
       )}
       {/* THE FORM LAYER HERE, under the drawing overlay, while no tool or a drawing tool is on (`formLayer`). */}
       {fieldsOver ? null : formLayer}
-      {/* OVER THE TEXT AND ITS MARKS, as the drawing overlay is: while Edit text or
-          Edit object is on, a press on an outline is the mode's, and nothing else
+      {/* OVER THE TEXT AND ITS MARKS, as the drawing overlay is: while an editing
+          mode is on, a press on an outline is the mode's, and nothing else
           holds the pointer — the modes share one slot and never mount together. */}
       {editing === undefined || size === undefined ? null : editing.mode === 'fields' ? (
         <FieldDesignLayer
@@ -2116,13 +2115,6 @@ function PageSlot({
           }}
           page={page}
           picked={editing.picked}
-        />
-      ) : editing.mode === 'objects' ? (
-        <ObjectEditPage
-          editing={editing}
-          geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
-          page={page}
-          pictureOf={pictureOf}
         />
       ) : (
         <TextEditPage
@@ -2211,8 +2203,8 @@ function paperIn(slot: HTMLElement | null, x: number, y: number): string | undef
 
 /**
  * The drawn page's own pixels inside `box`, a rectangle in the WINDOW's CSS pixels, copied into a canvas of their own;
- * or `undefined` where nothing is drawn there yet. What Edit object shows moving under the pointer (the owner's E5): the
- * object as it is on the page, taken from every canvas the page is drawn in, tiles included, at the drawing's own
+ * or `undefined` where nothing is drawn there yet. What Edit text draws moved below a growing block (ADR-0249 Decision
+ * 5): the page as it is, taken from every canvas the page is drawn in, tiles included, at the drawing's own
  * resolution so a picture is not blurred by the copy. In the window's pixels, so no caller has to share this slot's
  * origin to name a place on it.
  */

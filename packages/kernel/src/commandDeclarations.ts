@@ -1969,148 +1969,12 @@ const declarations = {
     // about the classification.
     purpose: 'ordinary',
   },
-  placePageObject: {
-    kind: 'placePageObject',
-    display: 'image',
-    writer: 'pdfium',
-    // INVERTIBLE FROM THE OBJECT'S OWN MATRIX, and that is measured rather than
-    // reasoned: `FPDFPageObj_SetMatrix` of the matrix read before a transform
-    // returns the object's bounds to exactly what they were (2026-09-10). So
-    // the inverse RESTORES rather than applying the opposite transform — which
-    // matters beyond ADR-0009 §3's rule, because an opposite transform composed
-    // repeatedly drifts and a restored matrix does not.
-    invertible: true,
-    undo: 'inverse',
-    // Six floats set on an object. Nothing mints an identifier or reads a clock.
-    reproducible: true,
-    replay: 'reapply-intent',
-    sources: 'none',
-    targets: 'text-object',
-    reads: 'none',
-    asset: 'none',
-    // A transform rewrites the page's content stream and unlinks nothing.
-    purpose: 'ordinary',
-  },
-  placePageObjects: {
-    kind: 'placePageObjects',
-    display: 'image',
-    // PDFium, as one object's placement is: the objects are text, and text keeps PDFium's route (ADR-0242 Decision 3).
-    writer: 'pdfium',
-    // A RESTORE OF EVERY MATRIX, `placePageObject`'s measured reason taken once per object.
-    invertible: true,
-    undo: 'inverse',
-    reproducible: true,
-    replay: 'reapply-intent',
-    sources: 'none',
-    targets: 'text-object',
-    reads: 'none',
-    asset: 'none',
-    purpose: 'ordinary',
-  },
-  arrangePageObject: {
-    kind: 'arrangePageObject',
-    display: 'image',
-    // PDFium's own list, which keeps each object's state and clip (ADR-0244).
-    writer: 'pdfium',
-    // MOVED BACK by the same call: a page, two places, nothing document-scaled.
-    invertible: true,
-    undo: 'inverse',
-    reproducible: true,
-    replay: 'reapply-intent',
-    sources: 'none',
-    targets: 'text-object',
-    reads: 'none',
-    asset: 'none',
-    purpose: 'ordinary',
-  },
-  placeDrawnObject: {
-    kind: 'placeDrawnObject',
-    display: 'image',
-    // MuPDF, IN THE PAGE'S OWN CONTENT STREAM (ADR-0240): PDFium's regeneration writes every text object again, and a
-    // font it cannot write back refused a picture's move at read-back (the owner's E1).
-    writer: 'mupdf',
-    // NOT INVERTIBLE, `editTextOperators`' reason: the checkpoint restores the page's content whole.
-    invertible: false,
-    undo: 'checkpoint',
-    // The same instructions wrapped in the same matrix. Nothing mints an identifier or reads a clock.
-    reproducible: true,
-    replay: 'reapply-intent',
-    sources: 'none',
-    // PDFIUM'S OBJECT INDEX, carried for the selection and the lane; the writer finds the object by kind and ordinal.
-    targets: 'text-object',
-    reads: 'none',
-    asset: 'none',
-    // ORDINARY, `editTextOperators`' reason: one page's content changes and nothing is unlinked.
-    purpose: 'ordinary',
-  },
-  recolorPageObjects: {
-    kind: 'recolorPageObjects',
-    display: 'image',
-    writer: 'pdfium',
-    // INVERTIBLE FROM THE PRIOR FILLS, one per named object — `fillFormField`'s
-    // shape on a third walk. The prior is four small integers per object and is
-    // bounded by the page, so the entry retains no document-scaled bytes.
-    invertible: true,
-    undo: 'inverse',
-    reproducible: true,
-    replay: 'reapply-intent',
-    sources: 'none',
-    targets: 'text-object',
-    reads: 'none',
-    asset: 'none',
-    purpose: 'ordinary',
-  },
-  deletePageObjects: {
-    kind: 'deletePageObjects',
-    display: 'image',
-    writer: 'pdfium',
-    // NOT INVERTIBLE, AND IT IS THE LIBRARY THAT SAYS SO. PDFium offers no way
-    // to reconstruct a page object from a description, so there is no prior
-    // state a capture could hold — a removed object is gone. This is the same
-    // classification `flattenFormFields` has and it arrives for a different
-    // reason: there the prior is document-scaled, here there is no prior at all.
-    //
-    // So undo takes a checkpoint, which costs one whole document image per
-    // entry (`CommandLog.trimTo`). That is the price of the row rather than a
-    // choice inside it.
-    invertible: false,
-    undo: 'checkpoint',
-    reproducible: true,
-    replay: 'reapply-intent',
-    sources: 'none',
-    targets: 'text-object',
-    reads: 'none',
-    asset: 'none',
-    // NOT `'removal'`, and the distinction is the AXIS's mechanism rather than
-    // the word. `purpose: 'removal'` selects MuPDF's collecting save
-    // ([ADR-0045](../../../docs/DECISIONS/0045-a-removals-garbage-collection-belongs-to-the-command.md)):
-    // `withDocumentRemoving` marks the session and `serialise` collects from
-    // then on. This command's writer of record is PDFium, whose
-    // `FPDF_SaveAsCopy` has no garbage-collection option at all — so there is
-    // nothing here for the axis to select, and declaring `'removal'` would name
-    // a mechanism that cannot run.
-    //
-    // What that leaves open is whether an unlinked object survives in PDFium's
-    // saved bytes, and `proof:pdfiumobject` measures it rather than this
-    // comment asserting it. **Measured 2026-09-10, and the first reading was
-    // misleading**: removing two objects from a 1,170-byte fixture answered
-    // 1,613 bytes, +38%, which reads as orphans. It is not. A PDFium save with
-    // NO EDIT AT ALL answers 1,664 — +42% — because `FPDF_SaveAsCopy` is a full
-    // rewrite with its own object layout and pdf-lib's output is unusually
-    // compact. Against that control the removal is 3.1% SMALLER, so the growth
-    // belongs to the save and nothing here is accumulating.
-    //
-    // The control is what makes the figure mean anything, and it is kept in the
-    // proof rather than only here: size against the original would have been a
-    // symptom recorded as a cause.
-    purpose: 'ordinary',
-  },
   replaceAllText: {
     kind: 'replaceAllText',
     display: 'image',
     writer: 'pdfium',
-    // NOT INVERTIBLE, AND THE PRIOR IS WHY — which is a different reason from
-    // `deletePageObjects`' beside it. A prior exists here: every object this
+    // NOT INVERTIBLE, AND THE PRIOR IS WHY — not because PDFium cannot rebuild
+    // what it changed. A prior exists here: every object this
     // changed, with the string it held. It is **document-scaled**, and
     // `CommandLog.trimTo`'s rule is that an invertible entry retains no
     // document-scaled bytes — a replace-all over a thousand pages would keep a
@@ -2161,12 +2025,9 @@ const declarations = {
     kind: 'promoteFormObjects',
     display: 'image',
     writer: 'pdfium',
-    // NOT INVERTIBLE, AND IT IS THE FOURTH DISTINCT REASON — the first one's,
-    // reached from the other end. `deletePageObjects` cannot be undone because
-    // PDFium can describe an object and not rebuild one; this cannot because
-    // PDFium can take a Form XObject apart (`FPDFFormObj_RemoveObject`) and
-    // offers nothing that builds one. Every piece is still on the page; the
-    // container has no constructor.
+    // NOT INVERTIBLE: PDFium can take a Form XObject apart
+    // (`FPDFFormObj_RemoveObject`) and offers nothing that builds one. Every
+    // piece is still on the page; the container has no constructor.
     invertible: false,
     undo: 'checkpoint',
     // THE SAME PAGE PROMOTES THE SAME WAY. The matrices come off the objects
@@ -2183,8 +2044,8 @@ const declarations = {
     targets: 'none',
     reads: 'none',
     asset: 'none',
-    // IT UNLINKS THE EMPTIED FORM, and `'removal'` is still wrong for
-    // `deletePageObjects`' reason: that axis selects MuPDF's collecting save,
+    // IT UNLINKS THE EMPTIED FORM, and `'removal'` is still wrong: that axis
+    // selects MuPDF's collecting save,
     // and this command's writer is PDFium, whose `FPDF_SaveAsCopy` has no
     // equivalent. Declaring it would name a mechanism that cannot run.
     purpose: 'ordinary',
@@ -2193,8 +2054,8 @@ const declarations = {
     kind: 'editTextBlock',
     display: 'image',
     writer: 'pdfium',
-    // NOT INVERTIBLE, `deletePageObjects`' reason and the fifth command to take
-    // it ([ADR-0096](../../../docs/DECISIONS/0096-text-is-edited-in-place-on-the-page-in-blocks-that-reflow.md)
+    // NOT INVERTIBLE
+    // ([ADR-0096](../../../docs/DECISIONS/0096-text-is-edited-in-place-on-the-page-in-blocks-that-reflow.md)
     // Decision 6). A block edit can make lines the page did not have and remove
     // lines a person deleted, and PDFium can describe an object and cannot
     // rebuild one. A prior of the old strings would restore the set text and
@@ -2213,8 +2074,8 @@ const declarations = {
     targets: 'text-object',
     reads: 'none',
     asset: 'none',
-    // IT REMOVES the lines a person deleted, and `'removal'` is still wrong for
-    // `deletePageObjects`' reason: that axis selects MuPDF's collecting save,
+    // IT REMOVES the lines a person deleted, and `'removal'` is still wrong:
+    // that axis selects MuPDF's collecting save,
     // and `FPDF_SaveAsCopy` has none.
     purpose: 'ordinary',
   },

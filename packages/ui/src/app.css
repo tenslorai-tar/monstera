@@ -4660,18 +4660,6 @@ optgroup {
   pointer-events: none;
 }
 
-/* A MENU WHOSE FACE RUNS A MEMBER (ADR-0241): the face is a tool button, and the chevron beside it a narrow one of the
-   same height, so the pair reads as one tool with a choice rather than as two tools. */
-.m-ribbon__split {
-  display: inline-flex;
-  flex: none;
-}
-
-.m-ribbon__chevron {
-  min-inline-size: 0;
-  padding-inline: var(--space-2);
-}
-
 .m-ribbon__more-label {
   display: inline-flex;
   align-items: center;
@@ -7028,7 +7016,7 @@ optgroup {
   inset-block-end: calc(100% + var(--m-handle-reach) + var(--space-4));
 }
 
-/* WHAT A MODE SAYS OF A PAGE — nothing to edit, or more than it can outline — for Edit text and Edit object alike. */
+/* WHAT A MODE SAYS OF A PAGE — nothing to edit, or more than it can outline. */
 .m-page-mode__notes {
   position: absolute;
   inset-block-start: var(--space-8);
@@ -7061,99 +7049,8 @@ optgroup {
 }
 
 /*
- * EDIT OBJECT'S MODE (ADR-0153): every object of the chosen kind outlined where it is. Unlike Edit text's layer this
- * one TAKES the pointer, because a press on blank paper means *select nothing*.
- */
-.m-object-edit-layer {
-  position: absolute;
-  inset: 0;
-  pointer-events: auto;
-  touch-action: none;
-}
-
-/* Its notes say what a page holds and take no press: one over the page's top edge must not cover an outline there. */
-.m-object-edit-layer .m-page-mode__notes {
-  pointer-events: none;
-}
-
-/* THE OBJECT ITSELF, MOVING (E5): its own pixels at the box a drag would put it in, never a target for a press. */
-.m-object-preview {
-  position: absolute;
-  pointer-events: none;
-}
-
-.m-object {
-  position: absolute;
-  padding: 0;
-  margin: 0;
-  border: 1px dashed var(--accent-on-paper, var(--accent));
-  border-radius: var(--radius-4);
-  background: transparent;
-  cursor: pointer;
-}
-
-.m-object:hover {
-  background: var(--accent-soft);
-}
-
-/* A BACKDROP (E9) shows its outline and no tint: a tint over the whole page says nothing about what a press picks. */
-.m-object--backdrop:hover {
-  background: transparent;
-}
-
-.m-object:focus-visible {
-  outline: 2px solid var(--accent-on-paper, var(--accent));
-  outline-offset: 2px;
-}
-
-/* THE SELECTED ONE, solid and draggable: the dashed outlines say *this can be picked*, the solid one *this is picked*. */
-.m-object--selected {
-  border-style: solid;
-  cursor: move;
-}
-
-/* A CORNER HANDLE, the selection layer's square (ADR-0133): sized by `CORNER_REACH` where it is drawn. */
-.m-object-handle {
-  position: absolute;
-  box-sizing: border-box;
-  border: 1px solid var(--accent-on-paper, var(--accent));
-  background: var(--page);
-}
-
-.m-object-handle--nw,
-.m-object-handle--se {
-  cursor: nwse-resize;
-}
-
-.m-object-handle--ne,
-.m-object-handle--sw {
-  cursor: nesw-resize;
-}
-
-/* THE ROTATE HANDLE (E6): a round one above the top side, the handle family's colours, so it reads as a different act. */
-.m-object-rotate {
-  position: absolute;
-  box-sizing: border-box;
-  border: 1px solid var(--accent-on-paper, var(--accent));
-  border-radius: 50%;
-  background: var(--page);
-  cursor: grab;
-}
-
-/* THE SIDES (E6): each moves one edge, so each says which way. */
-.m-object-handle--n,
-.m-object-handle--s {
-  cursor: ns-resize;
-}
-
-.m-object-handle--e,
-.m-object-handle--w {
-  cursor: ew-resize;
-}
-
-/*
  * *EDIT FIELDS* (ADR-0226 Decision 7): every field a dashed box with its name, the selected ones solid and movable, the
- * one selected field with eight handles. Edit object's outlines and squares, so the two modes read as one family.
+ * one selected field with eight handles.
  */
 .m-field-design-layer {
   position: absolute;

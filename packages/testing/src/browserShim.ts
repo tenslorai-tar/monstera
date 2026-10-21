@@ -714,8 +714,8 @@ export interface BrowserShimOptions {
      */
     readonly object?: number;
     /**
-     * A stamp whose appearance draws a picture, what *Comment › Image* places: for a case about Edit object picking it
-     * up (the owner's item 14g). Absent on every other mark, as the kernel's walk answers it.
+     * A stamp whose appearance draws a picture, what *Comment › Image* places: for a case about Edit text counting it
+     * among what a block would cover. Absent on every other mark, as the kernel's walk answers it.
      */
     readonly pictured?: true;
   }[];

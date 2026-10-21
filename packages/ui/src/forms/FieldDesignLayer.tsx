@@ -34,8 +34,8 @@ const MINIMUM_DRAG = 4;
 const LEAST = 8;
 
 /**
- * *Edit fields* as the page list carries it: the third value of the one slot Edit text and Edit object share, so the
- * three never hold together. The selection is the application's one field selection (`fieldSelection.ts`), which the
+ * *Edit fields* as the page list carries it: a value of the one slot the editing modes share, so no two of them ever
+ * hold together. The selection is the application's one field selection (`fieldSelection.ts`), which the
  * page reads as its own indices.
  */
 export interface FieldEditing {

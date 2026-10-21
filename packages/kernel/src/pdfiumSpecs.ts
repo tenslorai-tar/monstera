@@ -5,23 +5,6 @@ import { declaredCommands } from './commandDeclarations.js';
 import type { ApplyRequest, CommandExecution, KindsRoutedTo } from './commandRouting.js';
 import type { AppliedImage, Capture, ImageSession, Invert } from './engineSeam.js';
 import {
-  applyArrangePageObject,
-  applyDeletePageObjects,
-  applyPlacePageObject,
-  applyPlacePageObjects,
-  applyRecolorPageObjects,
-  captureArrangePageObject,
-  captureDeletePageObjects,
-  capturePlacePageObject,
-  capturePlacePageObjects,
-  captureRecolorPageObjects,
-  invertArrangePageObject,
-  invertDeletePageObjects,
-  invertPlacePageObject,
-  invertPlacePageObjects,
-  invertRecolorPageObjects,
-} from './pdfiumObjectEdit.js';
-import {
   applyPromoteFormObjects,
   capturePromoteFormObjects,
   invertPromoteFormObjects,
@@ -92,46 +75,6 @@ export const pdfiumSpecs = {
     // takes the inverse branch and never a checkpoint.
     invert: invertReplaceTextObject,
   },
-  placePageObject: {
-    ...declaredCommands.placePageObject,
-    apply: applyPlacePageObject,
-    capture: capturePlacePageObject,
-    invert: invertPlacePageObject,
-  },
-  placePageObjects: {
-    ...declaredCommands.placePageObjects,
-    apply: applyPlacePageObjects,
-    capture: capturePlacePageObjects,
-    invert: invertPlacePageObjects,
-  },
-  arrangePageObject: {
-    ...declaredCommands.arrangePageObject,
-    apply: applyArrangePageObject,
-    capture: captureArrangePageObject,
-    invert: invertArrangePageObject,
-  },
-  recolorPageObjects: {
-    ...declaredCommands.recolorPageObjects,
-    apply: applyRecolorPageObjects,
-    capture: captureRecolorPageObjects,
-    invert: invertRecolorPageObjects,
-  },
-  deletePageObjects: {
-    ...declaredCommands.deletePageObjects,
-    apply: applyDeletePageObjects,
-    // BOTH SLOTS ARE FILLED, and neither can run. `CommandSpec` requires them
-    // for every kind — leaving them out is a compile error, which is how the
-    // table stays exhaustive — and `CommandPrior.deletePageObjects` is `never`,
-    // so nothing can construct an argument for the invert. The capture says
-    // WHY, in a sentence the bus turns into a checkpoint.
-    //
-    // `flattenFormFields`' shape, and this is the first PDFium command to take
-    // it: the four pdf-lib entries carry the same pair for a different reason,
-    // theirs being that the prior is document-scaled and this one's that the
-    // prior does not exist.
-    capture: captureDeletePageObjects,
-    invert: invertDeletePageObjects,
-  },
   replaceTextAt: {
     ...declaredCommands.replaceTextAt,
     apply: applyReplaceTextAt,
@@ -143,29 +86,25 @@ export const pdfiumSpecs = {
   replaceAllText: {
     ...declaredCommands.replaceAllText,
     apply: applyReplaceAllText,
-    // TERMINAL FOR A THIRD REASON, and the capture's message is where it is
-    // stated: `deletePageObjects` has no prior, `flattenFormFields`' prior is
-    // unserialisable, and this one's exists and scales with the document.
+    // TERMINAL, and the capture's message is where it is stated: this one's prior exists and scales with the
+    // document, where `flattenFormFields`' is unserialisable.
     capture: captureReplaceAllText,
     invert: invertReplaceAllText,
   },
   promoteFormObjects: {
     ...declaredCommands.promoteFormObjects,
     apply: applyPromoteFormObjects,
-    // TERMINAL FOR A FOURTH REASON, and it is the first one's shape reached
-    // from the other end: `deletePageObjects` cannot be undone because PDFium
-    // can describe an object and not rebuild one, and this cannot because
-    // PDFium can take a Form XObject apart and not construct one. The pieces
-    // are all still on the page; the container is what has no constructor.
+    // TERMINAL: PDFium can take a Form XObject apart and not construct one. The pieces are all still on the page;
+    // the container is what has no constructor.
     capture: capturePromoteFormObjects,
     invert: invertPromoteFormObjects,
   },
   editTextBlock: {
     ...declaredCommands.editTextBlock,
     apply: applyEditTextBlock,
-    // TERMINAL, `deletePageObjects`' reason (ADR-0096 Decision 6): the capture
-    // says why in a sentence the bus turns into a checkpoint, and the invert
-    // cannot be handed an argument.
+    // TERMINAL (ADR-0096 Decision 6): a block edit makes and removes objects and PDFium cannot rebuild a removed
+    // one, so the capture says why in a sentence the bus turns into a checkpoint, and the invert cannot be handed an
+    // argument.
     capture: captureEditTextBlock,
     invert: invertEditTextBlock,
   },

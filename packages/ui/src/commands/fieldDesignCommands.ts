@@ -17,7 +17,7 @@ import { CONTEXT_PANEL_TAB_SETTING } from '../settings/layout.js';
 import type { SettingsStore } from '../settingsStore.js';
 import { hasDocument } from './documentCommands.js';
 
-/** *Edit fields*' mode in the tool slot (ADR-0226 Decision 7), Edit object's slot and its reason. */
+/** *Edit fields*' mode in the tool slot (ADR-0226 Decision 7), the slot Edit text holds, for its reason. */
 export const EDIT_FIELDS_TOOL_ID = 'forms.edit-fields';
 
 /**

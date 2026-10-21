@@ -58,17 +58,6 @@ for (const look of LOOKS) {
   });
 }
 
-test('Edit object with an object picked draws each property group in a card', async ({ page }) => {
-  await openApp(page, { pageObjects: [{ index: 0, kind: 'image', left: 200, bottom: 300, right: 300, top: 380, turn: 30, fill: null }] });
-  await openDocument(page);
-  await openSection(page, 'Edit');
-  await page.getByRole('toolbar', { name: 'Tools', exact: true }).getByRole('button', { name: 'Edit object', exact: true }).click();
-  await page.getByRole('group', { name: 'Objects on page 1' }).locator('[data-object="content:0"]').click();
-  await expect(page.locator('.m-properties').first().getByLabel('Left (pt)')).toBeVisible();
-  expect(await controlsIn(page)).toBeGreaterThan(3);
-  expect(await uncarded(page)).toStrictEqual([]);
-});
-
 test('the Forms section with nothing selected draws its setting in a card', async ({ page }) => {
   await openApp(page);
   await openDocument(page);

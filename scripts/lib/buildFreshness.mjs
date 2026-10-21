@@ -192,27 +192,13 @@ export const PDFIUM_COMMAND = [
 ];
 
 /**
- * The object proof's edges: {@link PDFIUM_COMMAND}'s, and the contract's barrel, whose command schemas its cases
- * parse through.
- *
- * @type {BuildEdge[]}
- */
-export const PDFIUM_OBJECT = [
-  ...PDFIUM_COMMAND,
-  ['packages/contract/src', 'packages/contract/dist/index.js', 'tsc'],
-  // THE ONE PLACEMENT MATRIX (ADR-0243), which every placement this proof reads back is made of.
-  ['packages/kernel/src/objectPlacementMatrix.ts', 'packages/kernel/dist/objectPlacementMatrix.js', 'tsc'],
-];
-
-/**
  * The read-back proof's edges: {@link PDFIUM_COMMAND}'s, and every module the other PDFium commands' specs live in,
- * since its subject is that ALL eight reach the read-back (ADR-0169) — plus the refusals it classifies by class.
+ * since its subject is that ALL of them reach the read-back (ADR-0169) — plus the refusals it classifies by class.
  *
  * @type {BuildEdge[]}
  */
 export const PDFIUM_READ_BACK = [
   ...PDFIUM_COMMAND,
-  ['packages/kernel/src/pdfiumObjectEdit.ts', 'packages/kernel/dist/pdfiumObjectEdit.js', 'tsc'],
   ['packages/kernel/src/pdfiumReplaceAll.ts', 'packages/kernel/dist/pdfiumReplaceAll.js', 'tsc'],
   ['packages/kernel/src/pdfiumPromote.ts', 'packages/kernel/dist/pdfiumPromote.js', 'tsc'],
   ['packages/kernel/src/textEditRefusals.ts', 'packages/kernel/dist/textEditRefusals.js', 'tsc'],
@@ -363,22 +349,6 @@ export const TEXT_SPACES = [
   ['packages/kernel/src', 'packages/kernel/dist/index.js', 'tsc'],
   ['packages/contract/src/commands.ts', 'packages/contract/dist/commands.js', 'tsc'],
   ['packages/shared/src', 'packages/shared/dist/index.js', 'tsc'],
-  ...NATIVE_ENGINE,
-];
-
-/**
- * What `drawnObjectPlace.proof.mjs` runs (ADR-0240): PDFium's reading and route, and MuPDF's placement in the content
- * stream with the numbering beneath it, on the native engine.
- *
- * @type {BuildEdge[]}
- */
-export const DRAWN_OBJECT_PLACE = [
-  ['packages/kernel/src/drawnObjectPlace.ts', 'packages/kernel/dist/drawnObjectPlace.js', 'tsc'],
-  ['packages/kernel/src/textOperators.ts', 'packages/kernel/dist/textOperators.js', 'tsc'],
-  ['packages/kernel/src/pdfiumFfi.ts', 'packages/kernel/dist/pdfiumFfi.js', 'tsc'],
-  ['packages/kernel/src/pdfiumSpecs.ts', 'packages/kernel/dist/pdfiumSpecs.js', 'tsc'],
-  ['packages/kernel/src/mupdfWriter.ts', 'packages/kernel/dist/mupdfWriter.js', 'tsc'],
-  ['packages/kernel/src/objectPlacementMatrix.ts', 'packages/kernel/dist/objectPlacementMatrix.js', 'tsc'],
   ...NATIVE_ENGINE,
 ];
 
@@ -672,7 +642,6 @@ export const ARTEFACT_EDGES = {
   // The object commands read the same built modules through the same routing,
   // so the same edges: the adapter, the two that dispatch to it, and the table
   // that says they should.
-  'proof:pdfiumobject': PDFIUM_OBJECT,
   // The page-content read (ADR-0210): the adapter and the channels module its image budget comes from.
   'proof:pdfiumcontent': PDFIUM_PAGE_CONTENT,
   // The fidelity proof drives the same built adapter, and reads pixels rather
@@ -727,7 +696,6 @@ export const ARTEFACT_EDGES = {
   'proof:fontworkapart': FONT_WORK_APART,
   'proof:apartstart': APART_START,
   // ADR-0240: a drawn object placed in its content stream, against PDFium's own route. Registered with its entry.
-  'proof:drawnobjects': DRAWN_OBJECT_PLACE,
   'proof:shimpassword': SHIM_PASSWORD,
   // THE WORD EXPORT'S PICTURES, read back by a zip reader and a PNG decoder that are not the writer's.
   'proof:wordpictures': WORD_PICTURES,

@@ -200,25 +200,11 @@ describe('the declaration table', () => {
         `invertible entry keeps its prior for ever and a terminal one keeps a whole document ` +
         `image. Before adding a kind here, check its prior is BOUNDED by the contract; if it ` +
         `is document-scaled, the declaration is wrong rather than this list.`,
-      // THE CHECK THE MESSAGE ABOVE ASKS FOR, carried out on 2026-09-10 for the
-      // two that joined:
-      //
-      // - `placePageObject`'s prior is a page, an index and SIX FLOATS — an
-      //   object's own matrix. Bounded by the shape, not by a constant.
-      // - `recolorPageObjects`' is four small integers per object, and the list
-      //   is capped at `MAX_EDITED_OBJECTS`, which is a page's worth. Bounded
-      //   by the contract.
-      //
-      // Neither grows with the document, so both belong here. `deletePageObjects`
-      // is deliberately absent: PDFium cannot rebuild a removed object, so it is
-      // declared terminal and appears in the control below instead.
+      // THE CHECK THE MESSAGE ABOVE ASKS FOR:
       //
       // - `replaceTextAt`'s (2026-10-04, ADR-0156) is `replaceTextObject`'s shape with ONE object: a page, an index and
       //   the string it held, capped by `PDFIUM_PRIOR_TEXT_MAX` on the wire. Bounded by the contract.
-      // - `placePageObjects`' (2026-10-14, ADR-0242) is `placePageObject`'s six floats per object, the list capped at
-      //   `MAX_EDITED_OBJECTS` on the command and `ENGINE_TEXT_OBJECTS_MAX` on the wire. Bounded by the contract.
-      // - `arrangePageObject`'s (2026-10-14, ADR-0244) is a page and two places: three integers. Bounded by the shape.
-    ).toStrictEqual(['replaceTextObject', 'placePageObject', 'placePageObjects', 'arrangePageObject', 'recolorPageObjects', 'replaceTextAt']);
+    ).toStrictEqual(['replaceTextObject', 'replaceTextAt']);
   });
 
   it('CONTROL: some byte-image command is TERMINAL, so the case above is a property and not a description', () => {
@@ -226,14 +212,14 @@ describe('the declaration table', () => {
     // would satisfy the case above by listing them all — and the retention
     // rule it states would be about a distinction the table no longer draws.
     // The pdf-lib content commands kept both sides populated until ADR-0121
-    // Decision 3 hosted them; PDFium's `deletePageObjects` and the signer keep
-    // the terminal side now.
+    // Decision 3 hosted them; PDFium's block edit and the signer keep the
+    // terminal side now.
     const terminalByteImage = KINDS.filter(
       (kind) =>
         writerShapes[declaredCommands[kind].writer] === 'byte-image' &&
         !declaredCommands[kind].invertible,
     );
-    expect(terminalByteImage).toContain('deletePageObjects');
+    expect(terminalByteImage).toContain('editTextBlock');
   });
 
   it('CONTROL: the sources derivation names a kind, so the type equality is not two empty sets', () => {
@@ -287,15 +273,6 @@ describe('the declaration table', () => {
       // A TAB ORDER puts the widget walk in order, and a given one names its fields by their places in it (ADR-0226 D15).
       'setTabOrder',
       'replaceTextObject',
-      'placePageObject',
-      // A BLOCK placed as one, named by its objects' indices in the same walk (ADR-0242).
-      'placePageObjects',
-      // AN OBJECT moved a place in front or behind, named by its index in the same walk (ADR-0244).
-      'arrangePageObject',
-      // A PICTURE, A FORM OR A SHAPE placed where it is drawn, named by the same walk's index (ADR-0240).
-      'placeDrawnObject',
-      'recolorPageObjects',
-      'deletePageObjects',
       // A BLOCK EDIT names the runs a read answered, at that read's version (ADR-0096).
       'editTextBlock',
       // AND THE SAME BLOCKS on a Type 3 page, the same read's names and version (ADR-0176).

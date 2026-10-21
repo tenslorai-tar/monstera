@@ -7,7 +7,7 @@ import {
   channels,
   createClient,
 } from '@monstera/contract';
-import { type DocId, asDocId, asDocVersion, asFileHandle, err, ok } from '@monstera/shared';
+import { type DocId, asDocId, asDocVersion, asFileHandle, err, messageKey, ok } from '@monstera/shared';
 import { act, cleanup, fireEvent, render as renderBare, screen, within } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -18,12 +18,13 @@ import { CONVERT_SCAN_TARGETS } from './commands/convertScan.js';
 import { reportProblem } from './commands/documentCommands.js';
 import { START_SCREEN_CONTEXT } from './commands/help.js';
 import { HELP_ARTICLES } from './help/articles.js';
-import type { CommandRegistry } from './registries/commands.js';
+import { CommandRegistry, type UiCommand } from './registries/commands.js';
 import type { DialogRegistry } from './registries/dialogs.js';
 import { SECTION_IDS } from './registries/placement.js';
 import { START_SCREEN_RECENT } from './RecentFiles.js';
 import { RECENT_RECHECK_MS } from './recentLine.js';
 import { CONTEXT_PANEL_TAB_SETTING, DOCUMENT_PANEL_SETTING, FLOAT_BAR_POSITION_SETTING } from './settings/layout.js';
+import * as projections from './surfaces/projections.js';
 import { SECTION_TITLES } from './surfaces/Ribbon.js';
 import { WRITTEN_TIPS, tipsOf } from './tips/tips.js';
 import type { Article, Inline } from './help/article.js';
@@ -355,7 +356,7 @@ const OPEN_DOCUMENT_ANSWERS = {
   // fixtures throw on a channel they have no answer for.
   'window.closeListening': { acknowledged: true },
   'app.rendererEnded': { kind: 'none' as const },
-  // EDIT TEXT AND EDIT OBJECT ask main to start their engine as they are chosen (R11).
+  // EDIT TEXT asks main to start its engine as it is chosen (R11).
   'app.prepareEditing': { started: true },
   'document.held': { documents: [] },
   'document.fileAccess': { access: 'writable' as const },
@@ -2781,11 +2782,11 @@ describe('App', () => {
       expect(blockReads.length).toBeGreaterThan(before);
     });
 
-    it('EDIT TEXT AND EDIT OBJECT each ask main to start the editing engine as they are chosen, and nothing before (R11)', async () => {
+    it('EDIT TEXT asks main to start the editing engine each time it is chosen, and nothing before (R11)', async () => {
       const asked: string[] = [];
       const client = createClient(channels, (id) => {
         asked.push(id);
-        // THE MODES' READS refused as an installation with no editing engine refuses them: this case is about the start.
+        // THE MODE'S READS refused as an installation with no editing engine refuses them: this case is about the start.
         if (id === 'document.textBlocks' || id === 'document.pageObjects') return Promise.resolve(err({ code: 'engine-unavailable' as const }));
         const answers: Readonly<Record<string, unknown>> = OPEN_DOCUMENT_ANSWERS;
         const answer = answers[id];
@@ -2805,7 +2806,8 @@ describe('App', () => {
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
         await Promise.resolve();
       });
-      await pressCommand('Edit object', 'Edit');
+      // LEFT, then chosen again: asked again, once for each time the mode is entered.
+      await pressCommand('Edit text', 'Edit');
       await act(async () => {
         await Promise.resolve();
       });
@@ -3127,6 +3129,100 @@ describe('App', () => {
     for (const target of Object.values(CONVERT_SCAN_TARGETS)) expect(text, target).toContain(`\`${target}\``);
     expect(text).not.toContain('`document.convert-scan-typo`');
     await expect(text).toMatchFileSnapshot('../../../docs/manual-test-checklist.md');
+  });
+
+  it('NO EDIT OBJECT COMMAND IS REACHABLE from any projection of the registry (R20, the owner’s decision of 2026-10-21)', () => {
+    // Edit object was withdrawn, not hidden: a command kept behind a `when` would still be one condition away from a
+    // surface. So every `when` is dropped and every projection is walked, and a command is found wherever it sits in a
+    // model's shape — by its id, or by the title a person reads.
+    let commands: CommandRegistry | undefined;
+    const { client } = recordingClient({ kind: 'cancelled' });
+    render(<App client={client} settings={freshSettings()} onRegistries={(registries) => (commands = registries.commands)} />);
+    if (commands === undefined) throw new Error('the shell reported no registries');
+    const shell = commands;
+
+    const CONTEXT = {
+      selectedPages: [0],
+      docId: asDocId('00000000-0000-4000-8000-000000000001'),
+      version: asDocVersion(1),
+      hasSelection: true,
+      dirty: true,
+      page: 0,
+      pageCount: 3,
+      openDocuments: [],
+    };
+    const MENUS = ['page', 'annotation', 'selection', 'tab', 'field'] as const;
+    // EVERY PROJECTION the module exports, named here once; the next line fails the day one is added and not walked.
+    const PROJECTIONS: Record<string, (registry: CommandRegistry) => unknown> = {
+      ribbonModel: (registry) => projections.ribbonModel(registry, CONTEXT),
+      railModel: (registry) => projections.railModel(registry, CONTEXT),
+      propertiesModel: (registry) => projections.propertiesModel(registry, CONTEXT),
+      showMeModel: (registry) => projections.showMeModel(registry, CONTEXT),
+      quickToolbarModel: (registry) => projections.quickToolbarModel(registry, CONTEXT),
+      contextMenuModel: (registry) => MENUS.map((menu) => projections.contextMenuModel(registry, CONTEXT, menu)),
+      startScreenModel: (registry) => projections.startScreenModel(registry, CONTEXT),
+      statusBarModel: (registry) => projections.statusBarModel(registry, CONTEXT),
+      menuBarCommandsModel: (registry) => projections.menuBarCommandsModel(registry, CONTEXT),
+      menuBarModel: (registry) => projections.menuBarModel(registry, CONTEXT),
+      paletteModel: (registry) => projections.paletteModel(registry, CONTEXT),
+      shortcutMapOf: (registry) => projections.shortcutMapOf(registry),
+    };
+    expect(Object.keys(projections).filter((name) => /Model$|^shortcutMapOf$/u.test(name)).sort()).toStrictEqual(Object.keys(PROJECTIONS).sort());
+
+    /** Every command a value holds, however deep: a model is arrays, maps and records of entries. */
+    const commandsIn = (value: unknown, found: Map<string, UiCommand>): void => {
+      if (value instanceof Map) for (const inner of value.values()) commandsIn(inner, found);
+      else if (Array.isArray(value)) for (const inner of value) commandsIn(inner, found);
+      else if (typeof value === 'object' && value !== null) {
+        if ('id' in value && 'placements' in value && typeof value.id === 'string') found.set(value.id, value as UiCommand);
+        else for (const inner of Object.values(value)) commandsIn(inner, found);
+      }
+    };
+    const editObject = (registry: CommandRegistry): string[] => {
+      const found = new Map<string, UiCommand>();
+      for (const project of Object.values(PROJECTIONS)) commandsIn(project(registry), found);
+      return [...found.values()]
+        .filter((command) =>
+          /object/iu.test(command.id) ||
+          [command.title, command.ribbonTitle].some((key) => key !== undefined && /\bobjects?\b/iu.test(i18n._(key))),
+        )
+        .map((command) => command.id);
+    };
+    const unconditional = (list: readonly UiCommand[]): CommandRegistry =>
+      new CommandRegistry(list.map(({ when: _when, ...command }) => command));
+
+    const reachable = new Map<string, UiCommand>();
+    for (const project of Object.values(PROJECTIONS)) commandsIn(project(unconditional(shell.all())), reachable);
+    // CONTROL: the walk sees the shell — every registered command is reachable once nothing hides it.
+    expect([...reachable.keys()].sort()).toStrictEqual(shell.all().map((command) => command.id).sort());
+    expect(editObject(unconditional(shell.all()))).toStrictEqual([]);
+
+    // CONTROL: a command planted with Edit object's id is found, and so is one whose id says nothing but whose title
+    // a person reads as Edit object — on a ribbon and on a right-click menu, hidden by a `when` that is false.
+    const planted = (id: string, title: string, placement: UiCommand['placements'][number]): UiCommand => ({
+      id,
+      title: messageKey(title),
+      icon: 'File',
+      placements: [placement],
+      when: () => false,
+      run: () => undefined,
+      feedback: { kind: 'visible' },
+    });
+    // THE TITLE AS DRAWN: the planted key's own spelling says nothing, so only the catalogue's words can be matched.
+    activateCatalogue('en', { ...EN, 'test.planted': 'Plain', 'test.planted-title': 'Edit all objects' });
+    try {
+      expect(
+        editObject(
+          unconditional([
+            ...shell.all(),
+            planted('edit.objects-all', 'test.planted', { surface: 'ribbon', section: 'edit', group: messageKey('test.group'), order: 1 }),
+            planted('edit.planted', 'test.planted-title', { surface: 'context-menu', context: 'page', order: 1 }),
+          ]),
+        ).sort(),
+      ).toStrictEqual(['edit.objects-all', 'edit.planted']);
+    } finally {
+      activateCatalogue('en', EN);
+    }
   });
 
   it('every Help article’s “choose SECTION, then TOOL in the GROUP group” is where the ribbon puts that tool', () => {

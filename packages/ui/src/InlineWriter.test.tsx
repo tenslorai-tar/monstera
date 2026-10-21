@@ -19,8 +19,8 @@ function Wrapped({ children }: { children: ReactNode }): ReactElement {
  * tools' cases (`textTools.test.ts` and its siblings) see which request a gesture makes and cannot see a box; this sees
  * the box and what each way of ending it answers, and cannot see a tool.
  *
- * `ObjectEditLayer.test`'s geometry on purpose: a non-zero crop origin and a zoom that is not 1, so an editor passing
- * PDF numbers straight through fails rather than coincides.
+ * A non-zero crop origin and a zoom that is not 1, on purpose, so an editor passing PDF numbers straight through fails
+ * rather than coincides.
  */
 const GEOMETRY = {
   crop: [50, 100, 250, 400] as readonly [number, number, number, number],

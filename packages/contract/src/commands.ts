@@ -3593,36 +3593,6 @@ export function keepsTheAnnotationWalk<C extends { readonly kind: string }>(
 }
 
 /**
- * The page-object commands that leave a page's OBJECT walk as it was — the same objects, in the same order, the edited
- * one at its own index — so an object selected on the page stays selected across them
- * ([ADR-0153](../../../docs/DECISIONS/0153-edit-object-is-a-mode-on-the-page-and-a-placed-picture-is-one-of-its-objects.md)
- * Decision 4). {@link KEEPS_THE_ANNOTATION_WALK}'s rule on PDFium's walk.
- *
- * **Measured 2026-10-04** with PDFium 155.0.8044.0, on a page of two text runs, a rule and two images: a move, a
- * resize and a recolour each answered the same five kinds in the same order; a removal shifted every later index, which
- * is why `deletePageObjects` is not here.
- */
-export const KEEPS_THE_OBJECT_WALK: ReadonlySet<ObjectWalkKeepingKind> = new Set([
-  'placePageObject',
-  // A DRAWN OBJECT WRAPPED in `q cm … Q` is still one object of its kind at its place (ADR-0240): measured by
-  // `objectPlacement.test.ts` against PDFium's walk before and after.
-  'placeDrawnObject',
-  // SEVERAL OBJECTS each given a new matrix by PDFium, `placePageObject`'s measured case taken once per object (ADR-0242).
-  'placePageObjects',
-  'recolorPageObjects',
-] as const);
-
-/** The kinds {@link KEEPS_THE_OBJECT_WALK} names. */
-export type ObjectWalkKeepingKind = 'placePageObject' | 'placeDrawnObject' | 'placePageObjects' | 'recolorPageObjects';
-
-/** Whether `command` is one of them — the set's one reader for a command in hand. */
-export function keepsTheObjectWalk<C extends { readonly kind: string }>(
-  command: C,
-): command is Extract<C, { readonly kind: ObjectWalkKeepingKind }> {
-  return (KEEPS_THE_OBJECT_WALK as ReadonlySet<string>).has(command.kind);
-}
-
-/**
  * The form-field commands that leave the WIDGET walk as it was: the same widgets, of the same kinds, at the same places in
  * each page's walk. {@link KEEPS_THE_ANNOTATION_WALK}'s rule on the widget walk. An edit changes a field's dictionary and
  * its widget's geometry and appearance in place; it adds, removes and reorders no widget, and the kernel proves it against
@@ -3665,12 +3635,6 @@ const WALK_NAMED_BY: Readonly<Record<NamesAnAnnotation | NamesAFormField | Names
   setTabOrder: 'field',
   flattenFormFields: 'field',
   replaceTextObject: 'object',
-  placePageObject: 'object',
-  placeDrawnObject: 'object',
-  placePageObjects: 'object',
-  arrangePageObject: 'object',
-  recolorPageObjects: 'object',
-  deletePageObjects: 'object',
   editTextBlock: 'object',
   editTextOperators: 'object',
 };
@@ -3683,7 +3647,6 @@ export function walkNamedBy(command: { readonly kind: string }): CommandWalk | u
 /** The walk `command` leaves as it was, by the three sets above, or `undefined` where it keeps none of them. */
 export function walkKeptBy(command: { readonly kind: string }): CommandWalk | undefined {
   if (keepsTheAnnotationWalk(command)) return 'annotation';
-  if (keepsTheObjectWalk(command)) return 'object';
   if ((KEEPS_THE_FIELD_WALK as ReadonlySet<string>).has(command.kind)) return 'field';
   return undefined;
 }
@@ -6061,24 +6024,12 @@ export const replaceTextObjectSchema = z
   );
 
 /**
- * How many of one page's objects a recolour or a removal may name.
- *
- * **DERIVED**, where two bounds that merely agree are not one bound: {@link MAX_EDIT_RUNS} answers *how many of a
- * page's objects may one command name*, and so does this — the commands differ in what they do to the objects, not in
- * how many of a page they may name. A literal here would be a second answer to one question.
- *
- * The test that separates them: could the two numbers ever correctly differ? For a payload bound and a chooser's
- * usability bound, yes. For two payload bounds over the same page, no.
- */
-export const MAX_EDITED_OBJECTS = MAX_EDIT_RUNS;
-
-/**
  * The largest and smallest a scale factor may be.
  *
  * A range rather than *any positive number*, and both ends earn their place.
  * Zero and below are excluded because a factor of zero collapses an object to
- * nothing — a delete wearing a placement's clothes, and this build has a delete
- * — while a negative one mirrors it, which is a different operation nobody
+ * nothing — a delete wearing a placement's clothes — while a negative one
+ * mirrors it, which is a different operation nobody
  * asked for and which no surface could express by dragging. The upper bound is
  * `MAX_PAGE_COORDINATE`-shaped reasoning rather than a guess: a scale past this
  * puts every object off any conforming page, so it is a payload that can only
@@ -6086,201 +6037,6 @@ export const MAX_EDITED_OBJECTS = MAX_EDIT_RUNS;
  */
 export const MIN_OBJECT_SCALE = 0.001;
 export const MAX_OBJECT_SCALE = 1000;
-
-/**
- * Moves and resizes one of a page's objects — the first of the three
- * object-level commands, and the only one that names a single object.
- *
- * ## AN INTENT, NOT A MATRIX, and that is a measurement
- *
- * `scripts/research/pdfiumObjects.mjs`, PDFium 155.0.8044.0, 2026-09-10: a
- * rectangle at x=200..320 scaled by 2 through `FPDFPageObj_Transform` landed at
- * **400..640** — off a 400pt page — because a matrix scales about the
- * coordinate system's origin. A person asking for something twice as big never
- * means that, so the payload says *how much bigger* and the kernel composes the
- * anchor. A raw matrix on this wire would make every caller responsible for
- * that composition, and the first one to get it wrong would move an object off
- * the page with no rule broken.
- *
- * ## One object, where its two siblings take a list
- *
- * `recolorPageObjects` and `deletePageObjects` name lists, because *make these
- * red* and *delete these* are one thing a person did. *Move these by the same
- * amount* is coherent; *make these each twice as big* is not, since each would
- * scale about its own box and the group would come apart. So this one names one
- * object, and moving several is several commands rather than a command whose
- * meaning changes with its length.
- */
-export const placePageObjectSchema = z.object({
-  kind: z.literal('placePageObject'),
-  /** Zero-based index of the page the object sits on. */
-  page: z.number().int().nonnegative(),
-  /** Its position in the page-object walk that produced the answer this names. */
-  index: z.number().int().nonnegative(),
-  /**
-   * Points to add to the object's position. Zero is legal — a pure resize.
-   *
-   * Bounded by `MAX_PAGE_COORDINATE` symmetrically, `annotationRectSchema`'s
-   * reason: a page may have a negative `/MediaBox` origin, and an offset larger
-   * than the largest conforming page can only move an object off every one.
-   */
-  moveBy: z
-    .object({
-      x: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
-      y: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
-    })
-    .strict(),
-  /** Factors to multiply width and height by. One is legal — a pure move. */
-  scaleBy: z
-    .object({
-      x: z.number().min(MIN_OBJECT_SCALE).max(MAX_OBJECT_SCALE),
-      y: z.number().min(MIN_OBJECT_SCALE).max(MAX_OBJECT_SCALE),
-    })
-    .strict(),
-  /**
-   * Degrees to turn it by, counter-clockwise as PDF measures them, about the centre of the box the scale left
-   * ([ADR-0243](../../../docs/DECISIONS/0243-an-objects-placement-may-turn-it.md)). Absent is none, which is every
-   * placement written before the rotate handle; `blockPlaceSchema`'s `rotate` has the same bound.
-   */
-  rotateBy: z.number().min(-360).max(360).optional(),
-  /** The version that answer carried. Refused if the document has moved. */
-  version: docVersionSchema,
-}).strict();
-
-/**
- * Moves and resizes a picture, a form or a shape WHERE IT IS DRAWN
- * ([ADR-0240](../../../docs/DECISIONS/0240-an-objects-placement-is-edited-where-it-is-drawn.md)): its own instructions
- * wrapped in the page's content stream, so no text on the page is written again and no font can refuse it.
- * `placePageObject`'s intent and anchor, for a drawn object.
- *
- * Named twice, and both are checked: `index` is its place in PDFium's walk, the one the selection and the command lane
- * hold, and `object` with `ordinal` is its place among the page's objects of that kind, which is how the writer finds
- * its instructions. `box` is the box the listing gave, which the found object must land on, so a page that moved under
- * the listing is refused rather than edited somewhere else.
- */
-export const placeDrawnObjectSchema = z
-  .object({
-    kind: z.literal('placeDrawnObject'),
-    page: z.number().int().nonnegative(),
-    index: z.number().int().nonnegative(),
-    object: z.enum(['path', 'image', 'form']),
-    ordinal: z.number().int().nonnegative().max(MAX_OBJECT_INDEX),
-    box: z
-      .object({
-        left: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
-        bottom: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
-        right: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
-        top: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
-      })
-      .strict(),
-    moveBy: placePageObjectSchema.shape.moveBy,
-    scaleBy: placePageObjectSchema.shape.scaleBy,
-    rotateBy: placePageObjectSchema.shape.rotateBy,
-    version: docVersionSchema,
-  })
-  .strict();
-
-/**
- * Moves and resizes SEVERAL page objects as one thing
- * ([ADR-0242](../../../docs/DECISIONS/0242-edit-object-picks-text-by-the-block-edit-text-reads.md)): a block of text a
- * producer wrote a word or a letter at a time. Every object takes one page matrix, scaled about the GROUP's lower-left
- * corner and then moved, so the block keeps its shape; `placePageObject`'s note refuses a list without such an anchor.
- *
- * `box` is the group's box as the renderer outlined it, and is the anchor. Two indices at least: one object is
- * `placePageObject`'s, and the command a person's drag sends is decided by what they picked, never by a list's length.
- */
-export const placePageObjectsSchema = z
-  .object({
-    kind: z.literal('placePageObjects'),
-    page: z.number().int().nonnegative(),
-    indices: z.array(objectIndexSchema).min(2).max(MAX_EDITED_OBJECTS),
-    box: placeDrawnObjectSchema.shape.box,
-    moveBy: placePageObjectSchema.shape.moveBy,
-    scaleBy: placePageObjectSchema.shape.scaleBy,
-    rotateBy: placePageObjectSchema.shape.rotateBy,
-    version: docVersionSchema,
-  })
-  .strict();
-
-/**
- * Moves one page object one place in front of or behind its neighbour
- * ([ADR-0244](../../../docs/DECISIONS/0244-arrange-reorders-an-object-through-pdfiums-own-list.md)): what is drawn later
- * is drawn on top, so `forward` puts it after the next object in the page's list and `backward` before the one before.
- */
-export const arrangePageObjectSchema = z
-  .object({
-    kind: z.literal('arrangePageObject'),
-    page: z.number().int().nonnegative(),
-    index: objectIndexSchema,
-    toward: z.enum(['forward', 'backward']),
-    version: docVersionSchema,
-  })
-  .strict();
-
-/**
- * Recolours a page's objects — **text objects included**.
- *
- * The *included* is measured rather than hoped: `FPDFPageObj_SetFillColor`
- * answers 1 for a text object as well as a path, and the colour survives a save
- * and a reopen (2026-09-10). A command that quietly worked on shapes only would
- * be the wired-tools defect on the kind a person is most likely to pick.
- *
- * ## One colour for the list, not one per entry
- *
- * *Make these red* is the intent; a per-entry colour would express *make this
- * one red and that one blue*, which is two things a person did and belongs in
- * two commands with two undo steps. `createFormField`'s shared page, one axis
- * along.
- *
- * ## RGB and an alpha, because that is what the engine stores
- *
- * Not a design token: `onColor` and the token scale govern **this
- * application's** surfaces, and these bytes are a value inside somebody's
- * document. A token here would put Monstera's palette into a file the user owns.
- */
-export const recolorPageObjectsSchema = z.object({
-  kind: z.literal('recolorPageObjects'),
-  page: z.number().int().nonnegative(),
-  /** The objects to recolour, in the engine's own numbering. */
-  indices: z.array(objectIndexSchema).min(1).max(MAX_EDITED_OBJECTS),
-  /** The colour they should all take. Channels are 0–255, as PDFium stores them. */
-  colour: z
-    .object({
-      red: z.number().int().min(0).max(255),
-      green: z.number().int().min(0).max(255),
-      blue: z.number().int().min(0).max(255),
-      /** Opacity. 255 is opaque, which is what every producer writes by default. */
-      alpha: z.number().int().min(0).max(255),
-    })
-    .strict(),
-  version: docVersionSchema,
-}).strict();
-
-/**
- * Removes objects from a page.
- *
- * ## It cannot be undone from a prior, and that is a property of the LIBRARY
- *
- * PDFium offers no way to reconstruct a page object from a description, so
- * there is no prior state a capture could hold — which is why this command's
- * declaration is a **checkpoint** one while its two siblings are invertible.
- * The fact is recorded here as well as there because a reader deciding what the
- * payload should carry needs it: a field describing the removed object would be
- * a prior nothing could put back.
- *
- * ## Duplicates are accepted, `deletePages`' reason exactly
- *
- * An object named twice is the same object, which is a set operation with an
- * obvious answer, and refusing it would make a UI that gathered a selection
- * responsible for de-duplicating it. The kernel takes the set.
- */
-export const deletePageObjectsSchema = z.object({
-  kind: z.literal('deletePageObjects'),
-  page: z.number().int().nonnegative(),
-  /** The objects to remove, in the engine's own numbering. */
-  indices: z.array(objectIndexSchema).min(1).max(MAX_EDITED_OBJECTS),
-  version: docVersionSchema,
-}).strict();
 
 /**
  * Normalize-then-edit: promote a page's Form XObject content into the page.
@@ -6294,14 +6050,13 @@ export const deletePageObjectsSchema = z.object({
  * renderer to name a structure it has no channel for and no reason to know
  * about.
  *
- * ## It is TERMINAL, and this is the fourth distinct reason in this build
+ * ## It is TERMINAL
  *
- * `deletePageObjects` has no prior because PDFium cannot rebuild an object;
  * `flattenFormFields`' prior is unserialisable; `replaceAllText`'s is
  * document-scaled. This one's prior would be **a Form XObject and its
  * placement**, and PDFium's public API can take a form apart and cannot build
- * one — so the inverse is unrepresentable in the same way the first is, arrived
- * at from the other direction. Undo takes a checkpoint.
+ * one — so the inverse is unrepresentable: every piece is recoverable and the
+ * container is not. Undo takes a checkpoint.
  *
  * ## And it RENUMBERS, which is why it is its own command
  *
@@ -6530,17 +6285,13 @@ export const MAX_BLOCK_PLACES = 64;
  * How a block is placed after its words are laid out
  * ([ADR-0180](../../../docs/DECISIONS/0180-formatting-is-marks-over-a-blocks-words-and-a-block-is-moved-resized-and-added-by-its-own-commands.md),
  * corrected 2026-10-06): moved, scaled about its top left, rotated about its centre, and laid out at a new measure.
- * Every field is optional and at least one is named; each is an INTENT in points and degrees, for the reason
- * `placePageObject` is: a matrix on this wire would make every caller compose the anchor.
+ * Every field is optional and at least one is named; each is an INTENT in points and degrees: a matrix on this wire
+ * would make every caller compose the anchor.
+ *
+ * ONE SHAPE. A second, a placement about a named box, served Edit object alone and left with it on 2026-10-21 (R20;
+ * ADR-0240's correction of that date).
  */
-/**
- * A text block's placement, ONE OF TWO SHAPES — never both: the block command's own move, scale, turn and measure, or
- * Edit object's placement {@link blockPlaceAboutSchema}. A union rather than one object with a refinement that refused
- * the mix: a refinement is invisible to the schema's size bound (`schemaBound.ts`), which then measured a placement
- * carrying both shapes' fields at once and put two routes past their ceilings (`hostRoutes.test.ts`). The union says
- * what the refinement did, where both the type and the bound can read it (B5).
- */
-const blockPlaceOwnSchema = z
+export const blockPlaceSchema = z
   .object({
     block: z.number().int().min(0).max(MAX_EDIT_RUNS),
     /** Points added to every object of the block, in PDF user space. */
@@ -6560,38 +6311,7 @@ const blockPlaceOwnSchema = z
   })
   .strict();
 
-/**
- * The placement AS AN OBJECT COMMAND MEANS IT ([ADR-0240](../../../docs/DECISIONS/0240-an-objects-placement-is-edited-where-it-is-drawn.md)'s
- * correction of 2026-10-19): about `box`, with a scale on each axis, by ADR-0243's one placement matrix — how Edit
- * object places a text block, so it lands where `placePageObjects` would have put it. A placement naming it names
- * nothing else, so the block is placed one way and its words are carried as they were. The operator writer takes it;
- * PDFium's block writer refuses it rather than ignore it.
- */
-const blockPlaceAboutSchema = z
-  .object({
-    block: z.number().int().min(0).max(MAX_EDIT_RUNS),
-    about: z
-      .object({
-        box: placeDrawnObjectSchema.shape.box,
-        moveBy: placePageObjectSchema.shape.moveBy,
-        scaleBy: placePageObjectSchema.shape.scaleBy,
-        rotateBy: placePageObjectSchema.shape.rotateBy,
-      })
-      .strict(),
-  })
-  .strict();
-
-export const blockPlaceSchema = z.union([blockPlaceOwnSchema, blockPlaceAboutSchema]);
-
 export type BlockPlace = z.infer<typeof blockPlaceSchema>;
-
-/**
- * Either placement READ as one record, the absent shape's fields `undefined` — for a reader that asks each field in
- * turn. Both branches of {@link BlockPlace} are assignable to it as they are, so a reader takes a wire value with no
- * cast, and the wire schema stays the union that refuses the mix.
- */
-export type BlockPlaceReading = Partial<Omit<z.infer<typeof blockPlaceOwnSchema>, 'block'>> &
-  Partial<Omit<z.infer<typeof blockPlaceAboutSchema>, 'block'>> & { readonly block: number };
 
 /**
  * The most blocks one edit may push (invariant L11): the blocks below one block in its column, on one page. Set by the file
@@ -6651,7 +6371,7 @@ export interface BlockFormatting {
   /** By paragraph, ascending. */
   readonly paragraphs?: readonly Omit<ParagraphProps, 'block'>[];
   /** How the block is placed once its words are laid out (ADR-0180, corrected 2026-10-06). */
-  readonly place?: Omit<BlockPlaceReading, 'block'>;
+  readonly place?: Omit<BlockPlace, 'block'>;
 }
 
 /**
@@ -6706,12 +6426,7 @@ export const blockEditSchema = z
     /** How named paragraphs are set (ADR-0180 Decision 2). Optional, absence meaning as the read found them. */
     paragraphs: z.array(paragraphPropsSchema).max(MAX_BLOCK_MARKS).optional(),
     /** How named blocks are moved, scaled, rotated and set at a new measure (ADR-0180, corrected 2026-10-06). */
-    //
-    // THE BLOCK COMMAND'S OWN PLACEMENTS, up to {@link MAX_BLOCK_PLACES}, OR EDIT OBJECT'S ONE: Edit object places the
-    // one block a press picked, so its larger shape is admitted once, and the worst case is the larger of the two
-    // rather than the larger shape times the block command's count — which put `engine/apply` past the frame and
-    // `engine/apply-file` past the file ceiling (`hostRoutes.test.ts`).
-    places: z.union([z.array(blockPlaceOwnSchema).max(MAX_BLOCK_PLACES), z.array(blockPlaceAboutSchema).length(1)]).optional(),
+    places: z.array(blockPlaceSchema).max(MAX_BLOCK_PLACES).optional(),
     /** Boxes of new text, laid out by the same writer as a block's words. An edit may hold only these. */
     inserts: z.array(pageInsertSchema).max(MAX_PAGE_INSERTS).optional(),
     /** The blocks in the edit to be moved down by another's growth, never written (ADR-0249 Decision 3). */
@@ -6932,7 +6647,7 @@ export function blocksOfEdit(edit: BlockEdit): EditedBlock[] {
  * ## TERMINAL
  *
  * It creates and removes objects, and PDFium can describe an object and cannot
- * rebuild one — `deletePageObjects`' reason. Undo takes a checkpoint.
+ * rebuild one. Undo takes a checkpoint.
  *
  * ## One index once
  *
@@ -7067,12 +6782,6 @@ export const commandSchema = z.discriminatedUnion('kind', [
   importFormDataSchema,
   importAnnotationsSchema,
   replaceTextObjectSchema,
-  placePageObjectSchema,
-  placeDrawnObjectSchema,
-  placePageObjectsSchema,
-  arrangePageObjectSchema,
-  recolorPageObjectsSchema,
-  deletePageObjectsSchema,
   promoteFormObjectsSchema,
   replaceAllTextSchema,
   replaceTextAtSchema,
@@ -7276,21 +6985,6 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // produced, and a few bounded numbers — the payload is the same size whatever
   // the document weighs.
   //
-  // What the renderer cannot express is the ANCHOR a scale turns about.
-  // Measured 2026-09-10: `FPDFPageObj_Transform` scales about the page's
-  // origin, so an object at x=200 doubled lands at 400. Composing the object's
-  // own box into that needs the box, which only the engine has — so the payload
-  // says *how much bigger* and the kernel says *about what*.
-  placePageObjectSchema,
-  // RENDERABLE, `placePageObject`'s reason: an intent, the box the listing gave and the object's place by kind; the
-  // writer finds its instructions and composes the anchor (ADR-0240).
-  placeDrawnObjectSchema,
-  // RENDERABLE: the indices of one block and the box the renderer outlined, which IS the anchor here (ADR-0242).
-  placePageObjectsSchema,
-  // RENDERABLE: an index and a direction; the engine moves the object in its own list (ADR-0244).
-  arrangePageObjectSchema,
-  recolorPageObjectsSchema,
-  deletePageObjectsSchema,
   // RENDERABLE, and its payload is ONE INTEGER — the smallest on this list. The
   // renderer says *make this page's text editable*; what it cannot express is
   // which forms, how deeply they nest, or what matrix each child needs composed
@@ -7511,12 +7205,6 @@ export function targetVersionOf(command: Command): DocVersion | undefined {
   if (command.kind === 'setTabOrder') return command.version;
   if (command.kind === 'flattenFormFields') return command.version;
   if (command.kind === 'replaceTextObject') return command.version;
-  if (command.kind === 'placePageObject') return command.version;
-  if (command.kind === 'placeDrawnObject') return command.version;
-  if (command.kind === 'placePageObjects') return command.version;
-  if (command.kind === 'arrangePageObject') return command.version;
-  if (command.kind === 'recolorPageObjects') return command.version;
-  if (command.kind === 'deletePageObjects') return command.version;
   if (command.kind === 'editTextBlock') return command.version;
   if (command.kind === 'editTextOperators') return command.version;
   if (command.kind === 'replacePage') return command.version;
@@ -7608,25 +7296,13 @@ void _theFieldNameIsACommandKind;
  * all three: this package cannot import the kernel, so the half checkable here
  * is only that the name is a real kind.
  *
- * ## The NAME is narrower than the walk, and it is kept anyway
+ * ## The walk is PDFium's page objects
  *
- * It reads *text object*, and three of its four members name objects of any
- * kind — a path, an image, a shading. The walk is the same one: PDFium's page
- * objects, numbered by `FPDFPage_GetObject`, which is what makes them one index
- * space and therefore one member of `CommandTargets`. Renaming it would touch
- * the axis, the kernel's tie and every citation of it for a gain of one word,
- * and the misreading it invites — *these commands are about text* — is smaller
- * than the one a split would invite: *these are two different index spaces*.
+ * Numbered by `FPDFPage_GetObject`, which is what makes them one index space and therefore one member of
+ * `CommandTargets`. Since Edit object's commands left (2026-10-21, R20) every member names text objects.
  */
 export type NamesATextObject =
   | 'replaceTextObject'
-  | 'placePageObject'
-  // PDFium's walk index too, carried beside the kind's ordinal the MuPDF writer finds it by (ADR-0240).
-  | 'placeDrawnObject'
-  | 'placePageObjects'
-  | 'arrangePageObject'
-  | 'recolorPageObjects'
-  | 'deletePageObjects'
   | 'editTextBlock'
   // PDFium's page object indices too: the writer is MuPDF, the names are the reading's (ADR-0176's correction).
   | 'editTextOperators';

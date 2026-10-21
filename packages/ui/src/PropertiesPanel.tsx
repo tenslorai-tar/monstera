@@ -36,10 +36,6 @@ import { LINE_WIDTH_PRESETS, STYLE_PRESETS } from './annotations/stylePresets.js
 import {
   COMMENT_STYLES_NO_WIDTH,
   PROPERTIES_ACTIONS,
-  PROPERTIES_OBJECT_HEADING,
-  PROPERTIES_OBJECT_KIND,
-  PROPERTIES_OBJECT_NO_FILL,
-  PROPERTIES_OBJECT_NONE_HINT,
   PROPERTIES_AS_DEFAULT,
   PROPERTIES_AUTHOR,
   PROPERTIES_BLEND,
@@ -76,9 +72,6 @@ import {
 } from './messages/en.js';
 import { spacingBoundOf, spacingOf } from './textFormatting.js';
 import { NumberInput, TextSection, type TextRow } from './TextSection.js';
-import { kindWord } from './ObjectEditLayer.js';
-import { ObjectGeometry } from './ObjectGeometry.js';
-import { type ObjectFill, type ObjectPick, recolourable } from './objectEditing.js';
 import { pdfjsPageOf } from './pageNumbering.js';
 import { Button } from './primitives/Button.js';
 import { SegmentedControl, type SegmentedOption } from './primitives/SegmentedControl.js';
@@ -140,23 +133,6 @@ export interface PropertiesPanelProps {
    * the selected mark, the Comment shows it, so the label and the Comment never hold two numbers.
    */
   readonly reading?: LiveReading | undefined;
-  /**
-   * The object Edit object has selected on the page, and how its fill is changed (ADR-0153 Decision 5), or `undefined`
-   * when none is. The tool slot holds Edit object or the select tool, never both, so this and {@link selection} are
-   * never both set.
-   */
-  readonly object?:
-    | {
-        readonly pick: ObjectPick;
-        readonly onRecolour: (colour: ObjectFill) => void;
-        /** Puts it at a box typed in, as a drag would (E6). */
-        readonly onPlace: (target: AnnotationRect) => void;
-        /** Turns it by a number of degrees, as the rotate handle would (E6). */
-        readonly onTurn: (degrees: number) => void;
-      }
-    | undefined;
-  /** Whether Edit object is the mode on the page, read from the tool slot the status line reads too (E8). */
-  readonly objectMode?: boolean | undefined;
   /** The computer's and Monstera's fonts, which a text box's and a typewriter's picker offers (K2); `undefined` while read. */
   readonly fonts?: FontList;
 }
@@ -211,8 +187,6 @@ export function PropertiesPanel({
   context,
   measuring = false,
   reading,
-  object,
-  objectMode,
   fonts,
 }: PropertiesPanelProps): ReactElement {
   const { i18n } = useLingui();
@@ -228,71 +202,6 @@ export function PropertiesPanel({
   const fontSize = useSetting(settings, ANNOTATION_FONT_SIZE_SETTING);
   const textBoxLook = useSetting(settings, TEXT_BOX_LOOK_SETTING);
   const fontSizeId = useId();
-
-  if (selection === undefined && object !== undefined) {
-    const { pick } = object;
-    const { fill } = pick.object;
-    const objectFoot = propertiesModel(registry, context);
-    return (
-      <section aria-label={i18n._(STYLE_PANEL_LABEL)} className="m-properties">
-        <header className="m-properties__head">
-          <h2 className="m-properties__title">{i18n._(PROPERTIES_OBJECT_HEADING)}</h2>
-          <p className="m-properties__meta" data-properties-object-kind={pick.object.kind}>
-            {i18n._(PROPERTIES_OBJECT_KIND)}: {i18n._(kindWord(pick.object.kind))}
-          </p>
-        </header>
-        <ObjectGeometry onPlace={object.onPlace} onTurn={object.onTurn} pick={pick} />
-        {recolourable(pick) && fill !== null ? (
-          <ColourRow
-            auto={false}
-            current={hexFromColour([fill.red / 255, fill.green / 255, fill.blue / 255])}
-            offerAuto={false}
-            onPick={(picked) => {
-              const colour = picked === undefined ? undefined : colourFromHex(picked);
-              if (colour === undefined) return;
-              // THE OBJECT'S OWN ALPHA KEPT: a colour swatch says nothing about transparency.
-              object.onRecolour({
-                red: Math.round(colour[0] * 255),
-                green: Math.round(colour[1] * 255),
-                blue: Math.round(colour[2] * 255),
-                alpha: fill.alpha,
-              });
-            }}
-          />
-        ) : pick.object.source === 'content' && pick.object.kind !== 'image' ? (
-          // SAID RATHER THAN HIDDEN: a shape whose colour PDFium will not describe shows no colour row, and a person
-          // looking for one is told why rather than left to wonder.
-          <p className="m-properties__meta">{i18n._(PROPERTIES_OBJECT_NO_FILL)}</p>
-        ) : null}
-        {objectFoot.length === 0 ? null : (
-          <div aria-label={i18n._(PROPERTIES_ACTIONS)} className="m-properties__foot" role="group">
-            {objectFoot.map((entry) => (
-              <Button
-                key={entry.command.id}
-                label={entry.command.title}
-                onClick={() => {
-                  void entry.command.run(context);
-                }}
-              />
-            ))}
-          </div>
-        )}
-      </section>
-    );
-  }
-
-  // EDIT OBJECT ON WITH NOTHING PICKED (the owner's E8): the panel says what the mode on the page is for, as the status
-  // line does, rather than the next annotation's defaults, which nothing a press in this mode would draw.
-  if (selection === undefined && objectMode === true) {
-    return (
-      <section aria-label={i18n._(STYLE_PANEL_LABEL)} className="m-properties" data-properties-object-mode="">
-        <header className="m-properties__head">
-          <h2 className="m-properties__title">{i18n._(PROPERTIES_OBJECT_HEADING)}</h2>
-          <p className="m-properties__meta">{i18n._(PROPERTIES_OBJECT_NONE_HINT)}</p>
-        </header>
-      </section>
-    );
-  }
 
   if (selection === undefined) {
     return (

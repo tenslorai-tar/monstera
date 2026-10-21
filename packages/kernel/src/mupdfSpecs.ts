@@ -146,7 +146,6 @@ import {
 } from './pageTransition.js';
 import { applyRotatePages, captureRotatePages, invertRotatePages } from './rotatePages.js';
 import { applyEditTextOperators, captureEditTextOperators, invertEditTextOperators } from './textOperatorEdit.js';
-import { applyPlaceDrawnObject, capturePlaceDrawnObject, invertPlaceDrawnObject } from './drawnObjectPlace.js';
 
 /**
  * MuPDF's commands: what each one does, and executing them in this process.
@@ -487,12 +486,6 @@ export const mupdfSpecs = {
     apply: applyImportAnnotations,
     capture: captureImportAnnotations,
     invert: invertImportAnnotations,
-  },
-  placeDrawnObject: {
-    ...declaredCommands.placeDrawnObject,
-    apply: applyPlaceDrawnObject,
-    capture: capturePlaceDrawnObject,
-    invert: invertPlaceDrawnObject,
   },
   // THE ONE ENTRY TAKING A PRE-READ (ADR-0176): its third parameter is PDFium's reading of the page, not sources.
   editTextOperators: {

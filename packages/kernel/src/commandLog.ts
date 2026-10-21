@@ -22,7 +22,6 @@ import type { PriorAnnotationAuthor, PriorAnnotationText } from './pageAnnotatio
 // reached from `main` and `pdfiumTextEdit.js` reaches koffi and `pdfium.dll`.
 // The import is erased, so the edge the header above warns about is not
 // created — the same care the `engineSeam.js` line records, on a second engine.
-import type { PriorArrangement, PriorFills, PriorPlacement, PriorPlacements } from './pdfiumObjectEdit.js';
 import type { PriorTextObjects } from './pdfiumTextEdit.js';
 import type { PriorLayerVisibility } from './layers.js';
 import type {
@@ -684,65 +683,25 @@ export interface CommandPrior {
    */
   readonly replaceTextObject: PriorTextObjects;
   /**
-   * The object's own matrix, put back.
-   *
-   * Six floats, so the entry retains nothing document-scaled. And a RESTORE
-   * rather than the opposite transform, which matters past ADR-0009 §3's rule:
-   * measured 2026-09-10, `FPDFPageObj_SetMatrix` of the matrix read before a
-   * transform returns the bounds exactly, where an opposite transform composed
-   * across repeated undo and redo accumulates floating-point drift.
-   */
-  readonly placePageObject: PriorPlacement;
-  /** Every object's own matrix, put back: a group's restore (ADR-0242), bounded by `MAX_EDITED_OBJECTS`. */
-  readonly placePageObjects: PriorPlacements;
-  /** The two places an arrangement moved an object between (ADR-0244): three integers. */
-  readonly arrangePageObject: PriorArrangement;
-  /**
-   * One fill per object the recolour named.
-   *
-   * Four small integers each, bounded by the page through `MAX_EDITED_OBJECTS`.
-   * `replaceTextObject`'s reasoning with a smaller prior.
-   */
-  readonly recolorPageObjects: PriorFills;
-  /**
-   * `never`, and the LIBRARY is what decides it.
-   *
-   * PDFium offers no way to reconstruct a page object from a description, so
-   * there is no prior state that would put a removed object back — unlike the
-   * four `never`s above, whose priors exist and are document-scaled. Undo takes
-   * a checkpoint, which is a whole document image per entry.
-   */
-  readonly deletePageObjects: never;
-  /**
-   * `never`, and for the THIRD distinct reason on this type.
-   *
-   * `deletePageObjects` has no prior at all. The four above have priors that are
-   * unserialisable. This one's prior exists, serialises cleanly, and is
-   * **document-scaled** — every object the replacement changed, with the string
-   * it held — which is exactly what an invertible entry may not retain.
+   * `never`, because its prior is DOCUMENT-SCALED: it exists and serialises cleanly — every object the replacement
+   * changed, with the string it held — which is exactly what an invertible entry may not retain.
    */
   readonly replaceAllText: never;
   /** The one object `replaceTextAt` picked, with the string it held: `replaceTextObject`'s prior, for its reason. */
   readonly replaceTextAt: PriorTextObjects;
   /**
-   * `never`, and it is the FIRST reason on this type reached from the far end.
-   *
-   * `deletePageObjects` has no prior because PDFium can describe an object and
-   * not rebuild one. A promotion's prior would be a **Form XObject and its
-   * placement**, and PDFium can take a form apart and offers nothing that
-   * constructs one — so every piece survives on the page and the container is
-   * what cannot be put back.
+   * `never`, because PDFium can describe an object and not rebuild one. A promotion's prior would be a **Form XObject
+   * and its placement**, and PDFium can take a form apart and offers nothing that constructs one — so every piece
+   * survives on the page and the container is what cannot be put back.
    */
   readonly promoteFormObjects: never;
   /**
-   * `never`, `deletePageObjects`' reason: a block edit makes and removes
-   * objects, and PDFium cannot rebuild a removed one. The old strings alone
+   * `never`: a block edit makes and removes objects, and PDFium cannot rebuild a removed one. The old strings alone
    * would undo the text and keep the lines (ADR-0096 Decision 6).
    */
   readonly editTextBlock: never;
   /** A checkpoint until Decision 7's prior lands (ADR-0176). */
   readonly editTextOperators: never;
-  readonly placeDrawnObject: never;
 }
 
 /**

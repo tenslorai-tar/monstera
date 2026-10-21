@@ -167,7 +167,6 @@ import {
   CALLOUT_TIP,
   UNDERLINE_TOOL_TITLE,
 } from '../messages/en.js';
-import type { ObjectPick } from '../objectEditing.js';
 import type { Write } from '../pageWriting.js';
 import type { IconName } from '../primitives/icons.js';
 import { type CommandContext, TOASTS, type UiCommand, VISIBLE } from '../registries/commands.js';
@@ -673,11 +672,7 @@ function alsoOnThePill(command: UiCommand, order: number): UiCommand {
  * selection does nothing because there is nothing registered, not because a
  * handler decided to return early.
  */
-export function deleteSelectionCommand(
-  deps: SelectionCommandDeps,
-  objects: ObjectSelectionDeps,
-  fields: FieldSelectionDeps,
-): UiCommand {
+export function deleteSelectionCommand(deps: SelectionCommandDeps, fields: FieldSelectionDeps): UiCommand {
   return {
     id: 'annotate.delete-selection',
     feedback: VISIBLE,
@@ -686,27 +681,20 @@ export function deleteSelectionCommand(
     // LAST IN THE ANNOTATION MENU, which is the owner's order for it (§7's row, 2026-09-19):
     // edit, reply, properties, copy, delete. The numbers between are what the owed items take.
     // AND AT THE PROPERTIES TAB'S FOOT, after Reply, which is v5-02's order (ADR-0102).
-    // AND LAST IN THE OBJECT MENU, after Properties (ADR-0153 Decision 5).
     placements: [
       { surface: 'context-menu', context: 'annotation', order: 50 },
-      { surface: 'context-menu', context: 'object', order: 50 },
       // AND LAST IN THE FIELD MENU (ADR-0226 Decision 7).
       { surface: 'context-menu', context: 'field', order: 50 },
       { surface: 'properties', order: 20 },
     ],
     shortcut: 'Delete',
-    when: () => deps.selection() !== undefined || objects.picked() !== undefined || fields.selected().length > 0,
+    when: () => deps.selection() !== undefined || fields.selected().length > 0,
     run: (): void => {
-      // ONE DELETE FOR EVERY SELECTION (ADR-0153 Decision 5): the tool slot holds one mode at a time, so there is never
-      // two — and a second command claiming the key would be refused by the shortcut map.
+      // ONE DELETE FOR EVERY SELECTION: the tool slot holds one mode at a time, so there is never two — and a second
+      // command claiming the key would be refused by the shortcut map.
       const chosen = fields.selected();
       if (chosen.length > 0) {
         fields.onDelete(chosen);
-        return;
-      }
-      const picked = objects.picked();
-      if (picked !== undefined) {
-        objects.onRemove(picked);
         return;
       }
       const selection = deps.selection();
@@ -727,14 +715,6 @@ export interface FieldSelectionDeps {
   readonly onDelete: (fields: readonly PlacedField[]) => void;
   /** Sends their new places as one `editFormFields`. */
   readonly onPlace: (moved: readonly PlacedField[]) => void;
-}
-
-/** What the commands that act on a selection read of Edit object's (ADR-0153 Decision 5). */
-export interface ObjectSelectionDeps {
-  /** The object selected on the page now, read through a function for {@link SelectionCommandDeps.selection}'s reason. */
-  readonly picked: () => ObjectPick | undefined;
-  /** Removes it, by the writer that holds it. */
-  readonly onRemove: (pick: ObjectPick) => void;
 }
 
 /**
@@ -1021,19 +1001,14 @@ export function selectAllMarksCommand(deps: {
  */
 export function selectionPropertiesCommand(
   deps: SelectionCommandDeps & { readonly settings: SettingsStore; readonly presence: PanelPresence },
-  objects: Pick<ObjectSelectionDeps, 'picked'>,
 ): UiCommand {
-  const anything = (): boolean => deps.selection() !== undefined || objects.picked() !== undefined;
+  const anything = (): boolean => deps.selection() !== undefined;
   return {
     id: 'annotate.properties',
     feedback: VISIBLE,
     title: SELECTION_PROPERTIES_TITLE,
     icon: 'PaintBucket',
-    // AND FIRST IN THE OBJECT MENU, where the object's colour is chosen (ADR-0153 Decision 5).
-    placements: [
-      { surface: 'context-menu', context: 'annotation', order: 30 },
-      { surface: 'context-menu', context: 'object', order: 10 },
-    ],
+    placements: [{ surface: 'context-menu', context: 'annotation', order: 30 }],
     when: anything,
     run: (): void => {
       if (!anything()) return;

@@ -58,7 +58,7 @@ if (!existsSync(library)) {
 }
 
 // THE BUILT MODULES are what this reads, so a stale build would prove the previous read-back.
-refuseStaleBuild(root, PDFIUM_READ_BACK, 32);
+refuseStaleBuild(root, PDFIUM_READ_BACK, 31);
 
 const { blockEditOf, replacementFieldsOf } = await import('../../packages/contract/dist/commands.js');
 const { objectRuns, openPdfium, pdfiumWriter, textRuns } = await import('../../packages/kernel/dist/pdfiumFfi.js');
@@ -69,10 +69,10 @@ const { EditRefusedError } = await import('../../packages/kernel/dist/textEditRe
 
 /** @type {string[]} */
 const failures = [];
-// AN INDEPENDENT CLAIM about this file (audit item 4c): two readable premises, nine commands refused on a Type 3 page
-// and saved on a Helvetica one (the ninth an emptied replacement, which removes its object), three undos refused, and
+// AN INDEPENDENT CLAIM about this file (audit item 4c): two readable premises, six commands refused on a Type 3 page
+// and saved on a Helvetica one (one of them an emptied replacement, which removes its object), one undo refused, and
 // the hand-built page's own edit refused at the read-back.
-const roster = createRoster(failures, { cases: 25 });
+const roster = createRoster(failures, { cases: 17 });
 
 /**
  * How much an edit of 9,800 objects may cost against one of 1,225, eight times fewer. Read on this project's Windows
@@ -172,9 +172,6 @@ function commandsFor(runs, objects, target) {
     ['replaceTextObject', { kind: 'replaceTextObject', page: 0, ...replacementFieldsOf([{ index: first.index, text: shorter(first.text) }]), version: 1 }],
     // EMPTIED, which removes the object rather than setting it (ADR-0169 Decision 6): a second route to generation.
     ['replaceTextObject emptied', { kind: 'replaceTextObject', page: 0, ...replacementFieldsOf([{ index: first.index, text: '' }]), version: 1 }],
-    ['placePageObject', { kind: 'placePageObject', page: 0, index: first.index, moveBy: { x: 0, y: -12 }, scaleBy: { x: 1, y: 1 }, version: 1 }],
-    ['recolorPageObjects', { kind: 'recolorPageObjects', page: 0, indices: [first.index], colour: { red: 200, green: 0, blue: 0, alpha: 255 }, version: 1 }],
-    ['deletePageObjects', { kind: 'deletePageObjects', page: 0, indices: [first.index], version: 1 }],
     ['replaceTextAt', { kind: 'replaceTextAt', page: 0, find: word, replace: shorter(word), at }],
     ['replaceAllText', { kind: 'replaceAllText', find: word, replace: shorter(word), version: 1 }],
     [
@@ -289,17 +286,11 @@ async function main() {
     `${String(blocksOf(helveticaRuns).length)} block(s) read`,
   );
 
-  // EVERY COMMAND, on the Chromium print's CIDFontType2 body: refused at the read-back. A TEXT RUN MOVED is the same
-  // refusal said as what it is, `moved-text` (ADR-0240 Decision 4), so the person is told in words and no reference.
+  // EVERY COMMAND, on the Chromium print's CIDFontType2 body: refused at the read-back.
   const onType3 = commandsFor(chromiumRuns, await objectRunsOf(chromium), CHROMIUM_LINES.body);
   for (const [kind, command] of onType3) {
     const outcome = await outcomeOf(applied(chromium, command));
-    const step = kind === 'placePageObject' ? 'moved-text' : 'read-back';
-    record(
-      `${kind} on a page with Type 3 text is refused at the ${step === 'read-back' ? 'read-back' : 'read-back, as moved text'}, so nothing is saved`,
-      'step' in outcome && outcome.step === step,
-      said(outcome),
-    );
+    record(`${kind} on a page with Type 3 text is refused at the read-back, so nothing is saved`, 'step' in outcome && outcome.step === 'read-back', said(outcome));
   }
 
   // AND ITS CONTROL: the same command on Helvetica line C, saved, with lines A and B in the reopened bytes.
@@ -314,7 +305,7 @@ async function main() {
     );
   }
 
-  // THE EIGHTH COMMAND, which needs a Form XObject: promoted onto a Type 3 page and refused; onto Helvetica, saved.
+  // THE LAST COMMAND, which needs a Form XObject: promoted onto a Type 3 page and refused; onto Helvetica, saved.
   const promote = { kind: 'promoteFormObjects', page: 0 };
   const promotedType3 = await outcomeOf(applied(await withAForm('type3'), promote));
   record(
@@ -332,7 +323,7 @@ async function main() {
 
   // AN UNDO REGENERATES THE PAGE AS THE EDIT DID, so each invertible command's inverse is refused the same way. The
   // prior is the command's own capture, which only reads.
-  for (const kind of /** @type {const} */ (['replaceTextObject', 'placePageObject', 'recolorPageObjects'])) {
+  for (const kind of /** @type {const} */ (['replaceTextObject'])) {
     const entry = onType3.find(([name]) => name === kind);
     const captured = entry === undefined ? undefined : await localPdfiumExecution.capture(chromium, entry[1]);
     const outcome =

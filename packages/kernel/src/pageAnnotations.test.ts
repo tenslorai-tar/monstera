@@ -3715,7 +3715,7 @@ describe('applyPlaceImage', () => {
   });
 
   it('the walk calls an image stamp PICTURED, and CONTROL: a built-in stamp, which draws words, is not (14g)', async () => {
-    // Edit object's *Images* finds a placed picture by this, since the page's object walk never sees an annotation.
+    // Edit text counts a placed picture by this, since the page's object walk never sees an annotation.
     // The control is the case the field could get wrong: the same subtype, an appearance with no picture in it.
     const placed = await placedOn(await fixture());
     const both = await drawnOn(

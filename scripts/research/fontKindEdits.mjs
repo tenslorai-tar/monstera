@@ -53,15 +53,14 @@
  * wrong*. A save that succeeded is then reopened and lines B and C are looked for: an edit that saved without them
  * destroyed text nobody asked it to touch, which is the outcome no read-back of the writes can see.
  *
- * Then THE CLASS: on the Type 3 fixture, four other PDFium commands each applied to line C alone, and lines A and B
- * looked for.
+ * Then THE CLASS: on the Type 3 fixture, a replacement and an emptying of line C alone, and lines A and B looked for.
  *
  * ## Its controls, on every run
  *
  * - Every fixture's three lines must read back exactly BEFORE anything is edited, or that fixture is reported as
  *   unreadable and not counted — a fixture PDFium cannot read would otherwise pass as a refusal.
- * - The loss detector must find a loss it is shown: line B removed on purpose from the Helvetica fixture with
- *   `removeObjects`. Without that, *nothing was lost* would be the answer for every row.
+ * - The loss detector must find a loss it is shown: line B removed on purpose from the Helvetica fixture by emptying
+ *   its objects. Without that, *nothing was lost* would be the answer for every row.
  *
  * ## In the host's runtime
  *
@@ -221,7 +220,9 @@ const failures = [];
   const session = await pdfium.pdfiumWriter.open(bytes);
   let damaged;
   try {
-    await pdfium.removeObjects(session, 0, b.lines.flatMap((/** @type {any} */ l) => l.runs.map((/** @type {Run} */ r) => r.index)));
+    // EMPTIED, which removes each object rather than setting it (ADR-0169 Decision 6).
+    const emptied = b.lines.flatMap((/** @type {any} */ l) => l.runs.map((/** @type {Run} */ r) => ({ index: r.index, text: '' })));
+    await pdfium.replaceTextObjects(session, 0, emptied, 'as-written');
     damaged = await pdfium.pdfiumWriter.serialise(session);
   } finally {
     await pdfium.pdfiumWriter.close(session);
@@ -295,9 +296,7 @@ for (const [n, path] of outside.entries()) {
   /** @type {[string, (session: unknown) => Promise<unknown>][]} */
   const commands = [
     ['replaceTextObject (line C)', (session) => pdfium.replaceTextObjects(session, 0, [{ index: cIndex, text: 'Control line changed.' }], 'as-written')],
-    ['recolorPageObjects (line C)', (session) => pdfium.setObjectFills(session, 0, [{ index: cIndex, red: 200, green: 0, blue: 0, alpha: 255 }])],
-    ['placePageObject (line C)', (session) => pdfium.placeObject(session, 0, cIndex, { moveBy: { x: 0, y: -20 }, scaleBy: { x: 1, y: 1 } })],
-    ['deletePageObjects (line C)', (session) => pdfium.removeObjects(session, 0, [cIndex])],
+    ['replaceTextObject emptied (line C)', (session) => pdfium.replaceTextObjects(session, 0, [{ index: cIndex, text: '' }], 'as-written')],
   ];
   for (const [label, run] of commands) {
     const session = await pdfium.pdfiumWriter.open(bytes);

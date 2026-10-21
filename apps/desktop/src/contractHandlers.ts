@@ -400,7 +400,7 @@ export function createContractHandlers(deps: {
   /** The native components and their states (ADR-0122). `componentStatuses`, where the source is the resolver's. */
   readonly components: (verify: boolean) => Promise<readonly ComponentStatus[]>;
   /**
-   * Starts the engine Edit text and Edit object read through, answering whether it is running (ADR-0048's correction
+   * Starts the engine Edit text reads through, answering whether it is running (ADR-0048's correction
    * of 2026-10-20). REQUIRED, so an assembly that forgot it is a compile error rather than a mode whose first read pays
    * the start again.
    */

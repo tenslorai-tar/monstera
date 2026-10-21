@@ -7,13 +7,8 @@ import {
   MAX_RUN_FONT_BYTES,
   channel,
   fileAnswered,
-  deletePageObjectsSchema,
   editTextBlockSchema,
-  arrangePageObjectSchema,
-  placePageObjectSchema,
-  placePageObjectsSchema,
   promoteFormObjectsSchema,
-  recolorPageObjectsSchema,
   replaceAllTextSchema,
   replaceTextAtSchema,
   replaceTextObjectSchema,
@@ -85,11 +80,6 @@ import { pageRunsSchema } from './pageRunsWire.js';
  */
 const pdfiumCommandSchema = z.discriminatedUnion('kind', [
   replaceTextObjectSchema,
-  placePageObjectSchema,
-  placePageObjectsSchema,
-  arrangePageObjectSchema,
-  recolorPageObjectsSchema,
-  deletePageObjectsSchema,
   promoteFormObjectsSchema,
   replaceAllTextSchema,
   replaceTextAtSchema,
@@ -231,107 +221,10 @@ const pdfiumPriorSchema = z.discriminatedUnion('kind', [
   // `replaceTextAt`'s prior is `replaceTextObject`'s shape and restores through its inverse (ADR-0156): ONE schema for
   // the two, so the restore cannot be handed a shape one of them would not write.
   z.object({ kind: z.literal('replaceTextAt'), prior: textObjectsPriorSchema }).strict(),
-  z
-    .object({
-      kind: z.literal('placePageObject'),
-      /**
-       * The object's own matrix, put back.
-       *
-       * Six floats and no bound beyond finiteness, which is `z.number()`'s own
-       * in zod 4 — a matrix is what PDFium answered about this document, not a
-       * value a renderer chose, and there is no smaller number that is correct
-       * for every page. What it CAN do wrong is arrive as `NaN`, which
-       * `FPDFPageObj_SetMatrix` would take and leave an object nothing can
-       * render; the schema is where that stops.
-       */
-      prior: z
-        .object({
-          page: z.number().int().nonnegative(),
-          index: z.number().int().nonnegative(),
-          matrix: z
-            .object({
-              a: z.number(),
-              b: z.number(),
-              c: z.number(),
-              d: z.number(),
-              e: z.number(),
-              f: z.number(),
-            })
-            .strict(),
-        })
-        .strict(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal('arrangePageObject'),
-      /** The place the object went to and the one it came from (ADR-0244): three integers. */
-      prior: z
-        .object({ page: z.number().int().nonnegative(), at: z.number().int().nonnegative(), from: z.number().int().nonnegative() })
-        .strict(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal('placePageObjects'),
-      /** Every object's own matrix, put back (ADR-0242): `placePageObject`'s prior once per object, bounded by the page. */
-      prior: z
-        .object({
-          page: z.number().int().nonnegative(),
-          objects: z
-            .array(
-              z
-                .object({
-                  index: z.number().int().nonnegative(),
-                  matrix: z.object({ a: z.number(), b: z.number(), c: z.number(), d: z.number(), e: z.number(), f: z.number() }).strict(),
-                })
-                .strict(),
-            )
-            .min(1)
-            .max(ENGINE_TEXT_OBJECTS_MAX)
-            .readonly(),
-        })
-        .strict(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal('recolorPageObjects'),
-      /** One fill per object the recolour named, bounded by the page. */
-      prior: z
-        .object({
-          page: z.number().int().nonnegative(),
-          objects: z
-            .array(
-              z
-                .object({
-                  index: z.number().int().nonnegative(),
-                  red: z.number().int().min(0).max(255),
-                  green: z.number().int().min(0).max(255),
-                  blue: z.number().int().min(0).max(255),
-                  alpha: z.number().int().min(0).max(255),
-                })
-                .strict(),
-            )
-            .min(1)
-            .max(ENGINE_TEXT_OBJECTS_MAX)
-            .readonly(),
-        })
-        .strict(),
-    })
-    .strict(),
-  // NO `deletePageObjects` MEMBER, and its absence is the mechanism. That
-  // command declares `invertible: false` because PDFium cannot reconstruct an
-  // object, so a prior tagged with its kind is a message this wire refuses to
-  // parse — main could not be handed one to hand to an invert that does not
-  // exist.
-  //
-  // AND NO `promoteFormObjects` MEMBER, for the same mechanism and the mirror
-  // reason: PDFium can take a Form XObject apart and cannot build one, so its
-  // prior is unrepresentable from the container's side rather than the object's.
-  // `replaceAllText` is absent too, its prior being document-scaled, and
-  // `editTextBlock` for `deletePageObjects`' own reason: it makes and removes
-  // objects PDFium cannot rebuild.
+  // NO `promoteFormObjects` MEMBER, and its absence is the mechanism: PDFium can take a Form XObject apart and cannot
+  // build one, so the command declares `invertible: false` and a prior tagged with its kind is a message this wire
+  // refuses to parse — main could not be handed one to hand to an invert that does not exist. `replaceAllText` is absent
+  // too, its prior being document-scaled, and `editTextBlock` because it makes and removes objects PDFium cannot rebuild.
 ]);
 
 /** What a capture answers, in `captureResultSchema`'s shape. */

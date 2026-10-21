@@ -2380,7 +2380,7 @@ type StartAsker = 'components' | 'editing-mode';
 
 const STARTED_BY: Readonly<Record<StartAsker, string>> = {
   components: 'Help › Components',
-  // ADR-0048's correction of 2026-10-20: Edit text or Edit object chosen starts the PDFium host ahead of its first read.
+  // ADR-0048's correction of 2026-10-20: Edit text chosen starts the PDFium host ahead of its first read.
   'editing-mode': 'Choosing an editing mode',
 };
 

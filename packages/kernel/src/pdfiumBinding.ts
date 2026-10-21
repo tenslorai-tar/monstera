@@ -61,7 +61,6 @@ export interface Bound {
   readonly objectBounds: Native;
   readonly getMatrix: Native;
   readonly setMatrix: Native;
-  readonly transform: Native;
   readonly getFillColour: Native;
   readonly setFillColour: Native;
   readonly getRenderMode: Native;
@@ -343,20 +342,6 @@ export function openPdfium(libraryPath: string): void {
     // (ADR-0009 §3).
     getMatrix: native(library.func('int FPDFPageObj_GetMatrix(void *object, _Out_ FS_MATRIX *matrix)')),
     setMatrix: native(library.func('int FPDFPageObj_SetMatrix(void *object, const FS_MATRIX *matrix)')),
-    // AND IT COMPOSES rather than replacing — measured the same day: two +30
-    // translations moved an object 60. So a move is a transform of the identity
-    // plus an offset, and nothing here has to read the existing matrix to
-    // apply one.
-    //
-    // **A scale is about the PAGE's origin, not the object's.** Measured: a
-    // rectangle at x=200..320 scaled by 2 landed at 400..640, off a 400pt page.
-    // Anything that wants to scale an object in place composes the translation
-    // itself; this binding is the raw call and says so.
-    transform: native(
-      library.func(
-        'void FPDFPageObj_Transform(void *object, double a, double b, double c, double d, double e, double f)',
-      ),
-    ),
     // FILL COLOUR, and it answers for a TEXT object as well as a path —
     // measured, both returning 1 and both surviving a save and reopen. The row
     // says *any page object* and this is the call that makes that true.

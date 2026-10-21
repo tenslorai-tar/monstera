@@ -79,7 +79,6 @@ import type { Spot } from '../accessibility/view.js';
 import { FLAT_FIELDS_DIALOG_ID } from '../dialogs/flatFields.js';
 import { FLAT_FIELDS_RESULT, type FlatFieldsAnswer } from '../dialogs/flatFieldsResult.js';
 import type { DialogReports } from '../registries/dialogs.js';
-import { type EditableObject, OBJECT_FILTERS, type ObjectFilter, type PageObjects } from '../objectEditing.js';
 import { BOXED_CHARACTERS_DIALOG_ID } from '../dialogs/boxedCharacters.js';
 import { PAGES_LEFT_DIALOG_ID } from '../dialogs/pagesLeft.js';
 import { UNSEALED_COPIES_DIALOG_ID } from '../dialogs/unsealedCopies.js';
@@ -197,10 +196,6 @@ import {
   MENU_GROUP_PANELS,
   MOVE_PAGE_EARLIER_TITLE,
   MOVE_PAGE_LATER_TITLE,
-  EDIT_OBJECTS_ALL_TITLE,
-  EDIT_OBJECTS_IMAGES_TITLE,
-  EDIT_OBJECTS_SHAPES_TITLE,
-  EDIT_OBJECTS_TEXT_TITLE,
   PROTECT_DOCUMENT_COMMAND_TITLE,
   APPLY_REDACTIONS_COMMAND_TITLE,
   REDACT_MATCHES_COMMAND_TITLE,
@@ -268,7 +263,6 @@ import {
   RIBBON_IMPORT_LAYER,
   RIBBON_FIND_DUPLICATES,
   RIBBON_EDIT_TEXT,
-  RIBBON_EDIT_OBJECT,
   RIBBON_DETECT_FIELDS,
   HAND_TOOL_TITLE,
   RIBBON_HAND,
@@ -4960,80 +4954,22 @@ export async function commitPageInsert(
   return sendBlockEdit(deps, docId, page, read, [], [insert]);
 }
 
-/** Edit object's mode in the tool slot (ADR-0153 Decision 1), Edit text's slot and its reason. */
-export const EDIT_OBJECTS_TOOL_ID = 'edit.objects';
-
-/** Each filter's title — one, since a ribbon menu draws its members by title, as the palette does. */
-const OBJECT_FILTER_TITLES: Readonly<Record<ObjectFilter, MessageKey>> = {
-  all: EDIT_OBJECTS_ALL_TITLE,
-  text: EDIT_OBJECTS_TEXT_TITLE,
-  images: EDIT_OBJECTS_IMAGES_TITLE,
-  shapes: EDIT_OBJECTS_SHAPES_TITLE,
-};
-
 /**
- * Each filter's glyph, which its menu item draws: one each, since four of one glyph in a menu say nothing about which
- * objects each outlines. *All* keeps the pencil the menu's button draws, its first member's.
- */
-const OBJECT_FILTER_ICONS: Readonly<Record<ObjectFilter, IconName>> = {
-  all: 'SquarePen',
-  text: 'Type',
-  images: 'Image',
-  shapes: 'Spline',
-};
-
-/**
- * Edit object's four filters, one ribbon menu (ADR-0153 Decision 2; ADR-0101).
+ * The boxes on one page that are not text — the content walk's other objects, where a clip narrows one what shows of it,
+ * and the pictures a person placed with Comment › Image — at the ONE version both reads answered: what Edit text's note
+ * on a grown block counts as newly covered (B1.6). `undefined` when either read was refused, or when the two answered at
+ * different versions, so boxes of one document are never laid over another's blocks.
  *
- * Each turns the mode on with its filter, and off again when it is the one already on — Edit text's toggle, per
- * filter. **The filter is a value beside the slot, not four slot ids**: the slot answers *what does a press on the
- * page do*, which is the same for all four, and the filter answers *which objects are outlined*.
- *
- * The index is never derived in the renderer: `document.pageObjects` answers it, the mode offers it, and a command
- * sends it at the version the read answered, so `#refuseIfStale` asks whether the document is still the one the
- * outlines described.
+ * Edit text's own read, made when Edit object was withdrawn (R20, 2026-10-21): that tool's page read also grouped text
+ * into blocks and described every object for picking, and the note reads none of that.
  */
-export function editObjectsCommands(deps: {
-  readonly activeTool: () => string | undefined;
-  readonly filter: () => ObjectFilter;
-  readonly onEnter: (filter: ObjectFilter | undefined) => void;
-}): readonly UiCommand[] {
-  const on = (filter: ObjectFilter): boolean => deps.activeTool() === EDIT_OBJECTS_TOOL_ID && deps.filter() === filter;
-  return OBJECT_FILTERS.map((filter, at) => ({
-    id: `edit.objects-${filter}`,
-    feedback: VISIBLE,
-    icon: OBJECT_FILTER_ICONS[filter],
-    title: OBJECT_FILTER_TITLES[filter],
-    // ONE MODE WITH FOUR FILTERS, so a press on the menu's face turns the mode on with the filter chosen last (ADR-0241).
-    placements: [{ surface: 'ribbon', section: 'edit', group: GROUP_TEXT, order: 20 + at, menu: RIBBON_EDIT_OBJECT, menuRuns: 'last' }],
-    when: hasDocument,
-    checked: () => on(filter),
-    run: (): void => {
-      // READ THROUGH THE FUNCTIONS at the press, `editTextCommand`'s rule.
-      deps.onEnter(on(filter) ? undefined : filter);
-    },
-  }));
-}
-
-/**
- * One page's objects for Edit object's mode: PDFium's walk of the page's content and the annotation walk's pictures on
- * that page, at ONE version (ADR-0153 Decision 3). `undefined` when either read was refused, or when the two answered
- * at different versions — a document that moved between them is read again at the next version, rather than outlined
- * from two documents at once.
- */
-export async function readPageObjects(
+export async function readPageContentBoxes(
   client: DocumentCommandDeps['client'],
   docId: DocId,
   page: number,
-  /** Whether text is outlined, and so grouped into Edit text's blocks (`showsText`); true unless a filter says not. */
-  withText = true,
-): Promise<
-  | { readonly ok: true; readonly objects: PageObjects }
-  /** `refused` is the read's own failure, or `undefined` where the document only moved between the two reads. */
-  | { readonly ok: false; readonly refused: Parameters<typeof reportProblem>[1] | undefined }
-> {
+): Promise<{ readonly version: DocVersion; readonly boxes: readonly AnnotationRect[] } | undefined> {
   // EVERY PART, read whole at one version (ADR-0130): a page drawn one glyph per object is thousands of objects.
-  const [content, marks, blocks] = await Promise.all([
+  const [content, marks] = await Promise.all([
     readWholeList(
       (from) => client['document.pageObjects']({ docId, page, from }),
       (part) => part.objects,
@@ -5042,97 +4978,23 @@ export async function readPageObjects(
       (from) => client['document.annotations']({ docId, from }),
       (part) => part.annotations,
     ),
-    // THE BLOCKS EDIT TEXT OPENS (ADR-0242), so a press on one letter picks its block, read where Edit text reads them —
-    // and only where text is outlined: under Edit images or Edit shapes the read is not made, and the text stays single
-    // objects nobody sees (R11: on a 44 MB brochure each such read was 0.6 to 1.3 s of whole-document hand-off).
-    withText
-      ? readWholeList(
-          (from) => client['document.textBlocks']({ docId, page, from }),
-          (part) => part.blocks,
-        )
-      : Promise.resolve({ ok: false as const, error: undefined }),
   ]);
-  if (!content.ok) return { ok: false, refused: content.error };
-  if (!marks.ok) return { ok: false, refused: marks.error };
-  if (content.value.version !== marks.value.version) return { ok: false, refused: undefined };
-  // A BLOCK READ THAT WAS REFUSED leaves the text as single objects, never the mode refused (ADR-0242 Decision 1); one
-  // at another version is the document moving between reads, which is read again at the next version.
-  if (blocks.ok && blocks.value.version !== content.value.version) return { ok: false, refused: undefined };
-  const blockOf = new Map<number, number>();
-  if (blocks.ok) {
-    for (const [at, block] of blocks.value.items.entries()) {
-      for (const line of block.lines) for (const run of line.runs) blockOf.set(run.index, at);
-    }
-  }
-  // EACH OBJECT'S PLACE AMONG ITS KIND, in the walk's order: how a drawn object is found in the page's content
-  // (ADR-0240). The whole list was read at one version, so the count is the page's.
-  const seen = new Map<string, number>();
-  const objects: EditableObject[] = [];
-  /** Where each block's object sits in `objects`: at its FIRST member's place, so the drawing order is the walk's. */
-  const placed = new Map<number, number>();
+  if (!content.ok || !marks.ok || content.value.version !== marks.value.version) return undefined;
+  const boxes: AnnotationRect[] = [];
   for (const object of content.value.items) {
-    const ordinal = seen.get(object.kind) ?? 0;
-    seen.set(object.kind, ordinal + 1);
-    const drawn = { x0: object.left, y0: object.bottom, x1: object.right, y1: object.top };
-    // WHAT SHOWS where a clip narrows it (E3), the engine's own box where nothing does.
-    const shown = object.shown === undefined ? drawn : { x0: object.shown.left, y0: object.shown.bottom, x1: object.shown.right, y1: object.shown.top };
-    const block = object.kind === 'text' ? blockOf.get(object.index) : undefined;
-    const at = block === undefined ? undefined : placed.get(block);
-    const held = at === undefined ? undefined : objects[at];
-    if (block !== undefined && at !== undefined && held !== undefined) {
-      // ONE MORE MEMBER: the block's boxes grow to hold it, and the command names it with the rest.
-      objects[at] = { ...held, box: union(held.box, shown), drawn: union(held.drawn, drawn), members: [...held.members, object.index] };
-      continue;
-    }
-    if (block !== undefined) placed.set(block, objects.length);
-    const textBlock = block === undefined || !blocks.ok ? undefined : blocks.value.items[block];
-    const style = textBlock?.style;
-    objects.push({
-      source: 'content',
-      index: object.index,
-      ordinal,
-      kind: object.kind,
-      box: shown,
-      drawn,
-      members: [object.index],
-      fill: object.fill,
-      ...(object.turn === undefined ? {} : { turn: object.turn }),
-      // HOW THE BLOCK IS SET, from its own base style: what Properties shows of text (E6).
-      ...(style === undefined
-        ? {}
-        : { look: { size: style.size, bold: style.bold, italic: style.italic, family: style.mono ? 'mono' : style.serif ? 'serif' : 'sans' } }),
-      // THE BLOCK AS ITS EDIT NAMES IT, so a placement goes to the operator writer with its words as read (ADR-0240's
-      // correction of 2026-10-19), by the one join Edit text diffs against (`wordsOfBlock`).
-      ...(textBlock === undefined
-        ? {}
-        : {
-            block: {
-              lines: textBlock.lines.map((line) => line.runs.map((run) => run.index)),
-              soft: textBlock.lines.map((line) => line.soft),
-              text: wordsOfBlock(textBlock),
-            },
-          }),
-    });
+    if (object.kind === 'text') continue;
+    // WHAT SHOWS where a clip narrows it, the engine's own box where nothing does.
+    boxes.push(
+      object.shown === undefined
+        ? { x0: object.left, y0: object.bottom, x1: object.right, y1: object.top }
+        : { x0: object.shown.left, y0: object.shown.bottom, x1: object.shown.right, y1: object.shown.top },
+    );
   }
   for (const mark of marks.value.items) {
     // A PICTURE A PERSON PLACED, on this page and drawn in a region: what the content walk cannot see.
-    if (mark.page !== page || mark.pictured !== true || mark.rect === null) continue;
-    objects.push({ source: 'stamp', index: mark.index, ordinal: 0, kind: 'picture', box: mark.rect, drawn: mark.rect, members: [mark.index], fill: null });
+    if (mark.page === page && mark.pictured === true && mark.rect !== null) boxes.push(mark.rect);
   }
-  return {
-    ok: true,
-    objects: {
-      version: content.value.version,
-      objects,
-      truncated: content.value.last.truncated || marks.value.last.truncated,
-      walked: content.value.items.length,
-    },
-  };
-}
-
-/** The smallest box holding both. */
-function union(a: AnnotationRect, b: AnnotationRect): AnnotationRect {
-  return { x0: Math.min(a.x0, b.x0), y0: Math.min(a.y0, b.y0), x1: Math.max(a.x1, b.x1), y1: Math.max(a.y1, b.y1) };
+  return { version: content.value.version, boxes };
 }
 
 /**

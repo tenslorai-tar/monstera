@@ -11,7 +11,6 @@ import { type DocId, type DocVersion, type MessageKey, asDocId, asDocVersion, as
 import { describe, expect, it, vi } from 'vitest';
 
 import { PAGE_BACKGROUND_DIALOG_ID } from '../dialogs/pageBackground.js';
-import type { ObjectFilter } from '../objectEditing.js';
 import {
   DETECT_FIELDS_TIP,
   EN,
@@ -47,7 +46,6 @@ import {
   TOAST_TOC_STALE,
   TOAST_TRANSITION_SET,
   TOAST_WORD_SAVED,
-  RIBBON_EDIT_OBJECT,
   SCAN_READERS_NONE,
 } from '../messages/en.js';
 import type { RecognisedWalk } from '../dialogs/ocrOutcome.js';
@@ -91,9 +89,7 @@ import {
   readRunFonts,
   editTextCommand,
   promoteTextOnPage,
-  EDIT_OBJECTS_TOOL_ID,
-  editObjectsCommands,
-  readPageObjects,
+  readPageContentBoxes,
   importFormDataFdfCommand,
   importFormDataJsonCommand,
   importFormDataXfdfCommand,
@@ -2504,12 +2500,11 @@ describe('delete pages — the mutation-dialog gate', () => {
     expect(asked).toStrictEqual(['dialog.signed-edit']);
   });
 
-  it('EDIT OBJECT’s read takes EVERY PART of a dense page, and the pictures placed on it (AAAAAAA-1, 14g)', async () => {
-    // TWO PARTS of content, the second starting at 512: a read that asked once would outline the first part as the
-    // page. And the annotation walk's pictures, of which only the one on THIS page that draws a picture is an object.
-    // THE ENGINE'S INDEX IS NOT THE POSITION: each object sits at an index its place in the answer is not, so a read
-    // that named an object by where it came in the list would name another.
-    const object = (at: number) => ({ index: 7 + 2 * at, kind: 'text' as const, left: 0, bottom: 0, right: 1, top: 1, fill: null });
+  it('EDIT TEXT’s read of what a block may cover takes EVERY PART of a dense page, its pictures and shapes, and the pictures placed on it — never its text', async () => {
+    // TWO PARTS of content, the second starting at 512: a read that asked once would count the first part as the page.
+    // And the annotation walk's pictures, of which only the one on THIS page that draws a picture counts.
+    const text = (at: number) => ({ index: 7 + 2 * at, kind: 'text' as const, left: 0, bottom: 0, right: 1, top: 1, fill: null });
+    const image = (index: number, left: number) => ({ index, kind: 'image' as const, left, bottom: 0, right: left + 10, top: 10, fill: null });
     const mark = (page: number, index: number, pictured: boolean) => ({
       page,
       index,
@@ -2526,25 +2521,20 @@ describe('delete pages — the mutation-dialog gate', () => {
     });
     const asked: string[] = [];
     const pages: unknown[] = [];
-    const read = await readPageObjects(
+    const read = await readPageContentBoxes(
       createClient(channels, (id, params) => {
         const from = (params as { from: number }).from;
         asked.push(`${id}@${String(from)}`);
         if (id === 'document.pageObjects') pages.push((params as { page: unknown }).page);
-        // EVERY TEXT OBJECT HERE IS ITS OWN, as on a page with no editable block (ADR-0242's fallback).
-        if (id === 'document.textBlocks') return Promise.resolve(err({ code: 'engine-unavailable' as const }));
         if (id === 'document.annotations') {
-          return Promise.resolve(
-            // THE PICTURE ON THIS PAGE is index 6 of the walk and third in its answer, after a picture on another page
-            // and a mark that draws none.
-            ok({ version: asDocVersion(4), annotations: [mark(5, 0, true), mark(3, 2, false), mark(3, 6, true)], next: null, truncated: false }),
-          );
+          // THE PICTURE ON THIS PAGE comes third, after a picture on another page and a mark that draws none.
+          return Promise.resolve(ok({ version: asDocVersion(4), annotations: [mark(5, 0, true), mark(3, 2, false), mark(3, 6, true)], next: null, truncated: false }));
         }
         return Promise.resolve(
           ok(
             from === 0
-              ? { version: asDocVersion(4), objects: Array.from({ length: 512 }, (_, at) => object(at)), next: 512, truncated: false }
-              : { version: asDocVersion(4), objects: [object(512), object(513)], next: null, truncated: false },
+              ? { version: asDocVersion(4), objects: [...Array.from({ length: 511 }, (_, at) => text(at)), image(2000, 100)], next: 512, truncated: false }
+              : { version: asDocVersion(4), objects: [text(512), image(2001, 300)], next: null, truncated: false },
           ),
         );
       }),
@@ -2552,39 +2542,29 @@ describe('delete pages — the mutation-dialog gate', () => {
       3,
     );
 
-    expect(asked.sort()).toStrictEqual(['document.annotations@0', 'document.pageObjects@0', 'document.pageObjects@512', 'document.textBlocks@0']);
+    // NO TEXT-BLOCK READ: the note needs none.
+    expect(asked.sort()).toStrictEqual(['document.annotations@0', 'document.pageObjects@0', 'document.pageObjects@512']);
     // THE PAGE ASKED FOR, zero-based as the command names it, on every part.
     expect(pages).toStrictEqual([3, 3]);
-    if (!read.ok) throw new Error('the read was refused');
-    expect(read.objects.objects).toHaveLength(515);
-    // THE ENGINE'S OWN INDICES and the walk's own: the second content object is index 9, the last 1033, and the stamp
-    // is index 6 of the annotation walk — never its place in either answer.
-    expect([read.objects.objects[1]?.index, read.objects.objects[513]?.index]).toStrictEqual([9, 1033]);
-    // EACH ONE'S PLACE AMONG ITS KIND counts across the parts (ADR-0240): the last text object is the 514th, never the
-    // second part's second.
-    expect(read.objects.objects[513]?.ordinal).toBe(513);
-    expect(read.objects.objects.at(-1)).toStrictEqual({
-      source: 'stamp',
-      index: 6,
-      ordinal: 0,
-      kind: 'picture',
-      box: { x0: 10, y0: 20, x1: 110, y1: 90 },
-      // NOTHING CLIPS A STAMP: what shows is its rectangle, and that is also the box its writer knows it by.
-      drawn: { x0: 10, y0: 20, x1: 110, y1: 90 },
-      members: [6],
-      fill: null,
+    // THE IMAGE OF EACH PART and this page's placed picture; CONTROL: 512 text objects, the other page's picture and the
+    // mark that draws none are all left out.
+    expect(read).toStrictEqual({
+      version: asDocVersion(4),
+      boxes: [
+        { x0: 100, y0: 0, x1: 110, y1: 10 },
+        { x0: 300, y0: 0, x1: 310, y1: 10 },
+        { x0: 10, y0: 20, x1: 110, y1: 90 },
+      ],
     });
   });
 
-  it('EDIT OBJECT’s read outlines a clipped picture by what SHOWS and keeps the engine’s box to name it by (E3)', async () => {
-    const read = await readPageObjects(
+  it('EDIT TEXT’s read counts a clipped picture by what SHOWS (E3)', async () => {
+    const read = await readPageContentBoxes(
       createClient(channels, (id) =>
         Promise.resolve(
           id === 'document.annotations'
             ? ok({ version: asDocVersion(4), annotations: [], next: null, truncated: false })
-            : id === 'document.textBlocks'
-              ? err({ code: 'engine-unavailable' as const })
-              : ok({
+            : ok({
                 version: asDocVersion(4),
                 objects: [
                   { index: 3, kind: 'image' as const, left: 20, bottom: 300, right: 400, top: 490, shown: { left: 200, bottom: 300, right: 400, top: 450 }, fill: null },
@@ -2599,142 +2579,25 @@ describe('delete pages — the mutation-dialog gate', () => {
       DOC,
       3,
     );
-    if (!read.ok) throw new Error('the read was refused');
-    expect(read.objects.objects.map((object) => [object.box, object.drawn])).toStrictEqual([
-      [
-        { x0: 200, y0: 300, x1: 400, y1: 450 },
-        { x0: 20, y0: 300, x1: 400, y1: 490 },
-      ],
-      [
-        { x0: 0, y0: 0, x1: 50, y1: 60 },
-        { x0: 0, y0: 0, x1: 50, y1: 60 },
-      ],
+    expect(read?.boxes).toStrictEqual([
+      { x0: 200, y0: 300, x1: 400, y1: 450 },
+      { x0: 0, y0: 0, x1: 50, y1: 60 },
     ]);
   });
 
-  it('EDIT OBJECT’s read makes ONE object of a block’s text objects, where the walk puts its first (E4, ADR-0242)', async () => {
-    // BLOCK's runs are objects 4, 9 and 2. The walk interleaves a picture (3) and a lone text object no block holds (11).
-    const text = (index: number, left: number) => ({ index, kind: 'text' as const, left, bottom: 700, right: left + 10, top: 710, fill: null });
-    const answers = (blocks: unknown) =>
-      createClient(channels, (id) =>
-        Promise.resolve(
-          id === 'document.annotations'
-            ? ok({ version: asDocVersion(4), annotations: [], next: null, truncated: false })
-            : id === 'document.textBlocks'
-              ? blocks
-              : ok({
-                  version: asDocVersion(4),
-                  objects: [text(2, 72), { index: 3, kind: 'image' as const, left: 0, bottom: 0, right: 50, top: 50, fill: null }, text(4, 100), text(9, 150), text(11, 400)],
-                  next: null,
-                  truncated: false,
-                }),
-        ),
-      );
-    const blocks = ok({
-      version: asDocVersion(4),
-      blocks: [BLOCK],
-      next: null,
-      truncated: false,
-      rotated: 0,
-      angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 },
-      unaddressable: 0,
-      rewrite: 'objects' as const,
-    });
-    const read = await readPageObjects(answers(blocks), DOC, 3);
-    if (!read.ok) throw new Error('the read was refused');
-    expect(read.objects.objects.map((object) => [object.index, object.members, object.box])).toStrictEqual([
-      [2, [2, 4, 9], { x0: 72, y0: 700, x1: 160, y1: 710 }],
-      [3, [3], { x0: 0, y0: 0, x1: 50, y1: 50 }],
-      [11, [11], { x0: 400, y0: 700, x1: 410, y1: 710 }],
-    ]);
-    // CONTROL: the same page with the block read refused is five objects, each its own — so the grouping above is the
-    // blocks', and a refused block read still outlines the page.
-    const alone = await readPageObjects(answers(err({ code: 'engine-unavailable' as const })), DOC, 3);
-    if (!alone.ok) throw new Error('the read was refused');
-    expect(alone.objects.objects.map((object) => object.members)).toStrictEqual([[2], [3], [4], [9], [11]]);
-  });
-
-  it('EDIT OBJECT under a filter that shows no text MAKES NO text-block read at all (R11)', async () => {
-    const asked: string[] = [];
-    const client = createClient(channels, (id) => {
-      asked.push(id);
-      return Promise.resolve(
-        id === 'document.annotations'
-          ? ok({ version: asDocVersion(4), annotations: [], next: null, truncated: false })
-          : id === 'document.textBlocks'
-            ? err({ code: 'engine-unavailable' as const })
-            : ok({ version: asDocVersion(4), objects: [{ index: 3, kind: 'image' as const, left: 0, bottom: 0, right: 50, top: 50, fill: null }], next: null, truncated: false }),
-      );
-    });
-    const read = await readPageObjects(client, DOC, 3, false);
-    expect(read.ok).toBe(true);
-    expect(asked.filter((id) => id === 'document.textBlocks')).toStrictEqual([]);
-    // CONTROL: the default read, which outlines text, asks for the blocks.
-    asked.length = 0;
-    await readPageObjects(client, DOC, 3);
-    expect(asked.filter((id) => id === 'document.textBlocks')).toHaveLength(1);
-  });
-
-  it('EDIT OBJECT’s read REFUSES two walks at different versions, and a refused walk, rather than outlining either', async () => {
-    // THE BLOCK READ IS REFUSED THROUGHOUT, which leaves text as single objects and never decides the read (ADR-0242).
+  it('EDIT TEXT’s read answers NOTHING for two walks at different versions, or a refused walk, rather than boxes of either', async () => {
     const answering = (objects: unknown, annotations: unknown) =>
-      createClient(channels, (id) =>
-        Promise.resolve(id === 'document.annotations' ? annotations : id === 'document.textBlocks' ? err({ code: 'engine-unavailable' as const }) : objects),
-      );
+      createClient(channels, (id) => Promise.resolve(id === 'document.annotations' ? annotations : objects));
     const content = ok({ version: asDocVersion(4), objects: [], next: null, truncated: false });
     const marks = (version: number) => ok({ version: asDocVersion(version), annotations: [], next: null, truncated: false });
     const refusal = err({ code: 'engine-unavailable' as const });
     // CONTROL: the same two walks at one version are read.
-    expect((await readPageObjects(answering(content, marks(4)), DOC, 0)).ok).toBe(true);
-    // MOVED BETWEEN THE TWO READS is no failure to report: `refused` is absent, and App reads again.
-    expect(await readPageObjects(answering(content, marks(5)), DOC, 0)).toStrictEqual({ ok: false, refused: undefined });
-    // A REFUSED WALK, of either kind, carries its refusal, which App reports once and leaves the mode on: a refusal a
-    // person meets, not a mode that silently outlines nothing.
-    expect(await readPageObjects(answering(refusal, marks(4)), DOC, 0)).toStrictEqual({
-      ok: false,
-      refused: { code: 'engine-unavailable' },
-    });
-    expect(await readPageObjects(answering(content, refusal), DOC, 0)).toStrictEqual({
-      ok: false,
-      refused: { code: 'engine-unavailable' },
-    });
-  });
-
-  it('EDIT OBJECT is ONE ribbon menu of four filters, each checked only while its own filter is on', () => {
-    let tool: string | undefined = undefined;
-    let filter: ObjectFilter = 'all';
-    const entered: (ObjectFilter | undefined)[] = [];
-    const commands = editObjectsCommands({
-      activeTool: () => tool,
-      filter: () => filter,
-      onEnter: (chosen) => {
-        entered.push(chosen);
-      },
-    });
-    expect(commands.map((command) => command.id)).toStrictEqual([
-      'edit.objects-all',
-      'edit.objects-text',
-      'edit.objects-images',
-      'edit.objects-shapes',
-    ]);
-    // ONE MENU, so the ribbon draws one *Edit object* button opening the four.
-    // THE MENU ITSELF, not only that the four agree: four with no menu would agree too, and draw four buttons.
-    expect(commands.map((command) => (command.placements[0] as { menu?: unknown }).menu)).toStrictEqual(
-      commands.map(() => RIBBON_EDIT_OBJECT),
-    );
-
-    const [all, , images] = commands;
-    if (all === undefined || images === undefined) throw new Error('no commands');
-    // OFF: nothing checked, and a press enters with that filter.
-    expect(commands.map((command) => command.checked?.(CONTEXT))).toStrictEqual([false, false, false, false]);
-    void images.run(CONTEXT);
-    // ON WITH IMAGES: only Images is checked; pressing it again leaves, pressing All switches the filter.
-    tool = EDIT_OBJECTS_TOOL_ID;
-    filter = 'images';
-    expect(commands.map((command) => command.checked?.(CONTEXT))).toStrictEqual([false, false, true, false]);
-    void images.run(CONTEXT);
-    void all.run(CONTEXT);
-    expect(entered).toStrictEqual(['images', undefined, 'all']);
+    expect(await readPageContentBoxes(answering(content, marks(4)), DOC, 0)).toStrictEqual({ version: asDocVersion(4), boxes: [] });
+    // MOVED BETWEEN THE TWO READS: boxes of one document are never laid over another's blocks.
+    expect(await readPageContentBoxes(answering(content, marks(5)), DOC, 0)).toBeUndefined();
+    // A REFUSED WALK, of either kind, is no note: the note is a courtesy after a write that already landed (B1.6).
+    expect(await readPageContentBoxes(answering(refusal, marks(4)), DOC, 0)).toBeUndefined();
+    expect(await readPageContentBoxes(answering(content, refusal), DOC, 0)).toBeUndefined();
   });
 
   it('SENDS NOTHING when the review is dismissed, which is the mutation-dialog gate', async () => {

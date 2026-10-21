@@ -68,14 +68,13 @@ const CASES = [
   'a box of text ADDED to the page is read by PDFium at the left and baseline it was given, in a bundled face',
   'CONTROL: before the edit the page holds no such text, and the box added carries a font the page did not have',
   'the heading reflowed onto a second line PUSHES the lines below it (ADR-0249): written whole, the second heading read as far lower as the heading grew, and both answered as moved',
-  'a heading placed ABOUT ITS BOX, as Edit object places text (ADR-0240’s correction, R11), is read halved about its LOWER-left corner and moved, the lines beside it where they were',
 ];
 
 /** @type {string[]} */
 const failures = [];
 // THE COUNT IS WRITTEN ONCE (VVVVVVV-36): the literal below is the independent claim a case leaving must touch (item 4c),
 // and the roster counts the names, so the two cannot be moved out of step.
-if (CASES.length !== 23) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 23`);
+if (CASES.length !== 22) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 22`);
 const roster = createRoster(failures, { cases: CASES.length });
 
 /** @param {string} name @param {boolean} held @param {string} detail */
@@ -312,24 +311,6 @@ async function run(pdfium, kernel) {
       scaledRead !== null &&
       othersStand(scaledRead),
     `the scaled heading read at ${JSON.stringify(scaledBox)} against ${JSON.stringify(originalBox)}.`,
-  );
-
-  // AS EDIT OBJECT PLACES TEXT (R11): ADR-0243's one matrix about the box the command names — halved about the LOWER-left
-  // corner, then moved — where the block's own placement above scales about its top left.
-  const about = await applied([
-    { ...headingBlock, place: { about: { box: originalBox, moveBy: { x: 10, y: 5 }, scaleBy: { x: 0.5, y: 0.5 } } } },
-  ]);
-  const aboutRead = about.saved === null ? null : await readRuns(about.saved);
-  const aboutBox = aboutRead === null ? null : boxOf(piecesOf(aboutRead));
-  check(
-    CASES[22] ?? '',
-    aboutBox !== null &&
-      Math.abs((aboutBox.right - aboutBox.left) / originalWidth - 0.5) < 0.03 &&
-      near(aboutBox.left, originalBox.left + 10) &&
-      near(aboutBox.bottom, originalBox.bottom + 5, 1.5) &&
-      aboutRead !== null &&
-      othersStand(aboutRead),
-    `the heading placed about its box read at ${JSON.stringify(aboutBox)} against ${JSON.stringify(originalBox)} (${about.outcome.ok ? 'written' : String(about.outcome.error)}).`,
   );
 
   const turned = await applied([{ ...headingBlock, place: { rotate: 90 } }]);

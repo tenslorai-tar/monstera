@@ -1,7 +1,7 @@
 import {
   type BlockMark,
   type BlockMarkSet,
-  type BlockPlaceReading,
+  type BlockPlace,
   type BlockPush,
   MAX_BLOCK_FONTS,
   MAX_RUN_FONT_BYTES,
@@ -54,7 +54,6 @@ import {
 import { type Alignment, blockShape, paragraphSpacing } from './paragraphShape.js';
 import { type ProgramFace, faceOf, programFace } from './fontFace.js';
 import { BOX } from './boxFont.js';
-import { type PlacementIntent, placementMatrix } from './objectPlacementMatrix.js';
 import { faceProgramApart } from './faceProgramApart.js';
 import { type PathGlyph, type PathStep, pathFontFor } from './pathFont.js';
 import type { DrawnGlyph } from './runFont.js';
@@ -1763,7 +1762,7 @@ export interface BlockEdit {
   readonly marks?: readonly Omit<BlockMark, 'block'>[];
   readonly paragraphs?: readonly Omit<ParagraphProps, 'block'>[];
   /** How the block is placed once laid out: moved, scaled, rotated, or set at a new measure (ADR-0180, corrected). */
-  readonly place?: Omit<BlockPlaceReading, 'block'>;
+  readonly place?: Omit<BlockPlace, 'block'>;
   /** In the edit to be moved down by block `by`'s growth, within `room`, and never written (ADR-0249 Decision 3). */
   readonly push?: Omit<BlockPush, 'block'>;
   /**
@@ -2965,11 +2964,6 @@ function layOutBlocks(
       // each named run holds here are the words the editor showed for it, so the edit diffs what a person typed against
       // what they were shown, and a line they left alone is not set again.
       const joined = readWalk(bindings, handle, walked);
-      // A PLACEMENT ABOUT A BOX IS THE OPERATOR WRITER'S (ADR-0240's correction of 2026-10-19): this writer places a block
-      // about its own corner and would lay it elsewhere, so it refuses one rather than ignore the box it names.
-      if (edits.some((edit) => edit.place?.about !== undefined)) {
-        throw refusedAt('object', 'a placement about a box is written by the operator writer, not this one');
-      }
       const blocks = edits.map((edit) => ({
         text: edit.text,
         soft: edit.soft,
@@ -4410,16 +4404,6 @@ export interface ObjectMatrix {
   readonly f: number;
 }
 
-/** How far to move an object, and how much to grow it. */
-export interface ObjectPlacement {
-  /** Points to add to x and y. Zero is legal: a pure scale moves nothing. */
-  readonly moveBy: { readonly x: number; readonly y: number };
-  /** Factors to multiply width and height by. One is legal: a pure move. */
-  readonly scaleBy: { readonly x: number; readonly y: number };
-  /** Degrees counter-clockwise about the scaled box's centre; absent is none (ADR-0243). */
-  readonly rotateBy?: number | undefined;
-}
-
 /** The object at `index`, whatever its kind, with the range checked. */
 function objectAt(bindings: Bound, handle: unknown, page: number, index: number): unknown {
   const total = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
@@ -4657,7 +4641,7 @@ function objectTurn(bindings: Bound, object: unknown): number | undefined {
 function placeObjects(
   bindings: Bound,
   objects: readonly unknown[],
-  place: Omit<BlockPlaceReading, 'block'>,
+  place: Omit<BlockPlace, 'block'>,
   anchor: { readonly x: number; readonly y: number },
 ): boolean {
   const scale = place.scale ?? 1;
@@ -4714,22 +4698,9 @@ function spanOf(bindings: Bound, objects: readonly unknown[]): { left: number; r
  * Indices rather than handles, `textObjectIndices`' reason: a `FPDF_PAGEOBJECT`
  * is owned by the page it came from and dies with it.
  *
- * Unlike that function this answers **every** object, not only the text ones —
- * the row it serves is *move / scale / recolor / delete any page object*, and a
- * walk that filtered would make an image the one thing on the page a person
- * could see and not select.
+ * Unlike that function this answers **every** object, not only the text ones: Edit text's note on what a grown block
+ * newly covers reads the pictures and shapes (B1.6), which a walk of text alone would never count.
  */
-/** What kind one object is, as {@link pageObjects} names kinds: the one object read, not the page's list. */
-export function objectKind(session: PdfiumSession, page: number, index: number): Promise<PageObject['kind']> {
-  return promised(() =>
-    onPage(session, page, (handle) => {
-      const bindings = api();
-      const object = objectAt(bindings, handle, page, index);
-      return OBJECT_KINDS[numberFrom(bindings.objectType(object), 'FPDFPageObj_GetType')] ?? 'unknown';
-    }),
-  );
-}
-
 export function pageObjects(session: PdfiumSession, page: number): Promise<readonly PageObject[]> {
   return promised(() =>
     onPage(session, page, (handle) => {
@@ -4774,182 +4745,6 @@ export function pageObjects(session: PdfiumSession, page: number): Promise<reado
       return found;
     }),
   );
-}
-
-/**
- * One object's own matrix, for an inverse to put back.
- *
- * The whole of a placement's undo. Measured 2026-09-10: a `SetMatrix` of the
- * matrix read before a transform returns the object's bounds to exactly what
- * they were — so the inverse RESTORES rather than computing the opposite
- * transform, which is ADR-0009 §3's rule and is also the only version that
- * survives repeated floating-point work.
- */
-export function objectMatrix(
-  session: PdfiumSession,
-  page: number,
-  index: number,
-): Promise<ObjectMatrix> {
-  return promised(() =>
-    onPage(session, page, (handle) => {
-      const bindings = api();
-      const object = objectAt(bindings, handle, page, index);
-      const matrix: Record<string, unknown> = {};
-      if (numberFrom(bindings.getMatrix(object, matrix), 'FPDFPageObj_GetMatrix') !== 1) {
-        throw refusedAt(
-          'matrix',
-          `FPDFPageObj_GetMatrix refused object ${String(index)} on page ${String(page)}, so its ` +
-            'placement cannot be recorded and an edit to it could not be undone',
-        );
-      }
-      const read = (key: string): number => numberFrom(matrix[key], `FS_MATRIX.${key}`);
-      return { a: read('a'), b: read('b'), c: read('c'), d: read('d'), e: read('e'), f: read('f') };
-    }),
-  );
-}
-
-/**
- * Moves and scales one object, and regenerates the page's content **once**.
- *
- * ## A SCALE IS ABOUT THE OBJECT'S OWN BOX, and PDFium's is not
- *
- * Measured 2026-09-10 (`scripts/research/pdfiumObjects.mjs`): a rectangle at
- * x=200..320 scaled by 2 through `FPDFPageObj_Transform` landed at **400..640**
- * — off a 400pt page — because a matrix scales about the coordinate system's
- * origin, which for a page is its bottom-left corner. That is never what a
- * person asking to make something twice as big means.
- *
- * So the composition happens here: translate the object's own anchor to the
- * origin, scale, translate back, then move. **The anchor is the box's
- * bottom-left corner**, which means an object grows right and up from where it
- * sits and the corner a person can see stays put. A centre anchor would be
- * equally defensible and is not more predictable; what matters is that one is
- * chosen, written down, and the same every time.
- *
- * The arithmetic is one matrix, not three calls: scaling about (px, py) and
- * then translating by (dx, dy) is `(sx, 0, 0, sy, px(1-sx)+dx, py(1-sy)+dy)`.
- *
- * ## And the transform COMPOSES, which is why nothing here reads the matrix
- *
- * Measured the same day: two +30 translations moved an object 60, not 30. So an
- * object's existing placement is preserved by construction and this call does
- * not have to read it. {@link objectMatrix} exists for the *inverse*, which is a
- * different question.
- *
- * @throws when the index names no object on the page.
- */
-export function placeObject(
-  session: PdfiumSession,
-  page: number,
-  index: number,
-  placement: ObjectPlacement,
-): Promise<void> {
-  return promised(() => {
-    onPage(session, page, (handle) => {
-      const bindings = api();
-      const object = objectAt(bindings, handle, page, index);
-      // THE ONE PLACEMENT MATRIX (ADR-0243), about the object's own box.
-      bindings.transform(object, ...placementMatrix({ ...placement, box: boundsOf(bindings, object) }));
-      generate(session, page, handle);
-    });
-  });
-}
-
-/**
- * Moves and resizes SEVERAL objects as one thing (ADR-0242): every one takes the same page matrix, scaled about the
- * GROUP's lower-left corner and then moved, so a block keeps its shape; then the page regenerates once.
- *
- * {@link placeObject}'s matrix with the group's box where that function takes the object's own, and composed onto each
- * object's existing placement by `FPDFPageObj_Transform` for that function's measured reason.
- *
- * @throws when an index names no object on the page, before any object is touched.
- */
-export function placeObjectGroup(
-  session: PdfiumSession,
-  page: number,
-  indices: readonly number[],
-  placement: ObjectPlacement & { readonly box: PlacementIntent['box'] },
-): Promise<void> {
-  return promised(() => {
-    onPage(session, page, (handle) => {
-      const bindings = api();
-      // EVERY OBJECT FOUND FIRST, so an index that names nothing leaves the page as it was rather than half placed.
-      const objects = indices.map((index) => objectAt(bindings, handle, page, index));
-      // THE ONE PLACEMENT MATRIX (ADR-0243), about the GROUP's box.
-      const matrix = placementMatrix(placement);
-      for (const object of objects) bindings.transform(object, ...matrix);
-      generate(session, page, handle);
-    });
-  });
-}
-
-/**
- * Moves one object from place `from` to place `to` in its page's list (ADR-0244), and regenerates once. PDFium keeps an
- * object with its own graphics state and clip, so only what is drawn over what changes.
- *
- * @throws when either place is off the page's list, before the page is touched.
- */
-export function moveObjectInList(session: PdfiumSession, page: number, from: number, to: number): Promise<void> {
-  return promised(() => {
-    onPage(session, page, (handle) => {
-      const bindings = api();
-      const total = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
-      if (to < 0 || to >= total) throw refusedAt('object', `page ${String(page)} has no place ${String(to)} among its ${String(total)} objects`);
-      const object = objectAt(bindings, handle, page, from);
-      if (numberFrom(bindings.removeObject(handle, object), 'FPDFPage_RemoveObject') !== 1) {
-        throw refusedAt('object', `FPDFPage_RemoveObject refused object ${String(from)} on page ${String(page)}`);
-      }
-      // TAKEN OUT AND PUT BACK: the page now owns it again, so nothing here leaks or frees it.
-      if (numberFrom(bindings.insertObjectAt(handle, object, to), 'FPDFPage_InsertObjectAtIndex') !== 1) {
-        throw refusedAt('object', `FPDFPage_InsertObjectAtIndex refused place ${String(to)} on page ${String(page)}`);
-      }
-      generate(session, page, handle);
-    });
-  });
-}
-
-/** Puts several objects' matrices back, and regenerates once: {@link placeObjectGroup}'s inverse. */
-export function setObjectMatrices(
-  session: PdfiumSession,
-  page: number,
-  entries: readonly { readonly index: number; readonly matrix: ObjectMatrix }[],
-): Promise<void> {
-  return promised(() => {
-    onPage(session, page, (handle) => {
-      const bindings = api();
-      for (const { index, matrix } of entries) {
-        const object = objectAt(bindings, handle, page, index);
-        if (numberFrom(bindings.setMatrix(object, matrix), 'FPDFPageObj_SetMatrix') !== 1) {
-          throw refusedAt('matrix', `FPDFPageObj_SetMatrix refused object ${String(index)} on page ${String(page)}`);
-        }
-      }
-      generate(session, page, handle);
-    });
-  });
-}
-
-/**
- * Puts one object's matrix back, and regenerates once.
- *
- * `placeObject`'s inverse, and it reads nothing off a command — the matrix it
- * is given is the whole restoring instruction (ADR-0009 §3).
- */
-export function setObjectMatrix(
-  session: PdfiumSession,
-  page: number,
-  index: number,
-  matrix: ObjectMatrix,
-): Promise<void> {
-  return promised(() => {
-    onPage(session, page, (handle) => {
-      const bindings = api();
-      const object = objectAt(bindings, handle, page, index);
-      if (numberFrom(bindings.setMatrix(object, matrix), 'FPDFPageObj_SetMatrix') !== 1) {
-        throw refusedAt('matrix', `FPDFPageObj_SetMatrix refused object ${String(index)} on page ${String(page)}`);
-      }
-      generate(session, page, handle);
-    });
-  });
 }
 
 /**
@@ -5139,149 +4934,6 @@ export function promoteFormObjects(session: PdfiumSession, page: number): Promis
       return moved;
     }),
   );
-}
-
-/** One object's new fill colour. */
-export interface ObjectFill {
-  readonly index: number;
-  readonly red: number;
-  readonly green: number;
-  readonly blue: number;
-  readonly alpha: number;
-}
-
-/**
- * Recolours objects and regenerates the page's content **once**.
- *
- * Plural for `replaceTextObjects`' measured reason: generation is per call and
- * costs 13.7× over forty objects when paid per object. Recolouring a heading
- * and its rule is two objects and one thing the person did.
- *
- * **It reaches a TEXT object as well as a path** — measured 2026-09-10, both
- * returning 1 and both surviving a save and a reopen — which is what makes the
- * row's *any page object* true rather than aspirational.
- *
- * @throws on an empty list, `replaceTextObjects`' reason.
- * @throws when an index names no object, before anything is set.
- */
-export function setObjectFills(
-  session: PdfiumSession,
-  page: number,
-  fills: readonly ObjectFill[],
-): Promise<void> {
-  return promised(() => {
-    onPage(session, page, (handle) => {
-      const bindings = api();
-      if (fills.length === 0) {
-        throw new Error(
-          `A recolour on page ${String(page)} named no object. Regenerating a page's content ` +
-            'stream is the whole cost of an edit, and this one would change nothing.',
-        );
-      }
-      // RESOLVED IN FULL FIRST, so a refusal leaves the page untouched.
-      const objects = fills.map((fill) => objectAt(bindings, handle, page, fill.index));
-      for (const [at, fill] of fills.entries()) {
-        if (
-          numberFrom(
-            bindings.setFillColour(objects[at], fill.red, fill.green, fill.blue, fill.alpha),
-            'FPDFPageObj_SetFillColor',
-          ) !== 1
-        ) {
-          throw refusedAt('object', `FPDFPageObj_SetFillColor refused object ${String(fill.index)} on page ${String(page)}`);
-        }
-      }
-      generate(session, page, handle);
-    });
-  });
-}
-
-/**
- * Removes objects from a page and regenerates its content **once**.
- *
- * ## ORDER CANNOT MATTER, because indices are resolved to HANDLES first
- *
- * An index is a position in the page's object order and removing one shifts
- * every later object down, so removing 1 then 3 by index would delete whatever
- * slid into 3 — `deletePages`' hazard on a different walk. This sorted
- * descending to avoid it, and **the mutation written to redden that (sorting
- * ascending) left every case green**, which is the signal not to skip past.
- *
- * The reason is that `FPDFPage_RemoveObject` takes the OBJECT, not the index:
- * every index is resolved against the untouched page before anything is
- * unlinked, and a handle does not renumber. So the sort was a second mechanism
- * for something the resolution already prevented, and it is gone — a guard
- * whose stated reason is not the one doing the work is worse than none, because
- * the next reader takes the stated reason as the rule.
- *
- * What the up-front resolution IS load-bearing for is the refusal: a bad index
- * anywhere in the list refuses before the page has been touched.
- *
- * ## Duplicates are removed, and the reason is NOT the one it looks like
- *
- * *The same index twice is a double free* was the obvious reading and it is
- * wrong, which the mutation showed rather than confirmed: deleting the `Set`
- * and removing `[0, 0]` throws **FPDFPage_RemoveObject refused object 0** —
- * PDFium declines to unlink an object that is no longer on the page, so the
- * second `FPDFPageObj_Destroy` is never reached.
- *
- * What the `Set` actually prevents is a **half-applied command**: without it a
- * duplicate makes the first removal land and the second throw, which leaves
- * this page mutated and the call failed. Nothing escapes to the file — the
- * throw happens before {@link generate}, and a page closed without generating
- * carries no change into the saved bytes (measured) — but a caller would meet
- * an error for an input with an obvious meaning.
- *
- * Recorded this way round because a guard whose stated reason is more alarming
- * than its evidence is one nobody re-checks.
- *
- * ## `Destroy` after `Remove`, and both are required
- *
- * `FPDFPage_RemoveObject` unlinks the object and hands ownership back to the
- * caller; `FPDFPageObj_Destroy` frees it. Skipping the second leaks for the
- * life of the process — a process whose memory a job object bounds — and
- * calling the second on an object still on a page frees memory the page will
- * use.
- *
- * ## It cannot be undone from anything a capture can hold
- *
- * A removed object is gone: PDFium offers no way to reconstruct one from a
- * description, so there is no prior state that would restore it. That is why
- * this command's declaration is a **checkpoint** one rather than invertible,
- * and the fact belongs here as well as there because it is a property of the
- * library rather than a choice about the log.
- *
- * @throws on an empty list, `replaceTextObjects`' reason.
- * @throws when an index names no object, before anything is removed.
- */
-export function removeObjects(
-  session: PdfiumSession,
-  page: number,
-  indices: readonly number[],
-): Promise<void> {
-  return promised(() => {
-    onPage(session, page, (handle) => {
-      const bindings = api();
-      if (indices.length === 0) {
-        throw new Error(
-          `A removal on page ${String(page)} named no object. Regenerating a page's content ` +
-            'stream is the whole cost of an edit, and this one would change nothing.',
-        );
-      }
-      // RESOLVED IN FULL FIRST, against the untouched page: a bad index refuses
-      // before anything is unlinked, and a resolved handle does not renumber
-      // when its neighbours leave. The `Set` is the double-free guard, not a
-      // tidiness — see the note above.
-      const named = [...new Set(indices)];
-      const objects = named.map((index) => objectAt(bindings, handle, page, index));
-      for (const [at, index] of named.entries()) {
-        if (numberFrom(bindings.removeObject(handle, objects[at]), 'FPDFPage_RemoveObject') !== 1) {
-          throw refusedAt('object', `FPDFPage_RemoveObject refused object ${String(index)} on page ${String(page)}`);
-        }
-        bindings.destroyObject(objects[at]);
-      }
-      generate(session, page, handle);
-    });
-  });
 }
 
 /**
@@ -5881,8 +5533,9 @@ export async function pageContent(session: PdfiumSession, page: number): Promise
  * Regenerates a page's content stream, or throws saying what that costs.
  *
  * **Every object edit needs it, and that is measured rather than assumed.**
- * `scripts/research/pdfiumObjects.mjs` deletes an object with the generate and
- * without it: with, the reopened bytes carry two objects; without, three. So a
+ * `scripts/research/pdfiumObjects.mjs` (retired with Edit object on 2026-10-21;
+ * in history before be90e61a) deleted an object with the generate and without
+ * it: with, the reopened bytes carried two objects; without, three. So a
  * mutation that skipped this would be present in memory, absent from the file,
  * and visible to nothing until the document was reopened.
  *

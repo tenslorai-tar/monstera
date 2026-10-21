@@ -235,8 +235,7 @@ try {
   // and the second is the one a reader would not predict:
   //
   // - `FPDFFormObj_GetObject` is indexed, so removing while walking renumbers
-  //   what is left — the same shape `removeObjects` already handles by taking
-  //   the OBJECT rather than the index.
+  //   what is left, so the OBJECT is taken rather than the index.
   // - ORDER IS CONTENT, not bookkeeping. Inserting the children in reverse put
   //   `SECOND LINE INSIDE` ahead of `INSIDE THE XOBJECT` in the extracted text
   //   — measured, in this file's first run. Content-stream order is what the

@@ -156,8 +156,7 @@ export interface TextEditLayerProps {
    */
   readonly paperAt: (x: number, y: number) => string | undefined;
   /**
-   * The drawn page's pixels in a box of the WINDOW's CSS pixels, or `undefined` where none are drawn (Edit object's
-   * `pictureOf`): what the text below a growing block is drawn moved from (ADR-0249 Decision 5). Absent, nothing is drawn
+   * The drawn page's pixels in a box of the WINDOW's CSS pixels, or `undefined` where none are drawn: what the text below a growing block is drawn moved from (ADR-0249 Decision 5). Absent, nothing is drawn
    * moved, and the write still moves it.
    */
   readonly pictureOf?: ((box: { x0: number; y0: number; x1: number; y1: number }) => HTMLCanvasElement | undefined) | undefined;

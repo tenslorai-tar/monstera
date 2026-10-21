@@ -1,8 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-import { PDFDocument, ParseSpeeds, StandardFonts, rgb } from '@cantoo/pdf-lib';
+import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Locator, type Page, expect, test } from '@playwright/test';
 
@@ -13,11 +10,8 @@ import {
   openDocument,
   openSection,
   runCommand,
-  samplePdf,
   shoot,
 } from './helpScreensHarness.js';
-
-const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
 /** The id `openApp` gives the sample document, so a scene that swaps the bytes keeps the same tab. */
 const SAMPLE_ID = asDocId(SAMPLE_DOC_ID);
@@ -283,49 +277,6 @@ async function formPdf(): Promise<Uint8Array> {
   return document.save();
 }
 
-/** Where {@link logoPdf} draws its logo on page 1, in PDF user space. */
-const LOGO = { left: 468, bottom: 684, right: 540, top: 756 } as const;
-
-/** The sample report with the Monstera logo, a real image object, at the top right of page 1. */
-async function logoPdf(): Promise<Uint8Array> {
-  const document = await PDFDocument.load(await samplePdf(), { updateMetadata: false, parseSpeed: ParseSpeeds.Fastest });
-  const logo = await document.embedPng(readFileSync(join(REPO_ROOT, 'assets', 'brand', 'logo-256.png')));
-  document.getPage(0).drawImage(logo, {
-    x: LOGO.left,
-    y: LOGO.bottom,
-    width: LOGO.right - LOGO.left,
-    height: LOGO.top - LOGO.bottom,
-  });
-  return document.save();
-}
-
-/** One object as `document.pageObjects` answers it. */
-type PageObject = NonNullable<SceneShim['pageObjects']>[number];
-
-/**
- * The objects on page 1 of {@link logoPdf}, in the order its content stream draws them: the title and each body line
- * are one text object apiece (pdf-lib writes one text block per `drawText`), then the logo. Each text object's box is
- * computed from the same text, size and font the sample draws with, through pdf-lib's own metrics — so the numbers
- * the dialog shows are this page's, not ones written here.
- */
-async function logoPageObjects(): Promise<PageObject[]> {
-  const scratch = await PDFDocument.create();
-  const font = await scratch.embedFont(StandardFonts.Helvetica);
-  const bold = await scratch.embedFont(StandardFonts.HelveticaBold);
-  const black = { red: 0, green: 0, blue: 0, alpha: 255 };
-  const boxOf = (text: string, size: number, face: typeof font, x: number, y: number): Omit<PageObject, 'index' | 'kind' | 'fill'> => {
-    const below = face.heightAtSize(size, { descender: true }) - face.heightAtSize(size, { descender: false });
-    return { left: x, bottom: y - below, right: x + face.widthOfTextAtSize(text, size), top: y + face.heightAtSize(size, { descender: false }) };
-  };
-  const body = 'Revenue grew across all three regions, led by the northern accounts and renewals.';
-  const objects: PageObject[] = [{ index: 0, kind: 'text', ...boxOf('Annual report — page 1', 22, bold, 72, 700), fill: black }];
-  for (let line = 0; line < 22; line += 1) {
-    objects.push({ index: line + 1, kind: 'text', ...boxOf(body, 11, font, 72, 660 - line * 24), fill: black });
-  }
-  objects.push({ index: 23, kind: 'image', ...LOGO, fill: null });
-  return objects;
-}
-
 test('ai-keys-and-pricing-1', async ({ page }) => {
   // A KEY ALREADY STORED, as the OS credential store holds one: the shim answers that the id is stored and never
   // hands the value back, which is what the write-only field shows.
@@ -453,29 +404,6 @@ test('edit-page-in-another-app-1', async ({ page }) => {
   const dialog = page.getByRole('dialog', { name: 'Put the edited page back?' });
   await expect(dialog).toBeVisible();
   await shoot(page, 'edit-page-in-another-app-1', dialog);
-});
-
-test('edit-page-objects-1', async ({ page }) => {
-  await openApp(page, { ...openedAs(await logoPdf(), 'Annual report.pdf'), pageObjects: await logoPageObjects() });
-  await openDocument(page);
-  await openSection(page, 'Edit');
-  // THE MODE ON THE PAGE (ADR-0153): every object outlined where it is, and the logo selected with its handles.
-  // THE FACE ENTERS EDIT ALL OBJECTS (ADR-0241), as the article's first step now says.
-  await page.getByRole('button', { name: 'Edit object', exact: true }).click();
-  const layer = page.getByRole('group', { name: 'Objects on page 1' });
-  const logo = layer.locator('[data-object="content:23"]');
-  await logo.click();
-  await expect(logo).toHaveAttribute('aria-pressed', 'true');
-  // FRAMED ON WHAT THE ARTICLE NAMES: the outlined title, the selected logo with its handles, and the Properties tab
-  // saying what is selected — the whole page is taller than the window and says nothing more.
-  const named = page.locator('.m-properties__head').first();
-  await expect(named.getByRole('heading', { name: 'Object' })).toBeVisible();
-  await shootAround(page, 'edit-page-objects-1', [
-    layer.locator('[data-object="content:0"]'),
-    layer.locator('[data-object="content:5"]'),
-    logo,
-    named,
-  ]);
 });
 
 /** A ribbon group, by its caption. */

@@ -9,8 +9,8 @@ import { pixelsOf } from './fieldDesign.js';
 import type { ListedField } from './fieldFill.js';
 
 /**
- * *Tab order* as the page list carries it (ADR-0226 Decision 15): the fourth value of the slot the editing modes share,
- * so it never holds together with Edit fields, Edit text or Edit object.
+ * *Tab order* as the page list carries it (ADR-0226 Decision 15): a value of the slot the editing modes share, so it
+ * never holds together with Edit fields or Edit text.
  */
 export interface TabOrderEditing {
   readonly mode: 'tab-order';

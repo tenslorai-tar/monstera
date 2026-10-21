@@ -267,7 +267,7 @@ const failures = [];
 // THE COUNT IS MOVED ONLY WITH THE CASES IT COUNTS, and the commit that moves it names the cases it adds or removes. A
 // running ledger of the count was kept here until 2026-10-17 and had stopped at 246 against 274 (VVVVVVV-23): a second
 // copy of the history git already holds, which nothing compared with the count.
-const roster = createRoster(failures, { cases: 298 });
+const roster = createRoster(failures, { cases: 296 });
 
 /**
  * @param {string} name
@@ -683,32 +683,6 @@ async function fontChangeCases() {
       whole.refused === '' && whole.text === expected,
       JSON.stringify(whole),
     );
-    // A PLACEMENT ABOUT A BOX IS THE OPERATOR WRITER'S (ADR-0240's correction of 2026-10-19, R11): this writer places a
-    // block about its own corner, so it refuses one rather than ignore the box and lay the block somewhere else.
-    /** @param {Record<string, unknown>} place @returns {Promise<string>} */
-    const placed = async (place) => {
-      try {
-        await localPdfiumExecution.apply({
-          session: pdf,
-          command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
-            kind: 'editTextBlock',
-            page: 0,
-            ...blockEditOf([{ ...block, place }]),
-            fit: 'reflow',
-            version: 1,
-          }),
-          sources: [],
-          reads: undefined,
-        });
-        return 'written';
-      } catch (error) {
-        return error instanceof Error ? `${error.name} ${String(Reflect.get(error, 'step'))}` : String(error);
-      }
-    };
-    const aboutBox = await placed({ about: { box: { left: 72, bottom: 600, right: 300, top: 700 }, moveBy: { x: 10, y: 0 }, scaleBy: { x: 1, y: 1 } } });
-    record('PDFium’s block writer REFUSES a placement about a box, at its object step, rather than ignore the box', aboutBox === 'EditRefusedError object', aboutBox);
-    const ownPlace = await placed({ move: { x: 10, y: 0 } });
-    record('CONTROL: the same block placed by its own move is written by PDFium’s block writer', ownPlace === 'written', ownPlace);
   } finally {
     bindEditFaces(null);
   }
@@ -2496,8 +2470,8 @@ async function replaceAtCases() {
 /**
  * Document-wide replace-all, through the same routing every case above uses.
  *
- * Its own function for `pdfiumObject.proof.mjs`' reason one file along: these
- * share a fixture and a helper, and the roster's count is an independent claim
+ * Its own function because these share a fixture and a helper, and the
+ * roster's count is an independent claim
  * a reader checks by counting `record` calls rather than by scrolling one body.
  */
 async function replaceAllCases() {

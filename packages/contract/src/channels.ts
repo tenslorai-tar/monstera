@@ -6983,7 +6983,7 @@ export const channels = {
   ),
 
   /**
-   * Starts the engine Edit text and Edit object read through, as either mode is chosen
+   * Starts the engine Edit text reads through, as the mode is chosen
    * ([ADR-0048](../../../docs/DECISIONS/0048-what-a-second-engine-host-owes-and-what-it-holds.md)'s correction of
    * 2026-10-20, R11): the PDFium host was built at its first read, so the first outline or block paid its start after the
    * person had pressed. It is the host the read builds, by the same call, and it still stops when idle.
@@ -6993,7 +6993,7 @@ export const channels = {
    * say so, and Help › Components is where a component that cannot start is named.
    */
   'app.prepareEditing': channel(
-    'Starts the editing engine ahead of the first read of Edit text or Edit object.',
+    'Starts the editing engine ahead of the first read of Edit text.',
     z.object({}).strict(),
     z.object({ started: z.boolean() }),
   ),

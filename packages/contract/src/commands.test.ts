@@ -255,17 +255,13 @@ describe('the block edit payload (ADR-0142)', () => {
       expect(editTextBlockSchema.safeParse(places([{ block: 0, scale: 2 }, { block: 1, width: 80 }])).success).toBe(true);
     });
 
-    it('takes Edit object’s ONE placement about a box, and refuses it beside the block command’s own fields or twice', () => {
+    it('REFUSES a placement about a box, the shape Edit object sent and took with it (R20)', () => {
       const places = (list: readonly object[]) => ({ ...withPlaces, places: list });
       const about = { box: { left: 10, bottom: 20, right: 110, top: 60 }, moveBy: { x: 5, y: -3 }, scaleBy: { x: 2, y: 1.5 } };
-      expect(editTextBlockSchema.safeParse(places([{ block: 0, about }])).success).toBe(true);
-      // THE MIX, which the union refuses where the refinement did — the size bound cannot read a refinement.
-      expect(editTextBlockSchema.safeParse(places([{ block: 0, about, move: { x: 1, y: 1 } }])).success).toBe(false);
-      expect(editTextBlockSchema.safeParse(places([{ block: 0, about, width: 80 }])).success).toBe(false);
-      // TWICE: Edit object places the one block a press picked, so its larger shape is admitted once.
-      expect(editTextBlockSchema.safeParse(places([{ block: 0, about }, { block: 1, about }])).success).toBe(false);
-      // And one of each in one command is neither shape.
-      expect(editTextBlockSchema.safeParse(places([{ block: 0, about }, { block: 1, width: 80 }])).success).toBe(false);
+      // THE STRICT SHAPE refuses the key, so no writer is handed a placement nothing in the application makes.
+      expect(editTextBlockSchema.safeParse(places([{ block: 0, about }])).success).toBe(false);
+      // CONTROL: the block's own placement in the same slot is accepted.
+      expect(editTextBlockSchema.safeParse(places([{ block: 0, scale: 2 }])).success).toBe(true);
     });
 
     it('takes an edit of added boxes alone, and refuses one that names nothing at all', () => {

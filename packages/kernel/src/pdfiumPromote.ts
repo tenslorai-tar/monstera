@@ -39,13 +39,10 @@ import { onImage, pdfiumWriter, promoteFormObjects } from './pdfiumFfi.js';
 /**
  * Says why a promotion has no prior, so the bus takes a checkpoint.
  *
- * **The fourth distinct reason in this build, and it is the first one's shape
- * arrived at backwards.** `deletePageObjects` has no prior because PDFium can
- * describe an object and not rebuild one. Here the prior would be *a Form
- * XObject and its placement* — and PDFium's public API can take a form apart
- * (`FPDFFormObj_RemoveObject`) and offers nothing that builds one. So the
- * inverse is unrepresentable for the same reason, reached from the far end: the
- * pieces are all recoverable and the container is not.
+ * The prior would be *a Form XObject and its placement* — and PDFium's public
+ * API can take a form apart (`FPDFFormObj_RemoveObject`) and offers nothing
+ * that builds one. So the inverse is unrepresentable: the pieces are all
+ * recoverable and the container is not.
  */
 export function capturePromoteFormObjects(): Promise<CaptureResult<never>> {
   return Promise.resolve({

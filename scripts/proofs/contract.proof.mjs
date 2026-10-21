@@ -692,63 +692,10 @@ const REPLACE_TEXT_SPEC = `  replaceTextObject: {
     reads: 'none',
   },`;
 
-const PLACE_OBJECT_SPEC = `  placePageObject: {
-    kind: 'placePageObject',
-    writer: 'pdfium',
-    apply: applyPlacePageObject,
-    capture: capturePlacePageObject,
-    invert: invertPlacePageObject,
-    invertible: true,
-    undo: 'inverse',
-    reproducible: true,
-    replay: 'reapply-intent',
-    sources: 'none',
-    reads: 'none',
-  },`;
-
-const RECOLOR_OBJECTS_SPEC = `  recolorPageObjects: {
-    kind: 'recolorPageObjects',
-    writer: 'pdfium',
-    apply: applyRecolorPageObjects,
-    capture: captureRecolorPageObjects,
-    invert: invertRecolorPageObjects,
-    invertible: true,
-    undo: 'inverse',
-    reproducible: true,
-    replay: 'reapply-intent',
-    sources: 'none',
-    reads: 'none',
-  },`;
-
 /**
- * The first PDFium spec that is TERMINAL, and the shape is the point.
+ * Terminal for its own reason, which is the axis rather than the word.
  *
- * `capture` and `invert` are both present and neither can run: `CommandSpec`
- * requires the slots for every kind — leaving them out is a compile error, which
- * is what keeps the table exhaustive — while `CommandPrior.deletePageObjects` is
- * `never`, so nothing can build an argument for the invert. The four pdf-lib
- * entries carry the same pair because their prior is document-scaled; this one
- * because PDFium cannot rebuild a removed object at all.
- */
-const DELETE_OBJECTS_SPEC = `  deletePageObjects: {
-    kind: 'deletePageObjects',
-    writer: 'pdfium',
-    apply: applyDeletePageObjects,
-    capture: captureDeletePageObjects,
-    invert: invertDeletePageObjects,
-    invertible: false,
-    undo: 'checkpoint',
-    reproducible: true,
-    replay: 'reapply-intent',
-    sources: 'none',
-    reads: 'none',
-  },`;
-
-/**
- * Terminal for a THIRD reason, which is the axis rather than the word.
- *
- * `deletePageObjects` has no prior. `flattenFormFields`' prior is
- * unserialisable. This one's prior exists, serialises cleanly and is
+ * `flattenFormFields`' prior is unserialisable. This one's prior exists, serialises cleanly and is
  * **document-scaled** — every object the replacement changed — and
  * `CommandLog.trimTo`'s rule is that an invertible entry retains nothing
  * document-scaled.
@@ -805,8 +752,8 @@ const PROMOTE_SPEC = `  promoteFormObjects: {
   },`;
 
 /**
- * The newest kind (ADR-0096), kept separate for {@link MOVE_SPEC}'s reason. Terminal for
- * `deletePageObjects`' reason: a block edit makes and removes objects PDFium cannot rebuild.
+ * The newest kind (ADR-0096), kept separate for {@link MOVE_SPEC}'s reason. Terminal because a block edit makes and
+ * removes objects, and PDFium can describe an object and cannot rebuild one.
  */
 const EDIT_BLOCK_SPEC = `  editTextBlock: {
     kind: 'editTextBlock',
@@ -966,56 +913,6 @@ const RESET_FORM_SPEC = `  resetForm: {
     invert: invertResetForm,
     invertible: false,
     undo: 'checkpoint',
-    reproducible: true,
-    replay: 'reapply-intent',
-    sources: 'none',
-    reads: 'none',
-  },`;
-
-/**
- * A picture, a form or a shape placed where it is drawn (ADR-0240) — the NEWEST kind since 2026-10-14, and the one the
- * `missing a command kind` case omits. `editTextOperators`' axes: the checkpoint is its undo.
- */
-const PLACE_DRAWN_SPEC = `  placeDrawnObject: {
-    kind: 'placeDrawnObject',
-    writer: 'mupdf',
-    apply: applyPlaceDrawnObject,
-    capture: capturePlaceDrawnObject,
-    invert: invertPlaceDrawnObject,
-    invertible: false,
-    undo: 'checkpoint',
-    reproducible: true,
-    replay: 'reapply-intent',
-    sources: 'none',
-    reads: 'none',
-  },`;
-
-/** Several page objects placed as one about the group's corner (ADR-0242). `placePageObject`'s axes. */
-const PLACE_OBJECTS_SPEC = `  placePageObjects: {
-    kind: 'placePageObjects',
-    writer: 'pdfium',
-    apply: applyPlacePageObjects,
-    capture: capturePlacePageObjects,
-    invert: invertPlacePageObjects,
-    invertible: true,
-    undo: 'inverse',
-    reproducible: true,
-    replay: 'reapply-intent',
-    sources: 'none',
-    reads: 'none',
-  },`;
-
-/**
- * One page object moved a place in front or behind (ADR-0244). Moved back by the same call, so invertible.
- */
-const ARRANGE_OBJECT_SPEC = `  arrangePageObject: {
-    kind: 'arrangePageObject',
-    writer: 'pdfium',
-    apply: applyArrangePageObject,
-    capture: captureArrangePageObject,
-    invert: invertArrangePageObject,
-    invertible: true,
-    undo: 'inverse',
     reproducible: true,
     replay: 'reapply-intent',
     sources: 'none',
@@ -1354,9 +1251,6 @@ const SPEC_IMPORTS = `import {
   applyResetForm,
   captureResetForm,
   invertResetForm,
-  applyPlaceDrawnObject,
-  capturePlaceDrawnObject,
-  invertPlaceDrawnObject,
   applyFillFormField,
   captureFillFormField,
   invertFillFormField,
@@ -1431,21 +1325,6 @@ import {
   applyReplaceTextObject,
   captureReplaceTextObject,
   invertReplaceTextObject,
-  applyPlacePageObject,
-  capturePlacePageObject,
-  invertPlacePageObject,
-  applyPlacePageObjects,
-  capturePlacePageObjects,
-  invertPlacePageObjects,
-  applyArrangePageObject,
-  captureArrangePageObject,
-  invertArrangePageObject,
-  applyRecolorPageObjects,
-  captureRecolorPageObjects,
-  invertRecolorPageObjects,
-  applyDeletePageObjects,
-  captureDeletePageObjects,
-  invertDeletePageObjects,
   applyReplaceAllText,
   captureReplaceAllText,
   invertReplaceAllText,
@@ -2377,9 +2256,6 @@ ${CREATE_FIELD_SPEC}
 ${EDIT_FIELD_SPECS}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
-${PLACE_OBJECT_SPEC}
-${RECOLOR_OBJECTS_SPEC}
-${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
 ${REPLACE_AT_SPEC}
 ${PROMOTE_SPEC}
@@ -2393,9 +2269,6 @@ ${SET_ANNOTATION_AUTHOR_SPEC}
 ${PLACE_SIGNATURE_MARK_SPEC}
 ${PLACE_SIGNATURE_PICTURE_SPEC}
 ${RESET_FORM_SPEC}
-${PLACE_DRAWN_SPEC}
-${PLACE_OBJECTS_SPEC}
-${ARRANGE_OBJECT_SPEC}
 ${REMOVE_MARKS_SPEC}
 ${EDIT_OPERATORS_SPEC}
 };
@@ -2513,9 +2386,6 @@ ${CREATE_FIELD_SPEC}
 ${EDIT_FIELD_SPECS}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
-${PLACE_OBJECT_SPEC}
-${RECOLOR_OBJECTS_SPEC}
-${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
 ${REPLACE_AT_SPEC}
 ${PROMOTE_SPEC}
@@ -2529,9 +2399,6 @@ ${SET_ANNOTATION_AUTHOR_SPEC}
 ${PLACE_SIGNATURE_MARK_SPEC}
 ${PLACE_SIGNATURE_PICTURE_SPEC}
 ${RESET_FORM_SPEC}
-${PLACE_DRAWN_SPEC}
-${PLACE_OBJECTS_SPEC}
-${ARRANGE_OBJECT_SPEC}
 ${EDIT_OPERATORS_SPEC}
 };
 `,
@@ -2659,9 +2526,6 @@ ${CREATE_FIELD_SPEC}
 ${EDIT_FIELD_SPECS}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
-${PLACE_OBJECT_SPEC}
-${RECOLOR_OBJECTS_SPEC}
-${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
 ${REPLACE_AT_SPEC}
 ${PROMOTE_SPEC}
@@ -2729,9 +2593,6 @@ ${CREATE_FIELD_SPEC}
 ${EDIT_FIELD_SPECS}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
-${PLACE_OBJECT_SPEC}
-${RECOLOR_OBJECTS_SPEC}
-${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
 ${REPLACE_AT_SPEC}
 ${PROMOTE_SPEC}
@@ -2808,9 +2669,6 @@ ${CREATE_FIELD_SPEC}
 ${EDIT_FIELD_SPECS}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
-${PLACE_OBJECT_SPEC}
-${RECOLOR_OBJECTS_SPEC}
-${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
 ${REPLACE_AT_SPEC}
 ${PROMOTE_SPEC}
@@ -2883,9 +2741,6 @@ ${CREATE_FIELD_SPEC}
 ${EDIT_FIELD_SPECS}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
-${PLACE_OBJECT_SPEC}
-${RECOLOR_OBJECTS_SPEC}
-${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
 ${REPLACE_AT_SPEC}
 ${PROMOTE_SPEC}
@@ -4139,8 +3994,9 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // 64 since `arrangePageObject` (2026-10-14, ADR-0244): three spelt, 60 counted, one.
     // 65 since `removePageMarks` (2026-10-15, ADR-0246): three spelt, 61 counted, one.
     // 64 since `insertImagePage` was removed (2026-10-17, ADR-0044's correction): three spelt, 60 counted, one.
+    // 58 since Edit object's six kinds were withdrawn (2026-10-21, ADR-0153's correction): three spelt, 54 counted, one.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 60 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 54 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

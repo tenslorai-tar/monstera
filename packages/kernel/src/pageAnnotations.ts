@@ -1722,8 +1722,7 @@ function blendOf(annotation: PDFAnnotation): AnnotationBlend {
  * those resources name, a level down, which is how another producer's image stamp usually wraps one.
  *
  * A picture a person places is a `/Stamp` (`applyPlaceImage`), not page content, so the page's object walk never sees
- * it: Edit object's *Images* listed none on a page holding two photos (the owner's item 14g). This is what lets that
- * mode find them. Stamps only, because a stamp is the one annotation this build places a picture as; a widget's icon
+ * it (the owner's item 14g). This is what lets Edit text count them among what a block would cover. Stamps only, because a stamp is the one annotation this build places a picture as; a widget's icon
  * is a form field's, and is edited as one.
  */
 function picturedStamp(annotation: PDFAnnotation): boolean {
