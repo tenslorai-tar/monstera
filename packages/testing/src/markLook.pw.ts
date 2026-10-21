@@ -217,6 +217,20 @@ const TOOLS: readonly {
     },
     part: 'stamp',
   },
+  // A SIGNATURE IS CHOSEN FIRST, then placed by a click: the finishing input is the click on the page.
+  {
+    title: 'Signature',
+    draw: async (page) => {
+      const chooser = page.getByRole('dialog', { name: 'Signature' });
+      await chooser.getByRole('button', { name: 'Type' }).click();
+      await chooser.getByRole('textbox', { name: 'Your name' }).fill('Ada Lovelace');
+      await expect(chooser.getByRole('img', { name: 'Your signature, as it will be placed' })).toBeVisible();
+      await chooser.getByRole('button', { name: 'Use Signature' }).click();
+      await expect(chooser).toBeHidden();
+      await clicks(page, [[270, 400]]);
+    },
+    part: 'strokes',
+  },
   // A LINK'S DESTINATION IS ASKED ON THE PAGE after its box is drawn, and Enter commits it.
   {
     title: 'Link to a web address',

@@ -1,5 +1,10 @@
 import {
   BUILT_IN_STAMP_NAME,
+  OUTLINE_OPS,
+  type RequestedSignatureMark,
+  fittedPoint,
+  outlineFit,
+  strokesFit,
   type AnnotationColour,
   type AnnotationDraft,
   type AnnotationPoint,
@@ -114,8 +119,18 @@ export type LookPart =
   | { readonly part: 'link'; readonly box: LookBox }
   /** A picture the renderer already holds: a kept stamp picture, a signature's picture or outline. */
   | { readonly part: 'picture'; readonly box: LookBox; readonly src: string }
-  /** A drawn signature's strokes, in their own box's units. */
-  | { readonly part: 'strokes'; readonly box: LookBox; readonly d: string; readonly viewBox: string; readonly paint: LookPaint }
+  /**
+   * A signature's mark as the writers draw it (`signatureFit.ts`), in its box's own units: a typed name's outline filled
+   * (`pen: 'fill'`), or drawn strokes with that pen.
+   */
+  | {
+      readonly part: 'strokes';
+      readonly box: LookBox;
+      readonly d: string;
+      readonly viewBox: string;
+      readonly paint: LookPaint;
+      readonly pen: number | 'fill';
+    }
   /** A moved mark's selection, where the release put it (R7): its box and handles go on with the mark. */
   | { readonly part: 'selection'; readonly mark: ReshapedMark };
 
@@ -270,6 +285,62 @@ export function selectionLook(command: DispatchableCommand, boxes: readonly Look
   if (draft.type === 'underline' || draft.type === 'strikeout') return { parts: markupParts(draft.type, boxes, paint) };
   if (draft.type === 'redact' && !('rect' in draft)) return { parts: markupParts('redact', boxes, paint) };
   return undefined;
+}
+
+/**
+ * A look drawn from the page as it is drawn NOW: for a route that knows where its mark goes in the page's own space and
+ * not on screen — a signature or a picture placed from the application, whose rectangle is the command's. The page
+ * calls it with its own transform each time it draws the look, so a zoom between the hold and the handover moves the
+ * look with the page.
+ */
+export type LookAt = (transform: PageTransform) => MarkLook | undefined;
+
+/** A signature's ink, black as both writers draw it (`0 g`, `0 G`). */
+const SIGNATURE_INK: LookPaint = { colour: [0, 0, 0], opacity: 1 };
+
+/**
+ * A plain signature's final look in `rect`, drawn through the page as it is then (`LookAt`): the mark fitted by the
+ * writers' own rule (`signatureFit.ts`), in the box as the page is SEEN — its width and height on screen in points —
+ * since the writers draw it upright on a turned page. A typed name's outline is filled; drawn strokes take the writers'
+ * pen. `undefined` for a mark the renderer does not hold the ink of: a kept one named by its id, or a picture.
+ */
+export function signatureLook(mark: RequestedSignatureMark, rect: AnnotationRect): LookAt | undefined {
+  if (mark.kind !== 'outlined' && mark.kind !== 'drawn') return undefined;
+  return (transform) => {
+    const box = boxOf(rect, transform);
+    const scale = pixelsPerPoint(transform);
+    const wide = box.width / scale;
+    const tall = box.height / scale;
+    // THE FIT IS Y-UP, as a form is; the look's box runs down.
+    const at = ([x, y]: readonly [number, number]): string => `${String(x)},${String(tall - y)}`;
+    const viewBox = `0 0 ${String(wide)} ${String(tall)}`;
+    if (mark.kind === 'drawn') {
+      const fit = strokesFit(mark.strokes, wide, tall);
+      const d = mark.strokes
+        .map((line) => line.map(([x, y], index) => `${index === 0 ? 'M' : 'L'}${at(fittedPoint(fit, x, y))}`).join(' '))
+        .join(' ');
+      return { parts: [{ part: 'strokes', box, d, viewBox, paint: SIGNATURE_INK, pen: fit.pen }] };
+    }
+    const fit = outlineFit(mark.outline, wide, tall);
+    const { ops, points } = mark.outline;
+    let next = 0;
+    const take = (): string => {
+      const point = fittedPoint(fit, points[next] ?? 0, points[next + 1] ?? 0);
+      next += 2;
+      return at(point);
+    };
+    // SVG HAS THE QUADRATIC the writers turn into its exact cubic, so each operator is drawn as itself.
+    const d = ops
+      .map((code) => {
+        const op = OUTLINE_OPS[code];
+        if (op === 'M' || op === 'L') return `${op}${take()}`;
+        if (op === 'Q') return `Q${take()} ${take()}`;
+        if (op === 'C') return `C${take()} ${take()} ${take()}`;
+        return 'Z';
+      })
+      .join(' ');
+    return { parts: [{ part: 'strokes', box, d, viewBox, paint: SIGNATURE_INK, pen: 'fill' }] };
+  };
 }
 
 /** The look of one new mark, from its draft. */

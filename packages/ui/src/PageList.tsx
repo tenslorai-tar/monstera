@@ -18,7 +18,7 @@ import { AnnotationLayer } from './AnnotationLayer.js';
 import { AnnotationOverlay } from './AnnotationOverlay.js';
 import { type MarkLook, selectionLook } from './markLook.js';
 import { MarkLookLayer } from './MarkLookLayer.js';
-import type { OverlayPage } from './annotations/annotationSpace.js';
+import { type OverlayPage, overlayTransform } from './annotations/annotationSpace.js';
 import type { AnnotationSelection, LinkSelection } from './annotations/selectTool.js';
 import { SelectionLayer } from './SelectionLayer.js';
 import { type TextEditing, TextEditPage } from './TextEditLayer.js';
@@ -69,7 +69,7 @@ import { ANNOTATION_SURFACE_LABEL, PAGE_IMAGE_ONLY, PAGE_LIST_LABEL, PAGE_OPENIN
 import { Icon } from './primitives/Icon.js';
 import { useOnColor } from './primitives/useOnColor.js';
 import type { LiveReading, UiTool } from './registries/tools.js';
-import { type HeldLook, type HeldLooks, heldOnPage, released, sendHeld } from './heldLooks.js';
+import { type HeldLook, type HeldLooks, heldOnPage, looksOn, released, sendHeld } from './heldLooks.js';
 import type { DocumentView } from './documentView.js';
 import { FIRST_PAGE, pdfjsPageOf } from './pageNumbering.js';
 import { holdPage } from './pageResidency.js';
@@ -1810,9 +1810,18 @@ function PageSlot({
   }, [drawnVersion, letGo, looks, page]);
   // A HELD LOOK THAT LEAVES A MARK OUT — a move, a reshape, an erasure — goes on leaving it out until the page draws the
   // result, by R17's own rule below: the look names it, so nothing between the drag's end and the hold forgets it.
-  const heldLeaves = shownLooks.find((entry) => entry.look.leaves !== undefined)?.look.leaves;
+  // EACH AS IT LOOKS ON THIS PAGE NOW: a look held by its place in the page's own space is drawn through the page's
+  // transform at this zoom (`LookAt`), so it moves with the page.
+  const drawnCrop = size?.crop;
+  const drawnRotation = size?.rotation;
+  const heldTransform = useMemo(
+    () =>
+      drawnCrop === undefined || drawnRotation === undefined ? undefined : overlayTransform({ crop: drawnCrop, rotation: drawnRotation, zoom }),
+    [drawnCrop, drawnRotation, zoom],
+  );
+  const heldLooksShown = useMemo(() => looksOn(shownLooks, heldTransform), [heldTransform, shownLooks]);
+  const heldLeaves = heldLooksShown.find((look) => look.leaves !== undefined)?.leaves;
   const leaving = reshaping ?? moving ?? heldLeaves;
-  const heldLooksShown = useMemo(() => shownLooks.map((entry) => entry.look), [shownLooks]);
   // THIS PAGE'S WAY INTO THE HOLDER, for its overlay: a look held on this page, dropped by the answer it gives back.
   const holdLook = held?.hold;
   const holdHere = useCallback(
@@ -1829,7 +1838,7 @@ function PageSlot({
   const selectedHere = drawing?.selection?.page === page ? drawing.selection.items : undefined;
   const lookContext = useMemo(() => (selectedHere === undefined ? undefined : { selected: selectedHere }), [selectedHere]);
   // AND A HELD RESHAPE'S READING goes on reaching the Comment until the page draws it (the owner's B1), as the drag's did.
-  const heldReading = shownLooks.find((entry) => entry.look.reading !== undefined)?.look.reading;
+  const heldReading = heldLooksShown.find((look) => look.reading !== undefined)?.reading;
   const heldIndex = heldReading?.index;
   const heldText = heldReading?.text;
   useEffect(() => {

@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { SIGNATURE_TOOL_ID } from '../annotations/signatureTool.js';
 import { SIGNATURE_DIALOG_ID } from '../dialogs/signature.js';
 import { SIGNATURE_PROBLEM_DIALOG_ID } from '../dialogs/signatureProblem.js';
+import { createHeldLooks } from '../heldLooks.js';
 import { TOAST_SIGNATURE_LIBRARY_FULL, TOAST_SIGNATURE_NOT_KEEPABLE } from '../messages/en.js';
 import type { CommandContext } from '../registries/commands.js';
 import { outlinedMarkOf } from '../signatureFaces.js';
@@ -51,7 +52,7 @@ describe('placePlainSignature', () => {
     const { client, calls } = answering(PLACED);
     const onApplied = vi.fn();
     const version = await placePlainSignature(
-      { client, ask: vi.fn(), onApplied, stamp: () => STAMP, toast: vi.fn() },
+      { client, ask: vi.fn(), onApplied, stamp: () => STAMP, toast: vi.fn(), held: undefined },
       DOC,
       2,
       RECT,
@@ -69,10 +70,50 @@ describe('placePlainSignature', () => {
     expect(version).toBe(asDocVersion(5));
   });
 
+  it('a typed name is HELD IN ITS FINAL LOOK before main is asked, kept once placed, and let go when refused (ADR-0257)', async () => {
+    // THE ORDER IS THE DECISION: the look is held while nothing has been sent, so the hold is asserted against the
+    // client's calls at the moment it is made, not against the state both orders end in.
+    vi.stubGlobal('requestAnimationFrame', (run: () => void) => setTimeout(run, 0));
+    try {
+      for (const [answer, keeps] of [
+        [PLACED, 1],
+        [{ kind: 'unreadable' }, 0],
+      ] as const) {
+        const { client, calls } = answering(answer);
+        const holder = createHeldLooks(() => asDocVersion(1));
+        const sentAtHold: number[] = [];
+        const spy = {
+          hold: (page: number, look: Parameters<typeof holder.hold>[1]) => {
+            sentAtHold.push(calls.length);
+            return holder.hold(page, look);
+          },
+          letGo: holder.letGo,
+        };
+        await placePlainSignature({ client, ask: vi.fn(() => Promise.resolve(undefined)), onApplied: vi.fn(), stamp: () => STAMP, toast: vi.fn(), held: spy }, DOC, 2, RECT, TYPED);
+        expect(sentAtHold).toStrictEqual([0]);
+        expect(calls.map(([id]) => id)).toStrictEqual(['document.placeSignature']);
+        expect(holder.getSnapshot().map((entry) => entry.page)).toStrictEqual(keeps === 1 ? [2] : []);
+      }
+      // A PICTURE'S INK IS NOT THE RENDERER'S to draw, so nothing is held for it, and it is still sent.
+      const { client, calls } = answering(PLACED);
+      const holder = createHeldLooks(() => asDocVersion(1));
+      await placePlainSignature(
+        { client, ask: vi.fn(), onApplied: vi.fn(), stamp: () => STAMP, toast: vi.fn(), held: holder },
+        DOC,
+        0,
+        RECT,
+        { mark: { kind: 'image' }, keep: false },
+      );
+      expect([holder.getSnapshot(), calls.length]).toStrictEqual([[], 1]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('a typed name its face CANNOT WRITE sends nothing, and says which characters', async () => {
     const { client, calls } = answering(PLACED);
     const ask = vi.fn(() => Promise.resolve(undefined));
-    const version = await placePlainSignature({ client, ask, onApplied: vi.fn(), stamp: () => STAMP, toast: vi.fn() }, DOC, 0, RECT, {
+    const version = await placePlainSignature({ client, ask, onApplied: vi.fn(), stamp: () => STAMP, toast: vi.fn(), held: undefined }, DOC, 0, RECT, {
       mark: { kind: 'typed', text: 'Ада', font: 'sacramento' },
       keep: true,
     });
@@ -85,14 +126,14 @@ describe('placePlainSignature', () => {
   it('a placement whose KEEP was refused for a full library is placed AND says so', async () => {
     const { client } = answering({ ...PLACED, kept: 'library-full' });
     const toast = vi.fn();
-    await placePlainSignature({ client, ask: vi.fn(), onApplied: vi.fn(), stamp: () => STAMP, toast }, DOC, 0, RECT, TYPED);
+    await placePlainSignature({ client, ask: vi.fn(), onApplied: vi.fn(), stamp: () => STAMP, toast, held: undefined }, DOC, 0, RECT, TYPED);
     expect(toast).toHaveBeenCalledWith('done', TOAST_SIGNATURE_LIBRARY_FULL);
   });
 
   it('a picture too large to keep is placed AND says it was not kept', async () => {
     const { client } = answering({ ...PLACED, kept: 'not-keepable' });
     const toast = vi.fn();
-    await placePlainSignature({ client, ask: vi.fn(), onApplied: vi.fn(), stamp: () => STAMP, toast }, DOC, 0, RECT, {
+    await placePlainSignature({ client, ask: vi.fn(), onApplied: vi.fn(), stamp: () => STAMP, toast, held: undefined }, DOC, 0, RECT, {
       mark: { kind: 'image' },
       keep: true,
     });
@@ -102,7 +143,7 @@ describe('placePlainSignature', () => {
   it('CONTROL: a placement that was kept says nothing — the page shows the mark', async () => {
     const { client } = answering(PLACED);
     const toast = vi.fn();
-    await placePlainSignature({ client, ask: vi.fn(), onApplied: vi.fn(), stamp: () => STAMP, toast }, DOC, 0, RECT, TYPED);
+    await placePlainSignature({ client, ask: vi.fn(), onApplied: vi.fn(), stamp: () => STAMP, toast, held: undefined }, DOC, 0, RECT, TYPED);
     expect(toast).not.toHaveBeenCalled();
   });
 
@@ -121,7 +162,7 @@ describe('placePlainSignature', () => {
       const { client } = answering(answer);
       const ask = vi.fn(() => Promise.resolve(undefined));
       const onApplied = vi.fn();
-      const version = await placePlainSignature({ client, ask, onApplied, stamp: () => STAMP, toast: vi.fn() }, DOC, 0, RECT, TYPED);
+      const version = await placePlainSignature({ client, ask, onApplied, stamp: () => STAMP, toast: vi.fn(), held: undefined }, DOC, 0, RECT, TYPED);
       expect(ask).toHaveBeenCalledWith(SIGNATURE_PROBLEM_DIALOG_ID, props);
       expect(onApplied).not.toHaveBeenCalled();
       expect(version).toBeUndefined();
@@ -132,7 +173,7 @@ describe('placePlainSignature', () => {
     const { client } = answering({ kind: 'cancelled' });
     const ask = vi.fn();
     expect(
-      await placePlainSignature({ client, ask, onApplied: vi.fn(), stamp: () => STAMP, toast: vi.fn() }, DOC, 0, RECT, TYPED),
+      await placePlainSignature({ client, ask, onApplied: vi.fn(), stamp: () => STAMP, toast: vi.fn(), held: undefined }, DOC, 0, RECT, TYPED),
     ).toBeUndefined();
     expect(ask).not.toHaveBeenCalled();
   });

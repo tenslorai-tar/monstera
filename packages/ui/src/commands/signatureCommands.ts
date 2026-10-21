@@ -1,6 +1,8 @@
-import type { AnnotationRect } from '@monstera/contract';
+import type { AnnotationRect, RequestedSignatureMark } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
 
+import { type HeldLooks, sendHeld } from '../heldLooks.js';
+import { signatureLook } from '../markLook.js';
 import { SIGNATURE_TOOL_ID } from '../annotations/signatureTool.js';
 import { fileTooLargeProblem } from '../dialogs/fileTooLarge.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
@@ -84,7 +86,11 @@ export async function chooseSignature(
  *   was placed
  */
 export async function placePlainSignature(
-  deps: Pick<DocumentCommandDeps, 'ask' | 'client' | 'onApplied' | 'stamp'> & WritesAFile,
+  deps: Pick<DocumentCommandDeps, 'ask' | 'client' | 'onApplied' | 'stamp'> &
+    WritesAFile & {
+      /** The document's holder (ADR-0257): the signature is held on its page in its final look while main writes it. */
+      readonly held: Pick<HeldLooks, 'hold' | 'letGo'> | undefined;
+    },
   docId: DocId,
   page: number,
   rect: AnnotationRect,
@@ -95,12 +101,29 @@ export async function placePlainSignature(
     void deps.ask(SIGNATURE_PROBLEM_DIALOG_ID, requested.problem);
     return undefined;
   }
+  let placed: DocVersion | undefined;
+  await sendHeld(deps.held, page, signatureLook(requested.mark, rect), async () => {
+    placed = await sendSignature(deps, docId, page, rect, requested.mark, look.keep);
+    return placed !== undefined;
+  });
+  return placed;
+}
+
+/** Sends one placement and says what came of it: the version it produced, or `undefined` for none. */
+async function sendSignature(
+  deps: Pick<DocumentCommandDeps, 'ask' | 'client' | 'onApplied' | 'stamp'> & WritesAFile,
+  docId: DocId,
+  page: number,
+  rect: AnnotationRect,
+  mark: RequestedSignatureMark,
+  keep: boolean,
+): Promise<DocVersion | undefined> {
   const answer = await deps.client['document.placeSignature']({
     docId,
     page,
     rect,
-    mark: requested.mark,
-    keep: look.keep,
+    mark,
+    keep,
     stamp: deps.stamp(),
   });
   if (!answer.ok) {

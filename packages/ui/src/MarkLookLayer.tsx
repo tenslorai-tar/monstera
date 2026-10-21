@@ -194,8 +194,22 @@ function VectorPart({ part }: { readonly part: LookPart }): ReactElement | null 
     }
     case 'strokes':
       return (
-        <svg height={part.box.height} viewBox={part.viewBox} width={part.box.width} x={part.box.x} y={part.box.y}>
-          <path className="m-mark-look__line" d={part.d} stroke={hexFromColour(part.paint.colour)} strokeOpacity={part.paint.opacity} />
+        // THE VIEWBOX IS THE BOX IN POINTS, the same shape as the box on screen, so it maps without fitting again.
+        <svg height={part.box.height} preserveAspectRatio="none" viewBox={part.viewBox} width={part.box.width} x={part.box.x} y={part.box.y}>
+          {part.pen === 'fill' ? (
+            // A TYPED NAME'S OUTLINE, filled by the nonzero rule, as the writers fill it (`f`).
+            <path d={part.d} fill={hexFromColour(part.paint.colour)} fillOpacity={part.paint.opacity} />
+          ) : (
+            // DRAWN INK with the writers' round caps and joins (`1 J`, `1 j`) and their pen.
+            <path
+              className="m-mark-look__line"
+              d={part.d}
+              stroke={hexFromColour(part.paint.colour)}
+              strokeLinecap="round"
+              strokeOpacity={part.paint.opacity}
+              strokeWidth={part.pen}
+            />
+          )}
         </svg>
       );
     case 'selection':

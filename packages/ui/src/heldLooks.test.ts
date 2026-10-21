@@ -2,7 +2,8 @@ import { asDocId, asDocVersion } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { DocumentStores } from './documentStores.js';
-import { createHeldLooks, heldOnPage, released, sendHeld } from './heldLooks.js';
+import { overlayTransform } from './annotations/annotationSpace.js';
+import { createHeldLooks, heldOnPage, looksOn, released, sendHeld } from './heldLooks.js';
 
 describe('released marks held in their final look (ADR-0257)', () => {
   const look = { parts: [] };
@@ -76,6 +77,22 @@ describe('released marks held in their final look (ADR-0257)', () => {
     // HELD while it was sent (two at the paint), and only the refused one let go after.
     expect(log.at(-1)).toBe('paint with 2 held');
     expect(holder.getSnapshot()).toHaveLength(1);
+  });
+
+  it('a look held by its place on the PAGE is drawn through the page’s transform as it is now, and not before there is one', () => {
+    const holder = createHeldLooks(() => asDocVersion(1));
+    const plain = holder.hold(0, { parts: [{ part: 'link', box: { x: 1, y: 2, width: 3, height: 4 } }] });
+    // A box 100 points wide at the page's own scale: the look's width says which transform drew it.
+    const placed = holder.hold(0, (transform) => ({ parts: [{ part: 'link', box: { x: 0, y: 0, width: 100 * transform.scale, height: 10 } }] }));
+    const widths = (zoom: number): number[] =>
+      looksOn([plain, placed], overlayTransform({ crop: [0, 0, 612, 792], rotation: 0, zoom })).flatMap((look) =>
+        look.parts.flatMap((part) => (part.part === 'link' ? [part.box.width] : [])),
+      );
+    expect(widths(1)).toStrictEqual([3, 100]);
+    // AT ANOTHER ZOOM the placed look moves with the page, and the plain one, already in pixels, does not.
+    expect(widths(2)).toStrictEqual([3, 200]);
+    // BEFORE THE PAGE IS MEASURED there is no transform, so only the plain look is drawn.
+    expect(looksOn([plain, placed], undefined)).toStrictEqual([plain.look]);
   });
 
   it('CONTROL: with NO look there is nothing to hold and nothing to wait for — the command is sent at once', async () => {

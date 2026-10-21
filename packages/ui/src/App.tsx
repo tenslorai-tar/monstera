@@ -1779,7 +1779,9 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         }
         void (async (): Promise<void> => {
           const look = await chooseSignature({ client, ask });
-          if (look !== undefined) await placePlainSignature({ client, ask, onApplied: applied, stamp, toast }, activeId, at.page, at.rect, look);
+          if (look !== undefined) {
+            await placePlainSignature({ client, ask, onApplied: applied, stamp, toast, held: stores.held(activeId) }, activeId, at.page, at.rect, look);
+          }
         })();
         return;
       }
@@ -1792,7 +1794,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
           : { kind: 'fillFormField', page: handle.page, index: handle.index, value: handle.value, version: handle.version },
       );
     },
-    [activeId, applied, applyCarryingFields, ask, client, stamp, toast],
+    [activeId, applied, applyCarryingFields, ask, client, stamp, stores, toast],
   );
 
   /**
@@ -3374,7 +3376,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       void (async (): Promise<void> => {
         const look = held ?? (await chooseSignature({ client, ask }));
         if (look === undefined) return;
-        const version = await placePlainSignature({ client, ask, onApplied: applied, stamp, toast }, activeId, page, rect, look);
+        const version = await placePlainSignature({ client, ask, onApplied: applied, stamp, toast, held: stores.held(activeId) }, activeId, page, rect, look);
         if (version === undefined) return;
         const walk = await listAnnotations();
         // THE WALK MUST BE THE PLACEMENT'S: a read at any other version could name a mark that landed in between.
@@ -3383,7 +3385,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         if (placed !== undefined) setPicked(placed);
       })();
     },
-    [activeId, applied, ask, client, listAnnotations, setToolId, signatureLook, stamp, toast],
+    [activeId, applied, ask, client, listAnnotations, setToolId, signatureLook, stamp, stores, toast],
   );
 
   /**

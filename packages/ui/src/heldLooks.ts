@@ -1,6 +1,6 @@
-import type { DocVersion } from '@monstera/shared';
+import type { DocVersion, PageTransform } from '@monstera/shared';
 
-import type { MarkLook } from './markLook.js';
+import type { LookAt, MarkLook } from './markLook.js';
 
 /**
  * A document's ONE holder of released marks in their final look, until its pages draw them
@@ -21,7 +21,7 @@ import type { MarkLook } from './markLook.js';
 /** A mark held in its final look on one page, from the version it was released over. */
 export interface HeldLook {
   readonly page: number;
-  readonly look: MarkLook;
+  readonly look: MarkLook | LookAt;
   /** The version the page showed when the mark was released: a page drawn from a newer one draws the mark itself. */
   readonly at: DocVersion;
 }
@@ -34,7 +34,7 @@ export interface HeldLooks {
    * Holds `look` on `page` until that page is drawn from a version newer than the document's now, and answers the
    * entry, which {@link letGo} takes to drop it sooner — a command refused, which made nothing.
    */
-  readonly hold: (page: number, look: MarkLook) => HeldLook;
+  readonly hold: (page: number, look: MarkLook | LookAt) => HeldLook;
   /** Drops a held look: refused, or drawn by its page. Idempotent, so the page and a refusal may both drop it. */
   readonly letGo: (entry: HeldLook) => void;
 }
@@ -94,7 +94,7 @@ export function afterNextPaint(): Promise<void> {
 export async function sendHeld(
   holder: Pick<HeldLooks, 'hold' | 'letGo'> | undefined,
   page: number,
-  look: MarkLook | undefined,
+  look: MarkLook | LookAt | undefined,
   send: () => Promise<boolean>,
   afterPaint: () => Promise<void> = afterNextPaint,
 ): Promise<boolean> {
@@ -112,6 +112,18 @@ export async function sendHeld(
  */
 export function heldOnPage(looks: readonly HeldLook[], page: number, drawn: DocVersion | undefined): readonly HeldLook[] {
   return looks.filter((entry) => entry.page === page && (drawn === undefined || drawn <= entry.at));
+}
+
+/**
+ * The looks a page draws, each as it looks on that page now: one held as a {@link LookAt} drawn through `transform`, and
+ * none of those before the page has a transform to draw them with.
+ */
+export function looksOn(entries: readonly HeldLook[], transform: PageTransform | undefined): readonly MarkLook[] {
+  return entries.flatMap((entry) => {
+    if (typeof entry.look !== 'function') return [entry.look];
+    const look = transform === undefined ? undefined : entry.look(transform);
+    return look === undefined ? [] : [look];
+  });
 }
 
 /** The looks of `page` its drawing at version `drawn` has replaced, for the holder to drop. */
