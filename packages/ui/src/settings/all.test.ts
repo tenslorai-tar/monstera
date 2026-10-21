@@ -31,7 +31,7 @@ describe('the registered settings', () => {
 
   it('names every setting with a title of its own', () => {
     // ONE NAME, ONE SETTING: a title is how a setting is named in the dialog, its search and an exported file, so two
-    // under one title are one name for two things — found when the tips' remembered round took the switch's.
+    // under one title are one name for two things — found when a remembered setting took the title of the switch beside it.
     const byTitle = new Map<string, string[]>();
     for (const setting of ALL_SETTINGS) byTitle.set(setting.title, [...(byTitle.get(setting.title) ?? []), setting.id]);
     const shared = [...byTitle.values()].filter((ids) => ids.length > 1);
@@ -63,12 +63,9 @@ describe('the registered settings', () => {
     // bar's own grip and Window › Reset Float bar position — a pair of number boxes here would place it blind.
     // EACH PROVIDER'S CHOSEN MODEL LEFT THIS LIST the day it arrived (ADR-0117, corrected 2026-09-28): its control is
     // declared, and lists what main already holds, so a props-only dialog draws it without fetching.
-    // AND THE TIPS SHOWN THIS ROUND (ADR-0159), a list of tip ids whose control is the tips themselves; the person's
-    // choice is the switch beside it, which is a row.
     expect(excluded).toStrictEqual([
       'appearance.accent',
       'appearance.float-bar-position',
-      'appearance.tips-shown',
       // HOW TALL A NEW INSERTION MARK IS (the owner's O5), whose control is a selected caret's Size in Properties with
       // *Use as default for new annotations* ticked, where the size kept is seen on a mark.
       'editing.caret-size',

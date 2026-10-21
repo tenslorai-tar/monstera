@@ -1,8 +1,8 @@
 ---
 id: status-bar
 title: Read the status bar
-summary: The bar at the bottom shows the page, the zoom, whether the document is saved, and its size.
-keywords: [status bar, bottom bar, page number, zoom slider, saved, file size, go to page]
+summary: The bar at the bottom shows the tool in hand, the page, the zoom, whether the document is saved, and its size.
+keywords: [status bar, bottom bar, page number, zoom slider, saved, file size, go to page, tool, escape]
 commands: [view.page-first, view.page-previous, view.page-next, view.page-last, view.zoom-in, view.zoom-out, view.fit-width, view.fit-page, view.toggle-quick-toolbar]
 contexts: [home]
 ---
@@ -18,6 +18,7 @@ The status bar runs along the bottom of the window. It shows where you are and l
 
 ## Good to know
 
+- While a tool is in your hand, the left end of the bar says what it does, and that **Esc** gets you out of it. It says nothing else there, and nothing at all when no tool is in your hand.
 - The status bar also shows the number of pages and the file's size.
 - If you type a page the document does not have, it says which pages it does have.
 - The button in **Panels and Float bar** shows or hides the Float bar.

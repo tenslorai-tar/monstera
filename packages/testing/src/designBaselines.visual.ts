@@ -61,13 +61,6 @@ async function openedOn(page: Page, look: Look): Promise<void> {
       { kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Baseline.pdf' },
     ],
     documentBytes: new Map([[docId, bytes]]),
-    // OFF, FOR THIS SUITE ONLY: the status bar's tip (ADR-0159) picks one of several candidates through
-    // `Math.random`, which nothing here can seed, so the words — and their width — differ by page load. A
-    // baseline captured against one tip and compared against another differs at exactly the status bar,
-    // which is what `section-home` did (669-815 pixels, 2026-10-06) whatever the capture otherwise waited
-    // on. Scoped here rather than in `pageBridge.ts`'s shared default: `statusTips.pw.ts` tests the tip
-    // itself and needs it on.
-    settings: { 'appearance.status-tips': false },
   });
   await page.goto('/');
   await expect(page.locator('html')).toHaveAttribute('data-theme', look.name);
@@ -109,8 +102,7 @@ async function sectionDrawn(page: Page, section: string): Promise<void> {
 }
 
 /**
- * Waits until the document is DRAWN: the page and its thumbnail each hold a canvas, and the status bar's tip
- * (ADR-0159) has finished its `--motion-fade` opacity transition in, never mid-fade.
+ * Waits until the document is DRAWN: the page and its thumbnail each hold a canvas.
  *
  * Measured 2026-09-15, three zero-tolerance comparisons of one build: the first
  * matched all 33 images, the second failed two and the third one — `dark-section-comment`
@@ -118,23 +110,9 @@ async function sectionDrawn(page: Page, section: string): Promise<void> {
  * bar still laying out. Playwright's stability rule is *two consecutive identical
  * frames*, and a document that has not started drawing is two identical frames. So
  * readiness is asserted on the thing that is late, never on how long to wait.
- *
- * The tip is the same shape of lateness, found the same way: `section-home` differed by 669–815 pixels
- * (2026-10-06, local and CI readings), each time at the tip's own words, which fade in over 400ms starting
- * from a `setTimeout(0)` on mount — so whether the fade has reached full opacity by the time a screenshot is
- * taken depends on timing nothing else here waits on. Asserted on the computed opacity, not a delay, for the
- * same reason as the canvases above: a wait long enough for every machine is a number nobody can read back.
  */
 async function documentDrawn(page: Page): Promise<void> {
   await expect.poll(() => page.locator('canvas:visible').count()).toBeGreaterThanOrEqual(2);
-  await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const tip = document.querySelector<HTMLElement>('.m-status-tip');
-        return tip === null ? 1 : Number.parseFloat(getComputedStyle(tip).opacity);
-      }),
-    )
-    .toBe(1);
 }
 
 /**
@@ -357,8 +335,6 @@ for (const look of LOOKS) {
         [LEFT, [['The quick brown fox jumps over the lazy dog.']]],
         [RIGHT, [['The quick red fox leaps over the lazy dog.']]],
       ]),
-      // OFF: `openedOn`'s reason above.
-      settings: { 'appearance.status-tips': false },
     });
     await page.goto('/');
     await expect(page.locator('html')).toHaveAttribute('data-theme', look.name);
@@ -454,8 +430,7 @@ for (const look of LOOKS) {
       opens: [{ kind: 'opened', docId: FORM, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Form.pdf' }],
       documentBytes: new Map([[FORM, bytes]]),
       formFields: [EVERY_FIELD_KIND],
-      // OFF: `openedOn`'s reason above.
-      settings: { 'appearance.status-tips': false, 'appearance.document-panel': 'forms' },
+      settings: { 'appearance.document-panel': 'forms' },
     });
     await page.goto('/');
     await expect(page.locator('html')).toHaveAttribute('data-theme', look.name);
