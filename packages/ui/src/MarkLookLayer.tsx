@@ -2,7 +2,7 @@ import type { ReactElement } from 'react';
 
 import { hexFromColour } from './annotations/annotationStyle.js';
 import { CORNER_REACH } from './annotations/selectTool.js';
-import type { LookBox, LookPart, LookStroke, MarkLook } from './markLook.js';
+import { type LookBox, type LookPart, type LookStroke, type MarkLook, RUBBER_STAMP } from './markLook.js';
 import { RedactMark } from './registries/annotationTypes.js';
 
 /**
@@ -167,30 +167,31 @@ function VectorPart({ part }: { readonly part: LookPart }): ReactElement | null 
         />
       );
     }
-    case 'stamp':
+    case 'stamp': {
+      // MUPDF'S RUBBER STAMP IN ITS OWN UNITS (`rubberStamp`): a 190 by 50 box whose y runs up, turned 0.6 degrees about
+      // its bottom-left corner, a 2-wide border at (2, 2, 186, 44), and the word centred on its baseline. Drawn here with
+      // y running down, so a PDF y is 50 less it, and the turn is the other way.
+      const { width, height } = RUBBER_STAMP;
+      const colour = hexFromColour(part.paint.colour);
       return (
-        <g>
-          <rect
-            className="m-mark-look__stamp"
-            {...strokeOf({ ...part.paint, width: Math.max(part.box.height / 16, 1) })}
-            height={part.box.height}
-            rx={part.box.height / 8}
-            width={part.box.width}
-            x={part.box.x}
-            y={part.box.y}
-          />
-          <text
-            className="m-mark-look__stamp-word"
-            fill={hexFromColour(part.paint.colour)}
-            fillOpacity={part.paint.opacity}
-            fontSize={part.box.height * 0.5}
-            x={part.box.x + part.box.width / 2}
-            y={part.box.y + part.box.height * 0.68}
-          >
-            {part.word}
-          </text>
-        </g>
+        <svg height={part.box.height} viewBox={`0 0 ${String(width)} ${String(height)}`} width={part.box.width} x={part.box.x} y={part.box.y}>
+          <g transform={`rotate(-0.6 0 ${String(height)})`}>
+            <rect className="m-mark-look__stamp" height={44} stroke={colour} strokeOpacity={part.paint.opacity} strokeWidth={2} width={186} x={2} y={height - 46} />
+            <text
+              className="m-mark-look__stamp-word"
+              fill={colour}
+              fillOpacity={part.paint.opacity}
+              fontSize={part.size}
+              textAnchor="middle"
+              x={width / 2}
+              y={height - part.baseline}
+            >
+              {part.word}
+            </text>
+          </g>
+        </svg>
       );
+    }
     case 'strokes':
       return (
         <svg height={part.box.height} viewBox={part.viewBox} width={part.box.width} x={part.box.x} y={part.box.y}>

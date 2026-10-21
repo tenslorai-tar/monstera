@@ -206,6 +206,17 @@ const TOOLS: readonly {
   { title: 'Callout', draw: (page) => writes(page, () => drag(page, [150, 300], [400, 400]), 'Escape'), part: 'words' },
   { title: 'Note', draw: (page) => writes(page, () => clicks(page, [[150, 400]]), 'Control+Enter'), part: 'sign' },
   { title: 'Insertion mark', draw: (page) => clicks(page, [[150, 400]]), part: 'sign' },
+  // A STAMP IS CHOSEN IN A DIALOG after its box is drawn: the finishing input is the press on the chooser's action.
+  {
+    title: 'Stamp',
+    draw: async (page) => {
+      await drag(page, [150, 400], [390, 340]);
+      const chooser = page.getByRole('dialog');
+      await chooser.locator('[data-stamp="not-approved"]').click();
+      await chooser.getByRole('button', { name: 'Add stamp', exact: true }).click();
+    },
+    part: 'stamp',
+  },
   // A LINK'S DESTINATION IS ASKED ON THE PAGE after its box is drawn, and Enter commits it.
   {
     title: 'Link to a web address',

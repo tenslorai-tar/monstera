@@ -1,4 +1,5 @@
 import {
+  BUILT_IN_STAMP_NAME,
   type AnnotationColour,
   type AnnotationDraft,
   type AnnotationPoint,
@@ -97,7 +98,18 @@ export type LookPart =
     }
   /** A sticky note's icon, a caret, a built-in stamp: a sign drawn in the mark's colour. */
   | { readonly part: 'sign'; readonly sign: 'note' | 'caret'; readonly box: LookBox; readonly paint: LookPaint }
-  | { readonly part: 'stamp'; readonly box: LookBox; readonly word: string; readonly paint: LookPaint }
+  /**
+   * A built-in stamp as MuPDF draws a rubber stamp (`rubberStamp`): its 190 by 50 box fitted into `box`, the word at the
+   * size and baseline MuPDF sets for the stamp's name, both in that box's own units.
+   */
+  | {
+      readonly part: 'stamp';
+      readonly box: LookBox;
+      readonly word: string;
+      readonly size: number;
+      readonly baseline: number;
+      readonly paint: LookPaint;
+    }
   /** A link, as the link layer outlines one where links are made. */
   | { readonly part: 'link'; readonly box: LookBox }
   /** A picture the renderer already holds: a kept stamp picture, a signature's picture or outline. */
@@ -124,8 +136,42 @@ export interface LookContext {
   readonly selected?: readonly SelectedAnnotation[];
   /** A text selection's boxes on screen at its release, for a markup the command names by its two ends. */
   readonly selectionBoxes?: readonly LookBox[];
-  /** A built-in stamp's words, as the stamp chooser shows them. */
-  readonly stampWord?: (stamp: Extract<AnnotationDraft, { readonly type: 'stamp' }>['stamp']) => string;
+}
+
+/** The box MuPDF draws a rubber stamp in, in its own units, before fitting it to the annotation's rectangle. */
+export const RUBBER_STAMP = { width: 190, height: 50 } as const;
+
+/**
+ * The word, type size and baseline MuPDF 1.28.0 sets for a rubber stamp's `/Name` (`pdf_write_stamp_appearance_rubber`,
+ * read in `source/pdf/pdf-appearance.c`): its standard names drawn in capitals at their own size, any other name drawn as
+ * written at 20 on a baseline of 17. Only the names a built-in stamp writes (`BUILT_IN_STAMP_NAME`) are listed.
+ */
+const RUBBER_WORDS: Readonly<Record<string, readonly [word: string, baseline: number, size: number]>> = {
+  Approved: ['APPROVED', 13, 30],
+  Confidential: ['CONFIDENTIAL', 17, 20],
+  Final: ['FINAL', 13, 30],
+  NotApproved: ['NOT APPROVED', 17, 20],
+  Draft: ['DRAFT', 13, 30],
+};
+
+/**
+ * A built-in stamp's look in `rect` on screen, as MuPDF lays one out: the 190 by 50 box scaled to fit, keeping its
+ * proportions and centred on the rectangle — measured on the engine, a 240 by 60 box came back 228 by 60 — and the word
+ * for its name.
+ */
+export function rubberStamp(name: string, rect: LookBox, paint: LookPaint): Extract<LookPart, { part: 'stamp' }> {
+  const [word, baseline, size] = RUBBER_WORDS[name] ?? [name, 17, 20];
+  const scale = Math.min(rect.width / RUBBER_STAMP.width, rect.height / RUBBER_STAMP.height);
+  const width = RUBBER_STAMP.width * scale;
+  const height = RUBBER_STAMP.height * scale;
+  return {
+    part: 'stamp',
+    box: { x: rect.x + (rect.width - width) / 2, y: rect.y + (rect.height - height) / 2, width, height },
+    word,
+    size,
+    baseline,
+    paint,
+  };
 }
 
 /** Pixels per point on this page as drawn: the length of one point along the page's own x axis. */
@@ -317,10 +363,8 @@ function draftLook(draft: AnnotationDraft, transform: PageTransform, context: Lo
       const size = (draft.size ?? 14) * scale;
       return { parts: [{ part: 'sign', sign: 'caret', box: { x: centre[0] - size / 2, y: centre[1] - size / 2, width: size, height: size }, paint }] };
     }
-    case 'stamp': {
-      const word = context.stampWord?.(draft.stamp);
-      return word === undefined ? undefined : { parts: [{ part: 'stamp', box: boxOf(draft.rect, transform), word, paint }] };
-    }
+    case 'stamp':
+      return { parts: [rubberStamp(BUILT_IN_STAMP_NAME[draft.stamp], boxOf(draft.rect, transform), paint)] };
     default: {
       const unhandled: never = draft;
       return unhandled;

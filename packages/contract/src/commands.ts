@@ -1301,6 +1301,25 @@ export const builtInStampSchema = z.enum(BUILT_IN_STAMPS);
 export type BuiltInStamp = z.infer<typeof builtInStampSchema>;
 
 /**
+ * Each built-in stamp's `/Name`, which is the stamp: MuPDF draws the word from it when the appearance is made. Five are
+ * the format's standard names (PDF 32000 §12.5.6.12), which MuPDF draws in capitals — `NotApproved` as NOT APPROVED; the
+ * other three have none, and MuPDF draws a non-standard name as its own text, so they are spelt as the words to show.
+ * Measured 2026-09-28 on MuPDF 1.28.0: each draws its word in Times-Bold inside a bordered box in the annotation's
+ * colour. Here, beside the list, because the kernel writes it and the renderer's held look reads it (ADR-0257): one
+ * table of names, not one per side. A record over the list, so a stamp added there arrives owing its name.
+ */
+export const BUILT_IN_STAMP_NAME: Readonly<Record<BuiltInStamp, string>> = {
+  approved: 'Approved',
+  'not-approved': 'NotApproved',
+  draft: 'Draft',
+  final: 'Final',
+  confidential: 'Confidential',
+  'for-review': 'FOR REVIEW',
+  void: 'VOID',
+  copy: 'COPY',
+};
+
+/**
  * How many points one ink stroke may carry.
  *
  * The renderer keeps points two CSS pixels apart, so this is over eight

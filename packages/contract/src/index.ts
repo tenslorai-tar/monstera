@@ -324,6 +324,7 @@ export {
   type TextDirection,
   textDirectionSchema,
   BUILT_IN_STAMPS,
+  BUILT_IN_STAMP_NAME,
   type BuiltInStamp,
   builtInStampSchema,
   LIBRARY_KINDS,

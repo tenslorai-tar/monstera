@@ -7354,9 +7354,8 @@ optgroup {
   mix-blend-mode: multiply;
 }
 
-/* MUPDF'S FACE for a reading and a stamp's word, as the placed caption's rule names it. */
-.m-mark-look__caption,
-.m-mark-look__stamp-word {
+/* MUPDF'S FACE for a reading, as the placed caption's rule names it. */
+.m-mark-look__caption {
   font-family: Helvetica, Arial, 'Arimo', sans-serif;
 }
 
@@ -7364,9 +7363,10 @@ optgroup {
   fill: none;
 }
 
+/* A RUBBER STAMP'S WORD IN TIMES-BOLD, the base-14 face MuPDF sets it in (`pdf_write_stamp_appearance_rubber`). */
 .m-mark-look__stamp-word {
+  font-family: 'Times New Roman', Times, 'Tinos', serif;
   font-weight: 700;
-  text-anchor: middle;
 }
 
 .m-mark-look__words {
