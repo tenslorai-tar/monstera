@@ -142,6 +142,38 @@ export interface AtomicWriteDone {
 export const RENAME_BACKOFF_MS: readonly number[] = [0, 50, 150, 400, 900];
 
 /**
+ * Runs `attempt` up the held-file ladder ({@link RENAME_BACKOFF_MS}): again after each wait while it fails with a
+ * holding error ({@link isTransient}), at once on any other. THE ONE CLIMB for every step another program's hold can
+ * refuse — the save's copy aside and its rename, and a removal's delete of a backup (`backupLedger.ts`) — so no step
+ * waits out a hold another step would have failed on. Named rather than written per step because it was: the rename
+ * climbed, and the copy aside one step before it failed on the same hold at once (QQQQQQQ-8's investigation,
+ * 2026-10-21, `atomicWrite.test.ts`).
+ *
+ * The constant keeps its first name, which ADR-0139 and the journal cite; what it governs is any held file.
+ */
+export async function climbHeld<T>(
+  attempt: () => Promise<T>,
+  wait: (ms: number) => Promise<void>,
+): Promise<{ readonly ok: true; readonly value: T; readonly attempts: number } | { readonly ok: false; readonly cause: unknown; readonly attempts: number }> {
+  let attempts = 0;
+  let last: unknown = null;
+  for (const delay of RENAME_BACKOFF_MS) {
+    if (delay > 0) await wait(delay);
+    attempts += 1;
+    try {
+      return { ok: true, value: await attempt(), attempts };
+    } catch (cause) {
+      last = cause;
+      // ONLY THE HOLDING ERRORS ARE RETRIED. `ENOENT` means the file is gone and no amount of waiting brings it back;
+      // `ENOSPC` means the disk is full. Retrying either burns the ladder and reports the wrong story — and a ladder that
+      // retries everything turns a permanent failure into a slow permanent failure.
+      if (!isTransient(cause)) break;
+    }
+  }
+  return { ok: false, cause: last, attempts };
+}
+
+/**
  * @param surface the filesystem calls
  * @param target the file to end up holding the new contents
  * @param writeTemp writes the new contents to the temp path it is given, through
@@ -194,12 +226,15 @@ export async function atomicWrite(
   const [newest] = names.backups;
   const keeping = hadOriginal && newest !== undefined;
   if (keeping) {
-    try {
-      // COPIED ASIDE, and the kept backups NOT TOUCHED until the save has landed (CR-DOC-09). Rotating them first meant
-      // a rename that then failed had already overwritten the oldest, and with one copy kept `.bak` became the very
-      // file that was never replaced: a save that did not happen destroyed the previous version.
-      await surface.copy(target, names.previous);
-    } catch (cause) {
+    // COPIED ASIDE, and the kept backups NOT TOUCHED until the save has landed (CR-DOC-09). Rotating them first meant
+    // a rename that then failed had already overwritten the oldest, and with one copy kept `.bak` became the very
+    // file that was never replaced: a save that did not happen destroyed the previous version.
+    //
+    // UP THE HELD-FILE LADDER, as the rename is: the copy reads the file being replaced and writes over the copy a
+    // previous save left aside, and another program holding either is the same moment's hold the rename waits out.
+    const copied = await climbHeld(() => surface.copy(target, names.previous), wait);
+    if (!copied.ok) {
+      const cause = copied.cause;
       // REFUSED, not continued — and NOT because the rename needs something to
       // roll back to. Nothing here reads the backup, no case asserts a recovery
       // from it, and a rename that fails has not touched the original, so there
@@ -214,27 +249,13 @@ export async function atomicWrite(
     }
   }
 
-  let attempts = 0;
-  let last: unknown = null;
-  for (const delay of RENAME_BACKOFF_MS) {
-    if (delay > 0) await wait(delay);
-    attempts += 1;
-    try {
-      await surface.rename(names.temp, target);
-      const previousKeptAt = keeping ? ((await rotateIn(surface, names.previous, names.backups)) ? newest : names.previous) : null;
-      // THE BACKUPS A SHORTER CHOICE NO LONGER KEEPS go once the save has landed — best-effort, since the save itself
-      // succeeded and a copy that could not be removed is still a copy of the person's document, not a failure.
-      for (const retired of names.retired) await surface.remove(retired).catch(() => undefined);
-      return ok({ previousKeptAt });
-    } catch (cause) {
-      last = cause;
-      // ONLY THE HOLDING ERRORS ARE RETRIED. `ENOENT` means the temp is gone
-      // and no amount of waiting brings it back; `ENOSPC` means the disk is
-      // full. Retrying either burns the ladder and reports the wrong story —
-      // and a ladder that retries everything is one that turns a permanent
-      // failure into a slow permanent failure.
-      if (!isTransient(cause)) break;
-    }
+  const renamed = await climbHeld(() => surface.rename(names.temp, target), wait);
+  if (renamed.ok) {
+    const previousKeptAt = keeping ? ((await rotateIn(surface, names.previous, names.backups)) ? newest : names.previous) : null;
+    // THE BACKUPS A SHORTER CHOICE NO LONGER KEEPS go once the save has landed — best-effort, since the save itself
+    // succeeded and a copy that could not be removed is still a copy of the person's document, not a failure.
+    for (const retired of names.retired) await surface.remove(retired).catch(() => undefined);
+    return ok({ previousKeptAt });
   }
 
   await surface.remove(names.temp).catch(() => undefined);
@@ -242,8 +263,8 @@ export async function atomicWrite(
   await surface.remove(names.previous).catch(() => undefined);
   return err({
     stage: 'rename',
-    detail: describe(last),
-    attempts,
+    detail: describe(renamed.cause),
+    attempts: renamed.attempts,
   });
 }
 

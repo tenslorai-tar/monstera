@@ -1,4 +1,4 @@
-import { type FileIdentity, RENAME_BACKOFF_MS, isTransient } from '@monstera/kernel';
+import { type FileIdentity, climbHeld } from '@monstera/kernel';
 
 import type { SettingsSurface } from './settingsFile.js';
 
@@ -105,20 +105,7 @@ export function createBackupProvenance(
   };
 
   /** The delete, climbing the kernel's held-file ladder: `true` once it went, `false` while it is still held. */
-  const removed = async (path: string): Promise<boolean> => {
-    for (const delay of RENAME_BACKOFF_MS) {
-      if (delay > 0) await deps.wait(delay);
-      try {
-        await deps.remove(path);
-        return true;
-      } catch (cause) {
-        // ONLY A HOLDING ERROR IS WAITED ON, as for a held rename; a read-only volume or a denied permission is the
-        // same answer on every attempt, so it is held at once rather than slowly.
-        if (!isTransient(cause)) return false;
-      }
-    }
-    return false;
-  };
+  const removed = async (path: string): Promise<boolean> => (await climbHeld(() => deps.remove(path), deps.wait)).ok;
 
   return {
     made: async (path) => {

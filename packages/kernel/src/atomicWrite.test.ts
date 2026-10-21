@@ -308,6 +308,46 @@ describe('atomicWrite', () => {
     expect(f.calls.some((call) => call.startsWith('rename:'))).toBe(false);
   });
 
+  it('THE COPY ASIDE CLIMBS THE SAME LADDER: held twice by EBUSY, the save lands on the third attempt (QQQQQQQ-8)', async () => {
+    // ANOTHER PROGRAM HOLDING THE FILE as the save copies it aside — a scanner, a sync client — is the hold the rename one
+    // step later already waits out. Refused at once here, a save failed that would have landed a moment later.
+    const files: Files = new Map([['/doc.pdf', 'original']]);
+    const f = fake(files, { copy: { times: 2, code: 'EBUSY' } });
+
+    const result = await atomicWrite(f.surface, '/doc.pdf', (temp) => f.surface.write(temp, BYTES), NAMES, (ms) => {
+      f.waits.push(ms);
+      return Promise.resolve();
+    });
+
+    expect(result.ok).toBe(true);
+    expect(files.get('/doc.pdf')).toBe('new contents');
+    expect(files.get('/doc.pdf.bak')).toBe('original');
+    // THREE COPIES AND THE LADDER'S OWN TWO WAITS, counted: "it eventually worked" is also what a retry with no back-off
+    // produces.
+    expect(f.calls.filter((call) => call.startsWith('copy:'))).toHaveLength(3);
+    expect(f.waits).toEqual([RENAME_BACKOFF_MS[1], RENAME_BACKOFF_MS[2]]);
+  });
+
+  it('a copy aside HELD PAST THE LADDER refuses the save, with the original untouched and nothing renamed', async () => {
+    const files: Files = new Map([['/doc.pdf', 'original']]);
+    const f = fake(files, { copy: { times: 99, code: 'EPERM' } });
+
+    const result = await atomicWrite(f.surface, '/doc.pdf', (temp) => f.surface.write(temp, BYTES), NAMES, () => Promise.resolve());
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.stage).toBe('backup');
+    expect(f.calls.filter((call) => call.startsWith('copy:'))).toHaveLength(RENAME_BACKOFF_MS.length);
+    expect(f.calls.some((call) => call.startsWith('rename:'))).toBe(false);
+    expect(files.get('/doc.pdf')).toBe('original');
+  });
+
+  it('CONTROL: a copy refused for good (EACCES) is tried ONCE, never climbed', async () => {
+    const files: Files = new Map([['/doc.pdf', 'original']]);
+    const f = fake(files, { copy: { times: 99, code: 'EACCES' } });
+    await atomicWrite(f.surface, '/doc.pdf', (temp) => f.surface.write(temp, BYTES), NAMES, () => Promise.resolve());
+    expect(f.calls.filter((call) => call.startsWith('copy:'))).toHaveLength(1);
+  });
+
   it('CLIMBS THE LADDER: a rename held twice by EBUSY succeeds on the third attempt', async () => {
     const files: Files = new Map([['/doc.pdf', 'original']]);
     const f = fake(files, { rename: { times: 2, code: 'EBUSY' } });

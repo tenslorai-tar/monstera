@@ -473,6 +473,7 @@ export {
   type AtomicWriteFailure,
   type AtomicWriteSurface,
   RENAME_BACKOFF_MS,
+  climbHeld,
   atomicWrite,
   isTransient,
 } from './atomicWrite.js';
