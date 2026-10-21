@@ -1,5 +1,5 @@
 import { useLingui } from '@lingui/react';
-import { formatFieldValue, parseFieldDate } from '@monstera/contract';
+import { type FieldLook, formatFieldValue, parseFieldDate } from '@monstera/contract';
 import { type CSSProperties, type FocusEvent, type KeyboardEvent, type ReactElement, useId, useRef, useState } from 'react';
 
 import { FORMS_CHOICE_EMPTY } from '../messages/en.js';
@@ -7,6 +7,7 @@ import { type CalendarDay, type CalendarState, DateOpen, DatePicker, calendarCel
 import { composing } from '../surfaces/shortcuts.js';
 import { caretIndexAt } from './fieldCaret.js';
 import type { FillOffer } from './fieldFill.js';
+import { type PageBox, TypedChoices } from './PageChoice.js';
 
 /**
  * The box a text field is typed into, for the Forms panel and the page alike (ADR-0168 Decision 2).
@@ -43,7 +44,7 @@ export function FieldTextBox({
   onTab,
   selectsAll = false,
   id,
-  list,
+  choices,
   onLeave,
   date,
 }: {
@@ -75,8 +76,17 @@ export function FieldTextBox({
   readonly selectsAll?: boolean;
   /** The element's id, for a sentence beside the box that names it (`Problem`). */
   readonly id?: string;
-  /** The id of a `datalist` whose options the box offers: a dropdown that also takes typing. */
-  readonly list?: string;
+  /**
+   * A DROPDOWN THAT ALSO TAKES TYPING (the owner's R21): its options, offered under the box (`TypedChoices`). Every one
+   * on opening, the held one marked; typing filters by what was typed since, never by what the box already held.
+   */
+  readonly choices?: {
+    readonly options: readonly string[];
+    readonly look: FieldLook | undefined;
+    readonly fontPx: number;
+    readonly at: PageBox;
+    readonly room: number;
+  };
   /**
    * Told what the box holds once it has been left with a change, after the commit: where the page says what is wrong
    * with the value (a format, a required field), and never where it decides whether to fill.
@@ -135,6 +145,38 @@ export function FieldTextBox({
     }
     return true;
   };
+  // WHAT WAS TYPED SINCE THE OPTIONS OPENED, which alone filters them, and the row the arrows are on.
+  const [typed, setTyped] = useState('');
+  const [active, setActive] = useState(-1);
+  const offered = choices === undefined ? [] : choices.options.filter((option) => option.toLowerCase().startsWith(typed.toLowerCase()));
+  const choicesId = `${useId()}-choices`;
+  // A ROW CHOSEN is written into the box and the box is left, which is what fills it — the calendar's way.
+  const pickChoice = (option: string): void => {
+    const element = box.current;
+    if (element === null) return;
+    element.value = option;
+    element.blur();
+  };
+  const choiceKey = (event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>): boolean => {
+    if (choices === undefined) return false;
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      const step = event.key === 'ArrowDown' ? 1 : -1;
+      setActive((was) => Math.min(offered.length - 1, Math.max(0, was + step)));
+      return true;
+    }
+    const row = offered[active];
+    if (event.key === 'Enter' && row !== undefined) {
+      event.preventDefault();
+      pickChoice(row);
+      return true;
+    }
+    if (event.key === 'Backspace') {
+      setTyped((was) => was.slice(0, -1));
+      setActive(-1);
+    }
+    return false;
+  };
   // THE PRESS IS SPENT BY THE FIRST FOCUS: a later focus, by Tab or by a click, puts the caret where that one says.
   const press = useRef(pressedAt);
   const selectAllOnce = useRef(selectsAll);
@@ -177,6 +219,7 @@ export function FieldTextBox({
     onKeyDown: (event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       if (composing(event)) return;
       if (calendarKey(event)) return;
+      if (choiceKey(event)) return;
       if (event.key === 'Escape' && onCancel !== undefined) {
         // STOPPED HERE, so the Escape that closes this box does not also leave a tool or close a panel behind it.
         event.stopPropagation();
@@ -199,9 +242,41 @@ export function FieldTextBox({
   // takes; a value that already holds more is shown whole and kept, never cut by the box.
   const limit = offer.maxLength !== null && offer.held.length <= offer.maxLength ? offer.maxLength : undefined;
   if (offer.lines) return <textarea rows={rows} maxLength={limit} {...common} />;
+  if (choices !== undefined) {
+    return (
+      <>
+        <input
+          type="text"
+          maxLength={limit}
+          {...common}
+          role="combobox"
+          aria-expanded={offered.length > 0}
+          aria-controls={offered.length > 0 ? choicesId : undefined}
+          aria-activedescendant={offered[active] === undefined ? undefined : `${choicesId}-row-${String(active)}`}
+          onBeforeInput={(event) => {
+            const data = event.nativeEvent.data;
+            if (data !== null) setTyped((was) => was + data);
+            setActive(-1);
+          }}
+        />
+        <TypedChoices
+          active={active}
+          at={choices.at}
+          fontPx={choices.fontPx}
+          held={offer.held}
+          id={choicesId}
+          look={choices.look}
+          name={name}
+          onPick={pickChoice}
+          options={offered}
+          room={choices.room}
+        />
+      </>
+    );
+  }
   if (date === undefined) {
     // A FIELD THAT MASKS WHAT IS TYPED (`/Ff` Password) is a password box, so its letters are not shown on the page.
-    return <input type={offer.masked ? 'password' : 'text'} maxLength={limit} {...(list === undefined ? {} : { list })} {...common} />;
+    return <input type={offer.masked ? 'password' : 'text'} maxLength={limit} {...common} />;
   }
   const { at } = date;
   const button = Math.min(at.height, DATE_BUTTON_MAX);

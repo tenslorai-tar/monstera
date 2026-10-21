@@ -6422,6 +6422,12 @@ optgroup {
   background-color: var(--field-chosen);
 }
 
+/* THE ROW THE ARROWS ARE ON in a dropdown that takes typing, whose focus stays in its box (`TypedChoices`). */
+.m-page-choice-row[data-active='true'] {
+  outline: 1px solid var(--field-ink);
+  outline-offset: -1px;
+}
+
 /* A DROPDOWN'S OPEN LIST, in the page under its field so it moves with the page (F4), above the fields around it. */
 .m-page-choice--open {
   z-index: 2;

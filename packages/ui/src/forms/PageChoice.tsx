@@ -207,6 +207,110 @@ export interface PageBox {
 }
 
 /**
+ * WHERE A LIST OPENED AT ITS FIELD SITS, for both kinds of dropdown: under the field; above it, touching it, only where
+ * there is no room below and room above; and where neither side holds the whole list, on the roomier side, shortened
+ * to the room and scrolling. Never past the page: the layer it is drawn in ends there, and a list placed below a field
+ * near the page's foot was cut off by it (the owner's R21, 2026-10-21).
+ *
+ * @param rows how many rows the list holds @param pageHeight how far the page reaches below the top of the layer
+ */
+export function openListPlace(at: PageBox, rows: number, fontPx: number, pageHeight: number): { readonly top: number; readonly maxHeight: number } {
+  const height = Math.min(rows, OPEN_ROWS) * fontPx * ROW_PITCH;
+  const below = at.top + at.height;
+  const roomBelow = Math.max(0, pageHeight - below);
+  const roomAbove = Math.max(0, at.top);
+  if (height <= roomBelow) return { top: below, maxHeight: height };
+  if (height <= roomAbove) return { top: at.top - height, maxHeight: height };
+  return roomBelow >= roomAbove ? { top: below, maxHeight: roomBelow } : { top: at.top - roomAbove, maxHeight: roomAbove };
+}
+
+/**
+ * A DROPDOWN THAT TAKES TYPING, its options under the box the words are typed in (the owner's R21). The focus stays in
+ * the box, whose leaving is what fills the field, so a press on a row is kept from taking it; the box says which row is
+ * active (`aria-activedescendant`) and picks it.
+ *
+ * Its rows are the page's own, as every choice's are (above). It was the browser's `<datalist>`, the same kind of
+ * control the native `<select>` was: a window of the browser's, placed by the screen's room rather than the field's, so
+ * it opened over the rows above and stayed where it was while the page moved; and it filtered by whatever the box held,
+ * so with London chosen it offered only London.
+ */
+export function TypedChoices({
+  id,
+  name,
+  options,
+  held,
+  active,
+  look,
+  fontPx,
+  at,
+  room,
+  onPick,
+}: {
+  readonly id: string;
+  readonly name: string;
+  /** What is offered now: every option, or those that start with what was typed since the list opened. */
+  readonly options: readonly string[];
+  /** The field's value when the box opened, marked among the rows. */
+  readonly held: string;
+  /** The row the arrows are on, or -1. */
+  readonly active: number;
+  readonly look: FieldLook | undefined;
+  readonly fontPx: number;
+  readonly at: PageBox;
+  readonly room: number;
+  readonly onPick: (option: string) => void;
+}): ReactElement | null {
+  const root = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const row = root.current?.querySelector(`#${CSS.escape(`${id}-row-${String(active)}`)}`);
+    if (row !== null && row !== undefined && typeof row.scrollIntoView === 'function') row.scrollIntoView({ block: 'nearest' });
+  }, [active, id]);
+  if (options.length === 0) return null;
+  const place = openListPlace(at, options.length, fontPx, room);
+  const pitch = fontPx * ROW_PITCH;
+  return (
+    <div
+      aria-label={name}
+      className="m-page-choice m-page-choice--open"
+      id={id}
+      // THE FOCUS STAYS IN THE BOX: a press that moved it would leave the box, which fills the field with what is typed,
+      // before the row's own choice arrived.
+      onMouseDown={(event) => {
+        event.preventDefault();
+      }}
+      ref={root}
+      role="listbox"
+      style={{
+        left: `${String(at.left)}px`,
+        top: `${String(place.top)}px`,
+        width: `${String(at.width)}px`,
+        maxHeight: `${String(place.maxHeight)}px`,
+        ...painted(look),
+        fontSize: `${String(fontPx)}px`,
+      }}
+    >
+      {options.map((option, row) => (
+        <div
+          aria-selected={option === held}
+          className="m-page-choice-row"
+          data-active={row === active ? 'true' : undefined}
+          id={`${id}-row-${String(row)}`}
+          // THE POSITION IS THE KEY: a document's options can repeat.
+          key={row}
+          onClick={() => {
+            onPick(option);
+          }}
+          role="option"
+          style={{ height: `${String(pitch)}px`, lineHeight: `${String(pitch)}px` }}
+        >
+          {option}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
  * A LIST BOX, its rows at the field (F1, F2): a press chooses the row pressed, Ctrl adds or takes one away and Shift
  * chooses a run where the list takes several; a list that takes one is never a dropdown.
  */
@@ -310,9 +414,7 @@ export function PageDropdown({
     if (how === 'escape') close();
     else setOpen(false);
   });
-  const height = Math.min(choices.length, OPEN_ROWS) * fontPx * ROW_PITCH;
-  const below = at.top + at.height;
-  const upwards = below + height > room && at.top - height >= 0;
+  const place = openListPlace(at, choices.length, fontPx, room);
   const labels = new Map([[0, i18n._(FORMS_CHOICE_EMPTY)]]);
   return (
     <>
@@ -367,9 +469,9 @@ export function PageDropdown({
             options={choices}
             style={{
               left: `${String(at.left)}px`,
-              top: `${String(upwards ? at.top - height : below)}px`,
+              top: `${String(place.top)}px`,
               width: `${String(at.width)}px`,
-              maxHeight: `${String(height)}px`,
+              maxHeight: `${String(place.maxHeight)}px`,
             }}
           />
         </div>

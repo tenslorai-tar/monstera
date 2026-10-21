@@ -425,8 +425,7 @@ export function FormLayer({
         }
 
         if (offer.kind === 'choice' && offer.editable && typing?.index === field.index) {
-          // A DROPDOWN THAT TAKES TYPING: a box offering the document's options, whose words are the value.
-          const listId = `${id}-options`;
+          // A DROPDOWN THAT TAKES TYPING: a box offering the document's options under it, whose words are the value.
           return [
             <FieldTextBox
               key={field.index}
@@ -435,7 +434,14 @@ export function FormLayer({
               className="m-page-field-editor"
               name={field.name}
               offer={{ kind: 'text', held: offer.held, lines: false, maxLength: null, comb: false, masked: false, required: offer.required, format: null, range: null }}
-              list={listId}
+              choices={{
+                // NOT THE EMPTY CHOICE: a box that takes typing is cleared by clearing its words.
+                options: offer.choices.filter((choice) => choice !== ''),
+                look: field.look,
+                fontPx: Math.min(listPx(field.look), box.height * LINE_FILL),
+                at: box,
+                room: pageHeight,
+              }}
               pressedAt={typing.pressedAt}
               selectsAll={typing.pressedAt === undefined}
               onCancel={() => {
@@ -449,11 +455,6 @@ export function FormLayer({
               }}
               style={{ ...at, fontSize: `${String(box.height * LINE_FILL)}px` }}
             />,
-            <datalist id={listId} key={`options-${String(field.index)}`}>
-              {offer.choices.filter((choice) => choice !== '').map((choice, place) => (
-                <option key={place} value={choice} />
-              ))}
-            </datalist>,
           ];
         }
 
