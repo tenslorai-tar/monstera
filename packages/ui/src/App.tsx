@@ -178,6 +178,8 @@ import { CommandPalette } from './CommandPalette.js';
 import { goToCommand, historyCommand, pageMoveCommand } from './commands/navigationCommands.js';
 import { syncConversation } from './chatHistorySync.js';
 import { type DocumentStore, DocumentStores } from './documentStores.js';
+import { sendHeld } from './heldLooks.js';
+import type { MarkLook } from './markLook.js';
 import { Thumbnails } from './Thumbnails.js';
 import { StatusBar } from './surfaces/StatusBar.js';
 import { StatusTip } from './surfaces/StatusTip.js';
@@ -1994,6 +1996,16 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
   // THE ACTIVE DOCUMENT'S HOLDER of released marks in their final look (ADR-0257): handed to its pages, which alone
   // subscribe to it, so a hold never renders the shell (`heldLooks.ts`).
   const heldLooks = activeId === undefined ? undefined : stores.held(activeId);
+  // A MARK FROM THE SELECTED-TEXT MENU, held in its final look on its page from the click until the page draws it
+  // (ADR-0257) — the overlay's own route, `sendHeld`, so the menu and the tool hold one way.
+  const placeHeld = useCallback(
+    (command: DispatchableCommand, look?: MarkLook): void => {
+      if (activeId === undefined) return;
+      const page = command.kind === 'addAnnotation' ? command.page : undefined;
+      void sendHeld(page === undefined ? undefined : heldLooks, page ?? 0, look, () => send(activeId, command));
+    },
+    [activeId, heldLooks, send],
+  );
   const zoomMode = view?.zoom ?? DEFAULT_ZOOM;
   // THE ORGANIZE GRID (ADR-0104): the canvas shows it while Organize is the rail's section, and the selection
   // counts only then — a page ticked there and left must not redirect a rotate given in the reading view.
@@ -3853,7 +3865,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
     } = {};
     const textDeps: TextSelectionDeps = {
       selection: () => textSelection,
-      place: dispatch,
+      place: placeHeld,
       style: () => style,
       // THE BROWSER'S OWN COPY, run by main on this window: the selection is still the
       // page's (the menu keeps it), and what it copies as is what the chord would copy.
@@ -4431,7 +4443,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       // THE SELECTED-TEXT MENU reads these four: the selection its `when` asks about, the one
       // dispatcher, the style a markup is drawn in, and the page that *Comment* asks for words.
       textSelection,
-      dispatch,
+      placeHeld,
       style,
       write,
       // EDIT COMMENT'S STARTING WORDS, read whole where the walk cut them; bound to the document on screen.

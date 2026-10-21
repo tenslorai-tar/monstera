@@ -85,6 +85,27 @@ export function afterNextPaint(): Promise<void> {
 }
 
 /**
+ * Sends a command whose mark is held in its final look meanwhile: the look held, painted, then the command sent, and the
+ * look dropped if the command made nothing. The one sequence for every route that is not the drawing overlay's — a text
+ * selection's markup from the tool or the menu, a placed stamp or signature — so none of them orders it differently.
+ *
+ * @returns whether the document's version moved, as `send` answers it.
+ */
+export async function sendHeld(
+  holder: Pick<HeldLooks, 'hold' | 'letGo'> | undefined,
+  page: number,
+  look: MarkLook | undefined,
+  send: () => Promise<boolean>,
+  afterPaint: () => Promise<void> = afterNextPaint,
+): Promise<boolean> {
+  const entry = look === undefined || holder === undefined ? undefined : holder.hold(page, look);
+  if (entry !== undefined) await afterPaint();
+  const moved = await send();
+  if (!moved && entry !== undefined) holder?.letGo(entry);
+  return moved;
+}
+
+/**
  * The looks a page shows: its own, each released over a version this page still shows. A page drawn from a NEWER
  * version draws the marks itself, so the look is no longer shown in the render that carries that drawing — the one rule
  * for when a held look leaves, which the page applies and {@link released} names for the holder to drop.

@@ -58,6 +58,34 @@ export interface TextSelection {
   /** Where the run starts and ends, in PDF user space — what the markup tools send. */
   readonly from: { readonly x: number; readonly y: number };
   readonly to: { readonly x: number; readonly y: number };
+  /**
+   * The selected words' boxes on the page as drawn, one per line, in the page's own pixels — the text layer's, which is
+   * laid over the page as the held looks are: what a markup's final look covers while the page has not drawn it
+   * (ADR-0257). One per line, so overlapping spans of one line do not lay a highlight over itself twice.
+   */
+  readonly boxes: readonly { readonly x: number; readonly y: number; readonly width: number; readonly height: number }[];
+}
+
+/**
+ * Rectangles merged into one box per line: two that overlap by more than half the smaller one's height are on one line,
+ * and the line's box spans them both.
+ */
+function linesOf(rects: readonly { left: number; top: number; right: number; bottom: number }[]): TextSelection['boxes'] {
+  const lines: { left: number; top: number; right: number; bottom: number }[] = [];
+  for (const rect of [...rects].sort((a, b) => a.top - b.top || a.left - b.left)) {
+    const line = lines.find(
+      (each) => Math.min(each.bottom, rect.bottom) - Math.max(each.top, rect.top) > Math.min(each.bottom - each.top, rect.bottom - rect.top) / 2,
+    );
+    if (line === undefined) {
+      lines.push({ ...rect });
+      continue;
+    }
+    line.left = Math.min(line.left, rect.left);
+    line.right = Math.max(line.right, rect.right);
+    line.top = Math.min(line.top, rect.top);
+    line.bottom = Math.max(line.bottom, rect.bottom);
+  }
+  return lines.map((line) => ({ x: line.left, y: line.top, width: line.right - line.left, height: line.bottom - line.top }));
 }
 
 /**
@@ -119,7 +147,35 @@ export function readTextSelection(selection: Selection | null = globalThis.docum
     text,
     from: entry.toPdf(first.left - origin.left, (first.top + first.bottom) / 2 - origin.top),
     to: entry.toPdf(last.right - origin.left, (last.top + last.bottom) / 2 - origin.top),
+    boxes: linesOf(selectedLines(clipped, layer).map((rect) => ({ left: rect.left - origin.left, top: rect.top - origin.top, right: rect.right - origin.left, bottom: rect.bottom - origin.top }))),
   };
+}
+
+/**
+ * The selected part of each line the range crosses, on screen: ACROSS from the range's own rectangles in that line, and
+ * UP AND DOWN from the line's element, which is placed at the box the engine read for it (`engineBoxOnScreen`). A range's
+ * rectangles are the substitute font's line box instead — its top 4 px above the line's on a 28 pt line, read 2026-10-21 by
+ * `markLook.pw.ts` at 1600 by 900 — and the quads
+ * MuPDF marks are the engine's, so a look drawn from them stood above the words it marks.
+ */
+function selectedLines(range: Range, layer: Element): { left: number; top: number; right: number; bottom: number }[] {
+  const found: { left: number; top: number; right: number; bottom: number }[] = [];
+  for (const line of layer.querySelectorAll('[data-text-line]')) {
+    if (!range.intersectsNode(line)) continue;
+    const part = range.cloneRange();
+    if (!line.contains(range.startContainer)) part.setStart(line, 0);
+    if (!line.contains(range.endContainer)) part.setEnd(line, line.childNodes.length);
+    const across = [...part.getClientRects()].filter((rect) => rect.width > 0);
+    if (across.length === 0) continue;
+    const box = line.getBoundingClientRect();
+    found.push({
+      left: Math.min(...across.map((rect) => rect.left)),
+      right: Math.max(...across.map((rect) => rect.right)),
+      top: box.top,
+      bottom: box.bottom,
+    });
+  }
+  return found;
 }
 
 /**

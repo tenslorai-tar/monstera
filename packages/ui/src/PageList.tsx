@@ -16,7 +16,7 @@ import { flushSync } from 'react-dom';
 
 import { AnnotationLayer } from './AnnotationLayer.js';
 import { AnnotationOverlay } from './AnnotationOverlay.js';
-import type { MarkLook } from './markLook.js';
+import { type MarkLook, selectionLook } from './markLook.js';
 import { MarkLookLayer } from './MarkLookLayer.js';
 import type { OverlayPage } from './annotations/annotationSpace.js';
 import type { AnnotationSelection, LinkSelection } from './annotations/selectTool.js';
@@ -69,7 +69,7 @@ import { ANNOTATION_SURFACE_LABEL, PAGE_IMAGE_ONLY, PAGE_LIST_LABEL, PAGE_OPENIN
 import { Icon } from './primitives/Icon.js';
 import { useOnColor } from './primitives/useOnColor.js';
 import type { LiveReading, UiTool } from './registries/tools.js';
-import { type HeldLook, type HeldLooks, heldOnPage, released } from './heldLooks.js';
+import { type HeldLook, type HeldLooks, heldOnPage, released, sendHeld } from './heldLooks.js';
 import type { DocumentView } from './documentView.js';
 import { FIRST_PAGE, pdfjsPageOf } from './pageNumbering.js';
 import { holdPage } from './pageResidency.js';
@@ -1222,12 +1222,13 @@ export function PageList({
     const command = fromSelection(selection);
     if (command === undefined) return;
     // NOT AWAITED: whether the version moved decides nothing here — the selection is spent either way — and the
-    // command reports its own refusal.
-    void drawing.onCommand(command);
+    // command reports its own refusal. HELD IN ITS FINAL LOOK over the selection's own lines first, in this task, so
+    // the words never show unmarked between the release and the page drawing the mark (ADR-0257).
+    void sendHeld(held, selection.page, selectionLook(command, selection.boxes), () => drawing.onCommand(command));
     // THE SELECTION IS SPENT once it is a mark: left in place it would still offer the selected-text menu for words
     // that are already marked, and the next drag would start from it.
     globalThis.document.getSelection()?.removeAllRanges();
-  }, [drawing, fromSelection]);
+  }, [drawing, fromSelection, held]);
 
   // THE PAGES IN USE (ADR-0247): those on screen, and the page after them, drawn only within the memory limit
   // (`pixelLedger.ts`). Every other page keeps its slot and holds no pixels.

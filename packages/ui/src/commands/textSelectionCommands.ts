@@ -14,6 +14,7 @@ import {
   UNDERLINE_SELECTION_TITLE,
   WRITE_NOTE_LABEL,
 } from '../messages/en.js';
+import { type MarkLook, selectionLook } from '../markLook.js';
 import type { Write } from '../pageWriting.js';
 import type { IconName } from '../primitives/icons.js';
 import { TOASTS, type UiCommand, VISIBLE } from '../registries/commands.js';
@@ -43,8 +44,11 @@ export interface TextSelectionDeps {
    * Dispatches a command against the FOCUSED document — `App`'s one dispatcher, which every
    * annotation tool's commit takes. The focused document is the one whose text layer holds the
    * selection, because a text selection is only tracked there.
+   *
+   * `look` is the mark's final look over the selection's own lines, held on its page from the release until the page
+   * draws the saved mark (ADR-0257); a command with none — a note, whose look the page's writer owns — passes none.
    */
-  readonly place: (command: DispatchableCommand) => void;
+  readonly place: (command: DispatchableCommand, look?: MarkLook) => void;
   /** The style the next annotation is drawn in — the markup tools' own. */
   readonly style: () => AnnotationStyle;
   /** Opens the find field searching for `text`. */
@@ -99,7 +103,8 @@ export function markupSelectionCommands(deps: TextSelectionDeps): readonly UiCom
     run: (context): void => {
       const selection = deps.selection();
       if (context.docId === undefined || selection === undefined) return;
-      deps.place(markupCommand(type, selection.page, selection.from, selection.to, deps.style()));
+      const command = markupCommand(type, selection.page, selection.from, selection.to, deps.style());
+      deps.place(command, selectionLook(command, selection.boxes));
     },
   }));
 }
@@ -194,7 +199,8 @@ export function redactSelectionCommand(deps: TextSelectionDeps): UiCommand {
       const selection = deps.selection();
       if (context.docId === undefined || selection === undefined) return;
       // THE REDACT TEXT TOOL'S OWN BUILDER, so a mark made from the menu and one made with the tool are one command.
-      deps.place(redactTextCommand(selection.page, selection.from, selection.to, deps.style()));
+      const command = redactTextCommand(selection.page, selection.from, selection.to, deps.style());
+      deps.place(command, selectionLook(command, selection.boxes));
     },
   };
 }

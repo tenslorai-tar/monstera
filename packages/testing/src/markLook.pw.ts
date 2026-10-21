@@ -1,4 +1,4 @@
-import { PDFDocument } from '@cantoo/pdf-lib';
+import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
@@ -28,18 +28,30 @@ interface Frame {
   readonly placeholder: boolean;
 }
 
-async function blankPage(): Promise<Uint8Array> {
+const WORDS = 'Quarterly totals rose sharply';
+
+/**
+ * A page with one line of words at y 600, 28 pt, for the tools whose gesture selects text, and that line as the engine
+ * would answer it — in display space, from the font's own advance and its ascent and descent at that size — since the
+ * shim's text layer is the engine's answer, not the page's.
+ */
+async function pageWithWords(): Promise<{ bytes: Uint8Array; line: { text: string; box: { x0: number; y0: number; x1: number; y1: number } } }> {
   const document = await PDFDocument.create();
-  document.addPage([612, 792]);
-  return document.save();
+  const sheet = document.addPage([612, 792]);
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  sheet.drawText(WORDS, { x: 150, y: 600, size: 28, font });
+  const top = 792 - 600 - font.heightAtSize(28, { descender: false });
+  const bottom = 792 - 600 + (font.heightAtSize(28) - font.heightAtSize(28, { descender: false }));
+  return { bytes: await document.save(), line: { text: WORDS, box: { x0: 150, y0: top, x1: 150 + font.widthOfTextAtSize(WORDS, 28), y1: bottom } } };
 }
 
 async function open(page: Page): Promise<void> {
-  const bytes = await blankPage();
+  const { bytes, line } = await pageWithWords();
   await page.setViewportSize({ width: 1600, height: 900 });
   await bridgeUnder(page, LOOKS[0], {
     opens: [{ kind: 'opened' as const, docId: ID, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Blank.pdf' }],
     documentBytes: new Map([[ID, bytes]]),
+    pageLinesPlaced: [[line]],
     settings: { 'appearance.ribbon-section': 'comment', 'appearance.status-tips': false },
   });
   await page.goto('/');
@@ -74,10 +86,18 @@ async function sample(page: Page): Promise<void> {
     // browser runs frames irregularly while nothing on the page animates (frames 250 ms apart before a release, no task
     // long enough to explain them, measured 2026-10-21) — so the app's part is when the look is there to be painted.
     const inserted: number[] = [];
+    // WHERE IT WAS DRAWN, against the line of words, read as it enters: the look and the words are two layers, and a
+    // look in the wrong place passes every rule about time.
+    const placed: { look: DOMRect; line: DOMRect | undefined }[] = [];
     new MutationObserver(() => {
-      if (inserted.length === 0 && document.querySelector('[data-mark-looks] [data-mark-look]') !== null) inserted.push(performance.now());
+      const look = document.querySelector('[data-mark-looks] [data-mark-look]');
+      if (inserted.length === 0 && look !== null) {
+        inserted.push(performance.now());
+        placed.push({ look: look.getBoundingClientRect(), line: document.querySelector('[data-text-line="0"]')?.getBoundingClientRect() });
+      }
     }).observe(document.body, { childList: true, subtree: true });
     Reflect.set(window, 'lookInserted', inserted);
+    Reflect.set(window, 'lookPlaced', placed);
     let running = true;
     const tick = (): void => {
       if (!running) return;
@@ -120,8 +140,19 @@ const TRIANGLE = [
   [330, 520],
 ] as const;
 
-/** Every tool the overlay serves, how it draws one mark, and the part its look must have. */
-const TOOLS: readonly { readonly title: string; readonly draw: (page: Page) => Promise<void>; readonly part: string }[] = [
+/**
+ * Every tool that places a mark from a gesture, how it draws one, and the part its look must have. `tool: false` is a
+ * route with no tool chosen: `select` runs before the sampler starts, and `draw` finishes the mark.
+ */
+const TOOLS: readonly {
+  readonly title: string;
+  readonly draw: (page: Page) => Promise<void>;
+  readonly part: string;
+  readonly tool?: false;
+  readonly select?: (page: Page) => Promise<void>;
+  /** A mark over the selected words of the page's one line, whose look must be drawn over them. */
+  readonly overWords?: true;
+}[] = [
   { title: 'Rectangle', draw: (page) => drag(page, [150, 600], [330, 500]), part: 'outline' },
   { title: 'Ellipse', draw: (page) => drag(page, [150, 600], [330, 500]), part: 'outline' },
   { title: 'Line', draw: (page) => drag(page, [150, 600], [330, 500]), part: 'poly' },
@@ -149,12 +180,34 @@ const TOOLS: readonly { readonly title: string; readonly draw: (page: Page) => P
   },
   { title: 'Highlight an area of the page', draw: (page) => drag(page, [150, 600], [330, 560]), part: 'fill' },
   { title: 'Mark an area for redaction', draw: (page) => drag(page, [150, 600], [330, 560]), part: 'redact' },
+  // THE TOOLS WHOSE GESTURE SELECTS TEXT: the drag selects the words, and the release marks them.
+  { title: 'Highlight text', draw: (page) => drag(page, [152, 608], [400, 608]), part: 'swash', overWords: true },
+  { title: 'Underline text', draw: (page) => drag(page, [152, 608], [400, 608]), part: 'rule', overWords: true },
+  { title: 'Strikethrough text', draw: (page) => drag(page, [152, 608], [400, 608]), part: 'rule', overWords: true },
+  { title: 'Mark text for redaction', draw: (page) => drag(page, [152, 608], [400, 608]), part: 'redact', overWords: true },
+  // AND THE SELECTED-TEXT MENU'S ROUTE: words selected with no tool, and the item chosen from the right-click.
+  ...[
+    ['Highlight', 'swash'],
+    ['Mark for redaction', 'redact'],
+  ].map(([item = '', part = '']) => ({
+    title: `the menu’s ${item}`,
+    tool: false as const,
+    draw: async (page: Page) => {
+      const at = await onScreen(page, 300, 608);
+      await page.mouse.click(at.x, at.y, { button: 'right' });
+      await page.getByRole('menuitem', { name: item, exact: true }).click();
+    },
+    select: (page: Page) => drag(page, [152, 608], [400, 608]),
+    part,
+    overWords: true as const,
+  })),
 ];
 
 for (const tool of TOOLS) {
   test(`${tool.title}: its final look from the release until the page draws it, never the placeholder or nothing`, async ({ page }) => {
     await open(page);
-    await runCommand(page, tool.title);
+    if (tool.tool === false) await tool.select?.(page);
+    else await runCommand(page, tool.title);
     await sample(page);
     await tool.draw(page);
     // UNTIL THE PAGE HAS BEEN DRAWN FROM THE COMMAND'S VERSION, which is when the holder lets the look go.
@@ -182,5 +235,16 @@ for (const tool of TOOLS) {
     expect(held.filter((frame) => frame.placeholder).map((frame) => Math.round(frame.t - finished)), 'frames with the placeholder').toStrictEqual([]);
     expect(held.filter((frame) => frame.looks.length === 0).map((frame) => Math.round(frame.t - finished)), 'frames with nothing').toStrictEqual([]);
     expect(after.slice(0, first).filter((frame) => frame.placeholder), 'the placeholder before the look').toStrictEqual([]);
+    if (tool.overWords === true) {
+      // OVER THE SELECTED WORDS: inside the line's height, starting at its start, and ending before its end — the drag
+      // stopped mid-line, so a look the width of the whole line is the line's box and not the selection's.
+      const [where] = await page.evaluate(() => Reflect.get(window, 'lookPlaced') as { look: DOMRect; line: DOMRect | undefined }[]);
+      const { look, line } = where ?? {};
+      if (look === undefined || line === undefined) throw new Error('the look or the line was not there to measure');
+      expect(look.top, 'look top against the line').toBeGreaterThanOrEqual(line.top - 1);
+      expect(look.bottom, 'look bottom against the line').toBeLessThanOrEqual(line.bottom + 1);
+      expect(Math.abs(look.left - line.left), 'look start against the line start').toBeLessThanOrEqual(tool.part === 'swash' ? line.height / 4 + 2 : 2);
+      expect(look.right, 'look end against the line end').toBeLessThan(line.right - 20);
+    }
   });
 }

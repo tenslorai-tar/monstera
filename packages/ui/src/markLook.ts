@@ -67,8 +67,14 @@ export type LookPart =
     }
   /** A colour laid over the page's words, multiplied as a highlight is drawn. */
   | { readonly part: 'fill'; readonly boxes: readonly LookBox[]; readonly paint: LookPaint }
-  /** A rule under or through words: an underline, a strikeout. */
-  | { readonly part: 'rule'; readonly boxes: readonly LookBox[]; readonly at: 'under' | 'through'; readonly stroke: LookStroke }
+  /** A text highlight's outline per line, as MuPDF draws one: the box with its ends bulged out (`highlightOutline`). */
+  | { readonly part: 'swash'; readonly paths: readonly string[]; readonly paint: LookPaint }
+  /** A rule under or through words, one line per line of words, each as MuPDF sets it (`ruleUnder`). */
+  | {
+      readonly part: 'rule';
+      readonly lines: readonly { readonly x1: number; readonly x2: number; readonly y: number; readonly width: number }[];
+      readonly paint: LookPaint;
+    }
   /** A redaction not yet applied: the page layer's own hatched mark. */
   | { readonly part: 'redact'; readonly boxes: readonly LookBox[] }
   /** A measurement's reading, where the page sets it. */
@@ -168,6 +174,58 @@ export const TEXT_INSET = 2;
 /** A sticky note's icon as MuPDF draws `/Name /Comment`: a 20 by 20 point sign at its top left. */
 const NOTE_SIZE = 20;
 
+/**
+ * A text highlight over one line's box, as MuPDF 1.28.0 draws it (`pdf_write_highlight_appearance`, read in
+ * `source/pdf/pdf-appearance.c`): the box filled, its two ends bulged out by cubic curves whose control points sit
+ * `h / 4.2425` beyond and inside each corner — *"magic number that matches adobe's appearance"*. In the page's pixels,
+ * where y runs down, for an upright line.
+ */
+export function highlightOutline(box: LookBox): string {
+  const m = box.height / 4.2425;
+  const left = box.x;
+  const right = box.x + box.width;
+  const top = box.y;
+  const bottom = box.y + box.height;
+  const at = (x: number, y: number): string => `${String(x)},${String(y)}`;
+  return [
+    `M${at(left, bottom)}`,
+    `C${at(left - m, bottom - m)} ${at(left - m, top + m)} ${at(left, top)}`,
+    `L${at(right, top)}`,
+    `C${at(right + m, top + m)} ${at(right + m, bottom - m)} ${at(right, bottom)}`,
+    'Z',
+  ].join(' ');
+}
+
+/**
+ * An underline (`share` 1/7) or a strikeout (3/7) of one line's box, as MuPDF 1.28.0 sets it
+ * (`pdf_write_underline_appearance`, `pdf_write_strike_out_appearance`): a line that share of the box's height above its
+ * bottom, `h / 16` thick — *"Acrobat draws the line at 1/7 of the box width from the bottom"*.
+ */
+export function ruleUnder(box: LookBox, share: number): { x1: number; x2: number; y: number; width: number } {
+  return { x1: box.x, x2: box.x + box.width, y: box.y + box.height - box.height * share, width: box.height / 16 };
+}
+
+/** A text markup's look over a selection's line boxes: one place for the tool's route and the menu's. */
+function markupParts(type: 'highlight' | 'underline' | 'strikeout' | 'redact', boxes: readonly LookBox[], paint: LookPaint): LookPart[] {
+  if (type === 'highlight') return [{ part: 'swash', paths: boxes.map(highlightOutline), paint }];
+  if (type === 'redact') return [{ part: 'redact', boxes }];
+  return [{ part: 'rule', lines: boxes.map((box) => ruleUnder(box, type === 'underline' ? 1 / 7 : 3 / 7)), paint }];
+}
+
+/**
+ * The final look of a markup made from a text selection — the tool's or the selected-text menu's — over the
+ * selection's own line boxes, which `readTextSelection` measured where the words are drawn.
+ */
+export function selectionLook(command: DispatchableCommand, boxes: readonly LookBox[]): MarkLook | undefined {
+  if (command.kind !== 'addAnnotation' || boxes.length === 0) return undefined;
+  const draft = command.annotation;
+  const paint = { colour: draft.colour, opacity: draft.opacity };
+  if (draft.type === 'highlight' && !('rect' in draft)) return { parts: markupParts('highlight', boxes, paint) };
+  if (draft.type === 'underline' || draft.type === 'strikeout') return { parts: markupParts(draft.type, boxes, paint) };
+  if (draft.type === 'redact' && !('rect' in draft)) return { parts: markupParts('redact', boxes, paint) };
+  return undefined;
+}
+
 /** The look of one new mark, from its draft. */
 function draftLook(draft: AnnotationDraft, transform: PageTransform, context: LookContext): MarkLook | undefined {
   const scale = pixelsPerPoint(transform);
@@ -218,15 +276,13 @@ function draftLook(draft: AnnotationDraft, transform: PageTransform, context: Lo
     }
     case 'highlight':
       if ('rect' in draft) return { parts: [{ part: 'fill', boxes: [boxOf(draft.rect, transform)], paint }] };
-      return context.selectionBoxes === undefined ? undefined : { parts: [{ part: 'fill', boxes: context.selectionBoxes, paint }] };
+      return context.selectionBoxes === undefined ? undefined : { parts: markupParts('highlight', context.selectionBoxes, paint) };
     case 'underline':
     case 'strikeout':
-      return context.selectionBoxes === undefined
-        ? undefined
-        : { parts: [{ part: 'rule', boxes: context.selectionBoxes, at: draft.type === 'underline' ? 'under' : 'through', stroke: stroke(1) }] };
+      return context.selectionBoxes === undefined ? undefined : { parts: markupParts(draft.type, context.selectionBoxes, paint) };
     case 'redact':
       if ('rect' in draft) return { parts: [{ part: 'redact', boxes: [boxOf(draft.rect, transform)] }] };
-      return context.selectionBoxes === undefined ? undefined : { parts: [{ part: 'redact', boxes: context.selectionBoxes }] };
+      return context.selectionBoxes === undefined ? undefined : { parts: markupParts('redact', context.selectionBoxes, paint) };
     case 'text-box':
     case 'typewriter':
     case 'callout': {

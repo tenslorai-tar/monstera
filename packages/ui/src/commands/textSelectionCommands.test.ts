@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { styleFrom } from '../annotations/annotationStyle.js';
 import { WRITE_NOTE_LABEL } from '../messages/en.js';
+import { type LookBox, type MarkLook, highlightOutline } from '../markLook.js';
 import type { WriteRequest } from '../pageWriting.js';
 import type { CommandContext } from '../registries/commands.js';
 import type { TextSelection } from '../TextLayer.js';
@@ -35,19 +36,37 @@ const CONTEXT: CommandContext = {
   openDocuments: [],
 };
 
-const SELECTION: TextSelection = { page: 2, text: 'quarterly totals', from: { x: 72, y: 700 }, to: { x: 210, y: 700 } };
+const SELECTION: TextSelection = {
+  page: 2,
+  text: 'quarterly totals',
+  from: { x: 72, y: 700 },
+  to: { x: 210, y: 700 },
+  boxes: [{ x: 144, y: 184, width: 276, height: 22 }],
+};
+const NO_BOX: LookBox = { x: 0, y: 0, width: 0, height: 0 };
 
-function recording(selection: TextSelection | undefined): { deps: TextSelectionDeps; placed: DispatchableCommand[]; searched: string[]; copies: number[] } {
+function recording(selection: TextSelection | undefined): {
+  deps: TextSelectionDeps;
+  placed: DispatchableCommand[];
+  looks: (MarkLook | undefined)[];
+  searched: string[];
+  copies: number[];
+} {
   const placed: DispatchableCommand[] = [];
+  const looks: (MarkLook | undefined)[] = [];
   const searched: string[] = [];
   const copies: number[] = [];
   return {
     placed,
+    looks,
     searched,
     copies,
     deps: {
       selection: () => selection,
-      place: (command) => placed.push(command),
+      place: (command, look) => {
+        placed.push(command);
+        looks.push(look);
+      },
       style: () => styleFrom({ colour: 'auto', opacity: 1, lineWidth: 1, fontSize: 12, font: 'sans', family: 'Helvetica', direction: 'left-to-right', look: {}, caretSize: 'auto' }),
       search: (text) => searched.push(text),
       copy: () => copies.push(1),
@@ -70,6 +89,28 @@ describe('the selected-text commands', () => {
       { x: 72, y: 700 },
       { x: 210, y: 700 },
     ]);
+  });
+
+  it('each markup is placed WITH its final look over the selection’s own line, as MuPDF draws it (ADR-0257)', () => {
+    const { deps, looks } = recording(SELECTION);
+    for (const command of markupSelectionCommands(deps)) void command.run(CONTEXT);
+    void redactSelectionCommand(deps).run(CONTEXT);
+
+    // The line is 276 by 22 at (144, 184): a highlight's outline bulges 22 / 4.2425 past each end; an underline sits
+    // 1/7 of its height above its foot and a strikeout 3/7, each 22 / 16 thick.
+    const [highlight, underline, strikeout, redact] = looks;
+    expect(highlight?.parts).toMatchObject([{ part: 'swash', paths: [highlightOutline(SELECTION.boxes[0] ?? NO_BOX)] }]);
+    expect(highlightOutline({ x: 144, y: 184, width: 276, height: 22 })).toContain(`C${String(144 - 22 / 4.2425)},`);
+    expect(underline?.parts).toMatchObject([{ part: 'rule', lines: [{ x1: 144, x2: 420, y: 206 - 22 / 7, width: 22 / 16 }] }]);
+    expect(strikeout?.parts).toMatchObject([{ part: 'rule', lines: [{ x1: 144, x2: 420, y: 206 - (22 * 3) / 7, width: 22 / 16 }] }]);
+    expect(redact?.parts).toStrictEqual([{ part: 'redact', boxes: SELECTION.boxes }]);
+  });
+
+  it('CONTROL: a selection whose lines were not measured is placed with NO look, rather than one drawn anywhere', () => {
+    const { deps, placed, looks } = recording({ ...SELECTION, boxes: [] });
+    for (const command of markupSelectionCommands(deps)) void command.run(CONTEXT);
+    expect(placed).toHaveLength(3);
+    expect(looks).toStrictEqual([undefined, undefined, undefined]);
   });
 
   it('SEARCH asks for the selected text, and COPY copies', () => {

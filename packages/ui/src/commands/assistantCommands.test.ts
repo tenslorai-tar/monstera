@@ -24,7 +24,7 @@ import { assistantSelectionCommands, draftReplyCommand, summariseCommentsCommand
 
 const DOC = asDocId('00000000-0000-4000-8000-0000000000c1');
 const CONTEXT = { docId: DOC } as CommandContext;
-const SELECTED: TextSelection = { page: 4, text: 'the indemnity clause', from: { x: 1, y: 2 }, to: { x: 3, y: 4 } };
+const SELECTED: TextSelection = { page: 4, text: 'the indemnity clause', from: { x: 1, y: 2 }, to: { x: 3, y: 4 }, boxes: [] };
 
 function recording(): { ask: AskAssistant; asked: unknown[][] } {
   const asked: unknown[][] = [];

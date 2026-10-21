@@ -128,7 +128,7 @@ describe('textMarkupTools', () => {
     // THE SAME WORDS A HIGHLIGHT WOULD NAME: an I-beam, the page's selection, and its two ends, never a box.
     const redact = textMarkupTools.find((tool) => tool.id === REDACT_TEXT_TOOL_ID);
     expect(redact?.cursor).toBe('text');
-    const selection = { page: 2, from: { x: 10, y: 700 }, to: { x: 220, y: 680 }, text: 'Revenue grew' };
+    const selection = { page: 2, from: { x: 10, y: 700 }, to: { x: 220, y: 680 }, text: 'Revenue grew', boxes: [] };
     const command = redact?.fromSelection?.(selection);
     expect(command).toStrictEqual(redactTextCommand(2, selection.from, selection.to, PLAIN_STYLE));
     expect(command).toMatchObject({ kind: 'addAnnotation', page: 2, annotation: { type: 'redact', over: 'text' } });

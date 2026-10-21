@@ -109,13 +109,28 @@ function VectorPart({ part }: { readonly part: LookPart }): ReactElement | null 
           ))}
         </>
       );
+    case 'swash':
+      return (
+        <>
+          {part.paths.map((d, at) => (
+            <path className="m-mark-look__fill" d={d} fill={hexFromColour(part.paint.colour)} fillOpacity={part.paint.opacity} key={at} />
+          ))}
+        </>
+      );
     case 'rule':
       return (
         <>
-          {part.boxes.map((box, at) => {
-            const y = part.at === 'under' ? box.y + box.height - part.stroke.width / 2 : box.y + box.height / 2;
-            return <line className="m-mark-look__line" {...strokeOf(part.stroke)} key={at} x1={box.x} x2={box.x + box.width} y1={y} y2={y} />;
-          })}
+          {part.lines.map((line, at) => (
+            <line
+              className="m-mark-look__line"
+              {...strokeOf({ ...part.paint, width: line.width })}
+              key={at}
+              x1={line.x1}
+              x2={line.x2}
+              y1={line.y}
+              y2={line.y}
+            />
+          ))}
         </>
       );
     case 'caption':
@@ -250,6 +265,7 @@ function BoxPart({ part }: { readonly part: LookPart }): ReactElement | null {
     case 'outline':
     case 'poly':
     case 'fill':
+    case 'swash':
     case 'rule':
     case 'caption':
     case 'sign':
