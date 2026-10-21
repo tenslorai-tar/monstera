@@ -134,6 +134,20 @@ async function clicks(page: Page, points: readonly (readonly [number, number])[]
   }
 }
 
+/** Opens a writer by `open`, types into it, and finishes it with `finish` — the input the case times from. */
+async function writes(page: Page, open: () => Promise<void>, finish: string, words = 'See figure 3'): Promise<void> {
+  await open();
+  // THE CARET IN A BOX FOR WORDS, whichever kind the writer is.
+  await page.waitForFunction(() => {
+    const focused = document.activeElement;
+    return (
+      focused instanceof HTMLTextAreaElement || focused instanceof HTMLInputElement || (focused instanceof HTMLElement && focused.isContentEditable)
+    );
+  });
+  await page.keyboard.type(words);
+  await page.keyboard.press(finish);
+}
+
 const TRIANGLE = [
   [150, 620],
   [330, 620],
@@ -185,6 +199,20 @@ const TOOLS: readonly {
   { title: 'Underline text', draw: (page) => drag(page, [152, 608], [400, 608]), part: 'rule', overWords: true },
   { title: 'Strikethrough text', draw: (page) => drag(page, [152, 608], [400, 608]), part: 'rule', overWords: true },
   { title: 'Mark text for redaction', draw: (page) => drag(page, [152, 608], [400, 608]), part: 'redact', overWords: true },
+  // THE WRITERS: the mark is made when the words are finished, so the finishing input is the key that finishes them, and
+  // the box typed into closes in the same moment the look must take its place.
+  { title: 'Text box', draw: (page) => writes(page, () => drag(page, [150, 400], [400, 330]), 'Escape'), part: 'words' },
+  { title: 'Typewriter', draw: (page) => writes(page, () => clicks(page, [[150, 400]]), 'Escape'), part: 'words' },
+  { title: 'Callout', draw: (page) => writes(page, () => drag(page, [150, 300], [400, 400]), 'Escape'), part: 'words' },
+  { title: 'Note', draw: (page) => writes(page, () => clicks(page, [[150, 400]]), 'Control+Enter'), part: 'sign' },
+  { title: 'Insertion mark', draw: (page) => clicks(page, [[150, 400]]), part: 'sign' },
+  // A LINK'S DESTINATION IS ASKED ON THE PAGE after its box is drawn, and Enter commits it.
+  {
+    title: 'Link to a web address',
+    draw: (page) => writes(page, () => drag(page, [150, 400], [400, 330]), 'Enter', 'https://example.com'),
+    part: 'link',
+  },
+  { title: 'Link to a page', draw: (page) => writes(page, () => drag(page, [150, 400], [400, 330]), 'Enter', '1'), part: 'link' },
   // AND THE SELECTED-TEXT MENU'S ROUTE: words selected with no tool, and the item chosen from the right-click.
   ...[
     ['Highlight', 'swash'],

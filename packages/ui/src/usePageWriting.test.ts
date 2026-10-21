@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { asDocId } from '@monstera/shared';
 import { act, renderHook } from '@testing-library/react';
+import { useSyncExternalStore } from 'react';
 import { describe, expect, it } from 'vitest';
 
 import { WRITE_TEXT_BOX_LABEL } from './messages/en.js';
@@ -24,14 +25,40 @@ const BLOCK: WriteRequest = {
   label: WRITE_TEXT_BOX_LABEL,
 };
 
-/** The hook with the first document on show, or with `active` — `null` for none, since `undefined` would be a default. */
+/**
+ * The hook with the first document on show, or with `active` — `null` for none, since `undefined` would be a default —
+ * and, beside it, a pane reading the request as `useWritingOn` does: from the store, in a root of its own, so a case
+ * can tell what renders the HOST from what renders the pane.
+ */
 function hosted(active: typeof FIRST | null = FIRST) {
-  return renderHook(({ active: shown, open }) => usePageWriting(shown, open), {
-    initialProps: {
-      active: active ?? undefined,
-      open: [{ docId: FIRST }, { docId: SECOND }] as readonly { readonly docId: typeof FIRST }[],
+  let hostRenders = 0;
+  const host = renderHook(
+    ({ active: shown, open }) => {
+      hostRenders += 1;
+      return usePageWriting(shown, open);
     },
+    {
+      initialProps: {
+        active: active ?? undefined,
+        open: [{ docId: FIRST }, { docId: SECOND }] as readonly { readonly docId: typeof FIRST }[],
+      },
+    },
+  );
+  const { writings } = host.result.current;
+  let paneRenders = 0;
+  const pane = renderHook(() => {
+    paneRenders += 1;
+    return useSyncExternalStore(writings.subscribe, writings.getSnapshot);
   });
+  return {
+    result: {
+      get current() {
+        return { write: host.result.current.write, writingDocId: pane.result.current?.docId, writing: pane.result.current?.writing };
+      },
+    },
+    rerender: host.rerender,
+    renders: () => ({ host: hostRenders, pane: paneRenders }),
+  };
 }
 
 /** Whether a promise has settled yet, and with what. */
@@ -58,6 +85,28 @@ describe('usePageWriting', () => {
     });
     expect(await answer).toBe('see figure 3');
     expect(result.current.writing).toBeUndefined();
+  });
+
+  it('asking and finishing render the PANE that draws the request, never the host that holds `write` (ADR-0257)', () => {
+    // THE DECISION IS WHAT RENDERS, so render counts are asserted: as the host's state, finishing the words rendered the
+    // whole shell before a writer's held look could reach the page, and the request and its answer were the same.
+    const { result, renders } = hosted();
+    const before = renders();
+    act(() => {
+      void result.current.write(BLOCK);
+    });
+    act(() => {
+      result.current.writing?.onDone('see figure 3');
+    });
+    expect(renders().host).toBe(before.host);
+    expect(renders().pane).toBe(before.pane + 2);
+  });
+
+  it('CONTROL: the host count SEES a render of the host — a count that could not move would pass the case above', () => {
+    const { rerender, renders } = hosted();
+    const before = renders().host;
+    rerender({ active: SECOND, open: [{ docId: FIRST }, { docId: SECOND }] });
+    expect(renders().host).toBe(before + 1);
   });
 
   it('answers NOTHING with no document on show, and draws nothing', async () => {

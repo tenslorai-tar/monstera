@@ -334,7 +334,7 @@ import type { AnnotationSelection, LinkSelection } from './annotations/selectToo
 import { SELECT_TOOL_ID, selectionOfNewest, selectionOfPage } from './annotations/selectTool.js';
 import { SIGNATURE_TOOL_ID } from './annotations/signatureTool.js';
 import { chooseSignature, placePlainSignature, signatureCommand } from './commands/signatureCommands.js';
-import { usePageWriting } from './usePageWriting.js';
+import { type PageWritings, usePageWriting, useWritingOn } from './usePageWriting.js';
 import type { SignatureLook } from './dialogs/signature.js';
 import { applyCarrying } from './commands/applyCarrying.js';
 import {
@@ -2897,7 +2897,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
 
   // THE ONE REQUEST FOR WORDS TYPED ON A PAGE (ADR-0154), and the means to make one: `usePageWriting` has the rules —
   // a request belongs to its document, and only a second request finishes the first.
-  const { write, writingDocId, writing: pageWriting } = usePageWriting(activeId, tabs);
+  const { write, writings } = usePageWriting(activeId, tabs);
   /**
    * How many marks main's clipboard holds, as the last copy reported it — the COUNT and never the
    * marks, which stay in main because a paste is a command the renderer may not send.
@@ -5081,8 +5081,8 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
           split={split}
           drawing={drawing}
           editing={pageEditing}
-          // ONLY THE REQUEST'S OWN DOCUMENT draws it; another on show leaves it waiting with its draft.
-          writing={writingDocId === open.docId ? pageWriting : undefined}
+          // THE WINDOW'S REQUEST, which the pane draws only where it is this document's (`useWritingOn`).
+          writings={writings}
           panning={toolId === HAND_TOOL_ID}
           // THE REVIEW'S WORD OVER THE FIND BAR'S MATCHES while a review shows one: one highlight on the page, and App
           // its one writer (ADR-0156's correction). The find bar's own state is untouched.
@@ -5671,7 +5671,7 @@ const DocumentLayer = memo(function DocumentLayer({
             onFillField={undefined}
             fieldSelection={undefined}
             // NOT DRAWN BEHIND: a request is drawn only while its document is on show, from its draft.
-            writing={undefined}
+            writings={undefined}
             panning={false}
             search={undefined}
             spotlights={undefined}
@@ -5748,7 +5748,7 @@ function PageCanvas({
   organize,
   drawing,
   editing,
-  writing,
+  writings,
   panning,
   search,
   spotlights,
@@ -5855,8 +5855,12 @@ function PageCanvas({
   readonly drawing: PageListProps['drawing'];
   /** Edit text's mode, or `undefined` when it is off. Both panes take it. */
   readonly editing: PageListProps['editing'];
-  /** Words being typed on a page (ADR-0154). Both panes take it; each draws it over its own slot of that page. */
-  readonly writing: PageListProps['writing'];
+  /**
+   * The window's request for words typed on a page (ADR-0154), subscribed to HERE, by the pane, and never by the shell
+   * (ADR-0257's correction of 2026-10-21). Both panes take this document's request; each draws it over its own slot of
+   * that page. `undefined` draws none.
+   */
+  readonly writings: PageWritings | undefined;
   /** The hand tool is on: a drag moves the pages (§10.3). */
   readonly panning: boolean;
   /** What the find bar last answered, painted over both panes' text layers. */
@@ -5907,6 +5911,8 @@ function PageCanvas({
    */
   readonly documentKeys: DocumentKeys;
 }): ReactElement {
+  // THIS DOCUMENT'S REQUEST FOR WORDS, read by the pane alone: finishing them renders this pane, never the shell.
+  const writing = useWritingOn(writings, open.docId);
   const moved = useCallback(
     (next: { readonly version: DocVersion; readonly byteLength: number }) => {
       // THE NAME IS CARRIED THROUGH, and it is not the command's to change: a
