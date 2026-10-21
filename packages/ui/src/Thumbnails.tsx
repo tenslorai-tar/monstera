@@ -4,6 +4,7 @@ import type { DocId, DocVersion } from '@monstera/shared';
 import { type ReactElement, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import type { DocumentView } from './documentView.js';
+import type { StripArrival } from './layerArrival.js';
 import { THUMBNAILS_LABEL, THUMBNAIL_PAGE } from './messages/en.js';
 import { pdfjsPageOf } from './pageNumbering.js';
 import { givePixelsBack } from './pixelLedger.js';
@@ -70,7 +71,13 @@ export function Thumbnails({
   grid,
   waitForFirstFrame = false,
   onReady,
+  arrival,
 }: {
+  /**
+   * The layer coming forward this strip is part of (`layerArrival.ts`), else `undefined`: the strip registers while
+   * mounted and says when its cards in view are drawn, so the layer is not shown with the strip still drawing.
+   */
+  readonly arrival?: StripArrival | undefined;
   /**
    * Told the width every card in this strip's view is drawn at, each time that becomes true: the Organize grid prepares
    * a new size out of sight and shows it only then (`PageGrid`). A failed card counts as finished, since it is shown as
@@ -214,16 +221,28 @@ export function Thumbnails({
   // EACH CARD'S LAST FINISHED DRAWING, by the width it was made for, so the strip can say when everything in its view
   // is drawn at the width asked now. A ref: a report re-renders nothing, and it is read by the check that follows it.
   const drawnAt = useRef(new Map<number, number>());
+  const viewDrawn = useCallback((): boolean => {
+    const element = scroller.current;
+    if (element === null) return false;
+    const inView = cardsInView(element);
+    return inView.length > 0 && inView.every((card) => drawnAt.current.get(card) === width);
+  }, [width]);
   const onDrawn = useCallback(
     (page: number, at: number): void => {
       drawnAt.current.set(page, at);
-      const element = scroller.current;
-      if (onReady === undefined || element === null) return;
-      const inView = cardsInView(element);
-      if (inView.length > 0 && inView.every((card) => drawnAt.current.get(card) === width)) onReady(width);
+      if ((onReady === undefined && arrival === undefined) || !viewDrawn()) return;
+      onReady?.(width);
+      arrival?.drawn();
     },
-    [onReady, width],
+    [arrival, onReady, viewDrawn, width],
   );
+  // REGISTERED WHILE MOUNTED, and drawn at once where its view already is: no draw is left to report it.
+  useLayoutEffect(() => {
+    if (arrival === undefined) return undefined;
+    const release = arrival.mounted();
+    if (viewDrawn()) arrival.drawn();
+    return release;
+  }, [arrival, viewDrawn]);
 
   // FULL PAGE'S SCROLL NAMES A PAGE: the card under the middle of the view, which is the one showing most of itself
   // there — never the topmost card a sliver of reaches, which is what a "first visible" rule would answer.

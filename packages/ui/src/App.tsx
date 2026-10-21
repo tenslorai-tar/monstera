@@ -201,6 +201,7 @@ import { offerSecurityNotice } from './updateStatus.js';
 import { type BusyNote, busyOver } from './busyNote.js';
 import { keepStartScroll, shouldAskRelease, takeStartScroll } from './idleRelease.js';
 import { inFlightNow } from './inFlight.js';
+import { layerArrival } from './layerArrival.js';
 import { toPark } from './layerParking.js';
 import { checkSpellingCommand } from './commands/checkSpelling.js';
 import { recognisePagesForExport } from './commands/recognisePages.js';
@@ -6127,23 +6128,34 @@ function PageCanvas({
   // A LAYER COMING FORWARD SAYS WHEN IT MAY BE SHOWN (`App.arrived`): at once where it shows no drawn pages — failed,
   // still opening, or the Organize grid — and otherwise when its first pane's viewport is drawn again.
   const docId = open.docId;
-  const viewDrawn = useMemo(
-    (): ViewDrawn | undefined =>
+  // AND ITS PAGES STRIP'S CARDS IN VIEW, where the strip is mounted (`layerArrival.ts`): a rebuilt layer's strip drew
+  // after the layer was on show.
+  const arrival = useMemo(
+    () =>
       onShowable === undefined
         ? undefined
+        : layerArrival(() => {
+            onShowable(docId);
+          }),
+    [docId, onShowable],
+  );
+  const viewDrawn = useMemo(
+    (): ViewDrawn | undefined =>
+      arrival === undefined
+        ? undefined
         : {
-            told: (): void => {
-              onShowable(docId);
-            },
+            told: arrival.page,
             // THE SAME RULE IN THE LIST, whose own first frame is a loading state too (`PageList`'s `onViewDrawn`).
             openingIsShowable: showsOpening,
           },
-    [docId, onShowable, showsOpening],
+    [arrival, showsOpening],
   );
   const drawsNoPages = failed || (ready === undefined && showsOpening) || organize !== undefined;
   useEffect(() => {
-    if (drawsNoPages) viewDrawn?.told();
-  }, [drawsNoPages, viewDrawn]);
+    // AT ONCE, past the strip: a layer drawing no pages has no viewport for its strip to be shown beside, and a strip
+    // over a failed or opening document may never draw.
+    if (drawsNoPages && onShowable !== undefined) onShowable(docId);
+  }, [docId, drawsNoPages, onShowable]);
 
   // THE GRID STAYS ON SHOW UNTIL THE PAGES ARE DRAWN (R12). Organize's grid takes the place of the panes, so leaving
   // it mounts a new page list, whose first frame is its loading state: "Opening the document…" over an empty page area,
@@ -6407,6 +6419,9 @@ function PageCanvas({
             // THE FIRST PAGE FIRST: the strip asks main for nothing until the page area has shown its first frame.
             // Organize's grid shows no first pane, so it never waits.
             waitForFirstFrame={!firstFrameShown && organize === undefined}
+            // A REBUILT LAYER'S STRIP ONLY (`showsOpening` false): every card of it is new and draws, where a layer kept
+            // behind comes forward with its strip already drawn and nothing left to report.
+            arrival={showsOpening ? undefined : arrival?.strip}
           />
         }
       />
