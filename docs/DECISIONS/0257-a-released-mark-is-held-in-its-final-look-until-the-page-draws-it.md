@@ -84,3 +84,22 @@ timed, with Comment marks, rotate, page delete and Edit text, against R19's figu
   every page is drawn for a gap that lasts under a second.
 - **Keeping the drag's preview and colouring it.** The preview is the gesture's, and a text box's words, a stamp's word
   and a signature are not in a gesture.
+
+## Correction while building, 2026-10-21 — the request for words leaves the shell's state, as the holder did
+
+Decision 3 holds a writer's look *when the words are done*, and it is: the overlay's `hold` runs in the same task as the
+key that finishes them. But the look reached the page **31 to 89 ms** after that key, against 6 to 11 ms for a mark with
+no words, read by `markLook.pw.ts` on 2026-10-21 with a mark at each `App` render and commit: every writer's finish
+started an `App` render 1 to 2 ms after the key, and the look entered the page 4 to 12 ms after that render committed.
+The mechanism is the one this ADR already removed for the holder. Finishing the words clears `usePageWriting`'s pending
+request, which is `App`'s state, so the held look is committed in the same batch as a render of the whole shell. One run
+took 351 ms.
+
+So the pending request moves to **a store of its own beside the holder**, which the page pane alone subscribes to.
+Finishing the words renders the pane that drew the editor, never the shell. ADR-0154's decisions are unchanged: the
+application still holds the one pending request, the page list still takes it as its own prop, and a second request,
+a closed document and a switch away still settle it as they did.
+
+Rejected: **deferring the request's removal to a transition** so the look commits first. The editor would then stay on
+screen over the look that replaces it, the same words drawn twice for a render's length. That is a second state between
+release and handover, which Decision 4 exists to forbid.
