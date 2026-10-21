@@ -28,8 +28,8 @@ by the regeneration.
 
 ## The numbering, measured
 
-`scripts/research/drawnObjectCorrespondence.mjs` lists PDFium's objects on a page and the kernel's numbering of the
-same content (`drawnObjects` beside `showOperators`), and compares the kind sequence and each drawn object's box. Its
+`scripts/research/drawnObjectCorrespondence.mjs` (removed with Edit object on 2026-10-21; readable at `35432fa7^`)
+lists PDFium's objects on a page and the kernel's numbering of the same content (`drawnObjects` beside `showOperators`), and compares the kind sequence and each drawn object's box. Its
 control is an image placed by `40 0 0 30 200 300 cm`, whose box is known by construction.
 
 | page | PDFium's objects | sequence agrees | boxes |

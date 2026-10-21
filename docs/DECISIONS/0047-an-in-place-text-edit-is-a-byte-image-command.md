@@ -272,7 +272,8 @@ read.
 The owner's review of 0.1.16.0 (R11) and their answer of 2026-10-20 (Q6 (a)). *Edit object*
 on a 44 MB brochure took 7.4 s to outline its page after the first improvements, and each warm
 PDFium read cost 0.6 to 1.8 s while its in-process parts total about 0.3 s (measured 2026-10-19,
-`scripts/research/objectClickWalk.mjs`). The difference was the input: **every** PDFium read —
+`scripts/research/objectClickWalk.mjs`, removed with Edit object on 2026-10-21 and readable at
+`35432fa7^`). The difference was the input: **every** PDFium read —
 text runs, page objects, run fonts, page runs — was handed `ByteImageAccess.current()`, a full
 serialise of the MuPDF session into `main`, written again into the host's snapshot area.
 
