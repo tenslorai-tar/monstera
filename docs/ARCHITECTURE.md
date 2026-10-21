@@ -1634,9 +1634,9 @@ data to project from, so every command declares where it appears:
 
 ```ts
 type Placement =
-  | { surface: 'ribbon';        section: SectionId; group: MessageKey; order: number; prominence?: 'secondary'; menu?: MessageKey; menuRuns?: 'last' }
+  | { surface: 'ribbon';        section: SectionId; group: MessageKey; order: number; prominence?: 'secondary'; menu?: MessageKey }
   | { surface: 'quick-toolbar'; order: number }
-  | { surface: 'context-menu';  context: 'page' | 'annotation' | 'selection' | 'tab' | 'object'; order: number }
+  | { surface: 'context-menu';  context: 'page' | 'annotation' | 'selection' | 'tab'; order: number }
   | { surface: 'start-screen';  slot: 'primary' | 'shortcut' | 'footer'; order: number }
   | { surface: 'status-bar';    cluster: 'navigation'; side: 'before' | 'after'; order: number }
   | { surface: 'status-bar';    cluster: 'zoom'; side: 'before' | 'between' | 'after'; order: number }
@@ -1716,11 +1716,9 @@ icon-only in Studio.
 group naming the same `menu` draw as one captioned button opening their commands,
 the way *More* does with a name: the owner's Forms › Data is *Export* and *Import*
 over six format commands. A menu is one primary unit of the row, and it does not
-combine with `secondary`. **A menu may run its last choice from its face** (amended
-2026-10-14, [ADR-0241](DECISIONS/0241-a-ribbon-menu-may-run-its-last-choice-from-its-face.md)):
-placements declaring `menuRuns: 'last'` draw the face as the member chosen last in
-this window, its first until then, beside a chevron that opens the menu. Every member
-of a menu declares it or none does.
+combine with `secondary`. (A menu that ran its last choice from its face,
+[ADR-0241](DECISIONS/0241-a-ribbon-menu-may-run-its-last-choice-from-its-face.md), was
+withdrawn on 2026-10-21 with Edit object, its only menu.)
 
 **The Properties tab has a foot** (amended 2026-09-24,
 [ADR-0102](DECISIONS/0102-a-selection-survives-a-command-that-keeps-the-walk.md)).
@@ -3160,6 +3158,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-10-21 | **Edit object is withdrawn from the application** (§7's `Placement`: the `object` menu context and `menuRuns` leave; the engines' object commands leave with them). The owner's decision of 2026-10-21 (R20): on a design tool's brochure the tool refused a heading's colour change and every move of a body text object, and took seconds to pick and apply. Removed from the registry, the contract and both engines, not hidden; what other tools share stays — Comment › Image's picture marks, and Edit text's read of the page's objects. | the 2026-10-04 and 2026-10-14 rows below that made Edit object and its menu | ADR-0153, 0240-0244 (each with a correction of 2026-10-21) |
 | 2026-10-20 | **A fourth shim export is withheld: change-history validation** (§3's engine paragraph). DEBIAN-CVE-2026-112036, a double free in MuPDF 1.28.0's signature-locking field lists, reached only through `wasm_pdf_validate_change_history`; the owner's answer of 2026-10-20 shut the door rather than watch it. The export scan now also refuses a DLL carrying a withheld symbol, and the object model's count is 536 (read 2026-10-20 by `proof:enginesurface` after the withholding; the 539 it replaces was not re-read, so when it went stale is not known). | "Three exports are withheld" | ADR-0124 (the WITHHELD mechanism) |
 | 2026-10-19 | **A text block is placed by the operator writer, by the one placement matrix** (§3's in-place editing). R11: a text object dragged in Edit object was refused in its font's name, because PDFium regenerates every text object on the page. The operator writer carries a placed block's operators verbatim under one `cm` (exact on 13 font kinds); a placement may name its box and then takes ADR-0243's matrix | ADR-0240 Decision 4, ADR-0242 Decision 3 (text keeps PDFium's route) | [0240](DECISIONS/0240-an-objects-placement-is-edited-where-it-is-drawn.md), [0242](DECISIONS/0242-edit-object-picks-text-by-the-block-edit-text-reads.md), corrections of 2026-10-19 |
 | 2026-10-19 | **A Type 3 run's face is read from its descriptor, by MuPDF** (§3, §5). R13: a bold lead-in on a page of Type 3 fonts opened in a plain sans, because PDFium reads such a font as no name and no weight. One engine read, `engine/text-faces`, on pages the operator writer edits; `main` fills only runs PDFium left unnamed | §3's "a Type 3 run is drawn in its kind of face" with no kind known | [0256](DECISIONS/0256-a-type-3-runs-face-is-read-from-its-descriptor-by-mupdf.md) |

@@ -107,3 +107,23 @@ schema are deleted with the command that opened them.
 - **Placing pictures as page content instead.** It would change what *Comment › Image* makes for every document,
   lose a picture's removability as a mark, and still leave every existing document's stamps unfound.
 - **A colour submenu in the context menu.** Decision 5.
+
+## Correction, 2026-10-21 — Edit object is WITHDRAWN from the application, by the owner's decision
+
+**What happened.** In the owner's review of 0.1.17.0 (R20), on a 48-page brochure made by a design tool, a colour change
+on a heading text object was refused ("…without disturbing other text on the page…", read-back 0), every move of a
+body text object was refused with the line ADR-0176's correction keeps for the rare case, and picking and applying took
+seconds with the old state on screen. The corpus sweep of R13 had found that refusal on 0 of 16 pages: the corpus held
+no document of this kind.
+
+**The owner's decision, 2026-10-21:** *"if this tool refuses to work it should be removed completely from the app"*;
+asked to choose, the whole tool, pictures and shapes included. It may return in a later version once it works.
+
+**What this means for this ADR.** Every decision here describes a tool the application no longer has: the mode, the
+four filters, the picked object's Properties view, the `object` context menu, and the six object command kinds
+(`placePageObject(s)`, `placeDrawnObject`, `arrangePageObject`, `recolorPageObjects`, `deletePageObjects`). They are
+removed from the registry, the contract and the engine — not hidden behind `when` (the wired-tools rule) and not left as
+dead code. **What stays** is what other tools share: Comment › Image still makes a stamp mark whose picture Ask can
+read (`pictured`), and Edit text still reads the page's objects (`document.pageObjects`) for its note about what a block
+covers. A return of the tool is a new ADR, not a revival of this one.
+

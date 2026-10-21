@@ -416,3 +416,9 @@ it running. It is the same host, built the same way, and it still retires after 
 when nothing calls it, so choosing a mode and doing nothing costs one start and gives it back.
 A mode chosen on a computer where the host cannot start says so by the route `starts` already
 has (Help › Components), never by refusing the mode.
+
+## Correction, 2026-10-21 — one editing mode starts it, Edit text
+
+Edit object is withdrawn from the application by the owner's decision of 2026-10-21 (R20; ADR-0153's correction has
+why). The host is now started when Edit text is chosen, the one editing mode left; everything else the correction above
+says — same host, same build, retired when idle, a failure said by Help › Components — is unchanged.

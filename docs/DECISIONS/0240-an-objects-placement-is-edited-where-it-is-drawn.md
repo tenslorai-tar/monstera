@@ -143,3 +143,12 @@ turned about the centre of the box the scale left. A block's placement may now n
 where PDFium's route would have put it. A placement that names no box means what it meant (Edit text's handles).
 PDFium's block writer refuses a placement that names a box, rather than ignore it: it has no such route and an ignored
 field is a placement silently not made.
+
+## Correction, 2026-10-21 — withdrawn with Edit object
+
+Edit object is withdrawn from the application by the owner's decision of 2026-10-21 (R20; ADR-0153's correction of the
+same date has why). Everything decided here served its object commands: `placePageObject(s)`, `placeDrawnObject`, the
+one placement matrix (`objectPlacementMatrix.ts`) and the placement about a box (`about`) that the correction above
+added to a text block's placement. All are removed. **Edit text keeps its own placement** — a block moved or resized
+by its handles names no box and takes the operator writer's own matrix, as it did before 2026-10-19 — so the `about`
+branch leaves the contract with the tool that alone built it.

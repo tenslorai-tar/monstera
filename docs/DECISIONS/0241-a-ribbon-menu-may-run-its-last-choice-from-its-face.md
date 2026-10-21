@@ -55,3 +55,11 @@ chevron is named *Edit object choices*, so the two parts are told apart.
 The chevron's name as shipped is *Choices for Edit object*. *Edit object choices* put the menu's caption, a placeholder,
 before a plural noun, which the catalogue's plural rule refuses (`en.test.ts`): a caption is not a count, but the rule
 cannot tell the two apart, and a wording that needs no exception is the better repair than an exception.
+
+## Correction, 2026-10-21 — withdrawn with Edit object, its only menu
+
+Edit object is withdrawn from the application by the owner's decision of 2026-10-21 (R20; ADR-0153's correction has
+why). Its menu was the only one that ran its last choice from its face (`menuRuns: 'last'`, read 2026-10-21 at
+4ddbf11f: one placement in the tree), so the placement field, its projection and its cases are removed with it rather
+than kept as a seam with no caller. A menu that wants this again brings it back with its own ADR, the way this one
+was decided for its first.

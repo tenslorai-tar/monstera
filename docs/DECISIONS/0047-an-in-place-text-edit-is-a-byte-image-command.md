@@ -291,3 +291,11 @@ holds nothing between commands* changes: the image is still handed per read.
 
 **Rejected:** keeping a PDFium document open between reads of one version. It would answer
 reads faster and is the session table this ADR refused, with its staleness in both directions.
+
+## Correction, 2026-10-21 — the correction above stands without Edit object
+
+The correction of 2026-10-20 was made for Edit object's reads (R11), and Edit object is withdrawn from the application
+by the owner's decision of 2026-10-21 (R20; ADR-0153's correction has why). **The rule stays whole**: it was never Edit
+object's — every PDFium read takes it, and Edit text's text blocks, run fonts, page runs and page objects, the other
+renderer and the PowerPoint export are PDFium reads (read 2026-10-21 at 4ddbf11f: `pdfiumReadImage`'s callers in
+`composition.ts`). Only the reads that existed for Edit object's own walk leave with it.

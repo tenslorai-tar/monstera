@@ -30,3 +30,9 @@ it back one place on keeps everything about how it is drawn and changes only wha
   would have to rebuild every one of them, and a clip it cannot rebuild would be a second refusal. This is the route
   that would lift Decision 4's limit, and it is recorded as the follow-up.
 - **To front and To back.** The owner asked for one step each way, which is what a crowded page needs.
+
+## Correction, 2026-10-21 — withdrawn with Edit object
+
+Edit object is withdrawn from the application by the owner's decision of 2026-10-21 (R20; ADR-0153's correction has
+why). *Bring forward* and *Send backward*, the `arrangePageObject` command and PDFium's list move behind it served only
+that tool and are removed with it.

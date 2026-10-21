@@ -33,3 +33,9 @@ and adding it to three spellings is three chances for the engines to mean differ
   `placePageObjectSchema` carries an intent stands.
 - **Turning about the box's lower-left corner**, the scale's anchor. A turn a person drags spins an object about its
   middle; a corner turn would throw it across the page.
+
+## Correction, 2026-10-21 — withdrawn with Edit object
+
+Edit object is withdrawn from the application by the owner's decision of 2026-10-21 (R20; ADR-0153's correction has
+why). The turn, its handle and the one placement matrix (`objectPlacementMatrix.ts`) served only its object commands
+and are removed with them.

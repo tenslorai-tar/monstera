@@ -57,3 +57,11 @@ a move on a page whose fonts it cannot write back, which the owner met (R11). So
 is placed by `editTextOperators` with its words unchanged and a placement naming the group's box, which takes ADR-0243's
 one matrix — the same placement `placePageObjects` meant. A line whose operators are quote operators (`'`, `"`) is laid
 out again in its own font, as before; nothing else is.
+
+## Correction, 2026-10-21 — withdrawn with Edit object
+
+Edit object is withdrawn from the application by the owner's decision of 2026-10-21 (R20; ADR-0153's correction has
+why). On the owner's brochure this ADR's route — a text object moved or recoloured through the block Edit text reads —
+refused every move and a heading's colour change. The tool, its pick-by-block and the placement about a box are
+removed. **Edit text is unchanged by it**: the block reading, the operator writer and their ADRs (0176, 0249, 0256)
+are Edit text's own, and its behaviour on a document of this kind is measured separately (R20's check).
