@@ -938,6 +938,71 @@ explained beyond that correlation; no timeout raised.
 probe discarded an uncommitted test case with it (the eraser case), re-added later from the session's text. A checkout
 of a path restores the whole file, which was known and not reached at the moment of typing.
 
+*Added the same day, after Guards' document-scope proof read this entry at `1e8b8436`: it answered none of the
+checklist's items, which the proof requires of the newest audit. The answers, each under its own heading, and one
+finding the range held that this entry missed.*
+
+**TTTTTTTT-10** — R20's removal (`35432fa7`) deleted `objectClickWalk.mjs` and `drawnObjectCorrespondence.mjs`, and
+ADR-0047 and ADR-0240 still named them as entry points, which `check:docs` refuses. That commit's own runs named its
+proofs and not `check:docs`, which Guards runs, and this audit's item 7 swept for *Edit object* by name and not for the
+removed files' paths. Found by the board at `3b961da4`; each path now says beside it when it was removed and where it
+can still be read. The sweep that would have found it is the one for the deleted paths themselves.
+
+### 1. Root cause or workaround?
+
+Each fix above states its mechanism in its commit. None is a retry, a raised bound or a loosened check:
+TTTTTTTT-4's stamp was moved onto the visible page, and the copy aside of TTTTTTTT-3 climbs the ladder the rename
+already climbed, not a longer one.
+
+### 2. Easy shape only?
+
+The compiler was run against the full rendered suite; the held-file ladder against a real exclusive hold on Windows;
+the blink walk on the hard shapes, a tab switch and a parked tab coming back. Not walked: a page drawn in tiles at a
+high zoom.
+
+### 2a.
+
+No assertion moved from asserted to derived.
+
+### 3. Would CI have caught it?
+
+TTTTTTTT-1 and -10 were caught by CI, on the board. TTTTTTTT-2 yes, the rendered suite runs there. TTTTTTTT-3 no: a
+Windows lock under load. TTTTTTTT-4 and -5 no: live walks are run by hand and are not CI steps.
+
+### 4. Non-vacuous?
+
+Run here: the ladder's two new cases go red, and only they, with the copy aside not retried; the blink walk goes red
+with the off-screen swap disabled. The other new cases name their controls in their commits; those were not re-run
+for this entry.
+
+### 4a.
+
+`markLatencyWalk` refuses to measure unless it reads an element at 300 ms and a canvas at 500 ms within 30 ms; the
+blink walk's per-frame reading was resolution-tested by its control below.
+
+### 4b.
+
+The blink walk must count a canvas hidden for a few frames as missing and one cleared as blank before it reports any
+zero. No other search-shaped instrument was added in the range.
+
+### 4c.
+
+No roster in this range derives its count from the set it governs: the one roster added, `visualFailures.proof.mjs`,
+declares `cases: 12` as a literal.
+
+### 5. Executed or asserted?
+
+Executed: every timing, frame count and verdict above. Asserted: nothing recorded as measured.
+
+### 6. Architecture before the feature?
+
+ADR-0257's correction, ADR-0258 and R20's B4 (`be90e61a`) each landed in their own commit ahead of the code.
+
+### 7. Documents?
+
+ADR-0257 and its correction, ADR-0258, the decisions README rows, ARCHITECTURE's compiler and held-look rows, FEATURES
+rows withdrawn with Edit object; ADR-0047 and ADR-0240's removed paths, named in TTTTTTTT-10.
+
 ---
 
 ## 2026-10-21 — R17: a moved measurement, read at every frame
