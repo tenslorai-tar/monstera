@@ -1814,6 +1814,17 @@ export const FORM_DATE_CALENDAR = messageKey('surface.form-layer.date-calendar')
 export const FORM_DATE_OPEN = messageKey('surface.form-layer.date-open');
 export const FORM_DATE_EARLIER = messageKey('surface.form-layer.date-earlier');
 export const FORM_DATE_LATER = messageKey('surface.form-layer.date-later');
+export const FORM_DATE_EARLIER_YEAR = messageKey('surface.form-layer.date-earlier-year');
+export const FORM_DATE_LATER_YEAR = messageKey('surface.form-layer.date-later-year');
+export const FORM_DATE_EARLIER_DECADE = messageKey('surface.form-layer.date-earlier-decade');
+export const FORM_DATE_LATER_DECADE = messageKey('surface.form-layer.date-later-decade');
+export const FORM_DATE_EARLIER_DECADES = messageKey('surface.form-layer.date-earlier-decades');
+export const FORM_DATE_LATER_DECADES = messageKey('surface.form-layer.date-later-decades');
+export const FORM_DATE_SHOW_MONTHS = messageKey('surface.form-layer.date-show-months');
+export const FORM_DATE_SHOW_YEARS = messageKey('surface.form-layer.date-show-years');
+export const FORM_DATE_SHOW_DECADES = messageKey('surface.form-layer.date-show-decades');
+export const FORM_DATE_RANGE = messageKey('surface.form-layer.date-range');
+export const FORM_DATE_TODAY = messageKey('surface.form-layer.date-today');
 export const FLATTEN_FORM_TITLE = messageKey('dialog.flatten-form.title');
 export const FLATTEN_FORM_EXPLAINS = messageKey('dialog.flatten-form.explains');
 export const FLATTEN_FORM_APPLY = messageKey('dialog.flatten-form.apply');
@@ -4680,6 +4691,17 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FORM_DATE_OPEN]: 'Choose a date',
   [FORM_DATE_EARLIER]: 'Previous month',
   [FORM_DATE_LATER]: 'Next month',
+  [FORM_DATE_EARLIER_YEAR]: 'Previous year',
+  [FORM_DATE_LATER_YEAR]: 'Next year',
+  [FORM_DATE_EARLIER_DECADE]: 'Previous ten years',
+  [FORM_DATE_LATER_DECADE]: 'Next ten years',
+  [FORM_DATE_EARLIER_DECADES]: 'Earlier decades',
+  [FORM_DATE_LATER_DECADES]: 'Later decades',
+  [FORM_DATE_SHOW_MONTHS]: 'Choose a month',
+  [FORM_DATE_SHOW_YEARS]: 'Choose a year',
+  [FORM_DATE_SHOW_DECADES]: 'Choose ten years',
+  [FORM_DATE_RANGE]: '{first}–{last}',
+  [FORM_DATE_TODAY]: 'Today',
   [FLATTEN_FORM_TITLE]: 'Flatten the form',
   [FLATTEN_FORM_EXPLAINS]:
     'Flatten turns the form into an ordinary page. Whatever is typed or ticked stays exactly as it looks, but nobody can change it any more. Use it before you send a final copy. You can undo it until you close the document.',

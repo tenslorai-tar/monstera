@@ -21,6 +21,7 @@ Fill a form where it is on the page, or from the **Forms** tab, which lists ever
 ## Good to know
 
 - A field the document marks as read-only says **The document marks this field read-only.** in the Forms tab, and clicking it on the page does nothing. Signature fields and buttons cannot be filled here.
+- A date field has a calendar: choose **Choose a date** at its right edge, or press **Alt+Down**. To go far back, such as to a date of birth, choose the month's name at the top to see the months, again to see the years, and again to see the decades, then choose the decade, the year, the month and the day. **Ctrl+Up** does the same from the keyboard, and **Enter** chooses. **Today** picks today's date. You can always type the date instead.
 - A list field that holds several choices at once is shown but cannot be changed here.
 - Monstera never runs scripts from documents, to keep your computer safe, so a field worked out by a script won't update by itself: it is marked with a small braces sign, { }, and Monstera tells you which fields when you open the form. Standard sums and formats still work.
 - Every field is listed, however large the form.

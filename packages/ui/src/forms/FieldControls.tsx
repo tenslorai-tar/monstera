@@ -3,7 +3,7 @@ import { formatFieldValue, parseFieldDate } from '@monstera/contract';
 import { type CSSProperties, type FocusEvent, type KeyboardEvent, type ReactElement, useId, useRef, useState } from 'react';
 
 import { FORMS_CHOICE_EMPTY } from '../messages/en.js';
-import { type CalendarDay, DateOpen, DatePicker, calendarDayId, dayAfter, isoOf, monthAfter } from './DatePicker.js';
+import { type CalendarDay, type CalendarState, DateOpen, DatePicker, calendarCellId, calendarKeyed, isoOf, today } from './DatePicker.js';
 import { composing } from '../surfaces/shortcuts.js';
 import { caretIndexAt } from './fieldCaret.js';
 import type { FillOffer } from './fieldFill.js';
@@ -91,11 +91,11 @@ export function FieldTextBox({
   const shown = useRef<string | undefined>(undefined);
   const cancelled = useRef(false);
   const box = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
-  // THE DAY THE CALENDAR IS ON while it is open, and the day the box held when it opened, which it marks.
-  const [opened, setOpened] = useState<{ readonly active: CalendarDay; readonly held: CalendarDay | undefined } | undefined>(undefined);
-  const calendar = opened?.active;
-  const setCalendar = (active: CalendarDay | undefined): void => {
-    setOpened((was) => (active === undefined ? undefined : { active, held: was?.held }));
+  // THE DAY AND VIEW THE CALENDAR IS ON while it is open, and the day the box held when it opened, which it marks.
+  const [opened, setOpened] = useState<{ readonly state: CalendarState; readonly held: CalendarDay | undefined } | undefined>(undefined);
+  const calendar = opened?.state;
+  const setCalendar = (state: CalendarState | undefined): void => {
+    setOpened((was) => (state === undefined ? undefined : { state, held: was?.held }));
   };
   const calendarId = `${useId()}-calendar`;
   const toggleCalendar = (): void => {
@@ -104,7 +104,7 @@ export function FieldTextBox({
       return;
     }
     const held = parseFieldDate(box.current?.value ?? offer.held, date.pattern);
-    setOpened({ active: held ?? today(), held });
+    setOpened({ state: { active: held ?? today(), view: 'days' }, held });
   };
   // A DAY CHOSEN is written in the field's own pattern and the box is left, which is what fills it.
   const pick = (day: CalendarDay): void => {
@@ -114,8 +114,8 @@ export function FieldTextBox({
     element.value = formatFieldValue(isoOf(day), { kind: 'date', pattern: date.pattern });
     element.blur();
   };
-  // THE KEYBOARD DRIVES AN OPEN CALENDAR FROM THE BOX, which keeps the focus: a day or a week with the arrows, a month
-  // with Page Up and Page Down, Enter to choose, Escape to close it and go on typing.
+  // THE KEYBOARD DRIVES AN OPEN CALENDAR FROM THE BOX, which keeps the focus, in whichever view it shows
+  // (`calendarKeyed`); Escape closes it to go on typing.
   const calendarKey = (event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>): boolean => {
     if (date === undefined) return false;
     if (event.altKey && event.key === 'ArrowDown') {
@@ -124,32 +124,16 @@ export function FieldTextBox({
       return true;
     }
     if (calendar === undefined) return false;
-    const steps: Readonly<Record<string, () => CalendarDay>> = {
-      ArrowLeft: () => dayAfter(calendar, -1),
-      ArrowRight: () => dayAfter(calendar, 1),
-      ArrowUp: () => dayAfter(calendar, -7),
-      ArrowDown: () => dayAfter(calendar, 7),
-      PageUp: () => monthAfter(calendar, -1),
-      PageDown: () => monthAfter(calendar, 1),
-    };
-    const step = steps[event.key];
-    if (step !== undefined) {
-      event.preventDefault();
-      setCalendar(step());
-      return true;
-    }
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      pick(calendar);
-      return true;
-    }
-    if (event.key === 'Escape') {
-      event.preventDefault();
+    const keyed = calendarKeyed(calendar, event);
+    if (keyed === undefined) return false;
+    event.preventDefault();
+    if (keyed.kind === 'move') setCalendar(keyed.state);
+    else if (keyed.kind === 'pick') pick(keyed.day);
+    else {
       event.stopPropagation();
       setCalendar(undefined);
-      return true;
     }
-    return false;
+    return true;
   };
   // THE PRESS IS SPENT BY THE FIRST FOCUS: a later focus, by Tab or by a click, puts the caret where that one says.
   const press = useRef(pressedAt);
@@ -232,7 +216,7 @@ export function FieldTextBox({
         aria-haspopup="dialog"
         aria-expanded={calendar !== undefined}
         aria-controls={calendar === undefined ? undefined : calendarId}
-        aria-activedescendant={calendar === undefined ? undefined : calendarDayId(calendarId, calendar.day)}
+        aria-activedescendant={calendar === undefined ? undefined : calendarCellId(calendarId, calendar)}
         style={{ ...style, paddingRight: `${String(button)}px` }}
       />
       <DateOpen
@@ -241,7 +225,7 @@ export function FieldTextBox({
       />
       {calendar === undefined ? null : (
         <DatePicker
-          active={calendar}
+          state={calendar}
           chosen={opened?.held}
           id={calendarId}
           onMove={setCalendar}
@@ -255,12 +239,6 @@ export function FieldTextBox({
 
 /** The widest the calendar's button grows in a tall field: a glyph's press target, not a column. */
 const DATE_BUTTON_MAX = 24;
-
-/** Today, on the computer's own calendar. */
-function today(): CalendarDay {
-  const now = new Date();
-  return { year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate() };
-}
 
 /** The canvas every caret measurement draws nothing on: one per window, made on first use. */
 let measuring: CanvasRenderingContext2D | null | undefined;
