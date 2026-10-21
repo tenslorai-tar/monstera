@@ -892,6 +892,30 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-21 — R17: a moved measurement, read at every frame
+
+The owner's R17: an Area triangle moved with Select showed two triangles during the drag, lost its reading, and
+redrew in steps after the release. `scripts/research/measureMoveFrames.mjs` reads the app at every animation frame —
+the page's own pixels on the old and the new outline, the overlay's moving and held shapes, the reading — and refuses a
+run whose controls do not see the shape where it was before and where it went after.
+
+**Before, one area move:** 29 of 33 drag frames without a reading; after the release the old triangle drawn again
+twice beside the held one, then nothing on screen for 152 ms (205 ms in a second run). Four mechanisms, named by a
+temporary attribute carrying the page's state at each frame:
+
+| what was seen | mechanism | now |
+|---|---|---|
+| no reading while moving | `previewOf` gave a reading to a reshape only; the page leaves the mark out while it moves, its saved reading with it | both branches take one `readAt` |
+| the old triangle drawn back after release | the overlay ended the gesture at once and held the shape a microtask later; the select tool's commit was `async` even for a move | a known command is answered and held in the same update |
+| nothing on screen before the saved mark | the mark was left out of every view while the held shape named it, so the move's own version was drawn without it | left out of the view the drag began on alone, with its object number taken then |
+| both shapes, or neither, as a drag begins | the page's drawing without the mark is a raster a frame or two later | the page reports which mark the drawing on screen is without (canvas or every tile, `flushSync`), and the overlay draws the moving shape only then |
+
+**After:** area, perimeter and distance each with no frame twice or empty, during the drag or after; the area with its
+reading at every frame. `measureMove.pw.ts` holds it on pinned Chromium, 20 of 20, and went red under each mechanism
+removed in turn (the last, `flushSync`, 1 run in 10 — the gap it closes falls between frames only sometimes).
+
+---
+
 ## 2026-10-20 — Stage audit of `a27f93d9..6abc979a` — findings SSSSSSSS-1 to SSSSSSSS-9
 
 Local fix session 3's range (the owner's review of 0.1.16.0, R1–R15), audited lean as the owner asked: fix what would

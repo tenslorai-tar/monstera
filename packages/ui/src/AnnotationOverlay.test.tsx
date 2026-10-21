@@ -250,7 +250,7 @@ describe('AnnotationOverlay', () => {
     expect(sent).toStrictEqual([]);
   });
 
-  it('draws a preview while the drag is in flight and nothing before it', () => {
+  it('draws a preview while the drag is in flight and nothing before it, and HOLDS it at the release in the same update', () => {
     const { surface } = mounted();
     expect(surface.querySelector('[data-annotation-preview]')).toBeNull();
 
@@ -263,8 +263,13 @@ describe('AnnotationOverlay', () => {
     expect(preview?.getAttribute('width')).toBe('100');
     expect(preview?.getAttribute('height')).toBe('60');
 
+    // THE RELEASE ENDS THE DRAG AND HOLDS ITS SHAPE AT ONCE, read before anything settles (R17): this tool's command is
+    // known at the release, and a render between the two drew nothing for the mark.
     pointer(surface, 'pointerup', 120, 80);
-    expect(surface.querySelector('[data-annotation-preview]')).toBeNull();
+    expect(surface.querySelector(':scope > [data-annotation-preview]')).toBeNull();
+    const held = surface.querySelector('[data-annotation-held] [data-annotation-preview]');
+    expect(held?.getAttribute('x')).toBe('20');
+    expect(held?.getAttribute('width')).toBe('100');
   });
 
   it('HOLDS the released shape until the page has been drawn from a newer view', async () => {

@@ -675,7 +675,7 @@ describe('a line’s ENDS and a polygon’s CORNERS are its handles (the owner�
     expect(preview.caption !== undefined && preview.caption.x > 240 && preview.caption.y < 98).toBe(false);
   });
 
-  it('CONTROL: a MOVE of the whole measurement, and a drag of a line that measures nothing, carry no reading', () => {
+  it('a MOVE of the whole measurement carries its reading where it goes (R17); CONTROL: a line that measures nothing carries none', () => {
     const scale = { perPoint: 1 / 72, unit: 'in' } as const;
     const measuredSelection: AnnotationSelection = {
       page: 3,
@@ -684,7 +684,10 @@ describe('a line’s ENDS and a polygon’s CORNERS are its handles (the owner�
     };
     const tool = selectTool({ ...NO_REOPEN, ...NO_LINKS, annotations: () => Promise.resolve(undefined), onSelect: () => undefined, selected: () => measuredSelection });
     const moving = tool.controller.update(tool.controller.begin(viewportPoint(100, 99)), viewportPoint(120, 99));
-    expect(tool.controller.preview(moving, 3, overlayTransform(PAGE))).not.toHaveProperty('caption');
+    // THE SAME NUMBER, since a move does not change a length: the page leaves the mark out while it moves, so the
+    // reading is drawn on the moving shape or not at all.
+    const moved = tool.controller.preview(moving, 3, overlayTransform(PAGE));
+    expect(moved).toMatchObject({ caption: { text: measureLabel('measure-distance', DISTANCE_ITEM.points, scale), of: DISTANCE_ITEM.index } });
     // THE SAME END DRAG ON THE UNMEASURED SELECTION above: its preview equals the outline alone (the previous case's).
     const plain = selectTool({ ...NO_REOPEN, ...NO_LINKS, annotations: () => Promise.resolve(undefined), onSelect: () => undefined, selected: () => SELECTED });
     const dragged = plain.controller.update(plain.controller.begin(viewportPoint(200, 98)), viewportPoint(240, 98));

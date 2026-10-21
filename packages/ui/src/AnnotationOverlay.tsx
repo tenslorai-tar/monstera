@@ -92,6 +92,14 @@ export interface AnnotationOverlayProps {
    * (R7): the page leaves that mark's stored drawing and its selection out while the drag draws them where they go.
    */
   readonly onReshaping?: ((index: number | undefined) => void) | undefined;
+  /**
+   * The mark the page underneath is drawn without, by its place in the walk. A drag draws a mark's moving shape only
+   * once the page no longer draws it, so the mark is never on screen twice (R17): the page's draw without it is a raster
+   * a frame or two after the drag begins, and until then the mark stays where it is, once.
+   */
+  readonly drawnWithout?: number | undefined;
+  /** Whether the page can draw without a mark at all; one it cannot is drawn moving at once rather than never. */
+  readonly canLeaveOut?: ((index: number) => boolean) | undefined;
 }
 
 export function AnnotationOverlay({
@@ -103,6 +111,8 @@ export function AnnotationOverlay({
   label,
   onReading,
   onReshaping,
+  drawnWithout,
+  canLeaveOut,
 }: AnnotationOverlayProps): ReactElement {
   const surface = useRef<SVGSVGElement>(null);
   /**
@@ -223,12 +233,17 @@ export function AnnotationOverlay({
       // only for a tool that previews at all.
       const shape = tool.controller.preview(finished, page, transform);
       const released = shape === undefined ? undefined : { preview: shape, since: drawnWith };
+      const answer = tool.controller.commit(finished, page, transform);
+      // A COMMAND ALREADY KNOWN IS HELD IN THIS UPDATE, with the gesture's end: held a microtask later, there was a render
+      // with neither the drag nor the held shape, and the page drew a moved mark back at its old place for it (R17).
+      // An answer still to come — a dialog's — holds nothing until it comes, as before.
+      if (!(answer instanceof Promise) && answer !== undefined && released !== undefined) setCommitted(released);
       // `Promise.resolve` OVER THE UNION. `commit` may answer now or later, and
       // this is the one line that does not care which — a synchronous answer
       // still lands a microtask later, which is why the overlay's own cases
       // settle before asserting rather than reading the DOM straight after the
       // pointer-up.
-      void Promise.resolve(tool.controller.commit(finished, page, transform)).then(async (command) => {
+      void Promise.resolve(answer).then(async (command) => {
         // `undefined` IS AN OUTCOME, and now it is two of them: a click that
         // did not drag produces no annotation from a tool that draws a shape
         // (the typewriter's click asks for words instead), and so does a
@@ -351,6 +366,9 @@ export function AnnotationOverlay({
   }, [onReading, page, readingIndex, readingText]);
   // THE MARK BEING RESHAPED OR MOVED (R7), from the drag and then from the held shape, as the reading is.
   const reshapingIndex = shown?.shape === 'boxes' ? shown.reshaped?.[0]?.of : undefined;
+  // A DRAG'S MARK THE PAGE STILL DRAWS: its moving shape waits for the page's drawing without it (R17).
+  const draggedIndex = preview?.shape === 'boxes' ? preview.reshaped?.[0]?.of : undefined;
+  const stillOnPage = draggedIndex !== undefined && canLeaveOut?.(draggedIndex) === true && drawnWithout !== draggedIndex;
   useEffect(() => {
     if (onReshaping === undefined) return undefined;
     onReshaping(reshapingIndex);
@@ -410,7 +428,7 @@ export function AnnotationOverlay({
           <Preview preview={held} />
         </g>
       )}
-      {preview === undefined ? null : <Preview preview={preview} />}
+      {preview === undefined || stillOnPage ? null : <Preview preview={preview} />}
     </svg>
   );
 }

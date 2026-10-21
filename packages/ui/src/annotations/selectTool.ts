@@ -707,19 +707,24 @@ function previewOf(
       if (box === null) return;
       reshaped.push({ of: item.index, handles: points.map(shown), box: { x: box.x0, y: box.y0, width: box.x1 - box.x0, height: box.y1 - box.y0 } });
     };
+    /**
+     * A MEASUREMENT READS WHAT THE RELEASE WILL WRITE (the owner's B1), at the points it goes to: the contract's
+     * `measureLabel` over them at the mark's own scale, which is `remeasure`'s arithmetic on the same numbers. A move of
+     * the whole mark reads the same number, and still needs it drawn: the page leaves the mark out while it moves, its
+     * saved reading with it, so without this the reading is gone for the whole drag (R17).
+     */
+    const readAt = (points: readonly AnnotationPoint[]): void => {
+      if (item?.measured === undefined) return;
+      const text = measureLabel(item.measured.kind, points, item.measured.scale);
+      // WHERE THE PAGE WILL SET IT (R7): the contract's `measureCaption`, the rule MuPDF's caption and the kernel's
+      // labels follow, through this page's transform — so the reading stays on the line and does not jump on release.
+      const set = measureCaption(item.measured.kind, points, text);
+      caption = set === undefined ? { ...captionBeside(pointer.x, pointer.y, text), of: item.index } : { ...placedCaption(set, transform), text, of: item.index };
+    };
     if ('points' in placement) {
       paths.push({ points: placement.points.map(shown), closed });
       reshapedAt(placement.points);
-      // A MEASUREMENT'S POINT MOVED READS WHAT THE RELEASE WILL WRITE (the owner's B1): the contract's `measureLabel` over
-      // the points the command carries, at the mark's own scale, which is `remeasure`'s arithmetic on the same numbers.
-      // A move of the whole mark changes no reading, so only this branch has one.
-      if (item?.measured !== undefined) {
-        const text = measureLabel(item.measured.kind, placement.points, item.measured.scale);
-        // WHERE THE PAGE WILL SET IT (R7): the contract's `measureCaption`, the rule MuPDF's caption and the kernel's
-        // labels follow, through this page's transform — so the reading stays on the line and does not jump on release.
-        const set = measureCaption(item.measured.kind, placement.points, text);
-        caption = set === undefined ? { ...captionBeside(pointer.x, pointer.y, text), of: item.index } : { ...placedCaption(set, transform), text, of: item.index };
-      }
+      readAt(placement.points);
       continue;
     }
     if (item?.points !== undefined) {
@@ -729,6 +734,7 @@ function previewOf(
       const movedPoints = item.points.map((point) => ({ x: point.x + dx, y: point.y + dy }));
       paths.push({ points: movedPoints.map(shown), closed });
       reshapedAt(movedPoints);
+      readAt(movedPoints);
       continue;
     }
     const box = boxOf(placement.rect, transform);
@@ -771,13 +777,62 @@ export function selectTool(deps: SelectDeps): UiTool {
     const link = deps.selectedLink();
     return link?.page === page ? grabbableLink(link, transform) : undefined;
   };
+  /** A click or a marquee off the selection: what it picks, read from the page's marks. Never a command. */
+  const pick = async (gesture: Gesture, page: number, transform: PageTransform, marquee: ReturnType<typeof marqueeOf>): Promise<undefined> => {
+    const snapshot = await deps.annotations();
+    if (snapshot === undefined) {
+      // NOTHING TO SELECT FROM. The selection is cleared rather than left
+      // alone: whatever it named was read from a document that is now closed
+      // or unreadable, and keeping it would draw boxes over a page nobody can
+      // name annotations on.
+      deps.onSelect(undefined);
+      deps.onSelectLink(undefined);
+      return undefined;
+    }
+
+    const onPage = snapshot.annotations.filter((entry) => entry.page === page);
+    const picked =
+      marquee.travelled < MINIMUM_MARQUEE
+        ? // A CLICK: `markAt`, the one rule the eraser and a reopen take too, at the point pressed — so clicking to
+          // select, to erase and to edit pick the same mark from the same pixel.
+          [markAt(onPage, page, startOf(gesture), transform)].filter((entry) => entry !== undefined)
+        : // A MARQUEE: everything it touches, in walk order, so the payload a
+          // removal is built from is ordered the way the document is.
+          onPage.filter((entry) => {
+            const box = boxOf(entry.rect, transform);
+            return (
+              box !== null &&
+              box.x0 <= marquee.x1 &&
+              box.x1 >= marquee.x0 &&
+              box.y0 <= marquee.y1 &&
+              box.y1 >= marquee.y0
+            );
+          });
+
+    const items = picked
+      .map(selectedFrom)
+      .filter((entry): entry is SelectedAnnotation => entry !== undefined);
+
+    // A CLICK ON NO MARK PICKS THE LINK UNDER IT, if there is one: a mark is drawn over a link, so it is asked first.
+    // One selection or the other, never both, since what Properties shows and what a drag moves is one thing.
+    const pickedLink =
+      items.length === 0 && marquee.travelled < MINIMUM_MARQUEE
+        ? linkAt(await deps.links(page), page, startOf(gesture), transform)
+        : undefined;
+    deps.onSelect(
+      items.length === 0 ? undefined : { page, version: snapshot.version, items },
+    );
+    deps.onSelectLink(pickedLink);
+    // NEVER A COMMAND. Selecting changes nothing about the document, and a
+    // tool that returned one here would put a version bump behind a click
+    // that was only meant to point at something.
+    return undefined;
+  };
   const controller: ToolController = {
     ...pointerPath,
-    commit: async (
-      gesture: Gesture,
-      page: number,
-      transform: PageTransform,
-    ): Promise<DispatchableCommand | undefined> => {
+    // A COMMAND KNOWN NOW IS ANSWERED NOW, and only a pick waits for a read: answered through a promise, a move was held
+    // by the overlay a microtask after its drag ended, and the page drew the mark back at its old place in between (R17).
+    commit: (gesture: Gesture, page: number, transform: PageTransform): DispatchableCommand | undefined | Promise<undefined> => {
       const marquee = marqueeOf(gesture);
 
       // A GESTURE THAT STARTED ON THE SELECTION IS AN EDIT, NOT A PICK, and it
@@ -794,55 +849,7 @@ export function selectTool(deps: SelectDeps): UiTool {
       if (link !== undefined && placed !== undefined && 'rect' in placed) {
         return { kind: 'editLink', page, index: placed.index, rect: placed.rect, version: link.version };
       }
-
-      const snapshot = await deps.annotations();
-      if (snapshot === undefined) {
-        // NOTHING TO SELECT FROM. The selection is cleared rather than left
-        // alone: whatever it named was read from a document that is now closed
-        // or unreadable, and keeping it would draw boxes over a page nobody can
-        // name annotations on.
-        deps.onSelect(undefined);
-        deps.onSelectLink(undefined);
-        return undefined;
-      }
-
-      const onPage = snapshot.annotations.filter((entry) => entry.page === page);
-      const picked =
-        marquee.travelled < MINIMUM_MARQUEE
-          ? // A CLICK: `markAt`, the one rule the eraser and a reopen take too, at the point pressed — so clicking to
-            // select, to erase and to edit pick the same mark from the same pixel.
-            [markAt(onPage, page, startOf(gesture), transform)].filter((entry) => entry !== undefined)
-          : // A MARQUEE: everything it touches, in walk order, so the payload a
-            // removal is built from is ordered the way the document is.
-            onPage.filter((entry) => {
-              const box = boxOf(entry.rect, transform);
-              return (
-                box !== null &&
-                box.x0 <= marquee.x1 &&
-                box.x1 >= marquee.x0 &&
-                box.y0 <= marquee.y1 &&
-                box.y1 >= marquee.y0
-              );
-            });
-
-      const items = picked
-        .map(selectedFrom)
-        .filter((entry): entry is SelectedAnnotation => entry !== undefined);
-
-      // A CLICK ON NO MARK PICKS THE LINK UNDER IT, if there is one: a mark is drawn over a link, so it is asked first.
-      // One selection or the other, never both, since what Properties shows and what a drag moves is one thing.
-      const pickedLink =
-        items.length === 0 && marquee.travelled < MINIMUM_MARQUEE
-          ? linkAt(await deps.links(page), page, startOf(gesture), transform)
-          : undefined;
-      deps.onSelect(
-        items.length === 0 ? undefined : { page, version: snapshot.version, items },
-      );
-      deps.onSelectLink(pickedLink);
-      // NEVER A COMMAND. Selecting changes nothing about the document, and a
-      // tool that returned one here would put a version bump behind a click
-      // that was only meant to point at something.
-      return undefined;
+      return pick(gesture, page, transform, marquee);
     },
     preview: (gesture: Gesture, page: number, transform: PageTransform): ToolPreview | undefined => {
       const marquee = marqueeOf(gesture);

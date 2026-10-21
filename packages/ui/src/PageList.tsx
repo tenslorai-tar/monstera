@@ -12,6 +12,7 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
+import { flushSync } from 'react-dom';
 
 import { AnnotationLayer } from './AnnotationLayer.js';
 import { AnnotationOverlay } from './AnnotationOverlay.js';
@@ -1776,7 +1777,35 @@ function PageSlot({
   // stayed at the old geometry while the line followed the pointer. The overlay draws both where the release puts them.
   const [moving, setMoving] = useState<number | undefined>(undefined);
   const leaving = reshaping ?? moving;
-  const leftOut = leaving === undefined ? undefined : annotations?.find((annotation) => annotation.index === leaving)?.object;
+  // LEFT OUT OF THE VIEW THE DRAG BEGAN ON, and of no other (R17). The overlay holds the released shape until the page
+  // is drawn from a newer view; that newer view has the mark where the release put it, so it is drawn WITH it, and the
+  // held shape hands over to a page that already shows the mark. Left out of every view, the newer one was drawn without
+  // it, the held shape dropped, and only then was the mark drawn: a frame of neither. The object number is taken when
+  // the drag begins, so the listing being read again for the new version cannot put the old drawing back meanwhile.
+  const [leftAt, setLeftAt] = useState<{ readonly index: number; readonly view: DocumentView | undefined; readonly object: number | undefined }>();
+  const leavingObject = leaving === undefined ? undefined : annotations?.find((annotation) => annotation.index === leaving)?.object;
+  if (leaving === undefined ? leftAt !== undefined : leftAt?.index !== leaving || (leftAt.object === undefined && leavingObject !== undefined && leftAt.view === view)) {
+    setLeftAt(leaving === undefined ? undefined : { index: leaving, view, object: leavingObject });
+  }
+  const leftOut = leftAt !== undefined && leftAt.view === view ? leftAt.object : undefined;
+  // WHICH MARK THE PAGE ON SCREEN IS DRAWN WITHOUT, set when a draw of it presents — the canvas's, or every tile's — in
+  // the same task as the pixels, so the overlay's moving shape appears in the frame the page's drawing of it leaves.
+  const [presentedWithout, setPresentedWithoutState] = useState<number | undefined>(undefined);
+  const setPresentedWithout = useCallback((without: number | undefined): void => {
+    flushSync(() => {
+      setPresentedWithoutState(without);
+    });
+  }, []);
+  // THE MARK THE PAGE ON SCREEN NO LONGER DRAWS, by its place in the walk: the overlay draws a mark's moving shape only
+  // once this names it, so a drag never shows the mark twice (R17). Read by the overlay against its own drag, so the
+  // first frame of a drag — before this page has heard which mark moves — draws the mark where it is, once.
+  const drawnWithout = leftAt !== undefined && leftOut !== undefined && presentedWithout === leftOut ? leftAt.index : undefined;
+  // WHETHER A MARK CAN BE LEFT OUT AT ALL: one the listing gives no object number is drawn moving at once rather than
+  // never, since the page cannot draw without it.
+  const canLeaveOut = useCallback(
+    (index: number): boolean => annotations?.find((annotation) => annotation.index === index)?.object !== undefined,
+    [annotations],
+  );
   // PUT BACK when the reading ends, before any draw that follows: a layout effect's cleanup runs ahead of every passive
   // effect, the tiles' included.
   useLayoutEffect(() => {
@@ -1863,6 +1892,7 @@ function PageSlot({
         rotation: drawn.rotation,
       });
       setDrawnWith(view);
+      setPresentedWithout(leftOut);
       onPainted(page, true);
     };
 
@@ -1893,7 +1923,7 @@ function PageSlot({
     return (): void => {
       superseded.abort();
     };
-  }, [draw, leftOut, onFailed, onMeasured, onPainted, page, quality, renderZoom, rotation, secondRasteriser, tiled, view]);
+  }, [draw, leftOut, onFailed, onMeasured, onPainted, page, quality, renderZoom, rotation, secondRasteriser, setPresentedWithout, tiled, view]);
 
   // HELD DECODED WHILE MOUNTED (`pageResidency.ts`), so a zoom's redraw of a page in the margin does not decode its
   // images again; released when it leaves the margin, and PDF.js then closes them unless the strip is drawing it.
@@ -1978,6 +2008,7 @@ function PageSlot({
             view={view}
             zoom={zoom}
             leftOut={leftOut}
+            onPresentedWithout={setPresentedWithout}
           />
         )
       ) : mounted ? (
@@ -2154,6 +2185,8 @@ function PageSlot({
           onReading={onReading}
           onReshaping={setMoving}
           drawnWith={drawnWith}
+          drawnWithout={drawnWithout}
+          canLeaveOut={canLeaveOut}
           page={page}
           tool={drawing.tool}
         />
@@ -2255,12 +2288,15 @@ function PageTiles({
   scroller,
   slot,
   leftOut,
+  onPresentedWithout,
 }: {
   readonly view: DocumentView;
   /** The slot's: whether a tile may rasterise now. A tile on screen keeps its last drawing until it may. */
   readonly draw: boolean;
   /** The mark a reshape is dragging, which the tiles are drawn without (`renderRegion`'s `leftOut`, the owner's B1). */
   readonly leftOut: number | undefined;
+  /** Told which mark the page on screen is drawn without, once EVERY tile shown has presented a draw without it. */
+  readonly onPresentedWithout: (without: number | undefined) => void;
   readonly page: number;
   readonly rotation: number | undefined;
   readonly scale: number;
@@ -2272,6 +2308,22 @@ function PageTiles({
 }): ReactElement {
   const [tiles, setTiles] = useState<readonly Tile[]>([]);
   const { width, height } = pageSize;
+  // WHAT EACH TILE ON SCREEN WAS LAST DRAWN WITHOUT: the page is without a mark only when every one of them is.
+  const presented = useRef(new Map<string, number | undefined>());
+  const shownTiles = useRef(tiles);
+  useLayoutEffect(() => {
+    shownTiles.current = tiles;
+  }, [tiles]);
+  const onPresented = useCallback(
+    (key: string, without: number | undefined): void => {
+      presented.current.set(key, without);
+      const all = shownTiles.current;
+      if (all.length > 0 && all.every((tile) => presented.current.has(tile.key) && presented.current.get(tile.key) === without)) {
+        onPresentedWithout(without);
+      }
+    },
+    [onPresentedWithout],
+  );
 
   useEffect(() => {
     const box = scroller.current;
@@ -2315,6 +2367,7 @@ function PageTiles({
           key={tile.key}
           draw={draw}
           leftOut={leftOut}
+          onPresented={onPresented}
           page={page}
           rotation={rotation}
           scale={scale}
@@ -2358,6 +2411,7 @@ function PageTile({
   scale,
   zoom,
   leftOut,
+  onPresented,
 }: {
   readonly view: DocumentView;
   readonly draw: boolean;
@@ -2367,10 +2421,12 @@ function PageTile({
   readonly scale: number;
   readonly zoom: number;
   readonly leftOut: number | undefined;
+  /** Told, when a draw of this tile is on screen, which mark it was drawn without. */
+  readonly onPresented: (key: string, without: number | undefined) => void;
 }): ReactElement {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [drawn, setDrawn] = useState<{ readonly x: number; readonly y: number; readonly width: number; readonly height: number; readonly scale: number }>();
-  const { x, y, width, height } = tile;
+  const { x, y, width, height, key: tileKey } = tile;
   // A TILE'S PIXELS GO WITH IT, as a page's do (ADR-0247): it had no release, and kept its store until collected.
   useLayoutEffect(() => {
     const element = canvas.current;
@@ -2388,7 +2444,9 @@ function PageTile({
     const region = { x, y, width, height };
     void renderRegion(view.document, pdfjsPageOf(page), target, scale, rotation, region, superseded.signal, leftOut)
       .then(() => {
-        if (!superseded.signal.aborted) setDrawn({ ...region, scale });
+        if (superseded.signal.aborted) return;
+        setDrawn({ ...region, scale });
+        onPresented(tileKey, leftOut);
       })
       .catch((error: unknown) => {
         if (error instanceof RenderCancelledError || superseded.signal.aborted) return;
@@ -2398,7 +2456,7 @@ function PageTile({
     return (): void => {
       superseded.abort();
     };
-  }, [draw, height, leftOut, page, rotation, scale, view, width, x, y]);
+  }, [draw, height, leftOut, onPresented, page, rotation, scale, tileKey, view, width, x, y]);
 
   const per = drawn === undefined ? 0 : zoom / drawn.scale;
   return (
