@@ -26,6 +26,13 @@
  * Its only result is an absence — the reassuring answer — so before any action it hides a page's canvas for a few frames
  * and refuses to report unless it counts that as missing, and it clears a canvas to white for a few frames and refuses
  * unless it counts that as blank. A walk whose sampler could not see would otherwise report zero for everything.
+ *
+ * ## And it sees the blink the off-screen swap exists to prevent
+ *
+ * Measured 2026-10-21, renderer built from 3b961da4 with one line added to `renderPage.ts`'s `renderPage`: the canvas
+ * on screen sized (so cleared) when a draw starts, which is what drawing in place does. Two runs each: rotate 4 blank
+ * and 2 flicker frames, zoom 3 blank, both red; without that line, both 0. A scroll stays clean either way, because a
+ * page already on screen is not redrawn by one.
  */
 import { writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -95,13 +102,15 @@ async function startSampling() {
     // A WHEEL IS AN INPUT: a scroll makes no pointerup, key or click.
     for (const kind of ['pointerup', 'keydown', 'click', 'wheel']) view.addEventListener(kind, note, { capture: true });
     // THE MAIN VIEW'S SCROLLER, whose box decides what is on screen: the Pages panel's thumbnails are canvases too.
-    const scroller = doc.querySelector('[data-document-layer="active"] .m-page-list') ?? doc.querySelector('.m-page-list');
     const read = () => {
       /** @type {Record<string, { shown: boolean, ink: number, sig: string }>} */
       const pages = {};
-      const room = scroller?.getBoundingClientRect();
+      // READ EVERY FRAME: a tab switch puts another layer's scroller on show.
+      const room = doc.querySelector('[data-document-layer="active"] .m-page-list')?.getBoundingClientRect();
       if (room === undefined) return pages;
-      for (const canvas of doc.querySelectorAll('[data-document-layer="active"] canvas[data-page-canvas], canvas[data-page-canvas]')) {
+      // THE LAYER ON SHOW ONLY: a document behind it keeps its canvases under `visibility: hidden`, and a selector list
+      // answers in tree order, so naming them as a fallback read the hidden layer's page 0 whenever it came first.
+      for (const canvas of doc.querySelectorAll('[data-document-layer="active"] canvas[data-page-canvas]')) {
         const key = canvas.getAttribute('data-page-canvas');
         if (key === null || key in pages) continue;
         const box = canvas.getBoundingClientRect();
@@ -223,14 +232,15 @@ const results = {};
 /**
  * Runs `act` `runs` times, judging each; `untouched` names the pages each run leaves alone, read before the run.
  * @param {string} name @param {(run: number) => Promise<void>} act @param {(run: number) => Promise<readonly string[] | null>} untouched
- * @param {() => Promise<void>} [undo]
+ * @param {() => Promise<void>} [undo] @param {() => Promise<void>} [prepare] runs before each run's sampling starts
  */
-async function measure(name, act, untouched, undo) {
+async function measure(name, act, untouched, undo, prepare) {
   if (!wanted(name)) return;
   await step(`no page blinks: ${name}`, async () => {
     /** @type {Verdict[]} */
     const verdicts = [];
     for (let run = 0; run < runs; run += 1) {
+      if (prepare !== undefined) await prepare();
       const leftAlone = await untouched(run);
       await startSampling();
       await page.waitForTimeout(200);
@@ -345,7 +355,7 @@ await measure(
   () => page.locator('header button[aria-label^="Switch to"]').first().click(),
 );
 // TAB SWITCH: a second document, then back to the first; the first's pages on show again may not blank on return.
-if (wanted('tab switch')) {
+if (wanted('tab switch') || wanted('parked tab rebuild')) {
   await walk.open(second);
   await settle();
 }
@@ -354,6 +364,20 @@ await measure(
   () => page.locator('.m-tab').first().click(),
   () => Promise.resolve(null),
   () => page.locator('.m-tab').nth(1).click(),
+);
+// A PARKED TAB COMING BACK: after `PARK_AFTER_MS` (60 s) behind with nothing to lose, a layer mounts nothing, so going
+// back to it builds the layer again — which must draw behind the one on show and come forward whole.
+await measure(
+  'parked tab rebuild',
+  async () => {
+    await page.locator('.m-tab').first().click();
+    await page.waitForSelector('[data-document-layer="parked"]', { state: 'detached', timeout: 30_000 });
+  },
+  () => Promise.resolve(null),
+  () => page.locator('.m-tab').nth(1).click(),
+  async () => {
+    await page.waitForSelector('[data-document-layer="parked"]', { state: 'attached', timeout: 120_000 });
+  },
 );
 // DELETE: the first page goes; the pages after it move up and may not blank on the way.
 await measure(
