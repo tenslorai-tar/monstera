@@ -2154,6 +2154,12 @@ export interface DocumentTextBlocks {
    * `editTextOperators`, where the page shows text in a Type 3 font.
    */
   readonly rewrite: PageRewrite;
+  /**
+   * The page was read with its forms' text moved onto it in memory (ADR-0232), so the blocks name THAT page's objects and
+   * an edit of them must be sent with `unpack`. Declared, so the field is typed from the reader to the wire: it was set
+   * through a spread no type named, and the channel's handler, which names the fields it passes, dropped it.
+   */
+  readonly unpacked?: true;
 }
 
 /** One of a page's objects, as the editing engine describes it. */

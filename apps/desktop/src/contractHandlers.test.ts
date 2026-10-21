@@ -2953,6 +2953,25 @@ describe('a dense page’s blocks and objects answer in parts the contract accep
     expect(wholeLast.ok && wholeLast.value.truncated).toBe(false);
   });
 
+  it('a page READ UNPACKED says so on every part (ADR-0232), so its edits are sent with `unpack`; CONTROL: a plain read does not', async () => {
+    // THE OWNER'S BROCHURE, 2026-10-21: the handler named the fields it passed and `unpacked` was not one, so a pull
+    // quote in a form was edited by indices of the unpacked page sent without `unpack`, and refused.
+    const unpacked = harness(OPENED, () => Promise.resolve(null), undefined, {
+      commands: {
+        textBlocks: () =>
+          Promise.resolve({ version: asDocVersion(7), blocks, truncated: false, rotated: 0, angled: NOT_ANGLED, unaddressable: 2, rewrite: 'objects', unpacked: true }),
+      } as unknown as DocumentCommands,
+    });
+    const first = await unpacked.handlers['document.textBlocks']({ docId: A_DOC, page: 0, from: 0 });
+    if (!first.ok || first.value.next === null) throw new Error('the first part should have a next');
+    const last = await unpacked.handlers['document.textBlocks']({ docId: A_DOC, page: 0, from: first.value.next });
+    if (!last.ok) throw new Error('the last part was refused');
+    expect([first.value.unpacked, last.value.unpacked]).toStrictEqual([true, true]);
+    expect(channels['document.textBlocks'].result.safeParse(first.value).success).toBe(true);
+    const plain = await handlers['document.textBlocks']({ docId: A_DOC, page: 0, from: 0 });
+    expect(plain.ok && 'unpacked' in plain.value).toBe(false);
+  });
+
   it('8,400 page objects: seventeen parts, all valid, and together the page', async () => {
     const { items, parts } = await walk('document.pageObjects', (value) => (value as { objects: unknown[] }).objects);
     expect(parts).toBe(17);
