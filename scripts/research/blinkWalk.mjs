@@ -42,7 +42,7 @@
 import { writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
-import { startWalk } from './liveWalk.mjs';
+import { startWalk, writesDone, writesLanded } from './liveWalk.mjs';
 
 const WINDOW_MS = 2500;
 
@@ -271,7 +271,9 @@ const results = {};
  * @property {() => Promise<void>} [undo] puts the document back after each run
  * @property {() => Promise<void>} [prepare] runs before each run's sampling starts
  * @property {true} [changesNothing] the action's claim is that no picture changes (the theme switch)
- * @property {number} [windowMs] how long after the last input the frames are read, where `WINDOW_MS` is too short
+ * @property {true} [writes] the action writes the document once: the frames are read until `WINDOW_MS` after that write
+ *   has LANDED, not after the input, since a write's time is the app's and not the walk's (Edit text's first, cold,
+ *   took longer than a fixed 12 s window in a full run on 2026-10-21, and the run read nothing)
  */
 
 /**
@@ -286,10 +288,12 @@ async function measure(name, act, how = {}) {
     for (let run = 0; run < runs; run += 1) {
       if (how.prepare !== undefined) await how.prepare();
       const leftAlone = how.untouched === undefined ? null : await how.untouched(run);
+      const written = await writesDone(page);
       await startSampling();
       await page.waitForTimeout(200);
       await act(run);
-      await page.waitForTimeout(how.windowMs ?? WINDOW_MS);
+      if (how.writes === true) await writesLanded(page, written);
+      await page.waitForTimeout(WINDOW_MS);
       const { frames, lastInput } = await stopSampling();
       if (lastInput === 0) throw new Error('the action made no input the page heard');
       const verdict = judge(frames, lastInput, leftAlone);
@@ -518,7 +522,7 @@ await measure(
       await undo();
     },
     // THE FIRST EDIT IS THE COLD ONE, measured at 9.7 s from the commit to the page in 0.1.17.0.
-    windowMs: 12_000,
+    writes: true,
   },
 );
 
