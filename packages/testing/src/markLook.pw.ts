@@ -52,6 +52,15 @@ async function open(page: Page): Promise<void> {
     opens: [{ kind: 'opened' as const, docId: ID, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Blank.pdf' }],
     documentBytes: new Map([[ID, bytes]]),
     pageLinesPlaced: [[line]],
+    // A PICTURE THE STAMP CHOOSER CAN KEEP, a 1 × 1 PNG, for the picture stamp's case.
+    library: {
+      pick: {
+        name: 'Paid',
+        bytes: new Uint8Array(
+          Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64'),
+        ),
+      },
+    },
     settings: { 'appearance.ribbon-section': 'comment', 'appearance.status-tips': false },
   });
   await page.goto('/');
@@ -159,7 +168,10 @@ const TRIANGLE = [
  * route with no tool chosen: `select` runs before the sampler starts, and `draw` finishes the mark.
  */
 const TOOLS: readonly {
+  /** The command that chooses the tool. */
   readonly title: string;
+  /** What the case is called, where two cases choose one tool. */
+  readonly name?: string;
   readonly draw: (page: Page) => Promise<void>;
   readonly part: string;
   readonly tool?: false;
@@ -217,6 +229,20 @@ const TOOLS: readonly {
     },
     part: 'stamp',
   },
+  // A KEPT PICTURE STAMP: kept from the chooser, chosen, and the press on its action finishes it. Main places it.
+  {
+    title: 'Stamp',
+    name: 'a kept picture stamp',
+    draw: async (page) => {
+      await drag(page, [150, 400], [390, 340]);
+      const chooser = page.getByRole('dialog');
+      await chooser.getByRole('button', { name: 'Add a picture…' }).click();
+      await expect(chooser.getByRole('img', { name: 'Paid' })).toBeVisible();
+      await chooser.locator('[data-stamp-picture] input').check();
+      await chooser.getByRole('button', { name: 'Add stamp', exact: true }).click();
+    },
+    part: 'picture',
+  },
   // A SIGNATURE IS CHOSEN FIRST, then placed by a click: the finishing input is the click on the page.
   {
     title: 'Signature',
@@ -257,7 +283,7 @@ const TOOLS: readonly {
 ];
 
 for (const tool of TOOLS) {
-  test(`${tool.title}: its final look from the release until the page draws it, never the placeholder or nothing`, async ({ page }) => {
+  test(`${tool.name ?? tool.title}: its final look from the release until the page draws it, never the placeholder or nothing`, async ({ page }) => {
     await open(page);
     if (tool.tool === false) await tool.select?.(page);
     else await runCommand(page, tool.title);

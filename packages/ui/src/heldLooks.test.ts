@@ -95,6 +95,37 @@ describe('released marks held in their final look (ADR-0257)', () => {
     expect(looksOn([plain, placed], undefined)).toStrictEqual([plain.look]);
   });
 
+  it('ONE LOOK ON SEVERAL PAGES lets go of what it kept alive ONCE, when the last page has dropped it', async () => {
+    const holder = createHeldLooks(() => asDocVersion(1));
+    let dropped = 0;
+    await sendHeld(holder, [0, 1, 2], look, () => Promise.resolve(true), () => Promise.resolve(), () => {
+      dropped += 1;
+    });
+    const [first, second, third] = holder.getSnapshot();
+    expect(holder.getSnapshot().map((entry) => entry.page)).toStrictEqual([0, 1, 2]);
+    if (first === undefined || second === undefined || third === undefined) throw new Error('three entries were held');
+    holder.letGo(first);
+    holder.letGo(second);
+    // STILL SHOWN ON ONE PAGE, so what it shows is still needed.
+    expect(dropped).toBe(0);
+    holder.letGo(third);
+    expect(dropped).toBe(1);
+    // A SECOND DROP OF THE SAME ENTRY tells nobody twice.
+    holder.letGo(third);
+    expect(dropped).toBe(1);
+  });
+
+  it('a REFUSED placement and a CLOSED document each let go of it too, and a send with nothing held at once', async () => {
+    const holder = createHeldLooks(() => asDocVersion(1));
+    const told: string[] = [];
+    await sendHeld(holder, [0, 1], look, () => Promise.resolve(false), () => Promise.resolve(), () => told.push('refused'));
+    await sendHeld(holder, [0, 1], look, () => Promise.resolve(true), () => Promise.resolve(), () => told.push('closed'));
+    await sendHeld(holder, [0], undefined, () => Promise.resolve(true), () => Promise.resolve(), () => told.push('nothing held'));
+    expect(told).toStrictEqual(['refused', 'nothing held']);
+    holder.close();
+    expect([told, holder.getSnapshot()]).toStrictEqual([['refused', 'nothing held', 'closed'], []]);
+  });
+
   it('CONTROL: with NO look there is nothing to hold and nothing to wait for — the command is sent at once', async () => {
     const log: string[] = [];
     const holder = createHeldLooks(() => asDocVersion(1));

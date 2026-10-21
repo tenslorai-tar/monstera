@@ -24,6 +24,8 @@ export interface HeldLook {
   readonly look: MarkLook | LookAt;
   /** The version the page showed when the mark was released: a page drawn from a newer one draws the mark itself. */
   readonly at: DocVersion;
+  /** Told once when the entry leaves the holder, however it leaves: what the look alone kept alive goes with it. */
+  readonly dropped: (() => void) | undefined;
 }
 
 export interface HeldLooks {
@@ -32,11 +34,14 @@ export interface HeldLooks {
   readonly subscribe: (listener: () => void) => () => void;
   /**
    * Holds `look` on `page` until that page is drawn from a version newer than the document's now, and answers the
-   * entry, which {@link letGo} takes to drop it sooner — a command refused, which made nothing.
+   * entry, which {@link letGo} takes to drop it sooner — a command refused, which made nothing. `dropped` is told when
+   * the entry leaves: a picture's `blob:` address, which the look alone still uses, is let go there.
    */
-  readonly hold: (page: number, look: MarkLook | LookAt) => HeldLook;
+  readonly hold: (page: number, look: MarkLook | LookAt, dropped?: () => void) => HeldLook;
   /** Drops a held look: refused, or drawn by its page. Idempotent, so the page and a refusal may both drop it. */
   readonly letGo: (entry: HeldLook) => void;
+  /** Drops every held look, its document closing: each entry's `dropped` is told, as a let-go tells it. */
+  readonly close: () => void;
 }
 
 /** A holder for one document, which reads the document's version at each hold. */
@@ -55,14 +60,22 @@ export function createHeldLooks(version: () => DocVersion): HeldLooks {
         listeners.delete(listener);
       };
     },
-    hold: (page, look) => {
-      const entry: HeldLook = { page, look, at: version() };
+    hold: (page, look, dropped) => {
+      const entry: HeldLook = { page, look, at: version(), dropped };
       changed([...looks, entry]);
       return entry;
     },
     letGo: (entry) => {
       if (!looks.includes(entry)) return;
       changed(looks.filter((each) => each !== entry));
+      entry.dropped?.();
+    },
+    close: () => {
+      // NOTHING HELD tells no page: a new empty list would render every page of a closing document for nothing.
+      if (looks.length === 0) return;
+      const leaving = looks;
+      changed([]);
+      for (const entry of leaving) entry.dropped?.();
     },
   };
 }
@@ -93,15 +106,27 @@ export function afterNextPaint(): Promise<void> {
  */
 export async function sendHeld(
   holder: Pick<HeldLooks, 'hold' | 'letGo'> | undefined,
-  page: number,
+  page: number | readonly number[],
   look: MarkLook | LookAt | undefined,
   send: () => Promise<boolean>,
   afterPaint: () => Promise<void> = afterNextPaint,
+  /**
+   * Told once the look has left EVERY page it was held on, however it left — drawn, refused, or its document closed —
+   * or at once when nothing was held: the end of whatever the look alone kept alive.
+   */
+  dropped?: () => void,
 ): Promise<boolean> {
-  const entry = look === undefined || holder === undefined ? undefined : holder.hold(page, look);
-  if (entry !== undefined) await afterPaint();
+  const pages = typeof page === 'number' ? [page] : page;
+  let left = pages.length;
+  const leaves = (): void => {
+    left -= 1;
+    if (left === 0) dropped?.();
+  };
+  const entries = look === undefined || holder === undefined || pages.length === 0 ? [] : pages.map((each) => holder.hold(each, look, leaves));
+  if (entries.length === 0) dropped?.();
+  else await afterPaint();
   const moved = await send();
-  if (!moved && entry !== undefined) holder?.letGo(entry);
+  if (!moved) for (const entry of entries) holder?.letGo(entry);
   return moved;
 }
 

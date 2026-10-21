@@ -593,6 +593,8 @@ export class DocumentStores {
     if (!this.#stores.has(docId)) return false;
     for (const watcher of this.#watchers) watcher.closed(docId);
     this.keys.forget(docId);
+    // ITS HELD LOOKS LEAVE WITH IT, each telling what it kept alive — a picture's `blob:` address — that it is gone.
+    this.#held.get(docId)?.close();
     this.#held.delete(docId);
     return this.#stores.delete(docId);
   }

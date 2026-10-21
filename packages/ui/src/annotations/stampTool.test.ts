@@ -24,11 +24,11 @@ function toolAnswering(
   readonly tool: ReturnType<typeof stampTool>;
   readonly asked: { id: string; props: unknown }[];
   readonly did: string[];
-  readonly placed: { page: number; rect: AnnotationRect; picture: string }[];
+  readonly placed: { page: number; rect: AnnotationRect; picture: string; src: string | undefined }[];
 } {
   const asked: { id: string; props: unknown }[] = [];
   const did: string[] = [];
-  const placed: { page: number; rect: AnnotationRect; picture: string }[] = [];
+  const placed: { page: number; rect: AnnotationRect; picture: string; src: string | undefined }[] = [];
   let round = 0;
   const tool = stampTool({
     ask: (id, props) => {
@@ -42,8 +42,8 @@ function toolAnswering(
       did.push(`listed ${String(mine)}`);
       return Promise.resolve({
         pictures: [KEPT],
-        release: () => {
-          did.push(`released ${String(mine)}`);
+        release: (keeping) => {
+          did.push(`released ${String(mine)}${keeping === undefined ? '' : ` keeping ${keeping}`}`);
         },
       });
     },
@@ -55,8 +55,8 @@ function toolAnswering(
       did.push(`removed ${id}`);
       return Promise.resolve();
     },
-    onPlaceStampPicture: (page, rect, picture) => {
-      placed.push({ page, rect, picture });
+    onPlaceStampPicture: (page, rect, picture, src) => {
+      placed.push({ page, rect, picture, src });
     },
   });
   return { tool, asked, did, placed };
@@ -104,9 +104,11 @@ describe('stampTool', () => {
   });
 
   it('hands a KEPT PICTURE to main with the page and the box, and builds no command itself', async () => {
-    const { tool, placed } = toolAnswering([{ picture: KEPT.id }]);
+    const { tool, placed, did } = toolAnswering([{ picture: KEPT.id }]);
     expect(await drag(tool, [20, 20], [120, 80])).toBeUndefined();
-    expect(placed).toStrictEqual([{ page: 3, rect: RECT, picture: KEPT.id }]);
+    // WITH ITS PREVIEW'S ADDRESS, kept past the chooser for the held look (ADR-0257), and that one only.
+    expect(placed).toStrictEqual([{ page: 3, rect: RECT, picture: KEPT.id, src: KEPT.src }]);
+    expect(did).toStrictEqual(['listed 1', `released 1 keeping ${KEPT.src}`]);
   });
 
   it('ADDING or REMOVING a picture changes the library and ASKS AGAIN, letting go of each round’s previews', async () => {

@@ -295,6 +295,15 @@ export function selectionLook(command: DispatchableCommand, boxes: readonly Look
  */
 export type LookAt = (transform: PageTransform) => MarkLook | undefined;
 
+/**
+ * A placed picture's final look in `rect` (`applyPlaceImage`): the picture stretched to fill the box as the page is
+ * seen, upright, the `cm` that scales the unit square into `[0, 0, seenWide, seenTall]`. `src` is a `blob:` address the
+ * renderer already holds.
+ */
+export function pictureLook(rect: AnnotationRect, src: string): LookAt {
+  return (transform) => ({ parts: [{ part: 'picture', box: boxOf(rect, transform), src }] });
+}
+
 /** A signature's ink, black as both writers draw it (`0 g`, `0 G`). */
 const SIGNATURE_INK: LookPaint = { colour: [0, 0, 0], opacity: 1 };
 

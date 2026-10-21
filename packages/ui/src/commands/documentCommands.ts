@@ -1123,7 +1123,7 @@ export async function placeImage(
    * says which on purpose rather than a stamp placement falling through to the picker by omission.
    */
   picture: string | undefined,
-): Promise<void> {
+): Promise<boolean> {
   // THE STAMP TRAVELS WITH THE REQUEST: main builds the `placeImage` command from the picked file,
   // and who placed it and when are this side's to say (ADR-0103).
   const answer = await deps.client['document.placeImage']({
@@ -1135,20 +1135,20 @@ export async function placeImage(
   });
   if (!answer.ok) {
     reportProblem(deps, answer.error);
-    return;
+    return false;
   }
-  if (answer.value.kind === 'cancelled') return;
+  if (answer.value.kind === 'cancelled') return false;
   if (answer.value.kind === 'absent') {
     void deps.ask(INSERT_IMAGE_PROBLEM_DIALOG_ID, { reason: 'absent' as const });
-    return;
+    return false;
   }
   if (answer.value.kind === 'unreadable') {
     void deps.ask(INSERT_IMAGE_PROBLEM_DIALOG_ID, { reason: 'unreadable' as const });
-    return;
+    return false;
   }
   if (answer.value.kind === 'too-large') {
     void deps.ask(INSERT_IMAGE_PROBLEM_DIALOG_ID, fileTooLargeProblem(answer.value));
-    return;
+    return false;
   }
   // THE TWO SCALARS, not the whole answer: `Applied` is a version and a byte
   // length, and handing the outcome object over would put `kind` and
@@ -1160,6 +1160,7 @@ export async function placeImage(
   if (answer.value.historyDropped > 0) {
     void deps.ask(HISTORY_TRIMMED_DIALOG_ID, { dropped: answer.value.historyDropped });
   }
+  return true;
 }
 
 /**

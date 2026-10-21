@@ -34,7 +34,14 @@ export const BLOB_URLS: LibraryPageDeps['urls'] = {
 export async function keptEntries(
   deps: LibraryPageDeps,
   kind: LibraryKind,
-): Promise<{ readonly kept: readonly KeptSignature[]; readonly release: () => void }> {
+): Promise<{
+  readonly kept: readonly KeptSignature[];
+  /**
+   * Lets go of every address made for the chooser, except `keeping`: the one picture placed, which its held look still
+   * shows until the page draws it, and which its placement then lets go of.
+   */
+  readonly release: (keeping?: string) => void;
+}> {
   const listed = await deps.client['library.list']({ kind });
   const made: string[] = [];
   const kept: KeptSignature[] = [];
@@ -58,8 +65,8 @@ export async function keptEntries(
   }
   return {
     kept,
-    release: () => {
-      for (const url of made) deps.urls.revoke(url);
+    release: (keeping) => {
+      for (const url of made) if (url !== keeping) deps.urls.revoke(url);
     },
   };
 }

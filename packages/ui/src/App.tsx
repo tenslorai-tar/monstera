@@ -22,6 +22,7 @@ import {
   type UpdateStatus,
   type WindowEditAction,
   type CloudProviderId,
+  pagesOfSet,
   walkKeptBy,
 } from '@monstera/contract';
 import type { DocId, DocVersion, FileHandle, MessageKey } from '@monstera/shared';
@@ -178,8 +179,8 @@ import { CommandPalette } from './CommandPalette.js';
 import { goToCommand, historyCommand, pageMoveCommand } from './commands/navigationCommands.js';
 import { syncConversation } from './chatHistorySync.js';
 import { type DocumentStore, DocumentStores } from './documentStores.js';
-import { sendHeld } from './heldLooks.js';
-import type { MarkLook } from './markLook.js';
+import { afterNextPaint, sendHeld } from './heldLooks.js';
+import { type MarkLook, pictureLook } from './markLook.js';
 import { Thumbnails } from './Thumbnails.js';
 import { StatusBar } from './surfaces/StatusBar.js';
 import { StatusTip } from './surfaces/StatusTip.js';
@@ -3319,17 +3320,29 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
    * the kept file instead of opening a picker, and the pages follow the same *this page or every page* setting.
    */
   const onPlaceStampPicture = useCallback(
-    (page: number, rect: AnnotationRect, picture: string): void => {
-      if (activeId === undefined) return;
-      void placeImage(
-        { client, ask, onApplied: applied, stamp },
-        activeId,
-        imagePagesFor(imagePages, page, pageCount),
-        rect,
-        picture,
+    (page: number, rect: AnnotationRect, picture: string, src: string | undefined): void => {
+      if (activeId === undefined) {
+        if (src !== undefined) BLOB_URLS.revoke(src);
+        return;
+      }
+      const pages = imagePagesFor(imagePages, page, pageCount);
+      // HELD IN ITS FINAL LOOK ON EVERY PAGE IT GOES ON (ADR-0257), by the one expander of a page set; the picture's
+      // address, kept past the chooser for this, is let go once the look has left the last of them.
+      const shown = pagesOfSet(pages, pageCount ?? page + 1, (refused) => {
+        throw new RangeError(`page ${String(refused)} is not in the document`);
+      });
+      void sendHeld(
+        stores.held(activeId),
+        shown,
+        src === undefined ? undefined : pictureLook(rect, src),
+        () => placeImage({ client, ask, onApplied: applied, stamp }, activeId, pages, rect, picture),
+        afterNextPaint,
+        () => {
+          if (src !== undefined) BLOB_URLS.revoke(src);
+        },
       );
     },
-    [activeId, applied, ask, client, imagePages, pageCount, stamp],
+    [activeId, applied, ask, client, imagePages, pageCount, stamp, stores],
   );
 
   /**

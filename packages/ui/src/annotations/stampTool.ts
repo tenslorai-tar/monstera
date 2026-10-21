@@ -12,10 +12,13 @@ import type { TextToolDeps } from './textTools.js';
 /** The registry id, shared with the command that selects this tool. */
 export const STAMP_TOOL_ID = 'annotate.stamp';
 
-/** The kept pictures the chooser shows, and how to let go of their `blob:` addresses once it has closed. */
+/**
+ * The kept pictures the chooser shows, and how to let go of their `blob:` addresses once it has closed — all but
+ * `keeping`, the one placed, whose address its held look shows until the page draws it (ADR-0257).
+ */
 export interface StampPictures {
   readonly pictures: readonly StampPicture[];
-  readonly release: () => void;
+  readonly release: (keeping?: string) => void;
 }
 
 /** What the stamp tool needs beyond asking: the person's stamp library, and where a kept picture is placed. */
@@ -26,8 +29,12 @@ export interface StampDeps {
   readonly addStampPicture: () => Promise<void>;
   /** Removes a kept picture. */
   readonly removeStampPicture: (id: string) => Promise<void>;
-  /** Places a kept picture in the box — main reads the file and mints the command, as it does for a picked image. */
-  readonly onPlaceStampPicture: (page: number, rect: AnnotationRect, picture: string) => void;
+  /**
+   * Places a kept picture in the box — main reads the file and mints the command, as it does for a picked image. `src`
+   * is the picture's `blob:` address, kept past the chooser: the placement holds the picture's look with it, and lets
+   * it go when that look leaves. `undefined` for a picture the chooser did not list, which is placed with no look.
+   */
+  readonly onPlaceStampPicture: (page: number, rect: AnnotationRect, picture: string, src: string | undefined) => void;
 }
 
 /**
@@ -85,12 +92,16 @@ export function stampTool(deps: Pick<TextToolDeps, 'ask' | 'style'> & StampDeps)
         let raw: unknown;
         try {
           raw = await deps.ask(STAMP_DIALOG_ID, { pictures });
-        } finally {
+        } catch (thrown) {
           release();
+          throw thrown;
         }
         const answered = STAMP_RESULT.safeParse(raw);
-        if (!answered.success) return undefined;
-        const answer = answered.data;
+        const answer = answered.success ? answered.data : undefined;
+        // THE PLACED PICTURE'S ADDRESS OUTLIVES THE CHOOSER, and only that one: every other is let go here.
+        const placed = answer !== undefined && 'picture' in answer ? pictures.find((each) => each.id === answer.picture) : undefined;
+        release(placed?.src);
+        if (answer === undefined) return undefined;
         if ('stamp' in answer) {
           return {
             kind: 'addAnnotation',
@@ -105,7 +116,7 @@ export function stampTool(deps: Pick<TextToolDeps, 'ask' | 'style'> & StampDeps)
           };
         }
         if ('picture' in answer) {
-          deps.onPlaceStampPicture(page, rect, answer.picture);
+          deps.onPlaceStampPicture(page, rect, answer.picture, placed?.src);
           return undefined;
         }
         if (answer.library === 'add') await deps.addStampPicture();
