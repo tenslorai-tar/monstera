@@ -45,6 +45,21 @@ const choose = (number: number, docId: string): void => {
 const AT_THE_END = { side: 'after', page: 'last', typed: '1' } as const;
 
 describe('MergeDocumentBody', () => {
+  it('EACH DOCUMENT IS ITS OWN CARD, its page range with Choose pages beside it and what it takes under them (R27)', () => {
+    opened({ draft: { placement: AT_THE_END, documents: [{ docId: 'd-a', pages: '1-2' }, ...DRAFT('d-b')] } });
+    const cards = screen.getAllByRole('listitem');
+    expect(cards.map((card) => card.classList.contains('m-card'))).toStrictEqual([true, true]);
+    const first = cards[0];
+    if (first === undefined) throw new Error('no first card');
+    // ON ONE LINE: the field and the button that chooses its pages by picture.
+    const line = first.querySelector('.m-merge-list__range-line');
+    expect(line?.querySelector('input') !== null && line?.querySelector('button')?.textContent === 'Choose pages…').toBe(true);
+    // UNDER THE LINE, never inside it: what the range takes.
+    expect(line?.nextElementSibling?.textContent).toBe('2 pages of 3 go in');
+    // ADD AND CHOOSE FILE sit under the cards, outside every one of them.
+    expect(cards.some((card) => card.contains(screen.getByRole('button', { name: 'Add a document' })))).toBe(false);
+  });
+
   it('OPENS AT THE END, after the last page, with the first document listed, and sends the page count', () => {
     const { resolve } = opened();
     expect(screen.getByRole('button', { name: 'After' }).getAttribute('aria-pressed')).toBe('true');

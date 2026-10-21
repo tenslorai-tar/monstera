@@ -1,7 +1,7 @@
 import { useLingui } from '@lingui/react';
 import { MAX_MERGE_DOCUMENTS, MAX_MERGE_PART_ENTRIES, type PageSet, pageSetOf } from '@monstera/contract';
 import { err } from '@monstera/shared';
-import type { ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { Suspense, lazy, useRef, useState } from 'react';
 
 import {
@@ -47,12 +47,15 @@ function MergePagesField({
   total,
   tried,
   onChange,
+  beside,
 }: {
   readonly text: string;
   readonly read: RowPages | undefined;
   readonly total: number;
   readonly tried: boolean;
   readonly onChange: (text: string) => void;
+  /** What sits beside the field on its line: *Choose pages…* (R27). */
+  readonly beside: ReactNode;
 }): ReactElement {
   const { _ } = useLingui();
   // SAID AS SOON AS THE TEXT IS WRONG and not only after a press: a field the person typed into is one they are reading.
@@ -66,14 +69,17 @@ function MergePagesField({
           : '';
   return (
     <span className="m-merge-list__range">
-      <Input
-        invalid={problem !== ''}
-        label={MERGE_DOCUMENT_PAGES}
-        labelShownBeside
-        placeholder={MERGE_DOCUMENT_PAGES_ALL}
-        value={text}
-        onValueChange={onChange}
-      />
+      <span className="m-merge-list__range-line">
+        <Input
+          invalid={problem !== ''}
+          label={MERGE_DOCUMENT_PAGES}
+          labelShownBeside
+          placeholder={MERGE_DOCUMENT_PAGES_ALL}
+          value={text}
+          onValueChange={onChange}
+        />
+        {beside}
+      </span>
       <span className="m-merge-list__range-note" role={problem === '' ? undefined : 'alert'}>
         {problem !== ''
           ? problem
@@ -239,7 +245,7 @@ export default function MergeDocumentBody({
                 const number = index + 1;
                 const chosen = choices.find((choice) => choice.docId === each.docId);
                 return (
-                  <li key={each.key} className="m-merge-list__document" data-merge-document={String(number)}>
+                  <li key={each.key} className="m-card m-merge-list__document" data-merge-document={String(number)}>
                     <span aria-hidden className="m-merge-list__number">
                       {String(number)}
                     </span>
@@ -300,38 +306,38 @@ export default function MergeDocumentBody({
                         onChange={(pages) => {
                           setDocuments((now) => now.map((row) => (row.key === each.key ? { ...row, pages } : row)));
                         }}
+                        beside={
+                          <Button
+                            label={picking.has(each.key) ? MERGE_DOCUMENT_PICK_HIDE : MERGE_DOCUMENT_PICK}
+                            onClick={() => {
+                              setPicking((now) => {
+                                const next = new Set(now);
+                                if (!next.delete(each.key)) next.add(each.key);
+                                return next;
+                              });
+                            }}
+                          />
+                        }
                       />
                     )}
-                    {chosen === undefined ? null : (
+                    {chosen === undefined || !picking.has(each.key) ? null : (
                       <span className="m-merge-list__pick">
-                        <Button
-                          label={picking.has(each.key) ? MERGE_DOCUMENT_PICK_HIDE : MERGE_DOCUMENT_PICK}
-                          onClick={() => {
-                            setPicking((now) => {
-                              const next = new Set(now);
-                              if (!next.delete(each.key)) next.add(each.key);
-                              return next;
-                            });
-                          }}
-                        />
-                        {picking.has(each.key) ? (
-                          <Suspense fallback={null}>
-                            <MergePagePicker
-                              docId={each.docId}
-                              total={chosen.pageCount}
-                              taken={takenOf(each.pages, chosen.pageCount)}
-                              onToggle={(page) => {
-                                setDocuments((now) =>
-                                  now.map((row) =>
-                                    row.key === each.key
-                                      ? { ...row, pages: pagesTextAfterToggle(row.pages, chosen.pageCount, page) }
-                                      : row,
-                                  ),
-                                );
-                              }}
-                            />
-                          </Suspense>
-                        ) : null}
+                        <Suspense fallback={null}>
+                          <MergePagePicker
+                            docId={each.docId}
+                            total={chosen.pageCount}
+                            taken={takenOf(each.pages, chosen.pageCount)}
+                            onToggle={(page) => {
+                              setDocuments((now) =>
+                                now.map((row) =>
+                                  row.key === each.key
+                                    ? { ...row, pages: pagesTextAfterToggle(row.pages, chosen.pageCount, page) }
+                                    : row,
+                                ),
+                              );
+                            }}
+                          />
+                        </Suspense>
                       </span>
                     )}
                   </li>
