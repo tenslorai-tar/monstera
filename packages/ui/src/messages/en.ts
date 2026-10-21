@@ -5154,7 +5154,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [CONTEXT_PANEL_LABEL]: 'Properties',
   [CONTEXT_PANEL_TAB_TITLE]: 'Contextual panel tab',
   [CONTEXT_PANEL_TAB_PROPERTIES]: 'Properties',
-  [CONTEXT_PANEL_TAB_ASSISTANT]: 'Assistant',
+  [CONTEXT_PANEL_TAB_ASSISTANT]: 'AI assistant',
   [CONTEXT_PANEL_TAB_STRIP]: 'Contextual panel tabs',
   [ASSISTANT_PROVIDER_LABEL]: 'Provider',
   [ASSISTANT_MODEL_LABEL]: 'Model',
@@ -5163,7 +5163,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_SEND]: 'Send',
   [ASSISTANT_STOP]: 'Stop',
   [ASSISTANT_REGENERATE]: 'Regenerate this answer',
-  [OPEN_ASSISTANT_TITLE]: 'Open the assistant',
+  [OPEN_ASSISTANT_TITLE]: 'Open the AI assistant',
   [ASSISTANT_EDIT]: 'Edit your question and ask again',
   [ASSISTANT_EDITING]: 'Editing your last question. Send replaces it and its answer.',
   [ASSISTANT_EDIT_CANCEL]: 'Cancel',
@@ -5202,8 +5202,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [HISTORY_READ_ONLY]: 'Saved conversation',
   [HISTORY_GONE]: 'This conversation is no longer saved.',
   [HISTORY_LOADING]: 'Loading saved conversations…',
-  [ASSISTANT_ASSISTANT]: 'Assistant',
-  [ASSISTANT_EMPTY]: 'No provider key is stored yet. Add one in Settings › AI and the assistant can start answering.',
+  [ASSISTANT_ASSISTANT]: 'AI assistant',
+  [ASSISTANT_EMPTY]: 'No provider key is stored yet. Add one in Settings › AI and the AI assistant can start answering.',
   [ASSISTANT_ASK]: 'Enter sends. Shift+Enter starts a new line.',
   // THE OWNER'S WORDING, exactly (addendum 3, G1).
   [ASSISTANT_NOTICE]: 'AI can make mistakes. Double check replies.',
@@ -5328,10 +5328,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // assistant needs a key.
   [AI_SETUP_TITLE]: 'Set up the AI assistant',
   [AI_SETUP_COMMAND_TITLE]: 'Set up AI…',
-  [TOAST_AI_KEY_CHECKED]: 'Your AI key works and is saved. The Assistant is ready.',
+  [TOAST_AI_KEY_CHECKED]: 'Your AI key works and is saved. The AI assistant is ready.',
   [TOAST_AI_KEY_KEPT_UNCHECKED]: 'Your AI key is saved. This provider cannot check a key in advance, so your first question will.',
   [AI_SETUP_INTRO]:
-    'The assistant answers questions about your documents using an AI provider you choose, with your own key. Everything else in Monstera works without one, so you can skip this and add a key later in Settings.',
+    'The AI assistant answers questions about your documents using an AI provider you choose, with your own key. Everything else in Monstera works without one, so you can skip this and add a key later in Settings.',
   [AI_SETUP_PROVIDER]: 'Provider',
   [AI_SETUP_KEY]: 'API key',
   // NOTHING PRE-SELECTED (ADR-0184): a provider the person did not choose is a key pasted for the wrong service.
@@ -5522,10 +5522,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [AI_SETUP_AT_START_DESCRIPTION]: 'Offers the one-step setup while no provider key is stored.',
   [AI_PROVIDER_TITLE]: 'AI provider',
   [AI_PROVIDER_DESCRIPTION]:
-    'Which service the Assistant asks, using that service’s key. Nothing from a document is sent until you press Send.',
+    'Which service the AI assistant asks, using that service’s key. Nothing from a document is sent until you press Send.',
   [AI_MODELS_TITLE]: 'AI model',
   [AI_MODELS_DESCRIPTION]:
-    'The model the Assistant asks for the provider above. Anthropic’s model also reads handwriting and scans.',
+    'The model the AI assistant asks for the provider above. Anthropic’s model also reads handwriting and scans.',
   [ASSISTANT_MODEL_NO_VISION]: '{name} (cannot read images)',
   [ASSISTANT_MODEL_NOT_OFFERED]: '{name} (not offered now)',
   [SETTINGS_AI_MODELS_FETCHED]: 'Listed by {provider} this session.',

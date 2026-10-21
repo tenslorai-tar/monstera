@@ -54,7 +54,7 @@ for (const width of [264, 326]) {
   test(`at ${String(width)} px every tab shows its glyph and its whole name, and the chevron stays clear`, async ({ page }) => {
     await open(page, width);
     const drawn = await read(page);
-    expect(drawn.tabs.map((tab) => tab.name)).toStrictEqual(['Properties', 'Assistant', 'Spelling']);
+    expect(drawn.tabs.map((tab) => tab.name)).toStrictEqual(['Properties', 'AI assistant', 'Spelling']);
     expect(drawn.tabs.every((tab) => tab.glyph && tab.whole && tab.inside && tab.clearOfChevron)).toBe(true);
     expect(drawn.chevronInside).toBe(true);
   });

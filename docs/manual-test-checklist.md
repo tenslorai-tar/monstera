@@ -158,7 +158,7 @@ is not available.
 
 - [ ] **Reading order** — Accessibility · `document.inspect-page-structure` · Shows: on screen · Help: *See a page's reading order*
 - [ ] **Accessibility check** — Accessibility · `document.accessibility-check` · Shows: on screen · Help: *Run an accessibility check*
-- [ ] **Open the assistant** — AI · `ai.open-assistant` · Shows: on screen · Help: *Ask the AI assistant about a document*
+- [ ] **Open the AI assistant** — AI · `ai.open-assistant` · Shows: on screen · Help: *Ask the AI assistant about a document*
 - [ ] **Set up AI…** — AI · `ai.setup` · Shows: a toast · Help: *Get and add keys for AI and online reading services*
 - [ ] **Summarise comments** — AI · `ai.summarise-comments` · Shows: on screen · Help: *Summarise a document's comments with AI*
 - [ ] **Import comments from XFDF…** — Comment files · `document.import-annotations-xfdf` · Shows: a toast · Help: *Export or import comments*
