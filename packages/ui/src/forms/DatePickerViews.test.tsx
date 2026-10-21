@@ -118,14 +118,27 @@ describe('the date field’s calendar: months, years and decades (R25)', () => {
     });
   }
 
-  it('CONTROL: without the title, the same date is 360 presses of the month arrow — the bound is the title’s', () => {
+  // A YEAR OF PRESSES, read one month at a time, not thirty: each press renders the whole form layer, and 360 of them
+  // took 5.4 s alone on Windows (2026-10-22), past the run's limit. What the bound rests on is that the arrow moves ONE
+  // month and no more, which every press here is read for; thirty years back is then 360 presses by that step.
+  it('CONTROL: without the title, the month arrow moves one month a press, so 30 years back is 360 presses — the bound is the title’s', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-10-21T12:00:00'));
     const { container } = openCalendar();
     const { press, count } = presser(container);
     const title = (): string => must(container.querySelector('.m-date-picker__month')).textContent;
-    while (title() !== 'October 1996' && count() < 400) press('Previous month');
-    expect(count()).toBe(360);
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const monthsSinceZero = (text: string): number => {
+      const [name = '', year = ''] = text.split(' ');
+      return Number(year) * 12 + months.indexOf(name);
+    };
+    for (let step = 0; step < 12; step += 1) {
+      const before = monthsSinceZero(title());
+      press('Previous month');
+      expect(monthsSinceZero(title()), title()).toBe(before - 1);
+    }
+    expect(title()).toBe('October 2025');
+    expect(count()).toBe(12);
   });
 
   it('the KEYBOARD alone, from the box: Ctrl+Up three times, three decades back, Enter down to a day', () => {
