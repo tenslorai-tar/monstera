@@ -296,7 +296,7 @@ import type { SecretStoreSurface } from './secretStore.js';
 import { type ChatHistory, noChatHistory } from './chatHistory.js';
 import { type SettingsSurface, createEphemeralSettings, createJsonFile } from './settingsFile.js';
 import { idleHost } from './idleRetire.js';
-import { type MemoryPressurePolicy, watchMemoryPressure } from './memoryPressure.js';
+import { type MemoryPressurePolicy, tellsThePerson, watchMemoryPressure } from './memoryPressure.js';
 import { type ShellFailureSink, engineHostEndingEvent } from './shellFailure.js';
 import type { ShellLog } from './shellLog.js';
 import type { CrashReports } from './crashReports.js';
@@ -1183,11 +1183,13 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
   // the line starts a new spell, and was told again, at every crossing — ten crossings, ten notices
   // (`compositionHost.test.ts`, run before this change). The owner's 8 GB computer told on every action; its readings
   // were not taken, which is why the log line now carries the figure.
+  // AND ONLY ON A COMPUTER OF 8 GB OR LESS (ADR-0253's correction of 2026-10-21, R18): a larger one can pass the line
+  // briefly and come back, which is no reason to tell anyone. The idle hosts below stop on every computer.
   let toldLow = false;
   const stopWatchingMemory = watchMemoryPressure(
     memoryPressure,
     async ({ available, total }) => {
-      if (!toldLow) {
+      if (!toldLow && tellsThePerson(memoryPressure, total)) {
         toldLow = true;
         sendEvent?.('app.memory-low', {});
       }

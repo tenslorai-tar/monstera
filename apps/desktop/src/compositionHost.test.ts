@@ -20,6 +20,7 @@ import type { ConverterExecutablePath } from './containedProgram.js';
 import type { BakedAppInfo as AppInfo } from './contractHandlers.js';
 import type { ConverterPlatform } from './converterSession.js';
 import type { ImageRead } from './documentCommands.js';
+import { MEMORY_PRESSURE } from './memoryPressure.js';
 import {
   FAKE_CONTAINER,
   FAKE_CREATED,
@@ -1622,7 +1623,7 @@ describe('the composition root, with BOTH engine hosts', () => {
       pickDocument: () => Promise.resolve(aDocument('low.pdf')),
       enginePlatform: mupdf.platform,
       pdfiumPlatform: second.platform,
-      memoryPressure: { intervalMs: 20, belowFraction: 0.1, read: () => ({ available: available * MIB, total: 100 * MIB }) },
+      memoryPressure: { intervalMs: 20, belowFraction: 0.1, tellsAtOrUnder: MEMORY_PRESSURE.tellsAtOrUnder, read: () => ({ available: available * MIB, total: 100 * MIB }) },
       sendEvent: (event) => {
         pushed.push(event);
       },
@@ -1676,7 +1677,7 @@ describe('the composition root, with BOTH engine hosts', () => {
       pickDocument: () => Promise.resolve(aDocument('low.pdf')),
       enginePlatform: mupdf.platform,
       pdfiumPlatform: second.platform,
-      memoryPressure: { intervalMs: 20, belowFraction: 0.1, read: () => ({ available: available * MIB, total: 100 * MIB }) },
+      memoryPressure: { intervalMs: 20, belowFraction: 0.1, tellsAtOrUnder: MEMORY_PRESSURE.tellsAtOrUnder, read: () => ({ available: available * MIB, total: 100 * MIB }) },
       sendEvent: (event) => {
         pushed.push(event);
       },
@@ -1708,6 +1709,50 @@ describe('the composition root, with BOTH engine hosts', () => {
     written.mockRestore();
   });
 
+  it('LOW MEMORY tells the person on an 8 GiB computer and NOT on a 16 GiB one, and stops the idle host on both (R18)', async () => {
+    const GIB = 1024 * MIB;
+    const told: Record<string, string[]> = {};
+    for (const total of [8 * GIB, 16 * GIB]) {
+      const name = `${String(total / GIB)} GiB`;
+      const mupdf = platformAnswering(serialisingEngine());
+      const second = platformAnswering(pdfiumPeer([]).peer);
+      // LOW BY THE SAME SHARE on both, 5% of the total, and crossing twice in the run.
+      let available = 0.9 * total;
+      const pushed: string[] = [];
+      const { handlers } = createShellDependencies({
+        ...harnessSurfaces('the composition-host test'),
+        appInfo,
+        pickDocument: () => Promise.resolve(aDocument('low.pdf')),
+        enginePlatform: mupdf.platform,
+        pdfiumPlatform: second.platform,
+        memoryPressure: { intervalMs: 20, belowFraction: 0.1, tellsAtOrUnder: MEMORY_PRESSURE.tellsAtOrUnder, read: () => ({ available, total }) },
+        sendEvent: (event) => {
+          pushed.push(event);
+        },
+      });
+      const opened = await handlers['document.open']({});
+      if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+      const edited = await handlers['document.execute']({
+        docId: opened.value.docId,
+        command: { kind: 'replaceTextObject', page: 0, ...replacementFieldsOf([{ index: 2, text: 'hi' }]), version: opened.value.version },
+      });
+      if (!edited.ok) throw new Error(JSON.stringify(edited));
+      available = 0.05 * total;
+      // CONTROL: THE HOST STOPS ON EVERY COMPUTER — the silent part is the same on both, so a run that told nothing
+      // because it never read low memory cannot pass for one that read it and withheld the notice.
+      await vi.waitFor(() => {
+        expect(spy(second.harness.calls, 'host.terminate'), name).toBe(1);
+      });
+      // A SECOND CROSSING IN THE SAME RUN, which tells nothing more.
+      available = 0.9 * total;
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      available = 0.05 * total;
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      told[name] = pushed.filter((event) => event === 'app.memory-low');
+    }
+    expect(told).toStrictEqual({ '8 GiB': ['app.memory-low'], '16 GiB': [] });
+  });
+
   it('CONTROL: a FRESH run that is low is told again — once per run, not once for ever (R15)', async () => {
     for (let run = 0; run < 2; run += 1) {
       const pushed: string[] = [];
@@ -1716,7 +1761,7 @@ describe('the composition root, with BOTH engine hosts', () => {
         appInfo,
         pickDocument: () => Promise.resolve(aDocument('low.pdf')),
         enginePlatform: platformAnswering(serialisingEngine()).platform,
-        memoryPressure: { intervalMs: 20, belowFraction: 0.1, read: () => ({ available: 5 * MIB, total: 100 * MIB }) },
+        memoryPressure: { intervalMs: 20, belowFraction: 0.1, tellsAtOrUnder: MEMORY_PRESSURE.tellsAtOrUnder, read: () => ({ available: 5 * MIB, total: 100 * MIB }) },
         sendEvent: (event) => {
           pushed.push(event);
         },
@@ -1750,7 +1795,7 @@ describe('the composition root, with BOTH engine hosts', () => {
       pickDocument: () => Promise.resolve(aDocument('busy.pdf')),
       enginePlatform: mupdf.platform,
       pdfiumPlatform: second.platform,
-      memoryPressure: { intervalMs: 20, belowFraction: 0.1, read: () => ({ available: available * MIB, total: 100 * MIB }) },
+      memoryPressure: { intervalMs: 20, belowFraction: 0.1, tellsAtOrUnder: MEMORY_PRESSURE.tellsAtOrUnder, read: () => ({ available: available * MIB, total: 100 * MIB }) },
     });
     const opened = await handlers['document.open']({});
     if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
