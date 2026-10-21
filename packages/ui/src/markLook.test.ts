@@ -27,6 +27,19 @@ describe('signatureLook', () => {
   it('CONTROL: a mark whose ink the renderer does not hold — a picture, a kept one by id — has no look', () => {
     expect(signatureLook({ kind: 'image' }, { x0: 0, y0: 0, x1: 10, y1: 10 })).toBeUndefined();
   });
+
+  it('draws a PICTURE by the writers’ fit, and a KEPT DRAWING by the strokes the dialog handed on', () => {
+    const transform = overlayTransform({ crop: [0, 0, 612, 792], rotation: 0, zoom: 1 });
+    const rect = { x0: 0, y0: 792, x1: 100, y1: 742 };
+    // A 200 by 100 picture in a 100 by 50 box: `pictureFit` scales by min(90 / 200, 45 / 100) = 0.45 to 90 by 45, its
+    // bottom-left corner at (5, 2.5) y up — so its top is 50 − 2.5 − 45 = 2.5 down from the box's.
+    const picture = signatureLook({ kind: 'image' }, rect, { kind: 'picture', src: 'blob:p', width: 200, height: 100 });
+    expect(picture?.(transform)?.parts).toStrictEqual([{ part: 'picture', box: { x: 5, y: 2.5, width: 90, height: 45 }, src: 'blob:p' }]);
+    // A KEPT DRAWING sent by its id is drawn exactly as the same strokes sent as themselves.
+    const strokes: [[number, number], [number, number]][] = [[[0, 0], [1, 1]]];
+    const kept = signatureLook({ kind: 'saved', id: '00000000-0000-4000-8000-0000000000b2' }, rect, { kind: 'drawn', strokes });
+    expect(kept?.(transform)).toStrictEqual(signatureLook({ kind: 'drawn', strokes }, rect)?.(transform));
+  });
 });
 
 describe('rubberStamp', () => {

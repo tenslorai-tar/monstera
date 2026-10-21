@@ -9,7 +9,7 @@ import { createHeldLooks } from '../heldLooks.js';
 import { TOAST_SIGNATURE_LIBRARY_FULL, TOAST_SIGNATURE_NOT_KEEPABLE } from '../messages/en.js';
 import type { CommandContext } from '../registries/commands.js';
 import { outlinedMarkOf } from '../signatureFaces.js';
-import { chooseSignature, placePlainSignature, signatureCommand } from './signatureCommands.js';
+import { chooseSignature, letGoOfChosen, placePlainSignature, signatureCommand } from './signatureCommands.js';
 
 /**
  * The plain Signature's renderer half (ADR-0133): the UI half of the wired pair. A placement must reach
@@ -20,7 +20,7 @@ import { chooseSignature, placePlainSignature, signatureCommand } from './signat
 const DOC = asDocId('00000000-0000-4000-8000-0000000000c1');
 const RECT = { x0: 100, y0: 100, x1: 250, y1: 150 } as const;
 const STAMP = { author: 'A. Tester', created: '2026-10-02T12:00:00Z' } as const;
-const TYPED = { mark: { kind: 'typed', text: 'Ada Lovelace', font: 'great-vibes' }, keep: true } as const;
+const TYPED = { mark: { kind: 'typed', text: 'Ada Lovelace', font: 'great-vibes' }, keep: true, shown: undefined } as const;
 
 /** A client answering `document.placeSignature` with `answer`, recording every call and its params. */
 function answering(answer: unknown): { readonly client: ContractClient; readonly calls: [string, unknown][] } {
@@ -102,7 +102,7 @@ describe('placePlainSignature', () => {
         DOC,
         0,
         RECT,
-        { mark: { kind: 'image' }, keep: false },
+        { mark: { kind: 'image' }, keep: false, shown: undefined },
       );
       expect([holder.getSnapshot(), calls.length]).toStrictEqual([[], 1]);
     } finally {
@@ -116,6 +116,7 @@ describe('placePlainSignature', () => {
     const version = await placePlainSignature({ client, ask, onApplied: vi.fn(), stamp: () => STAMP, toast: vi.fn(), held: undefined }, DOC, 0, RECT, {
       mark: { kind: 'typed', text: 'Ада', font: 'sacramento' },
       keep: true,
+      shown: undefined,
     });
     // SACRAMENTO'S FILES ARE LATIN ONLY, so each Cyrillic letter is named, once, in the order typed.
     expect(ask).toHaveBeenCalledWith(SIGNATURE_PROBLEM_DIALOG_ID, { reason: 'cannot-write', characters: 'А д а' });
@@ -136,6 +137,7 @@ describe('placePlainSignature', () => {
     await placePlainSignature({ client, ask: vi.fn(), onApplied: vi.fn(), stamp: () => STAMP, toast, held: undefined }, DOC, 0, RECT, {
       mark: { kind: 'image' },
       keep: true,
+      shown: undefined,
     });
     expect(toast).toHaveBeenCalledWith('done', TOAST_SIGNATURE_NOT_KEEPABLE);
   });
@@ -185,7 +187,7 @@ describe('chooseSignature', () => {
     const ask = vi
       .fn()
       .mockResolvedValueOnce({ library: 'remove', id: '00000000-0000-4000-8000-0000000000a1' })
-      .mockResolvedValueOnce(TYPED);
+      .mockResolvedValueOnce({ mark: TYPED.mark, keep: TYPED.keep });
     expect(await chooseSignature({ client, ask }, { make: () => 'blob:x', revoke: () => undefined })).toStrictEqual(TYPED);
     expect(ask).toHaveBeenNthCalledWith(1, SIGNATURE_DIALOG_ID, { kept: [] });
     expect(calls.map(([id]) => id)).toStrictEqual(['library.list', 'library.remove', 'library.list']);
@@ -214,7 +216,12 @@ describe('chooseSignature', () => {
     };
     const look = { mark: { kind: 'image', picked: 'held-7' }, keep: false } as const;
     const ask = vi.fn().mockResolvedValueOnce({ upload: 'pick', keep: false }).mockResolvedValueOnce(look);
-    expect(await chooseSignature({ client, ask }, urls)).toStrictEqual(look);
+    const sized: string[] = [];
+    const chosen = await chooseSignature({ client, ask }, urls, (src) => {
+      sized.push(src);
+      return Promise.resolve({ width: 40, height: 20 });
+    });
+    expect([chosen?.mark, chosen?.keep]).toStrictEqual([look.mark, look.keep]);
     expect(calls).toStrictEqual(['library.list', 'signature.pickPicture', 'library.list']);
     // THE SECOND ASKING SHOWS THE PICTURE main answered, by a blob of exactly its bytes, with keep as it was left.
     expect(made).toStrictEqual([[bytes, 'image/png']]);
@@ -223,7 +230,35 @@ describe('chooseSignature', () => {
       picked: { handle: 'held-7', name: 'Mine.png', src: 'blob:made-1' },
       keep: false,
     });
+    // THE PICTURE PLACED IS HANDED ON with its size, its address kept past the dialog for the held look (ADR-0257) and
+    // let go only when whoever holds the chosen signature closes it.
+    const shown = chosen?.shown;
+    expect(shown?.kind === 'picture' ? [shown.src, shown.width, shown.height] : shown).toStrictEqual(['blob:made-1', 40, 20]);
+    expect([sized, revoked]).toStrictEqual([['blob:made-1'], []]);
+    if (chosen !== undefined) letGoOfChosen(chosen);
     expect(revoked).toStrictEqual(['blob:made-1']);
+  });
+
+  it('CONTROL: a picked picture DISMISSED with the dialog is let go of, and one that does not decode holds no look', async () => {
+    const bytes = new Uint8Array([7]);
+    const client = createClient(channels, (id) =>
+      Promise.resolve(
+        ok(id === 'library.list' ? { entries: [] } : { kind: 'picked', handle: 'held-7', name: 'Mine.png', mediaType: 'image/png', bytes }),
+      ),
+    );
+    const revoked: string[] = [];
+    const urls = { make: () => 'blob:made', revoke: (url: string) => revoked.push(url) };
+    const dismissed = vi.fn().mockResolvedValueOnce({ upload: 'pick', keep: false }).mockResolvedValueOnce(undefined);
+    expect(await chooseSignature({ client, ask: dismissed }, urls, () => Promise.resolve({ width: 1, height: 1 }))).toBeUndefined();
+    expect(revoked).toStrictEqual(['blob:made']);
+
+    revoked.length = 0;
+    const placed = vi
+      .fn()
+      .mockResolvedValueOnce({ upload: 'pick', keep: false })
+      .mockResolvedValueOnce({ mark: { kind: 'image', picked: 'held-7' }, keep: false });
+    const chosen = await chooseSignature({ client, ask: placed }, urls, () => Promise.resolve(undefined));
+    expect([chosen?.shown, revoked]).toStrictEqual([undefined, ['blob:made']]);
   });
 
   it('CONTROL: a CANCELLED pick asks again with no picture — and a refused one says why first', async () => {
@@ -280,9 +315,14 @@ describe('chooseSignature', () => {
       ),
     );
     const typed = await chooseSignature({ client, ask: vi.fn().mockResolvedValue({ mark: { kind: 'saved', id: TYPED_ID }, keep: false }) });
-    expect(typed).toStrictEqual({ mark: { kind: 'typed', text: 'Ada', font: 'garamond-italic' }, keep: false });
+    expect(typed).toStrictEqual({ mark: { kind: 'typed', text: 'Ada', font: 'garamond-italic' }, keep: false, shown: undefined });
     const drawn = await chooseSignature({ client, ask: vi.fn().mockResolvedValue({ mark: { kind: 'saved', id: DRAWN_ID }, keep: false }) });
-    expect(drawn).toStrictEqual({ mark: { kind: 'saved', id: DRAWN_ID }, keep: false });
+    // STILL ITS ID FOR MAIN, and its strokes beside it for the held look (ADR-0257), which the renderer would not hold.
+    expect(drawn).toStrictEqual({
+      mark: { kind: 'saved', id: DRAWN_ID },
+      keep: false,
+      shown: { kind: 'drawn', strokes: [[[0, 0], [1, 1]]] },
+    });
   });
 
   it('a dismissed dialog answers nothing', async () => {

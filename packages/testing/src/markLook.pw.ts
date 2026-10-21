@@ -257,6 +257,21 @@ const TOOLS: readonly {
     },
     part: 'strokes',
   },
+  // A PICTURE SIGNATURE, uploaded in the dialog, then placed by a click.
+  {
+    title: 'Signature',
+    name: 'a picture signature',
+    draw: async (page) => {
+      const chooser = page.getByRole('dialog', { name: 'Signature' });
+      await chooser.getByRole('button', { name: 'Upload' }).click();
+      await chooser.getByRole('button', { name: 'Choose picture…' }).click();
+      await expect(chooser.getByRole('img').first()).toBeVisible();
+      await chooser.getByRole('button', { name: 'Use Signature' }).click();
+      await expect(chooser).toBeHidden();
+      await clicks(page, [[270, 400]]);
+    },
+    part: 'picture',
+  },
   // A LINK'S DESTINATION IS ASKED ON THE PAGE after its box is drawn, and Enter commits it.
   {
     title: 'Link to a web address',

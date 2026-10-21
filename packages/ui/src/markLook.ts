@@ -4,6 +4,7 @@ import {
   type RequestedSignatureMark,
   fittedPoint,
   outlineFit,
+  pictureFit,
   strokesFit,
   type AnnotationColour,
   type AnnotationDraft,
@@ -313,25 +314,42 @@ const SIGNATURE_INK: LookPaint = { colour: [0, 0, 0], opacity: 1 };
  * since the writers draw it upright on a turned page. A typed name's outline is filled; drawn strokes take the writers'
  * pen. `undefined` for a mark the renderer does not hold the ink of: a kept one named by its id, or a picture.
  */
-export function signatureLook(mark: RequestedSignatureMark, rect: AnnotationRect): LookAt | undefined {
-  if (mark.kind !== 'outlined' && mark.kind !== 'drawn') return undefined;
+export function signatureLook(
+  mark: RequestedSignatureMark,
+  rect: AnnotationRect,
+  /**
+   * The ink of a mark main is sent by name — a kept drawing by its id, a picture by its handle — which the dialog held
+   * and handed on: the drawing's strokes, or the picture's address and its size in pixels.
+   */
+  shown?:
+    | { readonly kind: 'drawn'; readonly strokes: Extract<RequestedSignatureMark, { kind: 'drawn' }>['strokes'] }
+    | { readonly kind: 'picture'; readonly src: string; readonly width: number; readonly height: number },
+): LookAt | undefined {
+  const ink = mark.kind === 'outlined' || mark.kind === 'drawn' ? mark : shown;
+  if (ink === undefined) return undefined;
   return (transform) => {
     const box = boxOf(rect, transform);
     const scale = pixelsPerPoint(transform);
     const wide = box.width / scale;
     const tall = box.height / scale;
+    if (ink.kind === 'picture') {
+      // THE WRITERS' PICTURE FIT, its bottom-left corner y up: the look's top is the box's height less its top edge.
+      const fit = pictureFit(ink, wide, tall);
+      const placed = { x: box.x + fit.x * scale, y: box.y + (tall - fit.y - fit.tall) * scale, width: fit.wide * scale, height: fit.tall * scale };
+      return { parts: [{ part: 'picture', box: placed, src: ink.src }] };
+    }
     // THE FIT IS Y-UP, as a form is; the look's box runs down.
     const at = ([x, y]: readonly [number, number]): string => `${String(x)},${String(tall - y)}`;
     const viewBox = `0 0 ${String(wide)} ${String(tall)}`;
-    if (mark.kind === 'drawn') {
-      const fit = strokesFit(mark.strokes, wide, tall);
-      const d = mark.strokes
+    if (ink.kind === 'drawn') {
+      const fit = strokesFit(ink.strokes, wide, tall);
+      const d = ink.strokes
         .map((line) => line.map(([x, y], index) => `${index === 0 ? 'M' : 'L'}${at(fittedPoint(fit, x, y))}`).join(' '))
         .join(' ');
       return { parts: [{ part: 'strokes', box, d, viewBox, paint: SIGNATURE_INK, pen: fit.pen }] };
     }
-    const fit = outlineFit(mark.outline, wide, tall);
-    const { ops, points } = mark.outline;
+    const fit = outlineFit(ink.outline, wide, tall);
+    const { ops, points } = ink.outline;
     let next = 0;
     const take = (): string => {
       const point = fittedPoint(fit, points[next] ?? 0, points[next + 1] ?? 0);

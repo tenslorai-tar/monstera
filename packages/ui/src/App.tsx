@@ -334,9 +334,8 @@ import { type WordsMark, type WordsToEdit, wordsToEdit } from './annotations/mar
 import type { AnnotationSelection, LinkSelection } from './annotations/selectTool.js';
 import { SELECT_TOOL_ID, selectionOfNewest, selectionOfPage } from './annotations/selectTool.js';
 import { SIGNATURE_TOOL_ID } from './annotations/signatureTool.js';
-import { chooseSignature, placePlainSignature, signatureCommand } from './commands/signatureCommands.js';
+import { type ChosenSignature, chooseSignature, letGoOfChosen, placePlainSignature, signatureCommand } from './commands/signatureCommands.js';
 import { type PageWritings, usePageWriting, useWritingOn } from './usePageWriting.js';
-import type { SignatureLook } from './dialogs/signature.js';
 import { applyCarrying } from './commands/applyCarrying.js';
 import {
   deleteSelectionCommand,
@@ -3366,16 +3365,18 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
    * so a second click never places the same look twice. State, so the tool registry rebuilt on it reads the look the
    * dialog answered rather than one captured before.
    */
-  const [signatureLook, setSignatureLook] = useState<SignatureLook | undefined>(undefined);
+  const [signatureLook, setSignatureLook] = useState<ChosenSignature | undefined>(undefined);
   /** The Signature command: the dialog first, then the click armed with the look it answered — the owner's order. */
   const startSignature = useCallback((): void => {
     void (async (): Promise<void> => {
       const look = await chooseSignature({ client, ask });
       if (look === undefined) return;
+      // A LOOK ARMED AND NEVER PLACED is replaced here, and lets go of what it kept for its held look.
+      if (signatureLook !== undefined) letGoOfChosen(signatureLook);
       setSignatureLook(look);
       setToolId(SIGNATURE_TOOL_ID);
     })();
-  }, [ask, client, setToolId]);
+  }, [ask, client, setToolId, signatureLook]);
   /**
    * Where the click puts it. A tool armed without a look — chosen from the palette, or pressed again after a placement
    * — asks first, so a click never places nothing. Once it lands, the select tool holds the new mark, so a drag moves

@@ -1,12 +1,13 @@
 import type { AnnotationRect, RequestedSignatureMark } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
 
-import { type HeldLooks, sendHeld } from '../heldLooks.js';
+import { type HeldLooks, afterNextPaint, sendHeld } from '../heldLooks.js';
 import { signatureLook } from '../markLook.js';
 import { SIGNATURE_TOOL_ID } from '../annotations/signatureTool.js';
 import { fileTooLargeProblem } from '../dialogs/fileTooLarge.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { type HeldSignaturePicture, SIGNATURE_ANSWERS, SIGNATURE_DIALOG_ID, type SignatureLook } from '../dialogs/signature.js';
+import type { KeptSignature } from '../dialogs/signDocument.js';
 import { SIGNATURE_PROBLEM_DIALOG_ID } from '../dialogs/signatureProblem.js';
 import { chosenOfKept, requestedMarkOf } from './signatureMarks.js';
 import { GROUP_QUICK_TOOLS, GROUP_STAMPS, SIGNATURE_TIP, SIGNATURE_TITLE, TOAST_SIGNATURE_LIBRARY_FULL, TOAST_SIGNATURE_NOT_KEEPABLE } from '../messages/en.js';
@@ -23,6 +24,67 @@ import { BLOB_URLS, type LibraryPageDeps, keptEntries } from './stampLibrary.js'
  * the command the ribbon draws; App holds the look between the dialog and the click.
  */
 
+/** A picture's size in pixels. */
+export interface PictureSize {
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * What a chosen signature's held look is drawn from where the mark main is sent carries no ink the renderer holds
+ * (ADR-0257): a kept drawing named by its id, or a picture — its `blob:` address, kept past the dialog, its size, and
+ * `close` to let the address go. Whoever ends the chosen signature's life calls `close`: its placement when the held
+ * look leaves the page, or the holder of an unplaced one when it is replaced.
+ */
+export type SignatureShown =
+  | Extract<KeptSignature['look'], { readonly kind: 'drawn' }>
+  | (PictureSize & { readonly kind: 'picture'; readonly src: string; readonly close: () => void });
+
+/** A look the Signature dialog answered, with what its held look is drawn from. */
+export type ChosenSignature = SignatureLook & { readonly shown: SignatureShown | undefined };
+
+/** Lets go of whatever an unplaced chosen signature kept alive. */
+export function letGoOfChosen(chosen: ChosenSignature): void {
+  if (chosen.shown?.kind === 'picture') chosen.shown.close();
+}
+
+/**
+ * A picture's size in pixels, from an address already decoded for the dialog's preview: `undefined` where the bytes do
+ * not decode here, and the placement then holds no look — main decodes what it places, and its answer says whether
+ * the picture was readable.
+ */
+async function pictureSize(src: string): Promise<PictureSize | undefined> {
+  const image = new Image();
+  image.src = src;
+  try {
+    await image.decode();
+  } catch {
+    return undefined;
+  }
+  return { width: image.naturalWidth, height: image.naturalHeight };
+}
+
+/** A kept address handed on with its size, or let go here when it has none to draw with. */
+async function pictureShown(
+  src: string,
+  urls: LibraryPageDeps['urls'],
+  sizeOf: (src: string) => Promise<PictureSize | undefined>,
+): Promise<SignatureShown | undefined> {
+  const size = await sizeOf(src);
+  if (size === undefined || size.width === 0 || size.height === 0) {
+    urls.revoke(src);
+    return undefined;
+  }
+  return {
+    kind: 'picture',
+    src,
+    ...size,
+    close: () => {
+      urls.revoke(src);
+    },
+  };
+}
+
 /**
  * Asks the Signature dialog until it answers a look, or is dismissed.
  *
@@ -33,10 +95,12 @@ import { BLOB_URLS, type LibraryPageDeps, keptEntries } from './stampLibrary.js'
 export async function chooseSignature(
   deps: Pick<DocumentCommandDeps, 'ask' | 'client'>,
   urls: LibraryPageDeps['urls'] = BLOB_URLS,
-): Promise<SignatureLook | undefined> {
+  sizeOf: (src: string) => Promise<PictureSize | undefined> = pictureSize,
+): Promise<ChosenSignature | undefined> {
   const library: LibraryPageDeps = { client: deps.client, ask: deps.ask, urls };
   // THE PICTURE MAIN HOLDS for this dialog, once Upload has picked one: carried across every asking, and its `blob:`
-  // address let go when it is replaced or the dialog is done with (ADR-0133's second correction).
+  // address let go when it is replaced or the dialog is done with (ADR-0133's second correction) — or handed on with the
+  // answer, when it is the picture placed.
   let picked: HeldSignaturePicture | undefined;
   let keep: boolean | undefined;
   try {
@@ -45,13 +109,29 @@ export async function chooseSignature(
       let answered: unknown;
       try {
         answered = await deps.ask(SIGNATURE_DIALOG_ID, { kept, ...(picked === undefined ? {} : { picked }), ...(keep === undefined ? {} : { keep }) });
-      } finally {
+      } catch (thrown) {
         release();
+        throw thrown;
       }
       const parsed = SIGNATURE_ANSWERS.safeParse(answered);
+      // THE ONE PICTURE PLACED keeps its address past the dialog (ADR-0257): already decoded for the dialog's preview,
+      // so its held look is drawn in the click's own frame. Every other address is let go here.
+      const mark = parsed.success && 'mark' in parsed.data ? parsed.data.mark : undefined;
+      const savedLook = mark?.kind === 'saved' ? kept.find((entry) => entry.id === mark.id)?.look : undefined;
+      const keeping = mark?.kind === 'image' ? picked?.src : savedLook?.kind === 'picture' ? savedLook.src : undefined;
+      release(keeping);
       // DISMISSED, or an answer of another shape — a registration defect rather than a person's doing — places nothing.
       if (!parsed.success) return undefined;
-      if ('mark' in parsed.data) return { ...parsed.data, mark: chosenOfKept(parsed.data.mark, kept) };
+      if ('mark' in parsed.data) {
+        // THE PICKED PICTURE IS HANDED ON, so the `finally` below no longer lets its address go.
+        if (keeping !== undefined && keeping === picked?.src) picked = undefined;
+        return {
+          ...parsed.data,
+          mark: chosenOfKept(parsed.data.mark, kept),
+          // A KEPT DRAWING's strokes, which main is named by id and the renderer would otherwise not hold; a picture.
+          shown: savedLook?.kind === 'drawn' ? savedLook : keeping === undefined ? undefined : await pictureShown(keeping, urls, sizeOf),
+        };
+      }
       if ('upload' in parsed.data) {
         keep = parsed.data.keep;
         const answer = await deps.client['signature.pickPicture']({});
@@ -94,18 +174,29 @@ export async function placePlainSignature(
   docId: DocId,
   page: number,
   rect: AnnotationRect,
-  look: SignatureLook,
+  /** The chosen look, and what it kept alive for its held look, which this placement now lets go of when it ends. */
+  look: ChosenSignature,
 ): Promise<DocVersion | undefined> {
   const requested = await requestedMarkOf(look.mark);
   if (requested.kind === 'problem') {
+    letGoOfChosen(look);
     void deps.ask(SIGNATURE_PROBLEM_DIALOG_ID, requested.problem);
     return undefined;
   }
   let placed: DocVersion | undefined;
-  await sendHeld(deps.held, page, signatureLook(requested.mark, rect), async () => {
-    placed = await sendSignature(deps, docId, page, rect, requested.mark, look.keep);
-    return placed !== undefined;
-  });
+  await sendHeld(
+    deps.held,
+    page,
+    signatureLook(requested.mark, rect, look.shown),
+    async () => {
+      placed = await sendSignature(deps, docId, page, rect, requested.mark, look.keep);
+      return placed !== undefined;
+    },
+    afterNextPaint,
+    () => {
+      letGoOfChosen(look);
+    },
+  );
   return placed;
 }
 
