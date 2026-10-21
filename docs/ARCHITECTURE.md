@@ -1920,7 +1920,10 @@ reconciled.
   says *who built them*.
 - **Network.** HTTPS only, host-locked per purpose, with an SSRF guard carrying
   a private-range blocklist and a DNS-rebinding pin — re-validated on **every**
-  resolution, not just the first — for user-supplied URLs.
+  resolution, not just the first — for user-supplied URLs. **A form's submission
+  is one** (amended 2026-10-21, ADR-0259): a button's `SubmitForm` address, read
+  from the document and agreed to by the person, is POSTed through that guard
+  and no other route.
 
   **One exception, and only one: an RFC 3161 timestamp request may be plain
   HTTP**, to a host in the contract's declared authority list and nowhere else
@@ -2433,6 +2436,15 @@ say**.
     `main` opens it, reading the address from the document by the link's place
     on its page and opening `https:`, `http:` and `mailto:` only. The renderer
     never names a URL to `main`.
+
+    **A button's action is asked for by a press on it** (amended 2026-10-21,
+    [ADR-0259](DECISIONS/0259-a-push-button-runs-an-ordered-list-of-standard-actions-each-by-the-route-that-owns-it.md)),
+    on the trigger its author chose. Each standard action runs by the route that
+    already owns it, and every one that leaves the machine or opens something —
+    a web address, a submission, another file — is named in a question first.
+    What crosses names the button and the step, never an address or a path, and
+    the kernel or `main` reads the action again from the document. A script, a
+    `Launch` and any action this build does not write are kept and never run.
 
     A PDF is a program as well as a page, and the process that parses it is
     parsing the single most attacker-controlled thing this application touches.
@@ -3162,6 +3174,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-10-21 | **A push button runs an ordered list of standard actions, each by the route that already owns it** (invariant 24; §9's network rule; the contract's push-button action). The owner's R22: a button's Action offered only *None* and *Reset the form*. A button now carries actions per trigger (mouse up, down, enter, leave) — go to a page, a web link, reset, show or hide fields, print, import form data, submit, open a file — written as the standard's own actions; a press names the button and the step, and the kernel or `main` reads the action from the document; whatever leaves the machine or opens something asks first; a submission is POSTed through ADR-0061's guard. Scripts and `Launch` are kept and never run. Rejected: running scripts, `Launch`, the renderer naming an address or a path, a second reset, attaching data to an email (nothing here binds Simple MAPI), one command for a whole press | the push button's one `buttonAction`, none or reset (the owner's F7, no ADR) | [0259](DECISIONS/0259-a-push-button-runs-an-ordered-list-of-standard-actions-each-by-the-route-that-owns-it.md) |
 | 2026-10-21 | **The status bar's start says only what the tool in hand does; tips are withdrawn** (§7's registry table, its Settings row and its status bar clause). The owner's R24: with Highlight area on, the line read the tool's instruction, *Esc gets you out*, and then *"Redo: press Ctrl+Y."*, a tip about something else read as part of the instruction. The status bar was the tips' only place, so the tips registry, its round and switch, and `background?` on a setting, which only the round declared, are removed rather than left with no reader. | the 2026-10-04 rows below that registered tips and `background?` | ADR-0159, 0160 (each with a correction of 2026-10-21) |
 | 2026-10-21 | **The React Compiler is switched on** (the renderer's build). The owner's R19, app-wide: each command's answer moved its document's version and rendered the whole shell — one 53 ms render on an erasure, the rest of the work every child of `App` rendering again. ADR-0004's pin of the compiler is now run; with it, the React work per erasure fell from a median of about 170 ms to about 95. | ADR-0004's unused pin | [0258](DECISIONS/0258-the-react-compiler-is-switched-on.md) |
 | 2026-10-21 | **A released mark is held in its final look until the page draws it** (§6). The owner's answer to R19 (a): every Comment tool showed a placeholder — an accent box or outline, an empty text box, or nothing — for 0.5 to 1.3 s after the release, and trimming the pipeline cannot reach 150 ms. The held shape is now the command's look, in the mark's own style, held by one holder per page for every route, and handed over by R17's rule. | ADR-0166's *What this does not do* (PDF.js can leave one annotation out, R17) | [0257](DECISIONS/0257-a-released-mark-is-held-in-its-final-look-until-the-page-draws-it.md) |
