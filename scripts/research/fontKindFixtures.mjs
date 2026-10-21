@@ -387,13 +387,36 @@ export async function buildFixture(id) {
   const page = doc.addPage([612, 792]);
   const helvetica = await doc.embedFont(StandardFonts.Helvetica);
   const lines = id === 'type0-cidfonttype0' ? JAPANESE : LINES;
+  const { font, show } = fontOfKind(doc, id, [...new Set(`${lines.a}${lines.b}`)], helvetica);
 
+  page.node.set(PDFName.of('Resources'), context.obj({ Font: { F1: font, F2: helvetica.ref } }));
+  const content =
+    `BT /F1 18 Tf 72 700 Td ${show(lines.a)} Tj ET\n` +
+    `BT /F1 12 Tf 72 670 Td ${show(lines.b)} Tj ET\n` +
+    `BT /F2 12 Tf 72 640 Td ${helvetica.encodeText(LINES.c).toString()} Tj ET\n`;
+  page.node.set(PDFName.of('Contents'), context.register(context.flateStream(content)));
+  // HELVETICA'S DICTIONARY IS WRITTEN BY THE SAVE, which embeds every font the document made.
+  return doc.save({ useObjectStreams: false });
+}
+
+/**
+ * The font dictionary of one kind, registered in `doc`, and how a run of text is written for it as a content-stream
+ * operand. ONE BUILDER for every fixture that needs a font kind (B3a): `buildFixture` here, and the brochure-shaped
+ * document of `brochureEditWalk.mjs`.
+ *
+ * @param {PDFDocument} doc
+ * @param {string} id one of {@link FONT_KINDS}' ids
+ * @param {string[]} used every character the document will set in it: a subset keeps these glyphs and no others
+ * @param {import('@cantoo/pdf-lib').PDFFont} helvetica the document's Helvetica, which the standard-14 kind is
+ * @returns {{ font: import('@cantoo/pdf-lib').PDFRef, show: (text: string) => string }}
+ */
+export function fontOfKind(doc, id, used, helvetica) {
+  const context = doc.context;
   /** The font under test, and how a line is encoded for it. */
   let font;
   /** @type {(text: string) => string} */
   let show;
   const literal = (/** @type {string} */ text) => PDFString.of(text).toString();
-  const used = [...new Set(`${lines.a}${lines.b}`)];
 
   if (id === 'type1-standard14') {
     font = helvetica.ref;
@@ -583,15 +606,7 @@ export async function buildFixture(id) {
   } else {
     throw new Error(`no fixture kind ${id}`);
   }
-
-  page.node.set(PDFName.of('Resources'), context.obj({ Font: { F1: font, F2: helvetica.ref } }));
-  const content =
-    `BT /F1 18 Tf 72 700 Td ${show(lines.a)} Tj ET\n` +
-    `BT /F1 12 Tf 72 670 Td ${show(lines.b)} Tj ET\n` +
-    `BT /F2 12 Tf 72 640 Td ${helvetica.encodeText(LINES.c).toString()} Tj ET\n`;
-  page.node.set(PDFName.of('Contents'), context.register(context.flateStream(content)));
-  // HELVETICA'S DICTIONARY IS WRITTEN BY THE SAVE, which embeds every font the document made.
-  return doc.save({ useObjectStreams: false });
+  return { font, show };
 }
 
 if (isMain(import.meta.url)) {
