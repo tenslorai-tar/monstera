@@ -5531,7 +5531,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [AI_SAVE_HISTORY_DESCRIPTION]:
     'Off by default. Conversations are discarded when the document closes; saved ones are encrypted on this computer.',
   [AI_AZURE_OPENAI_ENDPOINT_DESCRIPTION]: 'Your own Azure OpenAI resource address. Needed only for that provider.',
-  [INTEGRATIONS_DOCUSIGN_KEY_DESCRIPTION]: 'Write-only. Kept on this computer, encrypted for your Windows account.',
+  [INTEGRATIONS_DOCUSIGN_KEY_DESCRIPTION]:
+    'Write-only. Kept on this computer, encrypted for your Windows account. How to make one in DocuSign: “Send a document for signing with DocuSign” in Help, under Before you start.',
   [INTEGRATIONS_DOCUSIGN_ENVIRONMENT_DESCRIPTION]: 'Which DocuSign account the signing requests go to.',
   [ACCENT_PRESET_THEME]: 'The theme’s own',
   [ACCENT_PRESET_GREEN]: 'Green',
