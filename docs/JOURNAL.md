@@ -892,6 +892,54 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-21 — Stage audit of `6abc979a..0cbcb31e` — findings TTTTTTTT-1 to TTTTTTTT-9
+
+Local fix session 3's second range (R16–R20, the first R19 units, the React Compiler), audited lean at the owner's
+request of 2026-10-21 ~20:00, before the gate reached the batch: fix what would turn CI or Guards red or is a security or
+data-loss risk; record the rest. `npm run audit:scope`: 35 commits, 199 files; 7 proofs added, 47 modified, 9 removed.
+**Stated limitation, not a pass:** the modified proofs' diffs were read where this session wrote them (each commit names
+its proof, control and mutation); the range's other modified proofs were not re-read.
+
+### Fixed in range
+
+**TTTTTTTT-1** — the previous audit's own push: two channel lists missing `app.prepareEditing` (`fe29a46c`) and two
+rendered cases R7 and R11 had made stale (`755ec950`), both read off the board. The previous range's commits had run
+their own proofs and not these.
+**TTTTTTTT-2** — the React Compiler broke two screens before it was switched on in the shipped bundle: Bold after Ctrl+B
+and a bundled face's arrival. Each render read a mutable value past the `useSyncExternalStore` snapshot it had discarded,
+which a memoised render then kept. Both now read their snapshots (`063346a0`, ahead of `74f173cb`); the full rendered
+suite found them, which is the owner's condition for the compiler.
+**TTTTTTTT-3** — QQQQQQQ-8 (a removal's save answered `write-failed` once under load). Not reproduced in 2 full related
+runs, 300 runs of the case under load and 3,500 probe rounds. A gap was found anyway: a save's copy aside was not
+retried on a held file while the rename was. One ladder now serves both and the ledger's delete (`0b4a3765`). On Windows
+an exclusive hold refuses the copy once, and the ladder's fourth attempt succeeds.
+**TTTTTTTT-4** — an instrument's defect: `markLatencyWalk`'s third stamp run was dragged off the visible page and
+failed for the instrument's reason, not the app's (`a21892d2`).
+**TTTTTTTT-5** — an instrument's reading recorded as the app's. `blinkWalk`'s first commit (`3b961da4`) stated that a
+tab switch shows 8 frames with the pages missing, and "the first thing item 2 fixes". The frames were the
+instrument's: a selector list answers in tree order, so it read the hidden background layer's canvas. Its control had
+proved it could SEE a hidden canvas, which is not the same as reading the right one (item 4a against 4b). Corrected in
+`0cbcb31e`, with every action at 0 bad frames. Its own control also caught a second defect before any reading:
+`checkVisibility()` with no options does not see `visibility: hidden`.
+**TTTTTTTT-6** — nine proofs removed, all by R20 (`35432fa7`). The owner's decision of 2026-10-21 withdraws Edit object
+from the application, and the removed proofs are its coverage. The proofs that kept a share were trimmed with their
+anchors lowered and named in that commit. `App.test`'s walk of every projection proves that no Edit object command is
+reachable, with two planted controls. Item 7 swept: `Edit object` survives only in the amendment log, ADR history and
+FEATURES row 156's withdrawal.
+
+### Recorded
+
+**TTTTTTTT-7** — `menus.pw.ts` "every MENU half the window" failed 3 of 4 once with the compiler on, and has passed
+12 of 12 since. Not explained; held for the full gate before the push, no timeout raised.
+**TTTTTTTT-8** — `markLook.pw.ts` stalled opening its document three times, each during a machine-wide slow run. Not
+explained beyond that correlation; no timeout raised.
+**TTTTTTTT-9** — my own process. The escape guard denied three reflexes this range: a `node -p`, a `sed -i`, and a
+`sed` writing an audit report into a file. Nothing was written by any of them. And a `git checkout` meant to drop one
+probe discarded an uncommitted test case with it (the eraser case), re-added later from the session's text. A checkout
+of a path restores the whole file, which was known and not reached at the moment of typing.
+
+---
+
 ## 2026-10-21 — R17: a moved measurement, read at every frame
 
 The owner's R17: an Area triangle moved with Select showed two triangles during the drag, lost its reading, and
