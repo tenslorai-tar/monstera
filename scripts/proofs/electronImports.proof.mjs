@@ -772,6 +772,18 @@ try {
           'never imports the electron package.',
       },
     ],
+    [
+      'scripts/proofs/visualFailures.proof.mjs',
+      {
+        sites: 1,
+        reason:
+          'imports scripts/test/visual.config.mjs with a query string, `?runner` or `?local`, so the ' +
+          'config is evaluated afresh under each set of runner variables it is read under: a module ' +
+          'is evaluated once per specifier, and a literal would hand the second reading the first ' +
+          'one\'s object. The file named is always that config, whose own imports are literals this ' +
+          'scan reads.',
+      },
+    ],
   ]);
 
   /** @type {Map<string, number>} */
