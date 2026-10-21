@@ -142,6 +142,7 @@ import { checkForUpdatesCommand } from './commands/checkForUpdates.js';
 import { createTypingFocus, type TypingFocus } from './typingFocus.js';
 import { MenuBar } from './surfaces/MenuBar.js';
 import { usePageAnnotations } from './usePageAnnotations.js';
+import { annotationReadsFor } from './annotationReads.js';
 import { DEFAULT_ZOOM, startingZoomMode, stepZoom, type ZoomDirection, type ZoomMode } from './zoom.js';
 import {
   autoscrollCommand,
@@ -669,6 +670,8 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
   // THE WINDOW'S ONE CLIENT, through which every command and every read that writes a document out is sent, so a save
   // follows the commands already sent for its document (`orderedClient.ts`). Never `given` past this line.
   const client = useMemo(() => inWriteOrder(given), [given]);
+  // THE ONE READER OF A DOCUMENT'S ANNOTATION WALK, per version, for the page layers and every tool's press alike.
+  const annotationReads = useMemo(() => annotationReadsFor(client), [client]);
   /**
    * Every open document, in the order they were opened.
    *
@@ -2075,11 +2078,12 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
 
       for (const docId of docIds) {
         stores.close(docId);
+        annotationReads.forget(docId);
         const answer = await client['document.close']({ docId });
         if (!answer.ok) void ask(COMMAND_PROBLEM_DIALOG_ID, answer.error);
       }
     },
-    [activeId, ask, client, stores, tabs, unpark],
+    [activeId, annotationReads, ask, client, stores, tabs, unpark],
   );
 
   /**
@@ -2517,12 +2521,10 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
    */
   const listAnnotations = useCallback(async () => {
     if (activeId === undefined) return undefined;
-    const answer = await readWholeList(
-      (from) => client['document.annotations']({ docId: activeId, from }),
-      (part) => part.annotations,
-    );
+    // AT THE VERSION ON SHOW, so a press on a page whose marks the layers have read waits for no second read.
+    const answer = await annotationReads.read(activeId, stores.get(activeId)?.getState().version);
     return answer.ok ? { version: answer.value.version, annotations: answer.value.items } : undefined;
-  }, [activeId, client]);
+  }, [activeId, annotationReads, stores]);
   /**
    * The fields the open document has, for a field tool to ask a name against (`fieldNameCheck.ts`): the whole list, read
    * when a name is about to be asked for. `undefined` when it cannot be read, which is no check and never a refusal.

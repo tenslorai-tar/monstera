@@ -2,7 +2,7 @@ import type { AnnotationKindName, ContractClient } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
 import { useEffect, useState } from 'react';
 
-import { readWholeList } from './readWholeList.js';
+import { annotationReadsFor } from './annotationReads.js';
 
 /** One existing annotation as a layer over its page draws it: which one, what kind, and where. */
 export interface PageAnnotation {
@@ -42,6 +42,9 @@ export interface PageAnnotation {
  * the other's behaviour. When the comments tab is open too, the channel is asked twice per
  * version, and that is the cost.
  *
+ * **The tools' presses read through the same reads** (`annotationReads.ts`): an eraser or select press at a version
+ * this hook has read awaits the answer already in hand rather than asking `main` again.
+ *
  * ## A truncated answer draws what it holds
  *
  * The channel is bounded and says when the bound stopped the walk. The panel shows that flag;
@@ -67,10 +70,7 @@ export function usePageAnnotations(
     if (client === undefined || docId === undefined || version === undefined) return;
     let cancelled = false;
 
-    void readWholeList(
-      (from) => client['document.annotations']({ docId, from }),
-      (part) => part.annotations,
-    ).then(
+    void annotationReadsFor(client).read(docId, version).then(
       (answer) => {
         if (cancelled) return;
         // A REFUSAL AND A STALE VERSION BOTH DRAW NOTHING, and both are recorded as answered
