@@ -1428,6 +1428,14 @@ one adapter and one renderer. **`preview` is placed as `commit` is** (amended
 it is given the page and its transform, and may describe several boxes, so a
 move or a resize shows each mark where the command will put it.
 
+**A released mark is held in its FINAL LOOK until the page draws it** (amended 2026-10-21,
+[ADR-0257](DECISIONS/0257-a-released-mark-is-held-in-its-final-look-until-the-page-draws-it.md)). What is held after a
+release is drawn from the COMMAND by one function (`markLook.ts`), in the mark's own colour, width, fill, words and
+picture, and held by one holder per page slot, which every route uses — the overlay, a text selection's markup, the
+writer tools, stamps and signatures. It is dropped when the page presents a newer view, tiles included, in the same
+task as the pixels; a moved or erased mark is left out of the view the gesture began on. Comment › Image, whose picture
+the renderer never holds, is the stated exception.
+
 **That list read `begin`, `update`, `commit → Command`, `cancel` until
 2026-09-06, and three of its four entries were false** — found by the stage
 audit at `909c388`, not by any check. `cancel` is deliberately **not** a member
@@ -3158,6 +3166,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-10-21 | **A released mark is held in its final look until the page draws it** (§6). The owner's answer to R19 (a): every Comment tool showed a placeholder — an accent box or outline, an empty text box, or nothing — for 0.5 to 1.3 s after the release, and trimming the pipeline cannot reach 150 ms. The held shape is now the command's look, in the mark's own style, held by one holder per page for every route, and handed over by R17's rule. | ADR-0166's *What this does not do* (PDF.js can leave one annotation out, R17) | [0257](DECISIONS/0257-a-released-mark-is-held-in-its-final-look-until-the-page-draws-it.md) |
 | 2026-10-21 | **Edit object is withdrawn from the application** (§7's `Placement`: the `object` menu context and `menuRuns` leave; the engines' object commands leave with them). The owner's decision of 2026-10-21 (R20): on a design tool's brochure the tool refused a heading's colour change and every move of a body text object, and took seconds to pick and apply. Removed from the registry, the contract and both engines, not hidden; what other tools share stays — Comment › Image's picture marks, and Edit text's read of the page's objects. | the 2026-10-04 and 2026-10-14 rows below that made Edit object and its menu | ADR-0153, 0240-0244 (each with a correction of 2026-10-21) |
 | 2026-10-20 | **A fourth shim export is withheld: change-history validation** (§3's engine paragraph). DEBIAN-CVE-2026-112036, a double free in MuPDF 1.28.0's signature-locking field lists, reached only through `wasm_pdf_validate_change_history`; the owner's answer of 2026-10-20 shut the door rather than watch it. The export scan now also refuses a DLL carrying a withheld symbol, and the object model's count is 536 (read 2026-10-20 by `proof:enginesurface` after the withholding; the 539 it replaces was not re-read, so when it went stale is not known). | "Three exports are withheld" | ADR-0124 (the WITHHELD mechanism) |
 | 2026-10-19 | **A text block is placed by the operator writer, by the one placement matrix** (§3's in-place editing). R11: a text object dragged in Edit object was refused in its font's name, because PDFium regenerates every text object on the page. The operator writer carries a placed block's operators verbatim under one `cm` (exact on 13 font kinds); a placement may name its box and then takes ADR-0243's matrix | ADR-0240 Decision 4, ADR-0242 Decision 3 (text keeps PDFium's route) | [0240](DECISIONS/0240-an-objects-placement-is-edited-where-it-is-drawn.md), [0242](DECISIONS/0242-edit-object-picks-text-by-the-block-edit-text-reads.md), corrections of 2026-10-19 |
