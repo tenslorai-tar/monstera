@@ -49,7 +49,11 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 export default defineConfig({
   root: join(REPO_ROOT, 'packages', 'ui'),
   base: './',
-  plugins: [react()],
+  // THE REACT COMPILER (ADR-0258), as ADR-0004 pinned it: each command's answer renders the shell, and without it every
+  // child rendered again with it — one 53 ms render on an erasure. It memoizes each component by its inputs.
+  // THE REACT COMPILER (ADR-0258), as ADR-0004 pinned it: each command's answer renders the shell, and without it every
+  // child rendered again with it — one 53 ms render on an erasure. It memoizes each component by its inputs.
+  plugins: [react({ babel: { plugins: [['babel-plugin-react-compiler', {}]] } })],
   // PDF.js's packed CMaps (`packages/ui/src/cmaps.ts`): an extension Vite does not know, named so `?inline` makes each
   // a chunk the renderer imports rather than a file it would have to fetch, which the CSP refuses.
   assetsInclude: ['**/*.bcmap'],

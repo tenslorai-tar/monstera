@@ -274,6 +274,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "5.2.0",
+    "babel-plugin-react-compiler": "1.0.0",
     "eslint": "^10.8.1",
     "eslint-import-resolver-typescript": "4.4.5",
     "eslint-plugin-import-x": "^4.17.1",
