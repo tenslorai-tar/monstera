@@ -513,6 +513,14 @@ export interface BrowserShimOptions {
   readonly documentBytes?: ReadonlyMap<string, Uint8Array>;
 
   /**
+   * A font's bytes, answered by `app.bundledFace` for any bundled family once `released` settles — the case's to settle,
+   * so it sees a list drawn BEFORE a face arrives and again after it. The family a face is given to is the name it is
+   * registered under, so any valid font file serves; a case passes a committed one rather than a provisioned bundle,
+   * which a runner may not have.
+   */
+  readonly bundledFace?: { readonly bytes: Uint8Array<ArrayBuffer>; readonly released: Promise<void> };
+
+  /**
    * What `document.viewModel` answers, in order, across the whole shim.
    *
    * ## Scripted, and deliberately NOT simulated
@@ -1242,8 +1250,13 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
             }),
       ),
     // A BROWSER HOLDS NO BUNDLED FONT FILE (ADR-0250): refused as a broken install is, so the picker draws a bundled family
-    // in the interface font, which is what it does wherever a face cannot be had. No case here is about the face.
-    'app.bundledFace': () => Promise.reject(new Error('the browser shim holds no bundled font file')),
+    // in the interface font, which is what it does wherever a face cannot be had — unless a case gives a face, answered
+    // once the case lets it go (`bundledFace`'s reason).
+    'app.bundledFace': () => {
+      const face = options.bundledFace;
+      if (face === undefined) return Promise.reject(new Error('the browser shim holds no bundled font file'));
+      return face.released.then(() => ok({ bytes: face.bytes }));
+    },
     // NO ENGINE TO START in a browser: the shim's reads answer from its own fixtures, so preparing is a decided `false`.
     'app.prepareEditing': () => Promise.resolve(ok({ started: false })),
     // A BROWSER HOLDS NO NATIVE COMPONENT (ADR-0122), so each is present by name only, and verified when asked — the

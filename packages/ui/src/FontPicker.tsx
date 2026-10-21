@@ -3,7 +3,7 @@ import type { FontFamilyEntry } from '@monstera/contract';
 import { type MessageKey, SUBSET_TAG } from '@monstera/shared';
 import { type ReactElement, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
-import { drawFamilies, facesGiven, previewFamilyOf, subscribeFaces } from './familyFaces.js';
+import { drawFamilies, drawnWith, facesGiven, previewFamilyOf, subscribeFaces } from './familyFaces.js';
 import {
   FONT_GROUP_BUILT_IN,
   FONT_GROUP_BUNDLED,
@@ -197,9 +197,11 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
   useEffect(() => {
     if (read !== undefined) drawFamilies(read.families);
   }, [read]);
-  useSyncExternalStore(subscribeFaces, facesGiven);
+  // THE FACES GIVEN SO FAR, as this render reads them: the snapshot itself, so a compiled list draws a family again once
+  // it has one (ADR-0258).
+  const faces = useSyncExternalStore(subscribeFaces, facesGiven);
   /** The face a shown name is drawn in, or `undefined` for the interface font (ADR-0250 Decision 3). */
-  const previewOf = (name: string): string | undefined => previewFamilyOf(name, read?.families ?? []);
+  const previewOf = (name: string): string | undefined => previewFamilyOf(name, read?.families ?? [], drawnWith(faces));
   const shownIn = (name: string): React.CSSProperties | undefined => {
     const preview = previewOf(name);
     return preview === undefined ? undefined : { fontFamily: `"${preview}"` };

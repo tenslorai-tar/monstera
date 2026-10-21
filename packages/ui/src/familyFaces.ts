@@ -36,11 +36,15 @@ const registered = new Set<string>();
 /** {@link drawnByBrowser}'s answers, by name: a canvas measurement is cheap once and not on every render of a list. */
 const browserDraws = new Map<string, boolean>();
 
-/** How many times a face has been given here, for a list already on screen to draw a family again once it has one. */
-let given = 0;
+/**
+ * The families given a face here, as `useSyncExternalStore`'s snapshot: a new set each time a face is given and the same
+ * set between, so a list already on screen draws a family again once it has one — and reads it from this value rather
+ * than from {@link registered}, which a compiled render would read once and keep (ADR-0258).
+ */
+let given: ReadonlySet<string> = new Set();
 const listeners = new Set<() => void>();
 function gave(): void {
-  given += 1;
+  given = new Set(registered);
   for (const listener of listeners) listener();
 }
 /** `useSyncExternalStore`'s subscribe: told each time a family is given a face. */
@@ -50,9 +54,17 @@ export function subscribeFaces(listener: () => void): () => void {
     listeners.delete(listener);
   };
 }
-/** `useSyncExternalStore`'s snapshot: how many faces have been given. */
-export function facesGiven(): number {
+/** `useSyncExternalStore`'s snapshot: the families given a face here, by lower-case name. */
+export function facesGiven(): ReadonlySet<string> {
   return given;
+}
+
+/**
+ * Whether `family` is drawn in itself here, as a render reads it: a face given to it in `faces` — the snapshot it
+ * subscribed to — or the browser drawing it by name.
+ */
+export function drawnWith(faces: ReadonlySet<string>): (family: string) => boolean {
+  return (family) => faces.has(family.toLowerCase()) || drawnByBrowser(family);
 }
 
 /**
@@ -78,7 +90,7 @@ export function drawnByBrowser(family: string): boolean {
 
 /** Whether `family` is drawn in itself here: the browser knows it, or a face was given to it. */
 function drawable(family: string): boolean {
-  return registered.has(family.toLowerCase()) || drawnByBrowser(family);
+  return drawnWith(registered)(family);
 }
 
 /**

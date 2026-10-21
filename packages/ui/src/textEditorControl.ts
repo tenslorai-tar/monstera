@@ -90,9 +90,33 @@ let open: OpenEditor | undefined;
 let remembered: Range | undefined;
 const listeners = new Set<() => void>();
 
-/** Counts every change, which is what a control that re-reads the state subscribes to: the state itself is not a snapshot. */
+/** Counts every change: the open editor opening, closing, or its selection moving. */
 let revision = 0;
-export const editorRevision = (): number => revision;
+
+/** What a control showing the open editor's words reads: its words' state, its paragraph's, and its page's fonts. */
+export interface EditorSnapshot {
+  readonly state: FormatState | undefined;
+  readonly paragraph: ReturnType<typeof paragraphSettingAt> | undefined;
+  readonly fonts: readonly string[];
+}
+
+let snapshot: { readonly revision: number; readonly value: EditorSnapshot } | undefined;
+
+/**
+ * `useSyncExternalStore`'s snapshot for a control that shows the open editor: ONE OBJECT PER REVISION, read when the
+ * revision has moved and the same object until it moves again.
+ *
+ * A control read the state itself during its render, with a subscription only to be rendered again (ADR-0258): to the
+ * React Compiler that read has no inputs, so a compiled panel read it once and kept it — the Bold button stayed
+ * unpressed after Ctrl+B (`textFormat.pw.ts`, measured with the compiler on and off, 2026-10-21). What the render reads
+ * is now the snapshot itself, which is an input.
+ */
+export function openEditorSnapshot(): EditorSnapshot {
+  if (snapshot?.revision !== revision) {
+    snapshot = { revision, value: { state: openEditorState(), paragraph: openParagraphState(), fonts: openEditorFonts() } };
+  }
+  return snapshot.value;
+}
 
 const announce = (): void => {
   revision += 1;

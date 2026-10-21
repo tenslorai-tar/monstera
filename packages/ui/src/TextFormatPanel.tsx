@@ -15,14 +15,11 @@ import { IconButton } from './primitives/IconButton.js';
 import { ICONS } from './primitives/icons.js';
 import {
   KEEPS_EDITOR,
-  editorRevision,
   finishOpenEditor,
   formatOpenEditor,
   leavesEditor,
   onEditorChange,
-  openEditorFonts,
-  openEditorState,
-  openParagraphState,
+  openEditorSnapshot,
   refocusOpenEditor,
   removeOpenBlock,
 } from './textEditorControl.js';
@@ -74,16 +71,15 @@ export interface TextFormatPanelProps {
 
 export function TextFormatPanel({ fonts, documentFonts }: TextFormatPanelProps): ReactElement {
   const { _ } = useLingui();
-  // RE-READ ON EVERY CHANGE of the selection or the formatting, since the state is the editor's and not a snapshot.
-  useSyncExternalStore(onEditorChange, editorRevision);
-  const state = openEditorState();
-  const paragraph = openParagraphState();
+  // THE OPEN EDITOR'S SNAPSHOT, one per change of the selection or the formatting (`openEditorSnapshot`): the render reads
+  // only what this hook answers, so a compiled panel shows the words as they are now (ADR-0258).
+  const { state, paragraph, fonts: editorFonts } = useSyncExternalStore(onEditorChange, openEditorSnapshot);
   // THE SIZE THE SPACING IS A FRACTION OF: the words' at the selection.
   const wordSize = state?.size;
   // THE PICKER'S FIRST GROUP IS THE WHOLE DOCUMENT'S (B2.8): the open editor's page first, which the editor already holds
   // and so is there before the document's read answers, then every other font the document names.
   const inDocument: DocumentFont[] = [
-    ...openEditorFonts().map((name) => ({ name, partial: SUBSET_TAG.test(name) })),
+    ...editorFonts.map((name) => ({ name, partial: SUBSET_TAG.test(name) })),
     ...documentFonts,
   ];
   return (

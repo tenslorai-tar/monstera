@@ -1,9 +1,16 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
+import { BUNDLED_FAMILIES } from '@monstera/contract';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
 import { LOOKS, bridgeUnder } from './pageBridge.js';
 import { commandsSettled } from './settled.js';
+
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
 /**
  * Formatting words in place on pinned Chromium (the owner's K11 and C1 to C5): no bar floats over the page; the
@@ -28,6 +35,8 @@ async function openBlock(
   documentFonts: readonly { name: string; partial: boolean }[] = [],
   /** The ribbon's section at the start: Edit, where Edit text is reached, for a case about the Format group. */
   section?: 'edit',
+  /** A font's bytes the shim answers for a bundled family once the page releases it (`bundledFace`). */
+  bundledFace?: { readonly bytes: Uint8Array<ArrayBuffer>; readonly released: Promise<void> },
 ): Promise<void> {
   const bytes = await onePage();
   await page.setViewportSize({ width: 1800, height: 1000 });
@@ -38,6 +47,7 @@ async function openBlock(
       opens: [{ kind: 'opened' as const, docId: ID, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Format.pdf' }],
       documentBytes: new Map([[ID, bytes]]),
       documentFonts,
+      ...(bundledFace === undefined ? {} : { bundledFace }),
       ...(section === undefined ? {} : { settings: { 'appearance.ribbon-section': section } }),
       textBlocks: [
         {
@@ -161,6 +171,38 @@ test.describe('Formatting in the Properties panel (K11)', () => {
     await page.keyboard.press('Control+B');
     await expect(panel.getByRole('button', { name: 'Bold' })).toHaveAttribute('aria-pressed', 'true');
     await expect(page.locator('[data-text-editor]')).toBeFocused();
+  });
+
+  test('a bundled family is drawn in its own face once that face ARRIVES, in a list already on screen (ADR-0250, ADR-0258)', async ({
+    page,
+  }) => {
+    // ANY VALID FONT serves as a family's face, so a committed one: the bundle is provisioned, and a runner may not have it.
+    const bytes = new Uint8Array(readFileSync(join(REPO_ROOT, 'assets', 'fonts', 'marcellus', 'Marcellus-Regular.ttf')));
+    let release = (): void => undefined;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await openBlock(page, [], [], undefined, { bytes, released });
+    const panel = page.locator('[data-text-properties]');
+    await panel.getByRole('button', { name: /^Font:/u }).click();
+    // THE NAME'S OWN SPAN, which the picker draws in the family's face; the option around it carries no font of its own.
+    const drawnIn = (family: string): Promise<string> =>
+      panel
+        .locator(`[data-font-choice="${family}"] span`)
+        .first()
+        .evaluate((element) => (element as HTMLElement).style.fontFamily);
+    await expect(panel.locator('[data-font-choice="Carlito"]')).toBeVisible();
+    // THE CONTROL: a bundled family THIS BROWSER DOES NOT DRAW BY NAME, so it is in the interface font until its face
+    // arrives. Which ones a machine draws depends on its installed fonts (this one draws Carlito), so the case takes the
+    // first it does not, and refuses to count where every one is drawn already.
+    const waiting: string[] = [];
+    for (const family of BUNDLED_FAMILIES) if ((await panel.locator(`[data-font-choice="${family}"]`).count()) > 0 && (await drawnIn(family)) === '') waiting.push(family);
+    const [family] = waiting;
+    if (family === undefined) throw new Error('every bundled family is drawn by name on this machine, so a face arriving cannot be seen');
+    release();
+    // DRAWN AGAIN once the face is given — the same list, never reopened. A compiled list that read the faces given once,
+    // during its first render, kept the interface font (ADR-0258).
+    await expect.poll(() => drawnIn(family)).toBe(family);
   });
 
   test('the font picker lists the page’s own font first, its subset tag stripped, then this computer’s: names alone (N12)', async ({ page }) => {
