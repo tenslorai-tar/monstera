@@ -4164,7 +4164,18 @@ optgroup {
   min-inline-size: 0;
   /* THE CONTAINING BLOCK FOR THE LOUPE, which is placed from the pointer's offset in this box. */
   position: relative;
-  /* WHERE THE TOAST STRIP SITS (`.m-toasts`); with two panes the last one, the right, names it. */
+}
+
+/*
+ * WHERE THE TOAST STRIP SITS (`.m-toasts`): the page area ON SHOW, and no other. An anchor name several boxes carry
+ * resolves to the last of them in the tree, and every document kept behind keeps its page area, hidden. Named on every
+ * pane, the strip anchored to the last tab's hidden one whenever another tab was on show, and Chromium's default
+ * `position-visibility: anchors-visible` hides a box whose anchor is hidden: every toast and the conversion notice were
+ * mounted, placed, and never seen (R28, measured 2026-10-21 in 0.1.16.0 and 0.1.17.0 with four documents open). With
+ * two panes the last one, the right, names it; Side by Side, drawn over the layers and after them, names its own.
+ */
+.m-document-layer[data-document-layer='active'] .m-page-pane,
+.m-side .m-page-pane {
   anchor-name: --m-page-area;
 }
 
