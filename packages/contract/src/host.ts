@@ -47,4 +47,5 @@ export * from './listedAnnotation.js';
 export * from './measurement.js';
 export * from './pageSet.js';
 export * from './schemas.js';
+export * from './signatureFit.js';
 export * from './wordModes.js';

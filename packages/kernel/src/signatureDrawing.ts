@@ -1,4 +1,4 @@
-import { fittedPoint, outlineFit, pictureFit, strokesFit } from '@monstera/contract';
+import { fittedPoint, outlineFit, pictureFit, strokesFit } from '@monstera/contract/host';
 import { type AnnotationRect, type DrawableSignature, OUTLINE_OPS } from '@monstera/contract/host';
 import { snapRotation } from '@monstera/shared';
 
