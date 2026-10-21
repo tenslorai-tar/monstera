@@ -366,8 +366,10 @@ await measure('text highlight', async (run) => {
 await measure('stamp', async (run) => {
   await arm('annotate.stamp');
   const at = await slot();
-  const top = 560 + (run % 3) * 60;
-  const left = 80 + Math.floor(run / 3) * 250;
+  // TWO ROWS AND THEN ACROSS: a third row at 680 points began below the page's visible foot at this window's scale
+  // (measured 2026-10-21: the press landed at 874 px, the page ended at 846), and the chooser never opened.
+  const top = 560 + (run % 2) * 60;
+  const left = 80 + Math.floor(run / 2) * 250;
   // A BOX DRAGGED, then the chooser's default stamp added: the time runs from the press on "Add stamp".
   await page.mouse.move(at.x + left * at.scale, at.y + (top - 30) * at.scale);
   await page.mouse.down();
