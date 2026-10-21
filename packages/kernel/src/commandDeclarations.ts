@@ -1544,6 +1544,23 @@ const declarations = {
     // It replaces values in place and unlinks nothing.
     purpose: 'ordinary',
   },
+  resetWholeForm: {
+    kind: 'resetWholeForm',
+    display: 'image',
+    // `resetForm`'s writer, and the same reset (`resetFields`): only what chooses the fields differs.
+    writer: 'mupdf',
+    // NOT INVERTIBLE, `resetForm`'s reason: the prior is every value in the form.
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    // NAMES NOTHING, `replaceAllText`'s shape: every field is the target, so there is no answer to be stale against.
+    targets: 'none',
+    reads: 'none',
+    asset: 'none',
+    purpose: 'ordinary',
+  },
   deleteFormFields: {
     kind: 'deleteFormFields',
     display: 'image',

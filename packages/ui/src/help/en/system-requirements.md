@@ -19,7 +19,7 @@ Nothing else needs to be installed first: not Microsoft Office, not a PDF reader
 
 ## What optional features need
 
-- **Cloud storage**, **DocuSign** and the **Assistant** need an internet connection. The assistant needs your own key from one of the ten providers it offers, such as Anthropic, OpenAI or Azure, and DocuSign needs a DocuSign developer key.
+- **Cloud storage**, **DocuSign** and the **AI assistant** need an internet connection. The AI assistant needs your own key from one of the ten providers it offers, such as Anthropic, OpenAI or Azure, and DocuSign needs a DocuSign developer key.
 - **Print** needs a printer set up in Windows. *Microsoft Print to PDF* counts as one. To add a printer, open Windows Settings, then Printers & scanners.
 - **New PDF from camera** needs a camera. On an N or KN edition of Windows it also needs the Media Feature Pack: search Windows Settings for Optional features, add the Media Feature Pack, and restart the computer.
 

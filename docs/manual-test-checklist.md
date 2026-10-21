@@ -4,7 +4,7 @@
      equal to it. Regenerate with `npx vitest run packages/ui/src/App.test.tsx -t "manual test checklist" -u`.
      Do not edit by hand. -->
 
-Every command the application registers — 268 — and the checks only the installed window can answer.
+Every command the application registers — 269 — and the checks only the installed window can answer.
 For each command: use it on a real document, see the correct effect, then save, close and reopen and see it kept
 (the wired-tools rule, CLAUDE.md). A command that needs a selection, a second document or a key says so when it
 is not available.
@@ -127,6 +127,7 @@ is not available.
 - [ ] **Import form data from JSON…** — Data · `document.import-form-data-json` · Shows: a toast · Help: *Export or import form data*
 - [ ] **Import form data from XFDF…** — Data · `document.import-form-data-xfdf` · Shows: a toast · Help: *Export or import form data*
 - [ ] **Import form data from FDF…** — Data · `document.import-form-data-fdf` · Shows: a toast · Help: *Export or import form data*
+- [ ] **Reset form** — Data · `document.reset-form` · Shows: a toast · Help: *Fill in a form*
 - [ ] **Edit fields** — Fields · `forms.edit-fields` · Shows: on screen · Help: *Delete a form field*
 - [ ] **Add a text field** — Fields · `forms.field-text` · Shows: on screen · Help: *Create form fields*
 - [ ] **Add a tick box** — Fields · `forms.field-checkbox` · Shows: on screen · Help: *Create form fields*
@@ -158,7 +159,7 @@ is not available.
 
 - [ ] **Reading order** — Accessibility · `document.inspect-page-structure` · Shows: on screen · Help: *See a page's reading order*
 - [ ] **Accessibility check** — Accessibility · `document.accessibility-check` · Shows: on screen · Help: *Run an accessibility check*
-- [ ] **Open the assistant** — AI · `ai.open-assistant` · Shows: on screen · Help: *Ask the AI assistant about a document*
+- [ ] **Open the AI assistant** — AI · `ai.open-assistant` · Shows: on screen · Help: *Ask the AI assistant about a document*
 - [ ] **Set up AI…** — AI · `ai.setup` · Shows: a toast · Help: *Get and add keys for AI and online reading services*
 - [ ] **Summarise comments** — AI · `ai.summarise-comments` · Shows: on screen · Help: *Summarise a document's comments with AI*
 - [ ] **Import comments from XFDF…** — Comment files · `document.import-annotations-xfdf` · Shows: a toast · Help: *Export or import comments*

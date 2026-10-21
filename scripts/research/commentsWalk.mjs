@@ -818,7 +818,7 @@ await step('O4: every right-panel tab shows its icon and its whole name, the sel
   );
   expect(read).toStrictEqual([
     { name: 'Properties', glyph: true, whole: true },
-    { name: 'Assistant', glyph: true, whole: true },
+    { name: 'AI assistant', glyph: true, whole: true },
     { name: 'Spelling', glyph: true, whole: true },
   ]);
   return { tabs: read };

@@ -115,6 +115,7 @@ const FROM_THE_GALLERY = [
   'dialog.region-read',
   'dialog.reimport-external-edit',
   'dialog.replace-page',
+  'dialog.reset-form',
   'dialog.resize-pages',
   'dialog.restore-version',
   'dialog.sanitize-document',

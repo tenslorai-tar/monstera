@@ -6,12 +6,12 @@ keywords: [ask ai, explain, summarise selection, translate selection, draft repl
 commands: [ai.ask-selection, ai.explain-selection, ai.summarise-selection, ai.translate-selection, ai.draft-reply]
 contexts: [context-panel.assistant]
 ---
-You can send just a piece of text to the assistant straight from the page.
+You can send just a piece of text to the AI assistant straight from the page.
 
 ## Steps
 
 1. Select text with **Select text**, then right-click it.
-2. Choose **Ask AI** to ask your own question: the assistant opens with the selected text in quotation marks in the message box and the cursor after it, so type your question and press **Send**. Nothing is sent until you do.
+2. Choose **Ask AI** to ask your own question: the AI assistant opens with the selected text in quotation marks in the message box and the cursor after it, so type your question and press **Send**. Nothing is sent until you do.
 3. Or choose **Explain**, **Summarise** or **Translate**: these ask at once, about the selected text.
 4. To answer a comment: right-click the comment and choose **Draft a reply with AI**. When the draft appears, choose **Post as a reply** to add it.
 

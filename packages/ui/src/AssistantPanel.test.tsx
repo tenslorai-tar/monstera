@@ -422,7 +422,7 @@ describe('the assistant tab', () => {
     await drawn({ stored: [] });
     const lines = [...document.querySelectorAll('.m-assistant__state')].map((line) => line.textContent);
     expect(lines).toStrictEqual([
-      'No provider key is stored yet. Add one in Settings › AI and the assistant can start answering.',
+      'No provider key is stored yet. Add one in Settings › AI and the AI assistant can start answering.',
     ]);
   });
 
@@ -1035,7 +1035,7 @@ describe('the assistant about a document (ADR-0088)', () => {
     expect(focused.store.getState().conversation).toStrictEqual([]);
     const lines = [...document.querySelectorAll('.m-assistant__state, .m-assistant__problem')].map((line) => line.textContent);
     expect(lines).toStrictEqual([
-      'No provider key is stored yet. Add one in Settings › AI and the assistant can start answering.',
+      'No provider key is stored yet. Add one in Settings › AI and the AI assistant can start answering.',
     ]);
   });
 

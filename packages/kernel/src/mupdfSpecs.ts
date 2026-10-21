@@ -86,6 +86,9 @@ import {
   applyResetForm,
   captureResetForm,
   invertResetForm,
+  applyResetWholeForm,
+  captureResetWholeForm,
+  invertResetWholeForm,
 } from './formFields.js';
 import {
   applySetDocumentProtection,
@@ -438,6 +441,12 @@ export const mupdfSpecs = {
     apply: applyResetForm,
     capture: captureResetForm,
     invert: invertResetForm,
+  },
+  resetWholeForm: {
+    ...declaredCommands.resetWholeForm,
+    apply: applyResetWholeForm,
+    capture: captureResetWholeForm,
+    invert: invertResetWholeForm,
   },
   deleteFormFields: {
     ...declaredCommands.deleteFormFields,

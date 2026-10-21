@@ -180,14 +180,17 @@ export {
   applyFillFormField,
   applyFlattenFormFields,
   applyResetForm,
+  applyResetWholeForm,
   captureDeleteFormFields,
   captureFillFormField,
   captureFlattenFormFields,
   captureResetForm,
+  captureResetWholeForm,
   invertDeleteFormFields,
   invertFillFormField,
   invertFlattenFormFields,
   invertResetForm,
+  invertResetWholeForm,
   readFormFields,
 } from './formFields.js';
 export {

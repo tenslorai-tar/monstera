@@ -1814,6 +1814,17 @@ export const FORM_DATE_CALENDAR = messageKey('surface.form-layer.date-calendar')
 export const FORM_DATE_OPEN = messageKey('surface.form-layer.date-open');
 export const FORM_DATE_EARLIER = messageKey('surface.form-layer.date-earlier');
 export const FORM_DATE_LATER = messageKey('surface.form-layer.date-later');
+export const FORM_DATE_EARLIER_YEAR = messageKey('surface.form-layer.date-earlier-year');
+export const FORM_DATE_LATER_YEAR = messageKey('surface.form-layer.date-later-year');
+export const FORM_DATE_EARLIER_DECADE = messageKey('surface.form-layer.date-earlier-decade');
+export const FORM_DATE_LATER_DECADE = messageKey('surface.form-layer.date-later-decade');
+export const FORM_DATE_EARLIER_DECADES = messageKey('surface.form-layer.date-earlier-decades');
+export const FORM_DATE_LATER_DECADES = messageKey('surface.form-layer.date-later-decades');
+export const FORM_DATE_SHOW_MONTHS = messageKey('surface.form-layer.date-show-months');
+export const FORM_DATE_SHOW_YEARS = messageKey('surface.form-layer.date-show-years');
+export const FORM_DATE_SHOW_DECADES = messageKey('surface.form-layer.date-show-decades');
+export const FORM_DATE_RANGE = messageKey('surface.form-layer.date-range');
+export const FORM_DATE_TODAY = messageKey('surface.form-layer.date-today');
 export const FLATTEN_FORM_TITLE = messageKey('dialog.flatten-form.title');
 export const FLATTEN_FORM_EXPLAINS = messageKey('dialog.flatten-form.explains');
 export const FLATTEN_FORM_APPLY = messageKey('dialog.flatten-form.apply');
@@ -1894,6 +1905,12 @@ export const FORM_SETTINGS_HINT = messageKey('surface.form-settings.hint');
 export const DELETE_FIELDS_TITLE = messageKey('dialog.delete-fields.title');
 export const DELETE_FIELDS_EXPLAINS = messageKey('dialog.delete-fields.explains');
 export const DELETE_FIELDS_APPLY = messageKey('dialog.delete-fields.apply');
+export const RESET_FORM_TITLE = messageKey('command.forms.reset.title');
+export const RESET_FORM_TIP = messageKey('command.forms.reset.tip');
+export const RESET_FORM_DIALOG_TITLE = messageKey('dialog.reset-form.title');
+export const RESET_FORM_EXPLAINS = messageKey('dialog.reset-form.explains');
+export const RESET_FORM_APPLY = messageKey('dialog.reset-form.apply');
+export const TOAST_FORM_RESET = messageKey('toast.form-reset');
 export const FORM_FIELD_NAME_EMPTY = messageKey('dialog.form-field.name-empty');
 export const FORM_FIELD_NAME_TOO_LONG = messageKey('dialog.form-field.name-too-long');
 export const FORM_FIELD_NAME_SEGMENT = messageKey('dialog.form-field.name-segment');
@@ -4674,6 +4691,17 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FORM_DATE_OPEN]: 'Choose a date',
   [FORM_DATE_EARLIER]: 'Previous month',
   [FORM_DATE_LATER]: 'Next month',
+  [FORM_DATE_EARLIER_YEAR]: 'Previous year',
+  [FORM_DATE_LATER_YEAR]: 'Next year',
+  [FORM_DATE_EARLIER_DECADE]: 'Previous ten years',
+  [FORM_DATE_LATER_DECADE]: 'Next ten years',
+  [FORM_DATE_EARLIER_DECADES]: 'Earlier decades',
+  [FORM_DATE_LATER_DECADES]: 'Later decades',
+  [FORM_DATE_SHOW_MONTHS]: 'Choose a month',
+  [FORM_DATE_SHOW_YEARS]: 'Choose a year',
+  [FORM_DATE_SHOW_DECADES]: 'Choose ten years',
+  [FORM_DATE_RANGE]: '{first}–{last}',
+  [FORM_DATE_TODAY]: 'Today',
   [FLATTEN_FORM_TITLE]: 'Flatten the form',
   [FLATTEN_FORM_EXPLAINS]:
     'Flatten turns the form into an ordinary page. Whatever is typed or ticked stays exactly as it looks, but nobody can change it any more. Use it before you send a final copy. You can undo it until you close the document.',
@@ -4984,6 +5012,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [DELETE_FIELDS_EXPLAINS]:
     '{count, plural, other {# fields are selected.}} They and anything typed in them will be removed from the form. Undo brings them back.',
   [DELETE_FIELDS_APPLY]: 'Delete the fields',
+  [RESET_FORM_TITLE]: 'Reset form',
+  [RESET_FORM_TIP]: 'Reset form: clears everything typed or ticked in this form, so you can start again. You are asked first.',
+  [RESET_FORM_DIALOG_TITLE]: 'Reset this form?',
+  [RESET_FORM_EXPLAINS]:
+    'This clears everything typed or ticked in this form, putting every field back as the form started. Signatures stay as they are. Undo brings it all back.',
+  [RESET_FORM_APPLY]: 'Reset form',
+  [TOAST_FORM_RESET]: 'Form reset. Save to keep the change.',
   [SNAPSHOT_TOOL_TITLE]: 'Snapshot a region',
   [PLACE_IMAGE_TOOL_TITLE]: 'Place an image',
   // SAYS WHAT THE DRAG PRODUCES. "OCR region" is the row's name and means nothing
@@ -5154,7 +5189,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [CONTEXT_PANEL_LABEL]: 'Properties',
   [CONTEXT_PANEL_TAB_TITLE]: 'Contextual panel tab',
   [CONTEXT_PANEL_TAB_PROPERTIES]: 'Properties',
-  [CONTEXT_PANEL_TAB_ASSISTANT]: 'Assistant',
+  [CONTEXT_PANEL_TAB_ASSISTANT]: 'AI assistant',
   [CONTEXT_PANEL_TAB_STRIP]: 'Contextual panel tabs',
   [ASSISTANT_PROVIDER_LABEL]: 'Provider',
   [ASSISTANT_MODEL_LABEL]: 'Model',
@@ -5163,7 +5198,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_SEND]: 'Send',
   [ASSISTANT_STOP]: 'Stop',
   [ASSISTANT_REGENERATE]: 'Regenerate this answer',
-  [OPEN_ASSISTANT_TITLE]: 'Open the assistant',
+  [OPEN_ASSISTANT_TITLE]: 'Open the AI assistant',
   [ASSISTANT_EDIT]: 'Edit your question and ask again',
   [ASSISTANT_EDITING]: 'Editing your last question. Send replaces it and its answer.',
   [ASSISTANT_EDIT_CANCEL]: 'Cancel',
@@ -5202,8 +5237,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [HISTORY_READ_ONLY]: 'Saved conversation',
   [HISTORY_GONE]: 'This conversation is no longer saved.',
   [HISTORY_LOADING]: 'Loading saved conversations…',
-  [ASSISTANT_ASSISTANT]: 'Assistant',
-  [ASSISTANT_EMPTY]: 'No provider key is stored yet. Add one in Settings › AI and the assistant can start answering.',
+  [ASSISTANT_ASSISTANT]: 'AI assistant',
+  [ASSISTANT_EMPTY]: 'No provider key is stored yet. Add one in Settings › AI and the AI assistant can start answering.',
   [ASSISTANT_ASK]: 'Enter sends. Shift+Enter starts a new line.',
   // THE OWNER'S WORDING, exactly (addendum 3, G1).
   [ASSISTANT_NOTICE]: 'AI can make mistakes. Double check replies.',
@@ -5328,10 +5363,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // assistant needs a key.
   [AI_SETUP_TITLE]: 'Set up the AI assistant',
   [AI_SETUP_COMMAND_TITLE]: 'Set up AI…',
-  [TOAST_AI_KEY_CHECKED]: 'Your AI key works and is saved. The Assistant is ready.',
+  [TOAST_AI_KEY_CHECKED]: 'Your AI key works and is saved. The AI assistant is ready.',
   [TOAST_AI_KEY_KEPT_UNCHECKED]: 'Your AI key is saved. This provider cannot check a key in advance, so your first question will.',
   [AI_SETUP_INTRO]:
-    'The assistant answers questions about your documents using an AI provider you choose, with your own key. Everything else in Monstera works without one, so you can skip this and add a key later in Settings.',
+    'The AI assistant answers questions about your documents using an AI provider you choose, with your own key. Everything else in Monstera works without one, so you can skip this and add a key later in Settings.',
   [AI_SETUP_PROVIDER]: 'Provider',
   [AI_SETUP_KEY]: 'API key',
   // NOTHING PRE-SELECTED (ADR-0184): a provider the person did not choose is a key pasted for the wrong service.
@@ -5522,10 +5557,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [AI_SETUP_AT_START_DESCRIPTION]: 'Offers the one-step setup while no provider key is stored.',
   [AI_PROVIDER_TITLE]: 'AI provider',
   [AI_PROVIDER_DESCRIPTION]:
-    'Which service the Assistant asks, using that service’s key. Nothing from a document is sent until you press Send.',
+    'Which service the AI assistant asks, using that service’s key. Nothing from a document is sent until you press Send.',
   [AI_MODELS_TITLE]: 'AI model',
   [AI_MODELS_DESCRIPTION]:
-    'The model the Assistant asks for the provider above. Anthropic’s model also reads handwriting and scans.',
+    'The model the AI assistant asks for the provider above. Anthropic’s model also reads handwriting and scans.',
   [ASSISTANT_MODEL_NO_VISION]: '{name} (cannot read images)',
   [ASSISTANT_MODEL_NOT_OFFERED]: '{name} (not offered now)',
   [SETTINGS_AI_MODELS_FETCHED]: 'Listed by {provider} this session.',

@@ -34,6 +34,7 @@ import { IMPORT_SKIPPED_DIALOG } from '../dialogs/importSkipped.js';
 import { TAB_ORDER_DIALOG } from '../dialogs/tabOrder.js';
 import { FLAT_FIELDS_DIALOG } from '../dialogs/flatFields.js';
 import { FLATTEN_FORM_DIALOG } from '../dialogs/flattenForm.js';
+import { RESET_FORM_DIALOG } from '../dialogs/resetForm.js';
 import { FOLLOW_LINK_DIALOG } from '../dialogs/followLink.js';
 import { GENERATE_TOC_DIALOG } from '../dialogs/generateToc.js';
 import { HEADER_FOOTER_DIALOG } from '../dialogs/headerFooter.js';
@@ -176,6 +177,7 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   RESIZE_PAGES_DIALOG,
   FLAT_FIELDS_DIALOG,
   FLATTEN_FORM_DIALOG,
+  RESET_FORM_DIALOG,
   FOLLOW_LINK_DIALOG,
   IMPORT_FORM_DATA_PROBLEM_DIALOG,
   IMPORT_ANNOTATIONS_PROBLEM_DIALOG,

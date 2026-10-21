@@ -5044,17 +5044,22 @@ optgroup {
 .m-merge-list__documents {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto;
-  gap: var(--space-6) var(--space-8);
+  /* A CLEAR GAP BETWEEN ONE DOCUMENT AND THE NEXT (the owner's R27): each is its own card. */
+  gap: var(--space-12) var(--space-8);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
+/* EACH DOCUMENT IS A CARD, the app's one card style (`.m-card`), with a dialog's room inside it: its number, file and
+   page count on one line, its page range with *Choose pages…* on the next, then what the range takes. */
 .m-merge-list__document {
   display: grid;
   grid-column: 1 / -1;
   grid-template-columns: subgrid;
   align-items: center;
+  row-gap: var(--space-8);
+  padding: var(--space-10) var(--space-12);
 }
 
 .m-merge-list__number {
@@ -5080,12 +5085,29 @@ optgroup {
 }
 
 /* A ROW'S PAGE RANGE (ADR-0195), on its own line under the document, from the select's column to the row's end: the
-   field, and under it what it names or what is wrong. */
+   field with *Choose pages…* beside it, and under them what it names or what is wrong. */
 .m-merge-list__range {
   display: flex;
   grid-column: 2 / -1;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-4);
+}
+
+/* The field takes the room and the button keeps its own; in a narrow dialog the button goes under the field. */
+.m-merge-list__range-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.m-merge-list__range-line > :first-child {
+  flex: 1 1 12rem;
+  min-inline-size: 0;
+}
+
+.m-merge-list__range-line > .m-button {
+  white-space: nowrap;
 }
 
 /* CHOOSING PAGES BY PICTURE (item 5.1): under the range field, from the select's column to the row's end. The tiles wrap
@@ -6254,6 +6276,9 @@ optgroup {
 .m-date-picker {
   position: absolute;
   z-index: 2;
+  /* ONE WIDTH IN EVERY VIEW (R25), room for the days' seven columns, so the title does not move under the pointer. */
+  box-sizing: content-box;
+  inline-size: 17em;
   padding: var(--space-4);
   border: 1px solid var(--border); /* decorative: the edge of a floating surface, the days are its controls */
   border-radius: var(--radius-6);
@@ -6286,6 +6311,7 @@ optgroup {
 }
 
 .m-date-picker__grid {
+  inline-size: 100%;
   border-collapse: collapse;
   text-align: center;
 }
@@ -6315,6 +6341,47 @@ optgroup {
 .m-date-picker__day--active {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
+}
+
+/* THE TITLE GOES UP A VIEW (R25): a month's days to its year's months, to ten years, to a hundred. */
+.m-date-picker__title,
+.m-date-picker__today {
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-4);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.m-date-picker__title:hover,
+.m-date-picker__today:hover {
+  background: var(--surface2);
+}
+
+/* TWELVE CELLS, four to a row, across the calendar's one width. */
+.m-date-picker__cell {
+  inline-size: 100%;
+  min-block-size: 2.5em;
+  padding: 0 var(--space-2);
+  white-space: nowrap;
+}
+
+/* THE YEAR OR TEN EITHER SIDE OF THE PAGE, there to be chosen and dimmer, so the page's own range reads first. */
+.m-date-picker__cell--outside {
+  color: var(--muted);
+}
+
+.m-date-picker__foot {
+  display: flex;
+  justify-content: center;
+  margin-block-start: var(--space-2);
+}
+
+.m-date-picker__today {
+  color: var(--accent-text);
 }
 
 /* A COMB FIELD types one character to a cell, in a monospaced face whose spacing `combCells` sets from the field. */

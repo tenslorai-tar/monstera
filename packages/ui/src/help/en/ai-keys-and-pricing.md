@@ -13,7 +13,7 @@ Some parts of Monstera use an online service that you choose and pay for yoursel
 
 ### Get an Anthropic (Claude) key
 
-Claude can answer questions in the assistant, translate a page, read handwriting in a box, and read tables for Excel export.
+Claude can answer questions in the AI assistant, translate a page, read handwriting in a box, and read tables for Excel export.
 
 1. Go to the Claude Console at <https://platform.claude.com> and sign in, or create an account.
 2. Set up billing in the Console. Anthropic's own pricing is at <https://claude.com/pricing> and in more detail at <https://platform.claude.com/docs/en/about-claude/pricing>.
@@ -40,7 +40,7 @@ Azure OpenAI is one of the providers the AI assistant can use.
 ### Paste a key into Monstera
 
 1. Open **Settings**: in the rail, choose **Settings**, or in the rail choose **Tools**, then **Settings** in the **Application** group.
-2. For **Claude** or **Azure OpenAI** (and the other assistant providers): choose the **AI** page, and in **AI provider** pick the provider. It is also the one the assistant asks.
+2. For **Claude** or **Azure OpenAI** (and the other AI assistant providers): choose the **AI** page, and in **AI provider** pick the provider. It is also the one the AI assistant asks.
 3. Paste the key into its key field, for example **Anthropic API key** or **Azure OpenAI key**. For Azure OpenAI, also fill in **Azure OpenAI endpoint**.
 4. Under **AI model**, choose the model. The line beneath it says whether the list came from the provider this session or is Monstera's own.
 5. To make sure the key works, choose **Check** under its key field. It says **Key works**, or why not: the key was not accepted, the provider could not be reached, or it refused. A key that works also fills **AI model** with the provider's own list.
@@ -49,13 +49,13 @@ Azure OpenAI is one of the providers the AI assistant can use.
 
 ![The Settings window on the AI page, with AI provider set to Anthropic and the Anthropic API key field showing that a key is stored](screenshot:ai-keys-and-pricing-1)
 
-You can also add an assistant key with a check first: in the rail choose **Review**, then **Set up AI…** in the **AI** group. Pick a **Provider**, paste the **API key**, and choose **Check and save**. Monstera asks the provider whether it accepts the key and stores it only if it does. **Skip** closes the window without storing anything.
+You can also add an AI assistant key with a check first: in the rail choose **Review**, then **Set up AI…** in the **AI** group. Pick a **Provider**, paste the **API key**, and choose **Check and save**. Monstera asks the provider whether it accepts the key and stores it only if it does. **Skip** closes the window without storing anything.
 
 ![The Set up the AI assistant window with a provider chosen and the Check and save and Skip buttons](screenshot:ai-keys-and-pricing-2)
 
 ## Other AI providers
 
-The assistant can use any of these providers. Each needs its own key, pasted on the **AI** page of Settings after choosing it in **AI provider**. Pricing is set by each provider; follow their own pages. Links were checked on 2026-09-26.
+The AI assistant can use any of these providers. Each needs its own key, pasted on the **AI** page of Settings after choosing it in **AI provider**. Pricing is set by each provider; follow their own pages. Links were checked on 2026-09-26.
 
 | Provider | Where to create a key | Provider's pricing |
 |---|---|---|
@@ -73,7 +73,7 @@ The assistant can use any of these providers. Each needs its own key, pasted on 
 - You pay the provider directly. Monstera does not charge for, resell or estimate the cost of any provider. Check the provider's own pricing page before you use a service, and set spending limits in your provider account if it offers them.
 - Key fields are write-only. After you save a key, Settings shows only that a key is stored. To change it, type a new one over it; to delete it, choose the red **Remove the stored key** button beside **Check** and confirm with **Remove it**.
 - Keys are kept on this computer, encrypted for your Windows account (Windows' own data protection, through the app's secure storage). They are never included in **Export settings…** and never written to the diagnostics log. If this computer has no secure place for a key, Monstera says so and does not save it.
-- Nothing from your document is sent until you ask: the assistant sends only when you press **Send**, and the reading and translating windows say what will be sent before you confirm.
+- Nothing from your document is sent until you ask: the AI assistant sends only when you press **Send**, and the reading and translating windows say what will be sent before you confirm.
 - The **Azure OCR** and **Claude OCR** buttons in the **OCR** group of **Tools** appear only once the matching key (and, for Azure, the endpoint) is stored.
 - If you see "Your Anthropic account is out of credit — add credit at console.anthropic.com", add credit in the Claude Console (console.anthropic.com now opens platform.claude.com).
 - The provider links above were checked on 2026-09-26. Providers change their sites; if a link has moved, search the provider's site for "API keys" or "pricing".

@@ -18,7 +18,7 @@ The About window tells you what Monstera is and which version you have.
 
 ## Good to know
 
-- Your documents stay on your computer unless you send one, for example to the assistant or to cloud storage.
+- Your documents stay on your computer unless you send one, for example to the AI assistant or to cloud storage.
 - Monstera is open-source software under the GNU Affero General Public License, version 3 or later. You can read and build its source code.
 
 <!--

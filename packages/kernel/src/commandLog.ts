@@ -567,6 +567,9 @@ export interface CommandPrior {
    */
   readonly resetForm: never;
 
+  /** The whole form reset (the owner's R23): `resetForm`'s reason, every field rather than those a button names. */
+  readonly resetWholeForm: never;
+
   /**
    * The protection the session stood with before the change
    * ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) Decision 8).

@@ -15,7 +15,9 @@ import {
   DETECT_FIELDS_TIP,
   EN,
   FLATTEN_FORM_TIP,
+  GROUP_DATA,
   TAB_ORDER_TIP,
+  TOAST_FORM_RESET,
   TOAST_ACTIVE_CONTENT_REMOVED,
   TOAST_FIELDS_FLATTENED,
   TOAST_FORM_FLATTENED,
@@ -123,6 +125,7 @@ import {
   redactMatchesCommand,
   sanitizeDocumentCommand,
   flattenFormCommand,
+  resetFormCommand,
   tabOrderCommand,
   signDocument,
   signDocumentCommand,
@@ -6658,6 +6661,54 @@ describe('protectDocumentCommand', () => {
 
       expect(said).toStrictEqual([]);
       expect(asked).toStrictEqual(['dialog.flatten-form', 'dialog.command-problem']);
+    });
+  });
+
+  describe('resetFormCommand (the owner’s R23)', () => {
+    type ResetDeps = Parameters<typeof resetFormCommand>[0];
+    const deps = (client: ResetDeps['client'], said: unknown[], ask: ResetDeps['ask'], hasFields = true): ResetDeps => ({
+      client,
+      toast: (_kind, message) => said.push(message),
+      stamp,
+      signatures,
+      onApplied: () => undefined,
+      ask,
+      hasFields,
+    });
+
+    it('ASKS FIRST, then sends exactly one resetWholeForm, then SAYS it did', async () => {
+      const { client, sent } = recordingClient();
+      const said: unknown[] = [];
+      const asked: unknown[] = [];
+      await resetFormCommand(
+        deps(client, said, (id, props) => {
+          // NOTHING SENT YET when the question opens.
+          asked.push({ id, props, sent: sent.length });
+          return Promise.resolve({ confirmed: true });
+        }),
+      ).run(CONTEXT);
+
+      expect(asked).toStrictEqual([{ id: 'dialog.reset-form', props: {}, sent: 0 }]);
+      expect(sent).toStrictEqual([{ id: 'document.execute', params: { docId: DOC, command: { kind: 'resetWholeForm' } } }]);
+      expect(said).toStrictEqual([TOAST_FORM_RESET]);
+    });
+
+    it('CONTROL: a DISMISSED question dispatches nothing and says nothing', async () => {
+      const { client, sent } = recordingClient();
+      const said: unknown[] = [];
+      await resetFormCommand(deps(client, said, () => Promise.resolve(undefined))).run(CONTEXT);
+      expect([sent, said]).toStrictEqual([[], []]);
+    });
+
+    it('sits on the Forms ribbon’s Data group, and exists only while the document has a field', () => {
+      const { client } = recordingClient();
+      const ask = (): Promise<unknown> => Promise.resolve(undefined);
+      const command = resetFormCommand(deps(client, [], ask));
+      expect(command.placements).toStrictEqual([{ surface: 'ribbon', section: 'forms', group: GROUP_DATA, order: 99 }]);
+      expect(command.when?.(CONTEXT)).toBe(true);
+      // CONTROL: the same document with no field, and no document at all.
+      expect(resetFormCommand(deps(client, [], ask, false)).when?.(CONTEXT)).toBe(false);
+      expect(command.when?.({ ...CONTEXT, docId: undefined })).toBe(false);
     });
   });
 
