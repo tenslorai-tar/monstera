@@ -1,3 +1,4 @@
+import { fittedPoint, outlineFit, pictureFit, strokesFit } from '@monstera/contract';
 import { type AnnotationRect, type DrawableSignature, OUTLINE_OPS } from '@monstera/contract/host';
 import { snapRotation } from '@monstera/shared';
 
@@ -45,42 +46,23 @@ export interface SignatureDrawing {
 /** The resource name a picture mark's image is reached by. Private to the form, so it collides with nothing. */
 const PICTURE_NAME = 'Im0';
 
-/** How much of the box the mark may fill, on its tighter axis. */
-const FILL = 0.9;
-
-/** The pen's width as a share of the box's shorter side, for a drawn mark. */
-const PEN_SHARE = 0.03;
-
 /**
  * A typed name's outline, filled and centred in the box.
  *
- * **What is fitted is the face's line box and the ink together** (the outline's `frame` and every point): the line box
- * alone would cut a swash that reaches past the advance, and the ink alone would draw *ace* as tall as *Jgy*. Both axes
- * share one scale, so the letters keep their shape.
+ * Fitted by `outlineFit`, which says what is fitted and why.
  *
  * **A quadratic becomes the cubic that is the same curve** — control points two thirds of the way from each end to the
  * quadratic's one — because PDF has no quadratic operator; nothing is approximated. The path is filled by the nonzero
  * rule (`f`), the rule TrueType and CFF outlines are both drawn by.
  */
 function outlinedDrawing(mark: Extract<KeptMark, { kind: 'outlined' }>, width: number, height: number): SignatureDrawing {
-  const { ops, points, frame } = mark.outline;
-  let [left, top, right, bottom] = frame;
-  // A LOOP AND NOT `Math.min(...points)`, for the drawn mark's reason: an outline may carry 24,576 numbers.
-  for (let at = 0; at + 1 < points.length; at += 2) {
-    const x = points[at] ?? left;
-    const y = points[at + 1] ?? top;
-    left = Math.min(left, x);
-    right = Math.max(right, x);
-    top = Math.min(top, y);
-    bottom = Math.max(bottom, y);
-  }
-  // THE FRAME HAS AN AREA, which the schema refines, so both spans are positive and the scale is finite.
-  const scale = Math.min((width * FILL) / (right - left), (height * FILL) / (bottom - top));
-  const originX = (width - (right - left) * scale) / 2;
-  const originY = (height - (bottom - top) * scale) / 2;
-  // THE GRID IS Y-DOWN and a form is y-up, so a point's distance from the box's BOTTOM edge is its height in the form.
-  const at = (x: number, y: number): string =>
-    `${contentNumber(originX + (x - left) * scale)} ${contentNumber(originY + (bottom - y) * scale)}`;
+  const { ops, points } = mark.outline;
+  // THE ONE FIT (`signatureFit.ts`), which the renderer's held look takes too.
+  const fit = outlineFit(mark.outline, width, height);
+  const at = (x: number, y: number): string => {
+    const [across, up] = fittedPoint(fit, x, y);
+    return `${contentNumber(across)} ${contentNumber(up)}`;
+  };
 
   const lines = ['q', '0 g'];
   let next = 0;
@@ -116,50 +98,19 @@ function outlinedDrawing(mark: Extract<KeptMark, { kind: 'outlined' }>, width: n
 }
 
 /**
- * Drawn strokes, their ink fitted into the box.
- *
- * **The ink's own bounding box is what is fitted, not the pad's**, so where on the pad a person started and what shape
- * the pad was decide nothing. Both pad coordinates share one unit (the contract's point schema says so), which is what
- * lets one scale serve both axes without turning a circle into an ellipse.
+ * Drawn strokes, their ink fitted into the box by `strokesFit`. Both pad coordinates share one unit (the contract's
+ * point schema says so), which is what lets one scale serve both axes without turning a circle into an ellipse.
  */
 function drawnDrawing(mark: Extract<KeptMark, { kind: 'drawn' }>, width: number, height: number): SignatureDrawing {
-  // A LOOP AND NOT `Math.min(...points)`: a drawn signature may carry 65,536 points, and spreading that many arguments
-  // is a stack limit waiting for the person with the longest name.
-  let left = Infinity;
-  let right = -Infinity;
-  let top = Infinity;
-  let bottom = -Infinity;
-  for (const line of mark.strokes) {
-    for (const [x, y] of line) {
-      left = Math.min(left, x);
-      right = Math.max(right, x);
-      top = Math.min(top, y);
-      bottom = Math.max(bottom, y);
-    }
-  }
-  const pen = Math.max(1, Math.min(width, height) * PEN_SHARE);
-  const inkWide = right - left;
-  const inkTall = bottom - top;
-  // A DOT HAS NO EXTENT ON EITHER AXIS, so neither ratio exists; it is drawn at the centre, where the round cap makes
-  // it a mark.
-  const fits = [
-    inkWide > 0 ? (width * FILL - pen) / inkWide : Infinity,
-    inkTall > 0 ? (height * FILL - pen) / inkTall : Infinity,
-  ];
-  const tightest = Math.min(...fits);
-  const scale = Number.isFinite(tightest) ? Math.max(0, tightest) : 0;
-  const originX = (width - inkWide * scale) / 2;
-  const originY = (height - inkTall * scale) / 2;
+  // THE ONE FIT (`signatureFit.ts`), which the renderer's held look takes too.
+  const fit = strokesFit(mark.strokes, width, height);
 
   // Round caps and joins (`1 J`, `1 j`), black (`0 G`), the pen's width (`w`).
-  const lines = ['q', '0 G', `${contentNumber(pen)} w`, '1 J', '1 j'];
+  const lines = ['q', '0 G', `${contentNumber(fit.pen)} w`, '1 J', '1 j'];
   for (const line of mark.strokes) {
     line.forEach(([x, y], index) => {
-      // THE PAD IS Y-DOWN and a form is y-up, so a point's distance from the ink's BOTTOM edge is its height in the
-      // form.
-      const across = contentNumber(originX + (x - left) * scale);
-      const up = contentNumber(originY + (bottom - y) * scale);
-      lines.push(`${across} ${up} ${index === 0 ? 'm' : 'l'}`);
+      const [across, up] = fittedPoint(fit, x, y);
+      lines.push(`${contentNumber(across)} ${contentNumber(up)} ${index === 0 ? 'm' : 'l'}`);
     });
     lines.push('S');
   }
@@ -169,14 +120,11 @@ function drawnDrawing(mark: Extract<KeptMark, { kind: 'drawn' }>, width: number,
 
 /** A picture, scaled to fit the box without distortion and centred. */
 function pictureDrawing(mark: PictureMark, width: number, height: number): SignatureDrawing {
-  if (!(mark.width > 0 && mark.height > 0)) throw new RangeError('a signature picture needs a width and a height');
-  const scale = Math.min((width * FILL) / mark.width, (height * FILL) / mark.height);
-  const wide = mark.width * scale;
-  const tall = mark.height * scale;
+  const { x, y, wide, tall } = pictureFit(mark, width, height);
   return {
     content: [
       'q',
-      `${contentNumber(wide)} 0 0 ${contentNumber(tall)} ${contentNumber((width - wide) / 2)} ${contentNumber((height - tall) / 2)} cm`,
+      `${contentNumber(wide)} 0 0 ${contentNumber(tall)} ${contentNumber(x)} ${contentNumber(y)} cm`,
       `/${PICTURE_NAME} Do`,
       'Q',
     ].join('\n'),

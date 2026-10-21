@@ -42,6 +42,7 @@ export {
   pathLength,
   shoelaceArea,
 } from './measurement.js';
+export { type InkFit, SIGNATURE_FILL, fittedPoint, outlineFit, pictureFit, strokesFit } from './signatureFit.js';
 export {
   LIFTED_CREDENTIALS_MAX,
   PROTECTION_TERMS_MAX,
