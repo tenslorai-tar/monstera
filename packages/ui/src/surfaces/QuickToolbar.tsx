@@ -15,9 +15,9 @@ import {
 import { DOCUMENT_TOOLS_LABEL, FLOAT_BAR_GRIP_HELP, FLOAT_BAR_GRIP_LABEL, FLOAT_BAR_MORE } from '../messages/en.js';
 import { Icon } from '../primitives/Icon.js';
 import { MenuScrollArrows } from '../primitives/MenuScrollArrows.js';
-import { ICONS } from '../primitives/icons.js';
-import { IconButton } from '../primitives/IconButton.js';
 import type { CommandContext, CommandRegistry } from '../registries/commands.js';
+import { useRunCommand } from '../registries/useRunCommand.js';
+import { CommandIconButton } from './CommandIconButton.js';
 import { FLOAT_BAR_POSITION_SETTING, QUICK_TOOLBAR_OPEN_SETTING } from '../settings/layout.js';
 import type { SettingsStore } from '../settingsStore.js';
 import { useSetting } from '../useSetting.js';
@@ -95,6 +95,8 @@ export function QuickToolbar({ registry, context, settings }: QuickToolbarProps)
   const open = useSetting(settings, QUICK_TOOLBAR_OPEN_SETTING);
   const position = useSetting(settings, FLOAT_BAR_POSITION_SETTING);
   const entries = quickToolbarModel(registry, context);
+  // A PRESS RUNS AGAINST THE CONTEXT AT THE PRESS (`useRunCommand`), so a tool's handler keeps its identity.
+  const run = useRunCommand(context, registry);
   const shown = open && entries.length > 0;
   const bar = useRef<HTMLDivElement | null>(null);
   /** A press on the grip: where it began, where the bar was, the room at that moment, and whether it became a drag. */
@@ -235,7 +237,8 @@ export function QuickToolbar({ registry, context, settings }: QuickToolbarProps)
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>): void => {
     if (event.key === 'Home') {
       event.preventDefault();
-      void registry.get(RESET_COMMAND)?.run(context);
+      const reset = registry.get(RESET_COMMAND);
+      if (reset !== undefined) run(reset);
       return;
     }
     if (event.key === 'Escape' && placing) {
@@ -293,18 +296,14 @@ export function QuickToolbar({ registry, context, settings }: QuickToolbarProps)
         const icon = entry.command.icon;
         if (icon === undefined || folded.has(place)) return [];
         return [
-          <IconButton
+          <CommandIconButton
             key={entry.command.id}
-            icon={ICONS[icon]}
+            id={entry.command.id}
             label={entry.command.title}
-            size="control"
+            icon={icon}
             pressed={entry.command.checked?.(context)}
-            onClick={() => {
-              // Not awaited: a click handler returning a promise would make React's event handling
-              // wait on IPC, and nothing here reads the result — the command reports through its
-              // own callback.
-              void entry.command.run(context);
-            }}
+            run={run}
+            size="control"
           />,
         ];
       })}
@@ -341,8 +340,8 @@ export function QuickToolbar({ registry, context, settings }: QuickToolbarProps)
                       <span className="m-menu-bar__title">{i18n._(entry.command.title)}</span>
                     </>
                   );
-                  const run = (): void => {
-                    void entry.command.run(context);
+                  const runThis = (): void => {
+                    run(entry.command);
                   };
                   return checked === undefined ? (
                     <Menu.Item
@@ -350,7 +349,7 @@ export function QuickToolbar({ registry, context, settings }: QuickToolbarProps)
                       className="m-context-menu-item m-menu-bar__item"
                       data-command={entry.command.id}
                       label={i18n._(entry.command.title)}
-                      onClick={run}
+                      onClick={runThis}
                     >
                       {face}
                     </Menu.Item>
@@ -362,7 +361,7 @@ export function QuickToolbar({ registry, context, settings }: QuickToolbarProps)
                       label={i18n._(entry.command.title)}
                       checked={checked}
                       closeOnClick
-                      onCheckedChange={run}
+                      onCheckedChange={runThis}
                     >
                       {face}
                     </Menu.CheckboxItem>

@@ -8,6 +8,7 @@ import { Icon } from '../primitives/Icon.js';
 import { MenuScrollArrows } from '../primitives/MenuScrollArrows.js';
 import type { IconName } from '../primitives/icons.js';
 import type { CommandContext } from '../registries/commands.js';
+import { useRunCommand } from '../registries/useRunCommand.js';
 import type { OrderedEntry } from './projections.js';
 
 /**
@@ -63,6 +64,8 @@ export function RibbonMore({
   readonly accessibleName?: string;
 }): ReactElement {
   const { i18n } = useLingui();
+  // A PRESS RUNS AGAINST THE CONTEXT AT THE PRESS (`useRunCommand`), so an item's handler keeps its identity.
+  const run = useRunCommand(context);
   const marks = entries.some((entry) => entry.command.checked?.(context) !== undefined);
   // THE MEMBERS, for the Help centre's *Show me* (ADR-0112): a closed menu's items are not in the page, so the
   // trigger is what a ring for one of them lands on.
@@ -79,8 +82,7 @@ export function RibbonMore({
           {entries.map((entry) => {
             const checked = entry.command.checked?.(context);
             const choose = (): void => {
-              // Not awaited, for `QuickToolbar`'s reason: nothing here reads the result.
-              void entry.command.run(context);
+              run(entry.command);
               onChosen();
             };
             const face = (

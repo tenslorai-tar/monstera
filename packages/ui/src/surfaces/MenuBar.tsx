@@ -32,6 +32,7 @@ import { Icon } from '../primitives/Icon.js';
 import { MenuScrollArrows } from '../primitives/MenuScrollArrows.js';
 import type { IconName } from '../primitives/icons.js';
 import type { CommandContext, CommandRegistry, UiCommand } from '../registries/commands.js';
+import { useRunCommand } from '../registries/useRunCommand.js';
 import type { MenuBarSubmenu } from '../registries/placement.js';
 import { RECENT_RECHECK_MS } from '../recentLine.js';
 import { GIVES_FOCUS_BACK, cancelsAnotherMenu } from './menuRowClose.js';
@@ -264,9 +265,10 @@ export function MenuBar({
     };
   }, []);
 
+  // A PRESS RUNS AGAINST THE CONTEXT AT THE PRESS (`useRunCommand`), so an item's handler keeps its identity.
+  const runCommand = useRunCommand(context);
   const run = (command: UiCommand): void => {
-    // Not awaited, for `QuickToolbar`'s reason: nothing here reads the result.
-    void command.run(context);
+    runCommand(command);
   };
 
   /**

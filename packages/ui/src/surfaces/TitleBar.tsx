@@ -14,6 +14,7 @@ import { IconButton } from '../primitives/IconButton.js';
 import { ICONS } from '../primitives/icons.js';
 import { SegmentedControl } from '../primitives/SegmentedControl.js';
 import type { CommandContext, CommandRegistry, UiCommand } from '../registries/commands.js';
+import { useRunCommand } from '../registries/useRunCommand.js';
 import {
   HIGH_CONTRAST_QUERIES,
   SYSTEM_DARK_QUERY,
@@ -67,6 +68,8 @@ function ThemeSwitch({
   const theme = useSetting(settings, THEME_SETTING);
   const dark = useMediaAnswer([SYSTEM_DARK_QUERY], systemDark);
   const forced = useMediaAnswer(HIGH_CONTRAST_QUERIES, highContrastWanted);
+  // A PRESS RUNS AGAINST THE CONTEXT AT THE PRESS (`useRunCommand`), so the switch's handler keeps its identity.
+  const run = useRunCommand(context);
   const toLight = registry.get('view.theme-light');
   const toDark = registry.get('view.theme-dark');
   if (toLight === undefined || toDark === undefined) return null;
@@ -79,8 +82,7 @@ function ThemeSwitch({
       disabled={forced}
       focusableWhenDisabled
       onClick={() => {
-        // Not awaited, for `QuickToolbar`'s reason: nothing here reads the result.
-        void (next === 'light' ? toLight : toDark).run(context);
+        run(next === 'light' ? toLight : toDark);
       }}
     />
   );
@@ -139,6 +141,8 @@ export function TitleBar({
 }): ReactElement {
   const { _ } = useLingui();
   const mode = useSetting(settings, LAYOUT_MODE_SETTING);
+  // A PRESS RUNS AGAINST THE CONTEXT AT THE PRESS (`useRunCommand`), so the bar's handlers keep their identity.
+  const run = useRunCommand(context);
   const palette = registry.get(PALETTE_COMMAND);
   const modeCommands = new Map<LayoutMode, UiCommand | undefined>(
     MODES.map((each) => [each, registry.get(`view.layout-${each}`)]),
@@ -154,8 +158,7 @@ export function TitleBar({
           type="button"
           className="m-command-search"
           onClick={() => {
-            // Not awaited, for `QuickToolbar`'s reason: nothing here reads the result.
-            void palette.run(context);
+            run(palette);
           }}
         >
           <Icon name="Search" size="dense" />
@@ -172,7 +175,8 @@ export function TitleBar({
           options={MODES.map((each) => ({ value: each, label: LAYOUT_MODE_OPTION_TITLES[each] }))}
           value={mode}
           onChange={(chosen) => {
-            void modeCommands.get(chosen)?.run(context);
+            const command = modeCommands.get(chosen);
+            if (command !== undefined) run(command);
           }}
         />
       ) : null}

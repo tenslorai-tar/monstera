@@ -5,6 +5,7 @@ import { START_F1_HINT, START_LICENCE, START_VERSION } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
 import { CopyrightLine } from './CopyrightLine.js';
 import type { CommandContext, CommandRegistry } from '../registries/commands.js';
+import { useRunCommand } from '../registries/useRunCommand.js';
 import { shortcutMapOf, startScreenModel } from './projections.js';
 
 /** The footer names F1, which opens the Help centre (ADR-0112); the hint shows only while the shortcut map binds it. */
@@ -55,6 +56,8 @@ export function StartFooter({
 }): ReactElement {
   const { _ } = useLingui();
   const { footer } = startScreenModel(registry, context);
+  // A PRESS RUNS AGAINST THE CONTEXT AT THE PRESS (`useRunCommand`), so a button's handler keeps its identity.
+  const run = useRunCommand(context);
   const help = shortcutMapOf(registry).get(HELP_CHORD);
 
   return (
@@ -66,8 +69,7 @@ export function StartFooter({
             label={entry.command.title}
             variant="quiet"
             onClick={() => {
-              // Not awaited, for `StartScreen`'s reason.
-              void entry.command.run(context);
+              run(entry.command);
             }}
           />
         ))}

@@ -18,9 +18,9 @@ import {
 } from '../messages/en.js';
 import { byteSize } from '../byteSize.js';
 import { kernelPageOf, pdfjsPageOf } from '../pageNumbering.js';
-import { ICONS } from '../primitives/icons.js';
-import { IconButton } from '../primitives/IconButton.js';
 import type { CommandContext, CommandRegistry } from '../registries/commands.js';
+import { useRunCommand } from '../registries/useRunCommand.js';
+import { CommandIconButton } from './CommandIconButton.js';
 import type { SavedState } from '../savedState.js';
 import { ZOOM_STEPS, type ZoomMode } from '../zoom.js';
 import { statusBarModel, type OrderedEntry } from './projections.js';
@@ -134,6 +134,8 @@ export function StatusBar({
   readonly tip?: ReactNode;
 }): ReactElement {
   const { i18n } = useLingui();
+  // A PRESS RUNS AGAINST THE CONTEXT AT THE PRESS (`useRunCommand`), so a button's handler keeps its identity.
+  const run = useRunCommand(context, registry);
   // `null` until a person types: the field then shows what they typed, and otherwise the page.
   const [typed, setTyped] = useState<string | null>(null);
   const [outside, setOutside] = useState(false);
@@ -203,16 +205,14 @@ export function StatusBar({
       // registry that constructed; it keeps the type honest rather than asserting.
       if (icon === undefined) return [];
       return [
-        <IconButton
+        <CommandIconButton
           key={entry.command.id}
-          icon={ICONS[icon]}
+          id={entry.command.id}
           label={entry.command.title}
-          size="dense"
+          icon={icon}
           pressed={entry.command.checked?.(context)}
-          onClick={() => {
-            // Not awaited, for `QuickToolbar`'s reason: nothing here reads the result.
-            void entry.command.run(context);
-          }}
+          run={run}
+          size="dense"
         />,
       ];
     });

@@ -9,6 +9,7 @@ function scrollIntoView(node: HTMLElement | null): void {
 import { CLOSE_LABEL, PALETTE_EMPTY, PALETTE_LABEL, PALETTE_PLACEHOLDER } from './messages/en.js';
 import { Dialog } from './primitives/Dialog.js';
 import type { CommandContext, CommandRegistry } from './registries/commands.js';
+import { useRunCommand } from './registries/useRunCommand.js';
 import { paletteModel } from './surfaces/projections.js';
 import { composing } from './surfaces/shortcuts.js';
 
@@ -63,6 +64,8 @@ export function CommandPalette({
 
   const listId = useId();
   const [highlighted, setHighlighted] = useState(0);
+  // A PRESS RUNS AGAINST THE CONTEXT AT THE PRESS (`useRunCommand`), the one way a projection runs a command.
+  const runCommand = useRunCommand(context);
   // CLAMPED AT READ, so a shorter list after a keystroke never names an option that is gone.
   const highlight = Math.min(highlighted, Math.max(matches.length - 1, 0));
   const active = matches[highlight];
@@ -71,9 +74,7 @@ export function CommandPalette({
   const run = (command: (typeof matches)[number]): void => {
     // CLOSED FIRST, so a command that opens a dialog of its own opens it with no modal still above it.
     onClose();
-    // NOT AWAITED, for `QuickToolbar`'s reason: a handler returning a promise makes React's event
-    // handling wait on IPC, and nothing here reads the result — a command reports through its own callback.
-    void command.run(context);
+    runCommand(command);
   };
 
   return (

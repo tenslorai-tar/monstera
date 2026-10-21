@@ -22,6 +22,7 @@ import { MenuScrollArrows } from '../primitives/MenuScrollArrows.js';
 import type { IconName } from '../primitives/icons.js';
 import { ToolButton } from '../primitives/ToolButton.js';
 import type { CommandContext, CommandRegistry } from '../registries/commands.js';
+import { type RunCommand, useRunCommand } from '../registries/useRunCommand.js';
 import { SECTION_IDS, type SectionId } from '../registries/placement.js';
 import { LAYOUT_MODE_SETTING, RIBBON_SECTION_SETTING } from '../settings/layout.js';
 import type { SettingsStore } from '../settingsStore.js';
@@ -145,6 +146,59 @@ const SECTION_ICONS: Readonly<Record<SectionId, IconName>> = {
   tools: 'Wrench',
 };
 
+/**
+ * One ribbon tool, its handlers made HERE from the command and the ribbon's runner, which both keep their identity: made
+ * in the ribbon's list, they were new each time the list was drawn — at every version a command moves — and every
+ * tool, with the UI library's button and tooltip under it, was drawn again (ADR-0258's measurement).
+ */
+function RibbonTool({
+  id,
+  label,
+  description,
+  icon,
+  keepsFocus,
+  holds,
+  stacked,
+  pressed,
+  run,
+  afterRun,
+}: {
+  readonly id: string;
+  readonly label: MessageKey;
+  readonly description: MessageKey | undefined;
+  readonly icon: IconName;
+  readonly keepsFocus: boolean | undefined;
+  /** Whether a double press holds the tool on (`UiCommand.hold`). */
+  readonly holds: boolean;
+  readonly stacked: StackSize | undefined;
+  readonly pressed: boolean | undefined;
+  readonly run: RunCommand;
+  readonly afterRun: () => void;
+}): ReactElement {
+  return (
+    <ToolButton
+      command={id}
+      size={stacked}
+      pressed={pressed}
+      keepsFocus={keepsFocus}
+      icon={icon}
+      label={label}
+      description={description}
+      onDoubleClick={
+        holds
+          ? () => {
+              run(id, 'hold');
+            }
+          : undefined
+      }
+      onClick={() => {
+        run(id);
+        afterRun();
+      }}
+    />
+  );
+}
+
 export function Ribbon({ registry, context, settings, showing, values }: RibbonProps): ReactElement | null {
   const { i18n } = useLingui();
   const chosen = useSetting(settings, RIBBON_SECTION_SETTING);
@@ -161,6 +215,13 @@ export function Ribbon({ registry, context, settings, showing, values }: RibbonP
   const shut = (): void => {
     setOverlay(false);
     if (showing !== undefined) setSpent(showing.stamp);
+  };
+  // A PRESS RUNS AGAINST THE CONTEXT ON SCREEN AT THE PRESS (`useRunCommand`), so a tool's handlers keep their identity
+  // across the version every command moves, and a tool whose own state did not change is not drawn again.
+  const run = useRunCommand(context, registry);
+  // A TOOL CHOICE DISMISSES STUDIO'S OVERLAY (§10.3).
+  const afterRun = (): void => {
+    if (mode === 'studio') shut();
   };
 
   // CLICK-AWAY AND ESCAPE, only while Studio's overlay is open. A press on the rail is not "away": selecting a section
@@ -304,39 +365,24 @@ export function Ribbon({ registry, context, settings, showing, values }: RibbonP
 
   /** One ribbon tool, drawn the one way whatever its size (ADR-0194): a column's rows and a lone button alike. */
   const toolButton = (entry: RibbonEntry, stacked: StackSize | undefined): ReactElement => (
-    <ToolButton
+    <RibbonTool
       key={entry.command.id}
-      command={entry.command.id}
-      size={stacked}
-      // THE STATE IT SETS, where it sets one: the tool that is on, a panel that is shown (WCAG 4.1.2).
-      pressed={entry.command.checked?.(context)}
-      keepsFocus={entry.command.keepsFocus}
-      // THE REGISTRY GUARANTEES IT: a command placed on the ribbon with no
-      // icon is refused at construction, so `File` is never drawn for a
-      // command in the shipped graph.
-      icon={entry.command.icon ?? 'File'}
-      // THE SHORT FORM WHERE THERE IS ONE, and the full title as the
-      // tooltip in exactly that case — so a tooltip appears on the
-      // ribbon precisely where the caption is an abbreviation, and
-      // never to repeat what is already under the pointer. Both texts
-      // are the command's; this surface composes no string.
+      id={entry.command.id}
+      // THE SHORT FORM WHERE THERE IS ONE, and the full title as the tooltip in exactly that case — so a tooltip appears
+      // on the ribbon precisely where the caption is an abbreviation, and never to repeat what is already under the
+      // pointer. Both texts are the command's; this surface composes no string.
       label={entry.command.ribbonTitle ?? entry.command.title}
       description={entry.command.tip ?? (entry.command.ribbonTitle === undefined ? undefined : entry.command.title)}
-      onDoubleClick={
-        entry.command.hold === undefined
-          ? undefined
-          : () => {
-              entry.command.hold?.(context);
-            }
-      }
-      onClick={() => {
-        // Not awaited, for `QuickToolbar`'s reason: a handler
-        // returning a promise would make React's event handling
-        // wait on IPC, and nothing here reads the result.
-        void entry.command.run(context);
-        // A TOOL CHOICE DISMISSES STUDIO'S OVERLAY (§10.3).
-        if (mode === 'studio') shut();
-      }}
+      // THE REGISTRY GUARANTEES IT: a command placed on the ribbon with no icon is refused at construction, so `File`
+      // is never drawn for a command in the shipped graph.
+      icon={entry.command.icon ?? 'File'}
+      keepsFocus={entry.command.keepsFocus}
+      holds={entry.command.hold !== undefined}
+      stacked={stacked}
+      // THE STATE IT SETS, where it sets one: the tool that is on, a panel that is shown (WCAG 4.1.2).
+      pressed={entry.command.checked?.(context)}
+      run={run}
+      afterRun={afterRun}
     />
   );
 
@@ -381,7 +427,7 @@ export function Ribbon({ registry, context, settings, showing, values }: RibbonP
                   data-command={entry.command.id}
                   key={entry.command.id}
                   onClick={() => {
-                    void entry.command.run(context);
+                    run(entry.command);
                   }}
                   type="button"
                 >
@@ -440,7 +486,7 @@ export function Ribbon({ registry, context, settings, showing, values }: RibbonP
                             data-command={entry.command.id}
                             label={i18n._(entry.command.title)}
                             onClick={() => {
-                              void entry.command.run(context);
+                              run(entry.command);
                             }}
                           >
                             <span className="m-menu-bar__mark" aria-hidden="true" />

@@ -76,6 +76,7 @@ import { pdfjsPageOf } from './pageNumbering.js';
 import { Button } from './primitives/Button.js';
 import { SegmentedControl, type SegmentedOption } from './primitives/SegmentedControl.js';
 import type { CommandContext, CommandRegistry } from './registries/commands.js';
+import { useRunCommand } from './registries/useRunCommand.js';
 import type { LiveReading } from './registries/tools.js';
 import {
   ANNOTATION_COLOUR_SETTING,
@@ -194,6 +195,8 @@ export function PropertiesPanel({
   const measureRatio = useSetting(settings, MEASURE_RATIO_SETTING);
   const unitId = useId();
   const ratioId = useId();
+  // A PRESS RUNS AGAINST THE CONTEXT AT THE PRESS (`useRunCommand`), so a button's handler keeps its identity.
+  const run = useRunCommand(context);
   const [ratioText, setRatioText] = useState<string | undefined>(undefined);
   const asDefault = useSetting(settings, STYLE_AS_DEFAULT_SETTING);
   const colourSetting = useSetting(settings, ANNOTATION_COLOUR_SETTING);
@@ -489,7 +492,7 @@ export function PropertiesPanel({
               key={entry.command.id}
               label={entry.command.title}
               onClick={() => {
-                void entry.command.run(context);
+                run(entry.command);
               }}
             />
           ))}

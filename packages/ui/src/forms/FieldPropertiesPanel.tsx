@@ -153,6 +153,7 @@ import { pdfjsPageOf } from '../pageNumbering.js';
 import { Button } from '../primitives/Button.js';
 import { IconButton } from '../primitives/IconButton.js';
 import type { CommandContext, CommandRegistry } from '../registries/commands.js';
+import { useRunCommand } from '../registries/useRunCommand.js';
 import { propertiesModel } from '../surfaces/projections.js';
 
 /**
@@ -273,6 +274,8 @@ export function FieldPropertiesPanel({
   }, [first, key, read, version]);
 
   const foot = propertiesModel(registry, context);
+  // A PRESS RUNS AGAINST THE CONTEXT AT THE PRESS (`useRunCommand`), so a button's handler keeps its identity.
+  const run = useRunCommand(context);
   // THE FIELD'S LAST READ WHILE THE NEXT ONE IS TAKEN: a write moves the version, and a panel that emptied until the new
   // read arrived unmounted every control, so a picker opened in that moment closed under the person's pointer (the
   // forms walk's A8.4, 2026-10-16). Another field's read is never shown for this one.
@@ -314,7 +317,7 @@ export function FieldPropertiesPanel({
               key={entry.command.id}
               label={entry.command.title}
               onClick={() => {
-                void entry.command.run(context);
+                run(entry.command);
               }}
             />
           ))}

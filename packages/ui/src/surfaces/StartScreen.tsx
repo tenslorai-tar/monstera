@@ -16,6 +16,7 @@ import { Button } from '../primitives/Button.js';
 import { Icon } from '../primitives/Icon.js';
 import type { IconName } from '../primitives/icons.js';
 import type { CommandContext, CommandRegistry } from '../registries/commands.js';
+import { useRunCommand } from '../registries/useRunCommand.js';
 import { startScreenModel } from './projections.js';
 
 /**
@@ -78,6 +79,8 @@ export interface StartScreenProps {
 export function StartScreen({ registry, context, problems }: StartScreenProps): ReactElement {
   const { _ } = useLingui();
   const { primary, shortcut } = startScreenModel(registry, context);
+  // A PRESS RUNS AGAINST THE CONTEXT AT THE PRESS (`useRunCommand`), so a button's handler keeps its identity.
+  const run = useRunCommand(context);
 
   // BROUGHT INTO VIEW AS IT ARRIVES (cloud-4 7a): in a short window the line sits below the fold, under the footer, so
   // a pick that failed changed nothing a person could see.
@@ -117,11 +120,7 @@ export function StartScreen({ registry, context, problems }: StartScreenProps): 
             variant="primary"
             chord={entry.command.shortcut}
             onClick={() => {
-              // Not awaited, and the shape is `dispatchChord`'s for the same
-              // reason: a click handler that returned a promise would make React's
-              // event handling wait on IPC, and nothing here has anything to do
-              // with the result — the command reports through its own callback.
-              void entry.command.run(context);
+              run(entry.command);
             }}
           />
         ))}
@@ -148,7 +147,7 @@ export function StartScreen({ registry, context, problems }: StartScreenProps): 
                 summary={entry.command.summary}
                 icon={entry.command.icon}
                 onRun={() => {
-                  void entry.command.run(context);
+                  run(entry.command);
                 }}
               />
             ),
