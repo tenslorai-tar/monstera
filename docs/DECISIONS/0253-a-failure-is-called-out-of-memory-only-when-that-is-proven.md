@@ -95,3 +95,26 @@ asks the idle hosts to stop, which is the grain that work wants. The reviewer's 
 
 **The proof that replaces Decision 4's:** ten crossings with actions and the renewal's memory release between them send
 one `app.memory-low` and ten log lines; CONTROL: a fresh run that is low is told again.
+
+## Correction, 2026-10-21 — the notice is told only on a computer of 8 GB or less (the owner's decision, R18)
+
+**What the owner decided, 2026-10-20.** *Show the notice ONLY on computers with 4 GB or 8 GB of memory installed; on
+those, at most once per app start; never on a larger computer, whatever the reading.* A computer with plenty of memory
+can pass the 10% line briefly and come back, and that is no reason to warn anyone. Giving memory back is unchanged: on
+low memory the idle hosts still stop, on every computer.
+
+**The line, and the reading it is drawn from.** The total is Windows' own: `os.totalmem()`, which Node answers from
+`GlobalMemoryStatusEx`'s physical total — the memory Windows can use, which is what is installed less what the firmware
+and the graphics reserve, and never more than is installed. So an 8 GB computer reports at most 8 GiB, and the line is
+**8 GiB (8,589,934,592 bytes): told at or under it, never over it.** A 12 GB computer reports over it unless more than
+4 GiB is reserved. Read on 2026-10-21 on the development machine, 12 GiB installed (`Win32_PhysicalMemory`'s capacities,
+12,884,901,888 bytes): `os.totalmem()` = 12,761,452,544 bytes, 11.885 GiB — 123 MiB reserved, far from the 4 GiB a 12 GB
+computer would need to fall under the line. A 4 GB or 6 GB computer is under it too.
+
+**Decision 4 now reads:** low memory before any failure is one calm notice per run, and only on a computer whose total
+is at or under 8 GiB. On a larger computer the reading is still taken, the idle hosts still stop, and the log line
+still carries the figures; the person is not told.
+
+**The proof that replaces Decision 4's:** an 8 GiB total with a low reading sends `app.memory-low` once per run; a
+16 GiB total with the same readings sends none and still stops the idle hosts (CONTROL: the stop happens in both); a
+second crossing in the same run sends nothing.
