@@ -79,6 +79,7 @@ import {
   tabOrderCommand,
   flattenForm,
   flattenFormCommand,
+  resetFormCommand,
   EDIT_TEXT_TOOL_ID,
   EDIT_TEXT_ADD_TOOL_ID,
   addTextCommand,
@@ -1490,6 +1491,9 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
    */
   const formFieldList = useFormFieldList(client, activeId, openVersion);
   const fieldsInOrder = formFieldList.fields;
+  // WHETHER *RESET FORM* IS OFFERED: from the latest list whatever its version, which a fill does not empty, so the button
+  // does not leave the ribbon while each write is read again.
+  const formHasFields = (formFieldList.held?.fields.length ?? 0) > 0;
   // THE FIELDS WHOSE SCRIPTS ARE NEVER RUN, said once per document (the owner's decision of 2026-10-18).
   useFormScriptsNotice(activeId, formFieldList.fields, ask);
   /**
@@ -4266,6 +4270,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         ...fieldArrangeCommands({ placed: () => placedFields.map(aheadOfRead), apply: arrangeSelectedFields }),
         copyFieldToPagesCommand({ single: () => singleField, ask, apply: copyFieldToPages }),
         flattenFormCommand({ client, onApplied: applied, ask, stamp, signatures, toast, selectedFields: () => ({ fields: selectedHandles, version: selectionVersion }) }),
+        resetFormCommand({ client, onApplied: applied, ask, stamp, signatures, toast, hasFields: formHasFields }),
         tabOrderCommand({ client, onApplied: applied, ask, stamp, signatures, toast, orderByClicking }),
         // EDIT TEXT, a MODE in the tool slot (ADR-0096): it toggles as a drawing
         // tool's command does, and `editing` below is what the mode draws.
@@ -4377,6 +4382,8 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       chosenShortcuts,
       chooseTool,
       selectionVersion,
+      // WHETHER *RESET FORM* EXISTS, which changes when a document's first field list arrives or its last field goes.
+      formHasFields,
       setToolId,
       // THE PROVIDERS THIS BUILD REACHES, so `app.info`'s answer rebuilds the registry and the cloud commands appear.
       readCloudProviders,

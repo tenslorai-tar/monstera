@@ -28,6 +28,7 @@ import {
   MAX_REMOVED_ANNOTATIONS,
   fillFormFieldSchema,
   resetFormSchema,
+  resetWholeFormSchema,
   flattenFormFieldsSchema,
   setDocumentProtectionSchema,
   applyRedactionsSchema,
@@ -1172,6 +1173,7 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   editLinkSchema,
   fillFormFieldSchema,
   resetFormSchema,
+  resetWholeFormSchema,
   deleteFormFieldsSchema,
   flattenFormFieldsSchema,
   // CARRIES PASSWORDS ACROSS THIS PIPE, and that is ADR-0055's rule rather than

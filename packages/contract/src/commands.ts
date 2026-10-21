@@ -2847,6 +2847,19 @@ export const resetFormSchema = z.object({
   version: docVersionSchema,
 }).strict();
 
+/**
+ * Clears everything typed into the form (the owner's R23, 2026-10-21: *"some forms might not even have a reset
+ * button"*): every field back to its default (`/DV`, else empty or off), as one step a person can undo. A signature is
+ * left as it is.
+ *
+ * **NAMES NOTHING**, so it carries no version: *clear this form* is the same request whatever moved since it was asked,
+ * which is `replaceAllText`'s reason. The reset itself is the one a button's Reset form action runs (`resetFields` in the
+ * kernel), so a press of such a button and this command cannot clear a form differently.
+ */
+export const resetWholeFormSchema = z.object({
+  kind: z.literal('resetWholeForm'),
+}).strict();
+
 export const fillFormFieldSchema = z.object({
   kind: z.literal('fillFormField'),
   /** Zero-based index of the page the widget sits on. */
@@ -6787,6 +6800,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   replyToAnnotationSchema,
   fillFormFieldSchema,
   resetFormSchema,
+  resetWholeFormSchema,
   deleteFormFieldsSchema,
   flattenFormFieldsSchema,
   setDocumentProtectionSchema,
@@ -6935,6 +6949,8 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   fillFormFieldSchema,
   // RENDERABLE, a button's place at a version: which fields it resets is the button's own action, read in the kernel.
   resetFormSchema,
+  // RENDERABLE, and it carries nothing but its kind: every field, read in the kernel.
+  resetWholeFormSchema,
   // RENDERABLE, and `removeAnnotation`'s shape on the widget walk: the renderer
   // names rows of an answer it was given. What it cannot express is what a
   // delete has to do to the field TREE, which is measured behaviour the kernel

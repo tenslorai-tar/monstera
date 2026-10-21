@@ -920,8 +920,8 @@ const RESET_FORM_SPEC = `  resetForm: {
   },`;
 
 /**
- * Every stamp of one kind taken off every page (ADR-0246) — the NEWEST kind since 2026-10-15, and the one the
- * `missing a command kind` case omits. A checkpoint, as the stamps it removes are.
+ * Every stamp of one kind taken off every page (ADR-0246); it was the newest kind until `resetWholeForm`. A checkpoint,
+ * as the stamps it removes are.
  */
 const REMOVE_MARKS_SPEC = `  removePageMarks: {
     kind: 'removePageMarks',
@@ -929,6 +929,24 @@ const REMOVE_MARKS_SPEC = `  removePageMarks: {
     apply: applyRemovePageMarks,
     capture: captureRemovePageMarks,
     invert: invertRemovePageMarks,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`;
+
+/**
+ * Reset form on the ribbon (the owner's R23) — the NEWEST kind since 2026-10-21, and the one the `missing a command
+ * kind` case omits. {@link RESET_FORM_SPEC}'s axes, for its reason.
+ */
+const RESET_WHOLE_FORM_SPEC = `  resetWholeForm: {
+    kind: 'resetWholeForm',
+    writer: 'mupdf',
+    apply: applyResetWholeForm,
+    capture: captureResetWholeForm,
+    invert: invertResetWholeForm,
     invertible: false,
     undo: 'checkpoint',
     reproducible: true,
@@ -1293,6 +1311,9 @@ const SPEC_IMPORTS = `import {
   applyRemovePageMarks,
   captureRemovePageMarks,
   invertRemovePageMarks,
+  applyResetWholeForm,
+  captureResetWholeForm,
+  invertResetWholeForm,
 } from '@monstera/kernel/engine';
 // A SECOND IMPORT LINE, and the module it names is the finding rather than an
 // inconvenience: setPageBackground routes to a byte-image writer that runs in
@@ -2270,6 +2291,7 @@ ${PLACE_SIGNATURE_MARK_SPEC}
 ${PLACE_SIGNATURE_PICTURE_SPEC}
 ${RESET_FORM_SPEC}
 ${REMOVE_MARKS_SPEC}
+${RESET_WHOLE_FORM_SPEC}
 ${EDIT_OPERATORS_SPEC}
 };
 `,
@@ -2327,8 +2349,9 @@ ${EDIT_OPERATORS_SPEC}
     // `placePageObjects` the same day again (ADR-0242): TS2739 naming it and `placeDrawnObject`. `arrangePageObject`
     // (ADR-0244) followed it the same day, and the table was grown by `placePageObjects` before it was omitted.
     // TEN for ten on `removePageMarks` (2026-10-15, ADR-0246): TS2739 naming it and `arrangePageObject`.
+    // ELEVEN for eleven on `resetWholeForm` (2026-10-21, the owner's R23): TS2739 naming it and `removePageMarks`.
     because:
-      /Property 'removePageMarks' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'resetWholeForm' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -2399,6 +2422,7 @@ ${SET_ANNOTATION_AUTHOR_SPEC}
 ${PLACE_SIGNATURE_MARK_SPEC}
 ${PLACE_SIGNATURE_PICTURE_SPEC}
 ${RESET_FORM_SPEC}
+${REMOVE_MARKS_SPEC}
 ${EDIT_OPERATORS_SPEC}
 };
 `,
@@ -3995,8 +4019,9 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // 65 since `removePageMarks` (2026-10-15, ADR-0246): three spelt, 61 counted, one.
     // 64 since `insertImagePage` was removed (2026-10-17, ADR-0044's correction): three spelt, 60 counted, one.
     // 58 since Edit object's six kinds were withdrawn (2026-10-21, ADR-0153's correction): three spelt, 54 counted, one.
+    // 59 since `resetWholeForm` (2026-10-21, the owner's R23): three spelt, 55 counted, one.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 54 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 55 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

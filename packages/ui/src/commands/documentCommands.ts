@@ -139,6 +139,7 @@ import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import { SAVE_TOO_DEEP_DIALOG_ID, SAVE_TOO_DEEP_RESULT } from '../dialogs/saveTooDeep.js';
 import { SIGNATURE_BREAK_DIALOG_ID, SIGNATURE_BREAK_RESULT } from '../dialogs/signatureBreak.js';
 import { FLATTEN_FORM_DIALOG_ID, FLATTEN_FORM_RESULT } from '../dialogs/flattenForm.js';
+import { RESET_FORM_DIALOG_ID, RESET_FORM_RESULT } from '../dialogs/resetForm.js';
 import { TAB_ORDER_DIALOG_ID, TAB_ORDER_RESULT } from '../dialogs/tabOrder.js';
 import { PAGE_BACKGROUND_DIALOG_ID, PAGE_BACKGROUND_RESULT } from '../dialogs/pageBackground.js';
 import { SIGN_AGAIN_DIALOG_ID, SIGN_AGAIN_RESULT } from '../dialogs/signAgain.js';
@@ -273,6 +274,9 @@ import {
   RIBBON_TAB_ORDER,
   DETECT_FIELDS_TIP,
   FLATTEN_FORM_TIP,
+  RESET_FORM_TIP,
+  RESET_FORM_TITLE,
+  TOAST_FORM_RESET,
   TAB_ORDER_TIP,
   TAB_ORDER_COMMAND_TITLE,
   TOAST_TAB_ORDER_SET,
@@ -4309,6 +4313,34 @@ export function flattenFormCommand(
       // THE WHOLE FORM at the version on show; SELECTED FIELDS at the version their list was read at.
       const version = selected.fields.length === 0 ? context.version : (selected.version ?? context.version);
       await flattenForm(deps, context.docId, version, selected.fields);
+    },
+  };
+}
+
+/**
+ * *Reset form* (the owner's R23: *"some forms might not even have a reset button"*): every field back to its default,
+ * as one `resetWholeForm`, one undo. The kernel's `resetFields` does the clearing, the same function a form's own Reset
+ * button runs, and leaves a signature as it is.
+ *
+ * **Asked first**, since one press takes away everything typed; dismissing sends nothing. The toast says it ran.
+ *
+ * **Offered only while the document has a field to clear**, read from the fields list App holds as a value it renders
+ * from, so the projections follow it when the list arrives.
+ */
+export function resetFormCommand(deps: DocumentCommandDeps & WritesAFile & { readonly hasFields: boolean }): UiCommand {
+  return {
+    id: 'document.reset-form',
+    // OUT OF SIGHT where the cleared fields are off the page on show, so the toast is the sign that it ran.
+    feedback: TOASTS,
+    icon: 'Eraser',
+    title: RESET_FORM_TITLE,
+    tip: RESET_FORM_TIP,
+    placements: [{ surface: 'ribbon', section: 'forms', group: GROUP_DATA, order: 99 }],
+    when: (context) => hasDocument(context) && deps.hasFields,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined) return;
+      if (!RESET_FORM_RESULT.safeParse(await deps.ask(RESET_FORM_DIALOG_ID, {})).success) return;
+      if (await applyDocumentCommand(deps, context.docId, { kind: 'resetWholeForm' })) confirmDone(deps, TOAST_FORM_RESET);
     },
   };
 }

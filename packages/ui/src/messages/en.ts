@@ -1894,6 +1894,12 @@ export const FORM_SETTINGS_HINT = messageKey('surface.form-settings.hint');
 export const DELETE_FIELDS_TITLE = messageKey('dialog.delete-fields.title');
 export const DELETE_FIELDS_EXPLAINS = messageKey('dialog.delete-fields.explains');
 export const DELETE_FIELDS_APPLY = messageKey('dialog.delete-fields.apply');
+export const RESET_FORM_TITLE = messageKey('command.forms.reset.title');
+export const RESET_FORM_TIP = messageKey('command.forms.reset.tip');
+export const RESET_FORM_DIALOG_TITLE = messageKey('dialog.reset-form.title');
+export const RESET_FORM_EXPLAINS = messageKey('dialog.reset-form.explains');
+export const RESET_FORM_APPLY = messageKey('dialog.reset-form.apply');
+export const TOAST_FORM_RESET = messageKey('toast.form-reset');
 export const FORM_FIELD_NAME_EMPTY = messageKey('dialog.form-field.name-empty');
 export const FORM_FIELD_NAME_TOO_LONG = messageKey('dialog.form-field.name-too-long');
 export const FORM_FIELD_NAME_SEGMENT = messageKey('dialog.form-field.name-segment');
@@ -4984,6 +4990,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [DELETE_FIELDS_EXPLAINS]:
     '{count, plural, other {# fields are selected.}} They and anything typed in them will be removed from the form. Undo brings them back.',
   [DELETE_FIELDS_APPLY]: 'Delete the fields',
+  [RESET_FORM_TITLE]: 'Reset form',
+  [RESET_FORM_TIP]: 'Reset form: clears everything typed or ticked in this form, so you can start again. You are asked first.',
+  [RESET_FORM_DIALOG_TITLE]: 'Reset this form?',
+  [RESET_FORM_EXPLAINS]:
+    'This clears everything typed or ticked in this form, putting every field back as the form started. Signatures stay as they are. Undo brings it all back.',
+  [RESET_FORM_APPLY]: 'Reset form',
+  [TOAST_FORM_RESET]: 'Form reset. Save to keep the change.',
   [SNAPSHOT_TOOL_TITLE]: 'Snapshot a region',
   [PLACE_IMAGE_TOOL_TITLE]: 'Place an image',
   // SAYS WHAT THE DRAG PRODUCES. "OCR region" is the row's name and means nothing

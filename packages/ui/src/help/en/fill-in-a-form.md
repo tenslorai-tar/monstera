@@ -2,8 +2,8 @@
 id: fill-in-a-form
 title: Fill in a form
 summary: Fill a PDF form's text boxes, tick boxes, options, dropdowns and lists on the page or from the Forms tab.
-keywords: [fill form, form, fields, fill in, tick box, checkbox, radio, dropdown, list, acroform, complete form]
-commands: [view.show-fields]
+keywords: [fill form, form, fields, fill in, tick box, checkbox, radio, dropdown, list, acroform, complete form, reset form, clear form, start again]
+commands: [view.show-fields, document.reset-form]
 contexts: [panel.forms, forms]
 ---
 Fill a form where it is on the page, or from the **Forms** tab, which lists every field in the document with a control to fill it in.
@@ -25,6 +25,7 @@ Fill a form where it is on the page, or from the **Forms** tab, which lists ever
 - Monstera never runs scripts from documents, to keep your computer safe, so a field worked out by a script won't update by itself: it is marked with a small braces sign, { }, and Monstera tells you which fields when you open the form. Standard sums and formats still work.
 - Every field is listed, however large the form.
 - A form with no fields at all? Try "Find fields on a flat form", or type on it with the Typewriter.
+- To start again, in the rail choose **Forms**, then **Reset form** in the **Data** group, and confirm with **Reset form**. Every field goes back to how the form started; signatures stay as they are. It works whether or not the form has its own reset button.
 - Undo with **Ctrl+Z**.
 
 <!--

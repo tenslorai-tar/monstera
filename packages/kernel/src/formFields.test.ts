@@ -11,6 +11,7 @@ import {
   applyFillFormField,
   applyFlattenFormFields,
   applyResetForm,
+  applyResetWholeForm,
   captureDeleteFormFields,
   captureFillFormField,
   captureFlattenFormFields,
@@ -19,7 +20,7 @@ import {
   type ListedField,
   readFormFields,
 } from './formFields.js';
-import { mupdfWriter } from './mupdfWriter.js';
+import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import { applyAddAnnotation, readAnnotations } from './pageAnnotations.js';
 
 /**
@@ -296,6 +297,16 @@ async function onSession<T>(
   }
 }
 
+/** The names of the signature fields that still hold a signature (`/V`) in saved bytes, read by pdf-lib, not by MuPDF. */
+async function signedNames(bytes: Uint8Array): Promise<readonly string[]> {
+  const document = await PDFDocument.load(bytes);
+  return document
+    .getForm()
+    .getFields()
+    .filter((field) => field.acroField.dict.get(PDFName.of('FT')) === PDFName.of('Sig') && field.acroField.dict.get(PDFName.of('V')) !== undefined)
+    .map((field) => field.getName());
+}
+
 /** Every field the reader lists, as `{kind, name, values, on}` quadruples. */
 async function listed(
   bytes: Uint8Array,
@@ -429,6 +440,91 @@ describe('readFormFields', () => {
         return values(session);
       });
       expect(after).toStrictEqual({ 'applicant.name': ['Ada'], 'applicant.agrees': true, 'applicant.title': ['Dr'] });
+    });
+
+    it('a button resetting every field leaves a SIGNED signature as it was (`resetFields` leaves out every /Sig field)', async () => {
+      const document = await PDFDocument.load(await resettable());
+      const signature = document.context.obj({
+        Type: PDFName.of('Annot'),
+        Subtype: PDFName.of('Widget'),
+        FT: PDFName.of('Sig'),
+        T: PDFString.of('applicant.signature'),
+        V: document.context.register(document.context.obj({ Type: PDFName.of('Sig'), Name: PDFString.of('Ada') })),
+        Rect: document.context.obj([20, 300, 220, 340]),
+        F: 4,
+      });
+      const reference = document.context.register(signature);
+      document.getPages()[0]?.node.addAnnot(reference);
+      document.catalog.lookup(PDFName.of('AcroForm'), PDFDict).lookup(PDFName.of('Fields'), PDFArray).push(reference);
+      const saved = await onSession(await document.save(), async (session) => {
+        await applyResetForm(session, reset(3));
+        return mupdfWriter.serialise(session);
+      });
+      expect(await signedNames(saved)).toStrictEqual(['applicant.signature']);
+    });
+  });
+
+  describe('Reset form on the ribbon: every field, through the one reset (the owner’s R23)', () => {
+    /**
+     * {@link form}'s six kinds — text, box, radio, dropdown, list, signature — each holding a value, with a `/DV` on the
+     * text field and the signature SIGNED: a `/V` a reset would delete.
+     */
+    async function filled(): Promise<Uint8Array> {
+      const document = await PDFDocument.load(await form());
+      const fields = document.getForm();
+      fields.getTextField('applicant.name').acroField.dict.set(PDFName.of('DV'), PDFString.of('Your name'));
+      const signature = fields.getFields().find((field) => field.getName() === 'applicant.signature');
+      signature?.acroField.dict.set(
+        PDFName.of('V'),
+        document.context.register(document.context.obj({ Type: PDFName.of('Sig'), Name: PDFString.of('Ada') })),
+      );
+      return document.save();
+    }
+
+    const values = async (session: MupdfSession): Promise<Record<string, unknown>> =>
+      Object.fromEntries(
+        (await readFormFields(session)).fields
+          .filter((field) => field.kind !== 'signature')
+          // EACH RADIO OPTION ITS OWN ENTRY: one group, two widgets, each on or off.
+          .map((field) => [field.kind === 'radio' ? `${field.name} ${field.option ?? ''}` : field.name, field.on ?? field.values]),
+      );
+
+    it('every kind goes back to its default, the signature stays signed, and both survive save and reopen', async () => {
+      const saved = await onSession(await filled(), async (session) => {
+        // CONTROL, before: every value the reset must move, so an after that matched it could not be a reset that did nothing.
+        expect(await values(session)).toStrictEqual({
+          'applicant.name': ['Ada'],
+          'applicant.agrees': true,
+          'applicant.post first': true,
+          'applicant.post second': false,
+          'applicant.title': ['Dr'],
+          'applicant.languages': ['Dutch'],
+        });
+        await applyResetWholeForm(session, { kind: 'resetWholeForm' });
+        return mupdfWriter.serialise(session);
+      });
+      // REOPENED from the saved bytes, so what is read is what the file holds.
+      const after = await onSession(saved, (session) => values(session));
+      expect(after).toStrictEqual({
+        // THE /DV, not empty: the default the form names.
+        'applicant.name': ['Your name'],
+        'applicant.agrees': false,
+        'applicant.post first': false,
+        'applicant.post second': false,
+        'applicant.title': [],
+        'applicant.languages': [],
+      });
+      expect(await signedNames(saved)).toStrictEqual(['applicant.signature']);
+    });
+
+    it('CONTROL: MuPDF’s own every-field reset deletes the signature, which is the defect `resetFields` leaves it out of', async () => {
+      const saved = await onSession(await filled(), async (session) => {
+        await withDocument(session, (document) => {
+          document.resetForm(document.newNull(), false);
+        });
+        return mupdfWriter.serialise(session);
+      });
+      expect(await signedNames(saved)).toStrictEqual([]);
     });
   });
 
