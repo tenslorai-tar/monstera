@@ -1927,6 +1927,107 @@ optgroup {
   background: none;
 }
 
+/* A FIELD'S PROPERTIES, given room (the owner, 2026-10-23, C6): the rows of Options' Actions sat close, labels jammed
+   against drop-downs of uneven widths and Save crowding the last row. Scoped to the field view, whose rows are the ones
+   that carry a label and a control side by side in every section. The cards stay the one card style, with more inside
+   and between them. */
+[data-field-properties] {
+  container: field-properties / inline-size;
+}
+
+[data-field-properties] .m-properties__section {
+  gap: var(--space-8);
+}
+
+[data-field-properties] .m-properties__row,
+[data-field-properties] .m-properties__check {
+  padding: var(--space-8) var(--space-10);
+}
+
+[data-field-properties] .m-properties__row .m-properties__row,
+[data-field-properties] .m-properties__row .m-properties__check {
+  padding: 0;
+}
+
+/* A LABEL AND ITS CONTROL IN TWO ALIGNED COLUMNS where the panel is wide enough, every control the full width of its
+   column, so the drop-downs of one card line up rather than each ending where its longest word does. */
+[data-field-properties] .m-properties__row--inline {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  align-items: center;
+  gap: var(--space-6) var(--space-12);
+}
+
+[data-field-properties] .m-properties__row--inline > .m-properties__select,
+[data-field-properties] .m-properties__row--inline > .m-properties__number {
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+[data-field-properties] .m-properties__select,
+[data-field-properties] .m-properties__number,
+[data-field-properties] input.m-properties__comment,
+[data-field-properties] .m-field-options__text,
+[data-field-properties] .m-field-options__value {
+  box-sizing: border-box;
+  block-size: var(--control-field);
+}
+
+/* A CHOICE'S BOXES as the panel's other boxes, which they sat beside unstyled. */
+[data-field-properties] .m-field-options__text,
+[data-field-properties] .m-field-options__value {
+  padding: 0 var(--space-6);
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+  font: inherit;
+}
+
+/* AT THE PANEL'S NARROWEST each label goes above its control: two columns there leave a drop-down too narrow for its
+   words. The view is 232 px at the 264 px panel and 308 px at the 340 px default, so the switch sits between. */
+@container field-properties (inline-size < 280px) {
+  [data-field-properties] .m-properties__row--inline {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* WHAT THE BUTTON DOES: the list of actions, then the editor for the one being added or changed, apart from it. */
+[data-field-properties] .m-button-actions {
+  gap: var(--space-12);
+}
+
+[data-field-properties] .m-button-actions__row {
+  padding-block: var(--space-4);
+}
+
+[data-field-properties] .m-button-actions__row + .m-button-actions__row {
+  border-block-start: 1px solid var(--border); /* decorative: a rule between two actions; each row's buttons draw their own edges */
+}
+
+.m-button-actions__words {
+  flex: 1 1 0;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+/* THE EDITOR IN ITS OWN INSET CARD (the owner's C6), on the step-up surface inside the Actions card, so the action being
+   written reads apart from the ones already saved. The one exception to a group inside a card drawing no box of its own,
+   asked for by name. */
+[data-field-properties] .m-button-actions__editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+  padding: var(--space-10);
+  background: var(--surface2);
+  border: 1px solid var(--border); /* decorative: the inset card groups the editor; its controls draw their own edges and focus rings */
+  border-radius: var(--radius-8);
+}
+
+[data-field-properties] .m-button-actions__editor > .m-field-options__actions {
+  margin-block-start: var(--space-6);
+}
+
 .m-list-card:hover {
   border-color: var(--border-control);
 }

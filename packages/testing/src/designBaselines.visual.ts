@@ -472,6 +472,35 @@ for (const look of LOOKS) {
   });
 }
 
+// A BUTTON'S OPTIONS WITH ITS ACTION EDITOR OPEN (C6): no baseline showed a field's Properties, so the layout the owner
+// asked to be given room had no picture to hold it. At the panel's default width, the two-column one.
+for (const look of LOOKS) {
+  test(`${look.name}: a button's Options with the action editor open matches its baseline`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 1300 });
+    const bytes = await formPdf();
+    await bridgeUnder(page, look, {
+      opens: [{ kind: 'opened', docId: FORM, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Form.pdf' }],
+      documentBytes: new Map([[FORM, bytes]]),
+      formFields: [EVERY_FIELD_KIND],
+      settings: { 'appearance.document-panel': 'forms', 'appearance.context-panel-open': true, 'appearance.context-panel-tab': 'properties' },
+    });
+    await page.goto('/');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', look.name);
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    await expect(page.locator('canvas.m-page:visible').first()).toBeVisible();
+    await page.locator('.m-forms-panel .m-forms-jump').filter({ hasText: 'ResetButton' }).click();
+    const props = page.locator('[data-field-properties]');
+    await props.getByRole('button', { name: 'Add action' }).click();
+    await expect(props.locator('[data-button-action-editor]').getByLabel('Page', { exact: true })).toBeVisible();
+    // THE OPTIONS SECTION ALONE: the whole view is taller than the panel shows, and a capture of it takes in whatever the
+    // window draws over its lower part.
+    const options = props.locator('.m-properties__section').filter({ has: page.locator('summary', { hasText: /^Options$/u }) });
+    await options.scrollIntoViewIfNeeded();
+    await parkPointer(page);
+    await expect(options).toHaveScreenshot(`${look.name}-panel-button-options.png`);
+  });
+}
+
 // THE DATE FIELD'S CALENDAR IN EACH OF ITS FOUR VIEWS (C4; the owner's R25 built them): `datePickerViews.pw.ts` checks
 // each view's accessibility and fit, and nothing compared how one looks. The field holds a date, so every view opens on
 // a page decided by that value and never by the day the run happens.

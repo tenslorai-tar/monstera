@@ -466,8 +466,10 @@ test.describe('a push button’s actions', () => {
     const pane = await buttonProperties(page);
     await pane.getByRole('button', { name: 'Add action' }).click();
     const when = pane.getByLabel('When');
+    // THE NUMBER BOX'S OLD 6em, set on the drop-down itself: since C6 a number box in a field's properties fills its
+    // column too, so borrowing its class no longer narrows anything and the mutation would cut nothing.
     await when.evaluate((element) => {
-      element.setAttribute('class', 'm-properties__number');
+      (element as HTMLElement).style.inlineSize = '6em';
     });
     expect(await showsWholeChoice(when)).toBe(false);
   });
