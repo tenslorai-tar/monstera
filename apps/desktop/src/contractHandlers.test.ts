@@ -34,6 +34,7 @@ import {
   StaleTargetError,
   type StagedImage,
   TextNotWritableError,
+  UrlFetchRefused,
   readFileIdentity,
   stagedBytes,
 } from '@monstera/kernel';
@@ -51,7 +52,14 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { CloudOutcomeRefused, type CloudStorage, unconfiguredCloud } from './cloudSession.js';
 import { type AttachmentReaders, NO_ATTACHMENTS } from './askAttachments.js';
-import { type AppInfo, type PickDocument, type PickDocuments, createContractHandlers } from './contractHandlers.js';
+import {
+  type AppInfo,
+  MAILTO_WITH_DATA_MAX,
+  type PickDocument,
+  type PickDocuments,
+  createContractHandlers,
+  mailtoWithBody,
+} from './contractHandlers.js';
 import type { KnownRoot } from './displayLocation.js';
 import { NO_RECENT_PICTURES, createRecentPictures } from './recentPictures.js';
 import { createHeldPicture } from './heldPicture.js';
@@ -166,6 +174,8 @@ function harness(
     readonly recent?: RecentFiles;
     /** The compose host's font list, for the picker's cases; no host otherwise. */
     readonly fontFamilies?: (() => Promise<ListedFontFamilies>) | null;
+    /** What a form's POST meets (ADR-0259), for the submit's cases; a server that takes it otherwise. */
+    readonly postForm?: (address: string, body: Uint8Array, contentType: string) => Promise<void>;
   } = {},
 ) {
   const capabilities = new CapabilityRegistry();
@@ -182,6 +192,8 @@ function harness(
   // it would answer exactly what a correct one answers.
   const webPages: string[] = [];
   const linksOpened: string[] = [];
+  // EVERY POST A SUBMIT MADE, with what it carried, for `linksOpened`'s reason.
+  const formsPosted: { readonly address: string; readonly body: string; readonly contentType: string }[] = [];
   const settings = createEphemeralSettings();
   const secrets = createEphemeralSecrets();
   // RETURNED, like `settings`, so a case can read what the handlers recorded
@@ -270,6 +282,10 @@ function harness(
       linksOpened.push(address);
       return Promise.resolve(true);
     },
+    postForm: (address, body, contentType) => {
+      formsPosted.push({ address, body: new TextDecoder().decode(body), contentType });
+      return overrides.postForm === undefined ? Promise.resolve() : overrides.postForm(address, body, contentType);
+    },
     openStore: () => Promise.resolve(false),
     closeListening: () => false,
     cloud: overrides.cloud ?? unconfiguredCloud(),
@@ -315,6 +331,7 @@ function harness(
     storeOpened,
     webPages,
     linksOpened,
+    formsPosted,
   };
 }
 
@@ -811,6 +828,79 @@ describe('document.openButtonLink (ADR-0259)', () => {
   });
 });
 
+describe('document.submitButtonForm (ADR-0259)', () => {
+  /** Commands whose button read answers `steps` at version 4, and whose encoder answers `data`, recording what it was asked. */
+  function submitCommands(steps: readonly ButtonStep[] | null, data = 'applicant.name=Ada'): { commands: DocumentCommands; encoded: unknown[] } {
+    const encoded: unknown[] = [];
+    const commands = {
+      buttonActions: () => Promise.resolve({ version: asDocVersion(4), steps }),
+      submitFormData: (_docId: DocId, format: unknown, fields: unknown) => {
+        encoded.push({ format, fields });
+        return Promise.resolve(new TextEncoder().encode(data));
+      },
+    } as unknown as DocumentCommands;
+    return { commands, encoded };
+  }
+  const field = { page: 0, index: 3, name: 'Send' };
+  const request: { docId: DocId; version: DocVersion; field: typeof field; trigger: FieldActionTrigger; step: number } = {
+    docId: A_DOC,
+    version: asDocVersion(4),
+    field,
+    trigger: 'up',
+    step: 0,
+  };
+  const submit = (address: string, format: 'fdf' | 'xfdf' | 'html' = 'html'): readonly ButtonStep[] => [
+    { trigger: 'up', step: 0, action: { kind: 'submit', address, format, fields: ['applicant'] } },
+  ];
+
+  it('POSTS what the host encoded for the fields the step names, with its media type, to the address main read', async () => {
+    const { commands, encoded } = submitCommands(submit('https://forms.example/take'));
+    const { handlers, formsPosted, linksOpened } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+    expect(await handlers['document.submitButtonForm'](request)).toStrictEqual({ ok: true, value: { kind: 'sent' } });
+    expect(encoded).toStrictEqual([{ format: 'html', fields: ['applicant'] }]);
+    expect(formsPosted).toStrictEqual([
+      { address: 'https://forms.example/take', body: 'applicant.name=Ada', contentType: 'application/x-www-form-urlencoded' },
+    ]);
+    expect(linksOpened).toStrictEqual([]);
+  });
+
+  it('says the guard’s reason, and sends nothing for a moved document or a step that is not a submission', async () => {
+    const refusing = (): Promise<void> => Promise.reject(new UrlFetchRefused('blocked-address', 'not public'));
+    const { commands } = submitCommands(submit('https://inside.example/take', 'fdf'));
+    const refused = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands, postForm: refusing });
+    expect(await refused.handlers['document.submitButtonForm'](request)).toStrictEqual({ ok: true, value: { kind: 'refused', reason: 'blocked-address' } });
+    expect(refused.formsPosted.map((each) => each.contentType)).toStrictEqual(['application/vnd.fdf']);
+    for (const [asked, answer] of [
+      [{ ...request, version: asDocVersion(9) }, { kind: 'stale' }],
+      [{ ...request, step: 1 }, { kind: 'no-such-submit' }],
+    ] as const) {
+      const { handlers, formsPosted } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands: submitCommands(submit('https://forms.example/take')).commands });
+      expect(await handlers['document.submitButtonForm'](asked)).toStrictEqual({ ok: true, value: answer });
+      expect(formsPosted).toStrictEqual([]);
+    }
+  });
+
+  it('opens the mail app with the data as the message, and NEVER posts to a mailto: address', async () => {
+    const { commands } = submitCommands(submit('mailto:forms@example.org?subject=Application', 'xfdf'), '<xfdf/>');
+    const { handlers, formsPosted, linksOpened } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+    expect(await handlers['document.submitButtonForm'](request)).toStrictEqual({ ok: true, value: { kind: 'mail-opened' } });
+    expect(linksOpened).toStrictEqual(['mailto:forms@example.org?subject=Application&body=%3Cxfdf%2F%3E']);
+    expect(formsPosted).toStrictEqual([]);
+  });
+
+  it('opens the message WITHOUT the data where it would pass the policy, and CONTROL: one character under it carries it', async () => {
+    const address = 'mailto:forms@example.org';
+    const fits = 'x'.repeat(MAILTO_WITH_DATA_MAX - mailtoWithBody(address, '').length);
+    expect(mailtoWithBody(address, fits)).toHaveLength(MAILTO_WITH_DATA_MAX);
+    const under = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands: submitCommands(submit(address, 'fdf'), fits).commands });
+    expect(await under.handlers['document.submitButtonForm'](request)).toStrictEqual({ ok: true, value: { kind: 'mail-opened' } });
+    expect(under.linksOpened).toStrictEqual([mailtoWithBody(address, fits)]);
+    const over = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands: submitCommands(submit(address, 'fdf'), `${fits}x`).commands });
+    expect(await over.handlers['document.submitButtonForm'](request)).toStrictEqual({ ok: true, value: { kind: 'mail-opened-without-data' } });
+    expect(over.linksOpened).toStrictEqual([address]);
+  });
+});
+
 describe('document.saveBarcodeContact', () => {
   const request = { docId: A_DOC, version: asDocVersion(4), page: 2, index: 1 };
 
@@ -1183,6 +1273,7 @@ describe('document.open', () => {
       copyText: () => false,
       openWebPage: () => Promise.resolve(false),
       openLink: () => Promise.reject(new Error('this case follows no link')),
+      postForm: () => Promise.reject(new Error('this case sends no form')),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
     cloud: unconfiguredCloud(),
@@ -2093,6 +2184,7 @@ settings: createEphemeralSettings(),
       copyText: () => false,
       openWebPage: () => Promise.resolve(false),
       openLink: () => Promise.reject(new Error('this case follows no link')),
+      postForm: () => Promise.reject(new Error('this case sends no form')),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
     cloud: unconfiguredCloud(),
@@ -2155,6 +2247,7 @@ settings: createEphemeralSettings(),
       copyText: () => false,
       openWebPage: () => Promise.resolve(false),
       openLink: () => Promise.reject(new Error('this case follows no link')),
+      postForm: () => Promise.reject(new Error('this case sends no form')),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
       cloud: unconfiguredCloud(),
@@ -2316,6 +2409,7 @@ settings: createEphemeralSettings(),
       copyText: () => false,
       openWebPage: () => Promise.resolve(false),
       openLink: () => Promise.reject(new Error('this case follows no link')),
+      postForm: () => Promise.reject(new Error('this case sends no form')),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
       cloud: unconfiguredCloud(),
@@ -2549,6 +2643,7 @@ settings,
       copyText: () => false,
       openWebPage: () => Promise.resolve(false),
       openLink: () => Promise.reject(new Error('this case follows no link')),
+      postForm: () => Promise.reject(new Error('this case sends no form')),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
       cloud: unconfiguredCloud(),
@@ -2787,6 +2882,7 @@ settings: createEphemeralSettings(),
       copyText: () => false,
       openWebPage: () => Promise.resolve(false),
       openLink: () => Promise.reject(new Error('this case follows no link')),
+      postForm: () => Promise.reject(new Error('this case sends no form')),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
       cloud,

@@ -313,6 +313,7 @@ describe('browser shim', () => {
       'document.signatures',
       'document.snapshotRegion',
       'document.split',
+      'document.submitButtonForm',
       'document.textBlocks',
       'document.undo',
       'document.unlock',

@@ -196,6 +196,9 @@ function handlers(regionalLocale?: () => string, physicalMemory?: () => number) 
     openLink: () => {
       throw new Error('registration cases must not follow a link');
     },
+    postForm: () => {
+      throw new Error('registration cases must not send a form');
+    },
     openStore: () => {
       throw new Error('registration cases must not reach the Store');
     },

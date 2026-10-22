@@ -9,6 +9,7 @@ import {
   type CommandKind,
   type CommandOfKind,
   targetVersionOf,
+  type EncodedFormDataFormat,
   type FormDataFormat,
   type FormDataImportFormat,
   MAX_FORM_DATA_BYTES,
@@ -1907,7 +1908,9 @@ export interface SnapshotSource {
 export type DocumentFormDataReader = (
   docId: DocId,
   sessions: DocumentSessions,
-  format: FormDataFormat,
+  format: EncodedFormDataFormat,
+  /** The fields a submission names; every field where absent (ADR-0259 Decision 6). */
+  fields?: readonly string[],
 ) => Promise<ByteImage>;
 
 /**
@@ -3633,6 +3636,24 @@ export class DocumentCommands {
       return this.#fieldProperties(docId, sessions, handles);
     });
     return { version, fields: value };
+  }
+
+  /**
+   * The form's data as a push button's Submit sends it (ADR-0259 Decision 6): encoded in the engine host, the fields the
+   * action names or every field, and read back here in the lane, {@link exportFormData}'s route without the file. Data
+   * a person filled in is a form's size, never a document's, so it is held whole to be sent.
+   */
+  async submitFormData(docId: DocId, format: EncodedFormDataFormat, fields: readonly string[] | null): Promise<Uint8Array> {
+    const { value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return this.#formData.encode(docId, sessions, format, fields ?? undefined);
+    });
+    return value;
   }
 
   /** What one push button does, step by step (ADR-0259): {@link formFieldProperties}' body and lane, for one handle. */

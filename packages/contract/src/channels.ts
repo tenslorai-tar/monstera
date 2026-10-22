@@ -5583,6 +5583,42 @@ export const channels = {
   ),
 
   /**
+   * Sends the form's data as one step of a push button names (ADR-0259 Decision 6), after the person agreed to it:
+   * `document.openButtonLink`'s rule for a submission. `main` reads the step again at the version named, has the engine
+   * host encode the fields it names, and then POSTs them to an `https:` address through ADR-0061's guard, or opens the
+   * person's mail app at a `mailto:` address with the data in the message. Neither the address nor the data crosses
+   * from the renderer, and nothing is sent until this is asked.
+   */
+  'document.submitButtonForm': channel(
+    'Sends the form’s data where a push button’s Submit action names, read by main from the document.',
+    z
+      .object({
+        docId: docIdSchema,
+        version: docVersionSchema,
+        field: formFieldHandleSchema,
+        trigger: fieldActionTriggerSchema,
+        step: z.number().int().min(0).max(MAX_ACTION_CHAIN - 1),
+      })
+      .strict(),
+    z.discriminatedUnion('kind', [
+      /** Posted, and the server answered `2xx`. */
+      z.object({ kind: z.literal('sent') }),
+      z.object({ kind: z.literal('stale') }),
+      z.object({ kind: z.literal('no-such-submit') }),
+      /** Not sent, or not taken: the guard's reason, `http-error` for a server that answered something else. */
+      z.object({ kind: z.literal('refused'), reason: z.enum(URL_FETCH_REFUSALS) }),
+      /** The mail app opened at the address with the data in the message; Monstera sends no mail. */
+      z.object({ kind: z.literal('mail-opened') }),
+      /** The data made the address too long to hand over, so the mail app opened without it (Decision 6's policy). */
+      z.object({ kind: z.literal('mail-opened-without-data') }),
+      z.object({ kind: z.literal('not-opened') }),
+      /** A value XFDF cannot carry (`engine/exportFormData`'s code). */
+      z.object({ kind: z.literal('unrepresentable') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
    * A page's editable text, as the **blocks** a person edits in place, carrying
    * the editing engine's own object numbering.
    *

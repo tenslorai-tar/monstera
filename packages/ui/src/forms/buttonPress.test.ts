@@ -3,7 +3,8 @@ import { type DocVersion, type MessageKey, asDocId, asDocVersion, ok } from '@mo
 import { describe, expect, it } from 'vitest';
 
 import { FOLLOW_LINK_DIALOG_ID } from '../dialogs/followLink.js';
-import { BUTTON_PRESS_UNREAD } from '../messages/en.js';
+import { SUBMIT_FORM_DIALOG_ID } from '../dialogs/submitForm.js';
+import { BUTTON_PRESS_UNREAD, BUTTON_SUBMIT_BLOCKED, BUTTON_SUBMIT_MAIL_WITHOUT_DATA, BUTTON_SUBMIT_SENT } from '../messages/en.js';
 import type { ZoomMode } from '../zoom.js';
 import { type ButtonStepCommand, pressButton } from './buttonPress.js';
 
@@ -23,6 +24,8 @@ function pressing(
   lands: (sent: number) => boolean = () => true,
   /** What the person answers each question: agreeing, unless a case says otherwise. */
   answer: unknown = { open: true },
+  /** What `main` answers a submission: sent, unless a case says otherwise. */
+  submitted: SubmitOutcome = { kind: 'sent' },
 ) {
   const sent: ButtonStepCommand[] = [];
   const said: MessageKey[] = [];
@@ -37,7 +40,11 @@ function pressing(
         routes.push({ open: params });
         return Promise.resolve(ok({ kind: 'opened' as const }));
       },
-    } as Pick<ContractClient, 'document.buttonActions' | 'document.openButtonLink'>,
+      'document.submitButtonForm': (params: unknown) => {
+        routes.push({ submit: params });
+        return Promise.resolve(ok(submitted));
+      },
+    } as Pick<ContractClient, 'document.buttonActions' | 'document.openButtonLink' | 'document.submitButtonForm'>,
     ask: (id: string, props: unknown) => {
       routes.push({ ask: id, props });
       return Promise.resolve(answer);
@@ -61,6 +68,8 @@ function pressing(
   };
   return { deps, sent, said, routes };
 }
+
+type SubmitOutcome = Extract<Awaited<ReturnType<ContractClient['document.submitButtonForm']>>, { ok: true }>['value'];
 
 const reset = (trigger: ButtonStep['trigger'], step: number, fields: readonly string[] | null = null): ButtonStep => ({
   trigger,
@@ -141,6 +150,43 @@ describe('pressing a push button', () => {
       { kind: 'showHideFields', ...BUTTON_PLACE, trigger: 'up', step: 1, version: asDocVersion(8) },
       { kind: 'showHideFields', ...BUTTON_PLACE, trigger: 'up', step: 2, version: asDocVersion(9) },
     ]);
+  });
+
+  describe('a submission (ADR-0259 Decision 6)', () => {
+    const SUBMIT: ButtonStep = {
+      trigger: 'up',
+      step: 0,
+      action: { kind: 'submit', address: 'https://forms.example/take', format: 'html', fields: ['a'] },
+    };
+
+    it('asks first, naming where, how and what, and on Send asks main to send THE STEP, then says it was sent', async () => {
+      const { deps, routes, said } = pressing([SUBMIT], () => true, { send: true });
+      await pressButton(deps, DOC, { ...BUTTON, trigger: 'up' });
+      expect(routes).toStrictEqual([
+        { ask: SUBMIT_FORM_DIALOG_ID, props: { address: 'https://forms.example/take', format: 'html', fields: ['a'], mail: false } },
+        { submit: { docId: DOC, version: READ_AT, field: BUTTON, trigger: 'up', step: 0 } },
+      ]);
+      expect(said).toStrictEqual([BUTTON_SUBMIT_SENT]);
+    });
+
+    it('CONTROL: closing the question sends nothing, where the same press answered Send above', async () => {
+      const { deps, routes, said } = pressing([SUBMIT], () => true, null);
+      await pressButton(deps, DOC, { ...BUTTON, trigger: 'up' });
+      expect(routes.filter((route) => typeof route === 'object' && route !== null && 'submit' in route)).toStrictEqual([]);
+      expect(said).toStrictEqual([]);
+    });
+
+    it('says the guard’s reason, and where the data did not fit a message runs Export form data in its encoding', async () => {
+      const refused = pressing([SUBMIT], () => true, { send: true }, { kind: 'refused', reason: 'blocked-address' });
+      await pressButton(refused.deps, DOC, { ...BUTTON, trigger: 'up' });
+      expect(refused.said).toStrictEqual([BUTTON_SUBMIT_BLOCKED]);
+      const mail: ButtonStep = { ...SUBMIT, action: { kind: 'submit', address: 'mailto:forms@example.org', format: 'xfdf', fields: null } };
+      const long = pressing([mail], () => true, { send: true }, { kind: 'mail-opened-without-data' });
+      await pressButton(long.deps, DOC, { ...BUTTON, trigger: 'up' });
+      expect(long.routes.at(0)).toMatchObject({ props: { mail: true } });
+      expect(long.routes.at(-1)).toStrictEqual({ run: 'document.export-form-data-xfdf' });
+      expect(long.said).toStrictEqual([BUTTON_SUBMIT_MAIL_WITHOUT_DATA]);
+    });
   });
 
   it('imports by running the application’s own Import form data, and sends the next step at the version the import made', async () => {

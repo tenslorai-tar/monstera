@@ -292,6 +292,54 @@ test.describe('a push button’s actions', () => {
     await expect(page.locator('[data-form-field="0"]')).toHaveCount(0);
   });
 
+  test('Submit the form: set in Properties, then a press asks first, naming where and what, and only Send sends', async ({
+    page,
+  }) => {
+    const sent: Sent = [];
+    await openForm(page, sent);
+    const pane = await buttonProperties(page);
+    await pane.getByRole('button', { name: 'Add action' }).click();
+    await pane.getByLabel('Do', { exact: true }).selectOption('submit');
+    const to = pane.getByLabel('Send to');
+    const save = pane.getByRole('button', { name: 'Save action' });
+    // CONTROL: an address that is neither https: nor mailto: is said and cannot be saved.
+    await to.fill('http://forms.example/take');
+    await expect(pane.getByText('Type a whole address that starts with https:// or mailto:.')).toBeVisible();
+    await expect(save).toBeDisabled();
+    await to.fill('https://forms.example/take');
+    await pane.getByLabel('Send as').selectOption('html');
+    await pane.getByLabel('Only the fields ticked below').check();
+    await pane.getByRole('checkbox', { name: 'applicant.name' }).check();
+    await save.click();
+    const action = { kind: 'submit', address: 'https://forms.example/take', format: 'html', fields: ['applicant.name'] };
+    expect(executed(sent)).toStrictEqual([
+      {
+        kind: 'editFormFields',
+        edits: [{ field: { page: 0, index: 1, name: 'Clear' }, set: { buttonActions: [{ trigger: 'up', action }] } }],
+        version: 1,
+      },
+    ]);
+    await expect(pane.getByText('Pressed and let go: Send to https://forms.example/take')).toBeVisible();
+
+    const submits = (): unknown[] => sent.filter((call) => call.channel === 'document.submitButtonForm').map((call) => call.params);
+    const dialog = page.getByRole('dialog', { name: 'Send this form?' });
+    // CANCEL FIRST: the question names the address and the field, and closing it sends nothing.
+    await page.locator('[data-form-field="1"]').click();
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator('[data-submit-form-address]')).toHaveText('https://forms.example/take');
+    await expect(dialog.getByText('applicant.name')).toBeVisible();
+    await expect(dialog.getByText('web form data', { exact: false })).toBeVisible();
+    expect((await new AxeBuilder({ page }).include('[role="dialog"]').analyze()).violations).toStrictEqual([]);
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(dialog).toHaveCount(0);
+    // THEN SEND: exactly one request, naming the step at the version the edit produced, and never the address.
+    await page.locator('[data-form-field="1"]').click();
+    await dialog.getByRole('button', { name: 'Send' }).click();
+    await expect.poll(() => submits().length).toBe(1);
+    expect(submits()[0]).toStrictEqual({ docId: ID, version: 2, field: { page: 0, index: 1, name: 'Clear' }, trigger: 'up', step: 0 });
+    await expect(page.getByText('The form was sent.')).toBeVisible();
+  });
+
   test('Import form data: set in Properties with a file name, then a press opens the application’s import, which picks', async ({
     page,
   }) => {

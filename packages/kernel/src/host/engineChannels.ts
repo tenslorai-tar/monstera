@@ -43,7 +43,8 @@ import {
   MAX_BLANK_PAGES,
   PAGE_ADJUSTMENTS,
   PAGE_ADJUSTMENT_OUTCOMES,
-  formDataFormatSchema,
+  encodedFormDataFormatSchema,
+  actionFieldsSchema,
   formDataImportFormatSchema,
   annotationDataFormatSchema,
   annotationImportReportSchema,
@@ -3205,7 +3206,14 @@ export const engineChannels = {
   'engine/exportFormData': channel(
     'Writes a session’s form data to a file in the output directory.',
     z
-      .object({ session: sessionSchema, format: formDataFormatSchema, into: outputNameSchema })
+      .object({
+        session: sessionSchema,
+        // HTML FORM DATA TOO, which only a push button's Submit sends (ADR-0259 Decision 6).
+        format: encodedFormDataFormatSchema,
+        // THE FIELDS A SUBMISSION NAMES, by the one rule an action's names are read by; absent is every field.
+        fields: actionFieldsSchema.exactOptional(),
+        into: outputNameSchema,
+      })
       .strict(),
     // A COUNT, for `engine/serialise`'s reason: main knows where it asked for
     // the bytes and cannot know how many arrived without being told.

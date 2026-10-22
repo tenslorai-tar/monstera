@@ -2,7 +2,7 @@ import type {
   AnnotationDataFormat,
   ButtonStep,
   CommandOfKind,
-  FormDataFormat,
+  EncodedFormDataFormat,
   FormDataImportFormat,
   FormFieldHandle,
   FormFieldRead,
@@ -291,7 +291,9 @@ export type HostSnapshot = (
  */
 export type HostFormDataExport = (
   session: MupdfSession,
-  format: FormDataFormat,
+  format: EncodedFormDataFormat,
+  /** The fields a submission names; every field where absent (ADR-0259 Decision 6). */
+  fields?: readonly string[],
 ) => Promise<ByteImage>;
 
 /** The PDF/UA-1 object rules for a document (ADR-0078). Injected for the readers' reason. */
@@ -1280,14 +1282,14 @@ export function createEngineHandlers({
       }
     },
 
-    'engine/exportFormData': async ({ session, format, into }) => {
+    'engine/exportFormData': async ({ session, format, fields, into }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
       try {
         // BUILT HERE AND WRITTEN INTO THE GRANTED DIRECTORY, `engine/extract`'s
         // route and its reason: reading the fields reaches MuPDF, which
         // invariant 20 keeps out of main.
-        const bytes = await exportFormData(held.session, format);
+        const bytes = await exportFormData(held.session, format, fields);
         const written = await files.writeOutput(held.outputDirectory, into, bytes);
         return { ok: true, value: { bytes: written } };
       } catch (error) {

@@ -17,7 +17,7 @@ import { type CalculatedValue, calculatedValues, recalculate, restoreCalculated,
 import { kindOf } from './fieldKind.js';
 import { choiceLookOf } from './fieldLook.js';
 import { redrawFamily, remaskBeforeBake } from './fieldWidgets.js';
-import { actionRuns, triggersOf } from './buttonActions.js';
+import { actionRuns, namedAmong, triggersOf } from './buttonActions.js';
 import {
   MAX_FIELD_ANCESTRY,
   actionNodeAt,
@@ -1319,14 +1319,6 @@ function actionsListed(document: PDFDocument, widget: PDFWidget): Pick<ListedFie
 export interface FieldsChosen {
   readonly names: readonly string[];
   readonly exclude: boolean;
-}
-
-/**
- * Whether an action's list of fully qualified names takes the field `name` (ISO 32000-1, 12.7.3.1): named itself, or a
- * field under one named, since naming a field names its kids. ONE rule, which a reset and a show or hide both take.
- */
-function namedAmong(names: readonly string[], name: string): boolean {
-  return names.some((each) => each !== '' && (name === each || name.startsWith(`${each}.`)));
 }
 
 /**

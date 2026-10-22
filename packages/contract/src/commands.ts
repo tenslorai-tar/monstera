@@ -2,7 +2,7 @@ import type { DocId, DocVersion } from '@monstera/shared';
 import { DEFAULT_TEXT_LINE_HEIGHT, MAX_TEXT_LINE_HEIGHT, MAX_TEXT_PADDING, MIN_TEXT_LINE_HEIGHT } from '@monstera/shared';
 import { z } from 'zod';
 
-import { isFollowable } from './followedLinks.js';
+import { isFollowable, schemeOf } from './followedLinks.js';
 import { MAX_PAGE_INDEX, MAX_PAGE_SET_ENTRIES, pageSetOfAtMost, pageSetSchema, pairedPageSetSchema } from './pageSet.js';
 import {
   DOCUMENT_PASSWORD_MAX_CHARS,
@@ -2695,6 +2695,15 @@ export const formDataFormatSchema = z.enum(['json', 'xfdf', 'fdf']);
 
 /** See {@link formDataFormatSchema}. */
 export type FormDataFormat = z.infer<typeof formDataFormatSchema>;
+
+/**
+ * What the engine host encodes form data as: a file's three, and HTML form data, which only a push button's Submit
+ * sends (ADR-0259 Decision 6). A separate enum so the renderer's Export form data is not offered a format it has no
+ * file type for.
+ */
+export const encodedFormDataFormatSchema = z.enum([...formDataFormatSchema.options, 'html']);
+/** See {@link encodedFormDataFormatSchema}. */
+export type EncodedFormDataFormat = z.infer<typeof encodedFormDataFormatSchema>;
 
 /**
  * How many characters a filled field may carry.
@@ -5682,7 +5691,24 @@ export const MAX_DESTINATION_ZOOM = 64;
 export const MAX_ACTION_FIELDS = 64;
 
 /** The fields an action names, by fully qualified name. */
-const actionFieldsSchema = z.array(fieldNameSchema).min(1).max(MAX_ACTION_FIELDS).readonly();
+/** The fields an action names: one or more fully qualified names. The engine host's export takes the same list. */
+export const actionFieldsSchema = z.array(fieldNameSchema).min(1).max(MAX_ACTION_FIELDS).readonly();
+
+/**
+ * The encodings a submission is sent in, by `/SubmitForm`'s `/Flags` (ISO 32000-1, table 237): FDF with no format bit,
+ * XFDF (bit 6) and HTML form data (bit 3). THE WHOLE DOCUMENT (bit 9) IS NOT ONE YET: sending it means streaming the
+ * staged document into the request, since the document is never read into `main` (ADR-0165), and that route is not
+ * built; a document's own whole-document submission is kept and never run (ADR-0259's correction of 2026-10-22).
+ */
+export const SUBMIT_FORMATS = ['fdf', 'xfdf', 'html'] as const;
+/** One of {@link SUBMIT_FORMATS}. */
+export type SubmitFormat = (typeof SUBMIT_FORMATS)[number];
+
+/** Whether a form may be sent to an address: `https:` posted through the guard, or `mailto:` handed to the mail app. */
+export function isSubmitAddress(address: string): boolean {
+  const scheme = schemeOf(address);
+  return scheme === 'https:' || scheme === 'mailto:';
+}
 
 /** How long a file name an action writes may be: Windows' own limit for one name. */
 export const MAX_ACTION_FILE = 255;
@@ -5780,6 +5806,24 @@ export const fieldActionSchema = z.discriminatedUnion('kind', [
       hide: z.boolean(),
     })
     .strict(),
+  z
+    .object({
+      /**
+       * `/SubmitForm` (ISO 32000-1, 12.7.5.2): the form's data, in `format`, sent to `address` (ADR-0259 Decision 6).
+       * An `https:` address is posted to by `main` through ADR-0061's guard; a `mailto:` address opens the person's
+       * mail app with the data in the message. A press asks first, naming the address, the format and the fields.
+       */
+      kind: z.literal('submit'),
+      address: z
+        .string()
+        .min(1)
+        .max(MAX_LINK_URI)
+        .refine(isSubmitAddress, { message: 'a form is sent only to an https: or mailto: address' }),
+      format: z.enum(SUBMIT_FORMATS),
+      /** The fields sent, or every field where `null`; never the exclude form, which this build keeps rather than writes. */
+      fields: actionFieldsSchema.nullable(),
+    })
+    .strict(),
 ]);
 /** See {@link fieldActionSchema}. */
 export type FieldAction = z.infer<typeof fieldActionSchema>;
@@ -5792,6 +5836,7 @@ export const FIELD_ACTION_KINDS = [
   'showHide',
   'print',
   'importData',
+  'submit',
 ] as const satisfies readonly FieldAction['kind'][];
 /** The two lists hold the same kinds: a kind added to the union and not here is a compile error. */
 type MissingActionKind = Exclude<FieldAction['kind'], (typeof FIELD_ACTION_KINDS)[number]>;

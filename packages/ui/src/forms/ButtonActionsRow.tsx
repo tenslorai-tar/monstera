@@ -12,8 +12,10 @@ import {
   MAX_ACTION_FILE,
   MAX_BUTTON_ACTIONS,
   MAX_LINK_URI,
+  SUBMIT_FORMATS,
   buttonActionSchema,
   fieldActionSchema,
+  isSubmitAddress,
 } from '@monstera/contract';
 import type { DocVersion, MessageKey } from '@monstera/shared';
 import { type ReactElement, useEffect, useId, useState } from 'react';
@@ -46,7 +48,13 @@ import {
   BUTTON_ACTION_KIND_IMPORT,
   BUTTON_ACTION_KIND_LINK,
   BUTTON_ACTION_KIND_SHOW_HIDE,
+  BUTTON_ACTION_KIND_SUBMIT,
   BUTTON_ACTION_SHOW,
+  BUTTON_ACTION_SUBMIT_AS,
+  BUTTON_ACTION_SUBMIT_NOTE,
+  BUTTON_ACTION_SUBMIT_TO,
+  BUTTON_ACTION_SUBMIT_TO_RULE,
+  BUTTON_SUMMARY_SUBMIT,
   BUTTON_SUMMARY_HIDE,
   BUTTON_SUMMARY_SHOW,
   BUTTON_ACTION_KIND_PRINT,
@@ -73,6 +81,7 @@ import {
   BUTTON_VIEW_KEEP,
   FIELD_PROPS_ACTION_OTHER,
 } from '../messages/en.js';
+import { SUBMIT_FORMAT_NAMES } from '../dialogs/submitForm.js';
 import { kernelPageOf, pdfjsPageOf } from '../pageNumbering.js';
 import { Button } from '../primitives/Button.js';
 import { IconButton } from '../primitives/IconButton.js';
@@ -93,6 +102,7 @@ const KIND_LABELS: Readonly<Record<FieldAction['kind'], MessageKey>> = {
   showHide: BUTTON_ACTION_KIND_SHOW_HIDE,
   print: BUTTON_ACTION_KIND_PRINT,
   importData: BUTTON_ACTION_KIND_IMPORT,
+  submit: BUTTON_ACTION_KIND_SUBMIT,
 };
 
 /** A go-to's view in words. Total, for the trigger's reason. */
@@ -118,7 +128,15 @@ function freshAction(kind: FieldAction['kind']): FieldAction {
       return { kind: 'print' };
     case 'importData':
       return { kind: 'importData', file: 'form data.fdf' };
+    case 'submit':
+      return { kind: 'submit', address: 'https://', format: 'fdf', fields: null };
   }
+}
+
+/** An address a submission is written to: a whole `https:` address with a host, or a `mailto:` naming someone. */
+function writableSubmitAddress(address: string): boolean {
+  if (address.startsWith('mailto:')) return address.length > 'mailto:'.length && isSubmitAddress(address);
+  return writableAddress(address);
 }
 
 /** An address the editor writes: whole, and `https:` (the owner's R22); a document's own `http:` or `mailto:` is kept. */
@@ -137,6 +155,8 @@ function summaryOf(action: FieldAction, say: (key: MessageKey, values?: Record<s
       return say(BUTTON_ACTION_KIND_PRINT);
     case 'importData':
       return say(BUTTON_ACTION_KIND_IMPORT);
+    case 'submit':
+      return say(BUTTON_SUMMARY_SUBMIT, { address: action.address });
     case 'showHide':
       return say(action.hide ? BUTTON_SUMMARY_HIDE : BUTTON_SUMMARY_SHOW, { count: action.fields.length });
     case 'reset':
@@ -151,6 +171,7 @@ function summaryOf(action: FieldAction, say: (key: MessageKey, values?: Record<s
 function savable(draft: ButtonAction, pageCount: number): boolean {
   if (!buttonActionSchema.safeParse(draft).success) return false;
   if (draft.action.kind === 'link') return writableAddress(draft.action.address);
+  if (draft.action.kind === 'submit') return writableSubmitAddress(draft.action.address);
   return draft.action.kind !== 'goTo' || draft.action.page < pageCount;
 }
 
@@ -457,7 +478,75 @@ function ActionDetails({
       return <ImportDetails action={action} onChange={onChange} />;
     case 'showHide':
       return <ShowHideDetails action={action} known={known} onChange={onChange} />;
+    case 'submit':
+      return <SubmitDetails action={action} known={known} onChange={onChange} />;
   }
+}
+
+/** Where a submission goes, how it is encoded and which fields it carries. A press asks before anything is sent. */
+function SubmitDetails({
+  action,
+  known,
+  onChange,
+}: {
+  readonly action: Extract<FieldAction, { kind: 'submit' }>;
+  readonly known: readonly KnownField[];
+  readonly onChange: (action: FieldAction) => void;
+}): ReactElement {
+  const { i18n } = useLingui();
+  const toId = useId();
+  const asId = useId();
+  const valid = writableSubmitAddress(action.address);
+  return (
+    <>
+      <div className="m-properties__row">
+        <label className="m-properties__label" htmlFor={toId}>
+          {i18n._(BUTTON_ACTION_SUBMIT_TO)}
+        </label>
+        <input
+          aria-invalid={!valid}
+          className="m-properties__comment"
+          id={toId}
+          inputMode="url"
+          maxLength={MAX_LINK_URI}
+          onChange={(event) => {
+            onChange({ ...action, address: event.target.value });
+          }}
+          type="text"
+          value={action.address}
+        />
+      </div>
+      {valid ? null : <p className="m-properties__meta">{i18n._(BUTTON_ACTION_SUBMIT_TO_RULE)}</p>}
+      <div className="m-properties__row m-properties__row--inline">
+        <label className="m-properties__label" htmlFor={asId}>
+          {i18n._(BUTTON_ACTION_SUBMIT_AS)}
+        </label>
+        <select
+          className="m-properties__select"
+          id={asId}
+          onChange={(event) => {
+            const format = SUBMIT_FORMATS.find((each) => each === event.target.value);
+            if (format !== undefined) onChange({ ...action, format });
+          }}
+          value={action.format}
+        >
+          {SUBMIT_FORMATS.map((format) => (
+            <option key={format} value={format}>
+              {i18n._(SUBMIT_FORMAT_NAMES[format])}
+            </option>
+          ))}
+        </select>
+      </div>
+      <FieldsChoice
+        fields={action.fields}
+        known={known}
+        onChange={(fields) => {
+          onChange({ ...action, fields });
+        }}
+      />
+      <p className="m-properties__meta">{i18n._(BUTTON_ACTION_SUBMIT_NOTE)}</p>
+    </>
+  );
 }
 
 /** Which fields a show or hide names, ticked from the form's own (never *every field*: `/T` names some), and which way. */

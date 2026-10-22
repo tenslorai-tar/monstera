@@ -6,6 +6,7 @@ import type { ButtonAction, CommandOfKind, FieldActionTrigger, FormFieldHandle }
 import { asDocVersion } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
+import { chosenFormData, readFormData, serialiseFormData } from './formData.js';
 import { applyEditFormFields } from './formFieldEdit.js';
 import { readButtonActions } from './formFieldRead.js';
 import { applyResetForm, applyShowHideFields, readFormFields } from './formFields.js';
@@ -386,6 +387,91 @@ describe('Show or hide fields, as a push button action (ADR-0259)', () => {
       { trigger: 'up', step: 0, action: { kind: 'kept', subtype: 'Hide', runsAs: null } },
     ]);
     await expect(pressed(annotation, 'up', 0)).rejects.toThrow('is not a Show or hide action');
+  });
+});
+
+describe('Submit the form, as a push button action (ADR-0259)', () => {
+  /** The widget's `/A` as MuPDF's raw objects hold it: `/S`, the URL file specification, `/Flags` and `/Fields`. */
+  function submitRead(bytes: Uint8Array, name: string): Record<string, unknown> {
+    const pdf = mupdf.Document.openDocument(bytes, 'application/pdf').asPDF();
+    if (pdf === null) throw new Error('not a PDF');
+    const page = pdf.loadPage(0);
+    if (!(page instanceof mupdf.PDFPage)) throw new Error('not a PDF page');
+    const widget = page.getWidgets().find((each) => each.getName() === name);
+    if (widget === undefined) throw new Error(`MuPDF reads no widget named ${name}`);
+    const action = widget.getObject().get('A');
+    const fields = action.get('Fields');
+    return {
+      subtype: action.get('S').asName(),
+      fs: action.get('F', 'FS').asName(),
+      url: action.get('F', 'F').asString(),
+      flags: action.get('Flags').asNumber(),
+      fields: Array.from({ length: fields.length }, (_, at) => fields.get(at).asString()),
+    };
+  }
+
+  it('is written as /SubmitForm to a URL file specification, each format by its flag, and reads back as written', async () => {
+    const flags = { fdf: 0, html: 4, xfdf: 32 } as const;
+    for (const format of ['fdf', 'html', 'xfdf'] as const) {
+      const action = { kind: 'submit', address: 'https://forms.example/take', format, fields: ['applicant.city'] } as const;
+      const bytes = await written(await buttonForm(), 'go', [{ trigger: 'up', action }]);
+      expect(submitRead(bytes, 'go')).toStrictEqual({
+        subtype: 'SubmitForm',
+        fs: 'URL',
+        url: 'https://forms.example/take',
+        flags: flags[format],
+        fields: ['applicant.city'],
+      });
+      const handle = await handleOf(bytes, 'go');
+      expect(await onSession(bytes, (session) => readButtonActions(session, handle))).toStrictEqual([{ trigger: 'up', step: 0, action }]);
+    }
+  });
+
+  it('encodes the fields named, and only those, as HTML form data, FDF and XFDF', async () => {
+    const bytes = await buttonForm();
+    const [chosen, every] = await onSession(bytes, async (session) => {
+      const fields = await readFormData(session);
+      return [chosenFormData(fields, ['applicant.city']), chosenFormData(fields, undefined)] as const;
+    });
+    const text = (format: 'html' | 'fdf' | 'xfdf'): string => new TextDecoder().decode(serialiseFormData(chosen, format));
+    expect(text('html')).toBe('applicant.city=Paris');
+    expect(text('xfdf')).toContain('<field name="applicant.city"><value>Paris</value></field>');
+    expect(text('fdf')).toContain('/T (applicant.city) /V (Paris)');
+    // CONTROL: every field is sent where the action names none, so the one above is the choice and not the form.
+    expect(new TextDecoder().decode(serialiseFormData(every, 'html'))).toBe('applicant.name=Ada&applicant.city=Paris');
+    // A PARENT'S NAME takes its kids, by the reset's rule.
+    expect(chosenFormData(every, ['applicant']).map((field) => field.name)).toStrictEqual(['applicant.name', 'applicant.city']);
+  });
+
+  it('CONTROL: a submission this build does not carry out as written is kept and never run', async () => {
+    const shapes: readonly [string, number][] = [
+      ['a GET', 1 << 3],
+      ['the whole document', 1 << 8],
+      ['every field but those', 1],
+      ['two formats at once', (1 << 2) | (1 << 5)],
+    ];
+    for (const [what, flags] of shapes) {
+      const forged = await withAction(await buttonForm(), 'go', (document) =>
+        document.context.obj({ S: 'SubmitForm', F: document.context.obj({ FS: 'URL', F: PDFString.of('https://forms.example/take') }), Flags: flags }),
+      );
+      const handle = await handleOf(forged, 'go');
+      expect(await onSession(forged, (session) => readButtonActions(session, handle)), what).toStrictEqual([
+        { trigger: 'up', step: 0, action: { kind: 'kept', subtype: 'SubmitForm', runsAs: null } },
+      ]);
+    }
+    // And an address that is neither https: nor mailto:, beside the same shape at https: that is this build's own.
+    const plain = await withAction(await buttonForm(), 'go', (document) =>
+      document.context.obj({ S: 'SubmitForm', F: document.context.obj({ FS: 'URL', F: PDFString.of('http://forms.example/take') }) }),
+    );
+    expect(await onSession(plain, async (session) => readButtonActions(session, await handleOf(plain, 'go')))).toStrictEqual([
+      { trigger: 'up', step: 0, action: { kind: 'kept', subtype: 'SubmitForm', runsAs: null } },
+    ]);
+    const secure = await withAction(await buttonForm(), 'go', (document) =>
+      document.context.obj({ S: 'SubmitForm', F: document.context.obj({ FS: 'URL', F: PDFString.of('https://forms.example/take') }) }),
+    );
+    expect(await onSession(secure, async (session) => readButtonActions(session, await handleOf(secure, 'go')))).toStrictEqual([
+      { trigger: 'up', step: 0, action: { kind: 'submit', address: 'https://forms.example/take', format: 'fdf', fields: null } },
+    ]);
   });
 });
 

@@ -1775,6 +1775,28 @@ export const FORM_FIELD_REQUIRED_EMPTY = messageKey('surface.form-layer.required
 export const FORM_FIELD_REQUIRED_LEFT = messageKey('surface.form-layer.required-left');
 export const FORM_BUTTON_NO_SCRIPTS = messageKey('surface.form-layer.button-no-scripts');
 export const BUTTON_PRESS_UNREAD = messageKey('surface.form-layer.button-press-unread');
+export const SUBMIT_FORM_TITLE = messageKey('dialog.submit-form.title');
+export const SUBMIT_FORM_EXPLAINS_WEB = messageKey('dialog.submit-form.explains-web');
+export const SUBMIT_FORM_EXPLAINS_MAIL = messageKey('dialog.submit-form.explains-mail');
+export const SUBMIT_FORM_FIELDS_ALL = messageKey('dialog.submit-form.fields-all');
+export const SUBMIT_FORM_FIELDS_SOME = messageKey('dialog.submit-form.fields-some');
+export const SUBMIT_FORM_SEND = messageKey('dialog.submit-form.send');
+export const SUBMIT_FORM_OPEN_MAIL = messageKey('dialog.submit-form.open-mail');
+export const SUBMIT_FORMAT_FDF = messageKey('surface.submit-format.fdf');
+export const SUBMIT_FORMAT_XFDF = messageKey('surface.submit-format.xfdf');
+export const SUBMIT_FORMAT_HTML = messageKey('surface.submit-format.html');
+export const BUTTON_SUBMIT_SENT = messageKey('toast.button-submit.sent');
+export const BUTTON_SUBMIT_NOT_HTTPS = messageKey('toast.button-submit.not-https');
+export const BUTTON_SUBMIT_CREDENTIALS = messageKey('toast.button-submit.credentials');
+export const BUTTON_SUBMIT_BLOCKED = messageKey('toast.button-submit.blocked');
+export const BUTTON_SUBMIT_UNRESOLVABLE = messageKey('toast.button-submit.unresolvable');
+export const BUTTON_SUBMIT_UNREACHABLE = messageKey('toast.button-submit.unreachable');
+export const BUTTON_SUBMIT_NOT_TAKEN = messageKey('toast.button-submit.not-taken');
+export const BUTTON_SUBMIT_MAIL_OPENED = messageKey('toast.button-submit.mail-opened');
+export const BUTTON_SUBMIT_MAIL_WITHOUT_DATA = messageKey('toast.button-submit.mail-without-data');
+export const BUTTON_SUBMIT_NOT_OPENED = messageKey('toast.button-submit.not-opened');
+export const BUTTON_SUBMIT_UNREPRESENTABLE = messageKey('toast.button-submit.unrepresentable');
+export const BUTTON_SUBMIT_UNAVAILABLE = messageKey('toast.button-submit.unavailable');
 export const FORM_FIELD_PRESS = messageKey('surface.form-layer.press');
 /** A signature field on the page, pressed (the owner's F8): what it offers, and its name for a screen reader. */
 export const FORM_FIELD_SIGN = messageKey('surface.form-layer.sign');
@@ -1904,6 +1926,12 @@ export const BUTTON_ACTION_KIND_PRINT = messageKey('surface.field-properties.but
 export const BUTTON_ACTION_PRINT_NOTE = messageKey('surface.field-properties.button-action-print-note');
 export const BUTTON_ACTION_KIND_IMPORT = messageKey('surface.field-properties.button-action-kind-import');
 export const BUTTON_ACTION_KIND_SHOW_HIDE = messageKey('surface.field-properties.button-action-kind-show-hide');
+export const BUTTON_ACTION_KIND_SUBMIT = messageKey('surface.field-properties.button-action-kind-submit');
+export const BUTTON_ACTION_SUBMIT_TO = messageKey('surface.field-properties.button-action-submit-to');
+export const BUTTON_ACTION_SUBMIT_TO_RULE = messageKey('surface.field-properties.button-action-submit-to-rule');
+export const BUTTON_ACTION_SUBMIT_AS = messageKey('surface.field-properties.button-action-submit-as');
+export const BUTTON_ACTION_SUBMIT_NOTE = messageKey('surface.field-properties.button-action-submit-note');
+export const BUTTON_SUMMARY_SUBMIT = messageKey('surface.field-properties.button-summary-submit');
 export const BUTTON_ACTION_HIDE = messageKey('surface.field-properties.button-action-hide');
 export const BUTTON_ACTION_SHOW = messageKey('surface.field-properties.button-action-show');
 export const BUTTON_ACTION_FIELDS_NONE = messageKey('surface.field-properties.button-action-fields-none');
@@ -4680,6 +4708,30 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FORM_BUTTON_NO_SCRIPTS]:
     'Monstera never runs a script or starts a program a form’s button is set to run, so that part of what this button does is left out. Every other part of the form works.',
   [BUTTON_PRESS_UNREAD]: 'This button changed while it was being pressed, so nothing was done. Press it again.',
+  [SUBMIT_FORM_TITLE]: 'Send this form?',
+  [SUBMIT_FORM_EXPLAINS_WEB]: 'This button sends what is filled in on the form, as {format}, to this address:',
+  [SUBMIT_FORM_EXPLAINS_MAIL]:
+    'This button opens your mail app with what is filled in on the form, as {format}, in a message to this address. Nothing is sent until you send the message there.',
+  [SUBMIT_FORM_FIELDS_ALL]: 'Every field on the form is included.',
+  [SUBMIT_FORM_FIELDS_SOME]: '{count, plural, one {This field is included:} other {These # fields are included:}}',
+  [SUBMIT_FORM_SEND]: 'Send',
+  [SUBMIT_FORM_OPEN_MAIL]: 'Open in mail app',
+  [SUBMIT_FORMAT_FDF]: 'FDF',
+  [SUBMIT_FORMAT_XFDF]: 'XFDF',
+  [SUBMIT_FORMAT_HTML]: 'web form data',
+  [BUTTON_SUBMIT_SENT]: 'The form was sent.',
+  [BUTTON_SUBMIT_NOT_HTTPS]: 'The form was not sent. Monstera sends a form only to an address that starts with https://.',
+  [BUTTON_SUBMIT_CREDENTIALS]: 'The form was not sent, because its address carries a user name or password.',
+  [BUTTON_SUBMIT_BLOCKED]: 'The form was not sent, because its address is not on the public internet.',
+  [BUTTON_SUBMIT_UNRESOLVABLE]: 'The form was not sent, because the website in its address could not be found.',
+  [BUTTON_SUBMIT_UNREACHABLE]: 'The form was not sent, because the website did not answer. Check the connection and press the button again.',
+  [BUTTON_SUBMIT_NOT_TAKEN]: 'The website did not accept the form. It may be closed or may want something else filled in.',
+  [BUTTON_SUBMIT_MAIL_OPENED]: 'Your mail app has a new message with the form in it. Send it from there.',
+  [BUTTON_SUBMIT_MAIL_WITHOUT_DATA]:
+    'The form is too long to put in an email message, so your mail app opened an empty one. Save the form data, then attach the file to the message.',
+  [BUTTON_SUBMIT_NOT_OPENED]: 'No mail app opened, so the form was not sent.',
+  [BUTTON_SUBMIT_UNREPRESENTABLE]: 'The form holds a character XFDF cannot carry, so it was not sent.',
+  [BUTTON_SUBMIT_UNAVAILABLE]: 'The form was not sent, because the document could not be read just now.',
   [FORM_FIELD_PRESS]: 'Press {name}',
   [FORM_FIELD_SIGN]: 'Sign {name}',
   [FORM_SIGN_OFFER]: 'Sign this field',
@@ -5035,6 +5087,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [BUTTON_ACTION_PRINT_NOTE]: 'The Print window opens, as it does from the ribbon. Nothing is printed until Print is chosen there.',
   [BUTTON_ACTION_KIND_IMPORT]: 'Import form data',
   [BUTTON_ACTION_KIND_SHOW_HIDE]: 'Show or hide fields',
+  [BUTTON_ACTION_KIND_SUBMIT]: 'Submit the form',
+  [BUTTON_ACTION_SUBMIT_TO]: 'Send to',
+  [BUTTON_ACTION_SUBMIT_TO_RULE]: 'Type a whole address that starts with https:// or mailto:.',
+  [BUTTON_ACTION_SUBMIT_AS]: 'Send as',
+  [BUTTON_ACTION_SUBMIT_NOTE]:
+    'Pressing the button asks first, naming the address and the fields. An email address opens the mail app with the form in a new message, and nothing is sent until it is sent there.',
+  [BUTTON_SUMMARY_SUBMIT]: 'Send to {address}',
   [BUTTON_ACTION_HIDE]: 'Hide them',
   [BUTTON_ACTION_SHOW]: 'Show them',
   [BUTTON_ACTION_FIELDS_NONE]: 'Tick at least one field.',

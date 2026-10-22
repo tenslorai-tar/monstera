@@ -46,7 +46,7 @@ import { fieldNameClash } from '@monstera/shared';
 
 import type { FieldFace } from './fieldActions.js';
 import { FieldEditRefusedError } from './fieldEditRefusal.js';
-import { type ActionHeads, type ActionModel, type PlainAction, buttonSteps, holdsKept } from './buttonActions.js';
+import { type ActionHeads, type ActionModel, type PlainAction, SUBMIT_FLAGS, buttonSteps, holdsKept } from './buttonActions.js';
 import { MAX_FIELD_ANCESTRY } from './fieldRules.js';
 import { FIELD_FAMILY_MARKER, drawsFieldFamily, familyOfMarker, fieldFontOf } from './fieldFamily.js';
 import { base14Of } from './base14Families.js';
@@ -421,6 +421,15 @@ function actionDictOf(document: PDFDocument, action: FieldAction): PDFDict {
     case 'reset':
       return document.context.obj({
         S: 'ResetForm',
+        ...(action.fields === null ? {} : { Fields: action.fields.map((name) => PDFHexString.fromText(name)) }),
+      });
+    case 'submit':
+      // A URL FILE SPECIFICATION (ISO 32000-1, 7.11.5): `/FS /URL` and the address in `/F`, which `/SubmitForm`'s `/F`
+      // must be, and which `fileOfValue` and MuPDF's `fileOf` both read back. The flags are the one table's.
+      return document.context.obj({
+        S: 'SubmitForm',
+        F: document.context.obj({ FS: 'URL', F: PDFString.of(action.address) }),
+        Flags: SUBMIT_FLAGS[action.format],
         ...(action.fields === null ? {} : { Fields: action.fields.map((name) => PDFHexString.fromText(name)) }),
       });
     case 'showHide':

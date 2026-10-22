@@ -195,6 +195,7 @@ import {
   type CloudClient,
   writeStreamedDocument,
   fetchGuardedPdf,
+  postGuarded,
 } from '@monstera/kernel';
 import { type DocId, HeldPassword, normaliseRotation } from '@monstera/shared';
 
@@ -1929,10 +1930,10 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // over the pipe.
     formData: {
       pick: pickFormData,
-      encode: (docId, sessions, format) => {
+      encode: (docId, sessions, format, fields) => {
         const session = sessions.mupdf;
         if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
-        return engineHost.exportFormData(session, format);
+        return engineHost.exportFormData(session, format, fields);
       },
       // THE IMPORT NEEDS NO SESSION HERE, and that is the asset route working:
       // main picks and reads the file, the command carries the bytes, and the
@@ -2306,6 +2307,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       openWebPage: (page) => openWebPage(page, openInBrowser),
       openStore: async (page) => (openStore === undefined ? false : openStore(page)),
       openLink: async (address) => (openLink === undefined ? false : openLink(address)),
+      // A FORM SENT WHERE A BUTTON NAMES (ADR-0259 Decision 6), through the one guard a URL a document chose is reached by.
+      postForm: (address, body, contentType) => postGuarded(address, body, contentType),
       closeListening: () => {
         if (shellWindow === null) return false;
         closeGate.listening();
@@ -3123,7 +3126,7 @@ function engineSessionOpener(
   };
 
   /** The export's half, and {@link extractThroughHost}'s reason word for word. */
-  const exportFormDataThroughHost: HostFormDataExport = (session, format) => {
+  const exportFormDataThroughHost: HostFormDataExport = (session, format, fields) => {
     if (writer === null) {
       throw new Error(
         'A form data export reached the engine with no host writer registered. A session was ' +
@@ -3131,7 +3134,7 @@ function engineSessionOpener(
           'host connection have diverged.',
       );
     }
-    return writer.exportFormData(session, format);
+    return writer.exportFormData(session, format, fields);
   };
 
   /** The annotation export's half, and {@link extractThroughHost}'s reason word for word. */

@@ -91,3 +91,22 @@ Each action, in its own commit: a kernel case writes it and a second reader read
 `ResetForm`, `Named`, `GoToR`; MuPDF's object model for `Hide`, `ImportData`, `SubmitForm` and every `/Next` chain,
 which PDF.js does not read); a rendered case makes the button in *Edit fields*, switches to filling, presses it and
 observes the effect, with a control.
+
+## Correction, 2026-10-22 (cloud run 15, as built)
+
+Recorded as built, the Decision above left as written.
+
+1. **A submission is sent as FDF, XFDF or HTML form data, not as the whole document.** Sending the document means
+   streaming the staged image into the request, since the document is never read into `main` (ADR-0165), and that
+   route was not built in this run. A document's own `SubmitForm` with bit 9 is listed kept and never run, as one asking
+   for a GET, for coordinates, for every field but some, or for two formats at once is. `SUBMIT_FORMATS` is the list.
+2. **The data is encoded where the form is read**: `engine/exportFormData` takes HTML form data (`URLSearchParams`, the
+   encoding's own authority) and an optional list of field names, read by the one rule a reset and a show or hide take
+   (`namedAmong`). `main` posts what it answers through `postGuarded`, ADR-0061's `checkedUrl` and pinned lookup with a
+   POST; a redirect is not followed, since it asks for the data to go somewhere the person was not asked about.
+3. **A `mailto:` submission whose data would pass 2,000 characters** opens the mail app without it and runs the
+   application's Export form data in the action's encoding (FDF for HTML form data, which has no export), whose save
+   dialog is its own question. The editor offers HTML form data for a `mailto:` address too; it is text.
+4. **A hidden widget is marked in the field listing** (`hidden`, present only where true) and filling offers it nothing,
+   so a Show or hide is seen where it lands. Before this a field set hidden in Properties stayed fillable through a
+   control nobody could see.

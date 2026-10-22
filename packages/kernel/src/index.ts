@@ -759,6 +759,8 @@ export {
   fetchGuardedPdf,
   guardedLookup,
   pdfBody,
+  type PostTransport,
+  postGuarded,
 } from './guardedFetch.js';
 export {
   CLOUD_PROVIDERS,

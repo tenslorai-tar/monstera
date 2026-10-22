@@ -2857,6 +2857,14 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       const action = buttonSteps.get(field.name)?.find((each) => each.trigger === trigger && each.step === step)?.action;
       return Promise.resolve(ok({ kind: action?.kind === 'link' ? ('opened' as const) : ('no-such-link' as const) }));
     },
+    // A BUTTON'S SUBMIT as main answers it, the link's shape: an `https:` address is `sent` with no server behind it and a
+    // `mailto:` one `mail-opened` with no mail app, so a case reads the request a press made rather than a delivery.
+    'document.submitButtonForm': ({ docId, version, field, trigger, step }) => {
+      if (versions.get(docId) !== version) return Promise.resolve(ok({ kind: 'stale' as const }));
+      const action = buttonSteps.get(field.name)?.find((each) => each.trigger === trigger && each.step === step)?.action;
+      if (action?.kind !== 'submit') return Promise.resolve(ok({ kind: 'no-such-submit' as const }));
+      return Promise.resolve(ok({ kind: action.address.startsWith('mailto:') ? ('mail-opened' as const) : ('sent' as const) }));
+    },
     'document.saveBarcodeContact': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
     // NO WORK RUNS IN THE SHIM: every name is idle and nothing can be stopped.
     'work.progress': () => Promise.resolve(ok({ kind: 'idle' as const })),

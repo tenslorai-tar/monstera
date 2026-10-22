@@ -2,11 +2,12 @@ import * as mupdf from './mupdfRaw.js';
 import type { PDFObject, PDFWidget } from './mupdfRaw.js';
 import { z } from 'zod';
 
-import type { FieldFill, FormDataFormat, FormDataImportFormat, IMPORT_SKIP_REASONS } from '@monstera/contract';
+import type { EncodedFormDataFormat, FieldFill, FormDataImportFormat, IMPORT_SKIP_REASONS } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { ENGINE_IMPORT_SKIPS_MAX, ENGINE_IMPORT_SKIP_NAME_MAX } from './host/engineChannels.js';
+import { namedAmong } from './buttonActions.js';
 import { recalculate } from './fieldCalculation.js';
 import { fieldValues, fillWidget, onState, onStateKey, refuseUnfillable } from './formFields.js';
 import { fdfFile, pdfName, pdfString, xmlCanCarry, xmlEscaped } from './interchangeEncoding.js';
@@ -211,11 +212,34 @@ function fdfValue(field: ExportedField): string {
  */
 export function serialiseFormData(
   fields: readonly ExportedField[],
-  format: FormDataFormat,
+  format: EncodedFormDataFormat,
 ): Uint8Array {
   if (format === 'json') return new TextEncoder().encode(jsonFormData(fields));
   if (format === 'xfdf') return new TextEncoder().encode(xfdfFormData(fields));
+  if (format === 'html') return new TextEncoder().encode(htmlFormData(fields));
   return new TextEncoder().encode(fdfFormData(fields));
+}
+
+/**
+ * The fields a submission names (ADR-0259 Decision 6): every field where `names` is absent, else those it takes by the
+ * one rule a reset and a show or hide take (`namedAmong`).
+ */
+export function chosenFormData(fields: readonly ExportedField[], names: readonly string[] | undefined): readonly ExportedField[] {
+  return names === undefined ? fields : fields.filter((field) => namedAmong(names, field.name));
+}
+
+/**
+ * HTML form data (ISO 32000-1, 12.7.5.2, bit 3): `application/x-www-form-urlencoded`, as a browser posts a form, one
+ * `name=value` pair per value. `URLSearchParams` is the encoding's own authority in the runtime, so nothing here escapes
+ * anything. A field holding no value is sent with an empty one, as a browser sends an empty text box.
+ */
+function htmlFormData(fields: readonly ExportedField[]): string {
+  const pairs = new URLSearchParams();
+  for (const field of fields) {
+    if (field.values.length === 0) pairs.append(field.name, '');
+    for (const value of field.values) pairs.append(field.name, value);
+  }
+  return pairs.toString();
 }
 
 /**

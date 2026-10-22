@@ -5,6 +5,8 @@ import {
   type FieldActionTrigger,
   MAX_ACTION_CHAIN,
   MAX_ACTION_SUBTYPE,
+  SUBMIT_FORMATS,
+  type SubmitFormat,
   fieldActionSchema,
   stepRunsAs,
 } from '@monstera/contract/host';
@@ -73,6 +75,25 @@ export interface ActionHeads<Node> {
 /** `/Flags` bit 1 of a Reset form or a submission: the fields named are the ones LEFT OUT (ISO 32000-1, table 238). */
 const EXCLUDE = 1;
 
+/**
+ * A submission's `/Flags` as the format it names (ISO 32000-1, table 237): none is FDF, bit 3 HTML form data, bit 6
+ * XFDF. THE ONE TABLE, which the writer takes too, so what is written reads back as itself; bit 9, the whole document,
+ * is in no row, so a document's own is kept (`SUBMIT_FORMATS`' reason).
+ */
+export const SUBMIT_FLAGS: Readonly<Record<SubmitFormat, number>> = { fdf: 0, html: 1 << 2, xfdf: 1 << 5 };
+const SUBMIT_FORMAT_OF_FLAGS: ReadonlyMap<number, SubmitFormat> = new Map(
+  SUBMIT_FORMATS.map((format) => [SUBMIT_FLAGS[format], format] as const),
+);
+
+/**
+ * Whether an action's list of fully qualified names takes the field `name` (ISO 32000-1, 12.7.3.1): named itself, or a
+ * field under one named, since naming a field names its kids. ONE rule, which a reset, a show or hide and a submission
+ * all take.
+ */
+export function namedAmong(names: readonly string[], name: string): boolean {
+  return names.some((each) => each !== '' && (name === each || name.startsWith(`${each}.`)));
+}
+
 /** A kept action: the document's own, never written over, and run only as `runsAs` says. */
 function kept(subtype: string | null, runsAs: FieldAction['kind'] | null): ButtonStep['action'] {
   return { kind: 'kept', subtype: (subtype ?? '').slice(0, MAX_ACTION_SUBTYPE), runsAs };
@@ -110,6 +131,14 @@ export function classifyAction(plain: PlainAction): FieldAction | ButtonStep['ac
       if (plain.targets === 'unreadable' || plain.targets === null || plain.hide === null) return kept(plain.subtype, null);
       const parsed = fieldActionSchema.safeParse({ kind: 'showHide', fields: plain.targets, hide: plain.hide });
       return parsed.success ? parsed.data : kept(plain.subtype, 'showHide');
+    }
+    case 'SubmitForm': {
+      // ONLY THE FORMAT BITS, and at most one: a submission asking for a GET, for coordinates, for the annotations or for
+      // every field but some is one this build does not carry out as written, so it is kept and never run.
+      const format = SUBMIT_FORMAT_OF_FLAGS.get(plain.flags);
+      if (format === undefined || plain.fields === 'unreadable') return kept(plain.subtype, null);
+      const parsed = fieldActionSchema.safeParse({ kind: 'submit', address: plain.file, format, fields: plain.fields });
+      return parsed.success ? parsed.data : kept(plain.subtype, null);
     }
     case 'ImportData': {
       // A PATH TO SOMEWHERE ELSE is kept, and still runs: the press asks the person to pick, so what the document names

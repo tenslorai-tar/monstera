@@ -8,13 +8,14 @@ import {
 import type { DocId, DocVersion } from '@monstera/shared';
 
 import { askThenOpen } from '../commands/followLink.js';
+import { type SubmitFallbackId, askThenSubmit } from './buttonSubmit.js';
 import { BUTTON_PRESS_UNREAD } from '../messages/en.js';
 import type { ShowToast } from '../toasts.js';
 import { ZOOM_STEPS, type ZoomMode } from '../zoom.js';
 
 /** What a press needs: the button's steps, the one place a command is sent, the way a page is shown, and a sentence. */
 export interface ButtonPressDeps {
-  readonly client: Pick<ContractClient, 'document.buttonActions' | 'document.openButtonLink'>;
+  readonly client: Pick<ContractClient, 'document.buttonActions' | 'document.openButtonLink' | 'document.submitButtonForm'>;
   /** Opens a registered dialog and answers what it resolved: the question every address a document holds is asked. */
   readonly ask: (id: string, props: unknown) => Promise<unknown>;
   /** Sends a command naming one step; resolves with the version it produced, or `undefined` where it did not land. */
@@ -33,7 +34,7 @@ export type ButtonStepCommand = CommandOfKind<'resetForm'> | CommandOfKind<'show
  * The application's own commands a button's action is (ADR-0259 Decision 2): what a press does is what the person would
  * do from the ribbon, with the same dialogs, so the action never prints or imports by a second route.
  */
-export type ButtonCommandId = 'document.print' | 'document.import-form-data-fdf';
+export type ButtonCommandId = 'document.print' | 'document.import-form-data-fdf' | SubmitFallbackId;
 
 /**
  * The zoom a go-to asks for (ISO 32000-1, table 151): the whole page, the page's width, or an `/XYZ`'s own zoom, kept
@@ -93,6 +94,15 @@ export async function pressButton(deps: ButtonPressDeps, docId: DocId, pressed: 
         if (each.action.kind === 'link') {
           await askThenOpen(deps, each.action.address, () =>
             deps.client['document.openButtonLink']({ docId, version, field, trigger: pressed.trigger, step: each.step }),
+          );
+        }
+        break;
+      case 'submit':
+        // ASKED FIRST, naming where, how and what (ADR-0259 Decision 6); `main` sends what it reads at this step and
+        // version, so the address and the data never come from here.
+        if (each.action.kind === 'submit') {
+          await askThenSubmit(deps, each.action, () =>
+            deps.client['document.submitButtonForm']({ docId, version, field, trigger: pressed.trigger, step: each.step }),
           );
         }
         break;
