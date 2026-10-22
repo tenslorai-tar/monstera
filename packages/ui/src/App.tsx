@@ -3648,14 +3648,14 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         if (zoom !== undefined) changeZoom(() => zoom);
         navigator.jumpTo(page);
       };
-      void pressButton({ client, apply, toast, show }, docId, {
+      void pressButton({ client, ask, apply, toast, show }, docId, {
         page: handle.page,
         index: handle.index,
         name: handle.name,
         trigger: handle.press,
       });
     },
-    [activeId, applyCarryingFields, changeZoom, client, navigator, toast],
+    [activeId, applyCarryingFields, ask, changeZoom, client, navigator, toast],
   );
   /** The form layer's one way in: a fill, a signature, or a press. */
   const fillOrPress = useCallback(

@@ -2,6 +2,7 @@ import type { ButtonStep, CommandOfKind, ContractClient } from '@monstera/contra
 import { type DocVersion, type MessageKey, asDocId, asDocVersion, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
+import { FOLLOW_LINK_DIALOG_ID } from '../dialogs/followLink.js';
 import { BUTTON_PRESS_UNREAD } from '../messages/en.js';
 import type { ZoomMode } from '../zoom.js';
 import { pressButton } from './buttonPress.js';
@@ -17,7 +18,12 @@ const DOC = asDocId('00000000-0000-4000-8000-0000000000bb');
 const READ_AT = asDocVersion(7);
 const BUTTON = { page: 1, index: 4, name: 'go' };
 
-function pressing(steps: readonly ButtonStep[] | null, lands: (sent: number) => boolean = () => true) {
+function pressing(
+  steps: readonly ButtonStep[] | null,
+  lands: (sent: number) => boolean = () => true,
+  /** What the person answers each question: agreeing, unless a case says otherwise. */
+  answer: unknown = { open: true },
+) {
   const sent: CommandOfKind<'resetForm'>[] = [];
   const said: MessageKey[] = [];
   /** Every route a step took, in the order it took it. */
@@ -25,7 +31,15 @@ function pressing(steps: readonly ButtonStep[] | null, lands: (sent: number) => 
   const deps = {
     client: {
       'document.buttonActions': () => Promise.resolve(ok({ version: READ_AT, steps })),
-    } as Pick<ContractClient, 'document.buttonActions'>,
+      'document.openButtonLink': (params: unknown) => {
+        routes.push({ open: params });
+        return Promise.resolve(ok({ kind: 'opened' as const }));
+      },
+    } as Pick<ContractClient, 'document.buttonActions' | 'document.openButtonLink'>,
+    ask: (id: string, props: unknown) => {
+      routes.push({ ask: id, props });
+      return Promise.resolve(answer);
+    },
     apply: (command: CommandOfKind<'resetForm'>): Promise<DocVersion | undefined> => {
       sent.push(command);
       routes.push({ apply: command.step });
@@ -84,6 +98,21 @@ describe('pressing a push button', () => {
       // NONE NAMED keeps the reader's.
       { show: 1, zoom: undefined },
     ]);
+  });
+
+  it('asks before a link, naming its address, and on yes asks main to open THE STEP, never the address', async () => {
+    const { deps, routes } = pressing([{ trigger: 'up', step: 0, action: { kind: 'link', address: 'https://example.org/a' } }]);
+    await pressButton(deps, DOC, { ...BUTTON, trigger: 'up' });
+    expect(routes).toStrictEqual([
+      { ask: FOLLOW_LINK_DIALOG_ID, props: { address: 'https://example.org/a', followable: true, scheme: 'https:' } },
+      { open: { docId: DOC, version: READ_AT, field: BUTTON, trigger: 'up', step: 0 } },
+    ]);
+  });
+
+  it('CONTROL: a link the person declines opens nothing', async () => {
+    const { deps, routes } = pressing([{ trigger: 'up', step: 0, action: { kind: 'link', address: 'https://example.org/a' } }], () => true, null);
+    await pressButton(deps, DOC, { ...BUTTON, trigger: 'up' });
+    expect(routes.filter((route) => typeof route === 'object' && route !== null && 'open' in route)).toStrictEqual([]);
   });
 
   it('stops at a step that did not land, since what follows was written to follow it', async () => {

@@ -265,3 +265,32 @@ describe('Go to a page, as a push button action (ADR-0259)', () => {
     );
   });
 });
+
+describe('Open a web link, as a push button action (ADR-0259)', () => {
+  it('is written as /URI, and PDF.js reads the address as the widget’s url', async () => {
+    const address = 'https://example.org/apply?step=2';
+    const bytes = await written(await buttonForm(), 'go', [{ trigger: 'up', action: { kind: 'link', address } }]);
+    expect((await pdfjsWidget(bytes, 'go'))['url']).toBe(address);
+    const handle = await handleOf(bytes, 'go');
+    expect(await onSession(bytes, (session) => readButtonActions(session, handle))).toStrictEqual([
+      { trigger: 'up', step: 0, action: { kind: 'link', address } },
+    ]);
+    // CONTROL: the empty button carries no url to PDF.js, so the address above is the one written.
+    expect((await pdfjsWidget(await buttonForm(), 'go'))['url']).toBeUndefined();
+  });
+
+  it('writes an address that is not ASCII in the URL parser’s own encoding, as /URI must be', async () => {
+    const bytes = await written(await buttonForm(), 'go', [{ trigger: 'up', action: { kind: 'link', address: 'https://example.org/café' } }]);
+    expect((await pdfjsWidget(bytes, 'go'))['url']).toBe('https://example.org/caf%C3%A9');
+  });
+
+  it('CONTROL: a /URI whose scheme a person may not follow is kept and never run', async () => {
+    const forged = await withAction(await buttonForm(), 'go', (document) =>
+      document.context.obj({ S: 'URI', URI: PDFString.of('javascript:app.alert(1)') }),
+    );
+    const handle = await handleOf(forged, 'go');
+    expect(await onSession(forged, (session) => readButtonActions(session, handle))).toStrictEqual([
+      { trigger: 'up', step: 0, action: { kind: 'kept', subtype: 'URI', runsAs: null } },
+    ]);
+  });
+});

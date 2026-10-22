@@ -7,13 +7,16 @@ import {
 } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
 
+import { askThenOpen } from '../commands/followLink.js';
 import { BUTTON_PRESS_UNREAD } from '../messages/en.js';
 import type { ShowToast } from '../toasts.js';
 import { ZOOM_STEPS, type ZoomMode } from '../zoom.js';
 
 /** What a press needs: the button's steps, the one place a command is sent, the way a page is shown, and a sentence. */
 export interface ButtonPressDeps {
-  readonly client: Pick<ContractClient, 'document.buttonActions'>;
+  readonly client: Pick<ContractClient, 'document.buttonActions' | 'document.openButtonLink'>;
+  /** Opens a registered dialog and answers what it resolved: the question every address a document holds is asked. */
+  readonly ask: (id: string, props: unknown) => Promise<unknown>;
   /** Sends a command naming one step; resolves with the version it produced, or `undefined` where it did not land. */
   readonly apply: (command: CommandOfKind<'resetForm'>) => Promise<DocVersion | undefined>;
   /** Shows a zero-based page, at a zoom where the action names one: every other way of going to a page's route. */
@@ -55,10 +58,8 @@ export interface ButtonPressed {
  * What is sent names the step, never what it does: the kernel reads the action again (`resetForm`'s reason).
  */
 export async function pressButton(deps: ButtonPressDeps, docId: DocId, pressed: ButtonPressed): Promise<void> {
-  const read = await deps.client['document.buttonActions']({
-    docId,
-    field: { page: pressed.page, index: pressed.index, name: pressed.name },
-  });
+  const field = { page: pressed.page, index: pressed.index, name: pressed.name };
+  const read = await deps.client['document.buttonActions']({ docId, field });
   if (!read.ok || read.value.steps === null) {
     deps.toast('problem', BUTTON_PRESS_UNREAD);
     return;
@@ -74,6 +75,15 @@ export async function pressButton(deps: ButtonPressDeps, docId: DocId, pressed: 
         // THE PAGE THE DOCUMENT NAMES, read with the step: a kept go-to carries none and the kernel never lists one as
         // running, so only this build's own reading of a destination is shown.
         if (each.action.kind === 'goTo') deps.show(each.action.page, zoomOfGoTo(each.action));
+        break;
+      case 'link':
+        // ASKED FIRST, by the one question every address a document holds is asked (ADR-0167); `main` opens what it
+        // reads at this step and version, so the address shown is the only thing the renderer holds of it.
+        if (each.action.kind === 'link') {
+          await askThenOpen(deps, each.action.address, () =>
+            deps.client['document.openButtonLink']({ docId, version, field, trigger: pressed.trigger, step: each.step }),
+          );
+        }
         break;
       case 'reset': {
         const next = await deps.apply({ kind: 'resetForm', ...at });

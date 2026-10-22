@@ -10,6 +10,7 @@ import {
   type FormFieldHandle,
   MAX_ACTION_FIELDS,
   MAX_BUTTON_ACTIONS,
+  MAX_LINK_URI,
   buttonActionSchema,
 } from '@monstera/contract';
 import type { DocVersion, MessageKey } from '@monstera/shared';
@@ -31,7 +32,10 @@ import {
   BUTTON_ACTION_FIELDS_LIMIT,
   BUTTON_ACTION_FULL,
   BUTTON_ACTION_KEPT_ROW,
+  BUTTON_ACTION_ADDRESS,
+  BUTTON_ACTION_ADDRESS_HTTPS,
   BUTTON_ACTION_KIND_GO_TO,
+  BUTTON_ACTION_KIND_LINK,
   BUTTON_ACTION_KIND_RESET,
   BUTTON_ACTION_PAGE,
   BUTTON_ACTION_PAGE_RANGE,
@@ -42,6 +46,7 @@ import {
   BUTTON_ACTION_VIEW,
   BUTTON_ACTION_WHEN,
   BUTTON_SUMMARY_GO_TO,
+  BUTTON_SUMMARY_LINK,
   BUTTON_SUMMARY_RESET_ALL,
   BUTTON_SUMMARY_RESET_SOME,
   BUTTON_TRIGGER_DOWN,
@@ -68,6 +73,7 @@ const TRIGGER_LABELS: Readonly<Record<FieldActionTrigger, MessageKey>> = {
 /** Each kind's name in the *Do* list. Total, for the trigger's reason. */
 const KIND_LABELS: Readonly<Record<FieldAction['kind'], MessageKey>> = {
   goTo: BUTTON_ACTION_KIND_GO_TO,
+  link: BUTTON_ACTION_KIND_LINK,
   reset: BUTTON_ACTION_KIND_RESET,
 };
 
@@ -83,9 +89,16 @@ function freshAction(kind: FieldAction['kind']): FieldAction {
   switch (kind) {
     case 'goTo':
       return { kind: 'goTo', page: 0, view: 'keep', at: null };
+    case 'link':
+      return { kind: 'link', address: 'https://' };
     case 'reset':
       return { kind: 'reset', fields: null };
   }
+}
+
+/** An address the editor writes: whole, and `https:` (the owner's R22); a document's own `http:` or `mailto:` is kept. */
+function writableAddress(address: string): boolean {
+  return address.startsWith('https://') && URL.canParse(address) && new URL(address).hostname !== '';
 }
 
 /** One action in words, for its row. */
@@ -93,6 +106,8 @@ function summaryOf(action: FieldAction, say: (key: MessageKey, values?: Record<s
   switch (action.kind) {
     case 'goTo':
       return say(BUTTON_SUMMARY_GO_TO, { page: pdfjsPageOf(action.page) });
+    case 'link':
+      return say(BUTTON_SUMMARY_LINK, { address: action.address });
     case 'reset':
       return action.fields === null ? say(BUTTON_SUMMARY_RESET_ALL) : say(BUTTON_SUMMARY_RESET_SOME, { count: action.fields.length });
   }
@@ -104,6 +119,7 @@ function summaryOf(action: FieldAction, say: (key: MessageKey, values?: Record<s
  */
 function savable(draft: ButtonAction, pageCount: number): boolean {
   if (!buttonActionSchema.safeParse(draft).success) return false;
+  if (draft.action.kind === 'link') return writableAddress(draft.action.address);
   return draft.action.kind !== 'goTo' || draft.action.page < pageCount;
 }
 
@@ -392,6 +408,8 @@ function ActionDetails({
   switch (action.kind) {
     case 'goTo':
       return <GoToDetails action={action} onChange={onChange} pageCount={pageCount} />;
+    case 'link':
+      return <LinkDetails action={action} onChange={onChange} />;
     case 'reset':
       return (
         <FieldsChoice
@@ -469,6 +487,40 @@ function GoToDetails({
           ))}
         </select>
       </div>
+    </>
+  );
+}
+
+/** A link's address, typed whole; one that is not a whole `https:` address is said and cannot be saved. */
+function LinkDetails({
+  action,
+  onChange,
+}: {
+  readonly action: Extract<FieldAction, { kind: 'link' }>;
+  readonly onChange: (action: FieldAction) => void;
+}): ReactElement {
+  const { i18n } = useLingui();
+  const id = useId();
+  return (
+    <>
+      <div className="m-properties__row">
+        <label className="m-properties__label" htmlFor={id}>
+          {i18n._(BUTTON_ACTION_ADDRESS)}
+        </label>
+        <input
+          aria-invalid={!writableAddress(action.address)}
+          className="m-properties__comment"
+          id={id}
+          inputMode="url"
+          maxLength={MAX_LINK_URI}
+          onChange={(event) => {
+            onChange({ kind: 'link', address: event.target.value });
+          }}
+          type="text"
+          value={action.address}
+        />
+      </div>
+      {writableAddress(action.address) ? null : <p className="m-properties__meta">{i18n._(BUTTON_ACTION_ADDRESS_HTTPS)}</p>}
     </>
   );
 }

@@ -622,6 +622,7 @@ export function createContractHandlers(deps: {
     'document.placeBarcode': placeBarcodeHandler(deps.commands),
     'document.pageBarcodes': pageBarcodesHandler(deps.commands),
     'document.openBarcodeLink': openBarcodeLinkHandler(deps.commands, deps.openLink),
+    'document.openButtonLink': openButtonLinkHandler(deps.commands, deps.openLink),
     'document.saveBarcodeContact': saveBarcodeContactHandler(deps.commands, mintWritten),
     'document.accessibilityCheck': accessibilityCheckHandler(deps.commands),
     'document.sign': signHandler(deps.commands),
@@ -1749,6 +1750,37 @@ function openBarcodeLinkHandler(
       if (address === undefined || address === '') return ok({ kind: 'no-such-link' } as const);
       if (!isFollowable(address)) return ok({ kind: 'scheme-refused', scheme: shownSchemeOf(address) } as const);
       return ok({ kind: (await openLink(address)) ? 'opened' : 'not-opened' } as const);
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * A push button's web address opened (ADR-0259), read by main from the document by the step the renderer named:
+ * {@link openBarcodeLinkHandler}'s rule for a button. The steps are read again at the version the renderer saw them, so
+ * a button that moved since, or a step that is not a link, opens nothing; the address never crosses from the renderer.
+ */
+function openButtonLinkHandler(
+  commands: DocumentCommands,
+  openLink: (address: string) => Promise<boolean>,
+): ContractHandlers['document.openButtonLink'] {
+  return async ({
+    docId,
+    version,
+    field,
+    trigger,
+    step,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.openButtonLink']>>> => {
+    try {
+      const read = await commands.buttonActions(docId, field);
+      if (read.version !== version) return ok({ kind: 'stale' } as const);
+      const action = read.steps?.find((each) => each.trigger === trigger && each.step === step)?.action;
+      if (action?.kind !== 'link') return ok({ kind: 'no-such-link' } as const);
+      if (!isFollowable(action.address)) return ok({ kind: 'scheme-refused', scheme: shownSchemeOf(action.address) } as const);
+      return ok({ kind: (await openLink(action.address)) ? 'opened' : 'not-opened' } as const);
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });

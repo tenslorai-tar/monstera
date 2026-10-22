@@ -14,6 +14,8 @@ import {
   SHOWN_SCHEME_MAX,
   blockEditOf,
   channels,
+  type ButtonStep,
+  type FieldActionTrigger,
   type FontFamilyEntry,
   type ListedFontFamilies,
 } from '@monstera/contract';
@@ -38,6 +40,7 @@ import {
 import { BARCODE_WRITE_FORMATS } from '@monstera/kernel/barcode';
 import {
   type DocId,
+  type DocVersion,
   type FileHandle,
   asDocId,
   asDocVersion,
@@ -749,6 +752,62 @@ describe('document.openBarcodeLink', () => {
     });
     expect(staleHarness.linksOpened).toStrictEqual([]);
     expect(goneHarness.linksOpened).toStrictEqual([]);
+  });
+});
+
+describe('document.openButtonLink (ADR-0259)', () => {
+  /** Commands whose button read answers `steps` at `version`, recording the handles it was asked for. */
+  function buttonCommands(steps: readonly ButtonStep[] | null, version = 4): { commands: DocumentCommands; asked: unknown[] } {
+    const asked: unknown[] = [];
+    const commands = {
+      buttonActions: (_docId: DocId, field: unknown) => {
+        asked.push(field);
+        return Promise.resolve({ version: asDocVersion(version), steps });
+      },
+    } as unknown as DocumentCommands;
+    return { commands, asked };
+  }
+  const field = { page: 0, index: 3, name: 'Visit' };
+  const request: { docId: DocId; version: DocVersion; field: typeof field; trigger: FieldActionTrigger; step: number } = {
+    docId: A_DOC,
+    version: asDocVersion(4),
+    field,
+    trigger: 'up',
+    step: 1,
+  };
+  const STEPS: readonly ButtonStep[] = [
+    { trigger: 'up', step: 0, action: { kind: 'reset', fields: null } },
+    { trigger: 'up', step: 1, action: { kind: 'link', address: 'https://example.org/form' } },
+  ];
+
+  it('OPENS the address main read from the document for the step the renderer named — the address never crosses', async () => {
+    const { commands, asked } = buttonCommands(STEPS);
+    const { handlers, linksOpened } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+    expect(await handlers['document.openButtonLink'](request)).toStrictEqual({ ok: true, value: { kind: 'opened' } });
+    expect(linksOpened).toStrictEqual(['https://example.org/form']);
+    expect(asked).toStrictEqual([field]);
+  });
+
+  it('opens NOTHING for a moved document, a step that is not a link, a button that is gone, or a scheme not followed', async () => {
+    const cases: readonly [readonly ButtonStep[] | null, number, typeof request, unknown][] = [
+      [STEPS, 9, request, { kind: 'stale' }],
+      [STEPS, 4, { ...request, step: 0 }, { kind: 'no-such-link' }],
+      [STEPS, 4, { ...request, trigger: 'down' }, { kind: 'no-such-link' }],
+      [null, 4, request, { kind: 'no-such-link' }],
+    ];
+    for (const [steps, version, asked, answer] of cases) {
+      const { commands } = buttonCommands(steps, version);
+      const { handlers, linksOpened } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+      expect(await handlers['document.openButtonLink'](asked)).toStrictEqual({ ok: true, value: answer });
+      expect(linksOpened).toStrictEqual([]);
+    }
+    // A SCHEME NOT FOLLOWED cannot be a link step the contract takes, so it is built past it: the handler's own check is
+    // the second wall, and this is the case that shows it stands.
+    const forged = [{ trigger: 'up', step: 1, action: { kind: 'link', address: 'javascript:alert(1)' } }] as unknown as readonly ButtonStep[];
+    const { commands } = buttonCommands(forged);
+    const { handlers, linksOpened } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+    expect(await handlers['document.openButtonLink'](request)).toStrictEqual({ ok: true, value: { kind: 'scheme-refused', scheme: 'javascript:' } });
+    expect(linksOpened).toStrictEqual([]);
   });
 });
 

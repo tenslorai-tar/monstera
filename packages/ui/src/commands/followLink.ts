@@ -1,5 +1,5 @@
 import { type ContractClient, isFollowable, shownSchemeOf } from '@monstera/contract';
-import type { DocId, DocVersion, MessageKey } from '@monstera/shared';
+import type { DocId, DocVersion, MessageKey, Result } from '@monstera/shared';
 
 import { FOLLOW_LINK_DIALOG_ID, FOLLOW_LINK_RESULT } from '../dialogs/followLink.js';
 import type { FollowedLink } from '../LinkLayer.js';
@@ -47,13 +47,34 @@ export async function followLink(
     deps.jumpTo(link.page);
     return;
   }
+  await askThenOpen(deps, link.uri, () =>
+    deps.client['document.openLink']({ docId, version, page: followed.page, index: followed.index }),
+  );
+}
+
+/** What `main` answers when asked to open an address a document holds: a link's, a barcode's or a button's. */
+type OpenAnswer = Result<
+  { readonly kind: 'opened' | 'stale' | 'no-such-link' | 'too-long' | 'not-opened' } | { readonly kind: 'scheme-refused' },
+  unknown
+>;
+
+/**
+ * THE ONE QUESTION before an address a document holds is opened (ADR-0167 Decision 2, and ADR-0259 for a button): the
+ * dialog names the address, and only *Open link* sends anything; a scheme that is not followed is said there and never
+ * sent. `open` names what to open by its place, never by the address, which is `main`'s to read.
+ */
+export async function askThenOpen(
+  deps: Pick<FollowLinkDeps, 'ask' | 'toast'>,
+  address: string,
+  open: () => Promise<OpenAnswer>,
+): Promise<void> {
   const answer = await deps.ask(FOLLOW_LINK_DIALOG_ID, {
-    address: link.uri,
-    followable: isFollowable(link.uri),
-    scheme: shownSchemeOf(link.uri),
+    address,
+    followable: isFollowable(address),
+    scheme: shownSchemeOf(address),
   });
-  if (!FOLLOW_LINK_RESULT.safeParse(answer).success || !isFollowable(link.uri)) return;
-  const opened = await deps.client['document.openLink']({ docId, version, page: followed.page, index: followed.index });
+  if (!FOLLOW_LINK_RESULT.safeParse(answer).success || !isFollowable(address)) return;
+  const opened = await open();
   if (!opened.ok) {
     deps.toast('problem', LINK_FOLLOW_UNAVAILABLE);
     return;

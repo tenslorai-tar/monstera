@@ -73,6 +73,7 @@ import {
   formFieldHandleSchema,
   formFieldReadSchema,
   FIELD_ACTION_TRIGGERS,
+  MAX_ACTION_CHAIN,
   fieldActionTriggerSchema,
   buttonStepsSchema,
   documentFontSchema,
@@ -5546,6 +5547,33 @@ export const channels = {
     'Reads what one push button does, on each trigger, in order.',
     z.object({ docId: docIdSchema, field: formFieldHandleSchema }),
     z.object({ version: docVersionSchema, steps: buttonStepsSchema.nullable() }),
+    ['document-not-open', 'document-poisoned'],
+  ),
+
+  /**
+   * Opens the web address one step of a push button names (ADR-0259 Decision 2), after the person agreed to it:
+   * `document.openLink`'s rule for a button. The renderer names the button, the trigger and the step at the version it
+   * read them; `main` reads the steps again and opens the address only where that step is a link at that version and its
+   * scheme is one `isFollowable` takes. The address never crosses from the renderer.
+   */
+  'document.openButtonLink': channel(
+    'Opens the web address a push button’s action names, read by main from the document.',
+    z
+      .object({
+        docId: docIdSchema,
+        version: docVersionSchema,
+        field: formFieldHandleSchema,
+        trigger: fieldActionTriggerSchema,
+        step: z.number().int().min(0).max(MAX_ACTION_CHAIN - 1),
+      })
+      .strict(),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('opened') }),
+      z.object({ kind: z.literal('stale') }),
+      z.object({ kind: z.literal('no-such-link') }),
+      z.object({ kind: z.literal('scheme-refused'), scheme: z.string().max(SHOWN_SCHEME_MAX).nullable() }),
+      z.object({ kind: z.literal('not-opened') }),
+    ]),
     ['document-not-open', 'document-poisoned'],
   ),
 

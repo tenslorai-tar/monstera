@@ -165,6 +165,49 @@ test.describe('a push button’s actions', () => {
     expect(executed(sent)).toHaveLength(1);
   });
 
+  test('Open a web link: set in Properties, then a press asks first, naming the address, and only Open link sends', async ({ page }) => {
+    const sent: Sent = [];
+    await openForm(page, sent);
+    const pane = await buttonProperties(page);
+    await pane.getByRole('button', { name: 'Add action' }).click();
+    await pane.getByLabel('Do', { exact: true }).selectOption('link');
+    const address = pane.getByLabel('Web address');
+    // CONTROL: an address that is not a whole https one is said, and Save waits.
+    await address.fill('http://example.org/apply');
+    await expect(pane.getByText(/starts with https:\/\//u)).toBeVisible();
+    await expect(pane.getByRole('button', { name: 'Save action' })).toBeDisabled();
+    await address.fill('https://example.org/apply');
+    await pane.getByRole('button', { name: 'Save action' }).click();
+    expect(executed(sent)).toStrictEqual([
+      {
+        kind: 'editFormFields',
+        edits: [
+          {
+            field: { page: 0, index: 1, name: 'Clear' },
+            set: { buttonActions: [{ trigger: 'up', action: { kind: 'link', address: 'https://example.org/apply' } }] },
+          },
+        ],
+        version: 1,
+      },
+    ]);
+    await expect(pane.getByText('Pressed and let go: Open https://example.org/apply')).toBeVisible();
+
+    const opens = (): unknown[] => sent.filter((call) => call.channel === 'document.openButtonLink').map((call) => call.params);
+    // CANCEL FIRST: the question is asked and nothing is sent.
+    await page.locator('[data-form-field="1"]').click();
+    const question = page.getByRole('dialog', { name: 'Open this link?' });
+    await expect(question).toContainText('https://example.org/apply');
+    await question.getByRole('button', { name: 'Cancel' }).click();
+    await expect(question).toHaveCount(0);
+    // THEN AGREE: one request, naming the step and never the address. Read after it, the cancel above sent nothing.
+    await page.locator('[data-form-field="1"]').click();
+    await question.getByRole('button', { name: 'Open link' }).click();
+    await expect.poll(() => opens().length).toBe(1);
+    expect(opens()).toStrictEqual([
+      { docId: ID, version: 2, field: { page: 0, index: 1, name: 'Clear' }, trigger: 'up', step: 0 },
+    ]);
+  });
+
   /**
    * Pressed, then the text field filled: the fill is what arrives, so "nothing else was sent" is read after something
    * that WAS, never as an absence that waiting longer might have changed.

@@ -92,6 +92,7 @@ const mupdfActions = (document: PDFDocument): ActionModel<PDFObject> => ({
       fields: fieldsListed(node.get('Fields')),
       flags: flags.isNumber() ? Math.trunc(flags.asNumber()) : 0,
       destination: destinationOf(document, node.get('D')),
+      uri: stringOf(node.get('URI')),
     };
   },
   next: (node) => {
@@ -135,6 +136,11 @@ function destinationOf(document: PDFDocument, value: PDFObject): PlainAction['de
     numbers.push(each.isNumber() ? each.asNumber() : null);
   }
   return { page, fit: fit.isName() ? fit.asName() : null, numbers };
+}
+
+/** A string entry as text, or `null` where it is not a string. */
+function stringOf(value: PDFObject): string | null {
+  return value.isString() ? value.asString() : null;
 }
 
 /** `/Fields` as names, at most one past {@link MAX_ACTION_FIELDS}, or `unreadable` where an entry names no field. */

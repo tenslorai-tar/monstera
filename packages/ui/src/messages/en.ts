@@ -1895,6 +1895,10 @@ export const BUTTON_VIEW_KEEP = messageKey('surface.field-properties.button-view
 export const BUTTON_VIEW_FIT = messageKey('surface.field-properties.button-view-fit');
 export const BUTTON_VIEW_FIT_WIDTH = messageKey('surface.field-properties.button-view-fit-width');
 export const BUTTON_SUMMARY_GO_TO = messageKey('surface.field-properties.button-summary-go-to');
+export const BUTTON_ACTION_KIND_LINK = messageKey('surface.field-properties.button-action-kind-link');
+export const BUTTON_ACTION_ADDRESS = messageKey('surface.field-properties.button-action-address');
+export const BUTTON_ACTION_ADDRESS_HTTPS = messageKey('surface.field-properties.button-action-address-https');
+export const BUTTON_SUMMARY_LINK = messageKey('surface.field-properties.button-summary-link');
 export const BUTTON_ACTION_FIELDS_ALL = messageKey('surface.field-properties.button-action-fields-all');
 export const BUTTON_ACTION_FIELDS_CHOSEN = messageKey('surface.field-properties.button-action-fields-chosen');
 export const BUTTON_ACTION_FIELDS = messageKey('surface.field-properties.button-action-fields');
@@ -5008,6 +5012,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [BUTTON_VIEW_FIT]: 'Whole page',
   [BUTTON_VIEW_FIT_WIDTH]: 'Page width',
   [BUTTON_SUMMARY_GO_TO]: 'Go to page {page}',
+  [BUTTON_ACTION_KIND_LINK]: 'Open a web link',
+  [BUTTON_ACTION_ADDRESS]: 'Web address',
+  [BUTTON_ACTION_ADDRESS_HTTPS]: 'Type a whole address that starts with https://. Monstera asks before it opens one.',
+  [BUTTON_SUMMARY_LINK]: 'Open {address}',
   [BUTTON_ACTION_FIELDS_ALL]: 'Every field',
   [BUTTON_ACTION_FIELDS_CHOSEN]: 'Only the fields ticked below',
   [BUTTON_ACTION_FIELDS]: 'Fields',

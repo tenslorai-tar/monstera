@@ -159,6 +159,7 @@ const handlers: ContractHandlers = {
     Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false, alreadyFields: 0 })),
   'document.formFieldProperties': () => Promise.resolve(ok({ version: asDocVersion(1), fields: [] })),
   'document.buttonActions': () => Promise.resolve(ok({ version: asDocVersion(1), steps: null })),
+  'document.openButtonLink': () => Promise.resolve(ok({ kind: 'opened' as const })),
   'document.textBlocks': () =>
     Promise.resolve(
       ok({

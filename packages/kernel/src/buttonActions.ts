@@ -40,6 +40,8 @@ export interface PlainAction {
     | { readonly page: number | null; readonly fit: string | null; readonly numbers: readonly (number | null)[] }
     | 'named'
     | null;
+  /** `/URI` as text, or `null` where it is not a string. */
+  readonly uri: string | null;
 }
 
 /** What one object model offers the walker: a node's plain reading, the nodes its `/Next` names, and its identity. */
@@ -88,6 +90,12 @@ export function classifyAction(plain: PlainAction): FieldAction | ButtonStep['ac
       const destination = plain.destination;
       if (destination === null || destination === 'named' || destination.page === null) return kept(plain.subtype, null);
       const parsed = fieldActionSchema.safeParse({ kind: 'goTo', page: destination.page, ...viewOf(destination) });
+      return parsed.success ? parsed.data : kept(plain.subtype, null);
+    }
+    case 'URI': {
+      // A SCHEME NOT FOLLOWED (`javascript:`, `file:`) is kept and never run: the contract's link takes only what
+      // `isFollowable` does, so it fails the parse here rather than reaching a press.
+      const parsed = fieldActionSchema.safeParse({ kind: 'link', address: plain.uri });
       return parsed.success ? parsed.data : kept(plain.subtype, null);
     }
     case null:

@@ -2,6 +2,7 @@ import type { DocId, DocVersion } from '@monstera/shared';
 import { DEFAULT_TEXT_LINE_HEIGHT, MAX_TEXT_LINE_HEIGHT, MAX_TEXT_PADDING, MIN_TEXT_LINE_HEIGHT } from '@monstera/shared';
 import { z } from 'zod';
 
+import { isFollowable } from './followedLinks.js';
 import { MAX_PAGE_INDEX, MAX_PAGE_SET_ENTRIES, pageSetOfAtMost, pageSetSchema, pairedPageSetSchema } from './pageSet.js';
 import {
   DOCUMENT_PASSWORD_MAX_CHARS,
@@ -5708,12 +5709,26 @@ export const fieldActionSchema = z.discriminatedUnion('kind', [
         .nullable(),
     })
     .strict(),
+  z
+    .object({
+      /**
+       * `/URI` (ISO 32000-1, 12.6.4.7): an address `main` opens in the person's browser or mail app after they agree,
+       * read again from the document (ADR-0167's route). Only a scheme `isFollowable` takes; the editor writes `https:`.
+       */
+      kind: z.literal('link'),
+      address: z
+        .string()
+        .min(1)
+        .max(MAX_LINK_URI)
+        .refine(isFollowable, { message: 'a button opens only an https:, http: or mailto: address' }),
+    })
+    .strict(),
 ]);
 /** See {@link fieldActionSchema}. */
 export type FieldAction = z.infer<typeof fieldActionSchema>;
 
 /** Every kind {@link fieldActionSchema} holds, once, for a schema that names one. */
-export const FIELD_ACTION_KINDS = ['goTo', 'reset'] as const satisfies readonly FieldAction['kind'][];
+export const FIELD_ACTION_KINDS = ['goTo', 'link', 'reset'] as const satisfies readonly FieldAction['kind'][];
 /** The two lists hold the same kinds: a kind added to the union and not here is a compile error. */
 type MissingActionKind = Exclude<FieldAction['kind'], (typeof FIELD_ACTION_KINDS)[number]>;
 const ACTION_KINDS_COMPLETE: [MissingActionKind] extends [never] ? true : never = true;

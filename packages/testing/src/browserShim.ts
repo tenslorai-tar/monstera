@@ -2848,6 +2848,13 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     'ai.translateText': () => Promise.resolve(ok({ kind: 'refused' as const, problem: 'no-key' as const })),
     // NO BROWSER TO OPEN: what `main` answers when the system opened nothing.
     'document.openBarcodeLink': () => Promise.resolve(ok({ kind: 'not-opened' as const })),
+    // A BUTTON'S LINK as main answers it (ADR-0259): another version is stale, a step that is not a link opens nothing,
+    // and a link is `opened` with no browser behind it, so a case reads the request a press made rather than a window.
+    'document.openButtonLink': ({ docId, version, field, trigger, step }) => {
+      if (versions.get(docId) !== version) return Promise.resolve(ok({ kind: 'stale' as const }));
+      const action = buttonSteps.get(field.name)?.find((each) => each.trigger === trigger && each.step === step)?.action;
+      return Promise.resolve(ok({ kind: action?.kind === 'link' ? ('opened' as const) : ('no-such-link' as const) }));
+    },
     'document.saveBarcodeContact': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
     // NO WORK RUNS IN THE SHIM: every name is idle and nothing can be stopped.
     'work.progress': () => Promise.resolve(ok({ kind: 'idle' as const })),
