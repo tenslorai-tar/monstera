@@ -2846,6 +2846,23 @@ export const fieldActionTriggerSchema = z.enum(FIELD_ACTION_TRIGGERS);
 /** See {@link FIELD_ACTION_TRIGGERS}. */
 export type FieldActionTrigger = z.infer<typeof fieldActionTriggerSchema>;
 
+/**
+ * A push button's triggers that have actions, as a field LISTING carries them (ADR-0259 Decision 4): `runs`, those with
+ * at least one action a press carries out, and `kept`, those with one that is the document's content and never run.
+ *
+ * ONE SHAPE for both listings that carry it, the renderer's (`document.formFields`) and the engine host's
+ * (`engine/form-fields`), and here because the host may load this module and not the renderer's channel map. The
+ * host's copy of the field was given neither this nor `hidden` when the kernel's listing gained them, and refused its
+ * own answer for every form with a button that has actions: "The form fields in this document could not be read" in
+ * the live application (2026-10-22), while every renderer test, whose kernel is stubbed, passed.
+ */
+export const listedFieldActionsSchema = z
+  .object({
+    runs: z.array(fieldActionTriggerSchema).max(FIELD_ACTION_TRIGGERS.length).readonly(),
+    kept: z.array(fieldActionTriggerSchema).max(FIELD_ACTION_TRIGGERS.length).readonly(),
+  })
+  .strict();
+
 /** How many actions one push button may carry, on all its triggers together (ADR-0259 Decision 1). */
 export const MAX_BUTTON_ACTIONS = 8;
 

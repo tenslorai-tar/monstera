@@ -72,9 +72,9 @@ import {
   fieldScriptSchema,
   formFieldHandleSchema,
   formFieldReadSchema,
-  FIELD_ACTION_TRIGGERS,
   MAX_ACTION_CHAIN,
   fieldActionTriggerSchema,
+  listedFieldActionsSchema,
   buttonStepsSchema,
   documentFontSchema,
   listedFontFamiliesSchema,
@@ -5432,13 +5432,7 @@ export const channels = {
              * action a press carries out, and `kept`, those with one that is the document's content and is never run
              * (invariant 24). Present only on a push button that has any; what each does is `document.buttonActions`'.
              */
-            actions: z
-              .object({
-                runs: z.array(fieldActionTriggerSchema).max(FIELD_ACTION_TRIGGERS.length).readonly(),
-                kept: z.array(fieldActionTriggerSchema).max(FIELD_ACTION_TRIGGERS.length).readonly(),
-              })
-              .strict()
-              .exactOptional(),
+            actions: listedFieldActionsSchema.exactOptional(),
             /**
              * How a dropdown or a list box is drawn (the owner's F1), present only on one: the page's choice control
              * covers the document's own drawing of the field in its size and colours, never the application's theme.

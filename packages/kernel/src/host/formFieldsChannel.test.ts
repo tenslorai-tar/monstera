@@ -1,4 +1,4 @@
-import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
+import { AnnotationFlags, PDFDocument, PDFName, StandardFonts } from '@cantoo/pdf-lib';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { createClient, formFieldKindSchema, type Incident, wrapHandlers } from '@monstera/contract';
@@ -68,7 +68,23 @@ beforeAll(async () => {
   checkbox.addToPage(page, { x: 20, y: 500, width: 16, height: 16 });
 
   form = await document.save();
+
+  // A BUTTON THAT ACTS AND A FIELD THAT IS HIDDEN (ADR-0259): the two parts of a listing that are present only where
+  // they apply, and so the two no other fixture in this file reaches.
+  const acts = await PDFDocument.create();
+  const actsPage = acts.addPage([400, 600]);
+  const actsFont = await acts.embedFont(StandardFonts.Helvetica);
+  const actsForm = acts.getForm();
+  const secret = actsForm.createTextField('applicant.secret');
+  secret.addToPage(actsPage, { x: 20, y: 540, width: 200, height: 20, font: actsFont });
+  secret.acroField.getWidgets()[0]?.setFlagTo(AnnotationFlags.Hidden, true);
+  const clear = actsForm.createButton('Clear');
+  clear.addToPage('Clear', actsPage, { x: 20, y: 500, width: 80, height: 20, font: actsFont });
+  clear.acroField.getWidgets()[0]?.dict.set(PDFName.of('A'), acts.context.obj({ S: 'ResetForm' }));
+  acting = await acts.save();
 });
+
+let acting: ByteImage;
 
 const AREA = {
   snapshotDirectory: 'no directory: a field read carries no asset',
@@ -82,14 +98,17 @@ const AREA = {
  * real reader cannot produce today — which is the only way to ask whether the
  * declared result admits a kind no fixture here carries.
  */
-async function joined(formFields: HostFormFieldsReader): Promise<{
+async function joined(
+  formFields: HostFormFieldsReader,
+  document: ByteImage = form,
+): Promise<{
   readonly session: MupdfSession;
   readonly read: ReturnType<typeof remoteMupdfFormFields>;
   readonly token: MupdfSession;
   readonly stranger: MupdfSession;
   readonly incidents: readonly Incident[];
 }> {
-  const session = await mupdfWriter.open(form);
+  const session = await mupdfWriter.open(document);
   const held = new Map<string, HostSession>([
     [
       'h1',
@@ -334,6 +353,31 @@ describe('engine/form-fields', () => {
         'applicant.name',
         'applicant.agrees',
       ]);
+      expect(incidents).toStrictEqual([]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('CARRIES A BUTTON THAT ACTS AND A FIELD THAT IS HIDDEN, as the reader answers them (ADR-0259)', async () => {
+    // THE CASE THE LIVE APPLICATION FAILED, 2026-10-22: the reader listed `actions` and `hidden`, the host's declared
+    // result knew neither, and the host refused its own answer — "The form fields in this document could not be read".
+    const direct = await mupdfWriter.open(acting);
+    let expected;
+    try {
+      expected = await readFormFields(direct);
+    } finally {
+      await mupdfWriter.close(direct);
+    }
+    // THE FIXTURE CARRIES BOTH, read locally, so the comparison below is about the wire and not two lists lacking them.
+    expect(expected.fields.map((one) => ({ name: one.name, hidden: one.hidden, actions: one.actions }))).toStrictEqual([
+      { name: 'applicant.secret', hidden: true, actions: undefined },
+      { name: 'Clear', hidden: undefined, actions: { runs: ['up'], kept: [] } },
+    ]);
+
+    const { session, read, token, incidents } = await joined(readFormFields, acting);
+    try {
+      expect((await read(token)).fields).toStrictEqual(expected.fields);
       expect(incidents).toStrictEqual([]);
     } finally {
       await mupdfWriter.close(session);

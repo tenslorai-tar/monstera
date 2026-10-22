@@ -51,6 +51,7 @@ import {
   fieldFormatSchema,
   fieldLookSchema,
   fieldRangeSchema,
+  listedFieldActionsSchema,
   formFieldKindSchema,
   importFormDataSchema,
   importAnnotationsSchema,
@@ -575,6 +576,10 @@ const engineFormFieldSchema = z
     rect: annotationRectSchema.nullable(),
     /** Present and true where a value is a slice of a longer one, exactly optional for the annotation's `cut`. */
     cut: z.literal(true).exactOptional(),
+    /** Present and true where the widget carries the Hidden flag (`/F` bit 2), for `cut`'s reason. */
+    hidden: z.literal(true).exactOptional(),
+    /** A push button's triggers that have actions (ADR-0259 Decision 4), present only on one that has any. */
+    actions: listedFieldActionsSchema.exactOptional(),
     /** What filling it must respect (ADR-0226 Decision 4), from `fieldRules.ts`. Bounded scalars. */
     required: z.boolean(),
     maxLength: z.number().int().positive().nullable(),
