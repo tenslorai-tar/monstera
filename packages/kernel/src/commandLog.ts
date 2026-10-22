@@ -570,6 +570,9 @@ export interface CommandPrior {
   /** The whole form reset (the owner's R23): `resetForm`'s reason, every field rather than those a button names. */
   readonly resetWholeForm: never;
 
+  /** A show or hide (ADR-0259): `resetForm`'s reason, every widget of the fields the button's action names. */
+  readonly showHideFields: never;
+
   /**
    * The protection the session stood with before the change
    * ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) Decision 8).

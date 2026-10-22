@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 
 import { applyEditFormFields } from './formFieldEdit.js';
 import { readButtonActions } from './formFieldRead.js';
-import { applyResetForm, readFormFields } from './formFields.js';
+import { applyResetForm, applyShowHideFields, readFormFields } from './formFields.js';
 import * as mupdf from './mupdfRaw.js';
 import { mupdfWriter } from './mupdfWriter.js';
 import type { MupdfSession } from './engineSeam.js';
@@ -313,6 +313,79 @@ describe('Print the document, as a push button action (ADR-0259)', () => {
     expect(await onSession(next, (session) => readButtonActions(session, handle))).toStrictEqual([
       { trigger: 'up', step: 0, action: { kind: 'kept', subtype: 'Named', runsAs: null } },
     ]);
+  });
+});
+
+describe('Show or hide fields, as a push button action (ADR-0259)', () => {
+  /** `/T` and `/H` of the widget's `/A`, read from MuPDF's raw objects. */
+  function hideRead(bytes: Uint8Array, name: string): { subtype: string; targets: string[]; hide: boolean } {
+    const pdf = mupdf.Document.openDocument(bytes, 'application/pdf').asPDF();
+    if (pdf === null) throw new Error('not a PDF');
+    const page = pdf.loadPage(0);
+    if (!(page instanceof mupdf.PDFPage)) throw new Error('not a PDF page');
+    const widget = page.getWidgets().find((each) => each.getName() === name);
+    if (widget === undefined) throw new Error(`MuPDF reads no widget named ${name}`);
+    const action = widget.getObject().get('A');
+    const targets = action.get('T');
+    return {
+      subtype: action.get('S').asName(),
+      targets: Array.from({ length: targets.length }, (_, at) => targets.get(at).asString()),
+      hide: action.get('H').asBoolean(),
+    };
+  }
+
+  /** Each text field's Hidden flag as the listing reports it. */
+  async function hiddenOf(bytes: Uint8Array): Promise<Record<string, boolean>> {
+    const { fields } = await onSession(bytes, (session) => readFormFields(session));
+    return Object.fromEntries(fields.filter((field) => field.kind === 'text').map((field) => [field.name, field.hidden === true]));
+  }
+
+  async function pressed(bytes: Uint8Array, trigger: FieldActionTrigger, step: number): Promise<Uint8Array> {
+    const handle = await handleOf(bytes, 'go');
+    return onSession(bytes, async (session) => {
+      await applyShowHideFields(session, { kind: 'showHideFields', page: handle.page, index: handle.index, trigger, step, version: VERSION });
+      return mupdfWriter.serialise(session);
+    });
+  }
+
+  it('is written as /Hide naming the fields in /T with /H, and reads back as written', async () => {
+    const bytes = await written(await buttonForm(), 'go', [
+      { trigger: 'up', action: { kind: 'showHide', fields: ['applicant.city'], hide: true } },
+      { trigger: 'up', action: { kind: 'showHide', fields: ['applicant.name', 'applicant.city'], hide: false } },
+    ]);
+    expect(hideRead(bytes, 'go')).toStrictEqual({ subtype: 'Hide', targets: ['applicant.city'], hide: true });
+    expect(chainRead(bytes, 'go', 'up').map((each) => each.subtype)).toStrictEqual(['Hide', 'Hide']);
+    const handle = await handleOf(bytes, 'go');
+    expect(await onSession(bytes, (session) => readButtonActions(session, handle))).toStrictEqual([
+      { trigger: 'up', step: 0, action: { kind: 'showHide', fields: ['applicant.city'], hide: true } },
+      { trigger: 'up', step: 1, action: { kind: 'showHide', fields: ['applicant.name', 'applicant.city'], hide: false } },
+    ]);
+  });
+
+  it('a press hides the field named and no other, and the next step shows it again', async () => {
+    const bytes = await written(await buttonForm(), 'go', [
+      { trigger: 'up', action: { kind: 'showHide', fields: ['applicant.city'], hide: true } },
+      { trigger: 'up', action: { kind: 'showHide', fields: ['applicant'], hide: false } },
+    ]);
+    expect(await hiddenOf(bytes)).toStrictEqual({ 'applicant.name': false, 'applicant.city': false });
+    const hidden = await pressed(bytes, 'up', 0);
+    // CONTROL: the field not named stays shown, so the hide read its names rather than hiding every field.
+    expect(await hiddenOf(hidden)).toStrictEqual({ 'applicant.name': false, 'applicant.city': true });
+    // A PARENT'S NAME names its kids: `applicant` shows both again.
+    expect(await hiddenOf(await pressed(hidden, 'up', 1))).toStrictEqual({ 'applicant.name': false, 'applicant.city': false });
+  });
+
+  it('CONTROL: a step that is not a show or hide is refused, and a /T naming no field is kept and never run', async () => {
+    const reset = await written(await buttonForm(), 'go', [{ trigger: 'up', action: { kind: 'reset', fields: null } }]);
+    await expect(pressed(reset, 'up', 0)).rejects.toThrow('is not a Show or hide action');
+    const annotation = await withAction(await buttonForm(), 'go', (document) =>
+      document.context.obj({ S: 'Hide', T: document.context.obj({ Type: 'Annot', Subtype: 'Square' }) }),
+    );
+    const handle = await handleOf(annotation, 'go');
+    expect(await onSession(annotation, (session) => readButtonActions(session, handle))).toStrictEqual([
+      { trigger: 'up', step: 0, action: { kind: 'kept', subtype: 'Hide', runsAs: null } },
+    ]);
+    await expect(pressed(annotation, 'up', 0)).rejects.toThrow('is not a Show or hide action');
   });
 });
 

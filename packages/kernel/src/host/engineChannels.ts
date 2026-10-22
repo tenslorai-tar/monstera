@@ -29,6 +29,7 @@ import {
   fillFormFieldSchema,
   resetFormSchema,
   resetWholeFormSchema,
+  showHideFieldsSchema,
   flattenFormFieldsSchema,
   setDocumentProtectionSchema,
   applyRedactionsSchema,
@@ -1175,6 +1176,7 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   fillFormFieldSchema,
   resetFormSchema,
   resetWholeFormSchema,
+  showHideFieldsSchema,
   deleteFormFieldsSchema,
   flattenFormFieldsSchema,
   // CARRIES PASSWORDS ACROSS THIS PIPE, and that is ADR-0055's rule rather than

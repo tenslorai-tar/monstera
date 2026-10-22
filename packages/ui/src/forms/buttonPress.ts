@@ -18,13 +18,16 @@ export interface ButtonPressDeps {
   /** Opens a registered dialog and answers what it resolved: the question every address a document holds is asked. */
   readonly ask: (id: string, props: unknown) => Promise<unknown>;
   /** Sends a command naming one step; resolves with the version it produced, or `undefined` where it did not land. */
-  readonly apply: (command: CommandOfKind<'resetForm'>) => Promise<DocVersion | undefined>;
+  readonly apply: (command: ButtonStepCommand) => Promise<DocVersion | undefined>;
   /** Shows a zero-based page, at a zoom where the action names one: every other way of going to a page's route. */
   readonly show: (page: number, zoom: ZoomMode | undefined) => void;
   /** Runs one of the application's own registered commands, as its ribbon button does, to its end. */
   readonly run: (id: ButtonCommandId) => Promise<void>;
   readonly toast: ShowToast;
 }
+
+/** The commands a press sends, each naming one step of the button: the kernel reads what the step does. */
+export type ButtonStepCommand = CommandOfKind<'resetForm'> | CommandOfKind<'showHideFields'>;
 
 /**
  * The application's own commands a button's action is (ADR-0259 Decision 2): what a press does is what the person would
@@ -108,8 +111,9 @@ export async function pressButton(deps: ButtonPressDeps, docId: DocId, pressed: 
         version = again.value.version;
         break;
       }
-      case 'reset': {
-        const next = await deps.apply({ kind: 'resetForm', ...at });
+      case 'reset':
+      case 'showHide': {
+        const next = await deps.apply({ kind: runsAs === 'reset' ? 'resetForm' : 'showHideFields', ...at });
         if (next === undefined) return;
         version = next;
         break;

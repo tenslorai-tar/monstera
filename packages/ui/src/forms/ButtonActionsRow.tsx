@@ -32,6 +32,7 @@ import {
   BUTTON_ACTION_FIELDS_ALL,
   BUTTON_ACTION_FIELDS_CHOSEN,
   BUTTON_ACTION_FIELDS_LIMIT,
+  BUTTON_ACTION_FIELDS_LIMIT_SOME,
   BUTTON_ACTION_FILE,
   BUTTON_ACTION_FILE_NAME,
   BUTTON_ACTION_FILE_NOTE,
@@ -40,8 +41,14 @@ import {
   BUTTON_ACTION_ADDRESS,
   BUTTON_ACTION_ADDRESS_HTTPS,
   BUTTON_ACTION_KIND_GO_TO,
+  BUTTON_ACTION_FIELDS_NONE,
+  BUTTON_ACTION_HIDE,
   BUTTON_ACTION_KIND_IMPORT,
   BUTTON_ACTION_KIND_LINK,
+  BUTTON_ACTION_KIND_SHOW_HIDE,
+  BUTTON_ACTION_SHOW,
+  BUTTON_SUMMARY_HIDE,
+  BUTTON_SUMMARY_SHOW,
   BUTTON_ACTION_KIND_PRINT,
   BUTTON_ACTION_KIND_RESET,
   BUTTON_ACTION_PAGE,
@@ -83,6 +90,7 @@ const KIND_LABELS: Readonly<Record<FieldAction['kind'], MessageKey>> = {
   goTo: BUTTON_ACTION_KIND_GO_TO,
   link: BUTTON_ACTION_KIND_LINK,
   reset: BUTTON_ACTION_KIND_RESET,
+  showHide: BUTTON_ACTION_KIND_SHOW_HIDE,
   print: BUTTON_ACTION_KIND_PRINT,
   importData: BUTTON_ACTION_KIND_IMPORT,
 };
@@ -103,6 +111,9 @@ function freshAction(kind: FieldAction['kind']): FieldAction {
       return { kind: 'link', address: 'https://' };
     case 'reset':
       return { kind: 'reset', fields: null };
+    // NO FIELD TICKED, which cannot be saved: the standard's `/T` names at least one, and which is the person's choice.
+    case 'showHide':
+      return { kind: 'showHide', fields: [], hide: true };
     case 'print':
       return { kind: 'print' };
     case 'importData':
@@ -126,6 +137,8 @@ function summaryOf(action: FieldAction, say: (key: MessageKey, values?: Record<s
       return say(BUTTON_ACTION_KIND_PRINT);
     case 'importData':
       return say(BUTTON_ACTION_KIND_IMPORT);
+    case 'showHide':
+      return say(action.hide ? BUTTON_SUMMARY_HIDE : BUTTON_SUMMARY_SHOW, { count: action.fields.length });
     case 'reset':
       return action.fields === null ? say(BUTTON_SUMMARY_RESET_ALL) : say(BUTTON_SUMMARY_RESET_SOME, { count: action.fields.length });
   }
@@ -442,7 +455,60 @@ function ActionDetails({
       return <PrintNote />;
     case 'importData':
       return <ImportDetails action={action} onChange={onChange} />;
+    case 'showHide':
+      return <ShowHideDetails action={action} known={known} onChange={onChange} />;
   }
+}
+
+/** Which fields a show or hide names, ticked from the form's own (never *every field*: `/T` names some), and which way. */
+function ShowHideDetails({
+  action,
+  known,
+  onChange,
+}: {
+  readonly action: Extract<FieldAction, { kind: 'showHide' }>;
+  readonly known: readonly KnownField[];
+  readonly onChange: (action: FieldAction) => void;
+}): ReactElement {
+  const { i18n } = useLingui();
+  const groupId = useId();
+  return (
+    <>
+      <fieldset aria-label={i18n._(BUTTON_ACTION_KIND_SHOW_HIDE)} className="m-button-actions__fields">
+        <label className="m-properties__check">
+          <input
+            checked={action.hide}
+            name={groupId}
+            onChange={() => {
+              onChange({ ...action, hide: true });
+            }}
+            type="radio"
+          />
+          {i18n._(BUTTON_ACTION_HIDE)}
+        </label>
+        <label className="m-properties__check">
+          <input
+            checked={!action.hide}
+            name={groupId}
+            onChange={() => {
+              onChange({ ...action, hide: false });
+            }}
+            type="radio"
+          />
+          {i18n._(BUTTON_ACTION_SHOW)}
+        </label>
+      </fieldset>
+      <FieldsChoice
+        every={false}
+        fields={action.fields}
+        known={known}
+        onChange={(fields) => {
+          onChange({ ...action, fields: fields ?? [] });
+        }}
+      />
+      {action.fields.length === 0 ? <p className="m-properties__meta">{i18n._(BUTTON_ACTION_FIELDS_NONE)}</p> : null}
+    </>
+  );
 }
 
 /**
@@ -599,10 +665,13 @@ function FieldsChoice({
   fields,
   known,
   onChange,
+  every = true,
 }: {
   readonly fields: readonly string[] | null;
   readonly known: readonly KnownField[];
   readonly onChange: (fields: readonly string[] | null) => void;
+  /** Whether *Every field* is a choice: a reset's `/Fields` may be absent, and a show or hide's `/T` may not. */
+  readonly every?: boolean;
 }): ReactElement {
   const { i18n } = useLingui();
   const groupId = useId();
@@ -613,28 +682,32 @@ function FieldsChoice({
       <legend className="m-properties__label" id={groupId}>
         {i18n._(BUTTON_ACTION_FIELDS)}
       </legend>
-      <label className="m-properties__check">
-        <input
-          checked={fields === null}
-          name={groupId}
-          onChange={() => {
-            onChange(null);
-          }}
-          type="radio"
-        />
-        {i18n._(BUTTON_ACTION_FIELDS_ALL)}
-      </label>
-      <label className="m-properties__check">
-        <input
-          checked={fields !== null}
-          name={groupId}
-          onChange={() => {
-            onChange([]);
-          }}
-          type="radio"
-        />
-        {i18n._(BUTTON_ACTION_FIELDS_CHOSEN)}
-      </label>
+      {every ? (
+        <>
+          <label className="m-properties__check">
+            <input
+              checked={fields === null}
+              name={groupId}
+              onChange={() => {
+                onChange(null);
+              }}
+              type="radio"
+            />
+            {i18n._(BUTTON_ACTION_FIELDS_ALL)}
+          </label>
+          <label className="m-properties__check">
+            <input
+              checked={fields !== null}
+              name={groupId}
+              onChange={() => {
+                onChange([]);
+              }}
+              type="radio"
+            />
+            {i18n._(BUTTON_ACTION_FIELDS_CHOSEN)}
+          </label>
+        </>
+      ) : null}
       {fields === null ? null : (
         <>
           <ul className="m-button-actions__names">
@@ -654,7 +727,9 @@ function FieldsChoice({
             ))}
           </ul>
           {chosen.length > MAX_ACTION_FIELDS ? (
-            <p className="m-properties__meta">{i18n._(BUTTON_ACTION_FIELDS_LIMIT, { count: MAX_ACTION_FIELDS })}</p>
+            <p className="m-properties__meta">
+              {i18n._(every ? BUTTON_ACTION_FIELDS_LIMIT : BUTTON_ACTION_FIELDS_LIMIT_SOME, { count: MAX_ACTION_FIELDS })}
+            </p>
           ) : null}
         </>
       )}

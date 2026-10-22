@@ -240,6 +240,58 @@ test.describe('a push button’s actions', () => {
     expect(prints()[0]).toMatchObject({ docId: ID, pages: [[0, 2]] });
   });
 
+  test('Show or hide fields: set in Properties for the field ticked, then a press sends the show or hide BY ITS STEP', async ({
+    page,
+  }) => {
+    const sent: Sent = [];
+    await openForm(page, sent);
+    const pane = await buttonProperties(page);
+    await pane.getByRole('button', { name: 'Add action' }).click();
+    await pane.getByLabel('Do', { exact: true }).selectOption('showHide');
+    const save = pane.getByRole('button', { name: 'Save action' });
+    // CONTROL: with no field ticked it is said and cannot be saved, since `/T` names at least one.
+    await expect(pane.getByText('Tick at least one field.')).toBeVisible();
+    await expect(save).toBeDisabled();
+    // NO *EVERY FIELD* to choose: a hide names its fields.
+    await expect(pane.getByLabel('Every field')).toHaveCount(0);
+    await pane.getByRole('checkbox', { name: 'applicant.name' }).check();
+    await pane.getByLabel('Show them').check();
+    await pane.getByLabel('Hide them').check();
+    await save.click();
+    const action = { trigger: 'up', action: { kind: 'showHide', fields: ['applicant.name'], hide: true } };
+    expect(executed(sent)).toStrictEqual([
+      { kind: 'editFormFields', edits: [{ field: { page: 0, index: 1, name: 'Clear' }, set: { buttonActions: [action] } }], version: 1 },
+    ]);
+    await expect(pane.getByText('Pressed and let go: Hide 1 field')).toBeVisible();
+
+    await page.locator('[data-form-field="1"]').click();
+    await expect.poll(() => executed(sent).length).toBe(2);
+    expect(executed(sent)[1]).toStrictEqual({ kind: 'showHideFields', page: 0, index: 1, trigger: 'up', step: 0, version: 2 });
+  });
+
+  test('a field the document hides draws no control while filling, and its shown neighbour does', async ({ page }) => {
+    const sent: Sent = [];
+    const bytes = await formPdf();
+    await page.setViewportSize({ width: 1280, height: 860 });
+    await bridgeUnder(
+      page,
+      LOOKS[0],
+      {
+        opens: [{ kind: 'opened' as const, docId: ID, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Form.pdf' }],
+        documentBytes: new Map([[ID, bytes]]),
+        formFields: [[{ ...NAME, hidden: true }, BUTTON]],
+      },
+      (channel, params) => {
+        sent.push({ channel, params });
+      },
+    );
+    await page.goto('/');
+    await page.getByRole('button', { name: /^Open PDF/u }).first().click();
+    // THE NEIGHBOUR IS DRAWN, so the page's layer is up and the absence below is the mark's.
+    await expect(page.locator('[data-form-field="1"]')).toBeVisible();
+    await expect(page.locator('[data-form-field="0"]')).toHaveCount(0);
+  });
+
   test('Import form data: set in Properties with a file name, then a press opens the application’s import, which picks', async ({
     page,
   }) => {

@@ -46,6 +46,10 @@ export interface PlainAction {
   readonly named: string | null;
   /** `/F` as text: a string, or a file specification's `/UF`, else its `/F`; `null` where neither. */
   readonly file: string | null;
+  /** A `/Hide`'s `/T`, read as {@link PlainAction.fields} is: one entry or an array of them, `null` where absent. */
+  readonly targets: readonly string[] | 'unreadable' | null;
+  /** A `/Hide`'s `/H`: `true` where absent, as the standard defaults it, and `null` where it is not a boolean. */
+  readonly hide: boolean | null;
 }
 
 /** What one object model offers the walker: a node's plain reading, the nodes its `/Next` names, and its identity. */
@@ -100,6 +104,13 @@ export function classifyAction(plain: PlainAction): FieldAction | ButtonStep['ac
     // navigation this build does not write, so they are kept rather than run as something they are not.
     case 'Named':
       return plain.named === 'Print' ? { kind: 'print' } : kept(plain.subtype, null);
+    case 'Hide': {
+      // `/T` NAMING AN ANNOTATION that is not a field is kept and never run: a press shows or hides fields by name, and
+      // nothing names that one. More names than an edit writes is kept and runs, since a press reads `/T` again.
+      if (plain.targets === 'unreadable' || plain.targets === null || plain.hide === null) return kept(plain.subtype, null);
+      const parsed = fieldActionSchema.safeParse({ kind: 'showHide', fields: plain.targets, hide: plain.hide });
+      return parsed.success ? parsed.data : kept(plain.subtype, 'showHide');
+    }
     case 'ImportData': {
       // A PATH TO SOMEWHERE ELSE is kept, and still runs: the press asks the person to pick, so what the document names
       // is never opened and only an edit would have to rewrite it.

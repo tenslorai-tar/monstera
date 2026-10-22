@@ -1,11 +1,11 @@
-import type { ButtonStep, CommandOfKind, ContractClient } from '@monstera/contract';
+import type { ButtonStep, ContractClient } from '@monstera/contract';
 import { type DocVersion, type MessageKey, asDocId, asDocVersion, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { FOLLOW_LINK_DIALOG_ID } from '../dialogs/followLink.js';
 import { BUTTON_PRESS_UNREAD } from '../messages/en.js';
 import type { ZoomMode } from '../zoom.js';
-import { pressButton } from './buttonPress.js';
+import { type ButtonStepCommand, pressButton } from './buttonPress.js';
 
 /**
  * A press, carried out step by step (ADR-0259 Decision 3).
@@ -24,7 +24,7 @@ function pressing(
   /** What the person answers each question: agreeing, unless a case says otherwise. */
   answer: unknown = { open: true },
 ) {
-  const sent: CommandOfKind<'resetForm'>[] = [];
+  const sent: ButtonStepCommand[] = [];
   const said: MessageKey[] = [];
   /** Every route a step took, in the order it took it. */
   const routes: unknown[] = [];
@@ -42,7 +42,7 @@ function pressing(
       routes.push({ ask: id, props });
       return Promise.resolve(answer);
     },
-    apply: (command: CommandOfKind<'resetForm'>): Promise<DocVersion | undefined> => {
+    apply: (command: ButtonStepCommand): Promise<DocVersion | undefined> => {
       sent.push(command);
       routes.push({ apply: command.step });
       return Promise.resolve(lands(sent.length) ? asDocVersion(command.version + 1) : undefined);
@@ -126,6 +126,21 @@ describe('pressing a push button', () => {
     const { deps, routes } = pressing([reset('up', 0), { trigger: 'up', step: 1, action: { kind: 'print' } }]);
     await pressButton(deps, DOC, { ...BUTTON, trigger: 'up' });
     expect(routes).toStrictEqual([{ apply: 0 }, { run: 'document.print' }]);
+  });
+
+  it('shows or hides by sending showHideFields naming THE STEP, at the version the step before produced', async () => {
+    const { deps, sent } = pressing([
+      reset('up', 0),
+      { trigger: 'up', step: 1, action: { kind: 'showHide', fields: ['a'], hide: true } },
+      { trigger: 'up', step: 2, action: { kind: 'kept', subtype: 'Hide', runsAs: 'showHide' } },
+    ]);
+    await pressButton(deps, DOC, { ...BUTTON, trigger: 'up' });
+    expect(sent).toStrictEqual([
+      { kind: 'resetForm', ...BUTTON_PLACE, trigger: 'up', step: 0, version: READ_AT },
+      // CONTROL of the kind: a show or hide is never sent as a reset, which the kernel would refuse for this step.
+      { kind: 'showHideFields', ...BUTTON_PLACE, trigger: 'up', step: 1, version: asDocVersion(8) },
+      { kind: 'showHideFields', ...BUTTON_PLACE, trigger: 'up', step: 2, version: asDocVersion(9) },
+    ]);
   });
 
   it('imports by running the application’s own Import form data, and sends the next step at the version the import made', async () => {

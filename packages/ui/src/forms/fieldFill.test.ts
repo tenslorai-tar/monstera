@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { FORMS_MANY_VALUES, FORMS_NOT_FILLABLE, FORMS_READ_ONLY, FORMS_SIGNED, FORMS_TOO_LONG } from '../messages/en.js';
+import { FORMS_HIDDEN, FORMS_MANY_VALUES, FORMS_NOT_FILLABLE, FORMS_READ_ONLY, FORMS_SIGNED, FORMS_TOO_LONG } from '../messages/en.js';
 import { type ListedField, fieldFill } from './fieldFill.js';
 
 /**
@@ -105,6 +105,14 @@ describe('fieldFill', () => {
       values: { values: 'a, b' },
     });
     expect(fieldFill(field({ kind: 'other' }))).toStrictEqual({ kind: 'none', reason: FORMS_NOT_FILLABLE });
+  });
+
+  it('offers a HIDDEN field nothing, whatever its kind, and the same field shown is offered again (ADR-0259)', () => {
+    for (const kind of ['text', 'checkbox', 'button'] as const) {
+      expect(fieldFill(field({ kind, hidden: true }))).toStrictEqual({ kind: 'none', reason: FORMS_HIDDEN });
+      // CONTROL: without the mark the same field is offered, so the refusal above is the mark's.
+      expect(fieldFill(field({ kind })).kind).not.toBe('none');
+    }
   });
 
   it('offers an EMPTY signature field for signing, and never a signed one (the owner’s F8)', () => {

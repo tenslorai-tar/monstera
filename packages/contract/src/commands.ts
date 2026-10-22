@@ -2888,6 +2888,13 @@ export const resetWholeFormSchema = z.object({
   kind: z.literal('resetWholeForm'),
 }).strict();
 
+/**
+ * Carries out a Show or hide fields action of the button a person pressed (ADR-0259): every widget of each field its
+ * `/T` names shown or hidden as its `/H` says, as one step a person can undo. Names the BUTTON's step, for
+ * {@link resetFormSchema}'s reason: the fields are the document's to say, read again by the kernel.
+ */
+export const showHideFieldsSchema = z.object({ kind: z.literal('showHideFields'), ...buttonStepShape }).strict();
+
 export const fillFormFieldSchema = z.object({
   kind: z.literal('fillFormField'),
   /** Zero-based index of the page the widget sits on. */
@@ -3667,10 +3674,12 @@ export const KEEPS_THE_FIELD_WALK: ReadonlySet<FieldWalkKeepingKind> = new Set([
   'fillFormField',
   // A RESET writes values and redraws, as a fill does, and adds or removes no widget (the owner's F7).
   'resetForm',
+  // A SHOW OR HIDE writes each widget's `/F` and nothing else: the widget stays in the walk, hidden or not.
+  'showHideFields',
 ] as const);
 
 /** The kinds {@link KEEPS_THE_FIELD_WALK} names. */
-export type FieldWalkKeepingKind = 'editFormFields' | 'fillFormField' | 'resetForm';
+export type FieldWalkKeepingKind = 'editFormFields' | 'fillFormField' | 'resetForm' | 'showHideFields';
 
 /** The three walks a command can name an item in by its index, each at a version. */
 export type CommandWalk = 'annotation' | 'field' | 'object';
@@ -3689,6 +3698,7 @@ const WALK_NAMED_BY: Readonly<Record<NamesAnAnnotation | NamesAFormField | Names
   replyToAnnotation: 'annotation',
   fillFormField: 'field',
   resetForm: 'field',
+  showHideFields: 'field',
   deleteFormFields: 'field',
   editFormFields: 'field',
   duplicateFormField: 'field',
@@ -5758,12 +5768,31 @@ export const fieldActionSchema = z.discriminatedUnion('kind', [
       file: actionFileSchema,
     })
     .strict(),
+  z
+    .object({
+      /**
+       * `/Hide` (ISO 32000-1, 12.6.4.10): the fields named, each widget's Hidden flag set where `hide`, else cleared.
+       * The document's own action, so `/T` names fields by their fully qualified names; a press sends the step and the
+       * kernel reads them again (`showHideFields`).
+       */
+      kind: z.literal('showHide'),
+      fields: actionFieldsSchema,
+      hide: z.boolean(),
+    })
+    .strict(),
 ]);
 /** See {@link fieldActionSchema}. */
 export type FieldAction = z.infer<typeof fieldActionSchema>;
 
 /** Every kind {@link fieldActionSchema} holds, once, for a schema that names one. */
-export const FIELD_ACTION_KINDS = ['goTo', 'link', 'reset', 'print', 'importData'] as const satisfies readonly FieldAction['kind'][];
+export const FIELD_ACTION_KINDS = [
+  'goTo',
+  'link',
+  'reset',
+  'showHide',
+  'print',
+  'importData',
+] as const satisfies readonly FieldAction['kind'][];
 /** The two lists hold the same kinds: a kind added to the union and not here is a compile error. */
 type MissingActionKind = Exclude<FieldAction['kind'], (typeof FIELD_ACTION_KINDS)[number]>;
 const ACTION_KINDS_COMPLETE: [MissingActionKind] extends [never] ? true : never = true;
@@ -6983,6 +7012,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   fillFormFieldSchema,
   resetFormSchema,
   resetWholeFormSchema,
+  showHideFieldsSchema,
   deleteFormFieldsSchema,
   flattenFormFieldsSchema,
   setDocumentProtectionSchema,
@@ -7133,6 +7163,8 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   resetFormSchema,
   // RENDERABLE, and it carries nothing but its kind: every field, read in the kernel.
   resetWholeFormSchema,
+  // RENDERABLE, `resetFormSchema`'s shape: which fields it shows or hides is the button's own action, read in the kernel.
+  showHideFieldsSchema,
   // RENDERABLE, and `removeAnnotation`'s shape on the widget walk: the renderer
   // names rows of an answer it was given. What it cannot express is what a
   // delete has to do to the field TREE, which is measured behaviour the kernel
@@ -7416,6 +7448,7 @@ export function targetVersionOf(command: Command): DocVersion | undefined {
   if (command.kind === 'replyToAnnotation') return command.version;
   if (command.kind === 'fillFormField') return command.version;
   if (command.kind === 'resetForm') return command.version;
+  if (command.kind === 'showHideFields') return command.version;
   if (command.kind === 'editFormFields') return command.version;
   if (command.kind === 'duplicateFormField') return command.version;
   if (command.kind === 'deleteFormFields') return command.version;
@@ -7487,6 +7520,8 @@ export type NamesAFormField =
   | 'fillFormField'
   // A RESET names the button pressed, whose action says which fields (the owner's F7).
   | 'resetForm'
+  // A SHOW OR HIDE names the button pressed, for the reset's reason.
+  | 'showHideFields'
   | 'deleteFormFields'
   | 'editFormFields'
   | 'duplicateFormField'

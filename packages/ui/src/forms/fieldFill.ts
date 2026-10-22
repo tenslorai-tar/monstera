@@ -1,7 +1,7 @@
 import type { ChannelResult, FieldActionTrigger, FieldFormat, FieldRange } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 
-import { FORMS_MANY_VALUES, FORMS_NOT_FILLABLE, FORMS_READ_ONLY, FORMS_SIGNED, FORMS_TOO_LONG } from '../messages/en.js';
+import { FORMS_HIDDEN, FORMS_MANY_VALUES, FORMS_NOT_FILLABLE, FORMS_READ_ONLY, FORMS_SIGNED, FORMS_TOO_LONG } from '../messages/en.js';
 
 /** One field as `document.formFields` lists it: the contract's own row, so this cannot drift from the channel. */
 export type ListedField = ChannelResult<'document.formFields'>['fields'][number];
@@ -86,6 +86,9 @@ const LINE_BREAK = /[\r\n]/u;
  * to capture a prior for it, so there would not even be an undo.
  */
 export function fieldFill(field: ListedField): FillOffer {
+  // HIDDEN FIRST (`/F` bit 2): a reader neither shows the widget nor lets it be used, so the page draws no control there
+  // and a button's Show or hide is what brings it back.
+  if (field.hidden === true) return { kind: 'none', reason: FORMS_HIDDEN };
   if (field.readOnly) return { kind: 'none', reason: FORMS_READ_ONLY };
   if (field.cut === true) return { kind: 'none', reason: FORMS_TOO_LONG };
   if (field.kind === 'text') {

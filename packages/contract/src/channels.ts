@@ -5399,6 +5399,11 @@ export const channels = {
              */
             cut: z.literal(true).exactOptional(),
             /**
+             * Present and true where the widget carries the Hidden flag (`/F` bit 2): a reader neither shows it nor lets
+             * it be used, so filling offers no control for it. Still listed, for Edit fields, where it can be shown again.
+             */
+            hidden: z.literal(true).exactOptional(),
+            /**
              * What filling it must respect (ADR-0226 Decision 4): whether it is required, its length limit, whether
              * it is drawn a character to a cell, whether it hides what is typed, whether a list takes several values
              * and a dropdown takes typing, whether it is worked out from other fields, and the format this

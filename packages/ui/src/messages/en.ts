@@ -1475,6 +1475,7 @@ export const FORMS_NO_MATCH = messageKey('surface.forms.no-match');
 export const FORMS_ROW = messageKey('surface.forms.row');
 export const FORMS_GO_TO_PAGE = messageKey('surface.forms.go-to-page');
 export const FORMS_READ_ONLY = messageKey('surface.forms.read-only');
+export const FORMS_HIDDEN = messageKey('surface.forms.hidden');
 export const FORMS_NOT_FILLABLE = messageKey('surface.forms.not-fillable');
 /** A signature field in the Forms list (the owner's F8): an empty one is signed on the page; a signed one says so. */
 export const FORMS_SIGN_ON_PAGE = messageKey('surface.forms.sign-on-page');
@@ -1902,6 +1903,13 @@ export const BUTTON_SUMMARY_LINK = messageKey('surface.field-properties.button-s
 export const BUTTON_ACTION_KIND_PRINT = messageKey('surface.field-properties.button-action-kind-print');
 export const BUTTON_ACTION_PRINT_NOTE = messageKey('surface.field-properties.button-action-print-note');
 export const BUTTON_ACTION_KIND_IMPORT = messageKey('surface.field-properties.button-action-kind-import');
+export const BUTTON_ACTION_KIND_SHOW_HIDE = messageKey('surface.field-properties.button-action-kind-show-hide');
+export const BUTTON_ACTION_HIDE = messageKey('surface.field-properties.button-action-hide');
+export const BUTTON_ACTION_SHOW = messageKey('surface.field-properties.button-action-show');
+export const BUTTON_ACTION_FIELDS_NONE = messageKey('surface.field-properties.button-action-fields-none');
+export const BUTTON_ACTION_FIELDS_LIMIT_SOME = messageKey('surface.field-properties.button-action-fields-limit-some');
+export const BUTTON_SUMMARY_HIDE = messageKey('surface.field-properties.button-summary-hide');
+export const BUTTON_SUMMARY_SHOW = messageKey('surface.field-properties.button-summary-show');
 export const BUTTON_ACTION_FILE = messageKey('surface.field-properties.button-action-file');
 export const BUTTON_ACTION_FILE_NOTE = messageKey('surface.field-properties.button-action-file-note');
 export const BUTTON_ACTION_FILE_NAME = messageKey('surface.field-properties.button-action-file-name');
@@ -4314,6 +4322,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // application; the document set this flag, and the reader can do nothing
   // about it here.
   [FORMS_READ_ONLY]: 'The document marks this field read-only.',
+  [FORMS_HIDDEN]: 'The document hides this field, so it cannot be filled until it is shown.',
   // AND THE OTHER REASON A CONTROL IS ABSENT, kept apart from it: a signature
   // and a push button are not fields a person types into at all, which is a
   // different fact from one this document happens to have locked.
@@ -5025,6 +5034,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [BUTTON_ACTION_KIND_PRINT]: 'Print the document',
   [BUTTON_ACTION_PRINT_NOTE]: 'The Print window opens, as it does from the ribbon. Nothing is printed until Print is chosen there.',
   [BUTTON_ACTION_KIND_IMPORT]: 'Import form data',
+  [BUTTON_ACTION_KIND_SHOW_HIDE]: 'Show or hide fields',
+  [BUTTON_ACTION_HIDE]: 'Hide them',
+  [BUTTON_ACTION_SHOW]: 'Show them',
+  [BUTTON_ACTION_FIELDS_NONE]: 'Tick at least one field.',
+  [BUTTON_ACTION_FIELDS_LIMIT_SOME]: '{count, plural, one {Tick up to # field.} other {Tick up to # fields.}}',
+  [BUTTON_SUMMARY_HIDE]: 'Hide {count, plural, one {# field} other {# fields}}',
+  [BUTTON_SUMMARY_SHOW]: 'Show {count, plural, one {# field} other {# fields}}',
   [BUTTON_ACTION_FILE]: 'File name for other PDF readers',
   [BUTTON_ACTION_FILE_NOTE]: 'In Monstera, pressing the button asks the person to choose an FDF file, as Import form data does from the ribbon. Other readers look for this file beside the document.',
   [BUTTON_ACTION_FILE_NAME]: 'Type one file name, with no folder in it.',

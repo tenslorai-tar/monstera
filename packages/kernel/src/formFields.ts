@@ -24,8 +24,10 @@ import {
   buttonStepsOf,
   fieldDictionaryOf,
   fieldRulesOf,
+  hideOf,
   nearest,
   qualifiedNameOf,
+  targetsListed,
 } from './fieldRules.js';
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
@@ -91,6 +93,9 @@ const MAX_FIELD_OPTIONS = 512;
  * {@link MAX_LISTED_FIELDS} makes about the list of fields itself.
  */
 const MAX_FIELD_VALUES = 256;
+
+/** An annotation's Hidden flag, `/F` bit 2 (ISO 32000-1, table 165): a reader neither shows it nor lets it be used. */
+const ANNOTATION_HIDDEN = 1 << 1;
 
 /** How far up a `/Parent` chain an inherited key is looked for: `fieldRules.ts`', the one reader of a field's inherited rules. */
 export { MAX_FIELD_ANCESTRY };
@@ -285,6 +290,8 @@ export interface ListedField {
   readonly rect: AnnotationRect | null;
   /** Present and true where a value in {@link values} is a slice of a longer one — {@link listedValues}. */
   readonly cut?: true;
+  /** Present and true where the widget carries the Hidden flag (`/F` bit 2): filling offers no control for it. */
+  readonly hidden?: true;
   /** What filling it must respect, read by `fieldRules.ts` (ADR-0226 Decision 4): bounded scalars, never a tooltip. */
   readonly required: boolean;
   readonly maxLength: number | null;
@@ -483,6 +490,7 @@ export function readFormFields(
           multiline: kind === 'text' && widget.isMultiline(),
           rect: transform === null ? null : readRect(widget, transform),
           ...(listed.cut ? { cut: true as const } : {}),
+          ...((widget.getFlags() & ANNOTATION_HIDDEN) === 0 ? {} : { hidden: true as const }),
           ...listedRules(widget),
           ...optionOf(kind, widget),
           ...(kind === 'button' ? actionsListed(document, widget) : {}),
@@ -1314,6 +1322,14 @@ export interface FieldsChosen {
 }
 
 /**
+ * Whether an action's list of fully qualified names takes the field `name` (ISO 32000-1, 12.7.3.1): named itself, or a
+ * field under one named, since naming a field names its kids. ONE rule, which a reset and a show or hide both take.
+ */
+function namedAmong(names: readonly string[], name: string): boolean {
+  return names.some((each) => each !== '' && (name === each || name.startsWith(`${each}.`)));
+}
+
+/**
  * THE ONE RESET: every field `chosen` takes, or every field in the form where it is absent, back to its default (`/DV`,
  * else empty or off), with the widgets redrawn and the form's calculations run. A button's Reset form action
  * ({@link applyResetForm}) and *Reset form* on the ribbon ({@link applyResetWholeForm}) both call this, so the two cannot
@@ -1341,8 +1357,10 @@ export interface FieldsChosen {
  * one reading of a fully qualified name (`qualifiedNameOf`), over every field a page's widget belongs to.
  */
 export function resetFields(document: PDFDocument, chosen?: FieldsChosen): void {
-  const listed = (name: string): boolean =>
-    chosen === undefined || chosen.names.some((each) => each !== '' && (name === each || name.startsWith(`${each}.`))) !== chosen.exclude;
+  const listed = (name: string): boolean => {
+    if (chosen === undefined) return true;
+    return namedAmong(chosen.names, name) !== chosen.exclude;
+  };
   const fields = document.newArray();
   const seen = new Set<number>();
   for (let page = 0; page < document.countPages(); page += 1) {
@@ -1383,6 +1401,43 @@ export const applyResetForm: Apply<'mupdf', 'resetForm'> = (session, command) =>
     const named = at.node.get('Fields');
     resetFields(document, named.isArray() ? fieldsNamed(named, at.node.get('Flags')) : undefined);
   });
+
+/**
+ * Carries out one Show or hide fields step of the button a handle names (ADR-0259): every widget of each field its `/T`
+ * names, on every page, gets the Hidden flag where `/H` is true and loses it where false; nothing else on the widget
+ * changes. A step that is not a show or hide the listing said runs is refused, {@link applyResetForm}'s reason.
+ */
+export const applyShowHideFields: Apply<'mupdf', 'showHideFields'> = (session, command) =>
+  withDocument(session, (document) => {
+    const loaded = pageAt(document, command.page, document.countPages());
+    const button = widgetAt(loaded, command.index);
+    const at = actionNodeAt(document, button.getObject(), command.trigger, command.step);
+    const hides = at !== undefined && actionRuns(at.action) && at.node.get('S').isName() && at.node.get('S').asName() === 'Hide';
+    const names = at === undefined ? null : targetsListed(at.node.get('T'), MAX_FIELD_VALUES);
+    const hide = at === undefined ? null : hideOf(at.node.get('H'));
+    if (!hides || names === null || names === 'unreadable' || hide === null) {
+      throw new Error(`step ${String(command.step)} of "${button.getName()}" is not a Show or hide action, so nothing was changed`);
+    }
+    for (let page = 0; page < document.countPages(); page += 1) {
+      for (const widget of document.loadPage(page).getWidgets()) {
+        if (!namedAmong(names, qualifiedNameOf(widget.getObject()))) continue;
+        const flags = widget.getFlags();
+        widget.setFlags(hide ? flags | ANNOTATION_HIDDEN : flags & ~ANNOTATION_HIDDEN);
+      }
+    }
+  });
+
+/** Not recorded, {@link captureResetForm}'s reason: the prior is every widget of every field the action names. */
+export const captureShowHideFields = (session: MupdfSession): Promise<CaptureResult<never>> =>
+  withDocument(session, () => ({
+    captured: false,
+    reason: 'a show or hide is undone from the checkpoint the bus took: its prior is every widget the action names',
+  }));
+
+/** Unreachable, {@link invertResetForm}'s reason. */
+export const invertShowHideFields: Invert<'mupdf', 'showHideFields'> = (): Promise<void> => {
+  throw new Error('a show or hide has no inverse; undo restores the checkpoint the bus took (ADR-0037)');
+};
 
 /** *Reset form* on the ribbon (the owner's R23): every field, through {@link resetFields}. */
 export const applyResetWholeForm: Apply<'mupdf', 'resetWholeForm'> = (session) =>

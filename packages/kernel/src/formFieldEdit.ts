@@ -1,6 +1,7 @@
 import {
   EncryptedPDFError,
   PDFArray,
+  PDFBool,
   PDFButton,
   PDFCheckBox,
   PDFDict,
@@ -290,6 +291,8 @@ function pdfLibActions(document: PDFDocument): ActionModel<PdfLibAction> {
         uri: textOfValue(dict.lookup(PDFName.of('URI'))),
         named: nameOfValue(dict.lookup(PDFName.of('N'))),
         file: fileOfValue(dict.lookup(PDFName.of('F'))),
+        targets: targetsOfValue(document, dict.lookup(PDFName.of('T'))),
+        hide: hideOfValue(dict.lookup(PDFName.of('H'))),
       };
     },
     next: ({ dict }) => {
@@ -324,6 +327,26 @@ function nameOfValue(value: PDFObject | undefined): string | null {
 function fileOfValue(value: PDFObject | undefined): string | null {
   if (!(value instanceof PDFDict)) return textOfValue(value);
   return textOfValue(value.lookup(PDFName.of('UF'))) ?? textOfValue(value.lookup(PDFName.of('F')));
+}
+
+/** `fieldRules.ts`' `targetsListed`, over pdf-lib's objects: each entry a name string or a field's dictionary. */
+function targetsOfValue(document: PDFDocument, value: PDFObject | undefined): PlainAction['targets'] {
+  if (value === undefined || value === PDFNull) return null;
+  const entries: (PDFObject | undefined)[] =
+    value instanceof PDFArray ? Array.from({ length: Math.min(value.size(), MAX_ACTION_FIELDS + 1) }, (_, at) => value.lookup(at)) : [value];
+  const names: string[] = [];
+  for (const entry of entries) {
+    const name = entry instanceof PDFDict ? qualifiedNameOfDict(document, entry) : (textOfValue(entry) ?? '');
+    if (name === '') return 'unreadable';
+    names.push(name);
+  }
+  return names;
+}
+
+/** `fieldRules.ts`' `hideOf`, over pdf-lib's objects: `true` where absent, and `null` where it is not a boolean. */
+function hideOfValue(value: PDFObject | undefined): boolean | null {
+  if (value === undefined || value === PDFNull) return true;
+  return value instanceof PDFBool ? value.asBoolean() : null;
 }
 
 /** `fieldRules.ts`' `destinationOf`, over pdf-lib's objects: the page by its reference among this document's pages. */
@@ -399,6 +422,12 @@ function actionDictOf(document: PDFDocument, action: FieldAction): PDFDict {
       return document.context.obj({
         S: 'ResetForm',
         ...(action.fields === null ? {} : { Fields: action.fields.map((name) => PDFHexString.fromText(name)) }),
+      });
+    case 'showHide':
+      return document.context.obj({
+        S: 'Hide',
+        T: action.fields.map((name) => PDFHexString.fromText(name)),
+        H: action.hide ? PDFBool.True : PDFBool.False,
       });
   }
 }

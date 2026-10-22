@@ -318,7 +318,7 @@ import { type FieldProblem, emptyRequired } from './forms/fieldCheck.js';
 import { FieldPropertiesPanel } from './forms/FieldPropertiesPanel.js';
 import { FormSettingsPanel } from './forms/FormSettingsPanel.js';
 import type { PageFill } from './forms/FormLayer.js';
-import { type ButtonCommandId, pressButton } from './forms/buttonPress.js';
+import { type ButtonCommandId, type ButtonStepCommand, pressButton } from './forms/buttonPress.js';
 import { TabOrderBar } from './forms/TabOrderLayer.js';
 import type { PlacedField } from './forms/arrange.js';
 import { besideRect } from './forms/fieldDesign.js';
@@ -4786,7 +4786,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
     (handle: Extract<PageFill, { readonly press: unknown }>): void => {
       if (activeId === undefined) return;
       const docId = activeId;
-      const apply = (command: CommandOfKind<'resetForm'>): Promise<DocVersion | undefined> => {
+      const apply = (command: ButtonStepCommand): Promise<DocVersion | undefined> => {
         let produced: DocVersion | undefined;
         return applyCarryingFields(docId, command, (version) => {
           produced = version;

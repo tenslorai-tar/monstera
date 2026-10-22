@@ -191,6 +191,9 @@ export {
   invertFlattenFormFields,
   invertResetForm,
   invertResetWholeForm,
+  applyShowHideFields,
+  captureShowHideFields,
+  invertShowHideFields,
   readFormFields,
 } from './formFields.js';
 export {

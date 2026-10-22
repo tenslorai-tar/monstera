@@ -459,7 +459,7 @@ describe('the field properties pane', () => {
       fireEvent.change(when, { target: { value: 'down' } });
       // EVERY KIND IS OFFERED, in the owner's order.
       const what = screen.getByLabelText('Do');
-      expect([...(what as HTMLSelectElement).options].map((option) => option.textContent)).toStrictEqual(['Go to a page', 'Open a web link', 'Reset the form', 'Print the document', 'Import form data']);
+      expect([...(what as HTMLSelectElement).options].map((option) => option.textContent)).toStrictEqual(['Go to a page', 'Open a web link', 'Reset the form', 'Show or hide fields', 'Print the document', 'Import form data']);
       fireEvent.change(what, { target: { value: 'reset' } });
       fireEvent.click(screen.getByLabelText('Only the fields ticked below'));
       // CONTROL: nothing ticked is not an action, so Save waits.

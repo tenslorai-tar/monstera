@@ -95,6 +95,8 @@ const mupdfActions = (document: PDFDocument): ActionModel<PDFObject> => ({
       uri: stringOf(node.get('URI')),
       named: node.get('N').isName() ? node.get('N').asName() : null,
       file: fileOf(node.get('F')),
+      targets: targetsListed(node.get('T')),
+      hide: hideOf(node.get('H')),
     };
   },
   next: (node) => {
@@ -164,6 +166,28 @@ function fieldsListed(fields: PDFObject): PlainAction['fields'] {
     else return 'unreadable';
   }
   return names;
+}
+
+/**
+ * A `/Hide`'s `/T` as names (ISO 32000-1, table 215): a name string, an annotation dictionary, or an array of either. An
+ * annotation that is no field, having no `/T` up its ancestry, makes the whole `unreadable`, since no name says it.
+ */
+export function targetsListed(targets: PDFObject, bound = MAX_ACTION_FIELDS + 1): PlainAction['targets'] {
+  if (targets.isNull()) return null;
+  const entries = targets.isArray() ? Array.from({ length: Math.min(targets.length, bound) }, (_, at) => targets.get(at)) : [targets];
+  const names: string[] = [];
+  for (const entry of entries) {
+    const name = entry.isString() ? entry.asString() : entry.isDictionary() ? qualifiedNameOf(entry) : '';
+    if (name === '') return 'unreadable';
+    names.push(name);
+  }
+  return names;
+}
+
+/** A `/Hide`'s `/H`: `true` where absent (ISO 32000-1, table 215), else the boolean, and `null` where it is not one. */
+export function hideOf(value: PDFObject): boolean | null {
+  if (value.isNull()) return true;
+  return value.isBoolean() ? value.asBoolean() : null;
 }
 
 /** Each trigger's first action on a widget: `/A`, and `/AA`'s `/U`, `/D`, `/E` and `/X`, where each is a dictionary. */

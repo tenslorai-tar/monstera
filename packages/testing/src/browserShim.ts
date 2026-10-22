@@ -269,6 +269,8 @@ export interface ShimFormField {
   readonly rect: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number } | null;
   /** The channel's mark for a value listed as a slice of a longer one. */
   readonly cut?: true;
+  /** The channel's mark for a widget the document hides (`/F` bit 2). */
+  readonly hidden?: true;
   /** A radio widget's own choice, which the Fields list names the option by; absent names it by the field. */
   readonly option?: string;
   /**
