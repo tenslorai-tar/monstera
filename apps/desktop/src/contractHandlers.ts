@@ -70,9 +70,11 @@ import {
   EngineFormDataExportFailed,
   EngineAnnotationDataExportFailed,
   type IdentityReader,
+  type PostBody,
   StaleTargetError,
   UrlFetchRefused,
   type WriteTargetVerdict,
+  postBodyOf,
   readDocumentRange,
   readTranslation,
   translationInstruction,
@@ -447,7 +449,7 @@ export function createContractHandlers(deps: {
    * 6): ADR-0061's guard, `postGuarded`, in production. Throws `UrlFetchRefused` for every refusal and for an answer that
    * is not `2xx`.
    */
-  readonly postForm: (address: string, body: Uint8Array, contentType: string) => Promise<void>;
+  readonly postForm: (address: string, body: PostBody, contentType: string) => Promise<void>;
   /** Opens one of the Store application's pages (ADR-0107), answering whether this build can reach the Store. */
   readonly openStore: (page: StorePage) => Promise<boolean>;
   /**
@@ -1829,7 +1831,7 @@ export function mailtoWithBody(address: string, text: string): string {
 function submitButtonFormHandler(
   commands: DocumentCommands,
   openLink: (address: string) => Promise<boolean>,
-  postForm: (address: string, body: Uint8Array, contentType: string) => Promise<void>,
+  postForm: (address: string, body: PostBody, contentType: string) => Promise<void>,
 ): ContractHandlers['document.submitButtonForm'] {
   return async ({
     docId,
@@ -1849,7 +1851,7 @@ function submitButtonFormHandler(
         if (whole.length <= MAILTO_WITH_DATA_MAX) return ok({ kind: (await openLink(whole)) ? 'mail-opened' : 'not-opened' } as const);
         return ok({ kind: (await openLink(action.address)) ? 'mail-opened-without-data' : 'not-opened' } as const);
       }
-      await postForm(action.address, data, SUBMIT_MEDIA_TYPES[action.format]);
+      await postForm(action.address, postBodyOf(data), SUBMIT_MEDIA_TYPES[action.format]);
       return ok({ kind: 'sent' } as const);
     } catch (thrown) {
       if (thrown instanceof UrlFetchRefused) return ok({ kind: 'refused', reason: thrown.reason } as const);

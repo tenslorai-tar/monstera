@@ -31,6 +31,7 @@ import {
   ENGINE_BARCODES_MAX,
   EditRefusedError,
   type IdentityReader,
+  type PostBody,
   StaleTargetError,
   type StagedImage,
   TextNotWritableError,
@@ -181,7 +182,7 @@ function harness(
     /** The compose host's font list, for the picker's cases; no host otherwise. */
     readonly fontFamilies?: (() => Promise<ListedFontFamilies>) | null;
     /** What a form's POST meets (ADR-0259), for the submit's cases; a server that takes it otherwise. */
-    readonly postForm?: (address: string, body: Uint8Array, contentType: string) => Promise<void>;
+    readonly postForm?: (address: string, body: PostBody, contentType: string) => Promise<void>;
   } = {},
 ) {
   const capabilities = new CapabilityRegistry();
@@ -288,9 +289,10 @@ function harness(
       linksOpened.push(address);
       return Promise.resolve(true);
     },
-    postForm: (address, body, contentType) => {
-      formsPosted.push({ address, body: new TextDecoder().decode(body), contentType });
-      return overrides.postForm === undefined ? Promise.resolve() : overrides.postForm(address, body, contentType);
+    // THE BODY READ THROUGH ITS OWN `read`, as the transport reads it, so what is recorded is what a socket would get.
+    postForm: async (address, body, contentType) => {
+      formsPosted.push({ address, body: new TextDecoder().decode(await body.read(0, body.byteLength)), contentType });
+      if (overrides.postForm !== undefined) await overrides.postForm(address, body, contentType);
     },
     openStore: () => Promise.resolve(false),
     closeListening: () => false,

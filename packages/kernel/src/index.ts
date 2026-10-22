@@ -760,7 +760,10 @@ export {
   fetchGuardedPdf,
   guardedLookup,
   pdfBody,
+  type PostBody,
+  POST_CHUNK_BYTES,
   type PostTransport,
+  postBodyOf,
   postGuarded,
 } from './guardedFetch.js';
 export {
