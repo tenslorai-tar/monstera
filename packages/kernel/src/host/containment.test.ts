@@ -605,6 +605,9 @@ describe('the engine host answers a containment probe', () => {
     fieldProperties: () => {
       throw new Error('a containment probe must not read field properties');
     },
+    buttonActions: () => {
+      throw new Error('a containment probe must not read a button’s actions');
+    },
     flatFields: () => {
       throw new Error('a containment probe must not walk a page');
     },

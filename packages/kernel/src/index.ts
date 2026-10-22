@@ -129,6 +129,7 @@ export {
   type HostDestinationsReader,
   type HostDuplicatesReader,
   type HostExtract,
+  type HostButtonActionsReader,
   type HostFieldPropertiesReader,
   type HostFormImportPlanner,
   type HostFlatFieldsReader,
@@ -397,6 +398,7 @@ export {
   remoteMupdfGeometry,
   remoteMupdfDestinations,
   remoteMupdfDuplicateReport,
+  remoteMupdfButtonActions,
   remoteMupdfFieldProperties,
   remoteMupdfFormImportPlan,
   remoteMupdfAnnotationImportPlan,
@@ -757,6 +759,8 @@ export {
   fetchGuardedPdf,
   guardedLookup,
   pdfBody,
+  type PostTransport,
+  postGuarded,
 } from './guardedFetch.js';
 export {
   CLOUD_PROVIDERS,

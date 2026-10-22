@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
 import { closeSync, openSync, readSync, readdirSync, rmSync } from 'node:fs';
 import { copyFile, mkdir, open, readFile, rm, stat, statfs, writeFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 import type { FileAccess, SaveWriteCause } from '@monstera/contract';
 import {
@@ -2569,6 +2569,18 @@ export class DocumentService {
   nameOf(docId: DocId): string | undefined {
     const record = this.#records.get(docId);
     return record === undefined ? undefined : documentNameOf(record.path);
+  }
+
+  /**
+   * The path of the file called `name` in the folder this document was opened from, for a push button's Open a file
+   * (ADR-0259), or `undefined` where the document is not open or `name` is not ONE file name. Checked here as well as
+   * by the contract's schema, since this is where a name becomes a path: a separator of either platform, a drive's
+   * colon, `.` or `..` would reach outside the folder. Off the lane, for {@link nameOf}'s reason.
+   */
+  besidePath(docId: DocId, name: string): string | undefined {
+    const record = this.#records.get(docId);
+    if (record === undefined || name === '' || name === '.' || name === '..' || /[/\\:]/u.test(name)) return undefined;
+    return join(dirname(record.path), name);
   }
 
   /**

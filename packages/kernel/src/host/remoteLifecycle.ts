@@ -1,4 +1,4 @@
-import type { AnnotationDataFormat, ClientApi, FormDataFormat, PageSet, WordMode } from '@monstera/contract';
+import type { AnnotationDataFormat, ClientApi, EncodedFormDataFormat, PageSet, WordMode } from '@monstera/contract';
 
 import type { ByteImage, LockedReason, MupdfSession } from '../engineSeam.js';
 import type { PageImageRequest } from '../pageImages.js';
@@ -346,7 +346,9 @@ export interface RemoteMupdfLifecycle {
    */
   readonly exportFormData: (
     session: MupdfSession,
-    format: FormDataFormat,
+    format: EncodedFormDataFormat,
+    /** The fields a submission names; every field where absent (ADR-0259 Decision 6). */
+    fields?: readonly string[],
   ) => Promise<ByteImage>;
   /** The annotations, encoded — the form data's dance (ADR-0077). */
   readonly exportAnnotationData: (session: MupdfSession, format: AnnotationDataFormat) => Promise<ByteImage>;
@@ -465,12 +467,13 @@ export function remoteMupdfLifecycle(
       };
     },
 
-    exportFormData: async (session, format) => {
+    exportFormData: async (session, format, fields) => {
       const area = sessions.areaFor(session);
       const into = areas.mintName();
       const answer = await client['engine/exportFormData']({
         session: sessions.handleFor(session),
         format,
+        ...(fields === undefined ? {} : { fields }),
         into,
       });
       if (!answer.ok) throw new EngineFormDataExportFailed(answer.error.code);

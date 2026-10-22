@@ -115,6 +115,7 @@ async function joined(
       word: refuse('export a Word file'),
       flatFields: refuse('propose fields'),
       fieldProperties: refuse('read field properties'),
+      buttonActions: refuse('read a button’s actions'),
       formImportPlan: refuse('plan an import'),
       annotationImportPlan: refuse('plan a comment import'),
       barcodes,

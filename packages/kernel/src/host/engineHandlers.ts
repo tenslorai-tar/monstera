@@ -1,7 +1,8 @@
 import type {
   AnnotationDataFormat,
+  ButtonStep,
   CommandOfKind,
-  FormDataFormat,
+  EncodedFormDataFormat,
   FormDataImportFormat,
   FormFieldHandle,
   FormFieldRead,
@@ -290,7 +291,9 @@ export type HostSnapshot = (
  */
 export type HostFormDataExport = (
   session: MupdfSession,
-  format: FormDataFormat,
+  format: EncodedFormDataFormat,
+  /** The fields a submission names; every field where absent (ADR-0259 Decision 6). */
+  fields?: readonly string[],
 ) => Promise<ByteImage>;
 
 /** The PDF/UA-1 object rules for a document (ADR-0078). Injected for the readers' reason. */
@@ -363,6 +366,9 @@ export type HostFieldPropertiesReader = (
   session: MupdfSession,
   handles: readonly FormFieldHandle[],
 ) => Promise<readonly (FormFieldRead | null)[]>;
+
+/** One push button's steps (ADR-0259), `null` for a handle that no longer names a push button. */
+export type HostButtonActionsReader = (session: MupdfSession, handle: FormFieldHandle) => Promise<readonly ButtonStep[] | null>;
 
 /**
  * The engine host's side of Decision 10: it looks the spec up and calls it
@@ -609,6 +615,8 @@ export interface EngineHandlerParts {
   readonly flatFields: HostFlatFieldsReader;
   /** How this process reads the properties of named fields. `engine/field-properties`. */
   readonly fieldProperties: HostFieldPropertiesReader;
+  /** How this process reads one push button's actions. `engine/button-actions`. */
+  readonly buttonActions: HostButtonActionsReader;
   /** How this process plans an import of form data. `engine/form-import-plan`. */
   readonly formImportPlan: HostFormImportPlanner;
   readonly annotationImportPlan: typeof readAnnotationImportPlan;
@@ -658,6 +666,7 @@ export function createEngineHandlers({
   word,
   flatFields,
   fieldProperties,
+  buttonActions,
   formImportPlan,
   annotationImportPlan,
   barcodes,
@@ -1231,6 +1240,13 @@ export function createEngineHandlers({
       return { ok: true, value: { fields: [...(await fieldProperties(held.session, fields))] } };
     },
 
+    'engine/button-actions': async ({ session, field }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      const steps = await buttonActions(held.session, field);
+      return { ok: true, value: { steps: steps === null ? null : [...steps] } };
+    },
+
     'engine/annotation-import-plan': async ({ session, format, asset }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
@@ -1266,14 +1282,14 @@ export function createEngineHandlers({
       }
     },
 
-    'engine/exportFormData': async ({ session, format, into }) => {
+    'engine/exportFormData': async ({ session, format, fields, into }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
       try {
         // BUILT HERE AND WRITTEN INTO THE GRANTED DIRECTORY, `engine/extract`'s
         // route and its reason: reading the fields reaches MuPDF, which
         // invariant 20 keeps out of main.
-        const bytes = await exportFormData(held.session, format);
+        const bytes = await exportFormData(held.session, format, fields);
         const written = await files.writeOutput(held.outputDirectory, into, bytes);
         return { ok: true, value: { bytes: written } };
       } catch (error) {

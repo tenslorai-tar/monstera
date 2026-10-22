@@ -221,6 +221,9 @@ function start(stream: HostByteStream) {
     fieldProperties: () => {
       throw new Error('a host body case must not read field properties');
     },
+    buttonActions: () => {
+      throw new Error('a host body case must not read a button’s actions');
+    },
     flatFields: () => {
       throw new Error('no case here proposes fields');
     },

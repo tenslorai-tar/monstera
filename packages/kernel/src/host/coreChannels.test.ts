@@ -55,6 +55,8 @@ const MUPDF_READS = [
   'engine/extract',
   // THE PROPERTIES PANE'S READ (ADR-0193): MuPDF's own, for the field list's reason.
   'engine/field-properties',
+  // ONE PUSH BUTTON'S ACTIONS (ADR-0259), the same reading's.
+  'engine/button-actions',
   // WHAT AN IMPORT WOULD DO, planned beside the form it fills: the data file is hostile input MuPDF's host parses.
   'engine/form-import-plan',
   'engine/annotation-import-plan',

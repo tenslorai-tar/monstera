@@ -14,6 +14,8 @@ import {
   SHOWN_SCHEME_MAX,
   blockEditOf,
   channels,
+  type ButtonStep,
+  type FieldActionTrigger,
   type FontFamilyEntry,
   type ListedFontFamilies,
 } from '@monstera/contract';
@@ -32,12 +34,14 @@ import {
   StaleTargetError,
   type StagedImage,
   TextNotWritableError,
+  UrlFetchRefused,
   readFileIdentity,
   stagedBytes,
 } from '@monstera/kernel';
 import { BARCODE_WRITE_FORMATS } from '@monstera/kernel/barcode';
 import {
   type DocId,
+  type DocVersion,
   type FileHandle,
   asDocId,
   asDocVersion,
@@ -48,7 +52,14 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { CloudOutcomeRefused, type CloudStorage, unconfiguredCloud } from './cloudSession.js';
 import { type AttachmentReaders, NO_ATTACHMENTS } from './askAttachments.js';
-import { type AppInfo, type PickDocument, type PickDocuments, createContractHandlers } from './contractHandlers.js';
+import {
+  type AppInfo,
+  MAILTO_WITH_DATA_MAX,
+  type PickDocument,
+  type PickDocuments,
+  createContractHandlers,
+  mailtoWithBody,
+} from './contractHandlers.js';
 import type { KnownRoot } from './displayLocation.js';
 import { NO_RECENT_PICTURES, createRecentPictures } from './recentPictures.js';
 import { createHeldPicture } from './heldPicture.js';
@@ -116,6 +127,9 @@ function serviceAnswering(outcome: OpenOutcome | readonly OpenOutcome[]): {
       return Promise.resolve(answer);
     },
     holdsHandle: (handle: FileHandle) => held.has(handle),
+    // A FOLDER EVERY DOCUMENT HERE WAS OPENED FROM, for a button's Open a file: the service's own rule is
+    // `documentService.test.ts`' case, and these read which name the handler asked for and which path it then opened.
+    besidePath: (_docId: DocId, name: string) => join(BESIDE_FOLDER, name),
     close: (docId: DocId) => {
       closed.push(docId);
       return Promise.resolve();
@@ -128,6 +142,9 @@ function serviceAnswering(outcome: OpenOutcome | readonly OpenOutcome[]): {
   } as unknown as DocumentService;
   return { documents, opened, closed };
 }
+
+/** The folder {@link serviceAnswering}'s documents were opened from. */
+const BESIDE_FOLDER = resolve('home', 'forms');
 
 /** The document no case opened, for the declared failures of the reads that name a document. */
 const NOT_OPEN: DocId = asDocId('doc-not-open');
@@ -163,6 +180,8 @@ function harness(
     readonly recent?: RecentFiles;
     /** The compose host's font list, for the picker's cases; no host otherwise. */
     readonly fontFamilies?: (() => Promise<ListedFontFamilies>) | null;
+    /** What a form's POST meets (ADR-0259), for the submit's cases; a server that takes it otherwise. */
+    readonly postForm?: (address: string, body: Uint8Array, contentType: string) => Promise<void>;
   } = {},
 ) {
   const capabilities = new CapabilityRegistry();
@@ -179,6 +198,8 @@ function harness(
   // it would answer exactly what a correct one answers.
   const webPages: string[] = [];
   const linksOpened: string[] = [];
+  // EVERY POST A SUBMIT MADE, with what it carried, for `linksOpened`'s reason.
+  const formsPosted: { readonly address: string; readonly body: string; readonly contentType: string }[] = [];
   const settings = createEphemeralSettings();
   const secrets = createEphemeralSecrets();
   // RETURNED, like `settings`, so a case can read what the handlers recorded
@@ -267,6 +288,10 @@ function harness(
       linksOpened.push(address);
       return Promise.resolve(true);
     },
+    postForm: (address, body, contentType) => {
+      formsPosted.push({ address, body: new TextDecoder().decode(body), contentType });
+      return overrides.postForm === undefined ? Promise.resolve() : overrides.postForm(address, body, contentType);
+    },
     openStore: () => Promise.resolve(false),
     closeListening: () => false,
     cloud: overrides.cloud ?? unconfiguredCloud(),
@@ -312,6 +337,7 @@ function harness(
     storeOpened,
     webPages,
     linksOpened,
+    formsPosted,
   };
 }
 
@@ -752,6 +778,168 @@ describe('document.openBarcodeLink', () => {
   });
 });
 
+describe('document.openButtonLink (ADR-0259)', () => {
+  /** Commands whose button read answers `steps` at `version`, recording the handles it was asked for. */
+  function buttonCommands(steps: readonly ButtonStep[] | null, version = 4): { commands: DocumentCommands; asked: unknown[] } {
+    const asked: unknown[] = [];
+    const commands = {
+      buttonActions: (_docId: DocId, field: unknown) => {
+        asked.push(field);
+        return Promise.resolve({ version: asDocVersion(version), steps });
+      },
+    } as unknown as DocumentCommands;
+    return { commands, asked };
+  }
+  const field = { page: 0, index: 3, name: 'Visit' };
+  const request: { docId: DocId; version: DocVersion; field: typeof field; trigger: FieldActionTrigger; step: number } = {
+    docId: A_DOC,
+    version: asDocVersion(4),
+    field,
+    trigger: 'up',
+    step: 1,
+  };
+  const STEPS: readonly ButtonStep[] = [
+    { trigger: 'up', step: 0, action: { kind: 'reset', fields: null } },
+    { trigger: 'up', step: 1, action: { kind: 'link', address: 'https://example.org/form' } },
+  ];
+
+  it('OPENS the address main read from the document for the step the renderer named — the address never crosses', async () => {
+    const { commands, asked } = buttonCommands(STEPS);
+    const { handlers, linksOpened } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+    expect(await handlers['document.openButtonLink'](request)).toStrictEqual({ ok: true, value: { kind: 'opened' } });
+    expect(linksOpened).toStrictEqual(['https://example.org/form']);
+    expect(asked).toStrictEqual([field]);
+  });
+
+  it('opens NOTHING for a moved document, a step that is not a link, a button that is gone, or a scheme not followed', async () => {
+    const cases: readonly [readonly ButtonStep[] | null, number, typeof request, unknown][] = [
+      [STEPS, 9, request, { kind: 'stale' }],
+      [STEPS, 4, { ...request, step: 0 }, { kind: 'no-such-link' }],
+      [STEPS, 4, { ...request, trigger: 'down' }, { kind: 'no-such-link' }],
+      [null, 4, request, { kind: 'no-such-link' }],
+    ];
+    for (const [steps, version, asked, answer] of cases) {
+      const { commands } = buttonCommands(steps, version);
+      const { handlers, linksOpened } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+      expect(await handlers['document.openButtonLink'](asked)).toStrictEqual({ ok: true, value: answer });
+      expect(linksOpened).toStrictEqual([]);
+    }
+    // A SCHEME NOT FOLLOWED cannot be a link step the contract takes, so it is built past it: the handler's own check is
+    // the second wall, and this is the case that shows it stands.
+    const forged = [{ trigger: 'up', step: 1, action: { kind: 'link', address: 'javascript:alert(1)' } }] as unknown as readonly ButtonStep[];
+    const { commands } = buttonCommands(forged);
+    const { handlers, linksOpened } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+    expect(await handlers['document.openButtonLink'](request)).toStrictEqual({ ok: true, value: { kind: 'scheme-refused', scheme: 'javascript:' } });
+    expect(linksOpened).toStrictEqual([]);
+  });
+});
+
+describe('document.submitButtonForm (ADR-0259)', () => {
+  /** Commands whose button read answers `steps` at version 4, and whose encoder answers `data`, recording what it was asked. */
+  function submitCommands(steps: readonly ButtonStep[] | null, data = 'applicant.name=Ada'): { commands: DocumentCommands; encoded: unknown[] } {
+    const encoded: unknown[] = [];
+    const commands = {
+      buttonActions: () => Promise.resolve({ version: asDocVersion(4), steps }),
+      submitFormData: (_docId: DocId, format: unknown, fields: unknown) => {
+        encoded.push({ format, fields });
+        return Promise.resolve(new TextEncoder().encode(data));
+      },
+    } as unknown as DocumentCommands;
+    return { commands, encoded };
+  }
+  const field = { page: 0, index: 3, name: 'Send' };
+  const request: { docId: DocId; version: DocVersion; field: typeof field; trigger: FieldActionTrigger; step: number } = {
+    docId: A_DOC,
+    version: asDocVersion(4),
+    field,
+    trigger: 'up',
+    step: 0,
+  };
+  const submit = (address: string, format: 'fdf' | 'xfdf' | 'html' = 'html'): readonly ButtonStep[] => [
+    { trigger: 'up', step: 0, action: { kind: 'submit', address, format, fields: ['applicant'] } },
+  ];
+
+  it('POSTS what the host encoded for the fields the step names, with its media type, to the address main read', async () => {
+    const { commands, encoded } = submitCommands(submit('https://forms.example/take'));
+    const { handlers, formsPosted, linksOpened } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+    expect(await handlers['document.submitButtonForm'](request)).toStrictEqual({ ok: true, value: { kind: 'sent' } });
+    expect(encoded).toStrictEqual([{ format: 'html', fields: ['applicant'] }]);
+    expect(formsPosted).toStrictEqual([
+      { address: 'https://forms.example/take', body: 'applicant.name=Ada', contentType: 'application/x-www-form-urlencoded' },
+    ]);
+    expect(linksOpened).toStrictEqual([]);
+  });
+
+  it('says the guard’s reason, and sends nothing for a moved document or a step that is not a submission', async () => {
+    const refusing = (): Promise<void> => Promise.reject(new UrlFetchRefused('blocked-address', 'not public'));
+    const { commands } = submitCommands(submit('https://inside.example/take', 'fdf'));
+    const refused = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands, postForm: refusing });
+    expect(await refused.handlers['document.submitButtonForm'](request)).toStrictEqual({ ok: true, value: { kind: 'refused', reason: 'blocked-address' } });
+    expect(refused.formsPosted.map((each) => each.contentType)).toStrictEqual(['application/vnd.fdf']);
+    for (const [asked, answer] of [
+      [{ ...request, version: asDocVersion(9) }, { kind: 'stale' }],
+      [{ ...request, step: 1 }, { kind: 'no-such-submit' }],
+    ] as const) {
+      const { handlers, formsPosted } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands: submitCommands(submit('https://forms.example/take')).commands });
+      expect(await handlers['document.submitButtonForm'](asked)).toStrictEqual({ ok: true, value: answer });
+      expect(formsPosted).toStrictEqual([]);
+    }
+  });
+
+  it('opens the mail app with the data as the message, and NEVER posts to a mailto: address', async () => {
+    const { commands } = submitCommands(submit('mailto:forms@example.org?subject=Application', 'xfdf'), '<xfdf/>');
+    const { handlers, formsPosted, linksOpened } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+    expect(await handlers['document.submitButtonForm'](request)).toStrictEqual({ ok: true, value: { kind: 'mail-opened' } });
+    expect(linksOpened).toStrictEqual(['mailto:forms@example.org?subject=Application&body=%3Cxfdf%2F%3E']);
+    expect(formsPosted).toStrictEqual([]);
+  });
+
+  it('opens the message WITHOUT the data where it would pass the policy, and CONTROL: one character under it carries it', async () => {
+    const address = 'mailto:forms@example.org';
+    const fits = 'x'.repeat(MAILTO_WITH_DATA_MAX - mailtoWithBody(address, '').length);
+    expect(mailtoWithBody(address, fits)).toHaveLength(MAILTO_WITH_DATA_MAX);
+    const under = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands: submitCommands(submit(address, 'fdf'), fits).commands });
+    expect(await under.handlers['document.submitButtonForm'](request)).toStrictEqual({ ok: true, value: { kind: 'mail-opened' } });
+    expect(under.linksOpened).toStrictEqual([mailtoWithBody(address, fits)]);
+    const over = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands: submitCommands(submit(address, 'fdf'), `${fits}x`).commands });
+    expect(await over.handlers['document.submitButtonForm'](request)).toStrictEqual({ ok: true, value: { kind: 'mail-opened-without-data' } });
+    expect(over.linksOpened).toStrictEqual([address]);
+  });
+});
+
+describe('document.openButtonFile (ADR-0259)', () => {
+  function fileCommands(steps: readonly ButtonStep[] | null): DocumentCommands {
+    return { buttonActions: () => Promise.resolve({ version: asDocVersion(4), steps }) } as unknown as DocumentCommands;
+  }
+  const request: { docId: DocId; version: DocVersion; field: { page: number; index: number; name: string }; trigger: FieldActionTrigger; step: number } = {
+    docId: A_DOC,
+    version: asDocVersion(4),
+    field: { page: 0, index: 3, name: 'Guide' },
+    trigger: 'up',
+    step: 0,
+  };
+  const STEPS: readonly ButtonStep[] = [{ trigger: 'up', step: 0, action: { kind: 'openFile', file: 'guide.pdf' } }];
+
+  it('OPENS the file the step names, beside the document, through the one open route, and answers its outcome', async () => {
+    const opened: OpenOutcome = { kind: 'opened', docId: asDocId('doc-guide'), version: asDocVersion(1), byteLength: 9, name: 'guide.pdf' };
+    const { handlers, capabilities, opened: handles } = harness(opened, () => Promise.resolve(null), undefined, { commands: fileCommands(STEPS) });
+    expect(await handlers['document.openButtonFile'](request)).toStrictEqual({ ok: true, value: opened });
+    expect(handles.map((handle) => capabilities.resolve(handle))).toStrictEqual([join(BESIDE_FOLDER, 'guide.pdf')]);
+  });
+
+  it('CONTROL: opens NOTHING for a moved document or a step that is not Open a file, where the case above opened one', async () => {
+    for (const [asked, steps, answer] of [
+      [{ ...request, version: asDocVersion(9) }, STEPS, { kind: 'stale' }],
+      [request, [{ trigger: 'up', step: 0, action: { kind: 'link', address: 'https://example.org/guide.pdf' } }], { kind: 'no-such-file' }],
+      [request, null, { kind: 'no-such-file' }],
+    ] as const) {
+      const { handlers, opened } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands: fileCommands(steps) });
+      expect(await handlers['document.openButtonFile'](asked)).toStrictEqual({ ok: true, value: answer });
+      expect(opened).toStrictEqual([]);
+    }
+  });
+});
+
 describe('document.saveBarcodeContact', () => {
   const request = { docId: A_DOC, version: asDocVersion(4), page: 2, index: 1 };
 
@@ -1124,6 +1312,7 @@ describe('document.open', () => {
       copyText: () => false,
       openWebPage: () => Promise.resolve(false),
       openLink: () => Promise.reject(new Error('this case follows no link')),
+      postForm: () => Promise.reject(new Error('this case sends no form')),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
     cloud: unconfiguredCloud(),
@@ -2034,6 +2223,7 @@ settings: createEphemeralSettings(),
       copyText: () => false,
       openWebPage: () => Promise.resolve(false),
       openLink: () => Promise.reject(new Error('this case follows no link')),
+      postForm: () => Promise.reject(new Error('this case sends no form')),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
     cloud: unconfiguredCloud(),
@@ -2096,6 +2286,7 @@ settings: createEphemeralSettings(),
       copyText: () => false,
       openWebPage: () => Promise.resolve(false),
       openLink: () => Promise.reject(new Error('this case follows no link')),
+      postForm: () => Promise.reject(new Error('this case sends no form')),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
       cloud: unconfiguredCloud(),
@@ -2257,6 +2448,7 @@ settings: createEphemeralSettings(),
       copyText: () => false,
       openWebPage: () => Promise.resolve(false),
       openLink: () => Promise.reject(new Error('this case follows no link')),
+      postForm: () => Promise.reject(new Error('this case sends no form')),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
       cloud: unconfiguredCloud(),
@@ -2490,6 +2682,7 @@ settings,
       copyText: () => false,
       openWebPage: () => Promise.resolve(false),
       openLink: () => Promise.reject(new Error('this case follows no link')),
+      postForm: () => Promise.reject(new Error('this case sends no form')),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
       cloud: unconfiguredCloud(),
@@ -2728,6 +2921,7 @@ settings: createEphemeralSettings(),
       copyText: () => false,
       openWebPage: () => Promise.resolve(false),
       openLink: () => Promise.reject(new Error('this case follows no link')),
+      postForm: () => Promise.reject(new Error('this case sends no form')),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
       cloud,

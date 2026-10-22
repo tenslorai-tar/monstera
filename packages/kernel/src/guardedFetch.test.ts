@@ -14,6 +14,8 @@ import {
   addressBlocked,
   checkedUrl,
   fetchGuardedPdf,
+  type PostTransport,
+  postGuarded,
 } from './guardedFetch.js';
 
 /**
@@ -339,5 +341,71 @@ describe('fetchGuardedPdf, the body', () => {
   it('refuses a body past its ceiling by the bytes that arrived', async () => {
     await expect(bodyOf(`${PDF}${'x'.repeat(200)}`, 64)).rejects.toMatchObject({ reason: 'too-large' });
     expect(await bodyOf(PDF, PDF.length)).toBe(PDF);
+  });
+});
+
+describe('postGuarded, a form sent where a button names (ADR-0259)', () => {
+  /** A POST transport that resolves through the guard's own `lookup` and records what a socket would have been sent. */
+  function posting(status: number): {
+    readonly transport: PostTransport;
+    readonly sent: { readonly to: string; readonly body: string; readonly type: string }[];
+  } {
+    const sent: { to: string; body: string; type: string }[] = [];
+    return {
+      sent,
+      transport: (url, lookup, _idle, body, contentType) =>
+        new Promise((resolve, reject) => {
+          lookup(url.hostname, { all: true }, (error, addresses) => {
+            if (error !== null) {
+              reject(error);
+              return;
+            }
+            const handed = Array.isArray(addresses) ? addresses.map((entry) => entry.address) : [addresses];
+            sent.push({ to: `${url.href}@${handed.join(',')}`, body: Buffer.from(body).toString('utf8'), type: contentType });
+            resolve({ statusCode: status });
+          });
+        }),
+    };
+  }
+  const DATA = new TextEncoder().encode('applicant.name=Ada');
+
+  it('posts the data with its media type to the address, resolved through the guard', async () => {
+    const names = table({ 'forms.test': ['1.1.1.1'] });
+    const post = posting(204);
+    await postGuarded('https://forms.test/take', DATA, 'application/x-www-form-urlencoded', { resolve: names.resolve, transport: post.transport });
+    expect(post.sent).toStrictEqual([
+      { to: 'https://forms.test/take@1.1.1.1', body: 'applicant.name=Ada', type: 'application/x-www-form-urlencoded' },
+    ]);
+  });
+
+  it('CONTROL: a name resolving to this network is refused with nothing sent, where the public one above is sent', async () => {
+    const names = table({ 'inside.test': ['192.168.1.20'] });
+    const post = posting(204);
+    await expect(
+      postGuarded('https://inside.test/take', DATA, 'application/vnd.fdf', { resolve: names.resolve, transport: post.transport }),
+    ).rejects.toMatchObject({ reason: 'blocked-address' });
+    expect(post.sent).toStrictEqual([]);
+  });
+
+  it('a LITERAL loopback address against a listening socket is refused before any socket opens', async () => {
+    const server = await listening();
+    try {
+      await expect(postGuarded(`https://127.0.0.1:${String(server.port)}/take`, DATA, 'application/vnd.fdf')).rejects.toMatchObject({
+        reason: 'blocked-address',
+      });
+      expect(server.connections()).toBe(0);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('refuses http:, and an answer that is not a 2xx, a redirect included', async () => {
+    await expect(postGuarded('http://forms.test/take', DATA, 'application/vnd.fdf')).rejects.toMatchObject({ reason: 'not-https' });
+    for (const status of [302, 307, 500]) {
+      const names = table({ 'forms.test': ['1.1.1.1'] });
+      await expect(
+        postGuarded('https://forms.test/take', DATA, 'application/vnd.fdf', { resolve: names.resolve, transport: posting(status).transport }),
+      ).rejects.toMatchObject({ reason: 'http-error' });
+    }
   });
 });

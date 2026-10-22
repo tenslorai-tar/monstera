@@ -29,6 +29,7 @@ import {
   fillFormFieldSchema,
   resetFormSchema,
   resetWholeFormSchema,
+  showHideFieldsSchema,
   flattenFormFieldsSchema,
   setDocumentProtectionSchema,
   applyRedactionsSchema,
@@ -42,7 +43,8 @@ import {
   MAX_BLANK_PAGES,
   PAGE_ADJUSTMENTS,
   PAGE_ADJUSTMENT_OUTCOMES,
-  formDataFormatSchema,
+  encodedFormDataFormatSchema,
+  actionFieldsSchema,
   formDataImportFormatSchema,
   annotationDataFormatSchema,
   annotationImportReportSchema,
@@ -98,6 +100,7 @@ import {
   editFormFieldsSchema,
   formFieldHandleSchema,
   formFieldReadSchema,
+  buttonStepsSchema,
   importSkippedSchema,
   MAX_IMPORT_SKIPS,
   MAX_IMPORT_SKIP_NAME,
@@ -1174,6 +1177,7 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   fillFormFieldSchema,
   resetFormSchema,
   resetWholeFormSchema,
+  showHideFieldsSchema,
   deleteFormFieldsSchema,
   flattenFormFieldsSchema,
   // CARRIES PASSWORDS ACROSS THIS PIPE, and that is ADR-0055's rule rather than
@@ -3202,7 +3206,14 @@ export const engineChannels = {
   'engine/exportFormData': channel(
     'Writes a session’s form data to a file in the output directory.',
     z
-      .object({ session: sessionSchema, format: formDataFormatSchema, into: outputNameSchema })
+      .object({
+        session: sessionSchema,
+        // HTML FORM DATA TOO, which only a push button's Submit sends (ADR-0259 Decision 6).
+        format: encodedFormDataFormatSchema,
+        // THE FIELDS A SUBMISSION NAMES, by the one rule an action's names are read by; absent is every field.
+        fields: actionFieldsSchema.exactOptional(),
+        into: outputNameSchema,
+      })
       .strict(),
     // A COUNT, for `engine/serialise`'s reason: main knows where it asked for
     // the bytes and cannot know how many arrived without being told.
@@ -3281,6 +3292,17 @@ export const engineChannels = {
     'Reads the properties of the named form fields.',
     z.object({ session: sessionSchema, fields: z.array(formFieldHandleSchema).min(1).max(MAX_READ_FIELDS).readonly() }).strict(),
     z.object({ fields: z.array(formFieldReadSchema.nullable()).max(MAX_READ_FIELDS).readonly() }).strict(),
+    ['no-such-session'],
+  ),
+
+  /**
+   * What one push button does, step by step (ADR-0259 Decision 3). One button, `engine/field-properties`' reason for a
+   * channel of its own; FILE-ANSWERED because one chain of actions each naming fields is past a frame at its worst.
+   */
+  'engine/button-actions': fileAnswered(
+    'Reads what one push button does, on each trigger, in order.',
+    z.object({ session: sessionSchema, field: formFieldHandleSchema }).strict(),
+    z.object({ steps: buttonStepsSchema.nullable() }).strict(),
     ['no-such-session'],
   ),
 

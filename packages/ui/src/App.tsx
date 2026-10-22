@@ -11,6 +11,7 @@ import {
   DOCUSIGN_INTEGRATION_KEY_SETTING_ID,
   type SecretSettingId,
   type CommandOfKind,
+  type ButtonStep,
   pageSetOf,
   type FormFieldHandle,
   type FormFieldKind,
@@ -185,8 +186,6 @@ import { afterNextPaint, sendHeld } from './heldLooks.js';
 import { type MarkLook, pictureLook } from './markLook.js';
 import { Thumbnails } from './Thumbnails.js';
 import { StatusBar } from './surfaces/StatusBar.js';
-import { StatusTip } from './surfaces/StatusTip.js';
-import { tipsOf } from './tips/tips.js';
 import { LinksPanel } from './LinksPanel.js';
 import type { FollowedLink } from './LinkLayer.js';
 import { followLink } from './commands/followLink.js';
@@ -222,6 +221,7 @@ import {
   openDocumentCommand,
   openDroppedFiles,
   openRecentDocument,
+  settleButtonFileOpen,
   openWaitingDocuments,
   restoreLastSession,
 } from './commands/openDocument.js';
@@ -319,6 +319,7 @@ import { type FieldProblem, emptyRequired } from './forms/fieldCheck.js';
 import { FieldPropertiesPanel } from './forms/FieldPropertiesPanel.js';
 import { FormSettingsPanel } from './forms/FormSettingsPanel.js';
 import type { PageFill } from './forms/FormLayer.js';
+import { type ButtonCommandId, type ButtonStepCommand, pressButton } from './forms/buttonPress.js';
 import { TabOrderBar } from './forms/TabOrderLayer.js';
 import type { PlacedField } from './forms/arrange.js';
 import { besideRect } from './forms/fieldDesign.js';
@@ -470,7 +471,7 @@ import {
   redactSelectionCommand,
   searchSelectionCommand,
 } from './commands/textSelectionCommands.js';
-import { Ribbon, SECTION_TITLES } from './surfaces/Ribbon.js';
+import { Ribbon } from './surfaces/Ribbon.js';
 import { ContextPanel } from './surfaces/ContextPanel.js';
 import { DocumentBody } from './surfaces/DocumentBody.js';
 import { PanelPresence } from './panelPresence.js';
@@ -1587,6 +1588,15 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
     },
     [activeId, client],
   );
+  /** One push button's actions for the Properties list (ADR-0259), through the one channel a press reads too. */
+  const readButtonActions = useCallback(
+    async (handle: FormFieldHandle): Promise<readonly ButtonStep[] | null> => {
+      if (activeId === undefined) return null;
+      const answer = await client['document.buttonActions']({ docId: activeId, field: handle });
+      return answer.ok ? answer.value.steps : null;
+    },
+    [activeId, client],
+  );
   /**
    * One change to every selected field: ONE command and one undo step. The name, the choices and the calculation belong to
    * one field and ride in the single-edit shape (`editFormFieldsSchema`); everything else is the shared shape.
@@ -1775,7 +1785,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
   }, []);
 
   const fillFormField = useCallback(
-    (handle: PageFill & { readonly version: DocVersion }): void => {
+    (handle: Exclude<PageFill, { readonly press: unknown }> & { readonly version: DocVersion }): void => {
       if (activeId === undefined) return;
       // AN EMPTY SIGNATURE FIELD PRESSED (the owner's F8) is signed by the application's own two routes, at the field: a
       // typed, drawn or picture mark the signature dialog answers, or a certificate written into the field itself.
@@ -1793,14 +1803,14 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         })();
         return;
       }
-      // CARRYING THE FIELD SELECTION, which a fill and a reset keep (`applyCarryingFields`).
-      void applyCarryingFields(
-        activeId,
-        // A RESET FORM BUTTON PRESSED (the owner's F7) is its own command, naming the button: its action says which fields.
-        'reset' in handle
-          ? { kind: 'resetForm', page: handle.page, index: handle.index, version: handle.version }
-          : { kind: 'fillFormField', page: handle.page, index: handle.index, value: handle.value, version: handle.version },
-      );
+      // CARRYING THE FIELD SELECTION, which a fill keeps (`applyCarryingFields`).
+      void applyCarryingFields(activeId, {
+        kind: 'fillFormField',
+        page: handle.page,
+        index: handle.index,
+        value: handle.value,
+        version: handle.version,
+      });
     },
     [activeId, applied, applyCarryingFields, ask, client, stamp, stores, toast],
   );
@@ -4501,18 +4511,6 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
     onRegistries?.({ commands: registry, dialogs });
   }, [onRegistries, registry, dialogs]);
 
-  // THE TIPS, resolved against THIS registry (ADR-0159): a renamed command or a rebound key rebuilds the registry, and
-  // the tips with it, so a tip says the title and key a person sees.
-  const tips = useMemo(
-    () =>
-      tipsOf(
-        registry.all(),
-        (key) => _(key),
-        (section) => SECTION_TITLES[section],
-      ),
-    [registry, _],
-  );
-
   /**
    * What the scroller needs to let a reader draw: the active tool, and where a
    * finished gesture's command goes.
@@ -4778,6 +4776,49 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
   useEffect(() => {
     commandContextRef.current = context;
   }, [context]);
+
+  /**
+   * A PUSH BUTTON PRESSED (ADR-0259) runs its steps for that trigger, each by its own route (`pressButton`). The commands
+   * among them travel `applyCarryingFields`, as a fill does, so the field selection is carried past each; a step that
+   * shows a page goes through the zoom and the navigator every other way of showing one takes; and a step that is one of
+   * the application's own commands (Print) runs that registered command, so its dialogs are the ones the ribbon opens.
+   */
+  const pressFormButton = useCallback(
+    (handle: Extract<PageFill, { readonly press: unknown }>): void => {
+      if (activeId === undefined) return;
+      const docId = activeId;
+      const apply = (command: ButtonStepCommand): Promise<DocVersion | undefined> => {
+        let produced: DocVersion | undefined;
+        return applyCarryingFields(docId, command, (version) => {
+          produced = version;
+        }).then((landed) => (landed ? produced : undefined));
+      };
+      const show = (page: number, zoom: ZoomMode | undefined): void => {
+        if (zoom !== undefined) changeZoom(() => zoom);
+        navigator.jumpTo(page);
+      };
+      const run = async (id: ButtonCommandId): Promise<void> => {
+        await registry.availableById(id, context)?.run(context);
+      };
+      // A FILE A BUTTON OPENS is settled as a pick is: a tab, the open one brought forward, or the problem said.
+      const settleFileOpen = (answer: Parameters<typeof settleButtonFileOpen>[1]): unknown => settleButtonFileOpen(openDeps, answer);
+      void pressButton({ client, ask, apply, toast, show, run, settleFileOpen }, docId, {
+        page: handle.page,
+        index: handle.index,
+        name: handle.name,
+        trigger: handle.press,
+      });
+    },
+    [activeId, applyCarryingFields, ask, changeZoom, client, context, navigator, openDeps, registry, toast],
+  );
+  /** The form layer's one way in: a fill, a signature, or a press. */
+  const fillOrPress = useCallback(
+    (handle: PageFill & { readonly version: DocVersion }): void => {
+      if ('press' in handle) pressFormButton(handle);
+      else fillFormField(handle);
+    },
+    [fillFormField, pressFormButton],
+  );
 
   // ESCAPE STOPS the tool that is on (ADR-0154 Decision 4), innermost first: marks selected are let go before the tool
   // is. A key pressed inside a layer that holds its own selection, or in an open block's editor, is answered there and
@@ -5101,7 +5142,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
           onFollowLink={onFollowLink}
           linksOutlined={linksOutlined}
           fieldsHighlighted={fieldsHighlighted}
-          onFillField={fillFormField}
+          onFillField={fillOrPress}
           fieldSelection={fieldSelectionForPages}
           unit={unit}
           split={split}
@@ -5199,7 +5240,9 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
                   fonts={fieldFontList}
                   known={formFieldList.fields.map((field) => ({ name: field.name, kind: field.kind, options: field.options }))}
                   onEdit={editSelectedFields}
+                  pageCount={pageCount ?? 0}
                   read={readFieldProperties}
+                  readActions={readButtonActions}
                   registry={registry}
                   selected={selectedHandles}
                   version={open.version}
@@ -5361,8 +5404,6 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
           byteLength={open.byteLength}
           // WHAT THE TOOL THAT IS ON WAITS FOR, by its own hint, so the bar names nothing itself.
           toolHint={toolHint}
-          // A TIP from the tips registry, its titles and keys read from this registry (ADR-0159).
-          tip={<StatusTip settings={settings} tips={tips} />}
         />
       )}
       {/* ALWAYS MOUNTED, unlike the status bar above and deliberately so: a live region

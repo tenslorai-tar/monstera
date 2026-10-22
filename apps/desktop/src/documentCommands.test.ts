@@ -101,6 +101,7 @@ import {
   readPageAdjustment,
   readPageWordBoxes,
   detectFlatFields,
+  readButtonActions,
   readFieldProperties,
   readFormImportPlan,
   readInterchangeAnnotations,
@@ -934,6 +935,7 @@ const INERT = {
   formFields: noFormFields,
   flatFields: noFlatFields,
   fieldProperties: () => Promise.reject(new Error('this case does not read field properties')),
+  buttonActions: () => Promise.reject(new Error('this case does not read a button’s actions')),
   formImportPlan: () => Promise.reject(new Error('this case does not plan an import')),
   barcodes: noBarcodes,
   writeBarcode: noBarcodeWriter,
@@ -1032,6 +1034,11 @@ const LOCAL_READS = {
     const held = sessions.mupdf;
     if (held === undefined) throw new MissingSessionError(id, 'mupdf');
     return readFieldProperties(held, handles);
+  },
+  buttonActions: (id, sessions, handle) => {
+    const held = sessions.mupdf;
+    if (held === undefined) throw new MissingSessionError(id, 'mupdf');
+    return readButtonActions(held, handle);
   },
   // THE HOST'S ANSWER AS MAIN READS IT: a file that is not form data is `unreadable`, never a throw.
   formImportPlan: async (id, sessions, bytes, format) => {
@@ -1573,6 +1580,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         copyText: () => false,
         openWebPage: () => Promise.resolve(false),
         openLink: () => Promise.reject(new Error('this case follows no link')),
+        postForm: () => Promise.reject(new Error('this case sends no form')),
         openStore: () => Promise.resolve(false),
           closeListening: () => false,
         cloud: unconfiguredCloud(),
@@ -2931,6 +2939,7 @@ describe('search is E2s first consumer, through the composition point', () => {
         copyText: () => false,
         openWebPage: () => Promise.resolve(false),
         openLink: () => Promise.reject(new Error('this case follows no link')),
+        postForm: () => Promise.reject(new Error('this case sends no form')),
         openStore: () => Promise.resolve(false),
         closeListening: () => false,
         cloud: unconfiguredCloud(),

@@ -191,6 +191,9 @@ export {
   invertFlattenFormFields,
   invertResetForm,
   invertResetWholeForm,
+  applyShowHideFields,
+  captureShowHideFields,
+  invertShowHideFields,
   readFormFields,
 } from './formFields.js';
 export {
@@ -248,7 +251,7 @@ export {
   type FlatFieldCandidate,
   MAX_FLAT_CANDIDATES,
 } from './flatFields.js';
-export { readFieldProperties } from './formFieldRead.js';
+export { readButtonActions, readFieldProperties } from './formFieldRead.js';
 export { type ImportReport, readFormImportPlan } from './formData.js';
 export { applyEditTextOperators, captureEditTextOperators, invertEditTextOperators } from './textOperatorEdit.js';
 export {

@@ -1,7 +1,7 @@
-import type { ChannelResult, FieldFormat, FieldRange } from '@monstera/contract';
+import type { ChannelResult, FieldActionTrigger, FieldFormat, FieldRange } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 
-import { FORMS_MANY_VALUES, FORMS_NOT_FILLABLE, FORMS_READ_ONLY, FORMS_SIGNED, FORMS_TOO_LONG } from '../messages/en.js';
+import { FORMS_HIDDEN, FORMS_MANY_VALUES, FORMS_NOT_FILLABLE, FORMS_READ_ONLY, FORMS_SIGNED, FORMS_TOO_LONG } from '../messages/en.js';
 
 /** One field as `document.formFields` lists it: the contract's own row, so this cannot drift from the channel. */
 export type ListedField = ChannelResult<'document.formFields'>['fields'][number];
@@ -53,12 +53,15 @@ export type FillOffer =
       readonly required: boolean;
     }
   /**
-   * A push button. It is pressed and says what it cannot do (invariant 24, ADR-0193): what a form's button is set to do
-   * is the document's content, which opening a document never runs, and a control that pressed and said nothing would
-   * be the display-only defect. A button whose action is the standard Reset form (`resets`) is carried out instead, as one
-   * step a person can undo (the owner's F7): it is a standard action, not a script.
+   * A push button (ADR-0259). On each trigger in `runs` a press carries out the button's standard actions, each by its
+   * own route; on each in `kept` it holds the document's own content (a script), which opening a document never runs
+   * (invariant 24), and the press says so, since a control that pressed and said nothing would be the display-only defect.
    */
-  | { readonly kind: 'button'; readonly resets: boolean }
+  | {
+      readonly kind: 'button';
+      readonly runs: readonly FieldActionTrigger[];
+      readonly kept: readonly FieldActionTrigger[];
+    }
   /**
    * An empty signature field (the owner's F8): pressed on the page, it offers the application's own signing — a typed,
    * drawn or picture signature, or a certificate — placed in that field. A signed one is `none`, so it is never signed
@@ -83,6 +86,9 @@ const LINE_BREAK = /[\r\n]/u;
  * to capture a prior for it, so there would not even be an undo.
  */
 export function fieldFill(field: ListedField): FillOffer {
+  // HIDDEN FIRST (`/F` bit 2): a reader neither shows the widget nor lets it be used, so the page draws no control there
+  // and a button's Show or hide is what brings it back.
+  if (field.hidden === true) return { kind: 'none', reason: FORMS_HIDDEN };
   if (field.readOnly) return { kind: 'none', reason: FORMS_READ_ONLY };
   if (field.cut === true) return { kind: 'none', reason: FORMS_TOO_LONG };
   if (field.kind === 'text') {
@@ -123,7 +129,7 @@ export function fieldFill(field: ListedField): FillOffer {
       required: field.required,
     };
   }
-  if (field.kind === 'button') return { kind: 'button', resets: field.action === 'reset' };
+  if (field.kind === 'button') return { kind: 'button', runs: field.actions?.runs ?? [], kept: field.actions?.kept ?? [] };
   if (field.kind === 'signature') return field.signed === true ? { kind: 'none', reason: FORMS_SIGNED } : { kind: 'sign' };
   return { kind: 'none', reason: FORMS_NOT_FILLABLE };
 }

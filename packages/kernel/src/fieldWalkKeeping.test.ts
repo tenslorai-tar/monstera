@@ -1,10 +1,10 @@
-import { PDFDocument, PDFName } from '@cantoo/pdf-lib';
+import { PDFDocument, PDFName, PDFString } from '@cantoo/pdf-lib';
 import { type CommandOfKind, type FieldFill, type FormFieldProperties, KEEPS_THE_FIELD_WALK } from '@monstera/contract';
 import { asDocVersion } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { applyDuplicateFormField, applyEditFormFields } from './formFieldEdit.js';
-import { applyFillFormField, applyResetForm } from './formFields.js';
+import { applyFillFormField, applyResetForm, applyShowHideFields } from './formFields.js';
 import { buildFormTestPdf } from './formTestForm.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 
@@ -52,8 +52,33 @@ async function walkOf(bytes: Uint8Array): Promise<string[]> {
 }
 
 describe('the commands that keep the field walk', () => {
-  it('names exactly the edit, the fill and the reset', () => {
-    expect([...KEEPS_THE_FIELD_WALK]).toStrictEqual(['editFormFields', 'fillFormField', 'resetForm']);
+  it('names exactly the edit, the fill, the reset and the show or hide', () => {
+    expect([...KEEPS_THE_FIELD_WALK]).toStrictEqual(['editFormFields', 'fillFormField', 'resetForm', 'showHideFields']);
+  });
+
+  // ADR-0259: a hidden widget is still in MuPDF's walk, so a hide is in the set above; this hides every field of the test
+  // form and reads the walk, against the walk before.
+  it('a hide of every field leaves the walk as it was', async () => {
+    const form = await PDFDocument.load(await buildFormTestPdf());
+    const names = [...new Set(form.getForm().getFields().map((field) => field.getName().split('.')[0] ?? ''))];
+    const hide = form.getForm().createButton('walk.hide');
+    hide.addToPage('Hide', form.getPage(0), { x: 20, y: 20, width: 80, height: 20 });
+    hide.acroField.getWidgets()[0]?.dict.set(PDFName.of('A'), form.context.obj({ S: 'Hide', T: names.map((name) => PDFString.of(name)), H: true }));
+    const bytes = await form.save();
+    const before = await walkOf(bytes);
+    const button = (await placesOf(bytes)).find((place) => place.name === 'walk.hide');
+    if (button === undefined) throw new Error('the added push button is not in the walk');
+    const session = await mupdfWriter.open(bytes);
+    try {
+      await applyShowHideFields(session, { kind: 'showHideFields', page: button.page, index: button.index, trigger: 'up', step: 0, version: VERSION });
+      const after = await mupdfWriter.serialise(session);
+      expect(await walkOf(after)).toStrictEqual(before);
+      // The positive side: the hide did hide, so the walk above was read over hidden widgets.
+      const hidden = await withDocument(session, (document) => document.loadPage(0).getWidgets().filter((widget) => (widget.getFlags() & 2) !== 0).length);
+      expect(hidden).toBeGreaterThan(1);
+    } finally {
+      await mupdfWriter.close(session);
+    }
   });
 
   // THE OWNER'S F7: a reset writes values and redraws, as a fill does, so it is in the set above; this is the reading
@@ -70,7 +95,7 @@ describe('the commands that keep the field walk', () => {
     if (button === undefined) throw new Error('the added push button is not in the walk');
     const session = await mupdfWriter.open(bytes);
     try {
-      await applyResetForm(session, { kind: 'resetForm', page: button.page, index: button.index, version: VERSION });
+      await applyResetForm(session, { kind: 'resetForm', page: button.page, index: button.index, trigger: 'up', step: 0, version: VERSION });
       expect(await walkOf(await mupdfWriter.serialise(session))).toStrictEqual(before);
     } finally {
       await mupdfWriter.close(session);

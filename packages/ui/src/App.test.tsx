@@ -26,7 +26,6 @@ import { RECENT_RECHECK_MS } from './recentLine.js';
 import { CONTEXT_PANEL_TAB_SETTING, DOCUMENT_PANEL_SETTING, FLOAT_BAR_POSITION_SETTING } from './settings/layout.js';
 import * as projections from './surfaces/projections.js';
 import { SECTION_TITLES } from './surfaces/Ribbon.js';
-import { WRITTEN_TIPS, tipsOf } from './tips/tips.js';
 import type { Article, Inline } from './help/article.js';
 
 /** An article's text with its bold written back as `**…**`, one line per block, for the sentence checks below. */
@@ -3046,41 +3045,6 @@ describe('App', () => {
     expect(await press(true)).toBe('title-bar');
     // WRAPPING: back from the first pane is the last.
     expect(await press(true)).toBe('status-bar');
-  });
-
-  it('every TIP names only commands the application REGISTERS, and a key only for a command that has one (ADR-0159)', () => {
-    // THE OWNER'S CHECK (item 18b): a tip naming something that no longer exists fails here, against the registry this
-    // shell builds, as the Help articles' names do below. A `{nameKey}` in a tip's English words needs that command's
-    // shortcut, or the tip would say a key there is not.
-    let commands: CommandRegistry | undefined;
-    const { client } = recordingClient({ kind: 'cancelled' });
-    render(<App client={client} settings={freshSettings()} onRegistries={(registries) => (commands = registries.commands)} />);
-    if (commands === undefined) throw new Error('the shell reported no registries');
-    const registry = commands;
-    const wrong = WRITTEN_TIPS.flatMap((tip) => {
-      const words = EN[tip.words] ?? '';
-      const unknown = Object.entries(tip.names)
-        .filter(([, id]) => registry.get(id) === undefined)
-        .map(([name, id]) => `${tip.id}: {${name}} names ${id}, which is not registered`);
-      const keys = [...words.matchAll(/\{(\w+)Key\}/gu)].map((match) => match[1] ?? '');
-      const keyless = keys
-        .filter((name) => registry.get(tip.names[name] ?? '')?.shortcut === undefined)
-        .map((name) => `${tip.id}: {${name}Key} needs a key, and ${tip.names[name] ?? `no command named {${name}}`} has none`);
-      // EVERY PLACEHOLDER IS A NAME, so no word in a tip is left as a brace a person reads.
-      const placeholders = [...words.matchAll(/\{(\w+)\}/gu)].map((match) => match[1] ?? '');
-      const unnamed = placeholders
-        .filter((name) => !(name in tip.names) && !(name.endsWith('Key') && name.slice(0, -3) in tip.names))
-        .map((name) => `${tip.id}: {${name}} is named by no command`);
-      return [...unknown, ...keyless, ...unnamed];
-    });
-    expect(wrong, `\n${wrong.join('\n')}\n`).toStrictEqual([]);
-    // WELL OVER A HUNDRED, every one drawn whole against this registry.
-    const tips = tipsOf(registry.all(), (key) => i18n._(key), (section) => SECTION_TITLES[section]);
-    expect(tips.length).toBeGreaterThan(150);
-    expect(tips.filter((tip) => !tip.id.includes(':')).map((tip) => tip.id)).toStrictEqual(WRITTEN_TIPS.map((tip) => tip.id));
-    // CONTROL: the registry is the application's, so a real id is found and an invented one is not.
-    expect(registry.get('app.help')?.shortcut).toBe('F1');
-    expect(registry.get('app.frobnicate')).toBeUndefined();
   });
 
   it('every Help article names only commands and places the application REGISTERS', () => {

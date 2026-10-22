@@ -1598,14 +1598,13 @@ A feature is finished when it is **registered**, not when it is wired.
 |---|---|---|
 | **Commands** (`UiCommand`) | id, title (i18n key), icon, shortcut, `when(ctx)`, `checked?(ctx)`, `run(ctx)`, **`placements[]`**, **`feedback` — how a person learns it worked: visible, a toast, a result dialog, or none with a written reason; required (amended 2026-10-02, [ADR-0141](DECISIONS/0141-every-command-declares-how-a-person-learns-it-worked.md))** | ribbon, floating toolbar, menus, command palette, shortcut map, context menus, start-screen shortcuts, status-bar buttons, menu row's own buttons, the rail's foot |
 | **Dialogs** | id, lazy component, props schema, **result schema** | one mount point, one focus trap, one Escape/backdrop handler, and the promise an opener awaits |
-| **Settings** | id, type, default, category, i18n key, **a title per member of an enumerated setting**, **an unset title for a colour setting**, `secret?`, **`purpose?` — a text setting about the user names its autofill purpose, `name` or `email` (WCAG 1.3.5; amended 2026-09-27, [ADR-0116](DECISIONS/0116-a-text-setting-may-name-its-input-purpose.md))**, **`control?: 'ai-models'` — a choice whose options a provider answers, one per provider (amended 2026-09-28, [ADR-0117](DECISIONS/0117-an-ai-model-is-chosen-per-provider-from-the-fetched-list.md))**, **`runsLong?` — a text setting says whether its value is one read whole that runs long, required of every text setting and implied by a secret, so its field takes the row's width (amended 2026-10-04, [ADR-0157](DECISIONS/0157-a-field-whose-value-runs-long-takes-its-rows-width.md))**, **`background?` — the application writes it and no person's action does, so it is remembered and a failed save of it is not reported (amended 2026-10-04, [ADR-0160](DECISIONS/0160-a-setting-the-application-writes-for-itself-reports-no-failed-save.md))**, migration | the entire Settings dialog — **one control per schema kind, a colour as a no-choice checkbox beside a colour input, a set of an enum's members as a box per member each refused where the schema would refuse the result (amended 2026-09-28), a secret write-only and never read back** ([ADR-0056](DECISIONS/0056-the-settings-dialog-derives-a-control-from-a-schema-and-a-secret-is-write-only.md)), **and a declared model list, fetched, a model without vision disabled where the choice reads images** — persistence, export (secrets excluded) |
+| **Settings** | id, type, default, category, i18n key, **a title per member of an enumerated setting**, **an unset title for a colour setting**, `secret?`, **`purpose?` — a text setting about the user names its autofill purpose, `name` or `email` (WCAG 1.3.5; amended 2026-09-27, [ADR-0116](DECISIONS/0116-a-text-setting-may-name-its-input-purpose.md))**, **`control?: 'ai-models'` — a choice whose options a provider answers, one per provider (amended 2026-09-28, [ADR-0117](DECISIONS/0117-an-ai-model-is-chosen-per-provider-from-the-fetched-list.md))**, **`runsLong?` — a text setting says whether its value is one read whole that runs long, required of every text setting and implied by a secret, so its field takes the row's width (amended 2026-10-04, [ADR-0157](DECISIONS/0157-a-field-whose-value-runs-long-takes-its-rows-width.md))**, migration | the entire Settings dialog — **one control per schema kind, a colour as a no-choice checkbox beside a colour input, a set of an enum's members as a box per member each refused where the schema would refuse the result (amended 2026-09-28), a secret write-only and never read back** ([ADR-0056](DECISIONS/0056-the-settings-dialog-derives-a-control-from-a-schema-and-a-secret-is-write-only.md)), **and a declared model list, fetched, a model without vision disabled where the choice reads images** — persistence, export (secrets excluded) |
 | **Annotation types** | geometry adapter, renderer, kernel writer mapping | overlay, panel, persistence |
 | **Tools** | controller (begin/update/commit/cancel) | toolbar, overlay dispatch |
 | **AI providers** | id, models, validateKey, chat, vision? | onboarding, settings, assistant |
 | **Update providers** | detect, check, apply/redirect | title bar indicator, update flow |
 | **Import/Export formats** | id, extensions, direction, handler command | dialogs, file associations |
 | **Cloud providers** | id, auth, list, fetch | cloud storage panel |
-| **Tips** (amended 2026-10-04, [ADR-0159](DECISIONS/0159-a-tip-is-registered-names-its-commands-and-is-shown-in-the-status-bar.md)) | id, words (i18n key), the commands it names by id | the status bar's tip; and a tip for each command's key and each command's ribbon place, derived from the command registry, so no tip can name what is not registered |
 
 **A dialog that collects arguments ANSWERS the command that opened it**
 ([ADR-0038](DECISIONS/0038-a-dialog-answers-the-command-that-opened-it.md)).
@@ -1770,14 +1769,11 @@ still has a position. Writing the buttons into the bar by hand would be the
 second wiring place above; `StatusBar.tsx` lives in `packages/ui/src/surfaces`,
 where `check:secondwiring` scans.
 
-**The bar's start also shows a TIP** (amended 2026-10-04,
-[ADR-0159](DECISIONS/0159-a-tip-is-registered-names-its-commands-and-is-shown-in-the-status-bar.md)),
-after what a tool waits for, which comes first. Tips are the tips registry's,
-naming commands by id, so their titles and keys are the command registry's; one
-is shown at a time, in a random order that does not repeat until every tip has
-been, remembered across sessions; a tip that does not fit is hidden rather than
-cut; and it is `aria-hidden`, because the bar is a live region and a sentence
-changing every so often there would be read aloud over a person's work.
+**The bar's start says only what the tool in hand does** (amended 2026-10-21,
+the owner's R24; ADR-0159's correction withdraws its tips): the tool's own
+instruction and the one sentence that Escape stops it, or a page number the
+document does not have, and with no tool on, nothing. A sentence about anything
+else in that line reads as part of the tool's instruction.
 
 **The start screen projects commands into three slots** (amended 2026-09-15,
 [ADR-0068](DECISIONS/0068-the-start-screen-projects-into-three-slots.md)).
@@ -1924,7 +1920,10 @@ reconciled.
   says *who built them*.
 - **Network.** HTTPS only, host-locked per purpose, with an SSRF guard carrying
   a private-range blocklist and a DNS-rebinding pin — re-validated on **every**
-  resolution, not just the first — for user-supplied URLs.
+  resolution, not just the first — for user-supplied URLs. **A form's submission
+  is one** (amended 2026-10-21, ADR-0259): a button's `SubmitForm` address, read
+  from the document and agreed to by the person, is POSTed through that guard
+  and no other route.
 
   **One exception, and only one: an RFC 3161 timestamp request may be plain
   HTTP**, to a host in the contract's declared authority list and nowhere else
@@ -2437,6 +2436,15 @@ say**.
     `main` opens it, reading the address from the document by the link's place
     on its page and opening `https:`, `http:` and `mailto:` only. The renderer
     never names a URL to `main`.
+
+    **A button's action is asked for by a press on it** (amended 2026-10-21,
+    [ADR-0259](DECISIONS/0259-a-push-button-runs-an-ordered-list-of-standard-actions-each-by-the-route-that-owns-it.md)),
+    on the trigger its author chose. Each standard action runs by the route that
+    already owns it, and every one that leaves the machine or opens something —
+    a web address, a submission, another file — is named in a question first.
+    What crosses names the button and the step, never an address or a path, and
+    the kernel or `main` reads the action again from the document. A script, a
+    `Launch` and any action this build does not write are kept and never run.
 
     A PDF is a program as well as a page, and the process that parses it is
     parsing the single most attacker-controlled thing this application touches.
@@ -3166,6 +3174,8 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-10-21 | **A push button runs an ordered list of standard actions, each by the route that already owns it** (invariant 24; §9's network rule; the contract's push-button action). The owner's R22: a button's Action offered only *None* and *Reset the form*. A button now carries actions per trigger (mouse up, down, enter, leave) — go to a page, a web link, reset, show or hide fields, print, import form data, submit, open a file — written as the standard's own actions; a press names the button and the step, and the kernel or `main` reads the action from the document; whatever leaves the machine or opens something asks first; a submission is POSTed through ADR-0061's guard. Scripts and `Launch` are kept and never run. Rejected: running scripts, `Launch`, the renderer naming an address or a path, a second reset, attaching data to an email (nothing here binds Simple MAPI), one command for a whole press | the push button's one `buttonAction`, none or reset (the owner's F7, no ADR) | [0259](DECISIONS/0259-a-push-button-runs-an-ordered-list-of-standard-actions-each-by-the-route-that-owns-it.md) |
+| 2026-10-21 | **The status bar's start says only what the tool in hand does; tips are withdrawn** (§7's registry table, its Settings row and its status bar clause). The owner's R24: with Highlight area on, the line read the tool's instruction, *Esc gets you out*, and then *"Redo: press Ctrl+Y."*, a tip about something else read as part of the instruction. The status bar was the tips' only place, so the tips registry, its round and switch, and `background?` on a setting, which only the round declared, are removed rather than left with no reader. | the 2026-10-04 rows below that registered tips and `background?` | ADR-0159, 0160 (each with a correction of 2026-10-21) |
 | 2026-10-21 | **The React Compiler is switched on** (the renderer's build). The owner's R19, app-wide: each command's answer moved its document's version and rendered the whole shell — one 53 ms render on an erasure, the rest of the work every child of `App` rendering again. ADR-0004's pin of the compiler is now run; with it, the React work per erasure fell from a median of about 170 ms to about 95. | ADR-0004's unused pin | [0258](DECISIONS/0258-the-react-compiler-is-switched-on.md) |
 | 2026-10-21 | **A released mark is held in its final look until the page draws it** (§6). The owner's answer to R19 (a): every Comment tool showed a placeholder — an accent box or outline, an empty text box, or nothing — for 0.5 to 1.3 s after the release, and trimming the pipeline cannot reach 150 ms. The held shape is now the command's look, in the mark's own style, held by one holder per page for every route, and handed over by R17's rule. | ADR-0166's *What this does not do* (PDF.js can leave one annotation out, R17) | [0257](DECISIONS/0257-a-released-mark-is-held-in-its-final-look-until-the-page-draws-it.md) |
 | 2026-10-21 | **Edit object is withdrawn from the application** (§7's `Placement`: the `object` menu context and `menuRuns` leave; the engines' object commands leave with them). The owner's decision of 2026-10-21 (R20): on a design tool's brochure the tool refused a heading's colour change and every move of a body text object, and took seconds to pick and apply. Removed from the registry, the contract and both engines, not hidden; what other tools share stays — Comment › Image's picture marks, and Edit text's read of the page's objects. | the 2026-10-04 and 2026-10-14 rows below that made Edit object and its menu | ADR-0153, 0240-0244 (each with a correction of 2026-10-21) |

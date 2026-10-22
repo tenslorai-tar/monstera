@@ -1,12 +1,14 @@
 import {
   EncryptedPDFError,
   PDFArray,
+  PDFBool,
   PDFButton,
   PDFCheckBox,
   PDFDict,
   PDFDropdown,
   PDFHexString,
   PDFName,
+  PDFNull,
   PDFNumber,
   PDFOptionList,
   PDFRadioGroup,
@@ -17,11 +19,20 @@ import {
   StandardFonts,
   TextAlignment,
 } from '@cantoo/pdf-lib';
-import type { PDFDocument, PDFField, PDFFont, PDFPage } from '@cantoo/pdf-lib';
+import type { PDFDocument, PDFField, PDFFont, PDFObject, PDFPage } from '@cantoo/pdf-lib';
 
-import { BORDER_STYLE_FIELD_KINDS, choiceLabelOf, choiceValueOf } from '@monstera/contract/host';
+import {
+  BORDER_STYLE_FIELD_KINDS,
+  MAX_ACTION_CHAIN,
+  MAX_ACTION_FIELDS,
+  choiceLabelOf,
+  choiceValueOf,
+} from '@monstera/contract/host';
 import type {
   AnnotationRect,
+  ButtonAction,
+  FieldAction,
+  FieldActionTrigger,
   CommandOfKind,
   FIELD_BORDER_STYLES,
   FIELD_CHECK_STYLES,
@@ -35,7 +46,8 @@ import { fieldNameClash } from '@monstera/shared';
 
 import type { FieldFace } from './fieldActions.js';
 import { FieldEditRefusedError } from './fieldEditRefusal.js';
-import { buttonActionNamed } from './fieldRules.js';
+import { type ActionHeads, type ActionModel, type PlainAction, SUBMIT_FLAGS, buttonSteps, holdsKept } from './buttonActions.js';
+import { MAX_FIELD_ANCESTRY } from './fieldRules.js';
 import { FIELD_FAMILY_MARKER, drawsFieldFamily, familyOfMarker, fieldFontOf } from './fieldFamily.js';
 import { base14Of } from './base14Families.js';
 import { checkBoxAppearance, namesButtonStyle, radioAppearance } from './buttonAppearance.js';
@@ -220,19 +232,271 @@ function setButtonLabel(widget: PDFDict, label: string): void {
   mk.set(PDFName.of('CA'), text(label));
 }
 
-/**
- * Sets what a push button does (the owner's F7): no action, or the standard Reset form, which resets every field. A
- * button holding any other action (a script, a submit) keeps it: overwriting it would drop the document's own content,
- * and the Properties pane offers no choice for one, so a command that asks is a defect and is thrown as one.
- */
-function setButtonAction(document: PDFDocument, widget: PDFDict, action: 'none' | 'reset'): void {
-  const held = widget.lookupMaybe(PDFName.of('A'), PDFDict);
-  const subtype = held === undefined ? null : (held.lookupMaybe(PDFName.of('S'), PDFName)?.decodeText() ?? '');
-  if (buttonActionNamed(subtype) === 'other') {
-    throw new Error('this button runs an action Monstera does not write (a script or a submit), and it is kept as it is');
+/** An action dictionary as pdf-lib holds it: the dictionary, and the reference it was reached through, if any. */
+interface PdfLibAction {
+  readonly dict: PDFDict;
+  readonly ref: PDFRef | undefined;
+}
+
+/** A value that is an action dictionary, directly or through a reference, as {@link PdfLibAction}; else `undefined`. */
+function actionNode(document: PDFDocument, value: PDFObject | undefined): PdfLibAction | undefined {
+  if (value instanceof PDFRef) {
+    const dict = document.context.lookup(value);
+    return dict instanceof PDFDict ? { dict, ref: value } : undefined;
   }
-  if (action === 'none') widget.delete(PDFName.of('A'));
-  else widget.set(PDFName.of('A'), document.context.obj({ S: 'ResetForm' }));
+  return value instanceof PDFDict ? { dict: value, ref: undefined } : undefined;
+}
+
+/** A field dictionary's fully qualified name, each `/T` from the root down: `fieldRules.ts`' `qualifiedNameOf` for pdf-lib. */
+function qualifiedNameOfDict(document: PDFDocument, dict: PDFDict): string {
+  const parts: string[] = [];
+  let at: PDFDict | undefined = dict;
+  for (let hop = 0; hop < MAX_FIELD_ANCESTRY && at !== undefined; hop += 1) {
+    const partial = at.lookup(PDFName.of('T'));
+    if (partial instanceof PDFString || partial instanceof PDFHexString) parts.unshift(partial.decodeText());
+    const parent: PDFObject | undefined = at.lookup(PDFName.of('Parent'));
+    at = parent instanceof PDFDict ? parent : undefined;
+  }
+  return parts.join('.');
+}
+
+/**
+ * pdf-lib's object model as `buttonActions.ts` reads it (ADR-0259): the adapter, never a second classifier, so the edit
+ * refuses exactly the buttons the Properties read called kept.
+ */
+function pdfLibActions(document: PDFDocument): ActionModel<PdfLibAction> {
+  return {
+    plain: ({ dict }) => {
+      const subtype = dict.lookup(PDFName.of('S'));
+      const flags = dict.lookup(PDFName.of('Flags'));
+      const fields = dict.lookup(PDFName.of('Fields'));
+      let listed: PlainAction['fields'] = null;
+      if (fields instanceof PDFArray) {
+        const names: string[] = [];
+        for (let at = 0; at < Math.min(fields.size(), MAX_ACTION_FIELDS + 1) && listed !== 'unreadable'; at += 1) {
+          const entry = fields.lookup(at);
+          if (entry instanceof PDFString || entry instanceof PDFHexString) names.push(entry.decodeText());
+          else if (entry instanceof PDFDict) names.push(qualifiedNameOfDict(document, entry));
+          else listed = 'unreadable';
+        }
+        if (listed !== 'unreadable') listed = names;
+      } else if (fields !== undefined) {
+        listed = 'unreadable';
+      }
+      return {
+        subtype: subtype instanceof PDFName ? subtype.decodeText() : null,
+        fields: listed,
+        flags: flags instanceof PDFNumber ? Math.trunc(flags.asNumber()) : 0,
+        destination: destinationOfDict(document, dict.lookup(PDFName.of('D'))),
+        uri: textOfValue(dict.lookup(PDFName.of('URI'))),
+        named: nameOfValue(dict.lookup(PDFName.of('N'))),
+        file: fileOfValue(dict.lookup(PDFName.of('F'))),
+        targets: targetsOfValue(document, dict.lookup(PDFName.of('T'))),
+        hide: hideOfValue(dict.lookup(PDFName.of('H'))),
+      };
+    },
+    next: ({ dict }) => {
+      const next = dict.get(PDFName.of('Next'));
+      const resolved = next instanceof PDFRef ? document.context.lookup(next) : next;
+      if (!(resolved instanceof PDFArray)) {
+        const one = actionNode(document, next);
+        return one === undefined ? [] : [one];
+      }
+      const nodes: PdfLibAction[] = [];
+      for (let at = 0; at < Math.min(resolved.size(), MAX_ACTION_CHAIN); at += 1) {
+        const one = actionNode(document, resolved.get(at));
+        if (one !== undefined) nodes.push(one);
+      }
+      return nodes;
+    },
+    identity: ({ ref }) => ref?.objectNumber,
+  };
+}
+
+/** A string value as text, or `null` where it is not a string. */
+function textOfValue(value: PDFObject | undefined): string | null {
+  return value instanceof PDFString || value instanceof PDFHexString ? value.decodeText() : null;
+}
+
+/** A name value as text, or `null` where it is not a name. */
+function nameOfValue(value: PDFObject | undefined): string | null {
+  return value instanceof PDFName ? value.decodeText() : null;
+}
+
+/** `fieldRules.ts`' `fileOf`, over pdf-lib's objects: a string, or a file specification's `/UF`, else its `/F`. */
+function fileOfValue(value: PDFObject | undefined): string | null {
+  if (!(value instanceof PDFDict)) return textOfValue(value);
+  return textOfValue(value.lookup(PDFName.of('UF'))) ?? textOfValue(value.lookup(PDFName.of('F')));
+}
+
+/** `fieldRules.ts`' `targetsListed`, over pdf-lib's objects: each entry a name string or a field's dictionary. */
+function targetsOfValue(document: PDFDocument, value: PDFObject | undefined): PlainAction['targets'] {
+  if (value === undefined || value === PDFNull) return null;
+  const entries: (PDFObject | undefined)[] =
+    value instanceof PDFArray ? Array.from({ length: Math.min(value.size(), MAX_ACTION_FIELDS + 1) }, (_, at) => value.lookup(at)) : [value];
+  const names: string[] = [];
+  for (const entry of entries) {
+    const name = entry instanceof PDFDict ? qualifiedNameOfDict(document, entry) : (textOfValue(entry) ?? '');
+    if (name === '') return 'unreadable';
+    names.push(name);
+  }
+  return names;
+}
+
+/** `fieldRules.ts`' `hideOf`, over pdf-lib's objects: `true` where absent, and `null` where it is not a boolean. */
+function hideOfValue(value: PDFObject | undefined): boolean | null {
+  if (value === undefined || value === PDFNull) return true;
+  return value instanceof PDFBool ? value.asBoolean() : null;
+}
+
+/** `fieldRules.ts`' `destinationOf`, over pdf-lib's objects: the page by its reference among this document's pages. */
+function destinationOfDict(document: PDFDocument, value: PDFObject | undefined): PlainAction['destination'] {
+  if (value instanceof PDFName || value instanceof PDFString || value instanceof PDFHexString) return 'named';
+  if (!(value instanceof PDFArray) || value.size() === 0) return null;
+  const target = value.get(0);
+  const pages = document.getPages();
+  let page: number | null = null;
+  if (target instanceof PDFRef) {
+    const found = pages.findIndex((each) => each.ref.objectNumber === target.objectNumber);
+    page = found === -1 ? null : found;
+  } else if (target instanceof PDFNumber && Number.isInteger(target.asNumber()) && target.asNumber() >= 0 && target.asNumber() < pages.length) {
+    page = target.asNumber();
+  }
+  const fit = value.lookup(1);
+  const numbers: (number | null)[] = [];
+  for (let at = 2; at < Math.min(value.size(), 6); at += 1) {
+    const each = value.lookup(at);
+    numbers.push(each instanceof PDFNumber ? each.asNumber() : null);
+  }
+  return { page, fit: fit instanceof PDFName ? fit.decodeText() : null, numbers };
+}
+
+/** The widget's `/AA`, or `undefined` where it has none. */
+function additionalActionsOf(document: PDFDocument, widget: PDFDict): PDFDict | undefined {
+  const value = widget.get(PDFName.of('AA'));
+  const resolved = value instanceof PDFRef ? document.context.lookup(value) : value;
+  return resolved instanceof PDFDict ? resolved : undefined;
+}
+
+/** `fieldRules.ts`' `actionHeadsOf`, over pdf-lib's objects. */
+function pdfLibHeads(document: PDFDocument, widget: PDFDict): ActionHeads<PdfLibAction> {
+  const aa = additionalActionsOf(document, widget);
+  return {
+    up: actionNode(document, widget.get(PDFName.of('A'))),
+    upAgain: actionNode(document, aa?.get(PDFName.of('U'))),
+    down: actionNode(document, aa?.get(PDFName.of('D'))),
+    enter: actionNode(document, aa?.get(PDFName.of('E'))),
+    exit: actionNode(document, aa?.get(PDFName.of('X'))),
+  };
+}
+
+/** The `/AA` key each trigger past mouse up is written under (ISO 32000-1, table 194). */
+const ADDITIONAL_KEY: Readonly<Record<Exclude<FieldActionTrigger, 'up'>, string>> = { down: 'D', enter: 'E', exit: 'X' };
+
+/** One action, as the standard writes it (ADR-0259 Decision 2). */
+function actionDictOf(document: PDFDocument, action: FieldAction): PDFDict {
+  switch (action.kind) {
+    case 'goTo': {
+      // THE PAGE BY ITS REFERENCE, which an explicit destination to a page of this document must be (ISO 32000-1,
+      // 12.3.2.2): an index there names a page of ANOTHER document.
+      const target = document.getPages()[action.page];
+      if (target === undefined) throw new Error(`this document has no page ${String(action.page + 1)} for the button to go to`);
+      const at = action.at;
+      const view =
+        action.view === 'fit'
+          ? [PDFName.of('Fit')]
+          : action.view === 'fit-width'
+            ? [PDFName.of('FitH'), numberOrNull(at?.top ?? null)]
+            : [PDFName.of('XYZ'), numberOrNull(at?.left ?? null), numberOrNull(at?.top ?? null), numberOrNull(at?.zoom ?? null)];
+      return document.context.obj({ S: 'GoTo', D: [target.ref, ...view] });
+    }
+    case 'link':
+      // AN ASCII STRING, as `/URI` must be (ISO 32000-1, table 206): the URL parser's own form, which percent-encodes
+      // what is not ASCII. Every address the contract takes has a scheme, so it parses.
+      return document.context.obj({ S: 'URI', URI: PDFString.of(URL.canParse(action.address) ? new URL(action.address).href : action.address) });
+    case 'print':
+      return document.context.obj({ S: 'Named', N: 'Print' });
+    case 'importData':
+      return document.context.obj({ S: 'ImportData', F: fileSpecOf(document, action.file) });
+    case 'openFile':
+      // THE FIRST PAGE, WHOLE, IN A NEW WINDOW (ISO 32000-1, table 202): a remote destination names its page by number,
+      // since this document holds no reference into another.
+      return document.context.obj({
+        S: 'GoToR',
+        F: fileSpecOf(document, action.file),
+        D: [PDFNumber.of(0), PDFName.of('Fit')],
+        NewWindow: PDFBool.True,
+      });
+    case 'reset':
+      return document.context.obj({
+        S: 'ResetForm',
+        ...(action.fields === null ? {} : { Fields: action.fields.map((name) => PDFHexString.fromText(name)) }),
+      });
+    case 'submit':
+      // A URL FILE SPECIFICATION (ISO 32000-1, 7.11.5): `/FS /URL` and the address in `/F`, which `/SubmitForm`'s `/F`
+      // must be, and which `fileOfValue` and MuPDF's `fileOf` both read back. The flags are the one table's.
+      return document.context.obj({
+        S: 'SubmitForm',
+        F: document.context.obj({ FS: 'URL', F: PDFString.of(action.address) }),
+        Flags: SUBMIT_FLAGS[action.format],
+        ...(action.fields === null ? {} : { Fields: action.fields.map((name) => PDFHexString.fromText(name)) }),
+      });
+    case 'showHide':
+      return document.context.obj({
+        S: 'Hide',
+        T: action.fields.map((name) => PDFHexString.fromText(name)),
+        H: action.hide ? PDFBool.True : PDFBool.False,
+      });
+  }
+}
+
+/**
+ * A file specification for one file beside the document (ISO 32000-1, 7.11.3): `/F` for every reader and `/UF` in
+ * Unicode, so a name that is not ASCII reads back as typed.
+ */
+function fileSpecOf(document: PDFDocument, name: string): PDFDict {
+  return document.context.obj({ Type: 'Filespec', F: PDFString.of(name), UF: PDFHexString.fromText(name) });
+}
+
+/** A destination's number, or the `null` the standard writes for *keep what the reader has*. */
+function numberOrNull(value: number | null): PDFNumber | typeof PDFNull {
+  return value === null ? PDFNull : PDFNumber.of(value);
+}
+
+/**
+ * Writes what a push button does, whole (ADR-0259 Decision 1): each trigger's actions as a chain linked by `/Next`, mouse
+ * up as `/A` and the others under `/AA`, whose other keys are left as they are. A trigger with none loses its key.
+ *
+ * A button holding any action this build does not write keeps it: overwriting it would drop the document's own content,
+ * and the Properties pane offers no editing for one, so a command that asks is a defect and is thrown as one.
+ */
+function setButtonActions(document: PDFDocument, widget: PDFDict, actions: readonly ButtonAction[]): void {
+  if (holdsKept(buttonSteps(pdfLibActions(document), pdfLibHeads(document, widget)))) {
+    throw new Error('this button runs an action Monstera does not write (a script or a launch), and it is kept as it is');
+  }
+  const chained = (trigger: FieldActionTrigger): PDFRef | undefined => {
+    let next: PDFRef | undefined;
+    const list = actions.filter((each) => each.trigger === trigger);
+    for (let at = list.length - 1; at >= 0; at -= 1) {
+      const entry = list[at];
+      if (entry === undefined) continue;
+      const dict = actionDictOf(document, entry.action);
+      if (next !== undefined) dict.set(PDFName.of('Next'), next);
+      next = document.context.register(dict);
+    }
+    return next;
+  };
+  const up = chained('up');
+  if (up === undefined) widget.delete(PDFName.of('A'));
+  else widget.set(PDFName.of('A'), up);
+  const aa = additionalActionsOf(document, widget) ?? document.context.obj({});
+  for (const [trigger, key] of Object.entries(ADDITIONAL_KEY) as [Exclude<FieldActionTrigger, 'up'>, string][]) {
+    const head = chained(trigger);
+    if (head === undefined) aa.delete(PDFName.of(key));
+    else aa.set(PDFName.of(key), head);
+  }
+  if (aa.keys().length === 0) widget.delete(PDFName.of('AA'));
+  else if (!(widget.get(PDFName.of('AA')) instanceof PDFRef)) widget.set(PDFName.of('AA'), aa);
 }
 
 /** The annotation flags that decide whether a widget shows (PDF 32000-1 table 165): Hidden, Print, NoView. */
@@ -829,7 +1093,7 @@ export const applyEditFormFields: Apply<'pdf-lib', 'editFormFields'> = async (im
     if (field instanceof PDFTextField) setTextRules(field, set);
     if (set.visibility !== undefined) setVisibility(widget, set.visibility);
     if (set.buttonLabel !== undefined && field instanceof PDFButton) setButtonLabel(widget, set.buttonLabel);
-    if (set.buttonAction !== undefined && field instanceof PDFButton) setButtonAction(document, widget, set.buttonAction);
+    if (set.buttonActions !== undefined && field instanceof PDFButton) setButtonActions(document, widget, set.buttonActions);
     if (set.format !== undefined) setFormat(field, set.format);
     if (set.calculation !== undefined) setCalculation(form, field, set.calculation);
     if (set.calculationPosition !== undefined) moveInCalculationOrder(form, field, set.calculationPosition);

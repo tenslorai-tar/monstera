@@ -213,6 +213,9 @@ async function joined(ocr: HostOcrReader): Promise<{
       fieldProperties: () => {
         throw new Error('an OCR case must not read field properties');
       },
+      buttonActions: () => {
+        throw new Error('an OCR case must not read a button’s actions');
+      },
       flatFields: () => {
         throw new Error('a recognition must not propose fields');
       },

@@ -938,8 +938,8 @@ const REMOVE_MARKS_SPEC = `  removePageMarks: {
   },`;
 
 /**
- * Reset form on the ribbon (the owner's R23) — the NEWEST kind since 2026-10-21, and the one the `missing a command
- * kind` case omits. {@link RESET_FORM_SPEC}'s axes, for its reason.
+ * Reset form on the ribbon (the owner's R23); it was the newest kind until `showHideFields`. {@link RESET_FORM_SPEC}'s
+ * axes, for its reason.
  */
 const RESET_WHOLE_FORM_SPEC = `  resetWholeForm: {
     kind: 'resetWholeForm',
@@ -947,6 +947,24 @@ const RESET_WHOLE_FORM_SPEC = `  resetWholeForm: {
     apply: applyResetWholeForm,
     capture: captureResetWholeForm,
     invert: invertResetWholeForm,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`;
+
+/**
+ * A push button's Show or hide fields step (ADR-0259) — the NEWEST kind since 2026-10-22, and the one the `missing a
+ * command kind` case omits. {@link RESET_FORM_SPEC}'s axes, for its reason.
+ */
+const SHOW_HIDE_FIELDS_SPEC = `  showHideFields: {
+    kind: 'showHideFields',
+    writer: 'mupdf',
+    apply: applyShowHideFields,
+    capture: captureShowHideFields,
+    invert: invertShowHideFields,
     invertible: false,
     undo: 'checkpoint',
     reproducible: true,
@@ -1314,6 +1332,9 @@ const SPEC_IMPORTS = `import {
   applyResetWholeForm,
   captureResetWholeForm,
   invertResetWholeForm,
+  applyShowHideFields,
+  captureShowHideFields,
+  invertShowHideFields,
 } from '@monstera/kernel/engine';
 // A SECOND IMPORT LINE, and the module it names is the finding rather than an
 // inconvenience: setPageBackground routes to a byte-image writer that runs in
@@ -1431,6 +1452,10 @@ export const handlers: ContractHandlers = {
   'document.flatFieldCandidates': () =>
     Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false, alreadyFields: 0 })),
   'document.formFieldProperties': () => Promise.resolve(ok({ version: asDocVersion(1), fields: [] })),
+  'document.buttonActions': () => Promise.resolve(ok({ version: asDocVersion(1), steps: null })),
+  'document.openButtonLink': () => Promise.resolve(ok({ kind: 'opened' })),
+  'document.submitButtonForm': () => Promise.resolve(ok({ kind: 'sent' })),
+  'document.openButtonFile': () => Promise.resolve(ok({ kind: 'absent' })),
   'document.textBlocks': () =>
     Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, rotated: 0, angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 }, unaddressable: 0, rewrite: 'objects' as const })),
   'document.runFonts': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], runs: [] })),
@@ -1661,6 +1686,10 @@ export const handlers: ContractHandlers = {
   'document.flatFieldCandidates': () =>
     Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false, alreadyFields: 0 })),
   'document.formFieldProperties': () => Promise.resolve(ok({ version: asDocVersion(1), fields: [] })),
+  'document.buttonActions': () => Promise.resolve(ok({ version: asDocVersion(1), steps: null })),
+  'document.openButtonLink': () => Promise.resolve(ok({ kind: 'opened' })),
+  'document.submitButtonForm': () => Promise.resolve(ok({ kind: 'sent' })),
+  'document.openButtonFile': () => Promise.resolve(ok({ kind: 'absent' })),
   'document.textBlocks': () =>
     Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, rotated: 0, angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 }, unaddressable: 0, rewrite: 'objects' as const })),
   'document.runFonts': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], runs: [] })),
@@ -1972,6 +2001,10 @@ export const shim: ContractClient = {
   'document.flatFieldCandidates': () =>
     Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false, alreadyFields: 0 })),
   'document.formFieldProperties': () => Promise.resolve(ok({ version: asDocVersion(1), fields: [] })),
+  'document.buttonActions': () => Promise.resolve(ok({ version: asDocVersion(1), steps: null })),
+  'document.openButtonLink': () => Promise.resolve(ok({ kind: 'opened' })),
+  'document.submitButtonForm': () => Promise.resolve(ok({ kind: 'sent' })),
+  'document.openButtonFile': () => Promise.resolve(ok({ kind: 'absent' })),
   'document.textBlocks': () =>
     Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, rotated: 0, angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 }, unaddressable: 0, rewrite: 'objects' as const })),
   'document.runFonts': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], runs: [] })),
@@ -2292,6 +2325,7 @@ ${PLACE_SIGNATURE_PICTURE_SPEC}
 ${RESET_FORM_SPEC}
 ${REMOVE_MARKS_SPEC}
 ${RESET_WHOLE_FORM_SPEC}
+${SHOW_HIDE_FIELDS_SPEC}
 ${EDIT_OPERATORS_SPEC}
 };
 `,
@@ -2350,8 +2384,9 @@ ${EDIT_OPERATORS_SPEC}
     // (ADR-0244) followed it the same day, and the table was grown by `placePageObjects` before it was omitted.
     // TEN for ten on `removePageMarks` (2026-10-15, ADR-0246): TS2739 naming it and `arrangePageObject`.
     // ELEVEN for eleven on `resetWholeForm` (2026-10-21, the owner's R23): TS2739 naming it and `removePageMarks`.
+    // TWELVE for twelve on `showHideFields` (2026-10-22, ADR-0259): TS2739 naming it and `resetWholeForm`.
     because:
-      /Property 'resetWholeForm' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'showHideFields' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -2423,6 +2458,7 @@ ${PLACE_SIGNATURE_MARK_SPEC}
 ${PLACE_SIGNATURE_PICTURE_SPEC}
 ${RESET_FORM_SPEC}
 ${REMOVE_MARKS_SPEC}
+${RESET_WHOLE_FORM_SPEC}
 ${EDIT_OPERATORS_SPEC}
 };
 `,
@@ -4020,8 +4056,9 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // 64 since `insertImagePage` was removed (2026-10-17, ADR-0044's correction): three spelt, 60 counted, one.
     // 58 since Edit object's six kinds were withdrawn (2026-10-21, ADR-0153's correction): three spelt, 54 counted, one.
     // 59 since `resetWholeForm` (2026-10-21, the owner's R23): three spelt, 55 counted, one.
+    // 60 since `showHideFields` (2026-10-22, ADR-0259): three spelt, 56 counted, one.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 55 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 56 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

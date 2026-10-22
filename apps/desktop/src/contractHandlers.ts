@@ -46,7 +46,10 @@ import {
   type SpellingLanguage,
   type StorePage,
   type WindowEditAction,
+  type SubmitFormat,
   isFollowable,
+  isSubmitAddress,
+  schemeOf,
   shownSchemeOf,
   withTargetVersion,
 } from '@monstera/contract';
@@ -68,6 +71,7 @@ import {
   EngineAnnotationDataExportFailed,
   type IdentityReader,
   StaleTargetError,
+  UrlFetchRefused,
   type WriteTargetVerdict,
   readDocumentRange,
   readTranslation,
@@ -438,6 +442,12 @@ export function createContractHandlers(deps: {
    * and `isFollowable` allowed; it checks the scheme again itself, at the edge where the address leaves.
    */
   readonly openLink: (address: string) => Promise<boolean>;
+  /**
+   * Posts a form's data to an `https:` address a push button's Submit names, once the person agreed (ADR-0259 Decision
+   * 6): ADR-0061's guard, `postGuarded`, in production. Throws `UrlFetchRefused` for every refusal and for an answer that
+   * is not `2xx`.
+   */
+  readonly postForm: (address: string, body: Uint8Array, contentType: string) => Promise<void>;
   /** Opens one of the Store application's pages (ADR-0107), answering whether this build can reach the Store. */
   readonly openStore: (page: StorePage) => Promise<boolean>;
   /**
@@ -622,6 +632,9 @@ export function createContractHandlers(deps: {
     'document.placeBarcode': placeBarcodeHandler(deps.commands),
     'document.pageBarcodes': pageBarcodesHandler(deps.commands),
     'document.openBarcodeLink': openBarcodeLinkHandler(deps.commands, deps.openLink),
+    'document.openButtonLink': openButtonLinkHandler(deps.commands, deps.openLink),
+    'document.submitButtonForm': submitButtonFormHandler(deps.commands, deps.openLink, deps.postForm),
+    'document.openButtonFile': openButtonFileHandler(deps),
     'document.saveBarcodeContact': saveBarcodeContactHandler(deps.commands, mintWritten),
     'document.accessibilityCheck': accessibilityCheckHandler(deps.commands),
     'document.sign': signHandler(deps.commands),
@@ -646,6 +659,7 @@ export function createContractHandlers(deps: {
     'document.formFields': formFieldsHandler(deps.commands),
     'document.flatFieldCandidates': flatFieldCandidatesHandler(deps.commands),
     'document.formFieldProperties': formFieldPropertiesHandler(deps.commands),
+    'document.buttonActions': buttonActionsHandler(deps.commands),
     'document.textBlocks': textBlocksHandler(deps.commands),
     'document.pageObjects': pageObjectsHandler(deps.commands),
     'document.renderPage': renderPageHandler(deps.commands),
@@ -1748,6 +1762,130 @@ function openBarcodeLinkHandler(
       if (address === undefined || address === '') return ok({ kind: 'no-such-link' } as const);
       if (!isFollowable(address)) return ok({ kind: 'scheme-refused', scheme: shownSchemeOf(address) } as const);
       return ok({ kind: (await openLink(address)) ? 'opened' : 'not-opened' } as const);
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * A push button's web address opened (ADR-0259), read by main from the document by the step the renderer named:
+ * {@link openBarcodeLinkHandler}'s rule for a button. The steps are read again at the version the renderer saw them, so
+ * a button that moved since, or a step that is not a link, opens nothing; the address never crosses from the renderer.
+ */
+function openButtonLinkHandler(
+  commands: DocumentCommands,
+  openLink: (address: string) => Promise<boolean>,
+): ContractHandlers['document.openButtonLink'] {
+  return async ({
+    docId,
+    version,
+    field,
+    trigger,
+    step,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.openButtonLink']>>> => {
+    try {
+      const read = await commands.buttonActions(docId, field);
+      if (read.version !== version) return ok({ kind: 'stale' } as const);
+      const action = read.steps?.find((each) => each.trigger === trigger && each.step === step)?.action;
+      if (action?.kind !== 'link') return ok({ kind: 'no-such-link' } as const);
+      if (!isFollowable(action.address)) return ok({ kind: 'scheme-refused', scheme: shownSchemeOf(action.address) } as const);
+      return ok({ kind: (await openLink(action.address)) ? 'opened' : 'not-opened' } as const);
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/** The media type each encoding is posted with: the FDF and XFDF types Adobe registered, and a browser form's. */
+const SUBMIT_MEDIA_TYPES: Readonly<Record<SubmitFormat, string>> = {
+  fdf: 'application/vnd.fdf',
+  xfdf: 'application/vnd.adobe.xfdf',
+  html: 'application/x-www-form-urlencoded',
+};
+
+/**
+ * The longest `mailto:` address handed to the mail app with the data in it. POLICY, NOT A MEASUREMENT (ADR-0259
+ * Decision 6): the operating system hands the address to the mail app whole, and not every mail app takes a long one.
+ */
+export const MAILTO_WITH_DATA_MAX = 2000;
+
+/** A `mailto:` address with `text` as its message, RFC 6068's `body` header, joined to any header it already names. */
+export function mailtoWithBody(address: string, text: string): string {
+  return `${address}${address.includes('?') ? '&' : '?'}body=${encodeURIComponent(text)}`;
+}
+
+/**
+ * A push button's Submit carried out (ADR-0259 Decision 6), read by main from the document by the step the renderer
+ * named: {@link openButtonLinkHandler}'s rule, for a submission. The engine host encodes the fields the action names;
+ * an `https:` address is posted to through `postForm` (ADR-0061's guard), and a `mailto:` one opens the mail app with
+ * the data as the message, or without it where the address would pass {@link MAILTO_WITH_DATA_MAX}, so the person can
+ * save the data and attach it themselves. Nothing is sent by mail: the mail app holds the message until they send it.
+ */
+function submitButtonFormHandler(
+  commands: DocumentCommands,
+  openLink: (address: string) => Promise<boolean>,
+  postForm: (address: string, body: Uint8Array, contentType: string) => Promise<void>,
+): ContractHandlers['document.submitButtonForm'] {
+  return async ({
+    docId,
+    version,
+    field,
+    trigger,
+    step,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.submitButtonForm']>>> => {
+    try {
+      const read = await commands.buttonActions(docId, field);
+      if (read.version !== version) return ok({ kind: 'stale' } as const);
+      const action = read.steps?.find((each) => each.trigger === trigger && each.step === step)?.action;
+      if (action?.kind !== 'submit' || !isSubmitAddress(action.address)) return ok({ kind: 'no-such-submit' } as const);
+      const data = await commands.submitFormData(docId, action.format, action.fields);
+      if (schemeOf(action.address) === 'mailto:') {
+        const whole = mailtoWithBody(action.address, new TextDecoder().decode(data));
+        if (whole.length <= MAILTO_WITH_DATA_MAX) return ok({ kind: (await openLink(whole)) ? 'mail-opened' : 'not-opened' } as const);
+        return ok({ kind: (await openLink(action.address)) ? 'mail-opened-without-data' : 'not-opened' } as const);
+      }
+      await postForm(action.address, data, SUBMIT_MEDIA_TYPES[action.format]);
+      return ok({ kind: 'sent' } as const);
+    } catch (thrown) {
+      if (thrown instanceof UrlFetchRefused) return ok({ kind: 'refused', reason: thrown.reason } as const);
+      if (thrown instanceof EngineFormDataExportFailed && thrown.detail === 'unrepresentable') {
+        return ok({ kind: 'unrepresentable' } as const);
+      }
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * A push button's Open a file carried out (ADR-0259), read by main from the document by the step the renderer named:
+ * {@link openButtonLinkHandler}'s rule, for a PDF beside the document. The name is the document's, made a path by
+ * `besidePath` and opened through {@link openPath}, the one way a document is opened, so a file already open is
+ * brought forward and a moved one says so, as a pick would. Nothing but a PDF in Monstera is ever opened.
+ */
+function openButtonFileHandler(deps: OpenPathParts & { readonly commands: DocumentCommands }): ContractHandlers['document.openButtonFile'] {
+  return async ({
+    docId,
+    version,
+    field,
+    trigger,
+    step,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.openButtonFile']>>> => {
+    try {
+      const read = await deps.commands.buttonActions(docId, field);
+      if (read.version !== version) return ok({ kind: 'stale' } as const);
+      const action = read.steps?.find((each) => each.trigger === trigger && each.step === step)?.action;
+      const path = action?.kind === 'openFile' ? deps.documents.besidePath(docId, action.file) : undefined;
+      if (path === undefined) return ok({ kind: 'no-such-file' } as const);
+      const { outcome } = await openPath(deps, path);
+      return ok(outcome);
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
@@ -3158,6 +3296,20 @@ function formFieldPropertiesHandler(commands: DocumentCommands): ContractHandler
     try {
       const { version, fields: read } = await commands.formFieldProperties(docId, fields);
       return ok({ version, fields: read });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/** One push button's actions (ADR-0259): {@link formFieldPropertiesHandler}'s body and its refusals. */
+function buttonActionsHandler(commands: DocumentCommands): ContractHandlers['document.buttonActions'] {
+  return async ({ docId, field }): Promise<Awaited<ReturnType<ContractHandlers['document.buttonActions']>>> => {
+    try {
+      const { version, steps } = await commands.buttonActions(docId, field);
+      return ok({ version, steps: steps === null ? null : [...steps] });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });

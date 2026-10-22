@@ -231,6 +231,9 @@ async function joined(formFields: HostFormFieldsReader): Promise<{
       fieldProperties: () => {
         throw new Error('a field list read must not read field properties');
       },
+      buttonActions: () => {
+        throw new Error('a field list read must not read a button’s actions');
+      },
       flatFields: () => {
         throw new Error('a field read must not propose candidates');
       },

@@ -336,6 +336,89 @@ export async function fetchGuardedPdf(
   throw new UrlFetchRefused('too-many-redirects', `more than ${String(MAX_URL_REDIRECTS)} redirects`);
 }
 
+/** One POST's answer: its status, the only thing a submission reads. */
+export interface PostResponse {
+  readonly statusCode: number | undefined;
+}
+
+/** How one POST is made. Injected for {@link HopTransport}'s reason; production is {@link httpsPost}. */
+export type PostTransport = (
+  url: URL,
+  lookup: LookupFunction,
+  idleMs: number,
+  body: Uint8Array,
+  contentType: string,
+) => Promise<PostResponse>;
+
+/**
+ * One POST through `node:https`, with no pooled agent, for {@link httpsHop}'s reason. The answer's body is drained
+ * unread: a submission says whether the server took the data, and a page the server answered is not shown.
+ */
+export const httpsPost: PostTransport = (url, lookup, idleMs, body, contentType) =>
+  new Promise((resolve, reject) => {
+    const request = httpsRequest(
+      url,
+      {
+        method: 'POST',
+        agent: false,
+        lookup,
+        headers: { 'content-type': contentType, 'content-length': String(body.byteLength) },
+      },
+      (response) => {
+        response.resume();
+        resolve({ statusCode: response.statusCode });
+      },
+    );
+    request.setTimeout(idleMs, () => {
+      request.destroy(new UrlFetchRefused('unreachable', `${url.host} sent nothing for ${String(idleMs)} ms`));
+    });
+    request.on('error', (error) => {
+      reject(
+        error instanceof UrlFetchRefused
+          ? error
+          : new UrlFetchRefused('unreachable', `${url.host} could not be reached`, { cause: error }),
+      );
+    });
+    request.end(body);
+  });
+
+/** What a guarded POST is built from: {@link GuardedFetchParts} with a POST's transport. */
+export interface GuardedPostParts {
+  readonly resolve?: Resolve;
+  readonly transport?: PostTransport;
+  readonly idleMs?: number;
+}
+
+/**
+ * Posts a form's data to an address a document named and a person agreed to (ADR-0259 Decision 6), through the same
+ * guard a fetch takes: {@link checkedUrl} on the address and {@link guardedLookup} pinning the resolution the socket
+ * connects through, so a document cannot send a form to this machine or its network.
+ *
+ * A REDIRECT IS NOT FOLLOWED. A `307` or `308` asks for the same data to be sent again somewhere the person was not
+ * asked about, and a `301` to `303` turns the POST into a GET the server meant for a browser; either way the data went
+ * where they agreed and the server did not take it there, so it is refused as `http-error` like any other answer that
+ * is not `2xx`.
+ *
+ * @throws UrlFetchRefused for every refusal, and `http-error` for an answer that is not `2xx`
+ */
+export async function postGuarded(
+  raw: string,
+  body: Uint8Array,
+  contentType: string,
+  parts: GuardedPostParts = {},
+): Promise<void> {
+  const url = checkedUrl(raw);
+  const response = await (parts.transport ?? httpsPost)(
+    url,
+    guardedLookup(parts.resolve ?? systemResolve),
+    parts.idleMs ?? URL_IDLE_MS,
+    body,
+    contentType,
+  );
+  const status = response.statusCode ?? 0;
+  if (status < 200 || status >= 300) throw new UrlFetchRefused('http-error', `${url.host} answered HTTP ${String(status)}`);
+}
+
 /** How a caller names a body's refusal in its own error type. */
 export type PdfBodyRefusal = (kind: 'too-large' | 'not-a-pdf', message: string) => Error;
 

@@ -72,6 +72,10 @@ import {
   fieldScriptSchema,
   formFieldHandleSchema,
   formFieldReadSchema,
+  FIELD_ACTION_TRIGGERS,
+  MAX_ACTION_CHAIN,
+  fieldActionTriggerSchema,
+  buttonStepsSchema,
   documentFontSchema,
   listedFontFamiliesSchema,
   bundledFamilySchema,
@@ -5395,6 +5399,11 @@ export const channels = {
              */
             cut: z.literal(true).exactOptional(),
             /**
+             * Present and true where the widget carries the Hidden flag (`/F` bit 2): a reader neither shows it nor lets
+             * it be used, so filling offers no control for it. Still listed, for Edit fields, where it can be shown again.
+             */
+            hidden: z.literal(true).exactOptional(),
+            /**
              * What filling it must respect (ADR-0226 Decision 4): whether it is required, its length limit, whether
              * it is drawn a character to a cell, whether it hides what is typed, whether a list takes several values
              * and a dropdown takes typing, whether it is worked out from other fields, and the format this
@@ -5419,11 +5428,17 @@ export const channels = {
              */
             option: z.string().max(MAX_FORM_FIELD_TEXT).exactOptional(),
             /**
-             * A push button whose action is the standard Reset form (the owner's F7), which a press carries out as one
-             * step a person can undo. Present only on such a button; every other action (a script, a submit) is the
-             * document's content and is never run (invariant 24).
+             * A push button's triggers that have actions (ADR-0259 Decision 4): `runs`, the triggers with at least one
+             * action a press carries out, and `kept`, those with one that is the document's content and is never run
+             * (invariant 24). Present only on a push button that has any; what each does is `document.buttonActions`'.
              */
-            action: z.literal('reset').exactOptional(),
+            actions: z
+              .object({
+                runs: z.array(fieldActionTriggerSchema).max(FIELD_ACTION_TRIGGERS.length).readonly(),
+                kept: z.array(fieldActionTriggerSchema).max(FIELD_ACTION_TRIGGERS.length).readonly(),
+              })
+              .strict()
+              .exactOptional(),
             /**
              * How a dropdown or a list box is drawn (the owner's F1), present only on one: the page's choice control
              * covers the document's own drawing of the field in its size and colours, never the application's theme.
@@ -5525,6 +5540,106 @@ export const channels = {
       version: docVersionSchema,
       fields: z.array(formFieldReadSchema.nullable()).max(MAX_READ_FIELDS).readonly(),
     }),
+    ['document-not-open', 'document-poisoned'],
+  ),
+
+  /**
+   * What one push button does, step by step (ADR-0259 Decision 3): the Properties pane's list, and what a press reads to
+   * ask its questions. ONE button, so its worst is one button's chain and not sixteen (`document.formFieldProperties`
+   * reads up to {@link MAX_READ_FIELDS}). `null` is a handle that no longer names a push button.
+   */
+  'document.buttonActions': channel(
+    'Reads what one push button does, on each trigger, in order.',
+    z.object({ docId: docIdSchema, field: formFieldHandleSchema }),
+    z.object({ version: docVersionSchema, steps: buttonStepsSchema.nullable() }),
+    ['document-not-open', 'document-poisoned'],
+  ),
+
+  /**
+   * Opens the web address one step of a push button names (ADR-0259 Decision 2), after the person agreed to it:
+   * `document.openLink`'s rule for a button. The renderer names the button, the trigger and the step at the version it
+   * read them; `main` reads the steps again and opens the address only where that step is a link at that version and its
+   * scheme is one `isFollowable` takes. The address never crosses from the renderer.
+   */
+  'document.openButtonLink': channel(
+    'Opens the web address a push button’s action names, read by main from the document.',
+    z
+      .object({
+        docId: docIdSchema,
+        version: docVersionSchema,
+        field: formFieldHandleSchema,
+        trigger: fieldActionTriggerSchema,
+        step: z.number().int().min(0).max(MAX_ACTION_CHAIN - 1),
+      })
+      .strict(),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('opened') }),
+      z.object({ kind: z.literal('stale') }),
+      z.object({ kind: z.literal('no-such-link') }),
+      z.object({ kind: z.literal('scheme-refused'), scheme: z.string().max(SHOWN_SCHEME_MAX).nullable() }),
+      z.object({ kind: z.literal('not-opened') }),
+    ]),
+    ['document-not-open', 'document-poisoned'],
+  ),
+
+  /**
+   * Sends the form's data as one step of a push button names (ADR-0259 Decision 6), after the person agreed to it:
+   * `document.openButtonLink`'s rule for a submission. `main` reads the step again at the version named, has the engine
+   * host encode the fields it names, and then POSTs them to an `https:` address through ADR-0061's guard, or opens the
+   * person's mail app at a `mailto:` address with the data in the message. Neither the address nor the data crosses
+   * from the renderer, and nothing is sent until this is asked.
+   */
+  'document.submitButtonForm': channel(
+    'Sends the form’s data where a push button’s Submit action names, read by main from the document.',
+    z
+      .object({
+        docId: docIdSchema,
+        version: docVersionSchema,
+        field: formFieldHandleSchema,
+        trigger: fieldActionTriggerSchema,
+        step: z.number().int().min(0).max(MAX_ACTION_CHAIN - 1),
+      })
+      .strict(),
+    z.discriminatedUnion('kind', [
+      /** Posted, and the server answered `2xx`. */
+      z.object({ kind: z.literal('sent') }),
+      z.object({ kind: z.literal('stale') }),
+      z.object({ kind: z.literal('no-such-submit') }),
+      /** Not sent, or not taken: the guard's reason, `http-error` for a server that answered something else. */
+      z.object({ kind: z.literal('refused'), reason: z.enum(URL_FETCH_REFUSALS) }),
+      /** The mail app opened at the address with the data in the message; Monstera sends no mail. */
+      z.object({ kind: z.literal('mail-opened') }),
+      /** The data made the address too long to hand over, so the mail app opened without it (Decision 6's policy). */
+      z.object({ kind: z.literal('mail-opened-without-data') }),
+      z.object({ kind: z.literal('not-opened') }),
+      /** A value XFDF cannot carry (`engine/exportFormData`'s code). */
+      z.object({ kind: z.literal('unrepresentable') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * Opens the PDF one step of a push button names (ADR-0259 Decision 2), after the person agreed to it: the file of that
+   * name in the folder this document is in, opened through `openPath`, the one way a document is opened, so it answers
+   * what `document.open` answers. `main` reads the step again at the version named; the name never crosses from the
+   * renderer, and a document with no folder of its own, or a name that is not one file, opens nothing.
+   */
+  'document.openButtonFile': channel(
+    'Opens the PDF a push button’s action names, beside the document, read by main from the document.',
+    z
+      .object({
+        docId: docIdSchema,
+        version: docVersionSchema,
+        field: formFieldHandleSchema,
+        trigger: fieldActionTriggerSchema,
+        step: z.number().int().min(0).max(MAX_ACTION_CHAIN - 1),
+      })
+      .strict(),
+    z.discriminatedUnion('kind', [
+      ...openOutcomeSchema.options,
+      z.object({ kind: z.literal('stale') }),
+      z.object({ kind: z.literal('no-such-file') }),
+    ]),
     ['document-not-open', 'document-poisoned'],
   ),
 

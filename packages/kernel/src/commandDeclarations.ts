@@ -1544,6 +1544,24 @@ const declarations = {
     // It replaces values in place and unlinks nothing.
     purpose: 'ordinary',
   },
+  showHideFields: {
+    kind: 'showHideFields',
+    display: 'image',
+    // `resetForm`'s writer: it writes widgets' `/F` in the session the fill and the reset write in.
+    writer: 'mupdf',
+    // NOT INVERTIBLE, `resetForm`'s reason: the prior is every widget of every field the action names, across the
+    // document, which the checkpoint restores exactly.
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    // THE BUTTON PRESSED, by its place in the widget walk at a version: `resetForm`'s handle.
+    targets: 'field',
+    reads: 'none',
+    asset: 'none',
+    purpose: 'ordinary',
+  },
   resetWholeForm: {
     kind: 'resetWholeForm',
     display: 'image',

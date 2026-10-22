@@ -1295,4 +1295,12 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'refused', props: { address: 'file:///C:/Windows/System32/calc.exe', followable: false, scheme: 'file:' } },
     { state: 'no-scheme', props: { address: 'example.org/annual-report', followable: false, scheme: null } },
   ],
+  'dialog.submit-form': [
+    {
+      state: 'web',
+      props: { address: 'https://forms.example.org/apply', format: 'html', fields: ['applicant.name', 'applicant.city'], mail: false },
+    },
+    { state: 'mail', props: { address: 'mailto:forms@example.org', format: 'fdf', fields: null, mail: true } },
+  ],
+  'dialog.open-button-file': [{ state: 'named', props: { file: 'Applicant guide.pdf' } }],
 };

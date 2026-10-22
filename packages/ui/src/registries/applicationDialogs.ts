@@ -36,6 +36,8 @@ import { FLAT_FIELDS_DIALOG } from '../dialogs/flatFields.js';
 import { FLATTEN_FORM_DIALOG } from '../dialogs/flattenForm.js';
 import { RESET_FORM_DIALOG } from '../dialogs/resetForm.js';
 import { FOLLOW_LINK_DIALOG } from '../dialogs/followLink.js';
+import { SUBMIT_FORM_DIALOG } from '../dialogs/submitForm.js';
+import { OPEN_BUTTON_FILE_DIALOG } from '../dialogs/openButtonFile.js';
 import { GENERATE_TOC_DIALOG } from '../dialogs/generateToc.js';
 import { HEADER_FOOTER_DIALOG } from '../dialogs/headerFooter.js';
 import { HELP_DIALOG } from '../dialogs/help.js';
@@ -179,6 +181,8 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   FLATTEN_FORM_DIALOG,
   RESET_FORM_DIALOG,
   FOLLOW_LINK_DIALOG,
+  SUBMIT_FORM_DIALOG,
+  OPEN_BUTTON_FILE_DIALOG,
   IMPORT_FORM_DATA_PROBLEM_DIALOG,
   IMPORT_ANNOTATIONS_PROBLEM_DIALOG,
   IMPORT_ANNOTATIONS_RESULT_DIALOG,

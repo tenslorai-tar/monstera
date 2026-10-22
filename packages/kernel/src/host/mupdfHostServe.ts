@@ -20,8 +20,8 @@ import { readDocumentFonts } from '../documentFonts.js';
 import { readPageMarksOf } from '../pageMarks.js';
 import { detectFlatFields } from '../flatFields.js';
 import { readFormImportPlan } from '../formData.js';
-import { readFieldProperties } from '../formFieldRead.js';
-import { readFormData, serialiseFormData } from '../formData.js';
+import { readButtonActions, readFieldProperties } from '../formFieldRead.js';
+import { chosenFormData, readFormData, serialiseFormData } from '../formData.js';
 import { readFormFields } from '../formFields.js';
 import { readAnnotationWords, readAnnotations } from '../pageAnnotations.js';
 import { findDuplicatePages } from '../pageDuplicates.js';
@@ -156,11 +156,13 @@ const engineHandlers = createEngineHandlers({
   flatFields: detectFlatFields,
   // THE PROPERTIES PANE'S READ (ADR-0193), here for the field list's reason: it walks the document through MuPDF.
   fieldProperties: readFieldProperties,
+  // ONE BUTTON'S ACTIONS (ADR-0259), here for the Properties read's reason.
+  buttonActions: readButtonActions,
   // WHAT AN IMPORT WOULD DO, planned here for the field list's reason: the file is hostile input and the plan walks the form.
   formImportPlan: readFormImportPlan,
   annotationImportPlan: readAnnotationImportPlan,
-  exportFormData: async (session, format) =>
-    serialiseFormData(await readFormData(session), format),
+  exportFormData: async (session, format, fields) =>
+    serialiseFormData(chosenFormData(await readFormData(session), fields), format),
   // AND A FOURTH, the snapshot's reason for a whole page: §3 assigns export
   // rasterisation to MuPDF, which is here.
   pageImage: rasterisePageImage,

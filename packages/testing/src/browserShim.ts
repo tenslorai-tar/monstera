@@ -15,6 +15,11 @@ import {
   type FieldLook,
   type FormFieldKind,
   type FormFieldRead,
+  type ButtonAction,
+  type ButtonStep,
+  type FieldActionTrigger,
+  FIELD_ACTION_TRIGGERS,
+  stepRunsAs,
   type ImportSkipped,
   type SaveWriteCause,
   type Incident,
@@ -264,6 +269,8 @@ export interface ShimFormField {
   readonly rect: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number } | null;
   /** The channel's mark for a value listed as a slice of a longer one. */
   readonly cut?: true;
+  /** The channel's mark for a widget the document hides (`/F` bit 2). */
+  readonly hidden?: true;
   /** A radio widget's own choice, which the Fields list names the option by; absent names it by the field. */
   readonly option?: string;
   /**
@@ -767,6 +774,12 @@ export interface BrowserShimOptions {
    */
   readonly fieldProperties?: Readonly<Record<string, Partial<FormFieldRead>>>;
   /**
+   * What `document.buttonActions` answers for a push button, by field name (ADR-0259). An `editFormFields` this shim is
+   * sent that sets a button's `buttonActions` replaces its entry, numbered as the kernel numbers a written list, so a
+   * case can set a button's actions in Properties and then press it. The field list's `actions` summary follows it.
+   */
+  readonly buttonSteps?: Readonly<Record<string, readonly ButtonStep[]>>;
+  /**
    * The editable blocks `document.textBlocks` answers, on every page.
    *
    * A list, for `flatFieldCandidates`' reason. **`null` is a third state and
@@ -1192,6 +1205,17 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   // The list the read in progress takes its parts from (`document.layers`).
   let layersRead: readonly ShimLayer[] = [];
   const fieldLists = [...(options.formFields ?? [])];
+  const buttonSteps = new Map<string, readonly ButtonStep[]>(Object.entries(options.buttonSteps ?? {}));
+  /** A written list as the kernel reads it back: trigger by trigger in the contract's order, each numbered from 0. */
+  const stepsOf = (actions: readonly ButtonAction[]): readonly ButtonStep[] =>
+    FIELD_ACTION_TRIGGERS.flatMap((trigger) =>
+      actions.filter((each) => each.trigger === trigger).map((each, step) => ({ trigger, step, action: each.action })),
+    );
+  /** The field list's summary of a button's steps, as the kernel lists it. */
+  const summaryOf = (steps: readonly ButtonStep[]): { runs: FieldActionTrigger[]; kept: FieldActionTrigger[] } => ({
+    runs: FIELD_ACTION_TRIGGERS.filter((trigger) => steps.some((each) => each.trigger === trigger && stepRunsAs(each.action) !== null)),
+    kept: FIELD_ACTION_TRIGGERS.filter((trigger) => steps.some((each) => each.trigger === trigger && stepRunsAs(each.action) === null)),
+  });
   // `let`, because *Clear list* empties it as main's store empties itself.
   let recentEntries = options.recent ?? [];
 
@@ -1510,7 +1534,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       return Promise.resolve(ok(answer));
     },
 
-    'document.execute': ({ docId, breakSignatures }) => {
+    'document.execute': ({ docId, command, breakSignatures }) => {
       // ASKED BEFORE ANYTHING CHANGES, as main asks (ADR-0149): no version moves for the question.
       if (options.signed?.has(docId) === true && breakSignatures !== true) {
         return Promise.resolve(err({ code: 'breaks-signatures' }));
@@ -1530,6 +1554,12 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
 
       const next = current + 1;
       versions.set(docId, next);
+      // A BUTTON'S ACTIONS WRITTEN (ADR-0259) are what the next `document.buttonActions` reads, as the document's would be.
+      if (command.kind === 'editFormFields') {
+        for (const edit of command.edits) {
+          if ('buttonActions' in edit.set && edit.set.buttonActions !== undefined) buttonSteps.set(edit.field.name, stepsOf(edit.set.buttonActions));
+        }
+      }
       undoable.set(docId, (undoable.get(docId) ?? 0) + 1);
       // A COMMAND TRUNCATES THE REDO TAIL, as the real log's cursor does.
       redoable.set(docId, 0);
@@ -2503,7 +2533,10 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       return Promise.resolve(
         ok({
           version: asDocVersion(current),
-          fields: fields.slice(from).map((field) => ({ ...PLAIN_RULES, ...field })),
+          fields: fields.slice(from).map((field) => {
+            const steps = field.kind === 'button' ? buttonSteps.get(field.name) : undefined;
+            return { ...PLAIN_RULES, ...field, ...(steps === undefined || steps.length === 0 ? {} : { actions: summaryOf(steps) }) };
+          }),
           next: null,
           truncated: false,
         }),
@@ -2585,7 +2618,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
               masked: false,
               visibility: 'visible' as const,
               buttonLabel: null,
-              buttonAction: null,
+              buttonActionsKept:
+                found.kind === 'button' ? (buttonSteps.get(found.name) ?? []).some((each) => each.action.kind === 'kept') : null,
               textColour: null,
               editable: false,
               multiSelect: false,
@@ -2595,6 +2629,15 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
           }),
         }),
       );
+    },
+
+    /** One push button's steps (ADR-0259), from {@link BrowserShimOptions.buttonSteps} and the edits sent since. */
+    'document.buttonActions': ({ docId, field }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      const listed = (fieldLists[0] ?? []).find((each) => each.page === field.page && each.index === field.index);
+      const button = listed?.name === field.name && listed.kind === 'button';
+      return Promise.resolve(ok({ version: asDocVersion(current), steps: button ? [...(buttonSteps.get(field.name) ?? [])] : null }));
     },
 
     'document.textBlocks': ({ docId, from }) => {
@@ -2807,6 +2850,28 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     'ai.translateText': () => Promise.resolve(ok({ kind: 'refused' as const, problem: 'no-key' as const })),
     // NO BROWSER TO OPEN: what `main` answers when the system opened nothing.
     'document.openBarcodeLink': () => Promise.resolve(ok({ kind: 'not-opened' as const })),
+    // A BUTTON'S LINK as main answers it (ADR-0259): another version is stale, a step that is not a link opens nothing,
+    // and a link is `opened` with no browser behind it, so a case reads the request a press made rather than a window.
+    'document.openButtonLink': ({ docId, version, field, trigger, step }) => {
+      if (versions.get(docId) !== version) return Promise.resolve(ok({ kind: 'stale' as const }));
+      const action = buttonSteps.get(field.name)?.find((each) => each.trigger === trigger && each.step === step)?.action;
+      return Promise.resolve(ok({ kind: action?.kind === 'link' ? ('opened' as const) : ('no-such-link' as const) }));
+    },
+    // A BUTTON'S SUBMIT as main answers it, the link's shape: an `https:` address is `sent` with no server behind it and a
+    // `mailto:` one `mail-opened` with no mail app, so a case reads the request a press made rather than a delivery.
+    'document.submitButtonForm': ({ docId, version, field, trigger, step }) => {
+      if (versions.get(docId) !== version) return Promise.resolve(ok({ kind: 'stale' as const }));
+      const action = buttonSteps.get(field.name)?.find((each) => each.trigger === trigger && each.step === step)?.action;
+      if (action?.kind !== 'submit') return Promise.resolve(ok({ kind: 'no-such-submit' as const }));
+      return Promise.resolve(ok({ kind: action.address.startsWith('mailto:') ? ('mail-opened' as const) : ('sent' as const) }));
+    },
+    // A BUTTON'S FILE as main answers it, the link's shape: there is no folder beside a document in a browser, so an
+    // open-file step is `absent`, which the page says as a moved file, and a case reads the request a press made.
+    'document.openButtonFile': ({ docId, version, field, trigger, step }) => {
+      if (versions.get(docId) !== version) return Promise.resolve(ok({ kind: 'stale' as const }));
+      const action = buttonSteps.get(field.name)?.find((each) => each.trigger === trigger && each.step === step)?.action;
+      return Promise.resolve(ok({ kind: action?.kind === 'openFile' ? ('absent' as const) : ('no-such-file' as const) }));
+    },
     'document.saveBarcodeContact': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
     // NO WORK RUNS IN THE SHIM: every name is idle and nothing can be stopped.
     'work.progress': () => Promise.resolve(ok({ kind: 'idle' as const })),

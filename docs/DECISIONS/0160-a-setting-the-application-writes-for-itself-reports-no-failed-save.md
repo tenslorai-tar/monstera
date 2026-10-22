@@ -45,3 +45,15 @@ title, at its own change. A background write does not hide that, and does not st
   one moment a failure cannot be shown at all.
 - **Answer `settings.save` in the test client and change nothing else.** The test client is right to be added to, and
   it is, but the dialog it exposed is the product's.
+
+## Correction, 2026-10-21 — WITHDRAWN with the tips
+
+The tips are withdrawn by the owner's R24 (ADR-0159's correction of the same date), and the tips' round was the only
+setting that declared `background: true`. Read on 2026-10-21 by a search of `packages/ui/src` for `background: true`:
+one hit, `appearance.ts`' `TIPS_SHOWN_SETTING`. The field, the registry's refusal of a background setting that is not
+remembered, and `persistSettings`' silence for one are removed with it, since a flag no setting sets is a branch no
+build reaches.
+
+What this ADR found stays true and is the reason to come back here: a setting the application writes with no person's
+action must not open *Preference not saved*. The next such setting brings the field back, with this ADR's Decision as
+its own.

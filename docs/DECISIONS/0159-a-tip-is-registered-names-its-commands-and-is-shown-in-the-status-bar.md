@@ -70,3 +70,23 @@ guidance where it is asked for, in Help.
   rules already refuse truncation for that reason.
 - **Announcing each tip.** A live region that speaks every few seconds is noise over work.
 - **Order kept in memory only.** Every start would begin a new round and show the same few tips first.
+
+## Correction, 2026-10-21 — WITHDRAWN: the status bar's start says only what the tool in hand does
+
+The owner's R24, given for cloud run 15: *"make it only be information about the tool that the user has in his
+hands."* With Highlight area on, the start read *"Drag a box over the part of the page you want to stand out, such as a
+picture or a scan. Esc gets you out. Redo: press Ctrl+Y."*, and the last sentence was a tip about something else
+entirely, read as part of the tool's own instruction because it sat in the same line.
+
+**Every decision above is withdrawn**, because the status bar was the tips' only place: nothing else drew a tip, so the
+registry, its derived tips, the round and the switch had no reader left. Removed whole rather than left unmounted — a
+registry nothing projects is the second wiring place this ADR's own Context refused, from the other side. The
+`appearance.status-tips` and `appearance.tips-shown` settings leave with it; a value an older build stored is dropped
+on the next start by `SettingsStore.hydrate`'s rule for an id this build does not have.
+
+**What stays:** the start says what the tool that is on waits for, and the one sentence that Escape stops it (ADR-0154
+Decision 4), and a page number outside the document; with no tool on it says nothing. The proof reads the whole start
+region rather than the tool line's own span (`statusToolLine.pw.ts`), because every case that read the span alone was
+green while the tip sat beside it.
+
+ADR-0160, which existed for the round's writes, is withdrawn with it (its own correction).

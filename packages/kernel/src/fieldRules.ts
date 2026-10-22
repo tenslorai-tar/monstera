@@ -1,10 +1,21 @@
-import type { FIELD_BORDER_STYLES, FIELD_CHECK_STYLES, FieldCalculation, FieldFormat, FieldRange, FieldScript } from '@monstera/contract';
+import type {
+  ButtonStep,
+  FIELD_BORDER_STYLES,
+  FIELD_CHECK_STYLES,
+  FieldActionTrigger,
+  FieldCalculation,
+  FieldFormat,
+  FieldRange,
+  FieldScript,
+} from '@monstera/contract';
+import { MAX_ACTION_CHAIN, MAX_ACTION_FIELDS } from '@monstera/contract/host';
 
+import { type ActionHeads, type ActionModel, type PlainAction, buttonSteps, nodeAt } from './buttonActions.js';
 import { borderStyleOfName, checkStyleOfCharacter, parseCalculation, parseFormat, parseKeystroke, parseRange } from './fieldActions.js';
 
 type FieldBorderStyle = (typeof FIELD_BORDER_STYLES)[number];
 type FieldCheckStyle = (typeof FIELD_CHECK_STYLES)[number];
-import type { PDFObject, PDFWidget } from './mupdfRaw.js';
+import type { PDFDocument, PDFObject, PDFWidget } from './mupdfRaw.js';
 
 /**
  * What a field's dictionary says about how it is filled: its inherited flags, its length limit, and the format and
@@ -69,25 +80,146 @@ export function fieldDictionaryOf(object: PDFObject): PDFObject {
 }
 
 /**
- * What a push button's own `/A` does (the owner's F7): nothing, the standard Reset form (ISO 32000-1 12.6.4.12), or
- * anything else (a script, a submit), which is `other` and is never run. The one reading: the listing, the Properties
- * read and the reset's own refusal all take it.
+ * MuPDF's object model as `buttonActions.ts` reads it (ADR-0259): the adapter, never a second classifier. The listing,
+ * the Properties read and a press all take {@link buttonStepsOf} and {@link actionNodeAt}.
  */
-export function buttonActionOf(object: PDFObject): 'none' | 'reset' | 'other' {
-  const action = object.get('A');
-  if (action.isNull()) return buttonActionNamed(null);
-  const kind = action.isDictionary() ? action.get('S') : action;
-  return buttonActionNamed(kind.isName() ? kind.asName() : '');
+const mupdfActions = (document: PDFDocument): ActionModel<PDFObject> => ({
+  plain: (node) => {
+    const subtype = node.get('S');
+    const flags = node.get('Flags');
+    return {
+      subtype: subtype.isName() ? subtype.asName() : null,
+      fields: fieldsListed(node.get('Fields')),
+      flags: flags.isNumber() ? Math.trunc(flags.asNumber()) : 0,
+      destination: destinationOf(document, node.get('D')),
+      uri: stringOf(node.get('URI')),
+      named: node.get('N').isName() ? node.get('N').asName() : null,
+      file: fileOf(node.get('F')),
+      targets: targetsListed(node.get('T')),
+      hide: hideOf(node.get('H')),
+    };
+  },
+  next: (node) => {
+    const next = node.get('Next');
+    if (next.isDictionary()) return [next];
+    if (!next.isArray()) return [];
+    const nodes: PDFObject[] = [];
+    for (let at = 0; at < Math.min(next.length, MAX_ACTION_CHAIN); at += 1) {
+      const each = next.get(at);
+      if (each.isDictionary()) nodes.push(each);
+    }
+    return nodes;
+  },
+  identity: (node) => (node.isIndirect() ? node.asIndirect() : undefined),
+});
+
+/**
+ * An action's `/D` as `buttonActions.ts` reads it. The page is the index of the page object it names, looked up among
+ * this document's pages by object number; an integer, which the standard keeps for a remote document's pages, is taken
+ * as an index here only where it is one, since some writers put one in a local `GoTo`.
+ */
+function destinationOf(document: PDFDocument, value: PDFObject): PlainAction['destination'] {
+  if (value.isName() || value.isString()) return 'named';
+  if (!value.isArray() || value.length === 0) return null;
+  const target = value.get(0);
+  const count = document.countPages();
+  let page: number | null = null;
+  if (target.isIndirect()) {
+    const wanted = target.asIndirect();
+    for (let at = 0; at < count && page === null; at += 1) {
+      const each = document.findPage(at);
+      if (each.isIndirect() && each.asIndirect() === wanted) page = at;
+    }
+  } else if (target.isNumber() && Number.isInteger(target.asNumber()) && target.asNumber() >= 0 && target.asNumber() < count) {
+    page = target.asNumber();
+  }
+  const fit = value.get(1);
+  const numbers: (number | null)[] = [];
+  for (let at = 2; at < Math.min(value.length, 6); at += 1) {
+    const each = value.get(at);
+    numbers.push(each.isNumber() ? each.asNumber() : null);
+  }
+  return { page, fit: fit.isName() ? fit.asName() : null, numbers };
+}
+
+/** A string entry as text, or `null` where it is not a string. */
+function stringOf(value: PDFObject): string | null {
+  return value.isString() ? value.asString() : null;
+}
+
+/** A file specification as text (ISO 32000-1, 7.11): a string, or a dictionary's `/UF`, else its `/F`. */
+function fileOf(value: PDFObject): string | null {
+  if (value.isString()) return value.asString();
+  if (!value.isDictionary()) return null;
+  return stringOf(value.get('UF')) ?? stringOf(value.get('F'));
+}
+
+/** `/Fields` as names, at most one past {@link MAX_ACTION_FIELDS}, or `unreadable` where an entry names no field. */
+function fieldsListed(fields: PDFObject): PlainAction['fields'] {
+  if (fields.isNull()) return null;
+  if (!fields.isArray()) return 'unreadable';
+  const names: string[] = [];
+  for (let at = 0; at < Math.min(fields.length, MAX_ACTION_FIELDS + 1); at += 1) {
+    const entry = fields.get(at);
+    if (entry.isString()) names.push(entry.asString());
+    else if (entry.isDictionary()) names.push(qualifiedNameOf(entry));
+    else return 'unreadable';
+  }
+  return names;
 }
 
 /**
- * THE RULE, over the action's `/S` name: `null` where the button has no `/A`, and any other string (an empty one for
- * an `/S` that is not a name) where it has one. Its own function so the pdf-lib edit, which reads another object model,
- * asks this and not a second spelling of it (B3a).
+ * A `/Hide`'s `/T` as names (ISO 32000-1, table 215): a name string, an annotation dictionary, or an array of either. An
+ * annotation that is no field, having no `/T` up its ancestry, makes the whole `unreadable`, since no name says it.
  */
-export function buttonActionNamed(subtype: string | null): 'none' | 'reset' | 'other' {
-  if (subtype === null) return 'none';
-  return subtype === 'ResetForm' ? 'reset' : 'other';
+export function targetsListed(targets: PDFObject, bound = MAX_ACTION_FIELDS + 1): PlainAction['targets'] {
+  if (targets.isNull()) return null;
+  const entries = targets.isArray() ? Array.from({ length: Math.min(targets.length, bound) }, (_, at) => targets.get(at)) : [targets];
+  const names: string[] = [];
+  for (const entry of entries) {
+    const name = entry.isString() ? entry.asString() : entry.isDictionary() ? qualifiedNameOf(entry) : '';
+    if (name === '') return 'unreadable';
+    names.push(name);
+  }
+  return names;
+}
+
+/** A `/Hide`'s `/H`: `true` where absent (ISO 32000-1, table 215), else the boolean, and `null` where it is not one. */
+export function hideOf(value: PDFObject): boolean | null {
+  if (value.isNull()) return true;
+  return value.isBoolean() ? value.asBoolean() : null;
+}
+
+/** Each trigger's first action on a widget: `/A`, and `/AA`'s `/U`, `/D`, `/E` and `/X`, where each is a dictionary. */
+function actionHeadsOf(object: PDFObject): ActionHeads<PDFObject> {
+  const head = (action: PDFObject): PDFObject | undefined => (action.isDictionary() ? action : undefined);
+  return {
+    up: head(object.get('A')),
+    upAgain: head(object.get('AA', 'U')),
+    down: head(object.get('AA', 'D')),
+    enter: head(object.get('AA', 'E')),
+    exit: head(object.get('AA', 'X')),
+  };
+}
+
+/** Every step a widget's actions hold, classified once (`buttonActions.ts`). */
+export function buttonStepsOf(document: PDFDocument, object: PDFObject): readonly ButtonStep[] {
+  return buttonSteps(mupdfActions(document), actionHeadsOf(object));
+}
+
+/**
+ * The action at one step and what it is, as {@link buttonStepsOf} lists it, or `undefined` where there is no such
+ * step. A press's command takes this, so it runs exactly what the listing said would run and nothing past it.
+ */
+export function actionNodeAt(
+  document: PDFDocument,
+  object: PDFObject,
+  trigger: FieldActionTrigger,
+  step: number,
+): { readonly node: PDFObject; readonly action: ButtonStep['action'] } | undefined {
+  const listed = buttonStepsOf(document, object).find((each) => each.trigger === trigger && each.step === step);
+  const node = nodeAt(mupdfActions(document), actionHeadsOf(object), trigger, step);
+  return listed === undefined || node === undefined ? undefined : { node, action: listed.action };
 }
 
 /** The fully qualified name of a field object: each `/T` from the root down, joined by dots. */

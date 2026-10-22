@@ -84,36 +84,6 @@ export const DOCUMENT_SURFACE_LABEL = messageKey('surface.document.label');
 export const THEME_TITLE = messageKey('setting.appearance-theme.title');
 export const REDUCE_MOTION_TITLE = messageKey('setting.appearance-reduce-motion.title');
 export const REDUCE_MOTION_DESCRIPTION = messageKey('setting.appearance-reduce-motion.description');
-export const STATUS_TIPS_TITLE = messageKey('setting.appearance-status-tips.title');
-export const STATUS_TIPS_DESCRIPTION = messageKey('setting.appearance-status-tips.description');
-export const TIPS_SHOWN_TITLE = messageKey('setting.appearance-tips-shown.title');
-/**
- * The status bar's tips (ADR-0159). The two DERIVED forms take a command's own title, key and ribbon place; every
- * WRITTEN tip names its commands under placeholders, `{name}` for a title and `{nameKey}` for a key, so no tip spells a
- * command in prose. `tips.ts` holds which tip names which command.
- */
-export const TIP_KEY = messageKey('surface.status.tip.key');
-export const TIP_PLACE = messageKey('surface.status.tip.place');
-export const TIP_HELP = messageKey('surface.status.tip.help');
-export const TIP_PALETTE = messageKey('surface.status.tip.palette');
-export const TIP_SHORTCUTS = messageKey('surface.status.tip.shortcuts');
-export const TIP_FLOAT_BAR = messageKey('surface.status.tip.float-bar');
-export const TIP_FLOAT_BAR_RESET = messageKey('surface.status.tip.float-bar-reset');
-export const TIP_FOCUS = messageKey('surface.status.tip.focus');
-export const TIP_PANES = messageKey('surface.status.tip.panes');
-export const TIP_COMPARE = messageKey('surface.status.tip.compare');
-export const TIP_UNDO = messageKey('surface.status.tip.undo');
-export const TIP_GO_TO = messageKey('surface.status.tip.go-to');
-export const TIP_BACK = messageKey('surface.status.tip.back');
-export const TIP_RULERS = messageKey('surface.status.tip.rulers');
-export const TIP_LOUPE = messageKey('surface.status.tip.loupe');
-export const TIP_SPELLING = messageKey('surface.status.tip.spelling');
-export const TIP_KEY_CHECK = messageKey('surface.status.tip.key-check');
-export const TIP_REDACT = messageKey('surface.status.tip.redact');
-export const TIP_OCR = messageKey('surface.status.tip.ocr');
-export const TIP_ASSISTANT = messageKey('surface.status.tip.assistant');export const TIP_RIGHT_CLICK = messageKey('surface.status.tip.right-click');
-export const TIP_TIPS_OFF = messageKey('surface.status.tip.tips-off');
-export const TIP_FIND = messageKey('surface.status.tip.find');
 export const THUMBNAIL_SIZE_TITLE = messageKey('setting.viewing-thumbnail-size.title');
 export const THUMBNAIL_SIZE_DESCRIPTION = messageKey('setting.viewing-thumbnail-size.description');
 export const THUMBNAIL_SIZE_SMALL = messageKey('setting.viewing-thumbnail-size.small');
@@ -1505,6 +1475,7 @@ export const FORMS_NO_MATCH = messageKey('surface.forms.no-match');
 export const FORMS_ROW = messageKey('surface.forms.row');
 export const FORMS_GO_TO_PAGE = messageKey('surface.forms.go-to-page');
 export const FORMS_READ_ONLY = messageKey('surface.forms.read-only');
+export const FORMS_HIDDEN = messageKey('surface.forms.hidden');
 export const FORMS_NOT_FILLABLE = messageKey('surface.forms.not-fillable');
 /** A signature field in the Forms list (the owner's F8): an empty one is signed on the page; a signed one says so. */
 export const FORMS_SIGN_ON_PAGE = messageKey('surface.forms.sign-on-page');
@@ -1803,6 +1774,32 @@ export const FORM_FIELD_WANTS_TIME = messageKey('surface.form-layer.wants-time')
 export const FORM_FIELD_REQUIRED_EMPTY = messageKey('surface.form-layer.required-empty');
 export const FORM_FIELD_REQUIRED_LEFT = messageKey('surface.form-layer.required-left');
 export const FORM_BUTTON_NO_SCRIPTS = messageKey('surface.form-layer.button-no-scripts');
+export const BUTTON_PRESS_UNREAD = messageKey('surface.form-layer.button-press-unread');
+export const OPEN_BUTTON_FILE_TITLE = messageKey('dialog.open-button-file.title');
+export const OPEN_BUTTON_FILE_EXPLAINS = messageKey('dialog.open-button-file.explains');
+export const OPEN_BUTTON_FILE_OPEN = messageKey('dialog.open-button-file.open');
+export const SUBMIT_FORM_TITLE = messageKey('dialog.submit-form.title');
+export const SUBMIT_FORM_EXPLAINS_WEB = messageKey('dialog.submit-form.explains-web');
+export const SUBMIT_FORM_EXPLAINS_MAIL = messageKey('dialog.submit-form.explains-mail');
+export const SUBMIT_FORM_FIELDS_ALL = messageKey('dialog.submit-form.fields-all');
+export const SUBMIT_FORM_FIELDS_SOME = messageKey('dialog.submit-form.fields-some');
+export const SUBMIT_FORM_SEND = messageKey('dialog.submit-form.send');
+export const SUBMIT_FORM_OPEN_MAIL = messageKey('dialog.submit-form.open-mail');
+export const SUBMIT_FORMAT_FDF = messageKey('surface.submit-format.fdf');
+export const SUBMIT_FORMAT_XFDF = messageKey('surface.submit-format.xfdf');
+export const SUBMIT_FORMAT_HTML = messageKey('surface.submit-format.html');
+export const BUTTON_SUBMIT_SENT = messageKey('toast.button-submit.sent');
+export const BUTTON_SUBMIT_NOT_HTTPS = messageKey('toast.button-submit.not-https');
+export const BUTTON_SUBMIT_CREDENTIALS = messageKey('toast.button-submit.credentials');
+export const BUTTON_SUBMIT_BLOCKED = messageKey('toast.button-submit.blocked');
+export const BUTTON_SUBMIT_UNRESOLVABLE = messageKey('toast.button-submit.unresolvable');
+export const BUTTON_SUBMIT_UNREACHABLE = messageKey('toast.button-submit.unreachable');
+export const BUTTON_SUBMIT_NOT_TAKEN = messageKey('toast.button-submit.not-taken');
+export const BUTTON_SUBMIT_MAIL_OPENED = messageKey('toast.button-submit.mail-opened');
+export const BUTTON_SUBMIT_MAIL_WITHOUT_DATA = messageKey('toast.button-submit.mail-without-data');
+export const BUTTON_SUBMIT_NOT_OPENED = messageKey('toast.button-submit.not-opened');
+export const BUTTON_SUBMIT_UNREPRESENTABLE = messageKey('toast.button-submit.unrepresentable');
+export const BUTTON_SUBMIT_UNAVAILABLE = messageKey('toast.button-submit.unavailable');
 export const FORM_FIELD_PRESS = messageKey('surface.form-layer.press');
 /** A signature field on the page, pressed (the owner's F8): what it offers, and its name for a screen reader. */
 export const FORM_FIELD_SIGN = messageKey('surface.form-layer.sign');
@@ -1894,10 +1891,70 @@ export const FIELD_PROPS_SPELL_CHECK = messageKey('surface.field-properties.spel
 export const FIELD_PROPS_TEXT_COLOUR = messageKey('surface.field-properties.text-colour');
 export const FIELD_PROPS_TEXT_COLOUR_BLACK = messageKey('surface.field-properties.text-colour.black');
 export const FIELD_PROPS_BUTTON_LABEL = messageKey('surface.field-properties.button-label');
-export const FIELD_PROPS_ACTION = messageKey('surface.field-properties.action');
-export const FIELD_PROPS_ACTION_NONE = messageKey('surface.field-properties.action-none');
-export const FIELD_PROPS_ACTION_RESET = messageKey('surface.field-properties.action-reset');
 export const FIELD_PROPS_ACTION_OTHER = messageKey('surface.field-properties.action-other');
+// A PUSH BUTTON'S ACTIONS (ADR-0259): the list in Properties, and the editor that adds one or changes one.
+export const BUTTON_ACTIONS_LABEL = messageKey('surface.field-properties.button-actions');
+export const BUTTON_ACTIONS_NONE = messageKey('surface.field-properties.button-actions-none');
+export const BUTTON_ACTIONS_READING = messageKey('surface.field-properties.button-actions-reading');
+export const BUTTON_ACTION_ROW = messageKey('surface.field-properties.button-action-row');
+export const BUTTON_ACTION_KEPT_ROW = messageKey('surface.field-properties.button-action-kept-row');
+export const BUTTON_ACTION_ADD = messageKey('surface.field-properties.button-action-add');
+export const BUTTON_ACTION_EDIT = messageKey('surface.field-properties.button-action-edit');
+export const BUTTON_ACTION_UP = messageKey('surface.field-properties.button-action-up');
+export const BUTTON_ACTION_DOWN = messageKey('surface.field-properties.button-action-down');
+export const BUTTON_ACTION_REMOVE = messageKey('surface.field-properties.button-action-remove');
+export const BUTTON_ACTION_WHEN = messageKey('surface.field-properties.button-action-when');
+export const BUTTON_ACTION_DO = messageKey('surface.field-properties.button-action-do');
+export const BUTTON_ACTION_SAVE = messageKey('surface.field-properties.button-action-save');
+export const BUTTON_ACTION_CANCEL = messageKey('surface.field-properties.button-action-cancel');
+export const BUTTON_ACTION_FULL = messageKey('surface.field-properties.button-action-full');
+export const BUTTON_TRIGGER_UP = messageKey('surface.field-properties.button-trigger-up');
+export const BUTTON_TRIGGER_DOWN = messageKey('surface.field-properties.button-trigger-down');
+export const BUTTON_TRIGGER_ENTER = messageKey('surface.field-properties.button-trigger-enter');
+export const BUTTON_TRIGGER_EXIT = messageKey('surface.field-properties.button-trigger-exit');
+export const BUTTON_ACTION_KIND_RESET = messageKey('surface.field-properties.button-action-kind-reset');
+export const BUTTON_ACTION_KIND_GO_TO = messageKey('surface.field-properties.button-action-kind-go-to');
+export const BUTTON_ACTION_PAGE = messageKey('surface.field-properties.button-action-page');
+export const BUTTON_ACTION_PAGE_RANGE = messageKey('surface.field-properties.button-action-page-range');
+export const BUTTON_ACTION_VIEW = messageKey('surface.field-properties.button-action-view');
+export const BUTTON_VIEW_KEEP = messageKey('surface.field-properties.button-view-keep');
+export const BUTTON_VIEW_FIT = messageKey('surface.field-properties.button-view-fit');
+export const BUTTON_VIEW_FIT_WIDTH = messageKey('surface.field-properties.button-view-fit-width');
+export const BUTTON_SUMMARY_GO_TO = messageKey('surface.field-properties.button-summary-go-to');
+export const BUTTON_ACTION_KIND_LINK = messageKey('surface.field-properties.button-action-kind-link');
+export const BUTTON_ACTION_ADDRESS = messageKey('surface.field-properties.button-action-address');
+export const BUTTON_ACTION_ADDRESS_HTTPS = messageKey('surface.field-properties.button-action-address-https');
+export const BUTTON_SUMMARY_LINK = messageKey('surface.field-properties.button-summary-link');
+export const BUTTON_ACTION_KIND_PRINT = messageKey('surface.field-properties.button-action-kind-print');
+export const BUTTON_ACTION_PRINT_NOTE = messageKey('surface.field-properties.button-action-print-note');
+export const BUTTON_ACTION_KIND_IMPORT = messageKey('surface.field-properties.button-action-kind-import');
+export const BUTTON_ACTION_KIND_SHOW_HIDE = messageKey('surface.field-properties.button-action-kind-show-hide');
+export const BUTTON_ACTION_KIND_SUBMIT = messageKey('surface.field-properties.button-action-kind-submit');
+export const BUTTON_ACTION_KIND_OPEN_FILE = messageKey('surface.field-properties.button-action-kind-open-file');
+export const BUTTON_ACTION_OPEN_FILE = messageKey('surface.field-properties.button-action-open-file');
+export const BUTTON_ACTION_OPEN_FILE_RULE = messageKey('surface.field-properties.button-action-open-file-rule');
+export const BUTTON_ACTION_OPEN_FILE_NOTE = messageKey('surface.field-properties.button-action-open-file-note');
+export const BUTTON_SUMMARY_OPEN_FILE = messageKey('surface.field-properties.button-summary-open-file');
+export const BUTTON_ACTION_SUBMIT_TO = messageKey('surface.field-properties.button-action-submit-to');
+export const BUTTON_ACTION_SUBMIT_TO_RULE = messageKey('surface.field-properties.button-action-submit-to-rule');
+export const BUTTON_ACTION_SUBMIT_AS = messageKey('surface.field-properties.button-action-submit-as');
+export const BUTTON_ACTION_SUBMIT_NOTE = messageKey('surface.field-properties.button-action-submit-note');
+export const BUTTON_SUMMARY_SUBMIT = messageKey('surface.field-properties.button-summary-submit');
+export const BUTTON_ACTION_HIDE = messageKey('surface.field-properties.button-action-hide');
+export const BUTTON_ACTION_SHOW = messageKey('surface.field-properties.button-action-show');
+export const BUTTON_ACTION_FIELDS_NONE = messageKey('surface.field-properties.button-action-fields-none');
+export const BUTTON_ACTION_FIELDS_LIMIT_SOME = messageKey('surface.field-properties.button-action-fields-limit-some');
+export const BUTTON_SUMMARY_HIDE = messageKey('surface.field-properties.button-summary-hide');
+export const BUTTON_SUMMARY_SHOW = messageKey('surface.field-properties.button-summary-show');
+export const BUTTON_ACTION_FILE = messageKey('surface.field-properties.button-action-file');
+export const BUTTON_ACTION_FILE_NOTE = messageKey('surface.field-properties.button-action-file-note');
+export const BUTTON_ACTION_FILE_NAME = messageKey('surface.field-properties.button-action-file-name');
+export const BUTTON_ACTION_FIELDS_ALL = messageKey('surface.field-properties.button-action-fields-all');
+export const BUTTON_ACTION_FIELDS_CHOSEN = messageKey('surface.field-properties.button-action-fields-chosen');
+export const BUTTON_ACTION_FIELDS = messageKey('surface.field-properties.button-action-fields');
+export const BUTTON_ACTION_FIELDS_LIMIT = messageKey('surface.field-properties.button-action-fields-limit');
+export const BUTTON_SUMMARY_RESET_ALL = messageKey('surface.field-properties.button-summary-reset-all');
+export const BUTTON_SUMMARY_RESET_SOME = messageKey('surface.field-properties.button-summary-reset-some');
 export const FIELD_PROPS_GROUP_NAME = messageKey('surface.field-properties.group-name');
 export const FIELD_PROPS_RADIO_VALUES = messageKey('surface.field-properties.radio-values');
 export const FORM_SETTINGS_TITLE = messageKey('surface.form-settings.title');
@@ -3501,31 +3558,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [REDUCE_MOTION_TITLE]: 'Reduce motion',
   [REDUCE_MOTION_DESCRIPTION]:
     'Turns off the transitions and animations in the interface. Also on whenever Windows asks for reduced motion.',
-  [STATUS_TIPS_TITLE]: 'Show tips in the status bar',
-  [STATUS_TIPS_DESCRIPTION]: 'A short tip at the start of the status bar, a new one every so often.',
-  [TIPS_SHOWN_TITLE]: 'Tips shown this round',
-  [TIP_KEY]: '{command}: press {key}.',
-  [TIP_PLACE]: '{command} is in {section}, under {group}.',
-  [TIP_HELP]: 'Need help using a tool? Choose the tool, then press {helpKey}.',
-  [TIP_PALETTE]: 'Looking for a tool? Press {paletteKey} and type part of its name.',
-  [TIP_SHORTCUTS]: 'See every keyboard shortcut, and change them: press {shortcutsKey}.',
-  [TIP_FLOAT_BAR]: 'Did you know? “{floatBar}”, in the status bar, hides the Float bar.',
-  [TIP_FLOAT_BAR_RESET]: 'Float bar in the way? “{reset}” puts it back where it started.',
-  [TIP_FOCUS]: 'Need more room? “{focus}” hides the panels, and {leaveKey} brings them back.',
-  [TIP_PANES]: 'Move between the parts of the window with {nextKey}, and back with {previousKey}.',
-  [TIP_COMPARE]: '“{compare}” shows what changed between two versions of a document.',
-  [TIP_UNDO]: 'Changed something by mistake? {undoKey} undoes it, and {redoKey} does it again.',
-  [TIP_GO_TO]: 'Jump to any page: press {goToKey} and type its number.',
-  [TIP_BACK]: 'Jumped to another page? {backKey} goes back, and {forwardKey} forward.',
-  [TIP_RULERS]: 'Lining things up on the page? Try “{rulers}” and “{grid}”.',
-  [TIP_LOUPE]: '“{loupe}” magnifies the part of the page under the pointer.',
-  [TIP_SPELLING]: '“{spelling}” goes through the spelling one word at a time, beside the page.',
-  [TIP_KEY_CHECK]: 'Does an AI key work? Choose Check under it in “{settings}”, on the AI page.',
-  [TIP_REDACT]: 'A redaction mark removes nothing until you choose “{apply}”.',
-  [TIP_OCR]: 'A scanned page? “{ocr}” lets you search its words.',
-  [TIP_ASSISTANT]: 'Questions about this document? Try “{assistant}”.',  [TIP_RIGHT_CLICK]: 'Right-click a page, a comment or a tab to see what you can do with it.',
-  [TIP_TIPS_OFF]: 'Rather not see tips? Turn them off in “{settings}”, on the Appearance page.',
-  [TIP_FIND]: 'Looking for a word? {findKey} searches the whole document.',
   [THUMBNAIL_SIZE_TITLE]: 'Thumbnail size',
   [THUMBNAIL_SIZE_DESCRIPTION]: 'How large the page pictures in the Pages panel are drawn.',
   [THUMBNAIL_SIZE_OPTION_TITLES.small]: 'Small',
@@ -4326,6 +4358,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // application; the document set this flag, and the reader can do nothing
   // about it here.
   [FORMS_READ_ONLY]: 'The document marks this field read-only.',
+  [FORMS_HIDDEN]: 'The document hides this field, so it cannot be filled until it is shown.',
   // AND THE OTHER REASON A CONTROL IS ABSENT, kept apart from it: a signature
   // and a push button are not fields a person types into at all, which is a
   // different fact from one this document happens to have locked.
@@ -4681,7 +4714,35 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FORM_FIELD_REQUIRED_LEFT]:
     'The document was saved, and some required fields are still empty. The first is ready to fill, and every one is outlined in red on the page.',
   [FORM_BUTTON_NO_SCRIPTS]:
-    'Monstera does not run what a form’s buttons are set to do, such as a script or sending the form, so pressing this button does nothing here. Every other part of the form works.',
+    'Monstera never runs a script or starts a program a form’s button is set to run, so that part of what this button does is left out. Every other part of the form works.',
+  [BUTTON_PRESS_UNREAD]: 'This button changed while it was being pressed, so nothing was done. Press it again.',
+  [OPEN_BUTTON_FILE_TITLE]: 'Open this file?',
+  [OPEN_BUTTON_FILE_EXPLAINS]: 'This button opens the PDF named below, from the folder this document is in, in a new tab.',
+  [OPEN_BUTTON_FILE_OPEN]: 'Open',
+  [SUBMIT_FORM_TITLE]: 'Send this form?',
+  [SUBMIT_FORM_EXPLAINS_WEB]: 'This button sends what is filled in on the form, as {format}, to this address:',
+  [SUBMIT_FORM_EXPLAINS_MAIL]:
+    'This button opens your mail app with what is filled in on the form, as {format}, in a message to this address. Nothing is sent until you send the message there.',
+  [SUBMIT_FORM_FIELDS_ALL]: 'Every field on the form is included.',
+  [SUBMIT_FORM_FIELDS_SOME]: '{count, plural, one {This field is included:} other {These # fields are included:}}',
+  [SUBMIT_FORM_SEND]: 'Send',
+  [SUBMIT_FORM_OPEN_MAIL]: 'Open in mail app',
+  [SUBMIT_FORMAT_FDF]: 'FDF',
+  [SUBMIT_FORMAT_XFDF]: 'XFDF',
+  [SUBMIT_FORMAT_HTML]: 'web form data',
+  [BUTTON_SUBMIT_SENT]: 'The form was sent.',
+  [BUTTON_SUBMIT_NOT_HTTPS]: 'The form was not sent. Monstera sends a form only to an address that starts with https://.',
+  [BUTTON_SUBMIT_CREDENTIALS]: 'The form was not sent, because its address carries a user name or password.',
+  [BUTTON_SUBMIT_BLOCKED]: 'The form was not sent, because its address is not on the public internet.',
+  [BUTTON_SUBMIT_UNRESOLVABLE]: 'The form was not sent, because the website in its address could not be found.',
+  [BUTTON_SUBMIT_UNREACHABLE]: 'The form was not sent, because the website did not answer. Check the connection and press the button again.',
+  [BUTTON_SUBMIT_NOT_TAKEN]: 'The website did not accept the form. It may be closed or may want something else filled in.',
+  [BUTTON_SUBMIT_MAIL_OPENED]: 'Your mail app has a new message with the form in it. Send it from there.',
+  [BUTTON_SUBMIT_MAIL_WITHOUT_DATA]:
+    'The form is too long to put in an email message, so your mail app opened an empty one. Save the form data, then attach the file to the message.',
+  [BUTTON_SUBMIT_NOT_OPENED]: 'No mail app opened, so the form was not sent.',
+  [BUTTON_SUBMIT_UNREPRESENTABLE]: 'The form holds a character XFDF cannot carry, so it was not sent.',
+  [BUTTON_SUBMIT_UNAVAILABLE]: 'The form was not sent, because the document could not be read just now.',
   [FORM_FIELD_PRESS]: 'Press {name}',
   [FORM_FIELD_SIGN]: 'Sign {name}',
   [FORM_SIGN_OFFER]: 'Sign this field',
@@ -4999,11 +5060,72 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FIELD_PROPS_TEXT_COLOUR]: 'Text colour',
   [FIELD_PROPS_TEXT_COLOUR_BLACK]: 'Black',
   [FIELD_PROPS_BUTTON_LABEL]: 'Words on the button',
-  [FIELD_PROPS_ACTION]: 'Action',
-  [FIELD_PROPS_ACTION_NONE]: 'None',
-  [FIELD_PROPS_ACTION_RESET]: 'Reset the form',
   [FIELD_PROPS_ACTION_OTHER]:
-    'This button is set to run a script or send the form. Monstera does not run it, and keeps it as the document has it.',
+    'This button holds a script or another action Monstera never runs. It is kept exactly as the document has it, so the actions are not changed here.',
+  [BUTTON_ACTIONS_LABEL]: 'Actions',
+  [BUTTON_ACTIONS_NONE]: 'This button does nothing yet. Add an action to choose what a press does.',
+  [BUTTON_ACTIONS_READING]: 'Reading what this button does…',
+  [BUTTON_ACTION_ROW]: '{when}: {what}',
+  [BUTTON_ACTION_KEPT_ROW]: '{when}: {what} (kept as it is, never run)',
+  [BUTTON_ACTION_ADD]: 'Add action',
+  [BUTTON_ACTION_EDIT]: 'Edit action {number}',
+  [BUTTON_ACTION_UP]: 'Move action {number} up',
+  [BUTTON_ACTION_DOWN]: 'Move action {number} down',
+  [BUTTON_ACTION_REMOVE]: 'Remove action {number}',
+  [BUTTON_ACTION_WHEN]: 'When',
+  [BUTTON_ACTION_DO]: 'Do',
+  [BUTTON_ACTION_SAVE]: 'Save action',
+  [BUTTON_ACTION_CANCEL]: 'Cancel',
+  [BUTTON_ACTION_FULL]: '{count, plural, one {A button can hold # action.} other {A button can hold # actions.}} Remove one to add another.',
+  [BUTTON_TRIGGER_UP]: 'Pressed and let go',
+  [BUTTON_TRIGGER_DOWN]: 'Pressed down',
+  [BUTTON_TRIGGER_ENTER]: 'Pointer moves onto it',
+  [BUTTON_TRIGGER_EXIT]: 'Pointer moves off it',
+  [BUTTON_ACTION_KIND_RESET]: 'Reset the form',
+  [BUTTON_ACTION_KIND_GO_TO]: 'Go to a page',
+  [BUTTON_ACTION_PAGE]: 'Page',
+  [BUTTON_ACTION_PAGE_RANGE]: 'Choose a page from 1 to {count}.',
+  [BUTTON_ACTION_VIEW]: 'Show it',
+  [BUTTON_VIEW_KEEP]: 'At the zoom in use',
+  [BUTTON_VIEW_FIT]: 'Whole page',
+  [BUTTON_VIEW_FIT_WIDTH]: 'Page width',
+  [BUTTON_SUMMARY_GO_TO]: 'Go to page {page}',
+  [BUTTON_ACTION_KIND_LINK]: 'Open a web link',
+  [BUTTON_ACTION_ADDRESS]: 'Web address',
+  [BUTTON_ACTION_ADDRESS_HTTPS]: 'Type a whole address that starts with https://. Monstera asks before it opens one.',
+  [BUTTON_SUMMARY_LINK]: 'Open {address}',
+  [BUTTON_ACTION_KIND_PRINT]: 'Print the document',
+  [BUTTON_ACTION_PRINT_NOTE]: 'The Print window opens, as it does from the ribbon. Nothing is printed until Print is chosen there.',
+  [BUTTON_ACTION_KIND_IMPORT]: 'Import form data',
+  [BUTTON_ACTION_KIND_SHOW_HIDE]: 'Show or hide fields',
+  [BUTTON_ACTION_KIND_SUBMIT]: 'Submit the form',
+  [BUTTON_ACTION_KIND_OPEN_FILE]: 'Open a file',
+  [BUTTON_ACTION_OPEN_FILE]: 'PDF in the same folder',
+  [BUTTON_ACTION_OPEN_FILE_RULE]: 'Type one file name that ends in .pdf, with no folder in it.',
+  [BUTTON_ACTION_OPEN_FILE_NOTE]:
+    'Pressing the button asks first, then opens that PDF from the folder this document is in, in a new tab. Monstera opens only a PDF, and never starts a program.',
+  [BUTTON_SUMMARY_OPEN_FILE]: 'Open {file}',
+  [BUTTON_ACTION_SUBMIT_TO]: 'Send to',
+  [BUTTON_ACTION_SUBMIT_TO_RULE]: 'Type a whole address that starts with https:// or mailto:.',
+  [BUTTON_ACTION_SUBMIT_AS]: 'Send as',
+  [BUTTON_ACTION_SUBMIT_NOTE]:
+    'Pressing the button asks first, naming the address and the fields. An email address opens the mail app with the form in a new message, and nothing is sent until it is sent there.',
+  [BUTTON_SUMMARY_SUBMIT]: 'Send to {address}',
+  [BUTTON_ACTION_HIDE]: 'Hide them',
+  [BUTTON_ACTION_SHOW]: 'Show them',
+  [BUTTON_ACTION_FIELDS_NONE]: 'Tick at least one field.',
+  [BUTTON_ACTION_FIELDS_LIMIT_SOME]: '{count, plural, one {Tick up to # field.} other {Tick up to # fields.}}',
+  [BUTTON_SUMMARY_HIDE]: 'Hide {count, plural, one {# field} other {# fields}}',
+  [BUTTON_SUMMARY_SHOW]: 'Show {count, plural, one {# field} other {# fields}}',
+  [BUTTON_ACTION_FILE]: 'File name for other PDF readers',
+  [BUTTON_ACTION_FILE_NOTE]: 'In Monstera, pressing the button asks the person to choose an FDF file, as Import form data does from the ribbon. Other readers look for this file beside the document.',
+  [BUTTON_ACTION_FILE_NAME]: 'Type one file name, with no folder in it.',
+  [BUTTON_ACTION_FIELDS_ALL]: 'Every field',
+  [BUTTON_ACTION_FIELDS_CHOSEN]: 'Only the fields ticked below',
+  [BUTTON_ACTION_FIELDS]: 'Fields',
+  [BUTTON_ACTION_FIELDS_LIMIT]: '{count, plural, one {Tick up to # field} other {Tick up to # fields}}, or choose Every field.',
+  [BUTTON_SUMMARY_RESET_ALL]: 'Reset every field',
+  [BUTTON_SUMMARY_RESET_SOME]: 'Reset {count, plural, one {# field} other {# fields}}',
   [FIELD_PROPS_GROUP_NAME]: 'Group name',
   [FIELD_PROPS_RADIO_VALUES]: 'Each option’s value, one per line, in the order the options sit',
   [FORM_SETTINGS_TITLE]: 'Form',
@@ -5586,7 +5708,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [AI_SAVE_HISTORY_DESCRIPTION]:
     'Off by default. Conversations are discarded when the document closes; saved ones are encrypted on this computer.',
   [AI_AZURE_OPENAI_ENDPOINT_DESCRIPTION]: 'Your own Azure OpenAI resource address. Needed only for that provider.',
-  [INTEGRATIONS_DOCUSIGN_KEY_DESCRIPTION]: 'Write-only. Kept on this computer, encrypted for your Windows account.',
+  [INTEGRATIONS_DOCUSIGN_KEY_DESCRIPTION]:
+    'Write-only. Kept on this computer, encrypted for your Windows account. How to make one in DocuSign: “Send a document for signing with DocuSign” in Help, under Before you start.',
   [INTEGRATIONS_DOCUSIGN_ENVIRONMENT_DESCRIPTION]: 'Which DocuSign account the signing requests go to.',
   [ACCENT_PRESET_THEME]: 'The theme’s own',
   [ACCENT_PRESET_GREEN]: 'Green',

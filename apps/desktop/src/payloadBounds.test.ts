@@ -180,6 +180,7 @@ function handlers(): ReturnType<typeof createContractHandlers> {
     copyText: () => false,
     openWebPage: () => Promise.resolve(false),
     openLink: () => Promise.reject(new Error('no case here follows a link')),
+    postForm: () => Promise.reject(new Error('no case here sends a form')),
     openStore: () => Promise.resolve(false),
     closeListening: () => false,
     cloud: unconfiguredCloud(),
@@ -409,6 +410,8 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // THE ASK IS HANDLES AND THE ANSWER IS THEIR PROPERTIES, at most `MAX_READ_FIELDS` (16) of each: a four-thousand-field
   // form answers the same sixteen at most, so the payload is bounded by the request and not by the document (ADR-0193).
   'document.formFieldProperties': 'needs an engine session; bounded by its sixteen handles, not by the form',
+  // ONE BUTTON'S STEPS, at most `MAX_ACTION_CHAIN` of them: bounded by the one handle asked for, not by the form (ADR-0259).
+  'document.buttonActions': 'needs an engine session; bounded by its one handle, not by the form',
   'document.split': 'needs an engine session and a folder dialog',
   // THE ASK IS PAGES AND THREE NUMBERS, bounded by the split's own part count;
   // the images are written in the host and never cross.
@@ -500,6 +503,9 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // nothing a document contributes reaches the renderer through it.
   'document.openLink': 'needs an engine session',
   'document.openBarcodeLink': 'needs an engine session; answers one of five outcomes and carries no text',
+  'document.openButtonLink': 'needs an engine session; answers one of five outcomes and carries no address',
+  'document.submitButtonForm': 'needs an engine session; answers one of eight outcomes and carries no address and no data',
+  'document.openButtonFile': 'needs an engine session and a file beside the document; answers an open outcome and carries no path',
   'document.saveBarcodeContact': 'needs an engine session and a save dialog; answers one of seven outcomes and carries no text',
   'document.listBackups': 'needs an open document and a data folder; answers at most eleven versions by opaque id',
   'document.restoreBackup': 'needs an open document, a kept version and a save dialog',

@@ -224,6 +224,20 @@ export async function openRecentDocument(deps: OpenDocumentDeps, handle: FileHan
 }
 
 /**
+ * What opening the file a push button names left (ADR-0259): any open's outcome, settled by {@link settleOpen} as a pick
+ * is, or `refused` where the button moved since it was read or its step is not Open a file, which the press says.
+ */
+export function settleButtonFileOpen(
+  deps: OpenDocumentDeps,
+  answer: Result<ChannelResult<'document.openButtonFile'>, Failure>,
+): OpenOutcome | 'refused' {
+  if (!answer.ok) return settleOpen(deps, answer);
+  const outcome = answer.value;
+  if (outcome.kind === 'stale' || outcome.kind === 'no-such-file') return 'refused';
+  return settleOpen(deps, ok(outcome));
+}
+
+/**
  * What an open's answer does on screen — the ONE place, for a pick and a drop alike, because main opens
  * both through the same `openPath` and the page must not hold two opinions about the same outcomes.
  */
