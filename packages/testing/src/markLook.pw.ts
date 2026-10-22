@@ -103,6 +103,19 @@ async function open(page: Page, witness?: Witness): Promise<void> {
   await expect(page.locator('.m-page-pane[data-first-frame="shown"]').first()).toBeAttached();
 }
 
+/**
+ * The Signature tool armed with the look the dialog answered, which is when a person sees its click is ready.
+ *
+ * The dialog closes when it answers, and the tool is armed after the answer is ready: a picture is measured by decoding
+ * it first, and the look and the tool are then set in one render. A click in between reaches the tool before it, which
+ * places nothing (CI at f9c76e31 and 8b6cb4c0, Windows then Linux: nothing sent, no look, no dialog). It is the overlay's
+ * `data-tool` that `armTool` waits on too, and the look is set in the same render as the tool, so the tool armed is the
+ * look armed.
+ */
+async function signatureArmed(page: Page): Promise<void> {
+  await expect(page.locator('[data-annotation-overlay][data-tool="annotate.signature"]').first()).toBeAttached();
+}
+
 /** A point of the first page, in PDF points, on screen now. */
 async function onScreen(page: Page, x: number, y: number): Promise<{ x: number; y: number }> {
   const slot = await page.locator('.m-page-slot').first().boundingBox();
@@ -288,6 +301,7 @@ const TOOLS: readonly {
       await expect(chooser.getByRole('img', { name: 'Your signature, as it will be placed' })).toBeVisible();
       await chooser.getByRole('button', { name: 'Use Signature' }).click();
       await expect(chooser).toBeHidden();
+      await signatureArmed(page);
       await clicks(page, [[270, 400]]);
     },
     part: 'strokes',
@@ -303,6 +317,7 @@ const TOOLS: readonly {
       await expect(chooser.getByRole('img').first()).toBeVisible();
       await chooser.getByRole('button', { name: 'Use Signature' }).click();
       await expect(chooser).toBeHidden();
+      await signatureArmed(page);
       await clicks(page, [[270, 400]]);
     },
     part: 'picture',
