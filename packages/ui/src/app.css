@@ -562,11 +562,13 @@ optgroup {
   }
 }
 
-/* ADR-0002: the brand's height, and the width the image's own ratio gives it — never stretched. No shadow under it: v5
-   lifted it on a soft green one, which is a glow, and the ground has none (ADR-0140). */
+/* ADR-0002: the brand's height, and the width the image's own ratio gives it — never stretched. Its glow is the owner's
+   of 2026-10-23, the website's mark rule, and lights the artwork rather than the ground, which still has none
+   (ADR-0140): this logo alone carries it, never the menu row's or About's. */
 .m-start-logo {
   block-size: var(--logo-hero);
   inline-size: auto;
+  filter: var(--logo-hero-glow);
 }
 
 /* "PDF EDITOR" in the brand face, the accent's text colour, letterspaced (v5: 16 px, 0.2em) — not grey. */

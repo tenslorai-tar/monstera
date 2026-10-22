@@ -158,6 +158,10 @@ const NOT_COLOUR_ROLES = new Set([
   'glow',
   'glow-sm',
   'sel-glow',
+  // The start screen's logo glow, a filter around the artwork (the owner, 2026-10-23). It brightens the ground under
+  // the hero's wordmark by at most its outer falloff; the wordmark is large text far above its floor in dark, and
+  // high contrast draws no glow.
+  'logo-hero-glow',
   'vignette',
   'scrim',
   'blur-menu',
