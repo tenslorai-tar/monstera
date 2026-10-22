@@ -115,14 +115,29 @@ export async function boxSettled(page, read) {
  * data, and answers the helpers a walk script uses.
  *
  * @param {string} walk the walk's name, which is its output folder
- * @param {{ appRoot?: string, executable?: string, switches?: readonly string[] }} [options] `appRoot`: the checkout
+ * @param {{ appRoot?: string, executable?: string, switches?: readonly string[], appData?: string }} [options] `appRoot`: the checkout
  *   whose built app is launched — another worktree, for a walk that compares two commits; this checkout's when absent.
  *   `executable`: a PACKAGED app's `Monstera.exe`, unpacked from its MSIX and run where it lies (no install), which
  *   carries its own build and its own components, so no checkout's build or development environment is involved. The
  *   walk's own helpers and output stay here. `switches`: Chromium switches put before the app's path, for a walk that
- *   times painting and must have a window that paints while another covers it.
+ *   times painting and must have a window that paints while another covers it. `appData`: an EARLIER launch's user
+ *   data, for a walk that starts the app again over what a previous run left (a crash report); a fresh folder when absent.
  */
 export async function startWalk(walk, options = {}) {
+  const { app, output, runCommand } = await launchApp(walk, options);
+  const page = await app.firstWindow();
+  await page.waitForLoadState('domcontentloaded');
+  return walkOn(walk, app, page, output, runCommand);
+}
+
+/**
+ * Launches the app as {@link startWalk} does and asks nothing of its window: for a launch that is expected to end, as
+ * `--monstera-crash` ends one, where waiting on the window would be waiting on what the crash took away.
+ *
+ * @param {string} walk
+ * @param {Parameters<typeof startWalk>[1]} [options]
+ */
+export async function launchApp(walk, options = {}) {
   if (process.platform !== 'win32') {
     throw new Error(
       `The ${walk} walk opens real documents, and the engine hosts run only on Windows (ADR-0022). Run it there: ` +
@@ -138,6 +153,7 @@ export async function startWalk(walk, options = {}) {
   const stamp = new Date().toISOString().replaceAll(':', '-').slice(0, 19);
   const output = join(root, '_review', 'walks', walk, stamp);
   await mkdir(output, { recursive: true });
+  const appData = options.appData ?? join(output, 'app-data');
 
   /** @type {Record<string, string>} */
   const environment = {};
@@ -149,19 +165,30 @@ export async function startWalk(walk, options = {}) {
     options.executable === undefined
       ? {
           executablePath: electronBinaryPath(appRoot),
-          args: [...(options.switches ?? []), join(appRoot, 'apps/desktop'), `--user-data-dir=${join(output, 'app-data')}`],
+          args: [...(options.switches ?? []), join(appRoot, 'apps/desktop'), `--user-data-dir=${appData}`],
           cwd: appRoot,
           env: environment,
         }
       : {
           executablePath: options.executable,
-          args: [...(options.switches ?? []), `--user-data-dir=${join(output, 'app-data')}`],
+          args: [...(options.switches ?? []), `--user-data-dir=${appData}`],
           cwd: dirname(options.executable),
           env: environment,
         },
   );
-  const page = await app.firstWindow();
-  await page.waitForLoadState('domcontentloaded');
+  return { app, output, appData, runCommand };
+}
+
+/**
+ * The helpers a walk script uses, over a launched app and its first window.
+ *
+ * @param {string} walk
+ * @param {import('playwright').ElectronApplication} app
+ * @param {import('playwright').Page} page
+ * @param {string} output
+ * @param {Awaited<ReturnType<typeof launchApp>>['runCommand']} runCommand
+ */
+async function walkOn(walk, app, page, output, runCommand) {
 
   /**
    * Sizes the WINDOW's content area to `size`, and answers what the page then measures.

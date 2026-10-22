@@ -2,6 +2,7 @@ import { type IncidentSink, type MainHandlers, type WindowEditAction, checkEvent
 import { Menu, app, ipcMain, session } from 'electron';
 
 import type { TitleBarOverlay } from './contractHandlers.js';
+import { crashOrdered } from './crashSwitch.js';
 import { documentPathsIn } from './launchDocuments.js';
 import { bringToFront } from './secondLaunch.js';
 import { registerContractHandlers } from './registerHandlers.js';
@@ -193,6 +194,15 @@ export function startShell(build: () => ShellDependencies, memory: WindowMemory 
     window.webContents.on('render-process-gone', (_event, details) => {
       if (deps.rendererEnded(details)) window.webContents.reload();
     });
+    // A CRASH ON PURPOSE, development builds only (`crashSwitch.ts`): once, after the first page load, so the reloaded
+    // renderer is not crashed again.
+    const crash = crashOrdered(process.argv, app.isPackaged);
+    if (crash !== null) {
+      window.webContents.once('did-finish-load', () => {
+        if (crash === 'renderer') window.webContents.forcefullyCrashRenderer();
+        else process.crash();
+      });
+    }
     // EVERY PLATFORM ROUTE TO CLOSING passes one of these two. `app.quit()` closes each window
     // and abandons the quit when a `close` is prevented, so a quit is a `close` here; Windows'
     // shutdown and log-off arrive as `query-session-end`, whose prevention is what makes
