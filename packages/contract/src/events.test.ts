@@ -15,7 +15,9 @@ const NO_WEB: { answer: string; searched: boolean; sources: { title: string; hos
  */
 
 describe('the event registry', () => {
-  it('declares the assistant’s two events, the window’s close request, the launch’s waiting opens, a document notice, a part that could not start and the computer’s memory running low, and nothing else', () => {
+  it('declares the assistant’s two events, the window’s close request, the launch’s waiting opens, a document notice and a part that could not start, and nothing else', () => {
+    // NO LOW-MEMORY EVENT (ADR-0253's correction of 2026-10-23): low memory is answered by `main` alone, so there is no
+    // way to tell the renderer and nothing for it to show.
     expect(EVENT_IDS).toStrictEqual([
       'ai.delta',
       'ai.done',
@@ -23,8 +25,6 @@ describe('the event registry', () => {
       'document.opens-waiting',
       'document.notice',
       'app.component-cannot-start',
-      // ADR-0253: the computer's memory reads low, so the next failure is not called out of memory until it recovers.
-      'app.memory-low',
     ]);
   });
 

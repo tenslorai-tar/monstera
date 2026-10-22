@@ -3506,7 +3506,6 @@ export const OUT_OF_MEMORY_TITLE = messageKey('dialog.out-of-memory.title');
 export const OUT_OF_MEMORY_OTHERS = messageKey('dialog.out-of-memory.others');
 export const OUT_OF_MEMORY_OWN = messageKey('dialog.out-of-memory.own');
 export const OUT_OF_MEMORY_TRY_AGAIN = messageKey('dialog.out-of-memory.try-again');
-export const MEMORY_LOW_NOTICE = messageKey('toast.memory-low');
 export const CLOUD_VIEW_ONLY_OPENED = messageKey('dialog.cloud-view-only.opened');
 export const CLOUD_VIEW_ONLY_READ_ONLY = messageKey('dialog.cloud-view-only.read-only');
 export const CLOUD_VIEW_ONLY_FORBIDDEN = messageKey('dialog.cloud-view-only.forbidden');
@@ -5471,7 +5470,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'Monstera ran out of memory. This computer has {gigabytes, number} GB of memory. Your document is unchanged. Close ' +
     'some programs or tabs, then try again.',
   [OUT_OF_MEMORY_TRY_AGAIN]: 'Try again',
-  [MEMORY_LOW_NOTICE]: 'This computer is low on memory. Closing other programs will keep Monstera running smoothly.',
   [CLOUD_VIEW_ONLY_OPENED]:
     'This file is shared with you as view-only in {provider}, so Save back to cloud cannot change it. You can still edit it here, and save a copy to your own {provider}. The original stays as it is.',
   [CLOUD_VIEW_ONLY_READ_ONLY]:
