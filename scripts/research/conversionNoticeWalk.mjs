@@ -126,7 +126,10 @@ async function stopWatching() {
  * @param {() => Promise<void>} act ends with the input that starts the work
  */
 async function readNotice(act) {
-  if (!(await hidingShape())) throw new Error('no document behind with its page area after the one on show: the shape that hid the notice is not on screen');
+  const layers = await hidingShape();
+  if (!layers.shaped) {
+    throw new Error(`no document behind with its page area after the one on show: the shape that hid the notice is not on screen (layers: ${JSON.stringify(layers.seen)})`);
+  }
   const works = await writesDone(page, 'works');
   await watchNotice();
   const started = await page.evaluate(() => performance.now());
@@ -189,7 +192,7 @@ async function hidingShape() {
       pane: layer.querySelector('.m-page-pane') !== null,
     }));
     const active = layers.findIndex((layer) => layer.state === 'active');
-    return active >= 0 && layers.slice(active + 1).some((layer) => layer.state === 'background' && layer.pane);
+    return { shaped: active >= 0 && layers.slice(active + 1).some((layer) => layer.state === 'background' && layer.pane), seen: layers };
   });
 }
 
@@ -215,19 +218,25 @@ await step('CONTROL: with every page pane naming the anchor again, a Markdown co
   /** The panes and the anchor name each carries while the notice is mounted, for the failure's message. */
   let named = /** @type {string[]} */ ([]);
   const source = await longMarkdown('control.md', 2000);
-  await pickFiles([source]);
-  await saveTo(join(output, 'control.pdf'));
-  const reading = await readNotice(async () => {
-    await command('New PDF from Markdown…');
-    await chooseFile();
-    await page.locator('[data-task-notice]').waitFor({ state: 'attached', timeout: 15_000 });
-    named = await page.evaluate(() => {
-      const doc = /** @type {{ querySelectorAll: (selector: string) => Iterable<{ closest: (selector: string) => { getAttribute: (name: string) => string | null } | null }> }} */ (Reflect.get(globalThis, 'document'));
-      const style = /** @type {(element: unknown) => { anchorName: string }} */ (Reflect.get(globalThis, 'getComputedStyle'));
-      return [...doc.querySelectorAll('.m-page-pane')].map((pane) => `${pane.closest('[data-document-layer]')?.getAttribute('data-document-layer') ?? 'none'}:${style(pane).anchorName}`);
+  // THE OLD RULE TAKEN OFF AGAIN HOWEVER THE CONTROL ENDS: left on, every conversion after it reads the defect this walk
+  // put back, and all of them fail for the control's sake (2026-10-22: the shape check threw first, 7 steps red).
+  let reading;
+  try {
+    reading = await readNotice(async () => {
+      await pickFiles([source]);
+      await saveTo(join(output, 'control.pdf'));
+      await command('New PDF from Markdown…');
+      await chooseFile();
+      await page.locator('[data-task-notice]').waitFor({ state: 'attached', timeout: 15_000 });
+      named = await page.evaluate(() => {
+        const doc = /** @type {{ querySelectorAll: (selector: string) => Iterable<{ closest: (selector: string) => { getAttribute: (name: string) => string | null } | null }> }} */ (Reflect.get(globalThis, 'document'));
+        const style = /** @type {(element: unknown) => { anchorName: string }} */ (Reflect.get(globalThis, 'getComputedStyle'));
+        return [...doc.querySelectorAll('.m-page-pane')].map((pane) => `${pane.closest('[data-document-layer]')?.getAttribute('data-document-layer') ?? 'none'}:${style(pane).anchorName}`);
+      });
     });
-  });
-  await nameEveryPane(false);
+  } finally {
+    await nameEveryPane(false);
+  }
   await secondOnShow();
   process.stdout.write(`      control: ${JSON.stringify(reading)}\n`);
   if (reading.mountedMs < MIN_WORK_MS) throw new Error(`the control's notice was mounted for ${String(reading.mountedMs)} ms: too short to be a control`);
@@ -242,8 +251,12 @@ await step('CONTROL: with every page pane naming the anchor again, a Markdown co
 async function conversion(name, prepare, act) {
   if (!wanted(name)) return;
   await step(`${name}: the notice is on top from the chosen input until the work ends, with the second of three tabs on show`, async () => {
-    await prepare();
-    const reading = await readNotice(act);
+    // THE PICKERS ANSWERED INSIDE THE READING, after its shape check: answers queued before a check that throws are taken
+    // by the next step's picker, which then converts the wrong file.
+    const reading = await readNotice(async () => {
+      await prepare();
+      await act();
+    });
     await secondOnShow();
     process.stdout.write(`      ${name}: ${JSON.stringify(reading)}\n`);
     assertSeen(reading);
