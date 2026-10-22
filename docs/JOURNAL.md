@@ -892,6 +892,125 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-22 — Stage audit of `0cbcb31e..6aba348f` — findings UUUUUUUU-1 to UUUUUUUU-12
+
+Local fix session 3's third range: R19's blink and arrival units, R28, the two cloud merges (R22–R27, R29), R21, and
+the closing gate's walks, audited lean per the owner's closing steps of 2026-10-22 ~10:55. `npm run audit:scope`: 38
+commits, 165 files; 16 proofs added, 45 modified, 3 removed; 14 source files added, 73 changed, 2 removed.
+**Stated limitation, not a pass:** the modified proofs' diffs were read where this session wrote them, each commit
+naming its proof, control and mutation. The two cloud merges' proofs were read through their merge commits and the
+live walks that run them (R22's 13 checks), not diff by diff.
+
+### Fixed in range
+
+**UUUUUUUU-1** — §9.17's engine-host budget, red on CI: the hosts took the signature fit from the contract's ROOT,
+which builds the renderer's whole channel map at load (`348500a9`). Bisected; the hosts take it from the host entry
+(`44d98a48`), and cloud run 15's own route to the same fix was merged as the one route (`2f8f432d`, `30c5b50e`).
+**UUUUUUUU-2** — a form with a push button that acts could not be listed: the engine host's strict field schema did
+not carry R22's `actions` and `hidden`, so `document.formFields` failed for the whole document (`a8b159c3`). Both of
+R22's halves were green. The kernel listed the fields, and the UI dispatched against a stub. The host schema sits
+between them, which is the pair's second blind spot. It was found by the live walk, the only instrument that crosses it.
+**UUUUUUUU-3** — Select found nothing on a mark drawn a moment before (measure walk 3/5, comments 37/41). `99ac7383`,
+in the previous range, read the press's marks from the cache at the version on show, which is the document before a
+write still in flight. It now reads from main, which answers in the document's lane (`7c4ef1c0`, with a shim that
+models the lane and a control that rebuilds the cached read). The previous audit passed over it: no walk ran between.
+**UUUUUUUU-4** — an instrument's defect: `conversionNoticeWalk`'s control put the old anchor rule back and threw
+before taking it off, so seven conversions read the defect the walk itself had planted (0/8). The rule now comes off in a
+`finally`, and the pickers are answered after the shape check (`b935c1da`). 8/8 alone.
+**UUUUUUUU-5** — the text walk's step 9 had been a vacuous pass: the press on a 2 by 3.5 px recognised block often
+opened nothing, so no edit was sent. When one was sent, both block writers threw a plain `Error` for an edit that
+changed nothing, which reached the person as *internal* with the editor stuck. ADR-0260 (`5a6338e7`, with a same-day
+correction) and `6aba348f` make it `text-unchanged` (close silently) or the `set-text` refusal (editor kept), by one
+rule both writers call.
+**UUUUUUUU-6** — CI's three red steps of 2026-10-21, at their cause: the audit entry answered no checklist item
+(`f22f511c`); the electron-import scan could not account for a proof's fresh config read (`1654e53e`); §9.17 is
+UUUUUUUU-1. And R25's control rendered 360 presses where one step a press, over a year, was the claim (`18b30702`).
+**UUUUUUUU-7** — three proofs and two sources removed, all by R24 (`84da755c`), after the owner withdrew status tips
+and amended §7 in its own commit (`0f237e80`). `statusTips.pw.ts`, `StatusTip.test.tsx` and `tips.test.ts` covered
+only the withdrawn tips; `statusToolLine.pw.ts` covers the line that replaced them. `markLook.pw.ts` still set the
+withdrawn setting (`a83ddeaf`).
+
+### Recorded
+
+**UUUUUUUU-8** — R22 (cloud run 15) registered two dialogs and photographed neither. `dialogGallery.visual.ts`'s index
+case named both when the baselines were regenerated, and they are photographed in the commit after this audit.
+**UUUUUUUU-9** — why step 9's renderer sent an edit carrying the page's own words was not captured. With a capture in
+the host, eight runs sent four edits, all written. Measured in process: the page's own words answer *changed nothing*
+on 7 of 7 blocks, and any change in them writes. One candidate is keys typed before the editor took them, which would
+be its own defect and is open.
+**UUUUUUUU-10** — `blinkWalk`'s parked-tab case failed once (*"changed no picture"*, 116 frames in a 2.7 s window)
+and passed 3/3 alone and 19/19 in a full re-run. The app was busy and the rebuilt tab did not come forward inside the
+window. Not explained, and no window was widened.
+**UUUUUUUU-11** — `MergeDocumentBody`'s *Choose pages* case failed once in a 62-file batch and passes 19/19 alone;
+`proof:hostruntime` exited 1 after 332 s alone here, two cases under fork timeouts. Both left to CI's machines, by
+the owner's decision of 2026-10-22, with no bound raised.
+**UUUUUUUU-12** — my own process, counted from this session:
+- The escape guard denied a stray no-op `sed -i`, a `python -c` / `node -e` version probe, and earlier a `node -e`, an
+  `echo` into a file and a `sed` redirect. Nothing was written by any of them.
+- I ran an in-process PDFium edit during the forms walk, which caused its 10 false failures, and a `tsc --build`
+  during the walk runner, so later walks refused a stale build.
+- A walk ran 1 h 30 unchecked.
+- A bisect's `git restore --source --staged` left R23's removal staged. The owner caught it before any commit.
+
+### 1. Root cause or workaround?
+
+Each fix states its mechanism in its commit. None is a retry, a raised bound or a loosened check. Two proofs' message
+assertions became class assertions (`pdfiumCommand`'s restated mark and still place, `textOperatorEdit`'s still move).
+That is a strengthening, because the plain error's message is what the person was failed by.
+
+### 2. Easy shape only?
+
+The lane was modelled with a held command, the case where a cached read is wrong. ADR-0260's split was measured on
+the step's own recognised page, a 1-point glyphless OCR layer, not only on Helvetica. Not walked: a block edit on a
+Type 3 page answering unchanged through the operator writer in the live app (proven in `textOperatorEdit.test.ts`).
+
+### 2a.
+
+No assertion moved from asserted to derived.
+
+### 3. Would CI have caught it?
+
+UUUUUUUU-1 and -6 were caught by CI. UUUUUUUU-2, -3 and -5: no, each was found by a live walk, which CI does not run.
+The proofs written for them do run there: `selectAfterWrite.pw.ts`, `formFieldsChannel.test.ts`,
+`proof:pdfiumcommand`. UUUUUUUU-8 yes, the visual job's index case.
+
+### 4. Non-vacuous?
+
+Run here, each red with its guard removed and green restored: the cached read (0 handles); the old plain error in the
+PDFium writer (4 cases); the three `text-unchanged` mappings (4 cases); the conversion walk's control (mounted 5.9 s,
+seen 0 frames).
+
+### 4a.
+
+`conversionNoticeWalk`: the control above is its resolution test. `blinkWalk`: the hidden and cleared canvases it
+must count before any zero. `blockAsShown.ts` is not an instrument; its cases include the soft-against-hard join control.
+
+### 4b.
+
+No search-shaped instrument was added. The conversion walk's shape check now names the layers it saw, so its refusal
+says what it could and could not see.
+
+### 4c.
+
+`proof:pdfiumcommand` moved its literal from 296 to 299 with its three new cases. No roster in the range derives its
+count from the set it governs.
+
+### 5. Executed or asserted?
+
+Executed: every walk total, timing and mutation above. Asserted: UUUUUUUU-9's candidate cause, stated as open.
+
+### 6. Architecture before the feature?
+
+ADR-0259 (`5c2a2da3`), §7's amendment (`0f237e80`) and ADR-0260 (`5a6338e7`) each landed in its own commit ahead of
+the code.
+
+### 7. Documents?
+
+ADR-0259, ADR-0260 and its correction, the decisions README rows, §7. Swept for the removed tips: `StatusTip` and
+`tips.ts` are named only in the amendment and ADR history.
+
+---
+
 ## 2026-10-21 — Stage audit of `6abc979a..0cbcb31e` — findings TTTTTTTT-1 to TTTTTTTT-9
 
 Local fix session 3's second range (R16–R20, the first R19 units, the React Compiler), audited lean at the owner's
