@@ -1,4 +1,5 @@
 import {
+  BlockUnchangedError,
   EditRefusedError,
   FieldEditRefusedError,
   NothingToReplaceError,
@@ -44,6 +45,7 @@ export function editRefusalOf(
       | 'text-not-in-place'
       | 'nothing-to-replace'
       | 'replace-moves-line'
+      | 'text-unchanged'
       | 'engine-unavailable'
       | 'field-edit-refused'
     >
@@ -60,5 +62,8 @@ export function editRefusalOf(
   if (thrown instanceof NothingToReplaceError) return { code: 'nothing-to-replace' };
   // A REPLACEMENT THAT WOULD MOVE THE TEXT AFTER IT, refused before anything was generated: the version has not moved.
   if (thrown instanceof ReplaceMovesLineError) return { code: 'replace-moves-line' };
+  // A BLOCK EDIT THAT SENT THE WORDS ITS BLOCKS ALREADY SAY, and nothing else (ADR-0260): an answer the editor closes on,
+  // refused before anything was generated, so the version has not moved.
+  if (thrown instanceof BlockUnchangedError) return { code: 'text-unchanged' };
   return rewriteRefusalOf(thrown);
 }

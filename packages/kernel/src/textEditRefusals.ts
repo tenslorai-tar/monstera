@@ -59,6 +59,22 @@ export class NothingToReplaceError extends Error {
 }
 
 /**
+ * Why a block edit made no new version: every block it names says on the page exactly the words it was sent, and nothing
+ * else about it was asked for (ADR-0260). An answer, not a fault: the editor closes as it does when it judges the words
+ * unchanged itself.
+ *
+ * Thrown before anything is generated or serialised, so the bus records no entry and the document keeps its version. Its
+ * sibling is the edit the writer found nothing to write for while the words or their formatting DID differ: that is
+ * {@link EditRefusedError} at `set-text`, and the editor keeps what was typed.
+ */
+export class BlockUnchangedError extends Error {
+  constructor(options?: ErrorOptions) {
+    super('every block the edit names already says its words, and nothing else was asked for, so nothing was written', options);
+    this.name = 'BlockUnchangedError';
+  }
+}
+
+/**
  * Why a Replace wrote nothing: it changes a text object's width and other text follows that object on its line, which
  * would have to move (`replaceLineRule.ts`, the owner's answer of 2026-10-05). Moving it needs the line, which a
  * Replace does not have; Edit text does. Thrown before anything is generated or serialised, so there is no new version.

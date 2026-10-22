@@ -84,6 +84,8 @@ export const COMMAND_PROBLEM_DIALOG = declareDialog({
     z.object({ code: z.literal('nothing-to-replace') }).strict(),
     // A REPLACEMENT THAT WOULD MOVE THE TEXT AFTER IT ON ITS LINE (`replaceLineRule.ts`): nothing written, no new version.
     z.object({ code: z.literal('replace-moves-line') }).strict(),
+    // A BLOCK EDIT WHOSE BLOCKS ALREADY SAY ITS WORDS (ADR-0260): nothing written, no new version, the editor closed.
+    z.object({ code: z.literal('text-unchanged') }).strict(),
     // AN EDIT PDFIUM REFUSED (ADR-0169): the sentence is the step's, and the step and PDFium's number are the reference,
     // where `internal` shows its incident id.
     z.object({ code: z.literal('edit-refused'), detail: FAILURE_DETAIL_SCHEMAS['edit-refused'] }).strict(),

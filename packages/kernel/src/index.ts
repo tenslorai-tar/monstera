@@ -372,6 +372,7 @@ export type { MovedBlock } from './engineSeam.js';
 // THE REFUSAL, from a module that imports nothing, so main can name it without
 // loading the engine that throws it (`signingRefusals.ts`' shape).
 export {
+  BlockUnchangedError,
   EditRefusedError,
   NothingToReplaceError,
   ReplaceMovesLineError,

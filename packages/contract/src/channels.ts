@@ -2559,6 +2559,9 @@ export const channels = {
       'text-not-in-place',
       'nothing-to-replace',
       'replace-moves-line',
+      // `text-unchanged` IS A BLOCK EDIT'S (ADR-0260): every block it names already says the words it was sent, and
+      // nothing else was asked for, so there is no new version. An answer: the editor closes as on its own judgement.
+      'text-unchanged',
       'edit-refused',
       // `field-edit-refused` IS A CHANGE TO A FORM FIELD'S (ADR-0193): a name another field holds, an encrypted
       // document, a copy of a radio option. Nothing was written; the reason is the sentence.
@@ -3527,7 +3530,14 @@ export const channels = {
         problem: z.union([
           z
             .object({
-              code: z.enum(['engine-unavailable', 'text-not-in-place', 'nothing-to-replace', 'replace-moves-line', 'document-poisoned']),
+              code: z.enum([
+                'engine-unavailable',
+                'text-not-in-place',
+                'nothing-to-replace',
+                'replace-moves-line',
+                'text-unchanged',
+                'document-poisoned',
+              ]),
             })
             .strict(),
           z.object({ code: z.literal('text-not-writable'), detail: FAILURE_DETAIL_SCHEMAS['text-not-writable'] }).strict(),

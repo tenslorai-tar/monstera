@@ -10,7 +10,8 @@ import { type OperatorRefusal, type PageRuns, checkOperatorEdit, editOperators }
 import { pageContentStreams } from './pageContent.js';
 import { pageFonts } from './pageFonts.js';
 import { resourceDictionaryOf } from './pageResources.js';
-import { EditRefusedError, TextNotWritableError } from './textEditRefusals.js';
+import { BlockUnchangedError, EditRefusedError, TextNotWritableError } from './textEditRefusals.js';
+import { sentAsShown } from './blockAsShown.js';
 import { joinedContent } from './textOperators.js';
 
 /**
@@ -75,8 +76,14 @@ export async function applyEditTextOperators(
     if (!made.ok) {
       const refusal = made.error;
       if (refusal.reason === 'needs-a-face') throw new TextNotWritableError(refusal.characters.join(''));
+      // NOTHING TO WRITE, split by the PDFium writer's rule (ADR-0260): the words the page shows and nothing else is the
+      // answer the editor closes on; anything else was a change none of which could be written, and the editor keeps it.
       if (refusal.reason === 'unchanged') {
-        throw new Error(`An operator edit on page ${String(command.page)} changed nothing, so nothing was written.`);
+        const shown = new Map(read.runs.map((run) => [run.index, run.text] as const));
+        if ((command.inserts ?? []).length === 0 && sentAsShown(blocksOfEdit(command), (run) => shown.get(run))) {
+          throw new BlockUnchangedError();
+        }
+        throw new EditRefusedError('set-text', 0, `an operator edit on page ${String(command.page)} asked for a change and wrote none of it`);
       }
       throw refusalOf(refusal);
     }

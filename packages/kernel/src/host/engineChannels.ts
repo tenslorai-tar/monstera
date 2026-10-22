@@ -2240,7 +2240,8 @@ export const engineChannels = {
     // WHAT IT DREW AS BOXES (ADR-0177 Decision 7), capped and counted as the PDFium host's answer carries them; AND THE
     // BLOCKS IT MOVED DOWN (ADR-0249), as the PDFium host's answer carries them.
     z.object({ ...drawnBoxesShape, ...movedBlocksShape }).strict(),
-    ['no-such-session', 'text-not-writable', 'edit-refused'],
+    // `text-unchanged` (ADR-0260): an operator edit that sent the words its blocks already say, and nothing else.
+    ['no-such-session', 'text-not-writable', 'edit-refused', 'text-unchanged'],
   ),
 
   /**
@@ -3502,4 +3503,6 @@ export type EngineFailureCode =
   // AND A REPLACEMENT THAT WOULD CHANGE NOTHING, which makes no version (ADR-0169 Decision 6): the person's too.
   | 'nothing-to-replace'
   // AND A REPLACEMENT THAT WOULD MOVE THE TEXT AFTER IT on its line, which a Replace cannot do (`replaceLineRule.ts`).
-  | 'replace-moves-line';
+  | 'replace-moves-line'
+  // AND A BLOCK EDIT SENT THE WORDS ITS BLOCKS ALREADY SAY, and nothing else (ADR-0260): an answer, never an incident.
+  | 'text-unchanged';

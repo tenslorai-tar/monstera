@@ -11,6 +11,7 @@ import {
 
 import { type ByteImage, type DrawnBoxes, type ImageSession, NO_BOXES } from '../engineSeam.js';
 import {
+  BlockUnchangedError,
   EditRefusedError,
   NothingToReplaceError,
   ReplaceMovesLineError,
@@ -218,6 +219,8 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9]), dra
         if (image.length === 4) throw new NothingToReplaceError();
         // FIVE BYTES ARE A REPLACEMENT THAT WOULD MOVE THE TEXT AFTER IT ON ITS LINE (`replaceLineRule.ts`).
         if (image.length === 5) throw new ReplaceMovesLineError();
+        // SIX BYTES ARE A BLOCK EDIT WHOSE BLOCKS ALREADY SAY ITS WORDS (ADR-0260).
+        if (image.length === 6) throw new BlockUnchangedError();
         return Promise.resolve({ image: applied, ...drawn });
       },
       capture: (session) => {
@@ -581,6 +584,32 @@ describe('the PDFium host body', () => {
     // THE ENGINE WAS REACHED with the file's bytes, so the code is the handler's reading of its refusal and not a
     // request refused on the way in, which also writes nothing.
     expect(calls).toContain('apply:1,2,3,4');
+    expect(calls.filter((entry) => entry.startsWith('incident:'))).toStrictEqual([]);
+  });
+
+  it('answers a block edit whose blocks already say its words as text-unchanged, never an incident (ADR-0260)', async () => {
+    stream = stubStream();
+    const files = emptyFiles();
+    const { session, calls } = await openArea(files);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([1, 2, 3, 4, 5, 6]));
+
+    stream.feed(
+      request('a1', 'engine/apply', {
+        session,
+        sources: [],
+        command: { kind: 'replaceAllText', find: 'same', replace: 'same' },
+        from: IN,
+        password: null,
+        into: OUT,
+      }, undefined, files),
+    );
+    await stream.whenSent(2);
+
+    // ITS OWN CODE, where the plain error this was until ADR-0260 answered `engine-refused` and reached the person as
+    // *internal* with the editor stuck open; no output, and no incident, since it is an answer.
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: false, error: { code: 'text-unchanged' } } });
+    expect(files.written.size).toBe(0);
+    expect(calls).toContain('apply:1,2,3,4,5,6');
     expect(calls.filter((entry) => entry.startsWith('incident:'))).toStrictEqual([]);
   });
 

@@ -62,3 +62,16 @@ written, and four sent none (a 2 by 3.5 px block the press missed).
 Kernel: an edit carrying a block's own words answers `BlockUnchangedError`; the same edit with a mark answers
 `EditRefusedError` at `set-text`; control: one changed word writes. Host: the code crosses `engine/apply`. UI: the
 editor closes on `text-unchanged` and keeps the words and the sentence on the refusal. Then the text walk, alone.
+
+## Correction, 2026-10-22 (same day, before the build was committed)
+
+**Decision 1 is narrowed to the words alone, which is the owner's rule as given.** Building it as written, with a mark,
+a paragraph setting, a place or a push each counting as a change, turned two existing `proof:pdfiumcommand` cases red:
+*"a mark that restates what its words already are changes nothing"* and *"a place that moves, scales and turns nothing
+changes nothing"*. In both the writer's plan finds nothing to write because the page already looks as asked, so nothing
+the person asked for is lost by closing, and answering them with *"couldn't write that text"* would be false. So: the
+page's own words is `BlockUnchangedError` whatever else was sent, and words that differ with nothing written is the
+`set-text` refusal. `sentAsShown` (`blockAsShown.ts`) is that rule, called by both block writers. The **Proof**
+paragraph's second kernel case is accordingly a mark that sets nothing answering `BlockUnchangedError`; the refusal side
+is proven on the rule (`blockAsShown.test.ts`) and in the editor (`documentCommands.test.ts`), since a correct plan
+writes every difference in words and leaves no writer-level input that reaches it.

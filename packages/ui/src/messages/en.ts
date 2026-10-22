@@ -1646,6 +1646,11 @@ export const TEXT_NOT_IN_PLACE = messageKey('surface.text-edit.not-in-place');
 export const NOTHING_TO_REPLACE = messageKey('surface.text-edit.nothing-to-replace');
 /** A replacement that would change its text's width with more text after it on the line (`replaceLineRule.ts`). */
 export const REPLACE_MOVES_LINE = messageKey('surface.text-edit.replace-moves-line');
+/**
+ * A block edit the writer found already says its words (ADR-0260). The editor closes on it and says nothing; this is the
+ * sentence for the one route that shows a refusal rather than closing an editor, an edit made on a copy.
+ */
+export const TEXT_UNCHANGED = messageKey('surface.text-edit.text-unchanged');
 export const TEXT_EDIT_HELD = messageKey('surface.text-edit.held');
 /** A block whose words run past the page's edge: written whole, outlined, and said (the owner's Q7). */
 export const TEXT_EDIT_PAST_PAGE = messageKey('surface.text-edit.past-page');
@@ -4564,6 +4569,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // WHAT IT WOULD HAVE COST, then what does it: the words after it would have to move, which Edit text does.
   [REPLACE_MOVES_LINE]:
     'Nothing was changed: the new words are a different width, and the text after them on the line would have to move, which Replace cannot do yet. Edit text can change this line.',
+  [TEXT_UNCHANGED]: 'Nothing was changed: the text already says that.',
   [TEXT_EDIT_HELD]:
     'Nothing was changed, so the signatures still verify. Keep typing and you will be asked again when you finish, or press Esc to put the text back.',
   // THE OWNER'S OWN SENTENCE (Q7), and nothing promised that the editor cannot do: the words are all kept, and the way

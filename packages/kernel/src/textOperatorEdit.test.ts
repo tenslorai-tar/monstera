@@ -13,7 +13,7 @@ import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import type { PageRuns } from './operatorEdit.js';
 import { pageContentStreams } from './pageContent.js';
 import { pageFonts } from './pageFonts.js';
-import { EditRefusedError, TextNotWritableError } from './textEditRefusals.js';
+import { BlockUnchangedError, EditRefusedError, TextNotWritableError } from './textEditRefusals.js';
 import { applyEditTextOperators, putBack } from './textOperatorEdit.js';
 import { joinedContent, showOperators, textObjectCount } from './textOperators.js';
 
@@ -149,6 +149,23 @@ describe('applyEditTextOperators', () => {
     });
   });
 
+  it('answers the heading sent back with its own words as BlockUnchangedError, and leaves the page as it came (ADR-0260)', async () => {
+    await withChromium(async (session, content) => {
+      const runs = headingRuns(content);
+      const unchanged = await applyEditTextOperators(session, command(runs.runs[0]?.index ?? 0, 'Monstera fixture heading.'), runs).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      // BY ITS CLASS: a plain `Error` was thrown here until ADR-0260, which reached the person as *internal*.
+      expect(unchanged).toBeInstanceOf(BlockUnchangedError);
+      const after = await withDocument(session, (document) => joinedContent(pageContentStreams(document.findPage(0))));
+      expect(after).toStrictEqual(content);
+      // CONTROL: one word changed is written, so the answer above is not a writer that writes nothing (the first case
+      // reads the written words back; this asserts only that the same input with a change is not refused).
+      await expect(applyEditTextOperators(session, command(runs.runs[0]?.index ?? 0, 'Monstera fixture reading.'), runs)).resolves.toBeDefined();
+    });
+  });
+
   describe('a placement and an added box (ADR-0188)', () => {
     const words = 'Monstera fixture heading.';
     const placed = (index: number, place: NonNullable<Parameters<typeof blockEditOf>[0][number]['place']>): CommandOfKind<'editTextOperators'> => ({
@@ -180,8 +197,8 @@ describe('applyEditTextOperators', () => {
           () => null,
           (error: unknown) => error,
         );
-        expect(refusal).toBeInstanceOf(Error);
-        expect((refusal as Error).message).toContain('changed nothing');
+        // BY ITS CLASS (ADR-0260): the answer the editor closes on, where a plain error's message was asserted until then.
+        expect(refusal).toBeInstanceOf(BlockUnchangedError);
         expect(await withDocument(session, (document) => joinedContent(pageContentStreams(document.findPage(0))))).toStrictEqual(content);
       });
     });

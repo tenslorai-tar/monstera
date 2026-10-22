@@ -2453,6 +2453,50 @@ describe('delete pages — the mutation-dialog gate', () => {
     expect(asked).toStrictEqual(['dialog.command-problem']);
   });
 
+  it('a block the WRITER finds already says its words is `unchanged`: the editor closes, nothing is asked (ADR-0260)', async () => {
+    // THE TEXT WALK'S STEP 9: the editor sent, the writer found the page's own words, and the answer was a plain error
+    // that reached the person as *internal* with the editor stuck. Now it is the outcome the editor closes on.
+    const asked: string[] = [];
+    let applied = 0;
+    const client = createClient(channels, () => Promise.resolve(err({ code: 'text-unchanged' as const })));
+    const outcome = await commitTextBlock(
+      {
+        client,
+        stamp,
+        signatures,
+        onApplied: () => {
+          applied += 1;
+        },
+        ask: (id) => {
+          asked.push(id);
+          return Promise.resolve(undefined);
+        },
+      },
+      DOC,
+      3,
+      BLOCK,
+      'The quick brown dog',
+      readOf('objects'),
+    );
+    expect(outcome).toBe('unchanged');
+    expect(asked).toStrictEqual([]);
+    expect(applied).toBe(0);
+    // CONTROL: the writer's OTHER answer for an edit it wrote nothing for, words that differ, keeps the words with the
+    // set-text refusal — so the case above is not an editor that closes on every refusal.
+    const differ = createClient(channels, () =>
+      Promise.resolve(err({ code: 'edit-refused' as const, detail: { step: 'set-text' as const, engineError: 0 } })),
+    );
+    const kept = await commitTextBlock(
+      { client: differ, stamp, signatures, onApplied: () => undefined, ask: () => Promise.resolve(undefined) },
+      DOC,
+      3,
+      BLOCK,
+      'The quick brown dog',
+      readOf('objects'),
+    );
+    expect(kept).toStrictEqual({ refused: { code: 'edit-refused', detail: { step: 'set-text', engineError: 0 } } });
+  });
+
   it('a STALE read is kept for the editor as well', async () => {
     const asked: string[] = [];
     const client = createClient(channels, () => Promise.resolve(err({ code: 'stale-target' as const })));

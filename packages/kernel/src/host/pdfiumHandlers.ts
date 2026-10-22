@@ -7,6 +7,7 @@ import type { ImageSession } from '../engineSeam.js';
 import type { PageRuns } from '../operatorEdit.js';
 import type { PageContentRead, PageText, TextRun } from '../pdfiumFfi.js';
 import {
+  BlockUnchangedError,
   EditRefusedError,
   NothingToReplaceError,
   ReplaceMovesLineError,
@@ -380,6 +381,7 @@ export function createPdfiumHandlers({
         }
         if (error instanceof TextNotInPlaceError) return failed('text-not-in-place');
         if (error instanceof NothingToReplaceError) return failed('nothing-to-replace');
+        if (error instanceof BlockUnchangedError) return failed('text-unchanged');
         if (error instanceof ReplaceMovesLineError) return failed('replace-moves-line');
         return refusedBy(error);
       }

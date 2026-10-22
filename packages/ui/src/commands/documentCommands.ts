@@ -4920,7 +4920,7 @@ async function sendBlockEdit(
   inserts: PageInsert[] = [],
 ): Promise<BlockCommit> {
   /** Set by the hook below to what the editor says: the signatures question left unanswered, or the refusal. */
-  const kept: { outcome: Exclude<BlockCommit, 'written' | 'unchanged'> | undefined } = { outcome: undefined };
+  const kept: { outcome: Exclude<BlockCommit, 'written'> | undefined } = { outcome: undefined };
   const applied = await applyDocumentCommand(
     deps,
     docId,
@@ -4939,10 +4939,14 @@ async function sendBlockEdit(
       keep: (error) => {
         // A FAILURE THAT CARRIES SOMETHING passes whole, so the editor can name the characters or show the reference.
         // HELD, too, for memory that ran out (ADR-0253): the person was told in its own window and chose not to try again.
+        // AND UNCHANGED where the writer found its blocks already say the words, and nothing else was asked (ADR-0260): the
+        // editor closes as on its own judgement, with no sentence and no new version.
         kept.outcome =
-          error.code === 'breaks-signatures' || error.code === 'out-of-memory'
-            ? 'held'
-            : { refused: 'detail' in error || error.code === 'internal' ? error : { code: error.code } };
+          error.code === 'text-unchanged'
+            ? 'unchanged'
+            : error.code === 'breaks-signatures' || error.code === 'out-of-memory'
+              ? 'held'
+              : { refused: 'detail' in error || error.code === 'internal' ? error : { code: error.code } };
         return true;
       },
     },

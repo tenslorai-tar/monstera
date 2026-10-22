@@ -54,6 +54,7 @@ import {
 import { type Alignment, blockShape, paragraphSpacing } from './paragraphShape.js';
 import { type ProgramFace, faceOf, programFace } from './fontFace.js';
 import { BOX } from './boxFont.js';
+import { sentAsShown } from './blockAsShown.js';
 import { faceProgramApart } from './faceProgramApart.js';
 import { type PathGlyph, type PathStep, pathFontFor } from './pathFont.js';
 import type { DrawnGlyph } from './runFont.js';
@@ -85,7 +86,13 @@ import type {
 } from './presentationContent.js';
 import { readingOrder, rightToLeftCount } from './readingOrder.js';
 import { type RunBox, replacementsMovingTheirLine } from './replaceLineRule.js';
-import { EditRefusedError, ReplaceMovesLineError, TextNotWritableError, unwritableCharacters } from './textEditRefusals.js';
+import {
+  BlockUnchangedError,
+  EditRefusedError,
+  ReplaceMovesLineError,
+  TextNotWritableError,
+  unwritableCharacters,
+} from './textEditRefusals.js';
 import { readInLineOrder } from './bidiLine.js';
 import { type Orientation, isEditedInPlace, lineBaselineOf } from './textLines.js';
 import { type JoinedRun, joinRuns, membersOf } from './textRunJoin.js';
@@ -3773,11 +3780,15 @@ function layOutBlocks(
         // closed and its changes go with it.
         if (mode === 'trial') return { fits, boxed: [], pushed };
 
+        // NOTHING TO WRITE, which the writer itself splits in two (ADR-0260): regenerating a page's content stream is the
+        // whole cost of an edit, and this one would change nothing. Where every block was sent the words the page already
+        // shows for its runs, by the renderer's own join, and nothing else, it is an answer and the editor closes. Where
+        // the words or anything else about them differed, the person asked for a change none of which was written: the
+        // refusal, so the editor keeps what was typed rather than closing over it.
         if (written.length === 0 && removed.length === 0 && !placed && inserts.length === 0) {
-          throw new Error(
-            `A block edit on page ${String(page)} changed nothing. Regenerating a page's content ` +
-              'stream is the whole cost of an edit, and this one would change nothing.',
-          );
+          const shown = new Map(blocks.flatMap((block) => block.lines.flat().map((run) => [run.index, run.text] as const)));
+          if (sentAsShown(given, (run) => shown.get(run))) throw new BlockUnchangedError();
+          throw refusedAt('set-text', `A block edit on page ${String(page)} asked for a change and wrote none of it`);
         }
 
         for (const object of removed) {

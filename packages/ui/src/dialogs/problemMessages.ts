@@ -34,6 +34,7 @@ import {
   FIELD_EDIT_OPTIONS_RADIO_LABELS,
   NOTHING_TO_REPLACE,
   REPLACE_MOVES_LINE,
+  TEXT_UNCHANGED,
   PROBLEM_SERVICE_ADDRESS,
   PROBLEM_SERVICE_NO_KEY,
   PROBLEM_SERVICE_REFUSED,
@@ -77,6 +78,7 @@ export type CommandProblem =
   | { readonly code: 'text-not-in-place' }
   | { readonly code: 'nothing-to-replace' }
   | { readonly code: 'replace-moves-line' }
+  | { readonly code: 'text-unchanged' }
   | { readonly code: 'edit-refused'; readonly detail: FailureDetails['edit-refused'] }
   | { readonly code: 'field-edit-refused'; readonly detail: FailureDetails['field-edit-refused'] }
   | { readonly code: 'copy-absent' }
@@ -195,6 +197,7 @@ const CODE_MESSAGE: Readonly<Record<Exclude<CommandProblem['code'], 'edit-refuse
   'text-not-in-place': TEXT_NOT_IN_PLACE,
   'nothing-to-replace': NOTHING_TO_REPLACE,
   'replace-moves-line': REPLACE_MOVES_LINE,
+  'text-unchanged': TEXT_UNCHANGED,
   'copy-absent': PROBLEM_COPY_ABSENT,
   'copy-at-capacity': PROBLEM_COPY_AT_CAPACITY,
   'copy-busy': PROBLEM_COPY_BUSY,

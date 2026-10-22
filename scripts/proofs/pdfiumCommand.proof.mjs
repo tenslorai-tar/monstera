@@ -143,7 +143,7 @@ const specs = await import('../../packages/kernel/dist/pdfiumSpecs.js');
 // OVER BYTES THAT OPEN WITH NO PASSWORD, as every fixture here but the encrypted one does (`withNoPassword`).
 const localPdfiumExecution = withNoPassword(specs.localPdfiumExecution);
 const { declaredCommands } = await import('../../packages/kernel/dist/commandDeclarations.js');
-const { EditRefusedError } = await import('../../packages/kernel/dist/textEditRefusals.js');
+const { BlockUnchangedError, EditRefusedError } = await import('../../packages/kernel/dist/textEditRefusals.js');
 const { HeldPassword } = await import('../../packages/shared/dist/index.js');
 // THE CATALOGUE AN EDIT SETS A WORD IN, bound as `pdfiumHostEntry.ts` binds it (ADR-0173).
 const { bindEditFaces } = await import('../../packages/kernel/dist/editFaces.js');
@@ -267,7 +267,7 @@ const failures = [];
 // THE COUNT IS MOVED ONLY WITH THE CASES IT COUNTS, and the commit that moves it names the cases it adds or removes. A
 // running ledger of the count was kept here until 2026-10-17 and had stopped at 246 against 274 (VVVVVVV-23): a second
 // copy of the history git already holds, which nothing compared with the count.
-const roster = createRoster(failures, { cases: 296 });
+const roster = createRoster(failures, { cases: 299 });
 
 /**
  * @param {string} name
@@ -569,6 +569,7 @@ async function main() {
   await fontChangeCases();
   await restyledRowCases();
   await doubleSpaceRestyleCases();
+  await unchangedBlockCases();
   await keptSpacingCases();
   await keptMeasureCases();
   await gapSpacedCases();
@@ -1012,6 +1013,66 @@ async function keptSpacingCases() {
     plainAfter.same && Math.abs(plainAfter.extra) < 1.5,
     `${JSON.stringify(plainAfter.text)}: ${plainAfter.extra.toFixed(2)} pt added`,
   );
+}
+
+/**
+ * A block edit the writer plans nothing for is an answer or a refusal, never a plain error (ADR-0260): the text walk's
+ * step 9 reached the person as *internal* with the editor stuck. Each case is built from the page's own reading, so the
+ * words sent are exactly the ones the writer diffs against, and each asserts the CLASS that is thrown, because a plain
+ * `Error` — what the writer threw before — passes any case that only asks whether something was refused.
+ */
+async function unchangedBlockCases() {
+  const document = await PDFDocument.create();
+  const page = document.addPage([612, 792]);
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const LINES = ['A paragraph sent back with its own words', 'is not an edit, and nothing is written.'];
+  for (const [at, line] of LINES.entries()) page.drawText(line, { x: 72, y: 690 - at * 14.4, size: 12, font });
+  const pdf = await document.save();
+  const session = await pdfiumWriter.open(pdf);
+  let lines;
+  try {
+    lines = groupIntoBlocks((await textRuns(session, 0)).runs.map((run) => ({ ...run, setting: settingOf(run.style) })))[0]?.lines ?? [];
+  } finally {
+    await pdfiumWriter.close(session);
+  }
+  const words = paragraphsOfLines(lines.map((line) => ({ text: lineText(line.runs), soft: line.soft })));
+  /** @param {string} text @param {readonly { from: number; to: number; set: Record<string, unknown> }[]} marks */
+  const sent = (text, marks) =>
+    localPdfiumExecution
+      .apply({
+        session: pdf,
+        command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+          kind: 'editTextBlock',
+          page: 0,
+          ...blockEditOf([{ lines: lines.map((line) => line.runs.map((run) => run.index)), soft: lines.map((line) => line.soft), text, marks }]),
+          fit: 'reflow',
+          version: 1,
+        }),
+        sources: [],
+        reads: undefined,
+      })
+      .then(
+        () => 'written',
+        (/** @type {unknown} */ error) =>
+          error instanceof BlockUnchangedError
+            ? 'unchanged'
+            : error instanceof EditRefusedError
+              ? `refused at ${error.step}`
+              : `threw ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`,
+      );
+
+  const same = await sent(words, []);
+  record(
+    'a block sent the words the page already shows answers BlockUnchangedError: the editor closes',
+    lines.length === 2 && same === 'unchanged',
+    `${String(lines.length)} lines read; ${same}`,
+  );
+  // THE SAME WORDS with a mark that sets nothing: the plan writes nothing, and on the words alone it is unchanged.
+  const marked = await sent(words, [{ from: 0, to: 9, set: {} }]);
+  record('the same words with a mark that sets nothing answer BlockUnchangedError too', marked === 'unchanged', marked);
+  // CONTROL: one word changed is written, so the cases above are not a writer that writes nothing at all.
+  const changed = await sent(words.replace('nothing', 'nothing new'), []);
+  record('CONTROL: the same block with one word added is written', changed === 'written', changed);
 }
 
 async function doubleSpaceRestyleCases() {
@@ -4085,11 +4146,13 @@ async function placeCases() {
   }
 
   // A PLACEMENT THAT PLACES NOTHING is no edit.
+  // BY ITS CLASS (ADR-0260): `BlockUnchangedError` is the answer the editor closes on, where a message a plain `Error`
+  // carried was asserted until then and was what reached the person as *internal*.
   const nothing = await send([entry(upper, { scale: 1, move: { x: 0, y: 0 } })]).then(
     () => 'wrote',
-    (error) => (error instanceof Error ? error.message : String(error)),
+    (error) => (error instanceof BlockUnchangedError ? 'unchanged' : error instanceof Error ? `${error.name}: ${error.message}` : String(error)),
   );
-  record('a place that moves, scales and turns nothing changes nothing, and the edit says so', nothing.includes('changed nothing'), nothing);
+  record('a place that moves, scales and turns nothing changes nothing, and the edit says so', nothing === 'unchanged', nothing);
 
   // WIDTH: the block laid out again at a new measure.
   const narrow = await send([entry(upper, { width: 60 })]);
@@ -5634,11 +5697,12 @@ async function formatCases() {
     reads: undefined,
   }).then(
     () => 'wrote',
-    (error) => (error instanceof Error ? error.message : String(error)),
+    // BY ITS CLASS (ADR-0260), for the place case's reason above.
+    (error) => (error instanceof BlockUnchangedError ? 'unchanged' : error instanceof Error ? `${error.name}: ${error.message}` : String(error)),
   );
   record(
     'a mark that restates what its words already are changes nothing, so the edit says so and writes nothing',
-    doubly.includes('changed nothing'),
+    doubly === 'unchanged',
     doubly,
   );
 

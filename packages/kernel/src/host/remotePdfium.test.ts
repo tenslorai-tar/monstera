@@ -5,7 +5,7 @@ import { createClient } from '@monstera/contract';
 import { HeldPassword } from '@monstera/shared';
 
 import type { ByteImage, ImageSession } from '../engineSeam.js';
-import { NothingToReplaceError, ReplaceMovesLineError, TextNotInPlaceError } from '../textEditRefusals.js';
+import { BlockUnchangedError, NothingToReplaceError, ReplaceMovesLineError, TextNotInPlaceError } from '../textEditRefusals.js';
 import { EngineCallFailed, EngineSessionGone, type SessionArea } from './remoteEngine.js';
 import { EngineSerialiseMismatch } from './remoteLifecycle.js';
 import { pdfiumChannels } from './pdfiumChannels.js';
@@ -360,6 +360,11 @@ describe('main’s PDFium writer', () => {
     const moving = apply();
     await expect(moving).rejects.toBeInstanceOf(ReplaceMovesLineError);
     await expect(moving).rejects.not.toBeInstanceOf(NothingToReplaceError);
+    // AND A BLOCK EDIT WHOSE BLOCKS ALREADY SAY ITS WORDS (ADR-0260) is its own class, the answer the editor closes on.
+    code = 'text-unchanged';
+    const unchanged = apply();
+    await expect(unchanged).rejects.toBeInstanceOf(BlockUnchangedError);
+    await expect(unchanged).rejects.not.toBeInstanceOf(NothingToReplaceError);
   });
 
   it('refuses an answer whose count disagrees with the file that arrived', async () => {

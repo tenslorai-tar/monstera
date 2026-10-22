@@ -17,7 +17,7 @@ import type { CaptureResult, CommandPrior } from '../commandLog.js';
 import { declaredCommands } from '../commandDeclarations.js';
 import { type MupdfSession, NO_BOXES, type PreReadValue } from '../engineSeam.js';
 import type { PageRuns } from '../operatorEdit.js';
-import { EditRefusedError, TextNotWritableError } from '../textEditRefusals.js';
+import { BlockUnchangedError, EditRefusedError, TextNotWritableError } from '../textEditRefusals.js';
 import type { NextSave } from '../mupdfWriter.js';
 import type { DuplicatePageGroup } from '../pageDuplicates.js';
 import type { PageGeometryReader } from '../pageGeometry.js';
@@ -1013,6 +1013,7 @@ export function remoteMupdfExecution(
         if (!result.ok && result.error.code === 'edit-refused') {
           throw new EditRefusedError(result.error.detail.step, result.error.detail.engineError, 'the MuPDF host refused the operator edit');
         }
+        if (!result.ok && result.error.code === 'text-unchanged') throw new BlockUnchangedError();
         // THE BOXES THE HOST CAPPED, passed on whole: the bus hands them to `document.execute` (ADR-0177 Decision 7).
         return answered('engine/apply-file', result);
       }

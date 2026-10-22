@@ -17,7 +17,7 @@ import { cappedBoxes } from '@monstera/contract/host';
 import type { KindsRoutedTo } from '../commandRouting.js';
 import type { CommandExecution } from '../commandSpecs.js';
 import type { ByteImage, DocumentAccess, DrawnBoxes, EngineWriter, MupdfSession, PreReadValue } from '../engineSeam.js';
-import { EditRefusedError, TextNotWritableError } from '../textEditRefusals.js';
+import { BlockUnchangedError, EditRefusedError, TextNotWritableError } from '../textEditRefusals.js';
 // A VALUE IMPORT for the same reason the two below it are: `DocumentLocked` is
 // how this handler tells an encrypted document from an unreadable one, and the
 // alternative was keying on the wording of an error message. `engineSeam.ts`
@@ -1490,6 +1490,7 @@ export function createEngineHandlers({
         if (error instanceof EditRefusedError) {
           return { ok: false, error: { code: 'edit-refused', detail: { step: error.step, engineError: error.engineError } } } as const;
         }
+        if (error instanceof BlockUnchangedError) return { ok: false, error: { code: 'text-unchanged' } } as const;
         throw error;
       }
       // THE ONE CAP (`cappedBoxes`), which the PDFium host's answer takes too: two would cut a list two ways.
