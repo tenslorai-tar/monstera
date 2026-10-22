@@ -1436,6 +1436,15 @@ writer tools, stamps and signatures. It is dropped when the page presents a newe
 task as the pixels; a moved or erased mark is left out of the view the gesture began on. Comment › Image, whose picture
 the renderer never holds, is the stated exception.
 
+**A page command is shown at once from the pages already drawn** (amended 2026-10-23,
+[ADR-0261](DECISIONS/0261-a-page-command-is-shown-at-once-from-the-pages-already-drawn.md)). A rotate, move, swap or
+delete becomes a page PLAN at dispatch — which page of the view on screen each slot shows, at what rotation — built by
+one pure function (`pagePlan.ts`) and held by one holder per document; the main view, the strip and Organize draw it
+from the view they hold, until the page shows the version the command produced. While a plan is in force a slot's
+rotation is the plan's, never the view model's at the store's version, whose pages are not the view's. Undo and redo
+are planned from the inverse, except an undo of a delete. A field's design change is held as a look over the page
+drawn without the widget; Edit text's committed words stay in the editor until the page draws them.
+
 **That list read `begin`, `update`, `commit → Command`, `cancel` until
 2026-09-06, and three of its four entries were false** — found by the stage
 audit at `909c388`, not by any check. `cancel` is deliberately **not** a member
@@ -3174,6 +3183,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-10-23 | **A page command is shown at once from the pages already drawn** (§6). The owner's N1: rotate, move and delete took 0.5–0.9 s to show, a field design change 0.7 s and an Edit text commit 1.0 s, because nothing was drawn before the page drew the new version. A page plan made at dispatch is drawn from the view on screen and handed over by ADR-0257's rule; a field's design is held as a look; the editor's words stay until the page draws them. | ADR-0257's scope (Comment marks only) | [0261](DECISIONS/0261-a-page-command-is-shown-at-once-from-the-pages-already-drawn.md) |
 | 2026-10-21 | **A push button runs an ordered list of standard actions, each by the route that already owns it** (invariant 24; §9's network rule; the contract's push-button action). The owner's R22: a button's Action offered only *None* and *Reset the form*. A button now carries actions per trigger (mouse up, down, enter, leave) — go to a page, a web link, reset, show or hide fields, print, import form data, submit, open a file — written as the standard's own actions; a press names the button and the step, and the kernel or `main` reads the action from the document; whatever leaves the machine or opens something asks first; a submission is POSTed through ADR-0061's guard. Scripts and `Launch` are kept and never run. Rejected: running scripts, `Launch`, the renderer naming an address or a path, a second reset, attaching data to an email (nothing here binds Simple MAPI), one command for a whole press | the push button's one `buttonAction`, none or reset (the owner's F7, no ADR) | [0259](DECISIONS/0259-a-push-button-runs-an-ordered-list-of-standard-actions-each-by-the-route-that-owns-it.md) |
 | 2026-10-21 | **The status bar's start says only what the tool in hand does; tips are withdrawn** (§7's registry table, its Settings row and its status bar clause). The owner's R24: with Highlight area on, the line read the tool's instruction, *Esc gets you out*, and then *"Redo: press Ctrl+Y."*, a tip about something else read as part of the instruction. The status bar was the tips' only place, so the tips registry, its round and switch, and `background?` on a setting, which only the round declared, are removed rather than left with no reader. | the 2026-10-04 rows below that registered tips and `background?` | ADR-0159, 0160 (each with a correction of 2026-10-21) |
 | 2026-10-21 | **The React Compiler is switched on** (the renderer's build). The owner's R19, app-wide: each command's answer moved its document's version and rendered the whole shell — one 53 ms render on an erasure, the rest of the work every child of `App` rendering again. ADR-0004's pin of the compiler is now run; with it, the React work per erasure fell from a median of about 170 ms to about 95. | ADR-0004's unused pin | [0258](DECISIONS/0258-the-react-compiler-is-switched-on.md) |
