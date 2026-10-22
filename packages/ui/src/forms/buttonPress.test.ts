@@ -28,9 +28,11 @@ function pressing(
   const said: MessageKey[] = [];
   /** Every route a step took, in the order it took it. */
   const routes: unknown[] = [];
+  /** The document's version as `main` holds it: an import moves it by a route the press does not hold. */
+  let current = READ_AT;
   const deps = {
     client: {
-      'document.buttonActions': () => Promise.resolve(ok({ version: READ_AT, steps })),
+      'document.buttonActions': () => Promise.resolve(ok({ version: current, steps })),
       'document.openButtonLink': (params: unknown) => {
         routes.push({ open: params });
         return Promise.resolve(ok({ kind: 'opened' as const }));
@@ -50,6 +52,7 @@ function pressing(
     },
     run: (id: string) => {
       routes.push({ run: id });
+      if (id === 'document.import-form-data-fdf') current = asDocVersion(40);
       return Promise.resolve();
     },
     toast: (_kind: 'done' | 'problem', message: MessageKey) => {
@@ -123,6 +126,14 @@ describe('pressing a push button', () => {
     const { deps, routes } = pressing([reset('up', 0), { trigger: 'up', step: 1, action: { kind: 'print' } }]);
     await pressButton(deps, DOC, { ...BUTTON, trigger: 'up' });
     expect(routes).toStrictEqual([{ apply: 0 }, { run: 'document.print' }]);
+  });
+
+  it('imports by running the application’s own Import form data, and sends the next step at the version the import made', async () => {
+    const { deps, routes, sent } = pressing([{ trigger: 'up', step: 0, action: { kind: 'importData', file: 'answers.fdf' } }, reset('up', 1)]);
+    await pressButton(deps, DOC, { ...BUTTON, trigger: 'up' });
+    expect(routes).toStrictEqual([{ run: 'document.import-form-data-fdf' }, { apply: 1 }]);
+    // CONTROL of the reading: the reset is not sent at the version read before the import, which `main` would refuse.
+    expect(sent.map((command) => command.version)).toStrictEqual([asDocVersion(40)]);
   });
 
   it('stops at a step that did not land, since what follows was written to follow it', async () => {

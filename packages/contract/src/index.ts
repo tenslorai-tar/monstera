@@ -539,6 +539,7 @@ export {
   stepRunsAs,
   MAX_ACTION_CHAIN,
   MAX_ACTION_FIELDS,
+  MAX_ACTION_FILE,
   MAX_ACTION_SUBTYPE,
   MAX_BUTTON_ACTIONS,
   buttonActionSchema,

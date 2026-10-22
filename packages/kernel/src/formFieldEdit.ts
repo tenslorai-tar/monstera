@@ -289,6 +289,7 @@ function pdfLibActions(document: PDFDocument): ActionModel<PdfLibAction> {
         destination: destinationOfDict(document, dict.lookup(PDFName.of('D'))),
         uri: textOfValue(dict.lookup(PDFName.of('URI'))),
         named: nameOfValue(dict.lookup(PDFName.of('N'))),
+        file: fileOfValue(dict.lookup(PDFName.of('F'))),
       };
     },
     next: ({ dict }) => {
@@ -317,6 +318,12 @@ function textOfValue(value: PDFObject | undefined): string | null {
 /** A name value as text, or `null` where it is not a name. */
 function nameOfValue(value: PDFObject | undefined): string | null {
   return value instanceof PDFName ? value.decodeText() : null;
+}
+
+/** `fieldRules.ts`' `fileOf`, over pdf-lib's objects: a string, or a file specification's `/UF`, else its `/F`. */
+function fileOfValue(value: PDFObject | undefined): string | null {
+  if (!(value instanceof PDFDict)) return textOfValue(value);
+  return textOfValue(value.lookup(PDFName.of('UF'))) ?? textOfValue(value.lookup(PDFName.of('F')));
 }
 
 /** `fieldRules.ts`' `destinationOf`, over pdf-lib's objects: the page by its reference among this document's pages. */
@@ -386,12 +393,22 @@ function actionDictOf(document: PDFDocument, action: FieldAction): PDFDict {
       return document.context.obj({ S: 'URI', URI: PDFString.of(URL.canParse(action.address) ? new URL(action.address).href : action.address) });
     case 'print':
       return document.context.obj({ S: 'Named', N: 'Print' });
+    case 'importData':
+      return document.context.obj({ S: 'ImportData', F: fileSpecOf(document, action.file) });
     case 'reset':
       return document.context.obj({
         S: 'ResetForm',
         ...(action.fields === null ? {} : { Fields: action.fields.map((name) => PDFHexString.fromText(name)) }),
       });
   }
+}
+
+/**
+ * A file specification for one file beside the document (ISO 32000-1, 7.11.3): `/F` for every reader and `/UF` in
+ * Unicode, so a name that is not ASCII reads back as typed.
+ */
+function fileSpecOf(document: PDFDocument, name: string): PDFDict {
+  return document.context.obj({ Type: 'Filespec', F: PDFString.of(name), UF: PDFHexString.fromText(name) });
 }
 
 /** A destination's number, or the `null` the standard writes for *keep what the reader has*. */

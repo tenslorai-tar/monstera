@@ -5674,6 +5674,21 @@ export const MAX_ACTION_FIELDS = 64;
 /** The fields an action names, by fully qualified name. */
 const actionFieldsSchema = z.array(fieldNameSchema).min(1).max(MAX_ACTION_FIELDS).readonly();
 
+/** How long a file name an action writes may be: Windows' own limit for one name. */
+export const MAX_ACTION_FILE = 255;
+
+/**
+ * A file an action names, as this build writes it: ONE NAME, with no folder and no `..`, so it can only mean a file
+ * beside the document. A document's own path to somewhere else is read as kept (ADR-0259 Decision 5).
+ */
+const actionFileSchema = z
+  .string()
+  .min(1)
+  .max(MAX_ACTION_FILE)
+  .refine((name) => !/[/\\:]/u.test(name) && name !== '.' && name !== '..', {
+    message: 'an action names one file beside the document, with no folder in its name',
+  });
+
 /**
  * One action a push button runs, as this build writes it (ADR-0259 Decision 2): each is the standard's own action, so
  * any reader runs it, and each runs here by the route that already owns what it does.
@@ -5732,12 +5747,23 @@ export const fieldActionSchema = z.discriminatedUnion('kind', [
       kind: z.literal('print'),
     })
     .strict(),
+  z
+    .object({
+      /**
+       * `/ImportData` (ISO 32000-1, 12.7.5.4): form data from an FDF file. A press runs the application's own *Import form
+       * data (FDF)*, so the person picks the file; `file` is the name the standard requires and other readers look for
+       * beside the document, and Monstera never opens a path a document names.
+       */
+      kind: z.literal('importData'),
+      file: actionFileSchema,
+    })
+    .strict(),
 ]);
 /** See {@link fieldActionSchema}. */
 export type FieldAction = z.infer<typeof fieldActionSchema>;
 
 /** Every kind {@link fieldActionSchema} holds, once, for a schema that names one. */
-export const FIELD_ACTION_KINDS = ['goTo', 'link', 'reset', 'print'] as const satisfies readonly FieldAction['kind'][];
+export const FIELD_ACTION_KINDS = ['goTo', 'link', 'reset', 'print', 'importData'] as const satisfies readonly FieldAction['kind'][];
 /** The two lists hold the same kinds: a kind added to the union and not here is a compile error. */
 type MissingActionKind = Exclude<FieldAction['kind'], (typeof FIELD_ACTION_KINDS)[number]>;
 const ACTION_KINDS_COMPLETE: [MissingActionKind] extends [never] ? true : never = true;

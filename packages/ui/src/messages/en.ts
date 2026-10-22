@@ -1901,6 +1901,10 @@ export const BUTTON_ACTION_ADDRESS_HTTPS = messageKey('surface.field-properties.
 export const BUTTON_SUMMARY_LINK = messageKey('surface.field-properties.button-summary-link');
 export const BUTTON_ACTION_KIND_PRINT = messageKey('surface.field-properties.button-action-kind-print');
 export const BUTTON_ACTION_PRINT_NOTE = messageKey('surface.field-properties.button-action-print-note');
+export const BUTTON_ACTION_KIND_IMPORT = messageKey('surface.field-properties.button-action-kind-import');
+export const BUTTON_ACTION_FILE = messageKey('surface.field-properties.button-action-file');
+export const BUTTON_ACTION_FILE_NOTE = messageKey('surface.field-properties.button-action-file-note');
+export const BUTTON_ACTION_FILE_NAME = messageKey('surface.field-properties.button-action-file-name');
 export const BUTTON_ACTION_FIELDS_ALL = messageKey('surface.field-properties.button-action-fields-all');
 export const BUTTON_ACTION_FIELDS_CHOSEN = messageKey('surface.field-properties.button-action-fields-chosen');
 export const BUTTON_ACTION_FIELDS = messageKey('surface.field-properties.button-action-fields');
@@ -5020,6 +5024,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [BUTTON_SUMMARY_LINK]: 'Open {address}',
   [BUTTON_ACTION_KIND_PRINT]: 'Print the document',
   [BUTTON_ACTION_PRINT_NOTE]: 'The Print window opens, as it does from the ribbon. Nothing is printed until Print is chosen there.',
+  [BUTTON_ACTION_KIND_IMPORT]: 'Import form data',
+  [BUTTON_ACTION_FILE]: 'File name for other PDF readers',
+  [BUTTON_ACTION_FILE_NOTE]: 'In Monstera, pressing the button asks the person to choose an FDF file, as Import form data does from the ribbon. Other readers look for this file beside the document.',
+  [BUTTON_ACTION_FILE_NAME]: 'Type one file name, with no folder in it.',
   [BUTTON_ACTION_FIELDS_ALL]: 'Every field',
   [BUTTON_ACTION_FIELDS_CHOSEN]: 'Only the fields ticked below',
   [BUTTON_ACTION_FIELDS]: 'Fields',

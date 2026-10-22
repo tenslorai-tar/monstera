@@ -240,6 +240,44 @@ test.describe('a push button’s actions', () => {
     expect(prints()[0]).toMatchObject({ docId: ID, pages: [[0, 2]] });
   });
 
+  test('Import form data: set in Properties with a file name, then a press opens the application’s import, which picks', async ({
+    page,
+  }) => {
+    const sent: Sent = [];
+    await openForm(page, sent);
+    const pane = await buttonProperties(page);
+    await pane.getByRole('button', { name: 'Add action' }).click();
+    await pane.getByLabel('Do', { exact: true }).selectOption('importData');
+    const file = pane.getByLabel('File name for other PDF readers');
+    const save = pane.getByRole('button', { name: 'Save action' });
+    // CONTROL: a name with a folder in it is said and cannot be saved, so the one saved below is the one typed.
+    await file.fill('C:\\answers.fdf');
+    await expect(pane.getByText('Type one file name, with no folder in it.')).toBeVisible();
+    await expect(save).toBeDisabled();
+    await file.fill('answers.fdf');
+    await save.click();
+    expect(executed(sent)).toStrictEqual([
+      {
+        kind: 'editFormFields',
+        edits: [
+          {
+            field: { page: 0, index: 1, name: 'Clear' },
+            set: { buttonActions: [{ trigger: 'up', action: { kind: 'importData', file: 'answers.fdf' } }] },
+          },
+        ],
+        version: 1,
+      },
+    ]);
+    await expect(pane.getByText('Pressed and let go: Import form data')).toBeVisible();
+
+    const imports = (): unknown[] => sent.filter((call) => call.channel === 'document.importFormData').map((call) => call.params);
+    expect(imports()).toStrictEqual([]);
+    await page.locator('[data-form-field="1"]').click();
+    // THE APPLICATION'S IMPORT, whose picker is main's: the request names the format, never the file the document holds.
+    await expect.poll(() => imports().length).toBe(1);
+    expect(imports()[0]).toStrictEqual({ docId: ID, format: 'fdf' });
+  });
+
   /**
    * Pressed, then the text field filled: the fill is what arrives, so "nothing else was sent" is read after something
    * that WAS, never as an absence that waiting longer might have changed.

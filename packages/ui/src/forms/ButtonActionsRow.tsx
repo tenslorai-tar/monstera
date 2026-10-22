@@ -9,9 +9,11 @@ import {
   type FieldActionTrigger,
   type FormFieldHandle,
   MAX_ACTION_FIELDS,
+  MAX_ACTION_FILE,
   MAX_BUTTON_ACTIONS,
   MAX_LINK_URI,
   buttonActionSchema,
+  fieldActionSchema,
 } from '@monstera/contract';
 import type { DocVersion, MessageKey } from '@monstera/shared';
 import { type ReactElement, useEffect, useId, useState } from 'react';
@@ -30,11 +32,15 @@ import {
   BUTTON_ACTION_FIELDS_ALL,
   BUTTON_ACTION_FIELDS_CHOSEN,
   BUTTON_ACTION_FIELDS_LIMIT,
+  BUTTON_ACTION_FILE,
+  BUTTON_ACTION_FILE_NAME,
+  BUTTON_ACTION_FILE_NOTE,
   BUTTON_ACTION_FULL,
   BUTTON_ACTION_KEPT_ROW,
   BUTTON_ACTION_ADDRESS,
   BUTTON_ACTION_ADDRESS_HTTPS,
   BUTTON_ACTION_KIND_GO_TO,
+  BUTTON_ACTION_KIND_IMPORT,
   BUTTON_ACTION_KIND_LINK,
   BUTTON_ACTION_KIND_PRINT,
   BUTTON_ACTION_KIND_RESET,
@@ -78,6 +84,7 @@ const KIND_LABELS: Readonly<Record<FieldAction['kind'], MessageKey>> = {
   link: BUTTON_ACTION_KIND_LINK,
   reset: BUTTON_ACTION_KIND_RESET,
   print: BUTTON_ACTION_KIND_PRINT,
+  importData: BUTTON_ACTION_KIND_IMPORT,
 };
 
 /** A go-to's view in words. Total, for the trigger's reason. */
@@ -98,6 +105,8 @@ function freshAction(kind: FieldAction['kind']): FieldAction {
       return { kind: 'reset', fields: null };
     case 'print':
       return { kind: 'print' };
+    case 'importData':
+      return { kind: 'importData', file: 'form data.fdf' };
   }
 }
 
@@ -115,6 +124,8 @@ function summaryOf(action: FieldAction, say: (key: MessageKey, values?: Record<s
       return say(BUTTON_SUMMARY_LINK, { address: action.address });
     case 'print':
       return say(BUTTON_ACTION_KIND_PRINT);
+    case 'importData':
+      return say(BUTTON_ACTION_KIND_IMPORT);
     case 'reset':
       return action.fields === null ? say(BUTTON_SUMMARY_RESET_ALL) : say(BUTTON_SUMMARY_RESET_SOME, { count: action.fields.length });
   }
@@ -429,7 +440,47 @@ function ActionDetails({
       );
     case 'print':
       return <PrintNote />;
+    case 'importData':
+      return <ImportDetails action={action} onChange={onChange} />;
   }
+}
+
+/**
+ * Import form data's file name, which only another reader opens: here a press asks the person to pick, so the note says
+ * so. A name the contract refuses (a folder in it, or none) is said and cannot be saved.
+ */
+function ImportDetails({
+  action,
+  onChange,
+}: {
+  readonly action: Extract<FieldAction, { kind: 'importData' }>;
+  readonly onChange: (action: FieldAction) => void;
+}): ReactElement {
+  const { i18n } = useLingui();
+  const id = useId();
+  const valid = fieldActionSchema.safeParse(action).success;
+  return (
+    <>
+      <div className="m-properties__row">
+        <label className="m-properties__label" htmlFor={id}>
+          {i18n._(BUTTON_ACTION_FILE)}
+        </label>
+        <input
+          aria-invalid={!valid}
+          className="m-properties__comment"
+          id={id}
+          maxLength={MAX_ACTION_FILE}
+          onChange={(event) => {
+            onChange({ kind: 'importData', file: event.target.value });
+          }}
+          type="text"
+          value={action.file}
+        />
+      </div>
+      {valid ? null : <p className="m-properties__meta">{i18n._(BUTTON_ACTION_FILE_NAME)}</p>}
+      <p className="m-properties__meta">{i18n._(BUTTON_ACTION_FILE_NOTE)}</p>
+    </>
+  );
 }
 
 /** Print needs nothing more: what it does is said, so the person knows a press asks before anything prints. */

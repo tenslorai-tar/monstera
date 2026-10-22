@@ -315,3 +315,41 @@ describe('Print the document, as a push button action (ADR-0259)', () => {
     ]);
   });
 });
+
+describe('Import form data, as a push button action (ADR-0259)', () => {
+  /** `/F` of the widget's `/A`, read from MuPDF's raw objects: the file specification's `/F` and `/UF`. */
+  function fileRead(bytes: Uint8Array, name: string): { subtype: string; f: string; uf: string } {
+    const pdf = mupdf.Document.openDocument(bytes, 'application/pdf').asPDF();
+    if (pdf === null) throw new Error('not a PDF');
+    const page = pdf.loadPage(0);
+    if (!(page instanceof mupdf.PDFPage)) throw new Error('not a PDF page');
+    const widget = page.getWidgets().find((each) => each.getName() === name);
+    if (widget === undefined) throw new Error(`MuPDF reads no widget named ${name}`);
+    const action = widget.getObject().get('A');
+    return { subtype: action.get('S').asName(), f: action.get('F', 'F').asString(), uf: action.get('F', 'UF').asString() };
+  }
+
+  it('is written as /ImportData naming the file in /F and /UF, and reads back as written', async () => {
+    const bytes = await written(await buttonForm(), 'go', [{ trigger: 'up', action: { kind: 'importData', file: 'réponses.fdf' } }]);
+    expect(fileRead(bytes, 'go')).toStrictEqual({ subtype: 'ImportData', f: 'réponses.fdf', uf: 'réponses.fdf' });
+    const handle = await handleOf(bytes, 'go');
+    expect(await onSession(bytes, (session) => readButtonActions(session, handle))).toStrictEqual([
+      { trigger: 'up', step: 0, action: { kind: 'importData', file: 'réponses.fdf' } },
+    ]);
+  });
+
+  it('CONTROL: a file named by a path is kept, and still runs as an import the person picks for', async () => {
+    const elsewhere = await withAction(await buttonForm(), 'go', (document) =>
+      document.context.obj({ S: 'ImportData', F: PDFString.of('C:\\Users\\someone\\answers.fdf') }),
+    );
+    const handle = await handleOf(elsewhere, 'go');
+    expect(await onSession(elsewhere, (session) => readButtonActions(session, handle))).toStrictEqual([
+      { trigger: 'up', step: 0, action: { kind: 'kept', subtype: 'ImportData', runsAs: 'importData' } },
+    ]);
+    // The positive side of the same reading: a bare name is this build's own, so the kept answer above is the path's.
+    const named = await withAction(await buttonForm(), 'go', (document) => document.context.obj({ S: 'ImportData', F: PDFString.of('answers.fdf') }));
+    expect(await onSession(named, async (session) => readButtonActions(session, await handleOf(named, 'go')))).toStrictEqual([
+      { trigger: 'up', step: 0, action: { kind: 'importData', file: 'answers.fdf' } },
+    ]);
+  });
+});

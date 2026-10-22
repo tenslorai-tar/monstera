@@ -30,7 +30,7 @@ export interface ButtonPressDeps {
  * The application's own commands a button's action is (ADR-0259 Decision 2): what a press does is what the person would
  * do from the ribbon, with the same dialogs, so the action never prints or imports by a second route.
  */
-export type ButtonCommandId = 'document.print';
+export type ButtonCommandId = 'document.print' | 'document.import-form-data-fdf';
 
 /**
  * The zoom a go-to asks for (ISO 32000-1, table 151): the whole page, the page's width, or an `/XYZ`'s own zoom, kept
@@ -98,6 +98,16 @@ export async function pressButton(deps: ButtonPressDeps, docId: DocId, pressed: 
         // printed without the person choosing Print there.
         await deps.run('document.print');
         break;
+      case 'importData': {
+        // THE APPLICATION'S IMPORT, whose file picker is the question: the file the document names is never opened, and
+        // nothing is filled until the person picks one. A fill moves the version through a route this press does not
+        // hold, so the button is read again and the next step is sent at what the document is now.
+        await deps.run('document.import-form-data-fdf');
+        const again = await deps.client['document.buttonActions']({ docId, field });
+        if (!again.ok) return;
+        version = again.value.version;
+        break;
+      }
       case 'reset': {
         const next = await deps.apply({ kind: 'resetForm', ...at });
         if (next === undefined) return;

@@ -94,6 +94,7 @@ const mupdfActions = (document: PDFDocument): ActionModel<PDFObject> => ({
       destination: destinationOf(document, node.get('D')),
       uri: stringOf(node.get('URI')),
       named: node.get('N').isName() ? node.get('N').asName() : null,
+      file: fileOf(node.get('F')),
     };
   },
   next: (node) => {
@@ -142,6 +143,13 @@ function destinationOf(document: PDFDocument, value: PDFObject): PlainAction['de
 /** A string entry as text, or `null` where it is not a string. */
 function stringOf(value: PDFObject): string | null {
   return value.isString() ? value.asString() : null;
+}
+
+/** A file specification as text (ISO 32000-1, 7.11): a string, or a dictionary's `/UF`, else its `/F`. */
+function fileOf(value: PDFObject): string | null {
+  if (value.isString()) return value.asString();
+  if (!value.isDictionary()) return null;
+  return stringOf(value.get('UF')) ?? stringOf(value.get('F'));
 }
 
 /** `/Fields` as names, at most one past {@link MAX_ACTION_FIELDS}, or `unreadable` where an entry names no field. */
