@@ -32,13 +32,16 @@
  * Usage: node scripts/lib/boardStatus.proof.mjs
  */
 
-import { boardTarget, boardVerdict, onceWithoutVerdict, parseRuns, pollDelaySeconds } from './boardStatus.mjs';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+import { boardTarget, boardVerdict, onceWithoutVerdict, parseRuns, pollDelaySeconds, readAnswer } from './boardStatus.mjs';
 import { createRoster } from './passRoster.mjs';
 import { formatError } from './reportError.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 33 });
+const roster = createRoster(failures, { cases: 45 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -71,6 +74,17 @@ function payload(runs) {
   return { workflow_runs: runs };
 }
 
+/**
+ * A payload's verdict, through the parse — `boardVerdict` takes runs, so a payload reaches it the way the shell's
+ * readable answers do.
+ *
+ * @param {unknown} body
+ * @param {Parameters<typeof boardVerdict>[1]} options
+ */
+function verdictOf(body, options) {
+  return boardVerdict(parseRuns(body), options);
+}
+
 /** Both workflows at MINE, both finished. */
 const bothDone = payload([
   run({ name: 'Guards', runNumber: 161 }),
@@ -87,15 +101,15 @@ const halfDone = payload([
 
 check(
   'both workflows completed reads as COMPLETE',
-  boardVerdict(bothDone, { sha: MINE }).verdict === 'complete',
-  `got ${boardVerdict(bothDone, { sha: MINE }).verdict}. Two rows for the pushed sha, both ` +
+  verdictOf(bothDone, { sha: MINE }).verdict === 'complete',
+  `got ${verdictOf(bothDone, { sha: MINE }).verdict}. Two rows for the pushed sha, both ` +
     `completed, is the only state that means the board has answered.`,
 );
 
 check(
   'one still running reads as PENDING, not complete',
-  boardVerdict(halfDone, { sha: MINE }).verdict === 'pending',
-  `got ${boardVerdict(halfDone, { sha: MINE }).verdict}. The concurrency group cancels an ` +
+  verdictOf(halfDone, { sha: MINE }).verdict === 'pending',
+  `got ${verdictOf(halfDone, { sha: MINE }).verdict}. The concurrency group cancels an ` +
     `IN-PROGRESS run when the next push lands, so treating a started run as an answer is how a ` +
     `commit ends up with a cancelled verdict instead of one.`,
 );
@@ -104,7 +118,7 @@ check(
 // nothing, and so does querying before the runs register.
 check(
   'a sha with no runs reads as BLIND, never as pending',
-  boardVerdict(payload([run({ sha: OTHER }), run({ sha: OTHER, name: 'CI' })]), {
+  verdictOf(payload([run({ sha: OTHER }), run({ sha: OTHER, name: 'CI' })]), {
     sha: MINE,
   }).verdict === 'blind',
   'zero rows for the pushed sha is a broken lookup. Reporting it as "not started" is the ' +
@@ -114,7 +128,7 @@ check(
 
 check(
   'ONE row where two were expected is BLIND, not half-done',
-  boardVerdict(payload([run({ name: 'Guards' })]), { sha: MINE }).verdict === 'blind',
+  verdictOf(payload([run({ name: 'Guards' })]), { sha: MINE }).verdict === 'blind',
   'a page that does not reach far enough truncates the second workflow, and one row of two ' +
     'looks exactly like "the other has not started". The count is the control.',
 );
@@ -128,8 +142,8 @@ check(
 {
   /** @type {Map<number, number>} */
   const seen = new Map();
-  const first = boardVerdict(bothDone, { sha: MINE, seen });
-  const cached = boardVerdict(halfDone, { sha: MINE, seen });
+  const first = verdictOf(bothDone, { sha: MINE, seen });
+  const cached = verdictOf(halfDone, { sha: MINE, seen });
 
   check(
     'a payload showing a completed run as in_progress reads as STALE',
@@ -142,7 +156,7 @@ check(
 
   check(
     'CONTROL: without the earlier observation the same payload is merely PENDING',
-    boardVerdict(halfDone, { sha: MINE, seen: new Map() }).verdict === 'pending',
+    verdictOf(halfDone, { sha: MINE, seen: new Map() }).verdict === 'pending',
     'the stale verdict must come from the REGRESSION and not from the payload itself, or the ' +
       'case above is satisfied by any in-progress board and proves nothing about freshness.',
   );
@@ -195,7 +209,7 @@ check(
 
 check(
   'an unrecognised status reads as BLIND, not as unfinished',
-  boardVerdict(
+  verdictOf(
     payload([run({ status: 'hibernating', conclusion: null }), run({ name: 'CI' })]),
     { sha: MINE },
   ).verdict === 'blind',
@@ -218,7 +232,7 @@ check(
 // -----------------------------------------------------------------------------
 check(
   'a CANCELLED run is not green, even beside a successful one',
-  boardVerdict(
+  verdictOf(
     payload([
       run({ name: 'CI', runNumber: 155, conclusion: 'cancelled' }),
       run({ name: 'Guards', runNumber: 161, conclusion: 'success' }),
@@ -238,7 +252,7 @@ check(
 // FIXTURE rather than to a mutation.
 check(
   'nor is a timed-out one beside a success',
-  boardVerdict(
+  verdictOf(
     payload([
       run({ name: 'CI', runNumber: 155, conclusion: 'timed_out' }),
       run({ name: 'Guards', runNumber: 161, conclusion: 'success' }),
@@ -251,7 +265,7 @@ check(
 
 check(
   'CONTROL: two successes ARE green',
-  boardVerdict(bothDone, { sha: MINE }).green === true,
+  verdictOf(bothDone, { sha: MINE }).green === true,
   'without this the cases above are satisfied by a predicate that reports nothing green, ' +
     'which is the direction rule from audit item 4 — mutate towards the answer the bug also ' +
     'produces, and check the other one too.',
@@ -259,9 +273,9 @@ check(
 
 check(
   'a verdict that could not be read is never green',
-  boardVerdict(payload([run({ sha: OTHER }), run({ sha: OTHER, name: 'CI' })]), { sha: MINE })
+  verdictOf(payload([run({ sha: OTHER }), run({ sha: OTHER, name: 'CI' })]), { sha: MINE })
     .green === false &&
-    boardVerdict(halfDone, { sha: MINE }).green === false,
+    verdictOf(halfDone, { sha: MINE }).green === false,
   'BLIND and PENDING must both report green:false. An answer nobody could read is not a ' +
     'passing one, and a caller that checks `green` without checking `verdict` must not be ' +
     'handed `true` by a board it never saw.',
@@ -271,7 +285,7 @@ check(
   'an empty sha is refused rather than matching everything',
   (() => {
     try {
-      boardVerdict(bothDone, { sha: '' });
+      verdictOf(bothDone, { sha: '' });
       return false;
     } catch {
       return true;
@@ -487,11 +501,12 @@ check(
 {
   const refused = onceWithoutVerdict({
     sha: MINE,
-    look: { kind: 'refused', status: 403, why: 'The unauthenticated quota is spent (0 left this hour).' },
+    look: { kind: 'couldNotLook', why: 'HTTP 403 — The unauthenticated quota is spent (0 left this hour).' },
   });
   check(
     'one look REFUSED (403) prints the status and the reason, and exits 2',
     refused.exitCode === 2 &&
+      refused.line.startsWith('COULD NOT LOOK at') &&
       refused.line.includes('HTTP 403') &&
       refused.line.includes('quota is spent') &&
       refused.line.includes(MINE) &&
@@ -518,6 +533,98 @@ check(
     'CONTROL: a blind look is not reported as pending — BLIND, exit 2, so 3 still means the runs exist',
     blind.exitCode === 2 && blind.line.startsWith('BLIND at') && blind.line.includes('Found 0 run(s)'),
     `got ${JSON.stringify(blind)}.`,
+  );
+}
+
+// -----------------------------------------------------------------------------
+// RECORDED API ANSWERS FROM AN INCIDENT (C3). During GitHub's Actions incident of 2026-10-22 the board printed
+// "zero runs" twice. An empty list made `parseRuns` throw — correctly — but inside the verdict, after the shell's
+// `try`, so it left the poll loop as an uncaught error and exited 1, which is NOT GREEN's code. Every answer below
+// is a body as received, unparsed, and each must come back as COULD NOT LOOK: a reason in the caller's hands, never
+// a throw and never a board state.
+// -----------------------------------------------------------------------------
+{
+  /** @param {number} status */
+  const describeRefusal = (status) => `refusal ${String(status)} described by the caller.`;
+  /** @param {number} status @param {string} text */
+  const answer = (status, text) => readAnswer({ status, text, describeRefusal });
+
+  const EMPTY = '{"total_count":0,"workflow_runs":[]}';
+  const recorded = {
+    'an empty list': answer(200, EMPTY),
+    'a count with no rows': answer(200, '{"total_count":2,"workflow_runs":[]}'),
+    'HTTP 503 with an HTML body': answer(503, '<!DOCTYPE html><html><body>Unicorn! 503</body></html>'),
+    'HTTP 500 with a JSON error': answer(500, '{"message":"Server Error"}'),
+    'a truncated body': answer(200, `{"total_count":2,"workflow_runs":[{"id":1,"head_sha":"${MINE.slice(0, 12)}`),
+    'an error body with no workflow_runs': answer(200, '{"message":"API rate limit exceeded"}'),
+    'an empty body': answer(200, ''),
+  };
+  for (const [name, read] of Object.entries(recorded)) {
+    check(
+      `${name} reads as COULD NOT LOOK, with a reason`,
+      read.kind === 'couldNotLook' && read.why.length > 0,
+      `got ${JSON.stringify(read)}. None of these is evidence about the commit; anything but could-not-look ` +
+        `either throws past the shell or scores an answer nobody read.`,
+    );
+  }
+
+  const empty = recorded['an empty list'];
+  check(
+    'the empty list says it is NOT "no runs", and the 503 is not blamed on a token',
+    empty.kind === 'couldNotLook' &&
+      empty.why.includes('not "no runs"') &&
+      recorded['HTTP 503 with an HTML body'].kind === 'couldNotLook' &&
+      /failed on its own side/u.test(
+        /** @type {{ why: string }} */ (recorded['HTTP 503 with an HTML body']).why,
+      ) &&
+      !/token is not expired|scope/u.test(/** @type {{ why: string }} */ (recorded['HTTP 503 with an HTML body']).why),
+    `got ${JSON.stringify(empty)} and ${JSON.stringify(recorded['HTTP 503 with an HTML body'])}. A 5xx used to ` +
+      `be described as a token missing a scope, which sends a person to the wrong problem during an outage.`,
+  );
+
+  const once = onceWithoutVerdict({ sha: MINE, look: { kind: 'couldNotLook', why: empty.kind === 'couldNotLook' ? empty.why : '' } });
+  check(
+    'one look at an empty list prints COULD NOT LOOK and exits 2, never the red exit 1',
+    once.exitCode === 2 && once.line.startsWith('COULD NOT LOOK at') && !once.line.startsWith('NOT GREEN'),
+    `got ${JSON.stringify(once)}.`,
+  );
+
+  // THE CONTROL: the same recorded answer through the reading this replaced. The shell parsed the body and handed it
+  // to the verdict, which parsed the runs — so the empty list THREW, out of the loop, carrying "zero runs". If this
+  // stops throwing, the fixture no longer reproduces the incident and the cases above separate nothing.
+  const oldReading = (() => {
+    try {
+      parseRuns(JSON.parse(EMPTY));
+      return null;
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+  })();
+  check(
+    'CONTROL: the old reading of the empty list throws, which is what exited 1 during the incident',
+    oldReading !== null && /no runs/u.test(oldReading),
+    `got ${JSON.stringify(oldReading)}.`,
+  );
+
+  const readable = answer(
+    200,
+    JSON.stringify(payload([run({ name: 'Guards', runNumber: 161 }), run({ name: 'CI', runNumber: 155 })])),
+  );
+  check(
+    'CONTROL: a readable answer comes back as runs, and reaches a GREEN verdict',
+    readable.kind === 'runs' && boardVerdict(readable.runs, { sha: MINE }).green,
+    `got ${JSON.stringify(readable)}. Without this, a classifier that answered could-not-look for everything ` +
+      `would satisfy every case above.`,
+  );
+
+  // The shell is where the throw escaped, and it has no proof of its own — so it is held to the classifier here. It
+  // must take `readAnswer` and must not parse a body itself.
+  const shell = readFileSync(fileURLToPath(new URL('../ci/board.mjs', import.meta.url)), 'utf8');
+  check(
+    'the shell reads every answer through readAnswer and parses no body itself',
+    /readAnswer\(\{/u.test(shell) && !/\bparseRuns\b/u.test(shell) && !/response\.json\(\)/u.test(shell),
+    'scripts/ci/board.mjs calls parseRuns or response.json(), or never calls readAnswer — the shape in which an ' +
+      'unreadable answer leaves the loop as a throw.',
   );
 }
 

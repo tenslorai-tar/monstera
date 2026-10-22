@@ -229,11 +229,15 @@ export function parseRuns(payload) {
         `refuses instead of reporting an empty board.`,
     );
   }
+  // NOT "NO RUNS", and the sentence here used to say that for this repository an empty list "is not a state that
+  // occurs". It stopped being true when the query moved to `?head_sha=`: a push GitHub has not registered yet answers
+  // `[]`, and so does an API failing open — measured twice during GitHub's Actions incident of 2026-10-22. Neither is
+  // evidence about the commit, so it is refused here and {@link readAnswer} reports it as could-not-look.
   if (runs.length === 0) {
     throw new Error(
-      `The runs payload lists zero runs. For this repository that is not a state that occurs — ` +
-        `it means the query, the URL or the credentials are wrong. Reported as a fault rather ` +
-        `than as "nothing has started yet" (audit item 4b's corollary).`,
+      `The API listed no runs at this commit. That is not "no runs": a push GitHub has not registered yet and an ` +
+        `API failing open both answer an empty list, so nothing here is evidence about the commit (audit item 4b's ` +
+        `corollary — an empty result is a broken lookup, not a clean one).`,
     );
   }
 
@@ -263,6 +267,69 @@ export function parseRuns(payload) {
       completedAt: epochMs(row['updated_at']),
     };
   });
+}
+
+/**
+ * What one HTTP answer from `/actions/runs` lets this module read: the runs, or why it could not look.
+ *
+ * ## Why every answer is classified here, before any verdict
+ *
+ * The board printed "zero runs" twice during GitHub's Actions incident of 2026-10-22, while the API answered empty
+ * lists and failures. The mechanism was not the refusal in {@link parseRuns}, which was right to refuse an empty
+ * list — it was WHERE the refusal happened. The shell's `try` covered the fetch and `response.json()`; the parse ran
+ * inside the verdict, after it. So the throw left the poll loop as an uncaught error: the process printed the
+ * payload "lists zero runs" and exited 1, which is NOT GREEN's code. An API that told us nothing read as a board that
+ * answered red, and the wait ended on its first poll instead of asking again.
+ *
+ * So the shell now receives either runs or a reason, and {@link boardVerdict} takes runs rather than a payload, so
+ * no verdict can be reached from bytes that were not read here. An error status, a body that does not parse, an
+ * error body without `workflow_runs` and an empty list are one state for this purpose — **could not look** — because
+ * none of them is evidence about the commit. An empty list is also what a push GitHub has not registered yet
+ * answers, which is why it is not a fault either: the caller asks again.
+ *
+ * The parse's own refusals are taken as the reason rather than restated: this function does not hold a second
+ * opinion about what a readable payload is (B3a), it only moves the answer to where the shell is listening.
+ *
+ * @param {{ status: number, text: string, describeRefusal: (status: number) => string }} answer
+ *   `text` is the body as received, unparsed, so a truncated one is classified here rather than thrown by the shell.
+ *   `describeRefusal` names a 401, 403 or 429 — the shell passes `describeAuthorisation`, which reads the token from
+ *   the environment and so stays out of this module.
+ * @returns {{ kind: 'runs', runs: BoardRun[] } | { kind: 'couldNotLook', why: string }}
+ */
+export function readAnswer({ status, text, describeRefusal }) {
+  if (status >= 500) {
+    return {
+      kind: 'couldNotLook',
+      why:
+        `HTTP ${String(status)} — GitHub failed on its own side (an incident or an outage). That is not a ` +
+        `token or a quota problem, and it is not a board state`,
+    };
+  }
+  if (status === 401 || status === 403 || status === 429) {
+    return { kind: 'couldNotLook', why: `HTTP ${String(status)} — ${describeRefusal(status)}` };
+  }
+  if (status < 200 || status > 299) {
+    return { kind: 'couldNotLook', why: `HTTP ${String(status)} — the API declined the query` };
+  }
+
+  /** @type {unknown} */
+  let payload;
+  try {
+    payload = JSON.parse(text);
+  } catch (error) {
+    return {
+      kind: 'couldNotLook',
+      why:
+        `the body did not parse (${String(text.length)} bytes: ${error instanceof Error ? error.message : String(error)}). ` +
+        `A truncated or non-JSON answer carries no runs that can be counted`,
+    };
+  }
+
+  try {
+    return { kind: 'runs', runs: parseRuns(payload) };
+  } catch (error) {
+    return { kind: 'couldNotLook', why: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 /**
@@ -359,9 +426,12 @@ export function pollDelaySeconds(runs, { sha, nowMs, fallbackSeconds }) {
 }
 
 /**
- * What this payload says about one commit.
+ * What these runs say about one commit.
  *
- * @param {unknown} payload
+ * Takes runs and never a payload, so the only way to a verdict is through {@link readAnswer} or {@link parseRuns},
+ * and a payload that cannot be read is a reason in the caller's hands rather than a throw from here.
+ *
+ * @param {BoardRun[]} runs
  * @param {{
  *   sha: string,
  *   expect?: number,
@@ -377,10 +447,9 @@ export function pollDelaySeconds(runs, { sha, nowMs, fallbackSeconds }) {
  *   `success`. It is false for every other verdict, including `stale` and
  *   `blind` — an answer that could not be read is not a passing one.
  */
-export function boardVerdict(payload, { sha, expect = 2, seen = new Map() }) {
+export function boardVerdict(runs, { sha, expect = 2, seen = new Map() }) {
   if (sha === '') throw new Error('boardVerdict needs a sha to anchor on; "" matches everything.');
 
-  const runs = parseRuns(payload);
   const mine = runs.filter((run) => run.sha.startsWith(sha));
 
   // THE POSITIVE CONTROL, on every call rather than only in the proof. A wrong
@@ -471,22 +540,22 @@ export function boardVerdict(payload, { sha, expect = 2, seen = new Map() }) {
  * @param {{
  *   sha: string,
  *   look:
- *     | { kind: 'refused', status: number, why: string }
+ *     | { kind: 'couldNotLook', why: string }
  *     | { kind: 'failed', error: string }
  *     | { kind: 'answered', verdict: Exclude<Verdict, 'complete'>, reason: string },
- * }} input `refused` is an HTTP answer that was not OK, with
- *   `describeAuthorisation`'s reading of it; `failed` is a request that threw.
+ * }} input `couldNotLook` is {@link readAnswer}'s reason — an error status, an
+ *   unreadable body or an empty list; `failed` is a request that threw.
  * @returns {{ line: string, exitCode: 2 | 3 }} 3 for `pending` — the runs exist
  *   and have not finished — and 2, *neither green nor red*, for everything else.
  */
 export function onceWithoutVerdict({ sha, look }) {
   switch (look.kind) {
-    case 'refused':
+    case 'couldNotLook':
       return {
-        // `why` is a sentence of its own and ends in a stop, so the line supplies none after it.
+        // `why` may end in a stop of its own, so the line supplies one after trimming it.
         line:
-          `NO VERDICT at ${sha}: HTTP ${String(look.status)} — ${look.why.replace(/[.\s]+$/u, '')}. A refusal ` +
-          `is not a board state: the API declined to answer, so nothing here is evidence about the commit.`,
+          `COULD NOT LOOK at ${sha}: ${look.why.replace(/[.\s]+$/u, '')}. Nothing here is evidence about the ` +
+          `commit — neither green nor red, and not "no runs".`,
         exitCode: 2,
       };
     case 'failed':
