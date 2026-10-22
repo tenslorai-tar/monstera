@@ -251,6 +251,17 @@ export function refuseVersion(version, packed) {
 }
 
 /**
+ * Refuses a packed history that is not strictly increasing. The packager appends one entry per run, so a repeated or
+ * out-of-order entry was written by something else — and `refuseVersion` against such a history still passes the next
+ * version, so the record would go on carrying it unread.
+ *
+ * @param {readonly string[]} packed
+ */
+export function refuseHistory(packed) {
+  packed.forEach((version, index) => refuseVersion(version, packed.slice(0, index)));
+}
+
+/**
  * The package manifest.
  *
  * @param {{ identity: Identity; version: string; architecture: 'x64' }} options
@@ -562,6 +573,7 @@ function packedVersions(root) {
 async function main() {
   const { flavour, version, out, replaceOlder } = parseArguments(process.argv.slice(2));
   const { path: versionsPath, record } = packedVersions(REPO_ROOT);
+  refuseHistory(record.packed.map((entry) => entry.version));
   refuseVersion(version, record.packed.map((entry) => entry.version));
   /** @type {MsixConfig} */
   const config = JSON.parse(readFileSync(join(REPO_ROOT, 'scripts', 'release', 'msix.json'), 'utf8'));

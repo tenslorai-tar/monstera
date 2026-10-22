@@ -41,6 +41,7 @@ import {
   executableStrings,
   nameExecutable,
   packageIdentity,
+  refuseHistory,
   refuseVersion,
   unresolvedImports,
 } from '../release/packageMsix.mjs';
@@ -68,7 +69,7 @@ const RUNTIME_CASES = [
 ];
 
 /** Cases decidable without one. These run on every machine. */
-const PURE_CASES = 14;
+const PURE_CASES = 15;
 
 const roster = createRoster(failures, { cases: RUNTIME_PRESENT ? PURE_CASES + RUNTIME_CASES.length : PURE_CASES });
 
@@ -139,6 +140,21 @@ try {
     'a version already packed, or older than one, is refused; a greater one passes (0.10 is greater than 0.9)',
     reused !== null && older !== null && greater === null,
     `reused: ${String(reused)}; older: ${String(older)}; greater: ${String(greater)}`,
+  );
+
+  // A history naming 0.1.18.0 twice, as 77f00ffd committed it: refuseVersion still passes the next version against it.
+  const twice = ['0.1.17.0', '0.1.18.0', '0.1.18.0'];
+  const repeated = thrown(() => refuseHistory(twice));
+  const nextPassedAnyway = thrown(() => refuseVersion('0.1.19.0', twice)) === null;
+  // CONTROL: the repository's own record, and the same history without the repeat, are accepted.
+  const own = JSON.parse(readFileSync(join(REPO_ROOT, 'docs', 'packaged-versions.json'), 'utf8')).packed.map(
+    (/** @type {{ version: string }} */ entry) => entry.version,
+  );
+  const ownAccepted = thrown(() => refuseHistory(own)) === null && thrown(() => refuseHistory(twice.slice(0, 2))) === null;
+  check(
+    'a packed history naming a version twice is refused, which the next version alone would not reveal; the real record is not',
+    repeated !== null && repeated.includes('0.1.18.0') && nextPassedAnyway && ownAccepted && own.length > 1,
+    `repeated: ${String(repeated)}; next passed anyway: ${nextPassedAnyway}; own accepted: ${ownAccepted} (${own.length} entries)`,
   );
 
   const specifiers = bareSpecifiers(
