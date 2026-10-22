@@ -409,6 +409,8 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // THE ASK IS HANDLES AND THE ANSWER IS THEIR PROPERTIES, at most `MAX_READ_FIELDS` (16) of each: a four-thousand-field
   // form answers the same sixteen at most, so the payload is bounded by the request and not by the document (ADR-0193).
   'document.formFieldProperties': 'needs an engine session; bounded by its sixteen handles, not by the form',
+  // ONE BUTTON'S STEPS, at most `MAX_ACTION_CHAIN` of them: bounded by the one handle asked for, not by the form (ADR-0259).
+  'document.buttonActions': 'needs an engine session; bounded by its one handle, not by the form',
   'document.split': 'needs an engine session and a folder dialog',
   // THE ASK IS PAGES AND THREE NUMBERS, bounded by the split's own part count;
   // the images are written in the host and never cross.

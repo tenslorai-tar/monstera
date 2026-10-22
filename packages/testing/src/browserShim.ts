@@ -15,6 +15,11 @@ import {
   type FieldLook,
   type FormFieldKind,
   type FormFieldRead,
+  type ButtonAction,
+  type ButtonStep,
+  type FieldActionTrigger,
+  FIELD_ACTION_TRIGGERS,
+  stepRunsAs,
   type ImportSkipped,
   type SaveWriteCause,
   type Incident,
@@ -767,6 +772,12 @@ export interface BrowserShimOptions {
    */
   readonly fieldProperties?: Readonly<Record<string, Partial<FormFieldRead>>>;
   /**
+   * What `document.buttonActions` answers for a push button, by field name (ADR-0259). An `editFormFields` this shim is
+   * sent that sets a button's `buttonActions` replaces its entry, numbered as the kernel numbers a written list, so a
+   * case can set a button's actions in Properties and then press it. The field list's `actions` summary follows it.
+   */
+  readonly buttonSteps?: Readonly<Record<string, readonly ButtonStep[]>>;
+  /**
    * The editable blocks `document.textBlocks` answers, on every page.
    *
    * A list, for `flatFieldCandidates`' reason. **`null` is a third state and
@@ -1192,6 +1203,17 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   // The list the read in progress takes its parts from (`document.layers`).
   let layersRead: readonly ShimLayer[] = [];
   const fieldLists = [...(options.formFields ?? [])];
+  const buttonSteps = new Map<string, readonly ButtonStep[]>(Object.entries(options.buttonSteps ?? {}));
+  /** A written list as the kernel reads it back: trigger by trigger in the contract's order, each numbered from 0. */
+  const stepsOf = (actions: readonly ButtonAction[]): readonly ButtonStep[] =>
+    FIELD_ACTION_TRIGGERS.flatMap((trigger) =>
+      actions.filter((each) => each.trigger === trigger).map((each, step) => ({ trigger, step, action: each.action })),
+    );
+  /** The field list's summary of a button's steps, as the kernel lists it. */
+  const summaryOf = (steps: readonly ButtonStep[]): { runs: FieldActionTrigger[]; kept: FieldActionTrigger[] } => ({
+    runs: FIELD_ACTION_TRIGGERS.filter((trigger) => steps.some((each) => each.trigger === trigger && stepRunsAs(each.action) !== null)),
+    kept: FIELD_ACTION_TRIGGERS.filter((trigger) => steps.some((each) => each.trigger === trigger && stepRunsAs(each.action) === null)),
+  });
   // `let`, because *Clear list* empties it as main's store empties itself.
   let recentEntries = options.recent ?? [];
 
@@ -1510,7 +1532,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       return Promise.resolve(ok(answer));
     },
 
-    'document.execute': ({ docId, breakSignatures }) => {
+    'document.execute': ({ docId, command, breakSignatures }) => {
       // ASKED BEFORE ANYTHING CHANGES, as main asks (ADR-0149): no version moves for the question.
       if (options.signed?.has(docId) === true && breakSignatures !== true) {
         return Promise.resolve(err({ code: 'breaks-signatures' }));
@@ -1530,6 +1552,12 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
 
       const next = current + 1;
       versions.set(docId, next);
+      // A BUTTON'S ACTIONS WRITTEN (ADR-0259) are what the next `document.buttonActions` reads, as the document's would be.
+      if (command.kind === 'editFormFields') {
+        for (const edit of command.edits) {
+          if ('buttonActions' in edit.set && edit.set.buttonActions !== undefined) buttonSteps.set(edit.field.name, stepsOf(edit.set.buttonActions));
+        }
+      }
       undoable.set(docId, (undoable.get(docId) ?? 0) + 1);
       // A COMMAND TRUNCATES THE REDO TAIL, as the real log's cursor does.
       redoable.set(docId, 0);
@@ -2503,7 +2531,10 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       return Promise.resolve(
         ok({
           version: asDocVersion(current),
-          fields: fields.slice(from).map((field) => ({ ...PLAIN_RULES, ...field })),
+          fields: fields.slice(from).map((field) => {
+            const steps = field.kind === 'button' ? buttonSteps.get(field.name) : undefined;
+            return { ...PLAIN_RULES, ...field, ...(steps === undefined || steps.length === 0 ? {} : { actions: summaryOf(steps) }) };
+          }),
           next: null,
           truncated: false,
         }),
@@ -2585,7 +2616,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
               masked: false,
               visibility: 'visible' as const,
               buttonLabel: null,
-              buttonAction: null,
+              buttonActionsKept:
+                found.kind === 'button' ? (buttonSteps.get(found.name) ?? []).some((each) => each.action.kind === 'kept') : null,
               textColour: null,
               editable: false,
               multiSelect: false,
@@ -2595,6 +2627,15 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
           }),
         }),
       );
+    },
+
+    /** One push button's steps (ADR-0259), from {@link BrowserShimOptions.buttonSteps} and the edits sent since. */
+    'document.buttonActions': ({ docId, field }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      const listed = (fieldLists[0] ?? []).find((each) => each.page === field.page && each.index === field.index);
+      const button = listed?.name === field.name && listed.kind === 'button';
+      return Promise.resolve(ok({ version: asDocVersion(current), steps: button ? [...(buttonSteps.get(field.name) ?? [])] : null }));
     },
 
     'document.textBlocks': ({ docId, from }) => {

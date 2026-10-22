@@ -70,7 +70,7 @@ describe('the commands that keep the field walk', () => {
     if (button === undefined) throw new Error('the added push button is not in the walk');
     const session = await mupdfWriter.open(bytes);
     try {
-      await applyResetForm(session, { kind: 'resetForm', page: button.page, index: button.index, version: VERSION });
+      await applyResetForm(session, { kind: 'resetForm', page: button.page, index: button.index, trigger: 'up', step: 0, version: VERSION });
       expect(await walkOf(await mupdfWriter.serialise(session))).toStrictEqual(before);
     } finally {
       await mupdfWriter.close(session);

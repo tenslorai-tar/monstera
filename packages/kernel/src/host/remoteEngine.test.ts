@@ -40,7 +40,7 @@ import {
 import { readPageBarcodes } from '../barcodeReader.js';
 import { detectFlatFields } from '../flatFields.js';
 import { readFormImportPlan } from '../formData.js';
-import { readFieldProperties } from '../formFieldRead.js';
+import { readButtonActions, readFieldProperties } from '../formFieldRead.js';
 import { readFormData, serialiseFormData } from '../formData.js';
 import { readFormFields } from '../formFields.js';
 import { readAnnotationWords, readAnnotations } from '../pageAnnotations.js';
@@ -387,6 +387,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
       word: composeWordDocument,
       flatFields: detectFlatFields,
       fieldProperties: readFieldProperties,
+      buttonActions: readButtonActions,
       formImportPlan: readFormImportPlan,
       annotationImportPlan: async (session, bytes, format) => {
         const { readAnnotationImportPlan } = await import('../annotationInterchange.js');
@@ -1014,6 +1015,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         fieldProperties: () => {
           throw new Error('a refused-host case must not read field properties');
         },
+        buttonActions: () => {
+          throw new Error('a refused-host case must not read a button’s actions');
+        },
         flatFields: () => {
           throw new Error('unused');
         },
@@ -1192,6 +1196,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         },
         fieldProperties: () => {
           throw new Error('a refused-host case must not read field properties');
+        },
+        buttonActions: () => {
+          throw new Error('a refused-host case must not read a button’s actions');
         },
         flatFields: () => {
           throw new Error('the rotation-refusal case must not propose fields');

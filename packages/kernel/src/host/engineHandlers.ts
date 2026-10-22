@@ -1,5 +1,6 @@
 import type {
   AnnotationDataFormat,
+  ButtonStep,
   CommandOfKind,
   FormDataFormat,
   FormDataImportFormat,
@@ -364,6 +365,9 @@ export type HostFieldPropertiesReader = (
   handles: readonly FormFieldHandle[],
 ) => Promise<readonly (FormFieldRead | null)[]>;
 
+/** One push button's steps (ADR-0259), `null` for a handle that no longer names a push button. */
+export type HostButtonActionsReader = (session: MupdfSession, handle: FormFieldHandle) => Promise<readonly ButtonStep[] | null>;
+
 /**
  * The engine host's side of Decision 10: it looks the spec up and calls it
  * against a session **it** holds.
@@ -609,6 +613,8 @@ export interface EngineHandlerParts {
   readonly flatFields: HostFlatFieldsReader;
   /** How this process reads the properties of named fields. `engine/field-properties`. */
   readonly fieldProperties: HostFieldPropertiesReader;
+  /** How this process reads one push button's actions. `engine/button-actions`. */
+  readonly buttonActions: HostButtonActionsReader;
   /** How this process plans an import of form data. `engine/form-import-plan`. */
   readonly formImportPlan: HostFormImportPlanner;
   readonly annotationImportPlan: typeof readAnnotationImportPlan;
@@ -658,6 +664,7 @@ export function createEngineHandlers({
   word,
   flatFields,
   fieldProperties,
+  buttonActions,
   formImportPlan,
   annotationImportPlan,
   barcodes,
@@ -1229,6 +1236,13 @@ export function createEngineHandlers({
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
       return { ok: true, value: { fields: [...(await fieldProperties(held.session, fields))] } };
+    },
+
+    'engine/button-actions': async ({ session, field }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      const steps = await buttonActions(held.session, field);
+      return { ok: true, value: { steps: steps === null ? null : [...steps] } };
     },
 
     'engine/annotation-import-plan': async ({ session, format, asset }) => {

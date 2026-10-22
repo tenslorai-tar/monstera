@@ -98,6 +98,7 @@ import {
   editFormFieldsSchema,
   formFieldHandleSchema,
   formFieldReadSchema,
+  buttonStepsSchema,
   importSkippedSchema,
   MAX_IMPORT_SKIPS,
   MAX_IMPORT_SKIP_NAME,
@@ -3281,6 +3282,17 @@ export const engineChannels = {
     'Reads the properties of the named form fields.',
     z.object({ session: sessionSchema, fields: z.array(formFieldHandleSchema).min(1).max(MAX_READ_FIELDS).readonly() }).strict(),
     z.object({ fields: z.array(formFieldReadSchema.nullable()).max(MAX_READ_FIELDS).readonly() }).strict(),
+    ['no-such-session'],
+  ),
+
+  /**
+   * What one push button does, step by step (ADR-0259 Decision 3). One button, `engine/field-properties`' reason for a
+   * channel of its own; FILE-ANSWERED because one chain of actions each naming fields is past a frame at its worst.
+   */
+  'engine/button-actions': fileAnswered(
+    'Reads what one push button does, on each trigger, in order.',
+    z.object({ session: sessionSchema, field: formFieldHandleSchema }).strict(),
+    z.object({ steps: buttonStepsSchema.nullable() }).strict(),
     ['no-such-session'],
   ),
 

@@ -78,6 +78,8 @@ async function open(page: Page, sent: Sent, listed: readonly ShimFormField[] = L
       opens: [{ kind: 'opened' as const, docId: ID, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Form.pdf' }],
       documentBytes: new Map([[ID, bytes]]),
       formFields: [listed],
+      // SEND HOLDS A SCRIPT, the document's own content, which a press says it does not run (ADR-0259 Decision 5).
+      buttonSteps: { Send: [{ trigger: 'up', step: 0, action: { kind: 'kept', subtype: 'JavaScript', runsAs: null } }] },
     },
     (channel, params) => {
       sent.push({ channel, params });
@@ -142,7 +144,7 @@ test('a push button says, when pressed, that what it is set to do is not run her
   await open(page, sent);
   // NEAR THE EDGE as well as at the centre: a press anywhere on the button is the button's.
   await press(page, SEND, 0.1);
-  await expect(page.locator('.m-page-field-problem [role="alert"]')).toContainText('does not run what a form’s buttons are set to do');
+  await expect(page.locator('.m-page-field-problem [role="alert"]')).toContainText('never runs a script');
   expect(fills(sent)).toStrictEqual([]);
 });
 

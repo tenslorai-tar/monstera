@@ -158,6 +158,7 @@ const handlers: ContractHandlers = {
   'document.flatFieldCandidates': () =>
     Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false, alreadyFields: 0 })),
   'document.formFieldProperties': () => Promise.resolve(ok({ version: asDocVersion(1), fields: [] })),
+  'document.buttonActions': () => Promise.resolve(ok({ version: asDocVersion(1), steps: null })),
   'document.textBlocks': () =>
     Promise.resolve(
       ok({

@@ -55,6 +55,7 @@ import {
   type FileAccess,
   type FormFieldHandle,
   type FormFieldRead,
+  type ButtonStep,
   type ImportSkipped,
   keptLookOf,
   placedMarkOf,
@@ -2062,6 +2063,13 @@ export interface DocumentFieldProperties {
   readonly fields: readonly (FormFieldRead | null)[];
 }
 
+/** One push button's steps, through whichever host is live (ADR-0259); `null` for a handle naming no push button. */
+export type DocumentButtonActionsReader = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  handle: FormFieldHandle,
+) => Promise<readonly ButtonStep[] | null>;
+
 /** The candidates, stamped with the version the lane read them at. */
 export interface DocumentFlatFields {
   readonly version: DocVersion;
@@ -2572,6 +2580,8 @@ export interface DocumentCommandsParts {
   readonly flatFields: DocumentFlatFieldsReader;
   /** The named fields' properties, read in the engine host (ADR-0193). */
   readonly fieldProperties: DocumentFieldPropertiesReader;
+  /** One push button's actions, read in the engine host (ADR-0259). */
+  readonly buttonActions: DocumentButtonActionsReader;
   /** What importing a data file would do to the form, planned in the engine host. */
   readonly formImportPlan: DocumentFormImportPlanner;
   /** One page's barcodes, read in the engine host (ADR-0076). */
@@ -2850,6 +2860,7 @@ export class DocumentCommands {
   readonly #formFields: DocumentFormFieldsReader;
   readonly #flatFields: DocumentFlatFieldsReader;
   readonly #fieldProperties: DocumentFieldPropertiesReader;
+  readonly #buttonActions: DocumentButtonActionsReader;
   readonly #formImportPlan: DocumentFormImportPlanner;
   readonly #barcodes: DocumentBarcodesReader;
   readonly #copies: ProtectedCopies;
@@ -2940,6 +2951,7 @@ export class DocumentCommands {
     this.#formFields = parts.formFields;
     this.#flatFields = parts.flatFields;
     this.#fieldProperties = parts.fieldProperties;
+    this.#buttonActions = parts.buttonActions;
     this.#formImportPlan = parts.formImportPlan;
     this.#barcodes = parts.barcodes;
     this.#copies = parts.copies;
@@ -3621,6 +3633,20 @@ export class DocumentCommands {
       return this.#fieldProperties(docId, sessions, handles);
     });
     return { version, fields: value };
+  }
+
+  /** What one push button does, step by step (ADR-0259): {@link formFieldProperties}' body and lane, for one handle. */
+  async buttonActions(docId: DocId, handle: FormFieldHandle): Promise<{ readonly version: DocVersion; readonly steps: readonly ButtonStep[] | null }> {
+    const { version, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return this.#buttonActions(docId, sessions, handle);
+    });
+    return { version, steps: value };
   }
 
   /**

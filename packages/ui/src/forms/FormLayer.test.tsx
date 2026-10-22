@@ -97,22 +97,35 @@ describe('FormLayer', () => {
     expect(controls.map((element) => element.getAttribute('data-form-field'))).toStrictEqual(['6']);
   });
 
-  it('a PUSH BUTTON has a control, and pressing it says what it cannot do and fills nothing (A1.9)', () => {
-    const { container, fills } = draw([field({ index: 2, kind: 'button', name: 'Send' })]);
+  it('a PUSH BUTTON holding a script has a control, and pressing it says what it does not run and fills nothing (A1.9)', () => {
+    const { container, fills } = draw([field({ index: 2, kind: 'button', name: 'Send', actions: { runs: [], kept: ['up'] } })]);
     const button = at(container, 2);
     if (button === null) throw new Error('the push button has no control');
     fireEvent.click(button);
     expect(fills).toStrictEqual([]);
-    expect(container.querySelector('.m-page-field-problem [role="alert"]')?.textContent).toContain('does not run what a form’s buttons are set to do');
+    expect(container.querySelector('.m-page-field-problem [role="alert"]')?.textContent).toContain('never runs a script');
   });
 
-  it('a RESET FORM button pressed sends the reset by its own place, and says nothing about scripts (the owner’s F7)', () => {
-    // The case above is the control: the same button with no Reset form action says what it cannot do and sends nothing.
-    const { container, fills } = draw([field({ index: 5, kind: 'button', name: 'Clear', action: 'reset' })]);
-    const button = at(container, 5);
-    if (button === null) throw new Error('the reset button has no control');
+  it('a button with actions sends each trigger as it happens, by its place and name, and says nothing about scripts (ADR-0259)', () => {
+    // The case above is the control: a button whose press holds only a script sends nothing.
+    const { container, fills } = draw([field({ index: 5, kind: 'button', name: 'Clear', actions: { runs: ['up', 'down', 'enter', 'exit'], kept: [] } })]);
+    const button = must(at(container, 5));
+    fireEvent.pointerEnter(button);
+    fireEvent.pointerDown(button);
     fireEvent.click(button);
-    expect(fills).toStrictEqual([{ page: 2, index: 5, reset: true }]);
+    fireEvent.pointerLeave(button);
+    expect(fills).toStrictEqual(
+      (['enter', 'down', 'up', 'exit'] as const).map((press) => ({ page: 2, index: 5, name: 'Clear', press })),
+    );
+    expect(container.querySelector('.m-page-field-problem')).toBeNull();
+  });
+
+  it('CONTROL: a trigger with no actions sends nothing, and a hover script is not said on a hover', () => {
+    const { container, fills } = draw([field({ index: 5, kind: 'button', name: 'Clear', actions: { runs: ['up'], kept: ['enter'] } })]);
+    const button = must(at(container, 5));
+    fireEvent.pointerEnter(button);
+    fireEvent.pointerDown(button);
+    expect(fills).toStrictEqual([]);
     expect(container.querySelector('.m-page-field-problem')).toBeNull();
   });
 

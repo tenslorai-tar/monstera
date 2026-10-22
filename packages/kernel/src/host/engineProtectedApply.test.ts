@@ -102,6 +102,7 @@ function build(protectedWriting: Protection, protectedImage?: ProtectedImage) {
       annotations: refuse('list annotations'),
       formFields: refuse('read the fields'),
       fieldProperties: refuse('read a field’s properties'),
+      buttonActions: refuse('read a button’s actions'),
       formImportPlan: refuse('plan a form import'),
       annotationImportPlan: refuse('plan a comment import'),
       pageRewrite: refuse('rewrite a page'),

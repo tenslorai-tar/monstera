@@ -72,6 +72,9 @@ import {
   fieldScriptSchema,
   formFieldHandleSchema,
   formFieldReadSchema,
+  FIELD_ACTION_TRIGGERS,
+  fieldActionTriggerSchema,
+  buttonStepsSchema,
   documentFontSchema,
   listedFontFamiliesSchema,
   bundledFamilySchema,
@@ -5419,11 +5422,17 @@ export const channels = {
              */
             option: z.string().max(MAX_FORM_FIELD_TEXT).exactOptional(),
             /**
-             * A push button whose action is the standard Reset form (the owner's F7), which a press carries out as one
-             * step a person can undo. Present only on such a button; every other action (a script, a submit) is the
-             * document's content and is never run (invariant 24).
+             * A push button's triggers that have actions (ADR-0259 Decision 4): `runs`, the triggers with at least one
+             * action a press carries out, and `kept`, those with one that is the document's content and is never run
+             * (invariant 24). Present only on a push button that has any; what each does is `document.buttonActions`'.
              */
-            action: z.literal('reset').exactOptional(),
+            actions: z
+              .object({
+                runs: z.array(fieldActionTriggerSchema).max(FIELD_ACTION_TRIGGERS.length).readonly(),
+                kept: z.array(fieldActionTriggerSchema).max(FIELD_ACTION_TRIGGERS.length).readonly(),
+              })
+              .strict()
+              .exactOptional(),
             /**
              * How a dropdown or a list box is drawn (the owner's F1), present only on one: the page's choice control
              * covers the document's own drawing of the field in its size and colours, never the application's theme.
@@ -5525,6 +5534,18 @@ export const channels = {
       version: docVersionSchema,
       fields: z.array(formFieldReadSchema.nullable()).max(MAX_READ_FIELDS).readonly(),
     }),
+    ['document-not-open', 'document-poisoned'],
+  ),
+
+  /**
+   * What one push button does, step by step (ADR-0259 Decision 3): the Properties pane's list, and what a press reads to
+   * ask its questions. ONE button, so its worst is one button's chain and not sixteen (`document.formFieldProperties`
+   * reads up to {@link MAX_READ_FIELDS}). `null` is a handle that no longer names a push button.
+   */
+  'document.buttonActions': channel(
+    'Reads what one push button does, on each trigger, in order.',
+    z.object({ docId: docIdSchema, field: formFieldHandleSchema }),
+    z.object({ version: docVersionSchema, steps: buttonStepsSchema.nullable() }),
     ['document-not-open', 'document-poisoned'],
   ),
 

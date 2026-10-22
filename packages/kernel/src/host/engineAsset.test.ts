@@ -225,6 +225,9 @@ async function joined(): Promise<{
       fieldProperties: () => {
         throw new Error('an asset case must not read field properties');
       },
+      buttonActions: () => {
+        throw new Error('an asset case must not read a button’s actions');
+      },
       flatFields: () => {
         throw new Error('unused');
       },

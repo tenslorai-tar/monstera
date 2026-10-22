@@ -85,6 +85,7 @@ import {
   type HostLinkAddressReader,
   type BarcodeReport,
   type AccessibilityReportOnWire,
+  type HostButtonActionsReader,
   type HostFieldPropertiesReader,
   type RemoteFormImportPlanner,
   type RemoteAnnotationImportPlanner,
@@ -164,6 +165,7 @@ import {
   remoteMupdfBarcodes,
   remoteMupdfAccessibility,
   remoteMupdfDuplicateReport,
+  remoteMupdfButtonActions,
   remoteMupdfFieldProperties,
   remoteMupdfFormImportPlan,
   remoteMupdfAnnotationImportPlan,
@@ -1621,6 +1623,12 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
       return engineHost.fieldProperties(session, handles);
     },
+    // ONE BUTTON'S ACTIONS (ADR-0259), composed the same way.
+    buttonActions: (docId, sessions, handle) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return engineHost.buttonActions(session, handle);
+    },
     // THE ACCESSIBILITY CHECK, composed the same way, whole-document (ADR-0078).
     accessibility: (docId, sessions) => {
       const session = sessions.mupdf;
@@ -2481,6 +2489,8 @@ function engineSessionOpener(
   readonly flatFields: HostFlatFieldsReader;
   /** The named fields' properties, from whichever host is live (ADR-0193). */
   readonly fieldProperties: HostFieldPropertiesReader;
+  /** One push button's actions, from whichever host is live (ADR-0259). */
+  readonly buttonActions: HostButtonActionsReader;
   /** What importing a data file would do to the form, from whichever host is live. */
   readonly formImportPlan: RemoteFormImportPlanner;
   readonly annotationImportPlan: RemoteAnnotationImportPlanner;
@@ -2695,6 +2705,7 @@ function engineSessionOpener(
     formFields: remoteMupdfFormFields(client, remote),
     flatFields: remoteMupdfFlatFields(client, remote),
     fieldProperties: remoteMupdfFieldProperties(client, remote),
+    buttonActions: remoteMupdfButtonActions(client, remote),
     formImportPlan: remoteMupdfFormImportPlan(client, remote, sessionAssets()),
     annotationImportPlan: remoteMupdfAnnotationImportPlan(client, remote, sessionAssets()),
     barcodes: remoteMupdfBarcodes(client, remote),
@@ -3008,6 +3019,18 @@ function engineSessionOpener(
       );
     }
     return fieldProperties(session, handles);
+  };
+
+  /** One push button's actions (ADR-0259): {@link readFieldPropertiesThroughHost}'s registration and its reason. */
+  const readButtonActionsThroughHost: HostButtonActionsReader = (session, handle) => {
+    const buttonActions = bound?.buttonActions ?? null;
+    if (buttonActions === null) {
+      throw new Error(
+        'A button actions read reached the engine with no host reader registered. A session was resolved for this ' +
+          'document, so one was issued by a host — the supervisor and the host connection have diverged.',
+      );
+    }
+    return buttonActions(session, handle);
   };
 
   /** The import plan's half of the same registration. See {@link pageText}. */
@@ -3631,6 +3654,7 @@ function engineSessionOpener(
     formFields: readFormFieldsThroughHost,
     flatFields: readFlatFieldsThroughHost,
     fieldProperties: readFieldPropertiesThroughHost,
+    buttonActions: readButtonActionsThroughHost,
     formImportPlan: planFormImportThroughHost,
     annotationImportPlan: planAnnotationImportThroughHost,
     barcodes: readBarcodesThroughHost,

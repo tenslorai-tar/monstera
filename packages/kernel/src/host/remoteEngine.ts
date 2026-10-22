@@ -40,6 +40,7 @@ import type {
   HostAnnotationsReader,
   HostAnnotationRecordsReader,
   HostAnnotationWordsReader,
+  HostButtonActionsReader,
   HostFieldPropertiesReader,
   HostFlatFieldsReader,
   HostFontsReader,
@@ -755,6 +756,17 @@ export function remoteMupdfFieldProperties(
       await client['engine/field-properties']({ session: sessions.handleFor(session), fields: handles }),
     );
     return answer.fields;
+  };
+}
+
+/** {@link remoteMupdfFieldProperties} for one push button's actions (ADR-0259). */
+export function remoteMupdfButtonActions(client: ClientApi<EngineChannels>, sessions: RemoteSessions): HostButtonActionsReader {
+  return async (session, handle) => {
+    const answer = answered(
+      'engine/button-actions',
+      await client['engine/button-actions']({ session: sessions.handleFor(session), field: handle }),
+    );
+    return answer.steps;
   };
 }
 

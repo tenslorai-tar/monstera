@@ -646,6 +646,7 @@ export function createContractHandlers(deps: {
     'document.formFields': formFieldsHandler(deps.commands),
     'document.flatFieldCandidates': flatFieldCandidatesHandler(deps.commands),
     'document.formFieldProperties': formFieldPropertiesHandler(deps.commands),
+    'document.buttonActions': buttonActionsHandler(deps.commands),
     'document.textBlocks': textBlocksHandler(deps.commands),
     'document.pageObjects': pageObjectsHandler(deps.commands),
     'document.renderPage': renderPageHandler(deps.commands),
@@ -3158,6 +3159,20 @@ function formFieldPropertiesHandler(commands: DocumentCommands): ContractHandler
     try {
       const { version, fields: read } = await commands.formFieldProperties(docId, fields);
       return ok({ version, fields: read });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/** One push button's actions (ADR-0259): {@link formFieldPropertiesHandler}'s body and its refusals. */
+function buttonActionsHandler(commands: DocumentCommands): ContractHandlers['document.buttonActions'] {
+  return async ({ docId, field }): Promise<Awaited<ReturnType<ContractHandlers['document.buttonActions']>>> => {
+    try {
+      const { version, steps } = await commands.buttonActions(docId, field);
+      return ok({ version, steps: steps === null ? null : [...steps] });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });

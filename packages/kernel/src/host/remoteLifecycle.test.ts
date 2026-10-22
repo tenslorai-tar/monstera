@@ -27,7 +27,7 @@ import {
 } from '../annotationInterchange.js';
 import { detectFlatFields } from '../flatFields.js';
 import { readFormImportPlan } from '../formData.js';
-import { readFieldProperties } from '../formFieldRead.js';
+import { readButtonActions, readFieldProperties } from '../formFieldRead.js';
 import { readFormData, serialiseFormData } from '../formData.js';
 import { rasterisePageImage } from '../pageImages.js';
 import { snapshotRegion } from '../pageSnapshot.js';
@@ -327,6 +327,7 @@ function joined(
       word: composeWordDocument,
       flatFields: detectFlatFields,
       fieldProperties: readFieldProperties,
+      buttonActions: readButtonActions,
       formImportPlan: readFormImportPlan,
       annotationImportPlan: async (session, bytes, format) => {
         const { readAnnotationImportPlan } = await import('../annotationInterchange.js');
@@ -777,6 +778,9 @@ describe('remoteMupdfLifecycle', () => {
         },
         fieldProperties: () => {
           throw new Error('a lifecycle case must not read field properties');
+        },
+        buttonActions: () => {
+          throw new Error('a lifecycle case must not read a button’s actions');
         },
         flatFields: () => {
           throw new Error('the byte-size case must not propose fields');

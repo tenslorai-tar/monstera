@@ -2,7 +2,7 @@
 id: change-form-fields
 title: Change a form field
 summary: Rename, restyle, format, calculate, align, copy and set the tab order of the fields you have drawn.
-keywords: [field properties, rename field, tooltip, required, read only, default value, font, border, border style, check style, validate, fill, number format, date format, calculation, align fields, same size, copy field, tab order]
+keywords: [field properties, rename field, tooltip, required, read only, default value, font, border, border style, check style, validate, fill, number format, date format, calculation, align fields, same size, copy field, tab order, button action, reset button, go to page button]
 commands: [forms.arrange.align-left, forms.arrange.same-size, forms.copy-to-pages, document.tab-order]
 contexts: [dialog.field-copy, dialog.tab-order, forms]
 ---
@@ -29,6 +29,8 @@ Every field has properties you can change after it is drawn: its name, what it l
 - Beside each choice of a dropdown or a list box, what the document stores for it, when that is something other than the text people read. Leave it empty to keep the choice itself. Changing a choice's text keeps what is stored for it.
 - **Format**: a number (decimal places, separators, negative numbers and a currency sign), a percentage, a date or a time.
 - **Calculation**: the sum, product, average, smallest or largest of other fields you name, and where it falls in the calculation order.
+- **Actions** for a button, one button at a time. Choose **Add action**, then **When** it runs (pressed and let go, pressed down, the pointer moving onto it or off it) and what it does under **Do**: **Go to a page**, at the zoom in use, the whole page or the page width; or **Reset the form**, every field or only the fields you tick. **Save action** adds it. Each action has buttons to edit it, move it up or down and remove it, and a button runs its actions in that order when it is used while the form is filled in.
+- A button holding a script, or another action Monstera never runs, is kept exactly as it is: its actions are listed and not changed here.
 
 ## Line up and copy
 

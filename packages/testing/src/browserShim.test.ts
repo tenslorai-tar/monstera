@@ -235,6 +235,7 @@ describe('browser shim', () => {
       'document.annotations',
       'document.appendMarkdown',
       'document.awaitExternalEdit',
+      'document.buttonActions',
       'document.clearRecent',
       'document.close',
       'document.copyAnnotations',

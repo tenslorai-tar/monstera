@@ -1792,6 +1792,27 @@ optgroup {
   font: inherit;
 }
 
+/* A DROP-DOWN AS WIDE AS ITS LONGEST CHOICE, never cut: drawn at the number box's 6em, Action read "Reset the▾"
+   (the owner's R22). It does not shrink below its words; where the panel is narrower than label and drop-down
+   together, the row wraps and the drop-down takes the next line, up to the row's width. */
+.m-properties__select {
+  box-sizing: border-box;
+  flex: none;
+  min-inline-size: 6em;
+  max-inline-size: 100%;
+  padding: var(--space-4);
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+  font: inherit;
+}
+
+.m-properties__row--inline:has(> .m-properties__select) {
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-8);
+}
+
 /* A PERCENTAGE WIDTH, so the field takes the panel's width and contributes none of its own to the
    panel's minimum — a textarea's intrinsic width is twenty columns, wider than the narrowest panel. */
 .m-properties__comment {

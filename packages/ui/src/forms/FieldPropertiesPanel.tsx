@@ -18,6 +18,7 @@ import {
   type FieldCalculation,
   type FieldChoice,
   type FieldFormat,
+  type ButtonStep,
   type FormFieldHandle,
   type FormFieldProperties,
   type FormFieldRead,
@@ -34,6 +35,7 @@ import { ColourSwatches } from '../ColourChoice.js';
 import { type KnownField, fieldNameProblemAmong } from '../annotations/fieldNameCheck.js';
 import { colourFromHex, hexFromColour } from '../annotations/annotationStyle.js';
 import { FIELD_COLOURS, FIELD_COLOUR_FALLBACK } from './fieldColours.js';
+import { ButtonActionsRow } from './ButtonActionsRow.js';
 import {
   FIELD_PROPS_ACTIONS,
   FIELD_PROPS_BORDER_BEVELED,
@@ -128,10 +130,6 @@ import {
   FIELD_PROPS_ALIGNMENT_LEFT,
   FIELD_PROPS_ALIGNMENT_RIGHT,
   FIELD_PROPS_BUTTON_LABEL,
-  FIELD_PROPS_ACTION,
-  FIELD_PROPS_ACTION_NONE,
-  FIELD_PROPS_ACTION_OTHER,
-  FIELD_PROPS_ACTION_RESET,
   FIELD_PROPS_COMB,
   FIELD_PROPS_GROUP_NAME,
   FIELD_PROPS_MASKED,
@@ -185,6 +183,10 @@ export interface FieldPropertiesPanelProps {
   readonly known: readonly KnownField[];
   /** Reads the first handles' properties through the one channel. */
   readonly read: (handles: readonly FormFieldHandle[]) => Promise<readonly (FormFieldRead | null)[]>;
+  /** Reads one push button's actions through `document.buttonActions` (ADR-0259). */
+  readonly readActions: (handle: FormFieldHandle) => Promise<readonly ButtonStep[] | null>;
+  /** How many pages the document has, for a button's actions that name one. */
+  readonly pageCount: number;
   /** Changes every selected field by the members named. */
   readonly onEdit: (set: FormFieldProperties) => void;
   /**
@@ -250,6 +252,8 @@ export function FieldPropertiesPanel({
   version,
   known,
   read,
+  readActions,
+  pageCount,
   onEdit,
   fonts,
   documentFonts,
@@ -301,6 +305,20 @@ export function FieldPropertiesPanel({
         // remounted the font picker too, and a picker opened as the write landed closed (the forms walk's A8.4).
         <Controls
           key={key}
+          actionsRow={
+            first === undefined ? null : (
+              <ButtonActionsRow
+                handle={first}
+                known={known}
+                onCommit={(buttonActions) => {
+                  onEdit({ buttonActions });
+                }}
+                pageCount={pageCount}
+                readActions={readActions}
+                version={version}
+              />
+            )
+          }
           documentFonts={documentFonts}
           fonts={fonts}
           known={known}
@@ -334,6 +352,7 @@ function Controls({
   onEdit,
   fonts,
   documentFonts,
+  actionsRow,
 }: {
   readonly props: FormFieldRead;
   readonly single: boolean;
@@ -341,6 +360,8 @@ function Controls({
   readonly onEdit: (set: FormFieldProperties) => void;
   readonly fonts: FontList;
   readonly documentFonts: readonly DocumentFont[];
+  /** A push button's actions, drawn by the panel, which holds the handle and the version they are read at. */
+  readonly actionsRow: ReactNode;
 }): ReactElement {
   const { i18n } = useLingui();
   const kind = has(props.kind);
@@ -581,26 +602,8 @@ function Controls({
             }}
           />
         ) : null}
-        {/* WHAT THE BUTTON DOES (the owner's F7): nothing, or Reset form. A button set to run a script or send the form is
-            said so and offered no choice, so a choice here can never drop the document's own action. */}
-        {props.kind === 'button' && props.buttonAction === 'other' ? (
-          <p className="m-properties__meta" data-button-action="other">
-            {i18n._(FIELD_PROPS_ACTION_OTHER)}
-          </p>
-        ) : null}
-        {props.kind === 'button' && props.buttonAction !== 'other' ? (
-          <SelectRow
-            label={FIELD_PROPS_ACTION}
-            value={props.buttonAction ?? 'none'}
-            options={[
-              { value: 'none', label: i18n._(FIELD_PROPS_ACTION_NONE) },
-              { value: 'reset', label: i18n._(FIELD_PROPS_ACTION_RESET) },
-            ]}
-            onChange={(value) => {
-              onEdit({ buttonAction: value === 'reset' ? 'reset' : 'none' });
-            }}
-          />
-        ) : null}
+        {/* WHAT THE BUTTON DOES (ADR-0259), one button at a time: its actions are one field's, as its choices are. */}
+        {props.kind === 'button' && single ? actionsRow : null}
         {kind.value ? (
           <TextRow
             label={FIELD_PROPS_DEFAULT}
@@ -813,7 +816,7 @@ function SelectRow({
         {i18n._(label)}
       </label>
       <select
-        className="m-properties__number"
+        className="m-properties__select"
         id={id}
         onChange={(event) => {
           onChange(event.target.value);

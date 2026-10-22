@@ -1773,6 +1773,7 @@ export const FORM_FIELD_WANTS_TIME = messageKey('surface.form-layer.wants-time')
 export const FORM_FIELD_REQUIRED_EMPTY = messageKey('surface.form-layer.required-empty');
 export const FORM_FIELD_REQUIRED_LEFT = messageKey('surface.form-layer.required-left');
 export const FORM_BUTTON_NO_SCRIPTS = messageKey('surface.form-layer.button-no-scripts');
+export const BUTTON_PRESS_UNREAD = messageKey('surface.form-layer.button-press-unread');
 export const FORM_FIELD_PRESS = messageKey('surface.form-layer.press');
 /** A signature field on the page, pressed (the owner's F8): what it offers, and its name for a screen reader. */
 export const FORM_FIELD_SIGN = messageKey('surface.form-layer.sign');
@@ -1864,10 +1865,42 @@ export const FIELD_PROPS_SPELL_CHECK = messageKey('surface.field-properties.spel
 export const FIELD_PROPS_TEXT_COLOUR = messageKey('surface.field-properties.text-colour');
 export const FIELD_PROPS_TEXT_COLOUR_BLACK = messageKey('surface.field-properties.text-colour.black');
 export const FIELD_PROPS_BUTTON_LABEL = messageKey('surface.field-properties.button-label');
-export const FIELD_PROPS_ACTION = messageKey('surface.field-properties.action');
-export const FIELD_PROPS_ACTION_NONE = messageKey('surface.field-properties.action-none');
-export const FIELD_PROPS_ACTION_RESET = messageKey('surface.field-properties.action-reset');
 export const FIELD_PROPS_ACTION_OTHER = messageKey('surface.field-properties.action-other');
+// A PUSH BUTTON'S ACTIONS (ADR-0259): the list in Properties, and the editor that adds one or changes one.
+export const BUTTON_ACTIONS_LABEL = messageKey('surface.field-properties.button-actions');
+export const BUTTON_ACTIONS_NONE = messageKey('surface.field-properties.button-actions-none');
+export const BUTTON_ACTIONS_READING = messageKey('surface.field-properties.button-actions-reading');
+export const BUTTON_ACTION_ROW = messageKey('surface.field-properties.button-action-row');
+export const BUTTON_ACTION_KEPT_ROW = messageKey('surface.field-properties.button-action-kept-row');
+export const BUTTON_ACTION_ADD = messageKey('surface.field-properties.button-action-add');
+export const BUTTON_ACTION_EDIT = messageKey('surface.field-properties.button-action-edit');
+export const BUTTON_ACTION_UP = messageKey('surface.field-properties.button-action-up');
+export const BUTTON_ACTION_DOWN = messageKey('surface.field-properties.button-action-down');
+export const BUTTON_ACTION_REMOVE = messageKey('surface.field-properties.button-action-remove');
+export const BUTTON_ACTION_WHEN = messageKey('surface.field-properties.button-action-when');
+export const BUTTON_ACTION_DO = messageKey('surface.field-properties.button-action-do');
+export const BUTTON_ACTION_SAVE = messageKey('surface.field-properties.button-action-save');
+export const BUTTON_ACTION_CANCEL = messageKey('surface.field-properties.button-action-cancel');
+export const BUTTON_ACTION_FULL = messageKey('surface.field-properties.button-action-full');
+export const BUTTON_TRIGGER_UP = messageKey('surface.field-properties.button-trigger-up');
+export const BUTTON_TRIGGER_DOWN = messageKey('surface.field-properties.button-trigger-down');
+export const BUTTON_TRIGGER_ENTER = messageKey('surface.field-properties.button-trigger-enter');
+export const BUTTON_TRIGGER_EXIT = messageKey('surface.field-properties.button-trigger-exit');
+export const BUTTON_ACTION_KIND_RESET = messageKey('surface.field-properties.button-action-kind-reset');
+export const BUTTON_ACTION_KIND_GO_TO = messageKey('surface.field-properties.button-action-kind-go-to');
+export const BUTTON_ACTION_PAGE = messageKey('surface.field-properties.button-action-page');
+export const BUTTON_ACTION_PAGE_RANGE = messageKey('surface.field-properties.button-action-page-range');
+export const BUTTON_ACTION_VIEW = messageKey('surface.field-properties.button-action-view');
+export const BUTTON_VIEW_KEEP = messageKey('surface.field-properties.button-view-keep');
+export const BUTTON_VIEW_FIT = messageKey('surface.field-properties.button-view-fit');
+export const BUTTON_VIEW_FIT_WIDTH = messageKey('surface.field-properties.button-view-fit-width');
+export const BUTTON_SUMMARY_GO_TO = messageKey('surface.field-properties.button-summary-go-to');
+export const BUTTON_ACTION_FIELDS_ALL = messageKey('surface.field-properties.button-action-fields-all');
+export const BUTTON_ACTION_FIELDS_CHOSEN = messageKey('surface.field-properties.button-action-fields-chosen');
+export const BUTTON_ACTION_FIELDS = messageKey('surface.field-properties.button-action-fields');
+export const BUTTON_ACTION_FIELDS_LIMIT = messageKey('surface.field-properties.button-action-fields-limit');
+export const BUTTON_SUMMARY_RESET_ALL = messageKey('surface.field-properties.button-summary-reset-all');
+export const BUTTON_SUMMARY_RESET_SOME = messageKey('surface.field-properties.button-summary-reset-some');
 export const FIELD_PROPS_GROUP_NAME = messageKey('surface.field-properties.group-name');
 export const FIELD_PROPS_RADIO_VALUES = messageKey('surface.field-properties.radio-values');
 export const FORM_SETTINGS_TITLE = messageKey('surface.form-settings.title');
@@ -4626,7 +4659,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FORM_FIELD_REQUIRED_LEFT]:
     'The document was saved, and some required fields are still empty. The first is ready to fill, and every one is outlined in red on the page.',
   [FORM_BUTTON_NO_SCRIPTS]:
-    'Monstera does not run what a form’s buttons are set to do, such as a script or sending the form, so pressing this button does nothing here. Every other part of the form works.',
+    'Monstera never runs a script or starts a program a form’s button is set to run, so that part of what this button does is left out. Every other part of the form works.',
+  [BUTTON_PRESS_UNREAD]: 'This button changed while it was being pressed, so nothing was done. Press it again.',
   [FORM_FIELD_PRESS]: 'Press {name}',
   [FORM_FIELD_SIGN]: 'Sign {name}',
   [FORM_SIGN_OFFER]: 'Sign this field',
@@ -4944,11 +4978,42 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FIELD_PROPS_TEXT_COLOUR]: 'Text colour',
   [FIELD_PROPS_TEXT_COLOUR_BLACK]: 'Black',
   [FIELD_PROPS_BUTTON_LABEL]: 'Words on the button',
-  [FIELD_PROPS_ACTION]: 'Action',
-  [FIELD_PROPS_ACTION_NONE]: 'None',
-  [FIELD_PROPS_ACTION_RESET]: 'Reset the form',
   [FIELD_PROPS_ACTION_OTHER]:
-    'This button is set to run a script or send the form. Monstera does not run it, and keeps it as the document has it.',
+    'This button holds a script or another action Monstera never runs. It is kept exactly as the document has it, so the actions are not changed here.',
+  [BUTTON_ACTIONS_LABEL]: 'Actions',
+  [BUTTON_ACTIONS_NONE]: 'This button does nothing yet. Add an action to choose what a press does.',
+  [BUTTON_ACTIONS_READING]: 'Reading what this button does…',
+  [BUTTON_ACTION_ROW]: '{when}: {what}',
+  [BUTTON_ACTION_KEPT_ROW]: '{when}: {what} (kept as it is, never run)',
+  [BUTTON_ACTION_ADD]: 'Add action',
+  [BUTTON_ACTION_EDIT]: 'Edit action {number}',
+  [BUTTON_ACTION_UP]: 'Move action {number} up',
+  [BUTTON_ACTION_DOWN]: 'Move action {number} down',
+  [BUTTON_ACTION_REMOVE]: 'Remove action {number}',
+  [BUTTON_ACTION_WHEN]: 'When',
+  [BUTTON_ACTION_DO]: 'Do',
+  [BUTTON_ACTION_SAVE]: 'Save action',
+  [BUTTON_ACTION_CANCEL]: 'Cancel',
+  [BUTTON_ACTION_FULL]: '{count, plural, one {A button can hold # action.} other {A button can hold # actions.}} Remove one to add another.',
+  [BUTTON_TRIGGER_UP]: 'Pressed and let go',
+  [BUTTON_TRIGGER_DOWN]: 'Pressed down',
+  [BUTTON_TRIGGER_ENTER]: 'Pointer moves onto it',
+  [BUTTON_TRIGGER_EXIT]: 'Pointer moves off it',
+  [BUTTON_ACTION_KIND_RESET]: 'Reset the form',
+  [BUTTON_ACTION_KIND_GO_TO]: 'Go to a page',
+  [BUTTON_ACTION_PAGE]: 'Page',
+  [BUTTON_ACTION_PAGE_RANGE]: 'Choose a page from 1 to {count}.',
+  [BUTTON_ACTION_VIEW]: 'Show it',
+  [BUTTON_VIEW_KEEP]: 'At the zoom in use',
+  [BUTTON_VIEW_FIT]: 'Whole page',
+  [BUTTON_VIEW_FIT_WIDTH]: 'Page width',
+  [BUTTON_SUMMARY_GO_TO]: 'Go to page {page}',
+  [BUTTON_ACTION_FIELDS_ALL]: 'Every field',
+  [BUTTON_ACTION_FIELDS_CHOSEN]: 'Only the fields ticked below',
+  [BUTTON_ACTION_FIELDS]: 'Fields',
+  [BUTTON_ACTION_FIELDS_LIMIT]: '{count, plural, one {Tick up to # field} other {Tick up to # fields}}, or choose Every field.',
+  [BUTTON_SUMMARY_RESET_ALL]: 'Reset every field',
+  [BUTTON_SUMMARY_RESET_SOME]: 'Reset {count, plural, one {# field} other {# fields}}',
   [FIELD_PROPS_GROUP_NAME]: 'Group name',
   [FIELD_PROPS_RADIO_VALUES]: 'Each option’s value, one per line, in the order the options sit',
   [FORM_SETTINGS_TITLE]: 'Form',

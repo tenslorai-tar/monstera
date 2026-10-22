@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import type { FormFieldHandle, FormFieldProperties, FormFieldRead } from '@monstera/contract';
+import type { ButtonStep, FormFieldHandle, FormFieldProperties, FormFieldRead } from '@monstera/contract';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
@@ -76,7 +76,7 @@ const TEXT: FormFieldRead = {
   masked: false,
   visibility: 'visible',
   buttonLabel: null,
-  buttonAction: null,
+  buttonActionsKept: null,
   textColour: null,
   editable: false,
   multiSelect: false,
@@ -97,7 +97,12 @@ interface Mounted {
   readonly reads: (readonly FormFieldHandle[])[];
 }
 
-function mounted(field: FormFieldRead, selected: readonly FormFieldHandle[] = [handleOf(field)]): Mounted {
+function mounted(
+  field: FormFieldRead,
+  selected: readonly FormFieldHandle[] = [handleOf(field)],
+  /** What `document.buttonActions` answers for a push button: nothing, unless a case says. */
+  steps: readonly ButtonStep[] = [],
+): Mounted {
   const edits: FormFieldProperties[] = [];
   const reads: (readonly FormFieldHandle[])[] = [];
   render(
@@ -110,6 +115,7 @@ function mounted(field: FormFieldRead, selected: readonly FormFieldHandle[] = [h
           { name: 'email', kind: 'text', options: [] },
           { name: 'phone', kind: 'text', options: [] },
           { name: 'group.first', kind: 'text', options: [] },
+          { name: 'clear', kind: 'button', options: [] },
         ]}
         onEdit={(set) => {
           edits.push(set);
@@ -118,6 +124,8 @@ function mounted(field: FormFieldRead, selected: readonly FormFieldHandle[] = [h
           reads.push(handles);
           return Promise.resolve([field]);
         }}
+        pageCount={5}
+        readActions={() => Promise.resolve(steps)}
         registry={new CommandRegistry([])}
         selected={selected}
         version={asDocVersion(4)}
@@ -436,19 +444,74 @@ describe('the field properties pane', () => {
     expect(edits).toStrictEqual([{ alignment: 'right' }, { maxLength: 6 }, { comb: true }, { masked: true }, { visibility: 'no-print' }]);
   });
 
-  it('a push button offers its Action, None or Reset the form, and sends the one chosen (the owner’s F7)', async () => {
-    const { edits } = mounted({ ...TEXT, kind: 'button', name: 'clear', buttonLabel: 'Clear', buttonAction: 'none' });
-    const action = await screen.findByLabelText('Action');
-    expect((action as HTMLSelectElement).value).toBe('none');
-    fireEvent.change(action, { target: { value: 'reset' } });
-    expect(edits).toStrictEqual([{ buttonAction: 'reset' }]);
-  });
+  describe('a push button’s actions (ADR-0259)', () => {
+    const BUTTON: FormFieldRead = { ...TEXT, kind: 'button', name: 'clear', buttonLabel: 'Clear', buttonActionsKept: false };
+    const EVERY: ButtonStep = { trigger: 'up', step: 0, action: { kind: 'reset', fields: null } };
+    const ONE: ButtonStep = { trigger: 'up', step: 1, action: { kind: 'reset', fields: ['email'] } };
 
-  it('CONTROL: a button set to run a script is said so and offered no Action, so a choice cannot drop it', async () => {
-    mounted({ ...TEXT, kind: 'button', name: 'send', buttonLabel: 'Send', buttonAction: 'other' });
-    await screen.findByLabelText('Words on the button');
-    expect(screen.queryByLabelText('Action')).toBeNull();
-    expect(screen.getByText(/set to run a script or send the form/u)).toBeTruthy();
+    it('adds an action in place: When, Do, the fields ticked, Save writes the whole list', async () => {
+      const { edits } = mounted(BUTTON, undefined, []);
+      expect(await screen.findByText(/does nothing yet/u)).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Add action' }));
+      // EVERY TRIGGER IS OFFERED, by its own words.
+      const when = screen.getByLabelText('When');
+      expect([...(when as HTMLSelectElement).options].map((option) => option.value)).toStrictEqual(['up', 'down', 'enter', 'exit']);
+      fireEvent.change(when, { target: { value: 'down' } });
+      // EVERY KIND IS OFFERED, in the owner's order.
+      const what = screen.getByLabelText('Do');
+      expect([...(what as HTMLSelectElement).options].map((option) => option.textContent)).toStrictEqual(['Go to a page', 'Reset the form']);
+      fireEvent.change(what, { target: { value: 'reset' } });
+      fireEvent.click(screen.getByLabelText('Only the fields ticked below'));
+      // CONTROL: nothing ticked is not an action, so Save waits.
+      expect(screen.getByRole('button', { name: 'Save action' }).hasAttribute('disabled')).toBe(true);
+      // A PUSH BUTTON IS NOT OFFERED: there is nothing in one to reset.
+      expect(screen.queryByRole('checkbox', { name: 'clear' })).toBeNull();
+      fireEvent.click(screen.getByRole('checkbox', { name: 'email' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Save action' }));
+      expect(edits).toStrictEqual([{ buttonActions: [{ trigger: 'down', action: { kind: 'reset', fields: ['email'] } }] }]);
+    });
+
+    it('lists what the button does, and moves, edits and removes one, each writing the whole list in its new order', async () => {
+      const { edits } = mounted(BUTTON, undefined, [EVERY, ONE]);
+      expect(await screen.findByText('Pressed and let go: Reset every field')).toBeTruthy();
+      expect(screen.getByText('Pressed and let go: Reset 1 field')).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Move action 2 up' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Remove action 1' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Edit action 2' }));
+      fireEvent.click(screen.getByLabelText('Every field'));
+      fireEvent.click(screen.getByRole('button', { name: 'Save action' }));
+      const every = { trigger: 'up', action: EVERY.action };
+      const one = { trigger: 'up', action: ONE.action };
+      expect(edits).toStrictEqual([
+        { buttonActions: [one, every] },
+        { buttonActions: [one] },
+        { buttonActions: [every, every] },
+      ]);
+    });
+
+    it('Go to a page: the page typed from 1, sent from 0, at the view chosen; a page past the end is said and not saved', async () => {
+      const { edits } = mounted(BUTTON, undefined, []);
+      fireEvent.click(await screen.findByRole('button', { name: 'Add action' }));
+      const page = screen.getByLabelText('Page');
+      fireEvent.change(page, { target: { value: '6' } });
+      expect(screen.getByText('Choose a page from 1 to 5.')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Save action' }).hasAttribute('disabled')).toBe(true);
+      fireEvent.change(page, { target: { value: '5' } });
+      fireEvent.change(screen.getByLabelText('Show it'), { target: { value: 'fit-width' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save action' }));
+      expect(edits).toStrictEqual([{ buttonActions: [{ trigger: 'up', action: { kind: 'goTo', page: 4, view: 'fit-width', at: null } }] }]);
+    });
+
+    it('CONTROL: a button holding a script lists it, says it is kept, and offers nothing that could write over it', async () => {
+      mounted({ ...BUTTON, buttonActionsKept: true }, undefined, [
+        EVERY,
+        { trigger: 'enter', step: 0, action: { kind: 'kept', subtype: 'JavaScript', runsAs: null } },
+      ]);
+      expect(await screen.findByText('Pointer moves onto it: JavaScript (kept as it is, never run)')).toBeTruthy();
+      expect(screen.getByText(/holds a script or another action Monstera never runs/u)).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Add action' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Remove action 1' })).toBeNull();
+    });
   });
 
   it('a push button offers its words, and a limit of 0 sends no limit', async () => {
@@ -489,6 +552,8 @@ describe('the field properties pane', () => {
             edits.push(set);
           }}
           read={() => Promise.resolve([null])}
+          pageCount={5}
+          readActions={() => Promise.resolve(null)}
           registry={new CommandRegistry([])}
           selected={[handleOf(TEXT)]}
           version={asDocVersion(4)}
@@ -514,6 +579,8 @@ describe('a write landing while the pane is in use (the forms walk’s A8.4)', (
           known={[{ name: 'email', kind: 'text', options: [] }]}
           onEdit={() => undefined}
           read={() => answer(version).then((field) => [field])}
+          pageCount={5}
+          readActions={() => Promise.resolve(null)}
           registry={new CommandRegistry([])}
           selected={[handleOf(TEXT)]}
           version={asDocVersion(version)}

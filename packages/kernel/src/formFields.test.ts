@@ -378,7 +378,14 @@ describe('readFormFields', () => {
       return document.save();
     }
 
-    const reset = (index: number): CommandOfKind<'resetForm'> => ({ kind: 'resetForm', page: 0, index, version: asDocVersion(1) });
+    const reset = (index: number): CommandOfKind<'resetForm'> => ({
+      kind: 'resetForm',
+      page: 0,
+      index,
+      trigger: 'up',
+      step: 0,
+      version: asDocVersion(1),
+    });
     const values = async (session: MupdfSession): Promise<Record<string, unknown>> =>
       Object.fromEntries(
         (await readFormFields(session)).fields
@@ -388,7 +395,10 @@ describe('readFormFields', () => {
 
     it('the listing names the two reset buttons, and only them', async () => {
       const answer = await onSession(await resettable(), (session) => readFormFields(session));
-      expect(answer.fields.filter((field) => field.action === 'reset').map((field) => field.name)).toStrictEqual(['reset.all', 'reset.name']);
+      expect(answer.fields.filter((field) => field.actions?.runs.includes('up') === true).map((field) => field.name)).toStrictEqual([
+        'reset.all',
+        'reset.name',
+      ]);
     });
 
     it('a button naming no fields resets every field to its default: text to /DV, the box off, the dropdown empty', async () => {
@@ -436,7 +446,7 @@ describe('readFormFields', () => {
 
     it('CONTROL: a field that is not a Reset form button is refused, and nothing moves', async () => {
       const after = await onSession(await resettable(), async (session) => {
-        await expect(applyResetForm(session, reset(0))).rejects.toThrow('not a button whose action is Reset form');
+        await expect(applyResetForm(session, reset(0))).rejects.toThrow('is not a Reset form action');
         return values(session);
       });
       expect(after).toStrictEqual({ 'applicant.name': ['Ada'], 'applicant.agrees': true, 'applicant.title': ['Dr'] });

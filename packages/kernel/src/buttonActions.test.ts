@@ -1,0 +1,267 @@
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
+
+import { PDFDict, PDFDocument, PDFName, PDFString, StandardFonts } from '@cantoo/pdf-lib';
+import type { ButtonAction, CommandOfKind, FieldActionTrigger, FormFieldHandle } from '@monstera/contract';
+import { asDocVersion } from '@monstera/shared';
+import { describe, expect, it } from 'vitest';
+
+import { applyEditFormFields } from './formFieldEdit.js';
+import { readButtonActions } from './formFieldRead.js';
+import { applyResetForm, readFormFields } from './formFields.js';
+import * as mupdf from './mupdfRaw.js';
+import { mupdfWriter } from './mupdfWriter.js';
+import type { MupdfSession } from './engineSeam.js';
+
+/**
+ * A push button's actions (ADR-0259), written by the editor and read back by a SECOND READER.
+ *
+ * pdf-lib writes them; PDF.js, which shares no code with either engine, reads what it reads of a widget's `/A` (its
+ * `parseDestDictionary`: `GoTo`, `URI`, `GoToR`, `Named`, `ResetForm`); MuPDF's raw object model reads what PDF.js does
+ * not — every `/Next` and every `/AA` trigger — straight from the dictionaries, never through this build's own reader.
+ */
+
+const VERSION = asDocVersion(1);
+
+/** A form with two text fields, an empty push button `go`, and a push button `scripted` holding a script; three pages. */
+async function buttonForm(): Promise<Uint8Array> {
+  const document = await PDFDocument.create();
+  const page = document.addPage([400, 600]);
+  document.addPage([400, 600]);
+  document.addPage([400, 600]);
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const form = document.getForm();
+  const name = form.createTextField('applicant.name');
+  name.setText('Ada');
+  name.addToPage(page, { x: 20, y: 540, width: 160, height: 20, font });
+  name.acroField.dict.set(PDFName.of('DV'), PDFString.of('Your name'));
+  const city = form.createTextField('applicant.city');
+  city.setText('Paris');
+  city.addToPage(page, { x: 20, y: 500, width: 160, height: 20, font });
+  form.createButton('go').addToPage('Go', page, { x: 20, y: 400, width: 80, height: 20, font });
+  const scripted = form.createButton('scripted');
+  scripted.addToPage('Script', page, { x: 120, y: 400, width: 80, height: 20, font });
+  const widget = scripted.acroField.getWidgets()[0]?.dict;
+  widget?.set(PDFName.of('A'), document.context.obj({ S: 'JavaScript', JS: PDFString.of('app.alert(1)') }));
+  return document.save();
+}
+
+async function onSession<T>(bytes: Uint8Array, work: (session: MupdfSession) => Promise<T>): Promise<T> {
+  const session = await mupdfWriter.open(bytes);
+  try {
+    return await work(session);
+  } finally {
+    await mupdfWriter.close(session);
+  }
+}
+
+async function handleOf(bytes: Uint8Array, name: string): Promise<FormFieldHandle> {
+  const { fields } = await onSession(bytes, (session) => readFormFields(session));
+  const found = fields.find((field) => field.name === name);
+  if (found === undefined) throw new Error(`the form has no field ${name}`);
+  return { page: found.page, index: found.index, name };
+}
+
+async function written(bytes: Uint8Array, name: string, actions: readonly ButtonAction[]): Promise<Uint8Array> {
+  const field = await handleOf(bytes, name);
+  return applyEditFormFields(bytes, { kind: 'editFormFields', edits: [{ field, set: { buttonActions: actions } }], version: VERSION });
+}
+
+/**
+ * What PDF.js makes of the named widget: its own annotation data, read from saved bytes, with `destinationPage` the
+ * index PDF.js itself resolves an explicit destination's page reference to.
+ */
+async function pdfjsWidget(bytes: Uint8Array, name: string): Promise<Record<string, unknown>> {
+  const entry = createRequire(import.meta.url).resolve('pdfjs-dist/legacy/build/pdf.mjs');
+  const pdfjs = (await import(/* @vite-ignore */ pathToFileURL(entry).href)) as typeof import('pdfjs-dist');
+  const task = pdfjs.getDocument({ data: bytes.slice(), useSystemFonts: false, verbosity: 0 });
+  try {
+    const document = await task.promise;
+    const annotations = (await (await document.getPage(1)).getAnnotations()) as Record<string, unknown>[];
+    const found = annotations.find((each) => each['fieldName'] === name);
+    if (found === undefined) throw new Error(`PDF.js reads no widget named ${name}`);
+    const dest = found['dest'];
+    const target: unknown = Array.isArray(dest) ? dest[0] : undefined;
+    const isRef = typeof target === 'object' && target !== null && 'num' in target && 'gen' in target;
+    return isRef ? { ...found, destinationPage: await document.getPageIndex(target as { num: number; gen: number }) } : found;
+  } finally {
+    await task.destroy();
+  }
+}
+
+/** The `/S` of each action along one trigger's chain, read from MuPDF's raw objects: `/A` for up, `/AA /D` and so on. */
+function chainRead(bytes: Uint8Array, name: string, trigger: FieldActionTrigger): { subtype: string; fields: string[] | null }[] {
+  const pdf = mupdf.Document.openDocument(bytes, 'application/pdf').asPDF();
+  if (pdf === null) throw new Error('not a PDF');
+  const page = pdf.loadPage(0);
+  if (!(page instanceof mupdf.PDFPage)) throw new Error('not a PDF page');
+  const widget = page.getWidgets().find((each) => each.getName() === name);
+  if (widget === undefined) throw new Error(`MuPDF reads no widget named ${name}`);
+  const key = { up: undefined, down: 'D', enter: 'E', exit: 'X' }[trigger];
+  let at = key === undefined ? widget.getObject().get('A') : widget.getObject().get('AA', key);
+  const chain: { subtype: string; fields: string[] | null }[] = [];
+  while (at.isDictionary() && chain.length < 16) {
+    const fields = at.get('Fields');
+    chain.push({
+      subtype: at.get('S').asName(),
+      fields: fields.isArray() ? Array.from({ length: fields.length }, (_, index) => fields.get(index).asString()) : null,
+    });
+    at = at.get('Next');
+  }
+  return chain;
+}
+
+async function values(bytes: Uint8Array): Promise<Record<string, readonly string[]>> {
+  const { fields } = await onSession(bytes, (session) => readFormFields(session));
+  return Object.fromEntries(fields.filter((field) => field.kind === 'text').map((field) => [field.name, field.values]));
+}
+
+function resetStep(handle: FormFieldHandle, trigger: FieldActionTrigger, step: number): CommandOfKind<'resetForm'> {
+  return { kind: 'resetForm', page: handle.page, index: handle.index, trigger, step, version: VERSION };
+}
+
+describe('Reset the form, as a push button action (ADR-0259)', () => {
+  const NAME_ONLY: ButtonAction = { trigger: 'up', action: { kind: 'reset', fields: ['applicant.name'] } };
+  const EVERY: ButtonAction = { trigger: 'up', action: { kind: 'reset', fields: null } };
+
+  it('is written as /ResetForm, chained by /Next, and PDF.js reads the first as a reset of the field named', async () => {
+    const bytes = await written(await buttonForm(), 'go', [NAME_ONLY, EVERY, { trigger: 'down', action: { kind: 'reset', fields: null } }]);
+    const read = await pdfjsWidget(bytes, 'go');
+    expect(read['resetForm']).toStrictEqual({ fields: ['applicant.name'], refs: [], include: true });
+    expect(chainRead(bytes, 'go', 'up')).toStrictEqual([
+      { subtype: 'ResetForm', fields: ['applicant.name'] },
+      { subtype: 'ResetForm', fields: null },
+    ]);
+    expect(chainRead(bytes, 'go', 'down')).toStrictEqual([{ subtype: 'ResetForm', fields: null }]);
+    // CONTROL: the button with nothing written reads as nothing to both readers.
+    expect((await pdfjsWidget(await buttonForm(), 'go'))['resetForm']).toBeUndefined();
+    expect(chainRead(await buttonForm(), 'go', 'up')).toStrictEqual([]);
+  });
+
+  it('reads back as written, and the listing names the triggers that run', async () => {
+    const actions = [NAME_ONLY, EVERY, { trigger: 'exit', action: { kind: 'reset', fields: null } }] as const;
+    const bytes = await written(await buttonForm(), 'go', actions);
+    const handle = await handleOf(bytes, 'go');
+    const steps = await onSession(bytes, (session) => readButtonActions(session, handle));
+    expect(steps).toStrictEqual([
+      { trigger: 'up', step: 0, action: NAME_ONLY.action },
+      { trigger: 'up', step: 1, action: EVERY.action },
+      { trigger: 'exit', step: 0, action: { kind: 'reset', fields: null } },
+    ]);
+    const { fields } = await onSession(bytes, (session) => readFormFields(session));
+    expect(fields.find((field) => field.name === 'go')?.actions).toStrictEqual({ runs: ['up', 'exit'], kept: [] });
+  });
+
+  it('runs each step on its own: step 0 resets the field it names, step 1 every field', async () => {
+    const bytes = await written(await buttonForm(), 'go', [NAME_ONLY, EVERY]);
+    const handle = await handleOf(bytes, 'go');
+    expect(await values(bytes)).toStrictEqual({ 'applicant.name': ['Ada'], 'applicant.city': ['Paris'] });
+    const first = await onSession(bytes, async (session) => {
+      await applyResetForm(session, resetStep(handle, 'up', 0));
+      return mupdfWriter.serialise(session);
+    });
+    expect(await values(first)).toStrictEqual({ 'applicant.name': ['Your name'], 'applicant.city': ['Paris'] });
+    const second = await onSession(bytes, async (session) => {
+      await applyResetForm(session, resetStep(handle, 'up', 1));
+      return mupdfWriter.serialise(session);
+    });
+    expect(await values(second)).toStrictEqual({ 'applicant.name': ['Your name'], 'applicant.city': [] });
+  });
+
+  it('CONTROL: a step that is not there, or a script, is refused and nothing moves', async () => {
+    const bytes = await written(await buttonForm(), 'go', [NAME_ONLY]);
+    const go = await handleOf(bytes, 'go');
+    const scripted = await handleOf(bytes, 'scripted');
+    const after = await onSession(bytes, async (session) => {
+      await expect(applyResetForm(session, resetStep(go, 'up', 1))).rejects.toThrow('is not a Reset form action');
+      await expect(applyResetForm(session, resetStep(scripted, 'up', 0))).rejects.toThrow('is not a Reset form action');
+      return mupdfWriter.serialise(session);
+    });
+    expect(await values(after)).toStrictEqual({ 'applicant.name': ['Ada'], 'applicant.city': ['Paris'] });
+  });
+
+  it('a button holding a script is listed kept, never run, and an edit over it is refused with the script left in place', async () => {
+    const bytes = await buttonForm();
+    const handle = await handleOf(bytes, 'scripted');
+    expect(await onSession(bytes, (session) => readButtonActions(session, handle))).toStrictEqual([
+      { trigger: 'up', step: 0, action: { kind: 'kept', subtype: 'JavaScript', runsAs: null } },
+    ]);
+    const { fields } = await onSession(bytes, (session) => readFormFields(session));
+    expect(fields.find((field) => field.name === 'scripted')?.actions).toStrictEqual({ runs: [], kept: ['up'] });
+    await expect(written(bytes, 'scripted', [EVERY])).rejects.toThrow('kept as it is');
+    expect(chainRead(bytes, 'scripted', 'up')).toStrictEqual([{ subtype: 'JavaScript', fields: null }]);
+  });
+
+  it('an empty list takes every trigger away and leaves the rest of /AA as it was', async () => {
+    const source = await PDFDocument.load(await written(await buttonForm(), 'go', [EVERY, { trigger: 'enter', action: { kind: 'reset', fields: null } }]));
+    const aa = source.getForm().getButton('go').acroField.getWidgets()[0]?.dict.lookup(PDFName.of('AA'));
+    if (!(aa instanceof PDFDict)) throw new Error('the written button has no /AA');
+    expect(aa.has(PDFName.of('E'))).toBe(true);
+    // A FOCUS ACTION another tool wrote, which no trigger here names.
+    aa.set(PDFName.of('Fo'), source.context.obj({ S: 'ResetForm' }));
+    const cleared = await written(await source.save(), 'go', []);
+    expect(chainRead(cleared, 'go', 'up')).toStrictEqual([]);
+    expect(chainRead(cleared, 'go', 'enter')).toStrictEqual([]);
+    const left = (await PDFDocument.load(cleared)).getForm().getButton('go').acroField.getWidgets()[0]?.dict.lookup(PDFName.of('AA'));
+    expect(left instanceof PDFDict ? left.keys().map((key) => key.decodeText()) : []).toStrictEqual(['Fo']);
+  });
+});
+
+/** A button's `/A` set by hand, as another tool wrote it: what this build must read, and keep. */
+async function withAction(bytes: Uint8Array, name: string, action: (document: PDFDocument) => PDFDict): Promise<Uint8Array> {
+  const document = await PDFDocument.load(bytes);
+  document.getForm().getButton(name).acroField.getWidgets()[0]?.dict.set(PDFName.of('A'), action(document));
+  return document.save();
+}
+
+describe('Go to a page, as a push button action (ADR-0259)', () => {
+  it('is written as /GoTo to the page by its reference, and PDF.js resolves it to that page and that fit', async () => {
+    const bytes = await written(await buttonForm(), 'go', [{ trigger: 'up', action: { kind: 'goTo', page: 2, view: 'fit', at: null } }]);
+    const read = await pdfjsWidget(bytes, 'go');
+    expect(read['destinationPage']).toBe(2);
+    expect((read['dest'] as unknown[])[1]).toStrictEqual({ name: 'Fit' });
+    // CONTROL: the same button written to page 1 resolves to page 1, so the page is read, not assumed.
+    const other = await written(await buttonForm(), 'go', [{ trigger: 'up', action: { kind: 'goTo', page: 1, view: 'fit-width', at: null } }]);
+    expect((await pdfjsWidget(other, 'go'))['destinationPage']).toBe(1);
+    expect(((await pdfjsWidget(other, 'go'))['dest'] as unknown[])[1]).toStrictEqual({ name: 'FitH' });
+  });
+
+  it('reads back each view as written, on every trigger', async () => {
+    const actions: ButtonAction[] = [
+      { trigger: 'up', action: { kind: 'goTo', page: 2, view: 'fit', at: null } },
+      { trigger: 'down', action: { kind: 'goTo', page: 1, view: 'keep', at: null } },
+      { trigger: 'enter', action: { kind: 'goTo', page: 0, view: 'fit-width', at: { left: null, top: 500, zoom: null } } },
+    ];
+    const bytes = await written(await buttonForm(), 'go', actions);
+    const handle = await handleOf(bytes, 'go');
+    expect(await onSession(bytes, (session) => readButtonActions(session, handle))).toStrictEqual(
+      actions.map((each) => ({ trigger: each.trigger, step: 0, action: each.action })),
+    );
+  });
+
+  it('keeps the place and zoom another tool wrote, through a read and an edit that changes another action', async () => {
+    const acrobat = await withAction(await buttonForm(), 'go', (document) => {
+      const page = document.getPages()[1];
+      if (page === undefined) throw new Error('no page 2');
+      return document.context.obj({ S: 'GoTo', D: [page.ref, 'XYZ', 36, 700, 1.5] });
+    });
+    const handle = await handleOf(acrobat, 'go');
+    const [read] = (await onSession(acrobat, (session) => readButtonActions(session, handle))) ?? [];
+    const goTo = { kind: 'goTo', page: 1, view: 'keep', at: { left: 36, top: 700, zoom: 1.5 } } as const;
+    expect(read).toStrictEqual({ trigger: 'up', step: 0, action: goTo });
+    // AN EDIT ADDING A RESET AFTER IT writes the go-to back with its numbers.
+    const again = await written(acrobat, 'go', [{ trigger: 'up', action: goTo }, { trigger: 'up', action: { kind: 'reset', fields: null } }]);
+    expect((await pdfjsWidget(again, 'go'))['dest']).toMatchObject([{}, { name: 'XYZ' }, 36, 700, 1.5]);
+  });
+
+  it('CONTROL: a named destination is kept and never run, and a page the document does not have is refused', async () => {
+    const named = await withAction(await buttonForm(), 'go', (document) => document.context.obj({ S: 'GoTo', D: PDFString.of('chapter-2') }));
+    const handle = await handleOf(named, 'go');
+    expect(await onSession(named, (session) => readButtonActions(session, handle))).toStrictEqual([
+      { trigger: 'up', step: 0, action: { kind: 'kept', subtype: 'GoTo', runsAs: null } },
+    ]);
+    await expect(written(await buttonForm(), 'go', [{ trigger: 'up', action: { kind: 'goTo', page: 3, view: 'fit', at: null } }])).rejects.toThrow(
+      'no page 4',
+    );
+  });
+});

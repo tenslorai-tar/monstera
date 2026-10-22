@@ -2828,24 +2828,51 @@ export type FieldFill = z.infer<typeof fieldFillSchema>;
  * prior.
  */
 /**
- * Carries out the Reset form action of the button a person pressed (the owner's F7): every field its `/A` names, or every
- * field but those, back to its default (`/DV`, else empty or off), as one step a person can undo.
- *
- * ## The button names the fields, and the document is where that is read
- *
- * `/ResetForm` is one of the standard's actions (ISO 32000-1, 12.6.4.12), not a script, and its `/Fields` and `/Flags`
- * are the document's. So this names the BUTTON, by its place in the widget walk at a version, and the kernel reads the
- * action off it; a payload that listed the fields would be a second reading of `/Fields` composed in the renderer.
+ * When a push button's action runs (ADR-0259 Decision 1): `up` is its `/A`, run when it is pressed and let go, and
+ * `down`, `enter` and `exit` are its `/AA /D`, `/E` and `/X`. In the order a person meets them.
  */
-export const resetFormSchema = z.object({
-  kind: z.literal('resetForm'),
+export const FIELD_ACTION_TRIGGERS = ['up', 'down', 'enter', 'exit'] as const;
+export const fieldActionTriggerSchema = z.enum(FIELD_ACTION_TRIGGERS);
+/** See {@link FIELD_ACTION_TRIGGERS}. */
+export type FieldActionTrigger = z.infer<typeof fieldActionTriggerSchema>;
+
+/** How many actions one push button may carry, on all its triggers together (ADR-0259 Decision 1). */
+export const MAX_BUTTON_ACTIONS = 8;
+
+/**
+ * How far along one trigger's `/Next` chain a reading goes. A document's chain may be longer than an edit writes, and a
+ * chain past this is read as kept, never run in part (ADR-0259 Decision 5).
+ */
+export const MAX_ACTION_CHAIN = 32;
+
+/**
+ * Which action of a pressed button a command carries out (ADR-0259 Decision 3): the button by its place in the widget
+ * walk at a version, the trigger, and the step's place along that trigger's chain. Never the action itself: the kernel
+ * or `main` reads it from the document, so a renderer can choose only among actions the document holds.
+ */
+const buttonStepShape = {
   /** Zero-based index of the page the button sits on. */
   page: z.number().int().nonnegative(),
   /** Its position in the widget walk that produced the answer this names. */
   index: z.number().int().nonnegative(),
+  trigger: fieldActionTriggerSchema,
+  /** Zero-based, along the trigger's chain as the document holds it, kept actions counted. */
+  step: z.number().int().min(0).max(MAX_ACTION_CHAIN - 1),
   /** The version that answer carried. Refused if the document has moved. */
   version: docVersionSchema,
-}).strict();
+} as const;
+
+/**
+ * Carries out a Reset form action of the button a person pressed (the owner's F7, ADR-0259): every field it names, or
+ * every field but those, back to its default (`/DV`, else empty or off), as one step a person can undo.
+ *
+ * ## The button names the fields, and the document is where that is read
+ *
+ * `/ResetForm` is one of the standard's actions (ISO 32000-1, 12.6.4.12), not a script, and its `/Fields` and `/Flags`
+ * are the document's. So this names the BUTTON's step, and the kernel reads the action off it; a payload that listed
+ * the fields would be a second reading of `/Fields` composed in the renderer.
+ */
+export const resetFormSchema = z.object({ kind: z.literal('resetForm'), ...buttonStepShape }).strict();
 
 /**
  * Clears everything typed into the form (the owner's R23, 2026-10-21: *"some forms might not even have a reset
@@ -5637,8 +5664,111 @@ export const MAX_FIELD_LENGTH = 65_536;
  *
  * `null` where the property can be taken away: a tooltip, a default value, a border or a fill, a format, a calculation.
  */
-/** What a push button may be set to do here (the owner's F7): nothing, or the standard Reset form. */
-export const FIELD_BUTTON_ACTIONS = ['none', 'reset'] as const;
+/** The most an `/XYZ` destination's zoom is read as: 64 is 6,400%, Acrobat's own ceiling. */
+export const MAX_DESTINATION_ZOOM = 64;
+
+/** How many fields one action may name. A reset or a submission of more names every field, or every field but some. */
+export const MAX_ACTION_FIELDS = 64;
+
+/** The fields an action names, by fully qualified name. */
+const actionFieldsSchema = z.array(fieldNameSchema).min(1).max(MAX_ACTION_FIELDS).readonly();
+
+/**
+ * One action a push button runs, as this build writes it (ADR-0259 Decision 2): each is the standard's own action, so
+ * any reader runs it, and each runs here by the route that already owns what it does.
+ */
+export const fieldActionSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      /** `/ResetForm`: the fields named, or every field where `null`, back to their defaults by `resetFields`. */
+      kind: z.literal('reset'),
+      fields: actionFieldsSchema.nullable(),
+    })
+    .strict(),
+  z
+    .object({
+      /** `/GoTo` a page of this document (ISO 32000-1, 12.3.2.2), shown as the reader shows every page it goes to. */
+      kind: z.literal('goTo'),
+      /** Zero-based, like every page that crosses. */
+      page: z.number().int().min(0).max(MAX_PAGE_INDEX),
+      /** `keep` is `/XYZ`, the zoom the reader has; `fit` is `/Fit`, the whole page; `fit-width` is `/FitH`. */
+      view: z.enum(['keep', 'fit', 'fit-width']),
+      /**
+       * The place and zoom an `/XYZ` names, or the top a `/FitH` names, KEPT as the document wrote them so an edit that
+       * changes nothing else does not drop them: `null` for a destination that names none, as this build writes.
+       */
+      at: z
+        .object({
+          left: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE).nullable(),
+          top: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE).nullable(),
+          /** As the standard writes it: 1 is 100%; `null` keeps the reader's. */
+          zoom: z.number().gt(0).max(MAX_DESTINATION_ZOOM).nullable(),
+        })
+        .strict()
+        .nullable(),
+    })
+    .strict(),
+]);
+/** See {@link fieldActionSchema}. */
+export type FieldAction = z.infer<typeof fieldActionSchema>;
+
+/** Every kind {@link fieldActionSchema} holds, once, for a schema that names one. */
+export const FIELD_ACTION_KINDS = ['goTo', 'reset'] as const satisfies readonly FieldAction['kind'][];
+/** The two lists hold the same kinds: a kind added to the union and not here is a compile error. */
+type MissingActionKind = Exclude<FieldAction['kind'], (typeof FIELD_ACTION_KINDS)[number]>;
+const ACTION_KINDS_COMPLETE: [MissingActionKind] extends [never] ? true : never = true;
+void ACTION_KINDS_COMPLETE;
+
+/** One action and when it runs. */
+export const buttonActionSchema = z.object({ trigger: fieldActionTriggerSchema, action: fieldActionSchema }).strict();
+/** See {@link buttonActionSchema}. */
+export type ButtonAction = z.infer<typeof buttonActionSchema>;
+
+/** A push button's actions, in the order each trigger runs its own. Empty is a button that does nothing. */
+export const buttonActionsSchema = z.array(buttonActionSchema).max(MAX_BUTTON_ACTIONS).readonly();
+
+/** How long an action's `/S` may be as a reading names it: the standard's longest is `SetOCGState`. */
+export const MAX_ACTION_SUBTYPE = 32;
+
+/**
+ * An action a button holds that this build does not write (ADR-0259 Decision 5): a script, a `Launch`, a `GoTo` to a
+ * named destination, or one of this build's own kinds holding more than an edit writes. It is kept as it is.
+ */
+export const keptActionSchema = z
+  .object({
+    kind: z.literal('kept'),
+    /** The action's `/S` as the document names it, so a person can be told what it is; empty where it names none. */
+    subtype: z.string().max(MAX_ACTION_SUBTYPE),
+    /**
+     * The kind a press carries it out as all the same, or `null` for never: a kind this build runs, read from the
+     * document at the press, whose contents are past what an edit writes (a reset of every field but some). A script
+     * never.
+     */
+    runsAs: z.enum(FIELD_ACTION_KINDS).nullable(),
+  })
+  .strict();
+
+/**
+ * What a press does with one step (ADR-0259 Decision 3): the kind it runs as, or `null` where it is the document's own
+ * and never run. The one rule, which the kernel's listing and the renderer's press both take (B3a).
+ */
+export function stepRunsAs(action: FieldAction | z.infer<typeof keptActionSchema>): FieldAction['kind'] | null {
+  return action.kind === 'kept' ? action.runsAs : action.kind;
+}
+
+/** One step of a button as the document holds it: its trigger, its place along that trigger's chain, and what it is. */
+export const buttonStepSchema = z
+  .object({
+    trigger: fieldActionTriggerSchema,
+    step: z.number().int().min(0).max(MAX_ACTION_CHAIN - 1),
+    action: z.union([fieldActionSchema, keptActionSchema]),
+  })
+  .strict();
+/** See {@link buttonStepSchema}. */
+export type ButtonStep = z.infer<typeof buttonStepSchema>;
+
+/** Every step of a button, trigger by trigger in {@link FIELD_ACTION_TRIGGERS}' order, at most {@link MAX_ACTION_CHAIN}. */
+export const buttonStepsSchema = z.array(buttonStepSchema).max(MAX_ACTION_CHAIN).readonly();
 
 export const formFieldPropertiesSchema = z
   .object({
@@ -5698,11 +5828,11 @@ export const formFieldPropertiesSchema = z
     /** The words on a push button (`/MK /CA`). */
     buttonLabel: z.string().min(1).max(MAX_FIELD_OPTION),
     /**
-     * What a push button does when pressed (its `/A`, the owner's F7): nothing, or the standard Reset form. Only these two
-     * are written; a button set to run a script or send the form keeps that action and is not offered a change, so a
-     * choice here can never drop the document's own content.
+     * What a push button does, on each trigger, in order (ADR-0259): its `/A` and `/AA /D`, `/E` and `/X`, written whole.
+     * A button holding an action this build does not write (a script, a `Launch`) is refused, never written over, so an
+     * edit here can never drop the document's own content.
      */
-    buttonAction: z.enum(FIELD_BUTTON_ACTIONS),
+    buttonActions: buttonActionsSchema,
     /** The colour the field's text is drawn in, written into its default appearance (`/DA`). */
     textColour: annotationColourSchema,
     /** Whether a dropdown also takes words typed into it (`/Ff` bit 19, Edit). */
@@ -5722,15 +5852,16 @@ export type FormFieldProperties = z.infer<typeof formFieldPropertiesSchema>;
 export const MAX_SHARED_FIELD_DEFAULT = 512;
 
 /**
- * The properties a command that changes SEVERAL fields may carry: every member but the two that are lists, and a
+ * The properties a command that changes SEVERAL fields may carry: every member but the three that are lists, and a
  * default value under {@link MAX_SHARED_FIELD_DEFAULT}.
  *
  * A bound on the sum and not on each: a command crosses an engine host in one frame, and one list of 256 edits each
  * carrying a 256-choice list and a 4,096-character default is 260 MB at its worst (measured 2026-10-07 by
- * `hostRoutes.test.ts`). Choices and a calculation belong to ONE field, so they ride in the single-edit shape.
+ * `hostRoutes.test.ts`). Choices, a calculation and a button's actions belong to ONE field, so they ride in the
+ * single-edit shape.
  */
 export const sharedFieldPropertiesSchema = formFieldPropertiesSchema
-  .omit({ options: true, calculation: true })
+  .omit({ options: true, calculation: true, buttonActions: true })
   .extend({ defaultValue: z.string().max(MAX_SHARED_FIELD_DEFAULT).nullable().optional() })
   .strict();
 
@@ -5791,10 +5922,11 @@ export const formFieldReadSchema = z
     /** A push button's words, or `null` for a field that is not one or a button with none. */
     buttonLabel: z.string().max(MAX_FIELD_OPTION).nullable(),
     /**
-     * What a push button does (the owner's F7): `none`, `reset` (the standard Reset form), or `other` (a script, a submit
-     * or another action, which is never run and is kept as it is); `null` for a field that is not a push button.
+     * Whether a push button holds an action this build does not write (a script, a `Launch`, ADR-0259 Decision 5), which
+     * is kept as it is and never run, so its actions are not offered for editing; `null` for a field that is not a push
+     * button. What it does is `document.buttonActions`' answer, one button at a time.
      */
-    buttonAction: z.enum([...FIELD_BUTTON_ACTIONS, 'other']).nullable(),
+    buttonActionsKept: z.boolean().nullable(),
     /** The text's colour from the default appearance, or `null` where it names none (a reader draws black). */
     textColour: annotationColourSchema.nullable(),
     editable: z.boolean(),

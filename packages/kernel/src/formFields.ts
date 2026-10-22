@@ -1,4 +1,14 @@
-import type { AnnotationRect, CommandOfKind, FieldFill, FieldFormat, FieldLook, FieldRange, FieldScript, FormFieldKind } from '@monstera/contract';
+import type {
+  AnnotationRect,
+  CommandOfKind,
+  FieldActionTrigger,
+  FieldFill,
+  FieldFormat,
+  FieldLook,
+  FieldRange,
+  FieldScript,
+  FormFieldKind,
+} from '@monstera/contract';
 import { MAX_FIELD_VALUE } from '@monstera/contract/host';
 import type { PDFDocument, PDFObject, PDFPage, PDFWidget } from './mupdfRaw.js';
 
@@ -7,7 +17,16 @@ import { type CalculatedValue, calculatedValues, recalculate, restoreCalculated,
 import { kindOf } from './fieldKind.js';
 import { choiceLookOf } from './fieldLook.js';
 import { redrawFamily, remaskBeforeBake } from './fieldWidgets.js';
-import { MAX_FIELD_ANCESTRY, buttonActionOf, fieldDictionaryOf, fieldRulesOf, nearest, qualifiedNameOf } from './fieldRules.js';
+import { actionRuns, triggersOf } from './buttonActions.js';
+import {
+  MAX_FIELD_ANCESTRY,
+  actionNodeAt,
+  buttonStepsOf,
+  fieldDictionaryOf,
+  fieldRulesOf,
+  nearest,
+  qualifiedNameOf,
+} from './fieldRules.js';
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { ENGINE_FORM_FIELDS_MAX } from './host/engineChannels.js';
@@ -280,8 +299,8 @@ export interface ListedField {
   readonly range?: FieldRange;
   /** A radio option's own value ({@link radioOptionOf}); present only on a radio widget that names one. */
   readonly option?: string;
-  /** A push button whose action is Reset form ({@link resetsForm}); present only on one. */
-  readonly action?: 'reset';
+  /** A push button's triggers that run something and that hold something kept (ADR-0259); present only where any has. */
+  readonly actions?: { readonly runs: readonly FieldActionTrigger[]; readonly kept: readonly FieldActionTrigger[] };
   /** How a dropdown or a list box is drawn ({@link choiceLookOf}); present only on one (the owner's F1). */
   readonly look?: FieldLook;
   /** A signature field that holds a signature; present only on one (the owner's F8). */
@@ -466,7 +485,7 @@ export function readFormFields(
           ...(listed.cut ? { cut: true as const } : {}),
           ...listedRules(widget),
           ...optionOf(kind, widget),
-          ...(kind === 'button' && resetsForm(widget) ? { action: 'reset' as const } : {}),
+          ...(kind === 'button' ? actionsListed(document, widget) : {}),
           ...(kind === 'dropdown' || kind === 'listbox' ? { look: choiceLookOf(document, widget.getObject()) } : {}),
           // A SIGNATURE FIELD HOLDING ONE, whose value is the signature dictionary: never offered for signing again.
           ...(kind === 'signature' && nearest(widget.getObject(), 'V').isDictionary() ? { signed: true as const } : {}),
@@ -1279,9 +1298,10 @@ export const captureFlattenFormFields = (session: MupdfSession): Promise<Capture
  * here, so nothing can construct an argument, and throwing rather than
  * resolving keeps a widened type from landing as an undo that did nothing.
  */
-/** Whether a widget's own action is the standard Reset form, by the one reading of a button's action. */
-export function resetsForm(widget: PDFWidget): boolean {
-  return buttonActionOf(widget.getObject()) === 'reset';
+/** A push button's listing summary: its triggers that run and that hold kept actions, or nothing where it has none. */
+function actionsListed(document: PDFDocument, widget: PDFWidget): Pick<ListedField, 'actions'> {
+  const steps = buttonStepsOf(document, widget.getObject());
+  return steps.length === 0 ? {} : { actions: triggersOf(steps) };
 }
 
 /**
@@ -1345,22 +1365,23 @@ export function resetFields(document: PDFDocument, chosen?: FieldsChosen): void 
 }
 
 /**
- * Carries out the Reset form action of the button a handle names (the owner's F7): the fields its `/Fields` and
+ * Carries out one Reset form step of the button a handle names (the owner's F7, ADR-0259): the fields its `/Fields` and
  * `/Flags` choose, through {@link resetFields}.
  *
- * A button whose action is not Reset form is refused: the page sends this only for one that is, so another means the
- * document moved under the press, and running it would carry out something nobody asked for.
+ * A step that is not a Reset form the listing said runs is refused: the page sends this only for one that is, so another
+ * means the document moved under the press, and running it would carry out something nobody asked for.
  */
 export const applyResetForm: Apply<'mupdf', 'resetForm'> = (session, command) =>
   withDocument(session, (document) => {
     const loaded = pageAt(document, command.page, document.countPages());
     const button = widgetAt(loaded, command.index);
-    if (!resetsForm(button)) {
-      throw new Error(`the field "${button.getName()}" is not a button whose action is Reset form, so nothing was reset`);
+    const at = actionNodeAt(document, button.getObject(), command.trigger, command.step);
+    const resets = at !== undefined && actionRuns(at.action) && at.node.get('S').isName() && at.node.get('S').asName() === 'ResetForm';
+    if (at === undefined || !resets) {
+      throw new Error(`step ${String(command.step)} of "${button.getName()}" is not a Reset form action, so nothing was reset`);
     }
-    const action = button.getObject().get('A');
-    const named = action.get('Fields');
-    resetFields(document, named.isArray() ? fieldsNamed(named, action.get('Flags')) : undefined);
+    const named = at.node.get('Fields');
+    resetFields(document, named.isArray() ? fieldsNamed(named, at.node.get('Flags')) : undefined);
   });
 
 /** *Reset form* on the ribbon (the owner's R23): every field, through {@link resetFields}. */

@@ -1,5 +1,5 @@
 import { useLingui } from '@lingui/react';
-import type { AnnotationRect, FieldFill, FieldLook } from '@monstera/contract';
+import type { AnnotationRect, FieldActionTrigger, FieldFill, FieldLook } from '@monstera/contract';
 import { type CSSProperties, type ReactElement, useEffect, useId, useRef, useState } from 'react';
 
 import { type OverlayPage, pdfRectOnScreen } from '../annotations/annotationSpace.js';
@@ -32,13 +32,13 @@ interface Typing {
 }
 
 /**
- * One field to fill, named as every fill names it: page, place in the page's widget walk, and the value. Or a Reset form
- * button pressed, named the same way (the owner's F7): it travels the fill's path to the one place a command is sent,
- * which sends `resetForm` for it.
+ * One field to fill, named as every fill names it: page, place in the page's widget walk, and the value. Or a push button
+ * pressed on one of its triggers, named the same way and by its name (ADR-0259): it travels the fill's path to the one
+ * place a command is sent, which reads the button's steps and runs each by its own route.
  */
 export type PageFill =
   | { readonly page: number; readonly index: number; readonly value: FieldFill }
-  | { readonly page: number; readonly index: number; readonly reset: true }
+  | { readonly page: number; readonly index: number; readonly name: string; readonly press: FieldActionTrigger }
   /**
    * An empty signature field to sign (the owner's F8), with the application's own signing: a typed, drawn or picture
    * mark, or a certificate. It carries the field's place on the page and its full name, which is where the signature
@@ -291,6 +291,15 @@ export function FormLayer({
         };
 
         if (offer.kind === 'button') {
+          // EACH TRIGGER ITS OWN EVENT (ADR-0259 Decision 4): what runs is carried out by the one place commands are sent.
+          // What is the document's own script is SAID, NOT RUN (invariant 24), once per click: a press is a person asking,
+          // and a pointer passing over a button with a rollover script is not.
+          const trigger = (press: FieldActionTrigger): void => {
+            if (offer.runs.includes(press)) onFill({ page, index: field.index, name: field.name, press });
+            if (press === 'up' && (offer.kept.includes('up') || offer.kept.includes('down'))) {
+              tell({ message: FORM_BUTTON_NO_SCRIPTS, values: {} });
+            }
+          };
           return [
             <button
               {...marks}
@@ -299,15 +308,18 @@ export function FormLayer({
               aria-label={i18n._(FORM_FIELD_PRESS, { name: field.name })}
               className={look}
               onClick={() => {
-                // RESET FORM IS CARRIED OUT, a standard action and not a script (the owner's F7), as one undo step.
-                if (offer.resets) {
-                  onFill({ page, index: field.index, reset: true });
-                  return;
-                }
-                // SAID, NOT RUN (invariant 24): any other action is the document's content.
-                tell({ message: FORM_BUTTON_NO_SCRIPTS, values: {} });
+                trigger('up');
               }}
-              onPointerDown={pressed}
+              onPointerDown={() => {
+                pressed();
+                trigger('down');
+              }}
+              onPointerEnter={() => {
+                trigger('enter');
+              }}
+              onPointerLeave={() => {
+                trigger('exit');
+              }}
               style={at}
               type="button"
             />,

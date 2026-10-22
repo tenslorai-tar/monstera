@@ -1,12 +1,13 @@
 import { MAX_FIELD_OPTION, MAX_READ_FIELDS, choiceOf } from '@monstera/contract/host';
-import type { FieldChoice, FormFieldHandle, FormFieldRead } from '@monstera/contract';
+import type { ButtonStep, FieldChoice, FormFieldHandle, FormFieldRead } from '@monstera/contract';
 import type { PDFDocument, PDFObject, PDFWidget } from './mupdfRaw.js';
 
 import type { MupdfSession } from './engineSeam.js';
 import { faceOfFont, parseDefaultAppearance, textColourOf } from './fieldActions.js';
 import { FIELD_FAMILY_MARKER, familyOfMarker } from './fieldFamily.js';
 import { colourOf, defaultAppearanceOf } from './fieldLook.js';
-import { borderStyleOf, borderWidthOf, buttonActionOf, checkStyleOf, fieldRulesOf, nearest, qualifiedNameOf } from './fieldRules.js';
+import { holdsKept } from './buttonActions.js';
+import { borderStyleOf, borderWidthOf, buttonStepsOf, checkStyleOf, fieldRulesOf, nearest, qualifiedNameOf } from './fieldRules.js';
 import { kindOf, onStateKeyOf } from './formFields.js';
 import { withDocument } from './mupdfWriter.js';
 import { frameOf, readRect } from './pageAnnotations.js';
@@ -128,7 +129,7 @@ function readOne(document: PDFDocument, widget: PDFWidget, page: number, index: 
     masked: rules.masked,
     visibility: visibilityOf(object.get('F')),
     buttonLabel: kind === 'button' ? textOf(object.get('MK', 'CA'))?.slice(0, MAX_FIELD_OPTION) ?? null : null,
-    buttonAction: kind === 'button' ? buttonActionOf(object) : null,
+    buttonActionsKept: kind === 'button' ? holdsKept(buttonStepsOf(document, object)) : null,
     textColour: textColourOf(da),
     editable: rules.editable,
     multiSelect: rules.multiSelect,
@@ -185,5 +186,18 @@ export function readFieldProperties(
       answered.push(readOne(document, widget, handle.page, handle.index, loaded.rect(widget)));
     }
     return answered;
+  });
+}
+
+/**
+ * What one push button does, step by step (ADR-0259 Decision 3), by {@link readFieldProperties}' rule for a handle: `null`
+ * where the handle no longer names its field, or names a field that is not a push button.
+ */
+export function readButtonActions(session: MupdfSession, handle: FormFieldHandle): Promise<readonly ButtonStep[] | null> {
+  return withDocument(session, (document) => {
+    if (handle.page >= document.countPages()) return null;
+    const widget = document.loadPage(handle.page).getWidgets()[handle.index];
+    if (widget?.getName() !== handle.name || kindOf(widget) !== 'button') return null;
+    return buttonStepsOf(document, widget.getObject());
   });
 }
