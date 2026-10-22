@@ -72,6 +72,7 @@ import {
   type IdentityReader,
   type PostBody,
   StaleTargetError,
+  type StagedImage,
   UrlFetchRefused,
   type WriteTargetVerdict,
   postBodyOf,
@@ -450,6 +451,13 @@ export function createContractHandlers(deps: {
    * is not `2xx`.
    */
   readonly postForm: (address: string, body: PostBody, contentType: string) => Promise<void>;
+  /**
+   * Posts the whole document, staged as Save would write it, to the address a push button's Submit names (ADR-0261
+   * Decision 2): moved into a private file and sent from it a part at a time through `postForm`'s guard, as
+   * `contentType`. Owns `staged`: placed or discarded whatever happens, and the file removed when the send ends.
+   * Throws `UrlFetchRefused` as `postForm` does. REQUIRED, so no composition can post a document by some other route.
+   */
+  readonly postDocument: (address: string, staged: StagedImage, contentType: string) => Promise<void>;
   /** Opens one of the Store application's pages (ADR-0107), answering whether this build can reach the Store. */
   readonly openStore: (page: StorePage) => Promise<boolean>;
   /**
@@ -635,7 +643,7 @@ export function createContractHandlers(deps: {
     'document.pageBarcodes': pageBarcodesHandler(deps.commands),
     'document.openBarcodeLink': openBarcodeLinkHandler(deps.commands, deps.openLink),
     'document.openButtonLink': openButtonLinkHandler(deps.commands, deps.openLink),
-    'document.submitButtonForm': submitButtonFormHandler(deps.commands, deps.openLink, deps.postForm),
+    'document.submitButtonForm': submitButtonFormHandler(deps.commands, deps.openLink, deps.postForm, deps.postDocument),
     'document.openButtonFile': openButtonFileHandler(deps),
     'document.saveBarcodeContact': saveBarcodeContactHandler(deps.commands, mintWritten),
     'document.accessibilityCheck': accessibilityCheckHandler(deps.commands),
@@ -1808,6 +1816,7 @@ const SUBMIT_MEDIA_TYPES: Readonly<Record<SubmitFormat, string>> = {
   fdf: 'application/vnd.fdf',
   xfdf: 'application/vnd.adobe.xfdf',
   html: 'application/x-www-form-urlencoded',
+  pdf: 'application/pdf',
 };
 
 /**
@@ -1832,6 +1841,7 @@ function submitButtonFormHandler(
   commands: DocumentCommands,
   openLink: (address: string) => Promise<boolean>,
   postForm: (address: string, body: PostBody, contentType: string) => Promise<void>,
+  postDocument: (address: string, staged: StagedImage, contentType: string) => Promise<void>,
 ): ContractHandlers['document.submitButtonForm'] {
   return async ({
     docId,
@@ -1845,6 +1855,16 @@ function submitButtonFormHandler(
       if (read.version !== version) return ok({ kind: 'stale' } as const);
       const action = read.steps?.find((each) => each.trigger === trigger && each.step === step)?.action;
       if (action?.kind !== 'submit' || !isSubmitAddress(action.address)) return ok({ kind: 'no-such-submit' } as const);
+      if (action.format === 'pdf') {
+        // THE WHOLE DOCUMENT never fits in a message's address, so the mail app opens without it (ADR-0261 Decision 3).
+        if (schemeOf(action.address) === 'mailto:') {
+          return ok({ kind: (await openLink(action.address)) ? 'mail-opened-without-document' : 'not-opened' } as const);
+        }
+        // STAGED AS SAVE WOULD WRITE IT, in the document's lane and stamping nothing, and posted from a file a part at a
+        // time (ADR-0261 Decision 2): `main` holds one part, never the document.
+        await postDocument(action.address, await commands.currentStaged(docId), SUBMIT_MEDIA_TYPES.pdf);
+        return ok({ kind: 'sent' } as const);
+      }
       const data = await commands.submitFormData(docId, action.format, action.fields);
       if (schemeOf(action.address) === 'mailto:') {
         const whole = mailtoWithBody(action.address, new TextDecoder().decode(data));

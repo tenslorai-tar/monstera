@@ -1,8 +1,8 @@
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 
-import { PDFDict, PDFDocument, PDFName, PDFString, StandardFonts } from '@cantoo/pdf-lib';
-import type { ButtonAction, CommandOfKind, FieldActionTrigger, FormFieldHandle } from '@monstera/contract';
+import { PDFDict, PDFDocument, PDFHexString, PDFName, PDFString, StandardFonts } from '@cantoo/pdf-lib';
+import { type ButtonAction, type CommandOfKind, type FieldActionTrigger, type FormFieldHandle, fieldActionSchema } from '@monstera/contract';
 import { asDocVersion } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -427,6 +427,29 @@ describe('Submit the form, as a push button action (ADR-0259)', () => {
     }
   });
 
+  it('the WHOLE DOCUMENT is written as bit 9 with no /Fields, and reads back as itself (ADR-0261)', async () => {
+    const action = { kind: 'submit', address: 'https://forms.example/take', format: 'pdf', fields: null } as const;
+    const bytes = await written(await buttonForm(), 'go', [{ trigger: 'up', action }]);
+    expect(submitRead(bytes, 'go')).toStrictEqual({ subtype: 'SubmitForm', fs: 'URL', url: 'https://forms.example/take', flags: 256, fields: [] });
+    const handle = await handleOf(bytes, 'go');
+    expect(await onSession(bytes, (session) => readButtonActions(session, handle))).toStrictEqual([{ trigger: 'up', step: 0, action }]);
+
+    // A DOCUMENT'S OWN bit 9 BESIDE A FIELD LIST reads as the whole document naming none: the standard ignores the list.
+    const forged = await withAction(await buttonForm(), 'go', (document) =>
+      document.context.obj({
+        S: 'SubmitForm',
+        F: document.context.obj({ FS: 'URL', F: PDFString.of('https://forms.example/take') }),
+        Flags: 1 << 8,
+        Fields: [PDFHexString.fromText('applicant.city')],
+      }),
+    );
+    expect(await onSession(forged, async (session) => readButtonActions(session, await handleOf(forged, 'go')))).toStrictEqual([
+      { trigger: 'up', step: 0, action },
+    ]);
+    // CONTROL: the contract holds a whole-document submission to no fields, so an edit cannot write a list beside it.
+    expect(fieldActionSchema.safeParse({ ...action, fields: ['applicant.city'] }).success).toBe(false);
+  });
+
   it('encodes the fields named, and only those, as HTML form data, FDF and XFDF', async () => {
     const bytes = await buttonForm();
     const [chosen, every] = await onSession(bytes, async (session) => {
@@ -446,7 +469,9 @@ describe('Submit the form, as a push button action (ADR-0259)', () => {
   it('CONTROL: a submission this build does not carry out as written is kept and never run', async () => {
     const shapes: readonly [string, number][] = [
       ['a GET', 1 << 3],
-      ['the whole document', 1 << 8],
+      // THE WHOLE DOCUMENT BESIDE ANOTHER FORMAT: bit 9 alone runs since ADR-0261 (the case below), so the row that
+      // read `1 << 8` here asserts a shape that is still kept rather than one this build now carries out.
+      ['the whole document and web form data at once', (1 << 8) | (1 << 2)],
       ['every field but those', 1],
       ['two formats at once', (1 << 2) | (1 << 5)],
     ];

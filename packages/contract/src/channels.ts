@@ -5615,6 +5615,8 @@ export const channels = {
       z.object({ kind: z.literal('mail-opened') }),
       /** The data made the address too long to hand over, so the mail app opened without it (Decision 6's policy). */
       z.object({ kind: z.literal('mail-opened-without-data') }),
+      /** The whole document never fits in a `mailto:` address, so the mail app opened without it (ADR-0261 Decision 3). */
+      z.object({ kind: z.literal('mail-opened-without-document') }),
       z.object({ kind: z.literal('not-opened') }),
       /** A value XFDF cannot carry (`engine/exportFormData`'s code). */
       z.object({ kind: z.literal('unrepresentable') }),

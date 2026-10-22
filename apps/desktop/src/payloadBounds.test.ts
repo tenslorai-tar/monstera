@@ -181,6 +181,7 @@ function handlers(): ReturnType<typeof createContractHandlers> {
     openWebPage: () => Promise.resolve(false),
     openLink: () => Promise.reject(new Error('no case here follows a link')),
     postForm: () => Promise.reject(new Error('no case here sends a form')),
+    postDocument: () => Promise.reject(new Error('no case here sends a document')),
     openStore: () => Promise.resolve(false),
     closeListening: () => false,
     cloud: unconfiguredCloud(),

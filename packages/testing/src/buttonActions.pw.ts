@@ -340,6 +340,48 @@ test.describe('a push button’s actions', () => {
     await expect(page.getByText('The form was sent.')).toBeVisible();
   });
 
+  test('Submit the WHOLE PDF: choosing it lets go of the chosen fields, and the question says the whole document goes (ADR-0261)', async ({
+    page,
+  }) => {
+    const sent: Sent = [];
+    await openForm(page, sent);
+    const pane = await buttonProperties(page);
+    await pane.getByRole('button', { name: 'Add action' }).click();
+    await pane.getByLabel('Do', { exact: true }).selectOption('submit');
+    await pane.getByLabel('Send to').fill('https://forms.example/take');
+    // A FIELD CHOSEN FIRST, so the switch below has a choice to let go of: the hard shape for what is written.
+    await pane.getByLabel('Only the fields ticked below').check();
+    await pane.getByRole('checkbox', { name: 'applicant.name' }).check();
+    await pane.getByLabel('Send as').selectOption('pdf');
+    await expect(pane.getByLabel('Only the fields ticked below')).toHaveCount(0);
+    await expect(pane.getByText('The whole document is sent as it is at the press', { exact: false })).toBeVisible();
+    await pane.getByRole('button', { name: 'Save action' }).click();
+    const action = { kind: 'submit', address: 'https://forms.example/take', format: 'pdf', fields: null };
+    expect(executed(sent)).toStrictEqual([
+      {
+        kind: 'editFormFields',
+        edits: [{ field: { page: 0, index: 1, name: 'Clear' }, set: { buttonActions: [{ trigger: 'up', action }] } }],
+        version: 1,
+      },
+    ]);
+
+    const submits = (): unknown[] => sent.filter((call) => call.channel === 'document.submitButtonForm').map((call) => call.params);
+    const dialog = page.getByRole('dialog', { name: 'Send this form?' });
+    await page.locator('[data-form-field="1"]').click();
+    await expect(dialog.getByText('This button sends the whole document as it is now', { exact: false })).toBeVisible();
+    // NO FIELD LIST: the whole document carries every field, and a list would read as a choice.
+    await expect(dialog.getByText('Every field on the form is included.')).toHaveCount(0);
+    expect((await new AxeBuilder({ page }).include('[role="dialog"]').analyze()).violations).toStrictEqual([]);
+    // CLOSING IT SENDS NOTHING.
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(dialog).toHaveCount(0);
+    expect(submits()).toStrictEqual([]);
+    await page.locator('[data-form-field="1"]').click();
+    await dialog.getByRole('button', { name: 'Send' }).click();
+    await expect.poll(() => submits().length).toBe(1);
+    expect(submits()[0]).toStrictEqual({ docId: ID, version: 2, field: { page: 0, index: 1, name: 'Clear' }, trigger: 'up', step: 0 });
+  });
+
   test('Open a file: set in Properties, then a press asks first, naming the file, and only Open opens it', async ({ page }) => {
     const sent: Sent = [];
     await openForm(page, sent);

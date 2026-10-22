@@ -1793,6 +1793,10 @@ export const SUBMIT_FORM_OPEN_MAIL = messageKey('dialog.submit-form.open-mail');
 export const SUBMIT_FORMAT_FDF = messageKey('surface.submit-format.fdf');
 export const SUBMIT_FORMAT_XFDF = messageKey('surface.submit-format.xfdf');
 export const SUBMIT_FORMAT_HTML = messageKey('surface.submit-format.html');
+export const SUBMIT_FORMAT_PDF = messageKey('surface.submit-format.pdf');
+export const SUBMIT_FORM_EXPLAINS_WEB_WHOLE = messageKey('dialog.submit-form.explains-web-whole');
+export const SUBMIT_FORM_EXPLAINS_MAIL_WHOLE = messageKey('dialog.submit-form.explains-mail-whole');
+export const BUTTON_SUBMIT_MAIL_WITHOUT_DOCUMENT = messageKey('toast.button-submit.mail-without-document');
 export const BUTTON_SUBMIT_SENT = messageKey('toast.button-submit.sent');
 export const BUTTON_SUBMIT_NOT_HTTPS = messageKey('toast.button-submit.not-https');
 export const BUTTON_SUBMIT_CREDENTIALS = messageKey('toast.button-submit.credentials');
@@ -1944,6 +1948,7 @@ export const BUTTON_ACTION_SUBMIT_TO = messageKey('surface.field-properties.butt
 export const BUTTON_ACTION_SUBMIT_TO_RULE = messageKey('surface.field-properties.button-action-submit-to-rule');
 export const BUTTON_ACTION_SUBMIT_AS = messageKey('surface.field-properties.button-action-submit-as');
 export const BUTTON_ACTION_SUBMIT_NOTE = messageKey('surface.field-properties.button-action-submit-note');
+export const BUTTON_ACTION_SUBMIT_WHOLE_NOTE = messageKey('surface.field-properties.button-action-submit-whole-note');
 export const BUTTON_SUMMARY_SUBMIT = messageKey('surface.field-properties.button-summary-submit');
 export const BUTTON_ACTION_HIDE = messageKey('surface.field-properties.button-action-hide');
 export const BUTTON_ACTION_SHOW = messageKey('surface.field-properties.button-action-show');
@@ -4735,6 +4740,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SUBMIT_FORMAT_FDF]: 'FDF',
   [SUBMIT_FORMAT_XFDF]: 'XFDF',
   [SUBMIT_FORMAT_HTML]: 'web form data',
+  [SUBMIT_FORMAT_PDF]: 'the whole PDF',
+  [SUBMIT_FORM_EXPLAINS_WEB_WHOLE]:
+    'This button sends the whole document as it is now, with everything filled in and any changes not yet saved, to this address:',
+  [SUBMIT_FORM_EXPLAINS_MAIL_WHOLE]:
+    'This button sends the whole document as it is now, with everything filled in and any changes not yet saved, in a message to this address. Nothing is sent until you send the message from your mail app.',
+  [BUTTON_SUBMIT_MAIL_WITHOUT_DOCUMENT]:
+    'A whole document cannot go inside an email link, so your mail app opened an empty message. Attach the document to it, then send it from there.',
   [BUTTON_SUBMIT_SENT]: 'The form was sent.',
   [BUTTON_SUBMIT_NOT_HTTPS]: 'The form was not sent. Monstera sends a form only to an address that starts with https://.',
   [BUTTON_SUBMIT_CREDENTIALS]: 'The form was not sent, because its address carries a user name or password.',
@@ -5115,6 +5127,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [BUTTON_ACTION_SUBMIT_AS]: 'Send as',
   [BUTTON_ACTION_SUBMIT_NOTE]:
     'Pressing the button asks first, naming the address and the fields. An email address opens the mail app with the form in a new message, and nothing is sent until it is sent there.',
+  [BUTTON_ACTION_SUBMIT_WHOLE_NOTE]:
+    'The whole document is sent as it is at the press, with every field in it and any changes not yet saved.',
   [BUTTON_SUMMARY_SUBMIT]: 'Send to {address}',
   [BUTTON_ACTION_HIDE]: 'Hide them',
   [BUTTON_ACTION_SHOW]: 'Show them',

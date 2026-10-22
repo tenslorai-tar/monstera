@@ -4,7 +4,9 @@ import type { ReactElement } from 'react';
 
 import {
   SUBMIT_FORM_EXPLAINS_MAIL,
+  SUBMIT_FORM_EXPLAINS_MAIL_WHOLE,
   SUBMIT_FORM_EXPLAINS_WEB,
+  SUBMIT_FORM_EXPLAINS_WEB_WHOLE,
   SUBMIT_FORM_FIELDS_ALL,
   SUBMIT_FORM_FIELDS_SOME,
   SUBMIT_FORM_OPEN_MAIL,
@@ -36,13 +38,22 @@ export default function SubmitFormBody({
 }): ReactElement {
   const { _ } = useLingui();
   const named = _(SUBMIT_FORMAT_NAMES[format]);
+  const whole = format === 'pdf';
+  const explains = whole
+    ? mail
+      ? SUBMIT_FORM_EXPLAINS_MAIL_WHOLE
+      : SUBMIT_FORM_EXPLAINS_WEB_WHOLE
+    : mail
+      ? SUBMIT_FORM_EXPLAINS_MAIL
+      : SUBMIT_FORM_EXPLAINS_WEB;
   return (
     <div className="m-follow-link">
-      <p>{_(mail ? SUBMIT_FORM_EXPLAINS_MAIL : SUBMIT_FORM_EXPLAINS_WEB, { format: named })}</p>
+      <p>{_(explains, { format: named })}</p>
       <p className="m-follow-link__address" data-submit-form-address="">
         {address}
       </p>
-      {fields === null ? (
+      {/* THE WHOLE DOCUMENT CARRIES EVERY FIELD, which its sentence above already says. */}
+      {whole ? null : fields === null ? (
         <p>{_(SUBMIT_FORM_FIELDS_ALL)}</p>
       ) : (
         <>

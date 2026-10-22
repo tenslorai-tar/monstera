@@ -3,7 +3,7 @@ import type { MessageKey } from '@monstera/shared';
 import { lazy } from 'react';
 import { z } from 'zod';
 
-import { SUBMIT_FORMAT_FDF, SUBMIT_FORMAT_HTML, SUBMIT_FORMAT_XFDF, SUBMIT_FORM_TITLE } from '../messages/en.js';
+import { SUBMIT_FORMAT_FDF, SUBMIT_FORMAT_HTML, SUBMIT_FORMAT_PDF, SUBMIT_FORMAT_XFDF, SUBMIT_FORM_TITLE } from '../messages/en.js';
 import { declareDialog } from '../registries/dialogs.js';
 
 /**
@@ -14,6 +14,7 @@ export const SUBMIT_FORMAT_NAMES: Readonly<Record<SubmitFormat, MessageKey>> = {
   fdf: SUBMIT_FORMAT_FDF,
   xfdf: SUBMIT_FORMAT_XFDF,
   html: SUBMIT_FORMAT_HTML,
+  pdf: SUBMIT_FORMAT_PDF,
 };
 
 /** The id a push button's Submit opens before anything leaves the document (ADR-0259 Decision 6). */

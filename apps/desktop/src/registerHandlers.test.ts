@@ -199,6 +199,9 @@ function handlers(regionalLocale?: () => string, physicalMemory?: () => number) 
     postForm: () => {
       throw new Error('registration cases must not send a form');
     },
+    postDocument: () => {
+      throw new Error('registration cases must not send a document');
+    },
     openStore: () => {
       throw new Error('registration cases must not reach the Store');
     },

@@ -316,6 +316,7 @@ import { createCannotStartNotice } from './componentNotice.js';
 import { componentStatuses } from './componentStatus.js';
 import { type ByteVerdict, rasterWithinLimit } from './rasterWithinLimit.js';
 import { readSpellingDictionary } from './spellingDictionaries.js';
+import { sentFromStaged } from './stagedUpload.js';
 import type { ShellDependencies, ShellWindow } from './main.js';
 import { openWebPage } from './webPages.js';
 import { createCloseGate } from './windowClose.js';
@@ -997,6 +998,10 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     crashReports = null,
     launchDocuments = [],
   } = composition;
+  // WHERE A DOCUMENT IS SENT FROM, a file at a time and each removed when its send ends: the cloud working folder, which
+  // the uploads already use, or the system's temporary one in a harness with none. ONE folder for DocuSign and a
+  // whole-document submission (ADR-0261).
+  const uploadsDirectory = cloudComposition?.workingDirectory ?? join(tmpdir(), 'monstera-docusign-unconfigured');
   // THE COMMAND LINE'S DOCUMENTS, held until the page asks: the first launch's now, a later launch's when it arrives.
   const launched = createLaunchDocuments(launchDocuments);
   const capabilities = new CapabilityRegistry();
@@ -1887,7 +1892,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       openInBrowser,
       // SENT FROM WHERE THE CLOUD UPLOADS ARE SENT FROM (`.uploads` under the working folder), each file removed when its
       // send ends; a harness with no cloud folder sends from the system's temporary one, as backups fall back to it.
-      workingDirectory: cloudComposition?.workingDirectory ?? join(tmpdir(), 'monstera-docusign-unconfigured'),
+      workingDirectory: uploadsDirectory,
     }),
     // THE EXTRACT, composed like every reader above it: resolve the session,
     // then hand it to whichever host is live. What differs is that it produces
@@ -2299,6 +2304,10 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       openLink: async (address) => (openLink === undefined ? false : openLink(address)),
       // A FORM SENT WHERE A BUTTON NAMES (ADR-0259 Decision 6), through the one guard a URL a document chose is reached by.
       postForm: (address, body, contentType) => postGuarded(address, body, contentType),
+      // THE WHOLE DOCUMENT (ADR-0261), sent from where the cloud uploads and DocuSign send from, each file removed when
+      // its send ends, and through the same guard.
+      postDocument: (address, staged, contentType) =>
+        sentFromStaged(staged, uploadsDirectory, (source) => postGuarded(address, source, contentType)),
       closeListening: () => {
         if (shellWindow === null) return false;
         closeGate.listening();

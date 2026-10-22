@@ -8,6 +8,7 @@ import {
   BUTTON_SUBMIT_CREDENTIALS,
   BUTTON_SUBMIT_MAIL_OPENED,
   BUTTON_SUBMIT_MAIL_WITHOUT_DATA,
+  BUTTON_SUBMIT_MAIL_WITHOUT_DOCUMENT,
   BUTTON_SUBMIT_NOT_HTTPS,
   BUTTON_SUBMIT_NOT_OPENED,
   BUTTON_SUBMIT_NOT_TAKEN,
@@ -83,6 +84,9 @@ export async function askThenSubmit(
     case 'mail-opened-without-data':
       deps.toast('problem', BUTTON_SUBMIT_MAIL_WITHOUT_DATA);
       await deps.run(action.format === 'xfdf' ? 'document.export-form-data-xfdf' : 'document.export-form-data-fdf');
+      return;
+    case 'mail-opened-without-document':
+      deps.toast('problem', BUTTON_SUBMIT_MAIL_WITHOUT_DOCUMENT);
       return;
     case 'refused':
       deps.toast('problem', REFUSED[outcome.reason]);

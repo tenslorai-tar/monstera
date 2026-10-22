@@ -765,6 +765,7 @@ export {
   type PostTransport,
   postBodyOf,
   postGuarded,
+  writeInParts,
 } from './guardedFetch.js';
 export {
   CLOUD_PROVIDERS,

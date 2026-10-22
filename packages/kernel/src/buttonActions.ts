@@ -77,10 +77,11 @@ const EXCLUDE = 1;
 
 /**
  * A submission's `/Flags` as the format it names (ISO 32000-1, table 237): none is FDF, bit 3 HTML form data, bit 6
- * XFDF. THE ONE TABLE, which the writer takes too, so what is written reads back as itself; bit 9, the whole document,
- * is in no row, so a document's own is kept (`SUBMIT_FORMATS`' reason).
+ * XFDF, bit 9 the whole document (ADR-0261). THE ONE TABLE, which the writer takes too, so what is written reads back as
+ * itself. Exactly one row's flags are a format: bit 9 beside another bit is a submission this build does not carry out
+ * as written, and is kept.
  */
-export const SUBMIT_FLAGS: Readonly<Record<SubmitFormat, number>> = { fdf: 0, html: 1 << 2, xfdf: 1 << 5 };
+export const SUBMIT_FLAGS: Readonly<Record<SubmitFormat, number>> = { fdf: 0, html: 1 << 2, xfdf: 1 << 5, pdf: 1 << 8 };
 const SUBMIT_FORMAT_OF_FLAGS: ReadonlyMap<number, SubmitFormat> = new Map(
   SUBMIT_FORMATS.map((format) => [SUBMIT_FLAGS[format], format] as const),
 );
@@ -136,8 +137,12 @@ export function classifyAction(plain: PlainAction): FieldAction | ButtonStep['ac
       // ONLY THE FORMAT BITS, and at most one: a submission asking for a GET, for coordinates, for the annotations or for
       // every field but some is one this build does not carry out as written, so it is kept and never run.
       const format = SUBMIT_FORMAT_OF_FLAGS.get(plain.flags);
-      if (format === undefined || plain.fields === 'unreadable') return kept(plain.subtype, null);
-      const parsed = fieldActionSchema.safeParse({ kind: 'submit', address: plain.file, format, fields: plain.fields });
+      if (format === undefined) return kept(plain.subtype, null);
+      // THE WHOLE DOCUMENT NAMES NO FIELDS, whatever `/Fields` a document carries beside bit 9, readable or not: the
+      // standard ignores the list then, so reading one would offer an edit a choice the submission never honoured.
+      const fields = format === 'pdf' ? null : plain.fields;
+      if (fields === 'unreadable') return kept(plain.subtype, null);
+      const parsed = fieldActionSchema.safeParse({ kind: 'submit', address: plain.file, format, fields });
       return parsed.success ? parsed.data : kept(plain.subtype, null);
     }
     case 'GoToR': {
