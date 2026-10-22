@@ -36,9 +36,11 @@ import {
   BUTTON_ACTION_ADDRESS_HTTPS,
   BUTTON_ACTION_KIND_GO_TO,
   BUTTON_ACTION_KIND_LINK,
+  BUTTON_ACTION_KIND_PRINT,
   BUTTON_ACTION_KIND_RESET,
   BUTTON_ACTION_PAGE,
   BUTTON_ACTION_PAGE_RANGE,
+  BUTTON_ACTION_PRINT_NOTE,
   BUTTON_ACTION_REMOVE,
   BUTTON_ACTION_ROW,
   BUTTON_ACTION_SAVE,
@@ -75,6 +77,7 @@ const KIND_LABELS: Readonly<Record<FieldAction['kind'], MessageKey>> = {
   goTo: BUTTON_ACTION_KIND_GO_TO,
   link: BUTTON_ACTION_KIND_LINK,
   reset: BUTTON_ACTION_KIND_RESET,
+  print: BUTTON_ACTION_KIND_PRINT,
 };
 
 /** A go-to's view in words. Total, for the trigger's reason. */
@@ -93,6 +96,8 @@ function freshAction(kind: FieldAction['kind']): FieldAction {
       return { kind: 'link', address: 'https://' };
     case 'reset':
       return { kind: 'reset', fields: null };
+    case 'print':
+      return { kind: 'print' };
   }
 }
 
@@ -108,6 +113,8 @@ function summaryOf(action: FieldAction, say: (key: MessageKey, values?: Record<s
       return say(BUTTON_SUMMARY_GO_TO, { page: pdfjsPageOf(action.page) });
     case 'link':
       return say(BUTTON_SUMMARY_LINK, { address: action.address });
+    case 'print':
+      return say(BUTTON_ACTION_KIND_PRINT);
     case 'reset':
       return action.fields === null ? say(BUTTON_SUMMARY_RESET_ALL) : say(BUTTON_SUMMARY_RESET_SOME, { count: action.fields.length });
   }
@@ -420,7 +427,15 @@ function ActionDetails({
           }}
         />
       );
+    case 'print':
+      return <PrintNote />;
   }
+}
+
+/** Print needs nothing more: what it does is said, so the person knows a press asks before anything prints. */
+function PrintNote(): ReactElement {
+  const { i18n } = useLingui();
+  return <p className="m-properties__meta">{i18n._(BUTTON_ACTION_PRINT_NOTE)}</p>;
 }
 
 /**

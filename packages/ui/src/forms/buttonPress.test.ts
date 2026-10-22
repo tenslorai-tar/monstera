@@ -48,6 +48,10 @@ function pressing(
     show: (page: number, zoom: ZoomMode | undefined) => {
       routes.push({ show: page, zoom });
     },
+    run: (id: string) => {
+      routes.push({ run: id });
+      return Promise.resolve();
+    },
     toast: (_kind: 'done' | 'problem', message: MessageKey) => {
       said.push(message);
     },
@@ -113,6 +117,12 @@ describe('pressing a push button', () => {
     const { deps, routes } = pressing([{ trigger: 'up', step: 0, action: { kind: 'link', address: 'https://example.org/a' } }], () => true, null);
     await pressButton(deps, DOC, { ...BUTTON, trigger: 'up' });
     expect(routes.filter((route) => typeof route === 'object' && route !== null && 'open' in route)).toStrictEqual([]);
+  });
+
+  it('prints by running the application’s own Print, after the reset before it, in order', async () => {
+    const { deps, routes } = pressing([reset('up', 0), { trigger: 'up', step: 1, action: { kind: 'print' } }]);
+    await pressButton(deps, DOC, { ...BUTTON, trigger: 'up' });
+    expect(routes).toStrictEqual([{ apply: 0 }, { run: 'document.print' }]);
   });
 
   it('stops at a step that did not land, since what follows was written to follow it', async () => {

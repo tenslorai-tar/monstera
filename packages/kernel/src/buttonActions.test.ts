@@ -294,3 +294,24 @@ describe('Open a web link, as a push button action (ADR-0259)', () => {
     ]);
   });
 });
+
+describe('Print the document, as a push button action (ADR-0259)', () => {
+  it('is written as /Named /Print, and PDF.js reads it as the named action Print', async () => {
+    const bytes = await written(await buttonForm(), 'go', [{ trigger: 'up', action: { kind: 'print' } }]);
+    expect((await pdfjsWidget(bytes, 'go'))['action']).toBe('Print');
+    const handle = await handleOf(bytes, 'go');
+    expect(await onSession(bytes, (session) => readButtonActions(session, handle))).toStrictEqual([
+      { trigger: 'up', step: 0, action: { kind: 'print' } },
+    ]);
+    // CONTROL: the empty button names no action to PDF.js.
+    expect((await pdfjsWidget(await buttonForm(), 'go'))['action']).toBeUndefined();
+  });
+
+  it('CONTROL: a page move by name is the reader’s own navigation, and is kept and never run', async () => {
+    const next = await withAction(await buttonForm(), 'go', (document) => document.context.obj({ S: 'Named', N: 'NextPage' }));
+    const handle = await handleOf(next, 'go');
+    expect(await onSession(next, (session) => readButtonActions(session, handle))).toStrictEqual([
+      { trigger: 'up', step: 0, action: { kind: 'kept', subtype: 'Named', runsAs: null } },
+    ]);
+  });
+});

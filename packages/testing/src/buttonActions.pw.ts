@@ -208,6 +208,38 @@ test.describe('a push button’s actions', () => {
     ]);
   });
 
+  test('Print the document: set in Properties, then a press opens the application’s Print, and only its button prints', async ({
+    page,
+  }) => {
+    const sent: Sent = [];
+    await openForm(page, sent);
+    const pane = await buttonProperties(page);
+    await pane.getByRole('button', { name: 'Add action' }).click();
+    await pane.getByLabel('Do', { exact: true }).selectOption('print');
+    await pane.getByRole('button', { name: 'Save action' }).click();
+    expect(executed(sent)).toStrictEqual([
+      {
+        kind: 'editFormFields',
+        edits: [{ field: { page: 0, index: 1, name: 'Clear' }, set: { buttonActions: [{ trigger: 'up', action: { kind: 'print' } }] } }],
+        version: 1,
+      },
+    ]);
+    await expect(pane.getByText('Pressed and let go: Print the document')).toBeVisible();
+
+    const prints = (): unknown[] => sent.filter((call) => call.channel === 'document.print').map((call) => call.params);
+    const dialog = page.getByRole('dialog', { name: 'Print', exact: true });
+    // CANCEL FIRST: the Print window is the question, and closing it prints nothing.
+    await page.locator('[data-form-field="1"]').click();
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(dialog).toHaveCount(0);
+    // THEN PRINT: exactly one request, for the document's every page (one range, 0 to 2), read after it.
+    await page.locator('[data-form-field="1"]').click();
+    await dialog.getByRole('button', { name: 'Choose a printer…' }).click();
+    await expect.poll(() => prints().length).toBe(1);
+    expect(prints()[0]).toMatchObject({ docId: ID, pages: [[0, 2]] });
+  });
+
   /**
    * Pressed, then the text field filled: the fill is what arrives, so "nothing else was sent" is read after something
    * that WAS, never as an absence that waiting longer might have changed.

@@ -42,6 +42,8 @@ export interface PlainAction {
     | null;
   /** `/URI` as text, or `null` where it is not a string. */
   readonly uri: string | null;
+  /** `/N`, a named action's name, or `null` where it is not a name. */
+  readonly named: string | null;
 }
 
 /** What one object model offers the walker: a node's plain reading, the nodes its `/Next` names, and its identity. */
@@ -92,6 +94,10 @@ export function classifyAction(plain: PlainAction): FieldAction | ButtonStep['ac
       const parsed = fieldActionSchema.safeParse({ kind: 'goTo', page: destination.page, ...viewOf(destination) });
       return parsed.success ? parsed.data : kept(plain.subtype, null);
     }
+    // ONLY PRINT among the named actions: the standard's four page moves (`NextPage` and the rest) are a reader's own
+    // navigation this build does not write, so they are kept rather than run as something they are not.
+    case 'Named':
+      return plain.named === 'Print' ? { kind: 'print' } : kept(plain.subtype, null);
     case 'URI': {
       // A SCHEME NOT FOLLOWED (`javascript:`, `file:`) is kept and never run: the contract's link takes only what
       // `isFollowable` does, so it fails the parse here rather than reaching a press.

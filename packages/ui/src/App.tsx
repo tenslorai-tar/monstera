@@ -318,7 +318,7 @@ import { type FieldProblem, emptyRequired } from './forms/fieldCheck.js';
 import { FieldPropertiesPanel } from './forms/FieldPropertiesPanel.js';
 import { FormSettingsPanel } from './forms/FormSettingsPanel.js';
 import type { PageFill } from './forms/FormLayer.js';
-import { pressButton } from './forms/buttonPress.js';
+import { type ButtonCommandId, pressButton } from './forms/buttonPress.js';
 import { TabOrderBar } from './forms/TabOrderLayer.js';
 import type { PlacedField } from './forms/arrange.js';
 import { besideRect } from './forms/fieldDesign.js';
@@ -3629,42 +3629,6 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
     },
     [shownZoom, store],
   );
-  /**
-   * A PUSH BUTTON PRESSED (ADR-0259) runs its steps for that trigger, each by its own route (`pressButton`). The commands
-   * among them travel `applyCarryingFields`, as a fill does, so the field selection is carried past each; a step that
-   * shows a page goes through the zoom and the navigator every other way of showing one takes.
-   */
-  const pressFormButton = useCallback(
-    (handle: Extract<PageFill, { readonly press: unknown }>): void => {
-      if (activeId === undefined) return;
-      const docId = activeId;
-      const apply = (command: CommandOfKind<'resetForm'>): Promise<DocVersion | undefined> => {
-        let produced: DocVersion | undefined;
-        return applyCarryingFields(docId, command, (version) => {
-          produced = version;
-        }).then((landed) => (landed ? produced : undefined));
-      };
-      const show = (page: number, zoom: ZoomMode | undefined): void => {
-        if (zoom !== undefined) changeZoom(() => zoom);
-        navigator.jumpTo(page);
-      };
-      void pressButton({ client, ask, apply, toast, show }, docId, {
-        page: handle.page,
-        index: handle.index,
-        name: handle.name,
-        trigger: handle.press,
-      });
-    },
-    [activeId, applyCarryingFields, ask, changeZoom, client, navigator, toast],
-  );
-  /** The form layer's one way in: a fill, a signature, or a press. */
-  const fillOrPress = useCallback(
-    (handle: PageFill & { readonly version: DocVersion }): void => {
-      if ('press' in handle) pressFormButton(handle);
-      else fillFormField(handle);
-    },
-    [fillFormField, pressFormButton],
-  );
   // ONE STEP IN OR OUT BY THE READER'S *ZOOM STEP*, read here once: `+`, `−` and Ctrl+wheel all ask this with a
   // direction, so none of them holds a step of its own to disagree with the setting.
   const zoomStep = useSetting(settings, ZOOM_STEP_SETTING);
@@ -4811,6 +4775,47 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
   useEffect(() => {
     commandContextRef.current = context;
   }, [context]);
+
+  /**
+   * A PUSH BUTTON PRESSED (ADR-0259) runs its steps for that trigger, each by its own route (`pressButton`). The commands
+   * among them travel `applyCarryingFields`, as a fill does, so the field selection is carried past each; a step that
+   * shows a page goes through the zoom and the navigator every other way of showing one takes; and a step that is one of
+   * the application's own commands (Print) runs that registered command, so its dialogs are the ones the ribbon opens.
+   */
+  const pressFormButton = useCallback(
+    (handle: Extract<PageFill, { readonly press: unknown }>): void => {
+      if (activeId === undefined) return;
+      const docId = activeId;
+      const apply = (command: CommandOfKind<'resetForm'>): Promise<DocVersion | undefined> => {
+        let produced: DocVersion | undefined;
+        return applyCarryingFields(docId, command, (version) => {
+          produced = version;
+        }).then((landed) => (landed ? produced : undefined));
+      };
+      const show = (page: number, zoom: ZoomMode | undefined): void => {
+        if (zoom !== undefined) changeZoom(() => zoom);
+        navigator.jumpTo(page);
+      };
+      const run = async (id: ButtonCommandId): Promise<void> => {
+        await registry.availableById(id, context)?.run(context);
+      };
+      void pressButton({ client, ask, apply, toast, show, run }, docId, {
+        page: handle.page,
+        index: handle.index,
+        name: handle.name,
+        trigger: handle.press,
+      });
+    },
+    [activeId, applyCarryingFields, ask, changeZoom, client, context, navigator, registry, toast],
+  );
+  /** The form layer's one way in: a fill, a signature, or a press. */
+  const fillOrPress = useCallback(
+    (handle: PageFill & { readonly version: DocVersion }): void => {
+      if ('press' in handle) pressFormButton(handle);
+      else fillFormField(handle);
+    },
+    [fillFormField, pressFormButton],
+  );
 
   // ESCAPE STOPS the tool that is on (ADR-0154 Decision 4), innermost first: marks selected are let go before the tool
   // is. A key pressed inside a layer that holds its own selection, or in an open block's editor, is answered there and

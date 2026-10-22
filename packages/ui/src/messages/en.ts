@@ -1899,6 +1899,8 @@ export const BUTTON_ACTION_KIND_LINK = messageKey('surface.field-properties.butt
 export const BUTTON_ACTION_ADDRESS = messageKey('surface.field-properties.button-action-address');
 export const BUTTON_ACTION_ADDRESS_HTTPS = messageKey('surface.field-properties.button-action-address-https');
 export const BUTTON_SUMMARY_LINK = messageKey('surface.field-properties.button-summary-link');
+export const BUTTON_ACTION_KIND_PRINT = messageKey('surface.field-properties.button-action-kind-print');
+export const BUTTON_ACTION_PRINT_NOTE = messageKey('surface.field-properties.button-action-print-note');
 export const BUTTON_ACTION_FIELDS_ALL = messageKey('surface.field-properties.button-action-fields-all');
 export const BUTTON_ACTION_FIELDS_CHOSEN = messageKey('surface.field-properties.button-action-fields-chosen');
 export const BUTTON_ACTION_FIELDS = messageKey('surface.field-properties.button-action-fields');
@@ -5016,6 +5018,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [BUTTON_ACTION_ADDRESS]: 'Web address',
   [BUTTON_ACTION_ADDRESS_HTTPS]: 'Type a whole address that starts with https://. Monstera asks before it opens one.',
   [BUTTON_SUMMARY_LINK]: 'Open {address}',
+  [BUTTON_ACTION_KIND_PRINT]: 'Print the document',
+  [BUTTON_ACTION_PRINT_NOTE]: 'The Print window opens, as it does from the ribbon. Nothing is printed until Print is chosen there.',
   [BUTTON_ACTION_FIELDS_ALL]: 'Every field',
   [BUTTON_ACTION_FIELDS_CHOSEN]: 'Only the fields ticked below',
   [BUTTON_ACTION_FIELDS]: 'Fields',

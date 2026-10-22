@@ -288,6 +288,7 @@ function pdfLibActions(document: PDFDocument): ActionModel<PdfLibAction> {
         flags: flags instanceof PDFNumber ? Math.trunc(flags.asNumber()) : 0,
         destination: destinationOfDict(document, dict.lookup(PDFName.of('D'))),
         uri: textOfValue(dict.lookup(PDFName.of('URI'))),
+        named: nameOfValue(dict.lookup(PDFName.of('N'))),
       };
     },
     next: ({ dict }) => {
@@ -311,6 +312,11 @@ function pdfLibActions(document: PDFDocument): ActionModel<PdfLibAction> {
 /** A string value as text, or `null` where it is not a string. */
 function textOfValue(value: PDFObject | undefined): string | null {
   return value instanceof PDFString || value instanceof PDFHexString ? value.decodeText() : null;
+}
+
+/** A name value as text, or `null` where it is not a name. */
+function nameOfValue(value: PDFObject | undefined): string | null {
+  return value instanceof PDFName ? value.decodeText() : null;
 }
 
 /** `fieldRules.ts`' `destinationOf`, over pdf-lib's objects: the page by its reference among this document's pages. */
@@ -378,6 +384,8 @@ function actionDictOf(document: PDFDocument, action: FieldAction): PDFDict {
       // AN ASCII STRING, as `/URI` must be (ISO 32000-1, table 206): the URL parser's own form, which percent-encodes
       // what is not ASCII. Every address the contract takes has a scheme, so it parses.
       return document.context.obj({ S: 'URI', URI: PDFString.of(URL.canParse(action.address) ? new URL(action.address).href : action.address) });
+    case 'print':
+      return document.context.obj({ S: 'Named', N: 'Print' });
     case 'reset':
       return document.context.obj({
         S: 'ResetForm',

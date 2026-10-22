@@ -5723,12 +5723,21 @@ export const fieldActionSchema = z.discriminatedUnion('kind', [
         .refine(isFollowable, { message: 'a button opens only an https:, http: or mailto: address' }),
     })
     .strict(),
+  z
+    .object({
+      /**
+       * `/Named /N /Print`, the named action every major reader runs as its own Print (Acrobat's menu item, which the
+       * standard's table 212 leaves to the reader). It opens the application's Print, whose dialogs are the question.
+       */
+      kind: z.literal('print'),
+    })
+    .strict(),
 ]);
 /** See {@link fieldActionSchema}. */
 export type FieldAction = z.infer<typeof fieldActionSchema>;
 
 /** Every kind {@link fieldActionSchema} holds, once, for a schema that names one. */
-export const FIELD_ACTION_KINDS = ['goTo', 'link', 'reset'] as const satisfies readonly FieldAction['kind'][];
+export const FIELD_ACTION_KINDS = ['goTo', 'link', 'reset', 'print'] as const satisfies readonly FieldAction['kind'][];
 /** The two lists hold the same kinds: a kind added to the union and not here is a compile error. */
 type MissingActionKind = Exclude<FieldAction['kind'], (typeof FIELD_ACTION_KINDS)[number]>;
 const ACTION_KINDS_COMPLETE: [MissingActionKind] extends [never] ? true : never = true;

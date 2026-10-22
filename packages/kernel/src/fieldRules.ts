@@ -93,6 +93,7 @@ const mupdfActions = (document: PDFDocument): ActionModel<PDFObject> => ({
       flags: flags.isNumber() ? Math.trunc(flags.asNumber()) : 0,
       destination: destinationOf(document, node.get('D')),
       uri: stringOf(node.get('URI')),
+      named: node.get('N').isName() ? node.get('N').asName() : null,
     };
   },
   next: (node) => {

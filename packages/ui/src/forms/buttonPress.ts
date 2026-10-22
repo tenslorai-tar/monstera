@@ -21,8 +21,16 @@ export interface ButtonPressDeps {
   readonly apply: (command: CommandOfKind<'resetForm'>) => Promise<DocVersion | undefined>;
   /** Shows a zero-based page, at a zoom where the action names one: every other way of going to a page's route. */
   readonly show: (page: number, zoom: ZoomMode | undefined) => void;
+  /** Runs one of the application's own registered commands, as its ribbon button does, to its end. */
+  readonly run: (id: ButtonCommandId) => Promise<void>;
   readonly toast: ShowToast;
 }
+
+/**
+ * The application's own commands a button's action is (ADR-0259 Decision 2): what a press does is what the person would
+ * do from the ribbon, with the same dialogs, so the action never prints or imports by a second route.
+ */
+export type ButtonCommandId = 'document.print';
 
 /**
  * The zoom a go-to asks for (ISO 32000-1, table 151): the whole page, the page's width, or an `/XYZ`'s own zoom, kept
@@ -84,6 +92,11 @@ export async function pressButton(deps: ButtonPressDeps, docId: DocId, pressed: 
             deps.client['document.openButtonLink']({ docId, version, field, trigger: pressed.trigger, step: each.step }),
           );
         }
+        break;
+      case 'print':
+        // THE APPLICATION'S PRINT, whose resolution dialog and the system's print dialog are the question: nothing is
+        // printed without the person choosing Print there.
+        await deps.run('document.print');
         break;
       case 'reset': {
         const next = await deps.apply({ kind: 'resetForm', ...at });
