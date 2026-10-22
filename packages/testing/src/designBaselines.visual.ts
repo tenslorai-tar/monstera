@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { PDFDocument } from '@cantoo/pdf-lib';
+import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
@@ -443,5 +443,95 @@ for (const look of LOOKS) {
     expect(await list.evaluate((element) => element.scrollHeight <= element.clientHeight)).toBe(true);
     await parkPointer(page);
     await expect(page.locator('.m-document-panel').first()).toHaveScreenshot(`${look.name}-fields-list.png`);
+  });
+}
+
+// THE FORMS RIBBON ON A DOCUMENT WITH FIELDS (cloud run 16, C4): `section-forms` is taken on a blank page, where Reset
+// form is hidden by its `when` (`deps.hasFields`), so no baseline showed the group a person with a form sees.
+for (const look of LOOKS) {
+  test(`${look.name}: the Forms ribbon on a document with fields, Reset form showing, matches its baseline`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const bytes = await formPdf();
+    await bridgeUnder(page, look, {
+      opens: [{ kind: 'opened', docId: FORM, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Form.pdf' }],
+      documentBytes: new Map([[FORM, bytes]]),
+      formFields: [EVERY_FIELD_KIND],
+    });
+    await page.goto('/');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', look.name);
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    await expect(page.locator('canvas.m-page:visible').first()).toBeVisible();
+    await page.locator('[data-ribbon-section="forms"]').click();
+    const ribbon = page.locator('[data-ribbon-active]');
+    await expect(ribbon).toHaveAttribute('data-ribbon-active', 'forms');
+    // THE PREMISE OF THE PICTURE, asserted: without it this would be `section-forms` again under another name.
+    await expect(ribbon.getByRole('button', { name: 'Reset form', exact: true })).toBeVisible();
+    await settled(page, () => ribbon.boundingBox(), (box) => box !== null && box.width > 0, 'the Forms ribbon');
+    await parkPointer(page);
+    await expect(ribbon).toHaveScreenshot(`${look.name}-ribbon-forms-with-fields.png`);
+  });
+}
+
+// THE DATE FIELD'S CALENDAR IN EACH OF ITS FOUR VIEWS (C4; the owner's R25 built them): `datePickerViews.pw.ts` checks
+// each view's accessibility and fit, and nothing compared how one looks. The field holds a date, so every view opens on
+// a page decided by that value and never by the day the run happens.
+const DATED = asDocId('00000000-0000-4000-8000-0000000000e6');
+const BORN_RECT = { x0: 180, y0: 626, x1: 340, y1: 646 } as const;
+
+for (const look of LOOKS) {
+  test(`${look.name}: the date calendar in its days, months, years and decades views matches its baselines`, async ({ page }) => {
+    const document = await PDFDocument.create();
+    const font = await document.embedFont(StandardFonts.Helvetica);
+    const first = document.addPage([612, 792]);
+    document
+      .getForm()
+      .createTextField('Born')
+      .addToPage(first, { x: BORN_RECT.x0, y: BORN_RECT.y0, width: BORN_RECT.x1 - BORN_RECT.x0, height: BORN_RECT.y1 - BORN_RECT.y0, font });
+    const bytes = await document.save();
+    await page.setViewportSize({ width: 1280, height: 860 });
+    // A FIXED DAY, so nothing the calendar might draw from today moves between runs.
+    await page.clock.setFixedTime(new Date('2026-10-21T12:00:00Z'));
+    await bridgeUnder(page, look, {
+      opens: [{ kind: 'opened', docId: DATED, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Form.pdf' }],
+      documentBytes: new Map([[DATED, bytes]]),
+      formFields: [
+        [
+          {
+            index: 0,
+            page: 0,
+            kind: 'text',
+            name: 'Born',
+            values: ['21/10/2026'],
+            on: null,
+            options: [],
+            readOnly: false,
+            multiline: false,
+            rect: BORN_RECT,
+            format: { kind: 'date', pattern: 'dd/mm/yyyy' },
+          },
+        ],
+      ],
+    });
+    await page.goto('/');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', look.name);
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    await expect(page.locator('[data-form-layer="0"] [data-form-field="0"]')).toBeAttached();
+    await page.getByRole('button', { name: 'Fill in Born', exact: true }).click();
+    await page.getByRole('button', { name: 'Choose a date', exact: true }).click();
+    const calendar = page.getByRole('dialog', { name: 'Calendar' });
+    // EACH VIEW BY ITS TITLE, the route a person takes: days, then the month's title, the year's, the decade's.
+    const views = [
+      { view: 'days', next: /, Choose a month$/u },
+      { view: 'months', next: /, Choose a year$/u },
+      { view: 'years', next: /, Choose ten years$/u },
+      { view: 'decades', next: null },
+    ] as const;
+    for (const { view, next } of views) {
+      await expect(calendar).toHaveAttribute('data-view', view);
+      await settled(page, () => calendar.boundingBox(), (box) => box !== null && box.width > 0, `the calendar's ${view} view`);
+      await parkPointer(page);
+      await expect(calendar).toHaveScreenshot(`${look.name}-calendar-${view}.png`);
+      if (next !== null) await calendar.getByRole('button', { name: next }).click();
+    }
   });
 }
