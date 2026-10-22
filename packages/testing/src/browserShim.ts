@@ -697,7 +697,7 @@ export interface BrowserShimOptions {
   /**
    * What `document.annotations` lists: page, walk index, kind and rect, in PDF user space.
    *
-   * A single list, for `flatFieldCandidates`' reason — nothing here re-reads it across versions.
+   * A single list, which `annotationsFrom` may hold back until a version, for a case about a mark just written.
    * Absent is an empty document, which is what every case that is not about existing marks
    * wants.
    */
@@ -736,6 +736,12 @@ export interface BrowserShimOptions {
      */
     readonly pictured?: true;
   }[];
+  /**
+   * The version from which `annotations` is in the document; before it the list is empty. For a case about a mark a
+   * command has just written, where a read taken at the version before the write must not find it. Absent is every
+   * version.
+   */
+  readonly annotationsFrom?: number;
 
   /**
    * What `document.flatFieldCandidates` proposes.
@@ -2493,7 +2499,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       return Promise.resolve(
         ok({
           version: asDocVersion(current),
-          annotations: (options.annotations ?? []).slice(from).map(({ contents = '', ...annotation }) => ({
+          annotations: (current < (options.annotationsFrom ?? 0) ? [] : (options.annotations ?? [])).slice(from).map(({ contents = '', ...annotation }) => ({
             ...annotation,
             style: { colour: [1, 0, 0], opacity: 1, borderWidth: null },
             contents: contents.slice(0, MAX_ANNOTATION_CONTENTS),
@@ -2990,12 +2996,28 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     incidents.push(incident);
   });
 
+  // THE DOCUMENT'S LANE, as main's `DocumentCommands` runs a command and an annotation listing in it: a listing asked for
+  // while a command is held answers after that command, never with the document from before it. Only matters where a
+  // case holds a command with `delays`; with none, each call settles before the next is asked.
+  const lanes = new Map<string, Promise<unknown>>();
+  const laned = (id: string, params: unknown): string | undefined =>
+    (id === 'document.execute' || id === 'document.annotations') && typeof params === 'object' && params !== null && 'docId' in params
+      ? String(params.docId)
+      : undefined;
+
   const client = createClient(channels, async (id, params) => {
-    // A CHANNEL MAIN TAKES TIME OVER, where a case says so: the first-open case holds the view model back the way the
-    // engine host does on a large scan, so the frames between the click and the first page are long enough to read.
-    const wait = options.delays?.[id];
-    if (wait !== undefined) await new Promise((resolve) => setTimeout(resolve, wait));
-    return acrossTheWire(await wrapped[id](acrossTheWire(params)));
+    const answer = async () => {
+      // A CHANNEL MAIN TAKES TIME OVER, where a case says so: the first-open case holds the view model back the way the
+      // engine host does on a large scan, so the frames between the click and the first page are long enough to read.
+      const wait = options.delays?.[id];
+      if (wait !== undefined) await new Promise((resolve) => setTimeout(resolve, wait));
+      return acrossTheWire(await wrapped[id](acrossTheWire(params)));
+    };
+    const lane = laned(id, params);
+    if (lane === undefined) return answer();
+    const turn = (lanes.get(lane) ?? Promise.resolve()).then(answer, answer);
+    lanes.set(lane, turn.catch(() => undefined));
+    return turn;
   });
 
   return {

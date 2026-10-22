@@ -2536,10 +2536,13 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
    */
   const listAnnotations = useCallback(async () => {
     if (activeId === undefined) return undefined;
-    // AT THE VERSION ON SHOW, so a press on a page whose marks the layers have read waits for no second read.
-    const answer = await annotationReads.read(activeId, stores.get(activeId)?.getState().version);
+    // ALWAYS FROM MAIN, never the layers' read at the version on show: a press made while a write is still in flight
+    // is a press on the document that write produced, and main answers this read after it. Taken from the version on
+    // show, the Select tool pressed a measurement or a link drawn a moment before and found nothing (the measure and
+    // comments walks, 2026-10-22). The answer still refreshes the one reader, so the layers gain from it.
+    const answer = await annotationReads.read(activeId, undefined);
     return answer.ok ? { version: answer.value.version, annotations: answer.value.items } : undefined;
-  }, [activeId, annotationReads, stores]);
+  }, [activeId, annotationReads]);
   /**
    * The fields the open document has, for a field tool to ask a name against (`fieldNameCheck.ts`): the whole list, read
    * when a name is about to be asked for. `undefined` when it cannot be read, which is no check and never a refusal.
