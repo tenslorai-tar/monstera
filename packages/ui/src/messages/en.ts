@@ -1775,6 +1775,9 @@ export const FORM_FIELD_REQUIRED_EMPTY = messageKey('surface.form-layer.required
 export const FORM_FIELD_REQUIRED_LEFT = messageKey('surface.form-layer.required-left');
 export const FORM_BUTTON_NO_SCRIPTS = messageKey('surface.form-layer.button-no-scripts');
 export const BUTTON_PRESS_UNREAD = messageKey('surface.form-layer.button-press-unread');
+export const OPEN_BUTTON_FILE_TITLE = messageKey('dialog.open-button-file.title');
+export const OPEN_BUTTON_FILE_EXPLAINS = messageKey('dialog.open-button-file.explains');
+export const OPEN_BUTTON_FILE_OPEN = messageKey('dialog.open-button-file.open');
 export const SUBMIT_FORM_TITLE = messageKey('dialog.submit-form.title');
 export const SUBMIT_FORM_EXPLAINS_WEB = messageKey('dialog.submit-form.explains-web');
 export const SUBMIT_FORM_EXPLAINS_MAIL = messageKey('dialog.submit-form.explains-mail');
@@ -1927,6 +1930,11 @@ export const BUTTON_ACTION_PRINT_NOTE = messageKey('surface.field-properties.but
 export const BUTTON_ACTION_KIND_IMPORT = messageKey('surface.field-properties.button-action-kind-import');
 export const BUTTON_ACTION_KIND_SHOW_HIDE = messageKey('surface.field-properties.button-action-kind-show-hide');
 export const BUTTON_ACTION_KIND_SUBMIT = messageKey('surface.field-properties.button-action-kind-submit');
+export const BUTTON_ACTION_KIND_OPEN_FILE = messageKey('surface.field-properties.button-action-kind-open-file');
+export const BUTTON_ACTION_OPEN_FILE = messageKey('surface.field-properties.button-action-open-file');
+export const BUTTON_ACTION_OPEN_FILE_RULE = messageKey('surface.field-properties.button-action-open-file-rule');
+export const BUTTON_ACTION_OPEN_FILE_NOTE = messageKey('surface.field-properties.button-action-open-file-note');
+export const BUTTON_SUMMARY_OPEN_FILE = messageKey('surface.field-properties.button-summary-open-file');
 export const BUTTON_ACTION_SUBMIT_TO = messageKey('surface.field-properties.button-action-submit-to');
 export const BUTTON_ACTION_SUBMIT_TO_RULE = messageKey('surface.field-properties.button-action-submit-to-rule');
 export const BUTTON_ACTION_SUBMIT_AS = messageKey('surface.field-properties.button-action-submit-as');
@@ -4708,6 +4716,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FORM_BUTTON_NO_SCRIPTS]:
     'Monstera never runs a script or starts a program a form’s button is set to run, so that part of what this button does is left out. Every other part of the form works.',
   [BUTTON_PRESS_UNREAD]: 'This button changed while it was being pressed, so nothing was done. Press it again.',
+  [OPEN_BUTTON_FILE_TITLE]: 'Open this file?',
+  [OPEN_BUTTON_FILE_EXPLAINS]: 'This button opens the PDF named below, from the folder this document is in, in a new tab.',
+  [OPEN_BUTTON_FILE_OPEN]: 'Open',
   [SUBMIT_FORM_TITLE]: 'Send this form?',
   [SUBMIT_FORM_EXPLAINS_WEB]: 'This button sends what is filled in on the form, as {format}, to this address:',
   [SUBMIT_FORM_EXPLAINS_MAIL]:
@@ -5088,6 +5099,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [BUTTON_ACTION_KIND_IMPORT]: 'Import form data',
   [BUTTON_ACTION_KIND_SHOW_HIDE]: 'Show or hide fields',
   [BUTTON_ACTION_KIND_SUBMIT]: 'Submit the form',
+  [BUTTON_ACTION_KIND_OPEN_FILE]: 'Open a file',
+  [BUTTON_ACTION_OPEN_FILE]: 'PDF in the same folder',
+  [BUTTON_ACTION_OPEN_FILE_RULE]: 'Type one file name that ends in .pdf, with no folder in it.',
+  [BUTTON_ACTION_OPEN_FILE_NOTE]:
+    'Pressing the button asks first, then opens that PDF from the folder this document is in, in a new tab. Monstera opens only a PDF, and never starts a program.',
+  [BUTTON_SUMMARY_OPEN_FILE]: 'Open {file}',
   [BUTTON_ACTION_SUBMIT_TO]: 'Send to',
   [BUTTON_ACTION_SUBMIT_TO_RULE]: 'Type a whole address that starts with https:// or mailto:.',
   [BUTTON_ACTION_SUBMIT_AS]: 'Send as',

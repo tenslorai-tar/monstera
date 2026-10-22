@@ -505,6 +505,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'document.openBarcodeLink': 'needs an engine session; answers one of five outcomes and carries no text',
   'document.openButtonLink': 'needs an engine session; answers one of five outcomes and carries no address',
   'document.submitButtonForm': 'needs an engine session; answers one of eight outcomes and carries no address and no data',
+  'document.openButtonFile': 'needs an engine session and a file beside the document; answers an open outcome and carries no path',
   'document.saveBarcodeContact': 'needs an engine session and a save dialog; answers one of seven outcomes and carries no text',
   'document.listBackups': 'needs an open document and a data folder; answers at most eleven versions by opaque id',
   'document.restoreBackup': 'needs an open document, a kept version and a save dialog',

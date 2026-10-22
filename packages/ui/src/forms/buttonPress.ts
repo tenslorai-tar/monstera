@@ -8,6 +8,7 @@ import {
 import type { DocId, DocVersion } from '@monstera/shared';
 
 import { askThenOpen } from '../commands/followLink.js';
+import { OPEN_BUTTON_FILE_DIALOG_ID, OPEN_BUTTON_FILE_RESULT } from '../dialogs/openButtonFile.js';
 import { type SubmitFallbackId, askThenSubmit } from './buttonSubmit.js';
 import { BUTTON_PRESS_UNREAD } from '../messages/en.js';
 import type { ShowToast } from '../toasts.js';
@@ -15,7 +16,15 @@ import { ZOOM_STEPS, type ZoomMode } from '../zoom.js';
 
 /** What a press needs: the button's steps, the one place a command is sent, the way a page is shown, and a sentence. */
 export interface ButtonPressDeps {
-  readonly client: Pick<ContractClient, 'document.buttonActions' | 'document.openButtonLink' | 'document.submitButtonForm'>;
+  readonly client: Pick<
+    ContractClient,
+    'document.buttonActions' | 'document.openButtonLink' | 'document.submitButtonForm' | 'document.openButtonFile'
+  >;
+  /**
+   * Settles what opening a button's file answered, as any open is settled (`settleButtonFileOpen`): a new tab, the tab
+   * already open brought forward, or the problem said. `refused` where the step was not there to open.
+   */
+  readonly settleFileOpen: (answer: Awaited<ReturnType<ContractClient['document.openButtonFile']>>) => unknown;
   /** Opens a registered dialog and answers what it resolved: the question every address a document holds is asked. */
   readonly ask: (id: string, props: unknown) => Promise<unknown>;
   /** Sends a command naming one step; resolves with the version it produced, or `undefined` where it did not land. */
@@ -104,6 +113,15 @@ export async function pressButton(deps: ButtonPressDeps, docId: DocId, pressed: 
           await askThenSubmit(deps, each.action, () =>
             deps.client['document.submitButtonForm']({ docId, version, field, trigger: pressed.trigger, step: each.step }),
           );
+        }
+        break;
+      case 'openFile':
+        // ASKED FIRST, naming the file; `main` opens what it reads at this step and version, beside the document,
+        // through the one way a document is opened, and the answer is settled as a pick's is.
+        if (each.action.kind === 'openFile') {
+          if (!OPEN_BUTTON_FILE_RESULT.safeParse(await deps.ask(OPEN_BUTTON_FILE_DIALOG_ID, { file: each.action.file })).success) break;
+          const opened = await deps.client['document.openButtonFile']({ docId, version, field, trigger: pressed.trigger, step: each.step });
+          if (deps.settleFileOpen(opened) === 'refused') deps.toast('problem', BUTTON_PRESS_UNREAD);
         }
         break;
       case 'print':

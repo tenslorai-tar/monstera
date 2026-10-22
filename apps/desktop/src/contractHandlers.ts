@@ -634,6 +634,7 @@ export function createContractHandlers(deps: {
     'document.openBarcodeLink': openBarcodeLinkHandler(deps.commands, deps.openLink),
     'document.openButtonLink': openButtonLinkHandler(deps.commands, deps.openLink),
     'document.submitButtonForm': submitButtonFormHandler(deps.commands, deps.openLink, deps.postForm),
+    'document.openButtonFile': openButtonFileHandler(deps),
     'document.saveBarcodeContact': saveBarcodeContactHandler(deps.commands, mintWritten),
     'document.accessibilityCheck': accessibilityCheckHandler(deps.commands),
     'document.sign': signHandler(deps.commands),
@@ -1857,6 +1858,36 @@ function submitButtonFormHandler(
       }
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * A push button's Open a file carried out (ADR-0259), read by main from the document by the step the renderer named:
+ * {@link openButtonLinkHandler}'s rule, for a PDF beside the document. The name is the document's, made a path by
+ * `besidePath` and opened through {@link openPath}, the one way a document is opened, so a file already open is
+ * brought forward and a moved one says so, as a pick would. Nothing but a PDF in Monstera is ever opened.
+ */
+function openButtonFileHandler(deps: OpenPathParts & { readonly commands: DocumentCommands }): ContractHandlers['document.openButtonFile'] {
+  return async ({
+    docId,
+    version,
+    field,
+    trigger,
+    step,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.openButtonFile']>>> => {
+    try {
+      const read = await deps.commands.buttonActions(docId, field);
+      if (read.version !== version) return ok({ kind: 'stale' } as const);
+      const action = read.steps?.find((each) => each.trigger === trigger && each.step === step)?.action;
+      const path = action?.kind === 'openFile' ? deps.documents.besidePath(docId, action.file) : undefined;
+      if (path === undefined) return ok({ kind: 'no-such-file' } as const);
+      const { outcome } = await openPath(deps, path);
+      return ok(outcome);
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
       throw thrown;
     }

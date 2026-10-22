@@ -127,6 +127,9 @@ function serviceAnswering(outcome: OpenOutcome | readonly OpenOutcome[]): {
       return Promise.resolve(answer);
     },
     holdsHandle: (handle: FileHandle) => held.has(handle),
+    // A FOLDER EVERY DOCUMENT HERE WAS OPENED FROM, for a button's Open a file: the service's own rule is
+    // `documentService.test.ts`' case, and these read which name the handler asked for and which path it then opened.
+    besidePath: (_docId: DocId, name: string) => join(BESIDE_FOLDER, name),
     close: (docId: DocId) => {
       closed.push(docId);
       return Promise.resolve();
@@ -139,6 +142,9 @@ function serviceAnswering(outcome: OpenOutcome | readonly OpenOutcome[]): {
   } as unknown as DocumentService;
   return { documents, opened, closed };
 }
+
+/** The folder {@link serviceAnswering}'s documents were opened from. */
+const BESIDE_FOLDER = resolve('home', 'forms');
 
 /** The document no case opened, for the declared failures of the reads that name a document. */
 const NOT_OPEN: DocId = asDocId('doc-not-open');
@@ -898,6 +904,39 @@ describe('document.submitButtonForm (ADR-0259)', () => {
     const over = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands: submitCommands(submit(address, 'fdf'), `${fits}x`).commands });
     expect(await over.handlers['document.submitButtonForm'](request)).toStrictEqual({ ok: true, value: { kind: 'mail-opened-without-data' } });
     expect(over.linksOpened).toStrictEqual([address]);
+  });
+});
+
+describe('document.openButtonFile (ADR-0259)', () => {
+  function fileCommands(steps: readonly ButtonStep[] | null): DocumentCommands {
+    return { buttonActions: () => Promise.resolve({ version: asDocVersion(4), steps }) } as unknown as DocumentCommands;
+  }
+  const request: { docId: DocId; version: DocVersion; field: { page: number; index: number; name: string }; trigger: FieldActionTrigger; step: number } = {
+    docId: A_DOC,
+    version: asDocVersion(4),
+    field: { page: 0, index: 3, name: 'Guide' },
+    trigger: 'up',
+    step: 0,
+  };
+  const STEPS: readonly ButtonStep[] = [{ trigger: 'up', step: 0, action: { kind: 'openFile', file: 'guide.pdf' } }];
+
+  it('OPENS the file the step names, beside the document, through the one open route, and answers its outcome', async () => {
+    const opened: OpenOutcome = { kind: 'opened', docId: asDocId('doc-guide'), version: asDocVersion(1), byteLength: 9, name: 'guide.pdf' };
+    const { handlers, capabilities, opened: handles } = harness(opened, () => Promise.resolve(null), undefined, { commands: fileCommands(STEPS) });
+    expect(await handlers['document.openButtonFile'](request)).toStrictEqual({ ok: true, value: opened });
+    expect(handles.map((handle) => capabilities.resolve(handle))).toStrictEqual([join(BESIDE_FOLDER, 'guide.pdf')]);
+  });
+
+  it('CONTROL: opens NOTHING for a moved document or a step that is not Open a file, where the case above opened one', async () => {
+    for (const [asked, steps, answer] of [
+      [{ ...request, version: asDocVersion(9) }, STEPS, { kind: 'stale' }],
+      [request, [{ trigger: 'up', step: 0, action: { kind: 'link', address: 'https://example.org/guide.pdf' } }], { kind: 'no-such-file' }],
+      [request, null, { kind: 'no-such-file' }],
+    ] as const) {
+      const { handlers, opened } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands: fileCommands(steps) });
+      expect(await handlers['document.openButtonFile'](asked)).toStrictEqual({ ok: true, value: answer });
+      expect(opened).toStrictEqual([]);
+    }
   });
 });
 

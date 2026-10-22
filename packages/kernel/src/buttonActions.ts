@@ -140,6 +140,16 @@ export function classifyAction(plain: PlainAction): FieldAction | ButtonStep['ac
       const parsed = fieldActionSchema.safeParse({ kind: 'submit', address: plain.file, format, fields: plain.fields });
       return parsed.success ? parsed.data : kept(plain.subtype, null);
     }
+    case 'GoToR': {
+      // ONLY THE FIRST PAGE, WHOLE, as this build writes it: a press opens the file, and a destination naming another
+      // page or a named one is a place in it this build does not go to, so it is kept rather than run as somewhere else.
+      // A name that is not one PDF beside the document (a path, another kind of file) is kept and never run.
+      const destination = plain.destination;
+      const first = destination === null || (destination !== 'named' && destination.page === 0 && destination.fit === 'Fit');
+      if (!first) return kept(plain.subtype, null);
+      const parsed = fieldActionSchema.safeParse({ kind: 'openFile', file: plain.file });
+      return parsed.success ? parsed.data : kept(plain.subtype, null);
+    }
     case 'ImportData': {
       // A PATH TO SOMEWHERE ELSE is kept, and still runs: the press asks the person to pick, so what the document names
       // is never opened and only an edit would have to rewrite it.

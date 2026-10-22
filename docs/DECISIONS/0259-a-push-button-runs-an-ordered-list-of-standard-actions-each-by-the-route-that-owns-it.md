@@ -110,3 +110,7 @@ Recorded as built, the Decision above left as written.
 4. **A hidden widget is marked in the field listing** (`hidden`, present only where true) and filling offers it nothing,
    so a Show or hide is seen where it lands. Before this a field set hidden in Properties stayed fillable through a
    control nobody could see.
+5. **Open a file opens the first page.** A document's own `GoToR` naming another page, or a named destination, is kept
+   and never run rather than opened somewhere other than it says; so is one naming a path or a file that is not a PDF.
+   `DocumentService.besidePath` is where a name becomes a path, and it checks the name is one file again. The file is
+   opened through `openPath`, so a file already open is brought forward and a moved one is said, as a pick's would be.

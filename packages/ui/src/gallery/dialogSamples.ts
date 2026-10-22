@@ -1302,4 +1302,5 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     },
     { state: 'mail', props: { address: 'mailto:forms@example.org', format: 'fdf', fields: null, mail: true } },
   ],
+  'dialog.open-button-file': [{ state: 'named', props: { file: 'Applicant guide.pdf' } }],
 };

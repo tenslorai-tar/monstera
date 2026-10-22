@@ -5619,6 +5619,31 @@ export const channels = {
   ),
 
   /**
+   * Opens the PDF one step of a push button names (ADR-0259 Decision 2), after the person agreed to it: the file of that
+   * name in the folder this document is in, opened through `openPath`, the one way a document is opened, so it answers
+   * what `document.open` answers. `main` reads the step again at the version named; the name never crosses from the
+   * renderer, and a document with no folder of its own, or a name that is not one file, opens nothing.
+   */
+  'document.openButtonFile': channel(
+    'Opens the PDF a push button’s action names, beside the document, read by main from the document.',
+    z
+      .object({
+        docId: docIdSchema,
+        version: docVersionSchema,
+        field: formFieldHandleSchema,
+        trigger: fieldActionTriggerSchema,
+        step: z.number().int().min(0).max(MAX_ACTION_CHAIN - 1),
+      })
+      .strict(),
+    z.discriminatedUnion('kind', [
+      ...openOutcomeSchema.options,
+      z.object({ kind: z.literal('stale') }),
+      z.object({ kind: z.literal('no-such-file') }),
+    ]),
+    ['document-not-open', 'document-poisoned'],
+  ),
+
+  /**
    * A page's editable text, as the **blocks** a person edits in place, carrying
    * the editing engine's own object numbering.
    *

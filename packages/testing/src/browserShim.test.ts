@@ -274,6 +274,7 @@ describe('browser shim', () => {
       'document.newerOf',
       'document.open',
       'document.openBarcodeLink',
+      'document.openButtonFile',
       'document.openButtonLink',
       'document.openFromUrl',
       'document.openLink',

@@ -221,6 +221,7 @@ import {
   openDocumentCommand,
   openDroppedFiles,
   openRecentDocument,
+  settleButtonFileOpen,
   openWaitingDocuments,
   restoreLastSession,
 } from './commands/openDocument.js';
@@ -4799,14 +4800,16 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       const run = async (id: ButtonCommandId): Promise<void> => {
         await registry.availableById(id, context)?.run(context);
       };
-      void pressButton({ client, ask, apply, toast, show, run }, docId, {
+      // A FILE A BUTTON OPENS is settled as a pick is: a tab, the open one brought forward, or the problem said.
+      const settleFileOpen = (answer: Parameters<typeof settleButtonFileOpen>[1]): unknown => settleButtonFileOpen(openDeps, answer);
+      void pressButton({ client, ask, apply, toast, show, run, settleFileOpen }, docId, {
         page: handle.page,
         index: handle.index,
         name: handle.name,
         trigger: handle.press,
       });
     },
-    [activeId, applyCarryingFields, ask, changeZoom, client, context, navigator, registry, toast],
+    [activeId, applyCarryingFields, ask, changeZoom, client, context, navigator, openDeps, registry, toast],
   );
   /** The form layer's one way in: a fill, a signature, or a press. */
   const fillOrPress = useCallback(

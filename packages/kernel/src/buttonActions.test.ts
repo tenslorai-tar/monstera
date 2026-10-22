@@ -475,6 +475,40 @@ describe('Submit the form, as a push button action (ADR-0259)', () => {
   });
 });
 
+describe('Open a file, as a push button action (ADR-0259)', () => {
+  it('is written as /GoToR to the first page of the file, whole, in a new window, and PDF.js reads it so', async () => {
+    const bytes = await written(await buttonForm(), 'go', [{ trigger: 'up', action: { kind: 'openFile', file: 'guide.pdf' } }]);
+    const read = await pdfjsWidget(bytes, 'go');
+    // `unsafeUrl` IS PDF.js's READING of `/F` and `/D` (its `parseDestDictionary`, case `GoToR`): the file, then the remote
+    // destination as JSON. `url` is that resolved against a base, which a document read from bytes has none of.
+    expect({ target: read['unsafeUrl'], newWindow: read['newWindow'] }).toStrictEqual({ target: 'guide.pdf#[0,{"name":"Fit"}]', newWindow: true });
+    const handle = await handleOf(bytes, 'go');
+    expect(await onSession(bytes, (session) => readButtonActions(session, handle))).toStrictEqual([
+      { trigger: 'up', step: 0, action: { kind: 'openFile', file: 'guide.pdf' } },
+    ]);
+  });
+
+  it('CONTROL: another page, a path, or a file that is not a PDF is kept and never run, beside a bare PDF that is run', async () => {
+    const shapes: readonly [string, (document: PDFDocument) => PDFDict][] = [
+      ['another page', (document) => document.context.obj({ S: 'GoToR', F: PDFString.of('guide.pdf'), D: [2, 'Fit'] })],
+      // `/` IS A FILE SPECIFICATION'S SEPARATOR (ISO 32000-1, 7.11.2): a backslash in a literal string is an escape, so a
+      // document spelling one names a single file whose name lost it.
+      ['a path', (document) => document.context.obj({ S: 'GoToR', F: PDFString.of('../private/guide.pdf'), D: [0, 'Fit'] })],
+      ['not a PDF', (document) => document.context.obj({ S: 'GoToR', F: PDFString.of('setup.exe'), D: [0, 'Fit'] })],
+    ];
+    for (const [what, shape] of shapes) {
+      const forged = await withAction(await buttonForm(), 'go', shape);
+      expect(await onSession(forged, async (session) => readButtonActions(session, await handleOf(forged, 'go'))), what).toStrictEqual([
+        { trigger: 'up', step: 0, action: { kind: 'kept', subtype: 'GoToR', runsAs: null } },
+      ]);
+    }
+    const bare = await withAction(await buttonForm(), 'go', (document) => document.context.obj({ S: 'GoToR', F: PDFString.of('Guide.PDF') }));
+    expect(await onSession(bare, async (session) => readButtonActions(session, await handleOf(bare, 'go')))).toStrictEqual([
+      { trigger: 'up', step: 0, action: { kind: 'openFile', file: 'Guide.PDF' } },
+    ]);
+  });
+});
+
 describe('Import form data, as a push button action (ADR-0259)', () => {
   /** `/F` of the widget's `/A`, read from MuPDF's raw objects: the file specification's `/F` and `/UF`. */
   function fileRead(bytes: Uint8Array, name: string): { subtype: string; f: string; uf: string } {

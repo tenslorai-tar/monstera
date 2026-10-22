@@ -340,6 +340,42 @@ test.describe('a push button’s actions', () => {
     await expect(page.getByText('The form was sent.')).toBeVisible();
   });
 
+  test('Open a file: set in Properties, then a press asks first, naming the file, and only Open opens it', async ({ page }) => {
+    const sent: Sent = [];
+    await openForm(page, sent);
+    const pane = await buttonProperties(page);
+    await pane.getByRole('button', { name: 'Add action' }).click();
+    await pane.getByLabel('Do', { exact: true }).selectOption('openFile');
+    const file = pane.getByLabel('PDF in the same folder');
+    const save = pane.getByRole('button', { name: 'Save action' });
+    // CONTROL: a file that is not a PDF is said and cannot be saved, so the one saved below is the one typed.
+    await file.fill('setup.exe');
+    await expect(pane.getByText('Type one file name that ends in .pdf, with no folder in it.')).toBeVisible();
+    await expect(save).toBeDisabled();
+    await file.fill('Applicant guide.pdf');
+    await save.click();
+    const action = { kind: 'openFile', file: 'Applicant guide.pdf' };
+    expect(executed(sent)).toStrictEqual([
+      { kind: 'editFormFields', edits: [{ field: { page: 0, index: 1, name: 'Clear' }, set: { buttonActions: [{ trigger: 'up', action }] } }], version: 1 },
+    ]);
+    await expect(pane.getByText('Pressed and let go: Open Applicant guide.pdf')).toBeVisible();
+
+    const opens = (): unknown[] => sent.filter((call) => call.channel === 'document.openButtonFile').map((call) => call.params);
+    const dialog = page.getByRole('dialog', { name: 'Open this file?' });
+    await page.locator('[data-form-field="1"]').click();
+    await expect(dialog.locator('[data-open-button-file]')).toHaveText('Applicant guide.pdf');
+    expect((await new AxeBuilder({ page }).include('[role="dialog"]').analyze()).violations).toStrictEqual([]);
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(dialog).toHaveCount(0);
+    expect(opens()).toStrictEqual([]);
+    // THEN OPEN: one request naming the step, and the shim's moved file said as a pick's would be.
+    await page.locator('[data-form-field="1"]').click();
+    await dialog.getByRole('button', { name: 'Open', exact: true }).click();
+    await expect.poll(() => opens().length).toBe(1);
+    expect(opens()[0]).toStrictEqual({ docId: ID, version: 2, field: { page: 0, index: 1, name: 'Clear' }, trigger: 'up', step: 0 });
+    await expect(page.getByText('That file could not be opened. It may have been moved, renamed or deleted.')).toBeVisible();
+  });
+
   test('Import form data: set in Properties with a file name, then a press opens the application’s import, which picks', async ({
     page,
   }) => {

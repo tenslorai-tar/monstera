@@ -3,6 +3,7 @@ import { type DocVersion, type MessageKey, asDocId, asDocVersion, ok } from '@mo
 import { describe, expect, it } from 'vitest';
 
 import { FOLLOW_LINK_DIALOG_ID } from '../dialogs/followLink.js';
+import { OPEN_BUTTON_FILE_DIALOG_ID } from '../dialogs/openButtonFile.js';
 import { SUBMIT_FORM_DIALOG_ID } from '../dialogs/submitForm.js';
 import { BUTTON_PRESS_UNREAD, BUTTON_SUBMIT_BLOCKED, BUTTON_SUBMIT_MAIL_WITHOUT_DATA, BUTTON_SUBMIT_SENT } from '../messages/en.js';
 import type { ZoomMode } from '../zoom.js';
@@ -44,7 +45,16 @@ function pressing(
         routes.push({ submit: params });
         return Promise.resolve(ok(submitted));
       },
-    } as Pick<ContractClient, 'document.buttonActions' | 'document.openButtonLink' | 'document.submitButtonForm'>,
+      'document.openButtonFile': (params: unknown) => {
+        routes.push({ openFile: params });
+        return Promise.resolve(ok({ kind: 'absent' as const }));
+      },
+    } as Pick<ContractClient, 'document.buttonActions' | 'document.openButtonLink' | 'document.submitButtonForm' | 'document.openButtonFile'>,
+    // WHAT SETTLING SAW, for the open's own route: `settleButtonFileOpen` is `openDocument.test.ts`' to prove.
+    settleFileOpen: (answer: unknown) => {
+      routes.push({ settled: answer });
+      return undefined;
+    },
     ask: (id: string, props: unknown) => {
       routes.push({ ask: id, props });
       return Promise.resolve(answer);
@@ -187,6 +197,21 @@ describe('pressing a push button', () => {
       expect(long.routes.at(-1)).toStrictEqual({ run: 'document.export-form-data-xfdf' });
       expect(long.said).toStrictEqual([BUTTON_SUBMIT_MAIL_WITHOUT_DATA]);
     });
+  });
+
+  it('opens a file by asking first, naming it, then asking main to open THE STEP and settling what it answered', async () => {
+    const step: ButtonStep = { trigger: 'up', step: 0, action: { kind: 'openFile', file: 'guide.pdf' } };
+    const agreed = pressing([step]);
+    await pressButton(agreed.deps, DOC, { ...BUTTON, trigger: 'up' });
+    expect(agreed.routes).toStrictEqual([
+      { ask: OPEN_BUTTON_FILE_DIALOG_ID, props: { file: 'guide.pdf' } },
+      { openFile: { docId: DOC, version: READ_AT, field: BUTTON, trigger: 'up', step: 0 } },
+      { settled: { ok: true, value: { kind: 'absent' } } },
+    ]);
+    // CONTROL: closing the question opens nothing, where the same press agreed above.
+    const declined = pressing([step], () => true, null);
+    await pressButton(declined.deps, DOC, { ...BUTTON, trigger: 'up' });
+    expect(declined.routes).toStrictEqual([{ ask: OPEN_BUTTON_FILE_DIALOG_ID, props: { file: 'guide.pdf' } }]);
   });
 
   it('imports by running the application’s own Import form data, and sends the next step at the version the import made', async () => {

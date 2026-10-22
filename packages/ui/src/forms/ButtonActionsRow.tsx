@@ -48,7 +48,12 @@ import {
   BUTTON_ACTION_KIND_IMPORT,
   BUTTON_ACTION_KIND_LINK,
   BUTTON_ACTION_KIND_SHOW_HIDE,
+  BUTTON_ACTION_KIND_OPEN_FILE,
   BUTTON_ACTION_KIND_SUBMIT,
+  BUTTON_ACTION_OPEN_FILE,
+  BUTTON_ACTION_OPEN_FILE_NOTE,
+  BUTTON_ACTION_OPEN_FILE_RULE,
+  BUTTON_SUMMARY_OPEN_FILE,
   BUTTON_ACTION_SHOW,
   BUTTON_ACTION_SUBMIT_AS,
   BUTTON_ACTION_SUBMIT_NOTE,
@@ -103,6 +108,7 @@ const KIND_LABELS: Readonly<Record<FieldAction['kind'], MessageKey>> = {
   print: BUTTON_ACTION_KIND_PRINT,
   importData: BUTTON_ACTION_KIND_IMPORT,
   submit: BUTTON_ACTION_KIND_SUBMIT,
+  openFile: BUTTON_ACTION_KIND_OPEN_FILE,
 };
 
 /** A go-to's view in words. Total, for the trigger's reason. */
@@ -130,6 +136,8 @@ function freshAction(kind: FieldAction['kind']): FieldAction {
       return { kind: 'importData', file: 'form data.fdf' };
     case 'submit':
       return { kind: 'submit', address: 'https://', format: 'fdf', fields: null };
+    case 'openFile':
+      return { kind: 'openFile', file: 'guide.pdf' };
   }
 }
 
@@ -157,6 +165,8 @@ function summaryOf(action: FieldAction, say: (key: MessageKey, values?: Record<s
       return say(BUTTON_ACTION_KIND_IMPORT);
     case 'submit':
       return say(BUTTON_SUMMARY_SUBMIT, { address: action.address });
+    case 'openFile':
+      return say(BUTTON_SUMMARY_OPEN_FILE, { file: action.file });
     case 'showHide':
       return say(action.hide ? BUTTON_SUMMARY_HIDE : BUTTON_SUMMARY_SHOW, { count: action.fields.length });
     case 'reset':
@@ -480,7 +490,44 @@ function ActionDetails({
       return <ShowHideDetails action={action} known={known} onChange={onChange} />;
     case 'submit':
       return <SubmitDetails action={action} known={known} onChange={onChange} />;
+    case 'openFile':
+      return <OpenFileDetails action={action} onChange={onChange} />;
   }
+}
+
+/** The PDF a button opens: one name, in the folder the document is in. A name the contract refuses is said. */
+function OpenFileDetails({
+  action,
+  onChange,
+}: {
+  readonly action: Extract<FieldAction, { kind: 'openFile' }>;
+  readonly onChange: (action: FieldAction) => void;
+}): ReactElement {
+  const { i18n } = useLingui();
+  const id = useId();
+  const valid = fieldActionSchema.safeParse(action).success;
+  return (
+    <>
+      <div className="m-properties__row">
+        <label className="m-properties__label" htmlFor={id}>
+          {i18n._(BUTTON_ACTION_OPEN_FILE)}
+        </label>
+        <input
+          aria-invalid={!valid}
+          className="m-properties__comment"
+          id={id}
+          maxLength={MAX_ACTION_FILE}
+          onChange={(event) => {
+            onChange({ kind: 'openFile', file: event.target.value });
+          }}
+          type="text"
+          value={action.file}
+        />
+      </div>
+      {valid ? null : <p className="m-properties__meta">{i18n._(BUTTON_ACTION_OPEN_FILE_RULE)}</p>}
+      <p className="m-properties__meta">{i18n._(BUTTON_ACTION_OPEN_FILE_NOTE)}</p>
+    </>
+  );
 }
 
 /** Where a submission goes, how it is encoded and which fields it carries. A press asks before anything is sent. */

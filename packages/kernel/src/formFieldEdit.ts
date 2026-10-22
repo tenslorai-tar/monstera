@@ -418,6 +418,15 @@ function actionDictOf(document: PDFDocument, action: FieldAction): PDFDict {
       return document.context.obj({ S: 'Named', N: 'Print' });
     case 'importData':
       return document.context.obj({ S: 'ImportData', F: fileSpecOf(document, action.file) });
+    case 'openFile':
+      // THE FIRST PAGE, WHOLE, IN A NEW WINDOW (ISO 32000-1, table 202): a remote destination names its page by number,
+      // since this document holds no reference into another.
+      return document.context.obj({
+        S: 'GoToR',
+        F: fileSpecOf(document, action.file),
+        D: [PDFNumber.of(0), PDFName.of('Fit')],
+        NewWindow: PDFBool.True,
+      });
     case 'reset':
       return document.context.obj({
         S: 'ResetForm',

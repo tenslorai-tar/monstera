@@ -257,6 +257,22 @@ describe('DocumentService — the chat-history key (ADR-0093)', () => {
   });
 });
 
+describe('DocumentService — a file beside the document (ADR-0259, Open a file)', () => {
+  it('answers the named file in the folder the document was opened from, and nothing for a name that leaves it', async () => {
+    const registry = new CapabilityRegistry();
+    const service = newService(registry, { readIdentity: () => Promise.resolve(identity()) });
+    const opened = join(tmpdir(), 'forms', 'application.pdf');
+    const docId = mustOpen(await service.open(registry.mint(opened)));
+    expect(service.besidePath(docId, 'guide.pdf')).toBe(join(dirname(opened), 'guide.pdf'));
+    // CONTROL: every name that would reach outside the folder answers nothing, beside the one above that is answered.
+    for (const name of ['', '.', '..', '../secret.pdf', 'sub/guide.pdf', 'sub\\guide.pdf', 'C:guide.pdf']) {
+      expect(service.besidePath(docId, name), name).toBeUndefined();
+    }
+    await service.close(docId);
+    expect(service.besidePath(docId, 'guide.pdf')).toBeUndefined();
+  });
+});
+
 describe('DocumentService — one file is one document', () => {
   it('opens a file and reports the version it starts at', async () => {
     const registry = new CapabilityRegistry();

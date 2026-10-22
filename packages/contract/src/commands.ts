@@ -5824,6 +5824,17 @@ export const fieldActionSchema = z.discriminatedUnion('kind', [
       fields: actionFieldsSchema.nullable(),
     })
     .strict(),
+  z
+    .object({
+      /**
+       * `/GoToR` (ISO 32000-1, 12.6.4.3) to the first page of a PDF beside this document, in a new window. A press asks
+       * first, naming the file, and `main` opens it in Monstera through the one route a document is opened by; nothing
+       * else is ever started (`Launch` is kept, ADR-0259 Rejected).
+       */
+      kind: z.literal('openFile'),
+      file: actionFileSchema.refine((name) => /\.pdf$/iu.test(name), { message: 'a button opens only a PDF' }),
+    })
+    .strict(),
 ]);
 /** See {@link fieldActionSchema}. */
 export type FieldAction = z.infer<typeof fieldActionSchema>;
@@ -5837,6 +5848,7 @@ export const FIELD_ACTION_KINDS = [
   'print',
   'importData',
   'submit',
+  'openFile',
 ] as const satisfies readonly FieldAction['kind'][];
 /** The two lists hold the same kinds: a kind added to the union and not here is a compile error. */
 type MissingActionKind = Exclude<FieldAction['kind'], (typeof FIELD_ACTION_KINDS)[number]>;

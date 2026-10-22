@@ -2865,6 +2865,13 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (action?.kind !== 'submit') return Promise.resolve(ok({ kind: 'no-such-submit' as const }));
       return Promise.resolve(ok({ kind: action.address.startsWith('mailto:') ? ('mail-opened' as const) : ('sent' as const) }));
     },
+    // A BUTTON'S FILE as main answers it, the link's shape: there is no folder beside a document in a browser, so an
+    // open-file step is `absent`, which the page says as a moved file, and a case reads the request a press made.
+    'document.openButtonFile': ({ docId, version, field, trigger, step }) => {
+      if (versions.get(docId) !== version) return Promise.resolve(ok({ kind: 'stale' as const }));
+      const action = buttonSteps.get(field.name)?.find((each) => each.trigger === trigger && each.step === step)?.action;
+      return Promise.resolve(ok({ kind: action?.kind === 'openFile' ? ('absent' as const) : ('no-such-file' as const) }));
+    },
     'document.saveBarcodeContact': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
     // NO WORK RUNS IN THE SHIM: every name is idle and nothing can be stopped.
     'work.progress': () => Promise.resolve(ok({ kind: 'idle' as const })),
