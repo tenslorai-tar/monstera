@@ -45,9 +45,39 @@ async function pageWithWords(): Promise<{ bytes: Uint8Array; line: { text: strin
   return { bytes: await document.save(), line: { text: WORDS, box: { x0: 150, y0: top, x1: 150 + font.widthOfTextAtSize(WORDS, 28), y1: bottom } } };
 }
 
-async function open(page: Page): Promise<void> {
+/**
+ * What a case's failure says about where its look went, recorded from the start (CI at f9c76e31: the picture signature
+ * failed once on Windows with no held look in any frame, in 3.2 s, and nothing in the run said why). It changes no
+ * assertion; it is what the first assertion's message carries: every command the page sent, every image decode the
+ * page ran and how it ended (a picture signature's look is fitted from its decoded size, and a decode that rejects
+ * leaves it with no look), and whether the Signature dialog is open again after the press (a press with no look armed
+ * asks first).
+ */
+interface Witness {
+  readonly sent: string[];
+}
+
+async function open(page: Page, witness?: Witness): Promise<void> {
   const { bytes, line } = await pageWithWords();
   await page.setViewportSize({ width: 1600, height: 900 });
+  await page.addInitScript(() => {
+    const outcomes: string[] = [];
+    Reflect.set(window, 'decodeOutcomes', outcomes);
+    // THE BROWSER'S OWN METHOD, read off its descriptor and called on each image as `this`.
+    const decode = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'decode')?.value as (this: HTMLImageElement) => Promise<void>;
+    HTMLImageElement.prototype.decode = function decodeWitnessed(this: HTMLImageElement): Promise<void> {
+      const source = this.src.slice(0, 5);
+      return decode.call(this).then(
+        () => {
+          outcomes.push(`${source} decoded ${String(this.naturalWidth)}x${String(this.naturalHeight)}`);
+        },
+        (error: unknown) => {
+          outcomes.push(`${source} REJECTED ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`);
+          throw error;
+        },
+      );
+    };
+  });
   await bridgeUnder(page, LOOKS[0], {
     opens: [{ kind: 'opened' as const, docId: ID, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Blank.pdf' }],
     documentBytes: new Map([[ID, bytes]]),
@@ -62,6 +92,11 @@ async function open(page: Page): Promise<void> {
       },
     },
     settings: { 'appearance.ribbon-section': 'comment' },
+  }, (channel, params) => {
+    // A COMMAND BY ITS KIND, and every channel that places a mark of its own (`document.placeSignature`, the stamps'):
+    // a signature is not an `execute`, and a witness of `execute` alone reported a signature placed as nothing sent.
+    if (channel === 'document.execute') witness?.sent.push(`execute ${String((params as { readonly command?: { readonly kind?: unknown } }).command?.kind)}`);
+    else if (channel.startsWith('document.place')) witness?.sent.push(channel);
   });
   await page.goto('/');
   await page.getByRole('button', { name: /^Open PDF/u }).first().click();
@@ -299,7 +334,8 @@ const TOOLS: readonly {
 
 for (const tool of TOOLS) {
   test(`${tool.name ?? tool.title}: its final look from the release until the page draws it, never the placeholder or nothing`, async ({ page }) => {
-    await open(page);
+    const witness: Witness = { sent: [] };
+    await open(page, witness);
     if (tool.tool === false) await tool.select?.(page);
     else await runCommand(page, tool.title);
     await sample(page);
@@ -314,8 +350,18 @@ for (const tool of TOOLS) {
     const finished = inputs.at(-1) ?? Number.NaN;
     const after = frames.filter((frame) => frame.t >= finished);
     const first = after.findIndex((frame) => frame.looks.length > 0);
+    // WHAT THE RUN SAW, for the failure below to name its cause rather than its symptom (`Witness`).
+    const witnessed = {
+      sent: witness.sent,
+      decodes: await page.evaluate(() => Reflect.get(window, 'decodeOutcomes') as string[]),
+      dialogOpenAgain: await page.getByRole('dialog', { name: tool.title }).isVisible(),
+      lookInserted: insertedAt !== undefined,
+      framesWithALook: frames.filter((frame) => frame.looks.length > 0).length,
+      framesWithALookBeforeTheRelease: frames.filter((frame) => frame.t < finished && frame.looks.length > 0).length,
+      inputs: inputs.length,
+    };
     // THE CONTROL: a look WAS held, and it was this tool's — a run that held nothing would pass every rule below.
-    expect(first, 'no frame after the release showed a held look').toBeGreaterThanOrEqual(0);
+    expect(first, `no frame after the release showed a held look: ${JSON.stringify(witnessed)}`).toBeGreaterThanOrEqual(0);
     const shown = after[first];
     expect(shown?.looks).toContain(tool.part);
     // IN THE PAGE WITHIN 150 MS of the finishing input, timed when it was inserted.
