@@ -61,7 +61,7 @@ async function open(page: Page): Promise<void> {
         ),
       },
     },
-    settings: { 'appearance.ribbon-section': 'comment', 'appearance.status-tips': false },
+    settings: { 'appearance.ribbon-section': 'comment' },
   });
   await page.goto('/');
   await page.getByRole('button', { name: /^Open PDF/u }).first().click();
