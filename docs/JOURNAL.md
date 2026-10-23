@@ -892,6 +892,111 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-23 — Stage audit of `6aba348f..eda0c9ea` — findings VVVVVVVV-1 to VVVVVVVV-9
+
+Local fix session 4: N1 (page commands shown at once, ADR-0261), N2 (the pages a command changes, ADR-0262), N3's
+first Edit text write, N5, the merge of cloud run 16 (C1–C6, its ADR renumbered 0263) and the closing walks, audited
+lean per the owner's closing steps of 2026-10-23 ~09:05. N4 (Edit Object) was deferred by the owner and is not in the
+range. `npm run audit:scope` at `52db175f`: 37 commits, 166 files, within one batch; 10 proofs added, 29 modified, none
+removed; 7 source files added, 42 changed, none removed. **Stated limitation, not a pass:** the modified proofs' diffs
+were read where they lost lines (`App.test.tsx`, `compositionHost.test.ts`, `memoryPressure.test.ts`,
+`boardStatus.proof.mjs`); the rest were written in this session, each commit naming its proof, control and mutation.
+
+### Fixed in range
+
+**VVVVVVVV-1** — the board's red at `45bd4554`, at its causes. `renderedScreen.pw.ts:4207`: an undrawn thumbnail
+card was sized by the exact 612:792, a drawn one by the canvas's ceil'd height, so a card drawn after a scroll grew
+under a pixel and slid the card below. The same failure reproduced on the renderer from before N1, so N1 did not cause
+it. One rule now, `Math.ceil(width × shape)` (`e8853b53`). `pagesInUse.pw.ts:104`: Ctrl+F focused the find field one
+frame later by selector, and under load the panel committed after that frame. The field now takes a request in a
+layout effect (`60878873`).
+**VVVVVVVV-2** — the cloud branch's Linux red, *When* cut in its drop-down: each Options row sized its own columns,
+so a wider face cut the longest choice. The rows now share one pair of columns through a subgrid, and the case runs in a
+face wider than either platform's (`2f1932d5`).
+**VVVVVVVV-3** — N3's first Edit text write, 2.7–3.5 s on a later start: ADR-0126's inline-image keeper started
+the compose host on the first write, 2.39 s of it (timing laps, reverted). That host now starts with the editing mode
+(`52db175f`). ADR-0237's title claimed an edit starts no compose host, and has a dated correction.
+**VVVVVVVV-4** — found by the closing walks: an Add text box ended with Escape wrote nothing (textWalk 4, W1, W2).
+`d68195d6`, in this range, kept an older read on every page whose drawing was behind, and a box opened over it closed
+on the redraw. Keying the hold on *holding* alone then looped editors on the recognised page (step 9). The hold is now
+the holding editor's own read, by version. A written editor held as its look also re-sent its words on the next blur,
+and it is now final (`ba91b49a`).
+**VVVVVVVV-5** — `docs/packaged-versions.json` carried 0.1.18.0 twice. Removed, and `packageMsix.mjs` refuses a
+history with a repeated version (`a156769a`).
+
+### Recorded
+
+**VVVVVVVV-6** — textWalk step 9 had passed while checking nothing, the second time this step has been a vacuous
+pass (UUUUUUUU-5). In every run on record, including 0.1.18.0's of 2026-10-22, no write follows the recognition: the
+press opened no editor. Once one opened, a typed word was refused at `set-text`. The step now asserts both and is red
+(`eda0c9ea`). Not fixed in this range.
+**VVVVVVVV-7** — N1's rotate does not meet its target. At the handover, the saved drawing differs from the turned copy
+on 2.1% of the pixels, at text edges, which is one visible re-sharpening. A first-ever start's font list (5.6–13 s) is
+unchanged. Both are reported as targets not met, with these causes.
+**VVVVVVVV-8** — the whole-PDF submit to a real HTTPS receiver was not run: this session's permissions refused the
+outbound request. The other live checks of the merged cloud run ran in `buttonActionsWalk` (17/17).
+**VVVVVVVV-9** — my own process. I edited `FindBar.tsx` during a whole-file run, and the freshness guard refused the
+stale bundle mid-run (37 cases did not run). A lint fix after a build made a walk queue refuse to start, and I rebuilt
+and re-ran it. The escape guard denied an `echo` append, an `echo` beside a redirect, and a stray `node -e`. Nothing was
+written by any of them.
+
+### 1. Root cause or workaround?
+
+Each fix states its mechanism in its commit. None is a retry, a raised bound or a loosened check. Four test files
+had cases restated by decisions that changed their contract, each named in its commit: `TextEditLayer.test.tsx`
+(ADR-0261 D7), and the C1 removals in `App.test.tsx`, `compositionHost.test.ts` and `memoryPressure.test.ts`, whose
+cases now assert that nothing is pushed rather than a notice. That is a strengthening for a notice the owner withdrew.
+
+### 2. Easy shape only?
+
+N2's narrowed declarations are checked against MuPDF's own drawing per kind, not only by the table. The hold was
+walked on a second page and on a recognised page, which is where it failed. Not walked: a planned page move on a
+nested page tree in the live app (the plan reads the view, not the tree).
+
+### 2a.
+
+No assertion moved from asserted to derived.
+
+### 3. Would CI have caught it?
+
+VVVVVVVV-1 and -2 were caught by CI. VVVVVVVV-3 and -4: no, each was found by a live run. Their proofs do run there:
+`editingHosts.test.ts` and `textHoldOtherPage.pw.ts`.
+
+### 4. Non-vacuous?
+
+Run here, each red with its guard removed and green restored: the page plan (5 cases), the planned rotation's base,
+the Edit text hold, the find focus, the signature arming, the changed pages (two N2 mutations), the When columns, the
+compose host started with the mode (2 cases), the hold's condition and `wrote` (each red), and the new case on the
+build before its fix.
+
+### 4a / 4b.
+
+`wholeChoice.ts` measures text in the drop-down's own face, and its resolution test is the Verdana case that the
+old layout fails. `markLatencyWalk --changes` reads an element at 300 ms and a canvas at 500 ms on every run.
+`crashOfferWalk` waits for the crash's own log line. No new search-shaped instrument.
+
+### 4c.
+
+`packageMsix.proof.mjs` moved its literal from 14 to 15 with its new case. No roster in the range derives its count from
+the set it governs.
+
+### 5. Executed or asserted?
+
+Executed: every walk total, timing and mutation above. Asserted: nothing recorded as found.
+
+### 6. Architecture before the feature?
+
+ADR-0261 (`ec2724a0`) and ADR-0262 (`296f658d`) each landed in their own commit ahead of the code, and the cloud's
+ADR-0263 did the same on its branch.
+
+### 7. Documents?
+
+ADR-0261's two corrections, ADR-0263's renumbering correction (references swept by `renumber0261.mjs`), ADR-0237's
+correction, the decisions README rows, and §4 and §6 of the architecture document. Swept for *starts no compose host*:
+ADR-0237 and its row.
+
+---
+
 ## 2026-10-22 — Stage audit of `0cbcb31e..6aba348f` — findings UUUUUUUU-1 to UUUUUUUU-12
 
 Local fix session 3's third range: R19's blink and arrival units, R28, the two cloud merges (R22–R27, R29), R21, and
