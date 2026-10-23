@@ -38,6 +38,7 @@ import { type DocId, type DocVersion, type Failure, type MessageKey, lineText, p
 import type { z } from 'zod';
 
 import { isFormatted } from '../textFormatting.js';
+import { type PagePlans, inverseOf, pageOpOf } from '../pagePlan.js';
 import { BATES_NUMBER_DIALOG_ID } from '../dialogs/batesNumber.js';
 import { BATES_NUMBER_RESULT, BATES_NUMBER_SETTINGS, type BatesNumberAnswer } from '../dialogs/batesNumberResult.js';
 import { COMMAND_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG_ID } from '../dialogs/commandProblem.js';
@@ -465,6 +466,23 @@ export interface DocumentCommandDeps {
    * built without it would turn *Work on a copy* into a choice that opens nothing.
    */
   readonly signatures: SignedEditing;
+  /**
+   * Where a page command is shown ahead of its drawing
+   * ([ADR-0261](../../../../docs/DECISIONS/0261-a-page-command-is-shown-at-once-from-the-pages-already-drawn.md)):
+   * the document's plan holder, its version now, and the view on screen. Absent plans nothing, which is the shape a
+   * command had before the plan — every command still drawn when its page draws it — so a bag built without it (a
+   * case about something else) loses no correctness, only the head start. The application's bag carries it; the
+   * rendered cases of ADR-0261 are what hold it to that.
+   */
+  readonly pagePlanning?: (docId: DocId) => PagePlanning | undefined;
+}
+
+/** See {@link DocumentCommandDeps.pagePlanning}. */
+export interface PagePlanning {
+  readonly plans: PagePlans;
+  readonly storeVersion: DocVersion;
+  /** The view on screen, or `undefined` before one is: then nothing is planned. */
+  readonly view: { readonly version: DocVersion; readonly pageCount: number } | undefined;
 }
 
 /** See {@link DocumentCommandDeps.signatures}. */
@@ -716,6 +734,8 @@ export function hasPages(context: CommandContext): boolean {
  */
 interface Lane {
   tail: Promise<void>;
+  /** Commands sent into the lane and not yet ended: a page plan is made only when each of them is planned (ADR-0261). */
+  inFlight: number;
   /** Each move this renderer's own walk-keeping commands made: from the version a command was sent at, to the one it produced. */
   readonly moved: Map<DocVersion, { readonly to: DocVersion; readonly walk: CommandWalk }>;
 }
@@ -733,7 +753,7 @@ function laneOf(client: ContractClient, docId: DocId): Lane {
   }
   let lane = byDocument.get(docId);
   if (lane === undefined) {
-    lane = { tail: Promise.resolve(), moved: new Map() };
+    lane = { tail: Promise.resolve(), inFlight: 0, moved: new Map() };
     byDocument.set(docId, lane);
   }
   return lane;
@@ -844,8 +864,38 @@ export async function applyDocumentCommand(
   } = {},
 ): Promise<boolean> {
   const lane = laneOf(deps.client, docId);
+  // SHOWN AT ONCE (ADR-0261): a page command is planned here, at dispatch, before the lane, so the surfaces draw it in
+  // the update it is sent in. The plan follows the command's answer: produced, or dropped on a refusal.
+  const planning = deps.pagePlanning?.(docId);
+  const op = planning?.view === undefined || !onlyPlannedInFlight(lane, planning.plans) ? null : pageOpOf(command, planning.view.pageCount);
+  const planned = op === null || planning?.view === undefined ? null : planning.plans.propose(op, planning.storeVersion, planning.view.version);
+  const plannedOptions: typeof options =
+    planned === null || planning === undefined
+      ? options
+      : {
+          ...options,
+          produced: (version) => {
+            planning.plans.answered(planned, version);
+            options.produced?.(version);
+          },
+        };
   // COUNTED AS A WRITE (`inFlight.ts`), the condition a walk waits on instead of a sleep.
-  const run = countedAs('writes', () => lane.tail.then(() => sendInLane(lane, deps, docId, command, options)));
+  lane.inFlight += 1;
+  const run = countedAs('writes', () =>
+    lane.tail.then(() => sendInLane(lane, deps, docId, command, plannedOptions)).finally(() => {
+      lane.inFlight -= 1;
+    }),
+  );
+  if (planned !== null && planning !== undefined) {
+    void run.then(
+      (moved) => {
+        if (!moved) planning.plans.refused();
+      },
+      () => {
+        planning.plans.refused();
+      },
+    );
+  }
   lane.tail = run.then(
     () => undefined,
     () => undefined,
@@ -853,6 +903,14 @@ export async function applyDocumentCommand(
   return run;
 }
 
+
+/**
+ * Whether every command in `lane` not yet ended is a planned one: a plan drawn over an UNPLANNED command in flight —
+ * an insert sent a moment before a rotate — would turn the page that insert is about to push along (ADR-0261 Decision 2).
+ */
+function onlyPlannedInFlight(lane: Lane, plans: PagePlans): boolean {
+  return lane.inFlight === plans.getSnapshot().filter((each) => each.produced === undefined).length;
+}
 
 async function sendInLane(
   lane: Lane,
@@ -2689,6 +2747,38 @@ export function findDuplicatePagesCommand(deps: DocumentCommandDeps): UiCommand 
  * starts; treating it as a failure would put a message in front of a user who
  * pressed a key one time too many.
  */
+/**
+ * An undo or a redo planned ahead of its drawing (ADR-0261 Decision 4): from the inverse of the planned op that produced
+ * the version now, or the op an undo put back. `null` where nothing planned produced it — a delete's undo among them,
+ * whose pages no view holds — and the step is then drawn when the page draws it.
+ */
+function planHistoryStep(
+  deps: DocumentCommandDeps,
+  docId: DocId,
+  direction: 'undo' | 'redo',
+): { readonly answered: (version: DocVersion) => void; readonly refused: () => void } | null {
+  const planning = deps.pagePlanning?.(docId);
+  if (planning?.view === undefined) return null;
+  const { plans, storeVersion, view } = planning;
+  // NOTHING ELSE UNANSWERED: an undo is not in the lane, so a command still in flight would land on either side of it.
+  if (laneOf(deps.client, docId).inFlight !== 0 || plans.getSnapshot().some((each) => each.produced === undefined)) return null;
+  const op = direction === 'undo' ? plans.undoOf(storeVersion) : plans.redoOf(storeVersion);
+  if (op === null) return null;
+  const handle = plans.propose(op, storeVersion, view.version);
+  if (handle === null) return null;
+  return {
+    answered: (version) => {
+      plans.answered(handle, version);
+      // AN UNDO'S REDO repeats the op the undo put back, which is the inverse of the inverse it was planned with.
+      const forward = direction === 'undo' ? inverseOf(op) : null;
+      if (forward !== null) plans.undone(forward, version);
+    },
+    refused: () => {
+      plans.refused();
+    },
+  };
+}
+
 export function undoCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.undo',
@@ -2708,21 +2798,30 @@ export function undoCommand(deps: DocumentCommandDeps): UiCommand {
     run: async (context): Promise<void> => {
       const docId = context.docId;
       if (docId === undefined) return;
+      const step = planHistoryStep(deps, docId, 'undo');
       let answer = await countedAs('writes', () => deps.client['document.undo']({ docId }));
       // MEMORY RAN OUT, PROVEN (ADR-0253): the memory window, and *Try again* asks for the same undo again.
       while (!answer.ok && answer.error.code === 'out-of-memory') {
-        if (!(await triedAgainAfterMemory(deps, answer.error.detail))) return;
+        if (!(await triedAgainAfterMemory(deps, answer.error.detail))) {
+          step?.refused();
+          return;
+        }
         answer = await countedAs('writes', () => deps.client['document.undo']({ docId }));
       }
       if (!answer.ok) {
+        step?.refused();
         if (answer.error.code !== 'out-of-memory') reportProblem(deps, answer.error);
         return;
       }
-      if (answer.value.kind !== 'undone') return;
+      if (answer.value.kind !== 'undone') {
+        step?.refused();
+        return;
+      }
       deps.onApplied({
         version: answer.value.version,
         byteLength: answer.value.byteLength,
       });
+      step?.answered(answer.value.version);
     },
   };
 }
@@ -2752,18 +2851,27 @@ export function redoCommand(deps: DocumentCommandDeps): UiCommand {
     run: async (context): Promise<void> => {
       const docId = context.docId;
       if (docId === undefined) return;
+      const step = planHistoryStep(deps, docId, 'redo');
       let answer = await countedAs('writes', () => deps.client['document.redo']({ docId }));
       // MEMORY RAN OUT, PROVEN (ADR-0253): the memory window, and *Try again* asks for the same redo again.
       while (!answer.ok && answer.error.code === 'out-of-memory') {
-        if (!(await triedAgainAfterMemory(deps, answer.error.detail))) return;
+        if (!(await triedAgainAfterMemory(deps, answer.error.detail))) {
+          step?.refused();
+          return;
+        }
         answer = await countedAs('writes', () => deps.client['document.redo']({ docId }));
       }
       if (!answer.ok) {
+        step?.refused();
         if (answer.error.code !== 'out-of-memory') reportProblem(deps, answer.error);
         return;
       }
-      if (answer.value.kind !== 'redone') return;
+      if (answer.value.kind !== 'redone') {
+        step?.refused();
+        return;
+      }
       deps.onApplied({ version: answer.value.version, byteLength: answer.value.byteLength });
+      step?.answered(answer.value.version);
       tellUnsealed(deps, answer.value);
     },
   };

@@ -8,10 +8,12 @@ import type { StripArrival } from './layerArrival.js';
 import { THUMBNAILS_LABEL, THUMBNAIL_PAGE } from './messages/en.js';
 import { pdfjsPageOf } from './pageNumbering.js';
 import { givePixelsBack } from './pixelLedger.js';
-import { RenderCancelledError, renderPage } from './renderPage.js';
+import { type PagePlans, plannedRotation } from './pagePlan.js';
+import { type PageRotation, RenderCancelledError, renderPage } from './renderPage.js';
 import { THUMBNAIL_SIZES, type ThumbnailSize } from './settings/appearance.js';
 import { type MenuAt, inPageMenu } from './surfaces/ContextMenu.js';
 import { usePageRotations } from './usePageRotations.js';
+import { usePlannedPages } from './usePlannedPages.js';
 import { useVisiblePages } from './useVisiblePages.js';
 
 /**
@@ -61,7 +63,8 @@ export function Thumbnails({
   docId,
   version,
   view,
-  pageCount,
+  pageCount: viewPageCount,
+  plans,
   current,
   onJump,
   onMove,
@@ -171,8 +174,13 @@ export function Thumbnails({
         readonly onePage: { readonly onViewing: (page: number) => void } | undefined;
       }
     | undefined;
+  /** The document's page plan (ADR-0261): a page command shown on the cards before its version is drawn. */
+  readonly plans?: PagePlans | undefined;
 }): ReactElement {
   const { i18n } = useLingui();
+  // THE CARDS SHOWN, while a page command is ahead of the view (ADR-0261): `PageList`'s rule, from the one reader.
+  const planned = usePlannedPages(plans, view);
+  const pageCount = planned?.length ?? viewPageCount;
   const scroller = useRef<HTMLElement | null>(null);
   const onePage = grid?.onePage;
   const reading = onePage !== undefined;
@@ -392,8 +400,10 @@ export function Thumbnails({
             // version empties the rotation answers until the model is asked again, and a release keyed to the draw gave
             // back every card on screen for those frames of an edit.
             held={visible.has(page)}
-            draw={visible.has(page) && rotations.has(page)}
-            rotation={rotations.get(page)}
+            // A PLANNED CARD draws from the view at once (ADR-0261): its rotation is the plan's, not the model's.
+            draw={visible.has(page) && (planned !== null || rotations.has(page))}
+            source={planned?.[page]?.source ?? page}
+            rotation={planned === null ? rotations.get(page) : plannedRotation(planned[page] ?? { source: page, turn: 0 })}
             onDrawn={onDrawn}
           />
           {/* THE PAGE'S NUMBER UNDER IT, as v5-02 draws the strip. Seen, not read: the button's
@@ -462,6 +472,7 @@ const NOTHING_VISIBLE: ReadonlySet<number> = new Set();
 function ThumbCanvas({
   view,
   page,
+  source,
   width,
   held,
   draw,
@@ -470,13 +481,15 @@ function ThumbCanvas({
 }: {
   readonly view: DocumentView | undefined;
   readonly page: number;
+  /** The view's page the card draws: its own, or the one a page plan shows in its place (ADR-0261). */
+  readonly source: number;
   readonly width: number;
   /** Whether the card is in the margin, which is what keeps its pixels; out of it they are given back. */
   readonly held: boolean;
   /** Whether it may draw now: held, and its rotation answered for this version. */
   readonly draw: boolean;
-  /** The view model's rotation, or `undefined` where it did not answer for this version. */
-  readonly rotation: number | undefined;
+  /** The view model's rotation, `undefined` where it did not answer for this version, or a page plan's turn. */
+  readonly rotation: PageRotation;
   /** Told when a draw for `width` lands, or fails, which is shown as failed: either way the card is finished. */
   readonly onDrawn: (page: number, width: number) => void;
 }): ReactElement {
@@ -486,9 +499,10 @@ function ThumbCanvas({
   // what lets the element say which — a size alone read `drawn` from the first draw on, so a reader waiting for the
   // Organize grid's Full page saw thumbnail-sized pages as ready (CI, ubuntu-latest, on 6b7a6bd9).
   const [size, setSize] = useState<
-    { width: number; height: number; for: { view: DocumentView; page: number; width: number; rotation: number | undefined } } | undefined
+    { width: number; height: number; for: { view: DocumentView; source: number; width: number; rotation: PageRotation } } | undefined
   >(undefined);
-  const current = size !== undefined && size.for.view === view && size.for.page === page && size.for.width === width && size.for.rotation === rotation;
+  const current =
+    size !== undefined && size.for.view === view && size.for.source === source && size.for.width === width && size.for.rotation === rotation;
   // PIXELS GIVEN BACK when the card leaves the margin (run 4 item 13c): a canvas keeps its backing store for as long as
   // it is in the page, so a strip scrolled through a long document held every card's. The card keeps its size, so
   // nothing above it moves, and is drawn again when it comes back near the view; what is held is the margin's cards.
@@ -524,8 +538,8 @@ function ThumbCanvas({
       // ONE DRAW, FITTED TO THE COLUMN by `renderPage` from the page's own viewport. This drew the
       // page at full size first to learn its width, and that first pass is what a superseded
       // draw left behind: a canvas 612 points wide in a 96-pixel column (measured 2026-09-18).
-      const drawn = await renderPage(view.document, pdfjsPageOf(page), element, { fitWidth: width }, rotation, superseded.signal);
-      setSize({ width: drawn.width, height: drawn.height, for: { view, page, width, rotation } });
+      const drawn = await renderPage(view.document, pdfjsPageOf(source), element, { fitWidth: width }, rotation, superseded.signal);
+      setSize({ width: drawn.width, height: drawn.height, for: { view, source, width, rotation } });
       setReleased(false);
       report.current(page, width);
     };
@@ -543,7 +557,7 @@ function ThumbCanvas({
     return (): void => {
       superseded.abort();
     };
-  }, [draw, page, rotation, view, width]);
+  }, [draw, page, rotation, source, view, width]);
 
   return (
     <canvas

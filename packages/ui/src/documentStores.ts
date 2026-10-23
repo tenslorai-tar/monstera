@@ -12,6 +12,7 @@ import type { AccessibilityView } from './accessibility/view.js';
 import type { ReplyTarget } from './assistantRequest.js';
 import { DocumentKeys } from './documentKeys.js';
 import { type HeldLooks, createHeldLooks } from './heldLooks.js';
+import { type PagePlans, createPagePlans } from './pagePlan.js';
 import type { SpellingReview } from './spelling/review.js';
 import { DEFAULT_ZOOM, type ZoomMode } from './zoom.js';
 
@@ -528,6 +529,7 @@ export class DocumentStores {
   readonly #stores = new Map<DocId, DocumentStore>();
   /** Each open document's holder of released marks (ADR-0257), made and dropped with its store. */
   readonly #held = new Map<DocId, HeldLooks>();
+  readonly #plans = new Map<DocId, PagePlans>();
   readonly #watchers = new Set<StoreWatcher>();
   /**
    * The passwords a person typed for each open document (ADR-0171 Decision 7). HERE, beside the stores rather than in
@@ -569,6 +571,7 @@ export class DocumentStores {
     const store = createDocumentStore(docId, version, 0, zoom);
     this.#stores.set(docId, store);
     this.#held.set(docId, createHeldLooks(() => store.getState().version));
+    this.#plans.set(docId, createPagePlans());
     for (const watcher of this.#watchers) watcher.opened(docId, store);
     return store;
   }
@@ -581,6 +584,11 @@ export class DocumentStores {
   /** The document's holder of released marks in their final look (ADR-0257), while it is open. */
   held(docId: DocId): HeldLooks | undefined {
     return this.#held.get(docId);
+  }
+
+  /** The document's page plan (ADR-0261): page commands sent and not yet drawn, while it is open. */
+  plans(docId: DocId): PagePlans | undefined {
+    return this.#plans.get(docId);
   }
 
   /**
@@ -596,6 +604,7 @@ export class DocumentStores {
     // ITS HELD LOOKS LEAVE WITH IT, each telling what it kept alive — a picture's `blob:` address — that it is gone.
     this.#held.get(docId)?.close();
     this.#held.delete(docId);
+    this.#plans.delete(docId);
     return this.#stores.delete(docId);
   }
 

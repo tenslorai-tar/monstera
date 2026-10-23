@@ -10,6 +10,7 @@ import { Thumbnails } from './Thumbnails.js';
 import type { DocumentView } from './documentView.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
+import type { PageRotation } from './renderPage.js';
 
 /**
  * The thumbnail strip.
@@ -29,7 +30,7 @@ const rasterised: [number, number | { readonly fitWidth: number }][] = [];
 /** The signal each draw was handed, in order — what a superseded draw is cancelled through. */
 const signals: AbortSignal[] = [];
 /** The rotation each rasterisation was handed, in the same order. */
-const drawnAt: (number | undefined)[] = [];
+const drawnAt: PageRotation[] = [];
 /** When set, each draw waits for the case to finish it through {@link held}. */
 let holdDraws = false;
 const held: (() => void)[] = [];
@@ -42,7 +43,7 @@ vi.mock('./renderPage.js', async (importOriginal) => ({
     pdfjsPage: number,
     _canvas: unknown,
     scale: number | { readonly fitWidth: number },
-    rotation: number | undefined,
+    rotation: PageRotation,
     signal: AbortSignal,
   ) => {
     rasterised.push([pdfjsPage, scale]);

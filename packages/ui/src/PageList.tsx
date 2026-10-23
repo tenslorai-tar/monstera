@@ -58,6 +58,8 @@ const NO_HELD_LOOKS = (): readonly HeldLook[] => NO_HELD;
 const NO_HELD_SUBSCRIBE = (): (() => void) => () => undefined;
 import { type PageAnnotation, usePageAnnotations } from './usePageAnnotations.js';
 import { usePageRotations } from './usePageRotations.js';
+import { type PagePlans, plannedRotation } from './pagePlan.js';
+import { usePlannedPages } from './usePlannedPages.js';
 import { type PageTextAnswer, usePageText } from './usePageText.js';
 import { type PageLinkOnPage, usePageLinks } from './usePageLinks.js';
 import { FormLayer, type PageFill } from './forms/FormLayer.js';
@@ -76,6 +78,7 @@ import { holdPage } from './pageResidency.js';
 import { motionReduced } from './settings/appearance.js';
 import type { PageLayout } from './settings/viewing.js';
 import {
+  type PageRotation,
   RenderCancelledError,
   type SecondRasteriser,
   drawWithout,
@@ -349,6 +352,13 @@ export interface PageListProps {
    */
   readonly held?: HeldLooks | undefined;
   /**
+   * The document's page plan
+   * ([ADR-0261](../../../docs/DECISIONS/0261-a-page-command-is-shown-at-once-from-the-pages-already-drawn.md)): while a
+   * page command is sent and not yet drawn, the slots show its pages from the view they hold. Absent where no page
+   * command is sent from this list's document, the side-by-side view's.
+   */
+  readonly plans?: PagePlans | undefined;
+  /**
    * The search whose matches the text layers should paint, if one has been run.
    *
    * Passed straight through to every slot rather than resolved here: the ranges
@@ -519,7 +529,8 @@ function devicePixels(): number {
 export function PageList({
   client,
   view,
-  pageCount,
+  pageCount: viewPageCount,
+  plans,
   docId,
   version,
   onCurrentPage,
@@ -564,6 +575,10 @@ export function PageList({
   onActivate,
 }: PageListProps): ReactElement {
   const { i18n } = useLingui();
+  // THE PAGES SHOWN, while a page command is ahead of the view (ADR-0261): slot `i` draws `planned[i]` from the view, and
+  // the list is as long as the plan. Every count below is this one, so a deleted page's slot is gone with it.
+  const planned = usePlannedPages(plans, view);
+  const pageCount = planned?.length ?? viewPageCount;
   // WHERE A HAND DRAG STARTED: the pointer and the scroll position at the press, so each move sets
   // the scroll from the start rather than accumulating deltas that drift with rounding.
   const [grab, setGrab] = useState<
@@ -1388,8 +1403,12 @@ export function PageList({
           //
           // AND NOT BEHIND, the same `drawsPages` the canvas takes: the slot draws when this turns true, so a draw
           // left true while the tab was behind never ran again for the canvas that came back, which stayed blank.
-          draw={drawsPages && inUse(page) && rotations.has(page) && (resolved !== undefined || startBoxRefused)}
-          rotation={rotations.get(page)}
+          //
+          // AND NOT WAITING ON THE MODEL WHILE A PLAN IS SHOWN: a planned page's rotation is its own in the view, turned
+          // by the plan (`plannedRotation`), and the model's answer at the store's version is for another page.
+          draw={drawsPages && inUse(page) && (planned !== null || rotations.has(page)) && (resolved !== undefined || startBoxRefused)}
+          source={planned?.[page]?.source ?? page}
+          rotation={planned === null ? rotations.get(page) : plannedRotation(planned[page] ?? { source: page, turn: 0 })}
           size={sizes.get(page) ?? lastKnownBefore(sizes, page) ?? startEstimate}
           zoom={shown}
           renderZoom={renderZoom}
@@ -1654,6 +1673,7 @@ function lastKnownBefore(
  */
 function PageSlot({
   page,
+  source,
   ref,
   view,
   mounted,
@@ -1695,13 +1715,18 @@ function PageSlot({
   hidden,
 }: {
   readonly page: number;
+  /**
+   * The view's page this slot draws: its own, or the one a page plan shows in its place (ADR-0261). Everything else the
+   * slot shows — marks, text, fields — is the store's, whose pages already are the plan's.
+   */
+  readonly source: number;
   readonly ref: (element: HTMLElement | null) => void;
   readonly view: DocumentView | undefined;
   /** Whether the page is inside the margin, which is what keeps its canvas (and its bitmap) alive. */
   readonly mounted: boolean;
   /** Whether it may rasterise now: mounted, and its rotation answered for this version. */
   readonly draw: boolean;
-  readonly rotation: number | undefined;
+  readonly rotation: PageRotation;
   readonly size: Measured | undefined;
   readonly zoom: number;
   readonly renderZoom: number;
@@ -1938,7 +1963,7 @@ function PageSlot({
       if (tiled) {
         // A PAGE DRAWN IN TILES IS MEASURED, NOT DRAWN, here: no one canvas holds it, so its size, box and rotation
         // come from PDF.js' viewport alone and each tile draws its own piece.
-        const measured = await pageGeometry(view.document, pdfjsPageOf(page), scale, rotation);
+        const measured = await pageGeometry(view.document, pdfjsPageOf(source), scale, rotation);
         if (superseded.signal.aborted) return;
         onMeasured(page, { ...measured, drawnAt: scale });
         // MEASURED, NOT DRAWN, so the drawn view is not set here: the tiles say when every one of them has drawn it
@@ -1950,7 +1975,8 @@ function PageSlot({
       if (target === null) return;
       const drawn = await renderPage(
         view.document,
-        pdfjsPageOf(page),
+        // THE VIEW'S PAGE THIS SLOT SHOWS, which a page plan may make another than its own (ADR-0261).
+        pdfjsPageOf(source),
         target,
         scale,
         // `undefined` where the model has not answered yet, which hands PDF.js
@@ -2001,14 +2027,14 @@ function PageSlot({
     return (): void => {
       superseded.abort();
     };
-  }, [draw, leftOut, onFailed, onMeasured, onPainted, page, quality, renderZoom, rotation, secondRasteriser, setPresentedWithout, tiled, view]);
+  }, [draw, leftOut, onFailed, onMeasured, onPainted, page, quality, renderZoom, rotation, secondRasteriser, setPresentedWithout, source, tiled, view]);
 
   // HELD DECODED WHILE MOUNTED (`pageResidency.ts`), so a zoom's redraw of a page in the margin does not decode its
   // images again; released when it leaves the margin, and PDF.js then closes them unless the strip is drawing it.
   useEffect(() => {
     if (!mounted || view === undefined) return undefined;
-    return holdPage(view.document, pdfjsPageOf(page));
-  }, [mounted, page, view]);
+    return holdPage(view.document, pdfjsPageOf(source));
+  }, [mounted, source, view]);
 
   // THE CANVAS'S PIXELS GO WITH IT. A canvas taken out of the page keeps its backing store until it is collected, and
   // with an accelerated 2D canvas that store is GPU memory; sized to nothing, it is released now. Captured when the
@@ -2072,7 +2098,8 @@ function PageSlot({
         size === undefined || view === undefined ? null : (
           <PageTiles
             draw={draw}
-            page={page}
+            // THE VIEW'S PAGE THE SLOT DRAWS (ADR-0261), which the tiles cut from.
+            page={source}
             // THE PAGE'S DEVICE SIZE AT THE SCALE TILES DRAW AT, from the measured size and the scale it was measured
             // at — the same ratio `shown` places the slot by, so the tiles and the slot cannot disagree about the page.
             pageSize={{
@@ -2383,7 +2410,7 @@ function PageTiles({
   /** Told the view the page on screen is drawn from, once EVERY tile shown has presented a draw of it. */
   readonly onPresentedView: (view: DocumentView) => void;
   readonly page: number;
-  readonly rotation: number | undefined;
+  readonly rotation: PageRotation;
   readonly scale: number;
   readonly zoom: number;
   /** The page's size in device pixels at `scale`. */
@@ -2507,7 +2534,7 @@ function PageTile({
   readonly view: DocumentView;
   readonly draw: boolean;
   readonly page: number;
-  readonly rotation: number | undefined;
+  readonly rotation: PageRotation;
   readonly tile: Tile;
   readonly scale: number;
   readonly zoom: number;

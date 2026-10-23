@@ -131,6 +131,7 @@ import {
   redoCommand,
   zoomCommand,
   actualSizeCommand,
+  type PagePlanning,
 } from './commands/documentCommands.js';
 import { inWriteOrder } from './commands/orderedClient.js';
 import { textFormatCommands } from './commands/textFormatCommands.js';
@@ -1297,6 +1298,17 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
     },
     [activeId, appliedTo],
   );
+  // WHERE A PAGE COMMAND IS PLANNED at its dispatch (ADR-0261): the document's plan, which the page pane tells the view
+  // on screen, and the document's version now.
+  const pagePlanning = useCallback(
+    (docId: DocId): PagePlanning | undefined => {
+      const plans = stores.plans(docId);
+      const store = stores.get(docId);
+      if (plans === undefined || store === undefined) return undefined;
+      return { plans, storeVersion: store.getState().version, view: plans.view() };
+    },
+    [stores],
+  );
 
   /**
    * The Windows user name `main` answers on `app.info` — what an empty *Your name for comments*
@@ -1370,7 +1382,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
     (from: number, to: number): void => {
       if (activeId === undefined) return;
       void applyDocumentCommand(
-        { client, onApplied: applied, ask, stamp, signatures },
+        { client, onApplied: applied, ask, stamp, signatures, pagePlanning },
         activeId,
         { kind: 'movePage', from, to },
       ).then((moved) => {
@@ -1389,7 +1401,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         stores.get(activeId)?.getState().movedPages(count, { from, to });
       });
     },
-    [activeId, applied, ask, client, signatures, stamp, stores],
+    [activeId, applied, ask, client, pagePlanning, signatures, stamp, stores],
   );
 
   /**
@@ -1914,12 +1926,12 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
     (a: number, b: number): void => {
       if (activeId === undefined) return;
       void applyDocumentCommand(
-        { client, onApplied: applied, ask, stamp, signatures },
+        { client, onApplied: applied, ask, stamp, signatures, pagePlanning },
         activeId,
         { kind: 'swapPages', a, b },
       );
     },
-    [activeId, applied, ask, client, signatures, stamp],
+    [activeId, applied, ask, client, pagePlanning, signatures, stamp],
   );
 
   /**
@@ -2016,6 +2028,8 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
   // THE ACTIVE DOCUMENT'S HOLDER of released marks in their final look (ADR-0257): handed to its pages, which alone
   // subscribe to it, so a hold never renders the shell (`heldLooks.ts`).
   const heldLooks = activeId === undefined ? undefined : stores.held(activeId);
+  // AND ITS PAGE PLAN (ADR-0261), the same way: the surfaces that draw pages alone subscribe.
+  const pagePlans = activeId === undefined ? undefined : stores.plans(activeId);
   // A MARK FROM THE SELECTED-TEXT MENU, held in its final look on its page from the click until the page draws it
   // (ADR-0257) — the overlay's own route, `sendHeld`, so the menu and the tool hold one way.
   const placeHeld = useCallback(
@@ -2339,7 +2353,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       // scroller, which a document opened straight into Organize has never mounted.
       onDelete: (pages: readonly number[]) => {
         if (pageCount === undefined) return;
-        void askToDeletePages({ client, onApplied: applied, ask, stamp, signatures }, activeId, pageCount, pages);
+        void askToDeletePages({ client, onApplied: applied, ask, stamp, signatures, pagePlanning }, activeId, pageCount, pages);
       },
     };
   }, [
@@ -2351,6 +2365,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
     navigator,
     organizing,
     pageCount,
+    pagePlanning,
     selectedPages,
     settings,
     signatures,
@@ -4062,20 +4077,20 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         // THREE ROTATIONS, one factory. D2's row is a surface over the command
         // Stage 0 already declared — `rotatePages` takes the quarter turns, so
         // 180 and 270 needed no new command and no new contract entry.
-        rotatePageCommand({ client, onApplied: applied, ask, stamp, signatures }, 1),
-        rotatePageCommand({ client, onApplied: applied, ask, stamp, signatures }, 2),
-        rotatePageCommand({ client, onApplied: applied, ask, stamp, signatures }, 3),
+        rotatePageCommand({ client, onApplied: applied, ask, stamp, signatures, pagePlanning }, 1),
+        rotatePageCommand({ client, onApplied: applied, ask, stamp, signatures, pagePlanning }, 2),
+        rotatePageCommand({ client, onApplied: applied, ask, stamp, signatures, pagePlanning }, 3),
         // THE FIRST DESTRUCTIVE COMMAND, and it registers exactly like the
         // three above it. What is different is invisible here and deliberately
         // so: its log entry is terminal, and undoing it restores the checkpoint
         // the bus took rather than an inverse (ADR-0037).
         insertBlankPageCommand({ client, onApplied: applied, ask, stamp, signatures }),
         duplicatePageCommand({ client, onApplied: applied, ask, stamp, signatures }),
-        deletePageCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        deletePageCommand({ client, onApplied: applied, ask, stamp, signatures, pagePlanning }),
         // THE FIRST COMMAND WHOSE ARGUMENTS COME FROM A DIALOG. Its `run`
         // awaits an answer and dispatches only if there was one, which is the
         // whole of the mutation-dialog gate (ADR-0038).
-        deletePagesCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        deletePagesCommand({ client, onApplied: applied, ask, stamp, signatures, pagePlanning }),
         cropPagesCommand({ client, onApplied: applied, ask, stamp, signatures }),
         protectDocumentCommand({ client, onApplied: applied, ask, stamp, signatures, toast, documentKeys: stores.keys }),
         sanitizeDocumentCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
@@ -4254,8 +4269,8 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         optimizeCommand({ client, onApplied: applied, ask, stamp, signatures, track, toast, settleMarks }),
         generateTocCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         findDuplicatePagesCommand({ client, onApplied: applied, ask, stamp, signatures }),
-        undoCommand({ client, onApplied: applied, ask, stamp, signatures }),
-        redoCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        undoCommand({ client, onApplied: applied, ask, stamp, signatures, pagePlanning }),
+        redoCommand({ client, onApplied: applied, ask, stamp, signatures, pagePlanning }),
         saveCommand({ client, ask, toast, onSaved: onSavedByPerson, warnSignatureBreak, settleMarks }),
         closeTabCommand({ close: (docId) => requestClose([docId]) }),
         closeOthersCommand({ close: requestClose }),
@@ -4309,8 +4324,8 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
         // THE TWO LISTS, from their own ribbon sections (the placement audit, 2026-09-23).
         showPanelCommand({ settings, presence },'comments'),
         showPanelCommand({ settings, presence },'forms'),
-        movePageCommand({ client, onApplied: applied, ask, stamp, signatures }, 'earlier'),
-        movePageCommand({ client, onApplied: applied, ask, stamp, signatures }, 'later'),
+        movePageCommand({ client, onApplied: applied, ask, stamp, signatures, pagePlanning }, 'earlier'),
+        movePageCommand({ client, onApplied: applied, ask, stamp, signatures, pagePlanning }, 'later'),
         // §7's SELECTED-TEXT MENU. The markups dispatch through the one dispatcher, drawn in the
         // tools' own style; *Search* opens the Search panel and seeds the find field.
         ...(() => {
@@ -4395,6 +4410,8 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       // THE KEYS A PERSON CHOSE, so a change in the shortcuts dialog rebuilds the registry and the new key works at once.
       chosenShortcuts,
       chooseTool,
+      // WHERE A PAGE COMMAND IS PLANNED (ADR-0261), stable for the life of the stores.
+      pagePlanning,
       selectionVersion,
       // WHETHER *RESET FORM* EXISTS, which changes when a document's first field list arrives or its last field goes.
       formHasFields,
@@ -5118,6 +5135,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
           client={client}
           document={open}
           held={heldLooks}
+          plans={pagePlans}
           onVersionMoved={versionMoved}
           onFirstFrame={markFramed}
           onCurrentPage={viewed}
@@ -5786,6 +5804,7 @@ function PageCanvas({
   client,
   document: open,
   held,
+  plans,
   requestPassword,
   documentKeys,
   onVersionMoved,
@@ -5843,6 +5862,8 @@ function PageCanvas({
   readonly document: OpenDocument;
   /** The document's holder of released marks in their final look (ADR-0257), for the pages that show them. */
   readonly held?: PageListProps['held'];
+  /** The document's page plan (ADR-0261), for the main view, the strip and Organize. */
+  readonly plans?: PageListProps['plans'];
   /** Each drawn page's visible box, for the assistant's *Add as note* — `PageList.onPageBox`. */
   readonly onPageBox: (page: number, crop: readonly [number, number, number, number]) => void;
   readonly onVersionMoved: (next: OpenedDocument) => void;
@@ -6012,6 +6033,12 @@ function PageCanvas({
 
   const keys = useMemo(() => viewKeysOf(documentKeys, open.docId), [documentKeys, open.docId]);
   const { ready, failed, retry } = useDocumentView(client, open, moved, askPassword, keys);
+  // THE VIEW ON SCREEN, told to the document's page plan (ADR-0261): the ops this view has drawn leave, and a command
+  // sent from now is planned over it. A layout effect, so a command sent in the frame after the view changed plans over
+  // the new one.
+  useLayoutEffect(() => {
+    if (ready !== undefined) plans?.viewShown(ready.version, ready.document.numPages);
+  }, [plans, ready]);
   /**
    * Whether the page area's first frame has been shown (`PageList.onFirstFrame`): until it has, the thumbnail strip
    * asks main for nothing, so the first page is the first work main's lane does for this document.
@@ -6334,6 +6361,7 @@ function PageCanvas({
       unit={unit}
       drawing={drawing}
       held={held}
+      plans={plans}
       editing={editing}
       writing={writing}
       panning={panning}
@@ -6390,6 +6418,7 @@ function PageCanvas({
       label={SPLIT_SECOND_LABEL}
       drawing={drawing}
       held={held}
+      plans={plans}
       editing={editing}
       writing={writing}
       panning={panning}
@@ -6415,6 +6444,7 @@ function PageCanvas({
       version={open.version}
       view={ready}
       pageCount={ready.document.numPages}
+      plans={plans}
       current={current}
       selected={grid.selected}
       settings={settings}
@@ -6461,6 +6491,7 @@ function PageCanvas({
             version={open.version}
             view={ready}
             pageCount={ready.document.numPages}
+            plans={plans}
             current={current}
             onJump={onJump}
             onMove={onMove}

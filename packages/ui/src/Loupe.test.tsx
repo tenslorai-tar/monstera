@@ -4,12 +4,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Loupe } from './Loupe.js';
 import type { DocumentView } from './documentView.js';
+import type { PageRotation } from './renderPage.js';
 
 /** Every rasterisation, as `[pdfjsPage, scale]`. */
 const rasterised: [number, number][] = [];
 
 /** The rotation each rasterisation was handed, in the same order. */
-const drawnAt: (number | undefined)[] = [];
+const drawnAt: PageRotation[] = [];
 
 /** The region each rasterisation drew, in device pixels at its scale. */
 const regions: { x: number; y: number; width: number; height: number }[] = [];
@@ -22,7 +23,7 @@ vi.mock('./renderPage.js', async (importOriginal) => ({
     pdfjsPage: number,
     _canvas: unknown,
     scale: number,
-    rotation: number | undefined,
+    rotation: PageRotation,
     region: { x: number; y: number; width: number; height: number },
   ) => {
     rasterised.push([pdfjsPage, scale]);

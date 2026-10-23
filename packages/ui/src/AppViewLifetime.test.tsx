@@ -14,6 +14,7 @@ import { SettingsRegistry } from './registries/settings.js';
 import { ALL_SETTINGS } from './settings/all.js';
 import { SettingsStore } from './settingsStore.js';
 import { applyFullAppLimits } from './fullAppTestLimit.js';
+import type { PageRotation } from './renderPage.js';
 
 // THIS FILE RENDERS THE WHOLE APP: the case limit and the wait window of `fullAppTestLimit.ts`.
 applyFullAppLimits();
@@ -55,7 +56,7 @@ vi.mock('./documentView.js', () => ({
 }));
 
 /** Every rotation `renderPage` was handed, in order. `undefined` is a value here. */
-const drawn: (number | undefined)[] = [];
+const drawn: PageRotation[] = [];
 
 // MOCKED FOR THE SAME REASON THE VIEW IS: what a renderer HANDS the rasteriser
 // is a decision, and the state it produces is unobservable here — happy-dom
@@ -76,7 +77,7 @@ vi.mock('./renderPage.js', async (importOriginal) => ({
     _page: number,
     canvas: unknown,
     _scale: number | { readonly fitWidth: number },
-    rotation?: number,
+    rotation?: PageRotation,
   ) => {
     const spine =
       canvas instanceof HTMLElement && canvas.classList.contains('m-page');

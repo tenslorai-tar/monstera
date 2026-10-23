@@ -18,6 +18,7 @@ import { FIRST_PAGE } from './pageNumbering.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
 import type { DocumentView } from './documentView.js';
+import type { PageRotation } from './renderPage.js';
 import type { PageLayout } from './settings/viewing.js';
 import { type ZoomMode, resolveZoom } from './zoom.js';
 
@@ -72,7 +73,7 @@ const SCALE_2: ZoomMode = { kind: 'scale', scale: 2 };
 /** Every rasterisation, as `[pdfjsPage, scale]`. */
 const rasterised: [number, number][] = [];
 /** The rotation each rasterisation was handed, in the same order. */
-const drawnAt: (number | undefined)[] = [];
+const drawnAt: PageRotation[] = [];
 
 /**
  * MOCKED, because happy-dom implements no 2d context.
@@ -94,7 +95,7 @@ vi.mock('./renderPage.js', async (importOriginal) => ({
     pdfjsPage: number,
     _canvas: unknown,
     scale: number | { readonly fitWidth: number },
-    rotation: number | undefined,
+    rotation: PageRotation,
   ) => {
     // A FITTED DRAW names a width rather than a scale, and the real one fits from the page's own width.
     const factor = typeof scale === 'number' ? scale : scale.fitWidth / 100;

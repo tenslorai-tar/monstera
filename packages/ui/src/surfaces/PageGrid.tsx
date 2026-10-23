@@ -4,6 +4,8 @@ import type { DocId, DocVersion } from '@monstera/shared';
 import { type CSSProperties, type ReactElement, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import type { DocumentView } from '../documentView.js';
+import type { PagePlans } from '../pagePlan.js';
+import { usePlannedPages } from '../usePlannedPages.js';
 import {
   ORGANIZE_GRID_COUNT,
   ORGANIZE_GRID_HINTS,
@@ -103,6 +105,7 @@ export function PageGrid({
   version,
   view,
   pageCount,
+  plans,
   current,
   selected,
   settings,
@@ -122,6 +125,8 @@ export function PageGrid({
   readonly version: DocVersion;
   readonly view: DocumentView;
   readonly pageCount: number;
+  /** The document's page plan (ADR-0261): a page command shown on the cards before its version is drawn. */
+  readonly plans: PagePlans | undefined;
   readonly current: number;
   readonly selected: readonly number[];
   readonly settings: SettingsStore;
@@ -145,6 +150,8 @@ export function PageGrid({
   readonly leaving?: boolean;
 }): ReactElement {
   const { i18n } = useLingui();
+  // THE COUNT THE CARDS SHOW, a page plan's while a delete is ahead of the view (ADR-0261), so the header and the cards agree.
+  const plannedCount = usePlannedPages(plans, view)?.length ?? pageCount;
   const size = useSetting(settings, ORGANIZE_GRID_SIZE_SETTING);
   // THE FLOAT BAR'S LANE WHERE IT WAS MOVED TO (R12): docked, the stylesheet keeps the cards clear of its edge; moved,
   // the grid keeps them clear of the side the bar is nearer, as far in as the bar reaches, from the same share the bar
@@ -222,7 +229,7 @@ export function PageGrid({
         {/* THE CLIP AND THE ROW ARE TWO BOXES so a wrapped line cannot start with a separator (app.css). */}
         <div className="m-page-grid__summary">
           <p className="m-page-grid__items">
-            <strong>{i18n._(ORGANIZE_GRID_COUNT, { count: pageCount })}</strong>
+            <strong>{i18n._(ORGANIZE_GRID_COUNT, { count: plannedCount })}</strong>
             {selected.length === 0 ? null : <span>{i18n._(ORGANIZE_GRID_SELECTED, { count: selected.length })}</span>}
             {ORGANIZE_GRID_HINTS.map((hint) => (
               <span className="m-page-grid__hint" key={hint}>
@@ -257,6 +264,7 @@ export function PageGrid({
                 version={version}
                 view={view}
                 pageCount={pageCount}
+                plans={plans}
                 current={current}
                 onJump={onOpen}
                 onMove={onMove}

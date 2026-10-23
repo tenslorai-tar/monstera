@@ -149,7 +149,7 @@ export async function renderPage(
   pageNumber: number,
   canvas: HTMLCanvasElement,
   scale: number | { readonly fitWidth: number },
-  rotation: number | undefined,
+  rotation: PageRotation,
   signal: AbortSignal,
   raster?: SecondRasteriser,
   leftOut?: number,
@@ -175,7 +175,7 @@ async function drawPage(
   pageNumber: number,
   canvas: HTMLCanvasElement,
   scale: number | { readonly fitWidth: number },
-  rotation: number | undefined,
+  rotation: PageRotation,
   signal: AbortSignal,
   raster?: SecondRasteriser,
 ): Promise<RasterisedPage> {
@@ -306,9 +306,18 @@ type Viewport = ReturnType<PdfPage['getViewport']>;
  * turned, and it would do it silently on the first render. ONE place builds it, so a whole page, a tile and a size
  * asked for without drawing cannot disagree about the box.
  */
-function viewportOf(page: PdfPage, scale: number, rotation: number | undefined): Viewport {
-  return page.getViewport(rotation === undefined ? { scale } : { scale, rotation });
+function viewportOf(page: PdfPage, scale: number, rotation: PageRotation): Viewport {
+  if (rotation === undefined) return page.getViewport({ scale });
+  // A PLANNED TURN (ADR-0261) is from the page's OWN rotation, which only the page knows here: `rotation` replaces it.
+  const degrees = typeof rotation === 'number' ? rotation : (page.rotate + rotation.turnedFromOwn * 90) % 360;
+  return page.getViewport({ scale, rotation: degrees });
 }
+
+/**
+ * How a page is turned for a draw: the view model's absolute rotation, `undefined` for the page's own `/Rotate`, or a
+ * page plan's quarter turns from its own (`pagePlan.ts`, ADR-0261), for a page shown before its command is drawn.
+ */
+export type PageRotation = number | undefined | { readonly turnedFromOwn: number };
 
 /** What a page came out as: its device size at the viewport's scale, its visible box and the rotation drawn. */
 function geometryOf(page: PdfPage, viewport: Viewport, size: { width: number; height: number }): RasterisedPage {
@@ -372,7 +381,7 @@ export async function pageGeometry(
   document: PDFDocumentProxy,
   pageNumber: number,
   scale: number,
-  rotation: number | undefined,
+  rotation: PageRotation,
 ): Promise<RasterisedPage> {
   const page = await document.getPage(pageNumber);
   const viewport = viewportOf(page, scale, rotation);
@@ -388,7 +397,7 @@ export async function pageGeometry(
 export async function pageBoxAtOne(
   document: PDFDocumentProxy,
   pageNumber: number,
-  rotation: number | undefined,
+  rotation: PageRotation,
 ): Promise<{ readonly width: number; readonly height: number }> {
   const viewport = viewportOf(await document.getPage(pageNumber), 1, rotation);
   return { width: viewport.width, height: viewport.height };
@@ -443,7 +452,7 @@ export async function renderRegion(
   pageNumber: number,
   canvas: HTMLCanvasElement,
   scale: number,
-  rotation: number | undefined,
+  rotation: PageRotation,
   region: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
   signal: AbortSignal,
   leftOut?: number,
@@ -469,7 +478,7 @@ async function drawRegion(
   pageNumber: number,
   canvas: HTMLCanvasElement,
   scale: number,
-  rotation: number | undefined,
+  rotation: PageRotation,
   region: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
   signal: AbortSignal,
 ): Promise<void> {
