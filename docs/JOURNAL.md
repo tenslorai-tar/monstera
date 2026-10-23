@@ -995,6 +995,21 @@ ADR-0261's two corrections, ADR-0263's renumbering correction (references swept 
 correction, the decisions README rows, and §4 and §6 of the architecture document. Swept for *starts no compose host*:
 ADR-0237 and its row.
 
+### Correction, 2026-10-23 — 4a and 4b, each under its own heading
+
+The entry above answered 4a and 4b under one heading (*4a / 4b.*), which the document-scope check cannot read as two
+answers: Guards was red on `7c28dcd5` for it. The answers are unchanged, and are given here under their own headings.
+
+### 4a.
+
+`wholeChoice.ts` measures text in the drop-down's own face; its resolution test is the Verdana case the old layout
+fails. `markLatencyWalk --changes` reads an element at 300 ms and a canvas at 500 ms after the key, on every run.
+
+### 4b.
+
+No new search-shaped instrument. `crashOfferWalk` waits for the crash's own log line, which is a known-present anchor
+it must find.
+
 ---
 
 ## 2026-10-22 — Stage audit of `0cbcb31e..6aba348f` — findings UUUUUUUU-1 to UUUUUUUU-12
