@@ -6691,11 +6691,22 @@ export const blockPlaceSchema = z
     rotate: z.number().min(-360).max(360).optional(),
     /** The measure the block is laid out at, in points: how a text box is resized. */
     width: z.number().min(1).max(MAX_PAGE_COORDINATE).optional(),
-    /**
-     * One step in the page's drawing order (ADR-0264 Decision 5): the block drawn just after `past` (forward) or just
-     * before it (backward), its lines carried as they were. The operator writer's alone: PDFium's block writer regenerates
-     * the page in its own order and has no place to put a block, so `editTextBlockSchema` refuses it at the boundary.
-     */
+  })
+  .strict();
+
+export type BlockPlace = z.infer<typeof blockPlaceSchema>;
+
+/**
+ * {@link blockPlaceSchema} as the OPERATOR writer takes it, with one step in the page's drawing order
+ * ([ADR-0264](../../../docs/DECISIONS/0264-edit-object-returns-and-an-edit-changes-only-the-bytes-of-the-object-it-names.md)
+ * Decision 5): the block drawn just after `past` (forward) or just before it (backward), its lines carried as they were.
+ *
+ * A member of this schema and not of the shared one, because PDFium's block writer regenerates the page in its own order
+ * and has no place to put a block: `editTextBlock` cannot carry the key, so its strict place refuses it at the boundary
+ * and its worst encoding — which must fit the file a PDFium command crosses in — does not pay for it.
+ */
+export const operatorPlaceSchema = blockPlaceSchema
+  .extend({
     arrange: z
       .object({ to: z.enum(['forward', 'backward']), past: arrangeNeighbourSchema })
       .strict()
@@ -6703,7 +6714,7 @@ export const blockPlaceSchema = z
   })
   .strict();
 
-export type BlockPlace = z.infer<typeof blockPlaceSchema>;
+export type OperatorPlace = z.infer<typeof operatorPlaceSchema>;
 
 /**
  * The most blocks one edit may push (invariant L11): the blocks below one block in its column, on one page. Set by the file
@@ -6762,8 +6773,11 @@ export interface BlockFormatting {
   readonly marks?: readonly Omit<BlockMark, 'block'>[];
   /** By paragraph, ascending. */
   readonly paragraphs?: readonly Omit<ParagraphProps, 'block'>[];
-  /** How the block is placed once its words are laid out (ADR-0180, corrected 2026-10-06). */
-  readonly place?: Omit<BlockPlace, 'block'>;
+  /**
+   * How the block is placed once its words are laid out (ADR-0180, corrected 2026-10-06). The operator writer's own
+   * `arrange` included: a block edit for PDFium that names one is refused by `editTextBlock`'s schema.
+   */
+  readonly place?: Omit<OperatorPlace, 'block'>;
 }
 
 /**
@@ -6829,12 +6843,20 @@ export const blockEditSchema = z
 /** See {@link blockEditSchema}. */
 export type BlockEdit = z.infer<typeof blockEditSchema>;
 
+/** {@link blockEditSchema} as the operator writer takes it: its places may arrange ({@link operatorPlaceSchema}). */
+export const operatorEditSchema = blockEditSchema
+  .extend({ places: z.array(operatorPlaceSchema).max(MAX_BLOCK_PLACES).optional() })
+  .strict();
+
+/** See {@link operatorEditSchema}: the widest block edit, which {@link blockEditOf} builds for either writer. */
+export type OperatorBlockEdit = z.infer<typeof operatorEditSchema>;
+
 /**
  * Whether a block edit's starts describe its lists: each ascending from 0, every line holding a run and every block a
  * line, one text start per block inside the text, and every run named once — a run in two lines or two blocks would be
  * written twice. Order and agreement only; no size depends on them.
  */
-export function blockEditAgrees(edit: BlockEdit): boolean {
+export function blockEditAgrees(edit: OperatorBlockEdit): boolean {
   const {
     runs,
     lineStarts,
@@ -6954,7 +6976,7 @@ export function blockEditAgrees(edit: BlockEdit): boolean {
 }
 
 /** Blocks in their wire form — the ONE place they are flattened (B3a); {@link blocksOfEdit} is its inverse. */
-export function blockEditOf(blocks: readonly EditedBlock[], inserts: PageInsert[] = []): BlockEdit {
+export function blockEditOf(blocks: readonly EditedBlock[], inserts: PageInsert[] = []): OperatorBlockEdit {
   const runs: number[] = [];
   const lineStarts: number[] = [];
   const blockStarts: number[] = [];
@@ -6962,7 +6984,7 @@ export function blockEditOf(blocks: readonly EditedBlock[], inserts: PageInsert[
   const softLines: number[] = [];
   const marks: BlockMark[] = [];
   const paragraphs: ParagraphProps[] = [];
-  const places: BlockPlace[] = [];
+  const places: OperatorPlace[] = [];
   const pushes: BlockPush[] = [];
   let text = '';
   for (const [place, block] of blocks.entries()) {
@@ -6996,7 +7018,7 @@ export function blockEditOf(blocks: readonly EditedBlock[], inserts: PageInsert[
 }
 
 /** The blocks again, for the writer that lays them out — {@link blockEditOf}'s inverse. */
-export function blocksOfEdit(edit: BlockEdit): EditedBlock[] {
+export function blocksOfEdit(edit: OperatorBlockEdit): EditedBlock[] {
   const lineOf = (line: number): number[] =>
     edit.runs.slice(edit.lineStarts[line] ?? 0, edit.lineStarts[line + 1] ?? edit.runs.length);
   const soft = new Set(edit.softLines);
@@ -7152,12 +7174,9 @@ export const editTextBlockSchema = blockEditCommandObject('editTextBlock')
      */
     unpack: z.literal(true).exactOptional(),
   })
-  // ACROSS BLOCKS, not only within one: a run in two blocks would be written twice.
-  .refine((command) => blockEditAgrees(command), blockEditDisagrees())
-  // AN ARRANGE IS THE OPERATOR WRITER'S (ADR-0264 Decision 5): refused here rather than read as a placement of nothing.
-  .refine((command) => (command.places ?? []).every((place) => place.arrange === undefined), {
-    message: 'a block is arranged only by the operator writer',
-  });
+  // ACROSS BLOCKS, not only within one: a run in two blocks would be written twice. AN ARRANGE needs no check here: its
+  // key is the operator writer's place alone (`operatorPlaceSchema`), so this command's strict place refuses it.
+  .refine((command) => blockEditAgrees(command), blockEditDisagrees());
 
 /**
  * {@link editTextBlockSchema}'s intent for a page whose text includes a Type 3 font, which PDFium cannot regenerate
@@ -7167,10 +7186,10 @@ export const editTextBlockSchema = blockEditCommandObject('editTextBlock')
  * says per page which one the page needs (Decision 1), and the renderer picks the kind from it.
  */
 // NO `unpack`: a page whose text is in a Type 3 font is never read unpacked (ADR-0232 Decision 5).
-export const editTextOperatorsSchema = blockEditCommandObject('editTextOperators').refine(
-  (command) => blockEditAgrees(command),
-  blockEditDisagrees(),
-);
+export const editTextOperatorsSchema = blockEditCommandObject('editTextOperators')
+  // ITS PLACES MAY ARRANGE (ADR-0264 Decision 5), which PDFium's command cannot name.
+  .extend({ places: operatorEditSchema.shape.places })
+  .refine((command) => blockEditAgrees(command), blockEditDisagrees());
 
 /**
  * Which of the two a page's text is rewritten by (ADR-0176 Decision 1): `objects` for {@link editTextBlockSchema},
