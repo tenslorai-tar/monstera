@@ -1950,10 +1950,14 @@ optgroup {
 }
 
 /* A LABEL AND ITS CONTROL IN TWO ALIGNED COLUMNS where the panel is wide enough, every control the full width of its
-   column, so the drop-downs of one card line up rather than each ending where its longest word does. */
+   column, so the drop-downs of one card line up rather than each ending where its longest word does.
+   THE CONTROL'S COLUMN IS NEVER NARROWER THAN THE CONTROL'S OWN WIDTH — a drop-down's is its longest choice, whole —
+   and the label's takes what is left. A fixed 3 : 2 share cut "Pressed down" in the When drop-down on Linux, whose
+   face is wider, and passed on Windows only narrowly (the cloud branch's board at 4afb7eb7, buttonActions.pw.ts:119):
+   what a choice needs depends on the face and the display, so the column asks the control rather than assuming. */
 [data-field-properties] .m-properties__row--inline {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  grid-template-columns: minmax(min-content, 2fr) minmax(max-content, 3fr);
   align-items: center;
   gap: var(--space-6) var(--space-12);
 }
@@ -2014,18 +2018,39 @@ optgroup {
 /* THE EDITOR IN ITS OWN INSET CARD (the owner's C6), on the step-up surface inside the Actions card, so the action being
    written reads apart from the ones already saved. The one exception to a group inside a card drawing no box of its own,
    asked for by name. */
+/* THE EDITOR'S LABELLED ROWS SHARE ONE PAIR OF COLUMNS (`subgrid`): the control column is as wide as the widest control
+   in the card, each drop-down's own width being its longest choice, so every drop-down shows its choices whole AND the
+   drop-downs line up. A pair per row could have only one of the two once a choice was long. Everything else in the
+   card spans both columns. */
 [data-field-properties] .m-button-actions__editor {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-10);
+  display: grid;
+  grid-template-columns: minmax(min-content, 2fr) minmax(max-content, 3fr);
+  column-gap: var(--space-12);
+  row-gap: var(--space-10);
   padding: var(--space-10);
   background: var(--surface2);
   border: 1px solid var(--border); /* decorative: the inset card groups the editor; its controls draw their own edges and focus rings */
   border-radius: var(--radius-8);
 }
 
+[data-field-properties] .m-button-actions__editor > * {
+  grid-column: 1 / -1;
+}
+
+[data-field-properties] .m-button-actions__editor > .m-properties__row--inline {
+  grid-template-columns: subgrid;
+}
+
 [data-field-properties] .m-button-actions__editor > .m-field-options__actions {
   margin-block-start: var(--space-6);
+}
+
+/* AT THE PANEL'S NARROWEST the editor's pair of columns becomes one, which its rows take by `subgrid`: each label above
+   its control, as in the other cards. After the editor's own rule, which it must outrank by coming later. */
+@container field-properties (inline-size < 280px) {
+  [data-field-properties] .m-button-actions__editor {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .m-list-card:hover {

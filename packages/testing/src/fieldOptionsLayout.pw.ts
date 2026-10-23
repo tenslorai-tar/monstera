@@ -4,6 +4,7 @@ import { type Locator, type Page, expect, test } from '@playwright/test';
 import { EVERY_FIELD_KIND as FIELDS, EVERY_FIELD_KIND_ROWS, formPdf } from './formFieldsFixture.js';
 import { openSection, runCommand } from './helpScreensHarness.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
+import { showsWholeChoice } from './wholeChoice.js';
 
 /**
  * A field's Properties › Options, laid out with room (the owner, 2026-10-23, C6), on pinned Chromium against the compiled
@@ -106,3 +107,19 @@ test(`at the panel's narrowest (${String(NARROWEST)} px) each label sits above i
   }
   await insetAndRoom(editor);
 });
+
+// IN A WIDER FACE THAN THIS MACHINE'S: the board's Linux leg at 4afb7eb7 cut "Pressed down" in the When drop-down, whose
+// DejaVu Sans is wider than Windows' Segoe UI, and Windows passed only narrowly. Verdana is wider than both, so a layout
+// that shows every choice whole here does on either platform and at any face the panel is likely to be drawn in.
+for (const width of [NARROWEST, DEFAULT]) {
+  test(`at ${String(width)} px in a wider face, every drop-down in the editor shows its longest choice whole`, async ({ page }) => {
+    const editor = await editorOpen(page, width);
+    await page.addStyleTag({ content: '[data-field-properties] { font-family: Verdana, "DejaVu Sans", sans-serif; }' });
+    const drops = editor.locator('select');
+    expect(await drops.count()).toBeGreaterThan(1);
+    for (const drop of await drops.all()) {
+      const name = (await drop.getAttribute('aria-label')) ?? (await drop.evaluate((element) => element.id));
+      expect(await showsWholeChoice(drop), `${name} shows its longest choice whole`).toBe(true);
+    }
+  });
+}

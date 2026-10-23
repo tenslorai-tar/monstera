@@ -7,6 +7,7 @@ import { type Locator, type Page, expect, test } from '@playwright/test';
 import type { ShimFormField } from './browserShim.js';
 import { openSection, runCommand } from './helpScreensHarness.js';
 import { LOOKS, type Look, bridgeUnder } from './pageBridge.js';
+import { showsWholeChoice } from './wholeChoice.js';
 
 /**
  * A push button's actions (ADR-0259), through the real application on the pinned Chromium: set in Properties, then
@@ -87,24 +88,8 @@ async function buttonProperties(page: Page): Promise<Locator> {
 const executed = (sent: Sent): unknown[] =>
   sent.filter((call) => call.channel === 'document.execute').map((call) => (call.params as { command: unknown }).command);
 
-/**
- * Whether a drop-down draws its longest choice whole: its box at least as wide as the words in its own font, its padding
- * and the arrow's room. A cut face is what the owner saw (*"Reset the▾"*), and a select has no overflow to read, so the
- * words are measured.
- */
-async function showsWholeChoice(select: Locator): Promise<boolean> {
-  return select.evaluate((element) => {
-    if (!(element instanceof HTMLSelectElement)) throw new Error('not a drop-down');
-    const style = getComputedStyle(element);
-    const context = document.createElement('canvas').getContext('2d');
-    if (context === null) throw new Error('no canvas to measure with');
-    context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-    const widest = Math.max(...[...element.options].map((option) => context.measureText(option.text).width));
-    const arrow = 16;
-    const room = element.getBoundingClientRect().width - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) - arrow;
-    return room >= widest;
-  });
-}
+// WHETHER A DROP-DOWN DRAWS ITS LONGEST CHOICE WHOLE: `wholeChoice.ts`, shared with the Options layout's cases. A cut
+// face is what the owner saw (*"Reset the▾"*), and a select has no overflow to read, so the words are measured.
 
 test.describe('a push button’s actions', () => {
   test('Reset the form: set in Properties for the field ticked, then a press sends the reset BY ITS STEP', async ({ page }) => {
