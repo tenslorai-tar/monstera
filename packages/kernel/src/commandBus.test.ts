@@ -3072,6 +3072,7 @@ describe('CommandBus — Edit object’s edit of a text block is undone by its c
   };
   const EDITS: readonly { readonly name: string; readonly block: Parameters<typeof blockEditOf>[0][number] }[] = [
     { name: 'recolour', block: { lines: [[0]], soft: [false], text: 'Garden', marks: [{ from: 0, to: 6, set: { colour: { r: 255, g: 0, b: 0 } } }] } },
+    { name: 'delete', block: { lines: [[0]], soft: [false], text: '' } },
   ];
 
   for (const { name, block } of EDITS) {

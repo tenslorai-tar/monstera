@@ -114,6 +114,28 @@ async function pdfjsShown(bytes: Uint8Array): Promise<string[]> {
   }
 }
 
+describe('a text block deleted is emptied where it stands (ADR-0264 Decision 5)', () => {
+  it('empties the heading’s operators and adds nothing: PDF.js and MuPDF read the body line alone, after a save', async () => {
+    const text = await written([heading('')]);
+    expect(text).not.toContain(HEADING);
+    expect(text).toContain('1 0 0 1 52 160 Tm [] TJ ET EMC');
+    // NOTHING WAS ADDED: the content is the fixture's with the heading's array emptied, every other byte as it was.
+    expect(text.trimEnd()).toBe(CONTENT.replace(HEADING, '[] TJ'));
+    const bytes = await applied([heading('')]);
+    expect(await pdfjsShown(bytes)).toStrictEqual(['Volunteers meet on Saturday. #262626']);
+    // CONTROL: the fixture's own reading holds the heading, so its absence above is the deletion's.
+    expect(await pdfjsShown(await fixture())).toContain('Garden #1a5940');
+    const session = await mupdfWriter.open(bytes);
+    try {
+      const words = await withDocument(session, (document) => document.loadPage(0).toStructuredText().asText());
+      expect(words).not.toContain('Garden');
+      expect(words).toContain('Volunteers');
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+});
+
 describe('a text block recoloured whole is carried as it was (ADR-0264 Decision 5)', () => {
   it('writes the heading’s own kerned TJ again, byte for byte, with the colour set before it', async () => {
     const text = await written([heading('Garden', { marks: [{ from: 0, to: 6, set: { colour: RED } }] })]);
