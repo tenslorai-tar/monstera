@@ -3392,12 +3392,14 @@ function textBlocksHandler(commands: DocumentCommands): ContractHandlers['docume
     docId,
     page,
     from,
+    asItIs,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.textBlocks']>>> => {
     try {
       // EVERY FIELD OF THE PAGE'S READ RIDES ON EVERY PART, by spread and never by name: naming them dropped `unpacked`
       // (ADR-0232), so the renderer sent the edits of a page read unpacked without `unpack`, and the writer refused text
       // in a form as an object that begins no run (the owner's brochure, 2026-10-21). Only the parted fields are replaced.
-      const { blocks, truncated, ...read } = await commands.textBlocks(docId, page);
+      // AS IT IS for Edit object (ADR-0264), whose writer names the page as it is.
+      const { blocks, truncated, ...read } = await commands.textBlocks(docId, page, asItIs === true);
       // A PART AT A TIME (ADR-0130): a dense page is thousands of blocks, and answered whole it was refused by the
       // contract's bound as `internal` (AAAAAAA-1). The page's counts and its writer ride on every part; they are the
       // page's.

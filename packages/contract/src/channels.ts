@@ -5752,7 +5752,18 @@ export const channels = {
    */
   'document.textBlocks': channel(
     'One part of a page’s editable text as blocks, in the editing engine’s own object numbering.',
-    z.object({ docId: docIdSchema, page: z.number().int().nonnegative(), from: listPartFromSchema }),
+    z.object({
+      docId: docIdSchema,
+      page: z.number().int().nonnegative(),
+      from: listPartFromSchema,
+      /**
+       * Read the page AS IT IS, never unpacked
+       * ([ADR-0264](../../../docs/DECISIONS/0264-edit-object-returns-and-an-edit-changes-only-the-bytes-of-the-object-it-names.md)
+       * Decision 5): Edit object edits a block through the operator writer, which names the page as it is, and text
+       * inside a group is the group's, which moves as one. Absent is Edit text's read, unpacked where text is packed.
+       */
+      asItIs: z.literal(true).exactOptional(),
+    }),
     z.object({
       version: docVersionSchema,
       /** Where the next part begins, or `null` for the last. {@link listPartNextSchema}. */

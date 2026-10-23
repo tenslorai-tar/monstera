@@ -1653,7 +1653,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // records it as the open question of whether an open can be shared; nothing
     // here answers it, and a chooser that refreshed on every keystroke would be
     // the first thing to make it matter.
-    textBlocks: async (docId, sessions, page) => {
+    textBlocks: async (docId, sessions, page, asItIs) => {
       if (pdfiumHost === null) throw new EngineUnavailableError('reading a page’s text');
       const mupdf = sessions.mupdf;
       if (mupdf === undefined) throw new MissingSessionError(docId, 'mupdf');
@@ -1663,7 +1663,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // TEXT PACKED INSIDE A FORM IS READ UNPACKED (ADR-0232): only where the plain read found characters no object holds,
       // and only on a page PDFium writes, the host reads it again with its forms moved onto it in memory. An edit of these
       // blocks is sent with `unpack`, which moves them in the same command, so a page nobody edits is never changed.
-      const unpacked = readsUnpacked(plain.unaddressable, rewrite);
+      // NEVER for Edit object's read (ADR-0264 Decision 5): its writer names the page as it is.
+      const unpacked = !asItIs && readsUnpacked(plain.unaddressable, rewrite);
       const read = unpacked ? await pdfiumHost.textRuns(image, page, true) : plain;
       // A TYPE 3 RUN NAMED BY ITS DESCRIPTOR (ADR-0256): PDFium reads such a font as no name and no weight, so on a page the
       // operator writer edits MuPDF says each font's face, and only the runs PDFium left unnamed take it.
