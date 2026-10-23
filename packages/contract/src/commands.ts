@@ -6604,6 +6604,20 @@ export const paragraphPropsSchema = z
 
 export type ParagraphProps = z.infer<typeof paragraphPropsSchema>;
 
+/** The kinds of drawn object `editDrawnObject` names, as `document.pageObjects` lists them (ADR-0264 Decision 2). */
+export const DRAWN_OBJECT_KINDS = ['path', 'image', 'form', 'shading'] as const;
+
+/**
+ * The object an arrange goes past (ADR-0264 Decision 3): a text object by its place in PDFium's walk of the page's text,
+ * which is the numbering `textOperators.ts` states once, or a drawn object by its kind and ordinal. The renderer names
+ * it, since it holds every object's box and the writer does not; the writer finds where it is drawn.
+ */
+export const arrangeNeighbourSchema = z.union([
+  z.object({ kind: z.literal('text'), object: objectIndexSchema }).strict(),
+  z.object({ kind: z.enum(DRAWN_OBJECT_KINDS), ordinal: objectIndexSchema }).strict(),
+]);
+export type ArrangeNeighbour = z.infer<typeof arrangeNeighbourSchema>;
+
 /** The most blocks one edit may place (invariant L11): a person drags one, so this is an order over a real edit; bounded where the whole edit's worst encoding still fits the
  * 8 MiB file a PDFium command crosses in (`commands.test.ts`). */
 export const MAX_BLOCK_PLACES = 64;
@@ -6948,9 +6962,6 @@ export function blocksOfEdit(edit: BlockEdit): EditedBlock[] {
   });
 }
 
-/** The kinds of drawn object `editDrawnObject` names, as `document.pageObjects` lists them (ADR-0264 Decision 2). */
-export const DRAWN_OBJECT_KINDS = ['path', 'image', 'form', 'shading'] as const;
-
 /** A box in PDF user space, as `document.pageObjects` lists one. */
 const drawnBoxSchema = z
   .object({
@@ -6999,17 +7010,6 @@ const drawnRecolorSchema = z
 
 /** Removes the object; a shape that also sets the clip keeps its clip and loses only its paint (ADR-0264 Decision 3). */
 const drawnDeleteSchema = z.object({ op: z.literal('delete') }).strict();
-
-/**
- * The object an arrange goes past (ADR-0264 Decision 3): a text object by its place in PDFium's walk of the page's text,
- * which is the numbering `textOperators.ts` states once, or a drawn object by its kind and ordinal. The renderer names
- * it, since it holds every object's box and the writer does not; the writer finds where it is drawn.
- */
-export const arrangeNeighbourSchema = z.union([
-  z.object({ kind: z.literal('text'), object: objectIndexSchema }).strict(),
-  z.object({ kind: z.enum(DRAWN_OBJECT_KINDS), ordinal: objectIndexSchema }).strict(),
-]);
-export type ArrangeNeighbour = z.infer<typeof arrangeNeighbourSchema>;
 
 /** Moves the object one step in the drawing order: drawn just after `past` (forward), or just before it (backward). */
 const drawnArrangeSchema = z
