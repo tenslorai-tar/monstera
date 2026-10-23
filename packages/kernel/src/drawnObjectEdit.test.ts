@@ -387,17 +387,40 @@ describe('editDrawnObject — place (ADR-0264 Decision 3)', () => {
     expect(reading.paths).toStrictEqual(before.paths);
   });
 
-  it('a shape that ALSO SETS THE CLIP is moved in place, and its clip moves with it: no wrap, the same yellow through it', async () => {
+  it('a shape that ALSO SETS THE CLIP moves its paint, and the clip it sets for what follows STAYS (ADR-0264, corrected)', async () => {
     const bytes = await edited(command('path', 1, CLIPPER, { op: 'place', moveBy: { x: 100, y: 0 }, scaleBy: { x: 1, y: 1 } }));
     const content = new TextDecoder('latin1').decode(await savedContent(bytes));
-    // NOT WRAPPED: no `q … cm` was added around it, which a `Q` would have ended the clip with.
-    expect(content).not.toMatch(/q [-\d. ]+ cm\s+120 100 40 40 re/u);
-    expect(content).toContain('120 100 40 40 re W f');
+    // THE CLIP SAID AGAIN WHERE IT STOOD, painting nothing.
+    expect(content).toContain('20 100 40 40 re W n');
+    const before = await mupdfPixels(await fixture());
     const pixels = await mupdfPixels(bytes);
-    // THE CLIP MOVED WITH IT: the yellow drawn after it shows through the new place and not the old one.
-    expect([pixels(140, 120), pixels(40, 120)]).toStrictEqual([YELLOW, WHITE]);
+    // THE SHAPE IS PAINTED AT ITS NEW PLACE, in its own blue, where there was paper.
+    expect([before(140, 120), pixels(140, 120)]).toStrictEqual([WHITE, BLUE]);
+    // AND THE YELLOW DRAWN AFTER IT IS CUT AS BEFORE: through the old place, not the new. A clip that moved with the shape
+    // would show the yellow at 140, 120 and paper at 40, 120, which is what Decision 3 as first built did.
+    expect([pixels(40, 120), before(40, 120)]).toStrictEqual([YELLOW, YELLOW]);
     const reading = await pdfjsReading(bytes);
     expect(reading.paths).toContainEqual([120, 100, 160, 140]);
+  });
+
+  it('a picture moved WITH ITS WINDOW closes its wrap: the square drawn after it stays where it was, in its own red', async () => {
+    // THE WINDOW HOLDS THE PICTURE ALONE, so it moves with it, and the window's span ends where its `Q` begins. The wrap's
+    // closing `Q` set against that one read as `QQ`, an unknown token: the wrap never closed and the square after it was
+    // drawn moved.
+    const content = ['q 50 50 60 60 re W n q 60 0 0 60 50 50 cm /Im1 Do Q Q', 'q 1 0 0 rg 150 150 20 20 re f Q'].join('\n');
+    const bytes = await edited(
+      command('image', 0, { left: 50, bottom: 50, right: 110, top: 110 }, { op: 'place', moveBy: { x: 0, y: 30 }, scaleBy: { x: 1, y: 1 } }),
+      await fixture(content),
+    );
+    const text = new TextDecoder('latin1').decode(await savedContent(bytes));
+    expect(text).not.toMatch(/QQ/u);
+    const before = await mupdfPixels(await fixture(content));
+    const pixels = await mupdfPixels(bytes);
+    // THE SQUARE WHERE IT WAS: red at its centre, paper 30 points above it — as before.
+    expect([pixels(160, 160), pixels(160, 195)]).toStrictEqual([before(160, 160), before(160, 195)]);
+    expect(pixels(160, 160)).toStrictEqual(RED);
+    // AND THE PICTURE MOVED: green 30 points higher, paper where its bottom was.
+    expect([pixels(80, 125), pixels(80, 60)]).toStrictEqual([GREEN, WHITE]);
   });
 
   it('copies every byte outside the object, and the text and every object’s kind in order', () => {
@@ -408,7 +431,8 @@ describe('editDrawnObject — place (ADR-0264 Decision 3)', () => {
     // THE ONLY CHANGE IS THE WRAP: everything before and after it is the fixture's own text.
     const wrap = /q [-\d. ]+ cm\n/u.exec(text);
     expect(wrap).not.toBeNull();
-    expect(text.replace(wrap?.[0] ?? '', '').replace('/Im1 Do\nQ', '/Im1 Do')).toBe(CONTENT);
+    // THE CLOSING `Q` HAS A LINE BREAK EACH SIDE, so it cannot run into the token after it.
+    expect(text.replace(wrap?.[0] ?? '', '').replace('/Im1 Do\nQ\n', '/Im1 Do')).toBe(CONTENT);
     expect(showOperators(after).map((op) => op.object)).toStrictEqual(showOperators(content).map((op) => op.object));
     expect(drawnObjects(after, kinds).map((object) => object.kind)).toStrictEqual(drawnObjects(content, kinds).map((object) => object.kind));
   });

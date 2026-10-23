@@ -203,9 +203,21 @@ function place(
   if (own === null) throw refused('object', `${command.object} ${String(command.ordinal)} is drawn under a matrix with no inverse`);
   let edited: Uint8Array;
   let window: number | undefined;
-  if (found.clips) {
-    // A SHAPE THAT ALSO SETS THE CLIP is not wrapped: `Q` would end the clip early for everything after it. Its own
-    // coordinates are rewritten in place, so the shape and the clip it sets move together (Decision 3).
+  const clip = found.clip;
+  const paint = found.paint;
+  if (found.clips && clip !== undefined && paint !== undefined) {
+    // A SHAPE THAT ALSO SETS THE CLIP moves ITS PAINT, and the clip it sets for what follows stays where it was: painted
+    // placed inside `q … Q` without the clip, then its path said again as `W n` — recolour's construction. Rewriting its
+    // coordinates in place moves the clip too, and everything drawn after it is then cut differently (measured over the
+    // owner's corpus, 2026-10-23, `proof:editobject --corpus`: 7,670 to 209,698 pixels changed, up to 673 points away).
+    const latin1 = new TextDecoder('latin1');
+    const path = latin1.decode(content.subarray(found.start, clip.start)).trimEnd();
+    edited = spliced(content, [
+      { start: found.start, end: found.end, text: `\nq ${own.map(written).join(' ')} cm\n${path} ${paint.op}\nQ\n${path} ${clip.op} n\n` },
+    ]);
+    window = undefined;
+  } else if (found.clips) {
+    // A SHAPE THAT ONLY CLIPS paints nothing to move; its coordinates are rewritten in place, which is all it draws.
     edited = spliced(
       content,
       found.segments.map((segment) => ({ start: segment.start, end: segment.end, text: segmentThrough(segment, own) })),
@@ -217,7 +229,10 @@ function place(
     if (matrix === null) throw refused('object', `${command.object} ${String(command.ordinal)} is drawn under a matrix with no inverse`);
     edited = spliced(content, [
       { start: span.start, end: span.start, text: `q ${matrix.map(written).join(' ')} cm\n` },
-      { start: span.end, end: span.end, text: '\nQ' },
+      // A LINE BREAK AFTER THE `Q` TOO: a window's span ends where the `Q` that closes it begins, so `\nQ` alone was read
+      // as `QQ`, one unknown token — the wrap never closed, and everything after it was drawn moved and re-cut (measured
+      // over the owner's corpus, 2026-10-23: a picture changed 138,011 pixels up to 461 points away).
+      { start: span.end, end: span.end, text: '\nQ\n' },
     ]);
     window = span.window;
   }
@@ -237,8 +252,25 @@ function place(
       const carried = window !== undefined && at >= window;
       return samePoints(moved.windows[at]?.points ?? [], carried ? through(each.points, page) : each.points);
     });
-  if (!placedWell || !windowsPlaced || !sameObjects(drawn, after) || !sameText(content, edited)) {
-    throw refused('read-back', `placing ${command.object} ${String(command.ordinal)} did not read back as one object placed`);
+  // EVERY OTHER OBJECT THROUGH THE CLIPS IT WAS DRAWN THROUGH: a placement moves one object, and a clip that moved with it
+  // would change everything drawn after it while this object read back placed perfectly.
+  const othersOf = (objects: readonly DrawnObject[]): string[] => {
+    const placedOne = objects.filter((each) => each.kind === command.object)[command.ordinal];
+    return objects.filter((object) => object !== placedOne).map((object) => JSON.stringify(object.windows.map((each) => each.points)));
+  };
+  const othersBefore = othersOf(drawn);
+  const othersAfter = othersOf(after);
+  const recut = othersBefore.findIndex((each, at) => each !== othersAfter[at]);
+  // EACH CHECK NAMED, so a refusal says which part of the read-back failed rather than that one did.
+  const failed = [
+    ...(placedWell ? [] : ['it is not drawn where the placement put it']),
+    ...(windowsPlaced ? [] : ['a clip it is drawn through is not where it should be']),
+    ...(recut === -1 && othersBefore.length === othersAfter.length ? [] : [`another object is cut by different clips (the ${String(recut + 1)}th other)`]),
+    ...(sameObjects(drawn, after) ? [] : ['the objects changed']),
+    ...(sameText(content, edited) ? [] : ['the text changed']),
+  ];
+  if (failed.length > 0) {
+    throw refused('read-back', `placing ${command.object} ${String(command.ordinal)} did not read back as one object placed: ${failed.join('; ')}`);
   }
   return edited;
 }
