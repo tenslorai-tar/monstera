@@ -49,10 +49,10 @@ export const SECTION_IDS = ['home', 'organize', 'edit', 'comment', 'forms', 'pro
 export type StartScreenSlot = 'primary' | 'shortcut' | 'footer';
 
 /**
- * Where a context menu was opened. §7's contexts; `field` is the fields *Edit fields* has selected (ADR-0226
- * Decision 7). (`object`, Edit object's selected object, left with that tool on 2026-10-21.)
+ * Where a context menu was opened. §7's five contexts; `object` is Edit object's selected object (ADR-0153), and `field`
+ * the fields *Edit fields* has selected (ADR-0226 Decision 7).
  */
-export type MenuContext = 'page' | 'annotation' | 'selection' | 'tab' | 'field';
+export type MenuContext = 'page' | 'annotation' | 'selection' | 'tab' | 'object' | 'field';
 
 /** How a ribbon placement is drawn (ADR-0194). */
 export type RibbonSize = 'large' | 'small' | 'icon';
@@ -108,6 +108,14 @@ export type Placement =
        * primaries, so a member cannot be both; the registry refuses the pair.
        */
       readonly menu?: MessageKey;
+      /**
+       * The menu's FACE runs a member ([ADR-0241](../../../../docs/DECISIONS/0241-a-ribbon-menu-may-run-its-last-choice-from-its-face.md)):
+       * the one chosen last from this menu in this window, its first by `order` until then, with a chevron beside
+       * it that opens the menu. Edit object is one mode with four filters, so a press on its face means *turn the
+       * mode on*; Forms › Data's formats have no obvious member and declare nothing. Every placement naming the
+       * menu declares the same, and only with `menu`; the registry refuses either mistake.
+       */
+      readonly menuRuns?: 'last';
     }
   | { readonly surface: 'quick-toolbar'; readonly order: number }
   | { readonly surface: 'context-menu'; readonly context: MenuContext; readonly order: number }

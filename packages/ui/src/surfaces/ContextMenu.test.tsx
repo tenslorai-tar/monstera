@@ -183,7 +183,7 @@ describe('ContextMenuArea', () => {
         selection: () => selection,
         onDelete: () => undefined,
         onPlace: () => undefined,
-      }),
+      }, { picked: () => undefined }),
     ]);
 
     render(

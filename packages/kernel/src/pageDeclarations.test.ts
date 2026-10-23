@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
+import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
 import type { CommandKind, CommandOfKind } from '@monstera/contract';
 import { asDocVersion } from '@monstera/shared';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -28,6 +28,8 @@ beforeAll(async () => {
     const page = document.addPage([612, 792]);
     page.drawText(`Page ${String(at + 1)}: the quick brown fox jumps over the lazy dog.`, { x: 72, y: 700, size: 14, font });
   }
+  // A SHAPE ON PAGE 1, which Edit object's drawn command moves (ADR-0264).
+  document.getPage(1).drawRectangle({ x: 72, y: 600, width: 100, height: 50, color: rgb(0.2, 0.4, 0.8) });
   const field = document.getForm().createTextField('Name');
   field.addToPage(document.getPage(1), { x: 72, y: 500, width: 240, height: 24 });
   fixture = await document.save({ useObjectStreams: false });
@@ -101,6 +103,19 @@ const CHECKED: Readonly<Record<string, { readonly command: CommandOfKind<Command
   addAnnotation: { command: MARK },
   removeAnnotation: { command: { kind: 'removeAnnotation', page: 1, indices: [0], version: VERSION }, prepare: MARK },
   setPageTransition: { command: { kind: 'setPageTransition', pages: [1], style: 'blinds', durationSeconds: 2 } },
+  // THE SHAPE ON PAGE 1 moved where it is drawn (ADR-0264): one page's content is spliced, and no other page's.
+  editDrawnObject: {
+    command: {
+      kind: 'editDrawnObject',
+      page: 1,
+      index: 1,
+      object: 'path',
+      ordinal: 0,
+      box: { left: 72, bottom: 600, right: 172, top: 650 },
+      edit: { op: 'place', moveBy: { x: 20, y: -30 }, scaleBy: { x: 1, y: 1 } },
+      version: VERSION,
+    },
+  },
 };
 
 describe('the pages a command declares it changes (ADR-0262)', () => {

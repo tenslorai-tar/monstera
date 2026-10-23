@@ -708,6 +708,8 @@ export interface CommandPrior {
   readonly editTextBlock: never;
   /** A checkpoint until Decision 7's prior lands (ADR-0176). */
   readonly editTextOperators: never;
+  /** A checkpoint by decision: the whole-document copy restores the page's content (ADR-0264 Decision 6). */
+  readonly editDrawnObject: never;
 }
 
 /**

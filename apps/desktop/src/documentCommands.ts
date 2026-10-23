@@ -2136,6 +2136,8 @@ export type DocumentTextBlocksReader = (
   docId: DocId,
   sessions: DocumentSessions,
   page: number,
+  /** Read the page as it is, never unpacked: Edit object's read (ADR-0264 Decision 5). */
+  asItIs: boolean,
 ) => Promise<Omit<DocumentTextBlocks, 'version'>>;
 
 /** The blocks, stamped with the version the lane read them at. */
@@ -3802,7 +3804,7 @@ export class DocumentCommands {
    * about — the missing engine is a different state and {@link
    * EngineUnavailableError} is the one that says so.
    */
-  async textBlocks(docId: DocId, page: number): Promise<DocumentTextBlocks> {
+  async textBlocks(docId: DocId, page: number, asItIs = false): Promise<DocumentTextBlocks> {
     const { version, value } = await this.#documents.run(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
@@ -3810,7 +3812,7 @@ export class DocumentCommands {
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
-      return this.#textBlocks(docId, sessions, page);
+      return this.#textBlocks(docId, sessions, page, asItIs);
     });
 
     return { version, ...value };

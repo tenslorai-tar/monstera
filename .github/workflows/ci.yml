@@ -431,6 +431,17 @@ jobs:
           node scripts/ci/annotate.mjs scripts/proofs/textPush.proof.mjs
           ${{ runner.os == 'Windows' && '--require-engines' || '' }}
 
+      # ADR-0264 Decision 7, the gate the owner set before Edit object's
+      # surface: every edit on every object of the brochure and the
+      # repository's fixtures, through PDFium's reading and the MuPDF writers.
+      # The brochure must refuse nothing, and no edit may change a pixel
+      # outside the object it names; the control is PDFium's page rewrite,
+      # which disturbs the page it moves a heading on.
+      - name: Prove Edit object changes only the object it names
+        run: >
+          node scripts/ci/annotate.mjs scripts/proofs/editObject.proof.mjs
+          ${{ runner.os == 'Windows' && '--require-engines' || '' }}
+
       # ADR-0228's correction of 2026-10-16. Two and three spaces typed read
       # back as two and three, by the editor's reader and by MuPDF's page-text
       # read a copy takes; the control is the same words drawn unmarked, which

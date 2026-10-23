@@ -340,6 +340,20 @@ export const TEXT_PUSH = [
 ];
 
 /**
+ * What `editObject.proof.mjs` runs (ADR-0264 Decision 7): PDFium's listing, reading and grouping, the contract's encoder
+ * and neighbour rule, the shared paragraph join, and the MuPDF writers and rasteriser. The kernel's whole `src`, for
+ * {@link TYPE3_EDIT}'s reason.
+ *
+ * @type {BuildEdge[]}
+ */
+export const EDIT_OBJECT = [
+  ['packages/kernel/src', 'packages/kernel/dist/index.js', 'tsc'],
+  ['packages/contract/src/commands.ts', 'packages/contract/dist/commands.js', 'tsc'],
+  ['packages/shared/src', 'packages/shared/dist/index.js', 'tsc'],
+  ...NATIVE_ENGINE,
+];
+
+/**
  * What `textSpaces.proof.mjs` runs (ADR-0228's correction of 2026-10-16): the PDFium writer and reading, the grouping,
  * the contract's encoder, the shared paragraph join, and MuPDF's page-text read as the second reader.
  *
@@ -695,7 +709,9 @@ export const ARTEFACT_EDGES = {
   // ADR-0239: an edit's face program and a composition made apart. Registered with its entry.
   'proof:fontworkapart': FONT_WORK_APART,
   'proof:apartstart': APART_START,
-  // ADR-0240: a drawn object placed in its content stream, against PDFium's own route. Registered with its entry.
+  // ADR-0264: every Edit object edit on every object of the brochure and the repository's fixtures, PDFium reading and
+  // MuPDF writing. (The line here named ADR-0240's drawn-object proof, removed with Edit object on 2026-10-21.)
+  'proof:editobject': EDIT_OBJECT,
   'proof:shimpassword': SHIM_PASSWORD,
   // THE WORD EXPORT'S PICTURES, read back by a zip reader and a PNG decoder that are not the writer's.
   'proof:wordpictures': WORD_PICTURES,

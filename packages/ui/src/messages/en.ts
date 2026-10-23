@@ -1857,6 +1857,39 @@ export const FORM_FIELD_DATE_TOOL_TITLE = messageKey('command.forms.field-date')
 export const FORM_FIELD_BUTTON_TIP = messageKey('command.forms.field-button.tip');
 export const FORM_FIELD_SIGNATURE_TIP = messageKey('command.forms.field-signature.tip');
 export const FORM_FIELD_DATE_TIP = messageKey('command.forms.field-date.tip');
+/** Edit object's mode on the page (ADR-0264): the layer, each outline, and what a page with nothing to outline says. */
+export const OBJECT_EDIT_LAYER_LABEL = messageKey('surface.object-edit.layer');
+export const OBJECT_EDIT_OUTLINE = messageKey('surface.object-edit.outline');
+export const OBJECT_EDIT_FINDING = messageKey('surface.object-edit.finding');
+export const OBJECT_EDIT_NONE_ALL = messageKey('surface.object-edit.none-all');
+export const OBJECT_EDIT_NONE_TEXT = messageKey('surface.object-edit.none-text');
+export const OBJECT_EDIT_NONE_IMAGES = messageKey('surface.object-edit.none-images');
+export const OBJECT_EDIT_NONE_SHAPES = messageKey('surface.object-edit.none-shapes');
+export const OBJECT_EDIT_TRUNCATED = messageKey('surface.object-edit.truncated');
+/** The ribbon menu's four filters (ADR-0264 Decision 8), by the titles the menu and the palette both draw. */
+export const EDIT_OBJECTS_ALL_TITLE = messageKey('command.edit.objects-all');
+export const EDIT_OBJECTS_TEXT_TITLE = messageKey('command.edit.objects-text');
+export const EDIT_OBJECTS_IMAGES_TITLE = messageKey('command.edit.objects-images');
+export const EDIT_OBJECTS_SHAPES_TITLE = messageKey('command.edit.objects-shapes');
+export const RIBBON_EDIT_OBJECT = messageKey('ribbon.edit-object');
+export const RIBBON_MENU_CHOICES = messageKey('surface.ribbon.menu-choices');
+export const HINT_EDIT_OBJECTS = messageKey('tool.hint.edit-objects');
+export const OBJECT_FORWARD_TITLE = messageKey('command.edit.object-forward.title');
+export const OBJECT_BACKWARD_TITLE = messageKey('command.edit.object-backward.title');
+/** The Properties tab while an object is selected (ADR-0264 Decision 8). */
+export const PROPERTIES_OBJECT_HEADING = messageKey('surface.properties.object');
+export const PROPERTIES_OBJECT_KIND = messageKey('surface.properties.object-kind');
+export const PROPERTIES_OBJECT_COLOUR = messageKey('surface.properties.object-colour');
+export const PROPERTIES_OBJECT_NO_COLOUR = messageKey('surface.properties.object-no-colour');
+export const PROPERTIES_OBJECT_NONE_HINT = messageKey('surface.properties.object-none');
+// UNDER THE MODE'S DOMAIN: the words a person sees for each kind of thing on a page, on its outline and in the
+// Properties tab. A key's FIRST segment may not carry a hyphen (`KEY_SHAPE`), so not an `object-kind.` of their own.
+export const OBJECT_KIND_TEXT = messageKey('surface.object-edit.kind-text');
+export const OBJECT_KIND_PATH = messageKey('surface.object-edit.kind-path');
+export const OBJECT_KIND_IMAGE = messageKey('surface.object-edit.kind-image');
+export const OBJECT_KIND_SHADING = messageKey('surface.object-edit.kind-shading');
+export const OBJECT_KIND_FORM = messageKey('surface.object-edit.kind-form');
+export const OBJECT_KIND_PICTURE = messageKey('surface.object-edit.kind-picture');
 /** *Edit fields* (ADR-0226 Decision 7): the mode, its page layer, and what it offers on a field. */
 export const EDIT_FIELDS_TITLE = messageKey('command.forms.edit-fields');
 export const EDIT_FIELDS_TIP = messageKey('command.forms.edit-fields.tip');
@@ -3452,6 +3485,7 @@ export const EDIT_REFUSED_GENERATE = messageKey('dialog.command-problem.edit-ref
 export const EDIT_REFUSED_SAVE = messageKey('dialog.command-problem.edit-refused.save');
 export const EDIT_REFUSED_READ_BACK = messageKey('dialog.command-problem.edit-refused.read-back');
 export const EDIT_REFUSED_MOVED_TEXT = messageKey('dialog.command-problem.edit-refused.moved-text');
+export const EDIT_REFUSED_CROPPED = messageKey('dialog.command-problem.edit-refused.cropped');
 // A CHANGE TO A FORM FIELD THAT COULD NOT BE MADE, one sentence per reason (ADR-0193).
 export const FIELD_EDIT_NOT_FOUND = messageKey('dialog.command-problem.field-edit.not-found');
 export const FIELD_EDIT_NAME_TAKEN = messageKey('dialog.command-problem.field-edit.name-taken');
@@ -5043,6 +5077,41 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [HINT_HAND]: 'Drag to slide the page around.',
   [HINT_EDIT_TEXT]: 'Click a block of words and start changing them.',
   [HINT_EDIT_FIELDS]: 'Click a field to select it, drag it to move it, or drag a handle to resize it.',
+  [HINT_EDIT_OBJECTS]: 'Click an object to pick it, drag it to move it, or drag a handle to resize it.',
+  // EDIT OBJECT (ADR-0264): the layer, each outline, and what a page says while it is read or holds nothing to outline.
+  [OBJECT_EDIT_LAYER_LABEL]: 'Objects on page {page}',
+  // WHAT IT IS AND WHICH OF HOW MANY, so a person moving through the outlines with Tab hears where they are.
+  [OBJECT_EDIT_OUTLINE]: '{kind}, {position} of {count}',
+  [OBJECT_EDIT_FINDING]: 'Finding objects…',
+  [OBJECT_EDIT_NONE_ALL]: 'This page has nothing Monstera can pick.',
+  [OBJECT_EDIT_NONE_TEXT]: 'This page has no text Monstera can pick.',
+  [OBJECT_EDIT_NONE_IMAGES]: 'This page has no images.',
+  [OBJECT_EDIT_NONE_SHAPES]: 'This page has no shapes.',
+  [OBJECT_EDIT_TRUNCATED]: 'There was more on this page than Monstera can outline, so it may have other objects.',
+  // READ IN TWO PLACES, so each says the verb: under *Edit object* in the ribbon's menu, and alone in the palette.
+  [EDIT_OBJECTS_ALL_TITLE]: 'Edit all objects',
+  [EDIT_OBJECTS_TEXT_TITLE]: 'Edit text objects',
+  [EDIT_OBJECTS_IMAGES_TITLE]: 'Edit images',
+  [EDIT_OBJECTS_SHAPES_TITLE]: 'Edit shapes',
+  [RIBBON_EDIT_OBJECT]: 'Edit object',
+  // A CAPTION IS NOT A COUNT: the menu's name comes first so the plural rule has nothing to read (ADR-0241's correction).
+  [RIBBON_MENU_CHOICES]: 'Choices for {menu}',
+  [OBJECT_FORWARD_TITLE]: 'Bring forward',
+  [OBJECT_BACKWARD_TITLE]: 'Send backward',
+  [PROPERTIES_OBJECT_HEADING]: 'Object',
+  [PROPERTIES_OBJECT_KIND]: 'Kind',
+  [PROPERTIES_OBJECT_COLOUR]: 'Colour',
+  // SAYS WHAT CAN AND CANNOT CHANGE: a picture or a group keeps its own colours in this version (ADR-0264).
+  [PROPERTIES_OBJECT_NO_COLOUR]: 'Pictures and groups keep their own colours. Shapes and text can be recoloured.',
+  [PROPERTIES_OBJECT_NONE_HINT]: 'Click an object on the page to pick it.',
+  // THE KINDS, as words a person recognises rather than PDF's vocabulary: a *path* is a shape, and a form XObject is a
+  // group, since calling it a form would be taken for a fillable one. A picture a person placed is an image to them.
+  [OBJECT_KIND_TEXT]: 'Text',
+  [OBJECT_KIND_PATH]: 'Shape',
+  [OBJECT_KIND_IMAGE]: 'Image',
+  [OBJECT_KIND_SHADING]: 'Gradient',
+  [OBJECT_KIND_FORM]: 'Group',
+  [OBJECT_KIND_PICTURE]: 'Image',
   [EDIT_FIELDS_TITLE]: 'Edit fields',
   [EDIT_FIELDS_TIP]:
     'Edit fields: select, move and resize the form’s fields, and copy, paste or delete them. Press Esc to go back to filling the form.',
@@ -7443,6 +7512,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // the closest face — only for the rare page where neither writer can keep the rest of it, which is left as it was.
   [EDIT_REFUSED_READ_BACK]: 'Monstera couldn’t make this change without disturbing other text on the page, so nothing was changed.',
   [EDIT_REFUSED_MOVED_TEXT]: 'Monstera couldn’t move this text without disturbing other text on the page, so nothing was changed.',
+  // THE ONE CASE AN ARRANGE CANNOT KEEP THE PAGE INTACT (ADR-0264 Decision 4), in one plain line.
+  [EDIT_REFUSED_CROPPED]: 'This object would be cut off in that place, so nothing was changed.',
   // EACH SAYS WHAT STOPPED IT AND THAT NOTHING WAS CHANGED, and the three a person can fix say how.
   [FIELD_EDIT_NOT_FOUND]: 'That field has moved since the list was read, so nothing was changed. Select it again and try once more.',
   [FIELD_EDIT_NAME_TAKEN]: 'Another field already has that name, or a name that starts with it, so nothing was changed. Choose a different name.',

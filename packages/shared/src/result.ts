@@ -78,8 +78,10 @@ export interface StructuredError {
 /**
  * The step of a PDFium rewrite that refused, from ADR-0169 Decision 3's fixed set, and `moved-text`: a text object moved
  * whose page PDFium could not write back (ADR-0240 Decision 4), which is said in words and has no reference to quote.
+ * And `cropped`: an object brought forward or sent back to where the page clips drawing to an area that does not hold
+ * it (ADR-0264 Decision 4), said in one plain line with nothing to quote either.
  */
-export const EDIT_STEPS = ['open', 'page', 'object', 'set-text', 'matrix', 'generate', 'save', 'read-back', 'moved-text'] as const;
+export const EDIT_STEPS = ['open', 'page', 'object', 'set-text', 'matrix', 'generate', 'save', 'read-back', 'moved-text', 'cropped'] as const;
 export type EditStep = (typeof EDIT_STEPS)[number];
 
 /** Why a change to a form field was refused (ADR-0193): each the person's to act on, and none a defect. */

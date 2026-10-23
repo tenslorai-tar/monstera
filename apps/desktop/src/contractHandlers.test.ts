@@ -3311,6 +3311,21 @@ describe('a dense page’s blocks and objects answer in parts the contract accep
     expect(plain.ok && 'unpacked' in plain.value).toBe(false);
   });
 
+  it('Edit object’s read AS IT IS reaches the reader (ADR-0264); CONTROL: Edit text’s read asks for none', async () => {
+    const asked: boolean[] = [];
+    const reading = harness(OPENED, () => Promise.resolve(null), undefined, {
+      commands: {
+        textBlocks: (_docId: DocId, _page: number, asItIs: boolean) => {
+          asked.push(asItIs);
+          return Promise.resolve({ version: asDocVersion(7), blocks: [], truncated: false, rotated: 0, angled: NOT_ANGLED, unaddressable: 0, rewrite: 'objects' });
+        },
+      } as unknown as DocumentCommands,
+    });
+    await reading.handlers['document.textBlocks']({ docId: A_DOC, page: 0, from: 0, asItIs: true });
+    await reading.handlers['document.textBlocks']({ docId: A_DOC, page: 0, from: 0 });
+    expect(asked).toStrictEqual([true, false]);
+  });
+
   it('8,400 page objects: seventeen parts, all valid, and together the page', async () => {
     const { items, parts } = await walk('document.pageObjects', (value) => (value as { objects: unknown[] }).objects);
     expect(parts).toBe(17);

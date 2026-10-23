@@ -20,6 +20,7 @@ import { pdfPoint, toViewport } from '@monstera/shared';
 
 import type { SelectedAnnotation } from './annotations/selectTool.js';
 import type { PreviewCaption, ReshapedMark } from './registries/tools.js';
+import type { PaperPaint } from './paperAround.js';
 
 /**
  * A released mark's FINAL LOOK, drawn while the page has not yet drawn it
@@ -118,8 +119,14 @@ export type LookPart =
     }
   /** A link, as the link layer outlines one where links are made. */
   | { readonly part: 'link'; readonly box: LookBox }
-  /** A picture the renderer already holds: a kept stamp picture, a signature's picture or outline. */
+  /** A picture the renderer already holds: a kept stamp picture, a signature's picture or outline, an object's lifted pixels. */
   | { readonly part: 'picture'; readonly box: LookBox; readonly src: string }
+  /**
+   * The paper laid over the place an object of the page's content left (ADR-0264 Decision 9): its final look there is its
+   * absence, and the page's drawing is the only thing holding it. `paint` is the paper's own, read off the drawn page
+   * round that place by `paperAround`, the reading Edit text lays its editor on.
+   */
+  | { readonly part: 'paper'; readonly box: LookBox; readonly paint: PaperPaint }
   /**
    * A signature's mark as the writers draw it (`signatureFit.ts`), in its box's own units: a typed name's outline filled
    * (`pen: 'fill'`), or drawn strokes with that pen.

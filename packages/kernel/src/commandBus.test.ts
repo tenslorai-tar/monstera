@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inspect } from 'node:util';
 
-import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef, PDFString } from '@cantoo/pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef, PDFString, rgb } from '@cantoo/pdf-lib';
 import forge from 'node-forge';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -13,6 +13,7 @@ import {
   type FormFieldHandle,
   NETWORK_OCR_ENGINES,
   type PageSet,
+  blockEditOf,
   outlineOpCodes,
 } from '@monstera/contract';
 import { type DocVersion, asDocVersion } from '@monstera/shared';
@@ -46,6 +47,8 @@ import { applyAddAnnotation, readAnnotations } from './pageAnnotations.js';
 import { localPdfLibWriter } from './localEngine.js';
 import { shownOn } from './shownText.js';
 import { NothingToReplaceError } from './textEditRefusals.js';
+import { pageContentStreams } from './pageContent.js';
+import { drawnObjects, joinedContent } from './textOperators.js';
 
 /**
  * The log and the one path from a command to an entry (ADR-0009 §4).
@@ -2995,4 +2998,116 @@ describe('a gesture of several commands is ONE undo step (ADR-0200)', () => {
       await mupdfWriter.close(state.session);
     }
   });
+});
+
+/**
+ * ADR-0264 Decision 6: an Edit object edit of a drawn object is undone by its CHECKPOINT, the document as it was before
+ * the edit, which the restore writes back whole. Each edit is run on a page of a red square and a blue one over it; the
+ * case reads the restored bytes, whose page content is the page's before the edit, and the edited session (CONTROL)
+ * held other content, so the restore is what put it back.
+ */
+describe('CommandBus — an edit of a drawn object is undone by its checkpoint (ADR-0264)', () => {
+  const RED: CommandOfKind<'editDrawnObject'>['box'] = { left: 20, bottom: 20, right: 60, top: 60 };
+  const EDITS: readonly { readonly name: string; readonly ordinal: number; readonly box: typeof RED; readonly edit: CommandOfKind<'editDrawnObject'>['edit'] }[] = [
+    { name: 'place', ordinal: 0, box: RED, edit: { op: 'place', moveBy: { x: 100, y: 100 }, scaleBy: { x: 1, y: 1 } } },
+    { name: 'recolour', ordinal: 0, box: RED, edit: { op: 'recolor', colour: { r: 0, g: 128, b: 0 } } },
+    { name: 'delete', ordinal: 0, box: RED, edit: { op: 'delete' } },
+    // THE RED SQUARE BROUGHT FORWARD past the blue one over it.
+    { name: 'arrange', ordinal: 0, box: RED, edit: { op: 'arrange', to: 'forward', past: { kind: 'path', ordinal: 1 } } },
+  ];
+
+  for (const { name, ordinal, box, edit } of EDITS) {
+    it(`${name}: records a terminal entry, and undo writes back the page as it was`, async () => {
+      const document = await PDFDocument.create();
+      const page = document.addPage([200, 200]);
+      page.drawRectangle({ x: 20, y: 20, width: 40, height: 40, color: rgb(1, 0, 0) });
+      page.drawRectangle({ x: 40, y: 40, width: 40, height: 40, color: rgb(0, 0, 1) });
+      const session = await mupdfWriter.open(await document.save({ useObjectStreams: false }));
+      // IMAGES ACCEPTED: the kind's display is the image, so the bus replaces main's image after it, `sanitize`'s case.
+      const context = contextStub(true);
+      const restoredTo = join(checkpointRoot, `drawn-undo-${name}.pdf`);
+      const contentOf = (held: MupdfSession): Promise<string> =>
+        withDocument(held, (pdf) => new TextDecoder('latin1').decode(joinedContent(pageContentStreams(pdf.findPage(0)))));
+      const bus = new CommandBus({ mupdf: localMupdfWriter });
+      try {
+        const was = await contentOf(session);
+        const command: CommandOfKind<'editDrawnObject'> = { kind: 'editDrawnObject', page: 0, index: 0, object: 'path', ordinal, box, edit, version: asDocVersion(1) };
+        const { entry } = await bus.execute({ mupdf: session }, context, command, showingInputs(session));
+        expect(entry.kind).toBe('terminal');
+        // CONTROL: the edit changed the page in the session, so a restore that put it back did something.
+        expect(await contentOf(session)).not.toBe(was);
+        await bus.undo({ mupdf: session }, context, (write: SnapshotWrite) => write(restoredTo).then(() => undefined), showingInputs(session));
+        const restored = await mupdfWriter.open(new Uint8Array(await readFile(restoredTo)));
+        try {
+          expect(await contentOf(restored)).toBe(was);
+          // THE SHAPES WERE READ, not an empty page compared with an empty page.
+          expect(drawnObjects(new TextEncoder().encode(was), () => undefined)).toHaveLength(2);
+        } finally {
+          await mupdfWriter.close(restored);
+        }
+      } finally {
+        await mupdfWriter.close(session);
+      }
+    });
+  }
+});
+
+/**
+ * ADR-0264 Decision 5: Edit object's edits of a TEXT BLOCK are `editTextOperators`, whose undo is its checkpoint
+ * (ADR-0176 Decision 7). Each is run through the bus with the page's runs as its pre-read, on a heading line and a body
+ * line; the restored checkpoint's content is the page's before, and the edited session's differs (CONTROL).
+ */
+describe('CommandBus — Edit object’s edit of a text block is undone by its checkpoint (ADR-0264)', () => {
+  const CONTENT = [
+    'BT 0.1 0.35 0.25 rg /F1 26 Tf 1 0 0 1 52 160 Tm [(G) -12 (a) 8 (r) 8 (d) -12 (e) 8 (n)] TJ ET',
+    'BT /F1 11 Tf 1 0 0 1 52 120 Tm (Volunteers meet on Saturday.) Tj ET',
+  ].join('\n');
+  /** PDFium's reading of the page as the edits need it: each text object one run. */
+  const RUNS = {
+    textObjects: [0, 1],
+    runs: [
+      { index: 0, members: [0], text: 'Garden', left: 52, right: 140, bottom: 155, top: 180 },
+      { index: 1, members: [1], text: 'Volunteers meet on Saturday.', left: 52, right: 200, bottom: 117, top: 128 },
+    ],
+  };
+  const EDITS: readonly { readonly name: string; readonly block: Parameters<typeof blockEditOf>[0][number] }[] = [
+    { name: 'recolour', block: { lines: [[0]], soft: [false], text: 'Garden', marks: [{ from: 0, to: 6, set: { colour: { r: 255, g: 0, b: 0 } } }] } },
+    { name: 'delete', block: { lines: [[0]], soft: [false], text: '' } },
+    { name: 'place', block: { lines: [[0]], soft: [false], text: 'Garden', place: { move: { x: 30, y: -40 }, scale: 1.5 } } },
+    { name: 'arrange', block: { lines: [[0]], soft: [false], text: 'Garden', place: { arrange: { to: 'forward', past: { kind: 'text', object: 1 } } } } },
+  ];
+
+  for (const { name, block } of EDITS) {
+    it(`${name}: records a terminal entry, and undo writes back the page as it was`, async () => {
+      const document = await PDFDocument.create();
+      const page = document.addPage([300, 200]);
+      const font = await document.embedFont('Helvetica');
+      page.node.set(PDFName.of('Resources'), document.context.obj({ Font: { F1: font.ref } }));
+      page.node.set(PDFName.of('Contents'), document.context.register(document.context.stream(CONTENT)));
+      const session = await mupdfWriter.open(await document.save({ useObjectStreams: false }));
+      const context = contextStub(true);
+      const restoredTo = join(checkpointRoot, `text-undo-${name}.pdf`);
+      const contentOf = (held: MupdfSession): Promise<string> =>
+        withDocument(held, (pdf) => new TextDecoder('latin1').decode(joinedContent(pageContentStreams(pdf.findPage(0)))));
+      const bus = new CommandBus({ mupdf: localMupdfWriter });
+      const inputs: CommandInputs = { ...showingInputs(session), pageRuns: () => Promise.resolve(RUNS) };
+      try {
+        const was = await contentOf(session);
+        const command: CommandOfKind<'editTextOperators'> = { kind: 'editTextOperators', page: 0, ...blockEditOf([block]), fit: 'reflow', version: asDocVersion(1) };
+        const { entry } = await bus.execute({ mupdf: session }, context, command, inputs);
+        expect(entry.kind).toBe('terminal');
+        expect(await contentOf(session)).not.toBe(was);
+        await bus.undo({ mupdf: session }, context, (write: SnapshotWrite) => write(restoredTo).then(() => undefined), inputs);
+        const restored = await mupdfWriter.open(new Uint8Array(await readFile(restoredTo)));
+        try {
+          expect(await contentOf(restored)).toBe(was);
+          expect(was).toContain('(Volunteers meet on Saturday.) Tj');
+        } finally {
+          await mupdfWriter.close(restored);
+        }
+      } finally {
+        await mupdfWriter.close(session);
+      }
+    });
+  }
 });

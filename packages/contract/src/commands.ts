@@ -3733,6 +3733,7 @@ const WALK_NAMED_BY: Readonly<Record<NamesAnAnnotation | NamesAFormField | Names
   replaceTextObject: 'object',
   editTextBlock: 'object',
   editTextOperators: 'object',
+  editDrawnObject: 'object',
 };
 
 /** The walk `command` names its target in, or `undefined` for a kind that names none of the three. */
@@ -6603,6 +6604,62 @@ export const paragraphPropsSchema = z
 
 export type ParagraphProps = z.infer<typeof paragraphPropsSchema>;
 
+/** The kinds of drawn object `editDrawnObject` names, as `document.pageObjects` lists them (ADR-0264 Decision 2). */
+export const DRAWN_OBJECT_KINDS = ['path', 'image', 'form', 'shading'] as const;
+
+/**
+ * The object an arrange goes past (ADR-0264 Decision 3): a text object by its place in PDFium's walk of the page's text,
+ * which is the numbering `textOperators.ts` states once, or a drawn object by its kind and ordinal. The renderer names
+ * it, since it holds every object's box and the writer does not; the writer finds where it is drawn.
+ */
+export const arrangeNeighbourSchema = z.union([
+  z.object({ kind: z.literal('text'), object: objectIndexSchema }).strict(),
+  z.object({ kind: z.enum(DRAWN_OBJECT_KINDS), ordinal: objectIndexSchema }).strict(),
+]);
+export type ArrangeNeighbour = z.infer<typeof arrangeNeighbourSchema>;
+
+/** One object as `document.pageObjects` lists it, as far as an arrange asks: its place in the walk, its kind, its box. */
+export interface ListedObject {
+  readonly index: number;
+  readonly kind: 'unknown' | 'text' | 'path' | 'image' | 'shading' | 'form';
+  /** What shows of it: its box cut to its clip, where a clip narrows it. */
+  readonly box: { readonly left: number; readonly bottom: number; readonly right: number; readonly top: number };
+}
+
+/**
+ * THE ONE RULE for which object an arrange goes past (ADR-0264 Decision 3): the nearest object after the arranged one in
+ * PDFium's walk (forward) or before it (backward) whose box overlaps its box, so every press changes what is drawn over
+ * what. The renderer sends by it and the kernel check (`editObject.proof.mjs`) tries by it, so the two cannot disagree.
+ *
+ * `self` is a drawn object (its one index) or a text block (the indices its runs begin with, and its box): a text object
+ * whose centre lies in a block's box is part of that block and never its neighbour. An object of a kind no command can
+ * name (`unknown`) is passed over. `undefined` where nothing overlaps on that side: the step is not offered.
+ */
+export function arrangeNeighbourOf(
+  objects: readonly ListedObject[],
+  self: { readonly text: boolean; readonly indices: readonly number[]; readonly box: ListedObject['box'] },
+  to: 'forward' | 'backward',
+): ArrangeNeighbour | undefined {
+  const own = new Set(self.indices);
+  const first = Math.min(...self.indices);
+  const last = Math.max(...self.indices);
+  const overlaps = (box: ListedObject['box']): boolean =>
+    Math.min(box.right, self.box.right) > Math.max(box.left, self.box.left) && Math.min(box.top, self.box.top) > Math.max(box.bottom, self.box.bottom);
+  const inside = (box: ListedObject['box']): boolean => {
+    const x = (box.left + box.right) / 2;
+    const y = (box.bottom + box.top) / 2;
+    return x >= self.box.left && x <= self.box.right && y >= self.box.bottom && y <= self.box.top;
+  };
+  const ordered = to === 'forward' ? objects.filter((object) => object.index > last) : objects.filter((object) => object.index < first).reverse();
+  const found = ordered.find(
+    (object) => !own.has(object.index) && object.kind !== 'unknown' && !(self.text && object.kind === 'text' && inside(object.box)) && overlaps(object.box),
+  );
+  if (found === undefined) return undefined;
+  // ITS PLACE AMONG ITS KIND in the walk, which is how the writer finds it: a text object by PDFium's own number for it.
+  const before = objects.filter((object) => object.index < found.index && object.kind === found.kind).length;
+  return found.kind === 'text' ? { kind: 'text', object: before } : { kind: found.kind as (typeof DRAWN_OBJECT_KINDS)[number], ordinal: before };
+}
+
 /** The most blocks one edit may place (invariant L11): a person drags one, so this is an order over a real edit; bounded where the whole edit's worst encoding still fits the
  * 8 MiB file a PDFium command crosses in (`commands.test.ts`). */
 export const MAX_BLOCK_PLACES = 64;
@@ -6638,6 +6695,26 @@ export const blockPlaceSchema = z
   .strict();
 
 export type BlockPlace = z.infer<typeof blockPlaceSchema>;
+
+/**
+ * {@link blockPlaceSchema} as the OPERATOR writer takes it, with one step in the page's drawing order
+ * ([ADR-0264](../../../docs/DECISIONS/0264-edit-object-returns-and-an-edit-changes-only-the-bytes-of-the-object-it-names.md)
+ * Decision 5): the block drawn just after `past` (forward) or just before it (backward), its lines carried as they were.
+ *
+ * A member of this schema and not of the shared one, because PDFium's block writer regenerates the page in its own order
+ * and has no place to put a block: `editTextBlock` cannot carry the key, so its strict place refuses it at the boundary
+ * and its worst encoding — which must fit the file a PDFium command crosses in — does not pay for it.
+ */
+export const operatorPlaceSchema = blockPlaceSchema
+  .extend({
+    arrange: z
+      .object({ to: z.enum(['forward', 'backward']), past: arrangeNeighbourSchema })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+export type OperatorPlace = z.infer<typeof operatorPlaceSchema>;
 
 /**
  * The most blocks one edit may push (invariant L11): the blocks below one block in its column, on one page. Set by the file
@@ -6696,8 +6773,11 @@ export interface BlockFormatting {
   readonly marks?: readonly Omit<BlockMark, 'block'>[];
   /** By paragraph, ascending. */
   readonly paragraphs?: readonly Omit<ParagraphProps, 'block'>[];
-  /** How the block is placed once its words are laid out (ADR-0180, corrected 2026-10-06). */
-  readonly place?: Omit<BlockPlace, 'block'>;
+  /**
+   * How the block is placed once its words are laid out (ADR-0180, corrected 2026-10-06). The operator writer's own
+   * `arrange` included: a block edit for PDFium that names one is refused by `editTextBlock`'s schema.
+   */
+  readonly place?: Omit<OperatorPlace, 'block'>;
 }
 
 /**
@@ -6763,12 +6843,20 @@ export const blockEditSchema = z
 /** See {@link blockEditSchema}. */
 export type BlockEdit = z.infer<typeof blockEditSchema>;
 
+/** {@link blockEditSchema} as the operator writer takes it: its places may arrange ({@link operatorPlaceSchema}). */
+export const operatorEditSchema = blockEditSchema
+  .extend({ places: z.array(operatorPlaceSchema).max(MAX_BLOCK_PLACES).optional() })
+  .strict();
+
+/** See {@link operatorEditSchema}: the widest block edit, which {@link blockEditOf} builds for either writer. */
+export type OperatorBlockEdit = z.infer<typeof operatorEditSchema>;
+
 /**
  * Whether a block edit's starts describe its lists: each ascending from 0, every line holding a run and every block a
  * line, one text start per block inside the text, and every run named once — a run in two lines or two blocks would be
  * written twice. Order and agreement only; no size depends on them.
  */
-export function blockEditAgrees(edit: BlockEdit): boolean {
+export function blockEditAgrees(edit: OperatorBlockEdit): boolean {
   const {
     runs,
     lineStarts,
@@ -6827,12 +6915,17 @@ export function blockEditAgrees(edit: BlockEdit): boolean {
       !places.some((place) => place.block === push.block),
   );
   // PLACES ASCEND BY BLOCK, name a block of the edit, and each says something: a place that names nothing is a block the
-  // writer would re-lay out for no change.
+  // writer would re-lay out for no change. An arrange says where in the drawing order (ADR-0264 Decision 5).
   const placesAgree = places.every(
     (place, at) =>
       place.block < blockStarts.length &&
       (at === 0 || place.block > (places[at - 1]?.block ?? -1)) &&
-      ('about' in place || place.move !== undefined || place.scale !== undefined || place.rotate !== undefined || place.width !== undefined),
+      ('about' in place ||
+        place.move !== undefined ||
+        place.scale !== undefined ||
+        place.rotate !== undefined ||
+        place.width !== undefined ||
+        place.arrange !== undefined),
   );
   // A BLOCK'S WORDS, to bound its marks and its paragraphs by.
   const wordsOf = (block: number): string => text.slice(textStarts[block] ?? 0, textStarts[block + 1] ?? text.length);
@@ -6883,7 +6976,7 @@ export function blockEditAgrees(edit: BlockEdit): boolean {
 }
 
 /** Blocks in their wire form — the ONE place they are flattened (B3a); {@link blocksOfEdit} is its inverse. */
-export function blockEditOf(blocks: readonly EditedBlock[], inserts: PageInsert[] = []): BlockEdit {
+export function blockEditOf(blocks: readonly EditedBlock[], inserts: PageInsert[] = []): OperatorBlockEdit {
   const runs: number[] = [];
   const lineStarts: number[] = [];
   const blockStarts: number[] = [];
@@ -6891,7 +6984,7 @@ export function blockEditOf(blocks: readonly EditedBlock[], inserts: PageInsert[
   const softLines: number[] = [];
   const marks: BlockMark[] = [];
   const paragraphs: ParagraphProps[] = [];
-  const places: BlockPlace[] = [];
+  const places: OperatorPlace[] = [];
   const pushes: BlockPush[] = [];
   let text = '';
   for (const [place, block] of blocks.entries()) {
@@ -6925,7 +7018,7 @@ export function blockEditOf(blocks: readonly EditedBlock[], inserts: PageInsert[
 }
 
 /** The blocks again, for the writer that lays them out — {@link blockEditOf}'s inverse. */
-export function blocksOfEdit(edit: BlockEdit): EditedBlock[] {
+export function blocksOfEdit(edit: OperatorBlockEdit): EditedBlock[] {
   const lineOf = (line: number): number[] =>
     edit.runs.slice(edit.lineStarts[line] ?? 0, edit.lineStarts[line + 1] ?? edit.runs.length);
   const soft = new Set(edit.softLines);
@@ -6946,6 +7039,98 @@ export function blocksOfEdit(edit: BlockEdit): EditedBlock[] {
     };
   });
 }
+
+/** A box in PDF user space, as `document.pageObjects` lists one. */
+const drawnBoxSchema = z
+  .object({
+    left: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+    bottom: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+    right: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+    top: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+  })
+  .strict();
+
+/**
+ * Moves and resizes the object: a move in points, then a scale on each axis about the listed box's lower-left corner,
+ * one axis at a time for a side handle. An INTENT, `blockPlaceSchema`'s reason: the anchor needs the engine's own box.
+ */
+const drawnPlaceSchema = z
+  .object({
+    op: z.literal('place'),
+    moveBy: z
+      .object({
+        x: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+        y: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+      })
+      .strict(),
+    scaleBy: z
+      .object({
+        x: z.number().min(MIN_OBJECT_SCALE).max(MAX_OBJECT_SCALE),
+        y: z.number().min(MIN_OBJECT_SCALE).max(MAX_OBJECT_SCALE),
+      })
+      .strict(),
+  })
+  .strict();
+
+/** Recolours a SHAPE: the channels its paint uses take this colour, in 0 to 255 (ADR-0264 Decision 3). */
+const drawnRecolorSchema = z
+  .object({
+    op: z.literal('recolor'),
+    colour: z
+      .object({
+        r: z.number().int().min(0).max(255),
+        g: z.number().int().min(0).max(255),
+        b: z.number().int().min(0).max(255),
+      })
+      .strict(),
+  })
+  .strict();
+
+/** Removes the object; a shape that also sets the clip keeps its clip and loses only its paint (ADR-0264 Decision 3). */
+const drawnDeleteSchema = z.object({ op: z.literal('delete') }).strict();
+
+/** Moves the object one step in the drawing order: drawn just after `past` (forward), or just before it (backward). */
+const drawnArrangeSchema = z
+  .object({
+    op: z.literal('arrange'),
+    to: z.enum(['forward', 'backward']),
+    past: arrangeNeighbourSchema,
+  })
+  .strict();
+
+/** What `editDrawnObject` does to the object it names (ADR-0264 Decision 3). */
+export const drawnEditSchema = z.discriminatedUnion('op', [drawnPlaceSchema, drawnRecolorSchema, drawnArrangeSchema, drawnDeleteSchema]);
+export type DrawnEdit = z.infer<typeof drawnEditSchema>;
+
+/**
+ * Edits one picture, shape or group WHERE THE PAGE DRAWS IT
+ * ([ADR-0264](../../../docs/DECISIONS/0264-edit-object-returns-and-an-edit-changes-only-the-bytes-of-the-object-it-names.md)):
+ * MuPDF changes, moves or removes the object's own bytes in the page's content and copies every other byte, so no text
+ * on the page is written again and no font can refuse the edit. PDFium only listed it.
+ *
+ * Named twice, and both are checked: `index` is its place in PDFium's walk, which the selection and the command lane
+ * hold, and `object` with `ordinal` its place among the page's objects of that kind, which is how the writer finds its
+ * instructions (ADR-0264 Decision 2). `box` is the box the listing gave, which the found object must land on, so a page
+ * that moved under the listing is refused rather than edited somewhere else.
+ */
+export const editDrawnObjectSchema = z
+  .object({
+    kind: z.literal('editDrawnObject'),
+    page: z.number().int().nonnegative(),
+    index: objectIndexSchema,
+    object: z.enum(DRAWN_OBJECT_KINDS),
+    ordinal: objectIndexSchema,
+    box: drawnBoxSchema,
+    edit: drawnEditSchema,
+    /** The version the listing was read at. Refused if the document has moved. */
+    version: docVersionSchema,
+  })
+  .strict()
+  // A PICTURE IS NOT RECOLOURED in this version, nor a group, whose colours are its own content's (ADR-0264's *Not in
+  // this version*): refused at the boundary rather than written as a colour nothing draws in.
+  .refine((command) => command.edit.op !== 'recolor' || command.object === 'path', {
+    message: 'only a shape is recoloured',
+  });
 
 /**
  * Edit blocks of a page's text in place, reflowing what no longer fits
@@ -6989,7 +7174,8 @@ export const editTextBlockSchema = blockEditCommandObject('editTextBlock')
      */
     unpack: z.literal(true).exactOptional(),
   })
-  // ACROSS BLOCKS, not only within one: a run in two blocks would be written twice.
+  // ACROSS BLOCKS, not only within one: a run in two blocks would be written twice. AN ARRANGE needs no check here: its
+  // key is the operator writer's place alone (`operatorPlaceSchema`), so this command's strict place refuses it.
   .refine((command) => blockEditAgrees(command), blockEditDisagrees());
 
 /**
@@ -7000,10 +7186,10 @@ export const editTextBlockSchema = blockEditCommandObject('editTextBlock')
  * says per page which one the page needs (Decision 1), and the renderer picks the kind from it.
  */
 // NO `unpack`: a page whose text is in a Type 3 font is never read unpacked (ADR-0232 Decision 5).
-export const editTextOperatorsSchema = blockEditCommandObject('editTextOperators').refine(
-  (command) => blockEditAgrees(command),
-  blockEditDisagrees(),
-);
+export const editTextOperatorsSchema = blockEditCommandObject('editTextOperators')
+  // ITS PLACES MAY ARRANGE (ADR-0264 Decision 5), which PDFium's command cannot name.
+  .extend({ places: operatorEditSchema.shape.places })
+  .refine((command) => blockEditAgrees(command), blockEditDisagrees());
 
 /**
  * Which of the two a page's text is rewritten by (ADR-0176 Decision 1): `objects` for {@link editTextBlockSchema},
@@ -7115,6 +7301,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   replaceTextAtSchema,
   editTextBlockSchema,
   editTextOperatorsSchema,
+  editDrawnObjectSchema,
 ]);
 
 /**
@@ -7342,6 +7529,9 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   editTextBlockSchema,
   // RENDERABLE for the same reason, the same fields: the reading said this page needs its own content written (ADR-0176).
   editTextOperatorsSchema,
+  // RENDERABLE: an object as a listing named it, the box it listed, and an intent of a few numbers (ADR-0264). What the
+  // renderer cannot express is where the object's instructions are, which is the writer's to find.
+  editDrawnObjectSchema,
 ]);
 
 /** A command a renderer may send. */
@@ -7540,6 +7730,7 @@ export function targetVersionOf(command: Command): DocVersion | undefined {
   if (command.kind === 'replaceTextObject') return command.version;
   if (command.kind === 'editTextBlock') return command.version;
   if (command.kind === 'editTextOperators') return command.version;
+  if (command.kind === 'editDrawnObject') return command.version;
   if (command.kind === 'replacePage') return command.version;
   if (command.kind === 'importPageAsLayer') return command.version;
   if (command.kind === 'setLinkOutline') return command.version;
@@ -7634,13 +7825,15 @@ void _theFieldNameIsACommandKind;
  * ## The walk is PDFium's page objects
  *
  * Numbered by `FPDFPage_GetObject`, which is what makes them one index space and therefore one member of
- * `CommandTargets`. Since Edit object's commands left (2026-10-21, R20) every member names text objects.
+ * `CommandTargets`. Edit object's drawn command names a picture, a shape or a group in it (ADR-0264); the rest name text.
  */
 export type NamesATextObject =
   | 'replaceTextObject'
   | 'editTextBlock'
   // PDFium's page object indices too: the writer is MuPDF, the names are the reading's (ADR-0176's correction).
-  | 'editTextOperators';
+  | 'editTextOperators'
+  // The same walk's index, and the writer finds the object by kind and ordinal (ADR-0264 Decision 2).
+  | 'editDrawnObject';
 const _theObjectNameIsACommandKind: NamesATextObject extends CommandKind ? true : never = true;
 void _theObjectNameIsACommandKind;
 

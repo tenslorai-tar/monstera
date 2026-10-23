@@ -205,6 +205,9 @@ export function Ribbon({ registry, context, settings, showing, values }: RibbonP
   const mode = useSetting(settings, LAYOUT_MODE_SETTING);
   // STUDIO'S OVERLAY IS PRESENTATION, not state that persists: a reopened window starts with it shut.
   const [overlay, setOverlay] = useState(false);
+  // THE MEMBER EACH MENU'S FACE RUNS (ADR-0241), by the menu's caption: the window's, never a setting, so a restart
+  // starts every face on its first member again.
+  const [lastChosen, setLastChosen] = useState<ReadonlyMap<MessageKey, string>>(() => new Map());
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const railRef = useRef<HTMLElement | null>(null);
   // THE LAST *SHOW ME* THAT FINISHED OR WAS DISMISSED, by stamp. While one is asking, Studio's overlay is open without
@@ -551,6 +554,15 @@ export function Ribbon({ registry, context, settings, showing, values }: RibbonP
                         label: menu,
                         icon: entry.command.icon ?? 'File',
                         measuredAs: unit.key,
+                        runs:
+                          unit.menuRuns === undefined
+                            ? undefined
+                            : {
+                                chosen: lastChosen.get(menu),
+                                onPicked: (id) => {
+                                  setLastChosen((before) => new Map(before).set(menu, id));
+                                },
+                              },
                       }}
                       onChosen={() => {
                         if (mode === 'studio') shut();

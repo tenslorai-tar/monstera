@@ -11,6 +11,7 @@ import {
   ANTHROPIC_OUT_OF_CREDIT,
   EDIT_REFUSED_GENERATE,
   EDIT_REFUSED_MATRIX,
+  EDIT_REFUSED_CROPPED,
   EDIT_REFUSED_OBJECT,
   EDIT_REFUSED_OPEN,
   EDIT_REFUSED_PAGE,
@@ -115,8 +116,9 @@ export function problemParticulars(
 ): { readonly label: MessageKey; readonly value: string } | undefined {
   if (problem.code === 'internal') return { label: PROBLEM_REFERENCE_LABEL, value: problem.incident };
   if (problem.code === 'edit-refused') {
-    // A MOVED TEXT RUN'S FONT is said in words alone (ADR-0240 Decision 4): nothing about it is unknown to quote.
-    if (problem.detail.step === 'moved-text') return undefined;
+    // A MOVED TEXT RUN'S FONT is said in words alone (ADR-0240 Decision 4): nothing about it is unknown to quote. Nor
+    // is an arrange its new place would crop (ADR-0264 Decision 4).
+    if (problem.detail.step === 'moved-text' || problem.detail.step === 'cropped') return undefined;
     return { label: PROBLEM_REFERENCE_LABEL, value: `${problem.detail.step} ${String(problem.detail.engineError)}` };
   }
   if (problem.code === 'command-looped') {
@@ -172,6 +174,7 @@ const STEP_MESSAGE: Readonly<Record<EditStep, MessageKey>> = {
   save: EDIT_REFUSED_SAVE,
   'read-back': EDIT_REFUSED_READ_BACK,
   'moved-text': EDIT_REFUSED_MOVED_TEXT,
+  cropped: EDIT_REFUSED_CROPPED,
 };
 
 /**

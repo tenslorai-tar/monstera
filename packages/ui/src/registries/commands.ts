@@ -383,6 +383,7 @@ export class CommandRegistry {
     // already refuses to produce (ADR-0098 Decision 1). Refused here, naming the group, so the
     // mistake is a startup crash rather than a ribbon somebody has to look at.
     const primaries = new Map<string, boolean>();
+    const menus = new Map<string, { id: string; runs: 'last' | undefined }[]>();
     for (const command of this.#byId.values()) {
       for (const placement of command.placements) {
         if (placement.surface !== 'ribbon') continue;
@@ -395,6 +396,19 @@ export class CommandRegistry {
               `A menu member is part of one button and a secondary is a button of its own; drop one of the two (ADR-0101).`,
           );
         }
+        if (placement.menu === undefined) {
+          if (placement.menuRuns !== undefined) {
+            throw new Error(
+              `"${command.id}" declares what a menu's face runs in ${placement.section} › ${placement.group} and names no menu. ` +
+                `Only a menu has a face that runs a member; name the menu or drop menuRuns (ADR-0241).`,
+            );
+          }
+        } else {
+          const menuKey = `${placement.section} › ${placement.group} › ${placement.menu}`;
+          const members = menus.get(menuKey) ?? [];
+          members.push({ id: command.id, runs: placement.menuRuns });
+          menus.set(menuKey, members);
+        }
         const key = `${placement.section} › ${placement.group}`;
         primaries.set(key, (primaries.get(key) ?? false) || placement.prominence !== 'secondary');
       }
@@ -404,6 +418,17 @@ export class CommandRegistry {
         throw new Error(
           `The ribbon group ${group} holds only secondary tools, so it would draw as a caption over a ` +
             `lone More. Make at least one of its placements primary (ADR-0098).`,
+        );
+      }
+    }
+    // ONE ANSWER PER MENU FOR WHAT ITS FACE RUNS (ADR-0241): the menu is one unit, so members that disagree would leave
+    // the face to whichever member happened to be first.
+    for (const [menu, members] of menus) {
+      if (new Set(members.map((member) => member.runs)).size > 1) {
+        throw new Error(
+          `The ribbon menu ${menu} has members that disagree about what its face runs: ` +
+            `${members.map((member) => `"${member.id}" (${member.runs ?? 'nothing'})`).join(', ')}. ` +
+            `Every placement naming a menu declares the same menuRuns, or none does (ADR-0241).`,
         );
       }
     }

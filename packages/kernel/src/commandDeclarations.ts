@@ -2286,6 +2286,29 @@ const declarations = {
     // every object, where this changes one page's content and adds nothing else.
     purpose: 'ordinary',
   },
+  // A PICTURE, A SHAPE OR A GROUP edited where the page draws it (ADR-0264): MuPDF splices the object's own bytes and
+  // copies every other, where PDFium's regeneration wrote every text object again and refused a font (R20).
+  editDrawnObject: {
+    kind: 'editDrawnObject',
+    display: 'image',
+    // THE PAGES IT CHANGES (ADR-0262): the one whose content it splices, checked by `pageDeclarations.test.ts`.
+    pages: (command) => [command.page],
+    writer: 'mupdf',
+    // NOT INVERTIBLE, `editTextOperators`' reason: the checkpoint restores the page's content whole (ADR-0264 Decision 6).
+    invertible: false,
+    undo: 'checkpoint',
+    // The same instructions spliced the same way. Nothing mints an identifier or reads a clock.
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    // PDFIUM'S OBJECT INDEX, carried for the selection and the lane; the writer finds the object by kind and ordinal.
+    targets: 'text-object',
+    reads: 'none',
+    asset: 'none',
+    // ORDINARY, `editTextOperators`' reason: one page's content changes. A removal of a picture a person sees is an
+    // edit of the page, not a redaction, `deleteFormFields`' reasoning.
+    purpose: 'ordinary',
+  },
 } satisfies CommandDeclarations;
 
 /** The declarations as declared, with each writer's literal type intact. */

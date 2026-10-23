@@ -10,6 +10,7 @@ import type { WordsToEdit } from './annotations/markWords.js';
 import type { AnnotationSelection } from './annotations/selectTool.js';
 import { STYLE_PRESETS } from './annotations/stylePresets.js';
 import { activateCatalogue, i18n } from './i18n.js';
+import type { ObjectPick } from './objectEditing.js';
 import { panelControlsOutsideCards } from './propertyCards.js';
 import { DELETE_SELECTION_TITLE, EN, REPLY_SELECTION_TITLE } from './messages/en.js';
 import { PropertiesPanel, type StyleChange, caretRectAt, caretSizeOf } from './PropertiesPanel.js';
@@ -694,5 +695,104 @@ describe('PropertiesPanel for an insertion mark (the owner’s O5)', () => {
     // TURNED: a caret on a page at 90 degrees is tall in PDF space, and stays so.
     expect(caretRectAt({ x0: 93, y0: 90, x1: 107, y1: 110 }, 28)).toStrictEqual({ x0: 86, y0: 80, x1: 114, y1: 120 });
     expect(caretSizeOf(CARET.rect)).toBe(14);
+  });
+});
+
+describe('PropertiesPanel with an object selected on the page (ADR-0264 Decision 8)', () => {
+  const RULE: ObjectPick = {
+    page: 2,
+    version: asDocVersion(4),
+    object: { source: 'drawn', index: 1, ordinal: 0, kind: 'path', box: { x0: 0, y0: 0, x1: 10, y1: 1 }, drawn: { x0: 0, y0: 0, x1: 10, y1: 1 }, fill: { r: 0, g: 0, b: 0 } },
+    listed: [],
+  };
+
+  function shown(pick: ObjectPick): string[] {
+    const colours: string[] = [];
+    render(
+      <Wrapped>
+        <PropertiesPanel
+          context={CONTEXT}
+          object={{ pick, onRecolour: (colour) => colours.push(JSON.stringify(colour)) }}
+          onAuthor={() => undefined}
+          onComment={() => undefined}
+          wordsOf={() => Promise.reject(new Error('an object has no comment to read'))}
+          onRestyle={() => undefined}
+          registry={new CommandRegistry([])}
+          selection={undefined}
+          settings={new SettingsStore(new SettingsRegistry(ALL_SETTINGS))}
+        />
+      </Wrapped>,
+    );
+    return colours;
+  }
+
+  it('names the object and recolours a shape with the swatch picked', () => {
+    const colours = shown(RULE);
+    expect(screen.getByRole('heading', { name: 'Object' })).toBeDefined();
+    expect(screen.getByText('Kind: Shape')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'Yellow' }));
+    // #ffd400 in 0–255, as the commands carry a colour.
+    expect(colours).toStrictEqual([JSON.stringify({ r: 255, g: 212, b: 0 })]);
+  });
+
+  it('recolours a block of text, and offers NO colour for a picture or a group, saying why', () => {
+    const block: ObjectPick = {
+      ...RULE,
+      object: {
+        source: 'text',
+        kind: 'text',
+        index: 3,
+        indices: [3],
+        box: { x0: 0, y0: 0, x1: 10, y1: 10 },
+        block: { lines: [[3]], soft: [false], text: 'Hi' },
+        fill: { r: 0, g: 0, b: 0 },
+      },
+    };
+    expect(shown(block)).toStrictEqual([]);
+    expect(screen.getByText('Kind: Text')).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Yellow' })).toBeDefined();
+    cleanup();
+    shown({
+      ...RULE,
+      object: { source: 'drawn', index: 1, ordinal: 0, kind: 'form', box: { x0: 0, y0: 0, x1: 10, y1: 1 }, drawn: { x0: 0, y0: 0, x1: 10, y1: 1 }, fill: null },
+    });
+    expect(screen.getByText('Kind: Group')).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'Yellow' })).toBeNull();
+    expect(screen.getByText('Pictures and groups keep their own colours. Shapes and text can be recoloured.')).toBeDefined();
+    cleanup();
+    // CONTROL: a shape is offered the colour, so the absence above is the kind's and not the panel's.
+    shown(RULE);
+    expect(screen.queryByText('Pictures and groups keep their own colours. Shapes and text can be recoloured.')).toBeNull();
+  });
+});
+
+describe('PropertiesPanel while Edit object is on with nothing picked', () => {
+  function drawn(objectMode: boolean): void {
+    render(
+      <Wrapped>
+        <PropertiesPanel
+          context={CONTEXT}
+          objectMode={objectMode}
+          onAuthor={() => undefined}
+          onComment={() => undefined}
+          onRestyle={() => undefined}
+          registry={new CommandRegistry([])}
+          selection={undefined}
+          settings={new SettingsStore(new SettingsRegistry(ALL_SETTINGS))}
+          wordsOf={() => Promise.reject(new Error('nothing is selected'))}
+        />
+      </Wrapped>,
+    );
+  }
+
+  it('says what the mode is for, as the status line does, and offers no annotation defaults', () => {
+    drawn(true);
+    expect(screen.getByRole('heading', { name: 'Object' })).toBeDefined();
+    expect(screen.getByText('Click an object on the page to pick it.')).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'Yellow' })).toBeNull();
+    cleanup();
+    // CONTROL: with the mode off, the same panel is the next annotation's, so the text above is the mode's.
+    drawn(false);
+    expect(screen.getByRole('heading', { name: 'New annotations' })).toBeDefined();
   });
 });

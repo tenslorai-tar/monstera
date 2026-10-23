@@ -233,7 +233,7 @@ describe('the declaration table', () => {
     expect(declared).toContain('replacePage');
   });
 
-  it('CONTROL: exactly twenty-eight kinds declare a target, and the rest answer none', () => {
+  it('CONTROL: exactly twenty-nine kinds declare a target, and the rest answer none', () => {
     // The targets axis's version of the control above, and it carries the
     // second half as well. `never extends X` would satisfy one type-level line
     // on its own; and a table where EVERY command declared a target would
@@ -279,6 +279,8 @@ describe('the declaration table', () => {
       'editTextBlock',
       // AND THE SAME BLOCKS on a Type 3 page, the same read's names and version (ADR-0176).
       'editTextOperators',
+      // A PICTURE, A SHAPE OR A GROUP, named by PDFium's listing at its version (ADR-0264).
+      'editDrawnObject',
     ]);
     // `'page'` IS THE FOURTH MEMBER (ADR-0062's correction, 2026-09-14): a page
     // index is a position in the page tree, which is none of the three walks below.
