@@ -1660,9 +1660,10 @@ data to project from, so every command declares where it appears:
 
 ```ts
 type Placement =
-  | { surface: 'ribbon';        section: SectionId; group: MessageKey; order: number; prominence?: 'secondary'; menu?: MessageKey }
+  | { surface: 'ribbon';        section: SectionId; group: MessageKey; order: number; prominence?: 'secondary'; menu?: MessageKey;
+      menuRuns?: 'last' }
   | { surface: 'quick-toolbar'; order: number }
-  | { surface: 'context-menu';  context: 'page' | 'annotation' | 'selection' | 'tab'; order: number }
+  | { surface: 'context-menu';  context: 'page' | 'annotation' | 'selection' | 'tab' | 'field' | 'object'; order: number }
   | { surface: 'start-screen';  slot: 'primary' | 'shortcut' | 'footer'; order: number }
   | { surface: 'status-bar';    cluster: 'navigation'; side: 'before' | 'after'; order: number }
   | { surface: 'status-bar';    cluster: 'zoom'; side: 'before' | 'between' | 'after'; order: number }
@@ -3195,6 +3196,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-10-23 | **Edit object returns, and an edit changes only the bytes of the object it names** (§7's `Placement`: the `object` menu context and a ribbon menu's `menuRuns: 'last'` return). The owner's approved design (cloud run 17): R20 removed the tool because PDFium wrote the whole page again after any change and a font it could not write back refused the edit. Now PDFium only reads; every edit is a MuPDF splice of the one object's bytes in the page's own content, every other byte copied. Drawn objects through one `editDrawnObject` command (place, recolour, arrange, delete), text blocks through the operator writer, stamps through their own writer; the arrange carries the object's drawing state, and the one crop it cannot avoid is refused in one line. Proven before the build by a kernel check. The context line also names `field`, which `placement.ts`' `MenuContext` carries and this line did not (read 2026-10-23 at eb16f52b) | the 2026-10-21 row below, for the tool and its menu | [0264](DECISIONS/0264-edit-object-returns-and-an-edit-changes-only-the-bytes-of-the-object-it-names.md) |
 | 2026-10-23 | **A submission may send the whole document, streamed, and may go to a mail app through the Share sheet** (§9's network rule; the contract's submission formats). The owner's C2: the guarded POST writes its body a part at a time from a length and a read, so the whole document is staged and posted from a file and never held in `main`; a `mailto:` submission offers the Share sheet with the data as a file, beside the mail app route, with the address shown and Copy. Written as ADR-0261 on the cloud branch and renumbered at the merge. | ADR-0259 Decision 6, its rejected *Attaching the data to an email*, and its correction of 2026-10-22 item 1 | [0263](DECISIONS/0263-a-submission-may-send-the-whole-document-and-may-go-through-the-share-sheet.md) |
 | 2026-10-23 | **Every command answers the pages it changed** (§4, §6). The owner's N2: the strip and the main view redrew every mounted page on every version, and the strip's cards held the drawing slots the changed page waited for. Each kind declares its pages — all, none, a rule, or reported — and only a declaration the per-kind drawing check covers may name fewer than all. | — | [0262](DECISIONS/0262-a-command-declares-the-pages-it-changes.md) |
 | 2026-10-23 | **A page command is shown at once from the pages already drawn** (§6). The owner's N1: rotate, move and delete took 0.5–0.9 s to show, a field design change 0.7 s and an Edit text commit 1.0 s, because nothing was drawn before the page drew the new version. A page plan made at dispatch is drawn from the pixels already on screen and handed over by ADR-0257's rule; the editor's words stay until the page draws them. A field's design change, measured already meeting its targets, was left as it was. | ADR-0257's scope (Comment marks only) | [0261](DECISIONS/0261-a-page-command-is-shown-at-once-from-the-pages-already-drawn.md) |
