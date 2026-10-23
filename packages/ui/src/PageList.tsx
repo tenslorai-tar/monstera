@@ -1455,6 +1455,7 @@ export function PageList({
           source={planned?.[page]?.source ?? page}
           turn={planned?.[page]?.turn ?? 0}
           copyOf={planned === null ? undefined : copyOf}
+          keeps={plans?.unchangedBetween}
           rotation={planned === null ? rotations.get(page) : plannedRotationOf(planned[page] ?? { source: page, turn: 0 })}
           size={sizes.get(page) ?? lastKnownBefore(sizes, page) ?? startEstimate}
           zoom={shown}
@@ -1723,6 +1724,7 @@ function PageSlot({
   source,
   turn,
   copyOf,
+  keeps,
   ref,
   view,
   mounted,
@@ -1771,6 +1773,8 @@ function PageSlot({
   readonly source: number;
   /** The plan's quarter turns from the rotation the view draws `source` at; 0 where no plan is shown. */
   readonly turn: number;
+  /** Whether the view's page `page` is drawn the same at `to` as at `from` (ADR-0262); absent, every new view redraws. */
+  readonly keeps: ((from: DocVersion, to: DocVersion, page: number) => boolean) | undefined;
   /** While a page plan is shown: the drawing of a view's page the screen had when the plan changed, if any (ADR-0261). */
   readonly copyOf: ((source: number) => DrawnCopy | undefined) | undefined;
   readonly ref: (element: HTMLElement | null) => void;
@@ -2026,6 +2030,27 @@ function PageSlot({
       }
       const target = canvas.current;
       if (target === null) return;
+      // NOT DRAWN AGAIN WHERE THE NEW VIEW DID NOT CHANGE THIS PAGE (ADR-0262): the canvas shows this page, at this turn,
+      // scale and rotation, and no version since the one it was drawn from changed it, so its pixels are already this
+      // view's. Counted as drawn from it, which is what lets a held look on another page go and this one stay put.
+      const shows = SHOWS.get(target);
+      if (
+        shows !== undefined &&
+        shows.view !== view &&
+        shows.source === source &&
+        shows.turn === turn &&
+        shows.measured.drawnAt === scale &&
+        typeof rotation === 'number' &&
+        shows.measured.rotation === rotation &&
+        leftOut === undefined &&
+        keeps?.(shows.view.version, view.version, source) === true
+      ) {
+        SHOWS.set(target, { ...shows, view });
+        setDrawnWith(view);
+        setPresentedWithout(leftOut);
+        onPainted(page, true);
+        return;
+      }
       // A PLANNED PAGE FROM THE PIXELS ALREADY ON SCREEN (ADR-0261's correction): its source's drawing at this scale,
       // turned by the difference, presented in this task. Not while a mark is left out, which that drawing has in it.
       const held = copyOf?.(source);
@@ -2103,7 +2128,7 @@ function PageSlot({
     return (): void => {
       superseded.abort();
     };
-  }, [copyOf, draw, leftOut, onFailed, onMeasured, onPainted, page, quality, renderZoom, rotation, secondRasteriser, setPresentedWithout, source, tiled, turn, view]);
+  }, [copyOf, draw, keeps, leftOut, onFailed, onMeasured, onPainted, page, quality, renderZoom, rotation, secondRasteriser, setPresentedWithout, source, tiled, turn, view]);
 
   // HELD DECODED WHILE MOUNTED (`pageResidency.ts`), so a zoom's redraw of a page in the margin does not decode its
   // images again; released when it leaves the margin, and PDF.js then closes them unless the strip is drawing it.

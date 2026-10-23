@@ -181,7 +181,20 @@ export interface PagePlans {
   readonly redoOf: (version: DocVersion) => PageOp | null;
   /** An undo of `op` moved the document to `version`: a redo from there is planned with `op`. */
   readonly undone: (op: PageOp, version: DocVersion) => void;
+  /**
+   * The document moved to `version`, changing `pages` (ADR-0262): the answer's `changedPages`, `'all'` for an answer
+   * that names none.
+   */
+  readonly changed: (version: DocVersion, pages: 'all' | readonly number[]) => void;
+  /**
+   * Whether `page` is drawn the same at `to` as at `from` — no version between them, `to` included, changed it — so a
+   * surface keeps its drawing rather than drawing it again. `false` for any version not heard of, which is every page.
+   */
+  readonly unchangedBetween: (from: DocVersion, to: DocVersion, page: number) => boolean;
 }
+
+/** How many versions' changes a holder keeps: a surface further behind than this draws every page again. */
+const KEPT_CHANGES = 32;
 
 export function createPagePlans(): PagePlans {
   let pending: readonly PendingOp[] = [];
@@ -190,6 +203,8 @@ export function createPagePlans(): PagePlans {
   const producedBy = new Map<DocVersion, PageOp>();
   /** The op a redo from each version would repeat. */
   const redoFrom = new Map<DocVersion, PageOp>();
+  /** The pages each version changed, by the version (ADR-0262), the newest {@link KEPT_CHANGES}. */
+  const changes = new Map<DocVersion, 'all' | ReadonlySet<number>>();
   const handles = new WeakMap<object, PageOp>();
   const listeners = new Set<() => void>();
   const changed = (next: readonly PendingOp[]): void => {
@@ -233,6 +248,19 @@ export function createPagePlans(): PagePlans {
     redoOf: (version) => redoFrom.get(version) ?? null,
     undone: (op, version) => {
       redoFrom.set(version, op);
+    },
+    changed: (version, pages) => {
+      changes.set(version, pages === 'all' ? 'all' : new Set(pages));
+      const oldest = changes.keys().next();
+      if (changes.size > KEPT_CHANGES && oldest.done !== true) changes.delete(oldest.value);
+    },
+    unchangedBetween: (from, to, page) => {
+      if (to <= from) return to === from;
+      for (let at = from + 1; at <= to; at += 1) {
+        const pages = changes.get(at as DocVersion);
+        if (pages === undefined || pages === 'all' || pages.has(page)) return false;
+      }
+      return true;
     },
   };
 }

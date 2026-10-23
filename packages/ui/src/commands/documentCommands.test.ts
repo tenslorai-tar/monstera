@@ -721,7 +721,8 @@ describe('redo', () => {
 
     await redoCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
 
-    expect(applied).toStrictEqual([{ version: 4, byteLength: 777 }]);
+    // AND THE PAGES IT CHANGED, every page for an answer that names none (ADR-0262).
+    expect(applied).toStrictEqual([{ version: 4, byteLength: 777, changedPages: 'all' }]);
   });
 
   it('nothing-to-redo changed nothing, so the view is not rebuilt — the call not made', async () => {
@@ -802,7 +803,8 @@ describe('undo', () => {
     // `document.undo` does not carry one, because undo cannot grow the log and
     // therefore never sheds. A field here would be this command inventing a
     // number the kernel did not report.
-    expect(applied).toStrictEqual([{ version: 2, byteLength: 900 }]);
+    // AND THE PAGES IT CHANGED, every page for an answer that names none (ADR-0262).
+    expect(applied).toStrictEqual([{ version: 2, byteLength: 900, changedPages: 'all' }]);
   });
 
   it('an exhausted log is a SUCCESS that changed nothing', async () => {

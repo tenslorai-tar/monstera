@@ -425,6 +425,12 @@ interface StepDeps {
 export interface Applied {
   readonly version: DocVersion;
   readonly byteLength: number;
+  /**
+   * The pages it changed (ADR-0262), what the page surfaces redraw. ABSENT IS EVERY PAGE: the channels besides execute,
+   * undo and redo that move a document (an import, a merge from a file, a signature) do not name them, and the side an
+   * absence falls on is the one that redraws too much rather than leaving an old page.
+   */
+  readonly changedPages?: 'all' | readonly number[];
 }
 
 /**
@@ -2816,6 +2822,7 @@ export function undoCommand(deps: DocumentCommandDeps): UiCommand {
       deps.onApplied({
         version: answer.value.version,
         byteLength: answer.value.byteLength,
+        changedPages: answer.value.changedPages,
       });
       step?.answered(answer.value.version);
     },
@@ -2866,7 +2873,7 @@ export function redoCommand(deps: DocumentCommandDeps): UiCommand {
         step?.refused();
         return;
       }
-      deps.onApplied({ version: answer.value.version, byteLength: answer.value.byteLength });
+      deps.onApplied({ version: answer.value.version, byteLength: answer.value.byteLength, changedPages: answer.value.changedPages });
       step?.answered(answer.value.version);
       tellUnsealed(deps, answer.value);
     },

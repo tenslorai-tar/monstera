@@ -102,6 +102,22 @@ describe('createPagePlans — the holder', () => {
     expect(plans.getSnapshot()).toHaveLength(0);
   });
 
+  it('a page is unchanged between two versions only where every version between them named it unchanged (ADR-0262)', () => {
+    const plans = createPagePlans();
+    plans.changed(v(2), [0]);
+    plans.changed(v(3), [2]);
+    expect(plans.unchangedBetween(v(1), v(3), 1)).toBe(true);
+    expect(plans.unchangedBetween(v(1), v(3), 0)).toBe(false);
+    expect(plans.unchangedBetween(v(2), v(3), 0)).toBe(true);
+    // A VERSION NOT HEARD OF is every page, and so is 'all'.
+    expect(plans.unchangedBetween(v(1), v(4), 1)).toBe(false);
+    plans.changed(v(4), 'all');
+    expect(plans.unchangedBetween(v(3), v(4), 1)).toBe(false);
+    // CONTROL: the same version is unchanged, an older one is not asked for.
+    expect(plans.unchangedBetween(v(3), v(3), 0)).toBe(true);
+    expect(plans.unchangedBetween(v(3), v(2), 1)).toBe(false);
+  });
+
   it('an undo is planned from the inverse of the op that produced the version, and a redo from the op undone', () => {
     const plans = createPagePlans();
     const move = { kind: 'move', from: 0, to: 2 } as const;

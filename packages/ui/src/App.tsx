@@ -1288,9 +1288,16 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
   // each document in turn, and *Apply* on its redaction question moves THAT document — `activate` has been called,
   // but the `activeId` this closure holds is the one from before the close began.
   const appliedTo = useCallback(
-    (docId: DocId | undefined, next: { readonly version: DocVersion; readonly byteLength: number }) => {
+    (
+      docId: DocId | undefined,
+      next: { readonly version: DocVersion; readonly byteLength: number; readonly changedPages?: 'all' | readonly number[] },
+    ) => {
+      // THE PAGES IT CHANGED (ADR-0262), heard once here where every answer arrives, so the surfaces redraw only those.
+      // An answer from a channel that names none changed every page, the side that redraws too much.
+      if (docId !== undefined) stores.plans(docId)?.changed(next.version, next.changedPages ?? 'all');
+      const { version, byteLength } = next;
       setTabs((current) =>
-        current.map((tab) => (tab.docId === docId ? { ...tab, ...next } : tab)),
+        current.map((tab) => (tab.docId === docId ? { ...tab, version, byteLength } : tab)),
       );
       // THE DOCUMENT'S STORE HEARS OF IT TOO — `observed`'s first production caller. It had none, so the store's
       // version never left the opening one; nothing read it, and the Organize grid's selection (ADR-0104), which
@@ -1300,7 +1307,7 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
     [stores],
   );
   const applied = useCallback(
-    (next: { readonly version: DocVersion; readonly byteLength: number }) => {
+    (next: { readonly version: DocVersion; readonly byteLength: number; readonly changedPages?: 'all' | readonly number[] }) => {
       appliedTo(activeId, next);
     },
     [activeId, appliedTo],

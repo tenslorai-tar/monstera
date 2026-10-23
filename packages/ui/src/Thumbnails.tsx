@@ -396,6 +396,7 @@ export function Thumbnails({
             view={view}
             page={page}
             width={width}
+            keeps={plans?.unchangedBetween}
             // THE PIXELS FOLLOW THE MARGIN and the draw follows the answer, two props for `PageList`'s reason: a new
             // version empties the rotation answers until the model is asked again, and a release keyed to the draw gave
             // back every card on screen for those frames of an edit.
@@ -502,7 +503,10 @@ function ThumbCanvas({
   draw,
   rotation,
   onDrawn,
+  keeps,
 }: {
+  /** Whether the view's page `page` is drawn the same at `to` as at `from` (ADR-0262); absent, every new view redraws. */
+  readonly keeps: ((from: DocVersion, to: DocVersion, page: number) => boolean) | undefined;
   readonly view: DocumentView | undefined;
   readonly page: number;
   /** The view's page the card draws: its own, or the one a page plan shows in its place (ADR-0261). */
@@ -532,8 +536,22 @@ function ThumbCanvas({
       }
     | undefined
   >(undefined);
+  // A DRAWING THE NEW VIEW DID NOT CHANGE (ADR-0262): the same page at the same width and rotation, which no version since
+  // the one it was drawn from changed. It is this view's drawing too, so it is current and is not drawn again.
+  const unchanged =
+    size !== undefined &&
+    view !== undefined &&
+    size.for.view !== view &&
+    size.for.source === source &&
+    size.for.width === width &&
+    size.for.rotation === rotation &&
+    keeps?.(size.for.view.version, view.version, source) === true;
   const current =
-    size !== undefined && size.for.view === view && size.for.source === source && size.for.width === width && size.for.rotation === rotation;
+    size !== undefined &&
+    (unchanged || size.for.view === view) &&
+    size.for.source === source &&
+    size.for.width === width &&
+    size.for.rotation === rotation;
   // PIXELS GIVEN BACK when the card leaves the margin (run 4 item 13c): a canvas keeps its backing store for as long as
   // it is in the page, so a strip scrolled through a long document held every card's. The card keeps its size, so
   // nothing above it moves, and is drawn again when it comes back near the view; what is held is the margin's cards.
@@ -562,6 +580,11 @@ function ThumbCanvas({
   useEffect(() => {
     const element = canvas.current;
     if (!draw || view === undefined || element === null) return;
+    // NOT DRAWN AGAIN where the new view did not change this page (ADR-0262): the card's drawing is already this view's.
+    if (unchanged) {
+      report.current(page, width);
+      return;
+    }
     const superseded = new AbortController();
     delete element.dataset['failed'];
 
@@ -588,7 +611,7 @@ function ThumbCanvas({
     return (): void => {
       superseded.abort();
     };
-  }, [draw, page, rotation, source, view, width]);
+  }, [draw, page, rotation, source, unchanged, view, width]);
 
   return (
     <canvas

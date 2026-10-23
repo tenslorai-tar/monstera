@@ -52,14 +52,16 @@ const runs = Number(option('--runs') ?? '5');
 const only = option('--only')?.split(',');
 /** `--changes`: every run's change list printed, each change as its time, the part of the region and its new reading. */
 const showChanges = argv.includes('--changes');
+/** `--pages <n>`: the fixture's length, for what a change costs on a long document (ADR-0262's 5 and 60); 5 when absent. */
+const PAGES = Number(option('--pages') ?? '5');
 /** @param {string} name */
 const wanted = (name) => only === undefined || only.includes(name);
 
-/** Five Letter pages of lines in Helvetica, and a text field on the first: the owner's five-page shape, built here. */
+/** {@link PAGES} Letter pages of lines in Helvetica (five by default, the owner's shape), and a text field on the first. */
 async function fixture() {
   const document = await PDFDocument.create();
   const font = await document.embedFont(StandardFonts.Helvetica);
-  for (let index = 0; index < 5; index += 1) {
+  for (let index = 0; index < PAGES; index += 1) {
     const page = document.addPage([612, 792]);
     for (let line = 0; line < 8; line += 1) {
       page.drawText(`Page ${String(index + 1)}, line ${String(line + 1)}: the quick brown fox jumps over the lazy dog.`, { x: 72, y: 700 - line * 30, size: 14, font });
@@ -82,7 +84,7 @@ const walk = await startWalk(
 );
 const { page, output, command, section, step, finish } = walk;
 
-const path = join(output, 'five-pages.pdf');
+const path = join(output, `${String(PAGES)}-pages.pdf`);
 await writeFile(path, await fixture());
 await walk.open(path);
 
