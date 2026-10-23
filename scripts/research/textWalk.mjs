@@ -27,12 +27,17 @@ import { join } from 'node:path';
 import { expect as defaultExpect } from '@playwright/test';
 import { PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream, PDFString, StandardFonts } from '@cantoo/pdf-lib';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 import { boxSettled, root, startWalk, writesDone, writesIdle, writesLanded } from './liveWalk.mjs';
 import { savedContent, savedFonts, savedWords } from './savedPdf.mjs';
 import { tabMarks, textSteps } from './textWalkSteps.mjs';
 
 // THE PRODUCER'S PAGE THE N14 STEP BUILDS, fresh or refused, beside the shell's own edges `startWalk` checks.
 refuseStaleBuild(root, [['packages/kernel/src/producerSubsetFixture.ts', 'packages/kernel/dist/producerSubsetFixture.js', 'tsc']], 1);
+refuseStaleBuild(root, [['packages/kernel/src/scanTableFixture.ts', 'packages/kernel/dist/scanTableFixture.js', 'tsc']], 1);
+// A LITERAL SPECIFIER, so `proof:electronimports` can read what this loads; the fixture renders with the kernel's engine.
+const { buildPrintedScanPdf } = await import('../../packages/kernel/dist/scanTableFixture.js');
+if (bindNativeEngine() === null) throw new Error('the MuPDF shim is not built here, so the walk cannot make its printed scan: node scripts/provision/mupdf.mjs');
 
 const sample = process.argv[2] ?? join(root, '_review/test-files/sample5.pdf');
 const handwritten = process.argv[3] ?? join(homedir(), 'Desktop', 'Handwritten table.pdf');
@@ -284,35 +289,58 @@ await step('8. CJK (the owner’s check): Chinese and Japanese typed with Add te
   return { chineseKept: words.includes('汉字测试'), japaneseKept: words.includes('日本語'), fontsNamed: await savedFonts(cjkSaved) };
 });
 
+/**
+ * A scanned page recognised from Edit text's note, then a word typed at the end of its first recognised block, written,
+ * and found in a saved copy read by PDF.js. @param {string} path @param {string} savedName
+ */
+async function recogniseThenEdit(path, savedName) {
+  await open(path);
+  await section('Edit');
+  await ensureEditText();
+  // W7: THE PAGE'S NOTE ("This page is a picture, ...") OFFERS RECOGNITION in Edit text. Measured 2026-10-12 on this scan
+  // it was a paragraph and nothing else, and this step went round it through Tools > OCR pages.
+  await page.locator('[data-page-note] button').first().click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  // THE BUTTON TAKES A PRESS once the dialog has read what it needs (a 2 s sleep stood for this).
+  await expect(page.getByRole('dialog').getByRole('button', { name: 'Recognise', exact: true })).toBeEnabled({ timeout: 30_000 });
+  await page.getByRole('dialog').getByRole('button', { name: 'Recognise', exact: true }).click();
+  // RECOGNITION ENDS WITH ITS OWN ANSWER, a dialog with OK, which a person presses. This step waited for "the dialog
+  // hidden" with the wait's failure swallowed, so the answer stayed open and its backdrop took the press below: no editor
+  // opened, and in every run on record before 2026-10-23 no word was ever sent (measured that day on a printed scan, the
+  // press point read as `m-dialog__backdrop`). Edit text stays on through recognition, so nothing turns it on again.
+  const answer = page.getByRole('dialog', { name: 'Recognition' });
+  await answer.getByRole('button', { name: 'OK', exact: true }).click({ timeout: 120_000 });
+  await answer.waitFor({ state: 'hidden', timeout: 10_000 });
+  await expect(page.locator('[data-text-block]').first()).toBeVisible({ timeout: 120_000 });
+  await pressOn(page.locator('[data-text-block]').first());
+  // AN EDITOR TOOK THE PRESS, or the keys below go nowhere and nothing is said either.
+  await expect(editor()).toBeFocused();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' (walked)');
+  const said = await pressAway(10, 10);
+  // THE WORD IS WRITTEN, not only typed: the step returned `said` and checked nothing, and read as passed while the
+  // write was refused (2026-10-23: *couldn't write that text … set-text*).
+  if (said.length > 0) throw new Error(`the word on the recognised page was not written: ${JSON.stringify(said)}`);
+  const words = (await savedWords(await savedCopy(savedName))).join(' ');
+  if (!words.includes('(walked)')) throw new Error(`the saved copy does not carry the word: ${words.slice(0, 200)}`);
+  return { blocks: await page.locator('[data-text-block]').count(), said };
+}
+
+// A PRINTED SCAN, which must pass: typed prose rendered to a 200 dpi picture, the page holding nothing else
+// (`scanTableFixture.ts`). Measured 2026-10-23: recognised as four blocks, the word written and saved, 3 of 3.
+const printed = join(output, 'printed-scan.pdf');
+await writeFile(printed, await buildPrintedScanPdf());
+await step('9a. A printed scan: Recognise from Edit text’s note, then a word edited on the recognised page and saved', () =>
+  recogniseThenEdit(printed, 'printed-scan-edited.pdf'),
+);
+
 if (existsSync(handwritten)) {
   const scan = await copyOf(handwritten);
-  await step('9. Handwritten table.pdf: Recognise from Edit text’s note, then a word edited on the recognised page', async () => {
-    await open(scan);
-    await section('Edit');
-    await ensureEditText();
-    // W7: THE PAGE'S NOTE ("This page is a picture, ...") OFFERS RECOGNITION in Edit text. Measured 2026-10-12 on this scan
-    // it was a paragraph and nothing else, and this step went round it through Tools > OCR pages.
-    await page.locator('[data-page-note] button').first().click();
-    await expect(page.getByRole('dialog')).toBeVisible();
-    // THE BUTTON TAKES A PRESS once the dialog has read what it needs (a 2 s sleep stood for this).
-    await expect(page.getByRole('dialog').getByRole('button', { name: 'Recognise', exact: true })).toBeEnabled({ timeout: 30_000 });
-    await page.getByRole('dialog').getByRole('button', { name: 'Recognise', exact: true }).click();
-    await page.getByRole('dialog').waitFor({ state: 'hidden', timeout: 120_000 }).catch(() => undefined);
-    await section('Edit');
-    await ensureEditText();
-    await expect(page.locator('[data-text-block]').first()).toBeVisible({ timeout: 120_000 });
-    await pressOn(page.locator('[data-text-block]').first());
-    // AN EDITOR TOOK THE PRESS, or the keys below go nowhere and nothing is said either.
-    await expect(editor()).toBeFocused();
-    await page.keyboard.press('End');
-    await page.keyboard.type(' (walked)');
-    const said = await pressAway(10, 10);
-    // THE WORD IS WRITTEN, not only typed: the step returned `said` and checked nothing, and read as passed while the
-    // write was refused (2026-10-23: *couldn't write that text … set-text*). In every earlier run on record the press had
-    // opened no editor at all, so nothing was ever sent — which the step could not tell from success either.
-    if (said.length > 0) throw new Error(`the word on the recognised page was not written: ${JSON.stringify(said)}`);
-    return { blocks: await page.locator('[data-text-block]').count(), said };
-  });
+  // MUST PASS: with the recognition's answer put down as a person does, a word is written on recognised handwriting as
+  // on print (measured 2026-10-23, twice). A refusal met with that answer still open is the press reaching its backdrop.
+  await step('9. Handwritten table.pdf: Recognise from Edit text’s note, then a word edited on the recognised page', () =>
+    recogniseThenEdit(scan, 'handwritten-edited.pdf'),
+  );
 }
 
 /**

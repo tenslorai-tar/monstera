@@ -79,7 +79,31 @@ export async function buildRuledTablePdf(): Promise<Uint8Array> {
 
 /** The ruled table as a scan: the picture of {@link buildRuledTablePdf}'s page, and nothing else on the page. */
 export async function buildScannedTablePdf(): Promise<Uint8Array> {
-  const drawn = mupdf.Document.openDocument(await buildRuledTablePdf(), 'application/pdf');
+  return scanOf(await buildRuledTablePdf());
+}
+
+/** The lines of {@link buildPrintedScanPdf}'s typed page, as a reader of the picture should find them. */
+export const PRINTED_SCAN_LINES: readonly string[] = [
+  'Quarterly report for the northern region',
+  'Sales rose by twelve percent over the quarter,',
+  'led by strong demand for the new product line.',
+  'The team expects similar growth next year.',
+];
+
+/** A typed page of prose as a scan: the printed counterpart to a handwritten page, for recognition and then an edit. */
+export async function buildPrintedScanPdf(): Promise<Uint8Array> {
+  const document = await PDFDocument.create();
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const page = document.addPage([612, 792]);
+  PRINTED_SCAN_LINES.forEach((text, row) => {
+    page.drawText(text, { x: 72, y: 700 - row * 22, size: 14, font });
+  });
+  return scanOf(await wholeFile(document));
+}
+
+/** Page 1 of `bytes` as a scanner writes it: its pixels at {@link SCAN_DPI}, greyscale, and nothing else on the page. */
+async function scanOf(bytes: Uint8Array): Promise<Uint8Array> {
+  const drawn = mupdf.Document.openDocument(bytes, 'application/pdf');
   const scale = SCAN_DPI / 72;
   const pixmap = drawn.loadPage(0).toPixmap(mupdf.Matrix.scale(scale, scale), mupdf.ColorSpace.DeviceGray, false);
   const png = pixmap.asPNG();
