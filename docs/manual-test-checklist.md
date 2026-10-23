@@ -4,7 +4,7 @@
      equal to it. Regenerate with `npx vitest run packages/ui/src/App.test.tsx -t "manual test checklist" -u`.
      Do not edit by hand. -->
 
-Every command the application registers — 269 — and the checks only the installed window can answer.
+Every command the application registers — 275 — and the checks only the installed window can answer.
 For each command: use it on a real document, see the correct effect, then save, close and reopen and see it kept
 (the wired-tools rule, CLAUDE.md). A command that needs a selection, a second document or a key says so when it
 is not available.
@@ -83,6 +83,10 @@ is not available.
 - [ ] **Word count** — Proofing · `document.word-count` · Shows: a result dialog · Help: *Count words and characters*
 - [ ] **Edit text on the page** — Text · `text.edit` · Shows: on screen · Help: *Edit text on the page*
 - [ ] **Add text** — Text · `text.add` · Shows: on screen
+- [ ] **Edit all objects** — Text · `edit.objects-all` · Shows: on screen · Help: *Move, resize, recolour or remove things on a page*
+- [ ] **Edit text objects** — Text · `edit.objects-text` · Shows: on screen · Help: *Move, resize, recolour or remove things on a page*
+- [ ] **Edit images** — Text · `edit.objects-images` · Shows: on screen · Help: *Move, resize, recolour or remove things on a page*
+- [ ] **Edit shapes** — Text · `edit.objects-shapes` · Shows: on screen · Help: *Move, resize, recolour or remove things on a page*
 - [ ] **Copy** — Text · `edit.copy` · Shows: a toast · Help: *Select and copy text*
 - [ ] **Add a barcode** — Text · `organize.barcode` · Shows: on screen · Help: *Add and read barcodes and QR codes*
 
@@ -276,6 +280,8 @@ is not available.
 
 ## Properties tab
 
+- [ ] **Bring forward** · `edit.object-forward` · Shows: on screen · Help: *Move, resize, recolour or remove things on a page*
+- [ ] **Send backward** · `edit.object-backward` · Shows: on screen · Help: *Move, resize, recolour or remove things on a page*
 - [ ] **Copy to other pages…** · `forms.copy-to-pages` · Shows: on screen · Help: *Change a form field*
 - [ ] **Align left edges** · `forms.arrange.align-left` · Shows: on screen · Help: *Change a form field*
 - [ ] **Align right edges** · `forms.arrange.align-right` · Shows: on screen

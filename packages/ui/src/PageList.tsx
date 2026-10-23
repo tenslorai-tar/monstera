@@ -22,13 +22,14 @@ import { type OverlayPage, overlayTransform } from './annotations/annotationSpac
 import type { AnnotationSelection, LinkSelection } from './annotations/selectTool.js';
 import { SelectionLayer } from './SelectionLayer.js';
 import { type TextEditing, TextEditPage } from './TextEditLayer.js';
+import { type ObjectEditing, ObjectEditPage } from './ObjectEditLayer.js';
 import { type FieldEditing, FieldDesignLayer } from './forms/FieldDesignLayer.js';
 import { type TabOrderEditing, TabOrderLayer } from './forms/TabOrderLayer.js';
 import { InlineWriter } from './InlineWriter.js';
 import type { Draft, WriteRequest } from './pageWriting.js';
 
 /** What a press on the page edits, when a mode rather than a drawing tool holds the tool slot. */
-export type PageEditing = TextEditing | FieldEditing | TabOrderEditing;
+export type PageEditing = TextEditing | ObjectEditing | FieldEditing | TabOrderEditing;
 
 /** The one pending request for words on a page, its draft, and where its answer goes (ADR-0154). */
 export interface PageWriting {
@@ -302,7 +303,8 @@ export interface PageListProps {
    * is worse than none.
    */
   /**
-   * The editing mode on the page — Edit text's (ADR-0096), Edit fields' or Tab order's — or `undefined` when none is on.
+   * The editing mode on the page — Edit text's (ADR-0096), Edit object's (ADR-0264), Edit fields' or Tab order's — or
+   * `undefined` when none is on.
    *
    * A sibling of {@link drawing} rather than a member of it, because the two
    * never hold at once — they share one slot in the application, the tool id —
@@ -2353,6 +2355,14 @@ function PageSlot({
           }}
           page={page}
           picked={editing.picked}
+        />
+      ) : editing.mode === 'objects' ? (
+        <ObjectEditPage
+          editing={editing}
+          geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
+          page={page}
+          paperAt={paperAt}
+          pictureOf={pictureOf}
         />
       ) : (
         <TextEditPage

@@ -2781,7 +2781,71 @@ describe('App', () => {
       expect(blockReads.length).toBeGreaterThan(before);
     });
 
-    it('EDIT TEXT asks main to start the editing engine each time it is chosen, and nothing before (R11)', async () => {
+    it('EDIT OBJECT, chosen from its menu’s face, outlines the page’s objects, and a press then Delete removes the one pressed (ADR-0264)', async () => {
+      // THE COMPOSITION'S HALF of the wired pair: the layer's own cases stand on a layer handed its props, and the kernel
+      // cases on a writer handed its command; this is the path between them — the ribbon, the mode's read, the layer,
+      // the selection Delete reads, and the one dispatcher.
+      const { client, sent } = answeringClient({
+        ...OPEN_DOCUMENT_ANSWERS,
+        'document.pageObjects': {
+          version: asDocVersion(1),
+          next: null,
+          truncated: false,
+          objects: [{ index: 0, kind: 'path', left: 100, bottom: 600, right: 200, top: 700, fill: { red: 0, green: 0, blue: 0, alpha: 255 } }],
+        },
+        'document.textBlocks': {
+          version: asDocVersion(1),
+          next: null,
+          blocks: [],
+          truncated: false,
+          rotated: 0,
+          angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 },
+          unaddressable: 0,
+          rewrite: 'objects',
+        },
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 },
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+      await pressCommand('Edit object', 'Edit');
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      // THE BLOCKS READ AS THE PAGE IS, never unpacked: the operator writer names the page as it is.
+      expect(sent.find((call) => call.id === 'document.textBlocks')?.params).toMatchObject({ page: 0, asItIs: true });
+      // THE FIRST PAGE'S LAYER: the fixture answers every page alike.
+      const shape = await within(await screen.findByRole('group', { name: 'Objects on page 1' })).findByRole('button', { name: 'Shape, 1 of 1' });
+      // CONTROL: before the press nothing is selected, so Delete has nothing to remove.
+      expect(sent.filter((call) => call.id === 'document.execute')).toHaveLength(0);
+      await act(async () => {
+        fireEvent.pointerDown(shape, { button: 0, clientX: 10, clientY: 10, pointerId: 1 });
+        fireEvent.pointerUp(shape, { button: 0, clientX: 10, clientY: 10, pointerId: 1 });
+        await Promise.resolve();
+      });
+      await act(async () => {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }));
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      const executed = sent.filter((call) => call.id === 'document.execute');
+      expect(executed).toHaveLength(1);
+      expect(executed[0]?.params).toMatchObject({
+        docId: DOC,
+        command: {
+          kind: 'editDrawnObject',
+          page: 0,
+          index: 0,
+          object: 'path',
+          ordinal: 0,
+          box: { left: 100, bottom: 600, right: 200, top: 700 },
+          edit: { op: 'delete' },
+          version: asDocVersion(1),
+        },
+      });
+    });
+
+    it('the EDIT SECTION shown asks main to start the editing engine, once while it stays shown, and nothing before (ADR-0264 Decision 9)', async () => {
       const asked: string[] = [];
       const client = createClient(channels, (id) => {
         asked.push(id);
@@ -2794,23 +2858,32 @@ describe('App', () => {
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
+      const starts = (): number => asked.filter((id) => id === 'app.prepareEditing').length;
       // CONTROL: a document open in the reading view starts nothing.
-      expect(asked.filter((id) => id === 'app.prepareEditing')).toHaveLength(0);
-      await pressCommand('Edit text', 'Edit');
+      expect(starts()).toBe(0);
+      // THE EDIT SECTION SHOWN, before any mode is chosen in it: the engine starts while the person finds the tool.
       await act(async () => {
+        screen.getByRole('button', { name: 'Edit' }).click();
         await Promise.resolve();
       });
-      expect(asked.filter((id) => id === 'app.prepareEditing')).toHaveLength(1);
+      expect(starts()).toBe(1);
+      // A MODE CHOSEN AND LEFT in the section that is still shown asks nothing more: the engine was started already.
+      await pressCommand('Edit text', 'Edit');
       await act(async () => {
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
         await Promise.resolve();
       });
-      // LEFT, then chosen again: asked again, once for each time the mode is entered.
-      await pressCommand('Edit text', 'Edit');
+      expect(starts()).toBe(1);
+      // ANOTHER SECTION, then Edit again: asked again, once for each time the section is shown.
       await act(async () => {
+        screen.getByRole('button', { name: 'Home' }).click();
         await Promise.resolve();
       });
-      expect(asked.filter((id) => id === 'app.prepareEditing')).toHaveLength(2);
+      await act(async () => {
+        screen.getByRole('button', { name: 'Edit' }).click();
+        await Promise.resolve();
+      });
+      expect(starts()).toBe(2);
     });
 
     it('EDIT TEXT: a POISONED document ends the mode, since every page of it refuses (VVVVVVV-20)', async () => {
@@ -3095,10 +3168,11 @@ describe('App', () => {
     await expect(text).toMatchFileSnapshot('../../../docs/manual-test-checklist.md');
   });
 
-  it('NO EDIT OBJECT COMMAND IS REACHABLE from any projection of the registry (R20, the owner’s decision of 2026-10-21)', () => {
-    // Edit object was withdrawn, not hidden: a command kept behind a `when` would still be one condition away from a
-    // surface. So every `when` is dropped and every projection is walked, and a command is found wherever it sits in a
-    // model's shape — by its id, or by the title a person reads.
+  it('EDIT OBJECT’S COMMANDS, AND ONLY THEM, are reachable as objects from the projections of the registry (ADR-0264)', () => {
+    // Edit object was withdrawn on 2026-10-21 (R20) and returns under ADR-0264 with exactly its four filters and its two
+    // arrange steps. Every `when` is dropped and every projection is walked, and a command is found wherever it sits in a
+    // model's shape — by its id, or by the title a person reads — so a command left over from the withdrawn version, or
+    // one added beside these without its own decision, is found as well as one of these going missing.
     let commands: CommandRegistry | undefined;
     const { client } = recordingClient({ kind: 'cancelled' });
     render(<App client={client} settings={freshSettings()} onRegistries={(registries) => (commands = registries.commands)} />);
@@ -3115,7 +3189,7 @@ describe('App', () => {
       pageCount: 3,
       openDocuments: [],
     };
-    const MENUS = ['page', 'annotation', 'selection', 'tab', 'field'] as const;
+    const MENUS = ['page', 'annotation', 'selection', 'tab', 'field', 'object'] as const;
     // EVERY PROJECTION the module exports, named here once; the next line fails the day one is added and not walked.
     const PROJECTIONS: Record<string, (registry: CommandRegistry) => unknown> = {
       ribbonModel: (registry) => projections.ribbonModel(registry, CONTEXT),
@@ -3159,10 +3233,11 @@ describe('App', () => {
     for (const project of Object.values(PROJECTIONS)) commandsIn(project(unconditional(shell.all())), reachable);
     // CONTROL: the walk sees the shell — every registered command is reachable once nothing hides it.
     expect([...reachable.keys()].sort()).toStrictEqual(shell.all().map((command) => command.id).sort());
-    expect(editObject(unconditional(shell.all()))).toStrictEqual([]);
+    const RETURNED = ['edit.object-backward', 'edit.object-forward', 'edit.objects-all', 'edit.objects-images', 'edit.objects-shapes', 'edit.objects-text'];
+    expect(editObject(unconditional(shell.all())).sort()).toStrictEqual(RETURNED);
 
-    // CONTROL: a command planted with Edit object's id is found, and so is one whose id says nothing but whose title
-    // a person reads as Edit object — on a ribbon and on a right-click menu, hidden by a `when` that is false.
+    // CONTROL: a command planted with an object id is found, and so is one whose id says nothing but whose title a
+    // person reads as Edit object — on a ribbon and on a right-click menu, hidden by a `when` that is false.
     const planted = (id: string, title: string, placement: UiCommand['placements'][number]): UiCommand => ({
       id,
       title: messageKey(title),
@@ -3179,11 +3254,11 @@ describe('App', () => {
         editObject(
           unconditional([
             ...shell.all(),
-            planted('edit.objects-all', 'test.planted', { surface: 'ribbon', section: 'edit', group: messageKey('test.group'), order: 1 }),
+            planted('edit.objects-rotate', 'test.planted', { surface: 'ribbon', section: 'edit', group: messageKey('test.group'), order: 1 }),
             planted('edit.planted', 'test.planted-title', { surface: 'context-menu', context: 'page', order: 1 }),
           ]),
         ).sort(),
-      ).toStrictEqual(['edit.objects-all', 'edit.planted']);
+      ).toStrictEqual([...RETURNED, 'edit.objects-rotate', 'edit.planted'].sort());
     } finally {
       activateCatalogue('en', EN);
     }

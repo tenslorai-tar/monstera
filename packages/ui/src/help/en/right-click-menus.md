@@ -14,6 +14,7 @@ Right-click anything on screen to see only the tools that apply to it.
 2. Right-click an **annotation** for: **Edit comment…**, **Reply…**, **Draft a reply with AI**, **Copy**, **Properties** and **Delete selection**.
 3. Right-click **selected text** for: **Copy**, **Highlight**, **Underline**, **Strikethrough**, **Add comment**, **Mark for redaction**, **Search for this**, and the AI items **Ask AI**, **Explain**, **Summarise** and **Translate**.
 4. Right-click a **tab** for: **Close tab**, **Close other tabs** and **Open side by side**.
+5. With **Edit object** on, right-click an **object** for **Properties**, **Bring forward**, **Send backward** and **Delete selection**.
 
 ![The right-click menu over selected text](screenshot:right-click-menus-1)
 

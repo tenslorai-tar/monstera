@@ -36,6 +36,11 @@ import { LINE_WIDTH_PRESETS, STYLE_PRESETS } from './annotations/stylePresets.js
 import {
   COMMENT_STYLES_NO_WIDTH,
   PROPERTIES_ACTIONS,
+  PROPERTIES_OBJECT_COLOUR,
+  PROPERTIES_OBJECT_HEADING,
+  PROPERTIES_OBJECT_KIND,
+  PROPERTIES_OBJECT_NO_COLOUR,
+  PROPERTIES_OBJECT_NONE_HINT,
   PROPERTIES_AS_DEFAULT,
   PROPERTIES_AUTHOR,
   PROPERTIES_BLEND,
@@ -72,6 +77,8 @@ import {
 } from './messages/en.js';
 import { spacingBoundOf, spacingOf } from './textFormatting.js';
 import { NumberInput, TextSection, type TextRow } from './TextSection.js';
+import { kindWord } from './ObjectEditLayer.js';
+import { type ObjectColour, type ObjectPick, colourOf } from './objectEditing.js';
 import { pdfjsPageOf } from './pageNumbering.js';
 import { Button } from './primitives/Button.js';
 import { SegmentedControl, type SegmentedOption } from './primitives/SegmentedControl.js';
@@ -134,6 +141,14 @@ export interface PropertiesPanelProps {
    * the selected mark, the Comment shows it, so the label and the Comment never hold two numbers.
    */
   readonly reading?: LiveReading | undefined;
+  /**
+   * The object Edit object has selected on the page, and how its colour is changed (ADR-0264 Decision 8), or `undefined`
+   * when none is. The tool slot holds Edit object or the select tool, never both, so this and {@link selection} are
+   * never both set.
+   */
+  readonly object?: { readonly pick: ObjectPick; readonly onRecolour: (colour: ObjectColour) => void } | undefined;
+  /** Whether Edit object is the mode on the page, read from the tool slot the status line reads too. */
+  readonly objectMode?: boolean | undefined;
   /** The computer's and Monstera's fonts, which a text box's and a typewriter's picker offers (K2); `undefined` while read. */
   readonly fonts?: FontList;
 }
@@ -188,6 +203,8 @@ export function PropertiesPanel({
   context,
   measuring = false,
   reading,
+  object,
+  objectMode,
   fonts,
 }: PropertiesPanelProps): ReactElement {
   const { i18n } = useLingui();
@@ -205,6 +222,65 @@ export function PropertiesPanel({
   const fontSize = useSetting(settings, ANNOTATION_FONT_SIZE_SETTING);
   const textBoxLook = useSetting(settings, TEXT_BOX_LOOK_SETTING);
   const fontSizeId = useId();
+
+  if (selection === undefined && object !== undefined) {
+    const { pick } = object;
+    const colour = colourOf(pick.object);
+    const objectFoot = propertiesModel(registry, context);
+    return (
+      <section aria-label={i18n._(STYLE_PANEL_LABEL)} className="m-properties" data-properties-object="">
+        <header className="m-properties__head">
+          <h2 className="m-properties__title">{i18n._(PROPERTIES_OBJECT_HEADING)}</h2>
+          <p className="m-properties__meta" data-properties-object-kind={pick.object.kind}>
+            {i18n._(PROPERTIES_OBJECT_KIND)}: {i18n._(kindWord(pick.object.kind))}
+          </p>
+        </header>
+        {colour === undefined ? (
+          // SAID RATHER THAN HIDDEN: a picture or a group keeps its own colours in this version (ADR-0264), and a person
+          // looking for a colour row is told why rather than left to wonder.
+          <p className="m-properties__meta">{i18n._(PROPERTIES_OBJECT_NO_COLOUR)}</p>
+        ) : (
+          <ColourRow
+            auto={false}
+            current={hexFromColour([colour.r / 255, colour.g / 255, colour.b / 255])}
+            label={PROPERTIES_OBJECT_COLOUR}
+            offerAuto={false}
+            onPick={(picked) => {
+              const chosen = picked === undefined ? undefined : colourFromHex(picked);
+              if (chosen === undefined) return;
+              object.onRecolour({ r: Math.round(chosen[0] * 255), g: Math.round(chosen[1] * 255), b: Math.round(chosen[2] * 255) });
+            }}
+          />
+        )}
+        {objectFoot.length === 0 ? null : (
+          <div aria-label={i18n._(PROPERTIES_ACTIONS)} className="m-properties__foot" role="group">
+            {objectFoot.map((entry) => (
+              <Button
+                key={entry.command.id}
+                label={entry.command.title}
+                onClick={() => {
+                  run(entry.command);
+                }}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+    );
+  }
+
+  // EDIT OBJECT ON WITH NOTHING PICKED: the panel says what the mode on the page is for, as the status line does, rather
+  // than the next annotation's defaults, which nothing a press in this mode would draw.
+  if (selection === undefined && objectMode === true) {
+    return (
+      <section aria-label={i18n._(STYLE_PANEL_LABEL)} className="m-properties" data-properties-object-mode="">
+        <header className="m-properties__head">
+          <h2 className="m-properties__title">{i18n._(PROPERTIES_OBJECT_HEADING)}</h2>
+          <p className="m-properties__meta">{i18n._(PROPERTIES_OBJECT_NONE_HINT)}</p>
+        </header>
+      </section>
+    );
+  }
 
   if (selection === undefined) {
     return (

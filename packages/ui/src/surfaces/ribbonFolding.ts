@@ -228,6 +228,8 @@ function unfolded(groups: readonly GroupWidths[]): readonly GroupFold[] {
 export interface RibbonUnit<T> {
   readonly key: string;
   readonly menu: MessageKey | undefined;
+  /** What a named menu's face runs (ADR-0241): its members agree, which the registry holds. */
+  readonly menuRuns: 'last' | undefined;
   /**
    * `'small'` or `'icon'` where this unit is a COLUMN of small tools (ADR-0194): `entries` are the column's tools,
    * top to bottom, and the row measures and folds the column as one. `undefined` is a button, or a named menu.
@@ -246,6 +248,7 @@ export const STACK_ROWS = 3;
 interface UnitEntry {
   readonly secondary: boolean;
   readonly menu: MessageKey | undefined;
+  readonly menuRuns?: 'last' | undefined;
   /** Absent reads as large, so a fixture written before ADR-0194 is the same row. */
   readonly size?: 'large' | StackSize | undefined;
   readonly command: { readonly id: string };
@@ -273,7 +276,7 @@ function columnsOf(count: number): readonly number[] {
  * (ARCHITECTURE §7: a menu does not combine with `secondary`), so each is a button of its own.
  */
 export function ribbonUnits<T extends UnitEntry>(entries: readonly T[]): readonly RibbonUnit<T>[] {
-  interface Open { key: string; menu: MessageKey | undefined; stack: StackSize | undefined; entries: T[] }
+  interface Open { key: string; menu: MessageKey | undefined; menuRuns: 'last' | undefined; stack: StackSize | undefined; entries: T[] }
   /** A RUN of one small size, still whole: it becomes columns once the list is all read. */
   interface Run { run: StackSize; entries: T[] }
 
@@ -286,7 +289,7 @@ export function ribbonUnits<T extends UnitEntry>(entries: readonly T[]): readonl
       const stack = entry.size === 'small' || entry.size === 'icon' ? entry.size : undefined;
       if (entry.menu === undefined) {
         if (stack === undefined) {
-          items.push({ key: entry.command.id, menu: undefined, stack: undefined, entries: [entry] });
+          items.push({ key: entry.command.id, menu: undefined, menuRuns: undefined, stack: undefined, entries: [entry] });
           run = undefined;
         } else if (run?.run === stack) {
           run.entries.push(entry);
@@ -303,7 +306,7 @@ export function ribbonUnits<T extends UnitEntry>(entries: readonly T[]): readonl
         existing.entries.push(entry);
         continue;
       }
-      const unit: Open = { key: entry.command.id, menu: entry.menu, stack: undefined, entries: [entry] };
+      const unit: Open = { key: entry.command.id, menu: entry.menu, menuRuns: entry.menuRuns, stack: undefined, entries: [entry] };
       byMenu.set(entry.menu, unit);
       items.push(unit);
     }
@@ -318,7 +321,7 @@ export function ribbonUnits<T extends UnitEntry>(entries: readonly T[]): readonl
       return columnsOf(item.entries.length).map((count) => {
         const column = item.entries.slice(from, from + count);
         from += count;
-        return { key: column[0]?.command.id ?? '', menu: undefined, stack: item.run, entries: column };
+        return { key: column[0]?.command.id ?? '', menu: undefined, menuRuns: undefined, stack: item.run, entries: column };
       });
     });
 

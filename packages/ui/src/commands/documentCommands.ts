@@ -359,6 +359,7 @@ import { confirmDone, confirmWritten, type ConfirmWrittenDeps } from './confirmW
 import { countedAs } from '../inFlight.js';
 import type { ZoomDirection, ZoomMode } from '../zoom.js';
 import type { TextBlock } from '../textBlock.js';
+import { shownOf } from '../objectRead.js';
 
 /**
  * The three commands that act on the open document.
@@ -5131,12 +5132,7 @@ export async function readPageContentBoxes(
   const boxes: AnnotationRect[] = [];
   for (const object of content.value.items) {
     if (object.kind === 'text') continue;
-    // WHAT SHOWS where a clip narrows it, the engine's own box where nothing does.
-    boxes.push(
-      object.shown === undefined
-        ? { x0: object.left, y0: object.bottom, x1: object.right, y1: object.top }
-        : { x0: object.shown.left, y0: object.shown.bottom, x1: object.shown.right, y1: object.shown.top },
-    );
+    boxes.push(shownOf(object));
   }
   for (const mark of marks.value.items) {
     // A PICTURE A PERSON PLACED, on this page and drawn in a region: what the content walk cannot see.

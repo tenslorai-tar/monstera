@@ -477,6 +477,8 @@ export {
   type ArrangeNeighbour,
   arrangeNeighbourOf,
   type ListedObject,
+  MIN_OBJECT_SCALE,
+  MAX_OBJECT_SCALE,
   MAX_FIND_TEXT,
   replaceAllTextSchema,
   replaceTextAtSchema,
