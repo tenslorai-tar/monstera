@@ -6618,6 +6618,48 @@ export const arrangeNeighbourSchema = z.union([
 ]);
 export type ArrangeNeighbour = z.infer<typeof arrangeNeighbourSchema>;
 
+/** One object as `document.pageObjects` lists it, as far as an arrange asks: its place in the walk, its kind, its box. */
+export interface ListedObject {
+  readonly index: number;
+  readonly kind: 'unknown' | 'text' | 'path' | 'image' | 'shading' | 'form';
+  /** What shows of it: its box cut to its clip, where a clip narrows it. */
+  readonly box: { readonly left: number; readonly bottom: number; readonly right: number; readonly top: number };
+}
+
+/**
+ * THE ONE RULE for which object an arrange goes past (ADR-0264 Decision 3): the nearest object after the arranged one in
+ * PDFium's walk (forward) or before it (backward) whose box overlaps its box, so every press changes what is drawn over
+ * what. The renderer sends by it and the kernel check (`editObject.proof.mjs`) tries by it, so the two cannot disagree.
+ *
+ * `self` is a drawn object (its one index) or a text block (the indices its runs begin with, and its box): a text object
+ * whose centre lies in a block's box is part of that block and never its neighbour. An object of a kind no command can
+ * name (`unknown`) is passed over. `undefined` where nothing overlaps on that side: the step is not offered.
+ */
+export function arrangeNeighbourOf(
+  objects: readonly ListedObject[],
+  self: { readonly text: boolean; readonly indices: readonly number[]; readonly box: ListedObject['box'] },
+  to: 'forward' | 'backward',
+): ArrangeNeighbour | undefined {
+  const own = new Set(self.indices);
+  const first = Math.min(...self.indices);
+  const last = Math.max(...self.indices);
+  const overlaps = (box: ListedObject['box']): boolean =>
+    Math.min(box.right, self.box.right) > Math.max(box.left, self.box.left) && Math.min(box.top, self.box.top) > Math.max(box.bottom, self.box.bottom);
+  const inside = (box: ListedObject['box']): boolean => {
+    const x = (box.left + box.right) / 2;
+    const y = (box.bottom + box.top) / 2;
+    return x >= self.box.left && x <= self.box.right && y >= self.box.bottom && y <= self.box.top;
+  };
+  const ordered = to === 'forward' ? objects.filter((object) => object.index > last) : objects.filter((object) => object.index < first).reverse();
+  const found = ordered.find(
+    (object) => !own.has(object.index) && object.kind !== 'unknown' && !(self.text && object.kind === 'text' && inside(object.box)) && overlaps(object.box),
+  );
+  if (found === undefined) return undefined;
+  // ITS PLACE AMONG ITS KIND in the walk, which is how the writer finds it: a text object by PDFium's own number for it.
+  const before = objects.filter((object) => object.index < found.index && object.kind === found.kind).length;
+  return found.kind === 'text' ? { kind: 'text', object: before } : { kind: found.kind as (typeof DRAWN_OBJECT_KINDS)[number], ordinal: before };
+}
+
 /** The most blocks one edit may place (invariant L11): a person drags one, so this is an order over a real edit; bounded where the whole edit's worst encoding still fits the
  * 8 MiB file a PDFium command crosses in (`commands.test.ts`). */
 export const MAX_BLOCK_PLACES = 64;

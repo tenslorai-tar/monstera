@@ -475,6 +475,8 @@ export {
   type DrawnEdit,
   arrangeNeighbourSchema,
   type ArrangeNeighbour,
+  arrangeNeighbourOf,
+  type ListedObject,
   MAX_FIND_TEXT,
   replaceAllTextSchema,
   replaceTextAtSchema,

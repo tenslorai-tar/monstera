@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import {
+  type ListedObject,
   MAX_EDIT_RUNS,
   MAX_EDIT_TEXT,
+  arrangeNeighbourOf,
   blockEditOf,
   blocksOfEdit,
   commandSchema,
@@ -430,6 +432,28 @@ describe('which page is read again unpacked (ADR-0232)', () => {
     expect(editTextBlockSchema.safeParse({ kind: 'editTextBlock', ...wire, unpack: false }).success).toBe(false);
     expect(editTextOperatorsSchema.safeParse({ kind: 'editTextOperators', ...wire, unpack: true }).success).toBe(false);
     expect(editTextOperatorsSchema.safeParse({ kind: 'editTextOperators', ...wire }).success).toBe(true);
+  });
+
+  it('arrangeNeighbourOf: the nearest OVERLAPPING object on that side, by its place among its kind (ADR-0264)', () => {
+    const box = (left: number, bottom: number, right = left + 10, top = bottom + 10) => ({ left, bottom, right, top });
+    const page: ListedObject[] = [
+      { index: 0, kind: 'image', box: box(0, 0, 100, 100) },
+      { index: 1, kind: 'text', box: box(10, 10, 30, 20) },
+      { index: 2, kind: 'path', box: box(200, 200) },
+      { index: 3, kind: 'unknown', box: box(10, 10) },
+      { index: 4, kind: 'path', box: box(50, 50) },
+      { index: 5, kind: 'text', box: box(12, 12, 28, 18) },
+    ];
+    // THE PICTURE FORWARD passes over the far shape (no overlap) and the unknown, to the text at index 1 first.
+    expect(arrangeNeighbourOf(page, { text: false, indices: [0], box: page[0]?.box ?? box(0, 0) }, 'forward')).toStrictEqual({ kind: 'text', object: 0 });
+    // THE SHAPE AT 4 BACKWARD: the picture under it, the first overlapping one before it; its ordinal among pictures is 0.
+    expect(arrangeNeighbourOf(page, { text: false, indices: [4], box: box(50, 50) }, 'backward')).toStrictEqual({ kind: 'image', ordinal: 0 });
+    // A SHAPE BY ITS PLACE AMONG SHAPES: the one at 4 is the second shape.
+    expect(arrangeNeighbourOf(page, { text: false, indices: [0], box: box(45, 45, 60, 60) }, 'forward')).toStrictEqual({ kind: 'path', ordinal: 1 });
+    // A TEXT BLOCK of the runs at 1, whose box holds the glyphs at 5: those are its own, and forward there is nothing.
+    expect(arrangeNeighbourOf(page, { text: true, indices: [1], box: box(10, 10, 30, 20) }, 'forward')).toBeUndefined();
+    // CONTROL: the same box as a drawn object goes past that text, which is not its own.
+    expect(arrangeNeighbourOf(page, { text: false, indices: [1], box: box(10, 10, 30, 20) }, 'forward')).toStrictEqual({ kind: 'text', object: 1 });
   });
 
   it('a block ARRANGED is the operator writer’s alone: PDFium’s block edit refuses it at the boundary (ADR-0264)', () => {
