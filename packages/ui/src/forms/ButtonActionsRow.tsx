@@ -57,6 +57,7 @@ import {
   BUTTON_ACTION_SHOW,
   BUTTON_ACTION_SUBMIT_AS,
   BUTTON_ACTION_SUBMIT_NOTE,
+  BUTTON_ACTION_SUBMIT_WHOLE_NOTE,
   BUTTON_ACTION_SUBMIT_TO,
   BUTTON_ACTION_SUBMIT_TO_RULE,
   BUTTON_SUMMARY_SUBMIT,
@@ -573,7 +574,8 @@ function SubmitDetails({
           id={asId}
           onChange={(event) => {
             const format = SUBMIT_FORMATS.find((each) => each === event.target.value);
-            if (format !== undefined) onChange({ ...action, format });
+            // THE WHOLE DOCUMENT CARRIES EVERY FIELD, so choosing it lets go of any chosen (ADR-0263 Decision 1).
+            if (format !== undefined) onChange({ ...action, format, fields: format === 'pdf' ? null : action.fields });
           }}
           value={action.format}
         >
@@ -584,13 +586,17 @@ function SubmitDetails({
           ))}
         </select>
       </div>
-      <FieldsChoice
-        fields={action.fields}
-        known={known}
-        onChange={(fields) => {
-          onChange({ ...action, fields });
-        }}
-      />
+      {action.format === 'pdf' ? (
+        <p className="m-properties__meta">{i18n._(BUTTON_ACTION_SUBMIT_WHOLE_NOTE)}</p>
+      ) : (
+        <FieldsChoice
+          fields={action.fields}
+          known={known}
+          onChange={(fields) => {
+            onChange({ ...action, fields });
+          }}
+        />
+      )}
       <p className="m-properties__meta">{i18n._(BUTTON_ACTION_SUBMIT_NOTE)}</p>
     </>
   );

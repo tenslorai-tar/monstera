@@ -5638,11 +5638,23 @@ export const channels = {
         field: formFieldHandleSchema,
         trigger: fieldActionTriggerSchema,
         step: z.number().int().min(0).max(MAX_ACTION_CHAIN - 1),
+        /**
+         * The route the person chose in the question (ADR-0263 Decision 3): `post` for an `https:` address; for a
+         * `mailto:` one, `share` (the Share sheet, the data as a file) or `mail-app` (the data in the message). A route
+         * that does not fit the address `main` reads is `no-such-submit`, so a renderer cannot post to a mail address.
+         */
+        route: z.enum(['post', 'share', 'mail-app']),
       })
       .strict(),
     z.discriminatedUnion('kind', [
       /** Posted, and the server answered `2xx`. */
       z.object({ kind: z.literal('sent') }),
+      /** The Share sheet opened with the data, or the document, as a file; nothing is known of what the person did there. */
+      z.object({ kind: z.literal('shared') }),
+      /** No Share sheet on this platform (every one but Windows): nothing was offered. */
+      z.object({ kind: z.literal('share-unavailable') }),
+      /** A step before the sheet opened refused; nothing was shown. */
+      z.object({ kind: z.literal('share-failed') }),
       z.object({ kind: z.literal('stale') }),
       z.object({ kind: z.literal('no-such-submit') }),
       /** Not sent, or not taken: the guard's reason, `http-error` for a server that answered something else. */
@@ -5651,6 +5663,8 @@ export const channels = {
       z.object({ kind: z.literal('mail-opened') }),
       /** The data made the address too long to hand over, so the mail app opened without it (Decision 6's policy). */
       z.object({ kind: z.literal('mail-opened-without-data') }),
+      /** The whole document never fits in a `mailto:` address, so the mail app opened without it (ADR-0263 Decision 3). */
+      z.object({ kind: z.literal('mail-opened-without-document') }),
       z.object({ kind: z.literal('not-opened') }),
       /** A value XFDF cannot carry (`engine/exportFormData`'s code). */
       z.object({ kind: z.literal('unrepresentable') }),

@@ -84,6 +84,19 @@ resamples nothing; a copy of a moved page is the same pixels. What could still d
 rasterising a turned page with sub-pixel placement unlike the upright one, which `blinkWalk.mjs` reads as an untouched
 change if it shows.
 
+## Correction, 2026-10-23 (second) — no field look; a planned page turns from the model's rotation
+
+**Decision 6 was not built.** By the owner's rule of 2026-10-23 every speed item is measured on the current build
+before it is worked on, and a field's design change already met its targets: in `markLatencyWalk.mjs` (Border Red, 5
+runs) the page's pixels change 12 to 32 ms after the press and not again, and what changes later, to 184–251 ms, is
+the design layer's own elements. So no look is drawn ahead of a field's drawing.
+
+**And the planned rotation's base was wrong as Decision 1 first had it built** (the page's own `/Rotate` in the view):
+a rotate is a view-model command that writes no bytes in main (ADR-0032), so after one the view's bytes still say the
+rotation from before it. A planned page now turns from the view model's rotation at the VIEW's version, which the
+rotation reader keeps for the last few versions; the page's own only where the model never answered for it (45bd4554,
+with a rendered case red when the base is ignored).
+
 ## Proof
 
 A rendered case per category (rotate, move, delete, undo and redo of each, field design, Edit text commit) with a

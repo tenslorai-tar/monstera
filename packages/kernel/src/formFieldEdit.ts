@@ -439,6 +439,7 @@ function actionDictOf(document: PDFDocument, action: FieldAction): PDFDict {
         S: 'SubmitForm',
         F: document.context.obj({ FS: 'URL', F: PDFString.of(action.address) }),
         Flags: SUBMIT_FLAGS[action.format],
+        // NO `/Fields` FOR THE WHOLE DOCUMENT: the schema holds a whole-document submission to `null` fields (ADR-0263).
         ...(action.fields === null ? {} : { Fields: action.fields.map((name) => PDFHexString.fromText(name)) }),
       });
     case 'showHide':

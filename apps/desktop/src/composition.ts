@@ -299,7 +299,7 @@ import type { SecretStoreSurface } from './secretStore.js';
 import { type ChatHistory, noChatHistory } from './chatHistory.js';
 import { type SettingsSurface, createEphemeralSettings, createJsonFile } from './settingsFile.js';
 import { idleHost } from './idleRetire.js';
-import { type MemoryPressurePolicy, tellsThePerson, watchMemoryPressure } from './memoryPressure.js';
+import { type MemoryPressurePolicy, watchMemoryPressure } from './memoryPressure.js';
 import { type ShellFailureSink, engineHostEndingEvent } from './shellFailure.js';
 import type { ShellLog } from './shellLog.js';
 import type { CrashReports } from './crashReports.js';
@@ -316,6 +316,7 @@ import { createCannotStartNotice } from './componentNotice.js';
 import { componentStatuses } from './componentStatus.js';
 import { type ByteVerdict, rasterWithinLimit } from './rasterWithinLimit.js';
 import { readSpellingDictionary } from './spellingDictionaries.js';
+import { sentFromStaged } from './stagedUpload.js';
 import type { ShellDependencies, ShellWindow } from './main.js';
 import { openWebPage } from './webPages.js';
 import { createCloseGate } from './windowClose.js';
@@ -997,6 +998,10 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     crashReports = null,
     launchDocuments = [],
   } = composition;
+  // WHERE A DOCUMENT IS SENT FROM, a file at a time and each removed when its send ends: the cloud working folder, which
+  // the uploads already use, or the system's temporary one in a harness with none. ONE folder for DocuSign and a
+  // whole-document submission (ADR-0263).
+  const uploadsDirectory = cloudComposition?.workingDirectory ?? join(tmpdir(), 'monstera-docusign-unconfigured');
   // THE COMMAND LINE'S DOCUMENTS, held until the page asks: the first launch's now, a later launch's when it arrives.
   const launched = createLaunchDocuments(launchDocuments);
   const capabilities = new CapabilityRegistry();
@@ -1180,22 +1185,12 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
    * own account, so one doing work, or with work queued, is left running; the MuPDF host holds the documents' sessions
    * and is not asked. Logged, so a person's report says the application answered a low reading.
    */
-  // THE PERSON IS TOLD ONCE PER RUN (the owner's review of 0.1.16.0, R15), held HERE, in `main`, so a renderer renewed
-  // (ADR-0252) or reloaded (ADR-0253) does not tell again. Once per low SPELL was ADR-0253's grain, and the line has
-  // no band: a reading back at or over it for one tick ends the spell, so a computer whose available memory sits at
-  // the line starts a new spell, and was told again, at every crossing — ten crossings, ten notices
-  // (`compositionHost.test.ts`, run before this change). The owner's 8 GB computer told on every action; its readings
-  // were not taken, which is why the log line now carries the figure.
-  // AND ONLY ON A COMPUTER OF 8 GB OR LESS (ADR-0253's correction of 2026-10-21, R18): a larger one can pass the line
-  // briefly and come back, which is no reason to tell anyone. The idle hosts below stop on every computer.
-  let toldLow = false;
+  // NOBODY IS TOLD (ADR-0253's correction of 2026-10-23, the owner's decision): the answer is the idle hosts given back,
+  // on every computer, and the log line. The event that carried a notice is gone from the contract, so there is no
+  // `sendEvent` here to put back.
   const stopWatchingMemory = watchMemoryPressure(
     memoryPressure,
     async ({ available, total }) => {
-      if (!toldLow && tellsThePerson(memoryPressure, total)) {
-        toldLow = true;
-        sendEvent?.('app.memory-low', {});
-      }
       const [pdfium, compose] = await Promise.all([pdfiumHost?.retireIfIdle() ?? false, composeHost?.retireIfIdle() ?? false]);
       // THE FIGURE, so a person's report says what "low" was on their computer, not only that the line was crossed.
       failures({
@@ -1897,7 +1892,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       openInBrowser,
       // SENT FROM WHERE THE CLOUD UPLOADS ARE SENT FROM (`.uploads` under the working folder), each file removed when its
       // send ends; a harness with no cloud folder sends from the system's temporary one, as backups fall back to it.
-      workingDirectory: cloudComposition?.workingDirectory ?? join(tmpdir(), 'monstera-docusign-unconfigured'),
+      workingDirectory: uploadsDirectory,
     }),
     // THE EXTRACT, composed like every reader above it: resolve the session,
     // then hand it to whichever host is live. What differs is that it produces
@@ -2309,6 +2304,10 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       openLink: async (address) => (openLink === undefined ? false : openLink(address)),
       // A FORM SENT WHERE A BUTTON NAMES (ADR-0259 Decision 6), through the one guard a URL a document chose is reached by.
       postForm: (address, body, contentType) => postGuarded(address, body, contentType),
+      // THE WHOLE DOCUMENT (ADR-0263), sent from where the cloud uploads and DocuSign send from, each file removed when
+      // its send ends, and through the same guard.
+      postDocument: (address, staged, contentType) =>
+        sentFromStaged(staged, uploadsDirectory, (source) => postGuarded(address, source, contentType)),
       closeListening: () => {
         if (shellWindow === null) return false;
         closeGate.listening();

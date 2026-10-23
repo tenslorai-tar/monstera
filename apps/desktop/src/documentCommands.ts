@@ -242,7 +242,7 @@ import { type SignaturePictureSource, pickSignaturePicture } from './signaturePi
 import type { PersonalLibrary } from './personalLibrary.js';
 import { type PrintDestination, PrintFailedError } from './printing.js';
 import type { RecentPictures } from './recentPictures.js';
-import { type ShareDestination, ShareFailedError, shareTitle } from './sharing.js';
+import { type ShareDestination, ShareFailedError, type SharedFile, shareTitle } from './sharing.js';
 import { type OpenExternalEditor, isPdfPath } from './openExternalEditor.js';
 
 /**
@@ -6118,8 +6118,26 @@ export class DocumentCommands {
       return await this.#save.flush(docId, sessions);
     });
 
+    return await this.#offerToShare(fileName, { fileName, bytes });
+  }
+
+  /**
+   * Offers one file made FROM the document to the Windows Share sheet, its title the document's: a push button's
+   * submission of form data, shared rather than put in a message (ADR-0263 Decision 3). {@link email}'s sheet and
+   * answers; the file is the caller's, already encoded, and the document is not touched.
+   */
+  async shareFile(docId: DocId, file: SharedFile): Promise<EmailOutcome> {
+    const name = this.#documents.nameOf(docId);
+    if (name === undefined) throw new DocumentNotOpenError(docId, 'share');
+    if (this.#share === null) return { kind: 'unavailable' };
+    return await this.#offerToShare(name, file);
+  }
+
+  /** The sheet opened for `file` under the document's title, or a refusal before it opened said as `failed`. */
+  async #offerToShare(documentName: string, file: SharedFile): Promise<EmailOutcome> {
+    if (this.#share === null) return { kind: 'unavailable' };
     try {
-      await this.#share.offer({ title: shareTitle(fileName), files: [{ fileName, bytes }] });
+      await this.#share.offer({ title: shareTitle(documentName), files: [file] });
       return { kind: 'offered' };
     } catch (thrown) {
       if (thrown instanceof ShareFailedError) return { kind: 'failed' };

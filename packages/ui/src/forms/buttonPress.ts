@@ -11,6 +11,7 @@ import { askThenOpen } from '../commands/followLink.js';
 import { OPEN_BUTTON_FILE_DIALOG_ID, OPEN_BUTTON_FILE_RESULT } from '../dialogs/openButtonFile.js';
 import { type SubmitFallbackId, askThenSubmit } from './buttonSubmit.js';
 import { BUTTON_PRESS_UNREAD } from '../messages/en.js';
+import type { DialogReports } from '../registries/dialogs.js';
 import type { ShowToast } from '../toasts.js';
 import { ZOOM_STEPS, type ZoomMode } from '../zoom.js';
 
@@ -18,15 +19,23 @@ import { ZOOM_STEPS, type ZoomMode } from '../zoom.js';
 export interface ButtonPressDeps {
   readonly client: Pick<
     ContractClient,
-    'document.buttonActions' | 'document.openButtonLink' | 'document.submitButtonForm' | 'document.openButtonFile'
+    | 'document.buttonActions'
+    | 'document.openButtonLink'
+    | 'document.submitButtonForm'
+    | 'document.openButtonFile'
+    // A SUBMISSION'S COPY (ADR-0263): the address put on the clipboard by `main`.
+    | 'window.copyText'
   >;
   /**
    * Settles what opening a button's file answered, as any open is settled (`settleButtonFileOpen`): a new tab, the tab
    * already open brought forward, or the problem said. `refused` where the step was not there to open.
    */
   readonly settleFileOpen: (answer: Awaited<ReturnType<ContractClient['document.openButtonFile']>>) => unknown;
-  /** Opens a registered dialog and answers what it resolved: the question every address a document holds is asked. */
-  readonly ask: (id: string, props: unknown) => Promise<unknown>;
+  /**
+   * Opens a registered dialog and answers what it resolved: the question every address a document holds is asked.
+   * `onUpdate` hears what the dialog reports without closing (ADR-0094), a submission's Copy.
+   */
+  readonly ask: (id: string, props: unknown, onUpdate?: DialogReports) => Promise<unknown>;
   /** Sends a command naming one step; resolves with the version it produced, or `undefined` where it did not land. */
   readonly apply: (command: ButtonStepCommand) => Promise<DocVersion | undefined>;
   /** Shows a zero-based page, at a zoom where the action names one: every other way of going to a page's route. */
@@ -110,8 +119,8 @@ export async function pressButton(deps: ButtonPressDeps, docId: DocId, pressed: 
         // ASKED FIRST, naming where, how and what (ADR-0259 Decision 6); `main` sends what it reads at this step and
         // version, so the address and the data never come from here.
         if (each.action.kind === 'submit') {
-          await askThenSubmit(deps, each.action, () =>
-            deps.client['document.submitButtonForm']({ docId, version, field, trigger: pressed.trigger, step: each.step }),
+          await askThenSubmit(deps, each.action, (route) =>
+            deps.client['document.submitButtonForm']({ docId, version, field, trigger: pressed.trigger, step: each.step, route }),
           );
         }
         break;

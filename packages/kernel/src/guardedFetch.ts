@@ -341,18 +341,66 @@ export interface PostResponse {
   readonly statusCode: number | undefined;
 }
 
+/**
+ * A POST's body as a length and a read (ADR-0263 Decision 2): a form's data in hand, or a whole document read from the
+ * file it was staged into, a part at a time. The shape of `PdfSource`, which a staged document already is, so one
+ * guarded POST takes both and none of its callers holds a document whole.
+ */
+export interface PostBody {
+  readonly byteLength: number;
+  /** The bytes from `offset` up to `end`, exclusive: exactly `end - offset` of them, or a throw. */
+  readonly read: (offset: number, end: number) => Promise<Uint8Array>;
+}
+
+/** Bytes already in hand as a {@link PostBody}: a form's encoded data. */
+export function postBodyOf(bytes: Uint8Array): PostBody {
+  return { byteLength: bytes.byteLength, read: (offset, end) => Promise.resolve(bytes.subarray(offset, end)) };
+}
+
+/**
+ * The most of a body read into `main` at once: 1 MiB. POLICY, NOT A MEASUREMENT — small beside every budget `main`
+ * keeps, large enough that a 1.5 GB document is fifteen hundred writes rather than a million.
+ */
+export const POST_CHUNK_BYTES = 1024 * 1024;
+
+/** Where {@link writeInParts} writes: a request's own `write`, and a wait for the socket to take what it holds. */
+export interface PartSink {
+  /** Writes one part; `false` asks the writer to wait for {@link drained} before the next, as `Writable.write` does. */
+  readonly write: (part: Uint8Array) => boolean;
+  readonly drained: () => Promise<void>;
+}
+
+/**
+ * Writes `body` to `sink` in parts of at most {@link POST_CHUNK_BYTES}, in order, reading the next part only once the
+ * sink has taken the last, so `main` holds one part whatever the body's length. Answers how many parts were written.
+ */
+export async function writeInParts(body: PostBody, sink: PartSink): Promise<number> {
+  let parts = 0;
+  for (let offset = 0; offset < body.byteLength; offset += POST_CHUNK_BYTES) {
+    const end = Math.min(body.byteLength, offset + POST_CHUNK_BYTES);
+    const part = await body.read(offset, end);
+    if (part.byteLength !== end - offset) {
+      throw new Error(`the body's read answered ${String(part.byteLength)} bytes for ${String(end - offset)}`);
+    }
+    parts += 1;
+    if (!sink.write(part)) await sink.drained();
+  }
+  return parts;
+}
+
 /** How one POST is made. Injected for {@link HopTransport}'s reason; production is {@link httpsPost}. */
 export type PostTransport = (
   url: URL,
   lookup: LookupFunction,
   idleMs: number,
-  body: Uint8Array,
+  body: PostBody,
   contentType: string,
 ) => Promise<PostResponse>;
 
 /**
- * One POST through `node:https`, with no pooled agent, for {@link httpsHop}'s reason. The answer's body is drained
- * unread: a submission says whether the server took the data, and a page the server answered is not shown.
+ * One POST through `node:https`, with no pooled agent, for {@link httpsHop}'s reason. The body is written a part at a
+ * time ({@link writeInParts}) under its declared `content-length`. The answer's body is drained unread: a submission
+ * says whether the server took the data, and a page the server answered is not shown.
  */
 export const httpsPost: PostTransport = (url, lookup, idleMs, body, contentType) =>
   new Promise((resolve, reject) => {
@@ -372,14 +420,30 @@ export const httpsPost: PostTransport = (url, lookup, idleMs, body, contentType)
     request.setTimeout(idleMs, () => {
       request.destroy(new UrlFetchRefused('unreachable', `${url.host} sent nothing for ${String(idleMs)} ms`));
     });
-    request.on('error', (error) => {
+    const failed = (error: Error): void => {
       reject(
         error instanceof UrlFetchRefused
           ? error
           : new UrlFetchRefused('unreachable', `${url.host} could not be reached`, { cause: error }),
       );
-    });
-    request.end(body);
+    };
+    request.on('error', failed);
+    writeInParts(body, {
+      write: (part) => request.write(part),
+      // A REQUEST DESTROYED while waiting never drains, so its close ends the wait too; its error is reported above.
+      drained: () =>
+        new Promise((settle) => {
+          request.once('drain', settle);
+          request.once('close', settle);
+        }),
+    }).then(
+      () => {
+        if (!request.destroyed) request.end();
+      },
+      (thrown: unknown) => {
+        request.destroy(thrown instanceof Error ? thrown : new Error(String(thrown)));
+      },
+    );
   });
 
 /** What a guarded POST is built from: {@link GuardedFetchParts} with a POST's transport. */
@@ -403,7 +467,7 @@ export interface GuardedPostParts {
  */
 export async function postGuarded(
   raw: string,
-  body: Uint8Array,
+  body: PostBody,
   contentType: string,
   parts: GuardedPostParts = {},
 ): Promise<void> {

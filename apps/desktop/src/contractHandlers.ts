@@ -46,6 +46,7 @@ import {
   type SpellingLanguage,
   type StorePage,
   type WindowEditAction,
+  type SubmitDataFormat,
   type SubmitFormat,
   isFollowable,
   isSubmitAddress,
@@ -70,9 +71,12 @@ import {
   EngineFormDataExportFailed,
   EngineAnnotationDataExportFailed,
   type IdentityReader,
+  type PostBody,
   StaleTargetError,
+  type StagedImage,
   UrlFetchRefused,
   type WriteTargetVerdict,
+  postBodyOf,
   readDocumentRange,
   readTranslation,
   translationInstruction,
@@ -99,7 +103,9 @@ import {
   MissingSessionError,
   PageOutOfRangeError,
   PageTooLargeToPicture,
+  type EmailOutcome,
 } from './documentCommands.js';
+import { shareTitle } from './sharing.js';
 import type { Assistant } from './assistant.js';
 import { type AttachmentReaders, classifyAttachments, readAttachments, textSourcesIn } from './askAttachments.js';
 import type { ChatHistory } from './chatHistory.js';
@@ -447,7 +453,14 @@ export function createContractHandlers(deps: {
    * 6): ADR-0061's guard, `postGuarded`, in production. Throws `UrlFetchRefused` for every refusal and for an answer that
    * is not `2xx`.
    */
-  readonly postForm: (address: string, body: Uint8Array, contentType: string) => Promise<void>;
+  readonly postForm: (address: string, body: PostBody, contentType: string) => Promise<void>;
+  /**
+   * Posts the whole document, staged as Save would write it, to the address a push button's Submit names (ADR-0263
+   * Decision 2): moved into a private file and sent from it a part at a time through `postForm`'s guard, as
+   * `contentType`. Owns `staged`: placed or discarded whatever happens, and the file removed when the send ends.
+   * Throws `UrlFetchRefused` as `postForm` does. REQUIRED, so no composition can post a document by some other route.
+   */
+  readonly postDocument: (address: string, staged: StagedImage, contentType: string) => Promise<void>;
   /** Opens one of the Store application's pages (ADR-0107), answering whether this build can reach the Store. */
   readonly openStore: (page: StorePage) => Promise<boolean>;
   /**
@@ -633,7 +646,7 @@ export function createContractHandlers(deps: {
     'document.pageBarcodes': pageBarcodesHandler(deps.commands),
     'document.openBarcodeLink': openBarcodeLinkHandler(deps.commands, deps.openLink),
     'document.openButtonLink': openButtonLinkHandler(deps.commands, deps.openLink),
-    'document.submitButtonForm': submitButtonFormHandler(deps.commands, deps.openLink, deps.postForm),
+    'document.submitButtonForm': submitButtonFormHandler(deps.commands, deps.openLink, deps.postForm, deps.postDocument),
     'document.openButtonFile': openButtonFileHandler(deps),
     'document.saveBarcodeContact': saveBarcodeContactHandler(deps.commands, mintWritten),
     'document.accessibilityCheck': accessibilityCheckHandler(deps.commands),
@@ -1806,6 +1819,7 @@ const SUBMIT_MEDIA_TYPES: Readonly<Record<SubmitFormat, string>> = {
   fdf: 'application/vnd.fdf',
   xfdf: 'application/vnd.adobe.xfdf',
   html: 'application/x-www-form-urlencoded',
+  pdf: 'application/pdf',
 };
 
 /**
@@ -1820,16 +1834,39 @@ export function mailtoWithBody(address: string, text: string): string {
 }
 
 /**
- * A push button's Submit carried out (ADR-0259 Decision 6), read by main from the document by the step the renderer
- * named: {@link openButtonLinkHandler}'s rule, for a submission. The engine host encodes the fields the action names;
- * an `https:` address is posted to through `postForm` (ADR-0061's guard), and a `mailto:` one opens the mail app with
- * the data as the message, or without it where the address would pass {@link MAILTO_WITH_DATA_MAX}, so the person can
- * save the data and attach it themselves. Nothing is sent by mail: the mail app holds the message until they send it.
+ * The extension a submission's data is shared under, by encoding: its own, and `txt` for HTML form data, which is text
+ * and has no file type of its own (ADR-0263 Decision 3). The whole document is shared as itself.
+ */
+const SUBMIT_FILE_EXTENSIONS: Readonly<Record<SubmitDataFormat, string>> = { fdf: 'fdf', xfdf: 'xfdf', html: 'txt' };
+
+/** The file a submission's data is shared as: the document's name without its extension, then the encoding's. */
+export function submissionFileName(documentName: string, format: SubmitDataFormat): string {
+  return `${shareTitle(documentName)} form data.${SUBMIT_FILE_EXTENSIONS[format]}`;
+}
+
+/** What the Share sheet did, as a submission answers it. */
+function sharedAs(outcome: EmailOutcome): { readonly kind: 'shared' | 'share-unavailable' | 'share-failed' } {
+  return { kind: outcome.kind === 'offered' ? 'shared' : outcome.kind === 'unavailable' ? 'share-unavailable' : 'share-failed' };
+}
+
+/**
+ * A push button's Submit carried out (ADR-0259 Decision 6, ADR-0263), read by main from the document by the step the
+ * renderer named: {@link openButtonLinkHandler}'s rule, for a submission. The route is the person's choice in the
+ * question, and it must fit the address `main` reads: `post` for `https:`, `share` or `mail-app` for `mailto:`.
+ *
+ * - `post`: the fields the action names, encoded by the engine host, or the whole document staged, through the guard.
+ * - `share`: the same data as one file, or the whole document as itself, offered to the Share sheet, where the person
+ *   picks the mail app and addresses the message. The sheet takes no recipient, so the question shows the address.
+ * - `mail-app`: the data as the message, or no data where the address would pass {@link MAILTO_WITH_DATA_MAX}, so the
+ *   person can save it and attach it; the whole document never fits and is never put there.
+ *
+ * Nothing is sent by mail: the mail app holds the message until the person sends it.
  */
 function submitButtonFormHandler(
   commands: DocumentCommands,
   openLink: (address: string) => Promise<boolean>,
-  postForm: (address: string, body: Uint8Array, contentType: string) => Promise<void>,
+  postForm: (address: string, body: PostBody, contentType: string) => Promise<void>,
+  postDocument: (address: string, staged: StagedImage, contentType: string) => Promise<void>,
 ): ContractHandlers['document.submitButtonForm'] {
   return async ({
     docId,
@@ -1837,19 +1874,41 @@ function submitButtonFormHandler(
     field,
     trigger,
     step,
+    route,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.submitButtonForm']>>> => {
     try {
       const read = await commands.buttonActions(docId, field);
       if (read.version !== version) return ok({ kind: 'stale' } as const);
       const action = read.steps?.find((each) => each.trigger === trigger && each.step === step)?.action;
       if (action?.kind !== 'submit' || !isSubmitAddress(action.address)) return ok({ kind: 'no-such-submit' } as const);
+      // THE ROUTE FITS THE ADDRESS MAIN READ, never the other way: a renderer naming `post` for a mail address, or a
+      // mail route for a web one, has named a submission this document does not hold.
+      const mail = schemeOf(action.address) === 'mailto:';
+      if (mail === (route === 'post')) return ok({ kind: 'no-such-submit' } as const);
+      if (action.format === 'pdf') {
+        // THE WHOLE DOCUMENT SHARED AS ITSELF: ADR-0080's emailing, the save's bytes offered as the document's file.
+        if (route === 'share') return ok(sharedAs(await commands.email(docId)));
+        // IT NEVER FITS in a message's address, so the mail app opens without it (ADR-0263 Decision 3).
+        if (route === 'mail-app') {
+          return ok({ kind: (await openLink(action.address)) ? 'mail-opened-without-document' : 'not-opened' } as const);
+        }
+        // STAGED AS SAVE WOULD WRITE IT, in the document's lane and stamping nothing, and posted from a file a part at a
+        // time (ADR-0263 Decision 2): `main` holds one part, never the document.
+        await postDocument(action.address, await commands.currentStaged(docId), SUBMIT_MEDIA_TYPES.pdf);
+        return ok({ kind: 'sent' } as const);
+      }
       const data = await commands.submitFormData(docId, action.format, action.fields);
-      if (schemeOf(action.address) === 'mailto:') {
+      if (route === 'share') {
+        const name = commands.nameOf(docId);
+        if (name === undefined) return err({ code: 'document-not-open' });
+        return ok(sharedAs(await commands.shareFile(docId, { fileName: submissionFileName(name, action.format), bytes: data })));
+      }
+      if (route === 'mail-app') {
         const whole = mailtoWithBody(action.address, new TextDecoder().decode(data));
         if (whole.length <= MAILTO_WITH_DATA_MAX) return ok({ kind: (await openLink(whole)) ? 'mail-opened' : 'not-opened' } as const);
         return ok({ kind: (await openLink(action.address)) ? 'mail-opened-without-data' : 'not-opened' } as const);
       }
-      await postForm(action.address, data, SUBMIT_MEDIA_TYPES[action.format]);
+      await postForm(action.address, postBodyOf(data), SUBMIT_MEDIA_TYPES[action.format]);
       return ok({ kind: 'sent' } as const);
     } catch (thrown) {
       if (thrown instanceof UrlFetchRefused) return ok({ kind: 'refused', reason: thrown.reason } as const);

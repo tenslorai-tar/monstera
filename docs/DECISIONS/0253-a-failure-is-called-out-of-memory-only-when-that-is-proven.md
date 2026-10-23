@@ -118,3 +118,29 @@ still carries the figures; the person is not told.
 **The proof that replaces Decision 4's:** an 8 GiB total with a low reading sends `app.memory-low` once per run; a
 16 GiB total with the same readings sends none and still stops the idle hosts (CONTROL: the stop happens in both); a
 second crossing in the same run sends nothing.
+
+## Correction, 2026-10-23 — the notice is withdrawn; low memory is answered silently (the owner's decision)
+
+**What the owner decided, 2026-10-22.** *Remove the "low on memory" notice completely. Keep the silent protection: idle
+engine hosts still stop when memory is low, on every computer.* Two corrections narrowed the notice (once per run, then
+only at or under 8 GiB) and it still told a person something they could do little about, about a state Monstera had
+already answered by giving memory back.
+
+**Decision 4 now reads:** low memory before any failure is answered by `main` alone. On a reading below the line, each
+host that holds no session is asked to stop where it is idle, and the log line carries the figures — on every computer,
+whatever its total, as since R18 (0498955f). The person is told nothing.
+
+**Removed, not hidden:** the event `app.memory-low` leaves the contract, so `main` cannot push the notice and the
+renderer has nothing to subscribe to (B5: the withdrawn state is unrepresentable, not switched off). With it go the
+renderer's toast and its message, `toast.memory-low`, and the 8 GiB line (`tellsAtOrUnder`, `tellsThePerson`), which
+existed only to decide whom to tell. No setting ever governed the notice, so none is removed. Decisions 1 to 3 — the
+declared `out-of-memory` failure and the renderer reloaded with its documents — are unchanged.
+
+**Rejected:** keeping the event and never sending it (a channel with no sender is a seam inviting the notice back in a
+one-line diff); keeping the notice behind a setting (the owner asked for it gone, and a setting is a notice with an
+extra step).
+
+**The proof that replaces Decision 4's:** in `compositionHost.test.ts`, a low reading on an 8 GiB and a 16 GiB computer
+stops the idle PDFium host on both and pushes NO event of any kind after the reading; CONTROL: the stop happens in both,
+so a run that pushed nothing because it never read low cannot pass. The 8 GiB run is the one the withdrawn notice told,
+so restoring it turns the case red.

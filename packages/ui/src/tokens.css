@@ -260,6 +260,11 @@
   --glow-sm: 0 0 10px 1px color-mix(in srgb, var(--light-ring) 75%, transparent);
   --sel-glow: 0 0 0 1px color-mix(in srgb, var(--light-ring) 50%, transparent), 0 0 22px color-mix(in srgb, var(--light-ring) 55%, transparent);
   --shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  /* THE START SCREEN'S LOGO GLOW, and only that logo's (the owner, 2026-10-23): the website's `.brand-mark` rule, a thin
+     light edge and a soft green glow, `drop-shadow(0 0 .75px rgba(214,255,226,.75)) drop-shadow(0 0 9px
+     rgba(43,224,103,.35))` on a 34 px mark, scaled by 142 / 34 (about 4.2) to `--logo-hero`: 0.75 px becomes 3 px and
+     9 px becomes 38 px. The mark's own green, never the accent: it lights the artwork, not the ground (ADR-0140). */
+  --logo-hero-glow: drop-shadow(0 0 3px rgba(214, 255, 226, 0.75)) drop-shadow(0 0 38px rgba(43, 224, 103, 0.35));
   --vignette: rgba(0, 0, 0, 0.45);
   --scrim: rgba(0, 0, 0, 0.34);
   --blur-menu: 28px;
@@ -362,6 +367,9 @@
   --glow-sm: 0 0 8px color-mix(in srgb, var(--light-ring) 50%, transparent);
   --sel-glow: 0 0 0 1px color-mix(in srgb, var(--light-ring) 35%, transparent), 0 0 16px color-mix(in srgb, var(--light-ring) 35%, transparent);
   --shadow: 0 20px 50px rgba(20, 40, 30, 0.18);
+  /* Much fainter on a light ground, and no light edge, which a pale ground swallows: the glow alone at half the dark
+     theme's strength and a smaller reach, so the mark is lifted without a muddy halo. */
+  --logo-hero-glow: drop-shadow(0 0 24px rgba(43, 224, 103, 0.18));
   --vignette: rgba(20, 40, 30, 0.14);
   --scrim: rgba(0, 0, 0, 0.34);
   --blur-menu: 28px;
@@ -461,6 +469,7 @@
   --glow-sm: none;
   --sel-glow: none;
   --shadow: none;
+  --logo-hero-glow: none;
   --vignette: transparent;
   --scrim: rgba(0, 0, 0, 0.6);
   --blur-menu: 0px;
@@ -592,6 +601,9 @@
   --scrollbar-thumb-min: 32px;
   /* §10.3: the document panel's "six icon tabs (24 px tabs, 14 px icons)". */
   --control-panel-tab: 24px;
+  /* ONE HEIGHT for a field's property controls, a box, a number or a drop-down (cloud run 16, C6): 28 holds the chrome's
+     12 px text and its 4 px padding with room for a focus ring, where the three drew 24, 26 and 30 side by side. */
+  --control-field: 28px;
   /* v5 draws those tabs 34 wide at the same 24 tall; `DOCUMENT_PANEL_MIN_WIDTH` is derived from this. */
   --panel-tab-wide: 34px;
   /* The brand artwork's heights, which `assets/brand/README.md` names beside ADR-0002: *"the start-screen hero is 84 px

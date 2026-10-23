@@ -24,18 +24,8 @@ import { freemem, totalmem } from 'node:os';
 export interface MemoryPressurePolicy {
   readonly intervalMs: number;
   readonly belowFraction: number;
-  /**
-   * The largest total, in bytes, of a computer whose person is TOLD memory is low (ADR-0253's correction of 2026-10-21,
-   * the owner's R18). Over it the readings are still taken and the idle hosts still stop; only the notice is withheld.
-   */
-  readonly tellsAtOrUnder: number;
   /** Available and total physical memory in bytes, or `null` where they cannot be read. */
   readonly read: () => { readonly available: number; readonly total: number } | null;
-}
-
-/** Whether a computer of this total is told that memory is low: the one place the line is applied. */
-export function tellsThePerson(policy: MemoryPressurePolicy, total: number): boolean {
-  return total <= policy.tellsAtOrUnder;
 }
 
 /**
@@ -43,14 +33,12 @@ export function tellsThePerson(policy: MemoryPressurePolicy, total: number): boo
  * 400 MB on the owner's 4 GB low-end machine, and the memory walk is where it is read against the application's own
  * figures.
  *
- * TOLD AT OR UNDER 8 GiB of Windows' own total, the owner's 4 GB and 8 GB computers: `totalmem()` is the usable physical
- * memory, never more than is installed, so an 8 GB computer cannot report over it. Read 2026-10-21 on a 12 GiB
- * development machine: 12,761,452,544 bytes, 11.885 GiB, 123 MiB reserved (ADR-0253's correction of that date).
+ * Nobody is told (ADR-0253's correction of 2026-10-23): the answer is the hosts given back and the log line, on every
+ * computer whatever its total.
  */
 export const MEMORY_PRESSURE: MemoryPressurePolicy = {
   intervalMs: 5_000,
   belowFraction: 0.1,
-  tellsAtOrUnder: 8 * 1024 ** 3,
   read: () => ({ available: freemem(), total: totalmem() }),
 };
 
@@ -63,9 +51,8 @@ export interface LowReading {
 /**
  * Starts the readings, and answers how to stop them. The timer is unref'd.
  *
- * `onLow` is called once per LOW SPELL — each time a reading falls below the line after one at or above it — and that is
- * the right grain for giving memory back, and the wrong one for telling a person: a computer sitting at the line crosses
- * it again and again (see `composition.ts`, which tells once per run).
+ * `onLow` is called once per LOW SPELL — each time a reading falls below the line after one at or above it — which is
+ * the grain for giving memory back: a host stopped at the first reading has nothing more to give.
  */
 export function watchMemoryPressure(
   policy: MemoryPressurePolicy,

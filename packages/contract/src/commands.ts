@@ -5713,13 +5713,15 @@ export const actionFieldsSchema = z.array(fieldNameSchema).min(1).max(MAX_ACTION
 
 /**
  * The encodings a submission is sent in, by `/SubmitForm`'s `/Flags` (ISO 32000-1, table 237): FDF with no format bit,
- * XFDF (bit 6) and HTML form data (bit 3). THE WHOLE DOCUMENT (bit 9) IS NOT ONE YET: sending it means streaming the
- * staged document into the request, since the document is never read into `main` (ADR-0165), and that route is not
- * built; a document's own whole-document submission is kept and never run (ADR-0259's correction of 2026-10-22).
+ * XFDF (bit 6), HTML form data (bit 3) and THE WHOLE DOCUMENT (bit 9, `SubmitPDF`), which is staged as Save would write
+ * it and posted from a file a part at a time, never read into `main` (ADR-0263, amending ADR-0259's correction of
+ * 2026-10-22).
  */
-export const SUBMIT_FORMATS = ['fdf', 'xfdf', 'html'] as const;
+export const SUBMIT_FORMATS = ['fdf', 'xfdf', 'html', 'pdf'] as const;
 /** One of {@link SUBMIT_FORMATS}. */
 export type SubmitFormat = (typeof SUBMIT_FORMATS)[number];
+/** The encodings that carry the form's fields, which a submission may choose among; the whole document carries them all. */
+export type SubmitDataFormat = Exclude<SubmitFormat, 'pdf'>;
 
 /** Whether a form may be sent to an address: `https:` posted through the guard, or `mailto:` handed to the mail app. */
 export function isSubmitAddress(address: string): boolean {
@@ -5837,10 +5839,17 @@ export const fieldActionSchema = z.discriminatedUnion('kind', [
         .max(MAX_LINK_URI)
         .refine(isSubmitAddress, { message: 'a form is sent only to an https: or mailto: address' }),
       format: z.enum(SUBMIT_FORMATS),
-      /** The fields sent, or every field where `null`; never the exclude form, which this build keeps rather than writes. */
+      /**
+       * The fields sent, or every field where `null`; never the exclude form, which this build keeps rather than writes.
+       * ALWAYS `null` for the whole document: the standard ignores the field list when bit 9 is set, so a list beside it
+       * would be a choice nothing honours (ADR-0263 Decision 1).
+       */
       fields: actionFieldsSchema.nullable(),
     })
-    .strict(),
+    .strict()
+    .refine((action) => action.format !== 'pdf' || action.fields === null, {
+      message: 'a submission of the whole document names no fields',
+    }),
   z
     .object({
       /**

@@ -20,7 +20,6 @@ import type { ConverterExecutablePath } from './containedProgram.js';
 import type { BakedAppInfo as AppInfo } from './contractHandlers.js';
 import type { ConverterPlatform } from './converterSession.js';
 import type { ImageRead } from './documentCommands.js';
-import { MEMORY_PRESSURE } from './memoryPressure.js';
 import {
   FAKE_CONTAINER,
   FAKE_CREATED,
@@ -1607,7 +1606,7 @@ describe('the composition root, with BOTH engine hosts', () => {
     expect(spy(second.harness.calls, 'host.createSuspended')).toBe(2);
   });
 
-  it('LOW MEMORY stops the idle PDFium host at once, leaves the MuPDF host and the document, and says so (item 13e)', async () => {
+  it('LOW MEMORY stops the idle PDFium host at once, leaves the MuPDF host and the document, logs it and tells the person nothing (item 13e)', async () => {
     const mupdf = platformAnswering(serialisingEngine());
     const second = platformAnswering(pdfiumPeer([]).peer);
     let available = 90;
@@ -1615,7 +1614,8 @@ describe('the composition root, with BOTH engine hosts', () => {
     const written = vi.spyOn(process.stderr, 'write');
     const logged = (): string[] =>
       written.mock.calls.map(([line]) => String(line)).filter((line) => line.startsWith('MONSTERA_SHELL_FAILURE memory-low'));
-    // WHAT THE PERSON IS TOLD (ADR-0253): every event main pushes, so a notice per reading and none at all both show.
+    // WHAT THE PERSON IS TOLD: every event main pushes, of any name, so a notice restored under any event would show
+    // (ADR-0253's correction of 2026-10-23 withdrew the one there was).
     const pushed: string[] = [];
     const { handlers } = createShellDependencies({
       ...harnessSurfaces('the composition-host test'),
@@ -1623,7 +1623,7 @@ describe('the composition root, with BOTH engine hosts', () => {
       pickDocument: () => Promise.resolve(aDocument('low.pdf')),
       enginePlatform: mupdf.platform,
       pdfiumPlatform: second.platform,
-      memoryPressure: { intervalMs: 20, belowFraction: 0.1, tellsAtOrUnder: MEMORY_PRESSURE.tellsAtOrUnder, read: () => ({ available: available * MIB, total: 100 * MIB }) },
+      memoryPressure: { intervalMs: 20, belowFraction: 0.1, read: () => ({ available: available * MIB, total: 100 * MIB }) },
       sendEvent: (event) => {
         pushed.push(event);
       },
@@ -1638,11 +1638,11 @@ describe('the composition root, with BOTH engine hosts', () => {
       });
     const first = await edit(opened.value.version);
     if (!first.ok) throw new Error(JSON.stringify(first));
-    // CONTROL: readings above the line stop nothing, and tell the person nothing.
+    // CONTROL: readings above the line stop nothing.
     await new Promise((resolve) => setTimeout(resolve, 200));
     expect(spy(second.harness.calls, 'host.terminate')).toBe(0);
-    expect(pushed.filter((event) => event === 'app.memory-low')).toStrictEqual([]);
 
+    const beforeLow = pushed.length;
     available = 5;
     await vi.waitFor(() => {
       expect(spy(second.harness.calls, 'host.terminate')).toBe(1);
@@ -1654,16 +1654,16 @@ describe('the composition root, with BOTH engine hosts', () => {
         'MONSTERA_SHELL_FAILURE memory-low: available memory fell below 10% (5 of 100 MiB available): PDFium host stopped, compose host kept\n',
       ]);
     });
-    // ONE NOTICE FOR THE SPELL, though the readings stayed low for several intervals since.
+    // NOTHING PUSHED, though the readings stayed low for several intervals since: the stop above is the whole answer.
     await new Promise((resolve) => setTimeout(resolve, 200));
-    expect(pushed.filter((event) => event === 'app.memory-low')).toStrictEqual(['app.memory-low']);
+    expect(pushed.slice(beforeLow)).toStrictEqual([]);
     // THE DOCUMENT IS AS IT WAS: the next edit lands on the version the first one made.
     const next = await edit(first.value.version);
     expect(next.ok, JSON.stringify(next)).toBe(true);
     written.mockRestore();
   });
 
-  it('LOW MEMORY CROSSED AGAIN AND AGAIN, with actions and a renderer renewal between, tells the person ONCE per run (R15)', async () => {
+  it('LOW MEMORY CROSSED AGAIN AND AGAIN, with actions and a renderer renewal between, is logged per spell and tells the person nothing', async () => {
     const mupdf = platformAnswering(serialisingEngine());
     const second = platformAnswering(pdfiumPeer([]).peer);
     let available = 90;
@@ -1677,7 +1677,7 @@ describe('the composition root, with BOTH engine hosts', () => {
       pickDocument: () => Promise.resolve(aDocument('low.pdf')),
       enginePlatform: mupdf.platform,
       pdfiumPlatform: second.platform,
-      memoryPressure: { intervalMs: 20, belowFraction: 0.1, tellsAtOrUnder: MEMORY_PRESSURE.tellsAtOrUnder, read: () => ({ available: available * MIB, total: 100 * MIB }) },
+      memoryPressure: { intervalMs: 20, belowFraction: 0.1, read: () => ({ available: available * MIB, total: 100 * MIB }) },
       sendEvent: (event) => {
         pushed.push(event);
       },
@@ -1686,6 +1686,7 @@ describe('the composition root, with BOTH engine hosts', () => {
     if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
     const { docId } = opened.value;
     let version = opened.value.version;
+    const beforeLow = pushed.length;
     // THE OWNER'S 8 GB COMPUTER FORCED: the reading falls under the line and climbs back over it ten times, an edit
     // between each, and the renderer's memory released (the renewal's own call, ADR-0252) halfway through.
     for (let crossing = 1; crossing <= 10; crossing += 1) {
@@ -1703,13 +1704,13 @@ describe('the composition root, with BOTH engine hosts', () => {
       available = 90;
       await new Promise((resolve) => setTimeout(resolve, 60));
     }
-    // TEN SPELLS, each answered by giving memory back and logged with its figure; and ONE notice for the whole run.
+    // TEN SPELLS, each answered by giving memory back and logged with its figure; and nothing pushed to the person.
     expect(lows()).toBe(10);
-    expect(pushed.filter((event) => event === 'app.memory-low')).toStrictEqual(['app.memory-low']);
+    expect(pushed.slice(beforeLow)).toStrictEqual([]);
     written.mockRestore();
   });
 
-  it('LOW MEMORY tells the person on an 8 GiB computer and NOT on a 16 GiB one, and stops the idle host on both (R18)', async () => {
+  it('LOW MEMORY tells the person nothing on an 8 GiB computer or a 16 GiB one, and stops the idle host on both (ADR-0253, 2026-10-23)', async () => {
     const GIB = 1024 * MIB;
     const told: Record<string, string[]> = {};
     for (const total of [8 * GIB, 16 * GIB]) {
@@ -1725,7 +1726,7 @@ describe('the composition root, with BOTH engine hosts', () => {
         pickDocument: () => Promise.resolve(aDocument('low.pdf')),
         enginePlatform: mupdf.platform,
         pdfiumPlatform: second.platform,
-        memoryPressure: { intervalMs: 20, belowFraction: 0.1, tellsAtOrUnder: MEMORY_PRESSURE.tellsAtOrUnder, read: () => ({ available, total }) },
+        memoryPressure: { intervalMs: 20, belowFraction: 0.1, read: () => ({ available, total }) },
         sendEvent: (event) => {
           pushed.push(event);
         },
@@ -1737,9 +1738,11 @@ describe('the composition root, with BOTH engine hosts', () => {
         command: { kind: 'replaceTextObject', page: 0, ...replacementFieldsOf([{ index: 2, text: 'hi' }]), version: opened.value.version },
       });
       if (!edited.ok) throw new Error(JSON.stringify(edited));
+      const beforeLow = pushed.length;
       available = 0.05 * total;
-      // CONTROL: THE HOST STOPS ON EVERY COMPUTER — the silent part is the same on both, so a run that told nothing
-      // because it never read low memory cannot pass for one that read it and withheld the notice.
+      // CONTROL: THE HOST STOPS ON EVERY COMPUTER, so a run that told nothing because it never read low memory cannot
+      // pass for one that read it and told nothing. The 8 GiB run is the one the withdrawn notice told, so restoring the
+      // notice, under any event name, turns this case red there.
       await vi.waitFor(() => {
         expect(spy(second.harness.calls, 'host.terminate'), name).toBe(1);
       });
@@ -1748,28 +1751,9 @@ describe('the composition root, with BOTH engine hosts', () => {
       await new Promise((resolve) => setTimeout(resolve, 60));
       available = 0.05 * total;
       await new Promise((resolve) => setTimeout(resolve, 200));
-      told[name] = pushed.filter((event) => event === 'app.memory-low');
+      told[name] = pushed.slice(beforeLow);
     }
-    expect(told).toStrictEqual({ '8 GiB': ['app.memory-low'], '16 GiB': [] });
-  });
-
-  it('CONTROL: a FRESH run that is low is told again — once per run, not once for ever (R15)', async () => {
-    for (let run = 0; run < 2; run += 1) {
-      const pushed: string[] = [];
-      createShellDependencies({
-        ...harnessSurfaces('the composition-host test'),
-        appInfo,
-        pickDocument: () => Promise.resolve(aDocument('low.pdf')),
-        enginePlatform: platformAnswering(serialisingEngine()).platform,
-        memoryPressure: { intervalMs: 20, belowFraction: 0.1, tellsAtOrUnder: MEMORY_PRESSURE.tellsAtOrUnder, read: () => ({ available: 5 * MIB, total: 100 * MIB }) },
-        sendEvent: (event) => {
-          pushed.push(event);
-        },
-      });
-      await vi.waitFor(() => {
-        expect(pushed.filter((event) => event === 'app.memory-low'), `run ${String(run)}`).toStrictEqual(['app.memory-low']);
-      });
-    }
+    expect(told).toStrictEqual({ '8 GiB': [], '16 GiB': [] });
   });
 
   it('LOW MEMORY while the PDFium host is working leaves it running, and says it was kept (item 13e)', async () => {
@@ -1795,7 +1779,7 @@ describe('the composition root, with BOTH engine hosts', () => {
       pickDocument: () => Promise.resolve(aDocument('busy.pdf')),
       enginePlatform: mupdf.platform,
       pdfiumPlatform: second.platform,
-      memoryPressure: { intervalMs: 20, belowFraction: 0.1, tellsAtOrUnder: MEMORY_PRESSURE.tellsAtOrUnder, read: () => ({ available: available * MIB, total: 100 * MIB }) },
+      memoryPressure: { intervalMs: 20, belowFraction: 0.1, read: () => ({ available: available * MIB, total: 100 * MIB }) },
     });
     const opened = await handlers['document.open']({});
     if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');

@@ -1301,6 +1301,9 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
       props: { address: 'https://forms.example.org/apply', format: 'html', fields: ['applicant.name', 'applicant.city'], mail: false },
     },
     { state: 'mail', props: { address: 'mailto:forms@example.org', format: 'fdf', fields: null, mail: true } },
+    // THE WHOLE DOCUMENT (ADR-0263), to a web address and to a mail one: no field list, and the mail one's two routes.
+    { state: 'whole', props: { address: 'https://forms.example.org/apply', format: 'pdf', fields: null, mail: false } },
+    { state: 'mail-whole', props: { address: 'mailto:forms@example.org', format: 'pdf', fields: null, mail: true } },
   ],
   'dialog.open-button-file': [{ state: 'named', props: { file: 'Applicant guide.pdf' } }],
 };

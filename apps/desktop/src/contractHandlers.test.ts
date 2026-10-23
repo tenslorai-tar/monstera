@@ -31,6 +31,7 @@ import {
   ENGINE_BARCODES_MAX,
   EditRefusedError,
   type IdentityReader,
+  type PostBody,
   StaleTargetError,
   type StagedImage,
   TextNotWritableError,
@@ -59,6 +60,7 @@ import {
   type PickDocuments,
   createContractHandlers,
   mailtoWithBody,
+  submissionFileName,
 } from './contractHandlers.js';
 import type { KnownRoot } from './displayLocation.js';
 import { NO_RECENT_PICTURES, createRecentPictures } from './recentPictures.js';
@@ -67,7 +69,7 @@ import { unusedLibrarySurface } from './personalLibrary.js';
 import { NO_REVIEW_PROMPT, createEngagement, reviewPrompt } from './engagement.js';
 import { NO_MEMORY_RELEASE } from './memoryRelease.js';
 import { NO_RENDERER_ENDING } from './rendererEnding.js';
-import { type DocumentCommands, type ImageRead, MissingSessionError } from './documentCommands.js';
+import { type DocumentCommands, type EmailOutcome, type ImageRead, MissingSessionError } from './documentCommands.js';
 import type { ScannedSignaturePicture } from './signaturePicture.js';
 import { type LaunchDocuments, createLaunchDocuments } from './launchDocuments.js';
 import { type RecentFiles, createRecentFiles } from './recentFiles.js';
@@ -181,7 +183,9 @@ function harness(
     /** The compose host's font list, for the picker's cases; no host otherwise. */
     readonly fontFamilies?: (() => Promise<ListedFontFamilies>) | null;
     /** What a form's POST meets (ADR-0259), for the submit's cases; a server that takes it otherwise. */
-    readonly postForm?: (address: string, body: Uint8Array, contentType: string) => Promise<void>;
+    readonly postForm?: (address: string, body: PostBody, contentType: string) => Promise<void>;
+    /** What a whole document's POST meets (ADR-0263); a server that takes it otherwise. */
+    readonly postDocument?: (address: string, staged: StagedImage, contentType: string) => Promise<void>;
   } = {},
 ) {
   const capabilities = new CapabilityRegistry();
@@ -200,6 +204,8 @@ function harness(
   const linksOpened: string[] = [];
   // EVERY POST A SUBMIT MADE, with what it carried, for `linksOpened`'s reason.
   const formsPosted: { readonly address: string; readonly body: string; readonly contentType: string }[] = [];
+  // EVERY WHOLE DOCUMENT A SUBMIT POSTED (ADR-0263): where, how long, as what.
+  const documentsPosted: { readonly address: string; readonly byteLength: number; readonly contentType: string }[] = [];
   const settings = createEphemeralSettings();
   const secrets = createEphemeralSecrets();
   // RETURNED, like `settings`, so a case can read what the handlers recorded
@@ -288,9 +294,15 @@ function harness(
       linksOpened.push(address);
       return Promise.resolve(true);
     },
-    postForm: (address, body, contentType) => {
-      formsPosted.push({ address, body: new TextDecoder().decode(body), contentType });
-      return overrides.postForm === undefined ? Promise.resolve() : overrides.postForm(address, body, contentType);
+    // THE BODY READ THROUGH ITS OWN `read`, as the transport reads it, so what is recorded is what a socket would get.
+    postForm: async (address, body, contentType) => {
+      formsPosted.push({ address, body: new TextDecoder().decode(await body.read(0, body.byteLength)), contentType });
+      if (overrides.postForm !== undefined) await overrides.postForm(address, body, contentType);
+    },
+    postDocument: async (address, staged, contentType) => {
+      documentsPosted.push({ address, byteLength: staged.byteLength, contentType });
+      if (overrides.postDocument !== undefined) await overrides.postDocument(address, staged, contentType);
+      else await staged.discard();
     },
     openStore: () => Promise.resolve(false),
     closeListening: () => false,
@@ -338,6 +350,7 @@ function harness(
     webPages,
     linksOpened,
     formsPosted,
+    documentsPosted,
   };
 }
 
@@ -848,13 +861,23 @@ describe('document.submitButtonForm (ADR-0259)', () => {
     return { commands, encoded };
   }
   const field = { page: 0, index: 3, name: 'Send' };
-  const request: { docId: DocId; version: DocVersion; field: typeof field; trigger: FieldActionTrigger; step: number } = {
+  const request: {
+    docId: DocId;
+    version: DocVersion;
+    field: typeof field;
+    trigger: FieldActionTrigger;
+    step: number;
+    route: 'post' | 'share' | 'mail-app';
+  } = {
+    route: 'post',
     docId: A_DOC,
     version: asDocVersion(4),
     field,
     trigger: 'up',
     step: 0,
   };
+  /** The same press, routed to the mail app, for a `mailto:` address. */
+  const mailApp = { ...request, route: 'mail-app' as const };
   const submit = (address: string, format: 'fdf' | 'xfdf' | 'html' = 'html'): readonly ButtonStep[] => [
     { trigger: 'up', step: 0, action: { kind: 'submit', address, format, fields: ['applicant'] } },
   ];
@@ -889,7 +912,7 @@ describe('document.submitButtonForm (ADR-0259)', () => {
   it('opens the mail app with the data as the message, and NEVER posts to a mailto: address', async () => {
     const { commands } = submitCommands(submit('mailto:forms@example.org?subject=Application', 'xfdf'), '<xfdf/>');
     const { handlers, formsPosted, linksOpened } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
-    expect(await handlers['document.submitButtonForm'](request)).toStrictEqual({ ok: true, value: { kind: 'mail-opened' } });
+    expect(await handlers['document.submitButtonForm'](mailApp)).toStrictEqual({ ok: true, value: { kind: 'mail-opened' } });
     expect(linksOpened).toStrictEqual(['mailto:forms@example.org?subject=Application&body=%3Cxfdf%2F%3E']);
     expect(formsPosted).toStrictEqual([]);
   });
@@ -899,11 +922,127 @@ describe('document.submitButtonForm (ADR-0259)', () => {
     const fits = 'x'.repeat(MAILTO_WITH_DATA_MAX - mailtoWithBody(address, '').length);
     expect(mailtoWithBody(address, fits)).toHaveLength(MAILTO_WITH_DATA_MAX);
     const under = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands: submitCommands(submit(address, 'fdf'), fits).commands });
-    expect(await under.handlers['document.submitButtonForm'](request)).toStrictEqual({ ok: true, value: { kind: 'mail-opened' } });
+    expect(await under.handlers['document.submitButtonForm'](mailApp)).toStrictEqual({ ok: true, value: { kind: 'mail-opened' } });
     expect(under.linksOpened).toStrictEqual([mailtoWithBody(address, fits)]);
     const over = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands: submitCommands(submit(address, 'fdf'), `${fits}x`).commands });
-    expect(await over.handlers['document.submitButtonForm'](request)).toStrictEqual({ ok: true, value: { kind: 'mail-opened-without-data' } });
+    expect(await over.handlers['document.submitButtonForm'](mailApp)).toStrictEqual({ ok: true, value: { kind: 'mail-opened-without-data' } });
     expect(over.linksOpened).toStrictEqual([address]);
+  });
+
+  describe('the Share sheet route (ADR-0263 Decision 3)', () => {
+    /** {@link submitCommands} with a document name and a sheet that answers `outcome`, recording each file offered. */
+    function sharing(steps: readonly ButtonStep[], outcome: EmailOutcome, data = '<xfdf/>') {
+      const base = submitCommands(steps, data);
+      const offered: { fileName: string; text: string }[] = [];
+      const emailed: string[] = [];
+      const commands = Object.assign(base.commands, {
+        nameOf: () => 'Application.pdf',
+        shareFile: (_docId: DocId, file: { fileName: string; bytes: Uint8Array }) => {
+          offered.push({ fileName: file.fileName, text: new TextDecoder().decode(file.bytes) });
+          return Promise.resolve(outcome);
+        },
+        email: (docId: DocId) => {
+          emailed.push(docId);
+          return Promise.resolve(outcome);
+        },
+      });
+      return { commands, encoded: base.encoded, offered, emailed };
+    }
+    const shareRoute = { ...request, route: 'share' as const };
+
+    it('offers the encoded data as ONE FILE named for the document, and opens no mail link and posts nothing', async () => {
+      const { commands, encoded, offered } = sharing(submit('mailto:forms@example.org', 'xfdf'), { kind: 'offered' });
+      const { handlers, formsPosted, linksOpened } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+      expect(await handlers['document.submitButtonForm'](shareRoute)).toStrictEqual({ ok: true, value: { kind: 'shared' } });
+      expect(encoded).toStrictEqual([{ format: 'xfdf', fields: ['applicant'] }]);
+      expect(offered).toStrictEqual([{ fileName: 'Application form data.xfdf', text: '<xfdf/>' }]);
+      expect(linksOpened).toStrictEqual([]);
+      expect(formsPosted).toStrictEqual([]);
+      expect(submissionFileName('Application.pdf', 'html')).toBe('Application form data.txt');
+    });
+
+    it('shares the WHOLE DOCUMENT as itself, through emailing’s own route', async () => {
+      const whole: readonly ButtonStep[] = [
+        { trigger: 'up', step: 0, action: { kind: 'submit', address: 'mailto:forms@example.org', format: 'pdf', fields: null } },
+      ];
+      const { commands, encoded, emailed, offered } = sharing(whole, { kind: 'offered' });
+      const { handlers } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+      expect(await handlers['document.submitButtonForm'](shareRoute)).toStrictEqual({ ok: true, value: { kind: 'shared' } });
+      expect(emailed).toStrictEqual([A_DOC]);
+      expect(offered).toStrictEqual([]);
+      expect(encoded).toStrictEqual([]);
+    });
+
+    it('CONTROL: with no Share sheet nothing is offered and the answer says so; a refusing sheet says that', async () => {
+      for (const [outcome, answer] of [
+        [{ kind: 'unavailable' }, 'share-unavailable'],
+        [{ kind: 'failed' }, 'share-failed'],
+      ] as const) {
+        const { commands } = sharing(submit('mailto:forms@example.org', 'fdf'), outcome);
+        const { handlers, linksOpened } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+        expect(await handlers['document.submitButtonForm'](shareRoute)).toStrictEqual({ ok: true, value: { kind: answer } });
+        expect(linksOpened).toStrictEqual([]);
+      }
+    });
+
+    it('CONTROL: a route that does not fit the address main read is no-such-submit, and nothing is encoded or sent', async () => {
+      for (const [address, asked] of [
+        ['mailto:forms@example.org', request],
+        ['https://forms.example/take', shareRoute],
+        ['https://forms.example/take', mailApp],
+      ] as const) {
+        const { commands, encoded, offered } = sharing(submit(address, 'fdf'), { kind: 'offered' });
+        const { handlers, formsPosted, linksOpened } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+        expect(await handlers['document.submitButtonForm'](asked), `${address} by ${asked.route}`).toStrictEqual({ ok: true, value: { kind: 'no-such-submit' } });
+        expect([encoded, offered, formsPosted, linksOpened]).toStrictEqual([[], [], [], []]);
+      }
+    });
+  });
+
+  describe('the whole document (ADR-0263)', () => {
+    const whole = (address: string): readonly ButtonStep[] => [
+      { trigger: 'up', step: 0, action: { kind: 'submit', address, format: 'pdf', fields: null } },
+    ];
+    /** {@link submitCommands} with the document staged as Save would write it, recording each staging. */
+    function wholeCommands(steps: readonly ButtonStep[]): { commands: DocumentCommands; encoded: unknown[]; staged: string[] } {
+      const base = submitCommands(steps);
+      const staged: string[] = [];
+      const commands = Object.assign(base.commands, {
+        currentStaged: (docId: DocId) => {
+          staged.push(docId);
+          return Promise.resolve(stagedBytes(new Uint8Array(3 * 1024 * 1024 + 17)));
+        },
+      });
+      return { commands, encoded: base.encoded, staged };
+    }
+
+    it('STAGES the document and posts it as application/pdf, and encodes no form data for it', async () => {
+      const { commands, encoded, staged } = wholeCommands(whole('https://forms.example/take'));
+      const { handlers, documentsPosted, formsPosted } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+      expect(await handlers['document.submitButtonForm'](request)).toStrictEqual({ ok: true, value: { kind: 'sent' } });
+      expect(staged).toStrictEqual([A_DOC]);
+      expect(documentsPosted).toStrictEqual([
+        { address: 'https://forms.example/take', byteLength: 3 * 1024 * 1024 + 17, contentType: 'application/pdf' },
+      ]);
+      // CONTROL: the form-data route was not taken, so the post above is the document and not its fields.
+      expect(encoded).toStrictEqual([]);
+      expect(formsPosted).toStrictEqual([]);
+    });
+
+    it('says the guard’s reason for a private address, and CONTROL: a mailto: address stages nothing and posts nothing', async () => {
+      const refusing = (_address: string, staged: StagedImage): Promise<void> =>
+        staged.discard().then(() => Promise.reject(new UrlFetchRefused('blocked-address', 'not public')));
+      const inside = wholeCommands(whole('https://inside.example/take'));
+      const refused = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands: inside.commands, postDocument: refusing });
+      expect(await refused.handlers['document.submitButtonForm'](request)).toStrictEqual({ ok: true, value: { kind: 'refused', reason: 'blocked-address' } });
+
+      const mail = wholeCommands(whole('mailto:forms@example.org'));
+      const mailed = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands: mail.commands });
+      expect(await mailed.handlers['document.submitButtonForm'](mailApp)).toStrictEqual({ ok: true, value: { kind: 'mail-opened-without-document' } });
+      expect(mailed.linksOpened).toStrictEqual(['mailto:forms@example.org']);
+      expect(mail.staged).toStrictEqual([]);
+      expect(mailed.documentsPosted).toStrictEqual([]);
+    });
   });
 });
 
@@ -1313,6 +1452,7 @@ describe('document.open', () => {
       openWebPage: () => Promise.resolve(false),
       openLink: () => Promise.reject(new Error('this case follows no link')),
       postForm: () => Promise.reject(new Error('this case sends no form')),
+      postDocument: () => Promise.reject(new Error('this case sends no document')),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
     cloud: unconfiguredCloud(),
@@ -2224,6 +2364,7 @@ settings: createEphemeralSettings(),
       openWebPage: () => Promise.resolve(false),
       openLink: () => Promise.reject(new Error('this case follows no link')),
       postForm: () => Promise.reject(new Error('this case sends no form')),
+      postDocument: () => Promise.reject(new Error('this case sends no document')),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
     cloud: unconfiguredCloud(),
@@ -2287,6 +2428,7 @@ settings: createEphemeralSettings(),
       openWebPage: () => Promise.resolve(false),
       openLink: () => Promise.reject(new Error('this case follows no link')),
       postForm: () => Promise.reject(new Error('this case sends no form')),
+      postDocument: () => Promise.reject(new Error('this case sends no document')),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
       cloud: unconfiguredCloud(),
@@ -2449,6 +2591,7 @@ settings: createEphemeralSettings(),
       openWebPage: () => Promise.resolve(false),
       openLink: () => Promise.reject(new Error('this case follows no link')),
       postForm: () => Promise.reject(new Error('this case sends no form')),
+      postDocument: () => Promise.reject(new Error('this case sends no document')),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
       cloud: unconfiguredCloud(),
@@ -2683,6 +2826,7 @@ settings,
       openWebPage: () => Promise.resolve(false),
       openLink: () => Promise.reject(new Error('this case follows no link')),
       postForm: () => Promise.reject(new Error('this case sends no form')),
+      postDocument: () => Promise.reject(new Error('this case sends no document')),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
       cloud: unconfiguredCloud(),
@@ -2922,6 +3066,7 @@ settings: createEphemeralSettings(),
       openWebPage: () => Promise.resolve(false),
       openLink: () => Promise.reject(new Error('this case follows no link')),
       postForm: () => Promise.reject(new Error('this case sends no form')),
+      postDocument: () => Promise.reject(new Error('this case sends no document')),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
       cloud,

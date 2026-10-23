@@ -14,8 +14,12 @@ import {
   addressBlocked,
   checkedUrl,
   fetchGuardedPdf,
+  POST_CHUNK_BYTES,
+  type PostBody,
   type PostTransport,
+  postBodyOf,
   postGuarded,
+  writeInParts,
 } from './guardedFetch.js';
 
 /**
@@ -361,13 +365,15 @@ describe('postGuarded, a form sent where a button names (ADR-0259)', () => {
               return;
             }
             const handed = Array.isArray(addresses) ? addresses.map((entry) => entry.address) : [addresses];
-            sent.push({ to: `${url.href}@${handed.join(',')}`, body: Buffer.from(body).toString('utf8'), type: contentType });
-            resolve({ statusCode: status });
+            void body.read(0, body.byteLength).then((bytes) => {
+              sent.push({ to: `${url.href}@${handed.join(',')}`, body: Buffer.from(bytes).toString('utf8'), type: contentType });
+              resolve({ statusCode: status });
+            }, reject);
           });
         }),
     };
   }
-  const DATA = new TextEncoder().encode('applicant.name=Ada');
+  const DATA = postBodyOf(new TextEncoder().encode('applicant.name=Ada'));
 
   it('posts the data with its media type to the address, resolved through the guard', async () => {
     const names = table({ 'forms.test': ['1.1.1.1'] });
@@ -407,5 +413,85 @@ describe('postGuarded, a form sent where a button names (ADR-0259)', () => {
         postGuarded('https://forms.test/take', DATA, 'application/vnd.fdf', { resolve: names.resolve, transport: posting(status).transport }),
       ).rejects.toMatchObject({ reason: 'http-error' });
     }
+  });
+
+  it('CONTROL: a whole document to this network is refused before a byte of it is read (ADR-0263)', async () => {
+    const names = table({ 'inside.test': ['10.0.0.7'] });
+    let reads = 0;
+    const document: PostBody = {
+      byteLength: 3 * POST_CHUNK_BYTES,
+      read: (offset, end) => {
+        reads += 1;
+        return Promise.resolve(new Uint8Array(end - offset));
+      },
+    };
+    await expect(
+      postGuarded('https://inside.test/take', document, 'application/pdf', { resolve: names.resolve, transport: posting(204).transport }),
+    ).rejects.toMatchObject({ reason: 'blocked-address' });
+    expect(reads).toBe(0);
+  });
+});
+
+describe('writeInParts, a body written a part at a time (ADR-0263 Decision 2)', () => {
+  /** A body of `length` bytes, each its offset's low byte, that logs every read. */
+  function logged(length: number, log: string[]): PostBody {
+    return {
+      byteLength: length,
+      read: (offset, end) => {
+        log.push(`read ${String(offset)}-${String(end)}`);
+        return Promise.resolve(Uint8Array.from({ length: end - offset }, (_unused, at) => (offset + at) & 0xff));
+      },
+    };
+  }
+
+  it('writes every part in order, none past the part size, and reads the next only once the last drained', async () => {
+    const log: string[] = [];
+    const written: Uint8Array[] = [];
+    const length = 3 * POST_CHUNK_BYTES + 1234;
+    const parts = await writeInParts(logged(length, log), {
+      // A SOCKET THAT IS ALWAYS FULL, so every part waits for its drain: the hard shape for what is held.
+      write: (part) => {
+        written.push(part);
+        log.push(`write ${String(part.byteLength)}`);
+        return false;
+      },
+      drained: async () => {
+        await Promise.resolve();
+        log.push('drained');
+      },
+    });
+    expect(parts).toBe(4);
+    expect(written.map((part) => part.byteLength)).toStrictEqual([POST_CHUNK_BYTES, POST_CHUNK_BYTES, POST_CHUNK_BYTES, 1234]);
+    // ONE PART IN HAND: each read follows the drain of the part before it.
+    expect(log.slice(0, 7)).toStrictEqual([
+      `read 0-${String(POST_CHUNK_BYTES)}`,
+      `write ${String(POST_CHUNK_BYTES)}`,
+      'drained',
+      `read ${String(POST_CHUNK_BYTES)}-${String(2 * POST_CHUNK_BYTES)}`,
+      `write ${String(POST_CHUNK_BYTES)}`,
+      'drained',
+      `read ${String(2 * POST_CHUNK_BYTES)}-${String(3 * POST_CHUNK_BYTES)}`,
+    ]);
+    // THE BYTES ARE THE BODY'S, in order: a part read at the wrong offset would carry the wrong low bytes.
+    const joined = Buffer.concat(written);
+    expect(joined.byteLength).toBe(length);
+    expect(joined.every((byte, at) => byte === (at & 0xff))).toBe(true);
+  });
+
+  it('CONTROL: a socket that takes every part waits for no drain, and a short read is refused rather than sent', async () => {
+    const log: string[] = [];
+    let drains = 0;
+    expect(
+      await writeInParts(logged(2 * POST_CHUNK_BYTES, log), {
+        write: () => true,
+        drained: () => {
+          drains += 1;
+          return Promise.resolve();
+        },
+      }),
+    ).toBe(2);
+    expect(drains).toBe(0);
+    const short: PostBody = { byteLength: 10, read: () => Promise.resolve(new Uint8Array(4)) };
+    await expect(writeInParts(short, { write: () => true, drained: () => Promise.resolve() })).rejects.toThrow(/4 bytes for 10/u);
   });
 });

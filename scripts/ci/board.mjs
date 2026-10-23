@@ -54,7 +54,7 @@
 
 import { execFileSync } from 'node:child_process';
 
-import { boardTarget, boardVerdict, onceWithoutVerdict, parseRuns, pollDelaySeconds } from '../lib/boardStatus.mjs';
+import { boardTarget, boardVerdict, onceWithoutVerdict, pollDelaySeconds, readAnswer } from '../lib/boardStatus.mjs';
 import { describeAuthorisation, githubFetch } from '../lib/githubFetch.mjs';
 import { formatError } from '../lib/reportError.mjs';
 
@@ -162,50 +162,53 @@ async function main() {
   /** @type {Map<number, number>} */
   const seen = new Map();
 
-  // Refusals are collected rather than only traced, so the give-up message can
-  // say WHY it never got an answer. Quiet output must not mean a quieter
-  // diagnosis: a run that spent forty polls on HTTP 403 and one that spent them
-  // on a slow queue are different states, and the terse form has to keep them
-  // apart or it has recreated the defect it exists to remove.
+  // Answers that could not be looked at are collected rather than only traced,
+  // so the give-up message can say WHY it never got an answer. Quiet output must
+  // not mean a quieter diagnosis: a run that spent forty polls on HTTP 403 and
+  // one that spent them on a slow queue are different states, and the terse form
+  // has to keep them apart or it has recreated the defect it exists to remove.
   /** @type {string[]} */
-  const refusals = [];
+  const unanswered = [];
 
   for (let attempt = 1; attempt <= MAX_POLLS; attempt += 1) {
-    /** @type {unknown} */
-    let body;
+    /** @type {ReturnType<typeof readAnswer>} */
+    let answer;
     try {
       // `critical`: this is the caller the reserve exists to protect, so the
       // budget never refuses it. GitHub still can, and that is reported as
       // itself — a refusal is not a board state.
       const response = await githubFetch(runsUrl(sha, attempt), { purpose: 'critical' });
-      if (!response.ok) {
-        // A refusal is not a board state. Printed as itself so an expired token
-        // or a rate limit cannot spend every poll looking like a slow run — and
-        // now with WHICH of the three it is: no token, a rejected one, or a
-        // spent quota. They share an HTTP status and want three different
-        // actions, and this token expires on a date, so an expiry that reads as
-        // a network error is an afternoon on the wrong problem.
-        const remaining = Number(response.headers.get('x-ratelimit-remaining'));
-        const why = describeAuthorisation(
-          response.status,
-          Number.isNaN(remaining) ? null : remaining,
-        );
-        refusals.push(`HTTP ${String(response.status)} — ${why}`);
-        trace(`  poll ${String(attempt)}: HTTP ${String(response.status)} — ${why}\n`);
-        if (once) return concludeOnce(sha, { kind: 'refused', status: response.status, why });
-        await sleep(POLL_SECONDS * 1000);
-        continue;
-      }
-      body = await response.json();
+      // An error status names WHICH refusal it is: no token, a rejected one, or
+      // a spent quota. They share an HTTP status and want three different
+      // actions, and this token expires on a date, so an expiry that reads as a
+      // network error is an afternoon on the wrong problem.
+      const remaining = Number(response.headers.get('x-ratelimit-remaining'));
+      answer = readAnswer({
+        status: response.status,
+        text: await response.text(),
+        describeRefusal: (status) => describeAuthorisation(status, Number.isNaN(remaining) ? null : remaining),
+      });
     } catch (error) {
-      refusals.push(`request failed — ${formatError(error)}`);
+      unanswered.push(`request failed — ${formatError(error)}`);
       trace(`  poll ${String(attempt)}: request failed — ${formatError(error)}\n`);
       if (once) return concludeOnce(sha, { kind: 'failed', error: formatError(error) });
       await sleep(POLL_SECONDS * 1000);
       continue;
     }
 
-    const { verdict, reason, green } = boardVerdict(body, { sha, seen });
+    // COULD NOT LOOK is not a board state, and it is decided in `readAnswer`
+    // rather than here: an empty list used to throw out of the verdict, past
+    // this loop's `try`, and exit 1 — NOT GREEN's code — on the first poll of
+    // GitHub's 2026-10-22 incident. Now it is one more poll that saw nothing.
+    if (answer.kind === 'couldNotLook') {
+      unanswered.push(answer.why);
+      trace(`  poll ${String(attempt)}: COULD NOT LOOK — ${answer.why}\n`);
+      if (once) return concludeOnce(sha, { kind: 'couldNotLook', why: answer.why });
+      await sleep(POLL_SECONDS * 1000);
+      continue;
+    }
+
+    const { verdict, reason, green } = boardVerdict(answer.runs, { sha, seen });
     trace(`  poll ${String(attempt)}: ${verdict.toUpperCase()} — ${reason}\n`);
 
     if (verdict === 'complete') {
@@ -235,7 +238,7 @@ async function main() {
     // The decision is in `boardStatus.mjs` because this file prints what it is
     // handed: a schedule computed HERE would have no proof, which is the exact
     // mistake the greenness predicate made before it moved.
-    const paced = pollDelaySeconds(parseRuns(body), {
+    const paced = pollDelaySeconds(answer.runs, {
       sha,
       nowMs: Date.now(),
       fallbackSeconds: POLL_SECONDS,
@@ -248,13 +251,13 @@ async function main() {
     await sleep(paced.seconds * 1000);
   }
 
-  const refused = refusals.length;
+  const blind = unanswered.length;
   process.stdout.write(
     `\nNO VERDICT at ${sha}: gave up after ${String(MAX_POLLS)} polls. That is a timeout, ` +
       `not a verdict.\n` +
-      (refused > 0
-        ? `  ${String(refused)} of them were refusals, the last being ${refusals[refused - 1] ?? ''}. ` +
-          `A refusal is not a board state — the API declined to answer, so nothing here is\n` +
+      (blind > 0
+        ? `  ${String(blind)} of them could not look, the last being: ${unanswered[blind - 1] ?? ''}\n` +
+          `  An answer that could not be looked at is not a board state, so nothing here is\n` +
           `  evidence about the commit. Exit code 2, which is neither green nor red.\n`
         : `  Exit code 2, which is neither green nor red.\n`),
   );

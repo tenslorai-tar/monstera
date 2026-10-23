@@ -1581,6 +1581,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         openWebPage: () => Promise.resolve(false),
         openLink: () => Promise.reject(new Error('this case follows no link')),
         postForm: () => Promise.reject(new Error('this case sends no form')),
+        postDocument: () => Promise.reject(new Error('this case sends no document')),
         openStore: () => Promise.resolve(false),
           closeListening: () => false,
         cloud: unconfiguredCloud(),
@@ -2940,6 +2941,7 @@ describe('search is E2s first consumer, through the composition point', () => {
         openWebPage: () => Promise.resolve(false),
         openLink: () => Promise.reject(new Error('this case follows no link')),
         postForm: () => Promise.reject(new Error('this case sends no form')),
+        postDocument: () => Promise.reject(new Error('this case sends no document')),
         openStore: () => Promise.resolve(false),
         closeListening: () => false,
         cloud: unconfiguredCloud(),
@@ -4923,6 +4925,26 @@ describe('exportText — the document’s words, streamed one page at a time', (
 
       expect(await commands.email(textDoc)).toStrictEqual({ kind: 'unavailable' });
       expect(flushed).toBe(0);
+    });
+
+    it('a submission’s FILE is offered as itself, under the document’s title, and takes none of the document’s bytes (ADR-0263)', async () => {
+      const sheet = recordingSheet();
+      let flushed = 0;
+      const { commands } = exportingTo(null, {
+        share: sheet.destination,
+        flush: () => {
+          flushed += 1;
+          return Promise.resolve(FLUSHED);
+        },
+      });
+      const file = { fileName: 'words form data.fdf', bytes: new TextEncoder().encode('%FDF-1.2') };
+
+      expect(await commands.shareFile(textDoc, file)).toStrictEqual({ kind: 'offered' });
+      expect(sheet.offers).toStrictEqual([{ title: 'words', files: [file] }]);
+      expect(flushed).toBe(0);
+      // CONTROL: with no sheet on the platform nothing is offered and the answer says so.
+      const bare = exportingTo(null, { share: null, flush: () => Promise.resolve(FLUSHED) });
+      expect(await bare.commands.shareFile(textDoc, file)).toStrictEqual({ kind: 'unavailable' });
     });
   });
 });

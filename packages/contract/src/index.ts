@@ -631,6 +631,7 @@ export {
   encodedFormDataFormatSchema,
   actionFieldsSchema,
   SUBMIT_FORMATS,
+  type SubmitDataFormat,
   type SubmitFormat,
   isSubmitAddress,
   formDataFormatSchema,
