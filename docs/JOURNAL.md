@@ -1010,6 +1010,16 @@ fails. `markLatencyWalk --changes` reads an element at 300 ms and a canvas at 50
 No new search-shaped instrument. `crashOfferWalk` waits for the crash's own log line, which is a known-present anchor
 it must find.
 
+### Correction, 2026-10-23 (second) — VVVVVVVV-6's refusal was the walk's, not the app's
+
+VVVVVVVV-6 recorded that a word typed on a recognised page is refused, as a defect not fixed. Measured the same
+evening, at the owner's request on a printed scan: recognition ends with its own answer, a dialog with OK, and step 9
+waited for "the dialog hidden" with the wait's failure swallowed. So the answer stayed open, and its backdrop took the
+press on the first block (`elementFromPoint` read `m-dialog__backdrop`). No editor opened, which is why no word was
+written in any run on record. The one refusal seen came from a press made in that window. With OK pressed, a printed
+scan edits (3 of 3) and the handwritten page edits (twice): `3def1e78`, textWalk 26 of 26. **There is no app defect
+here.** The instrument defect, a swallowed wait, is fixed in that commit.
+
 ---
 
 ## 2026-10-22 — Stage audit of `0cbcb31e..6aba348f` — findings UUUUUUUU-1 to UUUUUUUU-12
