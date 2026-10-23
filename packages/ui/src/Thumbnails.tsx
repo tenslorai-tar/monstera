@@ -477,6 +477,22 @@ function cardsInView(strip: HTMLElement): readonly number[] {
 /** The empty visible set, one identity, for a strip that must not ask yet. */
 const NOTHING_VISIBLE: ReadonlySet<number> = new Set();
 
+/** An undrawn card's shape, a portrait Letter page's: the stylesheet's `aspect-ratio`, here so the card's height is whole pixels. */
+const UNDRAWN_SHAPE = 792 / 612;
+
+/**
+ * A drawn page's height over its width, EXACTLY: its visible box, sideways at a quarter turn. Not the canvas's own two
+ * numbers, whose height `renderPage` rounds up to a whole pixel — a card sized by those changed height by a fraction
+ * of a pixel against the undrawn card's exact 612 : 792.
+ */
+function shapeOf(drawn: { readonly crop: readonly [number, number, number, number]; readonly rotation: number; readonly width: number; readonly height: number }): number {
+  const [x0, y0, x1, y1] = drawn.crop;
+  const wide = Math.abs(x1 - x0);
+  const tall = Math.abs(y1 - y0);
+  if (wide === 0 || tall === 0) return drawn.height / drawn.width;
+  return drawn.rotation % 180 === 0 ? tall / wide : wide / tall;
+}
+
 function ThumbCanvas({
   view,
   page,
@@ -507,7 +523,14 @@ function ThumbCanvas({
   // what lets the element say which — a size alone read `drawn` from the first draw on, so a reader waiting for the
   // Organize grid's Full page saw thumbnail-sized pages as ready (CI, ubuntu-latest, on 6b7a6bd9).
   const [size, setSize] = useState<
-    { width: number; height: number; for: { view: DocumentView; source: number; width: number; rotation: PageRotation } } | undefined
+    | {
+        width: number;
+        height: number;
+        /** The page's height over its width, exactly, as drawn: its visible box, turned by the rotation drawn at. */
+        shape: number;
+        for: { view: DocumentView; source: number; width: number; rotation: PageRotation };
+      }
+    | undefined
   >(undefined);
   const current =
     size !== undefined && size.for.view === view && size.for.source === source && size.for.width === width && size.for.rotation === rotation;
@@ -547,7 +570,7 @@ function ThumbCanvas({
       // page at full size first to learn its width, and that first pass is what a superseded
       // draw left behind: a canvas 612 points wide in a 96-pixel column (measured 2026-09-18).
       const drawn = await renderPage(view.document, pdfjsPageOf(source), element, { fitWidth: width }, rotation, superseded.signal);
-      setSize({ width: drawn.width, height: drawn.height, for: { view, source, width, rotation } });
+      setSize({ width: drawn.width, height: drawn.height, shape: shapeOf(drawn), for: { view, source, width, rotation } });
       setReleased(false);
       report.current(page, width);
     };
@@ -576,13 +599,14 @@ function ThumbCanvas({
       // drawing made for another width, rotation or version, shown until the redraw lands.
       // `released`: drawn once and given back while out of the margin; its box keeps the drawing's size.
       data-drawn={size === undefined ? 'false' : released ? 'released' : current ? 'true' : 'stale'}
-      style={
-        size === undefined
-          ? undefined
-          : // THE COLUMN'S WIDTH EXACTLY, and the height the page's shape gives it — the last drawing's shape while a
-            // redraw is under way, so a card being redrawn at a new width is not stretched to the old height.
-            { width: `${String(width)}px`, height: `${String(current ? size.height : (size.height * width) / size.width)}px` }
-      }
+      // THE COLUMN'S WIDTH, and ONE HEIGHT RULE drawn or not: the page's shape at that width rounded up to a whole pixel,
+      // which is exactly the height `renderPage` gives the canvas it fits to the column. The undrawn card was sized by
+      // the stylesheet's exact 612 : 792 and the drawn one by the canvas, so a card grew by a fraction of a pixel as its
+      // drawing landed, and one drawn after Organize's Next had scrolled to the card below slid that card 1 px down
+      // (renderedScreen.pw.ts:4207 under the whole file's load, before ADR-0261 and after it). Sized exactly instead, the
+      // cards sat at fractional places and the scroll missed by a fraction the other way: whole pixels are the rule
+      // because the drawing is whole pixels. The last drawing's shape while a redraw is under way, as before.
+      style={{ width: `${String(width)}px`, height: `${String(Math.ceil(width * (size?.shape ?? UNDRAWN_SHAPE)))}px` }}
     />
   );
 }
