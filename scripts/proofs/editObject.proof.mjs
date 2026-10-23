@@ -176,7 +176,7 @@ function inkOf(kernel, bytes, index, box) {
  * @param {Render} before @param {Render} after @param {Box[]} allowed
  */
 function compare(before, after, allowed) {
-  if (before.width !== after.width || before.height !== after.height) return { outside: Number.POSITIVE_INFINITY, inside: 0 };
+  if (before.width !== after.width || before.height !== after.height) return { outside: Number.POSITIVE_INFINITY, inside: 0, farthest: Number.POSITIVE_INFINITY };
   const zones = allowed.map((box) => {
     const corners = [
       before.toDevice(box.left - EDGE, box.bottom - EDGE),
@@ -193,15 +193,22 @@ function compare(before, after, allowed) {
   });
   let outside = 0;
   let inside = 0;
+  // HOW FAR OUTSIDE, in device pixels to the nearest allowed zone: a changed pixel just past the margin (a stroke thicker
+  // than the margin allows for) and one across the page are both "outside", and only this tells them apart.
+  let farthest = 0;
   for (let y = 0; y < before.height; y += 1) {
     for (let x = 0; x < before.width; x += 1) {
       const at = (y * before.width + x) * 3;
       if (before.rgb[at] === after.rgb[at] && before.rgb[at + 1] === after.rgb[at + 1] && before.rgb[at + 2] === after.rgb[at + 2]) continue;
       if (zones.some((zone) => x >= zone.x0 && x <= zone.x1 && y >= zone.y0 && y <= zone.y1)) inside += 1;
-      else outside += 1;
+      else {
+        outside += 1;
+        const near = Math.min(...zones.map((zone) => Math.max(zone.x0 - x, x - zone.x1, zone.y0 - y, y - zone.y1, 0)));
+        farthest = Math.max(farthest, near);
+      }
     }
   }
-  return { outside, inside };
+  return { outside, inside, farthest };
 }
 
 /**
@@ -250,8 +257,8 @@ async function walkPage(pdfium, kernel, bytes, index, quotes) {
         return;
       }
       const after = render(kernel, await kernel.mupdfWriter.serialise(copy), index);
-      const { outside, inside } = compare(before, after, allowed);
-      tries.push({ object, edit, outcome: 'made', disturbed: outside, inside, why: '' });
+      const { outside, inside, farthest } = compare(before, after, allowed);
+      tries.push({ object, edit, outcome: 'made', disturbed: outside, inside, why: outside > 0 ? `up to ${String(farthest / SCALE)} pt past its box` : '' });
     } finally {
       await kernel.mupdfWriter.close(copy);
     }
