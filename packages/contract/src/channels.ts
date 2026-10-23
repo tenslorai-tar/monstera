@@ -1366,6 +1366,32 @@ const clearedCopiesSchema = z
 /** The names of a document's older copies that are owed a deletion and still held by another program (CR-DOC-10). */
 const heldCopiesSchema = z.array(z.string().min(1).max(MAX_DOCUMENT_NAME_LENGTH)).max(MAX_BACKUP_COPIES);
 
+/**
+ * Past this many pages, a command's changed pages are answered as `'all'`: what a surface redraws then is every page
+ * it holds anyway, and a list may not grow with the document (invariant L11).
+ */
+export const MAX_CHANGED_PAGES = 256;
+
+/**
+ * The pages a command changed, in the new version's numbering, or every page
+ * ([ADR-0262](../../../docs/DECISIONS/0262-a-command-declares-the-pages-it-changes.md)).
+ *
+ * REQUIRED WHERE IT IS MADE AND WHERE IT IS READ, `skippedPages`' shape: `main`'s answer type carries it, and an answer
+ * without it reads as `'all'` — the direction that redraws too much rather than leaving an old page — so a renderer is
+ * always handed a value to read.
+ */
+export const changedPagesSchema = z
+  .union([z.literal('all'), z.array(z.number().int().nonnegative()).max(MAX_CHANGED_PAGES).readonly()])
+  .default('all');
+
+/** See {@link changedPagesSchema}. */
+export type ChangedPages = z.infer<typeof changedPagesSchema>;
+
+/** A command's changed pages as they are answered: `'all'` once there are more than {@link MAX_CHANGED_PAGES}. */
+export function answeredChangedPages(pages: 'all' | readonly number[]): ChangedPages {
+  return pages === 'all' || pages.length > MAX_CHANGED_PAGES ? 'all' : pages;
+}
+
 /** A document that opened — `document.open`'s success, and the base of an import that opened with a note. */
 const openedSchema = z.object({
     kind: z.literal('opened'),
@@ -2512,6 +2538,12 @@ export const channels = {
       /** How many undo copies a protect could not encrypt: required, and zero for every other command (ADR-0178). */
       unsealedUndoCopies: z.number().int().nonnegative(),
       /**
+       * The pages the command changed, in the new version's numbering, or `'all'`
+       * ([ADR-0262](../../../docs/DECISIONS/0262-a-command-declares-the-pages-it-changes.md)): what a page surface
+       * redraws. REQUIRED, `historyDropped`'s reason — an optional field is one a renderer satisfies by not reading it.
+       */
+      changedPages: changedPagesSchema,
+      /**
        * The zero-based pages a header and footer, Bates numbers, a watermark or a background left as they were because
        * they display nothing ([ADR-0254](../../../docs/DECISIONS/0254-a-command-that-places-on-pages-skips-a-page-that-shows-nothing-and-names-it.md)),
        * which the renderer names. REQUIRED where it is read and where it is made: `main`'s answer type carries it, and
@@ -2626,6 +2658,8 @@ export const channels = {
         kind: z.literal('undone'),
         version: docVersionSchema,
         byteLength: z.number().int().nonnegative(),
+        // THE PAGES THE STEP CHANGES BACK, the entry's own declaration (ADR-0262 Decision 2).
+        changedPages: changedPagesSchema,
       }),
       // `nothing-to-undo` carries neither, and that is not an omission: nothing
       // moved, so the renderer's view is not stale and there is nothing to
@@ -2664,6 +2698,8 @@ export const channels = {
         // correction). Required, and empty or zero for every other redo.
         unsealedCopies: heldCopiesSchema.readonly(),
         unsealedUndoCopies: z.number().int().nonnegative(),
+        // THE PAGES THE STEP CHANGES AGAIN, the entry's own declaration (ADR-0262 Decision 2).
+        changedPages: changedPagesSchema,
       }),
       z.object({ kind: z.literal('nothing-to-redo') }),
     ]),

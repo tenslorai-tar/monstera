@@ -400,8 +400,9 @@ describe('rotate page', () => {
     // to the previous image's length, which is a RangeError past the end of the
     // new document or a parse of a truncated one.
     // AND `skippedPages` EMPTY though main's answer here names none: the contract reads an answer without it as none.
+    // AND `changedPages` ALL, the other way round: an answer naming none reads as every page (ADR-0262).
     expect(applied).toStrictEqual([
-      { version: 2, byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0, skippedPages: [] },
+      { version: 2, byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0, skippedPages: [], changedPages: 'all' },
     ]);
   });
 
@@ -580,7 +581,7 @@ describe('rotate page', () => {
     // nobody would leave the renderer showing the page as it was while a dialog
     // explains what the rotation cost.
     expect(applied).toStrictEqual([
-      { version: 2, byteLength: 2048, historyDropped: 3, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0, skippedPages: [] },
+      { version: 2, byteLength: 2048, historyDropped: 3, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0, skippedPages: [], changedPages: 'all' },
     ]);
   });
 
@@ -5300,7 +5301,7 @@ describe('generate table of contents', () => {
     expect(sent.map((call) => call.id)).toStrictEqual(['document.destinations', 'document.destinations', 'document.execute']);
     expect(sent[2]?.params).toStrictEqual({ docId: DOC, command: { kind: 'generateToc', at: 0, entries: left } });
     expect(record.applied).toStrictEqual([
-      { version: 2, byteLength: 8192, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0, skippedPages: [] },
+      { version: 2, byteLength: 8192, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0, skippedPages: [], changedPages: 'all' },
     ]);
   });
 
@@ -7351,6 +7352,7 @@ describe('an edit main answers breaks-signatures for (ADR-0149)', () => {
     unsealedCopies: [],
     unsealedUndoCopies: 0,
     skippedPages: [],
+    changedPages: 'all' as const,
   };
 
   /** Main as ADR-0149 has it: `breaks-signatures` until the edit is sent agreed, and `editCopy` answering `copy`. */

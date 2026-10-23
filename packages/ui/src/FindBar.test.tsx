@@ -418,6 +418,8 @@ describe('FindBar replace-all', () => {
       more: 0,
       unsealedCopies: [], unsealedUndoCopies: 0,
       skippedPages: [],
+      // EVERY PAGE, what an answer that names none reads as (ADR-0262).
+      changedPages: 'all',
     });
   });
 

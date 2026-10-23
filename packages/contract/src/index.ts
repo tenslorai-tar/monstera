@@ -217,6 +217,11 @@ export {
   MAX_LINK_URI_LENGTH,
   PAGE_OBJECTS_PART,
   TEXT_BLOCKS_PART,
+  // THE PAGES A COMMAND CHANGED (ADR-0262), in every command's answer.
+  type ChangedPages,
+  MAX_CHANGED_PAGES,
+  answeredChangedPages,
+  changedPagesSchema,
 } from './channels.js';
 // ONE annotation as it crosses, and how much of its note: the engine host's answer and the renderer's part take this row.
 export { MAX_ANNOTATION_CONTENTS, listedAnnotationSchema } from './listedAnnotation.js';

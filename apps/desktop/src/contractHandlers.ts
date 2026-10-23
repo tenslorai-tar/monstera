@@ -3674,6 +3674,7 @@ function redoHandler(commands: DocumentCommands): ContractHandlers['document.red
               byteLength: applied.byteLength,
               unsealedCopies: applied.unsealedCopies,
               unsealedUndoCopies: applied.unsealedUndoCopies,
+              changedPages: applied.changedPages,
             } as const),
       );
     } catch (thrown) {

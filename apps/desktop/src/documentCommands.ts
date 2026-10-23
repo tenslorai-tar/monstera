@@ -68,6 +68,8 @@ import {
   type PageAdjustmentOutcome,
   type PageMarksRead,
   type PdfaLevel,
+  type ChangedPages,
+  answeredChangedPages,
 } from '@monstera/contract';
 // DECLARATIONS, not specs. This reads `spec.writer` and calls nothing on it, so
 // importing the spec table would bind the MuPDF native library **in main** —
@@ -192,6 +194,8 @@ import {
   saveWriteCause,
   type SaveBackups,
   type LogEntry,
+  pagesChangedBy,
+  pagesChangedByRecorded,
 } from '@monstera/kernel';
 import type { BarcodeWriteFormat } from '@monstera/kernel/barcode';
 import type { ProtectionTerms } from './documentPasswords.js';
@@ -2487,6 +2491,8 @@ export interface Applied {
   readonly unsealedUndoCopies: number;
   /** The pages a command that places on pages left as they were because they display nothing (ADR-0254); else empty. */
   readonly skippedPages: readonly number[];
+  /** The pages it changed, in the new version's numbering, or every page (ADR-0262): what a page surface redraws. */
+  readonly changedPages: ChangedPages;
 }
 
 /**
@@ -4059,6 +4065,8 @@ export class DocumentCommands {
         unsealedCopies: unsealed.copies.copies,
         unsealedUndoCopies: unsealed.copies.undoCopies,
         skippedPages: skipped.pages,
+        // THE PAGES IT CHANGED, as its kind declares them (ADR-0262), through the contract's bound.
+        changedPages: answeredChangedPages(pagesChangedBy(command)),
       };
     });
 
@@ -4184,7 +4192,7 @@ export class DocumentCommands {
     // `engineHostConnection.ts` records for the same reason: the assignment
     // happens inside a closure, so the compiler narrows the `let` to its single
     // visible value and calls the read below unreachable.
-    const stepped = { yes: false };
+    const stepped: { yes: boolean; pages: 'all' | readonly number[] } = { yes: false, pages: 'all' };
 
     const { version, value: byteLength } = await this.#documents.run(docId, async (context) => {
       const failures = this.#engine.poisoned(docId);
@@ -4200,13 +4208,15 @@ export class DocumentCommands {
       const protect = isProtectStep(last) ? last : undefined;
       if (protect !== undefined) this.#engine.protectionStepped(docId, protect, 'before');
       try {
-        stepped.yes =
-          (await this.#bus.undo(
-            sessions,
-            context,
-            (write) => this.#restore(docId, write),
-            this.#byteImage(docId),
-          )) !== undefined;
+        const undone = await this.#bus.undo(
+          sessions,
+          context,
+          (write) => this.#restore(docId, write),
+          this.#byteImage(docId),
+        );
+        stepped.yes = undone !== undefined;
+        // THE PAGES THE STEP CHANGES BACK: the entry's own declaration (ADR-0262 Decision 2).
+        if (undone !== undefined) stepped.pages = pagesChangedByRecorded(undone.entry.command);
       } catch (thrown) {
         if (protect !== undefined) this.#engine.protectionStepped(docId, protect, 'after');
         throw thrown;
@@ -4231,7 +4241,17 @@ export class DocumentCommands {
     // NO UNSEALED COPIES: an undo seals nothing, so it leaves nothing unsealed (ADR-0178). A field omitted here would make
     // the renderer's obligation optional on one path, `historyDropped`'s reason.
     return stepped.yes
-      ? { version, byteLength, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0, skippedPages: [] }
+      ? {
+          version,
+          byteLength,
+          historyDropped: 0,
+          boxed: [],
+          more: 0,
+          unsealedCopies: [],
+          unsealedUndoCopies: 0,
+          skippedPages: [],
+          changedPages: answeredChangedPages(stepped.pages),
+        }
       : undefined;
   }
 
@@ -4271,7 +4291,7 @@ export class DocumentCommands {
   }
 
   async redo(docId: DocId): Promise<Applied | undefined> {
-    const stepped = { yes: false };
+    const stepped: { yes: boolean; pages: 'all' | readonly number[] } = { yes: false, pages: 'all' };
     const protectedAt: { path: string | undefined } = { path: undefined };
     // WHAT A REDONE PROTECT COULD NOT SEAL, held across the lane as `execute` holds it (ADR-0178's 2026-10-17 correction).
     const unsealed: { copies: UnsealedCopies } = { copies: NONE_UNSEALED };
@@ -4288,9 +4308,10 @@ export class DocumentCommands {
       const protect = isProtectStep(next) ? next : undefined;
       if (protect !== undefined) this.#engine.protectionStepped(docId, protect, 'after');
       try {
-        stepped.yes =
-          (await this.#bus.redo(sessions, context, this.#byteImage(docId, this.#bus.pendingRedoSources(context)))) !==
-          undefined;
+        const redoneStep = await this.#bus.redo(sessions, context, this.#byteImage(docId, this.#bus.pendingRedoSources(context)));
+        stepped.yes = redoneStep !== undefined;
+        // THE PAGES THE STEP CHANGES AGAIN: the entry's own declaration (ADR-0262 Decision 2).
+        if (redoneStep !== undefined) stepped.pages = pagesChangedByRecorded(redoneStep.entry.command);
       } catch (thrown) {
         if (protect !== undefined) this.#engine.protectionStepped(docId, protect, 'before');
         throw thrown;
@@ -4320,6 +4341,7 @@ export class DocumentCommands {
           unsealedUndoCopies: unsealed.copies.undoCopies,
           // TOLD AT THE EDIT, as boxes are: a redone stamp leaves the pages it left the first time.
           skippedPages: [],
+          changedPages: answeredChangedPages(stepped.pages),
         }
       : undefined;
   }

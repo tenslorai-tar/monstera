@@ -520,6 +520,12 @@ export interface BrowserShimOptions {
   readonly documentBytes?: ReadonlyMap<string, Uint8Array>;
 
   /**
+   * The pages every `document.execute`, undo and redo answers as changed (ADR-0262). The shim applies nothing, so a
+   * case says what its command changed; absent is `'all'`, what a kind no drawing check covers declares.
+   */
+  readonly changedPages?: 'all' | readonly number[];
+
+  /**
    * A font's bytes, answered by `app.bundledFace` for any bundled family once `released` settles — the case's to settle,
    * so it sees a list drawn BEFORE a face arrives and again after it. The family a face is given to is the name it is
    * registered under, so any valid font file serves; a case passes a committed one rather than a provisioned bundle,
@@ -1595,6 +1601,9 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
           unsealedUndoCopies: 0,
           // NONE: the shim's pages all display something (ADR-0254).
           skippedPages: [],
+          // EVERY PAGE BY DEFAULT, what a kind no drawing check covers declares (ADR-0262); a case about redrawing one
+          // page names its own.
+          changedPages: options.changedPages ?? 'all',
         }),
       );
     },
@@ -1622,7 +1631,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       const next = current + 1;
       versions.set(docId, next);
       return Promise.resolve(
-        ok({ kind: 'undone' as const, version: asDocVersion(next), byteLength: byteLengthOf(docId) }),
+        ok({ kind: 'undone' as const, version: asDocVersion(next), byteLength: byteLengthOf(docId), changedPages: options.changedPages ?? 'all' }),
       );
     },
 
@@ -1648,6 +1657,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
           byteLength: byteLengthOf(docId),
           unsealedCopies: [],
           unsealedUndoCopies: 0,
+          changedPages: options.changedPages ?? 'all',
         }),
       );
     },

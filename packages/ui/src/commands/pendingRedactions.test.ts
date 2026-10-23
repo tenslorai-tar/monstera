@@ -207,7 +207,7 @@ describe('settlePendingRedactions', () => {
   it('Apply burns in every page’s marks through the one dispatcher, and the view moves', async () => {
     const { settled, sent, moved } = await settle(3, 'apply');
     expect(sent.filter((call) => call.id === 'document.execute').map((call) => call.params)).toStrictEqual([BURN_IN]);
-    expect(moved).toStrictEqual([{ version: 2, byteLength: 4096, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0, skippedPages: [] }]);
+    expect(moved).toStrictEqual([{ version: 2, byteLength: 4096, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0, skippedPages: [], changedPages: 'all' }]);
     expect(settled).toBe('applied');
   });
 

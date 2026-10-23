@@ -106,6 +106,10 @@ export {
   type WriterOfRecord,
   type WriterRouting,
   declaredCommands,
+  // THE PAGES A COMMAND CHANGES (ADR-0262), read once for execute, undo and redo.
+  type PagesChanged,
+  pagesChangedBy,
+  pagesChangedByRecorded,
 } from './commandDeclarations.js';
 export {
   ENGINE_BARCODE_TEXT_MAX,

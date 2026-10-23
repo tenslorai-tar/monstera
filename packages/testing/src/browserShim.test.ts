@@ -423,6 +423,8 @@ describe('browser shim', () => {
           unsealedCopies: [],
           unsealedUndoCopies: 0,
           skippedPages: [],
+          // EVERY PAGE BY DEFAULT: the shim applies nothing, so a case names what its command changed (ADR-0262).
+          changedPages: 'all',
         },
       });
     });

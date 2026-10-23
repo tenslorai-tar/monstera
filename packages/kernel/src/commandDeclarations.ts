@@ -1,4 +1,4 @@
-import type { CommandKind, NetworkOcrEngine } from '@monstera/contract';
+import type { CommandKind, CommandOfKind, NetworkOcrEngine } from '@monstera/contract';
 
 import type {
   CommandAsset,
@@ -294,10 +294,32 @@ export interface PurposeRouting {
   readonly purpose: SavePurpose;
 }
 
+/**
+ * The pages a command changes, in the NEW version's numbering
+ * ([ADR-0262](../../../docs/DECISIONS/0262-a-command-declares-the-pages-it-changes.md)): `'all'`, always legal — the
+ * whole document may change or its pages move; `'none'` — nothing any page draws changes; or a rule from the command
+ * to its pages. **Anything but `'all'` must be covered by the per-kind drawing check** (`pageDeclarations.test.ts`), whose
+ * rule over this table is what keeps a narrower declaration from being added without a case: one that names too few
+ * leaves an old page on screen.
+ */
+export type PagesChanged<K extends CommandKind> = 'all' | 'none' | ((command: CommandOfKind<K>) => 'all' | readonly number[]);
+
+/** The pages a page set names, each entry a page or a run of them — the rule for a command that names pages as a set. */
+function pagesNamed(set: readonly (number | readonly [number, number])[] | 'all'): 'all' | readonly number[] {
+  if (set === 'all') return 'all';
+  return set.flatMap((entry) => (typeof entry === 'number' ? [entry] : Array.from({ length: entry[1] - entry[0] + 1 }, (_unused, at) => entry[0] + at)));
+}
+
+/** See {@link PagesChanged}. */
+export interface PageRouting<K extends CommandKind> {
+  readonly pages: PagesChanged<K>;
+}
+
 /** Everything one command kind declares about itself, minus the doing of it. */
 export type CommandDeclaration<K extends CommandKind> = {
   readonly kind: K;
-} & WriterRouting &
+} & PageRouting<K> &
+  WriterRouting &
   SourceRouting &
   TargetRouting &
   ReadRouting<K> &
@@ -335,6 +357,8 @@ const declarations = {
     // Invariant L6: page-tree work rewrites in place through MuPDF's own
     // PDFObject API. Rebuilding into a new document drops /AcroForm, /Outlines,
     // /Names and /OCProperties — measured, not assumed (ADR-0006).
+    // THE PAGES IT CHANGES (ADR-0262): the ones it turns, checked by `pageDeclarations.test.ts`.
+    pages: (command) => pagesNamed(command.pages),
     writer: 'mupdf',
     // ADR-0009 §3: the inverse restores prior state verbatim, including
     // ABSENCE. A page that inherited its rotation is restored by DELETING the
@@ -368,6 +392,8 @@ const declarations = {
     // rotation is. Through MuPDF's OBJECT api and not its layer api — the
     // latter writes session state that a save does not carry (`layers.ts`,
     // measured 2026-09-03).
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // ADR-0009 §3: the inverse restores prior state verbatim. A layer's prior
     // visibility is a boolean the document already carried, so the inverse is
@@ -403,6 +429,8 @@ const declarations = {
     // render while the field tree is orphaned, and the document silently stops
     // being a valid AcroForm. The `/Kids` rewrite through the PDFObject API is
     // what preserves all four catalog entries.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // The inverse of a move is a move, and it is NOT `{ from: to, to: from }`.
     // Moving 0→2 in `0 1 2 3` gives `1 2 0 3`; moving 2→0 from there gives
@@ -436,6 +464,8 @@ const declarations = {
     // a keep-set instead of a permutation. `rearrangePages` would express a
     // delete natively and is banned for the reason ADR-0006 measured — it drops
     // `/AcroForm` even for the identity permutation.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // THE FIRST COMMAND TO DECLARE THIS, and the type has named it since the
     // day `Invertibility` was written. A deleted page's prior state is its
@@ -469,6 +499,8 @@ const declarations = {
     // Invariant L6 again, and the copy is MuPDF's own `graftObject` rather than
     // a dictionary walk written here — measured 2026-09-04: a new indirect
     // object, dictionaries that diverge, and a shared `/Contents`.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // The inverse removes the page the copy occupies, and the capture stores
     // that index rather than re-deriving it from *"after the source"*. The
@@ -499,6 +531,8 @@ const declarations = {
     display: 'image',
     // Invariant L6 and `movePage`'s measurement, a third time: the same
     // `/Kids` rewrite with a symmetric permutation.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // The only command here whose inverse is the command itself, and the one
     // place a transposition is legitimate: `swapPermutation` is symmetric in
@@ -529,6 +563,8 @@ const declarations = {
     // `insertPage` would build the page AND put it in the tree, which is a
     // second writer for `/Kids` — the thing `pageOrder.ts` routes every
     // operation through one function to avoid (B3).
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // `duplicatePage`'s shape: the inverse removes the page the command added,
     // and the capture stores the index rather than re-deriving it.
@@ -557,6 +593,8 @@ const declarations = {
     // A page attribute written in place, exactly as a rotation is. Invariant
     // L6's argument for MuPDF applies unchanged: a rebuild to change one key
     // drops the four catalog entries ADR-0006 measured.
+    // THE PAGES IT CHANGES (ADR-0262): the ones it crops, checked by `pageDeclarations.test.ts`.
+    pages: (command) => pagesNamed(command.pages),
     writer: 'mupdf',
     // ADR-0009 §3 on a second key: the inverse restores the page's own
     // `/CropBox` verbatim INCLUDING absence, because a page that displayed its
@@ -588,6 +626,8 @@ const declarations = {
     // it was the first command routed to the pdf-lib byte-image writer, in that
     // writer's three standard fonts, beside the one typesetter every other
     // text Monstera draws takes.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // NOT INVERTIBLE, and the reason is the same one `deletePages` gives from
     // the other direction: the prior state of a page that has been drawn on is
@@ -622,6 +662,8 @@ const declarations = {
     kind: 'headerFooterPages',
     display: 'image',
     // `watermarkPages`' writer and reason (ADR-0235).
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // `watermarkPages`' reason unchanged: the prior state of a page that has
     // been drawn on is its whole content stream and what the drawing added.
@@ -650,6 +692,8 @@ const declarations = {
     kind: 'batesNumberPages',
     display: 'image',
     // `watermarkPages`' writer and reason (ADR-0235).
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // Drawn content, so `watermarkPages`' reason unchanged: the prior state is
     // the page's whole content stream and what the drawing added.
@@ -679,6 +723,8 @@ const declarations = {
     kind: 'removePageMarks',
     display: 'image',
     // THE STAMPS' WRITER (ADR-0246): it removes what that writer appended.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // A CHECKPOINT, for the stamps' reason: the prior state is the content arrays of every page a stamp was on.
     invertible: false,
@@ -702,6 +748,8 @@ const declarations = {
     // for MuPDF applies unchanged, and nothing here is drawn — so this is not
     // content composition and does not route to pdf-lib, however much
     // *transitions* sounds like presentation.
+    // THE PAGES IT CHANGES (ADR-0262): none any surface draws, checked by `pageDeclarations.test.ts`.
+    pages: 'none',
     writer: 'mupdf',
     // ADR-0009 §3 on a third key, and the same shape both siblings have:
     // **absence is a value**. A page that declared no `/Trans` must come back
@@ -735,6 +783,8 @@ const declarations = {
     // `setPageTransition` next door this one really does write a content
     // stream, which is what puts it on the byte-image writer rather than on
     // MuPDF.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'pdf-lib',
     // `watermarkPages`' reason: the prior state of a page whose content stream
     // has been changed is that whole stream.
@@ -765,6 +815,8 @@ const declarations = {
     // and the row below is *drawing onto pages*, where this draws nothing: the
     // stream it adds changes the coordinate system the existing marks are read
     // in and puts no marks of its own on the page.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // THE ONLY CONTENT-STREAM COMMAND HERE THAT IS INVERTIBLE, and the reason
     // is that it appends to no stream. It adds two and rewrites `/Contents` to
@@ -802,6 +854,8 @@ const declarations = {
     // this does not do. It also RASTERISES to decide the angle, and that is
     // MuPDF's by the matrix's print-and-export rasterisation row, so both
     // halves of this command name the same engine.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // `resizePages`' argument, unchanged: it appends to no existing stream, so
     // the prior state is the shape of the `/Contents` array rather than the
@@ -838,6 +892,8 @@ const declarations = {
     // this replaces an image XObject's stream and restates its dictionary, in
     // place, in the session. It is NOT content composition — nothing is drawn onto
     // the page, and the page's content stream is untouched.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // The prior state is the image streams themselves, which is document-scaled and
     // exactly what an invertible entry may not retain. §4's reserved list again.
@@ -865,6 +921,8 @@ const declarations = {
     display: 'image',
     // `enhancePages`' writer, for its reason and one more: it replaces the image
     // stream AND the page's boxes and content, which is page surgery in the session.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // The prior state is the image stream, the boxes and the content that drew it —
     // the image is document-scaled, so §4's reserved list again.
@@ -888,6 +946,8 @@ const declarations = {
     // is drawing onto a page. The RECOGNITION is MuPDF's — it rasterises, by the
     // print-and-export row — which is exactly why this command needs a pre-read
     // rather than a second writer: two engines, one of them writing.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'pdf-lib',
     // `generateToc`'s argument: a byte-image writer's prior state is the document
     // before the write, and there is no serialisable description of "this page
@@ -987,6 +1047,8 @@ const declarations = {
     // need no `reads` axis at all — rejected in ADR-0040's extension, because
     // moving one command off that row for convenience is how a matrix stops
     // being evidence.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'pdf-lib',
     // This adds pages, and the prior state of a
     // document that gained pages is the document without them — which is
@@ -1031,6 +1093,8 @@ const declarations = {
     // delete/insert/extract/MERGE/split/crop/resize" on MuPDF, so the writer is
     // assigned rather than chosen — and this is the row that ADR-0040 was
     // written for.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // `deletePages`' argument from the target's side: the prior state of a
     // document that gained another document's pages is its whole page tree.
@@ -1067,6 +1131,8 @@ const declarations = {
     display: 'image',
     // `docs/ARCHITECTURE.md:372`'s page-tree row, and this one touches both
     // halves of it — a delete and an insert.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // `deletePages`' argument and `mergeDocument`'s in one command: the prior
     // state is the replaced page's object graph AND the absence of what
@@ -1097,6 +1163,8 @@ const declarations = {
     // because the command writes `/OCProperties` and that module is its one writer.
     // *Drawing onto pages* is pdf-lib's, and taking this there would give
     // `/OCProperties` a second writer.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // `mergeDocument`'s argument: the prior state is the ABSENCE of five structures — a
     // group in `/OCGs` and `/D/Order`, a Form XObject, its `/XObject` entry and a drawing
@@ -1127,6 +1195,8 @@ const declarations = {
     // rectangle into `/Contents` through the byte-image writer would produce a
     // document that renders identically and has no annotation in it — the
     // `setPageTransition` row's argument, on the other side of the matrix.
+    // THE PAGES IT CHANGES (ADR-0262): the one it marks, checked by `pageDeclarations.test.ts`.
+    pages: (command) => [command.page],
     writer: 'mupdf',
     // `commandLog.ts`' entry says why, and it is the one `never` there that is
     // a *not yet*: the operation that removes an annotation exists, and the
@@ -1166,6 +1236,8 @@ const declarations = {
     // remove an annotation — it would draw over the appearance and leave the
     // object, which is the redaction row's distinction and the reason that row
     // says the marks remove nothing.
+    // THE PAGES IT CHANGES (ADR-0262): the one its marks leave, checked by `pageDeclarations.test.ts`.
+    pages: (command) => [command.page],
     writer: 'mupdf',
     // TERMINAL, and NOT for `addAnnotation`'s reason. That one says *not yet*
     // because the handle did not exist; this one has the handle and still
@@ -1203,6 +1275,8 @@ const declarations = {
     // rewrites an object in `/Annots` and its appearance stream. A content
     // writer could draw the shape somewhere else and would leave the original
     // object exactly where it was.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // NOT `addAnnotation`'s *not yet* and not `removeAnnotation`'s *never*. The
     // prior state is expressible — the geometry the annotation carried — and
@@ -1234,6 +1308,8 @@ const declarations = {
     kind: 'reshapeAnnotation',
     display: 'image',
     // `placeAnnotation`'s object: `/L` or `/Vertices` and the appearance, in `/Annots`.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // `placeAnnotation`'s reason one step simpler: the prior points are expressible and would restore exactly, and a
     // checkpoint is what every annotation command takes until a per-target prior exists (`captureStyleAnnotation`).
@@ -1261,6 +1337,8 @@ const declarations = {
     //
     // The pdf-lib route was EXECUTED before this was written and it works —
     // ADR-0044 records five readings. It loses on cost, not capability.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // `addAnnotation`'s reason, unchanged: the operation that removes an
     // annotation exists, and an inverse spelt "the last stamp on the page"
@@ -1295,6 +1373,8 @@ const declarations = {
   placeSignatureMark: {
     kind: 'placeSignatureMark',
     display: 'image',
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     invertible: false,
     undo: 'checkpoint',
@@ -1313,6 +1393,8 @@ const declarations = {
   placeSignaturePicture: {
     kind: 'placeSignaturePicture',
     display: 'image',
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     invertible: false,
     undo: 'checkpoint',
@@ -1331,6 +1413,8 @@ const declarations = {
     // object in `/Annots`, and the appearance stream MuPDF regenerates is that
     // object's. A content writer could draw the shape again in another colour
     // and would leave the original exactly where it was.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // The prior is three numbers per annotation and is entirely expressible —
     // the first of the four annotation commands where the format is not what
@@ -1356,6 +1440,8 @@ const declarations = {
     // `/Contents` is a key on an object in `/Annots`, and for a `FreeText` the
     // appearance stream MuPDF regenerates from it is that object's — the
     // annotation rows' classification exactly.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // THE FIRST INVERTIBLE COMMAND ON THIS WALK, and the reason is the payload
     // rather than the format: `CommandPrior` carries one value per command, and
@@ -1381,6 +1467,8 @@ const declarations = {
     display: 'image',
     // `/T` is a key on an object in `/Annots` — `editAnnotationText`'s
     // classification with a different key (ADR-0103).
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // `editAnnotationText`'s reason exactly: one index and one string, so the
     // prior is one value `CommandPrior` can carry.
@@ -1401,6 +1489,8 @@ const declarations = {
     // The annotation rows' classification: a reply is an object in `/Annots`
     // carrying its own appearance stream, plus two entries — `/IRT` and `/RT` —
     // on that same object. Nothing about it is page content.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // `addAnnotation`'s *not yet*, in its own words: this mints an object whose
     // walk index is not in the payload, so an inverse would have to name the
@@ -1432,6 +1522,8 @@ const declarations = {
     // for the annotation rows' reason. It is also NOT an annotation in MuPDF's
     // model — `getAnnotations()` does not return one — which is what put its
     // apply in `pageLinks.ts` rather than beside them.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // `addAnnotation`'s *not yet*, on a weaker footing: that one waits for a
     // handle that now exists, and this one waits for a handle nothing has
@@ -1457,6 +1549,8 @@ const declarations = {
     kind: 'setLinkOutline',
     display: 'image',
     // `/Border` and `/C` on a link's own dictionary, which only MuPDF's object layer reaches (`addLink`'s reason).
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // Not invertible: a link has no identity to restore to (`addLink`'s `captureAddLink`), so undo restores the checkpoint
     // the bus took (ADR-0037).
@@ -1477,6 +1571,8 @@ const declarations = {
     kind: 'editLink',
     display: 'image',
     // `/Rect` and `/A` on a link, through MuPDF's own `Link` (`addLink`'s reason).
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // `setLinkOutline`'s reason: a link has no identity to restore to, so undo restores the checkpoint (ADR-0037).
     invertible: false,
@@ -1500,6 +1596,8 @@ const declarations = {
     // value is `/V` on an object in `/AcroForm` and the appearance MuPDF
     // regenerates is that object's — measured, 7708 marked pixels before a
     // longer text value and 8701 after.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // THE FIRST INVERTIBLE COMMAND ON EITHER WALK, and the reason is the shape
     // of the payload rather than anything about forms: a fill names ONE widget,
@@ -1528,6 +1626,8 @@ const declarations = {
     display: 'image',
     // MuPDF, for the fill's reason: it writes field values and the appearances that show them (§3's matrix), and the
     // standard's Reset form is MuPDF's own `pdf_reset_form`.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // NOT INVERTIBLE, for `importFormData`'s reason: the prior is every value the button's action names, across the
     // document, which the checkpoint restores exactly and an inverse would have to carry whole.
@@ -1548,6 +1648,8 @@ const declarations = {
     kind: 'showHideFields',
     display: 'image',
     // `resetForm`'s writer: it writes widgets' `/F` in the session the fill and the reset write in.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // NOT INVERTIBLE, `resetForm`'s reason: the prior is every widget of every field the action names, across the
     // document, which the checkpoint restores exactly.
@@ -1566,6 +1668,8 @@ const declarations = {
     kind: 'resetWholeForm',
     display: 'image',
     // `resetForm`'s writer, and the same reset (`resetFields`): only what chooses the fields differs.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // NOT INVERTIBLE, `resetForm`'s reason: the prior is every value in the form.
     invertible: false,
@@ -1587,6 +1691,8 @@ const declarations = {
     // classification with a second structure attached. Nothing a content-stream
     // writer could do would remove a field; it would paint over the appearance
     // and leave the object fillable.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // TERMINAL, and it is `removeAnnotation`'s reason strictly larger rather
     // than a new one: the prior state is the widget's whole object graph — a
@@ -1620,6 +1726,8 @@ const declarations = {
     // `docs/ARCHITECTURE.md` §3 names the call: *"Form fields: flatten —
     // MuPDF, `bake(false, true)`"*. Settled before this row existed, so no B4
     // on the routing. The one that WAS owed is ADR-0045's, on the save.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // TERMINAL, and larger than `deleteFormFields`' reason rather than a new
     // one: this loses every widget in the document AND rewrites the content
@@ -1651,6 +1759,8 @@ const declarations = {
     display: 'image',
     // `docs/ARCHITECTURE.md` §3's matrix names MuPDF for *encryption,
     // permissions* and has since the founding record, so no B4 on the routing.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // INVERTIBLE (ADR-0171 Decision 8): the prior is the protection the session stood with, bounded and small, so the
     // undo takes no checkpoint, and a checkpoint is a whole copy of the document as it was, readable when it was. That
@@ -1692,6 +1802,8 @@ const declarations = {
     display: 'image',
     // `docs/ARCHITECTURE.md` §3's matrix names MuPDF for *redaction* and has
     // since the founding record, so no B4 on the routing.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // TERMINAL, and this is the one command in the table where that is the
     // POINT rather than a cost. The prior state is the content that was
@@ -1726,6 +1838,8 @@ const declarations = {
     display: 'image',
     // §3's matrix names MuPDF for annotations and for redaction, and this
     // command creates annotations. No B4 on the routing.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // TERMINAL, and for `addAnnotation`'s reason at a different scale: an
     // inverse would have to name every mark this created, in a walk whose
@@ -1752,6 +1866,8 @@ const declarations = {
     display: 'image',
     // §3's matrix names MuPDF for *optimize* and for the object model this
     // walks. No B4 on the routing.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // TERMINAL, and `flattenFormFields`' reason one step wider: the removals
     // are catalogue subtrees whose size is the document's, and flattening
@@ -1777,6 +1893,8 @@ const declarations = {
     // `@signpdf/signer-p12`, over a placeholder THIS BUILD writes. `signpdf`
     // has been a declared byte-image writer in `writerShapes` since Stage 0
     // with nothing behind it; this is the command that puts something there.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'signpdf',
     // TERMINAL. The prior state is the unsigned document, which is the whole
     // file — and the checkpoint holds exactly that.
@@ -1810,6 +1928,8 @@ const declarations = {
     // form commands above route to the structural writer of record and this one
     // does not, which is the matrix splitting a concern by OPERATION — its own
     // granularity, not an exception to B3.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'pdf-lib',
     // NOT INVERTIBLE, and the reason is NOT the byte-image family's. A drawn-on
     // page has no bounded prior state; a create's prior state is *this field did
@@ -1853,6 +1973,8 @@ const declarations = {
   editFormFields: {
     kind: 'editFormFields',
     display: 'image',
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'pdf-lib',
     // NOT INVERTIBLE, `createFormField`'s checkpoint and for a different reason: a rename moves a field's identity and a
     // list of edits is a set of dictionaries, so a prior state would be the whole of each. The checkpoint the bus already
@@ -1872,6 +1994,8 @@ const declarations = {
   duplicateFormField: {
     kind: 'duplicateFormField',
     display: 'image',
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'pdf-lib',
     invertible: false,
     undo: 'checkpoint',
@@ -1886,6 +2010,8 @@ const declarations = {
   setTabOrder: {
     kind: 'setTabOrder',
     display: 'image',
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'pdf-lib',
     invertible: false,
     undo: 'checkpoint',
@@ -1906,6 +2032,8 @@ const declarations = {
     // matrix puts on MuPDF; and it READS an FDF, which is PDF syntax and has no
     // API of its own — measured 2026-09-08, `fdf` appears zero times in
     // `mupdf.d.ts`. Both halves happen where the engine is.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // NOT INVERTIBLE. The prior is every value of every field the file happens
     // to name — a set the command cannot know until it has parsed, spread
@@ -1938,6 +2066,8 @@ const declarations = {
     display: 'image',
     // MuPDF, for `importFormData`'s two reasons: it creates annotations, which §3 puts on MuPDF,
     // and it reads an FDF, which is PDF syntax only MuPDF opens here (ADR-0077).
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // NOT INVERTIBLE, for `importFormData`'s reason: what it adds is decided by a file the command
     // has not parsed, and the checkpoint restores the document exactly.
@@ -1964,6 +2094,8 @@ const declarations = {
     // assigns in-place text editing to PDFium in both columns and ADR-0006 kept
     // that row; MuPDF's text API is extraction, so this is a classification
     // rather than a preference.
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'pdfium',
     // INVERTIBLE, and it is the first byte-image command that is — which
     // `commandDeclarations.test.ts` carried a trigger for and
@@ -2007,6 +2139,8 @@ const declarations = {
   replaceAllText: {
     kind: 'replaceAllText',
     display: 'image',
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'pdfium',
     // NOT INVERTIBLE, AND THE PRIOR IS WHY — not because PDFium cannot rebuild
     // what it changed. A prior exists here: every object this
@@ -2039,6 +2173,8 @@ const declarations = {
   replaceTextAt: {
     kind: 'replaceTextAt',
     display: 'image',
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'pdfium',
     // INVERTIBLE, `replaceTextObject`'s prior exactly: the one object's string as it was, put back into that object.
     // A spelling review is many single replacements against one document, and a checkpoint each would be a whole
@@ -2059,6 +2195,8 @@ const declarations = {
   promoteFormObjects: {
     kind: 'promoteFormObjects',
     display: 'image',
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'pdfium',
     // NOT INVERTIBLE: PDFium can take a Form XObject apart
     // (`FPDFFormObj_RemoveObject`) and offers nothing that builds one. Every
@@ -2088,6 +2226,8 @@ const declarations = {
   editTextBlock: {
     kind: 'editTextBlock',
     display: 'image',
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'pdfium',
     // NOT INVERTIBLE
     // ([ADR-0096](../../../docs/DECISIONS/0096-text-is-edited-in-place-on-the-page-in-blocks-that-reflow.md)
@@ -2120,6 +2260,8 @@ const declarations = {
   editTextOperators: {
     kind: 'editTextOperators',
     display: 'image',
+    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
+    pages: 'all',
     writer: 'mupdf',
     // NOT INVERTIBLE, and a checkpoint is the undo BY DECISION (owner, 2026-10-06):
     // the whole-document copy the checkpoint restores loses nothing an inverse
@@ -2151,6 +2293,31 @@ export type DeclaredCommands = typeof declarations;
 
 /** The table every routing consumer reads. */
 export const declaredCommands: DeclaredCommands = declarations;
+
+/**
+ * The pages `command` changes, as its kind declares them (ADR-0262): `'all'`, or a list in the new version's numbering,
+ * each once and in order. The ONE reading of the declaration: main's answers to execute, undo and redo all take it, so
+ * they cannot answer one command two ways. Bounded for the wire by the contract's `answeredChangedPages`, where the
+ * bound is.
+ */
+export function pagesChangedBy<K extends CommandKind>(command: CommandOfKind<K>): 'all' | readonly number[] {
+  const pages = (declarations as CommandDeclarations)[command.kind].pages;
+  if (pages === 'all') return 'all';
+  if (pages === 'none') return [];
+  const named = pages(command);
+  return named === 'all' ? 'all' : [...new Set(named)].sort((a, b) => a - b);
+}
+
+/**
+ * The pages a command RECORDED IN THE LOG changes, for an undo or a redo of it (ADR-0262 Decision 2): its kind's
+ * declaration, read through {@link pagesChangedBy}; and `'all'` for a kind the log keeps by its kind alone — its held
+ * intent (`'reapply-held-intent'`) or its stored result (`'stored-result'`) — whose recorded command names no page.
+ */
+export function pagesChangedByRecorded(command: { readonly kind: CommandKind }): 'all' | readonly number[] {
+  const declared = (declarations as CommandDeclarations)[command.kind];
+  if (declared.replay === 'reapply-held-intent' || declared.replay === 'stored-result') return 'all';
+  return pagesChangedBy(command as CommandOfKind<CommandKind>);
+}
 
 /** Which writer of record a given command kind is routed to. */
 export type WriterOf<K extends CommandKind> = DeclaredCommands[K]['writer'];
