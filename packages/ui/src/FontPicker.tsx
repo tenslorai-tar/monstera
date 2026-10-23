@@ -241,7 +241,21 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
         <Icon name="ChevronDown" size="dense" />
       </button>
       {open ? (
-        <div className="m-font-picker__open" data-font-picker="" ref={opened}>
+        <div
+          className="m-font-picker__open"
+          data-font-picker=""
+          // A PRESS ANYWHERE IN THE OPEN LIST KEEPS THE FOCUS WHERE IT IS, but in its search box, which takes it (T1).
+          // The choices kept it already; a press on the list itself — its own scroll bar, a group's heading, a note —
+          // took the default, which moved the focus to nothing focusable. The text editor beside the list reads a focus
+          // going nowhere as left (`leavesEditor(null)`), so it finished its words, and Properties fell back to *New
+          // annotations* with the list gone. The scroll bar still scrolls: cancelling the press moves no focus and stops
+          // no scrolling (the closing walks drag it in the app, where the bar is drawn).
+          onMouseDown={(event) => {
+            if (event.target !== search.current) event.preventDefault();
+          }}
+          ref={opened}
+          role="presentation"
+        >
           <input
             aria-activedescendant={flat.length === 0 ? undefined : optionId(Math.min(active, flat.length - 1))}
             aria-autocomplete="list"
@@ -303,13 +317,19 @@ export function FontPicker({ label, value, unset, list, inDocument, builtIn, onP
                           choose(choice);
                         }}
                         role="option"
+                        // THE WHOLE NAME ON HOVER: a name wider than the list is shortened, never scrolled to (T1).
+                        title={choice.family}
                       >
                         {/* EACH NAME IN ITS OWN TYPEFACE, or the face the writer would set it in; where neither can be
                             drawn, in the interface font and said so to a reader of the page (the owner's locked decision 6). */}
                         {previewOf(choice.family) === undefined ? (
-                          <span data-font-preview="none">{choice.family}</span>
+                          <span className="m-font-picker__option-name" data-font-preview="none">
+                            {choice.family}
+                          </span>
                         ) : (
-                          <span style={shownIn(choice.family)}>{choice.family}</span>
+                          <span className="m-font-picker__option-name" style={shownIn(choice.family)}>
+                            {choice.family}
+                          </span>
                         )}
                       </div>
                     );

@@ -7253,6 +7253,15 @@ optgroup {
   background: var(--surface2);
 }
 
+/* A NAME WIDER THAN THE LIST IS SHORTENED, never scrolled to (T1): the list never scrolls sideways, and the option's
+   `title` gives the whole name on hover. `min-inline-size: 0` lets the name be narrower than its own text. */
+.m-font-picker__option-name {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .m-font-picker__note {
   margin: 0;
   color: var(--muted);
