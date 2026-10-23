@@ -122,6 +122,55 @@ function render(kernel, bytes, index) {
 }
 
 /**
+ * A text block's box as the renderer of this comparison inks it: PDFium's box for the block, grown to hold every glyph
+ * MuPDF draws whose ORIGIN lies in that box.
+ *
+ * PDFium's box alone is not where the block's pixels are for a font the document does not embed: both engines place each
+ * glyph's origin from the page's own widths, but the height of the box comes from whatever substitute PDFium found among
+ * the machine's fonts, and the glyph from MuPDF's own fallback. Measured 2026-10-23: the CIDFontType0 fixture, its
+ * Japanese font not embedded, drew 941 to 4,042 pixels outside PDFium's box on a runner with no Japanese font — a
+ * recolour among them, which moves nothing — and none here, where PDFium found one. An origin is on the baseline, where
+ * the two engines agree, so it names the glyph without trusting either box.
+ * @param {any} kernel @param {Uint8Array} bytes @param {number} index @param {Box} box @returns {Box}
+ */
+function inkOf(kernel, bytes, index, box) {
+  const { mupdf } = kernel;
+  const document = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
+  try {
+    const page = document.loadPage(index);
+    // MuPDF's structured text is in its own page space; the page's transform takes PDF space there, so its inverse
+    // takes a point back. No axis is assumed: the inverse is the matrix's.
+    const [a, b, c, d, e, f] = page.getTransform();
+    const det = a * d - b * c;
+    /** @param {number} x @param {number} y @returns {[number, number]} */
+    const toPdf = (x, y) => [(d * (x - e) - c * (y - f)) / det, (a * (y - f) - b * (x - e)) / det];
+    const ink = { ...box };
+    const text = page.toStructuredText('preserve-whitespace');
+    try {
+      text.walk({
+        /** @param {string} _c @param {[number, number]} origin @param {unknown} _font @param {number} _size @param {number[]} quad */
+        onChar: (_c, origin, _font, _size, quad) => {
+          const [x, y] = toPdf(origin[0], origin[1]);
+          if (x < box.left - EDGE || x > box.right + EDGE || y < box.bottom - EDGE || y > box.top + EDGE) return;
+          for (let at = 0; at < 8; at += 2) {
+            const [qx, qy] = toPdf(quad[at] ?? 0, quad[at + 1] ?? 0);
+            ink.left = Math.min(ink.left, qx);
+            ink.right = Math.max(ink.right, qx);
+            ink.bottom = Math.min(ink.bottom, qy);
+            ink.top = Math.max(ink.top, qy);
+          }
+        },
+      });
+    } finally {
+      text.destroy();
+    }
+    return ink;
+  } finally {
+    document.destroy();
+  }
+}
+
+/**
  * How many pixels differ between two renders outside `allowed` (each a box in PDF space, widened by {@link EDGE}), and
  * how many differ inside it.
  * @param {Render} before @param {Render} after @param {Box[]} allowed
@@ -249,19 +298,26 @@ async function walkPage(pdfium, kernel, bytes, index) {
         { kind: 'editTextOperators', page: index, ...kernel.blockEditOf([{ lines, soft, text, ...rest }]), fit: 'reflow', version: 1 },
         runs,
       );
-    // SCALED ABOUT ITS TOP LEFT, the operator writer's own anchor.
-    const scaled = { left: box.left, bottom: box.top - (box.top - box.bottom) * 1.2, right: box.left + (box.right - box.left) * 1.2, top: box.top };
-    await attempt(name, 'move', written({ place: { move: { x: 12, y: -9 } } }), [box, { left: box.left + 12, bottom: box.bottom - 9, right: box.right + 12, top: box.top - 9 }]);
-    await attempt(name, 'resize', written({ place: { scale: 1.2 } }), [box, scaled]);
+    // WHERE ITS PIXELS ARE (`inkOf`), which is what may change; the command still names it by PDFium's box.
+    const ink = inkOf(kernel, bytes, index, box);
+    // SCALED ABOUT ITS TOP LEFT, the operator writer's own anchor, which is the top left of PDFium's box.
+    const scaled = {
+      left: box.left + (ink.left - box.left) * 1.2,
+      bottom: box.top - (box.top - ink.bottom) * 1.2,
+      right: box.left + (ink.right - box.left) * 1.2,
+      top: box.top - (box.top - ink.top) * 1.2,
+    };
+    await attempt(name, 'move', written({ place: { move: { x: 12, y: -9 } } }), [ink, { left: ink.left + 12, bottom: ink.bottom - 9, right: ink.right + 12, top: ink.top - 9 }]);
+    await attempt(name, 'resize', written({ place: { scale: 1.2 } }), [ink, scaled]);
     if (text.length > 0) {
-      await attempt(name, 'recolour', written({ text, marks: [{ from: 0, to: text.length, set: { colour: { r: 200, g: 30, b: 30 } } }] }), [box]);
+      await attempt(name, 'recolour', written({ text, marks: [{ from: 0, to: text.length, set: { colour: { r: 200, g: 30, b: 30 } } }] }), [ink]);
     }
     const indices = block.lines.flatMap((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index));
     for (const to of /** @type {const} */ (['forward', 'backward'])) {
       const past = kernel.arrangeNeighbourOf(listed, { text: true, indices, box }, to);
-      if (past !== undefined) await attempt(name, to, written({ place: { arrange: { to, past } } }), [box]);
+      if (past !== undefined) await attempt(name, to, written({ place: { arrange: { to, past } } }), [ink]);
     }
-    await attempt(name, 'delete', written({ text: '' }), [box]);
+    await attempt(name, 'delete', written({ text: '' }), [ink]);
   }
   return tries;
 }
