@@ -358,6 +358,24 @@ await measure('highlight area', async (run) => {
   });
 });
 
+// AN ERASURE (N3's eraser, 62-251 ms in session 3): a mark drawn and written first, then one press of the eraser on it,
+// timed from that press until the region stops changing — the mark gone from the page as it is drawn.
+await measure('eraser', async (run) => {
+  await arm('annotate.highlight-area');
+  const at = await slot();
+  const top = 330 + run * 50;
+  await page.mouse.move(at.x + 320 * at.scale, at.y + top * at.scale);
+  await page.mouse.down();
+  await page.mouse.move(at.x + 540 * at.scale, at.y + (top + 30) * at.scale, { steps: 8 });
+  await page.mouse.up();
+  await writesIdle(page);
+  await page.waitForTimeout(800);
+  await arm('annotate.eraser');
+  return timed(clipOf(at, 300, top - 10, 260, 50), async () => {
+    await page.mouse.click(at.x + 430 * at.scale, at.y + (top + 15) * at.scale);
+  });
+});
+
 await measure('text highlight', async (run) => {
   await arm('annotate.highlight');
   const at = await slot();
