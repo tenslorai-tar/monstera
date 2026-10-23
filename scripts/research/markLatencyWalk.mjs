@@ -50,6 +50,8 @@ const option = (name) => {
 const appRoot = option('--app-root');
 const runs = Number(option('--runs') ?? '5');
 const only = option('--only')?.split(',');
+/** `--changes`: every run's change list printed, each change as its time, the part of the region and its new reading. */
+const showChanges = argv.includes('--changes');
 /** @param {string} name */
 const wanted = (name) => only === undefined || only.includes(name);
 
@@ -239,7 +241,11 @@ async function measure(name, once, options = { shownWhileTyped: false }) {
     /** @type {Awaited<ReturnType<typeof timed>>[]} */
     const samples = [];
     for (let run = 0; run < runs; run += 1) {
-      samples.push(await once(run));
+      const sample = await once(run);
+      samples.push(sample);
+      // WHAT CHANGED BETWEEN THE FIRST AND THE FINAL, when asked: a final later than the first is a second change on
+      // screen, and only the change list says which part of the region made it.
+      if (showChanges) process.stdout.write(`      ${name} run ${String(run)}: ${sample.received}\n`);
       // EACH RUN UNDONE, so every run starts on the same page: marks left from earlier runs took the next run's press
       // (a stamp's box began on a highlight and selected it), and five deletes ran out of pages (trial, 2026-10-20).
       await page.keyboard.press('Escape');
