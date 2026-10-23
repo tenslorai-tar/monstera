@@ -197,6 +197,35 @@ describe('editDrawnObject — recolour (ADR-0264 Decision 3)', () => {
   });
 });
 
+describe('editDrawnObject — delete (ADR-0264 Decision 3)', () => {
+  const remove = { op: 'delete' } as const;
+
+  it('removes the red square: MuPDF draws paper there and PDF.js reads one path fewer, every other object as it was', async () => {
+    const bytes = await edited(command('path', 0, SQUARE, remove));
+    const pixels = await mupdfPixels(bytes);
+    expect([pixels(40, 40), pixels(120, 40), pixels(40, 120), pixels(160, 160)]).toStrictEqual([WHITE, GREEN, YELLOW, [255, 0, 255]]);
+    const control = await pdfjsReading(await fixture());
+    const reading = await pdfjsReading(bytes);
+    // CONTROL: the fixture's square is in PDF.js's reading, so its absence below is the removal's.
+    expect(control.paths).toContainEqual([20, 20, 60, 60]);
+    expect(reading.paths).toStrictEqual(control.paths.filter((path) => JSON.stringify(path) !== JSON.stringify([20, 20, 60, 60])));
+    expect(reading.images).toStrictEqual(control.images);
+  });
+
+  it('removes the picture; PDF.js reads no picture and MuPDF draws paper where it was', async () => {
+    const bytes = await edited(command('image', 0, PICTURE, remove));
+    expect((await pdfjsReading(bytes)).images).toStrictEqual([]);
+    expect((await mupdfPixels(bytes))(120, 40)).toStrictEqual(WHITE);
+  });
+
+  it('a shape that sets the clip loses its paint and keeps its clip: the yellow still shows inside it alone', async () => {
+    const bytes = await edited(command('path', 1, CLIPPER, remove));
+    expect(new TextDecoder('latin1').decode(await savedContent(bytes))).toContain('20 100 40 40 re W n');
+    const pixels = await mupdfPixels(bytes);
+    expect([pixels(40, 120), pixels(100, 120)]).toStrictEqual([YELLOW, WHITE]);
+  });
+});
+
 describe('editDrawnObject — place (ADR-0264 Decision 3)', () => {
   it('moves the red square 30 points up: MuPDF draws it there and not where it was, after a save and a reopen', async () => {
     const before = await mupdfPixels(await fixture());

@@ -6997,8 +6997,11 @@ const drawnRecolorSchema = z
   })
   .strict();
 
+/** Removes the object; a shape that also sets the clip keeps its clip and loses only its paint (ADR-0264 Decision 3). */
+const drawnDeleteSchema = z.object({ op: z.literal('delete') }).strict();
+
 /** What `editDrawnObject` does to the object it names (ADR-0264 Decision 3). */
-export const drawnEditSchema = z.discriminatedUnion('op', [drawnPlaceSchema, drawnRecolorSchema]);
+export const drawnEditSchema = z.discriminatedUnion('op', [drawnPlaceSchema, drawnRecolorSchema, drawnDeleteSchema]);
 export type DrawnEdit = z.infer<typeof drawnEditSchema>;
 
 /**

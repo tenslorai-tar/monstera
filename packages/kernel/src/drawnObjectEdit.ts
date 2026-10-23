@@ -302,6 +302,33 @@ function recolor(
   return edited;
 }
 
+/**
+ * A removal: the object's instructions go, one space left so the tokens either side cannot run together. A shape that
+ * also sets the clip keeps its path and loses only its paint, which becomes `n`, so what follows is clipped as before.
+ */
+function remove(
+  content: Uint8Array,
+  kinds: (name: string) => XObjectKind,
+  drawn: readonly DrawnObject[],
+  found: DrawnObject,
+  command: CommandOfKind<'editDrawnObject'>,
+): Uint8Array {
+  const paint = found.paint;
+  const edited =
+    found.clips && paint !== undefined
+      ? spliced(content, [{ start: paint.start, end: paint.end, text: 'n' }])
+      : spliced(content, [{ start: found.start, end: found.end, text: ' ' }]);
+
+  // READ BACK: every other object in its kind and order, the text as it was, and every clip as it was.
+  const after = drawnObjects(edited, kinds);
+  const others = drawn.filter((object) => object !== found);
+  const windowsOf = (objects: readonly DrawnObject[]): string => JSON.stringify(objects.map((object) => object.windows.map((window) => window.points)));
+  if (!sameObjects(others, after) || !sameText(content, edited) || windowsOf(after) !== windowsOf(others)) {
+    throw refused('read-back', `removing ${command.object} ${String(command.ordinal)} did not read back as one object removed`);
+  }
+  return edited;
+}
+
 /** The same drawn objects in the same kinds, in order. */
 function sameObjects(before: readonly DrawnObject[], after: readonly DrawnObject[]): boolean {
   return after.length === before.length && after.every((object, at) => object.kind === before[at]?.kind);
@@ -337,6 +364,8 @@ export function editDrawnContent(
       return { content: place(content, kinds, drawn, found, command, edit) };
     case 'recolor':
       return { content: recolor(content, kinds, drawn, found, command, edit) };
+    case 'delete':
+      return { content: remove(content, kinds, drawn, found, command) };
   }
 }
 
