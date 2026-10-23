@@ -60,6 +60,7 @@ import {
   type PickDocuments,
   createContractHandlers,
   mailtoWithBody,
+  submissionFileName,
 } from './contractHandlers.js';
 import type { KnownRoot } from './displayLocation.js';
 import { NO_RECENT_PICTURES, createRecentPictures } from './recentPictures.js';
@@ -68,7 +69,7 @@ import { unusedLibrarySurface } from './personalLibrary.js';
 import { NO_REVIEW_PROMPT, createEngagement, reviewPrompt } from './engagement.js';
 import { NO_MEMORY_RELEASE } from './memoryRelease.js';
 import { NO_RENDERER_ENDING } from './rendererEnding.js';
-import { type DocumentCommands, type ImageRead, MissingSessionError } from './documentCommands.js';
+import { type DocumentCommands, type EmailOutcome, type ImageRead, MissingSessionError } from './documentCommands.js';
 import type { ScannedSignaturePicture } from './signaturePicture.js';
 import { type LaunchDocuments, createLaunchDocuments } from './launchDocuments.js';
 import { type RecentFiles, createRecentFiles } from './recentFiles.js';
@@ -860,13 +861,23 @@ describe('document.submitButtonForm (ADR-0259)', () => {
     return { commands, encoded };
   }
   const field = { page: 0, index: 3, name: 'Send' };
-  const request: { docId: DocId; version: DocVersion; field: typeof field; trigger: FieldActionTrigger; step: number } = {
+  const request: {
+    docId: DocId;
+    version: DocVersion;
+    field: typeof field;
+    trigger: FieldActionTrigger;
+    step: number;
+    route: 'post' | 'share' | 'mail-app';
+  } = {
+    route: 'post',
     docId: A_DOC,
     version: asDocVersion(4),
     field,
     trigger: 'up',
     step: 0,
   };
+  /** The same press, routed to the mail app, for a `mailto:` address. */
+  const mailApp = { ...request, route: 'mail-app' as const };
   const submit = (address: string, format: 'fdf' | 'xfdf' | 'html' = 'html'): readonly ButtonStep[] => [
     { trigger: 'up', step: 0, action: { kind: 'submit', address, format, fields: ['applicant'] } },
   ];
@@ -901,7 +912,7 @@ describe('document.submitButtonForm (ADR-0259)', () => {
   it('opens the mail app with the data as the message, and NEVER posts to a mailto: address', async () => {
     const { commands } = submitCommands(submit('mailto:forms@example.org?subject=Application', 'xfdf'), '<xfdf/>');
     const { handlers, formsPosted, linksOpened } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
-    expect(await handlers['document.submitButtonForm'](request)).toStrictEqual({ ok: true, value: { kind: 'mail-opened' } });
+    expect(await handlers['document.submitButtonForm'](mailApp)).toStrictEqual({ ok: true, value: { kind: 'mail-opened' } });
     expect(linksOpened).toStrictEqual(['mailto:forms@example.org?subject=Application&body=%3Cxfdf%2F%3E']);
     expect(formsPosted).toStrictEqual([]);
   });
@@ -911,11 +922,81 @@ describe('document.submitButtonForm (ADR-0259)', () => {
     const fits = 'x'.repeat(MAILTO_WITH_DATA_MAX - mailtoWithBody(address, '').length);
     expect(mailtoWithBody(address, fits)).toHaveLength(MAILTO_WITH_DATA_MAX);
     const under = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands: submitCommands(submit(address, 'fdf'), fits).commands });
-    expect(await under.handlers['document.submitButtonForm'](request)).toStrictEqual({ ok: true, value: { kind: 'mail-opened' } });
+    expect(await under.handlers['document.submitButtonForm'](mailApp)).toStrictEqual({ ok: true, value: { kind: 'mail-opened' } });
     expect(under.linksOpened).toStrictEqual([mailtoWithBody(address, fits)]);
     const over = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands: submitCommands(submit(address, 'fdf'), `${fits}x`).commands });
-    expect(await over.handlers['document.submitButtonForm'](request)).toStrictEqual({ ok: true, value: { kind: 'mail-opened-without-data' } });
+    expect(await over.handlers['document.submitButtonForm'](mailApp)).toStrictEqual({ ok: true, value: { kind: 'mail-opened-without-data' } });
     expect(over.linksOpened).toStrictEqual([address]);
+  });
+
+  describe('the Share sheet route (ADR-0261 Decision 3)', () => {
+    /** {@link submitCommands} with a document name and a sheet that answers `outcome`, recording each file offered. */
+    function sharing(steps: readonly ButtonStep[], outcome: EmailOutcome, data = '<xfdf/>') {
+      const base = submitCommands(steps, data);
+      const offered: { fileName: string; text: string }[] = [];
+      const emailed: string[] = [];
+      const commands = Object.assign(base.commands, {
+        nameOf: () => 'Application.pdf',
+        shareFile: (_docId: DocId, file: { fileName: string; bytes: Uint8Array }) => {
+          offered.push({ fileName: file.fileName, text: new TextDecoder().decode(file.bytes) });
+          return Promise.resolve(outcome);
+        },
+        email: (docId: DocId) => {
+          emailed.push(docId);
+          return Promise.resolve(outcome);
+        },
+      });
+      return { commands, encoded: base.encoded, offered, emailed };
+    }
+    const shareRoute = { ...request, route: 'share' as const };
+
+    it('offers the encoded data as ONE FILE named for the document, and opens no mail link and posts nothing', async () => {
+      const { commands, encoded, offered } = sharing(submit('mailto:forms@example.org', 'xfdf'), { kind: 'offered' });
+      const { handlers, formsPosted, linksOpened } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+      expect(await handlers['document.submitButtonForm'](shareRoute)).toStrictEqual({ ok: true, value: { kind: 'shared' } });
+      expect(encoded).toStrictEqual([{ format: 'xfdf', fields: ['applicant'] }]);
+      expect(offered).toStrictEqual([{ fileName: 'Application form data.xfdf', text: '<xfdf/>' }]);
+      expect(linksOpened).toStrictEqual([]);
+      expect(formsPosted).toStrictEqual([]);
+      expect(submissionFileName('Application.pdf', 'html')).toBe('Application form data.txt');
+    });
+
+    it('shares the WHOLE DOCUMENT as itself, through emailing’s own route', async () => {
+      const whole: readonly ButtonStep[] = [
+        { trigger: 'up', step: 0, action: { kind: 'submit', address: 'mailto:forms@example.org', format: 'pdf', fields: null } },
+      ];
+      const { commands, encoded, emailed, offered } = sharing(whole, { kind: 'offered' });
+      const { handlers } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+      expect(await handlers['document.submitButtonForm'](shareRoute)).toStrictEqual({ ok: true, value: { kind: 'shared' } });
+      expect(emailed).toStrictEqual([A_DOC]);
+      expect(offered).toStrictEqual([]);
+      expect(encoded).toStrictEqual([]);
+    });
+
+    it('CONTROL: with no Share sheet nothing is offered and the answer says so; a refusing sheet says that', async () => {
+      for (const [outcome, answer] of [
+        [{ kind: 'unavailable' }, 'share-unavailable'],
+        [{ kind: 'failed' }, 'share-failed'],
+      ] as const) {
+        const { commands } = sharing(submit('mailto:forms@example.org', 'fdf'), outcome);
+        const { handlers, linksOpened } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+        expect(await handlers['document.submitButtonForm'](shareRoute)).toStrictEqual({ ok: true, value: { kind: answer } });
+        expect(linksOpened).toStrictEqual([]);
+      }
+    });
+
+    it('CONTROL: a route that does not fit the address main read is no-such-submit, and nothing is encoded or sent', async () => {
+      for (const [address, asked] of [
+        ['mailto:forms@example.org', request],
+        ['https://forms.example/take', shareRoute],
+        ['https://forms.example/take', mailApp],
+      ] as const) {
+        const { commands, encoded, offered } = sharing(submit(address, 'fdf'), { kind: 'offered' });
+        const { handlers, formsPosted, linksOpened } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+        expect(await handlers['document.submitButtonForm'](asked), `${address} by ${asked.route}`).toStrictEqual({ ok: true, value: { kind: 'no-such-submit' } });
+        expect([encoded, offered, formsPosted, linksOpened]).toStrictEqual([[], [], [], []]);
+      }
+    });
   });
 
   describe('the whole document (ADR-0261)', () => {
@@ -957,7 +1038,7 @@ describe('document.submitButtonForm (ADR-0259)', () => {
 
       const mail = wholeCommands(whole('mailto:forms@example.org'));
       const mailed = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands: mail.commands });
-      expect(await mailed.handlers['document.submitButtonForm'](request)).toStrictEqual({ ok: true, value: { kind: 'mail-opened-without-document' } });
+      expect(await mailed.handlers['document.submitButtonForm'](mailApp)).toStrictEqual({ ok: true, value: { kind: 'mail-opened-without-document' } });
       expect(mailed.linksOpened).toStrictEqual(['mailto:forms@example.org']);
       expect(mail.staged).toStrictEqual([]);
       expect(mailed.documentsPosted).toStrictEqual([]);

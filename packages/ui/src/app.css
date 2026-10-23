@@ -3107,6 +3107,11 @@ optgroup {
   user-select: text;
 }
 
+/* A SUBMISSION'S COPY, under the address it copies and at its start, so it reads as that address's own (ADR-0261). */
+.m-submit-form__copy {
+  display: flex;
+}
+
 .m-destinations-empty,
 .m-layers-empty,
 .m-annotations-empty,

@@ -1,7 +1,9 @@
 import { type ContractClient, type FieldAction, type UrlFetchRefusal, schemeOf } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 
-import { SUBMIT_FORM_DIALOG_ID, SUBMIT_FORM_RESULT } from '../dialogs/submitForm.js';
+import { confirmCopied } from '../commands/confirmWritten.js';
+import { SUBMIT_FORM_DIALOG_ID, SUBMIT_FORM_RESULT, SUBMIT_FORM_SEND_RESULT, type SUBMIT_ROUTES } from '../dialogs/submitForm.js';
+import type { DialogReports } from '../registries/dialogs.js';
 import {
   BUTTON_PRESS_UNREAD,
   BUTTON_SUBMIT_BLOCKED,
@@ -13,6 +15,9 @@ import {
   BUTTON_SUBMIT_NOT_OPENED,
   BUTTON_SUBMIT_NOT_TAKEN,
   BUTTON_SUBMIT_SENT,
+  BUTTON_SUBMIT_SHARED,
+  BUTTON_SUBMIT_SHARE_FAILED,
+  BUTTON_SUBMIT_SHARE_UNAVAILABLE,
   BUTTON_SUBMIT_UNAVAILABLE,
   BUTTON_SUBMIT_UNREACHABLE,
   BUTTON_SUBMIT_UNREPRESENTABLE,
@@ -22,6 +27,9 @@ import type { ShowToast } from '../toasts.js';
 
 /** What `main` answers a submission, and what a refused one said. */
 type SubmitAnswer = Awaited<ReturnType<ContractClient['document.submitButtonForm']>>;
+
+/** The route the person chose in the question, which `main` checks against the address it reads. */
+export type SubmitRoute = (typeof SUBMIT_ROUTES)[number];
 
 /**
  * Each guard reason's sentence for a SUBMISSION, in a total record keyed by the contract's list, for
@@ -44,11 +52,26 @@ const REFUSED: Readonly<Record<UrlFetchRefusal, MessageKey>> = {
 /** The application's own exports a submission falls back on when its data does not fit in a message. */
 export type SubmitFallbackId = 'document.export-form-data-fdf' | 'document.export-form-data-xfdf';
 
-/** What asking and sending needs: the dialog, a sentence, and the application's own Export form data. */
+/** What asking and sending needs: the dialog and its reports, a sentence, Export form data, and `main`'s clipboard. */
 export interface ButtonSubmitDeps {
-  readonly ask: (id: string, props: unknown) => Promise<unknown>;
+  readonly ask: (id: string, props: unknown, onUpdate?: DialogReports) => Promise<unknown>;
   readonly toast: ShowToast;
   readonly run: (id: SubmitFallbackId) => Promise<void>;
+  readonly client: Pick<ContractClient, 'window.copyText'>;
+}
+
+/**
+ * Who a `mailto:` address is to, as a person types it into a message: the part before any `?`, its escapes read
+ * (RFC 6068). What Copy copies, since the Share sheet takes no recipient and a pasted `mailto:` is not an address.
+ */
+export function mailRecipient(address: string): string {
+  const to = address.slice('mailto:'.length).split('?')[0] ?? '';
+  try {
+    return decodeURIComponent(to);
+  } catch {
+    // A STRAY `%` that names no escape is the address as written: shown and copied as it stands, never dropped.
+    return to;
+  }
 }
 
 /**
@@ -63,12 +86,23 @@ export interface ButtonSubmitDeps {
 export async function askThenSubmit(
   deps: ButtonSubmitDeps,
   action: Extract<FieldAction, { kind: 'submit' }>,
-  send: () => Promise<SubmitAnswer>,
+  send: (route: SubmitRoute) => Promise<SubmitAnswer>,
 ): Promise<void> {
   const mail = schemeOf(action.address) === 'mailto:';
-  const answer = await deps.ask(SUBMIT_FORM_DIALOG_ID, { address: action.address, format: action.format, fields: action.fields, mail });
-  if (!SUBMIT_FORM_RESULT.safeParse(answer).success) return;
-  const sent = await send();
+  const answer = await deps.ask(
+    SUBMIT_FORM_DIALOG_ID,
+    { address: action.address, format: action.format, fields: action.fields, mail },
+    // COPY, REPORTED with the dialog left open: through `main`, which holds the clipboard, and *Copied* only when it says so.
+    (reported) => {
+      if (!mail || !SUBMIT_FORM_RESULT.safeParse(reported).success || !('copy' in (reported as object))) return;
+      void deps.client['window.copyText']({ text: mailRecipient(action.address) }).then((copied) => {
+        if (copied.ok && copied.value.copied) confirmCopied({ toast: deps.toast });
+      });
+    },
+  );
+  const chosen = SUBMIT_FORM_SEND_RESULT.safeParse(answer);
+  if (!chosen.success) return;
+  const sent = await send(chosen.data.route);
   if (!sent.ok) {
     deps.toast('problem', BUTTON_SUBMIT_UNAVAILABLE);
     return;
@@ -87,6 +121,15 @@ export async function askThenSubmit(
       return;
     case 'mail-opened-without-document':
       deps.toast('problem', BUTTON_SUBMIT_MAIL_WITHOUT_DOCUMENT);
+      return;
+    case 'shared':
+      deps.toast('done', BUTTON_SUBMIT_SHARED);
+      return;
+    case 'share-unavailable':
+      deps.toast('problem', BUTTON_SUBMIT_SHARE_UNAVAILABLE);
+      return;
+    case 'share-failed':
+      deps.toast('problem', BUTTON_SUBMIT_SHARE_FAILED);
       return;
     case 'refused':
       deps.toast('problem', REFUSED[outcome.reason]);

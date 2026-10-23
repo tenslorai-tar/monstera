@@ -5,7 +5,16 @@ import { describe, expect, it } from 'vitest';
 import { FOLLOW_LINK_DIALOG_ID } from '../dialogs/followLink.js';
 import { OPEN_BUTTON_FILE_DIALOG_ID } from '../dialogs/openButtonFile.js';
 import { SUBMIT_FORM_DIALOG_ID } from '../dialogs/submitForm.js';
-import { BUTTON_PRESS_UNREAD, BUTTON_SUBMIT_BLOCKED, BUTTON_SUBMIT_MAIL_WITHOUT_DATA, BUTTON_SUBMIT_SENT } from '../messages/en.js';
+import {
+  BUTTON_PRESS_UNREAD,
+  BUTTON_SUBMIT_BLOCKED,
+  BUTTON_SUBMIT_MAIL_WITHOUT_DATA,
+  BUTTON_SUBMIT_SENT,
+  BUTTON_SUBMIT_SHARED,
+  BUTTON_SUBMIT_SHARE_FAILED,
+  BUTTON_SUBMIT_SHARE_UNAVAILABLE,
+  TOAST_COPIED,
+} from '../messages/en.js';
 import type { ZoomMode } from '../zoom.js';
 import { type ButtonStepCommand, pressButton } from './buttonPress.js';
 
@@ -27,6 +36,8 @@ function pressing(
   answer: unknown = { open: true },
   /** What `main` answers a submission: sent, unless a case says otherwise. */
   submitted: SubmitOutcome = { kind: 'sent' },
+  /** What the question REPORTS before it answers (ADR-0094): a submission's Copy. */
+  reports: readonly unknown[] = [],
 ) {
   const sent: ButtonStepCommand[] = [];
   const said: MessageKey[] = [];
@@ -49,14 +60,22 @@ function pressing(
         routes.push({ openFile: params });
         return Promise.resolve(ok({ kind: 'absent' as const }));
       },
-    } as Pick<ContractClient, 'document.buttonActions' | 'document.openButtonLink' | 'document.submitButtonForm' | 'document.openButtonFile'>,
+      'window.copyText': (params: unknown) => {
+        routes.push({ copy: params });
+        return Promise.resolve(ok({ copied: true }));
+      },
+    } as Pick<
+      ContractClient,
+      'document.buttonActions' | 'document.openButtonLink' | 'document.submitButtonForm' | 'document.openButtonFile' | 'window.copyText'
+    >,
     // WHAT SETTLING SAW, for the open's own route: `settleButtonFileOpen` is `openDocument.test.ts`' to prove.
     settleFileOpen: (answer: unknown) => {
       routes.push({ settled: answer });
       return undefined;
     },
-    ask: (id: string, props: unknown) => {
+    ask: (id: string, props: unknown, onUpdate?: (result: unknown, reply: (props: unknown) => void) => void) => {
       routes.push({ ask: id, props });
+      for (const report of reports) onUpdate?.(report, () => undefined);
       return Promise.resolve(answer);
     },
     apply: (command: ButtonStepCommand): Promise<DocVersion | undefined> => {
@@ -170,11 +189,11 @@ describe('pressing a push button', () => {
     };
 
     it('asks first, naming where, how and what, and on Send asks main to send THE STEP, then says it was sent', async () => {
-      const { deps, routes, said } = pressing([SUBMIT], () => true, { send: true });
+      const { deps, routes, said } = pressing([SUBMIT], () => true, { send: true, route: 'post' });
       await pressButton(deps, DOC, { ...BUTTON, trigger: 'up' });
       expect(routes).toStrictEqual([
         { ask: SUBMIT_FORM_DIALOG_ID, props: { address: 'https://forms.example/take', format: 'html', fields: ['a'], mail: false } },
-        { submit: { docId: DOC, version: READ_AT, field: BUTTON, trigger: 'up', step: 0 } },
+        { submit: { docId: DOC, version: READ_AT, field: BUTTON, trigger: 'up', step: 0, route: 'post' } },
       ]);
       expect(said).toStrictEqual([BUTTON_SUBMIT_SENT]);
     });
@@ -187,15 +206,56 @@ describe('pressing a push button', () => {
     });
 
     it('says the guard’s reason, and where the data did not fit a message runs Export form data in its encoding', async () => {
-      const refused = pressing([SUBMIT], () => true, { send: true }, { kind: 'refused', reason: 'blocked-address' });
+      const refused = pressing([SUBMIT], () => true, { send: true, route: 'post' }, { kind: 'refused', reason: 'blocked-address' });
       await pressButton(refused.deps, DOC, { ...BUTTON, trigger: 'up' });
       expect(refused.said).toStrictEqual([BUTTON_SUBMIT_BLOCKED]);
       const mail: ButtonStep = { ...SUBMIT, action: { kind: 'submit', address: 'mailto:forms@example.org', format: 'xfdf', fields: null } };
-      const long = pressing([mail], () => true, { send: true }, { kind: 'mail-opened-without-data' });
+      const long = pressing([mail], () => true, { send: true, route: 'mail-app' }, { kind: 'mail-opened-without-data' });
       await pressButton(long.deps, DOC, { ...BUTTON, trigger: 'up' });
       expect(long.routes.at(0)).toMatchObject({ props: { mail: true } });
       expect(long.routes.at(-1)).toStrictEqual({ run: 'document.export-form-data-xfdf' });
       expect(long.said).toStrictEqual([BUTTON_SUBMIT_MAIL_WITHOUT_DATA]);
+    });
+
+    describe('to a mail address, by the route chosen (ADR-0261 Decision 3)', () => {
+      const MAIL: ButtonStep = {
+        ...SUBMIT,
+        action: { kind: 'submit', address: 'mailto:forms%40example.org?subject=Application', format: 'fdf', fields: null },
+      };
+      const submits = (routes: unknown[]): unknown[] =>
+        routes.flatMap((route) => (typeof route === 'object' && route !== null && 'submit' in route ? [route.submit] : []));
+
+      it('Share sends THE STEP by the share route, and says to choose the mail app; CONTROL: Open in my mail app sends the other', async () => {
+        const shared = pressing([MAIL], () => true, { send: true, route: 'share' }, { kind: 'shared' });
+        await pressButton(shared.deps, DOC, { ...BUTTON, trigger: 'up' });
+        expect(submits(shared.routes)).toStrictEqual([{ docId: DOC, version: READ_AT, field: BUTTON, trigger: 'up', step: 0, route: 'share' }]);
+        expect(shared.said).toStrictEqual([BUTTON_SUBMIT_SHARED]);
+        const opened = pressing([MAIL], () => true, { send: true, route: 'mail-app' }, { kind: 'mail-opened' });
+        await pressButton(opened.deps, DOC, { ...BUTTON, trigger: 'up' });
+        expect(submits(opened.routes)).toMatchObject([{ route: 'mail-app' }]);
+      });
+
+      it('no Share sheet, or one that refused, is said with the other route to take', async () => {
+        for (const [outcome, sentence] of [
+          [{ kind: 'share-unavailable' }, BUTTON_SUBMIT_SHARE_UNAVAILABLE],
+          [{ kind: 'share-failed' }, BUTTON_SUBMIT_SHARE_FAILED],
+        ] as const) {
+          const { deps, said } = pressing([MAIL], () => true, { send: true, route: 'share' }, outcome);
+          await pressButton(deps, DOC, { ...BUTTON, trigger: 'up' });
+          expect(said).toStrictEqual([sentence]);
+        }
+      });
+
+      it('COPY copies who the message is to, through main, and sends nothing; CONTROL: closing after it still sends nothing', async () => {
+        const { deps, routes, said } = pressing([MAIL], () => true, null, { kind: 'sent' }, [{ copy: true }]);
+        await pressButton(deps, DOC, { ...BUTTON, trigger: 'up' });
+        await Promise.resolve();
+        expect(routes.filter((route) => typeof route === 'object' && route !== null && 'copy' in route)).toStrictEqual([
+          { copy: { text: 'forms@example.org' } },
+        ]);
+        expect(submits(routes)).toStrictEqual([]);
+        expect(said).toStrictEqual([TOAST_COPIED]);
+      });
     });
   });
 

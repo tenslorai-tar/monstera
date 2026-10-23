@@ -20,8 +20,17 @@ export const SUBMIT_FORMAT_NAMES: Readonly<Record<SubmitFormat, MessageKey>> = {
 /** The id a push button's Submit opens before anything leaves the document (ADR-0259 Decision 6). */
 export const SUBMIT_FORM_DIALOG_ID = 'dialog.submit-form';
 
-/** The one answer that sends. Closing the dialog is keeping the data, so × and Escape send nothing. */
-export const SUBMIT_FORM_RESULT = z.object({ send: z.literal(true) }).strict();
+/** The routes a submission goes by: posted for `https:`; shared as a file or put in a message for `mailto:` (ADR-0261). */
+export const SUBMIT_ROUTES = ['post', 'share', 'mail-app'] as const;
+
+/** The answer that sends, naming the route the person chose. Closing the dialog is keeping the data, so × and Escape send nothing. */
+export const SUBMIT_FORM_SEND_RESULT = z.object({ send: z.literal(true), route: z.enum(SUBMIT_ROUTES) }).strict();
+
+/**
+ * What the question answers, and what it REPORTS without closing (ADR-0094): Copy asks the opener to copy the
+ * address, through `main`, since the renderer holds no clipboard; only {@link SUBMIT_FORM_SEND_RESULT} sends.
+ */
+export const SUBMIT_FORM_RESULT = z.union([SUBMIT_FORM_SEND_RESULT, z.object({ copy: z.literal(true) }).strict()]);
 
 /**
  * Asked before a push button sends the form's data: where it goes, in which encoding, and which fields, as the

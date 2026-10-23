@@ -1794,6 +1794,12 @@ export const SUBMIT_FORMAT_FDF = messageKey('surface.submit-format.fdf');
 export const SUBMIT_FORMAT_XFDF = messageKey('surface.submit-format.xfdf');
 export const SUBMIT_FORMAT_HTML = messageKey('surface.submit-format.html');
 export const SUBMIT_FORMAT_PDF = messageKey('surface.submit-format.pdf');
+export const SUBMIT_FORM_SHARE = messageKey('dialog.submit-form.share');
+export const SUBMIT_FORM_COPY = messageKey('dialog.submit-form.copy');
+export const SUBMIT_FORM_ROUTES = messageKey('dialog.submit-form.routes');
+export const BUTTON_SUBMIT_SHARED = messageKey('toast.button-submit.shared');
+export const BUTTON_SUBMIT_SHARE_UNAVAILABLE = messageKey('toast.button-submit.share-unavailable');
+export const BUTTON_SUBMIT_SHARE_FAILED = messageKey('toast.button-submit.share-failed');
 export const SUBMIT_FORM_EXPLAINS_WEB_WHOLE = messageKey('dialog.submit-form.explains-web-whole');
 export const SUBMIT_FORM_EXPLAINS_MAIL_WHOLE = messageKey('dialog.submit-form.explains-mail-whole');
 export const BUTTON_SUBMIT_MAIL_WITHOUT_DOCUMENT = messageKey('toast.button-submit.mail-without-document');
@@ -4732,21 +4738,28 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SUBMIT_FORM_TITLE]: 'Send this form?',
   [SUBMIT_FORM_EXPLAINS_WEB]: 'This button sends what is filled in on the form, as {format}, to this address:',
   [SUBMIT_FORM_EXPLAINS_MAIL]:
-    'This button opens your mail app with what is filled in on the form, as {format}, in a message to this address. Nothing is sent until you send the message there.',
+    'This button sends what is filled in on the form, as {format}, in a message to this address. Nothing is sent until you send the message from your mail app.',
   [SUBMIT_FORM_FIELDS_ALL]: 'Every field on the form is included.',
   [SUBMIT_FORM_FIELDS_SOME]: '{count, plural, one {This field is included:} other {These # fields are included:}}',
   [SUBMIT_FORM_SEND]: 'Send',
-  [SUBMIT_FORM_OPEN_MAIL]: 'Open in mail app',
+  [SUBMIT_FORM_OPEN_MAIL]: 'Open in my mail app',
   [SUBMIT_FORMAT_FDF]: 'FDF',
   [SUBMIT_FORMAT_XFDF]: 'XFDF',
   [SUBMIT_FORMAT_HTML]: 'web form data',
   [SUBMIT_FORMAT_PDF]: 'the whole PDF',
+  [SUBMIT_FORM_SHARE]: 'Share with the file attached',
+  [SUBMIT_FORM_COPY]: 'Copy address',
+  [SUBMIT_FORM_ROUTES]:
+    'Share with the file attached opens the Windows Share window: choose your mail app there, and send the message to the address above. Open in my mail app starts the message to that address for you.',
+  [BUTTON_SUBMIT_SHARED]: 'Choose your mail app in the Share window, then send the message to the form’s address.',
+  [BUTTON_SUBMIT_SHARE_UNAVAILABLE]: 'Sharing is not available here. Press the button again and choose Open in my mail app.',
+  [BUTTON_SUBMIT_SHARE_FAILED]: 'The Share window did not open. Press the button again, or choose Open in my mail app.',
   [SUBMIT_FORM_EXPLAINS_WEB_WHOLE]:
     'This button sends the whole document as it is now, with everything filled in and any changes not yet saved, to this address:',
   [SUBMIT_FORM_EXPLAINS_MAIL_WHOLE]:
     'This button sends the whole document as it is now, with everything filled in and any changes not yet saved, in a message to this address. Nothing is sent until you send the message from your mail app.',
   [BUTTON_SUBMIT_MAIL_WITHOUT_DOCUMENT]:
-    'A whole document cannot go inside an email link, so your mail app opened an empty message. Attach the document to it, then send it from there.',
+    'A whole document cannot go inside an email link, so your mail app opened an empty message. Attach the document to it, or press the button again and choose Share with the file attached.',
   [BUTTON_SUBMIT_SENT]: 'The form was sent.',
   [BUTTON_SUBMIT_NOT_HTTPS]: 'The form was not sent. Monstera sends a form only to an address that starts with https://.',
   [BUTTON_SUBMIT_CREDENTIALS]: 'The form was not sent, because its address carries a user name or password.',

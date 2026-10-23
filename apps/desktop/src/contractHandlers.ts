@@ -46,6 +46,7 @@ import {
   type SpellingLanguage,
   type StorePage,
   type WindowEditAction,
+  type SubmitDataFormat,
   type SubmitFormat,
   isFollowable,
   isSubmitAddress,
@@ -102,7 +103,9 @@ import {
   MissingSessionError,
   PageOutOfRangeError,
   PageTooLargeToPicture,
+  type EmailOutcome,
 } from './documentCommands.js';
+import { shareTitle } from './sharing.js';
 import type { Assistant } from './assistant.js';
 import { type AttachmentReaders, classifyAttachments, readAttachments, textSourcesIn } from './askAttachments.js';
 import type { ChatHistory } from './chatHistory.js';
@@ -1831,11 +1834,33 @@ export function mailtoWithBody(address: string, text: string): string {
 }
 
 /**
- * A push button's Submit carried out (ADR-0259 Decision 6), read by main from the document by the step the renderer
- * named: {@link openButtonLinkHandler}'s rule, for a submission. The engine host encodes the fields the action names;
- * an `https:` address is posted to through `postForm` (ADR-0061's guard), and a `mailto:` one opens the mail app with
- * the data as the message, or without it where the address would pass {@link MAILTO_WITH_DATA_MAX}, so the person can
- * save the data and attach it themselves. Nothing is sent by mail: the mail app holds the message until they send it.
+ * The extension a submission's data is shared under, by encoding: its own, and `txt` for HTML form data, which is text
+ * and has no file type of its own (ADR-0261 Decision 3). The whole document is shared as itself.
+ */
+const SUBMIT_FILE_EXTENSIONS: Readonly<Record<SubmitDataFormat, string>> = { fdf: 'fdf', xfdf: 'xfdf', html: 'txt' };
+
+/** The file a submission's data is shared as: the document's name without its extension, then the encoding's. */
+export function submissionFileName(documentName: string, format: SubmitDataFormat): string {
+  return `${shareTitle(documentName)} form data.${SUBMIT_FILE_EXTENSIONS[format]}`;
+}
+
+/** What the Share sheet did, as a submission answers it. */
+function sharedAs(outcome: EmailOutcome): { readonly kind: 'shared' | 'share-unavailable' | 'share-failed' } {
+  return { kind: outcome.kind === 'offered' ? 'shared' : outcome.kind === 'unavailable' ? 'share-unavailable' : 'share-failed' };
+}
+
+/**
+ * A push button's Submit carried out (ADR-0259 Decision 6, ADR-0261), read by main from the document by the step the
+ * renderer named: {@link openButtonLinkHandler}'s rule, for a submission. The route is the person's choice in the
+ * question, and it must fit the address `main` reads: `post` for `https:`, `share` or `mail-app` for `mailto:`.
+ *
+ * - `post`: the fields the action names, encoded by the engine host, or the whole document staged, through the guard.
+ * - `share`: the same data as one file, or the whole document as itself, offered to the Share sheet, where the person
+ *   picks the mail app and addresses the message. The sheet takes no recipient, so the question shows the address.
+ * - `mail-app`: the data as the message, or no data where the address would pass {@link MAILTO_WITH_DATA_MAX}, so the
+ *   person can save it and attach it; the whole document never fits and is never put there.
+ *
+ * Nothing is sent by mail: the mail app holds the message until the person sends it.
  */
 function submitButtonFormHandler(
   commands: DocumentCommands,
@@ -1849,15 +1874,22 @@ function submitButtonFormHandler(
     field,
     trigger,
     step,
+    route,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.submitButtonForm']>>> => {
     try {
       const read = await commands.buttonActions(docId, field);
       if (read.version !== version) return ok({ kind: 'stale' } as const);
       const action = read.steps?.find((each) => each.trigger === trigger && each.step === step)?.action;
       if (action?.kind !== 'submit' || !isSubmitAddress(action.address)) return ok({ kind: 'no-such-submit' } as const);
+      // THE ROUTE FITS THE ADDRESS MAIN READ, never the other way: a renderer naming `post` for a mail address, or a
+      // mail route for a web one, has named a submission this document does not hold.
+      const mail = schemeOf(action.address) === 'mailto:';
+      if (mail === (route === 'post')) return ok({ kind: 'no-such-submit' } as const);
       if (action.format === 'pdf') {
-        // THE WHOLE DOCUMENT never fits in a message's address, so the mail app opens without it (ADR-0261 Decision 3).
-        if (schemeOf(action.address) === 'mailto:') {
+        // THE WHOLE DOCUMENT SHARED AS ITSELF: ADR-0080's emailing, the save's bytes offered as the document's file.
+        if (route === 'share') return ok(sharedAs(await commands.email(docId)));
+        // IT NEVER FITS in a message's address, so the mail app opens without it (ADR-0261 Decision 3).
+        if (route === 'mail-app') {
           return ok({ kind: (await openLink(action.address)) ? 'mail-opened-without-document' : 'not-opened' } as const);
         }
         // STAGED AS SAVE WOULD WRITE IT, in the document's lane and stamping nothing, and posted from a file a part at a
@@ -1866,7 +1898,12 @@ function submitButtonFormHandler(
         return ok({ kind: 'sent' } as const);
       }
       const data = await commands.submitFormData(docId, action.format, action.fields);
-      if (schemeOf(action.address) === 'mailto:') {
+      if (route === 'share') {
+        const name = commands.nameOf(docId);
+        if (name === undefined) return err({ code: 'document-not-open' });
+        return ok(sharedAs(await commands.shareFile(docId, { fileName: submissionFileName(name, action.format), bytes: data })));
+      }
+      if (route === 'mail-app') {
         const whole = mailtoWithBody(action.address, new TextDecoder().decode(data));
         if (whole.length <= MAILTO_WITH_DATA_MAX) return ok({ kind: (await openLink(whole)) ? 'mail-opened' : 'not-opened' } as const);
         return ok({ kind: (await openLink(action.address)) ? 'mail-opened-without-data' : 'not-opened' } as const);

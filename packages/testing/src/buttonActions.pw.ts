@@ -336,7 +336,7 @@ test.describe('a push button’s actions', () => {
     await page.locator('[data-form-field="1"]').click();
     await dialog.getByRole('button', { name: 'Send' }).click();
     await expect.poll(() => submits().length).toBe(1);
-    expect(submits()[0]).toStrictEqual({ docId: ID, version: 2, field: { page: 0, index: 1, name: 'Clear' }, trigger: 'up', step: 0 });
+    expect(submits()[0]).toStrictEqual({ docId: ID, version: 2, field: { page: 0, index: 1, name: 'Clear' }, trigger: 'up', step: 0, route: 'post' });
     await expect(page.getByText('The form was sent.')).toBeVisible();
   });
 
@@ -379,7 +379,38 @@ test.describe('a push button’s actions', () => {
     await page.locator('[data-form-field="1"]').click();
     await dialog.getByRole('button', { name: 'Send' }).click();
     await expect.poll(() => submits().length).toBe(1);
-    expect(submits()[0]).toStrictEqual({ docId: ID, version: 2, field: { page: 0, index: 1, name: 'Clear' }, trigger: 'up', step: 0 });
+    expect(submits()[0]).toStrictEqual({ docId: ID, version: 2, field: { page: 0, index: 1, name: 'Clear' }, trigger: 'up', step: 0, route: 'post' });
+  });
+
+  test('a MAIL submission offers Share with the file attached and Open in my mail app, and Copy copies who it is to (ADR-0261)', async ({
+    page,
+  }) => {
+    const sent: Sent = [];
+    const action = { kind: 'submit', address: 'mailto:forms@example.org?subject=Application', format: 'xfdf', fields: null } as const;
+    await openForm(page, sent, { Clear: [{ trigger: 'up', step: 0, action }] });
+    const submits = (): unknown[] => sent.filter((call) => call.channel === 'document.submitButtonForm').map((call) => call.params);
+    const copies = (): unknown[] => sent.filter((call) => call.channel === 'window.copyText').map((call) => call.params);
+    const dialog = page.getByRole('dialog', { name: 'Send this form?' });
+    await page.locator('[data-form-field="1"]').click();
+    await expect(dialog.locator('[data-submit-form-address]')).toHaveText('mailto:forms@example.org?subject=Application');
+    await expect(dialog.getByRole('button', { name: 'Open in my mail app' })).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Share with the file attached' })).toBeVisible();
+    expect((await new AxeBuilder({ page }).include('[role="dialog"]').analyze()).violations).toStrictEqual([]);
+    // COPY GOES TO MAIN and the question stays: the address is copied as a person types it, and nothing is sent.
+    await dialog.getByRole('button', { name: 'Copy address' }).click();
+    await expect.poll(copies).toStrictEqual([{ text: 'forms@example.org' }]);
+    await expect(dialog).toBeVisible();
+    expect(submits()).toStrictEqual([]);
+    // SHARE sends the step by the share route, never the address or the data.
+    await dialog.getByRole('button', { name: 'Share with the file attached' }).click();
+    await expect.poll(() => submits().length).toBe(1);
+    expect(submits()[0]).toStrictEqual({ docId: ID, version: 1, field: { page: 0, index: 1, name: 'Clear' }, trigger: 'up', step: 0, route: 'share' });
+    await expect(page.getByText('Choose your mail app in the Share window', { exact: false })).toBeVisible();
+    // CONTROL: the other route, on the next press, sends the step by the mail-app route.
+    await page.locator('[data-form-field="1"]').click();
+    await dialog.getByRole('button', { name: 'Open in my mail app' }).click();
+    await expect.poll(() => submits().length).toBe(2);
+    expect(submits()[1]).toMatchObject({ route: 'mail-app' });
   });
 
   test('Open a file: set in Properties, then a press asks first, naming the file, and only Open opens it', async ({ page }) => {

@@ -2863,12 +2863,14 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       const action = buttonSteps.get(field.name)?.find((each) => each.trigger === trigger && each.step === step)?.action;
       return Promise.resolve(ok({ kind: action?.kind === 'link' ? ('opened' as const) : ('no-such-link' as const) }));
     },
-    // A BUTTON'S SUBMIT as main answers it, the link's shape: an `https:` address is `sent` with no server behind it and a
-    // `mailto:` one `mail-opened` with no mail app, so a case reads the request a press made rather than a delivery.
-    'document.submitButtonForm': ({ docId, version, field, trigger, step }) => {
+    // A BUTTON'S SUBMIT as main answers it, the link's shape: an `https:` address is `sent` with no server behind it, a
+    // `mailto:` one `mail-opened` with no mail app or `shared` with no sheet behind it, by the route the press named, so a
+    // case reads the request a press made rather than a delivery.
+    'document.submitButtonForm': ({ docId, version, field, trigger, step, route }) => {
       if (versions.get(docId) !== version) return Promise.resolve(ok({ kind: 'stale' as const }));
       const action = buttonSteps.get(field.name)?.find((each) => each.trigger === trigger && each.step === step)?.action;
       if (action?.kind !== 'submit') return Promise.resolve(ok({ kind: 'no-such-submit' as const }));
+      if (route === 'share') return Promise.resolve(ok({ kind: 'shared' as const }));
       return Promise.resolve(ok({ kind: action.address.startsWith('mailto:') ? ('mail-opened' as const) : ('sent' as const) }));
     },
     // A BUTTON'S FILE as main answers it, the link's shape: there is no folder beside a document in a browser, so an
