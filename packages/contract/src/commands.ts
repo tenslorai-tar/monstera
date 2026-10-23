@@ -6649,6 +6649,15 @@ export const blockPlaceSchema = z
     rotate: z.number().min(-360).max(360).optional(),
     /** The measure the block is laid out at, in points: how a text box is resized. */
     width: z.number().min(1).max(MAX_PAGE_COORDINATE).optional(),
+    /**
+     * One step in the page's drawing order (ADR-0264 Decision 5): the block drawn just after `past` (forward) or just
+     * before it (backward), its lines carried as they were. The operator writer's alone: PDFium's block writer regenerates
+     * the page in its own order and has no place to put a block, so `editTextBlockSchema` refuses it at the boundary.
+     */
+    arrange: z
+      .object({ to: z.enum(['forward', 'backward']), past: arrangeNeighbourSchema })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -6842,12 +6851,17 @@ export function blockEditAgrees(edit: BlockEdit): boolean {
       !places.some((place) => place.block === push.block),
   );
   // PLACES ASCEND BY BLOCK, name a block of the edit, and each says something: a place that names nothing is a block the
-  // writer would re-lay out for no change.
+  // writer would re-lay out for no change. An arrange says where in the drawing order (ADR-0264 Decision 5).
   const placesAgree = places.every(
     (place, at) =>
       place.block < blockStarts.length &&
       (at === 0 || place.block > (places[at - 1]?.block ?? -1)) &&
-      ('about' in place || place.move !== undefined || place.scale !== undefined || place.rotate !== undefined || place.width !== undefined),
+      ('about' in place ||
+        place.move !== undefined ||
+        place.scale !== undefined ||
+        place.rotate !== undefined ||
+        place.width !== undefined ||
+        place.arrange !== undefined),
   );
   // A BLOCK'S WORDS, to bound its marks and its paragraphs by.
   const wordsOf = (block: number): string => text.slice(textStarts[block] ?? 0, textStarts[block + 1] ?? text.length);
@@ -7097,7 +7111,11 @@ export const editTextBlockSchema = blockEditCommandObject('editTextBlock')
     unpack: z.literal(true).exactOptional(),
   })
   // ACROSS BLOCKS, not only within one: a run in two blocks would be written twice.
-  .refine((command) => blockEditAgrees(command), blockEditDisagrees());
+  .refine((command) => blockEditAgrees(command), blockEditDisagrees())
+  // AN ARRANGE IS THE OPERATOR WRITER'S (ADR-0264 Decision 5): refused here rather than read as a placement of nothing.
+  .refine((command) => (command.places ?? []).every((place) => place.arrange === undefined), {
+    message: 'a block is arranged only by the operator writer',
+  });
 
 /**
  * {@link editTextBlockSchema}'s intent for a page whose text includes a Type 3 font, which PDFium cannot regenerate

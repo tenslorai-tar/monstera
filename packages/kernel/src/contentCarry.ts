@@ -1,4 +1,6 @@
-import { type ClipWindow, type Matrix, SETTING_SLOTS, type StateAt, multiply } from './textOperators.js';
+import type { ArrangeNeighbour } from '@monstera/contract/host';
+
+import { type ClipWindow, type ContentLayout, type Matrix, SETTING_SLOTS, type StateAt, multiply } from './textOperators.js';
 
 /**
  * What an edit of one object in a page's content writes with
@@ -58,6 +60,20 @@ export function boxOfPoints(points: readonly (readonly [number, number])[]): Pag
   const xs = points.map(([x]) => x);
   const ys = points.map(([, y]) => y);
   return { left: Math.min(...xs), bottom: Math.min(...ys), right: Math.max(...xs), top: Math.max(...ys) };
+}
+
+/**
+ * Where the object an arrange goes past is drawn: a drawn object's instructions, or the `BT … ET` of the text object
+ * PDFium numbers as `past.object`. The one answer both writers' arranges take (B3a); `undefined` where the page holds
+ * no such object.
+ */
+export function neighbourSpan(layout: ContentLayout, past: ArrangeNeighbour): { readonly start: number; readonly end: number } | undefined {
+  if (past.kind === 'text') {
+    const op = layout.operators.find((each) => each.object === past.object);
+    const end = op === undefined ? undefined : layout.textObjects.get(op.textObject);
+    return op === undefined || end === undefined ? undefined : { start: op.textObject, end };
+  }
+  return layout.drawn.filter((object) => object.kind === past.kind)[past.ordinal];
 }
 
 /** The initial value of each slot (ISO 32000 Table 51 and §9.3), said where the new place sets a slot the old did not. */

@@ -7,10 +7,13 @@ import { type BlockPlan, type FlowLine, type Measure, NO_MARK, type Row, largest
 import { type DecorationKind, decorationBand } from './markDecorations.js';
 import { JUSTIFY_CAP, RISE_SCALE, SUBSCRIPT_DROP, SUPERSCRIPT_RISE, spaceable, spacedBy } from './markFigures.js';
 import { type Alignment, blockShape, paragraphSpacing } from './paragraphShape.js';
+import { carried, neighbourSpan } from './contentCarry.js';
 import {
   type Matrix,
   type ShowOperator,
+  type XObjectKind,
   contentEnd,
+  contentLayout,
   multiply,
   showOperators,
   textObjectCount,
@@ -94,7 +97,21 @@ export type OperatorRefusal =
   | { readonly reason: 'transformed' }
   | { readonly reason: 'unknown-width'; readonly font: string }
   | { readonly reason: 'needs-a-face'; readonly characters: readonly string[] }
-  | { readonly reason: 'unchanged' };
+  | { readonly reason: 'unchanged' }
+  // AN ARRANGE whose new place clips to an area that does not hold the block (ADR-0264 Decision 4).
+  | { readonly reason: 'cropped' };
+
+/**
+ * What an arrange needs beyond the page's text (ADR-0264 Decision 5): what each XObject the content names is, so a drawn
+ * neighbour is found as PDFium numbers it, and the name the caller will add a plain graphics state under.
+ */
+export interface ArrangeContext {
+  readonly kinds: (name: string) => XObjectKind;
+  readonly plainState: string;
+}
+
+/** No arrange is possible: no XObject is known, and a plain state is never named. */
+const NO_ARRANGE: ArrangeContext = { kinds: () => undefined, plainState: '' };
 
 /** A byte range. */
 export interface Span {
@@ -117,6 +134,8 @@ export interface OperatorEdit {
   readonly baselines: readonly { readonly first: number; readonly last: number; readonly lastBefore: number }[];
   /** The pushed blocks that moved down (ADR-0249): where each stood and how far it went. */
   readonly moved: readonly MovedBlock[];
+  /** Whether the content names the plain graphics state an arrange carried a block with, which the page must then hold. */
+  readonly plain: boolean;
 }
 
 /** Below this, two numbers in user space or a matrix's off-diagonal are the same: float noise, not a different layout. */
@@ -311,6 +330,7 @@ class Refused extends Error {
  *
  * @param fonts the page's fonts by resource name (`pageFonts`)
  * @param page PDFium's reading of the same page at the same version
+ * @param arrangeWith what a block's arrange needs (ADR-0264): none is possible without it
  */
 export function editOperators(
   content: Uint8Array,
@@ -320,9 +340,10 @@ export function editOperators(
   faces: OperatorFaces | null = null,
   fit: 'reflow' | 'shrink' = 'reflow',
   inserts: readonly PageInsert[] = [],
+  arrangeWith: ArrangeContext = NO_ARRANGE,
 ): Result<OperatorEdit, OperatorRefusal> {
   try {
-    return ok(write(content, fonts, page, blocks, faces, fit, inserts));
+    return ok(write(content, fonts, page, blocks, faces, fit, inserts, arrangeWith));
   } catch (error) {
     if (error instanceof Refused) return err(error.refusal);
     throw error;
@@ -383,6 +404,7 @@ function write(
   faces: OperatorFaces | null,
   fit: 'reflow' | 'shrink',
   inserts: readonly PageInsert[],
+  arrangeWith: ArrangeContext,
 ): OperatorEdit {
   const real = showOperators(content);
   const objectEnds = textObjectEnds(content);
@@ -595,6 +617,8 @@ function write(
   const grew = new Map<number, number>();
   /** The pushed blocks that moved, where they stood and how far down they went: the PDFium writer's own answer. */
   const moved: MovedBlock[] = [];
+  /** Whether an arrange carried a block with the plain graphics state, which the page must then hold (ADR-0264). */
+  let plain = false;
 
   /** What an added box is among the blocks: the seed's run, and the box's own base style. */
   const boxes = inserts.map((insert, k) => ({
@@ -675,7 +699,8 @@ function write(
     const measured = blockPlace?.width !== undefined;
     // AND A BLOCK RECOLOURED WHOLE (ADR-0264 Decision 5) is set again in place, every line carried as it was with its
     // colour set: decided once the plan has said its words are the read's, below.
-    let replaceAll = movesBlock(blockPlace) || measured;
+    // AN ARRANGE carries every line as it was too, to its new place in the drawing order (ADR-0264 Decision 5).
+    let replaceAll = movesBlock(blockPlace) || measured || blockPlace?.arrange !== undefined;
     const sourceOf = (run: (typeof firstLine)[number]): ShowOperator => {
       const op = ops[run.first];
       if (op === undefined) throw new Refused({ reason: 'numbering', detail: `no operator ${String(run.first)}` });
@@ -1374,6 +1399,41 @@ function write(
       if (cm === null) parts.splice(0, 1, 'q', ...behind, 'BT');
       else parts.splice(2, 0, ...behind);
     }
+    // AN ARRANGED BLOCK goes just past the object it was arranged past (ADR-0264 Decision 5): after its unit going forward,
+    // before it going backward, inside a `q … Q` that carries the state its first line was drawn under there
+    // (`contentCarry.ts`, the drawn object's own carry). Its operators are emptied where they stood, as a placement's are.
+    const arrangement = push === undefined ? blockPlace?.arrange : undefined;
+    if (arrangement !== undefined) {
+      const members = lines.flat().flatMap((run) => run.members);
+      const first = Math.min(...members.map((at) => ops[at]?.start ?? Number.POSITIVE_INFINITY));
+      const last = Math.max(...members.map((at) => ops[at]?.end ?? Number.NEGATIVE_INFINITY));
+      const layout = contentLayout(content, arrangeWith.kinds);
+      const span = neighbourSpan(layout, arrangement.past);
+      if (span === undefined) throw new Refused({ reason: 'numbering', detail: `the page holds no ${arrangement.past.kind} the arrange names` });
+      const unit = layout.unitOf(span);
+      const forward = arrangement.to === 'forward';
+      // THE NEIGHBOUR IS ON THE SIDE THE ARRANGE GOES, or holds the block in its own text object: past it either way.
+      if (forward ? unit.end < last : unit.start > first) {
+        throw new Refused({ reason: 'numbering', detail: `the ${arrangement.past.kind} named is not ${forward ? 'after' : 'before'} the block` });
+      }
+      const at = forward ? unit.end : unit.start;
+      const [one, two] = contentLayout(content, arrangeWith.kinds, forward ? [first, at] : [at, first]).states;
+      const from = forward ? one : two;
+      const to = forward ? two : one;
+      if (from === undefined || to === undefined) throw new Error('the content pass answered no state at an offset it was asked for');
+      const runs = lines.flat().map((run) => run.run);
+      const box = {
+        left: Math.min(...runs.map((run) => run.left)),
+        bottom: Math.min(...runs.map((run) => run.bottom)),
+        right: Math.max(...runs.map((run) => run.right)),
+        top: Math.max(...runs.map((run) => run.top)),
+      };
+      const carry = carried(content, from, to, box, arrangeWith.plainState);
+      if (carry === 'cropped') throw new Refused({ reason: 'cropped' });
+      plain ||= carry.plain;
+      insertions.push({ at, text: `\n${carry.before}${parts.join('\n')}${carry.after}` });
+      continue;
+    }
     // BEFORE THE FIRST EDITED OPERATOR'S BT, so inside its marked content; for lines only added below the block, before
     // its last run's, whose marked content they continue.
     if (insert !== undefined) {
@@ -1461,7 +1521,7 @@ function write(
     out.set(piece, at);
     at += piece.length;
   }
-  return { content: out, emptied: [...emptied].sort((x, y) => x - y), changes, written, drawn, baselines: baselinesOut, moved };
+  return { content: out, emptied: [...emptied].sort((x, y) => x - y), changes, written, drawn, baselines: baselinesOut, moved, plain };
 }
 
 /**

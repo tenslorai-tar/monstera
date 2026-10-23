@@ -3074,6 +3074,7 @@ describe('CommandBus — Edit object’s edit of a text block is undone by its c
     { name: 'recolour', block: { lines: [[0]], soft: [false], text: 'Garden', marks: [{ from: 0, to: 6, set: { colour: { r: 255, g: 0, b: 0 } } }] } },
     { name: 'delete', block: { lines: [[0]], soft: [false], text: '' } },
     { name: 'place', block: { lines: [[0]], soft: [false], text: 'Garden', place: { move: { x: 30, y: -40 }, scale: 1.5 } } },
+    { name: 'arrange', block: { lines: [[0]], soft: [false], text: 'Garden', place: { arrange: { to: 'forward', past: { kind: 'text', object: 1 } } } } },
   ];
 
   for (const { name, block } of EDITS) {

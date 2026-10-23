@@ -1,14 +1,14 @@
-import type { ArrangeNeighbour, CommandOfKind, DrawnEdit } from '@monstera/contract/host';
+import type { CommandOfKind, DrawnEdit } from '@monstera/contract/host';
 
 import type { CaptureResult } from './commandLog.js';
-import { PLAIN_STATE, type PageBox, boxOfPoints, carried, inverse, written } from './contentCarry.js';
+import { PLAIN_STATE, type PageBox, boxOfPoints, carried, inverse, neighbourSpan, written } from './contentCarry.js';
 import type { Invert, MupdfSession } from './engineSeam.js';
-import type { PDFObject } from './mupdfRaw.js';
+import type { PDFDocument, PDFObject } from './mupdfRaw.js';
 import { withDocument } from './mupdfWriter.js';
-import { pageContentStreams } from './pageContent.js';
+import { pageContentStreams, xobjectKinds } from './pageContent.js';
+import { freeResourceName, resourceDictionaryOf } from './pageResources.js';
 import { EditRefusedError } from './textEditRefusals.js';
 import {
-  type ContentLayout,
   type DrawnObject,
   type Matrix,
   type XObjectKind,
@@ -48,19 +48,6 @@ const STROKE_ALLOWANCE = 6;
 const IMAGE_ALLOWANCE = 0.5;
 /** How far a point read back may differ from the one meant: a ten-thousandth of a point, far below a pixel. */
 const READ_BACK_TOLERANCE = 1e-4;
-
-/** What each XObject the page's resources name is. */
-export function xobjectKinds(leaf: PDFObject): (name: string) => XObjectKind {
-  let resources = leaf.getInheritable('Resources');
-  if (!resources.isNull()) resources = resources.resolve();
-  const xobjects = resources.isDictionary() ? resources.get('XObject').resolve() : resources;
-  return (name) => {
-    if (!xobjects.isDictionary()) return undefined;
-    const subtype = xobjects.get(name).resolve().get('Subtype');
-    if (!subtype.isName()) return undefined;
-    return subtype.asName() === 'Image' ? 'image' : subtype.asName() === 'Form' ? 'form' : undefined;
-  };
-}
 
 /** The unit square under a matrix, which is where an image is drawn. */
 function unitSquare(ctm: Matrix): readonly (readonly [number, number])[] {
@@ -341,16 +328,6 @@ function remove(
   return edited;
 }
 
-/** Where the object an arrange goes past is drawn: its instructions, or its text object's `BT … ET`. */
-function neighbourSpan(layout: ContentLayout, past: ArrangeNeighbour): { readonly start: number; readonly end: number } | undefined {
-  if (past.kind === 'text') {
-    const op = layout.operators.find((each) => each.object === past.object);
-    const end = op === undefined ? undefined : layout.textObjects.get(op.textObject);
-    return op === undefined || end === undefined ? undefined : { start: op.textObject, end };
-  }
-  return layout.drawn.filter((object) => object.kind === past.kind)[past.ordinal];
-}
-
 /** Where a drawn object reads back on the page: its points for a path, its CTM for everything else. */
 function geometryOf(object: DrawnObject): string {
   const round = (value: number): number => Math.round(value / READ_BACK_TOLERANCE) * READ_BACK_TOLERANCE;
@@ -466,7 +443,7 @@ export function editDrawnContent(
   content: Uint8Array,
   kinds: (name: string) => XObjectKind,
   command: CommandOfKind<'editDrawnObject'>,
-  plainState = PLAIN_STATE_NAME,
+  plainState = `${PLAIN_STATE_PREFIX}1`,
 ): DrawnEditResult {
   const drawn = drawnObjects(content, kinds);
   const found = drawn.filter((object) => object.kind === command.object)[command.ordinal];
@@ -486,36 +463,29 @@ export function editDrawnContent(
   }
 }
 
-/** The name an arrange's plain graphics state takes first; a page whose resources already use it takes the next free one. */
-const PLAIN_STATE_NAME = 'MonPlain';
+/** The prefix an arrange's plain graphics state is named by, the first free `MonPlain1`, `MonPlain2`, … of the page. */
+const PLAIN_STATE_PREFIX = 'MonPlain';
+
+/**
+ * The name a page will hold an arrange's plain graphics state under, chosen before the edit is written, and the one way
+ * it is added once an edit names it: `pageResources.ts`' answer to where a resource goes (B3a). For both arranges, the
+ * drawn object's and the text block's.
+ */
+export function plainStateName(leaf: PDFObject): string {
+  return freeResourceName(leaf, 'ExtGState', PLAIN_STATE_PREFIX);
+}
+
+export function addPlainState(document: PDFDocument, leaf: PDFObject, name: string): void {
+  resourceDictionaryOf(document, leaf, 'ExtGState').put(name, document.addObject(PLAIN_STATE));
+}
 
 export async function applyEditDrawnObject(session: MupdfSession, command: CommandOfKind<'editDrawnObject'>): Promise<void> {
   await withDocument(session, (document) => {
     const leaf = document.findPage(command.page);
     const content = joinedContent(pageContentStreams(leaf));
-    // THE PAGE'S OWN RESOURCES, or the ones it inherits: where the content's names are looked up.
-    let resources = leaf.getInheritable('Resources');
-    if (!resources.isNull()) resources = resources.resolve();
-    const states = resources.isDictionary() ? resources.get('ExtGState').resolve() : resources;
-    let name = PLAIN_STATE_NAME;
-    for (let suffix = 1; states.isDictionary() && !states.get(name).isNull(); suffix += 1) name = `${PLAIN_STATE_NAME}${String(suffix)}`;
+    const name = plainStateName(leaf);
     const result = editDrawnContent(content, xobjectKinds(leaf), command, name);
-    if (result.plain === true) {
-      // A PAGE WITH NO RESOURCES AT ALL is given a dictionary. One that inherits its resources has the entry added where
-      // it inherits them from: a name its siblings do not use, so it changes nothing they draw.
-      if (!resources.isDictionary()) {
-        resources = document.newDictionary();
-        leaf.put('Resources', resources);
-      }
-      let target = resources.get('ExtGState');
-      if (target.isNull()) {
-        target = document.newDictionary();
-        resources.put('ExtGState', target);
-      } else {
-        target = target.resolve();
-      }
-      target.put(name, document.addObject(PLAIN_STATE));
-    }
+    if (result.plain === true) addPlainState(document, leaf, name);
     leaf.put('Contents', document.addStream(result.content, document.newDictionary()));
   });
 }

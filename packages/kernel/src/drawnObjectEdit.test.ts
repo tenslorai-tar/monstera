@@ -6,9 +6,9 @@ import type { CommandOfKind, DrawnEdit } from '@monstera/contract/host';
 import { asDocVersion } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
-import { applyEditDrawnObject, editDrawnContent, xobjectKinds } from './drawnObjectEdit.js';
+import { applyEditDrawnObject, editDrawnContent } from './drawnObjectEdit.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
-import { pageContentStreams } from './pageContent.js';
+import { pageContentStreams, xobjectKinds } from './pageContent.js';
 import { rasterisePageRgba } from './pageImages.js';
 import { EditRefusedError } from './textEditRefusals.js';
 import { drawnObjects, joinedContent, showOperators } from './textOperators.js';
@@ -278,7 +278,7 @@ describe('editDrawnObject — arrange (ADR-0264 Decision 3)', () => {
     expect([pixels(30, 30), pixels(65, 65)]).toStrictEqual([RED, RED]);
     expect(pixels(135, 135)).toStrictEqual((await mupdfPixels(await fixture(content)))(135, 135));
     const text = new TextDecoder('latin1').decode(await savedContent(bytes));
-    expect(text).toMatch(/\/MonPlain gs/u);
+    expect(text).toMatch(/\/MonPlain1 gs/u);
   });
 
   it('carries the CLIP it stood in: moved past a picture outside its window, it is still cut to that window', async () => {
@@ -394,6 +394,15 @@ describe('editDrawnObject — place (ADR-0264 Decision 3)', () => {
     expect(text.replace(wrap?.[0] ?? '', '').replace('/Im1 Do\nQ', '/Im1 Do')).toBe(CONTENT);
     expect(showOperators(after).map((op) => op.object)).toStrictEqual(showOperators(content).map((op) => op.object));
     expect(drawnObjects(after, kinds).map((object) => object.kind)).toStrictEqual(drawnObjects(content, kinds).map((object) => object.kind));
+  });
+
+  it('places a shape on a page whose resources name no XObject at all (a null `/XObject` is not resolved)', async () => {
+    const document = await PDFDocument.create({ updateMetadata: false });
+    const page = document.addPage([200, 200]);
+    page.node.set(PDFName.of('Resources'), document.context.obj({}));
+    page.node.set(PDFName.of('Contents'), document.context.register(document.context.stream('q 1 0 0 rg 20 20 40 40 re f Q')));
+    const bytes = await edited(command('path', 0, SQUARE, { op: 'place', moveBy: { x: 0, y: 30 }, scaleBy: { x: 1, y: 1 } }), await document.save());
+    expect((await mupdfPixels(bytes))(40, 75)).toStrictEqual(RED);
   });
 
   it('refuses an object that is not where the listing put it, at the step `object`, and the page is unchanged', async () => {

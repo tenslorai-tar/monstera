@@ -31,3 +31,16 @@ export function freeName(dictionary: PDFObject, prefix: string): string {
     if (dictionary.get(name).isNull()) return name;
   }
 }
+
+/**
+ * {@link freeName} in the page's `kind` resources as {@link resourceDictionaryOf} finds them, READ ONLY: the name a writer
+ * will add a resource under if its edit turns out to need one, chosen before the edit is written, so a page whose edit
+ * needs none is given no dictionary it did not have (ADR-0264's arrange).
+ */
+export function freeResourceName(leaf: PDFObject, kind: 'Font' | 'ExtGState', prefix: string): string {
+  let resources = leaf.getInheritable('Resources');
+  if (!resources.isNull()) resources = resources.resolve();
+  let named = resources.isDictionary() ? resources.get(kind) : resources;
+  if (!named.isNull()) named = named.resolve();
+  return named.isDictionary() ? freeName(named, prefix) : `${prefix}1`;
+}

@@ -8,7 +8,8 @@ import { describe, expect, it } from 'vitest';
 
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import { type PageRun, type PageRuns, editOperators } from './operatorEdit.js';
-import { pageContentStreams } from './pageContent.js';
+import { pageContentStreams, xobjectKinds } from './pageContent.js';
+import { rasterisePageRgba } from './pageImages.js';
 import { pageFonts } from './pageFonts.js';
 import { applyEditTextOperators } from './textOperatorEdit.js';
 import { joinedContent, showOperators, textObjectCount } from './textOperators.js';
@@ -26,12 +27,20 @@ const CONTENT = [
   '/Span <</MCID 1>> BDC BT 0.15 0.15 0.15 rg /F1 11 Tf 1 0 0 1 52 120 Tm (Volunteers meet on Saturday.) Tj ET EMC',
 ].join('\n');
 
-async function fixture(): Promise<Uint8Array> {
+async function fixture(content = CONTENT): Promise<Uint8Array> {
   const document = await PDFDocument.create({ updateMetadata: false });
   const page = document.addPage([300, 200]);
   const font = await document.embedFont(StandardFonts.Helvetica);
-  page.node.set(PDFName.of('Resources'), document.context.obj({ Font: { F1: font.ref } }));
-  page.node.set(PDFName.of('Contents'), document.context.register(document.context.stream(CONTENT)));
+  const context = document.context;
+  // A GREEN PICTURE an arrange can go past, and a half opacity a page can leave in force.
+  const picture = context.register(
+    context.stream(Uint8Array.of(0, 200, 0), { Type: 'XObject', Subtype: 'Image', Width: 1, Height: 1, ColorSpace: 'DeviceRGB', BitsPerComponent: 8 }),
+  );
+  page.node.set(
+    PDFName.of('Resources'),
+    context.obj({ Font: { F1: font.ref }, XObject: { Im1: picture }, ExtGState: { Half: { Type: 'ExtGState', ca: 0.5, CA: 0.5 } } }),
+  );
+  page.node.set(PDFName.of('Contents'), context.register(context.stream(content)));
   return document.save({ useObjectStreams: false });
 }
 
@@ -62,13 +71,16 @@ function heading(text: string, rest: Omit<EditedBlock, 'lines' | 'soft' | 'text'
 const RED = { r: 255, g: 0, b: 0 };
 
 /** The edit made by the writer alone, on the fixture's content and fonts. */
-async function written(blocks: readonly EditedBlock[]): Promise<string> {
-  const session = await mupdfWriter.open(await fixture());
+async function written(blocks: readonly EditedBlock[], content = CONTENT): Promise<string> {
+  const session = await mupdfWriter.open(await fixture(content));
   try {
     return await withDocument(session, (document) => {
       const leaf = document.findPage(0);
       const content = joinedContent(pageContentStreams(leaf));
-      const made = editOperators(content, pageFonts(leaf), runsOf(content), blocks);
+      const made = editOperators(content, pageFonts(leaf), runsOf(content), blocks, null, 'reflow', [], {
+        kinds: xobjectKinds(leaf),
+        plainState: 'MonPlain1',
+      });
       if (!made.ok) throw new Error(`refused: ${JSON.stringify(made.error)}`);
       return new TextDecoder('latin1').decode(made.value.content);
     });
@@ -78,8 +90,8 @@ async function written(blocks: readonly EditedBlock[]): Promise<string> {
 }
 
 /** The command for `blocks`, through the application's own command shape and the writer's apply. */
-async function applied(blocks: readonly EditedBlock[]): Promise<Uint8Array> {
-  const session = await mupdfWriter.open(await fixture());
+async function applied(blocks: readonly EditedBlock[], content = CONTENT): Promise<Uint8Array> {
+  const session = await mupdfWriter.open(await fixture(content));
   try {
     const content = await withDocument(session, (document) => joinedContent(pageContentStreams(document.findPage(0))));
     const command: CommandOfKind<'editTextOperators'> = { kind: 'editTextOperators', page: 0, ...blockEditOf(blocks), fit: 'reflow', version: asDocVersion(1) };
@@ -152,6 +164,74 @@ async function mupdfLine(bytes: Uint8Array, words: string): Promise<readonly [nu
     await mupdfWriter.close(session);
   }
 }
+
+/** The colours MuPDF draws in the heading's area, each once: what is on top there. */
+async function headingColours(bytes: Uint8Array): Promise<Set<string>> {
+  const session = await mupdfWriter.open(bytes);
+  try {
+    const image = await rasterisePageRgba(session, 0, 1);
+    const colours = new Set<string>();
+    for (let y = 200 - 180; y < 200 - 162; y += 1) {
+      for (let x = 54; x < 120; x += 1) {
+        const at = (y * image.width + x) * 4;
+        colours.add(`${String(image.rgba[at])},${String(image.rgba[at + 1])},${String(image.rgba[at + 2])}`);
+      }
+    }
+    return colours;
+  } finally {
+    await mupdfWriter.close(session);
+  }
+}
+
+describe('a text block arranged is carried to its new place in the order (ADR-0264 Decision 5)', () => {
+  /** The heading in dark red, set outside its text object; a half opacity and a blue fill; the picture over the heading. */
+  const COVERED = [
+    `0.8 0 0 rg BT /F1 26 Tf 1 0 0 1 52 160 Tm ${HEADING} ET`,
+    '/Half gs 0 0 1 rg',
+    'q 120 0 0 40 40 150 cm /Im1 Do Q',
+    'BT /F1 11 Tf 1 0 0 1 52 120 Tm (Volunteers meet on Saturday.) Tj ET',
+  ].join('\n');
+  const forward = { arrange: { to: 'forward', past: { kind: 'image', ordinal: 0 } } } as const;
+
+  it('brings the heading forward past the picture over it: drawn on top, in its own opaque red, by both engines', async () => {
+    // CONTROL: the half-opaque picture is over the heading, so no pixel there is the heading's own red, though the red
+    // shows through it (the picture's green blended over it).
+    const covered = await headingColours(await fixture(COVERED));
+    expect(covered.has('204,0,0')).toBe(false);
+    expect(covered.has('102,100,0')).toBe(true);
+    const bytes = await applied([heading('Garden', { place: forward })], COVERED);
+    const colours = await headingColours(bytes);
+    // THE HEADING'S OWN RED, OPAQUE: the half opacity and the blue in force past the picture are not its.
+    expect(colours.has('204,0,0')).toBe(true);
+    expect([...colours].some((colour) => colour.startsWith('0,0,'))).toBe(false);
+    const shown = await pdfjsShown(bytes);
+    // JUST PAST THE PICTURE, before the body line, which keeps the blue in force where it stands.
+    expect(shown).toStrictEqual(['Garden #cc0000', 'Volunteers meet on Saturday. #0000ff']);
+  });
+
+  it('carries the heading’s own kerned array, empties it where it stood, and names the plain state it resets with', async () => {
+    const text = await written([heading('Garden', { place: forward })], COVERED);
+    expect(text).toContain('[<47> -12 <61> 8 <72> 8 <64> -12 <65> 8 <6E>] TJ');
+    expect(text).not.toContain(HEADING);
+    expect(text.indexOf('/Im1 Do')).toBeLessThan(text.indexOf('<47> -12'));
+    expect(text).toMatch(/\/MonPlain1 gs/u);
+  });
+
+  it('REFUSES at `cropped` where the picture sits in a window that would cut the heading off; CONTROL: a wider window does not', async () => {
+    const narrow = COVERED.replace('q 120 0 0 40 40 150 cm /Im1 Do Q', 'q 70 150 90 40 re W n q 120 0 0 40 40 150 cm /Im1 Do Q 0 0 1 rg 150 150 5 5 re f Q');
+    await expect(written([heading('Garden', { place: forward })], narrow)).rejects.toThrow(/"cropped"/u);
+    const wide = narrow.replace('70 150 90 40 re', '40 140 140 60 re');
+    await expect(written([heading('Garden', { place: forward })], wide)).resolves.toContain('<47> -12');
+  });
+
+  it('goes past a TEXT object by PDFium’s number, and backward before the picture', async () => {
+    const past = await written([heading('Garden', { place: { arrange: { to: 'forward', past: { kind: 'text', object: 1 } } } })], COVERED);
+    expect(past.indexOf('(Volunteers meet on Saturday.) Tj')).toBeLessThan(past.indexOf('<47> -12'));
+    const body = { lines: [[1]], soft: [false], text: 'Volunteers meet on Saturday.', place: { arrange: { to: 'backward', past: { kind: 'image', ordinal: 0 } } } } as const;
+    const back = await written([body], COVERED);
+    expect(back.indexOf('<56>')).toBeLessThan(back.indexOf('/Im1 Do'));
+  });
+});
 
 describe('a text block moved and resized is carried as it was (ADR-0264 Decision 5)', () => {
   it('moves the heading 30 points right and 40 down: PDF.js and MuPDF read it there, the body line where it was', async () => {

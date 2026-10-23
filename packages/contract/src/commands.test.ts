@@ -431,6 +431,20 @@ describe('which page is read again unpacked (ADR-0232)', () => {
     expect(editTextOperatorsSchema.safeParse({ kind: 'editTextOperators', ...wire, unpack: true }).success).toBe(false);
     expect(editTextOperatorsSchema.safeParse({ kind: 'editTextOperators', ...wire }).success).toBe(true);
   });
+
+  it('a block ARRANGED is the operator writer’s alone: PDFium’s block edit refuses it at the boundary (ADR-0264)', () => {
+    const arranged = {
+      page: 0,
+      ...blockEditOf([{ lines: [[1]], soft: [false], text: 'x', place: { arrange: { to: 'forward', past: { kind: 'image', ordinal: 0 } } } }]),
+      fit: 'reflow',
+      version: 1,
+    };
+    expect(editTextOperatorsSchema.safeParse({ kind: 'editTextOperators', ...arranged }).success).toBe(true);
+    expect(editTextBlockSchema.safeParse({ kind: 'editTextBlock', ...arranged }).success).toBe(false);
+    // CONTROL: the same block moved, which PDFium's writer places, is accepted there.
+    const moved = { ...arranged, ...blockEditOf([{ lines: [[1]], soft: [false], text: 'x', place: { move: { x: 1, y: 0 } } }]) };
+    expect(editTextBlockSchema.safeParse({ kind: 'editTextBlock', ...moved }).success).toBe(true);
+  });
 });
 
 describe('insertImagePage is removed (ADR-0044’s correction of 2026-10-17)', () => {

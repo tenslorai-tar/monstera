@@ -7,7 +7,8 @@ import type { FaceSource } from './fontCatalogue.js';
 import { withDocument } from './mupdfWriter.js';
 import type { PageFont } from './pageFonts.js';
 import { type OperatorRefusal, type PageRuns, checkOperatorEdit, editOperators } from './operatorEdit.js';
-import { pageContentStreams } from './pageContent.js';
+import { addPlainState, plainStateName } from './drawnObjectEdit.js';
+import { pageContentStreams, xobjectKinds } from './pageContent.js';
 import { pageFonts } from './pageFonts.js';
 import { resourceDictionaryOf } from './pageResources.js';
 import { BlockUnchangedError, EditRefusedError, TextNotWritableError } from './textEditRefusals.js';
@@ -36,6 +37,8 @@ import { joinedContent } from './textOperators.js';
 
 /** Why a refusal that is the page's, not the person's, was made: logged, never shown (the owner's sentence is). */
 function refusalOf(refusal: Exclude<OperatorRefusal, { reason: 'needs-a-face' | 'unchanged' }>): EditRefusedError {
+  // AN ARRANGE ITS NEW PLACE WOULD CROP is said in its own one line (ADR-0264 Decision 4), not the page's.
+  if (refusal.reason === 'cropped') return new EditRefusedError('cropped', 0, 'the block would be cut off past the object it was arranged past');
   const detail =
     refusal.reason === 'numbering'
       ? refusal.detail
@@ -72,7 +75,13 @@ export async function applyEditTextOperators(
     // THE RESOLVER'S FACES AND THE BOX (ADR-0177): read on the first word that needs one, so an edit the page's own
     // fonts carry never reads a font file.
     const faces = faceSet === null ? null : new faceSet(document, lazyFaces(), fonts);
-    const made = editOperators(content, fonts, read, blocksOfEdit(command), faces?.faces ?? null, command.fit, command.inserts ?? []);
+    // WHAT AN ARRANGE NEEDS (ADR-0264): the page's XObjects, so a drawn neighbour is found, and a free name for the plain
+    // graphics state, added below only where the edit names it.
+    const plainState = plainStateName(leaf);
+    const made = editOperators(content, fonts, read, blocksOfEdit(command), faces?.faces ?? null, command.fit, command.inserts ?? [], {
+      kinds: xobjectKinds(leaf),
+      plainState,
+    });
     if (!made.ok) {
       const refusal = made.error;
       if (refusal.reason === 'needs-a-face') throw new TextNotWritableError(refusal.characters.join(''));
@@ -110,6 +119,9 @@ export async function applyEditTextOperators(
       putBack(document, leaf, { before, stream, fontDictionary, names });
       throw new EditRefusedError('read-back', 0, `MuPDF's reading of the page does not hold ${String(missing.length)} edited block(s)`);
     }
+    // THE PLAIN GRAPHICS STATE an arrange carried a block with, once the edit is kept (ADR-0264): a refusal above then adds
+    // nothing the page would not use.
+    if (edit.plain) addPlainState(document, leaf, plainState);
     // EVERY CHARACTER DRAWN AS THE BOX, uncapped: the host names the first ones and counts the rest at the pipe
     // (`cappedBoxes`), as the PDFium writer's apply does (ADR-0177 Decision 7).
     const boxed = (faces?.boxed ?? []).map((character) => ({ character, page: command.page }));
@@ -154,6 +166,8 @@ function needsAFace(session: MupdfSession, command: CommandOfKind<'editTextOpera
       null,
       command.fit,
       command.inserts ?? [],
+      // THE SAME ARRANGE the apply will make, so a block arranged past a picture is asked about as it will be written.
+      { kinds: xobjectKinds(leaf), plainState: plainStateName(leaf) },
     );
     return !made.ok && made.error.reason === 'needs-a-face';
   });
