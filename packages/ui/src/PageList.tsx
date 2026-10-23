@@ -2257,6 +2257,8 @@ function PageSlot({
         <TextEditPage
           paperAt={paperAt}
           pictureOf={pictureOf}
+          // THE VERSION THE PAGE SHOWS, set with its pixels: a written editor stays until this is the newer one (ADR-0261).
+          drawn={drawnWith?.version}
           editing={editing}
           geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
           page={page}

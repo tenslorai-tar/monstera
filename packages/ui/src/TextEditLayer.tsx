@@ -454,7 +454,8 @@ export function TextEditLayer({
   >();
   /** The open block: its position in the answer, and the version that answer was read at. */
   const [opened, setOpened] = useState<
-    { readonly at: number; readonly version: DocVersion; readonly click: Click | undefined } | undefined
+    | { readonly at: number; readonly version: DocVersion; readonly click: Click | undefined; readonly parting?: boolean }
+    | undefined
   >();
   // A NEW READ CLOSES THE EDITOR, and it is DERIVED rather than reset in an
   // effect: an open block's indices describe the version it was read at, so an
@@ -682,6 +683,7 @@ export function TextEditLayer({
           return (
             <BlockEditor
               block={block}
+              parting={chosen === at && opened?.parting === true}
               click={chosen === undefined ? (handed === at ? next?.click : undefined) : opened?.click}
               finishingRef={finishingRef}
               geometry={geometry}
@@ -725,7 +727,9 @@ export function TextEditLayer({
                 }
                 // THE HANDED-TO EDITOR CLOSING ends the hand-over; the one being written closing does not.
                 if (at === handed || outcome === 'put-back') setNext(undefined);
-                setOpened((current) => (current?.at === at ? undefined : current));
+                // A WRITTEN EDITOR STAYS, locked, as its words' look until the page draws them (ADR-0261 Decision 7):
+                // it leaves with the read it was opened over, which the page keeps until its drawing is newer.
+                setOpened((current) => (current?.at !== at ? current : outcome === 'written' ? { ...current, parting: true } : undefined));
               }}
               onCommit={async (text, formatting) => {
                 const outcome = await onCommit(block, text, blocks, formatting);
@@ -1000,8 +1004,11 @@ export function TextEditPage({
   paperAt,
   pictureOf,
   pictureNoted,
+  drawn,
 }: {
   readonly page: number;
+  /** The version the page on screen is drawn from, `undefined` before it is drawn: the slot's, once its pixels are presented. */
+  readonly drawn: DocVersion | undefined;
   readonly geometry: OverlayPage;
   readonly editing: TextEditing;
   /** The layer's `pictureNoted`: the page's own note says it is a picture and offers recognition. */
@@ -1014,15 +1021,25 @@ export function TextEditPage({
   /** The layer's `pictureOf`: the drawn page's pixels in a box of the window, for the text below drawn moved. */
   readonly pictureOf?: ((box: { x0: number; y0: number; x1: number; y1: number }) => HTMLCanvasElement | undefined) | undefined;
 }): ReactElement {
-  const [answer, setAnswer] = useState<{ readonly version: DocVersion; readonly blocks: PageBlocks | undefined }>();
+  const [answers, setAnswers] = useState<{ readonly current?: BlocksAnswer; readonly previous?: BlocksAnswer }>({});
   const { read, version } = editing;
+  // THE READ THE PAGE STILL SHOWS, while its drawing is older than the document (ADR-0261 Decision 7): a written
+  // editor stays over the words it wrote until the page draws them, so no frame shows the old words with no editor.
+  // A page drawn from this version, or never drawn, shows this version's read.
+  const behind = drawn !== undefined && drawn < version;
+  const kept = behind ? [answers.current, answers.previous].find((each) => each !== undefined && each.version <= drawn) : undefined;
+  const answer = kept ?? (answers.current?.version === version ? answers.current : undefined);
   // ONE FUNCTION PER PAGE AND EDITING, so the layer's read of the page's objects runs once per write rather than once
   // per render.
   const pageObjects = useCallback(() => editing.objects(page), [editing, page]);
   useEffect(() => {
     let current = true;
     void read(page).then((blocks) => {
-      if (current) setAnswer({ version, blocks });
+      if (!current) return;
+      setAnswers((had) => {
+        const previous = had.current !== undefined && had.current.version !== version ? had.current : had.previous;
+        return previous === undefined ? { current: { version, blocks } } : { previous, current: { version, blocks } };
+      });
     });
     return () => {
       current = false;
@@ -1031,10 +1048,9 @@ export function TextEditPage({
 
   return (
     <TextEditLayer
-      blocks={answer?.version === version ? answer.blocks : undefined}
-      // AN ANSWER AT THIS VERSION WITH NO BLOCKS is a refused read (the read answers `undefined` for one), as against no
-      // answer yet.
-      unreadable={answer?.version === version && answer.blocks === undefined}
+      blocks={answer?.blocks}
+      // AN ANSWER WITH NO BLOCKS is a refused read (the read answers `undefined` for one), as against no answer yet.
+      unreadable={answer !== undefined && answer.blocks === undefined}
       geometry={geometry}
       onCommit={(block, text, read, formatting) => editing.onCommit(page, block, text, read, formatting)}
       onLeave={editing.onLeave}
@@ -1061,7 +1077,19 @@ export function TextEditPage({
   );
 }
 
+/** A read of a page's blocks, and the version it was read at; `blocks` undefined for a refused read. */
+interface BlocksAnswer {
+  readonly version: DocVersion;
+  readonly blocks: PageBlocks | undefined;
+}
+
 interface BlockEditorProps {
+  /**
+   * Written, and held as the words' look until the page draws them
+   * ([ADR-0261](../../../docs/DECISIONS/0261-a-page-command-is-shown-at-once-from-the-pages-already-drawn.md)
+   * Decision 7): locked as during the write, so nothing typed now is lost.
+   */
+  readonly parting?: boolean;
   readonly block: TextBlock;
   readonly geometry: OverlayPage;
   readonly placed: Placed;
@@ -1327,6 +1355,7 @@ function BlockEditor({
   stuckRef,
   pageFonts,
   onGrow,
+  parting = false,
 }: BlockEditorProps): ReactElement {
   const { _ } = useLingui();
   const original = wordsOf(block);
@@ -1444,7 +1473,10 @@ function BlockEditor({
   const baselineShift = useBaselineShift(area, block, geometry.zoom);
 
   /** Whether a write is in flight: the words are not editable meanwhile, so nothing is typed into a block already sent. */
-  const [busy, setBusy] = useState(false);
+  const [sending, setBusy] = useState(false);
+  // AND WRITTEN, until the page draws the words (ADR-0261 Decision 7): the editor stays as their look, and a key typed into
+  // it then would go into words already written, which nothing would send.
+  const busy = sending || parting;
   /** Whether the right-click menu is open, which has the focus in a popup outside this element. */
   const menuOpen = useRef(false);
   /** A sentence a menu item says beside the words, cleared by the next thing typed. */

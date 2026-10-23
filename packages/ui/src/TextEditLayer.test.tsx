@@ -363,7 +363,7 @@ describe('Edit text on the page (ADR-0096)', () => {
   });
 
   it('ESCAPE WRITES what was typed, for the block that was open, at the version it was read at', async () => {
-    const { view, commits } = mount();
+    const { view, commits, show } = mount();
     fireEvent.click(find(view.container, '[data-text-block="1"]'));
     const editor = editorIn(view.container);
     typeInto(editor, 'Helps with care and support\nat every single stage.');
@@ -378,6 +378,9 @@ describe('Edit text on the page (ADR-0096)', () => {
     expect(commits[0]?.version).toBe(7);
     // AND THE WRITER THE SAME READ NAMED, carried with its version rather than looked up beside it.
     expect(commits[0]?.rewrite).toBe('objects');
+    // HELD, LOCKED, until the read after the write (ADR-0261 Decision 7), and gone with it.
+    expect(find(view.container, '[data-text-editor]').getAttribute('contenteditable')).toBe('false');
+    show({ ...BLOCKS, version: asDocVersion(8) });
     expect(view.container.querySelector('[data-text-editor]')).toBeNull();
   });
 
@@ -1038,8 +1041,8 @@ describe('Edit text on the page (ADR-0096)', () => {
     });
   });
 
-  it('CONTROL: a block WRITTEN closes the editor, through the same finish', async () => {
-    const { view, answerWith } = mount();
+  it('CONTROL: a block WRITTEN closes the editor, through the same finish — once the page has the read after it (ADR-0261)', async () => {
+    const { view, answerWith, show } = mount();
     answerWith('written');
     fireEvent.click(find(view.container, '[data-text-block="0"]'));
     typeInto(editorIn(view.container), 'WORK EXPERIENCE');
@@ -1047,6 +1050,13 @@ describe('Edit text on the page (ADR-0096)', () => {
       fireEvent.keyDown(editorIn(view.container), { key: 'Escape' });
       await Promise.resolve();
     });
+    // HELD AS THE WORDS' LOOK until the page draws them (Decision 7), and locked, so nothing typed now is lost.
+    const held = find(view.container, '[data-text-editor]');
+    expect(held.textContent).toBe('WORK EXPERIENCE');
+    expect(held.getAttribute('contenteditable')).toBe('false');
+    // THE READ AFTER THE WRITE, which `TextEditPage` hands down once the page is drawn from it: the editor leaves with
+    // the read it was opened over.
+    show({ ...BLOCKS, version: asDocVersion(Number(BLOCKS.version) + 1) });
     expect(view.container.querySelector('[data-text-editor]')).toBeNull();
   });
 
@@ -1117,8 +1127,8 @@ describe('Edit text on the page (ADR-0096)', () => {
       fireEvent.keyDown(editorIn(view.container), { key: 'Escape' });
       await Promise.resolve();
     });
-    // WRITTEN: the editor closed, and the read after the write arrives with the block past the page's foot.
-    expect(view.container.querySelector('[data-text-editor]')).toBeNull();
+    // WRITTEN: the editor is held, locked, until the read after the write arrives — here with the block past the page's foot.
+    expect(find(view.container, '[data-text-editor]').getAttribute('contenteditable')).toBe('false');
     show(grown(-30));
     const editor = editorIn(view.container);
     // NOTHING TYPED IS LOST: every line, the last below the page, is in the editor the person sees.
@@ -1573,7 +1583,7 @@ describe('Edit text draws each run in its own font where the host rebuilt one (A
 
   it('the faces LEAVE WITH THE EDITOR: removed when it closes, and none before', async () => {
     const { added, removed } = withFonts();
-    const { view } = mount({ runFonts: () => Promise.resolve(SHARED) });
+    const { view, show } = mount({ runFonts: () => Promise.resolve(SHARED) });
     fireEvent.click(find(view.container, '[data-text-block="1"]'));
     await settle();
     expect(added).toHaveLength(1);
@@ -1582,6 +1592,9 @@ describe('Edit text draws each run in its own font where the host rebuilt one (A
       fireEvent.keyDown(editorIn(view.container), { key: 'Escape' });
       await Promise.resolve();
     });
+    // STILL DRAWN IN THEM while held as the words' look (ADR-0261 Decision 7), and gone with the editor.
+    expect(removed).toHaveLength(0);
+    show({ ...BLOCKS, version: asDocVersion(8) });
     expect(view.container.querySelector('[data-text-editor]')).toBeNull();
     expect(removed).toStrictEqual(added);
   });
