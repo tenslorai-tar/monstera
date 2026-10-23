@@ -186,3 +186,21 @@ Recorded as built, each with its reason. None changes what an edit writes.
   found again by its words, as before.
 - **Properties carries no typed position or size.** ADR-0153's E6 fields are not in the brief and are not rebuilt; the
   tab shows the kind, a shape's or a block's colour, and the commands its foot projects.
+
+## Correction, 2026-10-23 (local, over the owner's corpus) — a shape that sets the clip moves its paint, and its clip stays
+
+**Decision 3's place for a shape that also sets the clip was wrong, and its own last clause said why it could not be
+right.** Rewriting the shape's coordinates in place moves the clip it sets *for what follows*, so "the shape and the
+clip it sets move together and nothing else changes" is a contradiction: everything drawn after it is cut by the moved
+clip. Measured by Decision 7's own check, `proof:editobject --corpus` on the owner's corpus (first pages, 2026-10-23):
+22 shapes of one document disturbed 7,670 to 209,698 pixels each, up to 673 points from the shape, on both move and
+resize; their recolour, which already left the clip where it was, disturbed none.
+
+**Now a place of such a shape is recolour's construction**: the shape painted placed inside `q M cm … Q` without the
+clip, then its path said again as `W n` where it stood, so what follows is clipped exactly as before. Decision 3's title
+and this ADR's own rule, *an edit changes only the bytes of the object it names*, is what decides it; Decision 7 is the
+check that found it. A path that only clips (no paint) has nothing to move and keeps the old rewrite.
+
+**And the read-back is widened so the class is caught, not the instance**: a place now requires every OTHER object to be
+drawn through the same clips as before. The old read-back checked the placed object and the object list, and so passed
+an edit that re-cut the rest of the page.
