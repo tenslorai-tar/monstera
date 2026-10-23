@@ -270,6 +270,34 @@ function present(
   context.drawImage(drawing, 0, 0);
 }
 
+/**
+ * Puts a drawing ALREADY MADE on the canvas on screen, turned clockwise by `quarterTurns`, in one synchronous step: a
+ * page plan's page from the pixels the screen already had
+ * ([ADR-0261](../../../docs/DECISIONS/0261-a-page-command-is-shown-at-once-from-the-pages-already-drawn.md)'s
+ * correction). Whole pixels move and none is resampled, since a quarter turn at the size it was drawn at maps each
+ * pixel onto one. Sized by the ledger, as {@link present} is, which is the one place page pixels are counted.
+ */
+export function presentTurned(canvas: HTMLCanvasElement, drawing: HTMLCanvasElement, quarterTurns: number): void {
+  const turns = ((quarterTurns % 4) + 4) % 4;
+  const width = turns % 2 === 0 ? drawing.width : drawing.height;
+  const height = turns % 2 === 0 ? drawing.height : drawing.width;
+  holdPixels(canvas, width, height);
+  const context = contextOf(canvas);
+  context.save();
+  if (turns === 1) {
+    context.translate(width, 0);
+    context.rotate(Math.PI / 2);
+  } else if (turns === 2) {
+    context.translate(width, height);
+    context.rotate(Math.PI);
+  } else if (turns === 3) {
+    context.translate(0, height);
+    context.rotate(-Math.PI / 2);
+  }
+  context.drawImage(drawing, 0, 0);
+  context.restore();
+}
+
 /** A canvas nobody sees, at `size`, from the document the canvas on screen lives in. */
 function scratchFor(canvas: HTMLCanvasElement, size: { readonly width: number; readonly height: number }): HTMLCanvasElement {
   const scratch = canvas.ownerDocument.createElement('canvas');

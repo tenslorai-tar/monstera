@@ -84,10 +84,11 @@ import {
   drawWithout,
   pageBoxAtOne,
   pageGeometry,
+  presentTurned,
   renderPage,
   renderRegion,
 } from './renderPage.js';
-import { givePixelsBack, mayHoldAhead, subscribePixels } from './pixelLedger.js';
+import { givePixelsBack, holdPixels, mayHoldAhead, subscribePixels } from './pixelLedger.js';
 import { type Tile, tilesCovering } from './tiles.js';
 import type { SearchHighlight } from './searchHighlight.js';
 import { Loupe } from './Loupe.js';
@@ -515,6 +516,30 @@ interface Measured {
 }
 
 /**
+ * What a page canvas shows now: the view's page, the plan's quarter turns from that page's own rotation, and the
+ * measurement it was drawn with. Written by the slot at every whole-page draw, and read when a page plan changes, so a
+ * planned slot can take the drawing of its source from wherever it is on screen (ADR-0261's correction).
+ */
+interface Shown {
+  readonly view: DocumentView;
+  readonly source: number;
+  readonly turn: number;
+  readonly measured: Measured;
+}
+
+/** A page canvas's drawing kept at the moment a plan changed, beside what it shows. */
+interface DrawnCopy extends Shown {
+  readonly copy: HTMLCanvasElement;
+}
+
+const SHOWS = new WeakMap<HTMLCanvasElement, Shown>();
+
+/** The quarter turns from the page's own rotation a draw is made at: a plan's, or none for the view's own pages. */
+function turnOf(rotation: PageRotation): number {
+  return typeof rotation === 'object' ? rotation.turnedFromOwn : 0;
+}
+
+/**
  * Device pixels per CSS pixel, read at the point of use.
  *
  * Not cached: a window moved between a 1× and a 2× display changes it, and a
@@ -652,6 +677,28 @@ export function PageList({
   // NOT BEFORE THE FIRST FRAME, with the marks below: both are reads in main's one lane, and asked at mount they were
   // queued ahead of the rotation the first page waits for. Neither is drawn before a page is measured anyway.
   const scroller = useRef<HTMLDivElement | null>(null);
+  // THE DRAWINGS ON SCREEN WHEN A PLAN CHANGES (ADR-0261's correction): each page canvas's pixels, by the view's page they
+  // show, so a planned slot presents its source's at once instead of waiting for PDF.js. Kept in a LAYOUT effect, which
+  // runs after the render that hands the slots their plan and before any slot's draw effect touches a canvas. Let go when
+  // the plan changes again or ends; a copy is a page's bitmap, held only while a plan is being shown.
+  const copies = useRef<ReadonlyMap<number, DrawnCopy>>(new Map());
+  useLayoutEffect(() => {
+    for (const each of copies.current.values()) givePixelsBack(each.copy);
+    const kept = new Map<number, DrawnCopy>();
+    const list = scroller.current;
+    if (planned !== null && list !== null && view !== undefined) {
+      for (const canvas of list.querySelectorAll<HTMLCanvasElement>('canvas.m-page')) {
+        const shows = SHOWS.get(canvas);
+        if (shows?.view !== view || canvas.width === 0 || kept.has(shows.source)) continue;
+        const copy = canvas.ownerDocument.createElement('canvas');
+        holdPixels(copy, canvas.width, canvas.height);
+        copy.getContext('2d')?.drawImage(canvas, 0, 0);
+        kept.set(shows.source, { ...shows, copy });
+      }
+    }
+    copies.current = kept;
+  }, [planned, view]);
+  const copyOf = useCallback((source: number): DrawnCopy | undefined => copies.current.get(source), []);
   // THE ACCENT ON THE PAPER, solved once for every mark drawn over a page — an outline, a handle, a preview, a caret —
   // against `--page`, which is what those marks sit on: the accent itself is 3.30:1 on white in light, 2.54:1 in dark
   // and 1.49:1 in high contrast (measured 2026-10-04 with `contrast`), under the 3:1 a boundary needs in two of three.
@@ -1408,6 +1455,7 @@ export function PageList({
           // by the plan (`plannedRotation`), and the model's answer at the store's version is for another page.
           draw={drawsPages && inUse(page) && (planned !== null || rotations.has(page)) && (resolved !== undefined || startBoxRefused)}
           source={planned?.[page]?.source ?? page}
+          copyOf={planned === null ? undefined : copyOf}
           rotation={planned === null ? rotations.get(page) : plannedRotation(planned[page] ?? { source: page, turn: 0 })}
           size={sizes.get(page) ?? lastKnownBefore(sizes, page) ?? startEstimate}
           zoom={shown}
@@ -1674,6 +1722,7 @@ function lastKnownBefore(
 function PageSlot({
   page,
   source,
+  copyOf,
   ref,
   view,
   mounted,
@@ -1720,6 +1769,8 @@ function PageSlot({
    * slot shows — marks, text, fields — is the store's, whose pages already are the plan's.
    */
   readonly source: number;
+  /** While a page plan is shown: the drawing of a view's page the screen had when the plan changed, if any (ADR-0261). */
+  readonly copyOf: ((source: number) => DrawnCopy | undefined) | undefined;
   readonly ref: (element: HTMLElement | null) => void;
   readonly view: DocumentView | undefined;
   /** Whether the page is inside the margin, which is what keeps its canvas (and its bitmap) alive. */
@@ -1973,6 +2024,26 @@ function PageSlot({
       }
       const target = canvas.current;
       if (target === null) return;
+      // A PLANNED PAGE FROM THE PIXELS ALREADY ON SCREEN (ADR-0261's correction): its source's drawing at this scale,
+      // turned by the difference, presented in this task. Not while a mark is left out, which that drawing has in it.
+      const held = copyOf?.(source);
+      if (held?.view === view && held.measured.drawnAt === scale && leftOut === undefined) {
+        const turns = (((turnOf(rotation) - held.turn) % 4) + 4) % 4;
+        presentTurned(target, held.copy, turns);
+        const odd = turns % 2 === 1;
+        const measured = {
+          ...held.measured,
+          width: odd ? held.measured.height : held.measured.width,
+          height: odd ? held.measured.width : held.measured.height,
+          rotation: (held.measured.rotation + turns * 90) % 360,
+        };
+        SHOWS.set(target, { view, source, turn: turnOf(rotation), measured });
+        onMeasured(page, measured);
+        setDrawnWith(view);
+        setPresentedWithout(leftOut);
+        onPainted(page, true);
+        return;
+      }
       const drawn = await renderPage(
         view.document,
         // THE VIEW'S PAGE THIS SLOT SHOWS, which a page plan may make another than its own (ADR-0261).
@@ -1988,13 +2059,16 @@ function PageSlot({
         leftOut,
       );
       if (superseded.signal.aborted) return;
-      onMeasured(page, {
+      const measured = {
         width: drawn.width,
         height: drawn.height,
         drawnAt: scale,
         crop: drawn.crop,
         rotation: drawn.rotation,
-      });
+      };
+      // WHAT THIS CANVAS SHOWS NOW, for a plan made next to take it from (ADR-0261's correction).
+      SHOWS.set(target, { view, source, turn: turnOf(rotation), measured });
+      onMeasured(page, measured);
       setDrawnWith(view);
       setPresentedWithout(leftOut);
       onPainted(page, true);
@@ -2027,7 +2101,7 @@ function PageSlot({
     return (): void => {
       superseded.abort();
     };
-  }, [draw, leftOut, onFailed, onMeasured, onPainted, page, quality, renderZoom, rotation, secondRasteriser, setPresentedWithout, source, tiled, view]);
+  }, [copyOf, draw, leftOut, onFailed, onMeasured, onPainted, page, quality, renderZoom, rotation, secondRasteriser, setPresentedWithout, source, tiled, view]);
 
   // HELD DECODED WHILE MOUNTED (`pageResidency.ts`), so a zoom's redraw of a page in the margin does not decode its
   // images again; released when it leaves the margin, and PDF.js then closes them unless the strip is drawing it.
