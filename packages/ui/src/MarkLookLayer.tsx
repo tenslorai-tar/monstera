@@ -232,6 +232,7 @@ function VectorPart({ part }: { readonly part: LookPart }): ReactElement | null 
     case 'words':
     case 'redact':
     case 'picture':
+    case 'paper':
     case 'link':
       return null;
     default: {
@@ -275,6 +276,9 @@ function BoxPart({ part }: { readonly part: LookPart }): ReactElement | null {
       );
     case 'picture':
       return <img alt="" className="m-mark-look__picture" data-mark-look="picture" src={part.src} style={boxStyle(part.box)} />;
+    case 'paper':
+      // THE PAPER'S OWN PAINT, read off the drawn page: a value of the page, so no token can name it.
+      return <div className="m-mark-look__box" data-mark-look="paper" style={{ ...boxStyle(part.box), ...part.paint }} />;
     case 'link':
       return <div className="m-mark-look__link" data-mark-look="link" style={boxStyle(part.box)} />;
     case 'outline':
@@ -296,7 +300,7 @@ function BoxPart({ part }: { readonly part: LookPart }): ReactElement | null {
 }
 
 /** The parts drawn as HTML in their boxes; every other part is the SVG's. */
-const IN_BOXES: ReadonlySet<LookPart['part']> = new Set(['words', 'redact', 'picture', 'link']);
+const IN_BOXES: ReadonlySet<LookPart['part']> = new Set(['words', 'redact', 'picture', 'paper', 'link']);
 
 export function MarkLookLayer({ looks }: { readonly looks: readonly MarkLook[] }): ReactElement | null {
   const parts = looks.flatMap((look) => look.parts);
