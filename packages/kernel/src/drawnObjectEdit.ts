@@ -254,13 +254,13 @@ function place(
     });
   // EVERY OTHER OBJECT THROUGH THE CLIPS IT WAS DRAWN THROUGH: a placement moves one object, and a clip that moved with it
   // would change everything drawn after it while this object read back placed perfectly.
-  const othersOf = (objects: readonly DrawnObject[]): string[] => {
+  const othersOf = (objects: readonly DrawnObject[]): readonly DrawnObject[] => {
     const placedOne = objects.filter((each) => each.kind === command.object)[command.ordinal];
-    return objects.filter((object) => object !== placedOne).map((object) => JSON.stringify(object.windows.map((each) => each.points)));
+    return objects.filter((object) => object !== placedOne);
   };
   const othersBefore = othersOf(drawn);
   const othersAfter = othersOf(after);
-  const recut = othersBefore.findIndex((each, at) => each !== othersAfter[at]);
+  const recut = othersBefore.findIndex((each, at) => !sameWindows(each.windows, othersAfter[at]?.windows ?? []));
   // EACH CHECK NAMED, so a refusal says which part of the read-back failed rather than that one did.
   const failed = [
     ...(placedWell ? [] : ['it is not drawn where the placement put it']),
@@ -318,15 +318,13 @@ function recolor(
   // READ BACK: the same objects and text, the shape's points where they were, and its clip the clip it set before.
   const after = drawnObjects(edited, kinds);
   const shape = after.filter((object) => object.kind === 'path')[command.ordinal];
-  /** The clip every object is drawn through, by its windows' points: what a recolour must leave as it was. */
-  const windowsOf = (objects: readonly DrawnObject[]): readonly (readonly (readonly [number, number])[])[] =>
-    objects.flatMap((object) => object.windows.map((window) => window.points));
+  // THE CLIP EVERY OBJECT IS DRAWN THROUGH: what a recolour must leave as it was.
   if (
     shape === undefined ||
     !samePoints(shape.points, found.points) ||
     !sameObjects(drawn, after) ||
     !sameText(content, edited) ||
-    JSON.stringify(windowsOf(after)) !== JSON.stringify(windowsOf(drawn))
+    !sameClips(after, drawn)
   ) {
     throw refused('read-back', `recolouring path ${String(command.ordinal)} did not read back as one shape recoloured`);
   }
@@ -353,17 +351,35 @@ function remove(
   // READ BACK: every other object in its kind and order, the text as it was, and every clip as it was.
   const after = drawnObjects(edited, kinds);
   const others = drawn.filter((object) => object !== found);
-  const windowsOf = (objects: readonly DrawnObject[]): string => JSON.stringify(objects.map((object) => object.windows.map((window) => window.points)));
-  if (!sameObjects(others, after) || !sameText(content, edited) || windowsOf(after) !== windowsOf(others)) {
+  if (!sameObjects(others, after) || !sameText(content, edited) || !sameClips(after, others)) {
     throw refused('read-back', `removing ${command.object} ${String(command.ordinal)} did not read back as one object removed`);
   }
   return edited;
 }
 
-/** Where a drawn object reads back on the page: its points for a path, its CTM for everything else. */
-function geometryOf(object: DrawnObject): string {
-  const round = (value: number): number => Math.round(value / READ_BACK_TOLERANCE) * READ_BACK_TOLERANCE;
-  return JSON.stringify(object.kind === 'path' ? object.points.map(([x, y]) => [round(x), round(y)]) : object.ctm.map(round));
+/**
+ * Whether two lists of clip windows are the same windows, point for point WITHIN THE READ-BACK'S TOLERANCE: the one rule
+ * every read-back here compares clips by (B3a). Compared as text, a window whose points were worked out again through a
+ * carried CTM differs from itself in the last digit, and a correct arrange read back as having lost its clip (measured
+ * over the owner's corpus, 2026-10-23).
+ */
+function sameWindows(a: readonly { readonly points: readonly (readonly [number, number])[] }[], b: readonly { readonly points: readonly (readonly [number, number])[] }[]): boolean {
+  return a.length === b.length && a.every((window, at) => samePoints(window.points, b[at]?.points ?? []));
+}
+
+/**
+ * Whether two drawn objects are the same object as the read-back sees it: its kind, and where it is drawn WITHIN THE
+ * READ-BACK'S TOLERANCE — its points for a path, its CTM for anything else. Never its rounded geometry compared as text:
+ * rounding buckets each value, and two values a hair apart either side of a bucket's edge read as different (726.29095
+ * against 726.2909500038639 refused a correct arrange over the owner's corpus, 2026-10-23).
+ */
+export function sameDrawn(a: Pick<DrawnObject, 'kind' | 'points' | 'ctm'>, b: Pick<DrawnObject, 'kind' | 'points' | 'ctm'>): boolean {
+  return a.kind === b.kind && (a.kind === 'path' ? samePoints(a.points, b.points) : sameMatrix(a.ctm, b.ctm));
+}
+
+/** Whether every object of two lists, in order, is drawn through the same clip windows. */
+function sameClips(a: readonly DrawnObject[], b: readonly DrawnObject[]): boolean {
+  return a.length === b.length && a.every((object, at) => sameWindows(object.windows, b[at]?.windows ?? []));
 }
 
 /**
@@ -429,22 +445,32 @@ function arrange(
   const staying = drawn.filter((object) => !moving.includes(object));
   const insertAt = staying.filter((object) => object.start < at).length;
   const expected = [...staying.slice(0, insertAt), ...moving, ...staying.slice(insertAt)];
-  const signature = (object: DrawnObject): string => `${object.kind} ${geometryOf(object)}`;
   const inOrder =
     after.length === expected.length &&
     after.every((object, place) => {
       const wanted = expected[place];
-      return wanted !== undefined && signature(object) === signature(wanted);
+      return wanted !== undefined && sameDrawn(object, wanted);
     });
   const copy = inOrder ? after[expected.indexOf(found)] : undefined;
   const windowsKept =
     copy !== undefined &&
-    found.windows.every((window) => copy.windows.some((each) => JSON.stringify(each.points) === JSON.stringify(window.points)));
+    found.windows.every((window) => copy.windows.some((each) => sameWindows([each], [window])));
   // EACH CHECK NAMED, so a refusal says which part of the read-back failed rather than that one did.
+  // WHERE THE ORDER FIRST DIFFERS, by place and kind, so a refusal can be read without the page: numbers and kinds only.
+  const firstOff = after.findIndex((object, place) => {
+    const wanted = expected[place];
+    return wanted === undefined || !sameDrawn(object, wanted);
+  });
+  const orderDetail =
+    after.length !== expected.length
+      ? `${String(after.length)} objects where ${String(expected.length)} were expected`
+      : `at place ${String(firstOff)} of ${String(after.length)}, a ${String(after[firstOff]?.kind)} where a ${String(expected[firstOff]?.kind)} was expected (the object was at ${String(drawn.indexOf(found))}, put at ${String(insertAt)})`;
   const failed = [
     ...(sameText(content, edited) ? [] : ['the text changed']),
-    ...(inOrder ? [] : ['the drawn objects are not in the order the arrange asked for']),
-    ...(copy !== undefined && !windowsKept ? ['a clip it stood in is lost'] : []),
+    ...(inOrder ? [] : [`the drawn objects are not in the order the arrange asked for: ${orderDetail}`]),
+    ...(copy !== undefined && !windowsKept
+      ? [`a clip it stood in is lost (${String(found.windows.length)} before, ${String(copy.windows.length)} after)`]
+      : []),
   ];
   if (failed.length > 0) {
     throw refused('read-back', `arranging ${command.object} ${String(command.ordinal)} did not read back as one object moved in the order: ${failed.join('; ')}`);

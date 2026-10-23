@@ -6,7 +6,7 @@ import type { CommandOfKind, DrawnEdit } from '@monstera/contract/host';
 import { asDocVersion } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
-import { applyEditDrawnObject, editDrawnContent } from './drawnObjectEdit.js';
+import { applyEditDrawnObject, editDrawnContent, sameDrawn } from './drawnObjectEdit.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import { pageContentStreams, xobjectKinds } from './pageContent.js';
 import { rasterisePageRgba } from './pageImages.js';
@@ -355,6 +355,16 @@ describe('editDrawnObject — arrange (ADR-0264 Decision 3)', () => {
       await savedContent(await edited(command('image', 0, GREEN_BOX, { op: 'arrange', to: 'backward', past: { kind: 'path', ordinal: 0 } }), await fixture(content))),
     );
     expect(before.indexOf('/Im1 Do')).toBeLessThan(before.indexOf('re f'));
+  });
+
+  it('reads an object back WITHIN TOLERANCE: a hair apart either side of a rounding edge is the same place', () => {
+    // THE PAIR MEASURED over the owner's corpus: a shape arranged correctly, its carried CTM worked out again, read
+    // 726.2909500038639 where it had been 726.29095 — four billionths of a point, and 726.29095 sits on the edge of a
+    // ten-thousandth, so rounded and compared as text the two fell in different buckets.
+    const at = (y: number) => ({ kind: 'path' as const, ctm: [1, 0, 0, 1, 0, 0] as const, points: [[19.174417, y], [35.031547, y]] as [number, number][] });
+    expect(sameDrawn(at(726.29095), at(726.2909500038639))).toBe(true);
+    // CONTROL: a hundredth of a point apart is a different place.
+    expect(sameDrawn(at(726.29095), at(726.30095))).toBe(false);
   });
 
   it('goes past a TEXT object named by PDFium’s number for it', async () => {
