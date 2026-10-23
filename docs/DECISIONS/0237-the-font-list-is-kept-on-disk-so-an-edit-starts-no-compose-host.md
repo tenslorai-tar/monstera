@@ -39,3 +39,18 @@ the owner's PC (run 3's memory walk), which then stayed until it retired, though
   is hostile input (ADR-0172).
 - **Keying on the folders' own modification times.** A replaced file changes its own time and size and not always the
   folder's; the per-file listing is what changes when a font does.
+
+## Correction, 2026-10-23 — an edit's first write still started the compose host, and it now starts with the mode
+
+**The title's claim was false for the write.** The font list no longer starts the compose host, as decided above, but
+every PDFium write is preceded by ADR-0126's inline-image keeper, which runs in that host (`keepInlineImages`), so the
+first write of a session started it. Measured on 2026-10-23 with timing laps in the bus and the keeper (dev build at
+7b4cd7bc, `textHoldProbe`, later starts): the write took 3.0 s in `main`, of which the apply was 2.5 s, of which the
+compose host's start was 2.39 s; the PDFium apply inside the host was 60 ms.
+
+**Now the compose host starts as an editing mode is chosen**, beside the PDFium host and at the same moment
+(`startEditingHosts`, `editingHosts.ts`), by ADR-0048's correction of 2026-10-20 extended to the second host the first
+write uses. The first write then took 0.89 to 1.04 s (three later starts, same probe); choosing the mode takes about
+1 s longer, 2.5 to 2.7 s, in which the person picks a block. A keeper host that cannot start does not make editing
+unavailable, as before: the edit runs on the image as it is. A first-ever start still pays for building the font list
+itself (5.6 to 13 s measured), which this decision keeps on disk afterwards.

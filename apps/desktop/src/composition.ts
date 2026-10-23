@@ -298,6 +298,7 @@ import type { OpenExternalEditor } from './openExternalEditor.js';
 import type { SecretStoreSurface } from './secretStore.js';
 import { type ChatHistory, noChatHistory } from './chatHistory.js';
 import { type SettingsSurface, createEphemeralSettings, createJsonFile } from './settingsFile.js';
+import { type StartReading, startEditingHosts } from './editingHosts.js';
 import { idleHost } from './idleRetire.js';
 import { type MemoryPressurePolicy, watchMemoryPressure } from './memoryPressure.js';
 import { type ShellFailureSink, engineHostEndingEvent } from './shellFailure.js';
@@ -2251,8 +2252,9 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // pinned face from by its own table (ADR-0250).
       bundledFonts: nativeComponentPath('fonts'),
       // THE EDITING ENGINE STARTED AS A MODE IS CHOSEN (ADR-0048's correction of 2026-10-20, R11): the host the first read
-      // would build, by the same call, counted as a call so it still stops after its idle time when nothing reads.
-      prepareEditing: async () => pdfiumHost !== null && (await pdfiumHost.starts('editing-mode')) === 'started',
+      // would build, by the same call, counted as a call so it still stops after its idle time when nothing reads. AND THE
+      // COMPOSE HOST beside it, which the first write's inline-image keeper starts otherwise (ADR-0237's correction).
+      prepareEditing: () => startEditingHosts(pdfiumHost, composeHost),
       // VERIFY STARTS WHAT IT VERIFIED (Part 0.1): each engine host built and each converter run, the way the application
       // runs them, so a DLL missing from the computer is seen here rather than at a person's first document.
       components: (verify) =>
@@ -2370,8 +2372,6 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
 }
 
 /** What ends a host that has gone wrong without dying: each call's deadline, and the memory sampler's settings. */
-/** What starting a component found: it started, it could not, or there is nothing to start here. */
-type StartReading = 'started' | 'cannot-start' | 'not-checked';
 
 /**
  * Whether a host starts: its connection built, which loads its engine — the path a document's first use takes, so
@@ -4067,6 +4067,8 @@ function composeHostBinding(
   readonly signatureFromScan: ScanSignature;
   /** The font families the host can set text in, for the one font picker (`engine/font-families`). */
   readonly fontFamilies: () => Promise<ListedFontFamilies>;
+  /** Whether the compose host starts, for whoever asked: counted as a call, so it still stops after its idle time. */
+  readonly starts: (asker: StartAsker) => Promise<StartReading>;
   /**
    * Stops the host where it is idle by its own account, and answers whether it stopped: no call of this binding
    * running, and nothing in its granted area. The area is the account that matters for a workbook, whose parts stay
@@ -4226,7 +4228,7 @@ function composeHostBinding(
     return { families, more };
   });
 
-  const calls: Omit<ReturnType<typeof composeHostBinding>, 'retireIfIdle'> = {
+  const calls: Omit<ReturnType<typeof composeHostBinding>, 'retireIfIdle' | 'starts'> = {
     compose: async (format, source, page, family) => {
       const built = await ensure();
       const area = { snapshotDirectory: built.paths.snapshot, outputDirectory: built.paths.output };
@@ -4636,6 +4638,7 @@ function composeHostBinding(
     imageSize: counted(calls.imageSize),
     fontFamilies: counted(calls.fontFamilies),
     signatureFromScan: counted(calls.signatureFromScan),
+    starts: (asker) => counted(() => hostStarts(ensure, failures, asker))(),
     retireIfIdle,
     close: calls.close,
   };
