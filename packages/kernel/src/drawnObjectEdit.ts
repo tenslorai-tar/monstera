@@ -244,6 +244,64 @@ function place(
   return edited;
 }
 
+/** The painting operators that fill, and those that stroke (`B`, `B*`, `b`, `b*` do both). */
+const FILLS = new Set(['f', 'F', 'f*', 'B', 'B*', 'b', 'b*']);
+const STROKES = new Set(['S', 's', 'B', 'B*', 'b', 'b*']);
+
+/**
+ * A recolour: the path drawn inside `q <colour> … Q`, the colour set for the channels its paint uses. A shape that also
+ * sets the clip is drawn twice: painted in its colour inside the `q … Q` without the clip, then said again as `W n`, so
+ * the clip it sets for what follows is the one it set before (Decision 3).
+ */
+function recolor(
+  content: Uint8Array,
+  kinds: (name: string) => XObjectKind,
+  drawn: readonly DrawnObject[],
+  found: DrawnObject,
+  command: CommandOfKind<'editDrawnObject'>,
+  edit: Extract<DrawnEdit, { op: 'recolor' }>,
+): Uint8Array {
+  const paint = found.paint;
+  if (found.kind !== 'path' || paint === undefined) throw refused('object', `${command.object} ${String(command.ordinal)} is not a shape`);
+  const values = [edit.colour.r, edit.colour.g, edit.colour.b].map((channel) => written(channel / 255)).join(' ');
+  const colour = [...(FILLS.has(paint.op) ? [`${values} rg`] : []), ...(STROKES.has(paint.op) ? [`${values} RG`] : [])].join(' ');
+  const latin1 = new TextDecoder('latin1');
+  const clip = found.clip;
+  const edited =
+    clip === undefined
+      ? spliced(content, [
+          { start: found.start, end: found.start, text: `q ${colour}\n` },
+          { start: found.end, end: found.end, text: '\nQ' },
+        ])
+      : spliced(content, [
+          {
+            start: found.start,
+            end: found.end,
+            text: (() => {
+              const path = latin1.decode(content.subarray(found.start, clip.start)).trimEnd();
+              return `q ${colour}\n${path} ${paint.op}\nQ\n${path} ${clip.op} n`;
+            })(),
+          },
+        ]);
+
+  // READ BACK: the same objects and text, the shape's points where they were, and its clip the clip it set before.
+  const after = drawnObjects(edited, kinds);
+  const shape = after.filter((object) => object.kind === 'path')[command.ordinal];
+  /** The clip every object is drawn through, by its windows' points: what a recolour must leave as it was. */
+  const windowsOf = (objects: readonly DrawnObject[]): readonly (readonly (readonly [number, number])[])[] =>
+    objects.flatMap((object) => object.windows.map((window) => window.points));
+  if (
+    shape === undefined ||
+    !samePoints(shape.points, found.points) ||
+    !sameObjects(drawn, after) ||
+    !sameText(content, edited) ||
+    JSON.stringify(windowsOf(after)) !== JSON.stringify(windowsOf(drawn))
+  ) {
+    throw refused('read-back', `recolouring path ${String(command.ordinal)} did not read back as one shape recoloured`);
+  }
+  return edited;
+}
+
 /** The same drawn objects in the same kinds, in order. */
 function sameObjects(before: readonly DrawnObject[], after: readonly DrawnObject[]): boolean {
   return after.length === before.length && after.every((object, at) => object.kind === before[at]?.kind);
@@ -273,7 +331,13 @@ export function editDrawnContent(
   if (found === undefined || !landsOn(found, command.box)) {
     throw refused('object', `page ${String(command.page)} holds no ${command.object} ${String(command.ordinal)} where the listing put it`);
   }
-  return { content: place(content, kinds, drawn, found, command, command.edit) };
+  const { edit } = command;
+  switch (edit.op) {
+    case 'place':
+      return { content: place(content, kinds, drawn, found, command, edit) };
+    case 'recolor':
+      return { content: recolor(content, kinds, drawn, found, command, edit) };
+  }
 }
 
 export async function applyEditDrawnObject(session: MupdfSession, command: CommandOfKind<'editDrawnObject'>): Promise<void> {

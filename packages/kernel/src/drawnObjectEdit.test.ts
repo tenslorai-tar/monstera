@@ -158,6 +158,45 @@ const GREEN = [0, 200, 0] as const;
 const WHITE = [255, 255, 255] as const;
 const YELLOW = [255, 255, 0] as const;
 
+describe('editDrawnObject — recolour (ADR-0264 Decision 3)', () => {
+  const blue = { op: 'recolor', colour: { r: 0, g: 0, b: 255 } } as const;
+
+  it('draws the red square blue: MuPDF’s pixels and PDF.js’s fill both read the new colour, after a save and a reopen', async () => {
+    const bytes = await edited(command('path', 0, SQUARE, blue));
+    const pixels = await mupdfPixels(bytes);
+    expect(pixels(40, 40)).toStrictEqual([0, 0, 255]);
+    // EVERY OTHER OBJECT in its own colour: the picture and the yellow.
+    expect([pixels(120, 40), pixels(40, 120)]).toStrictEqual([GREEN, YELLOW]);
+    const reading = await pdfjsReading(bytes);
+    const control = await pdfjsReading(await fixture());
+    // CONTROL: the fixture's square is filled red, so the reader sees the fill it is asked about.
+    expect(control.fills).toContain('#ff0000');
+    expect(reading.fills).toContain('#0000ff');
+    expect(reading.paths).toStrictEqual(control.paths);
+  });
+
+  it('a shape that sets the clip keeps its clip: painted blue once, then said again as the clip, the yellow still through it', async () => {
+    const bytes = await edited(command('path', 1, CLIPPER, { op: 'recolor', colour: { r: 0, g: 128, b: 0 } }));
+    const text = new TextDecoder('latin1').decode(await savedContent(bytes));
+    expect(text).toContain('q 0 0.5019607843 0 rg\n20 100 40 40 re f\nQ\n20 100 40 40 re W n');
+    const pixels = await mupdfPixels(bytes);
+    // THE CLIP IS THE ONE IT SET: the yellow drawn after it still shows inside it and nowhere else.
+    expect([pixels(40, 120), pixels(100, 120)]).toStrictEqual([YELLOW, WHITE]);
+  });
+
+  it('a stroked shape is recoloured in its stroke; CONTROL: a filled one in its fill', () => {
+    const kinds = (): undefined => undefined;
+    const stroked = editDrawnContent(
+      new TextEncoder().encode('q 1 0 0 RG 10 10 m 50 50 l S Q'),
+      kinds,
+      command('path', 0, { left: 10, bottom: 10, right: 50, top: 50 }, blue),
+    );
+    expect(new TextDecoder('latin1').decode(stroked.content)).toBe('q 1 0 0 RG q 0 0 1 RG\n10 10 m 50 50 l S\nQ Q');
+    const filled = editDrawnContent(new TextEncoder().encode('10 10 40 40 re f'), kinds, command('path', 0, { left: 10, bottom: 10, right: 50, top: 50 }, blue));
+    expect(new TextDecoder('latin1').decode(filled.content)).toBe('q 0 0 1 rg\n10 10 40 40 re f\nQ');
+  });
+});
+
 describe('editDrawnObject — place (ADR-0264 Decision 3)', () => {
   it('moves the red square 30 points up: MuPDF draws it there and not where it was, after a save and a reopen', async () => {
     const before = await mupdfPixels(await fixture());

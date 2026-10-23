@@ -6983,8 +6983,22 @@ const drawnPlaceSchema = z
   })
   .strict();
 
+/** Recolours a SHAPE: the channels its paint uses take this colour, in 0 to 255 (ADR-0264 Decision 3). */
+const drawnRecolorSchema = z
+  .object({
+    op: z.literal('recolor'),
+    colour: z
+      .object({
+        r: z.number().int().min(0).max(255),
+        g: z.number().int().min(0).max(255),
+        b: z.number().int().min(0).max(255),
+      })
+      .strict(),
+  })
+  .strict();
+
 /** What `editDrawnObject` does to the object it names (ADR-0264 Decision 3). */
-export const drawnEditSchema = z.discriminatedUnion('op', [drawnPlaceSchema]);
+export const drawnEditSchema = z.discriminatedUnion('op', [drawnPlaceSchema, drawnRecolorSchema]);
 export type DrawnEdit = z.infer<typeof drawnEditSchema>;
 
 /**
@@ -7010,7 +7024,12 @@ export const editDrawnObjectSchema = z
     /** The version the listing was read at. Refused if the document has moved. */
     version: docVersionSchema,
   })
-  .strict();
+  .strict()
+  // A PICTURE IS NOT RECOLOURED in this version, nor a group, whose colours are its own content's (ADR-0264's *Not in
+  // this version*): refused at the boundary rather than written as a colour nothing draws in.
+  .refine((command) => command.edit.op !== 'recolor' || command.object === 'path', {
+    message: 'only a shape is recoloured',
+  });
 
 /**
  * Edit blocks of a page's text in place, reflowing what no longer fits
