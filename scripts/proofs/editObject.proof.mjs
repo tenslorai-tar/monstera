@@ -207,9 +207,11 @@ function compare(before, after, allowed) {
 /**
  * Every edit on every object of page `index` of `bytes`, each on a fresh copy, through PDFium's reading and the MuPDF
  * writers. Answers each try's outcome.
- * @param {any} pdfium @param {any} kernel @param {Uint8Array} bytes @param {number} index @returns {Promise<Try[]>}
+ * @param {any} pdfium @param {any} kernel @param {Uint8Array} bytes @param {number} index
+ * @param {boolean} quotes whether a text block may be named by its words: never for the owner's corpus
+ * @returns {Promise<Try[]>}
  */
-async function walkPage(pdfium, kernel, bytes, index) {
+async function walkPage(pdfium, kernel, bytes, index, quotes) {
   const session = await pdfium.pdfiumWriter.open(bytes);
   /** @type {any[]} */
   let objects;
@@ -290,7 +292,8 @@ async function walkPage(pdfium, kernel, bytes, index) {
     const lines = block.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index));
     const soft = block.lines.map((/** @type {any} */ line) => line.soft);
     const text = kernel.paragraphsOfLines(block.lines.map((/** @type {any} */ line) => ({ text: kernel.lineText(line.runs), soft: line.soft })));
-    const name = `block ${String(at)} “${text.slice(0, 24)}”`;
+    // A BLOCK OF THE OWNER'S CORPUS IS NAMED BY ITS NUMBER: its words are the owner's and are never printed.
+    const name = quotes ? `block ${String(at)} “${text.slice(0, 24)}”` : `block ${String(at)}`;
     /** @param {Record<string, unknown>} rest */
     const written = (rest) => (/** @type {any} */ copy) =>
       kernel.applyEditTextOperators(
@@ -322,17 +325,23 @@ async function walkPage(pdfium, kernel, bytes, index) {
   return tries;
 }
 
-/** The documents a run walks, each with its pages. @returns {Promise<{ name: string, bytes: Uint8Array, pages: number[], gate: boolean }[]>} */
+/**
+ * The documents a run walks, each with its pages, and whether its words may be printed (`quotes`): never for the corpus.
+ * @returns {Promise<{ name: string, bytes: Uint8Array, pages: number[], gate: boolean, quotes: boolean }[]>}
+ */
 async function documents() {
-  /** @type {{ name: string, bytes: Uint8Array, pages: number[], gate: boolean }[]} */
+  /** @type {{ name: string, bytes: Uint8Array, pages: number[], gate: boolean, quotes: boolean }[]} */
   const found = [];
-  for (let page = 1; page <= PAGES; page += 1) found.push({ name: `brochure page ${String(page)}`, bytes: await brochure(page), pages: [0], gate: true });
-  found.push({ name: 'chromium-type3.pdf', bytes: new Uint8Array(readFileSync(CHROMIUM)), pages: [0], gate: false });
-  for (const kind of FONT_KINDS) found.push({ name: `font kind ${kind.id}`, bytes: await buildFixture(kind.id), pages: [0], gate: false });
+  for (let page = 1; page <= PAGES; page += 1) found.push({ name: `brochure page ${String(page)}`, bytes: await brochure(page), pages: [0], gate: true, quotes: true });
+  found.push({ name: 'chromium-type3.pdf', bytes: new Uint8Array(readFileSync(CHROMIUM)), pages: [0], gate: false, quotes: true });
+  for (const kind of FONT_KINDS) found.push({ name: `font kind ${kind.id}`, bytes: await buildFixture(kind.id), pages: [0], gate: false, quotes: true });
   if (CORPUS !== null) {
-    for (const file of readdirSync(CORPUS).filter((each) => each.toLowerCase().endsWith('.pdf')).sort()) {
-      found.push({ name: `corpus ${file}`, bytes: new Uint8Array(readFileSync(join(CORPUS, file))), pages: [0], gate: false });
-    }
+    // BY NUMBER, NEVER BY NAME: the corpus is the owner's own documents, and their names are never printed. The number is
+    // the file's place in the folder sorted by name, so a run can be repeated against the same document.
+    const files = readdirSync(CORPUS).filter((each) => each.toLowerCase().endsWith('.pdf')).sort();
+    files.forEach((file, at) => {
+      found.push({ name: `corpus document ${String(at + 1)} of ${String(files.length)}`, bytes: new Uint8Array(readFileSync(join(CORPUS, file))), pages: [0], gate: false, quotes: false });
+    });
   }
   return found;
 }
@@ -399,7 +408,7 @@ async function run(pdfium, kernel) {
   for (const document of await documents()) {
     /** @type {Try[]} */
     const tries = [];
-    for (const page of document.pages) tries.push(...(await walkPage(pdfium, kernel, document.bytes, page)));
+    for (const page of document.pages) tries.push(...(await walkPage(pdfium, kernel, document.bytes, page, document.quotes)));
     results.push({ document: document.name, gate: document.gate, tries });
   }
 
