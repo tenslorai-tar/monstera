@@ -63,6 +63,27 @@ Three facts decide the design, read from the code on 2026-10-23:
 - **Asking `main` for the new layout first.** The answer comes after the command is applied, which is the wait being
   removed.
 
+## Correction, 2026-10-23 — a planned page takes the pixels already drawn, and PDF.js only when there are none
+
+**What was measured.** Built as Decision 1 first said — each planned page drawn again by PDF.js from the view on
+screen — the page's own pixels changed 270 to 350 ms after the command (`markLatencyWalk.mjs --changes`, rotate, move
+and delete, two runs each, 2026-10-23, the dev build at b34642ae plus this session's tree). The changes before that,
+at 35 to 70 ms, were the elements over the page; the canvas itself waited for a whole page's raster. Against 0.5 to
+0.9 s before, and against the owner's 100 ms, short.
+
+**The mechanism.** Every page a plan shows is one the screen already has: a moved page's drawing is in the slot it is
+leaving, a page after a delete is in the slot above, and a turned page is its own drawing turned by quarter turns. So
+at the moment a plan changes, the page list keeps a copy of each page canvas's drawing with what it shows — the view's
+page and its turn — and a planned slot presents the copy of its source at once, turned by the difference, through the
+one presenter that sizes the pixel ledger (`renderPage.ts`). PDF.js draws a planned slot only where no copy is held
+(a page scrolled in during the plan, a tiled page). The new version's drawing replaces it as before.
+
+**Why this is not the rejected CSS rotation.** That was rejected because a resampled picture is a visible change of
+sharpness at the handover. A quarter turn of a bitmap at the device size it was drawn at moves whole pixels and
+resamples nothing; a copy of a moved page is the same pixels. What could still differ at the handover is PDF.js
+rasterising a turned page with sub-pixel placement unlike the upright one, which `blinkWalk.mjs` reads as an untouched
+change if it shows.
+
 ## Proof
 
 A rendered case per category (rotate, move, delete, undo and redo of each, field design, Edit text commit) with a
