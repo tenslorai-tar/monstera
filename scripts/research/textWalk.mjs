@@ -302,9 +302,15 @@ if (existsSync(handwritten)) {
     await ensureEditText();
     await expect(page.locator('[data-text-block]').first()).toBeVisible({ timeout: 120_000 });
     await pressOn(page.locator('[data-text-block]').first());
+    // AN EDITOR TOOK THE PRESS, or the keys below go nowhere and nothing is said either.
+    await expect(editor()).toBeFocused();
     await page.keyboard.press('End');
     await page.keyboard.type(' (walked)');
     const said = await pressAway(10, 10);
+    // THE WORD IS WRITTEN, not only typed: the step returned `said` and checked nothing, and read as passed while the
+    // write was refused (2026-10-23: *couldn't write that text … set-text*). In every earlier run on record the press had
+    // opened no editor at all, so nothing was ever sent — which the step could not tell from success either.
+    if (said.length > 0) throw new Error(`the word on the recognised page was not written: ${JSON.stringify(said)}`);
     return { blocks: await page.locator('[data-text-block]').count(), said };
   });
 }
