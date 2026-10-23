@@ -151,6 +151,13 @@ export interface TextEditLayerProps {
   /** Leaves the mode: Escape pressed with no block open. */
   readonly onLeave: () => void;
   /**
+   * Told the version of the read an editor here was opened over while it is writing or holds words written and not yet
+   * drawn, and `undefined` otherwise: what lets the page keep THAT read while its drawing is behind
+   * ([ADR-0261](../../../docs/DECISIONS/0261-a-page-command-is-shown-at-once-from-the-pages-already-drawn.md)
+   * Decision 7), and nothing else.
+   */
+  readonly onHolding?: (holding: DocVersion | undefined) => void;
+  /**
    * The page's own colour behind a point of the drawn page, in the overlay's
    * CSS pixels, or `undefined` where it cannot be read.
    */
@@ -438,6 +445,7 @@ export function TextEditLayer({
   onRecognise,
   pictureNoted = false,
   onLeave,
+  onHolding,
   paperAt,
   pictureOf,
 }: TextEditLayerProps): ReactElement {
@@ -462,6 +470,18 @@ export function TextEditLayer({
   // editor over a newer answer would write words over objects the page no
   // longer has — and an effect would leave it open for one render first.
   const chosen = opened !== undefined && opened.version === blocks?.version ? opened.at : undefined;
+  /** The block whose write is in flight: set as it is sent, and cleared as its editor parts or the write comes back unwritten. */
+  const [committing, setCommitting] = useState<number | undefined>();
+  // HOLDING FROM THE MOMENT THE WRITE IS SENT, not from its answer: the document's version moves at the answer, and the
+  // page must already be keeping the read then, or the editor would be closed by the new version before it parts.
+  // THE VERSION OF THE EDITOR'S OWN READ, never only *that* it holds: an editor opened over the newest read while the page
+  // was still drawn from an older one would otherwise have the older read put back under it as its write began, which
+  // closed it, which ended the hold, which brought the newest read back — editors opened and closed in a loop until the
+  // page drew (`textWalk.mjs` step 9, after recognition, 2026-10-23).
+  const holding = chosen !== undefined && (opened?.parting === true || committing === chosen) ? opened?.version : undefined;
+  useEffect(() => {
+    onHolding?.(holding);
+  }, [holding, onHolding]);
   /**
    * The block a written edit was made to, and the version it was read at, until the editor that reopens over it closes
    * or the person opens another (the owner's Q7).
@@ -730,9 +750,13 @@ export function TextEditLayer({
                 // A WRITTEN EDITOR STAYS, locked, as its words' look until the page draws them (ADR-0261 Decision 7):
                 // it leaves with the read it was opened over, which the page keeps until its drawing is newer.
                 setOpened((current) => (current?.at !== at ? current : outcome === 'written' ? { ...current, parting: true } : undefined));
+                // IN THE SAME HANDLER as the parting, so no render between them holds nothing.
+                setCommitting((current) => (current === at ? undefined : current));
               }}
               onCommit={async (text, formatting) => {
+                setCommitting(at);
                 const outcome = await onCommit(block, text, blocks, formatting);
+                if (outcome !== 'written') setCommitting((current) => (current === at ? undefined : current));
                 if (outcome === 'written') setWritten({ box: block.box, version: blocks.version });
                 // A REFUSED WRITE KEEPS ITS EDITOR AND ITS WORDS, so the block clicked meanwhile does not open over them.
                 else if (outcome !== 'unchanged') setNext(undefined);
@@ -1022,12 +1046,16 @@ export function TextEditPage({
   readonly pictureOf?: ((box: { x0: number; y0: number; x1: number; y1: number }) => HTMLCanvasElement | undefined) | undefined;
 }): ReactElement {
   const [answers, setAnswers] = useState<{ readonly current?: BlocksAnswer; readonly previous?: BlocksAnswer }>({});
+  /** The read an editor on this page writes from or holds written words over, while it does (the layer's `onHolding`). */
+  const [holding, setHolding] = useState<DocVersion | undefined>();
   const { read, version } = editing;
-  // THE READ THE PAGE STILL SHOWS, while its drawing is older than the document (ADR-0261 Decision 7): a written
-  // editor stays over the words it wrote until the page draws them, so no frame shows the old words with no editor.
-  // A page drawn from this version, or never drawn, shows this version's read.
-  const behind = drawn !== undefined && drawn < version;
-  const kept = behind ? [answers.current, answers.previous].find((each) => each !== undefined && each.version <= drawn) : undefined;
+  // THE READ THE PAGE STILL SHOWS, while its drawing is older than the document AND an editor on it waits for its words
+  // to be drawn (ADR-0261 Decision 7): THAT EDITOR'S OWN READ, so it stays over the words it wrote until the page draws
+  // them and no frame shows the old words with no editor. ONLY THEN: offered to a page with no such editor, a box opened
+  // over the old read was closed by the page's next drawing, with what was typed in it (`textHoldOtherPage.pw.ts`).
+  // Otherwise this version's read.
+  const behind = drawn !== undefined && drawn < version && holding !== undefined;
+  const kept = behind ? [answers.current, answers.previous].find((each) => each?.version === holding) : undefined;
   const answer = kept ?? (answers.current?.version === version ? answers.current : undefined);
   // ONE FUNCTION PER PAGE AND EDITING, so the layer's read of the page's objects runs once per write rather than once
   // per render.
@@ -1073,6 +1101,7 @@ export function TextEditPage({
       paperAt={paperAt}
       pictureOf={pictureOf}
       pictureNoted={pictureNoted}
+      onHolding={setHolding}
     />
   );
 }
@@ -1365,6 +1394,12 @@ function BlockEditor({
   const area = useRef<HTMLDivElement>(null);
   /** Set while a write is in flight, so a blur during it does not write twice. */
   const writing = useRef(false);
+  /**
+   * Set once the words are WRITTEN, for good: the editor may stay as their look until the page draws them (ADR-0261
+   * Decision 7), and a blur then — the palette opened, another page pressed — would send the same words again at a
+   * version the document has left (`textHoldOtherPage.pw.ts`).
+   */
+  const wrote = useRef(false);
   // THE READ THIS EDITOR OPENED WITH, kept for its life: the layer hands a new function each render, and the block it
   // reads for is this editor's until it closes (`key`), so a second read would only load the same fonts again.
   const [readFonts] = useState(() => runFonts);
@@ -1497,7 +1532,7 @@ function BlockEditor({
    */
   const settle = useCallback(
     async (send: () => Promise<BlockCommit>): Promise<void> => {
-      if (writing.current) return;
+      if (writing.current || wrote.current) return;
       writing.current = true;
       setBusy(true);
       // A WRITE THAT REJECTS (a channel that threw, a host that went away) must still free the editor: without the `finally`
@@ -1523,6 +1558,7 @@ function BlockEditor({
         setProblem(outcome);
         return;
       }
+      if (outcome === 'written') wrote.current = true;
       onClose(outcome);
     },
     [onClose],
