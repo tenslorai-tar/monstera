@@ -51,3 +51,11 @@ What the tab bought was real and is kept: the tool does not cover the page, so a
 - The screens that change: the right panel's tab strip in every section (three tabs), and the Review tools' screen (the
   left panel shows the tool).
 - ADR-0183 is corrected by appending, and its index row says so.
+
+## Correction, 2026-10-24 — Decision 2 is superseded: Accessibility is the left strip's seventh tab
+
+By the owner's T3, [ADR-0265](0265-accessibility-is-a-panel-of-the-left-strip.md): taking over the panel's body displaced
+the tab on show, usually the thumbnails, until a close button was found. Accessibility is now a tab of the strip, which
+the two commands choose. The rejected *seventh permanent tab* is answered there: §10.3's count is amended, and the tab's
+Check view with nothing read is a start, not an empty screen. Decisions 1 and 4 stand; Decision 3's rule stands, decided
+now by the tab being on show.

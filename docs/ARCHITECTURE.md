@@ -3010,8 +3010,9 @@ them.
   commands first, then the sections from the end, never the active one,
   decided from a ruler of one button's height. Selecting a
   section populates the top tool ribbon. Beside it, one document panel at a
-  time — Pages, Bookmarks, Comments, Forms, Layers, Search — switched by a
-  **panel-tab strip** of six icon tabs (24 px tabs, 14 px icons) at the panel's
+  time — Pages, Bookmarks, Comments, Forms, Layers, Search, Accessibility
+  (amended 2026-10-24, [ADR-0265](DECISIONS/0265-accessibility-is-a-panel-of-the-left-strip.md)) —
+  switched by a **panel-tab strip** of seven icon tabs (24 px tabs, 14 px icons) at the panel's
   top, with the collapse chevron at the strip's end. The active tab names the
   panel via tooltip and accessible name; there is no separate title row. The
   strip is permanent chrome.
@@ -3196,6 +3197,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-10-24 | **Accessibility is a panel of the left strip, with its own tab** (§10.3). The owner's T3: the ribbon's *Accessibility check* and *Reading order* took over the left panel's body, displacing the tab on show. Accessibility is now the strip's seventh tab, the commands choose it at their view, and nothing else is displaced; a view's mark is drawn while that tab is on show. | ADR-0189 Decision 2 | [ADR-0265](DECISIONS/0265-accessibility-is-a-panel-of-the-left-strip.md) |
 | 2026-10-23 | **Edit object returns, and an edit changes only the bytes of the object it names** (§7's `Placement`: the `object` menu context and a ribbon menu's `menuRuns: 'last'` return). The owner's approved design (cloud run 17): R20 removed the tool because PDFium wrote the whole page again after any change and a font it could not write back refused the edit. Now PDFium only reads; every edit is a MuPDF splice of the one object's bytes in the page's own content, every other byte copied. Drawn objects through one `editDrawnObject` command (place, recolour, arrange, delete), text blocks through the operator writer, stamps through their own writer; the arrange carries the object's drawing state, and the one crop it cannot avoid is refused in one line. Proven before the build by a kernel check. The context line also names `field`, which `placement.ts`' `MenuContext` carries and this line did not (read 2026-10-23 at eb16f52b) | the 2026-10-21 row below, for the tool and its menu | [0264](DECISIONS/0264-edit-object-returns-and-an-edit-changes-only-the-bytes-of-the-object-it-names.md) |
 | 2026-10-23 | **A submission may send the whole document, streamed, and may go to a mail app through the Share sheet** (§9's network rule; the contract's submission formats). The owner's C2: the guarded POST writes its body a part at a time from a length and a read, so the whole document is staged and posted from a file and never held in `main`; a `mailto:` submission offers the Share sheet with the data as a file, beside the mail app route, with the address shown and Copy. Written as ADR-0261 on the cloud branch and renumbered at the merge. | ADR-0259 Decision 6, its rejected *Attaching the data to an email*, and its correction of 2026-10-22 item 1 | [0263](DECISIONS/0263-a-submission-may-send-the-whole-document-and-may-go-through-the-share-sheet.md) |
 | 2026-10-23 | **Every command answers the pages it changed** (§4, §6). The owner's N2: the strip and the main view redrew every mounted page on every version, and the strip's cards held the drawing slots the changed page waited for. Each kind declares its pages — all, none, a rule, or reported — and only a declaration the per-kind drawing check covers may name fewer than all. | — | [0262](DECISIONS/0262-a-command-declares-the-pages-it-changes.md) |
