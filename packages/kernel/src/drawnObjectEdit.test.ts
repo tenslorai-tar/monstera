@@ -42,7 +42,10 @@ async function fixture(content = CONTENT): Promise<Uint8Array> {
     context.stream(Uint8Array.of(0, 200, 0), { Type: 'XObject', Subtype: 'Image', Width: 1, Height: 1, ColorSpace: 'DeviceRGB', BitsPerComponent: 8 }),
   );
   const group = context.register(context.stream('1 0 1 rg 0 0 40 40 re f', { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 40, 40] }));
-  page.node.set(PDFName.of('Resources'), context.obj({ Font: { F1: font.ref }, XObject: { Im1: picture, Fm1: group } }));
+  page.node.set(
+    PDFName.of('Resources'),
+    context.obj({ Font: { F1: font.ref }, XObject: { Im1: picture, Fm1: group }, ExtGState: { Half: { Type: 'ExtGState', ca: 0.5, CA: 0.5 } } }),
+  );
   page.node.set(PDFName.of('Contents'), context.register(context.stream(content)));
   return document.save({ useObjectStreams: false });
 }
@@ -102,7 +105,7 @@ async function savedContent(bytes: Uint8Array): Promise<Uint8Array> {
  * PDF.js's reading of the page: each image it paints, as the box of its unit square under the matrix it tracks, and
  * each path it fills or strokes, as the box PDF.js itself computed for it, in page space.
  */
-async function pdfjsReading(bytes: Uint8Array): Promise<{ images: number[][]; paths: number[][]; fills: string[] }> {
+async function pdfjsReading(bytes: Uint8Array): Promise<{ images: number[][]; paths: number[][]; fills: string[]; painted: string[] }> {
   const entry = createRequire(import.meta.url).resolve('pdfjs-dist/legacy/build/pdf.mjs');
   const pdfjs = (await import(/* @vite-ignore */ pathToFileURL(entry).href)) as typeof import('pdfjs-dist');
   const task = pdfjs.getDocument({ data: bytes.slice(), useSystemFonts: false, verbosity: 0 });
@@ -129,25 +132,41 @@ async function pdfjsReading(bytes: Uint8Array): Promise<{ images: number[][]; pa
     const images: number[][] = [];
     const paths: number[][] = [];
     const fills: string[] = [];
+    /** Everything painted, in the order PDF.js paints it, with the fill in force: `image [box]` or `path [box] #colour`. */
+    const painted: string[] = [];
+    let fill = '#000000';
+    const fillStack: string[] = [];
     for (let at = 0; at < list.fnArray.length; at += 1) {
       const fn = list.fnArray[at];
       const args = list.argsArray[at] as unknown[];
-      if (fn === pdfjs.OPS.save) stack.push(ctm);
-      else if (fn === pdfjs.OPS.restore) ctm = stack.pop() ?? ctm;
-      else if (fn === pdfjs.OPS.transform) ctm = times(args as unknown as M, ctm);
-      else if (fn === pdfjs.OPS.paintImageXObject || fn === pdfjs.OPS.paintInlineImageXObject) images.push(boxOf(ctm, 0, 0, 1, 1));
-      else if (fn === pdfjs.OPS.paintFormXObjectBegin) {
+      if (fn === pdfjs.OPS.save) {
+        stack.push(ctm);
+        fillStack.push(fill);
+      } else if (fn === pdfjs.OPS.restore) {
+        ctm = stack.pop() ?? ctm;
+        fill = fillStack.pop() ?? fill;
+      } else if (fn === pdfjs.OPS.transform) ctm = times(args as unknown as M, ctm);
+      else if (fn === pdfjs.OPS.paintImageXObject || fn === pdfjs.OPS.paintInlineImageXObject) {
+        images.push(boxOf(ctm, 0, 0, 1, 1));
+        painted.push(`image ${JSON.stringify(boxOf(ctm, 0, 0, 1, 1))}`);
+      } else if (fn === pdfjs.OPS.paintFormXObjectBegin) {
         stack.push(ctm);
         const matrix = args[0] as M | null;
         if (matrix !== null) ctm = times(matrix, ctm);
       } else if (fn === pdfjs.OPS.paintFormXObjectEnd) ctm = stack.pop() ?? ctm;
-      else if (fn === pdfjs.OPS.setFillRGBColor) fills.push(String(args[0]));
-      else if (fn === pdfjs.OPS.constructPath) {
+      else if (fn === pdfjs.OPS.setFillRGBColor) {
+        fill = String(args[0]);
+        fills.push(fill);
+      } else if (fn === pdfjs.OPS.constructPath) {
         const minMax = args.at(-1) as ArrayLike<number> | null;
-        if (minMax !== null && minMax.length === 4) paths.push(boxOf(ctm, minMax[0] ?? 0, minMax[1] ?? 0, minMax[2] ?? 0, minMax[3] ?? 0));
+        if (minMax !== null && minMax.length === 4) {
+          const box = boxOf(ctm, minMax[0] ?? 0, minMax[1] ?? 0, minMax[2] ?? 0, minMax[3] ?? 0);
+          paths.push(box);
+          painted.push(`path ${JSON.stringify(box)} ${fill}`);
+        }
       }
     }
-    return { images, paths, fills };
+    return { images, paths, fills, painted };
   } finally {
     await task.destroy();
   }
@@ -157,6 +176,7 @@ const RED = [255, 0, 0] as const;
 const GREEN = [0, 200, 0] as const;
 const WHITE = [255, 255, 255] as const;
 const YELLOW = [255, 255, 0] as const;
+const BLUE = [0, 0, 255] as const;
 
 describe('editDrawnObject — recolour (ADR-0264 Decision 3)', () => {
   const blue = { op: 'recolor', colour: { r: 0, g: 0, b: 255 } } as const;
@@ -223,6 +243,108 @@ describe('editDrawnObject — delete (ADR-0264 Decision 3)', () => {
     expect(new TextDecoder('latin1').decode(await savedContent(bytes))).toContain('20 100 40 40 re W n');
     const pixels = await mupdfPixels(bytes);
     expect([pixels(40, 120), pixels(100, 120)]).toStrictEqual([YELLOW, WHITE]);
+  });
+});
+
+describe('editDrawnObject — arrange (ADR-0264 Decision 3)', () => {
+  /** A red square from 20 to 80 and the green picture over it from 50 to 110: the overlap shows green. */
+  const OVERLAP = ['q 1 0 0 rg 20 20 60 60 re f Q', 'q 60 0 0 60 50 50 cm /Im1 Do Q'].join('\n');
+  const RED_BOX = { left: 20, bottom: 20, right: 80, top: 80 };
+  const GREEN_BOX = { left: 50, bottom: 50, right: 110, top: 110 };
+
+  it('brings the red square forward past the picture: both engines draw it on top, after a save and a reopen', async () => {
+    const before = await mupdfPixels(await fixture(OVERLAP));
+    // CONTROL: the picture is on top where the two overlap.
+    expect(before(65, 65)).toStrictEqual(GREEN);
+    const bytes = await edited(command('path', 0, RED_BOX, { op: 'arrange', to: 'forward', past: { kind: 'image', ordinal: 0 } }), await fixture(OVERLAP));
+    const after = await mupdfPixels(bytes);
+    expect([after(65, 65), after(30, 30), after(100, 100)]).toStrictEqual([RED, RED, GREEN]);
+    // PDF.js PAINTS THE PICTURE FIRST NOW, then the square in its own red.
+    expect((await pdfjsReading(bytes)).painted).toStrictEqual(['image [50,50,110,110]', 'path [20,20,80,80] #ff0000']);
+  });
+
+  it('sends the picture backward past the square: the square shows over it', async () => {
+    const bytes = await edited(command('image', 0, GREEN_BOX, { op: 'arrange', to: 'backward', past: { kind: 'path', ordinal: 0 } }), await fixture(OVERLAP));
+    expect((await mupdfPixels(bytes))(65, 65)).toStrictEqual(RED);
+    expect((await pdfjsReading(bytes)).painted).toStrictEqual(['image [50,50,110,110]', 'path [20,20,80,80] #ff0000']);
+  });
+
+  it('CARRIES THE STATE it was drawn under: a colour set before it, and the opacity in force past its neighbour reset', async () => {
+    // THE SQUARE'S RED IS SET OUTSIDE IT, and past the picture the fill is blue and the opacity half.
+    const content = ['1 0 0 rg 20 20 60 60 re f', '0 0 1 rg /Half gs', 'q 60 0 0 60 50 50 cm /Im1 Do Q', '120 120 30 30 re f'].join('\n');
+    const bytes = await edited(command('path', 0, RED_BOX, { op: 'arrange', to: 'forward', past: { kind: 'image', ordinal: 0 } }), await fixture(content));
+    const pixels = await mupdfPixels(bytes);
+    // RED AND OPAQUE, where it was drawn red and opaque; CONTROL: the blue square after it is still half blue.
+    expect([pixels(30, 30), pixels(65, 65)]).toStrictEqual([RED, RED]);
+    expect(pixels(135, 135)).toStrictEqual((await mupdfPixels(await fixture(content)))(135, 135));
+    const text = new TextDecoder('latin1').decode(await savedContent(bytes));
+    expect(text).toMatch(/\/MonPlain gs/u);
+  });
+
+  it('carries the CLIP it stood in: moved past a picture outside its window, it is still cut to that window', async () => {
+    const content = ['q 20 20 30 30 re W n 1 0 0 rg 20 20 60 60 re f 0 0 1 rg 150 150 10 10 re f Q', 'q 60 0 0 60 50 50 cm /Im1 Do Q'].join('\n');
+    const bytes = await edited(command('path', 0, RED_BOX, { op: 'arrange', to: 'forward', past: { kind: 'image', ordinal: 0 } }), await fixture(content));
+    const pixels = await mupdfPixels(bytes);
+    // INSIDE ITS WINDOW it is red; outside it, where the picture is not, paper — as it was.
+    expect([pixels(30, 30), pixels(70, 30)]).toStrictEqual([RED, WHITE]);
+  });
+
+  it('REFUSES at `cropped` where the new place clips to an area that does not hold it, and the page is unchanged', async () => {
+    // THE PICTURE IS IN A WINDOW SHARED WITH A SHAPE, so the square past it would be drawn through that window.
+    const content = ['q 1 0 0 rg 20 20 60 60 re f Q', 'q 50 50 60 60 re W n q 60 0 0 60 50 50 cm /Im1 Do Q 0 0 1 rg 100 100 5 5 re f Q'].join('\n');
+    const session = await mupdfWriter.open(await fixture(content));
+    try {
+      const refusal = await applyEditDrawnObject(session, command('path', 0, RED_BOX, { op: 'arrange', to: 'forward', past: { kind: 'image', ordinal: 0 } })).catch(
+        (error: unknown) => error,
+      );
+      expect(refusal).toMatchObject({ name: 'EditRefusedError', step: 'cropped' });
+      const after = await withDocument(session, (document) => new TextDecoder('latin1').decode(joinedContent(pageContentStreams(document.findPage(0)))));
+      expect(after.trim()).toBe(content);
+      // CONTROL: the picture sent backward past the square lands outside every window, carries its own, and applies.
+      await expect(
+        applyEditDrawnObject(session, command('image', 0, GREEN_BOX, { op: 'arrange', to: 'backward', past: { kind: 'path', ordinal: 0 } })),
+      ).resolves.toBeUndefined();
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('a shape that SETS THE CLIP leaves its clip where it stood and moves its paint: what followed is clipped as before', async () => {
+    const content = ['0 0 1 rg 20 20 60 60 re W f', 'q 60 0 0 60 50 50 cm /Im1 Do Q'].join('\n');
+    const before = await mupdfPixels(await fixture(content));
+    const bytes = await edited(command('path', 0, RED_BOX, { op: 'arrange', to: 'forward', past: { kind: 'image', ordinal: 0 } }), await fixture(content));
+    const after = await mupdfPixels(bytes);
+    // THE PICTURE IS STILL CUT TO THE SQUARE (paper at 100, 100 as before), and the square is now over it.
+    expect([after(100, 100), before(100, 100)]).toStrictEqual([WHITE, WHITE]);
+    expect([after(65, 65), before(65, 65)]).toStrictEqual([BLUE, GREEN]);
+  });
+
+  it('a setting inside a marked-content wrapper STAYS where it stood: the shape after it keeps its colour', async () => {
+    const content = ['/Artifact BMC 1 0 0 rg 20 20 60 60 re f EMC', 'q 60 0 0 60 50 50 cm /Im1 Do Q', '120 120 30 30 re f'].join('\n');
+    const bytes = await edited(command('path', 0, RED_BOX, { op: 'arrange', to: 'forward', past: { kind: 'image', ordinal: 0 } }), await fixture(content));
+    const pixels = await mupdfPixels(bytes);
+    expect([pixels(65, 65), pixels(135, 135)]).toStrictEqual([RED, RED]);
+  });
+
+  it('refuses a neighbour on the wrong side at `object`; CONTROL: the same neighbour the other way applies', async () => {
+    const session = await mupdfWriter.open(await fixture(OVERLAP));
+    try {
+      await expect(
+        applyEditDrawnObject(session, command('path', 0, RED_BOX, { op: 'arrange', to: 'backward', past: { kind: 'image', ordinal: 0 } })),
+      ).rejects.toMatchObject({ step: 'object' });
+      await expect(
+        applyEditDrawnObject(session, command('path', 0, RED_BOX, { op: 'arrange', to: 'forward', past: { kind: 'image', ordinal: 0 } })),
+      ).resolves.toBeUndefined();
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('goes past a TEXT object named by PDFium’s number for it', async () => {
+    const content = ['q 1 0 0 rg 20 20 60 60 re f Q', 'BT /F1 40 Tf 0 1 0 rg 20 40 Td (HHH) Tj ET'].join('\n');
+    const bytes = await edited(command('path', 0, RED_BOX, { op: 'arrange', to: 'forward', past: { kind: 'text', object: 0 } }), await fixture(content));
+    const text = new TextDecoder('latin1').decode(await savedContent(bytes));
+    expect(text.indexOf('(HHH) Tj')).toBeLessThan(text.indexOf('20 20 60 60 re f'));
   });
 });
 

@@ -3011,6 +3011,8 @@ describe('CommandBus — an edit of a drawn object is undone by its checkpoint (
     { name: 'place', ordinal: 0, box: RED, edit: { op: 'place', moveBy: { x: 100, y: 100 }, scaleBy: { x: 1, y: 1 } } },
     { name: 'recolour', ordinal: 0, box: RED, edit: { op: 'recolor', colour: { r: 0, g: 128, b: 0 } } },
     { name: 'delete', ordinal: 0, box: RED, edit: { op: 'delete' } },
+    // THE RED SQUARE BROUGHT FORWARD past the blue one over it.
+    { name: 'arrange', ordinal: 0, box: RED, edit: { op: 'arrange', to: 'forward', past: { kind: 'path', ordinal: 1 } } },
   ];
 
   for (const { name, ordinal, box, edit } of EDITS) {

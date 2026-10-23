@@ -1,13 +1,23 @@
-import type { CommandOfKind, DrawnEdit } from '@monstera/contract/host';
+import type { ArrangeNeighbour, CommandOfKind, DrawnEdit } from '@monstera/contract/host';
 
 import type { CaptureResult } from './commandLog.js';
-import { type PageBox, boxOfPoints, inverse, written } from './contentCarry.js';
+import { PLAIN_STATE, type PageBox, boxOfPoints, carried, inverse, written } from './contentCarry.js';
 import type { Invert, MupdfSession } from './engineSeam.js';
 import type { PDFObject } from './mupdfRaw.js';
 import { withDocument } from './mupdfWriter.js';
 import { pageContentStreams } from './pageContent.js';
 import { EditRefusedError } from './textEditRefusals.js';
-import { type DrawnObject, type Matrix, type XObjectKind, drawnObjects, joinedContent, multiply, showOperators } from './textOperators.js';
+import {
+  type ContentLayout,
+  type DrawnObject,
+  type Matrix,
+  type XObjectKind,
+  contentLayout,
+  drawnObjects,
+  joinedContent,
+  multiply,
+  showOperators,
+} from './textOperators.js';
 
 /**
  * `editDrawnObject` in the MuPDF session
@@ -181,13 +191,15 @@ function sameMatrix(a: Matrix, b: Matrix): boolean {
 }
 
 /** Why an edit is refused at a step a person is told about (ADR-0264 Decision 4); the engine number is none, MuPDF has none. */
-function refused(step: 'object' | 'read-back', what: string): EditRefusedError {
+function refused(step: 'object' | 'read-back' | 'cropped', what: string): EditRefusedError {
   return new EditRefusedError(step, 0, what);
 }
 
 /** What an edit of a drawn object makes of the page's content. */
 export interface DrawnEditResult {
   readonly content: Uint8Array;
+  /** Whether the content names the plain graphics state, which the page's resources must then hold (an arrange's). */
+  readonly plain?: boolean;
 }
 
 /** A place: the wrap, or a clipping shape's own coordinates rewritten in place, read back as one object moved. */
@@ -329,6 +341,104 @@ function remove(
   return edited;
 }
 
+/** Where the object an arrange goes past is drawn: its instructions, or its text object's `BT … ET`. */
+function neighbourSpan(layout: ContentLayout, past: ArrangeNeighbour): { readonly start: number; readonly end: number } | undefined {
+  if (past.kind === 'text') {
+    const op = layout.operators.find((each) => each.object === past.object);
+    const end = op === undefined ? undefined : layout.textObjects.get(op.textObject);
+    return op === undefined || end === undefined ? undefined : { start: op.textObject, end };
+  }
+  return layout.drawn.filter((object) => object.kind === past.kind)[past.ordinal];
+}
+
+/** Where a drawn object reads back on the page: its points for a path, its CTM for everything else. */
+function geometryOf(object: DrawnObject): string {
+  const round = (value: number): number => Math.round(value / READ_BACK_TOLERANCE) * READ_BACK_TOLERANCE;
+  return JSON.stringify(object.kind === 'path' ? object.points.map(([x, y]) => [round(x), round(y)]) : object.ctm.map(round));
+}
+
+/**
+ * An arrange: the object's UNIT lifted out and put just after the neighbour's unit (forward) or just before it
+ * (backward), inside a `q … Q` that carries the state it was drawn under (`contentCarry.ts`). What its unit set for
+ * what follows stays where it stood: a setting at the unit's own depth, and the clip of a shape that sets one, whose
+ * paint alone moves. Refused at `cropped` where the new place clips to an area that does not hold the object's box.
+ */
+function arrange(
+  content: Uint8Array,
+  kinds: (name: string) => XObjectKind,
+  drawn: readonly DrawnObject[],
+  found: DrawnObject,
+  command: CommandOfKind<'editDrawnObject'>,
+  edit: Extract<DrawnEdit, { op: 'arrange' }>,
+  plainState: string,
+): DrawnEditResult {
+  const layout = contentLayout(content, kinds);
+  const own = layout.unitOf(found);
+  const span = neighbourSpan(layout, edit.past);
+  if (span === undefined) throw refused('object', `page ${String(command.page)} holds no ${edit.past.kind} the arrange names`);
+  const neighbour = layout.unitOf(span);
+  const forward = edit.to === 'forward';
+  // THE NEIGHBOUR IS ON THE SIDE THE ARRANGE GOES, and outside the object's own unit.
+  if (forward ? neighbour.start < own.end : neighbour.end > own.start) {
+    throw refused('object', `the ${edit.past.kind} named is not ${forward ? 'after' : 'before'} ${command.object} ${String(command.ordinal)}`);
+  }
+  const at = forward ? neighbour.end : neighbour.start;
+  const [first, second] = contentLayout(content, kinds, forward ? [own.start, at] : [at, own.start]).states;
+  const from = forward ? first : second;
+  const to = forward ? second : first;
+  if (from === undefined || to === undefined) throw new Error('the content pass answered no state at an offset it was asked for');
+  const carry = carried(content, from, to, command.box, plainState);
+  if (carry === 'cropped') throw refused('cropped', `${command.object} ${String(command.ordinal)} would be cut off past the ${edit.past.kind}`);
+
+  const latin1 = new TextDecoder('latin1');
+  const bytes = (start: number, end: number): string => latin1.decode(content.subarray(start, end));
+  const paint = found.paint;
+  const clip = found.clip;
+  // A SHAPE THAT SETS THE CLIP, lifted bare, leaves its clip where it stood: what follows it is still clipped by it, and
+  // only its paint moves.
+  const leavesClip = clip !== undefined && paint !== undefined && own.start === found.start && own.end === found.end;
+  const moved = leavesClip ? `${bytes(found.start, clip.start).trimEnd()} ${paint.op}` : bytes(own.start, own.end);
+  const left = [
+    ...own.leaks.map((leak) => bytes(leak.start, leak.end)),
+    ...(leavesClip ? [`${bytes(found.start, clip.end)} n`] : []),
+  ].join('\n');
+  const edited = spliced(content, [
+    { start: own.start, end: own.end, text: left === '' ? ' ' : left },
+    { start: at, end: at, text: `\n${carry.before}${moved}${carry.after}` },
+  ]);
+
+  // READ BACK: the same text and the same objects of each kind, the object drawn where it was drawn, on the other side of
+  // its neighbour, through every clip it stood in.
+  const after = drawnObjects(edited, kinds);
+  const count = (objects: readonly DrawnObject[], kind: DrawnObject['kind']): number => objects.filter((object) => object.kind === kind).length;
+  const placed = after.filter((object) => object.kind === found.kind && geometryOf(object) === geometryOf(found));
+  // THE NEIGHBOUR AFTER THE EDIT: a text object keeps its number (the text is the same), a drawn one its geometry.
+  const past = edit.past;
+  const neighbourAt =
+    past.kind === 'text'
+      ? showOperators(edited).find((op) => op.object === past.object)?.start
+      : after.find((object) => {
+          const before = drawn.filter((each) => each.kind === past.kind)[past.ordinal];
+          return before !== undefined && object.kind === past.kind && geometryOf(object) === geometryOf(before);
+        })?.start;
+  const copy = neighbourAt === undefined ? undefined : placed.find((object) => (forward ? object.start > neighbourAt : object.start < neighbourAt));
+  const windowsKept =
+    copy !== undefined &&
+    found.windows.every((window) => copy.windows.some((each) => JSON.stringify(each.points) === JSON.stringify(window.points)));
+  if (
+    !sameText(content, edited) ||
+    after.length !== drawn.length ||
+    DRAWN_KINDS.some((kind) => count(after, kind) !== count(drawn, kind)) ||
+    placed.length !== drawn.filter((object) => object.kind === found.kind && geometryOf(object) === geometryOf(found)).length ||
+    !windowsKept
+  ) {
+    throw refused('read-back', `arranging ${command.object} ${String(command.ordinal)} did not read back as one object moved in the order`);
+  }
+  return { content: edited, plain: carry.plain };
+}
+
+const DRAWN_KINDS = ['path', 'image', 'form', 'shading'] as const;
+
 /** The same drawn objects in the same kinds, in order. */
 function sameObjects(before: readonly DrawnObject[], after: readonly DrawnObject[]): boolean {
   return after.length === before.length && after.every((object, at) => object.kind === before[at]?.kind);
@@ -347,11 +457,16 @@ function sameText(before: Uint8Array, after: Uint8Array): boolean {
   );
 }
 
-/** The edit of `command` made to `content`, read back; the page's other bytes as they were. */
+/**
+ * The edit of `command` made to `content`, read back; the page's other bytes as they were.
+ *
+ * @param plainState the name the page's resources will hold the plain graphics state under, where an arrange needs one
+ */
 export function editDrawnContent(
   content: Uint8Array,
   kinds: (name: string) => XObjectKind,
   command: CommandOfKind<'editDrawnObject'>,
+  plainState = PLAIN_STATE_NAME,
 ): DrawnEditResult {
   const drawn = drawnObjects(content, kinds);
   const found = drawn.filter((object) => object.kind === command.object)[command.ordinal];
@@ -364,16 +479,43 @@ export function editDrawnContent(
       return { content: place(content, kinds, drawn, found, command, edit) };
     case 'recolor':
       return { content: recolor(content, kinds, drawn, found, command, edit) };
+    case 'arrange':
+      return arrange(content, kinds, drawn, found, command, edit, plainState);
     case 'delete':
       return { content: remove(content, kinds, drawn, found, command) };
   }
 }
 
+/** The name an arrange's plain graphics state takes first; a page whose resources already use it takes the next free one. */
+const PLAIN_STATE_NAME = 'MonPlain';
+
 export async function applyEditDrawnObject(session: MupdfSession, command: CommandOfKind<'editDrawnObject'>): Promise<void> {
   await withDocument(session, (document) => {
     const leaf = document.findPage(command.page);
     const content = joinedContent(pageContentStreams(leaf));
-    const result = editDrawnContent(content, xobjectKinds(leaf), command);
+    // THE PAGE'S OWN RESOURCES, or the ones it inherits: where the content's names are looked up.
+    let resources = leaf.getInheritable('Resources');
+    if (!resources.isNull()) resources = resources.resolve();
+    const states = resources.isDictionary() ? resources.get('ExtGState').resolve() : resources;
+    let name = PLAIN_STATE_NAME;
+    for (let suffix = 1; states.isDictionary() && !states.get(name).isNull(); suffix += 1) name = `${PLAIN_STATE_NAME}${String(suffix)}`;
+    const result = editDrawnContent(content, xobjectKinds(leaf), command, name);
+    if (result.plain === true) {
+      // A PAGE WITH NO RESOURCES AT ALL is given a dictionary. One that inherits its resources has the entry added where
+      // it inherits them from: a name its siblings do not use, so it changes nothing they draw.
+      if (!resources.isDictionary()) {
+        resources = document.newDictionary();
+        leaf.put('Resources', resources);
+      }
+      let target = resources.get('ExtGState');
+      if (target.isNull()) {
+        target = document.newDictionary();
+        resources.put('ExtGState', target);
+      } else {
+        target = target.resolve();
+      }
+      target.put(name, document.addObject(PLAIN_STATE));
+    }
     leaf.put('Contents', document.addStream(result.content, document.newDictionary()));
   });
 }

@@ -7000,8 +7000,28 @@ const drawnRecolorSchema = z
 /** Removes the object; a shape that also sets the clip keeps its clip and loses only its paint (ADR-0264 Decision 3). */
 const drawnDeleteSchema = z.object({ op: z.literal('delete') }).strict();
 
+/**
+ * The object an arrange goes past (ADR-0264 Decision 3): a text object by its place in PDFium's walk of the page's text,
+ * which is the numbering `textOperators.ts` states once, or a drawn object by its kind and ordinal. The renderer names
+ * it, since it holds every object's box and the writer does not; the writer finds where it is drawn.
+ */
+export const arrangeNeighbourSchema = z.union([
+  z.object({ kind: z.literal('text'), object: objectIndexSchema }).strict(),
+  z.object({ kind: z.enum(DRAWN_OBJECT_KINDS), ordinal: objectIndexSchema }).strict(),
+]);
+export type ArrangeNeighbour = z.infer<typeof arrangeNeighbourSchema>;
+
+/** Moves the object one step in the drawing order: drawn just after `past` (forward), or just before it (backward). */
+const drawnArrangeSchema = z
+  .object({
+    op: z.literal('arrange'),
+    to: z.enum(['forward', 'backward']),
+    past: arrangeNeighbourSchema,
+  })
+  .strict();
+
 /** What `editDrawnObject` does to the object it names (ADR-0264 Decision 3). */
-export const drawnEditSchema = z.discriminatedUnion('op', [drawnPlaceSchema, drawnRecolorSchema, drawnDeleteSchema]);
+export const drawnEditSchema = z.discriminatedUnion('op', [drawnPlaceSchema, drawnRecolorSchema, drawnArrangeSchema, drawnDeleteSchema]);
 export type DrawnEdit = z.infer<typeof drawnEditSchema>;
 
 /**

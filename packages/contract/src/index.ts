@@ -473,6 +473,8 @@ export {
   drawnEditSchema,
   DRAWN_OBJECT_KINDS,
   type DrawnEdit,
+  arrangeNeighbourSchema,
+  type ArrangeNeighbour,
   MAX_FIND_TEXT,
   replaceAllTextSchema,
   replaceTextAtSchema,

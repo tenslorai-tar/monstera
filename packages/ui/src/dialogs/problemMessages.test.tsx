@@ -59,6 +59,11 @@ describe('an edit PDFium refused says which part of the work refused', () => {
     expect(problemParticulars(refused('read-back', 0))?.value).toBe('read-back 0');
   });
 
+  it('an arrange its new place would CROP is said in one plain line with no reference (ADR-0264 Decision 4)', () => {
+    expect(english(problemMessage(refused('cropped', 0)))).toBe('This object would be cut off in that place, so nothing was changed.');
+    expect(problemParticulars(refused('cropped', 0))).toBeUndefined();
+  });
+
   it('PDFium’s password number at OPEN says the document is protected', () => {
     expect(problemMessage(refused('open', PDFIUM_PASSWORD_ERROR))).toBe(EDIT_REFUSED_PASSWORD);
   });

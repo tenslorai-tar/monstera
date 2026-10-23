@@ -3452,6 +3452,7 @@ export const EDIT_REFUSED_GENERATE = messageKey('dialog.command-problem.edit-ref
 export const EDIT_REFUSED_SAVE = messageKey('dialog.command-problem.edit-refused.save');
 export const EDIT_REFUSED_READ_BACK = messageKey('dialog.command-problem.edit-refused.read-back');
 export const EDIT_REFUSED_MOVED_TEXT = messageKey('dialog.command-problem.edit-refused.moved-text');
+export const EDIT_REFUSED_CROPPED = messageKey('dialog.command-problem.edit-refused.cropped');
 // A CHANGE TO A FORM FIELD THAT COULD NOT BE MADE, one sentence per reason (ADR-0193).
 export const FIELD_EDIT_NOT_FOUND = messageKey('dialog.command-problem.field-edit.not-found');
 export const FIELD_EDIT_NAME_TAKEN = messageKey('dialog.command-problem.field-edit.name-taken');
@@ -7443,6 +7444,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // the closest face — only for the rare page where neither writer can keep the rest of it, which is left as it was.
   [EDIT_REFUSED_READ_BACK]: 'Monstera couldn’t make this change without disturbing other text on the page, so nothing was changed.',
   [EDIT_REFUSED_MOVED_TEXT]: 'Monstera couldn’t move this text without disturbing other text on the page, so nothing was changed.',
+  // THE ONE CASE AN ARRANGE CANNOT KEEP THE PAGE INTACT (ADR-0264 Decision 4), in one plain line.
+  [EDIT_REFUSED_CROPPED]: 'This object would be cut off in that place, so nothing was changed.',
   // EACH SAYS WHAT STOPPED IT AND THAT NOTHING WAS CHANGED, and the three a person can fix say how.
   [FIELD_EDIT_NOT_FOUND]: 'That field has moved since the list was read, so nothing was changed. Select it again and try once more.',
   [FIELD_EDIT_NAME_TAKEN]: 'Another field already has that name, or a name that starts with it, so nothing was changed. Choose a different name.',
