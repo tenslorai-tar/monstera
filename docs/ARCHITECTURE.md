@@ -1054,6 +1054,14 @@ take the whole step: a step of terminal entries is undone by one restore of its 
 only when its caller names the version the previous command produced and the document is still there, so another command in
 between is never swallowed.
 
+**Every command answers the pages it changed** (amended 2026-10-23,
+[ADR-0262](DECISIONS/0262-a-command-declares-the-pages-it-changes.md)). Each kind's declaration says it — all pages,
+none, a rule from the command, or reported by the writer — in the new version's numbering, and `document.execute`,
+`document.undo` and `document.redo` answer it as `changedPages`; undo and redo answer the declaration of the entry they
+step over. **Only a declaration the per-kind drawing check covers may name fewer than all pages**, since one that names
+too few leaves an old page on screen; every other kind declares all. The page surfaces redraw only the pages changed
+since the version each was drawn from, and all of them across a version the renderer did not hear of.
+
 Memory is **one document; checkpoints are files** (amended 2026-09-29,
 [ADR-0121](DECISIONS/0121-main-never-holds-two-images.md)). It read *"one document plus a
 few checkpoints"*, and measured, one checkpoint of a 1× image is 2× — over §9.17's 1.5× the
@@ -3183,6 +3191,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-10-23 | **Every command answers the pages it changed** (§4, §6). The owner's N2: the strip and the main view redrew every mounted page on every version, and the strip's cards held the drawing slots the changed page waited for. Each kind declares its pages — all, none, a rule, or reported — and only a declaration the per-kind drawing check covers may name fewer than all. | — | [0262](DECISIONS/0262-a-command-declares-the-pages-it-changes.md) |
 | 2026-10-23 | **A page command is shown at once from the pages already drawn** (§6). The owner's N1: rotate, move and delete took 0.5–0.9 s to show, a field design change 0.7 s and an Edit text commit 1.0 s, because nothing was drawn before the page drew the new version. A page plan made at dispatch is drawn from the view on screen and handed over by ADR-0257's rule; a field's design is held as a look; the editor's words stay until the page draws them. | ADR-0257's scope (Comment marks only) | [0261](DECISIONS/0261-a-page-command-is-shown-at-once-from-the-pages-already-drawn.md) |
 | 2026-10-21 | **A push button runs an ordered list of standard actions, each by the route that already owns it** (invariant 24; §9's network rule; the contract's push-button action). The owner's R22: a button's Action offered only *None* and *Reset the form*. A button now carries actions per trigger (mouse up, down, enter, leave) — go to a page, a web link, reset, show or hide fields, print, import form data, submit, open a file — written as the standard's own actions; a press names the button and the step, and the kernel or `main` reads the action from the document; whatever leaves the machine or opens something asks first; a submission is POSTed through ADR-0061's guard. Scripts and `Launch` are kept and never run. Rejected: running scripts, `Launch`, the renderer naming an address or a path, a second reset, attaching data to an email (nothing here binds Simple MAPI), one command for a whole press | the push button's one `buttonAction`, none or reset (the owner's F7, no ADR) | [0259](DECISIONS/0259-a-push-button-runs-an-ordered-list-of-standard-actions-each-by-the-route-that-owns-it.md) |
 | 2026-10-21 | **The status bar's start says only what the tool in hand does; tips are withdrawn** (§7's registry table, its Settings row and its status bar clause). The owner's R24: with Highlight area on, the line read the tool's instruction, *Esc gets you out*, and then *"Redo: press Ctrl+Y."*, a tip about something else read as part of the instruction. The status bar was the tips' only place, so the tips registry, its round and switch, and `background?` on a setting, which only the round declared, are removed rather than left with no reader. | the 2026-10-04 rows below that registered tips and `background?` | ADR-0159, 0160 (each with a correction of 2026-10-21) |
