@@ -351,11 +351,45 @@ describe('editOperators on a page of lines', () => {
     });
   });
 
-  it('refuses a block whose lines draw under different CTMs, which one inserted object cannot', () => {
-    const shifted = bytes(THREE_LINES.replace('BT /F1 20 Tf 1 0 0 -1 72 360', 'q 1 0 0 1 5 0 cm BT /F1 20 Tf 1 0 0 -1 72 360').concat(' Q'));
-    expect(editOperators(shifted, fonts, runsOf(shifted, fonts), block('abc\ndef\nghx'))).toStrictEqual({
+  // A LINE SET IN ITS OWN `q 1 0 0 1 x y cm … Q`, as some producers write every line: the lines differ by a translation,
+  // which one inserted object reproduces, each line written where the page drew it (measured 2026-10-23: 25 blocks of one
+  // corpus document were refused every edit before).
+  const firstShifted = bytes(THREE_LINES.replace('BT /F1 20 Tf 1 0 0 -1 72 300', 'q 1 0 0 1 5 0 cm BT /F1 20 Tf 1 0 0 -1 72 300').replace('(abc) Tj ET', '(abc) Tj ET Q'));
+
+  it('edits a block whose lines differ by a translation, writing the line where the page drew it', () => {
+    const result = editOperators(firstShifted, fonts, runsOf(firstShifted, fonts), block('abc\ndef\nghx'));
+    if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+    expect(result.value.emptied).toStrictEqual([2]);
+    expect(checkOperatorEdit(firstShifted, result.value, fonts).ok).toBe(true);
+    // THE THIRD LINE STANDS UNDER THE PAGE'S OWN CTM, where its new object goes: at 72, as it was. Converted through the
+    // shifted first line's CTM instead, it would be written at 67 and drawn 3.75 points to the left of where it was.
+    expect(inserted(result.value)[0]).toContain('1 0 0 -1 72 360 Tm');
+  });
+
+  it('and writes a line of the shifted one under its own translation', () => {
+    const result = editOperators(firstShifted, fonts, runsOf(firstShifted, fonts), block('abx\ndef\nghi'));
+    if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+    // THE FIRST LINE'S NEW OBJECT stands inside its `q … cm`, so its own text space is the one the line had.
+    expect(inserted(result.value)[0]).toContain('1 0 0 -1 72 300 Tm');
+    expect(checkOperatorEdit(firstShifted, result.value, fonts).ok).toBe(true);
+  });
+
+  it('refuses a block whose lines differ in SCALE, which one inserted object cannot reproduce', () => {
+    const scaled = bytes(THREE_LINES.replace('BT /F1 20 Tf 1 0 0 -1 72 360', 'q 2 0 0 2 0 0 cm BT /F1 20 Tf 1 0 0 -1 72 360').concat(' Q'));
+    expect(editOperators(scaled, fonts, runsOf(scaled, fonts), block('abc\ndef\nghx'))).toStrictEqual({
       ok: false,
-      error: { reason: 'transformed' },
+      error: { reason: 'transformed', where: 'lines-under-different-ctms' },
+    });
+  });
+
+  it('refuses a block whose shifted line is drawn through a clip the first line is not', () => {
+    // THE SAME TRANSLATION AS ABOVE, and a clip inside it: the new object stands where the first line did, outside the clip.
+    const clipped = bytes(
+      THREE_LINES.replace('BT /F1 20 Tf 1 0 0 -1 72 360', 'q 1 0 0 1 5 0 cm 0 0 400 400 re W n BT /F1 20 Tf 1 0 0 -1 72 360').concat(' Q'),
+    );
+    expect(editOperators(clipped, fonts, runsOf(clipped, fonts), block('abc\ndef\nghx'))).toStrictEqual({
+      ok: false,
+      error: { reason: 'transformed', where: 'lines-under-different-ctms' },
     });
   });
 

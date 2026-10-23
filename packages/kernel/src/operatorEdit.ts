@@ -94,7 +94,8 @@ export interface PageRuns {
 /** Why an operator edit was not made. */
 export type OperatorRefusal =
   | { readonly reason: 'numbering'; readonly detail: string }
-  | { readonly reason: 'transformed' }
+  // `where` NAMES WHICH TRANSFORM the edit could not reproduce, so a refusal on a page says which of its four shapes it met.
+  | { readonly reason: 'transformed'; readonly where: 'content-end' | 'not-upright' | 'lines-under-different-ctms' | 'singular-ctm' }
   | { readonly reason: 'unknown-width'; readonly font: string }
   | { readonly reason: 'needs-a-face'; readonly characters: readonly string[] }
   | { readonly reason: 'unchanged' }
@@ -420,7 +421,7 @@ function write(
   // It is set under the CTM the content ends in, after the `Q`s that close what the content left open.
   const closing = inserts.length > 0 ? contentEnd(content) : undefined;
   const endInverse = closing === undefined ? null : inverse(closing.ctm);
-  if (closing !== undefined && endInverse === null) throw new Refused({ reason: 'transformed' });
+  if (closing !== undefined && endInverse === null) throw new Refused({ reason: 'transformed', where: 'content-end' });
   const tail: number[] = [];
   const syntheticFonts = new Map<ShowOperator, PageFont>();
   const syntheticOps: ShowOperator[] = [];
@@ -557,7 +558,7 @@ function write(
     if (op === undefined) throw new Refused({ reason: 'numbering', detail: `no operator ${String(at)}` });
     const m = multiply(textMatrix(at), op.state.ctm);
     if (Math.abs(m[1]) > SAME * Math.abs(m[0]) || Math.abs(m[2]) > SAME * Math.abs(m[3]) || m[0] <= 0 || m[3] <= 0) {
-      throw new Refused({ reason: 'transformed' });
+      throw new Refused({ reason: 'transformed', where: 'not-upright' });
     }
     return { x: m[4], y: m[5], unit: m[0], up: m[3] };
   };
@@ -666,10 +667,22 @@ function write(
     const firstRun = firstLine?.[0];
     if (firstLine === undefined || firstRun === undefined) continue;
     const ctm = ops[firstRun.first]?.state.ctm;
-    const sameCtm = (op: ShowOperator | undefined): boolean =>
-      op !== undefined && ctm !== undefined && op.state.ctm.every((value, at) => Math.abs(value - (ctm[at] ?? 0)) <= SAME);
-    if (!lines.every((line) => line.every((run) => run.members.every((member) => sameCtm(ops[member]))))) {
-      throw new Refused({ reason: 'transformed' });
+    // ONE INSERTED OBJECT DRAWS EVERY LINE under the first line's CTM, each line's origin taken from page space back
+    // through it (`toBt` below). So a block whose lines differ only by a TRANSLATION — each line set in its own
+    // `q 1 0 0 1 x y cm … Q`, as some producers write every line — is reproduced exactly: the origins already carry the
+    // translation, and the same scale and turn set every glyph alike. What one object cannot reproduce is a different
+    // scale or turn, or a line drawn through a clip the first line is not drawn through, since the object stands where the
+    // first line did. Measured 2026-10-23: 25 blocks of one corpus document refused every edit on this rule.
+    /** Whether `op`'s CTM matches the first line's in its first `count` entries: 6 is the whole, 4 its scale and turn. */
+    const matches = (op: ShowOperator | undefined, count: 4 | 6): boolean =>
+      op !== undefined && ctm !== undefined && op.state.ctm.slice(0, count).every((value, at) => Math.abs(value - (ctm[at] ?? 0)) <= SAME);
+    const members = lines.flatMap((line) => line.flatMap((run) => run.members));
+    if (!members.every((member) => matches(ops[member], 6))) {
+      const starts = members.map((member) => ops[member]?.start ?? 0);
+      const windows = contentLayout(content, arrangeWith.kinds, starts).states.map((state) => JSON.stringify(state.windows.map((window) => window.points)));
+      if (!members.every((member) => matches(ops[member], 4)) || windows.some((each) => each !== windows[0])) {
+        throw new Refused({ reason: 'transformed', where: 'lines-under-different-ctms' });
+      }
     }
     const inkRight = Math.max(...lines.flat().map((run) => run.right));
     const baselines = lines.map((line) => line[0]?.origin.y ?? 0);
@@ -1282,8 +1295,19 @@ function write(
     // (W9; read as the tab it stood for, every tab edit on this writer was refused as not reading as what it drew).
     drawn.push(segments.map((segment) => (segment.actual === '\t' ? TAB_GAP : segment.text)).join(''));
     if (segments.length === 0) continue;
-    const toBt = ctm === undefined ? null : inverse(ctm);
-    if (toBt === null || ctm === undefined) throw new Refused({ reason: 'transformed' });
+    // THE CTM WHERE THE NEW OBJECT STANDS, which every position below is converted into: an arranged block is carried with
+    // its first line's state (`contentCarry.ts`); lines only added go after the last run's text object; anything else goes
+    // at the first text object it empties. These are one CTM while a block's lines share one; where they differ by a
+    // translation (above), the first line's would set every line the edit writes off by the difference.
+    const standsAt =
+      (push === undefined ? blockPlace?.arrange : undefined) !== undefined
+        ? firstRun.first
+        : own.size === 0
+          ? lastRun.last
+          : [...own].reduce((best, at) => ((ops[at]?.textObject ?? 0) < (ops[best]?.textObject ?? 0) ? at : best));
+    const here = ops[standsAt]?.state.ctm;
+    const toBt = here === undefined ? null : inverse(here);
+    if (toBt === null || here === undefined) throw new Refused({ reason: 'transformed', where: 'singular-ctm' });
     const decoder = new TextDecoder('latin1');
     // THE BLOCK PLACED (ADR-0188): one `cm` in front of the object, which is the placement in the space the words are
     // written in, so it moves, scales and turns every line of the block, the ones carried as they were and the ones set
@@ -1309,7 +1333,7 @@ function write(
           y: (Math.min(...reaches.map((reach) => reach.bottom)) + Math.max(...reaches.map((reach) => reach.top))) / 2,
         };
       }
-      cm = multiply(multiply(ctm, placementMatrix(blockPlace, anchor, centre)), toBt);
+      cm = multiply(multiply(here, placementMatrix(blockPlace, anchor, centre)), toBt);
     }
     const parts = cm === null ? ['q BT'] : ['q', `${cm.map(num).join(' ')} cm`, 'BT'];
     /** An instruction's settings as bytes, to tell whether two operators were drawn under the same ones. */

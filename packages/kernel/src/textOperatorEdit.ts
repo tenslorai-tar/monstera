@@ -44,7 +44,7 @@ function refusalOf(refusal: Exclude<OperatorRefusal, { reason: 'needs-a-face' | 
       ? refusal.detail
       : refusal.reason === 'unknown-width'
         ? `font ${refusal.font} states no width this edit needs`
-        : 'its text is set under transforms one inserted object cannot reproduce';
+        : `its text is set under transforms one inserted object cannot reproduce (${refusal.where})`;
   // `read-back` IS THE STEP THE OWNER'S ONE PLAIN LINE NAMES (R13, Q3): the rest of the page could not be kept, so it is
   // left as it was — the same refusal a PDFium read-back makes of such a page, from the writer that replaces it.
   return new EditRefusedError('read-back', 0, `the operator edit refused the page: ${detail}`);
