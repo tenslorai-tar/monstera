@@ -384,37 +384,41 @@ function arrange(
     { start: at, end: at, text: `\n${carry.before}${moved}${carry.after}` },
   ]);
 
-  // READ BACK: the same text and the same objects of each kind, the object drawn where it was drawn, on the other side of
-  // its neighbour, through every clip it stood in.
+  // READ BACK: the same text, and the page's drawn objects in EXACTLY the order the arrange asked for — the old order with
+  // the object's unit taken out and put where it was inserted — each drawn where it was, the object through every clip it
+  // stood in.
+  //
+  // THE WHOLE ORDER, never the neighbour looked up again: the neighbour was found after the edit by its geometry, and the
+  // first object of that geometry is often its twin — a shape's fill and its outline are two objects with one path — so a
+  // correct arrange read back as "not on the other side of its neighbour" (42 of the 44 arrange refusals over the owner's
+  // corpus, 2026-10-23). The order a correct arrange leaves is known exactly, so it is compared exactly.
   const after = drawnObjects(edited, kinds);
-  const count = (objects: readonly DrawnObject[], kind: DrawnObject['kind']): number => objects.filter((object) => object.kind === kind).length;
-  const placed = after.filter((object) => object.kind === found.kind && geometryOf(object) === geometryOf(found));
-  // THE NEIGHBOUR AFTER THE EDIT: a text object keeps its number (the text is the same), a drawn one its geometry.
-  const past = edit.past;
-  const neighbourAt =
-    past.kind === 'text'
-      ? showOperators(edited).find((op) => op.object === past.object)?.start
-      : after.find((object) => {
-          const before = drawn.filter((each) => each.kind === past.kind)[past.ordinal];
-          return before !== undefined && object.kind === past.kind && geometryOf(object) === geometryOf(before);
-        })?.start;
-  const copy = neighbourAt === undefined ? undefined : placed.find((object) => (forward ? object.start > neighbourAt : object.start < neighbourAt));
+  const moving = drawn.filter((object) => object.start >= own.start && object.start < own.end);
+  const staying = drawn.filter((object) => !moving.includes(object));
+  const insertAt = staying.filter((object) => object.start < at).length;
+  const expected = [...staying.slice(0, insertAt), ...moving, ...staying.slice(insertAt)];
+  const signature = (object: DrawnObject): string => `${object.kind} ${geometryOf(object)}`;
+  const inOrder =
+    after.length === expected.length &&
+    after.every((object, place) => {
+      const wanted = expected[place];
+      return wanted !== undefined && signature(object) === signature(wanted);
+    });
+  const copy = inOrder ? after[expected.indexOf(found)] : undefined;
   const windowsKept =
     copy !== undefined &&
     found.windows.every((window) => copy.windows.some((each) => JSON.stringify(each.points) === JSON.stringify(window.points)));
-  if (
-    !sameText(content, edited) ||
-    after.length !== drawn.length ||
-    DRAWN_KINDS.some((kind) => count(after, kind) !== count(drawn, kind)) ||
-    placed.length !== drawn.filter((object) => object.kind === found.kind && geometryOf(object) === geometryOf(found)).length ||
-    !windowsKept
-  ) {
-    throw refused('read-back', `arranging ${command.object} ${String(command.ordinal)} did not read back as one object moved in the order`);
+  // EACH CHECK NAMED, so a refusal says which part of the read-back failed rather than that one did.
+  const failed = [
+    ...(sameText(content, edited) ? [] : ['the text changed']),
+    ...(inOrder ? [] : ['the drawn objects are not in the order the arrange asked for']),
+    ...(copy !== undefined && !windowsKept ? ['a clip it stood in is lost'] : []),
+  ];
+  if (failed.length > 0) {
+    throw refused('read-back', `arranging ${command.object} ${String(command.ordinal)} did not read back as one object moved in the order: ${failed.join('; ')}`);
   }
   return { content: edited, plain: carry.plain };
 }
-
-const DRAWN_KINDS = ['path', 'image', 'form', 'shading'] as const;
 
 /** The same drawn objects in the same kinds, in order. */
 function sameObjects(before: readonly DrawnObject[], after: readonly DrawnObject[]): boolean {

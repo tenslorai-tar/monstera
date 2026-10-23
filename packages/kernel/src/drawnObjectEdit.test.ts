@@ -340,6 +340,23 @@ describe('editDrawnObject — arrange (ADR-0264 Decision 3)', () => {
     }
   });
 
+  it('goes past a neighbour with a TWIN of the same geometry: a fill and its outline, two objects with one path', async () => {
+    // PATH 0 fills the square and PATH 1 outlines the same square, then the picture. Sent backward past path 1, the picture
+    // goes between them. The read-back found the neighbour again by its geometry, met path 0 first, and refused a
+    // correct arrange as "not on the other side of its neighbour" (42 of 44 arrange refusals over the owner's corpus).
+    const content = ['q 0 1 0 rg 20 20 60 60 re f Q', 'q 0 0 0 RG 20 20 60 60 re S Q', 'q 60 0 0 60 50 50 cm /Im1 Do Q'].join('\n');
+    const between = new TextDecoder('latin1').decode(
+      await savedContent(await edited(command('image', 0, GREEN_BOX, { op: 'arrange', to: 'backward', past: { kind: 'path', ordinal: 1 } }), await fixture(content))),
+    );
+    expect(between.indexOf('re f')).toBeLessThan(between.indexOf('/Im1 Do'));
+    expect(between.indexOf('/Im1 Do')).toBeLessThan(between.indexOf('re S'));
+    // CONTROL: past path 0, the twin itself, it goes before both — the neighbour is the one named, not one with its shape.
+    const before = new TextDecoder('latin1').decode(
+      await savedContent(await edited(command('image', 0, GREEN_BOX, { op: 'arrange', to: 'backward', past: { kind: 'path', ordinal: 0 } }), await fixture(content))),
+    );
+    expect(before.indexOf('/Im1 Do')).toBeLessThan(before.indexOf('re f'));
+  });
+
   it('goes past a TEXT object named by PDFium’s number for it', async () => {
     const content = ['q 1 0 0 rg 20 20 60 60 re f Q', 'BT /F1 40 Tf 0 1 0 rg 20 40 Td (HHH) Tj ET'].join('\n');
     const bytes = await edited(command('path', 0, RED_BOX, { op: 'arrange', to: 'forward', past: { kind: 'text', object: 0 } }), await fixture(content));
