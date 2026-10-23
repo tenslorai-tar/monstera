@@ -134,12 +134,17 @@ function fits(op: PageOp, count: number): boolean {
 }
 
 /**
- * The rotation to draw a planned page at: its own `/Rotate` IN THE VIEW ON SCREEN, turned by the plan. The view's bytes
- * are that version's, so their rotation is the one the model gave for it; the model's answer at the STORE's version,
- * which the surfaces otherwise draw with, describes the pages after the commands, not the view's (ADR-0261, fact 2).
+ * The rotation to draw a planned page at: the rotation the model gave its source AT THE VIEW'S VERSION, turned by the
+ * plan. Not the view's own `/Rotate`: a rotate is a view-model command that writes no new bytes in main (ADR-0032), so
+ * after one the view's bytes still carry the rotation from before it, and the model is what the page was drawn with.
+ * Nor the model's answer at the STORE's version, which describes the pages after the commands (ADR-0261, fact 2). The
+ * page's own rotation, turned, only where the model never answered for that version — which is what the page was drawn
+ * with then too.
+ *
+ * @param base the model's rotation of the source at the view's version, where it answered
  */
-export function plannedRotation(page: PlannedPage): PageRotation {
-  return TURNS[page.turn % 4];
+export function plannedRotation(page: PlannedPage, base: number | undefined): PageRotation {
+  return base === undefined ? TURNS[page.turn % 4] : (base + page.turn * 90) % 360;
 }
 
 /** ONE value per turn: a slot redraws when its rotation changes identity, so a fresh object per render redraws every render. */

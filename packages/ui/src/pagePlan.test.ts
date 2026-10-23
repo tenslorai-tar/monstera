@@ -61,9 +61,12 @@ describe('afterOp and plannedPages — what each slot shows', () => {
     expect(plannedPages([{ op: { kind: 'move', from: 0, to: 6 }, produced: undefined }], v(1), 4)).toBeNull();
   });
 
-  it('the rotation drawn is the page’s own in the view, turned by the plan', () => {
-    expect(plannedRotation({ source: 0, turn: 2 })).toStrictEqual({ turnedFromOwn: 2 });
-    expect(plannedRotation({ source: 0, turn: 0 })).toBeUndefined();
+  it('the rotation drawn is the model’s at the view’s version, turned by the plan; the page’s own only where it never answered', () => {
+    // A SECOND ROTATE: the model said 90 for the view's version, whose bytes may still say 0 (ADR-0032).
+    expect(plannedRotation({ source: 0, turn: 1 }, 90)).toBe(180);
+    expect(plannedRotation({ source: 0, turn: 3 }, 270)).toBe(180);
+    expect(plannedRotation({ source: 0, turn: 2 }, undefined)).toStrictEqual({ turnedFromOwn: 2 });
+    expect(plannedRotation({ source: 0, turn: 0 }, undefined)).toBeUndefined();
   });
 });
 

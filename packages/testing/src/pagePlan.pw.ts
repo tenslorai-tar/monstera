@@ -55,11 +55,16 @@ async function openHeld(page: Page, extra: Record<string, unknown> = {}): Promis
   });
   await page.goto('/');
   await page.getByRole('button', { name: /^Open PDF/u }).first().click();
-  await expect.poll(async () => (await drawn(page)).pages.filter((each) => each !== '').length, { timeout: 20_000 }).toBe(2);
-  await expect.poll(async () => (await drawn(page)).thumbs[0], { timeout: 20_000 }).toBe('portrait');
-  const before = await drawn(page);
-  expect(before.pages[0]).not.toBe(before.pages[1]);
-  return before;
+  // BOTH PAGES DRAWN, which is when they differ: two canvases not drawn yet are equal blanks of the same size.
+  await expect
+    .poll(async () => {
+      const { pages } = await drawn(page);
+      return pages.length === 2 && pages[0] !== '' && pages[1] !== '' && pages[0] !== pages[1];
+    }, { timeout: 20_000 })
+    .toBe(true);
+  // AND THE FIRST CARD, in whichever shape the model gives the first page.
+  await expect.poll(async () => (await drawn(page)).thumbs[0] ?? 'none', { timeout: 20_000 }).toMatch(/^(portrait|landscape)$/u);
+  return drawn(page);
 }
 
 test('a rotate is shown on the page and its card while main still holds the command', async ({ page }) => {
@@ -119,6 +124,19 @@ test('an undo of a move is shown at once, from the move it undoes', async ({ pag
   const sent = Date.now();
   await page.keyboard.press('Control+z');
   await expect.poll(async () => (await drawn(page)).pages, { timeout: SHOWN_WITHIN_MS }).toStrictEqual([before.pages[1], before.pages[0]]);
+  expect(Date.now() - sent).toBeLessThan(HELD_MS);
+});
+
+test('a page the model already turns is turned FROM the model’s rotation, not from its bytes’ own', async ({ page }) => {
+  // A ROTATE WRITES NO BYTES (ADR-0032): the model says page 1 is at 90 while its bytes still say 0, so it is drawn on
+  // its side. One more quarter turn is 180, upright; turned from the bytes' own 0 it would be 90, on its side again.
+  // The strip draws a planned card with no copy of pixels, so its card is where the base shows.
+  await openHeld(page, { viewModels: [{ pageCount: 8, rotations: [90, 0, 0, 0, 0, 0, 0, 0] }] });
+  await expect.poll(async () => (await drawn(page)).thumbs[0], { timeout: 20_000 }).toBe('landscape');
+  const sent = Date.now();
+  await runCommand(page, 'Rotate page');
+  await expect.poll(async () => (await drawn(page)).thumbs[0], { timeout: SHOWN_WITHIN_MS }).toBe('portrait');
+  await expect.poll(async () => (await drawn(page)).shapes[0], { timeout: SHOWN_WITHIN_MS }).toBe('portrait');
   expect(Date.now() - sent).toBeLessThan(HELD_MS);
 });
 

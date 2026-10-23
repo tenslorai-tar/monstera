@@ -1,6 +1,6 @@
 import type { ContractClient } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 /**
  * What is known about each visible page's rotation, AT THIS VERSION.
@@ -48,12 +48,14 @@ export function usePageRotations(
   docId: DocId,
   version: DocVersion,
   visible: ReadonlySet<number>,
-): ReadonlyMap<number, number | undefined> {
+): PageRotations {
   const key = `${String(docId)}@${String(version)}`;
   const [answered, setAnswered] = useState<{
     readonly key: string;
     readonly map: ReadonlyMap<number, number | undefined>;
-  }>({ key: '', map: EMPTY });
+    /** The answers of the versions before this one, newest first: what a page plan turns from (ADR-0261). */
+    readonly earlier: readonly { readonly key: string; readonly map: ReadonlyMap<number, number | undefined> }[];
+  }>({ key: '', map: EMPTY, earlier: [] });
   const current = answered.key === key ? answered.map : EMPTY;
 
   useEffect(() => {
@@ -76,11 +78,15 @@ export function usePageRotations(
       // falling back to the page's own `/Rotate` is that stated correctly.
       const usable = answer.ok && answer.value.version === version;
       setAnswered((previous) => {
-        const next = new Map(previous.key === key ? previous.map : EMPTY);
+        const same = previous.key === key;
+        const next = new Map(same ? previous.map : EMPTY);
         for (const [index, page] of wanted.entries()) {
           next.set(page, usable ? answer.value.rotations[index] : undefined);
         }
-        return { key, map: next };
+        // A NEW VERSION KEEPS THE LAST ONES' ANSWERS, a few deep: a page plan draws the view of an earlier version,
+        // and turns each page from the rotation the model gave for THAT version.
+        const earlier = same || previous.key === '' ? previous.earlier : [{ key: previous.key, map: previous.map }, ...previous.earlier].slice(0, KEPT_VERSIONS);
+        return { key, map: next, earlier };
       });
     };
     void read();
@@ -90,7 +96,28 @@ export function usePageRotations(
     };
   }, [client, current, docId, key, version, visible]);
 
-  return current;
+  const at = useCallback(
+    (other: DocVersion): ReadonlyMap<number, number | undefined> | undefined => {
+      const wanted = `${String(docId)}@${String(other)}`;
+      // THE LATEST ANSWERS ARE STILL THE ONES HELD until the new version's first read lands, so they are asked first.
+      if (wanted === answered.key) return answered.map;
+      return answered.earlier.find((each) => each.key === wanted)?.map;
+    },
+    [answered, docId],
+  );
+  return useMemo(() => ({ now: current, at }), [at, current]);
 }
+
+/**
+ * The model's rotations: `now`, at the version asked for, in the three states above; and `at`, the answers kept for an
+ * earlier version, which is what a page plan's view was drawn with (ADR-0261) — `undefined` where none were kept.
+ */
+export interface PageRotations {
+  readonly now: ReadonlyMap<number, number | undefined>;
+  readonly at: (version: DocVersion) => ReadonlyMap<number, number | undefined> | undefined;
+}
+
+/** How many earlier versions' answers are kept: the plans a person can stack before the page draws one. */
+const KEPT_VERSIONS = 4;
 
 const EMPTY: ReadonlyMap<number, number | undefined> = new Map();

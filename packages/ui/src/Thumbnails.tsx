@@ -186,7 +186,7 @@ export function Thumbnails({
   const reading = onePage !== undefined;
   // NEAR IS THE STRIP'S OWN BOX, half of it either side; a page to a row is read as Home is, so a whole view.
   const { visible, slotRef } = useVisiblePages(reading ? '100%' : '50%', undefined, scroller);
-  const rotations = usePageRotations(client, docId, version, waitForFirstFrame ? NOTHING_VISIBLE : visible);
+  const { now: rotations, at: rotationsAt } = usePageRotations(client, docId, version, waitForFirstFrame ? NOTHING_VISIBLE : visible);
   // A REF, not state: the source index is read once by the drop that follows,
   // and re-rendering the whole strip mid-drag would replace the element the
   // browser is dragging.
@@ -403,7 +403,15 @@ export function Thumbnails({
             // A PLANNED CARD draws from the view at once (ADR-0261): its rotation is the plan's, not the model's.
             draw={visible.has(page) && (planned !== null || rotations.has(page))}
             source={planned?.[page]?.source ?? page}
-            rotation={planned === null ? rotations.get(page) : plannedRotation(planned[page] ?? { source: page, turn: 0 })}
+            // TURNED FROM THE MODEL'S ROTATION AT THE VIEW'S VERSION (`plannedRotation`), the one the card was drawn with.
+            rotation={
+              planned === null
+                ? rotations.get(page)
+                : plannedRotation(
+                    planned[page] ?? { source: page, turn: 0 },
+                    view === undefined ? undefined : rotationsAt(view.version)?.get(planned[page]?.source ?? page),
+                  )
+            }
             onDrawn={onDrawn}
           />
           {/* THE PAGE'S NUMBER UNDER IT, as v5-02 draws the strip. Seen, not read: the button's

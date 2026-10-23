@@ -58,7 +58,7 @@ const NO_HELD_LOOKS = (): readonly HeldLook[] => NO_HELD;
 const NO_HELD_SUBSCRIBE = (): (() => void) => () => undefined;
 import { type PageAnnotation, usePageAnnotations } from './usePageAnnotations.js';
 import { usePageRotations } from './usePageRotations.js';
-import { type PagePlans, plannedRotation } from './pagePlan.js';
+import { type PagePlans, type PlannedPage, plannedRotation } from './pagePlan.js';
 import { usePlannedPages } from './usePlannedPages.js';
 import { type PageTextAnswer, usePageText } from './usePageText.js';
 import { type PageLinkOnPage, usePageLinks } from './usePageLinks.js';
@@ -516,8 +516,8 @@ interface Measured {
 }
 
 /**
- * What a page canvas shows now: the view's page, the plan's quarter turns from that page's own rotation, and the
- * measurement it was drawn with. Written by the slot at every whole-page draw, and read when a page plan changes, so a
+ * What a page canvas shows now: the view's page, the plan's quarter turns from the rotation that view draws it at
+ * (none for an unplanned draw), and the measurement it was drawn with. Written by the slot at every whole-page draw, and read when a page plan changes, so a
  * planned slot can take the drawing of its source from wherever it is on screen (ADR-0261's correction).
  */
 interface Shown {
@@ -533,11 +533,6 @@ interface DrawnCopy extends Shown {
 }
 
 const SHOWS = new WeakMap<HTMLCanvasElement, Shown>();
-
-/** The quarter turns from the page's own rotation a draw is made at: a plan's, or none for the view's own pages. */
-function turnOf(rotation: PageRotation): number {
-  return typeof rotation === 'object' ? rotation.turnedFromOwn : 0;
-}
 
 /**
  * Device pixels per CSS pixel, read at the point of use.
@@ -604,6 +599,9 @@ export function PageList({
   // the list is as long as the plan. Every count below is this one, so a deleted page's slot is gone with it.
   const planned = usePlannedPages(plans, view);
   const pageCount = planned?.length ?? viewPageCount;
+  /** A planned page's rotation: its source's at the view's version, as the model gave it, turned by the plan. */
+  const plannedRotationOf = (entry: PlannedPage): PageRotation =>
+    plannedRotation(entry, view === undefined ? undefined : rotationsAt(view.version)?.get(entry.source));
   // WHERE A HAND DRAG STARTED: the pointer and the scroll position at the press, so each move sets
   // the scroll from the start rather than accumulating deltas that drift with rounding.
   const [grab, setGrab] = useState<
@@ -632,7 +630,7 @@ export function PageList({
   //
   // DECLARED FIRST AMONG THE READS, so its effect asks first: every read of the document waits in main's one lane for
   // it, and this is the one the first page cannot draw without. The text and the marks below wait for the first frame.
-  const rotations = usePageRotations(client, docId, version, nearAndAhead);
+  const { now: rotations, at: rotationsAt } = usePageRotations(client, docId, version, nearAndAhead);
   /**
    * WHETHER THE FIRST FRAME HAS BEEN SHOWN: the mount's starting page drawn at the zoom it is shown at, and scrolled to
    * (the owner's rule, *never show an unfinished screen*; the review of 0.1.8.0 saw seconds of empty slots, a flash of
@@ -1455,8 +1453,9 @@ export function PageList({
           // by the plan (`plannedRotation`), and the model's answer at the store's version is for another page.
           draw={drawsPages && inUse(page) && (planned !== null || rotations.has(page)) && (resolved !== undefined || startBoxRefused)}
           source={planned?.[page]?.source ?? page}
+          turn={planned?.[page]?.turn ?? 0}
           copyOf={planned === null ? undefined : copyOf}
-          rotation={planned === null ? rotations.get(page) : plannedRotation(planned[page] ?? { source: page, turn: 0 })}
+          rotation={planned === null ? rotations.get(page) : plannedRotationOf(planned[page] ?? { source: page, turn: 0 })}
           size={sizes.get(page) ?? lastKnownBefore(sizes, page) ?? startEstimate}
           zoom={shown}
           renderZoom={renderZoom}
@@ -1722,6 +1721,7 @@ function lastKnownBefore(
 function PageSlot({
   page,
   source,
+  turn,
   copyOf,
   ref,
   view,
@@ -1769,6 +1769,8 @@ function PageSlot({
    * slot shows — marks, text, fields — is the store's, whose pages already are the plan's.
    */
   readonly source: number;
+  /** The plan's quarter turns from the rotation the view draws `source` at; 0 where no plan is shown. */
+  readonly turn: number;
   /** While a page plan is shown: the drawing of a view's page the screen had when the plan changed, if any (ADR-0261). */
   readonly copyOf: ((source: number) => DrawnCopy | undefined) | undefined;
   readonly ref: (element: HTMLElement | null) => void;
@@ -2028,7 +2030,7 @@ function PageSlot({
       // turned by the difference, presented in this task. Not while a mark is left out, which that drawing has in it.
       const held = copyOf?.(source);
       if (held?.view === view && held.measured.drawnAt === scale && leftOut === undefined) {
-        const turns = (((turnOf(rotation) - held.turn) % 4) + 4) % 4;
+        const turns = (((turn - held.turn) % 4) + 4) % 4;
         presentTurned(target, held.copy, turns);
         const odd = turns % 2 === 1;
         const measured = {
@@ -2037,7 +2039,7 @@ function PageSlot({
           height: odd ? held.measured.width : held.measured.height,
           rotation: (held.measured.rotation + turns * 90) % 360,
         };
-        SHOWS.set(target, { view, source, turn: turnOf(rotation), measured });
+        SHOWS.set(target, { view, source, turn, measured });
         onMeasured(page, measured);
         setDrawnWith(view);
         setPresentedWithout(leftOut);
@@ -2067,7 +2069,7 @@ function PageSlot({
         rotation: drawn.rotation,
       };
       // WHAT THIS CANVAS SHOWS NOW, for a plan made next to take it from (ADR-0261's correction).
-      SHOWS.set(target, { view, source, turn: turnOf(rotation), measured });
+      SHOWS.set(target, { view, source, turn, measured });
       onMeasured(page, measured);
       setDrawnWith(view);
       setPresentedWithout(leftOut);
@@ -2101,7 +2103,7 @@ function PageSlot({
     return (): void => {
       superseded.abort();
     };
-  }, [copyOf, draw, leftOut, onFailed, onMeasured, onPainted, page, quality, renderZoom, rotation, secondRasteriser, setPresentedWithout, source, tiled, view]);
+  }, [copyOf, draw, leftOut, onFailed, onMeasured, onPainted, page, quality, renderZoom, rotation, secondRasteriser, setPresentedWithout, source, tiled, turn, view]);
 
   // HELD DECODED WHILE MOUNTED (`pageResidency.ts`), so a zoom's redraw of a page in the margin does not decode its
   // images again; released when it leaves the margin, and PDF.js then closes them unless the strip is drawing it.
