@@ -39,6 +39,7 @@ import type { z } from 'zod';
 
 import { isFormatted } from '../textFormatting.js';
 import { type PagePlans, inverseOf, pageOpOf } from '../pagePlan.js';
+import { findFocus } from '../findFocus.js';
 import { BATES_NUMBER_DIALOG_ID } from '../dialogs/batesNumber.js';
 import { BATES_NUMBER_RESULT, BATES_NUMBER_SETTINGS, type BatesNumberAnswer } from '../dialogs/batesNumberResult.js';
 import { COMMAND_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG_ID } from '../dialogs/commandProblem.js';
@@ -1273,13 +1274,14 @@ export async function placeImage(
  * replaces. A command that opened a search panel that then did nothing would be
  * the display-only sin; this one hands off to a surface that works.
  *
- * ## Focus by attribute, not by a ref through the registry
+ * ## Focus by a request the field takes, not by a ref through the registry
  *
  * A command reaching into a component's internals would be the second wiring
  * place the registry exists to forbid — the registry would then carry both a
- * command and a handle to the thing it acts on. `data-find-input` is the
- * surface's own contract with the document, and the query selector is the whole
- * of it.
+ * command and a handle to the thing it acts on. So the command leaves a request
+ * (`findFocus.ts`) and the field takes it when it renders. It was a selector run
+ * one animation frame later, which under load ran before the panel was committed,
+ * found nothing, and lost the words typed next (`pagesInUse.pw.ts` on the board).
  */
 /**
  * The magnifications the ± controls step through.
@@ -1567,15 +1569,9 @@ export function findCommand(deps: { readonly settings: SettingsStore; readonly p
       // Search panel, one panel at a time, so with another panel showing there is no
       // field to focus. The setting is the one owner of which panel shows.
       showSearchPanel(deps.settings, deps.presence);
-      // AFTER THE RENDER the setting causes: `set` notifies synchronously and React
-      // renders the panel on its next commit, so the field exists one frame later.
-      requestAnimationFrame(() => {
-        const field = document.querySelector('[data-find-input]');
-        // `instanceof` rather than a cast: the selector is a string and the
-        // element it finds is whatever the DOM holds, so a surface that renamed
-        // its input leaves this doing nothing rather than throwing at a user.
-        if (field instanceof HTMLInputElement) field.focus();
-      });
+      // A REQUEST THE FIELD TAKES when it renders (`findFocus.ts`), not a focus one frame later: under load the panel
+      // was committed after that frame, the lookup found nothing, and the words typed next were lost.
+      findFocus.request();
     },
   };
 }

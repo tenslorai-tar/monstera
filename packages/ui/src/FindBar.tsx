@@ -1,10 +1,11 @@
 import { useLingui } from '@lingui/react';
-import { type ReactElement, useCallback, useEffect, useId, useRef, useState } from 'react';
+import { type ReactElement, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { type ContractClient, MAX_QUERY_LENGTH } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
 
 import { type DocumentMatch, searchDocument } from './documentSearch.js';
+import { findFocus } from './findFocus.js';
 import type { SearchHighlight } from './searchHighlight.js';
 import {
   FIND_ALL_PAGES,
@@ -247,6 +248,15 @@ export function FindBar({
   seed,
 }: FindBarProps): ReactElement | null {
   const { _ } = useLingui();
+  // CTRL+F'S FOCUS (`findFocus.ts`): taken in the layout effect of the render that shows the field, and spent only when
+  // the field exists, so a render that draws no bar leaves the request for the one that does.
+  const field = useRef<HTMLInputElement | null>(null);
+  const focusAsked = useSyncExternalStore(findFocus.subscribe, findFocus.getSnapshot);
+  useLayoutEffect(() => {
+    if (!focusAsked || field.current === null) return;
+    field.current.focus();
+    findFocus.taken();
+  });
   const [query, setQuery] = useState('');
   const [options, setOptions] = useState<FindOptions>({
     caseSensitive: false,
@@ -539,10 +549,8 @@ export function FindBar({
       <label htmlFor={inputId}>{_(FIND_LABEL)}</label>
       <input
         id={inputId}
-        // `data-find-input` so the command can focus it without this surface
-        // exporting a ref through the registry — a command that reached into a
-        // component's internals would be the second wiring place the registry
-        // exists to forbid.
+        // CTRL+F'S FOCUS, taken from its request (`findFocus.ts`) rather than found by a selector a frame later.
+        ref={field}
         data-find-input="true"
         className="m-input"
         value={query}

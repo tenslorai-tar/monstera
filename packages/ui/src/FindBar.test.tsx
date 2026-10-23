@@ -7,6 +7,7 @@ import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { FindBar } from './FindBar.js';
+import { findFocus } from './findFocus.js';
 import type { SearchHighlight } from './searchHighlight.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
@@ -505,6 +506,53 @@ describe('FindBar replace-all', () => {
     // AND THE FIND HALF IS STILL THERE, so this is not passing on a bar that
     // rendered nothing at all.
     expect(container.querySelector('[data-find-input]')).not.toBeNull();
+  });
+});
+
+describe('Ctrl+F’s focus, taken by the field from its request (findFocus.ts)', () => {
+  const bar = (client: ContractClient): ReactElement => (
+    <Wrapped>
+      <FindBar client={client} docId={DOC} version={V1} page={0} pageCount={PAGES} onJump={vi.fn()} onHighlight={vi.fn()} />
+    </Wrapped>
+  );
+
+  it('a request made BEFORE the bar is shown is taken by the field in the render that shows it, and spent', () => {
+    // THE BOARD'S SHAPE (45bd4554): the command asks, and the panel is committed later than a frame would have waited.
+    findFocus.request();
+    const { container, unmount } = render(bar(clientAnswering().client));
+    const field = only(container, '[data-find-input]', HTMLInputElement);
+    expect(document.activeElement).toBe(field);
+    expect(findFocus.getSnapshot()).toBe(false);
+    // SPENT: the bar shown again with no request takes no focus.
+    unmount();
+    const outside = document.createElement('button');
+    document.body.append(outside);
+    outside.focus();
+    const again = render(bar(clientAnswering().client));
+    expect(document.activeElement).toBe(outside);
+    again.unmount();
+    outside.remove();
+  });
+
+  it('a request made while the bar is shown moves the focus to the field', () => {
+    const { container } = render(bar(clientAnswering().client));
+    const outside = document.createElement('button');
+    document.body.append(outside);
+    outside.focus();
+    act(() => {
+      findFocus.request();
+    });
+    expect(document.activeElement).toBe(only(container, '[data-find-input]', HTMLInputElement));
+    outside.remove();
+  });
+
+  it('CONTROL: with no request the field takes no focus, so the cases above are the request', () => {
+    const outside = document.createElement('button');
+    document.body.append(outside);
+    outside.focus();
+    const { container } = render(bar(clientAnswering().client));
+    expect(document.activeElement).not.toBe(only(container, '[data-find-input]', HTMLInputElement));
+    outside.remove();
   });
 });
 
