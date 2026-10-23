@@ -154,3 +154,35 @@ inside a group (a group moves as one).
 - **Resetting the drawing state with nothing but operators.** `gs` parameters (opacity, blend mode, soft mask) have no
   operator of their own; only an `ExtGState` resets them, so the writer adds one plain graphics state to the page's
   resources when an arrange needs it.
+
+## Correction while building, 2026-10-23 — where the build departs from the decisions above
+
+Recorded as built, each with its reason. None changes what an edit writes.
+
+- **Decision 4's line.** The sentence shipped is *"This object would be cut off in that place, so nothing was changed."*
+  (`EDIT_REFUSED_CROPPED`). Every refusal of a writer's step in `problemMessages.ts` ends in *so nothing was changed*,
+  and the crop is one more step of that table (`cropped` beside `object` and `read-back`), so it takes the table's
+  ending rather than a second wording for the same outcome.
+- **Decision 5 needed a read the channel did not have.** `document.textBlocks` unpacks a page whose text sits in a form
+  (ADR-0232), and the operator writer names the page as it is. The read gained `asItIs: true`: the blocks of the page as
+  it is, never unpacked. Text inside a group is then the group's, which moves as one, as *Not in this version* says.
+- **Decision 9's "one read per page" is three reads at one version, not one channel.** The page's objects, its blocks
+  as it is and its marks are asked together (`objectRead.ts`) and used only where all three answered at the same
+  version; a page that moved between them is read again at the next version. A fourth channel answering the same three
+  questions would be a second opinion about each (B3a). The reads still run one page at a time, the page on show first.
+- **Decision 9's start.** What was built before this ADR started the editing engine as Edit text was CHOSEN, not as the
+  Edit tab was shown. It now starts when the Edit section is shown, and as either mode is chosen from anywhere, once
+  each time; `App.test.tsx` holds both, with the reading view as the control.
+- **Decision 9's held look lays the PAPER over the place the object left.** A drawn object is in the page's drawing, so
+  its copy alone at the new place would show it twice until the page redraws. The paper is read off the drawn page round
+  the object by `paperAround`, the reading Edit text lays its editor on, which moved into its own module so both take it
+  (B3a). **Its limit, stated:** an object standing on a photograph or a pattern is covered by a flat or shaded patch
+  until the page draws the result, for as long as that takes, which is not timed yet. A picture placed with Comment › Image needs no paper: the page leaves that mark out by its index while the
+  look stands (ADR-0257's `leaves`).
+- **Decision 8's selection takes the read's box before anything is built from it.** A place keeps the object's kind,
+  ordinal and index, and the selection is carried to the new version as said — but a command names the object by the
+  box PDFium listed (Decision 2), and the carried pick still holds the box from before the edit. So a carried pick is no
+  selection until the page's next read gives it the object as it is now (`refreshPick`, `settled`); a block edited is
+  found again by its words, as before.
+- **Properties carries no typed position or size.** ADR-0153's E6 fields are not in the brief and are not rebuilt; the
+  tab shows the kind, a shape's or a block's colour, and the commands its foot projects.
