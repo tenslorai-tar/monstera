@@ -42,6 +42,8 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
+
 import { EDIT_OBJECT, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
@@ -332,6 +334,17 @@ async function walkPage(pdfium, kernel, bytes, index, quotes) {
   return tries;
 }
 
+/** A paragraph of three lines in Helvetica 12, its first line ending in a word broken by a hyphen. */
+async function lineEndHyphen() {
+  const document = await PDFDocument.create({ updateMetadata: false });
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const page = document.addPage([612, 792]);
+  ['The quarterly figures were con-', 'firmed by the board at its meeting', 'on the fourth of the month.'].forEach((line, at) => {
+    page.drawText(line, { x: 72, y: 700 - at * 14, size: 12, font });
+  });
+  return new Uint8Array(await document.save());
+}
+
 /**
  * The documents a run walks, each with its pages, and whether its words may be printed (`quotes`): never for the corpus.
  * @returns {Promise<{ name: string, bytes: Uint8Array, pages: number[], gate: boolean, quotes: boolean }[]>}
@@ -342,6 +355,9 @@ async function documents() {
   for (let page = 1; page <= PAGES; page += 1) found.push({ name: `brochure page ${String(page)}`, bytes: await brochure(page), pages: [0], gate: true, quotes: true });
   found.push({ name: 'chromium-type3.pdf', bytes: new Uint8Array(readFileSync(CHROMIUM)), pages: [0], gate: false, quotes: true });
   for (const kind of FONT_KINDS) found.push({ name: `font kind ${kind.id}`, bytes: await buildFixture(kind.id), pages: [0], gate: false, quotes: true });
+  // A WORD BROKEN BY A HYPHEN AT A LINE'S END, which PDFium's text page reads as U+FFFE where MuPDF reads the hyphen the
+  // page draws: every edit of such a paragraph was refused over the owner's corpus until the reading took the hyphen.
+  found.push({ name: 'line-end hyphen', bytes: await lineEndHyphen(), pages: [0], gate: false, quotes: true });
   if (CORPUS !== null) {
     // BY NUMBER, NEVER BY NAME: the corpus is the owner's own documents, and their names are never printed. The number is
     // the file's place in the folder sorted by name, so a run can be repeated against the same document.

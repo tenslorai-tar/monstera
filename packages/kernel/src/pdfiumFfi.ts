@@ -424,7 +424,18 @@ function drawnTextOn(bindings: Bound, textPage: unknown, objects: readonly unkno
 function characterAt(bindings: Bound, textPage: unknown, at: number): string {
   const buffer = new Uint16Array(2);
   numberFrom(bindings.getText(textPage, at, 1, buffer), 'FPDFText_GetText');
-  return String.fromCharCode(buffer[0] ?? 0);
+  return String.fromCharCode(drawnUnit(buffer[0] ?? 0));
+}
+
+/**
+ * The unit a page's text reads where PDFium answers its own marker for a HYPHEN THAT BREAKS A WORD AT A LINE'S END,
+ * U+FFFE: the glyph on the page is a hyphen, and that is what every reader of the page's words is given — the one rule
+ * both of this module's ways of reading text take. Measured 2026-10-23 over the owner's corpus: a paragraph PDFium read
+ * with U+FFFE where MuPDF reads U+002D was refused every Edit object edit, its words never matching MuPDF's reading.
+ * U+FFFE is a non-character, never text a page means, so nothing else is turned into a hyphen by this.
+ */
+function drawnUnit(unit: number): number {
+  return unit === 0xfffe ? 0x2d : unit;
 }
 
 /** Letters a font is asked about a space with where the words at hand hold none it sets: common in Latin text. */
@@ -517,7 +528,7 @@ const UTF16_CHUNK = 8192;
 function fromUtf16Units(units: Uint16Array): string {
   let text = '';
   for (let at = 0; at < units.length; at += UTF16_CHUNK) {
-    text += String.fromCharCode(...units.subarray(at, at + UTF16_CHUNK));
+    text += String.fromCharCode(...units.subarray(at, at + UTF16_CHUNK).map(drawnUnit));
   }
   return text;
 }
