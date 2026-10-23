@@ -11,13 +11,15 @@
  * - a page and a view: the page box's own number and the status bar's zoom, before and after;
  * - a reset, a show or hide, an import: a copy saved after the press, read back by pdf-lib (a second reader);
  * - a link and mail: the address main hands `shell.openExternal`, which the walk records in place of opening it;
+ * - Share with the file attached (ADR-0263): the file the Share surface stages for the sheet, read back — the sheet itself
+ *   is the real one and opens on this desktop; Copy address: the system clipboard, read from main;
  * - print: Monstera's Print window, cancelled;
  * - submit to https: refused by ADR-0061's guard for this machine and its network — measured by a socket on this machine
  *   that must see no connection — and said; a private address is refused the same way;
  * - open a file: a tab for a PDF beside the document, and the sentence for one that is not there.
  */
 import { existsSync } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { join, resolve } from 'node:path';
 import { AnnotationFlags, PDFDocument, PDFName, StandardFonts } from '@cantoo/pdf-lib';
@@ -38,7 +40,7 @@ const wanted = (name) => only === undefined || only.includes(name);
 
 const LONG = 'A long answer that runs past what a mail link can carry. '.repeat(40);
 /** One button per action, in a column, and the order the walk presses them in. */
-const BUTTONS = ['GoKeep', 'GoFit', 'GoWidth', 'Link', 'Reset', 'Hide', 'Print', 'Import', 'SubmitLocal', 'SubmitPrivate', 'MailShort', 'MailLong', 'OpenFile', 'OpenMissing', 'Several'];
+const BUTTONS = ['GoKeep', 'GoFit', 'GoWidth', 'Link', 'Reset', 'Hide', 'Print', 'Import', 'SubmitLocal', 'SubmitPrivate', 'MailShort', 'MailLong', 'OpenFile', 'OpenMissing', 'Several', 'CopyAddress', 'MailWhole', 'ShareFdf', 'ShareWhole'];
 
 /** The form: a name, a city and long notes, filled; a button for each action; three pages to go to. */
 async function formPdf() {
@@ -287,19 +289,29 @@ await check('import form data, then a step after it', async () => {
   return read;
 });
 
-/** Sets a submit action and presses it, answering Send. @param {string} name @param {string} address @param {string[]} fields */
-async function submit(name, address, fields) {
+/** Sets a submit action and presses it, so its question is open. @param {string} name @param {string} address @param {string[]} fields @param {string} format */
+async function submitAsked(name, address, fields, format = 'html') {
   await addAction(name, async (pane) => {
     await pane.getByLabel('Do', { exact: true }).selectOption('submit');
     await pane.getByLabel('Send to').fill(address);
-    await pane.getByLabel('Send as').selectOption('html');
-    await tick(pane, fields);
+    await pane.getByLabel('Send as').selectOption(format);
+    // THE WHOLE DOCUMENT NAMES NO FIELDS (ADR-0263 Decision 1): the editor offers none to tick.
+    if (fields.length > 0) await tick(pane, fields);
   });
   await buttonOnPage(name).click();
   const dialog = page.getByRole('dialog', { name: 'Send this form?' });
   await dialog.waitFor({ timeout: 15_000 });
+  return dialog;
+}
+
+/**
+ * Sets a submit action, presses it and answers its question, then reads what was said.
+ * @param {string} name @param {string} address @param {string[]} fields @param {string} format @param {string | undefined} answer
+ */
+async function submit(name, address, fields, format = 'html', answer = undefined) {
+  const dialog = await submitAsked(name, address, fields, format);
   // THE QUESTION'S OWN ANSWER for each kind of address: a mail address opens the mail app and sends nothing itself.
-  await dialog.getByRole('button', { name: address.startsWith('mailto:') ? 'Open in mail app' : 'Send', exact: true }).click();
+  await dialog.getByRole('button', { name: answer ?? (address.startsWith('mailto:') ? 'Open in my mail app' : 'Send'), exact: true }).click();
   await page.waitForTimeout(2500);
   const said = await page.locator('.m-toast, [role="dialog"], [role="alert"]').allInnerTexts();
   for (const open of await page.getByRole('dialog').all()) {
@@ -409,6 +421,74 @@ await check('several actions in order: reset, go to page 2, hide', async () => {
   const read = { page: shown, name: copy.textOf('applicant.name'), notesHidden: copy.hidden('applicant.notes') };
   if (read.page !== '2' || read.name !== '' || !read.notesHidden) throw new Error(`after the press: ${JSON.stringify(read)}`);
   return read;
+});
+
+// ADR-0263's mail routes. The address is on the question with Copy, because the Share sheet carries no recipient.
+await check('a mail question shows the address, and Copy puts it on the clipboard', async () => {
+  await app.evaluate(({ clipboard }) => clipboard.writeText('nothing copied yet'));
+  const dialog = await submitAsked('CopyAddress', 'mailto:forms@example.org', ['applicant.name'], 'fdf');
+  const shown = await dialog.getByText('forms@example.org').count();
+  await dialog.getByRole('button', { name: 'Copy address', exact: true }).click();
+  await page.waitForTimeout(500);
+  const copied = await app.evaluate(({ clipboard }) => clipboard.readText());
+  await page.keyboard.press('Escape');
+  await dialog.waitFor({ state: 'detached', timeout: 10_000 });
+  if (shown === 0 || copied !== 'forms@example.org') throw new Error(`address shown ${String(shown)} time(s); the clipboard holds ${JSON.stringify(copied)}`);
+  return { shown, copied };
+});
+
+await check('the whole PDF by Open in my mail app: the mail app opens without it, and that is said', async () => {
+  const before = (await handed()).length;
+  const said = await submit('MailWhole', 'mailto:forms@example.org', [], 'pdf');
+  const given = (await handed()).slice(before);
+  const told = said.some((text) => text.includes('A whole document cannot go inside an email link'));
+  if (given.length !== 1 || !(given[0] ?? '').startsWith('mailto:forms@example.org') || (given[0] ?? '').length > 2100 || !told) {
+    throw new Error(`handed ${JSON.stringify(given)}; said ${JSON.stringify(said)}`);
+  }
+  return { handed: given, said };
+});
+
+/** The folders the Share surface stages files in (`entry.ts`), and the one a share adds. */
+const shares = join(await app.evaluate(({ app: electron }) => electron.getPath('temp')), 'Monstera shares');
+const listShares = async () => new Set(await readdir(shares).catch(() => /** @type {string[]} */ ([])));
+/** The files staged by the next share, once its folder appears. @param {Set<string>} before */
+async function staged(before) {
+  for (let waited = 0; waited < 30_000; waited += 300) {
+    const fresh = [...(await listShares())].filter((name) => !before.has(name) && name.startsWith('share-'));
+    const folder = fresh[0];
+    if (folder !== undefined) {
+      await page.waitForTimeout(500);
+      const files = await readdir(join(shares, folder));
+      return files.map((file) => join(shares, folder, file));
+    }
+    await page.waitForTimeout(300);
+  }
+  throw new Error(`no share folder appeared under ${shares}`);
+}
+
+await check('Share with the file attached: the form data as one .fdf file named for the document', async () => {
+  const before = await listShares();
+  const said = await submit('ShareFdf', 'mailto:forms@example.org', ['applicant.name'], 'fdf', 'Share with the file attached');
+  const files = await staged(before);
+  const file = files[0] ?? '';
+  const text = file === '' ? '' : await readFile(file, 'latin1');
+  if (files.length !== 1 || !file.endsWith('buttons form data.fdf') || !text.startsWith('%FDF') || !text.includes('applicant.name')) {
+    throw new Error(`staged ${JSON.stringify(files)}: ${text.slice(0, 80)}`);
+  }
+  return { files: files.map((each) => each.slice(shares.length + 1)), bytes: text.length, said };
+});
+
+await check('Share with the file attached: the whole PDF, as Save would write it', async () => {
+  const before = await listShares();
+  const said = await submit('ShareWhole', 'mailto:forms@example.org', [], 'pdf', 'Share with the file attached');
+  const files = await staged(before);
+  const file = files[0] ?? '';
+  if (files.length !== 1 || !file.endsWith('.pdf')) throw new Error(`staged ${JSON.stringify(files)}`);
+  // READ BACK BY A SECOND READER: the staged document is a PDF carrying the form and its buttons' actions.
+  const document = await PDFDocument.load(await readFile(file), { updateMetadata: false });
+  const fields = document.getForm().getFields().map((field) => field.getName());
+  if (!fields.includes('applicant.name') || !fields.includes('ShareWhole')) throw new Error(`the staged PDF's fields: ${JSON.stringify(fields)}`);
+  return { files: files.map((each) => each.slice(shares.length + 1)), fields: fields.length, pages: document.getPageCount(), said };
 });
 
 await writeFile(join(output, 'buttonActions.json'), `${JSON.stringify(results, null, 2)}\n`);
