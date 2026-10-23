@@ -403,3 +403,31 @@ for (const tool of TOOLS) {
     }
   });
 }
+
+// N5 (2026-10-23): A PRESS STRAIGHT AFTER "Use Signature" is a signature, not lost. The picture's decode is held 300 ms
+// — the control session 3 measured, which reproduced CI's nothing-sent witness exactly — and the press comes at once,
+// with no wait for the dialog or the tool. Before the tool was armed at the answer, that press reached the tool before
+// it and placed nothing.
+for (const pressed of ['at once', 'CONTROL: after the tool is armed'] as const) {
+  test(`a picture signature pressed ${pressed} after Use Signature is placed`, async ({ page }) => {
+    await page.addInitScript(() => {
+      const decode = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'decode')?.value as (this: HTMLImageElement) => Promise<void>;
+      HTMLImageElement.prototype.decode = function decodeHeld(this: HTMLImageElement): Promise<void> {
+        return new Promise((resolve) => setTimeout(resolve, 300)).then(() => decode.call(this));
+      };
+    });
+    const witness: Witness = { sent: [] };
+    await open(page, witness);
+    await runCommand(page, 'Signature');
+    const chooser = page.getByRole('dialog', { name: 'Signature' });
+    await chooser.getByRole('button', { name: 'Upload' }).click();
+    await chooser.getByRole('button', { name: 'Choose picture…' }).click();
+    await expect(chooser.getByRole('img').first()).toBeVisible();
+    await chooser.getByRole('button', { name: 'Use Signature' }).click();
+    if (pressed !== 'at once') await signatureArmed(page);
+    await clicks(page, [[270, 400]]);
+    // PLACED: the press sent a placement, whenever the picture finished preparing; nothing else asked again.
+    await expect.poll(() => witness.sent.filter((sent) => sent.startsWith('document.place')).length, { timeout: 10_000 }).toBe(1);
+    await expect(chooser).toBeHidden();
+  });
+}

@@ -339,7 +339,14 @@ import { type WordsMark, type WordsToEdit, wordsToEdit } from './annotations/mar
 import type { AnnotationSelection, LinkSelection } from './annotations/selectTool.js';
 import { SELECT_TOOL_ID, selectionOfNewest, selectionOfPage } from './annotations/selectTool.js';
 import { SIGNATURE_TOOL_ID } from './annotations/signatureTool.js';
-import { type ChosenSignature, chooseSignature, letGoOfChosen, placePlainSignature, signatureCommand } from './commands/signatureCommands.js';
+import {
+  type ChosenSignature,
+  type PreparingSignature,
+  chooseSignature,
+  letGoOfChosen,
+  placePlainSignature,
+  signatureCommand,
+} from './commands/signatureCommands.js';
 import { type PageWritings, usePageWriting, useWritingOn } from './usePageWriting.js';
 import { applyCarrying } from './commands/applyCarrying.js';
 import {
@@ -3400,16 +3407,27 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
    * so a second click never places the same look twice. State, so the tool registry rebuilt on it reads the look the
    * dialog answered rather than one captured before.
    */
-  const [signatureLook, setSignatureLook] = useState<ChosenSignature | undefined>(undefined);
+  //
+  // OR THE LOOK STILL BEING PREPARED (N5): the dialog chose a mark and its picture is being decoded. The tool is armed
+  // at the answer, so a press in that time reaches the signature tool, and the press waits for this look rather than
+  // asking again.
+  const [signatureLook, setSignatureLook] = useState<ChosenSignature | PreparingSignature | undefined>(undefined);
   /** The Signature command: the dialog first, then the click armed with the look it answered — the owner's order. */
   const startSignature = useCallback((): void => {
     void (async (): Promise<void> => {
-      const look = await chooseSignature({ client, ask });
-      if (look === undefined) return;
+      const preparing: PreparingSignature = {
+        preparing: chooseSignature({ client, ask }, undefined, undefined, () => {
+          // ARMED IN THE ANSWER'S TASK, before the picture is prepared: a press on the next frame is the signature's.
+          setSignatureLook(preparing);
+          setToolId(SIGNATURE_TOOL_ID);
+        }),
+      };
       // A LOOK ARMED AND NEVER PLACED is replaced here, and lets go of what it kept for its held look.
-      if (signatureLook !== undefined) letGoOfChosen(signatureLook);
-      setSignatureLook(look);
-      setToolId(SIGNATURE_TOOL_ID);
+      if (signatureLook !== undefined && !('preparing' in signatureLook)) letGoOfChosen(signatureLook);
+      const look = await preparing.preparing;
+      // STILL THIS ONE'S: a press that took it while it was prepared cleared it, and places it itself, so arming it again
+      // would let a second click place the same look twice.
+      setSignatureLook((current) => (current === preparing ? look : current));
     })();
   }, [ask, client, setToolId, signatureLook]);
   /**
@@ -3423,7 +3441,8 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
       const held = signatureLook;
       setSignatureLook(undefined);
       void (async (): Promise<void> => {
-        const look = held ?? (await chooseSignature({ client, ask }));
+        // A PRESS WHILE THE CHOSEN LOOK IS STILL BEING PREPARED takes that look when it is ready (N5), not a second dialog.
+        const look = held === undefined ? await chooseSignature({ client, ask }) : 'preparing' in held ? await held.preparing : held;
         if (look === undefined) return;
         const version = await placePlainSignature({ client, ask, onApplied: applied, stamp, toast, held: stores.held(activeId) }, activeId, page, rect, look);
         if (version === undefined) return;

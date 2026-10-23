@@ -92,10 +92,20 @@ async function pictureShown(
  * choosers take (B3a) — so it is the library *Sign with certificate* offers, shown the same way. Removing a kept one
  * is an answer: the opener removes it and asks again, because a dialog's props are fixed while it is open.
  */
+/**
+ * A look the dialog chose and whose picture is still being prepared: what the tool is armed with between the answer and
+ * the look (N5), so a press in that time waits for this rather than reaching the tool before it.
+ */
+export interface PreparingSignature {
+  readonly preparing: Promise<ChosenSignature | undefined>;
+}
+
 export async function chooseSignature(
   deps: Pick<DocumentCommandDeps, 'ask' | 'client'>,
   urls: LibraryPageDeps['urls'] = BLOB_URLS,
   sizeOf: (src: string) => Promise<PictureSize | undefined> = pictureSize,
+  /** Told the moment a mark is chosen, before its picture is prepared: what the caller arms its tool on. */
+  onChosen?: () => void,
 ): Promise<ChosenSignature | undefined> {
   const library: LibraryPageDeps = { client: deps.client, ask: deps.ask, urls };
   // THE PICTURE MAIN HOLDS for this dialog, once Upload has picked one: carried across every asking, and its `blob:`
@@ -123,6 +133,9 @@ export async function chooseSignature(
       // DISMISSED, or an answer of another shape — a registration defect rather than a person's doing — places nothing.
       if (!parsed.success) return undefined;
       if ('mark' in parsed.data) {
+        // TOLD AT ONCE, before the picture is prepared below: the caller arms its tool in the answer's own task, so a
+        // press straight after "Use Signature" reaches the signature tool and waits for this look (N5, 2026-10-23).
+        onChosen?.();
         // THE PICKED PICTURE IS HANDED ON, so the `finally` below no longer lets its address go.
         if (keeping !== undefined && keeping === picked?.src) picked = undefined;
         return {
