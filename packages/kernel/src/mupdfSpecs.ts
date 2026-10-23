@@ -152,6 +152,7 @@ import {
 } from './pageTransition.js';
 import { applyRotatePages, captureRotatePages, invertRotatePages } from './rotatePages.js';
 import { applyEditTextOperators, captureEditTextOperators, invertEditTextOperators } from './textOperatorEdit.js';
+import { applyEditDrawnObject, captureEditDrawnObject, invertEditDrawnObject } from './drawnObjectEdit.js';
 
 /**
  * MuPDF's commands: what each one does, and executing them in this process.
@@ -511,6 +512,12 @@ export const mupdfSpecs = {
     apply: applyEditTextOperators,
     capture: captureEditTextOperators,
     invert: invertEditTextOperators,
+  },
+  editDrawnObject: {
+    ...declaredCommands.editDrawnObject,
+    apply: applyEditDrawnObject,
+    capture: captureEditDrawnObject,
+    invert: invertEditDrawnObject,
   },
 };
 

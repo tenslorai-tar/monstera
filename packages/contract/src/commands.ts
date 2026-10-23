@@ -3733,6 +3733,7 @@ const WALK_NAMED_BY: Readonly<Record<NamesAnAnnotation | NamesAFormField | Names
   replaceTextObject: 'object',
   editTextBlock: 'object',
   editTextOperators: 'object',
+  editDrawnObject: 'object',
 };
 
 /** The walk `command` names its target in, or `undefined` for a kind that names none of the three. */
@@ -6947,6 +6948,70 @@ export function blocksOfEdit(edit: BlockEdit): EditedBlock[] {
   });
 }
 
+/** The kinds of drawn object `editDrawnObject` names, as `document.pageObjects` lists them (ADR-0264 Decision 2). */
+export const DRAWN_OBJECT_KINDS = ['path', 'image', 'form', 'shading'] as const;
+
+/** A box in PDF user space, as `document.pageObjects` lists one. */
+const drawnBoxSchema = z
+  .object({
+    left: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+    bottom: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+    right: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+    top: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+  })
+  .strict();
+
+/**
+ * Moves and resizes the object: a move in points, then a scale on each axis about the listed box's lower-left corner,
+ * one axis at a time for a side handle. An INTENT, `blockPlaceSchema`'s reason: the anchor needs the engine's own box.
+ */
+const drawnPlaceSchema = z
+  .object({
+    op: z.literal('place'),
+    moveBy: z
+      .object({
+        x: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+        y: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+      })
+      .strict(),
+    scaleBy: z
+      .object({
+        x: z.number().min(MIN_OBJECT_SCALE).max(MAX_OBJECT_SCALE),
+        y: z.number().min(MIN_OBJECT_SCALE).max(MAX_OBJECT_SCALE),
+      })
+      .strict(),
+  })
+  .strict();
+
+/** What `editDrawnObject` does to the object it names (ADR-0264 Decision 3). */
+export const drawnEditSchema = z.discriminatedUnion('op', [drawnPlaceSchema]);
+export type DrawnEdit = z.infer<typeof drawnEditSchema>;
+
+/**
+ * Edits one picture, shape or group WHERE THE PAGE DRAWS IT
+ * ([ADR-0264](../../../docs/DECISIONS/0264-edit-object-returns-and-an-edit-changes-only-the-bytes-of-the-object-it-names.md)):
+ * MuPDF changes, moves or removes the object's own bytes in the page's content and copies every other byte, so no text
+ * on the page is written again and no font can refuse the edit. PDFium only listed it.
+ *
+ * Named twice, and both are checked: `index` is its place in PDFium's walk, which the selection and the command lane
+ * hold, and `object` with `ordinal` its place among the page's objects of that kind, which is how the writer finds its
+ * instructions (ADR-0264 Decision 2). `box` is the box the listing gave, which the found object must land on, so a page
+ * that moved under the listing is refused rather than edited somewhere else.
+ */
+export const editDrawnObjectSchema = z
+  .object({
+    kind: z.literal('editDrawnObject'),
+    page: z.number().int().nonnegative(),
+    index: objectIndexSchema,
+    object: z.enum(DRAWN_OBJECT_KINDS),
+    ordinal: objectIndexSchema,
+    box: drawnBoxSchema,
+    edit: drawnEditSchema,
+    /** The version the listing was read at. Refused if the document has moved. */
+    version: docVersionSchema,
+  })
+  .strict();
+
 /**
  * Edit blocks of a page's text in place, reflowing what no longer fits
  * ([ADR-0096](../../../docs/DECISIONS/0096-text-is-edited-in-place-on-the-page-in-blocks-that-reflow.md);
@@ -7115,6 +7180,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   replaceTextAtSchema,
   editTextBlockSchema,
   editTextOperatorsSchema,
+  editDrawnObjectSchema,
 ]);
 
 /**
@@ -7342,6 +7408,9 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   editTextBlockSchema,
   // RENDERABLE for the same reason, the same fields: the reading said this page needs its own content written (ADR-0176).
   editTextOperatorsSchema,
+  // RENDERABLE: an object as a listing named it, the box it listed, and an intent of a few numbers (ADR-0264). What the
+  // renderer cannot express is where the object's instructions are, which is the writer's to find.
+  editDrawnObjectSchema,
 ]);
 
 /** A command a renderer may send. */
@@ -7540,6 +7609,7 @@ export function targetVersionOf(command: Command): DocVersion | undefined {
   if (command.kind === 'replaceTextObject') return command.version;
   if (command.kind === 'editTextBlock') return command.version;
   if (command.kind === 'editTextOperators') return command.version;
+  if (command.kind === 'editDrawnObject') return command.version;
   if (command.kind === 'replacePage') return command.version;
   if (command.kind === 'importPageAsLayer') return command.version;
   if (command.kind === 'setLinkOutline') return command.version;
@@ -7634,13 +7704,15 @@ void _theFieldNameIsACommandKind;
  * ## The walk is PDFium's page objects
  *
  * Numbered by `FPDFPage_GetObject`, which is what makes them one index space and therefore one member of
- * `CommandTargets`. Since Edit object's commands left (2026-10-21, R20) every member names text objects.
+ * `CommandTargets`. Edit object's drawn command names a picture, a shape or a group in it (ADR-0264); the rest name text.
  */
 export type NamesATextObject =
   | 'replaceTextObject'
   | 'editTextBlock'
   // PDFium's page object indices too: the writer is MuPDF, the names are the reading's (ADR-0176's correction).
-  | 'editTextOperators';
+  | 'editTextOperators'
+  // The same walk's index, and the writer finds the object by kind and ordinal (ADR-0264 Decision 2).
+  | 'editDrawnObject';
 const _theObjectNameIsACommandKind: NamesATextObject extends CommandKind ? true : never = true;
 void _theObjectNameIsACommandKind;
 

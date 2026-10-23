@@ -1454,7 +1454,17 @@ export function createEngineHandlers({
       // pre-read field, because no MuPDF command declares `reads`. Before this
       // the same fact was expressed by a call that simply stopped at three
       // arguments — indistinguishable from the drop that cost four rows.
-      const drawn = await execution.apply({ session: held.session, command: whole, sources: from, reads: undefined });
+      let drawn: DrawnBoxes;
+      try {
+        drawn = await execution.apply({ session: held.session, command: whole, sources: from, reads: undefined });
+      } catch (error) {
+        // THE ONE REFUSAL OF THIS CHANNEL a person is told about (ADR-0264 Decision 4), with its step; anything else is
+        // `internal`, as it always was.
+        if (error instanceof EditRefusedError) {
+          return { ok: false, error: { code: 'edit-refused', detail: { step: error.step, engineError: error.engineError } } } as const;
+        }
+        throw error;
+      }
       // NO KIND THIS CHANNEL CARRIES SETS TEXT (`Apply`: only an apply handed a pre-read answers boxes, and every such
       // kind is `engine/apply-file`'s), so its answer has no field for them. One that drew a box is refused by name
       // rather than answered without the characters the person is owed.

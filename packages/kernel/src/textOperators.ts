@@ -286,12 +286,18 @@ const SUPERSEDES: ReadonlyMap<string, readonly string[]> = new Map([
   ['CS', ['stroke']], ['G', ['stroke space']], ['RG', ['stroke space']], ['K', ['stroke space']],
 ]);
 
-/** One instruction in effect, and the slot it fills. */
-interface Setting {
+/**
+ * One instruction in effect, and the slot it fills (`null` for `gs`, which fills the parameters its dictionary names).
+ * Exported for what carries an object's drawing state to another place in the content (ADR-0264 Decision 3).
+ */
+export interface Setting {
   readonly slot: string | null;
   readonly start: number;
   readonly end: number;
 }
+
+/** The slots {@link SETTINGS} fills, each once: what a carried state names a default for where the source sets none. */
+export const SETTING_SLOTS: readonly string[] = [...new Set([...SETTINGS.values()].filter((slot): slot is string => slot !== null))];
 
 const SHOWS = new Set(['Tj', 'TJ', "'", '"']);
 
@@ -317,6 +323,22 @@ export interface DrawnObject {
   readonly points: readonly (readonly [number, number])[];
   /** The clip windows it is drawn through, outermost first (E3): what a placement may carry with it. */
   readonly windows: readonly ClipWindow[];
+  /**
+   * A path's segments as they are written, each with its operands in the space the path is built in: what a clipping
+   * path's coordinates are rewritten from, in place (ADR-0264 Decision 3). Empty for every other kind.
+   */
+  readonly segments: readonly PathSegment[];
+  /** A path's painting operator and where it stands, and its clip operator where it has one; absent for other kinds. */
+  readonly paint?: { readonly op: string; readonly start: number; readonly end: number };
+  readonly clip?: { readonly op: 'W' | 'W*'; readonly start: number; readonly end: number };
+}
+
+/** One segment of a path as written: its operator, its numbers in the path's own space, and where the instruction is. */
+export interface PathSegment {
+  readonly op: string;
+  readonly values: readonly number[];
+  readonly start: number;
+  readonly end: number;
 }
 
 /**
@@ -332,6 +354,10 @@ export interface ClipWindow {
   readonly ctm: Matrix;
   /** Its path's points in page space, control points included. */
   readonly points: readonly (readonly [number, number])[];
+  /** Where its path's segments end, which is where its `W` or `W*` begins: `start` to here is the path alone. */
+  readonly segmentsEnd: number;
+  /** Whether it clips by the even-odd rule (`W*`). */
+  readonly evenOdd: boolean;
 }
 
 /** Every object PDFium makes of what a page DRAWS, in order, by kind (ADR-0240 Decision 2). */
@@ -388,29 +414,142 @@ export function contentEnd(content: Uint8Array): { readonly depth: number; reado
   return { depth, ctm: baseCtm };
 }
 
+/**
+ * The drawing state in force at one offset of the content (ADR-0264 Decision 3): the CTM, every instruction in effect
+ * (the `settings` a shown operator carries, here for any offset), and the clip windows in force, outermost first.
+ */
+export interface StateAt {
+  readonly ctm: Matrix;
+  readonly settings: readonly Setting[];
+  readonly windows: readonly ClipWindow[];
+}
+
+/**
+ * Where the page draws one thing ALONE (ADR-0264 Decision 3): a drawn object's instructions, or a text object's `BT … ET`,
+ * widened over every `q … Q` and `BDC … EMC` (or `BMC … EMC`) around it that holds nothing else drawn or shown, and is
+ * balanced in both. What an arrange lifts out and puts back elsewhere, so no wrapper is left empty or split.
+ */
+export interface ContentUnit {
+  readonly start: number;
+  readonly end: number;
+  /**
+   * The instructions inside the unit that change the state AFTER it — a setting or a `cm` at the unit's own `q` depth —
+   * which stay where the unit stood when it is lifted out, so what follows is drawn as it was.
+   */
+  readonly leaks: readonly { readonly start: number; readonly end: number }[];
+}
+
+/** Every drawn object and text object of the page, the unit of any of them, and the state at each probed offset. */
+export interface ContentLayout {
+  readonly drawn: readonly DrawnObject[];
+  readonly operators: readonly ShowOperator[];
+  /** Where each text object ends, by where its `BT` begins: {@link textObjectEnds}' answer. */
+  readonly textObjects: ReadonlyMap<number, number>;
+  /** The unit of the span `[start, end)`, which is one drawn object's or one text object's (`BT` to past its `ET`). */
+  unitOf(span: { readonly start: number; readonly end: number }): ContentUnit;
+  /** The state at each offset asked, in the order asked: everything before the offset done, nothing at or after it. */
+  readonly states: readonly StateAt[];
+}
+
+/** The first index in `sorted` whose value is at least `value`. */
+function lowerBound(sorted: readonly number[], value: number): number {
+  let low = 0;
+  let high = sorted.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if ((sorted[middle] ?? 0) < value) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
+/**
+ * The page's units and the state at `probes` (ADR-0264 Decision 3): the one pass, read for what an arrange needs. A unit
+ * is worked out when asked for, since an arrange asks for two and a page may draw thousands of objects.
+ */
+export function contentLayout(content: Uint8Array, xobject: (name: string) => XObjectKind, probes: readonly number[] = []): ContentLayout {
+  const { drawn, operators, ends, containers, depths, states } = scan(content, xobject, probes);
+  /** Where every drawn object and text object begins, ascending: no two of them overlap. */
+  const itemStarts = [...drawn.map((object) => object.start), ...ends.keys()].sort((a, b) => a - b);
+  const depthStarts = depths.map((depth) => depth.start);
+  /** The `q` and marked-content depths with everything before `offset` done. */
+  const depthAt = (offset: number): { q: number; m: number } => {
+    const at = lowerBound(depthStarts, offset);
+    const before = depths[at - 1];
+    return before === undefined ? { q: 0, m: 0 } : { q: before.qAfter, m: before.mAfter };
+  };
+  const within = (start: number, end: number): typeof depths => depths.slice(lowerBound(depthStarts, start), lowerBound(depthStarts, end));
+  /** Whether `[start, end)` closes every `q` and marked-content sequence it opens, and closes none it did not. */
+  const balanced = (start: number, end: number): boolean => {
+    const at = depthAt(start);
+    const after = depthAt(end);
+    return at.q === after.q && at.m === after.m && within(start, end).every((depth) => depth.qAfter >= at.q && depth.mAfter >= at.m);
+  };
+  /** How many drawn or text objects begin in `[start, end)`. */
+  const itemsWithin = (start: number, end: number): number => lowerBound(itemStarts, end) - lowerBound(itemStarts, start);
+  const unitOf = (span: { readonly start: number; readonly end: number }): ContentUnit => {
+    let { start, end } = span;
+    for (;;) {
+      const wider = containers
+        .filter((container) => container.start <= start && container.end >= end && (container.start < start || container.end > end))
+        .sort((a, b) => a.end - a.start - (b.end - b.start))
+        // A CLIP SET AT THE WRAPPER'S OWN DEPTH outlives it (a marked-content sequence restores nothing), so a wrapper that
+        // sets one is not lifted: the object is lifted without it, and the clip is carried as a window in force.
+        .find((container) => {
+          const base = depthAt(container.start).q;
+          return (
+            itemsWithin(container.start, container.end) === 1 &&
+            balanced(container.start, container.end) &&
+            within(container.start, container.end).every((depth) => depth.q !== base || (depth.op !== 'W' && depth.op !== 'W*'))
+          );
+        });
+      if (wider === undefined) break;
+      ({ start, end } = wider);
+    }
+    const base = depthAt(start).q;
+    const leaks = within(start, end)
+      .filter((depth) => depth.q === base && (depth.op === 'cm' || SETTINGS.has(depth.op)))
+      .map((depth) => ({ start: depth.start, end: depth.end }));
+    return { start, end, leaks };
+  };
+  return { drawn, operators, textObjects: ends, unitOf, states };
+}
+
 /** The ONE pass over a content stream (the numbering rule and the `q` and `Q` it is read through are stated here once). */
 function scan(
   content: Uint8Array,
   xobject: (name: string) => XObjectKind = () => undefined,
+  probes: readonly number[] = [],
 ): {
   readonly operators: readonly ShowOperator[];
   readonly depth: number;
   readonly baseCtm: Matrix;
   readonly ends: ReadonlyMap<number, number>;
   readonly drawn: readonly DrawnObject[];
+  /** Every closed `q … Q` and marked-content sequence, from its first byte to its last. */
+  readonly containers: readonly { readonly start: number; readonly end: number }[];
+  /** Every instruction, with the `q` and marked-content depths before and after it. */
+  readonly depths: readonly { readonly op: string; readonly start: number; readonly end: number; readonly q: number; readonly m: number; readonly qAfter: number; readonly mAfter: number }[];
+  readonly states: readonly StateAt[];
 } {
   const found: ShowOperator[] = [];
   const drawn: DrawnObject[] = [];
   const counts = { path: 0, image: 0, form: 0, shading: 0 };
-  /** The path being built: where its first segment began, its points in page space, and whether it clips. */
-  let path: { start: number; points: (readonly [number, number])[]; clips: boolean } | null = null;
+  /** The path being built: where its first segment began, its points in page space, its segments, and its clip. */
+  let path: { start: number; points: (readonly [number, number])[]; clips: boolean; segments: PathSegment[]; clip?: NonNullable<DrawnObject['clip']> } | null = null;
   /** The clips in force, outermost first, each with the `q` depth it was set at; `end` is filled when a `Q` ends it. */
-  let windows: { start: number; end: number; depth: number; ctm: Matrix; points: readonly (readonly [number, number])[] }[] = [];
-  const draw = (kind: DrawnObject['kind'], start: number, end: number, ctmNow: Matrix, clips = false, points: DrawnObject['points'] = []): void => {
+  let windows: (ClipWindow & { start: number; end: number; depth: number })[] = [];
+  const draw = (kind: DrawnObject['kind'], start: number, end: number, ctmNow: Matrix, clips = false, points: DrawnObject['points'] = [], extra: Pick<DrawnObject, 'paint' | 'clip'> & { segments?: readonly PathSegment[] } = {}): void => {
     // THE RECORDS THEMSELVES, not copies: a window's end is known only at the `Q` that ends it, after what it holds.
-    drawn.push({ kind, ordinal: counts[kind], start, end, ctm: ctmNow, clips, points, windows: [...windows] });
+    drawn.push({ kind, ordinal: counts[kind], start, end, ctm: ctmNow, clips, points, windows: [...windows], segments: extra.segments ?? [], ...(extra.paint === undefined ? {} : { paint: extra.paint }), ...(extra.clip === undefined ? {} : { clip: extra.clip }) });
     counts[kind] += 1;
   };
+  const containers: { start: number; end: number }[] = [];
+  const openQ: number[] = [];
+  const openMarked: number[] = [];
+  const depths: { op: string; start: number; end: number; q: number; m: number; qAfter: number; mAfter: number }[] = [];
+  const states: StateAt[] = [];
+  let probe = 0;
   /** Where each text object ends, by where it begins: the offset just past its `ET`. */
   const ends = new Map<number, number>();
   let state: Omit<TextState, 'matrix' | 'line' | 'ctm'> = {
@@ -445,11 +584,29 @@ function scan(
     }
     const op = token.value;
     const start = operands[0]?.start ?? token.start;
+    // THE STATE AT EACH PROBE, with everything before it done: an instruction that begins at or after it is not.
+    while (probe < probes.length && start >= (probes[probe] ?? 0)) {
+      states.push({ ctm, settings, windows: [...windows] });
+      probe += 1;
+    }
+    const before = { q: saved.length, m: openMarked.length };
     switch (op) {
       case 'q':
         saved.push({ state, ctm, settings });
+        openQ.push(token.start);
         break;
+      case 'BDC':
+      case 'BMC':
+        openMarked.push(start);
+        break;
+      case 'EMC': {
+        const opened = openMarked.pop();
+        if (opened !== undefined) containers.push({ start: opened, end: token.end });
+        break;
+      }
       case 'Q': {
+        const opened = openQ.pop();
+        if (opened !== undefined) containers.push({ start: opened, end: token.end });
         // A CLIP ENDS WITH THE GRAPHICS STATE IT WAS SET IN (§8.5.4): every window set at this depth or deeper.
         for (const window of windows) if (window.depth >= saved.length) window.end = token.start;
         windows = windows.filter((window) => window.depth < saved.length);
@@ -519,8 +676,9 @@ function scan(
     // is `n`; an image or a form by the `Do` that names it, or an inline image; a shading by `sh`.
     const segment = SEGMENTS.get(op);
     if (segment !== undefined) {
-      path ??= { start, points: [], clips: false };
+      path ??= { start, points: [], clips: false, segments: [] };
       const values = operands.flatMap((operand) => (operand.kind === 'number' ? [operand.value] : []));
+      path.segments.push({ op, values, start, end: token.end });
       if (op === 're') {
         const [x = 0, y = 0, w = 0, h = 0] = values;
         path.points.push(apply(ctm, x, y), apply(ctm, x + w, y), apply(ctm, x + w, y + h), apply(ctm, x, y + h));
@@ -528,11 +686,30 @@ function scan(
         for (let at = 0; at + 1 < values.length; at += 2) path.points.push(apply(ctm, values[at] ?? 0, values[at + 1] ?? 0));
       }
     } else if (op === 'W' || op === 'W*') {
-      if (path !== null) path.clips = true;
+      if (path !== null) {
+        path.clips = true;
+        path.clip = { op, start: token.start, end: token.end };
+      }
     } else if (PAINTS.has(op) || op === 'n') {
-      if (path !== null && op !== 'n') draw('path', path.start, token.end, ctm, path.clips, path.points);
+      if (path !== null && op !== 'n') {
+        draw('path', path.start, token.end, ctm, path.clips, path.points, {
+          segments: path.segments,
+          paint: { op, start: token.start, end: token.end },
+          ...(path.clip === undefined ? {} : { clip: path.clip }),
+        });
+      }
       // THE CLIP TAKES HOLD AFTER THE PAINT (§8.5.4), so the path that sets it is not drawn through it.
-      if (path?.clips === true) windows.push({ start: path.start, end: content.length, depth: saved.length, ctm, points: path.points });
+      if (path?.clips === true) {
+        windows.push({
+          start: path.start,
+          end: content.length,
+          depth: saved.length,
+          ctm,
+          points: path.points,
+          segmentsEnd: path.clip?.start ?? token.start,
+          evenOdd: path.clip?.op === 'W*',
+        });
+      }
       path = null;
     } else if (op === 'Do') {
       const name = operands[0];
@@ -582,9 +759,14 @@ function scan(
       const gone = new Set([slot, ...(SUPERSEDES.get(op) ?? [])]);
       settings = [...settings.filter((setting) => setting.slot === null || !gone.has(setting.slot)), { slot, start, end: token.end }];
     }
+    depths.push({ op, start, end: token.end, q: before.q, m: before.m, qAfter: saved.length, mAfter: openMarked.length });
     operands = [];
   }
-  return { operators: found, depth: saved.length, baseCtm: saved[0]?.ctm ?? ctm, ends, drawn };
+  while (probe < probes.length) {
+    states.push({ ctm, settings, windows: [...windows] });
+    probe += 1;
+  }
+  return { operators: found, depth: saved.length, baseCtm: saved[0]?.ctm ?? ctm, ends, drawn, containers, depths, states };
 }
 
 /** The operator PDFium's text object `object` is, or `undefined` where the content shows fewer. */

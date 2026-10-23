@@ -1020,20 +1020,22 @@ export function remoteMupdfExecution(
       if (reads !== undefined) throw new Error(`"${split.command.kind}" carries a pre-read, which engine/apply has no slot for.`);
       await withAsset(session, command, async (wire, asset) => {
         if (isFileRouted(wire)) throw new Error(`"${wire.kind}" is file-routed, and is applied above.`);
-        answered(
-          'engine/apply',
-          await client['engine/apply']({
-            session: sessions.handleFor(session),
-            command: wire,
-            asset,
-            // TRANSLATED TO HANDLES HERE, exactly as the target is. `handleFor`
-            // is what turns main's session token into the host's, so a source
-            // that main holds but the host does not is refused at the registry
-            // rather than sent as a handle the peer would not recognise. Empty
-            // for every command naming no other document.
-            sources: sources.map((source) => sessions.handleFor(source)),
-          }),
-        );
+        const result = await client['engine/apply']({
+          session: sessions.handleFor(session),
+          command: wire,
+          asset,
+          // TRANSLATED TO HANDLES HERE, exactly as the target is. `handleFor`
+          // is what turns main's session token into the host's, so a source
+          // that main holds but the host does not is refused at the registry
+          // rather than sent as a handle the peer would not recognise. Empty
+          // for every command naming no other document.
+          sources: sources.map((source) => sessions.handleFor(source)),
+        });
+        // A DRAWN OBJECT'S REFUSAL comes back as the class it was thrown as, `engine/apply-file`'s rule (ADR-0264).
+        if (!result.ok && result.error.code === 'edit-refused') {
+          throw new EditRefusedError(result.error.detail.step, result.error.detail.engineError, 'the MuPDF host refused the object edit');
+        }
+        answered('engine/apply', result);
       });
       // NO KIND `engine/apply` CARRIES SETS TEXT, and its host refuses one that drew a box (`engineHandlers.ts`).
       return NO_BOXES;

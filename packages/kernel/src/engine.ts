@@ -254,6 +254,7 @@ export {
 export { readButtonActions, readFieldProperties } from './formFieldRead.js';
 export { type ImportReport, readFormImportPlan } from './formData.js';
 export { applyEditTextOperators, captureEditTextOperators, invertEditTextOperators } from './textOperatorEdit.js';
+export { applyEditDrawnObject, captureEditDrawnObject, invertEditDrawnObject } from './drawnObjectEdit.js';
 export {
   NamelessFieldError,
   readXfdf,

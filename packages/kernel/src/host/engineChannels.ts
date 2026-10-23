@@ -56,6 +56,7 @@ import {
   importFormDataSchema,
   importAnnotationsSchema,
   editTextOperatorsSchema,
+  editDrawnObjectSchema,
   type AnswerRoute,
   channel,
   fileAnswered,
@@ -1199,6 +1200,8 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   importFormDataSchema.omit({ bytes: true }),
   // THE THIRD, for the second's reason (ADR-0077).
   importAnnotationsSchema.omit({ bytes: true }),
+  // A DRAWN OBJECT EDITED WHERE IT IS DRAWN (ADR-0264): a few numbers, framed like every intent of its size.
+  editDrawnObjectSchema,
 ]);
 
 /**
@@ -2207,7 +2210,10 @@ export const engineChannels = {
     // on the way out, and an `engine/apply` that answers nothing, because no
     // kind it carries sets text. The one MuPDF apply that answers boxes is
     // carried by `engine/apply-file` below, whose answer holds them (ADR-0177).
-    wire: liveSessionWire,
+    //
+    // PLUS ONE APPLY REFUSAL a person is told about, on the apply alone: a drawn object not where its listing put it, or
+    // an arrange its new place would crop (ADR-0264 Decision 4), with the step that refused it.
+    wire: { ...liveSessionWire, applyFailures: ['edit-refused'] as const },
     // IN THE FRAME: every MuPDF kind fits one at its worst, the largest `addAnnotation` at 247,050 bytes (ADR-0138).
     commandRoute: 'frame',
   }),

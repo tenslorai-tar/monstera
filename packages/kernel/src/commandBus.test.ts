@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inspect } from 'node:util';
 
-import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef, PDFString } from '@cantoo/pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef, PDFString, rgb } from '@cantoo/pdf-lib';
 import forge from 'node-forge';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -46,6 +46,8 @@ import { applyAddAnnotation, readAnnotations } from './pageAnnotations.js';
 import { localPdfLibWriter } from './localEngine.js';
 import { shownOn } from './shownText.js';
 import { NothingToReplaceError } from './textEditRefusals.js';
+import { pageContentStreams } from './pageContent.js';
+import { drawnObjects, joinedContent } from './textOperators.js';
 
 /**
  * The log and the one path from a command to an entry (ADR-0009 §4).
@@ -2993,6 +2995,58 @@ describe('a gesture of several commands is ONE undo step (ADR-0200)', () => {
       expect(await withDocument(state.session, (document) => document.countPages())).toBe(2);
     } finally {
       await mupdfWriter.close(state.session);
+    }
+  });
+});
+
+/**
+ * ADR-0264 Decision 6: an Edit object edit of a drawn object is undone by its CHECKPOINT, the document as it was before
+ * the edit, which the restore writes back whole. The case reads the restored bytes: the shape is where it was, and the
+ * edited session (CONTROL) had it where the edit put it, so the restore is what put it back.
+ */
+describe('CommandBus — an edit of a drawn object is undone by its checkpoint (ADR-0264)', () => {
+  it('records a terminal entry, and undo writes back the page with the shape where it was', async () => {
+    const document = await PDFDocument.create();
+    document.addPage([200, 200]).drawRectangle({ x: 20, y: 20, width: 40, height: 40, color: rgb(1, 0, 0) });
+    const session = await mupdfWriter.open(await document.save({ useObjectStreams: false }));
+    // IMAGES ACCEPTED: the kind's display is the image, so the bus replaces main's image after it, `sanitize`'s case.
+    const context = contextStub(true);
+    const restoredTo = join(checkpointRoot, 'drawn-undo.pdf');
+    /** Where the page's one shape is, by the kernel's numbering of a session's content. */
+    const shapeOf = (held: MupdfSession): Promise<readonly (readonly [number, number])[] | undefined> =>
+      withDocument(held, (pdf) => drawnObjects(joinedContent(pageContentStreams(pdf.findPage(0))), () => undefined)[0]?.points);
+    const bus = new CommandBus({ mupdf: localMupdfWriter });
+    try {
+      const was = await shapeOf(session);
+      const { entry } = await bus.execute(
+        { mupdf: session },
+        context,
+        {
+          kind: 'editDrawnObject',
+          page: 0,
+          index: 0,
+          object: 'path',
+          ordinal: 0,
+          box: { left: 20, bottom: 20, right: 60, top: 60 },
+          edit: { op: 'place', moveBy: { x: 100, y: 100 }, scaleBy: { x: 1, y: 1 } },
+          version: asDocVersion(1),
+        },
+        showingInputs(session),
+      );
+      expect(entry.kind).toBe('terminal');
+      // CONTROL: the edit moved the shape in the session, so a restore that put it back did something.
+      expect(await shapeOf(session)).toStrictEqual(was?.map(([x, y]) => [x + 100, y + 100]));
+      await bus.undo({ mupdf: session }, context, (write: SnapshotWrite) => write(restoredTo).then(() => undefined), showingInputs(session));
+      const restored = await mupdfWriter.open(new Uint8Array(await readFile(restoredTo)));
+      try {
+        expect(await shapeOf(restored)).toStrictEqual(was);
+        // THE SHAPE WAS READ, not an empty page compared with an empty page.
+        expect(was).toHaveLength(4);
+      } finally {
+        await mupdfWriter.close(restored);
+      }
+    } finally {
+      await mupdfWriter.close(session);
     }
   });
 });
