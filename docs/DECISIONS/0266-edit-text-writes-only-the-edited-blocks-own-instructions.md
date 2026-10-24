@@ -155,3 +155,12 @@ needs it — its operators wrapped in the form's matrix and box and their resour
 the same — and for PDFium to read the inlined page so the operator writer names it as it names any page. That is a new
 host read and a new field on the edit, and it is recorded as the follow-up in the owner's questions rather than built
 under this correction.
+
+## Correction, 2026-10-24 — no read-back refuses an edit (ADR-0270)
+
+Decision 4's reading of the edited lines, and Decision 5's premise that the operator writer refuses for its read-back, are
+superseded by [ADR-0270](0270-edit-text-writes-what-the-person-typed-and-never-refuses-it.md), the owner's rule: the edit
+is written as the person typed it and kept, and a difference either read-back finds is a writer defect logged to the
+diagnostics log. Decision 4's rule — the lines the edit set, read by place, U+FFFD standing for any one character — is
+still the rule that decides whether there is a difference to log. Decision 1's guarantee is unchanged and is the one
+check ADR-0270 keeps on every write, as a logged defect proven 0, never a refusal.
