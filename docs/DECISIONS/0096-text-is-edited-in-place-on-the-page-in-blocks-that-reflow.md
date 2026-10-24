@@ -168,3 +168,32 @@ in-place editor: the text below a block in its column moves down by what the blo
 there is no room nothing moves and the person is told before the write. Decision 3 gains one consumer: the renderer
 draws the push from `main`'s `below` and `room`, and puts the blocks `main` named into the edit; the writer measures the
 growth. A translated page is unchanged.
+
+## Correction, 2026-10-24 — a gap inside a line is measured in the type beside it, not in the line's height
+
+Decision 4 split a line where the gap between two runs is *wider than the line is tall*. A line is every run that
+overlaps, so its height grows with exactly what says two runs are apart: two columns whose baselines are offset, and a
+large figure beside small text. Measured in the owner's document 11 with `editText.proof.mjs` and a scratch reading of
+`piecesOf`' inputs, 2026-10-24:
+
+| page | the gap | the two runs' type | the line's height |
+|---|---|---|---|
+| 2 | 13.71 pt | 12 pt and 12 pt, baselines 3.81 pt apart | 14.84 pt |
+| 1 | 14.29 pt | a 40 pt figure and an 11.5 pt list | over 30 pt |
+| 1 | 12.61 pt | a 14 pt caption and the 11.5 pt list | 26.67 pt |
+
+Each was joined into one line, so a block was drawn across both columns and an edit of one column's paragraph rewrote a
+line of the other: every one of document 11's disturbed edits.
+
+**A gap is now a word space when it is no wider than an em of the SMALLER of the two neighbours' type** (`piecesOf`,
+`textLines.ts`). A word space is set in the type around it, so this is still a quantity the text carries and not a
+spacing constant (the rejected alternative above). Across the corpus every other joined gap is at most 0.94 em, and the
+widest space this application justifies to is a space and `JUSTIFY_CAP`'s 0.6 em; those gutters are 1.1 to 1.57 em. On a
+line of one size and one baseline the em and the line's height are within a few tenths of each other, so text set that
+way groups as it did.
+
+The grouping now takes each run's size beside its setting key (`blockableOf`, one helper for both), and refuses a run
+with no size rather than comparing one: a script that builds the runs by hand would otherwise join every gap and pass.
+Proof: `textLines.test.ts`, the offset columns and the figure beside the list split; CONTROL, a raised reference mark, a
+space stretched to 0.94 em and a large word a word space from small ones stay one line. With the line's height put back,
+the two splitting cases fail.

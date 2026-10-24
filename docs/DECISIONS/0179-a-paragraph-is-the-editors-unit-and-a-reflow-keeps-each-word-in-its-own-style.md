@@ -159,3 +159,36 @@ The help article on editing text says this in one plain line. Proof: `pdfiumComm
 a second reader, pdf.js: a line set with character and word spacing keeps both when an edit sets it again; the same
 reading of the untouched line is the instrument's positive control; CONTROL: the same line with no spacing reads none.
 With the measurement disabled the case reads 0.1 of 60.5 points and fails.
+
+## Correction, 2026-10-24 — each paragraph is set by its own edges, and a line starts where its paragraph sets it
+
+Decision 5 gave a BLOCK one shape, its first paragraph of two lines, and the writer set every paragraph from the
+leftmost start of any line after the block's first. A block is often several paragraphs with different edges: a
+bulleted item and the plain paragraph after it, a hanging-indented item and a line left over from the item before it, a
+column of values each at its own place. Measured 2026-10-24 with `editText.proof.mjs` and the writer's planned rows:
+
+| document | the block | what the edit did |
+|---|---|---|
+| 8, page 3 | two bulleted paragraphs at 95.3 pt and a plain one at 77.3 | measured every line from 77.3, drew the bulleted ones from 95.3: up to 18 pt past the right edge |
+| 8, page 4 | an arrow item hanging from 109 to 127, and a one-line paragraph at 127 | set a refilled line of the item under the arrow, at 109 |
+| 12, page 1 | one paragraph whose second line stands 19.2 pt right of its edge | refilled that line to the width from the edge, drew it from its own start: 17.4 pt past the right |
+
+The editor drew the same blocks with one shape too, so on opening it put the bulleted paragraphs' words where the page
+does not have them. Two decisions, each one rule in one place:
+
+1. **Each paragraph has its own left edge and first-line indent**, read from its own lines by the shape's relations
+   (`paragraphEdges`, `paragraphShape.ts`): the leftmost of its lines after the first, and how far its first line
+   stands from that. A paragraph of one line has nothing to compare, so it takes the block's indent only where it stands
+   where the block's first lines do, and otherwise keeps its own start. Alignment stays the block's. The read sends the
+   edges with the block, and the editor draws each paragraph with them; the writer measures and places each paragraph
+   with them. A new paragraph is set in the edges of the old paragraph it is — the planner's own answer, by its first
+   word that was not typed — which is where the editor's paragraph comes from when Enter splits one.
+2. **A line set afresh starts where its paragraph sets it.** The line it replaces keeps its own start only where that
+   start agrees with that place, in the shape's unit (a glyph's side bearing); otherwise it is drawn where the editor
+   draws it and where its width was measured from. Two equal edges agree whatever the unit, a unit of 0 included.
+
+Decision 2 is built first, in the writer alone, and measured: `operatorEdit.test.ts` sets the refilled line from the
+edge and not from its own start, CONTROL a line a side bearing off keeps its own start; over the corpus with
+`proof:edittext`, document 12 reads 0 disturbed where it read 2. Decision 1 is built after the editor's own placement of
+paragraphs (cloud run 19) is merged, so the two take one function; until then document 8's five disturbed edits, all of
+this shape, are its open evidence.
