@@ -422,3 +422,18 @@ has (Help › Components), never by refusing the mode.
 Edit object is withdrawn from the application by the owner's decision of 2026-10-21 (R20; ADR-0153's correction has
 why). The host is now started when Edit text is chosen, the one editing mode left; everything else the correction above
 says — same host, same build, retired when idle, a failure said by Help › Components — is unchanged.
+
+## Correction, 2026-10-24 — the editing hosts stay running while the Edit tab is in use
+
+The owner's item 7a: *"today they stop 60 s after their last use … so a person who edits, reads for a minute and edits
+again pays their 2.5-3 s start again. Instead: while the Edit tab (Edit text or Edit object) is the one in use, the
+editing engines stay running; they stop 60 s after the person LEAVES the Edit tab, as now. The low-memory stop stays
+exactly as it is."* Edit object has returned (ADR-0264), and both modes and the Edit section ask for the hosts.
+
+**The renderer renews the ask while the Edit tab is in use**: the same `app.prepareEditing` it sends as the tab is shown,
+again every 20 s until the tab is left. Each is a counted call on the PDFium and compose hosts (`starts`, `idleRetire.ts`),
+so each restarts their idle time; the rule that stops a host `HOST_IDLE_MS` after its last call is unchanged, and so is
+the low-memory stop, which does not go through that timer. Leaving the tab ends the renewals, so the hosts stop 60 to
+80 s after it. A window that ends without leaving — a crash, a reload — renews nothing, so no host can be held for ever,
+which a hold `main` kept until told otherwise could not promise.
+
