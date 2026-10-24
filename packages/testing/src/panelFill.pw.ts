@@ -21,6 +21,7 @@ const TABS = [
   ['forms', '.m-forms-panel'],
   ['layers', '.m-layers'],
   ['search', '.m-find-bar'],
+  ['accessibility', '.m-accessibility'],
 ] as const;
 
 test('every left-panel tab draws its panel down to the panel’s foot', async ({ page }) => {
@@ -36,6 +37,11 @@ test('every left-panel tab draws its panel down to the panel’s foot', async ({
   await page.getByRole('button', { name: 'Open PDF…', exact: true }).click();
   await expect(page.locator('.m-page-pane[data-first-frame="shown"]').first()).toBeAttached();
 
+  // EVERY TAB THE STRIP DRAWS, read from the strip: a tab added to the roster and not to this list is a red case here
+  // rather than a panel nothing measures.
+  const drawnTabs = await page.locator('[data-panel-tab]').evaluateAll((tabs) => tabs.map((tab) => tab.getAttribute('data-panel-tab')));
+  expect([...drawnTabs].sort()).toStrictEqual(TABS.map(([tab]) => tab).sort());
+
   const gaps: Record<string, number> = {};
   for (const [tab, box] of TABS) {
     await page.locator(`[data-panel-tab="${tab}"]`).click();
@@ -48,7 +54,7 @@ test('every left-panel tab draws its panel down to the panel’s foot', async ({
     gaps[tab] = Math.round(outer.y + outer.height - (inner.y + inner.height));
   }
   // EVERY TAB AT ONCE, so a run names each one still short rather than stopping at the first.
-  expect(gaps).toStrictEqual({ pages: 0, bookmarks: 0, comments: 0, forms: 0, layers: 0, search: 0 });
+  expect(gaps).toStrictEqual({ pages: 0, bookmarks: 0, comments: 0, forms: 0, layers: 0, search: 0, accessibility: 0 });
 });
 
 /** A text field the Fields list names, on the first page. */

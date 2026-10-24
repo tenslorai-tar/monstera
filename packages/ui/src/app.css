@@ -3364,14 +3364,18 @@ optgroup {
  * share of it, so one panel takes the whole and the Bookmarks tab's outline and links take half each, every list
  * scrolling inside its own share. Measured 2026-10-13 (`panelFill.pw.ts`): before this, every one of the six tabs drew its
  * box to its content's height and stopped, 314 to 586 px above the foot of a 900 px window; the lists also capped
- * themselves at 40vh. A wrapper between the body and a panel (the Forms tab's right-click region) passes the share on. */
-.m-document-panel__body > *,
-.m-document-panel__body > .m-context-menu-region > * {
+ * themselves at 40vh. A wrapper between the body and a panel (the Forms tab's right-click region) passes the share on.
+ *
+ * NAMED UNDER THE PANEL, so the share OUTRANKS a panel's own sizing whatever order the file is in: `.m-thumbnails` sets
+ * `flex: 0 0 auto` for the strip it is elsewhere, later in this file, and against a one-class selector here the later
+ * rule wins and the Pages tab stops at its cards' height. */
+.m-document-panel > .m-document-panel__body > *,
+.m-document-panel > .m-document-panel__body > .m-context-menu-region > * {
   flex: 1 1 0;
   min-block-size: 0;
 }
 
-.m-document-panel__body > .m-context-menu-region {
+.m-document-panel > .m-document-panel__body > .m-context-menu-region {
   display: flex;
   flex-direction: column;
 }

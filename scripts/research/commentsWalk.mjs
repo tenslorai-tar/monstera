@@ -835,7 +835,11 @@ await step('N9: every left-panel tab draws its panel down to the panel’s foot'
     ['forms', '.m-forms-panel'],
     ['layers', '.m-layers'],
     ['search', '.m-find-bar'],
+    ['accessibility', '.m-accessibility'],
   ];
+  // EVERY TAB THE STRIP DRAWS, read from it, so a tab added to the roster and not here is reported, not left unmeasured.
+  const drawnTabs = await page.locator('[data-panel-tab]:visible').evaluateAll((each) => each.map((tab) => tab.getAttribute('data-panel-tab') ?? ''));
+  expect([...drawnTabs].sort()).toStrictEqual(tabs.map(([tab]) => tab).sort());
   for (const [tab, box] of tabs) {
     await page.locator(`[data-panel-tab="${tab}"]:visible`).click();
     const body = page.locator(`.m-document-panel__body[data-panel="${tab}"]:visible`);
@@ -843,7 +847,7 @@ await step('N9: every left-panel tab draws its panel down to the panel’s foot'
     if (outer === null || inner === null) throw new Error(`the ${tab} tab draws nothing`);
     gaps[tab] = Math.round(outer.y + outer.height - (inner.y + inner.height));
   }
-  expect(gaps).toStrictEqual({ pages: 0, bookmarks: 0, comments: 0, forms: 0, layers: 0, search: 0 });
+  expect(gaps).toStrictEqual({ pages: 0, bookmarks: 0, comments: 0, forms: 0, layers: 0, search: 0, accessibility: 0 });
   return gaps;
 });
 
