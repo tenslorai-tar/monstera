@@ -40,6 +40,7 @@ import {
   brandExecutable,
   executableStrings,
   nameExecutable,
+  packageFamilyName,
   packageIdentity,
   refuseHistory,
   refuseVersion,
@@ -69,7 +70,7 @@ const RUNTIME_CASES = [
 ];
 
 /** Cases decidable without one. These run on every machine. */
-const PURE_CASES = 15;
+const PURE_CASES = 17;
 
 const roster = createRoster(failures, { cases: RUNTIME_PRESENT ? PURE_CASES + RUNTIME_CASES.length : PURE_CASES });
 
@@ -121,35 +122,59 @@ try {
     String(unreserved),
   );
 
-  const shapes = ['0.1.0', '0.1.0.0.0', '0.1.a.0', '01.1.0.0'].map((version) => thrown(() => refuseVersion(version, [])));
+  /** Test-flavour entries for `versions`. @param {readonly string[]} versions */
+  const asTest = (versions) => versions.map((version) => ({ version, flavour: 'test' }));
+  const shapes = ['0.1.0', '0.1.0.0.0', '0.1.a.0', '01.1.0.0'].map((version) => thrown(() => refuseVersion(version, 'test', [])));
   // CONTROL: a well-formed version with nothing packed before it passes.
   check(
     'a version that is not four numeric parts is refused, and a well-formed one is not',
-    shapes.every((message) => message !== null) && thrown(() => refuseVersion('0.1.0.0', [])) === null,
+    shapes.every((message) => message !== null) && thrown(() => refuseVersion('0.1.0.0', 'test', [])) === null,
     JSON.stringify(shapes),
   );
 
-  const fourth = thrown(() => refuseVersion('0.1.0.1', []));
+  const fourth = thrown(() => refuseVersion('0.1.0.1', 'test', []));
   check('the fourth part must be 0 — the Store reserves it', fourth !== null && fourth.includes('fourth'), String(fourth));
 
-  const reused = thrown(() => refuseVersion('0.1.0.0', ['0.1.0.0']));
-  const older = thrown(() => refuseVersion('0.1.0.0', ['0.2.0.0']));
+  const reused = thrown(() => refuseVersion('0.1.0.0', 'test', asTest(['0.1.0.0'])));
+  const older = thrown(() => refuseVersion('0.1.0.0', 'test', asTest(['0.2.0.0'])));
   // CONTROL: a greater version passes against the same history — so the refusals are the ordering, not the history.
-  const greater = thrown(() => refuseVersion('0.10.0.0', ['0.2.0.0', '0.9.3.0']));
+  const greater = thrown(() => refuseVersion('0.10.0.0', 'test', asTest(['0.2.0.0', '0.9.3.0'])));
   check(
     'a version already packed, or older than one, is refused; a greater one passes (0.10 is greater than 0.9)',
     reused !== null && older !== null && greater === null,
     `reused: ${String(reused)}; older: ${String(older)}; greater: ${String(greater)}`,
   );
 
-  // A history naming 0.1.18.0 twice, as 77f00ffd committed it: refuseVersion still passes the next version against it.
-  const twice = ['0.1.17.0', '0.1.18.0', '0.1.18.0'];
-  const repeated = thrown(() => refuseHistory(twice));
-  const nextPassedAnyway = thrown(() => refuseVersion('0.1.19.0', twice)) === null;
-  // CONTROL: the repository's own record, and the same history without the repeat, are accepted.
-  const own = JSON.parse(readFileSync(join(REPO_ROOT, 'docs', 'packaged-versions.json'), 'utf8')).packed.map(
-    (/** @type {{ version: string }} */ entry) => entry.version,
+  // THE FAMILY NAME AGAINST THE AUTHORITY'S OWN ANSWER: Partner Center printed TenslorInc.MonsteraPDFEditor_qf39bdbw0gw9y
+  // for the reserved identity (the owner, 2026-10-24), which this function did not produce.
+  const store = JSON.parse(readFileSync(join(REPO_ROOT, 'scripts', 'release', 'msix.json'), 'utf8')).store;
+  const family = packageFamilyName(store.identityName, store.publisher);
+  // CONTROL: one character of the publisher changed gives another id, so the match is the publisher's, not the name's.
+  const another = packageFamilyName(store.identityName, store.publisher.replace('D9F15EC8', 'D9F15EC9'));
+  check(
+    "the Package Family Name computed from msix.json's Store identity is the one Partner Center printed, and a changed publisher's is not",
+    family === 'TenslorInc.MonsteraPDFEditor_qf39bdbw0gw9y' && another !== family && another.startsWith('TenslorInc.MonsteraPDFEditor_'),
+    `${family}; changed: ${another}`,
   );
+
+  // ONE RELEASE AS BOTH FLAVOURS: two identities, each ordered against its own packages.
+  const bothFlavours = [...asTest(['1.0.2150.0']), { version: '1.0.2150.0', flavour: 'store' }];
+  const storeBeside = thrown(() => refuseVersion('1.0.2150.0', 'store', asTest(['1.0.2150.0'])));
+  // CONTROL: the same number again in the SAME flavour is still refused, and so is a store version below a store one.
+  const storeAgain = thrown(() => refuseVersion('1.0.2150.0', 'store', bothFlavours));
+  const storeOlder = thrown(() => refuseVersion('1.0.2100.0', 'store', bothFlavours));
+  check(
+    'a version is ordered within its flavour: a Store package beside a test one of the same number passes, a repeat in one flavour does not',
+    storeBeside === null && storeAgain !== null && storeAgain.includes('store') && storeOlder !== null && thrown(() => refuseHistory(bothFlavours)) === null,
+    `beside: ${String(storeBeside)}; again: ${String(storeAgain)}; older: ${String(storeOlder)}`,
+  );
+
+  // A history naming 0.1.18.0 twice, as 77f00ffd committed it: refuseVersion still passes the next version against it.
+  const twice = asTest(['0.1.17.0', '0.1.18.0', '0.1.18.0']);
+  const repeated = thrown(() => refuseHistory(twice));
+  const nextPassedAnyway = thrown(() => refuseVersion('0.1.19.0', 'test', twice)) === null;
+  // CONTROL: the repository's own record, and the same history without the repeat, are accepted.
+  const own = JSON.parse(readFileSync(join(REPO_ROOT, 'docs', 'packaged-versions.json'), 'utf8')).packed;
   const ownAccepted = thrown(() => refuseHistory(own)) === null && thrown(() => refuseHistory(twice.slice(0, 2))) === null;
   check(
     'a packed history naming a version twice is refused, which the next version alone would not reveal; the real record is not',

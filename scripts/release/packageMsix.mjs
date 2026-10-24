@@ -230,35 +230,92 @@ export function packageIdentity(flavour, config) {
 }
 
 /**
+ * @typedef {{ readonly version: string; readonly flavour: string }} Packed
+ */
+
+/**
  * Refuses a version that is not four numeric parts with the fourth 0 (the Store reserves it), or that is not greater
- * than every version already packed — B8's *never reuse a number*, as a check.
+ * than every version already packed IN THE SAME FLAVOUR — B8's *never reuse a number*, as a check.
+ *
+ * PER FLAVOUR because a version is ordered within a package identity, which is what Windows and the Store compare: an
+ * update of the test package is judged against the test package, and the Store's against the Store's. The two flavours
+ * are two identities (`packageIdentity`), so one release packed as both is two packages each newer than its own last,
+ * which is how 1.0.2150.0 was packed for the owner's install and for upload (2026-10-24). The filter is here, not at
+ * the caller, so a caller cannot ask the question across identities.
  *
  * @param {string} version
- * @param {readonly string[]} packed
+ * @param {string} flavour
+ * @param {readonly Packed[]} packed
  */
-export function refuseVersion(version, packed) {
+export function refuseVersion(version, flavour, packed) {
   const parts = version.split('.');
   if (parts.length !== 4 || !parts.every((part) => /^(0|[1-9]\d{0,4})$/u.test(part))) {
     throw new Error(`${version} is not a four-part version (A.B.C.0).`);
   }
   if (parts[3] !== '0') throw new Error(`${version}: the fourth part must be 0 — the Store reserves it.`);
   const numbers = parts.map(Number);
-  for (const earlier of packed) {
-    const other = earlier.split('.').map(Number);
+  for (const earlier of packed.filter((entry) => entry.flavour === flavour)) {
+    const other = earlier.version.split('.').map(Number);
     const order = numbers.map((n, i) => n - (other[i] ?? 0)).find((d) => d !== 0) ?? 0;
-    if (order <= 0) throw new Error(`${version} is not greater than ${earlier}, which was already packed.`);
+    if (order <= 0) throw new Error(`${version} is not greater than ${earlier.version}, which was already packed as ${flavour}.`);
   }
 }
 
 /**
- * Refuses a packed history that is not strictly increasing. The packager appends one entry per run, so a repeated or
- * out-of-order entry was written by something else — and `refuseVersion` against such a history still passes the next
- * version, so the record would go on carrying it unread.
+ * Refuses a packed history that is not strictly increasing within each flavour. The packager appends one entry per run,
+ * so a repeated or out-of-order entry was written by something else — and `refuseVersion` against such a history still
+ * passes the next version, so the record would go on carrying it unread.
  *
- * @param {readonly string[]} packed
+ * @param {readonly Packed[]} packed
  */
 export function refuseHistory(packed) {
-  packed.forEach((version, index) => refuseVersion(version, packed.slice(0, index)));
+  packed.forEach((entry, index) => refuseVersion(entry.version, entry.flavour, packed.slice(0, index)));
+}
+
+/**
+ * The Package Family Name Windows gives an identity: its name, `_`, and the PUBLISHER ID — the first 64 bits of the
+ * SHA-256 of the Publisher in UTF-16LE, one zero bit added, written as thirteen characters of Crockford's base 32 in
+ * lower case. The data folder, the package's capability and the Store's listing all key on it, and Partner Center prints
+ * the one it expects, which `packageMsix.proof.mjs` holds this to.
+ *
+ * @param {string} name
+ * @param {string} publisher
+ */
+export function packageFamilyName(name, publisher) {
+  const digest = createHash('sha256').update(Buffer.from(publisher, 'utf16le')).digest();
+  let bits = '';
+  for (const byte of digest.subarray(0, 8)) bits += byte.toString(2).padStart(8, '0');
+  bits += '0';
+  const alphabet = '0123456789abcdefghjkmnpqrstvwxyz';
+  let id = '';
+  for (let at = 0; at < bits.length; at += 5) id += alphabet[Number.parseInt(bits.slice(at, at + 5), 2)];
+  return `${name}_${id}`;
+}
+
+/**
+ * The identity a packed `.msix` declares, read out of the file by Windows' own zip and XML readers (.NET's, through
+ * PowerShell) — not by this script's writer, which is what is being checked.
+ *
+ * @param {string} file
+ * @returns {{ name: string; publisher: string; version: string; publisherDisplayName: string }}
+ */
+export function packedIdentity(file) {
+  const script = [
+    'Add-Type -AssemblyName System.IO.Compression.FileSystem',
+    '$zip = [IO.Compression.ZipFile]::OpenRead($env:MONSTERA_MSIX)',
+    'try {',
+    "  $reader = New-Object IO.StreamReader($zip.GetEntry('AppxManifest.xml').Open())",
+    '  [xml]$manifest = $reader.ReadToEnd()',
+    '  $reader.Dispose()',
+    '} finally { $zip.Dispose() }',
+    '@{ name = $manifest.Package.Identity.Name; publisher = $manifest.Package.Identity.Publisher;',
+    '   version = $manifest.Package.Identity.Version; publisherDisplayName = $manifest.Package.Properties.PublisherDisplayName } | ConvertTo-Json -Compress',
+  ].join('\n');
+  const answer = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+    encoding: 'utf8',
+    env: { ...process.env, MONSTERA_MSIX: file },
+  });
+  return JSON.parse(answer);
 }
 
 /**
@@ -573,8 +630,8 @@ function packedVersions(root) {
 async function main() {
   const { flavour, version, out, replaceOlder } = parseArguments(process.argv.slice(2));
   const { path: versionsPath, record } = packedVersions(REPO_ROOT);
-  refuseHistory(record.packed.map((entry) => entry.version));
-  refuseVersion(version, record.packed.map((entry) => entry.version));
+  refuseHistory(record.packed);
+  refuseVersion(version, flavour, record.packed);
   /** @type {MsixConfig} */
   const config = JSON.parse(readFileSync(join(REPO_ROOT, 'scripts', 'release', 'msix.json'), 'utf8'));
   const identity = packageIdentity(flavour, config);
@@ -756,6 +813,14 @@ async function main() {
     }
   }
   execFileSync(tools.makeappx, ['pack', '/d', stage, '/p', file, '/o'], { stdio: 'pipe', maxBuffer: 256 * 1024 * 1024 });
+
+  // THE IDENTITY THE FILE DECLARES, read back out of what was packed, field by field against what was asked for.
+  const packed = packedIdentity(file);
+  const asked = { name: identity.name, publisher: identity.publisher, version, publisherDisplayName: identity.publisherDisplayName };
+  const differs = Object.entries(asked).filter(([key, value]) => packed[/** @type {keyof typeof packed} */ (key)] !== value);
+  if (differs.length > 0) throw new Error(`The packed manifest's identity is not the one asked for: ${JSON.stringify({ packed, asked })}`);
+  step(`  identity read back: ${packed.name}, ${packed.publisher}, ${packed.publisherDisplayName}, ${packed.version}`);
+  step(`  package family name: ${packageFamilyName(packed.name, packed.publisher)}`);
 
   record.packed.push({ version, flavour, commit, date: new Date().toISOString().slice(0, 10) });
   writeFileSync(versionsPath, `${JSON.stringify(record, null, 2)}\n`);
