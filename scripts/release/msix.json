@@ -1,13 +1,14 @@
 {
   "$comment": [
     "The Store flavour's package identity, as Partner Center reserves it (Product management > Product identity).",
-    "Empty until the name is reserved: scripts/release/packageMsix.mjs refuses the Store flavour while any value is",
-    "empty, and refuses a publisher carrying the unsigned OID. None of these is a secret; they are printed on the Store.",
-    "The test flavour needs none of them (ADR-0123)."
+    "scripts/release/packageMsix.mjs refuses the Store flavour while any value is empty, and refuses a publisher",
+    "carrying the unsigned OID. None of these is a secret; they are printed on the Store. The test flavour needs none of",
+    "them (ADR-0123). Given by the owner from Partner Center on 2026-10-24: the Package Family Name they make is",
+    "TenslorInc.MonsteraPDFEditor_qf39bdbw0gw9y, Store ID 9NHV3B1PV3XS."
   ],
   "store": {
-    "identityName": "",
-    "publisher": "",
-    "publisherDisplayName": ""
+    "identityName": "TenslorInc.MonsteraPDFEditor",
+    "publisher": "CN=D9F15EC8-929D-4010-9682-1BD1507F33B9",
+    "publisherDisplayName": "Tenslor Inc."
   }
 }
