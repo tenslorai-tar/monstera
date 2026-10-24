@@ -73,12 +73,16 @@ function check(at, held, detail) {
  *
  * PDFium answers a character's box from the font it draws with, and for a font the page names and does not carry that is
  * the platform's substitute — the Foxit faces it bundles on Linux, the system's on Windows — so the same page's boxes
- * differ by platform while its words, breaks, styles and baselines (the text matrix's, not a glyph's) do not. Read from
- * CI run 40109735351 (windows-latest, 2026-10-24) against the committed Linux reading: every differing field was a box
- * coordinate, the largest 0.252 pt (the heading's top, 742.438 against 742.186). Twice that is allowed; a field that is
- * not a box must still be equal.
+ * differ by platform while its words, breaks, styles and baselines (the text matrix's, not a glyph's) do not.
+ *
+ * Read on windows-latest against the committed Linux reading, 2026-10-24, in two runs because the first printed 40 of
+ * the 69 fields that differed: CI run 40109735351 found every field printed a box coordinate, the largest 0.252 pt (the
+ * heading's top); run 40113113179, at a 0.5 pt allowance, found every other field within it except three in the Courier
+ * block, 0.666 pt the largest (its second command's right edge, 296.874 against 296.208), where Windows' Courier New and
+ * PDFium's bundled fixed face differ most. No field that is not a box differed in either. The allowance is a little over
+ * twice the largest; a field that is not a box must still be equal.
  */
-const BOX_TOLERANCE = 0.5;
+const BOX_TOLERANCE = 1.5;
 
 /** @param {string} a @param {string} b */
 const same = (a, b) => a === b;
