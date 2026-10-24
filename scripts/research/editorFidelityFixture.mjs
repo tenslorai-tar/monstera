@@ -28,6 +28,7 @@ import { join } from 'node:path';
 
 import { PDFDocument, PDFName, StandardFonts } from '@cantoo/pdf-lib';
 
+import { EDITOR_FIDELITY_FIXTURE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { isMain } from '../lib/isMain.mjs';
 import { pdfiumLibrary } from '../provision/pdfium.mjs';
@@ -113,6 +114,8 @@ export async function buildPage() {
  * @param {Uint8Array} bytes
  */
 export async function readBlocks(bytes) {
+  // THE BUILT KERNEL THIS READS, fresh or refused: a stale one would write last build's reading under this build's name.
+  refuseStaleBuild(ROOT, EDITOR_FIDELITY_FIXTURE, 1);
   const pdfium = await import('../../packages/kernel/dist/pdfiumFfi.js');
   pdfium.openPdfium(pdfiumLibrary(ROOT));
   const { groupIntoBlocks, isEditedInPlace, settingOf, withRises } = await import('../../packages/kernel/dist/textLines.js');
