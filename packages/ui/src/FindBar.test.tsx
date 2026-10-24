@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import { type ContractClient, MAX_QUERY_LENGTH, channels, createClient } from '@monstera/contract';
+import { type ContractClient, MAX_QUERY_LENGTH, blocksOfEdit, channels, createClient } from '@monstera/contract';
 import { type DocVersion, asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { act, fireEvent, render } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
@@ -15,6 +15,17 @@ import { EN } from './messages/en.js';
 const DOC = asDocId('00000000-0000-4000-8000-0000000000fd');
 /** The version every fixture answer is read from, and the one on screen unless a case moves it. */
 const V1 = asDocVersion(1);
+
+/** A page's one block, holding each query a replace-all case types: what the block writer is sent (ADR-0267). */
+const PLAIN = { size: 11, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false };
+const WIDGET_BLOCK = {
+  box: { x0: 72, y0: 700, x1: 300, y1: 711 },
+  lines: [{ runs: [{ index: 0, text: 'hit a WIDGET narrow', style: PLAIN }], box: { x0: 72, y0: 700, x1: 300, y1: 711 }, soft: false, baseline: 703 }],
+  style: PLAIN,
+  shape: { align: 'left' as const, firstIndent: 0 },
+  push: { below: [], room: 0 },
+};
+const BLOCKS_PART = { next: null, truncated: false, rotated: 0, angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 }, unaddressable: 0, rewrite: 'operators' as const };
 
 /**
  * Match navigation.
@@ -324,20 +335,26 @@ describe('FindBar replace-all', () => {
     const sent: { id: string; params: unknown }[] = [];
     const applied = vi.fn();
     const painted: PaintSpy = vi.fn();
+    // EVERY PAGE holds one block, read at the version the last write produced (ADR-0267: the block writer, page by page).
+    let version = 1;
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
       if (id === 'document.searchPage') {
         return Promise.resolve(
           ok({
-            version: asDocVersion(1),
+            version: asDocVersion(version),
             matches: [{ line: 0, offset: 0, endLine: 0, endOffset: 3, text: 'hit on 0' }],
             truncated: false,
           }),
         );
       }
+      if (id === 'document.textBlocks') {
+        return Promise.resolve(ok({ version: asDocVersion(version), blocks: [WIDGET_BLOCK], ...BLOCKS_PART }));
+      }
       if (refusing !== undefined) return Promise.resolve(err({ code: refusing }));
+      version += 1;
       return Promise.resolve(
-        ok({ version: asDocVersion(2), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0, skippedPages: [] }),
+        ok({ version: asDocVersion(version), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0, skippedPages: [] }),
       );
     });
     const { container } = render(
@@ -392,22 +409,24 @@ describe('FindBar replace-all', () => {
       await Promise.resolve();
     });
 
-    expect(sent).toStrictEqual([
-      {
-        id: 'document.execute',
-        params: {
-          docId: DOC,
-          command: {
-            kind: 'replaceAllText',
-            find: 'WIDGET',
-            replace: 'GADGET',
-            caseSensitive: true,
-            wholeWord: true,
-            regex: true,
-          },
-        },
-      },
+    // THE SEARCH'S OWN QUERY AND FLAGS, on every page's search, which decides the pages read.
+    const searches = sent.filter((each) => each.id === 'document.searchPage').map((each) => each.params);
+    expect(searches).toHaveLength(PAGES);
+    for (const each of searches) expect(each).toMatchObject({ query: 'WIDGET', caseSensitive: true, wholeWord: true, regex: true });
+    // AND THE BLOCK WRITER ON EVERY PAGE (ADR-0267), never PDFium's replace: the block's words with the match replaced.
+    const executed = sent.filter((each) => each.id === 'document.execute').map((each) => each.params as { command: Record<string, unknown>; joinsStep?: number });
+    expect(executed.map((each) => [each.command['kind'], each.command['page']])).toStrictEqual([
+      ['editTextOperators', 0],
+      ['editTextOperators', 1],
+      ['editTextOperators', 2],
     ]);
+    expect(executed.map((each) => blocksOfEdit(each.command as Parameters<typeof blocksOfEdit>[0])[0]?.text)).toStrictEqual([
+      'hit a GADGET narrow',
+      'hit a GADGET narrow',
+      'hit a GADGET narrow',
+    ]);
+    // ONE UNDO STEP (ADR-0200): each page joins the version the page before produced; the first is a step of its own.
+    expect(executed.map((each) => each.joinsStep)).toStrictEqual([undefined, 2, 3]);
     // AND THE SHELL WAS TOLD THE VERSION MOVED, which is what makes the rest of
     // the application redraw. A dispatch nothing reported would leave the reader
     // looking at the document as it was.

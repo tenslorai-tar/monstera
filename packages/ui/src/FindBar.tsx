@@ -34,7 +34,8 @@ import {
 } from './messages/en.js';
 import { pdfjsPageOf } from './pageNumbering.js';
 import { ListCard } from './primitives/ListCard.js';
-import { type DocumentCommandDeps, applyDocumentCommand } from './commands/documentCommands.js';
+import { type DocumentCommandDeps, reportProblem } from './commands/documentCommands.js';
+import { replaceInDocument } from './commands/replaceText.js';
 
 /**
  * The find bar: E2's text substrate, reached by a person.
@@ -140,9 +141,8 @@ export interface FindBarProps {
    * How a dispatched command's outcome is handled — the REPLACE half's only need.
    *
    * `DocumentCommandDeps` whole rather than an `onApplied` of its own, because
-   * `applyDocumentCommand` is what this surface dispatches through and that is
-   * deliberate: it is the dispatcher outside the command registry, already used
-   * by the thumbnail strip's drag-reorder, and it does four things a copy here
+   * `applyDocumentCommand` is what the block writer's replacement dispatches
+   * through (`replaceText.ts`, ADR-0267), and it does four things a copy here
    * would have to do identically — report a declared failure, tell the caller
    * the version moved only when it did, raise invariant 18's dialog when history
    * was shed, and answer whether the document moved (B3a).
@@ -359,10 +359,11 @@ export function FindBar({
    * Which is the whole reason this control is in the find bar: a person who set
    * *whole word* to find something meant it for the replacement too, and a
    * second place to set it would be two opinions about one question. `normalise`
-   * is the one option the command does not take — `compileQuery` answers offsets
-   * into normalised text and a replacement splices into the original, so the two
-   * would be in different frames. Nothing here sets it, and the find bar does
-   * not offer it either.
+   * is the one option the replacement does not take — `compileQuery` answers
+   * offsets into normalised text and a replacement splices into the original, so
+   * the two would be in different frames. Nothing here sets it, and the find bar
+   * does not offer it either. Each page's blocks go to the block writer, the
+   * pages one undo step (ADR-0267).
    *
    * ## The RESULTS ARE CLEARED, because the document moved
    *
@@ -377,23 +378,25 @@ export function FindBar({
     setReplacing(true);
     setReplaced(false);
     try {
-      const moved = await applyDocumentCommand(commands, docId, {
-        kind: 'replaceAllText',
-        find: query,
-        replace: replacement,
-        ...options,
-      });
-      if (!moved) return;
+      // THROUGH THE BLOCK WRITER, a page at a time and one undo step (ADR-0267), never PDFium's whole-page rewrite.
+      const outcome = await replaceInDocument(commands, docId, query, replacement, options, { pageCount: pageCount ?? 0 });
+      if (outcome.kind === 'bad-pattern') {
+        setHeld({ at: version, shown: { kind: 'bad-pattern' } });
+        return;
+      }
+      if (outcome.kind === 'refused') reportProblem(commands, outcome.problem);
+      // NOTHING MATCHED IS SAID, as the PDFium command's refusal said it.
+      if (outcome.kind === 'replaced' && outcome.pages === 0) reportProblem(commands, { code: 'nothing-to-replace' });
+      if (outcome.pages === 0) return;
       setReplaced(true);
       setHeld({ at: version, shown: IDLE });
       onHighlight(null);
     } finally {
-      // IN A `finally`, so a refusal does not leave the button disabled for
-      // ever. `applyDocumentCommand` reports the refusal itself; what this owes
-      // is returning the control to the person.
+      // IN A `finally`, so a refusal or a throw does not leave the button disabled for ever: what this owes is returning
+      // the control to the person.
       setReplacing(false);
     }
-  }, [commands, docId, onHighlight, options, query, replacement, version]);
+  }, [commands, docId, onHighlight, options, pageCount, query, replacement, version]);
 
   const searchAll = useCallback(async (): Promise<void> => {
     if (docId === undefined || pageCount === undefined || query === '') return;

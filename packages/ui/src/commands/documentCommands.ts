@@ -5033,6 +5033,8 @@ async function sendBlockEdit(
   read: BlocksRead,
   blocks: Parameters<typeof blockEditOf>[0],
   inserts: PageInsert[] = [],
+  /** The undo step a gesture's earlier command produced, joined and moved on (ADR-0200); absent, a step of its own. */
+  step?: UndoStep,
 ): Promise<BlockCommit> {
   /** Set by the hook below to what the editor says: the signatures question left unanswered, or the refusal. */
   const kept: { outcome: Exclude<BlockCommit, 'written'> | undefined } = { outcome: undefined };
@@ -5064,12 +5066,40 @@ async function sendBlockEdit(
               : { refused: 'detail' in error || error.code === 'internal' ? error : { code: error.code } };
         return true;
       },
+      ...(step?.version === undefined ? {} : { joinsStep: step.version }),
+      ...(step === undefined
+        ? {}
+        : {
+            produced: (version: DocVersion) => {
+              step.version = version;
+            },
+          }),
     },
   );
   if (applied) return 'written';
   // UNREACHABLE BY `applyDocumentCommand`'s OWN RULE: a command not applied answered a failure, and the hook kept it.
   if (kept.outcome === undefined) throw new Error('a block edit was neither applied nor refused');
   return kept.outcome;
+}
+
+/** The version a gesture's last command produced, which its next one names to join the same undo step (ADR-0200). */
+export interface UndoStep {
+  version: DocVersion | undefined;
+}
+
+/**
+ * Writes one page's replacement (ADR-0267): the block entries `blocksReplaced` made from the page's read, in one command
+ * of the block writer, joining `step`. The outcome is {@link commitTextBlock}'s.
+ */
+export function commitReplacement(
+  deps: DocumentCommandDeps,
+  docId: DocId,
+  page: number,
+  read: BlocksRead,
+  blocks: Parameters<typeof blockEditOf>[0],
+  step: UndoStep,
+): Promise<BlockCommit> {
+  return sendBlockEdit(deps, docId, page, read, blocks, [], step);
 }
 
 /**

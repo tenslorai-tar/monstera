@@ -1,4 +1,4 @@
-import { compileQuery } from '@monstera/shared';
+import { compileQuery, replaceMatches } from '@monstera/shared';
 import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
@@ -85,31 +85,6 @@ export function invertReplaceAllText(): Promise<AppliedImage> {
   );
 }
 
-/**
- * Applies a compiled query's replacements to one string.
- *
- * Splices from the END so no surviving offset has moved — `removeObjects`'
- * renumbering hazard on characters instead of indices, and here there is no
- * handle to resolve first, so the ordering is the mechanism rather than a second
- * one.
- *
- * @returns the new string, or `null` when nothing matched
- */
-function replacedIn(
-  text: string,
-  matches: readonly { offset: number; length: number }[],
-  replacement: string,
-): string | null {
-  if (matches.length === 0) return null;
-  let next = text;
-  for (const match of [...matches].reverse()) {
-    next = next.slice(0, match.offset) + replacement + next.slice(match.offset + match.length);
-  }
-  // A REPLACEMENT MAY PRODUCE THE ORIGINAL — replacing `a` with `a` matches
-  // everywhere and changes nothing. Answering `null` for it means the page is
-  // not regenerated, which is the same rule the surface applies one layer up.
-  return next === text ? null : next;
-}
 
 /**
  * Replaces every occurrence across the document, and answers the new bytes.
@@ -169,7 +144,7 @@ export async function applyReplaceAllText(
       // object whose text it was, and a joined run's text written into its first object corrupts the line (ADR-0130).
       const { runs } = await objectRuns(session, page);
       const replacements = runs.flatMap((run) => {
-        const next = replacedIn(run.text, compiled.value.matchesIn(run.text), command.replace);
+        const next = replaceMatches(run.text, compiled.value.matchesIn(run.text), command.replace);
         return next === null ? [] : [{ index: run.index, text: next }];
       });
       // NO CALL FOR A PAGE WITH NO MATCH. `replaceTextObjects` throws on an

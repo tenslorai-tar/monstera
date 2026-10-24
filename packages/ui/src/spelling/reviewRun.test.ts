@@ -1,4 +1,4 @@
-import { channels, createClient } from '@monstera/contract';
+import { blocksOfEdit, channels, createClient } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok, tokensOf } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -75,10 +75,12 @@ interface Script {
   pages: string[][];
   comments: Comment[];
   fields: Field[];
-  /** `page:line` keys whose text `replaceAllText` cannot reach — a word split across two text objects. */
+  /** `page:line` keys no block holds, so a replacement cannot reach them — text packed in a form. */
   split: Set<string>;
-  /** Refuse every `replaceTextAt` with this code. */
+  /** `internal`: refuse every block edit so. `text-not-in-place`: the page's read holds no block at all. */
   refuseAt?: 'text-not-in-place' | 'internal';
+  /** The first line's block stands a point's width around this point in user space, worked by hand for a turned page. */
+  blockAt?: { readonly x: number; readonly y: number };
   /** Called before each text-layer read of a page, so a case can move the document mid-walk. */
   beforeRead?: (page: number) => void;
   dictionary: boolean;
@@ -96,18 +98,8 @@ function tokenBoxes(text: string, line: number): number[] {
   return [...tokensOf(text)].flatMap((token) => [10 + token.index * 6, y0, 10 + (token.index + token.text.length) * 6, y1]);
 }
 
-/** `text` with every whole-word occurrence of `find` replaced, as `replaceAllText` with both flags would. */
-function replacedWords(text: string, find: string, replace: string): string {
-  let result = '';
-  let at = 0;
-  for (const token of tokensOf(text)) {
-    if (token.isWord && token.text === find) {
-      result += text.slice(at, token.index) + replace;
-      at = token.index + token.text.length;
-    }
-  }
-  return result + text.slice(at);
-}
+/** A run's style, as `document.textBlocks` answers it: plain, which a replacement never reads. */
+const PLAIN = { size: 11, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false };
 
 function harness(script: Script): {
   readonly deps: SpellingDeps;
@@ -222,35 +214,35 @@ function harness(script: Script): {
             truncated: false,
           }),
         );
+      case 'document.textBlocks': {
+        // EACH LINE ONE BLOCK OF ONE RUN, its run numbered by its line, placed where the line's words are in user space —
+        // or, where a case names `blockAt`, the first line's block a point's width around that hand-worked point. A
+        // `split` line is one no block holds (text packed in a form), and `refuseAt: 'text-not-in-place'` holds none.
+        const page = params['page'] as number;
+        const lines = script.refuseAt === 'text-not-in-place' ? [] : (script.pages[page] ?? []);
+        const blocks = lines.flatMap((text, line) => {
+          if (script.split.has(`${String(page)}:${String(line)}`)) return [];
+          const { y0, y1 } = boxOf(line);
+          const box =
+            line === 0 && script.blockAt !== undefined
+              ? { x0: script.blockAt.x - 1, y0: script.blockAt.y - 1, x1: script.blockAt.x + 1, y1: script.blockAt.y + 1 }
+              : { x0: 10, y0: HEIGHT - y1, x1: 10 + text.length * 6, y1: HEIGHT - y0 };
+          return [{ box, lines: [{ runs: [{ index: line, text, style: PLAIN }], box, soft: false, baseline: box.y0 }], style: PLAIN, shape: { align: 'left' as const, firstIndent: 0 }, push: { below: [], room: 0 } }];
+        });
+        return Promise.resolve(ok({ version: version(), blocks, next: null, truncated: false, rotated: 0, angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 }, unaddressable: 0, rewrite: 'operators' }));
+      }
       case 'document.execute': {
         const command = params['command'] as Record<string, unknown>;
         sent.push(command);
-        if (command['kind'] === 'replaceTextAt') {
+        if (command['kind'] === 'editTextOperators') {
           if (script.refuseAt === 'internal') return Promise.resolve(err({ code: 'internal', incident: 'incident-7' }));
-          if (script.refuseAt !== undefined) return Promise.resolve(err({ code: script.refuseAt }));
-          const at = command['at'] as { x: number; y: number };
-          const y = HEIGHT - at.y;
+          // EACH BLOCK'S WORDS ARE ITS LINE'S, by the run its line is numbered by.
           const lines = script.pages[command['page'] as number] ?? [];
-          const line = lines.findIndex((_, index) => y >= boxOf(index).y0 && y <= boxOf(index).y1);
-          const text = lines[line];
-          const token = text === undefined ? undefined : [...tokensOf(text)].find((each) => at.x >= 10 + each.index * 6 && at.x <= 10 + (each.index + each.text.length) * 6);
-          if (text === undefined || token === undefined || token.text !== command['find']) {
-            return Promise.resolve(err({ code: 'text-not-in-place' }));
+          for (const block of blocksOfEdit(command as Parameters<typeof blocksOfEdit>[0])) {
+            const line = block.lines[0]?.[0];
+            if (line !== undefined) lines[line] = block.text;
           }
-          lines[line] = text.slice(0, token.index) + String(command['replace']) + text.slice(token.index + token.text.length);
           return Promise.resolve(moved());
-        }
-        if (command['kind'] === 'replaceAllText') {
-          let changed = false;
-          for (const [page, lines] of script.pages.entries()) {
-            for (const [line, text] of lines.entries()) {
-              if (script.split.has(`${String(page)}:${String(line)}`)) continue;
-              lines[line] = replacedWords(text, String(command['find']), String(command['replace']));
-              changed ||= lines[line] !== text;
-            }
-          }
-          // A REPLACEMENT THAT CHANGES NOTHING IS REFUSED, as the kernel refuses it (ADR-0169 Decision 6).
-          return Promise.resolve(changed ? moved() : err({ code: 'nothing-to-replace' }));
         }
         if (command['kind'] === 'editAnnotationText' || command['kind'] === 'fillFormField') {
           if (command['version'] !== version()) return Promise.resolve(err({ code: 'stale-target' }));
@@ -432,13 +424,15 @@ describe('passing over a word', () => {
 });
 
 describe('replacing one occurrence on the page', () => {
-  it('sends replaceTextAt with the word’s centre in PDF user space, and the review moves to the NEXT word', async () => {
-    const { deps, store, sent } = harness(script({ pages: [['the documnet teh', 'teh']] }));
+  it('replaces the word at its centre in PDF user space through the block writer, and the review moves to the NEXT word', async () => {
+    // `documnet` is token 1 of line 0, at offset 4: x from 10 + 4*6 = 34 to 10 + 12*6 = 82, so 58; y 4 to 16, so 10,
+    // which is 800 - 10 = 790 in PDF space. THE BLOCK STANDS THERE ALONE, so a point anywhere else finds no block.
+    const { deps, store, sent } = harness(script({ pages: [['the documnet teh', 'teh']], blockAt: { x: 58, y: 790 } }));
     await startReview(deps, store, 1);
     await replaceWord(deps, store, 'document');
-    // `documnet` is token 1 of line 0, at offset 4: x from 10 + 4*6 = 34 to 10 + 12*6 = 82, so 58; y 4 to 16, so 10,
-    // which is 800 - 10 = 790 in PDF space.
-    expect(sent).toStrictEqual([{ kind: 'replaceTextAt', page: 0, find: 'documnet', replace: 'document', at: { x: 58, y: 790 } }]);
+    // THE BLOCK WRITER (ADR-0267), that block, that occurrence: the `teh` beside it is left for the review.
+    expect(sent.map((each) => (each as { kind: string }).kind)).toStrictEqual(['editTextOperators']);
+    expect(blocksOfEdit(sent[0] as Parameters<typeof blocksOfEdit>[0]).map((each) => each.text)).toStrictEqual(['the document teh']);
     const review = reviewOf(store);
     expect(review.current?.word).toBe('teh');
     expect(review.current?.place).toStrictEqual({ kind: 'text', page: 0, line: 0, offset: 13 });
@@ -449,24 +443,36 @@ describe('replacing one occurrence on the page', () => {
   // one turned as well, must each land the point where the word is in user space. Worked by hand rather than through
   // `toPdf`, so a wrong transform cannot agree with itself. The word's centre is (58, 10) as shown in every case.
   it('a page whose box starts at (50, 100) puts the point at the box’s origin plus the shown point, y up from the box top', async () => {
+    // x: 50 + 58. y: the box's top, 900, less 10 down from it. The block stands there alone.
     const { deps, store, sent } = harness(
-      script({ pages: [['the documnet']], shown: { rotation: 0, crop: [50, 100, 650, 900] } }),
+      script({ pages: [['the documnet']], shown: { rotation: 0, crop: [50, 100, 650, 900] }, blockAt: { x: 108, y: 890 } }),
     );
     await startReview(deps, store, 1);
     await replaceWord(deps, store, 'document');
-    // x: 50 + 58. y: the box's top, 900, less 10 down from it.
-    expect(sent).toStrictEqual([{ kind: 'replaceTextAt', page: 0, find: 'documnet', replace: 'document', at: { x: 108, y: 890 } }]);
+    expect(blocksOfEdit(sent[0] as Parameters<typeof blocksOfEdit>[0]).map((each) => each.text)).toStrictEqual(['the document']);
   });
 
   it('the same page TURNED 90 degrees takes the shown x up the page and the shown y across it', async () => {
+    // Turned clockwise, the page's left edge is the top of what is shown and its bottom edge the left: so user x is the
+    // box's left plus the shown y (50 + 10), and user y the box's bottom plus the shown x (100 + 58). The block stands there.
     const { deps, store, sent } = harness(
-      script({ pages: [['the documnet']], shown: { rotation: 90, crop: [50, 100, 650, 900] } }),
+      script({ pages: [['the documnet']], shown: { rotation: 90, crop: [50, 100, 650, 900] }, blockAt: { x: 60, y: 158 } }),
     );
     await startReview(deps, store, 1);
     await replaceWord(deps, store, 'document');
-    // Turned clockwise, the page's left edge is the top of what is shown and its bottom edge the left: so user x is the
-    // box's left plus the shown y (50 + 10), and user y the box's bottom plus the shown x (100 + 58).
-    expect(sent).toStrictEqual([{ kind: 'replaceTextAt', page: 0, find: 'documnet', replace: 'document', at: { x: 60, y: 158 } }]);
+    expect(blocksOfEdit(sent[0] as Parameters<typeof blocksOfEdit>[0]).map((each) => each.text)).toStrictEqual(['the document']);
+  });
+
+  it('CONTROL: a point that is not where the word is finds no block, writes nothing, and says it is not in place', async () => {
+    // THE UPRIGHT PAGE'S POINT for a page TURNED: the block stands where the turned page has the word, so the cases
+    // above are the transform's and not a block found anywhere.
+    const { deps, store, sent } = harness(
+      script({ pages: [['the documnet']], shown: { rotation: 90, crop: [50, 100, 650, 900] }, blockAt: { x: 108, y: 890 } }),
+    );
+    await startReview(deps, store, 1);
+    await replaceWord(deps, store, 'document');
+    expect(sent).toStrictEqual([]);
+    expect(reviewOf(store).notice).toBe(TEXT_NOT_IN_PLACE);
   });
 
   it('says a word that cannot be replaced in place, in the panel and not a dialog, and stays on it', async () => {
@@ -557,7 +563,7 @@ describe('replacing in a comment and in a field', () => {
 });
 
 describe('replacing every occurrence', () => {
-  it('sends ONE replaceAllText for the page text, then one edit per comment and field that holds the word', async () => {
+  it('sends ONE block edit per page for the page text, then one edit per comment and field that holds the word', async () => {
     const { deps, store, sent } = harness(
       script({
         pages: [['teh cat', 'teh'], ['dog teh']],
@@ -567,17 +573,21 @@ describe('replacing every occurrence', () => {
     );
     await startReview(deps, store, 2);
     await replaceAll(deps, store, 'the');
-    expect(sent).toStrictEqual([
-      { kind: 'replaceAllText', find: 'teh', replace: 'the', caseSensitive: true, wholeWord: true },
-      { kind: 'editAnnotationText', page: 0, index: 0, text: 'the and the', version: asDocVersion(2) },
-      { kind: 'fillFormField', page: 1, index: 0, value: { set: 'text', text: 'the dog' }, version: asDocVersion(3) },
+    // THE BLOCK WRITER, one command per page with every block of it that holds the word (ADR-0267).
+    const kinds = sent.map((each) => (each as { kind: string }).kind);
+    expect(kinds).toStrictEqual(['editTextOperators', 'editTextOperators', 'editAnnotationText', 'fillFormField']);
+    const text = (at: number) => blocksOfEdit(sent[at] as Parameters<typeof blocksOfEdit>[0]).map((each) => each.text);
+    expect([text(0), text(1)]).toStrictEqual([['the cat', 'the'], ['dog the']]);
+    expect(sent.slice(2)).toStrictEqual([
+      { kind: 'editAnnotationText', page: 0, index: 0, text: 'the and the', version: asDocVersion(3) },
+      { kind: 'fillFormField', page: 1, index: 0, value: { set: 'text', text: 'the dog' }, version: asDocVersion(4) },
     ]);
     const review = reviewOf(store);
     expect(review.current).toBeUndefined();
     expect(review.replaced).toBe(6);
   });
 
-  it('COUNTS WHAT CHANGED, measured by reading again: a word split across two objects is not counted, and is still shown', async () => {
+  it('COUNTS WHAT CHANGED, measured by reading again: a word no block holds is not counted, and is still shown', async () => {
     const { deps, store } = harness(script({ pages: [['teh one', 'teh two']], split: new Set(['0:1']) }));
     await startReview(deps, store, 1);
     await replaceAll(deps, store, 'the');
@@ -592,7 +602,8 @@ describe('replacing every occurrence', () => {
     );
     await startReview(deps, store, 1);
     await replaceAll(deps, store, 'the');
-    expect(sent).toMatchObject([{ kind: 'replaceAllText' }, { kind: 'editAnnotationText' }]);
+    // THE PAGE TEXT HELD NOTHING A BLOCK COULD REACH, so nothing was sent for it, and the comment was edited.
+    expect(sent).toMatchObject([{ kind: 'editAnnotationText' }]);
     const review = reviewOf(store);
     expect(review.replaced).toBe(1);
     expect(review.notice).not.toBe(NOTHING_TO_REPLACE);

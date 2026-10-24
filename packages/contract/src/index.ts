@@ -731,6 +731,8 @@ export {
   type PdfaLeftOutKind,
   MAX_PDFA_LEFT_OUT,
 } from './commands.js';
+// A REPLACEMENT'S BLOCK EDITS (ADR-0267): the find bar's and the spelling review's, and `proof:edittext`'s.
+export { type ReplacedBlock, blocksReplaced, wordsOf } from './blockReplace.js';
 export {
   // A command's pages as runs (decision D, finding AAA-1): the renderer writes them, the kernel expands them.
   MAX_PAGE_INDEX,

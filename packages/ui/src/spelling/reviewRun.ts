@@ -18,7 +18,8 @@ import {
 
 import { unscaledTransform } from '../annotations/annotationSpace.js';
 import { wordsToEdit } from '../annotations/markWords.js';
-import { type DocumentCommandDeps, applyDocumentCommand } from '../commands/documentCommands.js';
+import { type DocumentCommandDeps, applyDocumentCommand, reportProblem } from '../commands/documentCommands.js';
+import { type ReplaceOutcome, replaceInDocument, replaceWordAt } from '../commands/replaceText.js';
 import { problemMessage } from '../dialogs/problemMessages.js';
 import type { DocumentStore } from '../documentStores.js';
 import {
@@ -428,7 +429,22 @@ function settle(store: DocumentStore, run: number, notice?: MessageKey): void {
 }
 
 /**
- * The point `replaceTextAt` names for the word on a page: the centre of its box in MuPDF's word boxes, paired to the
+ * What the panel says for a page-text replacement that wrote nothing (ADR-0267), by `noticeFor`'s rule: an `internal`
+ * refusal is the problem dialog's, with its reference; the signatures question's Cancel and an unchanged word say
+ * nothing; a word no block at its point holds is not in place, as the PDFium command said it.
+ */
+function sentenceFor(deps: SpellingDeps, outcome: ReplaceOutcome | { readonly kind: 'not-found' }): MessageKey | undefined {
+  if (outcome.kind === 'not-found' || outcome.kind === 'bad-pattern') return problemMessage({ code: 'text-not-in-place' });
+  if (outcome.kind !== 'refused') return undefined;
+  if (outcome.problem.code === 'internal') {
+    reportProblem(deps.commands, outcome.problem);
+    return undefined;
+  }
+  return problemMessage(outcome.problem);
+}
+
+/**
+ * The point a page-text replacement names for the word on a page: the centre of its box in MuPDF's word boxes, paired to the
  * text layer line the review read, converted through the drawn page's transform at scale 1. `undefined` with the
  * reason when it cannot be named — the line is not the one the review holds, or the page has not been drawn.
  */
@@ -525,10 +541,19 @@ export async function replaceWord(deps: SpellingDeps, store: DocumentStore, repl
   let command: DispatchableCommand | MessageKey;
   if (isText(current)) {
     const point = await pointOf(deps, docId, current);
-    command =
-      typeof point === 'string'
-        ? point
-        : { kind: 'replaceTextAt', page: current.place.page, find: current.word, replace: replacement, at: point };
+    if (typeof point !== 'string') {
+      // PAGE TEXT THROUGH THE BLOCK WRITER (ADR-0267 Decision 3): the block at the word's point, that one occurrence.
+      const outcome = await replaceWordAt(deps.commands, docId, current.place.page, current.word, replacement, point);
+      if (reviewing(store, run) === undefined) return;
+      if (outcome.kind === 'replaced' && outcome.pages > 0) {
+        write(store, run, (now) => ({ ...now, replaced: now.replaced + 1 }));
+        await readAgain(deps, store, run, new Set([current.place.page]), pastOccurrence(current, replacement.length));
+        return;
+      }
+      settle(store, run, sentenceFor(deps, outcome));
+      return;
+    }
+    command = point;
   } else {
     command = await listEdit(deps, store, run, current, [current.place.offset], replacement);
   }
@@ -554,8 +579,8 @@ export async function replaceWord(deps: SpellingDeps, store: DocumentStore, repl
 }
 
 /**
- * Replace all: every occurrence of the word, exactly as written, becomes `replacement` — the page text through
- * `replaceAllText` (whole word, case sensitive), then each comment and field that holds it, one edit each.
+ * Replace all: every occurrence of the word, exactly as written, becomes `replacement` — the page text through the block
+ * writer (whole word, case sensitive; ADR-0267), then each comment and field that holds it, one edit each.
  */
 export async function replaceAll(deps: SpellingDeps, store: DocumentStore, replacement: string): Promise<void> {
   const started = begin(store);
@@ -572,14 +597,21 @@ export async function replaceAll(deps: SpellingDeps, store: DocumentStore, repla
   // it is said only where the whole Replace all changed nothing; any other refusal is said as it was.
   let pageNotice: { readonly notice: MessageKey; readonly code: string | undefined } | undefined;
   if (pages.size > 0) {
-    const page = await sendHeld(deps, store, {
-      kind: 'replaceAllText',
-      find: word,
-      replace: replacement,
-      caseSensitive: true,
-      wholeWord: true,
-    });
-    if (page.notice !== undefined) pageNotice = { notice: page.notice, code: page.code };
+    // THROUGH THE BLOCK WRITER (ADR-0267), on the pages the review found the word on, those pages one undo step.
+    const outcome = await replaceInDocument(
+      deps.commands,
+      store.getState().docId,
+      word,
+      replacement,
+      { caseSensitive: true, wholeWord: true },
+      [...pages].sort((a, b) => a - b),
+    );
+    if (outcome.kind === 'replaced' && outcome.pages === 0) {
+      pageNotice = { notice: problemMessage({ code: 'nothing-to-replace' }), code: 'nothing-to-replace' };
+    } else if (outcome.kind === 'refused') {
+      const said = sentenceFor(deps, outcome);
+      if (said !== undefined) pageNotice = { notice: said, code: outcome.problem.code };
+    }
   }
 
   // THEN EACH COMMENT AND FIELD, one edit each: an edit names its handle at one version, and every edit moves it.
@@ -604,8 +636,8 @@ export async function replaceAll(deps: SpellingDeps, store: DocumentStore, repla
 
   if (reviewing(store, run) === undefined) return;
   await readAgain(deps, store, run, pages, pastOccurrence(current, replacement.length));
-  // THE PAGE TEXT'S COUNT IS MEASURED, not assumed: `replaceAllText` answers no count, and an occurrence split across
-  // two text objects is one it cannot reach. So what changed is what the review held on those pages less what the
+  // THE PAGE TEXT'S COUNT IS MEASURED, not assumed: the replacement answers pages, not occurrences, and an occurrence
+  // split across two blocks is one it cannot reach. So what changed is what the review held on those pages less what the
   // pages still hold once read again.
   const before = same.filter(isText).length;
   const after =

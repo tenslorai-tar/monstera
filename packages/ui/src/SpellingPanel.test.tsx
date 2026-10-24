@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import { channels, createClient } from '@monstera/contract';
+import { blocksOfEdit, channels, createClient } from '@monstera/contract';
 import { asDocId, asDocVersion, ok, tokensOf } from '@monstera/shared';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
@@ -61,6 +61,16 @@ function drawn(lines: readonly string[]): { readonly sent: unknown[]; readonly s
         return Promise.resolve(ok({ version: asDocVersion(1), annotations: [], next: null, truncated: false }));
       case 'document.formFields':
         return Promise.resolve(ok({ version: asDocVersion(1), fields: [], next: null, truncated: false }));
+      case 'document.textBlocks': {
+        // EACH LINE ONE BLOCK, where the shown line is in user space under the crop below (700 tall): what the block
+        // writer's replacement reads (ADR-0267).
+        const plain = { size: 11, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false };
+        const blocks = lines.map((text, line) => {
+          const at = { x0: 0, y0: 700 - (line * 20 + 12), x1: 500, y1: 700 - line * 20 };
+          return { box: at, lines: [{ runs: [{ index: line, text, style: plain }], box: at, soft: false, baseline: at.y0 }], style: plain, shape: { align: 'left' as const, firstIndent: 0 }, push: { below: [], room: 0 } };
+        });
+        return Promise.resolve(ok({ version: asDocVersion(1), blocks, next: null, truncated: false, rotated: 0, angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 }, unaddressable: 0, rewrite: 'operators' }));
+      }
       case 'document.execute':
         sent.push(params['command']);
         return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 1, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [], unsealedUndoCopies: 0 }));
@@ -131,12 +141,14 @@ describe('SpellingPanel', () => {
     expect(screen.getByLabelText('Change to')).toHaveProperty('value', 'document');
   });
 
-  it('REPLACE DISPATCHES replaceTextAt for the word shown, with the word chosen, and moves on', async () => {
+  it('REPLACE DISPATCHES the block writer for the word shown, with the word chosen, and moves on', async () => {
     const { sent } = drawn(['the documnet', 'teh cat']);
     await check();
     await press('Replace');
     expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatchObject({ kind: 'replaceTextAt', page: 0, find: 'documnet', replace: 'document' });
+    expect(sent[0]).toMatchObject({ kind: 'editTextOperators', page: 0 });
+    // THAT BLOCK, the word replaced in it, and the line below untouched (ADR-0267).
+    expect(blocksOfEdit(sent[0] as Parameters<typeof blocksOfEdit>[0]).map((each) => each.text)).toStrictEqual(['the document']);
     expect(document.querySelector('.m-spelling__word')?.textContent).toBe('teh');
   });
 
@@ -145,15 +157,17 @@ describe('SpellingPanel', () => {
     await check();
     fireEvent.change(screen.getByLabelText('Change to'), { target: { value: 'paper' } });
     await press('Replace');
-    expect(sent[0]).toMatchObject({ kind: 'replaceTextAt', find: 'documnet', replace: 'paper' });
+    expect(blocksOfEdit(sent[0] as Parameters<typeof blocksOfEdit>[0]).map((each) => each.text)).toStrictEqual(['the paper']);
   });
 
-  it('REPLACE ALL dispatches replaceAllText, exactly as written and whole', async () => {
-    const { sent } = drawn(['teh cat', 'teh']);
+  it('REPLACE ALL dispatches the block writer, exactly as written and whole', async () => {
+    // `tehx` IS NOT THE WORD, so a replacement that was not whole-word would write it too.
+    const { sent } = drawn(['teh cat tehx', 'teh']);
     await check();
     fireEvent.change(screen.getByLabelText('Change to'), { target: { value: 'the' } });
     await press('Replace all');
-    expect(sent[0]).toStrictEqual({ kind: 'replaceAllText', find: 'teh', replace: 'the', caseSensitive: true, wholeWord: true });
+    expect(sent[0]).toMatchObject({ kind: 'editTextOperators', page: 0 });
+    expect(blocksOfEdit(sent[0] as Parameters<typeof blocksOfEdit>[0]).map((each) => each.text)).toStrictEqual(['the cat tehx', 'the']);
   });
 
   it('Ignore sends nothing and moves on; with nothing left it says the spelling was checked', async () => {

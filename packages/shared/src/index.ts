@@ -54,6 +54,7 @@ export {
   compileQuery,
   findInLines,
   normalised,
+  replaceMatches,
 } from './textMatch.js';
 // HERE FOR `findInLines`' REASON, one file over: the browser shim answers
 // `document.pageWordCount` and may not import the kernel, so a counting rule in

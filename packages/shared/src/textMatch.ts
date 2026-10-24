@@ -363,6 +363,34 @@ function bounded(line: string, offset: number, length: number): boolean {
 }
 
 /**
+ * A compiled query's matches in `text` replaced by `replacement`, or `null` when nothing changed. The ONE splice every
+ * replacement takes (B3a): PDFium's replace-all of an object's string and the block writer's of a block's words.
+ *
+ * Overlapping matches — `compileQuery` answers every position, so "aa" is found twice in "aaa" — are taken left to right
+ * and a match that starts inside one already taken is skipped: replacing both would splice the second into words the
+ * first already rewrote. Spliced from the end, so no surviving offset has moved.
+ *
+ * `null` too where the replacement produces the original (`a` for `a`), so a caller writes nothing for it.
+ */
+export function replaceMatches(
+  text: string,
+  matches: readonly { readonly offset: number; readonly length: number }[],
+  replacement: string,
+): string | null {
+  const taken: { offset: number; length: number }[] = [];
+  let end = -1;
+  for (const match of [...matches].sort((a, b) => a.offset - b.offset)) {
+    if (match.offset < end) continue;
+    taken.push(match);
+    end = match.offset + match.length;
+  }
+  if (taken.length === 0) return null;
+  let next = text;
+  for (const match of taken.reverse()) next = next.slice(0, match.offset) + replacement + next.slice(match.offset + match.length);
+  return next === text ? null : next;
+}
+
+/**
  * Every occurrence of `query` in the given lines, in order.
  *
  * @returns the matches, or the reason the query could not be compiled. A
