@@ -2177,6 +2177,8 @@ export interface DocumentTextBlocks {
    * through a spread no type named, and the channel's handler, which names the fields it passes, dropped it.
    */
   readonly unpacked?: true;
+  /** *Unpack it* keeps this page, so the editor may offer it (ADR-0232's correction of 2026-10-24). */
+  readonly unpackable?: true;
 }
 
 /** One of a page's objects, as the editing engine describes it. */

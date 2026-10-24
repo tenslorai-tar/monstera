@@ -1628,6 +1628,7 @@ export const TEXT_EDIT_UNREADABLE = messageKey('surface.text-edit.unreadable');
 export const TEXT_EDIT_TRUNCATED = messageKey('surface.text-edit.truncated');
 export const TEXT_EDIT_COVERS = messageKey('surface.text-edit.covers');
 export const TEXT_EDIT_UNADDRESSABLE = messageKey('surface.text-edit.unaddressable');
+export const TEXT_EDIT_PACKED = messageKey('surface.text-edit.packed');
 export const TEXT_EDIT_PROMOTE = messageKey('surface.text-edit.promote');
 export const TEXT_EDIT_RECOGNISE = messageKey('surface.text-edit.recognise');
 export const TEXT_EDIT_TURNED = messageKey('surface.text-edit.turned');
@@ -4584,6 +4585,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // a block* is how a Form XObject got there to somebody who did not make the
   // PDF, and the button beside it is what makes the text editable.
   [TEXT_EDIT_UNADDRESSABLE]: 'Some text on this page was pasted in as a block and is not outlined.',
+  [TEXT_EDIT_PACKED]: 'Some text on this page is held inside a block that can’t be edited here.',
   // SAYS WHAT IT DOES TO THE PAGE: the block becomes ordinary page content,
   // which is a change to the document a person is agreeing to.
   [TEXT_EDIT_PROMOTE]: 'Unpack it so it can be edited',

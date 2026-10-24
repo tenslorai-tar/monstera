@@ -12,6 +12,7 @@ export {
   pageRuns,
   renderPageBitmap,
   unpackedIfAsked,
+  unpackKeepsThePage,
   renderPageBitmapWithoutText,
   replaceTextObjects,
   runFonts,

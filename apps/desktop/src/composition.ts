@@ -1754,6 +1754,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         // THE PAGE'S WRITER (ADR-0266), from MuPDF's reading of its fonts and PDFium's of its packed text above.
         rewrite,
         ...(unpacked ? { unpacked: true as const } : {}),
+        // *Unpack it* OFFERED ONLY WHERE IT KEEPS THE PAGE, the PDFium host's trial on its own copy (ADR-0232's correction).
+        ...(plain.unpackable === true ? { unpackable: true as const } : {}),
       };
     },
     // THE OTHER ENGINE'S SECOND READ, and it groups nothing — an object is what

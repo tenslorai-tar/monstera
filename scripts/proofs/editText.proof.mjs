@@ -103,6 +103,8 @@ const CASES = [
   'numbered paragraphs: a paragraph that grows moves the lines below by one line’s pitch, every gap below kept (within 1 px)',
   'a code block: a word changed in one line leaves every other line as it was, and no line is merged',
   'CONTROL: the same code edit with its lines sent as one paragraph merges them, and the check above sees it',
+  'Unpack it IS offered on a page of plain text in a scaled form, which its promotion keeps (the check can say yes)',
+  'Unpack it is NOT offered on the brochure, where its promotion moves text (ADR-0232’s correction)',
 ];
 
 /**
@@ -419,6 +421,64 @@ async function editFirstBlock(pdfium, kernel, bytes, text, soft) {
   }
 }
 
+/**
+ * Page `index` of `bytes` as a document of its own, by MuPDF's graft: the page's content and resources, so every edit of
+ * it is the edit of that page. Why: a corpus page's edits each open a fresh copy, and a 41 MB document opened once per
+ * edit exhausted the native allocator of one process (2026-10-24, `malloc failed` on 40 of document 4's 48 pages).
+ * @param {any} kernel @param {Uint8Array} bytes @param {number} index @returns {Uint8Array}
+ */
+function onePage(kernel, bytes, index) {
+  const { mupdf } = kernel;
+  const source = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
+  const target = new mupdf.PDFDocument();
+  try {
+    target.graftPage(0, source, index);
+    return new Uint8Array(target.saveToBuffer('').asUint8Array());
+  } finally {
+    target.destroy();
+    source.destroy();
+  }
+}
+
+/**
+ * The page's text held inside forms, which Edit text does not offer (ADR-0266's correction): how many characters, how
+ * many blocks that text would make where PDFium can take it out of its forms, and whether *Unpack it* is offered there
+ * (`unpackKeepsThePage`, ADR-0232's correction).
+ * @param {any} pdfium @param {any} kernel @param {Uint8Array} bytes @param {number} index
+ * @returns {Promise<{ characters: number, blocks: number, unpackable: boolean }>}
+ */
+async function packedOf(pdfium, kernel, bytes, index) {
+  const session = await pdfium.pdfiumWriter.open(bytes);
+  try {
+    const plain = await pdfium.textRuns(session, index);
+    if (plain.unaddressable === 0) return { characters: 0, blocks: 0, unpackable: false };
+    const count = (/** @type {any} */ read) =>
+      kernel.groupIntoBlocks(read.runs.filter((/** @type {any} */ run) => kernel.isEditedInPlace(run.style)).map((/** @type {any} */ run) => ({ ...run, setting: kernel.settingOf(run.style) }))).length;
+    const before = count(plain);
+    await pdfium.unpackedIfAsked(session, index, true);
+    const blocks = Math.max(0, count(await pdfium.textRuns(session, index)) - before);
+    return { characters: plain.unaddressable, blocks, unpackable: await pdfium.unpackKeepsThePage({ bytes, opensWith: undefined }, index) };
+  } finally {
+    await pdfium.pdfiumWriter.close(session);
+  }
+}
+
+/** Two lines of plain text inside a form placed scaled on the page, beside a line of its own: a promotion that keeps it. */
+async function textInAForm() {
+  const inner = await PDFDocument.create({ updateMetadata: false });
+  const innerPage = inner.addPage([300, 120]);
+  const innerFont = await inner.embedFont(StandardFonts.Helvetica);
+  innerPage.drawText('Inside the form, first', { x: 10, y: 60, size: 14, font: innerFont });
+  innerPage.drawText('Inside the form, second', { x: 10, y: 30, size: 14, font: innerFont });
+  const outer = await PDFDocument.create({ updateMetadata: false });
+  const [form] = await outer.embedPdf(await inner.save());
+  if (form === undefined) throw new Error('embedPdf produced no page');
+  const page = outer.addPage([400, 300]);
+  page.drawText('On the page', { x: 30, y: 260, size: 14, font: await outer.embedFont(StandardFonts.Helvetica) });
+  page.drawPage(form, { x: 40, y: 80, xScale: 1.2, yScale: 1.2 });
+  return new Uint8Array(await outer.save());
+}
+
 /** A paragraph of three lines in Helvetica 12, its first line ending in a word broken by a hyphen. */
 async function lineEndHyphen() {
   const document = await PDFDocument.create({ updateMetadata: false });
@@ -528,8 +588,8 @@ function report(document, tries) {
 async function run(pdfium, kernel) {
   /** @type {string[]} */
   const failures = [];
-  const roster = createRoster(failures, { cases: 11 });
-  if (CASES.length !== 11) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 11`);
+  const roster = createRoster(failures, { cases: 13 });
+  if (CASES.length !== 13) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 13`);
   const check = (/** @type {string} */ name, /** @type {boolean} */ held, /** @type {string} */ detail) => {
     const mark = roster.mark();
     if (!held) failures.push(`${name}\n      ${detail}`);
@@ -627,6 +687,13 @@ async function run(pdfium, kernel) {
   process.stdout.write(`  the code block's control, its lines sent as one paragraph: ${mergeCheck === '' ? 'read back as the page’s own lines' : mergeCheck}\n`);
   check(CASES[10] ?? '', mergeCheck !== '', 'the merged edit read back as the page’s own lines, so the check cannot see a merge');
 
+  // UNPACK IT, OFFERED ONLY WHERE IT KEEPS THE PAGE: the check says yes where it should, and no on the brochure.
+  const clean = await packedOf(pdfium, kernel, await textInAForm(), 0);
+  check(CASES[11] ?? '', clean.characters > 0 && clean.unpackable, JSON.stringify(clean));
+  const brochurePacked = await packedOf(pdfium, kernel, await brochure(1), 0);
+  process.stdout.write(`  Unpack it: a page of text in a form ${clean.unpackable ? 'offered' : 'NOT offered'}; the brochure ${brochurePacked.unpackable ? 'OFFERED' : 'not offered'}\n`);
+  check(CASES[12] ?? '', brochurePacked.characters > 0 && !brochurePacked.unpackable, JSON.stringify(brochurePacked));
+
   if (CORPUS !== null) corpus();
 
   process.stdout.write(
@@ -644,8 +711,9 @@ async function walkPageRouted(pdfium, kernel, bytes, old) {
 }
 
 /**
- * The owner's corpus, every page of every document, each page in a process of its own; reported per document number.
- * Not gated: CI has no corpus, and the owner reads the counts.
+ * The owner's corpus, every page of every document, each page in a process of its own and edited as a document of its
+ * own (`onePage`); reported per document number, with the text held in forms that is not offered, and a table at the
+ * end. Not gated: CI has no corpus, and the owner reads the counts.
  */
 function corpus() {
   if (CORPUS === null) return;
@@ -653,6 +721,8 @@ function corpus() {
   process.stdout.write(`\n  THE OWNER'S CORPUS, ${OLD_ROUTE ? 'routed as before ADR-0266' : 'routed as the application routes it'}:\n`);
   /** @type {Try[]} */
   const all = [];
+  /** @type {string[]} */
+  const table = ['| document | pages | blocks offered | edits | refused | disturbed | packed characters | packed blocks not offered | Unpack it offered on |', '|---|---|---|---|---|---|---|---|---|'];
   for (const [at, file] of files.entries()) {
     // BY NUMBER, NEVER BY NAME: the number is the file's place in the folder sorted by name.
     if (ONLY !== null && !ONLY.includes(at + 1)) continue;
@@ -661,21 +731,41 @@ function corpus() {
     const pages = childRun([path, '--count']);
     if (typeof pages !== 'number') {
       process.stdout.write(`  ${label}: could not be opened, not counted\n`);
+      table.push(`| ${String(at + 1)} | not opened | | | | | | | |`);
       continue;
     }
     /** @type {Try[]} */
     const tries = [];
     let failed = 0;
+    const packed = { characters: 0, blocks: 0, pages: 0, unpackable: 0 };
+    let blocksOffered = 0;
     for (let page = 0; page < Math.min(pages, PAGES); page += 1) {
-      const answer = childRun([path, '--page', String(page)]);
-      if (Array.isArray(answer)) tries.push(...answer);
-      else failed += 1;
+      const answer = /** @type {{ tries: Try[], packed: { characters: number, blocks: number, unpackable: boolean } } | null} */ (childRun([path, '--page', String(page)]));
+      if (answer === null || !Array.isArray(answer.tries)) {
+        failed += 1;
+        continue;
+      }
+      tries.push(...answer.tries);
+      // THE BLOCKS OFFERED ON THE PAGE: each named once per edit, the page's own replacements apart.
+      blocksOffered += new Set(answer.tries.filter((each) => !each.block.startsWith('the page')).map((each) => each.block)).size;
+      packed.characters += answer.packed.characters;
+      packed.blocks += answer.packed.blocks;
+      if (answer.packed.characters > 0) packed.pages += 1;
+      if (answer.packed.unpackable) packed.unpackable += 1;
     }
     report(`${label}, ${String(Math.min(pages, PAGES))} of ${String(pages)} page(s)${failed > 0 ? `, ${String(failed)} page(s) whose walk FAILED` : ''}`, tries);
+    if (packed.characters > 0) {
+      process.stdout.write(`      text held in forms, not offered: ${String(packed.characters)} character(s) on ${String(packed.pages)} page(s), ${String(packed.blocks)} block(s) where PDFium can take it out; Unpack it offered on ${String(packed.unpackable)} page(s)\n`);
+    }
+    const { tries: edits, refused, disturbed } = counts(tries);
+    table.push(
+      `| ${String(at + 1)} | ${String(Math.min(pages, PAGES))}${failed > 0 ? ` (${String(failed)} failed)` : ''} | ${String(blocksOffered)} | ${String(edits)} | ${String(refused)} | ${String(disturbed)} | ${String(packed.characters)} | ${String(packed.blocks)} | ${String(packed.unpackable)} page(s) |`,
+    );
     all.push(...tries);
   }
   const total = counts(all);
   process.stdout.write(`\n  CORPUS: ${String(total.tries)} edit(s), ${String(total.refused)} refused, ${String(total.disturbed)} disturbed, ${String(total.unseen)} unseen\n\n`);
+  process.stdout.write(`${table.join('\n')}\n\n`);
 }
 
 /**
@@ -707,7 +797,10 @@ async function child(/** @type {any} */ pdfium, /** @type {any} */ kernel) {
     }
     return;
   }
-  process.stdout.write(`${JSON.stringify(await walkPage(pdfium, kernel, bytes, Number(option('--page') ?? 0), false))}\n`);
+  // THE PAGE AS A DOCUMENT OF ITS OWN (`onePage`), and its packed text beside its edits.
+  const one = onePage(kernel, bytes, Number(option('--page') ?? 0));
+  const tries = await walkPage(pdfium, kernel, one, 0, false);
+  process.stdout.write(`${JSON.stringify({ tries, packed: await packedOf(pdfium, kernel, one, 0) })}\n`);
 }
 
 const library = pdfiumLibrary(ROOT);

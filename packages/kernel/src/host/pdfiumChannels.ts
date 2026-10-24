@@ -490,6 +490,12 @@ const basePdfiumChannels = {
          */
         unaddressable: z.number().int().nonnegative().max(PDFIUM_PRIOR_TEXT_MAX),
         /**
+         * Whether *Unpack it* would take text out of this page's forms and leave the page drawn the same in every pixel
+         * (ADR-0232's correction of 2026-10-24, `unpackKeepsThePage`). Asked only of a plain read of a page with
+         * characters in forms; absent otherwise.
+         */
+        unpackable: z.boolean().optional(),
+        /**
          * The page box the runs are measured in, or `null` where PDFium answers none: what `main` measures the page's
          * margins against for a block's push (ADR-0249 Decision 2), in the runs' own frame.
          */

@@ -45,6 +45,7 @@ import {
   TEXT_EDIT_TRUNCATED,
   TEXT_EDIT_COVERS,
   TEXT_EDIT_UNADDRESSABLE,
+  TEXT_EDIT_PACKED,
   TEXT_EDIT_UNREADABLE,
   TEXT_ADD_SURFACE,
   TEXT_HANDLE_MOVE,
@@ -108,6 +109,8 @@ export interface PageBlocks extends BlocksRead {
   /** `rotated` by kind, which the note names (ADR-0181 Decision 7). */
   readonly angled: { readonly turned: number; readonly vertical: number; readonly slanted: number; readonly mirrored: number };
   readonly unaddressable: number;
+  /** *Unpack it* keeps this page, so its button is offered (ADR-0232's correction of 2026-10-24); absent, it is not. */
+  readonly unpackable?: true;
 }
 
 export interface TextEditLayerProps {
@@ -591,13 +594,19 @@ export function TextEditLayer({
     if (angled.slanted > 0) notes.push(<p key="slanted">{_(TEXT_EDIT_SLANTED)}</p>);
     if (angled.mirrored > 0) notes.push(<p key="mirrored">{_(TEXT_EDIT_MIRRORED)}</p>);
     if (blocks.unaddressable > 0) {
+      // THE BUTTON ONLY WHERE IT KEEPS THE PAGE (ADR-0232's correction of 2026-10-24): where unpacking would move other
+      // text or take nothing out, the note says plainly that the text cannot be edited here, and offers nothing.
       notes.push(
-        <p key="unaddressable">
-          {_(TEXT_EDIT_UNADDRESSABLE)}{' '}
-          <button className="m-text-edit__promote" onClick={onPromote} type="button">
-            {_(TEXT_EDIT_PROMOTE)}
-          </button>
-        </p>,
+        blocks.unpackable === true ? (
+          <p key="unaddressable">
+            {_(TEXT_EDIT_UNADDRESSABLE)}{' '}
+            <button className="m-text-edit__promote" onClick={onPromote} type="button">
+              {_(TEXT_EDIT_PROMOTE)}
+            </button>
+          </p>
+        ) : (
+          <p key="unaddressable">{_(TEXT_EDIT_PACKED)}</p>
+        ),
       );
     }
   }

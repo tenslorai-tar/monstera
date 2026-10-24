@@ -5915,6 +5915,12 @@ export const channels = {
        * it is, which is every page with no text packed inside a form.
        */
       unpacked: z.literal(true).exactOptional(),
+      /**
+       * *Unpack it* would take this page's packed text out of its forms and leave the page drawn the same in every pixel
+       * ([ADR-0232](../../../docs/DECISIONS/0232-packed-text-is-unpacked-by-the-edit-that-changes-it.md)'s correction of
+       * 2026-10-24): the editor offers the button only then. Absent everywhere else, which says *do not offer it*.
+       */
+      unpackable: z.literal(true).exactOptional(),
     }),
     ['document-not-open', 'document-poisoned', 'engine-unavailable'],
   ),

@@ -1418,16 +1418,23 @@ describe('Edit text on the page (ADR-0096)', () => {
     expect(onLeave).toHaveBeenCalledTimes(1);
   });
 
-  it('a page with NO editable text says so, and one with blocked-in text offers to unpack it', () => {
+  it('a page with NO editable text says so, and one with blocked-in text offers to unpack it WHERE THAT KEEPS THE PAGE', () => {
     const empty = mount({ blocks: { ...BLOCKS, blocks: [] } });
     expect(empty.view.container.textContent).toContain('This page has no text that can be edited.');
     empty.view.unmount();
 
-    const packed = mount({ blocks: { ...BLOCKS, unaddressable: 36 } });
+    // THE READ SAID UNPACKING KEEPS THE PAGE (ADR-0232's correction of 2026-10-24): the button is offered.
+    const packed = mount({ blocks: { ...BLOCKS, unaddressable: 36, unpackable: true } });
     fireEvent.click(packed.view.getByRole('button', { name: /Unpack it/u }));
     expect(packed.onPromote).toHaveBeenCalledTimes(1);
     // CONTROL: a page with blocks and nothing packed says neither sentence.
     expect(packed.view.container.textContent).not.toContain('no text that can be edited');
+    packed.view.unmount();
+
+    // AND WHERE IT WOULD NOT (it moves other text, or takes nothing out): the note says so plainly, and NO button.
+    const kept = mount({ blocks: { ...BLOCKS, unaddressable: 36 } });
+    expect(kept.view.queryByRole('button', { name: /Unpack it/u })).toBeNull();
+    expect(kept.view.container.textContent).toContain('held inside a block that can’t be edited here');
   });
 
   it('a page with no text offers to RECOGNISE it, and only then: a page with blocks does not (ADR-0181 Decision 9)', () => {

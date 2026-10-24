@@ -4829,6 +4829,8 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
             rewrite: last.rewrite,
             // AND WHETHER IT WAS READ UNPACKED (ADR-0232), which every edit and run-font read of these blocks repeats.
             ...(last.unpacked === true ? { unpacked: true as const } : {}),
+            // AND WHETHER *Unpack it* KEEPS THE PAGE, the one condition the button is offered on (ADR-0232's correction).
+            ...(last.unpackable === true ? { unpackable: true as const } : {}),
           };
         }
         if (!refusal.reported) {
