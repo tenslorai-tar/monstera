@@ -1,5 +1,6 @@
 import {
   compareReleaseVersions,
+  releaseOf,
   releaseVersionSchema,
   updateManifestSchema,
   type UpdateManifest,
@@ -86,10 +87,12 @@ export const UPDATE_RECORD_FILE = 'update-check.json';
  * 3. below the newest;
  * 4. otherwise current, which includes a build AHEAD of the manifest.
  *
- * An installed version that is not three numbers — a development build's pre-release tag — is `unknown`, never a
- * guess. Numbers compare as numbers, so `1.2.10` is above `1.2.9`.
+ * The installed version is the PACKAGE's, four parts (`A.B.C.0`), and it is compared as the release it names
+ * (`releaseOf`). One that names no release — a development build's pre-release tag — is `unknown`, never a guess.
+ * Numbers compare as numbers, so `1.2.10` is above `1.2.9`.
  */
-export function statusFor(installed: string, manifest: UpdateManifest, acknowledged: string | null): UpdateStatus {
+export function statusFor(packageVersion: string, manifest: UpdateManifest, acknowledged: string | null): UpdateStatus {
+  const installed = releaseOf(packageVersion);
   if (!releaseVersionSchema.safeParse(installed).success) return { kind: 'unknown' };
   const below = (version: string): boolean => compareReleaseVersions(installed, version) < 0;
   if (manifest.security && below(manifest.version)) {

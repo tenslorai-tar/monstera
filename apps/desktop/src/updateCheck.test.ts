@@ -183,6 +183,14 @@ describe('statusFor — what a manifest says about the installed version (U5)', 
     expect(at('0.0.0-dev')).toStrictEqual({ kind: 'unknown' });
     expect(at('1.4')).toStrictEqual({ kind: 'unknown' });
   });
+
+  it('the PACKAGE version a build says (A.B.C.0, Help › About) is compared as the release it names', () => {
+    // THE OWNER'S 1.0.2150.0 is the release 1.0.2150: behind a manifest's 1.0.2151, current at its own.
+    expect(at('1.0.2150.0', { version: '1.0.2151', minimumVersion: '1.0.0' })).toStrictEqual({ kind: 'newer', version: '1.0.2151' });
+    expect(at('1.0.2150.0', { version: '1.0.2150', minimumVersion: '1.0.0' })).toStrictEqual({ kind: 'current' });
+    // CONTROL: a fourth part that is not 0 names no release the Store makes, and is unknown, never a guess.
+    expect(at('1.0.2150.3', { version: '1.0.2151', minimumVersion: '1.0.0' })).toStrictEqual({ kind: 'unknown' });
+  });
 });
 
 describe('the providers (ADR-0018)', () => {

@@ -185,6 +185,7 @@ export {
   // THE UPDATE CHECK (ADR-0110): main parses the manifest and answers the status; the page reads the status, and
   // registers the check's switch only while the address is live.
   compareReleaseVersions,
+  releaseOf,
   releaseVersionSchema,
   UPDATE_CHECK_SETTING_ID,
   UPDATE_MANIFEST,

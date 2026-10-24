@@ -1151,6 +1151,17 @@ export const releaseVersionSchema = z
   .regex(/^(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})$/u);
 
 /**
+ * The release a package version names: `A.B.C.0`, the Store's four parts with the fourth always 0, is the release
+ * `A.B.C`. The application says its package version (Help › About, `app.getVersion()`), and the update check compares
+ * releases, so this is the one place the two meet (B3a). Anything else is returned as it is, and the schema above then
+ * judges it — a development build's version is not a release, and reads as one nowhere.
+ */
+export function releaseOf(version: string): string {
+  const parts = version.split('.');
+  return parts.length === 4 && parts[3] === '0' ? parts.slice(0, 3).join('.') : version;
+}
+
+/**
  * Orders two versions the schema above accepts: negative, zero or positive, part by part. **Numbers compare as
  * numbers** — `1.2.10` is above `1.2.9`, which a string comparison gets wrong. The one comparison the manifest's
  * own rule and main's check both take (B3a).

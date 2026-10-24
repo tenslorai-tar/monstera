@@ -614,11 +614,13 @@ async function main() {
 
   step('application');
   const app = join(stage, 'resources', 'app');
-  const semver = version.split('.').slice(0, 3).join('.');
   mkdirSync(app, { recursive: true });
+  // THE PACKAGE'S OWN VERSION, all four parts: `app.getVersion()` reads this, and Help › About shows it, so About says
+  // what the manifest and the executable say (the owner's item 4 of 2026-10-23). The update check takes the release,
+  // `A.B.C`, from it through the contract's one conversion (`releaseOf`).
   writeFileSync(
     join(app, 'package.json'),
-    `${JSON.stringify({ name: 'monstera', productName: DISPLAY_NAME, version: semver, private: true, type: 'module', main: './dist/entry.js', license: 'AGPL-3.0-or-later' }, null, 2)}\n`,
+    `${JSON.stringify({ name: 'monstera', productName: DISPLAY_NAME, version, private: true, type: 'module', main: './dist/entry.js', license: 'AGPL-3.0-or-later' }, null, 2)}\n`,
   );
   cpSync(join(REPO_ROOT, 'apps', 'desktop', 'dist'), join(app, 'dist'), { recursive: true, filter: shippedFromDist });
   for (const name of SHIPPED_WORKSPACES.filter((workspace) => workspace !== '@monstera/desktop')) {
