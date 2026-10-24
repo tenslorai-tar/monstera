@@ -51,6 +51,23 @@ function check(at, held, detail) {
 /** @param {string} a @param {string} b */
 const same = (a, b) => a === b;
 
+/**
+ * Every leaf where two parsed readings differ, by its path, with both values: what a failure prints, so a reading that
+ * changes on another platform or under another build names the field and the size of the change rather than "differ".
+ *
+ * @param {unknown} committed @param {unknown} read @param {string} [path]
+ * @returns {string[]}
+ */
+function differences(committed, read, path = '') {
+  if (typeof committed === 'object' && committed !== null && typeof read === 'object' && read !== null) {
+    const keys = new Set([...Object.keys(committed), ...Object.keys(read)]);
+    return [...keys].flatMap((key) =>
+      differences(/** @type {Record<string, unknown>} */ (committed)[key], /** @type {Record<string, unknown>} */ (read)[key], `${path}/${key}`),
+    );
+  }
+  return committed === read ? [] : [`${path || '/'}: committed ${JSON.stringify(committed)}, read ${JSON.stringify(read)}`];
+}
+
 if (!existsSync(pdfiumLibrary(ROOT))) {
   exitUnverifiable({
     required: REQUIRED,
@@ -75,7 +92,14 @@ if (!existsSync(pdfiumLibrary(ROOT))) {
     `${String(blocks.length)} blocks, the code block's ends ${JSON.stringify(code)}, the list's ${JSON.stringify(list)}`,
   );
   check(1, Buffer.compare(readFileSync(FIXTURE_PDF), Buffer.from(bytes)) === 0, `${String(bytes.length)} bytes built`);
-  check(2, same(committed, read), same(committed, read) ? 'the same' : 'they differ: run `node scripts/research/editorFidelityFixture.mjs` and read the diff');
+  const found = differences(JSON.parse(committed), JSON.parse(read));
+  check(
+    2,
+    same(committed, read),
+    same(committed, read)
+      ? 'the same'
+      : `${String(found.length)} field(s) differ:\n        ${found.slice(0, 40).join('\n        ')}${found.length > 40 ? `\n        and ${String(found.length - 40)} more` : ''}`,
+  );
   const altered = committed.replace('git clone', 'git fetch');
   check(3, altered !== committed && !same(altered, read), 'one word changed in a copy reads as different');
 
