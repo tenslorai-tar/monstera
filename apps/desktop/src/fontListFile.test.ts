@@ -8,45 +8,47 @@ import { createEphemeralSettings } from './settingsFile.js';
 /**
  * The font folders' fingerprint and the kept list (ADR-0237): a font installed, removed or replaced changes the
  * fingerprint, and the same folders give the same one, so the list is read from the host exactly when the fonts changed.
+ * The listing is asynchronous (ADR-0268), so a folder that cannot be listed is a REJECTED promise, as `readdir` answers.
  */
 function listing(folders: Record<string, Record<string, { size: number; mtimeMs: number }>>): FolderListing {
   return {
     names: (folder) => {
       const files = folders[folder];
-      if (files === undefined) throw new Error(`no folder ${folder}`);
-      return Object.keys(files);
+      if (files === undefined) return Promise.reject(new Error(`no folder ${folder}`));
+      return Promise.resolve(Object.keys(files));
     },
     stat: (path) => {
       for (const [folder, files] of Object.entries(folders)) {
         for (const [name, stat] of Object.entries(files)) {
           // JOINED AS THE CODE JOINS, by `path.join`: on Windows it turns `/bundled` into `\bundled`, which the two
           // spellings this case once listed by hand did not cover (CI's Windows leg, 2026-10-14).
-          if (path === join(folder, name)) return { ...stat, isFile: true };
+          if (path === join(folder, name)) return Promise.resolve({ ...stat, isFile: true });
         }
       }
-      throw new Error(`no file ${path}`);
+      return Promise.reject(new Error(`no file ${path}`));
     },
   };
 }
 
 const FONTS = { '/bundled': { 'Tinos.ttf': { size: 100, mtimeMs: 1 } }, '/system': { 'arial.ttf': { size: 200, mtimeMs: 2 } } };
-const of = (folders: typeof FONTS | Record<string, Record<string, { size: number; mtimeMs: number }>>): string =>
+const of = (folders: typeof FONTS | Record<string, Record<string, { size: number; mtimeMs: number }>>): Promise<string> =>
   fontFoldersFingerprint(['/bundled', '/system'], listing(folders));
+const kept = (fingerprint: string) => () => Promise.resolve(fingerprint);
 
 describe('fontFoldersFingerprint', () => {
-  it('is the same for the same folders, whatever order the names are listed in', () => {
+  it('is the same for the same folders, whatever order the names are listed in', async () => {
     const reordered = { '/bundled': FONTS['/bundled'], '/system': { 'arial.ttf': { size: 200, mtimeMs: 2 } } };
-    expect(of(reordered)).toBe(of(FONTS));
+    expect(await of(reordered)).toBe(await of(FONTS));
   });
 
   // CONTROL: each change a font makes to its folder is a different fingerprint.
-  it('changes when a font is installed, removed, replaced at another size, or touched', () => {
-    const base = of(FONTS);
-    expect(of({ ...FONTS, '/system': { ...FONTS['/system'], 'new.ttf': { size: 5, mtimeMs: 3 } } })).not.toBe(base);
-    expect(of({ ...FONTS, '/system': {} })).not.toBe(base);
-    expect(of({ ...FONTS, '/system': { 'arial.ttf': { size: 201, mtimeMs: 2 } } })).not.toBe(base);
-    expect(of({ ...FONTS, '/system': { 'arial.ttf': { size: 200, mtimeMs: 9 } } })).not.toBe(base);
-    expect(fontFoldersFingerprint(['/bundled', '/gone'], listing(FONTS))).not.toBe(base);
+  it('changes when a font is installed, removed, replaced at another size, or touched', async () => {
+    const base = await of(FONTS);
+    expect(await of({ ...FONTS, '/system': { ...FONTS['/system'], 'new.ttf': { size: 5, mtimeMs: 3 } } })).not.toBe(base);
+    expect(await of({ ...FONTS, '/system': {} })).not.toBe(base);
+    expect(await of({ ...FONTS, '/system': { 'arial.ttf': { size: 201, mtimeMs: 2 } } })).not.toBe(base);
+    expect(await of({ ...FONTS, '/system': { 'arial.ttf': { size: 200, mtimeMs: 9 } } })).not.toBe(base);
+    expect(await fontFoldersFingerprint(['/bundled', '/gone'], listing(FONTS))).not.toBe(base);
   });
 });
 
@@ -60,11 +62,11 @@ describe('keptFontFamilies', () => {
       asked += 1;
       return Promise.resolve(LIST);
     };
-    expect(await keptFontFamilies(file, () => 'a'.repeat(64), fromHost)).toStrictEqual(LIST);
-    expect(await keptFontFamilies(file, () => 'a'.repeat(64), fromHost)).toStrictEqual(LIST);
+    expect(await keptFontFamilies(file, kept('a'.repeat(64)), fromHost)).toStrictEqual(LIST);
+    expect(await keptFontFamilies(file, kept('a'.repeat(64)), fromHost)).toStrictEqual(LIST);
     expect(asked).toBe(1);
     // CONTROL: another fingerprint asks again.
-    await keptFontFamilies(file, () => 'b'.repeat(64), fromHost);
+    await keptFontFamilies(file, kept('b'.repeat(64)), fromHost);
     expect(asked).toBe(2);
   });
 
@@ -72,7 +74,7 @@ describe('keptFontFamilies', () => {
     const file = createEphemeralSettings();
     file.write({ fingerprint: 'a'.repeat(64), families: [{ name: '' }], more: 0 });
     let asked = 0;
-    await keptFontFamilies(file, () => 'a'.repeat(64), () => {
+    await keptFontFamilies(file, kept('a'.repeat(64)), () => {
       asked += 1;
       return Promise.resolve(LIST);
     });
@@ -89,16 +91,16 @@ describe('keptFontFamilies', () => {
       asked += 1;
       return Promise.resolve(LIST);
     };
-    await keptFontFamilies(file, () => 'a'.repeat(64), fromHost);
+    await keptFontFamilies(file, kept('a'.repeat(64)), fromHost);
     expect(asked).toBe(1);
     // CONTROL: the list this reading kept is answered from the file.
-    await keptFontFamilies(file, () => 'a'.repeat(64), fromHost);
+    await keptFontFamilies(file, kept('a'.repeat(64)), fromHost);
     expect(asked).toBe(1);
   });
 
   it('keeps nothing when the host read fails', async () => {
     const file = createEphemeralSettings();
-    await expect(keptFontFamilies(file, () => 'a'.repeat(64), () => Promise.reject(new Error('the host failed')))).rejects.toThrow('the host failed');
+    await expect(keptFontFamilies(file, kept('a'.repeat(64)), () => Promise.reject(new Error('the host failed')))).rejects.toThrow('the host failed');
     expect(file.read()).toStrictEqual({});
   });
 });

@@ -288,8 +288,12 @@ function commandCalls(calls: readonly string[]): readonly string[] {
   // `app.rendererEnded` and `document.held` join them the same way (ADR-0253): a window asks once as it loads whether
   // its renderer ended and which documents main still holds. What it does with the answer is the reloaded-window cases'
   // subject below.
+  // `app.fontFamilies` joins them the same way (ADR-0268): the window reads the font list once at its first idle moment,
+  // so Edit text's picker never waits for it. That it is read once, and the picker's read is the same, is
+  // `fontList.test.ts`' subject.
   return calls.filter(
     (id) =>
+      id !== 'app.fontFamilies' &&
       id !== 'document.recent' &&
       id !== 'settings.loadSecrets' &&
       id !== 'app.info' &&

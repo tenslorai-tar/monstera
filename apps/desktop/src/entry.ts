@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
-import { open, readFile, stat } from 'node:fs/promises';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { open, readFile, readdir, stat } from 'node:fs/promises';
 import { totalmem } from 'node:os';
 import { join } from 'node:path';
 
@@ -508,14 +508,15 @@ startShell(() => {
     // TEN ENTRIES, the contract's `MAX_RECENT_ENTRIES` (ADR-0143); not a setting since 2026-10-01.
     recent: createRecentFiles(createJsonFile(app.getPath('userData'), RECENT_FILE)),
     // THE FONT LIST KEPT ON DISK (ADR-0237), fingerprinted over the two folders the hosts read: the bundled set and the
-    // system's. Listed with readdir and stat; no font file is opened in main.
+    // system's. Listed with readdir and stat, ASYNCHRONOUSLY (ADR-0268), so the listing never holds main's event loop; no
+    // font file is opened in main.
     fontList: {
       file: createJsonFile(app.getPath('userData'), FONT_LIST_FILE),
       fingerprint: () =>
         fontFoldersFingerprint([nativeComponentPath('fonts'), installedFontsFolder()], {
-          names: (folder) => readdirSync(folder),
-          stat: (path) => {
-            const found = statSync(path);
+          names: (folder) => readdir(folder),
+          stat: async (path) => {
+            const found = await stat(path);
             return { size: found.size, mtimeMs: found.mtimeMs, isFile: found.isFile() };
           },
         }),

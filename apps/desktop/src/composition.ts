@@ -720,7 +720,7 @@ export interface ShellComposition {
    * resolved in `entry.ts` beside `userData`. Absent, the list is the compose host's each session — every harness's
    * position, and every unit test's.
    */
-  readonly fontList?: { readonly file: SettingsSurface; readonly fingerprint: () => string };
+  readonly fontList?: { readonly file: SettingsSurface; readonly fingerprint: () => Promise<string> };
   readonly cloud?: {
     readonly clients: Readonly<Record<CloudProviderId, CloudClient | null>>;
     readonly workingDirectory: string;

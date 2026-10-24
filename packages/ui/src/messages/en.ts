@@ -4688,7 +4688,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // this computer does not have.
   [FONT_LIST_MORE]:
     '{count, plural, one {One more font family is on this computer than this list can hold: the last by name is not listed.} other {# more font families are on this computer than this list can hold: the last by name are not listed.}}',
-  [FONT_LIST_READING]: 'Reading the fonts on this computer…',
+  [FONT_LIST_READING]: 'Loading fonts…',
   [FONT_NONE_MATCH]: 'No font matches “{query}”.',
   [TEXT_PROPERTIES_LABEL]: 'Text being edited',
   [TEXT_PROPERTIES_HEADING]: 'Editing text',

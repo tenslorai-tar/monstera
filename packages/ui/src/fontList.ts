@@ -35,6 +35,38 @@ export function fontListOf(client: ContractClient): Promise<ReadFontList> {
  * The font list, read the first time `wanted` is true and held after it; `undefined` until then and while it is read.
  * Not at start: a session that never formats words never asks main to read a computer's fonts.
  */
+/**
+ * Asks for the font list at the first idle moment, so Edit text's picker meets a list already read
+ * ([ADR-0268](../../../docs/DECISIONS/0268-the-font-list-is-read-in-the-background-once-the-start-screen-is-idle.md)):
+ * through {@link fontListOf}, the one request a window holds, so the picker's later request is this one, finished or in
+ * flight. On a computer's first start the list is built by the compose host, 5.6 to 13 s measured; `main` reads the
+ * kept file on every later start. Answers the cancel, for an effect's clean-up.
+ *
+ * `idle` is the browser's `requestIdleCallback` where it has one, else the next turn of the event loop; a case hands its
+ * own, so the moment is the case's to choose.
+ */
+export function readFontListWhenIdle(
+  client: ContractClient,
+  idle: (work: () => void) => () => void = whenIdle,
+): () => void {
+  return idle(() => {
+    void fontListOf(client);
+  });
+}
+
+function whenIdle(work: () => void): () => void {
+  if (typeof requestIdleCallback === 'function') {
+    const handle = requestIdleCallback(work);
+    return () => {
+      cancelIdleCallback(handle);
+    };
+  }
+  const handle = setTimeout(work, 0);
+  return () => {
+    clearTimeout(handle);
+  };
+}
+
 export function useFontList(client: ContractClient, wanted: boolean): FontList {
   const [list, setList] = useState<FontList>(undefined);
   useEffect(() => {

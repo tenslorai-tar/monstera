@@ -454,7 +454,7 @@ import { AssistantPanel } from './AssistantPanel.js';
 import type { DropOpener, EventSubscriber } from './bridge.js';
 import { PropertiesPanel, type StyleChange, caretRectAt } from './PropertiesPanel.js';
 import { TextFormatPanel } from './TextFormatPanel.js';
-import { fontListOf, useDocumentFonts, useFontList } from './fontList.js';
+import { fontListOf, readFontListWhenIdle, useDocumentFonts, useFontList } from './fontList.js';
 import { listedFamiliesFor } from './familyFaces.js';
 import { readOnePageLinks } from './usePageLinks.js';
 import { LinkProperties } from './LinkProperties.js';
@@ -876,6 +876,9 @@ export function App({ client: given, settings, subscribe = NO_EVENTS, dropOpener
   // WHETHER THE IN-PLACE TEXT EDITOR IS OPEN, from the one place it registers (ADR-0180).
   const textEditorOpen = useSyncExternalStore(onEditorChange, editorIsOpen);
   const fontList = useFontList(client, textEditorOpen);
+  // THE FONT LIST READ AT THE FIRST IDLE MOMENT after the window mounts (ADR-0268), so the first person to open Edit text
+  // never waits for a first start's build of it; the picker's request is then this one.
+  useEffect(() => readFontListWhenIdle(client), [client]);
   // THE PROPERTIES TAB COMES FORWARD when an editor opens, since the formatting is there (K11); a closed panel stays
   // closed, and the ribbon's Format group and the keys still reach the same formatting.
   useEffect(() => {

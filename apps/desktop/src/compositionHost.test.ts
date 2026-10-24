@@ -2600,7 +2600,7 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
         appInfo,
         enginePlatform: platformAnswering(serialisingEngine()).platform,
         composePlatform: third.platform,
-        fontList: { file, fingerprint: () => fingerprint },
+        fontList: { file, fingerprint: () => Promise.resolve(fingerprint) },
       });
       return { handlers, calls: third.harness.calls };
     };
