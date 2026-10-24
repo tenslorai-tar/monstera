@@ -5038,6 +5038,16 @@ for (const look of LOOKS) {
     expect(await editor.evaluate((element) => (element as HTMLElement).innerText)).toBe(
       'A paragraph of words set on the page\nand a second line.',
     );
+    // NOTHING OF THE EDITOR'S IS PAINTED until the words are changed (cloud run 19, `AS_DRAWN`): the page shows.
+    const untouched = await editor.locator('.m-text-editor__run').evaluateAll((spans) => spans.map((span) => getComputedStyle(span).color));
+    expect(untouched).toStrictEqual(['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0)']);
+    // A LETTER TYPED AND TAKEN BACK leaves its paragraph drawn by the editor, which is what is measured below: once where
+    // the click put the caret, and once at the block's end, so both of its lines are drawn.
+    for (const at of [undefined, 'Control+End'] as const) {
+      if (at !== undefined) await page.keyboard.press(at);
+      await page.keyboard.type('x');
+      await page.keyboard.press('Backspace');
+    }
     // EACH RUN AS THE PAGE SETS IT (ADR-0145): its size at the scale the page is drawn at, its fill, its weight —
     // computed, so it is what the browser draws and not what was asked of it.
     const runs = await editor.locator('.m-text-editor__run').evaluateAll((spans) =>
