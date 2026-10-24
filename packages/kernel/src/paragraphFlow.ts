@@ -609,6 +609,8 @@ export type Row =
       readonly replaces: number;
       /** The paragraph it belongs to, by place in the new words, for the settings that paragraph has. */
       readonly paragraph: number;
+      /** The OLD paragraph whose edges it is set in ({@link planBlock}): the place the editor draws it, by the same rule. */
+      readonly shapedBy: number;
     }
   /** A paragraph with no words: a blank line the person left, kept at the pitch. */
   | { readonly kind: 'blank'; readonly opens: boolean; readonly paragraph: number };
@@ -672,14 +674,15 @@ function lineAt(old: OldWords, offset: number): number {
  * @param text the words after the edit
  * @param measure how wide a piece of text is in a run's style
  * @param limits the width a paragraph's first line, and every other, may fill; or, per paragraph (by place in the new
- * words), where the person set one differently (ADR-0180 Decision 2)
+ * words, and the old paragraph whose edges it is set in), where the person set one differently (ADR-0180 Decision 2) or
+ * the paragraph's own edges set it (ADR-0179's correction of 2026-10-24)
  * @param formatting what spans of the words are, and which paragraphs' settings changed (ADR-0180 Decision 1)
  */
 export function planBlock(
   lines: readonly FlowLine[],
   text: string,
   measure: Measure,
-  limits: Limits | ((paragraph: number) => Limits),
+  limits: Limits | ((paragraph: number, shapedBy: number) => Limits),
   formatting?: Formatting,
 ): BlockPlan {
   const attribution = attribute(lines, text);
@@ -688,21 +691,27 @@ export function planBlock(
   const styles = styleOfUnits(attribution, formatting);
   /** The old paragraphs a new one already stands for: a split gives the second half to nobody, it is set afresh. */
   const claimed = new Set<number>();
+  /** The old paragraph the paragraph before was set in, which a paragraph made only of typed words takes too. */
+  let shapedBefore = 0;
   for (const [place, paragraph] of paragraphsOf(attribution, formatting).entries()) {
     const { start, end } = paragraph;
     const opens = rows.length > 0;
-    const limitsHere = typeof limits === 'function' ? limits(place) : limits;
+    // THE OLD PARAGRAPH THIS ONE IS, by its first unit that was not typed: the words were written over it or in front of
+    // it, and its lines are the ones to keep or set again.
+    let anchor = -1;
+    for (let unit = start; unit < end && anchor < 0; unit += 1) anchor = from[unit] ?? -1;
+    const heldAt = anchor < 0 ? -1 : old.paragraphs.findIndex((candidate) => anchor >= candidate.start && anchor <= candidate.end);
+    // THE EDGES IT IS SET IN are that old paragraph's — the half of one Enter split included, as the editor's own paragraph
+    // after a split keeps the one it was split from — or, for words all typed, the paragraph's before it.
+    const shapedBy = heldAt >= 0 ? heldAt : shapedBefore;
+    shapedBefore = shapedBy;
+    const limitsHere = typeof limits === 'function' ? limits(place, shapedBy) : limits;
     if (paragraph.chunks.length === 0) {
       rows.push({ kind: 'blank', opens, paragraph: place });
       continue;
     }
     // A PARAGRAPH THE PERSON FORMATTED OR RE-SET is laid out again whole, where an unformatted one keeps what it can.
     const formatted = formatting?.forced?.has(place) === true || styles.slice(start, end).some((style) => style !== NO_MARK);
-    // THE OLD PARAGRAPH THIS ONE IS, by its first unit that was not typed: the words were written over it or in front of
-    // it, and its lines are the ones to keep or set again.
-    let anchor = -1;
-    for (let unit = start; unit < end && anchor < 0; unit += 1) anchor = from[unit] ?? -1;
-    const heldAt = anchor < 0 ? -1 : old.paragraphs.findIndex((candidate) => anchor >= candidate.start && anchor <= candidate.end);
     const held = heldAt < 0 || claimed.has(heldAt) ? undefined : old.paragraphs[heldAt];
     if (heldAt >= 0 && held !== undefined) claimed.add(heldAt);
     // WHERE THE PARAGRAPH FIRST DIFFERS FROM THE OLD ONE, in new units: the first unit that is not the next old one, or
@@ -770,6 +779,7 @@ export function planBlock(
           opens: at === 0 && relaidFrom < 0 && opens,
           replaces: stands,
           paragraph: place,
+          shapedBy,
         });
       }
     }

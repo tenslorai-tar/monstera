@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { blockShape, characterUnit, paragraphShape, paragraphSpacing, type LineExtent } from './paragraphShape.js';
+import { blockShape, characterUnit, paragraphEdges, paragraphShape, paragraphSpacing, type LineExtent } from './paragraphShape.js';
 
 /** Six points a character, so an edge is "agreeing" within six points and the cases read in characters. */
 const CHARACTER = 6;
@@ -116,5 +116,42 @@ describe('paragraphSpacing (ADR-0179 Decision 6)', () => {
 
   it('is 0 for a single line', () => {
     expect(paragraphSpacing([700], [false])).toBe(0);
+  });
+});
+
+describe('paragraphEdges (ADR-0179, corrected 2026-10-24)', () => {
+  it('gives each paragraph its own left: a bulleted item at 92 and the plain paragraph after it at 72', () => {
+    // Two lines of an item, then two of a paragraph: the block's own shape is the item's, and the paragraph keeps 72.
+    expect(paragraphEdges([line(92, 20), line(92, 10), line(72, 25), line(72, 8)], [true, false, true, false])).toStrictEqual([
+      { left: 92, firstIndent: 0 },
+      { left: 72, firstIndent: 0 },
+    ]);
+  });
+
+  it('reads a hanging item hanging, and gives a one-line item that stands where the block’s first lines do the same hang', () => {
+    // An arrow item hanging from 109 to 127, then a one-line item at 109: it takes the hang, so a wrap goes under the words.
+    // The item's lines end apart and their centres differ, so it is read left-aligned, as document 8's is.
+    expect(paragraphEdges([line(109, 20), line(127, 25), line(109, 12)], [true, false, false])).toStrictEqual([
+      { left: 127, firstIndent: -18 },
+      { left: 127, firstIndent: -18 },
+    ]);
+  });
+
+  it('CONTROL: a one-line paragraph standing at the block’s REST edge keeps its own start, with no indent', () => {
+    // The line left over from the item before, at 127: it is not a first line, so it does not take the hang.
+    expect(paragraphEdges([line(109, 20), line(127, 25), line(127, 12)], [true, false, false])).toStrictEqual([
+      { left: 127, firstIndent: -18 },
+      { left: 127, firstIndent: 0 },
+    ]);
+  });
+
+  it('CONTROL: every paragraph of a centred block takes the block’s edge, since none of its lines stands by its left', () => {
+    const edges = paragraphEdges([line(100, 10), line(85, 15), line(110, 6)], [true, false, false]);
+    const shape = blockShape([line(100, 10), line(85, 15), line(110, 6)], [true, false, false]);
+    expect(shape.align).toBe('center');
+    expect(edges).toStrictEqual([
+      { left: shape.left, firstIndent: 0 },
+      { left: shape.left, firstIndent: 0 },
+    ]);
   });
 });

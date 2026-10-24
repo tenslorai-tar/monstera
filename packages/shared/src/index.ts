@@ -149,3 +149,17 @@ export {
   remapPageIndexAfterDelete,
   swapPermutation,
 } from './pageRemap.js';
+// A PARAGRAPH'S SHAPE AND EDGES (ADR-0179 and its correction of 2026-10-24): one reading the editor draws with and the
+// writer sets with, which is why it is here and not in the kernel.
+export {
+  type Alignment,
+  type LineExtent,
+  type ParagraphEdges,
+  type ParagraphShape,
+  agree,
+  blockShape,
+  characterUnit,
+  paragraphEdges,
+  paragraphShape,
+  paragraphSpacing,
+} from './paragraphShape.js';

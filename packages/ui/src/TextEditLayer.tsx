@@ -8,6 +8,7 @@ import {
   NEW_TEXT_MARGIN,
   lineText,
   newTextBox,
+  paragraphEdges,
   pdfPoint,
   toPdf,
   toViewport,
@@ -57,7 +58,7 @@ import { composing } from './surfaces/shortcuts.js';
 import { joinEdits, neighbourOf, splitEdits, wordsOfBlock } from './textBlockOps.js';
 import { type EditorOps, type EditorSpelling, TextEditorMenu } from './TextEditorMenu.js';
 import { formatOpenEditor, keepsEditor, openEditorState, registerEditor, steppedSize } from './textEditorControl.js';
-import { insertTab, isFormatted, readEditor, toggleChord } from './textFormatting.js';
+import { PAGE_EDGE_KEYS, insertTab, isFormatted, paintParagraph, readEditor, toggleChord } from './textFormatting.js';
 import { paperAround } from './paperAround.js';
 import {
   dragged,
@@ -329,7 +330,8 @@ function pitchOf(block: TextBlock): number | undefined {
 
 /**
  * Where each paragraph the editor draws starts against where the block's even spacing would put it, in points: `down`,
- * so its first baseline lies on the page's, and `across`, so its first line starts where the page's does.
+ * so its first baseline lies on the page's. Where its lines start ACROSS is its own edges', drawn on its row
+ * (`paragraphEdges`, ADR-0179's correction of 2026-10-24), the one reading the writer sets the paragraph with.
  *
  * ## Why the even spacing alone is not where the page's lines are
  *
@@ -338,34 +340,30 @@ function pitchOf(block: TextBlock): number | undefined {
  * paragraphs, read by PDFium and grouped by `groupIntoBlocks` as one block of five lines ending on purpose: the page's
  * baselines are 700, 686, 669, 655 and 636, the even spacing put the editor's at 700, 686, 672, 658 and 644, and the
  * editor, as tall as its own lines, ended 8 points above the page's last line, which showed below it as a second copy.
- * The lines that carry on a clause's words start at the number column's right (90.6 against the block's 73.2), and the
- * editor drew them at the block's left.
+ * (The lines that carry on a clause's words start at the number column's right, 90.6 against the block's 73.2: that clause
+ * is a paragraph whose own edges say so.)
  *
- * So each paragraph is moved by what the page shows. `down` counts the lines of the paragraph before it at the pitch,
- * since that is how the editor lays them out; `across` is measured from where the block's shape already starts a first
- * line, and is nothing for a block centred or set right, whose lines the alignment places.
+ * So each paragraph is moved down by what the page shows: `down` counts the lines of the paragraph before it at the
+ * pitch, since that is how the editor lays them out.
  */
-function paragraphPlaces(block: TextBlock): readonly { readonly down: number; readonly across: number }[] {
+function paragraphPlaces(block: TextBlock): readonly { readonly down: number }[] {
   const pitch = pitchOf(block);
   const paragraphs = paragraphsOf(block);
-  const start = block.shape.align === 'left' ? block.box.x0 + Math.max(block.shape.firstIndent, 0) : undefined;
   return paragraphs.map((lines, at) => {
     const first = lines[0];
     const before = paragraphs[at - 1]?.[0];
     const above = paragraphs[at - 1]?.length ?? 0;
     return {
       down: pitch === undefined || before === undefined || first === undefined ? 0 : before.baseline - above * pitch - first.baseline,
-      across: start === undefined || first === undefined ? 0 : first.box.x0 - start,
     };
   });
 }
 
-/** Moves each row the editor built from a paragraph of the page to where that paragraph is (`paragraphPlaces`), at the zoom. */
-function placeParagraphs(element: HTMLElement, places: readonly { readonly down: number; readonly across: number }[], zoom: number): void {
+/** Moves each row the editor built from a paragraph of the page down to where that paragraph is (`paragraphPlaces`), at the zoom. */
+function placeParagraphs(element: HTMLElement, places: readonly { readonly down: number }[], zoom: number): void {
   for (const row of element.querySelectorAll<HTMLElement>(':scope > .m-text-editor__line[data-paragraph]')) {
     const place = places[Number(row.dataset['paragraph'])];
     row.style.marginTop = place === undefined || place.down === 0 ? '' : `${String(place.down * zoom)}px`;
-    row.style.marginLeft = place === undefined || place.across === 0 ? '' : `${String(place.across * zoom)}px`;
   }
 }
 
@@ -1495,6 +1493,16 @@ function BlockEditor({
     const element = area.current;
     if (element === null) return;
     const owner = element.ownerDocument;
+    // EACH PARAGRAPH'S OWN EDGES ON THE PAGE (ADR-0179's correction of 2026-10-24), by the one function the writer takes
+    // over the same lines: a bulleted item and the plain paragraph after it in one block stand at their own lefts. Only
+    // where the block is left-aligned, as the writer reads them only there.
+    const edges =
+      block.shape.align === 'left'
+        ? paragraphEdges(
+            block.lines.map((line) => ({ x0: line.box.x0, x1: line.box.x1, characters: line.runs.reduce((sum, run) => sum + run.text.length, 0) })),
+            block.lines.map((line) => line.soft),
+          )
+        : [];
     element.replaceChildren(
       // A PARAGRAPH A `div`, its soft-wrapped lines run together, so the browser wraps it at the block's width and the
       // words read back are the paragraphs the kernel is sent (ADR-0179).
@@ -1504,6 +1512,13 @@ function BlockEditor({
         row.className = `m-text-editor__line ${AS_DRAWN}`;
         // WHICH OF THE PAGE'S PARAGRAPHS THIS ROW IS, for `placeParagraphs`.
         row.dataset['paragraph'] = String(paragraph);
+        // AT ITS OWN EDGES: its lines after the first from its own left, its first from that by its own indent.
+        const edge = edges[paragraph];
+        if (edge !== undefined) {
+          row.dataset[PAGE_EDGE_KEYS.left] = String(edge.left - block.box.x0);
+          row.dataset[PAGE_EDGE_KEYS.first] = String(edge.firstIndent);
+          paintParagraph(row, zoomNow.current);
+        }
         for (const [at, line] of lines.entries()) {
           for (const run of line.runs) {
             const span = owner.createElement('span');
@@ -1614,7 +1629,9 @@ function BlockEditor({
     for (const span of element.querySelectorAll<HTMLElement>('.m-text-editor__run, .m-text-editor__fmt[data-size]')) {
       span.style.fontSize = `${String(Number(span.dataset['size'] ?? '0') * geometry.zoom)}px`;
     }
-    // AND EACH PARAGRAPH WHERE THE PAGE HAS IT, at the same zoom (`paragraphPlaces`).
+    // AND EACH PARAGRAPH'S INDENTS, the page's and the person's, which are points drawn at the zoom (`paintParagraph`);
+    // THEN EACH PARAGRAPH DOWN WHERE THE PAGE HAS IT (`paragraphPlaces`), which the painting would otherwise clear.
+    for (const row of element.querySelectorAll<HTMLElement>(':scope > .m-text-editor__line')) paintParagraph(row, geometry.zoom);
     placeParagraphs(element, paragraphPlaces(block), geometry.zoom);
     // WHAT EACH ROW STILL AS DRAWN SAYS AND WHERE IT STANDS at this zoom, which a change is measured against; and the paper
     // under the rows already drawn, placed again at it.
@@ -1967,8 +1984,8 @@ function BlockEditor({
           color: `rgb(${String(r)}, ${String(g)}, ${String(b)})`,
           // PAPER BEHIND THE WORDS only once they are moved off their place; until then each changed row's is a cover.
           ...(moved ? paper : {}),
-          // THE PARAGRAPHS' SHAPE (ADR-0179): the alignment the lines keep, and a first line set in or out from the rest.
-          // A hanging indent is a negative one, drawn as padding on the block and the first line taken back out.
+          // THE PARAGRAPHS' ALIGNMENT (ADR-0179). Their indents are each paragraph's own, drawn on its `div`
+          // (`paintParagraph`), since a block's paragraphs need not share an edge.
           textAlign: block.shape.align,
           // EACH PARAGRAPH RUNS THE WAY ITS OWN FIRST LETTER SAYS (ADR-0181): a Hebrew or Arabic line is laid out right to
           // left as it is typed, the next paragraph of the same block by its own letters, which one `dir` on the element
@@ -1977,12 +1994,6 @@ function BlockEditor({
           unicodeBidi: 'plaintext',
           // A TAB IS DRAWN AT THE STOP THE PAGE WILL SET IT AT (ADR-0228 Decision 2): the shared stop, at the zoom shown.
           tabSize: `${String(TAB_STOP * geometry.zoom)}px`,
-          ...(block.shape.align === 'left' && block.shape.firstIndent !== 0
-            ? {
-                paddingLeft: Math.max(0, -block.shape.firstIndent) * geometry.zoom,
-                textIndent: block.shape.firstIndent * geometry.zoom,
-              }
-            : {}),
         }}
       />
       </TextEditorMenu>

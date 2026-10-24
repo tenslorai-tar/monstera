@@ -518,13 +518,27 @@ function paragraphElementsIn(root: HTMLElement, range: Range): HTMLElement[] {
   );
 }
 
-/** Draws a paragraph's settings from its `data-*`: the one place its inline style is made. */
-function paintParagraph(element: HTMLElement, zoom: number): void {
+/**
+ * The `data-*` names a paragraph's OWN edges on the page are carried under (ADR-0179's correction of 2026-10-24): how far
+ * its lines after the first stand from the block's left, and its first line from them. Never read back as a setting —
+ * they are the page's, and the writer reads them again from the same lines — and kept by a paragraph that Enter splits,
+ * which is the writer's rule for the new one too.
+ */
+export const PAGE_EDGE_KEYS = { left: 'pageLeft', first: 'pageFirst' } as const;
+
+/**
+ * Draws a paragraph's settings from its `data-*`: the one place its inline style is made. Where the person set no indent,
+ * the paragraph's own edges on the page, by the writer's rule (`operatorEdit.ts`' `setFor`): a left indent the person set
+ * puts the first line at it, and the page's first-line indent is the default only where neither was set.
+ */
+export function paintParagraph(element: HTMLElement, zoom: number): void {
   const { align, left, first, spacing, before, after } = element.dataset;
+  const pageLeft = element.dataset[PAGE_EDGE_KEYS.left];
+  const pageFirst = element.dataset[PAGE_EDGE_KEYS.first];
   element.style.textAlign = align ?? '';
   element.style.marginBottom = after === undefined ? '' : `${String(Number(after) * zoom)}px`;
-  const leftIndent = left === undefined ? undefined : Number(left);
-  const firstIndent = first === undefined ? undefined : Number(first);
+  const leftIndent = left !== undefined ? Number(left) : pageLeft === undefined ? undefined : Number(pageLeft);
+  const firstIndent = first !== undefined ? Number(first) : left === undefined && pageFirst !== undefined ? Number(pageFirst) : undefined;
   element.style.paddingLeft = leftIndent === undefined ? '' : `${String(leftIndent * zoom)}px`;
   element.style.textIndent = firstIndent === undefined ? '' : `${String(firstIndent * zoom)}px`;
   element.style.lineHeight = spacing === undefined ? '' : String(Number(spacing) * 1.2);

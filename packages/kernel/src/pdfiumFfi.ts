@@ -8,7 +8,7 @@ import {
   type PageInsert,
   type ParagraphProps,
 } from '@monstera/contract/host';
-import { type EditStep, TAB_STOP, nextTabStop } from '@monstera/shared';
+import { type Alignment, type EditStep, TAB_STOP, blockShape, nextTabStop, paragraphSpacing } from '@monstera/shared';
 import koffi from 'koffi';
 
 import { editFaces, editFacesBound } from './editFaces.js';
@@ -51,7 +51,6 @@ import {
   spaceable,
   spacedBy,
 } from './markFigures.js';
-import { type Alignment, blockShape, paragraphSpacing } from './paragraphShape.js';
 import { type ProgramFace, faceOf, programFace } from './fontFace.js';
 import { BOX } from './boxFont.js';
 import { sentAsShown } from './blockAsShown.js';

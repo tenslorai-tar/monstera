@@ -52,7 +52,7 @@
 
 import { MAX_PUSHED_BLOCKS } from '@monstera/contract/host';
 
-import { blockShape } from './paragraphShape.js';
+import { blockShape } from '@monstera/shared';
 
 /** How a text object's matrix sets it (`orientationOf`, `pdfiumFfi.ts`): `upright` is the only one an editor is placed along. */
 export type Orientation = 'upright' | 'turned' | 'vertical' | 'slanted' | 'mirrored';

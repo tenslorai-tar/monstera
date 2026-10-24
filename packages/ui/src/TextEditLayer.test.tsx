@@ -232,15 +232,36 @@ describe('Edit text on the page (ADR-0096)', () => {
     expect(editorIn(view.container).querySelectorAll('.m-text-editor__line')).toHaveLength(2);
   });
 
+  /**
+   * The fixture's paragraph block as ONE paragraph whose first line starts `first` points from the second's: its lines say
+   * the indent, as the page's do, and the editor reads it from them (`paragraphEdges`, ADR-0179's correction of 2026-10-24).
+   */
+  const indentedBy = (paragraph: TextBlock, first: number): TextBlock => {
+    const [one, two] = paragraph.lines;
+    if (one === undefined || two === undefined) throw new Error('the fixture lost a line');
+    const left = paragraph.box.x0;
+    return {
+      ...paragraph,
+      lines: [
+        { ...one, box: { ...one.box, x0: left + Math.max(first, 0) }, soft: true },
+        { ...two, box: { ...two.box, x0: left + Math.max(-first, 0) } },
+      ],
+      shape: { align: 'left', firstIndent: first },
+    };
+  };
+  /** The editor's row for its first paragraph, which carries that paragraph's own edges. */
+  const firstRow = (container: HTMLElement): HTMLElement => {
+    const row = editorIn(container).querySelector<HTMLElement>('.m-text-editor__line');
+    if (row === null) throw new Error('the editor holds no paragraph');
+    return row;
+  };
+
   it('sets the editor in the SHAPE the read found: a centred block is centred, an indented first line is indented (ADR-0179)', async () => {
     const [heading, paragraph] = BLOCKS.blocks;
     if (heading === undefined || paragraph === undefined) throw new Error('the fixture lost a block');
     const shaped: PageBlocks = {
       ...BLOCKS,
-      blocks: [
-        { ...heading, shape: { align: 'center', firstIndent: 0 } },
-        { ...paragraph, shape: { align: 'left', firstIndent: 24 } },
-      ],
+      blocks: [{ ...heading, shape: { align: 'center', firstIndent: 0 } }, indentedBy(paragraph, 24)],
     };
     const { view, answerWith } = mount({ blocks: shaped });
     // NOTHING TYPED, so the open block writes nothing and the next opens at once.
@@ -252,21 +273,37 @@ describe('Edit text on the page (ADR-0096)', () => {
       fireEvent.click(find(view.container, '[data-text-block="1"]'));
       await Promise.resolve();
     });
-    const indented = editorIn(view.container);
-    expect(indented.style.textAlign).toBe('left');
-    expect(indented.style.textIndent).toBe('24px');
+    expect(editorIn(view.container).style.textAlign).toBe('left');
+    // THE INDENT IS THE PARAGRAPH'S, on its own row.
+    expect(firstRow(view.container).style.textIndent).toBe('24px');
   });
 
-  it('a HANGING indent pads the block in and takes the first line back out, since the box starts at that line', () => {
+  it('a HANGING indent pads the paragraph in and takes its first line back out, since the box starts at that line', () => {
     const [heading, paragraph] = BLOCKS.blocks;
     if (heading === undefined || paragraph === undefined) throw new Error('the fixture lost a block');
-    const { view } = mount({
-      blocks: { ...BLOCKS, blocks: [heading, { ...paragraph, shape: { align: 'left', firstIndent: -12 } }] },
-    });
+    // EIGHTEEN POINTS, half as much again as a character of these lines (12): one character is within what agreeing
+    // edges allow, and a hang that small is read as none.
+    const { view } = mount({ blocks: { ...BLOCKS, blocks: [heading, indentedBy(paragraph, -18)] } });
     fireEvent.click(find(view.container, '[data-text-block="1"]'));
-    const editor = editorIn(view.container);
-    expect(editor.style.paddingLeft).toBe('12px');
-    expect(editor.style.textIndent).toBe('-12px');
+    const row = firstRow(view.container);
+    expect(row.style.paddingLeft).toBe('18px');
+    expect(row.style.textIndent).toBe('-18px');
+  });
+
+  it('sets EACH PARAGRAPH at its own left: a second paragraph standing 20 points in starts 20 in, the first at the edge', () => {
+    // The block's two one-line paragraphs, the second moved right as a bulleted item's words are beside a plain line
+    // (the owner's document 8, 2026-10-24). One shape for the block put both at its left.
+    const [heading, paragraph] = BLOCKS.blocks;
+    const [one, two] = paragraph?.lines ?? [];
+    if (heading === undefined || paragraph === undefined || one === undefined || two === undefined) throw new Error('the fixture lost a line');
+    const moved: TextBlock = { ...paragraph, lines: [one, { ...two, box: { ...two.box, x0: paragraph.box.x0 + 20 } }] };
+    const { view } = mount({ blocks: { ...BLOCKS, blocks: [heading, moved] } });
+    fireEvent.click(find(view.container, '[data-text-block="1"]'));
+    // WHERE EACH PARAGRAPH'S FIRST LINE STARTS: its padding and its first-line indent together.
+    const starts = [...editorIn(view.container).querySelectorAll<HTMLElement>('.m-text-editor__line')].map(
+      (row) => Number.parseFloat(row.style.paddingLeft || '0') + Number.parseFloat(row.style.textIndent || '0'),
+    );
+    expect(starts).toStrictEqual([0, 20]);
   });
 
   it('lays each paragraph out in the direction its own letters say, so Hebrew and Arabic are typed right to left (ADR-0181)', () => {

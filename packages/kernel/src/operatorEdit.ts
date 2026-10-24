@@ -1,12 +1,23 @@
 import type { BlockMarkSet, BlockPlace, EditedBlock, PageInsert } from '@monstera/contract/host';
-import { type Result, TAB_STOP, err, nextTabStop, ok } from '@monstera/shared';
+import {
+  type Alignment,
+  type Result,
+  TAB_STOP,
+  agree,
+  blockShape,
+  characterUnit,
+  err,
+  nextTabStop,
+  ok,
+  paragraphEdges,
+  paragraphSpacing,
+} from '@monstera/shared';
 
 import type { MovedBlock } from './engineSeam.js';
 import type { PageFont } from './pageFonts.js';
 import { type BlockPlan, type FlowLine, type Measure, NO_MARK, type Row, largestFit, planBlock } from './paragraphFlow.js';
 import { type DecorationKind, decorationBand } from './markDecorations.js';
 import { JUSTIFY_CAP, RISE_SCALE, SUBSCRIPT_DROP, SUPERSCRIPT_RISE, spaceable, spacedBy } from './markFigures.js';
-import { type Alignment, agree, blockShape, characterUnit, paragraphSpacing } from './paragraphShape.js';
 import { carried, neighbourSpan } from './contentCarry.js';
 import {
   type Matrix,
@@ -775,6 +786,22 @@ function write(
     // A MEASURE THE PERSON GAVE is the measure, from the block's own left edge (the PDFium writer's rule).
     const blockRight = blockPlace?.width !== undefined ? blockLeft + blockPlace.width : inkRight;
     const restOrigin = Math.min(...(lines.length > 1 ? lines.slice(1) : lines).map((line) => line[0]?.origin.x ?? 0));
+    // EACH OLD PARAGRAPH'S OWN EDGES (ADR-0179's correction of 2026-10-24), the editor's own reading of the same lines
+    // (`paragraphEdges`), so a bulleted item and the plain paragraph after it in one block are each set from their own left.
+    // In ink for comparing a line's start, and in origins for placing one, since an operator is placed by its origin: the
+    // leftmost origin of the paragraph's lines after its first, or its one line's origin less the indent it takes.
+    const edges = paragraphEdges(extents, soft);
+    const paragraphOrigins: number[] = [];
+    {
+      let from = 0;
+      for (let at = 0; at < lines.length; at += 1) {
+        if (at < lines.length - 1 && soft[at] === true) continue;
+        const origins = lines.slice(from, at + 1).map((line) => line[0]?.origin.x ?? 0);
+        const [head = 0, ...rest] = origins;
+        paragraphOrigins.push(rest.length > 0 ? Math.min(...rest) : head - (edges[paragraphOrigins.length]?.firstIndent ?? 0));
+        from = at + 1;
+      }
+    }
 
     /** Empties a run's operators, and the inkless spaces PDFium joined into it that no run holds. */
     const empty = (members: readonly number[]): void => {
@@ -1073,18 +1100,20 @@ function write(
     };
 
     // HOW EACH PARAGRAPH IS SET: the block's shape with what the person set over it (ADR-0180 Decision 2), as the PDFium
-    // writer reads it. Edges are origins here, since an operator is placed by where its glyph is drawn from.
+    // writer reads it. Edges are origins here, since an operator is placed by where its glyph is drawn from. A left-aligned
+    // block's paragraph takes the edges of the old paragraph it is set in (`shapedBy`, the planner's), as the editor draws it.
     const settings = new Map((block.paragraphs ?? []).map((setting) => [setting.paragraph, setting]));
-    const setFor = (place: number): { align: Alignment | 'justify'; leftEdge: number; first: number; centre: number } => {
+    const setFor = (place: number, shapedBy: number): { align: Alignment | 'justify'; leftEdge: number; first: number; centre: number } => {
       const given = settings.get(place);
       const align = given?.align ?? shape.align;
-      const leftEdge = given?.leftIndent === undefined ? restOrigin : blockLeft + given.leftIndent;
-      const first = given?.firstIndent ?? (given?.leftIndent === undefined ? shape.firstIndent : 0);
+      const own = shape.align === 'left' ? { left: paragraphOrigins[shapedBy], first: edges[shapedBy]?.firstIndent } : { left: undefined, first: undefined };
+      const leftEdge = given?.leftIndent === undefined ? (own.left ?? restOrigin) : blockLeft + given.leftIndent;
+      const first = given?.firstIndent ?? (given?.leftIndent === undefined ? (own.first ?? shape.firstIndent) : 0);
       const centre = given?.align === undefined && shape.align === 'center' ? shape.centre : (leftEdge + blockRight) / 2;
       return { align, leftEdge, first, centre };
     };
-    const limits = (place: number): { first: number; rest: number } => {
-      const set = setFor(place);
+    const limits = (place: number, shapedBy: number): { first: number; rest: number } => {
+      const set = setFor(place, shapedBy);
       if (set.align === 'center') {
         const across = Math.max(1, 2 * Math.min(blockRight - set.centre, set.centre - set.leftEdge));
         return { first: across, rest: across };
@@ -1237,16 +1266,17 @@ function write(
       // where it did and is set from its left, each leading piece that is exactly an old run is that run, untouched.
       // At least one old run is set again, which is where the rest of the line begins.
       let untouched = 0;
-      const set = setFor(row.paragraph);
-      // A LINE SET AFRESH STARTS WHERE THE PARAGRAPH SETS IT, which is where the editor draws it — its first line at the
+      const set = setFor(row.paragraph, row.shapedBy);
+      // A LINE SET AFRESH STARTS WHERE ITS PARAGRAPH SETS IT, which is where the editor draws it — its first line at the
       // indent, every other at the left edge — and where the plan measured its width from. The line it replaces keeps its
-      // own start only where that start IS that place: its ink's left agrees with the shape's edge, in the shape's own terms
-      // and unit (`agree`, `paragraphShape.ts`). Measured 2026-10-24 in the owner's document 12: a paragraph's second line
-      // stood 19.2 pt right of the edge, was refilled to the 82.87 pt the edge allows, and was drawn from its own start,
+      // own start only where that start IS that place: its ink's left agrees with the paragraph's edge, in the shape's own
+      // terms and unit (`agree`, `paragraphShape.ts`). Measured 2026-10-24 in the owner's document 12: a paragraph's second
+      // line stood 19.2 pt right of the edge, was refilled to the 82.87 pt the edge allows, and was drawn from its own start,
       // ending 17.4 pt past the block's right.
       const inkStart = extents[row.replaces]?.x0;
-      const startsWhereSet =
-        replaced !== undefined && inkStart !== undefined && agree([inkStart, shape.left + (row.first ? shape.firstIndent : 0)], unit);
+      const edge = shape.align === 'left' ? edges[row.shapedBy] : undefined;
+      const inkEdge = edge === undefined ? shape.left + (row.first ? shape.firstIndent : 0) : edge.left + (row.first ? edge.firstIndent : 0);
+      const startsWhereSet = replaced !== undefined && inkStart !== undefined && agree([inkStart, inkEdge], unit);
       const keepsItsLine = given?.leftIndent === undefined && given?.firstIndent === undefined && startsWhereSet;
       if (shrink === 1 && !replaceAll && replaced !== undefined && set.align === 'left' && keepsItsLine && Math.abs(target - (baselines[row.replaces] ?? 0)) <= SAME) {
         while (untouched < replaced.length - 1) {

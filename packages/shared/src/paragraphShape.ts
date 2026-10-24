@@ -130,6 +130,58 @@ export function blockShape(lines: readonly LineExtent[], soft: readonly boolean[
   return paragraphShape(lines);
 }
 
+/** Where one paragraph's lines start: the edge its lines after the first keep, and how far its first line stands from it. */
+export interface ParagraphEdges {
+  /** The left edge of its lines after the first, in the space the lines are in. */
+  readonly left: number;
+  /** How far its first line starts to the right of `left`: negative for a hanging indent, `0` for none. */
+  readonly firstIndent: number;
+}
+
+/**
+ * Each paragraph's own edges, by the shape's relations
+ * ([ADR-0179](../../../docs/DECISIONS/0179-a-paragraph-is-the-editors-unit-and-a-reflow-keeps-each-word-in-its-own-style.md)'s
+ * correction of 2026-10-24): a block often holds paragraphs that do not share one — a bulleted item and the plain paragraph
+ * after it, an item hanging from its bullet beside a line left over from the item before. The ONE function the editor
+ * draws each paragraph with and the writer sets each one with, over the same lines, so a paragraph is never at one edge
+ * on screen and another on the page.
+ *
+ * - A paragraph of two lines or more keeps the leftmost of its lines after the first, and its first line's offset from
+ *   that unless every line's start agrees (`agree`, one character).
+ * - A paragraph of one line has nothing of its own to compare. It takes the block's indent only where it stands where the
+ *   block's first lines do — a one-line item of a list whose other items hang — and otherwise keeps its own start.
+ * - A block that is not left-aligned gives every paragraph the block's edge: its lines stand by their centre or their
+ *   right, and no left edge is read from them.
+ *
+ * @param lines the block's lines, top to bottom
+ * @param soft whether each line's end is soft; the last is never read
+ * @returns one entry per paragraph, in order
+ */
+export function paragraphEdges(lines: readonly LineExtent[], soft: readonly boolean[]): readonly ParagraphEdges[] {
+  const block = blockShape(lines, soft);
+  const unit = characterUnit(lines);
+  const edges: ParagraphEdges[] = [];
+  let start = 0;
+  for (let at = 0; at < lines.length; at += 1) {
+    if (at < lines.length - 1 && soft[at] === true) continue;
+    const own = lines.slice(start, at + 1);
+    start = at + 1;
+    const [first, ...rest] = own;
+    if (first === undefined) continue;
+    if (block.align !== 'left') {
+      edges.push({ left: block.left, firstIndent: block.firstIndent });
+    } else if (rest.length > 0) {
+      const left = Math.min(...rest.map((line) => line.x0));
+      edges.push({ left, firstIndent: agree(own.map((line) => line.x0), unit) ? 0 : first.x0 - left });
+    } else if (block.firstIndent !== 0 && agree([first.x0, block.left + block.firstIndent], unit)) {
+      edges.push({ left: first.x0 - block.firstIndent, firstIndent: block.firstIndent });
+    } else {
+      edges.push({ left: first.x0, firstIndent: 0 });
+    }
+  }
+  return edges;
+}
+
 /**
  * The extra space a paragraph's end leaves, beyond the pitch inside a paragraph: what a paragraph typed below takes
  * ([ADR-0179](../../../docs/DECISIONS/0179-a-paragraph-is-the-editors-unit-and-a-reflow-keeps-each-word-in-its-own-style.md)

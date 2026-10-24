@@ -759,6 +759,34 @@ describe('editOperators on paragraphs (ADR-0179)', () => {
     });
   });
 
+  it('sets each paragraph from its OWN left edge: a bulleted item at 92 beside a plain paragraph at 72 (ADR-0179, 2026-10-24)', () => {
+    // The shape measured in the owner's document 8: one block, an item whose lines stand at 92 and a paragraph at 72 that
+    // reaches the right edge, 132. A word typed at the end of the item's FIRST line refills it within the 40 its own edge
+    // leaves: `aaa bbb`, then `eee ccc` from 92. Measured from the block's leftmost line, 72, the first line takes
+    // `aaa bbb eee` (55) and, drawn from 92, ends at 147, fifteen past the right.
+    const content = bytes(
+      [
+        'BT /F1 10 Tf 1 0 0 1 92 100 Tm (aaa bbb) Tj ET',
+        'BT /F1 10 Tf 1 0 0 1 92 88 Tm (ccc) Tj ET',
+        'BT /F1 10 Tf 1 0 0 1 72 76 Tm (dddddddddddd) Tj ET',
+      ].join('\n'),
+    );
+    const page: PageRuns = {
+      textObjects: [0, 1, 2],
+      runs: [inked(0, 'aaa bbb', 92, 127), inked(1, 'ccc', 92, 107), inked(2, 'dddddddddddd', 72, 132)],
+    };
+    const result = editOperators(content, fonts, page, [
+      { lines: [[0], [1], [2]], soft: [true, false, false], text: 'aaa bbb eee ccc\ndddddddddddd' },
+    ]);
+    if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+    const written = inserted(result.value).join('\n');
+    // `eee` OPENS THE SECOND LINE, from the item's own edge.
+    expect(written).toMatch(/^1 0 0 1 92 88 Tm <656565/mu);
+    expect(written).not.toMatch(/^1 0 0 1 72 88 Tm/mu);
+    // CONTROL: the plain paragraph, untouched, is not written at all; and nothing of the item reaches past 132.
+    expect(written).not.toContain('<646464');
+  });
+
   it('keeps a centred line centred when its words change', () => {
     const content = bytes(
       [
