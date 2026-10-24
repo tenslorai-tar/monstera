@@ -102,3 +102,23 @@ and the check was what refused.
 - **Patching PDFium's `FontsMapSearch` to key on the font object**: a fork of the engine for one symptom of a writer whose
   unit is wrong; the next document finds the next thing the page rewrite re-derives.
 - **Keeping PDFium as the default and the read-back as the guard**: correct, and refuses every edit of the brochure.
+
+## Correction, 2026-10-24, before the code — Decision 4 checks the lines the edit set, not the block by place
+
+**Decision 4 answered the wrong question.** It was written from the refused edits alone. Read against the page before
+any edit (scratch probe, document 2, page 2, blocks 2, 8 and 10): MuPDF's reading of the UNEDITED page already fails to
+hold the line that ends in raised markers unbroken — block 8's first line is held, its second is not. So the check was
+refusing on lines the edit never wrote. The operator writer leaves such a line alone, or carries it as its own operators,
+and the structural read-back already holds those bytes: every operator outside the edit byte for byte, and every inserted
+operator, carried ones included, read through its font's ToUnicode as the words drawn.
+
+**So Decision 4 is now:** MuPDF's reading must hold, unbroken and white space aside, each line whose words the edit SET
+(`OperatorEdit.checked`), each line on its own; a line left where it was or carried is not asked of it. A character
+MuPDF reads as U+FFFD stands for any one character, as decided. Reading by place was not built: it would compare
+positions this writer already fixed itself, and it is a second opinion about lines MuPDF reads as the page did.
+
+**And Decision 1's line that a wrap pushes down is now carried, not set again.** Before this change such a line was
+set again from its words in its run's own state, which is a re-encoding the owner's rule excludes (*"only their
+positions change, never their text or fonts"*). It is now carried as its operators were, by the same replay a placed
+block's lines take (ADR-0188), and set from its words only where it cannot be carried. A case with a kerned line below a
+wrap holds its kerning in the carried operator, and goes red with the replay restricted to placed blocks again.
