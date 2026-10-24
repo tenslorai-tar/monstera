@@ -325,6 +325,48 @@ function pitchOf(block: TextBlock): number | undefined {
 }
 
 /**
+ * Where each paragraph the editor draws starts against where the block's even spacing would put it, in points: `down`,
+ * so its first baseline lies on the page's, and `across`, so its first line starts where the page's does.
+ *
+ * ## Why the even spacing alone is not where the page's lines are
+ *
+ * The editor sets every line at the block's pitch (`pitchOf`, its first two baselines apart), and a block is often more
+ * than one paragraph with space of its own between them. Measured 2026-10-24 on a contract clause of three numbered
+ * paragraphs, read by PDFium and grouped by `groupIntoBlocks` as one block of five lines ending on purpose: the page's
+ * baselines are 700, 686, 669, 655 and 636, the even spacing put the editor's at 700, 686, 672, 658 and 644, and the
+ * editor, as tall as its own lines, ended 8 points above the page's last line, which showed below it as a second copy.
+ * The lines that carry on a clause's words start at the number column's right (90.6 against the block's 73.2), and the
+ * editor drew them at the block's left.
+ *
+ * So each paragraph is moved by what the page shows. `down` counts the lines of the paragraph before it at the pitch,
+ * since that is how the editor lays them out; `across` is measured from where the block's shape already starts a first
+ * line, and is nothing for a block centred or set right, whose lines the alignment places.
+ */
+function paragraphPlaces(block: TextBlock): readonly { readonly down: number; readonly across: number }[] {
+  const pitch = pitchOf(block);
+  const paragraphs = paragraphsOf(block);
+  const start = block.shape.align === 'left' ? block.box.x0 + Math.max(block.shape.firstIndent, 0) : undefined;
+  return paragraphs.map((lines, at) => {
+    const first = lines[0];
+    const before = paragraphs[at - 1]?.[0];
+    const above = paragraphs[at - 1]?.length ?? 0;
+    return {
+      down: pitch === undefined || before === undefined || first === undefined ? 0 : before.baseline - above * pitch - first.baseline,
+      across: start === undefined || first === undefined ? 0 : first.box.x0 - start,
+    };
+  });
+}
+
+/** Moves each row the editor built from a paragraph of the page to where that paragraph is (`paragraphPlaces`), at the zoom. */
+function placeParagraphs(element: HTMLElement, places: readonly { readonly down: number; readonly across: number }[], zoom: number): void {
+  for (const row of element.querySelectorAll<HTMLElement>(':scope > .m-text-editor__line[data-paragraph]')) {
+    const place = places[Number(row.dataset['paragraph'])];
+    row.style.marginTop = place === undefined || place.down === 0 ? '' : `${String(place.down * zoom)}px`;
+    row.style.marginLeft = place === undefined || place.across === 0 ? '' : `${String(place.across * zoom)}px`;
+  }
+}
+
+/**
  * How far the editor's words are moved down, in pixels, so its first baseline lies on the page's (the owner's A7,
  * 2026-10-14: the editor stood at the block's ink top, and a CSS line box puts its half-leading and its face's whole
  * ascent above the first baseline, so the words sat 2 to 3 pixels low at 100 % and 4 to 5 at 200 %, and a one-line
@@ -1394,9 +1436,11 @@ function BlockEditor({
     element.replaceChildren(
       // A PARAGRAPH A `div`, its soft-wrapped lines run together, so the browser wraps it at the block's width and the
       // words read back are the paragraphs the kernel is sent (ADR-0179).
-      ...paragraphsOf(block).map((lines) => {
+      ...paragraphsOf(block).map((lines, paragraph) => {
         const row = owner.createElement('div');
         row.className = 'm-text-editor__line';
+        // WHICH OF THE PAGE'S PARAGRAPHS THIS ROW IS, for `placeParagraphs`.
+        row.dataset['paragraph'] = String(paragraph);
         for (const line of lines) {
           for (const run of line.runs) {
             const span = owner.createElement('span');
@@ -1449,7 +1493,9 @@ function BlockEditor({
     for (const span of element.querySelectorAll<HTMLElement>('.m-text-editor__run, .m-text-editor__fmt[data-size]')) {
       span.style.fontSize = `${String(Number(span.dataset['size'] ?? '0') * geometry.zoom)}px`;
     }
-  }, [geometry.zoom]);
+    // AND EACH PARAGRAPH WHERE THE PAGE HAS IT, at the same zoom (`paragraphPlaces`).
+    placeParagraphs(element, paragraphPlaces(block), geometry.zoom);
+  }, [block, geometry.zoom]);
   const baselineShift = useBaselineShift(area, block, geometry.zoom);
 
   /** Whether a write is in flight: the words are not editable meanwhile, so nothing is typed into a block already sent. */
@@ -1715,7 +1761,10 @@ function BlockEditor({
         if (menuOpen.current) return;
         if (problem === undefined) void finish();
       }}
-      style={{ ...boxStyle(placed), height: 'auto', minHeight: placed.height }}
+      // THE PAGE'S PAPER OVER THE BLOCK'S WHOLE BOX, not only behind the words: the editor is as tall as its own lines,
+      // and where those end above the block's foot, or the person has moved them, the page's own copy of the block
+      // showed beside them (`paragraphPlaces`' measurement). The frame stands where the block is and never moves.
+      style={{ ...boxStyle(placed), height: 'auto', minHeight: placed.height, ...paper }}
     >
       {/* THE PLACER: what the person has done to the block so far, shown as a transform over the editor and its handles so
           the bar and the sentences stay upright where they are. The measure is its width, so the words wrap at it live. */}
