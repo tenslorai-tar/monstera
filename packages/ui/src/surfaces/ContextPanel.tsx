@@ -29,7 +29,7 @@ import { PanelSheet } from './PanelSheet.js';
  *
  * The founding record names it *"right contextual panel (annotations list / properties)"*
  * (`BUILD-PROMPT.md`:1070). The architecture drops the parenthetical and places *Comments* — the
- * annotations list — in the left document panel's six tabs, where design pass C put it. A second
+ * annotations list — in the left document panel's tabs, where design pass C put it. A second
  * list here would be two surfaces for one list (B3), so this panel holds what is left of the
  * record's phrase: the style controls and the selection's styles. `App` hands them in as children,
  * because their state lives there.

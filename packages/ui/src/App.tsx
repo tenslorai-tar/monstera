@@ -6504,8 +6504,8 @@ function PageCanvas({
     // NO SLOTS: the parser is what knows how many pages there are, so until it opens there is nothing honest to lay
     // out. The page area says the document is opening (§10.5's loading state) — until the owner's review of 0.1.8.0
     // it was an empty dark pane for as long as a 210 MB scan's parse took. The failure case above is the one that
-    // carries a marker. The document panel is already there, for the failure case's reason: five of its six panels do
-    // not wait for PDF.js.
+    // carries a marker. The document panel is already there, for the failure case's reason: every panel but Pages
+    // does without PDF.js.
     return (
       <DocumentBody
         settings={settings}
