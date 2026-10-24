@@ -1709,6 +1709,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
             upright.map((run) => ({
               ...run,
               setting: settingOf(run.style),
+              // A FIXED-PITCH LINE KEEPS ITS BREAK (`softEnds`): code set one command to a line is not a wrapped paragraph.
+              fixedPitch: run.style.mono,
               style: {
                 size: run.style.size,
                 colour: run.style.colour,
