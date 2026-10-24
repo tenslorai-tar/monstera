@@ -7,8 +7,13 @@ words are this project's own, and every font in one is freely licensed.
 | Fixture | Made by | Contents | Fonts |
 |---|---|---|---|
 | `text-edit/chromium-type3.pdf` | `node scripts/research/chromiumType3Fixture.mjs`, which prints a page of our own HTML with Edge headless (`--print-to-pdf`); printed 2026-10-04 by Edge 154.0.4258.53, Skia/PDF m154 | One page, three lines of our own words (`CHROMIUM_LINES` in the script); Info carries the page's own title, Edge's user-agent string as Creator, Skia as Producer and the print date — the script refuses a print whose Info or bytes name a local path | Liberation Sans Regular (SIL OFL 1.1, from `pdfjs-dist`): the two headings in Chromium's synthetic bold, which Skia writes as a Type 3 font; the body line as Type0 / CIDFontType2 |
+| `text-edit/editor-fidelity.pdf` | `node scripts/research/editorFidelityFixture.mjs`, which builds it with pdf-lib and `fontKindFixtures.mjs`' `fontOfKind`, and writes beside it `editor-fidelity.blocks.json`, PDFium's reading of it grouped as main groups it; `proof:editorfidelityfixture` holds both to what the script writes now | One page, six blocks of our own words: a bold heading over two lines, a justified paragraph, a bulleted list with bold lead-ins and raised references, a code block one command to a line, and two paragraphs; no Info dictionary | Times-Roman, Times-Bold, Courier and Helvetica named and not embedded; Liberation Sans Regular (SIL OFL 1.1, from `pdfjs-dist`) embedded as TrueType for one paragraph |
 
 **Why this one is committed rather than built at test time**: it is Chromium's own PDF writer that makes it, and a
 runner without Edge — every Linux one — cannot. The fonts-by-kind fixtures `scripts/research/fontKindFixtures.mjs`
 builds need only this repository's dependencies and, for the Type 1 kinds, the MuPDF source its provisioning
 extracts under `.tools`, so they are built on demand and not committed.
+
+**The editor fidelity page is committed** for a different reason: `editorFidelity.pw.ts` runs in the renderer's test
+runner, which cannot import the font-kind builder under `scripts/`. `proof:editorfidelityfixture` builds it again and
+refuses a committed copy that differs.

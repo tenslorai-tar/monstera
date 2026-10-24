@@ -452,6 +452,15 @@ jobs:
           node scripts/ci/annotate.mjs scripts/proofs/lineEndMarks.proof.mjs
           ${{ runner.os == 'Windows' && '--require-engines' || '' }}
 
+      # The page editorFidelity.pw.ts opens Edit text on, and the blocks it
+      # hands the editor, are what the fixture script builds and what PDFium
+      # and the grouping read from it now; the control is a reading with one
+      # word changed, which must read as different.
+      - name: Prove the editor fidelity fixture is the reading
+        run: >
+          node scripts/ci/annotate.mjs scripts/proofs/editorFidelityFixture.proof.mjs
+          ${{ runner.os == 'Windows' && '--require-engines' || '' }}
+
       # ADR-0228's correction of 2026-10-16. Two and three spaces typed read
       # back as two and three, by the editor's reader and by MuPDF's page-text
       # read a copy takes; the control is the same words drawn unmarked, which
