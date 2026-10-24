@@ -7,12 +7,13 @@ import { asDocVersion } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
-import { type PageRun, type PageRuns, editOperators } from './operatorEdit.js';
+import { runsOfContent as runsOf } from './contentRunsFixture.js';
+import { editOperators } from './operatorEdit.js';
 import { pageContentStreams, xobjectKinds } from './pageContent.js';
 import { rasterisePageRgba } from './pageImages.js';
 import { pageFonts } from './pageFonts.js';
 import { applyEditTextOperators } from './textOperatorEdit.js';
-import { joinedContent, showOperators, textObjectCount } from './textOperators.js';
+import { joinedContent } from './textOperators.js';
 
 /**
  * Edit object's edits of a TEXT BLOCK through the operator writer (ADR-0264 Decision 5): recoloured with every line
@@ -42,25 +43,6 @@ async function fixture(content = CONTENT): Promise<Uint8Array> {
   );
   page.node.set(PDFName.of('Contents'), context.register(context.stream(content)));
   return document.save({ useObjectStreams: false });
-}
-
-/** PDFium's reading as these cases need it: each text object one run of what its literal strings say. */
-function runsOf(content: Uint8Array): PageRuns {
-  const ops = showOperators(content);
-  const runs: PageRun[] = [];
-  for (const textObject of new Set(ops.map((op) => op.textObject))) {
-    const line = ops.filter((op) => op.textObject === textObject && op.object !== null);
-    const first = line[0]?.object;
-    if (first === undefined || first === null) continue;
-    const text = line.map((op) => new TextDecoder('latin1').decode(op.codes)).join('');
-    // ITS INK AS PDFium WOULD BOX IT, near enough for an anchor: from a fifth of its size below the baseline to four
-    // fifths above, from its origin to where Helvetica's average advance ends it.
-    const lead = line[0];
-    const [, , , , x = 0, y = 0] = lead?.state.matrix ?? [];
-    const size = lead?.state.size ?? 0;
-    runs.push({ index: first, members: line.map((op) => op.object ?? -1), text, left: x, right: x + 0.5 * size * text.length, bottom: y - 0.2 * size, top: y + 0.8 * size });
-  }
-  return { textObjects: Array.from({ length: textObjectCount(ops) }, (_, at) => at), runs };
 }
 
 /** The heading block's edit: its one run, its words, and what else the case asks. */

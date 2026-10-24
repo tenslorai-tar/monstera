@@ -2260,8 +2260,10 @@ const declarations = {
   editTextOperators: {
     kind: 'editTextOperators',
     display: 'image',
-    // THE PAGES IT CHANGES (ADR-0262): all, until the per-kind drawing check covers this kind.
-    pages: 'all',
+    // THE PAGES IT CHANGES (ADR-0262): the one whose content it writes, checked by `pageDeclarations.test.ts`. The page
+    // gets a stream of its own, and what it adds to a resource dictionary another page may share is a NAME, which no
+    // other page's content draws.
+    pages: (command) => [command.page],
     writer: 'mupdf',
     // NOT INVERTIBLE, and a checkpoint is the undo BY DECISION (owner, 2026-10-06):
     // the whole-document copy the checkpoint restores loses nothing an inverse

@@ -2,14 +2,18 @@ import { createHash } from 'node:crypto';
 
 import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
 import type { CommandKind, CommandOfKind } from '@monstera/contract';
+import { blockEditOf } from '@monstera/contract/host';
 import { asDocVersion } from '@monstera/shared';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { declaredCommands, pagesChangedBy } from './commandDeclarations.js';
+import { runsOfContent } from './contentRunsFixture.js';
 import type { MupdfSession } from './engineSeam.js';
 import { localMupdfExecution } from './mupdfSpecs.js';
 import { ColorSpace, Matrix } from './mupdfRaw.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
+import { pageContentStreams } from './pageContent.js';
+import { joinedContent } from './textOperators.js';
 
 /**
  * The per-kind drawing check ([ADR-0262](../../../docs/DECISIONS/0262-a-command-declares-the-pages-it-changes.md)
@@ -60,7 +64,12 @@ async function beforeAndAfter(
   const run = async (bytes: Uint8Array, each: CommandOfKind<CommandKind>): Promise<Uint8Array> => {
     const session: MupdfSession = await mupdfWriter.open(bytes);
     try {
-      await localMupdfExecution.apply({ session, command: each as never, sources: [], reads: undefined });
+      // A KIND THAT DECLARES THE PAGE-RUNS PRE-READ is handed the fixture page's runs, as the host hands PDFium's.
+      const reads =
+        declaredCommands[each.kind].reads === 'pageRuns' && 'page' in each
+          ? await withDocument(session, (document) => runsOfContent(joinedContent(pageContentStreams(document.findPage(each.page)))))
+          : undefined;
+      await localMupdfExecution.apply({ session, command: each as never, sources: [], reads });
       return await mupdfWriter.serialise(session);
     } finally {
       await mupdfWriter.close(session);
@@ -113,6 +122,17 @@ const CHECKED: Readonly<Record<string, { readonly command: CommandOfKind<Command
       ordinal: 0,
       box: { left: 72, bottom: 600, right: 172, top: 650 },
       edit: { op: 'place', moveBy: { x: 20, y: -30 }, scaleBy: { x: 1, y: 1 } },
+      version: VERSION,
+    },
+  },
+  // PAGE 1'S LINE MOVED by the operator writer (Edit object's text block, ADR-0264 Decision 5): the page gets a new content
+  // stream of its own, and a font or a graphics state it adds is a name no other page draws.
+  editTextOperators: {
+    command: {
+      kind: 'editTextOperators',
+      page: 1,
+      ...blockEditOf([{ lines: [[0]], soft: [false], text: 'Page 2: the quick brown fox jumps over the lazy dog.', place: { move: { x: 20, y: -30 } } }]),
+      fit: 'reflow',
       version: VERSION,
     },
   },
