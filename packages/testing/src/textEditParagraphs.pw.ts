@@ -14,17 +14,24 @@ import { LOOKS, bridgeUnder } from './pageBridge.js';
  * `groupIntoBlocks`, and its baselines are not evenly spaced: the editor's last line stood 8 points above the page's,
  * and the page's own last line showed below the editor, a second copy a few pixels away. The lines carrying on a
  * clause's words were drawn at the number column's left. `paragraphPlaces` in `TextEditLayer.tsx` moves each paragraph
- * to where the page has it, and the frame carries the page's paper over the block's whole box.
+ * to where the page has it.
+ *
+ * ## Corrected by cloud run 19: ONE copy is now the PAGE'S, until the person changes a row
+ *
+ * This file first held the shape run 18 built, a papered frame over the block with the editor's copy drawn on it. Run
+ * 19 measured that any second drawing changes what is shown on open (`editorFidelity.pw.ts`) and stopped drawing rows
+ * nobody changed (`AS_DRAWN`). The single copy is now the page's own, so the first assertion below is that opening
+ * changes no pixel of the block, and the walk's that no frame draws a row or lays paper while nothing is changed.
  *
  * ## What is asserted, and how it is read
  *
- * - NO SECOND COPY: with the editor open and its own words made transparent, the block's box on screen holds no dark
- *   pixel, so nothing of the page's words shows beside or under the editor. Its positive control is the same box
- *   before the editor opens, which must hold ink.
+ * - ONE COPY: the block's box on screen holds the same dark pixels after the editor opens as before. Its positive
+ *   control is that the box holds ink before.
  * - EACH LINE ON THE PAGE'S: a zero-size marker at the start of each of the editor's rows stands on its baseline and at
- *   its first letter's origin, and each is within a pixel of the page's line, at 100 % and at 200 %.
- * - OPENING AND CLOSING, every animation frame: while the editor is there it holds the block's words and its frame
- *   covers the block's box, so no frame shows the editor's words beside the page's, or an empty editor over paper.
+ *   its first letter's origin, and each is within a pixel of the page's line, at 100 % and at 200 %: where a changed
+ *   row is drawn, and where the caret runs meanwhile.
+ * - OPENING AND CLOSING, every animation frame: while the editor is there it holds the block's words and draws none of
+ *   them and lays no paper, so no frame shows a second copy or a papered gap.
  *
  * ## The fixture is the shape that fails
  *
@@ -113,7 +120,8 @@ async function open(page: Page, zoom: string): Promise<void> {
   // THE OUTLINES AND HANDLES HIDDEN, so the only dark pixels are words.
   await page.addStyleTag({
     content:
-      '.m-text-editor-handle,.m-text-editor-problem{visibility:hidden!important}.m-text-block{border-color:transparent!important;outline:none!important}.m-text-editor-frame{outline:none!important;border-color:transparent!important}',
+      // AND THE OUTLINE'S HOVER TINT, which an open block, having no outline, does not show (measured: 153 dark pixels at 200 %).
+      '.m-text-editor-handle,.m-text-editor-problem{visibility:hidden!important}.m-text-block{border-color:transparent!important;outline:none!important;background:transparent!important}.m-text-editor-frame{outline:none!important;border-color:transparent!important}',
   });
 }
 
@@ -179,6 +187,8 @@ for (const zoom of ['100pct', '200pct'] as const) {
     const editor = page.locator('[data-text-editor]');
     await expect(editor).toBeFocused();
     await page.waitForTimeout(300);
+    // THE SAME PLACE ON THE PAGE, or the ink compared is of two places.
+    expect((await onScreen(page)).y(CLAUSE_BOX.y1) - 1).toBe(region.y);
 
     // EACH ROW'S BASELINE AND START against the page's line it was built from.
     const rows = await editor.evaluate((element) =>
@@ -203,28 +213,35 @@ for (const zoom of ['100pct', '200pct'] as const) {
       expect.soft(Math.abs(each.across), facts).toBeLessThanOrEqual(1);
     }
 
-    // AND NOTHING OF THE PAGE'S COPY: the editor's own words made transparent, its paper left as it is.
-    await page.addStyleTag({ content: '[data-text-editor],[data-text-editor] *{color:transparent!important;text-decoration-color:transparent!important;caret-color:transparent!important}' });
+    // AND ONE COPY, THE PAGE'S: the box holds the ink it held before the editor opened, the caret hidden.
+    await page.addStyleTag({ content: '[data-text-editor]{caret-color:transparent!important}' });
     await page.waitForTimeout(100);
-    expect.soft(await darkPixels(page, region)).toBe(0);
+    expect.soft(await darkPixels(page, region)).toBe(before);
   });
 }
 
-test('opening and closing the clause’s editor shows, in every frame, either the page’s words or the editor’s over the whole block', async ({ page }) => {
+test('opening and closing the clause’s editor shows, in every frame, the page’s words and nothing of the editor’s', async ({ page }) => {
   await open(page, '100pct');
-  const at = await onScreen(page);
-  const block = { left: at.x(CLAUSE_BOX.x0), top: at.y(CLAUSE_BOX.y1), right: at.x(CLAUSE_BOX.x1), bottom: at.y(CLAUSE_BOX.y0) };
   await page.evaluate(() => {
-    const frames: { readonly open: boolean; readonly words: string; readonly cover: { left: number; top: number; right: number; bottom: number } | null }[] = [];
+    const frames: { readonly open: boolean; readonly words: string; readonly drawn: number; readonly papered: number }[] = [];
     Reflect.set(window, 'editorFrames', frames);
+    const clear = (element: Element): boolean => {
+      const style = getComputedStyle(element);
+      return style.backgroundColor === 'rgba(0, 0, 0, 0)' && style.backgroundImage === 'none';
+    };
     const sample = (): void => {
       const editor = document.querySelector('[data-text-editor]');
-      const element = editor?.closest('.m-text-editor-frame') ?? null;
-      // THE BOX THE PAGE'S PAPER IS PAINTED OVER, which is the frame only where the frame carries the paper.
-      const style = element === null ? null : getComputedStyle(element);
-      const painted = style !== null && (style.backgroundColor !== 'rgba(0, 0, 0, 0)' || style.backgroundImage !== 'none');
-      const frame = painted ? (element?.getBoundingClientRect() ?? null) : null;
-      frames.push({ open: editor !== null, words: editor?.textContent ?? '', cover: frame === null ? null : { left: frame.left, top: frame.top, right: frame.right, bottom: frame.bottom } });
+      const rows = editor === null ? [] : Array.from(editor.querySelectorAll(':scope > div'));
+      const frame = editor?.closest('.m-text-editor-frame') ?? null;
+      frames.push({
+        open: editor !== null,
+        words: editor?.textContent ?? '',
+        drawn: rows.filter((row) => getComputedStyle(row).color !== 'rgba(0, 0, 0, 0)').length,
+        papered:
+          document.querySelectorAll('.m-text-editor-cover').length +
+          (editor !== null && !clear(editor) ? 1 : 0) +
+          (frame !== null && !clear(frame) ? 1 : 0),
+      });
       if (Reflect.get(window, 'editorFramesStop') !== true) requestAnimationFrame(sample);
     };
     requestAnimationFrame(sample);
@@ -237,21 +254,12 @@ test('opening and closing the clause’s editor shows, in every frame, either th
   await page.waitForTimeout(300);
   const frames = await page.evaluate(() => {
     Reflect.set(window, 'editorFramesStop', true);
-    return Reflect.get(window, 'editorFrames') as { readonly open: boolean; readonly words: string; readonly cover: { left: number; top: number; right: number; bottom: number } | null }[];
+    return Reflect.get(window, 'editorFrames') as { readonly open: boolean; readonly words: string; readonly drawn: number; readonly papered: number }[];
   });
   // THE WALK SAW BOTH: frames with the editor open and frames after it closed, or it proves nothing about either.
   expect(frames.some((frame) => frame.open)).toBe(true);
   expect(frames.at(-1)?.open).toBe(false);
   const words = READ.map((line) => line.text).join('');
-  const wrong = frames.filter(
-    (frame) =>
-      frame.open &&
-      (frame.words !== words ||
-        frame.cover === null ||
-        frame.cover.left > block.left + 0.5 ||
-        frame.cover.top > block.top + 0.5 ||
-        frame.cover.right < block.right - 0.5 ||
-        frame.cover.bottom < block.bottom - 0.5),
-  );
-  expect(wrong, JSON.stringify({ block, wrong: wrong.slice(0, 4) })).toStrictEqual([]);
+  const wrong = frames.filter((frame) => frame.open && (frame.words !== words || frame.drawn > 0 || frame.papered > 0));
+  expect(wrong, JSON.stringify(wrong.slice(0, 4))).toStrictEqual([]);
 });

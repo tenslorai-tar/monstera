@@ -6739,6 +6739,10 @@ optgroup {
   position: absolute;
   inset: 0;
   pointer-events: none;
+  /* NEVER THE SCROLL ANCHOR. The editor moves itself onto the page's baseline after it opens, and Chromium, anchored on a
+     word inside it, scrolled the page list by the same amount to hold that word still: the page under it jumped 10 px at
+     200 % (measured 2026-10-24, no script scroll anywhere in the trace). The page is what the view holds still. */
+  overflow-anchor: none;
 }
 
 .m-text-block {
@@ -6841,10 +6845,16 @@ optgroup {
   overflow: hidden;
   white-space: pre-wrap;
   overflow-wrap: break-word;
-  background: var(--page);
+  /* NO PAPER OF ITS OWN: the page shows through a row still as drawn, and each changed row's paper is a cover under it
+     (`AS_DRAWN` in `TextEditLayer.tsx`). A block moved off its place carries the paper with it (`--placed`). */
+  background: transparent;
   caret-color: var(--accent-on-paper, var(--accent));
   /* THE OFFSET PARENT of the baseline marker (`useBaselineShift`), so its offset is in the editor's own frame. */
   position: relative;
+}
+
+.m-text-editor--placed {
+  background: var(--page);
 }
 
 /* A BLOCK WHOSE LINES ALL END ON PURPOSE widens rather than wraps (the owner's A7): at least the block's width, as wide as
@@ -6854,6 +6864,34 @@ optgroup {
   min-inline-size: calc(100% + 1ch);
   white-space: pre;
   overflow-wrap: normal;
+}
+
+/* A ROW AS THE PAGE DREW IT (`AS_DRAWN` in `TextEditLayer.tsx`): its lines break where the page's do and nowhere else,
+   and nothing of it is painted, so the page's own drawing of those words is what shows until the person changes them.
+   The caret keeps the words' colour, which the editor sets apart from `color`. Every descendant, because each run
+   carries its own colour, decoration and highlight inline. */
+.m-text-editor__line--as-drawn {
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+.m-text-editor__line--as-drawn,
+.m-text-editor__line--as-drawn * {
+  color: transparent !important;
+  text-decoration-color: transparent !important;
+  background-color: transparent !important;
+  /* LEFT ALONE BY FORCED COLOURS, `.m-text-layer`'s reason: they would paint `transparent` in the system's text colour and
+     draw this row over the page's own copy of it. */
+  forced-color-adjust: none;
+}
+
+/* THE PAGE'S PAPER over its own copy of a row the editor draws: placed from script in the frame's pixels, under the
+   words. The page's colour where the paper behind a point could not be read. */
+.m-text-editor-cover {
+  position: absolute;
+  inset-inline: -1px;
+  background-color: var(--page);
+  pointer-events: none;
 }
 
 /* WHERE THE FIRST LINE'S BASELINE IS: a marker of no size standing on it, put in and taken out within one layout. */
