@@ -17,6 +17,7 @@ import { activateCatalogue, i18n } from './i18n.js';
 import { EN, SPELLING_DICTIONARY_FULL } from './messages/en.js';
 import { type PageBlocks, TextEditLayer, fontsOfPage, nearbyStyle } from './TextEditLayer.js';
 import { TextFormatPanel } from './TextFormatPanel.js';
+import { readEditor } from './textFormatting.js';
 import { panelControlsOutsideCards } from './propertyCards.js';
 
 afterEach(() => {
@@ -188,7 +189,10 @@ describe('Edit text on the page (ADR-0096)', () => {
     const editor = editorIn(view.container);
     expect(editor.innerText).toBe('Helps with care and support\nat every stage.');
     expect(editor.style.color).toBe('rgb(20, 40, 60)');
-    expect(editor.style.backgroundColor).toBe('rgb(250, 250, 250)');
+    // NO PAPER while nothing is changed (`AS_DRAWN`): every row is laid out as the page drew it and the page shows.
+    expect(editor.style.backgroundColor).toBe('');
+    expect(view.container.querySelectorAll('.m-text-editor-cover')).toHaveLength(0);
+    expect([...editor.querySelectorAll('.m-text-editor__line')].every((row) => row.classList.contains('m-text-editor__line--as-drawn'))).toBe(true);
     expect(editor.style.fontWeight).toBe('700');
     expect(editor.classList.contains('m-text-editor--serif')).toBe(true);
     // THE HANDLES MARK THE OPEN BLOCK, and they take no pointer.
@@ -212,6 +216,10 @@ describe('Edit text on the page (ADR-0096)', () => {
     // ONE PARAGRAPH: one line element, the two lines' words joined by the space the soft wrap stands for.
     expect(editor.querySelectorAll('.m-text-editor__line')).toHaveLength(1);
     expect(editor.innerText).toBe('Helps with care and support at every stage.');
+    // BROKEN WHERE THE PAGE BROKE IT (`AS_DRAWN`), by a wrap the words sent to the writer do not see: the text is the
+    // paragraph's, one space where the line ended, exactly as before the editor drew the page's breaks.
+    expect(editor.querySelectorAll('br[data-soft-wrap]')).toHaveLength(1);
+    expect(readEditor(editor).text).toBe('Helps with care and support at every stage.');
     // THE SPACE IS THE PREVIOUS RUN'S, so it measures as it was set: the run before it is `and support`, in OTHER.
     const spans = [...editor.querySelectorAll<HTMLElement>('.m-text-editor__run')];
     expect(spans.map((span) => span.textContent)).toStrictEqual(['Helps with care ', 'and support', ' ', 'at every stage.']);
@@ -303,18 +311,36 @@ describe('Edit text on the page (ADR-0096)', () => {
     }
   });
 
-  it('draws the editor’s paper as a gradient where the page behind it is shaded, and flat where it is not', () => {
+  it('draws the paper over a changed row as a gradient where the page behind it is shaded, and flat where it is not', () => {
+    /** Opens the paragraph, changes its first row's words and answers the paper laid over the page's copy of that row. */
+    const coverAfterTyping = (container: HTMLElement): { style: { backgroundImage: string; backgroundColor: string } } => {
+      fireEvent.click(find(container, '[data-text-block="1"]'));
+      const editor = editorIn(container);
+      const run = editor.querySelector('.m-text-editor__run');
+      if (run === null) throw new Error('no run');
+      run.textContent = `${run.textContent}x`;
+      fireEvent.input(editor);
+      // ONLY THE CHANGED ROW IS DRAWN, and nothing behind the editor itself.
+      expect([...editor.querySelectorAll('.m-text-editor__line')].map((row) => row.classList.contains('m-text-editor__line--as-drawn'))).toStrictEqual([false, true]);
+      expect(editor.style.backgroundColor).toBe('');
+      // TWO COVERS for the one row, its band where the page drew it and its box where it is now, in one paper.
+      const covers = [...container.querySelectorAll<HTMLElement>('.m-text-editor-cover')];
+      expect(covers).toHaveLength(2);
+      const looks = new Set(covers.map((each) => `${each.style.backgroundImage}|${each.style.backgroundColor}`));
+      expect(looks.size).toBe(1);
+      const [backgroundImage = '', backgroundColor = ''] = [...looks][0]?.split('|') ?? [];
+      return { style: { backgroundImage, backgroundColor } };
+    };
     const shaded = mount({ paperAt: (_x, y) => (y < 170 ? 'rgb(200, 200, 200)' : 'rgb(100, 100, 100)') });
-    fireEvent.click(find(shaded.view.container, '[data-text-block="1"]'));
-    const editor = editorIn(shaded.view.container);
-    expect(editor.style.backgroundImage).toBe('linear-gradient(to bottom, rgb(200, 200, 200), rgb(100, 100, 100))');
-    expect(editor.style.backgroundColor).toBe('');
+    const cover = coverAfterTyping(shaded.view.container);
+    expect(cover.style.backgroundImage).toBe('linear-gradient(to bottom, rgb(200, 200, 200), rgb(100, 100, 100))');
+    expect(cover.style.backgroundColor).toBe('');
     shaded.view.unmount();
     // CONTROL: three of four agreeing is flat paper with a stray neighbour, as before.
     const flat = mount({ paperAt: (x, y) => (x < 70 && y < 140 ? 'rgb(0, 0, 0)' : 'rgb(250, 250, 250)') });
-    fireEvent.click(find(flat.view.container, '[data-text-block="1"]'));
-    expect(editorIn(flat.view.container).style.backgroundColor).toBe('rgb(250, 250, 250)');
-    expect(editorIn(flat.view.container).style.backgroundImage).toBe('');
+    const flatCover = coverAfterTyping(flat.view.container);
+    expect(flatCover.style.backgroundColor).toBe('rgb(250, 250, 250)');
+    expect(flatCover.style.backgroundImage).toBe('');
   });
 
   it('stacks the outlines by area, the smallest on top, so a block inside another is the one clicked', () => {

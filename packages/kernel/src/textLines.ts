@@ -231,6 +231,11 @@ export interface BlockableRun<S> extends LineableRun {
    * (ADR-0097's correction of 2026-10-17): its block is at least that wide.
    */
   readonly measure?: number | undefined;
+  /**
+   * Whether the run is set in a fixed-pitch face — the read's own `mono`, passed by the caller since `style` is never
+   * read here. A line of such runs keeps its break ({@link softEnds}).
+   */
+  readonly fixedPitch?: boolean | undefined;
 }
 
 /**
@@ -486,7 +491,11 @@ export function groupIntoBlocks<S>(runs: readonly BlockableRun<S>[]): readonly E
     // is counted a whole stop wide, ADR-0228 Decision 2) has room left before the measure, and judged against the measure
     // its wrap read as a paragraph's end (measured 2026-10-17, `proof:pdfiumcommand`'s second edit of a tabbed line).
     const soft = softEnds(
-      block.map((piece, at) => ({ text: texts[at] ?? '', box: { x0: piece.left, x1: piece.right } })),
+      block.map((piece, at) => ({
+        text: texts[at] ?? '',
+        box: { x0: piece.left, x1: piece.right },
+        fixedPitch: piece.runs.every((run) => run.fixedPitch === true),
+      })),
       inkRight,
     );
     const { align, firstIndent } = blockShape(
@@ -604,6 +613,12 @@ export function pushesOfPage(
 }
 
 /**
+ * What a line that begins a list entry starts with: a bullet of the kinds word processors and browsers draw, or a number
+ * or a letter closed by a full stop or a bracket, then white space. The ONE statement of it in the reading.
+ */
+export const LIST_ENTRY = /^(?:[•◦▪▫‣⁃●○■□–—*-]|\(?(?:\d{1,3}|[a-z])[.)])\s/u;
+
+/**
  * Whether each line of a block ENDS in a soft wrap, by the typesetter's own test and no constant: a line was soft-wrapped
  * when **the next line's first word would not have fitted at its end**, which is the only reason a typesetter breaks a
  * line inside a paragraph ([ADR-0097](../../../docs/DECISIONS/0097-a-page-is-translated-as-one-block-edit-and-a-font-that-cannot-carry-it-falls-back.md)
@@ -625,7 +640,15 @@ export function pushesOfPage(
  *
  * - the line ENDS A SENTENCE (`.`, `!`, `?`, `:`) and the next begins with a capital or a digit;
  * - the next line starts INDENTED past this one by more than a character, and not by the even amount on both sides a
- *   shorter centred line has.
+ *   shorter centred line has;
+ * - both lines are set in a FIXED-PITCH face. A monospaced face is how code, a terminal's output and preformatted text
+ *   are set, where every line ends where its writer ended it. Measured 2026-10-24 on four Courier commands one to a line,
+ *   read by PDFium and grouped here: the first, the block's widest, read as soft because the next line's first word
+ *   (`#`) would not have fitted after it, so the editor drew the two commands as one line and an edit would have written
+ *   them so. Prose set in a typewriter face keeps its line breaks too, which is the principle's cost again;
+ * - the next line BEGINS A LIST ENTRY ({@link LIST_ENTRY}): a bullet or a number, then a space. Measured the same day on
+ *   two entries of a bulleted list, each a bold lead-in and a raised reference: the first ended near the block's right
+ *   edge and read as wrapping into the second, so typing in one entry would have joined the two.
  *
  * A wrap that happens to fall at a sentence's end is then kept as a break, which costs a ragged line if words are added
  * before it; reading two sentences as one costs the person's line breaks. Of the two, the one that keeps what the page
@@ -635,12 +658,18 @@ export function pushesOfPage(
  * @param right the block's right edge
  */
 export function softEnds(
-  lines: readonly { readonly text: string; readonly box: { readonly x0: number; readonly x1: number } }[],
+  lines: readonly {
+    readonly text: string;
+    readonly box: { readonly x0: number; readonly x1: number };
+    readonly fixedPitch?: boolean;
+  }[],
   right: number,
 ): boolean[] {
   return lines.map((line, at) => {
     const next = lines[at + 1];
     if (next === undefined) return false;
+    if (line.fixedPitch === true && next.fixedPitch === true) return false;
+    if (LIST_ENTRY.test(next.text.trimStart())) return false;
     const nextText = next.text.trimStart();
     const firstWord = nextText.split(/\s/u)[0] ?? '';
     const perCharacter = nextText.length === 0 ? 0 : (next.box.x1 - next.box.x0) / nextText.length;

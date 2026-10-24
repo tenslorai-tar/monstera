@@ -156,6 +156,8 @@
     "proof:inlineimages": "node scripts/proofs/inlineImages.proof.mjs",
     "proof:type3edit": "node scripts/proofs/type3Edit.proof.mjs",
     "proof:textpush": "node scripts/proofs/textPush.proof.mjs",
+    "proof:lineendmarks": "node scripts/proofs/lineEndMarks.proof.mjs",
+    "proof:editorfidelityfixture": "node scripts/proofs/editorFidelityFixture.proof.mjs",
     "proof:editobject": "node scripts/proofs/editObject.proof.mjs",
     "proof:edittext": "node scripts/proofs/editText.proof.mjs",
     "proof:textspaces": "node scripts/proofs/textSpaces.proof.mjs",

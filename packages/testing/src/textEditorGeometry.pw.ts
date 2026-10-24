@@ -131,9 +131,16 @@ async function ink(page: Page, clip: { x: number; y: number; width: number; heig
   }
 }
 
-/** The editor's own glyphs' ink, the page's canvas hidden. */
+/**
+ * The editor's own glyphs' ink, the page's canvas hidden. A row nobody has changed is laid out where the editor would draw
+ * it and painted in no colour, so the page shows (cloud run 19, `editorFidelity.pw.ts`); this instrument asks where the
+ * words ARE laid out, so it paints them for the reading, in the words' own colour, and takes the paint off after.
+ */
 async function editorInk(page: Page, clip: { x: number; y: number; width: number; height: number }) {
   const canvas = page.locator('canvas[data-page-canvas="0"]');
+  const painted = await page.addStyleTag({
+    content: '.m-text-editor__line--as-drawn,.m-text-editor__line--as-drawn *{color:black!important}',
+  });
   await canvas.evaluate((element) => {
     (element as HTMLElement).style.visibility = 'hidden';
   });
@@ -142,6 +149,9 @@ async function editorInk(page: Page, clip: { x: number; y: number; width: number
   } finally {
     await canvas.evaluate((element) => {
       (element as HTMLElement).style.visibility = '';
+    });
+    await painted.evaluate((element) => {
+      (element as HTMLElement).remove();
     });
   }
 }

@@ -85,6 +85,33 @@ describe('softEnds (ADR-0097 4c, ADR-0179 Decision 2)', () => {
   it('never calls the last line soft: it ends nothing', () => {
     expect(softEnds([line('The quick brown fox', 180)], 200)).toStrictEqual([false]);
   });
+
+  /**
+   * COMMANDS ONE TO A LINE, in a fixed-pitch face (cloud run 19, measured on four Courier lines read by PDFium): the
+   * widest ends the block's right edge, the next begins with `#`, and nothing else keeps the break. CONTROL: the same
+   * lines and widths not marked fixed-pitch still read as a wrap, so the face is what keeps it.
+   */
+  it('keeps a break between two lines set in a fixed-pitch face', () => {
+    const command = 'git clone https://github.com/explodinggradients/ragas.git';
+    const comment = '# 2. Install uv (if not already installed)';
+    const code = (text: string, fixedPitch: boolean) => ({ text, box: { x0: 0, x1: text.length * 5 }, fixedPitch });
+    const right = command.length * 5;
+    expect(softEnds([code(command, true), code(comment, true)], right)).toStrictEqual([false, false]);
+    expect(softEnds([code(command, false), code(comment, false)], right)).toStrictEqual([true, false]);
+  });
+
+  /**
+   * TWO ENTRIES OF A BULLETED LIST (cloud run 19, measured): the first reached the block's right edge and read as wrapping
+   * into the second. CONTROL: the same second line without its bullet is a wrap, so the bullet is what keeps the break;
+   * and a numbered entry and a lettered one keep theirs the same way.
+   */
+  it('keeps a break before a line that begins a list entry', () => {
+    const first = line('• Retrieval quality – measured on the held out set', 195);
+    expect(softEnds([first, line('• Answer accuracy – scored by two readers', 180)], 200)).toStrictEqual([false, false]);
+    expect(softEnds([first, line('answer accuracy – scored by two readers', 180)], 200)).toStrictEqual([true, false]);
+    expect(softEnds([first, line('2. Answer accuracy', 90)], 200)).toStrictEqual([false, false]);
+    expect(softEnds([first, line('b) answer accuracy', 90)], 200)).toStrictEqual([false, false]);
+  });
 });
 
 describe('a block carries its soft ends and its shape (ADR-0179)', () => {
@@ -118,6 +145,16 @@ describe('a block carries its soft ends and its shape (ADR-0179)', () => {
       long(0, 'Ada Lovelace', 700, 710, 140),
       long(1, 'England', 688, 698, 120),
       long(2, 'London SW1A 1AA', 676, 686, 200),
+    ]);
+    expect(block?.lines.map((line) => line.soft)).toStrictEqual([false, false, false]);
+  });
+
+  it('carries a run’s fixed pitch to the soft ends: the wrapped paragraph above, set fixed-pitch, keeps every break', () => {
+    const fixed = (run: BlockableRun<string>): BlockableRun<string> => ({ ...run, fixedPitch: true });
+    const [block] = groupIntoBlocks([
+      fixed(long(0, 'The quick brown fox jumps over', 700, 710, 280)),
+      fixed(long(1, 'the lazy dog and then it runs', 688, 698, 270)),
+      fixed(long(2, 'away', 676, 686, 100)),
     ]);
     expect(block?.lines.map((line) => line.soft)).toStrictEqual([false, false, false]);
   });

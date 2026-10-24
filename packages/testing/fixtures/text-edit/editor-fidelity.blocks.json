@@ -1,0 +1,703 @@
+[
+ {
+  "box": {
+   "x0": 72.522,
+   "y0": 704.31,
+   "x1": 333.648,
+   "y1": 742.438
+  },
+  "style": {
+   "size": 18,
+   "colour": {
+    "r": 0,
+    "g": 0,
+    "b": 0
+   },
+   "serif": true,
+   "mono": false,
+   "italic": false,
+   "bold": true,
+   "font": "Times-Bold"
+  },
+  "shape": {
+   "align": "left",
+   "firstIndent": 0
+  },
+  "lines": [
+   {
+    "runs": [
+     {
+      "index": 0,
+      "text": "Quarterly results for the northern",
+      "style": {
+       "size": 18,
+       "colour": {
+        "r": 0,
+        "g": 0,
+        "b": 0
+       },
+       "serif": true,
+       "mono": false,
+       "italic": false,
+       "bold": true,
+       "font": "Times-Bold"
+      }
+     }
+    ],
+    "box": {
+     "x0": 72.63,
+     "y0": 726.328,
+     "x1": 333.648,
+     "y1": 742.438
+    },
+    "soft": true,
+    "baseline": 730
+   },
+   {
+    "runs": [
+     {
+      "index": 1,
+      "text": "region and its partners",
+      "style": {
+       "size": 18,
+       "colour": {
+        "r": 0,
+        "g": 0,
+        "b": 0
+       },
+       "serif": true,
+       "mono": false,
+       "italic": false,
+       "bold": true,
+       "font": "Times-Bold"
+      }
+     }
+    ],
+    "box": {
+     "x0": 72.522,
+     "y0": 704.31,
+     "x1": 246.996,
+     "y1": 720.438
+    },
+    "soft": false,
+    "baseline": 708
+   }
+  ]
+ },
+ {
+  "box": {
+   "x0": 72.055,
+   "y0": 619.613,
+   "x1": 372.245,
+   "y1": 657.513
+  },
+  "style": {
+   "size": 11,
+   "colour": {
+    "r": 0,
+    "g": 0,
+    "b": 0
+   },
+   "serif": true,
+   "mono": false,
+   "italic": false,
+   "bold": false,
+   "font": "Times-Roman"
+  },
+  "shape": {
+   "align": "left",
+   "firstIndent": 0
+  },
+  "lines": [
+   {
+    "runs": [
+     {
+      "index": 2,
+      "text": "The committee met on the first Monday of each month to review the",
+      "style": {
+       "size": 11,
+       "colour": {
+        "r": 0,
+        "g": 0,
+        "b": 0
+       },
+       "serif": true,
+       "mono": false,
+       "italic": false,
+       "bold": false,
+       "font": "Times-Roman"
+      }
+     }
+    ],
+    "box": {
+     "x0": 72.187,
+     "y0": 647.613,
+     "x1": 372.245,
+     "y1": 657.513
+    },
+    "soft": true,
+    "baseline": 650
+   },
+   {
+    "runs": [
+     {
+      "index": 15,
+      "text": "progress of each project against its plan, agree what to change,",
+      "style": {
+       "size": 11,
+       "colour": {
+        "r": 0,
+        "g": 0,
+        "b": 0
+       },
+       "serif": true,
+       "mono": false,
+       "italic": false,
+       "bold": false,
+       "font": "Times-Roman"
+      }
+     }
+    ],
+    "box": {
+     "x0": 72.055,
+     "y0": 633.613,
+     "x1": 371.86,
+     "y1": 643.513
+    },
+    "soft": true,
+    "baseline": 636
+   },
+   {
+    "runs": [
+     {
+      "index": 26,
+      "text": "and record every decision in the minutes it kept for the board.",
+      "style": {
+       "size": 11,
+       "colour": {
+        "r": 0,
+        "g": 0,
+        "b": 0
+       },
+       "serif": true,
+       "mono": false,
+       "italic": false,
+       "bold": false,
+       "font": "Times-Roman"
+      }
+     }
+    ],
+    "box": {
+     "x0": 72.407,
+     "y0": 619.613,
+     "x1": 341.973,
+     "y1": 629.513
+    },
+    "soft": false,
+    "baseline": 622
+   }
+  ]
+ },
+ {
+  "box": {
+   "x0": 80.44,
+   "y0": 571.613,
+   "x1": 376.284,
+   "y1": 598.732
+  },
+  "style": {
+   "size": 11,
+   "colour": {
+    "r": 0,
+    "g": 0,
+    "b": 0
+   },
+   "serif": true,
+   "mono": false,
+   "italic": false,
+   "bold": false,
+   "font": "Times-Roman"
+  },
+  "shape": {
+   "align": "left",
+   "firstIndent": 0
+  },
+  "lines": [
+   {
+    "runs": [
+     {
+      "index": 38,
+      "text": "• ",
+      "style": {
+       "size": 11,
+       "colour": {
+        "r": 0,
+        "g": 0,
+        "b": 0
+       },
+       "serif": true,
+       "mono": false,
+       "italic": false,
+       "bold": false,
+       "font": "Times-Roman"
+      }
+     },
+     {
+      "index": 39,
+      "text": "Retrieval quality",
+      "style": {
+       "size": 11,
+       "colour": {
+        "r": 0,
+        "g": 0,
+        "b": 0
+       },
+       "serif": true,
+       "mono": false,
+       "italic": false,
+       "bold": true,
+       "font": "Times-Bold"
+      }
+     },
+     {
+      "index": 40,
+      "text": " – measured on the held out set of questions",
+      "style": {
+       "size": 11,
+       "colour": {
+        "r": 0,
+        "g": 0,
+        "b": 0
+       },
+       "serif": true,
+       "mono": false,
+       "italic": false,
+       "bold": false,
+       "font": "Times-Roman"
+      }
+     },
+     {
+      "index": 41,
+      "text": "[3]",
+      "style": {
+       "size": 7,
+       "colour": {
+        "r": 0,
+        "g": 0,
+        "b": 0
+       },
+       "serif": true,
+       "mono": false,
+       "italic": false,
+       "bold": false,
+       "font": "Times-Roman",
+       "rise": 4
+      }
+     }
+    ],
+    "box": {
+     "x0": 80.44,
+     "y0": 587.624,
+     "x1": 371.191,
+     "y1": 598.732
+    },
+    "soft": false,
+    "baseline": 590
+   },
+   {
+    "runs": [
+     {
+      "index": 42,
+      "text": "• ",
+      "style": {
+       "size": 11,
+       "colour": {
+        "r": 0,
+        "g": 0,
+        "b": 0
+       },
+       "serif": true,
+       "mono": false,
+       "italic": false,
+       "bold": false,
+       "font": "Times-Roman"
+      }
+     },
+     {
+      "index": 43,
+      "text": "Answer accuracy",
+      "style": {
+       "size": 11,
+       "colour": {
+        "r": 0,
+        "g": 0,
+        "b": 0
+       },
+       "serif": true,
+       "mono": false,
+       "italic": false,
+       "bold": true,
+       "font": "Times-Bold"
+      }
+     },
+     {
+      "index": 44,
+      "text": " – scored by two readers on a sample of fifty",
+      "style": {
+       "size": 11,
+       "colour": {
+        "r": 0,
+        "g": 0,
+        "b": 0
+       },
+       "serif": true,
+       "mono": false,
+       "italic": false,
+       "bold": false,
+       "font": "Times-Roman"
+      }
+     },
+     {
+      "index": 45,
+      "text": "[4]",
+      "style": {
+       "size": 7,
+       "colour": {
+        "r": 0,
+        "g": 0,
+        "b": 0
+       },
+       "serif": true,
+       "mono": false,
+       "italic": false,
+       "bold": false,
+       "font": "Times-Roman",
+       "rise": 4
+      }
+     }
+    ],
+    "box": {
+     "x0": 80.44,
+     "y0": 571.613,
+     "x1": 376.284,
+     "y1": 582.732
+    },
+    "soft": false,
+    "baseline": 574
+   }
+  ]
+ },
+ {
+  "box": {
+   "x0": 72.261,
+   "y0": 482.596,
+   "x1": 379.089,
+   "y1": 525.913
+  },
+  "style": {
+   "size": 9,
+   "colour": {
+    "r": 0,
+    "g": 0,
+    "b": 0
+   },
+   "serif": false,
+   "mono": true,
+   "italic": false,
+   "bold": false,
+   "font": "Courier"
+  },
+  "shape": {
+   "align": "left",
+   "firstIndent": 0
+  },
+  "lines": [
+   {
+    "runs": [
+     {
+      "index": 46,
+      "text": "git clone https://github.com/explodinggradients/ragas.git",
+      "style": {
+       "size": 9,
+       "colour": {
+        "r": 0,
+        "g": 0,
+        "b": 0
+       },
+       "serif": false,
+       "mono": true,
+       "italic": false,
+       "bold": false,
+       "font": "Courier"
+      }
+     }
+    ],
+    "box": {
+     "x0": 72.351,
+     "y0": 518.596,
+     "x1": 379.089,
+     "y1": 525.913
+    },
+    "soft": false,
+    "baseline": 520
+   },
+   {
+    "runs": [
+     {
+      "index": 47,
+      "text": "# 2. Install uv (if not already installed)",
+      "style": {
+       "size": 9,
+       "colour": {
+        "r": 0,
+        "g": 0,
+        "b": 0
+       },
+       "serif": false,
+       "mono": true,
+       "italic": false,
+       "bold": false,
+       "font": "Courier"
+      }
+     }
+    ],
+    "box": {
+     "x0": 72.702,
+     "y0": 506.596,
+     "x1": 296.874,
+     "y1": 513.913
+    },
+    "soft": false,
+    "baseline": 508
+   },
+   {
+    "runs": [
+     {
+      "index": 48,
+      "text": "curl -LsSf https://astral.sh/uv/install.sh | sh",
+      "style": {
+       "size": 9,
+       "colour": {
+        "r": 0,
+        "g": 0,
+        "b": 0
+       },
+       "serif": false,
+       "mono": true,
+       "italic": false,
+       "bold": false,
+       "font": "Courier"
+      }
+     }
+    ],
+    "box": {
+     "x0": 72.612,
+     "y0": 493.759,
+     "x1": 325.638,
+     "y1": 502.75
+    },
+    "soft": false,
+    "baseline": 496
+   },
+   {
+    "runs": [
+     {
+      "index": 49,
+      "text": "uv sync --all-extras",
+      "style": {
+       "size": 9,
+       "colour": {
+        "r": 0,
+        "g": 0,
+        "b": 0
+       },
+       "serif": false,
+       "mono": true,
+       "italic": false,
+       "bold": false,
+       "font": "Courier"
+      }
+     }
+    ],
+    "box": {
+     "x0": 72.261,
+     "y0": 482.596,
+     "x1": 179.244,
+     "y1": 489.661
+    },
+    "soft": false,
+    "baseline": 484
+   }
+  ]
+ },
+ {
+  "box": {
+   "x0": 72.187,
+   "y0": 363.613,
+   "x1": 360.112,
+   "y1": 387.513
+  },
+  "style": {
+   "size": 11,
+   "colour": {
+    "r": 0,
+    "g": 0,
+    "b": 0
+   },
+   "serif": true,
+   "mono": false,
+   "italic": false,
+   "bold": false,
+   "font": "Times-Roman"
+  },
+  "shape": {
+   "align": "left",
+   "firstIndent": 0
+  },
+  "lines": [
+   {
+    "runs": [
+     {
+      "index": 50,
+      "text": "This paragraph is set in Times, which the file names and does not",
+      "style": {
+       "size": 11,
+       "colour": {
+        "r": 0,
+        "g": 0,
+        "b": 0
+       },
+       "serif": true,
+       "mono": false,
+       "italic": false,
+       "bold": false,
+       "font": "Times-Roman"
+      }
+     }
+    ],
+    "box": {
+     "x0": 72.187,
+     "y0": 377.613,
+     "x1": 360.112,
+     "y1": 387.513
+    },
+    "soft": true,
+    "baseline": 380
+   },
+   {
+    "runs": [
+     {
+      "index": 51,
+      "text": "carry, so every reader draws it in a Times of its own choosing.",
+      "style": {
+       "size": 11,
+       "colour": {
+        "r": 0,
+        "g": 0,
+        "b": 0
+       },
+       "serif": true,
+       "mono": false,
+       "italic": false,
+       "bold": false,
+       "font": "Times-Roman"
+      }
+     }
+    ],
+    "box": {
+     "x0": 72.275,
+     "y0": 363.613,
+     "x1": 345.57,
+     "y1": 373.513
+    },
+    "soft": false,
+    "baseline": 366
+   }
+  ]
+ },
+ {
+  "box": {
+   "x0": 72.242,
+   "y0": 423.723,
+   "x1": 393.211,
+   "y1": 447.975
+  },
+  "style": {
+   "size": 11,
+   "colour": {
+    "r": 0,
+    "g": 0,
+    "b": 0
+   },
+   "serif": false,
+   "mono": false,
+   "italic": false,
+   "bold": false,
+   "font": "LiberationSans"
+  },
+  "shape": {
+   "align": "left",
+   "firstIndent": 0
+  },
+  "lines": [
+   {
+    "runs": [
+     {
+      "index": 52,
+      "text": "This paragraph is set in a font the file carries with it, so the",
+      "style": {
+       "size": 11,
+       "colour": {
+        "r": 0,
+        "g": 0,
+        "b": 0
+       },
+       "serif": false,
+       "mono": false,
+       "italic": false,
+       "bold": false,
+       "font": "LiberationSans"
+      }
+     }
+    ],
+    "box": {
+     "x0": 72.242,
+     "y0": 437.723,
+     "x1": 355.195,
+     "y1": 447.975
+    },
+    "soft": false,
+    "baseline": 440
+   },
+   {
+    "runs": [
+     {
+      "index": 53,
+      "text": "page draws its own glyphs and an editor can draw the same ones.",
+      "style": {
+       "size": 11,
+       "colour": {
+        "r": 0,
+        "g": 0,
+        "b": 0
+       },
+       "serif": false,
+       "mono": false,
+       "italic": false,
+       "bold": false,
+       "font": "LiberationSans"
+      }
+     }
+    ],
+    "box": {
+     "x0": 72.704,
+     "y0": 423.723,
+     "x1": 393.211,
+     "y1": 433.975
+    },
+    "soft": false,
+    "baseline": 426
+   }
+  ]
+ }
+]

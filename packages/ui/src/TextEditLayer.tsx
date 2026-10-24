@@ -328,6 +328,93 @@ function pitchOf(block: TextBlock): number | undefined {
 }
 
 /**
+ * Where each paragraph the editor draws starts against where the block's even spacing would put it, in points: `down`,
+ * so its first baseline lies on the page's, and `across`, so its first line starts where the page's does.
+ *
+ * ## Why the even spacing alone is not where the page's lines are
+ *
+ * The editor sets every line at the block's pitch (`pitchOf`, its first two baselines apart), and a block is often more
+ * than one paragraph with space of its own between them. Measured 2026-10-24 on a contract clause of three numbered
+ * paragraphs, read by PDFium and grouped by `groupIntoBlocks` as one block of five lines ending on purpose: the page's
+ * baselines are 700, 686, 669, 655 and 636, the even spacing put the editor's at 700, 686, 672, 658 and 644, and the
+ * editor, as tall as its own lines, ended 8 points above the page's last line, which showed below it as a second copy.
+ * The lines that carry on a clause's words start at the number column's right (90.6 against the block's 73.2), and the
+ * editor drew them at the block's left.
+ *
+ * So each paragraph is moved by what the page shows. `down` counts the lines of the paragraph before it at the pitch,
+ * since that is how the editor lays them out; `across` is measured from where the block's shape already starts a first
+ * line, and is nothing for a block centred or set right, whose lines the alignment places.
+ */
+function paragraphPlaces(block: TextBlock): readonly { readonly down: number; readonly across: number }[] {
+  const pitch = pitchOf(block);
+  const paragraphs = paragraphsOf(block);
+  const start = block.shape.align === 'left' ? block.box.x0 + Math.max(block.shape.firstIndent, 0) : undefined;
+  return paragraphs.map((lines, at) => {
+    const first = lines[0];
+    const before = paragraphs[at - 1]?.[0];
+    const above = paragraphs[at - 1]?.length ?? 0;
+    return {
+      down: pitch === undefined || before === undefined || first === undefined ? 0 : before.baseline - above * pitch - first.baseline,
+      across: start === undefined || first === undefined ? 0 : first.box.x0 - start,
+    };
+  });
+}
+
+/** Moves each row the editor built from a paragraph of the page to where that paragraph is (`paragraphPlaces`), at the zoom. */
+function placeParagraphs(element: HTMLElement, places: readonly { readonly down: number; readonly across: number }[], zoom: number): void {
+  for (const row of element.querySelectorAll<HTMLElement>(':scope > .m-text-editor__line[data-paragraph]')) {
+    const place = places[Number(row.dataset['paragraph'])];
+    row.style.marginTop = place === undefined || place.down === 0 ? '' : `${String(place.down * zoom)}px`;
+    row.style.marginLeft = place === undefined || place.across === 0 ? '' : `${String(place.across * zoom)}px`;
+  }
+}
+
+/**
+ * A row the person has not changed: laid out exactly as the page broke it, and NOT DRAWN, so what shows is the page's
+ * own drawing of those words (cloud run 19).
+ *
+ * ## Why the editor does not draw words nobody has changed
+ *
+ * Opening a block used to draw the editor's copy of every word over paper, and two drawings of one text are not the
+ * same picture. Measured 2026-10-24 in Chromium 151 at 100 %, `editorFidelity.pw.ts`' six blocks, pixels changed by
+ * opening against an instrument spread of 0: a bold heading 1,451, a justified paragraph 3,403, a bulleted list 3,282, a
+ * Courier code block 2,331, Times not embedded 1,959 — and a paragraph whose runs had their own font rebuilt by the host
+ * (ADR-0175) 1,671, because the page is PDF.js drawing on a canvas and the editor is the browser setting text, and the
+ * two rasterise one glyph differently. The soft-wrapped paragraphs were also set again by the browser, so the heading
+ * moved a word between its lines. No choice of face makes a second drawing invisible; not drawing it does.
+ *
+ * So until a row is changed its words are transparent and its paper absent: the caret, the selection, the keys and
+ * every reading of the words work on it as before, over the page's own pixels. Its lines break where the page's do —
+ * each soft wrap is a break the reader takes for nothing — and it does not wrap again, so the caret moves along the
+ * page's lines. A row is drawn ({@link revealRow}) when its words or its formatting change, or when a change above moves
+ * it; only then does it rewrap at the block's measure, and only then is the page's copy of it papered.
+ */
+const AS_DRAWN = 'm-text-editor__line--as-drawn';
+
+/** What a row says: its words, the formatting the person put on them, and its paragraph's settings. */
+function rowSignature(row: HTMLElement): string {
+  const formatting = Array.from(row.querySelectorAll<HTMLElement>('[data-fmt]'), (span) => span.dataset['fmt'] ?? '');
+  const settings = Object.entries(row.dataset).filter(([key]) => key !== 'paragraph');
+  return JSON.stringify([row.textContent, formatting, settings]);
+}
+
+/** Draws a row the editor's own way from now on: its page breaks taken out, so it wraps at the block's measure. */
+function revealRow(row: HTMLElement): void {
+  row.classList.remove(AS_DRAWN);
+  for (const wrap of row.querySelectorAll('br[data-soft-wrap]')) wrap.remove();
+}
+
+/** Where the page drew a paragraph, from the frame's top, in pixels: what the paper must cover once its row is drawn. */
+function paragraphBand(block: TextBlock, paragraph: number, zoom: number): { top: number; bottom: number } | undefined {
+  const lines = paragraphsOf(block)[paragraph];
+  if (lines === undefined || lines.length === 0) return undefined;
+  return {
+    top: (block.box.y1 - Math.max(...lines.map((line) => line.box.y1))) * zoom,
+    bottom: (block.box.y1 - Math.min(...lines.map((line) => line.box.y0))) * zoom,
+  };
+}
+
+/**
  * How far the editor's words are moved down, in pixels, so its first baseline lies on the page's (the owner's A7,
  * 2026-10-14: the editor stood at the block's ink top, and a CSS line box puts its half-leading and its face's whole
  * ascent above the first baseline, so the words sat 2 to 3 pixels low at 100 % and 4 to 5 at 200 %, and a one-line
@@ -1277,6 +1364,10 @@ function drawRun(span: HTMLElement, style: TextBlock['style'], zoom: number): vo
   // AT ITS RISE FROM THE LINE, as the page sets it and the writer keeps it (the owner's N14): a length raises the run's
   // baseline by exactly that, so a superscript stays a superscript while the block is open.
   span.style.verticalAlign = style.rise === undefined ? '' : `${String(style.rise * zoom)}px`;
+  // AND RAISED WITHOUT HEIGHTENING ITS LINE: a raised box the line's own height tops the line box by its rise, so every
+  // line below it stood lower than the page's — 2 px under a 7 point reference raised 4 points on a 16 point pitch
+  // (`editorFidelity.pw.ts`, measured 2026-10-24). With no height of its own it leaves the line as the page set it.
+  span.style.lineHeight = style.rise === undefined ? '' : '0';
   // ITS DECORATIONS AS THE PAGE HAS THEM (the owner's L2): drawn, and said on the run for the formatting state (`runBase`).
   span.style.textDecoration = [style.underline === true ? 'underline' : '', style.strike === true ? 'line-through' : ''].join(' ').trim();
   span.style.backgroundColor = style.highlight === undefined ? '' : `rgb(${String(style.highlight.r)}, ${String(style.highlight.g)}, ${String(style.highlight.b)})`;
@@ -1346,6 +1437,10 @@ function BlockEditor({
   /** Why the words are still here after a commit wrote nothing: a signed document left as it was, or the refusal. */
   const [problem, setProblem] = useState<Exclude<BlockCommit, 'written' | 'unchanged'> | undefined>(undefined);
   const area = useRef<HTMLDivElement>(null);
+  /** Each row still as the page drew it, by paragraph: what it said and where it stood when it was laid out (`AS_DRAWN`). */
+  const drawn = useRef(new Map<number, { readonly signature: string; readonly top: number }>());
+  /** Where the page's paper is laid over its own copy of the rows the editor now draws, in pixels from the frame's top. */
+  const [covers, setCovers] = useState<readonly { readonly top: number; readonly height: number }[]>([]);
   /** Set while a write is in flight, so a blur during it does not write twice. */
   const writing = useRef(false);
   /**
@@ -1403,10 +1498,13 @@ function BlockEditor({
     element.replaceChildren(
       // A PARAGRAPH A `div`, its soft-wrapped lines run together, so the browser wraps it at the block's width and the
       // words read back are the paragraphs the kernel is sent (ADR-0179).
-      ...paragraphsOf(block).map((lines) => {
+      ...paragraphsOf(block).map((lines, paragraph) => {
         const row = owner.createElement('div');
-        row.className = 'm-text-editor__line';
-        for (const line of lines) {
+        // AS THE PAGE DREW IT until the person changes it (`AS_DRAWN`): laid out at the page's breaks, and not drawn.
+        row.className = `m-text-editor__line ${AS_DRAWN}`;
+        // WHICH OF THE PAGE'S PARAGRAPHS THIS ROW IS, for `placeParagraphs`.
+        row.dataset['paragraph'] = String(paragraph);
+        for (const [at, line] of lines.entries()) {
           for (const run of line.runs) {
             const span = owner.createElement('span');
             span.textContent = run.text;
@@ -1424,6 +1522,13 @@ function BlockEditor({
             drawRun(join, last.style, 1);
             join.dataset['run'] = String(last.index);
             row.append(join);
+          }
+          // AND THE LINE ENDS WHERE THE PAGE'S DOES: a wrap the reader takes for nothing (`readEditor`), removed when the
+          // paragraph is changed and rewraps (`revealRow`).
+          if (at < lines.length - 1) {
+            const wrap = owner.createElement('br');
+            wrap.dataset['softWrap'] = '';
+            row.append(wrap);
           }
         }
         // A PARAGRAPH WITH NO WORDS KEEPS A LINE: an empty `span` in a `div` lays out no line box, and Chromium then has no
@@ -1450,6 +1555,57 @@ function BlockEditor({
     selection?.addRange(range);
   }, [block, click]);
 
+  /**
+   * Draws every row the person changed, or that a change moved, and lays the page's paper over the page's copy of each
+   * (`AS_DRAWN`): the paragraph's band where the page drew it, and the row where it is now, since a grown row reaches
+   * past its band and a row moved down leaves its band behind. Again until nothing more moves, since a row that rewraps
+   * can move the rows below it.
+   */
+  const revealChanged = useCallback((): void => {
+    const element = area.current;
+    if (element === null) return;
+    for (let pass = 0; pass <= element.children.length; pass += 1) {
+      let more = false;
+      for (const row of element.querySelectorAll<HTMLElement>(`:scope > .${AS_DRAWN}`)) {
+        const was = drawn.current.get(Number(row.dataset['paragraph']));
+        if (was?.signature === rowSignature(row) && Math.abs(was.top - row.offsetTop) <= 0.5) continue;
+        revealRow(row);
+        more = true;
+      }
+      if (!more) break;
+    }
+    const rows = Array.from(element.querySelectorAll<HTMLElement>(':scope > div'));
+    const asDrawn = new Set(rows.filter((row) => row.classList.contains(AS_DRAWN)).map((row) => Number(row.dataset['paragraph'])));
+    const found: { top: number; height: number }[] = [];
+    for (let paragraph = 0; paragraph < paragraphsOf(block).length; paragraph += 1) {
+      if (asDrawn.has(paragraph)) continue;
+      const band = paragraphBand(block, paragraph, geometry.zoom);
+      if (band !== undefined) found.push({ top: band.top, height: band.bottom - band.top });
+    }
+    const frame = element.closest('.m-text-editor-frame')?.getBoundingClientRect();
+    for (const row of rows) {
+      if (row.classList.contains(AS_DRAWN)) continue;
+      // THE WORDS' OWN EXTENT, not the row's line box: a line box is the pitch tall, and its foot reached the tops of the
+      // next line's letters, which the paper then clipped — 75 pixels of the command below a typed one in a Courier block
+      // (`editorFidelity.pw.ts`, measured 2026-10-24). Read on screen where the page is upright, and from the row's box on
+      // a page drawn turned, whose screen rectangles are not the frame's.
+      const range = element.ownerDocument.createRange();
+      range.selectNodeContents(row);
+      const words = range.getBoundingClientRect();
+      if (placed.rotation === 0 && frame !== undefined && words.height > 0) {
+        found.push({ top: words.top - frame.top, height: words.height });
+      } else {
+        found.push({ top: element.offsetTop + row.offsetTop, height: row.offsetHeight });
+      }
+    }
+    // WORDS OUTSIDE EVERY ROW (a paste the browser left loose) are the editor's: the whole editor is covered under them.
+    if (Array.from(element.childNodes).some((node) => node.nodeType === Node.TEXT_NODE && (node.textContent ?? '').trim() !== '')) {
+      found.push({ top: element.offsetTop, height: element.offsetHeight });
+    }
+    // A PIXEL EITHER WAY, for the edge of a glyph's anti-aliasing.
+    setCovers(found.map((cover) => ({ top: cover.top - 1, height: cover.height + 2 })));
+  }, [block, geometry.zoom, placed.rotation]);
+
   // AT THE ZOOM ON SCREEN: each run's size times the zoom, again whenever the zoom moves, on the runs as they are now
   // — what the person typed stays.
   useLayoutEffect(() => {
@@ -1458,7 +1614,18 @@ function BlockEditor({
     for (const span of element.querySelectorAll<HTMLElement>('.m-text-editor__run, .m-text-editor__fmt[data-size]')) {
       span.style.fontSize = `${String(Number(span.dataset['size'] ?? '0') * geometry.zoom)}px`;
     }
-  }, [geometry.zoom]);
+    // AND EACH PARAGRAPH WHERE THE PAGE HAS IT, at the same zoom (`paragraphPlaces`).
+    placeParagraphs(element, paragraphPlaces(block), geometry.zoom);
+    // WHAT EACH ROW STILL AS DRAWN SAYS AND WHERE IT STANDS at this zoom, which a change is measured against; and the paper
+    // under the rows already drawn, placed again at it.
+    drawn.current = new Map(
+      Array.from(element.querySelectorAll<HTMLElement>(`:scope > .${AS_DRAWN}[data-paragraph]`), (row) => [
+        Number(row.dataset['paragraph']),
+        { signature: rowSignature(row), top: row.offsetTop },
+      ]),
+    );
+    revealChanged();
+  }, [block, geometry.zoom, revealChanged]);
   const baselineShift = useBaselineShift(area, block, geometry.zoom);
 
   /** Whether a write is in flight: the words are not editable meanwhile, so nothing is typed into a block already sent. */
@@ -1472,12 +1639,21 @@ function BlockEditor({
   const [notice, setNotice] = useState<MessageKey | undefined>(undefined);
   /** Where the block is being put (ADR-0180, corrected): shown over the editor and sent with its words when it writes. */
   const [placement, setPlacement] = useState<Placement>(NOT_PLACED);
+  /** Whether the person has moved, scaled, turned or re-measured the block: then every word is drawn where it now goes. */
+  const moved = placeOf(placement, block.box) !== undefined;
+  // EVERY ROW DRAWN once the block is placed elsewhere (`AS_DRAWN`): the page's copy is papered whole, so a row left as
+  // drawn would show nothing at all.
+  useLayoutEffect(() => {
+    const element = area.current;
+    if (!moved || element === null) return;
+    for (const row of element.querySelectorAll<HTMLElement>(`:scope > .${AS_DRAWN}`)) revealRow(row);
+  }, [moved]);
   // A BLOCK THE PERSON PLACED PUSHES NOTHING, as its write sends nothing to push (`commitTextBlock`).
   const openedPitch = pitchOf(block);
   useGrowth(
     area,
     onGrow,
-    placeOf(placement, block.box) !== undefined,
+    moved,
     openedPitch === undefined ? undefined : block.lines.length * openedPitch * geometry.zoom,
   );
   /**
@@ -1726,6 +1902,11 @@ function BlockEditor({
       }}
       style={{ ...boxStyle(placed), height: 'auto', minHeight: placed.height }}
     >
+      {/* THE PAGE'S PAPER over its own copy of what the editor draws (`AS_DRAWN`): the paragraphs the person changed, or the
+          whole block once they have moved it, since then every word is drawn somewhere else. Under the words, first. */}
+      {(moved ? [{ top: 0, height: undefined }] : covers).map((cover, at) => (
+        <div aria-hidden="true" className="m-text-editor-cover" key={at} style={{ top: cover.top, height: cover.height ?? '100%', ...paper }} />
+      ))}
       {/* THE PLACER: what the person has done to the block so far, shown as a transform over the editor and its handles so
           the bar and the sentences stay upright where they are. The measure is its width, so the words wrap at it live. */}
       <div
@@ -1752,13 +1933,15 @@ function BlockEditor({
         // A BLOCK WHOSE EVERY LINE ENDS ON PURPOSE is not wrapped by the editor: it widens instead (the owner's A7, a
         // one-line form label wrapped onto a second line, over the field below, because the editor's face was wider
         // than the page's). Only a paragraph the page wrapped is wrapped here, and a block the person gave a new measure.
-        className={`m-text-editor ${faceOf(block.style)}${block.lines.some((line) => line.soft) || placement.width !== undefined ? '': ' m-text-editor--lines'}`}
+        className={`m-text-editor ${faceOf(block.style)}${block.lines.some((line) => line.soft) || placement.width !== undefined ? '': ' m-text-editor--lines'}${moved ? ' m-text-editor--placed' : ''}`}
         aria-busy={busy}
         contentEditable={busy ? false : 'plaintext-only'}
         // THE BLOCK'S SIZE IN POINTS, which words in no run take and are read in (`runBase`), as a run carries its own.
         data-size={block.style.size}
         data-text-editor=""
         onInput={(event) => {
+          // WHAT THE PERSON CHANGED IS DRAWN, and nothing else (`AS_DRAWN`): typing, a paste, a deletion and a format alike.
+          revealChanged();
           setText(readEditor(event.currentTarget).text);
           setProblem(undefined);
           setNotice(undefined);
@@ -1782,7 +1965,8 @@ function BlockEditor({
           fontWeight: block.style.bold ? 700 : 400,
           fontStyle: block.style.italic ? 'italic' : 'normal',
           color: `rgb(${String(r)}, ${String(g)}, ${String(b)})`,
-          ...paper,
+          // PAPER BEHIND THE WORDS only once they are moved off their place; until then each changed row's is a cover.
+          ...(moved ? paper : {}),
           // THE PARAGRAPHS' SHAPE (ADR-0179): the alignment the lines keep, and a first line set in or out from the rest.
           // A hanging indent is a negative one, drawn as padding on the block and the first line taken back out.
           textAlign: block.shape.align,

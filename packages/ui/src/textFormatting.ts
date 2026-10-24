@@ -324,7 +324,9 @@ function paragraphsOf(root: HTMLElement): { text: string; paragraphs: Paragraph[
         if (node instanceof Text) {
           text += node.data;
           open.nodes.push(node);
-        } else if (node instanceof HTMLElement && node.tagName === 'BR') {
+        } else if (node instanceof HTMLElement && node.tagName === 'BR' && node.dataset['softWrap'] === undefined) {
+          // A SOFT WRAP the editor drew where the page's line ended (`AS_DRAWN`) is not a break: the space it stands for
+          // is in the run before it, as it was before the editor drew lines at the page's breaks.
           // A BREAK THAT ENDS ITS PARAGRAPH is the placeholder an empty line keeps; any other starts another.
           const last = nodes.slice(index + 1).every((later) => !(later instanceof Text) || later.data === '');
           if (!last) {
