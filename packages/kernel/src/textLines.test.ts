@@ -99,6 +99,19 @@ describe('softEnds (ADR-0097 4c, ADR-0179 Decision 2)', () => {
     expect(softEnds([code(command, true), code(comment, true)], right)).toStrictEqual([false, false]);
     expect(softEnds([code(command, false), code(comment, false)], right)).toStrictEqual([true, false]);
   });
+
+  /**
+   * TWO ENTRIES OF A BULLETED LIST (cloud run 19, measured): the first reached the block's right edge and read as wrapping
+   * into the second. CONTROL: the same second line without its bullet is a wrap, so the bullet is what keeps the break;
+   * and a numbered entry and a lettered one keep theirs the same way.
+   */
+  it('keeps a break before a line that begins a list entry', () => {
+    const first = line('• Retrieval quality – measured on the held out set', 195);
+    expect(softEnds([first, line('• Answer accuracy – scored by two readers', 180)], 200)).toStrictEqual([false, false]);
+    expect(softEnds([first, line('answer accuracy – scored by two readers', 180)], 200)).toStrictEqual([true, false]);
+    expect(softEnds([first, line('2. Answer accuracy', 90)], 200)).toStrictEqual([false, false]);
+    expect(softEnds([first, line('b) answer accuracy', 90)], 200)).toStrictEqual([false, false]);
+  });
 });
 
 describe('a block carries its soft ends and its shape (ADR-0179)', () => {
