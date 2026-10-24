@@ -13,6 +13,18 @@
  * - `add`: words added at its end;
  * - `font`, `size`, `colour`: all its words set in a bundled face (Tinos), a quarter larger, and in red.
  *
+ * And on every page, through `blocksReplaced`, the one function a person's Replace all and spelling replacement go
+ * through (ADR-0267): `replace all` of the page's most frequent word of four letters or more, whole and as written, and
+ * `spelling`, its first occurrence alone.
+ *
+ * ## The lines, on two pages made for them
+ *
+ * A block of numbered paragraphs set at uneven spacing (the editor shows each paragraph where the page has it, the cloud
+ * branch's F2): a word changed must leave every line where it was, and a paragraph that grows must move the lines below
+ * by one pitch, every gap below kept, each within a pixel. A code block, one show per line: a word changed in one line
+ * must leave every other line as it was and merge none — and its CONTROL, the same edit sent with the lines as one
+ * paragraph, must be seen to merge them.
+ *
  * ## The counts, and the pixels
  *
  * A REFUSAL is any edit the writer did not make, named by its error and step. Every edit that was made is drawn by MuPDF
@@ -34,6 +46,7 @@
  * - THE INSTRUMENT SEES THE BROCHURE'S DEFECT: a page showing two fonts of one name and different encodings, its first
  *   line edited through PDFium's page rewrite (the route before ADR-0266), must be refused or disturb the second line —
  *   and edited by the application's route must be made and disturb nothing.
+ * - THE OLD REPLACE: PDFium's `replaceAllText` on the same page of two fonts of one name must be refused or disturb it.
  * - BEFORE AND AFTER: `--route old` routes as before ADR-0266 (PDFium for every page not showing Type 3 text, its packed
  *   text read unpacked), so the same run prints the counts the change is measured against. The cases are the
  *   application's route's, so under `--route old` they are expected to fail: that run is a measurement.
@@ -85,6 +98,11 @@ const CASES = [
   'the brochure and the link-markers page: every edit of every block is made — no refusal',
   'the brochure and the link-markers page: every edit made disturbs nothing and changes the block (not vacuous)',
   'the repository’s fixtures: every edit made disturbs nothing',
+  'THE OLD REPLACE: PDFium’s replace-all on the page of two fonts of one name is refused or disturbs (ADR-0267)',
+  'numbered paragraphs: a word changed leaves every line where the page has it, each paragraph’s spacing kept (within 1 px)',
+  'numbered paragraphs: a paragraph that grows moves the lines below by one line’s pitch, every gap below kept (within 1 px)',
+  'a code block: a word changed in one line leaves every other line as it was, and no line is merged',
+  'CONTROL: the same code edit with its lines sent as one paragraph merges them, and the check above sees it',
 ];
 
 /**
@@ -137,9 +155,12 @@ async function walkPage(pdfium, kernel, bytes, index, quotes) {
   } finally {
     await pdfium.pdfiumWriter.close(session);
   }
-  const blocks = kernel.groupIntoBlocks(
+  const grouped = kernel.groupIntoBlocks(
     read.runs.filter((/** @type {any} */ run) => kernel.isEditedInPlace(run.style)).map((/** @type {any} */ run) => ({ ...run, setting: kernel.settingOf(run.style) })),
   );
+  // WHAT EACH BLOCK PUSHES, as `main` adds it to the read (`pushesOfPage`, ADR-0249): a replacement sends it.
+  const pushes = kernel.pushesOfPage(grouped.map((/** @type {any} */ block) => block.box), read);
+  const blocks = grouped.map((/** @type {any} */ block, /** @type {number} */ at) => ({ ...block, push: pushes[at] ?? { below: [], room: 0 } }));
   const before = render(kernel, bytes, index);
   const beforeCharacters = charactersOf(kernel, bytes, index);
   // A CHARACTER IS ITSELF by its place AND its size: a heading made larger keeps its first letter's pen position, and that
@@ -149,25 +170,102 @@ async function walkPage(pdfium, kernel, bytes, index, quotes) {
   /** @type {Try[]} */
   const tries = [];
 
+  /**
+   * Where a block may draw after an edit, and how to tell its characters: its ink before; its column from its leftmost
+   * PEN POSITION, not only its ink, since a line wrapped below starts at the pen position, which a glyph's side bearing
+   * puts left of the ink (measured on the brochure's heading, 2026-10-24); and a character is the block's by the centre of
+   * its glyph's box, not its pen position (the heading's own first letter stood 1.6 pt left of the ink).
+   * @param {any} block
+   */
+  const zoneOf = (block) => {
+    const ink = inkOf(kernel, bytes, index, { left: block.box.x0, bottom: block.box.y0, right: block.box.x1, top: block.box.y1 });
+    const holds = (/** @type {{ box: Box }} */ each) => {
+      const x = (each.box.left + each.box.right) / 2;
+      const y = (each.box.bottom + each.box.top) / 2;
+      return x >= ink.left - 1.5 && x <= ink.right + 1.5 && y >= ink.bottom - 1.5 && y <= ink.top + 1.5;
+    };
+    const own = beforeCharacters.filter(holds);
+    return {
+      ink,
+      holds,
+      left: Math.min(ink.left, ...own.map((each) => each.x)),
+      right: Math.max(ink.right, ...own.map((each) => each.x)),
+    };
+  };
+  /** @type {Map<number, ReturnType<typeof zoneOf>>} */
+  const zones = new Map();
+  const zone = (/** @type {number} */ at) => {
+    const known = zones.get(at);
+    if (known !== undefined) return known;
+    const made = zoneOf(blocks[at]);
+    zones.set(at, made);
+    return made;
+  };
+
+  /**
+   * One edit of `entries` on a fresh copy of the page, which may change the blocks at `touched`: made or refused, and
+   * what its pixels say outside where those blocks may draw.
+   * @param {string} name @param {string} edit @param {any[]} entries @param {number[]} touched
+   */
+  const attempt = async (name, edit, entries, touched) => {
+    const wire = { page: index, ...kernel.blockEditOf(entries), fit: 'reflow', version: 1 };
+    /** @type {Uint8Array} */
+    let after;
+    try {
+      if (rewrite === 'operators') {
+        const copy = await kernel.mupdfWriter.open(bytes);
+        try {
+          await kernel.applyEditTextOperators(copy, { kind: 'editTextOperators', ...wire }, runs);
+          after = await kernel.mupdfWriter.serialise(copy);
+        } finally {
+          await kernel.mupdfWriter.close(copy);
+        }
+      } else {
+        after = await kernel.pdfiumExecution.apply({
+          session: bytes,
+          command: { kind: 'editTextBlock', ...wire, ...(unpacked ? { unpack: true } : {}) },
+          sources: [],
+          reads: undefined,
+        });
+      }
+    } catch (error) {
+      tries.push({ block: name, edit, route: rewrite, outcome: 'refused', disturbed: 0, lost: 0, inside: 0, why: reasonOf(error) });
+      return;
+    }
+    const areas = touched.map(zone);
+    // WHERE THE BLOCKS MAY DRAW: their ink before, and the ink of every character read after and not before whose origin
+    // is in one of their columns from its top down — the edited words, wrapped and grown, and a pushed block moved.
+    const was = new Set(beforeCharacters.map(keyOf));
+    const afterCharacters = charactersOf(kernel, after, index);
+    const now = new Set(afterCharacters.map(keyOf));
+    const grown = afterCharacters
+      .filter((each) => !was.has(keyOf(each)))
+      .filter((each) => areas.some((area) => each.x >= area.left - 1.5 && each.x <= area.right + 1.5 && each.y <= area.ink.top + 1.5))
+      .map((each) => each.box);
+    // A CHARACTER OUTSIDE THE BLOCKS THAT IS GONE is disturbed text wherever it went, though its pixels might be allowed.
+    // Not a space: it draws nothing, and an edit sets a line's spaces again with its words.
+    const lost = beforeCharacters.filter((each) => each.character.trim() !== '' && !areas.some((area) => area.holds(each)) && !now.has(keyOf(each))).length;
+    const { outside, inside, farthest } = compare(before, render(kernel, after, index), [...areas.map((area) => area.ink), ...grown]);
+    tries.push({
+      block: name,
+      edit,
+      route: rewrite,
+      outcome: 'made',
+      disturbed: outside,
+      lost,
+      inside,
+      why: outside > 0 || lost > 0 ? `${String(lost)} character(s) outside the block gone; pixels up to ${String(farthest / 2)} pt away` : '',
+    });
+  };
+
   for (const [at, block] of blocks.entries()) {
-    const box = { left: block.box.x0, bottom: block.box.y0, right: block.box.x1, top: block.box.y1 };
     const lines = block.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index));
     const soft = block.lines.map((/** @type {any} */ line) => line.soft);
     const text = kernel.paragraphsOfLines(block.lines.map((/** @type {any} */ line) => ({ text: kernel.lineText(line.runs), soft: line.soft })));
     if (text.trim().length === 0) continue;
     // A BLOCK OF THE OWNER'S CORPUS IS NAMED BY ITS NUMBER: its words are the owner's and are never printed.
     const name = quotes ? `block ${String(at)} “${text.slice(0, 24)}”` : `block ${String(at)}`;
-    const ink = inkOf(kernel, bytes, index, box);
-    // A CHARACTER IS THE BLOCK'S by the centre of its glyph's box, not its pen position, which a side bearing puts outside
-    // the ink: the brochure's heading's own first letter stood 1.6 pt left of it (2026-10-24).
-    const inBlock = (/** @type {{ box: Box }} */ each) => {
-      const x = (each.box.left + each.box.right) / 2;
-      const y = (each.box.bottom + each.box.top) / 2;
-      return x >= ink.left - 1.5 && x <= ink.right + 1.5 && y >= ink.bottom - 1.5 && y <= ink.top + 1.5;
-    };
-    /** The characters MuPDF reads in the block before the edit: their pen positions bound its column. */
-    const ownCharacters = beforeCharacters.filter(inBlock);
-    const size =Number(block.lines[0]?.runs[0]?.style.size ?? 10);
+    const size = Number(block.lines[0]?.runs[0]?.style.size ?? 10);
     const whole = (/** @type {Record<string, unknown>} */ set) => ({ text, marks: [{ from: 0, to: text.length, set }] });
     /** @type {Record<(typeof EDITS)[number], Record<string, unknown> | null>} */
     const asked = {
@@ -179,61 +277,146 @@ async function walkPage(pdfium, kernel, bytes, index, quotes) {
     };
     for (const edit of EDITS) {
       const rest = asked[edit];
-      if (rest === null) continue;
-      const wire = { page: index, ...kernel.blockEditOf([{ lines, soft, ...rest }]), fit: 'reflow', version: 1 };
-      /** @type {Uint8Array} */
-      let after;
-      try {
-        if (rewrite === 'operators') {
-          const copy = await kernel.mupdfWriter.open(bytes);
-          try {
-            await kernel.applyEditTextOperators(copy, { kind: 'editTextOperators', ...wire }, runs);
-            after = await kernel.mupdfWriter.serialise(copy);
-          } finally {
-            await kernel.mupdfWriter.close(copy);
-          }
-        } else {
-          after = await kernel.pdfiumExecution.apply({
-            session: bytes,
-            command: { kind: 'editTextBlock', ...wire, ...(unpacked ? { unpack: true } : {}) },
-            sources: [],
-            reads: undefined,
-          });
-        }
-      } catch (error) {
-        tries.push({ block: name, edit, route: rewrite, outcome: 'refused', disturbed: 0, lost: 0, inside: 0, why: reasonOf(error) });
-        continue;
-      }
-      // WHERE THE BLOCK MAY DRAW: its ink before, and the ink of every character read after and not before whose origin
-      // is in the block's column from its top down — the edited words, wrapped and grown.
-      const was = new Set(beforeCharacters.map(keyOf));
-      const afterCharacters = charactersOf(kernel, after, index);
-      const now = new Set(afterCharacters.map(keyOf));
-      // THE COLUMN runs from the block's leftmost PEN POSITION, not only its ink: a line wrapped below starts at the pen
-      // position, which a glyph's side bearing puts left of the ink (measured on the brochure's heading, 2026-10-24).
-      const columnLeft = Math.min(ink.left, ...ownCharacters.map((each) => each.x));
-      const columnRight = Math.max(ink.right, ...ownCharacters.map((each) => each.x));
-      const grown = afterCharacters
-        .filter((each) => !was.has(keyOf(each)))
-        .filter((each) => each.x >= columnLeft - 1.5 && each.x <= columnRight + 1.5 && each.y <= ink.top + 1.5)
-        .map((each) => each.box);
-      // A CHARACTER OUTSIDE THE BLOCK THAT IS GONE is disturbed text wherever it went, though its pixels might be allowed.
-      // Not a space: it draws nothing, and an edit sets a line's spaces again with its words.
-      const lost = beforeCharacters.filter((each) => each.character.trim() !== '' && !inBlock(each) && !now.has(keyOf(each))).length;
-      const { outside, inside, farthest } = compare(before, render(kernel, after, index), [ink, ...grown]);
-      tries.push({
-        block: name,
-        edit,
-        route: rewrite,
-        outcome: 'made',
-        disturbed: outside,
-        lost,
-        inside,
-        why: outside > 0 || lost > 0 ? `${String(lost)} character(s) outside the block gone; pixels up to ${String(farthest / 2)} pt away` : '',
-      });
+      if (rest !== null) await attempt(name, edit, [{ lines, soft, ...rest }], [at]);
     }
   }
+
+  // THE PAGE'S REPLACEMENTS (ADR-0267), through the one function a person's go through: Replace all of the page's most
+  // frequent word of four letters or more, whole and as written, and a spelling replacement of its first occurrence.
+  const counted = new Map();
+  for (const block of blocks) {
+    for (const word of kernel.wordsOf(block).match(/\p{L}{4,}/gu) ?? []) counted.set(word, (counted.get(word) ?? 0) + 1);
+  }
+  const frequent = [...counted].sort((a, b) => b[1] - a[1])[0]?.[0];
+  if (typeof frequent === 'string') {
+    const compiled = kernel.compileQuery(frequent, { caseSensitive: true, wholeWord: true, normalise: 'none' });
+    const matchesIn = compiled.ok ? compiled.value.matchesIn : () => [];
+    const touchedBy = (/** @type {any[]} */ entries) =>
+      blocks.flatMap((/** @type {any} */ each, /** @type {number} */ at) =>
+        entries.some((entry) => entry.lines[0]?.[0] === each.lines[0]?.runs[0]?.index) ? [at] : []);
+    const all = kernel.blocksReplaced(blocks, matchesIn, 'Altered');
+    const label = quotes ? `the page’s “${frequent}”` : 'the page’s most frequent word';
+    if (all.length > 0) await attempt(label, 'replace all', all, touchedBy(all));
+    const first = blocks.findIndex((/** @type {any} */ each) => matchesIn(kernel.wordsOf(each)).length > 0);
+    const one = first === -1 ? [] : kernel.blocksReplaced(blocks, matchesIn, 'Altered', { block: first, occurrence: 0 });
+    if (one.length > 0) await attempt(label, 'spelling', one, touchedBy(one));
+  }
   return tries;
+}
+
+/**
+ * A page's lines as MuPDF reads them: its drawn characters grouped by baseline (within a point), each line's words with
+ * no spaces and its baseline, top down. What a person sees as lines, read from the bytes, not from what was sent.
+ * @param {any} kernel @param {Uint8Array} bytes @returns {{ y: number, text: string }[]}
+ */
+function linesOf(kernel, bytes) {
+  /** @type {{ y: number, chars: { x: number, character: string }[] }[]} */
+  const rows = [];
+  for (const each of charactersOf(kernel, bytes, 0).filter((one) => one.character.trim() !== '')) {
+    const row = rows.find((one) => Math.abs(one.y - each.y) < 1);
+    if (row === undefined) rows.push({ y: each.y, chars: [each] });
+    else row.chars.push(each);
+  }
+  return rows
+    .map((row) => ({ y: row.y, text: row.chars.sort((a, b) => a.x - b.x).map((one) => one.character).join('') }))
+    .sort((a, b) => b.y - a.y);
+}
+
+/** 1 px at the proof's 144 dpi, in points: how far a line may stand from where it stood. */
+const ONE_PIXEL = 0.5;
+
+/**
+ * Whether a page's lines after an edit are its lines before, but for `changed` (line number → its words after, no
+ * spaces), each at the baseline it had shifted by `shift(line)`: the same count of lines, every other line's words
+ * unchanged, every line within {@link ONE_PIXEL}. Answers the first difference, or `''`.
+ * @param {{ y: number, text: string }[]} before @param {{ y: number, text: string }[]} after
+ * @param {Map<number, string>} changed @param {(line: number) => number} [shift]
+ */
+function sameLines(before, after, changed, shift = () => 0) {
+  if (before.length !== after.length) return `${String(before.length)} line(s) became ${String(after.length)}`;
+  for (const [at, line] of before.entries()) {
+    const now = after[at];
+    if (now === undefined) return `line ${String(at)} is gone`;
+    const words = changed.get(at) ?? line.text;
+    if (now.text !== words) return `line ${String(at)} reads differently`;
+    const off = now.y - (line.y - shift(at));
+    if (Math.abs(off) > ONE_PIXEL) return `line ${String(at)} stands ${off.toFixed(2)} pt from where the page had it`;
+  }
+  return '';
+}
+
+/**
+ * The cloud branch's F2 shape (2026-10-24): one block of three numbered paragraphs, each of two lines at a 14 pt pitch,
+ * the paragraphs 2 and 4 pt further apart — uneven, as a page sets them, so one even spacing cannot pass, and close
+ * enough that the reading groups them as one block (3 and 6 pt apart, it made two: measured 2026-10-24).
+ */
+async function numberedParagraphs() {
+  const document = await PDFDocument.create({ updateMetadata: false });
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const page = document.addPage([612, 792]);
+  const lines = [
+    ['1. The members agreed the budget for', 'the spring planting at the first meeting.'],
+    ['2. The garden opens at dawn and closes', 'at dusk on every day of the week.'],
+    ['3. Tools are lent to members free of', 'charge and returned the same day.'],
+  ];
+  let y = 700;
+  lines.forEach((paragraph, at) => {
+    for (const line of paragraph) {
+      page.drawText(line, { x: 72, y, size: 11, font });
+      y -= 14;
+    }
+    y -= at === 0 ? 2 : 4;
+  });
+  return new Uint8Array(await document.save());
+}
+
+/**
+ * A code block: a monospace face, one show per line, each line a line of its own. Shaped so that a merge CAN happen: the
+ * closing brace fits after the line above it, so the same edit sent with the lines as one paragraph joins them (with
+ * lines of similar length nothing fits and the control could not fail: measured 2026-10-24).
+ */
+async function codeBlock() {
+  const document = await PDFDocument.create({ updateMetadata: false });
+  const font = await document.embedFont(StandardFonts.Courier);
+  const page = document.addPage([612, 792]);
+  ['if (ready) {', '  start();', '}', 'stop();'].forEach((line, at) => {
+    page.drawText(line, { x: 72, y: 700 - at * 12, size: 10, font });
+  });
+  return new Uint8Array(await document.save());
+}
+
+/**
+ * The first block of page 0 of `bytes`, edited by `text` through the operator writer as the application sends it: the
+ * read's lines and soft wraps, unless `soft` is given. Answers the bytes, or the refusal.
+ * @param {any} pdfium @param {any} kernel @param {Uint8Array} bytes @param {(words: string) => string} text
+ * @param {boolean[]} [soft]
+ */
+async function editFirstBlock(pdfium, kernel, bytes, text, soft) {
+  const session = await pdfium.pdfiumWriter.open(bytes);
+  /** @type {any} */
+  let read;
+  /** @type {any} */
+  let runs;
+  try {
+    read = await pdfium.textRuns(session, 0);
+    runs = await pdfium.pageRuns(session, 0);
+  } finally {
+    await pdfium.pdfiumWriter.close(session);
+  }
+  const blocks = kernel.groupIntoBlocks(read.runs.filter((/** @type {any} */ run) => kernel.isEditedInPlace(run.style)).map((/** @type {any} */ run) => ({ ...run, setting: kernel.settingOf(run.style) })));
+  const block = blocks[0];
+  const lines = block.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index));
+  const sent = soft ?? block.lines.map((/** @type {any} */ line) => line.soft);
+  const words = kernel.paragraphsOfLines(block.lines.map((/** @type {any} */ line, /** @type {number} */ at) => ({ text: kernel.lineText(line.runs), soft: sent[at] ?? false })));
+  const copy = await kernel.mupdfWriter.open(bytes);
+  try {
+    await kernel.applyEditTextOperators(copy, { kind: 'editTextOperators', page: 0, ...kernel.blockEditOf([{ lines, soft: sent, text: text(words) }]), fit: 'reflow', version: 1 }, runs);
+    return { blocks: blocks.length, lines: block.lines.length, bytes: await kernel.mupdfWriter.serialise(copy) };
+  } catch (error) {
+    return { blocks: blocks.length, lines: block.lines.length, refused: reasonOf(error) };
+  } finally {
+    await kernel.mupdfWriter.close(copy);
+  }
 }
 
 /** A paragraph of three lines in Helvetica 12, its first line ending in a word broken by a hyphen. */
@@ -345,8 +528,8 @@ function report(document, tries) {
 async function run(pdfium, kernel) {
   /** @type {string[]} */
   const failures = [];
-  const roster = createRoster(failures, { cases: 6 });
-  if (CASES.length !== 6) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 6`);
+  const roster = createRoster(failures, { cases: 11 });
+  if (CASES.length !== 11) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 11`);
   const check = (/** @type {string} */ name, /** @type {boolean} */ held, /** @type {string} */ detail) => {
     const mark = roster.mark();
     if (!held) failures.push(`${name}\n      ${detail}`);
@@ -390,6 +573,59 @@ async function run(pdfium, kernel) {
     describe(gate.filter((each) => each.outcome === 'made' && (each.disturbed > 0 || each.lost > 0 || each.inside === 0))),
   );
   check(CASES[5] ?? '', rest.length > 0 && counts(rest).disturbed === 0, describe(rest.filter((each) => each.disturbed > 0 || each.lost > 0)));
+
+  // THE OLD REPLACE (ADR-0267's control): PDFium's replace-all of a word of the first line, the same length so the line
+  // need not move, on the page of two fonts of one name — its page rewrite sets the second line in the first font.
+  /** @type {string} */
+  let oldReplace;
+  try {
+    const replaced = await kernel.pdfiumExecution.apply({
+      session: same,
+      command: { kind: 'replaceAllText', find: 'first', replace: 'other', caseSensitive: true, wholeWord: true },
+      sources: [],
+      reads: undefined,
+    });
+    const gone = sameLines(linesOf(kernel, same), linesOf(kernel, replaced), new Map([[0, 'Theotherlineofthepage.']]));
+    oldReplace = gone === '' ? 'made and disturbed nothing' : `made, and ${gone}`;
+  } catch (error) {
+    oldReplace = `refused: ${reasonOf(error)}`;
+  }
+  process.stdout.write(`  the old replace, PDFium's replace-all on two fonts of one name: ${oldReplace}\n`);
+  check(CASES[6] ?? '', oldReplace !== 'made and disturbed nothing', oldReplace);
+
+  // NUMBERED PARAGRAPHS (the cloud branch's F2): the editor shows each paragraph where the page has it, so the writer must
+  // write it there. A word of the first line swapped for one of the same length, then a paragraph made a line longer.
+  const numbered = await numberedParagraphs();
+  const numberedBefore = linesOf(kernel, numbered);
+  const swapped = await editFirstBlock(pdfium, kernel, numbered, (words) => words.replace('budget', 'income'));
+  const swapCheck = swapped.bytes === undefined ? `refused: ${swapped.refused ?? ''}` : sameLines(numberedBefore, linesOf(kernel, swapped.bytes), new Map([[0, '1.Themembersagreedtheincomefor']]));
+  check(CASES[7] ?? '', swapped.blocks === 1 && swapped.lines === 6 && swapCheck === '', `${String(swapped.blocks)} block(s), ${String(swapped.lines)} line(s) in the first: ${swapCheck}`);
+  const grown = await editFirstBlock(pdfium, kernel, numbered, (words) => words.replace('the first meeting.', 'the first meeting of the whole committee in the hall.'));
+  /** @type {string} */
+  let growCheck;
+  if (grown.bytes === undefined) growCheck = `refused: ${grown.refused ?? ''}`;
+  else {
+    const after = linesOf(kernel, grown.bytes);
+    // ONE LINE MORE, and every line from the second paragraph down where it stood less exactly the first's new line's pitch.
+    const pitch = after.length === numberedBefore.length + 1 ? (numberedBefore[2]?.y ?? 0) - (after[3]?.y ?? 0) : Number.NaN;
+    const below = numberedBefore.slice(2).map((line, at) => ({ was: line, now: after[at + 3] }));
+    const off = below.find((each) => each.now === undefined || each.now.text !== each.was.text || Math.abs(each.was.y - pitch - each.now.y) > ONE_PIXEL);
+    growCheck = after.length !== numberedBefore.length + 1 ? `${String(numberedBefore.length)} line(s) became ${String(after.length)}` : Math.abs(pitch - 14) > ONE_PIXEL ? `the lines below moved ${pitch.toFixed(2)} pt, not one pitch` : off === undefined ? '' : 'a line below did not keep its gap';
+  }
+  check(CASES[8] ?? '', growCheck === '', growCheck);
+
+  // A CODE BLOCK: one line's word changed, every other line as it was, none merged — and its CONTROL, the same edit sent
+  // with the lines as one paragraph, which the same check must see merged.
+  const code = await codeBlock();
+  const codeBefore = linesOf(kernel, code);
+  const renamed = (/** @type {string} */ words) => words.replace('ready', 'other');
+  const changedCode = await editFirstBlock(pdfium, kernel, code, renamed);
+  const codeCheck = changedCode.bytes === undefined ? `refused: ${changedCode.refused ?? ''}` : sameLines(codeBefore, linesOf(kernel, changedCode.bytes), new Map([[0, 'if(other){']]));
+  check(CASES[9] ?? '', changedCode.lines === 4 && codeCheck === '', `${String(changedCode.blocks)} block(s), ${String(changedCode.lines)} line(s) in the first: ${codeCheck}`);
+  const merged = await editFirstBlock(pdfium, kernel, code, renamed, Array.from({ length: changedCode.lines }, () => true));
+  const mergeCheck = merged.bytes === undefined ? `refused: ${merged.refused ?? ''}` : sameLines(codeBefore, linesOf(kernel, merged.bytes), new Map([[0, 'if(other){']]));
+  process.stdout.write(`  the code block's control, its lines sent as one paragraph: ${mergeCheck === '' ? 'read back as the page’s own lines' : mergeCheck}\n`);
+  check(CASES[10] ?? '', mergeCheck !== '', 'the merged edit read back as the page’s own lines, so the check cannot see a merge');
 
   if (CORPUS !== null) corpus();
 
@@ -495,8 +731,9 @@ if (!existsSync(library) || shim === null || !existsSync(fontsDirectory(ROOT))) 
   const pdfium = await import('../../packages/kernel/dist/pdfiumFfi.js');
   pdfium.openPdfium(library);
   const { blockEditOf, readsUnpacked } = await import('../../packages/contract/dist/commands.js');
-  const { groupIntoBlocks, isEditedInPlace, settingOf } = await import('../../packages/kernel/dist/textLines.js');
-  const { paragraphsOfLines, lineText } = await import('../../packages/shared/dist/index.js');
+  const { groupIntoBlocks, isEditedInPlace, settingOf, pushesOfPage } = await import('../../packages/kernel/dist/textLines.js');
+  const { paragraphsOfLines, lineText, compileQuery } = await import('../../packages/shared/dist/index.js');
+  const { blocksReplaced, wordsOf } = await import('../../packages/contract/dist/blockReplace.js');
   const mupdf = await import('../../packages/kernel/dist/mupdfRaw.js');
   const { mupdfWriter } = await import('../../packages/kernel/dist/mupdfWriter.js');
   const { readPageRewrite } = await import('../../packages/kernel/dist/pageRewrite.js');
@@ -512,7 +749,11 @@ if (!existsSync(library) || shim === null || !existsSync(fontsDirectory(ROOT))) 
   const kernel = {
     blockEditOf,
     readsUnpacked,
+    compileQuery,
+    blocksReplaced,
+    wordsOf,
     groupIntoBlocks,
+    pushesOfPage,
     isEditedInPlace,
     settingOf,
     paragraphsOfLines,
