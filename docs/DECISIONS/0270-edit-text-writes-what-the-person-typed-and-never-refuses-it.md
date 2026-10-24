@@ -78,3 +78,16 @@ default.
 - A writer defect now shows as a logged line and a proof count rather than a refusal; the proof is the gate.
 - The face that ships with Monstera and draws every script is a new dependency, asked in `owner-questions.md` with its
   measurement before it is added; the box stands in until it ships.
+
+## Correction, 2026-10-24 — the owner's answers: GNU Unifont is the last face, and the four stops stay
+
+The owner approved this ADR the same day and answered its two open points:
+
+- **The every-script face is GNU Unifont 18.0.01** (released 2026-09-16; approved as a new dependency), bundled under its
+  free font licence, the SIL Open Font License 1.1, recorded in NOTICE and on the notices page. It is used ONLY as the
+  last step, after the run's own font, the page's font of the same family and the closest face installed or bundled. It
+  is written into a document as a SUBSET — only the characters the edit uses — like every face the edit embeds, and that
+  is checked. **The box step is removed once it ships**: Decision 3's chain ends at Unifont.
+- **Decision 4's four stops stay** — a numbering mismatch, a font with no widths, a clip the inserted object cannot
+  share, an arrange that would crop — since writing past any of them changes other parts of the page. Each is logged as
+  a writer defect, counted by the proof, and must read 0.
