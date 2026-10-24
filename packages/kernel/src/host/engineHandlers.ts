@@ -67,6 +67,8 @@ import {
   ENGINE_BARCODES_MAX,
   ENGINE_DUPLICATE_PAGES_MAX,
   type EngineChannels,
+  MAX_WRITER_NOTE,
+  MAX_WRITER_NOTES,
   type MupdfWireCommand,
   joinAsset,
   joinPlaceholderAsset,
@@ -1504,8 +1506,16 @@ export function createEngineHandlers({
         throw error;
       }
       // THE ONE CAP (`cappedBoxes`), which the PDFium host's answer takes too: two would cut a list two ways.
-      // AND THE BLOCKS IT MOVED (ADR-0249), whole: one per pushed block, which the command already bounds.
-      return { ok: true, value: { ...cappedBoxes(drawn), moved: [...drawn.moved] } };
+      // AND THE BLOCKS IT MOVED (ADR-0249), whole: one per pushed block, which the command already bounds. AND WHAT ITS
+      // CHECKS NOTED (ADR-0270), each held to the frame's bound: a note cut short still says what it is.
+      return {
+        ok: true,
+        value: {
+          ...cappedBoxes(drawn),
+          moved: [...drawn.moved],
+          noted: drawn.noted.slice(0, MAX_WRITER_NOTES).map((note) => note.slice(0, MAX_WRITER_NOTE)),
+        },
+      };
     },
 
     'engine/capture': async ({ session, command, asset }) => {

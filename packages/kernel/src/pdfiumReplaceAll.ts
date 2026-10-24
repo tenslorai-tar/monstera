@@ -159,6 +159,6 @@ export async function applyReplaceAllText(
     // with an undo step that did nothing.
     if (rewritten === 0) throw new NothingToReplaceError();
     // EVERY BOX, uncapped: the host names the first ones and counts the rest at the pipe (`cappedBoxes`).
-    return { image: await pdfiumWriter.serialise(session), boxed, more: 0, moved: [] };
+    return { image: await pdfiumWriter.serialise(session), boxed, more: 0, moved: [], noted: [] };
   });
 }

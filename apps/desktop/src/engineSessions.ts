@@ -764,6 +764,17 @@ export class EngineSessions implements EngineSessionSource {
   readonly #entries = new Map<DocId, DocumentEntry>();
 
   /**
+   * @param failures where a writer defect a kept write's checks found is logged (ADR-0270): the shell's log, which the
+   * composition root hands in; by default stderr, which is where a failure goes when no log was made.
+   */
+  constructor(private readonly failures: ShellFailureSink = (failure) => process.stderr.write(`MONSTERA_SHELL_FAILURE ${failure.event}: ${failure.detail}\n`)) {}
+
+  /** A defect a KEPT write's own checks found (ADR-0270): logged, never shown. */
+  readonly writerDefect = (docId: DocId, kind: string, detail: string): void => {
+    this.failures({ event: 'edit-writer-defect', detail: `${kind} on ${docId}: ${detail}` });
+  };
+
+  /**
    * The passwords the open documents' files open with (ADR-0171 Decision 1). HERE, beside the entries, so the close
    * that drops a document's entry is the close that wipes its password: one teardown registration, not a second one a
    * close path has to remember (finding FFFF-1).

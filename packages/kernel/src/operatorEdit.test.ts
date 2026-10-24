@@ -11,6 +11,7 @@ import {
   type PageRuns,
   checkOperatorEdit,
   editOperators,
+  pageFontsAsRead,
 } from './operatorEdit.js';
 import { pageContentStreams } from './pageContent.js';
 import { type PageFont, pageFonts } from './pageFonts.js';
@@ -420,6 +421,55 @@ describe('editOperators on a page of lines', () => {
 
   it('answers unchanged for an edit that changes nothing', () => {
     expect(editOperators(content, fonts, page, block('abc\ndef\nghi'))).toStrictEqual({ ok: false, error: { reason: 'unchanged' } });
+  });
+});
+
+describe('a glyph the page draws with a code its font names no text for is the page’s own font’s (ADR-0270 Decision 3)', () => {
+  // THE SHAPE MEASURED IN THE OWNER'S DOCUMENT 2 (2026-10-24): a Type 3 glyph PDFium reads as U+073C that no font on the
+  // page maps, so typing beside it was refused as a character no face carries. Here code 0x41 draws and has a width, its
+  // font's ToUnicode names `a` and `b` only, and PDFium reads the run as `abQ`.
+  const own = font('F1', 'ab');
+  const drawsA: PageFont = { ...own, width: (code) => (code === 0x41 ? 0.5 : own.width(code)), draws: (code) => code === 0x41 || own.draws(code) };
+  const declared = new Map([['F1', drawsA]]);
+  const content = bytes('BT /F1 10 Tf 1 0 0 1 72 100 Tm (abA) Tj ET');
+  const page: PageRuns = { textObjects: [0], runs: [inked(0, 'abQ', 72, 87)] };
+  // THE SAME WIDTH AS THE LINE, so nothing wraps and the line is set again where it stood.
+  const edit = [{ lines: [[0]], soft: [false], text: 'baQ' }];
+
+  it('learns the code from PDFium’s reading, and sets the character in the page’s own font with it', () => {
+    const asRead = pageFontsAsRead(declared, content, page);
+    expect(asRead.get('F1')?.toUnicode?.text.get(0x41)).toBe('Q');
+    const result = editOperators(content, asRead, page, edit);
+    if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+    expect(inserted(result.value)[0]).toContain('<626141>');
+    // AND THE CHECK READS IT AS THE WRITER SET IT, from the same fonts: no defect to note.
+    expect(checkOperatorEdit(content, result.value, asRead)).toStrictEqual({ ok: true, value: undefined });
+  });
+
+  it('CONTROL: with the fonts as the page declares them the character has no carrier, which is the refusal it was', () => {
+    expect(editOperators(content, declared, page, edit)).toStrictEqual({ ok: false, error: { reason: 'needs-a-face', characters: ['Q'] } });
+  });
+
+  it('learns a code PDFium reads as TWO characters, and sets those two with it — the document’s own glyph', () => {
+    // The shape measured: one glyph read as `=` and U+073C. Here the last code is read as `QZ`.
+    const twice: PageRuns = { textObjects: [0], runs: [inked(0, 'abQZ', 72, 87)] };
+    const asRead = pageFontsAsRead(declared, content, twice);
+    expect(asRead.get('F1')?.toUnicode?.text.get(0x41)).toBe('QZ');
+    const result = editOperators(content, asRead, twice, [{ lines: [[0]], soft: [false], text: 'baQZ' }]);
+    if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+    expect(inserted(result.value)[0]).toContain('<626141>');
+  });
+
+  it('CONTROL: two unnamed codes side by side teach nothing — how their characters split would be a guess', () => {
+    const both = bytes('BT /F1 10 Tf 1 0 0 1 72 100 Tm (aAA) Tj ET');
+    const read: PageRuns = { textObjects: [0], runs: [inked(0, 'aQZ', 72, 87)] };
+    expect(pageFontsAsRead(declared, both, read)).toBe(declared);
+  });
+
+  it('CONTROL: a run whose named codes do not read as PDFium reads them teaches nothing', () => {
+    // `b` is named `b` and PDFium reads `x` there: the run does not line up, so the unnamed code after it is not learned.
+    const misread: PageRuns = { textObjects: [0], runs: [inked(0, 'axQ', 72, 87)] };
+    expect(pageFontsAsRead(declared, content, misread)).toBe(declared);
   });
 });
 

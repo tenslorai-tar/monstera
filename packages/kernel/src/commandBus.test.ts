@@ -1583,11 +1583,13 @@ describe('CommandBus — execution goes through the registered writer (ADR-0023 
 
   it('hands a LIVE-SESSION apply’s boxes to the caller, as it hands a byte-image one’s (ADR-0177 Decision 7)', async () => {
     // THE ANSWER IS THE APPLY'S, not a constant: two characters on two pages, which no other path produces.
-    // AND A MOVED BLOCK NO OTHER PATH PRODUCES (ADR-0249), so a bus that dropped `moved` answers `[]` and fails here.
+    // AND A MOVED BLOCK NO OTHER PATH PRODUCES (ADR-0249), so a bus that dropped `moved` answers `[]` and fails here; AND
+    // A WRITER DEFECT NOTED (ADR-0270), for the same reason.
     const drawn = {
       boxed: [{ character: '\u{378}', page: 0 }, { character: '\u{379}', page: 2 }],
       more: 3,
       moved: [{ block: 1, box: { x0: 72, y0: 560, x1: 540, y1: 590 }, down: 14.5 }],
+      noted: ['page 0: the structural read-back found a byte outside the edit changed'],
     };
     const bus = new CommandBus({ mupdf: { ...localMupdfWriter, apply: () => Promise.resolve(drawn) } });
     const session = await mupdfWriter.open(flat);

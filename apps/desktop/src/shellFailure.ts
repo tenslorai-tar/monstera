@@ -158,6 +158,12 @@ export type ShellFailureEvent =
    */
   | 'working-file-left'
   /**
+   * A writer defect an edit's own checks found in a write that was KEPT (ADR-0270): a read-back that read the edited words
+   * differently, or a byte outside the edited block that changed. The person's typing is written and never refused for
+   * it; this line is where the defect is, for us, and `proof:edittext` counts the same checks at 0.
+   */
+  | 'edit-writer-defect'
+  /**
    * The shell could not close what it holds on the way out.
    *
    * A lifecycle failure like the rest, and the only one that happens when there

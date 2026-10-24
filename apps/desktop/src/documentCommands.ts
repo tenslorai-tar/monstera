@@ -402,6 +402,11 @@ export interface EngineSessionSource {
   readonly commandBegan: (docId: DocId, kind: string) => void;
   readonly commandEnded: (docId: DocId, kind: string, succeeded: boolean) => void;
   readonly commandBarred: (docId: DocId, kind: string) => boolean;
+  /**
+   * A writer defect a KEPT write's own checks found (ADR-0270): logged where the supervisor logs a host's death, never
+   * shown. Required, so a supervisor that would drop it is a compile error rather than a defect nobody sees.
+   */
+  readonly writerDefect: (docId: DocId, kind: string, detail: string) => void;
 }
 
 /**
@@ -4040,6 +4045,8 @@ export class DocumentCommands {
           options.joinsStep,
         ),
       );
+      // A DEFECT THE WRITE'S OWN CHECKS FOUND in a write that was kept (ADR-0270): to the log, never to the person.
+      for (const note of drawn.noted) this.#engine.writerDefect(docId, command.kind, note);
       // THE MARKUP ON TEXT THE EDIT PUSHED DOWN moves with it (ADR-0249 Decision 4): by its own writer, MuPDF, in this
       // lane straight after the edit, so nothing comes between and each command joins the edit's undo step (ADR-0200).
       const followed = drawn.moved.length === 0 ? 0 : await this.#moveMarkupOnMovedText(docId, context, command, drawn.moved);

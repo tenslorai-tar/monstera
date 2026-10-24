@@ -649,7 +649,9 @@ describe('the PDFium host body', () => {
     const drawn = Array.from({ length: 70 }, (_, at) => ({ character: String.fromCodePoint(0x4e00 + at), page: 0 }));
     // AND A MOVED BLOCK (ADR-0249), which crosses whole: a handler that dropped it answers `[]`.
     const moved = [{ block: 1, box: { x0: 72, y0: 560, x1: 540, y1: 590 }, down: 14.5 }];
-    const { session } = await openArea(files, { boxed: drawn, more: 0, moved });
+    // AND A WRITER DEFECT NOTED (ADR-0270), which crosses whole too.
+    const noted = ['page 0: a note'];
+    const { session } = await openArea(files, { boxed: drawn, more: 0, moved, noted });
     files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([4, 5]));
     stream.feed(
       request('a1', 'engine/apply', {
@@ -663,12 +665,13 @@ describe('the PDFium host body', () => {
     );
     await stream.whenSent(2);
     const answer = answerIn(stream.sent[1]) as {
-      body: { ok: boolean; value: { boxed: unknown[]; more: number; moved: unknown[] } };
+      body: { ok: boolean; value: { boxed: unknown[]; more: number; moved: unknown[]; noted: unknown[] } };
     };
     expect(answer.body.ok, JSON.stringify(answer)).toBe(true);
     expect(answer.body.value.boxed).toStrictEqual(drawn.slice(0, 64));
     expect(answer.body.value.more).toBe(6);
     expect(answer.body.value.moved).toStrictEqual(moved);
+    expect(answer.body.value.noted).toStrictEqual(noted);
   });
 
   it('applies from the named file and writes the result into the granted directory', async () => {

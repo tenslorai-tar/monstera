@@ -129,6 +129,10 @@ import { PAGE_TEXT_READS } from '../textStructure.js';
 import { PROBE_CODE_MAX_CHARS, PROBE_CODE_PATTERN } from './containment.js';
 import { pageRunsSchema } from './pageRunsWire.js';
 
+/** The most writer defects one answer carries, and the longest each may be: enough to name what differed and where. */
+export const MAX_WRITER_NOTES = 8;
+export const MAX_WRITER_NOTE = 400;
+
 /**
  * The blocks a text edit moved down (ADR-0249 Decision 4), as a host answers them beside its boxes: each its place in the
  * edit, where its objects stood and how far down it went — `engineSeam.ts`' `MovedBlock`. At most one per pushed block,
@@ -146,6 +150,11 @@ export const movedBlocksShape = {
         .strict(),
     )
     .max(MAX_PUSHED_BLOCKS),
+  /**
+   * Writer defects a kept write's own checks found (ADR-0270), for the diagnostics log: a few, each a short line of our
+   * words and numbers. Bounded so a host that found many cannot fill the frame; the proof counts the same checks at 0.
+   */
+  noted: z.array(z.string().max(MAX_WRITER_NOTE)).max(MAX_WRITER_NOTES),
 };
 
 /**

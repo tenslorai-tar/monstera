@@ -822,8 +822,8 @@ export class CommandBus {
     if (shape === 'hosted-image') return NO_BOXES;
     // AN ANSWER IS OWED, `#install`'s rule: an apply that forgot its return would otherwise read as one that drew none.
     if (applied === undefined) throw new Error(`An apply routed to ${writer} answered nothing where it owes its boxes.`);
-    const { boxed, more, moved } = applied as DrawnBoxes;
-    return { boxed, more, moved };
+    const { boxed, more, moved, noted } = applied as DrawnBoxes;
+    return { boxed, more, moved, noted };
   }
 
   /**

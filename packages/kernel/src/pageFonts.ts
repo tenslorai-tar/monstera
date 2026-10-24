@@ -38,6 +38,12 @@ export interface PageFont {
   readonly face: string | null;
   /** Its descriptor's weight, `null` where none is stated. */
   readonly weight: number | null;
+  /**
+   * The codes whose text in `toUnicode` is PDFium's READING of the page and not the font's own statement
+   * (`pageFontsAsRead`, ADR-0270): a glyph the font names nothing for, which another reader is free to name otherwise.
+   * Absent where none were learned.
+   */
+  readonly readByPdfium?: ReadonlySet<number>;
 }
 
 /**

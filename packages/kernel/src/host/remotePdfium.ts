@@ -298,6 +298,7 @@ export function remotePdfiumExecution(
           boxed: answer.boxed,
           more: answer.more,
           moved: answer.moved,
+          noted: answer.noted,
         };
       },
       regenerates,

@@ -1672,6 +1672,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           commandBegan: () => undefined,
           commandEnded: () => undefined,
           commandBarred: () => false,
+          writerDefect: () => undefined,
           sessions: () => {
             const cause = new Error(`EPERM: operation not permitted, stat '${SECRET}'`);
             cause.stack = `Error: EPERM: operation not permitted, stat '${SECRET}'\n    at readFileIdentity (${SECRET}:1:1)`;
@@ -6179,7 +6180,11 @@ describe('placeSignature — a plain signature, resolved as a certificate signat
    * An edit whose writer answers the blocks it pushed down, through a bus that records what it is asked and answers as the
    * writer would, and the page's marks and links as main reads them. `moved` is what the edit answers.
    */
-  async function pushingEdit(moved: readonly { block: number; box: { x0: number; y0: number; x1: number; y1: number }; down: number }[]) {
+  async function pushingEdit(
+    moved: readonly { block: number; box: { x0: number; y0: number; x1: number; y1: number }; down: number }[],
+    noted: readonly string[] = [],
+    logged: { readonly event: string; readonly detail: string }[] = [],
+  ) {
     const made = await PDFDocument.create();
     made.addPage([612, 792]);
     const bytes = await made.save();
@@ -6189,7 +6194,7 @@ describe('placeSignature — a plain signature, resolved as a certificate signat
     const own = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING, checkpointDirectory: CHECKPOINTS });
     const opened = await own.open(registry.mint(path));
     if (opened.kind !== 'opened') throw new Error(`Fixture did not open: ${opened.kind}`);
-    const held = new EngineSessions();
+    const held = new EngineSessions((failure) => logged.push(failure));
     held.hold(opened.docId, { mupdf: await mupdfWriter.open(bytes) });
     const asked: { readonly command: Command; readonly joinsStep: unknown }[] = [];
     const bus = {
@@ -6198,7 +6203,7 @@ describe('placeSignature — a plain signature, resolved as a certificate signat
         return Promise.resolve({
           entry: {},
           trimmed: { droppedEntries: 0 },
-          drawn: { boxed: [], more: 0, moved: command.kind === 'editTextBlock' ? moved : [] },
+          drawn: { boxed: [], more: 0, moved: command.kind === 'editTextBlock' ? moved : [], noted: command.kind === 'editTextBlock' ? noted : [] },
           version: 0,
         });
       },
@@ -6256,6 +6261,23 @@ describe('placeSignature — a plain signature, resolved as a certificate signat
     expect(asked[0]?.joinsStep).toBeUndefined();
     expect(asked[1]?.joinsStep).toBeDefined();
     expect(asked[2]?.joinsStep).toBeDefined();
+  });
+
+  it('LOGS a writer defect a kept edit’s checks noted, as a shell failure, and the edit stands (ADR-0270)', async () => {
+    const logged: { readonly event: string; readonly detail: string }[] = [];
+    const asked = await pushingEdit([], ['page 0: MuPDF’s reading does not hold 1 line(s) the edit set'], logged);
+    // THE EDIT WAS MADE: nothing refused it.
+    expect(asked.map(({ command }) => command.kind)).toStrictEqual(['editTextBlock']);
+    expect(logged).toHaveLength(1);
+    expect(logged[0]?.event).toBe('edit-writer-defect');
+    expect(logged[0]?.detail).toContain('editTextBlock on ');
+    expect(logged[0]?.detail).toContain('does not hold 1 line(s)');
+  });
+
+  it('CONTROL: an edit whose checks noted nothing logs nothing', async () => {
+    const logged: { readonly event: string; readonly detail: string }[] = [];
+    await pushingEdit([], [], logged);
+    expect(logged).toStrictEqual([]);
   });
 
   it('CONTROL: an edit that moved nothing sends nothing after it', async () => {
@@ -7860,6 +7882,7 @@ describe('a protect in this session: the holder follows it', () => {
       commandBegan: () => undefined,
       commandEnded: () => undefined,
       commandBarred: () => false,
+      writerDefect: () => undefined,
     }));
     try {
       await commands.execute(docId, { kind: 'setDocumentProtection', encryption: 'aes-256', userPassword: KEY });

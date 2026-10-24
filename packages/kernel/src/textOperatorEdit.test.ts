@@ -14,7 +14,7 @@ import type { PageRuns } from './operatorEdit.js';
 import { pageContentStreams } from './pageContent.js';
 import { pageFonts } from './pageFonts.js';
 import { BlockUnchangedError, EditRefusedError, TextNotWritableError } from './textEditRefusals.js';
-import { applyEditTextOperators, putBack, readingHolds } from './textOperatorEdit.js';
+import { applyEditTextOperators, readingHolds } from './textOperatorEdit.js';
 import { joinedContent, showOperators, textObjectCount } from './textOperators.js';
 
 /** The Chromium print committed as Part B's starting material (`scripts/research/chromiumType3Fixture.mjs`). */
@@ -72,6 +72,13 @@ describe('readingHolds, MuPDF’s read-back of the words an edit set (ADR-0266 D
 
   it('refuses words broken by others between them', () => {
     expect(readingHolds('the new other words', 'the new words')).toBe(false);
+  });
+
+  it('takes an UNNAMED GLYPH IN THE WORDS for whatever one character MuPDF reads there (ADR-0270)', () => {
+    // The glyph PDFium reads as `=` and U+073C and MuPDF as U+F4BC: the words carry it as U+FFFD.
+    expect(readingHolds('ng/-5', 'ng/�-5')).toBe(true);
+    // CONTROL: it stands for ONE character, so a glyph missing from the reading is still a line not held.
+    expect(readingHolds('ng/-5', 'ng/�-5')).toBe(false);
   });
 });
 
@@ -278,31 +285,6 @@ describe('applyEditTextOperators', () => {
     });
   });
 
-  it('puts the page back as it was when a write is refused after it was made: content, stream and fonts (SSSSSSS-15)', async () => {
-    await withChromium(async (session, content) => {
-      const restored = await withDocument(session, (document) => {
-        const leaf = document.findPage(0);
-        const fontDictionary = leaf.get('Resources').get('Font');
-        const before = leaf.get('Contents');
-        // THE WRITE, as the apply makes it: a new stream for `/Contents`, and a font named in the page's `/Font`.
-        const stream = document.addStream('BT /MonsteraX 12 Tf (written) Tj ET', document.newDictionary());
-        fontDictionary.put('MonsteraX', document.newDictionary());
-        leaf.put('Contents', stream);
-        // CONTROL: the write is on the page, so what follows is the undoing's doing.
-        const written = new TextDecoder('latin1').decode(joinedContent(pageContentStreams(leaf)));
-        putBack(document, leaf, { before, stream, fontDictionary, names: ['MonsteraX'] });
-        return {
-          written,
-          content: joinedContent(pageContentStreams(leaf)),
-          font: fontDictionary.get('MonsteraX').isNull(),
-        };
-      });
-      expect(restored.written).toContain('(written) Tj');
-      expect(restored.content).toStrictEqual(content);
-      expect(restored.font).toBe(true);
-    });
-  });
-
   it('keeps ONE word wider than the block, broken at its edge, rather than refusing the edit (Q7’s sideways shape)', async () => {
     await withChromium(async (session, content) => {
       const runs = headingRuns(content);
@@ -343,6 +325,8 @@ describe('applyEditTextOperators', () => {
           boxed: [],
           more: 0,
           moved: [],
+          // AND NOTHING NOTED: both read-backs agree with the write (ADR-0270).
+          noted: [],
         });
         expect(await pageWords(session)).toContain('Monsterafixturezap.');
         const { fonts, content } = await after(session);
@@ -370,7 +354,7 @@ describe('applyEditTextOperators', () => {
           ...command(index, words),
           ...blockEditOf([{ lines: [[index]], soft: [false], text: words }], [{ left: 100, baseline: 400, measure: 200, size: 14, text: 'A new box' }]),
         };
-        expect(await applyEditTextOperators(session, added, runs)).toStrictEqual({ boxed: [], more: 0, moved: [] });
+        expect(await applyEditTextOperators(session, added, runs)).toStrictEqual({ boxed: [], more: 0, moved: [], noted: [] });
         expect(await pageWords(session)).toContain('Anewbox');
         const { fonts, content: written } = await after(session);
         expect(fonts.filter((name) => name.startsWith('MonsteraF'))).toHaveLength(1);
@@ -407,7 +391,7 @@ describe('applyEditTextOperators', () => {
         const unassigned = String.fromCodePoint(0x378);
         const drawn = await applyEditTextOperators(session, command(runs.runs[0]?.index ?? 0, `Monstera fixture ${unassigned}.`), runs);
         // THE PERSON IS TOLD (ADR-0177 Decision 7): the character and its page, answered by the apply.
-        expect(drawn).toStrictEqual({ boxed: [{ character: unassigned, page: 0 }], more: 0, moved: [] });
+        expect(drawn).toStrictEqual({ boxed: [{ character: unassigned, page: 0 }], more: 0, moved: [], noted: [] });
         // THE REAL CHARACTER in MuPDF's reading: the box font's ToUnicode maps its code to U+0378, not to the box.
         expect(await pageWords(session)).toContain(`Monsterafixture${unassigned}.`);
         expect(await pageWords(session)).not.toContain(String.fromCodePoint(0x25a1));

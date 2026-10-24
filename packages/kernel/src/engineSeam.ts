@@ -121,10 +121,17 @@ export interface DrawnBoxes {
   readonly boxed: readonly BoxedInEdit[];
   readonly more: number;
   readonly moved: readonly MovedBlock[];
+  /**
+   * Writer defects the write's own checks found in a write that was KEPT
+   * ([ADR-0270](../../../docs/DECISIONS/0270-edit-text-writes-what-the-person-typed-and-never-refuses-it.md)): a read-back
+   * that read the edited words otherwise, a byte outside the edited block that changed. For the diagnostics log, never
+   * for the person; empty for every write whose checks found nothing. Required, so a forwarding site cannot drop one.
+   */
+  readonly noted: readonly string[];
 }
 
-/** No box drawn and nothing moved: what every operation answers that sets no new text. */
-export const NO_BOXES: DrawnBoxes = { boxed: [], more: 0, moved: [] };
+/** No box drawn, nothing moved and nothing noted: what every operation answers that sets no new text. */
+export const NO_BOXES: DrawnBoxes = { boxed: [], more: 0, moved: [], noted: [] };
 
 /** What a BYTE-IMAGE writer's apply and invert answer (ADR-0174): the new image, and the characters it drew as boxes. */
 export interface AppliedImage extends DrawnBoxes {

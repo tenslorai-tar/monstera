@@ -167,19 +167,35 @@ export function readToUnicode(cmap: Uint8Array): Result<ToUnicode, string> {
 }
 
 /**
- * The codes that draw `characters`, one per character, or `null` where one has none: the CMap read backwards. Where two
- * codes draw one character the lowest is taken, so the answer is the same on every run.
+ * The codes that draw `characters`, or `null` where some part has none: the CMap read backwards. A character's own code
+ * is taken where it has one, as always; only where it has none is a code naming that character and the ones after it
+ * looked for, the shortest first — a glyph PDFium reads as `=` and a mark, one code for two characters. So text a
+ * single-character code already sets is set exactly as before, and a ligature is never chosen over its letters. Where two
+ * codes name the same text the lowest is taken, so the answer is the same on every run.
  */
 export function codesFor(map: ToUnicode, characters: string): number[] | null {
   const backwards = new Map<string, number>();
+  let longest = 1;
   for (const [code, value] of [...map.text].sort(([left], [right]) => left - right)) {
-    if (!backwards.has(value)) backwards.set(value, code);
+    if (value === '' || backwards.has(value)) continue;
+    backwards.set(value, code);
+    longest = Math.max(longest, Array.from(value).length);
   }
-  const codes: number[] = [];
-  for (const character of characters) {
-    const code = backwards.get(character);
-    if (code === undefined) return null;
-    codes.push(code);
+  const points = Array.from(characters);
+  // FROM THE END BACK: `rest[at]` is the codes that draw the characters from `at` on, or `null` where none do — each point
+  // taking the SHORTEST text that leaves the rest drawable, so a letter's own code wins wherever the letters after it can
+  // still be drawn, and a two-character code is used only where it must be.
+  const rest: (readonly number[] | null)[] = new Array<readonly number[] | null>(points.length + 1).fill(null);
+  rest[points.length] = [];
+  for (let at = points.length - 1; at >= 0; at -= 1) {
+    for (let length = 1; length <= Math.min(longest, points.length - at); length += 1) {
+      const code = backwards.get(points.slice(at, at + length).join(''));
+      const after = rest[at + length];
+      if (code !== undefined && after !== null && after !== undefined) {
+        rest[at] = [code, ...after];
+        break;
+      }
+    }
   }
-  return codes;
+  return rest[0] === null || rest[0] === undefined ? null : [...rest[0]];
 }

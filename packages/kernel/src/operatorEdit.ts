@@ -215,6 +215,93 @@ function codesOf(font: PageFont, bytes: Uint8Array): number[] {
   return codes;
 }
 
+/**
+ * The page's fonts AS PDFium READ THEM: each font's `ToUnicode` with the codes PDFium named that the font itself names
+ * nothing for ([ADR-0270](../../../docs/DECISIONS/0270-edit-text-writes-what-the-person-typed-and-never-refuses-it.md)
+ * Decision 3, the document's own font first). The editor's words are PDFium's reading, so a character the page draws
+ * with a code its font gives no text for — measured 2026-10-24 in the owner's document 2, a Type 3 glyph PDFium reads
+ * as U+073C that no font on the page maps — was a character "no face carries", though the page's own font draws it.
+ * Learned only from a run whose codes and PDFium's characters line up exactly, white space aside — an unnamed code read
+ * as the characters up to where the next named code's text begins, since one glyph may be read as two (measured there:
+ * `=` and U+073C from one code) — so a code is never guessed; a text two codes are read as keeps the first. The writer
+ * and its structural check both take these fonts, so the words an edit sets and the words the check reads are one
+ * reading.
+ *
+ * @param fonts the page's fonts, `pageFonts`'
+ * @param content the page's content, joined
+ * @param page PDFium's reading of the page: its runs and its text objects' indices
+ */
+export function pageFontsAsRead(fonts: ReadonlyMap<string, PageFont>, content: Uint8Array, page: PageRuns): ReadonlyMap<string, PageFont> {
+  const ops = showOperators(content);
+  const opAt = new Map<number, number>();
+  for (const [at, op] of ops.entries()) {
+    const object = op.object === null ? undefined : page.textObjects[op.object];
+    if (object !== undefined) opAt.set(object, at);
+  }
+  const learned = new Map<string, Map<number, string>>();
+  const visible = (text: string): string[] => Array.from(text).filter((character) => !/\s/u.test(character));
+  for (const run of page.runs) {
+    const said = visible(run.text);
+    // THE RUN'S CODES IN ORDER, each with the text its font names for it, or none.
+    const flat: { readonly resource: string; readonly code: number; readonly named: string | undefined }[] = [];
+    let whole = true;
+    for (const member of run.members) {
+      const op = ops[opAt.get(member) ?? -1];
+      const font = op?.state.font === null || op === undefined ? undefined : fonts.get(op.state.font);
+      if (op === undefined || font === undefined) {
+        whole = false;
+        break;
+      }
+      for (const code of codesOf(font, op.codes)) flat.push({ resource: font.resource, code, named: font.toUnicode?.text.get(code) });
+    }
+    if (!whole) continue;
+    const found: { readonly resource: string; readonly code: number; readonly text: string }[] = [];
+    let next = 0;
+    let aligned = true;
+    for (const [at, item] of flat.entries()) {
+      if (item.named !== undefined) {
+        for (const character of visible(item.named)) {
+          if (said[next] !== character) aligned = false;
+          next += 1;
+        }
+        if (!aligned) break;
+        continue;
+      }
+      // AN UNNAMED CODE READS AS EVERYTHING UP TO WHERE THE NEXT NAMED CODE'S TEXT BEGINS, or to the run's end: one glyph
+      // PDFium may read as more than one character (measured: `=` and a mark). Two unnamed codes side by side would split
+      // their characters by a guess, so such a run teaches nothing.
+      if (flat[at + 1] !== undefined && flat[at + 1]?.named === undefined) {
+        aligned = false;
+        break;
+      }
+      const following = flat.slice(at + 1).map((each) => visible(each.named ?? '')[0]).find((first) => first !== undefined);
+      let end = following === undefined ? said.length : said.indexOf(following, next + 1);
+      if (following !== undefined && end < 0) end = -1;
+      if (end <= next) {
+        aligned = false;
+        break;
+      }
+      found.push({ resource: item.resource, code: item.code, text: said.slice(next, end).join('') });
+      next = end;
+    }
+    if (!aligned || next !== said.length) continue;
+    for (const { resource, code, text } of found) {
+      const known = learned.get(resource) ?? new Map<number, string>();
+      if (![...known.values()].includes(text)) known.set(code, text);
+      learned.set(resource, known);
+    }
+  }
+  if (learned.size === 0) return fonts;
+  return new Map(
+    [...fonts].map(([resource, font]) => {
+      const extra = learned.get(resource);
+      if (extra === undefined) return [resource, font];
+      const text = new Map([...(font.toUnicode?.text ?? new Map<number, string>()), ...extra]);
+      return [resource, { ...font, toUnicode: { text, bytes: font.toUnicode?.bytes ?? font.codeBytes }, readByPdfium: new Set(extra.keys()) }];
+    }),
+  );
+}
+
 /** How far `codes` advance in text space, in `font` at `state`'s size and spacing, or `null` for a width it lacks. */
 function advanceOf(font: PageFont, codes: readonly number[], state: ShowOperator['state']): number | null {
   let tx = 0;
@@ -326,6 +413,26 @@ interface VisualLine {
   readonly segments: Segment[];
   /** Where its ink stands, in user space, for a line carried as it was: its glyphs' own advance is not asked of a font. */
   readonly extent?: { readonly left: number; readonly right: number };
+}
+
+/**
+ * A line as ANOTHER READER may read it: each glyph set with a code whose text is PDFium's reading and not its font's own
+ * (`PageFont.readByPdfium`) stands as U+FFFD, one glyph that reader may name however it likes — MuPDF reads the one
+ * measured (document 2, 2026-10-24) as U+F4BC where PDFium reads `=` and U+073C. What the reading check holds the edit to.
+ *
+ * @param text the line's words, as the writer set them
+ * @param line the line as laid, whose segments say which font and code drew each part
+ */
+function asAnotherReaderMay(text: string, line: VisualLine): string {
+  let read = text;
+  for (const segment of line.segments) {
+    for (const code of segment.codes) {
+      if (segment.font.readByPdfium?.has(code) !== true) continue;
+      const named = segment.font.toUnicode?.text.get(code);
+      if (named !== undefined && named !== '') read = read.replace(named, '�');
+    }
+  }
+  return read;
 }
 
 /**
@@ -1257,7 +1364,7 @@ function write(
           previousEnd = run.right;
         }
         laid.push(text);
-        setLines.push(text);
+        setLines.push(asAnotherReaderMay(text, placedLine));
         continue;
       }
       // A LINE SET AFRESH, one run of words after another in each run's own state, aligned as the block's paragraphs are.
@@ -1331,7 +1438,7 @@ function write(
         );
       }
       laid.push(row.pieces.map((piece) => piece.text).join(''));
-      setLines.push(setting.map((piece) => piece.text).join(''));
+      setLines.push(asAnotherReaderMay(setting.map((piece) => piece.text).join(''), placedLine));
     }
     // EVERY OLD LINE THE PLAN DID NOT KEEP is emptied from its first run that was set again: a line set afresh stands in
     // for it, or the person removed it.

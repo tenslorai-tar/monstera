@@ -178,7 +178,7 @@ export async function applyReplaceTextObject(
     // set object by object carry no knowledge of the line, a Replace's position (`replaceLineRule.ts`).
     const boxed = await replaceTextObjects(session, command.page, replacementsOf(command), 'held');
     // AND WHAT IT DREW AS BOXES (ADR-0174), since a Replace writes in pieces as the editor does (ADR-0173 Decision 9).
-    return { image: await pdfiumWriter.serialise(session), boxed, more: 0, moved: [] };
+    return { image: await pdfiumWriter.serialise(session), boxed, more: 0, moved: [], noted: [] };
   });
 }
 
@@ -252,7 +252,7 @@ export async function applyEditTextBlock(
     const { boxed, pushed } = await editTextBlocks(session, command.page, blocks, command.inserts ?? []);
     // THE IMAGE AND WHAT IT DREW AS BOXES (ADR-0174), every one, since this is the process that drew them; AND THE BLOCKS
     // IT MOVED DOWN (ADR-0249), whose markup `main` moves with them.
-    return { image: await pdfiumWriter.serialise(session), boxed, more: 0, moved: pushed };
+    return { image: await pdfiumWriter.serialise(session), boxed, more: 0, moved: pushed, noted: [] };
   });
 }
 

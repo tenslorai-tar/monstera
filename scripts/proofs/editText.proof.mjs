@@ -102,8 +102,8 @@ const CASES = [
   'THE INSTRUMENT SEES THE BROCHURE’S DEFECT: two fonts of one name, edited through PDFium’s page rewrite, are refused or disturbed',
   'and the same page edited by the application’s route is made and disturbs nothing',
   'the brochure and the link-markers page: every edit of every block is made — no refusal',
-  'the brochure and the link-markers page: every edit made disturbs nothing and changes the block (not vacuous)',
-  'the repository’s fixtures: every edit made disturbs nothing',
+  'the brochure and the link-markers page: every edit made disturbs nothing, logs no defect, and changes the block (not vacuous)',
+  'the repository’s fixtures: every edit made disturbs nothing and logs no defect',
   'THE OLD REPLACE: PDFium’s replace-all on the page of two fonts of one name is refused or disturbs (ADR-0267)',
   'numbered paragraphs: a word changed leaves every line where the page has it, each paragraph’s spacing kept (within 1 px)',
   'numbered paragraphs: a paragraph that grows moves the lines below by one line’s pitch, every gap below kept (within 1 px)',
@@ -115,15 +115,20 @@ const CASES = [
 
 /**
  * @typedef {import('../lib/pageDisturbance.mjs').Box} Box
- * @typedef {{ block: string, edit: string, route: string, outcome: 'made' | 'refused', disturbed: number, lost: number, inside: number, why: string, page?: number }} Try
+ * `logged` is how many writer defects the write's own checks NOTED in a write that was kept (ADR-0270): a read-back that
+ * read the words otherwise, a byte outside the edit that changed. Each is a defect for us, and it must be 0.
+ * @typedef {{ block: string, edit: string, route: string, outcome: 'made' | 'refused', disturbed: number, lost: number, inside: number, logged: number, why: string, page?: number }} Try
  */
 
 /** A refusal named by its error and step, its numbers masked, so equal causes count together. @param {unknown} error */
 function reasonOf(error) {
   const named = /** @type {any} */ (error);
   const name = String(named?.name ?? 'Error');
-  // A TextNotWritableError names characters, which are the document's own: never printed.
-  const message = name === 'TextNotWritableError' ? 'a character no face carries' : String(named?.message ?? error).replace(/\d+/gu, '#');
+  // A TextNotWritableError names characters, which are the document's own: never printed as text — by CODE POINT only,
+  // which says which character no face carries without quoting the document.
+  const points = Array.from(String(named?.characters ?? ''), (character) => `U+${(character.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, '0')}`);
+  const message =
+    name === 'TextNotWritableError' ? `a character no face carries${points.length === 0 ? '' : ` (${[...new Set(points)].join(' ')})`}` : String(named?.message ?? error).replace(/\d+/gu, '#');
   return `${name}${named?.step === undefined ? '' : ` at ${String(named.step)}`}: ${message.slice(0, 160)}`;
 }
 
@@ -219,11 +224,13 @@ async function walkPage(pdfium, kernel, bytes, index, quotes) {
     const wire = { page: index, ...kernel.blockEditOf(entries), fit: 'reflow', version: 1 };
     /** @type {Uint8Array} */
     let after;
+    /** @type {readonly string[]} */
+    let noted = [];
     try {
       if (rewrite === 'operators') {
         const copy = await kernel.mupdfWriter.open(bytes);
         try {
-          await kernel.applyEditTextOperators(copy, { kind: 'editTextOperators', ...wire }, runs);
+          ({ noted } = await kernel.applyEditTextOperators(copy, { kind: 'editTextOperators', ...wire }, runs));
           after = await kernel.mupdfWriter.serialise(copy);
         } finally {
           await kernel.mupdfWriter.close(copy);
@@ -237,7 +244,7 @@ async function walkPage(pdfium, kernel, bytes, index, quotes) {
         });
       }
     } catch (error) {
-      tries.push({ block: name, edit, route: rewrite, outcome: 'refused', disturbed: 0, lost: 0, inside: 0, why: reasonOf(error) });
+      tries.push({ block: name, edit, route: rewrite, outcome: 'refused', disturbed: 0, lost: 0, inside: 0, logged: 0, why: reasonOf(error) });
       return;
     }
     const areas = touched.map(zone);
@@ -269,7 +276,14 @@ async function walkPage(pdfium, kernel, bytes, index, quotes) {
       disturbed: outside,
       lost,
       inside,
-      why: outside > 0 || lost > 0 ? `${String(lost)} character(s) outside the block gone; pixels up to ${String(farthest / 2)} pt away` : '',
+      logged: noted.length,
+      // THE NOTES ARE OUR WORDS AND NUMBERS (`textOperatorEdit.ts`), never the document's, so they may be printed.
+      why: [
+        outside > 0 || lost > 0 ? `${String(lost)} character(s) outside the block gone; pixels up to ${String(farthest / 2)} pt away` : '',
+        ...noted.map((note) => `logged: ${note}`),
+      ]
+        .filter((part) => part !== '')
+        .join('; '),
     });
   };
 
@@ -591,24 +605,27 @@ function counts(tries) {
     refused: tries.length - made.length,
     disturbed: made.filter((each) => each.disturbed > 0 || each.lost > 0).length,
     unseen: made.filter((each) => each.inside === 0 && each.disturbed === 0).length,
+    logged: made.filter((each) => each.logged > 0).length,
   };
 }
 
 /** @param {string} document @param {Try[]} tries */
 function report(document, tries) {
-  const { tries: all, refused, disturbed, unseen } = counts(tries);
-  process.stdout.write(`  ${document}: ${String(all)} edit(s), ${String(refused)} refused, ${String(disturbed)} disturbed, ${String(unseen)} unseen\n`);
+  const { tries: all, refused, disturbed, unseen, logged } = counts(tries);
+  process.stdout.write(
+    `  ${document}: ${String(all)} edit(s), ${String(refused)} refused, ${String(disturbed)} disturbed, ${String(unseen)} unseen, ${String(logged)} logged\n`,
+  );
   /** @type {Map<string, number>} */
   const reasons = new Map();
   for (const each of tries) {
-    if (each.outcome === 'made' && each.disturbed === 0 && each.lost === 0) continue;
+    if (each.outcome === 'made' && each.disturbed === 0 && each.lost === 0 && each.logged === 0) continue;
     const key = `${each.edit} (${each.route}): ${each.outcome === 'made' ? `disturbed — ${each.why.replace(/\d+(\.\d+)?/gu, '#')}` : each.why}`;
     reasons.set(key, (reasons.get(key) ?? 0) + 1);
   }
   for (const [key, count] of reasons) process.stdout.write(`      ${String(count)} × ${key}\n`);
   // `--detail`: every try that was not clean, with its numbers (never a corpus block's words: those are named by number).
   if (argv.includes('--detail')) {
-    for (const each of tries.filter((one) => one.outcome !== 'made' || one.disturbed > 0 || one.lost > 0)) {
+    for (const each of tries.filter((one) => one.outcome !== 'made' || one.disturbed > 0 || one.lost > 0 || one.logged > 0)) {
       process.stdout.write(`        ${each.page === undefined ? '' : `page ${String(each.page)} `}${each.block} ${each.edit}: ${each.outcome}, ${String(each.disturbed)} pixel(s); ${each.why}\n`);
     }
   }
@@ -657,12 +674,17 @@ async function run(pdfium, kernel) {
   const describe = (/** @type {Try[]} */ list) => list.map((each) => `${each.block} ${each.edit}: ${each.outcome} ${each.why}`).join('; ') || 'none';
   const gateCounts = counts(gate);
   check(CASES[3] ?? '', gate.length > 0 && gateCounts.refused === 0, describe(gate.filter((each) => each.outcome === 'refused')));
+  // NOTHING LOGGED EITHER (ADR-0270): a defect the write's checks noted is a write kept with a defect in it.
   check(
     CASES[4] ?? '',
-    gateCounts.disturbed === 0 && gateCounts.unseen === 0,
-    describe(gate.filter((each) => each.outcome === 'made' && (each.disturbed > 0 || each.lost > 0 || each.inside === 0))),
+    gateCounts.disturbed === 0 && gateCounts.unseen === 0 && gateCounts.logged === 0,
+    describe(gate.filter((each) => each.outcome === 'made' && (each.disturbed > 0 || each.lost > 0 || each.inside === 0 || each.logged > 0))),
   );
-  check(CASES[5] ?? '', rest.length > 0 && counts(rest).disturbed === 0, describe(rest.filter((each) => each.disturbed > 0 || each.lost > 0)));
+  check(
+    CASES[5] ?? '',
+    rest.length > 0 && counts(rest).disturbed === 0 && counts(rest).logged === 0,
+    describe(rest.filter((each) => each.disturbed > 0 || each.lost > 0 || each.logged > 0)),
+  );
 
   // THE OLD REPLACE (ADR-0267's control): PDFium's replace-all of a word of the first line, the same length so the line
   // need not move, on the page of two fonts of one name — its page rewrite sets the second line in the first font.
@@ -752,7 +774,10 @@ function corpus() {
   /** @type {Try[]} */
   const all = [];
   /** @type {string[]} */
-  const table = ['| document | pages | blocks offered | edits | refused | disturbed | packed characters | packed blocks not offered | Unpack it offered on |', '|---|---|---|---|---|---|---|---|---|'];
+  const table = [
+    '| document | pages | blocks offered | edits | refused | disturbed | logged | packed characters | packed blocks not offered | Unpack it offered on |',
+    '|---|---|---|---|---|---|---|---|---|---|',
+  ];
   for (const [at, file] of files.entries()) {
     // BY NUMBER, NEVER BY NAME: the number is the file's place in the folder sorted by name.
     if (ONLY !== null && !ONLY.includes(at + 1)) continue;
@@ -761,7 +786,7 @@ function corpus() {
     const pages = childRun([path, '--count']);
     if (typeof pages !== 'number') {
       process.stdout.write(`  ${label}: could not be opened, not counted\n`);
-      table.push(`| ${String(at + 1)} | not opened | | | | | | | |`);
+      table.push(`| ${String(at + 1)} | not opened | | | | | | | | |`);
       continue;
     }
     /** @type {Try[]} */
@@ -790,14 +815,16 @@ function corpus() {
     if (packed.characters > 0) {
       process.stdout.write(`      text held in forms, not offered: ${String(packed.characters)} character(s) on ${String(packed.pages)} page(s), ${String(packed.blocks)} block(s) where PDFium can take it out; Unpack it offered on ${String(packed.unpackable)} page(s)\n`);
     }
-    const { tries: edits, refused, disturbed } = counts(tries);
+    const { tries: edits, refused, disturbed, logged } = counts(tries);
     table.push(
-      `| ${String(at + 1)} | ${String(Math.min(pages, PAGES))}${failed > 0 ? ` (${String(failed)} failed)` : ''} | ${String(blocksOffered)} | ${String(edits)} | ${String(refused)} | ${String(disturbed)} | ${String(packed.characters)} | ${String(packed.blocks)} | ${String(packed.unpackable)} page(s) |`,
+      `| ${String(at + 1)} | ${String(Math.min(pages, PAGES))}${failed > 0 ? ` (${String(failed)} failed)` : ''} | ${String(blocksOffered)} | ${String(edits)} | ${String(refused)} | ${String(disturbed)} | ${String(logged)} | ${String(packed.characters)} | ${String(packed.blocks)} | ${String(packed.unpackable)} page(s) |`,
     );
     all.push(...tries);
   }
   const total = counts(all);
-  process.stdout.write(`\n  CORPUS: ${String(total.tries)} edit(s), ${String(total.refused)} refused, ${String(total.disturbed)} disturbed, ${String(total.unseen)} unseen\n\n`);
+  process.stdout.write(
+    `\n  CORPUS: ${String(total.tries)} edit(s), ${String(total.refused)} refused, ${String(total.disturbed)} disturbed, ${String(total.unseen)} unseen, ${String(total.logged)} logged\n\n`,
+  );
   process.stdout.write(`${table.join('\n')}\n\n`);
 }
 

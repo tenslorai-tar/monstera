@@ -58,4 +58,17 @@ describe('codesFor', () => {
     const map = read(bytes('2 beginbfchar <09> <0041> <02> <0041> endbfchar'));
     expect(codesFor(map, 'A')).toStrictEqual([2]);
   });
+
+  it('finds ONE code for two characters where neither has a code of its own: a glyph read as `=` and a mark', () => {
+    const map: ToUnicode = { text: new Map([[0x01, 'a'], [0x02, '=ܼ']]), bytes: 1 };
+    expect(codesFor(map, 'a=ܼ')).toStrictEqual([0x01, 0x02]);
+  });
+
+  it('CONTROL: letters with codes of their own are set with them, never a ligature naming the two', () => {
+    const map: ToUnicode = { text: new Map([[0x10, 'f'], [0x11, 'i'], [0x20, 'fi']]), bytes: 1 };
+    expect(codesFor(map, 'fi')).toStrictEqual([0x10, 0x11]);
+    // AND WHERE ONE LETTER HAS NONE, the ligature is what draws it.
+    const noI: ToUnicode = { text: new Map([[0x10, 'f'], [0x20, 'fi']]), bytes: 1 };
+    expect(codesFor(noI, 'fi')).toStrictEqual([0x20]);
+  });
 });

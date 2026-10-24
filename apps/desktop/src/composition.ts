@@ -1016,7 +1016,14 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
   // whatever a document holds outside this index — the engine session, above
   // all"*), rather than by a `release(docId)` some future close path has to
   // remember to call. Finding FFFF-1.
-  const engine = new EngineSessions();
+  //
+  // ONE SINK, NOT TWO. This is where a host death is reported, and it is the
+  // single loudest thing this application can say — a resolution taken here and
+  // a different one on the returned `failures` would put half the lifecycle in
+  // the log and half on a handle nobody is reading. The supervisor takes it too,
+  // for a writer defect a kept edit's own checks found (ADR-0270).
+  const failures = log?.failures ?? reportShellFailure;
+  const engine = new EngineSessions(failures);
 
   // DECLARED HERE AND ASSIGNED BELOW, because the two halves are circular by
   // nature: recycling needs the session factory, and the factory needs the
@@ -1081,11 +1088,6 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
   // BUILT BEFORE THE BUS, because the bus routes `mupdf` to a writer this
   // returns. The order is the dependency: a writer that talks to the engine
   // host cannot exist before something can build one.
-  // ONE SINK, NOT TWO. This is where a host death is reported, and it is the
-  // single loudest thing this application can say — a resolution taken here and
-  // a different one on the returned `failures` would put half the lifecycle in
-  // the log and half on a handle nobody is reading.
-  const failures = log?.failures ?? reportShellFailure;
   /** The window's memory given back with no document open (ADR-0252): the signal at the last close, the reload when idle. */
   const memoryRelease = createMemoryRelease(
     documents,
