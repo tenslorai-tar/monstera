@@ -21,6 +21,8 @@ Everything drawn on a page (text, shapes, pictures) is a separate object. **Edit
    - or press **Delete**, or right-click it and choose **Delete selection**.
 5. Press **Esc** to clear the selection, and **Esc** again, or **Edit object** again, to finish.
 
+![The page with Edit object on: each object outlined, and the chosen one with its handles](screenshot:edit-page-objects-1)
+
 ## Good to know
 
 - **Edit images** includes pictures you placed yourself with **Image** in the **Comment** section, as well as the pictures that are part of the page.
@@ -30,3 +32,9 @@ Everything drawn on a page (text, shapes, pictures) is a separate object. **Edit
 - Pictures and groups keep their own colours; the **Properties** tab says so.
 - To change the words themselves, use **Edit text on the page**.
 - Every change can be undone with **Ctrl+Z**.
+
+<!--
+Screenshots to capture:
+1. edit-page-objects-1 — Edit object on over the sample page: the objects outlined, the title chosen with its handles. Frame the page.
+-->
+

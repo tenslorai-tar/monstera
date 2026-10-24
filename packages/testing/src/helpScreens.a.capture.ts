@@ -407,6 +407,24 @@ test('edit-page-in-another-app-1', async ({ page }) => {
   await shoot(page, 'edit-page-in-another-app-1', dialog);
 });
 
+test('edit-page-objects-1', async ({ page }) => {
+  // THE SAMPLE PAGE'S TITLE AS A SHAPE and a picture beside it, as PDFium's walk lists them (`objectEdit.pw.ts`' shape):
+  // Edit object outlines both, and the title is chosen, its handles drawn.
+  await openApp(page, {
+    pageObjects: [
+      { index: 0, kind: 'path', left: 70, bottom: 694, right: 330, top: 722, fill: { red: 0, green: 0, blue: 0, alpha: 255 } },
+      { index: 1, kind: 'image', left: 360, bottom: 560, right: 540, top: 700, fill: null },
+    ],
+  });
+  await openDocument(page);
+  await openSection(page, 'Edit');
+  await page.getByRole('toolbar', { name: 'Tools', exact: true }).getByRole('button', { name: 'Edit object', exact: true }).click();
+  const layer = page.getByRole('group', { name: 'Objects on page 1' });
+  await expect(layer.locator('.m-object')).toHaveCount(2);
+  await layer.locator('[data-object="drawn:0"]').click();
+  await shoot(page, 'edit-page-objects-1', page.locator('canvas.m-page').first());
+});
+
 /** A ribbon group, by its caption. */
 function ribbonGroup(page: Page, caption: string): Locator {
   return page.locator('.m-ribbon__group', { has: page.locator('.m-ribbon__caption', { hasText: new RegExp(`^${caption}$`, 'u') }) });
