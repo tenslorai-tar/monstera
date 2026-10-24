@@ -142,7 +142,10 @@ then leaves PDFium no Edit text change to write.
 
 **So Decision 2 is now: no page is PDFium's.** Every Edit text change goes to the operator writer. On a page with text
 packed inside a form, the page's own blocks are edited as on any other page, and the packed text is not offered for
-editing: it is counted as characters no command can name and the editor says so, as it did before ADR-0232. Decision 3's
+editing: it is counted as characters no command can name and the editor says so, with ADR-0232 Decision 5's note and its
+*Unpack it* button, as on a Type 3 page before this ADR. That button is a command of its own the person chooses, which
+restructures the page through PDFium; what it does to the rest of such a page was not measured under this correction
+and is owed. Decision 3's
 function is not built; the route is one constant where `main` reads a page for the editor. Nothing in Edit text still
 needs PDFium's writer; its reads (runs, styles, fonts, the typing box's font) are unchanged.
 
