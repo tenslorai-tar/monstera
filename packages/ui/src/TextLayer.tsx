@@ -242,10 +242,16 @@ export function holdPressedAnchor(root: HTMLElement): () => void {
     release();
     // A TOUCH selects by a long press, through none of the drag path above.
     if (event.button !== 0 || event.shiftKey || event.pointerType === 'touch') return;
+    // BESIDE A LINE the press means that line's nearest end (`caretBesideLine`): on the layer between lines Chromium
+    // places it at the end of the nearest LONG line, and a drag from 1 pt before *This Agreement…* selected nothing, or
+    // only the line's last word (measured 2026-10-24). On a line it is the caret at the exact point.
+    const line = event.target instanceof Element ? event.target.closest('[data-text-line]') : null;
+    const beside = line === null ? caretBesideLine(root, event.clientX, event.clientY) : null;
     // ABSENT IN HAPPY-DOM, and in an engine without it the press is the platform's alone, as it was.
-    const caret = typeof owner.caretPositionFromPoint === 'function' ? owner.caretPositionFromPoint(event.clientX, event.clientY) : null;
-    if (caret?.offsetNode.nodeType !== Node.TEXT_NODE || !root.contains(caret.offsetNode)) return;
-    press = { node: caret.offsetNode, offset: caret.offset };
+    const exact = beside === null && typeof owner.caretPositionFromPoint === 'function' ? owner.caretPositionFromPoint(event.clientX, event.clientY) : null;
+    const caret = beside ?? (exact === null ? null : { node: exact.offsetNode, offset: exact.offset });
+    if (caret?.node.nodeType !== Node.TEXT_NODE || !root.contains(caret.node)) return;
+    press = caret;
     owner.addEventListener('selectionchange', reanchor);
   };
   const counted = (event: MouseEvent): void => {
@@ -266,8 +272,76 @@ export function holdPressedAnchor(root: HTMLElement): () => void {
   };
 }
 
-/** One 2d context for measuring text, made on first use; `null` where there is none (happy-dom). */
-let measuring: CanvasRenderingContext2D | null | undefined;
+/**
+ * The caret a point BESIDE a line means: the end of the line whose band holds the point, nearest it across, where the
+ * point is past that line's right edge, and its start where the point is before its left. `null` where no line's band
+ * holds the point, which is between two lines or beyond the last.
+ *
+ * Bands are the lines' elements on screen, so the rule reads the boxes the engine reported, in whatever zoom and turn
+ * the page is shown at. Where two bands hold the point (a paragraph's boxes overlap by a point), the line whose middle is
+ * nearer is the one meant.
+ */
+export function caretBesideLine(root: Element, x: number, y: number): { readonly node: Text; readonly offset: number } | null {
+  let best: { readonly node: Text; readonly offset: number; readonly across: number; readonly down: number } | null = null;
+  for (const line of root.querySelectorAll('[data-text-line]')) {
+    const node = line.firstChild;
+    if (node?.nodeType !== Node.TEXT_NODE) continue;
+    const box = line.getBoundingClientRect();
+    if (y < box.top || y > box.bottom) continue;
+    const across = x > box.right ? x - box.right : x < box.left ? box.left - x : 0;
+    const down = Math.abs(y - (box.top + box.bottom) / 2);
+    if (best !== null && (across > best.across || (across === best.across && down >= best.down))) continue;
+    const text = node as Text;
+    best = { node: text, offset: x < box.left ? 0 : text.length, across, down };
+  }
+  return best === null ? null : { node: best.node, offset: best.offset };
+}
+
+/**
+ * Takes a drag's moving end to the end of the line it runs past, which the gap cover alone does not.
+ *
+ * ## The mechanism, measured 2026-10-24 in Chromium 151
+ *
+ * Past a line's right edge the pointer is over `.m-text-layer__gaps`, which is not selectable, so Chromium leaves the
+ * selection where the LAST move event over the line put it. A move event is a sample of the pointer, not every pixel it
+ * crosses, so that event can be a word or two before the end: a drag from the start of *…continue for the term of* to
+ * 3 pt past its end, in 20 moves, selected up to *term* and marked nothing of *of*, while a 16 character line in the
+ * same 20 moves was whole. The text was not short — each line's text ended within 0.01 px of its box — and the
+ * selection, the copy and the markup made from it all lost the same words.
+ *
+ * So over the cover, the moving end is placed by {@link caretBesideLine}: past a line's end within its band, the end of
+ * that line. Between two lines nothing is placed and the selection still holds, which is what the cover is for.
+ *
+ * **Never on the first drag event,** for {@link holdPressedAnchor}'s reason: that event decides whether the press drags
+ * selected text, so the moving end is touched only once Chromium has already made that decision.
+ *
+ * @returns the cleanup that removes every listener this added
+ */
+export function followPastLineEnds(root: HTMLElement): () => void {
+  let moves = 0;
+  const pressed = (): void => {
+    moves = 0;
+  };
+  const moved = (event: PointerEvent): void => {
+    if ((event.buttons & 1) === 0) return;
+    moves += 1;
+    if (moves < 2) return;
+    if (!(event.target instanceof Element) || event.target.closest('.m-text-layer__gaps') === null) return;
+    const selection = root.ownerDocument.getSelection();
+    const anchor = selection?.anchorNode ?? null;
+    if (selection === null || anchor === null || !root.contains(anchor)) return;
+    const caret = caretBesideLine(root, event.clientX, event.clientY);
+    if (caret === null) return;
+    if (selection.focusNode === caret.node && selection.focusOffset === caret.offset) return;
+    selection.extend(caret.node, caret.offset);
+  };
+  root.addEventListener('pointerdown', pressed);
+  root.addEventListener('pointermove', moved);
+  return (): void => {
+    root.removeEventListener('pointerdown', pressed);
+    root.removeEventListener('pointermove', moved);
+  };
+}
 
 /**
  * Scales each line's text horizontally so it spans exactly its box.
@@ -275,27 +349,39 @@ let measuring: CanvasRenderingContext2D | null | undefined;
  * The page's own font is not available here, so the browser draws each line in a substitute —
  * measured 2026-09-19 on a 16 pt Helvetica line in the live app: the box is 334 px and the
  * substitute runs 437 px, 31% past the ink. Widening the element does not narrow its glyphs, so the
- * text is measured in the font it is actually drawn in and scaled by *box ÷ natural*, which is how
- * PDF.js fits its own text layer.
+ * text is measured as it is laid out and scaled by *box ÷ natural*, which is how PDF.js fits its own
+ * text layer.
  *
- * Written onto the elements rather than rendered, because the font it measures in is a computed
- * style that exists only after layout, and a state set from a layout effect to feed it back is a
- * second render React's own lint refuses. `transform` is a property this component's render never
- * sets, so a re-render cannot overwrite it.
+ * **The natural width is the DOM's own layout of the line, read through a range**, never a canvas's
+ * measure of the same string: the two lay text out by different rules, and where they differ the
+ * fitted line ends short of its box. Measured 2026-10-24 in Chromium 151 on an 80 character line at
+ * 14 px: a canvas read 467.40 px where the line laid out at 466.64 in `serif`, and 512.57 where it
+ * laid out at 511.80 in `sans-serif`, so the line ended 0.6 px inside its box and a whole line's
+ * selection, and the markup made from it, ended there. In `monospace` the two agreed.
  *
- * Where there is no 2d context the lines are left unscaled, which is where they were.
+ * Every transform is cleared, then every line read, then every line written, so the page lays out
+ * once for all its lines rather than once per line.
+ *
+ * Written onto the elements rather than rendered, because the width it measures exists only after
+ * layout, and a state set from a layout effect to feed it back is a second render React's own lint
+ * refuses. `transform` is a property this component's render never sets, so a re-render cannot
+ * overwrite it.
+ *
+ * Where nothing is laid out (happy-dom answers every range with an empty box) the lines are left
+ * unscaled, which is where they were.
  */
 function fitLines(root: HTMLElement): void {
-  measuring ??= root.ownerDocument.createElement('canvas').getContext('2d');
-  const context = measuring;
-  if (context === null) return;
-  for (const element of root.querySelectorAll<HTMLElement>('.m-text-line')) {
-    const style = getComputedStyle(element);
-    context.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-    const natural = context.measureText(element.textContent).width;
-    const box = Number.parseFloat(style.width);
+  const lines = [...root.querySelectorAll<HTMLElement>('.m-text-line')];
+  for (const element of lines) element.style.transform = '';
+  const range = root.ownerDocument.createRange();
+  const measured = lines.map((element) => {
+    range.selectNodeContents(element);
+    return { natural: range.getBoundingClientRect().width, box: Number.parseFloat(getComputedStyle(element).width) };
+  });
+  lines.forEach((element, at) => {
+    const { natural = 0, box = 0 } = measured[at] ?? {};
     element.style.transform = natural > 0 && box > 0 ? `scaleX(${String(box / natural)})` : '';
-  }
+  });
 }
 
 /**
@@ -406,6 +492,11 @@ export function TextLayer({
   useEffect(() => {
     const root = container.current;
     return root === null ? undefined : holdPressedAnchor(root);
+  }, [hasLines]);
+  // AND ITS MOVING END REACHES THE END OF A LINE IT RUNS PAST (`followPastLineEnds`), keyed as the press is.
+  useEffect(() => {
+    const root = container.current;
+    return root === null ? undefined : followPastLineEnds(root);
   }, [hasLines]);
 
   // FITTED AFTER LAYOUT AND BEFORE PAINT, so no frame shows the unfitted text under a drag. Again

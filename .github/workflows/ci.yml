@@ -442,6 +442,16 @@ jobs:
           node scripts/ci/annotate.mjs scripts/proofs/editObject.proof.mjs
           ${{ runner.os == 'Windows' && '--require-engines' || '' }}
 
+      # A markup made from a whole line's two ends covers its first glyph to
+      # its last, on Times not embedded, embedded TrueType, Type 3 and
+      # Identity-H CID lines; the kernel half of lineEnds.pw.ts, and the holder
+      # of the lines file both halves read. The control is the end a held
+      # selection left, which marks the line short.
+      - name: Prove a whole line is marked to its last glyph
+        run: >
+          node scripts/ci/annotate.mjs scripts/proofs/lineEndMarks.proof.mjs
+          ${{ runner.os == 'Windows' && '--require-engines' || '' }}
+
       # ADR-0228's correction of 2026-10-16. Two and three spaces typed read
       # back as two and three, by the editor's reader and by MuPDF's page-text
       # read a copy takes; the control is the same words drawn unmarked, which

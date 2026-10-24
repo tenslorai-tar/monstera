@@ -340,6 +340,14 @@ export const TEXT_PUSH = [
 ];
 
 /**
+ * What `lineEndMarks.proof.mjs` runs: the page-text read and the text layer the renderer is handed, and the markup
+ * writer, on the native engine. The kernel's whole `src`, for {@link TYPE3_EDIT}'s reason.
+ *
+ * @type {BuildEdge[]}
+ */
+export const LINE_END_MARKS = [['packages/kernel/src', 'packages/kernel/dist/index.js', 'tsc'], ...NATIVE_ENGINE];
+
+/**
  * What `editObject.proof.mjs` runs (ADR-0264 Decision 7): PDFium's listing, reading and grouping, the contract's encoder
  * and neighbour rule, the shared paragraph join, and the MuPDF writers and rasteriser. The kernel's whole `src`, for
  * {@link TYPE3_EDIT}'s reason.
@@ -702,6 +710,8 @@ export const ARTEFACT_EDGES = {
   'proof:type3edit': TYPE3_EDIT,
   // A growing paragraph pushing the text below it, written by PDFium and read back by MuPDF (ADR-0249).
   'proof:textpush': TEXT_PUSH,
+  // A whole line marked from its two ends covers its first glyph to its last on every font kind (cloud run 18, F1).
+  'proof:lineendmarks': LINE_END_MARKS,
   // ADR-0228's correction: two spaces written by PDFium, read back by the editor and by MuPDF.
   'proof:textspaces': TEXT_SPACES,
   // A HOST'S FONT CATALOGUE, read in a thread that ends, against the in-thread read that keeps HarfBuzz's memory.

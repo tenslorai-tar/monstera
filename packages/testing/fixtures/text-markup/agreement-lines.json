@@ -1,0 +1,41 @@
+{
+  "$comment": [
+    "A page of contract text in Times, standard 14 and NOT embedded, 11 pt on 14, each line at x 72 on its baseline.",
+    "Both halves of the line end pair build the page from this file and read their answers from it: the rendered case",
+    "(packages/testing/src/lineEnds.pw.ts) hands `lines[].box` to the page as its text layer and asserts a drag's two",
+    "ends against `lines[].glyphs`; the kernel proof (scripts/proofs/lineEndMarks.proof.mjs) refuses to pass unless the",
+    "engine still reads exactly these boxes (readPageText and textLayerOf) and these glyph edges (MuPDF's character",
+    "quads, spaces skipped), so the file cannot go stale without the proof turning red.",
+    "Read 2026-10-24 with MuPDF 1.28.0 through the native engine on Linux, by `npm run proof:lineendmarks`.",
+    "The boxes are whole points because MuPDF's JSON writes them so; the glyph edges are not."
+  ],
+  "size": 11,
+  "x": 72,
+  "pageHeight": 792,
+  "lines": [
+    {
+      "text": "This Agreement shall commence on the Effective Date and continue for the term of",
+      "baseline": 700,
+      "box": { "x0": 72, "y0": 80, "x1": 439, "y1": 94 },
+      "glyphs": { "first": 72, "last": 439.5 }
+    },
+    {
+      "text": "twelve months, unless ended sooner under clause 9.",
+      "baseline": 686,
+      "box": { "x0": 72, "y0": 94, "x1": 299, "y1": 108 },
+      "glyphs": { "first": 72, "last": 299.6 }
+    },
+    {
+      "text": "Short line.",
+      "baseline": 672,
+      "box": { "x0": 72, "y0": 108, "x1": 117, "y1": 122 },
+      "glyphs": { "first": 72, "last": 117.84 }
+    },
+    {
+      "text": "Each party may end it on notice.",
+      "baseline": 658,
+      "box": { "x0": 72, "y0": 122, "x1": 214, "y1": 136 },
+      "glyphs": { "first": 72, "last": 214.67 }
+    }
+  ]
+}

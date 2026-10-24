@@ -6283,7 +6283,8 @@ optgroup {
  * the selection's end two lines up (measured 2026-10-03, Chromium 151). Over this cover, which is not selectable, the
  * selection holds where it was and follows the pointer again on the next line it touches — PDF.js's `endOfContent`,
  * for the same reason. Zero height while nothing is pressed, so a press on the page's margin starts a selection there
- * exactly as before.
+ * exactly as before. Holding alone ended a drag at the last move event that fell on the line, which can be a word before
+ * its end, so within a line's band the moving end is placed at that line's end (`followPastLineEnds` in `TextLayer.tsx`).
  */
 .m-text-layer__gaps {
   position: absolute;
