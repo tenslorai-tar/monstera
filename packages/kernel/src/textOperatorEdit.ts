@@ -55,6 +55,26 @@ function squeezed(text: string): string {
   return text.replace(/\s/gu, '');
 }
 
+/** What MuPDF reads a glyph as when it cannot name it. */
+const UNNAMED = '�';
+
+/**
+ * Whether MuPDF's reading of the page holds `words` unbroken, white space aside
+ * ([ADR-0266](../../../docs/DECISIONS/0266-edit-text-writes-only-the-edited-blocks-own-instructions.md) Decision 4). A
+ * character MuPDF reads as U+FFFD stands for any one character: it is MuPDF saying it cannot name a glyph, not a glyph
+ * missing. Measured 2026-10-24 on the owner's document 2: a glyph PDFium reads as U+0019, which the edit sets again in
+ * the run's own font with the run's own code, reads back from MuPDF as U+FFFD, and the edit was refused for it.
+ */
+export function readingHolds(reading: string, words: string): boolean {
+  const page = Array.from(squeezed(reading));
+  const wanted = Array.from(squeezed(words));
+  if (wanted.length === 0) return true;
+  for (let start = 0; start + wanted.length <= page.length; start += 1) {
+    if (wanted.every((character, at) => page[start + at] === character || page[start + at] === UNNAMED)) return true;
+  }
+  return false;
+}
+
 export async function applyEditTextOperators(
   session: MupdfSession,
   command: CommandOfKind<'editTextOperators'>,
@@ -107,17 +127,18 @@ export async function applyEditTextOperators(
     const before = leaf.get('Contents');
     const stream = document.addStream(edit.content, document.newDictionary());
     leaf.put('Contents', stream);
-    // MuPDF'S OWN READING of the page as it now is, the second read-back: each block's words where the block was.
+    // MuPDF'S OWN READING of the page as it now is, the second read-back: each line whose words the edit set, unbroken
+    // (ADR-0266 Decision 4). Not the lines it left or carried: their bytes are the page's, held byte for byte above.
     // `clip=no` READS PAST THE PAGE'S EDGE. MuPDF's text device drops every glyph outside the page by default
     // (`FZ_STEXT_CLIP`, MuPDF 1.28.0), so a word wider than the page lost its end to the reading and the edit was
     // refused, where the owner's rule keeps the text and says it no longer fits (Q7). The question here is whether the
     // content holds the words, not whether they are on the page.
     const page = document.loadPage(command.page);
-    const reading = squeezed(page.toStructuredText('clip=no').asText());
-    const missing = edit.written.filter((words) => !reading.includes(squeezed(words)));
+    const reading = page.toStructuredText('clip=no').asText();
+    const missing = edit.checked.filter((words) => !readingHolds(reading, words));
     if (missing.length > 0) {
       putBack(document, leaf, { before, stream, fontDictionary, names });
-      throw new EditRefusedError('read-back', 0, `MuPDF's reading of the page does not hold ${String(missing.length)} edited block(s)`);
+      throw new EditRefusedError('read-back', 0, `MuPDF's reading of the page does not hold ${String(missing.length)} line(s) the edit set`);
     }
     // THE PLAIN GRAPHICS STATE an arrange carried a block with, once the edit is kept (ADR-0264): a refusal above then adds
     // nothing the page would not use.

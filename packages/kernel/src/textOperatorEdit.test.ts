@@ -14,7 +14,7 @@ import type { PageRuns } from './operatorEdit.js';
 import { pageContentStreams } from './pageContent.js';
 import { pageFonts } from './pageFonts.js';
 import { BlockUnchangedError, EditRefusedError, TextNotWritableError } from './textEditRefusals.js';
-import { applyEditTextOperators, putBack } from './textOperatorEdit.js';
+import { applyEditTextOperators, putBack, readingHolds } from './textOperatorEdit.js';
 import { joinedContent, showOperators, textObjectCount } from './textOperators.js';
 
 /** The Chromium print committed as Part B's starting material (`scripts/research/chromiumType3Fixture.mjs`). */
@@ -56,6 +56,24 @@ async function withChromium<T>(work: (session: Awaited<ReturnType<typeof mupdfWr
 /** The page's text as MuPDF reads it, every white space removed. */
 const pageWords = (session: Awaited<ReturnType<typeof mupdfWriter.open>>) =>
   withDocument(session, (document) => document.loadPage(0).toStructuredText().asText().replace(/\s/gu, ''));
+
+describe('readingHolds, MuPDF’s read-back of the words an edit set (ADR-0266 Decision 4)', () => {
+  it('finds the words unbroken, white space aside', () => {
+    expect(readingHolds('first line\nthe new words here\nnext', 'the new  words here')).toBe(true);
+  });
+
+  it('takes a character MuPDF could not name for any one character, and nothing more', () => {
+    expect(readingHolds('Item�cost', 'Item\u0019cost')).toBe(true);
+    // CONTROL: a character MuPDF DID name, and named otherwise, is a word not held.
+    expect(readingHolds('Itemxcost', 'Item\u0019cost')).toBe(false);
+    // CONTROL: an unnamed character stands for one, so a word with a character missing is not held.
+    expect(readingHolds('Item�ost', 'Item\u0019cost')).toBe(false);
+  });
+
+  it('refuses words broken by others between them', () => {
+    expect(readingHolds('the new other words', 'the new words')).toBe(false);
+  });
+});
 
 describe('applyEditTextOperators', () => {
   it('writes the heading in its own Type 3 font, MuPDF reads it back, and it survives a save and a reopen', async () => {

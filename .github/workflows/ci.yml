@@ -442,6 +442,17 @@ jobs:
           node scripts/ci/annotate.mjs scripts/proofs/editObject.proof.mjs
           ${{ runner.os == 'Windows' && '--require-engines' || '' }}
 
+      # ADR-0266: every Edit text change goes to the operator writer. Every
+      # block of the brochure, the link-markers page and the repository's
+      # fixtures is given new words, added words, a face, a size and a colour;
+      # the brochure and the link-markers page must refuse nothing and no edit
+      # may change a pixel outside the block. The control is two fonts of one
+      # name, which PDFium's page rewrite merges.
+      - name: Prove Edit text changes only the block it edits
+        run: >
+          node scripts/ci/annotate.mjs scripts/proofs/editText.proof.mjs
+          ${{ runner.os == 'Windows' && '--require-engines' || '' }}
+
       # ADR-0228's correction of 2026-10-16. Two and three spaces typed read
       # back as two and three, by the editor's reader and by MuPDF's page-text
       # read a copy takes; the control is the same words drawn unmarked, which

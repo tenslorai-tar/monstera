@@ -127,8 +127,17 @@ export interface OperatorEdit {
   readonly emptied: readonly number[];
   /** Each change: the bytes it replaced in the content before, and the bytes now there. An insertion replaces none. */
   readonly changes: readonly { readonly before: Span; readonly after: Span; readonly inserted: boolean }[];
-  /** What each block says after the edit, its lines joined by line breaks: MuPDF's read-back of the page reads it. */
+  /** What each block says after the edit, its lines joined by line breaks. */
   readonly written: readonly string[];
+  /**
+   * The lines whose words this edit set, each on its own, which MuPDF's reading of the page must hold unbroken
+   * ([ADR-0266](../../../docs/DECISIONS/0266-edit-text-writes-only-the-edited-blocks-own-instructions.md)). NOT a line the
+   * edit left where it was or carried as its own operators: their bytes are the page's, which the structural read-back
+   * holds byte for byte, and MuPDF may read them out of order as it read the page before (measured 2026-10-24: a line
+   * ending in raised reference markers, which MuPDF reads as a line of their own elsewhere). Nor the words of an untouched
+   * run that leads a line set afresh, which keep their operators.
+   */
+  readonly checked: readonly string[];
   /** What the inserted objects draw, block by block, in drawing order: the structural read-back reads it. */
   readonly drawn: readonly string[];
   /** Each block's first and last baseline after the edit, and its last before it, in user space. */
@@ -611,6 +620,7 @@ function write(
   /** The operators a block's rewrite is placed before: their `BT`, one inserted object per block. */
   const insertions: { readonly at: number; readonly text: string }[] = [];
   const written: string[] = [];
+  const checked: string[] = [];
   const drawn: string[] = [];
   const baselinesOut: { first: number; last: number; lastBefore: number }[] = [];
   const uncarried = new Set<string>();
@@ -728,6 +738,8 @@ function write(
 
     const visual: VisualLine[] = [];
     const laid: string[] = [];
+    /** The lines whose words this edit sets, each on its own: what MuPDF's reading must hold ({@link OperatorEdit.checked}). */
+    const setLines: string[] = [];
     /**
      * The scale the block is set at: 1 for `reflow`, and for `shrink` the largest that ends the block no lower than its
      * old last line did (ADR-0181 Decision 10). Every size, every width and every gap between lines is multiplied by it,
@@ -1184,19 +1196,21 @@ function write(
         const line = lines[row.line];
         if (line === undefined) continue;
         const text = line.map((run) => run.run.text).join('');
-        // A LINE AN EARLIER WRAP MOVED DOWN is set again whole at its new baseline, keeping the gap each run had to the
-        // one before it; one that did not move is not touched.
+        // A LINE THAT DID NOT MOVE is not touched.
         if (shrink === 1 && !replaceAll && Math.abs(target - (baselines[row.line] ?? 0)) <= SAME) {
           kept.add(row.line);
           laid.push(text);
           continue;
         }
-        // A BLOCK PLACED OR GIVEN A MEASURE carries the lines it did not change as they are, operator by operator at its
-        // own place, so their glyphs, kerning and fonts are the page's and not a re-setting of their words (ADR-0188).
-        if (replaceAll && shrink === 1 && replay(line, target - (baselines[row.line] ?? 0))) {
+        // A LINE AN EARLIER WRAP MOVED DOWN, and every line of a block placed or given a measure, is carried as it is,
+        // operator by operator at its new place, so its glyphs, kerning and fonts are the page's and only its position
+        // changes (ADR-0188; ADR-0266 Decision 1, the owner's *only their positions change, never their text or fonts*).
+        if (shrink === 1 && replay(line, target - (baselines[row.line] ?? 0))) {
           laid.push(text);
           continue;
         }
+        // ONLY A LINE THAT CANNOT BE CARRIED is set again whole at its new baseline, keeping the gap each run had to the one
+        // before it.
         const placedLine: VisualLine = { baseline: target, segments: [] };
         visual.push(placedLine);
         let cursor = line[0]?.origin.x ?? 0;
@@ -1209,6 +1223,7 @@ function write(
           previousEnd = run.right;
         }
         laid.push(text);
+        setLines.push(text);
         continue;
       }
       // A LINE SET AFRESH, one run of words after another in each run's own state, aligned as the block's paragraphs are.
@@ -1272,6 +1287,7 @@ function write(
         );
       }
       laid.push(row.pieces.map((piece) => piece.text).join(''));
+      setLines.push(setting.map((piece) => piece.text).join(''));
     }
     // EVERY OLD LINE THE PLAN DID NOT KEEP is emptied from its first run that was set again: a line set afresh stands in
     // for it, or the person removed it.
@@ -1286,6 +1302,7 @@ function write(
     if (uncarried.size > 0) continue;
     for (const at of own) emptied.add(at);
     written.push(laid.join('\n'));
+    checked.push(...setLines);
     baselinesOut.push({ first: baselines[0] ?? 0, last: previous, lastBefore: baselines.at(-1) ?? 0 });
     // WHAT THE BLOCK GREW, for the blocks it pushes; a placed block and a pushed one push nothing (the PDFium writer's rule).
     if (block.place === undefined && push === undefined) grew.set(jobAt, (baselines.at(-1) ?? 0) - previous);
@@ -1545,7 +1562,7 @@ function write(
     out.set(piece, at);
     at += piece.length;
   }
-  return { content: out, emptied: [...emptied].sort((x, y) => x - y), changes, written, drawn, baselines: baselinesOut, moved, plain };
+  return { content: out, emptied: [...emptied].sort((x, y) => x - y), changes, written, checked, drawn, baselines: baselinesOut, moved, plain };
 }
 
 /**

@@ -14,10 +14,13 @@ import { joinedContent, showOperators } from './textOperators.js';
 export type PageRewrite = TextRewrite;
 
 /**
- * A page needs the operator writer when its own content shows text in a Type 3 font: an operator that shows a code
- * (one PDFium numbers as a text object) while the text state's font names a `/Font` resource of `/Subtype /Type3`.
- * PDFium saves such a page without the text, which its read-back refuses (ADR-0169), so every other page stays with
- * the writer that rewrites its objects.
+ * Whether PDFium can write a page's text at all: `operators` where its own content shows text in a Type 3 font — an
+ * operator that shows a code (one PDFium numbers as a text object) while the text state's font names a `/Font` resource
+ * of `/Subtype /Type3` — since PDFium saves such a page without the text, which its read-back refuses (ADR-0169).
+ *
+ * NOT THE PAGE'S WRITER, since 2026-10-24: every page's Edit text changes go to the operator writer
+ * ([ADR-0266](../../../docs/DECISIONS/0266-edit-text-writes-only-the-edited-blocks-own-instructions.md)), and `main`
+ * reads this to name a Type 3 run's face (ADR-0256).
  *
  * Read by MuPDF, because the PDFium API has no query for a font's type, and through `textOperators.ts`, the module
  * that numbers the operators the edit will name: the page this answers about and the page the edit changes are read

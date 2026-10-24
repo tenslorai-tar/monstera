@@ -239,7 +239,7 @@ describe('editOperators on a page of lines', () => {
     expect(latin1(result.value.content)).toContain('[] TJ');
   });
 
-  it('moves every line below a wrap down by the block’s pitch, setting them again', () => {
+  it('moves every line below a wrap down by the block’s pitch', () => {
     // 72 + 3 letters at 10: the block is 30 wide in text space, so a fourth word wraps.
     const result = editOperators(content, fonts, page, block('abc abc\ndef\nghi'));
     if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
@@ -256,6 +256,24 @@ describe('editOperators on a page of lines', () => {
     const changed = editOperators(content, fonts, page, block('abx abc\ndef\nghi'));
     if (!changed.ok) throw new Error(`refused: ${JSON.stringify(changed.error)}`);
     expect(changed.value.emptied).toStrictEqual([0, 1, 2]);
+  });
+
+  it('CARRIES a line a wrap moves down as its own operators, kerning and codes and all: only its position changes (ADR-0266)', () => {
+    // THE SECOND LINE IS KERNED, which a re-setting of its words would lose: `def` set again is `(def) Tj`.
+    const kerned = bytes(THREE_LINES.replace('(def) Tj', '[(d) -120 (ef)] TJ'));
+    const runs = runsOf(kerned, fonts);
+    const result = editOperators(kerned, fonts, runs, block('abc abc\ndef\nghi'));
+    if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+    expect(checkOperatorEdit(kerned, result.value, fonts).ok).toBe(true);
+    const object = inserted(result.value)[0] ?? '';
+    expect(object).toContain('[<64> -120 <6566>] TJ');
+    // ONLY THE WORDS THE EDIT SET are MuPDF's to read back: the wrapped `abc`, never the two lines carried as they were.
+    expect(result.value.checked).toStrictEqual(['abc']);
+    // CONTROL: a line whose words DO change is set, and is read back.
+    const changed = editOperators(kerned, fonts, runs, block('abc abc\ndex\nghi'));
+    if (!changed.ok) throw new Error(`refused: ${JSON.stringify(changed.error)}`);
+    expect(changed.value.checked).toContain('dex');
+    expect(changed.value.checked).not.toContain('ghi');
   });
 
   it('empties a removed line and inserts nothing for it', () => {

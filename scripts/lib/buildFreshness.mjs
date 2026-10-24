@@ -712,6 +712,8 @@ export const ARTEFACT_EDGES = {
   // ADR-0264: every Edit object edit on every object of the brochure and the repository's fixtures, PDFium reading and
   // MuPDF writing. (The line here named ADR-0240's drawn-object proof, removed with Edit object on 2026-10-21.)
   'proof:editobject': EDIT_OBJECT,
+  // EDIT TEXT'S WRITER on every block (ADR-0266): the same reading, grouping, encoder and MuPDF writer, and the route.
+  'proof:edittext': EDIT_OBJECT,
   'proof:shimpassword': SHIM_PASSWORD,
   // THE WORD EXPORT'S PICTURES, read back by a zip reader and a PNG decoder that are not the writer's.
   'proof:wordpictures': WORD_PICTURES,

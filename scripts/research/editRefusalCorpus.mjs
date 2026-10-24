@@ -8,8 +8,9 @@
  *
  * Every page of every PDF under `MONSTERA_CORPUS`: PDFium's reading of the page (`pageRuns`), grouped into blocks the
  * way the editor groups them, and the first block with words gets a word appended — what the owner did in R13's video.
- * The edit is routed as the application routes it: MuPDF's `readPageRewrite` sends a page showing Type 3 text to the
- * operator writer (`applyEditTextOperators`), every other page to PDFium's (`applyEditTextBlock`). The bundled fonts are
+ * The edit is routed as the application routes it (ADR-0266): every page to the operator writer (`applyEditTextOperators`).
+ * `--route old` routes as before that ADR, for the counts it is measured against: a page showing Type 3 text (MuPDF's
+ * `readPageRewrite`) to the operator writer, every other page to PDFium's (`applyEditTextBlock`). The bundled fonts are
  * bound as the host binds them, so a word the page's own fonts cannot carry is set in the closest bundled face, not
  * refused. Each outcome is classified as the shell classifies it:
  *
@@ -28,7 +29,7 @@
  *
  * Prints counts and document numbers only — never a file's name or its text.
  *
- * Usage: MONSTERA_CORPUS=<folder> node scripts/research/editRefusalCorpus.mjs [--pages <max per document>]
+ * Usage: MONSTERA_CORPUS=<folder> node scripts/research/editRefusalCorpus.mjs [--pages <max per document>] [--route old]
  */
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
@@ -45,6 +46,8 @@ const ROOT = repoRoot();
 const CORPUS = process.env['MONSTERA_CORPUS'] ?? '';
 const pagesAt = process.argv.indexOf('--pages');
 const PAGE_CAP = pagesAt === -1 ? Infinity : Number(process.argv[pagesAt + 1]);
+const routeAt = process.argv.indexOf('--route');
+const OLD_ROUTE = routeAt !== -1 && process.argv[routeAt + 1] === 'old';
 const CONTROL = join(ROOT, 'packages', 'testing', 'fixtures', 'text-edit', 'chromium-type3.pdf');
 
 if (CORPUS === '' || !existsSync(CORPUS)) {
@@ -120,7 +123,8 @@ async function editPage(bytes, page) {
   ]);
   const session = await mupdfWriter.open(bytes);
   try {
-    const rewrite = await readPageRewrite(session, page);
+    // THE APPLICATION'S RULE (ADR-0266), or the one before it under `--route old`.
+    const rewrite = OLD_ROUTE ? await readPageRewrite(session, page) : 'operators';
     if (rewrite === 'operators') {
       // THE VERSION IS A NUMBER on the wire and branded on arrival, so the command is handed over as the host receives it.
       const command = /** @type {any} */ ({ kind: 'editTextOperators', page, ...edit, fit: 'reflow', version: 1 });

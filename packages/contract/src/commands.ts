@@ -7192,9 +7192,13 @@ export const editTextOperatorsSchema = blockEditCommandObject('editTextOperators
   .refine((command) => blockEditAgrees(command), blockEditDisagrees());
 
 /**
- * Which of the two a page's text is rewritten by (ADR-0176 Decision 1): `objects` for {@link editTextBlockSchema},
- * `operators` for {@link editTextOperatorsSchema}, where the page shows text in a Type 3 font. Defined once, beside the
- * two kinds it chooses between: the engine host answers it, `document.textBlocks` carries it, the renderer sends by it.
+ * Which of the two a page's text is rewritten by: `objects` for {@link editTextBlockSchema}, PDFium's page rewrite, and
+ * `operators` for {@link editTextOperatorsSchema}, the operator writer. Defined once, beside the two kinds it chooses
+ * between: `document.textBlocks` carries it, the renderer sends by it.
+ *
+ * `main` answers `operators` for every page since
+ * [ADR-0266](../../../docs/DECISIONS/0266-edit-text-writes-only-the-edited-blocks-own-instructions.md): PDFium's page
+ * rewrite writes every object of the page again, and was measured re-fonting and moving text nobody edited.
  */
 export const textRewriteSchema = z.enum(['objects', 'operators']);
 export type TextRewrite = z.infer<typeof textRewriteSchema>;

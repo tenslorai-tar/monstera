@@ -41,6 +41,7 @@ import {
   defaultModel,
   readsUnpacked,
   storedSetting,
+  type TextRewrite,
 } from '@monstera/contract';
 import {
   CapabilityRegistry,
@@ -1658,17 +1659,21 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       const mupdf = sessions.mupdf;
       if (mupdf === undefined) throw new MissingSessionError(docId, 'mupdf');
       const image = pdfiumReadImage(docId, sessions);
-      const rewrite = await engineHost.pageRewrite(mupdf, page);
+      // WHETHER THE PAGE'S OWN CONTENT SHOWS TYPE 3 TEXT, MuPDF's reading (ADR-0176 Decision 1): the PDFium API has no query
+      // for a font's type. It names a Type 3 run's face below; it no longer chooses a writer.
+      const showsType3 = (await engineHost.pageRewrite(mupdf, page)) === 'operators';
       const plain = await pdfiumHost.textRuns(image, page, false);
-      // TEXT PACKED INSIDE A FORM IS READ UNPACKED (ADR-0232): only where the plain read found characters no object holds,
-      // and only on a page PDFium writes, the host reads it again with its forms moved onto it in memory. An edit of these
-      // blocks is sent with `unpack`, which moves them in the same command, so a page nobody edits is never changed.
-      // NEVER for Edit object's read (ADR-0264 Decision 5): its writer names the page as it is.
+      // EVERY PAGE'S TEXT IS THE OPERATOR WRITER'S (ADR-0266 and its corrections): it changes only the edited block's own
+      // instructions, where PDFium's page rewrite writes the whole page again and was measured re-fonting and moving text
+      // nobody edited — on a page whose text is packed inside a form too, so such text is not offered for editing.
+      const rewrite: TextRewrite = 'operators';
+      // TEXT PACKED INSIDE A FORM IS READ UNPACKED (ADR-0232) only on a page PDFium writes, which since ADR-0266 is none:
+      // the rule stays the one place that says so. NEVER for Edit object's read (ADR-0264 Decision 5).
       const unpacked = !asItIs && readsUnpacked(plain.unaddressable, rewrite);
       const read = unpacked ? await pdfiumHost.textRuns(image, page, true) : plain;
-      // A TYPE 3 RUN NAMED BY ITS DESCRIPTOR (ADR-0256): PDFium reads such a font as no name and no weight, so on a page the
-      // operator writer edits MuPDF says each font's face, and only the runs PDFium left unnamed take it.
-      const faces = rewrite === 'operators' ? await engineHost.textFaces(mupdf, page) : null;
+      // A TYPE 3 RUN NAMED BY ITS DESCRIPTOR (ADR-0256): PDFium reads such a font as no name and no weight, so on a page
+      // showing Type 3 text MuPDF says each font's face, and only the runs PDFium left unnamed take it.
+      const faces = showsType3 ? await engineHost.textFaces(mupdf, page) : null;
       const found = faces === null ? read : { ...read, runs: read.runs.map((run) => namedByDescriptor(run, faces)) };
       // THE GROUPING IS MAIN'S, and this is the only place it happens.
       //
@@ -1746,8 +1751,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         // are what the engine could not place, so there is nothing here to
         // group and the count crosses as the count it is.
         unaddressable: found.unaddressable,
-        // THE PAGE'S WRITER, MuPDF's reading (ADR-0176 Decision 1): the PDFium API has no query for a font's type,
-        // and the session MuPDF holds is the document these runs were read from.
+        // THE PAGE'S WRITER (ADR-0266), from MuPDF's reading of its fonts and PDFium's of its packed text above.
         rewrite,
         ...(unpacked ? { unpacked: true as const } : {}),
       };
