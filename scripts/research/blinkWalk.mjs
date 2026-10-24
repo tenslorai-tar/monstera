@@ -499,7 +499,7 @@ await measure('picture signature', clickToSign, {
 });
 
 // EDIT TEXT: a block's words changed and committed; the first page redraws, no other.
-if (wanted('edit text')) await section('Edit');
+if (wanted('edit text') || wanted('edit object move')) await section('Edit');
 await measure(
   'edit text',
   async () => {
@@ -526,6 +526,38 @@ await measure(
   },
 );
 
+// EDIT OBJECT: the first page's first text block dragged down and to the right through its outline, the operator writer
+// writing it (ADR-0264); the first page redraws, no other — the text block's command names its own page (ADR-0262).
+const objectFace = () => page.getByRole('toolbar', { name: 'Tools', exact: true }).getByRole('button', { name: 'Edit object', exact: true });
+await measure(
+  'edit object move',
+  async () => {
+    const box = await page.locator('[data-object-edit-layer="0"] [data-object^="text:"]').first().boundingBox();
+    if (box === null) throw new Error('the first text block has no outline');
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2 + 40, { steps: 8 });
+    await page.mouse.up();
+  },
+  {
+    prepare: async () => {
+      if ((await objectFace().getAttribute('aria-pressed')) !== 'true') await objectFace().click();
+      const outline = page.locator('[data-object-edit-layer="0"] [data-object^="text:"]').first();
+      await outline.waitFor({ timeout: 30_000 });
+      await outline.click();
+      await page.locator('[data-object-handle]').first().waitFor({ timeout: 15_000 });
+    },
+    untouched: allBut([0]),
+    undo: async () => {
+      // THE SELECTION, then the mode: Escape with nothing selected ends Edit object itself.
+      await page.keyboard.press('Escape');
+      if ((await objectFace().getAttribute('aria-pressed')) === 'true') await objectFace().click();
+      await undo();
+    },
+    writes: true,
+  },
+);
+
 // A FORM FIELD'S DESIGN: the field's border recoloured from its Properties; the first page redraws, no other.
 await measure('field design change', () => page.getByRole('button', { name: 'Red' }).first().click(), {
   prepare: async () => {
@@ -536,7 +568,7 @@ await measure('field design change', () => page.getByRole('button', { name: 'Red
   untouched: allBut([0]),
   undo: putDownAndUndo,
 });
-if (wanted('edit text') || wanted('field design change')) await section('Home');
+if (wanted('edit text') || wanted('edit object move') || wanted('field design change')) await section('Home');
 
 // TAB SWITCH: a second document, then back to the first; the first's pages on show again may not blank on return.
 if (wanted('tab switch') || wanted('parked tab rebuild')) {
