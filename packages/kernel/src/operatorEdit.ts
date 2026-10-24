@@ -6,7 +6,7 @@ import type { PageFont } from './pageFonts.js';
 import { type BlockPlan, type FlowLine, type Measure, NO_MARK, type Row, largestFit, planBlock } from './paragraphFlow.js';
 import { type DecorationKind, decorationBand } from './markDecorations.js';
 import { JUSTIFY_CAP, RISE_SCALE, SUBSCRIPT_DROP, SUPERSCRIPT_RISE, spaceable, spacedBy } from './markFigures.js';
-import { type Alignment, blockShape, paragraphSpacing } from './paragraphShape.js';
+import { type Alignment, agree, blockShape, characterUnit, paragraphSpacing } from './paragraphShape.js';
 import { carried, neighbourSpan } from './contentCarry.js';
 import {
   type Matrix,
@@ -138,7 +138,13 @@ export interface OperatorEdit {
    * run that leads a line set afresh, which keep their operators.
    */
   readonly checked: readonly string[];
-  /** What the inserted objects draw, block by block, in drawing order: the structural read-back reads it. */
+  /**
+   * What each inserted object draws, one entry per object in the order the objects sit in the content: the structural
+   * read-back reads each object against its own entry. NOT the blocks' order: an edit of several blocks — a replace of
+   * every match, a block and the blocks it pushes — inserts each where its own lines are, and the page's content need not
+   * hold them in the order they were edited (measured 2026-10-24: 157 edits of one corpus document refused as not reading
+   * as what they drew, every one correct).
+   */
   readonly drawn: readonly string[];
   /** Each block's first and last baseline after the edit, and its last before it, in user space. */
   readonly baselines: readonly { readonly first: number; readonly last: number; readonly lastBefore: number }[];
@@ -617,11 +623,10 @@ function write(
   };
 
   const emptied = new Set<number>();
-  /** The operators a block's rewrite is placed before: their `BT`, one inserted object per block. */
-  const insertions: { readonly at: number; readonly text: string }[] = [];
+  /** The operators a block's rewrite is placed before: their `BT`, one inserted object per block, with what it draws. */
+  const insertions: { readonly at: number; readonly text: string; readonly drawn: string }[] = [];
   const written: string[] = [];
   const checked: string[] = [];
-  const drawn: string[] = [];
   const baselinesOut: { first: number; last: number; lastBefore: number }[] = [];
   const uncarried = new Set<string>();
   /** What each block grew, by its place in the edit: its old last baseline less its new one (ADR-0249 Decision 1). */
@@ -677,22 +682,22 @@ function write(
     const firstRun = firstLine?.[0];
     if (firstLine === undefined || firstRun === undefined) continue;
     const ctm = ops[firstRun.first]?.state.ctm;
-    // ONE INSERTED OBJECT DRAWS EVERY LINE under the first line's CTM, each line's origin taken from page space back
-    // through it (`toBt` below). So a block whose lines differ only by a TRANSLATION — each line set in its own
-    // `q 1 0 0 1 x y cm … Q`, as some producers write every line — is reproduced exactly: the origins already carry the
-    // translation, and the same scale and turn set every glyph alike. What one object cannot reproduce is a different
-    // scale or turn, or a line drawn through a clip the first line is not drawn through, since the object stands where the
-    // first line did. Measured 2026-10-23: 25 blocks of one corpus document refused every edit on this rule.
-    /** Whether `op`'s CTM matches the first line's in its first `count` entries: 6 is the whole, 4 its scale and turn. */
-    const matches = (op: ShowOperator | undefined, count: 4 | 6): boolean =>
-      op !== undefined && ctm !== undefined && op.state.ctm.slice(0, count).every((value, at) => Math.abs(value - (ctm[at] ?? 0)) <= SAME);
+    // ONE INSERTED OBJECT DRAWS EVERY LINE, under the CTM where it stands. A line drawn under another CTM is reproduced
+    // exactly inside it: its origin is taken from page space back through that CTM (`toBt` below), and its text matrix
+    // carries the rest of the difference (`inStandingSpace` below) — a glyph is placed by its text matrix times its CTM,
+    // so the text matrix times its own CTM times the standing one's inverse, under the standing one, is the same
+    // placement, and its size, spacing and every operator carried as it was mean what they meant. That covers a
+    // translation, as some producers set every line in its own `q 1 0 0 1 x y cm … Q`, and a scale or turn as well.
+    // Measured 2026-10-24: one corpus page draws its text under fifteen CTMs at three scales, and every block an edit
+    // pushed across them was refused. What one object cannot reproduce is a CLIP the first line is not drawn through,
+    // since the object stands where the first line did: that is still refused.
     const members = lines.flatMap((line) => line.flatMap((run) => run.members));
-    if (!members.every((member) => matches(ops[member], 6))) {
+    const sameCtm = (op: ShowOperator | undefined): boolean =>
+      op !== undefined && ctm !== undefined && op.state.ctm.every((value, at) => Math.abs(value - (ctm[at] ?? 0)) <= SAME);
+    if (!members.every((member) => sameCtm(ops[member]))) {
       const starts = members.map((member) => ops[member]?.start ?? 0);
       const windows = contentLayout(content, arrangeWith.kinds, starts).states.map((state) => JSON.stringify(state.windows.map((window) => window.points)));
-      if (!members.every((member) => matches(ops[member], 4)) || windows.some((each) => each !== windows[0])) {
-        throw new Refused({ reason: 'transformed', where: 'lines-under-different-ctms' });
-      }
+      if (windows.some((each) => each !== windows[0])) throw new Refused({ reason: 'transformed', where: 'lines-under-different-ctms' });
     }
     const inkRight = Math.max(...lines.flat().map((run) => run.right));
     const baselines = lines.map((line) => line[0]?.origin.y ?? 0);
@@ -754,14 +759,14 @@ function write(
       runs: line.map((run) => ({ id: run.run.index, text: run.run.text })),
       soft: soft[at] === true,
     }));
-    const shape = blockShape(
-      lines.map((line) => ({
-        x0: Math.min(...line.map((run) => run.run.left)),
-        x1: Math.max(...line.map((run) => run.run.right)),
-        characters: line.reduce((sum, run) => sum + run.run.text.length, 0),
-      })),
-      soft,
-    );
+    const extents = lines.map((line) => ({
+      x0: Math.min(...line.map((run) => run.run.left)),
+      x1: Math.max(...line.map((run) => run.run.right)),
+      characters: line.reduce((sum, run) => sum + run.run.text.length, 0),
+    }));
+    const shape = blockShape(extents, soft);
+    /** One character's width across the block: what two of its edges are compared in, the shape's own unit. */
+    const unit = characterUnit(extents);
     const spacing = paragraphSpacing(baselines, soft);
     const byId = new Map(lines.flat().map((run) => [run.run.index, run]));
     // WHERE A LINE SET AFRESH STARTS: the origin of the line that keeps the paragraph's left edge, since the shape's edge
@@ -1233,7 +1238,16 @@ function write(
       // At least one old run is set again, which is where the rest of the line begins.
       let untouched = 0;
       const set = setFor(row.paragraph);
-      const keepsItsLine = given?.leftIndent === undefined && given?.firstIndent === undefined;
+      // A LINE SET AFRESH STARTS WHERE THE PARAGRAPH SETS IT, which is where the editor draws it — its first line at the
+      // indent, every other at the left edge — and where the plan measured its width from. The line it replaces keeps its
+      // own start only where that start IS that place: its ink's left agrees with the shape's edge, in the shape's own terms
+      // and unit (`agree`, `paragraphShape.ts`). Measured 2026-10-24 in the owner's document 12: a paragraph's second line
+      // stood 19.2 pt right of the edge, was refilled to the 82.87 pt the edge allows, and was drawn from its own start,
+      // ending 17.4 pt past the block's right.
+      const inkStart = extents[row.replaces]?.x0;
+      const startsWhereSet =
+        replaced !== undefined && inkStart !== undefined && agree([inkStart, shape.left + (row.first ? shape.firstIndent : 0)], unit);
+      const keepsItsLine = given?.leftIndent === undefined && given?.firstIndent === undefined && startsWhereSet;
       if (shrink === 1 && !replaceAll && replaced !== undefined && set.align === 'left' && keepsItsLine && Math.abs(target - (baselines[row.replaces] ?? 0)) <= SAME) {
         while (untouched < replaced.length - 1) {
           const piece = row.pieces[untouched];
@@ -1310,7 +1324,7 @@ function write(
     const segments = visual.flatMap((line) => line.segments.map((segment) => ({ ...segment, baseline: line.baseline })));
     // WHAT THE CODES SHOW, which the structural read-back reads them as: a tab's segment means a tab and draws its gap
     // (W9; read as the tab it stood for, every tab edit on this writer was refused as not reading as what it drew).
-    drawn.push(segments.map((segment) => (segment.actual === '\t' ? TAB_GAP : segment.text)).join(''));
+    const drawnWords = segments.map((segment) => (segment.actual === '\t' ? TAB_GAP : segment.text)).join('');
     if (segments.length === 0) continue;
     // THE CTM WHERE THE NEW OBJECT STANDS, which every position below is converted into: an arranged block is carried with
     // its first line's state (`contentCarry.ts`); lines only added go after the last run's text object; anything else goes
@@ -1325,6 +1339,15 @@ function write(
     const here = ops[standsAt]?.state.ctm;
     const toBt = here === undefined ? null : inverse(here);
     if (toBt === null || here === undefined) throw new Refused({ reason: 'transformed', where: 'singular-ctm' });
+    /**
+     * An operator's text matrix (its scale, turn and skew) for drawing it under `here`: its own, where it was drawn under
+     * `here` too, and else its own times its CTM times `here`'s inverse, which places every glyph where its own CTM did.
+     */
+    const inStandingSpace = (op: ShowOperator): Matrix => {
+      const { matrix, ctm: own } = op.state;
+      if (own.every((value, at) => Math.abs(value - (here[at] ?? 0)) <= SAME)) return matrix;
+      return multiply(multiply([matrix[0], matrix[1], matrix[2], matrix[3], 0, 0], own), toBt);
+    };
     const decoder = new TextDecoder('latin1');
     // THE BLOCK PLACED (ADR-0188): one `cm` in front of the object, which is the placement in the space the words are
     // written in, so it moves, scales and turns every line of the block, the ones carried as they were and the ones set
@@ -1406,7 +1429,7 @@ function write(
         parts.push(`${num(wanted)} Tc`);
         said = wanted;
       }
-      const [a, b, c, d] = segment.source.state.matrix;
+      const [a, b, c, d] = inStandingSpace(segment.source);
       const raised = segment.baseline + (style?.rise ?? 0);
       const [e, f] = apply(toBt, segment.x, raised);
       const shown = `${[a, b, c, d, e, f].map(num).join(' ')} Tm ${segment.verbatim ?? `${hexOf(segment.font, segment.codes)} Tj`}`;
@@ -1472,7 +1495,7 @@ function write(
       const carry = carried(content, from, to, box, arrangeWith.plainState);
       if (carry === 'cropped') throw new Refused({ reason: 'cropped' });
       plain ||= carry.plain;
-      insertions.push({ at, text: `\n${carry.before}${parts.join('\n')}${carry.after}` });
+      insertions.push({ at, text: `\n${carry.before}${parts.join('\n')}${carry.after}`, drawn: drawnWords });
       continue;
     }
     // BEFORE THE FIRST EDITED OPERATOR'S BT, so inside its marked content; for lines only added below the block, before
@@ -1483,7 +1506,7 @@ function write(
       // A LINE BREAK FIRST, since the content need not end in white space and its last token must not run into a `Q`.
       const closers = closed || closing === undefined ? '' : 'Q\n'.repeat(closing.depth);
       closed = true;
-      insertions.push({ at: content.length, text: `\n${closers}${parts.join('\n')}` });
+      insertions.push({ at: content.length, text: `\n${closers}${parts.join('\n')}`, drawn: drawnWords });
       continue;
     }
     if (own.size === 0) {
@@ -1493,7 +1516,7 @@ function write(
       const after = objectEnds.get(ops[lastRun.last]?.textObject ?? -1);
       if (after !== undefined) {
         // A LINE BREAK FIRST: the text object it follows ends at its `ET`, and a `q` set against it would be one token.
-        insertions.push({ at: after, text: `\n${parts.join('\n')}` });
+        insertions.push({ at: after, text: `\n${parts.join('\n')}`, drawn: drawnWords });
         continue;
       }
     }
@@ -1511,16 +1534,16 @@ function write(
     const ends = objectEnds.get(anchor);
     if (own.size > 0 && keptBefore && !keptAfter && ends !== undefined) {
       // A LINE BREAK FIRST, for the reason the lines added below give: a `q` set against the `ET` would be one token.
-      insertions.push({ at: ends, text: `\n${parts.join('\n')}` });
+      insertions.push({ at: ends, text: `\n${parts.join('\n')}`, drawn: drawnWords });
       continue;
     }
-    insertions.push({ at: anchor, text: parts.join('\n') });
+    insertions.push({ at: anchor, text: parts.join('\n'), drawn: drawnWords });
   }
   if (uncarried.size > 0) throw new Refused({ reason: 'needs-a-face', characters: [...uncarried] });
   if (emptied.size === 0 && insertions.length === 0) throw new Refused({ reason: 'unchanged' });
 
   // THE SPLICES, in the order they sit in the bytes: each emptied operator's span, and each insertion at its BT.
-  const splices: { readonly start: number; readonly end: number; readonly text: string; readonly inserted: boolean }[] = [];
+  const splices: { readonly start: number; readonly end: number; readonly text: string; readonly inserted: boolean; readonly drawn?: string }[] = [];
   for (const at of emptied) {
     const op = ops[at];
     if (op === undefined) continue;
@@ -1537,9 +1560,11 @@ function write(
           : spacing;
     splices.push({ start: op.start, end: op.end, text, inserted: false });
   }
-  for (const insertion of insertions) splices.push({ start: insertion.at, end: insertion.at, text: insertion.text, inserted: true });
+  for (const insertion of insertions) splices.push({ start: insertion.at, end: insertion.at, text: insertion.text, inserted: true, drawn: insertion.drawn });
   // AN INSERTION SITS BEFORE AN EMPTIED OPERATOR AT THE SAME OFFSET, and two blocks' insertions keep their order.
   splices.sort((left, right) => left.start - right.start || Number(right.inserted) - Number(left.inserted));
+  // WHAT EACH INSERTED OBJECT DRAWS, in the order the objects now sit: the order `changes` lists them in.
+  const drawn = splices.flatMap((splice) => (splice.inserted ? [splice.drawn ?? ''] : []));
 
   const pieces: Uint8Array[] = [];
   const changes: { before: Span; after: Span; inserted: boolean }[] = [];
@@ -1607,14 +1632,21 @@ export function checkOperatorEdit(
     }
   }
   // THE WORDS, as the inserted objects' own fonts read them: positions are MuPDF's to read back.
-  const shown = now
-    .filter(inside)
-    .map((op) => {
-      const font = op.state.font === null ? undefined : fonts.get(op.state.font);
-      if (font?.toUnicode === null || font === undefined) return '\u0000';
-      return codesOf(font, op.codes).map((code) => font.toUnicode?.text.get(code) ?? '\u0000').join('');
-    })
-    .join('');
-  if (shown !== edit.drawn.join('')) return err('the inserted text does not read as the words drawn');
+  /** What an operator shows, through its own font. */
+  const reads = (op: ShowOperator): string => {
+    const font = op.state.font === null ? undefined : fonts.get(op.state.font);
+    if (font?.toUnicode === null || font === undefined) return '\u0000';
+    return codesOf(font, op.codes).map((code) => font.toUnicode?.text.get(code) ?? '\u0000').join('');
+  };
+  // EACH INSERTED OBJECT AGAINST WHAT IT WAS TO DRAW, one by one in the order they sit: a concatenation would let one
+  // object's words stand in for another's.
+  if (insertedSpans.length !== edit.drawn.length) return err('the inserted text does not read as the words drawn');
+  for (const [at, span] of insertedSpans.entries()) {
+    const shown = now
+      .filter((op) => op.start >= span.start && op.end <= span.end)
+      .map(reads)
+      .join('');
+    if (shown !== edit.drawn[at]) return err('the inserted text does not read as the words drawn');
+  }
   return ok(undefined);
 }

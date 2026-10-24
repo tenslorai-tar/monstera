@@ -6,7 +6,7 @@
  *
  * ## Relations, and one unit
  *
- * Two edges AGREE when they differ by less than one character's width of the text they are on, the unit `softEnds`
+ * Two edges AGREE when they differ by no more than one character's width of the text they are on, the unit `softEnds`
  * already uses: the average width of a character across the lines, their widths over their characters. That is a
  * quantity the text carries, so there is no constant to defend. Measured on the lines the engine reads, a justified
  * paragraph's edges agree to the last digit and a ragged one's differ by many characters, so the unit separates them
@@ -62,10 +62,14 @@ export function characterUnit(lines: readonly LineExtent[]): number {
   return characters === 0 ? 0 : width / characters;
 }
 
-/** Whether every value lies within `unit` of every other: the range is under one unit. */
-function agree(values: readonly number[], unit: number): boolean {
+/**
+ * Whether every value lies within `unit` of every other: the range is no more than one unit. The ONE rule for two edges
+ * agreeing. EQUAL VALUES AGREE whatever the unit, a unit of 0 included — lines whose ink has no width — which a range
+ * required to be under the unit refused.
+ */
+export function agree(values: readonly number[], unit: number): boolean {
   if (values.length < 2) return true;
-  return Math.max(...values) - Math.min(...values) < unit;
+  return Math.max(...values) - Math.min(...values) <= unit;
 }
 
 /**

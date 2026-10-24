@@ -392,12 +392,19 @@ describe('editOperators on a page of lines', () => {
     expect(checkOperatorEdit(firstShifted, result.value, fonts).ok).toBe(true);
   });
 
-  it('refuses a block whose lines differ in SCALE, which one inserted object cannot reproduce', () => {
+  it('writes a block whose lines differ in SCALE, the scaled line’s text matrix carrying the difference (2026-10-24)', () => {
+    // The third line under its own `2 0 0 2 0 0 cm` on top of the page's 0.75: drawn at 1.5 times its text matrix. Edited
+    // with the first, the new object stands where the first did, under 0.75, so the third line's text matrix must be
+    // twice its own to draw at the same size: (1 0 0 -1) times 1.5 times the inverse of 0.75 is (2 0 0 -2).
     const scaled = bytes(THREE_LINES.replace('BT /F1 20 Tf 1 0 0 -1 72 360', 'q 2 0 0 2 0 0 cm BT /F1 20 Tf 1 0 0 -1 72 360').concat(' Q'));
-    expect(editOperators(scaled, fonts, runsOf(scaled, fonts), block('abc\ndef\nghx'))).toStrictEqual({
-      ok: false,
-      error: { reason: 'transformed', where: 'lines-under-different-ctms' },
-    });
+    const result = editOperators(scaled, fonts, runsOf(scaled, fonts), block('abx\ndef\nghx'));
+    if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+    expect(checkOperatorEdit(scaled, result.value, fonts).ok).toBe(true);
+    const [object = ''] = inserted(result.value);
+    // AT 144, 720 under 0.75: the page point 108, 252 its own 1.5 put it at.
+    expect(object).toMatch(/^2 0 0 -2 144 720 Tm <676878>/mu);
+    // CONTROL: the first line, drawn under the CTM the object stands in, keeps its own text matrix.
+    expect(object).toMatch(/^1 0 0 -1 72 300 Tm <616278>/mu);
   });
 
   it('refuses a block whose shifted line is drawn through a clip the first line is not', () => {
@@ -713,6 +720,45 @@ describe('editOperators on paragraphs (ADR-0179)', () => {
     expect(plain).toStrictEqual({ ok: false, error: { reason: 'unchanged' } });
   });
 
+  describe('a line set afresh starts where the paragraph sets it, as the editor draws it', () => {
+    // The shape measured in the owner's document 12 (2026-10-24): one paragraph whose lines after the first do not all
+    // keep its left edge. `aaaaa` and `bbb` stand at 92, `cccccccccc` at 72 and reaches 122, the right edge; their centres
+    // differ by more than a character, so it is left-aligned with a first-line indent of 20, as that page's was. Typing `a`
+    // for `aaaaa` pulls `bbb` up into the first line (25 of the 30 its indent leaves), and nine `c` for ten makes the
+    // second line new words, 45 wide — not the old third line carried up, which keeps its own place whatever this rule.
+    const content = (second: number): Uint8Array =>
+      bytes(
+        [
+          'BT /F1 10 Tf 1 0 0 1 92 100 Tm (aaaaa) Tj ET',
+          `BT /F1 10 Tf 1 0 0 1 ${String(second)} 88 Tm (bbb) Tj ET`,
+          'BT /F1 10 Tf 1 0 0 1 72 76 Tm (cccccccccc) Tj ET',
+        ].join('\n'),
+      );
+    const page = (second: number): PageRuns => ({
+      textObjects: [0, 1, 2],
+      runs: [inked(0, 'aaaaa', 92, 117), inked(1, 'bbb', second, second + 15), inked(2, 'cccccccccc', 72, 122)],
+    });
+    const edited = (second: number): string => {
+      const result = editOperators(content(second), fonts, page(second), [
+        { lines: [[0], [1], [2]], soft: [true, true, false], text: 'a bbb ccccccccc' },
+      ]);
+      if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+      return inserted(result.value).join('\n');
+    };
+
+    it('sets the refilled line from the left edge, never from its own start 20 to the right, so it ends at the right edge', () => {
+      const written = edited(92);
+      expect(written).toContain('1 0 0 1 72 88 Tm <636363636363636363>');
+      // From its own start it would have ended at 137, fifteen past the block's right.
+      expect(written).not.toContain('1 0 0 1 92 88 Tm');
+    });
+
+    it('CONTROL: a line whose start differs from the edge by a side bearing keeps its own start', () => {
+      // 72.3 is within one character (5) of the edge: the line stands at the edge, and is written where it was.
+      expect(edited(72.3)).toContain('1 0 0 1 72.3 88 Tm <636363636363636363>');
+    });
+  });
+
   it('keeps a centred line centred when its words change', () => {
     const content = bytes(
       [
@@ -790,6 +836,32 @@ describe('checkOperatorEdit', () => {
     });
     // CONTROL: the edit as made reads back.
     expect(checkOperatorEdit(content, edit, fonts)).toStrictEqual({ ok: true, value: undefined });
+  });
+
+  describe('an edit of several blocks, each inserted object read against its own words (2026-10-24)', () => {
+    // THE BLOCKS EDITED IN THE OPPOSITE ORDER TO THE ONE THEY SIT IN: a replace of every match, or a block and the blocks
+    // it pushes, edits in the order it is given, and each new object goes where its own lines are. Read as one
+    // concatenation in the edit's order, `dexabx` against the `abxdex` the content draws, every such edit was refused.
+    const two = bytes(['BT /F1 10 Tf 1 0 0 1 72 300 Tm (abc) Tj ET', 'BT /F1 10 Tf 1 0 0 1 72 100 Tm (def) Tj ET'].join('\n'));
+    const both = editOperators(two, fonts, runsOf(two, fonts), [
+      { lines: [[1]], soft: [false], text: 'dex' },
+      { lines: [[0]], soft: [false], text: 'abx' },
+    ]);
+
+    it('makes the edit, and it reads back', () => {
+      if (!both.ok) throw new Error(`refused: ${JSON.stringify(both.error)}`);
+      expect(both.value.drawn).toStrictEqual(['abx', 'dex']);
+      expect(checkOperatorEdit(two, both.value, fonts)).toStrictEqual({ ok: true, value: undefined });
+    });
+
+    it('CONTROL: words that read right only joined together are refused, object by object', () => {
+      // `abxd` and `ex` join to `abxdex`, which a concatenation accepts; neither object draws its own entry.
+      if (!both.ok) throw new Error(`refused: ${JSON.stringify(both.error)}`);
+      expect(checkOperatorEdit(two, { ...both.value, drawn: ['abxd', 'ex'] }, fonts)).toStrictEqual({
+        ok: false,
+        error: 'the inserted text does not read as the words drawn',
+      });
+    });
   });
 });
 
