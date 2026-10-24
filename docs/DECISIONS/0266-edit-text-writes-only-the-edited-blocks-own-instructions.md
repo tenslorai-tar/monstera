@@ -122,3 +122,33 @@ set again from its words in its run's own state, which is a re-encoding the owne
 positions change, never their text or fonts"*). It is now carried as its operators were, by the same replay a placed
 block's lines take (ADR-0188), and set from its words only where it cannot be carried. A case with a kerned line below a
 wrap holds its kerning in the carried operator, and goes red with the replay restricted to placed blocks again.
+
+## Correction, 2026-10-24, before the code — Decision 2 is withdrawn: PDFium writes no Edit text change
+
+**Decision 2 kept PDFium's page rewrite for a page whose text is packed inside a form, on the ground that its read-back
+would refuse an edit that changed other text. Measured, it does not.** `proof:edittext` (this ADR's check, built kernel
+at this commit's parent) edited every block of such pages through ADR-0232's route, PDFium unpacking the page and writing
+it:
+
+| page | edits | refused | disturbed |
+|---|---|---|---|
+| the generated brochure, three pages (a pull quote drawn inside a form) | 120 | 0 | **120**, 23 to 140 characters outside the block moved or gone each time, pixels changed up to 310 pt away |
+| corpus document 6 (307 of its 966 characters in forms) | 75 | 0 | **75**, about 75,400 pixels each, up to 589 pt away |
+| corpus document 3 (every character in forms) | 0 | — | — : the unpacked read found no block to edit |
+
+So the read-back, which compares each text object's font name and words, does not see what the page rewrite does to the
+rest of such a page, and every one of those edits was saved. The owner's rule — *never if it would change other text* —
+then leaves PDFium no Edit text change to write.
+
+**So Decision 2 is now: no page is PDFium's.** Every Edit text change goes to the operator writer. On a page with text
+packed inside a form, the page's own blocks are edited as on any other page, and the packed text is not offered for
+editing: it is counted as characters no command can name and the editor says so, as it did before ADR-0232. Decision 3's
+function is not built; the route is one constant where `main` reads a page for the editor. Nothing in Edit text still
+needs PDFium's writer; its reads (runs, styles, fonts, the typing box's font) are unchanged.
+
+**What this leaves undone, and the recommended next step.** Packed text is not editable until the operator writer can
+reach it. The way that keeps the owner's rule is for MuPDF to INLINE the form into the page's own content where an edit
+needs it — its operators wrapped in the form's matrix and box and their resources renamed into the page's, which draws
+the same — and for PDFium to read the inlined page so the operator writer names it as it names any page. That is a new
+host read and a new field on the edit, and it is recorded as the follow-up in the owner's questions rather than built
+under this correction.
