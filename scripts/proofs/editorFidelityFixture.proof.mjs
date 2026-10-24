@@ -31,14 +31,34 @@ const REQUIRED = process.argv.includes('--require-engines');
 const CASES = [
   'PREMISE: the reading names six blocks, the code block’s four commands and the list’s two entries each ending hard',
   'the committed page is the page the script builds, byte for byte',
-  'the committed blocks are the blocks PDFium and the grouping read from it now',
+  'the committed blocks are the blocks PDFium and the grouping read from it now: every field equal, a box coordinate within BOX_TOLERANCE',
   'CONTROL: a reading with one block’s words changed is reported as different',
+  'CONTROL: a reading with one box moved past BOX_TOLERANCE is reported as different',
 ];
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 4 });
-if (CASES.length !== 4) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 4`);
+const roster = createRoster(failures, { cases: 5 });
+if (CASES.length !== 5) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 5`);
+
+/**
+ * The differences between two readings that the platform does not explain: every field not a box coordinate, and every
+ * box coordinate moved past {@link BOX_TOLERANCE}. With the largest box move that is explained, for the report.
+ *
+ * @param {unknown} committed @param {unknown} read
+ */
+function unexplained(committed, read) {
+  const found = differences(committed, read);
+  const moves = found.map(boxMove);
+  return {
+    wrong: found.filter((_each, at) => {
+      const move = moves[at];
+      return move === null || move === undefined || move > BOX_TOLERANCE;
+    }),
+    boxes: moves.filter((move) => move !== null && move !== undefined && move <= BOX_TOLERANCE).length,
+    largest: Math.max(0, ...moves.map((move) => (move !== null && move !== undefined && move <= BOX_TOLERANCE ? move : 0))),
+  };
+}
 
 /** @param {number} at @param {boolean} held @param {string} detail */
 function check(at, held, detail) {
@@ -48,6 +68,18 @@ function check(at, held, detail) {
   roster.record(mark, `${name} — ${detail}`);
 }
 
+/**
+ * How far a BOX coordinate may lie from the committed one, in points: the platform's measure of a glyph and nothing else.
+ *
+ * PDFium answers a character's box from the font it draws with, and for a font the page names and does not carry that is
+ * the platform's substitute — the Foxit faces it bundles on Linux, the system's on Windows — so the same page's boxes
+ * differ by platform while its words, breaks, styles and baselines (the text matrix's, not a glyph's) do not. Read from
+ * CI run 40109735351 (windows-latest, 2026-10-24) against the committed Linux reading: every differing field was a box
+ * coordinate, the largest 0.252 pt (the heading's top, 742.438 against 742.186). Twice that is allowed; a field that is
+ * not a box must still be equal.
+ */
+const BOX_TOLERANCE = 0.5;
+
 /** @param {string} a @param {string} b */
 const same = (a, b) => a === b;
 
@@ -56,7 +88,7 @@ const same = (a, b) => a === b;
  * changes on another platform or under another build names the field and the size of the change rather than "differ".
  *
  * @param {unknown} committed @param {unknown} read @param {string} [path]
- * @returns {string[]}
+ * @returns {{ path: string, committed: unknown, read: unknown }[]}
  */
 function differences(committed, read, path = '') {
   if (typeof committed === 'object' && committed !== null && typeof read === 'object' && read !== null) {
@@ -65,8 +97,18 @@ function differences(committed, read, path = '') {
       differences(/** @type {Record<string, unknown>} */ (committed)[key], /** @type {Record<string, unknown>} */ (read)[key], `${path}/${key}`),
     );
   }
-  return committed === read ? [] : [`${path || '/'}: committed ${JSON.stringify(committed)}, read ${JSON.stringify(read)}`];
+  return committed === read ? [] : [{ path: path || '/', committed, read }];
 }
+
+/** @param {{ path: string, committed: unknown, read: unknown }} found */
+const told = (found) => `${found.path}: committed ${JSON.stringify(found.committed)}, read ${JSON.stringify(found.read)}`;
+
+/** How far a differing box coordinate moved, or `null` where the field is not a box coordinate or not a number. */
+const boxMove = (/** @type {{ path: string, committed: unknown, read: unknown }} */ found) =>
+  BOX_FIELD.test(found.path) && typeof found.committed === 'number' && typeof found.read === 'number' ? Math.abs(found.committed - found.read) : null;
+
+/** Whether a differing field is a box coordinate, which is all {@link BOX_TOLERANCE} may excuse. */
+const BOX_FIELD = /\/box\/[xy][01]$/u;
 
 if (!existsSync(pdfiumLibrary(ROOT))) {
   exitUnverifiable({
@@ -92,16 +134,24 @@ if (!existsSync(pdfiumLibrary(ROOT))) {
     `${String(blocks.length)} blocks, the code block's ends ${JSON.stringify(code)}, the list's ${JSON.stringify(list)}`,
   );
   check(1, Buffer.compare(readFileSync(FIXTURE_PDF), Buffer.from(bytes)) === 0, `${String(bytes.length)} bytes built`);
-  const found = differences(JSON.parse(committed), JSON.parse(read));
+  const now = unexplained(JSON.parse(committed), JSON.parse(read));
   check(
     2,
-    same(committed, read),
-    same(committed, read)
-      ? 'the same'
-      : `${String(found.length)} field(s) differ:\n        ${found.slice(0, 40).join('\n        ')}${found.length > 40 ? `\n        and ${String(found.length - 40)} more` : ''}`,
+    now.wrong.length === 0,
+    now.wrong.length === 0
+      ? same(committed, read)
+        ? 'the same'
+        : `the same but ${String(now.boxes)} box coordinate(s), the largest moved ${now.largest.toFixed(3)} pt`
+      : `${String(now.wrong.length)} field(s) differ past what the platform's substitute faces explain:\n        ${now.wrong.slice(0, 40).map(told).join('\n        ')}${now.wrong.length > 40 ? `\n        and ${String(now.wrong.length - 40)} more` : ''}`,
   );
-  const altered = committed.replace('git clone', 'git fetch');
-  check(3, altered !== committed && !same(altered, read), 'one word changed in a copy reads as different');
+  const words = unexplained(JSON.parse(committed.replace('git clone', 'git fetch')), JSON.parse(read));
+  check(3, words.wrong.some((each) => !BOX_FIELD.test(each.path)), `${String(words.wrong.length)} field(s) named`);
+  /** @type {{ box: { x0: number } }[]} */
+  const shifted = JSON.parse(committed);
+  const first = shifted[0];
+  if (first !== undefined) first.box.x0 += BOX_TOLERANCE * 2;
+  const boxes = unexplained(shifted, JSON.parse(read));
+  check(4, boxes.wrong.some((each) => each.path === '/0/box/x0'), boxes.wrong.map(told).join('; ') || 'nothing named');
 
   process.stdout.write(
     failures.length > 0
