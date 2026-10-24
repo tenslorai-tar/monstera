@@ -892,6 +892,114 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-24 — Stage audit of `eda0c9ea..6b29f80f` — findings WWWWWWWW-1 to WWWWWWWW-9
+
+Local fix session 4's round 2: the merge of cloud run 17 (Edit object, ADR-0264) and its corpus checks, T1 (the font
+list's scroll bar), T2 (link markers), T3 (the Accessibility tab, ADR-0265), T4 (Donate's address), the version
+1.0.2150.0, and the closing walks and baselines, audited lean per the owner's closing steps of 2026-10-23. `npm run
+audit:scope` at `879483ef`, one commit before the range's end: 42 commits, 142 files, within one batch; 11 proofs added, 19 modified, none removed; 12
+source files added, 55 changed, none removed. **Stated limitation, not a pass:** the modified proofs' diffs were read
+where they lost lines (`DocumentPanel.test.tsx`, whose lost cases are the tool view ADR-0265 removed, and whose six-tab
+case is now seven); `commandBus.test.ts` and the rest came with the cloud branch or were written in this round, each
+commit naming its proof and control.
+
+### Fixed in range
+
+**WWWWWWWW-1** — Edit object on the owner's corpus, first run: 172 refused and 46 edits that disturbed another object
+in 2,952. Six causes, each fixed with a case red without it: lines under different translations (`1faeab07`); the
+arrange read-back finding a neighbour's twin (`9cb5b8e5`); a clip-setting shape whose move moved its clip, with
+ADR-0264's correction ahead of the code (`9cd16acb`, `d85e5084`); a wrap's closing `Q` meeting the next as `QQ`
+(`d85e5084`); read-backs comparing rounded text, which flipped on 4e-9 (`20ab2fba`); PDFium's line-end hyphen read as
+U+FFFE (`b5030a4a`). Final: 0 refused, 0 disturbed, 10 cropped (the stated case).
+**WWWWWWWW-2** — the corpus proof printed the corpus's file names and quoted its blocks' text. It labels documents and
+blocks by number now (`d59cfff3`).
+**WWWWWWWW-3** — the paper over the place a moved text block left stayed 6.8 s on a 60-page document:
+`editTextOperators` declared every page changed (ADR-0262), so every page and thumbnail redrew before page 1. It
+declares its own page, and `pageDeclarations.test.ts` covers the kind (`a0271a08`; declaring the next page is red).
+60 pages: 1,273 ms after.
+**WWWWWWWW-4** — found by the closing walks (comments N9, exports N7, each red twice): T3 removed a `:not()` that had
+given the panel body's share rule a second class, and `.m-thumbnails`' own `flex`, later in the file, then won. The
+Pages tab stopped 460 px above its foot, and with the list unbounded every thumbnail counted as on screen, so after the
+12 MiB CSV document the next document did not draw within 30 s. The share now outranks a panel's class in any order,
+and `panelFill.pw.ts` measures the seventh tab and requires its list to match the strip (`036b37f7`). The 12 MiB
+import went from 378 to 282 s with it.
+**WWWWWWWW-5** — objectEditWalk's paper timer, before it was committed, watched the drag's paper, which hands over to
+the held look's at release: it read 34 ms against 6.8 s. It now times both and requires the held one to have been
+seen. Its jump measure keyed on an object id, which a move renumbers; it now drops the block on blank paper and reads
+the outline nearest the lifted look.
+**WWWWWWWW-9** — found by this audit's sweep for the relationship T3 changed (`npm run sweep:prose -- "six tabs"`):
+the Document panel's help article listed six tabs and had no Accessibility context, FEATURES' menu-bar row said Window
+lists six panel tabs, and two comments counted six (`6b29f80f`).
+
+### Recorded
+
+**WWWWWWWW-6** — Edit object's targets not met, and accepted by the owner for 1.0.2150.0 (2026-10-24): the paper about
+1 s after a release, the first outlines 1.5 s on a small document, and one 60–81 ms task during a drag.
+**WWWWWWWW-7** — T2 not reproduced in seven fixture shapes, in the kernel and the live app. The refusal is the PDFium
+writer's read-back; the document's shape or its log line is needed.
+**WWWWWWWW-8** — my own process. T3 changed `app.css` and I ran two rendered files rather than the set
+`affectedProofs` names for it, which holds `panelFill.pw.ts` (CI runs it; the walks found it first). Two scratch probes
+under `scripts/research/` broke the build's typecheck and were deleted. The escape guard denied an `echo` with a
+redirect, a `sed -i`, a `node -e` and a heredoc; nothing was written by any of them.
+
+### 1. Root cause or workaround?
+
+Each fix states its mechanism in its commit. None is a retry, a raised bound or a loosened check. The read-back
+tolerance (WWWWWWWW-1) replaces an equality of rounded text with one of numbers within 1e-4, a margin measured against
+the 4e-9 noise; it is one named function per comparison.
+
+### 2. Easy shape only?
+
+The corpus is the hard shape for Edit object, and the brochure and repository fixtures the easy one. The paper patch
+was measured on 60 pages, where it was found, and on one.
+
+### 2a.
+
+No assertion moved from asserted to derived.
+
+### 3. Would CI have caught it?
+
+WWWWWWWW-4: yes, `panelFill.pw.ts` is in the rendered set CI runs, and it was red on the build. WWWWWWWW-1 and -3: no,
+each was found by a run on the corpus or in the live app; their cases now run in CI.
+
+### 4. Non-vacuous?
+
+Run here, each red with its guard removed: the six corpus causes, the narrowed declaration (wrong page, red), the panel
+fill (red on the build before the fix), the font list (3 of 5 red on the old build), the Accessibility tab, Donate's
+address and the version's `releaseOf`.
+
+### 4a.
+
+objectEditWalk's patch timer was resolution-tested against the case it got wrong: the held look's paper must be seen
+before its absence counts, and it read 6,759 ms where the drag's paper read 34.
+
+### 4b.
+
+No new search-shaped instrument. `panelFill.pw.ts` now reads the strip's own tabs, so a tab it does not list is a red
+case rather than one it never looks at.
+
+### 4c.
+
+`panelFill.pw.ts`' list is checked against the strip it governs: a tab added grows the strip, which the comparison
+sees.
+
+### 5. Executed or asserted?
+
+Executed: the corpus counts, every walk total and timing, every mutation above. Asserted: nothing recorded as found.
+
+### 6. Architecture before the feature?
+
+ADR-0264's correction (`9cd16acb`) and ADR-0265 (`9ac52823`) each landed in their own commit ahead of their code.
+
+### 7. Documents?
+
+ADR-0264's correction, ADR-0265, ADR-0189's correction, the decisions README rows, §10.3 of the architecture document,
+FEATURES rows 222 and 223, and the two help articles. Swept for *six tabs* with `sweep:prose`, which found four live
+statements still saying six (WWWWWWWW-9); the remaining matches are dated records and the design draft. No help-centre
+picture is in the repository yet, so none changed.
+
+---
+
 ## 2026-10-23 — Stage audit of `6aba348f..eda0c9ea` — findings VVVVVVVV-1 to VVVVVVVV-9
 
 Local fix session 4: N1 (page commands shown at once, ADR-0261), N2 (the pages a command changes, ADR-0262), N3's
