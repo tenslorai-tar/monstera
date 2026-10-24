@@ -196,6 +196,7 @@ import {
   SHOW_LAYERS_TITLE,
   SHOW_PAGES_TITLE,
   SHOW_SEARCH_TITLE,
+  SHOW_ACCESSIBILITY_TITLE,
   MENU_GROUP_PANELS,
   MOVE_PAGE_EARLIER_TITLE,
   MOVE_PAGE_LATER_TITLE,
@@ -1519,6 +1520,8 @@ const SHOWN_PANELS: Readonly<
   },
   layers: { id: 'view.show-layers', icon: 'Layers', title: SHOW_LAYERS_TITLE, order: 50, ribbon: [] },
   search: { id: 'view.show-search', icon: 'Search', title: SHOW_SEARCH_TITLE, order: 60, ribbon: [] },
+  // REACHED FROM ITS TAB AND FROM REVIEW'S TWO COMMANDS, which open it at their view (ADR-0265); here it is the panel.
+  accessibility: { id: 'view.show-accessibility', icon: 'ShieldCheck', title: SHOW_ACCESSIBILITY_TITLE, order: 70, ribbon: [] },
 };
 
 /**

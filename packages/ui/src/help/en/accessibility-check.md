@@ -10,7 +10,7 @@ The accessibility check looks at the parts of the PDF/UA accessibility standard 
 
 ## Steps
 
-1. In the rail, choose **Review**, then **Accessibility check** in the **Accessibility** group. The **Accessibility** panel opens on the left, beside the page, and checks the document. Choose the cross at its top, or any of the panel's tabs, to close it.
+1. In the rail, choose **Review**, then **Accessibility check** in the **Accessibility** group. The left panel's **Accessibility** tab opens beside the page and checks the document.
 2. Under **Needs fixing**, each problem says what it means and what to do about it, for example that a link has no description, so a screen reader cannot say where it goes.
 3. Choose a page button under a problem, such as "Page 3". The page scrolls to it and the place is marked. Choose **Clear the mark on the page** when you are done.
 4. Under **Needs a person to check**, look at each item yourself: Monstera cannot tell whether it is a problem.
@@ -20,6 +20,7 @@ The accessibility check looks at the parts of the PDF/UA accessibility standard 
 
 ## Good to know
 
+- The **Accessibility** tab is the shield at the end of the left panel's tabs. Choose it and **Check this document** to check from there. The panel's other tabs stay where they are: choose any of them to go back to it.
 - A problem about the whole file, such as missing document information, says so and has no page to point to.
 - Where Monstera cannot make the repair, the line says to fix it in the program that made the file, then export the PDF again.
 - Passing the automatic checks does not show that a document is accessible. The checks for a person matter as much.

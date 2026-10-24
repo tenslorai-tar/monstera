@@ -43,11 +43,12 @@ export const DOCUMENT_PANEL_SETTING: SettingDefinition<
     forms: 'forms';
     layers: 'layers';
     search: 'search';
+    accessibility: 'accessibility';
   }>
 > = {
   id: 'appearance.document-panel',
   title: DOCUMENT_PANEL_TITLE,
-  schema: z.enum(['pages', 'bookmarks', 'comments', 'forms', 'layers', 'search']),
+  schema: z.enum(['pages', 'bookmarks', 'comments', 'forms', 'layers', 'search', 'accessibility']),
   fallback: 'pages',
   category: 'appearance',
   // REMEMBERED, not asked: the control for which tab is open is the tab.
@@ -69,11 +70,11 @@ export const DOCUMENT_PANEL_OPEN_SETTING: SettingDefinition<z.ZodBoolean> = {
  * The narrowest the document panel may be, in CSS pixels.
  *
  * Derived from the strip it must hold, read from the stylesheets: the strip's `--space-4` padding on both sides (8),
- * six v5 tabs of `--panel-tab-wide` (6 × 34 = 204) with five `--space-2` gaps (10), the `--space-2` gap before the
- * collapse chevron (2), the chevron itself — a 14 px glyph with `--space-4` padding and a 1 px border on each side (24)
- * — and the panel's 1 px border on each side (2): 250, raised to 256, the next step of §10.2's 8 px grid. Narrower,
- * and the strip's last tab or the chevron is clipped; the rendered test asserts the strip fits at this width. It was
- * 192 until 2026-09-26, derived from 24 px tabs; v5 draws them 34 wide, and the rendered case went red at 192.
+ * seven tabs of `--panel-tab-wide` (7 × 29 = 203, ADR-0265) with six `--space-2` gaps (12), the `--space-2` gap before
+ * the collapse chevron (2), the chevron itself — a 14 px glyph with `--space-4` padding and a 1 px border on each side
+ * (24) — and the panel's 1 px border on each side (2): 251, raised to 256, the next step of §10.2's 8 px grid.
+ * Narrower, and the strip's last tab or the chevron is clipped; the rendered test asserts the strip fits at this width.
+ * The seventh tab was fitted to this width rather than this width to it, so a width a person set stays a valid one.
  */
 export const DOCUMENT_PANEL_MIN_WIDTH = 256;
 

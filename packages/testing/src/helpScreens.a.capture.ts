@@ -142,8 +142,9 @@ test('accessibility-check-1', async ({ page }) => {
   await openDocument(page);
   await openSection(page, 'Review');
   await runCommand(page, 'Accessibility check');
-  // THE TOOL IN THE LEFT DOCUMENT PANEL (ADR-0189), which holds the page's side while it is open.
-  const panel = page.locator('[data-panel-tool="open"]');
+  // THE LEFT DOCUMENT PANEL'S ACCESSIBILITY TAB (ADR-0265), which the command chooses.
+  const panel = page.locator('[data-pane="document-panel"]');
+  await expect(panel.getByRole('tab', { name: 'Accessibility' })).toHaveAttribute('aria-selected', 'true');
   await expect(panel).toBeVisible();
   await expect(panel.getByText('Needs fixing')).toBeVisible();
   await shoot(page, 'accessibility-check-1', panel);

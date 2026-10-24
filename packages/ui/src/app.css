@@ -3360,35 +3360,18 @@ optgroup {
   overflow-y: auto;
 }
 
-/* A TOOL IN USE (ADR-0189): its name and the way to close it, over the tool's own body. */
-.m-document-panel__tool-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-6);
-  padding: var(--space-6) var(--space-10);
-}
-
-.m-document-panel__tool-title {
-  margin: 0;
-  font-size: var(--font-chrome-12);
-  font-weight: 600;
-  color: var(--text);
-}
-
 /* EVERY TAB FILLS THE PANEL TO ITS FOOT (the owner's N9). The body is a column and each panel it holds takes an equal
  * share of it, so one panel takes the whole and the Bookmarks tab's outline and links take half each, every list
  * scrolling inside its own share. Measured 2026-10-13 (`panelFill.pw.ts`): before this, every one of the six tabs drew its
  * box to its content's height and stopped, 314 to 586 px above the foot of a 900 px window; the lists also capped
- * themselves at 40vh. A wrapper between the body and a panel (the Forms tab's right-click region) passes the share on. A
- * tool in use keeps its own layout: its heading is not a share. */
-.m-document-panel__body:not(.m-document-panel__tool) > *,
-.m-document-panel__body:not(.m-document-panel__tool) > .m-context-menu-region > * {
+ * themselves at 40vh. A wrapper between the body and a panel (the Forms tab's right-click region) passes the share on. */
+.m-document-panel__body > *,
+.m-document-panel__body > .m-context-menu-region > * {
   flex: 1 1 0;
   min-block-size: 0;
 }
 
-.m-document-panel__body:not(.m-document-panel__tool) > .m-context-menu-region {
+.m-document-panel__body > .m-context-menu-region {
   display: flex;
   flex-direction: column;
 }

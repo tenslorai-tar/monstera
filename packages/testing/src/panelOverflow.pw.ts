@@ -86,13 +86,30 @@ for (const width of LEFT_WIDTHS) {
   test(`every tab of the left panel at ${String(width)} px scrolls only down`, async ({ page }) => {
     await open(page, { 'appearance.document-panel-width': width, 'appearance.context-panel-open': false });
     const tabs = page.locator('.m-document-panel__tabs [role="tab"]');
-    // AN INDEPENDENT COUNT of the tabs (audit item 4c): a tab that left would otherwise leave the walk with it.
-    await expect(tabs).toHaveCount(6);
-    for (let at = 0; at < 6; at += 1) {
+    // AN INDEPENDENT COUNT of the tabs (audit item 4c): a tab that left would otherwise leave the walk with it. Seven since
+    // Accessibility joined the strip (ADR-0265).
+    await expect(tabs).toHaveCount(7);
+    for (let at = 0; at < 7; at += 1) {
       const tab = tabs.nth(at);
       await tab.click();
       await expect(tab).toHaveAttribute('aria-selected', 'true');
       await expectNoneSideways(page, `tab ${String(at + 1)}, ${(await tab.getAttribute('aria-label')) ?? ''}`);
+    }
+  });
+
+  test(`the left panel's seven tabs fit in one row of its strip at ${String(width)} px, clear of the collapse chevron`, async ({ page }) => {
+    await open(page, { 'appearance.document-panel-width': width, 'appearance.context-panel-open': false });
+    const strip = page.locator('.m-document-panel__strip');
+    const boxes = await page.locator('.m-document-panel__tabs [role="tab"]').evaluateAll((tabs) => tabs.map((tab) => tab.getBoundingClientRect().toJSON() as DOMRect));
+    expect(boxes).toHaveLength(7);
+    const chevron = await strip.getByRole('button', { name: 'Collapse the document panel' }).boundingBox();
+    const box = await strip.boundingBox();
+    if (chevron === null || box === null) throw new Error('the strip or its chevron has no box');
+    // ONE ROW: every tab's top within a pixel of the first's; INSIDE THE STRIP and LEFT OF THE CHEVRON.
+    expect(new Set(boxes.map((tab) => Math.round(tab.top))).size, 'one row').toBe(1);
+    for (const tab of boxes) {
+      expect(tab.left).toBeGreaterThanOrEqual(box.x - 0.5);
+      expect(tab.right).toBeLessThanOrEqual(chevron.x + 0.5);
     }
   });
 }

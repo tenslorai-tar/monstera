@@ -2,24 +2,24 @@
 import { I18nProvider } from '@lingui/react';
 import { act, render, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import appCss from '../app.css?raw';
 import { activateCatalogue, i18n } from '../i18n.js';
-import { CONTEXT_PANEL_TAB_ACCESSIBILITY, EN } from '../messages/en.js';
+import { EN } from '../messages/en.js';
 import { SettingsRegistry } from '../registries/settings.js';
 import { ALL_SETTINGS } from '../settings/all.js';
 import { DOCUMENT_PANEL_OPEN_SETTING, DOCUMENT_PANEL_SETTING } from '../settings/layout.js';
 import { PanelPresence } from '../panelPresence.js';
 import { SettingsStore } from '../settingsStore.js';
-import { DocumentPanel, type PanelTool } from './DocumentPanel.js';
+import { DocumentPanel } from './DocumentPanel.js';
 
 /**
  * §10.3's document panel, as a surface a person operates.
  *
  * Each panel's content is a marked stand-in, because what this file asserts is the host:
- * one panel at a time, six tabs named by their panel, the collapse and its reopen, and the
- * settings as the one owner of both.
+ * one panel at a time, seven tabs named by their panel (ADR-0265), the collapse and its
+ * reopen, and the settings as the one owner of both.
  */
 
 beforeAll(() => {
@@ -36,63 +36,46 @@ const STAND_INS = {
   forms: <p>forms content</p>,
   layers: <p>layers content</p>,
   search: <p>search content</p>,
+  accessibility: <p>accessibility content</p>,
 };
 
-function drawn(
-  settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS)),
-  tool?: PanelTool,
-): {
+function drawn(settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS))): {
   readonly settings: SettingsStore;
   readonly presence: PanelPresence;
 } {
   const presence = new PanelPresence(settings);
   render(
     <Wrapped>
-      <DocumentPanel
-        tool={tool}
-        settings={settings}
-        presence={presence}
-        pages={<p>pages content</p>}
-        panels={STAND_INS}
-      />
+      <DocumentPanel settings={settings} presence={presence} pages={<p>pages content</p>} panels={STAND_INS} />
     </Wrapped>,
   );
   return { settings, presence };
 }
 
 describe('DocumentPanel', () => {
-  it('a TOOL takes the body while it is open, a tab or its close button closes it, and the setting is untouched (ADR-0189)', async () => {
-    const closed = vi.fn();
-    const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
-    drawn(settings, { title: CONTEXT_PANEL_TAB_ACCESSIBILITY, content: <p>tool content</p>, onClose: closed });
-
-    expect(screen.getByText('tool content')).toBeDefined();
-    expect(screen.getByRole('heading', { name: 'Accessibility' })).toBeDefined();
-    // THE PANEL'S OWN BODY IS NOT DRAWN BESIDE IT, so the tool's content is not one of two.
-    expect(screen.queryByText('pages content')).toBeNull();
-    expect(settings.get(DOCUMENT_PANEL_SETTING.id)).toBe('pages');
-
+  it('ACCESSIBILITY IS A TAB (ADR-0265): chosen, it shows its panel; the tab chosen before is there and shows its own again', async () => {
+    const { settings } = drawn();
     await act(async () => {
-      screen.getByRole('button', { name: 'Close' }).click();
+      screen.getByRole('tab', { name: 'Bookmarks' }).click();
       await Promise.resolve();
     });
-    expect(closed).toHaveBeenCalledTimes(1);
-    // THE CHOSEN TAB TOO, which fires no change of its own: it is the way back to the panel.
     await act(async () => {
-      screen.getByRole('tab', { name: 'Pages' }).click();
+      screen.getByRole('tab', { name: 'Accessibility' }).click();
       await Promise.resolve();
     });
-    expect(closed).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('accessibility content')).toBeDefined();
+    expect(settings.get(DOCUMENT_PANEL_SETTING.id)).toBe('accessibility');
+    // NOTHING DISPLACED: every other tab is still in the strip, and the one chosen before shows its own panel again.
+    expect(screen.getAllByRole('tab')).toHaveLength(7);
+    await act(async () => {
+      screen.getByRole('tab', { name: 'Bookmarks' }).click();
+      await Promise.resolve();
+    });
+    expect(screen.getByText('bookmarks content')).toBeDefined();
+    expect(screen.queryByText('accessibility content')).toBeNull();
   });
 
-  it('CONTROL: with no tool the panel shows its own chosen body and no close button', () => {
-    drawn();
-    expect(screen.getByText('pages content')).toBeDefined();
-    expect(screen.queryByRole('button', { name: 'Close' })).toBeNull();
-    expect(screen.queryByText('tool content')).toBeNull();
-  });
-
-  it('shows ONE panel, Pages by default, with SIX tabs named by their panel', () => {
+  it('shows ONE panel, Pages by default, with SEVEN tabs named by their panel', () => {
     drawn();
 
     expect(screen.getAllByRole('tab').map((tab) => tab.getAttribute('aria-label'))).toStrictEqual([
@@ -102,6 +85,7 @@ describe('DocumentPanel', () => {
       'Forms',
       'Layers',
       'Search',
+      'Accessibility',
     ]);
     expect(screen.getByText('pages content')).toBeDefined();
     // ONE, not six hidden: the other panels' content is absent from the document.

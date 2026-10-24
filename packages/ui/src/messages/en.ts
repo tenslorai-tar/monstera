@@ -2324,9 +2324,9 @@ export const TOAST_COMMENTS_IMPORTED = messageKey('toast.comments-imported');
 export const TOAST_SAVED_BACK = messageKey('toast.saved-back');
 export const THUMBNAILS_LABEL = messageKey('surface.thumbnails.label');
 /**
- * §10.3's document panel: six tabs, each named by its accessible name and tooltip,
- * since the panel has "no separate title row". The option titles are these same keys,
- * so the Settings dialog names a panel the way its tab does.
+ * §10.3's document panel: seven tabs (ADR-0265), each named by its accessible name and
+ * tooltip, since the panel has "no separate title row". The option titles are these same
+ * keys, so the Settings dialog names a panel the way its tab does.
  */
 export const PANEL_PAGES = messageKey('surface.panel.pages');
 export const PANEL_BOOKMARKS = messageKey('surface.panel.bookmarks');
@@ -2334,6 +2334,7 @@ export const PANEL_COMMENTS = messageKey('surface.panel.comments');
 export const PANEL_FORMS = messageKey('surface.panel.forms');
 export const PANEL_LAYERS = messageKey('surface.panel.layers');
 export const PANEL_SEARCH = messageKey('surface.panel.search');
+export const PANEL_ACCESSIBILITY = messageKey('surface.panel.accessibility');
 export const PANEL_TITLES = {
   pages: PANEL_PAGES,
   bookmarks: PANEL_BOOKMARKS,
@@ -2341,10 +2342,10 @@ export const PANEL_TITLES = {
   forms: PANEL_FORMS,
   layers: PANEL_LAYERS,
   search: PANEL_SEARCH,
+  accessibility: PANEL_ACCESSIBILITY,
 } as const;
 export const PANEL_STRIP_LABEL = messageKey('surface.panel.strip');
 export const PANEL_COLLAPSE = messageKey('surface.panel.collapse');
-export const PANEL_TOOL_CLOSE = messageKey('surface.panel.tool-close');
 export const PANEL_REOPEN = messageKey('surface.panel.reopen');
 export const DOCUMENT_PANEL_TITLE = messageKey('setting.appearance-document-panel.title');
 export const DOCUMENT_PANEL_OPEN_TITLE = messageKey('setting.appearance-document-panel-open.title');
@@ -2983,6 +2984,7 @@ export const SHOW_PAGES_TITLE = messageKey('command.show-pages.title');
 export const SHOW_BOOKMARKS_TITLE = messageKey('command.show-bookmarks.title');
 export const SHOW_LAYERS_TITLE = messageKey('command.show-layers.title');
 export const SHOW_SEARCH_TITLE = messageKey('command.show-search.title');
+export const SHOW_ACCESSIBILITY_TITLE = messageKey('command.show-accessibility.title');
 export const SHOW_PROPERTIES_TITLE = messageKey('command.show-properties.title');
 export const CHECK_FOR_UPDATES_TITLE = messageKey('command.check-for-updates.title');
 export const UPDATE_AVAILABLE_TITLE = messageKey('command.update-available.title');
@@ -5401,9 +5403,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PANEL_FORMS]: 'Forms',
   [PANEL_LAYERS]: 'Layers',
   [PANEL_SEARCH]: 'Search',
+  [PANEL_ACCESSIBILITY]: 'Accessibility',
   [PANEL_STRIP_LABEL]: 'Document panels',
   [PANEL_COLLAPSE]: 'Collapse the document panel',
-  [PANEL_TOOL_CLOSE]: 'Close',
   [PANEL_REOPEN]: 'Show the document panel',
   [DOCUMENT_PANEL_TITLE]: 'Document panel',
   [DOCUMENT_PANEL_OPEN_TITLE]: 'Show the document panel',
@@ -6788,6 +6790,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SHOW_BOOKMARKS_TITLE]: 'Bookmarks panel',
   [SHOW_LAYERS_TITLE]: 'Layers panel',
   [SHOW_SEARCH_TITLE]: 'Search panel',
+  [SHOW_ACCESSIBILITY_TITLE]: 'Accessibility panel',
   [SHOW_PROPERTIES_TITLE]: 'Properties panel',
   [CHECK_FOR_UPDATES_TITLE]: 'Check for updates',
   // THE STORE INSTALLS IT, so no word here says Monstera will (ADR-0018). The indicator names what exists.

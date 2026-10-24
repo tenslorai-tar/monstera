@@ -604,8 +604,10 @@
   /* ONE HEIGHT for a field's property controls, a box, a number or a drop-down (cloud run 16, C6): 28 holds the chrome's
      12 px text and its 4 px padding with room for a focus ring, where the three drew 24, 26 and 30 side by side. */
   --control-field: 28px;
-  /* v5 draws those tabs 34 wide at the same 24 tall; `DOCUMENT_PANEL_MIN_WIDTH` is derived from this. */
-  --panel-tab-wide: 34px;
+  /* v5 drew those tabs 34 wide at the same 24 tall, for six. SEVEN since ADR-0265, at the panel's narrowest width
+     (`DOCUMENT_PANEL_MIN_WIDTH`, derived from this), are 29 wide: at 34 the strip needed 286 px of the panel's 256
+     (measured 2026-10-24, `panelOverflow.pw.ts`). Still a 24 px target at the least. */
+  --panel-tab-wide: 29px;
   /* The brand artwork's heights, which `assets/brand/README.md` names beside ADR-0002: *"the start-screen hero is 84 px
      and the title bar 26 px"*. The derivatives are drawn at twice these, for a 2x display. v5 draws the mark in the
      MENU BAR at 18 (ADR-0107), which is where it moved from the title bar; the 26 px title-bar size is retired with it. */

@@ -2,9 +2,7 @@ import { useLingui } from '@lingui/react';
 import { Tabs } from '@base-ui/react/tabs';
 import { useCallback, type ReactElement, type ReactNode } from 'react';
 
-import type { MessageKey } from '@monstera/shared';
-
-import { PANEL_COLLAPSE, PANEL_REOPEN, PANEL_STRIP_LABEL, PANEL_TOOL_CLOSE } from '../messages/en.js';
+import { PANEL_COLLAPSE, PANEL_REOPEN, PANEL_STRIP_LABEL } from '../messages/en.js';
 import { type PanelPresence, usePanelForm } from '../panelPresence.js';
 import { Icon } from '../primitives/Icon.js';
 import { ICONS } from '../primitives/icons.js';
@@ -18,52 +16,42 @@ import { PANEL_IDS, PANELS, type PanelId } from './panels.js';
 
 /**
  * §10.3's document panel: *"one document panel at a time — Pages, Bookmarks, Comments,
- * Forms, Layers, Search — switched by a panel-tab strip of six icon tabs (24 px tabs, 14 px
- * icons) at the panel's top, with the collapse chevron at the strip's end."*
+ * Forms, Layers, Search, Accessibility — switched by a panel-tab strip of seven icon tabs
+ * (24 px tabs, 14 px icons) at the panel's top, with the collapse chevron at the strip's end."*
  *
  * ## WHERE IT LIVES, and why that is not App
  *
  * The Pages panel is the thumbnail strip, and the strip draws through the PDF.js view
  * only `PageCanvas` holds. A strip that opened its own would parse the document twice
  * (see `PageCanvas`' own note on the sidebar). So this host renders inside `PageCanvas`,
- * and the other five panels, whose state lives in `App`, arrive as `panels`.
+ * and the other panels, whose state lives in `App`, arrive as `panels`.
  *
  * ## THE SETTINGS ARE THE ONE OWNER of which panel shows and whether it is open
  *
  * §10.3: *"State is persisted per panel."* `document.find` opens the Search panel through
- * the same setting, so there is no second place that decides. Whether it is open is written
- * only through `panelPresence.ts`, which also decides whether a narrow row draws it in the
- * row, as a sheet over the page's edge, or as its handle (ADR-0146).
+ * the same setting, and Review's *Accessibility check* and *Reading order* the Accessibility
+ * panel (ADR-0265), so there is no second place that decides and no panel takes another's
+ * place. Whether it is open is written only through `panelPresence.ts`, which also decides
+ * whether a narrow row draws it in the row, as a sheet over the page's edge, or as its
+ * handle (ADR-0146).
  *
- * ## One panel is mounted, not six hidden
+ * ## One panel is mounted, not seven hidden
  *
  * Only the chosen panel's content renders. A hidden panel still mounted would keep asking
  * main for outlines and annotation lists nobody can see, and would keep its controls in
  * the tab order behind a panel a reader cannot see.
  */
-/**
- * A tool that holds the panel's body for as long as it is in use (ADR-0189): the accessibility tools. It is not a
- * panel of the strip — no tab, no setting — so a launch never opens with one, and closing it leaves the panel as it was.
- */
-export interface PanelTool {
-  readonly title: MessageKey;
-  readonly content: ReactNode;
-  readonly onClose: () => void;
-}
-
 export interface DocumentPanelProps {
-  /** The tool using the panel, or `undefined` for the panel's own chosen one. */
-  readonly tool: PanelTool | undefined;
   readonly settings: SettingsStore;
   /** Whether the panel is in the row, a sheet or its handle, and the one writer of its open setting. */
   readonly presence: PanelPresence;
   /** The Pages panel: the thumbnail strip, built where the document view is. */
   readonly pages: ReactNode;
-  /** The other five panels, built by `App` where their state lives. */
+  /** The other panels, built by `App` where their state lives — Accessibility among them (ADR-0265). */
   readonly panels: Readonly<Record<Exclude<PanelId, 'pages'>, ReactNode>>;
 }
 
-export function DocumentPanel({ tool, settings, presence, pages, panels }: DocumentPanelProps): ReactElement {
+export function DocumentPanel({ settings, presence, pages, panels }: DocumentPanelProps): ReactElement {
   const { i18n } = useLingui();
   const chosen = useSetting(settings, DOCUMENT_PANEL_SETTING);
   const form = usePanelForm(presence, 'start');
@@ -87,15 +75,7 @@ export function DocumentPanel({ tool, settings, presence, pages, panels }: Docum
         <Tabs.List aria-label={i18n._(PANEL_STRIP_LABEL)} className="m-document-panel__tabs">
           {PANEL_IDS.map((id) => (
             <Tooltip key={id} label={PANELS[id].title}>
-              <Tabs.Tab
-                aria-label={i18n._(PANELS[id].title)}
-                className="m-panel-tab"
-                data-panel-tab={id}
-                // A TAB CHOSEN WHILE A TOOL IS OPEN CLOSES THE TOOL, including the one already chosen, which fires no
-                // change: the tool had the body, and the tab is the way back to the panel.
-                onClick={tool?.onClose}
-                value={id}
-              >
+              <Tabs.Tab aria-label={i18n._(PANELS[id].title)} className="m-panel-tab" data-panel-tab={id} value={id}>
                 <Icon name={PANELS[id].icon} size="dense" />
               </Tabs.Tab>
             </Tooltip>
@@ -112,19 +92,9 @@ export function DocumentPanel({ tool, settings, presence, pages, panels }: Docum
           }}
         />
       </div>
-      {tool === undefined ? (
-        <Tabs.Panel className="m-document-panel__body" data-panel={chosen} value={chosen}>
-          {chosen === 'pages' ? pages : panels[chosen]}
-        </Tabs.Panel>
-      ) : (
-        <div className="m-document-panel__body m-document-panel__tool" data-panel-tool="open">
-          <div className="m-document-panel__tool-head">
-            <h2 className="m-document-panel__tool-title">{i18n._(tool.title)}</h2>
-            <IconButton icon={ICONS.X} label={PANEL_TOOL_CLOSE} size="dense" onClick={tool.onClose} />
-          </div>
-          {tool.content}
-        </div>
-      )}
+      <Tabs.Panel className="m-document-panel__body" data-panel={chosen} value={chosen}>
+        {chosen === 'pages' ? pages : panels[chosen]}
+      </Tabs.Panel>
     </Tabs.Root>
   );
 
