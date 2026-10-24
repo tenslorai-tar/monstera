@@ -98,6 +98,7 @@ describe('a block carries its soft ends and its shape (ADR-0179)', () => {
     right,
     style: 'body',
     setting: settingOf(style),
+    size: style.size,
   });
 
   it('answers soft on the lines that wrapped and not on the last, and a left shape for a ragged paragraph', () => {
@@ -257,7 +258,8 @@ const placed = (
   bottom: number,
   top: number,
   setting = 'Body|11.00|0,0,0',
-): BlockableRun<number> => ({ index, text, left, right, bottom, top, style: index, setting });
+  size = 11,
+): BlockableRun<number> => ({ index, text, left, right, bottom, top, style: index, setting, size });
 
 describe('grouping lines into the blocks a person edits in place (ADR-0096)', () => {
   it('joins a paragraph’s lines into ONE block, however many lines it has', () => {
@@ -298,6 +300,56 @@ describe('grouping lines into the blocks a person edits in place (ADR-0096)', ()
     ]);
 
     expect(blocks.map((block) => block.lines.map(covers))).toStrictEqual([[[1]], [[2]]]);
+  });
+
+  it('SPLITS two columns whose baselines are OFFSET, though their combined line is taller than the gutter', () => {
+    // The shape measured in the owner's document 11 (2026-10-24): 12 pt lines 11.03 pt tall, baselines 3.81 pt apart, a
+    // 13.71 pt gutter. Their union is 14.84 pt tall, so a gap measured against the LINE joined the two columns.
+    const blocks = groupIntoBlocks([
+      placed(1, 'Left column words', 72, 300, 295.0, 306.03, 'Body|12.00|0,0,0', 12),
+      placed(2, 'Right column words', 313.71, 540, 298.81, 309.84, 'Body|12.00|0,0,0', 12),
+    ]);
+
+    expect(blocks.map((block) => block.lines.map(covers))).toStrictEqual([[[1]], [[2]]]);
+  });
+
+  it('SPLITS a large figure from the smaller words beside it, though the figure makes the line taller than the gap', () => {
+    // The owner's document 11, page 1: a 40 pt figure 14.29 pt from an 11.5 pt list. The figure alone makes the line
+    // over 30 pt tall, so a gap measured against the line joined the figure to the list.
+    const blocks = groupIntoBlocks([
+      placed(1, '34', 72, 130, 280, 310, 'Figure|40.00|0,0,0', 40),
+      placed(2, 'A list of names', 144.29, 400, 298, 306.5, 'Body|11.50|0,0,0', 11.5),
+    ]);
+
+    expect(blocks.map((block) => block.lines.map(covers))).toStrictEqual([[[1]], [[2]]]);
+  });
+
+  it('CONTROL: what is under an em of the smaller type stays one line — a raised mark, a wide justified space, a big word', () => {
+    // A rule that split on an offset or on a change of size passes the cases above and breaks these. A reference mark
+    // raised 4 pt in 7 pt type beside its word; a space stretched to 0.94 em, the widest the corpus joins; and a 40 pt
+    // word a word space from smaller words.
+    const marked = groupIntoBlocks([
+      placed(1, 'A sentence with a mark', 72, 300, 295.0, 306.03),
+      placed(2, '12', 300.5, 307, 299.0, 306.5, 'Body|7.00|0,0,0', 7),
+    ]);
+    const justified = groupIntoBlocks([
+      placed(1, 'Stretched', 72, 200, 295, 306),
+      placed(2, 'words', 200 + 0.94 * 11, 300, 295, 306),
+    ]);
+    const large = groupIntoBlocks([
+      placed(1, 'BIG', 72, 160, 280, 310, 'Figure|40.00|0,0,0', 40),
+      placed(2, 'small words', 163, 400, 298, 306.5),
+    ]);
+
+    expect(marked.map((block) => block.lines.map(covers))).toStrictEqual([[[1, 2]]]);
+    expect(justified.map((block) => block.lines.map(covers))).toStrictEqual([[[1, 2]]]);
+    expect(large.map((block) => block.lines[0]?.runs.length)).toStrictEqual([2]);
+  });
+
+  it('REFUSES a run with no size, which would otherwise join every gap', () => {
+    // A script building runs by hand with `{ ...run, setting }` leaves `size` out; compared, it joins the columns above.
+    const sizeless = { ...placed(2, 'Right column words', 320, 540, 699.9, 711.1), size: undefined as unknown as number };
+    expect(() => groupIntoBlocks([placed(1, 'Left column words', 72, 280, 700.0, 711.0), sizeless])).toThrow(TypeError);
   });
 
   it('CONTROL: runs a word-space apart stay ONE line of one block', () => {
@@ -368,6 +420,7 @@ function headingOverList(setting: (style: Set & { font: string }) => string): Bl
     top,
     style: { size: style.size, colour: style.colour, bold: style.bold },
     setting: setting(style),
+    size: style.size,
   });
   const runs = [run(0, 'What we offer', 2, 160, 685, 700, HEADING)];
   // THE GAP THE OWNER MEASURED: 7.99 pt from the heading to a line 8.47 pt tall — under the line's height.
@@ -447,6 +500,7 @@ describe('withRises', () => {
     top: baseline + 8,
     style: { baseline },
     setting: 'Body|11.00|0,0,0',
+    size: 11,
   });
 
   it('gives each run its offset from its line’s first run, and the block a style with no baseline', () => {

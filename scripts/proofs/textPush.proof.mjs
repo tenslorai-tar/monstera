@@ -111,10 +111,7 @@ async function run(pdfium, kernel) {
     try {
       const read = await pdfium.textRuns(session, 0);
       const blocks = kernel.groupIntoBlocks(
-        read.runs.filter((/** @type {any} */ run) => kernel.isEditedInPlace(run.style)).map((/** @type {any} */ run) => ({
-          ...run,
-          setting: kernel.settingOf(run.style),
-        })),
+        read.runs.filter((/** @type {any} */ run) => kernel.isEditedInPlace(run.style)).map((/** @type {any} */ run) => kernel.blockableOf(run)),
       );
       const pushes = read.box === null ? [] : kernel.pushesOf(blocks.map((/** @type {any} */ block) => block.box), read.box);
       return { blocks, pushes };
@@ -301,10 +298,10 @@ if (!existsSync(library) || shim === null) {
   pdfium.openPdfium(library);
   const { blockEditOf } = await import('../../packages/contract/dist/commands.js');
   const { localPdfiumExecution } = await import('../../packages/kernel/dist/pdfiumSpecs.js');
-  const { groupIntoBlocks, isEditedInPlace, pushesOf, settingOf } = await import('../../packages/kernel/dist/textLines.js');
+  const { groupIntoBlocks, isEditedInPlace, pushesOf, blockableOf } = await import('../../packages/kernel/dist/textLines.js');
   const { paragraphsOfLines } = await import('../../packages/shared/dist/index.js');
   const mupdf = await import('../../packages/kernel/dist/mupdfRaw.js');
-  await run(pdfium, { blockEditOf, localPdfiumExecution, groupIntoBlocks, isEditedInPlace, pushesOf, settingOf, paragraphsOfLines, mupdf });
+  await run(pdfium, { blockEditOf, localPdfiumExecution, groupIntoBlocks, isEditedInPlace, pushesOf, blockableOf, paragraphsOfLines, mupdf });
   process.stdout.write(
     failures.length > 0
       ? `\n${String(failures.length)} text push case(s) FAILED:\n\n  - ${failures.join('\n\n  - ')}\n`

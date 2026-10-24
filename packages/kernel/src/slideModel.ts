@@ -9,7 +9,7 @@ import type {
 } from './presentationContent.js';
 import type { PageSize } from './pageGeometry.js';
 import { logicalWordOrder, rightToLeftCount } from './readingOrder.js';
-import { groupIntoBlocks, settingOf } from './textLines.js';
+import { blockableOf, groupIntoBlocks } from './textLines.js';
 
 /**
  * A page's content as slide objects
@@ -446,13 +446,14 @@ function textBoxes(fit: Fit, runs: readonly ContentRun[]): readonly SlideTextBox
 
 function framedBoxes(fit: Fit, frame: TextFrame, shown: readonly ContentRun[]): readonly SlideTextBox[] {
   const blocks = groupIntoBlocks(
-    shown.map((run) => ({
-      index: run.index,
-      text: run.text,
-      ...localBox(run, frame),
-      style: run.style,
-      setting: settingOf({ font: run.style.font, size: run.style.size, colour: run.style.colour }),
-    })),
+    shown.map((run) =>
+      blockableOf({
+        index: run.index,
+        text: run.text,
+        ...localBox(run, frame),
+        style: run.style,
+      }),
+    ),
   );
   const lefts = new Map(shown.map((run) => [run.index, localBox(run, frame).left]));
   // THE BOX TURNS WITH THE PAGE'S QUARTER TURN (clockwise) AND AGAINST THE TEXT'S OWN ANGLE (counter-clockwise in page

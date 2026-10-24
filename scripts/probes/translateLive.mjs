@@ -43,7 +43,7 @@ import { listModels } from '../../packages/kernel/dist/aiModels.js';
 import { streamChat } from '../../packages/kernel/dist/aiChat.js';
 import { openPdfium, pageText, pdfiumWriter, textRuns } from '../../packages/kernel/dist/pdfiumFfi.js';
 import { localPdfiumExecution } from '../../packages/kernel/dist/pdfiumSpecs.js';
-import { groupIntoBlocks, settingOf } from '../../packages/kernel/dist/textLines.js';
+import { blockableOf, groupIntoBlocks } from '../../packages/kernel/dist/textLines.js';
 import { readTranslation, translationInstruction, translationRequest } from '../../packages/kernel/dist/translation.js';
 import { lineText, paragraphsOfLines } from '../../packages/shared/dist/index.js';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
@@ -110,8 +110,8 @@ const { runs } = await textRuns(session, 0);
 const before = await pageText(session, 0);
 await pdfiumWriter.close(session);
 if (!before.includes('meeting') || !before.includes('Tuesday')) fail('PREMISE — the drawn page does not read back in English.');
-// EACH RUN'S SETTING by the one `settingOf`, as `composition.ts` keys it for the grouping.
-const blocks = groupIntoBlocks(runs.map((run) => ({ ...run, setting: settingOf(run.style) })));
+// EACH RUN'S SETTING AND SIZE by the one `blockableOf`, as `composition.ts` keys it for the grouping.
+const blocks = groupIntoBlocks(runs.map((run) => blockableOf(run)));
 // THE BLOCK'S PARAGRAPHS by the one join, as `translatePageHandler` sends them (ADR-0179).
 const texts = blocks.map((block) => paragraphsOfLines(block.lines.map((line) => ({ text: lineText(line.runs), soft: line.soft }))));
 

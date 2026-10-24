@@ -65,7 +65,7 @@ import { PDFDocument, PDFName, StandardFonts } from '@cantoo/pdf-lib';
 import { EDIT_OBJECT, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
-import { compare, charactersOf, inkOf, render } from '../lib/pageDisturbance.mjs';
+import { compare, charactersOf, differencePicture, inkOf, render } from '../lib/pageDisturbance.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { exitUnverifiable } from '../lib/unverifiable.mjs';
 import { fontsDirectory } from '../provision/fonts.mjs';
@@ -85,6 +85,12 @@ const CORPUS = option('--corpus');
 const PAGES = Number(option('--pages') ?? Number.POSITIVE_INFINITY);
 /** `--documents 3,6`: only these corpus numbers. */
 const ONLY = option('--documents')?.split(',').map(Number) ?? null;
+/** `--page-list 4,9`: only these pages (1-based) of each document walked, for a rerun of the pages a run named. */
+const PAGE_LIST = option('--page-list')?.split(',').map(Number) ?? null;
+/** `--pictures <folder>`: each disturbed edit drawn before, after and as the difference, the allowed zones shaded. */
+const PICTURES = option('--pictures');
+/** What a child's pictures are named by: its document's number and page, never a file's name. */
+const LABEL = option('--label') ?? 'fixture';
 const CHILD = option('--child');
 const CHROMIUM = join(ROOT, 'packages', 'testing', 'fixtures', 'text-edit', 'chromium-type3.pdf');
 /** The bundled face a `font` edit sets the words in. */
@@ -109,7 +115,7 @@ const CASES = [
 
 /**
  * @typedef {import('../lib/pageDisturbance.mjs').Box} Box
- * @typedef {{ block: string, edit: string, route: string, outcome: 'made' | 'refused', disturbed: number, lost: number, inside: number, why: string }} Try
+ * @typedef {{ block: string, edit: string, route: string, outcome: 'made' | 'refused', disturbed: number, lost: number, inside: number, why: string, page?: number }} Try
  */
 
 /** A refusal named by its error and step, its numbers masked, so equal causes count together. @param {unknown} error */
@@ -158,7 +164,7 @@ async function walkPage(pdfium, kernel, bytes, index, quotes) {
     await pdfium.pdfiumWriter.close(session);
   }
   const grouped = kernel.groupIntoBlocks(
-    read.runs.filter((/** @type {any} */ run) => kernel.isEditedInPlace(run.style)).map((/** @type {any} */ run) => ({ ...run, setting: kernel.settingOf(run.style) })),
+    read.runs.filter((/** @type {any} */ run) => kernel.isEditedInPlace(run.style)).map((/** @type {any} */ run) => kernel.blockableOf(run)),
   );
   // WHAT EACH BLOCK PUSHES, as `main` adds it to the read (`pushesOfPage`, ADR-0249): a replacement sends it.
   const pushes = kernel.pushesOfPage(grouped.map((/** @type {any} */ block) => block.box), read);
@@ -247,7 +253,14 @@ async function walkPage(pdfium, kernel, bytes, index, quotes) {
     // A CHARACTER OUTSIDE THE BLOCKS THAT IS GONE is disturbed text wherever it went, though its pixels might be allowed.
     // Not a space: it draws nothing, and an edit sets a line's spaces again with its words.
     const lost = beforeCharacters.filter((each) => each.character.trim() !== '' && !areas.some((area) => area.holds(each)) && !now.has(keyOf(each))).length;
-    const { outside, inside, farthest } = compare(before, render(kernel, after, index), [...areas.map((area) => area.ink), ...grown]);
+    const drawnAfter = render(kernel, after, index);
+    const zonesAllowed = [...areas.map((area) => area.ink), ...grown];
+    const { outside, inside, farthest } = compare(before, drawnAfter, zonesAllowed);
+    if (PICTURES !== null && (outside > 0 || lost > 0)) {
+      // NAMED BY NUMBERS: the child's label (document and page), the block's number and the edit.
+      const blockNumber = /^block (\d+)/u.exec(name)?.[1] ?? 'page';
+      differencePicture(join(PICTURES, `${LABEL}-block${blockNumber}-${edit.replace(/\s/gu, '-')}.png`), before, drawnAfter, zonesAllowed);
+    }
     tries.push({
       block: name,
       edit,
@@ -277,9 +290,26 @@ async function walkPage(pdfium, kernel, bytes, index, quotes) {
       size: whole({ size: Math.min(400, Math.round(size * 1.25 * 10) / 10) }),
       colour: whole({ colour: { r: 200, g: 30, b: 30 } }),
     };
+    // THE TEXT BELOW, AS THE APPLICATION SENDS IT (`commitTextBlock`, ADR-0249): the blocks below in its column, where the
+    // read measured room, with their words as read, pushed by what this block grows. Without them the proof wrote what no
+    // person's edit writes — a grown block over the text below — and counted it as disturbed (2026-10-24).
+    /** @type {{ index: number, under: any }[]} */
+    const below =
+      block.push.room <= 0
+        ? []
+        : block.push.below.flatMap((/** @type {number} */ index) => {
+            const under = blocks[index];
+            return under === undefined ? [] : [{ index, under }];
+          });
+    const pushed = below.map(({ under }) => ({
+      lines: under.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index)),
+      soft: under.lines.map((/** @type {any} */ line) => line.soft),
+      text: kernel.wordsOf(under),
+      push: { by: 0, room: block.push.room },
+    }));
     for (const edit of EDITS) {
       const rest = asked[edit];
-      if (rest !== null) await attempt(name, edit, [{ lines, soft, ...rest }], [at]);
+      if (rest !== null) await attempt(name, edit, [{ lines, soft, ...rest }, ...pushed], [at, ...below.map(({ index }) => index)]);
     }
   }
 
@@ -405,7 +435,7 @@ async function editFirstBlock(pdfium, kernel, bytes, text, soft) {
   } finally {
     await pdfium.pdfiumWriter.close(session);
   }
-  const blocks = kernel.groupIntoBlocks(read.runs.filter((/** @type {any} */ run) => kernel.isEditedInPlace(run.style)).map((/** @type {any} */ run) => ({ ...run, setting: kernel.settingOf(run.style) })));
+  const blocks = kernel.groupIntoBlocks(read.runs.filter((/** @type {any} */ run) => kernel.isEditedInPlace(run.style)).map((/** @type {any} */ run) => kernel.blockableOf(run)));
   const block = blocks[0];
   const lines = block.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index));
   const sent = soft ?? block.lines.map((/** @type {any} */ line) => line.soft);
@@ -453,7 +483,7 @@ async function packedOf(pdfium, kernel, bytes, index) {
     const plain = await pdfium.textRuns(session, index);
     if (plain.unaddressable === 0) return { characters: 0, blocks: 0, unpackable: false };
     const count = (/** @type {any} */ read) =>
-      kernel.groupIntoBlocks(read.runs.filter((/** @type {any} */ run) => kernel.isEditedInPlace(run.style)).map((/** @type {any} */ run) => ({ ...run, setting: kernel.settingOf(run.style) }))).length;
+      kernel.groupIntoBlocks(read.runs.filter((/** @type {any} */ run) => kernel.isEditedInPlace(run.style)).map((/** @type {any} */ run) => kernel.blockableOf(run))).length;
     const before = count(plain);
     await pdfium.unpackedIfAsked(session, index, true);
     const blocks = Math.max(0, count(await pdfium.textRuns(session, index)) - before);
@@ -579,7 +609,7 @@ function report(document, tries) {
   // `--detail`: every try that was not clean, with its numbers (never a corpus block's words: those are named by number).
   if (argv.includes('--detail')) {
     for (const each of tries.filter((one) => one.outcome !== 'made' || one.disturbed > 0 || one.lost > 0)) {
-      process.stdout.write(`        ${each.block} ${each.edit}: ${each.outcome}, ${String(each.disturbed)} pixel(s); ${each.why}\n`);
+      process.stdout.write(`        ${each.page === undefined ? '' : `page ${String(each.page)} `}${each.block} ${each.edit}: ${each.outcome}, ${String(each.disturbed)} pixel(s); ${each.why}\n`);
     }
   }
 }
@@ -740,12 +770,15 @@ function corpus() {
     const packed = { characters: 0, blocks: 0, pages: 0, unpackable: 0 };
     let blocksOffered = 0;
     for (let page = 0; page < Math.min(pages, PAGES); page += 1) {
-      const answer = /** @type {{ tries: Try[], packed: { characters: number, blocks: number, unpackable: boolean } } | null} */ (childRun([path, '--page', String(page)]));
+      if (PAGE_LIST !== null && !PAGE_LIST.includes(page + 1)) continue;
+      const answer = /** @type {{ tries: Try[], packed: { characters: number, blocks: number, unpackable: boolean } } | null} */ (
+        childRun([path, '--page', String(page), '--label', `doc${String(at + 1)}-p${String(page + 1)}`, ...(PICTURES === null ? [] : ['--pictures', PICTURES])])
+      );
       if (answer === null || !Array.isArray(answer.tries)) {
         failed += 1;
         continue;
       }
-      tries.push(...answer.tries);
+      tries.push(...answer.tries.map((each) => ({ ...each, page: page + 1 })));
       // THE BLOCKS OFFERED ON THE PAGE: each named once per edit, the page's own replacements apart.
       blocksOffered += new Set(answer.tries.filter((each) => !each.block.startsWith('the page')).map((each) => each.block)).size;
       packed.characters += answer.packed.characters;
@@ -824,7 +857,7 @@ if (!existsSync(library) || shim === null || !existsSync(fontsDirectory(ROOT))) 
   const pdfium = await import('../../packages/kernel/dist/pdfiumFfi.js');
   pdfium.openPdfium(library);
   const { blockEditOf, readsUnpacked } = await import('../../packages/contract/dist/commands.js');
-  const { groupIntoBlocks, isEditedInPlace, settingOf, pushesOfPage } = await import('../../packages/kernel/dist/textLines.js');
+  const { groupIntoBlocks, isEditedInPlace, blockableOf, pushesOfPage } = await import('../../packages/kernel/dist/textLines.js');
   const { paragraphsOfLines, lineText, compileQuery } = await import('../../packages/shared/dist/index.js');
   const { blocksReplaced, wordsOf } = await import('../../packages/contract/dist/blockReplace.js');
   const mupdf = await import('../../packages/kernel/dist/mupdfRaw.js');
@@ -848,7 +881,7 @@ if (!existsSync(library) || shim === null || !existsSync(fontsDirectory(ROOT))) 
     groupIntoBlocks,
     pushesOfPage,
     isEditedInPlace,
-    settingOf,
+    blockableOf,
     paragraphsOfLines,
     lineText,
     mupdf,

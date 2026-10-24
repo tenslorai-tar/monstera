@@ -68,7 +68,7 @@ const specs = await import('../../packages/kernel/dist/pdfiumSpecs.js');
 const { bindEditFaces } = await import('../../packages/kernel/dist/editFaces.js');
 const { faceSourceOf, fontFoldersOf, readCatalogue } = await import('../../packages/kernel/dist/fontCatalogue.js');
 const { candidatesFor } = await import('../../packages/kernel/dist/fontResolver.js');
-const { groupIntoBlocks, settingOf } = await import('../../packages/kernel/dist/textLines.js');
+const { blockableOf, groupIntoBlocks } = await import('../../packages/kernel/dist/textLines.js');
 const { installedFontsFolder } = await import('../../apps/desktop/dist/installedFonts.js');
 // MuPDF IN THIS PROCESS, where the shim is built, for the round trip the live case's document makes between its edits.
 const { bindNativeEngine } = await import('../lib/nativeEngine.mjs');
@@ -88,7 +88,7 @@ async function blockOf(image) {
   const session = await pdfiumWriter.open(image);
   try {
     const { runs } = await textRuns(session, 0);
-    return groupIntoBlocks(runs.map((/** @type {any} */ run) => ({ ...run, setting: settingOf(run.style) })))[0];
+    return groupIntoBlocks(runs.map((/** @type {any} */ run) => blockableOf(run)))[0];
   } finally {
     await pdfiumWriter.close(session);
   }

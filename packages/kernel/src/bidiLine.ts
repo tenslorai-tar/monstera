@@ -105,10 +105,13 @@ export function logicalLine<T extends DrawnRun>(runs: readonly T[]): LogicalLine
  * @param runs the page's runs, in reading order
  * @param editable whether a run is one the grouping is given (`isEditedInPlace`)
  */
-export function readInLineOrder<T extends LineableRun & DrawnRun>(runs: readonly T[], editable: (run: T) => boolean): T[] {
+export function readInLineOrder<T extends LineableRun & DrawnRun & { readonly style: { readonly size: number } }>(
+  runs: readonly T[],
+  editable: (run: T) => boolean,
+): T[] {
   const out = [...runs];
   const slots = new Map<T, number>(runs.map((run, at) => [run, at]));
-  for (const piece of piecesOf(runs.filter(editable))) {
+  for (const piece of piecesOf(runs.filter(editable), (run) => run.style.size)) {
     if (piece.runs.length === 0) continue;
     const { runs: ordered, texts } = logicalLine(piece.runs);
     // A LINE READ AS IT CAME is left as it came: the same runs, the same words.

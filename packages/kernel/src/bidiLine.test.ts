@@ -120,6 +120,7 @@ describe('readInLineOrder', () => {
     left,
     right,
     ...box,
+    style: { size: 11 },
   });
 
   it('puts a line the page gives left to right into the order typed, each run saying its words, in the slots the line filled', () => {
@@ -157,6 +158,7 @@ describe('the block grouping over a line given in the order typed', () => {
       top: 132.3,
       style,
       setting: 'x',
+      size: style.size,
     });
     const blocks = groupIntoBlocks([at(2, 158.5, 241, 'A'), at(0, 72.3, 111.5, 'Hello'), at(1, 112, 158.3, ' world')]);
     expect(blocks).toHaveLength(1);

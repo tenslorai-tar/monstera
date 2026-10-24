@@ -8,6 +8,9 @@
  * has checked the build is fresh.
  */
 
+import { writeFileSync } from 'node:fs';
+import { crc32, deflateSync } from 'node:zlib';
+
 /** Device pixels per point the pages are drawn at: 144 dpi, where a point is two pixels. */
 export const SCALE = 2;
 /** How far outside an object's box its own edges may draw: a point and a half, for antialiasing and a stroke's width. */
@@ -116,6 +119,52 @@ export function inkOf(kernel, bytes, index, box) {
     ink.top = Math.max(ink.top, each.box.top);
   }
   return ink;
+}
+
+/**
+ * A picture of a disturbance, written as a PNG to `path`: the page before, the page after, and the difference — every
+ * changed pixel red outside the allowed zones and green inside them, the zones shaded blue, the rest of the page grey.
+ * For a person to look at what a count says. The PNG is written here, by `zlib`, so no image library is a dependency.
+ * @param {string} path @param {Render} before @param {Render} after @param {Box[]} allowed
+ */
+export function differencePicture(path, before, after, allowed) {
+  const { width: w, height: h } = before;
+  const zones = allowed.map((box) => {
+    const [x0, y0] = before.toDevice(box.left - EDGE, box.top + EDGE);
+    const [x1, y1] = before.toDevice(box.right + EDGE, box.bottom - EDGE);
+    return { x0: Math.min(x0, x1), x1: Math.max(x0, x1), y0: Math.min(y0, y1), y1: Math.max(y0, y1) };
+  });
+  const width = w * 3;
+  const raw = Buffer.alloc((width * 3 + 1) * h);
+  for (let y = 0; y < h; y += 1) {
+    const row = y * (width * 3 + 1);
+    for (let x = 0; x < w; x += 1) {
+      const i = (y * w + x) * 3;
+      const inside = zones.some((zone) => x >= zone.x0 && x <= zone.x1 && y >= zone.y0 && y <= zone.y1);
+      const differs = before.rgb[i] !== after.rgb[i] || before.rgb[i + 1] !== after.rgb[i + 1] || before.rgb[i + 2] !== after.rgb[i + 2];
+      const grey = Math.round(((before.rgb[i] ?? 0) + (before.rgb[i + 1] ?? 0) + (before.rgb[i + 2] ?? 0)) / 6 + 128);
+      const marked = differs ? (inside ? [0, 160, 0] : [255, 0, 0]) : inside ? [200, 220, 255] : [grey, grey, grey];
+      for (let c = 0; c < 3; c += 1) {
+        raw[row + 1 + x * 3 + c] = before.rgb[i + c] ?? 0;
+        raw[row + 1 + (w + x) * 3 + c] = after.rgb[i + c] ?? 0;
+        raw[row + 1 + (2 * w + x) * 3 + c] = marked[c] ?? 0;
+      }
+    }
+  }
+  const chunk = (/** @type {string} */ type, /** @type {Buffer} */ body) => {
+    const head = Buffer.alloc(8);
+    head.writeUInt32BE(body.length, 0);
+    head.write(type, 4, 'latin1');
+    const tail = Buffer.alloc(4);
+    tail.writeUInt32BE(crc32(Buffer.concat([head.subarray(4), body])) >>> 0, 0);
+    return Buffer.concat([head, body, tail]);
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(h, 4);
+  header[8] = 8;
+  header[9] = 2;
+  writeFileSync(path, Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', header), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]));
 }
 
 /**

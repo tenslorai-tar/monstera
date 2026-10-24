@@ -361,6 +361,7 @@ export {
   type EditableLine,
   type GroupableRun,
   type RisenBlock,
+  blockableOf,
   groupIntoBlocks,
   groupIntoLines,
   isEditedInPlace,

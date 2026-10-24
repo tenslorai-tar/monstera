@@ -138,7 +138,7 @@ const {
 const { joinedContent, showOperators, textObjectCount } = await import('../../packages/kernel/dist/textOperators.js');
 // THE ONE HARFBUZZ READER, to read a rebuilt run font back (ADR-0175).
 const { ShapingFace } = await import('../../packages/kernel/dist/textShaping.js');
-const { groupIntoBlocks, risesOf, settingOf } = await import('../../packages/kernel/dist/textLines.js');
+const { blockableOf, groupIntoBlocks, risesOf } = await import('../../packages/kernel/dist/textLines.js');
 const specs = await import('../../packages/kernel/dist/pdfiumSpecs.js');
 // OVER BYTES THAT OPEN WITH NO PASSWORD, as every fixture here but the encrypted one does (`withNoPassword`).
 const localPdfiumExecution = withNoPassword(specs.localPdfiumExecution);
@@ -616,7 +616,7 @@ async function fontChangeCases() {
     let block;
     try {
       const runs = (await textRuns(session, 0)).runs;
-      const read = groupIntoBlocks(runs.map((run) => ({ ...run, setting: settingOf(run.style) })))[0];
+      const read = groupIntoBlocks(runs.map((run) => blockableOf(run)))[0];
       const lines = read?.lines ?? [];
       // THE BREAKS AS THE KERNEL READS THEM, which the editor sends back: two sentences, one to a line, each too long
       // for the next one's first word to have fitted, which `softEnds` read as one paragraph until the owner's A4.
@@ -721,7 +721,7 @@ async function keptMeasureCases() {
     const session = await pdfiumWriter.open(bytes);
     try {
       const runs = (await textRuns(session, 0)).runs;
-      return groupIntoBlocks(runs.map((run) => ({ ...run, setting: settingOf(run.style) }))).find((block) =>
+      return groupIntoBlocks(runs.map((run) => blockableOf(run))).find((block) =>
         lineText(block.lines[0]?.runs ?? []).startsWith('Lorem'),
       );
     } finally {
@@ -810,7 +810,7 @@ async function restyledRowCases() {
     /** @type {{ lines: number[][], soft: boolean[] }} */
     let block;
     try {
-      const lines = groupIntoBlocks((await textRuns(session, 0)).runs.map((run) => ({ ...run, setting: settingOf(run.style) })))[0]?.lines ?? [];
+      const lines = groupIntoBlocks((await textRuns(session, 0)).runs.map((run) => blockableOf(run)))[0]?.lines ?? [];
       block = { lines: lines.map((line) => line.runs.map((run) => run.index)), soft: lines.map((line) => line.soft) };
     } finally {
       await pdfiumWriter.close(session);
@@ -847,7 +847,7 @@ async function restyledRowCases() {
             ? []
             : runs.filter((run) => Math.abs(run.style.baseline - typed.style.baseline) < 0.5).sort((a, b) => a.left - b.left);
         const gaps = row.slice(1).map((run, at) => run.left - (row[at]?.right ?? run.left));
-        const blocks = groupIntoBlocks(runs.map((run) => ({ ...run, setting: settingOf(run.style) })));
+        const blocks = groupIntoBlocks(runs.map((run) => blockableOf(run)));
         return {
           blocks: blocks.length,
           runs: row.length,
@@ -973,7 +973,7 @@ async function keptSpacingCases() {
     const session = await pdfiumWriter.open(bytes);
     let lines;
     try {
-      lines = groupIntoBlocks((await textRuns(session, 0)).runs.map((run) => ({ ...run, setting: settingOf(run.style) })))[0]?.lines ?? [];
+      lines = groupIntoBlocks((await textRuns(session, 0)).runs.map((run) => blockableOf(run)))[0]?.lines ?? [];
     } finally {
       await pdfiumWriter.close(session);
     }
@@ -1031,7 +1031,7 @@ async function unchangedBlockCases() {
   const session = await pdfiumWriter.open(pdf);
   let lines;
   try {
-    lines = groupIntoBlocks((await textRuns(session, 0)).runs.map((run) => ({ ...run, setting: settingOf(run.style) })))[0]?.lines ?? [];
+    lines = groupIntoBlocks((await textRuns(session, 0)).runs.map((run) => blockableOf(run)))[0]?.lines ?? [];
   } finally {
     await pdfiumWriter.close(session);
   }
@@ -1089,7 +1089,7 @@ async function doubleSpaceRestyleCases() {
     const paragraph = async (bytes) => {
       const session = await pdfiumWriter.open(bytes);
       try {
-        const lines = groupIntoBlocks((await textRuns(session, 0)).runs.map((run) => ({ ...run, setting: settingOf(run.style) })))[0]?.lines ?? [];
+        const lines = groupIntoBlocks((await textRuns(session, 0)).runs.map((run) => blockableOf(run)))[0]?.lines ?? [];
         return {
           lines: lines.map((line) => line.runs.map((run) => run.index)),
           soft: lines.map((line) => line.soft),
@@ -1330,7 +1330,7 @@ async function gapSpacedCases() {
       const session = await pdfiumWriter.open(bytes);
       try {
         const runs = (await textRuns(session, 0)).runs;
-        const blocks = groupIntoBlocks(runs.map((run) => ({ ...run, setting: settingOf(run.style) })));
+        const blocks = groupIntoBlocks(runs.map((run) => blockableOf(run)));
         const lines = blocks.find((block) => block.lines.some((line) => lineText(line.runs).includes(holding)))?.lines ?? [];
         return {
           lines: lines.map((line) => line.runs.map((run) => run.index)),
@@ -3077,8 +3077,8 @@ async function blocksOf(bytes) {
   const session = await pdfiumWriter.open(bytes);
   try {
     const { runs, unaddressable } = await textRuns(session, 0);
-    // EACH RUN'S SETTING by the one `settingOf`, as `composition.ts` keys it for the grouping.
-    return { runs, unaddressable, blocks: groupIntoBlocks(runs.map((run) => ({ ...run, setting: settingOf(run.style) }))) };
+    // EACH RUN'S SETTING AND SIZE by the one `blockableOf`, as `composition.ts` keys it for the grouping.
+    return { runs, unaddressable, blocks: groupIntoBlocks(runs.map((run) => blockableOf(run))) };
   } finally {
     await pdfiumWriter.close(session);
   }
@@ -3359,7 +3359,7 @@ async function settingCases() {
 
   // THE CONTROL FIRST: grouped by the gap alone — every run set alike — the heading and the list are one block,
   // so the page really does hold the shape that fooled the old rule.
-  const alike = groupIntoBlocks(runs.map((run) => ({ ...run, setting: 'one' })));
+  const alike = groupIntoBlocks(runs.map((run) => ({ ...blockableOf(run), setting: 'one' })));
   const headingBlock = blocks.find((block) => block.lines.some((line) => line.runs.some((run) => run.text.includes('Typography'))));
   const listBlock = blocks.find((block) => block.lines.some((line) => line.runs.some((run) => run.text.includes('follow'))));
   record(

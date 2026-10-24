@@ -128,10 +128,10 @@ import {
   DuplicateRemoteSession,
   classifyContainment,
   createRemoteSessions,
+  blockableOf,
   engineChannels,
   groupIntoBlocks,
   isEditedInPlace,
-  settingOf,
   pushesOfPage,
   withRises,
   hostedPdfLibExecution,
@@ -1712,8 +1712,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       const grouped = withRises(
           groupIntoBlocks(
             upright.map((run) => ({
-              ...run,
-              setting: settingOf(run.style),
+              ...blockableOf(run),
               style: {
                 size: run.style.size,
                 colour: run.style.colour,

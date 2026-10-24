@@ -219,13 +219,13 @@ export interface BlockBox {
 }
 
 /** A run as the block grouping needs it: the line grouping's fields and a horizontal extent. */
-export interface BlockableRun<S> extends GroupableRun {
-  readonly left: number;
-  readonly right: number;
+export interface BlockableRun<S> extends LineableRun {
   /** How the run is set. Carried through to the block, never read here. */
   readonly style: S;
   /** The run's font, size and fill as one comparable key — {@link settingOf}'s, and read here only for equality. */
   readonly setting: string;
+  /** The size the run is drawn at, in points: what a gap beside it is measured in ({@link piecesOf}). */
+  readonly size: number;
   /**
    * The width of the measure an edit set the run's lines to, from its block's left edge, where one is recorded
    * (ADR-0097's correction of 2026-10-17): its block is at least that wide.
@@ -247,6 +247,16 @@ export function settingOf(style: {
 }): string {
   const { r, g, b } = style.colour;
   return `${style.font}|${style.size.toFixed(2)}|${String(r)},${String(g)},${String(b)}`;
+}
+
+/**
+ * A run with what the block grouping reads of how it is set — its {@link settingOf} key and the size it is drawn at — taken
+ * from its style in one place, so no caller derives the two apart.
+ */
+export function blockableOf<R extends { readonly style: Parameters<typeof settingOf>[0] }>(
+  run: R,
+): R & { readonly setting: string; readonly size: number } {
+  return { ...run, setting: settingOf(run.style), size: run.style.size };
 }
 
 /**
@@ -289,18 +299,20 @@ interface Piece<S> {
 }
 
 /**
- * The pieces of a page's runs: each line split where the gap between the piece so far and the next run is wider than the
- * line is tall (step 2 of {@link groupIntoBlocks}), in the order the runs came. The ONE place a piece is decided, which
+ * The pieces of a page's runs: each line split where the gap between the piece so far and the next run is wider than an
+ * em of the smaller of the two neighbours' type (step 2 of {@link groupIntoBlocks}), in the order the runs came. The ONE place a piece is decided, which
  * the block grouping and the line reading (`readInLineOrder`, in `bidiLine.ts`, which takes the bidirectional algorithm
  * this module must not load into `main`) both take (B3a): two readings of which runs are one line would put a run's words
  * in one and its place in the other.
+ *
+ * @param sizeOf the size a run is drawn at, in points
  */
 export function piecesOf<T extends LineableRun>(
   runs: readonly T[],
+  sizeOf: (run: T) => number,
 ): { runs: T[]; order: number; left: number; right: number; bottom: number; top: number }[] {
   const pieces: { runs: T[]; order: number; left: number; right: number; bottom: number; top: number }[] = [];
   for (const line of overlapLines(runs)) {
-    const height = line.top - line.bottom;
     let piece: (typeof pieces)[number] | undefined;
     // SWEPT LEFT TO RIGHT, whatever order the runs came in: a gap is between two neighbours, and a line read in the order
     // it was typed visits a right-to-left phrase before the words beside it, which a sweep in that order measures from
@@ -308,10 +320,25 @@ export function piecesOf<T extends LineableRun>(
     const given = new Map(line.runs.map((run, at) => [run, at] as const));
     const swept = [...line.runs].sort((a, b) => a.left - b.left || (given.get(a) ?? 0) - (given.get(b) ?? 0));
     const first = pieces.length;
+    // THE SIZE OF THE RUN AT THE PIECE'S RIGHT, the one the next gap is beside.
+    let edge = 0;
     for (const run of swept) {
+      // A SIZE THAT IS NOT A NUMBER IS REFUSED, never compared: every comparison with it is false, so a gap would never
+      // be wider than it and every line would be one piece, columns and all. A typed caller cannot leave it out; a script
+      // that builds the runs by hand can, and the grouping it is proving would then pass while grouping nothing apart.
+      if (!Number.isFinite(sizeOf(run))) throw new TypeError(`a run's size must be a number of points, not ${String(sizeOf(run))}`);
       const gap =
         piece === undefined ? 0 : Math.max(0, run.left - piece.right, piece.left - run.right);
-      if (piece === undefined || gap > height) {
+      // A WORD SPACE IS SET IN THE TYPE AROUND IT, so the gap is measured in an em of the SMALLER neighbour's type, never
+      // against the line's height. The line is every run that overlaps, so its height grows with what says the runs are
+      // apart: two columns whose baselines are offset, and a large figure beside small text. Measured 2026-10-24 in the
+      // owner's document 11: a 13.71 pt gutter between 12 pt columns whose baselines are 3.81 pt apart, against a line
+      // 14.84 pt tall; a 40 pt figure and a 14 pt caption 14.29 and 12.61 pt from an 11.5 pt list. Each was joined, and an
+      // edit of one column's paragraph rewrote a line of the other. Across the corpus every other joined gap is at most
+      // 0.94 em, and the widest space this application justifies to is a space and JUSTIFY_CAP's 0.6 em (`markFigures.ts`),
+      // under an em; those gutters are 1.1 to 1.57.
+      if (piece === undefined || gap > Math.min(edge, sizeOf(run))) {
+        edge = sizeOf(run);
         piece = {
           runs: [run],
           order: pieces.length,
@@ -324,6 +351,7 @@ export function piecesOf<T extends LineableRun>(
         continue;
       }
       piece.runs.push(run);
+      if (run.right >= piece.right) edge = sizeOf(run);
       piece.left = Math.min(piece.left, run.left);
       piece.right = Math.max(piece.right, run.right);
       piece.bottom = Math.min(piece.bottom, run.bottom);
@@ -400,7 +428,7 @@ function longestRun<S>(piece: Piece<S>): BlockableRun<S> | undefined {
  * @param runs the page's text runs, in reading order
  */
 export function groupIntoBlocks<S>(runs: readonly BlockableRun<S>[]): readonly EditableBlock<S>[] {
-  const pieces = piecesOf(runs);
+  const pieces = piecesOf(runs, (run) => run.size);
 
   // TOP TO BOTTOM, not reading order, for the BLOCK pass only. A block's lines
   // are top to bottom by what a block is, and reading order is the content
