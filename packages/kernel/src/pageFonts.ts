@@ -1,5 +1,3 @@
-import { StandardFontEmbedder, StandardFonts, isStandardFont } from '@cantoo/pdf-lib';
-
 import type { PDFObject } from './mupdfRaw.js';
 import { bufferBytes } from './mupdfWriter.js';
 import { withoutSubsetTag } from './subsetName.js';
@@ -74,68 +72,31 @@ function nameOf(object: PDFObject): string | null {
   return value.isName() ? value.asName() : null;
 }
 
-/** A standard 14 font's name (ISO 32000-1 §9.6.2.2), in the type pdf-lib's embedder takes. */
-type StandardName = Parameters<typeof StandardFontEmbedder.for>[0];
+/**
+ * pdf-lib's standard-font tables, as `loadStandardFonts` answers them: what a font the file does not carry is read
+ * through. A required argument of {@link pageFonts}, so a caller cannot read a page's fonts without having loaded them,
+ * and the module is never in a host's start (`standardFontTables.ts` says what that cost).
+ */
+export type StandardFontTables = typeof import('./standardFontTables.js');
 
-/** `name` where it is a standard font's, by pdf-lib's own rule (`isStandardFont`, which its `embedStandardFont` asks). */
-function standardName(name: string | null): StandardName | null {
-  return name !== null && isStandardFont(name) ? name : null;
-}
+let standardTables: StandardFontTables | null = null;
 
-/** The two standard fonts whose built-in encoding is their own rather than a Latin one. */
-const SYMBOLIC = new Set<string>([StandardFonts.Symbol, StandardFonts.ZapfDingbats]);
-
-/** pdf-lib's tables for a standard font, read once a process: parsing one is its metrics file decompressed. */
-const embedders = new Map<string, StandardFontEmbedder>();
-function embedderFor(name: StandardName): StandardFontEmbedder {
-  const held = embedders.get(name);
-  if (held !== undefined) return held;
-  const made = StandardFontEmbedder.for(name);
-  embedders.set(name, made);
-  return made;
+/** The standard-font tables, loaded on the first read of a page's fonts and kept for the process. */
+export async function loadStandardFonts(): Promise<StandardFontTables> {
+  standardTables ??= await import('./standardFontTables.js');
+  return standardTables;
 }
 
 /**
  * A simple font with no ToUnicode, read through its encoding (ISO 32000-1 §9.10.2, ADR-0176's correction of 2026-10-25):
- * each code's character and glyph name, from pdf-lib's table for the encoding — the WinAnsi encoding named, or the
- * built-in encoding of Symbol or ZapfDingbats with none named — and, for a standard font, the font's own AFM tables.
- * `null` for any other encoding (MacRoman, Standard, `/Differences`), which pdf-lib holds no table for: the stated limit.
+ * the encoding object read here, its table and the standard font's widths from `standard`.
  */
-function encodedAs(font: PDFObject, base: string | null): { readonly toUnicode: ToUnicode; readonly width: (code: number) => number | null } | null {
+function encodedAs(font: PDFObject, base: string | null, standard: StandardFontTables): { readonly toUnicode: ToUnicode; readonly width: (code: number) => number | null } | null {
   const encoding = resolved(font.get('Encoding'));
   const differences = encoding.isDictionary() ? resolved(encoding.get('Differences')) : null;
   const named = encoding.isName() ? encoding.asName() : encoding.isDictionary() && differences?.isNull() === true ? nameOf(encoding.get('BaseEncoding')) : null;
-  const standard = standardName(base);
-  let table: StandardFontEmbedder;
-  if (named === 'WinAnsiEncoding') {
-    // THE WINANSI TABLE is one for every Latin standard font; a symbolic one's own is not it.
-    const latin = standard !== null && !SYMBOLIC.has(standard) ? standard : standardName(StandardFonts.Helvetica);
-    if (latin === null) return null;
-    table = embedderFor(latin);
-  } else if (encoding.isNull() && standard !== null && SYMBOLIC.has(standard)) {
-    table = embedderFor(standard);
-  } else {
-    return null;
-  }
-  const text = new Map<number, string>();
-  const glyphs = new Map<number, string>();
-  for (const point of table.encoding.supportedCodePoints) {
-    const { code, name } = table.encoding.encodeUnicodeCodePoint(point);
-    // THE FIRST CHARACTER A CODE IS READ AS keeps it: a code two characters encode to is one glyph.
-    if (text.has(code)) continue;
-    text.set(code, String.fromCodePoint(point));
-    glyphs.set(code, name);
-  }
-  // A STANDARD FONT'S WIDTHS from its AFM, in thousandths, where the table it is read through is its own.
-  const metrics = standard !== null && table === embedderFor(standard) ? table.font : null;
-  return {
-    toUnicode: { text, bytes: 1 },
-    width: (code) => {
-      const glyph = glyphs.get(code);
-      const width = metrics === null || glyph === undefined ? undefined : metrics.getWidthOfGlyph(glyph);
-      return typeof width === 'number' ? width / 1000 : null;
-    },
-  };
+  const table = standard.standardEncoding(named, encoding.isNull(), base);
+  return table === null ? null : { toUnicode: { text: table.text, bytes: 1 }, width: table.width };
 }
 
 /** A simple font's widths: `/FirstChar` and `/Widths`, each scaled by `scale`. */
@@ -209,7 +170,7 @@ function toUnicodeOf(font: PDFObject): ToUnicode | null {
 }
 
 /** One font resource, read. */
-function read(resource: string, font: PDFObject): PageFont {
+function read(resource: string, font: PDFObject, standard: StandardFontTables): PageFont {
   const subtype = nameOf(font.get('Subtype')) ?? '';
   const descendants = resolved(font.get('DescendantFonts'));
   const descendant = subtype === 'Type0' && descendants.isArray() ? resolved(descendants.get(0)) : null;
@@ -236,7 +197,7 @@ function read(resource: string, font: PDFObject): PageFont {
   // encoding promises no glyph: measured in the owner's documents 6 and 8, words written so drew nothing.
   const own = toUnicodeOf(font);
   const carried = descriptor.isDictionary() && ['FontFile', 'FontFile2', 'FontFile3'].some((key) => !descriptor.get(key).isNull());
-  const encoded = own === null && !carried && subtype !== 'Type3' && descendant === null ? encodedAs(font, nameOf(font.get('BaseFont'))) : null;
+  const encoded = own === null && !carried && subtype !== 'Type3' && descendant === null ? encodedAs(font, nameOf(font.get('BaseFont')), standard) : null;
   if (encoded !== null) {
     const stated = width;
     width = (code) => stated(code) ?? encoded.width(code);
@@ -253,15 +214,19 @@ function read(resource: string, font: PDFObject): PageFont {
   };
 }
 
-/** Every font resource the page's own content can name: its `/Resources /Font`, inherited where the page has none. */
-export function pageFonts(leaf: PDFObject): ReadonlyMap<string, PageFont> {
+/**
+ * Every font resource the page's own content can name: its `/Resources /Font`, inherited where the page has none.
+ *
+ * @param standard the standard-font tables (`loadStandardFonts`), which a font the file does not carry is read through
+ */
+export function pageFonts(leaf: PDFObject, standard: StandardFontTables): ReadonlyMap<string, PageFont> {
   const fonts = new Map<string, PageFont>();
   const resources = resolved(leaf.getInheritable('Resources'));
   if (!resources.isDictionary()) return fonts;
   const dictionary = resolved(resources.get('Font'));
   if (!dictionary.isDictionary()) return fonts;
   dictionary.forEach((value, key) => {
-    if (typeof key === 'string') fonts.set(key, read(key, resolved(value)));
+    if (typeof key === 'string') fonts.set(key, read(key, resolved(value), standard));
   });
   return fonts;
 }

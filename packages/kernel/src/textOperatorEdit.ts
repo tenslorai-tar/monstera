@@ -9,7 +9,7 @@ import type { PageFont } from './pageFonts.js';
 import { type OperatorRefusal, type PageRuns, checkOperatorEdit, editOperators, pageFontsAsRead } from './operatorEdit.js';
 import { addPlainState, plainStateName } from './drawnObjectEdit.js';
 import { pageContentStreams, xobjectKinds } from './pageContent.js';
-import { pageFonts } from './pageFonts.js';
+import { type StandardFontTables, loadStandardFonts, pageFonts } from './pageFonts.js';
 import { resourceDictionaryOf } from './pageResources.js';
 import { BlockUnchangedError, EditRefusedError, TextNotWritableError } from './textEditRefusals.js';
 import { sentAsShown } from './blockAsShown.js';
@@ -90,7 +90,9 @@ export async function applyEditTextOperators(
   // HarfBuzz, +6.4 MB of resident set at import (measured 2026-10-06, Node 22.22.0 on Linux, three runs against a control
   // that imports nothing), which every MuPDF host would otherwise pay at start against a 100 MB fixed-cost budget.
   // Loaded only when the page's own fonts cannot carry the edit and this process was given a catalogue.
-  const needed = editFacesBound() && (await needsAFace(session, command, read));
+  // THE STANDARD-FONT TABLES the page's fonts are read with, on first need for the same reason: they bring pdf-lib.
+  const standard = await loadStandardFonts();
+  const needed = editFacesBound() && (await needsAFace(session, command, read, standard));
   // THE CATALOGUE'S MODULE TOO, where the host bound its folders (`bindEditFolders`): it brings HarfBuzz as well.
   if (needed) await loadEditFaces();
   const faceSet = needed ? (await import('./operatorFaces.js')).OperatorFaceSet : null;
@@ -100,7 +102,7 @@ export async function applyEditTextOperators(
     const { content, holder } = target;
     // THE PAGE'S FONTS AS PDFium READ THEM (`pageFontsAsRead`): a glyph the page draws with a code its font names no text
     // for is still the page's own font's to set, and the check below reads the same fonts.
-    const fonts = pageFontsAsRead(pageFonts(holder), content, read);
+    const fonts = pageFontsAsRead(pageFonts(holder, standard), content, read);
     // THE RESOLVER'S FACES AND THE BOX (ADR-0177): read on the first word that needs one, so an edit the page's own
     // fonts carry never reads a font file.
     const faces = faceSet === null ? null : new faceSet(document, lazyFaces(), fonts);
@@ -161,13 +163,13 @@ export async function applyEditTextOperators(
  * Whether the page's own fonts leave a word of this edit uncarried: `editOperators` with no faces, refusing for that
  * reason alone. A pure pass over the page's content, so asking twice changes nothing.
  */
-function needsAFace(session: MupdfSession, command: CommandOfKind<'editTextOperators'>, read: PageRuns): Promise<boolean> {
+function needsAFace(session: MupdfSession, command: CommandOfKind<'editTextOperators'>, read: PageRuns, standard: StandardFontTables): Promise<boolean> {
   return withDocument(session, (document) => {
     // READ ONLY: the placement as it is, copied by nothing, since this pass writes nothing.
     const { content, holder } = targetOf(document, command, false);
     const made = editOperators(
       content,
-      pageFontsAsRead(pageFonts(holder), content, read),
+      pageFontsAsRead(pageFonts(holder, standard), content, read),
       read,
       blocksOfEdit(command),
       null,

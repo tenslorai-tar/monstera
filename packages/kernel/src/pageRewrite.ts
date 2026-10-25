@@ -3,7 +3,7 @@ import type { TextRewrite } from '@monstera/contract';
 import type { MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
 import { pageContentStreams } from './pageContent.js';
-import { pageFonts } from './pageFonts.js';
+import { loadStandardFonts, pageFonts } from './pageFonts.js';
 import { joinedContent, showOperators } from './textOperators.js';
 
 /**
@@ -26,10 +26,11 @@ export type PageRewrite = TextRewrite;
  * that numbers the operators the edit will name: the page this answers about and the page the edit changes are read
  * by one tokeniser.
  */
-export function readPageRewrite(session: MupdfSession, page: number): Promise<PageRewrite> {
+export async function readPageRewrite(session: MupdfSession, page: number): Promise<PageRewrite> {
+  const standard = await loadStandardFonts();
   return withDocument(session, (document) => {
     const leaf = document.findPage(page);
-    const fonts = pageFonts(leaf);
+    const fonts = pageFonts(leaf, standard);
     const shown = showOperators(joinedContent(pageContentStreams(leaf)));
     const type3 = shown.some(
       (op) => op.object !== null && op.state.font !== null && fonts.get(op.state.font)?.subtype === 'Type3',

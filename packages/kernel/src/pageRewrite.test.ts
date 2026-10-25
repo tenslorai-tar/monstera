@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import { pageFonts } from './pageFonts.js';
+import * as STANDARD from './standardFontTables.js';
 import { readPageRewrite } from './pageRewrite.js';
 
 /** The Chromium print committed as Part B's starting material (`scripts/research/chromiumType3Fixture.mjs`). */
@@ -20,7 +21,7 @@ async function rewriteOf(content: (type3: string, other: string) => string): Pro
   try {
     await withDocument(session, (document) => {
       const leaf = document.findPage(0);
-      const fonts = [...pageFonts(leaf).values()];
+      const fonts = [...pageFonts(leaf, STANDARD).values()];
       const type3 = fonts.find((font) => font.subtype === 'Type3')?.resource;
       const other = fonts.find((font) => font.subtype !== 'Type3')?.resource;
       if (type3 === undefined || other === undefined) throw new Error('the print no longer holds both kinds of font');

@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import { pageContentStreams } from './pageContent.js';
 import { pageFonts } from './pageFonts.js';
+import * as STANDARD from './standardFontTables.js';
 import { codesFor } from './toUnicode.js';
 
 /** The Chromium print committed as Part B's starting material (`scripts/research/chromiumType3Fixture.mjs`). */
@@ -72,7 +73,7 @@ describe('pageFonts', () => {
   it('reads each font’s kind, face and weight, the leaf inheriting the tree’s resources', async () => {
     const session = await mupdfWriter.open(await threeFonts());
     try {
-      const fonts = await withDocument(session, (document) => pageFonts(document.findPage(0)));
+      const fonts = await withDocument(session, (document) => pageFonts(document.findPage(0), STANDARD));
       expect([...fonts.values()].map((font) => [font.resource, font.subtype, font.face, font.weight, font.codeBytes])).toStrictEqual([
         ['F1', 'Type3', 'LiberationSans', 400, 1],
         ['F2', 'Type0', 'LiberationSans', 400, 2],
@@ -86,7 +87,7 @@ describe('pageFonts', () => {
   it('scales a Type 3 font’s widths by its FontMatrix, reads both forms of /W, and has none for a standard font in its built-in encoding', async () => {
     const session = await mupdfWriter.open(await threeFonts());
     try {
-      const fonts = await withDocument(session, (document) => pageFonts(document.findPage(0)));
+      const fonts = await withDocument(session, (document) => pageFonts(document.findPage(0), STANDARD));
       const width = (name: string, code: number) => fonts.get(name)?.width(code);
       // 500 x 0.002: the FontMatrix's own scale, so a Type 3 font at 0.001 and one at 0.002 differ by exactly that.
       // TO SINGLE PRECISION: MuPDF holds a PDF real as a float, measured 0.002 reading back as 0.0020000000949.
@@ -123,7 +124,7 @@ describe('pageFonts', () => {
     page.node.set(PDFName.of('Contents'), context.register(context.flateStream('BT /F1 10 Tf (A) Tj ET')));
     const session = await mupdfWriter.open(await doc.save({ useObjectStreams: false }));
     try {
-      const fonts = await withDocument(session, (document) => pageFonts(document.findPage(0)));
+      const fonts = await withDocument(session, (document) => pageFonts(document.findPage(0), STANDARD));
       const read = (name: string) => {
         const font = fonts.get(name);
         const map = font?.toUnicode ?? null;
@@ -145,7 +146,7 @@ describe('pageFonts', () => {
   it('says a Type 3 font draws only the codes its CharProcs hold, and reads its ToUnicode', async () => {
     const session = await mupdfWriter.open(await threeFonts());
     try {
-      const fonts = await withDocument(session, (document) => pageFonts(document.findPage(0)));
+      const fonts = await withDocument(session, (document) => pageFonts(document.findPage(0), STANDARD));
       const type3 = fonts.get('F1');
       expect([65, 66, 67].map((code) => type3?.draws(code))).toStrictEqual([true, true, false]);
       // CONTROL: the ToUnicode names C, so a writer asking the ToUnicode alone would take a code with no glyph.
@@ -159,7 +160,7 @@ describe('pageFonts', () => {
   it('reads the committed Chromium print: a Type 3 heading face and a Type0 body face, one face by name', async () => {
     const session = await mupdfWriter.open(new Uint8Array(readFileSync(CHROMIUM)));
     try {
-      const fonts = await withDocument(session, (document) => pageFonts(document.findPage(0)));
+      const fonts = await withDocument(session, (document) => pageFonts(document.findPage(0), STANDARD));
       const of = (name: string) => fonts.get(name);
       expect([of('F4')?.subtype, of('F4')?.face, of('F4')?.weight, of('F5')?.subtype, of('F5')?.face]).toStrictEqual([
         'Type3',

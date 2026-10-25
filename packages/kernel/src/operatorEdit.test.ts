@@ -16,6 +16,7 @@ import {
 } from './operatorEdit.js';
 import { pageContentStreams } from './pageContent.js';
 import { type PageFont, pageFonts } from './pageFonts.js';
+import * as STANDARD from './standardFontTables.js';
 import { type ShowOperator, joinedContent, operatorsAndDecorations, showOperators, textObjectCount } from './textOperators.js';
 
 /** The marks of one edited block, as the contract carries them. */
@@ -84,7 +85,7 @@ async function chromium<T>(read: (content: Uint8Array, fonts: ReadonlyMap<string
   try {
     return await withDocument(session, (document) => {
       const leaf = document.findPage(0);
-      return read(joinedContent(pageContentStreams(leaf)), pageFonts(leaf));
+      return read(joinedContent(pageContentStreams(leaf)), pageFonts(leaf, STANDARD));
     });
   } finally {
     await mupdfWriter.close(session);

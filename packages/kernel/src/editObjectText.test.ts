@@ -12,6 +12,7 @@ import { editOperators } from './operatorEdit.js';
 import { pageContentStreams, xobjectKinds } from './pageContent.js';
 import { rasterisePageRgba } from './pageImages.js';
 import { pageFonts } from './pageFonts.js';
+import * as STANDARD from './standardFontTables.js';
 import { applyEditTextOperators } from './textOperatorEdit.js';
 import { joinedContent } from './textOperators.js';
 
@@ -59,7 +60,7 @@ async function written(blocks: readonly EditedBlock[], content = CONTENT): Promi
     return await withDocument(session, (document) => {
       const leaf = document.findPage(0);
       const content = joinedContent(pageContentStreams(leaf));
-      const made = editOperators(content, pageFonts(leaf), runsOf(content), blocks, null, 'reflow', [], {
+      const made = editOperators(content, pageFonts(leaf, STANDARD), runsOf(content), blocks, null, 'reflow', [], {
         kinds: xobjectKinds(leaf),
         plainState: 'MonPlain1',
       });

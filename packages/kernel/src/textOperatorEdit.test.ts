@@ -13,6 +13,7 @@ import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import type { PageRuns } from './operatorEdit.js';
 import { pageContentStreams } from './pageContent.js';
 import { pageFonts } from './pageFonts.js';
+import * as STANDARD from './standardFontTables.js';
 import { BlockUnchangedError, EditRefusedError, TextNotWritableError } from './textEditRefusals.js';
 import { applyEditTextOperators, readingHolds } from './textOperatorEdit.js';
 import { joinedContent, showOperators, textObjectCount } from './textOperators.js';
@@ -314,7 +315,7 @@ describe('applyEditTextOperators', () => {
     const after = (session: Awaited<ReturnType<typeof mupdfWriter.open>>) =>
       withDocument(session, (document) => {
         const leaf = document.findPage(0);
-        return { fonts: [...pageFonts(leaf).keys()], content: new TextDecoder('latin1').decode(joinedContent(pageContentStreams(leaf))) };
+        return { fonts: [...pageFonts(leaf, STANDARD).keys()], content: new TextDecoder('latin1').decode(joinedContent(pageContentStreams(leaf))) };
       });
 
     it('sets a character only the LAST face draws in GNU Unifont, as a CFF subset, and no box (ADR-0270)', async () => {

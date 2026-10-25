@@ -1,7 +1,7 @@
 import type { MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
 import { pageContentStreams } from './pageContent.js';
-import { pageFonts } from './pageFonts.js';
+import { loadStandardFonts, pageFonts } from './pageFonts.js';
 import {
   TEXT_FACE_FONTS_MAX,
   TEXT_FACE_RANGES_MAX,
@@ -27,10 +27,11 @@ import { joinedContent, showOperators } from './textOperators.js';
  * answer is the runs of consecutive objects sharing a font, bounded by {@link TEXT_FACE_RANGES_MAX}. Past the bound the
  * answer says `truncated`, and the objects past it keep what PDFium read.
  */
-export function readTextFaces(session: MupdfSession, page: number): Promise<TextFaces> {
+export async function readTextFaces(session: MupdfSession, page: number): Promise<TextFaces> {
+  const standard = await loadStandardFonts();
   return withDocument(session, (document) => {
     const leaf = document.findPage(page);
-    const fonts = pageFonts(leaf);
+    const fonts = pageFonts(leaf, standard);
     const named: TextFace[] = [];
     const indexOf = new Map<string, number>();
     const ranges: TextFaceRange[] = [];
