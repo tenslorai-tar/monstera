@@ -5,7 +5,8 @@ import type { PDFDocument, PDFObject } from './mupdfRaw.js';
 import { bufferBytes, newDocument, withDocument } from './mupdfWriter.js';
 import { pageContentStreams, xobjectKinds } from './pageContent.js';
 import { freeName, resourceDictionaryOf } from './pageResources.js';
-import { type Matrix, type Setting, drawnObjects, joinedContent, showOperators } from './textOperators.js';
+import { type PageBox, boxOfPoints, inverse, written as numberWritten } from './contentCarry.js';
+import { type ClipWindow, type Matrix, type Setting, drawnObjects, joinedContent, multiply, showOperators } from './textOperators.js';
 
 /**
  * Text inside a form XObject, edited in the form's own content as text on the page is
@@ -38,12 +39,17 @@ export interface FormPlacement {
   readonly states: readonly string[];
   /** The form XObject, as its holder's resources name it: what its stream is read from and written to. */
   readonly form: PDFObject;
-  /** The page leaf or form whose content draws it. */
+  /** The page leaf or form whose content draws it: a form as its holder's resources name it, so its stream can be read. */
   readonly holder: PDFObject;
   /** The form's own content, decoded. */
   readonly content: Uint8Array;
   /** Where its `Do` sits in the holder's content, which a copy renames. */
   readonly operand: { readonly start: number; readonly end: number };
+  /**
+   * The clip windows in force at its `Do` that frame it alone — nothing else drawn between a window's path and the `Q`
+   * that ends it — in the holder's space: what an edit grows with the form's box ({@link growFrames}).
+   */
+  readonly frames: readonly ClipWindow[];
 }
 
 const LATIN1 = new TextDecoder('latin1');
@@ -129,7 +135,8 @@ function placementsUnder(
 ): FormPlacement[] {
   const found: FormPlacement[] = [];
   const seen = new Map<string, number>();
-  for (const drawn of drawnObjects(content, xobjectKinds(holder))) {
+  const everything = drawnObjects(content, xobjectKinds(holder));
+  for (const drawn of everything) {
     if (drawn.kind !== 'form') continue;
     const operand = doOperand(content, drawn.start, drawn.end);
     if (operand === undefined) continue;
@@ -148,8 +155,11 @@ function placementsUnder(
       holder,
       content: own,
       operand: { start: operand.start, end: operand.end },
+      frames: drawn.windows.filter((window) => everything.filter((other) => other.start >= window.start && other.start < window.end).length === 1),
     };
-    found.push(placement, ...placementsUnder(form.resolve(), own, placement.chain, placement.states, placement.path, new Set([...entered, id])));
+    // THE HOLDING FORM AS ITS REFERENCE, which its stream is read from and written to: resolved, it answers its
+    // dictionary, and a stream's dictionary has no stream.
+    found.push(placement, ...placementsUnder(form, own, placement.chain, placement.states, placement.path, new Set([...entered, id])));
   }
   return found;
 }
@@ -253,22 +263,15 @@ export function readFormPages(session: MupdfSession, page: number): Promise<{ re
 const READ_EXTENT = 14_400;
 
 /**
- * The form's `/BBox` grown to hold every character its content draws now
- * ([ADR-0269](../../../docs/DECISIONS/0269-text-inside-a-form-is-edited-in-the-forms-own-content.md)'s correction of
- * 2026-10-25): a form draws nothing outside its box, so words an edit wrapped below a box drawn round one line were
- * written and not shown. Read by MuPDF from the form's content alone, in the form's own space, on a page reaching
- * {@link READ_EXTENT} each way; the box only grows, to the union of what it was and those characters.
+ * Every character a form's content draws, as one box in the form's own space, each side outward to the whole point; or
+ * `undefined` for content that draws none. Read by MuPDF from the content alone, on a page reaching {@link READ_EXTENT}
+ * each way.
  *
  * @param resources the resources the content draws with: the form's own, or its holder's where it has none
  */
-export function growFormBox(form: PDFObject, content: Uint8Array, resources: PDFObject): void {
-  const own = form.resolve();
-  const stated = own.get('BBox');
-  if (!stated.isArray() || stated.length !== 4) return;
-  const [ax = 0, ay = 0, bx = 0, by = 0] = [0, 1, 2, 3].map((at) => stated.get(at).asNumber());
-  // A SIDE MOVES ONLY WHERE A CHARACTER LIES PAST IT, outward to the whole point, so a box nothing outgrew is not rewritten.
+export function charactersDrawn(content: Uint8Array, resources: PDFObject): PageBox | undefined {
   // A RECORD, written by the walk's callback, so its sides are read after the walk as it left them.
-  const box = { x0: Math.min(ax, bx), y0: Math.min(ay, by), x1: Math.max(ax, bx), y1: Math.max(ay, by), grew: false };
+  const box = { x0: Number.POSITIVE_INFINITY, y0: Number.POSITIVE_INFINITY, x1: Number.NEGATIVE_INFINITY, y1: Number.NEGATIVE_INFINITY };
   const reading = newDocument();
   try {
     const grafted = resources.isNull() ? reading.newDictionary() : reading.graftObject(resources);
@@ -279,17 +282,113 @@ export function growFormBox(form: PDFObject, content: Uint8Array, resources: PDF
         for (let at = 0; at + 1 < quad.length; at += 2) {
           const x = (quad[at] ?? 0) - READ_EXTENT;
           const y = READ_EXTENT - (quad[at + 1] ?? 0);
-          if (x < box.x0) [box.x0, box.grew] = [Math.floor(x), true];
-          if (x > box.x1) [box.x1, box.grew] = [Math.ceil(x), true];
-          if (y < box.y0) [box.y0, box.grew] = [Math.floor(y), true];
-          if (y > box.y1) [box.y1, box.grew] = [Math.ceil(y), true];
+          box.x0 = Math.min(box.x0, Math.floor(x));
+          box.x1 = Math.max(box.x1, Math.ceil(x));
+          box.y0 = Math.min(box.y0, Math.floor(y));
+          box.y1 = Math.max(box.y1, Math.ceil(y));
         }
       },
     });
   } finally {
     reading.destroy();
   }
-  if (box.grew) own.put('BBox', [box.x0, box.y0, box.x1, box.y1]);
+  return box.x0 > box.x1 ? undefined : { left: box.x0, bottom: box.y0, right: box.x1, top: box.y1 };
+}
+
+/**
+ * The form's `/BBox` grown to hold `characters`, in the form's own space
+ * ([ADR-0269](../../../docs/DECISIONS/0269-text-inside-a-form-is-edited-in-the-forms-own-content.md)'s correction of
+ * 2026-10-25): a form draws nothing outside its box, so words an edit wrapped below a box drawn round one line were
+ * written and not shown. The box only grows, to the union of what it was and those characters; a box nothing outgrew is
+ * not rewritten.
+ */
+export function growFormBox(form: PDFObject, characters: PageBox): void {
+  const own = form.resolve();
+  const stated = own.get('BBox');
+  if (!stated.isArray() || stated.length !== 4) return;
+  const [ax = 0, ay = 0, bx = 0, by = 0] = [0, 1, 2, 3].map((at) => stated.get(at).asNumber());
+  const was = [Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by)];
+  const grown = [Math.min(was[0] ?? 0, characters.left), Math.min(was[1] ?? 0, characters.bottom), Math.max(was[2] ?? 0, characters.right), Math.max(was[3] ?? 0, characters.top)];
+  if (grown.some((side, at) => side !== was[at])) own.put('BBox', grown);
+}
+
+/** `box` carried through `matrix`, as the box of its four corners. */
+function boxThrough(box: PageBox, matrix: Matrix): PageBox {
+  const corners = [
+    [box.left, box.bottom],
+    [box.right, box.bottom],
+    [box.right, box.top],
+    [box.left, box.top],
+  ] as const;
+  return boxOfPoints(corners.map(([x, y]) => {
+    const moved = multiply([1, 0, 0, 1, x, y], matrix);
+    return [moved[4], moved[5]] as const;
+  }));
+}
+
+/** A path of one rectangle, as a content stream writes `x y w h re`, its four numbers apart from the bytes round them. */
+const ONE_RECTANGLE = /^(\s*)([-+]?(?:\d+\.?\d*|\.\d+))(\s+)([-+]?(?:\d+\.?\d*|\.\d+))(\s+)([-+]?(?:\d+\.?\d*|\.\d+))(\s+)([-+]?(?:\d+\.?\d*|\.\d+))(\s+re\s*)$/u;
+
+/**
+ * The frames of placement `path` on page `page` grown with its box (ADR-0269's correction of 2026-10-25, *the clips that
+ * frame a placement grow with its box*): a placement is drawn through the clips in force at each `Do` along its path, and
+ * those are its holders' content, outside the wrapper it is read and edited in, so a line written below the box was
+ * written and not shown however far the box grew. From the edited form outward, each step's frames
+ * ({@link FormPlacement.frames}) whose path is one rectangle grow to hold `characters`, carried into the space the
+ * rectangle is built in, and each holding form's `/BBox` grows by {@link growFormBox}. A frame's four numbers are the
+ * only bytes of a holder's content it writes, and a frame that already holds them is left as it was.
+ *
+ * @param characters what the edited form draws, in its own space ({@link charactersDrawn})
+ */
+export function growFrames(document: PDFDocument, page: number, path: FormPath, characters: PageBox): void {
+  let inForm = characters;
+  for (let depth = path.length; depth >= 1; depth -= 1) {
+    const leaf = document.findPage(page);
+    const step = placementAt(leaf, path.slice(0, depth));
+    if (step === undefined) return;
+    // A HOLDING FORM draws nothing outside its own box either.
+    if (depth < path.length) growFormBox(step.form, inForm);
+    const doCtm = step.chain[2 * (depth - 1)];
+    const formMatrixHere = step.chain[2 * (depth - 1) + 1];
+    if (doCtm === undefined || formMatrixHere === undefined) return;
+    const inHolder = boxThrough(inForm, multiply(formMatrixHere, doCtm));
+    const holderContent = depth === 1 ? joinedContent(pageContentStreams(leaf)) : bufferBytes(step.holder.readStream());
+    const splices: { readonly start: number; readonly end: number; readonly text: string }[] = [];
+    for (const frame of step.frames) {
+      const rectangle = ONE_RECTANGLE.exec(LATIN1.decode(holderContent.subarray(frame.start, frame.segmentsEnd)));
+      const back = inverse(frame.ctm);
+      if (rectangle === null || back === null) continue;
+      const [x = 0, y = 0, w = 0, h = 0] = [2, 4, 6, 8].map((at) => Number(rectangle[at]));
+      const wanted = boxThrough(inHolder, back);
+      const left = Math.min(x, x + w, wanted.left);
+      const bottom = Math.min(y, y + h, wanted.bottom);
+      const right = Math.max(x, x + w, wanted.right);
+      const top = Math.max(y, y + h, wanted.top);
+      if (left === Math.min(x, x + w) && bottom === Math.min(y, y + h) && right === Math.max(x, x + w) && top === Math.max(y, y + h)) continue;
+      const [lead = '', , one = ' ', , two = ' ', , three = ' ', , tail = ' re'] = rectangle.slice(1);
+      const numbers = [left, bottom, right - left, top - bottom].map(numberWritten);
+      splices.push({ start: frame.start, end: frame.segmentsEnd, text: `${lead}${numbers[0] ?? ''}${one}${numbers[1] ?? ''}${two}${numbers[2] ?? ''}${three}${numbers[3] ?? ''}${tail}` });
+    }
+    if (splices.length > 0) {
+      const encoder = new TextEncoder();
+      const parts: Uint8Array[] = [];
+      let from = 0;
+      for (const splice of [...splices].sort((one, two) => one.start - two.start)) {
+        parts.push(holderContent.subarray(from, splice.start), encoder.encode(splice.text));
+        from = splice.end;
+      }
+      parts.push(holderContent.subarray(from));
+      const grown = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
+      let at = 0;
+      for (const part of parts) {
+        grown.set(part, at);
+        at += part.length;
+      }
+      if (depth === 1) leaf.put('Contents', document.addStream(grown, document.newDictionary()));
+      else step.holder.writeStream(grown);
+    }
+    inForm = inHolder;
+  }
 }
 
 /** How many placements across the whole document draw `form`'s object: more than one means it is used elsewhere. */

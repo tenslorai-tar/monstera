@@ -14,7 +14,7 @@ import { resourceDictionaryOf } from './pageResources.js';
 import { BlockUnchangedError, EditRefusedError, TextNotWritableError } from './textEditRefusals.js';
 import { sentAsShown } from './blockAsShown.js';
 import { joinedContent } from './textOperators.js';
-import { type FormPlacement, growFormBox, ownPlacement, placementAt, unwrappedForm, wrappedForm } from './formText.js';
+import { type FormPlacement, charactersDrawn, growFormBox, growFrames, ownPlacement, placementAt, unwrappedForm, wrappedForm } from './formText.js';
 import type { PDFDocument, PDFObject } from './mupdfRaw.js';
 
 /**
@@ -228,9 +228,13 @@ function targetOf(document: PDFDocument, command: CommandOfKind<'editTextOperato
     write: (edited) => {
       const own = unwrappedForm(edited, wrapped);
       placement.form.writeStream(own);
-      // AND ITS BOX, grown to hold what it now draws, or words wrapped past it are written and not shown (ADR-0269's
-      // correction of 2026-10-25). Read with the resources the content names, the added fonts among them.
-      growFormBox(placement.form, own, holder.getInheritable('Resources'));
+      // AND ITS BOX AND ITS FRAMES, grown to hold what it now draws, or words wrapped past them are written and not shown
+      // (ADR-0269's corrections of 2026-10-25). Read with the resources the content names, the added fonts among them.
+      const characters = charactersDrawn(own, holder.getInheritable('Resources'));
+      if (characters !== undefined) {
+        growFormBox(placement.form, characters);
+        growFrames(document, command.page, placement.path, characters);
+      }
     },
   };
 }
