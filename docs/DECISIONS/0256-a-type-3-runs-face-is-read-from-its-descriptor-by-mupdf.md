@@ -65,3 +65,11 @@ and `textOperators.ts` numbers each showing operator by PDFium's own object inde
 
 - One more MuPDF read per text read of an operators page — the same page MuPDF already reads to decide the route.
 - A Type 3 run's font field in Properties names the face the descriptor names, where it said nothing before.
+
+## Correction, 2026-10-25 — what is saved for a new word is the face's kind too (Decision 3)
+
+Decision 3's last sentence — *the writer still writes the words in the page's own Type 3 font where it carries them* — no
+longer holds for a NEW word: by the owner's font principle (ADR-0176's correction of 2026-10-25), a word the run did not
+already say is written in the closest ordinary face from the chain, never in drawn letters. So the kind of face the
+editor draws a Type 3 run's typed words in while typing is now the kind they are saved in, rather than a preview of
+letters the page would have drawn itself. The run's own words still keep its own glyphs.

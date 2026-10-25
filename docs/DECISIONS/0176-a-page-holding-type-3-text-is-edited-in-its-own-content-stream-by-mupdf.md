@@ -252,3 +252,40 @@ documents 6 and 8 were made, changed 0 pixels, and were not in MuPDF's reading. 
 its producer used, so a code its encoding names may draw nothing; a font the file does not carry is drawn by the reader
 from a whole face, which is what makes the encoding a promise of a glyph. A font with an embedded program is therefore
 read as before.
+
+## Correction, 2026-10-25 — a new word is never written in drawn letters: the owner's font principle, everywhere (Decision 5)
+
+The owner, 2026-10-25: *"monstera should not be rejecting edits, it should simply look at the fonts of the previous words
+in the line of text that is to be edited and select a font that is the closest match from the document font, user
+computer or its own list or any other available source it has access to and write the new text. If the document has a
+type 3 font that is drawn, or a difficult font style or system, monstera should not start drawing its own font to match
+it which would break things, instead for the newly typed text, monstera should use normal font that closely matches the
+drawn font and move on, no rejections."* Asked whether this is for Type 3 and one document only: *"will this principle
+be applied globally, all over the app for text editing? because that is what i want."*
+
+**Decision 5 now reads:** each word is set in the first face that carries all of it, where **a font whose letters are
+drawn (`/Type3`) is never a face for a NEW word**. A new word is one the run did not already say: typed, replaced,
+corrected or translated. It goes to the chain — a sibling ordinary font in the document, the resolver's installed, then
+bundled faces, then Unifont (ADR-0270) — matched on the run's own face, weight, slant and kind, as every word without a
+carrier already was. **A word the run already said** keeps the run's own font and codes, so a line set again moves its
+old words without changing their letters: the run's own words are the words of its reading, compared whole. An ordinary
+font program still carries a new word where it holds every letter of it — an embedded TrueType, OpenType, CFF or Type 1
+subset that has the glyphs, or a font the file names and does not carry (this day's earlier correction). A subset missing
+a letter, an encoding nothing reads, or no usable program already went to the chain, and still does.
+
+**One place, every route.** The rule is in the operator writer's choice of a word's face (`operatorEdit.ts`), and
+Find & replace, spelling corrections and translation all write through that writer (ADR-0267, ADR-0266), so it is global
+by construction rather than by four call sites agreeing. New text boxes, form fields and stamps already take the one
+resolver and are unchanged.
+
+**Nothing is drawn to imitate a page's letters in what is written.** The faces written are programs that exist: a
+subset of a real face, or Unifont. Reading a Type 3 run to know its text, face, weight and place stays (ADR-0256), and
+so does learning a drawn glyph's text from PDFium's reading (`pageFontsAsRead`), which now only re-sets a run's own words
+and lets the read-back read them; it never sets a new word.
+
+**A visible difference is accepted.** Looked at closely, a new word may sit in a slightly different face from its
+neighbours; the owner accepts this for an edit that is never refused and moves on.
+
+**Rejected: making Type 3 code reuse faster.** Measured the same day on document 2, the slow finish was not the Type 3
+work (the read lane, Journal 2026-10-25); and the owner's rule is about what is written, not about speed. **Rejected:
+reusing a Type 3 glyph for a new word where the font happens to hold the letter** — the owner: drop it.
