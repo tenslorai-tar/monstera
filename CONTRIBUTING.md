@@ -116,6 +116,7 @@ npm run scan:secrets    # full-history secret scan
 
 ```bash
 npm run provision:electron   # the pinned runtime, verified against a SHA-256
+npm run provision:mupdf      # builds the MuPDF library the engine hosts load
 npm run provision:grants     # lets the contained engine host run that runtime
 npm run build                # typecheck + preload bundle + renderer bundle
 npm start                    # the shell, on that runtime
@@ -126,6 +127,10 @@ is not politeness: the only thing a person observes here is a window, and a
 window built from stale sources is indistinguishable from a current one — so
 without it, editing a file and running the app shows you the previous version
 with nothing anywhere saying so.
+
+`provision:mupdf` needs Visual Studio's C++ build tools. Without the library it
+builds, the shell starts with no engine host, and a document displays but no
+engine command can run on it.
 
 If it says the runtime is missing, run `provision:electron`. **Do not install
 the `electron` package's own binary** — importing that package *is* the
