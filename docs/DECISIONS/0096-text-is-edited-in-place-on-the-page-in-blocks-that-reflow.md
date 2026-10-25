@@ -197,3 +197,32 @@ with no size rather than comparing one: a script that builds the runs by hand wo
 Proof: `textLines.test.ts`, the offset columns and the figure beside the list split; CONTROL, a raised reference mark, a
 space stretched to 0.94 em and a large word a word space from small ones stay one line. With the line's height put back,
 the two splitting cases fail.
+
+## Correction, 2026-10-25 — a justified line's wide spaces are word spaces, which its neighbours show
+
+The em rule above splits a justified line wherever justification stretched a space past an em, and a justified paragraph
+set one word to an object then reads as fragments side by side: measured 2026-10-24 on document 4 page 4, an edit adding
+words to one fragment wrote them over the next, the only disturbed edit left in documents 4, 8, 11 and 12. No width
+separates the two: those spaces are 1.0 to 1.6 em, and document 11's gutters are 1.1 to 1.57.
+
+**What separates them is the lines beside.** A gap wider than an em is a word space set wide where all three hold
+(`piecesOf`, `textLines.ts`):
+
+1. another gap on the same line is within 0.1 em of it — justification sets every space of a line alike, measured to
+   within 0.05 em on document 4's lines;
+2. a run of the same size on a line just beside it — above or below, closer than the shorter line is tall, the block
+   relation's own test — spans the whole gap, as a word over a word space does;
+3. no piece of such a line starts within half a point of where the run after the gap starts, as a column does.
+
+Measured 2026-10-25 over the corpus, with the kernel's own pieces: of 662 gaps the em rule splits, the three join 87, all
+in document 4; every one on the five pages looked at (4, 8, 9, 13, 35) is a justified word space, and documents 5, 6, 8,
+11 and 12 split exactly as before. Each condition was added for a case the others let through:
+
+| left out | what it joined |
+|---|---|
+| 1, equal spacing | 148 gaps, among them document 11's gutters where a longer line beside reached across |
+| 3, the column start | document 4 page 6's three-column list, two gutters equal by chance and a long entry over one |
+| 2 read at the gap's middle rather than across it | document 5's table, two cells whose padding made the gaps equal, a cell below ending 0.9 pt past the middle |
+
+**A line with one wide gap stays split**, since no second gap shows it was justified: the conservative direction, which
+is the grouping before this correction.
