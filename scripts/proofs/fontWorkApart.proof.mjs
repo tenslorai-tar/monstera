@@ -222,7 +222,11 @@ const runRequest = (() => {
   // eight 0.6 MB rebuilds fit inside without growing it. Measured 2026-10-14: eight in this thread grew 0.0 MB, so the
   // control refused; and with `runFontsApart` mutated to rebuild in this thread, eight apart grew nothing either and every
   // case passed. Sixty read 36 MB, on both sides.
-  const REBUILDS = 60;
+  // THE FREE SPACE IS WHAT THE FACE PROGRAMS ABOVE GREW, at most, and it follows the largest bundled face: sixty was enough
+  // beside a 1.2 MB face, and with GNU Unifont (5.3 MB) the largest, eight face programs left more than 36 MB free and
+  // sixty rebuilds grew 0.0 MB on CI at `5ef7b84c` and here, 2026-10-25. So the count reads at least four times what
+  // that step grew, and never fewer than sixty.
+  const REBUILDS = Math.max(60, Math.ceil((4 * grewHere) / carlito.length));
   forgetRunFonts();
   let rebuiltApart = runFontsApart([runRequest])[0] ?? null;
   const startRuns = await settled();
