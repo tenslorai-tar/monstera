@@ -97,16 +97,8 @@ for (let pageNumber = 1; pageNumber <= PAGES; pageNumber += 1) {
   await writeFile(path, await brochure(pageNumber));
   await walk.open(path);
   await section('Edit');
-  await attempt(pageNumber, 'replace a heading’s words', async () => {
-    await openAt(120, 70);
-    await page.keyboard.press('Control+A');
-    await page.keyboard.type('Summer at the garden');
-  });
-  await attempt(pageNumber, 'change a heading’s colour', async () => {
-    await openAt(120, 70);
-    await page.keyboard.press('Control+A');
-    await text.panel().getByRole('button', { name: 'Red', exact: true }).first().click();
-  });
+  // THE TOP HEADING LAST: replaced by longer words it wraps to a second line, and that line pushes everything below it
+  // down (ADR-0249), so a press aimed afterwards at a fixed place below misses (the run of 2026-10-25, two misses a page).
   await attempt(pageNumber, 'edit a heading laid over a picture', async () => {
     await openAt(90, 234);
     await page.keyboard.press('End');
@@ -115,7 +107,9 @@ for (let pageNumber = 1; pageNumber <= PAGES; pageNumber += 1) {
   // THE JUSTIFIED LINE AND THE QUOTE BEFORE THE BODY LINE: a body line that grows pushes the paragraphs below it down
   // (ADR-0249), and the justified one was then no longer where the press aimed (run of 2026-10-21).
   await attempt(pageNumber, 'edit a justified line', async () => {
-    await openAt(100, 507);
+    // THE JUSTIFIED PARAGRAPH'S FIRST LINE as the fixture draws it now, read off the walk's own screenshot (2026-10-25):
+    // 507 pointed into the space above it.
+    await openAt(100, 540);
     await page.keyboard.press('End');
     await page.keyboard.type(' now');
   });
@@ -128,6 +122,17 @@ for (let pageNumber = 1; pageNumber <= PAGES; pageNumber += 1) {
     await openAt(100, 342);
     await page.keyboard.press('End');
     await page.keyboard.type(' too');
+  });
+  // THE COLOUR BEFORE THE WORDS, so it is asked of the heading as the page has it.
+  await attempt(pageNumber, 'change a heading’s colour', async () => {
+    await openAt(120, 70);
+    await page.keyboard.press('Control+A');
+    await text.panel().getByRole('button', { name: 'Red', exact: true }).first().click();
+  });
+  await attempt(pageNumber, 'replace a heading’s words', async () => {
+    await openAt(120, 70);
+    await page.keyboard.press('Control+A');
+    await page.keyboard.type('Summer at the garden');
   });
 }
 
